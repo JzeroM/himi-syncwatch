@@ -54,21 +54,20 @@ jobs:
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
-          # 删除错误的平台目录
-          rm -rf android ios windows macos linux web
+          # 删除错误的平台目录和构建缓存
+          rm -rf android ios windows macos linux web build .dart_tool
           
           # 用 flutter create 生成正确的平台文件
-          flutter create --project-name himi_syncwatch --org com.himi --platforms android temp_proj
-          
-          # 复制平台文件回来
-          cp -r temp_proj/android .
-          rm -rf temp_proj
+          flutter create --project-name himi_syncwatch --org com.himi --platforms android .
           
           # 恢复源码
           rm -rf lib
           cp -r /tmp/lib_backup lib
           cp /tmp/pubspec.yaml.bak pubspec.yaml
           cp /tmp/AGENTS.md.bak AGENTS.md || true
+          
+          # 验证
+          ls -la android/app/build.gradle
 
       - name: 添加自定义权限
         run: |
@@ -104,12 +103,9 @@ jobs:
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
-          rm -rf android ios windows macos linux web
+          rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms ios temp_proj
-          
-          cp -r temp_proj/ios .
-          rm -rf temp_proj
+          flutter create --project-name himi_syncwatch --org com.himi --platforms ios .
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
@@ -144,12 +140,9 @@ jobs:
           Copy-Item -Recurse lib /tmp/lib_backup
           Copy-Item pubspec.yaml /tmp/pubspec.yaml.bak -ErrorAction SilentlyContinue
           
-          Remove-Item -Recurse -Force android,ios,windows,macos,linux,web -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force android,ios,windows,macos,linux,web,build,.dart_tool -ErrorAction SilentlyContinue
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms windows temp_proj
-          
-          Copy-Item -Recurse temp_proj/windows .
-          Remove-Item -Recurse temp_proj
+          flutter create --project-name himi_syncwatch --org com.himi --platforms windows .
           
           Remove-Item -Recurse -Force lib
           Copy-Item -Recurse /tmp/lib_backup lib
@@ -177,12 +170,9 @@ jobs:
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
-          rm -rf android ios windows macos linux web
+          rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms macos temp_proj
-          
-          cp -r temp_proj/macos .
-          rm -rf temp_proj
+          flutter create --project-name himi_syncwatch --org com.himi --platforms macos .
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
@@ -217,12 +207,9 @@ jobs:
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
-          rm -rf android ios windows macos linux web
+          rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms linux temp_proj
-          
-          cp -r temp_proj/linux .
-          rm -rf temp_proj
+          flutter create --project-name himi_syncwatch --org com.himi --platforms linux .
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
