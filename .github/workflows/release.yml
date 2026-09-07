@@ -55,12 +55,8 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          # 创建临时项目
-          cd /tmp
-          flutter create --project-name himi_syncwatch --org com.himi --platforms android temp_android
-          cd -
+          flutter create --project-name himi_syncwatch --org com.himi --platforms android /tmp/temp_android
           
-          # 复制平台文件
           cp -r /tmp/temp_android/android .
           rm -rf /tmp/temp_android
           
@@ -70,6 +66,7 @@ jobs:
           cp /tmp/AGENTS.md.bak AGENTS.md || true
           
           ls -la android/app/build.gradle
+          pwd
 
       - name: 添加自定义权限
         run: |
@@ -107,9 +104,7 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          cd /tmp
-          flutter create --project-name himi_syncwatch --org com.himi --platforms ios temp_ios
-          cd -
+          flutter create --project-name himi_syncwatch --org com.himi --platforms ios /tmp/temp_ios
           
           cp -r /tmp/temp_ios/ios .
           rm -rf /tmp/temp_ios
@@ -149,12 +144,10 @@ jobs:
           
           Remove-Item -Recurse -Force android,ios,windows,macos,linux,web,build,.dart_tool -ErrorAction SilentlyContinue
           
-          cd /tmp
-          flutter create --project-name himi_syncwatch --org com.himi --platforms windows temp_windows
-          cd -
+          flutter create --project-name himi_syncwatch --org com.himi --platforms windows C:/temp_windows
           
-          Copy-Item -Recurse /tmp/temp_windows/windows .
-          Remove-Item -Recurse -Force /tmp/temp_windows
+          Copy-Item -Recurse C:/temp_windows/windows .
+          Remove-Item -Recurse -Force C:/temp_windows
           
           Remove-Item -Recurse -Force lib
           Copy-Item -Recurse /tmp/lib_backup lib
@@ -184,9 +177,7 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          cd /tmp
-          flutter create --project-name himi_syncwatch --org com.himi --platforms macos temp_macos
-          cd -
+          flutter create --project-name himi_syncwatch --org com.himi --platforms macos /tmp/temp_macos
           
           cp -r /tmp/temp_macos/macos .
           rm -rf /tmp/temp_macos
@@ -226,9 +217,7 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          cd /tmp
-          flutter create --project-name himi_syncwatch --org com.himi --platforms linux temp_linux
-          cd -
+          flutter create --project-name himi_syncwatch --org com.himi --platforms linux /tmp/temp_linux
           
           cp -r /tmp/temp_linux/linux .
           rm -rf /tmp/temp_linux
