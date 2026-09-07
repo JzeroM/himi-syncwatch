@@ -123,7 +123,7 @@ class EmbyService {
           if (sortBy != null) 'SortBy': sortBy,
           if (sortOrder != null) 'SortOrder': sortOrder,
           'Recursive': true,
-          'Fields': fields ?? 'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams',
+          'Fields': fields ?? 'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources',
           'ImageTypeLimit': 1,
         },
       );
@@ -238,7 +238,7 @@ class EmbyService {
         '/Users/$_userId/Items/$id',
         queryParameters: {
           'Fields':
-              'Overview,Genres,MediaStreams,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks',
+              'Overview,Genres,MediaStreams,MediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks',
         },
       );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
@@ -248,8 +248,12 @@ class EmbyService {
     }
   }
 
-  String getStreamUrl(String itemId) {
-    return '$_serverUrl/Videos/$itemId/stream?static=true';
+  String getStreamUrl(String itemId, {String? mediaSourceId}) {
+    final base = '$_serverUrl/Videos/$itemId/stream?static=true';
+    if (mediaSourceId != null) {
+      return '$base&MediaSourceId=$mediaSourceId';
+    }
+    return base;
   }
 
   String getImageUrl(String itemId, {String type = 'Primary'}) {

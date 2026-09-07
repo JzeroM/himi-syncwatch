@@ -14,11 +14,13 @@ import 'package:himi_syncwatch/services/room_service.dart';
 class PlayerScreen extends ConsumerStatefulWidget {
   final String itemId;
   final String? roomId;
+  final String? mediaSourceId;
 
   const PlayerScreen({
     super.key,
     required this.itemId,
     this.roomId,
+    this.mediaSourceId,
   });
 
   @override
@@ -57,7 +59,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _initializePlayer() async {
     final embyService = ref.read(embyServiceProvider);
-    final streamUrl = embyService.getStreamUrl(widget.itemId);
+    final streamUrl = embyService.getStreamUrl(
+      widget.itemId,
+      mediaSourceId: widget.mediaSourceId,
+    );
     final config = ref.read(embyConfigProvider);
     final token = config?.accessToken ?? '';
 

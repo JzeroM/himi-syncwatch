@@ -77,6 +77,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   Future<void> _createRoom() async {
     if (_item == null) return;
+
+    MediaSource? selectedSource;
+    if (_item!.hasMultipleVersions) {
+      selectedSource = await _showVersionPicker();
+      if (selectedSource == null) return;
+    }
+
     final roomService = ref.read(roomServiceProvider);
     final room = await roomService.createRoom(
       mediaItemId: _item!.id,
@@ -86,8 +93,40 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       hostName: '房主',
     );
     if (room != null && mounted) {
-      context.push('/player/${_item!.id}?roomId=${room.id}');
+      final query = StringBuffer('roomId=${room.id}');
+      if (selectedSource != null) {
+        query.write('&mediaSourceId=${selectedSource.id}');
+      }
+      context.push('/player/${_item!.id}?$query');
     }
+  }
+
+  Future<MediaSource?> _showVersionPicker() async {
+    if (_item == null || !_item!.hasMultipleVersions) return null;
+    return showModalBottomSheet<MediaSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                '选择版本',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ..._item!.mediaSources.map((source) => ListTile(
+                  leading: const Icon(Icons.movie),
+                  title: Text(source.name),
+                  subtitle: Text(source.displayLabel),
+                  onTap: () => Navigator.pop(ctx, source),
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -138,8 +177,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           children: [
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: () {
-                  context.push('/player/${_item!.id}');
+                onPressed: () async {
+                  MediaSource? source;
+                  if (_item!.hasMultipleVersions) {
+                    source = await _showVersionPicker();
+                    if (source == null) return;
+                  }
+                  final query = StringBuffer();
+                  if (source != null) {
+                    query.write('mediaSourceId=${source.id}');
+                  }
+                  final suffix = query.isNotEmpty ? '?$query' : '';
+                  if (mounted) {
+                    context.push('/player/${_item!.id}$suffix');
+                  }
                 },
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('开始播放'),
@@ -318,6 +369,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   _buildMediaInfo(item),
                   const SizedBox(height: 20),
                 ],
+                if (item.hasMultipleVersions) ...[
+                  _buildMediaSources(item),
+                  const SizedBox(height: 20),
+                ],
                 if (_episodes.isNotEmpty) ...[
                   const Text(
                     '剧集',
@@ -371,6 +426,27 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildMediaSources(MediaItem item) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '可用版本',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        ...item.mediaSources.map((source) => Card(
+              child: ListTile(
+                leading: const Icon(Icons.movie_creation_outlined),
+                title: Text(source.name),
+                subtitle: Text(source.displayLabel),
+                dense: true,
+              ),
+            )),
       ],
     );
   }
