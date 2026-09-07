@@ -1,21 +1,34 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 
 class EmbyService {
   late final Dio _dio;
   String? _serverUrl;
   String? _accessToken;
+  String? _userId;
 
   EmbyService() {
     _dio = Dio();
+    (_dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+      final client = HttpClient()
+        ..badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+      return client;
+    };
   }
 
   String? get serverUrl => _serverUrl;
   String? get accessToken => _accessToken;
 
-  void configure({required String serverUrl, required String accessToken}) {
+  void configure(
+      {required String serverUrl,
+      required String accessToken,
+      String? userId}) {
     _serverUrl = serverUrl;
     _accessToken = accessToken;
+    _userId = userId;
     _dio.options.baseUrl = serverUrl;
     _dio.options.headers['X-Emby-Authorization'] =
         'MediaBrowser Client="HimiSync", Device="Desktop", DeviceId="himi-sync-001", Version="1.0.0"';
@@ -60,8 +73,9 @@ class EmbyService {
   }) async {
     try {
       final response = await _dio.get(
-        '/Users/me/Items',
+        '/Items',
         queryParameters: {
+          if (_userId != null) 'UserId': _userId,
           if (parentId != null) 'ParentId': parentId,
           if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
           if (limit != null) 'Limit': limit,

@@ -43,6 +43,7 @@ final embyServiceProvider = Provider<EmbyService>((ref) {
     service.configure(
       serverUrl: config.serverUrl,
       accessToken: config.accessToken!,
+      userId: config.userId,
     );
   }
 

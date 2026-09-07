@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/router.dart';
 
-class HimiSyncApp extends StatelessWidget {
+class HimiSyncApp extends ConsumerWidget {
   const HimiSyncApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(appRouterProvider);
+
     return MaterialApp.router(
       title: 'HimiSync',
       debugShowCheckedModeBanner: false,
@@ -16,7 +19,7 @@ class HimiSyncApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      routerConfig: appRouter,
+      routerConfig: router,
     );
   }
 }
