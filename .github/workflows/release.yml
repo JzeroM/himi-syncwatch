@@ -58,9 +58,7 @@ jobs:
           
           flutter create --project-name himi_syncwatch --org com.himi --platforms android /tmp/temp_proj
           
-          ls -la /tmp/temp_proj/android/
-          ls -la /tmp/temp_proj/android/app/
-          
+          mkdir -p android
           cp -a /tmp/temp_proj/android/* android/
           rm -rf /tmp/temp_proj
           
@@ -69,8 +67,8 @@ jobs:
           cp /tmp/pubspec.yaml.bak pubspec.yaml
           cp /tmp/AGENTS.md.bak AGENTS.md || true
           
-          ls -la android/app/build.gradle
-          pwd
+          find android -name "*.gradle*" | head -10
+          ls -la android/app/build.gradle*
 
       - name: 添加自定义权限
         run: |
@@ -80,9 +78,14 @@ jobs:
           # 允许明文流量
           sed -i 's|android:icon="@mipmap/ic_launcher"|android:icon="@mipmap/ic_launcher"\n        android:usesCleartextTraffic="true"|' android/app/src/main/AndroidManifest.xml
           
-          # 更新 compileSdk 和 minSdk
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle
+          # 更新 compileSdk 和 minSdk（兼容 .gradle 和 .gradle.kts）
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle.kts
+          else
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle
+          fi
 
       - run: flutter pub get
       - run: flutter build apk --release --split-per-abi
@@ -108,10 +111,11 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms ios /tmp/temp_ios
+          flutter create --project-name himi_syncwatch --org com.himi --platforms ios /tmp/temp_proj
           
-          cp -r /tmp/temp_ios/ios .
-          rm -rf /tmp/temp_ios
+          mkdir -p ios
+          cp -a /tmp/temp_proj/ios/* ios/
+          rm -rf /tmp/temp_proj
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
@@ -148,10 +152,11 @@ jobs:
           
           Remove-Item -Recurse -Force android,ios,windows,macos,linux,web,build,.dart_tool -ErrorAction SilentlyContinue
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms windows C:/temp_windows
+          flutter create --project-name himi_syncwatch --org com.himi --platforms windows C:/temp_proj
           
-          Copy-Item -Recurse C:/temp_windows/windows .
-          Remove-Item -Recurse -Force C:/temp_windows
+          New-Item -ItemType Directory -Force -Path windows
+          Copy-Item -Recurse C:/temp_proj/windows/* windows/
+          Remove-Item -Recurse -Force C:/temp_proj
           
           Remove-Item -Recurse -Force lib
           Copy-Item -Recurse /tmp/lib_backup lib
@@ -181,10 +186,11 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms macos /tmp/temp_macos
+          flutter create --project-name himi_syncwatch --org com.himi --platforms macos /tmp/temp_proj
           
-          cp -r /tmp/temp_macos/macos .
-          rm -rf /tmp/temp_macos
+          mkdir -p macos
+          cp -a /tmp/temp_proj/macos/* macos/
+          rm -rf /tmp/temp_proj
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
@@ -221,10 +227,11 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms linux /tmp/temp_linux
+          flutter create --project-name himi_syncwatch --org com.himi --platforms linux /tmp/temp_proj
           
-          cp -r /tmp/temp_linux/linux .
-          rm -rf /tmp/temp_linux
+          mkdir -p linux
+          cp -a /tmp/temp_proj/linux/* linux/
+          rm -rf /tmp/temp_proj
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
