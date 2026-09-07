@@ -32,7 +32,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   late final VideoController _controller;
   Timer? _heartbeatTimer;
   StreamSubscription? _rtmSubscription;
-  StreamSubscription? _subtitleSubscription;
   bool _isHost = false;
   bool _showControls = true;
   Duration _position = Duration.zero;
@@ -52,7 +51,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   SubtitleTrack? _currentSubtitle;
   List<AudioTrack> _audioTracks = [];
   AudioTrack? _currentAudio;
-  List<String> _currentSubtitleText = ['', ''];
+  StreamSubscription? _tracksSubscription;
+  bool _subtitleAutoSelected = false;
 
   @override
   void initState() {
@@ -83,20 +83,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _player.open(Media(url, httpHeaders: {
       'X-Emby-Token': token,
     }));
-
-    _refreshTracks();
-  }
-
-  void _refreshTracks() {
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
-      setState(() {
-        _subtitleTracks = _player.state.tracks.subtitle;
-        _audioTracks = _player.state.tracks.audio;
-        _currentSubtitle = _player.state.track.subtitle;
-        _currentAudio = _player.state.track.audio;
-      });
-    });
   }
 
   Future<String> _resolveStreamUrl(String url, String token) async {
@@ -144,8 +130,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (mounted) setState(() => _volume = volume);
     });
 
-    _subtitleSubscription = _player.stream.subtitle.listen((subtitle) {
-      if (mounted) setState(() => _currentSubtitleText = subtitle);
+    _tracksSubscription = _player.stream.tracks.listen((tracks) {
+      if (!mounted) return;
+      final subs = tracks.subtitle;
+      final audios = tracks.audio;
+      setState(() {
+        _subtitleTracks = subs;
+        _audioTracks = audios;
+      });
+      if (!_subtitleAutoSelected && subs.isNotEmpty) {
+        _subtitleAutoSelected = true;
+        _player.setSubtitleTrack(subs.first);
+      }
     });
 
     _player.stream.track.listen((_) {
@@ -154,6 +150,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _currentSubtitle = _player.state.track.subtitle;
           _currentAudio = _player.state.track.audio;
         });
+      }
+    });
+  }
+
+  void _refreshTracks() {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      final subs = _player.state.tracks.subtitle;
+      final audios = _player.state.tracks.audio;
+      setState(() {
+        _subtitleTracks = subs;
+        _audioTracks = audios;
+        _currentSubtitle = _player.state.track.subtitle;
+        _currentAudio = _player.state.track.audio;
+      });
+      // 自动选中第一条字幕轨道
+      if (!_subtitleAutoSelected && subs.isNotEmpty) {
+        _subtitleAutoSelected = true;
+        _player.setSubtitleTrack(subs.first);
       }
     });
   }
@@ -345,7 +360,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rtmSubscription?.cancel();
-    _subtitleSubscription?.cancel();
+    _tracksSubscription?.cancel();
 
     if (widget.roomId != null) {
       final roomService = RoomService();
@@ -380,22 +395,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               child: Video(
                 controller: _controller,
                 controls: NoVideoControls,
-              ),
-            ),
-
-            // 字幕显示
-            if (_currentSubtitleText.isNotEmpty &&
-                _currentSubtitleText.first.isNotEmpty)
-              Positioned(
-                bottom: _showControls ? 140 : 40,
-                left: 24,
-                right: 24,
-                child: Text(
-                  _currentSubtitleText.first,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
+                subtitleViewConfiguration: const SubtitleViewConfiguration(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 50),
+                  style: TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 20,
                     fontWeight: FontWeight.w500,
                     shadows: [
                       Shadow(
@@ -407,6 +411,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ),
                 ),
               ),
+            ),
 
             if (_showControls)
               Positioned(
@@ -499,7 +504,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 进度条
             SliderTheme(
               data: SliderThemeData(
                 activeTrackColor: const Color(0xFF6366F1),
@@ -521,7 +525,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ),
             ),
 
-            // 时间
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
@@ -534,7 +537,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ),
             ),
 
-            // 控制按钮
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -588,19 +590,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ],
             ),
 
-            // 音量滑块
             if (_showVolumeSlider) ...[
               const SizedBox(height: 12),
               _buildVolumeSlider(),
             ],
 
-            // 字幕选择菜单
             if (_showSubtitleMenu) ...[
               const SizedBox(height: 12),
               _buildSubtitleList(),
             ],
 
-            // 音轨选择菜单
             if (_showAudioMenu) ...[
               const SizedBox(height: 12),
               _buildAudioTrackList(),
