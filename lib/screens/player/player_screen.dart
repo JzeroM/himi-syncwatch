@@ -32,6 +32,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   late final VideoController _controller;
   Timer? _heartbeatTimer;
   StreamSubscription? _rtmSubscription;
+  StreamSubscription? _subtitleSubscription;
   bool _isHost = false;
   bool _showControls = true;
   Duration _position = Duration.zero;
@@ -42,6 +43,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   double _volume = 100;
   bool _syncPaused = false;
   Timer? _hideControlsTimer;
+
+  bool _showVolumeSlider = false;
+  bool _showSubtitleMenu = false;
+  bool _showAudioMenu = false;
+
+  List<SubtitleTrack> _subtitleTracks = [];
+  SubtitleTrack? _currentSubtitle;
+  List<AudioTrack> _audioTracks = [];
+  AudioTrack? _currentAudio;
+  List<String> _currentSubtitleText = ['', ''];
 
   @override
   void initState() {
@@ -72,6 +83,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _player.open(Media(url, httpHeaders: {
       'X-Emby-Token': token,
     }));
+
+    _refreshTracks();
+  }
+
+  void _refreshTracks() {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      setState(() {
+        _subtitleTracks = _player.state.tracks.subtitle;
+        _audioTracks = _player.state.tracks.audio;
+        _currentSubtitle = _player.state.track.subtitle;
+        _currentAudio = _player.state.track.audio;
+      });
+    });
   }
 
   Future<String> _resolveStreamUrl(String url, String token) async {
@@ -109,11 +134,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
 
     _player.stream.duration.listen((duration) {
-      if (mounted) setState(() => _duration = duration);
+      if (mounted) {
+        setState(() => _duration = duration);
+        _refreshTracks();
+      }
     });
 
     _player.stream.volume.listen((volume) {
       if (mounted) setState(() => _volume = volume);
+    });
+
+    _subtitleSubscription = _player.stream.subtitle.listen((subtitle) {
+      if (mounted) setState(() => _currentSubtitleText = subtitle);
+    });
+
+    _player.stream.track.listen((_) {
+      if (mounted) {
+        setState(() {
+          _currentSubtitle = _player.state.track.subtitle;
+          _currentAudio = _player.state.track.audio;
+        });
+      }
     });
   }
 
@@ -280,10 +321,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_showControls) {
       _hideControlsTimer = Timer(const Duration(seconds: 5), () {
         if (mounted && _player.state.playing) {
-          setState(() => _showControls = false);
+          setState(() {
+            _showControls = false;
+            _showVolumeSlider = false;
+            _showSubtitleMenu = false;
+            _showAudioMenu = false;
+          });
         }
       });
     }
+  }
+
+  void _closeAllMenus() {
+    setState(() {
+      _showVolumeSlider = false;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+    });
   }
 
   @override
@@ -291,6 +345,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rtmSubscription?.cancel();
+    _subtitleSubscription?.cancel();
 
     if (widget.roomId != null) {
       final roomService = RoomService();
@@ -311,7 +366,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
-        onTap: _toggleControls,
+        onTap: () {
+          if (_showVolumeSlider || _showSubtitleMenu || _showAudioMenu) {
+            _closeAllMenus();
+          } else {
+            _toggleControls();
+          }
+        },
         behavior: HitTestBehavior.opaque,
         child: Stack(
           children: [
@@ -321,6 +382,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 controls: NoVideoControls,
               ),
             ),
+
+            // 字幕显示
+            if (_currentSubtitleText.isNotEmpty &&
+                _currentSubtitleText.first.isNotEmpty)
+              Positioned(
+                bottom: _showControls ? 140 : 40,
+                left: 24,
+                right: 24,
+                child: Text(
+                  _currentSubtitleText.first,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    shadows: [
+                      Shadow(
+                        blurRadius: 6,
+                        color: Colors.black87,
+                        offset: Offset(1, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             if (_showControls)
               Positioned(
@@ -352,8 +438,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top,
-        left: 8,
-        right: 8,
+        left: 12,
+        right: 12,
       ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -396,274 +482,339 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildControls() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.transparent,
-            Colors.black.withValues(alpha: 0.8),
+    return GestureDetector(
+      onTap: () {},
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.85),
+            ],
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 进度条
+            SliderTheme(
+              data: SliderThemeData(
+                activeTrackColor: const Color(0xFF6366F1),
+                inactiveTrackColor: Colors.white24,
+                thumbColor: const Color(0xFF6366F1),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                trackHeight: 3,
+              ),
+              child: Slider(
+                value: _duration.inMilliseconds > 0
+                    ? _position.inMilliseconds
+                        .toDouble()
+                        .clamp(0, _duration.inMilliseconds.toDouble())
+                    : 0,
+                max: _duration.inMilliseconds > 0
+                    ? _duration.inMilliseconds.toDouble()
+                    : 1,
+                onChanged: _canControlPlayback ? _onSeek : null,
+              ),
+            ),
+
+            // 时间
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Text(
+                    '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+
+            // 控制按钮
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildControlButton(
+                  icon: _volumeIcon,
+                  onTap: () {
+                    setState(() {
+                      _showVolumeSlider = !_showVolumeSlider;
+                      _showSubtitleMenu = false;
+                      _showAudioMenu = false;
+                    });
+                  },
+                ),
+                const SizedBox(width: 28),
+                _buildControlButton(
+                  icon: Icons.subtitles,
+                  onTap: () {
+                    setState(() {
+                      _showSubtitleMenu = !_showSubtitleMenu;
+                      _showVolumeSlider = false;
+                      _showAudioMenu = false;
+                    });
+                  },
+                  badge: _subtitleTracks.isNotEmpty ? '${_subtitleTracks.length}' : null,
+                ),
+                const SizedBox(width: 28),
+                _buildControlButton(
+                  icon: Icons.audiotrack,
+                  onTap: () {
+                    setState(() {
+                      _showAudioMenu = !_showAudioMenu;
+                      _showVolumeSlider = false;
+                      _showSubtitleMenu = false;
+                    });
+                  },
+                  badge: _audioTracks.isNotEmpty ? '${_audioTracks.length}' : null,
+                ),
+                if (_canControlPlayback) ...[
+                  const SizedBox(width: 28),
+                  GestureDetector(
+                    onTap: _togglePlayPause,
+                    child: Icon(
+                      _player.state.playing
+                          ? Icons.pause_circle_filled
+                          : Icons.play_circle_fill,
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+
+            // 音量滑块
+            if (_showVolumeSlider) ...[
+              const SizedBox(height: 12),
+              _buildVolumeSlider(),
+            ],
+
+            // 字幕选择菜单
+            if (_showSubtitleMenu) ...[
+              const SizedBox(height: 12),
+              _buildSubtitleList(),
+            ],
+
+            // 音轨选择菜单
+            if (_showAudioMenu) ...[
+              const SizedBox(height: 12),
+              _buildAudioTrackList(),
+            ],
           ],
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 进度条
-          SliderTheme(
-            data: SliderThemeData(
-              activeTrackColor: const Color(0xFF6366F1),
-              inactiveTrackColor: Colors.white24,
-              thumbColor: const Color(0xFF6366F1),
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              trackHeight: 3,
-            ),
-            child: Slider(
-              value: _duration.inMilliseconds > 0
-                  ? _position.inMilliseconds
-                      .toDouble()
-                      .clamp(0, _duration.inMilliseconds.toDouble())
-                  : 0,
-              max: _duration.inMilliseconds > 0
-                  ? _duration.inMilliseconds.toDouble()
-                  : 1,
-              onChanged: _canControlPlayback ? _onSeek : null,
-            ),
-          ),
+    );
+  }
 
-          // 时间 + 控制按钮
-          Row(
-            children: [
-              Text(
-                '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-              const Spacer(),
-              // 音量
-              _buildVolumeButton(),
-              // 字幕
-              _buildSubtitleButton(),
-              // 音轨
-              _buildAudioTrackButton(),
-              // 播放/暂停（仅房主/独立播放显示）
-              if (_canControlPlayback) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: Icon(
-                    _player.state.playing
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_fill,
-                    color: Colors.white,
-                    size: 36,
-                  ),
-                  onPressed: _togglePlayPause,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+  Widget _buildControlButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    String? badge,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(icon, color: Colors.white, size: 24),
+          if (badge != null)
+            Positioned(
+              right: -6,
+              top: -4,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF6366F1),
+                  shape: BoxShape.circle,
                 ),
-              ],
-            ],
-          ),
+                child: Text(
+                  badge,
+                  style: const TextStyle(color: Colors.white, fontSize: 9),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildVolumeButton() {
-    return PopupMenuButton<double>(
-      offset: const Offset(0, -180),
-      onSelected: (value) {
-        _player.setVolume(value);
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem<double>(
-          enabled: false,
-          child: Text('音量', style: TextStyle(fontWeight: FontWeight.bold)),
+  Widget _buildVolumeSlider() {
+    return Row(
+      children: [
+        Icon(
+          _volume == 0
+              ? Icons.volume_off
+              : _volume < 50
+                  ? Icons.volume_down
+                  : Icons.volume_up,
+          color: Colors.white70,
+          size: 20,
         ),
-        PopupMenuItem<double>(
-          value: 0,
-          child: Row(
-            children: [
-              Icon(_volume == 0 ? Icons.volume_off : Icons.volume_up,
-                  size: 18),
-              const SizedBox(width: 8),
-              const Text('静音'),
-            ],
+        const SizedBox(width: 8),
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              activeTrackColor: const Color(0xFF6366F1),
+              inactiveTrackColor: Colors.white24,
+              thumbColor: const Color(0xFF6366F1),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+              trackHeight: 3,
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            ),
+            child: Slider(
+              value: _volume.clamp(0, 100),
+              min: 0,
+              max: 100,
+              onChanged: (value) {
+                _player.setVolume(value);
+              },
+            ),
           ),
         ),
-        PopupMenuItem<double>(
-          value: 50,
-          child: Row(
-            children: [
-              Icon(
-                _volume >= 50 ? Icons.volume_up : Icons.volume_down,
-                size: 18,
-                color: _volume == 50 ? const Color(0xFF6366F1) : null,
-              ),
-              const SizedBox(width: 8),
-              Text('50%',
-                  style: TextStyle(
-                    color: _volume == 50 ? const Color(0xFF6366F1) : null,
-                  )),
-            ],
-          ),
-        ),
-        PopupMenuItem<double>(
-          value: 100,
-          child: Row(
-            children: [
-              Icon(Icons.volume_up,
-                  size: 18,
-                  color: _volume == 100 ? const Color(0xFF6366F1) : null),
-              const SizedBox(width: 8),
-              Text('100%',
-                  style: TextStyle(
-                    color: _volume == 100 ? const Color(0xFF6366F1) : null,
-                  )),
-            ],
+        const SizedBox(width: 4),
+        SizedBox(
+          width: 36,
+          child: Text(
+            '${_volume.round()}',
+            textAlign: TextAlign.right,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ),
       ],
-      child: Icon(
-        _volume == 0
-            ? Icons.volume_off
-            : _volume < 50
-                ? Icons.volume_down
-                : Icons.volume_up,
-        color: Colors.white,
-        size: 22,
+    );
+  }
+
+  Widget _buildSubtitleList() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 180),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        children: [
+          _buildMenuItem(
+            label: '关闭字幕',
+            isSelected: _currentSubtitle?.id == 'no',
+            onTap: () {
+              _player.setSubtitleTrack(SubtitleTrack.no());
+              setState(() => _showSubtitleMenu = false);
+            },
+          ),
+          for (int i = 0; i < _subtitleTracks.length; i++)
+            _buildMenuItem(
+              label: _subtitleTrackLabel(_subtitleTracks[i]),
+              isSelected: _currentSubtitle?.id == _subtitleTracks[i].id,
+              onTap: () {
+                _player.setSubtitleTrack(_subtitleTracks[i]);
+                setState(() => _showSubtitleMenu = false);
+              },
+            ),
+          if (_subtitleTracks.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                '当前视频无字幕轨道',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildSubtitleButton() {
-    final tracks = _player.state.tracks;
-    final subtitleTracks = tracks.subtitle;
-    final currentSubtitle = _player.state.track.subtitle;
-
-    return PopupMenuButton<String>(
-      offset: const Offset(0, -180),
-      onSelected: (value) {
-        if (value == 'off') {
-          _player.setSubtitleTrack(SubtitleTrack.no());
-        } else {
-          final idx = int.tryParse(value);
-          if (idx != null && idx < subtitleTracks.length) {
-            _player.setSubtitleTrack(subtitleTracks[idx]);
-          }
-        }
-      },
-      itemBuilder: (context) {
-        final items = <PopupMenuItem<String>>[
-          const PopupMenuItem<String>(
-            enabled: false,
-            child:
-                Text('字幕', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          PopupMenuItem<String>(
-            value: 'off',
-            child: Row(
-              children: [
-                if (currentSubtitle.id == 'no')
-                  const Icon(Icons.check, size: 18, color: Color(0xFF6366F1))
-                else
-                  const SizedBox(width: 18),
-                const SizedBox(width: 8),
-                const Text('关闭'),
-              ],
+  Widget _buildAudioTrackList() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 180),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        children: [
+          for (int i = 0; i < _audioTracks.length; i++)
+            _buildMenuItem(
+              label: _audioTrackLabel(_audioTracks[i]),
+              isSelected: _currentAudio?.id == _audioTracks[i].id,
+              onTap: () {
+                _player.setAudioTrack(_audioTracks[i]);
+                setState(() => _showAudioMenu = false);
+              },
             ),
-          ),
-        ];
-
-        for (int i = 0; i < subtitleTracks.length; i++) {
-          final track = subtitleTracks[i];
-          final lang = track.language?.isNotEmpty == true
-              ? track.language!
-              : track.title ?? '字幕 ${i + 1}';
-          final isActive = currentSubtitle.id == track.id;
-          items.add(
-            PopupMenuItem<String>(
-              value: '$i',
-              child: Row(
-                children: [
-                  if (isActive)
-                    const Icon(Icons.check, size: 18, color: Color(0xFF6366F1))
-                  else
-                    const SizedBox(width: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      lang,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+          if (_audioTracks.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                '当前视频无音轨选项',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
               ),
             ),
-          );
-        }
-
-        return items;
-      },
-      child: const Icon(Icons.subtitles, color: Colors.white, size: 22),
+        ],
+      ),
     );
   }
 
-  Widget _buildAudioTrackButton() {
-    final tracks = _player.state.tracks;
-    final audioTracks = tracks.audio;
-    final currentAudio = _player.state.track.audio;
-
-    return PopupMenuButton<String>(
-      offset: const Offset(0, -180),
-      onSelected: (value) {
-        final idx = int.tryParse(value);
-        if (idx != null && idx < audioTracks.length) {
-          _player.setAudioTrack(audioTracks[idx]);
-        }
-      },
-      itemBuilder: (context) {
-        final items = <PopupMenuItem<String>>[
-          const PopupMenuItem<String>(
-            enabled: false,
-            child: Text('音轨', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ];
-
-        for (int i = 0; i < audioTracks.length; i++) {
-          final track = audioTracks[i];
-          final lang = track.language?.isNotEmpty == true
-              ? track.language!
-              : track.title ?? '音轨 ${i + 1}';
-          final isActive = currentAudio.id == track.id;
-          items.add(
-            PopupMenuItem<String>(
-              value: '$i',
-              child: Row(
-                children: [
-                  if (isActive)
-                    const Icon(Icons.check, size: 18, color: Color(0xFF6366F1))
-                  else
-                    const SizedBox(width: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      lang,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+  Widget _buildMenuItem({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            if (isSelected)
+              const Icon(Icons.check, size: 16, color: Color(0xFF6366F1))
+            else
+              const SizedBox(width: 16),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? const Color(0xFF6366F1) : Colors.white,
+                  fontSize: 14,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-          );
-        }
-
-        return items;
-      },
-      child: const Icon(Icons.audiotrack, color: Colors.white, size: 22),
+          ],
+        ),
+      ),
     );
   }
+
+  String _subtitleTrackLabel(SubtitleTrack track) {
+    final lang = track.language?.isNotEmpty == true
+        ? track.language!
+        : track.title;
+    return lang?.isNotEmpty == true ? lang! : '字幕';
+  }
+
+  String _audioTrackLabel(AudioTrack track) {
+    final lang = track.language?.isNotEmpty == true
+        ? track.language!
+        : track.title;
+    return lang?.isNotEmpty == true ? lang! : '音轨';
+  }
+
+  IconData get _volumeIcon =>
+      _volume == 0
+          ? Icons.volume_off
+          : _volume < 50
+              ? Icons.volume_down
+              : Icons.volume_up;
 
   String _formatDuration(Duration duration) {
     final hours = duration.inHours;
