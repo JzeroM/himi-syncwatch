@@ -52,7 +52,7 @@ jobs:
           # 保存我们的源码
           cp -r lib /tmp/lib_backup
           cp pubspec.yaml /tmp/pubspec.yaml.bak
-          cp pubspec.lock /tmp/pubspec.lock.bak
+          cp pubspec.lock /tmp/pubspec.lock.bak || true
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
           # 删除错误的平台目录
@@ -69,8 +69,8 @@ jobs:
           rm -rf lib
           cp -r /tmp/lib_backup lib
           cp /tmp/pubspec.yaml.bak pubspec.yaml
-          cp /tmp/pubspec.lock.bak pubspec.lock
           cp /tmp/AGENTS.md.bak AGENTS.md || true
+          cp /tmp/pubspec.lock.bak pubspec.lock || true
 
       - name: 添加自定义权限
         run: |
@@ -100,7 +100,7 @@ jobs:
         run: |
           cp -r lib /tmp/lib_backup
           cp pubspec.yaml /tmp/pubspec.yaml.bak
-          cp pubspec.lock /tmp/pubspec.lock.bak
+          cp pubspec.lock /tmp/pubspec.lock.bak || true
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
           rm -rf android ios windows macos linux web
@@ -113,7 +113,7 @@ jobs:
           rm -rf lib
           cp -r /tmp/lib_backup lib
           cp /tmp/pubspec.yaml.bak pubspec.yaml
-          cp /tmp/pubspec.lock.bak pubspec.lock
+          cp /tmp/pubspec.lock.bak pubspec.lock || true
           cp /tmp/AGENTS.md.bak AGENTS.md || true
 
       - name: 添加自定义权限
@@ -143,7 +143,7 @@ jobs:
         run: |
           Copy-Item -Recurse lib /tmp/lib_backup
           Copy-Item pubspec.yaml /tmp/pubspec.yaml.bak
-          Copy-Item pubspec.lock /tmp/pubspec.lock.bak
+          Copy-Item pubspec.lock /tmp/pubspec.lock.bak -ErrorAction SilentlyContinue
           
           Remove-Item -Recurse -Force android,ios,windows,macos,linux,web -ErrorAction SilentlyContinue
           
@@ -155,7 +155,7 @@ jobs:
           Remove-Item -Recurse -Force lib
           Copy-Item -Recurse /tmp/lib_backup lib
           Copy-Item /tmp/pubspec.yaml.bak pubspec.yaml
-          Copy-Item /tmp/pubspec.lock.bak pubspec.lock
+          Copy-Item /tmp/pubspec.lock.bak pubspec.lock -ErrorAction SilentlyContinue
 
       - run: flutter pub get
       - run: flutter build windows --release
@@ -177,7 +177,7 @@ jobs:
         run: |
           cp -r lib /tmp/lib_backup
           cp pubspec.yaml /tmp/pubspec.yaml.bak
-          cp pubspec.lock /tmp/pubspec.lock.bak
+          cp pubspec.lock /tmp/pubspec.lock.bak || true
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
           rm -rf android ios windows macos linux web
@@ -190,7 +190,7 @@ jobs:
           rm -rf lib
           cp -r /tmp/lib_backup lib
           cp /tmp/pubspec.yaml.bak pubspec.yaml
-          cp /tmp/pubspec.lock.bak pubspec.lock
+          cp /tmp/pubspec.lock.bak pubspec.lock || true
           cp /tmp/AGENTS.md.bak AGENTS.md || true
 
       - run: flutter pub get
@@ -214,7 +214,7 @@ jobs:
         run: |
           cp -r lib /tmp/lib_backup
           cp pubspec.yaml /tmp/pubspec.yaml.bak
-          cp pubspec.lock /tmp/pubspec.lock.bak
+          cp pubspec.lock /tmp/pubspec.lock.bak || true
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
           rm -rf android ios windows macos linux web
@@ -227,7 +227,7 @@ jobs:
           rm -rf lib
           cp -r /tmp/lib_backup lib
           cp /tmp/pubspec.yaml.bak pubspec.yaml
-          cp /tmp/pubspec.lock.bak pubspec.lock
+          cp /tmp/pubspec.lock.bak pubspec.lock || true
           cp /tmp/AGENTS.md.bak AGENTS.md || true
 
       - run: flutter pub get
