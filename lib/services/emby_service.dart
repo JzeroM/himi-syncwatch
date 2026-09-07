@@ -4,10 +4,12 @@ import 'package:dio/io.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 
 class EmbyService {
-  late final Dio _dio;
+  late Dio _dio;
   String? _serverUrl;
   String? _accessToken;
   String? _userId;
+  String? _serverId;
+  String? _deviceId;
 
   EmbyService() {
     _dio = Dio();
@@ -21,46 +23,81 @@ class EmbyService {
 
   String? get serverUrl => _serverUrl;
   String? get accessToken => _accessToken;
+  String? get serverId => _serverId;
 
-  void configure(
-      {required String serverUrl,
-      required String accessToken,
-      String? userId}) {
+  void configure({
+    required String serverUrl,
+    required String accessToken,
+    required String userId,
+    required String serverId,
+    String deviceId = 'himi-001',
+  }) {
     _serverUrl = serverUrl;
     _accessToken = accessToken;
     _userId = userId;
+    _serverId = serverId;
+    _deviceId = deviceId;
+
     _dio.options.baseUrl = serverUrl;
-    _dio.options.headers['X-Emby-Authorization'] =
-        'MediaBrowser Client="HimiSync", Device="Desktop", DeviceId="himi-sync-001", Version="1.0.0"';
     _dio.options.headers['X-Emby-Token'] = accessToken;
+    _dio.options.headers['X-Emby-Authorization'] = _buildAuthHeader();
   }
 
-  Future<String?> authenticate({
+  String _buildAuthHeader() {
+    return 'Emby Client="HimiSync", Device="Desktop", '
+        'DeviceId="$_deviceId", Version="1.0.0", '
+        'UserId="$_userId", Token="$_accessToken", '
+        'ServerId="$_serverId"';
+  }
+
+  Future<Map<String, dynamic>> pingServer(String serverUrl) async {
+    final dio = Dio(BaseOptions(
+      baseUrl: serverUrl,
+      connectTimeout: const Duration(seconds: 5),
+    ));
+    (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+      final client = HttpClient()
+        ..badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+      return client;
+    };
+
+    final response = await dio.get('/System/Info/Public');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> authenticate({
     required String serverUrl,
     required String username,
     required String password,
+    required String deviceId,
   }) async {
+    final dio = Dio(BaseOptions(baseUrl: serverUrl));
+    (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+      final client = HttpClient()
+        ..badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+      return client;
+    };
+
+    dio.options.headers['X-Emby-Authorization'] =
+        'Emby Client="HimiSync", Device="Desktop", '
+        'DeviceId="$deviceId", Version="1.0.0"';
+
+    final response = await dio.post(
+      '/Users/authenticatebyname',
+      data: {'Username': username, 'Pw': password},
+    );
+
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<MediaItem?> validateToken() async {
     try {
-      _serverUrl = serverUrl;
-      _dio.options.baseUrl = serverUrl;
-      _dio.options.headers['X-Emby-Authorization'] =
-          'MediaBrowser Client="HimiSync", Device="Desktop", DeviceId="himi-sync-001", Version="1.0.0"';
-
-      final response = await _dio.post(
-        '/Users/authenticatebyname',
-        data: {'Username': username, 'Pw': password},
-      );
-
-      final token = response.data['AccessToken'];
-      final userId = response.data['User']['Id'];
-
-      if (token != null) {
-        _accessToken = token;
-        _dio.options.headers['X-Emby-Token'] = token;
-        return userId;
-      }
-      return null;
-    } catch (e) {
+      final response = await _dio.get('/Users/$_userId');
+      return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) return null;
       return null;
     }
   }
@@ -82,7 +119,7 @@ class EmbyService {
           if (limit != null) 'Limit': limit,
           if (startIndex != null) 'StartIndex': startIndex,
           'Recursive': true,
-          'Fields': fields ?? 'Overview,Genres,MediaStreams',
+          'Fields': fields ?? 'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams',
           'ImageTypeLimit': 1,
         },
       );
@@ -91,37 +128,8 @@ class EmbyService {
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();
-    } catch (e) {
-      return [];
-    }
-  }
-
-  static const _posterWallFields =
-      'ImageTags,PrimaryImageAspectRatio,ProductionYear,ChildCount,CommunityRating';
-
-  Future<List<MediaItem>> getAllItems({
-    String? includeItemTypes,
-    int limit = 50,
-  }) async {
-    try {
-      final response = await _dio.get(
-        '/Items',
-        queryParameters: {
-          if (_userId != null) 'UserId': _userId,
-          if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
-          'Limit': limit,
-          'Recursive': true,
-          'Fields': _posterWallFields,
-          'ImageTypeLimit': 1,
-          'OrderBy': 'DateCreated DESC',
-        },
-      );
-
-      final items = response.data['Items'] as List<dynamic>? ?? [];
-      return items
-          .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
-          .toList();
-    } catch (e) {
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
       return [];
     }
   }
@@ -145,12 +153,14 @@ class EmbyService {
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();
-    } catch (e) {
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
       return [];
     }
   }
 
-  Future<List<MediaItem>> getSimilarItems(String itemId, {int limit = 10}) async {
+  Future<List<MediaItem>> getSimilarItems(String itemId,
+      {int limit = 10}) async {
     try {
       final response = await _dio.get(
         '/Items/$itemId/Similar',
@@ -165,7 +175,8 @@ class EmbyService {
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();
-    } catch (e) {
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
       return [];
     }
   }
@@ -185,7 +196,8 @@ class EmbyService {
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();
-    } catch (e) {
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
       return [];
     }
   }
@@ -199,7 +211,8 @@ class EmbyService {
         final itemId = (f['ItemId'] ?? f['Id'])?.toString() ?? '';
         final collectionType = f['CollectionType'] as String? ?? '';
         if (name.isNotEmpty && itemId.isNotEmpty) {
-          final posterUrl = '$_serverUrl/Items/$itemId/Images/Primary?maxHeight=300';
+          final posterUrl =
+              '$_serverUrl/Items/$itemId/Images/Primary?maxHeight=300';
           folders.add(LibraryFolder(
             id: itemId,
             name: name,
@@ -209,7 +222,8 @@ class EmbyService {
         }
       }
       return folders;
-    } catch (e) {
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
       return [];
     }
   }
@@ -219,11 +233,13 @@ class EmbyService {
       final response = await _dio.get(
         '/Users/$_userId/Items/$id',
         queryParameters: {
-          'Fields': 'Overview,Genres,MediaStreams,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks',
+          'Fields':
+              'Overview,Genres,MediaStreams,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks',
         },
       );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
-    } catch (e) {
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
       return null;
     }
   }

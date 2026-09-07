@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:uuid/uuid.dart';
+import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
@@ -23,11 +25,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<_CategoryData> _categories = [];
   bool _isLoading = true;
   String? _error;
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
-    _loadMedia();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final authService = ref.read(embyAuthServiceProvider);
+    final serverIds = await authService.listServerIds();
+
+    if (serverIds.isNotEmpty) {
+      final configs = <EmbyServerConfig>[];
+      EmbyServerConfig? activeConfig;
+
+      for (final sid in serverIds) {
+        final session = await authService.loadSession(sid);
+        if (session != null) {
+          final config = EmbyServerConfig.fromJson(session);
+          configs.add(config);
+          if (activeConfig == null) activeConfig = config;
+        }
+      }
+
+      ref.read(embyServerListProvider.notifier).setList(configs);
+
+      if (activeConfig != null) {
+        ref.read(embyConfigProvider.notifier).setConfig(activeConfig);
+        await _loadMedia();
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } else {
+      setState(() => _isLoading = false);
+    }
+
+    setState(() => _initialized = true);
   }
 
   Future<void> _loadMedia() async {
@@ -67,6 +102,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_initialized) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final hasServer = ref.watch(embyConfigProvider) != null;
+
     return Scaffold(
       drawer: _ServerDrawer(onRefresh: _loadMedia),
       appBar: AppBar(
@@ -78,59 +121,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         title: const Text('HimiSync'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.group_add),
-            tooltip: '加入房间',
-            onPressed: () => _showJoinRoomDialog(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () => _showSearch(context),
-          ),
+          if (hasServer) ...[
+            IconButton(
+              icon: const Icon(Icons.group_add),
+              tooltip: '加入房间',
+              onPressed: () => _showJoinRoomDialog(context),
+            ),
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () => _showSearch(context),
+            ),
+          ],
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadMedia,
-                        child: const Text('重试'),
+      body: !hasServer
+          ? const _EmptyState()
+          : _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(_error!,
+                              style: const TextStyle(color: Colors.red)),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _loadMedia,
+                            child: const Text('重试'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadMedia,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    itemCount: _categories.length,
-                    itemBuilder: (context, index) {
-                      final cat = _categories[index];
-                      return _CategorySection(
-                        category: cat,
-                        onViewAll: () => context.push(
-                          '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}',
-                        ),
-                        onItemTap: (item) =>
-                            context.push('/detail/${item.id}'),
-                      );
-                    },
-                  ),
-                ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadMedia,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        itemCount: _categories.length,
+                        itemBuilder: (context, index) {
+                          final cat = _categories[index];
+                          return _CategorySection(
+                            category: cat,
+                            onViewAll: () => context.push(
+                              '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}',
+                            ),
+                            onItemTap: (item) =>
+                                context.push('/detail/${item.id}'),
+                          );
+                        },
+                      ),
+                    ),
     );
   }
 
   void _showSearch(BuildContext context) {
-    showSearch(
-      context: context,
-      delegate: _MediaSearchDelegate(ref),
-    );
+    showSearch(context: context, delegate: _MediaSearchDelegate(ref));
   }
 
   void _showJoinRoomDialog(BuildContext context) {
@@ -168,6 +213,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               }
             },
             child: const Text('加入'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.dns, size: 64, color: Colors.grey[600]),
+          const SizedBox(height: 16),
+          Text(
+            '暂无服务器',
+            style: TextStyle(fontSize: 18, color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '点击左上角 ☰ 添加 Emby 服务器',
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],
       ),
@@ -282,12 +353,19 @@ class _PosterCard extends StatelessWidget {
   }
 }
 
-class _ServerDrawer extends ConsumerWidget {
+class _ServerDrawer extends ConsumerStatefulWidget {
   final VoidCallback onRefresh;
   const _ServerDrawer({required this.onRefresh});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ServerDrawer> createState() => _ServerDrawerState();
+}
+
+class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
+  bool _showAddForm = false;
+
+  @override
+  Widget build(BuildContext context) {
     final servers = ref.watch(embyServerListProvider);
     final currentConfig = ref.watch(embyConfigProvider);
 
@@ -306,162 +384,356 @@ class _ServerDrawer extends ConsumerWidget {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.add),
-                    tooltip: '添加服务器',
-                    onPressed: () {
-                      Navigator.pop(context);
-                      context.push('/login');
-                    },
+                    icon: Icon(_showAddForm ? Icons.close : Icons.add),
+                    tooltip: _showAddForm ? '取消添加' : '添加服务器',
+                    onPressed: () =>
+                        setState(() => _showAddForm = !_showAddForm),
                   ),
                 ],
               ),
             ),
             const Divider(height: 1),
-            Expanded(
-              child: servers.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          '暂无服务器\n点击右上角 + 添加',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
+            if (_showAddForm)
+              _AddServerForm(
+                onSuccess: () {
+                  setState(() => _showAddForm = false);
+                  widget.onRefresh();
+                },
+              )
+            else ...[
+              Expanded(
+                child: servers.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            '暂无服务器\n点击右上角 + 添加',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey),
+                          ),
                         ),
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: servers.length,
-                      itemBuilder: (context, index) {
-                        final server = servers[index];
-                        final isActive = currentConfig?.id == server.id;
-                        return ListTile(
-                          leading: Icon(
-                            Icons.dns,
-                            color: isActive
-                                ? Theme.of(context).colorScheme.primary
-                                : null,
-                          ),
-                          title: Text(
-                            server.label,
-                            style: TextStyle(
-                              fontWeight:
-                                  isActive ? FontWeight.bold : FontWeight.normal,
+                      )
+                    : ListView.builder(
+                        itemCount: servers.length,
+                        itemBuilder: (context, index) {
+                          final server = servers[index];
+                          final isActive = currentConfig?.id == server.id;
+                          return ListTile(
+                            leading: Icon(
+                              Icons.dns,
+                              color: isActive
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
                             ),
-                          ),
-                          subtitle: Text(
-                            '${server.username} · ${server.serverUrl}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (isActive)
-                                const Icon(Icons.check_circle,
-                                    color: Colors.green, size: 20),
-                              PopupMenuButton<String>(
-                                itemBuilder: (context) => [
-                                  if (!isActive)
-                                    const PopupMenuItem(
-                                      value: 'switch',
-                                      child: Text('切换'),
-                                    ),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text('删除',
-                                        style: TextStyle(color: Colors.red)),
-                                  ),
-                                ],
-                                onSelected: (value) async {
-                                  if (value == 'switch') {
-                                    await ref
-                                        .read(embyConfigProvider.notifier)
-                                        .saveConfig(server);
-                                    onRefresh();
-                                    if (context.mounted) Navigator.pop(context);
-                                  } else if (value == 'delete') {
-                                    final confirmed = await showDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('删除服务器'),
-                                        content: Text(
-                                            '确定删除 "${server.label}" 吗？'),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, false),
-                                            child: const Text('取消'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(ctx, true),
-                                            child: const Text('删除',
-                                                style: TextStyle(
-                                                    color: Colors.red)),
-                                          ),
-                                        ],
+                            title: Text(
+                              server.label,
+                              style: TextStyle(
+                                fontWeight: isActive
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${server.username} · ${server.serverUrl}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isActive)
+                                  const Icon(Icons.check_circle,
+                                      color: Colors.green, size: 20),
+                                PopupMenuButton<String>(
+                                  itemBuilder: (context) => [
+                                    if (!isActive)
+                                      const PopupMenuItem(
+                                        value: 'switch',
+                                        child: Text('切换'),
                                       ),
-                                    );
-                                    if (confirmed == true) {
-                                      await ref
-                                          .read(embyServerListProvider.notifier)
-                                          .removeServer(server.id);
-                                      if (isActive) {
-                                        final remaining =
-                                            ref.read(embyServerListProvider);
-                                        if (remaining.isNotEmpty) {
-                                          await ref
-                                              .read(embyConfigProvider.notifier)
-                                              .saveConfig(remaining.first);
-                                        } else {
-                                          await ref
-                                              .read(embyConfigProvider.notifier)
-                                              .clearConfig();
+                                    const PopupMenuItem(
+                                      value: 'delete',
+                                      child: Text('删除',
+                                          style: TextStyle(color: Colors.red)),
+                                    ),
+                                  ],
+                                  onSelected: (value) async {
+                                    if (value == 'switch') {
+                                      ref
+                                          .read(embyConfigProvider.notifier)
+                                          .setConfig(server);
+                                      widget.onRefresh();
+                                      if (context.mounted) Navigator.pop(context);
+                                    } else if (value == 'delete') {
+                                      final confirmed = await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text('删除服务器'),
+                                          content: Text(
+                                              '确定删除 "${server.label}" 吗？'),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
+                                              child: const Text('取消'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: const Text('删除',
+                                                  style: TextStyle(
+                                                      color: Colors.red)),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      if (confirmed == true) {
+                                        final authService = ref.read(
+                                            embyAuthServiceProvider);
+                                        await authService.deleteSession(
+                                            server.serverId);
+                                        ref
+                                            .read(embyServerListProvider
+                                                .notifier)
+                                            .removeServer(server.serverId);
+                                        if (isActive) {
+                                          final remaining = ref.read(
+                                              embyServerListProvider);
+                                          if (remaining.isNotEmpty) {
+                                            ref
+                                                .read(embyConfigProvider
+                                                    .notifier)
+                                                .setConfig(remaining.first);
+                                          } else {
+                                            ref
+                                                .read(embyConfigProvider
+                                                    .notifier)
+                                                .clear();
+                                          }
+                                          widget.onRefresh();
                                         }
-                                        onRefresh();
                                       }
                                     }
-                                  }
-                                },
-                              ),
-                            ],
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              const Divider(height: 1),
+              if (currentConfig != null)
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('退出当前服务器'),
+                  onTap: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('退出'),
+                        content:
+                            Text('确定退出 "${currentConfig.label}" 吗？'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('取消'),
                           ),
-                        );
-                      },
-                    ),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('退出登录'),
-              onTap: () async {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('退出登录'),
-                    content: const Text('确定退出当前登录吗？'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('取消'),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('退出',
+                                style: TextStyle(color: Colors.red)),
+                          ),
+                        ],
                       ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('退出',
-                            style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed == true) {
-                  await ref.read(embyConfigProvider.notifier).clearConfig();
-                  if (context.mounted) context.go('/login');
-                }
-              },
-            ),
+                    );
+                    if (confirmed == true) {
+                      final authService =
+                          ref.read(embyAuthServiceProvider);
+                      await authService.deleteSession(
+                          currentConfig.serverId);
+                      ref.read(embyConfigProvider.notifier).clear();
+                      ref
+                          .read(embyServerListProvider.notifier)
+                          .removeServer(currentConfig.serverId);
+                      widget.onRefresh();
+                    }
+                  },
+                ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AddServerForm extends ConsumerStatefulWidget {
+  final VoidCallback onSuccess;
+  const _AddServerForm({required this.onSuccess});
+
+  @override
+  ConsumerState<_AddServerForm> createState() => _AddServerFormState();
+}
+
+class _AddServerFormState extends ConsumerState<_AddServerForm> {
+  final _urlController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _nameController = TextEditingController();
+  bool _isLoading = false;
+  String? _error;
+  String? _serverName;
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pingAndLogin() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final authService = ref.read(embyAuthServiceProvider);
+      final url = _urlController.text.trim();
+
+      final info = await EmbyService().pingServer(url);
+      final serverName = info['ServerName'] ?? url;
+      final serverId = info['Id'] ?? '';
+
+      setState(() => _serverName = serverName);
+
+      final authResult = await EmbyService().authenticate(
+        serverUrl: url,
+        username: _usernameController.text.trim(),
+        password: _passwordController.text,
+        deviceId: authService.deviceId,
+      );
+
+      final userId = authResult['User']['Id'] as String;
+      final accessToken = authResult['AccessToken'] as String;
+      final returnedServerId = authResult['ServerId'] as String? ?? serverId;
+
+      final configId = 'srv_${const Uuid().v4().substring(0, 8)}';
+      final config = EmbyServerConfig(
+        id: configId,
+        serverUrl: url,
+        serverName: serverName,
+        serverId: returnedServerId,
+        username: _usernameController.text.trim(),
+        accessToken: accessToken,
+        userId: userId,
+      );
+
+      await authService.saveSession(
+        serverId: returnedServerId,
+        serverUrl: url,
+        serverName: serverName,
+        userId: userId,
+        username: _usernameController.text.trim(),
+        accessToken: accessToken,
+      );
+
+      ref.read(embyServerListProvider.notifier).addServer(config);
+      ref.read(embyConfigProvider.notifier).setConfig(config);
+
+      widget.onSuccess();
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_serverName != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '已连接: $_serverName',
+                style: const TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          TextField(
+            controller: _urlController,
+            decoration: const InputDecoration(
+              labelText: '服务器地址',
+              hintText: 'https://emby.example.com:8096',
+              prefixIcon: Icon(Icons.dns),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            keyboardType: TextInputType.url,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(
+              labelText: '备注名称（可选）',
+              hintText: '如：家里NAS',
+              prefixIcon: Icon(Icons.label),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _usernameController,
+            decoration: const InputDecoration(
+              labelText: '用户名',
+              prefixIcon: Icon(Icons.person),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordController,
+            decoration: const InputDecoration(
+              labelText: '密码',
+              prefixIcon: Icon(Icons.lock),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            obscureText: true,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+          ],
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 44,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _pingAndLogin,
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('连接并登录'),
+            ),
+          ),
+        ],
       ),
     );
   }
