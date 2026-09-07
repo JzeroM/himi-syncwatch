@@ -109,49 +109,88 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
                 )
               : RefreshIndicator(
                   onRefresh: _loadItems,
-                  child: CustomScrollView(
-                    slivers: [
-                      SliverPadding(
-                        padding: const EdgeInsets.all(8),
-                        sliver: SliverGrid(
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            childAspectRatio: 0.7,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => MediaCard(
-                              item: _items[index],
-                              onTap: () => context.push(
-                                '/detail/${_items[index].id}',
-                              ),
-                            ),
-                            childCount: _items.length,
-                          ),
-                        ),
-                      ),
-                      if (_loadingMore)
-                        const SliverToBoxAdapter(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isPC = constraints.maxWidth > 600;
+                      final cardWidth = 160.0;
+                      final spacing = 12.0;
+
+                      if (isPC) {
+                        final columns =
+                            (constraints.maxWidth / (cardWidth + spacing))
+                                .floor()
+                                .clamp(1, 20);
+                        final actualWidth =
+                            (constraints.maxWidth - spacing * (columns + 1)) /
+                                columns;
+
+                        return SingleChildScrollView(
                           child: Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
-                          ),
-                        ),
-                      if (!_loadingMore && _items.isNotEmpty)
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Center(
-                              child: OutlinedButton(
-                                onPressed: _loadMore,
-                                child: const Text('加载更多'),
-                              ),
+                            padding: EdgeInsets.all(spacing),
+                            child: Wrap(
+                              spacing: spacing,
+                              runSpacing: spacing,
+                              alignment: WrapAlignment.center,
+                              children: _items.map((item) {
+                                return SizedBox(
+                                  width: actualWidth,
+                                  child: MediaCard(
+                                    item: item,
+                                    onTap: () =>
+                                        context.push('/detail/${item.id}'),
+                                  ),
+                                );
+                              }).toList(),
                             ),
                           ),
-                        ),
-                    ],
+                        );
+                      } else {
+                        return CustomScrollView(
+                          slivers: [
+                            SliverPadding(
+                              padding: EdgeInsets.all(spacing / 2),
+                              sliver: SliverGrid(
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  childAspectRatio: 0.56,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                ),
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) => MediaCard(
+                                    item: _items[index],
+                                    onTap: () => context.push(
+                                        '/detail/${_items[index].id}'),
+                                  ),
+                                  childCount: _items.length,
+                                ),
+                              ),
+                            ),
+                            if (_loadingMore)
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child:
+                                      Center(child: CircularProgressIndicator()),
+                                ),
+                              ),
+                            if (!_loadingMore && _items.isNotEmpty)
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Center(
+                                    child: OutlinedButton(
+                                      onPressed: _loadMore,
+                                      child: const Text('加载更多'),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      }
+                    },
                   ),
                 ),
     );

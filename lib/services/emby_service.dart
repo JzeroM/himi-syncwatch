@@ -139,7 +139,7 @@ class EmbyService {
 
   Future<MediaItem?> getItemDetails(String id) async {
     try {
-      final response = await _dio.get('/Items/$id');
+      final response = await _dio.get('/Users/$_userId/Items/$id');
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
     } catch (e) {
       return null;

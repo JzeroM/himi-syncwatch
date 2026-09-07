@@ -5,17 +5,19 @@ class MediaCard extends StatelessWidget {
   final MediaItem item;
   final VoidCallback? onTap;
   final bool compact;
+  final Size? fixedSize;
 
   const MediaCard({
     super.key,
     required this.item,
     this.onTap,
     this.compact = false,
+    this.fixedSize,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    Widget card = Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -89,6 +91,15 @@ class MediaCard extends StatelessWidget {
         ),
       ),
     );
+
+    if (fixedSize != null) {
+      return SizedBox(
+        width: fixedSize!.width,
+        height: fixedSize!.height,
+        child: card,
+      );
+    }
+    return card;
   }
 
   Widget _buildPlaceholder() {

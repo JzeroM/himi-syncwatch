@@ -207,7 +207,7 @@ class _CategoryRow extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 200,
+          height: 295,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -215,12 +215,13 @@ class _CategoryRow extends StatelessWidget {
             itemBuilder: (context, index) {
               final item = category.items[index];
               return SizedBox(
-                width: 130,
+                width: 160,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: MediaCard(
                     item: item,
                     compact: true,
+                    fixedSize: const Size(160, 285),
                     onTap: () => onItemTap(item),
                   ),
                 ),
