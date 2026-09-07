@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/screens/room/room_screen.dart';
 import 'package:himi_syncwatch/screens/login/login_screen.dart';
+import 'package:himi_syncwatch/screens/category/category_screen.dart';
 
 final routerKey = GlobalKey<NavigatorState>();
 
@@ -33,6 +34,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         builder: (context, state) => const HomeScreen(),
+      ),
+      GoRoute(
+        path: '/category/:id',
+        builder: (context, state) => CategoryScreen(
+          libraryId: state.pathParameters['id']!,
+          libraryName: state.uri.queryParameters['name'],
+        ),
       ),
       GoRoute(
         path: '/detail/:id',

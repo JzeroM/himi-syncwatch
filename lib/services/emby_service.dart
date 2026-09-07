@@ -101,7 +101,7 @@ class EmbyService {
         '/Search/Hints',
         queryParameters: {
           'SearchTerm': query,
-          'IncludeItemTypes': 'Movie,Series,Episode',
+          'IncludeItemTypes': 'Movie,Series',
           'Limit': 20,
         },
       );
@@ -110,6 +110,28 @@ class EmbyService {
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<LibraryFolder>> getLibraries() async {
+    try {
+      final response = await _dio.get('/Library/VirtualFolders');
+      final folders = <LibraryFolder>[];
+      for (final f in response.data) {
+        final name = f['Name'] as String? ?? '';
+        final itemId = (f['ItemId'] ?? f['Id'])?.toString() ?? '';
+        final collectionType = f['CollectionType'] as String? ?? '';
+        if (name.isNotEmpty && itemId.isNotEmpty) {
+          folders.add(LibraryFolder(
+            id: itemId,
+            name: name,
+            collectionType: collectionType,
+          ));
+        }
+      }
+      return folders;
     } catch (e) {
       return [];
     }
@@ -131,4 +153,16 @@ class EmbyService {
   String getImageUrl(String itemId, {String type = 'Primary'}) {
     return '$_serverUrl/Items/$itemId/Images/$type';
   }
+}
+
+class LibraryFolder {
+  final String id;
+  final String name;
+  final String collectionType;
+
+  const LibraryFolder({
+    required this.id,
+    required this.name,
+    required this.collectionType,
+  });
 }

@@ -4,11 +4,13 @@ import 'package:himi_syncwatch/models/media_item.dart';
 class MediaCard extends StatelessWidget {
   final MediaItem item;
   final VoidCallback? onTap;
+  final bool compact;
 
   const MediaCard({
     super.key,
     required this.item,
     this.onTap,
+    this.compact = false,
   });
 
   @override
@@ -29,46 +31,60 @@ class MediaCard extends StatelessWidget {
                     )
                   : _buildPlaceholder(),
             ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+            if (!compact)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (item.year != null) ...[
-                        Text(
-                          item.year!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[400],
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (item.year != null) ...[
+                          Text(
+                            item.year!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[400],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
+                          const SizedBox(width: 8),
+                        ],
+                        if (item.officialRating != null)
+                          Text(
+                            item.officialRating!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[400],
+                            ),
+                          ),
                       ],
-                      if (item.officialRating != null)
-                        Text(
-                          item.officialRating!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[400],
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-            ),
+            if (compact)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+                child: Text(
+                  item.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
