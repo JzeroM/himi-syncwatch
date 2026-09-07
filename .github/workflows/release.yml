@@ -49,24 +49,26 @@ jobs:
 
       - name: 生成 Android 平台文件
         run: |
-          # 保存我们的源码
           cp -r lib /tmp/lib_backup
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
-          # 删除错误的平台目录和构建缓存
           rm -rf android ios windows macos linux web build .dart_tool
           
-          # 用 flutter create 生成正确的平台文件
-          flutter create --project-name himi_syncwatch --org com.himi --platforms android .
+          # 创建临时项目
+          cd /tmp
+          flutter create --project-name himi_syncwatch --org com.himi --platforms android temp_android
+          cd -
           
-          # 恢复源码
+          # 复制平台文件
+          cp -r /tmp/temp_android/android .
+          rm -rf /tmp/temp_android
+          
           rm -rf lib
           cp -r /tmp/lib_backup lib
           cp /tmp/pubspec.yaml.bak pubspec.yaml
           cp /tmp/AGENTS.md.bak AGENTS.md || true
           
-          # 验证
           ls -la android/app/build.gradle
 
       - name: 添加自定义权限
@@ -105,7 +107,12 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms ios .
+          cd /tmp
+          flutter create --project-name himi_syncwatch --org com.himi --platforms ios temp_ios
+          cd -
+          
+          cp -r /tmp/temp_ios/ios .
+          rm -rf /tmp/temp_ios
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
@@ -142,7 +149,12 @@ jobs:
           
           Remove-Item -Recurse -Force android,ios,windows,macos,linux,web,build,.dart_tool -ErrorAction SilentlyContinue
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms windows .
+          cd /tmp
+          flutter create --project-name himi_syncwatch --org com.himi --platforms windows temp_windows
+          cd -
+          
+          Copy-Item -Recurse /tmp/temp_windows/windows .
+          Remove-Item -Recurse -Force /tmp/temp_windows
           
           Remove-Item -Recurse -Force lib
           Copy-Item -Recurse /tmp/lib_backup lib
@@ -172,7 +184,12 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms macos .
+          cd /tmp
+          flutter create --project-name himi_syncwatch --org com.himi --platforms macos temp_macos
+          cd -
+          
+          cp -r /tmp/temp_macos/macos .
+          rm -rf /tmp/temp_macos
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
@@ -209,7 +226,12 @@ jobs:
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms linux .
+          cd /tmp
+          flutter create --project-name himi_syncwatch --org com.himi --platforms linux temp_linux
+          cd -
+          
+          cp -r /tmp/temp_linux/linux .
+          rm -rf /tmp/temp_linux
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
