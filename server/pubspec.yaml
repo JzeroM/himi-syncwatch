@@ -2,7 +2,7 @@ name: himi_syncwatch_server
 description: "HimiSync 后端服务"
 
 environment:
-  sdk: ^3.13.0
+  sdk: ^3.6.0
 
 dependencies:
   shelf: ^1.4.2
