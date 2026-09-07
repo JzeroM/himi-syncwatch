@@ -203,7 +203,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev libasound2-dev liblzma-dev libmpv-dev pkg-config
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev libasound2-dev liblzma-dev libmpv-dev pkg-config libsecret-1-dev
 
       - name: 生成 Linux 平台文件
         run: |
