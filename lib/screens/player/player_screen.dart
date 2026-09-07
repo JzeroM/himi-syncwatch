@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -56,13 +57,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _initializePlayer() async {
     final embyService = ref.read(embyServiceProvider);
-    final url = embyService.getStreamUrl(widget.itemId);
+    final streamUrl = embyService.getStreamUrl(widget.itemId);
     final config = ref.read(embyConfigProvider);
     final token = config?.accessToken ?? '';
+
+    final url = await _resolveStreamUrl(streamUrl, token);
 
     await _player.open(Media(url, httpHeaders: {
       'X-Emby-Token': token,
     }));
+  }
+
+  Future<String> _resolveStreamUrl(String url, String token) async {
+    try {
+      final client = HttpClient()
+        ..badCertificateCallback = (_, __, ___) => true;
+      final request = await client.getUrl(Uri.parse(url));
+      request.headers.set('X-Emby-Token', token);
+      final response = await request.close().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          request.abort();
+          throw Exception('连接超时');
+        },
+      );
+
+      if (response.statusCode == 302 || response.statusCode == 301) {
+        final location = response.headers.value('location');
+        if (location != null && location.isNotEmpty) {
+          client.close(force: true);
+          return location;
+        }
+      }
+
+      client.close(force: true);
+      return url;
+    } catch (_) {
+      return url;
+    }
   }
 
   void _setupPlayerListeners() {

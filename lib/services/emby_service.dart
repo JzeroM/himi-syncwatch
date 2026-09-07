@@ -249,7 +249,7 @@ class EmbyService {
   }
 
   String getStreamUrl(String itemId) {
-    return '$_serverUrl/Videos/$itemId/master.m3u8?Static=true&api_key=$_accessToken';
+    return '$_serverUrl/Videos/$itemId/stream?static=true';
   }
 
   String getImageUrl(String itemId, {String type = 'Primary'}) {
