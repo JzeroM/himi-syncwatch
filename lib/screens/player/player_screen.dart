@@ -6,6 +6,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:himi_syncwatch/core/config.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/room.dart';
+import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/services/room_service.dart';
 
@@ -54,11 +55,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _initializePlayer() async {
-    final url =
-        'http://localhost:8096/Videos/${widget.itemId}/stream?static=true';
+    final embyService = ref.read(embyServiceProvider);
+    final url = embyService.getStreamUrl(widget.itemId);
+    final config = ref.read(embyConfigProvider);
+    final token = config?.accessToken ?? '';
 
     await _player.open(Media(url, httpHeaders: {
-      'X-Emby-Token': '',
+      'X-Emby-Token': token,
     }));
   }
 
