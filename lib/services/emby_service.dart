@@ -108,7 +108,8 @@ class EmbyService {
     int? limit,
     int? startIndex,
     String? fields,
-    String? orderBy,
+    String? sortBy,
+    String? sortOrder,
   }) async {
     try {
       final response = await _dio.get(
@@ -119,7 +120,8 @@ class EmbyService {
           if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
           if (limit != null) 'Limit': limit,
           if (startIndex != null) 'StartIndex': startIndex,
-          if (orderBy != null) 'OrderBy': orderBy,
+          if (sortBy != null) 'SortBy': sortBy,
+          if (sortOrder != null) 'SortOrder': sortOrder,
           'Recursive': true,
           'Fields': fields ?? 'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams',
           'ImageTypeLimit': 1,

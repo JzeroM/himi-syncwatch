@@ -6,17 +6,18 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 enum SortOption {
-  name('名称', 'SortName,Name'),
-  yearDesc('年份 ↓', 'ProductionYear DESC'),
-  yearAsc('年份 ↑', 'ProductionYear'),
-  ratingDesc('评分 ↓', 'CommunityRating DESC'),
-  ratingAsc('评分 ↑', 'CommunityRating'),
-  dateDesc('最近添加', 'DateCreated DESC'),
-  dateAsc('最早添加', 'DateCreated');
+  dateDesc('最近添加', 'DateCreated', 'Descending'),
+  nameAsc('名称 A-Z', 'SortName', 'Ascending'),
+  nameDesc('名称 Z-A', 'SortName', 'Descending'),
+  yearDesc('年份 ↓', 'ProductionYear', 'Descending'),
+  yearAsc('年份 ↑', 'ProductionYear', 'Ascending'),
+  ratingDesc('评分 ↓', 'CommunityRating', 'Descending'),
+  ratingAsc('评分 ↑', 'CommunityRating', 'Ascending');
 
   final String label;
-  final String embyValue;
-  const SortOption(this.label, this.embyValue);
+  final String sortBy;
+  final String sortOrder;
+  const SortOption(this.label, this.sortBy, this.sortOrder);
 }
 
 enum FilterOption {
@@ -113,7 +114,8 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         includeItemTypes: _filterOption.embyValue,
         fields:
             'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating',
-        orderBy: _sortOption.embyValue,
+        sortBy: _sortOption.sortBy,
+        sortOrder: _sortOption.sortOrder,
       );
 
       setState(() {
@@ -143,7 +145,8 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         includeItemTypes: _filterOption.embyValue,
         fields:
             'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating',
-        orderBy: _sortOption.embyValue,
+        sortBy: _sortOption.sortBy,
+        sortOrder: _sortOption.sortOrder,
       );
 
       if (moreItems.isNotEmpty) {
