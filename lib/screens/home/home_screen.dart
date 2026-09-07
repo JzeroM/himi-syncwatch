@@ -121,21 +121,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         title: const Text('HimiSync'),
         actions: [
-          if (hasServer) ...[
-            IconButton(
-              icon: const Icon(Icons.group_add),
-              tooltip: '加入房间',
-              onPressed: () => _showJoinRoomDialog(context),
-            ),
+          IconButton(
+            icon: const Icon(Icons.group_add),
+            tooltip: '加入房间',
+            onPressed: () => _showJoinRoomDialog(context),
+          ),
+          if (hasServer)
             IconButton(
               icon: const Icon(Icons.search),
               onPressed: () => _showSearch(context),
             ),
-          ],
         ],
       ),
       body: !hasServer
-          ? const _EmptyState()
+          ? _EmptyState(onJoinRoom: () => _showJoinRoomDialog(context))
           : _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
@@ -221,7 +220,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  final VoidCallback onJoinRoom;
+  const _EmptyState({required this.onJoinRoom});
 
   @override
   Widget build(BuildContext context) {
@@ -239,6 +239,12 @@ class _EmptyState extends StatelessWidget {
           Text(
             '点击左上角 ☰ 添加 Emby 服务器',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: onJoinRoom,
+            icon: const Icon(Icons.group_add),
+            label: const Text('加入房间'),
           ),
         ],
       ),
