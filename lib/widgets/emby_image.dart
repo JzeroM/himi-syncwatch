@@ -22,7 +22,7 @@ class EmbyImage extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, final WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (url == null || url!.isEmpty) {
       return errorWidget ?? _defaultError();
     }
