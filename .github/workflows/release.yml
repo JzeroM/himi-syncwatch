@@ -49,16 +49,20 @@ jobs:
 
       - name: 生成 Android 平台文件
         run: |
+          set -x
           cp -r lib /tmp/lib_backup
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           
           rm -rf android ios windows macos linux web build .dart_tool
           
-          flutter create --project-name himi_syncwatch --org com.himi --platforms android /tmp/temp_android
+          flutter create --project-name himi_syncwatch --org com.himi --platforms android /tmp/temp_proj
           
-          cp -r /tmp/temp_android/android .
-          rm -rf /tmp/temp_android
+          ls -la /tmp/temp_proj/android/
+          ls -la /tmp/temp_proj/android/app/
+          
+          cp -a /tmp/temp_proj/android/* android/
+          rm -rf /tmp/temp_proj
           
           rm -rf lib
           cp -r /tmp/lib_backup lib
