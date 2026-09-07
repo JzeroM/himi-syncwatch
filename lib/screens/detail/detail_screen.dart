@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/services/room_service.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 final roomServiceProvider = Provider<RoomService>((ref) => RoomService());
 
@@ -112,13 +113,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           expandedHeight: 300,
           pinned: true,
           flexibleSpace: FlexibleSpaceBar(
-            background: _item!.backdropUrl != null
-                ? Image.network(
-                    _item!.backdropUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildBackdropPlaceholder(),
-                  )
-                : _buildBackdropPlaceholder(),
+            background: EmbyImage(
+              url: _item!.backdropUrl ?? _item!.posterUrl,
+              fit: BoxFit.cover,
+            ),
           ),
         ),
         SliverToBoxAdapter(
@@ -203,15 +201,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildBackdropPlaceholder() {
-    return Container(
-      color: Colors.grey[800],
-      child: const Center(
-        child: Icon(Icons.movie, size: 64, color: Colors.grey),
-      ),
     );
   }
 }

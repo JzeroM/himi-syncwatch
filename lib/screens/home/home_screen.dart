@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/media_card.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -285,14 +286,14 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
           itemBuilder: (context, index) {
             final item = items[index];
             return ListTile(
-              leading: item.posterUrl != null
-                  ? Image.network(
-                      item.posterUrl!,
-                      width: 50,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.movie),
-                    )
-                  : const Icon(Icons.movie),
+              leading: SizedBox(
+                width: 50,
+                height: 70,
+                child: EmbyImage(
+                  url: item.posterUrl,
+                  fit: BoxFit.cover,
+                ),
+              ),
               title: Text(item.name),
               subtitle: Text(item.year ?? ''),
               onTap: () {

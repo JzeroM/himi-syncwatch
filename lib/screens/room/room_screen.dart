@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/room.dart';
 import 'package:himi_syncwatch/services/room_service.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 final roomServiceProvider = Provider<RoomService>((ref) => RoomService());
 
@@ -108,16 +109,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             Center(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  _room!.mediaItemPosterUrl!,
+                child: EmbyImage(
+                  url: _room!.mediaItemPosterUrl,
                   height: 200,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 200,
-                    width: 140,
-                    color: Colors.grey[800],
-                    child: const Icon(Icons.movie, size: 48),
-                  ),
                 ),
               ),
             ),

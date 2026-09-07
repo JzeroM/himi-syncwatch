@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 class MediaCard extends StatelessWidget {
   final MediaItem item;
@@ -25,13 +26,10 @@ class MediaCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: item.posterUrl != null
-                  ? Image.network(
-                      item.posterUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildPlaceholder(),
-                    )
-                  : _buildPlaceholder(),
+              child: EmbyImage(
+                url: item.posterUrl,
+                fit: BoxFit.cover,
+              ),
             ),
             if (!compact)
               Padding(
@@ -100,14 +98,5 @@ class MediaCard extends StatelessWidget {
       );
     }
     return card;
-  }
-
-  Widget _buildPlaceholder() {
-    return Container(
-      color: Colors.grey[800],
-      child: const Center(
-        child: Icon(Icons.movie, size: 48, color: Colors.grey),
-      ),
-    );
   }
 }
