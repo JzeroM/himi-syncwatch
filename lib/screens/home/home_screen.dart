@@ -134,7 +134,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
       body: !hasServer
-          ? _EmptyState(onJoinRoom: () => _showJoinRoomDialog(context))
+          ? const _EmptyState()
           : _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
@@ -220,8 +220,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 class _EmptyState extends StatelessWidget {
-  final VoidCallback onJoinRoom;
-  const _EmptyState({required this.onJoinRoom});
+  const _EmptyState();
 
   @override
   Widget build(BuildContext context) {
@@ -239,12 +238,6 @@ class _EmptyState extends StatelessWidget {
           Text(
             '点击左上角 ☰ 添加 Emby 服务器',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: onJoinRoom,
-            icon: const Icon(Icons.group_add),
-            label: const Text('加入房间'),
           ),
         ],
       ),
