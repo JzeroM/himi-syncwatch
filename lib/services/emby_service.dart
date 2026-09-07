@@ -169,10 +169,12 @@ class EmbyService {
         final itemId = (f['ItemId'] ?? f['Id'])?.toString() ?? '';
         final collectionType = f['CollectionType'] as String? ?? '';
         if (name.isNotEmpty && itemId.isNotEmpty) {
+          final posterUrl = '$_serverUrl/Items/$itemId/Images/Primary?maxHeight=300';
           folders.add(LibraryFolder(
             id: itemId,
             name: name,
             collectionType: collectionType,
+            posterUrl: posterUrl,
           ));
         }
       }
@@ -209,10 +211,12 @@ class LibraryFolder {
   final String id;
   final String name;
   final String collectionType;
+  final String posterUrl;
 
   const LibraryFolder({
     required this.id,
     required this.name,
     required this.collectionType,
+    required this.posterUrl,
   });
 }

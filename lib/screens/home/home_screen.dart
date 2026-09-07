@@ -41,7 +41,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final embyService = ref.read(embyServiceProvider);
       final libraries = await embyService.getLibraries();
-
       final latestItems = await embyService.getLatestItems(limit: 12);
 
       final categories = <_CategoryData>[];
@@ -72,7 +71,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: _ServerDrawer(onRefresh: _loadMedia),
       appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         title: const Text('HimiSync'),
         actions: [
           IconButton(
@@ -159,8 +165,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       fit: StackFit.expand,
                       children: [
                         EmbyImage(
-                          url: '${ref.read(embyConfigProvider)?.serverUrl}'
-                              '/Items/${lib.id}/Images/Primary?maxHeight=300',
+                          url: lib.posterUrl,
                           fit: BoxFit.cover,
                         ),
                         Container(
@@ -178,18 +183,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         Positioned(
                           left: 12,
                           bottom: 12,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                lib.name,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            lib.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
@@ -312,7 +312,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 class _PosterCard extends StatelessWidget {
   final MediaItem item;
   final VoidCallback? onTap;
-
   const _PosterCard({required this.item, this.onTap});
 
   @override
@@ -328,15 +327,35 @@ class _PosterCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  EmbyImage(
-                    url: item.posterUrl,
-                    fit: BoxFit.cover,
-                  ),
+                  EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
                   if (item.communityRating != null)
                     Positioned(
                       top: 4,
                       right: 4,
-                      child: _RatingBadge(rating: item.communityRating!),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star,
+                                size: 12, color: Colors.amber),
+                            const SizedBox(width: 2),
+                            Text(
+                              item.communityRating!.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -357,32 +376,192 @@ class _PosterCard extends StatelessWidget {
   }
 }
 
-class _RatingBadge extends StatelessWidget {
-  final double rating;
-  const _RatingBadge({required this.rating});
+class _ServerDrawer extends ConsumerWidget {
+  final VoidCallback onRefresh;
+  const _ServerDrawer({required this.onRefresh});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.star, size: 12, color: Colors.amber),
-          const SizedBox(width: 2),
-          Text(
-            rating.toStringAsFixed(1),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final servers = ref.watch(embyServerListProvider);
+    final currentConfig = ref.watch(embyConfigProvider);
+
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '服务器',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    tooltip: '添加服务器',
+                    onPressed: () {
+                      Navigator.pop(context);
+                      context.push('/login');
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const Divider(height: 1),
+            Expanded(
+              child: servers.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          '暂无服务器\n点击右上角 + 添加',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: servers.length,
+                      itemBuilder: (context, index) {
+                        final server = servers[index];
+                        final isActive =
+                            currentConfig?.id == server.id;
+
+                        return ListTile(
+                          leading: Icon(
+                            Icons.dns,
+                            color: isActive
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                          title: Text(
+                            server.label,
+                            style: TextStyle(
+                              fontWeight: isActive
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${server.username} · ${server.serverUrl}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isActive)
+                                const Icon(Icons.check_circle,
+                                    color: Colors.green, size: 20),
+                              PopupMenuButton<String>(
+                                itemBuilder: (context) => [
+                                  if (!isActive)
+                                    const PopupMenuItem(
+                                      value: 'switch',
+                                      child: Text('切换'),
+                                    ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('删除',
+                                        style: TextStyle(color: Colors.red)),
+                                  ),
+                                ],
+                                onSelected: (value) async {
+                                  if (value == 'switch') {
+                                    await ref
+                                        .read(embyConfigProvider.notifier)
+                                        .saveConfig(server);
+                                    onRefresh();
+                                    if (context.mounted) Navigator.pop(context);
+                                  } else if (value == 'delete') {
+                                    final confirmed = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        title: const Text('删除服务器'),
+                                        content: Text(
+                                            '确定删除 "${server.label}" 吗？'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child: const Text('取消'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, true),
+                                            child: const Text('删除',
+                                                style: TextStyle(
+                                                    color: Colors.red)),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirmed == true) {
+                                      await ref
+                                          .read(embyServerListProvider
+                                              .notifier)
+                                          .removeServer(server.id);
+                                      if (isActive) {
+                                        final remaining = ref.read(
+                                            embyServerListProvider);
+                                        if (remaining.isNotEmpty) {
+                                          await ref
+                                              .read(
+                                                  embyConfigProvider.notifier)
+                                              .saveConfig(remaining.first);
+                                        } else {
+                                          await ref
+                                              .read(
+                                                  embyConfigProvider.notifier)
+                                              .clearConfig();
+                                        }
+                                        onRefresh();
+                                      }
+                                    }
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('退出登录'),
+              onTap: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('退出登录'),
+                    content: const Text('确定退出当前登录吗？'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('取消'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('退出',
+                            style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await ref.read(embyConfigProvider.notifier).clearConfig();
+                  if (context.mounted) context.go('/login');
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -420,7 +599,6 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
     if (query.length < 2) {
       return const Center(child: Text('输入至少2个字符进行搜索'));
     }
-
     return FutureBuilder<List<MediaItem>>(
       future: ref.read(embyServiceProvider).searchItems(query),
       builder: (context, snapshot) {
@@ -428,9 +606,7 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
           return const Center(child: CircularProgressIndicator());
         }
         final items = snapshot.data ?? [];
-        if (items.isEmpty) {
-          return const Center(child: Text('未找到结果'));
-        }
+        if (items.isEmpty) return const Center(child: Text('未找到结果'));
         return ListView.builder(
           itemCount: items.length,
           itemBuilder: (context, index) {
@@ -439,10 +615,7 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
               leading: SizedBox(
                 width: 50,
                 height: 70,
-                child: EmbyImage(
-                  url: item.posterUrl,
-                  fit: BoxFit.cover,
-                ),
+                child: EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
               ),
               title: Text(item.name),
               subtitle: Text(item.year ?? ''),

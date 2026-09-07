@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:uuid/uuid.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -15,6 +16,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _serverUrlController = TextEditingController();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _displayNameController = TextEditingController();
   bool _isLoading = false;
   String? _error;
 
@@ -25,6 +27,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (config != null) {
       _serverUrlController.text = config.serverUrl;
       _usernameController.text = config.username;
+      _displayNameController.text = config.displayName ?? '';
     }
   }
 
@@ -33,6 +36,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _serverUrlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _displayNameController.dispose();
     super.dispose();
   }
 
@@ -51,14 +55,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       );
 
       if (userId != null) {
+        final serverId = 'server_${const Uuid().v4().substring(0, 8)}';
         final config = EmbyServerConfig(
+          id: serverId,
           serverUrl: _serverUrlController.text,
           username: _usernameController.text,
           accessToken: embyService.accessToken,
           userId: userId,
+          displayName: _displayNameController.text.isNotEmpty
+              ? _displayNameController.text
+              : null,
         );
 
         await ref.read(embyConfigProvider.notifier).saveConfig(config);
+        await ref.read(embyServerListProvider.notifier).addServer(config);
 
         if (mounted) {
           context.go('/');
@@ -108,6 +118,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 48),
+              TextField(
+                controller: _displayNameController,
+                decoration: const InputDecoration(
+                  labelText: '服务器名称（可选）',
+                  hintText: '如：家里NAS',
+                  prefixIcon: Icon(Icons.label),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: _serverUrlController,
                 decoration: const InputDecoration(
