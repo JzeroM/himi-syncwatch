@@ -1,3 +1,70 @@
+class MediaStream {
+  final String type;
+  final String codec;
+  final String? title;
+  final String? language;
+  final int? width;
+  final int? height;
+  final int? channels;
+  final bool? isDefault;
+
+  MediaStream({
+    required this.type,
+    required this.codec,
+    this.title,
+    this.language,
+    this.width,
+    this.height,
+    this.channels,
+    this.isDefault,
+  });
+
+  factory MediaStream.fromJson(Map<String, dynamic> json) {
+    return MediaStream(
+      type: json['Type'] ?? '',
+      codec: json['Codec'] ?? '',
+      title: json['Title'],
+      language: json['Language'],
+      width: json['Width'],
+      height: json['Height'],
+      channels: json['Channels'],
+      isDefault: json['IsDefault'],
+    );
+  }
+
+  String get displayType {
+    switch (type) {
+      case 'Video':
+        return '视频';
+      case 'Audio':
+        return '音频';
+      case 'Subtitle':
+        return '字幕';
+      default:
+        return type;
+    }
+  }
+
+  String get displayInfo {
+    switch (type) {
+      case 'Video':
+        if (width != null && height != null) {
+          return '$codec ${width}x$height';
+        }
+        return codec;
+      case 'Audio':
+        final chStr = channels != null ? '$channels ch' : '';
+        final langStr = language != null && language != 'und' ? ' $language' : '';
+        final titleStr = title != null && title!.isNotEmpty ? ' ${title}' : '';
+        return '$codec$langStr$titleStr $chStr'.trim();
+      case 'Subtitle':
+        return '$codec ${language ?? ''} ${title ?? ''}'.trim();
+      default:
+        return codec;
+    }
+  }
+}
+
 class MediaItem {
   final String id;
   final String name;
@@ -11,6 +78,9 @@ class MediaItem {
   final String? seriesName;
   final int? indexNumber;
   final int? parentIndexNumber;
+  final List<String> genres;
+  final int? runTimeTicks;
+  final List<MediaStream> mediaStreams;
 
   MediaItem({
     required this.id,
@@ -25,20 +95,31 @@ class MediaItem {
     this.seriesName,
     this.indexNumber,
     this.parentIndexNumber,
+    this.genres = const [],
+    this.runTimeTicks,
+    this.mediaStreams = const [],
   });
 
   factory MediaItem.fromJson(Map<String, dynamic> json, {String? serverUrl}) {
     final baseUrl = serverUrl ?? '';
 
+    String? buildUrl(String path) {
+      if (baseUrl.isEmpty) return null;
+      return '$baseUrl$path';
+    }
+
+    final imageTags = json['ImageTags'] as Map<String, dynamic>?;
+    final backdropTags = (json['BackdropImageTags'] as List<dynamic>?);
+
     return MediaItem(
       id: json['Id'] ?? '',
       name: json['Name'] ?? '',
       overview: json['Overview'],
-      posterUrl: json['ImageTags']?['Primary'] != null && baseUrl.isNotEmpty
-          ? '$baseUrl/Items/${json["Id"]}/Images/Primary?maxHeight=400&tag=${json['ImageTags']['Primary']}'
+      posterUrl: imageTags?['Primary'] != null
+          ? buildUrl('/Items/${json["Id"]}/Images/Primary?maxHeight=400&tag=${imageTags!['Primary']}')
           : null,
-      backdropUrl: json['ImageTags']?['Backdrop'] != null && baseUrl.isNotEmpty
-          ? '$baseUrl/Items/${json["Id"]}/Images/Backdrop?maxHeight=300&tag=${json['ImageTags']['Backdrop']}'
+      backdropUrl: backdropTags != null && backdropTags.isNotEmpty
+          ? buildUrl('/Items/${json["Id"]}/Images/Backdrop?maxHeight=400&tag=${backdropTags[0]}')
           : null,
       year: json['ProductionYear']?.toString(),
       officialRating: json['OfficialRating'],
@@ -47,10 +128,24 @@ class MediaItem {
       seriesName: json['SeriesName'],
       indexNumber: json['IndexNumber'],
       parentIndexNumber: json['ParentIndexNumber'],
+      genres: (json['Genres'] as List<dynamic>?)?.cast<String>() ?? [],
+      runTimeTicks: json['RunTimeTicks'] as int?,
+      mediaStreams: (json['MediaStreams'] as List<dynamic>?)
+              ?.map((s) => MediaStream.fromJson(s))
+              .toList() ??
+          [],
     );
   }
 
   bool get isMovie => type == 'Movie';
   bool get isSeries => type == 'Series';
   bool get isEpisode => type == 'Episode';
+
+  String? get runtimeText {
+    if (runTimeTicks == null || runTimeTicks! <= 0) return null;
+    final h = runTimeTicks! ~/ 36000000000;
+    final m = (runTimeTicks! % 36000000000) ~/ 60000000;
+    if (h > 0) return '$h h ${m}m';
+    return '$m min';
+  }
 }

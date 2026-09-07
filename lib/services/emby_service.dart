@@ -70,6 +70,7 @@ class EmbyService {
     String? includeItemTypes,
     int? limit,
     int? startIndex,
+    String? fields,
   }) async {
     try {
       final response = await _dio.get(
@@ -81,7 +82,51 @@ class EmbyService {
           if (limit != null) 'Limit': limit,
           if (startIndex != null) 'StartIndex': startIndex,
           'Recursive': true,
-          'Fields': 'Overview,Genres,MediaStreams',
+          'Fields': fields ?? 'Overview,Genres,MediaStreams',
+          'ImageTypeLimit': 1,
+        },
+      );
+
+      final items = response.data['Items'] as List<dynamic>? ?? [];
+      return items
+          .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<MediaItem>> getLatestItems({
+    String? parentId,
+    int limit = 10,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/Users/$_userId/Items/Latest',
+        queryParameters: {
+          if (parentId != null) 'ParentId': parentId,
+          'Limit': limit,
+          'Fields': 'CommunityRating,ProductionYear,ImageTags',
+          'ImageTypeLimit': 1,
+        },
+      );
+
+      final items = response.data as List<dynamic>? ?? [];
+      return items
+          .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<MediaItem>> getSimilarItems(String itemId, {int limit = 10}) async {
+    try {
+      final response = await _dio.get(
+        '/Items/$itemId/Similar',
+        queryParameters: {
+          'Limit': limit,
+          'Fields': 'CommunityRating,ProductionYear,ImageTags',
           'ImageTypeLimit': 1,
         },
       );
@@ -139,7 +184,12 @@ class EmbyService {
 
   Future<MediaItem?> getItemDetails(String id) async {
     try {
-      final response = await _dio.get('/Users/$_userId/Items/$id');
+      final response = await _dio.get(
+        '/Users/$_userId/Items/$id',
+        queryParameters: {
+          'Fields': 'Overview,Genres,MediaStreams,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks',
+        },
+      );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
     } catch (e) {
       return null;
