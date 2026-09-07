@@ -39,8 +39,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Room? _room;
   String? _myUserId;
 
-  // 同步状态
+  double _volume = 100;
   bool _syncPaused = false;
+  Timer? _hideControlsTimer;
 
   @override
   void initState() {
@@ -110,12 +111,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _player.stream.duration.listen((duration) {
       if (mounted) setState(() => _duration = duration);
     });
+
+    _player.stream.volume.listen((volume) {
+      if (mounted) setState(() => _volume = volume);
+    });
   }
 
   void _setupRoomSync() async {
     final roomService = RoomService();
 
-    // 加入房间
     final room = await roomService.joinRoom(
       roomId: widget.roomId!,
       userId: _myUserId!,
@@ -134,7 +138,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _room = room;
     _isHost = room.hostId == _myUserId;
 
-    // 初始化 RTM
     final rtmService = ref.read(rtmServiceProvider);
     await rtmService.initialize(
       appId: AgoraConfig.appId,
@@ -143,7 +146,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await rtmService.login(AgoraConfig.appId);
     await rtmService.subscribe(widget.roomId!);
 
-    // 监听 RTM 消息
     _rtmSubscription = rtmService.messageStream.listen((message) {
       if (!mounted) return;
       final senderId = message['userId'];
@@ -157,7 +159,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     });
 
-    // 房主启动心跳
     if (_isHost) {
       _startHeartbeat();
     }
@@ -172,30 +173,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final rate = (message['rate'] as num).toDouble();
     final timestamp = message['ts'] as int;
 
-    // 计算预期进度
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final elapsed = now - timestamp;
     final expectedPos = position + (elapsed * rate);
 
-    // 获取当前播放位置（秒）
     final currentPos = _player.state.position.inMilliseconds / 1000.0;
     final diff = (expectedPos - currentPos).abs();
 
     if (diff < AppConstants.syncThresholdMicro) {
       // 差值 < 0.3s，不做操作
     } else if (diff < AppConstants.syncThresholdMedium) {
-      // 差值 0.3~1s，微调播放速率
       _player.setRate(1.02);
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) _player.setRate(rate);
       });
     } else {
-      // 差值 > 1s，直接跳转
       _player
           .seek(Duration(milliseconds: (expectedPos * 1000).toInt()));
     }
 
-    // 同步播放/暂停状态
     if (playing && !_player.state.playing) {
       _player.play();
     } else if (!playing && _player.state.playing) {
@@ -206,7 +202,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _handleCommand(Map<String, dynamic> message) {
     final action = message['action'] as String;
 
-    // 收到指令后暂停自动纠偏 3 秒
     _syncPaused = true;
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) _syncPaused = false;
@@ -277,14 +272,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _toggleControls() {
     setState(() => _showControls = !_showControls);
+    _resetHideTimer();
+  }
+
+  void _resetHideTimer() {
+    _hideControlsTimer?.cancel();
+    if (_showControls) {
+      _hideControlsTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted && _player.state.playing) {
+          setState(() => _showControls = false);
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rtmSubscription?.cancel();
 
-    // 离开房间
     if (widget.roomId != null) {
       final roomService = RoomService();
       roomService.leaveRoom(roomId: widget.roomId!, userId: _myUserId!);
@@ -294,15 +301,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     super.dispose();
   }
 
+  bool get _canControlPlayback {
+    if (widget.roomId == null) return true;
+    return _isHost;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
         onTap: _toggleControls,
+        behavior: HitTestBehavior.opaque,
         child: Stack(
           children: [
-            // 视频画面
             Center(
               child: Video(
                 controller: _controller,
@@ -310,7 +322,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ),
             ),
 
-            // 顶部栏
             if (_showControls)
               Positioned(
                 top: 0,
@@ -319,7 +330,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 child: _buildTopBar(),
               ),
 
-            // 底部控制栏
             if (_showControls)
               Positioned(
                 bottom: 0,
@@ -328,7 +338,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 child: _buildControls(),
               ),
 
-            // 加载指示器
             if (_duration.inMilliseconds == 0)
               const Center(
                 child: CircularProgressIndicator(color: Color(0xFF6366F1)),
@@ -388,7 +397,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Widget _buildControls() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -420,36 +429,253 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               max: _duration.inMilliseconds > 0
                   ? _duration.inMilliseconds.toDouble()
                   : 1,
-              onChanged: _onSeek,
+              onChanged: _canControlPlayback ? _onSeek : null,
             ),
           ),
 
           // 时间 + 控制按钮
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
-              Row(
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      _player.state.playing
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_fill,
-                      color: Colors.white,
-                      size: 40,
-                    ),
-                    onPressed: _togglePlayPause,
+              const Spacer(),
+              // 音量
+              _buildVolumeButton(),
+              // 字幕
+              _buildSubtitleButton(),
+              // 音轨
+              _buildAudioTrackButton(),
+              // 播放/暂停（仅房主/独立播放显示）
+              if (_canControlPlayback) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: Icon(
+                    _player.state.playing
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_fill,
+                    color: Colors.white,
+                    size: 36,
                   ),
-                ],
-              ),
-              const SizedBox(width: 48),
+                  onPressed: _togglePlayPause,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildVolumeButton() {
+    return PopupMenuButton<double>(
+      offset: const Offset(0, -180),
+      onSelected: (value) {
+        _player.setVolume(value);
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem<double>(
+          enabled: false,
+          child: Text('音量', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        PopupMenuItem<double>(
+          value: 0,
+          child: Row(
+            children: [
+              Icon(_volume == 0 ? Icons.volume_off : Icons.volume_up,
+                  size: 18),
+              const SizedBox(width: 8),
+              const Text('静音'),
+            ],
+          ),
+        ),
+        PopupMenuItem<double>(
+          value: 50,
+          child: Row(
+            children: [
+              Icon(
+                _volume >= 50 ? Icons.volume_up : Icons.volume_down,
+                size: 18,
+                color: _volume == 50 ? const Color(0xFF6366F1) : null,
+              ),
+              const SizedBox(width: 8),
+              Text('50%',
+                  style: TextStyle(
+                    color: _volume == 50 ? const Color(0xFF6366F1) : null,
+                  )),
+            ],
+          ),
+        ),
+        PopupMenuItem<double>(
+          value: 100,
+          child: Row(
+            children: [
+              Icon(Icons.volume_up,
+                  size: 18,
+                  color: _volume == 100 ? const Color(0xFF6366F1) : null),
+              const SizedBox(width: 8),
+              Text('100%',
+                  style: TextStyle(
+                    color: _volume == 100 ? const Color(0xFF6366F1) : null,
+                  )),
+            ],
+          ),
+        ),
+      ],
+      child: IconButton(
+        icon: Icon(
+          _volume == 0
+              ? Icons.volume_off
+              : _volume < 50
+                  ? Icons.volume_down
+                  : Icons.volume_up,
+          color: Colors.white,
+          size: 22,
+        ),
+        onPressed: () {},
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+      ),
+    );
+  }
+
+  Widget _buildSubtitleButton() {
+    final tracks = _player.state.tracks;
+    final subtitleTracks = tracks.subtitle;
+    final currentSubtitle = _player.state.track.subtitle;
+
+    return PopupMenuButton<String>(
+      offset: const Offset(0, -180),
+      onSelected: (value) {
+        if (value == 'off') {
+          _player.setSubtitleTrack(SubtitleTrack.no());
+        } else {
+          final idx = int.tryParse(value);
+          if (idx != null && idx < subtitleTracks.length) {
+            _player.setSubtitleTrack(subtitleTracks[idx]);
+          }
+        }
+      },
+      itemBuilder: (context) {
+        final items = <PopupMenuItem<String>>[
+          const PopupMenuItem<String>(
+            enabled: false,
+            child:
+                Text('字幕', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          PopupMenuItem<String>(
+            value: 'off',
+            child: Row(
+              children: [
+                if (currentSubtitle.id == 'no')
+                  const Icon(Icons.check, size: 18, color: Color(0xFF6366F1))
+                else
+                  const SizedBox(width: 18),
+                const SizedBox(width: 8),
+                const Text('关闭'),
+              ],
+            ),
+          ),
+        ];
+
+        for (int i = 0; i < subtitleTracks.length; i++) {
+          final track = subtitleTracks[i];
+          final lang = track.language?.isNotEmpty == true
+              ? track.language!
+              : track.title ?? '字幕 ${i + 1}';
+          final isActive = currentSubtitle.id == track.id;
+          items.add(
+            PopupMenuItem<String>(
+              value: '$i',
+              child: Row(
+                children: [
+                  if (isActive)
+                    const Icon(Icons.check, size: 18, color: Color(0xFF6366F1))
+                  else
+                    const SizedBox(width: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      lang,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return items;
+      },
+      child: IconButton(
+        icon: const Icon(Icons.subtitles, color: Colors.white, size: 22),
+        onPressed: () {},
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+      ),
+    );
+  }
+
+  Widget _buildAudioTrackButton() {
+    final tracks = _player.state.tracks;
+    final audioTracks = tracks.audio;
+    final currentAudio = _player.state.track.audio;
+
+    return PopupMenuButton<String>(
+      offset: const Offset(0, -180),
+      onSelected: (value) {
+        final idx = int.tryParse(value);
+        if (idx != null && idx < audioTracks.length) {
+          _player.setAudioTrack(audioTracks[idx]);
+        }
+      },
+      itemBuilder: (context) {
+        final items = <PopupMenuItem<String>>[
+          const PopupMenuItem<String>(
+            enabled: false,
+            child: Text('音轨', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ];
+
+        for (int i = 0; i < audioTracks.length; i++) {
+          final track = audioTracks[i];
+          final lang = track.language?.isNotEmpty == true
+              ? track.language!
+              : track.title ?? '音轨 ${i + 1}';
+          final isActive = currentAudio.id == track.id;
+          items.add(
+            PopupMenuItem<String>(
+              value: '$i',
+              child: Row(
+                children: [
+                  if (isActive)
+                    const Icon(Icons.check, size: 18, color: Color(0xFF6366F1))
+                  else
+                    const SizedBox(width: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      lang,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return items;
+      },
+      child: IconButton(
+        icon: const Icon(Icons.audiotrack, color: Colors.white, size: 22),
+        onPressed: () {},
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
       ),
     );
   }
