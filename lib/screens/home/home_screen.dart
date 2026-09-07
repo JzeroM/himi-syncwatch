@@ -496,7 +496,7 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                                         ref
                                             .read(embyServerListProvider
                                                 .notifier)
-                                            .removeServer(server.serverId);
+                                            .removeServer(server.id);
                                         if (isActive) {
                                           final remaining = ref.read(
                                               embyServerListProvider);
@@ -556,7 +556,7 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                       ref.read(embyConfigProvider.notifier).clear();
                       ref
                           .read(embyServerListProvider.notifier)
-                          .removeServer(currentConfig.serverId);
+                          .removeServer(currentConfig.id);
                       widget.onRefresh();
                     }
                   },
