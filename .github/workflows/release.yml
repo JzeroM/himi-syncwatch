@@ -71,30 +71,7 @@ jobs:
           ls -la android/app/build.gradle*
 
       - name: 添加自定义权限
-        run: |
-          # 添加权限到 AndroidManifest.xml
-          python3 -c "
-          import re
-          with open('android/app/src/main/AndroidManifest.xml', 'r') as f:
-              content = f.read()
-          perms = '''    <uses-permission android:name=\"android.permission.INTERNET\" />
-    <uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\" />
-    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />
-    <uses-permission android:name=\"android.permission.WAKE_LOCK\" />'''
-          content = content.replace('<manifest', '<manifest>\n' + perms, 1)
-          content = content.replace('android:icon=\"@mipmap/ic_launcher\"', 'android:icon=\"@mipmap/ic_launcher\"\n        android:usesCleartextTraffic=\"true\"')
-          with open('android/app/src/main/AndroidManifest.xml', 'w') as f:
-              f.write(content)
-          "
-          
-          # 更新 compileSdk 和 minSdk（兼容 .gradle 和 .gradle.kts）
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle.kts
-          else
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle
-          fi
+        run: chmod +x scripts/patch_android.sh && bash scripts/patch_android.sh
 
       - run: flutter pub get
       - run: flutter build apk --release --split-per-abi
