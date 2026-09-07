@@ -188,15 +188,19 @@ class EmbyService {
   Future<List<MediaItem>> searchItems(String query) async {
     try {
       final response = await _dio.get(
-        '/Search/Hints',
+        '/Items',
         queryParameters: {
-          'SearchTerm': query,
+          if (_userId != null) 'UserId': _userId,
+          'Recursive': true,
           'IncludeItemTypes': 'Movie,Series',
-          'Limit': 20,
+          'searchTerm': query,
+          'Limit': 30,
+          'Fields': 'ImageTags,PrimaryImageAspectRatio,ProductionYear',
+          'ImageTypeLimit': 1,
         },
       );
 
-      final items = response.data['SearchHints'] as List<dynamic>? ?? [];
+      final items = response.data['Items'] as List<dynamic>? ?? [];
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();

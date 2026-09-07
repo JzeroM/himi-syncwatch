@@ -869,8 +869,8 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
   Widget buildSuggestions(BuildContext context) => _buildSearchResults();
 
   Widget _buildSearchResults() {
-    if (query.length < 2) {
-      return const Center(child: Text('输入至少2个字符进行搜索'));
+    if (query.length < 1) {
+      return const Center(child: Text('输入关键词进行搜索'));
     }
     return FutureBuilder<List<MediaItem>>(
       future: ref.read(embyServiceProvider).searchItems(query),
