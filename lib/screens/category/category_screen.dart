@@ -3,7 +3,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
-import 'package:himi_syncwatch/widgets/media_card.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
+
+enum SortOption {
+  name('名称', 'SortName,Name'),
+  yearDesc('年份 ↓', 'ProductionYear DESC'),
+  yearAsc('年份 ↑', 'ProductionYear'),
+  ratingDesc('评分 ↓', 'CommunityRating DESC'),
+  ratingAsc('评分 ↑', 'CommunityRating'),
+  dateDesc('最近添加', 'DateCreated DESC'),
+  dateAsc('最早添加', 'DateCreated');
+
+  final String label;
+  final String embyValue;
+  const SortOption(this.label, this.embyValue);
+}
+
+enum FilterOption {
+  all('全部', null),
+  movie('电影', 'Movie'),
+  series('剧集', 'Series');
+
+  final String label;
+  final String? embyValue;
+  const FilterOption(this.label, this.embyValue);
+}
 
 class CategoryScreen extends ConsumerStatefulWidget {
   final String libraryId;
@@ -20,35 +44,65 @@ class CategoryScreen extends ConsumerStatefulWidget {
 }
 
 class _CategoryScreenState extends ConsumerState<CategoryScreen> {
+  final ScrollController _scrollController = ScrollController();
+  final int _pageSize = 30;
+
   List<MediaItem> _items = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
   String? _error;
-  int _currentBatch = 0;
-  static const int _batchSize = 30;
-  bool _loadingMore = false;
+  int _startIndex = 0;
+  bool _hasMore = true;
+
+  SortOption _sortOption = SortOption.dateDesc;
+  FilterOption _filterOption = FilterOption.all;
 
   @override
   void initState() {
     super.initState();
-    _loadItems();
+    _scrollController.addListener(_onScroll);
+    _loadFirstPage();
   }
 
-  Future<void> _loadItems() async {
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadFirstPage() async {
     setState(() {
       _isLoading = true;
       _error = null;
+      _items = [];
+      _startIndex = 0;
+      _hasMore = true;
     });
 
     try {
       final embyService = ref.read(embyServiceProvider);
       final items = await embyService.getItems(
         parentId: widget.libraryId,
-        limit: _batchSize,
+        limit: _pageSize,
         startIndex: 0,
+        includeItemTypes: _filterOption.embyValue,
+        fields:
+            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating',
+        orderBy: _sortOption.embyValue,
       );
+
       setState(() {
         _items = items;
-        _currentBatch = 1;
+        _startIndex = items.length;
+        _hasMore = items.length >= _pageSize;
         _isLoading = false;
       });
     } catch (e) {
@@ -60,25 +114,45 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
   }
 
   Future<void> _loadMore() async {
-    if (_loadingMore) return;
-    setState(() => _loadingMore = true);
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
 
     try {
       final embyService = ref.read(embyServiceProvider);
       final moreItems = await embyService.getItems(
         parentId: widget.libraryId,
-        limit: _batchSize,
-        startIndex: _currentBatch * _batchSize,
+        limit: _pageSize,
+        startIndex: _startIndex,
+        includeItemTypes: _filterOption.embyValue,
+        fields:
+            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating',
+        orderBy: _sortOption.embyValue,
       );
+
       if (moreItems.isNotEmpty) {
         setState(() {
           _items.addAll(moreItems);
-          _currentBatch++;
+          _startIndex += moreItems.length;
+          _hasMore = moreItems.length >= _pageSize;
         });
+      } else {
+        setState(() => _hasMore = false);
       }
     } catch (_) {}
 
-    setState(() => _loadingMore = false);
+    setState(() => _isLoadingMore = false);
+  }
+
+  void _onSortChanged(SortOption? value) {
+    if (value == null || value == _sortOption) return;
+    setState(() => _sortOption = value);
+    _loadFirstPage();
+  }
+
+  void _onFilterChanged(FilterOption value) {
+    if (value == _filterOption) return;
+    setState(() => _filterOption = value);
+    _loadFirstPage();
   }
 
   @override
@@ -90,109 +164,234 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(widget.libraryName ?? '分类'),
+        actions: [
+          PopupMenuButton<SortOption>(
+            icon: const Icon(Icons.sort),
+            tooltip: '排序',
+            onSelected: _onSortChanged,
+            itemBuilder: (context) => SortOption.values.map((opt) {
+              return PopupMenuItem(
+                value: opt,
+                child: Row(
+                  children: [
+                    if (opt == _sortOption)
+                      const Icon(Icons.check, size: 18, color: Colors.green)
+                    else
+                      const SizedBox(width: 18),
+                    const SizedBox(width: 8),
+                    Text(opt.label),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadItems,
-                        child: const Text('重试'),
-                      ),
-                    ],
+      body: Column(
+        children: [
+          _buildFilterChips(),
+          Expanded(child: _buildBody()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChips() {
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        itemCount: FilterOption.values.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final opt = FilterOption.values[index];
+          final selected = opt == _filterOption;
+          return FilterChip(
+            label: Text(opt.label),
+            selected: selected,
+            onSelected: (_) => _onFilterChanged(opt),
+            selectedColor: Theme.of(context).colorScheme.primaryContainer,
+            checkmarkColor: Theme.of(context).colorScheme.primary,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(_error!, style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadFirstPage,
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_items.isEmpty) {
+      return const Center(child: Text('暂无内容'));
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadFirstPage,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isPC = constraints.maxWidth > 600;
+          final columns = isPC
+              ? (constraints.maxWidth / 180).floor().clamp(2, 12)
+              : 3;
+
+          return CustomScrollView(
+            controller: _scrollController,
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.all(8),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    childAspectRatio: 0.56,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
                   ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadItems,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isPC = constraints.maxWidth > 600;
-                      final cardWidth = 160.0;
-                      final spacing = 12.0;
-
-                      if (isPC) {
-                        final columns =
-                            (constraints.maxWidth / (cardWidth + spacing))
-                                .floor()
-                                .clamp(1, 20);
-                        final actualWidth =
-                            (constraints.maxWidth - spacing * (columns + 1)) /
-                                columns;
-
-                        return SingleChildScrollView(
-                          child: Padding(
-                            padding: EdgeInsets.all(spacing),
-                            child: Wrap(
-                              spacing: spacing,
-                              runSpacing: spacing,
-                              alignment: WrapAlignment.center,
-                              children: _items.map((item) {
-                                return SizedBox(
-                                  width: actualWidth,
-                                  child: MediaCard(
-                                    item: item,
-                                    onTap: () =>
-                                        context.push('/detail/${item.id}'),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        );
-                      } else {
-                        return CustomScrollView(
-                          slivers: [
-                            SliverPadding(
-                              padding: EdgeInsets.all(spacing / 2),
-                              sliver: SliverGrid(
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  childAspectRatio: 0.56,
-                                  crossAxisSpacing: 8,
-                                  mainAxisSpacing: 8,
-                                ),
-                                delegate: SliverChildBuilderDelegate(
-                                  (context, index) => MediaCard(
-                                    item: _items[index],
-                                    onTap: () => context.push(
-                                        '/detail/${_items[index].id}'),
-                                  ),
-                                  childCount: _items.length,
-                                ),
-                              ),
-                            ),
-                            if (_loadingMore)
-                              const SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child:
-                                      Center(child: CircularProgressIndicator()),
-                                ),
-                              ),
-                            if (!_loadingMore && _items.isNotEmpty)
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Center(
-                                    child: OutlinedButton(
-                                      onPressed: _loadMore,
-                                      child: const Text('加载更多'),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        );
-                      }
-                    },
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _GridCard(
+                      item: _items[index],
+                      onTap: () => context.push('/detail/${_items[index].id}'),
+                    ),
+                    childCount: _items.length,
                   ),
                 ),
+              ),
+              SliverToBoxAdapter(
+                child: _buildFooter(),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFooter() {
+    if (_isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!_hasMore && _items.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: Text(
+            '已加载全部 ${_items.length} 项',
+            style: TextStyle(color: Colors.grey[500], fontSize: 13),
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+}
+
+class _GridCard extends StatelessWidget {
+  final MediaItem item;
+  final VoidCallback? onTap;
+  const _GridCard({required this.item, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
+                  if (item.communityRating != null)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: _RatingBadge(rating: item.communityRating!),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (item.year != null)
+                    Text(
+                      item.year!,
+                      style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RatingBadge extends StatelessWidget {
+  final double rating;
+  const _RatingBadge({required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.star, size: 12, color: Colors.amber),
+          const SizedBox(width: 2),
+          Text(
+            rating.toStringAsFixed(1),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
