@@ -439,6 +439,15 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 12),
                             ),
+                            onTap: isActive
+                                ? null
+                                : () {
+                                    ref
+                                        .read(embyConfigProvider.notifier)
+                                        .setConfig(server);
+                                    widget.onRefresh();
+                                    Navigator.pop(context);
+                                  },
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -447,10 +456,10 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                                       color: Colors.green, size: 20),
                                 PopupMenuButton<String>(
                                   itemBuilder: (context) => [
-                                    if (!isActive)
+                                    if (isActive)
                                       const PopupMenuItem(
-                                        value: 'switch',
-                                        child: Text('切换'),
+                                        value: 'edit',
+                                        child: Text('编辑'),
                                       ),
                                     const PopupMenuItem(
                                       value: 'delete',
@@ -459,12 +468,8 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                                     ),
                                   ],
                                   onSelected: (value) async {
-                                    if (value == 'switch') {
-                                      ref
-                                          .read(embyConfigProvider.notifier)
-                                          .setConfig(server);
-                                      widget.onRefresh();
-                                      if (context.mounted) Navigator.pop(context);
+                                    if (value == 'edit') {
+                                      _showEditServerDialog(context, server);
                                     } else if (value == 'delete') {
                                       final confirmed = await showDialog<bool>(
                                         context: context,
@@ -564,6 +569,141 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _showEditServerDialog(BuildContext context, EmbyServerConfig server) {
+    final nameController = TextEditingController(text: server.serverName);
+    final urlController = TextEditingController(text: server.serverUrl);
+    final usernameController = TextEditingController(text: server.username);
+    final passwordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑服务器'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: '服务器名称',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: urlController,
+                decoration: const InputDecoration(
+                  labelText: '服务器地址',
+                  hintText: 'https://emby.example.com:8920',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: usernameController,
+                decoration: const InputDecoration(
+                  labelText: '用户名',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: '新密码（留空保持不变）',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              final url = urlController.text.trim();
+              final username = usernameController.text.trim();
+              final password = passwordController.text;
+
+              if (url.isEmpty || username.isEmpty) return;
+
+              final authService = ref.read(embyAuthServiceProvider);
+
+              // 如果密码非空，重新认证获取新 token
+              if (password.isNotEmpty) {
+                try {
+                  final embyService = EmbyService();
+                  final authResult = await embyService.authenticate(
+                    serverUrl: url,
+                    username: username,
+                    password: password,
+                    deviceId: server.id,
+                  );
+                  final newConfig = server.copyWith(
+                    serverUrl: url,
+                    serverName: name,
+                    username: username,
+                    accessToken: authResult['AccessToken'],
+                    userId: authResult['User']['Id'],
+                    serverId: authResult['ServerId'] ?? server.serverId,
+                  );
+                  ref.read(embyServerListProvider.notifier).updateServer(newConfig);
+                  ref.read(embyConfigProvider.notifier).setConfig(newConfig);
+                  await authService.deleteSession(server.serverId);
+                  await authService.saveSession(
+                    serverId: newConfig.serverId,
+                    serverUrl: url,
+                    serverName: name,
+                    userId: newConfig.userId!,
+                    username: username,
+                    accessToken: newConfig.accessToken!,
+                  );
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text('编辑失败: $e')),
+                    );
+                  }
+                  return;
+                }
+              } else {
+                // 仅更新名称/地址/用户名
+                final newConfig = server.copyWith(
+                  serverUrl: url,
+                  serverName: name,
+                  username: username,
+                );
+                ref.read(embyServerListProvider.notifier).updateServer(newConfig);
+                if (ref.read(embyConfigProvider)?.id == server.id) {
+                  ref.read(embyConfigProvider.notifier).setConfig(newConfig);
+                }
+                await authService.deleteSession(server.serverId);
+                await authService.saveSession(
+                  serverId: newConfig.serverId,
+                  serverUrl: url,
+                  serverName: name,
+                  userId: newConfig.userId ?? '',
+                  username: username,
+                  accessToken: newConfig.accessToken ?? '',
+                );
+              }
+
+              if (ctx.mounted) Navigator.pop(ctx);
+              widget.onRefresh();
+            },
+            child: const Text('保存'),
+          ),
+        ],
       ),
     );
   }
