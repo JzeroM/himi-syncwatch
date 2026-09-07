@@ -96,6 +96,36 @@ class EmbyService {
     }
   }
 
+  static const _posterWallFields =
+      'ImageTags,PrimaryImageAspectRatio,ProductionYear,ChildCount,CommunityRating';
+
+  Future<List<MediaItem>> getAllItems({
+    String? includeItemTypes,
+    int limit = 50,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/Items',
+        queryParameters: {
+          if (_userId != null) 'UserId': _userId,
+          if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
+          'Limit': limit,
+          'Recursive': true,
+          'Fields': _posterWallFields,
+          'ImageTypeLimit': 1,
+          'OrderBy': 'DateCreated DESC',
+        },
+      );
+
+      final items = response.data['Items'] as List<dynamic>? ?? [];
+      return items
+          .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
   Future<List<MediaItem>> getLatestItems({
     String? parentId,
     int limit = 10,

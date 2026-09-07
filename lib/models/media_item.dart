@@ -32,31 +32,17 @@ class MediaStream {
     );
   }
 
-  String get displayType {
-    switch (type) {
-      case 'Video':
-        return '视频';
-      case 'Audio':
-        return '音频';
-      case 'Subtitle':
-        return '字幕';
-      default:
-        return type;
-    }
-  }
-
   String get displayInfo {
     switch (type) {
       case 'Video':
-        if (width != null && height != null) {
-          return '$codec ${width}x$height';
-        }
+        if (width != null && height != null) return '$codec ${width}x$height';
         return codec;
       case 'Audio':
-        final chStr = channels != null ? '$channels ch' : '';
-        final langStr = language != null && language != 'und' ? ' $language' : '';
-        final titleStr = title != null && title!.isNotEmpty ? ' ${title}' : '';
-        return '$codec$langStr$titleStr $chStr'.trim();
+        final ch = channels != null ? '$channels ch' : '';
+        final lang =
+            language != null && language != 'und' ? ' $language' : '';
+        final t = title != null && title!.isNotEmpty ? ' $title' : '';
+        return '$codec$lang$t $ch'.trim();
       case 'Subtitle':
         return '$codec ${language ?? ''} ${title ?? ''}'.trim();
       default:
@@ -81,6 +67,8 @@ class MediaItem {
   final List<String> genres;
   final int? runTimeTicks;
   final List<MediaStream> mediaStreams;
+  final int? childCount;
+  final double? primaryImageAspectRatio;
 
   MediaItem({
     required this.id,
@@ -98,6 +86,8 @@ class MediaItem {
     this.genres = const [],
     this.runTimeTicks,
     this.mediaStreams = const [],
+    this.childCount,
+    this.primaryImageAspectRatio,
   });
 
   factory MediaItem.fromJson(Map<String, dynamic> json, {String? serverUrl}) {
@@ -109,17 +99,19 @@ class MediaItem {
     }
 
     final imageTags = json['ImageTags'] as Map<String, dynamic>?;
-    final backdropTags = (json['BackdropImageTags'] as List<dynamic>?);
+    final backdropTags = json['BackdropImageTags'] as List<dynamic>?;
 
     return MediaItem(
       id: json['Id'] ?? '',
       name: json['Name'] ?? '',
       overview: json['Overview'],
       posterUrl: imageTags?['Primary'] != null
-          ? buildUrl('/Items/${json["Id"]}/Images/Primary?maxHeight=400&tag=${imageTags!['Primary']}')
+          ? buildUrl(
+              '/Items/${json["Id"]}/Images/Primary?maxHeight=400&tag=${imageTags!['Primary']}')
           : null,
       backdropUrl: backdropTags != null && backdropTags.isNotEmpty
-          ? buildUrl('/Items/${json["Id"]}/Images/Backdrop?maxHeight=400&tag=${backdropTags[0]}')
+          ? buildUrl(
+              '/Items/${json["Id"]}/Images/Backdrop?maxHeight=400&tag=${backdropTags[0]}')
           : null,
       year: json['ProductionYear']?.toString(),
       officialRating: json['OfficialRating'],
@@ -134,6 +126,9 @@ class MediaItem {
               ?.map((s) => MediaStream.fromJson(s))
               .toList() ??
           [],
+      childCount: json['ChildCount'] as int?,
+      primaryImageAspectRatio:
+          (json['PrimaryImageAspectRatio'] as num?)?.toDouble(),
     );
   }
 

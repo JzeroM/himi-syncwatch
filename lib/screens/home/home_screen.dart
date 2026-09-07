@@ -13,16 +13,10 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _CategoryData {
-  final LibraryFolder folder;
-  final List<MediaItem> items;
-  _CategoryData({required this.folder, required this.items});
-}
-
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<LibraryFolder> _libraries = [];
-  List<MediaItem> _latestItems = [];
-  List<_CategoryData> _categories = [];
+  List<MediaItem> _movies = [];
+  List<MediaItem> _series = [];
   bool _isLoading = true;
   String? _error;
 
@@ -40,24 +34,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     try {
       final embyService = ref.read(embyServiceProvider);
-      final libraries = await embyService.getLibraries();
-      final latestItems = await embyService.getLatestItems(limit: 12);
 
-      final categories = <_CategoryData>[];
-      for (final lib in libraries) {
-        final items = await embyService.getItems(
-          parentId: lib.id,
-          limit: 10,
-        );
-        if (items.isNotEmpty) {
-          categories.add(_CategoryData(folder: lib, items: items));
-        }
-      }
+      final results = await Future.wait([
+        embyService.getLibraries(),
+        embyService.getAllItems(includeItemTypes: 'Movie', limit: 50),
+        embyService.getAllItems(includeItemTypes: 'Series', limit: 50),
+      ]);
 
       setState(() {
-        _libraries = libraries;
-        _latestItems = latestItems;
-        _categories = categories;
+        _libraries = results[0] as List<LibraryFolder>;
+        _movies = results[1] as List<MediaItem>;
+        _series = results[2] as List<MediaItem>;
         _isLoading = false;
       });
     } catch (e) {
@@ -114,19 +101,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     padding: const EdgeInsets.only(bottom: 24),
                     children: [
                       _buildLibraryRow(),
-                      if (_latestItems.isNotEmpty)
-                        _buildSection(
-                          '最新添加',
-                          items: _latestItems,
-                          onViewAll: null,
-                        ),
-                      ..._categories.map((cat) => _buildSection(
-                            cat.folder.name,
-                            items: cat.items,
-                            onViewAll: () => context.push(
-                              '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}',
-                            ),
-                          )),
+                      if (_movies.isNotEmpty)
+                        _buildSection('电影', _movies),
+                      if (_series.isNotEmpty)
+                        _buildSection('电视剧', _series),
                     ],
                   ),
                 ),
@@ -164,10 +142,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        EmbyImage(
-                          url: lib.posterUrl,
-                          fit: BoxFit.cover,
-                        ),
+                        EmbyImage(url: lib.posterUrl, fit: BoxFit.cover),
                         Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -204,35 +179,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildSection(
-    String title, {
-    required List<MediaItem> items,
-    VoidCallback? onViewAll,
-  }) {
+  Widget _buildSection(String title, List<MediaItem> items) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              if (onViewAll != null)
-                TextButton.icon(
-                  onPressed: onViewAll,
-                  icon: const Icon(Icons.chevron_right, size: 20),
-                  label: const Text('查看更多'),
-                ),
-            ],
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ),
         SizedBox(
@@ -332,44 +287,95 @@ class _PosterCard extends StatelessWidget {
                     Positioned(
                       top: 4,
                       right: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.star,
-                                size: 12, color: Colors.amber),
-                            const SizedBox(width: 2),
-                            Text(
-                              item.communityRating!.toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      child: _RatingBadge(rating: item.communityRating!),
+                    ),
+                  if (item.childCount != null && item.childCount! > 0)
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: _CountBadge(count: item.childCount!),
                     ),
                 ],
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-              child: Text(
-                item.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, height: 1.2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (item.year != null)
+                    Text(
+                      item.year!,
+                      style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                    ),
+                ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RatingBadge extends StatelessWidget {
+  final double rating;
+  const _RatingBadge({required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.star, size: 12, color: Colors.amber),
+          const SizedBox(width: 2),
+          Text(
+            rating.toStringAsFixed(1),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CountBadge extends StatelessWidget {
+  final int count;
+  const _CountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '$count集',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
@@ -427,9 +433,7 @@ class _ServerDrawer extends ConsumerWidget {
                       itemCount: servers.length,
                       itemBuilder: (context, index) {
                         final server = servers[index];
-                        final isActive =
-                            currentConfig?.id == server.id;
-
+                        final isActive = currentConfig?.id == server.id;
                         return ListTile(
                           leading: Icon(
                             Icons.dns,
@@ -440,9 +444,8 @@ class _ServerDrawer extends ConsumerWidget {
                           title: Text(
                             server.label,
                             style: TextStyle(
-                              fontWeight: isActive
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                              fontWeight:
+                                  isActive ? FontWeight.bold : FontWeight.normal,
                             ),
                           ),
                           subtitle: Text(
@@ -502,21 +505,18 @@ class _ServerDrawer extends ConsumerWidget {
                                     );
                                     if (confirmed == true) {
                                       await ref
-                                          .read(embyServerListProvider
-                                              .notifier)
+                                          .read(embyServerListProvider.notifier)
                                           .removeServer(server.id);
                                       if (isActive) {
-                                        final remaining = ref.read(
-                                            embyServerListProvider);
+                                        final remaining =
+                                            ref.read(embyServerListProvider);
                                         if (remaining.isNotEmpty) {
                                           await ref
-                                              .read(
-                                                  embyConfigProvider.notifier)
+                                              .read(embyConfigProvider.notifier)
                                               .saveConfig(remaining.first);
                                         } else {
                                           await ref
-                                              .read(
-                                                  embyConfigProvider.notifier)
+                                              .read(embyConfigProvider.notifier)
                                               .clearConfig();
                                         }
                                         onRefresh();
