@@ -108,7 +108,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    final hasServer = ref.watch(embyConfigProvider) != null;
+    final hasServer = ref.watch(embyConfigProvider)?.isAuthenticated == true;
 
     return Scaffold(
       drawer: _ServerDrawer(onRefresh: _loadMedia),
@@ -528,44 +528,6 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                         },
                       ),
               ),
-              const Divider(height: 1),
-              if (currentConfig != null)
-                ListTile(
-                  leading: const Icon(Icons.logout),
-                  title: const Text('退出当前服务器'),
-                  onTap: () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('退出'),
-                        content:
-                            Text('确定退出 "${currentConfig.label}" 吗？'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('取消'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('退出',
-                                style: TextStyle(color: Colors.red)),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirmed == true) {
-                      final authService =
-                          ref.read(embyAuthServiceProvider);
-                      await authService.deleteSession(
-                          currentConfig.serverId);
-                      ref.read(embyConfigProvider.notifier).clear();
-                      ref
-                          .read(embyServerListProvider.notifier)
-                          .removeServer(currentConfig.id);
-                      widget.onRefresh();
-                    }
-                  },
-                ),
             ],
           ],
         ),
