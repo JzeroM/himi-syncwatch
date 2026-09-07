@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  FLUTTER_VERSION: '3.27.4'
+  FLUTTER_VERSION: '3.32.5'
 
 jobs:
   server-test:
@@ -192,6 +192,7 @@ jobs:
       - name: 设置 macOS 最低版本
         run: |
           sed -i '' 's/MACOSX_DEPLOYMENT_TARGET = 10.14/MACOSX_DEPLOYMENT_TARGET = 10.15/' macos/Runner/Configs/AppInfo.xcconfig || true
+          sed -i '' 's/^(MACOSX_DEPLOYMENT_TARGET).*/\1 = 10.15/' macos/Podfile || true
 
       - run: flutter pub get
       - run: flutter build macos --release
