@@ -121,27 +121,8 @@ if marker in t:
 else:
     is_kts = target.endswith('.kts')
     if is_kts:
-        block = (
-            marker + '\n'
-            'subprojects {\n'
-            '    plugins.withId("com.android.library") {\n'
-            '        extensions.findByName("android")?.let { ext ->\n'
-            '            try {\n'
-            '                ext.javaClass.getMethod("compileSdkVersion", Int::class.java)\n'
-            '                    .invoke(ext, 36)\n'
-            '            } catch (_: Throwable) {}\n'
-            '        }\n'
-            '    }\n'
-            '    plugins.withId("com.android.application") {\n'
-            '        extensions.findByName("android")?.let { ext ->\n'
-            '            try {\n'
-            '                ext.javaClass.getMethod("compileSdkVersion", Int::class.java)\n'
-            '                    .invoke(ext, 36)\n'
-            '            } catch (_: Throwable) {}\n'
-            '        }\n'
-            '    }\n'
-            '}\n'
-        )
+        # .kts 的 compileSdk 由 Gradle init script 统一强制（避免 afterEvaluate 与 evaluationDependsOn 冲突）
+        print(f'{target}: 跳过 .kts root patch（使用 init script）')
     else:
         block = (
             marker + '\n'
@@ -155,9 +136,9 @@ else:
             '    }\n'
             '}\n'
         )
-    with open(target, 'a') as f:
-        f.write('\n' + block)
-    print(f'{target}: 已追加 subprojects compileSdk=36 覆盖')
+        with open(target, 'a') as f:
+            f.write('\n' + block)
+        print(f'{target}: 已追加 subprojects compileSdk=36 覆盖')
 
 print('=== 根 build.gradle 尾部 ===')
 with open(target) as f:
@@ -165,3 +146,21 @@ with open(target) as f:
 PYEOF
 
 echo "=== Android 补丁全部完成 ==="
+
+# ===== 5. Gradle init script：强制所有 android 子项目 compileSdk=36 =====
+INIT_DIR="$HOME/.gradle/init.d"
+mkdir -p "$INIT_DIR"
+cat > "$INIT_DIR/force-compilesdk.gradle.kts" <<'INITEOF'
+allprojects {
+    afterEvaluate {
+        extensions.findByName("android")?.let { ext ->
+            try {
+                ext.javaClass.getMethod("compileSdkVersion", Int::class.java)
+                    .invoke(ext, 36)
+            } catch (_: Throwable) {}
+        }
+    }
+}
+INITEOF
+echo "已写入 Gradle init script: $INIT_DIR/force-compilesdk.gradle.kts"
+cat "$INIT_DIR/force-compilesdk.gradle.kts"
