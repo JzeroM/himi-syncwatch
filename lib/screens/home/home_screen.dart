@@ -13,10 +13,14 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
+class _CategoryData {
+  final LibraryFolder folder;
+  final List<MediaItem> items;
+  _CategoryData({required this.folder, required this.items});
+}
+
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  List<LibraryFolder> _libraries = [];
-  List<MediaItem> _movies = [];
-  List<MediaItem> _series = [];
+  List<_CategoryData> _categories = [];
   bool _isLoading = true;
   String? _error;
 
@@ -34,17 +38,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     try {
       final embyService = ref.read(embyServiceProvider);
+      final libraries = await embyService.getLibraries();
 
-      final results = await Future.wait([
-        embyService.getLibraries(),
-        embyService.getAllItems(includeItemTypes: 'Movie', limit: 50),
-        embyService.getAllItems(includeItemTypes: 'Series', limit: 50),
-      ]);
+      final futures = libraries.map((lib) async {
+        final items = await embyService.getItems(
+          parentId: lib.id,
+          limit: 20,
+          includeItemTypes: 'Movie,Series',
+          fields: 'ImageTags,PrimaryImageAspectRatio,ProductionYear',
+        );
+        return _CategoryData(folder: lib, items: items);
+      }).toList();
+
+      final results = await Future.wait(futures);
+      final categories = results.where((c) => c.items.isNotEmpty).toList();
 
       setState(() {
-        _libraries = results[0] as List<LibraryFolder>;
-        _movies = results[1] as List<MediaItem>;
-        _series = results[2] as List<MediaItem>;
+        _categories = categories;
         _isLoading = false;
       });
     } catch (e) {
@@ -97,121 +107,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 )
               : RefreshIndicator(
                   onRefresh: _loadMedia,
-                  child: ListView(
+                  child: ListView.builder(
                     padding: const EdgeInsets.only(bottom: 24),
-                    children: [
-                      _buildLibraryRow(),
-                      if (_movies.isNotEmpty)
-                        _buildSection('电影', _movies),
-                      if (_series.isNotEmpty)
-                        _buildSection('电视剧', _series),
-                    ],
-                  ),
-                ),
-    );
-  }
-
-  Widget _buildLibraryRow() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Text(
-            '媒体库',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ),
-        SizedBox(
-          height: 120,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: _libraries.length,
-            itemBuilder: (context, index) {
-              final lib = _libraries[index];
-              return GestureDetector(
-                onTap: () => context.push(
-                  '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}',
-                ),
-                child: Container(
-                  width: 200,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        EmbyImage(url: lib.posterUrl, fit: BoxFit.cover),
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.black.withValues(alpha: 0.3),
-                                Colors.black.withValues(alpha: 0.8),
-                              ],
-                            ),
-                          ),
+                    itemCount: _categories.length,
+                    itemBuilder: (context, index) {
+                      final cat = _categories[index];
+                      return _CategorySection(
+                        category: cat,
+                        onViewAll: () => context.push(
+                          '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}',
                         ),
-                        Positioned(
-                          left: 12,
-                          bottom: 12,
-                          child: Text(
-                            lib.name,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                        onItemTap: (item) =>
+                            context.push('/detail/${item.id}'),
+                      );
+                    },
                   ),
                 ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSection(String title, List<MediaItem> items) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ),
-        SizedBox(
-          height: 200,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return SizedBox(
-                width: 130,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: _PosterCard(
-                    item: item,
-                    onTap: () => context.push('/detail/${item.id}'),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 
@@ -264,6 +175,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
+class _CategorySection extends StatelessWidget {
+  final _CategoryData category;
+  final VoidCallback onViewAll;
+  final void Function(MediaItem item) onItemTap;
+
+  const _CategorySection({
+    required this.category,
+    required this.onViewAll,
+    required this.onItemTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+          child: GestureDetector(
+            onTap: onViewAll,
+            child: Row(
+              children: [
+                Text(
+                  category.folder.name,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, color: Colors.grey[400], size: 22),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 200,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: category.items.length,
+            itemBuilder: (context, index) {
+              final item = category.items[index];
+              return SizedBox(
+                width: 130,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: _PosterCard(
+                    item: item,
+                    onTap: () => onItemTap(item),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _PosterCard extends StatelessWidget {
   final MediaItem item;
   final VoidCallback? onTap;
@@ -279,24 +251,7 @@ class _PosterCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
-                  if (item.communityRating != null)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: _RatingBadge(rating: item.communityRating!),
-                    ),
-                  if (item.childCount != null && item.childCount! > 0)
-                    Positioned(
-                      top: 4,
-                      left: 4,
-                      child: _CountBadge(count: item.childCount!),
-                    ),
-                ],
-              ),
+              child: EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
@@ -321,61 +276,6 @@ class _PosterCard extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RatingBadge extends StatelessWidget {
-  final double rating;
-  const _RatingBadge({required this.rating});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.star, size: 12, color: Colors.amber),
-          const SizedBox(width: 2),
-          Text(
-            rating.toStringAsFixed(1),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CountBadge extends StatelessWidget {
-  final int count;
-  const _CountBadge({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        '$count集',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
         ),
       ),
     );
