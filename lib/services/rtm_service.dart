@@ -1,0 +1,189 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:agora_rtm/agora_rtm.dart';
+import 'package:himi_syncwatch/core/constants.dart';
+
+class RtmService {
+  RtmClient? _client;
+  String? _currentUserId;
+  String? _currentChannelId;
+  final StreamController<Map<String, dynamic>> _messageController =
+      StreamController.broadcast();
+
+  Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
+
+  bool get isConnected => _client != null;
+
+  Future<void> initialize({
+    required String appId,
+    required String userId,
+  }) async {
+    _currentUserId = userId;
+
+    final rtmConfig = RtmConfig(
+      areaCode: {RtmAreaCode.cn},
+      useStringUserId: true,
+      heartbeatInterval: 5,
+      presenceTimeout: 300,
+    );
+
+    try {
+      final (status, client) = await RTM(appId, userId, config: rtmConfig);
+
+      if (status.error == true) {
+        print('[RTM] 初始化失败: ${status.reason}');
+        return;
+      }
+
+      _client = client;
+      print('[RTM] 初始化成功, userId: $userId');
+
+      _client?.addListener(
+        message: (event) {
+          try {
+            if (event.message != null) {
+              final data = jsonDecode(utf8.decode(event.message!));
+              _messageController.add(data);
+            }
+          } catch (e) {
+            print('[RTM] 消息解析失败: $e');
+          }
+        },
+        linkState: (event) {
+          print('[RTM] 连接状态: ${event.currentState}');
+        },
+        presence: (event) {
+          print('[RTM] 成员变化: ${event.type}');
+        },
+      );
+    } catch (e) {
+      print('[RTM] 初始化异常: $e');
+    }
+  }
+
+  Future<void> login(String appId, {String? token}) async {
+    if (_client == null) return;
+
+    try {
+      final (status, _) = await _client!.login(token ?? appId);
+      if (status.error == true) {
+        print('[RTM] 登录失败: ${status.reason}');
+      } else {
+        print('[RTM] 登录成功');
+      }
+    } catch (e) {
+      print('[RTM] 登录异常: $e');
+    }
+  }
+
+  Future<void> subscribe(String channelName) async {
+    if (_client == null) return;
+
+    _currentChannelId = channelName;
+
+    try {
+      final (status, _) = await _client!.subscribe(channelName);
+      if (status.error == true) {
+        print('[RTM] 订阅失败: ${status.reason}');
+      } else {
+        print('[RTM] 订阅频道: $channelName');
+      }
+    } catch (e) {
+      print('[RTM] 订阅异常: $e');
+    }
+  }
+
+  Future<void> unsubscribe(String channelName) async {
+    if (_client == null) return;
+
+    try {
+      final (status, _) = await _client!.unsubscribe(channelName);
+      if (status.error == true) {
+        print('[RTM] 取消订阅失败: ${status.reason}');
+      } else {
+        print('[RTM] 取消订阅: $channelName');
+        _currentChannelId = null;
+      }
+    } catch (e) {
+      print('[RTM] 取消订阅异常: $e');
+    }
+  }
+
+  Future<void> sendHeartbeat({
+    required double position,
+    required bool playing,
+    required double rate,
+  }) async {
+    if (_client == null || _currentChannelId == null) return;
+
+    final message = {
+      'type': AppConstants.msgTypeHeartbeat,
+      'userId': _currentUserId,
+      'position': position,
+      'playing': playing,
+      'rate': rate,
+      'ts': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    };
+
+    await _publishMessage(message);
+  }
+
+  Future<void> sendCommand({
+    required String action,
+    double? position,
+    double? rate,
+  }) async {
+    if (_client == null || _currentChannelId == null) return;
+
+    final message = {
+      'type': AppConstants.msgTypeCommand,
+      'userId': _currentUserId,
+      'action': action,
+      if (position != null) 'position': position,
+      if (rate != null) 'rate': rate,
+    };
+
+    await _publishMessage(message);
+  }
+
+  Future<void> _publishMessage(Map<String, dynamic> message) async {
+    if (_client == null || _currentChannelId == null) return;
+
+    try {
+      final (status, _) = await _client!.publish(
+        _currentChannelId!,
+        jsonEncode(message),
+        channelType: RtmChannelType.message,
+        customType: 'application/json',
+      );
+
+      if (status.error == true) {
+        print('[RTM] 发布失败: ${status.reason}');
+      }
+    } catch (e) {
+      print('[RTM] 发布异常: $e');
+    }
+  }
+
+  Future<void> logout() async {
+    if (_client == null) return;
+
+    try {
+      final (status, _) = await _client!.logout();
+      if (status.error == true) {
+        print('[RTM] 登出失败: ${status.reason}');
+      } else {
+        print('[RTM] 登出成功');
+      }
+    } catch (e) {
+      print('[RTM] 登出异常: $e');
+    }
+  }
+
+  void dispose() {
+    _messageController.close();
+    logout();
+    _client?.release();
+    _client = null;
+  }
+}
