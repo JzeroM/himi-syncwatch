@@ -323,18 +323,7 @@ class _GridCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
-                  if (item.communityRating != null)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: _RatingBadge(rating: item.communityRating!),
-                    ),
-                ],
-              ),
+              child: EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
@@ -360,37 +349,6 @@ class _GridCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _RatingBadge extends StatelessWidget {
-  final double rating;
-  const _RatingBadge({required this.rating});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.star, size: 12, color: Colors.amber),
-          const SizedBox(width: 2),
-          Text(
-            rating.toStringAsFixed(1),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
       ),
     );
   }
