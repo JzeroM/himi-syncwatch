@@ -29,14 +29,27 @@ enum FilterOption {
   const FilterOption(this.label, this.embyValue);
 }
 
+FilterOption _defaultFilter(String? collectionType) {
+  switch (collectionType) {
+    case 'movies':
+      return FilterOption.movie;
+    case 'tvshows':
+      return FilterOption.series;
+    default:
+      return FilterOption.all;
+  }
+}
+
 class CategoryScreen extends ConsumerStatefulWidget {
   final String libraryId;
   final String? libraryName;
+  final String? collectionType;
 
   const CategoryScreen({
     super.key,
     required this.libraryId,
     this.libraryName,
+    this.collectionType,
   });
 
   @override
@@ -55,11 +68,15 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
   bool _hasMore = true;
 
   SortOption _sortOption = SortOption.dateDesc;
-  FilterOption _filterOption = FilterOption.all;
+  late FilterOption _filterOption;
+
+  bool get _showFilterChips =>
+      widget.collectionType != 'movies' && widget.collectionType != 'tvshows';
 
   @override
   void initState() {
     super.initState();
+    _filterOption = _defaultFilter(widget.collectionType);
     _scrollController.addListener(_onScroll);
     _loadFirstPage();
   }
@@ -189,7 +206,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
       ),
       body: Column(
         children: [
-          _buildFilterChips(),
+          if (_showFilterChips) _buildFilterChips(),
           Expanded(child: _buildBody()),
         ],
       ),

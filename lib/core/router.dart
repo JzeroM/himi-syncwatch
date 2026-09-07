@@ -23,6 +23,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => CategoryScreen(
           libraryId: state.pathParameters['id']!,
           libraryName: state.uri.queryParameters['name'],
+          collectionType: state.uri.queryParameters['type'],
         ),
       ),
       GoRoute(

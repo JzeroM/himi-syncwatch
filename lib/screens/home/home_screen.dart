@@ -163,7 +163,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           return _CategorySection(
                             category: cat,
                             onViewAll: () => context.push(
-                              '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}',
+                              '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
                             ),
                             onItemTap: (item) =>
                                 context.push('/detail/${item.id}'),
