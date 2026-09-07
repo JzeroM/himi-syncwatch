@@ -10,7 +10,6 @@ env:
   FLUTTER_VERSION: '3.27.4'
 
 jobs:
-  # ===== 后端测试 =====
   server-test:
     runs-on: ubuntu-latest
     defaults:
@@ -25,7 +24,6 @@ jobs:
       - run: dart analyze
       - run: dart test
 
-  # ===== Flutter 静态分析 =====
   flutter-analyze:
     runs-on: ubuntu-latest
     steps:
@@ -36,7 +34,6 @@ jobs:
       - run: dart pub get
       - run: dart analyze lib/
 
-  # ===== Android APK =====
   build-android:
     needs: [server-test, flutter-analyze]
     runs-on: ubuntu-latest
@@ -49,14 +46,47 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-      - run: dart pub get
+
+      - name: 生成 Android 平台文件
+        run: |
+          # 保存我们的源码
+          cp -r lib /tmp/lib_backup
+          cp pubspec.yaml /tmp/pubspec.yaml.bak
+          cp pubspec.lock /tmp/pubspec.lock.bak
+          cp AGENTS.md /tmp/AGENTS.md.bak || true
+          
+          # 删除错误的平台目录
+          rm -rf android ios windows macos linux web
+          
+          # 用 flutter create 生成正确的平台文件
+          flutter create --project-name himi_syncwatch --org com.himi --platforms android temp_proj
+          
+          # 复制平台文件回来
+          cp -r temp_proj/android .
+          rm -rf temp_proj
+          
+          # 恢复源码
+          rm -rf lib
+          cp -r /tmp/lib_backup lib
+          cp /tmp/pubspec.yaml.bak pubspec.yaml
+          cp /tmp/pubspec.lock.bak pubspec.lock
+          cp /tmp/AGENTS.md.bak AGENTS.md || true
+
+      - name: 添加自定义权限
+        run: |
+          # 添加权限到 AndroidManifest.xml
+          sed -i 's|<manifest|<manifest>\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />|' android/app/src/main/AndroidManifest.xml
+          
+          # 允许明文流量
+          sed -i 's|android:icon="@mipmap/ic_launcher"|android:icon="@mipmap/ic_launcher"\n        android:usesCleartextTraffic="true"|' android/app/src/main/AndroidManifest.xml
+
+      - run: flutter pub get
       - run: flutter build apk --release --split-per-abi
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/*.apk
 
-  # ===== iOS (IPArchive) =====
   build-ios:
     needs: [server-test, flutter-analyze]
     runs-on: macos-latest
@@ -65,30 +95,75 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-      - run: dart pub get
+
+      - name: 生成 iOS 平台文件
+        run: |
+          cp -r lib /tmp/lib_backup
+          cp pubspec.yaml /tmp/pubspec.yaml.bak
+          cp pubspec.lock /tmp/pubspec.lock.bak
+          cp AGENTS.md /tmp/AGENTS.md.bak || true
+          
+          rm -rf android ios windows macos linux web
+          
+          flutter create --project-name himi_syncwatch --org com.himi --platforms ios temp_proj
+          
+          cp -r temp_proj/ios .
+          rm -rf temp_proj
+          
+          rm -rf lib
+          cp -r /tmp/lib_backup lib
+          cp /tmp/pubspec.yaml.bak pubspec.yaml
+          cp /tmp/pubspec.lock.bak pubspec.lock
+          cp /tmp/AGENTS.md.bak AGENTS.md || true
+
+      - name: 添加自定义权限
+        run: |
+          # 添加麦克风权限和后台模式
+          plutil -insert NSMicrophoneUsageDescription -string "声网实时消息需要麦克风权限" ios/Runner/Info.plist
+          plutil -insert NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}' ios/Runner/Info.plist
+          plutil -insert UIBackgroundModes -json '["audio"]' ios/Runner/Info.plist
+
+      - run: flutter pub get
       - run: flutter build ios --release --no-codesign
       - uses: actions/upload-artifact@v4
         with:
           name: ios-build
           path: build/ios/iphoneos/Runner.app
 
-  # ===== Windows =====
   build-windows:
     needs: [server-test, flutter-analyze]
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-      - run: dart pub get
+
+      - name: 生成 Windows 平台文件
+        run: |
+          Copy-Item -Recurse lib /tmp/lib_backup
+          Copy-Item pubspec.yaml /tmp/pubspec.yaml.bak
+          Copy-Item pubspec.lock /tmp/pubspec.lock.bak
+          
+          Remove-Item -Recurse -Force android,ios,windows,macos,linux,web -ErrorAction SilentlyContinue
+          
+          flutter create --project-name himi_syncwatch --org com.himi --platforms windows temp_proj
+          
+          Copy-Item -Recurse temp_proj/windows .
+          Remove-Item -Recurse temp_proj
+          
+          Remove-Item -Recurse -Force lib
+          Copy-Item -Recurse /tmp/lib_backup lib
+          Copy-Item /tmp/pubspec.yaml.bak pubspec.yaml
+          Copy-Item /tmp/pubspec.lock.bak pubspec.lock
+
+      - run: flutter pub get
       - run: flutter build windows --release
       - uses: actions/upload-artifact@v4
         with:
           name: windows-exe
           path: build/windows/x64/runner/Release/
 
-  # ===== macOS =====
   build-macos:
     needs: [server-test, flutter-analyze]
     runs-on: macos-latest
@@ -97,14 +172,34 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-      - run: dart pub get
+
+      - name: 生成 macOS 平台文件
+        run: |
+          cp -r lib /tmp/lib_backup
+          cp pubspec.yaml /tmp/pubspec.yaml.bak
+          cp pubspec.lock /tmp/pubspec.lock.bak
+          cp AGENTS.md /tmp/AGENTS.md.bak || true
+          
+          rm -rf android ios windows macos linux web
+          
+          flutter create --project-name himi_syncwatch --org com.himi --platforms macos temp_proj
+          
+          cp -r temp_proj/macos .
+          rm -rf temp_proj
+          
+          rm -rf lib
+          cp -r /tmp/lib_backup lib
+          cp /tmp/pubspec.yaml.bak pubspec.yaml
+          cp /tmp/pubspec.lock.bak pubspec.lock
+          cp /tmp/AGENTS.md.bak AGENTS.md || true
+
+      - run: flutter pub get
       - run: flutter build macos --release
       - uses: actions/upload-artifact@v4
         with:
           name: macos-app
           path: build/macos/Build/Products/Release/
 
-  # ===== Linux =====
   build-linux:
     needs: [server-test, flutter-analyze]
     runs-on: ubuntu-latest
@@ -113,15 +208,35 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev
-      - run: dart pub get
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev libasound2-dev liblzma-dev
+
+      - name: 生成 Linux 平台文件
+        run: |
+          cp -r lib /tmp/lib_backup
+          cp pubspec.yaml /tmp/pubspec.yaml.bak
+          cp pubspec.lock /tmp/pubspec.lock.bak
+          cp AGENTS.md /tmp/AGENTS.md.bak || true
+          
+          rm -rf android ios windows macos linux web
+          
+          flutter create --project-name himi_syncwatch --org com.himi --platforms linux temp_proj
+          
+          cp -r temp_proj/linux .
+          rm -rf temp_proj
+          
+          rm -rf lib
+          cp -r /tmp/lib_backup lib
+          cp /tmp/pubspec.yaml.bak pubspec.yaml
+          cp /tmp/pubspec.lock.bak pubspec.lock
+          cp /tmp/AGENTS.md.bak AGENTS.md || true
+
+      - run: flutter pub get
       - run: flutter build linux --release
       - uses: actions/upload-artifact@v4
         with:
           name: linux-binary
           path: build/linux/x64/bundle/
 
-  # ===== 发布 Release =====
   release:
     needs: [build-android, build-ios, build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
@@ -130,34 +245,16 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
-
       - name: Package release assets
         run: |
-          # Android APK
           mkdir -p release
           cp android-apk/*.apk release/
-          
-          # Windows
-          cd windows-exe
-          7z a ../release/himi-sync-windows.zip .
-          cd ..
-          
-          # macOS
-          cd macos-app
-          7z a ../release/himi-sync-macos.zip .
-          cd ..
-          
-          # Linux
-          cd linux-binary
-          7z a ../release/himi-sync-linux.zip .
-          cd ..
-          
-          # iOS (archive需要Xcode签名，这里只提供build)
+          cd windows-exe && 7z a ../release/himi-sync-windows.zip . && cd ..
+          cd macos-app && 7z a ../release/himi-sync-macos.zip . && cd ..
+          cd linux-binary && 7z a ../release/himi-sync-linux.zip . && cd ..
           cp ios-build/Runner.app release/himi-sync-ios.app || true
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
