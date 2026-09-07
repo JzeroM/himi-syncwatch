@@ -525,19 +525,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ),
         ),
       ],
-      child: IconButton(
-        icon: Icon(
-          _volume == 0
-              ? Icons.volume_off
-              : _volume < 50
-                  ? Icons.volume_down
-                  : Icons.volume_up,
-          color: Colors.white,
-          size: 22,
-        ),
-        onPressed: () {},
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(),
+      child: Icon(
+        _volume == 0
+            ? Icons.volume_off
+            : _volume < 50
+                ? Icons.volume_down
+                : Icons.volume_up,
+        color: Colors.white,
+        size: 22,
       ),
     );
   }
@@ -611,12 +606,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
         return items;
       },
-      child: IconButton(
-        icon: const Icon(Icons.subtitles, color: Colors.white, size: 22),
-        onPressed: () {},
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(),
-      ),
+      child: const Icon(Icons.subtitles, color: Colors.white, size: 22),
     );
   }
 
@@ -671,12 +661,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
         return items;
       },
-      child: IconButton(
-        icon: const Icon(Icons.audiotrack, color: Colors.white, size: 22),
-        onPressed: () {},
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(),
-      ),
+      child: const Icon(Icons.audiotrack, color: Colors.white, size: 22),
     );
   }
 
