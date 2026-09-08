@@ -585,7 +585,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return GestureDetector(
       onTap: () {},
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+        padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + MediaQuery.of(context).padding.bottom),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
