@@ -175,7 +175,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     ? '&name=${Uri.encodeComponent(widget.audienceName)}'
                     : '';
                 context.push(
-                  '/player/$mediaItemId?roomCode=${Uri.encodeComponent(widget.roomCode)}&isHost=true$nameParam',
+                  '/player/$mediaItemId?roomCode=${Uri.encodeComponent(widget.roomCode)}&isHost=false$nameParam',
                 );
               },
               icon: const Icon(Icons.play_arrow),
