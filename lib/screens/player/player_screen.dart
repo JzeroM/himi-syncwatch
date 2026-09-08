@@ -440,6 +440,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       userName: _audienceName!,
     );
 
+    // 所有人都把自己加入在线列表
+    _onlineUsers.add(_myUserId!);
+    setState(() {});
+
     _rtmSubscription = rtmService.messageStream.listen((message) {
       if (!mounted) return;
       final senderId = message['userId'];
@@ -468,11 +472,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     });
 
-    // Host: 把自己加入在线列表
-    if (_isHost) {
-      _onlineUsers.add(_myUserId!);
-    }
-
     // Host: 发送房间剧集信息给观众
     if (_isHost && _episodeIds.isNotEmpty) {
       rtmService.sendRoomInfo(
@@ -496,8 +495,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final epIndexStr = metadata['currentEpisodeIndex'];
     if (epIndexStr != null && mounted) {
       final epIndex = int.tryParse(epIndexStr);
-      if (epIndex != null) {
-        setState(() => _currentEpisodeIndex = epIndex);
+      if (epIndex != null && epIndex < _episodeIds.length) {
+        await _loadEpisodeStream(epIndex);
       }
     }
   }
@@ -1382,6 +1381,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     return InkWell(
       onTap: () {
+        if (!_isHost) return;
         if (isPlaying) {
           _togglePlayPause();
         } else {
