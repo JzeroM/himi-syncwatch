@@ -354,7 +354,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     rtmService.sendJoinLeave(
       action: 'join',
       userName: _audienceName!,
-    });
+    );
 
     _rtmSubscription = rtmService.messageStream.listen((message) {
       if (!mounted) return;
