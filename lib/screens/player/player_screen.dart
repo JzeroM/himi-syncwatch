@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -60,6 +61,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int? _embyDefaultAudioIndex;
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
+  bool _isLandscape = false;
 
   @override
   void initState() {
@@ -389,6 +391,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
+  void _toggleOrientation() {
+    setState(() => _isLandscape = !_isLandscape);
+    if (_isLandscape) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+  }
+
   void _onSeek(double value) {
     _player.seek(Duration(milliseconds: value.toInt()));
     if (widget.roomId != null) {
@@ -431,6 +449,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _heartbeatTimer?.cancel();
     _rtmSubscription?.cancel();
     _tracksSubscription?.cancel();
+
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
     if (widget.roomId != null) {
       final roomService = RoomService();
@@ -655,6 +680,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       color: Colors.white,
                       size: 40,
                     ),
+                  ),
+                ],
+                if (Platform.isAndroid || Platform.isIOS) ...[
+                  const SizedBox(width: 28),
+                  _buildControlButton(
+                    icon: _isLandscape
+                        ? Icons.screen_lock_portrait
+                        : Icons.screen_lock_landscape,
+                    onTap: _toggleOrientation,
                   ),
                 ],
               ],
