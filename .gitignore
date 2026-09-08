@@ -57,3 +57,6 @@ server/.env
 
 # Logs
 *.log
+
+# Clawbench
+.clawbench/
