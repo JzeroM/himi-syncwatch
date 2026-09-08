@@ -879,22 +879,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _useServerSubtitleBurnIn = false;
     _activeSubtitleIndex = stream.index;
     final real = _realSubtitleTracks;
-    if (real.isEmpty) return;
-
-    // 语言/标题优先精确匹配（Emby 与 mpv 轨名可能不完全一致）
-    for (final track in real) {
-      final matchLang = stream.language != null &&
-          track.language != null &&
-          stream.language == track.language;
-      final matchTitle = stream.displayTitle != null &&
-          track.title != null &&
-          stream.displayTitle!.contains(track.title!);
-      if (matchLang || matchTitle) {
-        _player.setSubtitleTrack(track);
-        return;
-      }
-    }
-    // 顺序兜底：Emby 字幕列表顺序与 mpv sid 顺序一致
     if (embyIndex < real.length) {
       _player.setSubtitleTrack(real[embyIndex]);
     }
