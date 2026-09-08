@@ -218,6 +218,7 @@ class EmbyService {
         final name = f['Name'] as String? ?? '';
         final itemId = (f['ItemId'] ?? f['Id'])?.toString() ?? '';
         final collectionType = f['CollectionType'] as String? ?? '';
+        final indexNumber = f['IndexNumber'] as int? ?? 0;
         if (name.isNotEmpty && itemId.isNotEmpty) {
           final posterUrl =
               '$_serverUrl/Items/$itemId/Images/Primary?maxHeight=300';
@@ -226,9 +227,11 @@ class EmbyService {
             name: name,
             collectionType: collectionType,
             posterUrl: posterUrl,
+            indexNumber: indexNumber,
           ));
         }
       }
+      folders.sort((a, b) => a.indexNumber.compareTo(b.indexNumber));
       return folders;
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
@@ -281,11 +284,13 @@ class LibraryFolder {
   final String name;
   final String collectionType;
   final String posterUrl;
+  final int indexNumber;
 
   const LibraryFolder({
     required this.id,
     required this.name,
     required this.collectionType,
     required this.posterUrl,
+    this.indexNumber = 0,
   });
 }
