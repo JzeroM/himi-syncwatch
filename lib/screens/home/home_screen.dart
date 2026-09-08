@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -220,8 +221,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               final name = nameController.text.trim();
               if (code.isNotEmpty && name.isNotEmpty) {
                 Navigator.pop(context);
+                final roomData = RoomCode.decode(code);
+                if (roomData == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('房间码无效')),
+                  );
+                  return;
+                }
+                final mediaItemId = roomData['mediaItemId'] as String? ?? '';
+                if (mediaItemId.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('房间码无效')),
+                  );
+                  return;
+                }
                 context.push(
-                  '/room?code=${Uri.encodeComponent(code)}&name=${Uri.encodeComponent(name)}',
+                  '/player/$mediaItemId?roomCode=${Uri.encodeComponent(code)}&isHost=false&name=${Uri.encodeComponent(name)}',
                 );
               }
             },
