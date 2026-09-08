@@ -76,6 +76,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _initializePlayer() async {
+    if (_player.platform is NativePlayer) {
+      await (_player.platform as NativePlayer).setProperty('sub-visibility', 'yes');
+    }
+
     final embyService = ref.read(embyServiceProvider);
 
     final details = await embyService.getItemDetails(widget.itemId);
