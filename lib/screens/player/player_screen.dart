@@ -61,19 +61,70 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
 
+  StreamSubscription? _logSubscription;
+  File? _debugFile;
+  Timer? _debugSnapshotTimer;
+
   @override
   void initState() {
     super.initState();
-    _player = Player(configuration: const PlayerConfiguration(libass: true));
+    _player = Player(
+      configuration: const PlayerConfiguration(
+        libass: true,
+        logLevel: MPVLogLevel.debug,
+      ),
+    );
     _controller = VideoController(_player);
     _myUserId = 'user-${DateTime.now().millisecondsSinceEpoch}';
 
+    _initDebugLogging();
     _initializePlayer();
     _setupPlayerListeners();
 
     if (widget.roomId != null) {
       _setupRoomSync();
     }
+  }
+
+  void _initDebugLogging() {
+    try {
+      final home = Platform.environment['USERPROFILE'] ??
+          Platform.environment['HOME'] ??
+          Directory.current.path;
+      _debugFile = File('$home/himi_subtitle_debug.log');
+      _debugFile!.writeAsStringSync(
+          '=== HimiSync 字幕调试 ${DateTime.now()} ===\n');
+      _logSubscription = _player.stream.log.listen((log) {
+        final line = '[${log.prefix}:${log.level}] ${log.text}';
+        final lower = line.toLowerCase();
+        if (lower.contains('sub') ||
+            lower.contains('sid') ||
+            lower.contains('track') ||
+            lower.contains('error') ||
+            lower.contains('vo') ||
+            lower.contains('hwdec') ||
+            lower.contains('lavfi')) {
+          _writeDebug(line);
+        }
+      });
+      _debugSnapshotTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        _writeDebug(
+          'SNAPSHOT playing=${_player.state.playing} '
+          'dur=${_player.state.duration} '
+          'tracks=${_subtitleTracks.map((t) => '${t.id}/${t.title}/${t.language}').join(';')} '
+          'curSub=${_currentSubtitle?.id ?? "null"}',
+        );
+      });
+    } catch (_) {}
+  }
+
+  void _writeDebug(String line) {
+    try {
+      _debugFile?.writeAsStringSync(
+        '${DateTime.now().toIso8601String()} $line\n',
+        mode: FileMode.append,
+      );
+    } catch (_) {}
   }
 
   Future<void> _initializePlayer() async {
@@ -428,6 +479,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _heartbeatTimer?.cancel();
     _rtmSubscription?.cancel();
     _tracksSubscription?.cancel();
+    _logSubscription?.cancel();
+    _debugSnapshotTimer?.cancel();
 
     if (widget.roomId != null) {
       final roomService = RoomService();
