@@ -7,6 +7,17 @@ class MediaStream {
   final int? height;
   final int? channels;
   final bool? isDefault;
+  final int index;
+  final bool isForced;
+  final bool isExternal;
+  final String? displayTitle;
+  final String? displayLanguage;
+  final String? subtitleLocationType;
+  final String? channelLayout;
+  final int? bitRate;
+  final int? sampleRate;
+  final String? videoRange;
+  final String? extendedVideoType;
 
   MediaStream({
     required this.type,
@@ -17,6 +28,17 @@ class MediaStream {
     this.height,
     this.channels,
     this.isDefault,
+    this.index = 0,
+    this.isForced = false,
+    this.isExternal = false,
+    this.displayTitle,
+    this.displayLanguage,
+    this.subtitleLocationType,
+    this.channelLayout,
+    this.bitRate,
+    this.sampleRate,
+    this.videoRange,
+    this.extendedVideoType,
   });
 
   factory MediaStream.fromJson(Map<String, dynamic> json) {
@@ -29,25 +51,50 @@ class MediaStream {
       height: json['Height'],
       channels: json['Channels'],
       isDefault: json['IsDefault'],
+      index: json['Index'] ?? 0,
+      isForced: json['IsForced'] ?? false,
+      isExternal: json['IsExternal'] ?? false,
+      displayTitle: json['DisplayTitle'],
+      displayLanguage: json['DisplayLanguage'],
+      subtitleLocationType: json['SubtitleLocationType'],
+      channelLayout: json['ChannelLayout'],
+      bitRate: json['BitRate'] as int?,
+      sampleRate: json['SampleRate'] as int?,
+      videoRange: json['VideoRange'],
+      extendedVideoType: json['ExtendedVideoType'],
     );
   }
 
+  bool get isTextSubtitle => type == 'Subtitle';
+  bool get isInternalStream => subtitleLocationType == 'InternalStream';
+
   String get displayInfo {
+    if (displayTitle != null && displayTitle!.isNotEmpty) {
+      return displayTitle!;
+    }
     switch (type) {
       case 'Video':
         if (width != null && height != null) return '$codec ${width}x$height';
         return codec;
       case 'Audio':
-        final ch = channels != null ? '$channels ch' : '';
+        final ch = channelLayout ?? (channels != null ? '$channels ch' : '');
         final lang =
             language != null && language != 'und' ? ' $language' : '';
         final t = title != null && title!.isNotEmpty ? ' $title' : '';
         return '$codec$lang$t $ch'.trim();
       case 'Subtitle':
-        return '$codec ${language ?? ''} ${title ?? ''}'.trim();
+        final lang = displayLanguage ?? language ?? '';
+        final forced = isForced ? ' (forced)' : '';
+        return '$lang (${codec.toUpperCase()})$forced'.trim();
       default:
         return codec;
     }
+  }
+
+  String get label {
+    final lang = displayLanguage ?? language ?? '';
+    if (lang.isEmpty || lang == 'und') return codec.toUpperCase();
+    return lang;
   }
 }
 
@@ -59,6 +106,9 @@ class MediaSource {
   final int? height;
   final String? container;
   final int? size;
+  final List<MediaStream> mediaStreams;
+  final int? defaultAudioStreamIndex;
+  final int? defaultSubtitleStreamIndex;
 
   MediaSource({
     required this.id,
@@ -68,6 +118,9 @@ class MediaSource {
     this.height,
     this.container,
     this.size,
+    this.mediaStreams = const [],
+    this.defaultAudioStreamIndex,
+    this.defaultSubtitleStreamIndex,
   });
 
   factory MediaSource.fromJson(Map<String, dynamic> json) {
@@ -79,7 +132,36 @@ class MediaSource {
       height: json['Height'],
       container: json['Container'],
       size: json['Size'] as int?,
+      mediaStreams: (json['MediaStreams'] as List<dynamic>?)
+              ?.map((s) => MediaStream.fromJson(s))
+              .toList() ??
+          [],
+      defaultAudioStreamIndex: json['DefaultAudioStreamIndex'] as int?,
+      defaultSubtitleStreamIndex: json['DefaultSubtitleStreamIndex'] as int?,
     );
+  }
+
+  List<MediaStream> get audioStreams =>
+      mediaStreams.where((s) => s.type == 'Audio').toList();
+
+  List<MediaStream> get subtitleStreams =>
+      mediaStreams.where((s) => s.type == 'Subtitle').toList();
+
+  MediaStream? get videoStream =>
+      mediaStreams.where((s) => s.type == 'Video').firstOrNull;
+
+  MediaStream? get defaultAudioStream {
+    if (defaultAudioStreamIndex == null) return audioStreams.firstOrNull;
+    return audioStreams
+        .where((s) => s.index == defaultAudioStreamIndex)
+        .firstOrNull;
+  }
+
+  MediaStream? get defaultSubtitleStream {
+    if (defaultSubtitleStreamIndex == null) return null;
+    return subtitleStreams
+        .where((s) => s.index == defaultSubtitleStreamIndex)
+        .firstOrNull;
   }
 
   String get displayLabel {

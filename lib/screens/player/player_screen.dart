@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:himi_syncwatch/core/config.dart';
 import 'package:himi_syncwatch/core/constants.dart';
+import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/room.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
@@ -54,6 +55,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   StreamSubscription? _tracksSubscription;
   bool _subtitleAutoSelected = false;
 
+  List<MediaStream> _embySubtitleStreams = [];
+  List<MediaStream> _embyAudioStreams = [];
+  int? _embyDefaultAudioIndex;
+  int? _embyDefaultSubtitleIndex;
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +77,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _initializePlayer() async {
     final embyService = ref.read(embyServiceProvider);
+
+    final details = await embyService.getItemDetails(widget.itemId);
+    if (details != null && mounted) {
+      final source = details.mediaSources.firstWhere(
+        (s) => s.id == widget.mediaSourceId,
+        orElse: () => details.mediaSources.firstOrNull ?? 
+            MediaSource(id: '', name: ''),
+      );
+      setState(() {
+        _embyAudioStreams = source.audioStreams;
+        _embySubtitleStreams = source.subtitleStreams;
+        _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
+        _embyDefaultSubtitleIndex = source.defaultSubtitleStreamIndex;
+      });
+    }
+
     final streamUrl = embyService.getStreamUrl(
       widget.itemId,
       mediaSourceId: widget.mediaSourceId,
@@ -138,9 +160,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _subtitleTracks = subs;
         _audioTracks = audios;
       });
-      if (!_subtitleAutoSelected && subs.isNotEmpty) {
+      if (!_subtitleAutoSelected) {
         _subtitleAutoSelected = true;
-        _player.setSubtitleTrack(subs.first);
+        _autoSelectDefaultTracks();
       }
     });
 
@@ -154,6 +176,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
+  void _autoSelectDefaultTracks() {
+    if (_embyDefaultSubtitleIndex != null) {
+      final embyIdx = _embySubtitleStreams.indexWhere(
+        (s) => s.index == _embyDefaultSubtitleIndex,
+      );
+      if (embyIdx >= 0 && embyIdx < _subtitleTracks.length) {
+        _player.setSubtitleTrack(_subtitleTracks[embyIdx]);
+      }
+    } else if (_subtitleTracks.isNotEmpty) {
+      _player.setSubtitleTrack(_subtitleTracks.first);
+    }
+
+    if (_embyDefaultAudioIndex != null) {
+      final embyIdx = _embyAudioStreams.indexWhere(
+        (s) => s.index == _embyDefaultAudioIndex,
+      );
+      if (embyIdx >= 0 && embyIdx < _audioTracks.length) {
+        _player.setAudioTrack(_audioTracks[embyIdx]);
+      }
+    }
+  }
+
   void _refreshTracks() {
     Future.delayed(const Duration(milliseconds: 300), () {
       if (!mounted) return;
@@ -165,10 +209,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _currentSubtitle = _player.state.track.subtitle;
         _currentAudio = _player.state.track.audio;
       });
-      // 自动选中第一条字幕轨道
-      if (!_subtitleAutoSelected && subs.isNotEmpty) {
+      if (!_subtitleAutoSelected) {
         _subtitleAutoSelected = true;
-        _player.setSubtitleTrack(subs.first);
+        _autoSelectDefaultTracks();
       }
     });
   }
@@ -560,7 +603,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _showAudioMenu = false;
                     });
                   },
-                  badge: _subtitleTracks.isNotEmpty ? '${_subtitleTracks.length}' : null,
+                  badge: _embySubtitleStreams.isNotEmpty ? '${_embySubtitleStreams.length}' : null,
                 ),
                 const SizedBox(width: 28),
                 _buildControlButton(
@@ -572,7 +615,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _showSubtitleMenu = false;
                     });
                   },
-                  badge: _audioTracks.isNotEmpty ? '${_audioTracks.length}' : null,
+                  badge: _embyAudioStreams.isNotEmpty ? '${_embyAudioStreams.length}' : null,
                 ),
                 if (_canControlPlayback) ...[
                   const SizedBox(width: 28),
@@ -707,16 +750,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               setState(() => _showSubtitleMenu = false);
             },
           ),
-          for (int i = 0; i < _subtitleTracks.length; i++)
+          for (int i = 0; i < _embySubtitleStreams.length; i++)
             _buildMenuItem(
-              label: _subtitleTrackLabel(_subtitleTracks[i]),
-              isSelected: _currentSubtitle?.id == _subtitleTracks[i].id,
+              label: _embySubtitleStreams[i].displayInfo,
+              isSelected: _isEmbySubtitleSelected(i),
               onTap: () {
-                _player.setSubtitleTrack(_subtitleTracks[i]);
+                _selectEmbySubtitle(i);
                 setState(() => _showSubtitleMenu = false);
               },
             ),
-          if (_subtitleTracks.isEmpty)
+          if (_embySubtitleStreams.isEmpty && _subtitleTracks.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
@@ -740,16 +783,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         shrinkWrap: true,
         padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
-          for (int i = 0; i < _audioTracks.length; i++)
+          for (int i = 0; i < _embyAudioStreams.length; i++)
             _buildMenuItem(
-              label: _audioTrackLabel(_audioTracks[i]),
-              isSelected: _currentAudio?.id == _audioTracks[i].id,
+              label: _embyAudioStreams[i].displayInfo,
+              isSelected: _isEmbyAudioSelected(i),
               onTap: () {
-                _player.setAudioTrack(_audioTracks[i]);
+                _selectEmbyAudio(i);
                 setState(() => _showAudioMenu = false);
               },
             ),
-          if (_audioTracks.isEmpty)
+          if (_embyAudioStreams.isEmpty && _audioTracks.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
@@ -760,6 +803,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ],
       ),
     );
+  }
+
+  bool _isEmbySubtitleSelected(int embyIndex) {
+    if (_currentSubtitle == null) return false;
+    if (_currentSubtitle!.id == 'no') return false;
+    final mpvIndex = _findMpvSubtitleIndex(embyIndex);
+    if (mpvIndex == null) return false;
+    return _currentSubtitle?.id == _subtitleTracks[mpvIndex].id;
+  }
+
+  bool _isEmbyAudioSelected(int embyIndex) {
+    if (_currentAudio == null) return false;
+    final mpvIndex = _findMpvAudioIndex(embyIndex);
+    if (mpvIndex == null) return false;
+    return _currentAudio?.id == _audioTracks[mpvIndex].id;
+  }
+
+  int? _findMpvSubtitleIndex(int embyIndex) {
+    if (embyIndex >= _subtitleTracks.length) return null;
+    return embyIndex;
+  }
+
+  int? _findMpvAudioIndex(int embyIndex) {
+    if (embyIndex >= _audioTracks.length) return null;
+    return embyIndex;
+  }
+
+  void _selectEmbySubtitle(int embyIndex) {
+    final mpvIndex = _findMpvSubtitleIndex(embyIndex);
+    if (mpvIndex != null && mpvIndex < _subtitleTracks.length) {
+      _player.setSubtitleTrack(_subtitleTracks[mpvIndex]);
+    }
+  }
+
+  void _selectEmbyAudio(int embyIndex) {
+    final mpvIndex = _findMpvAudioIndex(embyIndex);
+    if (mpvIndex != null && mpvIndex < _audioTracks.length) {
+      _player.setAudioTrack(_audioTracks[mpvIndex]);
+    }
   }
 
   Widget _buildMenuItem({
@@ -792,20 +874,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ),
       ),
     );
-  }
-
-  String _subtitleTrackLabel(SubtitleTrack track) {
-    final lang = track.language?.isNotEmpty == true
-        ? track.language!
-        : track.title;
-    return lang?.isNotEmpty == true ? lang! : '字幕';
-  }
-
-  String _audioTrackLabel(AudioTrack track) {
-    final lang = track.language?.isNotEmpty == true
-        ? track.language!
-        : track.title;
-    return lang?.isNotEmpty == true ? lang! : '音轨';
   }
 
   IconData get _volumeIcon =>
