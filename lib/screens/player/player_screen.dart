@@ -138,6 +138,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
       _seriesName = _roomData!['seriesName'] ?? '';
       _hasEpisodeList = true;
+    } else {
+      // 电影：无 episodeIds 时，用 mediaItemId 构建单集资源列表
+      final mediaItemId = _roomData!['mediaItemId'] as String?;
+      if (mediaItemId != null && mediaItemId.isNotEmpty) {
+        _episodeIds = [mediaItemId];
+        _episodeNames = ['电影'];
+        _episodeSeasons = [0];
+        _episodeNumbers = [0];
+        _episodePosters = [''];
+        _seriesName = '';
+        _hasEpisodeList = true;
+      }
     }
   }
 
@@ -436,6 +448,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final type = message['type'];
       if (type == AppConstants.msgTypeHeartbeat) {
         _handleHeartbeat(message);
+      } else if (type == AppConstants.msgTypeRoomInfo) {
+        _handleRoomInfo(message);
       } else if (type == AppConstants.msgTypeCommand) {
         final action = message['action'] as String?;
         if (action == 'join') {
@@ -457,6 +471,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // Host: 把自己加入在线列表
     if (_isHost) {
       _onlineUsers.add(_myUserId!);
+    }
+
+    // Host: 发送房间剧集信息给观众
+    if (_isHost && _episodeIds.isNotEmpty) {
+      rtmService.sendRoomInfo(
+        channelName: _rtmChannel!,
+        seriesName: _seriesName,
+        episodeIds: _episodeIds,
+        episodeNames: _episodeNames,
+        episodeSeasons: _episodeSeasons,
+        episodeNumbers: _episodeNumbers,
+        episodePosters: _episodePosters,
+      );
     }
 
     if (_isHost) {
@@ -544,6 +571,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _removeEpisodeLocal(epIndex);
         }
         break;
+    }
+  }
+
+  void _handleRoomInfo(Map<String, dynamic> message) {
+    if (_isHost) return;
+    if (_hasEpisodeList) return;
+
+    final epIds = message['episodeIds'];
+    if (epIds is List && epIds.isNotEmpty) {
+      setState(() {
+        _episodeIds = List<String>.from(epIds);
+        _episodeNames = List<String>.from(message['episodeNames'] ?? []);
+        _episodeSeasons = List<int>.from(message['episodeSeasons'] ?? []);
+        _episodeNumbers = List<int>.from(message['episodeNumbers'] ?? []);
+        _episodePosters = List<String>.from(message['episodePosters'] ?? []);
+        _seriesName = message['seriesName'] ?? '';
+        _hasEpisodeList = true;
+      });
+      _addBroadcastMessage('已同步房间资源列表');
     }
   }
 
@@ -1357,26 +1403,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ),
         child: Row(
           children: [
-            // 播放/暂停按钮
-            GestureDetector(
-              onTap: () {
-                if (isPlaying) {
-                  _togglePlayPause();
-                } else {
-                  _switchToEpisode(index);
-                }
-              },
-              child: Icon(
-                isPlaying && _player.state.playing
-                    ? Icons.pause_circle
-                    : Icons.play_circle,
-                color: isPlaying
-                    ? const Color(0xFF6366F1)
-                    : Colors.white54,
-                size: 22,
+            // 播放/暂停按钮（仅房主）
+            if (_isHost)
+              GestureDetector(
+                onTap: () {
+                  if (isPlaying) {
+                    _togglePlayPause();
+                  } else {
+                    _switchToEpisode(index);
+                  }
+                },
+                child: Icon(
+                  isPlaying && _player.state.playing
+                      ? Icons.pause_circle
+                      : Icons.play_circle,
+                  color: isPlaying
+                      ? const Color(0xFF6366F1)
+                      : Colors.white54,
+                  size: 22,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
+            if (_isHost) const SizedBox(width: 8),
 
             // 缩略图
             ClipRRect(

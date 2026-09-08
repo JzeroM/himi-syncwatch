@@ -16,6 +16,7 @@ class AppConstants {
   static const String msgTypePlayInfo = 'playInfo';
   static const String msgTypeTokenRequest = 'tokenRequest';
   static const String msgTypeTokenResponse = 'tokenResponse';
+  static const String msgTypeRoomInfo = 'roomInfo';
 
   // 指令动作
   static const String actionPlay = 'play';

@@ -258,6 +258,41 @@ class RtmService {
     await _publishMessage(message);
   }
 
+  Future<void> sendRoomInfo({
+    required String channelName,
+    required String seriesName,
+    required List<String> episodeIds,
+    required List<String> episodeNames,
+    required List<int> episodeSeasons,
+    required List<int> episodeNumbers,
+    required List<String> episodePosters,
+  }) async {
+    if (_client == null) return;
+
+    final message = {
+      'type': AppConstants.msgTypeRoomInfo,
+      'userId': _currentUserId,
+      'seriesName': seriesName,
+      'episodeIds': episodeIds,
+      'episodeNames': episodeNames,
+      'episodeSeasons': episodeSeasons,
+      'episodeNumbers': episodeNumbers,
+      'episodePosters': episodePosters,
+    };
+
+    try {
+      final (status, _) = await _client!.publish(
+        channelName,
+        jsonEncode(message),
+      );
+      if (status.error == true) {
+        print('[RTM] 发送房间信息失败: ${status.reason}');
+      }
+    } catch (e) {
+      print('[RTM] 发送房间信息异常: $e');
+    }
+  }
+
   Future<void> _publishMessage(Map<String, dynamic> message) async {
     if (_client == null || _currentChannelId == null) return;
 

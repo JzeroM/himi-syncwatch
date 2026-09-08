@@ -156,7 +156,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _buildInfoRow('媒体 ID', mediaItemId),
                   _buildInfoRow('频道', channel),
                   _buildInfoRow('App ID', '${appId.substring(0, 8)}...'),
                   _buildInfoRow('可用 Token 数', '${tokens.length}'),
