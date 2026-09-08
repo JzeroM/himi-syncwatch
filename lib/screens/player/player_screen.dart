@@ -64,7 +64,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _player = Player();
+    _player = Player(configuration: const PlayerConfiguration(libass: true));
     _controller = VideoController(_player);
     _myUserId = 'user-${DateTime.now().millisecondsSinceEpoch}';
 
