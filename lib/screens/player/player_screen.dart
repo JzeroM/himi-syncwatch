@@ -58,7 +58,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   List<MediaStream> _embySubtitleStreams = [];
   List<MediaStream> _embyAudioStreams = [];
   int? _embyDefaultAudioIndex;
-  int? _embyDefaultSubtitleIndex;
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
 
@@ -101,7 +100,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _embyAudioStreams = source.audioStreams;
         _embySubtitleStreams = source.subtitleStreams;
         _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
-        _embyDefaultSubtitleIndex = source.defaultSubtitleStreamIndex;
       });
     }
 
@@ -127,6 +125,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _player.open(Media(url, httpHeaders: {
       'X-Emby-Token': token,
     }));
+
+    if (_player.platform is NativePlayer) {
+      final native = _player.platform as NativePlayer;
+      await native.setProperty('sub-visibility', 'yes');
+      await native.setProperty('sid', 'auto');
+    }
 
     if (pos > Duration.zero) {
       await _player.seek(pos);
@@ -206,16 +210,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _autoSelectDefaultTracks() {
-    if (_embyDefaultSubtitleIndex != null) {
-      final embyIdx = _embySubtitleStreams.indexWhere(
-        (s) => s.index == _embyDefaultSubtitleIndex,
-      );
-      if (embyIdx >= 0 && embyIdx < _subtitleTracks.length) {
-        _player.setSubtitleTrack(_subtitleTracks[embyIdx]);
-      }
-    } else if (_subtitleTracks.isNotEmpty) {
-      _player.setSubtitleTrack(_subtitleTracks.first);
-    }
+    _player.setSubtitleTrack(SubtitleTrack.auto());
 
     if (_embyDefaultAudioIndex != null) {
       final embyIdx = _embyAudioStreams.indexWhere(
@@ -881,6 +876,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } else {
       _useServerSubtitleBurnIn = false;
       _activeSubtitleIndex = stream.index;
+      for (final track in _subtitleTracks) {
+        if (track.id == 'auto' || track.id == 'no') continue;
+        final matchLang = stream.language != null &&
+            track.language != null &&
+            stream.language == track.language;
+        final matchTitle = stream.displayTitle != null &&
+            track.title != null &&
+            stream.displayTitle!.contains(track.title!);
+        if (matchLang || matchTitle) {
+          _player.setSubtitleTrack(track);
+          return;
+        }
+      }
       final mpvIndex = _findMpvSubtitleIndex(embyIndex);
       if (mpvIndex != null && mpvIndex < _subtitleTracks.length) {
         _player.setSubtitleTrack(_subtitleTracks[mpvIndex]);
