@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
+import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -186,17 +188,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
-            hintText: '输入房间号',
+            hintText: '粘贴房间码',
             border: OutlineInputBorder(),
           ),
           autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          onSubmitted: (value) {
-            if (value.trim().isNotEmpty) {
-              Navigator.pop(context);
-              context.push('/room/${value.trim().toUpperCase()}');
-            }
-          },
+          maxLines: 3,
+          minLines: 1,
         ),
         actions: [
           TextButton(
@@ -205,10 +202,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           FilledButton(
             onPressed: () {
-              final roomId = controller.text.trim();
-              if (roomId.isNotEmpty) {
+              final code = controller.text.trim();
+              if (code.isNotEmpty) {
                 Navigator.pop(context);
-                context.push('/room/${roomId.toUpperCase()}');
+                context.push('/room?code=${Uri.encodeComponent(code)}');
               }
             },
             child: const Text('加入'),
@@ -361,18 +358,21 @@ class _ServerDrawer extends ConsumerStatefulWidget {
 }
 
 class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
-  bool _showAddForm = false;
+  bool _showAddServerForm = false;
+  bool _showAgoraForm = false;
 
   @override
   Widget build(BuildContext context) {
     final servers = ref.watch(embyServerListProvider);
     final currentConfig = ref.watch(embyConfigProvider);
+    final agoraConfig = ref.watch(agoraConfigProvider);
 
     return Drawer(
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── 服务器区域 ──
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
@@ -383,23 +383,23 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
-                    icon: Icon(_showAddForm ? Icons.close : Icons.add),
-                    tooltip: _showAddForm ? '取消添加' : '添加服务器',
+                    icon: Icon(_showAddServerForm ? Icons.close : Icons.add),
+                    tooltip: _showAddServerForm ? '取消添加' : '添加服务器',
                     onPressed: () =>
-                        setState(() => _showAddForm = !_showAddForm),
+                        setState(() => _showAddServerForm = !_showAddServerForm),
                   ),
                 ],
               ),
             ),
             const Divider(height: 1),
-            if (_showAddForm)
+            if (_showAddServerForm)
               _AddServerForm(
                 onSuccess: () {
-                  setState(() => _showAddForm = false);
+                  setState(() => _showAddServerForm = false);
                   widget.onRefresh();
                 },
               )
-            else ...[
+            else
               Expanded(
                 child: servers.isEmpty
                     ? const Center(
@@ -527,7 +527,34 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                         },
                       ),
               ),
-            ],
+
+            // ── Agora 配置区域 ──
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.key),
+              title: const Text('声网配置'),
+              subtitle: Text(
+                agoraConfig?.isConfigured == true
+                    ? 'App ID: ${agoraConfig!.appId.substring(0, 8)}...'
+                    : '未配置',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: agoraConfig?.isConfigured == true
+                      ? Colors.green
+                      : Colors.orange,
+                ),
+              ),
+              trailing: Icon(
+                _showAgoraForm ? Icons.expand_less : Icons.expand_more,
+              ),
+              onTap: () =>
+                  setState(() => _showAgoraForm = !_showAgoraForm),
+            ),
+            if (_showAgoraForm)
+              _AgoraConfigForm(
+                currentConfig: agoraConfig,
+                onSaved: () => setState(() => _showAgoraForm = false),
+              ),
           ],
         ),
       ),
@@ -600,7 +627,6 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
 
               final authService = ref.read(embyAuthServiceProvider);
 
-              // 如果密码非空，重新认证获取新 token
               if (password.isNotEmpty) {
                 try {
                   final embyService = EmbyService();
@@ -638,7 +664,6 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                   return;
                 }
               } else {
-                // 仅更新名称/地址/用户名
                 final newConfig = server.copyWith(
                   serverUrl: url,
                   serverName: name,
@@ -832,6 +857,94 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('连接并登录'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AgoraConfigForm extends ConsumerStatefulWidget {
+  final AgoraConfigModel? currentConfig;
+  final VoidCallback onSaved;
+  const _AgoraConfigForm({required this.currentConfig, required this.onSaved});
+
+  @override
+  ConsumerState<_AgoraConfigForm> createState() => _AgoraConfigFormState();
+}
+
+class _AgoraConfigFormState extends ConsumerState<_AgoraConfigForm> {
+  late final TextEditingController _appIdController;
+  late final TextEditingController _certController;
+
+  @override
+  void initState() {
+    super.initState();
+    _appIdController = TextEditingController(
+        text: widget.currentConfig?.appId ?? '');
+    _certController = TextEditingController(
+        text: widget.currentConfig?.appCertificate ?? '');
+  }
+
+  @override
+  void dispose() {
+    _appIdController.dispose();
+    _certController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        children: [
+          TextField(
+            controller: _appIdController,
+            decoration: const InputDecoration(
+              labelText: 'App ID',
+              hintText: '声网 App ID',
+              prefixIcon: Icon(Icons.vpn_key),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _certController,
+            decoration: const InputDecoration(
+              labelText: 'App Certificate',
+              hintText: '声网 App Certificate',
+              prefixIcon: Icon(Icons.lock),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 40,
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                final appId = _appIdController.text.trim();
+                final cert = _certController.text.trim();
+                if (appId.isEmpty) return;
+
+                final config = AgoraConfigModel(
+                  appId: appId,
+                  appCertificate: cert,
+                );
+                await ref.read(agoraConfigProvider.notifier).save(config);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('声网配置已保存')),
+                  );
+                  widget.onSaved();
+                }
+              },
+              icon: const Icon(Icons.save, size: 18),
+              label: const Text('保存'),
             ),
           ),
         ],

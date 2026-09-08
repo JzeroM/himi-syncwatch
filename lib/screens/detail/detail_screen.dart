@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
-import 'package:himi_syncwatch/services/room_service.dart';
+import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
-
-final roomServiceProvider = Provider<RoomService>((ref) => RoomService());
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -78,22 +77,37 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Future<void> _createRoom() async {
     if (_item == null) return;
 
+    final agoraConfig = ref.read(agoraConfigProvider);
+    if (agoraConfig == null || !agoraConfig.isConfigured) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在侧边栏配置声网 App ID 和 App Certificate')),
+        );
+      }
+      return;
+    }
+
     MediaSource? selectedSource;
     if (_item!.hasMultipleVersions) {
       selectedSource = await _showVersionPicker();
       if (selectedSource == null) return;
     }
 
-    final roomService = ref.read(roomServiceProvider);
-    final room = await roomService.createRoom(
+    final channel = RoomCode.generateChannelId();
+    final hostUid = RoomCode.generateHostUid();
+
+    final roomCode = RoomCode.encode(
+      appId: agoraConfig.appId,
+      appCertificate: agoraConfig.appCertificate,
+      channel: channel,
+      hostUid: hostUid,
       mediaItemId: _item!.id,
-      mediaItemName: _item!.name,
-      mediaItemPosterUrl: _item!.posterUrl,
-      hostId: 'user-${DateTime.now().millisecondsSinceEpoch}',
-      hostName: '房主',
+      mediaSourceId: selectedSource?.id,
+      tokenCount: 10,
     );
-    if (room != null && mounted) {
-      final query = StringBuffer('roomId=${room.id}');
+
+    if (mounted) {
+      final query = StringBuffer('roomCode=${Uri.encodeComponent(roomCode)}&isHost=true');
       if (selectedSource != null) {
         query.write('&mediaSourceId=${selectedSource.id}');
       }

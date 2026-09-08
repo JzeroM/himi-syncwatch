@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:himi_syncwatch/core/app.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 
 class _SelfSignedHttpOverrides extends HttpOverrides {
@@ -23,10 +24,14 @@ void main() async {
   final authService = EmbyAuthService();
   await authService.init();
 
+  final agoraNotifier = AgoraConfigNotifier();
+  await agoraNotifier.load();
+
   runApp(
     ProviderScope(
       overrides: [
         embyAuthServiceProvider.overrideWithValue(authService),
+        agoraConfigProvider.overrideWith((ref) => agoraNotifier),
       ],
       child: const HimiSyncApp(),
     ),

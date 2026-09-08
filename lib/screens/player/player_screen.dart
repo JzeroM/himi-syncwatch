@@ -5,24 +5,26 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:himi_syncwatch/core/config.dart';
+import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
-import 'package:himi_syncwatch/models/room.dart';
+import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
-import 'package:himi_syncwatch/services/room_service.dart';
+import 'package:himi_syncwatch/utils/room_code.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final String itemId;
-  final String? roomId;
+  final String? roomCode;
   final String? mediaSourceId;
+  final bool isHost;
 
   const PlayerScreen({
     super.key,
     required this.itemId,
-    this.roomId,
+    this.roomCode,
     this.mediaSourceId,
+    this.isHost = false,
   });
 
   @override
@@ -38,8 +40,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _showControls = true;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
-  Room? _room;
   String? _myUserId;
+  String? _rtmChannel;
+  String? _rtmAppId;
 
   double _volume = 100;
   bool _syncPaused = false;
@@ -64,6 +67,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isLandscape = false;
   BoxFit _videoFit = BoxFit.contain;
 
+  Map<String, dynamic>? _roomData;
+
   @override
   void initState() {
     super.initState();
@@ -71,12 +76,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       configuration: const PlayerConfiguration(libass: true),
     );
     _controller = VideoController(_player);
-    _myUserId = 'user-${DateTime.now().millisecondsSinceEpoch}';
+    _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
+
+    _isHost = widget.isHost;
 
     _initializePlayer();
     _setupPlayerListeners();
 
-    if (widget.roomId != null) {
+    if (widget.roomCode != null) {
       _setupRoomSync();
     }
   }
@@ -142,6 +149,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     if (wasPlaying) {
       await _player.play();
+    }
+
+    // Host: 发布播放信息到频道元数据
+    if (_isHost && _rtmChannel != null) {
+      final rtmService = ref.read(rtmServiceProvider);
+      await rtmService.publishPlayInfo(
+        channelName: _rtmChannel!,
+        playUrl: url,
+        itemId: widget.itemId,
+        mediaSourceId: widget.mediaSourceId,
+      );
     }
   }
 
@@ -251,33 +269,72 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _setupRoomSync() async {
-    final roomService = RoomService();
-
-    final room = await roomService.joinRoom(
-      roomId: widget.roomId!,
-      userId: _myUserId!,
-      userName: '观众',
-    );
-
-    if (room == null) {
+    final agoraConfig = ref.read(agoraConfigProvider);
+    if (agoraConfig == null || !agoraConfig.isConfigured) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('加入房间失败')),
+          const SnackBar(content: Text('声网未配置')),
         );
       }
       return;
     }
 
-    _room = room;
-    _isHost = room.hostId == _myUserId;
+    _roomData = RoomCode.decode(widget.roomCode!);
+    if (_roomData == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('房间码无效')),
+        );
+      }
+      return;
+    }
+
+    _rtmChannel = _roomData!['channel'] as String?;
+    _rtmAppId = _roomData!['appId'] as String?;
+
+    if (_rtmChannel == null || _rtmAppId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('房间数据不完整')),
+        );
+      }
+      return;
+    }
 
     final rtmService = ref.read(rtmServiceProvider);
     await rtmService.initialize(
-      appId: AgoraConfig.appId,
+      appId: _rtmAppId!,
       userId: _myUserId!,
     );
-    await rtmService.login(AgoraConfig.appId);
-    await rtmService.subscribe(widget.roomId!);
+
+    // Host: 使用自己的 token 登录; Audience: 从 roomCode 消费一个 token
+    String? loginToken;
+    if (_isHost) {
+      loginToken = RtmTokenBuilder.buildToken(
+        appId: _rtmAppId!,
+        appCertificate: agoraConfig.appCertificate,
+        userId: _myUserId!,
+        tokenExpireSeconds: 86400,
+      );
+    } else {
+      loginToken = RoomCode.consumeToken(_roomData!);
+      if (loginToken == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('无可用水_token')),
+          );
+        }
+        return;
+      }
+    }
+
+    await rtmService.login(_rtmAppId!, token: loginToken);
+    await rtmService.subscribe(_rtmChannel!);
+
+    // 如果是观众，先读取频道元数据获取播放 URL
+    if (!_isHost) {
+      _fetchPlayInfoFromMetadata(rtmService);
+    }
 
     _rtmSubscription = rtmService.messageStream.listen((message) {
       if (!mounted) return;
@@ -289,12 +346,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _handleHeartbeat(message);
       } else if (type == AppConstants.msgTypeCommand) {
         _handleCommand(message);
+      } else if (type == AppConstants.msgTypeTokenRequest) {
+        _handleTokenRequest(message, rtmService);
       }
     });
 
     if (_isHost) {
       _startHeartbeat();
     }
+  }
+
+  void _fetchPlayInfoFromMetadata(RtmService rtmService) async {
+    final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+    final playUrl = metadata['playUrl'];
+    if (playUrl != null && mounted) {
+      final token = ref.read(embyConfigProvider)?.accessToken ?? '';
+      final resolvedUrl = await _resolveStreamUrl(playUrl, token);
+      final pos = _player.state.position;
+      final wasPlaying = _player.state.playing;
+
+      await _player.open(Media(resolvedUrl, httpHeaders: {
+        'X-Emby-Token': token,
+      }));
+
+      if (_player.platform is NativePlayer) {
+        final native = _player.platform as NativePlayer;
+        await native.setProperty('sub-visibility', 'yes');
+        await native.setProperty('sid', 'auto');
+      }
+
+      if (pos > Duration.zero) await _player.seek(pos);
+      if (wasPlaying) await _player.play();
+    }
+  }
+
+  void _handleTokenRequest(Map<String, dynamic> message, RtmService rtmService) {
+    if (!_isHost) return;
+
+    final requestUid = message['requestUid'] as String?;
+    if (requestUid == null) return;
+
+    final agoraConfig = ref.read(agoraConfigProvider);
+    if (agoraConfig == null || !agoraConfig.isConfigured) return;
+
+    final token = RtmTokenBuilder.buildToken(
+      appId: _rtmAppId!,
+      appCertificate: agoraConfig.appCertificate,
+      userId: requestUid,
+      tokenExpireSeconds: 86400,
+    );
+
+    rtmService.replyToken(
+      audienceUid: requestUid,
+      token: token,
+      channelName: _rtmChannel!,
+    );
   }
 
   void _handleHeartbeat(Map<String, dynamic> message) {
@@ -385,12 +491,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _togglePlayPause() {
     if (_player.state.playing) {
       _player.pause();
-      if (widget.roomId != null) {
+      if (widget.roomCode != null) {
         _sendCommand(AppConstants.actionPause);
       }
     } else {
       _player.play();
-      if (widget.roomId != null) {
+      if (widget.roomCode != null) {
         _sendCommand(AppConstants.actionPlay);
       }
     }
@@ -433,7 +539,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _onSeek(double value) {
     _player.seek(Duration(milliseconds: value.toInt()));
-    if (widget.roomId != null) {
+    if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
     }
   }
@@ -481,17 +587,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-    if (widget.roomId != null) {
-      final roomService = RoomService();
-      roomService.leaveRoom(roomId: widget.roomId!, userId: _myUserId!);
-    }
-
     _player.dispose();
     super.dispose();
   }
 
   bool get _canControlPlayback {
-    if (widget.roomId == null) return true;
+    if (widget.roomCode == null) return true;
     return _isHost;
   }
 
@@ -582,7 +683,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
-          if (widget.roomId != null) ...[
+          if (widget.roomCode != null) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
@@ -590,16 +691,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                '${_isHost ? "房主" : "房间"}: ${widget.roomId}',
+                _isHost ? '房主模式' : '观众模式',
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
-            const SizedBox(width: 8),
-            if (_room != null)
-              Text(
-                '${_room!.members.length}人',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
           ],
         ],
       ),

@@ -36,14 +36,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/player/:id',
         builder: (context, state) => PlayerScreen(
           itemId: state.pathParameters['id']!,
-          roomId: state.uri.queryParameters['roomId'],
+          roomCode: state.uri.queryParameters['roomCode'],
           mediaSourceId: state.uri.queryParameters['mediaSourceId'],
+          isHost: state.uri.queryParameters['isHost'] == 'true',
         ),
       ),
       GoRoute(
-        path: '/room/:roomId',
+        path: '/room',
         builder: (context, state) => RoomScreen(
-          roomId: state.pathParameters['roomId']!,
+          roomCode: state.uri.queryParameters['code'] ?? '',
         ),
       ),
     ],

@@ -13,6 +13,9 @@ class AppConstants {
   static const String msgTypeCommand = 'command';
   static const String msgTypeJoin = 'join';
   static const String msgTypeLeave = 'leave';
+  static const String msgTypePlayInfo = 'playInfo';
+  static const String msgTypeTokenRequest = 'tokenRequest';
+  static const String msgTypeTokenResponse = 'tokenResponse';
 
   // 指令动作
   static const String actionPlay = 'play';

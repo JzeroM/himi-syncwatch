@@ -5,6 +5,8 @@ import 'package:himi_syncwatch/core/constants.dart';
 
 class RtmService {
   RtmClient? _client;
+  RtmStorage? _storage;
+  RtmPresence? _presence;
   String? _currentUserId;
   String? _currentChannelId;
   final StreamController<Map<String, dynamic>> _messageController =
@@ -36,6 +38,8 @@ class RtmService {
       }
 
       _client = client;
+      _storage = client.getStorage();
+      _presence = client.getPresence();
       print('[RTM] 初始化成功, userId: $userId');
 
       _client?.addListener(
@@ -109,6 +113,85 @@ class RtmService {
     }
   }
 
+  // Channel metadata: 设置频道元数据
+  Future<void> setChannelMetadata({
+    required String channelName,
+    required Map<String, String> metadata,
+  }) async {
+    if (_storage == null) return;
+
+    try {
+      final data = metadata.map((k, v) => MapEntry(k, v));
+      final (status, _) = await _storage!.setChannelMetadata(
+        channelName,
+        data,
+        options: MetadataOptions(
+          enablePresence: true,
+        ),
+      );
+      if (status.error == true) {
+        print('[RTM] 设置频道元数据失败: ${status.reason}');
+      }
+    } catch (e) {
+      print('[RTM] 设置频道元数据异常: $e');
+    }
+  }
+
+  // Channel metadata: 读取频道元数据
+  Future<Map<String, String>> getChannelMetadata(String channelName) async {
+    if (_storage == null) return {};
+
+    try {
+      final (status, data) = await _storage!.getChannelMetadata(
+        channelName,
+        options: MetadataOptions(
+          enablePresence: true,
+        ),
+      );
+      if (status.error == true || data == null) {
+        return {};
+      }
+      return Map<String, String>.from(data);
+    } catch (e) {
+      print('[RTM] 读取频道元数据异常: $e');
+      return {};
+    }
+  }
+
+  // Presence: 获取在线用户数
+  Future<int> getOnlineUserCount(String channelName) async {
+    if (_presence == null) return 0;
+
+    try {
+      final (status, result) = await _presence!.getOnlineUsers(channelName);
+      if (status.error == true || result == null) {
+        return 0;
+      }
+      return result.total ?? 0;
+    } catch (e) {
+      print('[RTM] 获取在线用户数异常: $e');
+      return 0;
+    }
+  }
+
+  // 发布播放信息到频道元数据
+  Future<void> publishPlayInfo({
+    required String channelName,
+    required String playUrl,
+    required String itemId,
+    String? mediaSourceId,
+  }) async {
+    await setChannelMetadata(
+      channelName: channelName,
+      metadata: {
+        'playUrl': playUrl,
+        'itemId': itemId,
+        if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
+      },
+    );
+  }
+
+  // 发送 RTM 消息
   Future<void> sendHeartbeat({
     required double position,
     required bool playing,
@@ -144,6 +227,59 @@ class RtmService {
     };
 
     await _publishMessage(message);
+  }
+
+  // 观众请求 token
+  Future<void> requestToken({
+    required String channelName,
+    required String hostUid,
+    required String requestUid,
+  }) async {
+    if (_client == null) return;
+
+    try {
+      final (status, _) = await _client!.sendMessageToPeer(
+        hostUid,
+        jsonEncode({
+          'type': AppConstants.msgTypeTokenRequest,
+          'requestUid': requestUid,
+        }),
+        channelType: RtmChannelType.message,
+        customType: 'application/json',
+      );
+      if (status.error == true) {
+        print('[RTM] 发送 token 请求失败: ${status.reason}');
+      }
+    } catch (e) {
+      print('[RTM] 发送 token 请求异常: $e');
+    }
+  }
+
+  // Host 回复 token
+  Future<void> replyToken({
+    required String audienceUid,
+    required String token,
+    required String channelName,
+  }) async {
+    if (_client == null) return;
+
+    try {
+      final (status, _) = await _client!.sendMessageToPeer(
+        audienceUid,
+        jsonEncode({
+          'type': AppConstants.msgTypeTokenResponse,
+          'token': token,
+          'channelName': channelName,
+        }),
+        channelType: RtmChannelType.message,
+        customType: 'application/json',
+      );
+      if (status.error == true) {
+        print('[RTM] 发送 token 回复失败: ${status.reason}');
+      }
+    } catch (e) {
+      print('[RTM] 发送 token 回复异常: $e');
+    }
   }
 
   Future<void> _publishMessage(Map<String, dynamic> message) async {
@@ -185,5 +321,7 @@ class RtmService {
     logout();
     _client?.release();
     _client = null;
+    _storage = null;
+    _presence = null;
   }
 }
