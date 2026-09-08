@@ -61,70 +61,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
 
-  StreamSubscription? _logSubscription;
-  File? _debugFile;
-  Timer? _debugSnapshotTimer;
-
   @override
   void initState() {
     super.initState();
     _player = Player(
-      configuration: const PlayerConfiguration(
-        libass: true,
-        logLevel: MPVLogLevel.debug,
-      ),
+      configuration: const PlayerConfiguration(libass: true),
     );
     _controller = VideoController(_player);
     _myUserId = 'user-${DateTime.now().millisecondsSinceEpoch}';
 
-    _initDebugLogging();
     _initializePlayer();
     _setupPlayerListeners();
 
     if (widget.roomId != null) {
       _setupRoomSync();
     }
-  }
-
-  void _initDebugLogging() {
-    try {
-      final home = Platform.environment['USERPROFILE'] ??
-          Platform.environment['HOME'] ??
-          Directory.current.path;
-      _debugFile = File('$home/himi_subtitle_debug.log');
-      _debugFile!.writeAsStringSync(
-          '=== HimiSync 字幕调试 ${DateTime.now()} ===\n');
-      _logSubscription = _player.stream.log.listen((log) {
-        final line = '[${log.prefix}:${log.level}] ${log.text}';
-        final lower = line.toLowerCase();
-        if (lower.contains('sub') ||
-            lower.contains('sid') ||
-            lower.contains('track') ||
-            lower.contains('error') ||
-            lower.contains('vo') ||
-            lower.contains('hwdec') ||
-            lower.contains('lavfi')) {
-          _writeDebug(line);
-        }
-      });
-      _debugSnapshotTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-        _writeDebug(
-          'SNAPSHOT playing=${_player.state.playing} '
-          'dur=${_player.state.duration} '
-          'tracks=${_subtitleTracks.map((t) => '${t.id}/${t.title}/${t.language}').join(';')} '
-          'curSub=${_currentSubtitle?.id ?? "null"}',
-        );
-      });
-    } catch (_) {}
-  }
-
-  void _writeDebug(String line) {
-    try {
-      _debugFile?.writeAsStringSync(
-        '${DateTime.now().toIso8601String()} $line\n',
-        mode: FileMode.append,
-      );
-    } catch (_) {}
   }
 
   Future<void> _initializePlayer() async {
@@ -267,8 +218,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final embyIdx = _embyAudioStreams.indexWhere(
         (s) => s.index == _embyDefaultAudioIndex,
       );
-      if (embyIdx >= 0 && embyIdx < _audioTracks.length) {
-        _player.setAudioTrack(_audioTracks[embyIdx]);
+      final real = _realAudioTracks;
+      if (embyIdx >= 0 && embyIdx < real.length) {
+        _player.setAudioTrack(real[embyIdx]);
       }
     }
   }
@@ -479,8 +431,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _heartbeatTimer?.cancel();
     _rtmSubscription?.cancel();
     _tracksSubscription?.cancel();
-    _logSubscription?.cancel();
-    _debugSnapshotTimer?.cancel();
 
     if (widget.roomId != null) {
       final roomService = RoomService();
@@ -888,33 +838,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  List<SubtitleTrack> get _realSubtitleTracks => _subtitleTracks
+      .where((t) => t.id != 'auto' && t.id != 'no')
+      .toList();
+
+  List<AudioTrack> get _realAudioTracks => _audioTracks
+      .where((t) => t.id != 'auto' && t.id != 'no')
+      .toList();
+
   bool _isEmbySubtitleSelected(int embyIndex) {
     final stream = _embySubtitleStreams[embyIndex];
     if (_useServerSubtitleBurnIn) {
       return _activeSubtitleIndex == stream.index;
     }
-    if (_currentSubtitle == null) return false;
-    if (_currentSubtitle!.id == 'no') return false;
-    final mpvIndex = _findMpvSubtitleIndex(embyIndex);
-    if (mpvIndex == null) return false;
-    return _currentSubtitle?.id == _subtitleTracks[mpvIndex].id;
+    if (_currentSubtitle == null || _currentSubtitle!.id == 'no') return false;
+    final real = _realSubtitleTracks;
+    if (embyIndex >= real.length) return false;
+    return _currentSubtitle?.id == real[embyIndex].id;
   }
 
   bool _isEmbyAudioSelected(int embyIndex) {
     if (_currentAudio == null) return false;
-    final mpvIndex = _findMpvAudioIndex(embyIndex);
-    if (mpvIndex == null) return false;
-    return _currentAudio?.id == _audioTracks[mpvIndex].id;
-  }
-
-  int? _findMpvSubtitleIndex(int embyIndex) {
-    if (embyIndex >= _subtitleTracks.length) return null;
-    return embyIndex;
-  }
-
-  int? _findMpvAudioIndex(int embyIndex) {
-    if (embyIndex >= _audioTracks.length) return null;
-    return embyIndex;
+    final real = _realAudioTracks;
+    if (embyIndex >= real.length) return false;
+    return _currentAudio?.id == real[embyIndex].id;
   }
 
   void _selectEmbySubtitle(int embyIndex) {
@@ -926,33 +873,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _useServerSubtitleBurnIn = true;
       _activeSubtitleIndex = stream.index;
       _loadStream(subtitleStreamIndex: stream.index);
-    } else {
-      _useServerSubtitleBurnIn = false;
-      _activeSubtitleIndex = stream.index;
-      for (final track in _subtitleTracks) {
-        if (track.id == 'auto' || track.id == 'no') continue;
-        final matchLang = stream.language != null &&
-            track.language != null &&
-            stream.language == track.language;
-        final matchTitle = stream.displayTitle != null &&
-            track.title != null &&
-            stream.displayTitle!.contains(track.title!);
-        if (matchLang || matchTitle) {
-          _player.setSubtitleTrack(track);
-          return;
-        }
+      return;
+    }
+
+    _useServerSubtitleBurnIn = false;
+    _activeSubtitleIndex = stream.index;
+    final real = _realSubtitleTracks;
+    if (real.isEmpty) return;
+
+    // 语言/标题优先精确匹配（Emby 与 mpv 轨名可能不完全一致）
+    for (final track in real) {
+      final matchLang = stream.language != null &&
+          track.language != null &&
+          stream.language == track.language;
+      final matchTitle = stream.displayTitle != null &&
+          track.title != null &&
+          stream.displayTitle!.contains(track.title!);
+      if (matchLang || matchTitle) {
+        _player.setSubtitleTrack(track);
+        return;
       }
-      final mpvIndex = _findMpvSubtitleIndex(embyIndex);
-      if (mpvIndex != null && mpvIndex < _subtitleTracks.length) {
-        _player.setSubtitleTrack(_subtitleTracks[mpvIndex]);
-      }
+    }
+    // 顺序兜底：Emby 字幕列表顺序与 mpv sid 顺序一致
+    if (embyIndex < real.length) {
+      _player.setSubtitleTrack(real[embyIndex]);
     }
   }
 
   void _selectEmbyAudio(int embyIndex) {
-    final mpvIndex = _findMpvAudioIndex(embyIndex);
-    if (mpvIndex != null && mpvIndex < _audioTracks.length) {
-      _player.setAudioTrack(_audioTracks[mpvIndex]);
+    final real = _realAudioTracks;
+    if (embyIndex < real.length) {
+      _player.setAudioTrack(real[embyIndex]);
     }
   }
 
