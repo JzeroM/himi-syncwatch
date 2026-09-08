@@ -175,6 +175,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _setupPlayerListeners() {
+    _player.stream.playing.listen((_) {
+      if (mounted) setState(() {});
+    });
+
     _player.stream.position.listen((position) {
       if (mounted) setState(() => _position = position);
     });
@@ -732,21 +736,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
                 const Spacer(),
 
-                if (Platform.isAndroid || Platform.isIOS) ...[
-                  _buildControlButton(
-                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
-                    onTap: _cycleVideoFit,
-                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
-                  ),
-                  const SizedBox(width: 20),
-                  _buildControlButton(
-                    icon: _isLandscape
-                        ? Icons.screen_lock_portrait
-                        : Icons.screen_lock_landscape,
-                    onTap: _toggleOrientation,
-                  ),
-                  const SizedBox(width: 20),
-                ],
                 _buildControlButton(
                   icon: Icons.subtitles,
                   onTap: () {
@@ -770,6 +759,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   },
                   badge: _embyAudioStreams.isNotEmpty ? '${_embyAudioStreams.length}' : null,
                 ),
+                if (Platform.isAndroid || Platform.isIOS) ...[
+                  const SizedBox(width: 20),
+                  _buildControlButton(
+                    icon: _isLandscape
+                        ? Icons.screen_lock_portrait
+                        : Icons.screen_lock_landscape,
+                    onTap: _toggleOrientation,
+                  ),
+                  const SizedBox(width: 20),
+                  _buildControlButton(
+                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
+                    onTap: _cycleVideoFit,
+                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
+                  ),
+                ],
               ],
             ),
           ],
