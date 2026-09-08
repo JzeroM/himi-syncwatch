@@ -861,7 +861,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             Orientation.portrait &&
         (Platform.isAndroid || Platform.isIOS);
 
-    if (isPortrait && _hasEpisodeList) {
+    final showPanel = widget.roomCode != null;
+
+    if (isPortrait && showPanel) {
       // 手机竖屏：视频在上，资源面板在下
       return Column(
         children: [
@@ -872,18 +874,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ),
         ],
       );
-    } else {
+    } else if (showPanel) {
       // 桌面/横屏：视频在左，资源面板在右
       return Row(
         children: [
           Expanded(flex: 3, child: _buildVideoArea()),
-          if (_hasEpisodeList)
-            SizedBox(
-              width: 320,
-              child: _buildResourcePanel(),
-            ),
+          SizedBox(
+            width: 320,
+            child: _buildResourcePanel(),
+          ),
         ],
       );
+    } else {
+      return _buildVideoArea();
     }
   }
 
