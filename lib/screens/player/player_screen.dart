@@ -763,7 +763,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // 复制房间码
   void _copyRoomCode() {
     if (widget.roomCode == null) return;
-    Clipboard.setData(ClipboardData(text: widget.roomCode));
+    Clipboard.setData(ClipboardData(text: widget.roomCode!));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('已复制房间码')),
     );
@@ -1300,7 +1300,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      _isHost ? '房主' : _audienceName,
+                      _isHost ? '房主' : (_audienceName ?? '观众'),
                       style: const TextStyle(
                           color: Colors.white, fontSize: 11),
                     ),
