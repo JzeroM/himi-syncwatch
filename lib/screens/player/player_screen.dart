@@ -606,7 +606,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return GestureDetector(
       onTap: () {},
       child: Container(
-        padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + MediaQuery.of(context).padding.bottom),
+        padding: EdgeInsets.fromLTRB(16, 10, 16, 12 + MediaQuery.of(context).padding.bottom),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -640,7 +640,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 onChanged: _canControlPlayback ? _onSeek : null,
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
@@ -653,11 +652,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ),
             ),
 
+            if (_showSubtitleMenu) ...[
+              _buildExpandablePanel(
+                maxHeight: 180,
+                child: _buildSubtitleListContent(),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (_showAudioMenu) ...[
+              _buildExpandablePanel(
+                maxHeight: 180,
+                child: _buildAudioTrackListContent(),
+              ),
+              const SizedBox(height: 8),
+            ],
+
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildControlButton(
-                  icon: _volumeIcon,
+                if (_canControlPlayback)
+                  GestureDetector(
+                    onTap: _togglePlayPause,
+                    child: Icon(
+                      _player.state.playing
+                          ? Icons.pause_circle_filled
+                          : Icons.play_circle_fill,
+                      color: Colors.white,
+                      size: 36,
+                    ),
+                  ),
+                if (_canControlPlayback) const SizedBox(width: 16),
+                GestureDetector(
                   onTap: () {
                     setState(() {
                       _showVolumeSlider = !_showVolumeSlider;
@@ -665,8 +689,64 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _showAudioMenu = false;
                     });
                   },
+                  onLongPress: () {
+                    final newVol = _volume > 0 ? 0.0 : 100.0;
+                    _player.setVolume(newVol);
+                    setState(() => _volume = newVol);
+                  },
+                  child: Icon(_volumeIcon, color: Colors.white, size: 24),
                 ),
-                const SizedBox(width: 28),
+                if (_showVolumeSlider) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 100,
+                    child: SliderTheme(
+                      data: SliderThemeData(
+                        activeTrackColor: const Color(0xFF6366F1),
+                        inactiveTrackColor: Colors.white24,
+                        thumbColor: const Color(0xFF6366F1),
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        trackHeight: 2,
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                      ),
+                      child: Slider(
+                        value: _volume.clamp(0, 100),
+                        min: 0,
+                        max: 100,
+                        onChanged: (v) {
+                          _player.setVolume(v);
+                          setState(() => _volume = v);
+                        },
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 30,
+                    child: Text(
+                      '${_volume.round()}',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    ),
+                  ),
+                ],
+
+                const Spacer(),
+
+                if (Platform.isAndroid || Platform.isIOS) ...[
+                  _buildControlButton(
+                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
+                    onTap: _cycleVideoFit,
+                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
+                  ),
+                  const SizedBox(width: 20),
+                  _buildControlButton(
+                    icon: _isLandscape
+                        ? Icons.screen_lock_portrait
+                        : Icons.screen_lock_landscape,
+                    onTap: _toggleOrientation,
+                  ),
+                  const SizedBox(width: 20),
+                ],
                 _buildControlButton(
                   icon: Icons.subtitles,
                   onTap: () {
@@ -678,7 +758,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   },
                   badge: _embySubtitleStreams.isNotEmpty ? '${_embySubtitleStreams.length}' : null,
                 ),
-                const SizedBox(width: 28),
+                const SizedBox(width: 20),
                 _buildControlButton(
                   icon: Icons.audiotrack,
                   onTap: () {
@@ -690,53 +770,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   },
                   badge: _embyAudioStreams.isNotEmpty ? '${_embyAudioStreams.length}' : null,
                 ),
-                if (_canControlPlayback) ...[
-                  const SizedBox(width: 28),
-                  GestureDetector(
-                    onTap: _togglePlayPause,
-                    child: Icon(
-                      _player.state.playing
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_fill,
-                      color: Colors.white,
-                      size: 40,
-                    ),
-                  ),
-                ],
-                if (Platform.isAndroid || Platform.isIOS) ...[
-                  const SizedBox(width: 28),
-                  _buildControlButton(
-                    icon: _isLandscape
-                        ? Icons.screen_lock_portrait
-                        : Icons.screen_lock_landscape,
-                    onTap: _toggleOrientation,
-                  ),
-                  const SizedBox(width: 28),
-                  _buildControlButton(
-                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
-                    onTap: _cycleVideoFit,
-                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
-                  ),
-                ],
               ],
             ),
-
-            if (_showVolumeSlider) ...[
-              const SizedBox(height: 12),
-              _buildVolumeSlider(),
-            ],
-
-            if (_showSubtitleMenu) ...[
-              const SizedBox(height: 12),
-              _buildSubtitleList(),
-            ],
-
-            if (_showAudioMenu) ...[
-              const SizedBox(height: 12),
-              _buildAudioTrackList(),
-            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildExpandablePanel({
+    required double maxHeight,
+    required Widget child,
+  }) {
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: child,
       ),
     );
   }
@@ -773,129 +827,69 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  Widget _buildVolumeSlider() {
-    return Row(
+  Widget _buildSubtitleListContent() {
+    return ListView(
+      shrinkWrap: true,
+      padding: const EdgeInsets.symmetric(vertical: 4),
       children: [
-        Icon(
-          _volume == 0
-              ? Icons.volume_off
-              : _volume < 50
-                  ? Icons.volume_down
-                  : Icons.volume_up,
-          color: Colors.white70,
-          size: 20,
+        _buildMenuItem(
+          label: '关闭字幕',
+          isSelected: _currentSubtitle?.id == 'no' && !_useServerSubtitleBurnIn,
+          onTap: () {
+            if (_useServerSubtitleBurnIn) {
+              _useServerSubtitleBurnIn = false;
+              _activeSubtitleIndex = null;
+              _loadStream();
+            } else {
+              _player.setSubtitleTrack(SubtitleTrack.no());
+            }
+            setState(() => _showSubtitleMenu = false);
+          },
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: SliderTheme(
-            data: SliderThemeData(
-              activeTrackColor: const Color(0xFF6366F1),
-              inactiveTrackColor: Colors.white24,
-              thumbColor: const Color(0xFF6366F1),
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-              trackHeight: 3,
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            ),
-            child: Slider(
-              value: _volume.clamp(0, 100),
-              min: 0,
-              max: 100,
-              onChanged: (value) {
-                _player.setVolume(value);
-              },
+        for (int i = 0; i < _embySubtitleStreams.length; i++)
+          _buildMenuItem(
+            label: _embySubtitleStreams[i].displayInfo,
+            isSelected: _isEmbySubtitleSelected(i),
+            onTap: () {
+              _selectEmbySubtitle(i);
+              setState(() => _showSubtitleMenu = false);
+            },
+          ),
+        if (_embySubtitleStreams.isEmpty && _subtitleTracks.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              '当前视频无字幕轨道',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
           ),
-        ),
-        const SizedBox(width: 4),
-        SizedBox(
-          width: 36,
-          child: Text(
-            '${_volume.round()}',
-            textAlign: TextAlign.right,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-        ),
       ],
     );
   }
 
-  Widget _buildSubtitleList() {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 180),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [
+  Widget _buildAudioTrackListContent() {
+    return ListView(
+      shrinkWrap: true,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      children: [
+        for (int i = 0; i < _embyAudioStreams.length; i++)
           _buildMenuItem(
-            label: '关闭字幕',
-            isSelected: _currentSubtitle?.id == 'no' && !_useServerSubtitleBurnIn,
+            label: _embyAudioStreams[i].displayInfo,
+            isSelected: _isEmbyAudioSelected(i),
             onTap: () {
-              if (_useServerSubtitleBurnIn) {
-                _useServerSubtitleBurnIn = false;
-                _activeSubtitleIndex = null;
-                _loadStream();
-              } else {
-                _player.setSubtitleTrack(SubtitleTrack.no());
-              }
-              setState(() => _showSubtitleMenu = false);
+              _selectEmbyAudio(i);
+              setState(() => _showAudioMenu = false);
             },
           ),
-          for (int i = 0; i < _embySubtitleStreams.length; i++)
-            _buildMenuItem(
-              label: _embySubtitleStreams[i].displayInfo,
-              isSelected: _isEmbySubtitleSelected(i),
-              onTap: () {
-                _selectEmbySubtitle(i);
-                setState(() => _showSubtitleMenu = false);
-              },
+        if (_embyAudioStreams.isEmpty && _audioTracks.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              '当前视频无音轨选项',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
-          if (_embySubtitleStreams.isEmpty && _subtitleTracks.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text(
-                '当前视频无字幕轨道',
-                style: TextStyle(color: Colors.white54, fontSize: 13),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAudioTrackList() {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 180),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [
-          for (int i = 0; i < _embyAudioStreams.length; i++)
-            _buildMenuItem(
-              label: _embyAudioStreams[i].displayInfo,
-              isSelected: _isEmbyAudioSelected(i),
-              onTap: () {
-                _selectEmbyAudio(i);
-                setState(() => _showAudioMenu = false);
-              },
-            ),
-          if (_embyAudioStreams.isEmpty && _audioTracks.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text(
-                '当前视频无音轨选项',
-                style: TextStyle(color: Colors.white54, fontSize: 13),
-              ),
-            ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 
