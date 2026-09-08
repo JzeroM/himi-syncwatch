@@ -22,4 +22,6 @@ class AppConstants {
   static const String actionPause = 'pause';
   static const String actionSeek = 'seek';
   static const String actionRate = 'rate';
+  static const String actionSwitchEpisode = 'switchEpisode';
+  static const String actionRemoveEpisode = 'removeEpisode';
 }

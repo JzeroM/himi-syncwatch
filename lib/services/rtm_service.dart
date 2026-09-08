@@ -186,6 +186,7 @@ class RtmService {
     required String playUrl,
     required String itemId,
     String? mediaSourceId,
+    int? currentEpisodeIndex,
   }) async {
     await setChannelMetadata(
       channelName: channelName,
@@ -193,6 +194,8 @@ class RtmService {
         'playUrl': playUrl,
         'itemId': itemId,
         if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
+        if (currentEpisodeIndex != null)
+          'currentEpisodeIndex': '$currentEpisodeIndex',
       },
     );
   }
@@ -221,6 +224,8 @@ class RtmService {
     required String action,
     double? position,
     double? rate,
+    int? episodeIndex,
+    String? itemId,
   }) async {
     if (_client == null || _currentChannelId == null) return;
 
@@ -230,6 +235,8 @@ class RtmService {
       'action': action,
       if (position != null) 'position': position,
       if (rate != null) 'rate': rate,
+      if (episodeIndex != null) 'episodeIndex': episodeIndex,
+      if (itemId != null) 'itemId': itemId,
     };
 
     await _publishMessage(message);

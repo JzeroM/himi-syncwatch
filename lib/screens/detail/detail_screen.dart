@@ -87,18 +87,39 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       return;
     }
 
-    // 弹窗输入预签 token 数量
-    final tokenCount = await _showTokenCountDialog();
-    if (tokenCount == null) return;
-
+    // 1. 版本选择（如有）
     MediaSource? selectedSource;
     if (_item!.hasMultipleVersions) {
       selectedSource = await _showVersionPicker();
       if (selectedSource == null) return;
     }
 
+    // 2. 电视剧 → 集数多选弹窗
+    List<MediaItem>? selectedEpisodes;
+    if (_item!.isSeries && _episodes.isNotEmpty) {
+      selectedEpisodes = await _showEpisodePicker();
+      if (selectedEpisodes == null) return;
+    }
+
+    // 3. Token 数量弹窗
+    final tokenCount = await _showTokenCountDialog();
+    if (tokenCount == null) return;
+
+    // 4. 构建房间码
     final channel = RoomCode.generateChannelId();
     final hostUid = RoomCode.generateHostUid();
+
+    final epIds = selectedEpisodes?.map((e) => e.id).toList();
+    final epNames = selectedEpisodes?.map((e) => e.name).toList();
+    final epSeasons = selectedEpisodes
+        ?.map((e) => e.parentIndexNumber ?? 0)
+        .toList();
+    final epNumbers = selectedEpisodes
+        ?.map((e) => e.indexNumber ?? 0)
+        .toList();
+    final epPosters = selectedEpisodes
+        ?.map((e) => e.posterUrl ?? '')
+        .toList();
 
     final roomCode = RoomCode.encode(
       appId: agoraConfig.appId,
@@ -108,10 +129,18 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       mediaItemId: _item!.id,
       mediaSourceId: selectedSource?.id,
       tokenCount: tokenCount,
+      seriesName: _item!.isSeries ? _item!.name : null,
+      episodeIds: epIds,
+      episodeNames: epNames,
+      episodeSeasons: epSeasons,
+      episodeNumbers: epNumbers,
+      episodePosters: epPosters,
     );
 
     if (mounted) {
-      final query = StringBuffer('roomCode=${Uri.encodeComponent(roomCode)}&isHost=true');
+      final query = StringBuffer(
+        'roomCode=${Uri.encodeComponent(roomCode)}&isHost=true',
+      );
       if (selectedSource != null) {
         query.write('&mediaSourceId=${selectedSource.id}');
       }
@@ -143,6 +172,122 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<List<MediaItem>?> _showEpisodePicker() async {
+    final selected = Set<String>.from(_episodes.map((e) => e.id));
+
+    return showModalBottomSheet<List<MediaItem>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.4,
+            maxChildSize: 0.9,
+            expand: false,
+            builder: (ctx, scrollController) => Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '选择要一起看的集数',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setSheetState(() {
+                            if (selected.length == _episodes.length) {
+                              selected.clear();
+                            } else {
+                              selected.addAll(_episodes.map((e) => e.id));
+                            }
+                          });
+                        },
+                        child: Text(
+                          selected.length == _episodes.length
+                              ? '取消全选'
+                              : '全选',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: _episodes.length,
+                    itemBuilder: (ctx, i) {
+                      final ep = _episodes[i];
+                      final isSelected = selected.contains(ep.id);
+                      return CheckboxListTile(
+                        value: isSelected,
+                        onChanged: (v) {
+                          setSheetState(() {
+                            if (v == true) {
+                              selected.add(ep.id);
+                            } else {
+                              selected.remove(ep.id);
+                            }
+                          });
+                        },
+                        secondary: SizedBox(
+                          width: 48,
+                          height: 32,
+                          child: EmbyImage(
+                            url: ep.posterUrl,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        title: Text(
+                          'S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0} - ${ep.name}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Text(
+                        '已选 ${selected.length} 集',
+                        style: TextStyle(color: Colors.grey[400]),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('取消'),
+                      ),
+                      FilledButton(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () {
+                                final result = _episodes
+                                    .where((e) => selected.contains(e.id))
+                                    .toList();
+                                Navigator.pop(ctx, result);
+                              },
+                        child: const Text('确认'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

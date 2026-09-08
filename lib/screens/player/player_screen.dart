@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -14,6 +13,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -79,6 +79,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final ScrollController _broadcastScrollController = ScrollController();
   String? _audienceName;
 
+  // 剧集资源列表
+  List<String> _episodeIds = [];
+  List<String> _episodeNames = [];
+  List<int> _episodeSeasons = [];
+  List<int> _episodeNumbers = [];
+  List<String> _episodePosters = [];
+  String _seriesName = '';
+  int _currentEpisodeIndex = -1;
+  bool _hasEpisodeList = false;
+  bool _isPlayerReady = false;
+
   @override
   void initState() {
     super.initState();
@@ -93,7 +104,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ? widget.audienceName
         : (_isHost ? '房主' : '观众');
 
-    _initializePlayer();
+    // 解析房间码中的剧集列表
+    if (widget.roomCode != null) {
+      _parseEpisodeListFromRoomCode();
+    }
+
+    _initPlayerProperties();
     _setupPlayerListeners();
 
     if (widget.roomCode != null) {
@@ -101,7 +117,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  Future<void> _initializePlayer() async {
+  void _parseEpisodeListFromRoomCode() {
+    _roomData = RoomCode.decode(widget.roomCode!);
+    if (_roomData == null) return;
+
+    final epIds = _roomData!['episodeIds'];
+    if (epIds is List && epIds.isNotEmpty) {
+      _episodeIds = List<String>.from(epIds);
+      _episodeNames = List<String>.from(
+        _roomData!['episodeNames'] ?? List.filled(epIds.length, ''),
+      );
+      _episodeSeasons = List<int>.from(
+        _roomData!['episodeSeasons'] ?? List.filled(epIds.length, 0),
+      );
+      _episodeNumbers = List<int>.from(
+        _roomData!['episodeNumbers'] ?? List.filled(epIds.length, 0),
+      );
+      _episodePosters = List<String>.from(
+        _roomData!['episodePosters'] ?? List.filled(epIds.length, ''),
+      );
+      _seriesName = _roomData!['seriesName'] ?? '';
+      _hasEpisodeList = true;
+    }
+  }
+
+  void _initPlayerProperties() async {
     if (_player.platform is NativePlayer) {
       final native = _player.platform as NativePlayer;
       await native.setProperty('sub-visibility', 'yes');
@@ -111,15 +151,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await native.setProperty('sub-shadow-offset', '1');
       await native.setProperty('sub-margin-y', '22');
     }
+  }
 
+  Future<void> _loadEpisodeStream(int episodeIndex) async {
+    if (episodeIndex < 0 || episodeIndex >= _episodeIds.length) return;
+
+    final itemId = _episodeIds[episodeIndex];
+
+    // 获取 Emby 详情（字幕/音轨信息）
     final embyService = ref.read(embyServiceProvider);
-
-    final details = await embyService.getItemDetails(widget.itemId);
+    final details = await embyService.getItemDetails(itemId);
     if (details != null && mounted) {
       final source = details.mediaSources.firstWhere(
         (s) => s.id == widget.mediaSourceId,
-        orElse: () => details.mediaSources.firstOrNull ??
-            MediaSource(id: '', name: ''),
+        orElse: () =>
+            details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
       );
       setState(() {
         _embyAudioStreams = source.audioStreams;
@@ -128,16 +174,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       });
     }
 
-    await _loadStream();
+    // 加载流
+    await _loadStream(itemId: itemId);
+
+    setState(() {
+      _currentEpisodeIndex = episodeIndex;
+      _isPlayerReady = true;
+    });
   }
 
-  Future<void> _loadStream({int? subtitleStreamIndex}) async {
+  Future<void> _loadStream({
+    String? itemId,
+    int? subtitleStreamIndex,
+  }) async {
+    final targetItemId = itemId ?? widget.itemId;
+
     final embyService = ref.read(embyServiceProvider);
     final config = ref.read(embyConfigProvider);
     final token = config?.accessToken ?? '';
 
     final streamUrl = embyService.getStreamUrl(
-      widget.itemId,
+      targetItemId,
       mediaSourceId: widget.mediaSourceId,
       subtitleStreamIndex: subtitleStreamIndex,
     );
@@ -170,8 +227,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await rtmService.publishPlayInfo(
         channelName: _rtmChannel!,
         playUrl: url,
-        itemId: widget.itemId,
+        itemId: targetItemId,
         mediaSourceId: widget.mediaSourceId,
+        currentEpisodeIndex: _currentEpisodeIndex,
       );
     }
   }
@@ -247,6 +305,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         });
       }
     });
+
+    // 自动播下一集
+    _player.stream.completed.listen((completed) {
+      if (!mounted || !completed) return;
+      if (!_hasEpisodeList) return;
+
+      final nextIndex = _currentEpisodeIndex + 1;
+      if (nextIndex < _episodeIds.length) {
+        _switchToEpisode(nextIndex);
+        _addBroadcastMessage('自动播放下一集');
+      } else {
+        _addBroadcastMessage('所有剧集播放完毕');
+      }
+    });
   }
 
   void _autoSelectDefaultTracks() {
@@ -292,7 +364,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    _roomData = RoomCode.decode(widget.roomCode!);
+    _roomData ??= RoomCode.decode(widget.roomCode!);
     if (_roomData == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -344,9 +416,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await rtmService.login(_rtmAppId!, token: loginToken);
     await rtmService.subscribe(_rtmChannel!);
 
-    // 如果是观众，先读取频道元数据获取播放 URL
+    // 观众：仅同步当前播放状态，不自动加载流
     if (!_isHost) {
-      _fetchPlayInfoFromMetadata(rtmService);
+      _fetchCurrentPlayInfo(rtmService);
     }
 
     // 发送加入消息
@@ -392,27 +464,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  void _fetchPlayInfoFromMetadata(RtmService rtmService) async {
+  void _fetchCurrentPlayInfo(RtmService rtmService) async {
     final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
-    final playUrl = metadata['playUrl'];
-    if (playUrl != null && mounted) {
-      final token = ref.read(embyConfigProvider)?.accessToken ?? '';
-      final resolvedUrl = await _resolveStreamUrl(playUrl, token);
-      final pos = _player.state.position;
-      final wasPlaying = _player.state.playing;
-
-      await _player.open(Media(resolvedUrl, httpHeaders: {
-        'X-Emby-Token': token,
-      }));
-
-      if (_player.platform is NativePlayer) {
-        final native = _player.platform as NativePlayer;
-        await native.setProperty('sub-visibility', 'yes');
-        await native.setProperty('sid', 'auto');
+    final epIndexStr = metadata['currentEpisodeIndex'];
+    if (epIndexStr != null && mounted) {
+      final epIndex = int.tryParse(epIndexStr);
+      if (epIndex != null) {
+        setState(() => _currentEpisodeIndex = epIndex);
       }
-
-      if (pos > Duration.zero) await _player.seek(pos);
-      if (wasPlaying) await _player.play();
     }
   }
 
@@ -440,8 +499,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (mounted) _player.setRate(rate);
       });
     } else {
-      _player
-          .seek(Duration(milliseconds: (expectedPos * 1000).toInt()));
+      _player.seek(Duration(milliseconds: (expectedPos * 1000).toInt()));
     }
 
     if (playing && !_player.state.playing) {
@@ -474,6 +532,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         final r = (message['rate'] as num).toDouble();
         _player.setRate(r);
         break;
+      case AppConstants.actionSwitchEpisode:
+        final epIndex = message['episodeIndex'] as int?;
+        if (epIndex != null) {
+          _switchToEpisode(epIndex);
+        }
+        break;
+      case AppConstants.actionRemoveEpisode:
+        final epIndex = message['episodeIndex'] as int?;
+        if (epIndex != null) {
+          _removeEpisodeLocal(epIndex);
+        }
+        break;
     }
   }
 
@@ -482,7 +552,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final time =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     setState(() => _broadcastMessages.add('[$time] $msg'));
-    // 滚动到底部
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_broadcastScrollController.hasClients) {
         _broadcastScrollController.animateTo(
@@ -563,7 +632,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   static const _videoFitLabels = ['自适应', '裁剪', '铺满', '原始'];
 
   void _cycleVideoFit() {
-    final nextIndex = (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
+    final nextIndex =
+        (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
     setState(() => _videoFit = _videoFitModes[nextIndex]);
   }
 
@@ -603,77 +673,99 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
-  void _shareRoomCode() {
-    if (widget.roomCode == null) return;
-    SharePlus.instance.share(
-      ShareParams(
-        text: '来一起看电影吧！\n\n房间码：\n${widget.roomCode}\n\n在 HimiSync 中粘贴即可加入',
-        subject: 'HimiSync 观影邀请',
-      ),
-    );
+  // 切集
+  void _switchToEpisode(int index) async {
+    if (index < 0 || index >= _episodeIds.length) return;
+    if (index == _currentEpisodeIndex && _isPlayerReady) return;
+
+    await _loadEpisodeStream(index);
+
+    // Host: 发送切集命令
+    if (_isHost && _rtmChannel != null) {
+      final rtmService = ref.read(rtmServiceProvider);
+      await rtmService.sendCommand(
+        action: AppConstants.actionSwitchEpisode,
+        episodeIndex: index,
+        itemId: _episodeIds[index],
+      );
+    }
   }
 
-  Widget _buildBroadcastBoard() {
-    return Container(
-      width: 220,
-      constraints: const BoxConstraints(maxHeight: 200),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-            child: Row(
-              children: [
-                const Icon(Icons.campaign, color: Colors.white70, size: 14),
-                const SizedBox(width: 4),
-                Text(
-                  '播报 (${_broadcastMessages.length})',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: Colors.white24),
-          Flexible(
-            child: _broadcastMessages.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: Text(
-                      '暂无消息',
-                      style: TextStyle(color: Colors.white38, fontSize: 11),
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _broadcastScrollController,
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    itemCount: _broadcastMessages.length,
-                    itemBuilder: (context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
-                        child: Text(
-                          _broadcastMessages[index],
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 11,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
+  // 删除剧集（房主）
+  void _removeEpisode(int index) async {
+    if (index < 0 || index >= _episodeIds.length) return;
+    if (!_isHost) return;
+
+    final removedName = _episodeNames[index];
+
+    _episodeIds.removeAt(index);
+    _episodeNames.removeAt(index);
+    _episodeSeasons.removeAt(index);
+    _episodeNumbers.removeAt(index);
+    _episodePosters.removeAt(index);
+
+    if (_currentEpisodeIndex == index) {
+      if (_episodeIds.isNotEmpty) {
+        final nextIdx = index.clamp(0, _episodeIds.length - 1);
+        _currentEpisodeIndex = nextIdx;
+        _loadEpisodeStream(nextIdx);
+      } else {
+        _currentEpisodeIndex = -1;
+        _isPlayerReady = false;
+        _player.stop();
+      }
+    } else if (_currentEpisodeIndex > index) {
+      _currentEpisodeIndex--;
+    }
+
+    _hasEpisodeList = _episodeIds.isNotEmpty;
+    _addBroadcastMessage('已移除: $removedName');
+    setState(() {});
+
+    // 发送删除命令
+    if (_rtmChannel != null) {
+      final rtmService = ref.read(rtmServiceProvider);
+      await rtmService.sendCommand(
+        action: AppConstants.actionRemoveEpisode,
+        episodeIndex: index,
+      );
+    }
+  }
+
+  // 删除剧集（观众端，仅修改本地列表）
+  void _removeEpisodeLocal(int index) {
+    if (index < 0 || index >= _episodeIds.length) return;
+
+    _episodeIds.removeAt(index);
+    _episodeNames.removeAt(index);
+    _episodeSeasons.removeAt(index);
+    _episodeNumbers.removeAt(index);
+    _episodePosters.removeAt(index);
+
+    if (_currentEpisodeIndex == index) {
+      if (_episodeIds.isNotEmpty) {
+        final nextIdx = index.clamp(0, _episodeIds.length - 1);
+        _currentEpisodeIndex = nextIdx;
+        _loadEpisodeStream(nextIdx);
+      } else {
+        _currentEpisodeIndex = -1;
+        _isPlayerReady = false;
+        _player.stop();
+      }
+    } else if (_currentEpisodeIndex > index) {
+      _currentEpisodeIndex--;
+    }
+
+    _hasEpisodeList = _episodeIds.isNotEmpty;
+    setState(() {});
+  }
+
+  // 复制房间码
+  void _copyRoomCode() {
+    if (widget.roomCode == null) return;
+    Clipboard.setData(ClipboardData(text: widget.roomCode));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制房间码')),
     );
   }
 
@@ -725,61 +817,99 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           }
         },
         behavior: HitTestBehavior.opaque,
-        child: Stack(
-          children: [
-            Center(
-              child: Video(
-                controller: _controller,
-                controls: NoVideoControls,
-                fit: _videoFit,
-                subtitleViewConfiguration: const SubtitleViewConfiguration(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 50),
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
-                    shadows: [
-                      Shadow(
-                        blurRadius: 6,
-                        color: Colors.black87,
-                        offset: Offset(1, 1),
-                      ),
-                    ],
-                  ),
+        child: _buildResponsiveLayout(),
+      ),
+    );
+  }
+
+  Widget _buildResponsiveLayout() {
+    final isPortrait = MediaQuery.of(context).orientation ==
+            Orientation.portrait &&
+        (Platform.isAndroid || Platform.isIOS);
+
+    if (isPortrait && _hasEpisodeList) {
+      // 手机竖屏：视频在上，资源面板在下
+      return Column(
+        children: [
+          Expanded(flex: 3, child: _buildVideoArea()),
+          SizedBox(
+            height: 280,
+            child: _buildResourcePanel(),
+          ),
+        ],
+      );
+    } else {
+      // 桌面/横屏：视频在左，资源面板在右
+      return Row(
+        children: [
+          Expanded(flex: 3, child: _buildVideoArea()),
+          if (_hasEpisodeList)
+            SizedBox(
+              width: 320,
+              child: _buildResourcePanel(),
+            ),
+        ],
+      );
+    }
+  }
+
+  Widget _buildVideoArea() {
+    return Stack(
+      children: [
+        // 视频 / 占位文字
+        if (_isPlayerReady || !_hasEpisodeList)
+          Center(
+            child: Video(
+              controller: _controller,
+              controls: NoVideoControls,
+              fit: _videoFit,
+              subtitleViewConfiguration: const SubtitleViewConfiguration(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 50),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
+                  shadows: [
+                    Shadow(
+                      blurRadius: 6,
+                      color: Colors.black87,
+                      offset: Offset(1, 1),
+                    ),
+                  ],
                 ),
               ),
             ),
+          )
+        else
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.play_circle_outline,
+                    size: 64, color: Colors.white24),
+                const SizedBox(height: 16),
+                Text(
+                  '请从资源面板选择要播放的内容',
+                  style: TextStyle(color: Colors.white38, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
 
-            if (_showControls)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: _buildTopBar(),
-              ),
+        // TopBar（渐变浮层）
+        if (_showControls)
+          Positioned(top: 0, left: 0, right: 0, child: _buildTopBar()),
 
-            if (_showControls && widget.roomCode != null)
-              Positioned(
-                left: 12,
-                top: MediaQuery.of(context).padding.top + 56,
-                child: _buildBroadcastBoard(),
-              ),
+        // Controls（底部渐变浮层，仅视频区域底部）
+        if (_showControls && (_isPlayerReady || !_hasEpisodeList))
+          Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
 
-            if (_showControls)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: _buildControls(),
-              ),
-
-            if (_duration.inMilliseconds == 0)
-              const Center(
-                child: CircularProgressIndicator(color: Color(0xFF6366F1)),
-              ),
-          ],
-        ),
-      ),
+        // 加载指示器
+        if (_duration.inMilliseconds == 0 && _isPlayerReady)
+          const Center(
+            child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+          ),
+      ],
     );
   }
 
@@ -806,45 +936,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
-          if (widget.roomCode != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: _isHost ? const Color(0xFF6366F1) : Colors.red,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                _isHost ? '房主模式' : '观众: $_audienceName',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // 在线人数
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.people, color: Colors.white70, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${_onlineUsers.length}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ],
           const Spacer(),
           if (widget.roomCode != null)
             IconButton(
-              icon: const Icon(Icons.share, color: Colors.white),
-              tooltip: '分享房间码',
-              onPressed: _shareRoomCode,
+              icon: const Icon(Icons.copy, color: Colors.white),
+              tooltip: '复制房间码',
+              onPressed: _copyRoomCode,
             ),
         ],
       ),
@@ -855,7 +952,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return GestureDetector(
       onTap: () {},
       child: Container(
-        padding: EdgeInsets.fromLTRB(16, 10, 16, 12 + MediaQuery.of(context).padding.bottom),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          10,
+          16,
+          12 + MediaQuery.of(context).padding.bottom,
+        ),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -874,7 +976,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 activeTrackColor: const Color(0xFF6366F1),
                 inactiveTrackColor: Colors.white24,
                 thumbColor: const Color(0xFF6366F1),
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 6),
                 trackHeight: 3,
               ),
               child: Slider(
@@ -895,7 +998,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 children: [
                   Text(
                     '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 12),
                   ),
                 ],
               ),
@@ -918,6 +1022,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
             Row(
               children: [
+                // 上一集
+                if (_canControlPlayback &&
+                    _hasEpisodeList &&
+                    _episodeIds.length > 1)
+                  GestureDetector(
+                    onTap: _currentEpisodeIndex > 0
+                        ? () => _switchToEpisode(_currentEpisodeIndex - 1)
+                        : null,
+                    child: Icon(
+                      Icons.skip_previous,
+                      color: _currentEpisodeIndex > 0
+                          ? Colors.white
+                          : Colors.white24,
+                      size: 28,
+                    ),
+                  ),
+                if (_canControlPlayback &&
+                    _hasEpisodeList &&
+                    _episodeIds.length > 1)
+                  const SizedBox(width: 8),
+
+                // 播放/暂停
                 if (_canControlPlayback)
                   GestureDetector(
                     onTap: _togglePlayPause,
@@ -929,7 +1055,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       size: 36,
                     ),
                   ),
-                if (_canControlPlayback) const SizedBox(width: 16),
+                if (_canControlPlayback) const SizedBox(width: 8),
+
+                // 下一集
+                if (_canControlPlayback &&
+                    _hasEpisodeList &&
+                    _episodeIds.length > 1)
+                  GestureDetector(
+                    onTap: _currentEpisodeIndex < _episodeIds.length - 1
+                        ? () =>
+                            _switchToEpisode(_currentEpisodeIndex + 1)
+                        : null,
+                    child: Icon(
+                      Icons.skip_next,
+                      color: _currentEpisodeIndex < _episodeIds.length - 1
+                          ? Colors.white
+                          : Colors.white24,
+                      size: 28,
+                    ),
+                  ),
+                if (_canControlPlayback &&
+                    _hasEpisodeList &&
+                    _episodeIds.length > 1)
+                  const SizedBox(width: 8),
+
+                // 音量
                 GestureDetector(
                   onTap: () {
                     setState(() {
@@ -943,7 +1093,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     _player.setVolume(newVol);
                     setState(() => _volume = newVol);
                   },
-                  child: Icon(_volumeIcon, color: Colors.white, size: 24),
+                  child:
+                      Icon(_volumeIcon, color: Colors.white, size: 24),
                 ),
                 if (_showVolumeSlider) ...[
                   const SizedBox(width: 8),
@@ -954,9 +1105,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         activeTrackColor: const Color(0xFF6366F1),
                         inactiveTrackColor: Colors.white24,
                         thumbColor: const Color(0xFF6366F1),
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7),
                         trackHeight: 2,
-                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                        overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 12),
                       ),
                       child: Slider(
                         value: _volume.clamp(0, 100),
@@ -974,13 +1127,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     child: Text(
                       '${_volume.round()}',
                       textAlign: TextAlign.right,
-                      style: const TextStyle(color: Colors.white70, fontSize: 11),
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 11),
                     ),
                   ),
                 ],
 
                 const Spacer(),
 
+                // 字幕
                 _buildControlButton(
                   icon: Icons.subtitles,
                   onTap: () {
@@ -990,9 +1145,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _showAudioMenu = false;
                     });
                   },
-                  badge: _embySubtitleStreams.isNotEmpty ? '${_embySubtitleStreams.length}' : null,
+                  badge: _embySubtitleStreams.isNotEmpty
+                      ? '${_embySubtitleStreams.length}'
+                      : null,
                 ),
                 const SizedBox(width: 20),
+
+                // 音轨
                 _buildControlButton(
                   icon: Icons.audiotrack,
                   onTap: () {
@@ -1002,8 +1161,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _showSubtitleMenu = false;
                     });
                   },
-                  badge: _embyAudioStreams.isNotEmpty ? '${_embyAudioStreams.length}' : null,
+                  badge: _embyAudioStreams.isNotEmpty
+                      ? '${_embyAudioStreams.length}'
+                      : null,
                 ),
+
+                // 横竖屏 + 画面比例
                 if (Platform.isAndroid || Platform.isIOS) ...[
                   const SizedBox(width: 20),
                   _buildControlButton(
@@ -1014,9 +1177,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ),
                   const SizedBox(width: 20),
                   _buildControlButton(
-                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
+                    icon: _videoFitIcons[
+                        _videoFitModes.indexOf(_videoFit)],
                     onTap: _cycleVideoFit,
-                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
+                    badge: _videoFitLabels[
+                        _videoFitModes.indexOf(_videoFit)],
                   ),
                 ],
               ],
@@ -1067,7 +1232,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
                 child: Text(
                   badge,
-                  style: const TextStyle(color: Colors.white, fontSize: 9),
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 9),
                 ),
               ),
             ),
@@ -1076,6 +1242,250 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  // ========== 资源面板 ==========
+  Widget _buildResourcePanel() {
+    return Container(
+      color: const Color(0xFF1A1A2E),
+      child: Column(
+        children: [
+          // 面板头部
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.white12)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _seriesName.isNotEmpty ? _seriesName : '资源',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (_roomData != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white12,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.people,
+                            color: Colors.white70, size: 12),
+                        const SizedBox(width: 3),
+                        Text('${_onlineUsers.length}',
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                if (_roomData != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color:
+                          _isHost ? const Color(0xFF6366F1) : Colors.red,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _isHost ? '房主' : _audienceName,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 11),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // 剧集列表
+          Expanded(
+            child: _episodeIds.isEmpty
+                ? const Center(
+                    child: Text('暂无资源',
+                        style: TextStyle(
+                            color: Colors.white24, fontSize: 13)),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: _episodeIds.length,
+                    itemBuilder: (ctx, i) =>
+                        _buildEpisodeListItem(i),
+                  ),
+          ),
+
+          // 播报板（底部）
+          if (_roomData != null) _buildBroadcastBoardInPanel(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEpisodeListItem(int index) {
+    final isPlaying = index == _currentEpisodeIndex;
+    final season =
+        _episodeSeasons.length > index ? _episodeSeasons[index] : 0;
+    final number =
+        _episodeNumbers.length > index ? _episodeNumbers[index] : 0;
+    final name =
+        _episodeNames.length > index ? _episodeNames[index] : '';
+    final poster =
+        _episodePosters.length > index ? _episodePosters[index] : null;
+
+    return InkWell(
+      onTap: () => _switchToEpisode(index),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: isPlaying
+              ? const Color(0xFF6366F1).withValues(alpha: 0.3)
+              : null,
+          border: Border(
+            left: BorderSide(
+              color: isPlaying
+                  ? const Color(0xFF6366F1)
+                  : Colors.transparent,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            // 播放按钮
+            GestureDetector(
+              onTap: () => _switchToEpisode(index),
+              child: Icon(
+                isPlaying
+                    ? Icons.pause_circle
+                    : Icons.play_circle,
+                color: isPlaying
+                    ? const Color(0xFF6366F1)
+                    : Colors.white54,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // 缩略图
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: SizedBox(
+                width: 56,
+                height: 36,
+                child: poster != null && poster.isNotEmpty
+                    ? EmbyImage(url: poster, fit: BoxFit.cover)
+                    : Container(
+                        color: Colors.grey[800],
+                        child: const Icon(Icons.movie,
+                            size: 16, color: Colors.grey),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // 集信息
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'S${season.toString().padLeft(2, '0')}E${number.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      color: isPlaying
+                          ? const Color(0xFF6366F1)
+                          : Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      color: isPlaying
+                          ? Colors.white
+                          : Colors.white54,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+
+            // 删除按钮（仅房主）
+            if (_isHost)
+              GestureDetector(
+                onTap: () => _removeEpisode(index),
+                child: const Icon(Icons.close,
+                    color: Colors.white24, size: 18),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBroadcastBoardInPanel() {
+    return Container(
+      height: 120,
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Colors.white12)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              children: [
+                const Icon(Icons.campaign,
+                    color: Colors.white70, size: 12),
+                const SizedBox(width: 4),
+                Text('播报 (${_broadcastMessages.length})',
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 11)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _broadcastMessages.isEmpty
+                ? const Center(
+                    child: Text('暂无消息',
+                        style: TextStyle(
+                            color: Colors.white24, fontSize: 11)),
+                  )
+                : ListView.builder(
+                    controller: _broadcastScrollController,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10),
+                    itemCount: _broadcastMessages.length,
+                    itemBuilder: (ctx, i) => Text(
+                      _broadcastMessages[i],
+                      style: const TextStyle(
+                          color: Colors.white54, fontSize: 11),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ========== 字幕/音轨选择 ==========
   Widget _buildSubtitleListContent() {
     return ListView(
       shrinkWrap: true,
@@ -1083,12 +1493,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       children: [
         _buildMenuItem(
           label: '关闭字幕',
-          isSelected: _currentSubtitle?.id == 'no' && !_useServerSubtitleBurnIn,
+          isSelected:
+              _currentSubtitle?.id == 'no' && !_useServerSubtitleBurnIn,
           onTap: () {
             if (_useServerSubtitleBurnIn) {
               _useServerSubtitleBurnIn = false;
               _activeSubtitleIndex = null;
-              _loadStream();
+              _loadStream(itemId: _episodeIds.isNotEmpty
+                  ? _episodeIds[_currentEpisodeIndex]
+                  : widget.itemId);
             } else {
               _player.setSubtitleTrack(SubtitleTrack.no());
             }
@@ -1155,7 +1568,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_useServerSubtitleBurnIn) {
       return _activeSubtitleIndex == stream.index;
     }
-    if (_currentSubtitle == null || _currentSubtitle!.id == 'no') return false;
+    if (_currentSubtitle == null || _currentSubtitle!.id == 'no') {
+      return false;
+    }
     final real = _realSubtitleTracks;
     if (embyIndex >= real.length) return false;
     return _currentSubtitle?.id == real[embyIndex].id;
@@ -1176,7 +1591,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (isExternal) {
       _useServerSubtitleBurnIn = true;
       _activeSubtitleIndex = stream.index;
-      _loadStream(subtitleStreamIndex: stream.index);
+      _loadStream(
+        itemId: _episodeIds.isNotEmpty
+            ? _episodeIds[_currentEpisodeIndex]
+            : widget.itemId,
+        subtitleStreamIndex: stream.index,
+      );
       return;
     }
 
@@ -1203,11 +1623,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
             if (isSelected)
-              const Icon(Icons.check, size: 16, color: Color(0xFF6366F1))
+              const Icon(Icons.check,
+                  size: 16, color: Color(0xFF6366F1))
             else
               const SizedBox(width: 16),
             const SizedBox(width: 12),
@@ -1215,7 +1637,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               child: Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? const Color(0xFF6366F1) : Colors.white,
+                  color: isSelected
+                      ? const Color(0xFF6366F1)
+                      : Colors.white,
                   fontSize: 14,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -1227,12 +1651,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  IconData get _volumeIcon =>
-      _volume == 0
-          ? Icons.volume_off
-          : _volume < 50
-              ? Icons.volume_down
-              : Icons.volume_up;
+  IconData get _volumeIcon => _volume == 0
+      ? Icons.volume_off
+      : _volume < 50
+          ? Icons.volume_down
+          : Icons.volume_up;
 
   String _formatDuration(Duration duration) {
     final hours = duration.inHours;

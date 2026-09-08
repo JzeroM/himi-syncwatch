@@ -15,6 +15,12 @@ class RoomCode {
     String? mediaSourceId,
     int tokenCount = 5,
     int tokenExpireSeconds = 86400,
+    String? seriesName,
+    List<String>? episodeIds,
+    List<String>? episodeNames,
+    List<int>? episodeSeasons,
+    List<int>? episodeNumbers,
+    List<String>? episodePosters,
   }) {
     final tokens = <String>[];
     for (int i = 0; i < tokenCount; i++) {
@@ -36,6 +42,12 @@ class RoomCode {
       'mediaItemId': mediaItemId,
       if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
       'tokens': tokens,
+      if (seriesName != null) 'seriesName': seriesName,
+      if (episodeIds != null) 'episodeIds': episodeIds,
+      if (episodeNames != null) 'episodeNames': episodeNames,
+      if (episodeSeasons != null) 'episodeSeasons': episodeSeasons,
+      if (episodeNumbers != null) 'episodeNumbers': episodeNumbers,
+      if (episodePosters != null) 'episodePosters': episodePosters,
     };
 
     final encoded = base64Url.encode(utf8.encode(jsonEncode(data)));
