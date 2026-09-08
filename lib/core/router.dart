@@ -39,12 +39,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           roomCode: state.uri.queryParameters['roomCode'],
           mediaSourceId: state.uri.queryParameters['mediaSourceId'],
           isHost: state.uri.queryParameters['isHost'] == 'true',
+          audienceName: state.uri.queryParameters['name'] ?? '',
         ),
       ),
       GoRoute(
         path: '/room',
         builder: (context, state) => RoomScreen(
           roomCode: state.uri.queryParameters['code'] ?? '',
+          audienceName: state.uri.queryParameters['name'] ?? '',
         ),
       ),
     ],

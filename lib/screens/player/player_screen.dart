@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -19,6 +20,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? roomCode;
   final String? mediaSourceId;
   final bool isHost;
+  final String audienceName;
 
   const PlayerScreen({
     super.key,
@@ -26,6 +28,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.roomCode,
     this.mediaSourceId,
     this.isHost = false,
+    this.audienceName = '',
   });
 
   @override
@@ -70,6 +73,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Map<String, dynamic>? _roomData;
 
+  // 播报板 + 在线用户
+  final List<String> _broadcastMessages = [];
+  final Set<String> _onlineUsers = {};
+  final ScrollController _broadcastScrollController = ScrollController();
+  String? _audienceName;
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +89,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
 
     _isHost = widget.isHost;
+    _audienceName = widget.audienceName.isNotEmpty
+        ? widget.audienceName
+        : (_isHost ? '房主' : '观众');
 
     _initializePlayer();
     _setupPlayerListeners();
@@ -337,6 +349,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _fetchPlayInfoFromMetadata(rtmService);
     }
 
+    // 发送加入消息
+    _addBroadcastMessage('${_audienceName} 加入了房间');
+    rtmService.sendJoinLeave(
+      action: 'join',
+      userName: _audienceName!,
+    });
+
     _rtmSubscription = rtmService.messageStream.listen((message) {
       if (!mounted) return;
       final senderId = message['userId'];
@@ -346,9 +365,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (type == AppConstants.msgTypeHeartbeat) {
         _handleHeartbeat(message);
       } else if (type == AppConstants.msgTypeCommand) {
-        _handleCommand(message);
+        final action = message['action'] as String?;
+        if (action == 'join') {
+          final name = message['userName'] as String? ?? '观众';
+          _addBroadcastMessage('$name 加入了房间');
+          _onlineUsers.add(senderId);
+          setState(() {});
+        } else if (action == 'leave') {
+          final name = message['userName'] as String? ?? '观众';
+          _addBroadcastMessage('$name 离开了房间');
+          _onlineUsers.remove(senderId);
+          setState(() {});
+        } else {
+          _handleCommand(message);
+        }
       }
     });
+
+    // Host: 把自己加入在线列表
+    if (_isHost) {
+      _onlineUsers.add(_myUserId!);
+    }
 
     if (_isHost) {
       _startHeartbeat();
@@ -438,6 +475,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _player.setRate(r);
         break;
     }
+  }
+
+  void _addBroadcastMessage(String msg) {
+    final now = DateTime.now();
+    final time =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    setState(() => _broadcastMessages.add('[$time] $msg'));
+    // 滚动到底部
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_broadcastScrollController.hasClients) {
+        _broadcastScrollController.animateTo(
+          _broadcastScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _startHeartbeat() {
@@ -549,12 +603,98 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
+  void _shareRoomCode() {
+    if (widget.roomCode == null) return;
+    SharePlus.instance.share(
+      ShareParams(
+        text: '来一起看电影吧！\n\n房间码：\n${widget.roomCode}\n\n在 HimiSync 中粘贴即可加入',
+        subject: 'HimiSync 观影邀请',
+      ),
+    );
+  }
+
+  Widget _buildBroadcastBoard() {
+    return Container(
+      width: 220,
+      constraints: const BoxConstraints(maxHeight: 200),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+            child: Row(
+              children: [
+                const Icon(Icons.campaign, color: Colors.white70, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  '播报 (${_broadcastMessages.length})',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Colors.white24),
+          Flexible(
+            child: _broadcastMessages.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Text(
+                      '暂无消息',
+                      style: TextStyle(color: Colors.white38, fontSize: 11),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _broadcastScrollController,
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    itemCount: _broadcastMessages.length,
+                    itemBuilder: (context, index) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Text(
+                          _broadcastMessages[index],
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 11,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rtmSubscription?.cancel();
     _tracksSubscription?.cancel();
+    _broadcastScrollController.dispose();
+
+    // 发送离开消息
+    if (widget.roomCode != null) {
+      try {
+        final rtmService = ref.read(rtmServiceProvider);
+        rtmService.sendJoinLeave(
+          action: 'leave',
+          userName: _audienceName ?? '观众',
+        );
+      } catch (_) {}
+    }
 
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -618,6 +758,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 child: _buildTopBar(),
               ),
 
+            if (_showControls && widget.roomCode != null)
+              Positioned(
+                left: 12,
+                top: MediaQuery.of(context).padding.top + 56,
+                child: _buildBroadcastBoard(),
+              ),
+
             if (_showControls)
               Positioned(
                 bottom: 0,
@@ -667,11 +814,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                _isHost ? '房主模式' : '观众模式',
+                _isHost ? '房主模式' : '观众: $_audienceName',
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
+            const SizedBox(width: 8),
+            // 在线人数
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.people, color: Colors.white70, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_onlineUsers.length}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
           ],
+          const Spacer(),
+          if (widget.roomCode != null)
+            IconButton(
+              icon: const Icon(Icons.share, color: Colors.white),
+              tooltip: '分享房间码',
+              onPressed: _shareRoomCode,
+            ),
         ],
       ),
     );

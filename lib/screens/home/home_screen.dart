@@ -180,20 +180,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _showJoinRoomDialog(BuildContext context) {
-    final controller = TextEditingController();
+    final codeController = TextEditingController();
+    final nameController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('加入房间'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: '粘贴房间码',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-          maxLines: 3,
-          minLines: 1,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: codeController,
+              decoration: const InputDecoration(
+                hintText: '粘贴房间码',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+              minLines: 1,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                hintText: '你的昵称',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -202,10 +216,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           FilledButton(
             onPressed: () {
-              final code = controller.text.trim();
-              if (code.isNotEmpty) {
+              final code = codeController.text.trim();
+              final name = nameController.text.trim();
+              if (code.isNotEmpty && name.isNotEmpty) {
                 Navigator.pop(context);
-                context.push('/room?code=${Uri.encodeComponent(code)}');
+                context.push(
+                  '/room?code=${Uri.encodeComponent(code)}&name=${Uri.encodeComponent(name)}',
+                );
               }
             },
             child: const Text('加入'),

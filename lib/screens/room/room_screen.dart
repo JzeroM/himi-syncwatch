@@ -7,8 +7,9 @@ import 'package:himi_syncwatch/utils/room_code.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomCode;
+  final String audienceName;
 
-  const RoomScreen({super.key, required this.roomCode});
+  const RoomScreen({super.key, required this.roomCode, this.audienceName = ''});
 
   @override
   ConsumerState<RoomScreen> createState() => _RoomScreenState();
@@ -171,8 +172,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             height: 50,
             child: FilledButton.icon(
               onPressed: () {
+                final nameParam = widget.audienceName.isNotEmpty
+                    ? '&name=${Uri.encodeComponent(widget.audienceName)}'
+                    : '';
                 context.push(
-                  '/player/$mediaItemId?roomCode=${Uri.encodeComponent(widget.roomCode)}&isHost=true',
+                  '/player/$mediaItemId?roomCode=${Uri.encodeComponent(widget.roomCode)}&isHost=true$nameParam',
                 );
               },
               icon: const Icon(Icons.play_arrow),

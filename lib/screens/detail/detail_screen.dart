@@ -87,6 +87,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       return;
     }
 
+    // 弹窗输入预签 token 数量
+    final tokenCount = await _showTokenCountDialog();
+    if (tokenCount == null) return;
+
     MediaSource? selectedSource;
     if (_item!.hasMultipleVersions) {
       selectedSource = await _showVersionPicker();
@@ -103,7 +107,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       hostUid: hostUid,
       mediaItemId: _item!.id,
       mediaSourceId: selectedSource?.id,
-      tokenCount: 10,
+      tokenCount: tokenCount,
     );
 
     if (mounted) {
@@ -139,6 +143,53 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<int?> _showTokenCountDialog() async {
+    final controller = TextEditingController(text: '10');
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('建房设置'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('预签 Token 数量', style: TextStyle(fontSize: 14)),
+            const SizedBox(height: 4),
+            Text(
+              '决定最多可容纳多少观众加入',
+              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final n = int.tryParse(controller.text.trim());
+              if (n != null && n > 0 && n <= 100) {
+                Navigator.pop(ctx, n);
+              }
+            },
+            child: const Text('确定'),
+          ),
+        ],
       ),
     );
   }

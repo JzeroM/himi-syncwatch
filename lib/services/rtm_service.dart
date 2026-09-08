@@ -235,6 +235,22 @@ class RtmService {
     await _publishMessage(message);
   }
 
+  Future<void> sendJoinLeave({
+    required String action,
+    required String userName,
+  }) async {
+    if (_client == null || _currentChannelId == null) return;
+
+    final message = {
+      'type': AppConstants.msgTypeCommand,
+      'userId': _currentUserId,
+      'action': action,
+      'userName': userName,
+    };
+
+    await _publishMessage(message);
+  }
+
   Future<void> _publishMessage(Map<String, dynamic> message) async {
     if (_client == null || _currentChannelId == null) return;
 
