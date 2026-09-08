@@ -252,7 +252,18 @@ class EmbyService {
     }
   }
 
-  String getStreamUrl(String itemId, {String? mediaSourceId}) {
+  String getStreamUrl(String itemId, {String? mediaSourceId, int? subtitleStreamIndex}) {
+    if (subtitleStreamIndex != null) {
+      final base = '$_serverUrl/Videos/$itemId/stream';
+      final params = <String>[
+        'SubtitleStreamIndex=$subtitleStreamIndex',
+        'SubtitleMethod=HlsEmbed',
+      ];
+      if (mediaSourceId != null) {
+        params.add('MediaSourceId=$mediaSourceId');
+      }
+      return '$base?${params.join('&')}';
+    }
     final base = '$_serverUrl/Videos/$itemId/stream?static=true';
     if (mediaSourceId != null) {
       return '$base&MediaSourceId=$mediaSourceId';

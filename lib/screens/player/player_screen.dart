@@ -59,6 +59,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   List<MediaStream> _embyAudioStreams = [];
   int? _embyDefaultAudioIndex;
   int? _embyDefaultSubtitleIndex;
+  int? _activeSubtitleIndex;
+  bool _useServerSubtitleBurnIn = false;
 
   @override
   void initState() {
@@ -77,7 +79,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _initializePlayer() async {
     if (_player.platform is NativePlayer) {
-      await (_player.platform as NativePlayer).setProperty('sub-visibility', 'yes');
+      final native = _player.platform as NativePlayer;
+      await native.setProperty('sub-visibility', 'yes');
+      await native.setProperty('sub-auto', 'fuzzy');
+      await native.setProperty('sub-font-size', '40');
+      await native.setProperty('sub-border-size', '2');
+      await native.setProperty('sub-shadow-offset', '1');
+      await native.setProperty('sub-margin-y', '22');
     }
 
     final embyService = ref.read(embyServiceProvider);
@@ -86,7 +94,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (details != null && mounted) {
       final source = details.mediaSources.firstWhere(
         (s) => s.id == widget.mediaSourceId,
-        orElse: () => details.mediaSources.firstOrNull ?? 
+        orElse: () => details.mediaSources.firstOrNull ??
             MediaSource(id: '', name: ''),
       );
       setState(() {
@@ -97,18 +105,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       });
     }
 
-    final streamUrl = embyService.getStreamUrl(
-      widget.itemId,
-      mediaSourceId: widget.mediaSourceId,
-    );
+    await _loadStream();
+  }
+
+  Future<void> _loadStream({int? subtitleStreamIndex}) async {
+    final embyService = ref.read(embyServiceProvider);
     final config = ref.read(embyConfigProvider);
     final token = config?.accessToken ?? '';
 
+    final streamUrl = embyService.getStreamUrl(
+      widget.itemId,
+      mediaSourceId: widget.mediaSourceId,
+      subtitleStreamIndex: subtitleStreamIndex,
+    );
+
     final url = await _resolveStreamUrl(streamUrl, token);
+
+    final pos = _player.state.position;
+    final wasPlaying = _player.state.playing;
 
     await _player.open(Media(url, httpHeaders: {
       'X-Emby-Token': token,
     }));
+
+    if (pos > Duration.zero) {
+      await _player.seek(pos);
+    }
+    if (wasPlaying) {
+      await _player.play();
+    }
   }
 
   Future<String> _resolveStreamUrl(String url, String token) async {
@@ -748,9 +773,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         children: [
           _buildMenuItem(
             label: '关闭字幕',
-            isSelected: _currentSubtitle?.id == 'no',
+            isSelected: _currentSubtitle?.id == 'no' && !_useServerSubtitleBurnIn,
             onTap: () {
-              _player.setSubtitleTrack(SubtitleTrack.no());
+              if (_useServerSubtitleBurnIn) {
+                _useServerSubtitleBurnIn = false;
+                _activeSubtitleIndex = null;
+                _loadStream();
+              } else {
+                _player.setSubtitleTrack(SubtitleTrack.no());
+              }
               setState(() => _showSubtitleMenu = false);
             },
           ),
@@ -810,6 +841,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   bool _isEmbySubtitleSelected(int embyIndex) {
+    final stream = _embySubtitleStreams[embyIndex];
+    if (_useServerSubtitleBurnIn) {
+      return _activeSubtitleIndex == stream.index;
+    }
     if (_currentSubtitle == null) return false;
     if (_currentSubtitle!.id == 'no') return false;
     final mpvIndex = _findMpvSubtitleIndex(embyIndex);
@@ -835,9 +870,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _selectEmbySubtitle(int embyIndex) {
-    final mpvIndex = _findMpvSubtitleIndex(embyIndex);
-    if (mpvIndex != null && mpvIndex < _subtitleTracks.length) {
-      _player.setSubtitleTrack(_subtitleTracks[mpvIndex]);
+    final stream = _embySubtitleStreams[embyIndex];
+    final isExternal = stream.isExternal ||
+        stream.subtitleLocationType == 'ExternalStream';
+
+    if (isExternal) {
+      _useServerSubtitleBurnIn = true;
+      _activeSubtitleIndex = stream.index;
+      _loadStream(subtitleStreamIndex: stream.index);
+    } else {
+      _useServerSubtitleBurnIn = false;
+      _activeSubtitleIndex = stream.index;
+      final mpvIndex = _findMpvSubtitleIndex(embyIndex);
+      if (mpvIndex != null && mpvIndex < _subtitleTracks.length) {
+        _player.setSubtitleTrack(_subtitleTracks[mpvIndex]);
+      }
     }
   }
 
