@@ -266,6 +266,8 @@ class RtmService {
     required List<int> episodeSeasons,
     required List<int> episodeNumbers,
     required List<String> episodePosters,
+    String? playUrl,
+    String? mediaSourceId,
   }) async {
     if (_client == null) return;
 
@@ -278,6 +280,8 @@ class RtmService {
       'episodeSeasons': episodeSeasons,
       'episodeNumbers': episodeNumbers,
       'episodePosters': episodePosters,
+      if (playUrl != null) 'playUrl': playUrl,
+      if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
     };
 
     try {

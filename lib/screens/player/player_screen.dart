@@ -172,18 +172,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     // 获取 Emby 详情（字幕/音轨信息）
     final embyService = ref.read(embyServiceProvider);
-    final details = await embyService.getItemDetails(itemId);
-    if (details != null && mounted) {
-      final source = details.mediaSources.firstWhere(
-        (s) => s.id == widget.mediaSourceId,
-        orElse: () =>
-            details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
-      );
-      setState(() {
-        _embyAudioStreams = source.audioStreams;
-        _embySubtitleStreams = source.subtitleStreams;
-        _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
-      });
+    final config = ref.read(embyConfigProvider);
+
+    // 如果没有配置 Emby，跳过详情获取
+    if (config != null && config.isAuthenticated) {
+      try {
+        final details = await embyService.getItemDetails(itemId);
+        if (details != null && mounted) {
+          final source = details.mediaSources.firstWhere(
+            (s) => s.id == widget.mediaSourceId,
+            orElse: () =>
+                details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
+          );
+          setState(() {
+            _embyAudioStreams = source.audioStreams;
+            _embySubtitleStreams = source.subtitleStreams;
+            _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
+          });
+        }
+      } catch (e) {
+        print('[Player] 获取 Emby 详情失败: $e');
+      }
     }
 
     // 加载流
@@ -205,44 +214,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final config = ref.read(embyConfigProvider);
     final token = config?.accessToken ?? '';
 
-    final streamUrl = embyService.getStreamUrl(
-      targetItemId,
-      mediaSourceId: widget.mediaSourceId,
-      subtitleStreamIndex: subtitleStreamIndex,
-    );
-
-    final url = await _resolveStreamUrl(streamUrl, token);
-
-    final pos = _player.state.position;
-    final wasPlaying = _player.state.playing;
-
-    await _player.open(Media(url, httpHeaders: {
-      'X-Emby-Token': token,
-    }));
-
-    if (_player.platform is NativePlayer) {
-      final native = _player.platform as NativePlayer;
-      await native.setProperty('sub-visibility', 'yes');
-      await native.setProperty('sid', 'auto');
-    }
-
-    if (pos > Duration.zero) {
-      await _player.seek(pos);
-    }
-    if (wasPlaying) {
-      await _player.play();
-    }
-
-    // Host: 发布播放信息到频道元数据
-    if (_isHost && _rtmChannel != null) {
-      final rtmService = ref.read(rtmServiceProvider);
-      await rtmService.publishPlayInfo(
-        channelName: _rtmChannel!,
-        playUrl: url,
-        itemId: targetItemId,
+    try {
+      final streamUrl = embyService.getStreamUrl(
+        targetItemId,
         mediaSourceId: widget.mediaSourceId,
-        currentEpisodeIndex: _currentEpisodeIndex,
+        subtitleStreamIndex: subtitleStreamIndex,
       );
+
+      final url = await _resolveStreamUrl(streamUrl, token);
+
+      final pos = _player.state.position;
+      final wasPlaying = _player.state.playing;
+
+      await _player.open(Media(url, httpHeaders: {
+        'X-Emby-Token': token,
+      }));
+
+      if (_player.platform is NativePlayer) {
+        final native = _player.platform as NativePlayer;
+        await native.setProperty('sub-visibility', 'yes');
+        await native.setProperty('sid', 'auto');
+      }
+
+      if (pos > Duration.zero) {
+        await _player.seek(pos);
+      }
+      if (wasPlaying) {
+        await _player.play();
+      }
+
+      // Host: 发布播放信息到频道元数据
+      if (_isHost && _rtmChannel != null) {
+        final rtmService = ref.read(rtmServiceProvider);
+        await rtmService.publishPlayInfo(
+          channelName: _rtmChannel!,
+          playUrl: url,
+          itemId: targetItemId,
+          mediaSourceId: widget.mediaSourceId,
+          currentEpisodeIndex: _currentEpisodeIndex,
+        );
+      }
+    } catch (e) {
+      print('[Player] 加载流失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('播放失败: $e')),
+        );
+      }
     }
   }
 
@@ -493,7 +511,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _fetchCurrentPlayInfo(RtmService rtmService) async {
     final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
     final epIndexStr = metadata['currentEpisodeIndex'];
-    if (epIndexStr != null && mounted) {
+    final playUrl = metadata['playUrl'];
+
+    if (playUrl is String && playUrl.isNotEmpty && mounted) {
+      // 优先使用 playUrl 直接播放
+      _addBroadcastMessage('使用主机播放地址');
+      _player.open(Media(playUrl, httpHeaders: {
+        'X-Emby-Token': '',
+      }));
+      if (epIndexStr != null) {
+        final epIndex = int.tryParse(epIndexStr);
+        if (epIndex != null && mounted) {
+          setState(() {
+            _currentEpisodeIndex = epIndex;
+            _isPlayerReady = true;
+          });
+        }
+      }
+    } else if (epIndexStr != null && mounted) {
       final epIndex = int.tryParse(epIndexStr);
       if (epIndex != null && epIndex < _episodeIds.length) {
         await _loadEpisodeStream(epIndex);
@@ -589,8 +624,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _hasEpisodeList = true;
       });
       _addBroadcastMessage('已同步房间资源列表');
-      if (_episodeIds.isNotEmpty) {
-        _loadEpisodeStream(0);
+
+      // 从频道元数据获取播放地址
+      if (_rtmChannel != null) {
+        final rtmService = ref.read(rtmServiceProvider);
+        _fetchCurrentPlayInfo(rtmService);
       }
     }
   }
