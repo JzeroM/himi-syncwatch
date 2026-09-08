@@ -74,6 +74,10 @@ jobs:
         run: chmod +x scripts/patch_android.sh && bash scripts/patch_android.sh
 
       - run: flutter pub get
+
+      - name: 使用完整版 libmpv (media-kit full, 支持 PGS 位图字幕)
+        run: bash scripts/patch_android_full_libmpv.sh
+
       - run: flutter build apk --release --split-per-abi
       - uses: actions/upload-artifact@v4
         with:
@@ -150,6 +154,25 @@ jobs:
 
       - run: flutter pub get
       - run: flutter build windows --release
+
+      - name: 替换为完整版 libmpv-2.dll (shinchiro, 支持 PGS/TrueHD)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260903/mpv-dev-x86_64-20260903-git-69e63f425a.7z"
+          Invoke-WebRequest -Uri $url -OutFile mpv.7z
+          # 优先用 tar(bsdtar, 支持 7z) 提取；失败则退化为 7z
+          tar -xf mpv.7z libmpv-2.dll 2>$null
+          if (-not (Test-Path libmpv-2.dll)) {
+            & "C:\Program Files\7-Zip\7z.exe" e mpv.7z libmpv-2.dll -y
+          }
+          if (-not (Test-Path libmpv-2.dll)) { throw "未能从 mpv.7z 提取 libmpv-2.dll" }
+          $dest = "build/windows/x64/runner/Release/libmpv-2.dll"
+          Copy-Item -Force libmpv-2.dll $dest
+          $f = Get-Item $dest
+          Write-Host "已覆盖: $($f.FullName)  大小=$([math]::Round($f.Length/1MB,1))MB"
+          Get-FileHash $dest -Algorithm SHA256 | Select-Object Hash
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-exe
