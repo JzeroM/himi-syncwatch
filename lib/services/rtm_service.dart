@@ -121,13 +121,13 @@ class RtmService {
     if (_storage == null) return;
 
     try {
-      final data = metadata.map((k, v) => MapEntry(k, v));
+      final items = metadata.entries
+          .map((e) => MetadataItem(key: e.key, value: e.value))
+          .toList();
       final (status, _) = await _storage!.setChannelMetadata(
         channelName,
-        data,
-        options: MetadataOptions(
-          enablePresence: true,
-        ),
+        RtmChannelType.message,
+        items,
       );
       if (status.error == true) {
         print('[RTM] 设置频道元数据失败: ${status.reason}');
@@ -142,16 +142,19 @@ class RtmService {
     if (_storage == null) return {};
 
     try {
-      final (status, data) = await _storage!.getChannelMetadata(
+      final (status, result) = await _storage!.getChannelMetadata(
         channelName,
-        options: MetadataOptions(
-          enablePresence: true,
-        ),
+        RtmChannelType.message,
       );
-      if (status.error == true || data == null) {
+      if (status.error == true || result == null) {
         return {};
       }
-      return Map<String, String>.from(data);
+      final data = result.data;
+      if (data.items == null) return {};
+      return {
+        for (final item in data.items!)
+          if (item.key != null && item.value != null) item.key!: item.value!,
+      };
     } catch (e) {
       print('[RTM] 读取频道元数据异常: $e');
       return {};
@@ -163,11 +166,14 @@ class RtmService {
     if (_presence == null) return 0;
 
     try {
-      final (status, result) = await _presence!.getOnlineUsers(channelName);
+      final (status, result) = await _presence!.getOnlineUsers(
+        channelName,
+        RtmChannelType.message,
+      );
       if (status.error == true || result == null) {
         return 0;
       }
-      return result.total ?? 0;
+      return result.count;
     } catch (e) {
       print('[RTM] 获取在线用户数异常: $e');
       return 0;
@@ -229,59 +235,6 @@ class RtmService {
     await _publishMessage(message);
   }
 
-  // 观众请求 token
-  Future<void> requestToken({
-    required String channelName,
-    required String hostUid,
-    required String requestUid,
-  }) async {
-    if (_client == null) return;
-
-    try {
-      final (status, _) = await _client!.sendMessageToPeer(
-        hostUid,
-        jsonEncode({
-          'type': AppConstants.msgTypeTokenRequest,
-          'requestUid': requestUid,
-        }),
-        channelType: RtmChannelType.message,
-        customType: 'application/json',
-      );
-      if (status.error == true) {
-        print('[RTM] 发送 token 请求失败: ${status.reason}');
-      }
-    } catch (e) {
-      print('[RTM] 发送 token 请求异常: $e');
-    }
-  }
-
-  // Host 回复 token
-  Future<void> replyToken({
-    required String audienceUid,
-    required String token,
-    required String channelName,
-  }) async {
-    if (_client == null) return;
-
-    try {
-      final (status, _) = await _client!.sendMessageToPeer(
-        audienceUid,
-        jsonEncode({
-          'type': AppConstants.msgTypeTokenResponse,
-          'token': token,
-          'channelName': channelName,
-        }),
-        channelType: RtmChannelType.message,
-        customType: 'application/json',
-      );
-      if (status.error == true) {
-        print('[RTM] 发送 token 回复失败: ${status.reason}');
-      }
-    } catch (e) {
-      print('[RTM] 发送 token 回复异常: $e');
-    }
-  }
-
   Future<void> _publishMessage(Map<String, dynamic> message) async {
     if (_client == null || _currentChannelId == null) return;
 
@@ -289,8 +242,6 @@ class RtmService {
       final (status, _) = await _client!.publish(
         _currentChannelId!,
         jsonEncode(message),
-        channelType: RtmChannelType.message,
-        customType: 'application/json',
       );
 
       if (status.error == true) {

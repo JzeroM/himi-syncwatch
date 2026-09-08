@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
+import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -346,8 +347,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _handleHeartbeat(message);
       } else if (type == AppConstants.msgTypeCommand) {
         _handleCommand(message);
-      } else if (type == AppConstants.msgTypeTokenRequest) {
-        _handleTokenRequest(message, rtmService);
       }
     });
 
@@ -378,29 +377,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (pos > Duration.zero) await _player.seek(pos);
       if (wasPlaying) await _player.play();
     }
-  }
-
-  void _handleTokenRequest(Map<String, dynamic> message, RtmService rtmService) {
-    if (!_isHost) return;
-
-    final requestUid = message['requestUid'] as String?;
-    if (requestUid == null) return;
-
-    final agoraConfig = ref.read(agoraConfigProvider);
-    if (agoraConfig == null || !agoraConfig.isConfigured) return;
-
-    final token = RtmTokenBuilder.buildToken(
-      appId: _rtmAppId!,
-      appCertificate: agoraConfig.appCertificate,
-      userId: requestUid,
-      tokenExpireSeconds: 86400,
-    );
-
-    rtmService.replyToken(
-      audienceUid: requestUid,
-      token: token,
-      channelName: _rtmChannel!,
-    );
   }
 
   void _handleHeartbeat(Map<String, dynamic> message) {
