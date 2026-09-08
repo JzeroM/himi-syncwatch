@@ -705,15 +705,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _episodePosters.removeAt(index);
 
     if (_currentEpisodeIndex == index) {
-      if (_episodeIds.isNotEmpty) {
-        final nextIdx = index.clamp(0, _episodeIds.length - 1);
-        _currentEpisodeIndex = nextIdx;
-        _loadEpisodeStream(nextIdx);
-      } else {
-        _currentEpisodeIndex = -1;
-        _isPlayerReady = false;
-        _player.stop();
-      }
+      _currentEpisodeIndex = -1;
+      _isPlayerReady = false;
+      _player.stop();
     } else if (_currentEpisodeIndex > index) {
       _currentEpisodeIndex--;
     }
@@ -743,15 +737,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _episodePosters.removeAt(index);
 
     if (_currentEpisodeIndex == index) {
-      if (_episodeIds.isNotEmpty) {
-        final nextIdx = index.clamp(0, _episodeIds.length - 1);
-        _currentEpisodeIndex = nextIdx;
-        _loadEpisodeStream(nextIdx);
-      } else {
-        _currentEpisodeIndex = -1;
-        _isPlayerReady = false;
-        _player.stop();
-      }
+      _currentEpisodeIndex = -1;
+      _isPlayerReady = false;
+      _player.stop();
     } else if (_currentEpisodeIndex > index) {
       _currentEpisodeIndex--;
     }
@@ -1344,7 +1332,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _episodePosters.length > index ? _episodePosters[index] : null;
 
     return InkWell(
-      onTap: () => _switchToEpisode(index),
+      onTap: () {
+        if (isPlaying) {
+          _togglePlayPause();
+        } else {
+          _switchToEpisode(index);
+        }
+      },
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1363,11 +1357,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ),
         child: Row(
           children: [
-            // 播放按钮
+            // 播放/暂停按钮
             GestureDetector(
-              onTap: () => _switchToEpisode(index),
+              onTap: () {
+                if (isPlaying) {
+                  _togglePlayPause();
+                } else {
+                  _switchToEpisode(index);
+                }
+              },
               child: Icon(
-                isPlaying
+                isPlaying && _player.state.playing
                     ? Icons.pause_circle
                     : Icons.play_circle,
                 color: isPlaying
