@@ -589,6 +589,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _hasEpisodeList = true;
       });
       _addBroadcastMessage('已同步房间资源列表');
+      if (_episodeIds.isNotEmpty) {
+        _loadEpisodeStream(0);
+      }
     }
   }
 
