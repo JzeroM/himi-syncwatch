@@ -62,6 +62,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
   bool _isLandscape = false;
+  BoxFit _videoFit = BoxFit.contain;
 
   @override
   void initState() {
@@ -407,6 +408,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
+  static const _videoFitModes = [
+    BoxFit.contain,
+    BoxFit.cover,
+    BoxFit.fill,
+    BoxFit.none,
+  ];
+  static const _videoFitIcons = [
+    Icons.fit_screen,
+    Icons.fullscreen,
+    Icons.zoom_out_map,
+    Icons.aspect_ratio,
+  ];
+  static const _videoFitLabels = ['自适应', '裁剪', '铺满', '原始'];
+
+  void _cycleVideoFit() {
+    final nextIndex = (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
+    setState(() => _videoFit = _videoFitModes[nextIndex]);
+  }
+
   void _onSeek(double value) {
     _player.seek(Duration(milliseconds: value.toInt()));
     if (widget.roomId != null) {
@@ -490,6 +510,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               child: Video(
                 controller: _controller,
                 controls: NoVideoControls,
+                fit: _videoFit,
                 subtitleViewConfiguration: const SubtitleViewConfiguration(
                   padding: EdgeInsets.fromLTRB(16, 0, 16, 50),
                   style: TextStyle(
@@ -689,6 +710,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ? Icons.screen_lock_portrait
                         : Icons.screen_lock_landscape,
                     onTap: _toggleOrientation,
+                  ),
+                  const SizedBox(width: 28),
+                  _buildControlButton(
+                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
+                    onTap: _cycleVideoFit,
+                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
                   ),
                 ],
               ],
