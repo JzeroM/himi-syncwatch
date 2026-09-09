@@ -19,13 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装 Qt 6 (Quick / QuickControls2)
+      - name: 安装 Qt 6 (Quick / QuickControls2 属基础包，无需额外模块)
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
           arch: 'win64_msvc2019_64'
           cache: true
-          modules: 'qtdeclarative qtquickcontrols2 qtmultimedia'
 
       - name: 配置 CMake (MSVC)
         run: |
