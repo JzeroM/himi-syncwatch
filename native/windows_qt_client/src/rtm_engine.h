@@ -54,8 +54,8 @@ private:
     void onSubscribeResult(uint64_t requestId, const char* channelName,
                            agora::rtm::RTM_ERROR_CODE errorCode) override;
     void onPublishResult(uint64_t requestId, agora::rtm::RTM_ERROR_CODE errorCode) override;
-    void onMessageEvent(const agora::rtm::MessageEvent& event) override;
-    void onPresenceEvent(const agora::rtm::PresenceEvent& event) override;
+    void onMessageEvent(const MessageEvent& event) override;
+    void onPresenceEvent(const PresenceEvent& event) override;
     void onGetOnlineUsersResult(uint64_t requestId, const agora::rtm::UserState* userStateList,
                                 size_t count, const char* nextPage,
                                 agora::rtm::RTM_ERROR_CODE errorCode) override;
