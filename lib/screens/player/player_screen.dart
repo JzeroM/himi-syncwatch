@@ -89,6 +89,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int _currentEpisodeIndex = -1;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
+  bool _seriesCollapsed = false;
 
   @override
   void initState() {
@@ -203,6 +204,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _currentEpisodeIndex = episodeIndex;
       _isPlayerReady = true;
     });
+    _autoExpandSeries();
   }
 
   Future<void> _loadStream({
@@ -527,6 +529,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             _currentEpisodeIndex = epIndex;
             _isPlayerReady = true;
           });
+          _autoExpandSeries();
         }
       }
     } else if (epIndexStr != null && mounted) {
@@ -648,6 +651,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         );
       }
     });
+  }
+
+  bool get _isSeries => _seriesName.isNotEmpty && _episodeIds.length > 1;
+
+  void _autoExpandSeries() {
+    if (_isSeries && _seriesCollapsed) {
+      setState(() => _seriesCollapsed = false);
+    }
   }
 
   void _startHeartbeat() {
@@ -1395,18 +1406,70 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         style: TextStyle(
                             color: Colors.white24, fontSize: 13)),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: _episodeIds.length,
-                    itemBuilder: (ctx, i) =>
-                        _buildEpisodeListItem(i),
-                  ),
+                : _isSeries
+                    ? _buildSeriesCollapseList()
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: _episodeIds.length,
+                        itemBuilder: (ctx, i) =>
+                            _buildEpisodeListItem(i),
+                      ),
           ),
 
           // 播报板（底部）
           if (_roomData != null) _buildBroadcastBoardInPanel(),
         ],
       ),
+    );
+  }
+
+  Widget _buildSeriesCollapseList() {
+    return Column(
+      children: [
+        // 折叠标题栏
+        InkWell(
+          onTap: () => setState(() => _seriesCollapsed = !_seriesCollapsed),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: const Color(0xFF16213E),
+            child: Row(
+              children: [
+                Icon(
+                  _seriesCollapsed ? Icons.chevron_right : Icons.expand_more,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    _seriesName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '(${_episodeIds.length}集)',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // 展开时显示集列表
+        if (!_seriesCollapsed)
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: _episodeIds.length,
+              itemBuilder: (ctx, i) => _buildEpisodeListItem(i),
+            ),
+          ),
+      ],
     );
   }
 
