@@ -274,28 +274,32 @@ class RtmService {
 
   Future<void> sendRoomInfo({
     required String channelName,
-    required String seriesName,
-    required List<String> episodeIds,
-    required List<String> episodeNames,
-    required List<int> episodeSeasons,
-    required List<int> episodeNumbers,
-    required List<String> episodePosters,
-    String? playUrl,
+    String? mediaItemId,
     String? mediaSourceId,
+    String? mediaItemName,
+    String? seriesName,
+    List<String>? episodeIds,
+    List<String>? episodeNames,
+    List<int>? episodeSeasons,
+    List<int>? episodeNumbers,
+    List<String>? episodePosters,
+    String? playUrl,
   }) async {
     if (_client == null) return;
 
     final message = {
       'type': AppConstants.msgTypeRoomInfo,
       'userId': _currentUserId,
-      'seriesName': seriesName,
-      'episodeIds': episodeIds,
-      'episodeNames': episodeNames,
-      'episodeSeasons': episodeSeasons,
-      'episodeNumbers': episodeNumbers,
-      'episodePosters': episodePosters,
-      if (playUrl != null) 'playUrl': playUrl,
+      if (mediaItemId != null) 'mediaItemId': mediaItemId,
       if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
+      if (mediaItemName != null) 'mediaItemName': mediaItemName,
+      if (seriesName != null) 'seriesName': seriesName,
+      if (episodeIds != null) 'episodeIds': episodeIds,
+      if (episodeNames != null) 'episodeNames': episodeNames,
+      if (episodeSeasons != null) 'episodeSeasons': episodeSeasons,
+      if (episodeNumbers != null) 'episodeNumbers': episodeNumbers,
+      if (episodePosters != null) 'episodePosters': episodePosters,
+      if (playUrl != null) 'playUrl': playUrl,
     };
 
     try {

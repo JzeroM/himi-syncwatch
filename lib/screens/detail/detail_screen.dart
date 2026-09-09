@@ -94,48 +94,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       if (selectedSource == null) return;
     }
 
-    // 2. 电视剧 → 集数多选弹窗
-    List<MediaItem>? selectedEpisodes;
-    if (_item!.isSeries && _episodes.isNotEmpty) {
-      selectedEpisodes = await _showEpisodePicker();
-      if (selectedEpisodes == null) return;
-    }
-
-    // 3. Token 数量弹窗
+    // 2. Token 数量弹窗
     final tokenCount = await _showTokenCountDialog();
     if (tokenCount == null) return;
 
-    // 4. 构建房间码
+    // 3. 构建房间码（仅含连接信息，媒体数据通过 RTM 发送）
     final channel = RoomCode.generateChannelId();
     final hostUid = RoomCode.generateHostUid();
-
-    final epIds = selectedEpisodes?.map((e) => e.id).toList();
-    final epNames = selectedEpisodes?.map((e) => e.name).toList();
-    final epSeasons = selectedEpisodes
-        ?.map((e) => e.parentIndexNumber ?? 0)
-        .toList();
-    final epNumbers = selectedEpisodes
-        ?.map((e) => e.indexNumber ?? 0)
-        .toList();
-    final epPosters = selectedEpisodes
-        ?.map((e) => e.posterUrl ?? '')
-        .toList();
 
     final roomCode = RoomCode.encode(
       appId: agoraConfig.appId,
       appCertificate: agoraConfig.appCertificate,
       channel: channel,
       hostUid: hostUid,
-      mediaItemId: _item!.id,
-      mediaSourceId: selectedSource?.id,
-      mediaItemName: _item!.name,
       tokenCount: tokenCount,
-      seriesName: _item!.isSeries ? _item!.name : null,
-      episodeIds: epIds,
-      episodeNames: epNames,
-      episodeSeasons: epSeasons,
-      episodeNumbers: epNumbers,
-      episodePosters: epPosters,
     );
 
     if (mounted) {

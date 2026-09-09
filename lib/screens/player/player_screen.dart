@@ -107,8 +107,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ? widget.audienceName
         : (_isHost ? '房主' : '观众');
 
-    // 解析房间码中的剧集列表
-    if (widget.roomCode != null) {
+    // 主持人从房间码解析剧集列表（如有），观众通过 RTM 接收
+    if (widget.roomCode != null && _isHost) {
       _parseEpisodeListFromRoomCode();
     }
 
@@ -154,6 +154,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _seriesName = '';
         _hasEpisodeList = true;
       }
+    }
+  }
+
+  Future<void> _fetchEpisodesFromEmby() async {
+    final embyService = ref.read(embyServiceProvider);
+    final config = ref.read(embyConfigProvider);
+    if (config == null || !config.isAuthenticated) return;
+
+    try {
+      final item = await embyService.getItemDetails(widget.itemId);
+      if (item == null || !mounted) return;
+
+      if (item.isSeries) {
+        // 电视剧：获取所有剧集
+        final episodes = await embyService.getItems(
+          parentId: widget.itemId,
+          includeItemTypes: 'Episode',
+          sortBy: 'SortName',
+          sortOrder: 'Ascending',
+        );
+        if (mounted && episodes.isNotEmpty) {
+          setState(() {
+            _episodeIds = episodes.map((e) => e.id).toList();
+            _episodeNames = episodes.map((e) => e.name).toList();
+            _episodeSeasons =
+                episodes.map((e) => e.parentIndexNumber ?? 0).toList();
+            _episodeNumbers =
+                episodes.map((e) => e.indexNumber ?? 0).toList();
+            _episodePosters = episodes.map((e) => e.posterUrl ?? '').toList();
+            _seriesName = item.name;
+            _hasEpisodeList = true;
+          });
+        }
+      } else {
+        // 电影：单集
+        if (mounted) {
+          setState(() {
+            _episodeIds = [widget.itemId];
+            _episodeNames = [item.name];
+            _episodeSeasons = [0];
+            _episodeNumbers = [0];
+            _episodePosters = [item.posterUrl ?? ''];
+            _seriesName = '';
+            _hasEpisodeList = true;
+          });
+        }
+      }
+    } catch (e) {
+      print('[Player] 从 Emby 获取剧集失败: $e');
     }
   }
 
@@ -400,14 +449,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_roomSyncInitializing) return;
     _roomSyncInitializing = true;
 
-    final agoraConfig = ref.read(agoraConfigProvider);
-    if (agoraConfig == null || !agoraConfig.isConfigured) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('声网未配置')),
-        );
+    // 仅主持人需要检查声网配置
+    if (_isHost) {
+      final agoraConfig = ref.read(agoraConfigProvider);
+      if (agoraConfig == null || !agoraConfig.isConfigured) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('声网未配置')),
+          );
+        }
+        return;
       }
-      return;
     }
 
     _roomData ??= RoomCode.decode(widget.roomCode!);
@@ -444,6 +496,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         appId: _rtmAppId!,
         userId: rtmUserId,
       );
+      final agoraConfig = ref.read(agoraConfigProvider)!;
       loginToken = RtmTokenBuilder.buildToken(
         appId: _rtmAppId!,
         appCertificate: agoraConfig.appCertificate,
@@ -480,9 +533,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     await rtmService.subscribe(_rtmChannel!);
 
-    // 观众：仅同步当前播放状态，不自动加载流
-    if (!_isHost) {
-      _fetchCurrentPlayInfo(rtmService);
+    // 主持人：从 Emby 获取剧集列表（覆盖房间码中的数据）
+    if (_isHost && !_hasEpisodeList) {
+      await _fetchEpisodesFromEmby();
     }
 
     // 发送加入消息
@@ -513,6 +566,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _addBroadcastMessage('$name 加入了房间');
           _onlineUsers.add(senderId);
           setState(() {});
+          // 主持人发送房间信息（含媒体数据 + 剧集列表）
+          if (_isHost && _episodeIds.isNotEmpty) {
+            rtmService.sendRoomInfo(
+              channelName: _rtmChannel!,
+              mediaItemId: widget.itemId,
+              mediaSourceId: widget.mediaSourceId,
+              mediaItemName: _episodeNames.isNotEmpty
+                  ? _episodeNames.first
+                  : null,
+              seriesName: _seriesName,
+              episodeIds: _episodeIds,
+              episodeNames: _episodeNames,
+              episodeSeasons: _episodeSeasons,
+              episodeNumbers: _episodeNumbers,
+              episodePosters: _episodePosters,
+            );
+          }
         } else if (action == 'leave') {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 离开了房间');
@@ -523,19 +593,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         }
       }
     });
-
-    // Host: 发送房间剧集信息给观众
-    if (_isHost && _episodeIds.isNotEmpty) {
-      rtmService.sendRoomInfo(
-        channelName: _rtmChannel!,
-        seriesName: _seriesName,
-        episodeIds: _episodeIds,
-        episodeNames: _episodeNames,
-        episodeSeasons: _episodeSeasons,
-        episodeNumbers: _episodeNumbers,
-        episodePosters: _episodePosters,
-      );
-    }
 
     if (_isHost) {
       _startHeartbeat();
@@ -644,6 +701,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final epIds = message['episodeIds'];
     if (epIds is List && epIds.isNotEmpty) {
+      // 电视剧：接收完整剧集列表
       setState(() {
         _episodeIds = List<String>.from(epIds);
         _episodeNames = List<String>.from(message['episodeNames'] ?? []);
@@ -653,12 +711,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _seriesName = message['seriesName'] ?? '';
         _hasEpisodeList = true;
       });
+    } else {
+      // 电影：用 mediaItemId 构建单集
+      final mediaItemId = message['mediaItemId'] as String?;
+      final mediaItemName = message['mediaItemName'] as String?;
+      if (mediaItemId != null && mediaItemId.isNotEmpty) {
+        setState(() {
+          _episodeIds = [mediaItemId];
+          _episodeNames = [mediaItemName ?? '电影'];
+          _episodeSeasons = [0];
+          _episodeNumbers = [0];
+          _episodePosters = [''];
+          _seriesName = '';
+          _hasEpisodeList = true;
+        });
+      }
+    }
+
+    if (_hasEpisodeList) {
       _addBroadcastMessage('已同步房间资源列表');
 
       // 从频道元数据获取播放地址
       if (_rtmChannel != null) {
         final rtmService = ref.read(rtmServiceProvider);
         _fetchCurrentPlayInfo(rtmService);
+      }
+    }
       }
     }
   }

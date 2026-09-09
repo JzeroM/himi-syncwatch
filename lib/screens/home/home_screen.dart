@@ -228,15 +228,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   );
                   return;
                 }
-                final mediaItemId = roomData['mediaItemId'] as String? ?? '';
-                if (mediaItemId.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('房间码无效')),
-                  );
-                  return;
-                }
                 context.push(
-                  '/player/$mediaItemId?roomCode=${Uri.encodeComponent(code)}&isHost=false&name=${Uri.encodeComponent(name)}',
+                  '/player/_?roomCode=${Uri.encodeComponent(code)}&isHost=false&name=${Uri.encodeComponent(name)}',
                 );
               }
             },
