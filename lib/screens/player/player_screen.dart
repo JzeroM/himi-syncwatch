@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
+import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
@@ -357,7 +358,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     if (_embyDefaultAudioIndex != null) {
       final embyIdx = _embyAudioStreams.indexWhere(
-        (s) => s.index == _embyDefaultAudioIndex,
+        (s) => s.index == _embyDefaultAudioIndex!,
       );
       final real = _realAudioTracks;
       if (embyIdx >= 0 && embyIdx < real.length) {
