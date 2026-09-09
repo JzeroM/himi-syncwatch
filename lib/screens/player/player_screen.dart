@@ -472,35 +472,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     await rtmService.subscribe(_rtmChannel!);
 
-    // 主持人：将剧集数据写入频道 Metadata（持久化备份，观众可直接读取）
-    if (_isHost && _episodeIds.isNotEmpty) {
-      rtmService.publishRoomInfoToMetadata(
-        channelName: _rtmChannel!,
-        roomData: {
-          'episodeIds': _episodeIds,
-          'episodeNames': _episodeNames,
-          'episodeSeasons': _episodeSeasons,
-          'episodeNumbers': _episodeNumbers,
-          'episodePosters': _episodePosters,
-          'seriesName': _seriesName,
-          'mediaItemId': widget.itemId,
-          'mediaSourceId': widget.mediaSourceId,
-        },
-      );
-    }
-
-    // 发送加入消息
-    _addBroadcastMessage('${_audienceName} 加入了房间');
-    rtmService.sendJoinLeave(
-      action: 'join',
-      userName: _audienceName!,
-    );
-
-    // 初始化在线人数（自己）
-    _onlineUserCount = 1;
-    setState(() {});
-
-    // 设置消息监听器（必须在 subscribe 之后、任何异步操作之前）
+    // 1. 设置消息监听器（subscribe 之后立即设置，确保不丢消息）
     print('[Room] ${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
     _rtmSubscription = rtmService.messageStream.listen((message) {
       if (!mounted) return;
@@ -567,28 +539,73 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     });
 
-    // 监听 Presence 事件（在线人数变化）
+    // 2. 监听 Presence 事件（在线人数变化）
     _presenceSubscription = rtmService.presenceStream.listen((event) {
       if (mounted) {
         _refreshOnlineCount(rtmService);
       }
     });
 
-    // 观众：先从频道 Metadata 读取剧集数据（持久化备份）
-    if (!_isHost && !_hasEpisodeList) {
-      final metadataData = await rtmService.getRoomInfoFromMetadata(_rtmChannel!);
-      if (metadataData != null && mounted) {
+    // 3. 发送 join 命令（通知已在频道的人）
+    _addBroadcastMessage('${_audienceName} 加入了房间');
+    rtmService.sendJoinLeave(
+      action: 'join',
+      userName: _audienceName!,
+    );
+
+    // 初始化在线人数（自己）
+    _onlineUserCount = 1;
+    setState(() {});
+
+    // 4. 主持人：延迟 500ms 后写入 Metadata（确保 listener 就绪）
+    if (_isHost && _episodeIds.isNotEmpty) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          rtmService.publishRoomInfoToMetadata(
+            channelName: _rtmChannel!,
+            roomData: {
+              'episodeIds': _episodeIds,
+              'episodeNames': _episodeNames,
+              'episodeSeasons': _episodeSeasons,
+              'episodeNumbers': _episodeNumbers,
+              'episodePosters': _episodePosters,
+              'seriesName': _seriesName,
+              'mediaItemId': widget.itemId,
+              'mediaSourceId': widget.mediaSourceId,
+            },
+          );
+        }
+      });
+    }
+
+    // 5. 观众：从 Metadata 读取（立即 + 500ms 重试）
+    if (!_isHost) {
+      final data = await rtmService.getRoomInfoFromMetadata(_rtmChannel!);
+      if (data != null && mounted) {
         print('[Room] 从 Metadata 获取到房间数据');
-        _handleRoomInfo(metadataData);
+        _handleRoomInfo(data);
+      } else if (mounted) {
+        // 500ms 后再试一次（场景3竞态优化：主持人正在写入）
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (!_hasEpisodeList && mounted) {
+          final data2 = await rtmService.getRoomInfoFromMetadata(_rtmChannel!);
+          if (data2 != null && mounted) {
+            print('[Room] 500ms重试从 Metadata 获取到房间数据');
+            _handleRoomInfo(data2);
+          }
+        }
       }
     }
 
-    // 观众 fallback：定时重试请求 roomInfo（最多 3 次）
+    // 6. 观众 fallback：如果 Metadata 没拿到，启动重试（最多 3 次）
     if (!_isHost && !_hasEpisodeList) {
       int retryCount = 0;
       _roomRequestTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
         if (!mounted || _hasEpisodeList || retryCount >= 3) {
           timer.cancel();
+          if (mounted && !_hasEpisodeList) {
+            _addBroadcastMessage('房间不存在或主持人已离开');
+          }
           return;
         }
         rtmService.sendRequestRoomInfo();
@@ -597,6 +614,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       });
     }
 
+    // 7. 主持人开始心跳
     if (_isHost) {
       _startHeartbeat();
     }
