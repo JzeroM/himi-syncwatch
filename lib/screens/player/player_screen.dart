@@ -393,6 +393,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isHost) {
       final agoraConfig = ref.read(agoraConfigProvider);
       if (agoraConfig == null || !agoraConfig.isConfigured) {
+        _roomSyncInitializing = false;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('声网未配置')),
@@ -404,6 +405,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _roomData ??= RoomCode.decode(widget.roomCode!);
     if (_roomData == null) {
+      _roomSyncInitializing = false;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('房间码无效')),
@@ -416,6 +418,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _rtmAppId = _roomData!['appId'] as String?;
 
     if (_rtmChannel == null || _rtmAppId == null) {
+      _roomSyncInitializing = false;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('房间数据不完整')),
@@ -446,6 +449,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } else {
       final tokenData = RoomCode.consumeToken(_roomData!);
       if (tokenData == null) {
+        _roomSyncInitializing = false;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('无可用水_token')),
@@ -464,6 +468,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final loginOk = await rtmService.login(_rtmAppId!, token: loginToken);
     if (!loginOk) {
+      _roomSyncInitializing = false;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('RTM 登录失败，请检查声网配置')),
@@ -471,7 +476,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       return;
     }
-    await rtmService.subscribe(_rtmChannel!);
+    final subscribeOk = await rtmService.subscribe(_rtmChannel!);
+    if (!subscribeOk) {
+      _roomSyncInitializing = false;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('RTM 频道订阅失败，请检查网络')),
+        );
+      }
+      return;
+    }
 
     // 1. 设置消息监听器（subscribe 之后立即设置，确保不丢消息）
     print('[Room] ${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
@@ -495,7 +509,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _addBroadcastMessage('$name 加入了房间');
           _refreshOnlineCount(rtmService);
           // 主持人发送房间信息（含媒体数据 + 剧集列表）
-          if (_isHost && _episodeIds.isNotEmpty) {
+          if (_isHost) {
             print('[Room] 主持人发送 roomInfo, episodeCount=${_episodeIds.length}');
             rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
@@ -518,7 +532,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _refreshOnlineCount(rtmService);
         } else if (action == AppConstants.actionRequestRoomInfo) {
           // 观众请求房间信息，主持人重新发送
-          if (_isHost && _episodeIds.isNotEmpty) {
+          if (_isHost) {
             rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
               mediaItemId: widget.itemId,
@@ -558,60 +572,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _onlineUserCount = 1;
     setState(() {});
 
-    // 4. 主持人：延迟 500ms 后写入 Metadata（确保 listener 就绪）
+    // 4. 主持人：立即写入 Metadata
     if (_isHost && _episodeIds.isNotEmpty) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          rtmService.publishRoomInfoToMetadata(
-            channelName: _rtmChannel!,
-            roomData: {
-              'episodeIds': _episodeIds,
-              'episodeNames': _episodeNames,
-              'episodeSeasons': _episodeSeasons,
-              'episodeNumbers': _episodeNumbers,
-              'episodePosters': _episodePosters,
-              'seriesName': _seriesName,
-              'mediaItemId': widget.itemId,
-              'mediaSourceId': widget.mediaSourceId,
-            },
-          );
-        }
-      });
+      rtmService.publishRoomInfoToMetadata(
+        channelName: _rtmChannel!,
+        roomData: {
+          'episodeIds': _episodeIds,
+          'episodeNames': _episodeNames,
+          'episodeSeasons': _episodeSeasons,
+          'episodeNumbers': _episodeNumbers,
+          'episodePosters': _episodePosters,
+          'seriesName': _seriesName,
+          'mediaItemId': widget.itemId,
+          'mediaSourceId': widget.mediaSourceId,
+        },
+      );
     }
 
-    // 5. 观众：从 Metadata 读取（立即 + 500ms 重试）
+    // 5. 观众：从 Metadata 读取（重试最多 5 次，间隔 2s）
     if (!_isHost) {
-      final data = await rtmService.getRoomInfoFromMetadata(_rtmChannel!);
-      if (data != null && mounted) {
-        print('[Room] 从 Metadata 获取到房间数据');
-        _handleRoomInfo(data);
-      } else if (mounted) {
-        // 500ms 后再试一次（场景3竞态优化：主持人正在写入）
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (!_hasEpisodeList && mounted) {
-          final data2 = await rtmService.getRoomInfoFromMetadata(_rtmChannel!);
-          if (data2 != null && mounted) {
-            print('[Room] 500ms重试从 Metadata 获取到房间数据');
-            _handleRoomInfo(data2);
-          }
-        }
-      }
-    }
-
-    // 6. 观众 fallback：如果 Metadata 没拿到，启动重试（最多 3 次）
-    if (!_isHost && !_hasEpisodeList) {
       int retryCount = 0;
-      _roomRequestTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-        if (!mounted || _hasEpisodeList || retryCount >= 3) {
+      _roomRequestTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+        if (!mounted || _hasEpisodeList || retryCount >= 5) {
           timer.cancel();
           if (mounted && !_hasEpisodeList) {
             _addBroadcastMessage('房间不存在或主持人已离开');
           }
           return;
         }
-        rtmService.sendRequestRoomInfo();
-        _addBroadcastMessage('正在获取房间资源...');
         retryCount++;
+        print('[Room] 观众第 $retryCount 次从 Metadata 获取房间数据');
+        rtmService.getRoomInfoFromMetadata(_rtmChannel!).then((data) {
+          if (data != null && mounted && !_hasEpisodeList) {
+            print('[Room] 从 Metadata 获取到房间数据');
+            _handleRoomInfo(data);
+            timer.cancel();
+          }
+        });
       });
     }
 

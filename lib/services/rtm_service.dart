@@ -36,7 +36,7 @@ class RtmService {
     }
 
     final rtmConfig = RtmConfig(
-      areaCode: {RtmAreaCode.cn},
+      areaCode: {RtmAreaCode.glob},
       useStringUserId: true,
       heartbeatInterval: 5,
       presenceTimeout: 300,
@@ -99,8 +99,8 @@ class RtmService {
     }
   }
 
-  Future<void> subscribe(String channelName) async {
-    if (_client == null) return;
+  Future<bool> subscribe(String channelName) async {
+    if (_client == null) return false;
 
     _currentChannelId = channelName;
 
@@ -108,11 +108,14 @@ class RtmService {
       final (status, _) = await _client!.subscribe(channelName);
       if (status.error == true) {
         print('[RTM] 订阅失败: ${status.reason}');
+        return false;
       } else {
         print('[RTM] 订阅频道: $channelName');
+        return true;
       }
     } catch (e) {
       print('[RTM] 订阅异常: $e');
+      return false;
     }
   }
 
