@@ -429,23 +429,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     final rtmService = ref.read(rtmServiceProvider);
-    await rtmService.initialize(
-      appId: _rtmAppId!,
-      userId: _myUserId!,
-    );
 
-    // Host: 使用自己的 token 登录; Audience: 从 roomCode 消费一个 token
+    // Host: 使用自己的 userId 初始化; Audience: 从 token 中获取 tokenId
     String? loginToken;
+    String rtmUserId;
+
     if (_isHost) {
+      rtmUserId = _myUserId!;
+      await rtmService.initialize(
+        appId: _rtmAppId!,
+        userId: rtmUserId,
+      );
       loginToken = RtmTokenBuilder.buildToken(
         appId: _rtmAppId!,
         appCertificate: agoraConfig.appCertificate,
-        userId: _myUserId!,
+        userId: rtmUserId,
         tokenExpireSeconds: 86400,
       );
     } else {
-      loginToken = RoomCode.consumeToken(_roomData!);
-      if (loginToken == null) {
+      final tokenData = RoomCode.consumeToken(_roomData!);
+      if (tokenData == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('无可用水_token')),
@@ -453,6 +456,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         }
         return;
       }
+      rtmUserId = tokenData['tokenId'] as String;
+      loginToken = tokenData['token'] as String;
+
+      await rtmService.initialize(
+        appId: _rtmAppId!,
+        userId: rtmUserId,
+      );
     }
 
     await rtmService.login(_rtmAppId!, token: loginToken);

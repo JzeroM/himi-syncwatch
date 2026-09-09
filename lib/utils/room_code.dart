@@ -23,7 +23,7 @@ class RoomCode {
     List<int>? episodeNumbers,
     List<String>? episodePosters,
   }) {
-    final tokens = <String>[];
+    final tokens = <Map<String, dynamic>>[];
     for (int i = 0; i < tokenCount; i++) {
       final tokenId = 'himi_${const Uuid().v4().substring(0, 8)}';
       final token = RtmTokenBuilder.buildToken(
@@ -32,7 +32,7 @@ class RoomCode {
         userId: tokenId,
         tokenExpireSeconds: tokenExpireSeconds,
       );
-      tokens.add(token);
+      tokens.add({'tokenId': tokenId, 'token': token});
     }
 
     final data = {
@@ -74,13 +74,14 @@ class RoomCode {
     }
   }
 
-  static String? consumeToken(Map<String, dynamic> roomData) {
+  static Map<String, dynamic>? consumeToken(Map<String, dynamic> roomData) {
     final tokens = roomData['tokens'] as List?;
     if (tokens == null || tokens.isEmpty) return null;
 
     final rng = Random();
     final index = rng.nextInt(tokens.length);
-    return tokens.removeAt(index) as String;
+    final item = tokens.removeAt(index);
+    return Map<String, dynamic>.from(item);
   }
 
   static String generateChannelId() {
