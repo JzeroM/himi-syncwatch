@@ -472,6 +472,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     await rtmService.subscribe(_rtmChannel!);
 
+    // 主持人：将剧集数据写入频道 Metadata（持久化备份，观众可直接读取）
+    if (_isHost && _episodeIds.isNotEmpty) {
+      rtmService.publishRoomInfoToMetadata(
+        channelName: _rtmChannel!,
+        roomData: {
+          'episodeIds': _episodeIds,
+          'episodeNames': _episodeNames,
+          'episodeSeasons': _episodeSeasons,
+          'episodeNumbers': _episodeNumbers,
+          'episodePosters': _episodePosters,
+          'seriesName': _seriesName,
+          'mediaItemId': widget.itemId,
+          'mediaSourceId': widget.mediaSourceId,
+        },
+      );
+    }
+
     // 发送加入消息
     _addBroadcastMessage('${_audienceName} 加入了房间');
     rtmService.sendJoinLeave(
@@ -484,24 +501,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() {});
 
     // 设置消息监听器（必须在 subscribe 之后、任何异步操作之前）
+    print('[Room] ${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
     _rtmSubscription = rtmService.messageStream.listen((message) {
       if (!mounted) return;
       final senderId = message['userId'];
       if (senderId == _myUserId) return;
 
       final type = message['type'];
+      print('[Room] 收到消息 type=$type, sender=$senderId');
       if (type == AppConstants.msgTypeHeartbeat) {
         _handleHeartbeat(message);
       } else if (type == AppConstants.msgTypeRoomInfo) {
+        print('[Room] 收到 roomInfo, episodeIds=${message['episodeIds']?.length ?? 0}');
         _handleRoomInfo(message);
       } else if (type == AppConstants.msgTypeCommand) {
         final action = message['action'] as String?;
+        print('[Room] 收到命令 action=$action');
         if (action == 'join') {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 加入了房间');
           _refreshOnlineCount(rtmService);
           // 主持人发送房间信息（含媒体数据 + 剧集列表）
           if (_isHost && _episodeIds.isNotEmpty) {
+            print('[Room] 主持人发送 roomInfo, episodeCount=${_episodeIds.length}');
             rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
               mediaItemId: widget.itemId,
@@ -552,13 +574,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     });
 
-    // 观众 fallback：3 秒内未收到 roomInfo 则主动请求
-    if (!_isHost) {
-      _roomRequestTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted && !_hasEpisodeList) {
-          rtmService.sendRequestRoomInfo();
-          _addBroadcastMessage('正在获取房间资源...');
+    // 观众：先从频道 Metadata 读取剧集数据（持久化备份）
+    if (!_isHost && !_hasEpisodeList) {
+      final metadataData = await rtmService.getRoomInfoFromMetadata(_rtmChannel!);
+      if (metadataData != null && mounted) {
+        print('[Room] 从 Metadata 获取到房间数据');
+        _handleRoomInfo(metadataData);
+      }
+    }
+
+    // 观众 fallback：定时重试请求 roomInfo（最多 3 次）
+    if (!_isHost && !_hasEpisodeList) {
+      int retryCount = 0;
+      _roomRequestTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+        if (!mounted || _hasEpisodeList || retryCount >= 3) {
+          timer.cancel();
+          return;
         }
+        rtmService.sendRequestRoomInfo();
+        _addBroadcastMessage('正在获取房间资源...');
+        retryCount++;
       });
     }
 
@@ -678,7 +713,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_hasEpisodeList) return;
     _roomRequestTimer?.cancel();
 
+    print('[Room] _handleRoomInfo: keys=${message.keys.toList()}');
     final epIds = message['episodeIds'];
+    print('[Room] _handleRoomInfo: epIds type=${epIds.runtimeType}, len=${epIds is List ? epIds.length : "N/A"}');
     if (epIds is List && epIds.isNotEmpty) {
       // 电视剧：接收完整剧集列表
       setState(() {

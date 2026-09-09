@@ -59,7 +59,10 @@ class RtmService {
         message: (event) {
           try {
             if (event.message != null) {
-              final data = jsonDecode(utf8.decode(event.message!));
+              final raw = utf8.decode(event.message!);
+              print('[RTM] 收到原始消息: ${raw.length} bytes');
+              final data = jsonDecode(raw);
+              print('[RTM] 收到消息 type=${data['type']}, userId=${data['userId']}');
               _messageController.add(data);
             }
           } catch (e) {
@@ -216,6 +219,29 @@ class RtmService {
     );
   }
 
+  // 将房间剧集数据写入频道 Metadata（持久化备份）
+  Future<void> publishRoomInfoToMetadata({
+    required String channelName,
+    required Map<String, dynamic> roomData,
+  }) async {
+    await setChannelMetadata(
+      channelName: channelName,
+      metadata: {'roomInfo': jsonEncode(roomData)},
+    );
+  }
+
+  // 从频道 Metadata 读取房间剧集数据
+  Future<Map<String, dynamic>?> getRoomInfoFromMetadata(String channelName) async {
+    final metadata = await getChannelMetadata(channelName);
+    final roomInfoJson = metadata['roomInfo'];
+    if (roomInfoJson != null && roomInfoJson.isNotEmpty) {
+      try {
+        return jsonDecode(roomInfoJson) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+    return null;
+  }
+
   // 发送 RTM 消息
   Future<void> sendHeartbeat({
     required double position,
@@ -319,9 +345,11 @@ class RtmService {
     };
 
     try {
+      final encoded = jsonEncode(message);
+      print('[RTM] sendRoomInfo size=${encoded.length} bytes, episodes=${episodeIds?.length ?? 0}');
       final (status, _) = await _client!.publish(
         channelName,
-        jsonEncode(message),
+        encoded,
       );
       if (status.error == true) {
         print('[RTM] 发送房间信息失败: ${status.reason}');
@@ -335,9 +363,11 @@ class RtmService {
     if (_client == null || _currentChannelId == null) return;
 
     try {
+      final encoded = jsonEncode(message);
+      print('[RTM] 发布消息 type=${message['type']}, size=${encoded.length} bytes');
       final (status, _) = await _client!.publish(
         _currentChannelId!,
-        jsonEncode(message),
+        encoded,
       );
 
       if (status.error == true) {
