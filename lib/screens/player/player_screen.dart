@@ -91,6 +91,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isPlayerReady = false;
   bool _seriesCollapsed = false;
   String? _lastPlayUrl;
+  bool _roomSyncInitializing = false;
 
   @override
   void initState() {
@@ -396,6 +397,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _setupRoomSync() async {
+    if (_roomSyncInitializing) return;
+    _roomSyncInitializing = true;
+
     final agoraConfig = ref.read(agoraConfigProvider);
     if (agoraConfig == null || !agoraConfig.isConfigured) {
       if (mounted) {
@@ -465,7 +469,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
     }
 
-    await rtmService.login(_rtmAppId!, token: loginToken);
+    final loginOk = await rtmService.login(_rtmAppId!, token: loginToken);
+    if (!loginOk) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('RTM 登录失败，请检查声网配置')),
+        );
+      }
+      return;
+    }
     await rtmService.subscribe(_rtmChannel!);
 
     // 观众：仅同步当前播放状态，不自动加载流
@@ -905,7 +917,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _tracksSubscription?.cancel();
     _broadcastScrollController.dispose();
 
-    // 发送离开消息
+    // 清理 RTM
     if (widget.roomCode != null) {
       try {
         final rtmService = ref.read(rtmServiceProvider);
@@ -913,6 +925,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           action: 'leave',
           userName: _audienceName ?? '观众',
         );
+        if (_rtmChannel != null) {
+          rtmService.unsubscribe(_rtmChannel!);
+        }
+        rtmService.logout();
       } catch (_) {}
     }
 

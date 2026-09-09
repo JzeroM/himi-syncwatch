@@ -22,6 +22,16 @@ class RtmService {
   }) async {
     _currentUserId = userId;
 
+    // 释放旧 client
+    if (_client != null) {
+      try {
+        await _client!.release();
+      } catch (_) {}
+      _client = null;
+      _storage = null;
+      _presence = null;
+    }
+
     final rtmConfig = RtmConfig(
       areaCode: {RtmAreaCode.cn},
       useStringUserId: true,
@@ -65,18 +75,20 @@ class RtmService {
     }
   }
 
-  Future<void> login(String appId, {String? token}) async {
-    if (_client == null) return;
+  Future<bool> login(String appId, {String? token}) async {
+    if (_client == null) return false;
 
     try {
       final (status, _) = await _client!.login(token ?? appId);
       if (status.error == true) {
         print('[RTM] 登录失败: ${status.reason}');
-      } else {
-        print('[RTM] 登录成功');
+        return false;
       }
+      print('[RTM] 登录成功');
+      return true;
     } catch (e) {
       print('[RTM] 登录异常: $e');
+      return false;
     }
   }
 
