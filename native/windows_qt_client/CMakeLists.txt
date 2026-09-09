@@ -16,7 +16,7 @@ if(NOT DEFINED LIBMPV_DIR AND DEFINED ENV{LIBMPV_DIR})
 endif()
 
 # Qt6 快速应用（QML）
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick QuickControls2)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick QuickControls2 Qml)
 
 qt_standard_project_setup()
 
@@ -67,6 +67,7 @@ target_link_libraries(himi_qt_win PRIVATE
     Qt6::Gui
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::Qml
 )
 
 # 将运行时第三方 DLL 复制到输出目录（AgoraRtmWrapper 场景类似 libmpv-2.dll）

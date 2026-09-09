@@ -49,6 +49,12 @@ jobs:
       - name: 编译
         run: cmake --build build --config Release --parallel
 
+      - name: 部署 Qt6 runtime DLLs (包括 Qt6Qml.dll)
+        shell: pwsh
+        run: |
+          $qtBin = "${{ steps.install-qt.outputs.qt-dir }}/bin"
+          & "$qtBin/windeployqt.exe" "build/Release/himi_qt_win.exe"
+
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
