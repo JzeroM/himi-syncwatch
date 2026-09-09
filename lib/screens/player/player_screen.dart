@@ -172,6 +172,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final itemId = _episodeIds[episodeIndex];
 
+    // 先设置 _currentEpisodeIndex，这样 publishPlayInfo 能拿到正确的值
+    setState(() {
+      _currentEpisodeIndex = episodeIndex;
+    });
+
     // 获取 Emby 详情（字幕/音轨信息）
     final embyService = ref.read(embyServiceProvider);
     final config = ref.read(embyConfigProvider);
@@ -201,7 +206,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _loadStream(itemId: itemId);
 
     setState(() {
-      _currentEpisodeIndex = episodeIndex;
       _isPlayerReady = true;
     });
     _autoExpandSeries();
@@ -517,9 +521,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final playUrl = metadata['playUrl'];
 
     if (playUrl is String && playUrl.isNotEmpty && mounted) {
-      // 优先使用 playUrl 直接播放
       _addBroadcastMessage('使用主机播放地址');
-      _player.open(Media(playUrl, httpHeaders: {
+      await _player.open(Media(playUrl, httpHeaders: {
         'X-Emby-Token': '',
       }));
       if (epIndexStr != null) {
@@ -531,11 +534,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           });
           _autoExpandSeries();
         }
-      }
-    } else if (epIndexStr != null && mounted) {
-      final epIndex = int.tryParse(epIndexStr);
-      if (epIndex != null && epIndex < _episodeIds.length) {
-        await _loadEpisodeStream(epIndex);
       }
     }
   }
@@ -600,7 +598,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       case AppConstants.actionSwitchEpisode:
         final epIndex = message['episodeIndex'] as int?;
         if (epIndex != null) {
-          _switchToEpisode(epIndex);
+          _syncSwitchToEpisode(epIndex);
         }
         break;
       case AppConstants.actionRemoveEpisode:
@@ -771,7 +769,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
-  // 切集
+  // 切集（房主操作 + 发送RTM命令）
   void _switchToEpisode(int index) async {
     if (index < 0 || index >= _episodeIds.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
@@ -786,6 +784,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         episodeIndex: index,
         itemId: _episodeIds[index],
       );
+    }
+  }
+
+  // 观众同步切集：从频道元数据读取 playUrl 直接播放
+  void _syncSwitchToEpisode(int epIndex) async {
+    if (epIndex < 0 || epIndex >= _episodeIds.length) return;
+
+    if (_rtmChannel == null) return;
+    final rtmService = ref.read(rtmServiceProvider);
+    final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+    final playUrl = metadata['playUrl'];
+
+    if (playUrl is String && playUrl.isNotEmpty && mounted) {
+      _addBroadcastMessage('同步切集: ${_episodeNames[epIndex]}');
+      await _player.open(Media(playUrl, httpHeaders: {
+        'X-Emby-Token': '',
+      }));
+      setState(() {
+        _currentEpisodeIndex = epIndex;
+        _isPlayerReady = true;
+      });
+      _autoExpandSeries();
     }
   }
 
@@ -1484,6 +1504,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final poster =
         _episodePosters.length > index ? _episodePosters[index] : null;
 
+    // 电影：season==0 && number==0 时为电影，不显示 S00E00
+    final isMovie = season == 0 && number == 0 && _seriesName.isEmpty;
+
     return InkWell(
       onTap: () {
         if (!_isHost) return;
@@ -1552,33 +1575,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
             // 集信息
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'S${season.toString().padLeft(2, '0')}E${number.toString().padLeft(2, '0')}',
-                    style: TextStyle(
-                      color: isPlaying
-                          ? const Color(0xFF6366F1)
-                          : Colors.white70,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+              child: isMovie
+                  ? Text(
+                      name,
+                      style: TextStyle(
+                        color: isPlaying ? Colors.white : Colors.white54,
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'S${season.toString().padLeft(2, '0')}E${number.toString().padLeft(2, '0')}',
+                          style: TextStyle(
+                            color: isPlaying
+                                ? const Color(0xFF6366F1)
+                                : Colors.white70,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          name,
+                          style: TextStyle(
+                            color: isPlaying
+                                ? Colors.white
+                                : Colors.white54,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    name,
-                    style: TextStyle(
-                      color: isPlaying
-                          ? Colors.white
-                          : Colors.white54,
-                      fontSize: 12,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
             ),
 
             // 删除按钮（仅房主）
