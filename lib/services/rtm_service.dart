@@ -226,6 +226,7 @@ class RtmService {
     double? rate,
     int? episodeIndex,
     String? itemId,
+    String? playUrl,
   }) async {
     if (_client == null || _currentChannelId == null) return;
 
@@ -237,6 +238,7 @@ class RtmService {
       if (rate != null) 'rate': rate,
       if (episodeIndex != null) 'episodeIndex': episodeIndex,
       if (itemId != null) 'itemId': itemId,
+      if (playUrl != null) 'playUrl': playUrl,
     };
 
     await _publishMessage(message);

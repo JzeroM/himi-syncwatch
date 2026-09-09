@@ -90,6 +90,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
   bool _seriesCollapsed = false;
+  String? _lastPlayUrl;
 
   @override
   void initState() {
@@ -211,7 +212,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _autoExpandSeries();
   }
 
-  Future<void> _loadStream({
+  Future<String?> _loadStream({
     String? itemId,
     int? subtitleStreamIndex,
   }) async {
@@ -261,6 +262,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           currentEpisodeIndex: _currentEpisodeIndex,
         );
       }
+
+      _lastPlayUrl = url;
+      return url;
     } catch (e) {
       print('[Player] 加载流失败: $e');
       if (mounted) {
@@ -268,6 +272,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           SnackBar(content: Text('播放失败: $e')),
         );
       }
+      return null;
     }
   }
 
@@ -597,8 +602,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         break;
       case AppConstants.actionSwitchEpisode:
         final epIndex = message['episodeIndex'] as int?;
+        final playUrl = message['playUrl'] as String?;
         if (epIndex != null) {
-          _syncSwitchToEpisode(epIndex);
+          _syncSwitchToEpisode(epIndex, playUrl: playUrl);
         }
         break;
       case AppConstants.actionRemoveEpisode:
@@ -776,29 +782,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     await _loadEpisodeStream(index);
 
-    // Host: 发送切集命令
+    // Host: 发送切集命令（附带 playUrl）
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
       await rtmService.sendCommand(
         action: AppConstants.actionSwitchEpisode,
         episodeIndex: index,
         itemId: _episodeIds[index],
+        playUrl: _lastPlayUrl,
       );
     }
   }
 
-  // 观众同步切集：从频道元数据读取 playUrl 直接播放
-  void _syncSwitchToEpisode(int epIndex) async {
+  // 观众同步切集：优先用消息中的 playUrl，其次从 metadata 读
+  void _syncSwitchToEpisode(int epIndex, {String? playUrl}) async {
     if (epIndex < 0 || epIndex >= _episodeIds.length) return;
 
-    if (_rtmChannel == null) return;
-    final rtmService = ref.read(rtmServiceProvider);
-    final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
-    final playUrl = metadata['playUrl'];
+    // 优先用消息中的 playUrl
+    String? url = playUrl;
 
-    if (playUrl is String && playUrl.isNotEmpty && mounted) {
+    // 其次从频道元数据读
+    if ((url == null || url.isEmpty) && _rtmChannel != null) {
+      final rtmService = ref.read(rtmServiceProvider);
+      final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+      url = metadata['playUrl'];
+    }
+
+    if (url != null && url.isNotEmpty && mounted) {
       _addBroadcastMessage('同步切集: ${_episodeNames[epIndex]}');
-      await _player.open(Media(playUrl, httpHeaders: {
+      await _player.open(Media(url, httpHeaders: {
         'X-Emby-Token': '',
       }));
       setState(() {
