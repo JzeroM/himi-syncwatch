@@ -1,10 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 
@@ -125,7 +125,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       if (selectedSource != null) {
         query.write('&mediaSourceId=${selectedSource.id}');
       }
-      // 电视剧：传递完整剧集数据
+      // 电视剧：通过 Riverpod provider 传递完整剧集数据（避免 URL 编码问题）
       if (selectedEpisodes != null && selectedEpisodes.isNotEmpty) {
         final seriesName = _item!.name;
         final episodesJson = selectedEpisodes.map((e) => {
@@ -136,16 +136,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           'poster': e.posterUrl ?? '',
           'seriesName': seriesName,
         }).toList();
-        query.write('&episodes=${Uri.encodeComponent(jsonEncode(episodesJson))}');
+        ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
       }
-      // 电影：传递电影数据
+      // 电影：通过 Riverpod provider 传递电影数据
       if (!_item!.isSeries) {
         final movieData = {
           'id': _item!.id,
           'name': _item!.name,
           'poster': _item!.posterUrl ?? '',
         };
-        query.write('&movie=${Uri.encodeComponent(jsonEncode(movieData))}');
+        ref.read(pendingRoomMovieProvider.notifier).state = movieData;
       }
       context.push('/player/${_item!.id}?$query');
     }

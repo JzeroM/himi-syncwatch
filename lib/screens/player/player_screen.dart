@@ -7,9 +7,9 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
-import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
@@ -21,8 +21,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? mediaSourceId;
   final bool isHost;
   final String audienceName;
-  final List<Map<String, dynamic>>? episodes;
-  final Map<String, dynamic>? movie;
 
   const PlayerScreen({
     super.key,
@@ -31,8 +29,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.mediaSourceId,
     this.isHost = false,
     this.audienceName = '',
-    this.episodes,
-    this.movie,
   });
 
   @override
@@ -113,27 +109,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ? widget.audienceName
         : (_isHost ? '房主' : '观众');
 
-    // 主持人：优先使用外部传入的 episodes/movie；观众通过 RTM 接收
+    // 主持人：优先从 Riverpod provider 读取 episodes/movie；观众通过 RTM 接收
     if (_isHost) {
-      if (widget.episodes != null && widget.episodes!.isNotEmpty) {
+      final pendingEpisodes = ref.read(pendingRoomEpisodesProvider);
+      final pendingMovie = ref.read(pendingRoomMovieProvider);
+      if (pendingEpisodes != null && pendingEpisodes.isNotEmpty) {
         // 电视剧：从完整数据提取所有字段
-        _episodeIds = widget.episodes!.map((e) => e['id'] as String).toList();
-        _episodeNames = widget.episodes!.map((e) => e['name'] as String? ?? '').toList();
-        _episodeSeasons = widget.episodes!.map((e) => e['season'] as int? ?? 0).toList();
-        _episodeNumbers = widget.episodes!.map((e) => e['number'] as int? ?? 0).toList();
-        _episodePosters = widget.episodes!.map((e) => e['poster'] as String? ?? '').toList();
-        _seriesName = widget.episodes!.first['seriesName'] as String? ?? '';
+        _episodeIds = pendingEpisodes.map((e) => e['id'] as String).toList();
+        _episodeNames = pendingEpisodes.map((e) => e['name'] as String? ?? '').toList();
+        _episodeSeasons = pendingEpisodes.map((e) => e['season'] as int? ?? 0).toList();
+        _episodeNumbers = pendingEpisodes.map((e) => e['number'] as int? ?? 0).toList();
+        _episodePosters = pendingEpisodes.map((e) => e['poster'] as String? ?? '').toList();
+        _seriesName = pendingEpisodes.first['seriesName'] as String? ?? '';
         _hasEpisodeList = true;
-      } else if (widget.movie != null) {
+        // 读完清空 provider，避免重复使用
+        ref.read(pendingRoomEpisodesProvider.notifier).state = null;
+      } else if (pendingMovie != null) {
         // 电影：单条记录
-        final movie = widget.movie!;
-        _episodeIds = [movie['id'] as String];
-        _episodeNames = [movie['name'] as String? ?? '电影'];
+        _episodeIds = [pendingMovie['id'] as String];
+        _episodeNames = [pendingMovie['name'] as String? ?? '电影'];
         _episodeSeasons = [0];
         _episodeNumbers = [0];
-        _episodePosters = [movie['poster'] as String? ?? ''];
+        _episodePosters = [pendingMovie['poster'] as String? ?? ''];
         _seriesName = '';
         _hasEpisodeList = true;
+        ref.read(pendingRoomMovieProvider.notifier).state = null;
       }
     }
 
