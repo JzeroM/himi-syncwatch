@@ -11,8 +11,11 @@ class RtmService {
   String? _currentChannelId;
   final StreamController<Map<String, dynamic>> _messageController =
       StreamController.broadcast();
+  final StreamController<Map<String, dynamic>> _presenceController =
+      StreamController.broadcast();
 
   Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
+  Stream<Map<String, dynamic>> get presenceStream => _presenceController.stream;
 
   bool get isConnected => _client != null;
 
@@ -68,6 +71,7 @@ class RtmService {
         },
         presence: (event) {
           print('[RTM] 成员变化: ${event.type}');
+          _presenceController.add({'type': event.type});
         },
       );
     } catch (e) {
@@ -349,6 +353,7 @@ class RtmService {
 
   void dispose() {
     _messageController.close();
+    _presenceController.close();
     logout();
     _client?.release();
     _client = null;

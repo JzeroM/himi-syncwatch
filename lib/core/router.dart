@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -34,13 +35,26 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/player/:id',
-        builder: (context, state) => PlayerScreen(
-          itemId: state.pathParameters['id']!,
-          roomCode: state.uri.queryParameters['roomCode'],
-          mediaSourceId: state.uri.queryParameters['mediaSourceId'],
-          isHost: state.uri.queryParameters['isHost'] == 'true',
-          audienceName: state.uri.queryParameters['name'] ?? '',
-        ),
+        builder: (context, state) {
+          List<String>? episodes;
+          final episodesJson = state.uri.queryParameters['episodes'];
+          if (episodesJson != null && episodesJson.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(Uri.decodeComponent(episodesJson));
+              if (decoded is List) {
+                episodes = decoded.cast<String>();
+              }
+            } catch (_) {}
+          }
+          return PlayerScreen(
+            itemId: state.pathParameters['id']!,
+            roomCode: state.uri.queryParameters['roomCode'],
+            mediaSourceId: state.uri.queryParameters['mediaSourceId'],
+            isHost: state.uri.queryParameters['isHost'] == 'true',
+            audienceName: state.uri.queryParameters['name'] ?? '',
+            episodes: episodes,
+          );
+        },
       ),
       GoRoute(
         path: '/room',

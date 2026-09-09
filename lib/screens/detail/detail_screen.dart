@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -94,11 +95,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       if (selectedSource == null) return;
     }
 
-    // 2. Token 数量弹窗
+    // 2. 电视剧 → 集数多选弹窗
+    List<String>? selectedEpisodeIds;
+    if (_item!.isSeries && _episodes.isNotEmpty) {
+      final selectedEpisodes = await _showEpisodePicker();
+      if (selectedEpisodes == null) return;
+      selectedEpisodeIds = selectedEpisodes.map((e) => e.id).toList();
+    }
+
+    // 3. Token 数量弹窗
     final tokenCount = await _showTokenCountDialog();
     if (tokenCount == null) return;
 
-    // 3. 构建房间码（仅含连接信息，媒体数据通过 RTM 发送）
+    // 4. 构建房间码（仅含连接信息，媒体数据通过 RTM 发送）
     final channel = RoomCode.generateChannelId();
     final hostUid = RoomCode.generateHostUid();
 
@@ -116,6 +125,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       );
       if (selectedSource != null) {
         query.write('&mediaSourceId=${selectedSource.id}');
+      }
+      if (selectedEpisodeIds != null && selectedEpisodeIds.isNotEmpty) {
+        query.write('&episodes=${Uri.encodeComponent(jsonEncode(selectedEpisodeIds))}');
       }
       context.push('/player/${_item!.id}?$query');
     }
@@ -145,6 +157,122 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<List<MediaItem>?> _showEpisodePicker() async {
+    final selected = Set<String>.from(_episodes.map((e) => e.id));
+
+    return showModalBottomSheet<List<MediaItem>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.4,
+            maxChildSize: 0.9,
+            expand: false,
+            builder: (ctx, scrollController) => Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '选择要一起看的集数',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setSheetState(() {
+                            if (selected.length == _episodes.length) {
+                              selected.clear();
+                            } else {
+                              selected.addAll(_episodes.map((e) => e.id));
+                            }
+                          });
+                        },
+                        child: Text(
+                          selected.length == _episodes.length
+                              ? '取消全选'
+                              : '全选',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: _episodes.length,
+                    itemBuilder: (ctx, i) {
+                      final ep = _episodes[i];
+                      final isSelected = selected.contains(ep.id);
+                      return CheckboxListTile(
+                        value: isSelected,
+                        onChanged: (v) {
+                          setSheetState(() {
+                            if (v == true) {
+                              selected.add(ep.id);
+                            } else {
+                              selected.remove(ep.id);
+                            }
+                          });
+                        },
+                        secondary: SizedBox(
+                          width: 48,
+                          height: 32,
+                          child: EmbyImage(
+                            url: ep.posterUrl,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        title: Text(
+                          'S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0} - ${ep.name}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Text(
+                        '已选 ${selected.length} 集',
+                        style: TextStyle(color: Colors.grey[400]),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('取消'),
+                      ),
+                      FilledButton(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () {
+                                final result = _episodes
+                                    .where((e) => selected.contains(e.id))
+                                    .toList();
+                                Navigator.pop(ctx, result);
+                              },
+                        child: const Text('确认'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

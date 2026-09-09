@@ -21,6 +21,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? mediaSourceId;
   final bool isHost;
   final String audienceName;
+  final List<String>? episodes;
 
   const PlayerScreen({
     super.key,
@@ -29,6 +30,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.mediaSourceId,
     this.isHost = false,
     this.audienceName = '',
+    this.episodes,
   });
 
   @override
@@ -75,7 +77,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // 播报板 + 在线用户
   final List<String> _broadcastMessages = [];
-  final Set<String> _onlineUsers = {};
+  int _onlineUserCount = 0;
+  StreamSubscription? _presenceSubscription;
   final ScrollController _broadcastScrollController = ScrollController();
   String? _audienceName;
 
@@ -107,9 +110,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ? widget.audienceName
         : (_isHost ? '房主' : '观众');
 
-    // 主持人从房间码解析剧集列表（如有），观众通过 RTM 接收
-    if (widget.roomCode != null && _isHost) {
-      _parseEpisodeListFromRoomCode();
+    // 主持人：优先使用外部传入的 episodes；观众通过 RTM 接收
+    if (_isHost && widget.episodes != null && widget.episodes!.isNotEmpty) {
+      _episodeIds = widget.episodes!;
+      _hasEpisodeList = true;
     }
 
     _initPlayerProperties();
@@ -533,11 +537,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     await rtmService.subscribe(_rtmChannel!);
 
-    // 主持人：从 Emby 获取剧集列表（覆盖房间码中的数据）
-    if (_isHost && !_hasEpisodeList) {
-      await _fetchEpisodesFromEmby();
-    }
-
     // 发送加入消息
     _addBroadcastMessage('${_audienceName} 加入了房间');
     rtmService.sendJoinLeave(
@@ -545,10 +544,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       userName: _audienceName!,
     );
 
-    // 所有人都把自己加入在线列表
-    _onlineUsers.add(_myUserId!);
+    // 初始化在线人数（自己）
+    _onlineUserCount = 1;
     setState(() {});
 
+    // 设置消息监听器（必须在 subscribe 之后、任何异步操作之前）
     _rtmSubscription = rtmService.messageStream.listen((message) {
       if (!mounted) return;
       final senderId = message['userId'];
@@ -564,8 +564,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (action == 'join') {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 加入了房间');
-          _onlineUsers.add(senderId);
-          setState(() {});
+          _refreshOnlineCount(rtmService);
           // 主持人发送房间信息（含媒体数据 + 剧集列表）
           if (_isHost && _episodeIds.isNotEmpty) {
             rtmService.sendRoomInfo(
@@ -586,16 +585,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         } else if (action == 'leave') {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 离开了房间');
-          _onlineUsers.remove(senderId);
-          setState(() {});
+          _refreshOnlineCount(rtmService);
         } else {
           _handleCommand(message);
         }
       }
     });
 
+    // 监听 Presence 事件（在线人数变化）
+    _presenceSubscription = rtmService.presenceStream.listen((event) {
+      if (mounted) {
+        _refreshOnlineCount(rtmService);
+      }
+    });
+
     if (_isHost) {
       _startHeartbeat();
+    }
+  }
+
+  void _refreshOnlineCount(RtmService rtmService) async {
+    if (_rtmChannel == null) return;
+    final count = await rtmService.getOnlineUserCount(_rtmChannel!);
+    if (mounted) {
+      setState(() {
+        _onlineUserCount = count;
+      });
     }
   }
 
@@ -990,6 +1005,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rtmSubscription?.cancel();
+    _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
     _broadcastScrollController.dispose();
 
@@ -1505,7 +1521,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         const Icon(Icons.people,
                             color: Colors.white70, size: 12),
                         const SizedBox(width: 3),
-                        Text('${_onlineUsers.length}',
+                        Text('$_onlineUserCount',
                             style: const TextStyle(
                                 color: Colors.white70, fontSize: 11)),
                       ],
