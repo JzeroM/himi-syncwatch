@@ -32,24 +32,35 @@ qt_add_qml_module(himi_qt_win
         src/qml/Main.qml
 )
 
-# ---- M1 起引入：Agora RTM C++ SDK ----
-# 预留，待 M1 里程碑启用（确认 SDK 路径与头文件后解除注释并接入源文件）
-if(FALSE)
-    target_include_directories(himi_qt_win PRIVATE
-        "${AGORA_RTM_SDK}/sdk/high_level_api/include"
-    )
-    target_link_libraries(himi_qt_win PRIVATE
-        "${AGORA_RTM_SDK}/sdk/x86_64/agora_rtm_sdk.dll.lib"
-    )
+# ---- M1: Agora RTM C++ SDK ----
+# AGORA_RTM_SDK 指向声网 RTM C++ SDK 解压根目录(含 sdk/high_level_api/include 与 sdk/x86_64)
+if(NOT AGORA_RTM_SDK)
+    message(FATAL_ERROR "缺少 AGORA_RTM_SDK(声网 RTM C++ SDK 根目录)。请设置 CMake 变量或环境变量 AGORA_RTM_SDK。")
 endif()
+
+target_include_directories(himi_qt_win PRIVATE
+    "${AGORA_RTM_SDK}/sdk/high_level_api/include"
+)
+target_link_libraries(himi_qt_win PRIVATE
+    "${AGORA_RTM_SDK}/sdk/x86_64/agora_rtm_sdk.dll.lib"
+)
+
+# 拷贝运行时 DLL 到输出目录
+add_custom_command(TARGET himi_qt_win POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${AGORA_RTM_SDK}/sdk/x86_64/agora_rtm_sdk.dll"
+        "$<TARGET_FILE_DIR:himi_qt_win>/agora_rtm_sdk.dll")
+add_custom_command(TARGET himi_qt_win POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${AGORA_RTM_SDK}/sdk/x86_64/libaosl.dll"
+        "$<TARGET_FILE_DIR:himi_qt_win>/libaosl.dll")
 
 # ---- M2 起引入：libmpv ----
 # 预留
-if(FALSE)
-    target_include_directories(himi_qt_win PRIVATE "${LIBMPV_DIR}/include")
-    target_link_directories(himi_qt_win PRIVATE "${LIBMPV_DIR}/lib")
-    target_link_libraries(himi_qt_win PRIVATE mpv)
-endif()
+# if(LIBMPV_DIR)
+#     target_include_directories(himi_qt_win PRIVATE "${LIBMPV_DIR}/include")
+#     target_link_libraries(himi_qt_win PRIVATE "${LIBMPV_DIR}/lib/libmpv.dll.a")
+# endif()
 
 target_link_libraries(himi_qt_win PRIVATE
     Qt6::Core

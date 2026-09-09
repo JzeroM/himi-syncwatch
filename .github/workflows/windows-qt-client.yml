@@ -12,6 +12,8 @@ on:
 env:
   QT_VERSION: '6.7.2'
   CLIENT_DIR: ${{ inputs.client_dir || 'native/windows_qt_client' }}
+  AGORA_RTM_SDK_URL: 'https://download.agora.io/rtm2/release/Agora_RTM_C%2B%2B_SDK_for_Windows_v2.2.5.zip'
+  AGORA_RTM_SDK: 'D:/a/himi-syncwatch/agora_extract/Agora_Native_SDK_for_Windows_MINI_RTM'
 
 jobs:
   build-windows:
@@ -26,11 +28,23 @@ jobs:
           arch: 'win64_msvc2019_64'
           cache: true
 
+      - name: 下载并解压 Agora RTM C++ SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri $env:AGORA_RTM_SDK_URL -OutFile agora_sdk.zip
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:AGORA_RTM_SDK)
+          Expand-Archive -Path agora_sdk.zip -DestinationPath (Split-Path $env:AGORA_RTM_SDK) -Force
+          Write-Host "SDK dir: $env:AGORA_RTM_SDK"
+          Test-Path "$env:AGORA_RTM_SDK/sdk/x86_64/agora_rtm_sdk.dll"
+
       - name: 配置 CMake (MSVC)
+        shell: pwsh
         run: |
           cmake -S $env:CLIENT_DIR -B build `
             -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_PREFIX_PATH="${{ steps.install-qt.outputs.qt-dir }}"
+            -DCMAKE_PREFIX_PATH="${{ steps.install-qt.outputs.qt-dir }}" `
+            -DAGORA_RTM_SDK="$env:AGORA_RTM_SDK"
 
       - name: 编译
         run: cmake --build build --config Release --parallel

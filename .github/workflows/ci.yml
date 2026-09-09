@@ -3,6 +3,10 @@ name: CI
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - 'native/**'
+      - '.github/workflows/windows-qt-client.yml'
+      - '.github/workflows/release.yml'
 
 jobs:
   flutter-analyze:
