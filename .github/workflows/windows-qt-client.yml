@@ -1,0 +1,46 @@
+name: Windows Qt Client Build
+
+# 仅手动触发，避免 native 改动触发 Flutter 的自动 bump/release 全流程
+on:
+  workflow_dispatch:
+    inputs:
+      client_dir:
+        description: 'Qt 客户端源目录'
+        required: false
+        default: 'native/windows_qt_client'
+
+env:
+  QT_VERSION: '6.7.2'
+  CLIENT_DIR: ${{ inputs.client_dir || 'native/windows_qt_client' }}
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Qt 6 (Quick / QuickControls2)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: 'win64_msvc2019_64'
+          cache: true
+          modules: 'qtdeclarative qtquickcontrols2 qtmultimedia'
+
+      - name: 配置 CMake (MSVC)
+        run: |
+          cmake -S $env:CLIENT_DIR -B build `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_PREFIX_PATH="${{ steps.install-qt.outputs.qt-dir }}"
+
+      - name: 编译
+        run: cmake --build build --config Release --parallel
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: himi-qt-win
+          path: |
+            build/Release/himi_qt_win.exe
+            build/Release/*.dll
+          if-no-files-found: error
