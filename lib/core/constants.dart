@@ -25,4 +25,5 @@ class AppConstants {
   static const String actionRate = 'rate';
   static const String actionSwitchEpisode = 'switchEpisode';
   static const String actionRemoveEpisode = 'removeEpisode';
+  static const String actionRequestRoomInfo = 'requestRoomInfo';
 }

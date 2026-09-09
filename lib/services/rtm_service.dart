@@ -276,6 +276,18 @@ class RtmService {
     await _publishMessage(message);
   }
 
+  Future<void> sendRequestRoomInfo() async {
+    if (_client == null || _currentChannelId == null) return;
+
+    final message = {
+      'type': AppConstants.msgTypeCommand,
+      'userId': _currentUserId,
+      'action': AppConstants.actionRequestRoomInfo,
+    };
+
+    await _publishMessage(message);
+  }
+
   Future<void> sendRoomInfo({
     required String channelName,
     String? mediaItemId,

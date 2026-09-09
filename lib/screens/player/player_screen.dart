@@ -21,7 +21,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? mediaSourceId;
   final bool isHost;
   final String audienceName;
-  final List<String>? episodes;
+  final List<Map<String, dynamic>>? episodes;
+  final Map<String, dynamic>? movie;
 
   const PlayerScreen({
     super.key,
@@ -31,6 +32,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.isHost = false,
     this.audienceName = '',
     this.episodes,
+    this.movie,
   });
 
   @override
@@ -79,6 +81,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final List<String> _broadcastMessages = [];
   int _onlineUserCount = 0;
   StreamSubscription? _presenceSubscription;
+  Timer? _roomRequestTimer;
   final ScrollController _broadcastScrollController = ScrollController();
   String? _audienceName;
 
@@ -110,10 +113,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ? widget.audienceName
         : (_isHost ? '房主' : '观众');
 
-    // 主持人：优先使用外部传入的 episodes；观众通过 RTM 接收
-    if (_isHost && widget.episodes != null && widget.episodes!.isNotEmpty) {
-      _episodeIds = widget.episodes!;
-      _hasEpisodeList = true;
+    // 主持人：优先使用外部传入的 episodes/movie；观众通过 RTM 接收
+    if (_isHost) {
+      if (widget.episodes != null && widget.episodes!.isNotEmpty) {
+        // 电视剧：从完整数据提取所有字段
+        _episodeIds = widget.episodes!.map((e) => e['id'] as String).toList();
+        _episodeNames = widget.episodes!.map((e) => e['name'] as String? ?? '').toList();
+        _episodeSeasons = widget.episodes!.map((e) => e['season'] as int? ?? 0).toList();
+        _episodeNumbers = widget.episodes!.map((e) => e['number'] as int? ?? 0).toList();
+        _episodePosters = widget.episodes!.map((e) => e['poster'] as String? ?? '').toList();
+        _seriesName = widget.episodes!.first['seriesName'] as String? ?? '';
+        _hasEpisodeList = true;
+      } else if (widget.movie != null) {
+        // 电影：单条记录
+        final movie = widget.movie!;
+        _episodeIds = [movie['id'] as String];
+        _episodeNames = [movie['name'] as String? ?? '电影'];
+        _episodeSeasons = [0];
+        _episodeNumbers = [0];
+        _episodePosters = [movie['poster'] as String? ?? ''];
+        _seriesName = '';
+        _hasEpisodeList = true;
+      }
     }
 
     _initPlayerProperties();
@@ -500,6 +521,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 离开了房间');
           _refreshOnlineCount(rtmService);
+        } else if (action == AppConstants.actionRequestRoomInfo) {
+          // 观众请求房间信息，主持人重新发送
+          if (_isHost && _episodeIds.isNotEmpty) {
+            rtmService.sendRoomInfo(
+              channelName: _rtmChannel!,
+              mediaItemId: widget.itemId,
+              mediaSourceId: widget.mediaSourceId,
+              mediaItemName: _episodeNames.isNotEmpty
+                  ? _episodeNames.first
+                  : null,
+              seriesName: _seriesName,
+              episodeIds: _episodeIds,
+              episodeNames: _episodeNames,
+              episodeSeasons: _episodeSeasons,
+              episodeNumbers: _episodeNumbers,
+              episodePosters: _episodePosters,
+            );
+          }
         } else {
           _handleCommand(message);
         }
@@ -512,6 +551,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _refreshOnlineCount(rtmService);
       }
     });
+
+    // 观众 fallback：3 秒内未收到 roomInfo 则主动请求
+    if (!_isHost) {
+      _roomRequestTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted && !_hasEpisodeList) {
+          rtmService.sendRequestRoomInfo();
+          _addBroadcastMessage('正在获取房间资源...');
+        }
+      });
+    }
 
     if (_isHost) {
       _startHeartbeat();
@@ -627,6 +676,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _handleRoomInfo(Map<String, dynamic> message) {
     if (_isHost) return;
     if (_hasEpisodeList) return;
+    _roomRequestTimer?.cancel();
 
     final epIds = message['episodeIds'];
     if (epIds is List && epIds.isNotEmpty) {
@@ -918,6 +968,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void dispose() {
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
+    _roomRequestTimer?.cancel();
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();

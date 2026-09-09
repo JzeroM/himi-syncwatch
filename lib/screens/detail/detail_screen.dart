@@ -96,11 +96,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
 
     // 2. 电视剧 → 集数多选弹窗
-    List<String>? selectedEpisodeIds;
+    List<MediaItem>? selectedEpisodes;
     if (_item!.isSeries && _episodes.isNotEmpty) {
-      final selectedEpisodes = await _showEpisodePicker();
+      selectedEpisodes = await _showEpisodePicker();
       if (selectedEpisodes == null) return;
-      selectedEpisodeIds = selectedEpisodes.map((e) => e.id).toList();
     }
 
     // 3. Token 数量弹窗
@@ -126,8 +125,27 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       if (selectedSource != null) {
         query.write('&mediaSourceId=${selectedSource.id}');
       }
-      if (selectedEpisodeIds != null && selectedEpisodeIds.isNotEmpty) {
-        query.write('&episodes=${Uri.encodeComponent(jsonEncode(selectedEpisodeIds))}');
+      // 电视剧：传递完整剧集数据
+      if (selectedEpisodes != null && selectedEpisodes.isNotEmpty) {
+        final seriesName = _item!.name;
+        final episodesJson = selectedEpisodes.map((e) => {
+          'id': e.id,
+          'name': e.name,
+          'season': e.parentIndexNumber ?? 0,
+          'number': e.indexNumber ?? 0,
+          'poster': e.posterUrl ?? '',
+          'seriesName': seriesName,
+        }).toList();
+        query.write('&episodes=${Uri.encodeComponent(jsonEncode(episodesJson))}');
+      }
+      // 电影：传递电影数据
+      if (!_item!.isSeries) {
+        final movieData = {
+          'id': _item!.id,
+          'name': _item!.name,
+          'poster': _item!.posterUrl ?? '',
+        };
+        query.write('&movie=${Uri.encodeComponent(jsonEncode(movieData))}');
       }
       context.push('/player/${_item!.id}?$query');
     }

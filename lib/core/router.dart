@@ -36,13 +36,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/player/:id',
         builder: (context, state) {
-          List<String>? episodes;
+          List<Map<String, dynamic>>? episodes;
           final episodesJson = state.uri.queryParameters['episodes'];
           if (episodesJson != null && episodesJson.isNotEmpty) {
             try {
               final decoded = jsonDecode(Uri.decodeComponent(episodesJson));
               if (decoded is List) {
-                episodes = decoded.cast<String>();
+                episodes = decoded.cast<Map<String, dynamic>>();
+              }
+            } catch (_) {}
+          }
+          Map<String, dynamic>? movie;
+          final movieJson = state.uri.queryParameters['movie'];
+          if (movieJson != null && movieJson.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(Uri.decodeComponent(movieJson));
+              if (decoded is Map) {
+                movie = decoded.cast<String, dynamic>();
               }
             } catch (_) {}
           }
@@ -53,6 +63,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             isHost: state.uri.queryParameters['isHost'] == 'true',
             audienceName: state.uri.queryParameters['name'] ?? '',
             episodes: episodes,
+            movie: movie,
           );
         },
       ),
