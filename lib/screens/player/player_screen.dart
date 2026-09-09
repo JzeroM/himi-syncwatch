@@ -737,8 +737,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _fetchCurrentPlayInfo(rtmService);
       }
     }
-      }
-    }
   }
 
   void _addBroadcastMessage(String msg) {
