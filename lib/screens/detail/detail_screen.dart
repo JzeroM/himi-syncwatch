@@ -128,6 +128,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       hostUid: hostUid,
       mediaItemId: _item!.id,
       mediaSourceId: selectedSource?.id,
+      mediaItemName: _item!.name,
       tokenCount: tokenCount,
       seriesName: _item!.isSeries ? _item!.name : null,
       episodeIds: epIds,

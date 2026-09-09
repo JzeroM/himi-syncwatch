@@ -141,9 +141,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } else {
       // 电影：无 episodeIds 时，用 mediaItemId 构建单集资源列表
       final mediaItemId = _roomData!['mediaItemId'] as String?;
+      final mediaItemName = _roomData!['mediaItemName'] as String?;
       if (mediaItemId != null && mediaItemId.isNotEmpty) {
         _episodeIds = [mediaItemId];
-        _episodeNames = ['电影'];
+        _episodeNames = [mediaItemName ?? '电影'];
         _episodeSeasons = [0];
         _episodeNumbers = [0];
         _episodePosters = [''];
