@@ -95,6 +95,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _seriesCollapsed = false;
   bool _roomSyncInitializing = false;
 
+  // 同步调试面板
+  bool _showSyncDebug = false;
+  String _syncRtmChannel = '-';
+  String _syncRtmStatus = '未连接';
+  String _syncMetadataPlayUrl = '空';
+  String _syncMetadataIndex = '-';
+  List<String> _syncEvents = [];
+
+  void _logSyncEvent(String event) {
+    final now = DateTime.now();
+    final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+    setState(() {
+      _syncEvents.add('[$time] $event');
+      if (_syncEvents.length > 15) _syncEvents.removeAt(0);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -252,6 +269,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           currentEpisodeIndex: _currentEpisodeIndex,
           token: isPublic ? null : token,
         );
+        _logSyncEvent('publishPlayInfo: len=${url.length}, public=$isPublic');
         print('[Stream] metadata 已更新: isPublic=$isPublic, playUrlLen=${url.length}');
       }
 
@@ -329,10 +347,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final epIndexStr = metadata['currentEpisodeIndex'];
     final token = metadata['token'];
 
+    setState(() {
+      _syncMetadataPlayUrl = playUrl != null && playUrl.isNotEmpty ? '已获取(${playUrl.length}字符)' : '空';
+      _syncMetadataIndex = epIndexStr ?? '-';
+    });
+
     print('[Sync] metadata 读取: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr, hasToken=${token != null}, retry=$retryCount');
 
     // 安全网：playUrl 为空时重试一次
     if ((playUrl == null || playUrl.isEmpty || epIndexStr == null) && retryCount < 1) {
+      _logSyncEvent('metadata 未就绪, 500ms后重试');
       print('[Sync] metadata 未就绪，500ms 后重试');
       await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) {
@@ -366,8 +390,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       await _player.play();
       _autoExpandSeries();
+      _logSyncEvent('播放器打开成功');
       print('[Sync] 播放器打开成功');
     } catch (e) {
+      _logSyncEvent('播放器打开失败: $e');
       print('[Sync] 播放器打开失败: $e');
       _addBroadcastMessage('同步播放失败: $e');
     }
@@ -547,6 +573,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final loginOk = await rtmService.login(_rtmAppId!, token: loginToken);
     if (!loginOk) {
       _roomSyncInitializing = false;
+      setState(() => _syncRtmStatus = '登录失败');
+      _logSyncEvent('RTM 登录失败');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('RTM 登录失败，请检查声网配置')),
@@ -557,6 +585,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final subscribeOk = await rtmService.subscribe(_rtmChannel!);
     if (!subscribeOk) {
       _roomSyncInitializing = false;
+      setState(() => _syncRtmStatus = '订阅失败');
+      _logSyncEvent('RTM 订阅失败');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('RTM 频道订阅失败，请检查网络')),
@@ -564,6 +594,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       return;
     }
+
+    setState(() {
+      _syncRtmChannel = _rtmChannel ?? '-';
+      _syncRtmStatus = '已连接';
+    });
+    _logSyncEvent('RTM 已连接, 频道: $_rtmChannel');
 
     // 1. 设置消息监听器（subscribe 之后立即设置，确保不丢消息）
     print('[Room] ${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
@@ -578,6 +614,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _handleHeartbeat(message);
       } else if (type == AppConstants.msgTypeRoomInfo) {
         print('[Room] 收到 roomInfo, episodeIds=${message['episodeIds']?.length ?? 0}');
+        _logSyncEvent('收到 roomInfo (${message['episodeIds']?.length ?? 0}集)');
         _handleRoomInfo(message);
       } else if (type == AppConstants.msgTypeCommand) {
         final action = message['action'] as String?;
@@ -585,6 +622,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (action == 'join') {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 加入了房间');
+          _logSyncEvent('$name 加入房间');
           _refreshOnlineCount(rtmService);
           // 主持人发送房间信息（含媒体数据 + 剧集列表）
           if (_isHost) {
@@ -799,6 +837,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         break;
       case AppConstants.actionSyncPlay:
         final position = (message['position'] as num?)?.toDouble() ?? 0.0;
+        _logSyncEvent('收到 syncPlay, pos=${position.toStringAsFixed(1)}s');
         // 从 metadata 读取播放地址
         _fetchPlayUrlFromMetadata(position: position);
         break;
@@ -1006,6 +1045,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         final playUrl = metadata['playUrl'];
         if (playUrl != null && playUrl.isNotEmpty) {
           metadataReady = true;
+          _logSyncEvent('metadata playUrl 已就绪 (第${i + 1}次)');
           print('[Sync] metadata playUrl 已就绪 (attempt ${i + 1})');
           break;
         }
@@ -1014,10 +1054,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
 
       if (!metadataReady) {
+        _logSyncEvent('警告: metadata playUrl 为空');
         print('[Sync] 警告：metadata playUrl 仍为空，继续发送 syncPlay');
       }
 
       final position = _player.state.position.inMilliseconds / 1000.0;
+      _logSyncEvent('发送 syncPlay: ep=$index, pos=${position.toStringAsFixed(1)}s');
       print('[Sync] 主持人 sendCommand syncPlay: episode=$index, pos=$position');
       await rtmService.sendCommand(
         action: AppConstants.actionSyncPlay,
@@ -1256,7 +1298,78 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           const Center(
             child: CircularProgressIndicator(color: Color(0xFF6366F1)),
           ),
+
+        // 同步调试面板
+        if (_showSyncDebug)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: _buildSyncDebugPanel(),
+          ),
       ],
+    );
+  }
+
+  Widget _buildSyncDebugPanel() {
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.sync, color: Colors.green, size: 16),
+              const SizedBox(width: 6),
+              const Text('同步调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => setState(() => _showSyncDebug = false),
+                child: const Icon(Icons.close, color: Colors.white54, size: 16),
+              ),
+            ],
+          ),
+          const Divider(color: Colors.white24, height: 8),
+          _debugRow('角色', _isHost ? '主持人' : '观众'),
+          _debugRow('RTM频道', _syncRtmChannel),
+          _debugRow('RTM状态', _syncRtmStatus),
+          _debugRow('metadata playUrl', _syncMetadataPlayUrl),
+          _debugRow('metadata epIndex', _syncMetadataIndex),
+          if (_syncEvents.isNotEmpty) ...[
+            const Divider(color: Colors.white24, height: 8),
+            const Text('最近事件:', style: TextStyle(color: Colors.white54, fontSize: 11)),
+            const SizedBox(height: 4),
+            ...(_syncEvents.length > 8 ? _syncEvents.sublist(_syncEvents.length - 8) : _syncEvents).map((e) => Text(
+              e,
+              style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace'),
+            ))),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _debugRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 11), overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1284,6 +1397,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             onPressed: () => Navigator.pop(context),
           ),
           const Spacer(),
+          if (widget.roomCode != null)
+            IconButton(
+              icon: Icon(_showSyncDebug ? Icons.sync : Icons.sync_disabled, color: _showSyncDebug ? Colors.green : Colors.white54),
+              tooltip: '同步调试',
+              onPressed: () => setState(() => _showSyncDebug = !_showSyncDebug),
+            ),
           if (widget.roomCode != null)
             IconButton(
               icon: const Icon(Icons.copy, color: Colors.white),
