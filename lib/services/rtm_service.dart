@@ -172,9 +172,10 @@ class RtmService {
 
   // Channel metadata: 读取频道元数据，返回 (data, diagnostic)
   Future<(Map<String, String>, String)> getChannelMetadata(String channelName) async {
+    final empty = <String, String>{};
     if (_storage == null) {
       print('[RTM] ⚠️ getChannelMetadata: _storage is null');
-      return ({}, 'storage_null');
+      return (empty, 'storage_null');
     }
 
     try {
@@ -185,13 +186,13 @@ class RtmService {
       print('[RTM] getChannelMetadata: error=${status.error}, reason=${status.reason}');
       if (status.error == true || result == null) {
         print('[RTM] getChannelMetadata: result is null or error');
-        return ({}, 'error:${status.reason}');
+        return (empty, 'error:${status.reason}');
       }
       final data = result.data;
       print('[RTM] getChannelMetadata: majorRevision=${data.majorRevision}, itemCount=${data.itemCount}, items=${data.items?.length ?? 0}');
       if (data.items == null || data.items!.isEmpty) {
         print('[RTM] getChannelMetadata: items 为空');
-        return ({}, 'ok,0items');
+        return (empty, 'ok,0items');
       }
       final map = <String, String>{};
       for (final item in data.items!) {
@@ -204,7 +205,7 @@ class RtmService {
       return (map, 'ok,${map.length}items,keys=${map.keys.toList()}');
     } catch (e) {
       print('[RTM] 读取频道元数据异常: $e');
-      return ({}, 'exception:$e');
+      return (empty, 'exception:$e');
     }
   }
 

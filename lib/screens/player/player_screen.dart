@@ -677,7 +677,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 await Future.delayed(Duration(milliseconds: 300 * (i + 1)));
               }
               final position = _player.state.position.inMilliseconds / 1000.0;
-              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position, metadataReady=$metadataReady');
+              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position, metadataReady=$metadataReady, diag=$joinVerifyDiag');
               await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
                 episodeIndex: _currentEpisodeIndex,
