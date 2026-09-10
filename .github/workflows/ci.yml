@@ -59,3 +59,17 @@ jobs:
           
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
         id: version
+
+      - name: Trigger release workflow
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tag = '${{ steps.version.outputs.tag }}';
+            console.log(`Triggering release for tag: ${tag}`);
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yml',
+              ref: tag,
+            });
