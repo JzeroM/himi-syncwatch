@@ -642,26 +642,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _fetchCurrentPlayInfo(RtmService rtmService) async {
     final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
     final epIndexStr = metadata['currentEpisodeIndex'];
-    final itemId = metadata['itemId'];
+    final itemId = metadata['itemId'] as String?;
 
-    // 不再直接使用 playUrl（因为 token 不同），而是让主持人通过 syncPlay 命令同步
-    // 如果收到 itemId，说明主持人已在播放，等待 syncPlay 命令
+    // 主持人已在播放，通过 syncPlay 命令同步（不依赖 playUrl）
+    // 如果没有收到 syncPlay（比如主持人暂停了），则等待 syncPlay 或由观众手动选择
     if (itemId != null && epIndexStr != null && mounted) {
       final epIndex = int.tryParse(epIndexStr);
       if (epIndex != null && epIndex >= 0 && epIndex < _episodeIds.length) {
-        _addBroadcastMessage('等待主持人同步播放...');
-        // 等待 syncPlay 命令（如果 2 秒内没收到，则从 metadata 加载）
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted && !_player.state.playing && !_isPlayerReady) {
-          // syncPlay 命令未到达，使用本地 token 加载
-          _addBroadcastMessage('使用本地连接同步');
-          await _loadEpisodeStream(epIndex);
-          setState(() {
-            _currentEpisodeIndex = epIndex;
-            _isPlayerReady = true;
-          });
-          _autoExpandSeries();
-        }
+        _addBroadcastMessage('主持人正在播放: ${_episodeNames[epIndex]}');
+      }
+    }
+  }
       }
     }
   }
@@ -935,14 +926,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     await _loadEpisodeStream(index);
 
-    // Host: 发送切集命令（附带 playUrl）
+    // Host: 发送 syncPlay 命令，观众用本地 token 加载
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
+      final position = _player.state.position.inMilliseconds / 1000.0;
       await rtmService.sendCommand(
-        action: AppConstants.actionSwitchEpisode,
+        action: AppConstants.actionSyncPlay,
         episodeIndex: index,
         itemId: _episodeIds[index],
-        playUrl: _lastPlayUrl,
+        position: position,
       );
     }
   }
