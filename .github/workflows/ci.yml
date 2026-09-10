@@ -42,6 +42,9 @@ jobs:
           echo "版本: $VERSION"
           echo "标签: $TAG_NAME"
           
+          # 如果 tag 已存在则删除
+          git push origin --delete $TAG_NAME 2>/dev/null || true
+          
           # 创建并推送 tag
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
