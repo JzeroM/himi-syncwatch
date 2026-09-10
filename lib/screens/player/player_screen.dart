@@ -78,7 +78,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final List<String> _broadcastMessages = [];
   int _onlineUserCount = 0;
   StreamSubscription? _presenceSubscription;
-  Timer? _roomRequestTimer;
   final ScrollController _broadcastScrollController = ScrollController();
   String? _audienceName;
 
@@ -101,6 +100,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _syncRtmStatus = '未连接';
   String _syncMetadataPlayUrl = '空';
   String _syncMetadataIndex = '-';
+  String _syncMetadataAllKeys = '-'; // metadata 全量 key 列表
   List<String> _syncEvents = [];
 
   void _logSyncEvent(String event) {
@@ -350,6 +350,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() {
       _syncMetadataPlayUrl = playUrl != null && playUrl.isNotEmpty ? '已获取(${playUrl.length}字符)' : '空';
       _syncMetadataIndex = epIndexStr ?? '-';
+      _syncMetadataAllKeys = metadata.keys.isNotEmpty ? metadata.keys.toList().toString() : '无';
     });
 
     print('[Sync] metadata 读取: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr, hasToken=${token != null}, retry=$retryCount');
@@ -716,47 +717,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     });
 
-    // 4. 主持人：立即写入 Metadata
-    if (_isHost && _episodeIds.isNotEmpty) {
-      rtmService.publishRoomInfoToMetadata(
-        channelName: _rtmChannel!,
-        roomData: {
-          'episodeIds': _episodeIds,
-          'episodeNames': _episodeNames,
-          'episodeSeasons': _episodeSeasons,
-          'episodeNumbers': _episodeNumbers,
-          'episodePosters': _episodePosters,
-          'seriesName': _seriesName,
-          'mediaItemId': widget.itemId,
-          'mediaSourceId': widget.mediaSourceId,
-        },
-      );
-    }
-
-    // 5. 观众：从 Metadata 读取（重试最多 5 次，间隔 2s）
-    if (!_isHost) {
-      int retryCount = 0;
-      _roomRequestTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-        if (!mounted || _hasEpisodeList || retryCount >= 5) {
-          timer.cancel();
-          if (mounted && !_hasEpisodeList) {
-            _addBroadcastMessage('房间不存在或主持人已离开');
-          }
-          return;
-        }
-        retryCount++;
-        print('[Room] 观众第 $retryCount 次从 Metadata 获取房间数据');
-        rtmService.getRoomInfoFromMetadata(_rtmChannel!).then((data) {
-          if (data != null && mounted && !_hasEpisodeList) {
-            print('[Room] 从 Metadata 获取到房间数据');
-            _handleRoomInfo(data);
-            timer.cancel();
-          }
-        });
-      });
-    }
-
-    // 7. 主持人开始心跳
+    // 主持人开始心跳
     if (_isHost) {
       _startHeartbeat();
     }
@@ -853,7 +814,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _handleRoomInfo(Map<String, dynamic> message) {
     if (_isHost) return;
     if (_hasEpisodeList) return;
-    _roomRequestTimer?.cancel();
 
     print('[Room] _handleRoomInfo: keys=${message.keys.toList()}');
     final epIds = message['episodeIds'];
@@ -1153,7 +1113,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void dispose() {
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
-    _roomRequestTimer?.cancel();
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
@@ -1342,6 +1301,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _debugRow('RTM状态', _syncRtmStatus),
           _debugRow('metadata playUrl', _syncMetadataPlayUrl),
           _debugRow('metadata epIndex', _syncMetadataIndex),
+          _debugRow('metadata 所有key', _syncMetadataAllKeys),
           if (_syncEvents.isNotEmpty) ...[
             const Divider(color: Colors.white24, height: 8),
             const Text('最近事件:', style: TextStyle(color: Colors.white54, fontSize: 11)),

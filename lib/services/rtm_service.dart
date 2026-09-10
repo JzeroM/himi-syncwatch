@@ -140,19 +140,25 @@ class RtmService {
     required String channelName,
     required Map<String, String> metadata,
   }) async {
-    if (_storage == null) return;
+    if (_storage == null) {
+      print('[RTM] ⚠️ setChannelMetadata: _storage is null, skip');
+      return;
+    }
 
     try {
       final items = metadata.entries
           .map((e) => MetadataItem(key: e.key, value: e.value))
           .toList();
-      final (status, _) = await _storage!.setChannelMetadata(
+      final totalLen = metadata.entries.fold<int>(0, (s, e) => s + e.key.length + e.value.length);
+      print('[RTM] setChannelMetadata: keys=${metadata.keys.toList()}, totalLen=$totalLen');
+      final (status, result) = await _storage!.setChannelMetadata(
         channelName,
         RtmChannelType.message,
         items,
       );
-      if (status.error == true) {
-        print('[RTM] 设置频道元数据失败: ${status.reason}');
+      print('[RTM] setChannelMetadata result: error=${status.error}, reason=${status.reason}');
+      if (result != null) {
+        print('[RTM] setChannelMetadata result: channelName=${result.channelName}, channelType=${result.channelType}');
       }
     } catch (e) {
       print('[RTM] 设置频道元数据异常: $e');
@@ -161,22 +167,36 @@ class RtmService {
 
   // Channel metadata: 读取频道元数据
   Future<Map<String, String>> getChannelMetadata(String channelName) async {
-    if (_storage == null) return {};
+    if (_storage == null) {
+      print('[RTM] ⚠️ getChannelMetadata: _storage is null');
+      return {};
+    }
 
     try {
       final (status, result) = await _storage!.getChannelMetadata(
         channelName,
         RtmChannelType.message,
       );
+      print('[RTM] getChannelMetadata: error=${status.error}, reason=${status.reason}');
       if (status.error == true || result == null) {
+        print('[RTM] getChannelMetadata: result is null or error');
         return {};
       }
       final data = result.data;
-      if (data.items == null) return {};
-      return {
-        for (final item in data.items!)
-          if (item.key != null && item.value != null) item.key!: item.value!,
-      };
+      print('[RTM] getChannelMetadata: majorRevision=${data.majorRevision}, itemCount=${data.itemCount}, items=${data.items?.length ?? 0}');
+      if (data.items == null || data.items!.isEmpty) {
+        print('[RTM] getChannelMetadata: items 为空');
+        return {};
+      }
+      final map = <String, String>{};
+      for (final item in data.items!) {
+        print('[RTM]   item: key=${item.key}, valueLen=${item.value?.length ?? 0}, author=${item.authorUserId}, revision=${item.revision}');
+        if (item.key != null && item.value != null) {
+          map[item.key!] = item.value!;
+        }
+      }
+      print('[RTM] getChannelMetadata: 返回 ${map.length} 个 key: ${map.keys.toList()}');
+      return map;
     } catch (e) {
       print('[RTM] 读取频道元数据异常: $e');
       return {};
@@ -222,29 +242,6 @@ class RtmService {
         if (token != null) 'token': token,
       },
     );
-  }
-
-  // 将房间剧集数据写入频道 Metadata（持久化备份）
-  Future<void> publishRoomInfoToMetadata({
-    required String channelName,
-    required Map<String, dynamic> roomData,
-  }) async {
-    await setChannelMetadata(
-      channelName: channelName,
-      metadata: {'roomInfo': jsonEncode(roomData)},
-    );
-  }
-
-  // 从频道 Metadata 读取房间剧集数据
-  Future<Map<String, dynamic>?> getRoomInfoFromMetadata(String channelName) async {
-    final metadata = await getChannelMetadata(channelName);
-    final roomInfoJson = metadata['roomInfo'];
-    if (roomInfoJson != null && roomInfoJson.isNotEmpty) {
-      try {
-        return jsonDecode(roomInfoJson) as Map<String, dynamic>;
-      } catch (_) {}
-    }
-    return null;
   }
 
   // 发送 RTM 消息
