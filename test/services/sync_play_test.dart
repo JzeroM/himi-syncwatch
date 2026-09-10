@@ -109,6 +109,64 @@ void main() {
 
       expect(playUrl, isNull);
     });
+
+    test('syncPlay 暂存机制：episodeIds 为空时应暂存', () {
+      final episodeIds = <String>[];
+      final epIndex = 0;
+      final playUrl = 'https://cdn.example.com/video.mkv';
+      final position = 10.0;
+
+      final shouldPending = episodeIds.isEmpty;
+      expect(shouldPending, isTrue);
+
+      Map<String, dynamic>? pendingSyncPlay;
+      if (shouldPending) {
+        pendingSyncPlay = {
+          'episodeIndex': epIndex,
+          'playUrl': playUrl,
+          'position': position,
+        };
+      }
+
+      expect(pendingSyncPlay, isNotNull);
+      expect(pendingSyncPlay!['episodeIndex'], equals(0));
+      expect(pendingSyncPlay['playUrl'], equals(playUrl));
+      expect(pendingSyncPlay['position'], equals(10.0));
+    });
+
+    test('syncPlay 暂存机制：roomInfo 到达后应处理暂存消息', () {
+      final pendingSyncPlay = <String, dynamic>{
+        'episodeIndex': 1,
+        'playUrl': 'https://cdn.example.com/video.mkv',
+        'position': 20.0,
+      };
+
+      final episodeIds = ['ep0', 'ep1', 'ep2'];
+
+      final epIndex = pendingSyncPlay['episodeIndex'] as int;
+      final shouldProcess = episodeIds.isNotEmpty &&
+          epIndex >= 0 &&
+          epIndex < episodeIds.length;
+
+      expect(shouldProcess, isTrue);
+    });
+
+    test('syncPlay 暂存机制：roomInfo 到达后 epIndex 越界不处理', () {
+      final pendingSyncPlay = <String, dynamic>{
+        'episodeIndex': 5,
+        'playUrl': 'https://cdn.example.com/video.mkv',
+        'position': 20.0,
+      };
+
+      final episodeIds = ['ep0', 'ep1', 'ep2'];
+
+      final epIndex = pendingSyncPlay['episodeIndex'] as int;
+      final shouldProcess = episodeIds.isNotEmpty &&
+          epIndex >= 0 &&
+          epIndex < episodeIds.length;
+
+      expect(shouldProcess, isFalse);
+    });
   });
 
   group('心跳消息解析', () {

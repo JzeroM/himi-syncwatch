@@ -95,6 +95,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _seriesCollapsed = false;
   String? _lastPlayUrl;
   bool _roomSyncInitializing = false;
+  Map<String, dynamic>? _pendingSyncPlay;
 
   @override
   void initState() {
@@ -267,6 +268,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<String> _resolveStreamUrl(String url, String token) async {
+    print('[Stream] _resolveStreamUrl: 原始URL=${url.substring(0, url.length.clamp(0, 120))}');
     try {
       final client = HttpClient()
         ..badCertificateCallback = (_, __, ___) => true;
@@ -284,13 +286,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         final location = response.headers.value('location');
         if (location != null && location.isNotEmpty) {
           client.close(force: true);
+          print('[Stream] 302 重定向到: ${location.substring(0, location.length.clamp(0, 120))}');
           return location;
         }
       }
 
       client.close(force: true);
+      print('[Stream] 无重定向, status=${response.statusCode}, 返回原始URL');
       return url;
-    } catch (_) {
+    } catch (e) {
+      print('[Stream] _resolveStreamUrl 异常: $e, 返回原始URL');
       return url;
     }
   }
@@ -511,7 +516,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           // 主持人发送房间信息（含媒体数据 + 剧集列表）
           if (_isHost) {
             print('[Room] 主持人发送 roomInfo, episodeCount=${_episodeIds.length}');
-            rtmService.sendRoomInfo(
+            await rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
               mediaItemId: widget.itemId,
               mediaSourceId: widget.mediaSourceId,
@@ -528,8 +533,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
               final position = _player.state.position.inMilliseconds / 1000.0;
-              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
-              rtmService.sendCommand(
+              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position, lastPlayUrl=${_lastPlayUrl?.substring(0, (_lastPlayUrl?.length ?? 0).clamp(0, 80))}');
+              await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
                 episodeIndex: _currentEpisodeIndex,
                 itemId: _episodeIds[_currentEpisodeIndex],
@@ -641,21 +646,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _fetchCurrentPlayInfo(RtmService rtmService) async {
+    print('[Sync] _fetchCurrentPlayInfo: channel=$_rtmChannel, episodeIdsLen=${_episodeIds.length}');
     final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
     final epIndexStr = metadata['currentEpisodeIndex'];
     final playUrl = metadata['playUrl'];
+    print('[Sync] metadata: playUrl=${playUrl?.substring(0, (playUrl?.length ?? 0).clamp(0, 80))}, epIndex=$epIndexStr');
 
     if (playUrl != null && playUrl.isNotEmpty && epIndexStr != null && mounted) {
       final epIndex = int.tryParse(epIndexStr);
       if (epIndex != null && epIndex >= 0 && epIndex < _episodeIds.length) {
         _addBroadcastMessage('同步主持人播放');
-        await _player.open(Media(playUrl));
-        setState(() {
-          _currentEpisodeIndex = epIndex;
-          _isPlayerReady = true;
-        });
-        _autoExpandSeries();
+        try {
+          print('[Sync] _fetchCurrentPlayInfo 打开播放器: ${playUrl.substring(0, playUrl.length.clamp(0, 120))}');
+          await _player.open(Media(playUrl));
+          setState(() {
+            _currentEpisodeIndex = epIndex;
+            _isPlayerReady = true;
+          });
+          _autoExpandSeries();
+          print('[Sync] _fetchCurrentPlayInfo 播放器打开成功');
+        } catch (e) {
+          print('[Sync] _fetchCurrentPlayInfo 播放器打开失败: $e');
+          _addBroadcastMessage('同步播放失败: $e');
+        }
+      } else {
+        print('[Sync] _fetchCurrentPlayInfo epIndex=$epIndex 无效或越界');
       }
+    } else {
+      print('[Sync] _fetchCurrentPlayInfo 无有效 playUrl 或 epIndex');
     }
   }
 
@@ -778,6 +796,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     if (_hasEpisodeList) {
       _addBroadcastMessage('已同步房间资源列表');
+
+      // 如果有暂存的 syncPlay 消息，立即处理
+      if (_pendingSyncPlay != null) {
+        final pending = _pendingSyncPlay!;
+        _pendingSyncPlay = null;
+        print('[Sync] 处理暂存的 syncPlay: epIndex=${pending['episodeIndex']}');
+        _syncPlayFromHost(
+          pending['episodeIndex'] as int,
+          pending['playUrl'] as String?,
+          (pending['position'] as num?)?.toDouble() ?? 0.0,
+        );
+      }
 
       // 从频道元数据获取播放地址
       if (_rtmChannel != null) {
@@ -932,6 +962,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
       final position = _player.state.position.inMilliseconds / 1000.0;
+      print('[Sync] 主持人 sendCommand syncPlay: episode=$index, pos=$position, playUrl=${_lastPlayUrl?.substring(0, (_lastPlayUrl?.length ?? 0).clamp(0, 80))}');
       await rtmService.sendCommand(
         action: AppConstants.actionSyncPlay,
         episodeIndex: index,
@@ -969,24 +1000,63 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // 观众同步播放：用房主广播的直链直接播放
   void _syncPlayFromHost(int epIndex, String? playUrl, double position) async {
-    if (epIndex < 0 || epIndex >= _episodeIds.length) return;
-    if (playUrl == null || playUrl.isEmpty) return;
+    print('[Sync] _syncPlayFromHost: epIndex=$epIndex, playUrl=${playUrl?.substring(0, (playUrl?.length ?? 0).clamp(0, 80))}, pos=$position, episodeIdsLen=${_episodeIds.length}');
+
+    // 如果 _episodeIds 还没收到，暂存消息等 roomInfo 到达后处理
+    if (_episodeIds.isEmpty) {
+      print('[Sync] _episodeIds 为空，暂存 syncPlay 等待 roomInfo');
+      _pendingSyncPlay = {
+        'episodeIndex': epIndex,
+        'playUrl': playUrl,
+        'position': position,
+      };
+      return;
+    }
+
+    if (epIndex < 0 || epIndex >= _episodeIds.length) {
+      print('[Sync] epIndex=$epIndex 越界, episodeIdsLen=${_episodeIds.length}');
+      return;
+    }
+    if (playUrl == null || playUrl.isEmpty) {
+      print('[Sync] playUrl 为空，尝试从 metadata 获取');
+      // 尝试从频道元数据获取
+      if (_rtmChannel != null) {
+        final rtmService = ref.read(rtmServiceProvider);
+        final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+        final metaUrl = metadata['playUrl'];
+        if (metaUrl != null && metaUrl.isNotEmpty) {
+          playUrl = metaUrl;
+          print('[Sync] 从 metadata 获取到 playUrl: ${metaUrl.substring(0, metaUrl.length.clamp(0, 80))}');
+        }
+      }
+      if (playUrl == null || playUrl.isEmpty) {
+        print('[Sync] 仍无 playUrl，放弃');
+        return;
+      }
+    }
 
     _addBroadcastMessage('同步主持人播放');
 
-    await _player.open(Media(playUrl));
+    try {
+      print('[Sync] 打开播放器: ${playUrl.substring(0, playUrl.length.clamp(0, 120))}');
+      await _player.open(Media(playUrl));
 
-    setState(() {
-      _currentEpisodeIndex = epIndex;
-      _isPlayerReady = true;
-    });
+      setState(() {
+        _currentEpisodeIndex = epIndex;
+        _isPlayerReady = true;
+      });
 
-    if (position > 0) {
-      await _player.seek(Duration(milliseconds: (position * 1000).toInt()));
+      if (position > 0) {
+        await _player.seek(Duration(milliseconds: (position * 1000).toInt()));
+      }
+
+      await _player.play();
+      _autoExpandSeries();
+      print('[Sync] 播放器打开成功');
+    } catch (e) {
+      print('[Sync] 播放器打开失败: $e');
+      _addBroadcastMessage('同步播放失败: $e');
     }
-
-    await _player.play();
-    _autoExpandSeries();
   }
 
   // 删除剧集（房主）
