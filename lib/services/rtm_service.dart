@@ -209,6 +209,7 @@ class RtmService {
     required String itemId,
     String? mediaSourceId,
     int? currentEpisodeIndex,
+    String? token,
   }) async {
     await setChannelMetadata(
       channelName: channelName,
@@ -218,6 +219,7 @@ class RtmService {
         if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
         if (currentEpisodeIndex != null)
           'currentEpisodeIndex': '$currentEpisodeIndex',
+        if (token != null) 'token': token,
       },
     );
   }
