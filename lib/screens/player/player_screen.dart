@@ -533,7 +533,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
               final position = _player.state.position.inMilliseconds / 1000.0;
-              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position, lastPlayUrl=${_lastPlayUrl?.substring(0, (_lastPlayUrl?.length ?? 0).clamp(0, 80))}');
+              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position, lastPlayUrlLen=${_lastPlayUrl?.length}');
               await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
                 episodeIndex: _currentEpisodeIndex,
@@ -657,7 +657,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
     final epIndexStr = metadata['currentEpisodeIndex'];
     final playUrl = metadata['playUrl'];
-    print('[Sync] metadata: playUrl=${playUrl?.substring(0, (playUrl?.length ?? 0).clamp(0, 80))}, epIndex=$epIndexStr');
+    print('[Sync] metadata: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr');
 
     if (playUrl != null && playUrl.isNotEmpty && epIndexStr != null && mounted) {
       final epIndex = int.tryParse(epIndexStr);
@@ -969,7 +969,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
       final position = _player.state.position.inMilliseconds / 1000.0;
-      print('[Sync] 主持人 sendCommand syncPlay: episode=$index, pos=$position, playUrl=${_lastPlayUrl?.substring(0, (_lastPlayUrl?.length ?? 0).clamp(0, 80))}');
+      print('[Sync] 主持人 sendCommand syncPlay: episode=$index, pos=$position, playUrlLen=${_lastPlayUrl?.length}');
       await rtmService.sendCommand(
         action: AppConstants.actionSyncPlay,
         episodeIndex: index,
@@ -1007,7 +1007,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // 观众同步播放：用房主广播的直链直接播放
   void _syncPlayFromHost(int epIndex, String? playUrl, double position) async {
-    print('[Sync] _syncPlayFromHost: epIndex=$epIndex, playUrl=${playUrl?.substring(0, (playUrl?.length ?? 0).clamp(0, 80))}, pos=$position, episodeIdsLen=${_episodeIds.length}');
+    print('[Sync] _syncPlayFromHost: epIndex=$epIndex, playUrlLen=${playUrl?.length}, pos=$position, episodeIdsLen=${_episodeIds.length}');
 
     // 如果 _episodeIds 还没收到，暂存消息等 roomInfo 到达后处理
     if (_episodeIds.isEmpty) {
