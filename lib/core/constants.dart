@@ -26,4 +26,5 @@ class AppConstants {
   static const String actionSwitchEpisode = 'switchEpisode';
   static const String actionRemoveEpisode = 'removeEpisode';
   static const String actionRequestRoomInfo = 'requestRoomInfo';
+  static const String actionSyncPlay = 'syncPlay';
 }
