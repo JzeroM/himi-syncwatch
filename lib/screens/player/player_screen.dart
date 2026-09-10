@@ -642,7 +642,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _fetchCurrentPlayInfo(RtmService rtmService) async {
     final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
     final epIndexStr = metadata['currentEpisodeIndex'];
-    final itemId = metadata['itemId'] as String?;
+    final itemId = metadata['itemId'];
 
     // 不再直接使用 playUrl（因为 token 不同），而是让主持人通过 syncPlay 命令同步
     // 如果收到 itemId，说明主持人已在播放，等待 syncPlay 命令
