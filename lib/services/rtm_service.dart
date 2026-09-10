@@ -135,14 +135,14 @@ class RtmService {
     }
   }
 
-  // Channel metadata: 设置频道元数据
-  Future<void> setChannelMetadata({
+  // Channel metadata: 设置频道元数据，返回诊断字符串
+  Future<String> setChannelMetadata({
     required String channelName,
     required Map<String, String> metadata,
   }) async {
     if (_storage == null) {
       print('[RTM] ⚠️ setChannelMetadata: _storage is null, skip');
-      return;
+      return 'storage_null';
     }
 
     try {
@@ -160,16 +160,21 @@ class RtmService {
       if (result != null) {
         print('[RTM] setChannelMetadata result: channelName=${result.channelName}, channelType=${result.channelType}');
       }
+      if (status.error == true) {
+        return 'error:${status.reason}';
+      }
+      return 'ok,${metadata.keys.length}keys,${totalLen}chars';
     } catch (e) {
       print('[RTM] 设置频道元数据异常: $e');
+      return 'exception:$e';
     }
   }
 
-  // Channel metadata: 读取频道元数据
-  Future<Map<String, String>> getChannelMetadata(String channelName) async {
+  // Channel metadata: 读取频道元数据，返回 (data, diagnostic)
+  Future<(Map<String, String>, String)> getChannelMetadata(String channelName) async {
     if (_storage == null) {
       print('[RTM] ⚠️ getChannelMetadata: _storage is null');
-      return {};
+      return ({}, 'storage_null');
     }
 
     try {
@@ -180,13 +185,13 @@ class RtmService {
       print('[RTM] getChannelMetadata: error=${status.error}, reason=${status.reason}');
       if (status.error == true || result == null) {
         print('[RTM] getChannelMetadata: result is null or error');
-        return {};
+        return ({}, 'error:${status.reason}');
       }
       final data = result.data;
       print('[RTM] getChannelMetadata: majorRevision=${data.majorRevision}, itemCount=${data.itemCount}, items=${data.items?.length ?? 0}');
       if (data.items == null || data.items!.isEmpty) {
         print('[RTM] getChannelMetadata: items 为空');
-        return {};
+        return ({}, 'ok,0items');
       }
       final map = <String, String>{};
       for (final item in data.items!) {
@@ -196,10 +201,39 @@ class RtmService {
         }
       }
       print('[RTM] getChannelMetadata: 返回 ${map.length} 个 key: ${map.keys.toList()}');
-      return map;
+      return (map, 'ok,${map.length}items,keys=${map.keys.toList()}');
     } catch (e) {
       print('[RTM] 读取频道元数据异常: $e');
-      return {};
+      return ({}, 'exception:$e');
+    }
+  }
+
+  // 元数据自检：写入测试 key → 读回 → 返回诊断字符串
+  Future<String> testMetadata(String channelName) async {
+    final testKey = 'test_ping';
+    final testValue = '${DateTime.now().millisecondsSinceEpoch}';
+    print('[RTM] testMetadata: 写入 $testKey=$testValue');
+
+    final writeDiag = await setChannelMetadata(
+      channelName: channelName,
+      metadata: {testKey: testValue},
+    );
+    print('[RTM] testMetadata 写入诊断: $writeDiag');
+
+    if (writeDiag.startsWith('error') || writeDiag.startsWith('storage_null') || writeDiag.startsWith('exception')) {
+      return '写入失败: $writeDiag';
+    }
+
+    final (readData, readDiag) = await getChannelMetadata(channelName);
+    print('[RTM] testMetadata 读取诊断: $readDiag');
+
+    final readValue = readData[testKey];
+    if (readValue == testValue) {
+      return '✅ 自检通过: 写=$writeDiag, 读=$readDiag';
+    } else if (readValue != null) {
+      return '⚠️ 值不匹配: 写=$testValue, 读=$readValue';
+    } else {
+      return '❌ 读回为空: 写=$writeDiag, 读=$readDiag, keys=${readData.keys.toList()}';
     }
   }
 
@@ -222,8 +256,8 @@ class RtmService {
     }
   }
 
-  // 发布播放信息到频道元数据
-  Future<void> publishPlayInfo({
+  // 发布播放信息到频道元数据，返回写入诊断
+  Future<String> publishPlayInfo({
     required String channelName,
     required String playUrl,
     required String itemId,
@@ -231,7 +265,7 @@ class RtmService {
     int? currentEpisodeIndex,
     String? token,
   }) async {
-    await setChannelMetadata(
+    return await setChannelMetadata(
       channelName: channelName,
       metadata: {
         'playUrl': playUrl,

@@ -101,6 +101,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _syncMetadataPlayUrl = '空';
   String _syncMetadataIndex = '-';
   String _syncMetadataAllKeys = '-'; // metadata 全量 key 列表
+  String _syncMetadataWriteDiag = '-'; // 最后一次写入诊断
+  String _syncMetadataReadDiag = '-'; // 最后一次读取诊断
+  String _syncMetadataTestResult = '-'; // 自检结果
   List<String> _syncEvents = [];
 
   void _logSyncEvent(String event) {
@@ -261,7 +264,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (_isHost && _rtmChannel != null) {
         final rtmService = ref.read(rtmServiceProvider);
         final isPublic = _isPublicUrl(url);
-        await rtmService.publishPlayInfo(
+        final writeDiag = await rtmService.publishPlayInfo(
           channelName: _rtmChannel!,
           playUrl: url,
           itemId: targetItemId,
@@ -269,8 +272,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           currentEpisodeIndex: _currentEpisodeIndex,
           token: isPublic ? null : token,
         );
-        _logSyncEvent('publishPlayInfo: len=${url.length}, public=$isPublic');
-        print('[Stream] metadata 已更新: isPublic=$isPublic, playUrlLen=${url.length}');
+        setState(() {
+          _syncMetadataWriteDiag = writeDiag;
+        });
+        _logSyncEvent('publishPlayInfo: len=${url.length}, public=$isPublic, 写入=$writeDiag');
+        print('[Stream] metadata 已更新: isPublic=$isPublic, playUrlLen=${url.length}, writeDiag=$writeDiag');
       }
 
       return url;
@@ -342,7 +348,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_rtmChannel == null || !mounted) return;
 
     final rtmService = ref.read(rtmServiceProvider);
-    final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+    final (metadata, readDiag) = await rtmService.getChannelMetadata(_rtmChannel!);
     final playUrl = metadata['playUrl'];
     final epIndexStr = metadata['currentEpisodeIndex'];
     final token = metadata['token'];
@@ -351,6 +357,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _syncMetadataPlayUrl = playUrl != null && playUrl.isNotEmpty ? '已获取(${playUrl.length}字符)' : '空';
       _syncMetadataIndex = epIndexStr ?? '-';
       _syncMetadataAllKeys = metadata.keys.isNotEmpty ? metadata.keys.toList().toString() : '无';
+      _syncMetadataReadDiag = readDiag;
     });
 
     print('[Sync] metadata 读取: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr, hasToken=${token != null}, retry=$retryCount');
@@ -602,6 +609,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
     _logSyncEvent('RTM 已连接, 频道: $_rtmChannel');
 
+    // 元数据自检（延迟 1 秒等 channel 稳定）
+    Future.delayed(const Duration(seconds: 1), () async {
+      if (!mounted || _rtmChannel == null) return;
+      final rtmService = ref.read(rtmServiceProvider);
+      final result = await rtmService.testMetadata(_rtmChannel!);
+      if (mounted) {
+        setState(() {
+          _syncMetadataTestResult = result;
+        });
+        _logSyncEvent('元数据自检: $result');
+      }
+    });
+
     // 1. 设置消息监听器（subscribe 之后立即设置，确保不丢消息）
     print('[Room] ${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
     _rtmSubscription = rtmService.messageStream.listen((message) async {
@@ -646,8 +666,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
               // 确认 metadata playUrl 已同步后再发 syncPlay
               bool metadataReady = false;
+              String joinVerifyDiag = '';
               for (int i = 0; i < 3; i++) {
-                final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+                final (metadata, diag) = await rtmService.getChannelMetadata(_rtmChannel!);
+                joinVerifyDiag = diag;
                 if (metadata['playUrl'] != null && metadata['playUrl']!.isNotEmpty) {
                   metadataReady = true;
                   break;
@@ -1000,8 +1022,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       // 等待 metadata 中 playUrl 就绪（最多重试 3 次，间隔递增）
       bool metadataReady = false;
+      String switchVerifyDiag = '';
       for (int i = 0; i < 3; i++) {
-        final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+        final (metadata, diag) = await rtmService.getChannelMetadata(_rtmChannel!);
+        switchVerifyDiag = diag;
         final playUrl = metadata['playUrl'];
         if (playUrl != null && playUrl.isNotEmpty) {
           metadataReady = true;
@@ -1012,6 +1036,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         print('[Sync] metadata playUrl 未就绪，等待 ${300 * (i + 1)}ms (attempt ${i + 1}/3)');
         await Future.delayed(Duration(milliseconds: 300 * (i + 1)));
       }
+
+      setState(() {
+        _syncMetadataReadDiag = switchVerifyDiag;
+      });
 
       if (!metadataReady) {
         _logSyncEvent('警告: metadata playUrl 为空');
@@ -1302,6 +1330,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _debugRow('metadata playUrl', _syncMetadataPlayUrl),
           _debugRow('metadata epIndex', _syncMetadataIndex),
           _debugRow('metadata 所有key', _syncMetadataAllKeys),
+          _debugRow('metadata 写入诊断', _syncMetadataWriteDiag),
+          _debugRow('metadata 读取诊断', _syncMetadataReadDiag),
+          _debugRow('metadata 自检', _syncMetadataTestResult),
           if (_syncEvents.isNotEmpty) ...[
             const Divider(color: Colors.white24, height: 8),
             const Text('最近事件:', style: TextStyle(color: Colors.white54, fontSize: 11)),
