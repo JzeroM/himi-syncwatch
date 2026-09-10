@@ -643,7 +643,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _fetchCurrentPlayInfo(RtmService rtmService) async {
     final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
     final epIndexStr = metadata['currentEpisodeIndex'];
-    final playUrl = metadata['playUrl'] as String?;
+    final playUrl = metadata['playUrl'];
 
     if (playUrl != null && playUrl.isNotEmpty && epIndexStr != null && mounted) {
       final epIndex = int.tryParse(epIndexStr);
