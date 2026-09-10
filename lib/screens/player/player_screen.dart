@@ -534,6 +534,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 episodeIndex: _currentEpisodeIndex,
                 itemId: _episodeIds[_currentEpisodeIndex],
                 position: position,
+                playUrl: _lastPlayUrl,
               );
             }
           }
@@ -642,17 +643,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _fetchCurrentPlayInfo(RtmService rtmService) async {
     final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
     final epIndexStr = metadata['currentEpisodeIndex'];
-    final itemId = metadata['itemId'] as String?;
+    final playUrl = metadata['playUrl'] as String?;
 
-    // 主持人已在播放，通过 syncPlay 命令同步（不依赖 playUrl）
-    // 如果没有收到 syncPlay（比如主持人暂停了），则等待 syncPlay 或由观众手动选择
-    if (itemId != null && epIndexStr != null && mounted) {
+    if (playUrl != null && playUrl.isNotEmpty && epIndexStr != null && mounted) {
       final epIndex = int.tryParse(epIndexStr);
       if (epIndex != null && epIndex >= 0 && epIndex < _episodeIds.length) {
-        _addBroadcastMessage('主持人正在播放: ${_episodeNames[epIndex]}');
-      }
-    }
-  }
+        _addBroadcastMessage('同步主持人播放');
+        await _player.open(Media(playUrl));
+        setState(() {
+          _currentEpisodeIndex = epIndex;
+          _isPlayerReady = true;
+        });
+        _autoExpandSeries();
       }
     }
   }
@@ -723,10 +725,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         break;
       case AppConstants.actionSyncPlay:
         final epIndex = message['episodeIndex'] as int?;
-        final itemId = message['itemId'] as String?;
         final position = (message['position'] as num?)?.toDouble() ?? 0.0;
-        if (epIndex != null && itemId != null) {
-          _syncPlayFromHost(epIndex, itemId, position);
+        final playUrl = message['playUrl'] as String?;
+        if (epIndex != null) {
+          _syncPlayFromHost(epIndex, playUrl, position);
         }
         break;
       case AppConstants.actionRemoveEpisode:
@@ -926,7 +928,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     await _loadEpisodeStream(index);
 
-    // Host: 发送 syncPlay 命令，观众用本地 token 加载
+    // Host: 发送 syncPlay 命令（带直链），观众直接播放
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
       final position = _player.state.position.inMilliseconds / 1000.0;
@@ -935,6 +937,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         episodeIndex: index,
         itemId: _episodeIds[index],
         position: position,
+        playUrl: _lastPlayUrl,
       );
     }
   }
@@ -955,9 +958,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     if (url != null && url.isNotEmpty && mounted) {
       _addBroadcastMessage('同步切集: ${_episodeNames[epIndex]}');
-      await _player.open(Media(url, httpHeaders: {
-        'X-Emby-Token': '',
-      }));
+      await _player.open(Media(url));
       setState(() {
         _currentEpisodeIndex = epIndex;
         _isPlayerReady = true;
@@ -966,22 +967,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  // 观众同步播放：用本地 token 加载视频
-  void _syncPlayFromHost(int epIndex, String itemId, double position) async {
+  // 观众同步播放：用房主广播的直链直接播放
+  void _syncPlayFromHost(int epIndex, String? playUrl, double position) async {
     if (epIndex < 0 || epIndex >= _episodeIds.length) return;
+    if (playUrl == null || playUrl.isEmpty) return;
 
     _addBroadcastMessage('同步主持人播放');
 
-    // 加载剧集流（使用本地 token）
-    await _loadEpisodeStream(epIndex);
+    await _player.open(Media(playUrl));
 
-    // Seek 到主持人位置
+    setState(() {
+      _currentEpisodeIndex = epIndex;
+      _isPlayerReady = true;
+    });
+
     if (position > 0) {
       await _player.seek(Duration(milliseconds: (position * 1000).toInt()));
     }
 
-    // 开始播放
     await _player.play();
+    _autoExpandSeries();
   }
 
   // 删除剧集（房主）

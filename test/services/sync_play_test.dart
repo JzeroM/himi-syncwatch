@@ -4,7 +4,7 @@ import 'package:himi_syncwatch/core/constants.dart';
 
 void main() {
   group('同步播放消息解析', () {
-    test('解析 syncPlay 命令消息', () {
+    test('解析 syncPlay 命令消息（含 playUrl）', () {
       final messageJson = jsonEncode({
         'type': AppConstants.msgTypeCommand,
         'userId': 'host_user',
@@ -12,6 +12,7 @@ void main() {
         'episodeIndex': 2,
         'itemId': 'abc123',
         'position': 65.3,
+        'playUrl': 'https://cdn.example.com/video.mkv?token=xxx',
       });
 
       final message = jsonDecode(messageJson) as Map<String, dynamic>;
@@ -21,6 +22,21 @@ void main() {
       expect(message['episodeIndex'], equals(2));
       expect(message['itemId'], equals('abc123'));
       expect(message['position'], equals(65.3));
+      expect(message['playUrl'], contains('https://'));
+    });
+
+    test('syncPlay 消息 playUrl 为空时也能解析', () {
+      final messageJson = jsonEncode({
+        'type': AppConstants.msgTypeCommand,
+        'userId': 'host_user',
+        'action': AppConstants.actionSyncPlay,
+        'episodeIndex': 0,
+        'position': 0.0,
+      });
+
+      final message = jsonDecode(messageJson) as Map<String, dynamic>;
+
+      expect(message['playUrl'], isNull);
     });
 
     test('解析 roomInfo 消息包含剧集列表', () {
@@ -47,7 +63,6 @@ void main() {
     });
 
     test('同步播放命令 - 主持人未播放时不发送', () {
-      // 模拟主持人未播放状态
       final isPlayerReady = false;
       final currentEpisodeIndex = -1;
 
@@ -57,13 +72,42 @@ void main() {
     });
 
     test('同步播放命令 - 主持人已播放时发送', () {
-      // 模拟主持人已播放状态
       final isPlayerReady = true;
       final currentEpisodeIndex = 1;
 
       final shouldSend = isPlayerReady && currentEpisodeIndex >= 0;
 
       expect(shouldSend, isTrue);
+    });
+
+    test('观众接收 syncPlay 需要 playUrl 才能播放', () {
+      final message = {
+        'action': AppConstants.actionSyncPlay,
+        'episodeIndex': 1,
+        'position': 30.0,
+        'playUrl': 'https://cdn.example.com/video.mkv',
+      };
+
+      final epIndex = message['episodeIndex'] as int?;
+      final playUrl = message['playUrl'] as String?;
+      final position = (message['position'] as num?)?.toDouble() ?? 0.0;
+
+      expect(epIndex, isNotNull);
+      expect(playUrl, isNotNull);
+      expect(playUrl, isNotEmpty);
+      expect(position, equals(30.0));
+    });
+
+    test('观众接收 syncPlay 无 playUrl 时不播放', () {
+      final message = {
+        'action': AppConstants.actionSyncPlay,
+        'episodeIndex': 1,
+        'position': 30.0,
+      };
+
+      final playUrl = message['playUrl'] as String?;
+
+      expect(playUrl, isNull);
     });
   });
 
