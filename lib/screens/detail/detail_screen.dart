@@ -187,107 +187,109 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          return DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            minChildSize: 0.4,
-            maxChildSize: 0.9,
-            expand: false,
-            builder: (ctx, scrollController) => Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '选择要一起看的集数',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+          return SafeArea(
+            child: DraggableScrollableSheet(
+              initialChildSize: 0.7,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (ctx, scrollController) => Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '选择要一起看的集数',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          setSheetState(() {
-                            if (selected.length == _episodes.length) {
-                              selected.clear();
-                            } else {
-                              selected.addAll(_episodes.map((e) => e.id));
-                            }
-                          });
-                        },
-                        child: Text(
-                          selected.length == _episodes.length
-                              ? '取消全选'
-                              : '全选',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    controller: scrollController,
-                    itemCount: _episodes.length,
-                    itemBuilder: (ctx, i) {
-                      final ep = _episodes[i];
-                      final isSelected = selected.contains(ep.id);
-                      return CheckboxListTile(
-                        value: isSelected,
-                        onChanged: (v) {
-                          setSheetState(() {
-                            if (v == true) {
-                              selected.add(ep.id);
-                            } else {
-                              selected.remove(ep.id);
-                            }
-                          });
-                        },
-                        secondary: SizedBox(
-                          width: 48,
-                          height: 32,
-                          child: EmbyImage(
-                            url: ep.posterUrl,
-                            fit: BoxFit.cover,
+                        TextButton(
+                          onPressed: () {
+                            setSheetState(() {
+                              if (selected.length == _episodes.length) {
+                                selected.clear();
+                              } else {
+                                selected.addAll(_episodes.map((e) => e.id));
+                              }
+                            });
+                          },
+                          child: Text(
+                            selected.length == _episodes.length
+                                ? '取消全选'
+                                : '全选',
                           ),
                         ),
-                        title: Text(
-                          'S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0} - ${ep.name}',
-                          style: const TextStyle(fontSize: 14),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: _episodes.length,
+                      itemBuilder: (ctx, i) {
+                        final ep = _episodes[i];
+                        final isSelected = selected.contains(ep.id);
+                        return CheckboxListTile(
+                          value: isSelected,
+                          onChanged: (v) {
+                            setSheetState(() {
+                              if (v == true) {
+                                selected.add(ep.id);
+                              } else {
+                                selected.remove(ep.id);
+                              }
+                            });
+                          },
+                          secondary: SizedBox(
+                            width: 48,
+                            height: 32,
+                            child: EmbyImage(
+                              url: ep.posterUrl,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          title: Text(
+                            'S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0} - ${ep.name}',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Text(
+                          '已选 ${selected.length} 集',
+                          style: TextStyle(color: Colors.grey[400]),
                         ),
-                      );
-                    },
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: selected.isEmpty
+                              ? null
+                              : () {
+                                  final result = _episodes
+                                      .where((e) => selected.contains(e.id))
+                                      .toList();
+                                  Navigator.pop(ctx, result);
+                                },
+                          child: const Text('确认'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Text(
-                        '已选 ${selected.length} 集',
-                        style: TextStyle(color: Colors.grey[400]),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('取消'),
-                      ),
-                      FilledButton(
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () {
-                                final result = _episodes
-                                    .where((e) => selected.contains(e.id))
-                                    .toList();
-                                Navigator.pop(ctx, result);
-                              },
-                        child: const Text('确认'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -373,19 +375,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Widget _buildBottomBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
         child: Row(
           children: [
             Expanded(
@@ -396,13 +398,35 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     source = await _showVersionPicker();
                     if (source == null) return;
                   }
-                  final query = StringBuffer();
-                  if (source != null) {
-                    query.write('mediaSourceId=${source.id}');
+
+                  // 电视剧：通过 provider 传递完整剧集数据
+                  if (_item!.isSeries && _episodes.isNotEmpty) {
+                    final seriesName = _item!.name;
+                    final episodesJson = _episodes.map((e) => {
+                      'id': e.id,
+                      'name': e.name,
+                      'season': e.parentIndexNumber ?? 0,
+                      'number': e.indexNumber ?? 0,
+                      'poster': e.posterUrl ?? '',
+                      'seriesName': seriesName,
+                    }).toList();
+                    ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
                   }
-                  final suffix = query.isNotEmpty ? '?$query' : '';
+                  // 电影：通过 provider 传递电影数据
+                  if (!_item!.isSeries) {
+                    ref.read(pendingRoomMovieProvider.notifier).state = {
+                      'id': _item!.id,
+                      'name': _item!.name,
+                      'poster': _item!.posterUrl ?? '',
+                    };
+                  }
+
+                  final query = StringBuffer('isHost=true');
+                  if (source != null) {
+                    query.write('&mediaSourceId=${source.id}');
+                  }
                   if (mounted) {
-                    context.push('/player/${_item!.id}$suffix');
+                    context.push('/player/${_item!.id}?${query.toString()}');
                   }
                 },
                 icon: const Icon(Icons.play_arrow),

@@ -297,6 +297,9 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
               SliverToBoxAdapter(
                 child: _buildFooter(),
               ),
+              SliverToBoxAdapter(
+                child: SizedBox(height: MediaQuery.of(context).padding.bottom),
+              ),
             ],
           );
         },

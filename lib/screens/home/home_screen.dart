@@ -158,7 +158,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   : RefreshIndicator(
                       onRefresh: _loadMedia,
                       child: ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 24),
+                        padding: EdgeInsets.only(bottom: 24 + MediaQuery.of(context).padding.bottom),
                         itemCount: _categories.length,
                         itemBuilder: (context, index) {
                           final cat = _categories[index];
