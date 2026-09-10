@@ -1349,7 +1349,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ...(_syncEvents.length > 8 ? _syncEvents.sublist(_syncEvents.length - 8) : _syncEvents).map((e) => Text(
               e,
               style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace'),
-            ))),
+            )),
           ],
         ],
       ),
