@@ -320,7 +320,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   /// 从 metadata 读取播放地址并播放（观众端统一入口）
-  void _fetchPlayUrlFromMetadata({double position = 0.0}) async {
+  void _fetchPlayUrlFromMetadata({double position = 0.0, int retryCount = 0}) async {
     if (_rtmChannel == null || !mounted) return;
 
     final rtmService = ref.read(rtmServiceProvider);
@@ -329,7 +329,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final epIndexStr = metadata['currentEpisodeIndex'];
     final token = metadata['token'];
 
-    print('[Sync] metadata 读取: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr, hasToken=${token != null}');
+    print('[Sync] metadata 读取: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr, hasToken=${token != null}, retry=$retryCount');
+
+    // 安全网：playUrl 为空时重试一次
+    if ((playUrl == null || playUrl.isEmpty || epIndexStr == null) && retryCount < 1) {
+      print('[Sync] metadata 未就绪，500ms 后重试');
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) {
+        _fetchPlayUrlFromMetadata(position: position, retryCount: retryCount + 1);
+      }
+      return;
+    }
 
     if (playUrl == null || playUrl.isEmpty || epIndexStr == null || !mounted) return;
 
@@ -595,8 +605,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             );
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
+              // 确认 metadata playUrl 已同步后再发 syncPlay
+              bool metadataReady = false;
+              for (int i = 0; i < 3; i++) {
+                final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+                if (metadata['playUrl'] != null && metadata['playUrl']!.isNotEmpty) {
+                  metadataReady = true;
+                  break;
+                }
+                await Future.delayed(Duration(milliseconds: 300 * (i + 1)));
+              }
               final position = _player.state.position.inMilliseconds / 1000.0;
-              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
+              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position, metadataReady=$metadataReady');
               await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
                 episodeIndex: _currentEpisodeIndex,
@@ -975,9 +995,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     await _loadEpisodeStream(index);
 
-    // Host: 发送 syncPlay 命令，观众从 metadata 读取播放地址
+    // Host: 确认 metadata playUrl 已同步后，再发送 syncPlay 命令
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
+
+      // 等待 metadata 中 playUrl 就绪（最多重试 3 次，间隔递增）
+      bool metadataReady = false;
+      for (int i = 0; i < 3; i++) {
+        final metadata = await rtmService.getChannelMetadata(_rtmChannel!);
+        final playUrl = metadata['playUrl'];
+        if (playUrl != null && playUrl.isNotEmpty) {
+          metadataReady = true;
+          print('[Sync] metadata playUrl 已就绪 (attempt ${i + 1})');
+          break;
+        }
+        print('[Sync] metadata playUrl 未就绪，等待 ${300 * (i + 1)}ms (attempt ${i + 1}/3)');
+        await Future.delayed(Duration(milliseconds: 300 * (i + 1)));
+      }
+
+      if (!metadataReady) {
+        print('[Sync] 警告：metadata playUrl 仍为空，继续发送 syncPlay');
+      }
+
       final position = _player.state.position.inMilliseconds / 1000.0;
       print('[Sync] 主持人 sendCommand syncPlay: episode=$index, pos=$position');
       await rtmService.sendCommand(
