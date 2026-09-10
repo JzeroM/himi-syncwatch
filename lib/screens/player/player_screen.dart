@@ -494,7 +494,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     // 1. 设置消息监听器（subscribe 之后立即设置，确保不丢消息）
     print('[Room] ${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
-    _rtmSubscription = rtmService.messageStream.listen((message) {
+    _rtmSubscription = rtmService.messageStream.listen((message) async {
       if (!mounted) return;
       final senderId = message['userId'];
       if (senderId == _myUserId) return;
@@ -588,6 +588,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // 初始化在线人数（自己）
     _onlineUserCount = 1;
     setState(() {});
+
+    // 延迟刷新在线人数（等待 RTM presence 同步）
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        _refreshOnlineCount(rtmService);
+      }
+    });
 
     // 4. 主持人：立即写入 Metadata
     if (_isHost && _episodeIds.isNotEmpty) {
