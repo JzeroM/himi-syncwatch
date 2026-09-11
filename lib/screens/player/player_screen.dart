@@ -884,6 +884,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _showRoomDestroyedDialog() {
     _heartbeatTimer?.cancel();
+    _player.stop();
+    if (_rtmChannel != null) {
+      try {
+        final rtmService = ref.read(rtmServiceProvider);
+        rtmService.unsubscribe(_rtmChannel!);
+      } catch (_) {}
+    }
     showDialog(
       context: context,
       barrierDismissible: false,
