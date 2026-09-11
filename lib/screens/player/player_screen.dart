@@ -706,12 +706,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // 2. 监听 Presence 事件（在线人数变化）
     _presenceSubscription = rtmService.presenceStream.listen((event) async {
       if (mounted && !_isHost && _hostUserId != null && _rtmChannel != null) {
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        final users = await rtmService.getOnlineUserIds(_rtmChannel!);
-        if (!users.contains(_hostUserId)) {
-          _showRoomDestroyedDialog();
-          return;
+        for (var i = 0; i < 5; i++) {
+          await Future.delayed(Duration(seconds: 2 + i * 2));
+          if (!mounted) return;
+          final users = await rtmService.getOnlineUserIds(_rtmChannel!);
+          if (!users.contains(_hostUserId)) {
+            _showRoomDestroyedDialog();
+            return;
+          }
         }
       }
       if (mounted) {
@@ -913,17 +915,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('房间已解散'),
         content: const Text('房主已离开，房间已解散'),
-        actions: [
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-            },
-            child: const Text('确定'),
-          ),
-        ],
       ),
     );
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) Navigator.pop(context);
+    });
   }
 
   Future<bool> _confirmLeaveRoom() async {
@@ -945,6 +941,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ],
       ),
     );
+    if (result == true && _rtmChannel != null) {
+      final rtmService = ref.read(rtmServiceProvider);
+      await rtmService.sendJoinLeave(
+        action: AppConstants.actionRoomDestroyed,
+        userName: _audienceName ?? '房主',
+      );
+      await rtmService.sendJoinLeave(
+        action: AppConstants.actionRoomDestroyed,
+        userName: _audienceName ?? '房主',
+      );
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
     return result ?? false;
   }
 
@@ -1196,17 +1204,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (widget.roomCode != null) {
       try {
         final rtmService = ref.read(rtmServiceProvider);
-        if (_isHost) {
-          rtmService.sendJoinLeave(
-            action: AppConstants.actionRoomDestroyed,
-            userName: _audienceName ?? '房主',
-          );
-        } else {
-          rtmService.sendJoinLeave(
-            action: 'leave',
-            userName: _audienceName ?? '观众',
-          );
-        }
+        rtmService.sendJoinLeave(
+          action: 'leave',
+          userName: _audienceName ?? '观众',
+        );
         if (_rtmChannel != null) {
           rtmService.unsubscribe(_rtmChannel!);
         }
