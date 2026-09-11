@@ -706,6 +706,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // 2. 监听 Presence 事件（在线人数变化）
     _presenceSubscription = rtmService.presenceStream.listen((event) async {
       if (mounted && !_isHost && _hostUserId != null && _rtmChannel != null) {
+        await Future.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
         final users = await rtmService.getOnlineUserIds(_rtmChannel!);
         if (!users.contains(_hostUserId)) {
           _showRoomDestroyedDialog();
@@ -1194,10 +1196,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (widget.roomCode != null) {
       try {
         final rtmService = ref.read(rtmServiceProvider);
-        rtmService.sendJoinLeave(
-          action: 'leave',
-          userName: _audienceName ?? '观众',
-        );
+        if (_isHost) {
+          rtmService.sendJoinLeave(
+            action: AppConstants.actionRoomDestroyed,
+            userName: _audienceName ?? '房主',
+          );
+        } else {
+          rtmService.sendJoinLeave(
+            action: 'leave',
+            userName: _audienceName ?? '观众',
+          );
+        }
         if (_rtmChannel != null) {
           rtmService.unsubscribe(_rtmChannel!);
         }
@@ -1437,7 +1446,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () async {
+              final shouldPop = await _confirmLeaveRoom();
+              if (shouldPop && context.mounted) Navigator.pop(context);
+            },
           ),
           const Spacer(),
           if (widget.roomCode != null)
@@ -1686,9 +1698,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ),
                 ],
 
-                // 横竖屏 + 画面比例（房间内隐藏）
-                if ((Platform.isAndroid || Platform.isIOS) &&
-                    widget.roomCode == null) ...[
+                // 横竖屏（移动端都显示）
+                if (Platform.isAndroid || Platform.isIOS) ...[
                   const SizedBox(width: 20),
                   _buildControlButton(
                     icon: _isLandscape
@@ -1696,6 +1707,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         : Icons.screen_lock_landscape,
                     onTap: _toggleOrientation,
                   ),
+                ],
+                // 画面比例（仅本地播放）
+                if ((Platform.isAndroid || Platform.isIOS) &&
+                    widget.roomCode == null) ...[
                   const SizedBox(width: 20),
                   _buildControlButton(
                     icon: _videoFitIcons[
