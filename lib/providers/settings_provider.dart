@@ -24,8 +24,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     }
   }
 
-  Future<void> update({bool? hardwareDecoding}) async {
-    state = state.copyWith(hardwareDecoding: hardwareDecoding);
+  Future<void> update({bool? hardwareDecoding, int? bufferSizeMB}) async {
+    state = state.copyWith(
+      hardwareDecoding: hardwareDecoding,
+      bufferSizeMB: bufferSizeMB,
+    );
     await _storage.write(key: _storageKey, value: jsonEncode(state.toJson()));
   }
 }
