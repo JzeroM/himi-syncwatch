@@ -49,6 +49,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _myUserId;
   String? _rtmChannel;
   String? _rtmAppId;
+  String? _hostUserId;
 
   double _volume = 100;
   bool _syncPaused = false;
@@ -703,7 +704,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
 
     // 2. 监听 Presence 事件（在线人数变化）
-    _presenceSubscription = rtmService.presenceStream.listen((event) {
+    _presenceSubscription = rtmService.presenceStream.listen((event) async {
+      if (mounted && !_isHost && _hostUserId != null && _rtmChannel != null) {
+        final users = await rtmService.getOnlineUserIds(_rtmChannel!);
+        if (!users.contains(_hostUserId)) {
+          _showRoomDestroyedDialog();
+          return;
+        }
+      }
       if (mounted) {
         _refreshOnlineCount(rtmService);
       }
@@ -839,6 +847,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _handleRoomInfo(Map<String, dynamic> message) {
     if (_isHost) return;
     if (_hasEpisodeList) return;
+
+    // 记录房主 userId（用于 Presence 检测房主离线）
+    final hostId = message['userId'] as String?;
+    if (hostId != null && hostId.isNotEmpty) {
+      _hostUserId = hostId;
+    }
 
     print('[Room] _handleRoomInfo: keys=${message.keys.toList()}');
     final epIds = message['episodeIds'];
@@ -1181,7 +1195,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       try {
         final rtmService = ref.read(rtmServiceProvider);
         rtmService.sendJoinLeave(
-          action: _isHost ? AppConstants.actionRoomDestroyed : 'leave',
+          action: 'leave',
           userName: _audienceName ?? '观众',
         );
         if (_rtmChannel != null) {

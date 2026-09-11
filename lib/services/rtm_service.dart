@@ -257,6 +257,27 @@ class RtmService {
     }
   }
 
+  Future<List<String>> getOnlineUserIds(String channelName) async {
+    if (_presence == null) return [];
+
+    try {
+      final (status, result) = await _presence!.getOnlineUsers(
+        channelName,
+        RtmChannelType.message,
+      );
+      if (status.error == true || result == null) {
+        return [];
+      }
+      return result.userStateList
+          .map((u) => u.userId ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+    } catch (e) {
+      print('[RTM] 获取在线用户ID异常: $e');
+      return [];
+    }
+  }
+
   // 发送 RTM 消息
   Future<void> sendHeartbeat({
     required double position,
