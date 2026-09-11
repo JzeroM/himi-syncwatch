@@ -298,7 +298,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Future<int?> _showTokenCountDialog() async {
-    final controller = TextEditingController(text: '10');
+    final controller = TextEditingController(text: '2');
     return showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -307,12 +307,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('预签 Token 数量', style: TextStyle(fontSize: 14)),
-            const SizedBox(height: 4),
-            Text(
-              '决定最多可容纳多少观众加入',
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-            ),
+            const Text('房间最大人数', style: TextStyle(fontSize: 14)),
             const SizedBox(height: 12),
             TextField(
               controller: controller,

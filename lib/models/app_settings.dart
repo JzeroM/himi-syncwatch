@@ -4,7 +4,7 @@ class AppSettings {
 
   const AppSettings({
     this.hardwareDecoding = true,
-    this.bufferSizeMB = 64,
+    this.bufferSizeMB = 32,
   });
 
   AppSettings copyWith({bool? hardwareDecoding, int? bufferSizeMB}) {

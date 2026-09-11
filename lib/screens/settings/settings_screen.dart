@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 
-const _bufferStops = [64, 128, 256, 512, 1024];
+const _bufferStops = [32, 64, 128, 256, 512, 1024];
 
 double _bufferToSlider(int mb) {
   final idx = _bufferStops.indexOf(mb);
   return idx >= 0 ? idx.toDouble() : 0.0;
 }
 
-int _sliderToBuffer(int index) => _bufferStops[index.clamp(0, 4)];
+int _sliderToBuffer(int index) => _bufferStops[index.clamp(0, 5)];
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -44,8 +44,8 @@ class SettingsScreen extends ConsumerWidget {
                 child: Slider(
                   value: _bufferToSlider(settings.bufferSizeMB),
                   min: 0,
-                  max: 4,
-                  divisions: 4,
+                  max: 5,
+                  divisions: 5,
                   label: '${settings.bufferSizeMB}',
                   onChanged: (v) {
                     final mb = _sliderToBuffer(v.round());

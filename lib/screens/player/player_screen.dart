@@ -54,6 +54,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _syncPaused = false;
   bool _isSyncing = false;
   DateTime? _lastSeekTime;
+  bool _showPanel = true;
   Timer? _hideControlsTimer;
 
   bool _showVolumeSlider = false;
@@ -1234,7 +1235,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             Orientation.portrait &&
         (Platform.isAndroid || Platform.isIOS);
 
-    final showPanel = widget.roomCode != null;
+    final showPanel = widget.roomCode != null && _showPanel;
 
     if (isPortrait && showPanel) {
       // 手机竖屏：视频在上，资源面板在下
@@ -1657,8 +1658,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       : null,
                 ),
 
-                // 横竖屏 + 画面比例
-                if (Platform.isAndroid || Platform.isIOS) ...[
+                // 面板切换（仅房间模式）
+                if (widget.roomCode != null) ...[
+                  const SizedBox(width: 20),
+                  _buildControlButton(
+                    icon: _showPanel
+                        ? Icons.close_fullscreen
+                        : Icons.open_in_full,
+                    onTap: () => setState(() => _showPanel = !_showPanel),
+                  ),
+                ],
+
+                // 横竖屏 + 画面比例（房间内隐藏）
+                if ((Platform.isAndroid || Platform.isIOS) &&
+                    widget.roomCode == null) ...[
                   const SizedBox(width: 20),
                   _buildControlButton(
                     icon: _isLandscape
