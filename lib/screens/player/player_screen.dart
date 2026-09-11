@@ -246,14 +246,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         subtitleStreamIndex: subtitleStreamIndex,
       );
 
-      // 诊断：后台检查重定向链路（仅日志，不影响播放）
-      _resolveStreamUrl(streamUrl, token);
+      // 预解析重定向（libmpv 不能可靠跟随 HTTP→HTTPS 跨协议重定向）
+      final url = await _resolveStreamUrl(streamUrl, token);
 
       final pos = _player.state.position;
       final wasPlaying = _player.state.playing;
 
-      // libmpv 直接处理重定向，使用原始 URL
-      await _player.open(Media(streamUrl, httpHeaders: {
+      await _player.open(Media(url, httpHeaders: {
         'X-Emby-Token': token,
       }));
 
@@ -270,7 +269,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         await _player.play();
       }
 
-      // Host: 发布播放信息到频道元数据（存原始 URL + token）
+      // Host: 发布播放信息到频道元数据（存原始 URL + token，供观众自行解析）
       if (_isHost && _rtmChannel != null) {
         final rtmService = ref.read(rtmServiceProvider);
         final writeDiag = await rtmService.publishPlayInfo(
@@ -288,7 +287,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         print('[Stream] metadata 已更新: playUrlLen=${streamUrl.length}, writeDiag=$writeDiag');
       }
 
-      return streamUrl;
+      return url;
     } catch (e) {
       print('[Player] 加载流失败: $e');
       if (mounted) {
@@ -371,10 +370,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _addBroadcastMessage('同步主持人播放');
 
     try {
+      // 观众自行解析重定向（metadata 存的是原始 URL）
+      final resolvedUrl = await _resolveStreamUrl(playUrl, token ?? '');
+      print('[Sync] 原始URL解析完成: ${playUrl.length}字符 → ${resolvedUrl.length}字符');
+
       if (token != null && token.isNotEmpty) {
-        await _player.open(Media(playUrl, httpHeaders: {'X-Emby-Token': token}));
+        await _player.open(Media(resolvedUrl, httpHeaders: {'X-Emby-Token': token}));
       } else {
-        await _player.open(Media(playUrl));
+        await _player.open(Media(resolvedUrl));
       }
 
       setState(() {
