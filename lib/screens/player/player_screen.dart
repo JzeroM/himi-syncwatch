@@ -705,12 +705,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     // 2. 监听 Presence 事件（在线人数变化）
     _presenceSubscription = rtmService.presenceStream.listen((event) async {
-      if (mounted && !_isHost && _hostUserId != null && _rtmChannel != null) {
-        for (var i = 0; i < 5; i++) {
-          await Future.delayed(Duration(seconds: 2 + i * 2));
-          if (!mounted) return;
-          final users = await rtmService.getOnlineUserIds(_rtmChannel!);
-          if (!users.contains(_hostUserId)) {
+      if (mounted && !_isHost && _hostUserId != null) {
+        final snapshot = event['snapshot'];
+        if (snapshot != null && snapshot.userStateList != null) {
+          final userIds = snapshot.userStateList!
+              .map((u) => u.userId ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList();
+          if (!userIds.contains(_hostUserId)) {
             _showRoomDestroyedDialog();
             return;
           }
@@ -941,18 +943,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ],
       ),
     );
-    if (result == true && _rtmChannel != null) {
-      final rtmService = ref.read(rtmServiceProvider);
-      await rtmService.sendJoinLeave(
-        action: AppConstants.actionRoomDestroyed,
-        userName: _audienceName ?? '房主',
-      );
-      await rtmService.sendJoinLeave(
-        action: AppConstants.actionRoomDestroyed,
-        userName: _audienceName ?? '房主',
-      );
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
     return result ?? false;
   }
 
@@ -1204,10 +1194,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (widget.roomCode != null) {
       try {
         final rtmService = ref.read(rtmServiceProvider);
-        rtmService.sendJoinLeave(
-          action: 'leave',
-          userName: _audienceName ?? '观众',
-        );
         if (_rtmChannel != null) {
           rtmService.unsubscribe(_rtmChannel!);
         }
