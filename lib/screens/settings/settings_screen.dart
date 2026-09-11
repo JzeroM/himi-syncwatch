@@ -2,6 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 
+const _bufferStops = [64, 128, 256, 512, 1024];
+
+double _bufferToSlider(int mb) {
+  final idx = _bufferStops.indexOf(mb);
+  return idx >= 0 ? idx.toDouble() : 0.0;
+}
+
+int _sliderToBuffer(int index) => _bufferStops[index.clamp(0, 4)];
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -20,6 +29,42 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (value) {
               ref.read(settingsProvider.notifier).update(hardwareDecoding: value);
             },
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Text(
+              '视频缓存大小 (MB)',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: _bufferToSlider(settings.bufferSizeMB),
+                  min: 0,
+                  max: 4,
+                  divisions: 4,
+                  label: '${settings.bufferSizeMB}',
+                  onChanged: (v) {
+                    final mb = _sliderToBuffer(v.round());
+                    ref.read(settingsProvider.notifier).update(bufferSizeMB: mb);
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: SizedBox(
+                  width: 48,
+                  child: Text(
+                    '${settings.bufferSizeMB}',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
+            ],
           ),
           const Divider(height: 1),
         ],

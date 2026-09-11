@@ -52,6 +52,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   double _volume = 100;
   bool _syncPaused = false;
+  bool _isSyncing = false;
+  DateTime? _lastSeekTime;
   Timer? _hideControlsTimer;
 
   bool _showVolumeSlider = false;
@@ -119,8 +121,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    final settings = ref.read(settingsProvider);
     _player = Player(
-      configuration: const PlayerConfiguration(libass: true),
+      configuration: PlayerConfiguration(
+        libass: true,
+        bufferSize: settings.bufferSizeMB * 1024 * 1024,
+      ),
     );
     _controller = VideoController(_player);
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
@@ -353,40 +359,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _fetchPlayUrlFromMetadata({double position = 0.0, int retryCount = 0}) async {
     if (_rtmChannel == null || !mounted) return;
 
-    final rtmService = ref.read(rtmServiceProvider);
-    final (metadata, readDiag) = await rtmService.getChannelMetadata(_rtmChannel!);
-    final playUrl = metadata['playUrl'];
-    final epIndexStr = metadata['currentEpisodeIndex'];
-    final token = metadata['token'];
-
-    setState(() {
-      _syncMetadataPlayUrl = playUrl != null && playUrl.isNotEmpty ? '已获取(${playUrl.length}字符)' : '空';
-      _syncMetadataIndex = epIndexStr ?? '-';
-      _syncMetadataAllKeys = metadata.keys.isNotEmpty ? metadata.keys.toList().toString() : '无';
-      _syncMetadataReadDiag = readDiag;
-    });
-
-    print('[Sync] metadata 读取: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr, hasToken=${token != null}, retry=$retryCount');
-
-    // 安全网：playUrl 为空时重试一次
-    if ((playUrl == null || playUrl.isEmpty || epIndexStr == null) && retryCount < 1) {
-      _logSyncEvent('metadata 未就绪, 500ms后重试');
-      print('[Sync] metadata 未就绪，500ms 后重试');
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
-        _fetchPlayUrlFromMetadata(position: position, retryCount: retryCount + 1);
-      }
-      return;
-    }
-
-    if (playUrl == null || playUrl.isEmpty || epIndexStr == null || !mounted) return;
-
-    final epIndex = int.tryParse(epIndexStr);
-    if (epIndex == null || epIndex < 0 || epIndex >= _episodeIds.length) return;
-
-    _addBroadcastMessage('同步主持人播放');
-
+    _isSyncing = true;
     try {
+      final rtmService = ref.read(rtmServiceProvider);
+      final (metadata, readDiag) = await rtmService.getChannelMetadata(_rtmChannel!);
+      final playUrl = metadata['playUrl'];
+      final epIndexStr = metadata['currentEpisodeIndex'];
+      final token = metadata['token'];
+
+      setState(() {
+        _syncMetadataPlayUrl = playUrl != null && playUrl.isNotEmpty ? '已获取(${playUrl.length}字符)' : '空';
+        _syncMetadataIndex = epIndexStr ?? '-';
+        _syncMetadataAllKeys = metadata.keys.isNotEmpty ? metadata.keys.toList().toString() : '无';
+        _syncMetadataReadDiag = readDiag;
+      });
+
+      print('[Sync] metadata 读取: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr, hasToken=${token != null}, retry=$retryCount');
+
+      if ((playUrl == null || playUrl.isEmpty || epIndexStr == null) && retryCount < 1) {
+        _logSyncEvent('metadata 未就绪, 500ms后重试');
+        print('[Sync] metadata 未就绪，500ms 后重试');
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) {
+          _fetchPlayUrlFromMetadata(position: position, retryCount: retryCount + 1);
+        }
+        return;
+      }
+
+      if (playUrl == null || playUrl.isEmpty || epIndexStr == null || !mounted) return;
+
+      final epIndex = int.tryParse(epIndexStr);
+      if (epIndex == null || epIndex < 0 || epIndex >= _episodeIds.length) return;
+
+      _addBroadcastMessage('同步主持人播放');
+
       // 观众自行解析重定向（metadata 存的是原始 URL）
       final resolvedUrl = await _resolveStreamUrl(playUrl, token ?? '');
       print('[Sync] 原始URL解析完成: ${playUrl.length}字符 → ${resolvedUrl.length}字符');
@@ -395,6 +401,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         await _player.open(Media(resolvedUrl, httpHeaders: {'X-Emby-Token': token}));
       } else {
         await _player.open(Media(resolvedUrl));
+      }
+
+      // 等待缓冲完成再 seek（最多等 10 秒）
+      await for (final buffering in _player.stream.buffering) {
+        if (!buffering || !mounted) break;
       }
 
       setState(() {
@@ -414,6 +425,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _logSyncEvent('播放器打开失败: $e');
       print('[Sync] 播放器打开失败: $e');
       _addBroadcastMessage('同步播放失败: $e');
+    } finally {
+      _isSyncing = false;
     }
   }
 
@@ -768,6 +781,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _handleHeartbeat(Map<String, dynamic> message) {
     if (_isHost) return;
     if (_syncPaused) return;
+    if (_isSyncing) return;
+    if (_player.state.buffering) return;
 
     final position = (message['position'] as num).toDouble();
     final playing = message['playing'] as bool;
@@ -789,6 +804,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (mounted) _player.setRate(rate);
       });
     } else {
+      // seek 防抖：距上次 seek 不足 2 秒则跳过
+      if (_lastSeekTime != null &&
+          DateTime.now().difference(_lastSeekTime!).inMilliseconds < 2000) {
+        return;
+      }
+      _lastSeekTime = DateTime.now();
       _player.seek(Duration(milliseconds: (expectedPos * 1000).toInt()));
     }
 
