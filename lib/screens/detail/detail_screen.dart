@@ -390,55 +390,41 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ),
         child: Row(
           children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  MediaSource? source;
-                  if (_item!.hasMultipleVersions) {
-                    source = await _showVersionPicker();
-                    if (source == null) return;
-                  }
+            // 电影才显示「开始播放」（电视剧需从集数列表点击具体哪集）
+            if (!_item!.isSeries)
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    MediaSource? source;
+                    if (_item!.hasMultipleVersions) {
+                      source = await _showVersionPicker();
+                      if (source == null) return;
+                    }
 
-                  // 电视剧：通过 provider 传递完整剧集数据
-                  if (_item!.isSeries && _episodes.isNotEmpty) {
-                    final seriesName = _item!.name;
-                    final episodesJson = _episodes.map((e) => {
-                      'id': e.id,
-                      'name': e.name,
-                      'season': e.parentIndexNumber ?? 0,
-                      'number': e.indexNumber ?? 0,
-                      'poster': e.posterUrl ?? '',
-                      'seriesName': seriesName,
-                    }).toList();
-                    ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
-                  }
-                  // 电影：通过 provider 传递电影数据
-                  if (!_item!.isSeries) {
                     ref.read(pendingRoomMovieProvider.notifier).state = {
                       'id': _item!.id,
                       'name': _item!.name,
                       'poster': _item!.posterUrl ?? '',
                     };
-                  }
 
-                  final query = StringBuffer('isHost=true');
-                  if (source != null) {
-                    query.write('&mediaSourceId=${source.id}');
-                  }
-                  if (mounted) {
-                    context.push('/player/${_item!.id}?${query.toString()}');
-                  }
-                },
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('开始播放'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.white,
+                    final query = StringBuffer('isHost=true');
+                    if (source != null) {
+                      query.write('&mediaSourceId=${source.id}');
+                    }
+                    if (mounted) {
+                      context.push('/player/${_item!.id}?${query.toString()}');
+                    }
+                  },
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('开始播放'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
+            if (!_item!.isSeries) const SizedBox(width: 12),
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: _createRoom,
@@ -625,7 +611,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             ? Text(ep.overview!,
                                 maxLines: 2, overflow: TextOverflow.ellipsis)
                             : null,
-                        onTap: () => context.push('/player/${ep.id}'),
+                        onTap: () {
+                          final seriesName = _item!.name;
+                          final episodesJson = _episodes.map((e) => {
+                            'id': e.id,
+                            'name': e.name,
+                            'season': e.parentIndexNumber ?? 0,
+                            'number': e.indexNumber ?? 0,
+                            'poster': e.posterUrl ?? '',
+                            'seriesName': seriesName,
+                          }).toList();
+                          ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
+                          context.push('/player/${ep.id}?isHost=true');
+                        },
                       )),
                   const SizedBox(height: 20),
                 ],

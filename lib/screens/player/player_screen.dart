@@ -163,6 +163,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (widget.roomCode != null) {
       _setupRoomSync();
     }
+
+    // 从详情页集数列表进入：自动播放点击的那一集
+    if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final targetIndex = _episodeIds.indexOf(widget.itemId);
+        _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
+      });
+    }
   }
 
   void _initPlayerProperties() async {

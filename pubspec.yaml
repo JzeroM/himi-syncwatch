@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HimiSync - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.2.5+35
+version: 1.2.6+36
 
 environment:
   sdk: ^3.13.0
