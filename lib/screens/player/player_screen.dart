@@ -55,6 +55,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isSyncing = false;
   DateTime? _lastSeekTime;
   bool _showPanel = true;
+  String _currentPlayUrl = '';
+  String _currentToken = '';
   Timer? _hideControlsTimer;
 
   bool _showVolumeSlider = false;
@@ -273,6 +275,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // 预解析重定向（libmpv 不能可靠跟随 HTTP→HTTPS 跨协议重定向）
       final url = await _resolveStreamUrl(streamUrl, token);
 
+      _currentPlayUrl = streamUrl;
+      _currentToken = token;
+
       final pos = _player.state.position;
       final wasPlaying = _player.state.playing;
 
@@ -291,24 +296,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       if (wasPlaying) {
         await _player.play();
-      }
-
-      // Host: 发布播放信息到频道元数据（存原始 URL + token，供观众自行解析）
-      if (_isHost && _rtmChannel != null) {
-        final rtmService = ref.read(rtmServiceProvider);
-        final writeDiag = await rtmService.publishPlayInfo(
-          channelName: _rtmChannel!,
-          playUrl: streamUrl,
-          itemId: targetItemId,
-          mediaSourceId: widget.mediaSourceId,
-          currentEpisodeIndex: _currentEpisodeIndex,
-          token: token,
-        );
-        setState(() {
-          _syncMetadataWriteDiag = writeDiag;
-        });
-        _logSyncEvent('publishPlayInfo: len=${streamUrl.length}, 写入=$writeDiag');
-        print('[Stream] metadata 已更新: playUrlLen=${streamUrl.length}, writeDiag=$writeDiag');
       }
 
       return url;
@@ -356,61 +343,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  /// 从 metadata 读取播放地址并播放（观众端统一入口）
-  void _fetchPlayUrlFromMetadata({double position = 0.0, int retryCount = 0}) async {
-    if (_rtmChannel == null || !mounted) return;
+  /// 观众播放：从 syncPlay 消息中的 playUrl 直接播放
+  void _playFromUrl({
+    required String playUrl,
+    required String token,
+    double position = 0.0,
+    int? epIndex,
+  }) async {
+    if (!mounted) return;
 
     _isSyncing = true;
     try {
-      final rtmService = ref.read(rtmServiceProvider);
-      final (metadata, readDiag) = await rtmService.getChannelMetadata(_rtmChannel!);
-      final playUrl = metadata['playUrl'];
-      final epIndexStr = metadata['currentEpisodeIndex'];
-      final token = metadata['token'];
-
-      setState(() {
-        _syncMetadataPlayUrl = playUrl != null && playUrl.isNotEmpty ? '已获取(${playUrl.length}字符)' : '空';
-        _syncMetadataIndex = epIndexStr ?? '-';
-        _syncMetadataAllKeys = metadata.keys.isNotEmpty ? metadata.keys.toList().toString() : '无';
-        _syncMetadataReadDiag = readDiag;
-      });
-
-      print('[Sync] metadata 读取: playUrlLen=${playUrl?.length}, epIndex=$epIndexStr, hasToken=${token != null}, retry=$retryCount');
-
-      if ((playUrl == null || playUrl.isEmpty || epIndexStr == null) && retryCount < 1) {
-        _logSyncEvent('metadata 未就绪, 500ms后重试');
-        print('[Sync] metadata 未就绪，500ms 后重试');
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) {
-          _fetchPlayUrlFromMetadata(position: position, retryCount: retryCount + 1);
-        }
-        return;
-      }
-
-      if (playUrl == null || playUrl.isEmpty || epIndexStr == null || !mounted) return;
-
-      final epIndex = int.tryParse(epIndexStr);
-      if (epIndex == null || epIndex < 0 || epIndex >= _episodeIds.length) return;
-
       _addBroadcastMessage('同步主持人播放');
 
-      // 观众自行解析重定向（metadata 存的是原始 URL）
-      final resolvedUrl = await _resolveStreamUrl(playUrl, token ?? '');
-      print('[Sync] 原始URL解析完成: ${playUrl.length}字符 → ${resolvedUrl.length}字符');
+      // 观众自行解析重定向
+      final resolvedUrl = await _resolveStreamUrl(playUrl, token);
+      print('[Sync] URL解析完成: ${playUrl.length}字符 → ${resolvedUrl.length}字符');
 
-      if (token != null && token.isNotEmpty) {
+      if (token.isNotEmpty) {
         await _player.open(Media(resolvedUrl, httpHeaders: {'X-Emby-Token': token}));
       } else {
         await _player.open(Media(resolvedUrl));
       }
 
-      // 等待缓冲完成再 seek（最多等 10 秒）
+      // 等待缓冲完成再 seek
       await for (final buffering in _player.stream.buffering) {
         if (!buffering || !mounted) break;
       }
 
       setState(() {
-        _currentEpisodeIndex = epIndex;
+        if (epIndex != null) _currentEpisodeIndex = epIndex;
         _isPlayerReady = true;
       });
 
@@ -669,7 +631,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _addBroadcastMessage('$name 加入了房间');
           _logSyncEvent('$name 加入房间');
           _refreshOnlineCount(rtmService);
-          // 主持人发送房间信息（含媒体数据 + 剧集列表）
+          // 主持人发送房间信息（含媒体数据 + 剧集列表 + playUrl）
           if (_isHost) {
             print('[Room] 主持人发送 roomInfo, episodeCount=${_episodeIds.length}');
             await rtmService.sendRoomInfo(
@@ -685,28 +647,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               episodeSeasons: _episodeSeasons,
               episodeNumbers: _episodeNumbers,
               episodePosters: _episodePosters,
+              playUrl: _currentPlayUrl,
+              token: _currentToken,
             );
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
-              // 确认 metadata playUrl 已同步后再发 syncPlay
-              bool metadataReady = false;
-              String joinVerifyDiag = '';
-              for (int i = 0; i < 3; i++) {
-                final (metadata, diag) = await rtmService.getChannelMetadata(_rtmChannel!);
-                joinVerifyDiag = diag;
-                if (metadata['playUrl'] != null && metadata['playUrl']!.isNotEmpty) {
-                  metadataReady = true;
-                  break;
-                }
-                await Future.delayed(Duration(milliseconds: 300 * (i + 1)));
-              }
               final position = _player.state.position.inMilliseconds / 1000.0;
-              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position, metadataReady=$metadataReady, diag=$joinVerifyDiag');
+              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
               await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
                 episodeIndex: _currentEpisodeIndex,
                 itemId: _episodeIds[_currentEpisodeIndex],
                 position: position,
+                playUrl: _currentPlayUrl,
+                token: _currentToken,
               );
             }
           }
@@ -730,6 +684,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               episodeSeasons: _episodeSeasons,
               episodeNumbers: _episodeNumbers,
               episodePosters: _episodePosters,
+              playUrl: _currentPlayUrl,
+              token: _currentToken,
             );
           }
         } else {
@@ -852,15 +808,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         break;
       case AppConstants.actionSyncPlay:
         final position = (message['position'] as num?)?.toDouble() ?? 0.0;
-        _logSyncEvent('收到 syncPlay, pos=${position.toStringAsFixed(1)}s');
-        // 从 metadata 读取播放地址
-        _fetchPlayUrlFromMetadata(position: position);
+        final playUrl = message['playUrl'] as String?;
+        final token = message['token'] as String?;
+        final epIndex = message['episodeIndex'] as int?;
+        _logSyncEvent('收到 syncPlay, pos=${position.toStringAsFixed(1)}s, urlLen=${playUrl?.length ?? 0}');
+        if (playUrl != null && playUrl.isNotEmpty) {
+          _playFromUrl(playUrl: playUrl, token: token ?? '', position: position, epIndex: epIndex);
+        }
         break;
       case AppConstants.actionRemoveEpisode:
         final epIndex = message['episodeIndex'] as int?;
         if (epIndex != null) {
           _removeEpisodeLocal(epIndex);
         }
+        break;
+      case AppConstants.actionRoomDestroyed:
+        _showRoomDestroyedDialog();
         break;
     }
   }
@@ -902,9 +865,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     if (_hasEpisodeList) {
       _addBroadcastMessage('已同步房间资源列表');
-      // 从 metadata 读取播放地址并播放
-      _fetchPlayUrlFromMetadata();
+      // 从 roomInfo 消息中获取 playUrl 并播放
+      final playUrl = message['playUrl'] as String?;
+      final token = message['token'] as String?;
+      if (playUrl != null && playUrl.isNotEmpty) {
+        _playFromUrl(playUrl: playUrl, token: token ?? '');
+      }
     }
+  }
+
+  void _showRoomDestroyedDialog() {
+    _heartbeatTimer?.cancel();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('房间已解散'),
+        content: const Text('房主已离开，房间已解散'),
+        actions: [
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _confirmLeaveRoom() async {
+    if (!_isHost || widget.roomCode == null) return true;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('解散房间'),
+        content: const Text('离开将解散当前房间，所有观众将被退出。确定离开吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定离开'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   void _addBroadcastMessage(String msg) {
@@ -1048,49 +1058,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     await _loadEpisodeStream(index);
 
-    // Host: 确认 metadata playUrl 已同步后，再发送 syncPlay 命令
+    // Host: 发送 syncPlay 命令（含 playUrl + token）
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
-
-      // 等待 metadata 中 playUrl 就绪（最多重试 3 次，间隔递增）
-      bool metadataReady = false;
-      String switchVerifyDiag = '';
-      for (int i = 0; i < 3; i++) {
-        final (metadata, diag) = await rtmService.getChannelMetadata(_rtmChannel!);
-        switchVerifyDiag = diag;
-        final playUrl = metadata['playUrl'];
-        if (playUrl != null && playUrl.isNotEmpty) {
-          metadataReady = true;
-          _logSyncEvent('metadata playUrl 已就绪 (第${i + 1}次)');
-          print('[Sync] metadata playUrl 已就绪 (attempt ${i + 1})');
-          break;
-        }
-        print('[Sync] metadata playUrl 未就绪，等待 ${300 * (i + 1)}ms (attempt ${i + 1}/3)');
-        await Future.delayed(Duration(milliseconds: 300 * (i + 1)));
-      }
-
-      setState(() {
-        _syncMetadataReadDiag = switchVerifyDiag;
-      });
-
-      if (!metadataReady) {
-        _logSyncEvent('警告: metadata playUrl 为空');
-        print('[Sync] 警告：metadata playUrl 仍为空，继续发送 syncPlay');
-      }
-
       final position = _player.state.position.inMilliseconds / 1000.0;
       _logSyncEvent('发送 syncPlay: ep=$index, pos=${position.toStringAsFixed(1)}s');
-      print('[Sync] 主持人 sendCommand syncPlay: episode=$index, pos=$position');
+      print('[Sync] 主持人 sendCommand syncPlay: episode=$index, pos=$position, urlLen=${_currentPlayUrl.length}');
       await rtmService.sendCommand(
         action: AppConstants.actionSyncPlay,
         episodeIndex: index,
         itemId: _episodeIds[index],
         position: position,
+        playUrl: _currentPlayUrl,
+        token: _currentToken,
       );
     }
   }
 
-  // 观众同步切集：从 metadata 读取播放地址
+  // 观众同步切集：接收 syncPlay 命令后自动播放（playUrl 已在 syncPlay 消息中）
   void _syncSwitchToEpisode(int epIndex) async {
     if (epIndex < 0 || epIndex >= _episodeIds.length) return;
 
@@ -1098,9 +1083,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() {
       _currentEpisodeIndex = epIndex;
     });
-
-    // 从 metadata 读取播放地址
-    _fetchPlayUrlFromMetadata();
+    // syncPlay 消息会紧随其后到达，直接处理
   }
 
   // 删除剧集（房主）
@@ -1183,14 +1166,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       try {
         final rtmService = ref.read(rtmServiceProvider);
         rtmService.sendJoinLeave(
-          action: 'leave',
+          action: _isHost ? AppConstants.actionRoomDestroyed : 'leave',
           userName: _audienceName ?? '观众',
         );
         if (_rtmChannel != null) {
           rtmService.unsubscribe(_rtmChannel!);
-          if (_isHost) {
-            rtmService.clearPlayMetadata(_rtmChannel!);
-          }
         }
         rtmService.logout();
       } catch (_) {}
@@ -1214,18 +1194,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureDetector(
-        onTap: () {
-          if (_showVolumeSlider || _showSubtitleMenu || _showAudioMenu) {
-            _closeAllMenus();
-          } else {
-            _toggleControls();
-          }
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final shouldPop = await _confirmLeaveRoom();
+        if (shouldPop && context.mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: GestureDetector(
+          onTap: () {
+            if (_showVolumeSlider || _showSubtitleMenu || _showAudioMenu) {
+              _closeAllMenus();
+            } else {
+              _toggleControls();
+            }
         },
         behavior: HitTestBehavior.opaque,
         child: _buildResponsiveLayout(),
+      ),
       ),
     );
   }
