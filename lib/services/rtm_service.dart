@@ -74,7 +74,10 @@ class RtmService {
         },
         presence: (event) {
           print('[RTM] 成员变化: ${event.type}');
-          _presenceController.add({'type': event.type});
+          _presenceController.add({
+            'type': event.type,
+            'snapshot': event.snapshot,
+          });
         },
       );
     } catch (e) {
