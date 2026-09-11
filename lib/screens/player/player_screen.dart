@@ -271,19 +271,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // Host: 发布播放信息到频道元数据
       if (_isHost && _rtmChannel != null) {
         final rtmService = ref.read(rtmServiceProvider);
+        final isPublic = _isPublicUrl(url);
         final writeDiag = await rtmService.publishPlayInfo(
           channelName: _rtmChannel!,
           playUrl: url,
           itemId: targetItemId,
           mediaSourceId: widget.mediaSourceId,
           currentEpisodeIndex: _currentEpisodeIndex,
-          token: token,
+          token: isPublic ? null : token,
         );
         setState(() {
           _syncMetadataWriteDiag = writeDiag;
         });
-        _logSyncEvent('publishPlayInfo: len=${url.length}, 写入=$writeDiag');
-        print('[Stream] metadata 已更新: playUrlLen=${url.length}, hasToken=${token.isNotEmpty}, writeDiag=$writeDiag');
+        _logSyncEvent('publishPlayInfo: len=${url.length}, public=$isPublic, 写入=$writeDiag');
+        print('[Stream] metadata 已更新: isPublic=$isPublic, playUrlLen=${url.length}, writeDiag=$writeDiag');
       }
 
       return url;
@@ -296,6 +297,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       return null;
     }
+  }
+
+  /// 检测 URL 是否为公开可访问（不需要认证）
+  /// CDN 签名 URL 的认证信息已嵌入 URL 本身，无需额外传 token
+  bool _isPublicUrl(String url) {
+    if (url.contains('x-amz-') || url.contains('Signature=')) return true;
+    return false;
   }
 
   Future<String> _resolveStreamUrl(String url, String token) async {
