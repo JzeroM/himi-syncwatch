@@ -13,6 +13,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -706,16 +707,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // 2. 监听 Presence 事件（在线人数变化）
     _presenceSubscription = rtmService.presenceStream.listen((event) async {
       if (mounted && !_isHost && _hostUserId != null) {
-        final snapshot = event['snapshot'];
-        if (snapshot != null && snapshot.userStateList != null) {
-          final userIds = snapshot.userStateList!
-              .map((u) => u.userId ?? '')
-              .where((id) => id.isNotEmpty)
-              .toList();
-          if (!userIds.contains(_hostUserId)) {
-            _showRoomDestroyedDialog();
-            return;
-          }
+        final type = event['type'];
+        final publisher = event['publisher'] as String?;
+        if (publisher == _hostUserId &&
+            (type == RtmPresenceEventType.remoteLeaveChannel ||
+             type == RtmPresenceEventType.remoteTimeout)) {
+          _showRoomDestroyedDialog();
+          return;
         }
       }
       if (mounted) {

@@ -73,10 +73,10 @@ class RtmService {
           print('[RTM] 连接状态: ${event.currentState}');
         },
         presence: (event) {
-          print('[RTM] 成员变化: ${event.type}');
+          print('[RTM] 成员变化: ${event.type}, publisher=${event.publisher}');
           _presenceController.add({
             'type': event.type,
-            'snapshot': event.snapshot,
+            'publisher': event.publisher,
           });
         },
       );
