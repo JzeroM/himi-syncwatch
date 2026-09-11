@@ -246,12 +246,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         subtitleStreamIndex: subtitleStreamIndex,
       );
 
-      final url = await _resolveStreamUrl(streamUrl, token);
+      // 诊断：后台检查重定向链路（仅日志，不影响播放）
+      _resolveStreamUrl(streamUrl, token);
 
       final pos = _player.state.position;
       final wasPlaying = _player.state.playing;
 
-      await _player.open(Media(url, httpHeaders: {
+      // libmpv 直接处理重定向，使用原始 URL
+      await _player.open(Media(streamUrl, httpHeaders: {
         'X-Emby-Token': token,
       }));
 
@@ -268,26 +270,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         await _player.play();
       }
 
-      // Host: 发布播放信息到频道元数据
+      // Host: 发布播放信息到频道元数据（存原始 URL + token）
       if (_isHost && _rtmChannel != null) {
         final rtmService = ref.read(rtmServiceProvider);
-        final isPublic = _isPublicUrl(url);
         final writeDiag = await rtmService.publishPlayInfo(
           channelName: _rtmChannel!,
-          playUrl: url,
+          playUrl: streamUrl,
           itemId: targetItemId,
           mediaSourceId: widget.mediaSourceId,
           currentEpisodeIndex: _currentEpisodeIndex,
-          token: isPublic ? null : token,
+          token: token,
         );
         setState(() {
           _syncMetadataWriteDiag = writeDiag;
         });
-        _logSyncEvent('publishPlayInfo: len=${url.length}, public=$isPublic, 写入=$writeDiag');
-        print('[Stream] metadata 已更新: isPublic=$isPublic, playUrlLen=${url.length}, writeDiag=$writeDiag');
+        _logSyncEvent('publishPlayInfo: len=${streamUrl.length}, 写入=$writeDiag');
+        print('[Stream] metadata 已更新: playUrlLen=${streamUrl.length}, writeDiag=$writeDiag');
       }
 
-      return url;
+      return streamUrl;
     } catch (e) {
       print('[Player] 加载流失败: $e');
       if (mounted) {
@@ -297,13 +298,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       return null;
     }
-  }
-
-  /// 检测 URL 是否为公开可访问（不需要认证）
-  /// CDN 签名 URL 的认证信息已嵌入 URL 本身，无需额外传 token
-  bool _isPublicUrl(String url) {
-    if (url.contains('x-amz-') || url.contains('Signature=')) return true;
-    return false;
   }
 
   Future<String> _resolveStreamUrl(String url, String token) async {
