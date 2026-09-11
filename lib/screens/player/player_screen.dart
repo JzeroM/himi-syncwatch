@@ -53,6 +53,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   double _volume = 100;
   bool _syncPaused = false;
   bool _isSyncing = false;
+  int _playRequestId = 0;
   DateTime? _lastSeekTime;
   bool _showPanel = true;
   String _currentPlayUrl = '';
@@ -352,6 +353,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }) async {
     if (!mounted) return;
 
+    final requestId = ++_playRequestId;
     _isSyncing = true;
     try {
       _addBroadcastMessage('同步主持人播放');
@@ -359,6 +361,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // 观众自行解析重定向
       final resolvedUrl = await _resolveStreamUrl(playUrl, token);
       print('[Sync] URL解析完成: ${playUrl.length}字符 → ${resolvedUrl.length}字符');
+
+      // 解析完成，检查是否已被更新的请求抢占
+      if (requestId != _playRequestId || !mounted) return;
 
       if (token.isNotEmpty) {
         await _player.open(Media(resolvedUrl, httpHeaders: {'X-Emby-Token': token}));
@@ -370,6 +375,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await for (final buffering in _player.stream.buffering) {
         if (!buffering || !mounted) break;
       }
+
+      // 缓冲完成，再次检查是否已被抢占
+      if (requestId != _playRequestId || !mounted) return;
 
       setState(() {
         if (epIndex != null) _currentEpisodeIndex = epIndex;
@@ -389,7 +397,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       print('[Sync] 播放器打开失败: $e');
       _addBroadcastMessage('同步播放失败: $e');
     } finally {
-      _isSyncing = false;
+      if (requestId == _playRequestId) _isSyncing = false;
     }
   }
 
