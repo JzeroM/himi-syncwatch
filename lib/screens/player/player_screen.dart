@@ -271,20 +271,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // Host: 发布播放信息到频道元数据
       if (_isHost && _rtmChannel != null) {
         final rtmService = ref.read(rtmServiceProvider);
-        final isPublic = _isPublicUrl(url);
         final writeDiag = await rtmService.publishPlayInfo(
           channelName: _rtmChannel!,
           playUrl: url,
           itemId: targetItemId,
           mediaSourceId: widget.mediaSourceId,
           currentEpisodeIndex: _currentEpisodeIndex,
-          token: isPublic ? null : token,
+          token: token,
         );
         setState(() {
           _syncMetadataWriteDiag = writeDiag;
         });
-        _logSyncEvent('publishPlayInfo: len=${url.length}, public=$isPublic, 写入=$writeDiag');
-        print('[Stream] metadata 已更新: isPublic=$isPublic, playUrlLen=${url.length}, writeDiag=$writeDiag');
+        _logSyncEvent('publishPlayInfo: len=${url.length}, 写入=$writeDiag');
+        print('[Stream] metadata 已更新: playUrlLen=${url.length}, hasToken=${token.isNotEmpty}, writeDiag=$writeDiag');
       }
 
       return url;
@@ -296,25 +295,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         );
       }
       return null;
-    }
-  }
-
-  /// 检测 URL 是否为公开可访问（不需要认证）
-  bool _isPublicUrl(String url) {
-    try {
-      final uri = Uri.parse(url);
-      final host = uri.host;
-      if (host.startsWith('192.168.')) return false;
-      if (host.startsWith('10.')) return false;
-      if (host.startsWith('172.')) {
-        final secondOctet = int.tryParse(host.split('.')[1]) ?? 0;
-        if (secondOctet >= 16 && secondOctet <= 31) return false;
-      }
-      if (host == 'localhost' || host == '127.0.0.1') return false;
-      if (url.contains('x-amz-') || url.contains('Signature=')) return true;
-      return true;
-    } catch (_) {
-      return false;
     }
   }
 
