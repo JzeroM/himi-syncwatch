@@ -38,7 +38,7 @@ class RtmService {
     final rtmConfig = RtmConfig(
       areaCode: {RtmAreaCode.glob},
       useStringUserId: true,
-      heartbeatInterval: 5,
+      heartbeatInterval: 15,
       presenceTimeout: 300,
     );
 
@@ -257,48 +257,6 @@ class RtmService {
     }
   }
 
-  // 发布播放信息到频道元数据，返回写入诊断
-  Future<String> publishPlayInfo({
-    required String channelName,
-    required String playUrl,
-    required String itemId,
-    String? mediaSourceId,
-    int? currentEpisodeIndex,
-    String? token,
-  }) async {
-    return await setChannelMetadata(
-      channelName: channelName,
-      metadata: {
-        'playUrl': playUrl,
-        'itemId': itemId,
-        if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
-        if (currentEpisodeIndex != null)
-          'currentEpisodeIndex': '$currentEpisodeIndex',
-        if (token != null) 'token': token,
-      },
-    );
-  }
-
-  /// 清除播放相关 metadata（主持人离开时调用）
-  Future<String> clearPlayMetadata(String channelName) async {
-    if (_storage == null) return 'storage_null';
-
-    final playKeys = ['playUrl', 'itemId', 'mediaSourceId', 'currentEpisodeIndex', 'token'];
-    final items = playKeys.map((k) => MetadataItem(key: k, value: '')).toList();
-
-    try {
-      final (status, result) = await _storage!.removeChannelMetadata(
-        channelName,
-        RtmChannelType.message,
-        metadata: items,
-      );
-      if (status.error == true) return 'error:${status.reason}';
-      return 'ok,${playKeys.length}keys_removed';
-    } catch (e) {
-      return 'exception:$e';
-    }
-  }
-
   // 发送 RTM 消息
   Future<void> sendHeartbeat({
     required double position,
@@ -326,6 +284,7 @@ class RtmService {
     int? episodeIndex,
     String? itemId,
     String? playUrl,
+    String? token,
   }) async {
     if (_client == null || _currentChannelId == null) return;
 
@@ -338,6 +297,7 @@ class RtmService {
       if (episodeIndex != null) 'episodeIndex': episodeIndex,
       if (itemId != null) 'itemId': itemId,
       if (playUrl != null) 'playUrl': playUrl,
+      if (token != null) 'token': token,
     };
 
     await _publishMessage(message);
@@ -383,6 +343,7 @@ class RtmService {
     List<int>? episodeNumbers,
     List<String>? episodePosters,
     String? playUrl,
+    String? token,
   }) async {
     if (_client == null) return;
 
@@ -399,6 +360,7 @@ class RtmService {
       if (episodeNumbers != null) 'episodeNumbers': episodeNumbers,
       if (episodePosters != null) 'episodePosters': episodePosters,
       if (playUrl != null) 'playUrl': playUrl,
+      if (token != null) 'token': token,
     };
 
     try {

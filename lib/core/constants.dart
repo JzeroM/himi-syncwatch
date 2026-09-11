@@ -4,7 +4,7 @@ class AppConstants {
   static const String embyTokenHeader = 'X-Emby-Token';
 
   // 声网 RTM
-  static const int rtmHeartbeatIntervalMs = 2500;
+  static const int rtmHeartbeatIntervalMs = 5000;
   static const double syncThresholdMicro = 0.3;
   static const double syncThresholdMedium = 1.0;
 
@@ -27,4 +27,5 @@ class AppConstants {
   static const String actionRemoveEpisode = 'removeEpisode';
   static const String actionRequestRoomInfo = 'requestRoomInfo';
   static const String actionSyncPlay = 'syncPlay';
+  static const String actionRoomDestroyed = 'roomDestroyed';
 }
