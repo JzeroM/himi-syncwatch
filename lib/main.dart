@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:himi_syncwatch/core/app.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 
 class _SelfSignedHttpOverrides extends HttpOverrides {
@@ -27,11 +28,15 @@ void main() async {
   final agoraNotifier = AgoraConfigNotifier();
   await agoraNotifier.load();
 
+  final settingsNotifier = SettingsNotifier();
+  await settingsNotifier.load();
+
   runApp(
     ProviderScope(
       overrides: [
         embyAuthServiceProvider.overrideWithValue(authService),
         agoraConfigProvider.overrideWith((ref) => agoraNotifier),
+        settingsProvider.overrideWith((ref) => settingsNotifier),
       ],
       child: const HimiSyncApp(),
     ),

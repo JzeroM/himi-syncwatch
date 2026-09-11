@@ -12,6 +12,7 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -176,6 +177,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _initPlayerProperties() async {
     if (_player.platform is NativePlayer) {
       final native = _player.platform as NativePlayer;
+
+      // 硬解码
+      final settings = ref.read(settingsProvider);
+      if (settings.hardwareDecoding) {
+        if (Platform.isAndroid) {
+          await native.setProperty('hwdec', 'mediacodec');
+        } else if (Platform.isIOS || Platform.isMacOS) {
+          await native.setProperty('hwdec', 'videotoolbox');
+        } else if (Platform.isWindows) {
+          await native.setProperty('hwdec', 'd3d11va');
+        } else if (Platform.isLinux) {
+          await native.setProperty('hwdec', 'vaapi');
+        }
+      }
+
+      // 字幕
       await native.setProperty('sub-visibility', 'yes');
       await native.setProperty('sub-auto', 'fuzzy');
       await native.setProperty('sub-font-size', '40');

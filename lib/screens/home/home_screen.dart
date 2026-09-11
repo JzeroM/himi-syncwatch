@@ -396,14 +396,24 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── 服务器区域 ──
+            // ── 设置入口 ──
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('设置'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/settings');
+              },
+            ),
+            const Divider(height: 1),
+            // ── Emby 服务器区域 ──
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    '服务器',
+                    'Emby 服务器',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
