@@ -42,7 +42,7 @@ class EmbyAuthService {
   }
 
   String _authHeader(String serverId, String userId, String token) {
-    return 'Emby Client="HimiSync", Device="Desktop", '
+    return 'Emby Client="HIMI", Device="Desktop", '
         'DeviceId="$deviceId", Version="1.0.0", '
         'UserId="$userId", Token="$token", ServerId="$serverId"';
   }

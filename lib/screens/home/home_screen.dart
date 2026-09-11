@@ -122,7 +122,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('HimiSync'),
+        title: const Text('HIMI'),
         actions: [
           IconButton(
             icon: const Icon(Icons.group_add),
@@ -384,7 +384,6 @@ class _ServerDrawer extends ConsumerStatefulWidget {
 
 class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
   bool _showAddServerForm = false;
-  bool _showAgoraForm = false;
 
   @override
   Widget build(BuildContext context) {
@@ -569,21 +568,118 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                       : Colors.orange,
                 ),
               ),
-              trailing: Icon(
-                _showAgoraForm ? Icons.expand_less : Icons.expand_more,
-              ),
-              onTap: () =>
-                  setState(() => _showAgoraForm = !_showAgoraForm),
+              trailing: const Icon(Icons.edit),
+              onTap: () => _showAgoraConfigSheet(context),
             ),
-            if (_showAgoraForm)
-              _AgoraConfigForm(
-                currentConfig: agoraConfig,
-                onSaved: () => setState(() => _showAgoraForm = false),
-              ),
           ],
         ),
       ),
     );
+  }
+
+  void _showAgoraConfigSheet(BuildContext context) {
+    final agoraConfig = ref.read(agoraConfigProvider);
+    final appIdController = TextEditingController(text: agoraConfig?.appId ?? '');
+    final certController = TextEditingController(text: agoraConfig?.appCertificate ?? '');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.key, size: 20),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        '声网配置',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    if (agoraConfig?.isConfigured == true)
+                      TextButton(
+                        onPressed: () async {
+                          await ref.read(agoraConfigProvider.notifier).clear();
+                          if (ctx.mounted) {
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('声网配置已清空')),
+                            );
+                          }
+                        },
+                        child: const Text('清空', style: TextStyle(color: Colors.red)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: appIdController,
+                  decoration: const InputDecoration(
+                    labelText: 'App ID',
+                    hintText: '声网 App ID',
+                    prefixIcon: Icon(Icons.vpn_key),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: certController,
+                  decoration: const InputDecoration(
+                    labelText: 'App Certificate',
+                    hintText: '声网 App Certificate',
+                    prefixIcon: Icon(Icons.lock),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final appId = appIdController.text.trim();
+                      final cert = certController.text.trim();
+                      if (appId.isEmpty) return;
+
+                      final config = AgoraConfigModel(
+                        appId: appId,
+                        appCertificate: cert,
+                      );
+                      await ref.read(agoraConfigProvider.notifier).save(config);
+                      if (ctx.mounted) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('声网配置已保存')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.save, size: 18),
+                    label: const Text('保存'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).then((_) {
+      appIdController.dispose();
+      certController.dispose();
+    });
   }
 
   void _showEditServerDialog(BuildContext context, EmbyServerConfig server) {
@@ -882,94 +978,6 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('连接并登录'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AgoraConfigForm extends ConsumerStatefulWidget {
-  final AgoraConfigModel? currentConfig;
-  final VoidCallback onSaved;
-  const _AgoraConfigForm({required this.currentConfig, required this.onSaved});
-
-  @override
-  ConsumerState<_AgoraConfigForm> createState() => _AgoraConfigFormState();
-}
-
-class _AgoraConfigFormState extends ConsumerState<_AgoraConfigForm> {
-  late final TextEditingController _appIdController;
-  late final TextEditingController _certController;
-
-  @override
-  void initState() {
-    super.initState();
-    _appIdController = TextEditingController(
-        text: widget.currentConfig?.appId ?? '');
-    _certController = TextEditingController(
-        text: widget.currentConfig?.appCertificate ?? '');
-  }
-
-  @override
-  void dispose() {
-    _appIdController.dispose();
-    _certController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        children: [
-          TextField(
-            controller: _appIdController,
-            decoration: const InputDecoration(
-              labelText: 'App ID',
-              hintText: '声网 App ID',
-              prefixIcon: Icon(Icons.vpn_key),
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _certController,
-            decoration: const InputDecoration(
-              labelText: 'App Certificate',
-              hintText: '声网 App Certificate',
-              prefixIcon: Icon(Icons.lock),
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 40,
-            child: ElevatedButton.icon(
-              onPressed: () async {
-                final appId = _appIdController.text.trim();
-                final cert = _certController.text.trim();
-                if (appId.isEmpty) return;
-
-                final config = AgoraConfigModel(
-                  appId: appId,
-                  appCertificate: cert,
-                );
-                await ref.read(agoraConfigProvider.notifier).save(config);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('声网配置已保存')),
-                  );
-                  widget.onSaved();
-                }
-              },
-              icon: const Icon(Icons.save, size: 18),
-              label: const Text('保存'),
             ),
           ),
         ],

@@ -37,8 +37,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Future<void> _shareRoomCode() async {
     await SharePlus.instance.share(
       ShareParams(
-        text: '来一起看电影吧！\n\n房间码：\n${widget.roomCode}\n\n在 HimiSync 中粘贴即可加入',
-        subject: 'HimiSync 观影邀请',
+        text: '来一起看电影吧！\n\n房间码：\n${widget.roomCode}\n\n在 HIMI 中粘贴即可加入',
+        subject: 'HIMI 观影邀请',
       ),
     );
   }

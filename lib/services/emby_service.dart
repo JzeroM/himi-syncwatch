@@ -44,7 +44,7 @@ class EmbyService {
   }
 
   String _buildAuthHeader() {
-    return 'Emby Client="HimiSync", Device="Desktop", '
+    return 'Emby Client="HIMI", Device="Desktop", '
         'DeviceId="$_deviceId", Version="1.0.0", '
         'UserId="$_userId", Token="$_accessToken", '
         'ServerId="$_serverId"';
@@ -81,7 +81,7 @@ class EmbyService {
     };
 
     dio.options.headers['X-Emby-Authorization'] =
-        'Emby Client="HimiSync", Device="Desktop", '
+        'Emby Client="HIMI", Device="Desktop", '
         'DeviceId="$deviceId", Version="1.0.0"';
 
     final response = await dio.post(
