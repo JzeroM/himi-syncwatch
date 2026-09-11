@@ -1152,6 +1152,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         );
         if (_rtmChannel != null) {
           rtmService.unsubscribe(_rtmChannel!);
+          if (_isHost) {
+            rtmService.clearPlayMetadata(_rtmChannel!);
+          }
         }
         rtmService.logout();
       } catch (_) {}

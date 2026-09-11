@@ -279,6 +279,26 @@ class RtmService {
     );
   }
 
+  /// 清除播放相关 metadata（主持人离开时调用）
+  Future<String> clearPlayMetadata(String channelName) async {
+    if (_storage == null) return 'storage_null';
+
+    final playKeys = ['playUrl', 'itemId', 'mediaSourceId', 'currentEpisodeIndex', 'token'];
+    final items = playKeys.map((k) => MetadataItem(key: k, value: '')).toList();
+
+    try {
+      final (status, result) = await _storage!.removeChannelMetadata(
+        channelName,
+        RtmChannelType.message,
+        metadata: items,
+      );
+      if (status.error == true) return 'error:${status.reason}';
+      return 'ok,${playKeys.length}keys_removed';
+    } catch (e) {
+      return 'exception:$e';
+    }
+  }
+
   // 发送 RTM 消息
   Future<void> sendHeartbeat({
     required double position,
