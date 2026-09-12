@@ -100,8 +100,9 @@ jobs:
 
       - name: 添加自定义权限
         run: |
-          # 添加麦克风权限和后台模式
           plutil -insert NSMicrophoneUsageDescription -string "声网实时消息需要麦克风权限" ios/Runner/Info.plist
+          plutil -insert NSCameraUsageDescription -string "扫描二维码加入房间" ios/Runner/Info.plist
+          plutil -insert NSPhotoLibraryUsageDescription -string "从相册选择二维码图片加入房间" ios/Runner/Info.plist
           plutil -insert NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}' ios/Runner/Info.plist
           plutil -insert UIBackgroundModes -json '["audio"]' ios/Runner/Info.plist
 

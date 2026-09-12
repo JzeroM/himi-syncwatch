@@ -11,6 +11,8 @@ perms = [
     '    <uses-permission android:name="android.permission.INTERNET" />',
     '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
     '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
+    '    <uses-permission android:name="android.permission.CAMERA" />',
+    '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
     '    <uses-permission android:name="android.permission.WAKE_LOCK" />',
 ]
 with open(manifest) as f:
