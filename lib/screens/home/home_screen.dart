@@ -397,6 +397,14 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
     final currentConfig = ref.watch(embyConfigProvider);
     final agoraConfig = ref.watch(agoraConfigProvider);
 
+    final seenServerIds = <String>{};
+    final dedupedServers = <EmbyServerConfig>[];
+    for (final s in servers) {
+      if (seenServerIds.add(s.serverId)) {
+        dedupedServers.add(s);
+      }
+    }
+
     return Drawer(
       child: SafeArea(
         child: Column(
@@ -441,7 +449,7 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
               )
             else
               Expanded(
-                child: servers.isEmpty
+                child: dedupedServers.isEmpty
                     ? const Center(
                         child: Padding(
                           padding: EdgeInsets.all(24),
@@ -453,9 +461,9 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                         ),
                       )
                     : ListView.builder(
-                        itemCount: servers.length,
+                        itemCount: dedupedServers.length,
                         itemBuilder: (context, index) {
-                          final server = servers[index];
+                          final server = dedupedServers[index];
                           final isActive = currentConfig?.id == server.id;
                           return ListTile(
                             leading: Icon(
