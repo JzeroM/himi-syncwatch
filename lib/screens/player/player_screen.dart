@@ -113,6 +113,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _syncMetadataWriteDiag = '-'; // 最后一次写入诊断
   String _syncMetadataReadDiag = '-'; // 最后一次读取诊断
   String _syncMetadataTestResult = '-'; // 自检结果
+  String _hwdecStatus = '-'; // 硬解码器状态
   List<String> _syncEvents = [];
 
   void _logSyncEvent(String event) {
@@ -122,6 +123,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _syncEvents.add('[$time] $event');
       if (_syncEvents.length > 15) _syncEvents.removeAt(0);
     });
+  }
+
+  Future<void> _queryHwdecStatus() async {
+    if (_player.platform is! NativePlayer) return;
+    try {
+      final native = _player.platform as NativePlayer;
+      final hwdec = await native.getProperty('hwdec-current');
+      if (mounted) {
+        setState(() => _hwdecStatus = hwdec.isEmpty ? '(软解码)' : hwdec);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -300,6 +312,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (wasPlaying) {
         await _player.play();
       }
+      Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
 
       return url;
     } catch (e) {
@@ -393,6 +406,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await _player.play();
       _autoExpandSeries();
       _logSyncEvent('播放器打开成功');
+      Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
       print('[Sync] 播放器打开成功');
     } catch (e) {
       _logSyncEvent('播放器打开失败: $e');
@@ -1391,6 +1405,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _debugRow('metadata 写入诊断', _syncMetadataWriteDiag),
           _debugRow('metadata 读取诊断', _syncMetadataReadDiag),
           _debugRow('metadata 自检', _syncMetadataTestResult),
+          const Divider(color: Colors.white24, height: 8),
+          _debugRow('硬解码器', _hwdecStatus),
           if (_syncEvents.isNotEmpty) ...[
             const Divider(color: Colors.white24, height: 8),
             const Text('最近事件:', style: TextStyle(color: Colors.white54, fontSize: 11)),
