@@ -10,8 +10,7 @@ class RoomCode {
     required String appId,
     required String appCertificate,
     required String channel,
-    required String hostUid,
-    int tokenCount = 5,
+    int tokenCount = 2,
     int tokenExpireSeconds = 86400,
   }) {
     final tokens = <Map<String, dynamic>>[];
@@ -23,15 +22,14 @@ class RoomCode {
         userId: tokenId,
         tokenExpireSeconds: tokenExpireSeconds,
       );
-      tokens.add({'tokenId': tokenId, 'token': token});
+      tokens.add({'i': tokenId, 'r': token});
     }
 
     final data = {
       'v': 1,
       'appId': appId,
       'channel': channel,
-      'hostUid': hostUid,
-      'tokens': tokens,
+      't': tokens,
     };
 
     final encoded = base64Url.encode(utf8.encode(jsonEncode(data)));
@@ -48,7 +46,15 @@ class RoomCode {
 
       if (data['v'] != 1) return null;
       if (data['appId'] == null || data['channel'] == null) return null;
-      if (data['tokens'] is! List) return null;
+      if (data['t'] is! List) return null;
+
+      data['tokens'] = data['t'];
+      for (final t in data['tokens']) {
+        if (t is Map) {
+          t['tokenId'] = t['i'];
+          t['token'] = t['r'];
+        }
+      }
 
       return data;
     } catch (_) {
@@ -68,9 +74,5 @@ class RoomCode {
 
   static String generateChannelId() {
     return 'himi_${const Uuid().v4().substring(0, 12)}';
-  }
-
-  static String generateHostUid() {
-    return 'host_${const Uuid().v4().substring(0, 12)}';
   }
 }

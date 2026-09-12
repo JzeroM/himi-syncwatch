@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 
@@ -37,7 +38,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Future<void> _shareRoomCode() async {
     await SharePlus.instance.share(
       ShareParams(
-        text: '来一起看电影吧！\n\n房间码：\n${widget.roomCode}\n\n在 HIMI 中粘贴即可加入',
+        text: '来一起看电影吧！\n\n房间码：\n${widget.roomCode}\n\n在 HIMI 中扫码或粘贴即可加入',
         subject: 'HIMI 观影邀请',
       ),
     );
@@ -77,6 +78,42 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // QR Code 卡片
+          Card(
+            color: const Color(0xFF1E1E2E),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text(
+                    '扫码加入',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: QrImageView(
+                      data: widget.roomCode,
+                      version: QrVersions.auto,
+                      size: 180,
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '长按保存图片 · 在 HIMI 中扫码加入',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // 房间码卡片
           Card(
             color: const Color(0xFF1E1E2E),
@@ -139,7 +176,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           // 房间信息
           Card(

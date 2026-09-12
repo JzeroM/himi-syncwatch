@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
+import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -191,7 +192,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nameController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('加入房间'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -214,11 +215,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 isDense: true,
               ),
             ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  final navigator = Navigator.of(context);
+                  final messenger = ScaffoldMessenger.of(context);
+                  final result = await navigator.push<String>(
+                    MaterialPageRoute(
+                      builder: (_) => const QrScannerScreen(),
+                    ),
+                  );
+                  if (result != null && context.mounted) {
+                    final roomData = RoomCode.decode(result);
+                    if (roomData == null) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('扫码结果无效')),
+                      );
+                      return;
+                    }
+                    final name = nameController.text.trim();
+                    if (name.isEmpty) {
+                      _showJoinRoomDialog(context);
+                      return;
+                    }
+                    context.push(
+                      '/player/_?roomCode=${Uri.encodeComponent(result)}&isHost=false&name=${Uri.encodeComponent(name)}',
+                    );
+                  }
+                },
+                icon: const Icon(Icons.qr_code_scanner, size: 18),
+                label: const Text('扫码加入'),
+              ),
+            ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('取消'),
           ),
           FilledButton(
@@ -226,7 +262,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               final code = codeController.text.trim();
               final name = nameController.text.trim();
               if (code.isNotEmpty && name.isNotEmpty) {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 final roomData = RoomCode.decode(code);
                 if (roomData == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
