@@ -42,12 +42,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     if (serverIds.isNotEmpty) {
       final configs = <EmbyServerConfig>[];
+      final seenServerIds = <String>{};
       EmbyServerConfig? activeConfig;
 
       for (final sid in serverIds) {
         final session = await authService.loadSession(sid);
         if (session != null) {
           final config = EmbyServerConfig.fromJson(session);
+          if (seenServerIds.contains(config.serverId)) {
+            await authService.deleteSession(sid);
+            continue;
+          }
+          seenServerIds.add(config.serverId);
           configs.add(config);
           if (activeConfig == null) activeConfig = config;
         }
@@ -767,14 +773,24 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                     password: password,
                     deviceId: server.id,
                   );
+                  final newServerId = authResult['ServerId'] ?? server.serverId;
                   final newConfig = server.copyWith(
                     serverUrl: url,
                     serverName: name,
                     username: username,
                     accessToken: authResult['AccessToken'],
                     userId: authResult['User']['Id'],
-                    serverId: authResult['ServerId'] ?? server.serverId,
+                    serverId: newServerId,
                   );
+
+                  final existingServers = ref.read(embyServerListProvider);
+                  for (final other in existingServers) {
+                    if (other.id != server.id && other.serverId == newServerId) {
+                      await authService.deleteSession(other.serverId);
+                      ref.read(embyServerListProvider.notifier).removeServer(other.id);
+                    }
+                  }
+
                   ref.read(embyServerListProvider.notifier).updateServer(newConfig);
                   ref.read(embyConfigProvider.notifier).setConfig(newConfig);
                   await authService.deleteSession(server.serverId);
@@ -880,6 +896,14 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
       final returnedServerId = authResult['ServerId'] as String? ?? serverId;
 
       final configId = 'srv_${const Uuid().v4().substring(0, 8)}';
+
+      final existingServers = ref.read(embyServerListProvider);
+      final duplicate = existingServers.where((s) => s.serverId == returnedServerId).toList();
+      for (final old in duplicate) {
+        await authService.deleteSession(old.serverId);
+        ref.read(embyServerListProvider.notifier).removeServer(old.id);
+      }
+
       final config = EmbyServerConfig(
         id: configId,
         serverUrl: url,
