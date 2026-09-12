@@ -108,13 +108,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
     // 4. 构建房间码（仅含连接信息，媒体数据通过 RTM 发送）
     final channel = RoomCode.generateChannelId();
-    final hostUid = RoomCode.generateHostUid();
 
     final roomCode = RoomCode.encode(
       appId: agoraConfig.appId,
       appCertificate: agoraConfig.appCertificate,
       channel: channel,
-      hostUid: hostUid,
       tokenCount: tokenCount,
     );
 
