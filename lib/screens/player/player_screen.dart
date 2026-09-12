@@ -941,6 +941,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ],
       ),
     );
+    if (result == true && _rtmChannel != null) {
+      final rtmService = ref.read(rtmServiceProvider);
+      await rtmService.sendJoinLeave(
+        action: AppConstants.actionRoomDestroyed,
+        userName: _audienceName ?? '房主',
+      );
+      await rtmService.sendJoinLeave(
+        action: AppConstants.actionRoomDestroyed,
+        userName: _audienceName ?? '房主',
+      );
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
     return result ?? false;
   }
 
