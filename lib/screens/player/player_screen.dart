@@ -918,7 +918,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ),
     );
     Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     });
   }
 
