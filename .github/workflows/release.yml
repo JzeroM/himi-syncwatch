@@ -108,9 +108,7 @@ jobs:
 
       - name: 设置 iOS 最低部署版本
         run: |
-          sed -i '' 's/# platform :ios, '13.0'/platform :ios, '15.5'/' ios/Podfile || true
-          sed -i '' 's/platform :ios, '13.0'/platform :ios, '15.5'/' ios/Podfile || true
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 13.0/IPHONEOS_DEPLOYMENT_TARGET = 15.5/' ios/Runner.xcodeproj/project.pbxproj || true
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.5/' ios/Runner.xcodeproj/project.pbxproj
 
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
