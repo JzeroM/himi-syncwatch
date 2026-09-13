@@ -4,7 +4,7 @@ class AppSettings {
 
   const AppSettings({
     this.decodeMode = 'auto',
-    this.bufferSizeMB = 32,
+    this.bufferSizeMB = 64,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';

@@ -6,8 +6,8 @@
 set -euo pipefail
 
 if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-  echo "⚠️  ANDROID_KEYSTORE_BASE64 未设置，跳过签名配置（使用 debug 签名）"
-  exit 0
+  echo "❌ ANDROID_KEYSTORE_BASE64 未设置，无法构建正式签名 APK"
+  exit 1
 fi
 
 echo "🔑 配置 Android APK 签名..."

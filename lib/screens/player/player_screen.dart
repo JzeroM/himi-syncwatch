@@ -60,6 +60,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _hostUserId;
 
   double _volume = 50;
+  double _brightness = 0.5;
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
@@ -69,7 +70,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _currentToken = '';
   Timer? _hideControlsTimer;
 
-  bool _showVolumeSlider = false;
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
   bool _showDecodeModeMenu = false;
@@ -79,6 +79,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _gestureHintText = '';
   Timer? _gestureHintTimer;
   IconData? _gestureOverlayIcon;
+  bool _isLeftSide = false;
+  bool _showBrightnessBar = false;
+  bool _showVolumeBar = false;
+  Timer? _gestureBarTimer;
 
   List<SubtitleTrack> _subtitleTracks = [];
   SubtitleTrack? _currentSubtitle;
@@ -1206,7 +1210,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (mounted && _player.state.playing) {
           setState(() {
             _showControls = false;
-            _showVolumeSlider = false;
             _showSubtitleMenu = false;
             _showAudioMenu = false;
           });
@@ -1217,10 +1220,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _closeAllMenus() {
     setState(() {
-      _showVolumeSlider = false;
       _showSubtitleMenu = false;
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
+      _showBrightnessBar = false;
+      _showVolumeBar = false;
     });
   }
 
@@ -1530,7 +1534,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         backgroundColor: Colors.black,
         body: GestureDetector(
           onTap: () {
-            if (_showVolumeSlider || _showSubtitleMenu || _showAudioMenu || _showDecodeModeMenu) {
+            if (_showSubtitleMenu || _showAudioMenu || _showDecodeModeMenu || _showBrightnessBar || _showVolumeBar) {
               _closeAllMenus();
             } else {
               _toggleControls();
@@ -1538,6 +1542,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           },
           onDoubleTap: _onDoubleTap,
           onHorizontalDragEnd: _onHorizontalDragEnd,
+          onVerticalDragStart: _onVerticalDragStart,
+          onVerticalDragUpdate: _onVerticalDragUpdate,
+          onVerticalDragEnd: _onVerticalDragEnd,
           behavior: HitTestBehavior.opaque,
           child: _buildResponsiveLayout(),
         ),
@@ -1642,6 +1649,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             right: 0,
             child: _buildGestureHint(),
           ),
+
+        // 亮度柱式进度条（右侧）
+        if (_showBrightnessBar) _buildBrightnessBar(),
+
+        // 音量柱式进度条（左侧）
+        if (_showVolumeBar) _buildVolumeBar(),
 
         // Controls（底部渐变浮层，仅视频区域底部）
         if (_showControls && (_isPlayerReady || !_hasEpisodeList))
@@ -1985,6 +1998,135 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  // ========== 垂直手势：亮度/音量 ==========
+  void _onVerticalDragStart(DragStartDetails details) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    _isLeftSide = details.globalPosition.dx < screenWidth / 2;
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails details) {
+    final delta = details.primaryDelta ?? 0;
+    if (_isLeftSide) {
+      // 左侧：调节亮度
+      _brightness = (_brightness - delta / 600).clamp(0.0, 1.0);
+      _setBrightness(_brightness);
+      setState(() {
+        _showBrightnessBar = true;
+        _showVolumeBar = false;
+      });
+    } else {
+      // 右侧：调节音量
+      final newVol = (_volume - delta / 600 * 100).clamp(0.0, 100.0);
+      _volume = newVol;
+      _player.setVolume(newVol);
+      setState(() {
+        _showVolumeBar = true;
+        _showBrightnessBar = false;
+      });
+    }
+    _startGestureBarTimer();
+  }
+
+  void _onVerticalDragEnd(DragEndDetails details) {
+    _startGestureBarTimer();
+  }
+
+  Future<void> _setBrightness(double value) async {
+    if (_player.platform is NativePlayer) {
+      final native = _player.platform as NativePlayer;
+      final mpvValue = ((value - 0.5) * 100).round();
+      await native.setProperty('brightness', mpvValue.toString());
+    }
+  }
+
+  void _startGestureBarTimer() {
+    _gestureBarTimer?.cancel();
+    _gestureBarTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _showBrightnessBar = false;
+          _showVolumeBar = false;
+        });
+      }
+    });
+  }
+
+  Widget _buildBrightnessBar() {
+    return Positioned(
+      top: MediaQuery.of(context).size.height * 0.15,
+      bottom: MediaQuery.of(context).size.height * 0.15,
+      right: 20,
+      child: _buildVerticalBar(
+        value: _brightness,
+        icon: Icons.brightness_6,
+        color: const Color(0xFFFFD54F),
+      ),
+    );
+  }
+
+  Widget _buildVolumeBar() {
+    return Positioned(
+      top: MediaQuery.of(context).size.height * 0.15,
+      bottom: MediaQuery.of(context).size.height * 0.15,
+      left: 20,
+      child: _buildVerticalBar(
+        value: _volume / 100,
+        icon: _volume == 0
+            ? Icons.volume_off
+            : _volume < 50
+                ? Icons.volume_down
+                : Icons.volume_up,
+        color: const Color(0xFF6366F1),
+      ),
+    );
+  }
+
+  Widget _buildVerticalBar({
+    required double value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      width: 36,
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Icon(icon, color: Colors.white70, size: 18),
+          const SizedBox(height: 8),
+          Expanded(
+            child: RotatedBox(
+              quarterTurns: -1,
+              child: SliderTheme(
+                data: SliderThemeData(
+                  activeTrackColor: color,
+                  inactiveTrackColor: Colors.white24,
+                  thumbColor: color,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  trackHeight: 3,
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                ),
+                child: Slider(
+                  value: value,
+                  onChanged: null,
+                ),
+              ),
+            ),
+          ),
+          Text(
+            '${(value * 100).round()}',
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
   Widget _buildControls() {
     return GestureDetector(
       onTap: () {},
@@ -2116,60 +2258,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     _episodeIds.length > 1)
                   const SizedBox(width: 8),
 
-                // 音量
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _showVolumeSlider = !_showVolumeSlider;
-                      _showSubtitleMenu = false;
-                      _showAudioMenu = false;
-                    });
-                  },
-                  onLongPress: () {
-                    final newVol = _volume > 0 ? 0.0 : 100.0;
-                    _player.setVolume(newVol);
-                    setState(() => _volume = newVol);
-                  },
-                  child:
-                      Icon(_volumeIcon, color: Colors.white, size: 24),
-                ),
-                if (_showVolumeSlider) ...[
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 100,
-                    child: SliderTheme(
-                      data: SliderThemeData(
-                        activeTrackColor: const Color(0xFF6366F1),
-                        inactiveTrackColor: Colors.white24,
-                        thumbColor: const Color(0xFF6366F1),
-                        thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 7),
-                        trackHeight: 2,
-                        overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 12),
-                      ),
-                      child: Slider(
-                        value: _volume.clamp(0, 100),
-                        min: 0,
-                        max: 100,
-                        onChanged: (v) {
-                          _player.setVolume(v);
-                          setState(() => _volume = v);
-                        },
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 30,
-                    child: Text(
-                      '${_volume.round()}',
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 11),
-                    ),
-                  ),
-                ],
-
                 const Spacer(),
 
                 // 字幕
@@ -2178,7 +2266,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   onTap: () {
                     setState(() {
                       _showSubtitleMenu = !_showSubtitleMenu;
-                      _showVolumeSlider = false;
                       _showAudioMenu = false;
                     });
                   },
@@ -2194,7 +2281,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   onTap: () {
                     setState(() {
                       _showAudioMenu = !_showAudioMenu;
-                      _showVolumeSlider = false;
                       _showSubtitleMenu = false;
                     });
                   },
@@ -2781,12 +2867,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ),
     );
   }
-
-  IconData get _volumeIcon => _volume == 0
-      ? Icons.volume_off
-      : _volume < 50
-          ? Icons.volume_down
-          : Icons.volume_up;
 
   String _formatDuration(Duration duration) {
     final hours = duration.inHours;
