@@ -540,12 +540,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _player.setSubtitleTrack(SubtitleTrack.auto());
 
     if (_embyDefaultAudioIndex != null) {
-      final embyIdx = _embyAudioStreams.indexWhere(
-        (s) => s.index == _embyDefaultAudioIndex!,
-      );
-      final real = _realAudioTracks;
-      if (embyIdx >= 0 && embyIdx < real.length) {
-        _player.setAudioTrack(real[embyIdx]);
+      final embyStream = _embyAudioStreams
+          .where((s) => s.index == _embyDefaultAudioIndex!)
+          .firstOrNull;
+      if (embyStream != null) {
+        final matched = _findMpvAudioTrack(embyStream);
+        if (matched != null) {
+          _player.setAudioTrack(matched);
+        }
       }
     }
   }
@@ -2471,6 +2473,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       .where((t) => t.id != 'auto' && t.id != 'no')
       .toList();
 
+  SubtitleTrack? _findMpvSubtitleTrack(MediaStream embyStream) {
+    final targetId = embyStream.index.toString();
+    return _realSubtitleTracks
+        .where((t) => t.id == targetId)
+        .firstOrNull;
+  }
+
+  AudioTrack? _findMpvAudioTrack(MediaStream embyStream) {
+    final targetId = embyStream.index.toString();
+    return _realAudioTracks
+        .where((t) => t.id == targetId)
+        .firstOrNull;
+  }
+
   bool _isEmbySubtitleSelected(int embyIndex) {
     final stream = _embySubtitleStreams[embyIndex];
     if (_useServerSubtitleBurnIn) {
@@ -2479,16 +2495,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_currentSubtitle == null || _currentSubtitle!.id == 'no') {
       return false;
     }
-    final real = _realSubtitleTracks;
-    if (embyIndex >= real.length) return false;
-    return _currentSubtitle?.id == real[embyIndex].id;
+    final matched = _findMpvSubtitleTrack(stream);
+    if (matched == null) return false;
+    return _currentSubtitle?.id == matched.id;
   }
 
   bool _isEmbyAudioSelected(int embyIndex) {
     if (_currentAudio == null) return false;
-    final real = _realAudioTracks;
-    if (embyIndex >= real.length) return false;
-    return _currentAudio?.id == real[embyIndex].id;
+    final stream = _embyAudioStreams[embyIndex];
+    final matched = _findMpvAudioTrack(stream);
+    if (matched == null) return false;
+    return _currentAudio?.id == matched.id;
   }
 
   void _selectEmbySubtitle(int embyIndex) {
@@ -2510,16 +2527,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _useServerSubtitleBurnIn = false;
     _activeSubtitleIndex = stream.index;
-    final real = _realSubtitleTracks;
-    if (embyIndex < real.length) {
-      _player.setSubtitleTrack(real[embyIndex]);
+    final matched = _findMpvSubtitleTrack(stream);
+    if (matched != null) {
+      _player.setSubtitleTrack(matched);
     }
   }
 
   void _selectEmbyAudio(int embyIndex) {
-    final real = _realAudioTracks;
-    if (embyIndex < real.length) {
-      _player.setAudioTrack(real[embyIndex]);
+    final stream = _embyAudioStreams[embyIndex];
+    final matched = _findMpvAudioTrack(stream);
+    if (matched != null) {
+      _player.setAudioTrack(matched);
     }
   }
 
