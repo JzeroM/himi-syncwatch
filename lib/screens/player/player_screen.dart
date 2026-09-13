@@ -177,7 +177,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       configuration: PlayerConfiguration(
         libass: true,
         bufferSize: settings.bufferSizeMB * 1024 * 1024,
-        vo: Platform.isAndroid ? 'mediacodec' : null,
       ),
     );
     _controller = VideoController(_player);

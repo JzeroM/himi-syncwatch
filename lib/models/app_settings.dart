@@ -46,11 +46,4 @@ class AppSettings {
     'hw': 'HW',
     'sw': 'SW',
   };
-
-  static const decodeModeMpvValues = {
-    'auto': 'auto',
-    'hw+': 'mediacodec-copy',
-    'hw': 'mediacodec',
-    'sw': 'no',
-  };
 }

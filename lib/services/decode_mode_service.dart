@@ -101,13 +101,18 @@ class DecodeModeService {
   static String resolveHwdec(String mode, DeviceCodecInfo? deviceInfo) {
     if (mode == 'sw') return 'no';
 
+    final hw = _platformHwdecValues();
+
     if (mode == 'auto') {
-      // 智能选择：有硬解能力 → auto-safe；无或未知 → auto-safe（让 mpv 自己判断）
+      // 智能选择：有硬解能力 → 平台直通值（mpv 失败会自动重试其他方法）
+      // 无硬解或查询失败 → auto-safe（mpv 安全选择）
+      if (deviceInfo != null && !deviceInfo.isUnknown && deviceInfo.hasAnyHw) {
+        return hw.directValue;
+      }
       return 'auto-safe';
     }
 
     // HW / HW+ 模式：根据平台返回正确值
-    final hw = _platformHwdecValues();
     switch (mode) {
       case 'hw+':
         return hw.copyValue;
@@ -122,12 +127,6 @@ class DecodeModeService {
   /// HW/HW+ 锁死不回退，智能模式允许回退
   static String resolveFallback(String mode) {
     return (mode == 'hw' || mode == 'hw+') ? 'no' : '3';
-  }
-
-  /// 获取当前平台的 VO 推荐值
-  static String? get platformVo {
-    if (Platform.isAndroid) return 'gpu';
-    return null; // 其他平台使用 mpv 默认值
   }
 
   /// 从 mpv 日志判定实际解码状态（跨平台）
