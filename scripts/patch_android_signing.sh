@@ -70,6 +70,8 @@ android {
 
     buildTypes {
         release {
+            minifyEnabled false
+            shrinkResources false
             signingConfig = keyProperties['storeFile'] ? signingConfigs.release : signingConfigs.debug
         }
     }
