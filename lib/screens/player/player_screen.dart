@@ -120,6 +120,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _syncMetadataTestResult = '-'; // 自检结果
   String _hwdecStatus = '-'; // 硬解码器状态（实际值 hwdec-current）
   String _hwdecConfig = '-'; // 硬解码器配置（配置值 hwdec）
+  String _voStatus = '-'; // 视频输出驱动
   List<String> _syncEvents = [];
   final GlobalKey _qrKey = GlobalKey();
 
@@ -138,10 +139,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final native = _player.platform as NativePlayer;
       final hwdec = await native.getProperty('hwdec-current');
       final hwdecCfg = await native.getProperty('hwdec');
+      final vo = await native.getProperty('vo');
       if (mounted) {
         setState(() {
           _hwdecConfig = hwdecCfg.isEmpty ? '(未设置)' : hwdecCfg;
           _hwdecStatus = hwdec.isEmpty ? '(软解码)' : hwdec;
+          _voStatus = vo.isEmpty ? '-' : vo;
         });
       }
     } catch (_) {}
@@ -155,6 +158,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       configuration: PlayerConfiguration(
         libass: true,
         bufferSize: settings.bufferSizeMB * 1024 * 1024,
+        vo: Platform.isAndroid ? 'mediacodec' : null,
       ),
     );
     _controller = VideoController(_player);
@@ -1565,6 +1569,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _debugRow('metadata 读取诊断', _syncMetadataReadDiag),
           _debugRow('metadata 自检', _syncMetadataTestResult),
           const Divider(color: Colors.white24, height: 8),
+          _debugRow('视频输出 vo', _voStatus),
           _debugRow('硬解码 配置', _hwdecConfig),
           _debugRow('硬解码 实际', _hwdecStatus),
           if (_syncEvents.isNotEmpty) ...[
