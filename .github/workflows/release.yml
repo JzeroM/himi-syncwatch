@@ -112,10 +112,16 @@ jobs:
 
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
+      - name: 打包未签名 IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r himi-sync-ios-unsigned.ipa Payload
+          rm -rf Payload
       - uses: actions/upload-artifact@v4
         with:
           name: ios-build
-          path: build/ios/iphoneos/Runner.app
+          path: himi-sync-ios-unsigned.ipa
 
   build-windows:
     needs: [flutter-analyze]
@@ -262,7 +268,7 @@ jobs:
           cd windows-exe && 7z a ../release/himi-sync-windows.zip . && cd ..
           cd macos-app && 7z a ../release/himi-sync-macos.zip . && cd ..
           cd linux-binary && 7z a ../release/himi-sync-linux.zip . && cd ..
-          cp ios-build/Runner.app release/himi-sync-ios.app || true
+          cp ios-build/himi-sync-ios-unsigned.ipa release/ || true
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -270,6 +276,6 @@ jobs:
           files: |
             release/*.apk
             release/*.zip
-            release/*.app
+            release/*.ipa
           draft: false
           prerelease: false
