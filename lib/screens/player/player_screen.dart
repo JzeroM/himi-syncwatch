@@ -113,7 +113,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _syncMetadataWriteDiag = '-'; // 最后一次写入诊断
   String _syncMetadataReadDiag = '-'; // 最后一次读取诊断
   String _syncMetadataTestResult = '-'; // 自检结果
-  String _hwdecStatus = '-'; // 硬解码器状态
+  String _hwdecStatus = '-'; // 硬解码器状态（实际值 hwdec-current）
+  String _hwdecConfig = '-'; // 硬解码器配置（配置值 hwdec）
   List<String> _syncEvents = [];
 
   void _logSyncEvent(String event) {
@@ -130,8 +131,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     try {
       final native = _player.platform as NativePlayer;
       final hwdec = await native.getProperty('hwdec-current');
+      final hwdecCfg = await native.getProperty('hwdec');
       if (mounted) {
-        setState(() => _hwdecStatus = hwdec.isEmpty ? '(软解码)' : hwdec);
+        setState(() {
+          _hwdecConfig = hwdecCfg.isEmpty ? '(未设置)' : hwdecCfg;
+          _hwdecStatus = hwdec.isEmpty ? '(软解码)' : hwdec;
+        });
       }
     } catch (_) {}
   }
@@ -206,7 +211,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final settings = ref.read(settingsProvider);
       if (settings.hardwareDecoding) {
         if (Platform.isAndroid) {
-          await native.setProperty('hwdec', 'mediacodec');
+          await native.setProperty('hwdec', 'mediacodec-copy');
         } else if (Platform.isIOS || Platform.isMacOS) {
           await native.setProperty('hwdec', 'videotoolbox');
         } else if (Platform.isWindows) {
@@ -1406,7 +1411,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _debugRow('metadata 读取诊断', _syncMetadataReadDiag),
           _debugRow('metadata 自检', _syncMetadataTestResult),
           const Divider(color: Colors.white24, height: 8),
-          _debugRow('硬解码器', _hwdecStatus),
+          _debugRow('硬解码 配置', _hwdecConfig),
+          _debugRow('硬解码 实际', _hwdecStatus),
           if (_syncEvents.isNotEmpty) ...[
             const Divider(color: Colors.white24, height: 8),
             const Text('最近事件:', style: TextStyle(color: Colors.white54, fontSize: 11)),
