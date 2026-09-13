@@ -1914,12 +1914,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     if (_player.platform is NativePlayer) {
       final native = _player.platform as NativePlayer;
+
+      // 记住当前状态
+      final currentPos = _player.state.position;
+      final wasPlaying = _player.state.playing;
+
+      // 设置新 hwdec 属性
       final hwdecValue =
           DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
       await native.setProperty('hwdec', hwdecValue);
 
       final fallbackValue = DecodeModeService.resolveFallback(mode);
       await native.setProperty('vd-lavc-software-fallback', fallbackValue);
+
+      // 用 loadfile replace 直接替换当前流（比 open() 更快）
+      if (_currentPlayUrl.isNotEmpty) {
+        await native.command(['loadfile', _currentPlayUrl, 'replace']);
+
+        // 立即 seek 到原位置
+        if (currentPos > Duration.zero) {
+          await _player.seek(currentPos);
+        }
+
+        // 恢复播放状态
+        if (!wasPlaying) {
+          await _player.pause();
+        }
+      }
     }
 
     setState(() => _showDecodeModeMenu = false);
