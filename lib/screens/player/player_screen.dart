@@ -173,6 +173,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       configuration: PlayerConfiguration(
         libass: true,
         bufferSize: settings.bufferSizeMB * 1024 * 1024,
+        vo: Platform.isAndroid ? 'mediacodec' : null,
       ),
     );
     _controller = VideoController(_player);
@@ -241,15 +242,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           settings.decodeMode, _deviceCodecInfo);
       await native.setProperty('hwdec', hwdecValue);
 
-      // Phase 2b: 设置 fallback 策略 — HW/HW+ 锁死不回退
+      // Phase 3: 设置 fallback 策略 — HW/HW+ 锁死不回退
       final fallbackValue = DecodeModeService.resolveFallback(settings.decodeMode);
-      await native.setProperty('hwdec-software-fallback', fallbackValue);
-
-      // Phase 2c: 设置平台 VO（Android 需要 gpu，其他平台用默认值）
-      final platformVo = DecodeModeService.platformVo;
-      if (platformVo != null) {
-        await native.setProperty('vo', platformVo);
-      }
+      await native.setProperty('vd-lavc-software-fallback', fallbackValue);  // Android mpv 0.36 只认识旧名
 
       // Phase 3: 监听 mpv 日志 — 实时检测解码状态
       _logSubscription?.cancel();

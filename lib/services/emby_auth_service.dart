@@ -59,9 +59,11 @@ class EmbyAuthService {
     required String serverName,
     required String userId,
     required String username,
+    required String id,          // 新增：本地 UUID，用于服务器去重
     required String accessToken,
   }) async {
     final data = {
+      'id': id,                // 新增：保存 id 字段，防止重启后全勾选
       'serverId': serverId,
       'serverUrl': serverUrl,
       'serverName': serverName,

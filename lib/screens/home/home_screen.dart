@@ -845,6 +845,7 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                     userId: newConfig.userId!,
                     username: username,
                     accessToken: newConfig.accessToken!,
+                    id: newConfig.id,
                   );
                 } catch (e) {
                   if (ctx.mounted) {
@@ -872,6 +873,7 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                   userId: newConfig.userId ?? '',
                   username: username,
                   accessToken: newConfig.accessToken ?? '',
+                  id: newConfig.id,
                 );
               }
 
@@ -965,7 +967,8 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
         userId: userId,
         username: _usernameController.text.trim(),
         accessToken: accessToken,
-      );
+                  id: config.id,
+                );
 
       ref.read(embyServerListProvider.notifier).addServer(config);
       ref.read(embyConfigProvider.notifier).setConfig(config);
