@@ -67,6 +67,8 @@ def patch_app(path):
         if t2 != t:
             t, changed = t2, True
 
+    # applicationId（flutter create 生成的可能是 com.himi.himi_syncwatch，需统一）
+    rep(r'applicationId\s*=\s*"[^"]*"', 'applicationId = "com.himi.syncwatch"')
     # compileSdk / minSdk
     rep(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36')
     rep(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24')
