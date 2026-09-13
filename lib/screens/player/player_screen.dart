@@ -1296,84 +1296,89 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (widget.roomCode == null) return;
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF1E1E2E),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(ctx).padding.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              '分享加入房间',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-            ),
-            const SizedBox(height: 16),
-            RepaintBoundary(
-              key: _qrKey,
-              child: Container(
-                padding: const EdgeInsets.all(12),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '分享加入房间',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              const SizedBox(height: 16),
+              RepaintBoundary(
+                key: _qrKey,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: QrImageView(
+                    data: widget.roomCode!,
+                    version: QrVersions.auto,
+                    size: 180,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Colors.black.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: QrImageView(
-                  data: widget.roomCode!,
-                  version: QrVersions.auto,
-                  size: 180,
-                  backgroundColor: Colors.white,
+                child: Text(
+                  widget.roomCode!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    color: Colors.white70,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () { Navigator.pop(ctx); _saveQrToGallery(); },
+                      icon: const Icon(Icons.save_alt, size: 18),
+                      label: const Text('保存图片'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () { Navigator.pop(ctx); _shareQrImage(); },
+                      icon: const Icon(Icons.share, size: 18),
+                      label: const Text('分享图片'),
+                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () { Navigator.pop(ctx); _copyRoomCode(); },
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('复制'),
+                    ),
+                  ),
+                ],
               ),
-              child: SelectableText(
-                widget.roomCode!,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  color: Colors.white70,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () { Navigator.pop(ctx); _saveQrToGallery(); },
-                    icon: const Icon(Icons.save_alt, size: 18),
-                    label: const Text('保存图片'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () { Navigator.pop(ctx); _shareQrImage(); },
-                    icon: const Icon(Icons.share, size: 18),
-                    label: const Text('分享图片'),
-                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () { Navigator.pop(ctx); _copyRoomCode(); },
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: const Text('复制'),
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
