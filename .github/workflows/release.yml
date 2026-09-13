@@ -59,6 +59,14 @@ jobs:
       - name: 添加自定义权限
         run: chmod +x scripts/patch_android.sh && bash scripts/patch_android.sh
 
+      - name: 配置 APK 签名
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash scripts/patch_android_signing.sh
+
       - run: flutter pub get
 
       - name: 使用完整版 libmpv (media-kit full, 支持 PGS 位图字幕)
