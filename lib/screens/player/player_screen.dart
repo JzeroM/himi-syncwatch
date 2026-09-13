@@ -17,6 +17,7 @@ import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:agora_rtm/agora_rtm.dart';
+import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -120,8 +121,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _syncMetadataReadDiag = '-'; // 最后一次读取诊断
   String _syncMetadataTestResult = '-'; // 自检结果
   String _hwdecStatus = '-'; // 硬解码器状态（实际值 hwdec-current）
-  String _hwdecConfig = '-'; // 硬解码器配置（配置值 hwdec）
   String _voStatus = '-'; // 视频输出驱动
+  DeviceCodecInfo? _deviceCodecInfo; // 设备硬解码能力
+  String _videoCodec = '-'; // 视频编码格式
+  String _videoResolution = '-'; // 视频分辨率
+  String _actualDecoder = '检测中...'; // 实际解码器
+  String _actualDecoderFull = ''; // 实际解码器完整描述
+  StreamSubscription? _logSubscription; // mpv 日志订阅
+  StreamSubscription? _videoParamsSubscription; // 视频参数订阅
   List<String> _syncEvents = [];
   final GlobalKey _qrKey = GlobalKey();
 
@@ -139,13 +146,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     try {
       final native = _player.platform as NativePlayer;
       final hwdec = await native.getProperty('hwdec-current');
-      final hwdecCfg = await native.getProperty('hwdec');
       final vo = await native.getProperty('vo');
+      final codec = await native.getProperty('video-codec');
       if (mounted) {
         setState(() {
-          _hwdecConfig = hwdecCfg.isEmpty ? '(未设置)' : hwdecCfg;
           _hwdecStatus = hwdec.isEmpty ? '(软解码)' : hwdec;
           _voStatus = vo.isEmpty ? '-' : vo;
+          if (codec.isNotEmpty) _videoCodec = codec;
+          // 如果日志还没检测到，用 hwdec-current 作为补充
+          if (_actualDecoder == '检测中...' && hwdec.isNotEmpty) {
+            _actualDecoder = hwdec;
+            _actualDecoderFull = hwdec;
+          }
         });
       }
     } catch (_) {}
@@ -217,30 +229,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _initPlayerProperties() async {
     if (_player.platform is NativePlayer) {
       final native = _player.platform as NativePlayer;
-
-      // 解码模式
       final settings = ref.read(settingsProvider);
-      final mode = settings.decodeMode;
-      String hwdecValue;
-      if (mode == 'sw') {
-        hwdecValue = 'no';
-      } else if (mode == 'auto') {
-        hwdecValue = 'auto';
-      } else {
-        // hw+ 或 hw
-        if (Platform.isAndroid) {
-          hwdecValue = mode == 'hw+' ? 'mediacodec-copy' : 'mediacodec';
-        } else if (Platform.isIOS || Platform.isMacOS) {
-          hwdecValue = 'videotoolbox';
-        } else if (Platform.isWindows) {
-          hwdecValue = 'd3d11va';
-        } else if (Platform.isLinux) {
-          hwdecValue = 'vaapi';
-        } else {
-          hwdecValue = 'auto';
-        }
-      }
+
+      // Phase 1: 查询设备硬解能力
+      final handle = await _player.handle;
+      _deviceCodecInfo = await DecodeModeService.queryDeviceCapabilities(handle);
+
+      // Phase 2: 决定 hwdec 值并设置
+      final hwdecValue = DecodeModeService.resolveHwdec(
+          settings.decodeMode, _deviceCodecInfo);
       await native.setProperty('hwdec', hwdecValue);
+
+      // Phase 2b: 设置 fallback 策略 — HW/HW+ 锁死不回退
+      final fallbackValue = DecodeModeService.resolveFallback(settings.decodeMode);
+      await native.setProperty('hwdec-software-fallback', fallbackValue);
+
+      // Phase 3: 监听 mpv 日志 — 实时检测解码状态
+      _logSubscription?.cancel();
+      _logSubscription = _player.stream.log.listen((log) {
+        final status = DecodeModeService.parseLogMessage(log.text);
+        // 从日志提取实际解码器
+        final decoder = DecodeModeService.parseActualDecoder(log.text);
+        if (decoder != null && mounted) {
+          setState(() {
+            _actualDecoder = decoder;
+            _actualDecoderFull = _formatActualDecoder(decoder, status);
+          });
+        }
+      });
+
+      // Phase 3b: 监听视频参数 — 获取分辨率
+      _videoParamsSubscription?.cancel();
+      _videoParamsSubscription = _player.stream.videoParams.listen((params) {
+        if (mounted && params.w != null && params.h != null) {
+          setState(() => _videoResolution = '${params.w}x${params.h}');
+        }
+      });
 
       // 字幕
       await native.setProperty('sub-visibility', 'yes');
@@ -250,6 +274,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await native.setProperty('sub-shadow-offset', '1');
       await native.setProperty('sub-margin-y', '22');
     }
+  }
+
+  String _formatActualDecoder(String decoder, DecodeStatus status) {
+    if (decoder == 'no') return 'no (软解码) ❌';
+    if (status == DecodeStatus.hwActive) return '$decoder ✅';
+    if (status == DecodeStatus.hwFailed) return '$decoder ❌ 已回退';
+    return '$decoder';
   }
 
   Future<void> _loadEpisodeStream(int episodeIndex) async {
@@ -1391,6 +1422,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
+    _logSubscription?.cancel();
+    _videoParamsSubscription?.cancel();
     _broadcastScrollController.dispose();
 
     // 清理 RTM
@@ -1585,9 +1618,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _debugRow('metadata 读取诊断', _syncMetadataReadDiag),
           _debugRow('metadata 自检', _syncMetadataTestResult),
           const Divider(color: Colors.white24, height: 8),
+          _debugRow('设备能力', _buildDeviceCapabilityText()),
+          _debugRow('视频信息', _videoCodec != '-' ? '$_videoCodec, $_videoResolution' : _videoResolution),
           _debugRow('视频输出 vo', _voStatus),
-          _debugRow('解码模式', '${AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'} (${_hwdecConfig})'),
-          _debugRow('硬解码 实际', _hwdecStatus),
+          _debugRow('解码模式', AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
+          _debugRow('实际解码', _actualDecoderFull.isNotEmpty ? _actualDecoderFull : _hwdecStatus),
           if (_syncEvents.isNotEmpty) ...[
             const Divider(color: Colors.white24, height: 8),
             const Text('最近事件:', style: TextStyle(color: Colors.white54, fontSize: 11)),
@@ -1617,6 +1652,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ],
       ),
     );
+  }
+
+  String _buildDeviceCapabilityText() {
+    if (_deviceCodecInfo == null) return '检测中...';
+    final info = _deviceCodecInfo!;
+    if (!info.hasAnyHw) return '无硬解码器';
+    return 'H264${info.hasH264Hw ? "✅" : "❌"} '
+        'H265${info.hasHevcHw ? "✅" : "❌"} '
+        'VP9${info.hasVp9Hw ? "✅" : "❌"} '
+        'AV1${info.hasAv1Hw ? "✅" : "❌"}';
   }
 
   Widget _buildTopBar() {
