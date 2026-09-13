@@ -120,12 +120,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _syncMetadataWriteDiag = '-'; // 最后一次写入诊断
   String _syncMetadataReadDiag = '-'; // 最后一次读取诊断
   String _syncMetadataTestResult = '-'; // 自检结果
-  String _hwdecStatus = '-'; // 硬解码器状态（实际值 hwdec-current）
   String _voStatus = '-'; // 视频输出驱动
   DeviceCodecInfo? _deviceCodecInfo; // 设备硬解码能力
   String _videoCodec = '-'; // 视频编码格式
   String _videoResolution = '-'; // 视频分辨率
-  String _actualDecoder = '检测中...'; // 实际解码器
   String _actualDecoderFull = ''; // 实际解码器完整描述
   StreamSubscription? _logSubscription; // mpv 日志订阅
   StreamSubscription? _videoParamsSubscription; // 视频参数订阅
@@ -145,18 +143,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_player.platform is! NativePlayer) return;
     try {
       final native = _player.platform as NativePlayer;
+      // 优先使用 hwPixelformat（比 hwdec-current 可靠，Android 上 hwdec-current 有已知 bug）
+      final hwPF = await native.getProperty('video-params/hw-pixelformat');
       final hwdec = await native.getProperty('hwdec-current');
       final vo = await native.getProperty('vo');
       final codec = await native.getProperty('video-codec');
       if (mounted) {
         setState(() {
-          _hwdecStatus = hwdec.isEmpty ? '(软解码)' : hwdec;
           _voStatus = vo.isEmpty ? '-' : vo;
           if (codec.isNotEmpty) _videoCodec = codec;
-          // 如果日志还没检测到，用 hwdec-current 作为补充
-          if (_actualDecoder == '检测中...' && hwdec.isNotEmpty) {
-            _actualDecoder = hwdec;
+          // hwPixelformat 非空 = 硬解码生效
+          if (hwPF.isNotEmpty) {
+            _actualDecoderFull = '$hwPF ✅';
+          } else if (hwdec.isNotEmpty) {
             _actualDecoderFull = hwdec;
+          } else {
+            _actualDecoderFull = 'no (软解码)';
           }
         });
       }
@@ -171,7 +173,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       configuration: PlayerConfiguration(
         libass: true,
         bufferSize: settings.bufferSizeMB * 1024 * 1024,
-        vo: Platform.isAndroid ? 'mediacodec' : null,
       ),
     );
     _controller = VideoController(_player);
@@ -244,6 +245,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final fallbackValue = DecodeModeService.resolveFallback(settings.decodeMode);
       await native.setProperty('hwdec-software-fallback', fallbackValue);
 
+      // Phase 2c: 设置平台 VO（Android 需要 gpu，其他平台用默认值）
+      final platformVo = DecodeModeService.platformVo;
+      if (platformVo != null) {
+        await native.setProperty('vo', platformVo);
+      }
+
       // Phase 3: 监听 mpv 日志 — 实时检测解码状态
       _logSubscription?.cancel();
       _logSubscription = _player.stream.log.listen((log) {
@@ -252,7 +259,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         final decoder = DecodeModeService.parseActualDecoder(log.text);
         if (decoder != null && mounted) {
           setState(() {
-            _actualDecoder = decoder;
             _actualDecoderFull = _formatActualDecoder(decoder, status);
           });
         }
@@ -1622,7 +1628,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _debugRow('视频信息', _videoCodec != '-' ? '$_videoCodec, $_videoResolution' : _videoResolution),
           _debugRow('视频输出 vo', _voStatus),
           _debugRow('解码模式', AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
-          _debugRow('实际解码', _actualDecoderFull.isNotEmpty ? _actualDecoderFull : _hwdecStatus),
+          _debugRow('实际解码', _actualDecoderFull.isNotEmpty ? _actualDecoderFull : '检测中...'),
           if (_syncEvents.isNotEmpty) ...[
             const Divider(color: Colors.white24, height: 8),
             const Text('最近事件:', style: TextStyle(color: Colors.white54, fontSize: 11)),
@@ -1657,6 +1663,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _buildDeviceCapabilityText() {
     if (_deviceCodecInfo == null) return '检测中...';
     final info = _deviceCodecInfo!;
+    if (info.isUnknown) return '检测失败 (不影响播放)';
     if (!info.hasAnyHw) return '无硬解码器';
     return 'H264${info.hasH264Hw ? "✅" : "❌"} '
         'H265${info.hasHevcHw ? "✅" : "❌"} '

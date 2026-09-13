@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:collection';
+import 'dart:io';
 // ignore: implementation_imports
 import 'package:media_kit/ffi/ffi.dart';
 // ignore: implementation_imports
@@ -14,6 +15,7 @@ class DeviceCodecInfo {
   final bool hasVp9Hw;
   final bool hasAv1Hw;
   final List<String> hwDecoders;
+  final bool isUnknown;
 
   const DeviceCodecInfo({
     required this.hasH264Hw,
@@ -21,55 +23,96 @@ class DeviceCodecInfo {
     required this.hasVp9Hw,
     required this.hasAv1Hw,
     required this.hwDecoders,
+    this.isUnknown = false,
   });
+
+  /// decoder-list 查询失败时的降级状态
+  const DeviceCodecInfo.unknown()
+      : hasH264Hw = false,
+        hasHevcHw = false,
+        hasVp9Hw = false,
+        hasAv1Hw = false,
+        hwDecoders = const [],
+        isUnknown = true;
 
   bool get hasAnyHw => hasH264Hw || hasHevcHw || hasVp9Hw || hasAv1Hw;
 }
 
-/// 解码模式服务 — 参考 Yamby 的智能选择方案
+/// 平台 hwdec 值映射
+class _PlatformHwdec {
+  final String directValue; // HW 模式
+  final String copyValue; // HW+ 模式
+  const _PlatformHwdec(this.directValue, this.copyValue);
+}
+
+/// 解码模式服务 — 参考 Yamby 的智能选择方案，全平台适配
 class DecodeModeService {
+  /// 获取当前平台的 hwdec 值
+  static _PlatformHwdec _platformHwdecValues() {
+    if (Platform.isAndroid) {
+      return const _PlatformHwdec('mediacodec', 'mediacodec-copy');
+    }
+    if (Platform.isIOS || Platform.isMacOS) {
+      return const _PlatformHwdec('videotoolbox', 'videotoolbox-copy');
+    }
+    if (Platform.isWindows) {
+      return const _PlatformHwdec('d3d11va', 'd3d11va-copy');
+    }
+    if (Platform.isLinux) {
+      return const _PlatformHwdec('vaapi', 'vaapi-copy');
+    }
+    return const _PlatformHwdec('auto', 'auto-copy');
+  }
+
   /// 查询设备硬解能力（通过 mpv decoder-list）
   static Future<DeviceCodecInfo> queryDeviceCapabilities(int mpvHandle) async {
     try {
       final decoders = await _queryDecoders(mpvHandle);
+      if (decoders.isEmpty) {
+        return const DeviceCodecInfo.unknown();
+      }
       return DeviceCodecInfo(
         hasH264Hw: decoders.any(
-            (d) => d.toLowerCase().contains('h264') && d.toLowerCase().contains('mediacodec')),
+            (d) => d.startsWith('h264_') && _isHwDecoder(d)),
         hasHevcHw: decoders.any(
-            (d) => d.toLowerCase().contains('hevc') && d.toLowerCase().contains('mediacodec')),
+            (d) => d.startsWith('hevc_') && _isHwDecoder(d)),
         hasVp9Hw: decoders.any(
-            (d) => d.toLowerCase().contains('vp9') && d.toLowerCase().contains('mediacodec')),
+            (d) => d.startsWith('vp9_') && _isHwDecoder(d)),
         hasAv1Hw: decoders.any(
-            (d) => d.toLowerCase().contains('av1') && d.toLowerCase().contains('mediacodec')),
-        hwDecoders: decoders
-            .where((d) => d.toLowerCase().contains('mediacodec'))
-            .toList(),
+            (d) => d.startsWith('av1_') && _isHwDecoder(d)),
+        hwDecoders: decoders.where((d) => _isHwDecoder(d)).toList(),
       );
-    } catch (e) {
-      // 查询失败时返回空能力（不影响播放）
-      return const DeviceCodecInfo(
-        hasH264Hw: false,
-        hasHevcHw: false,
-        hasVp9Hw: false,
-        hasAv1Hw: false,
-        hwDecoders: [],
-      );
+    } catch (_) {
+      return const DeviceCodecInfo.unknown();
     }
   }
 
-  /// 根据模式 + 设备能力决定 hwdec 值
+  /// 判断 decoder-list 中的名称是否为硬件解码器（跨平台）
+  static bool _isHwDecoder(String name) {
+    return name.contains('_mediacodec') ||
+        name.contains('_videotoolbox') ||
+        name.contains('_d3d11va') ||
+        name.contains('_vaapi') ||
+        name.contains('_nvdec') ||
+        name.contains('_vdpau');
+  }
+
+  /// 根据模式 + 设备能力 + 平台决定 hwdec 值
   static String resolveHwdec(String mode, DeviceCodecInfo? deviceInfo) {
+    if (mode == 'sw') return 'no';
+
+    if (mode == 'auto') {
+      // 智能选择：有硬解能力 → auto-safe；无或未知 → auto-safe（让 mpv 自己判断）
+      return 'auto-safe';
+    }
+
+    // HW / HW+ 模式：根据平台返回正确值
+    final hw = _platformHwdecValues();
     switch (mode) {
-      case 'auto':
-        // 智能选择：有硬解能力 → auto-safe（让 mpv 选最优）；无 → 直接软解
-        if (deviceInfo == null) return 'auto-safe';
-        return deviceInfo.hasAnyHw ? 'auto-safe' : 'no';
       case 'hw+':
-        return 'mediacodec-copy';
+        return hw.copyValue;
       case 'hw':
-        return 'mediacodec';
-      case 'sw':
-        return 'no';
+        return hw.directValue;
       default:
         return 'auto-safe';
     }
@@ -81,32 +124,44 @@ class DecodeModeService {
     return (mode == 'hw' || mode == 'hw+') ? 'no' : '3';
   }
 
-  /// 从 mpv 日志判定实际解码状态
+  /// 获取当前平台的 VO 推荐值
+  static String? get platformVo {
+    if (Platform.isAndroid) return 'gpu';
+    return null; // 其他平台使用 mpv 默认值
+  }
+
+  /// 从 mpv 日志判定实际解码状态（跨平台）
   static DecodeStatus parseLogMessage(String logText) {
+    // 通用成功：所有平台都输出 "Using hardware decoding (XXX)"
+    if (logText.contains('Using hardware decoding')) {
+      return DecodeStatus.hwActive;
+    }
+    // Android 专属成功
     if (logText.contains('MediaCodec started successfully') ||
         logText.contains('HW-downloading from mediacodec')) {
       return DecodeStatus.hwActive;
     }
+    // 通用失败
     if (logText.contains('Error while decoding frame') ||
-        logText.contains('MediaCodec failed to start') ||
         logText.contains('Attempting next decoding method')) {
       return DecodeStatus.hwFailed;
     }
     return DecodeStatus.unknown;
   }
 
-  /// 从日志文本中提取实际解码器名称
+  /// 从日志文本中提取实际解码器名称（跨平台）
   static String? parseActualDecoder(String logText) {
-    // HW-downloading from mediacodec → mediacodec-copy
+    // 通用成功日志：所有平台都输出 "Using hardware decoding (XXX)"
+    if (logText.contains('Using hardware decoding')) {
+      final match =
+          RegExp(r'Using hardware decoding \((\w+)\)').firstMatch(logText);
+      if (match != null) return match.group(1);
+    }
+    // Android 专属：HW-downloading from mediacodec
     if (logText.contains('HW-downloading from mediacodec')) {
       return 'mediacodec-copy';
     }
-    // Using hardware decoding (mediacodec) → mediacodec
-    if (logText.contains('Using hardware decoding')) {
-      final match = RegExp(r'Using hardware decoding \((\w+)\)').firstMatch(logText);
-      if (match != null) return match.group(1);
-    }
-    // Fallback: mediacodec → no (software)
+    // 失败日志
     if (logText.contains('Error while decoding frame') ||
         logText.contains('Attempting next decoding method')) {
       return 'no';
@@ -114,7 +169,7 @@ class DecodeModeService {
     return null;
   }
 
-  /// 内部：通过 FFI 查询 mpv decoder-list
+  /// 内部：通过 FFI 查询 mpv decoder-list（带错误检查）
   static Future<HashSet<String>> _queryDecoders(int handle) async {
     NativeLibrary.ensureInitialized();
     final mpv = generated.MPV(DynamicLibrary.open(NativeLibrary.path));
@@ -123,24 +178,31 @@ class DecodeModeService {
     final name = 'decoder-list'.toNativeUtf8();
     final data = calloc<generated.mpv_node>();
     try {
-      mpv.mpv_get_property(
+      final result = mpv.mpv_get_property(
         Pointer.fromAddress(handle),
         name.cast(),
         generated.mpv_format.MPV_FORMAT_NODE,
         data.cast(),
       );
+      // 检查返回值：负数表示错误
+      if (result < 0) {
+        return decoders;
+      }
       if (data.ref.format == generated.mpv_format.MPV_FORMAT_NODE_ARRAY) {
         for (int i = 0; i < data.ref.u.list.ref.num; i++) {
           final decoder = data.ref.u.list.ref.values[i];
           if (decoder.format == generated.mpv_format.MPV_FORMAT_NODE_MAP) {
             String? decoderName;
             for (int j = 0; j < decoder.u.list.ref.num; j++) {
-              final k = decoder.u.list.ref.keys[j].cast<Utf8>().toDartString();
+              final k =
+                  decoder.u.list.ref.keys[j].cast<Utf8>().toDartString();
               final v = decoder.u.list.ref.values[j];
-              if (k == 'codec' && v.format == generated.mpv_format.MPV_FORMAT_STRING) {
+              if (k == 'codec' &&
+                  v.format == generated.mpv_format.MPV_FORMAT_STRING) {
                 decoderName ??= v.u.string.cast<Utf8>().toDartString();
               }
-              if (k == 'driver' && v.format == generated.mpv_format.MPV_FORMAT_STRING) {
+              if (k == 'driver' &&
+                  v.format == generated.mpv_format.MPV_FORMAT_STRING) {
                 decoderName ??= v.u.string.cast<Utf8>().toDartString();
               }
             }
