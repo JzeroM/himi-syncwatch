@@ -46,7 +46,7 @@ void main() {
     test('同步阈值配置正确', () {
       expect(AppConstants.syncThresholdMicro, equals(0.3));
       expect(AppConstants.syncThresholdMedium, equals(1.0));
-      expect(AppConstants.rtmHeartbeatIntervalMs, equals(2500));
+      expect(AppConstants.rtmHeartbeatIntervalMs, equals(5000));
     });
   });
 }

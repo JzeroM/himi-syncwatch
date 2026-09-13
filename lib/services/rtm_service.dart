@@ -368,6 +368,9 @@ class RtmService {
     List<String>? episodePosters,
     String? playUrl,
     String? token,
+    List<Map<String, dynamic>>? subtitleStreams,
+    List<Map<String, dynamic>>? audioStreams,
+    int? defaultAudioStreamIndex,
   }) async {
     if (_client == null) return;
 
@@ -385,6 +388,9 @@ class RtmService {
       if (episodePosters != null) 'episodePosters': episodePosters,
       if (playUrl != null) 'playUrl': playUrl,
       if (token != null) 'token': token,
+      if (subtitleStreams != null) 'subtitleStreams': subtitleStreams,
+      if (audioStreams != null) 'audioStreams': audioStreams,
+      if (defaultAudioStreamIndex != null) 'defaultAudioStreamIndex': defaultAudioStreamIndex,
     };
 
     try {

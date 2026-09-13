@@ -65,6 +65,30 @@ class MediaStream {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'Type': type,
+      'Codec': codec,
+      if (title != null) 'Title': title,
+      if (language != null) 'Language': language,
+      if (width != null) 'Width': width,
+      if (height != null) 'Height': height,
+      if (channels != null) 'Channels': channels,
+      if (isDefault != null) 'IsDefault': isDefault,
+      'Index': index,
+      'IsForced': isForced,
+      'IsExternal': isExternal,
+      if (displayTitle != null) 'DisplayTitle': displayTitle,
+      if (displayLanguage != null) 'DisplayLanguage': displayLanguage,
+      if (subtitleLocationType != null) 'SubtitleLocationType': subtitleLocationType,
+      if (channelLayout != null) 'ChannelLayout': channelLayout,
+      if (bitRate != null) 'BitRate': bitRate,
+      if (sampleRate != null) 'SampleRate': sampleRate,
+      if (videoRange != null) 'VideoRange': videoRange,
+      if (extendedVideoType != null) 'ExtendedVideoType': extendedVideoType,
+    };
+  }
+
   bool get isTextSubtitle => type == 'Subtitle';
   bool get isInternalStream => subtitleLocationType == 'InternalStream';
 

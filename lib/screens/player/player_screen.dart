@@ -90,6 +90,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Map<String, dynamic>? _roomData;
 
+  // 房间解散检测
+  bool _hasReceivedRoomInfo = false;
+  Timer? _roomInfoTimeout;
+
   // 播报板 + 在线用户
   final List<String> _broadcastMessages = [];
   int _onlineUserCount = 0;
@@ -677,6 +681,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
     _logSyncEvent('RTM 已连接, 频道: $_rtmChannel');
 
+    // 观众：检测频道内是否有人（房主是否在线）
+    if (!_isHost) {
+      final onlineCount = await rtmService.getOnlineUserCount(_rtmChannel!);
+      _logSyncEvent('频道在线人数: $onlineCount');
+      if (onlineCount == 0) {
+        _logSyncEvent('频道无人在线，房间已解散');
+        _showRoomDestroyedDialog();
+        return;
+      }
+      // 启动 roomInfo 等待超时（10 秒）
+      _roomInfoTimeout?.cancel();
+      _roomInfoTimeout = Timer(const Duration(seconds: 10), () {
+        if (mounted && !_hasReceivedRoomInfo) {
+          _logSyncEvent('等待 roomInfo 超时，房间可能已解散');
+          _showRoomDestroyedDialog();
+        }
+      });
+    }
+
     // 元数据自检（延迟 1 秒等 channel 稳定）
     Future.delayed(const Duration(seconds: 1), () async {
       if (!mounted || _rtmChannel == null) return;
@@ -731,6 +754,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               episodePosters: _episodePosters,
               playUrl: _currentPlayUrl,
               token: _currentToken,
+              subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
+              audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
+              defaultAudioStreamIndex: _embyDefaultAudioIndex,
             );
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
@@ -768,6 +794,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               episodePosters: _episodePosters,
               playUrl: _currentPlayUrl,
               token: _currentToken,
+              subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
+              audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
+              defaultAudioStreamIndex: _embyDefaultAudioIndex,
             );
           }
         } else {
@@ -924,6 +953,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isHost) return;
     if (_hasEpisodeList) return;
 
+    // 收到 roomInfo，取消超时
+    _hasReceivedRoomInfo = true;
+    _roomInfoTimeout?.cancel();
+
     // 记录房主 userId（用于 Presence 检测房主离线）
     final hostId = message['userId'] as String?;
     if (hostId != null && hostId.isNotEmpty) {
@@ -963,6 +996,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     if (_hasEpisodeList) {
       _addBroadcastMessage('已同步房间资源列表');
+
+      // 解析字幕/音轨数据
+      final subtitleStreamsRaw = message['subtitleStreams'];
+      final audioStreamsRaw = message['audioStreams'];
+      if (subtitleStreamsRaw is List) {
+        _embySubtitleStreams = subtitleStreamsRaw
+            .whereType<Map<String, dynamic>>()
+            .map((s) => MediaStream.fromJson(s))
+            .toList();
+      }
+      if (audioStreamsRaw is List) {
+        _embyAudioStreams = audioStreamsRaw
+            .whereType<Map<String, dynamic>>()
+            .map((s) => MediaStream.fromJson(s))
+            .toList();
+      }
+      _embyDefaultAudioIndex = message['defaultAudioStreamIndex'] as int?;
+      print('[Room] 字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条');
+
       // 从 roomInfo 消息中获取 playUrl 并播放
       final playUrl = message['playUrl'] as String?;
       final token = message['token'] as String?;
@@ -1420,6 +1472,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void dispose() {
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
+    _roomInfoTimeout?.cancel();
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
