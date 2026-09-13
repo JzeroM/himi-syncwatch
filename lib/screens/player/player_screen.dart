@@ -59,7 +59,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _rtmAppId;
   String? _hostUserId;
 
-  double _volume = 100;
+  double _volume = 50;
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
@@ -72,6 +72,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _showVolumeSlider = false;
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
+  bool _showDecodeModeMenu = false;
+
+  // 手势控制
+  bool _showGestureOverlay = false;
+  String _gestureHintText = '';
+  Timer? _gestureHintTimer;
+  IconData? _gestureOverlayIcon;
 
   List<SubtitleTrack> _subtitleTracks = [];
   SubtitleTrack? _currentSubtitle;
@@ -277,6 +284,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await native.setProperty('sub-border-size', '2');
       await native.setProperty('sub-shadow-offset', '1');
       await native.setProperty('sub-margin-y', '22');
+
+      // 音量默认 50%
+      await native.setProperty('volume', '50');
     }
   }
 
@@ -1210,6 +1220,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _showVolumeSlider = false;
       _showSubtitleMenu = false;
       _showAudioMenu = false;
+      _showDecodeModeMenu = false;
     });
   }
 
@@ -1519,15 +1530,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         backgroundColor: Colors.black,
         body: GestureDetector(
           onTap: () {
-            if (_showVolumeSlider || _showSubtitleMenu || _showAudioMenu) {
+            if (_showVolumeSlider || _showSubtitleMenu || _showAudioMenu || _showDecodeModeMenu) {
               _closeAllMenus();
             } else {
               _toggleControls();
             }
-        },
-        behavior: HitTestBehavior.opaque,
-        child: _buildResponsiveLayout(),
-      ),
+          },
+          onDoubleTap: _onDoubleTap,
+          onHorizontalDragEnd: _onHorizontalDragEnd,
+          behavior: HitTestBehavior.opaque,
+          child: _buildResponsiveLayout(),
+        ),
       ),
     );
   }
@@ -1612,6 +1625,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         // TopBar（渐变浮层）
         if (_showControls)
           Positioned(top: 0, left: 0, right: 0, child: _buildTopBar()),
+
+        // 解码模式选择面板
+        if (_showDecodeModeMenu)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 48,
+            right: 12,
+            child: _buildDecodeModePanel(),
+          ),
+
+        // 手势提示浮层（快进快退/双击播放暂停）
+        if (_showGestureOverlay)
+          Positioned(
+            bottom: 100,
+            left: 0,
+            right: 0,
+            child: _buildGestureHint(),
+          ),
 
         // Controls（底部渐变浮层，仅视频区域底部）
         if (_showControls && (_isPlayerReady || !_hasEpisodeList))
@@ -1745,19 +1775,212 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             },
           ),
           const Spacer(),
-          if (widget.roomCode != null)
+          // 解码模式按钮
+          GestureDetector(
+            onTap: () => setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _showDecodeModeMenu
+                    ? const Color(0xFF6366F1)
+                    : Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.memory, color: Colors.white, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? 'Auto',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (widget.roomCode != null) ...[
+            const SizedBox(width: 8),
             IconButton(
               icon: Icon(_showSyncDebug ? Icons.sync : Icons.sync_disabled, color: _showSyncDebug ? Colors.green : Colors.white54),
               tooltip: '同步调试',
               onPressed: () => setState(() => _showSyncDebug = !_showSyncDebug),
             ),
-          if (widget.roomCode != null)
             IconButton(
               icon: const Icon(Icons.share, color: Colors.white),
               tooltip: '分享房间',
               onPressed: _showShareRoomSheet,
             ),
+          ],
         ],
+      ),
+    );
+  }
+
+  // ========== 解码模式选择面板 ==========
+  Widget _buildDecodeModePanel() {
+    final currentMode = ref.watch(settingsProvider).decodeMode;
+    final modes = ['auto', 'hw+', 'hw', 'sw'];
+    final labels = {'auto': 'Auto', 'hw+': 'HW+', 'hw': 'HW', 'sw': 'SW'};
+    final descriptions = {
+      'auto': '智能选择',
+      'hw+': '硬解+回拷',
+      'hw': '纯硬解',
+      'sw': '纯软解',
+    };
+
+    return GestureDetector(
+      onTap: () {},
+      child: Container(
+        width: 160,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E2E),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: modes.map((mode) {
+            final isSelected = mode == currentMode;
+            return InkWell(
+              onTap: () => _switchDecodeMode(mode),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? const Color(0xFF6366F1).withValues(alpha: 0.3)
+                      : null,
+                  border: const Border(
+                    bottom: BorderSide(color: Colors.white12, width: 0.5),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isSelected
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color: isSelected ? const Color(0xFF6366F1) : Colors.white54,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            labels[mode]!,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight:
+                                  isSelected ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                          Text(
+                            descriptions[mode]!,
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _switchDecodeMode(String mode) async {
+    await ref.read(settingsProvider.notifier).update(decodeMode: mode);
+
+    if (_player.platform is NativePlayer) {
+      final native = _player.platform as NativePlayer;
+      final hwdecValue =
+          DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
+      await native.setProperty('hwdec', hwdecValue);
+
+      final fallbackValue = DecodeModeService.resolveFallback(mode);
+      await native.setProperty('vd-lavc-software-fallback', fallbackValue);
+    }
+
+    setState(() => _showDecodeModeMenu = false);
+  }
+
+  // ========== 手势控制 ==========
+  void _onDoubleTap() {
+    _togglePlayPause();
+    _showGestureIcon(_player.state.playing ? Icons.play_arrow : Icons.pause);
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    final delta = details.primaryVelocity ?? 0;
+    final seekDelta = (delta / 100 * 5000).round();
+    _seekRelative(seekDelta);
+  }
+
+  void _seekRelative(int deltaMs) {
+    final currentMs = _position.inMilliseconds;
+    final targetMs = (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
+    _player.seek(Duration(milliseconds: targetMs));
+
+    final seconds = (deltaMs / 1000).round();
+    _showGestureHint(seconds > 0 ? '+${seconds}s' : '${seconds}s');
+
+    if (widget.roomCode != null) {
+      _sendCommand(AppConstants.actionSeek, position: targetMs / 1000);
+    }
+  }
+
+  void _showGestureIcon(IconData icon) {
+    _gestureHintTimer?.cancel();
+    setState(() {
+      _gestureOverlayIcon = icon;
+      _showGestureOverlay = true;
+    });
+    _gestureHintTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _showGestureOverlay = false);
+    });
+  }
+
+  void _showGestureHint(String text) {
+    _gestureHintTimer?.cancel();
+    setState(() {
+      _gestureHintText = text;
+      _gestureOverlayIcon = null;
+      _showGestureOverlay = true;
+    });
+    _gestureHintTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => _showGestureOverlay = false);
+    });
+  }
+
+  Widget _buildGestureHint() {
+    if (_gestureOverlayIcon != null) {
+      return Center(
+        child: Icon(_gestureOverlayIcon!, color: Colors.white70, size: 48),
+      );
+    }
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          _gestureHintText,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
     );
   }
