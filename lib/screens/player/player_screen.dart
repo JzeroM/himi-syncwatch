@@ -10,6 +10,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
@@ -217,19 +218,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_player.platform is NativePlayer) {
       final native = _player.platform as NativePlayer;
 
-      // 硬解码
+      // 解码模式
       final settings = ref.read(settingsProvider);
-      if (settings.hardwareDecoding) {
+      final mode = settings.decodeMode;
+      String hwdecValue;
+      if (mode == 'sw') {
+        hwdecValue = 'no';
+      } else if (mode == 'auto') {
+        hwdecValue = 'auto';
+      } else {
+        // hw+ 或 hw
         if (Platform.isAndroid) {
-          await native.setProperty('hwdec', 'mediacodec-copy');
+          hwdecValue = mode == 'hw+' ? 'mediacodec-copy' : 'mediacodec';
         } else if (Platform.isIOS || Platform.isMacOS) {
-          await native.setProperty('hwdec', 'videotoolbox');
+          hwdecValue = 'videotoolbox';
         } else if (Platform.isWindows) {
-          await native.setProperty('hwdec', 'd3d11va');
+          hwdecValue = 'd3d11va';
         } else if (Platform.isLinux) {
-          await native.setProperty('hwdec', 'vaapi');
+          hwdecValue = 'vaapi';
+        } else {
+          hwdecValue = 'auto';
         }
       }
+      await native.setProperty('hwdec', hwdecValue);
 
       // 字幕
       await native.setProperty('sub-visibility', 'yes');
@@ -1570,7 +1581,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _debugRow('metadata 自检', _syncMetadataTestResult),
           const Divider(color: Colors.white24, height: 8),
           _debugRow('视频输出 vo', _voStatus),
-          _debugRow('硬解码 配置', _hwdecConfig),
+          _debugRow('解码模式', '${AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'} (${_hwdecConfig})'),
           _debugRow('硬解码 实际', _hwdecStatus),
           if (_syncEvents.isNotEmpty) ...[
             const Divider(color: Colors.white24, height: 8),

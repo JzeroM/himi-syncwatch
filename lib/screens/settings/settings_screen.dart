@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 
 const _bufferStops = [32, 64, 128, 256, 512, 1024];
@@ -22,13 +23,23 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
         children: [
-          SwitchListTile(
-            title: const Text('硬解码'),
-            subtitle: const Text('启用硬件加速解码，降低 CPU 占用'),
-            value: settings.hardwareDecoding,
-            onChanged: (value) {
-              ref.read(settingsProvider.notifier).update(hardwareDecoding: value);
-            },
+          ListTile(
+            title: const Text('解码方式'),
+            subtitle: const Text('建议默认使用 Auto，SW 将会有极大性能损耗'),
+            trailing: DropdownButton<String>(
+              value: settings.decodeMode,
+              onChanged: (value) {
+                if (value != null) {
+                  ref.read(settingsProvider.notifier).update(decodeMode: value);
+                }
+              },
+              items: AppSettings.decodeModeLabels.entries.map((e) {
+                return DropdownMenuItem(
+                  value: e.key,
+                  child: Text(e.value),
+                );
+              }).toList(),
+            ),
           ),
           const Divider(height: 1),
           Padding(

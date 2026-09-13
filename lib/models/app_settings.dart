@@ -1,28 +1,56 @@
 class AppSettings {
-  final bool hardwareDecoding;
+  final String decodeMode; // 'auto', 'hw+', 'hw', 'sw'
   final int bufferSizeMB;
 
   const AppSettings({
-    this.hardwareDecoding = true,
+    this.decodeMode = 'auto',
     this.bufferSizeMB = 32,
   });
 
-  AppSettings copyWith({bool? hardwareDecoding, int? bufferSizeMB}) {
+  bool get hardwareDecoding => decodeMode != 'sw';
+
+  AppSettings copyWith({String? decodeMode, int? bufferSizeMB}) {
     return AppSettings(
-      hardwareDecoding: hardwareDecoding ?? this.hardwareDecoding,
+      decodeMode: decodeMode ?? this.decodeMode,
       bufferSizeMB: bufferSizeMB ?? this.bufferSizeMB,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'hardwareDecoding': hardwareDecoding,
+        'decodeMode': decodeMode,
         'bufferSizeMB': bufferSizeMB,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
+    // 兼容旧版 bool hardwareDecoding
+    final raw = json['decodeMode'];
+    String mode;
+    if (raw is String && ['auto', 'hw+', 'hw', 'sw'].contains(raw)) {
+      mode = raw;
+    } else if (raw == true || json['hardwareDecoding'] == true) {
+      mode = 'auto';
+    } else if (raw == false || json['hardwareDecoding'] == false) {
+      mode = 'sw';
+    } else {
+      mode = 'auto';
+    }
     return AppSettings(
-      hardwareDecoding: json['hardwareDecoding'] as bool? ?? true,
+      decodeMode: mode,
       bufferSizeMB: json['bufferSizeMB'] as int? ?? 64,
     );
   }
+
+  static const decodeModeLabels = {
+    'auto': 'Auto',
+    'hw+': 'HW+',
+    'hw': 'HW',
+    'sw': 'SW',
+  };
+
+  static const decodeModeMpvValues = {
+    'auto': 'auto',
+    'hw+': 'mediacodec-copy',
+    'hw': 'mediacodec',
+    'sw': 'no',
+  };
 }
