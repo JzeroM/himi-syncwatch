@@ -182,23 +182,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     }
 
-    _initPlayerProperties();
     _setupPlayerListeners();
 
     if (widget.roomCode != null) {
       _setupRoomSync();
     }
 
-    // 从详情页集数列表进入：自动播放点击的那一集
-    if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    // 先完成硬件解码设置，再启动播放，避免竞态
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _initPlayerProperties();
+      if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
         final targetIndex = _episodeIds.indexOf(widget.itemId);
         _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
-      });
-    }
+      }
+    });
   }
 
-  void _initPlayerProperties() async {
+  Future<void> _initPlayerProperties() async {
     if (_player.platform is NativePlayer) {
       final native = _player.platform as NativePlayer;
 
