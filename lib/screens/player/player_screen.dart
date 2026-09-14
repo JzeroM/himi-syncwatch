@@ -377,7 +377,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _brightness = await ScreenBrightness().application;
       } catch (_) {}
       await _initPlayerProperties();
-      if (mounted) setState(() => _isPlayerReady = true);
       if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
         final targetIndex = _episodeIds.indexOf(widget.itemId);
         _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
