@@ -1830,10 +1830,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     final showPanel = widget.roomCode != null && _showPanel;
 
-    if (showPanel && _currentEpisodeIndex < 0) {
-      // 未选中任何资源：资源面板全屏
-      return _buildResourcePanel();
-    } else if (isPortrait && showPanel) {
+    if (isPortrait && showPanel) {
       // 手机竖屏：视频在上，资源面板在下
       return Column(
         children: [
