@@ -267,6 +267,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _actualDecoderFull = ''; // 实际解码器完整描述
   StreamSubscription? _logSubscription; // mpv 日志订阅
   StreamSubscription? _videoParamsSubscription; // 视频参数订阅
+  List<String> _logEntries = []; // mpv 日志条目用于超时检测
+  DateTime _logStartTime = DateTime.now(); // 播放开始时间，用于日志检测超时
   List<String> _syncEvents = [];
   final GlobalKey _qrKey = GlobalKey();
 
@@ -401,6 +403,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _logSubscription?.cancel();
       _logSubscription = _player.stream.log.listen((log) {
         LogService().log('mpv', log.text);
+        _logEntries.add(log.text);
+        if (_logEntries.length > 20) _logEntries.removeAt(0);
         final status = DecodeModeService.parseLogMessage(log.text);
         // 从日志提取实际解码器
         final decoder = DecodeModeService.parseActualDecoder(log.text);
@@ -441,6 +445,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (decoder == 'no') return 'no (软解码) ❌';
     if (status == DecodeStatus.hwActive) return '$decoder ✅';
     if (status == DecodeStatus.hwFailed) return '$decoder ❌ 已回退';
+
+    // 关键 fallback：如果日志监听 3 秒未捕获到解码信息，显示检测中
+    if (_logEntries.isEmpty && DateTime.now().difference(_logStartTime).inSeconds > 3) {
+      return '检测中...';
+    }
     return '$decoder';
   }
 
