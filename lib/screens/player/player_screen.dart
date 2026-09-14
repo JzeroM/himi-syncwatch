@@ -368,6 +368,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     if (widget.roomCode != null) {
       _setupRoomSync();
+      _switchToLandscape(_OrientationMode.landscapeLeft);
     }
 
     // 先完成硬件解码设置，再启动播放，避免竞态
@@ -2682,10 +2683,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 if (_roomData != null && _isHost && !_player.state.playing) ...[
                   GestureDetector(
                     onTap: () async {
+                      SystemChrome.setPreferredOrientations([
+                        DeviceOrientation.portraitUp,
+                      ]);
+                      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
                       final itemData = await showSearch<Map<String, dynamic>?>(
                         context: context,
                         delegate: RoomSearchDelegate(ref, roomCode: widget.roomCode!),
                       );
+                      _switchToLandscape(_OrientationMode.landscapeLeft);
                       if (itemData != null && mounted) {
                         final resourceData = await context.push<Map<String, dynamic>>(
                           '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}',
