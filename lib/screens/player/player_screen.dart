@@ -293,19 +293,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_player.platform is! NativePlayer) return;
     try {
       final native = _player.platform as NativePlayer;
-      final hwdec = await native.getProperty('hwdec-current');
       final vo = await native.getProperty('vo');
       final codec = await native.getProperty('video-codec');
       if (mounted) {
         setState(() {
           _voStatus = vo.isEmpty ? '-' : vo;
           if (codec.isNotEmpty) _videoCodec = codec;
-          // hwdec-current 非空且不是 "no" = 硬解码生效
-          if (hwdec.isNotEmpty && hwdec != 'no') {
-            _actualDecoderFull = '$hwdec ✅';
-          } else {
-            _actualDecoderFull = 'no (软解码)';
-          }
         });
       }
     } catch (_) {}
