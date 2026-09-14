@@ -907,27 +907,35 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                               ),
                             ),
                             const SizedBox(height: 12),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.asset(
-                                step.image,
-                                fit: BoxFit.contain,
-                                height: 220,
-                                errorBuilder: (_, __, ___) => Container(
+                            GestureDetector(
+                              onTap: () => _showFullImage(context, step.image),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.asset(
+                                  step.image,
+                                  fit: BoxFit.contain,
                                   height: 220,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey[200],
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '请将截图放到:\n${step.image}',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                                  errorBuilder: (_, __, ___) => Container(
+                                    height: 220,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[200],
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '请将截图放到:\n${step.image}',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '点击放大',
+                              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
                             ),
                             const SizedBox(height: 12),
                             Text(
@@ -966,6 +974,32 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                 ),
                 const SizedBox(height: 8),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFullImage(BuildContext context, String imagePath) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: EdgeInsets.zero,
+        backgroundColor: Colors.black,
+        child: GestureDetector(
+          onTap: () => Navigator.pop(ctx),
+          child: InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 5.0,
+            child: Center(
+              child: Image.asset(
+                imagePath,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Text('图片加载失败', style: TextStyle(color: Colors.white)),
+                ),
+              ),
             ),
           ),
         ),
