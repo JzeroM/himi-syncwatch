@@ -52,6 +52,52 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 enum _OrientationMode { portraitUp, landscapeLeft, landscapeRight }
 
+class _ResourceItem {
+  final String id;
+  final String name;
+  final int season;
+  final int number;
+  final String poster;
+  final String seriesName;
+
+  const _ResourceItem({
+    required this.id,
+    required this.name,
+    this.season = 0,
+    this.number = 0,
+    this.poster = '',
+    this.seriesName = '',
+  });
+
+  bool get isMovie => season == 0 && number == 0 && seriesName.isEmpty;
+}
+
+class _SeasonGroup {
+  final int seasonNumber;
+  final List<_ResourceItem> episodes;
+  bool collapsed = true;
+
+  _SeasonGroup({
+    required this.seasonNumber,
+    required this.episodes,
+  });
+}
+
+class _ResourceGroup {
+  final String name;
+  final bool isMovie;
+  final List<_SeasonGroup> seasons;
+  bool collapsed = true;
+
+  _ResourceGroup({
+    required this.name,
+    required this.isMovie,
+    required this.seasons,
+  });
+
+  int get totalCount => seasons.fold(0, (sum, s) => sum + s.episodes.length);
+}
+
 class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
   late final Player _player;
   late final VideoController _controller;
@@ -122,7 +168,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   final ScrollController _broadcastScrollController = ScrollController();
   String? _audienceName;
 
-  // 剧集资源列表
+  // 剧集资源列表（扁平数组，保持 RTM 兼容）
   List<String> _episodeIds = [];
   List<String> _episodeNames = [];
   List<int> _episodeSeasons = [];
@@ -132,7 +178,78 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   int _currentEpisodeIndex = -1;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
-  bool _seriesCollapsed = false;
+
+  // 分组缓存（由 _rebuildGroups 从扁平数组计算）
+  List<_ResourceGroup> _resourceGroups = [];
+
+  void _rebuildGroups() {
+    final groups = <String, _ResourceGroup>{};
+
+    for (int i = 0; i < _episodeIds.length; i++) {
+      final season = _episodeSeasons[i];
+      final number = _episodeNumbers[i];
+      final name = _episodeNames[i];
+      final poster = i < _episodePosters.length ? _episodePosters[i] : '';
+      final id = _episodeIds[i];
+
+      final isMovie = season == 0 && number == 0 && _seriesName.isEmpty;
+
+      final groupName = isMovie ? '电影' : _seriesName;
+
+      final item = _ResourceItem(
+        id: id,
+        name: name,
+        season: season,
+        number: number,
+        poster: poster,
+        seriesName: _seriesName,
+      );
+
+      groups.putIfAbsent(groupName, () => _ResourceGroup(
+        name: groupName,
+        isMovie: isMovie,
+        seasons: [],
+      ));
+
+      final group = groups[groupName]!;
+      _SeasonGroup seasonGroup = group.seasons.cast<_SeasonGroup?>().firstWhere(
+        (s) => s!.seasonNumber == season,
+        orElse: () => _SeasonGroup(seasonNumber: season, episodes: []),
+      )!;
+
+      if (!group.seasons.any((s) => s.seasonNumber == season)) {
+        group.seasons.add(seasonGroup);
+        group.seasons.sort((a, b) => a.seasonNumber.compareTo(b.seasonNumber));
+      }
+
+      seasonGroup.episodes.add(item);
+    }
+
+    _resourceGroups = groups.values.toList();
+    // 电影组排在前面
+    _resourceGroups.sort((a, b) {
+      if (a.isMovie && !b.isMovie) return -1;
+      if (!a.isMovie && b.isMovie) return 1;
+      return a.name.compareTo(b.name);
+    });
+
+    // 恢复折叠状态：当前播放的集所在组自动展开
+    if (_currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodeIds.length) {
+      final curSeason = _episodeSeasons[_currentEpisodeIndex];
+      final curSeries = _seriesName;
+      final curGroupName = curSeries.isEmpty ? '电影' : curSeries;
+      for (final g in _resourceGroups) {
+        if (g.name == curGroupName) {
+          g.collapsed = false;
+          for (final s in g.seasons) {
+            if (s.seasonNumber == curSeason) {
+              s.collapsed = false;
+            }
+          }
+        }
+      }
+    }
+  }
   bool _roomSyncInitializing = false;
 
   // 同步调试面板
@@ -227,10 +344,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _episodePosters = pendingEpisodes.map((e) => e['poster'] as String? ?? '').toList();
         _seriesName = pendingEpisodes.first['seriesName'] as String? ?? '';
         _hasEpisodeList = true;
-        // 读完清空 provider，避免重复使用
         ref.read(pendingRoomEpisodesProvider.notifier).state = null;
       } else if (pendingMovie != null) {
-        // 电影：单条记录
         _episodeIds = [pendingMovie['id'] as String];
         _episodeNames = [pendingMovie['name'] as String? ?? '电影'];
         _episodeSeasons = [0];
@@ -240,6 +355,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _hasEpisodeList = true;
         ref.read(pendingRoomMovieProvider.notifier).state = null;
       }
+      _rebuildGroups();
     }
 
     _setupPlayerListeners();
@@ -256,6 +372,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _brightness = await ScreenBrightness().application;
       } catch (_) {}
       await _initPlayerProperties();
+      if (mounted) setState(() => _isPlayerReady = true);
       if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
         final targetIndex = _episodeIds.indexOf(widget.itemId);
         _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
@@ -373,7 +490,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (widget.roomCode == null && mounted) {
       _switchToLandscape(_OrientationMode.landscapeLeft);
     }
-    _autoExpandSeries();
+    _rebuildGroups();
   }
 
   Future<String?> _loadStream({
@@ -510,7 +627,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
 
       await _player.play();
-      _autoExpandSeries();
+      _rebuildGroups();
       _logSyncEvent('播放器打开成功');
       Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
       print('[Sync] 播放器打开成功');
@@ -1040,6 +1157,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         });
       }
     }
+    _rebuildGroups();
 
     if (_hasEpisodeList) {
       _addBroadcastMessage('已同步房间资源列表');
@@ -1143,13 +1261,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
   }
 
-  bool get _isSeries => _seriesName.isNotEmpty && _episodeIds.length > 1;
-
-  void _autoExpandSeries() {
-    if (_isSeries && _seriesCollapsed) {
-      setState(() => _seriesCollapsed = false);
-    }
-  }
+  int get _totalEpisodeCount => _episodeIds.length;
 
   void _startHeartbeat() {
     _heartbeatTimer = Timer.periodic(
@@ -1361,6 +1473,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     _hasEpisodeList = _episodeIds.isNotEmpty;
     _addBroadcastMessage('已移除: $removedName');
+    _rebuildGroups();
     setState(() {});
 
     // 发送删除命令
@@ -1392,6 +1505,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
 
     _hasEpisodeList = _episodeIds.isNotEmpty;
+    _rebuildGroups();
     setState(() {});
   }
 
@@ -1434,7 +1548,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _addBroadcastMessage('已添加: $name');
       }
     }
-    _autoExpandSeries();
+    _rebuildGroups();
     setState(() {});
   }
 
@@ -2351,7 +2465,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 // 上一集
                 if (_canControlPlayback &&
                     _hasEpisodeList &&
-                    _episodeIds.length > 1)
+                    _totalEpisodeCount > 1)
                   GestureDetector(
                     onTap: _currentEpisodeIndex > 0
                         ? () => _switchToEpisode(_currentEpisodeIndex - 1)
@@ -2366,7 +2480,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   ),
                 if (_canControlPlayback &&
                     _hasEpisodeList &&
-                    _episodeIds.length > 1)
+                    _totalEpisodeCount > 1)
                   const SizedBox(width: 8),
 
                 // 播放/暂停
@@ -2386,15 +2500,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 // 下一集
                 if (_canControlPlayback &&
                     _hasEpisodeList &&
-                    _episodeIds.length > 1)
+                    _totalEpisodeCount > 1)
                   GestureDetector(
-                    onTap: _currentEpisodeIndex < _episodeIds.length - 1
+                    onTap: _currentEpisodeIndex < _totalEpisodeCount - 1
                         ? () =>
                             _switchToEpisode(_currentEpisodeIndex + 1)
                         : null,
                     child: Icon(
                       Icons.skip_next,
-                      color: _currentEpisodeIndex < _episodeIds.length - 1
+                      color: _currentEpisodeIndex < _totalEpisodeCount - 1
                           ? Colors.white
                           : Colors.white24,
                       size: 28,
@@ -2402,7 +2516,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   ),
                 if (_canControlPlayback &&
                     _hasEpisodeList &&
-                    _episodeIds.length > 1)
+                    _totalEpisodeCount > 1)
                   const SizedBox(width: 8),
 
                 const Spacer(),
@@ -2542,10 +2656,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             ),
             child: Row(
               children: [
-                Expanded(
+                const Expanded(
                   child: Text(
-                    _seriesName.isNotEmpty ? _seriesName : '资源',
-                    style: const TextStyle(
+                    '资源',
+                    style: TextStyle(
                       color: Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -2561,7 +2675,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         delegate: RoomSearchDelegate(ref, roomCode: widget.roomCode!),
                       );
                       if (itemData != null && mounted) {
-                        // 跳转详情页（roomMode），等待用户点击"加入资源"后返回数据
                         final resourceData = await context.push<Map<String, dynamic>>(
                           '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}',
                         );
@@ -2616,22 +2729,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             ),
           ),
 
-          // 剧集列表
+          // 资源分组列表
           Expanded(
-            child: _episodeIds.isEmpty
+            child: _resourceGroups.isEmpty
                 ? const Center(
                     child: Text('暂无资源',
                         style: TextStyle(
                             color: Colors.white24, fontSize: 13)),
                   )
-                : _isSeries
-                    ? _buildSeriesCollapseList()
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        itemCount: _episodeIds.length,
-                        itemBuilder: (ctx, i) =>
-                            _buildEpisodeListItem(i),
-                      ),
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: _resourceGroups.length,
+                    itemBuilder: (ctx, i) => _buildGroupWidget(_resourceGroups[i]),
+                  ),
           ),
 
           // 播报板（底部）
@@ -2641,26 +2751,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     );
   }
 
-  Widget _buildSeriesCollapseList() {
+  Widget _buildGroupWidget(_ResourceGroup group) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 折叠标题栏
+        // 组标题（电影 / 剧名）
         InkWell(
-          onTap: () => setState(() => _seriesCollapsed = !_seriesCollapsed),
+          onTap: () => setState(() => group.collapsed = !group.collapsed),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             color: const Color(0xFF16213E),
             child: Row(
               children: [
                 Icon(
-                  _seriesCollapsed ? Icons.chevron_right : Icons.expand_more,
+                  group.collapsed ? Icons.chevron_right : Icons.expand_more,
                   color: Colors.white70,
                   size: 20,
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    _seriesName,
+                    group.name,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13,
@@ -2670,7 +2781,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   ),
                 ),
                 Text(
-                  '(${_episodeIds.length}集)',
+                  group.isMovie ? '(${group.totalCount})' : '(${group.totalCount}集)',
                   style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
               ],
@@ -2678,32 +2789,75 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           ),
         ),
 
-        // 展开时显示集列表
-        if (!_seriesCollapsed)
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              itemCount: _episodeIds.length,
-              itemBuilder: (ctx, i) => _buildEpisodeListItem(i),
-            ),
-          ),
+        // 展开内容
+        if (!group.collapsed)
+          if (group.isMovie)
+            // 电影组：直接列出
+            ...group.seasons.first.episodes.map((item) {
+              final flatIndex = _findFlatIndex(item.id);
+              return _buildEpisodeListItem(flatIndex, item);
+            })
+          else
+            // 电视剧组：按季分组
+            ...group.seasons.map((season) => _buildSeasonWidget(group, season)),
       ],
     );
   }
 
-  Widget _buildEpisodeListItem(int index) {
-    final isPlaying = index == _currentEpisodeIndex;
-    final season =
-        _episodeSeasons.length > index ? _episodeSeasons[index] : 0;
-    final number =
-        _episodeNumbers.length > index ? _episodeNumbers[index] : 0;
-    final name =
-        _episodeNames.length > index ? _episodeNames[index] : '';
-    final poster =
-        _episodePosters.length > index ? _episodePosters[index] : null;
+  Widget _buildSeasonWidget(_ResourceGroup group, _SeasonGroup season) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 季标题
+        InkWell(
+          onTap: () => setState(() => season.collapsed = !season.collapsed),
+          child: Container(
+            padding: const EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6),
+            color: const Color(0xFF1A1A2E),
+            child: Row(
+              children: [
+                Icon(
+                  season.collapsed ? Icons.chevron_right : Icons.expand_more,
+                  color: Colors.white54,
+                  size: 16,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '第${season.seasonNumber}季',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Text(
+                  '(${season.episodes.length}集)',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ),
 
-    // 电影：season==0 && number==0 时为电影，不显示 S00E00
-    final isMovie = season == 0 && number == 0 && _seriesName.isEmpty;
+        // 展开时显示集列表
+        if (!season.collapsed)
+          ...season.episodes.map((item) {
+            final flatIndex = _findFlatIndex(item.id);
+            return _buildEpisodeListItem(flatIndex, item);
+          }),
+      ],
+    );
+  }
+
+  int _findFlatIndex(String itemId) {
+    return _episodeIds.indexOf(itemId);
+  }
+
+  Widget _buildEpisodeListItem(int flatIndex, _ResourceItem item) {
+    final isPlaying = flatIndex == _currentEpisodeIndex;
+    final isMovie = item.isMovie;
 
     return InkWell(
       onTap: () {
@@ -2711,7 +2865,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (isPlaying) {
           _togglePlayPause();
         } else {
-          _switchToEpisode(index);
+          _switchToEpisode(flatIndex);
         }
       },
       child: Container(
@@ -2739,7 +2893,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   if (isPlaying) {
                     _togglePlayPause();
                   } else {
-                    _switchToEpisode(index);
+                    _switchToEpisode(flatIndex);
                   }
                 },
                 child: Icon(
@@ -2760,8 +2914,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               child: SizedBox(
                 width: 56,
                 height: 36,
-                child: poster != null && poster.isNotEmpty
-                    ? EmbyImage(url: poster, fit: BoxFit.cover)
+                child: item.poster.isNotEmpty
+                    ? EmbyImage(url: item.poster, fit: BoxFit.cover)
                     : Container(
                         color: Colors.grey[800],
                         child: const Icon(Icons.movie,
@@ -2775,7 +2929,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             Expanded(
               child: isMovie
                   ? Text(
-                      name,
+                      item.name,
                       style: TextStyle(
                         color: isPlaying ? Colors.white : Colors.white54,
                         fontSize: 12,
@@ -2787,7 +2941,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'S${season.toString().padLeft(2, '0')}E${number.toString().padLeft(2, '0')}',
+                          'S${item.season.toString().padLeft(2, '0')}E${item.number.toString().padLeft(2, '0')}',
                           style: TextStyle(
                             color: isPlaying
                                 ? const Color(0xFF6366F1)
@@ -2798,7 +2952,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          name,
+                          item.name,
                           style: TextStyle(
                             color: isPlaying
                                 ? Colors.white
@@ -2815,7 +2969,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             // 删除按钮（仅房主）
             if (_isHost)
               GestureDetector(
-                onTap: () => _removeEpisode(index),
+                onTap: () => _removeEpisode(flatIndex),
                 child: const Icon(Icons.close,
                     color: Colors.white24, size: 18),
               ),
