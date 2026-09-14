@@ -60,3 +60,6 @@ server/.env
 
 # Clawbench
 .clawbench/
+
+# Web build artifacts
+web/
