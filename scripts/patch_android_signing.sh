@@ -15,12 +15,12 @@ echo "🔑 配置 Android APK 签名..."
 # 1. 解码 keystore 文件
 echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/himi-release.jks
 
-# 2. 写入 key.properties
-cat > android/app/key.properties << EOF
+# 2. 写入 key.properties（放在 android/ 根目录，与 rootProject.file('key.properties') 对应）
+cat > android/key.properties << EOF
 storePassword=${ANDROID_KEYSTORE_PASSWORD}
 keyPassword=${ANDROID_KEY_PASSWORD}
 keyAlias=${ANDROID_KEY_ALIAS}
-storeFile=himi-release.jks
+storeFile=app/himi-release.jks
 EOF
 
 # 3. 注入签名配置到 build.gradle（不覆写，保留 patch_android.sh 的所有修改）
@@ -47,6 +47,7 @@ for path in glob.glob('android/app/build.gradle'):
             t = t[:pos] + key_props_block + t[pos:]
 
     # 3b. 在 buildTypes 之前插入 signingConfigs 块
+    # 注意：检查 'signingConfigs {' 块是否存在，而非仅检查 'signingConfigs' 字符串
     signing_configs_block = (
         "    signingConfigs {\n"
         "        release {\n"
@@ -57,7 +58,7 @@ for path in glob.glob('android/app/build.gradle'):
         "        }\n"
         "    }\n\n"
     )
-    if 'signingConfigs' not in t:
+    if 'signingConfigs {' not in t:
         anchor = '    buildTypes {'
         pos = t.find(anchor)
         if pos != -1:
@@ -79,4 +80,4 @@ PYEOF
 
 echo "✅ Android 签名配置完成"
 echo "   keystore: android/app/himi-release.jks"
-echo "   key.properties: android/app/key.properties"
+echo "   key.properties: android/key.properties"
