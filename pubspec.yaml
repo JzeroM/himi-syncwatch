@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HimiSync - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.0.11+81
+version: 1.0.12+82
 
 environment:
   sdk: ^3.6.0
@@ -16,7 +16,7 @@ dependencies:
   riverpod_annotation: ^2.6.1
   # 播放器
   media_kit: ^1.1.11
-  media_kit_video: ^1.2.5
+  media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.5
   # 声网 RTM（中国区）
   agora_rtm: ^2.2.5
