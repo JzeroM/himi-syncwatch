@@ -29,6 +29,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -75,7 +76,7 @@ class _ResourceItem {
 class _SeasonGroup {
   final int seasonNumber;
   final List<_ResourceItem> episodes;
-  bool collapsed = false;
+  bool collapsed = true;
 
   _SeasonGroup({
     required this.seasonNumber,
@@ -87,7 +88,7 @@ class _ResourceGroup {
   final String name;
   final bool isMovie;
   final List<_SeasonGroup> seasons;
-  bool collapsed = false;
+  bool collapsed = true;
 
   _ResourceGroup({
     required this.name,
@@ -256,7 +257,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _roomSyncInitializing = false;
 
   // 同步调试面板
-  bool _showSyncDebug = false;
   String _syncRtmChannel = '-';
   String _syncRtmStatus = '未连接';
   String _syncMetadataPlayUrl = '空';
@@ -275,7 +275,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   List<String> _syncEvents = [];
   final GlobalKey _qrKey = GlobalKey();
 
+  // 调试面板折叠状态
+  bool _debugSectionInfo = true;
+  bool _debugSectionDevice = false;
+  bool _debugSectionLog = true;
+
+  // 调试面板拖拽位置
+  double _debugPanelX = 20;
+  double _debugPanelY = 100;
+
   void _logSyncEvent(String event) {
+    LogService().log('Sync', event);
     final now = DateTime.now();
     final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
     setState(() {
@@ -406,6 +416,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // Phase 3: 监听 mpv 日志 — 实时检测解码状态
       _logSubscription?.cancel();
       _logSubscription = _player.stream.log.listen((log) {
+        LogService().log('mpv', log.text);
         final status = DecodeModeService.parseLogMessage(log.text);
         // 从日志提取实际解码器
         final decoder = DecodeModeService.parseActualDecoder(log.text);
@@ -480,7 +491,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           });
         }
       } catch (e) {
-        print('[Player] 获取 Emby 详情失败: $e');
+        LogService().log('Player', '获取 Emby 详情失败: $e');
       }
     }
 
@@ -544,7 +555,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       return url;
     } catch (e) {
-      print('[Player] 加载流失败: $e');
+      LogService().log('Player', '加载流失败: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('播放失败: $e')),
@@ -555,7 +566,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   Future<String> _resolveStreamUrl(String url, String token) async {
-    print('[Stream] _resolveStreamUrl: 原始URL=${url.substring(0, url.length.clamp(0, 120))}');
+    LogService().log('Stream', '_resolveStreamUrl: 原始URL=${url.substring(0, url.length.clamp(0, 120))}');
     try {
       final client = HttpClient()
         ..badCertificateCallback = (_, __, ___) => true;
@@ -573,16 +584,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         final location = response.headers.value('location');
         if (location != null && location.isNotEmpty) {
           client.close(force: true);
-          print('[Stream] 302 重定向到: ${location.substring(0, location.length.clamp(0, 120))}');
+          LogService().log('Stream', '302 重定向到: ${location.substring(0, location.length.clamp(0, 120))}');
           return location;
         }
       }
 
       client.close(force: true);
-      print('[Stream] 无重定向, status=${response.statusCode}, 返回原始URL');
+      LogService().log('Stream', '无重定向, status=${response.statusCode}, 返回原始URL');
       return url;
     } catch (e) {
-      print('[Stream] _resolveStreamUrl 异常: $e, 返回原始URL');
+      LogService().log('Stream', '_resolveStreamUrl 异常: $e, 返回原始URL');
       return url;
     }
   }
@@ -603,7 +614,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // 观众自行解析重定向
       final resolvedUrl = await _resolveStreamUrl(playUrl, token);
-      print('[Sync] URL解析完成: ${playUrl.length}字符 → ${resolvedUrl.length}字符');
+      LogService().log('Sync', 'URL解析完成: ${playUrl.length}字符 → ${resolvedUrl.length}字符');
 
       // 解析完成，检查是否已被更新的请求抢占
       if (requestId != _playRequestId || !mounted) return;
@@ -635,10 +646,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _rebuildGroups();
       _logSyncEvent('播放器打开成功');
       Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
-      print('[Sync] 播放器打开成功');
+      LogService().log('Sync', '播放器打开成功');
     } catch (e) {
       _logSyncEvent('播放器打开失败: $e');
-      print('[Sync] 播放器打开失败: $e');
+      LogService().log('Sync', '播放器打开失败: $e');
       _addBroadcastMessage('同步播放失败: $e');
     } finally {
       if (requestId == _playRequestId) _isSyncing = false;
@@ -880,23 +891,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
 
     // 1. 设置消息监听器（subscribe 之后立即设置，确保不丢消息）
-    print('[Room] ${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
+    LogService().log('Room', '${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
     _rtmSubscription = rtmService.messageStream.listen((message) async {
       if (!mounted) return;
       final senderId = message['userId'];
       if (senderId == _myUserId) return;
 
       final type = message['type'];
-      print('[Room] 收到消息 type=$type, sender=$senderId');
+      LogService().log('Room', '收到消息 type=$type, sender=$senderId');
       if (type == AppConstants.msgTypeHeartbeat) {
         _handleHeartbeat(message);
       } else if (type == AppConstants.msgTypeRoomInfo) {
-        print('[Room] 收到 roomInfo, episodeIds=${message['episodeIds']?.length ?? 0}');
+        LogService().log('Room', '收到 roomInfo, episodeIds=${message['episodeIds']?.length ?? 0}');
         _logSyncEvent('收到 roomInfo (${message['episodeIds']?.length ?? 0}集)');
         _handleRoomInfo(message);
       } else if (type == AppConstants.msgTypeCommand) {
         final action = message['action'] as String?;
-        print('[Room] 收到命令 action=$action');
+        LogService().log('Room', '收到命令 action=$action');
         if (action == 'join') {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 加入了房间');
@@ -904,7 +915,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _refreshOnlineCount(rtmService);
           // 主持人发送房间信息（含媒体数据 + 剧集列表 + playUrl）
           if (_isHost) {
-            print('[Room] 主持人发送 roomInfo, episodeCount=${_episodeIds.length}');
+            LogService().log('Room', '主持人发送 roomInfo, episodeCount=${_episodeIds.length}');
             await rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
               mediaItemId: widget.itemId,
@@ -928,7 +939,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
               final position = _player.state.position.inMilliseconds / 1000.0;
-              print('[Room] 主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
+              LogService().log('Room', '主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
               await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
                 episodeIndex: _currentEpisodeIndex,
@@ -1134,9 +1145,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _hostUserId = hostId;
     }
 
-    print('[Room] _handleRoomInfo: keys=${message.keys.toList()}');
+    LogService().log('Room', '_handleRoomInfo: keys=${message.keys.toList()}');
     final epIds = message['episodeIds'];
-    print('[Room] _handleRoomInfo: epIds type=${epIds.runtimeType}, len=${epIds is List ? epIds.length : "N/A"}');
+    LogService().log('Room', '_handleRoomInfo: epIds type=${epIds.runtimeType}, len=${epIds is List ? epIds.length : "N/A"}');
     if (epIds is List && epIds.isNotEmpty) {
       // 电视剧：接收完整剧集列表
       setState(() {
@@ -1187,7 +1198,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             .toList();
       }
       _embyDefaultAudioIndex = message['defaultAudioStreamIndex'] as int?;
-      print('[Room] 字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条');
+      LogService().log('Room', '字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条');
 
       // 从 roomInfo 消息中获取 playUrl 并播放
       final playUrl = message['playUrl'] as String?;
@@ -1436,7 +1447,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final rtmService = ref.read(rtmServiceProvider);
       final position = _player.state.position.inMilliseconds / 1000.0;
       _logSyncEvent('发送 syncPlay: ep=$index, pos=${position.toStringAsFixed(1)}s');
-      print('[Sync] 主持人 sendCommand syncPlay: episode=$index, pos=$position, urlLen=${_currentPlayUrl.length}');
+      LogService().log('Sync', '主持人 sendCommand syncPlay: episode=$index, pos=$position, urlLen=${_currentPlayUrl.length}');
       await rtmService.sendCommand(
         action: AppConstants.actionSyncPlay,
         episodeIndex: index,
@@ -1941,11 +1952,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           ),
 
         // 同步调试面板
-        if (_showSyncDebug)
+        if (ref.watch(settingsProvider).showSyncDebug && widget.roomCode != null)
           Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
+            left: _debugPanelX,
+            top: _debugPanelY,
             child: _buildSyncDebugPanel(),
           ),
       ],
@@ -1953,55 +1963,131 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   Widget _buildSyncDebugPanel() {
+    final logs = LogService().entries;
     return Container(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.all(12),
+      width: 320,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.85),
+        color: Colors.black.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.sync, color: Colors.green, size: 16),
-              const SizedBox(width: 6),
-              const Text('同步调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              GestureDetector(
-                onTap: () => setState(() => _showSyncDebug = false),
-                child: const Icon(Icons.close, color: Colors.white54, size: 16),
+          // 标题栏 — 可拖拽
+          GestureDetector(
+            onPanUpdate: (d) => setState(() {
+              _debugPanelX += d.delta.dx;
+              _debugPanelY += d.delta.dy;
+            }),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.15),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
               ),
-            ],
+              child: Row(
+                children: [
+                  const Icon(Icons.drag_indicator, color: Colors.green, size: 16),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text('同步调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
+                  GestureDetector(
+                    onTap: () async {
+                      await Clipboard.setData(ClipboardData(text: LogService().exportAll()));
+                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('日志已复制')));
+                    },
+                    child: const Icon(Icons.copy, color: Colors.white54, size: 16),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => LogService().shareLogs(),
+                    child: const Icon(Icons.share, color: Colors.white54, size: 16),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => ref.read(settingsProvider.notifier).update(showSyncDebug: false),
+                    child: const Icon(Icons.close, color: Colors.white54, size: 16),
+                  ),
+                ],
+              ),
+            ),
           ),
-          const Divider(color: Colors.white24, height: 8),
-          _debugRow('角色', _isHost ? '主持人' : '观众'),
-          _debugRow('RTM频道', _syncRtmChannel),
-          _debugRow('RTM状态', _syncRtmStatus),
-          _debugRow('metadata playUrl', _syncMetadataPlayUrl),
-          _debugRow('metadata epIndex', _syncMetadataIndex),
-          _debugRow('metadata 所有key', _syncMetadataAllKeys),
-          _debugRow('metadata 写入诊断', _syncMetadataWriteDiag),
-          _debugRow('metadata 读取诊断', _syncMetadataReadDiag),
-          _debugRow('metadata 自检', _syncMetadataTestResult),
-          const Divider(color: Colors.white24, height: 8),
-          _debugRow('设备能力', _buildDeviceCapabilityText()),
-          _debugRow('视频信息', _videoCodec != '-' ? '$_videoCodec, $_videoResolution' : _videoResolution),
-          _debugRow('视频输出 vo', _voStatus),
-          _debugRow('解码模式', AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
-          _debugRow('实际解码', _actualDecoderFull.isNotEmpty ? _actualDecoderFull : '检测中...'),
-          if (_syncEvents.isNotEmpty) ...[
-            const Divider(color: Colors.white24, height: 8),
-            const Text('最近事件:', style: TextStyle(color: Colors.white54, fontSize: 11)),
-            const SizedBox(height: 4),
-            ...(_syncEvents.length > 8 ? _syncEvents.sublist(_syncEvents.length - 8) : _syncEvents).map((e) => Text(
-              e,
-              style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace'),
-            )),
-          ],
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ▼ 连接信息
+                  _buildSectionHeader('连接信息', _debugSectionInfo, () {
+                    setState(() => _debugSectionInfo = !_debugSectionInfo);
+                  }),
+                  if (_debugSectionInfo) ...[
+                    _debugRow('角色', _isHost ? '主持人' : '观众'),
+                    _debugRow('RTM频道', _syncRtmChannel),
+                    _debugRow('RTM状态', _syncRtmStatus),
+                    _debugRow('metadata playUrl', _syncMetadataPlayUrl),
+                    _debugRow('metadata epIndex', _syncMetadataIndex),
+                    _debugRow('metadata 所有key', _syncMetadataAllKeys),
+                    _debugRow('metadata 写入', _syncMetadataWriteDiag),
+                    _debugRow('metadata 读取', _syncMetadataReadDiag),
+                    _debugRow('metadata 自检', _syncMetadataTestResult),
+                  ],
+                  const SizedBox(height: 4),
+                  // ▶ 设备信息
+                  _buildSectionHeader('设备信息', _debugSectionDevice, () {
+                    setState(() => _debugSectionDevice = !_debugSectionDevice);
+                  }),
+                  if (_debugSectionDevice) ...[
+                    _debugRow('设备能力', _buildDeviceCapabilityText()),
+                    _debugRow('视频信息', _videoCodec != '-' ? '$_videoCodec, $_videoResolution' : _videoResolution),
+                    _debugRow('视频输出 vo', _voStatus),
+                    _debugRow('解码模式', AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
+                    _debugRow('实际解码', _actualDecoderFull.isNotEmpty ? _actualDecoderFull : '检测中...'),
+                  ],
+                  const SizedBox(height: 4),
+                  // ▼ 运行日志
+                  _buildSectionHeader('运行日志 (${logs.length})', _debugSectionLog, () {
+                    setState(() => _debugSectionLog = !_debugSectionLog);
+                  }),
+                  if (_debugSectionLog && logs.isNotEmpty) ...[
+                    SizedBox(
+                      height: 200,
+                      child: ListView.builder(
+                        reverse: true,
+                        itemCount: logs.length > 50 ? 50 : logs.length,
+                        itemBuilder: (_, i) {
+                          final idx = logs.length - 1 - i;
+                          return Text(
+                            logs[idx],
+                            style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, bool expanded, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(expanded ? Icons.expand_more : Icons.chevron_right, color: Colors.green, size: 16),
+          const SizedBox(width: 4),
+          Text(title, style: const TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -2088,11 +2174,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           ),
           if (widget.roomCode != null) ...[
             const SizedBox(width: 8),
-            IconButton(
-              icon: Icon(_showSyncDebug ? Icons.sync : Icons.sync_disabled, color: _showSyncDebug ? Colors.green : Colors.white54),
-              tooltip: '同步调试',
-              onPressed: () => setState(() => _showSyncDebug = !_showSyncDebug),
-            ),
             IconButton(
               icon: const Icon(Icons.share, color: Colors.white),
               tooltip: '分享房间',

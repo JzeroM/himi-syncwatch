@@ -1,3 +1,4 @@
+import 'package:himi_syncwatch/services/log_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:agora_rtm/agora_rtm.dart';
@@ -46,34 +47,34 @@ class RtmService {
       final (status, client) = await RTM(appId, userId, config: rtmConfig);
 
       if (status.error == true) {
-        print('[RTM] 初始化失败: ${status.reason}');
+        LogService().log('RTM', '初始化失败: ${status.reason}');
         return;
       }
 
       _client = client;
       _storage = client.getStorage();
       _presence = client.getPresence();
-      print('[RTM] 初始化成功, userId: $userId');
+      LogService().log('RTM', '初始化成功, userId: $userId');
 
       _client?.addListener(
         message: (event) {
           try {
             if (event.message != null) {
               final raw = utf8.decode(event.message!);
-              print('[RTM] 收到原始消息: ${raw.length} bytes');
+              LogService().log('RTM', '收到原始消息: ${raw.length} bytes');
               final data = jsonDecode(raw);
-              print('[RTM] 收到消息 type=${data['type']}, userId=${data['userId']}');
+              LogService().log('RTM', '收到消息 type=${data['type']}, userId=${data['userId']}');
               _messageController.add(data);
             }
           } catch (e) {
-            print('[RTM] 消息解析失败: $e');
+            LogService().log('RTM', '消息解析失败: $e');
           }
         },
         linkState: (event) {
-          print('[RTM] 连接状态: ${event.currentState}');
+          LogService().log('RTM', '连接状态: ${event.currentState}');
         },
         presence: (event) {
-          print('[RTM] 成员变化: ${event.type}, publisher=${event.publisher}');
+          LogService().log('RTM', '成员变化: ${event.type}, publisher=${event.publisher}');
           _presenceController.add({
             'type': event.type,
             'publisher': event.publisher,
@@ -81,7 +82,7 @@ class RtmService {
         },
       );
     } catch (e) {
-      print('[RTM] 初始化异常: $e');
+      LogService().log('RTM', '初始化异常: $e');
     }
   }
 
@@ -91,13 +92,13 @@ class RtmService {
     try {
       final (status, _) = await _client!.login(token ?? appId);
       if (status.error == true) {
-        print('[RTM] 登录失败: ${status.reason}');
+        LogService().log('RTM', '登录失败: ${status.reason}');
         return false;
       }
-      print('[RTM] 登录成功');
+      LogService().log('RTM', '登录成功');
       return true;
     } catch (e) {
-      print('[RTM] 登录异常: $e');
+      LogService().log('RTM', '登录异常: $e');
       return false;
     }
   }
@@ -110,14 +111,14 @@ class RtmService {
     try {
       final (status, _) = await _client!.subscribe(channelName);
       if (status.error == true) {
-        print('[RTM] 订阅失败: ${status.reason}');
+        LogService().log('RTM', '订阅失败: ${status.reason}');
         return false;
       } else {
-        print('[RTM] 订阅频道: $channelName');
+        LogService().log('RTM', '订阅频道: $channelName');
         return true;
       }
     } catch (e) {
-      print('[RTM] 订阅异常: $e');
+      LogService().log('RTM', '订阅异常: $e');
       return false;
     }
   }
@@ -128,13 +129,13 @@ class RtmService {
     try {
       final (status, _) = await _client!.unsubscribe(channelName);
       if (status.error == true) {
-        print('[RTM] 取消订阅失败: ${status.reason}');
+        LogService().log('RTM', '取消订阅失败: ${status.reason}');
       } else {
-        print('[RTM] 取消订阅: $channelName');
+        LogService().log('RTM', '取消订阅: $channelName');
         _currentChannelId = null;
       }
     } catch (e) {
-      print('[RTM] 取消订阅异常: $e');
+      LogService().log('RTM', '取消订阅异常: $e');
     }
   }
 
@@ -144,7 +145,7 @@ class RtmService {
     required Map<String, String> metadata,
   }) async {
     if (_storage == null) {
-      print('[RTM] ⚠️ setChannelMetadata: _storage is null, skip');
+      LogService().log('RTM', '⚠️ setChannelMetadata: _storage is null, skip');
       return 'storage_null';
     }
 
@@ -153,22 +154,22 @@ class RtmService {
           .map((e) => MetadataItem(key: e.key, value: e.value))
           .toList();
       final totalLen = metadata.entries.fold<int>(0, (s, e) => s + e.key.length + e.value.length);
-      print('[RTM] setChannelMetadata: keys=${metadata.keys.toList()}, totalLen=$totalLen');
+      LogService().log('RTM', 'setChannelMetadata: keys=${metadata.keys.toList()}, totalLen=$totalLen');
       final (status, result) = await _storage!.setChannelMetadata(
         channelName,
         RtmChannelType.message,
         items,
       );
-      print('[RTM] setChannelMetadata result: error=${status.error}, reason=${status.reason}');
+      LogService().log('RTM', 'setChannelMetadata result: error=${status.error}, reason=${status.reason}');
       if (result != null) {
-        print('[RTM] setChannelMetadata result: channelName=${result.channelName}, channelType=${result.channelType}');
+        LogService().log('RTM', 'setChannelMetadata result: channelName=${result.channelName}, channelType=${result.channelType}');
       }
       if (status.error == true) {
         return 'error:${status.reason}';
       }
       return 'ok,${metadata.keys.length}keys,${totalLen}chars';
     } catch (e) {
-      print('[RTM] 设置频道元数据异常: $e');
+      LogService().log('RTM', '设置频道元数据异常: $e');
       return 'exception:$e';
     }
   }
@@ -177,7 +178,7 @@ class RtmService {
   Future<(Map<String, String>, String)> getChannelMetadata(String channelName) async {
     final empty = <String, String>{};
     if (_storage == null) {
-      print('[RTM] ⚠️ getChannelMetadata: _storage is null');
+      LogService().log('RTM', '⚠️ getChannelMetadata: _storage is null');
       return (empty, 'storage_null');
     }
 
@@ -186,28 +187,28 @@ class RtmService {
         channelName,
         RtmChannelType.message,
       );
-      print('[RTM] getChannelMetadata: error=${status.error}, reason=${status.reason}');
+      LogService().log('RTM', 'getChannelMetadata: error=${status.error}, reason=${status.reason}');
       if (status.error == true || result == null) {
-        print('[RTM] getChannelMetadata: result is null or error');
+        LogService().log('RTM', 'getChannelMetadata: result is null or error');
         return (empty, 'error:${status.reason}');
       }
       final data = result.data;
-      print('[RTM] getChannelMetadata: majorRevision=${data.majorRevision}, itemCount=${data.itemCount}, items=${data.items?.length ?? 0}');
+      LogService().log('RTM', 'getChannelMetadata: majorRevision=${data.majorRevision}, itemCount=${data.itemCount}, items=${data.items?.length ?? 0}');
       if (data.items == null || data.items!.isEmpty) {
-        print('[RTM] getChannelMetadata: items 为空');
+        LogService().log('RTM', 'getChannelMetadata: items 为空');
         return (empty, 'ok,0items');
       }
       final map = <String, String>{};
       for (final item in data.items!) {
-        print('[RTM]   item: key=${item.key}, valueLen=${item.value?.length ?? 0}, author=${item.authorUserId}, revision=${item.revision}');
+        LogService().log('RTM', '  item: key=${item.key}, valueLen=${item.value?.length ?? 0}, author=${item.authorUserId}, revision=${item.revision}');
         if (item.key != null && item.value != null) {
           map[item.key!] = item.value!;
         }
       }
-      print('[RTM] getChannelMetadata: 返回 ${map.length} 个 key: ${map.keys.toList()}');
+      LogService().log('RTM', 'getChannelMetadata: 返回 ${map.length} 个 key: ${map.keys.toList()}');
       return (map, 'ok,${map.length}items,keys=${map.keys.toList()}');
     } catch (e) {
-      print('[RTM] 读取频道元数据异常: $e');
+      LogService().log('RTM', '读取频道元数据异常: $e');
       return (empty, 'exception:$e');
     }
   }
@@ -216,20 +217,20 @@ class RtmService {
   Future<String> testMetadata(String channelName) async {
     final testKey = 'test_ping';
     final testValue = '${DateTime.now().millisecondsSinceEpoch}';
-    print('[RTM] testMetadata: 写入 $testKey=$testValue');
+    LogService().log('RTM', 'testMetadata: 写入 $testKey=$testValue');
 
     final writeDiag = await setChannelMetadata(
       channelName: channelName,
       metadata: {testKey: testValue},
     );
-    print('[RTM] testMetadata 写入诊断: $writeDiag');
+    LogService().log('RTM', 'testMetadata 写入诊断: $writeDiag');
 
     if (writeDiag.startsWith('error') || writeDiag.startsWith('storage_null') || writeDiag.startsWith('exception')) {
       return '写入失败: $writeDiag';
     }
 
     final (readData, readDiag) = await getChannelMetadata(channelName);
-    print('[RTM] testMetadata 读取诊断: $readDiag');
+    LogService().log('RTM', 'testMetadata 读取诊断: $readDiag');
 
     final readValue = readData[testKey];
     if (readValue == testValue) {
@@ -255,7 +256,7 @@ class RtmService {
       }
       return result.count;
     } catch (e) {
-      print('[RTM] 获取在线用户数异常: $e');
+      LogService().log('RTM', '获取在线用户数异常: $e');
       return 0;
     }
   }
@@ -276,7 +277,7 @@ class RtmService {
           .where((id) => id.isNotEmpty)
           .toList();
     } catch (e) {
-      print('[RTM] 获取在线用户ID异常: $e');
+      LogService().log('RTM', '获取在线用户ID异常: $e');
       return [];
     }
   }
@@ -422,16 +423,16 @@ class RtmService {
 
     try {
       final encoded = jsonEncode(message);
-      print('[RTM] sendRoomInfo size=${encoded.length} bytes, episodes=${episodeIds?.length ?? 0}');
+      LogService().log('RTM', 'sendRoomInfo size=${encoded.length} bytes, episodes=${episodeIds?.length ?? 0}');
       final (status, _) = await _client!.publish(
         channelName,
         encoded,
       );
       if (status.error == true) {
-        print('[RTM] 发送房间信息失败: ${status.reason}');
+        LogService().log('RTM', '发送房间信息失败: ${status.reason}');
       }
     } catch (e) {
-      print('[RTM] 发送房间信息异常: $e');
+      LogService().log('RTM', '发送房间信息异常: $e');
     }
   }
 
@@ -440,17 +441,17 @@ class RtmService {
 
     try {
       final encoded = jsonEncode(message);
-      print('[RTM] 发布消息 type=${message['type']}, size=${encoded.length} bytes');
+      LogService().log('RTM', '发布消息 type=${message['type']}, size=${encoded.length} bytes');
       final (status, _) = await _client!.publish(
         _currentChannelId!,
         encoded,
       );
 
       if (status.error == true) {
-        print('[RTM] 发布失败: ${status.reason}');
+        LogService().log('RTM', '发布失败: ${status.reason}');
       }
     } catch (e) {
-      print('[RTM] 发布异常: $e');
+      LogService().log('RTM', '发布异常: $e');
     }
   }
 
@@ -460,12 +461,12 @@ class RtmService {
     try {
       final (status, _) = await _client!.logout();
       if (status.error == true) {
-        print('[RTM] 登出失败: ${status.reason}');
+        LogService().log('RTM', '登出失败: ${status.reason}');
       } else {
-        print('[RTM] 登出成功');
+        LogService().log('RTM', '登出成功');
       }
     } catch (e) {
-      print('[RTM] 登出异常: $e');
+      LogService().log('RTM', '登出异常: $e');
     }
   }
 

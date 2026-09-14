@@ -1,24 +1,28 @@
 class AppSettings {
   final String decodeMode; // 'auto', 'hw+', 'hw', 'sw'
   final int bufferSizeMB;
+  final bool showSyncDebug;
 
   const AppSettings({
     this.decodeMode = 'auto',
     this.bufferSizeMB = 64,
+    this.showSyncDebug = false,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
 
-  AppSettings copyWith({String? decodeMode, int? bufferSizeMB}) {
+  AppSettings copyWith({String? decodeMode, int? bufferSizeMB, bool? showSyncDebug}) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       bufferSizeMB: bufferSizeMB ?? this.bufferSizeMB,
+      showSyncDebug: showSyncDebug ?? this.showSyncDebug,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
         'bufferSizeMB': bufferSizeMB,
+        'showSyncDebug': showSyncDebug,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -37,6 +41,7 @@ class AppSettings {
     return AppSettings(
       decodeMode: mode,
       bufferSizeMB: json['bufferSizeMB'] as int? ?? 64,
+      showSyncDebug: json['showSyncDebug'] as bool? ?? false,
     );
   }
 

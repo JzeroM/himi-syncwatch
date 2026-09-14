@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
 
 String _decodeModeDescription(String mode) {
   switch (mode) {
@@ -91,6 +92,21 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
             ],
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            title: const Text('同步调试面板'),
+            subtitle: const Text('仅在房间内显示，可拖拽移动'),
+            value: settings.showSyncDebug,
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).update(showSyncDebug: v),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.bug_report),
+            title: const Text('导出运行日志'),
+            subtitle: const Text('保存最近 1000 条日志并分享'),
+            onTap: () => LogService().shareLogs(),
           ),
           const Divider(height: 1),
         ],
