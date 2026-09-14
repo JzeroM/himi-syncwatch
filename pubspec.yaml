@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HimiSync - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.0.14+84
+version: 1.0.15+85
 
 environment:
   sdk: ^3.6.0
@@ -34,6 +34,10 @@ dependencies:
   mobile_scanner: ^6.0.11
   image_picker: ^1.1.2
   permission_handler: ^11.3.1
+  # 屏幕亮度
+  screen_brightness: ^2.1.11
+  # 锁屏保持
+  wakelock_plus: ^1.2.8
   # 工具
   intl: ^0.19.0
   uuid: ^4.5.1

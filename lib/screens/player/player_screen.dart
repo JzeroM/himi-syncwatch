@@ -24,6 +24,8 @@ import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:screen_brightness/screen_brightness.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -190,7 +192,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         bufferSize: settings.bufferSizeMB * 1024 * 1024,
       ),
     );
-    _controller = VideoController(_player);
+    _controller = VideoController(
+      _player,
+      configuration: const VideoControllerConfiguration(
+        enableHardwareAcceleration: true,
+      ),
+    );
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
 
     _isHost = widget.isHost;
@@ -234,6 +241,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     // 先完成硬件解码设置，再启动播放，避免竞态
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 读取当前系统亮度
+      try {
+        _brightness = await ScreenBrightness().application;
+      } catch (_) {}
       await _initPlayerProperties();
       if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
         final targetIndex = _episodeIds.indexOf(widget.itemId);
@@ -292,6 +303,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // 音量默认 50%
       await native.setProperty('volume', '50');
     }
+
+    // 锁屏保持
+    try {
+      await WakelockPlus.enable();
+    } catch (_) {}
   }
 
   String _formatActualDecoder(String decoder, DecodeStatus status) {
@@ -1494,6 +1510,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _videoParamsSubscription?.cancel();
     _broadcastScrollController.dispose();
 
+    // 恢复屏幕亮度
+    try {
+      ScreenBrightness().resetApplicationScreenBrightness();
+    } catch (_) {}
+
+    // 释放锁屏保持
+    try {
+      WakelockPlus.disable();
+    } catch (_) {}
+
     // 清理 RTM
     if (widget.roomCode != null) {
       try {
@@ -1596,6 +1622,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               controller: _controller,
               controls: NoVideoControls,
               fit: _videoFit,
+              filterQuality: FilterQuality.medium,
+              pauseUponEnteringBackgroundMode: true,
+              resumeUponEnteringForegroundMode: true,
               subtitleViewConfiguration: const SubtitleViewConfiguration(
                 padding: EdgeInsets.fromLTRB(16, 0, 16, 50),
                 style: TextStyle(
@@ -2034,11 +2063,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _setBrightness(double value) async {
-    if (_player.platform is NativePlayer) {
-      final native = _player.platform as NativePlayer;
-      final mpvValue = ((value - 0.5) * 100).round();
-      await native.setProperty('brightness', mpvValue.toString());
-    }
+    try {
+      await ScreenBrightness().setApplicationScreenBrightness(value);
+    } catch (_) {}
   }
 
   void _startGestureBarTimer() {
