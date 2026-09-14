@@ -829,15 +829,20 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
 
     final steps = [
       _AgoraGuideStep(
-        title: '注册并开通 RTM',
-        image: 'assets/images/agora_step1_register.png',
-        description: '访问 shengwang.cn 注册账号\n'
-            '创建项目时选择「通用项目」\n'
-            '套餐包 → RTM → 选择体验版（免费）',
+        title: '注册登录并创建通用项目',
+        image: 'assets/images/agora_step1.png',
+        description: '访问 shengwang.cn 注册并登录\n'
+            '创建项目时选择「通用项目」',
+      ),
+      _AgoraGuideStep(
+        title: '开通体验版套餐包',
+        image: 'assets/images/agora_step2.png',
+        description: '套餐包 → RTM\n'
+            '选择「体验版」（免费）',
       ),
       _AgoraGuideStep(
         title: '开启 Presence 和 Storage',
-        image: 'assets/images/agora_step3_presence.png',
+        image: 'assets/images/agora_step3.png',
         description: '全部产品 → 实时消息 RTM → 基础配置\n'
             '启用「出席通知 (Presence)」\n'
             '启用「状态同步 (Storage)」\n'
@@ -845,14 +850,9 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
       ),
       _AgoraGuideStep(
         title: '获取 APP ID 和证书',
-        image: 'assets/images/agora_step4_appid.png',
+        image: 'assets/images/agora_step4.png',
         description: '项目总览页 → 复制 APP ID\n'
-            '展开查看主要证书 → 复制 APP Certificate',
-      ),
-      _AgoraGuideStep(
-        title: '填写配置',
-        image: 'assets/images/agora_step2_project.png',
-        description: '将 APP ID 和 APP Certificate\n'
+            '展开查看主要证书 → 复制 APP Certificate\n'
             '填入下方输入框 → 点击保存',
       ),
     ];
