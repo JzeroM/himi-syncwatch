@@ -1927,14 +1927,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final fallbackValue = DecodeModeService.resolveFallback(mode);
       await native.setProperty('vd-lavc-software-fallback', fallbackValue);
 
-      // 用 loadfile replace 直接替换当前流（比 open() 更快）
+      // 用 loadfile replace + start 参数直接替换当前流
       if (_currentPlayUrl.isNotEmpty) {
-        await native.command(['loadfile', _currentPlayUrl, 'replace']);
-
-        // 立即 seek 到原位置
-        if (currentPos > Duration.zero) {
-          await _player.seek(currentPos);
-        }
+        final startSec = currentPos.inMilliseconds / 1000.0;
+        await native.command([
+          'loadfile', _currentPlayUrl, 'replace',
+          'start=$startSec',
+        ]);
 
         // 恢复播放状态
         if (!wasPlaying) {
