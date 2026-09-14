@@ -2536,7 +2536,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (_roomData != null) ...[
+                if (_roomData != null && _isHost && !_player.state.playing) ...[
                   GestureDetector(
                     onTap: () {
                       showSearch(
