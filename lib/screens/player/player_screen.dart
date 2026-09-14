@@ -1948,58 +1948,66 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   Widget _buildSyncDebugPanel() {
     final logs = LogService().entries;
-    return GestureDetector(
-      onPanUpdate: (d) => setState(() {
-        _debugPanelX += d.delta.dx;
-        _debugPanelY += d.delta.dy;
-      }),
-      child: Container(
-        width: 320,
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.7,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 标题栏
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.15),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.drag_indicator, color: Colors.green, size: 16),
-                  const SizedBox(width: 6),
-                  const Expanded(
-                    child: Text('同步调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
-                  ),
-                  GestureDetector(
-                    onTap: () async {
-                      await Clipboard.setData(ClipboardData(text: LogService().exportAll()));
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('日志已复制')));
-                    },
-                    child: const Icon(Icons.copy, color: Colors.white54, size: 16),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => LogService().shareLogs(),
-                    child: const Icon(Icons.share, color: Colors.white54, size: 16),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => ref.read(settingsProvider.notifier).update(showSyncDebug: false),
-                    child: const Icon(Icons.close, color: Colors.white54, size: 16),
-                  ),
-                ],
-              ),
+    return Container(
+      width: 320,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 标题栏
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.15),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
             ),
+            child: Row(
+              children: [
+                // 拖拽区 — 仅此区域响应 pan 手势
+                GestureDetector(
+                  onPanUpdate: (d) => setState(() {
+                    _debugPanelX += d.delta.dx;
+                    _debugPanelY += d.delta.dy;
+                  }),
+                  behavior: HitTestBehavior.opaque,
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.drag_indicator, color: Colors.green, size: 16),
+                      SizedBox(width: 6),
+                      Text('同步调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                // 按钮区 — 独立手势，不受 pan 影响
+                GestureDetector(
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: LogService().exportAll()));
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('日志已复制')));
+                  },
+                  child: const Icon(Icons.copy, color: Colors.white54, size: 16),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => LogService().shareLogs(),
+                  child: const Icon(Icons.share, color: Colors.white54, size: 16),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => ref.read(settingsProvider.notifier).update(showSyncDebug: false),
+                  child: const Icon(Icons.close, color: Colors.white54, size: 16),
+                ),
+              ],
+            ),
+          ),
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(10),
@@ -2052,9 +2060,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 ],
               ),
             ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
