@@ -64,8 +64,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String? _rtmAppId;
   String? _hostUserId;
 
-  double _volume = 50;
-  double _brightness = 0.5;
+  double _volume = 80;
+  double _brightness = 0.65;
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
@@ -309,7 +309,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       await native.setProperty('sub-margin-y', '22');
 
       // 音量默认 50%
-      await native.setProperty('volume', '50');
+      await native.setProperty('volume', '80');
     }
 
     // 锁屏保持
