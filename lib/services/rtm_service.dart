@@ -355,6 +355,31 @@ class RtmService {
     await _publishMessage(message);
   }
 
+  Future<void> sendAddResource({
+    required String itemId,
+    required String name,
+    required String poster,
+    required bool isSeries,
+    String seriesName = '',
+    List<Map<String, dynamic>>? episodes,
+  }) async {
+    if (_client == null || _currentChannelId == null) return;
+
+    final message = {
+      'type': AppConstants.msgTypeCommand,
+      'userId': _currentUserId,
+      'action': AppConstants.actionAddResource,
+      'itemId': itemId,
+      'name': name,
+      'poster': poster,
+      'isSeries': isSeries,
+      'seriesName': seriesName,
+      if (episodes != null) 'episodes': episodes,
+    };
+
+    await _publishMessage(message);
+  }
+
   Future<void> sendRoomInfo({
     required String channelName,
     String? mediaItemId,

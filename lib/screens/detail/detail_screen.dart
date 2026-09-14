@@ -5,12 +5,15 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
+import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
-  const DetailScreen({super.key, required this.itemId});
+  final bool roomMode;
+  final String? roomCode;
+  const DetailScreen({super.key, required this.itemId, this.roomMode = false, this.roomCode});
 
   @override
   ConsumerState<DetailScreen> createState() => _DetailScreenState();
@@ -146,6 +149,51 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ref.read(pendingRoomMovieProvider.notifier).state = movieData;
       }
       context.push('/player/${_item!.id}?$query');
+    }
+  }
+
+  Future<void> _addResourceToRoom() async {
+    if (_item == null || widget.roomCode == null) return;
+
+    final rtmService = ref.read(rtmServiceProvider);
+
+    if (_item!.isSeries && _episodes.isNotEmpty) {
+      // 电视剧：弹出集数选择
+      final selectedEpisodes = await _showEpisodePicker();
+      if (selectedEpisodes == null || selectedEpisodes.isEmpty) return;
+
+      final episodesJson = selectedEpisodes.map((e) => {
+        'id': e.id,
+        'name': e.name,
+        'season': e.parentIndexNumber ?? 0,
+        'number': e.indexNumber ?? 0,
+        'poster': e.posterUrl ?? '',
+        'seriesName': _item!.name,
+      }).toList();
+
+      await rtmService.sendAddResource(
+        itemId: _item!.id,
+        name: _item!.name,
+        poster: _item!.posterUrl ?? '',
+        isSeries: true,
+        seriesName: _item!.name,
+        episodes: episodesJson,
+      );
+    } else {
+      // 电影：直接添加
+      await rtmService.sendAddResource(
+        itemId: _item!.id,
+        name: _item!.name,
+        poster: _item!.posterUrl ?? '',
+        isSeries: false,
+      );
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已添加到房间资源列表')),
+      );
+      Navigator.of(context).pop();
     }
   }
 
@@ -381,55 +429,71 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             ),
           ],
         ),
-        child: Row(
-          children: [
-            // 电影才显示「开始播放」（电视剧需从集数列表点击具体哪集）
-            if (!_item!.isSeries)
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    MediaSource? source;
-                    if (_item!.hasMultipleVersions) {
-                      source = await _showVersionPicker();
-                      if (source == null) return;
-                    }
-
-                    ref.read(pendingRoomMovieProvider.notifier).state = {
-                      'id': _item!.id,
-                      'name': _item!.name,
-                      'poster': _item!.posterUrl ?? '',
-                    };
-
-                    final query = StringBuffer('isHost=true');
-                    if (source != null) {
-                      query.write('&mediaSourceId=${source.id}');
-                    }
-                    if (mounted) {
-                      context.push('/player/${_item!.id}?${query.toString()}');
-                    }
-                  },
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('开始播放'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
+        child: widget.roomMode
+            ? Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _addResourceToRoom,
+                      icon: const Icon(Icons.add),
+                      label: const Text('加入资源'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
                   ),
-                ),
+                ],
+              )
+            : Row(
+                children: [
+                  if (!_item!.isSeries)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          MediaSource? source;
+                          if (_item!.hasMultipleVersions) {
+                            source = await _showVersionPicker();
+                            if (source == null) return;
+                          }
+
+                          ref.read(pendingRoomMovieProvider.notifier).state = {
+                            'id': _item!.id,
+                            'name': _item!.name,
+                            'poster': _item!.posterUrl ?? '',
+                          };
+
+                          final query = StringBuffer('isHost=true');
+                          if (source != null) {
+                            query.write('&mediaSourceId=${source.id}');
+                          }
+                          if (mounted) {
+                            context.push('/player/${_item!.id}?${query.toString()}');
+                          }
+                        },
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('开始播放'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  if (!_item!.isSeries) const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _createRoom,
+                      icon: const Icon(Icons.group_add),
+                      label: const Text('建房'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            if (!_item!.isSeries) const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _createRoom,
-                icon: const Icon(Icons.group_add),
-                label: const Text('建房'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

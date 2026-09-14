@@ -28,4 +28,5 @@ class AppConstants {
   static const String actionRequestRoomInfo = 'requestRoomInfo';
   static const String actionSyncPlay = 'syncPlay';
   static const String actionRoomDestroyed = 'roomDestroyed';
+  static const String actionAddResource = 'addResource';
 }

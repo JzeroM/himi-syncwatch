@@ -31,6 +31,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/detail/:id',
         builder: (context, state) => DetailScreen(
           itemId: state.pathParameters['id']!,
+          roomMode: state.uri.queryParameters['roomMode'] == 'true',
+          roomCode: state.uri.queryParameters['roomCode'],
         ),
       ),
       GoRoute(

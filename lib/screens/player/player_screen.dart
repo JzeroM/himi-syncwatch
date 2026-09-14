@@ -21,6 +21,7 @@ import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -985,6 +986,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _removeEpisodeLocal(epIndex);
         }
         break;
+      case AppConstants.actionAddResource:
+        _handleAddResource(message);
+        break;
       case AppConstants.actionRoomDestroyed:
         _showRoomDestroyedDialog();
         break;
@@ -1387,6 +1391,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
 
     _hasEpisodeList = _episodeIds.isNotEmpty;
+    setState(() {});
+  }
+
+  void _handleAddResource(Map<String, dynamic> message) {
+    final isSeries = message['isSeries'] as bool? ?? false;
+    final name = message['name'] as String? ?? '';
+    final poster = message['poster'] as String? ?? '';
+    final seriesName = message['seriesName'] as String? ?? '';
+
+    if (isSeries) {
+      final episodes = message['episodes'] as List<dynamic>?;
+      if (episodes != null && episodes.isNotEmpty) {
+        // 电视剧：添加所有选中的集数
+        for (final ep in episodes) {
+          final epMap = ep as Map<String, dynamic>;
+          _episodeIds.add(epMap['id'] as String);
+          _episodeNames.add(epMap['name'] as String? ?? '');
+          _episodeSeasons.add(epMap['season'] as int? ?? 0);
+          _episodeNumbers.add(epMap['number'] as int? ?? 0);
+          _episodePosters.add(epMap['poster'] as String? ?? '');
+        }
+        if (_seriesName.isEmpty) {
+          _seriesName = seriesName;
+        }
+        _hasEpisodeList = true;
+        _addBroadcastMessage('已添加: $name (${episodes.length}集)');
+      }
+    } else {
+      // 电影：添加单条
+      final itemId = message['itemId'] as String?;
+      if (itemId != null && itemId.isNotEmpty) {
+        _episodeIds.add(itemId);
+        _episodeNames.add(name);
+        _episodeSeasons.add(0);
+        _episodeNumbers.add(0);
+        _episodePosters.add(poster);
+        _hasEpisodeList = true;
+        _addBroadcastMessage('已添加: $name');
+      }
+    }
+    _autoExpandSeries();
     setState(() {});
   }
 
@@ -2491,6 +2536,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (_roomData != null) ...[
+                  GestureDetector(
+                    onTap: () {
+                      showSearch(
+                        context: context,
+                        delegate: RoomSearchDelegate(ref, roomCode: widget.roomCode!),
+                      );
+                    },
+                    child: const Icon(Icons.search, color: Colors.white70, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 if (_roomData != null) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(
