@@ -20,7 +20,7 @@ cat > android/key.properties << EOF
 storePassword=${ANDROID_KEYSTORE_PASSWORD}
 keyPassword=${ANDROID_KEY_PASSWORD}
 keyAlias=${ANDROID_KEY_ALIAS}
-storeFile=app/himi-release.jks
+storeFile=himi-release.jks
 EOF
 
 # 3. 注入签名配置到 build.gradle（不覆写，保留 patch_android.sh 的所有修改）
