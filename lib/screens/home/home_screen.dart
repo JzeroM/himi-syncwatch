@@ -57,8 +57,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           seenServerIds.add(config.serverId);
           configs.add(config);
           if (activeConfig == null) activeConfig = config;
-        }
-      }
+  }
+}
 
       ref.read(embyServerListProvider.notifier).setList(configs);
 
@@ -744,6 +744,11 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.help_outline, size: 20),
+                      tooltip: '配置说明',
+                      onPressed: () => _showAgoraGuide(context),
+                    ),
                     if (agoraConfig?.isConfigured == true)
                       TextButton(
                         onPressed: () async {
@@ -816,6 +821,156 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
       appIdController.dispose();
       certController.dispose();
     });
+  }
+
+  void _showAgoraGuide(BuildContext context) {
+    final pageController = PageController();
+    var currentPage = 0;
+
+    final steps = [
+      _AgoraGuideStep(
+        title: '注册并开通 RTM',
+        image: 'assets/images/agora_step1_register.png',
+        description: '访问 shengwang.cn 注册账号\n'
+            '创建项目时选择「通用项目」\n'
+            '套餐包 → RTM → 选择体验版（免费）',
+      ),
+      _AgoraGuideStep(
+        title: '开启 Presence 和 Storage',
+        image: 'assets/images/agora_step3_presence.png',
+        description: '全部产品 → 实时消息 RTM → 基础配置\n'
+            '启用「出席通知 (Presence)」\n'
+            '启用「状态同步 (Storage)」\n'
+            '数据存储区域选「中国」',
+      ),
+      _AgoraGuideStep(
+        title: '获取 APP ID 和证书',
+        image: 'assets/images/agora_step4_appid.png',
+        description: '项目总览页 → 复制 APP ID\n'
+            '展开查看主要证书 → 复制 APP Certificate',
+      ),
+      _AgoraGuideStep(
+        title: '填写配置',
+        image: 'assets/images/agora_step2_project.png',
+        description: '将 APP ID 和 APP Certificate\n'
+            '填入下方输入框 → 点击保存',
+      ),
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+          content: SizedBox(
+            width: 360,
+            height: 420,
+            child: Column(
+              children: [
+                // 页码指示器
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(steps.length, (i) {
+                    return Container(
+                      width: 8,
+                      height: 8,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: i == currentPage
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.grey[300],
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 12),
+                // 页面内容
+                Expanded(
+                  child: PageView.builder(
+                    controller: pageController,
+                    itemCount: steps.length,
+                    onPageChanged: (i) {
+                      currentPage = i;
+                      setDialogState(() {});
+                    },
+                    itemBuilder: (ctx, i) {
+                      final step = steps[i];
+                      return SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            Text(
+                              '步骤 ${i + 1}: ${step.title}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.asset(
+                                step.image,
+                                fit: BoxFit.contain,
+                                height: 220,
+                                errorBuilder: (_, __, ___) => Container(
+                                  height: 220,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '请将截图放到:\n${step.image}',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              step.description,
+                              style: const TextStyle(fontSize: 13, height: 1.5),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 底部按钮
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('关闭'),
+                    ),
+                    FilledButton(
+                      onPressed: currentPage < steps.length - 1
+                          ? () {
+                              pageController.nextPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            }
+                          : () => Navigator.pop(ctx),
+                      child: Text(
+                          currentPage < steps.length - 1 ? '下一步' : '完成'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _showEditServerDialog(BuildContext context, EmbyServerConfig server) {
@@ -1205,4 +1360,15 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
       },
     );
   }
+}
+
+class _AgoraGuideStep {
+  final String title;
+  final String image;
+  final String description;
+  const _AgoraGuideStep({
+    required this.title,
+    required this.image,
+    required this.description,
+  });
 }
