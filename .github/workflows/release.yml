@@ -87,34 +87,36 @@ jobs:
       - name: 验证 APK 签名
         run: |
           echo "=== 验证 APK 签名证书 ==="
-          for apk in build/app/outputs/flutter-apk/*-release.apk; do
-            echo "检查: $apk"
-            # 用 Python 提取 APK 签名证书 SHA-256
-            python3 -c "
-          import struct, hashlib, sys
-          with open('$apk', 'rb') as f:
-              data = f.read()
-          magic = b'APK Sig Block 42'
-          pos = data.rfind(magic)
-          if pos == -1:
-              print('ERROR: 未找到 APK Signing Block')
-              sys.exit(1)
-          block_size = struct.unpack('<Q', data[pos-8:pos])[0]
-          block = data[pos-8-block_size:pos-8]
-          # 查找 X.509 证书 (SEQUENCE tag 0x30 0x82)
-          idx = 0
-          while idx < len(block) - 4:
-              if block[idx] == 0x30 and block[idx+1] == 0x82:
-                  cert_len = int.from_bytes(block[idx+2:idx+4], 'big')
-                  if 200 < cert_len < 5000 and idx + 4 + cert_len <= len(block):
-                      cert = block[idx:idx+4+cert_len]
-                      h = hashlib.sha256(cert).hexdigest()
-                      print(f'  签名证书 SHA-256: {h}')
-                      break
-              idx += 1
-          else:
-              print('WARNING: 未能提取签名证书')
-          "
+          cat > /tmp/verify_cert.py << 'PYEOF'
+import struct, hashlib, sys, glob
+
+for apk in glob.glob("build/app/outputs/flutter-apk/*-release.apk"):
+    print(f"检查: {apk}")
+    with open(apk, "rb") as f:
+        data = f.read()
+    magic = b"APK Sig Block 42"
+    pos = data.rfind(magic)
+    if pos == -1:
+        print("ERROR: 未找到 APK Signing Block")
+        sys.exit(1)
+    block_size = struct.unpack("<Q", data[pos - 8 : pos])[0]
+    block = data[pos - 8 - block_size : pos - 8]
+    found = False
+    idx = 0
+    while idx < len(block) - 4:
+        if block[idx] == 0x30 and block[idx + 1] == 0x82:
+            cert_len = int.from_bytes(block[idx + 2 : idx + 4], "big")
+            if 200 < cert_len < 5000 and idx + 4 + cert_len <= len(block):
+                cert = block[idx : idx + 4 + cert_len]
+                h = hashlib.sha256(cert).hexdigest()
+                print(f"  签名证书 SHA-256: {h}")
+                found = True
+                break
+        idx += 1
+    if not found:
+        print("WARNING: 未能提取签名证书")
+PYEOF
+          python3 /tmp/verify_cert.py
 
       - uses: actions/upload-artifact@v4
         with:
