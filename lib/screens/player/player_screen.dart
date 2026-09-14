@@ -75,7 +75,7 @@ class _ResourceItem {
 class _SeasonGroup {
   final int seasonNumber;
   final List<_ResourceItem> episodes;
-  bool collapsed = true;
+  bool collapsed = false;
 
   _SeasonGroup({
     required this.seasonNumber,
@@ -87,7 +87,7 @@ class _ResourceGroup {
   final String name;
   final bool isMovie;
   final List<_SeasonGroup> seasons;
-  bool collapsed = true;
+  bool collapsed = false;
 
   _ResourceGroup({
     required this.name,
@@ -174,6 +174,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   List<int> _episodeSeasons = [];
   List<int> _episodeNumbers = [];
   List<String> _episodePosters = [];
+  List<String> _episodeSeriesNames = [];
   String _seriesName = '';
   int _currentEpisodeIndex = -1;
   bool _hasEpisodeList = false;
@@ -191,10 +192,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final name = _episodeNames[i];
       final poster = i < _episodePosters.length ? _episodePosters[i] : '';
       final id = _episodeIds[i];
+      final epSeriesName = i < _episodeSeriesNames.length ? _episodeSeriesNames[i] : '';
 
-      final isMovie = season == 0 && number == 0 && _seriesName.isEmpty;
+      final isMovie = season == 0 && number == 0 && epSeriesName.isEmpty;
 
-      final groupName = isMovie ? '电影' : _seriesName;
+      final groupName = isMovie ? '电影' : epSeriesName;
 
       final item = _ResourceItem(
         id: id,
@@ -202,7 +204,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         season: season,
         number: number,
         poster: poster,
-        seriesName: _seriesName,
+        seriesName: epSeriesName,
       );
 
       groups.putIfAbsent(groupName, () => _ResourceGroup(
@@ -236,8 +238,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // 恢复折叠状态：当前播放的集所在组自动展开
     if (_currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodeIds.length) {
       final curSeason = _episodeSeasons[_currentEpisodeIndex];
-      final curSeries = _seriesName;
-      final curGroupName = curSeries.isEmpty ? '电影' : curSeries;
+      final curSeriesName = _currentEpisodeIndex < _episodeSeriesNames.length
+          ? _episodeSeriesNames[_currentEpisodeIndex] : '';
+      final curGroupName = curSeriesName.isEmpty ? '电影' : curSeriesName;
       for (final g in _resourceGroups) {
         if (g.name == curGroupName) {
           g.collapsed = false;
@@ -342,6 +345,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _episodeSeasons = pendingEpisodes.map((e) => e['season'] as int? ?? 0).toList();
         _episodeNumbers = pendingEpisodes.map((e) => e['number'] as int? ?? 0).toList();
         _episodePosters = pendingEpisodes.map((e) => e['poster'] as String? ?? '').toList();
+        _episodeSeriesNames = pendingEpisodes.map((e) => e['seriesName'] as String? ?? '').toList();
         _seriesName = pendingEpisodes.first['seriesName'] as String? ?? '';
         _hasEpisodeList = true;
         ref.read(pendingRoomEpisodesProvider.notifier).state = null;
@@ -351,6 +355,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _episodeSeasons = [0];
         _episodeNumbers = [0];
         _episodePosters = [pendingMovie['poster'] as String? ?? ''];
+        _episodeSeriesNames = [''];
         _seriesName = '';
         _hasEpisodeList = true;
         ref.read(pendingRoomMovieProvider.notifier).state = null;
@@ -913,6 +918,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               episodeSeasons: _episodeSeasons,
               episodeNumbers: _episodeNumbers,
               episodePosters: _episodePosters,
+              episodeSeriesNames: _episodeSeriesNames,
               playUrl: _currentPlayUrl,
               token: _currentToken,
               subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
@@ -953,6 +959,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               episodeSeasons: _episodeSeasons,
               episodeNumbers: _episodeNumbers,
               episodePosters: _episodePosters,
+              episodeSeriesNames: _episodeSeriesNames,
               playUrl: _currentPlayUrl,
               token: _currentToken,
               subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
@@ -1138,6 +1145,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _episodeSeasons = List<int>.from(message['episodeSeasons'] ?? []);
         _episodeNumbers = List<int>.from(message['episodeNumbers'] ?? []);
         _episodePosters = List<String>.from(message['episodePosters'] ?? []);
+        _episodeSeriesNames = List<String>.from(message['episodeSeriesNames'] ?? []);
         _seriesName = message['seriesName'] ?? '';
         _hasEpisodeList = true;
       });
@@ -1152,6 +1160,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _episodeSeasons = [0];
           _episodeNumbers = [0];
           _episodePosters = [''];
+          _episodeSeriesNames = [''];
           _seriesName = '';
           _hasEpisodeList = true;
         });
@@ -1462,6 +1471,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _episodeSeasons.removeAt(index);
     _episodeNumbers.removeAt(index);
     _episodePosters.removeAt(index);
+    _episodeSeriesNames.removeAt(index);
 
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
@@ -1495,6 +1505,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _episodeSeasons.removeAt(index);
     _episodeNumbers.removeAt(index);
     _episodePosters.removeAt(index);
+    _episodeSeriesNames.removeAt(index);
 
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
@@ -1529,6 +1540,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _episodeSeasons.add(epMap['season'] as int? ?? 0);
           _episodeNumbers.add(epMap['number'] as int? ?? 0);
           _episodePosters.add(epMap['poster'] as String? ?? '');
+          _episodeSeriesNames.add(seriesName);
         }
         if (_seriesName.isEmpty) {
           _seriesName = seriesName;
@@ -1544,6 +1556,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _episodeSeasons.add(0);
         _episodeNumbers.add(0);
         _episodePosters.add(poster);
+        _episodeSeriesNames.add('');
         _hasEpisodeList = true;
         _addBroadcastMessage('已添加: $name');
       }
@@ -1817,7 +1830,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     final showPanel = widget.roomCode != null && _showPanel;
 
-    if (isPortrait && showPanel) {
+    if (showPanel && _currentEpisodeIndex < 0) {
+      // 未选中任何资源：资源面板全屏
+      return _buildResourcePanel();
+    } else if (isPortrait && showPanel) {
       // 手机竖屏：视频在上，资源面板在下
       return Column(
         children: [
