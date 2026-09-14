@@ -191,22 +191,22 @@ class DecodeModeService {
         for (int i = 0; i < data.ref.u.list.ref.num; i++) {
           final decoder = data.ref.u.list.ref.values[i];
           if (decoder.format == generated.mpv_format.MPV_FORMAT_NODE_MAP) {
-            String? decoderName;
+            String? codec;
+            String? driver;
             for (int j = 0; j < decoder.u.list.ref.num; j++) {
               final k =
                   decoder.u.list.ref.keys[j].cast<Utf8>().toDartString();
               final v = decoder.u.list.ref.values[j];
-              if (k == 'codec' &&
-                  v.format == generated.mpv_format.MPV_FORMAT_STRING) {
-                decoderName ??= v.u.string.cast<Utf8>().toDartString();
-              }
-              if (k == 'driver' &&
-                  v.format == generated.mpv_format.MPV_FORMAT_STRING) {
-                decoderName ??= v.u.string.cast<Utf8>().toDartString();
-              }
+              if (v.format != generated.mpv_format.MPV_FORMAT_STRING) continue;
+              final val = v.u.string.cast<Utf8>().toDartString();
+              if (k == 'codec') codec = val;
+              if (k == 'driver') driver = val;
             }
-            if (decoderName != null) {
-              decoders.add(decoderName);
+            // 拼接为 mpv 标准格式: "h264_mEDIACODEC"
+            if (codec != null && driver != null) {
+              decoders.add('${codec}_$driver'.toLowerCase());
+            } else if (codec != null) {
+              decoders.add(codec);
             }
           }
         }

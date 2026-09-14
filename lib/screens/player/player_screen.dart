@@ -259,11 +259,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   // 同步调试面板
   String _syncRtmChannel = '-';
   String _syncRtmStatus = '未连接';
-  String _syncMetadataPlayUrl = '空';
-  String _syncMetadataIndex = '-';
-  String _syncMetadataAllKeys = '-'; // metadata 全量 key 列表
-  String _syncMetadataWriteDiag = '-'; // 最后一次写入诊断
-  String _syncMetadataReadDiag = '-'; // 最后一次读取诊断
   String _syncMetadataTestResult = '-'; // 自检结果
   String _voStatus = '-'; // 视频输出驱动
   DeviceCodecInfo? _deviceCodecInfo; // 设备硬解码能力
@@ -298,8 +293,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_player.platform is! NativePlayer) return;
     try {
       final native = _player.platform as NativePlayer;
-      // 优先使用 hwPixelformat（比 hwdec-current 可靠，Android 上 hwdec-current 有已知 bug）
-      final hwPF = await native.getProperty('video-params/hw-pixelformat');
       final hwdec = await native.getProperty('hwdec-current');
       final vo = await native.getProperty('vo');
       final codec = await native.getProperty('video-codec');
@@ -307,11 +300,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         setState(() {
           _voStatus = vo.isEmpty ? '-' : vo;
           if (codec.isNotEmpty) _videoCodec = codec;
-          // hwPixelformat 非空 = 硬解码生效
-          if (hwPF.isNotEmpty) {
-            _actualDecoderFull = '$hwPF ✅';
-          } else if (hwdec.isNotEmpty) {
-            _actualDecoderFull = hwdec;
+          // hwdec-current 非空且不是 "no" = 硬解码生效
+          if (hwdec.isNotEmpty && hwdec != 'no') {
+            _actualDecoderFull = '$hwdec ✅';
           } else {
             _actualDecoderFull = 'no (软解码)';
           }
@@ -1964,26 +1955,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   Widget _buildSyncDebugPanel() {
     final logs = LogService().entries;
-    return Container(
-      width: 320,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.7,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 标题栏 — 可拖拽
-          GestureDetector(
-            onPanUpdate: (d) => setState(() {
-              _debugPanelX += d.delta.dx;
-              _debugPanelY += d.delta.dy;
-            }),
-            child: Container(
+    return GestureDetector(
+      onPanUpdate: (d) => setState(() {
+        _debugPanelX += d.delta.dx;
+        _debugPanelY += d.delta.dy;
+      }),
+      child: Container(
+        width: 320,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 标题栏
+            Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.green.withValues(alpha: 0.15),
@@ -2016,7 +2007,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 ],
               ),
             ),
-          ),
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(10),
@@ -2031,11 +2021,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     _debugRow('角色', _isHost ? '主持人' : '观众'),
                     _debugRow('RTM频道', _syncRtmChannel),
                     _debugRow('RTM状态', _syncRtmStatus),
-                    _debugRow('metadata playUrl', _syncMetadataPlayUrl),
-                    _debugRow('metadata epIndex', _syncMetadataIndex),
-                    _debugRow('metadata 所有key', _syncMetadataAllKeys),
-                    _debugRow('metadata 写入', _syncMetadataWriteDiag),
-                    _debugRow('metadata 读取', _syncMetadataReadDiag),
                     _debugRow('metadata 自检', _syncMetadataTestResult),
                   ],
                   const SizedBox(height: 4),
@@ -2074,8 +2059,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 ],
               ),
             ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
