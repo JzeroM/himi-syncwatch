@@ -132,6 +132,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         title: const Text('HIMI'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: '开房间',
+            onPressed: hasServer ? () => _createEmptyRoom(context) : null,
+          ),
+          IconButton(
             icon: const Icon(Icons.group_add),
             tooltip: '加入房间',
             onPressed: () => _showJoinRoomDialog(context),
@@ -276,6 +281,77 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               }
             },
             child: const Text('加入'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createEmptyRoom(BuildContext context) async {
+    final agoraConfig = ref.read(agoraConfigProvider);
+    if (agoraConfig == null || !agoraConfig.isConfigured) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在侧边栏配置声网 App ID 和 App Certificate')),
+        );
+      }
+      return;
+    }
+
+    final tokenCount = await _showTokenCountDialog(context);
+    if (tokenCount == null) return;
+
+    final channel = RoomCode.generateChannelId();
+    final roomCode = RoomCode.encode(
+      appId: agoraConfig.appId,
+      appCertificate: agoraConfig.appCertificate,
+      channel: channel,
+      tokenCount: tokenCount,
+    );
+
+    if (context.mounted) {
+      context.push(
+        '/player/_?roomCode=${Uri.encodeComponent(roomCode)}&isHost=true',
+      );
+    }
+  }
+
+  Future<int?> _showTokenCountDialog(BuildContext context) {
+    final controller = TextEditingController(text: '2');
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('开房间'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('房间最大人数', style: TextStyle(fontSize: 14)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final n = int.tryParse(controller.text.trim());
+              if (n != null && n > 0 && n <= 100) {
+                Navigator.pop(ctx, n);
+              }
+            },
+            child: const Text('确定'),
           ),
         ],
       ),

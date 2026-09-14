@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 
-class RoomSearchDelegate extends SearchDelegate<String> {
+class RoomSearchDelegate extends SearchDelegate<Map<String, dynamic>?> {
   final WidgetRef ref;
   final String roomCode;
   RoomSearchDelegate(this.ref, {required this.roomCode});
@@ -24,7 +23,7 @@ class RoomSearchDelegate extends SearchDelegate<String> {
   Widget buildLeading(BuildContext context) {
     return IconButton(
       icon: const Icon(Icons.arrow_back),
-      onPressed: () => close(context, ''),
+      onPressed: () => close(context, null),
     );
   }
 
@@ -59,8 +58,12 @@ class RoomSearchDelegate extends SearchDelegate<String> {
               title: Text(item.name),
               subtitle: Text(item.year ?? ''),
               onTap: () {
-                close(context, '');
-                context.push('/detail/${item.id}?roomMode=true&roomCode=${Uri.encodeComponent(roomCode)}');
+                close(context, {
+                  'itemId': item.id,
+                  'name': item.name,
+                  'poster': item.posterUrl ?? '',
+                  'year': item.year ?? '',
+                });
               },
             );
           },

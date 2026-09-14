@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:agora_token_generator/agora_token_generator.dart';
@@ -1395,15 +1396,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _handleAddResource(Map<String, dynamic> message) {
-    final isSeries = message['isSeries'] as bool? ?? false;
-    final name = message['name'] as String? ?? '';
-    final poster = message['poster'] as String? ?? '';
-    final seriesName = message['seriesName'] as String? ?? '';
+    _addResourceLocally(message);
+  }
+
+  void _addResourceLocally(Map<String, dynamic> data) {
+    final isSeries = data['isSeries'] as bool? ?? false;
+    final name = data['name'] as String? ?? '';
+    final poster = data['poster'] as String? ?? '';
+    final seriesName = data['seriesName'] as String? ?? '';
 
     if (isSeries) {
-      final episodes = message['episodes'] as List<dynamic>?;
+      final episodes = data['episodes'] as List<dynamic>?;
       if (episodes != null && episodes.isNotEmpty) {
-        // 电视剧：添加所有选中的集数
         for (final ep in episodes) {
           final epMap = ep as Map<String, dynamic>;
           _episodeIds.add(epMap['id'] as String);
@@ -1419,8 +1423,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _addBroadcastMessage('已添加: $name (${episodes.length}集)');
       }
     } else {
-      // 电影：添加单条
-      final itemId = message['itemId'] as String?;
+      final itemId = data['itemId'] as String?;
       if (itemId != null && itemId.isNotEmpty) {
         _episodeIds.add(itemId);
         _episodeNames.add(name);
@@ -1433,6 +1436,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
     _autoExpandSeries();
     setState(() {});
+  }
+
+  void _sendAddResourceRTM(Map<String, dynamic> data) {
+    if (_rtmChannel == null) return;
+    final rtmService = ref.read(rtmServiceProvider);
+    final isSeries = data['isSeries'] as bool? ?? false;
+    rtmService.sendAddResource(
+      itemId: data['itemId'] as String? ?? '',
+      name: data['name'] as String? ?? '',
+      poster: data['poster'] as String? ?? '',
+      isSeries: isSeries,
+      seriesName: data['seriesName'] as String? ?? '',
+      episodes: isSeries ? (data['episodes'] as List<Map<String, dynamic>>?) : null,
+    );
   }
 
   // 复制房间码
@@ -2538,11 +2555,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 ),
                 if (_roomData != null && _isHost && !_player.state.playing) ...[
                   GestureDetector(
-                    onTap: () {
-                      showSearch(
+                    onTap: () async {
+                      final itemData = await showSearch<Map<String, dynamic>?>(
                         context: context,
                         delegate: RoomSearchDelegate(ref, roomCode: widget.roomCode!),
                       );
+                      if (itemData != null && mounted) {
+                        // 跳转详情页（roomMode），等待用户点击"加入资源"后返回数据
+                        final resourceData = await context.push<Map<String, dynamic>>(
+                          '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}',
+                        );
+                        if (resourceData != null && mounted) {
+                          _addResourceLocally(resourceData);
+                          _sendAddResourceRTM(resourceData);
+                        }
+                      }
                     },
                     child: const Icon(Icons.search, color: Colors.white70, size: 20),
                   ),

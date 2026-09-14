@@ -5,7 +5,6 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
-import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 
@@ -155,7 +154,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Future<void> _addResourceToRoom() async {
     if (_item == null || widget.roomCode == null) return;
 
-    final rtmService = ref.read(rtmServiceProvider);
+    Map<String, dynamic> result;
 
     if (_item!.isSeries && _episodes.isNotEmpty) {
       // 电视剧：弹出集数选择
@@ -171,29 +170,26 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         'seriesName': _item!.name,
       }).toList();
 
-      await rtmService.sendAddResource(
-        itemId: _item!.id,
-        name: _item!.name,
-        poster: _item!.posterUrl ?? '',
-        isSeries: true,
-        seriesName: _item!.name,
-        episodes: episodesJson,
-      );
+      result = {
+        'itemId': _item!.id,
+        'name': _item!.name,
+        'poster': _item!.posterUrl ?? '',
+        'isSeries': true,
+        'seriesName': _item!.name,
+        'episodes': episodesJson,
+      };
     } else {
       // 电影：直接添加
-      await rtmService.sendAddResource(
-        itemId: _item!.id,
-        name: _item!.name,
-        poster: _item!.posterUrl ?? '',
-        isSeries: false,
-      );
+      result = {
+        'itemId': _item!.id,
+        'name': _item!.name,
+        'poster': _item!.posterUrl ?? '',
+        'isSeries': false,
+      };
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已添加到房间资源列表')),
-      );
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(result);
     }
   }
 
