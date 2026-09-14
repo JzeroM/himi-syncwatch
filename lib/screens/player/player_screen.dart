@@ -1915,31 +1915,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_player.platform is NativePlayer) {
       final native = _player.platform as NativePlayer;
 
-      // 记住当前状态
-      final currentPos = _player.state.position;
-      final wasPlaying = _player.state.playing;
-
-      // 设置新 hwdec 属性
+      // 只设置新 hwdec 属性，mpv 播放中热切换，无需重载流
       final hwdecValue =
           DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
       await native.setProperty('hwdec', hwdecValue);
 
       final fallbackValue = DecodeModeService.resolveFallback(mode);
       await native.setProperty('vd-lavc-software-fallback', fallbackValue);
-
-      // 用 loadfile replace + start 参数直接替换当前流
-      if (_currentPlayUrl.isNotEmpty) {
-        final startSec = currentPos.inMilliseconds / 1000.0;
-        await native.command([
-          'loadfile', _currentPlayUrl, 'replace',
-          'start=$startSec',
-        ]);
-
-        // 恢复播放状态
-        if (!wasPlaying) {
-          await _player.pause();
-        }
-      }
     }
 
     setState(() => _showDecodeModeMenu = false);
