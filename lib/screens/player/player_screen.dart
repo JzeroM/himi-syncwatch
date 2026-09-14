@@ -26,6 +26,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -47,7 +48,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends ConsumerState<PlayerScreen> {
+enum _OrientationMode { portraitUp, landscapeLeft, landscapeRight }
+
+class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
   late final Player _player;
   late final VideoController _controller;
   Timer? _heartbeatTimer;
@@ -98,8 +101,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int? _embyDefaultAudioIndex;
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
-  bool _isLandscape = false;
+  _OrientationMode _orientationMode = _OrientationMode.portraitUp;
   BoxFit _videoFit = BoxFit.contain;
+
+  // 传感器
+  StreamSubscription? _accelSub;
 
   Map<String, dynamic>? _roomData;
 
@@ -185,6 +191,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final settings = ref.read(settingsProvider);
     _player = Player(
       configuration: PlayerConfiguration(
@@ -234,6 +241,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     _setupPlayerListeners();
+    _startOrientationSensor();
 
     if (widget.roomCode != null) {
       _setupRoomSync();
@@ -358,6 +366,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() {
       _isPlayerReady = true;
     });
+
+    // 单人模式自动横屏
+    if (widget.roomCode == null && mounted) {
+      _switchToLandscape(_OrientationMode.landscapeLeft);
+    }
     _autoExpandSeries();
   }
 
@@ -1171,15 +1184,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
+  void _startOrientationSensor() {
+    double filteredX = 0;
+    const alpha = 0.2;
+    int flipCount = 0;
+
+    _accelSub = accelerometerEventStream(
+      samplingPeriod: SensorInterval.normalInterval,
+    ).listen((event) {
+      filteredX = alpha * event.x + (1 - alpha) * filteredX;
+
+      // 仅在横屏模式下检测180度翻转
+      if (_orientationMode == _OrientationMode.landscapeLeft) {
+        if (filteredX < -8.0) {
+          flipCount++;
+          if (flipCount >= 3) {
+            _switchToLandscape(_OrientationMode.landscapeRight);
+            flipCount = 0;
+          }
+        } else {
+          flipCount = 0;
+        }
+      } else if (_orientationMode == _OrientationMode.landscapeRight) {
+        if (filteredX > 8.0) {
+          flipCount++;
+          if (flipCount >= 3) {
+            _switchToLandscape(_OrientationMode.landscapeLeft);
+            flipCount = 0;
+          }
+        } else {
+          flipCount = 0;
+        }
+      }
+    });
+  }
+
+  void _switchToLandscape(_OrientationMode mode) {
+    if (!mounted) return;
+    setState(() => _orientationMode = mode);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
   void _toggleOrientation() {
-    setState(() => _isLandscape = !_isLandscape);
-    if (_isLandscape) {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    if (_orientationMode == _OrientationMode.portraitUp) {
+      _switchToLandscape(_OrientationMode.landscapeLeft);
     } else {
+      setState(() => _orientationMode = _OrientationMode.portraitUp);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
@@ -1508,6 +1562,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _tracksSubscription?.cancel();
     _logSubscription?.cancel();
     _videoParamsSubscription?.cancel();
+    _accelSub?.cancel();
     _broadcastScrollController.dispose();
 
     // 恢复屏幕亮度
@@ -1538,6 +1593,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
+    WidgetsBinding.instance.removeObserver(this);
     _player.dispose();
     super.dispose();
   }
@@ -2333,9 +2389,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 if (Platform.isAndroid || Platform.isIOS) ...[
                   const SizedBox(width: 20),
                   _buildControlButton(
-                    icon: _isLandscape
-                        ? Icons.screen_lock_portrait
-                        : Icons.screen_lock_landscape,
+                    icon: _orientationMode == _OrientationMode.portraitUp
+                        ? Icons.screen_lock_landscape
+                        : Icons.screen_lock_portrait,
                     onTap: _toggleOrientation,
                   ),
                 ],
