@@ -1861,7 +1861,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     return Stack(
       children: [
         // 视频 / 占位文字
-        if (_isPlayerReady || !_hasEpisodeList)
+        if (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null))
           Center(
             child: Video(
               controller: _controller,
@@ -1931,7 +1931,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (_showVolumeBar) _buildVolumeBar(),
 
         // Controls（底部渐变浮层，仅视频区域底部）
-        if (_showControls && (_isPlayerReady || !_hasEpisodeList))
+        if (_showControls && (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
           Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
 
         // 加载指示器
