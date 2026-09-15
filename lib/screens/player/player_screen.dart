@@ -587,6 +587,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 设置 HTTP headers
       _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       _player.media = url;
+      await _player.updateTexture();
 
       // 字幕设置
       _player.setProperty('subtitle', '1');
@@ -595,9 +596,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (pos > Duration.zero) {
         await _player.seek(position: pos.inMilliseconds);
       }
-      if (wasPlaying) {
-        _player.state = PlaybackState.playing;
-      }
+      _player.state = PlaybackState.playing;
       Future.delayed(const Duration(seconds: 2), () async {
         _queryHwdecStatus();
         await _queryActualDecoder();
@@ -671,10 +670,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (requestId != _playRequestId || !mounted) return;
 
       if (token.isNotEmpty) {
-        _player.setProperty('avio.headers', 'X-Emby-Token: $token'); _player.media = resolvedUrl;
+        _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+        _player.media = resolvedUrl;
       } else {
         _player.media = resolvedUrl;
       }
+      await _player.updateTexture();
 
       // 等待缓冲完成再 seek
       await Future.delayed(const Duration(milliseconds: 500));
