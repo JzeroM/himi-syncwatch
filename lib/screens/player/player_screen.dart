@@ -372,8 +372,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // Seek 触发帧刷新
     try {
       final pos = await native.getProperty('playback-time');
-      if (pos != null && pos.toString().isNotEmpty) {
-        final seconds = double.tryParse(pos.toString()) ?? 0;
+      final posStr = pos.toString();
+      if (posStr.isNotEmpty) {
+        final seconds = double.tryParse(posStr) ?? 0;
         await native.seek(Duration(milliseconds: (seconds * 1000).round()));
       }
     } catch (_) {}
