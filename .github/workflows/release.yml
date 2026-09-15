@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  FLUTTER_VERSION: '3.27.4'
+  FLUTTER_VERSION: '3.47.4'
 
 jobs:
   flutter-analyze:
@@ -256,8 +256,8 @@ jobs:
 
       - name: 设置 macOS 最低版本
         run: |
-          sed -i '' 's/MACOSX_DEPLOYMENT_TARGET = 10.14/MACOSX_DEPLOYMENT_TARGET = 10.15/' macos/Runner/Configs/AppInfo.xcconfig || true
-          sed -i '' 's/^(MACOSX_DEPLOYMENT_TARGET).*/\1 = 10.15/' macos/Podfile || true
+          sed -i '' -E 's/^([[:space:]]*MACOSX_DEPLOYMENT_TARGET)[[:space:]]*=.*/\1 = 10.15/' macos/Runner/Configs/AppInfo.xcconfig || true
+          sed -i '' -E 's/^([[:space:]]*MACOSX_DEPLOYMENT_TARGET)[[:space:]]*=.*/\1 = 10.15/' macos/Podfile || true
 
       - run: flutter pub get
       - run: flutter build macos --release

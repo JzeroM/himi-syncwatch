@@ -67,7 +67,7 @@ for path in glob.glob('android/app/build.gradle'):
     # 3c. 替换 release 块中的 signingConfig 行
     t = re.sub(
         r'(buildTypes\s*\{[^}]*release\s*\{[^}]*?)signingConfig\s*=\s*signingConfigs\.debug',
-        r'\1signingConfig = keyProperties[\'storeFile\'] ? signingConfigs.release : signingConfigs.debug',
+        r"\1signingConfig = keyProperties['storeFile'] ? signingConfigs.release : signingConfigs.debug",
         t,
         flags=re.DOTALL
     )
