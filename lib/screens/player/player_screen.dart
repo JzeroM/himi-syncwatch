@@ -2291,24 +2291,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final native = _player.platform as NativePlayer;
       final wasPlaying = _player.state.playing;
 
+      // 获取当前位置（用于 seek 触发帧刷新）
+      dynamic currentPos;
+      try {
+        currentPos = await native.getProperty('playback-time');
+      } catch (_) {
+        currentPos = null;
+      }
+
       // Step1: 暂停（防止切换期间旧解码器输出帧导致撕裂）
       if (wasPlaying) await _player.pause();
 
-      // Step2: 直接设置新解码器（mpv 在暂停时接受 hwdec 属性变更）
-      final hwdecValue = DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
-      final fallbackValue = DecodeModeService.resolveFallback(mode);
-      await native.setProperty('hwdec', hwdecValue);
-      await native.setProperty('vd-lavc-software-fallback', fallbackValue);
+      // Step2: 切换解码器
+      if (mode == 'sw') {
+        // SW 专用两步过渡：给 mpv 500ms 完成 HW→SW 管线重置
+        await native.setProperty('hwdec', 'auto-safe');
+        await native.setProperty('vd-lavc-software-fallback', '3');
+        await Future.delayed(const Duration(milliseconds: 200));
+        await native.setProperty('hwdec', 'no');
+        await Future.delayed(const Duration(milliseconds: 300));
+      } else {
+        // HW/HW+/Auto: 直接设置（硬件解码器初始化快）
+        final hwdecValue = DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
+        final fallbackValue = DecodeModeService.resolveFallback(mode);
+        await native.setProperty('hwdec', hwdecValue);
+        await native.setProperty('vd-lavc-software-fallback', fallbackValue);
+      }
 
-      // Step3: 恢复播放（mpv 自动用新解码器解码下一帧）
+      // Step3: seek 触发帧刷新（强制新解码器解码当前帧）
+      if (currentPos != null) {
+        try {
+          await native.seek(currentPos);
+        } catch (_) {}
+      }
+
+      // Step4: 恢复播放
       if (wasPlaying) await _player.play();
 
-      // Step4: 重置解码器日志
+      // Step5: 重置解码器日志
       _decoderLogEntries.clear();
       _actualDecoderFull = '';
       _logStartTime = DateTime.now();
 
-      // Step5: 持久化设置
+      // Step6: 持久化设置
       await ref.read(settingsProvider.notifier).update(decodeMode: mode);
       setState(() => _showDecodeModeMenu = false);
     } finally {
