@@ -105,9 +105,10 @@ class MediaStream {
   /// HDR 类型标签
   String get hdrLabel {
     if (isDolbyVision) {
-      // 尝试获取具体 Profile
-      if (extendedVideoSubType?.contains('Profile50') == true) return 'Dolby Vision P5';
-      if (extendedVideoSubType?.contains('Profile81') == true) return 'Dolby Vision P8';
+      if (extendedVideoSubType == 'DoviProfile50') return 'Dolby Vision P5';
+      if (extendedVideoSubType == 'DoviProfile76') return 'Dolby Vision P7';
+      if (extendedVideoSubType == 'DoviProfile81') return 'Dolby Vision P8';
+      if (extendedVideoSubType == 'DoviProfile84') return 'Dolby Vision P8.4';
       return 'Dolby Vision';
     }
     if (videoRange == 'HDR') return 'HDR10';

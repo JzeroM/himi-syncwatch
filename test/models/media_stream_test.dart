@@ -259,6 +259,14 @@ void main() {
       );
       expect(dvP5.hdrLabel, equals('Dolby Vision P5'));
 
+      final dvP7 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile76',
+      );
+      expect(dvP7.hdrLabel, equals('Dolby Vision P7'));
+
       final dvP8 = MediaStream(
         type: 'Video',
         codec: 'hevc',
@@ -266,6 +274,14 @@ void main() {
         extendedVideoSubType: 'DoviProfile81',
       );
       expect(dvP8.hdrLabel, equals('Dolby Vision P8'));
+
+      final dvP84 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile84',
+      );
+      expect(dvP84.hdrLabel, equals('Dolby Vision P8.4'));
 
       final hdr10 = MediaStream(
         type: 'Video',
@@ -307,6 +323,14 @@ void main() {
       );
       expect(dvP5.isDolbyVisionProfile5, isTrue);
 
+      final dvP7 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile76',
+      );
+      expect(dvP7.isDolbyVisionProfile5, isFalse);
+
       final dvP8 = MediaStream(
         type: 'Video',
         codec: 'hevc',
@@ -314,6 +338,14 @@ void main() {
         extendedVideoSubType: 'DoviProfile81',
       );
       expect(dvP8.isDolbyVisionProfile5, isFalse);
+
+      final dvP84 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile84',
+      );
+      expect(dvP84.isDolbyVisionProfile5, isFalse);
 
       final dvNoSubType = MediaStream(
         type: 'Video',

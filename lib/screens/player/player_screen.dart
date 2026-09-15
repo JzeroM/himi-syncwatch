@@ -369,11 +369,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           // P5 HW 解码：IPT-PQ 色彩空间，需要 mpv 做色彩空间转换
           await native.setProperty('target-colorspace-hint', 'yes');
           await _setHdrColorParams(native);
-          LogService().log('Player', 'DV P5 HW 解码: target-colorspace-hint=yes + HDR 色彩空间参数');
+          LogService().log('Player', 'DV P5 HW: target-colorspace-hint=yes + HDR 色彩空间参数');
         } else {
-          // P8 HW 解码：BT.2020 PQ，硬件直接处理，仅 colorspace hint
+          // P7/P8 HW 解码：BT.2020 PQ/HLG/SDR，硬件直接处理，仅 colorspace hint
           await native.setProperty('target-colorspace-hint', 'yes');
-          LogService().log('Player', 'DV P8 HW 解码: target-colorspace-hint=yes');
+          final profile = _embyVideoStream?.extendedVideoSubType ?? 'unknown';
+          LogService().log('Player', 'DV $profile HW: target-colorspace-hint=yes');
         }
       } else if (hdrType != 'SDR') {
         // 非 DV 但有 HDR（HDR10/HLG）→ 也设置 HDR 参数
