@@ -141,7 +141,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   List<int> _audioTracks = [];
   int? _currentAudio;
   StreamSubscription? _tracksSubscription;
-  bool _subtitleAutoSelected = false;
 
   List<MediaStream> _embySubtitleStreams = [];
   List<MediaStream> _embyAudioStreams = [];
@@ -735,13 +734,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       }
     });
-  }
-
-  void _autoSelectDefaultTracks() {
-    // fvp: 自动选择默认音轨
-    if (_embyDefaultAudioIndex != null) {
-      _player.setActiveTracks(MediaType.audio, [_embyDefaultAudioIndex!]);
-    }
   }
 
   void _setupRoomSync() async {
