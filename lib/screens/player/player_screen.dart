@@ -399,9 +399,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // Phase 3: 设置 fallback 策略 — HW/HW+ 锁死不回退
       final fallbackValue = DecodeModeService.resolveFallback(settings.decodeMode);
-      await native.setProperty('vd-lavc-software-fallback', fallbackValue);  // Android mpv 0.36 只认识旧名
+      await native.setProperty('vd-lavc-software-fallback', fallbackValue);
 
-      // Phase 3: 监听 mpv 日志 — 实时检测解码状态
+      // Phase 4: 监听 mpv 日志 — 检测解码状态
       _logSubscription?.cancel();
       _logSubscription = _player.stream.log.listen((log) {
         LogService().log('mpv', log.text);
@@ -411,7 +411,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         final status = DecodeModeService.parseLogMessage(log.text);
         final decoder = DecodeModeService.parseActualDecoder(log.text);
 
-        // 仅存解码相关日志（用于超时检测）
+        // 仅存解码相关日志
         if (decoder != null || status != DecodeStatus.unknown) {
           _decoderLogEntries.add(log.text);
           if (_decoderLogEntries.length > 10) _decoderLogEntries.removeAt(0);
@@ -424,7 +424,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       });
 
-      // Phase 3b: 监听视频参数 — 获取分辨率
+      // Phase 5: 监听视频参数 — 获取分辨率
       _videoParamsSubscription?.cancel();
       _videoParamsSubscription = _player.stream.videoParams.listen((params) {
         if (mounted && params.w != null && params.h != null) {
@@ -440,7 +440,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       await native.setProperty('sub-shadow-offset', '1');
       await native.setProperty('sub-margin-y', '22');
 
-      // 音量默认 50%
+      // 音量默认 80%
       await native.setProperty('volume', '80');
     }
 
@@ -1072,7 +1072,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         return;
       }
       _lastSeekTime = DateTime.now();
-      _player.seek(Duration(milliseconds: (expectedPos * 1000).toInt()));
+      try {
+        _player.seek(Duration(milliseconds: (expectedPos * 1000).toInt()));
+      } catch (_) {}
     }
 
     if (playing && !_player.state.playing) {
@@ -1099,7 +1101,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         break;
       case AppConstants.actionSeek:
         final pos = (message['position'] as num).toDouble();
-        _player.seek(Duration(milliseconds: (pos * 1000).toInt()));
+        try {
+          _player.seek(Duration(milliseconds: (pos * 1000).toInt()));
+        } catch (_) {}
         break;
       case AppConstants.actionRate:
         final r = (message['rate'] as num).toDouble();
@@ -1404,7 +1408,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _onSeek(double value) {
-    _player.seek(Duration(milliseconds: value.toInt()));
+    try {
+      _player.seek(Duration(milliseconds: value.toInt()));
+    } catch (_) {}
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
     }
@@ -2283,73 +2289,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
 
       final native = _player.platform as NativePlayer;
+      final wasPlaying = _player.state.playing;
 
-      // 安全获取当前位置
-      dynamic currentPos;
-      try {
-        currentPos = await native.getProperty('playback-time');
-      } catch (_) {
-        currentPos = null;
-      }
+      // Step1: 暂停（防止切换期间旧解码器输出帧导致撕裂）
+      if (wasPlaying) await _player.pause();
 
-      if (mode == 'sw') {
-        // SW 模式：两步过渡，防止黑屏/管线重置卡顿
-        await native.setProperty('hwdec', 'auto-safe');
-        await native.setProperty('vd-lavc-software-fallback', '3');
-        await Future.delayed(const Duration(milliseconds: 200));
+      // Step2: 直接设置新解码器（mpv 在暂停时接受 hwdec 属性变更）
+      final hwdecValue = DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
+      final fallbackValue = DecodeModeService.resolveFallback(mode);
+      await native.setProperty('hwdec', hwdecValue);
+      await native.setProperty('vd-lavc-software-fallback', fallbackValue);
 
-        await native.setProperty('hwdec', 'no');
-        await Future.delayed(const Duration(milliseconds: 300));
+      // Step3: 恢复播放（mpv 自动用新解码器解码下一帧）
+      if (wasPlaying) await _player.play();
 
-        await _waitForDecodeReady(native);
-      } else {
-        // HW / HW+ 模式：强制不回退（resolveFallback 返回 'no'）
-        final hwdecValue =
-            DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
-        await native.setProperty('hwdec', hwdecValue);
-
-        final fallbackValue = DecodeModeService.resolveFallback(mode);
-        await native.setProperty('vd-lavc-software-fallback', fallbackValue);
-      }
-
-      await _seekToPositionWithKeyframe(native, currentPos);
-
-      // 重置解码器日志（旧模式日志不再有效）
+      // Step4: 重置解码器日志
       _decoderLogEntries.clear();
       _actualDecoderFull = '';
       _logStartTime = DateTime.now();
 
-      // 同步 settings 到 Riverpod
+      // Step5: 持久化设置
       await ref.read(settingsProvider.notifier).update(decodeMode: mode);
       setState(() => _showDecodeModeMenu = false);
     } finally {
       _isSwitchingDecode = false;
     }
-  }
-
-  /// 等待解码管线就绪（通过播放时间变化检测）
-  Future<void> _waitForDecodeReady(NativePlayer native) async {
-    final start = DateTime.now();
-    double? lastPos;
-    while (DateTime.now().difference(start).inMilliseconds < 3000) {
-      await Future.delayed(const Duration(milliseconds: 150));
-      try {
-        final pos = await native.getProperty('playback-time');
-        final currentPos = (pos as num?)?.toDouble();
-        if (currentPos != null && lastPos != null && currentPos != lastPos) {
-          return; // 播放时间在变化，管线已就绪
-        }
-        lastPos = currentPos;
-      } catch (_) {}
-    }
-  }
-
-  /// Seek 到目标位置
-  Future<void> _seekToPositionWithKeyframe(NativePlayer native, dynamic pos) async {
-    if (pos == null) return;
-    try {
-      await native.seek(pos);
-    } catch (_) {}
   }
 
   // ========== 手势控制 ==========
@@ -2367,7 +2331,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _seekRelative(int deltaMs) {
     final currentMs = _position.inMilliseconds;
     final targetMs = (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
-    _player.seek(Duration(milliseconds: targetMs));
+    try {
+      _player.seek(Duration(milliseconds: targetMs));
+    } catch (_) {}
 
     final seconds = (deltaMs / 1000).round();
     _showGestureHint(seconds > 0 ? '+${seconds}s' : '${seconds}s');
