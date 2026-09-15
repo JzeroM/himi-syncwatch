@@ -2302,6 +2302,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // Step1: 暂停（防止切换期间旧解码器输出帧导致撕裂）
       if (wasPlaying) await _player.pause();
 
+      // 记录目标解码器值（用于调试日志）
+      final hwdecTarget = mode == 'sw' ? 'no' : DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
+
       // Step2: 切换解码器
       if (mode == 'sw') {
         // SW: 两步过渡（压缩版，给 mpv 100ms 完成 HW→SW 管线重置）
@@ -2324,6 +2327,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           await native.seek(currentPos);
         } catch (_) {}
       }
+
+      // [临时调试] 轮询 hwdec-current 5次，每次间隔100ms
+      LogService().log('DEBUG', '=== 开始检测 hwdec-current (目标: $hwdecTarget) ===');
+      for (var i = 0; i < 5; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        try {
+          final hwdecCurrent = await native.getProperty('hwdec-current');
+          LogService().log('DEBUG', 'hwdec-current[$i]: "$hwdecCurrent"');
+        } catch (e) {
+          LogService().log('DEBUG', 'hwdec-current[$i]: error $e');
+        }
+      }
+      LogService().log('DEBUG', '=== 检测结束 ===');
 
       // Step4: 恢复播放
       if (wasPlaying) await _player.play();
