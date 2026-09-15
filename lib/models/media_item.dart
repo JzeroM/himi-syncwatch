@@ -91,6 +91,20 @@ class MediaStream {
 
   bool get isTextSubtitle => type == 'Subtitle';
   bool get isInternalStream => subtitleLocationType == 'InternalStream';
+  
+  /// 杜比视界检测
+  bool get isDolbyVision => extendedVideoType == 'DolbyVision';
+  
+  /// HDR 类型检测（HDR10/HLG/Dolby Vision）
+  bool get isHDR => videoRange == 'HDR' || videoRange == 'PQ' || isDolbyVision;
+  
+  /// HDR 类型标签
+  String get hdrLabel {
+    if (isDolbyVision) return 'Dolby Vision';
+    if (videoRange == 'HDR') return 'HDR10';
+    if (videoRange == 'HLG') return 'HLG';
+    return 'SDR';
+  }
 
   String get displayInfo {
     if (displayTitle != null && displayTitle!.isNotEmpty) {

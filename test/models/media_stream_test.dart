@@ -189,4 +189,97 @@ void main() {
       expect(parsedAudios, isEmpty);
     });
   });
+
+  group('MediaStream HDR/DV 检测', () {
+    test('isDolbyVision', () {
+      final dv = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+      );
+      expect(dv.isDolbyVision, isTrue);
+
+      final normal = MediaStream(type: 'Video', codec: 'hevc');
+      expect(normal.isDolbyVision, isFalse);
+
+      final hdr10 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'HDR',
+      );
+      expect(hdr10.isDolbyVision, isFalse);
+    });
+
+    test('isHDR', () {
+      final dv = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+      );
+      expect(dv.isHDR, isTrue);
+
+      final hdr10 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'HDR',
+      );
+      expect(hdr10.isHDR, isTrue);
+
+      final pq = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'PQ',
+      );
+      expect(pq.isHDR, isTrue);
+
+      final hlg = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'HLG',
+      );
+      expect(hlg.isHDR, isFalse); // HLG 不是 isHDR
+
+      final sdr = MediaStream(type: 'Video', codec: 'h264');
+      expect(sdr.isHDR, isFalse);
+    });
+
+    test('hdrLabel', () {
+      final dv = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+      );
+      expect(dv.hdrLabel, equals('Dolby Vision'));
+
+      final hdr10 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'HDR',
+      );
+      expect(hdr10.hdrLabel, equals('HDR10'));
+
+      final hlg = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'HLG',
+      );
+      expect(hlg.hdrLabel, equals('HLG'));
+
+      final sdr = MediaStream(type: 'Video', codec: 'h264');
+      expect(sdr.hdrLabel, equals('SDR'));
+    });
+
+    test('DV + HDR 组合', () {
+      // DV 内容通常也有 videoRange='PQ'
+      final dvWithPQ = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        videoRange: 'PQ',
+      );
+      expect(dvWithPQ.isDolbyVision, isTrue);
+      expect(dvWithPQ.isHDR, isTrue);
+      expect(dvWithPQ.hdrLabel, equals('Dolby Vision')); // DV 优先于 PQ
+    });
+  });
 }

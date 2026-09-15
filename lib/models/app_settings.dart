@@ -2,20 +2,23 @@ class AppSettings {
   final String decodeMode; // 'auto', 'hw+', 'hw', 'sw'
   final int bufferSizeMB;
   final bool showSyncDebug;
+  final bool dvHwDecode; // 杜比视界硬件解码开关（默认关闭，安全优先）
 
   const AppSettings({
     this.decodeMode = 'auto',
     this.bufferSizeMB = 64,
     this.showSyncDebug = false,
+    this.dvHwDecode = false,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
 
-  AppSettings copyWith({String? decodeMode, int? bufferSizeMB, bool? showSyncDebug}) {
+  AppSettings copyWith({String? decodeMode, int? bufferSizeMB, bool? showSyncDebug, bool? dvHwDecode}) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       bufferSizeMB: bufferSizeMB ?? this.bufferSizeMB,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
+      dvHwDecode: dvHwDecode ?? this.dvHwDecode,
     );
   }
 
@@ -23,6 +26,7 @@ class AppSettings {
         'decodeMode': decodeMode,
         'bufferSizeMB': bufferSizeMB,
         'showSyncDebug': showSyncDebug,
+        'dvHwDecode': dvHwDecode,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -42,6 +46,7 @@ class AppSettings {
       decodeMode: mode,
       bufferSizeMB: json['bufferSizeMB'] as int? ?? 64,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
+      dvHwDecode: json['dvHwDecode'] as bool? ?? false,
     );
   }
 

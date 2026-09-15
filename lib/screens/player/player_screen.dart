@@ -265,6 +265,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _videoCodec = '-'; // 视频编码格式
   String _videoResolution = '-'; // 视频分辨率
   String _actualDecoderFull = ''; // 实际解码器完整描述
+  String _hdrType = 'SDR'; // HDR 类型标签
+  bool _isDolbyVisionContent = false; // 当前是否播放 DV 内容
   StreamSubscription? _logSubscription; // mpv 日志订阅
   StreamSubscription? _videoParamsSubscription; // 视频参数订阅
   List<String> _logEntries = []; // mpv 日志条目（全部，用于调试面板）
@@ -317,6 +319,79 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _actualDecoderFull = _formatActualDecoder(hwdecCurrent);
         });
       }
+    } catch (_) {}
+  }
+
+  /// 检测杜比视界内容并应用相应策略
+  Future<void> _detectDolbyVision() async {
+    if (_player.platform is! NativePlayer) return;
+    try {
+      final native = _player.platform as NativePlayer;
+      
+      // 查询当前视频编码
+      final videoCodec = await native.getProperty('video-codec');
+      
+      // 检测 DV（通过 codec 名称特征）
+      final isDV = videoCodec.contains('dv') || 
+                    videoCodec.contains('dolby') ||
+                    videoCodec.contains('dovi');
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _isDolbyVisionContent = isDV;
+        _hdrType = isDV ? 'Dolby Vision' : 
+                   (videoCodec.contains('hevc') ? 'HDR10/SDR' : 'SDR');
+      });
+      
+      LogService().log('Player', 'DV 检测: codec=$videoCodec, isDV=$isDV');
+      
+      // DV 内容处理
+      if (isDV) {
+        final settings = ref.read(settingsProvider);
+        if (!settings.dvHwDecode) {
+          // 默认：强制 SW 解码（安全）
+          LogService().log('Player', 'DV 内容: 强制 SW 解码（设置 dvHwDecode=false）');
+          await _forceSwForDolbyVision(native);
+        } else {
+          LogService().log('Player', 'DV 内容: 允许 HW 解码（设置 dvHwDecode=true）');
+        }
+        // 设置 HDR 色彩管理参数
+        await _setHdrColorParams(native);
+      }
+    } catch (_) {}
+  }
+
+  /// DV 内容强制 SW 解码
+  Future<void> _forceSwForDolbyVision(NativePlayer native) async {
+    final wasPlaying = _player.state.playing;
+    if (wasPlaying) await _player.pause();
+    
+    // 切换到 SW 解码
+    await native.setProperty('hwdec', 'no');
+    await native.setProperty('vd-lavc-software-fallback', '3');
+    
+    // Seek 触发帧刷新
+    try {
+      final pos = await native.getProperty('playback-time');
+      if (pos != null) await native.seek(pos);
+    } catch (_) {}
+    
+    if (wasPlaying) await _player.play();
+    
+    // 更新调试面板
+    await Future.delayed(const Duration(milliseconds: 100));
+    await _queryActualDecoder();
+  }
+
+  /// 设置 HDR 色彩管理参数
+  Future<void> _setHdrColorParams(NativePlayer native) async {
+    try {
+      await native.setProperty('target-trc', 'pq');        // PQ 传输函数
+      await native.setProperty('target-prim', 'bt.2020');   // BT.2020 广色域
+      await native.setProperty('tone-mapping', 'bt.2446a');  // HDR→SDR 色调映射
+      await native.setProperty('hdr-compute-peak', 'yes');   // 动态峰值计算
+      LogService().log('Player', 'HDR 参数已设置: target-trc=pq, target-prim=bt.2020');
     } catch (_) {}
   }
 
@@ -546,9 +621,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (wasPlaying) {
         await _player.play();
       }
-      Future.delayed(const Duration(seconds: 2), () {
+      Future.delayed(const Duration(seconds: 2), () async {
         _queryHwdecStatus();
-        _queryActualDecoder();
+        await _queryActualDecoder();
+        await _detectDolbyVision();
       });
 
       return url;
@@ -2055,6 +2131,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     _debugRow('视频输出 vo', _voStatus),
                     _debugRow('解码模式', AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
                     _debugRow('实际解码', _actualDecoderFull.isNotEmpty ? _actualDecoderFull : '检测中...'),
+                    if (_hdrType != 'SDR')
+                      _debugRow('HDR 类型', _hdrType),
                   ],
                   const SizedBox(height: 4),
                   // ▼ 运行日志

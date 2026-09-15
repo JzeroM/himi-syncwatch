@@ -102,6 +102,14 @@ class SettingsScreen extends ConsumerWidget {
                 ref.read(settingsProvider.notifier).update(showSyncDebug: v),
           ),
           const Divider(height: 1),
+          SwitchListTile(
+            title: const Text('杜比视界硬件解码'),
+            subtitle: const Text('默认关闭(安全)。开启后DV内容尝试硬件解码，需设备支持'),
+            value: settings.dvHwDecode,
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).update(dvHwDecode: v),
+          ),
+          const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.bug_report),
             title: const Text('导出运行日志'),
