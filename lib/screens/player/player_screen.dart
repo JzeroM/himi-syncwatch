@@ -582,7 +582,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _currentToken = token;
 
       final pos = Duration(milliseconds: _player.position);
-      final wasPlaying = _player.state == PlaybackState.playing;
 
       // 设置 HTTP headers
       _player.setProperty('avio.headers', 'X-Emby-Token: $token');
