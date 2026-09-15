@@ -267,8 +267,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _actualDecoderFull = ''; // 实际解码器完整描述
   StreamSubscription? _logSubscription; // mpv 日志订阅
   StreamSubscription? _videoParamsSubscription; // 视频参数订阅
-  List<String> _logEntries = []; // mpv 日志条目用于超时检测
+  List<String> _logEntries = []; // mpv 日志条目（全部，用于调试面板）
+  List<String> _decoderLogEntries = []; // 解码相关日志（仅解码状态变化）
   DateTime _logStartTime = DateTime.now(); // 播放开始时间，用于日志检测超时
+  bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
   final GlobalKey _qrKey = GlobalKey();
 
@@ -405,9 +407,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         LogService().log('mpv', log.text);
         _logEntries.add(log.text);
         if (_logEntries.length > 20) _logEntries.removeAt(0);
+
         final status = DecodeModeService.parseLogMessage(log.text);
-        // 从日志提取实际解码器
         final decoder = DecodeModeService.parseActualDecoder(log.text);
+
+        // 仅存解码相关日志（用于超时检测）
+        if (decoder != null || status != DecodeStatus.unknown) {
+          _decoderLogEntries.add(log.text);
+          if (_decoderLogEntries.length > 10) _decoderLogEntries.removeAt(0);
+        }
+
         if (decoder != null && mounted) {
           setState(() {
             _actualDecoderFull = _formatActualDecoder(decoder, status);
@@ -446,11 +455,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (status == DecodeStatus.hwActive) return '$decoder ✅';
     if (status == DecodeStatus.hwFailed) return '$decoder ❌ 已回退';
 
-    // 关键 fallback：如果日志监听 3 秒未捕获到解码信息，显示检测中
-    if (_logEntries.isEmpty && DateTime.now().difference(_logStartTime).inSeconds > 3) {
-      return '检测中...';
+    // unknown 状态：显示解码器名 + 检测中标记
+    if (decoder.isNotEmpty) return '$decoder ⏳';
+
+    // 超时：3秒内未捕获到解码信息
+    if (DateTime.now().difference(_logStartTime).inSeconds > 3) {
+      return '未检测到解码器';
     }
-    return '$decoder';
+    return '检测中...';
   }
 
   Future<void> _loadEpisodeStream(int episodeIndex) async {
@@ -2260,71 +2272,84 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   Future<void> _switchDecodeMode(String mode) async {
-    if (_player.platform is! NativePlayer) {
+    if (_isSwitchingDecode) return;
+    _isSwitchingDecode = true;
+
+    try {
+      if (_player.platform is! NativePlayer) {
+        await ref.read(settingsProvider.notifier).update(decodeMode: mode);
+        setState(() => _showDecodeModeMenu = false);
+        return;
+      }
+
+      final native = _player.platform as NativePlayer;
+
+      // 安全获取当前位置
+      dynamic currentPos;
+      try {
+        currentPos = await native.getProperty('playback-time');
+      } catch (_) {
+        currentPos = null;
+      }
+
+      if (mode == 'sw') {
+        // SW 模式：两步过渡，防止黑屏/管线重置卡顿
+        await native.setProperty('hwdec', 'auto-safe');
+        await native.setProperty('vd-lavc-software-fallback', '3');
+        await Future.delayed(const Duration(milliseconds: 200));
+
+        await native.setProperty('hwdec', 'no');
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        await _waitForDecodeReady(native);
+      } else {
+        // HW / HW+ 模式：强制不回退（resolveFallback 返回 'no'）
+        final hwdecValue =
+            DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
+        await native.setProperty('hwdec', hwdecValue);
+
+        final fallbackValue = DecodeModeService.resolveFallback(mode);
+        await native.setProperty('vd-lavc-software-fallback', fallbackValue);
+      }
+
+      await _seekToPositionWithKeyframe(native, currentPos);
+
+      // 重置解码器日志（旧模式日志不再有效）
+      _decoderLogEntries.clear();
+      _actualDecoderFull = '';
+      _logStartTime = DateTime.now();
+
+      // 同步 settings 到 Riverpod
       await ref.read(settingsProvider.notifier).update(decodeMode: mode);
       setState(() => _showDecodeModeMenu = false);
-      return;
+    } finally {
+      _isSwitchingDecode = false;
     }
-
-    final native = _player.platform as NativePlayer;
-    // final settings = ref.read(settingsProvider);  // 已移除，直接使用模式参数
-
-    // 先保存当前播放位置，防止切换后丢失
-    final currentPos = await native.getProperty('playback-time');
-
-    if (mode == 'sw') {
-      // SW 模式：两步过渡，防止黑屏/管线重置卡顿
-      // 步骤1：过渡到 auto-safe（释放硬件解码但保持 mpv 就绪）
-      await native.setProperty('hwdec', 'auto-safe');
-      await native.setProperty('vd-lavc-software-fallback', '3');
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      // 步骤2：确认 hwdec=no（纯软解）
-      await native.setProperty('hwdec', 'no');
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      // 确认软件解码管线就绪（通过日志或播放时间变化）
-      await _waitForDecodeReady(native);
-    } else {
-      // HW / HW+ 模式：直接热切换
-      final hwdecValue =
-          DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
-      await native.setProperty('hwdec', hwdecValue);
-
-      final fallbackValue = DecodeModeService.resolveFallback(mode);
-      await native.setProperty('vd-lavc-software-fallback', fallbackValue);
-    }
-
-    // 恢复播放进度
-    await _seekToPositionWithKeyframe(native, currentPos);
-
-    setState(() => _showDecodeModeMenu = false);
   }
 
-  /// 等待解码管线就绪（监听日志确认）
+  /// 等待解码管线就绪（通过播放时间变化检测）
   Future<void> _waitForDecodeReady(NativePlayer native) async {
     final start = DateTime.now();
+    double? lastPos;
     while (DateTime.now().difference(start).inMilliseconds < 3000) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      // 如果检测到播放时间变化，视为管线已就绪
+      await Future.delayed(const Duration(milliseconds: 150));
       try {
-        await native.getProperty('playback-time');
+        final pos = await native.getProperty('playback-time');
+        final currentPos = (pos as num?)?.toDouble();
+        if (currentPos != null && lastPos != null && currentPos != lastPos) {
+          return; // 播放时间在变化，管线已就绪
+        }
+        lastPos = currentPos;
       } catch (_) {}
     }
   }
 
-  /// Seek 到目标位置（带关键帧预优化的尝试）
+  /// Seek 到目标位置
   Future<void> _seekToPositionWithKeyframe(NativePlayer native, dynamic pos) async {
     if (pos == null) return;
     try {
-      // 尝试关键帧 Seek（若 NativePlayer 支持则精准定位，否则回退到普通 Seek）
       await native.seek(pos);
-    } catch (_) {
-      // 兼容性回退：若关键帧 Seek 失败，尝试普通定位
-      try {
-        await native.seek(pos);
-      } catch (__) {}
-    }
+    } catch (_) {}
   }
 
   // ========== 手势控制 ==========
