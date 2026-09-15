@@ -359,14 +359,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (isDV) {
         final settings = ref.read(settingsProvider);
         if (!settings.dvHwDecode) {
-          // 默认：强制 SW 解码（安全）
+          // 默认：强制 SW 解码（安全）+ 设置 HDR 参数（SW 需要手动色调映射）
           LogService().log('Player', 'DV 内容: 强制 SW 解码（设置 dvHwDecode=false）');
           await _forceSwForDolbyVision(native);
+          await _setHdrColorParams(native);
         } else {
-          LogService().log('Player', 'DV 内容: 允许 HW 解码（设置 dvHwDecode=true）');
+          // 允许 HW 解码：不设置 HDR 参数（硬件自行处理 HDR 元数据）
+          LogService().log('Player', 'DV 内容: 允许 HW 解码（设置 dvHwDecode=true），HDR 由硬件处理');
         }
-        // 设置 HDR 色彩管理参数
-        await _setHdrColorParams(native);
       } else if (hdrType != 'SDR') {
         // 非 DV 但有 HDR（HDR10/HLG）→ 也设置 HDR 参数
         await _setHdrColorParams(native);
