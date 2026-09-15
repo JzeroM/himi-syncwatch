@@ -18,6 +18,7 @@ class MediaStream {
   final int? sampleRate;
   final String? videoRange;
   final String? extendedVideoType;
+  final String? extendedVideoSubType; // DV Profile: DoviProfile50/DoviProfile81 等
 
   MediaStream({
     required this.type,
@@ -39,6 +40,7 @@ class MediaStream {
     this.sampleRate,
     this.videoRange,
     this.extendedVideoType,
+    this.extendedVideoSubType,
   });
 
   factory MediaStream.fromJson(Map<String, dynamic> json) {
@@ -62,6 +64,7 @@ class MediaStream {
       sampleRate: json['SampleRate'] as int?,
       videoRange: json['VideoRange'],
       extendedVideoType: json['ExtendedVideoType'],
+      extendedVideoSubType: json['ExtendedVideoSubType'],
     );
   }
 
@@ -86,6 +89,7 @@ class MediaStream {
       if (sampleRate != null) 'SampleRate': sampleRate,
       if (videoRange != null) 'VideoRange': videoRange,
       if (extendedVideoType != null) 'ExtendedVideoType': extendedVideoType,
+      if (extendedVideoSubType != null) 'ExtendedVideoSubType': extendedVideoSubType,
     };
   }
 
@@ -100,11 +104,20 @@ class MediaStream {
   
   /// HDR 类型标签
   String get hdrLabel {
-    if (isDolbyVision) return 'Dolby Vision';
+    if (isDolbyVision) {
+      // 尝试获取具体 Profile
+      if (extendedVideoSubType?.contains('Profile50') == true) return 'Dolby Vision P5';
+      if (extendedVideoSubType?.contains('Profile81') == true) return 'Dolby Vision P8';
+      return 'Dolby Vision';
+    }
     if (videoRange == 'HDR') return 'HDR10';
     if (videoRange == 'HLG') return 'HLG';
     return 'SDR';
   }
+
+  /// DV Profile 5 检测（单层，IPT-PQ 色彩空间，需要特殊处理）
+  bool get isDolbyVisionProfile5 =>
+      isDolbyVision && extendedVideoSubType?.contains('Profile50') == true;
 
   String get displayInfo {
     if (displayTitle != null && displayTitle!.isNotEmpty) {

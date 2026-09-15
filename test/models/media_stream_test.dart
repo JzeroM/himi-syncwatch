@@ -251,6 +251,22 @@ void main() {
       );
       expect(dv.hdrLabel, equals('Dolby Vision'));
 
+      final dvP5 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile50',
+      );
+      expect(dvP5.hdrLabel, equals('Dolby Vision P5'));
+
+      final dvP8 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile81',
+      );
+      expect(dvP8.hdrLabel, equals('Dolby Vision P8'));
+
       final hdr10 = MediaStream(
         type: 'Video',
         codec: 'hevc',
@@ -280,6 +296,34 @@ void main() {
       expect(dvWithPQ.isDolbyVision, isTrue);
       expect(dvWithPQ.isHDR, isTrue);
       expect(dvWithPQ.hdrLabel, equals('Dolby Vision')); // DV 优先于 PQ
+    });
+
+    test('isDolbyVisionProfile5', () {
+      final dvP5 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile50',
+      );
+      expect(dvP5.isDolbyVisionProfile5, isTrue);
+
+      final dvP8 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile81',
+      );
+      expect(dvP8.isDolbyVisionProfile5, isFalse);
+
+      final dvNoSubType = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+      );
+      expect(dvNoSubType.isDolbyVisionProfile5, isFalse);
+
+      final nonDV = MediaStream(type: 'Video', codec: 'hevc');
+      expect(nonDV.isDolbyVisionProfile5, isFalse);
     });
   });
 }

@@ -358,15 +358,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // DV 内容处理
       if (isDV) {
         final settings = ref.read(settingsProvider);
+        final isP5 = _embyVideoStream?.isDolbyVisionProfile5 == true;
+
         if (!settings.dvHwDecode) {
           // 默认：强制 SW 解码（安全）+ 设置 HDR 参数（SW 需要手动色调映射）
           LogService().log('Player', 'DV 内容: 强制 SW 解码（设置 dvHwDecode=false）');
           await _forceSwForDolbyVision(native);
           await _setHdrColorParams(native);
-        } else {
-          // 允许 HW 解码：设置 colorspace hint 让显示设备切换 HDR 模式
+        } else if (isP5) {
+          // P5 HW 解码：IPT-PQ 色彩空间，需要 mpv 做色彩空间转换
           await native.setProperty('target-colorspace-hint', 'yes');
-          LogService().log('Player', 'DV 内容: 允许 HW 解码（设置 dvHwDecode=true），target-colorspace-hint=yes');
+          await _setHdrColorParams(native);
+          LogService().log('Player', 'DV P5 HW 解码: target-colorspace-hint=yes + HDR 色彩空间参数');
+        } else {
+          // P8 HW 解码：BT.2020 PQ，硬件直接处理，仅 colorspace hint
+          await native.setProperty('target-colorspace-hint', 'yes');
+          LogService().log('Player', 'DV P8 HW 解码: target-colorspace-hint=yes');
         }
       } else if (hdrType != 'SDR') {
         // 非 DV 但有 HDR（HDR10/HLG）→ 也设置 HDR 参数
