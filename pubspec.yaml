@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.0.33+103
+version: 1.0.34+104
 
 environment:
   sdk: ^3.6.0
@@ -15,9 +15,9 @@ dependencies:
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
   # 播放器
-  media_kit: ^1.1.11
+  media_kit: ^1.2.6
   media_kit_video: ^2.0.1
-  media_kit_libs_video: ^1.0.5
+  media_kit_libs_video: ^1.0.7
   # 声网 RTM（中国区）
   agora_rtm: ^2.2.5
   # 声网 Token 生成（纯 Dart，客户端签名）
