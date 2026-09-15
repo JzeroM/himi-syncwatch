@@ -2303,29 +2303,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (wasPlaying) await _player.pause();
 
       // Step2: 切换解码器
-      if (mode == 'sw') {
-        // SW 专用两步过渡：给 mpv 500ms 完成 HW→SW 管线重置
-        await native.setProperty('hwdec', 'auto-safe');
-        await native.setProperty('vd-lavc-software-fallback', '3');
-        await Future.delayed(const Duration(milliseconds: 200));
-        await native.setProperty('hwdec', 'no');
-        await Future.delayed(const Duration(milliseconds: 300));
-      } else {
-        // HW/HW+/Auto: 直接设置（硬件解码器初始化快）
-        final hwdecValue = DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
-        final fallbackValue = DecodeModeService.resolveFallback(mode);
-        await native.setProperty('hwdec', hwdecValue);
-        await native.setProperty('vd-lavc-software-fallback', fallbackValue);
-      }
+      final hwdecValue = DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
+      final fallbackValue = DecodeModeService.resolveFallback(mode);
+      await native.setProperty('hwdec', hwdecValue);
+      await native.setProperty('vd-lavc-software-fallback', fallbackValue);
 
-      // Step3: seek 触发帧刷新（强制新解码器解码当前帧）
+      // Step3: 轮询等待解码器就绪（自适应，50-200ms）
+      await _waitDecoderReady(native, hwdecValue);
+
+      // Step4: seek 触发帧刷新（强制新解码器解码当前帧）
       if (currentPos != null) {
         try {
           await native.seek(currentPos);
         } catch (_) {}
       }
 
-      // Step4: 恢复播放
+      // Step5: 恢复播放
       if (wasPlaying) await _player.play();
 
       // Step5: 重置解码器日志
@@ -2338,6 +2331,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       setState(() => _showDecodeModeMenu = false);
     } finally {
       _isSwitchingDecode = false;
+    }
+  }
+
+  /// 轮询等待解码器就绪（自适应，50ms×4 = 最多200ms）
+  Future<void> _waitDecoderReady(NativePlayer native, String expected) async {
+    for (var i = 0; i < 4; i++) {
+      await Future.delayed(const Duration(milliseconds: 50));
+      try {
+        final current = await native.getProperty('hwdec-current');
+        final value = current?.toString() ?? '';
+        // 确认解码器已切换到目标值，或已切到 SW（expected='no'）
+        if (value == expected || (expected == 'no' && value.isEmpty)) return;
+      } catch (_) {}
     }
   }
 
