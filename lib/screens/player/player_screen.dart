@@ -266,7 +266,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _videoResolution = '-'; // 视频分辨率
   String _actualDecoderFull = ''; // 实际解码器完整描述
   String _hdrType = 'SDR'; // HDR 类型标签
-  bool _isDolbyVisionContent = false; // 当前是否播放 DV 内容
   StreamSubscription? _logSubscription; // mpv 日志订阅
   StreamSubscription? _videoParamsSubscription; // 视频参数订阅
   List<String> _logEntries = []; // mpv 日志条目（全部，用于调试面板）
@@ -339,7 +338,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (!mounted) return;
       
       setState(() {
-        _isDolbyVisionContent = isDV;
         _hdrType = isDV ? 'Dolby Vision' : 
                    (videoCodec.contains('hevc') ? 'HDR10/SDR' : 'SDR');
       });
@@ -374,7 +372,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // Seek 触发帧刷新
     try {
       final pos = await native.getProperty('playback-time');
-      if (pos != null) await native.seek(pos);
+      if (pos != null && pos.toString().isNotEmpty) {
+        final seconds = double.tryParse(pos.toString()) ?? 0;
+        await native.seek(Duration(milliseconds: (seconds * 1000).round()));
+      }
     } catch (_) {}
     
     if (wasPlaying) await _player.play();
