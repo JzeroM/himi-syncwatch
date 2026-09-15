@@ -153,7 +153,7 @@ class DecodeModeService {
     // 通用成功日志：所有平台都输出 "Using hardware decoding (XXX)"
     if (logText.contains('Using hardware decoding')) {
       final match =
-          RegExp(r'Using hardware decoding \((\w+)\)').firstMatch(logText);
+          RegExp(r'Using hardware decoding \((.+?)\)').firstMatch(logText);
       if (match != null) return match.group(1);
     }
     // Android 专属：HW-downloading from mediacodec
