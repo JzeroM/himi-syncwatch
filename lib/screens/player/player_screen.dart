@@ -147,6 +147,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   List<MediaStream> _embySubtitleStreams = [];
   List<MediaStream> _embyAudioStreams = [];
+  MediaStream? _embyVideoStream; // 视频流信息（用于 DV 检测）
   int? _embyDefaultAudioIndex;
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
@@ -327,22 +328,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     try {
       final native = _player.platform as NativePlayer;
       
-      // 查询当前视频编码
-      final videoCodec = await native.getProperty('video-codec');
+      // 优先使用 Emby API 的 extendedVideoType（可靠）
+      // 回退到 mpv video-codec 属性（兜底）
+      bool isDV = false;
+      String hdrType = 'SDR';
       
-      // 检测 DV（通过 codec 名称特征）
-      final isDV = videoCodec.contains('dv') || 
-                    videoCodec.contains('dolby') ||
-                    videoCodec.contains('dovi');
+      if (_embyVideoStream != null) {
+        // 使用 Emby API 数据
+        isDV = _embyVideoStream!.isDolbyVision;
+        hdrType = _embyVideoStream!.hdrLabel;
+        LogService().log('Player', 'DV 检测(Emby API): isDV=$isDV, hdrType=$hdrType');
+      } else {
+        // 回退：查询 mpv 属性
+        final videoCodec = await native.getProperty('video-codec');
+        isDV = videoCodec.contains('dv') || 
+               videoCodec.contains('dolby') ||
+               videoCodec.contains('dovi');
+        hdrType = isDV ? 'Dolby Vision' : 
+                  (videoCodec.contains('hevc') ? 'HDR10/SDR' : 'SDR');
+        LogService().log('Player', 'DV 检测(mpv): codec=$videoCodec, isDV=$isDV');
+      }
       
       if (!mounted) return;
       
       setState(() {
-        _hdrType = isDV ? 'Dolby Vision' : 
-                   (videoCodec.contains('hevc') ? 'HDR10/SDR' : 'SDR');
+        _hdrType = hdrType;
       });
-      
-      LogService().log('Player', 'DV 检测: codec=$videoCodec, isDV=$isDV');
       
       // DV 内容处理
       if (isDV) {
@@ -355,6 +366,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           LogService().log('Player', 'DV 内容: 允许 HW 解码（设置 dvHwDecode=true）');
         }
         // 设置 HDR 色彩管理参数
+        await _setHdrColorParams(native);
+      } else if (hdrType != 'SDR') {
+        // 非 DV 但有 HDR（HDR10/HLG）→ 也设置 HDR 参数
         await _setHdrColorParams(native);
       }
     } catch (_) {}
@@ -559,6 +573,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           setState(() {
             _embyAudioStreams = source.audioStreams;
             _embySubtitleStreams = source.subtitleStreams;
+            _embyVideoStream = source.videoStream;
             _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
           });
         }
@@ -1010,6 +1025,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               token: _currentToken,
               subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
               audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
+              videoStream: _embyVideoStream?.toJson(),
               defaultAudioStreamIndex: _embyDefaultAudioIndex,
             );
             // 主持人发送当前播放状态（同步播放进度）
@@ -1051,6 +1067,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               token: _currentToken,
               subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
               audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
+              videoStream: _embyVideoStream?.toJson(),
               defaultAudioStreamIndex: _embyDefaultAudioIndex,
             );
           }
@@ -1277,8 +1294,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             .map((s) => MediaStream.fromJson(s))
             .toList();
       }
+      // 接收视频流信息（用于 DV 检测）
+      final videoStreamRaw = message['videoStream'];
+      if (videoStreamRaw is Map<String, dynamic>) {
+        _embyVideoStream = MediaStream.fromJson(videoStreamRaw);
+      }
       _embyDefaultAudioIndex = message['defaultAudioStreamIndex'] as int?;
-      LogService().log('Room', '字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条');
+      LogService().log('Room', '字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条, 视频=${_embyVideoStream?.codec ?? "无"}');
 
       // 从 roomInfo 消息中获取 playUrl 并播放
       final playUrl = message['playUrl'] as String?;
