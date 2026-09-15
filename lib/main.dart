@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:media_kit/media_kit.dart';
+import 'package:fvp/fvp.dart' as fvp;
 import 'package:himi_syncwatch/core/app.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
@@ -20,7 +20,7 @@ class _SelfSignedHttpOverrides extends HttpOverrides {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = _SelfSignedHttpOverrides();
-  MediaKit.ensureInitialized();
+  fvp.registerWith();
 
   final authService = EmbyAuthService();
   await authService.init();
