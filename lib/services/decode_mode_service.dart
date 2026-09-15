@@ -2,6 +2,8 @@ import 'dart:ffi';
 import 'dart:collection';
 import 'dart:io';
 // ignore: implementation_imports
+import 'package:media_kit/ffi/ffi.dart';
+// ignore: implementation_imports
 import 'package:media_kit/src/player/native/core/native_library.dart';
 // ignore: implementation_imports
 import 'package:media_kit/generated/libmpv/bindings.dart' as generated;
