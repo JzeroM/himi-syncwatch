@@ -266,10 +266,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _actualDecoderFull = ''; // 实际解码器完整描述
   String _hdrType = 'SDR'; // HDR 类型标签
   bool _isDolbyVisionP5 = false; // 当前是否 DV P5（控制解码模式显示）
-  StreamSubscription? _logSubscription; // mpv 日志订阅
-  StreamSubscription? _videoParamsSubscription; // 视频参数订阅
-  List<String> _logEntries = []; // mpv 日志条目（全部，用于调试面板）
-  bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
+  StreamSubscription? _logSubscription;
+  StreamSubscription? _videoParamsSubscription;
+  bool _isSwitchingDecode = false;
   List<String> _syncEvents = [];
   final GlobalKey _qrKey = GlobalKey();
 
@@ -417,7 +416,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final settings = ref.read(settingsProvider);
     _player = Player();
     _player.updateTexture();
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
@@ -479,30 +477,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   Future<void> _initPlayerProperties() async {
-    if (true) {
-      // fvp: 使用 _player 直接调用
-      final settings = ref.read(settingsProvider);
+    final settings = ref.read(settingsProvider);
 
-      // Phase 1: 查询设备硬解能力
-      // fvp: 无需获取 handle
-      _deviceCodecInfo = const DeviceCodecInfo.unknown(); // fvp: 使用默认解码器
+    _deviceCodecInfo = const DeviceCodecInfo.unknown();
 
-      // Phase 2: 设置解码器
-      final decoders = DecodeModeService.resolveDecoders(settings.decodeMode, _deviceCodecInfo);
-      _player.setDecoders(MediaType.video, decoders);
+    final decoders = DecodeModeService.resolveDecoders(settings.decodeMode, _deviceCodecInfo);
+    _player.setDecoders(MediaType.video, decoders);
 
-      // Phase 3: 字幕设置
-      _player.setProperty('subtitle', '1');
-      _player.setProperty('subtitle.font.size', '40');
-      _player.setProperty('subtitle.border', '2');
-      _player.setProperty('subtitle.shadow', '1');
-      _player.setProperty('subtitle.margin.y', '22');
+    _player.setProperty('subtitle', '1');
+    _player.setProperty('subtitle.font.size', '40');
+    _player.setProperty('subtitle.border', '2');
+    _player.setProperty('subtitle.shadow', '1');
+    _player.setProperty('subtitle.margin.y', '22');
 
-      // Phase 4: 音量默认 80%
-      _player.volume = 0.8;
-    }
+    _player.volume = 0.8;
 
-    // 锁屏保持
     try {
       await WakelockPlus.enable();
     } catch (_) {}
@@ -752,14 +741,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // fvp: 自动选择默认音轨
     if (_embyDefaultAudioIndex != null) {
       _player.setActiveTracks(MediaType.audio, [_embyDefaultAudioIndex!]);
-    }
-  }
-
-  void _refreshTracks() {
-    // fvp: 无需手动刷新轨道列表
-    if (!_subtitleAutoSelected) {
-      _subtitleAutoSelected = true;
-      _autoSelectDefaultTracks();
     }
   }
 
@@ -1058,7 +1039,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_isHost) return;
     if (_syncPaused) return;
     if (_isSyncing) return;
-    if (false) return;
 
     final position = (message['position'] as num).toDouble();
     final playing = message['playing'] as bool;
@@ -1786,6 +1766,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void dispose() {
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
+    _positionTimer?.cancel();
     _roomInfoTimeout?.cancel();
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
@@ -2318,13 +2299,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _isSwitchingDecode = true;
 
     try {
-      if (true) {
-        await ref.read(settingsProvider.notifier).update(decodeMode: mode);
-        setState(() => _showDecodeModeMenu = false);
-        return;
-      }
-
-      // fvp: 使用 _player 直接调用
       final wasPlaying = _player.state == PlaybackState.playing;
 
       // 获取当前位置（用于 seek 触发帧刷新）
