@@ -48,6 +48,10 @@ dependencies:
   logger: ^2.5.0
   path_provider: ^2.1.5
 
+dependency_overrides:
+  # path_provider_foundation 2.6.0 拉入 objective_c，其 build hook 在非 Apple 平台报 arm64e 错误
+  path_provider_foundation: 2.5.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

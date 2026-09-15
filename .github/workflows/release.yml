@@ -157,9 +157,11 @@ jobs:
           plutil -insert NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}' ios/Runner/Info.plist
           plutil -insert UIBackgroundModes -json '["audio"]' ios/Runner/Info.plist
 
-      - name: 设置 iOS 最低部署版本
+      - name: 设置 iOS 最低部署版本 + 禁用签名
         run: |
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.5/' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = "[^"]*"/DEVELOPMENT_TEAM = ""/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' ios/Runner.xcodeproj/project.pbxproj
 
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
