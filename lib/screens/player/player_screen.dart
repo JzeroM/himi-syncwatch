@@ -2340,7 +2340,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       await Future.delayed(const Duration(milliseconds: 50));
       try {
         final current = await native.getProperty('hwdec-current');
-        final value = current?.toString() ?? '';
+        final value = current.toString();
         // 确认解码器已切换到目标值，或已切到 SW（expected='no'）
         if (value == expected || (expected == 'no' && value.isEmpty)) return;
       } catch (_) {}
