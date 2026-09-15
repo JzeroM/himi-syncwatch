@@ -268,8 +268,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   StreamSubscription? _logSubscription; // mpv 日志订阅
   StreamSubscription? _videoParamsSubscription; // 视频参数订阅
   List<String> _logEntries = []; // mpv 日志条目（全部，用于调试面板）
-  List<String> _decoderLogEntries = []; // 解码相关日志（仅解码状态变化）
-  DateTime _logStartTime = DateTime.now(); // 播放开始时间，用于日志检测超时
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
   final GlobalKey _qrKey = GlobalKey();
@@ -303,6 +301,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         setState(() {
           _voStatus = vo.isEmpty ? '-' : vo;
           if (codec.isNotEmpty) _videoCodec = codec;
+        });
+      }
+    } catch (_) {}
+  }
+
+  /// 主动查询 hwdec-current，获取实际解码器
+  Future<void> _queryActualDecoder() async {
+    if (_player.platform is! NativePlayer) return;
+    try {
+      final native = _player.platform as NativePlayer;
+      final hwdecCurrent = await native.getProperty('hwdec-current');
+      if (mounted) {
+        setState(() {
+          _actualDecoderFull = _formatActualDecoder(hwdecCurrent);
         });
       }
     } catch (_) {}
@@ -401,27 +413,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final fallbackValue = DecodeModeService.resolveFallback(settings.decodeMode);
       await native.setProperty('vd-lavc-software-fallback', fallbackValue);
 
-      // Phase 4: 监听 mpv 日志 — 检测解码状态
+      // Phase 4: 监听 mpv 日志
       _logSubscription?.cancel();
       _logSubscription = _player.stream.log.listen((log) {
         LogService().log('mpv', log.text);
         _logEntries.add(log.text);
         if (_logEntries.length > 20) _logEntries.removeAt(0);
-
-        final status = DecodeModeService.parseLogMessage(log.text);
-        final decoder = DecodeModeService.parseActualDecoder(log.text);
-
-        // 仅存解码相关日志
-        if (decoder != null || status != DecodeStatus.unknown) {
-          _decoderLogEntries.add(log.text);
-          if (_decoderLogEntries.length > 10) _decoderLogEntries.removeAt(0);
-        }
-
-        if (decoder != null && mounted) {
-          setState(() {
-            _actualDecoderFull = _formatActualDecoder(decoder, status);
-          });
-        }
       });
 
       // Phase 5: 监听视频参数 — 获取分辨率
@@ -450,19 +447,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } catch (_) {}
   }
 
-  String _formatActualDecoder(String decoder, DecodeStatus status) {
-    if (decoder == 'no') return 'no (软解码) ❌';
-    if (status == DecodeStatus.hwActive) return '$decoder ✅';
-    if (status == DecodeStatus.hwFailed) return '$decoder ❌ 已回退';
-
-    // unknown 状态：显示解码器名 + 检测中标记
-    if (decoder.isNotEmpty) return '$decoder ⏳';
-
-    // 超时：3秒内未捕获到解码信息
-    if (DateTime.now().difference(_logStartTime).inSeconds > 3) {
-      return '未检测到解码器';
-    }
-    return '检测中...';
+  /// 基于 hwdec-current 属性值格式化解码器显示
+  String _formatActualDecoder(String hwdecCurrent) {
+    if (hwdecCurrent.isEmpty) return '检测中...';
+    if (hwdecCurrent == 'no') return '软解码';
+    // 硬解码器：显示名称 + 标记
+    return '$hwdecCurrent (硬解码)';
   }
 
   Future<void> _loadEpisodeStream(int episodeIndex) async {
@@ -556,7 +546,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (wasPlaying) {
         await _player.play();
       }
-      Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
+      Future.delayed(const Duration(seconds: 2), () {
+        _queryHwdecStatus();
+        _queryActualDecoder();
+      });
 
       return url;
     } catch (e) {
@@ -2302,9 +2295,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // Step1: 暂停（防止切换期间旧解码器输出帧导致撕裂）
       if (wasPlaying) await _player.pause();
 
-      // 记录目标解码器值（用于调试日志）
-      final hwdecTarget = mode == 'sw' ? 'no' : DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
-
       // Step2: 切换解码器
       if (mode == 'sw') {
         // SW: 两步过渡（压缩版，给 mpv 100ms 完成 HW→SW 管线重置）
@@ -2328,26 +2318,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         } catch (_) {}
       }
 
-      // [临时调试] 轮询 hwdec-current 5次，每次间隔100ms
-      LogService().log('DEBUG', '=== 开始检测 hwdec-current (目标: $hwdecTarget) ===');
-      for (var i = 0; i < 5; i++) {
-        await Future.delayed(const Duration(milliseconds: 100));
-        try {
-          final hwdecCurrent = await native.getProperty('hwdec-current');
-          LogService().log('DEBUG', 'hwdec-current[$i]: "$hwdecCurrent"');
-        } catch (e) {
-          LogService().log('DEBUG', 'hwdec-current[$i]: error $e');
-        }
-      }
-      LogService().log('DEBUG', '=== 检测结束 ===');
+      // Step4: 查询实际解码器并更新显示
+      await Future.delayed(const Duration(milliseconds: 100));
+      await _queryActualDecoder();
 
-      // Step4: 恢复播放
+      // Step5: 恢复播放
       if (wasPlaying) await _player.play();
-
-      // Step5: 重置解码器日志
-      _decoderLogEntries.clear();
-      _actualDecoderFull = '';
-      _logStartTime = DateTime.now();
 
       // Step6: 持久化设置
       await ref.read(settingsProvider.notifier).update(decodeMode: mode);
