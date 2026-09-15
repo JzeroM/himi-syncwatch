@@ -63,4 +63,70 @@ void main() {
       expect(restored.dvHwDecode, equals(original.dvHwDecode));
     });
   });
+
+  group('AppSettings gpuNext', () {
+    test('默认值为 true', () {
+      const settings = AppSettings();
+      expect(settings.gpuNext, isTrue);
+    });
+
+    test('copyWith 保留 gpuNext', () {
+      const original = AppSettings(gpuNext: false);
+      final copied = original.copyWith(decodeMode: 'hw');
+      expect(copied.gpuNext, isFalse);
+      expect(copied.decodeMode, equals('hw'));
+    });
+
+    test('copyWith 修改 gpuNext', () {
+      const original = AppSettings();
+      final copied = original.copyWith(gpuNext: false);
+      expect(copied.gpuNext, isFalse);
+    });
+
+    test('toJson 包含 gpuNext', () {
+      const settings = AppSettings(gpuNext: false);
+      final json = settings.toJson();
+      expect(json['gpuNext'], isFalse);
+    });
+
+    test('fromJson 解析 gpuNext', () {
+      final json = {
+        'decodeMode': 'auto',
+        'bufferSizeMB': 64,
+        'showSyncDebug': false,
+        'dvHwDecode': false,
+        'gpuNext': false,
+      };
+      final settings = AppSettings.fromJson(json);
+      expect(settings.gpuNext, isFalse);
+    });
+
+    test('fromJson 默认 gpuNext 为 true（旧版兼容）', () {
+      final json = {
+        'decodeMode': 'auto',
+        'bufferSizeMB': 64,
+        'showSyncDebug': false,
+        'dvHwDecode': false,
+      };
+      final settings = AppSettings.fromJson(json);
+      expect(settings.gpuNext, isTrue);
+    });
+
+    test('toJson/fromJson 往返保持一致', () {
+      const original = AppSettings(
+        decodeMode: 'sw',
+        bufferSizeMB: 256,
+        showSyncDebug: true,
+        dvHwDecode: true,
+        gpuNext: false,
+      );
+      final json = original.toJson();
+      final restored = AppSettings.fromJson(json);
+      expect(restored.decodeMode, equals(original.decodeMode));
+      expect(restored.bufferSizeMB, equals(original.bufferSizeMB));
+      expect(restored.showSyncDebug, equals(original.showSyncDebug));
+      expect(restored.dvHwDecode, equals(original.dvHwDecode));
+      expect(restored.gpuNext, equals(original.gpuNext));
+    });
+  });
 }

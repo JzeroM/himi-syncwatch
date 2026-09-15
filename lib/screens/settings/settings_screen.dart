@@ -103,8 +103,16 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
           SwitchListTile(
+            title: const Text('gpu-next'),
+            subtitle: const Text('mpv-配合软解修正杜比颜色'),
+            value: settings.gpuNext,
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).update(gpuNext: v),
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
             title: const Text('杜比视界硬件解码'),
-            subtitle: const Text('默认关闭(安全)。开启后DV内容尝试硬件解码，需设备支持'),
+            subtitle: const Text('仅限 P7/P8。P5 内容始终使用软件解码'),
             value: settings.dvHwDecode,
             onChanged: (v) =>
                 ref.read(settingsProvider.notifier).update(dvHwDecode: v),

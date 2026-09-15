@@ -267,6 +267,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _videoResolution = '-'; // 视频分辨率
   String _actualDecoderFull = ''; // 实际解码器完整描述
   String _hdrType = 'SDR'; // HDR 类型标签
+  bool _isDolbyVisionP5 = false; // 当前是否 DV P5（控制解码模式显示）
   StreamSubscription? _logSubscription; // mpv 日志订阅
   StreamSubscription? _videoParamsSubscription; // 视频参数订阅
   List<String> _logEntries = []; // mpv 日志条目（全部，用于调试面板）
@@ -353,6 +354,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       
       setState(() {
         _hdrType = hdrType;
+        _isDolbyVisionP5 = isDV && _embyVideoStream?.isDolbyVisionProfile5 == true;
       });
       
       // DV 内容处理
@@ -360,18 +362,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         final settings = ref.read(settingsProvider);
         final isP5 = _embyVideoStream?.isDolbyVisionProfile5 == true;
 
-        if (!settings.dvHwDecode) {
-          // 默认：强制 SW 解码（安全）+ 设置 HDR 参数（SW 需要手动色调映射）
-          LogService().log('Player', 'DV 内容: 强制 SW 解码（设置 dvHwDecode=false）');
+        if (isP5) {
+          // P5: 强制 SW（Android MediaCodec 不支持 IPT-PQc2）
+          LogService().log('Player', 'DV P5: 强制 SW 解码（IPT-PQc2 不兼容 HW）');
           await _forceSwForDolbyVision(native);
           await _setHdrColorParams(native);
-        } else if (isP5) {
-          // P5 HW 解码：IPT-PQ 色彩空间，需要 mpv 做色彩空间转换
-          await native.setProperty('target-colorspace-hint', 'yes');
+        } else if (!settings.dvHwDecode) {
+          // P7/P8: 用户选择 SW
+          LogService().log('Player', 'DV P7/P8: SW 解码（dvHwDecode=false）');
+          await _forceSwForDolbyVision(native);
           await _setHdrColorParams(native);
-          LogService().log('Player', 'DV P5 HW: target-colorspace-hint=yes + HDR 色彩空间参数');
         } else {
-          // P7/P8 HW 解码：BT.2020 PQ/HLG/SDR，硬件直接处理，仅 colorspace hint
+          // P7/P8: HW 解码
           await native.setProperty('target-colorspace-hint', 'yes');
           final profile = _embyVideoStream?.extendedVideoSubType ?? 'unknown';
           LogService().log('Player', 'DV $profile HW: target-colorspace-hint=yes');
@@ -630,6 +632,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       final pos = _player.state.position;
       final wasPlaying = _player.state.playing;
+
+      // gpu-next 仅对 DV P5 生效（IPT-PQc2 色彩空间需要 libplacebo 处理）
+      if (_player.platform is NativePlayer) {
+        final native = _player.platform as NativePlayer;
+        final settings = ref.read(settingsProvider);
+        final isP5 = _embyVideoStream?.isDolbyVisionProfile5 == true;
+        if (isP5 && settings.gpuNext) {
+          await native.setProperty('vo', 'gpu-next');
+          LogService().log('Player', 'DV P5: 设置 vo=gpu-next');
+        }
+      }
 
       await _player.open(Media(url, httpHeaders: {
         'X-Emby-Token': token,
@@ -2162,7 +2175,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     _debugRow('设备能力', _buildDeviceCapabilityText()),
                     _debugRow('视频信息', _videoCodec != '-' ? '$_videoCodec, $_videoResolution' : _videoResolution),
                     _debugRow('视频输出 vo', _voStatus),
-                    _debugRow('解码模式', AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
+                    _debugRow('解码模式', _isDolbyVisionP5 ? 'SW (DV P5)' : AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
                     _debugRow('实际解码', _actualDecoderFull.isNotEmpty ? _actualDecoderFull : '检测中...'),
                     if (_hdrType != 'SDR')
                       _debugRow('HDR 类型', _hdrType),
@@ -2267,7 +2280,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           const Spacer(),
           // 解码模式按钮
           GestureDetector(
-            onTap: () => setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
+            onTap: _isDolbyVisionP5 ? null : () => setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -2282,7 +2295,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   const Icon(Icons.memory, color: Colors.white, size: 14),
                   const SizedBox(width: 4),
                   Text(
-                    AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? 'Auto',
+                    _isDolbyVisionP5 ? 'SW' : (AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? 'Auto'),
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ],
@@ -2304,14 +2317,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   // ========== 解码模式选择面板 ==========
   Widget _buildDecodeModePanel() {
+    // DV P5: 不可切换，只显示 SW
+    if (_isDolbyVisionP5) {
+      return Container(
+        width: 160,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E2E),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Color(0xFF6366F1),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+                border: Border(bottom: BorderSide(color: Colors.white12, width: 0.5)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.radio_button_checked, color: Colors.white, size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('SW', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                        Text('DV P5 强制软解', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // P7/P8 或非 DV: 只显示 HW 和 SW
     final currentMode = ref.watch(settingsProvider).decodeMode;
-    final modes = ['auto', 'hw+', 'hw', 'sw'];
-    final labels = {'auto': 'Auto', 'hw+': 'HW+', 'hw': 'HW', 'sw': 'SW'};
+    final isHW = currentMode != 'sw';
+    final modes = ['hw', 'sw'];
+    final labels = {'hw': 'HW', 'sw': 'SW'};
     final descriptions = {
-      'auto': '智能选择',
-      'hw+': '硬解+回拷',
-      'hw': '纯硬解',
-      'sw': '纯软解',
+      'hw': '硬件解码',
+      'sw': '软件解码',
     };
 
     return GestureDetector(
@@ -2326,26 +2379,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: modes.map((mode) {
-            final isSelected = mode == currentMode;
+            final isSelected = (mode == 'hw' && isHW) || (mode == 'sw' && !isHW);
             return InkWell(
-              onTap: () => _switchDecodeMode(mode),
+              onTap: () => _switchDecodeMode(mode == 'hw' ? 'auto' : 'sw'),
               borderRadius: BorderRadius.circular(8),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? const Color(0xFF6366F1).withValues(alpha: 0.3)
-                      : null,
-                  border: const Border(
-                    bottom: BorderSide(color: Colors.white12, width: 0.5),
-                  ),
+                  color: isSelected ? const Color(0xFF6366F1).withValues(alpha: 0.3) : null,
+                  border: const Border(bottom: BorderSide(color: Colors.white12, width: 0.5)),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                      isSelected
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
+                      isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                       color: isSelected ? const Color(0xFF6366F1) : Colors.white54,
                       size: 16,
                     ),
@@ -2354,20 +2401,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            labels[mode]!,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight:
-                                  isSelected ? FontWeight.bold : FontWeight.normal,
-                            ),
-                          ),
-                          Text(
-                            descriptions[mode]!,
-                            style: const TextStyle(
-                                color: Colors.white54, fontSize: 10),
-                          ),
+                          Text(labels[mode]!, style: TextStyle(
+                            color: Colors.white, fontSize: 13,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          )),
+                          Text(descriptions[mode]!, style: const TextStyle(color: Colors.white54, fontSize: 10)),
                         ],
                       ),
                     ),
