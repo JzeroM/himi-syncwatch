@@ -364,8 +364,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           await _forceSwForDolbyVision(native);
           await _setHdrColorParams(native);
         } else {
-          // 允许 HW 解码：不设置 HDR 参数（硬件自行处理 HDR 元数据）
-          LogService().log('Player', 'DV 内容: 允许 HW 解码（设置 dvHwDecode=true），HDR 由硬件处理');
+          // 允许 HW 解码：设置 colorspace hint 让显示设备切换 HDR 模式
+          await native.setProperty('target-colorspace-hint', 'yes');
+          LogService().log('Player', 'DV 内容: 允许 HW 解码（设置 dvHwDecode=true），target-colorspace-hint=yes');
         }
       } else if (hdrType != 'SDR') {
         // 非 DV 但有 HDR（HDR10/HLG）→ 也设置 HDR 参数
