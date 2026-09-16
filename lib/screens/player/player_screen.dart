@@ -3203,10 +3203,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
       _player.setMedia(subtitleUrl, mdk.MediaType.subtitle);
-      _player.activeSubtitleTracks = [stream.index];
+      _player.activeSubtitleTracks = [embyIndex];
     } else {
       // 内嵌字幕：用 fvp 原生轨道切换，瞬间完成
-      _player.activeSubtitleTracks = [stream.index];
+      _player.activeSubtitleTracks = [embyIndex];
     }
 
     _useServerSubtitleBurnIn = false;
