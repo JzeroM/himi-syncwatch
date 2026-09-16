@@ -63,10 +63,10 @@ void main() {
     });
 
     test('同步播放命令 - 主持人未播放时不发送', () {
+      // isPlayerReady=false 时不应发送（currentEpisodeIndex 无关）
       final isPlayerReady = false;
-      final currentEpisodeIndex = -1;
 
-      final shouldSend = isPlayerReady && currentEpisodeIndex >= 0;
+      final shouldSend = isPlayerReady;
 
       expect(shouldSend, isFalse);
     });
