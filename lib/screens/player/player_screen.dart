@@ -6,8 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:fvp/mdk.dart' as mdk;
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -100,8 +99,7 @@ class _ResourceGroup {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
-  late final Player _player;
-  late final VideoController _controller;
+  late final mdk.Player _player;
   Timer? _heartbeatTimer;
   StreamSubscription? _rtmSubscription;
   bool _isHost = false;
@@ -138,10 +136,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _showVolumeBar = false;
   Timer? _gestureBarTimer;
 
-  List<SubtitleTrack> _subtitleTracks = [];
-  SubtitleTrack? _currentSubtitle;
-  List<AudioTrack> _audioTracks = [];
-  AudioTrack? _currentAudio;
+  // fvp: 轨道信息通过 Emby API 获取，不需要 media_kit 的 SubtitleTrack/AudioTrack
   StreamSubscription? _tracksSubscription;
   bool _subtitleAutoSelected = false;
 
@@ -262,15 +257,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _syncRtmStatus = '未连接';
   String _syncMetadataTestResult = '-'; // 自检结果
   String _voStatus = '-'; // 视频输出驱动
-  DeviceCodecInfo? _deviceCodecInfo; // 设备硬解码能力
   String _videoCodec = '-'; // 视频编码格式
   String _videoResolution = '-'; // 视频分辨率
   String _actualDecoderFull = ''; // 实际解码器完整描述
   String _hdrType = 'SDR'; // HDR 类型标签
   bool _isDolbyVisionP5 = false; // 当前是否 DV P5（控制解码模式显示）
-  StreamSubscription? _logSubscription; // mpv 日志订阅
-  StreamSubscription? _videoParamsSubscription; // 视频参数订阅
-  List<String> _logEntries = []; // mpv 日志条目（全部，用于调试面板）
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
   final GlobalKey _qrKey = GlobalKey();
@@ -295,29 +286,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   Future<void> _queryHwdecStatus() async {
-    if (_player.platform is! NativePlayer) return;
     try {
-      final native = _player.platform as NativePlayer;
-      final vo = await native.getProperty('vo');
-      final codec = await native.getProperty('video-codec');
+      // fvp: 通过 property 获取编解码器信息
+      final codec = _player.getProperty('video.decoder') ?? 'auto';
       if (mounted) {
         setState(() {
-          _voStatus = vo.isEmpty ? '-' : vo;
-          if (codec.isNotEmpty) _videoCodec = codec;
-        });
-      }
-    } catch (_) {}
-  }
-
-  /// 主动查询 hwdec-current，获取实际解码器
-  Future<void> _queryActualDecoder() async {
-    if (_player.platform is! NativePlayer) return;
-    try {
-      final native = _player.platform as NativePlayer;
-      final hwdecCurrent = await native.getProperty('hwdec-current');
-      if (mounted) {
-        setState(() {
-          _actualDecoderFull = _formatActualDecoder(hwdecCurrent);
+          _voStatus = 'fvp/libmdk';
+          _videoCodec = codec;
         });
       }
     } catch (_) {}
@@ -325,12 +300,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   /// 检测杜比视界内容并应用相应策略
   Future<void> _detectDolbyVision() async {
-    if (_player.platform is! NativePlayer) return;
     try {
-      final native = _player.platform as NativePlayer;
-      
       // 优先使用 Emby API 的 extendedVideoType（可靠）
-      // 回退到 mpv video-codec 属性（兜底）
       bool isDV = false;
       String hdrType = 'SDR';
       
@@ -339,15 +310,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         isDV = _embyVideoStream!.isDolbyVision;
         hdrType = _embyVideoStream!.hdrLabel;
         LogService().log('Player', 'DV 检测(Emby API): isDV=$isDV, hdrType=$hdrType');
-      } else {
-        // 回退：查询 mpv 属性
-        final videoCodec = await native.getProperty('video-codec');
-        isDV = videoCodec.contains('dv') || 
-               videoCodec.contains('dolby') ||
-               videoCodec.contains('dovi');
-        hdrType = isDV ? 'Dolby Vision' : 
-                  (videoCodec.contains('hevc') ? 'HDR10/SDR' : 'SDR');
-        LogService().log('Player', 'DV 检测(mpv): codec=$videoCodec, isDV=$isDV');
       }
       
       if (!mounted) return;
@@ -357,68 +319,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _isDolbyVisionP5 = isDV && _embyVideoStream?.isDolbyVisionProfile5 == true;
       });
       
-      // DV 内容处理
+      // fvp/libmdk 原生支持 Dolby Vision（包括 P5），无需手动设置
       if (isDV) {
-        final settings = ref.read(settingsProvider);
-        final isP5 = _embyVideoStream?.isDolbyVisionProfile5 == true;
-
-        if (isP5) {
-          // P5: 强制 SW（Android MediaCodec 不支持 IPT-PQc2）
-          LogService().log('Player', 'DV P5: 强制 SW 解码（IPT-PQc2 不兼容 HW）');
-          await _forceSwForDolbyVision(native);
-          await _setHdrColorParams(native);
-        } else if (!settings.dvHwDecode) {
-          // P7/P8: 用户选择 SW
-          LogService().log('Player', 'DV P7/P8: SW 解码（dvHwDecode=false）');
-          await _forceSwForDolbyVision(native);
-          await _setHdrColorParams(native);
-        } else {
-          // P7/P8: HW 解码
-          await native.setProperty('target-colorspace-hint', 'yes');
-          final profile = _embyVideoStream?.extendedVideoSubType ?? 'unknown';
-          LogService().log('Player', 'DV $profile HW: target-colorspace-hint=yes');
-        }
-      } else if (hdrType != 'SDR') {
-        // 非 DV 但有 HDR（HDR10/HLG）→ 也设置 HDR 参数
-        await _setHdrColorParams(native);
+        final profile = _embyVideoStream?.extendedVideoSubType ?? 'unknown';
+        LogService().log('Player', 'DV $profile: fvp 原生处理');
       }
-    } catch (_) {}
-  }
-
-  /// DV 内容强制 SW 解码
-  Future<void> _forceSwForDolbyVision(NativePlayer native) async {
-    final wasPlaying = _player.state.playing;
-    if (wasPlaying) await _player.pause();
-    
-    // 切换到 SW 解码
-    await native.setProperty('hwdec', 'no');
-    await native.setProperty('vd-lavc-software-fallback', '3');
-    
-    // Seek 触发帧刷新
-    try {
-      final pos = await native.getProperty('playback-time');
-      final posStr = pos.toString();
-      if (posStr.isNotEmpty) {
-        final seconds = double.tryParse(posStr) ?? 0;
-        await native.seek(Duration(milliseconds: (seconds * 1000).round()));
-      }
-    } catch (_) {}
-    
-    if (wasPlaying) await _player.play();
-    
-    // 更新调试面板
-    await Future.delayed(const Duration(milliseconds: 100));
-    await _queryActualDecoder();
-  }
-
-  /// 设置 HDR 色彩管理参数
-  Future<void> _setHdrColorParams(NativePlayer native) async {
-    try {
-      await native.setProperty('target-trc', 'pq');        // PQ 传输函数
-      await native.setProperty('target-prim', 'bt.2020');   // BT.2020 广色域
-      await native.setProperty('tone-mapping', 'bt.2446a');  // HDR→SDR 色调映射
-      await native.setProperty('hdr-compute-peak', 'yes');   // 动态峰值计算
-      LogService().log('Player', 'HDR 参数已设置: target-trc=pq, target-prim=bt.2020');
     } catch (_) {}
   }
 
@@ -426,19 +331,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final settings = ref.read(settingsProvider);
-    _player = Player(
-      configuration: PlayerConfiguration(
-        libass: true,
-        bufferSize: settings.bufferSizeMB * 1024 * 1024,
-      ),
-    );
-    _controller = VideoController(
-      _player,
-      configuration: const VideoControllerConfiguration(
-        enableHardwareAcceleration: true,
-      ),
-    );
+    _player = mdk.Player();
+    // 字幕属性配置
+    _player.setProperty('subtitle', '1');
+    _player.setProperty('subtitle.font.size', '40');
+    _player.setProperty('subtitle.border', '2');
+    _player.setProperty('subtitle.shadow', '1');
+    _player.setProperty('subtitle.margin.y', '22');
+    // 音量默认 80%
+    _player.volume = 0.8;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
 
     _isHost = widget.isHost;
@@ -498,63 +399,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   Future<void> _initPlayerProperties() async {
-    if (_player.platform is NativePlayer) {
-      final native = _player.platform as NativePlayer;
-      final settings = ref.read(settingsProvider);
+    final settings = ref.read(settingsProvider);
 
-      // Phase 1: 查询设备硬解能力
-      final handle = await _player.handle;
-      _deviceCodecInfo = await DecodeModeService.queryDeviceCapabilities(handle);
-
-      // Phase 2: 决定 hwdec 值并设置
-      final hwdecValue = DecodeModeService.resolveHwdec(
-          settings.decodeMode, _deviceCodecInfo);
-      await native.setProperty('hwdec', hwdecValue);
-
-      // Phase 3: 设置 fallback 策略 — HW/HW+ 锁死不回退
-      final fallbackValue = DecodeModeService.resolveFallback(settings.decodeMode);
-      await native.setProperty('vd-lavc-software-fallback', fallbackValue);
-
-      // Phase 4: 监听 mpv 日志
-      _logSubscription?.cancel();
-      _logSubscription = _player.stream.log.listen((log) {
-        LogService().log('mpv', log.text);
-        _logEntries.add(log.text);
-        if (_logEntries.length > 20) _logEntries.removeAt(0);
-      });
-
-      // Phase 5: 监听视频参数 — 获取分辨率
-      _videoParamsSubscription?.cancel();
-      _videoParamsSubscription = _player.stream.videoParams.listen((params) {
-        if (mounted && params.w != null && params.h != null) {
-          setState(() => _videoResolution = '${params.w}x${params.h}');
-        }
-      });
-
-      // 字幕
-      await native.setProperty('sub-visibility', 'yes');
-      await native.setProperty('sub-auto', 'fuzzy');
-      await native.setProperty('sub-font-size', '40');
-      await native.setProperty('sub-border-size', '2');
-      await native.setProperty('sub-shadow-offset', '1');
-      await native.setProperty('sub-margin-y', '22');
-
-      // 音量默认 80%
-      await native.setProperty('volume', '80');
-    }
+    // 配置解码器
+    final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
+    _player.videoDecoders = decoders;
 
     // 锁屏保持
     try {
       await WakelockPlus.enable();
     } catch (_) {}
-  }
-
-  /// 基于 hwdec-current 属性值格式化解码器显示
-  String _formatActualDecoder(String hwdecCurrent) {
-    if (hwdecCurrent.isEmpty) return '检测中...';
-    if (hwdecCurrent == 'no') return '软解码';
-    // 硬解码器：显示名称 + 标记
-    return '$hwdecCurrent (硬解码)';
   }
 
   Future<void> _loadEpisodeStream(int episodeIndex) async {
@@ -624,45 +478,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         subtitleStreamIndex: subtitleStreamIndex,
       );
 
-      // 预解析重定向（libmpv 不能可靠跟随 HTTP→HTTPS 跨协议重定向）
+      // 预解析重定向
       final url = await _resolveStreamUrl(streamUrl, token);
 
       _currentPlayUrl = streamUrl;
       _currentToken = token;
 
-      final pos = _player.state.position;
-      final wasPlaying = _player.state.playing;
+      final pos = _player.position;
+      final wasPlaying = _player.state == mdk.PlaybackState.playing;
 
-      // gpu-next 仅对 DV P5 生效（IPT-PQc2 色彩空间需要 libplacebo 处理）
-      if (_player.platform is NativePlayer) {
-        final native = _player.platform as NativePlayer;
-        final settings = ref.read(settingsProvider);
-        final isP5 = _embyVideoStream?.isDolbyVisionProfile5 == true;
-        if (isP5 && settings.gpuNext) {
-          await native.setProperty('vo', 'gpu-next');
-          LogService().log('Player', 'DV P5: 设置 vo=gpu-next');
-        }
+      // 设置媒体并准备播放
+      if (token.isNotEmpty) {
+        _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
+      _player.media = url;
+      await _player.prepare();
+      await _player.updateTexture();
 
-      await _player.open(Media(url, httpHeaders: {
-        'X-Emby-Token': token,
-      }));
+      // 字幕自动选择
+      _player.activeSubtitleTracks = [0];
 
-      if (_player.platform is NativePlayer) {
-        final native = _player.platform as NativePlayer;
-        await native.setProperty('sub-visibility', 'yes');
-        await native.setProperty('sid', 'auto');
-      }
-
-      if (pos > Duration.zero) {
-        await _player.seek(pos);
+      if (pos > 0) {
+        await _player.seek(position: pos);
       }
       if (wasPlaying) {
-        await _player.play();
+        _player.state = mdk.PlaybackState.playing;
       }
       Future.delayed(const Duration(seconds: 2), () async {
-        _queryHwdecStatus();
-        await _queryActualDecoder();
         await _detectDolbyVision();
       });
 
@@ -732,16 +574,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 解析完成，检查是否已被更新的请求抢占
       if (requestId != _playRequestId || !mounted) return;
 
+      // 设置媒体并准备播放
       if (token.isNotEmpty) {
-        await _player.open(Media(resolvedUrl, httpHeaders: {'X-Emby-Token': token}));
-      } else {
-        await _player.open(Media(resolvedUrl));
+        _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
+      _player.media = resolvedUrl;
+      await _player.prepare();
+      await _player.updateTexture();
 
-      // 等待缓冲完成再 seek
-      await for (final buffering in _player.stream.buffering) {
-        if (!buffering || !mounted) break;
-      }
+      // 等待加载完成
+      await Future.delayed(const Duration(milliseconds: 500));
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
@@ -752,10 +594,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       });
 
       if (position > 0) {
-        await _player.seek(Duration(milliseconds: (position * 1000).toInt()));
+        await _player.seek(position: (position * 1000).toInt());
       }
 
-      await _player.play();
+      _player.state = mdk.PlaybackState.playing;
       _rebuildGroups();
       _logSyncEvent('播放器打开成功');
       Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
@@ -770,73 +612,64 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _setupPlayerListeners() {
-    _player.stream.playing.listen((_) {
-      if (mounted) setState(() {});
+    // 使用 onStateChanged 监听播放状态变化
+    _player.onStateChanged.listen((event) {
+      if (!mounted) return;
+      setState(() {
+        // 更新播放状态
+      });
+      // 更新音量
+      _volume = _player.volume * 100;
     });
 
-    _player.stream.position.listen((position) {
-      if (mounted) setState(() => _position = position);
-    });
-
-    _player.stream.duration.listen((duration) {
-      if (mounted) {
-        setState(() => _duration = duration);
+    // 使用 onMediaStatus 监听媒体状态变化
+    _player.onMediaStatus.listen((event) {
+      if (!mounted) return;
+      
+      // 检查是否加载完成
+      if (event.newValue.test(mdk.MediaStatus.loaded)) {
+        setState(() {
+          _duration = Duration(milliseconds: _player.mediaInfo.duration);
+        });
         _refreshTracks();
       }
-    });
-
-    _player.stream.volume.listen((volume) {
-      if (mounted) setState(() => _volume = volume);
-    });
-
-    _tracksSubscription = _player.stream.tracks.listen((tracks) {
-      if (!mounted) return;
-      final subs = tracks.subtitle;
-      final audios = tracks.audio;
-      setState(() {
-        _subtitleTracks = subs;
-        _audioTracks = audios;
-      });
-      if (!_subtitleAutoSelected) {
-        _subtitleAutoSelected = true;
-        _autoSelectDefaultTracks();
+      
+      // 检查是否播放结束
+      if (event.newValue.test(mdk.MediaStatus.end)) {
+        if (!_hasEpisodeList) return;
+        final nextIndex = _currentEpisodeIndex + 1;
+        if (nextIndex < _episodeIds.length) {
+          _switchToEpisode(nextIndex);
+          _addBroadcastMessage('自动播放下一集');
+        } else {
+          _addBroadcastMessage('所有剧集播放完毕');
+        }
       }
     });
 
-    _player.stream.track.listen((_) {
-      if (mounted) {
-        setState(() {
-          _currentSubtitle = _player.state.track.subtitle;
-          _currentAudio = _player.state.track.audio;
-        });
+    // 定时更新播放位置（fvp 没有直接的 position stream）
+    Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
       }
-    });
-
-    // 自动播下一集
-    _player.stream.completed.listen((completed) {
-      if (!mounted || !completed) return;
-      if (!_hasEpisodeList) return;
-
-      final nextIndex = _currentEpisodeIndex + 1;
-      if (nextIndex < _episodeIds.length) {
-        _switchToEpisode(nextIndex);
-        _addBroadcastMessage('自动播放下一集');
-      } else {
-        _addBroadcastMessage('所有剧集播放完毕');
+      final pos = _player.position;
+      if (pos != _position.inMilliseconds) {
+        setState(() => _position = Duration(milliseconds: pos));
       }
     });
   }
 
   void _autoSelectDefaultTracks() {
-    _player.setSubtitleTrack(SubtitleTrack.auto());
+    // fvp: 自动选择第一个字幕轨道
+    _player.activeSubtitleTracks = [0];
 
     if (_embyDefaultAudioIndex != null) {
       final embyIdx = _embyAudioStreams.indexWhere(
         (s) => s.index == _embyDefaultAudioIndex!,
       );
-      final real = _realAudioTracks;
-      if (embyIdx >= 0 && embyIdx < real.length) {
-        _player.setAudioTrack(real[embyIdx]);
+      if (embyIdx >= 0) {
+        _player.activeAudioTracks = [embyIdx];
       }
     }
   }
@@ -844,13 +677,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _refreshTracks() {
     Future.delayed(const Duration(milliseconds: 300), () {
       if (!mounted) return;
-      final subs = _player.state.tracks.subtitle;
-      final audios = _player.state.tracks.audio;
       setState(() {
-        _subtitleTracks = subs;
-        _audioTracks = audios;
-        _currentSubtitle = _player.state.track.subtitle;
-        _currentAudio = _player.state.track.audio;
+        // 轨道信息将在 UI 中通过 Emby 数据显示
       });
       if (!_subtitleAutoSelected) {
         _subtitleAutoSelected = true;
@@ -1052,7 +880,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             );
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
-              final position = _player.state.position.inMilliseconds / 1000.0;
+              final position = _player.position / 1000.0;
               LogService().log('Room', '主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
               await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
@@ -1154,7 +982,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_isHost) return;
     if (_syncPaused) return;
     if (_isSyncing) return;
-    if (_player.state.buffering) return;
+    // fvp: 检查是否在缓冲中
+    if (_player.mediaStatus.test(mdk.MediaStatus.buffering)) return;
 
     final position = (message['position'] as num).toDouble();
     final playing = message['playing'] as bool;
@@ -1165,15 +994,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final elapsed = now - timestamp;
     final expectedPos = position + (elapsed * rate);
 
-    final currentPos = _player.state.position.inMilliseconds / 1000.0;
+    final currentPos = _player.position / 1000.0;
     final diff = (expectedPos - currentPos).abs();
 
     if (diff < AppConstants.syncThresholdMicro) {
       // 差值 < 0.3s，不做操作
     } else if (diff < AppConstants.syncThresholdMedium) {
-      _player.setRate(1.02);
+      _player.playbackRate = 1.02;
       Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) _player.setRate(rate);
+        if (mounted) _player.playbackRate = rate;
       });
     } else {
       // seek 防抖：距上次 seek 不足 2 秒则跳过
@@ -1183,14 +1012,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _lastSeekTime = DateTime.now();
       try {
-        _player.seek(Duration(milliseconds: (expectedPos * 1000).toInt()));
+        _player.seek(position: (expectedPos * 1000).toInt());
       } catch (_) {}
     }
 
-    if (playing && !_player.state.playing) {
-      _player.play();
-    } else if (!playing && _player.state.playing) {
-      _player.pause();
+    if (playing && _player.state != mdk.PlaybackState.playing) {
+      _player.state = mdk.PlaybackState.playing;
+    } else if (!playing && _player.state == mdk.PlaybackState.playing) {
+      _player.state = mdk.PlaybackState.paused;
     }
   }
 
@@ -1204,20 +1033,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     switch (action) {
       case AppConstants.actionPlay:
-        _player.play();
+        _player.state = mdk.PlaybackState.playing;
         break;
       case AppConstants.actionPause:
-        _player.pause();
+        _player.state = mdk.PlaybackState.paused;
         break;
       case AppConstants.actionSeek:
         final pos = (message['position'] as num).toDouble();
         try {
-          _player.seek(Duration(milliseconds: (pos * 1000).toInt()));
+          _player.seek(position: (pos * 1000).toInt());
         } catch (_) {}
         break;
       case AppConstants.actionRate:
         final r = (message['rate'] as num).toDouble();
-        _player.setRate(r);
+        _player.playbackRate = r;
         break;
       case AppConstants.actionSwitchEpisode:
         final epIndex = message['episodeIndex'] as int?;
@@ -1335,7 +1164,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   void _showRoomDestroyedDialog() {
     _heartbeatTimer?.cancel();
-    _player.stop();
+    _player.state = mdk.PlaybackState.stopped;
     if (_rtmChannel != null) {
       try {
         final rtmService = ref.read(rtmServiceProvider);
@@ -1411,12 +1240,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _heartbeatTimer = Timer.periodic(
       const Duration(milliseconds: AppConstants.rtmHeartbeatIntervalMs),
       (_) {
-        if (!mounted || !_player.state.playing) return;
+        if (!mounted || _player.state != mdk.PlaybackState.playing) return;
         final rtmService = ref.read(rtmServiceProvider);
         rtmService.sendHeartbeat(
-          position: _player.state.position.inMilliseconds / 1000.0,
-          playing: _player.state.playing,
-          rate: _player.state.rate,
+          position: _player.position / 1000.0,
+          playing: _player.state == mdk.PlaybackState.playing,
+          rate: _player.playbackRate,
         );
       },
     );
@@ -1432,13 +1261,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _togglePlayPause() {
-    if (_player.state.playing) {
-      _player.pause();
+    if (_player.state == mdk.PlaybackState.playing) {
+      _player.state = mdk.PlaybackState.paused;
       if (widget.roomCode != null) {
         _sendCommand(AppConstants.actionPause);
       }
     } else {
-      _player.play();
+      _player.state = mdk.PlaybackState.playing;
       if (widget.roomCode != null) {
         _sendCommand(AppConstants.actionPlay);
       }
@@ -1524,7 +1353,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   void _onSeek(double value) {
     try {
-      _player.seek(Duration(milliseconds: value.toInt()));
+      _player.seek(position: value.toInt());
     } catch (_) {}
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
@@ -1540,7 +1369,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _hideControlsTimer?.cancel();
     if (_showControls) {
       _hideControlsTimer = Timer(const Duration(seconds: 5), () {
-        if (mounted && _player.state.playing) {
+        if (mounted && _player.state == mdk.PlaybackState.playing) {
           setState(() {
             _showControls = false;
             _showSubtitleMenu = false;
@@ -1571,7 +1400,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // Host: 发送 syncPlay 命令（含 playUrl + token）
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
-      final position = _player.state.position.inMilliseconds / 1000.0;
+      final position = _player.position / 1000.0;
       _logSyncEvent('发送 syncPlay: ep=$index, pos=${position.toStringAsFixed(1)}s');
       LogService().log('Sync', '主持人 sendCommand syncPlay: episode=$index, pos=$position, urlLen=${_currentPlayUrl.length}');
       await rtmService.sendCommand(
@@ -1613,7 +1442,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
       _isPlayerReady = false;
-      _player.stop();
+      _player.state = mdk.PlaybackState.stopped;
     } else if (_currentEpisodeIndex > index) {
       _currentEpisodeIndex--;
     }
@@ -1647,7 +1476,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
       _isPlayerReady = false;
-      _player.stop();
+      _player.state = mdk.PlaybackState.stopped;
     } else if (_currentEpisodeIndex > index) {
       _currentEpisodeIndex--;
     }
@@ -1886,8 +1715,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
-    _logSubscription?.cancel();
-    _videoParamsSubscription?.cancel();
     _accelSub?.cancel();
     _broadcastScrollController.dispose();
 
@@ -2000,28 +1827,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         // 视频 / 占位文字
         if (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null))
           Center(
-            child: Video(
-              controller: _controller,
-              controls: NoVideoControls,
-              fit: _videoFit,
-              filterQuality: FilterQuality.medium,
-              pauseUponEnteringBackgroundMode: true,
-              resumeUponEnteringForegroundMode: true,
-              subtitleViewConfiguration: const SubtitleViewConfiguration(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 50),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w500,
-                  shadows: [
-                    Shadow(
-                      blurRadius: 6,
-                      color: Colors.black87,
-                      offset: Offset(1, 1),
-                    ),
-                  ],
-                ),
-              ),
+            child: ValueListenableBuilder<int?>(
+              valueListenable: _player.textureId,
+              builder: (context, textureId, child) {
+                if (textureId == null) {
+                  return const SizedBox();
+                }
+                return Texture(textureId: textureId);
+              },
             ),
           )
         else
@@ -2241,14 +2054,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   String _buildDeviceCapabilityText() {
-    if (_deviceCodecInfo == null) return '检测中...';
-    final info = _deviceCodecInfo!;
-    if (info.isUnknown) return '检测失败 (不影响播放)';
-    if (!info.hasAnyHw) return '无硬解码器';
-    return 'H264${info.hasH264Hw ? "✅" : "❌"} '
-        'H265${info.hasHevcHw ? "✅" : "❌"} '
-        'VP9${info.hasVp9Hw ? "✅" : "❌"} '
-        'AV1${info.hasAv1Hw ? "✅" : "❌"}';
+    // fvp: 解码能力由 libmdk 自动管理
+    return 'fvp/libmdk 自动管理';
   }
 
   Widget _buildTopBar() {
@@ -2424,57 +2231,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _isSwitchingDecode = true;
 
     try {
-      if (_player.platform is! NativePlayer) {
-        await ref.read(settingsProvider.notifier).update(decodeMode: mode);
-        setState(() => _showDecodeModeMenu = false);
-        return;
-      }
+      final wasPlaying = _player.state == mdk.PlaybackState.playing;
 
-      final native = _player.platform as NativePlayer;
-      final wasPlaying = _player.state.playing;
+      // 获取当前位置
+      final currentPos = _player.position;
 
-      // 获取当前位置（用于 seek 触发帧刷新）
-      dynamic currentPos;
-      try {
-        currentPos = await native.getProperty('playback-time');
-      } catch (_) {
-        currentPos = null;
-      }
-
-      // Step1: 暂停（防止切换期间旧解码器输出帧导致撕裂）
-      if (wasPlaying) await _player.pause();
+      // Step1: 暂停（防止切换期间解码器输出帧导致撕裂）
+      if (wasPlaying) _player.state = mdk.PlaybackState.paused;
 
       // Step2: 切换解码器
-      if (mode == 'sw') {
-        // SW: 两步过渡（压缩版，给 mpv 100ms 完成 HW→SW 管线重置）
-        await native.setProperty('hwdec', 'auto-safe');
-        await native.setProperty('vd-lavc-software-fallback', '3');
-        await Future.delayed(const Duration(milliseconds: 50));
-        await native.setProperty('hwdec', 'no');
-        await Future.delayed(const Duration(milliseconds: 50));
-      } else {
-        // HW/HW+/Auto: 直接设置（硬件解码器初始化快，无需等待）
-        final hwdecValue = DecodeModeService.resolveHwdec(mode, _deviceCodecInfo);
-        final fallbackValue = DecodeModeService.resolveFallback(mode);
-        await native.setProperty('hwdec', hwdecValue);
-        await native.setProperty('vd-lavc-software-fallback', fallbackValue);
-      }
+      final decoders = DecodeModeService.resolveDecoders(mode);
+      _player.videoDecoders = decoders;
 
       // Step3: seek 触发帧刷新（强制新解码器解码当前帧）
-      if (currentPos != null) {
+      if (currentPos > 0) {
         try {
-          await native.seek(currentPos);
+          await _player.seek(position: currentPos);
         } catch (_) {}
       }
 
-      // Step4: 查询实际解码器并更新显示
-      await Future.delayed(const Duration(milliseconds: 100));
-      await _queryActualDecoder();
+      // Step4: 恢复播放
+      if (wasPlaying) _player.state = mdk.PlaybackState.playing;
 
-      // Step5: 恢复播放
-      if (wasPlaying) await _player.play();
-
-      // Step6: 持久化设置
+      // Step5: 持久化设置
       await ref.read(settingsProvider.notifier).update(decodeMode: mode);
       setState(() => _showDecodeModeMenu = false);
     } finally {
@@ -2485,7 +2264,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   // ========== 手势控制 ==========
   void _onDoubleTap() {
     _togglePlayPause();
-    _showGestureIcon(_player.state.playing ? Icons.play_arrow : Icons.pause);
+    _showGestureIcon(_player.state == mdk.PlaybackState.playing ? Icons.play_arrow : Icons.pause);
   }
 
   void _onHorizontalDragEnd(DragEndDetails details) {
@@ -2498,7 +2277,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final currentMs = _position.inMilliseconds;
     final targetMs = (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
     try {
-      _player.seek(Duration(milliseconds: targetMs));
+      _player.seek(position: targetMs);
     } catch (_) {}
 
     final seconds = (deltaMs / 1000).round();
@@ -2577,7 +2356,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 右侧：调节音量
       final newVol = (_volume - delta / 600 * 100).clamp(0.0, 100.0);
       _volume = newVol;
-      _player.setVolume(newVol);
+      _player.volume = newVol / 100.0; // fvp 使用 0.0-1.0 范围
       setState(() {
         _showVolumeBar = true;
         _showBrightnessBar = false;
@@ -2784,7 +2563,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   GestureDetector(
                     onTap: _togglePlayPause,
                     child: Icon(
-                      _player.state.playing
+                      _player.state == mdk.PlaybackState.playing
                           ? Icons.pause_circle_filled
                           : Icons.play_circle_fill,
                       color: Colors.white,
@@ -2963,7 +2742,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (_roomData != null && _isHost && !_player.state.playing) ...[
+                if (_roomData != null && _isHost && _player.state != mdk.PlaybackState.playing) ...[
                   GestureDetector(
                     onTap: () async {
                       SystemChrome.setPreferredOrientations([
@@ -3198,7 +2977,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   }
                 },
                 child: Icon(
-                  isPlaying && _player.state.playing
+                  isPlaying && _player.state == mdk.PlaybackState.playing
                       ? Icons.pause_circle
                       : Icons.play_circle,
                   color: isPlaying
@@ -3334,8 +3113,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       children: [
         _buildMenuItem(
           label: '关闭字幕',
-          isSelected:
-              _currentSubtitle?.id == 'no' && !_useServerSubtitleBurnIn,
+          isSelected: _activeSubtitleIndex == null && !_useServerSubtitleBurnIn,
           onTap: () {
             if (_useServerSubtitleBurnIn) {
               _useServerSubtitleBurnIn = false;
@@ -3344,7 +3122,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   ? _episodeIds[_currentEpisodeIndex]
                   : widget.itemId);
             } else {
-              _player.setSubtitleTrack(SubtitleTrack.no());
+              // fvp: 禁用字幕
+              _player.activeSubtitleTracks = [];
             }
             setState(() => _showSubtitleMenu = false);
           },
@@ -3358,7 +3137,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               setState(() => _showSubtitleMenu = false);
             },
           ),
-        if (_embySubtitleStreams.isEmpty && _subtitleTracks.isEmpty)
+        if (_embySubtitleStreams.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
@@ -3384,7 +3163,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               setState(() => _showAudioMenu = false);
             },
           ),
-        if (_embyAudioStreams.isEmpty && _audioTracks.isEmpty)
+        if (_embyAudioStreams.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
@@ -3396,32 +3175,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     );
   }
 
-  List<SubtitleTrack> get _realSubtitleTracks => _subtitleTracks
-      .where((t) => t.id != 'auto' && t.id != 'no')
-      .toList();
-
-  List<AudioTrack> get _realAudioTracks => _audioTracks
-      .where((t) => t.id != 'auto' && t.id != 'no')
-      .toList();
-
   bool _isEmbySubtitleSelected(int embyIndex) {
     final stream = _embySubtitleStreams[embyIndex];
     if (_useServerSubtitleBurnIn) {
       return _activeSubtitleIndex == stream.index;
     }
-    if (_currentSubtitle == null || _currentSubtitle!.id == 'no') {
-      return false;
-    }
-    final real = _realSubtitleTracks;
-    if (embyIndex >= real.length) return false;
-    return _currentSubtitle?.id == real[embyIndex].id;
+    // fvp: 简化选择逻辑，基于 Emby 索引
+    return _activeSubtitleIndex == stream.index;
   }
 
   bool _isEmbyAudioSelected(int embyIndex) {
-    if (_currentAudio == null) return false;
-    final real = _realAudioTracks;
-    if (embyIndex >= real.length) return false;
-    return _currentAudio?.id == real[embyIndex].id;
+    // fvp: 通过 activeAudioTracks 判断
+    return _player.activeAudioTracks.contains(embyIndex);
   }
 
   void _selectEmbySubtitle(int embyIndex) {
@@ -3443,17 +3208,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     _useServerSubtitleBurnIn = false;
     _activeSubtitleIndex = stream.index;
-    final real = _realSubtitleTracks;
-    if (embyIndex < real.length) {
-      _player.setSubtitleTrack(real[embyIndex]);
-    }
+    // fvp: 通过 Emby URL 参数选择字幕，需要重新加载流
+    _loadStream(
+      itemId: _episodeIds.isNotEmpty
+          ? _episodeIds[_currentEpisodeIndex]
+          : widget.itemId,
+      subtitleStreamIndex: stream.index,
+    );
   }
 
   void _selectEmbyAudio(int embyIndex) {
-    final real = _realAudioTracks;
-    if (embyIndex < real.length) {
-      _player.setAudioTrack(real[embyIndex]);
-    }
+    // fvp: 通过 activeAudioTracks 选择音轨
+    _player.activeAudioTracks = [embyIndex];
   }
 
   Widget _buildMenuItem({

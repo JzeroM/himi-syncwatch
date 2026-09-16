@@ -2,50 +2,70 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 
 void main() {
-  group('AppSettings dvHwDecode', () {
-    test('默认值为 false', () {
+  group('AppSettings', () {
+    test('默认值', () {
       const settings = AppSettings();
-      expect(settings.dvHwDecode, isFalse);
+      expect(settings.decodeMode, equals('auto'));
+      expect(settings.bufferSizeMB, equals(64));
+      expect(settings.showSyncDebug, isFalse);
     });
 
-    test('copyWith 保留 dvHwDecode', () {
-      const original = AppSettings(dvHwDecode: true);
-      final copied = original.copyWith(decodeMode: 'hw');
-      expect(copied.dvHwDecode, isTrue);
+    test('copyWith 保留未指定字段', () {
+      const original = AppSettings(decodeMode: 'hw', bufferSizeMB: 128);
+      final copied = original.copyWith(showSyncDebug: true);
       expect(copied.decodeMode, equals('hw'));
+      expect(copied.bufferSizeMB, equals(128));
+      expect(copied.showSyncDebug, isTrue);
     });
 
-    test('copyWith 修改 dvHwDecode', () {
+    test('copyWith 修改字段', () {
       const original = AppSettings();
-      final copied = original.copyWith(dvHwDecode: true);
-      expect(copied.dvHwDecode, isTrue);
+      final copied = original.copyWith(decodeMode: 'sw');
+      expect(copied.decodeMode, equals('sw'));
     });
 
-    test('toJson 包含 dvHwDecode', () {
-      const settings = AppSettings(dvHwDecode: true);
+    test('toJson 包含所有字段', () {
+      const settings = AppSettings(
+        decodeMode: 'hw+',
+        bufferSizeMB: 256,
+        showSyncDebug: true,
+      );
       final json = settings.toJson();
-      expect(json['dvHwDecode'], isTrue);
+      expect(json['decodeMode'], equals('hw+'));
+      expect(json['bufferSizeMB'], equals(256));
+      expect(json['showSyncDebug'], isTrue);
     });
 
-    test('fromJson 解析 dvHwDecode', () {
+    test('fromJson 解析所有字段', () {
       final json = {
-        'decodeMode': 'auto',
-        'bufferSizeMB': 64,
-        'showSyncDebug': false,
-        'dvHwDecode': true,
+        'decodeMode': 'hw',
+        'bufferSizeMB': 128,
+        'showSyncDebug': true,
       };
       final settings = AppSettings.fromJson(json);
-      expect(settings.dvHwDecode, isTrue);
+      expect(settings.decodeMode, equals('hw'));
+      expect(settings.bufferSizeMB, equals(128));
+      expect(settings.showSyncDebug, isTrue);
     });
 
-    test('fromJson 默认 dvHwDecode 为 false', () {
-      final json = {
-        'decodeMode': 'auto',
-        'bufferSizeMB': 64,
-        'showSyncDebug': false,
-      };
+    test('fromJson 默认值', () {
+      final json = <String, dynamic>{};
       final settings = AppSettings.fromJson(json);
-      expect(settings.dvHwDecode, isFalse);
+      expect(settings.decodeMode, equals('auto'));
+      expect(settings.bufferSizeMB, equals(64));
+      expect(settings.showSyncDebug, isFalse);
+    });
+
+    test('fromJson 兼容旧版 bool hardwareDecoding', () {
+      final json = {'hardwareDecoding': true};
+      final settings = AppSettings.fromJson(json);
+      expect(settings.decodeMode, equals('auto'));
+    });
+
+    test('fromJson 兼容旧版 false hardwareDecoding', () {
+      final json = {'hardwareDecoding': false};
+      final settings = AppSettings.fromJson(json);
+      expect(settings.decodeMode, equals('sw'));
     });
 
     test('toJson/fromJson 往返保持一致', () {
@@ -53,80 +73,20 @@ void main() {
         decodeMode: 'hw+',
         bufferSizeMB: 128,
         showSyncDebug: true,
-        dvHwDecode: true,
       );
       final json = original.toJson();
       final restored = AppSettings.fromJson(json);
       expect(restored.decodeMode, equals(original.decodeMode));
       expect(restored.bufferSizeMB, equals(original.bufferSizeMB));
       expect(restored.showSyncDebug, equals(original.showSyncDebug));
-      expect(restored.dvHwDecode, equals(original.dvHwDecode));
-    });
-  });
-
-  group('AppSettings gpuNext', () {
-    test('默认值为 true', () {
-      const settings = AppSettings();
-      expect(settings.gpuNext, isTrue);
     });
 
-    test('copyWith 保留 gpuNext', () {
-      const original = AppSettings(gpuNext: false);
-      final copied = original.copyWith(decodeMode: 'hw');
-      expect(copied.gpuNext, isFalse);
-      expect(copied.decodeMode, equals('hw'));
-    });
+    test('hardwareDecoding getter', () {
+      const autoSettings = AppSettings(decodeMode: 'auto');
+      expect(autoSettings.hardwareDecoding, isTrue);
 
-    test('copyWith 修改 gpuNext', () {
-      const original = AppSettings();
-      final copied = original.copyWith(gpuNext: false);
-      expect(copied.gpuNext, isFalse);
-    });
-
-    test('toJson 包含 gpuNext', () {
-      const settings = AppSettings(gpuNext: false);
-      final json = settings.toJson();
-      expect(json['gpuNext'], isFalse);
-    });
-
-    test('fromJson 解析 gpuNext', () {
-      final json = {
-        'decodeMode': 'auto',
-        'bufferSizeMB': 64,
-        'showSyncDebug': false,
-        'dvHwDecode': false,
-        'gpuNext': false,
-      };
-      final settings = AppSettings.fromJson(json);
-      expect(settings.gpuNext, isFalse);
-    });
-
-    test('fromJson 默认 gpuNext 为 true（旧版兼容）', () {
-      final json = {
-        'decodeMode': 'auto',
-        'bufferSizeMB': 64,
-        'showSyncDebug': false,
-        'dvHwDecode': false,
-      };
-      final settings = AppSettings.fromJson(json);
-      expect(settings.gpuNext, isTrue);
-    });
-
-    test('toJson/fromJson 往返保持一致', () {
-      const original = AppSettings(
-        decodeMode: 'sw',
-        bufferSizeMB: 256,
-        showSyncDebug: true,
-        dvHwDecode: true,
-        gpuNext: false,
-      );
-      final json = original.toJson();
-      final restored = AppSettings.fromJson(json);
-      expect(restored.decodeMode, equals(original.decodeMode));
-      expect(restored.bufferSizeMB, equals(original.bufferSizeMB));
-      expect(restored.showSyncDebug, equals(original.showSyncDebug));
-      expect(restored.dvHwDecode, equals(original.dvHwDecode));
-      expect(restored.gpuNext, equals(original.gpuNext));
+      const swSettings = AppSettings(decodeMode: 'sw');
+      expect(swSettings.hardwareDecoding, isFalse);
     });
   });
 }
