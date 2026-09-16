@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -518,9 +519,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       } catch (_) {
         LogService().log('Player', 'updateTexture 超时或失败');
       }
-
-      // 字幕自动选择
-      _player.activeSubtitleTracks = [0];
 
       if (pos > 0) {
         await _player.seek(position: pos);
@@ -3104,18 +3102,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       children: [
         _buildMenuItem(
           label: '关闭字幕',
-          isSelected: _activeSubtitleIndex == null && !_useServerSubtitleBurnIn,
+          isSelected: _activeSubtitleIndex == null,
           onTap: () {
-            if (_useServerSubtitleBurnIn) {
-              _useServerSubtitleBurnIn = false;
-              _activeSubtitleIndex = null;
-              _loadStream(itemId: _episodeIds.isNotEmpty
-                  ? _episodeIds[_currentEpisodeIndex]
-                  : widget.itemId);
-            } else {
-              // fvp: 禁用字幕
-              _player.activeSubtitleTracks = [];
-            }
+            // 统一使用 fvp 原生 API，不再重载流
+            _player.activeSubtitleTracks = [];
+            _useServerSubtitleBurnIn = false;
+            _activeSubtitleIndex = null;
             setState(() => _showSubtitleMenu = false);
           },
         ),
@@ -3132,10 +3124,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
-              '当前视频无字幕轨道',
+              '当前视频无内嵌字幕轨道',
               style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
           ),
+        Divider(color: Colors.white24, height: 1),
+        _buildMenuItem(
+          label: '加载本地字幕文件...',
+          isSelected: false,
+          onTap: () {
+            _loadLocalSubtitle();
+            setState(() => _showSubtitleMenu = false);
+          },
+        ),
       ],
     );
   }
@@ -3186,31 +3187,76 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         stream.subtitleLocationType == 'ExternalStream';
 
     if (isExternal) {
-      _useServerSubtitleBurnIn = true;
-      _activeSubtitleIndex = stream.index;
-      _loadStream(
-        itemId: _episodeIds.isNotEmpty
-            ? _episodeIds[_currentEpisodeIndex]
-            : widget.itemId,
-        subtitleStreamIndex: stream.index,
+      // 外挂字幕：用 fvp setMedia 加载外部文件，不重载流
+      final itemId = _episodeIds.isNotEmpty
+          ? _episodeIds[_currentEpisodeIndex]
+          : widget.itemId;
+      final embyService = ref.read(embyServiceProvider);
+      final config = ref.read(embyConfigProvider);
+      final subtitleUrl = embyService.getSubtitleUrl(
+        itemId,
+        subtitleIndex: stream.index,
+        mediaSourceId: widget.mediaSourceId,
       );
-      return;
+      final token = config?.accessToken ?? '';
+      if (token.isNotEmpty) {
+        _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+      }
+      _player.setMedia(subtitleUrl, mdk.MediaType.subtitle);
+      _player.activeSubtitleTracks = [stream.index];
+    } else {
+      // 内嵌字幕：用 fvp 原生轨道切换，瞬间完成
+      _player.activeSubtitleTracks = [stream.index];
     }
 
     _useServerSubtitleBurnIn = false;
     _activeSubtitleIndex = stream.index;
-    // fvp: 通过 Emby URL 参数选择字幕，需要重新加载流
-    _loadStream(
-      itemId: _episodeIds.isNotEmpty
-          ? _episodeIds[_currentEpisodeIndex]
-          : widget.itemId,
-      subtitleStreamIndex: stream.index,
-    );
   }
 
   void _selectEmbyAudio(int embyIndex) {
     // fvp: 通过 activeAudioTracks 选择音轨
     _player.activeAudioTracks = [embyIndex];
+  }
+
+  Future<void> _loadLocalSubtitle() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['srt', 'ass', 'ssa', 'vtt', 'sub', 'idx'],
+      );
+      if (result == null || !mounted) return;
+
+      final file = result.files.first;
+      final filePath = file.path;
+      if (filePath == null) return;
+
+      // 加载本地字幕文件
+      _player.setMedia(filePath, mdk.MediaType.subtitle);
+
+      // 获取当前字幕轨道数量，新加载的字幕在末尾
+      final subtitleCount = _player.mediaInfo.subtitle?.length ?? 0;
+      if (subtitleCount > 0) {
+        _player.activeSubtitleTracks = [subtitleCount - 1];
+      }
+
+      setState(() {
+        _activeSubtitleIndex = -1;
+        _useServerSubtitleBurnIn = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已加载字幕: ${file.name}')),
+        );
+      }
+    } catch (e) {
+      LogService().log('Player', '加载本地字幕失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('加载字幕失败: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildMenuItem({

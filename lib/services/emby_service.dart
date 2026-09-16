@@ -272,6 +272,19 @@ class EmbyService {
     return base;
   }
 
+  /// 获取单个字幕轨道的直接下载 URL（用于 fvp 原生字幕加载）
+  String getSubtitleUrl(String itemId, {
+    required int subtitleIndex,
+    String? mediaSourceId,
+    String format = 'srt',
+  }) {
+    var url = '$_serverUrl/Videos/$itemId/Subtitles/$subtitleIndex/Stream.$format';
+    if (mediaSourceId != null) {
+      url += '?MediaSourceId=$mediaSourceId';
+    }
+    return url;
+  }
+
   String getImageUrl(String itemId, {String type = 'Primary'}) {
     return '$_serverUrl/Items/$itemId/Images/$type';
   }
