@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -106,7 +107,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _isHost = false;
   bool _showControls = true;
   Duration _position = Duration.zero;
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(Duration.zero);
   Duration _duration = Duration.zero;
+  final ValueNotifier<Duration> _durationNotifier = ValueNotifier(Duration.zero);
   String? _myUserId;
   String? _rtmChannel;
   String? _rtmAppId;
@@ -114,6 +117,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   double _volume = 80;
   double _brightness = 0.65;
+  final ValueNotifier<double> _brightnessNotifier = ValueNotifier(0.65);
+  final ValueNotifier<double> _volumeNotifier = ValueNotifier(80);
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
@@ -135,6 +140,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _isLeftSide = false;
   bool _showBrightnessBar = false;
   bool _showVolumeBar = false;
+  final ValueNotifier<bool> _showBrightnessBarNotifier = ValueNotifier(false);
+  final ValueNotifier<bool> _showVolumeBarNotifier = ValueNotifier(false);
   Timer? _gestureBarTimer;
 
   // fvp: 轨道信息通过 Emby API 获取，不需要 media_kit 的 SubtitleTrack/AudioTrack
@@ -161,6 +168,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   // 播报板 + 在线用户
   final List<String> _broadcastMessages = [];
+  final ValueNotifier<int> _broadcastVersion = ValueNotifier(0);
   int _onlineUserCount = 0;
   StreamSubscription? _presenceSubscription;
   final ScrollController _broadcastScrollController = ScrollController();
@@ -265,6 +273,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _isDolbyVisionP5 = false; // 当前是否 DV P5（控制解码模式显示）
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
+  final ValueNotifier<int> _syncEventsVersion = ValueNotifier(0);
   final GlobalKey _qrKey = GlobalKey();
 
   // 调试面板折叠状态
@@ -280,10 +289,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     LogService().log('Sync', event);
     final now = DateTime.now();
     final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-    setState(() {
-      _syncEvents.add('[$time] $event');
-      if (_syncEvents.length > 15) _syncEvents.removeAt(0);
-    });
+    _syncEvents.add('[$time] $event');
+    if (_syncEvents.length > 15) _syncEvents.removeAt(0);
+    _syncEventsVersion.value++;
   }
 
   Future<void> _queryHwdecStatus() async {
@@ -604,11 +612,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // 使用 onStateChanged 监听播放状态变化
     _player.onStateChanged.listen((event) {
       if (!mounted) return;
-      setState(() {
-        // 更新播放状态
-      });
       // 更新音量
       _volume = _player.volume * 100;
+      _volumeNotifier.value = _volume;
     });
 
     // 使用 onMediaStatus 监听媒体状态变化
@@ -617,9 +623,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       
       // 检查是否加载完成
       if (event.newValue.test(mdk.MediaStatus.loaded)) {
-        setState(() {
-          _duration = Duration(milliseconds: _player.mediaInfo.duration);
-        });
+        _duration = Duration(milliseconds: _player.mediaInfo.duration);
+        _durationNotifier.value = _duration;
         _refreshTracks();
       }
       
@@ -643,8 +648,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         return;
       }
       final pos = _player.position;
-      if (pos != _position.inMilliseconds) {
-        setState(() => _position = Duration(milliseconds: pos));
+      if (pos != _positionNotifier.value.inMilliseconds) {
+        _position = Duration(milliseconds: pos);
+        _positionNotifier.value = _position;
       }
     });
   }
@@ -666,9 +672,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _refreshTracks() {
     Future.delayed(const Duration(milliseconds: 300), () {
       if (!mounted) return;
-      setState(() {
-        // 轨道信息将在 UI 中通过 Emby 数据显示
-      });
       if (!_subtitleAutoSelected) {
         _subtitleAutoSelected = true;
         _autoSelectDefaultTracks();
@@ -1211,7 +1214,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final now = DateTime.now();
     final time =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    setState(() => _broadcastMessages.add('[$time] $msg'));
+    _broadcastMessages.add('[$time] $msg');
+    _broadcastVersion.value++;
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_broadcastScrollController.hasClients) {
         _broadcastScrollController.animateTo(
@@ -1341,6 +1345,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _onSeek(double value) {
+    _positionNotifier.value = Duration(milliseconds: value.toInt());
     try {
       _player.seek(position: value.toInt());
     } catch (_) {}
@@ -1438,8 +1443,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     _hasEpisodeList = _episodeIds.isNotEmpty;
     _addBroadcastMessage('已移除: $removedName');
-    _rebuildGroups();
-    setState(() {});
+    setState(() { _rebuildGroups(); });
 
     // 发送删除命令
     if (_rtmChannel != null) {
@@ -1471,8 +1475,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
 
     _hasEpisodeList = _episodeIds.isNotEmpty;
-    _rebuildGroups();
-    setState(() {});
+    setState(() { _rebuildGroups(); });
   }
 
   void _handleAddResource(Map<String, dynamic> message) {
@@ -1516,8 +1519,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _addBroadcastMessage('已添加: $name');
       }
     }
-    _rebuildGroups();
-    setState(() {});
+    setState(() { _rebuildGroups(); });
   }
 
   void _sendAddResourceRTM(Map<String, dynamic> data) {
@@ -1707,6 +1709,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _accelSub?.cancel();
     _broadcastScrollController.dispose();
 
+    // 释放 ValueNotifier
+    _positionNotifier.dispose();
+    _durationNotifier.dispose();
+    _brightnessNotifier.dispose();
+    _volumeNotifier.dispose();
+    _broadcastVersion.dispose();
+    _syncEventsVersion.dispose();
+    _showBrightnessBarNotifier.dispose();
+    _showVolumeBarNotifier.dispose();
+
     // 恢复屏幕亮度
     try {
       ScreenBrightness().resetApplicationScreenBrightness();
@@ -1864,10 +1876,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           ),
 
         // 亮度柱式进度条（右侧）
-        if (_showBrightnessBar) _buildBrightnessBar(),
+        ValueListenableBuilder<bool>(
+          valueListenable: _showBrightnessBarNotifier,
+          builder: (context, show, _) => show ? _buildBrightnessBar() : const SizedBox.shrink(),
+        ),
 
         // 音量柱式进度条（左侧）
-        if (_showVolumeBar) _buildVolumeBar(),
+        ValueListenableBuilder<bool>(
+          valueListenable: _showVolumeBarNotifier,
+          builder: (context, show, _) => show ? _buildVolumeBar() : const SizedBox.shrink(),
+        ),
 
         // Controls（底部渐变浮层，仅视频区域底部）
         if (_showControls && (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
@@ -2337,19 +2355,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 左侧：调节亮度
       _brightness = (_brightness - delta / 600).clamp(0.0, 1.0);
       _setBrightness(_brightness);
-      setState(() {
-        _showBrightnessBar = true;
-        _showVolumeBar = false;
-      });
+      _brightnessNotifier.value = _brightness;
+      _showBrightnessBarNotifier.value = true;
+      _showVolumeBarNotifier.value = false;
     } else {
       // 右侧：调节音量
       final newVol = (_volume - delta / 600 * 100).clamp(0.0, 100.0);
       _volume = newVol;
       _player.volume = newVol / 100.0; // fvp 使用 0.0-1.0 范围
-      setState(() {
-        _showVolumeBar = true;
-        _showBrightnessBar = false;
-      });
+      _volumeNotifier.value = _volume;
+      _showVolumeBarNotifier.value = true;
+      _showBrightnessBarNotifier.value = false;
     }
     _startGestureBarTimer();
   }
@@ -2368,10 +2384,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _gestureBarTimer?.cancel();
     _gestureBarTimer = Timer(const Duration(seconds: 1), () {
       if (mounted) {
-        setState(() {
-          _showBrightnessBar = false;
-          _showVolumeBar = false;
-        });
+        _showBrightnessBarNotifier.value = false;
+        _showVolumeBarNotifier.value = false;
       }
     });
   }
@@ -2381,10 +2395,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       top: MediaQuery.of(context).size.height * 0.15,
       bottom: MediaQuery.of(context).size.height * 0.15,
       right: 20,
-      child: _buildVerticalBar(
-        value: _brightness,
-        icon: Icons.brightness_6,
-        color: const Color(0xFFFFD54F),
+      child: ValueListenableBuilder<double>(
+        valueListenable: _brightnessNotifier,
+        builder: (context, brightness, _) {
+          return _buildVerticalBar(
+            value: brightness,
+            icon: Icons.brightness_6,
+            color: const Color(0xFFFFD54F),
+          );
+        },
       ),
     );
   }
@@ -2394,14 +2413,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       top: MediaQuery.of(context).size.height * 0.15,
       bottom: MediaQuery.of(context).size.height * 0.15,
       left: 20,
-      child: _buildVerticalBar(
-        value: _volume / 100,
-        icon: _volume == 0
-            ? Icons.volume_off
-            : _volume < 50
-                ? Icons.volume_down
-                : Icons.volume_up,
-        color: const Color(0xFF6366F1),
+      child: ValueListenableBuilder<double>(
+        valueListenable: _volumeNotifier,
+        builder: (context, volume, _) {
+          return _buildVerticalBar(
+            value: volume / 100,
+            icon: volume == 0
+                ? Icons.volume_off
+                : volume < 50
+                    ? Icons.volume_down
+                    : Icons.volume_up,
+            color: const Color(0xFF6366F1),
+          );
+        },
       ),
     );
   }
@@ -2484,26 +2508,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     const RoundSliderThumbShape(enabledThumbRadius: 6),
                 trackHeight: 3,
               ),
-              child: Slider(
-                value: _duration.inMilliseconds > 0
-                    ? _position.inMilliseconds
-                        .toDouble()
-                        .clamp(0, _duration.inMilliseconds.toDouble())
-                    : 0,
-                max: _duration.inMilliseconds > 0
-                    ? _duration.inMilliseconds.toDouble()
-                    : 1,
-                onChanged: _canControlPlayback ? _onSeek : null,
+              child: ValueListenableBuilder2<Duration, Duration>(
+                first: _positionNotifier,
+                second: _durationNotifier,
+                builder: (context, pos, dur, _) {
+                  return Slider(
+                    value: dur.inMilliseconds > 0
+                        ? pos.inMilliseconds
+                            .toDouble()
+                            .clamp(0, dur.inMilliseconds.toDouble())
+                        : 0,
+                    max: dur.inMilliseconds > 0
+                        ? dur.inMilliseconds.toDouble()
+                        : 1,
+                    onChanged: _canControlPlayback ? _onSeek : null,
+                  );
+                },
               ),
             ),
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: [
-                  Text(
-                    '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 12),
+                  ValueListenableBuilder2<Duration, Duration>(
+                    first: _positionNotifier,
+                    second: _durationNotifier,
+                    builder: (context, pos, dur, _) {
+                      return Text(
+                        '${_formatDuration(pos)} / ${_formatDuration(dur)}',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -3054,42 +3090,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: Colors.white12)),
       ),
-      child: Column(
-        children: [
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Row(
-              children: [
-                const Icon(Icons.campaign,
-                    color: Colors.white70, size: 12),
-                const SizedBox(width: 4),
-                Text('播报 (${_broadcastMessages.length})',
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 11)),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _broadcastMessages.isEmpty
-                ? const Center(
-                    child: Text('暂无消息',
-                        style: TextStyle(
-                            color: Colors.white24, fontSize: 11)),
-                  )
-                : ListView.builder(
-                    controller: _broadcastScrollController,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10),
-                    itemCount: _broadcastMessages.length,
-                    itemBuilder: (ctx, i) => Text(
-                      _broadcastMessages[i],
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 11),
-                    ),
-                  ),
-          ),
-        ],
+      child: ValueListenableBuilder<int>(
+        valueListenable: _broadcastVersion,
+        builder: (context, version, _) {
+          return Column(
+            children: [
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.campaign,
+                        color: Colors.white70, size: 12),
+                    const SizedBox(width: 4),
+                    Text('播报 (${_broadcastMessages.length})',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 11)),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _broadcastMessages.isEmpty
+                    ? const Center(
+                        child: Text('暂无消息',
+                            style: TextStyle(
+                                color: Colors.white24, fontSize: 11)),
+                      )
+                    : ListView.builder(
+                        controller: _broadcastScrollController,
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10),
+                        itemCount: _broadcastMessages.length,
+                        itemBuilder: (ctx, i) => Text(
+                          _broadcastMessages[i],
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 11),
+                        ),
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -3303,5 +3344,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
     }
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+/// 同时监听两个 ValueNotifier 的 Builder
+class ValueListenableBuilder2<A, B> extends StatelessWidget {
+  final ValueListenable<A> first;
+  final ValueListenable<B> second;
+  final Widget Function(BuildContext, A, B, Widget?) builder;
+  final Widget? child;
+
+  const ValueListenableBuilder2({
+    super.key,
+    required this.first,
+    required this.second,
+    required this.builder,
+    this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<A>(
+      valueListenable: first,
+      builder: (context, a, _) {
+        return ValueListenableBuilder<B>(
+          valueListenable: second,
+          builder: (context, b, child) {
+            return builder(context, a, b, child);
+          },
+          child: child,
+        );
+      },
+    );
   }
 }
