@@ -1,334 +1,45 @@
-name: Build & Release
+name: Release
 
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-
-env:
-  FLUTTER_VERSION: '3.47.4'
 
 jobs:
-  flutter-analyze:
+  create-release:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-      - run: dart pub get
-      - run: dart analyze lib/
-
-  build-android:
-    needs: [flutter-analyze]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-
-      - name: 生成 Android 平台文件
-        run: |
-          set -x
-          cp -r lib /tmp/lib_backup
-          cp pubspec.yaml /tmp/pubspec.yaml.bak
-          cp AGENTS.md /tmp/AGENTS.md.bak || true
-          
-          rm -rf android ios windows macos linux web build .dart_tool
-          
-          flutter create --project-name himi_syncwatch --org com.himi --platforms android /tmp/temp_proj
-          
-          mkdir -p android
-          cp -a /tmp/temp_proj/android/* android/
-          rm -rf /tmp/temp_proj
-          
-          rm -rf lib
-          cp -r /tmp/lib_backup lib
-          cp /tmp/pubspec.yaml.bak pubspec.yaml
-          cp /tmp/AGENTS.md.bak AGENTS.md || true
-          
-          find android -name "*.gradle*" | head -10
-          ls -la android/app/build.gradle*
-
-      - name: 添加自定义权限
-        run: chmod +x scripts/patch_android.sh && bash scripts/patch_android.sh
-
-      - name: 配置 APK 签名
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: bash scripts/patch_android_signing.sh
-
-      - run: flutter pub get
-
-      - name: 使用完整版 libmpv (media-kit full, 支持 PGS 位图字幕)
-        run: bash scripts/patch_android_full_libmpv.sh
-
-      - name: 验证签名配置
-        run: |
-          echo "=== 验证 keystore 文件 ==="
-          ls -la android/app/himi-release.jks
-          keytool -list -keystore android/app/himi-release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" -alias "${{ secrets.ANDROID_KEY_ALIAS }}" 2>&1 | head -5
-          echo "=== 验证 key.properties ==="
-          cat android/key.properties
-          echo "=== 验证 build.gradle 签名配置 ==="
-          grep -A 10 'signingConfigs' android/app/build.gradle || true
-
-      - run: flutter build apk --release --split-per-abi
-
-      - name: 验证 APK 签名
-        run: |
-          echo "=== 验证 APK 签名证书 ==="
-          python3 << 'PYEOF'
-          import struct, hashlib, sys, glob
-          for apk in glob.glob("build/app/outputs/flutter-apk/*-release.apk"):
-              print(f"检查: {apk}")
-              with open(apk, "rb") as f:
-                  data = f.read()
-              magic = b"APK Sig Block 42"
-              pos = data.rfind(magic)
-              if pos == -1:
-                  print("ERROR: 未找到 APK Signing Block")
-                  sys.exit(1)
-              block_size = struct.unpack("<Q", data[pos - 8 : pos])[0]
-              block = data[pos - 8 - block_size : pos - 8]
-              found = False
-              idx = 0
-              while idx < len(block) - 4:
-                  if block[idx] == 0x30 and block[idx + 1] == 0x82:
-                      cert_len = int.from_bytes(block[idx + 2 : idx + 4], "big")
-                      if 200 < cert_len < 5000 and idx + 4 + cert_len <= len(block):
-                          cert = block[idx : idx + 4 + cert_len]
-                          h = hashlib.sha256(cert).hexdigest()
-                          print(f"  签名证书 SHA-256: {h}")
-                          found = True
-                          break
-                  idx += 1
-              if not found:
-                  print("WARNING: 未能提取签名证书")
-          PYEOF
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: build/app/outputs/flutter-apk/*.apk
-
-  build-ios:
-    needs: [flutter-analyze]
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-
-      - name: 生成 iOS 平台文件
-        run: |
-          cp -r lib /tmp/lib_backup
-          cp pubspec.yaml /tmp/pubspec.yaml.bak
-          cp AGENTS.md /tmp/AGENTS.md.bak || true
-          
-          rm -rf android ios windows macos linux web build .dart_tool
-          
-          flutter create --project-name himi_syncwatch --org com.himi --platforms ios /tmp/temp_proj
-          
-          mkdir -p ios
-          cp -a /tmp/temp_proj/ios/* ios/
-          rm -rf /tmp/temp_proj
-          
-          rm -rf lib
-          cp -r /tmp/lib_backup lib
-          cp /tmp/pubspec.yaml.bak pubspec.yaml
-          cp /tmp/AGENTS.md.bak AGENTS.md || true
-
-      - name: 添加自定义权限
-        run: |
-          plutil -insert NSMicrophoneUsageDescription -string "声网实时消息需要麦克风权限" ios/Runner/Info.plist
-          plutil -insert NSCameraUsageDescription -string "扫描二维码加入房间" ios/Runner/Info.plist
-          plutil -insert NSPhotoLibraryUsageDescription -string "从相册选择二维码图片加入房间" ios/Runner/Info.plist
-          plutil -insert NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}' ios/Runner/Info.plist
-          plutil -insert UIBackgroundModes -json '["audio"]' ios/Runner/Info.plist
-
-      - name: 设置 iOS 最低部署版本 + 禁用签名
-        run: |
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.5/' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/DEVELOPMENT_TEAM = "[^"]*"/DEVELOPMENT_TEAM = ""/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' ios/Runner.xcodeproj/project.pbxproj
-
-      - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
-      - name: 打包未签名 IPA
-        run: |
-          mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r himi-sync-ios-unsigned.ipa Payload
-          rm -rf Payload
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ios-build
-          path: himi-sync-ios-unsigned.ipa
-
-  build-windows:
-    needs: [flutter-analyze]
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-
-      - name: 生成 Windows 平台文件
-        run: |
-          Copy-Item -Recurse lib /tmp/lib_backup
-          Copy-Item pubspec.yaml /tmp/pubspec.yaml.bak -ErrorAction SilentlyContinue
-          
-          Remove-Item -Recurse -Force android,ios,windows,macos,linux,web,build,.dart_tool -ErrorAction SilentlyContinue
-          
-          flutter create --project-name himi_syncwatch --org com.himi --platforms windows C:/temp_proj
-          
-          New-Item -ItemType Directory -Force -Path windows
-          Copy-Item -Recurse C:/temp_proj/windows/* windows/
-          Remove-Item -Recurse -Force C:/temp_proj
-          
-          Remove-Item -Recurse -Force lib
-          Copy-Item -Recurse /tmp/lib_backup lib
-          Copy-Item /tmp/pubspec.yaml.bak pubspec.yaml -ErrorAction SilentlyContinue
-
-      - run: flutter pub get
-      - run: flutter build windows --release
-
-      - name: 替换为完整版 libmpv-2.dll (shinchiro, 支持 PGS/TrueHD)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260903/mpv-dev-x86_64-20260903-git-69e63f425a.7z"
-          Invoke-WebRequest -Uri $url -OutFile mpv.7z
-          # 优先用 tar(bsdtar, 支持 7z) 提取；失败则退化为 7z
-          tar -xf mpv.7z libmpv-2.dll 2>$null
-          if (-not (Test-Path libmpv-2.dll)) {
-            & "C:\Program Files\7-Zip\7z.exe" e mpv.7z libmpv-2.dll -y
-          }
-          if (-not (Test-Path libmpv-2.dll)) { throw "未能从 mpv.7z 提取 libmpv-2.dll" }
-          $dest = "build/windows/x64/runner/Release/libmpv-2.dll"
-          Copy-Item -Force libmpv-2.dll $dest
-          $f = Get-Item $dest
-          Write-Host "已覆盖: $($f.FullName)  大小=$([math]::Round($f.Length/1MB,1))MB"
-          Get-FileHash $dest -Algorithm SHA256 | Select-Object Hash
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-exe
-          path: build/windows/x64/runner/Release/
-
-  build-macos:
-    needs: [flutter-analyze]
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-
-      - name: 生成 macOS 平台文件
-        run: |
-          cp -r lib /tmp/lib_backup
-          cp pubspec.yaml /tmp/pubspec.yaml.bak
-          cp AGENTS.md /tmp/AGENTS.md.bak || true
-          
-          rm -rf android ios windows macos linux web build .dart_tool
-          
-          flutter create --project-name himi_syncwatch --org com.himi --platforms macos /tmp/temp_proj
-          
-          mkdir -p macos
-          cp -a /tmp/temp_proj/macos/* macos/
-          rm -rf /tmp/temp_proj
-          
-          rm -rf lib
-          cp -r /tmp/lib_backup lib
-          cp /tmp/pubspec.yaml.bak pubspec.yaml
-          cp /tmp/AGENTS.md.bak AGENTS.md || true
-
-      - name: 设置 macOS 最低版本
-        run: |
-          sed -i '' -E 's/^([[:space:]]*MACOSX_DEPLOYMENT_TARGET)[[:space:]]*=.*/\1 = 10.15/' macos/Runner/Configs/AppInfo.xcconfig || true
-          sed -i '' -E 's/^([[:space:]]*MACOSX_DEPLOYMENT_TARGET)[[:space:]]*=.*/\1 = 10.15/' macos/Podfile || true
-
-      - run: flutter pub get
-      - run: flutter build macos --release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-app
-          path: build/macos/Build/Products/Release/
-
-  build-linux:
-    needs: [flutter-analyze]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev libasound2-dev liblzma-dev libmpv-dev pkg-config libsecret-1-dev
-
-      - name: 生成 Linux 平台文件
-        run: |
-          cp -r lib /tmp/lib_backup
-          cp pubspec.yaml /tmp/pubspec.yaml.bak
-          cp AGENTS.md /tmp/AGENTS.md.bak || true
-          
-          rm -rf android ios windows macos linux web build .dart_tool
-          
-          flutter create --project-name himi_syncwatch --org com.himi --platforms linux /tmp/temp_proj
-          
-          mkdir -p linux
-          cp -a /tmp/temp_proj/linux/* linux/
-          rm -rf /tmp/temp_proj
-          
-          rm -rf lib
-          cp -r /tmp/lib_backup lib
-          cp /tmp/pubspec.yaml.bak pubspec.yaml
-          cp /tmp/AGENTS.md.bak AGENTS.md || true
-
-      - run: flutter pub get
-      - run: flutter build linux --release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-binary
-          path: build/linux/x64/bundle/
-
-  release:
-    needs: [build-android, build-ios, build-windows, build-macos, build-linux]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-      - name: Package release assets
-        run: |
-          mkdir -p release
-          cp android-apk/*.apk release/
-          cd windows-exe && 7z a ../release/himi-sync-windows.zip . && cd ..
-          cd macos-app && 7z a ../release/himi-sync-macos.zip . && cd ..
-          cd linux-binary && 7z a ../release/himi-sync-linux.zip . && cd ..
-          cp ios-build/himi-sync-ios-unsigned.ipa release/ || true
-      - name: Create GitHub Release
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.x'
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Extract version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build APK (Android)
+        run: flutter build apk --release
+
+      - name: Build Web
+        run: flutter build web --release --base-href /himi-syncwatch/
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: HIMI SyncWatch v${{ steps.version.outputs.tag }}
           generate_release_notes: true
           files: |
-            release/*.apk
-            release/*.zip
-            release/*.ipa
+            build/app/outputs/flutter-apk/app-release.apk
           draft: false
           prerelease: false
