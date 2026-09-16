@@ -8,12 +8,10 @@ String _decodeModeDescription(String mode) {
   switch (mode) {
     case 'auto':
       return '智能选择：自动匹配最佳解码方式';
-    case 'hw+':
-      return 'HW+：强制硬解码+回拷，兼容性最好';
     case 'hw':
-      return 'HW：强制纯硬解码，失败不回退';
+      return '硬解：强制纯硬解码，失败不回退';
     case 'sw':
-      return 'SW：纯软解码，CPU 占用高';
+      return '软解：纯软解码，CPU 占用高';
     default:
       return '建议默认使用智能选择';
   }

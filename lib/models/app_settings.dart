@@ -1,5 +1,5 @@
 class AppSettings {
-  final String decodeMode; // 'auto', 'hw+', 'hw', 'sw'
+  final String decodeMode; // 'auto', 'hw', 'sw'
   final int bufferSizeMB;
   final bool showSyncDebug;
 
@@ -26,11 +26,14 @@ class AppSettings {
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
-    // 兼容旧版 bool hardwareDecoding
+    // 兼容旧版 bool hardwareDecoding 和 hw+
     final raw = json['decodeMode'];
     String mode;
-    if (raw is String && ['auto', 'hw+', 'hw', 'sw'].contains(raw)) {
+    if (raw is String && ['auto', 'hw', 'sw'].contains(raw)) {
       mode = raw;
+    } else if (raw == 'hw+') {
+      // hw+ 已废弃，迁移到 auto
+      mode = 'auto';
     } else if (raw == true || json['hardwareDecoding'] == true) {
       mode = 'auto';
     } else if (raw == false || json['hardwareDecoding'] == false) {
@@ -46,9 +49,8 @@ class AppSettings {
   }
 
   static const decodeModeLabels = {
-    'auto': 'Auto',
-    'hw+': 'HW+',
-    'hw': 'HW',
-    'sw': 'SW',
+    'auto': '智能',
+    'hw': '硬解',
+    'sw': '软解',
   };
 }

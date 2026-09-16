@@ -10,35 +10,22 @@ void main() {
       expect(result, equals(['FFmpeg']));
     });
 
-    test('HW 模式 → 平台硬解器', () {
+    test('HW 模式 → 纯硬解，不含 FFmpeg', () {
       final result = DecodeModeService.resolveDecoders('hw');
       if (Platform.isAndroid) {
-        expect(result, contains('AMediaCodec'));
+        expect(result, equals(['AMediaCodec']));
       } else if (Platform.isIOS || Platform.isMacOS) {
-        expect(result, contains('VT'));
+        expect(result, equals(['VT']));
       } else if (Platform.isWindows) {
         expect(result, contains('D3D11'));
+        expect(result, isNot(contains('FFmpeg')));
       } else if (Platform.isLinux) {
         expect(result, contains('VAAPI'));
+        expect(result, isNot(contains('FFmpeg')));
       }
-      expect(result, contains('FFmpeg'));
     });
 
-    test('HW+ 模式 → 平台硬解器', () {
-      final result = DecodeModeService.resolveDecoders('hw+');
-      if (Platform.isAndroid) {
-        expect(result, contains('AMediaCodec'));
-      } else if (Platform.isIOS || Platform.isMacOS) {
-        expect(result, contains('VT'));
-      } else if (Platform.isWindows) {
-        expect(result, contains('D3D11'));
-      } else if (Platform.isLinux) {
-        expect(result, contains('VAAPI'));
-      }
-      expect(result, contains('FFmpeg'));
-    });
-
-    test('Auto 模式 → 平台自动解码器', () {
+    test('Auto 模式 → 硬解+软解回退', () {
       final result = DecodeModeService.resolveDecoders('auto');
       if (Platform.isAndroid) {
         expect(result, contains('AMediaCodec'));
@@ -52,7 +39,7 @@ void main() {
       expect(result, contains('FFmpeg'));
     });
 
-    test('未知模式 → 默认解码器', () {
+    test('未知模式 → 默认 auto 解码器', () {
       final result = DecodeModeService.resolveDecoders('unknown');
       expect(result, isNotEmpty);
       expect(result, contains('FFmpeg'));
@@ -60,9 +47,24 @@ void main() {
   });
 
   group('AppSettings.fromJson - 解码模式兼容', () {
-    test('新版 decodeMode 字符串值', () {
+    test('新版 decodeMode 字符串值 hw', () {
+      final settings = AppSettings.fromJson({'decodeMode': 'hw'});
+      expect(settings.decodeMode, equals('hw'));
+    });
+
+    test('新版 decodeMode 字符串值 sw', () {
+      final settings = AppSettings.fromJson({'decodeMode': 'sw'});
+      expect(settings.decodeMode, equals('sw'));
+    });
+
+    test('新版 decodeMode 字符串值 auto', () {
+      final settings = AppSettings.fromJson({'decodeMode': 'auto'});
+      expect(settings.decodeMode, equals('auto'));
+    });
+
+    test('旧版 hw+ 迁移到 auto', () {
       final settings = AppSettings.fromJson({'decodeMode': 'hw+'});
-      expect(settings.decodeMode, equals('hw+'));
+      expect(settings.decodeMode, equals('auto'));
     });
 
     test('旧版 hardwareDecoding=true → auto', () {

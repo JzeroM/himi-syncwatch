@@ -2124,7 +2124,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   // ========== 解码模式选择面板 ==========
   Widget _buildDecodeModePanel() {
-    // DV P5: 不可切换，只显示 SW
+    // DV P5: 不可切换，只显示软解
     if (_isDolbyVisionP5) {
       return Container(
         width: 160,
@@ -2151,7 +2151,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('SW', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                        Text('软解', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                         Text('DV P5 强制软解', style: TextStyle(color: Colors.white70, fontSize: 10)),
                       ],
                     ),
@@ -2164,20 +2164,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       );
     }
 
-    // P7/P8 或非 DV: 只显示 HW 和 SW
+    // 三种解码模式: 智能 / 硬解 / 软解
     final currentMode = ref.watch(settingsProvider).decodeMode;
-    final isHW = currentMode != 'sw';
-    final modes = ['hw', 'sw'];
-    final labels = {'hw': 'HW', 'sw': 'SW'};
+    final modes = ['auto', 'hw', 'sw'];
+    final labels = {'auto': '智能', 'hw': '硬解', 'sw': '软解'};
     final descriptions = {
-      'hw': '硬件解码',
-      'sw': '软件解码',
+      'auto': '优先硬解，失败回退软解',
+      'hw': '纯硬解，失败不回退',
+      'sw': '纯软解，CPU 占用高',
     };
 
     return GestureDetector(
       onTap: () {},
       child: Container(
-        width: 160,
+        width: 180,
         decoration: BoxDecoration(
           color: const Color(0xFF1E1E2E),
           borderRadius: BorderRadius.circular(8),
@@ -2186,9 +2186,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: modes.map((mode) {
-            final isSelected = (mode == 'hw' && isHW) || (mode == 'sw' && !isHW);
+            final isSelected = currentMode == mode;
             return InkWell(
-              onTap: () => _switchDecodeMode(mode == 'hw' ? 'auto' : 'sw'),
+              onTap: () => _switchDecodeMode(mode),
               borderRadius: BorderRadius.circular(8),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

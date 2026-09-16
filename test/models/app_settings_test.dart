@@ -26,12 +26,12 @@ void main() {
 
     test('toJson 包含所有字段', () {
       const settings = AppSettings(
-        decodeMode: 'hw+',
+        decodeMode: 'hw',
         bufferSizeMB: 256,
         showSyncDebug: true,
       );
       final json = settings.toJson();
-      expect(json['decodeMode'], equals('hw+'));
+      expect(json['decodeMode'], equals('hw'));
       expect(json['bufferSizeMB'], equals(256));
       expect(json['showSyncDebug'], isTrue);
     });
@@ -68,9 +68,15 @@ void main() {
       expect(settings.decodeMode, equals('sw'));
     });
 
+    test('fromJson 兼容旧版 hw+ 迁移到 auto', () {
+      final json = {'decodeMode': 'hw+'};
+      final settings = AppSettings.fromJson(json);
+      expect(settings.decodeMode, equals('auto'));
+    });
+
     test('toJson/fromJson 往返保持一致', () {
       const original = AppSettings(
-        decodeMode: 'hw+',
+        decodeMode: 'hw',
         bufferSizeMB: 128,
         showSyncDebug: true,
       );
@@ -84,6 +90,9 @@ void main() {
     test('hardwareDecoding getter', () {
       const autoSettings = AppSettings(decodeMode: 'auto');
       expect(autoSettings.hardwareDecoding, isTrue);
+
+      const hwSettings = AppSettings(decodeMode: 'hw');
+      expect(hwSettings.hardwareDecoding, isTrue);
 
       const swSettings = AppSettings(decodeMode: 'sw');
       expect(swSettings.hardwareDecoding, isFalse);
