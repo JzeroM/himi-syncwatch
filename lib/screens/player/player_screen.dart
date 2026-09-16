@@ -461,6 +461,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // 加载流
       await _loadStream(itemId: itemId);
+
+      // 单人模式：fvp prepare() 完成后为 paused，需要手动启动播放
+      if (widget.roomCode == null && mounted) {
+        _player.state = mdk.PlaybackState.playing;
+      }
     } catch (e) {
       LogService().log('Player', '_loadEpisodeStream 异常: $e');
     }
@@ -496,9 +501,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         subtitleStreamIndex: subtitleStreamIndex,
       );
 
-      // 预解析重定向
-      final url = await _resolveStreamUrl(streamUrl, token);
-
       _currentPlayUrl = streamUrl;
       _currentToken = token;
 
@@ -509,7 +511,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
-      _player.media = url;
+      _player.media = streamUrl;
       await _player.prepare();
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 15));
@@ -530,7 +532,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         await _detectDolbyVision();
       });
 
-      return url;
+      return streamUrl;
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
       if (mounted) {
@@ -542,38 +544,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-  Future<String> _resolveStreamUrl(String url, String token) async {
-    LogService().log('Stream', '_resolveStreamUrl: 原始URL=${url.substring(0, url.length.clamp(0, 120))}');
-    try {
-      final client = HttpClient()
-        ..badCertificateCallback = (_, __, ___) => true;
-      final request = await client.getUrl(Uri.parse(url));
-      request.headers.set('X-Emby-Token', token);
-      final response = await request.close().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          request.abort();
-          throw Exception('连接超时');
-        },
-      );
-
-      if (response.statusCode == 302 || response.statusCode == 301) {
-        final location = response.headers.value('location');
-        if (location != null && location.isNotEmpty) {
-          client.close(force: true);
-          LogService().log('Stream', '302 重定向到: ${location.substring(0, location.length.clamp(0, 120))}');
-          return location;
-        }
-      }
-
-      client.close(force: true);
-      LogService().log('Stream', '无重定向, status=${response.statusCode}, 返回原始URL');
-      return url;
-    } catch (e) {
-      LogService().log('Stream', '_resolveStreamUrl 异常: $e, 返回原始URL');
-      return url;
-    }
-  }
 
   /// 观众播放：从 syncPlay 消息中的 playUrl 直接播放
   void _playFromUrl({
@@ -589,18 +559,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     try {
       _addBroadcastMessage('同步主持人播放');
 
-      // 观众自行解析重定向
-      final resolvedUrl = await _resolveStreamUrl(playUrl, token);
-      LogService().log('Sync', 'URL解析完成: ${playUrl.length}字符 → ${resolvedUrl.length}字符');
+      // fvp 原生处理重定向，直接使用 playUrl
+      LogService().log('Sync', '直接使用 playUrl: ${playUrl.length}字符');
 
-      // 解析完成，检查是否已被更新的请求抢占
+      // 检查是否已被更新的请求抢占
       if (requestId != _playRequestId || !mounted) return;
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
-      _player.media = resolvedUrl;
+      _player.media = playUrl;
       await _player.prepare();
       await _player.updateTexture();
 
