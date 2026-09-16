@@ -24,6 +24,10 @@ import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
+import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -275,11 +279,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   List<String> _syncEvents = [];
   final ValueNotifier<int> _syncEventsVersion = ValueNotifier(0);
   final GlobalKey _qrKey = GlobalKey();
-
-  // 调试面板折叠状态
-  bool _debugSectionInfo = true;
-  bool _debugSectionDevice = false;
-  bool _debugSectionLog = true;
 
   // 调试面板拖拽位置
   double _debugPanelX = 20;
@@ -1863,7 +1862,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           Positioned(
             top: MediaQuery.of(context).padding.top + 48,
             right: 12,
-            child: _buildDecodeModePanel(),
+            child: DecodeModePanel(
+              isDolbyVisionP5: _isDolbyVisionP5,
+              onSwitchMode: _switchDecodeMode,
+            ),
           ),
 
         // 手势提示浮层（快进快退/双击播放暂停）
@@ -1902,167 +1904,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           Positioned(
             left: _debugPanelX,
             top: _debugPanelY,
-            child: _buildSyncDebugPanel(),
+            child: SyncDebugPanel(
+              isHost: _isHost,
+              rtmChannel: _syncRtmChannel,
+              rtmStatus: _syncRtmStatus,
+              metadataTestResult: _syncMetadataTestResult,
+              videoCodec: _videoCodec,
+              videoResolution: _videoResolution,
+              voStatus: _voStatus,
+              decodeMode: ref.read(settingsProvider).decodeMode,
+              actualDecoder: _actualDecoderFull,
+              hdrType: _hdrType,
+              isDolbyVisionP5: _isDolbyVisionP5,
+              onDrag: (delta) {
+                setState(() {
+                  _debugPanelX += delta.dx;
+                  _debugPanelY += delta.dy;
+                });
+              },
+            ),
           ),
       ],
     );
-  }
-
-  Widget _buildSyncDebugPanel() {
-    final logs = LogService().entries;
-    return Container(
-      width: 320,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.7,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 标题栏
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.15),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-            ),
-            child: Row(
-              children: [
-                // 拖拽区 — 仅此区域响应 pan 手势
-                GestureDetector(
-                  onPanUpdate: (d) => setState(() {
-                    _debugPanelX += d.delta.dx;
-                    _debugPanelY += d.delta.dy;
-                  }),
-                  behavior: HitTestBehavior.opaque,
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.drag_indicator, color: Colors.green, size: 16),
-                      SizedBox(width: 6),
-                      Text('同步调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                // 按钮区 — 独立手势，不受 pan 影响
-                GestureDetector(
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: LogService().exportAll()));
-                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('日志已复制')));
-                  },
-                  child: const Icon(Icons.copy, color: Colors.white54, size: 16),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => LogService().shareLogs(),
-                  child: const Icon(Icons.share, color: Colors.white54, size: 16),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => ref.read(settingsProvider.notifier).update(showSyncDebug: false),
-                  child: const Icon(Icons.close, color: Colors.white54, size: 16),
-                ),
-              ],
-            ),
-          ),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ▼ 连接信息
-                  _buildSectionHeader('连接信息', _debugSectionInfo, () {
-                    setState(() => _debugSectionInfo = !_debugSectionInfo);
-                  }),
-                  if (_debugSectionInfo) ...[
-                    _debugRow('角色', _isHost ? '主持人' : '观众'),
-                    _debugRow('RTM频道', _syncRtmChannel),
-                    _debugRow('RTM状态', _syncRtmStatus),
-                    _debugRow('metadata 自检', _syncMetadataTestResult),
-                  ],
-                  const SizedBox(height: 4),
-                  // ▶ 设备信息
-                  _buildSectionHeader('设备信息', _debugSectionDevice, () {
-                    setState(() => _debugSectionDevice = !_debugSectionDevice);
-                  }),
-                  if (_debugSectionDevice) ...[
-                    _debugRow('设备能力', _buildDeviceCapabilityText()),
-                    _debugRow('视频信息', _videoCodec != '-' ? '$_videoCodec, $_videoResolution' : _videoResolution),
-                    _debugRow('视频输出 vo', _voStatus),
-                    _debugRow('解码模式', _isDolbyVisionP5 ? 'SW (DV P5)' : AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
-                    _debugRow('实际解码', _actualDecoderFull.isNotEmpty ? _actualDecoderFull : '检测中...'),
-                    if (_hdrType != 'SDR')
-                      _debugRow('HDR 类型', _hdrType),
-                  ],
-                  const SizedBox(height: 4),
-                  // ▼ 运行日志
-                  _buildSectionHeader('运行日志 (${logs.length})', _debugSectionLog, () {
-                    setState(() => _debugSectionLog = !_debugSectionLog);
-                  }),
-                  if (_debugSectionLog && logs.isNotEmpty) ...[
-                    SizedBox(
-                      height: 200,
-                      child: ListView.builder(
-                        reverse: true,
-                        itemCount: logs.length > 50 ? 50 : logs.length,
-                        itemBuilder: (_, i) {
-                          final idx = logs.length - 1 - i;
-                          return Text(
-                            logs[idx],
-                            style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title, bool expanded, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        children: [
-          Icon(expanded ? Icons.expand_more : Icons.chevron_right, color: Colors.green, size: 16),
-          const SizedBox(width: 4),
-          Text(title, style: const TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Widget _debugRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 110,
-            child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 11), overflow: TextOverflow.ellipsis),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _buildDeviceCapabilityText() {
-    // fvp: 解码能力由 libmdk 自动管理
-    return 'fvp/libmdk 自动管理';
   }
 
   Widget _buildTopBar() {
@@ -2125,110 +1988,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  // ========== 解码模式选择面板 ==========
-  Widget _buildDecodeModePanel() {
-    // DV P5: 不可切换，只显示软解
-    if (_isDolbyVisionP5) {
-      return Container(
-        width: 160,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E2E),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: const BoxDecoration(
-                color: Color(0xFF6366F1),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
-                border: Border(bottom: BorderSide(color: Colors.white12, width: 0.5)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.radio_button_checked, color: Colors.white, size: 16),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('软解', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                        Text('DV P5 强制软解', style: TextStyle(color: Colors.white70, fontSize: 10)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // 三种解码模式: 智能 / 硬解 / 软解
-    final currentMode = ref.watch(settingsProvider).decodeMode;
-    final modes = ['auto', 'hw', 'sw'];
-    final labels = {'auto': '智能', 'hw': '硬解', 'sw': '软解'};
-    final descriptions = {
-      'auto': '优先硬解，失败回退软解',
-      'hw': '纯硬解，失败不回退',
-      'sw': '纯软解，CPU 占用高',
-    };
-
-    return GestureDetector(
-      onTap: () {},
-      child: Container(
-        width: 180,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E2E),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: modes.map((mode) {
-            final isSelected = currentMode == mode;
-            return InkWell(
-              onTap: () => _switchDecodeMode(mode),
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF6366F1).withValues(alpha: 0.3) : null,
-                  border: const Border(bottom: BorderSide(color: Colors.white12, width: 0.5)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                      color: isSelected ? const Color(0xFF6366F1) : Colors.white54,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(labels[mode]!, style: TextStyle(
-                            color: Colors.white, fontSize: 13,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          )),
-                          Text(descriptions[mode]!, style: const TextStyle(color: Colors.white54, fontSize: 10)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        ),
       ),
     );
   }
@@ -2548,14 +2307,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             if (_showSubtitleMenu) ...[
               _buildExpandablePanel(
                 maxHeight: 180,
-                child: _buildSubtitleListContent(),
+                child: SubtitleMenuPanel(
+                  player: _player,
+                  subtitleStreams: _embySubtitleStreams,
+                  activeSubtitleIndex: _activeSubtitleIndex,
+                  useServerBurnIn: _useServerSubtitleBurnIn,
+                  itemId: _episodeIds.isNotEmpty ? _episodeIds[_currentEpisodeIndex] : widget.itemId,
+                  mediaSourceId: widget.mediaSourceId,
+                  token: _currentToken,
+                  onSubtitleSelected: (index) {
+                    if (index == null) {
+                      _player.activeSubtitleTracks = [];
+                      _useServerSubtitleBurnIn = false;
+                      _activeSubtitleIndex = null;
+                    } else {
+                      _selectEmbySubtitle(index);
+                    }
+                  },
+                  onLoadLocal: _loadLocalSubtitle,
+                  onClose: () => setState(() => _showSubtitleMenu = false),
+                ),
               ),
               const SizedBox(height: 8),
             ],
             if (_showAudioMenu) ...[
               _buildExpandablePanel(
                 maxHeight: 180,
-                child: _buildAudioTrackListContent(),
+                child: AudioTrackMenuPanel(
+                  player: _player,
+                  audioStreams: _embyAudioStreams,
+                  onAudioSelected: _selectEmbyAudio,
+                  onClose: () => setState(() => _showAudioMenu = false),
+                ),
               ),
               const SizedBox(height: 8),
             ],
@@ -3135,93 +2918,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     );
   }
 
-  // ========== 字幕/音轨选择 ==========
-  Widget _buildSubtitleListContent() {
-    return ListView(
-      shrinkWrap: true,
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      children: [
-        _buildMenuItem(
-          label: '关闭字幕',
-          isSelected: _activeSubtitleIndex == null,
-          onTap: () {
-            // 统一使用 fvp 原生 API，不再重载流
-            _player.activeSubtitleTracks = [];
-            _useServerSubtitleBurnIn = false;
-            _activeSubtitleIndex = null;
-            setState(() => _showSubtitleMenu = false);
-          },
-        ),
-        for (int i = 0; i < _embySubtitleStreams.length; i++)
-          _buildMenuItem(
-            label: _embySubtitleStreams[i].displayInfo,
-            isSelected: _isEmbySubtitleSelected(i),
-            onTap: () {
-              _selectEmbySubtitle(i);
-              setState(() => _showSubtitleMenu = false);
-            },
-          ),
-        if (_embySubtitleStreams.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              '当前视频无内嵌字幕轨道',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
-            ),
-          ),
-        Divider(color: Colors.white24, height: 1),
-        _buildMenuItem(
-          label: '加载本地字幕文件...',
-          isSelected: false,
-          onTap: () {
-            _loadLocalSubtitle();
-            setState(() => _showSubtitleMenu = false);
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAudioTrackListContent() {
-    return ListView(
-      shrinkWrap: true,
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      children: [
-        for (int i = 0; i < _embyAudioStreams.length; i++)
-          _buildMenuItem(
-            label: _embyAudioStreams[i].displayInfo,
-            isSelected: _isEmbyAudioSelected(i),
-            onTap: () {
-              _selectEmbyAudio(i);
-              setState(() => _showAudioMenu = false);
-            },
-          ),
-        if (_embyAudioStreams.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              '当前视频无音轨选项',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
-            ),
-          ),
-      ],
-    );
-  }
-
-  bool _isEmbySubtitleSelected(int embyIndex) {
-    final stream = _embySubtitleStreams[embyIndex];
-    if (_useServerSubtitleBurnIn) {
-      return _activeSubtitleIndex == stream.index;
-    }
-    // fvp: 简化选择逻辑，基于 Emby 索引
-    return _activeSubtitleIndex == stream.index;
-  }
-
-  bool _isEmbyAudioSelected(int embyIndex) {
-    // fvp: 通过 activeAudioTracks 判断
-    return _player.activeAudioTracks.contains(embyIndex);
-  }
-
   void _selectEmbySubtitle(int embyIndex) {
     final stream = _embySubtitleStreams[embyIndex];
     final isExternal = stream.isExternal ||
@@ -3298,42 +2994,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         );
       }
     }
-  }
-
-  Widget _buildMenuItem({
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            if (isSelected)
-              const Icon(Icons.check,
-                  size: 16, color: Color(0xFF6366F1))
-            else
-              const SizedBox(width: 16),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: isSelected
-                      ? const Color(0xFF6366F1)
-                      : Colors.white,
-                  fontSize: 14,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   String _formatDuration(Duration duration) {
