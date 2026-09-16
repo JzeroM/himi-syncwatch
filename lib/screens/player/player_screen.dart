@@ -390,10 +390,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       try {
         _brightness = await ScreenBrightness().application;
       } catch (_) {}
-      await _initPlayerProperties();
+      try {
+        await _initPlayerProperties();
+      } catch (_) {}
       if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
         final targetIndex = _episodeIds.indexOf(widget.itemId);
-        _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
+        try {
+          await _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
+        } catch (_) {
+          LogService().log('Player', '_loadEpisodeStream 异常，强制设置 _isPlayerReady');
+          if (mounted) {
+            setState(() {
+              _isPlayerReady = true;
+            });
+          }
+        }
       }
     });
   }
@@ -421,38 +432,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _currentEpisodeIndex = episodeIndex;
     });
 
-    // 获取 Emby 详情（字幕/音轨信息）
-    final embyService = ref.read(embyServiceProvider);
-    final config = ref.read(embyConfigProvider);
+    try {
+      // 获取 Emby 详情（字幕/音轨信息）
+      final embyService = ref.read(embyServiceProvider);
+      final config = ref.read(embyConfigProvider);
 
-    // 如果没有配置 Emby，跳过详情获取
-    if (config != null && config.isAuthenticated) {
-      try {
-        final details = await embyService.getItemDetails(itemId);
-        if (details != null && mounted) {
-          final source = details.mediaSources.firstWhere(
-            (s) => s.id == widget.mediaSourceId,
-            orElse: () =>
-                details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
-          );
-          setState(() {
-            _embyAudioStreams = source.audioStreams;
-            _embySubtitleStreams = source.subtitleStreams;
-            _embyVideoStream = source.videoStream;
-            _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
-          });
+      // 如果没有配置 Emby，跳过详情获取
+      if (config != null && config.isAuthenticated) {
+        try {
+          final details = await embyService.getItemDetails(itemId);
+          if (details != null && mounted) {
+            final source = details.mediaSources.firstWhere(
+              (s) => s.id == widget.mediaSourceId,
+              orElse: () =>
+                  details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
+            );
+            setState(() {
+              _embyAudioStreams = source.audioStreams;
+              _embySubtitleStreams = source.subtitleStreams;
+              _embyVideoStream = source.videoStream;
+              _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
+            });
+          }
+        } catch (e) {
+          LogService().log('Player', '获取 Emby 详情失败: $e');
         }
-      } catch (e) {
-        LogService().log('Player', '获取 Emby 详情失败: $e');
       }
+
+      // 加载流
+      await _loadStream(itemId: itemId);
+    } catch (e) {
+      LogService().log('Player', '_loadEpisodeStream 异常: $e');
     }
 
-    // 加载流
-    await _loadStream(itemId: itemId);
-
-    setState(() {
-      _isPlayerReady = true;
-    });
+    // 无论成功或失败，都标记播放器已就绪，避免卡在 placeholder
+    if (mounted) {
+      setState(() {
+        _isPlayerReady = true;
+      });
+    }
 
     // 单人模式自动横屏
     if (widget.roomCode == null && mounted) {
@@ -493,7 +511,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _player.media = url;
       await _player.prepare();
-      await _player.updateTexture();
+      try {
+        await _player.updateTexture().timeout(const Duration(seconds: 15));
+      } catch (_) {
+        LogService().log('Player', 'updateTexture 超时或失败');
+      }
 
       // 字幕自动选择
       _player.activeSubtitleTracks = [0];
