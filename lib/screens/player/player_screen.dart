@@ -532,7 +532,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _currentPlayUrl = streamUrl;
       _currentToken = token;
 
-      final pos = _player.position;
+      // 切换视频前重置状态，避免旧尺寸/旧进度残留
+      _videoNativeSize = null;
+      _position = Duration.zero;
+      _positionNotifier.value = Duration.zero;
+
       final wasPlaying = _player.state == mdk.PlaybackState.playing;
 
       // 设置媒体并准备播放
@@ -547,9 +551,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         LogService().log('Player', 'updateTexture 超时或失败');
       }
 
-      if (pos > 0) {
-        await _player.seek(position: pos, flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
-      }
       if (wasPlaying) {
         _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
@@ -590,6 +591,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // 检查是否已被更新的请求抢占
       if (requestId != _playRequestId || !mounted) return;
+
+      // 切换视频前重置状态，避免旧尺寸/旧进度残留
+      _videoNativeSize = null;
+      _position = Duration.zero;
+      _positionNotifier.value = Duration.zero;
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
@@ -1919,7 +1925,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 }
                 return LayoutBuilder(
                   builder: (context, constraints) {
-                    if (_videoNativeSize == null) {
+                    if (_videoNativeSize == null ||
+                        _videoNativeSize!.width <= 0 ||
+                        _videoNativeSize!.height <= 0) {
                       return Texture(textureId: textureId);
                     }
                     final containerW = constraints.maxWidth;
