@@ -128,6 +128,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
+  Completer<void> _pendingLoaded = Completer<void>()..complete();
   DateTime? _lastSeekTime;
   bool _showPanel = true;
   String _currentPlayUrl = '';
@@ -547,15 +548,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
+      // 重置 pendingLoaded，等待 loaded 事件触发后再 updateTexture
+      _pendingLoaded = Completer<void>();
       _player.media = streamUrl;
       await _player.prepare();
+      try {
+        await _pendingLoaded.future.timeout(const Duration(seconds: 10));
+      } catch (_) {
+        LogService().log('Player', 'loaded 事件超时');
+      }
 
       bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
         textureReady = _player.textureId.value != null;
       } catch (_) {
-        LogService().log('Player', 'updateTexture 超时或失败');
+        LogService().log('Player', 'updateTexture 失败，重试');
+        await Future.delayed(const Duration(milliseconds: 500));
+        try {
+          await _player.updateTexture().timeout(const Duration(seconds: 5));
+          textureReady = _player.textureId.value != null;
+        } catch (_) {
+          LogService().log('Player', 'updateTexture 重试仍失败');
+        }
       }
 
       // updateTexture 完成后统一触发重建，确保 textureId + _videoNativeSize 同步生效
@@ -611,15 +626,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
+      _pendingLoaded = Completer<void>();
       _player.media = playUrl;
       await _player.prepare();
+      try {
+        await _pendingLoaded.future.timeout(const Duration(seconds: 10));
+      } catch (_) {
+        LogService().log('Player', 'loaded 事件超时');
+      }
 
       bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
         textureReady = _player.textureId.value != null;
       } catch (_) {
-        LogService().log('Player', 'updateTexture 超时或失败');
+        LogService().log('Player', 'updateTexture 失败，重试');
+        await Future.delayed(const Duration(milliseconds: 500));
+        try {
+          await _player.updateTexture().timeout(const Duration(seconds: 5));
+          textureReady = _player.textureId.value != null;
+        } catch (_) {
+          LogService().log('Player', 'updateTexture 重试仍失败');
+        }
       }
 
       // updateTexture 完成后统一触发重建，确保 textureId + _videoNativeSize 同步生效
@@ -685,6 +713,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _refreshTracks();
         // 触发重建，让 LayoutBuilder 读到新的 _videoNativeSize
         if (mounted) setState(() {});
+        // 完成 pendingLoaded，让 _loadStream 中 await 解除阻塞
+        if (!_pendingLoaded.isCompleted) _pendingLoaded.complete();
       }
       
       // 检查是否播放结束
