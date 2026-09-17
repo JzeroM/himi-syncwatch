@@ -346,11 +346,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('subtitle.border', '2');
     _player.setProperty('subtitle.shadow', '1');
     _player.setProperty('subtitle.margin.y', '22');
-    // 立体声降混：将多声道音频降混为立体声（用户可选）
-    final settings = ref.read(settingsProvider);
-    if (settings.stereoDownmix) {
-      _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
-    }
+    // 立体声降混由 _updateStereoDownmix() 根据音频编码动态控制
+    _updateStereoDownmix();
+    // 监听降混设置变更
+    ref.listen(settingsProvider, (prev, next) {
+      if (prev?.stereoDownmix != next.stereoDownmix) {
+        _updateStereoDownmix();
+      }
+    });
     // 音量默认 80%
     _player.volume = 0.8;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
@@ -480,6 +483,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           LogService().log('Player', '获取 Emby 详情失败: $e');
         }
       }
+
+      // 根据当前音频编码更新降混状态
+      _updateStereoDownmix();
 
       // 单人模式：fvp prepare() 完成后为 paused，需要手动启动播放
       if (widget.roomCode == null && mounted) {
@@ -1156,6 +1162,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _embyDefaultAudioIndex = message['defaultAudioStreamIndex'] as int?;
       LogService().log('Room', '字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条, 视频=${_embyVideoStream?.codec ?? "无"}');
+      // 根据当前音频编码更新降混状态
+      _updateStereoDownmix();
 
       // 从 roomInfo 消息中获取 playUrl 并播放
       final playUrl = message['playUrl'] as String?;
@@ -2970,9 +2978,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _activeSubtitleIndex = stream.index;
   }
 
+  /// 检查当前音频是否为 TrueHD
+  bool _isCurrentAudioTrueHD() {
+    if (_embyAudioStreams.isEmpty) return false;
+    final activeTracks = _player.activeAudioTracks;
+    if (activeTracks.isEmpty) return false;
+    final idx = activeTracks.first;
+    if (idx < 0 || idx >= _embyAudioStreams.length) return false;
+    return _embyAudioStreams[idx].codec.toLowerCase() == 'truehd';
+  }
+
+  /// 根据音频编码和用户设置，更新立体声降混状态
+  void _updateStereoDownmix() {
+    final settings = ref.read(settingsProvider);
+    if (settings.stereoDownmix && _isCurrentAudioTrueHD()) {
+      _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
+    } else {
+      _player.setProperty('audio.avfilter', '');
+    }
+  }
+
   void _selectEmbyAudio(int embyIndex) {
     // fvp: 通过 activeAudioTracks 选择音轨
     _player.activeAudioTracks = [embyIndex];
+    // 音轨切换后重新评估降混状态
+    _updateStereoDownmix();
   }
 
   Future<void> _loadLocalSubtitle() async {
