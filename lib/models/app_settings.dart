@@ -66,8 +66,8 @@ class AppSettings {
 
   static const audioRendererLabels = {
     'auto': '自动',
-    'aaudio': 'AAudio',
-    'opensl': 'OpenSL',
-    'audiotrack': 'AudioTrack',
+    'AAudio': 'AAudio',
+    'OpenSL': 'OpenSL',
+    'AudioTrack': 'AudioTrack',
   };
 }
