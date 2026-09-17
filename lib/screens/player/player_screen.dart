@@ -533,8 +533,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _currentPlayUrl = streamUrl;
       _currentToken = token;
 
-      // 切换视频前重置状态，避免旧尺寸/旧进度残留
-      _videoNativeSize = null;
+      // 重置进度（不重置 _videoNativeSize，避免 Texture 失去布局约束导致黑屏）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
 
@@ -597,8 +596,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 检查是否已被更新的请求抢占
       if (requestId != _playRequestId || !mounted) return;
 
-      // 切换视频前重置状态，避免旧尺寸/旧进度残留
-      _videoNativeSize = null;
+      // 切换视频前重置进度（不重置 _videoNativeSize，避免 Texture 失去布局约束导致黑屏）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
 
@@ -675,6 +673,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _videoNativeSize = null;
         }
         _refreshTracks();
+        // 触发重建，让 LayoutBuilder 读到新的 _videoNativeSize
+        if (mounted) setState(() {});
       }
       
       // 检查是否播放结束
@@ -1926,6 +1926,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null))
           Center(
             child: ValueListenableBuilder<int?>(
+              key: ValueKey(_videoNativeSize),
               valueListenable: _player.textureId,
               builder: (context, textureId, child) {
                 if (textureId == null) {
