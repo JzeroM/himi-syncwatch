@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -161,6 +162,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _useServerSubtitleBurnIn = false;
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
   BoxFit _videoFit = BoxFit.contain;
+  Size? _videoNativeSize;
 
   // 传感器
   StreamSubscription? _accelSub;
@@ -649,6 +651,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (event.newValue.test(mdk.MediaStatus.loaded)) {
         _duration = Duration(milliseconds: _player.mediaInfo.duration);
         _durationNotifier.value = _duration;
+        final videos = _player.mediaInfo.video;
+        if (videos != null && videos.isNotEmpty) {
+          _videoNativeSize = Size(videos[0].codec.width.toDouble(), videos[0].codec.height.toDouble());
+        } else {
+          _videoNativeSize = null;
+        }
         _refreshTracks();
       }
       
@@ -1909,13 +1917,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     child: CircularProgressIndicator(color: Colors.white54),
                   );
                 }
-                return FittedBox(
-                  fit: _videoFit,
-                  child: SizedBox(
-                    width: MediaQuery.of(context).size.width,
-                    height: MediaQuery.of(context).size.height,
-                    child: Texture(textureId: textureId),
-                  ),
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (_videoNativeSize == null) {
+                      return Texture(textureId: textureId);
+                    }
+                    final containerW = constraints.maxWidth;
+                    final containerH = constraints.maxHeight;
+                    final videoW = _videoNativeSize!.width;
+                    final videoH = _videoNativeSize!.height;
+
+                    switch (_videoFit) {
+                      case BoxFit.fill:
+                        return SizedBox(
+                          width: containerW,
+                          height: containerH,
+                          child: Texture(textureId: textureId),
+                        );
+                      case BoxFit.none:
+                        return Texture(textureId: textureId);
+                      case BoxFit.cover:
+                        final scale = max(containerW / videoW, containerH / videoH);
+                        return ClipRect(
+                          child: Center(
+                            child: Transform.scale(
+                              scale: scale,
+                              child: SizedBox(
+                                width: videoW,
+                                height: videoH,
+                                child: Texture(textureId: textureId),
+                              ),
+                            ),
+                          ),
+                        );
+                      default: // contain
+                        final scale = min(containerW / videoW, containerH / videoH);
+                        return Center(
+                          child: Transform.scale(
+                            scale: scale,
+                            child: SizedBox(
+                              width: videoW,
+                              height: videoH,
+                              child: Texture(textureId: textureId),
+                            ),
+                          ),
+                        );
+                    }
+                  },
                 );
               },
             ),
