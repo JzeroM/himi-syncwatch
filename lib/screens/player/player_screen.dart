@@ -346,6 +346,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('subtitle.border', '2');
     _player.setProperty('subtitle.shadow', '1');
     _player.setProperty('subtitle.margin.y', '22');
+    // 音频解码器：TrueHD/DTS-HD 等高码率格式必须使用 FFmpeg 软解
+    _player.audioDecoders = ['FFmpeg'];
+    // 音频解码器属性：TrueHD 解码优化
+    _player.setProperty('audio.decoder', 'threads=1');
+    // 音频重采样：异步模式减少 TrueHD 解码延迟
+    _player.setProperty('audio.avfilter', 'aresample=async=1:first_pts=0');
     // 音量默认 80%
     _player.volume = 0.8;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
