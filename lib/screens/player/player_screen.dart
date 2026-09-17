@@ -558,6 +558,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         LogService().log('Player', 'updateTexture 超时或失败');
       }
 
+      // updateTexture 完成后统一触发重建，确保 textureId + _videoNativeSize 同步生效
+      if (mounted) setState(() {});
+
       // 仅 texture 就绪时才恢复播放，避免有声无画
       if (wasPlaying && textureReady) {
         _player.state = mdk.PlaybackState.playing;
@@ -618,6 +621,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       } catch (_) {
         LogService().log('Player', 'updateTexture 超时或失败');
       }
+
+      // updateTexture 完成后统一触发重建，确保 textureId + _videoNativeSize 同步生效
+      if (mounted) setState(() {});
 
       // 等待加载完成
       await Future.delayed(const Duration(milliseconds: 500));
@@ -1930,7 +1936,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null))
           Center(
             child: ValueListenableBuilder<int?>(
-              key: ValueKey(_videoNativeSize),
               valueListenable: _player.textureId,
               builder: (context, textureId, child) {
                 if (textureId == null) {
