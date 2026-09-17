@@ -131,6 +131,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _currentPlayUrl = '';
   String _currentToken = '';
   Timer? _hideControlsTimer;
+  Timer? _positionTimer;
+  bool _isDraggingSlider = false;
 
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
@@ -652,11 +654,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
 
     // 定时更新播放位置（fvp 没有直接的 position stream）
-    Timer.periodic(const Duration(milliseconds: 500), (timer) {
+    _positionTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
+      if (_isDraggingSlider) return; // 拖动中不更新，避免进度条回弹
       final pos = _player.position;
       if (pos != _positionNotifier.value.inMilliseconds) {
         _position = Duration(milliseconds: pos);
@@ -1359,10 +1362,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _onSeekStart(double value) {
+    _isDraggingSlider = true;
     _positionNotifier.value = Duration(milliseconds: value.toInt());
   }
 
   void _onSeekEnd(double value) {
+    _isDraggingSlider = false;
+    // 立即更新 UI 到目标位置，不等 Timer.periodic
+    _position = Duration(milliseconds: value.toInt());
+    _positionNotifier.value = _position;
     try {
       _player.seek(position: value.toInt());
     } catch (_) {}
@@ -1717,6 +1725,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   @override
   void dispose() {
+    _positionTimer?.cancel();
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _roomInfoTimeout?.cancel();
@@ -1794,6 +1803,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             }
           },
           onDoubleTap: _onDoubleTap,
+          onHorizontalDragUpdate: _onHorizontalDragUpdate,
           onHorizontalDragEnd: _onHorizontalDragEnd,
           onVerticalDragStart: _onVerticalDragStart,
           onVerticalDragUpdate: _onVerticalDragUpdate,
@@ -2046,25 +2056,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   // ========== 手势控制 ==========
+  double _horizontalDragAccumulator = 0;
+
   void _onDoubleTap() {
     _togglePlayPause();
     _showGestureIcon(_player.state == mdk.PlaybackState.playing ? Icons.play_arrow : Icons.pause);
   }
 
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    _horizontalDragAccumulator += details.primaryDelta ?? 0;
+    // 每累计 100 像素显示一次预览
+    if (_horizontalDragAccumulator.abs() > 100) {
+      final deltaMs = (_horizontalDragAccumulator / 100 * 5000).round().clamp(-60000, 60000);
+      final currentMs = _position.inMilliseconds;
+      final previewMs = (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
+      final previewDuration = Duration(milliseconds: previewMs);
+      final minutes = previewDuration.inMinutes;
+      final seconds = (previewDuration.inSeconds % 60).toString().padLeft(2, '0');
+      _showGestureHint('$minutes:$seconds');
+    }
+  }
+
   void _onHorizontalDragEnd(DragEndDetails details) {
     final delta = details.primaryVelocity ?? 0;
     final seekDelta = (delta / 100 * 5000).round();
+    _horizontalDragAccumulator = 0;
     _seekRelative(seekDelta);
   }
 
   void _seekRelative(int deltaMs) {
+    // 限制最大跳转 ±60 秒
+    final clampedDelta = deltaMs.clamp(-60000, 60000);
     final currentMs = _position.inMilliseconds;
-    final targetMs = (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
+    final targetMs = (currentMs + clampedDelta).clamp(0, _duration.inMilliseconds);
+
+    // 立即更新 UI
+    _position = Duration(milliseconds: targetMs);
+    _positionNotifier.value = _position;
+
     try {
       _player.seek(position: targetMs);
     } catch (_) {}
 
-    final seconds = (deltaMs / 1000).round();
+    final seconds = (clampedDelta / 1000).round();
     _showGestureHint(seconds > 0 ? '+${seconds}s' : '${seconds}s');
 
     if (widget.roomCode != null) {
