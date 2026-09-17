@@ -462,7 +462,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final config = ref.read(embyConfigProvider);
 
       // 1. 加载流（HTTP 连接 + 容器探测 + 首帧解码）
-      await _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
+      final textureReady = await _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
 
       // 2. 同步获取 Emby 详情（字幕/音轨信息），确保发送 roomInfo 时数据完整
       if (config != null && config.isAuthenticated) {
@@ -486,8 +486,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       }
 
-      // 3. 启动播放
-      if (mounted) {
+      // 3. 仅在 texture 就绪时启动播放，避免有声无画
+      if (mounted && textureReady) {
         _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
       }
@@ -509,7 +509,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _rebuildGroups();
   }
 
-  Future<String?> _loadStream({
+  /// 加载流并返回 texture 是否就绪
+  Future<bool> _loadStream({
     String? itemId,
     int? subtitleStreamIndex,
     String? mediaSourceId,
@@ -545,13 +546,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _player.media = streamUrl;
       await _player.prepare();
+
+      bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
+        textureReady = _player.textureId.value != null;
       } catch (_) {
         LogService().log('Player', 'updateTexture 超时或失败');
       }
 
-      if (wasPlaying) {
+      // 仅 texture 就绪时才恢复播放，避免有声无画
+      if (wasPlaying && textureReady) {
         _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
       }
@@ -559,7 +564,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         await _detectDolbyVision();
       });
 
-      return streamUrl;
+      return textureReady;
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
       if (mounted) {
@@ -567,7 +572,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           SnackBar(content: Text('播放失败: $e')),
         );
       }
-      return null;
+      return false;
     }
   }
 
@@ -603,8 +608,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _player.media = playUrl;
       await _player.prepare();
+
+      bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
+        textureReady = _player.textureId.value != null;
       } catch (_) {
         LogService().log('Player', 'updateTexture 超时或失败');
       }
@@ -620,12 +628,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _isPlayerReady = true;
       });
 
-      if (position > 0) {
-        await _player.seek(position: (position * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
-      }
+      // 仅在 texture 就绪时启动播放，避免有声无画
+      if (textureReady) {
+        if (position > 0) {
+          await _player.seek(position: (position * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+        }
 
-      _player.state = mdk.PlaybackState.playing;
-      _syncPlayState();
+        _player.state = mdk.PlaybackState.playing;
+        _syncPlayState();
+      }
       _rebuildGroups();
       _logSyncEvent('播放器打开成功');
       Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
@@ -1460,12 +1471,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // 请求已被新请求取代，放弃
     if (requestId != _playRequestId || !mounted) return;
 
-    // 主持人切集后自动播放
-    if (mounted) {
-      _player.state = mdk.PlaybackState.playing;
-      _syncPlayState();
-    }
-
     // Host: 发送 syncPlay 命令（含 playUrl + token）
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
@@ -1781,6 +1786,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   @override
   void dispose() {
+    // 先停止播放器，确保音频立即停止
+    try {
+      _player.state = mdk.PlaybackState.stopped;
+    } catch (_) {}
+
     _positionTimer?.cancel();
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
@@ -1792,18 +1802,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
     _accelSub?.cancel();
-    _broadcastScrollController.dispose();
+    try { _broadcastScrollController.dispose(); } catch (_) {}
 
-    // 释放 ValueNotifier
-    _positionNotifier.dispose();
-    _durationNotifier.dispose();
-    _brightnessNotifier.dispose();
-    _volumeNotifier.dispose();
-    _isPlayingNotifier.dispose();
-    _broadcastVersion.dispose();
-    _syncEventsVersion.dispose();
-    _showBrightnessBarNotifier.dispose();
-    _showVolumeBarNotifier.dispose();
+    // 释放 ValueNotifier（包 try-catch 确保后续代码执行）
+    try { _positionNotifier.dispose(); } catch (_) {}
+    try { _durationNotifier.dispose(); } catch (_) {}
+    try { _brightnessNotifier.dispose(); } catch (_) {}
+    try { _volumeNotifier.dispose(); } catch (_) {}
+    try { _isPlayingNotifier.dispose(); } catch (_) {}
+    try { _broadcastVersion.dispose(); } catch (_) {}
+    try { _syncEventsVersion.dispose(); } catch (_) {}
+    try { _showBrightnessBarNotifier.dispose(); } catch (_) {}
+    try { _showVolumeBarNotifier.dispose(); } catch (_) {}
 
     // 恢复屏幕亮度
     try {
@@ -1834,7 +1844,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
     WidgetsBinding.instance.removeObserver(this);
-    _player.dispose();
+    try { _player.dispose(); } catch (_) {}
     super.dispose();
   }
 
