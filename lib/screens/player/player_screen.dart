@@ -466,32 +466,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final embyService = ref.read(embyServiceProvider);
       final config = ref.read(embyConfigProvider);
 
-      // 1. 加载流（HTTP 连接 + 容器探测 + 首帧解码）
-      final textureReady = await _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
+      // 并行：加载流 + 获取 Emby 详情，互不阻塞
+      final textureReadyF = _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
+      final detailsF = (config != null && config.isAuthenticated)
+          ? embyService.getItemDetails(itemId).catchError((e) {
+              LogService().log('Player', '获取 Emby 详情失败: $e');
+              return null;
+            })
+          : Future.value(null);
 
-      // 2. 同步获取 Emby 详情（字幕/音轨信息），确保发送 roomInfo 时数据完整
-      if (config != null && config.isAuthenticated) {
-        try {
-          final details = await embyService.getItemDetails(itemId);
-          if (details != null && mounted) {
-            final source = details.mediaSources.firstWhere(
-              (s) => s.id == epMediaSourceId,
-              orElse: () =>
-                  details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
-            );
-            setState(() {
-              _embyAudioStreams = source.audioStreams;
-              _embySubtitleStreams = source.subtitleStreams;
-              _embyVideoStream = source.videoStream;
-              _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
-            });
-          }
-        } catch (e) {
-          LogService().log('Player', '获取 Emby 详情失败: $e');
+      final textureReady = await textureReadyF;
+
+      // 处理 Emby 详情（不阻塞播放）
+      try {
+        final details = await detailsF;
+        if (details != null && mounted) {
+          final source = details.mediaSources.firstWhere(
+            (s) => s.id == epMediaSourceId,
+            orElse: () =>
+                details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
+          );
+          setState(() {
+            _embyAudioStreams = source.audioStreams;
+            _embySubtitleStreams = source.subtitleStreams;
+            _embyVideoStream = source.videoStream;
+            _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
+          });
         }
-      }
+      } catch (_) {}
 
-      // 3. 仅在 texture 就绪时启动播放，避免有声无画
+      // texture 就绪时启动播放
       if (mounted && textureReady) {
         _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
@@ -548,15 +552,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
-      // 重置 pendingLoaded，等待 loaded 事件触发后再 updateTexture
       _pendingLoaded = Completer<void>();
       _player.media = streamUrl;
-      await _player.prepare();
-      try {
-        await _pendingLoaded.future.timeout(const Duration(seconds: 10));
-      } catch (_) {
-        LogService().log('Player', 'loaded 事件超时');
-      }
+      _player.prepare(); // fire-and-forget，updateTexture 内部会等 loaded
 
       bool textureReady = false;
       try {
@@ -564,7 +562,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         textureReady = _player.textureId.value != null;
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败，重试');
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 300));
         try {
           await _player.updateTexture().timeout(const Duration(seconds: 5));
           textureReady = _player.textureId.value != null;
@@ -628,12 +626,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _pendingLoaded = Completer<void>();
       _player.media = playUrl;
-      await _player.prepare();
-      try {
-        await _pendingLoaded.future.timeout(const Duration(seconds: 10));
-      } catch (_) {
-        LogService().log('Player', 'loaded 事件超时');
-      }
+      _player.prepare(); // fire-and-forget
 
       bool textureReady = false;
       try {
@@ -641,7 +634,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         textureReady = _player.textureId.value != null;
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败，重试');
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 300));
         try {
           await _player.updateTexture().timeout(const Duration(seconds: 5));
           textureReady = _player.textureId.value != null;
@@ -652,9 +645,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // updateTexture 完成后统一触发重建，确保 textureId + _videoNativeSize 同步生效
       if (mounted) setState(() {});
-
-      // 等待加载完成
-      await Future.delayed(const Duration(milliseconds: 500));
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
