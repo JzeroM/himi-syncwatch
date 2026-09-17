@@ -1409,6 +1409,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     await _loadEpisodeStream(index);
 
+    // 主持人切集后自动播放
+    if (mounted) {
+      _player.state = mdk.PlaybackState.playing;
+    }
+
     // Host: 发送 syncPlay 命令（含 playUrl + token）
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
