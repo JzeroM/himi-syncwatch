@@ -1009,7 +1009,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _lastSeekTime = DateTime.now();
       try {
-        _player.seek(position: (expectedPos * 1000).toInt());
+        _player.setBufferRange(min: 0, max: 4000);
+        final seekFuture = _player.seek(position: (expectedPos * 1000).toInt());
+        seekFuture.then((_) => _player.setBufferRange(min: -1));
       } catch (_) {}
     }
 
@@ -1038,7 +1040,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       case AppConstants.actionSeek:
         final pos = (message['position'] as num).toDouble();
         try {
-          _player.seek(position: (pos * 1000).toInt());
+          _player.setBufferRange(min: 0, max: 4000);
+          final seekFuture = _player.seek(position: (pos * 1000).toInt());
+          seekFuture.then((_) => _player.setBufferRange(min: -1));
         } catch (_) {}
         break;
       case AppConstants.actionRate:
@@ -1355,7 +1359,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   void _onSeekEnd(double value) {
     try {
-      _player.seek(position: value.toInt());
+      // 临时降低缓冲要求，seek 后立即解码
+      _player.setBufferRange(min: 0, max: 4000);
+      final seekFuture = _player.seek(position: value.toInt());
+      // seek 完成后恢复默认缓冲（min=1000）
+      seekFuture.then((_) {
+        _player.setBufferRange(min: -1);
+      });
     } catch (_) {}
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
@@ -2052,7 +2062,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final currentMs = _position.inMilliseconds;
     final targetMs = (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
     try {
-      _player.seek(position: targetMs);
+      _player.setBufferRange(min: 0, max: 4000);
+      final seekFuture = _player.seek(position: targetMs);
+      seekFuture.then((_) => _player.setBufferRange(min: -1));
     } catch (_) {}
 
     final seconds = (deltaMs / 1000).round();
