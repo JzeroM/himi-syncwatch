@@ -346,6 +346,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('subtitle.border', '2');
     _player.setProperty('subtitle.shadow', '1');
     _player.setProperty('subtitle.margin.y', '22');
+    // TrueHD 降混为立体声，减少解码数据量约 60%
+    _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
     // 音量默认 80%
     _player.volume = 0.8;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
