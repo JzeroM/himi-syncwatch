@@ -456,12 +456,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 1. 加载流（HTTP 连接 + 容器探测 + 首帧解码）
       await _loadStream(itemId: itemId);
 
-      // 2. 立即启动播放（不等 Emby 详情，确保初始缓冲带宽完整）
-      if (widget.roomCode == null && mounted) {
-        _player.state = mdk.PlaybackState.playing;
-      }
-
-      // 3. 播放启动后，异步获取 Emby 详情（字幕/音轨信息）
+      // 2. 同步获取 Emby 详情（字幕/音轨信息），确保发送 roomInfo 时数据完整
       if (config != null && config.isAuthenticated) {
         try {
           final details = await embyService.getItemDetails(itemId);
@@ -481,6 +476,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         } catch (e) {
           LogService().log('Player', '获取 Emby 详情失败: $e');
         }
+      }
+
+      // 3. 启动播放
+      if (mounted) {
+        _player.state = mdk.PlaybackState.playing;
       }
     } catch (e) {
       LogService().log('Player', '_loadEpisodeStream 异常: $e');
@@ -584,7 +584,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _player.media = playUrl;
       await _player.prepare();
-      await _player.updateTexture();
+      try {
+        await _player.updateTexture().timeout(const Duration(seconds: 5));
+      } catch (_) {
+        LogService().log('Player', 'updateTexture 超时或失败');
+      }
 
       // 等待加载完成
       await Future.delayed(const Duration(milliseconds: 500));
@@ -1857,7 +1861,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               valueListenable: _player.textureId,
               builder: (context, textureId, child) {
                 if (textureId == null) {
-                  return const SizedBox();
+                  return const Center(
+                    child: CircularProgressIndicator(color: Colors.white54),
+                  );
                 }
                 return Texture(textureId: textureId);
               },
