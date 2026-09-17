@@ -363,6 +363,7 @@ class RtmService {
     required bool isSeries,
     String seriesName = '',
     List<Map<String, dynamic>>? episodes,
+    String? mediaSourceId,
   }) async {
     if (_client == null || _currentChannelId == null) return;
 
@@ -376,6 +377,7 @@ class RtmService {
       'isSeries': isSeries,
       'seriesName': seriesName,
       if (episodes != null) 'episodes': episodes,
+      if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
     };
 
     await _publishMessage(message);
@@ -393,6 +395,7 @@ class RtmService {
     List<int>? episodeNumbers,
     List<String>? episodePosters,
     List<String>? episodeSeriesNames,
+    List<String?>? episodeMediaSourceIds,
     String? playUrl,
     String? token,
     List<Map<String, dynamic>>? subtitleStreams,
@@ -415,6 +418,7 @@ class RtmService {
       if (episodeNumbers != null) 'episodeNumbers': episodeNumbers,
       if (episodePosters != null) 'episodePosters': episodePosters,
       if (episodeSeriesNames != null) 'episodeSeriesNames': episodeSeriesNames,
+      if (episodeMediaSourceIds != null) 'episodeMediaSourceIds': episodeMediaSourceIds,
       if (playUrl != null) 'playUrl': playUrl,
       if (token != null) 'token': token,
       if (subtitleStreams != null) 'subtitleStreams': subtitleStreams,

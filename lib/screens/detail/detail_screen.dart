@@ -179,12 +179,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         'episodes': episodesJson,
       };
     } else {
-      // 电影：直接添加
+      // 电影：支持版本选择
+      String? selectedMediaSourceId;
+      if (widget.roomMode == true && _item!.hasMultipleVersions) {
+        final selectedSource = await _showVersionPicker();
+        if (selectedSource == null) return;
+        selectedMediaSourceId = selectedSource.id;
+      }
       result = {
         'itemId': _item!.id,
         'name': _item!.name,
         'poster': _item!.posterUrl ?? '',
         'isSeries': false,
+        if (selectedMediaSourceId != null) 'mediaSourceId': selectedMediaSourceId,
       };
     }
 

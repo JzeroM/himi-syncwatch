@@ -187,6 +187,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   List<int> _episodeNumbers = [];
   List<String> _episodePosters = [];
   List<String> _episodeSeriesNames = [];
+  List<String?> _episodeMediaSourceIds = [];
   String _seriesName = '';
   int _currentEpisodeIndex = -1;
   bool _hasEpisodeList = false;
@@ -374,6 +375,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _episodeNumbers = pendingEpisodes.map((e) => e['number'] as int? ?? 0).toList();
         _episodePosters = pendingEpisodes.map((e) => e['poster'] as String? ?? '').toList();
         _episodeSeriesNames = pendingEpisodes.map((e) => e['seriesName'] as String? ?? '').toList();
+        _episodeMediaSourceIds = List<String?>.filled(_episodeIds.length, null);
         _seriesName = pendingEpisodes.first['seriesName'] as String? ?? '';
         _hasEpisodeList = true;
         ref.read(pendingRoomEpisodesProvider.notifier).state = null;
@@ -384,6 +386,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _episodeNumbers = [0];
         _episodePosters = [pendingMovie['poster'] as String? ?? ''];
         _episodeSeriesNames = [''];
+        _episodeMediaSourceIds = [widget.mediaSourceId];
         _seriesName = '';
         _hasEpisodeList = true;
         ref.read(pendingRoomMovieProvider.notifier).state = null;
@@ -443,6 +446,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (episodeIndex < 0 || episodeIndex >= _episodeIds.length) return;
 
     final itemId = _episodeIds[episodeIndex];
+    final epMediaSourceId = episodeIndex < _episodeMediaSourceIds.length
+        ? _episodeMediaSourceIds[episodeIndex]
+        : null;
 
     // 先设置 _currentEpisodeIndex，这样 publishPlayInfo 能拿到正确的值
     setState(() {
@@ -454,7 +460,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final config = ref.read(embyConfigProvider);
 
       // 1. 加载流（HTTP 连接 + 容器探测 + 首帧解码）
-      await _loadStream(itemId: itemId);
+      await _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
 
       // 2. 同步获取 Emby 详情（字幕/音轨信息），确保发送 roomInfo 时数据完整
       if (config != null && config.isAuthenticated) {
@@ -462,7 +468,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           final details = await embyService.getItemDetails(itemId);
           if (details != null && mounted) {
             final source = details.mediaSources.firstWhere(
-              (s) => s.id == widget.mediaSourceId,
+              (s) => s.id == epMediaSourceId,
               orElse: () =>
                   details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
             );
@@ -503,8 +509,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   Future<String?> _loadStream({
     String? itemId,
     int? subtitleStreamIndex,
+    String? mediaSourceId,
   }) async {
     final targetItemId = itemId ?? widget.itemId;
+    final effectiveMediaSourceId = mediaSourceId ??
+        (targetItemId == widget.itemId ? widget.mediaSourceId : null);
 
     final embyService = ref.read(embyServiceProvider);
     final config = ref.read(embyConfigProvider);
@@ -513,7 +522,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     try {
       final streamUrl = embyService.getStreamUrl(
         targetItemId,
-        mediaSourceId: widget.mediaSourceId,
+        mediaSourceId: effectiveMediaSourceId,
         subtitleStreamIndex: subtitleStreamIndex,
       );
 
@@ -1526,6 +1535,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _episodeNumbers.add(epMap['number'] as int? ?? 0);
           _episodePosters.add(epMap['poster'] as String? ?? '');
           _episodeSeriesNames.add(seriesName);
+          _episodeMediaSourceIds.add(null);
         }
         if (_seriesName.isEmpty) {
           _seriesName = seriesName;
@@ -1542,6 +1552,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _episodeNumbers.add(0);
         _episodePosters.add(poster);
         _episodeSeriesNames.add('');
+        _episodeMediaSourceIds.add(data['mediaSourceId'] as String?);
         _hasEpisodeList = true;
         _addBroadcastMessage('已添加: $name');
       }
