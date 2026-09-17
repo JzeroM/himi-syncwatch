@@ -454,18 +454,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final embyService = ref.read(embyServiceProvider);
       final config = ref.read(embyConfigProvider);
 
-      // 并行：Emby 详情请求 + 流加载
-      Future<MediaItem?>? detailsFuture;
-      if (config != null && config.isAuthenticated) {
-        detailsFuture = embyService.getItemDetails(itemId);
-      }
-
+      // 1. 加载流（HTTP 连接 + 容器探测 + 首帧解码）
       await _loadStream(itemId: itemId);
 
-      // 流加载完成后，处理 Emby 详情
-      if (detailsFuture != null) {
+      // 2. 立即启动播放（不等 Emby 详情，确保初始缓冲带宽完整）
+      if (widget.roomCode == null && mounted) {
+        _player.state = mdk.PlaybackState.playing;
+      }
+
+      // 3. 播放启动后，异步获取 Emby 详情（字幕/音轨信息）
+      if (config != null && config.isAuthenticated) {
         try {
-          final details = await detailsFuture;
+          final details = await embyService.getItemDetails(itemId);
           if (details != null && mounted) {
             final source = details.mediaSources.firstWhere(
               (s) => s.id == widget.mediaSourceId,
@@ -478,18 +478,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               _embyVideoStream = source.videoStream;
               _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
             });
+            // 详情加载后更新降混状态
+            _updateStereoDownmix();
           }
         } catch (e) {
           LogService().log('Player', '获取 Emby 详情失败: $e');
         }
-      }
-
-      // 根据当前音频编码更新降混状态
-      _updateStereoDownmix();
-
-      // 单人模式：fvp prepare() 完成后为 paused，需要手动启动播放
-      if (widget.roomCode == null && mounted) {
-        _player.state = mdk.PlaybackState.playing;
       }
     } catch (e) {
       LogService().log('Player', '_loadEpisodeStream 异常: $e');
