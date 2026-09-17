@@ -545,7 +545,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
 
       if (pos > 0) {
-        await _player.seek(position: pos);
+        await _player.seek(position: pos, flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
       }
       if (wasPlaying) {
         _player.state = mdk.PlaybackState.playing;
@@ -611,7 +611,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       });
 
       if (position > 0) {
-        await _player.seek(position: (position * 1000).toInt());
+        await _player.seek(position: (position * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
       }
 
       _player.state = mdk.PlaybackState.playing;
@@ -1026,7 +1026,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _lastSeekTime = DateTime.now();
       try {
-        _player.seek(position: (expectedPos * 1000).toInt());
+        _player.seek(position: (expectedPos * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
       } catch (_) {}
     }
 
@@ -1056,7 +1056,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       case AppConstants.actionSeek:
         final pos = (message['position'] as num).toDouble();
         try {
-          _player.seek(position: (pos * 1000).toInt());
+          _player.seek(position: (pos * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
         } catch (_) {}
         break;
       case AppConstants.actionRate:
@@ -1378,7 +1378,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _position = Duration(milliseconds: value.toInt());
     _positionNotifier.value = _position;
     try {
-      _player.seek(position: value.toInt());
+      _player.seek(position: value.toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
     } catch (_) {}
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
@@ -2110,7 +2110,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _positionNotifier.value = _position;
 
     try {
-      _player.seek(position: targetMs);
+      _player.seek(position: targetMs, flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
     } catch (_) {}
 
     final seconds = (clampedDelta / 1000).round();
