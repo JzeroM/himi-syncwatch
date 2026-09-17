@@ -107,6 +107,7 @@ class _ResourceGroup {
 class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
   late final mdk.Player _player;
   Timer? _heartbeatTimer;
+  Timer? _rateRestoreTimer;
   StreamSubscription? _rtmSubscription;
   bool _isHost = false;
   bool _showControls = true;
@@ -144,8 +145,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   Timer? _gestureHintTimer;
   IconData? _gestureOverlayIcon;
   bool _isLeftSide = false;
-  bool _showBrightnessBar = false;
-  bool _showVolumeBar = false;
   final ValueNotifier<bool> _showBrightnessBarNotifier = ValueNotifier(false);
   final ValueNotifier<bool> _showVolumeBarNotifier = ValueNotifier(false);
   Timer? _gestureBarTimer;
@@ -192,6 +191,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   int _currentEpisodeIndex = -1;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
+  final ValueNotifier<bool> _isPlayingNotifier = ValueNotifier(false);
 
   // 分组缓存（由 _rebuildGroups 从扁平数组计算）
   List<_ResourceGroup> _resourceGroups = [];
@@ -487,6 +487,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 3. 启动播放
       if (mounted) {
         _player.state = mdk.PlaybackState.playing;
+        _syncPlayState();
       }
     } catch (e) {
       LogService().log('Player', '_loadEpisodeStream 异常: $e');
@@ -549,6 +550,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       if (wasPlaying) {
         _player.state = mdk.PlaybackState.playing;
+        _syncPlayState();
       }
       Future.delayed(const Duration(seconds: 2), () async {
         await _detectDolbyVision();
@@ -615,6 +617,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
 
       _player.state = mdk.PlaybackState.playing;
+      _syncPlayState();
       _rebuildGroups();
       _logSyncEvent('播放器打开成功');
       Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
@@ -635,6 +638,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 更新音量
       _volume = _player.volume * 100;
       _volumeNotifier.value = _volume;
+      _syncPlayState();
     });
 
     // 使用 onMediaStatus 监听媒体状态变化
@@ -1014,8 +1018,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (diff < AppConstants.syncThresholdMicro) {
       // 差值 < 0.3s，不做操作
     } else if (diff < AppConstants.syncThresholdMedium) {
+      _rateRestoreTimer?.cancel();
       _player.playbackRate = 1.02;
-      Future.delayed(const Duration(seconds: 2), () {
+      _rateRestoreTimer = Timer(const Duration(seconds: 2), () {
         if (mounted) _player.playbackRate = rate;
       });
     } else {
@@ -1033,8 +1038,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // 主持人控制播放/暂停状态
     if (playing && _player.state != mdk.PlaybackState.playing) {
       _player.state = mdk.PlaybackState.playing;
+      _syncPlayState();
     } else if (!playing && _player.state == mdk.PlaybackState.playing) {
       _player.state = mdk.PlaybackState.paused;
+      _syncPlayState();
     }
   }
 
@@ -1049,9 +1056,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     switch (action) {
       case AppConstants.actionPlay:
         _player.state = mdk.PlaybackState.playing;
+        _syncPlayState();
         break;
       case AppConstants.actionPause:
         _player.state = mdk.PlaybackState.paused;
+        _syncPlayState();
         break;
       case AppConstants.actionSeek:
         final pos = (message['position'] as num).toDouble();
@@ -1180,6 +1189,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _showRoomDestroyedDialog() {
     _heartbeatTimer?.cancel();
     _player.state = mdk.PlaybackState.stopped;
+    _syncPlayState();
     if (_rtmChannel != null) {
       try {
         final rtmService = ref.read(rtmServiceProvider);
@@ -1287,6 +1297,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (widget.roomCode != null) {
         _sendCommand(AppConstants.actionPlay);
       }
+    }
+    _syncPlayState();
+  }
+
+  void _syncPlayState() {
+    final playing = _player.state == mdk.PlaybackState.playing;
+    if (_isPlayingNotifier.value != playing) {
+      _isPlayingNotifier.value = playing;
     }
   }
 
@@ -1399,6 +1417,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             _showControls = false;
             _showSubtitleMenu = false;
             _showAudioMenu = false;
+            _showDecodeModeMenu = false;
           });
         }
       });
@@ -1410,9 +1429,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _showSubtitleMenu = false;
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
-      _showBrightnessBar = false;
-      _showVolumeBar = false;
     });
+    _showBrightnessBarNotifier.value = false;
+    _showVolumeBarNotifier.value = false;
   }
 
   // 切集（房主操作 + 发送RTM命令）
@@ -1420,11 +1439,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (index < 0 || index >= _episodeIds.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
 
+    final requestId = ++_playRequestId;
+
     await _loadEpisodeStream(index);
+
+    // 请求已被新请求取代，放弃
+    if (requestId != _playRequestId || !mounted) return;
 
     // 主持人切集后自动播放
     if (mounted) {
       _player.state = mdk.PlaybackState.playing;
+      _syncPlayState();
     }
 
     // Host: 发送 syncPlay 命令（含 playUrl + token）
@@ -1468,11 +1493,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _episodeNumbers.removeAt(index);
     _episodePosters.removeAt(index);
     _episodeSeriesNames.removeAt(index);
+    _episodeMediaSourceIds.removeAt(index);
 
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
       _isPlayerReady = false;
       _player.state = mdk.PlaybackState.stopped;
+      _syncPlayState();
     } else if (_currentEpisodeIndex > index) {
       _currentEpisodeIndex--;
     }
@@ -1501,11 +1528,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _episodeNumbers.removeAt(index);
     _episodePosters.removeAt(index);
     _episodeSeriesNames.removeAt(index);
+    _episodeMediaSourceIds.removeAt(index);
 
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
       _isPlayerReady = false;
       _player.state = mdk.PlaybackState.stopped;
+      _syncPlayState();
     } else if (_currentEpisodeIndex > index) {
       _currentEpisodeIndex--;
     }
@@ -1741,6 +1770,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _positionTimer?.cancel();
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
+    _rateRestoreTimer?.cancel();
+    _gestureHintTimer?.cancel();
+    _gestureBarTimer?.cancel();
     _roomInfoTimeout?.cancel();
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
@@ -1753,6 +1785,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _durationNotifier.dispose();
     _brightnessNotifier.dispose();
     _volumeNotifier.dispose();
+    _isPlayingNotifier.dispose();
     _broadcastVersion.dispose();
     _syncEventsVersion.dispose();
     _showBrightnessBarNotifier.dispose();
@@ -1809,7 +1842,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         backgroundColor: Colors.black,
         body: GestureDetector(
           onTap: () {
-            if (_showSubtitleMenu || _showAudioMenu || _showDecodeModeMenu || _showBrightnessBar || _showVolumeBar) {
+            if (_showSubtitleMenu || _showAudioMenu || _showDecodeModeMenu || _showBrightnessBarNotifier.value || _showVolumeBarNotifier.value) {
               _closeAllMenus();
             } else {
               _toggleControls();
@@ -1876,7 +1909,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     child: CircularProgressIndicator(color: Colors.white54),
                   );
                 }
-                return Texture(textureId: textureId);
+                return FittedBox(
+                  fit: _videoFit,
+                  child: SizedBox(
+                    width: MediaQuery.of(context).size.width,
+                    height: MediaQuery.of(context).size.height,
+                    child: Texture(textureId: textureId),
+                  ),
+                );
               },
             ),
           )
@@ -2046,7 +2086,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final currentPos = _player.position;
 
       // Step1: 暂停（防止切换期间解码器输出帧导致撕裂）
-      if (wasPlaying) _player.state = mdk.PlaybackState.paused;
+      if (wasPlaying) {
+        _player.state = mdk.PlaybackState.paused;
+        _syncPlayState();
+      }
 
       // Step2: 切换解码器
       final decoders = DecodeModeService.resolveDecoders(mode);
@@ -2060,7 +2103,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
 
       // Step4: 恢复播放
-      if (wasPlaying) _player.state = mdk.PlaybackState.playing;
+      if (wasPlaying) {
+        _player.state = mdk.PlaybackState.playing;
+        _syncPlayState();
+      }
 
       // Step5: 持久化设置
       await ref.read(settingsProvider.notifier).update(decodeMode: mode);
@@ -2093,10 +2139,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _onHorizontalDragEnd(DragEndDetails details) {
-    final delta = details.primaryVelocity ?? 0;
-    final seekDelta = (delta / 100 * 5000).round();
+    // 使用与预览相同的累加器计算，确保预览与实际 seek 位置一致
+    final deltaMs = (_horizontalDragAccumulator / 100 * 5000).round().clamp(-60000, 60000);
     _horizontalDragAccumulator = 0;
-    _seekRelative(seekDelta);
+    if (deltaMs != 0) {
+      _seekRelative(deltaMs);
+    } else {
+      // 没有足够拖动距离时使用速度回退
+      final delta = details.primaryVelocity ?? 0;
+      final seekDelta = (delta / 100 * 5000).round();
+      if (seekDelta != 0) _seekRelative(seekDelta);
+    }
   }
 
   void _seekRelative(int deltaMs) {
@@ -2441,12 +2494,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 if (_canControlPlayback)
                   GestureDetector(
                     onTap: _togglePlayPause,
-                    child: Icon(
-                      _player.state == mdk.PlaybackState.playing
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_fill,
-                      color: Colors.white,
-                      size: 36,
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _isPlayingNotifier,
+                      builder: (context, isPlaying, child) {
+                        return Icon(
+                          isPlaying
+                              ? Icons.pause_circle_filled
+                              : Icons.play_circle_fill,
+                          color: Colors.white,
+                          size: 36,
+                        );
+                      },
                     ),
                   ),
                 if (_canControlPlayback) const SizedBox(width: 8),
@@ -2855,14 +2913,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     _switchToEpisode(flatIndex);
                   }
                 },
-                child: Icon(
-                  isPlaying && _player.state == mdk.PlaybackState.playing
-                      ? Icons.pause_circle
-                      : Icons.play_circle,
-                  color: isPlaying
-                      ? const Color(0xFF6366F1)
-                      : Colors.white54,
-                  size: 22,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _isPlayingNotifier,
+                  builder: (context, isPlayingNow, child) {
+                    return Icon(
+                      isPlaying && isPlayingNow
+                          ? Icons.pause_circle
+                          : Icons.play_circle,
+                      color: isPlaying
+                          ? const Color(0xFF6366F1)
+                          : Colors.white54,
+                      size: 22,
+                    );
+                  },
                 ),
               ),
             if (_isHost) const SizedBox(width: 8),
