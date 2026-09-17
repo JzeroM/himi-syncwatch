@@ -81,15 +81,5 @@ void main() {
       final settings = AppSettings.fromJson({'decodeMode': 123});
       expect(settings.decodeMode, equals('auto'));
     });
-
-    test('bufferSizeMB 默认值 64', () {
-      final settings = AppSettings.fromJson({});
-      expect(settings.bufferSizeMB, equals(64));
-    });
-
-    test('bufferSizeMB 从 JSON 读取', () {
-      final settings = AppSettings.fromJson({'bufferSizeMB': 128});
-      expect(settings.bufferSizeMB, equals(128));
-    });
   });
 }

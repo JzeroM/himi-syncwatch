@@ -6,15 +6,13 @@ void main() {
     test('默认值', () {
       const settings = AppSettings();
       expect(settings.decodeMode, equals('auto'));
-      expect(settings.bufferSizeMB, equals(64));
       expect(settings.showSyncDebug, isFalse);
     });
 
     test('copyWith 保留未指定字段', () {
-      const original = AppSettings(decodeMode: 'hw', bufferSizeMB: 128);
+      const original = AppSettings(decodeMode: 'hw');
       final copied = original.copyWith(showSyncDebug: true);
       expect(copied.decodeMode, equals('hw'));
-      expect(copied.bufferSizeMB, equals(128));
       expect(copied.showSyncDebug, isTrue);
     });
 
@@ -27,24 +25,20 @@ void main() {
     test('toJson 包含所有字段', () {
       const settings = AppSettings(
         decodeMode: 'hw',
-        bufferSizeMB: 256,
         showSyncDebug: true,
       );
       final json = settings.toJson();
       expect(json['decodeMode'], equals('hw'));
-      expect(json['bufferSizeMB'], equals(256));
       expect(json['showSyncDebug'], isTrue);
     });
 
     test('fromJson 解析所有字段', () {
       final json = {
         'decodeMode': 'hw',
-        'bufferSizeMB': 128,
         'showSyncDebug': true,
       };
       final settings = AppSettings.fromJson(json);
       expect(settings.decodeMode, equals('hw'));
-      expect(settings.bufferSizeMB, equals(128));
       expect(settings.showSyncDebug, isTrue);
     });
 
@@ -52,7 +46,6 @@ void main() {
       final json = <String, dynamic>{};
       final settings = AppSettings.fromJson(json);
       expect(settings.decodeMode, equals('auto'));
-      expect(settings.bufferSizeMB, equals(64));
       expect(settings.showSyncDebug, isFalse);
     });
 
@@ -77,13 +70,11 @@ void main() {
     test('toJson/fromJson 往返保持一致', () {
       const original = AppSettings(
         decodeMode: 'hw',
-        bufferSizeMB: 128,
         showSyncDebug: true,
       );
       final json = original.toJson();
       final restored = AppSettings.fromJson(json);
       expect(restored.decodeMode, equals(original.decodeMode));
-      expect(restored.bufferSizeMB, equals(original.bufferSizeMB));
       expect(restored.showSyncDebug, equals(original.showSyncDebug));
     });
 

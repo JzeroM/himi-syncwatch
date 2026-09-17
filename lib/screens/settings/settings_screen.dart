@@ -17,15 +17,6 @@ String _decodeModeDescription(String mode) {
   }
 }
 
-const _bufferStops = [32, 64, 128, 256, 512, 1024];
-
-double _bufferToSlider(int mb) {
-  final idx = _bufferStops.indexOf(mb);
-  return idx >= 0 ? idx.toDouble() : 0.0;
-}
-
-int _sliderToBuffer(int index) => _bufferStops[index.clamp(0, 5)];
-
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -54,42 +45,6 @@ class SettingsScreen extends ConsumerWidget {
                 );
               }).toList(),
             ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Text(
-              '视频缓存大小 (MB)',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Slider(
-                  value: _bufferToSlider(settings.bufferSizeMB),
-                  min: 0,
-                  max: 5,
-                  divisions: 5,
-                  label: '${settings.bufferSizeMB}',
-                  onChanged: (v) {
-                    final mb = _sliderToBuffer(v.round());
-                    ref.read(settingsProvider.notifier).update(bufferSizeMB: mb);
-                  },
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: SizedBox(
-                  width: 48,
-                  child: Text(
-                    '${settings.bufferSizeMB}',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-            ],
           ),
           const Divider(height: 1),
           SwitchListTile(
