@@ -399,13 +399,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     // 先完成硬件解码设置，再启动播放，避免竞态
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // 读取当前系统亮度
-      try {
-        _brightness = await ScreenBrightness().application;
-      } catch (_) {}
-      try {
-        await _initPlayerProperties();
-      } catch (_) {}
+      // 并行执行：亮度读取 + 播放器属性初始化
+      await Future.wait([
+        Future(() async {
+          try {
+            _brightness = await ScreenBrightness().application;
+          } catch (_) {}
+        }),
+        _initPlayerProperties(),
+      ]);
       if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
         final targetIndex = _episodeIds.indexOf(widget.itemId);
         try {
@@ -446,14 +448,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
 
     try {
-      // 获取 Emby 详情（字幕/音轨信息）
       final embyService = ref.read(embyServiceProvider);
       final config = ref.read(embyConfigProvider);
 
-      // 如果没有配置 Emby，跳过详情获取
+      // 并行：Emby 详情请求 + 流加载
+      Future<MediaItem?>? detailsFuture;
       if (config != null && config.isAuthenticated) {
+        detailsFuture = embyService.getItemDetails(itemId);
+      }
+
+      await _loadStream(itemId: itemId);
+
+      // 流加载完成后，处理 Emby 详情
+      if (detailsFuture != null) {
         try {
-          final details = await embyService.getItemDetails(itemId);
+          final details = await detailsFuture;
           if (details != null && mounted) {
             final source = details.mediaSources.firstWhere(
               (s) => s.id == widget.mediaSourceId,
@@ -471,9 +480,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           LogService().log('Player', '获取 Emby 详情失败: $e');
         }
       }
-
-      // 加载流
-      await _loadStream(itemId: itemId);
 
       // 单人模式：fvp prepare() 完成后为 paused，需要手动启动播放
       if (widget.roomCode == null && mounted) {
@@ -527,7 +533,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = streamUrl;
       await _player.prepare();
       try {
-        await _player.updateTexture().timeout(const Duration(seconds: 15));
+        await _player.updateTexture().timeout(const Duration(seconds: 5));
       } catch (_) {
         LogService().log('Player', 'updateTexture 超时或失败');
       }
