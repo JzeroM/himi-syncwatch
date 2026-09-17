@@ -127,6 +127,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _isSyncing = false;
   int _playRequestId = 0;
   DateTime? _lastSeekTime;
+  int _seekGeneration = 0;
   bool _showPanel = true;
   String _currentPlayUrl = '';
   String _currentToken = '';
@@ -1008,13 +1009,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         return;
       }
       _lastSeekTime = DateTime.now();
-      try {
-        _player.setBufferRange(min: 0, max: 4000);
-        final seekFuture = _player.seek(position: (expectedPos * 1000).toInt());
-        seekFuture.then((_) => _player.setBufferRange(min: -1));
-      } catch (_) {}
+      _seekAndWaitBuffer((expectedPos * 1000).toInt());
     }
 
+    // 主持人控制播放/暂停状态
     if (playing && _player.state != mdk.PlaybackState.playing) {
       _player.state = mdk.PlaybackState.playing;
     } else if (!playing && _player.state == mdk.PlaybackState.playing) {
@@ -1039,11 +1037,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         break;
       case AppConstants.actionSeek:
         final pos = (message['position'] as num).toDouble();
-        try {
-          _player.setBufferRange(min: 0, max: 4000);
-          final seekFuture = _player.seek(position: (pos * 1000).toInt());
-          seekFuture.then((_) => _player.setBufferRange(min: -1));
-        } catch (_) {}
+        _seekAndWaitBuffer((pos * 1000).toInt());
         break;
       case AppConstants.actionRate:
         final r = (message['rate'] as num).toDouble();
@@ -1353,20 +1347,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     setState(() => _videoFit = _videoFitModes[nextIndex]);
   }
 
+  /// seek 并等待缓冲完成，期间暂停播放
+  Future<void> _seekAndWaitBuffer(int positionMs) async {
+    final wasPlaying = _player.state == mdk.PlaybackState.playing;
+    if (wasPlaying) {
+      _player.state = mdk.PlaybackState.paused;
+    }
+
+    _seekGeneration++;
+    final myGeneration = _seekGeneration;
+
+    try {
+      await _player.seek(position: positionMs);
+      await _waitForBuffer(myGeneration);
+    } catch (_) {}
+
+    if (wasPlaying && mounted && _seekGeneration == myGeneration) {
+      _player.state = mdk.PlaybackState.playing;
+    }
+  }
+
+  /// 等待 buffered 状态出现（带超时）
+  Future<void> _waitForBuffer(int generation) async {
+    final completer = Completer<void>();
+
+    late StreamSubscription sub;
+    sub = _player.onMediaStatus.listen((event) {
+      if (_seekGeneration != generation) {
+        sub.cancel();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      if (event.newValue.test(mdk.MediaStatus.buffered)) {
+        sub.cancel();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+
+    await completer.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => sub.cancel(),
+    );
+  }
+
   void _onSeekStart(double value) {
     _positionNotifier.value = Duration(milliseconds: value.toInt());
   }
 
   void _onSeekEnd(double value) {
-    try {
-      // 临时降低缓冲要求，seek 后立即解码
-      _player.setBufferRange(min: 0, max: 4000);
-      final seekFuture = _player.seek(position: value.toInt());
-      // seek 完成后恢复默认缓冲（min=1000）
-      seekFuture.then((_) {
-        _player.setBufferRange(min: -1);
-      });
-    } catch (_) {}
+    _seekAndWaitBuffer(value.toInt());
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
     }
@@ -2061,11 +2090,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _seekRelative(int deltaMs) {
     final currentMs = _position.inMilliseconds;
     final targetMs = (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
-    try {
-      _player.setBufferRange(min: 0, max: 4000);
-      final seekFuture = _player.seek(position: targetMs);
-      seekFuture.then((_) => _player.setBufferRange(min: -1));
-    } catch (_) {}
+    _seekAndWaitBuffer(targetMs);
 
     final seconds = (deltaMs / 1000).round();
     _showGestureHint(seconds > 0 ? '+${seconds}s' : '${seconds}s');
