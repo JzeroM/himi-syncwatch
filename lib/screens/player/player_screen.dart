@@ -356,6 +356,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (settings.stereoDownmix) {
       _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
     }
+    // 音频后端：OpenSL 时钟精度更高，可改善 TrueHD 等高复杂度音频的播放流畅度
+    if (settings.audioRenderer != 'auto') {
+      _player.setProperty('audio.renderer', settings.audioRenderer);
+    }
     // 音量默认 80%
     _player.volume = 0.8;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';

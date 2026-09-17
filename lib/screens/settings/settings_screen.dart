@@ -17,6 +17,21 @@ String _decodeModeDescription(String mode) {
   }
 }
 
+String _audioRendererDescription(String renderer) {
+  switch (renderer) {
+    case 'auto':
+      return '使用系统默认音频后端';
+    case 'aaudio':
+      return 'AAudio：现代低延迟后端（默认）';
+    case 'opensl':
+      return 'OpenSL：时钟精度更高，改善 TrueHD 等音频流畅度';
+    case 'audiotrack':
+      return 'AudioTrack：兼容性最好的传统后端';
+    default:
+      return '建议默认使用自动';
+  }
+}
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -53,6 +68,25 @@ class SettingsScreen extends ConsumerWidget {
             value: settings.stereoDownmix,
             onChanged: (v) =>
                 ref.read(settingsProvider.notifier).update(stereoDownmix: v),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            title: const Text('音频后端'),
+            subtitle: Text(_audioRendererDescription(settings.audioRenderer)),
+            trailing: DropdownButton<String>(
+              value: settings.audioRenderer,
+              onChanged: (value) {
+                if (value != null) {
+                  ref.read(settingsProvider.notifier).update(audioRenderer: value);
+                }
+              },
+              items: AppSettings.audioRendererLabels.entries.map((e) {
+                return DropdownMenuItem(
+                  value: e.key,
+                  child: Text(e.value),
+                );
+              }).toList(),
+            ),
           ),
           const Divider(height: 1),
           SwitchListTile(

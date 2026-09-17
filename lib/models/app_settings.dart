@@ -2,20 +2,28 @@ class AppSettings {
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
   final bool stereoDownmix;
+  final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
 
   const AppSettings({
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
     this.stereoDownmix = false,
+    this.audioRenderer = 'auto',
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
 
-  AppSettings copyWith({String? decodeMode, bool? showSyncDebug, bool? stereoDownmix}) {
+  AppSettings copyWith({
+    String? decodeMode,
+    bool? showSyncDebug,
+    bool? stereoDownmix,
+    String? audioRenderer,
+  }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
+      audioRenderer: audioRenderer ?? this.audioRenderer,
     );
   }
 
@@ -23,6 +31,7 @@ class AppSettings {
         'decodeMode': decodeMode,
         'showSyncDebug': showSyncDebug,
         'stereoDownmix': stereoDownmix,
+        'audioRenderer': audioRenderer,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -45,6 +54,7 @@ class AppSettings {
       decodeMode: mode,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
+      audioRenderer: json['audioRenderer'] as String? ?? 'auto',
     );
   }
 
@@ -52,5 +62,12 @@ class AppSettings {
     'auto': '智能',
     'hw': '硬解',
     'sw': '软解',
+  };
+
+  static const audioRendererLabels = {
+    'auto': '自动',
+    'aaudio': 'AAudio',
+    'opensl': 'OpenSL',
+    'audiotrack': 'AudioTrack',
   };
 }
