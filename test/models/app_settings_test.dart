@@ -7,39 +7,46 @@ void main() {
       const settings = AppSettings();
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
+      expect(settings.stereoDownmix, isFalse);
     });
 
     test('copyWith 保留未指定字段', () {
-      const original = AppSettings(decodeMode: 'hw');
+      const original = AppSettings(decodeMode: 'hw', stereoDownmix: true);
       final copied = original.copyWith(showSyncDebug: true);
       expect(copied.decodeMode, equals('hw'));
+      expect(copied.stereoDownmix, isTrue);
       expect(copied.showSyncDebug, isTrue);
     });
 
     test('copyWith 修改字段', () {
       const original = AppSettings();
-      final copied = original.copyWith(decodeMode: 'sw');
+      final copied = original.copyWith(decodeMode: 'sw', stereoDownmix: true);
       expect(copied.decodeMode, equals('sw'));
+      expect(copied.stereoDownmix, isTrue);
     });
 
     test('toJson 包含所有字段', () {
       const settings = AppSettings(
         decodeMode: 'hw',
         showSyncDebug: true,
+        stereoDownmix: true,
       );
       final json = settings.toJson();
       expect(json['decodeMode'], equals('hw'));
       expect(json['showSyncDebug'], isTrue);
+      expect(json['stereoDownmix'], isTrue);
     });
 
     test('fromJson 解析所有字段', () {
       final json = {
         'decodeMode': 'hw',
         'showSyncDebug': true,
+        'stereoDownmix': true,
       };
       final settings = AppSettings.fromJson(json);
       expect(settings.decodeMode, equals('hw'));
       expect(settings.showSyncDebug, isTrue);
+      expect(settings.stereoDownmix, isTrue);
     });
 
     test('fromJson 默认值', () {
@@ -47,6 +54,7 @@ void main() {
       final settings = AppSettings.fromJson(json);
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
+      expect(settings.stereoDownmix, isFalse);
     });
 
     test('fromJson 兼容旧版 bool hardwareDecoding', () {
@@ -71,11 +79,13 @@ void main() {
       const original = AppSettings(
         decodeMode: 'hw',
         showSyncDebug: true,
+        stereoDownmix: true,
       );
       final json = original.toJson();
       final restored = AppSettings.fromJson(json);
       expect(restored.decodeMode, equals(original.decodeMode));
       expect(restored.showSyncDebug, equals(original.showSyncDebug));
+      expect(restored.stereoDownmix, equals(original.stereoDownmix));
     });
 
     test('hardwareDecoding getter', () {

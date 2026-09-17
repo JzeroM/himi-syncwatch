@@ -48,6 +48,14 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
           SwitchListTile(
+            title: const Text('立体声降混'),
+            subtitle: const Text('将多声道音频降混为立体声（解决部分声道无声问题）'),
+            value: settings.stereoDownmix,
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).update(stereoDownmix: v),
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
             title: const Text('同步调试面板'),
             subtitle: const Text('仅在房间内显示，可拖拽移动'),
             value: settings.showSyncDebug,

@@ -1,24 +1,28 @@
 class AppSettings {
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
+  final bool stereoDownmix;
 
   const AppSettings({
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
+    this.stereoDownmix = false,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
 
-  AppSettings copyWith({String? decodeMode, bool? showSyncDebug}) {
+  AppSettings copyWith({String? decodeMode, bool? showSyncDebug, bool? stereoDownmix}) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
+      stereoDownmix: stereoDownmix ?? this.stereoDownmix,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
         'showSyncDebug': showSyncDebug,
+        'stereoDownmix': stereoDownmix,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -40,6 +44,7 @@ class AppSettings {
     return AppSettings(
       decodeMode: mode,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
+      stereoDownmix: json['stereoDownmix'] as bool? ?? false,
     );
   }
 

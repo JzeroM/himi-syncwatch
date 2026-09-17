@@ -346,8 +346,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('subtitle.border', '2');
     _player.setProperty('subtitle.shadow', '1');
     _player.setProperty('subtitle.margin.y', '22');
-    // TrueHD 降混为立体声，减少解码数据量约 60%
-    _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
+    // 立体声降混：将多声道音频降混为立体声（用户可选）
+    final settings = ref.read(settingsProvider);
+    if (settings.stereoDownmix) {
+      _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
+    }
     // 音量默认 80%
     _player.volume = 0.8;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
@@ -977,6 +980,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_isSyncing) return;
     // fvp: 检查是否在缓冲中
     if (_player.mediaStatus.test(mdk.MediaStatus.buffering)) return;
+    if (_player.mediaStatus.test(mdk.MediaStatus.seeking)) return;
 
     final position = (message['position'] as num).toDouble();
     final playing = message['playing'] as bool;
@@ -1345,8 +1349,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     setState(() => _videoFit = _videoFitModes[nextIndex]);
   }
 
-  void _onSeek(double value) {
+  void _onSeekStart(double value) {
     _positionNotifier.value = Duration(milliseconds: value.toInt());
+  }
+
+  void _onSeekEnd(double value) {
     try {
       _player.seek(position: value.toInt());
     } catch (_) {}
@@ -2282,7 +2289,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     max: dur.inMilliseconds > 0
                         ? dur.inMilliseconds.toDouble()
                         : 1,
-                    onChanged: _canControlPlayback ? _onSeek : null,
+                    onChangeStart: _canControlPlayback ? _onSeekStart : null,
+                    onChanged: (v) {
+                      _positionNotifier.value = Duration(milliseconds: v.toInt());
+                    },
+                    onChangeEnd: _canControlPlayback ? _onSeekEnd : null,
                   );
                 },
               ),

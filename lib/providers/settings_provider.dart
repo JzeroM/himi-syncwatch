@@ -24,10 +24,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     }
   }
 
-  Future<void> update({String? decodeMode, bool? showSyncDebug}) async {
+  Future<void> update({String? decodeMode, bool? showSyncDebug, bool? stereoDownmix}) async {
     state = state.copyWith(
       decodeMode: decodeMode,
       showSyncDebug: showSyncDebug,
+      stereoDownmix: stereoDownmix,
     );
     await _storage.write(key: _storageKey, value: jsonEncode(state.toJson()));
   }
