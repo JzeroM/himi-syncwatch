@@ -229,7 +229,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-binary
-          path: build/linux/x64/bundle/
+          path: build/linux/x64/release/bundle/
 
   release:
     needs: [build-android, build-ios, build-windows, build-macos, build-linux]
@@ -246,10 +246,13 @@ jobs:
       - name: Package release assets
         run: |
           mkdir -p release
-          cp android-apk/*.apk release/
-          cd windows-exe && 7z a ../release/himi-sync-windows.zip . && cd ..
-          cd macos-app && 7z a ../release/himi-sync-macos.zip . && cd ..
-          cd linux-binary && 7z a ../release/himi-sync-linux.zip . && cd ..
+          cp android-apk/*.apk release/ || true
+          cd windows-exe && 7z a ../release/himi-sync-windows.zip . && cd .. || true
+          MACOS_APP=$(find macos-app -name "*.app" -maxdepth 1 -type d | head -1)
+          if [ -n "$MACOS_APP" ]; then
+            cd macos-app && 7z a ../release/himi-sync-macos.zip "$(basename "$MACOS_APP")" && cd .. || true
+          fi
+          cd linux-binary && 7z a ../release/himi-sync-linux.zip . && cd .. || true
           cp ios-build/himi-sync-ios-unsigned.ipa release/ || true
 
       - name: Create GitHub Release
