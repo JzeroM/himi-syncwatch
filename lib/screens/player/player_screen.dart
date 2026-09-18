@@ -504,9 +504,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       } catch (_) {}
 
-      // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
+      // _loadStream 已在 updateTexture() 后设置播放状态，此处仅同步 UI
       if (mounted) {
-        _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
       }
     } catch (e) {
@@ -559,11 +558,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       final wasPlaying = _player.state == mdk.PlaybackState.playing;
 
-      // 先停掉旧媒体，确保 fvp 内部管线干净重置（防止 playing 状态下换媒体导致视频解码器未启动）
-      if (wasPlaying) {
-        _player.state = mdk.PlaybackState.stopped;
-      }
-
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
@@ -609,6 +603,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
       }
+      // 延迟重试，处理 fvp buffering → playing 的延迟转换
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && _player.state != mdk.PlaybackState.playing) {
+          _player.state = mdk.PlaybackState.playing;
+          _syncPlayState();
+        }
+      });
       Future.delayed(const Duration(seconds: 2), () async {
         await _detectDolbyVision();
       });
@@ -657,11 +658,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _positionNotifier.value = Duration.zero;
       _videoNativeSize = null;
       _textureRenderSize = null;
-
-      // 先停掉旧媒体，确保 fvp 内部管线干净重置
-      if (_player.state == mdk.PlaybackState.playing) {
-        _player.state = mdk.PlaybackState.stopped;
-      }
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
@@ -764,13 +760,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _videoNativeSize = null;
         }
         _refreshTracks();
-        // 重新应用播放状态（防止 fvp 内部状态覆盖）
-        if (mounted) {
-          _player.state = mdk.PlaybackState.playing;
-          _syncPlayState();
-        }
-        // 触发重建，让 LayoutBuilder 读到新的 _videoNativeSize
-        if (mounted) setState(() {});
+        // 注意：不再在此处设置 _player.state = playing
+        // loaded 通过 ReceivePort 异步到达，此时 updateTexture() 可能还没创建 texture
+        // 播放状态由 _loadStream 在 updateTexture() 之后统一设置
       }
       
       // 检查是否播放结束
