@@ -207,6 +207,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   List<EpisodeInfo> _episodes = [];
   String _seriesName = '';
   int _currentEpisodeIndex = -1;
+  bool _isSwitchingMedia = false;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
   final ValueNotifier<bool> _isPlayingNotifier = ValueNotifier(false);
@@ -557,6 +558,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
+      _isSwitchingMedia = true;
       _player.media = streamUrl;
       _player.prepare(); // fire-and-forget，updateTexture 内部会等 loaded
 
@@ -577,6 +579,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // updateTexture 完成后统一触发重建，确保 textureId + _videoNativeSize 同步生效
       if (mounted) setState(() {});
+      _isSwitchingMedia = false;
 
       // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
       if (wasPlaying && mounted) {
@@ -590,6 +593,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       return textureReady;
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
+      _isSwitchingMedia = false;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('播放失败: $e')),
@@ -628,6 +632,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
+      _isSwitchingMedia = true;
       _player.media = playUrl;
       _player.prepare(); // fire-and-forget
 
@@ -648,6 +653,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // updateTexture 完成后统一触发重建，确保 textureId + _videoNativeSize 同步生效
       if (mounted) setState(() {});
+      _isSwitchingMedia = false;
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
@@ -710,6 +716,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       
       // 检查是否播放结束
       if (event.newValue.test(mdk.MediaStatus.end)) {
+        if (_isSwitchingMedia) return;
         if (!_hasEpisodeList || !_canControlPlayback) return;
         final nextIndex = _currentEpisodeIndex + 1;
         if (nextIndex < _episodes.length) {
