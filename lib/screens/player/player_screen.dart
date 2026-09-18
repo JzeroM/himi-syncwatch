@@ -480,7 +480,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             })
           : Future.value(null);
 
-      final textureReady = await textureReadyF;
+      await textureReadyF;
 
       // 处理 Emby 详情（不阻塞播放）
       try {
@@ -500,8 +500,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       } catch (_) {}
 
-      // texture 就绪时启动播放
-      if (mounted && textureReady) {
+      // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
+      if (mounted) {
         _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
       }
@@ -578,8 +578,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // updateTexture 完成后统一触发重建，确保 textureId + _videoNativeSize 同步生效
       if (mounted) setState(() {});
 
-      // 仅 texture 就绪时才恢复播放，避免有声无画
-      if (wasPlaying && textureReady) {
+      // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
+      if (wasPlaying && mounted) {
         _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
       }
