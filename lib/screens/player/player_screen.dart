@@ -559,6 +559,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       final wasPlaying = _player.state == mdk.PlaybackState.playing;
 
+      // 先停掉旧媒体，确保 fvp 内部管线干净重置（防止 playing 状态下换媒体导致视频解码器未启动）
+      if (wasPlaying) {
+        _player.state = mdk.PlaybackState.stopped;
+      }
+
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
@@ -608,6 +613,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         await _detectDolbyVision();
       });
 
+      // 延迟清除切换锁，确保旧媒体的 MediaStatus.end 事件被完全过滤
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _isSwitchingMedia = false;
+      });
+
       return textureReady;
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
@@ -647,6 +657,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _positionNotifier.value = Duration.zero;
       _videoNativeSize = null;
       _textureRenderSize = null;
+
+      // 先停掉旧媒体，确保 fvp 内部管线干净重置
+      if (_player.state == mdk.PlaybackState.playing) {
+        _player.state = mdk.PlaybackState.stopped;
+      }
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
@@ -709,6 +724,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _logSyncEvent('播放器打开成功');
       Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
       LogService().log('Sync', '播放器打开成功');
+
+      // 延迟清除切换锁，确保旧媒体的 MediaStatus.end 事件被完全过滤
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _isSwitchingMedia = false;
+      });
     } catch (e) {
       _isSwitchingMedia = false;
       _logSyncEvent('播放器打开失败: $e');
@@ -744,8 +764,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _videoNativeSize = null;
         }
         _refreshTracks();
-        // 新媒体已就绪，解除切换锁
-        _isSwitchingMedia = false;
         // 重新应用播放状态（防止 fvp 内部状态覆盖）
         if (mounted) {
           _player.state = mdk.PlaybackState.playing;
