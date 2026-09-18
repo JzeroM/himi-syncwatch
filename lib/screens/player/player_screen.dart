@@ -79,6 +79,28 @@ class _ResourceItem {
   bool get isMovie => season == 0 && number == 0 && seriesName.isEmpty;
 }
 
+class EpisodeInfo {
+  final String id;
+  final String name;
+  final int season;
+  final int number;
+  final String poster;
+  final String seriesName;
+  final String? mediaSourceId;
+
+  const EpisodeInfo({
+    required this.id,
+    required this.name,
+    this.season = 0,
+    this.number = 0,
+    this.poster = '',
+    this.seriesName = '',
+    this.mediaSourceId,
+  });
+
+  bool get isMovie => season == 0 && number == 0 && seriesName.isEmpty;
+}
+
 class _SeasonGroup {
   final int seasonNumber;
   final List<_ResourceItem> episodes;
@@ -128,7 +150,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
-  Completer<void> _pendingLoaded = Completer<void>()..complete();
   DateTime? _lastSeekTime;
   bool _showPanel = true;
   String _currentPlayUrl = '';
@@ -182,14 +203,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   final ScrollController _broadcastScrollController = ScrollController();
   String? _audienceName;
 
-  // 剧集资源列表（扁平数组，保持 RTM 兼容）
-  List<String> _episodeIds = [];
-  List<String> _episodeNames = [];
-  List<int> _episodeSeasons = [];
-  List<int> _episodeNumbers = [];
-  List<String> _episodePosters = [];
-  List<String> _episodeSeriesNames = [];
-  List<String?> _episodeMediaSourceIds = [];
+  // 剧集资源列表
+  List<EpisodeInfo> _episodes = [];
   String _seriesName = '';
   int _currentEpisodeIndex = -1;
   bool _hasEpisodeList = false;
@@ -202,40 +217,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _rebuildGroups() {
     final groups = <String, _ResourceGroup>{};
 
-    for (int i = 0; i < _episodeIds.length; i++) {
-      final season = _episodeSeasons[i];
-      final number = _episodeNumbers[i];
-      final name = _episodeNames[i];
-      final poster = i < _episodePosters.length ? _episodePosters[i] : '';
-      final id = _episodeIds[i];
-      final epSeriesName = i < _episodeSeriesNames.length ? _episodeSeriesNames[i] : '';
+    for (int i = 0; i < _episodes.length; i++) {
+      final ep = _episodes[i];
 
-      final isMovie = season == 0 && number == 0 && epSeriesName.isEmpty;
-
-      final groupName = isMovie ? '电影' : epSeriesName;
+      final groupName = ep.isMovie ? '电影' : ep.seriesName;
 
       final item = _ResourceItem(
-        id: id,
-        name: name,
-        season: season,
-        number: number,
-        poster: poster,
-        seriesName: epSeriesName,
+        id: ep.id,
+        name: ep.name,
+        season: ep.season,
+        number: ep.number,
+        poster: ep.poster,
+        seriesName: ep.seriesName,
       );
 
       groups.putIfAbsent(groupName, () => _ResourceGroup(
         name: groupName,
-        isMovie: isMovie,
+        isMovie: ep.isMovie,
         seasons: [],
       ));
 
       final group = groups[groupName]!;
       _SeasonGroup seasonGroup = group.seasons.cast<_SeasonGroup?>().firstWhere(
-        (s) => s!.seasonNumber == season,
-        orElse: () => _SeasonGroup(seasonNumber: season, episodes: []),
+        (s) => s!.seasonNumber == ep.season,
+        orElse: () => _SeasonGroup(seasonNumber: ep.season, episodes: []),
       )!;
 
-      if (!group.seasons.any((s) => s.seasonNumber == season)) {
+      if (!group.seasons.any((s) => s.seasonNumber == ep.season)) {
         group.seasons.add(seasonGroup);
         group.seasons.sort((a, b) => a.seasonNumber.compareTo(b.seasonNumber));
       }
@@ -252,16 +260,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
 
     // 恢复折叠状态：当前播放的集所在组自动展开
-    if (_currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodeIds.length) {
-      final curSeason = _episodeSeasons[_currentEpisodeIndex];
-      final curSeriesName = _currentEpisodeIndex < _episodeSeriesNames.length
-          ? _episodeSeriesNames[_currentEpisodeIndex] : '';
-      final curGroupName = curSeriesName.isEmpty ? '电影' : curSeriesName;
+    if (_currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length) {
+      final curEp = _episodes[_currentEpisodeIndex];
+      final curGroupName = curEp.isMovie ? '电影' : curEp.seriesName;
       for (final g in _resourceGroups) {
         if (g.name == curGroupName) {
           g.collapsed = false;
           for (final s in g.seasons) {
-            if (s.seasonNumber == curSeason) {
+            if (s.seasonNumber == curEp.season) {
               s.collapsed = false;
             }
           }
@@ -376,24 +382,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final pendingMovie = ref.read(pendingRoomMovieProvider);
       if (pendingEpisodes != null && pendingEpisodes.isNotEmpty) {
         // 电视剧：从完整数据提取所有字段
-        _episodeIds = pendingEpisodes.map((e) => e['id'] as String).toList();
-        _episodeNames = pendingEpisodes.map((e) => e['name'] as String? ?? '').toList();
-        _episodeSeasons = pendingEpisodes.map((e) => e['season'] as int? ?? 0).toList();
-        _episodeNumbers = pendingEpisodes.map((e) => e['number'] as int? ?? 0).toList();
-        _episodePosters = pendingEpisodes.map((e) => e['poster'] as String? ?? '').toList();
-        _episodeSeriesNames = pendingEpisodes.map((e) => e['seriesName'] as String? ?? '').toList();
-        _episodeMediaSourceIds = List<String?>.filled(_episodeIds.length, null);
+        _episodes = pendingEpisodes.map((e) => EpisodeInfo(
+          id: e['id'] as String,
+          name: e['name'] as String? ?? '',
+          season: e['season'] as int? ?? 0,
+          number: e['number'] as int? ?? 0,
+          poster: e['poster'] as String? ?? '',
+          seriesName: e['seriesName'] as String? ?? '',
+        )).toList();
         _seriesName = pendingEpisodes.first['seriesName'] as String? ?? '';
         _hasEpisodeList = true;
         ref.read(pendingRoomEpisodesProvider.notifier).state = null;
       } else if (pendingMovie != null) {
-        _episodeIds = [pendingMovie['id'] as String];
-        _episodeNames = [pendingMovie['name'] as String? ?? '电影'];
-        _episodeSeasons = [0];
-        _episodeNumbers = [0];
-        _episodePosters = [pendingMovie['poster'] as String? ?? ''];
-        _episodeSeriesNames = [''];
-        _episodeMediaSourceIds = [widget.mediaSourceId];
+        _episodes = [EpisodeInfo(
+          id: pendingMovie['id'] as String,
+          name: pendingMovie['name'] as String? ?? '电影',
+          poster: pendingMovie['poster'] as String? ?? '',
+          mediaSourceId: widget.mediaSourceId,
+        )];
         _seriesName = '';
         _hasEpisodeList = true;
         ref.read(pendingRoomMovieProvider.notifier).state = null;
@@ -420,8 +426,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }),
         _initPlayerProperties(),
       ]);
-      if (_isHost && _hasEpisodeList && _episodeIds.isNotEmpty && widget.roomCode == null) {
-        final targetIndex = _episodeIds.indexOf(widget.itemId);
+      if (_isHost && _hasEpisodeList && _episodes.isNotEmpty && widget.roomCode == null) {
+        final targetIndex = _episodes.indexWhere((e) => e.id == widget.itemId);
         try {
           await _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
         } catch (_) {
@@ -450,12 +456,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   Future<void> _loadEpisodeStream(int episodeIndex) async {
-    if (episodeIndex < 0 || episodeIndex >= _episodeIds.length) return;
+    if (episodeIndex < 0 || episodeIndex >= _episodes.length) return;
 
-    final itemId = _episodeIds[episodeIndex];
-    final epMediaSourceId = episodeIndex < _episodeMediaSourceIds.length
-        ? _episodeMediaSourceIds[episodeIndex]
-        : null;
+    final ep = _episodes[episodeIndex];
+    final itemId = ep.id;
+    final epMediaSourceId = ep.mediaSourceId;
 
     // 先设置 _currentEpisodeIndex，这样 publishPlayInfo 能拿到正确的值
     setState(() {
@@ -552,7 +557,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
-      _pendingLoaded = Completer<void>();
       _player.media = streamUrl;
       _player.prepare(); // fire-and-forget，updateTexture 内部会等 loaded
 
@@ -624,7 +628,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
-      _pendingLoaded = Completer<void>();
       _player.media = playUrl;
       _player.prepare(); // fire-and-forget
 
@@ -703,15 +706,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _refreshTracks();
         // 触发重建，让 LayoutBuilder 读到新的 _videoNativeSize
         if (mounted) setState(() {});
-        // 完成 pendingLoaded，让 _loadStream 中 await 解除阻塞
-        if (!_pendingLoaded.isCompleted) _pendingLoaded.complete();
       }
       
       // 检查是否播放结束
       if (event.newValue.test(mdk.MediaStatus.end)) {
-        if (!_hasEpisodeList) return;
+        if (!_hasEpisodeList || !_canControlPlayback) return;
         final nextIndex = _currentEpisodeIndex + 1;
-        if (nextIndex < _episodeIds.length) {
+        if (nextIndex < _episodes.length) {
           _switchToEpisode(nextIndex);
           _addBroadcastMessage('自动播放下一集');
         } else {
@@ -904,7 +905,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
 
     // 1. 设置消息监听器（subscribe 之后立即设置，确保不丢消息）
-    LogService().log('Room', '${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodeIds.length}');
+    LogService().log('Room', '${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodes.length}');
     _rtmSubscription = rtmService.messageStream.listen((message) async {
       if (!mounted) return;
       final senderId = message['userId'];
@@ -928,21 +929,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _refreshOnlineCount(rtmService);
           // 主持人发送房间信息（含媒体数据 + 剧集列表 + playUrl）
           if (_isHost) {
-            LogService().log('Room', '主持人发送 roomInfo, episodeCount=${_episodeIds.length}');
+            LogService().log('Room', '主持人发送 roomInfo, episodeCount=${_episodes.length}');
             await rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
               mediaItemId: widget.itemId,
               mediaSourceId: widget.mediaSourceId,
-              mediaItemName: _episodeNames.isNotEmpty
-                  ? _episodeNames.first
+              mediaItemName: _episodes.isNotEmpty
+                  ? _episodes.first.name
                   : null,
               seriesName: _seriesName,
-              episodeIds: _episodeIds,
-              episodeNames: _episodeNames,
-              episodeSeasons: _episodeSeasons,
-              episodeNumbers: _episodeNumbers,
-              episodePosters: _episodePosters,
-              episodeSeriesNames: _episodeSeriesNames,
+              episodeIds: _episodes.map((e) => e.id).toList(),
+              episodeNames: _episodes.map((e) => e.name).toList(),
+              episodeSeasons: _episodes.map((e) => e.season).toList(),
+              episodeNumbers: _episodes.map((e) => e.number).toList(),
+              episodePosters: _episodes.map((e) => e.poster).toList(),
+              episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
               playUrl: _currentPlayUrl,
               token: _currentToken,
               subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
@@ -957,7 +958,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
                 episodeIndex: _currentEpisodeIndex,
-                itemId: _episodeIds[_currentEpisodeIndex],
+                itemId: _episodes[_currentEpisodeIndex].id,
                 position: position,
                 playUrl: _currentPlayUrl,
                 token: _currentToken,
@@ -975,16 +976,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               channelName: _rtmChannel!,
               mediaItemId: widget.itemId,
               mediaSourceId: widget.mediaSourceId,
-              mediaItemName: _episodeNames.isNotEmpty
-                  ? _episodeNames.first
+              mediaItemName: _episodes.isNotEmpty
+                  ? _episodes.first.name
                   : null,
               seriesName: _seriesName,
-              episodeIds: _episodeIds,
-              episodeNames: _episodeNames,
-              episodeSeasons: _episodeSeasons,
-              episodeNumbers: _episodeNumbers,
-              episodePosters: _episodePosters,
-              episodeSeriesNames: _episodeSeriesNames,
+              episodeIds: _episodes.map((e) => e.id).toList(),
+              episodeNames: _episodes.map((e) => e.name).toList(),
+              episodeSeasons: _episodes.map((e) => e.season).toList(),
+              episodeNumbers: _episodes.map((e) => e.number).toList(),
+              episodePosters: _episodes.map((e) => e.poster).toList(),
+              episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
               playUrl: _currentPlayUrl,
               token: _currentToken,
               subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
@@ -1127,12 +1128,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         final r = (message['rate'] as num).toDouble();
         _player.playbackRate = r;
         break;
-      case AppConstants.actionSwitchEpisode:
-        final epIndex = message['episodeIndex'] as int?;
-        if (epIndex != null) {
-          _syncSwitchToEpisode(epIndex);
-        }
-        break;
       case AppConstants.actionSyncPlay:
         final position = (message['position'] as num?)?.toDouble() ?? 0.0;
         final playUrl = message['playUrl'] as String?;
@@ -1146,7 +1141,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       case AppConstants.actionRemoveEpisode:
         final epIndex = message['episodeIndex'] as int?;
         if (epIndex != null) {
-          _removeEpisodeLocal(epIndex);
+          _removeEpisode(epIndex, sendRtm: false);
         }
         break;
       case AppConstants.actionAddResource:
@@ -1177,13 +1172,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     LogService().log('Room', '_handleRoomInfo: epIds type=${epIds.runtimeType}, len=${epIds is List ? epIds.length : "N/A"}');
     if (epIds is List && epIds.isNotEmpty) {
       // 电视剧：接收完整剧集列表
+      final names = List<String>.from(message['episodeNames'] ?? []);
+      final seasons = List<int>.from(message['episodeSeasons'] ?? []);
+      final numbers = List<int>.from(message['episodeNumbers'] ?? []);
+      final posters = List<String>.from(message['episodePosters'] ?? []);
+      final seriesNames = List<String>.from(message['episodeSeriesNames'] ?? []);
       setState(() {
-        _episodeIds = List<String>.from(epIds);
-        _episodeNames = List<String>.from(message['episodeNames'] ?? []);
-        _episodeSeasons = List<int>.from(message['episodeSeasons'] ?? []);
-        _episodeNumbers = List<int>.from(message['episodeNumbers'] ?? []);
-        _episodePosters = List<String>.from(message['episodePosters'] ?? []);
-        _episodeSeriesNames = List<String>.from(message['episodeSeriesNames'] ?? []);
+        _episodes = List.generate(epIds.length, (i) => EpisodeInfo(
+          id: epIds[i] as String,
+          name: i < names.length ? names[i] : '',
+          season: i < seasons.length ? seasons[i] : 0,
+          number: i < numbers.length ? numbers[i] : 0,
+          poster: i < posters.length ? posters[i] : '',
+          seriesName: i < seriesNames.length ? seriesNames[i] : '',
+        ));
         _seriesName = message['seriesName'] ?? '';
         _hasEpisodeList = true;
       });
@@ -1193,12 +1195,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final mediaItemName = message['mediaItemName'] as String?;
       if (mediaItemId != null && mediaItemId.isNotEmpty) {
         setState(() {
-          _episodeIds = [mediaItemId];
-          _episodeNames = [mediaItemName ?? '电影'];
-          _episodeSeasons = [0];
-          _episodeNumbers = [0];
-          _episodePosters = [''];
-          _episodeSeriesNames = [''];
+          _episodes = [EpisodeInfo(
+            id: mediaItemId,
+            name: mediaItemName ?? '电影',
+          )];
           _seriesName = '';
           _hasEpisodeList = true;
         });
@@ -1315,7 +1315,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
   }
 
-  int get _totalEpisodeCount => _episodeIds.length;
+  int get _totalEpisodeCount => _episodes.length;
 
   void _startHeartbeat() {
     _heartbeatTimer = Timer.periodic(
@@ -1491,7 +1491,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   // 切集（房主操作 + 发送RTM命令）
   void _switchToEpisode(int index) async {
-    if (index < 0 || index >= _episodeIds.length) return;
+    if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
 
     final requestId = ++_playRequestId;
@@ -1510,7 +1510,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       await rtmService.sendCommand(
         action: AppConstants.actionSyncPlay,
         episodeIndex: index,
-        itemId: _episodeIds[index],
+        itemId: _episodes[index].id,
         position: position,
         playUrl: _currentPlayUrl,
         token: _currentToken,
@@ -1518,31 +1518,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-  // 观众同步切集：接收 syncPlay 命令后自动播放（playUrl 已在 syncPlay 消息中）
-  void _syncSwitchToEpisode(int epIndex) async {
-    if (epIndex < 0 || epIndex >= _episodeIds.length) return;
+  // 删除剧集（sendRtm=true 时为房主操作，false 时为观众端本地删除）
+  void _removeEpisode(int index, {bool sendRtm = true}) {
+    if (index < 0 || index >= _episodes.length) return;
+    if (sendRtm && !_isHost) return;
 
-    _addBroadcastMessage('同步切集: ${_episodeNames[epIndex]}');
-    setState(() {
-      _currentEpisodeIndex = epIndex;
-    });
-    // syncPlay 消息会紧随其后到达，直接处理
-  }
-
-  // 删除剧集（房主）
-  void _removeEpisode(int index) async {
-    if (index < 0 || index >= _episodeIds.length) return;
-    if (!_isHost) return;
-
-    final removedName = _episodeNames[index];
-
-    _episodeIds.removeAt(index);
-    _episodeNames.removeAt(index);
-    _episodeSeasons.removeAt(index);
-    _episodeNumbers.removeAt(index);
-    _episodePosters.removeAt(index);
-    _episodeSeriesNames.removeAt(index);
-    _episodeMediaSourceIds.removeAt(index);
+    final removedName = _episodes[index].name;
+    _episodes.removeAt(index);
 
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
@@ -1553,43 +1535,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _currentEpisodeIndex--;
     }
 
-    _hasEpisodeList = _episodeIds.isNotEmpty;
+    _hasEpisodeList = _episodes.isNotEmpty;
     _addBroadcastMessage('已移除: $removedName');
     setState(() { _rebuildGroups(); });
 
-    // 发送删除命令
-    if (_rtmChannel != null) {
-      final rtmService = ref.read(rtmServiceProvider);
-      await rtmService.sendCommand(
+    // 房主发送删除命令
+    if (sendRtm && _rtmChannel != null) {
+      ref.read(rtmServiceProvider).sendCommand(
         action: AppConstants.actionRemoveEpisode,
         episodeIndex: index,
       );
     }
-  }
-
-  // 删除剧集（观众端，仅修改本地列表）
-  void _removeEpisodeLocal(int index) {
-    if (index < 0 || index >= _episodeIds.length) return;
-
-    _episodeIds.removeAt(index);
-    _episodeNames.removeAt(index);
-    _episodeSeasons.removeAt(index);
-    _episodeNumbers.removeAt(index);
-    _episodePosters.removeAt(index);
-    _episodeSeriesNames.removeAt(index);
-    _episodeMediaSourceIds.removeAt(index);
-
-    if (_currentEpisodeIndex == index) {
-      _currentEpisodeIndex = -1;
-      _isPlayerReady = false;
-      _player.state = mdk.PlaybackState.stopped;
-      _syncPlayState();
-    } else if (_currentEpisodeIndex > index) {
-      _currentEpisodeIndex--;
-    }
-
-    _hasEpisodeList = _episodeIds.isNotEmpty;
-    setState(() { _rebuildGroups(); });
   }
 
   void _handleAddResource(Map<String, dynamic> message) {
@@ -1607,13 +1563,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (episodes != null && episodes.isNotEmpty) {
         for (final ep in episodes) {
           final epMap = ep as Map<String, dynamic>;
-          _episodeIds.add(epMap['id'] as String);
-          _episodeNames.add(epMap['name'] as String? ?? '');
-          _episodeSeasons.add(epMap['season'] as int? ?? 0);
-          _episodeNumbers.add(epMap['number'] as int? ?? 0);
-          _episodePosters.add(epMap['poster'] as String? ?? '');
-          _episodeSeriesNames.add(seriesName);
-          _episodeMediaSourceIds.add(null);
+          _episodes.add(EpisodeInfo(
+            id: epMap['id'] as String,
+            name: epMap['name'] as String? ?? '',
+            season: epMap['season'] as int? ?? 0,
+            number: epMap['number'] as int? ?? 0,
+            poster: epMap['poster'] as String? ?? '',
+            seriesName: seriesName,
+          ));
         }
         if (_seriesName.isEmpty) {
           _seriesName = seriesName;
@@ -1624,13 +1581,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } else {
       final itemId = data['itemId'] as String?;
       if (itemId != null && itemId.isNotEmpty) {
-        _episodeIds.add(itemId);
-        _episodeNames.add(name);
-        _episodeSeasons.add(0);
-        _episodeNumbers.add(0);
-        _episodePosters.add(poster);
-        _episodeSeriesNames.add('');
-        _episodeMediaSourceIds.add(data['mediaSourceId'] as String?);
+        _episodes.add(EpisodeInfo(
+          id: itemId,
+          name: name,
+          poster: poster,
+          mediaSourceId: data['mediaSourceId'] as String?,
+        ));
         _hasEpisodeList = true;
         _addBroadcastMessage('已添加: $name');
       }
@@ -2532,7 +2488,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   subtitleStreams: _embySubtitleStreams,
                   activeSubtitleIndex: _activeSubtitleIndex,
                   useServerBurnIn: _useServerSubtitleBurnIn,
-                  itemId: _episodeIds.isNotEmpty ? _episodeIds[_currentEpisodeIndex] : widget.itemId,
+                    itemId: _episodes.isNotEmpty ? _episodes[_currentEpisodeIndex].id : widget.itemId,
                   mediaSourceId: widget.mediaSourceId,
                   token: _currentToken,
                   onSubtitleSelected: (index) {
@@ -2965,7 +2921,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   int _findFlatIndex(String itemId) {
-    return _episodeIds.indexOf(itemId);
+    return _episodes.indexWhere((e) => e.id == itemId);
   }
 
   Widget _buildEpisodeListItem(int flatIndex, _ResourceItem item) {
@@ -3155,8 +3111,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     if (isExternal) {
       // 外挂字幕：用 fvp setMedia 加载外部文件，不重载流
-      final itemId = _episodeIds.isNotEmpty
-          ? _episodeIds[_currentEpisodeIndex]
+      final itemId = _episodes.isNotEmpty
+          ? _episodes[_currentEpisodeIndex].id
           : widget.itemId;
       final embyService = ref.read(embyServiceProvider);
       final config = ref.read(embyConfigProvider);
