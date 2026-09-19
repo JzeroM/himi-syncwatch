@@ -208,7 +208,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _seriesName = '';
   int _currentEpisodeIndex = -1;
   bool _isSwitchingMedia = false;
-  bool _isNextMediaQueued = false;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
   final ValueNotifier<bool> _isPlayingNotifier = ValueNotifier(false);
@@ -582,7 +581,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.setProperty('avio.headers', 'X-Emby-Token: $token');
     }
     _player.setNext(nextUrl);
-    _isNextMediaQueued = true;
   }
 
   /// 同步从 mediaInfo 获取视频原生尺寸，用于缩放计算
@@ -786,28 +784,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _duration = Duration(milliseconds: _player.mediaInfo.duration);
         _durationNotifier.value = _duration;
         _refreshTracks();
-
-        // gapless 转场：setNext 触发的自动切换，更新集数状态
-        if (_isNextMediaQueued) {
-          _isNextMediaQueued = false;
-          final nextIndex = _currentEpisodeIndex + 1;
-          if (nextIndex < _episodes.length) {
-            setState(() {
-              _currentEpisodeIndex = nextIndex;
-            });
-            _rebuildGroups();
-            // 房主：通知观众自动切集
-            if (_isHost && _rtmChannel != null && mounted) {
-              final rtmService = ref.read(rtmServiceProvider);
-              rtmService.sendCommand(
-                action: AppConstants.actionSyncPlay,
-                episodeIndex: nextIndex,
-                itemId: _episodes[nextIndex].id,
-                position: 0,
-              );
-            }
-          }
-        }
         // 注意：不再在此处设置 _player.state = playing
         // loaded 通过 ReceivePort 异步到达，此时 updateTexture() 可能还没创建 texture
         // 播放状态由 _loadStream 在 updateTexture() 之后统一设置
@@ -819,10 +795,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (!_hasEpisodeList || !_canControlPlayback) return;
         final nextIndex = _currentEpisodeIndex + 1;
         if (nextIndex < _episodes.length) {
-          // setNext 已排队下一集时，跳过手动切换（gapless 会自动过渡）
-          if (!_isNextMediaQueued) {
-            _switchToEpisode(nextIndex);
-          }
+          _switchToEpisode(nextIndex);
         } else {
           _addBroadcastMessage('所有剧集播放完毕');
         }
@@ -1581,9 +1554,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _switchToEpisode(int index) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
-
-    // 清除预加载队列，防止 gapless 自动切换干扰手动选择
-    _isNextMediaQueued = false;
 
     final requestId = ++_playRequestId;
 
