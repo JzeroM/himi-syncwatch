@@ -560,7 +560,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = streamUrl;
       await _player.prepare();
 
-      // 创建纹理并应用画面比例
+      // 创建屏幕尺寸纹理（fit:false 使 setAspectRatio 生效）并应用画面比例
+      final screen = MediaQuery.of(context).size;
+      try {
+        await _player.updateTexture(
+          width: screen.width.toInt(),
+          height: screen.height.toInt(),
+          fit: false,
+        ).timeout(const Duration(seconds: 5));
+      } catch (_) {
+        LogService().log('Player', 'updateTexture 失败');
+      }
       _applyVideoFit();
 
       // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
@@ -630,7 +640,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = playUrl;
       await _player.prepare();
 
-      // 创建纹理并应用画面比例
+      // 创建屏幕尺寸纹理（fit:false 使 setAspectRatio 生效）并应用画面比例
+      final screen = MediaQuery.of(context).size;
+      try {
+        await _player.updateTexture(
+          width: screen.width.toInt(),
+          height: screen.height.toInt(),
+          fit: false,
+        ).timeout(const Duration(seconds: 5));
+      } catch (_) {
+        LogService().log('Player', 'updateTexture 失败');
+      }
       _applyVideoFit();
 
       // 缓冲完成，再次检查是否已被抢占
@@ -1426,19 +1446,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _applyVideoFit();
   }
 
-  /// 使用 mdk 原生缩放替代 Flutter Transform.scale
+  /// 使用 mdk 原生 setAspectRatio 设置画面缩放（不重建纹理）
   void _applyVideoFit() {
     if (!mounted) return;
-    final screen = MediaQuery.of(context).size;
-    final w = screen.width.toInt();
-    final h = screen.height.toInt();
-
-    // 重建纹理到屏幕尺寸，使 setAspectRatio 生效
-    _player.updateTexture(width: w, height: h).timeout(
-      const Duration(seconds: 5),
-      onTimeout: () => 0,
-    );
-
     switch (_videoFit) {
       case BoxFit.contain:
         _player.setAspectRatio(mdk.keepAspectRatio);
@@ -1453,7 +1463,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       default:
         break;
     }
-    if (mounted) setState(() {});
   }
 
   void _onSeekStart(double value) {
