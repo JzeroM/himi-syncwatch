@@ -471,6 +471,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final itemId = ep.id;
     final epMediaSourceId = ep.mediaSourceId;
 
+    // 立即标记就绪，显示视频区域（带黑色遮罩），避免卡在 placeholder
+    if (mounted) {
+      setState(() {
+        _isPlayerReady = true;
+      });
+    }
+
     // 先设置 _currentEpisodeIndex，这样 publishPlayInfo 能拿到正确的值
     setState(() {
       _currentEpisodeIndex = episodeIndex;
@@ -596,8 +603,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _positionNotifier.value = Duration.zero;
       _videoNativeSize = null;
 
-      final wasPlaying = _player.state == mdk.PlaybackState.playing;
-
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
@@ -612,12 +617,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 同步设置视频原生尺寸（从 mediaInfo 读取）
       _syncVideoNativeSize();
 
-      // 启动播放
+      // 启动播放（无条件，首播和切集都需要）
       if (mounted) {
-        if (wasPlaying) {
-          _player.state = mdk.PlaybackState.playing;
-          _syncPlayState();
-        }
+        _player.state = mdk.PlaybackState.playing;
+        _syncPlayState();
         setState(() {});
       }
       Future.delayed(const Duration(seconds: 2), () async {
@@ -2053,7 +2056,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           ),
 
         // 切集遮罩：掩盖旧帧残留，新帧就绪后自动消失
-        if (_isSwitchingMedia && _isPlayerReady)
+        if (_isSwitchingMedia)
           Container(
             color: Colors.black,
             child: const Center(
