@@ -568,8 +568,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = streamUrl;
       await _player.prepare();
 
+      bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
+        textureReady = true;
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败');
       }
@@ -578,10 +580,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (mounted) setState(() {});
 
       // 从 fvp 获取真实 GPU 纹理尺寸（已修正 PAR/rotation），用于 contain/fill 缩放
-      final size = await _player.textureSize;
-      if (size != null && mounted) {
-        _textureRenderSize = size;
-        setState(() {});
+      // 用 .then() 避免 _videoSize 未完成时阻塞整个流程
+      if (textureReady) {
+        _player.textureSize.then((size) {
+          if (size != null && mounted) {
+            _textureRenderSize = size;
+            setState(() {});
+          }
+        });
       }
 
       // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
@@ -654,8 +660,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = playUrl;
       await _player.prepare();
 
+      bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
+        textureReady = true;
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败');
       }
@@ -664,10 +672,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (mounted) setState(() {});
 
       // 从 fvp 获取真实 GPU 纹理尺寸（已修正 PAR/rotation），用于 contain/fill 缩放
-      final size = await _player.textureSize;
-      if (size != null && mounted) {
-        _textureRenderSize = size;
-        setState(() {});
+      // 用 .then() 避免 _videoSize 未完成时阻塞整个流程
+      if (textureReady) {
+        _player.textureSize.then((size) {
+          if (size != null && mounted) {
+            _textureRenderSize = size;
+            setState(() {});
+          }
+        });
       }
 
       // 缓冲完成，再次检查是否已被抢占
