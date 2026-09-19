@@ -128,6 +128,20 @@ class _ResourceGroup {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
+  static const _videoFitModes = [
+    BoxFit.contain,
+    BoxFit.cover,
+    BoxFit.fill,
+    BoxFit.none,
+  ];
+  static const _videoFitIcons = [
+    Icons.fit_screen,
+    Icons.fullscreen,
+    Icons.zoom_out_map,
+    Icons.aspect_ratio,
+  ];
+  static const _videoFitLabels = ['自适应', '裁剪', '铺满', '原始'];
+
   late final mdk.Player _player;
   Timer? _heartbeatTimer;
   Timer? _rateRestoreTimer;
@@ -183,7 +197,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
-  BoxFit _videoFit = BoxFit.none;
+  BoxFit _videoFit = BoxFit.contain;
   Size? _videoNativeSize;
 
   // 传感器
@@ -415,7 +429,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     if (widget.roomCode != null) {
       _setupRoomSync();
-      _switchToLandscape(_OrientationMode.landscapeLeft);
     }
 
     // 先完成硬件解码设置，再启动播放，避免竞态
@@ -533,13 +546,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       });
     }
 
-    // 单人模式自动横屏
-    if (widget.roomCode == null && mounted) {
-      _switchToLandscape(_OrientationMode.landscapeLeft);
-    }
     _rebuildGroups();
 
-    // 预加载下一集（gapless 播放，不阻塞当前集播放）
+    // 预加载下一集（不阻塞当前集播放）
     _preloadNextEpisode();
   }
 
@@ -1499,6 +1508,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       ]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
+  }
+
+  void _cycleVideoFit() {
+    final nextIndex =
+        (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
+    setState(() => _videoFit = _videoFitModes[nextIndex]);
   }
 
   void _onSeekStart(double value) {
@@ -2658,6 +2673,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     _totalEpisodeCount > 1)
                   const SizedBox(width: 8),
 
+                // 画面比例（仅本地单人模式）
+                if (widget.roomCode == null)
+                  _buildControlButton(
+                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
+                    onTap: _cycleVideoFit,
+                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
+                  ),
+                if (widget.roomCode == null) const SizedBox(width: 8),
+
                 const Spacer(),
 
                 // 字幕
@@ -2805,7 +2829,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         context: context,
                         delegate: RoomSearchDelegate(ref, roomCode: widget.roomCode!),
                       );
-                      _switchToLandscape(_OrientationMode.landscapeLeft);
+                      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
                       if (itemData != null && mounted) {
                         final resourceData = await context.push<Map<String, dynamic>>(
                           '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}',
