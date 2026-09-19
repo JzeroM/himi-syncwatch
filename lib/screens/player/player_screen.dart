@@ -208,6 +208,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _seriesName = '';
   int _currentEpisodeIndex = -1;
   bool _isSwitchingMedia = false;
+  bool _isNextMediaQueued = false;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
   final ValueNotifier<bool> _isPlayingNotifier = ValueNotifier(false);
@@ -368,6 +369,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (settings.audioRenderer != 'auto') {
       _player.audioBackends = [settings.audioRenderer];
     }
+    // 视频缓存：根据用户设置配置缓冲区（min=起播等待, max=最大缓冲, drop=网络差时丢帧）
+    _applyBufferSettings(settings.videoCacheSize);
     // 音量默认 80%
     _player.volume = 0.8;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
@@ -536,6 +539,50 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _switchToLandscape(_OrientationMode.landscapeLeft);
     }
     _rebuildGroups();
+
+    // 预加载下一集（gapless 播放，不阻塞当前集播放）
+    _preloadNextEpisode();
+  }
+
+  /// 根据缓存大小设置缓冲区参数
+  void _applyBufferSettings(int cacheSizeMB) {
+    int minMs;
+    int maxMs;
+    if (cacheSizeMB <= 32) {
+      minMs = 500; maxMs = 2000;
+    } else if (cacheSizeMB <= 64) {
+      minMs = 500; maxMs = 4000;
+    } else if (cacheSizeMB <= 128) {
+      minMs = 1000; maxMs = 6000;
+    } else if (cacheSizeMB <= 256) {
+      minMs = 1500; maxMs = 8000;
+    } else {
+      minMs = 2000; maxMs = 12000;
+    }
+    _player.setBufferRange(min: minMs, max: maxMs, drop: true);
+  }
+
+  /// 预加载下一集（gapless 播放）
+  void _preloadNextEpisode() {
+    if (!_hasEpisodeList) return;
+    final nextIndex = _currentEpisodeIndex + 1;
+    if (nextIndex >= _episodes.length) return;
+
+    final nextEp = _episodes[nextIndex];
+    final embyService = ref.read(embyServiceProvider);
+    final config = ref.read(embyConfigProvider);
+    final token = config?.accessToken ?? '';
+
+    final nextUrl = embyService.getStreamUrl(
+      nextEp.id,
+      mediaSourceId: nextEp.mediaSourceId,
+    );
+
+    if (token.isNotEmpty) {
+      _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+    }
+    _player.setNext(nextUrl);
+    _isNextMediaQueued = true;
   }
 
   /// 同步从 mediaInfo 获取视频原生尺寸，用于缩放计算
@@ -739,6 +786,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _duration = Duration(milliseconds: _player.mediaInfo.duration);
         _durationNotifier.value = _duration;
         _refreshTracks();
+
+        // gapless 转场：setNext 触发的自动切换，更新集数状态
+        if (_isNextMediaQueued) {
+          _isNextMediaQueued = false;
+          final nextIndex = _currentEpisodeIndex + 1;
+          if (nextIndex < _episodes.length) {
+            setState(() {
+              _currentEpisodeIndex = nextIndex;
+            });
+            _rebuildGroups();
+            // 房主：通知观众自动切集
+            if (_isHost && _rtmChannel != null && mounted) {
+              final rtmService = ref.read(rtmServiceProvider);
+              rtmService.sendCommand(
+                action: AppConstants.actionSyncPlay,
+                episodeIndex: nextIndex,
+                itemId: _episodes[nextIndex].id,
+                position: 0,
+              );
+            }
+          }
+        }
         // 注意：不再在此处设置 _player.state = playing
         // loaded 通过 ReceivePort 异步到达，此时 updateTexture() 可能还没创建 texture
         // 播放状态由 _loadStream 在 updateTexture() 之后统一设置
@@ -750,7 +819,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (!_hasEpisodeList || !_canControlPlayback) return;
         final nextIndex = _currentEpisodeIndex + 1;
         if (nextIndex < _episodes.length) {
-          _switchToEpisode(nextIndex);
+          // setNext 已排队下一集时，跳过手动切换（gapless 会自动过渡）
+          if (!_isNextMediaQueued) {
+            _switchToEpisode(nextIndex);
+          }
         } else {
           _addBroadcastMessage('所有剧集播放完毕');
         }
@@ -1509,6 +1581,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _switchToEpisode(int index) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
+
+    // 清除预加载队列，防止 gapless 自动切换干扰手动选择
+    _isNextMediaQueued = false;
 
     final requestId = ++_playRequestId;
 
