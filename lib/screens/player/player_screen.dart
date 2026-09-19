@@ -2052,6 +2052,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             child: CircularProgressIndicator(color: Color(0xFF6366F1)),
           ),
 
+        // 切集遮罩：掩盖旧帧残留，新帧就绪后自动消失
+        if (_isSwitchingMedia && _isPlayerReady)
+          Container(
+            color: Colors.black,
+            child: const Center(
+              child: CircularProgressIndicator(color: Colors.white54),
+            ),
+          ),
+
         // 同步调试面板
         if (ref.watch(settingsProvider).showSyncDebug && widget.roomCode != null)
           Positioned(
