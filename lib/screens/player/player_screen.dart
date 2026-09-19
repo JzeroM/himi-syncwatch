@@ -567,6 +567,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = streamUrl;
       _player.prepare(); // fire-and-forget，updateTexture 内部会等 loaded
 
+      // 预先置空 textureId，跳过 updateTexture() 内部的 releaseTexture() 步骤
+      // 避免 releaseTexture() await 让出事件循环时 onMediaStatus Block D
+      // 毒化 _videoSize Completer（complete(null)），导致 createTexture 失败
+      if ((_player.textureId.value ?? -1) >= 0) {
+        _player.textureId.value = null;
+      }
+
       bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
@@ -667,6 +674,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _textureVersion++;
       _player.media = playUrl;
       _player.prepare(); // fire-and-forget
+
+      // 预先置空 textureId，跳过 updateTexture() 内部的 releaseTexture() 步骤
+      // 避免 releaseTexture() await 让出事件循环时 onMediaStatus Block D
+      // 毒化 _videoSize Completer（complete(null)），导致 createTexture 失败
+      if ((_player.textureId.value ?? -1) >= 0) {
+        _player.textureId.value = null;
+      }
 
       bool textureReady = false;
       try {
