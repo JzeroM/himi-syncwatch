@@ -450,6 +450,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
     _player.videoDecoders = decoders;
 
+    // 启动速度优化：减少 FFmpeg 格式探测耗时
+    _player.setProperty('avformat.probesize', '32768');
+    _player.setProperty('avformat.analyzeduration', '50000');
+    _player.setProperty('avformat.fflags', '+nobuffer');
+    _player.setProperty('avformat.fpsprobesize', '0');
+    _player.setBufferRange(min: 0);
+
     // 锁屏保持
     try {
       await WakelockPlus.enable();
