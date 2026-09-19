@@ -184,7 +184,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _useServerSubtitleBurnIn = false;
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
   BoxFit _videoFit = BoxFit.contain;
-  Size? _videoNativeSize;
   Size? _textureRenderSize;
   int _textureVersion = 0;
   final GlobalKey _textureKey = GlobalKey();
@@ -554,7 +553,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 重置进度 + 纹理尺寸（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
-      _videoNativeSize = null;
       _textureRenderSize = null;
 
       final wasPlaying = _player.state == mdk.PlaybackState.playing;
@@ -568,27 +566,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = streamUrl;
       await _player.prepare();
 
-      bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
-        textureReady = true;
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败');
       }
 
       // updateTexture 完成后统一触发重建，确保 textureId 同步生效
       if (mounted) setState(() {});
-
-      // 从 fvp 获取真实 GPU 纹理尺寸（已修正 PAR/rotation），用于 contain/fill 缩放
-      // 用 .then() 避免 _videoSize 未完成时阻塞整个流程
-      if (textureReady) {
-        _player.textureSize.then((size) {
-          if (size != null && mounted) {
-            _textureRenderSize = size;
-            setState(() {});
-          }
-        });
-      }
 
       // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
       if (wasPlaying && mounted) {
@@ -648,7 +633,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 切换视频前重置进度 + 纹理尺寸（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
-      _videoNativeSize = null;
       _textureRenderSize = null;
 
       // 设置媒体并准备播放
@@ -660,27 +644,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = playUrl;
       await _player.prepare();
 
-      bool textureReady = false;
       try {
         await _player.updateTexture().timeout(const Duration(seconds: 5));
-        textureReady = true;
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败');
       }
 
       // updateTexture 完成后统一触发重建，确保 textureId 同步生效
       if (mounted) setState(() {});
-
-      // 从 fvp 获取真实 GPU 纹理尺寸（已修正 PAR/rotation），用于 contain/fill 缩放
-      // 用 .then() 避免 _videoSize 未完成时阻塞整个流程
-      if (textureReady) {
-        _player.textureSize.then((size) {
-          if (size != null && mounted) {
-            _textureRenderSize = size;
-            setState(() {});
-          }
-        });
-      }
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
@@ -736,12 +707,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (event.newValue.test(mdk.MediaStatus.loaded)) {
         _duration = Duration(milliseconds: _player.mediaInfo.duration);
         _durationNotifier.value = _duration;
-        final videos = _player.mediaInfo.video;
-        if (videos != null && videos.isNotEmpty) {
-          _videoNativeSize = Size(videos[0].codec.width.toDouble(), videos[0].codec.height.toDouble());
-        } else {
-          _videoNativeSize = null;
-        }
         _refreshTracks();
         // 注意：不再在此处设置 _player.state = playing
         // loaded 通过 ReceivePort 异步到达，此时 updateTexture() 可能还没创建 texture
@@ -1941,6 +1906,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
+  /// 从 Texture 的 RenderBox 读取真实 GPU 渲染尺寸，用于 contain/fill/cover 缩放计算
+  void _scheduleTextureSizeRead() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final size = (_textureKey.currentContext?.findRenderObject() as RenderBox?)?.size;
+      if (size != null && size.width > 0 && size.height > 0 && _textureRenderSize != size) {
+        _textureRenderSize = size;
+        setState(() {});
+      }
+    });
+  }
+
   Widget _buildVideoArea() {
     return Stack(
       children: [
@@ -1961,58 +1938,63 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     final containerW = constraints.maxWidth;
                     final containerH = constraints.maxHeight;
 
-                    // 使用 Texture 实际渲染尺寸（GPU 纹理注册表），fallback 到 codec 尺寸
-                    final renderW = _textureRenderSize?.width ?? _videoNativeSize?.width ?? 0;
-                    final renderH = _textureRenderSize?.height ?? _videoNativeSize?.height ?? 0;
-
-                    if (renderW <= 0 || renderH <= 0) {
-                      return Texture(key: _textureKey, textureId: textureId);
-                    }
-
                     switch (_videoFit) {
                       case BoxFit.none:
+                        _scheduleTextureSizeRead();
                         return Texture(key: _textureKey, textureId: textureId);
-                      case BoxFit.fill:
-                        // Texture 不遵循 SizedBox 约束，必须用 Transform 拉伸
-                        final scaleX = containerW / renderW;
-                        final scaleY = containerH / renderH;
-                        return Center(
-                          child: Transform.scale(
-                            scaleX: scaleX,
-                            scaleY: scaleY,
-                            child: SizedBox(
-                              width: renderW,
-                              height: renderH,
-                              child: Texture(key: _textureKey, textureId: textureId),
-                            ),
-                          ),
-                        );
-                      case BoxFit.cover:
-                        final scale = max(containerW / renderW, containerH / renderH);
-                        return ClipRect(
-                          child: Center(
-                            child: Transform.scale(
-                              scale: scale,
-                              child: SizedBox(
-                                width: renderW,
-                                height: renderH,
-                                child: Texture(key: _textureKey, textureId: textureId),
+
+                      default:
+                        // 尺寸还没读到，先按原始渲染，post-frame 读尺寸后重新渲染
+                        if (_textureRenderSize == null) {
+                          _scheduleTextureSizeRead();
+                          return Texture(key: _textureKey, textureId: textureId);
+                        }
+
+                        final renderW = _textureRenderSize!.width;
+                        final renderH = _textureRenderSize!.height;
+
+                        switch (_videoFit) {
+                          case BoxFit.fill:
+                            final scaleX = containerW / renderW;
+                            final scaleY = containerH / renderH;
+                            return Center(
+                              child: Transform.scale(
+                                scaleX: scaleX,
+                                scaleY: scaleY,
+                                child: SizedBox(
+                                  width: renderW,
+                                  height: renderH,
+                                  child: Texture(key: _textureKey, textureId: textureId),
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      default: // contain
-                        final scale = min(containerW / renderW, containerH / renderH);
-                        return Center(
-                          child: Transform.scale(
-                            scale: scale,
-                            child: SizedBox(
-                              width: renderW,
-                              height: renderH,
-                              child: Texture(key: _textureKey, textureId: textureId),
-                            ),
-                          ),
-                        );
+                            );
+                          case BoxFit.cover:
+                            final scale = max(containerW / renderW, containerH / renderH);
+                            return ClipRect(
+                              child: Center(
+                                child: Transform.scale(
+                                  scale: scale,
+                                  child: SizedBox(
+                                    width: renderW,
+                                    height: renderH,
+                                    child: Texture(key: _textureKey, textureId: textureId),
+                                  ),
+                                ),
+                              ),
+                            );
+                          default: // contain
+                            final scale = min(containerW / renderW, containerH / renderH);
+                            return Center(
+                              child: Transform.scale(
+                                scale: scale,
+                                child: SizedBox(
+                                  width: renderW,
+                                  height: renderH,
+                                  child: Texture(key: _textureKey, textureId: textureId),
+                                ),
+                              ),
+                            );
+                        }
                     }
                   },
                 );
