@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -183,6 +184,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _useServerSubtitleBurnIn = false;
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
   BoxFit _videoFit = BoxFit.contain;
+  Size? _videoNativeSize;
 
   // 传感器
   StreamSubscription? _accelSub;
@@ -549,6 +551,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
+      _videoNativeSize = null;
 
       final wasPlaying = _player.state == mdk.PlaybackState.playing;
 
@@ -560,18 +563,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = streamUrl;
       await _player.prepare();
 
-      // 创建屏幕尺寸纹理（fit:false 使 setAspectRatio 生效）并应用画面比例
-      final screen = MediaQuery.of(context).size;
+      // 创建原始尺寸纹理
       try {
-        await _player.updateTexture(
-          width: screen.width.toInt(),
-          height: screen.height.toInt(),
-          fit: false,
-        ).timeout(const Duration(seconds: 5));
+        await _player.updateTexture().timeout(const Duration(seconds: 5));
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败');
       }
-      _applyVideoFit();
+      // 异步获取视频原生尺寸，用于缩放计算
+      _player.textureSize.then((size) {
+        if (mounted && size != null && _videoNativeSize != size) {
+          _videoNativeSize = size;
+          setState(() {});
+        }
+      });
 
       // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
       if (wasPlaying && mounted) {
@@ -631,6 +635,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 切换视频前重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
+      _videoNativeSize = null;
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
@@ -640,18 +645,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = playUrl;
       await _player.prepare();
 
-      // 创建屏幕尺寸纹理（fit:false 使 setAspectRatio 生效）并应用画面比例
-      final screen = MediaQuery.of(context).size;
+      // 创建原始尺寸纹理
       try {
-        await _player.updateTexture(
-          width: screen.width.toInt(),
-          height: screen.height.toInt(),
-          fit: false,
-        ).timeout(const Duration(seconds: 5));
+        await _player.updateTexture().timeout(const Duration(seconds: 5));
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败');
       }
-      _applyVideoFit();
+      // 异步获取视频原生尺寸，用于缩放计算
+      _player.textureSize.then((size) {
+        if (mounted && size != null && _videoNativeSize != size) {
+          _videoNativeSize = size;
+          setState(() {});
+        }
+      });
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
@@ -1442,27 +1448,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _cycleVideoFit() {
     final nextIndex =
         (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
-    _videoFit = _videoFitModes[nextIndex];
-    _applyVideoFit();
-  }
-
-  /// 使用 mdk 原生 setAspectRatio 设置画面缩放（不重建纹理）
-  void _applyVideoFit() {
-    if (!mounted) return;
-    switch (_videoFit) {
-      case BoxFit.contain:
-        _player.setAspectRatio(mdk.keepAspectRatio);
-        break;
-      case BoxFit.fill:
-        _player.setAspectRatio(mdk.ignoreAspectRatio);
-        break;
-      case BoxFit.cover:
-        _player.setAspectRatio(mdk.keepAspectRatioCrop);
-        break;
-      case BoxFit.none:
-      default:
-        break;
-    }
+    setState(() => _videoFit = _videoFitModes[nextIndex]);
   }
 
   void _onSeekStart(double value) {
@@ -1940,8 +1926,64 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     child: CircularProgressIndicator(color: Colors.white54),
                   );
                 }
-                return Center(
-                  child: Texture(textureId: textureId),
+                // 无视频尺寸时先按原尺寸渲染，拿到尺寸后 setState 重新渲染
+                if (_videoNativeSize == null) {
+                  return Center(
+                    child: Texture(textureId: textureId),
+                  );
+                }
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final containerW = constraints.maxWidth;
+                    final containerH = constraints.maxHeight;
+                    final renderW = _videoNativeSize!.width;
+                    final renderH = _videoNativeSize!.height;
+
+                    switch (_videoFit) {
+                      case BoxFit.none:
+                        return Texture(textureId: textureId);
+                      case BoxFit.fill:
+                        final scaleX = containerW / renderW;
+                        final scaleY = containerH / renderH;
+                        return Center(
+                          child: Transform.scale(
+                            scaleX: scaleX,
+                            scaleY: scaleY,
+                            child: SizedBox(
+                              width: renderW,
+                              height: renderH,
+                              child: Texture(textureId: textureId),
+                            ),
+                          ),
+                        );
+                      case BoxFit.cover:
+                        final scale = max(containerW / renderW, containerH / renderH);
+                        return ClipRect(
+                          child: Center(
+                            child: Transform.scale(
+                              scale: scale,
+                              child: SizedBox(
+                                width: renderW,
+                                height: renderH,
+                                child: Texture(textureId: textureId),
+                              ),
+                            ),
+                          ),
+                        );
+                      default: // contain
+                        final scale = min(containerW / renderW, containerH / renderH);
+                        return Center(
+                          child: Transform.scale(
+                            scale: scale,
+                            child: SizedBox(
+                              width: renderW,
+                              height: renderH,
+                              child: Texture(textureId: textureId),
+                            ),
+                          ),
+                        );
+                    }
+                  },
                 );
               },
             ),
