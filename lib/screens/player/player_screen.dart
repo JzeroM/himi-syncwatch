@@ -183,7 +183,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   int? _activeSubtitleIndex;
   bool _useServerSubtitleBurnIn = false;
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
-  BoxFit _videoFit = BoxFit.contain;
+  BoxFit _videoFit = BoxFit.none;
   Size? _videoNativeSize;
 
   // 传感器
@@ -1431,26 +1431,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-  static const _videoFitModes = [
-    BoxFit.contain,
-    BoxFit.cover,
-    BoxFit.fill,
-    BoxFit.none,
-  ];
-  static const _videoFitIcons = [
-    Icons.fit_screen,
-    Icons.fullscreen,
-    Icons.zoom_out_map,
-    Icons.aspect_ratio,
-  ];
-  static const _videoFitLabels = ['自适应', '裁剪', '铺满', '原始'];
-
-  void _cycleVideoFit() {
-    final nextIndex =
-        (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
-    setState(() => _videoFit = _videoFitModes[nextIndex]);
-  }
-
   void _onSeekStart(double value) {
     _isDraggingSlider = true;
     _positionNotifier.value = Duration(milliseconds: value.toInt());
@@ -2649,18 +2629,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         ? Icons.screen_lock_landscape
                         : Icons.screen_lock_portrait,
                     onTap: _toggleOrientation,
-                  ),
-                ],
-                // 画面比例（仅本地播放）
-                if ((Platform.isAndroid || Platform.isIOS) &&
-                    widget.roomCode == null) ...[
-                  const SizedBox(width: 20),
-                  _buildControlButton(
-                    icon: _videoFitIcons[
-                        _videoFitModes.indexOf(_videoFit)],
-                    onTap: _cycleVideoFit,
-                    badge: _videoFitLabels[
-                        _videoFitModes.indexOf(_videoFit)],
                   ),
                 ],
               ],
