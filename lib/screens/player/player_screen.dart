@@ -550,6 +550,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } catch (_) {}
   }
 
+  /// 确保纹理存在：首次播放时创建，后续复用现有纹理避免黑屏
+  Future<void> _ensureTexture() async {
+    if (_player.textureId.value != null) return;
+    try {
+      await _player.updateTexture().timeout(const Duration(seconds: 5));
+    } catch (_) {
+      LogService().log('Player', 'updateTexture 失败');
+    }
+  }
+
   /// 加载流并返回 texture 是否就绪
   Future<bool> _loadStream({
     String? itemId,
@@ -589,35 +599,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = streamUrl;
       await _player.prepare();
 
-      // 创建原始尺寸纹理
-      try {
-        await _player.updateTexture().timeout(const Duration(seconds: 5));
-      } catch (_) {
-        LogService().log('Player', 'updateTexture 失败');
-      }
+      // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
+      await _ensureTexture();
 
-      // 同步设置视频原生尺寸（从 mediaInfo 读取，避免异步竞态导致黑屏）
+      // 同步设置视频原生尺寸（从 mediaInfo 读取）
       _syncVideoNativeSize();
 
-      // 仅在纹理就绪后启动播放，避免有声无画
-      if (mounted && _videoNativeSize != null && _player.textureId.value != null) {
+      // 启动播放
+      if (mounted) {
         if (wasPlaying) {
           _player.state = mdk.PlaybackState.playing;
           _syncPlayState();
         }
         setState(() {});
-      } else if (wasPlaying && mounted) {
-        // 纹理未就绪时延迟重试
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (mounted && _videoNativeSize == null) {
-            _syncVideoNativeSize();
-          }
-          if (mounted && _player.textureId.value != null) {
-            _player.state = mdk.PlaybackState.playing;
-            _syncPlayState();
-            setState(() {});
-          }
-        });
       }
       Future.delayed(const Duration(seconds: 2), () async {
         await _detectDolbyVision();
@@ -675,13 +669,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.media = playUrl;
       await _player.prepare();
 
-      // 创建原始尺寸纹理
-      try {
-        await _player.updateTexture().timeout(const Duration(seconds: 5));
-      } catch (_) {
-        LogService().log('Player', 'updateTexture 失败');
-      }
-      // 同步设置视频原生尺寸（从 mediaInfo 读取，避免异步竞态导致黑屏）
+      // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
+      await _ensureTexture();
+      // 同步设置视频原生尺寸（从 mediaInfo 读取）
       _syncVideoNativeSize();
 
       // 缓冲完成，再次检查是否已被抢占
