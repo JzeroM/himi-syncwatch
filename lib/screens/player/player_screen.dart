@@ -566,27 +566,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _isSwitchingMedia = true;
       _textureVersion++;
       _player.media = streamUrl;
-      _player.prepare();
+      await _player.prepare();
 
-      // 等待 MediaStatus.loaded —— 此时 fvp 内部 _setVideoSize() 已 completed _videoSize Completer
-      // 确保 updateTexture() 中 await _videoSize.future 立即返回，避免 Block D 竞态
-      bool textureReady = false;
       try {
-        await _player.onMediaStatus
-            .where((e) => e.newValue.test(mdk.MediaStatus.loaded))
-            .first
-            .timeout(const Duration(seconds: 8));
         await _player.updateTexture().timeout(const Duration(seconds: 5));
-        textureReady = _player.textureId.value != null;
       } catch (_) {
-        LogService().log('Player', 'updateTexture 失败，重试');
-        await Future.delayed(const Duration(milliseconds: 300));
-        try {
-          await _player.updateTexture().timeout(const Duration(seconds: 5));
-          textureReady = _player.textureId.value != null;
-        } catch (_) {
-          LogService().log('Player', 'updateTexture 重试仍失败');
-        }
+        LogService().log('Player', 'updateTexture 失败');
       }
 
       // updateTexture 完成后统一触发重建，确保 textureId 同步生效
@@ -626,7 +611,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _isSwitchingMedia = false;
       });
 
-      return textureReady;
+      return _player.textureId.value != null;
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
       _isSwitchingMedia = false;
@@ -673,27 +658,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _isSwitchingMedia = true;
       _textureVersion++;
       _player.media = playUrl;
-      _player.prepare();
+      await _player.prepare();
 
-      // 等待 MediaStatus.loaded —— 此时 fvp 内部 _setVideoSize() 已 completed _videoSize Completer
-      // 确保 updateTexture() 中 await _videoSize.future 立即返回，避免 Block D 竞态
-      bool textureReady = false;
       try {
-        await _player.onMediaStatus
-            .where((e) => e.newValue.test(mdk.MediaStatus.loaded))
-            .first
-            .timeout(const Duration(seconds: 8));
         await _player.updateTexture().timeout(const Duration(seconds: 5));
-        textureReady = _player.textureId.value != null;
       } catch (_) {
-        LogService().log('Player', 'updateTexture 失败，重试');
-        await Future.delayed(const Duration(milliseconds: 300));
-        try {
-          await _player.updateTexture().timeout(const Duration(seconds: 5));
-          textureReady = _player.textureId.value != null;
-        } catch (_) {
-          LogService().log('Player', 'updateTexture 重试仍失败');
-        }
+        LogService().log('Player', 'updateTexture 失败');
       }
 
       // updateTexture 完成后统一触发重建，确保 textureId 同步生效
@@ -721,7 +691,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       });
 
       // 仅在 texture 就绪时启动播放，避免有声无画
-      if (textureReady) {
+      if (_player.textureId.value != null) {
         if (position > 0) {
           await _player.seek(position: (position * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
         }
