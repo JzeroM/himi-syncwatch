@@ -524,6 +524,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _rebuildGroups();
   }
 
+  /// 同步从 mediaInfo 获取视频原生尺寸，用于缩放计算
+  void _syncVideoNativeSize() {
+    try {
+      final info = _player.mediaInfo;
+      final videos = info.video;
+      if (videos != null && videos.isNotEmpty) {
+        var v = videos[0];
+        for (final i in videos) {
+          if (i.codec.width > v.codec.width) v = i;
+        }
+        final vc = v.codec;
+        if (vc.width > 0 && vc.height > 0) {
+          double w = vc.width.toDouble();
+          double h = (vc.height.toDouble() / vc.par).roundToDouble();
+          if (v.rotation % 180 == 90) {
+            final tmp = w; w = h; h = tmp;
+          }
+          final size = Size(w, h);
+          if (_videoNativeSize != size) {
+            _videoNativeSize = size;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   /// 加载流并返回 texture 是否就绪
   Future<bool> _loadStream({
     String? itemId,
@@ -569,26 +595,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败');
       }
-      // 异步获取视频原生尺寸，用于缩放计算
-      _player.textureSize.then((size) {
-        if (mounted && size != null && _videoNativeSize != size) {
-          _videoNativeSize = size;
-          setState(() {});
-        }
-      });
 
-      // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
-      if (wasPlaying && mounted) {
-        _player.state = mdk.PlaybackState.playing;
-        _syncPlayState();
-      }
-      // 延迟重试，处理 fvp buffering → playing 的延迟转换
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && _player.state != mdk.PlaybackState.playing) {
+      // 同步设置视频原生尺寸（从 mediaInfo 读取，避免异步竞态导致黑屏）
+      _syncVideoNativeSize();
+
+      // 仅在纹理就绪后启动播放，避免有声无画
+      if (mounted && _videoNativeSize != null && _player.textureId.value != null) {
+        if (wasPlaying) {
           _player.state = mdk.PlaybackState.playing;
           _syncPlayState();
         }
-      });
+        setState(() {});
+      } else if (wasPlaying && mounted) {
+        // 纹理未就绪时延迟重试
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (mounted && _videoNativeSize == null) {
+            _syncVideoNativeSize();
+          }
+          if (mounted && _player.textureId.value != null) {
+            _player.state = mdk.PlaybackState.playing;
+            _syncPlayState();
+            setState(() {});
+          }
+        });
+      }
       Future.delayed(const Duration(seconds: 2), () async {
         await _detectDolbyVision();
       });
@@ -651,13 +681,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       } catch (_) {
         LogService().log('Player', 'updateTexture 失败');
       }
-      // 异步获取视频原生尺寸，用于缩放计算
-      _player.textureSize.then((size) {
-        if (mounted && size != null && _videoNativeSize != size) {
-          _videoNativeSize = size;
-          setState(() {});
-        }
-      });
+      // 同步设置视频原生尺寸（从 mediaInfo 读取，避免异步竞态导致黑屏）
+      _syncVideoNativeSize();
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
