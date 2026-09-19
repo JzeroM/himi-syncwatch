@@ -577,18 +577,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // updateTexture 完成后统一触发重建，确保 textureId 同步生效
       if (mounted) setState(() {});
 
-      // 读取 Texture 实际渲染尺寸（GPU 纹理注册表尺寸，非 codec 尺寸）
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final ctx = _textureKey.currentContext;
-        if (ctx != null) {
-          final renderObj = ctx.findRenderObject();
-          if (renderObj is RenderBox && renderObj.hasSize && renderObj.size.width > 0) {
-            _textureRenderSize = renderObj.size;
-            setState(() {});
-          }
-        }
-      });
+      // 从 fvp 获取真实 GPU 纹理尺寸（已修正 PAR/rotation），用于 contain/fill 缩放
+      final size = await _player.textureSize;
+      if (size != null && mounted) {
+        _textureRenderSize = size;
+        setState(() {});
+      }
 
       // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
       if (wasPlaying && mounted) {
@@ -669,18 +663,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // updateTexture 完成后统一触发重建，确保 textureId 同步生效
       if (mounted) setState(() {});
 
-      // 读取 Texture 实际渲染尺寸
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final ctx = _textureKey.currentContext;
-        if (ctx != null) {
-          final renderObj = ctx.findRenderObject();
-          if (renderObj is RenderBox && renderObj.hasSize && renderObj.size.width > 0) {
-            _textureRenderSize = renderObj.size;
-            setState(() {});
-          }
-        }
-      });
+      // 从 fvp 获取真实 GPU 纹理尺寸（已修正 PAR/rotation），用于 contain/fill 缩放
+      final size = await _player.textureSize;
+      if (size != null && mounted) {
+        _textureRenderSize = size;
+        setState(() {});
+      }
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
