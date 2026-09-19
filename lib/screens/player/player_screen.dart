@@ -459,6 +459,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } catch (_) {}
   }
 
+  /// 获取指定集的 stream URL 和 token（不触发播放）
+  Future<String?> _getEpisodeStreamUrl(int episodeIndex) async {
+    if (episodeIndex < 0 || episodeIndex >= _episodes.length) return null;
+    final ep = _episodes[episodeIndex];
+    final embyService = ref.read(embyServiceProvider);
+    final config = ref.read(embyConfigProvider);
+    final token = config?.accessToken ?? '';
+    final streamUrl = embyService.getStreamUrl(
+      ep.id,
+      mediaSourceId: ep.mediaSourceId,
+    );
+    _currentPlayUrl = streamUrl;
+    _currentToken = token;
+    if (token.isNotEmpty) {
+      _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+    }
+    return streamUrl;
+  }
+
+  /// 预先设置下一集为 setNext（无间隙自动播放）
+  void _prepareNextEpisode() async {
+    if (!_hasEpisodeList || !_canControlPlayback) return;
+    final nextIndex = _currentEpisodeIndex + 1;
+    if (nextIndex >= _episodes.length) return;
+    try {
+      final streamUrl = await _getEpisodeStreamUrl(nextIndex);
+      if (streamUrl == null || !mounted) return;
+      _player.setNext(streamUrl);
+      LogService().log('Player', '已设置 setNext: ep=$nextIndex');
+    } catch (e) {
+      LogService().log('Player', '设置 setNext 失败: $e');
+    }
+  }
+
   Future<void> _loadEpisodeStream(int episodeIndex) async {
     if (episodeIndex < 0 || episodeIndex >= _episodes.length) return;
 
@@ -621,6 +655,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         await _detectDolbyVision();
       });
 
+      // 预加载下一集
+      _prepareNextEpisode();
+
       // 延迟清除切换锁，确保旧媒体的 MediaStatus.end 事件被完全过滤
       Future.delayed(const Duration(milliseconds: 500), () {
         _isSwitchingMedia = false;
@@ -735,6 +772,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
       LogService().log('Sync', '播放器打开成功');
 
+      // 预加载下一集
+      _prepareNextEpisode();
+
       // 延迟清除切换锁，确保旧媒体的 MediaStatus.end 事件被完全过滤
       Future.delayed(const Duration(milliseconds: 500), () {
         _isSwitchingMedia = false;
@@ -785,8 +825,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (!_hasEpisodeList || !_canControlPlayback) return;
         final nextIndex = _currentEpisodeIndex + 1;
         if (nextIndex < _episodes.length) {
-          _switchToEpisode(nextIndex);
+          // setNext 已预先设置，fvp 会自动切换
+          // 仅更新 UI 状态
+          setState(() {
+            _currentEpisodeIndex = nextIndex;
+          });
           _addBroadcastMessage('自动播放下一集');
+          _rebuildGroups();
+          // 切换完成后预加载再下一集
+          _prepareNextEpisode();
         } else {
           _addBroadcastMessage('所有剧集播放完毕');
         }
@@ -1565,29 +1612,74 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _switchToEpisode(int index) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
+    _switchViaSetNext(index);
+  }
+
+  /// 通过 setNext + seek 到末尾切换集数（避免竞态条件）
+  void _switchViaSetNext(int index) async {
+    if (index < 0 || index >= _episodes.length) return;
+    if (index == _currentEpisodeIndex && _isPlayerReady) return;
 
     final requestId = ++_playRequestId;
 
-    await _loadEpisodeStream(index);
+    final streamUrl = await _getEpisodeStreamUrl(index);
+    if (streamUrl == null || requestId != _playRequestId || !mounted) return;
 
-    // 请求已被新请求取代，放弃
-    if (requestId != _playRequestId || !mounted) return;
+    // 设置下一个媒体（不触发 set media setter，无竞态条件）
+    _player.setNext(streamUrl);
 
-    // Host: 发送 syncPlay 命令（含 playUrl + token）
+    setState(() {
+      _currentEpisodeIndex = index;
+    });
+
+    // Seek 到当前媒体末尾附近，触发自然结束
+    final duration = _player.mediaInfo.duration; // 毫秒
+    final currentPosition = _player.position; // 毫秒
+
+    if (duration > 0 && currentPosition < duration - 200) {
+      await _player.seek(
+        position: duration - 200,
+        flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame),
+      );
+      LogService().log('Player', 'seek 到末尾附近: ${duration - 200}ms (duration=${duration}ms)');
+    }
+
+    // 获取 Emby 详情（不阻塞）
+    final embyService = ref.read(embyServiceProvider);
+    final config = ref.read(embyConfigProvider);
+    if (config != null && config.isAuthenticated) {
+      embyService.getItemDetails(_episodes[index].id).then((details) {
+        if (details != null && mounted) {
+          final source = details.mediaSources.firstWhere(
+            (s) => s.id == _episodes[index].mediaSourceId,
+            orElse: () => details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
+          );
+          setState(() {
+            _embyAudioStreams = source.audioStreams;
+            _embySubtitleStreams = source.subtitleStreams;
+            _embyVideoStream = source.videoStream;
+            _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
+          });
+        }
+      }).catchError((_) {});
+    }
+
+    // Host: 发送 syncPlay 命令
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
       final position = _player.position / 1000.0;
       _logSyncEvent('发送 syncPlay: ep=$index, pos=${position.toStringAsFixed(1)}s');
-      LogService().log('Sync', '主持人 sendCommand syncPlay: episode=$index, pos=$position, urlLen=${_currentPlayUrl.length}');
       await rtmService.sendCommand(
         action: AppConstants.actionSyncPlay,
         episodeIndex: index,
         itemId: _episodes[index].id,
         position: position,
-        playUrl: _currentPlayUrl,
+        playUrl: streamUrl,
         token: _currentToken,
       );
     }
+
+    _rebuildGroups();
   }
 
   // 删除剧集（sendRtm=true 时为房主操作，false 时为观众端本地删除）
