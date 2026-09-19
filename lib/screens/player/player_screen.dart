@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -184,9 +183,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _useServerSubtitleBurnIn = false;
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
   BoxFit _videoFit = BoxFit.contain;
-  Size? _textureRenderSize;
-  int _textureVersion = 0;
-  final GlobalKey _textureKey = GlobalKey();
 
   // 传感器
   StreamSubscription? _accelSub;
@@ -550,10 +546,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _currentPlayUrl = streamUrl;
       _currentToken = token;
 
-      // 重置进度 + 纹理尺寸（与首次播放状态一致）
+      // 重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
-      _textureRenderSize = null;
 
       final wasPlaying = _player.state == mdk.PlaybackState.playing;
 
@@ -562,18 +557,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
       _isSwitchingMedia = true;
-      _textureVersion++;
       _player.media = streamUrl;
       await _player.prepare();
 
-      try {
-        await _player.updateTexture().timeout(const Duration(seconds: 5));
-      } catch (_) {
-        LogService().log('Player', 'updateTexture 失败');
-      }
-
-      // updateTexture 完成后统一触发重建，确保 textureId 同步生效
-      if (mounted) setState(() {});
+      // 创建纹理并应用画面比例
+      _applyVideoFit();
 
       // 恢复播放状态（无论 texture 是否就绪，fvp 可能已在后台缓冲完成）
       if (wasPlaying && mounted) {
@@ -630,28 +618,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 检查是否已被更新的请求抢占
       if (requestId != _playRequestId || !mounted) return;
 
-      // 切换视频前重置进度 + 纹理尺寸（与首次播放状态一致）
+      // 切换视频前重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
-      _textureRenderSize = null;
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
       _isSwitchingMedia = true;
-      _textureVersion++;
       _player.media = playUrl;
       await _player.prepare();
 
-      try {
-        await _player.updateTexture().timeout(const Duration(seconds: 5));
-      } catch (_) {
-        LogService().log('Player', 'updateTexture 失败');
-      }
-
-      // updateTexture 完成后统一触发重建，确保 textureId 同步生效
-      if (mounted) setState(() {});
+      // 创建纹理并应用画面比例
+      _applyVideoFit();
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
@@ -1442,7 +1422,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _cycleVideoFit() {
     final nextIndex =
         (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
-    setState(() => _videoFit = _videoFitModes[nextIndex]);
+    _videoFit = _videoFitModes[nextIndex];
+    _applyVideoFit();
+  }
+
+  /// 使用 mdk 原生缩放替代 Flutter Transform.scale
+  void _applyVideoFit() {
+    if (!mounted) return;
+    final screen = MediaQuery.of(context).size;
+    final w = screen.width.toInt();
+    final h = screen.height.toInt();
+
+    // 重建纹理到屏幕尺寸，使 setAspectRatio 生效
+    _player.updateTexture(width: w, height: h).timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => 0,
+    );
+
+    switch (_videoFit) {
+      case BoxFit.contain:
+        _player.setAspectRatio(mdk.keepAspectRatio);
+        break;
+      case BoxFit.fill:
+        _player.setAspectRatio(mdk.ignoreAspectRatio);
+        break;
+      case BoxFit.cover:
+        _player.setAspectRatio(mdk.keepAspectRatioCrop);
+        break;
+      case BoxFit.none:
+      default:
+        break;
+    }
+    if (mounted) setState(() {});
   }
 
   void _onSeekStart(double value) {
@@ -1906,18 +1917,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-  /// 从 Texture 的 RenderBox 读取真实 GPU 渲染尺寸，用于 contain/fill/cover 缩放计算
-  void _scheduleTextureSizeRead() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final size = (_textureKey.currentContext?.findRenderObject() as RenderBox?)?.size;
-      if (size != null && size.width > 0 && size.height > 0 && _textureRenderSize != size) {
-        _textureRenderSize = size;
-        setState(() {});
-      }
-    });
-  }
-
   Widget _buildVideoArea() {
     return Stack(
       children: [
@@ -1925,7 +1924,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null))
           Center(
             child: ValueListenableBuilder<int?>(
-              key: ValueKey(_textureVersion),
               valueListenable: _player.textureId,
               builder: (context, textureId, child) {
                 if (textureId == null) {
@@ -1933,70 +1931,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     child: CircularProgressIndicator(color: Colors.white54),
                   );
                 }
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final containerW = constraints.maxWidth;
-                    final containerH = constraints.maxHeight;
-
-                    switch (_videoFit) {
-                      case BoxFit.none:
-                        _scheduleTextureSizeRead();
-                        return Texture(key: _textureKey, textureId: textureId);
-
-                      default:
-                        // 尺寸还没读到，先按原始渲染，post-frame 读尺寸后重新渲染
-                        if (_textureRenderSize == null) {
-                          _scheduleTextureSizeRead();
-                          return Texture(key: _textureKey, textureId: textureId);
-                        }
-
-                        final renderW = _textureRenderSize!.width;
-                        final renderH = _textureRenderSize!.height;
-
-                        switch (_videoFit) {
-                          case BoxFit.fill:
-                            final scaleX = containerW / renderW;
-                            final scaleY = containerH / renderH;
-                            return Center(
-                              child: Transform.scale(
-                                scaleX: scaleX,
-                                scaleY: scaleY,
-                                child: SizedBox(
-                                  width: renderW,
-                                  height: renderH,
-                                  child: Texture(key: _textureKey, textureId: textureId),
-                                ),
-                              ),
-                            );
-                          case BoxFit.cover:
-                            final scale = max(containerW / renderW, containerH / renderH);
-                            return ClipRect(
-                              child: Center(
-                                child: Transform.scale(
-                                  scale: scale,
-                                  child: SizedBox(
-                                    width: renderW,
-                                    height: renderH,
-                                    child: Texture(key: _textureKey, textureId: textureId),
-                                  ),
-                                ),
-                              ),
-                            );
-                          default: // contain
-                            final scale = min(containerW / renderW, containerH / renderH);
-                            return Center(
-                              child: Transform.scale(
-                                scale: scale,
-                                child: SizedBox(
-                                  width: renderW,
-                                  height: renderH,
-                                  child: Texture(key: _textureKey, textureId: textureId),
-                                ),
-                              ),
-                            );
-                        }
-                    }
-                  },
+                return Center(
+                  child: Texture(textureId: textureId),
                 );
               },
             ),
