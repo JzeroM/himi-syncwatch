@@ -383,8 +383,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (settings.audioRenderer != 'auto') {
       _player.audioBackends = [settings.audioRenderer];
     }
-    // 视频缓存：根据用户设置配置缓冲区（min=起播等待, max=最大缓冲, drop=网络差时丢帧）
-    _applyBufferSettings(settings.videoCacheSize);
     // 音量默认 80%
     _player.volume = 0.8;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
@@ -432,6 +430,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _setupRoomSync();
     }
 
+    _switchToLandscape(_OrientationMode.landscapeLeft);
+
     // 先完成硬件解码设置，再启动播放，避免竞态
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // 并行执行：亮度读取 + 播放器属性初始化
@@ -471,7 +471,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('avformat.analyzeduration', '50000');
     _player.setProperty('avformat.fflags', '+nobuffer');
     _player.setProperty('avformat.fpsprobesize', '0');
-    _player.setBufferRange(min: 0);
 
     // 锁屏保持
     try {
@@ -551,24 +550,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     // 预加载下一集（不阻塞当前集播放）
     _preloadNextEpisode();
-  }
-
-  /// 根据缓存大小设置缓冲区参数
-  void _applyBufferSettings(int cacheSizeMB) {
-    int minMs;
-    int maxMs;
-    if (cacheSizeMB <= 32) {
-      minMs = 500; maxMs = 2000;
-    } else if (cacheSizeMB <= 64) {
-      minMs = 500; maxMs = 4000;
-    } else if (cacheSizeMB <= 128) {
-      minMs = 1000; maxMs = 6000;
-    } else if (cacheSizeMB <= 256) {
-      minMs = 1500; maxMs = 8000;
-    } else {
-      minMs = 2000; maxMs = 12000;
-    }
-    _player.setBufferRange(min: minMs, max: maxMs, drop: true);
   }
 
   /// 预加载下一集（gapless 播放）
@@ -725,6 +706,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       await _ensureTexture();
       // 同步设置视频原生尺寸（从 mediaInfo 读取）
       _syncVideoNativeSize();
+
+      // 单人模式自动横屏
+      if (widget.roomCode == null && mounted) {
+        _switchToLandscape(_OrientationMode.landscapeLeft);
+      }
 
       // 缓冲完成，再次检查是否已被抢占
       if (requestId != _playRequestId || !mounted) return;
@@ -2664,15 +2650,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     _totalEpisodeCount > 1)
                   const SizedBox(width: 8),
 
-                // 画面比例（仅本地单人模式）
-                if (widget.roomCode == null)
-                  _buildControlButton(
-                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
-                    onTap: _cycleVideoFit,
-                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
-                  ),
-                if (widget.roomCode == null) const SizedBox(width: 8),
-
                 const Spacer(),
 
                 // 字幕
@@ -2723,6 +2700,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         ? Icons.screen_lock_landscape
                         : Icons.screen_lock_portrait,
                     onTap: _toggleOrientation,
+                  ),
+                ],
+
+                // 画面比例（仅本地单人模式）
+                if (widget.roomCode == null) ...[
+                  const SizedBox(width: 20),
+                  _buildControlButton(
+                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
+                    onTap: _cycleVideoFit,
+                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
                   ),
                 ],
               ],
@@ -2821,6 +2808,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         delegate: RoomSearchDelegate(ref, roomCode: widget.roomCode!),
                       );
                       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+                      _switchToLandscape(_OrientationMode.landscapeLeft);
                       if (itemData != null && mounted) {
                         final resourceData = await context.push<Map<String, dynamic>>(
                           '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}',

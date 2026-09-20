@@ -3,14 +3,12 @@ class AppSettings {
   final bool showSyncDebug;
   final bool stereoDownmix;
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
-  final int videoCacheSize; // MB: 32, 64, 128, 256, 512
 
   const AppSettings({
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
     this.stereoDownmix = false,
     this.audioRenderer = 'auto',
-    this.videoCacheSize = 64,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -20,14 +18,12 @@ class AppSettings {
     bool? showSyncDebug,
     bool? stereoDownmix,
     String? audioRenderer,
-    int? videoCacheSize,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
-      videoCacheSize: videoCacheSize ?? this.videoCacheSize,
     );
   }
 
@@ -36,7 +32,6 @@ class AppSettings {
         'showSyncDebug': showSyncDebug,
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
-        'videoCacheSize': videoCacheSize,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -60,7 +55,6 @@ class AppSettings {
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
       audioRenderer: json['audioRenderer'] as String? ?? 'auto',
-      videoCacheSize: json['videoCacheSize'] as int? ?? 64,
     );
   }
 
@@ -76,6 +70,4 @@ class AppSettings {
     'OpenSL': 'OpenSL',
     'AudioTrack': 'AudioTrack',
   };
-
-  static const videoCacheSizeOptions = [32, 64, 128, 256, 512];
 }

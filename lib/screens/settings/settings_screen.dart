@@ -32,45 +32,6 @@ String _audioRendererDescription(String renderer) {
   }
 }
 
-Widget _buildVideoCacheSizeTile(BuildContext context, WidgetRef ref, AppSettings settings) {
-  final options = AppSettings.videoCacheSizeOptions;
-  final current = settings.videoCacheSize;
-  // 找最近的选项索引
-  int index = options.indexOf(current);
-  if (index < 0) {
-    index = 1; // 默认 64MB
-  }
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('视频缓存大小', style: TextStyle(fontSize: 16)),
-            Text('${options[index]} MB',
-                style: const TextStyle(fontSize: 14, color: Colors.white70)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Slider(
-          value: index.toDouble(),
-          min: 0,
-          max: (options.length - 1).toDouble(),
-          divisions: options.length - 1,
-          onChanged: (v) {
-            final selected = options[v.round()];
-            ref.read(settingsProvider.notifier).update(videoCacheSize: selected);
-          },
-        ),
-        const Text('网络卡顿时增大缓冲区，数值越大起播等待越长',
-            style: TextStyle(fontSize: 12, color: Colors.white38)),
-      ],
-    ),
-  );
-}
-
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -127,8 +88,6 @@ class SettingsScreen extends ConsumerWidget {
               }).toList(),
             ),
           ),
-          const Divider(height: 1),
-          _buildVideoCacheSizeTile(context, ref, settings),
           const Divider(height: 1),
           SwitchListTile(
             title: const Text('同步调试面板'),

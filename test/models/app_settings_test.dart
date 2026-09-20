@@ -8,7 +8,6 @@ void main() {
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
       expect(settings.stereoDownmix, isFalse);
-      expect(settings.videoCacheSize, equals(64));
     });
 
     test('copyWith 保留未指定字段', () {
@@ -31,13 +30,11 @@ void main() {
         decodeMode: 'hw',
         showSyncDebug: true,
         stereoDownmix: true,
-        videoCacheSize: 128,
       );
       final json = settings.toJson();
       expect(json['decodeMode'], equals('hw'));
       expect(json['showSyncDebug'], isTrue);
       expect(json['stereoDownmix'], isTrue);
-      expect(json['videoCacheSize'], equals(128));
     });
 
     test('fromJson 解析所有字段', () {
@@ -45,13 +42,11 @@ void main() {
         'decodeMode': 'hw',
         'showSyncDebug': true,
         'stereoDownmix': true,
-        'videoCacheSize': 256,
       };
       final settings = AppSettings.fromJson(json);
       expect(settings.decodeMode, equals('hw'));
       expect(settings.showSyncDebug, isTrue);
       expect(settings.stereoDownmix, isTrue);
-      expect(settings.videoCacheSize, equals(256));
     });
 
     test('fromJson 默认值', () {
@@ -60,7 +55,6 @@ void main() {
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
       expect(settings.stereoDownmix, isFalse);
-      expect(settings.videoCacheSize, equals(64));
     });
 
     test('fromJson 兼容旧版 bool hardwareDecoding', () {
@@ -86,14 +80,12 @@ void main() {
         decodeMode: 'hw',
         showSyncDebug: true,
         stereoDownmix: true,
-        videoCacheSize: 128,
       );
       final json = original.toJson();
       final restored = AppSettings.fromJson(json);
       expect(restored.decodeMode, equals(original.decodeMode));
       expect(restored.showSyncDebug, equals(original.showSyncDebug));
       expect(restored.stereoDownmix, equals(original.stereoDownmix));
-      expect(restored.videoCacheSize, equals(original.videoCacheSize));
     });
 
     test('hardwareDecoding getter', () {
@@ -105,31 +97,6 @@ void main() {
 
       const swSettings = AppSettings(decodeMode: 'sw');
       expect(swSettings.hardwareDecoding, isFalse);
-    });
-
-    test('videoCacheSize 默认值为 64', () {
-      const settings = AppSettings();
-      expect(settings.videoCacheSize, equals(64));
-    });
-
-    test('videoCacheSize copyWith 修改', () {
-      const original = AppSettings();
-      final copied = original.copyWith(videoCacheSize: 256);
-      expect(copied.videoCacheSize, equals(256));
-      expect(original.videoCacheSize, equals(64));
-    });
-
-    test('videoCacheSize toJson/fromJson 往返', () {
-      const original = AppSettings(videoCacheSize: 512);
-      final json = original.toJson();
-      final restored = AppSettings.fromJson(json);
-      expect(restored.videoCacheSize, equals(512));
-    });
-
-    test('videoCacheSize 旧版无此字段时默认 64', () {
-      final json = <String, dynamic>{};
-      final settings = AppSettings.fromJson(json);
-      expect(settings.videoCacheSize, equals(64));
     });
   });
 }
