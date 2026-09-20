@@ -397,7 +397,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (pendingEpisodes != null && pendingEpisodes.isNotEmpty) {
         // 电视剧：从完整数据提取所有字段
         _episodes = pendingEpisodes.map((e) => EpisodeInfo(
-          id: e['id'] as String,
+          id: e['id'] as String? ?? '',
           name: e['name'] as String? ?? '',
           season: e['season'] as int? ?? 0,
           number: e['number'] as int? ?? 0,
@@ -409,7 +409,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         ref.read(pendingRoomEpisodesProvider.notifier).state = null;
       } else if (pendingMovie != null) {
         _episodes = [EpisodeInfo(
-          id: pendingMovie['id'] as String,
+          id: pendingMovie['id'] as String? ?? '',
           name: pendingMovie['name'] as String? ?? '电影',
           poster: pendingMovie['poster'] as String? ?? '',
           mediaSourceId: widget.mediaSourceId,
@@ -492,6 +492,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
 
     // 先设置 _currentEpisodeIndex，这样 publishPlayInfo 能拿到正确的值
+    if (!mounted) return;
     setState(() {
       _currentEpisodeIndex = episodeIndex;
     });
@@ -906,6 +907,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final loginOk = await rtmService.login(_rtmAppId!, token: loginToken);
     if (!loginOk) {
       _roomSyncInitializing = false;
+      if (!mounted) return;
       setState(() => _syncRtmStatus = '登录失败');
       _logSyncEvent('RTM 登录失败');
       if (mounted) {
@@ -918,6 +920,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final subscribeOk = await rtmService.subscribe(_rtmChannel!);
     if (!subscribeOk) {
       _roomSyncInitializing = false;
+      if (!mounted) return;
       setState(() => _syncRtmStatus = '订阅失败');
       _logSyncEvent('RTM 订阅失败');
       if (mounted) {
@@ -928,6 +931,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _syncRtmChannel = _rtmChannel ?? '-';
       _syncRtmStatus = '已连接';
@@ -1088,7 +1092,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     // 初始化在线人数（自己）
     _onlineUserCount = 1;
-    setState(() {});
+    if (mounted) setState(() {});
 
     // 延迟刷新在线人数（等待 RTM presence 同步）
     Future.delayed(const Duration(seconds: 3), () {
@@ -1121,10 +1125,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_player.mediaStatus.test(mdk.MediaStatus.buffering)) return;
     if (_player.mediaStatus.test(mdk.MediaStatus.seeking)) return;
 
-    final position = (message['position'] as num).toDouble();
-    final playing = message['playing'] as bool;
-    final rate = (message['rate'] as num).toDouble();
-    final timestamp = message['ts'] as int;
+    final position = (message['position'] as num?)?.toDouble() ?? 0.0;
+    final playing = message['playing'] as bool? ?? false;
+    final rate = (message['rate'] as num?)?.toDouble() ?? 1.0;
+    final timestamp = message['ts'] as int? ?? 0;
 
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final elapsed = now - timestamp;
@@ -1164,7 +1168,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _handleCommand(Map<String, dynamic> message) {
-    final action = message['action'] as String;
+    final action = message['action'] as String?;
+    if (action == null) return;
 
     _syncPaused = true;
     Future.delayed(const Duration(seconds: 3), () {
@@ -1181,13 +1186,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _syncPlayState();
         break;
       case AppConstants.actionSeek:
-        final pos = (message['position'] as num).toDouble();
+        final pos = (message['position'] as num?)?.toDouble() ?? 0.0;
         try {
           _player.seek(position: (pos * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
         } catch (_) {}
         break;
       case AppConstants.actionRate:
-        final r = (message['rate'] as num).toDouble();
+        final r = (message['rate'] as num?)?.toDouble() ?? 1.0;
         _player.playbackRate = r;
         break;
       case AppConstants.actionSyncPlay:
@@ -1241,7 +1246,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final seriesNames = List<String>.from(message['episodeSeriesNames'] ?? []);
       setState(() {
         _episodes = List.generate(epIds.length, (i) => EpisodeInfo(
-          id: epIds[i] as String,
+          id: epIds[i] as String? ?? '',
           name: i < names.length ? names[i] : '',
           season: i < seasons.length ? seasons[i] : 0,
           number: i < numbers.length ? numbers[i] : 0,
@@ -1610,9 +1615,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final episodes = data['episodes'] as List<dynamic>?;
       if (episodes != null && episodes.isNotEmpty) {
         for (final ep in episodes) {
-          final epMap = ep as Map<String, dynamic>;
+          if (ep is! Map<String, dynamic>) continue;
+          final epMap = ep;
           _episodes.add(EpisodeInfo(
-            id: epMap['id'] as String,
+            id: epMap['id'] as String? ?? '',
             name: epMap['name'] as String? ?? '',
             season: epMap['season'] as int? ?? 0,
             number: epMap['number'] as int? ?? 0,
@@ -2558,7 +2564,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   subtitleStreams: _embySubtitleStreams,
                   activeSubtitleIndex: _activeSubtitleIndex,
                   useServerBurnIn: _useServerSubtitleBurnIn,
-                    itemId: _episodes.isNotEmpty ? _episodes[_currentEpisodeIndex].id : widget.itemId,
+                    itemId: _episodes.isNotEmpty && _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length ? _episodes[_currentEpisodeIndex].id : widget.itemId,
                   mediaSourceId: widget.mediaSourceId,
                   token: _currentToken,
                   onSubtitleSelected: (index) {
@@ -2931,10 +2937,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (!group.collapsed)
           if (group.isMovie)
             // 电影组：直接列出
-            ...group.seasons.first.episodes.map((item) {
-              final flatIndex = _findFlatIndex(item.id);
-              return _buildEpisodeListItem(flatIndex, item);
-            })
+            if (group.seasons.isNotEmpty)
+              ...group.seasons.first.episodes.map((item) {
+                final flatIndex = _findFlatIndex(item.id);
+                return _buildEpisodeListItem(flatIndex, item);
+              })
+            else
+              const SizedBox.shrink()
           else
             // 电视剧组：按季分组
             ...group.seasons.map((season) => _buildSeasonWidget(group, season)),
@@ -3216,7 +3225,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         type: FileType.custom,
         allowedExtensions: ['srt', 'ass', 'ssa', 'vtt', 'sub', 'idx'],
       );
-      if (result == null || !mounted) return;
+      if (result == null || result.files.isEmpty || !mounted) return;
 
       final file = result.files.first;
       final filePath = file.path;

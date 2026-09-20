@@ -1202,9 +1202,19 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
         deviceId: authService.deviceId,
       );
 
-      final userId = authResult['User']['Id'] as String;
-      final accessToken = authResult['AccessToken'] as String;
+      final user = authResult['User'] as Map<String, dynamic>?;
+      final userId = user?['Id'] as String? ?? '';
+      final accessToken = authResult['AccessToken'] as String? ?? '';
       final returnedServerId = authResult['ServerId'] as String? ?? serverId;
+
+      if (userId.isEmpty || accessToken.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('登录失败：服务端返回数据异常')),
+          );
+        }
+        return;
+      }
 
       final configId = 'srv_${const Uuid().v4().substring(0, 8)}';
 
