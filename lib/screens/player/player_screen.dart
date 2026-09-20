@@ -593,6 +593,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   /// 同步从 mediaInfo 获取视频原生尺寸，用于缩放计算
+  /// 对齐 MPV 算法：PAR 修正到宽度，选面积最大的流
   void _syncVideoNativeSize() {
     try {
       final info = _player.mediaInfo;
@@ -600,16 +601,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (videos != null && videos.isNotEmpty) {
         var v = videos[0];
         for (final i in videos) {
-          if (i.codec.width > v.codec.width) v = i;
+          final a = i.codec.width * i.codec.height;
+          final b = v.codec.width * v.codec.height;
+          if (a > b) v = i;
         }
         final vc = v.codec;
         if (vc.width > 0 && vc.height > 0) {
-          double w = vc.width.toDouble();
-          double h = (vc.height.toDouble() / vc.par).roundToDouble();
+          double dw = vc.width.toDouble() * vc.par;
+          double dh = vc.height.toDouble();
           if (v.rotation % 180 == 90) {
-            final tmp = w; w = h; h = tmp;
+            final tmp = dw; dw = dh; dh = tmp;
           }
-          final size = Size(w, h);
+          final size = Size(dw, dh);
           if (_videoNativeSize != size) {
             _videoNativeSize = size;
           }
