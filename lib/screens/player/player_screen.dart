@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
+
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -1986,8 +1986,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 }
                 return LayoutBuilder(
                   builder: (context, constraints) {
-                    final containerW = constraints.maxWidth;
-                    final containerH = constraints.maxHeight;
                     final renderW = _videoNativeSize!.width;
                     final renderH = _videoNativeSize!.height;
 
@@ -1995,43 +1993,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                       case BoxFit.none:
                         return Texture(textureId: textureId);
                       case BoxFit.fill:
-                        final scaleX = containerW / renderW;
-                        final scaleY = containerH / renderH;
-                        return Center(
-                          child: Transform.scale(
-                            scaleX: scaleX,
-                            scaleY: scaleY,
+                        return FittedBox(
+                          fit: BoxFit.fill,
+                          child: SizedBox(
+                            width: renderW,
+                            height: renderH,
+                            child: Texture(textureId: textureId),
+                          ),
+                        );
+                      case BoxFit.cover:
+                        return ClipRect(
+                          child: FittedBox(
+                            fit: BoxFit.cover,
                             child: SizedBox(
                               width: renderW,
                               height: renderH,
                               child: Texture(textureId: textureId),
-                            ),
-                          ),
-                        );
-                      case BoxFit.cover:
-                        final scale = max(containerW / renderW, containerH / renderH);
-                        return ClipRect(
-                          child: Center(
-                            child: Transform.scale(
-                              scale: scale,
-                              child: SizedBox(
-                                width: renderW,
-                                height: renderH,
-                                child: Texture(textureId: textureId),
-                              ),
                             ),
                           ),
                         );
                       default: // contain
-                        final scale = min(containerW / renderW, containerH / renderH);
-                        return Center(
-                          child: Transform.scale(
-                            scale: scale,
-                            child: SizedBox(
-                              width: renderW,
-                              height: renderH,
-                              child: Texture(textureId: textureId),
-                            ),
+                        return FittedBox(
+                          fit: BoxFit.contain,
+                          child: SizedBox(
+                            width: renderW,
+                            height: renderH,
+                            child: Texture(textureId: textureId),
                           ),
                         );
                     }
