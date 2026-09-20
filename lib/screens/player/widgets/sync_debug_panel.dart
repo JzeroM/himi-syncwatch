@@ -16,7 +16,6 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   final String decodeMode;
   final String actualDecoder;
   final String hdrType;
-  final bool isDolbyVisionP5;
   final ValueChanged<Offset> onDrag;
 
   const SyncDebugPanel({
@@ -31,7 +30,6 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.decodeMode,
     required this.actualDecoder,
     required this.hdrType,
-    required this.isDolbyVisionP5,
     required this.onDrag,
   });
 
@@ -124,7 +122,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     _debugRow('设备能力', 'fvp/libmdk 自动管理'),
                     _debugRow('视频信息', widget.videoCodec != '-' ? '${widget.videoCodec}, ${widget.videoResolution}' : widget.videoResolution),
                     _debugRow('视频输出 vo', widget.voStatus),
-                    _debugRow('解码模式', widget.isDolbyVisionP5 ? 'SW (DV P5)' : AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
+                    _debugRow('解码模式', AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
                     _debugRow('实际解码', widget.actualDecoder.isNotEmpty ? widget.actualDecoder : '检测中...'),
                     if (widget.hdrType != 'SDR')
                       _debugRow('HDR 类型', widget.hdrType),

@@ -302,7 +302,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _videoResolution = '-'; // 视频分辨率
   String _actualDecoderFull = ''; // 实际解码器完整描述
   String _hdrType = 'SDR'; // HDR 类型标签
-  bool _isDolbyVisionP5 = false; // 当前是否 DV P5（控制解码模式显示）
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
   final ValueNotifier<int> _syncEventsVersion = ValueNotifier(0);
@@ -352,7 +351,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       
       setState(() {
         _hdrType = hdrType;
-        _isDolbyVisionP5 = isDV && _embyVideoStream?.isDolbyVisionProfile5 == true;
       });
       
       // fvp/libmdk 原生支持 Dolby Vision（包括 P5），无需手动设置
@@ -1546,7 +1544,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     final requestId = ++_playRequestId;
 
-    // Host: 发送 syncPlay 命令
+    // 先加载新集，获取 playUrl
+    await _loadEpisodeStream(index);
+    if (requestId != _playRequestId || !mounted) return;
+
+    // 加载完成后，主持人发送带 playUrl 的 syncPlay 给观众
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
       final position = _player.position / 1000.0;
@@ -1556,11 +1558,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         episodeIndex: index,
         itemId: _episodes[index].id,
         position: position,
+        playUrl: _currentPlayUrl,
+        token: _currentToken,
       );
     }
 
-    if (requestId != _playRequestId || !mounted) return;
-    await _loadEpisodeStream(index);
     _rebuildGroups();
   }
 
@@ -2056,7 +2058,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             top: MediaQuery.of(context).padding.top + 48,
             right: 12,
             child: DecodeModePanel(
-              isDolbyVisionP5: _isDolbyVisionP5,
               onSwitchMode: _switchDecodeMode,
             ),
           ),
@@ -2117,7 +2118,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualDecoder: _actualDecoderFull,
               hdrType: _hdrType,
-              isDolbyVisionP5: _isDolbyVisionP5,
               onDrag: (delta) {
                 setState(() {
                   _debugPanelX += delta.dx;
@@ -2159,7 +2159,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           const Spacer(),
           // 解码模式按钮
           GestureDetector(
-            onTap: _isDolbyVisionP5 ? null : () => setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
+            onTap: () => setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -2174,7 +2174,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   const Icon(Icons.memory, color: Colors.white, size: 14),
                   const SizedBox(width: 4),
                   Text(
-                    _isDolbyVisionP5 ? 'SW' : (AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? 'Auto'),
+                    AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? 'Auto',
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ],
@@ -2239,11 +2239,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   double _horizontalDragAccumulator = 0;
 
   void _onDoubleTap() {
+    if (!_canControlPlayback) return;
     _togglePlayPause();
     _showGestureIcon(_player.state == mdk.PlaybackState.playing ? Icons.play_arrow : Icons.pause);
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (!_canControlPlayback) return;
     _horizontalDragAccumulator += details.primaryDelta ?? 0;
     // 每累计 100 像素显示一次预览
     if (_horizontalDragAccumulator.abs() > 100) {
@@ -2258,6 +2260,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _onHorizontalDragEnd(DragEndDetails details) {
+    if (!_canControlPlayback) return;
     // 使用与预览相同的累加器计算，确保预览与实际 seek 位置一致
     final deltaMs = (_horizontalDragAccumulator / 100 * 5000).round().clamp(-60000, 60000);
     _horizontalDragAccumulator = 0;

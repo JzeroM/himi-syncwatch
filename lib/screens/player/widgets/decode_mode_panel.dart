@@ -3,56 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 
 class DecodeModePanel extends ConsumerWidget {
-  final bool isDolbyVisionP5;
   final ValueChanged<String> onSwitchMode;
 
   const DecodeModePanel({
     super.key,
-    required this.isDolbyVisionP5,
     required this.onSwitchMode,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (isDolbyVisionP5) {
-      return Container(
-        width: 160,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E2E),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: const BoxDecoration(
-                color: Color(0xFF6366F1),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
-                border: Border(bottom: BorderSide(color: Colors.white12, width: 0.5)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.radio_button_checked, color: Colors.white, size: 16),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('软解', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                        Text('DV P5 强制软解', style: TextStyle(color: Colors.white70, fontSize: 10)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     final currentMode = ref.watch(settingsProvider).decodeMode;
     final modes = ['auto', 'hw', 'sw'];
     final labels = {'auto': '智能', 'hw': '硬解', 'sw': '软解'};
