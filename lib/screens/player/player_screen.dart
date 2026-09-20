@@ -592,30 +592,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setNext(nextUrl);
   }
 
-  /// 同步从 mediaInfo 获取视频原生尺寸，用于缩放计算
-  /// 对齐 MPV 算法：PAR 修正到宽度，选面积最大的流
-  void _syncVideoNativeSize() {
+  /// 从 fvp textureSize 获取实际纹理尺寸（与 GL FBO 完全一致）
+  /// 必须在 _ensureTexture() 之后调用，此时 textureSize.future 已 resolve
+  void _syncVideoNativeSize() async {
     try {
-      final info = _player.mediaInfo;
-      final videos = info.video;
-      if (videos != null && videos.isNotEmpty) {
-        var v = videos[0];
-        for (final i in videos) {
-          final a = i.codec.width * i.codec.height;
-          final b = v.codec.width * v.codec.height;
-          if (a > b) v = i;
-        }
-        final vc = v.codec;
-        if (vc.width > 0 && vc.height > 0) {
-          double dw = vc.width.toDouble() * vc.par;
-          double dh = vc.height.toDouble();
-          if (v.rotation % 180 == 90) {
-            final tmp = dw; dw = dh; dh = tmp;
-          }
-          final size = Size(dw, dh);
-          if (_videoNativeSize != size) {
-            _videoNativeSize = size;
-          }
+      final size = await _player.textureSize;
+      if (size != null && mounted) {
+        if (_videoNativeSize != size) {
+          setState(() { _videoNativeSize = size; });
         }
       }
     } catch (_) {}
