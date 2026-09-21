@@ -46,6 +46,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final seenServerIds = <String>{};
       EmbyServerConfig? activeConfig;
 
+      final savedId = await authService.loadSelectedServerId();
+
       for (final sid in serverIds) {
         final session = await authService.loadSession(sid);
         if (session != null) {
@@ -56,9 +58,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
           seenServerIds.add(config.serverId);
           configs.add(config);
-          if (activeConfig == null) activeConfig = config;
-  }
-}
+          if (activeConfig == null || config.id == savedId) {
+            activeConfig = config;
+          }
+        }
+      }
 
       ref.read(embyServerListProvider.notifier).setList(configs);
 
@@ -604,6 +608,7 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                                     ref
                                         .read(embyConfigProvider.notifier)
                                         .setConfig(server);
+                                    ref.read(embyAuthServiceProvider).saveSelectedServerId(server.id);
                                     widget.onRefresh();
                                     Navigator.pop(context);
                                   },
@@ -669,11 +674,13 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                                                 .read(embyConfigProvider
                                                     .notifier)
                                                 .setConfig(remaining.first);
+                                            authService.saveSelectedServerId(remaining.first.id);
                                           } else {
                                             ref
                                                 .read(embyConfigProvider
                                                     .notifier)
                                                 .clear();
+                                            authService.saveSelectedServerId('');
                                           }
                                           widget.onRefresh();
                                         }
@@ -1102,6 +1109,7 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
 
                   ref.read(embyServerListProvider.notifier).updateServer(newConfig);
                   ref.read(embyConfigProvider.notifier).setConfig(newConfig);
+                  authService.saveSelectedServerId(newConfig.id);
                   await authService.deleteSession(server.serverId);
                   await authService.saveSession(
                     serverId: newConfig.serverId,
@@ -1129,6 +1137,7 @@ class _ServerDrawerState extends ConsumerState<_ServerDrawer> {
                 ref.read(embyServerListProvider.notifier).updateServer(newConfig);
                 if (ref.read(embyConfigProvider)?.id == server.id) {
                   ref.read(embyConfigProvider.notifier).setConfig(newConfig);
+                  authService.saveSelectedServerId(newConfig.id);
                 }
                 await authService.deleteSession(server.serverId);
                 await authService.saveSession(
@@ -1247,6 +1256,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
 
       ref.read(embyServerListProvider.notifier).addServer(config);
       ref.read(embyConfigProvider.notifier).setConfig(config);
+      authService.saveSelectedServerId(config.id);
 
       widget.onSuccess();
     } catch (e) {

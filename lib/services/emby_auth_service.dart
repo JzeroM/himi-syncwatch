@@ -95,6 +95,14 @@ class EmbyAuthService {
     }
   }
 
+  Future<void> saveSelectedServerId(String configId) async {
+    await _secureStorage.write(key: 'selected_config_id', value: configId);
+  }
+
+  Future<String?> loadSelectedServerId() async {
+    return await _secureStorage.read(key: 'selected_config_id');
+  }
+
   Future<Dio> createDio({
     required String serverUrl,
     required String accessToken,
