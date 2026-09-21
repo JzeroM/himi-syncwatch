@@ -445,6 +445,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (!hwSupported) {
       _player.videoDecoders = ['FFmpeg'];
       LogService().log('Player', 'DV: 设备不支持硬解，强制软解');
+
+      // DV 软解降低分辨率：减轻 CPU 压力，改善流畅度
+      final settings = ref.read(settingsProvider);
+      if (settings.dvSoftDecodeScale != 'off') {
+        final height = settings.dvSoftDecodeScale == '1080p' ? '1080' : '720';
+        _player.setProperty('video.avfilter', 'scale=-2:$height');
+        LogService().log('Player', 'DV: 软解降分辨率 → ${height}p');
+      }
     }
   }
 
@@ -578,6 +586,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('avformat.analyzeduration', '500000');  // 500ms
     _player.setProperty('avformat.fflags', '+fastseek');         // 允许快速 seek
     _player.setProperty('avformat.fpsprobesize', '0');
+
+    // FFmpeg 解码线程数：匹配设备核心数提升并行解码能力
+    _player.setProperty('avcodec.threads', '4');
+
+    // 自适应音视频同步：视频落后时自动减速音频追赶
+    mdk.setGlobalOption('avsync.audio.adaptive', true);
 
     // 锁屏保持
     try {
@@ -739,12 +753,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
 
-      // 缓冲区配置：DV 软解需要更大缓冲余量
+      // 缓冲区配置：DV 软解需要更大缓冲余量，启用丢帧防止堆积
       final isDv = _embyVideoStream?.isDolbyVision ?? false;
       if (isDv) {
-        _player.setBufferRange(min: 8000, max: 15000);
+        _player.setBufferRange(min: 8000, max: 15000, drop: true);
       } else {
-        _player.setBufferRange(min: 2000, max: 5000);
+        _player.setBufferRange(min: 2000, max: 5000, drop: true);
       }
 
       _isSwitchingMedia = true;
@@ -819,12 +833,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // prepare 前配置 DV 解码器
       await _configureDecoderForDV();
 
-      // 缓冲区配置：DV 软解需要更大缓冲余量
+      // 缓冲区配置：DV 软解需要更大缓冲余量，启用丢帧防止堆积
       final isDv = _embyVideoStream?.isDolbyVision ?? false;
       if (isDv) {
-        _player.setBufferRange(min: 8000, max: 15000);
+        _player.setBufferRange(min: 8000, max: 15000, drop: true);
       } else {
-        _player.setBufferRange(min: 2000, max: 5000);
+        _player.setBufferRange(min: 2000, max: 5000, drop: true);
       }
 
       _isSwitchingMedia = true;

@@ -89,6 +89,25 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
+          ListTile(
+            title: const Text('DV 软解分辨率'),
+            subtitle: const Text('杜比视界软解时降低解码分辨率，改善流畅度'),
+            trailing: DropdownButton<String>(
+              value: settings.dvSoftDecodeScale,
+              onChanged: (value) {
+                if (value != null) {
+                  ref.read(settingsProvider.notifier).update(dvSoftDecodeScale: value);
+                }
+              },
+              items: AppSettings.dvSoftDecodeScaleLabels.entries.map((e) {
+                return DropdownMenuItem(
+                  value: e.key,
+                  child: Text(e.value),
+                );
+              }).toList(),
+            ),
+          ),
+          const Divider(height: 1),
           SwitchListTile(
             title: const Text('播放调试面板'),
             subtitle: const Text('实时显示播放诊断信息，可拖拽移动'),

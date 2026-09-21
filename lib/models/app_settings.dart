@@ -3,12 +3,14 @@ class AppSettings {
   final bool showSyncDebug;
   final bool stereoDownmix;
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
+  final String dvSoftDecodeScale; // 'off', '1080p', '720p'
 
   const AppSettings({
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
     this.stereoDownmix = false,
     this.audioRenderer = 'OpenSL',
+    this.dvSoftDecodeScale = 'off',
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -18,12 +20,14 @@ class AppSettings {
     bool? showSyncDebug,
     bool? stereoDownmix,
     String? audioRenderer,
+    String? dvSoftDecodeScale,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
+      dvSoftDecodeScale: dvSoftDecodeScale ?? this.dvSoftDecodeScale,
     );
   }
 
@@ -32,6 +36,7 @@ class AppSettings {
         'showSyncDebug': showSyncDebug,
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
+        'dvSoftDecodeScale': dvSoftDecodeScale,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -55,6 +60,7 @@ class AppSettings {
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
       audioRenderer: json['audioRenderer'] as String? ?? 'auto',
+      dvSoftDecodeScale: json['dvSoftDecodeScale'] as String? ?? 'off',
     );
   }
 
@@ -69,5 +75,11 @@ class AppSettings {
     'AAudio': 'AAudio',
     'OpenSL': 'OpenSL',
     'AudioTrack': 'AudioTrack',
+  };
+
+  static const dvSoftDecodeScaleLabels = {
+    'off': '关闭',
+    '1080p': '1080p',
+    '720p': '720p',
   };
 }
