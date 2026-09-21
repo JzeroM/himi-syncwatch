@@ -376,6 +376,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       String vCodec = '-';
       String pixFmt = '-';
       int dovi = 0;
+      int vWidth = 0;
+      int vHeight = 0;
       if (mi.video != null && mi.video!.isNotEmpty) {
         final vc = mi.video![0].codec;
         vCodec = vc.codec;
@@ -383,6 +385,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         fps = vc.frameRate;
         pixFmt = vc.formatName ?? '-';
         dovi = vc.doviProfile;
+        vWidth = vc.width;
+        vHeight = vc.height;
       }
 
       // 音频信息
@@ -417,6 +421,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _positionMs = pos;
         _durationMs = mi.duration;
         _videoCodecName = vCodec;
+        _videoResolution = vWidth > 0 && vHeight > 0 ? '${vWidth}x$vHeight' : '-';
         _videoBitrate = vBitrate > 0 ? (vBitrate / 1000).round() : 0;
         _pixelFormat = pixFmt;
         _doviProfile = dovi;
@@ -571,9 +576,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('avformat.analyzeduration', '500000');  // 500ms
     _player.setProperty('avformat.fflags', '+fastseek');         // 允许快速 seek
     _player.setProperty('avformat.fpsprobesize', '0');
-
-    // 缓冲区配置：网络串流优化
-    _player.setBufferRange(min: 2000, max: 5000);
 
     // 锁屏保持
     try {
@@ -734,6 +736,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
+
+      // 缓冲区配置：DV 软解需要更大缓冲余量
+      final isDv = _embyVideoStream?.isDolbyVision ?? false;
+      if (isDv) {
+        _player.setBufferRange(min: 5000, max: 10000);
+      } else {
+        _player.setBufferRange(min: 2000, max: 5000);
+      }
+
       _isSwitchingMedia = true;
       _player.media = streamUrl;
       await _player.prepare();
@@ -805,6 +816,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // prepare 前配置 DV 解码器
       await _configureDecoderForDV();
+
+      // 缓冲区配置：DV 软解需要更大缓冲余量
+      final isDv = _embyVideoStream?.isDolbyVision ?? false;
+      if (isDv) {
+        _player.setBufferRange(min: 5000, max: 10000);
+      } else {
+        _player.setBufferRange(min: 2000, max: 5000);
+      }
 
       _isSwitchingMedia = true;
       _player.media = playUrl;
