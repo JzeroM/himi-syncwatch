@@ -16,6 +16,16 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   final String decodeMode;
   final String actualDecoder;
   final String hdrType;
+  final bool isSinglePlayer;
+
+  // 播放诊断数据
+  final int bufferedMs;
+  final int mediaBitrate;
+  final double videoFps;
+  final int audioSampleRate;
+  final int audioChannels;
+  final String mediaFormat;
+
   final ValueChanged<Offset> onDrag;
 
   const SyncDebugPanel({
@@ -30,6 +40,13 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.decodeMode,
     required this.actualDecoder,
     required this.hdrType,
+    required this.isSinglePlayer,
+    required this.bufferedMs,
+    required this.mediaBitrate,
+    required this.videoFps,
+    required this.audioSampleRate,
+    required this.audioChannels,
+    required this.mediaFormat,
     required this.onDrag,
   });
 
@@ -38,13 +55,16 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
 }
 
 class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
-  bool _sectionInfo = true;
+  bool _sectionPlayback = true;
   bool _sectionDevice = true;
+  bool _sectionConnection = false;
   bool _sectionLog = false;
 
   @override
   Widget build(BuildContext context) {
     final logs = LogService().entries;
+    final decodeModeLabel = AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-';
+
     return Container(
       width: 320,
       constraints: BoxConstraints(
@@ -58,8 +78,9 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 标题栏
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.green.withValues(alpha: 0.15),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
@@ -74,11 +95,12 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     children: [
                       Icon(Icons.drag_indicator, color: Colors.green, size: 16),
                       SizedBox(width: 6),
-                      Text('同步调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
+                      Text('播放调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
                 const Spacer(),
+                // 复制日志
                 GestureDetector(
                   onTap: () async {
                     await Clipboard.setData(ClipboardData(text: LogService().exportAll()));
@@ -87,11 +109,13 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                   child: const Icon(Icons.copy, color: Colors.white54, size: 16),
                 ),
                 const SizedBox(width: 8),
+                // 分享日志
                 GestureDetector(
                   onTap: () => LogService().shareLogs(),
                   child: const Icon(Icons.share, color: Colors.white54, size: 16),
                 ),
                 const SizedBox(width: 8),
+                // 关闭
                 GestureDetector(
                   onTap: () => ref.read(settingsProvider.notifier).update(showSyncDebug: false),
                   child: const Icon(Icons.close, color: Colors.white54, size: 16),
@@ -99,39 +123,64 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
               ],
             ),
           ),
+
+          // 内容区
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionHeader('连接信息', _sectionInfo, () {
-                    setState(() => _sectionInfo = !_sectionInfo);
+                  // ── 播放状态 ──
+                  _buildSectionHeader('播放状态', _sectionPlayback, () {
+                    setState(() => _sectionPlayback = !_sectionPlayback);
                   }),
-                  if (_sectionInfo) ...[
-                    _debugRow('角色', widget.isHost ? '主持人' : '观众'),
-                    _debugRow('RTM频道', widget.rtmChannel),
-                    _debugRow('RTM状态', widget.rtmStatus),
-                    _debugRow('metadata 自检', widget.metadataTestResult),
+                  if (_sectionPlayback) ...[
+                    _debugRow('缓冲区', '${widget.bufferedMs}ms'),
+                    _debugRow('媒体码率', widget.mediaBitrate > 0 ? '${widget.mediaBitrate}kbps' : '-'),
+                    _debugRow('视频帧率', widget.videoFps > 0 ? '${widget.videoFps.toStringAsFixed(1)}fps' : '-'),
+                    _debugRow('音频采样率', widget.audioSampleRate > 0 ? '${widget.audioSampleRate}Hz' : '-'),
+                    _debugRow('声道数', widget.audioChannels > 0 ? '${widget.audioChannels}ch' : '-'),
+                    _debugRow('封装格式', widget.mediaFormat.isNotEmpty ? widget.mediaFormat : '-'),
                   ],
+
                   const SizedBox(height: 4),
+
+                  // ── 设备信息 ──
                   _buildSectionHeader('设备信息', _sectionDevice, () {
                     setState(() => _sectionDevice = !_sectionDevice);
                   }),
                   if (_sectionDevice) ...[
-                    _debugRow('设备能力', 'fvp/libmdk 自动管理'),
-                    _debugRow('视频信息', widget.videoCodec != '-' ? '${widget.videoCodec}, ${widget.videoResolution}' : widget.videoResolution),
-                    _debugRow('视频输出 vo', widget.voStatus),
-                    _debugRow('解码模式', AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'),
-                    _debugRow('实际解码', widget.actualDecoder.isNotEmpty ? widget.actualDecoder : '检测中...'),
+                    _debugRow('视频编码', widget.videoCodec),
+                    _debugRow('分辨率', widget.videoResolution),
+                    _debugRow('视频输出', widget.voStatus),
+                    _debugRow('解码模式', decodeModeLabel),
+                    _debugRow('实际解码器', widget.actualDecoder.isNotEmpty ? widget.actualDecoder : '检测中...'),
                     if (widget.hdrType != 'SDR')
                       _debugRow('HDR 类型', widget.hdrType),
                   ],
+
+                  // ── 连接信息（仅房间模式）──
+                  if (!widget.isSinglePlayer) ...[
+                    const SizedBox(height: 4),
+                    _buildSectionHeader('连接信息', _sectionConnection, () {
+                      setState(() => _sectionConnection = !_sectionConnection);
+                    }),
+                    if (_sectionConnection) ...[
+                      _debugRow('角色', widget.isHost ? '主持人' : '观众'),
+                      _debugRow('RTM 频道', widget.rtmChannel),
+                      _debugRow('RTM 状态', widget.rtmStatus),
+                      _debugRow('Metadata 自检', widget.metadataTestResult),
+                    ],
+                  ],
+
                   const SizedBox(height: 4),
+
+                  // ── 运行日志 ──
                   _buildSectionHeader('运行日志 (${logs.length})', _sectionLog, () {
                     setState(() => _sectionLog = !_sectionLog);
                   }),
-                  if (_sectionLog && logs.isNotEmpty) ...[
+                  if (_sectionLog && logs.isNotEmpty)
                     SizedBox(
                       height: 200,
                       child: ListView.builder(
@@ -146,7 +195,6 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                         },
                       ),
                     ),
-                  ],
                 ],
               ),
             ),
@@ -176,7 +224,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 80,
+            width: 75,
             child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 10)),
           ),
           Expanded(

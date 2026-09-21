@@ -90,8 +90,8 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
           SwitchListTile(
-            title: const Text('同步调试面板'),
-            subtitle: const Text('仅在房间内显示，可拖拽移动'),
+            title: const Text('播放调试面板'),
+            subtitle: const Text('实时显示播放诊断信息，可拖拽移动'),
             value: settings.showSyncDebug,
             onChanged: (v) =>
                 ref.read(settingsProvider.notifier).update(showSyncDebug: v),

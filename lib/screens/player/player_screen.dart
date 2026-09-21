@@ -172,6 +172,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _currentToken = '';
   Timer? _hideControlsTimer;
   Timer? _positionTimer;
+  Timer? _diagnosticTimer;
   bool _isDraggingSlider = false;
 
   bool _showSubtitleMenu = false;
@@ -305,6 +306,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _hdrType = 'SDR'; // HDR 类型标签
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
+
+  // 播放诊断数据
+  int _bufferedMs = 0;
+  int _mediaBitrate = 0;
+  double _videoFps = 0;
+  int _audioSampleRate = 0;
+  int _audioChannels = 0;
+  String _mediaFormat = '';
   final ValueNotifier<int> _syncEventsVersion = ValueNotifier(0);
   final GlobalKey _qrKey = GlobalKey();
 
@@ -331,6 +340,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _videoCodec = codec;
         });
       }
+    } catch (_) {}
+  }
+
+  /// 定时采集播放诊断数据（缓冲区、码率、帧率等）
+  void _queryDiagnostics() {
+    if (!mounted) return;
+    try {
+      final mi = _player.mediaInfo;
+      final buffered = _player.buffered();
+
+      int bitrate = 0;
+      double fps = 0;
+      int sampleRate = 0;
+      int channels = 0;
+      String format = mi.format ?? '';
+
+      if (mi.video != null && mi.video!.isNotEmpty) {
+        final vc = mi.video![0].codec;
+        bitrate = vc.bitRate;
+        fps = vc.frameRate;
+      }
+      if (mi.audio != null && mi.audio!.isNotEmpty) {
+        final ac = mi.audio![0].codec;
+        sampleRate = ac.sampleRate;
+        channels = ac.channels;
+      }
+
+      setState(() {
+        _bufferedMs = buffered;
+        _mediaBitrate = bitrate > 0 ? (bitrate / 1000).round() : 0;
+        _videoFps = fps;
+        _audioSampleRate = sampleRate;
+        _audioChannels = channels;
+        _mediaFormat = format;
+      });
     } catch (_) {}
   }
 
@@ -813,6 +857,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _position = Duration(milliseconds: pos);
         _positionNotifier.value = _position;
       }
+    });
+
+    // 定时采集播放诊断数据
+    _diagnosticTimer?.cancel();
+    _diagnosticTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _queryDiagnostics();
     });
   }
 
@@ -1849,6 +1903,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } catch (_) {}
 
     _positionTimer?.cancel();
+    _diagnosticTimer?.cancel();
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
@@ -2125,8 +2180,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             ),
           ),
 
-        // 同步调试面板
-        if (ref.watch(settingsProvider).showSyncDebug && widget.roomCode != null)
+        // 同步调试面板（单人模式 + 房间模式均可显示）
+        if (ref.watch(settingsProvider).showSyncDebug)
           Positioned(
             left: _debugPanelX,
             top: _debugPanelY,
@@ -2141,6 +2196,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualDecoder: _actualDecoderFull,
               hdrType: _hdrType,
+              isSinglePlayer: widget.roomCode == null,
+              bufferedMs: _bufferedMs,
+              mediaBitrate: _mediaBitrate,
+              videoFps: _videoFps,
+              audioSampleRate: _audioSampleRate,
+              audioChannels: _audioChannels,
+              mediaFormat: _mediaFormat,
               onDrag: (delta) {
                 setState(() {
                   _debugPanelX += delta.dx;
