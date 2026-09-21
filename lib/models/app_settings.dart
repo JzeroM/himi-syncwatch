@@ -8,7 +8,7 @@ class AppSettings {
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
     this.stereoDownmix = false,
-    this.audioRenderer = 'auto',
+    this.audioRenderer = 'OpenSL',
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';

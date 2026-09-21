@@ -411,7 +411,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       setState(() {
         _bufferedMs = buffered;
-        _mediaBitrate = mi.bitRate > 0 ? (mi.bitRate / 1000).round() : 0;
+        _mediaBitrate = vBitrate > 0 ? (vBitrate / 1000).round() : 0;
         _videoFps = fps;
         _audioSampleRate = sampleRate;
         _audioChannels = channels;
@@ -481,10 +481,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('subtitle.margin.y', '22');
     // 立体声降混：将多声道音频降混为立体声（用户可选）
     final settings = ref.read(settingsProvider);
+    // 先清除旧滤镜，避免残留
+    _player.setProperty('audio.avfilter', '');
     if (settings.stereoDownmix) {
       _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
     }
-    // 音频后端：OpenSL 时钟精度更高，可改善 TrueHD 等高复杂度音频的播放流畅度
+    // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度
     if (settings.audioRenderer != 'auto') {
       _player.audioBackends = [settings.audioRenderer];
     }
@@ -740,7 +742,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 缓冲区配置：DV 软解需要更大缓冲余量
       final isDv = _embyVideoStream?.isDolbyVision ?? false;
       if (isDv) {
-        _player.setBufferRange(min: 5000, max: 10000);
+        _player.setBufferRange(min: 8000, max: 15000);
       } else {
         _player.setBufferRange(min: 2000, max: 5000);
       }
@@ -820,7 +822,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 缓冲区配置：DV 软解需要更大缓冲余量
       final isDv = _embyVideoStream?.isDolbyVision ?? false;
       if (isDv) {
-        _player.setBufferRange(min: 5000, max: 10000);
+        _player.setBufferRange(min: 8000, max: 15000);
       } else {
         _player.setBufferRange(min: 2000, max: 5000);
       }

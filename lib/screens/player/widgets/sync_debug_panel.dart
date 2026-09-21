@@ -219,9 +219,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                   }),
                   if (_sectionDecoder) ...[
                     _debugRow('模式', decodeModeLabel),
-                    _debugRow('解码器', widget.actualVideoDecoders),
+                    _debugRow('配置', widget.actualVideoDecoders),
                     _debugRow('音频后端', widget.audioBackend),
-                    _debugRow('视频输出', widget.voStatus),
                   ],
 
                   // ── 连接信息（仅房间模式）──
@@ -297,8 +296,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
     buf.writeln('降混: ${widget.stereoDownmix}');
     buf.writeln();
     buf.writeln('=== 解码器 ===');
-    buf.writeln('模式: ${widget.decodeMode} | 解码器: ${widget.actualVideoDecoders}');
-    buf.writeln('音频后端: ${widget.audioBackend} | VO: ${widget.voStatus}');
+    buf.writeln('模式: ${widget.decodeMode} | 配置: ${widget.actualVideoDecoders}');
+    buf.writeln('音频后端: ${widget.audioBackend}');
     buf.writeln();
     buf.writeln('=== 日志 (最近20条) ===');
     final logs = LogService().entries;
