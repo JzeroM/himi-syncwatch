@@ -438,21 +438,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   Future<void> _configureDecoderForDV() async {
     if (!Platform.isAndroid) return;
 
-    // 使用 Emby API 数据判断是否 DV
     if (_embyVideoStream == null || !_embyVideoStream!.isDolbyVision) return;
 
     final hwSupported = await DolbyVisionService.isSupported();
     if (!hwSupported) {
       _player.videoDecoders = ['FFmpeg'];
       LogService().log('Player', 'DV: 设备不支持硬解，强制软解');
-
-      // DV 软解降低分辨率：减轻 CPU 压力，改善流畅度
-      final settings = ref.read(settingsProvider);
-      if (settings.dvSoftDecodeScale != 'off') {
-        final height = settings.dvSoftDecodeScale == '1080p' ? '1080' : '720';
-        _player.setProperty('video.avfilter', 'scale=-2:$height');
-        LogService().log('Player', 'DV: 软解降分辨率 → ${height}p');
-      }
     }
   }
 

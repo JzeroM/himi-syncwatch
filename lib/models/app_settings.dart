@@ -3,14 +3,12 @@ class AppSettings {
   final bool showSyncDebug;
   final bool stereoDownmix;
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
-  final String dvSoftDecodeScale; // 'off', '1080p', '720p'
 
   const AppSettings({
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
     this.stereoDownmix = false,
     this.audioRenderer = 'OpenSL',
-    this.dvSoftDecodeScale = 'off',
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -20,14 +18,12 @@ class AppSettings {
     bool? showSyncDebug,
     bool? stereoDownmix,
     String? audioRenderer,
-    String? dvSoftDecodeScale,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
-      dvSoftDecodeScale: dvSoftDecodeScale ?? this.dvSoftDecodeScale,
     );
   }
 
@@ -36,17 +32,14 @@ class AppSettings {
         'showSyncDebug': showSyncDebug,
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
-        'dvSoftDecodeScale': dvSoftDecodeScale,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
-    // 兼容旧版 bool hardwareDecoding 和 hw+
     final raw = json['decodeMode'];
     String mode;
     if (raw is String && ['auto', 'hw', 'sw'].contains(raw)) {
       mode = raw;
     } else if (raw == 'hw+') {
-      // hw+ 已废弃，迁移到 auto
       mode = 'auto';
     } else if (raw == true || json['hardwareDecoding'] == true) {
       mode = 'auto';
@@ -60,7 +53,6 @@ class AppSettings {
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
       audioRenderer: json['audioRenderer'] as String? ?? 'auto',
-      dvSoftDecodeScale: json['dvSoftDecodeScale'] as String? ?? 'off',
     );
   }
 
@@ -75,11 +67,5 @@ class AppSettings {
     'AAudio': 'AAudio',
     'OpenSL': 'OpenSL',
     'AudioTrack': 'AudioTrack',
-  };
-
-  static const dvSoftDecodeScaleLabels = {
-    'off': '关闭',
-    '1080p': '1080p',
-    '720p': '720p',
   };
 }
