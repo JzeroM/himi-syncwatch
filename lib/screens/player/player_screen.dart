@@ -334,42 +334,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } catch (_) {}
   }
 
-  /// 检测杜比视界内容并应用相应策略
+  /// 在 prepare() 之前配置 DV 解码器（Android 设备不支持硬解时强制软解）
+  Future<void> _configureDecoderForDV() async {
+    if (!Platform.isAndroid) return;
+
+    // 使用 Emby API 数据判断是否 DV
+    if (_embyVideoStream == null || !_embyVideoStream!.isDolbyVision) return;
+
+    final hwSupported = await DolbyVisionService.isSupported();
+    if (!hwSupported) {
+      _player.videoDecoders = ['FFmpeg'];
+      LogService().log('Player', 'DV: 设备不支持硬解，强制软解');
+    }
+  }
+
+  /// 检测杜比视界内容并更新 HDR 标签
   Future<void> _detectDolbyVision() async {
     try {
-      // 优先使用 Emby API 的 extendedVideoType（可靠）
       bool isDV = false;
       String hdrType = 'SDR';
-      
+
       if (_embyVideoStream != null) {
-        // 使用 Emby API 数据
         isDV = _embyVideoStream!.isDolbyVision;
         hdrType = _embyVideoStream!.hdrLabel;
         LogService().log('Player', 'DV 检测(Emby API): isDV=$isDV, hdrType=$hdrType');
       }
-      
+
       if (!mounted) return;
-      
+
       setState(() {
         _hdrType = hdrType;
       });
-      
-      if (isDV) {
-        final profile = _embyVideoStream?.extendedVideoSubType ?? 'unknown';
-        
-        // Android: 查询设备 DV 硬解能力，不支持则强制软解
-        if (Platform.isAndroid) {
-          final hwSupported = await DolbyVisionService.isSupported();
-          if (!hwSupported) {
-            _player.videoDecoders = ['FFmpeg'];
-            LogService().log('Player', 'DV $profile: 设备不支持硬解，强制软解');
-          } else {
-            LogService().log('Player', 'DV $profile: 设备支持硬解');
-          }
-        } else {
-          LogService().log('Player', 'DV $profile: 非 Android 平台');
-        }
-      }
     } catch (_) {}
   }
 
@@ -513,20 +508,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final embyService = ref.read(embyServiceProvider);
       final config = ref.read(embyConfigProvider);
 
-      // 并行：加载流 + 获取 Emby 详情，互不阻塞
-      final textureReadyF = _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
-      final detailsF = (config != null && config.isAuthenticated)
-          ? embyService.getItemDetails(itemId).catchError((e) {
-              LogService().log('Player', '获取 Emby 详情失败: $e');
-              return null;
-            })
-          : Future.value(null);
-
-      await textureReadyF;
-
-      // 处理 Emby 详情（不阻塞播放）
+      // 第一步：先获取 Emby 详情（获取 DV 信息，用于解码器选择）
       try {
-        final details = await detailsF;
+        final details = (config != null && config.isAuthenticated)
+            ? await embyService.getItemDetails(itemId).catchError((e) {
+                LogService().log('Player', '获取 Emby 详情失败: $e');
+                return null;
+              })
+            : null;
         if (details != null && mounted) {
           final source = details.mediaSources.firstWhere(
             (s) => s.id == epMediaSourceId,
@@ -541,6 +530,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           });
         }
       } catch (_) {}
+
+      // 第二步：根据 DV 信息配置解码器（prepare 之前）
+      await _configureDecoderForDV();
+
+      // 第三步：加载流（prepare 会使用已配置好的解码器）
+      await _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
 
       // _loadStream 已在 updateTexture() 后设置播放状态，此处仅同步 UI
       if (mounted) {
@@ -709,6 +704,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
+
+      // prepare 前配置 DV 解码器
+      await _configureDecoderForDV();
+
       _isSwitchingMedia = true;
       _player.media = playUrl;
       await _player.prepare();
