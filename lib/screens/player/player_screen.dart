@@ -590,9 +590,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // FFmpeg 解码线程数：匹配设备核心数提升并行解码能力
     _player.setProperty('avcodec.threads', '4');
 
-    // 自适应音视频同步：视频落后时自动减速音频追赶
-    mdk.setGlobalOption('avsync.audio.adaptive', true);
-
     // 锁屏保持
     try {
       await WakelockPlus.enable();
