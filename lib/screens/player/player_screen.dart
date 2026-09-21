@@ -300,9 +300,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _syncRtmStatus = '未连接';
   String _syncMetadataTestResult = '-'; // 自检结果
   String _voStatus = '-'; // 视频输出驱动
-  String _videoCodec = '-'; // 视频编码格式
   String _videoResolution = '-'; // 视频分辨率
-  String _actualDecoderFull = ''; // 实际解码器完整描述
   String _hdrType = 'SDR'; // HDR 类型标签
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
@@ -314,6 +312,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   int _audioSampleRate = 0;
   int _audioChannels = 0;
   String _mediaFormat = '';
+  // 新增诊断字段
+  String _playbackState = 'stopped';
+  String _mediaStatusStr = '-';
+  int _positionMs = 0;
+  int _durationMs = 0;
+  String _videoCodecName = '-';
+  int _videoBitrate = 0;
+  String _pixelFormat = '-';
+  int _doviProfile = 0;
+  String _audioCodecName = '-';
+  int _audioBitrate = 0;
+  String _stereoDownmix = '关';
+  String _actualVideoDecoders = '-';
+  String _audioBackend = '-';
   final ValueNotifier<int> _syncEventsVersion = ValueNotifier(0);
   final GlobalKey _qrKey = GlobalKey();
 
@@ -332,12 +344,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   Future<void> _queryHwdecStatus() async {
     try {
-      // fvp: 通过 property 获取编解码器信息
-      final codec = _player.getProperty('video.decoder') ?? 'auto';
       if (mounted) {
         setState(() {
           _voStatus = 'fvp/libmdk';
-          _videoCodec = codec;
         });
       }
     } catch (_) {}
@@ -349,31 +358,73 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     try {
       final mi = _player.mediaInfo;
       final buffered = _player.buffered();
+      final pos = _player.position;
+      final st = _player.state;
+      final ms = _player.mediaStatus;
 
-      int bitrate = 0;
+      // 播放状态
+      String playState = st == mdk.PlaybackState.playing ? 'playing' :
+                         st == mdk.PlaybackState.paused ? 'paused' : 'stopped';
+      String mediaSt = ms.test(mdk.MediaStatus.buffering) ? 'buffering' :
+                       ms.test(mdk.MediaStatus.seeking) ? 'seeking' :
+                       ms.test(mdk.MediaStatus.loaded) ? 'loaded' :
+                       ms.test(mdk.MediaStatus.end) ? 'end' : '-';
+
+      // 视频信息
+      int vBitrate = 0;
       double fps = 0;
-      int sampleRate = 0;
-      int channels = 0;
-      String format = mi.format ?? '';
-
+      String vCodec = '-';
+      String pixFmt = '-';
+      int dovi = 0;
       if (mi.video != null && mi.video!.isNotEmpty) {
         final vc = mi.video![0].codec;
-        bitrate = vc.bitRate;
+        vCodec = vc.codec;
+        vBitrate = vc.bitRate;
         fps = vc.frameRate;
+        pixFmt = vc.formatName ?? '-';
+        dovi = vc.doviProfile;
       }
+
+      // 音频信息
+      int aBitrate = 0;
+      int sampleRate = 0;
+      int channels = 0;
+      String aCodec = '-';
       if (mi.audio != null && mi.audio!.isNotEmpty) {
         final ac = mi.audio![0].codec;
+        aCodec = ac.codec;
+        aBitrate = ac.bitRate;
         sampleRate = ac.sampleRate;
         channels = ac.channels;
       }
 
+      // 实际解码器
+      final actualDec = _player.getProperty('video.decoder') ?? '-';
+
+      // 降混设置
+      final dm = ref.read(settingsProvider).stereoDownmix ? '开' : '关';
+      final ab = ref.read(settingsProvider).audioRenderer;
+
       setState(() {
         _bufferedMs = buffered;
-        _mediaBitrate = bitrate > 0 ? (bitrate / 1000).round() : 0;
+        _mediaBitrate = mi.bitRate > 0 ? (mi.bitRate / 1000).round() : 0;
         _videoFps = fps;
         _audioSampleRate = sampleRate;
         _audioChannels = channels;
-        _mediaFormat = format;
+        _mediaFormat = mi.format ?? '';
+        _playbackState = playState;
+        _mediaStatusStr = mediaSt;
+        _positionMs = pos;
+        _durationMs = mi.duration;
+        _videoCodecName = vCodec;
+        _videoBitrate = vBitrate > 0 ? (vBitrate / 1000).round() : 0;
+        _pixelFormat = pixFmt;
+        _doviProfile = dovi;
+        _audioCodecName = aCodec;
+        _audioBitrate = aBitrate > 0 ? (aBitrate / 1000).round() : 0;
+        _stereoDownmix = dm;
+        _actualVideoDecoders = actualDec;
+        _audioBackend = ab;
       });
     } catch (_) {}
   }
@@ -520,6 +571,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.setProperty('avformat.analyzeduration', '500000');  // 500ms
     _player.setProperty('avformat.fflags', '+fastseek');         // 允许快速 seek
     _player.setProperty('avformat.fpsprobesize', '0');
+
+    // 缓冲区配置：网络串流优化
+    _player.setBufferRange(min: 2000, max: 5000);
 
     // 锁屏保持
     try {
@@ -2190,19 +2244,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               rtmChannel: _syncRtmChannel,
               rtmStatus: _syncRtmStatus,
               metadataTestResult: _syncMetadataTestResult,
-              videoCodec: _videoCodec,
-              videoResolution: _videoResolution,
               voStatus: _voStatus,
-              decodeMode: ref.read(settingsProvider).decodeMode,
-              actualDecoder: _actualDecoderFull,
               hdrType: _hdrType,
               isSinglePlayer: widget.roomCode == null,
+              // 播放状态
+              playbackState: _playbackState,
+              mediaStatusStr: _mediaStatusStr,
+              positionMs: _positionMs,
+              durationMs: _durationMs,
               bufferedMs: _bufferedMs,
               mediaBitrate: _mediaBitrate,
+              mediaFormat: _mediaFormat,
+              // 视频信息
+              videoCodecName: _videoCodecName,
+              videoResolution: _videoResolution,
               videoFps: _videoFps,
+              videoBitrate: _videoBitrate,
+              pixelFormat: _pixelFormat,
+              doviProfile: _doviProfile,
+              // 音频信息
+              audioCodecName: _audioCodecName,
               audioSampleRate: _audioSampleRate,
               audioChannels: _audioChannels,
-              mediaFormat: _mediaFormat,
+              audioBitrate: _audioBitrate,
+              stereoDownmix: _stereoDownmix,
+              // 解码器
+              decodeMode: ref.read(settingsProvider).decodeMode,
+              actualVideoDecoders: _actualVideoDecoders,
+              audioBackend: _audioBackend,
               onDrag: (delta) {
                 setState(() {
                   _debugPanelX += delta.dx;
