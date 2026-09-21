@@ -22,6 +22,7 @@ import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
+import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -353,10 +354,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _hdrType = hdrType;
       });
       
-      // fvp/libmdk 原生支持 Dolby Vision（包括 P5），无需手动设置
       if (isDV) {
         final profile = _embyVideoStream?.extendedVideoSubType ?? 'unknown';
-        LogService().log('Player', 'DV $profile: fvp 原生处理');
+        
+        // Android: 查询设备 DV 硬解能力，不支持则强制软解
+        if (Platform.isAndroid) {
+          final hwSupported = await DolbyVisionService.isSupported();
+          if (!hwSupported) {
+            _player.videoDecoders = ['FFmpeg'];
+            LogService().log('Player', 'DV $profile: 设备不支持硬解，强制软解');
+          } else {
+            LogService().log('Player', 'DV $profile: 设备支持硬解');
+          }
+        } else {
+          LogService().log('Player', 'DV $profile: 非 Android 平台');
+        }
       }
     } catch (_) {}
   }
@@ -464,10 +476,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
     _player.videoDecoders = decoders;
 
-    // 启动速度优化：减少 FFmpeg 格式探测耗时
-    _player.setProperty('avformat.probesize', '32768');
-    _player.setProperty('avformat.analyzeduration', '50000');
-    _player.setProperty('avformat.fflags', '+nobuffer');
+    // avformat 缓冲配置：平衡起播速度与播放稳定性
+    _player.setProperty('avformat.probesize', '1048576');      // 1MB
+    _player.setProperty('avformat.analyzeduration', '500000');  // 500ms
+    _player.setProperty('avformat.fflags', '+fastseek');         // 允许快速 seek
     _player.setProperty('avformat.fpsprobesize', '0');
 
     // 锁屏保持
@@ -781,6 +793,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         } else {
           _addBroadcastMessage('所有剧集播放完毕');
         }
+      }
+
+      // 播放错误处理
+      if (event.newValue.test(mdk.MediaStatus.invalid)) {
+        LogService().log('Player', '播放错误: ${event.newValue}');
+        _addBroadcastMessage('播放出错');
       }
     });
 
