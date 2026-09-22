@@ -741,14 +741,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
 
-      // 缓冲区配置：DV 软解需要更大缓冲余量，启用丢帧防止堆积
-      final isDv = _embyVideoStream?.isDolbyVision ?? false;
-      if (isDv) {
-        _player.setBufferRange(min: 8000, max: 15000, drop: true);
-      } else {
-        _player.setBufferRange(min: 2000, max: 5000, drop: true);
-      }
-
       _isSwitchingMedia = true;
       _player.media = streamUrl;
       await _player.prepare();
@@ -820,14 +812,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // prepare 前配置 DV 解码器
       await _configureDecoderForDV();
-
-      // 缓冲区配置：DV 软解需要更大缓冲余量，启用丢帧防止堆积
-      final isDv = _embyVideoStream?.isDolbyVision ?? false;
-      if (isDv) {
-        _player.setBufferRange(min: 8000, max: 15000, drop: true);
-      } else {
-        _player.setBufferRange(min: 2000, max: 5000, drop: true);
-      }
 
       _isSwitchingMedia = true;
       _player.media = playUrl;
