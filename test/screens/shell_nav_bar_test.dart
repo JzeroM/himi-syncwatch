@@ -31,6 +31,13 @@ Positioned _blob(WidgetTester tester) {
   );
 }
 
+BoxDecoration _blobDecoration(WidgetTester tester) {
+  final box = tester.widget<DecoratedBox>(
+    find.byKey(const ValueKey('navBlob')),
+  );
+  return box.decoration as BoxDecoration;
+}
+
 void main() {
   testWidgets('四格 icon+label 组在 60 高度内严格对齐且整体垂直居中', (tester) async {
     await _pumpNav(tester, onSelect: (_) {});
@@ -148,5 +155,86 @@ void main() {
     final settled = _blob(tester);
     expect(settled.left, closeTo(0, 0.5));
     expect(settled.width, closeTo(200, 0.5));
+  });
+
+  testWidgets('水珠为半透明白色玻璃，青色仅用于选中图标', (tester) async {
+    await _pumpNav(tester, onSelect: (_) {});
+
+    final d = _blobDecoration(tester);
+    expect(d.color, Colors.white.withValues(alpha: 0.18));
+    expect(d.border?.top.color, Colors.white.withValues(alpha: 0.28));
+    expect(d.boxShadow?.first.color, Colors.white.withValues(alpha: 0.10));
+
+    // 青色只出现在选中图标/文字，不给水珠
+    expect(tester.widget<Icon>(find.byIcon(Icons.home)).color, kNavBlobColor);
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.dns_outlined)).color,
+      Colors.white70,
+    );
+    expect(d.color, isNot(kNavBlobColor));
+  });
+
+  testWidgets('水珠饱满：高 50、固定 25 圆角（两端半圆直边）', (tester) async {
+    await _pumpNav(tester, onSelect: (_) {});
+
+    expect(_blob(tester).height, 50);
+    expect(
+      _blobDecoration(tester).borderRadius,
+      BorderRadius.all(Radius.circular(25)),
+    );
+  });
+
+  testWidgets('短时横向滑动即可拖动水珠（无需长按），跟手且松手落点切换', (tester) async {
+    int? selected;
+    await _pumpNav(tester, onSelect: (i) => selected = i);
+    final nav = tester.getRect(find.byType(ShellNavBar));
+
+    // 按下后立即横滑（远小于长按 500ms 阈值）→ 直接进入拖动
+    final gesture = await tester.startGesture(
+      Offset(nav.left + 100, nav.center.dy),
+    );
+    await tester.pump();
+    await gesture.moveTo(Offset(nav.left + 300, nav.center.dy));
+    await tester.pump();
+
+    final dragging = _blob(tester);
+    expect(dragging.left, closeTo(300 - dragging.width! / 2, 1));
+    expect(dragging.width, greaterThan(200));
+    expect(selected, isNull); // 拖动中途不回调
+
+    // 水珠中心已在第二格 → 该格图标实时点亮青色实心
+    expect(find.byIcon(Icons.dns), findsOneWidget);
+    expect(tester.widget<Icon>(find.byIcon(Icons.dns)).color, kNavBlobColor);
+
+    // 拖到第三格中部松手 → 落点切换
+    await gesture.moveTo(Offset(nav.left + 490, nav.center.dy));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(selected, 2);
+    expect(tester.widget<Icon>(find.byIcon(Icons.key)).color, kNavBlobColor);
+    expect(find.byIcon(Icons.dns_outlined), findsOneWidget);
+  });
+
+  testWidgets('手指落在非水珠格横向滑动，水珠吸附到手指跟手', (tester) async {
+    int? selected;
+    await _pumpNav(tester, onSelect: (i) => selected = i);
+    final nav = tester.getRect(find.byType(ShellNavBar));
+
+    // 初始水珠在第一格，直接从第三格按下横滑 → 水珠吸附到手指
+    final gesture = await tester.startGesture(
+      Offset(nav.left + 500, nav.center.dy),
+    );
+    await tester.pump();
+    await gesture.moveTo(Offset(nav.left + 520, nav.center.dy));
+    await tester.pump();
+
+    final dragging = _blob(tester);
+    expect(dragging.left, closeTo(520 - dragging.width! / 2, 1));
+    expect(selected, isNull);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(selected, 2); // 落点在第三格
   });
 }

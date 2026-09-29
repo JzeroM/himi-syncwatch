@@ -21,6 +21,7 @@ Future<GoRouter> _pumpApp(
   WidgetTester tester, {
   FakeEmbyAuthService? auth,
   FakeEmbyService? emby,
+  EdgeInsets viewPadding = EdgeInsets.zero,
 }) async {
   late GoRouter router;
   await tester.pumpWidget(
@@ -34,7 +35,14 @@ Future<GoRouter> _pumpApp(
       child: Consumer(
         builder: (context, ref, _) {
           router = ref.watch(appRouterProvider);
-          return MaterialApp.router(routerConfig: router);
+          return MaterialApp.router(
+            routerConfig: router,
+            // 模拟真机系统栏（edge-to-edge 下 padding 已被消费，仅 viewPadding 保留）
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(viewPadding: viewPadding),
+              child: child ?? const SizedBox.shrink(),
+            ),
+          );
         },
       ),
     ),
@@ -173,6 +181,24 @@ void main() {
     expect(insets.left, 12);
     expect(insets.right, 12);
     expect(insets.bottom, 4);
+  });
+
+  testWidgets('三键虚拟按键(48)时胶囊贴其上沿 +2，避免被遮挡', (tester) async {
+    await _pumpApp(tester, viewPadding: const EdgeInsets.only(bottom: 48));
+
+    final padding = tester.widget<Padding>(
+      find.byKey(const ValueKey('shellNavBarPadding')),
+    );
+    expect((padding.padding as EdgeInsets).bottom, 50);
+  });
+
+  testWidgets('手势导航条(34)时胶囊贴近屏底留 6 间距', (tester) async {
+    await _pumpApp(tester, viewPadding: const EdgeInsets.only(bottom: 34));
+
+    final padding = tester.widget<Padding>(
+      find.byKey(const ValueKey('shellNavBarPadding')),
+    );
+    expect((padding.padding as EdgeInsets).bottom, 6);
   });
 
   testWidgets('首页滑到底部导航胶囊淡出隐藏，回滚立即显示', (tester) async {

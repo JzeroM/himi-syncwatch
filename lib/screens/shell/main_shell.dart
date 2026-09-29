@@ -38,8 +38,11 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    // 悬浮胶囊贴近屏幕底，仅保留少量手势空间
-    final bottomGap = bottomInset > 0 ? 6.0 : 4.0;
+    // 三键虚拟按键（≥40）：紧贴其上沿 +2，避免被遮挡又不留空隙；
+    // 手势条（≤34，透明）或无安全区：贴近屏底保留少量空间
+    final bottomGap = bottomInset >= 40
+        ? bottomInset + 2
+        : (bottomInset > 0 ? 6.0 : 4.0);
 
     return Scaffold(
       extendBody: true,
