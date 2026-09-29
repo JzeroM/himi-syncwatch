@@ -48,6 +48,12 @@ Future<ProviderContainer> _pumpScreen(
   return container;
 }
 
+/// 包裹指定图标的玻璃容器（椭圆胶囊）。
+Finder _capsuleOf(IconData icon) => find.ancestor(
+      of: find.byIcon(icon),
+      matching: find.byType(GlassContainer),
+    );
+
 void main() {
   testWidgets('无服务器时显示引导到 Emby 服务器标签的空态', (tester) async {
     await _pumpScreen(tester);
@@ -71,6 +77,8 @@ void main() {
 
     expect(find.byType(GlassBackdrop), findsOneWidget);
     expect(find.text('HIMI'), findsOneWidget);
+    // 空态标题同样被玻璃椭圆包裹
+    expect(_capsuleOf(Icons.dns_outlined), findsOneWidget);
   });
 
   testWidgets('已有服务器时加载媒体库且不报错', (tester) async {
@@ -120,5 +128,27 @@ void main() {
     expect(container.read(embyConfigProvider)?.id, 'srv_b');
     expect(auth.selectedServerId, 'srv_b');
     expect(find.text('备用服务器'), findsOneWidget);
+  });
+
+  testWidgets('服务器标题与顶部操作按钮各包进玻璃椭圆', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    await _pumpScreen(tester, auth: auth);
+
+    // 标题（服务器名）被玻璃椭圆包裹
+    expect(_capsuleOf(Icons.dns_outlined), findsOneWidget);
+    expect(_capsuleOf(Icons.arrow_drop_down), findsOneWidget);
+
+    // 搜索 / 加入房间 / 开房间三个按钮同属一个玻璃椭圆
+    final search = tester.widgetList(_capsuleOf(Icons.search)).first;
+    final join = tester.widgetList(_capsuleOf(Icons.group_add)).first;
+    final room =
+        tester.widgetList(_capsuleOf(Icons.add_circle_outline)).first;
+    expect(identical(search, join), isTrue);
+    expect(identical(room, join), isTrue);
   });
 }

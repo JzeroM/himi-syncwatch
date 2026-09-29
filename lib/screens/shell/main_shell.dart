@@ -13,13 +13,15 @@ class MainShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    // 悬浮胶囊尽量贴近屏幕底（参考悬浮导航样式），仅保留少量手势空间
+    final bottomGap = (bottomInset - 24).clamp(0.0, double.infinity) + 4;
 
     return Scaffold(
       extendBody: true,
       body: shell,
       bottomNavigationBar: Padding(
         key: const ValueKey('shellNavBarPadding'),
-        padding: EdgeInsets.fromLTRB(12, 0, 12, bottomInset + 6),
+        padding: EdgeInsets.fromLTRB(12, 0, 12, bottomGap),
         child: GlassContainer(
           borderRadius: const BorderRadius.all(Radius.circular(28)),
           padding: EdgeInsets.zero,
