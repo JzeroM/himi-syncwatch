@@ -1,0 +1,106 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/services/mdk_log_parser.dart';
+
+void main() {
+  group('MdkLogParser 状态行识别', () {
+    test('真机状态行被识别', () {
+      const line =
+          '[DD 21:26:53.580][720->0][ffmpeg] | 26.4fps cache 0v 1.0s';
+      expect(MdkLogParser.isStatusLine(line), isTrue);
+    });
+
+    test('媒体信息行不是状态行（关键：避免取到声明帧率 24）', () {
+      const line = '[DD 21:26:52.100][0x7f0][ffmpeg] video info: '
+          '3840x2160 fps: 24 duration: 5400.0';
+      expect(MdkLogParser.isStatusLine(line), isFalse);
+      expect(MdkLogParser.parseFps(line), isNull);
+    });
+
+    test('关键行被识别', () {
+      expect(
+        MdkLogParser.isNotableLine('[DD][decoder.video | FFmpeg | 0]'),
+        isTrue,
+      );
+      expect(MdkLogParser.isNotableLine('av_sync drop 12 frames'), isTrue);
+      expect(
+        MdkLogParser.isNotableLine('dovi profile 8.4 detected'),
+        isTrue,
+      );
+    });
+
+    test('buffering progress 刷屏既非状态行也非关键行', () {
+      // 这一行每秒会刷 10~30 条，早期版本因保留它而误触发 50 行/秒安全阀
+      const line = 'buffering progress 12.5%';
+      expect(MdkLogParser.isStatusLine(line), isFalse);
+      expect(MdkLogParser.isNotableLine(line), isFalse);
+      expect(MdkLogParser.shouldKeep(line), isFalse);
+    });
+
+    test('空行被丢弃', () {
+      expect(MdkLogParser.shouldKeep(''), isFalse);
+      expect(MdkLogParser.shouldKeep('   '), isFalse);
+    });
+  });
+
+  group('MdkLogParser 实测帧率解析', () {
+    test('取状态行中的实测帧率，而非媒体声明的 24', () {
+      const mediaInfo = 'video info: 3840x2160 fps: 24';
+      const status = '| 7.7fps cache 0v 0.0s';
+
+      expect(MdkLogParser.parseFps(mediaInfo), isNull,
+          reason: '声明帧率不得进入诊断时间线');
+      expect(MdkLogParser.parseFps(status), closeTo(7.7, 0.01));
+    });
+
+    test('兼容整数与小数形式', () {
+      expect(
+        MdkLogParser.parseFps('[0][0] | 24fps cache 0v 3.0s'),
+        closeTo(24.0, 0.01),
+      );
+      expect(
+        MdkLogParser.parseFps('[0][0] | 23.976fps cache 0v 3.0s'),
+        closeTo(23.976, 0.001),
+      );
+    });
+
+    test('兼容 fps 在前的写法', () {
+      expect(
+        MdkLogParser.parseFps('status fps: 18.8 cache 2v 1.5s'),
+        closeTo(18.8, 0.01),
+      );
+      expect(
+        MdkLogParser.parseFps('rfps: 24.5 cache 2v 1.5s'),
+        closeTo(24.5, 0.01),
+      );
+    });
+
+    test('0 fps 视为无效，不污染时间线', () {
+      expect(MdkLogParser.parseFps('| 0.0fps cache 0v 0.0s'), isNull);
+    });
+
+    test('异常大值被拒绝', () {
+      expect(MdkLogParser.parseFps('| 99999fps cache 0v 0.0s'), isNull);
+    });
+
+    test('无 fps 的行返回 null', () {
+      expect(MdkLogParser.parseFps('| cache 0v 1.0s'), isNull);
+    });
+  });
+
+  group('MdkLogParser 缓存解析', () {
+    test('提取缓存秒数', () {
+      expect(
+        MdkLogParser.parseCacheSeconds('| 26.4fps cache 0v 1.0s'),
+        closeTo(1.0, 0.01),
+      );
+      expect(
+        MdkLogParser.parseCacheSeconds('| 23.4fps cache 2v 5.5s update 42ms'),
+        closeTo(5.5, 0.01),
+      );
+    });
+
+    test('非状态行返回 null', () {
+      expect(MdkLogParser.parseCacheSeconds('video info: fps: 24'), isNull);
+    });
+  });
+}

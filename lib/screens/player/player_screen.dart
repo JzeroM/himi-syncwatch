@@ -38,6 +38,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -303,6 +304,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _voStatus = '-'; // 视频输出驱动
   String _videoResolution = '-'; // 视频分辨率
   String _hdrType = 'SDR'; // HDR 类型标签
+  DvProbeResult _dvProbe = DvProbeResult.unknown; // 设备 DV 解码能力（仅展示）
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
 
@@ -336,9 +338,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   int _bufProgress = -1; // 缓冲进度 0-100，-1 表示未知
   Timer? _sampleTimer;
   bool _deepLogActive = false;
-  int _deepLogPerSecond = 0;
-  int _deepLogSecond = 0;
+  DateTime _deepWindowStart = DateTime.now();
+  int _deepPerSecond = 0;
+
+  /// 深度诊断安全阀：仅对"保留行"计数。过滤掉 `buffering progress`
+  /// 刷屏后，状态行约 4 行/秒，不会再被误触发。
+  static const int _deepLinesPerSecondLimit = 50;
+  static const int _deepStatusLineCap = 240; // 状态行保留 240 条 ≈ 60s
+  static const int _deepNoteLineCap = 120;
+
+  /// mdk 状态行（fps / cache），按时间顺序保留最近若干条
   final List<String> _deepLogLines = <String>[];
+  /// 解码器选择 / 丢帧 / 错误等关键行
+  final List<String> _deepNoteLines = <String>[];
   final GlobalKey _qrKey = GlobalKey();
 
   // 调试面板拖拽位置
@@ -491,17 +503,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-  /// 在 prepare() 之前配置 DV 解码器（Android 设备不支持硬解时强制软解）
-  Future<void> _configureDecoderForDV() async {
+  /// 探测设备 DV 解码能力，仅用于日志与调试面板展示。
+  ///
+  /// 不再据此覆盖解码器列表：解码模式（auto/hw/sw）由 [DecodeModeService]
+  /// 统一决定。旧实现在能力探测假阴性时强制 `['FFmpeg']`，会把具备硬解
+  /// 的设备（骁龙平台 DV 常声明在 video/hevc 而非 video/dolby-vision）
+  /// 错误降级为软件解码，4K 10bit 下解码不及导致卡顿。
+  /// mdk 的 AMediaCodec 本身在失败时会自动回退到 FFmpeg。
+  Future<void> _probeDvCapability() async {
     if (!Platform.isAndroid) return;
-
-    if (_embyVideoStream == null || !_embyVideoStream!.isDolbyVision) return;
-
-    final hwSupported = await DolbyVisionService.isSupported();
-    if (!hwSupported) {
-      _player.videoDecoders = ['FFmpeg'];
-      LogService().log('Player', 'DV: 设备不支持硬解，强制软解');
+    if (_embyVideoStream == null || !_embyVideoStream!.isDolbyVision) {
+      _dvProbe = DvProbeResult.unknown;
+      return;
     }
+    final probe = await DolbyVisionService.probe();
+    if (!mounted) return;
+    setState(() => _dvProbe = probe);
+    LogService().log('Player', 'DV 能力: ${probe.summary}');
+    LogService().log(
+      'Player',
+      'DV 解码器配置: ${_player.videoDecoders.join(',')}',
+    );
   }
 
   /// 检测杜比视界内容并更新 HDR 标签
@@ -692,8 +714,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       } catch (_) {}
 
-      // 第二步：根据 DV 信息配置解码器（prepare 之前）
-      await _configureDecoderForDV();
+      // 第二步：探测 DV 解码能力（不覆盖解码器配置）
+      await _probeDvCapability();
 
       // 换集：清空上一集的卡顿诊断，避免时间线跨集污染
       _diag.reset();
@@ -872,8 +894,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
 
-      // prepare 前配置 DV 解码器
-      await _configureDecoderForDV();
+      // prepare 前探测 DV 解码能力
+      await _probeDvCapability();
 
       _isSwitchingMedia = true;
       _player.media = playUrl;
@@ -1050,7 +1072,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   /// 因此这里**原样保留**最近若干行原始文本，同时做防御式 fps 解析。
   /// 拿到真机数据后可据此精确化解析规则。
   ///
-  /// 安全阀：单秒内捕获行数超限则自动关闭，避免日志风暴影响播放。
+  /// 安全阀：单秒内保留行数超限则自动关闭，避免日志风暴影响播放。
   void _syncDeepDiagnostics() {
     final enabled = ref.read(settingsProvider).deepDiagnostics;
     if (enabled == _deepLogActive) return;
@@ -1059,6 +1081,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } else {
       _deepLogActive = false;
       _deepLogLines.clear();
+      _deepNoteLines.clear();
       _stopDeepDiagnostics();
     }
   }
@@ -1066,33 +1089,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _startDeepDiagnostics() {
     try {
       _deepLogLines.clear();
+      _deepNoteLines.clear();
       // 2 = 启用（不依赖 log level）
       mdk.setGlobalOption('log.status', 2);
       mdk.setLogHandler((level, message) {
         if (!_deepLogActive) return;
+        final line = message.trim();
+        if (line.isEmpty) return;
+
+        // 只保留两类行：mdk 状态行（含 fps/cache）与值得关注的关键行
+        // （解码器选择、丢帧、错误等）。`buffering progress` 这类每数十毫秒
+        // 一条的进度刷屏直接丢弃——它既无诊断价值，又会在一秒内堆出
+        // 数十行把旧版安全阀误触发。
+        final isStatus = _isStatusLine(line);
+        if (!isStatus && !_isNotableLine(line)) return;
+
         final now = DateTime.now();
-        if (now.second != _deepLogSecond) {
-          _deepLogSecond = now.second;
-          _deepLogPerSecond = 0;
+        if (now.difference(_deepWindowStart) >=
+            const Duration(milliseconds: 1000)) {
+          _deepWindowStart = now;
+          _deepPerSecond = 0;
         }
-        _deepLogPerSecond++;
-        if (_deepLogPerSecond > 50) {
+        _deepPerSecond++;
+        if (_deepPerSecond > _deepLinesPerSecondLimit) {
           _deepLogActive = false;
           _stopDeepDiagnostics();
-          _diag.note('深度诊断日志过密(>50行/秒)，已自动关闭');
+          _diag.note('深度诊断日志过密(>$_deepLinesPerSecondLimit 行/秒)，已自动关闭');
           LogService().log('Diag', '深度诊断日志过密，已自动关闭');
           return;
         }
-        final line = message.trim();
-        if (line.isEmpty) return;
-        _deepLogLines.add(line);
-        while (_deepLogLines.length > 60) {
-          _deepLogLines.removeAt(0);
+
+        if (isStatus) {
+          _deepLogLines.add(line);
+          while (_deepLogLines.length > _deepStatusLineCap) {
+            _deepLogLines.removeAt(0);
+          }
+          final fps = _parseFps(line);
+          if (fps != null) _diag.updateFps(fps);
+        } else {
+          _deepNoteLines.add(line);
+          while (_deepNoteLines.length > _deepNoteLineCap) {
+            _deepNoteLines.removeAt(0);
+          }
         }
-        final fps = _parseFps(line);
-        if (fps != null) _diag.updateFps(fps);
       });
       _deepLogActive = true;
+      _deepWindowStart = DateTime.now();
+      _deepPerSecond = 0;
       LogService().log('Diag', '深度诊断已开启(log.status=2)');
     } catch (e) {
       LogService().log('Diag', '深度诊断开启失败: $e');
@@ -1115,18 +1158,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-  /// 从 log.status 行中防御式提取帧率。
-  /// 兼容 "fps: 23.98"、"fps 23.98"、"23.98 fps"、"rfps: 24.500000" 等形式。
-  static double? _parseFps(String line) {
-    if (!line.toLowerCase().contains('fps')) return null;
-    final match =
-        RegExp(r'fps[^0-9]{0,3}([0-9]+\.?[0-9]*)', caseSensitive: false)
-            .firstMatch(line);
-    if (match == null) return null;
-    final fps = double.tryParse(match.group(1)!);
-    if (fps == null || fps <= 0 || fps > 1000) return null;
-    return fps;
-  }
+  /// mdk 状态行解析委托给 [MdkLogParser]（纯 Dart，可单测）。
+  ///
+  /// 关键：媒体信息行也含 `fps: 24`，那是**声明帧率**，不随卡顿变化。
+  /// 旧版正则不区分二者，导致面板永远显示 24fps，掩盖了真实的掉帧。
+  static bool _isStatusLine(String line) => MdkLogParser.isStatusLine(line);
+
+  static bool _isNotableLine(String line) => MdkLogParser.isNotableLine(line);
+
+  static double? _parseFps(String line) => MdkLogParser.parseFps(line);
 
   /// 组装完整的诊断导出文本（时间线 + 卡顿 + 事件 + 媒体信息）。
   String _exportFullDiagnostics() {
@@ -1136,12 +1176,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final raw = _deepLogLines.isEmpty
         ? '(深度诊断未开启或无数据)'
         : _deepLogLines.join('\n');
+    final notable = _deepNoteLines.isEmpty
+        ? '(无)'
+        : _deepNoteLines.join('\n');
     return '$_diagSummary\n\n'
+        '=== 解码环境 ===\n'
+        '解码模式: ${AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'} | '
+        'videoDecoders: ${_player.videoDecoders.join(',')}\n'
+        'DV 内容: ${_embyVideoStream?.isDolbyVision == true}\n'
+        'DV 能力: ${_dvProbe.summary}\n\n'
         '=== 时间线 ===\n$_diagTimeline\n'
         '=== 卡顿事件 ===\n$_diagStalls\n'
         '=== mdk 事件原文 ===\n${_diag.exportEvents()}'
         '=== 诊断事件 ===\n$_diagNotes\n'
-        '=== mdk 原始状态日志 ===\n$raw';
+        '=== mdk 状态行 (fps/cache) ===\n$raw\n\n'
+        '=== mdk 关键行 (解码器/丢帧/错误) ===\n$notable';
   }
 
   void _autoSelectDefaultTracks() {
@@ -2499,6 +2548,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualVideoDecoders: _actualVideoDecoders,
               audioBackend: _audioBackend,
+              dvCapability: _embyVideoStream?.isDolbyVision == true
+                  ? _dvProbe.summary
+                  : '',
               // 卡顿诊断
               stallSummary: _diagSummary,
               bufProgress: _bufProgress,

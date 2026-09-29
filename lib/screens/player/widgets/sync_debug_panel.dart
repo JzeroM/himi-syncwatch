@@ -43,6 +43,9 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   final String actualVideoDecoders;
   final String audioBackend;
 
+  /// 设备 Dolby Vision 硬件解码能力摘要（仅 DV 内容时非空）
+  final String dvCapability;
+
   // 卡顿诊断
   final String stallSummary;
   final int bufProgress;
@@ -81,6 +84,7 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.decodeMode,
     required this.actualVideoDecoders,
     required this.audioBackend,
+    required this.dvCapability,
     required this.stallSummary,
     required this.bufProgress,
     required this.deepLogActive,
@@ -237,6 +241,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                   if (_sectionDecoder) ...[
                     _debugRow('模式', decodeModeLabel),
                     _debugRow('配置', widget.actualVideoDecoders),
+                    if (widget.dvCapability.isNotEmpty)
+                      _debugRow('DV硬解', widget.dvCapability),
                     _debugRow('音频后端', widget.audioBackend),
                   ],
 
@@ -365,6 +371,9 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
     buf.writeln();
     buf.writeln('=== 解码器 ===');
     buf.writeln('模式: ${widget.decodeMode} | 配置: ${widget.actualVideoDecoders}');
+    if (widget.dvCapability.isNotEmpty) {
+      buf.writeln('DV硬解能力: ${widget.dvCapability}');
+    }
     buf.writeln('音频后端: ${widget.audioBackend}');
     buf.writeln();
     buf.writeln('=== 日志 (最近20条) ===');

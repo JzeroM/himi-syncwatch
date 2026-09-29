@@ -10,7 +10,9 @@ class DiagSample {
   final int t;
   /// 播放位置（ms）
   final int pos;
-  /// 缓冲余量（ms）= buffered - position，负数表示已欠载
+  /// 播放头前方的已缓冲时长（ms），约等于 fvp `Player.buffered()` 的返回值。
+  /// 接近 0 表示即将欠载；fvp 返回的是时长而非绝对缓冲终点，
+  /// 因此不可再减去 [pos]。
   final int ahead;
   /// 播放状态文本
   final String state;
@@ -72,7 +74,7 @@ class PlaybackDiagnostics {
   DateTime? _sessionStart;
   int? _stallStartT;
   String? _stallType;
-  int _minAhead = 0;
+  int _minAhead = 1 << 30;
   int _minAheadT = 0;
   double? _latestFps;
   final List<String> _notes = <String>[];
@@ -85,7 +87,8 @@ class PlaybackDiagnostics {
   int get stallTotalMs => _stalls.fold(0, (s, e) => s + e.durationMs);
   int get stallMaxMs =>
       _stalls.isEmpty ? 0 : _stalls.map((e) => e.durationMs).reduce((a, b) => a > b ? a : b);
-  int get minAheadMs => _minAhead;
+  /// 播放头前方的最小缓冲余量（ms），无采样时为 null。
+  int? get minAheadMs => _samples.isEmpty ? null : _minAhead;
   int get minAheadAtMs => _minAheadT;
   double? get latestFps => _latestFps;
   List<StallEvent> get stalls => List.unmodifiable(_stalls);
@@ -106,7 +109,7 @@ class PlaybackDiagnostics {
     _sessionStart = null;
     _stallStartT = null;
     _stallType = null;
-    _minAhead = 0;
+    _minAhead = 1 << 30;
     _minAheadT = 0;
     _latestFps = null;
   }
@@ -133,7 +136,9 @@ class PlaybackDiagnostics {
       }
     }
 
-    final ahead = buffered - pos;
+    // fvp 的 buffered() 返回"播放头前方的已缓冲时长"，
+    // 已是从当前位置算起的余量，不可再减 pos（曾导致 -257000ms 之类假值）。
+    final ahead = buffered < 0 ? 0 : buffered;
     if (_samples.isEmpty || ahead < _minAhead) {
       _minAhead = ahead;
       _minAheadT = elapsedMs;
@@ -227,7 +232,7 @@ class PlaybackDiagnostics {
       ..writeln('卡顿次数: $stallCount')
       ..writeln('累计卡顿: ${stallTotalMs}ms')
       ..writeln('最长卡顿: ${stallMaxMs}ms')
-      ..writeln('最小缓冲余量: ${minAheadMs}ms @ ${(minAheadAtMs / 1000).toStringAsFixed(0)}s')
+      ..writeln('最小缓冲余量: ${minAheadMs == null ? '-' : '${minAheadMs}ms @ ${(minAheadAtMs / 1000).toStringAsFixed(0)}s'}')
       ..writeln('采样点: $sampleCount (每 250ms)')
       ..writeln('已播放: ${(elapsedMs / 1000).toStringAsFixed(0)}s');
     if (isStalling) {

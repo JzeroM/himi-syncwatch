@@ -19,7 +19,10 @@ void main() {
       expect(diag.sampleCount, 2);
     });
 
-    test('缓冲余量 = buffered - position，负值表示欠载', () {
+    test('缓冲余量直接取 buffered()，不再减去 position', () {
+      // fvp 的 Player.buffered() 返回"播放头前方的已缓冲时长"，
+      // 不是缓冲区绝对终点。旧实现误算成 buffered - pos，
+      // 在 pos=257s 时会产出 -257000ms 之类无意义的假值。
       var now = DateTime(2026, 1, 1);
       final diag = PlaybackDiagnostics(clock: () => now);
 
@@ -29,7 +32,51 @@ void main() {
       diag.addSample(
           pos: 5000, buffered: 4000, state: 'playing', status: 'loaded');
 
-      expect(diag.minAheadMs, -1000);
+      expect(diag.minAheadMs, 4000);
+    });
+
+    test('长时间播放后缓冲余量不会变成巨大负数', () {
+      var now = DateTime(2026, 1, 1);
+      final diag = PlaybackDiagnostics(clock: () => now);
+
+      // 模拟播放 4 分钟、始终维持 1s 缓冲
+      for (var i = 0; i < 960; i++) {
+        diag.addSample(
+            pos: i * 250, buffered: 1000, state: 'playing', status: 'loaded');
+        now = now.add(const Duration(milliseconds: 250));
+      }
+
+      expect(diag.minAheadMs, 1000);
+
+      // 时间线的缓冲余量列（第 2 列）应恒为 1000，不随 pos 增长。
+      // 注意末列无 fps 时会渲染为 '-'，所以不能整体断言不含 '-'。
+      final rows = diag.exportTimeline().trim().split('\n').skip(1);
+      expect(rows, isNotEmpty);
+      for (final row in rows) {
+        final cols = row.trim().split(RegExp(r'\s+'));
+        expect(cols.length, greaterThanOrEqualTo(4));
+        expect(int.tryParse(cols[1]), 1000,
+            reason: '缓冲余量列应恒为 1000，实际: "$row"');
+      }
+    });
+
+    test('负数/未知缓冲值归零处理', () {
+      var now = DateTime(2026, 1, 1);
+      final diag = PlaybackDiagnostics(clock: () => now);
+
+      diag.addSample(
+          pos: 0, buffered: -1, state: 'playing', status: 'loaded');
+      now = now.add(const Duration(milliseconds: 250));
+      diag.addSample(
+          pos: 250, buffered: 2000, state: 'playing', status: 'loaded');
+
+      expect(diag.minAheadMs, 0);
+    });
+
+    test('无采样时最小缓冲余量为 null', () {
+      final diag = PlaybackDiagnostics();
+      expect(diag.minAheadMs, isNull);
+      expect(diag.summary(), contains('最小缓冲余量: -'));
     });
 
     test('记录最小缓冲余量及其出现时刻', () {
@@ -45,7 +92,7 @@ void main() {
       diag.addSample(
           pos: 4000, buffered: 9000, state: 'playing', status: 'loaded');
 
-      expect(diag.minAheadMs, 100);
+      expect(diag.minAheadMs, 2100);
       expect(diag.minAheadAtMs, 2000);
     });
 
@@ -280,7 +327,7 @@ void main() {
       for (var i = 0; i < 2000; i++) {
         diag.addSample(
             pos: i * 250,
-            buffered: i * 250 + 4000,
+            buffered: 4000,
             state: 'playing',
             status: 'loaded');
         now = now.add(const Duration(milliseconds: 250));
