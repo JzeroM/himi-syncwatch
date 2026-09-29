@@ -16,11 +16,11 @@ class GlassConfig {
   static const double saturation = 1.4;
 
   /// 面板着色（底部导航胶囊 / 浮动底栏）。
-  static const Color panelTint = Color(0xA61A1D23);
+  static const Color panelTint = Color(0x731A1D23);
 
   /// 页面顶栏着色（渐变上深下浅）。
-  static const Color barTint = Color(0x991A1D23);
-  static const Color barTintSoft = Color(0x591A1D23);
+  static const Color barTint = Color(0x661A1D23);
+  static const Color barTintSoft = Color(0x3D1A1D23);
 
   /// 关闭玻璃后的降级纯色。
   static const Color fallbackColor = Color(0xF01A1D24);

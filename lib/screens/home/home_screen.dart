@@ -135,7 +135,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('HIMI'),
+        title: _buildTitle(ref.watch(embyConfigProvider)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         flexibleSpace: const GlassBackdrop(),
@@ -198,6 +198,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                     ),
     );
+  }
+
+  /// 标题显示当前服务器名，点击下拉切换 Emby 服务器。
+  Widget _buildTitle(EmbyServerConfig? current) {
+    final servers = ref.watch(embyServerListProvider);
+    final seenServerIds = <String>{};
+    final dedupedServers = <EmbyServerConfig>[];
+    for (final s in servers) {
+      if (seenServerIds.add(s.serverId)) {
+        dedupedServers.add(s);
+      }
+    }
+
+    final label = current?.label ?? 'HIMI';
+    if (dedupedServers.isEmpty) {
+      return Text(label, overflow: TextOverflow.ellipsis);
+    }
+
+    return PopupMenuButton<String>(
+      tooltip: '切换服务器',
+      onSelected: (id) {
+        for (final s in dedupedServers) {
+          if (s.id == id) {
+            _selectServer(s);
+            break;
+          }
+        }
+      },
+      itemBuilder: (context) => dedupedServers.map((s) {
+        final active = current?.id == s.id;
+        return PopupMenuItem(
+          value: s.id,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (active)
+                const Icon(Icons.check_circle, size: 18, color: Colors.green)
+              else
+                const Icon(Icons.dns_outlined, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  s.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(label, overflow: TextOverflow.ellipsis),
+          ),
+          const Icon(Icons.arrow_drop_down),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _selectServer(EmbyServerConfig server) async {
+    final current = ref.read(embyConfigProvider);
+    if (current?.id == server.id) return;
+    ref.read(embyConfigProvider.notifier).setConfig(server);
+    await ref.read(embyAuthServiceProvider).saveSelectedServerId(server.id);
   }
 
   void _showSearch(BuildContext context) {

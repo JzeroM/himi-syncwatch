@@ -117,5 +117,13 @@ void main() {
     test('底部预留高度为常量', () {
       expect(GlassConfig.shellBottomReserve, 96);
     });
+
+    test('玻璃着色透明度低于 50%，背景可透出', () {
+      expect(GlassConfig.panelTint.a, closeTo(0x73 / 255, 0.001));
+      expect(GlassConfig.barTint.a, closeTo(0x66 / 255, 0.001));
+      expect(GlassConfig.barTintSoft.a, closeTo(0x3D / 255, 0.001));
+      expect(GlassConfig.panelTint.a, lessThan(0.5));
+      expect(GlassConfig.barTint.a, lessThan(0.5));
+    });
   });
 }

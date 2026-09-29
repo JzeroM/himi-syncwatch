@@ -18,7 +18,8 @@ class MainShell extends StatelessWidget {
       extendBody: true,
       body: shell,
       bottomNavigationBar: Padding(
-        padding: EdgeInsets.fromLTRB(12, 0, 12, bottomInset + 12),
+        key: const ValueKey('shellNavBarPadding'),
+        padding: EdgeInsets.fromLTRB(12, 0, 12, bottomInset + 6),
         child: GlassContainer(
           borderRadius: const BorderRadius.all(Radius.circular(28)),
           padding: EdgeInsets.zero,

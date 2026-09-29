@@ -112,6 +112,18 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
   });
 
+  testWidgets('底部导航胶囊贴近安全区，仅留 6 间距', (tester) async {
+    await _pumpApp(tester);
+
+    final padding = tester.widget<Padding>(
+      find.byKey(const ValueKey('shellNavBarPadding')),
+    );
+    final insets = padding.padding as EdgeInsets;
+    expect(insets.left, 12);
+    expect(insets.right, 12);
+    expect(insets.bottom, 6);
+  });
+
   testWidgets('顶层路由表包含分类 / 详情 / 播放 / 房间', (tester) async {
     final router = await _pumpApp(tester);
 

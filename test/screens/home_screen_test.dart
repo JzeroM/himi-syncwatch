@@ -12,12 +12,13 @@ Map<String, dynamic> _sessionJson({
   required String id,
   required String serverId,
   required String serverUrl,
+  String name = '家庭NAS',
 }) {
   return {
     'id': id,
     'serverId': serverId,
     'serverUrl': serverUrl,
-    'serverName': '家庭NAS',
+    'serverName': name,
     'userId': 'uid',
     'username': 'user',
     'accessToken': 'token',
@@ -85,5 +86,39 @@ void main() {
     expect(find.byType(RefreshIndicator), findsOneWidget);
     expect(find.text('重试'), findsNothing);
     expect(find.byIcon(Icons.search), findsOneWidget);
+  });
+
+  testWidgets('标题显示当前服务器名并可下拉切换', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1', 's2'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        's2': _sessionJson(
+          id: 'srv_b',
+          serverId: 's2',
+          serverUrl: 'https://b',
+          name: '备用服务器',
+        ),
+      },
+    );
+    final container = await _pumpScreen(tester, auth: auth);
+
+    // 标题为当前服务器名
+    expect(find.text('家庭NAS'), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_drop_down), findsOneWidget);
+
+    // 点击标题弹出服务器下拉
+    await tester.tap(find.text('家庭NAS'));
+    await tester.pumpAndSettle();
+    expect(find.text('备用服务器'), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle), findsWidgets);
+
+    // 选择另一台服务器完成切换
+    await tester.tap(find.text('备用服务器'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(embyConfigProvider)?.id, 'srv_b');
+    expect(auth.selectedServerId, 'srv_b');
+    expect(find.text('备用服务器'), findsOneWidget);
   });
 }
