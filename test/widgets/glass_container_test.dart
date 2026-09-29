@@ -57,6 +57,48 @@ void main() {
       expect(box.color, GlassConfig.fallbackColor);
       expect(box.gradient, isNull);
     });
+
+    testWidgets('开启玻璃时面板带悬浮投影', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const GlassContainer(child: Text('面板内容')),
+          const AppSettings(glassUi: true),
+        ),
+      );
+
+      final decorations = tester.widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byType(GlassContainer),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      expect(
+        decorations.any((d) {
+          final box = d.decoration as BoxDecoration;
+          return box.boxShadow != null && box.boxShadow!.isNotEmpty;
+        }),
+        isTrue,
+      );
+    });
+
+    testWidgets('玻璃着色为三段渐变（上亮、中主体、下透）', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const GlassContainer(child: Text('面板内容')),
+          const AppSettings(glassUi: true),
+        ),
+      );
+
+      final decoration = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: find.byType(ClipRRect),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      final box = decoration.decoration as BoxDecoration;
+      expect(box.gradient, isA<LinearGradient>());
+      expect((box.gradient! as LinearGradient).colors.length, 3);
+    });
   });
 
   group('GlassBackdrop', () {
@@ -112,6 +154,8 @@ void main() {
 
     test('blur 与饱和增强可合成滤镜', () {
       expect(GlassConfig.filter(), isA<ImageFilter>());
+      expect(GlassConfig.blurSigma, 20);
+      expect(GlassConfig.saturation, 1.6);
     });
 
     test('底部预留高度为常量', () {

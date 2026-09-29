@@ -141,7 +141,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        flexibleSpace: const GlassBackdrop(),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),

@@ -72,10 +72,11 @@ void main() {
     expect(find.byIcon(Icons.menu), findsNothing);
   });
 
-  testWidgets('顶栏使用玻璃背景', (tester) async {
+  testWidgets('顶栏无通栏玻璃条，仅标题与操作两个玻璃椭圆', (tester) async {
     await _pumpScreen(tester);
 
-    expect(find.byType(GlassBackdrop), findsOneWidget);
+    expect(find.byType(GlassBackdrop), findsNothing);
+    expect(find.byType(GlassContainer), findsNWidgets(2));
     expect(find.text('HIMI'), findsOneWidget);
     // 空态标题同样被玻璃椭圆包裹
     expect(_capsuleOf(Icons.dns_outlined), findsOneWidget);

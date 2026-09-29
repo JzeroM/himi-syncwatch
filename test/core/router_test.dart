@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/core/router.dart';
+import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
@@ -11,17 +12,24 @@ import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/services/emby_service.dart';
 
 import '../helpers/test_fakes.dart';
 
-Future<GoRouter> _pumpApp(WidgetTester tester) async {
+Future<GoRouter> _pumpApp(
+  WidgetTester tester, {
+  FakeEmbyAuthService? auth,
+  FakeEmbyService? emby,
+}) async {
   late GoRouter router;
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
-        embyAuthServiceProvider.overrideWith((ref) => FakeEmbyAuthService()),
-        embyServiceProvider.overrideWith((ref) => FakeEmbyService()),
+        embyAuthServiceProvider
+            .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
+        embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
       ],
       child: Consumer(
         builder: (context, ref, _) {
@@ -33,6 +41,49 @@ Future<GoRouter> _pumpApp(WidgetTester tester) async {
   );
   await tester.pumpAndSettle();
   return router;
+}
+
+Map<String, dynamic> _sessionJson({String id = 's1'}) => {
+      'id': id,
+      'serverId': id,
+      'serverUrl': 'https://$id.example',
+      'serverName': '家庭NAS',
+      'userId': 'uid',
+      'username': 'user',
+      'accessToken': 'token',
+    };
+
+/// 首页有 4 个媒体库可滚动（posterUrl 为 null，不触发图片加载动画）。
+FakeEmbyService _scrollableEmby() => FakeEmbyService(
+      libraries: List.generate(
+        4,
+        (i) => LibraryFolder(
+          id: 'lib$i',
+          name: '媒体库$i',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+      ),
+      items: List.generate(
+        12,
+        (i) => MediaItem(id: 'm$i', name: '影片$i', type: 'Movie'),
+      ),
+    );
+
+double _navOpacity(WidgetTester tester) {
+  final opacities = tester.widgetList<AnimatedOpacity>(
+    find.descendant(
+      of: find.byType(MainShell),
+      matching: find.byType(AnimatedOpacity),
+    ),
+  );
+  // 导航显隐的 AnimatedOpacity 是第一个且唯一带 300ms 的
+  return opacities
+      .firstWhere(
+        (o) => o.duration == const Duration(milliseconds: 300),
+        orElse: () => opacities.first,
+      )
+      .opacity;
 }
 
 int _shellIndex(WidgetTester tester) {
@@ -102,13 +153,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(DetailScreen), findsOneWidget);
-    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(ShellNavBar), findsNothing);
 
     router.pop();
     await tester.pumpAndSettle();
 
     expect(find.byType(DetailScreen), findsNothing);
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(ShellNavBar), findsOneWidget);
     expect(find.byType(HomeScreen), findsOneWidget);
   });
 
@@ -122,6 +173,59 @@ void main() {
     expect(insets.left, 12);
     expect(insets.right, 12);
     expect(insets.bottom, 4);
+  });
+
+  testWidgets('首页滑到底部导航胶囊淡出隐藏，回滚立即显示', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {'s1': _sessionJson()},
+    );
+    await _pumpApp(tester, auth: auth, emby: _scrollableEmby());
+
+    expect(_navOpacity(tester), 1.0);
+
+    // 滑到最底部 → 淡出隐藏
+    await tester.drag(find.byType(ListView).first, const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    expect(_navOpacity(tester), 0.0);
+
+    // 回滚 → 淡入显示
+    await tester.drag(find.byType(ListView).first, const Offset(0, 400));
+    await tester.pumpAndSettle();
+    expect(_navOpacity(tester), 1.0);
+  });
+
+  testWidgets('非首页标签滚动不隐藏导航（仅首页生效）', (tester) async {
+    await _pumpApp(tester);
+
+    await tester.tap(find.text('设置'));
+    await tester.pumpAndSettle();
+    expect(_shellIndex(tester), 3);
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, -2000));
+    await tester.pumpAndSettle();
+    expect(_navOpacity(tester), 1.0);
+  });
+
+  testWidgets('长按导航拖动，松手落点切换标签', (tester) async {
+    await _pumpApp(tester);
+
+    final navRect = tester.getRect(find.byType(ShellNavBar));
+    final gesture = await tester.startGesture(
+      Offset(navRect.left + 100, navRect.center.dy),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+
+    // 拖到第三格中部松手
+    await gesture.moveTo(
+      Offset(navRect.left + navRect.width * 0.62, navRect.center.dy),
+    );
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(_shellIndex(tester), 2);
+    expect(find.byType(AgoraConfigScreen), findsOneWidget);
   });
 
   testWidgets('顶层路由表包含分类 / 详情 / 播放 / 房间', (tester) async {

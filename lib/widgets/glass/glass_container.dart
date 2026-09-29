@@ -38,7 +38,11 @@ class GlassContainer extends ConsumerWidget {
             ? LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [tint, tint.withValues(alpha: tint.a * 0.82)],
+                colors: [
+                  Color.lerp(tint, Colors.white, 0.06)!,
+                  tint,
+                  tint.withValues(alpha: tint.a * 0.72),
+                ],
               )
             : null,
         borderRadius: borderRadius,
@@ -62,6 +66,17 @@ class GlassContainer extends ConsumerWidget {
     }
 
     content = ClipRRect(borderRadius: borderRadius, child: content);
+
+    // 悬浮投影画在裁剪层之外，避免被 ClipRRect 吃掉
+    if (glassEnabled) {
+      content = DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: borderRadius,
+          boxShadow: GlassConfig.panelShadow,
+        ),
+        child: content,
+      );
+    }
 
     if (margin != null) {
       content = Padding(padding: margin!, child: content);
@@ -107,7 +122,7 @@ class GlassBackdrop extends ConsumerWidget {
   }
 }
 
-/// 面板高光描边：顶部更亮、向下渐隐，模拟玻璃边缘反光。
+/// 面板高光描边：外圈亮线（顶部更亮、向下渐隐）+ 内圈暗线，模拟玻璃厚度折射。
 class GlassRimPainter extends CustomPainter {
   const GlassRimPainter(this.borderRadius);
 
@@ -117,7 +132,9 @@ class GlassRimPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     final rect = Offset.zero & size;
-    final paint = Paint()
+
+    // 外圈亮边
+    final highlight = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..shader = const LinearGradient(
@@ -125,7 +142,14 @@ class GlassRimPainter extends CustomPainter {
         end: Alignment.bottomCenter,
         colors: [GlassConfig.highlightTop, GlassConfig.highlightBottom],
       ).createShader(rect);
-    canvas.drawRRect(borderRadius.toRRect(rect).deflate(0.5), paint);
+    canvas.drawRRect(borderRadius.toRRect(rect).deflate(0.5), highlight);
+
+    // 内圈玻璃厚度暗线
+    final inner = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = GlassConfig.innerRimColor;
+    canvas.drawRRect(borderRadius.toRRect(rect).deflate(1.5), inner);
   }
 
   @override

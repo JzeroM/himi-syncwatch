@@ -10,10 +10,10 @@ class GlassConfig {
   const GlassConfig._();
 
   /// 背景模糊半径（逻辑像素）。
-  static const double blurSigma = 18;
+  static const double blurSigma = 20;
 
   /// 模糊后叠加的饱和度增强系数。
-  static const double saturation = 1.4;
+  static const double saturation = 1.6;
 
   /// 面板着色（底部导航胶囊 / 顶栏胶囊 / 浮动底栏）。
   static const Color panelTint = Color(0x401A1D23);
@@ -29,8 +29,20 @@ class GlassConfig {
   static const Color rimColor = Color(0x33FFFFFF);
 
   /// 内侧高光渐变（顶部更亮，底部渐隐）。
-  static const Color highlightTop = Color(0x66FFFFFF);
+  static const Color highlightTop = Color(0x8CFFFFFF);
   static const Color highlightBottom = Color(0x00FFFFFF);
+
+  /// 玻璃厚度暗线（外亮线内侧的 0.5px 折射暗边）。
+  static const Color innerRimColor = Color(0x33000000);
+
+  /// 悬浮投影（让玻璃面板与背景产生距离感）。
+  static const List<BoxShadow> panelShadow = [
+    BoxShadow(
+      color: Color(0x59000000),
+      blurRadius: 16,
+      offset: Offset(0, 6),
+    ),
+  ];
 
   /// 底部导航在每个标签页内容区预留的高度（不含安全区）。
   static const double shellBottomReserve = 96;

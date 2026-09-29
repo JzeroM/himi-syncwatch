@@ -1,65 +1,79 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 /// 四标签底部导航壳：首页 / Emby服务器 / 声网配置 / 设置。
 ///
 /// 浮动玻璃胶囊导航，`extendBody` 让页面内容延伸到导航之下。
-class MainShell extends StatelessWidget {
+/// 仅首页：滑到底部时胶囊淡出隐藏，回滚立即恢复。
+class MainShell extends StatefulWidget {
   const MainShell({super.key, required this.shell});
 
   final StatefulNavigationShell shell;
 
   @override
+  State<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<MainShell> {
+  bool _navVisible = true;
+
+  bool _handleScroll(ScrollNotification notification) {
+    // 仅首页标签响应滚动显隐
+    if (widget.shell.currentIndex != 0) return false;
+    final metrics = notification.metrics;
+    if (metrics.maxScrollExtent <= 0) return false;
+
+    if (metrics.pixels >= metrics.maxScrollExtent - 8) {
+      if (_navVisible) setState(() => _navVisible = false);
+    } else if ((notification is ScrollUpdateNotification &&
+            (notification.scrollDelta ?? 0) < 0) ||
+        metrics.pixels < metrics.maxScrollExtent - 32) {
+      if (!_navVisible) setState(() => _navVisible = true);
+    }
+    return false;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    // 悬浮胶囊尽量贴近屏幕底（参考悬浮导航样式），仅保留少量手势空间
-    final bottomGap = (bottomInset - 24).clamp(0.0, double.infinity) + 4;
+    // 悬浮胶囊贴近屏幕底，仅保留少量手势空间
+    final bottomGap = bottomInset > 0 ? 6.0 : 4.0;
 
     return Scaffold(
       extendBody: true,
-      body: shell,
-      bottomNavigationBar: Padding(
-        key: const ValueKey('shellNavBarPadding'),
-        padding: EdgeInsets.fromLTRB(12, 0, 12, bottomGap),
-        child: GlassContainer(
-          borderRadius: const BorderRadius.all(Radius.circular(28)),
-          padding: EdgeInsets.zero,
-          child: NavigationBar(
-            height: 68,
-            backgroundColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            indicatorColor: Colors.white24,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            selectedIndex: shell.currentIndex,
-            onDestinationSelected: (index) {
-              shell.goBranch(
-                index,
-                initialLocation: index == shell.currentIndex,
-              );
-            },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
-                label: '首页',
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _handleScroll,
+        child: widget.shell,
+      ),
+      bottomNavigationBar: AnimatedSlide(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInCubic,
+        offset: _navVisible ? Offset.zero : const Offset(0, 1.5),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 300),
+          opacity: _navVisible ? 1 : 0,
+          child: IgnorePointer(
+            ignoring: !_navVisible,
+            child: Padding(
+              key: const ValueKey('shellNavBarPadding'),
+              padding: EdgeInsets.fromLTRB(12, 0, 12, bottomGap),
+              child: GlassContainer(
+                borderRadius: const BorderRadius.all(Radius.circular(28)),
+                padding: EdgeInsets.zero,
+                child: ShellNavBar(
+                  currentIndex: widget.shell.currentIndex,
+                  onSelect: (index) {
+                    widget.shell.goBranch(
+                      index,
+                      initialLocation: index == widget.shell.currentIndex,
+                    );
+                    if (!_navVisible) setState(() => _navVisible = true);
+                  },
+                ),
               ),
-              NavigationDestination(
-                icon: Icon(Icons.dns_outlined),
-                selectedIcon: Icon(Icons.dns),
-                label: 'Emby服务器',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.key_outlined),
-                selectedIcon: Icon(Icons.key),
-                label: '声网配置',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings),
-                label: '设置',
-              ),
-            ],
+            ),
           ),
         ),
       ),
