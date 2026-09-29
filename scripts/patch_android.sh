@@ -69,6 +69,12 @@ def patch_app(path):
 
     # applicationId（flutter create 生成的可能是 com.himi.himi_syncwatch，需统一）
     rep(r'applicationId\s*=\s*"[^"]*"', 'applicationId = "com.himi.syncwatch"')
+    # namespace 必须与仓库 Kotlin 包名一致：manifest 里的 `.MainActivity`
+    # 是相对 namespace 解析的。flutter create 生成的模板是
+    # com.himi.himi_syncwatch，若不同步就会绑到模板那个空 MainActivity，
+    # 仓库实现（含 com.himi/dolby_vision 通道注册）永远不生效，
+    # 真机上 DV 探测报 MissingPluginException。
+    rep(r'namespace\s*=\s*"[^"]*"', 'namespace = "com.himi.syncwatch"')
     # compileSdk / minSdk
     rep(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36')
     rep(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24')

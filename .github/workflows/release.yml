@@ -36,6 +36,11 @@ jobs:
       - name: 生成 Android 平台文件
         run: |
           cp -r lib /tmp/lib_backup
+          # android/app/src/main 是唯一事实来源：DV Kotlin 插件、HIMI 标签、
+          # 权限清单都在其中，flutter create 的模板一概没有。
+          # 不备份就整体替换的话，产物会缺 com.himi/dolby_vision 通道，
+          # 真机表现为 MissingPluginException（且打包不报错，极难发现）。
+          cp -r android/app/src/main /tmp/android_main_backup
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           rm -rf android ios windows macos linux web build .dart_tool
@@ -43,6 +48,10 @@ jobs:
           mkdir -p android
           cp -a /tmp/temp_proj/android/* android/
           rm -rf /tmp/temp_proj
+          # 整体替换而非只补 kotlin/：连带还原 manifest 的 label 与全部权限，
+          # 也顺带清掉模板同名的空 MainActivity，避免两个实现并存。
+          rm -rf android/app/src/main
+          cp -a /tmp/android_main_backup android/app/src/main
           rm -rf lib
           cp -r /tmp/lib_backup lib
           cp /tmp/pubspec.yaml.bak pubspec.yaml
@@ -58,6 +67,10 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: bash scripts/patch_android_signing.sh
+
+      # 打包前拦截源码缺失：这类问题构建阶段零报错，只在真机上炸
+      - name: 校验 Android 源码完整性
+        run: chmod +x scripts/verify_sources.sh && bash scripts/verify_sources.sh
 
       - run: flutter pub get
       - run: flutter build apk --release --split-per-abi
@@ -89,6 +102,10 @@ jobs:
       - name: 生成 iOS 平台文件
         run: |
           cp -r lib /tmp/lib_backup
+          # Info.plist（HIMI 显示名、权限文案）与 Assets.xcassets（应用图标、
+          # 启动图）是仓库自定义内容，flutter create 模板一概没有。
+          cp -r ios/Runner/Info.plist /tmp/ios_Info.plist.bak
+          cp -r ios/Runner/Assets.xcassets /tmp/ios_assets_backup
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp AGENTS.md /tmp/AGENTS.md.bak || true
           rm -rf android ios windows macos linux web build .dart_tool
@@ -96,6 +113,9 @@ jobs:
           mkdir -p ios
           cp -a /tmp/temp_proj/ios/* ios/
           rm -rf /tmp/temp_proj
+          rm -rf ios/Runner/Info.plist ios/Runner/Assets.xcassets
+          cp /tmp/ios_Info.plist.bak ios/Runner/Info.plist
+          cp -a /tmp/ios_assets_backup ios/Runner/Assets.xcassets
           rm -rf lib
           cp -r /tmp/lib_backup lib
           cp /tmp/pubspec.yaml.bak pubspec.yaml
@@ -103,11 +123,23 @@ jobs:
 
       - name: 添加自定义权限
         run: |
-          plutil -insert NSMicrophoneUsageDescription -string "声网实时消息需要麦克风权限" ios/Runner/Info.plist
-          plutil -insert NSCameraUsageDescription -string "扫描二维码加入房间" ios/Runner/Info.plist
-          plutil -insert NSPhotoLibraryUsageDescription -string "从相册选择二维码图片加入房间" ios/Runner/Info.plist
-          plutil -insert NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}' ios/Runner/Info.plist
-          plutil -insert UIBackgroundModes -json '["audio"]' ios/Runner/Info.plist
+          # 幂等写入：仓库 Info.plist 已含这些 key，-insert 遇到已存在会报错；
+          # 改为先 -replace、失败再 -insert，模板与仓库版本都能跑通。
+          plist_set() {
+            local key=$1; shift
+            plutil -replace "$key" "$@" ios/Runner/Info.plist 2>/dev/null \
+              || plutil -insert "$key" "$@" ios/Runner/Info.plist
+          }
+          plist_set NSMicrophoneUsageDescription -string "声网实时消息需要麦克风权限"
+          plist_set NSCameraUsageDescription -string "扫描二维码加入房间"
+          plist_set NSPhotoLibraryUsageDescription -string "从相册选择二维码图片加入房间"
+          plist_set NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}'
+          plist_set UIBackgroundModes -json '["audio"]'
+          echo "CFBundleDisplayName = $(plutil -extract CFBundleDisplayName raw ios/Runner/Info.plist)"
+
+      # 打包前拦截源码缺失：这类问题构建阶段零报错，只在产物上表现为图标/显示名不对
+      - name: 校验平台源码完整性
+        run: bash scripts/verify_sources.sh
 
       - name: 设置 iOS 最低部署版本 + 禁用签名
         run: |
