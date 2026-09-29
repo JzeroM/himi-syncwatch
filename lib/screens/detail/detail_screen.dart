@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -392,30 +394,43 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accentUrl = _item?.backdropUrl ?? _item?.posterUrl ?? '';
+    final accent = ref.watch(posterColorProvider(accentUrl)).valueOrNull;
+    final base = Theme.of(context).scaffoldBackgroundColor;
+
     return Scaffold(
       extendBody: true,
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadDetails,
-                        child: const Text('重试'),
-                      ),
-                    ],
-                  ),
-                )
-              : _buildContent(),
+      body: AnimatedContainer(
+        key: const Key('detailBackground'),
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          gradient: PosterPalette.pageGradient(accent, base),
+        ),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(_error!,
+                            style: const TextStyle(color: Colors.red)),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _loadDetails,
+                          child: const Text('重试'),
+                        ),
+                      ],
+                    ),
+                  )
+                : _buildContent(accent, base),
+      ),
       bottomNavigationBar:
           _item != null ? _buildBottomBar() : null,
     );
@@ -498,7 +513,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildContent(Color? accent, Color base) {
     if (_item == null) return const SizedBox();
     final item = _item!;
 
@@ -534,7 +549,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       colors: [
                         Colors.transparent,
                         Colors.black.withValues(alpha: 0.4),
-                        Colors.black.withValues(alpha: 0.9),
+                        if (accent != null)
+                          Color.lerp(accent, base, 0.6)!
+                        else
+                          Colors.black.withValues(alpha: 0.9),
                       ],
                       stops: const [0.0, 0.5, 1.0],
                     ),

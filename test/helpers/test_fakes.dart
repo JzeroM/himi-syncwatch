@@ -87,9 +87,18 @@ class FakeEmbyAuthService extends EmbyAuthService {
 
 /// 不发起真实网络请求的 Emby 服务。
 class FakeEmbyService extends EmbyService {
+  FakeEmbyService({this.item, this.similar = const []});
+
+  final MediaItem? item;
+  final List<MediaItem> similar;
+
   @override
-  Future<MediaItem?> getItemDetails(String id) async => null;
+  Future<MediaItem?> getItemDetails(String id) async => item;
 
   @override
   Future<List<LibraryFolder>> getLibraries() async => [];
+
+  @override
+  Future<List<MediaItem>> getSimilarItems(String itemId, {int limit = 10}) async =>
+      similar;
 }
