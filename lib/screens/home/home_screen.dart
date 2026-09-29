@@ -95,6 +95,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           limit: 20,
           includeItemTypes: 'Movie,Series',
           fields: 'ImageTags,PrimaryImageAspectRatio,ProductionYear',
+          sortBy: 'DateCreated',
+          sortOrder: 'Descending',
         );
         return _CategoryData(folder: lib, items: items);
       }).toList();
