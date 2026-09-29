@@ -159,9 +159,10 @@ if [ -d ios ]; then
     err "缺少 $PLIST"
   fi
 
-  # 图标：Contents.json 的 filename 必须都能对上实际文件。
-  # 曾出现文件被改名成 .png.img 而引用仍是 .png，引用整体失效、
-  # 构建却照常通过，产物落到默认图标。
+  # 图标：Contents.json 的 filename 必须都能对上实际文件，且文件非空。
+  # 曾出现文件被改名成 .png.img 而引用仍是 .png，引用整体失效、构建却照常
+  # 通过；又曾出现文件名正确但内容 0 字节，恢复进 CI 后 Xcode 报
+  # "AppIcon did not have any applicable content" 直接失败。两种都要拦。
   sec "iOS · 图标资源"
   if [ -d "$ASSETS" ]; then
     missing=$(python3 - "$ASSETS" <<'PYEOF'
@@ -177,15 +178,20 @@ for name in ('AppIcon.appiconset', 'LaunchImage.imageset'):
         data = json.load(f)
     for item in data.get('images', []):
         fn = item.get('filename')
-        if fn and not os.path.exists(os.path.join(d, fn)):
-            missing.append(f'{name}/{fn}')
+        if not fn:
+            continue
+        p = os.path.join(d, fn)
+        if not os.path.exists(p):
+            missing.append(f'{name}/{fn}(缺失)')
+        elif os.path.getsize(p) == 0:
+            missing.append(f'{name}/{fn}(0字节)')
 print('; '.join(missing))
 PYEOF
-) || missing="(解析失败)"
+  ) || missing="(解析失败)"
     if [ -z "$missing" ]; then
-      ok "Assets.xcassets 引用完整（AppIcon + LaunchImage）"
+      ok "Assets.xcassets 引用完整且文件有效（AppIcon + LaunchImage）"
     else
-      err "图标引用失效: $missing"
+      err "图标资源不可用: $missing"
     fi
   else
     err "缺少 $ASSETS（应用图标会被模板默认图标覆盖）"
