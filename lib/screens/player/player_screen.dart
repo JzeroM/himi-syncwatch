@@ -22,6 +22,8 @@ import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
+import 'package:himi_syncwatch/services/decoder_report.dart';
+import 'package:himi_syncwatch/services/codec_mime_map.dart';
 import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
@@ -328,7 +330,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   int _audioBitrate = 0;
   String _stereoDownmix = '关';
   String _actualVideoDecoders = '-';
+  /// mdk `video.decoder` 属性原值，字段名与内容不符，如实单列展示
+  String _mdkRawDecoder = '-';
   String _audioBackend = '-';
+  /// 实际生效的解码器（框架名由 mdk 事件给出，底层 codec 名由平台预选推断）
+  DecoderReport _decoderReport = DecoderReport.empty;
+  String _codecProbeKey = '';
   // 卡顿诊断
   final PlaybackDiagnostics _diag = PlaybackDiagnostics();
   String _diagSummary = '';
@@ -427,16 +434,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
 
       // mdk 上报的 video.decoder 不可靠（实测返回 `scale=3840x1608`
-      // 这类与解码器无关的值），配置项以 videoDecoders 为准。
-      final actualDec = _player.getProperty('video.decoder');
-      final decoders = _player.videoDecoders;
-      final actualDecoders = (actualDec != null && actualDec.isNotEmpty)
-          ? '${decoders.join(',')} (mdk: $actualDec)'
-          : decoders.join(',');
+      // 这类与解码器无关的值）。配置项以 videoDecoders 为准；mdk 原值
+      // 单独一行如实展示，它与实际解码器的偏差本身就是有用的证据。
+      final mdkRawDecoder = _player.getProperty('video.decoder') ?? '-';
+      final actualDecoders = _player.videoDecoders.join(',');
 
       // 降混设置
       final dm = ref.read(settingsProvider).stereoDownmix ? '开' : '关';
       final ab = ref.read(settingsProvider).audioRenderer;
+
+      // 平台预选解码器：签名未变则跳过，避免每个采样周期跨 MethodChannel
+      _maybeProbeCodecs(vCodec, vWidth, vHeight, dovi, aCodec);
 
       setState(() {
         _bufferedMs = buffered;
@@ -458,12 +466,85 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _audioBitrate = aBitrate > 0 ? (aBitrate / 1000).round() : 0;
         _stereoDownmix = dm;
         _actualVideoDecoders = actualDecoders;
+        _mdkRawDecoder = mdkRawDecoder;
         _audioBackend = ab;
         _diagSummary = _diag.summary();
       });
     } catch (e) {
       LogService().log('Diag', '诊断采集失败: $e');
     }
+  }
+
+  /// 按格式签名去重地探测平台预选解码器。
+  ///
+  /// mdk 事件只给出解码框架名（`AMediaCodec` / `FFmpeg`），无法区分
+  /// 框架内落到硬件还是软件实现；这里补上底层 codec 名。
+  ///
+  /// 结果是「Android 会为该格式选谁」的**推断**，展示时须标注置信度。
+  /// 签名不变直接返回，防止每个采样周期都跨一次 MethodChannel。
+  Future<void> _maybeProbeCodecs(
+    String videoCodec,
+    int width,
+    int height,
+    int doviProfile,
+    String audioCodec,
+  ) async {
+    final key = '$videoCodec|${width}x$height|$doviProfile|$audioCodec';
+    if (key == _codecProbeKey) return;
+    _codecProbeKey = key;
+
+    final vMime = CodecMimeMap.video(videoCodec);
+    final aMime = CodecMimeMap.audio(audioCodec);
+    final isDv = doviProfile > 0;
+
+    // mime 映射未命中时保持空值，由 verdict 判为未知，绝不猜。
+    final video = vMime == null
+        ? null
+        : await DolbyVisionService.selectDecoder(
+            mime: vMime,
+            width: width > 0 ? width : null,
+            height: height > 0 ? height : null,
+            dolbyVision: isDv,
+          );
+    final audio =
+        aMime == null ? null : await DolbyVisionService.selectDecoder(mime: aMime);
+
+    if (!mounted) return;
+    setState(() {
+      var report = _decoderReport;
+      if (video != null) {
+        report = report.withVideo(
+          report.video.copyWith(
+            codec: video.picked ?? '',
+            codecIsSoftware: video.isSoftware,
+          ),
+        );
+      }
+      if (audio != null) {
+        report = report.withAudio(
+          report.audio.copyWith(
+            codec: audio.picked ?? '',
+            codecIsSoftware: audio.isSoftware,
+          ),
+        );
+      }
+      _decoderReport = report;
+    });
+  }
+
+  /// 记录 mdk 上报的实际解码框架。
+  ///
+  /// mdk 每尝试一个解码器就发一次事件（含失败回退），因此取**最新值**，
+  /// 回退过程在面板上直接可见。error 字段一并保留，成功为 0。
+  void _noteDecoderEvent(mdk.MediaEvent event) {
+    final isVideo = event.category == 'decoder.video';
+    final current = isVideo ? _decoderReport.video : _decoderReport.audio;
+    final next = current.copyWith(framework: event.detail, error: event.error);
+    setState(() {
+      _decoderReport = isVideo
+          ? _decoderReport.withVideo(next)
+          : _decoderReport.withAudio(next);
+    });
   }
 
   /// 把 mdk MediaStatus 位标志映射为可读文本。
@@ -724,6 +805,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // 换集：清空上一集的卡顿诊断，避免时间线跨集污染
       _diag.reset();
+      _decoderReport = DecoderReport.empty;
+      _codecProbeKey = '';
 
       // 第三步：加载流（prepare 会使用已配置好的解码器）
       await _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
@@ -892,6 +975,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _positionNotifier.value = Duration.zero;
       _videoNativeSize = null;
       _diag.reset();
+      _decoderReport = DecoderReport.empty;
+      _codecProbeKey = '';
       _bufProgress = -1;
 
       // 设置媒体并准备播放
@@ -1024,9 +1109,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _bufProgress = event.error;
         case 'thread.video':
         case 'thread.audio':
+        case 'render.video':
+          _diag.addEvent(event.category, event.detail, event.error);
+          if (event.detail.contains('error')) {
+            LogService().log('Diag',
+                '${event.category} 错误: ${event.detail} (${event.error})');
+          }
         case 'decoder.video':
         case 'decoder.audio':
-        case 'render.video':
+          // 拆出来单独处理：实际生效的解码框架即来自这两个事件
+          _noteDecoderEvent(event);
           _diag.addEvent(event.category, event.detail, event.error);
           if (event.detail.contains('error')) {
             LogService().log('Diag',
@@ -2554,6 +2646,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               // 解码器
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualVideoDecoders: _actualVideoDecoders,
+              mdkRawDecoder: _mdkRawDecoder,
+              decoderReport: _decoderReport,
               audioBackend: _audioBackend,
               dvCapability: _embyVideoStream?.isDolbyVision == true
                   ? _dvProbe.summary

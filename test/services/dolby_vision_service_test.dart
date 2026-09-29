@@ -192,4 +192,114 @@ void main() {
       expect(calls, 1);
     });
   });
+
+  group('DolbyVisionService.selectDecoder', () {
+    const channel = MethodChannel('com.himi/dolby_vision');
+
+    setUp(() => DolbyVisionService.isAndroidOverride = true);
+
+    void mockSelect(Map<Object?, Object?> result, void Function(MethodCall)? onCall) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        onCall?.call(call);
+        return result;
+      });
+    }
+
+    test('解析平台预选出的底层 codec 名', () async {
+      mockSelect(const {
+        'picked': 'c2.qti.hevc.decoder',
+        'mime': 'video/hevc',
+        'isSoftware': false,
+        'supported': ['c2.qti.hevc.decoder', 'c2.android.hevc.decoder'],
+        'dvProfiles': [0x0103, 0x0109],
+        'error': null,
+      }, null);
+
+      final s = await DolbyVisionService.selectDecoder(mime: 'video/hevc');
+      expect(s.hasPicked, isTrue);
+      expect(s.picked, 'c2.qti.hevc.decoder');
+      expect(s.mime, 'video/hevc');
+      expect(s.isSoftware, isFalse);
+      expect(s.supported, hasLength(2));
+      expect(s.dvProfiles, [0x0103, 0x0109]);
+    });
+
+    test('DV 内容把 dolbyVision 标记与尺寸一并传给原生', () async {
+      MethodCall? seen;
+      mockSelect(const {'picked': 'c2.qti.hevc.decoder'}, (c) => seen = c);
+
+      await DolbyVisionService.selectDecoder(
+        mime: 'video/hevc',
+        width: 3840,
+        height: 1608,
+        dolbyVision: true,
+      );
+
+      expect(seen?.method, 'selectDecoder');
+      final args = Map<Object?, Object?>.from(seen!.arguments as Map);
+      expect(args['mime'], 'video/hevc');
+      expect(args['width'], 3840);
+      expect(args['height'], 1608);
+      expect(args['dolbyVision'], isTrue);
+    });
+
+    test('软件 codec 被正确标记，交由上层判为软解', () async {
+      mockSelect(const {
+        'picked': 'c2.android.hevc.decoder',
+        'isSoftware': true,
+      }, null);
+
+      final s = await DolbyVisionService.selectDecoder(mime: 'video/hevc');
+      expect(s.isSoftware, isTrue);
+    });
+
+    test('无匹配解码器时 hasPicked 为 false', () async {
+      mockSelect(const {'picked': null, 'error': '无匹配解码器'}, null);
+      final s = await DolbyVisionService.selectDecoder(mime: 'video/hevc');
+      expect(s.hasPicked, isFalse);
+      expect(s.display, '探测失败');
+    });
+
+    test('缺失字段按 null 解析，不抛异常', () async {
+      mockSelect(const <Object?, Object?>{}, null);
+      final s = await DolbyVisionService.selectDecoder(mime: 'video/hevc');
+      expect(s.hasPicked, isFalse);
+      expect(s.isSoftware, isNull);
+      expect(s.supported, isEmpty);
+      expect(s.dvProfiles, isEmpty);
+    });
+
+    test('探测异常时返回错误信息', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'ERR');
+      });
+      final s = await DolbyVisionService.selectDecoder(mime: 'video/hevc');
+      expect(s.error, isNotNull);
+    });
+
+    test('非 Android 平台不调用平台通道', () async {
+      DolbyVisionService.isAndroidOverride = false;
+      var called = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        called = true;
+        return const {};
+      });
+
+      final s = await DolbyVisionService.selectDecoder(mime: 'video/hevc');
+      expect(called, isFalse);
+      expect(s.error, '非 Android 平台');
+    });
+
+    test('结果不缓存——格式变化时需重新探测', () async {
+      var calls = 0;
+      mockSelect(const {'picked': 'c2.qti.hevc.decoder'}, (_) => calls++);
+
+      await DolbyVisionService.selectDecoder(mime: 'video/hevc');
+      await DolbyVisionService.selectDecoder(mime: 'video/hevc');
+      expect(calls, 2);
+    });
+  });
 }

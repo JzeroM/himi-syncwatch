@@ -101,6 +101,59 @@ class DvProbeResult {
   }
 }
 
+/// 平台预选的解码器。
+///
+/// 注意：这是「Android 会为该格式选谁」的**推断**，
+/// 并非「mdk 实际已选中谁」的实证。两者可能因 mdk 的 DV 策略而分叉，
+/// 因此调用方在展示时必须标注置信度。
+class CodecSelection {
+  const CodecSelection({
+    this.picked,
+    this.mime,
+    this.isSoftware,
+    this.supported = const [],
+    this.dvProfiles = const [],
+    this.error,
+  });
+
+  /// findDecoderForFormat 选出的 codec 名
+  final String? picked;
+
+  /// 命中时使用的 MIME（DV 场景下可能是 video/dolby-vision 或 video/hevc）
+  final String? mime;
+
+  /// [picked] 是否为软件实现
+  final bool? isSoftware;
+
+  /// 经 isFormatSupported 逐个校验后，真正吃下该格式的全部候选
+  final List<String> supported;
+
+  /// [picked] 声明的 DV profile（0x0100 段）
+  final List<int> dvProfiles;
+
+  final String? error;
+
+  static const unknown = CodecSelection();
+
+  bool get hasPicked => picked != null && picked!.isNotEmpty;
+
+  String get display =>
+      hasPicked ? picked! : (error == null ? '未探测' : '探测失败');
+
+  factory CodecSelection.fromMap(Map<Object?, Object?> map) => CodecSelection(
+        picked: map['picked'] as String?,
+        mime: map['mime'] as String?,
+        isSoftware: map['isSoftware'] as bool?,
+        supported: ((map['supported'] as List<Object?>?) ?? const [])
+            .whereType<String>()
+            .toList(growable: false),
+        dvProfiles: ((map['dvProfiles'] as List<Object?>?) ?? const [])
+            .map((e) => (e as num?)?.toInt() ?? 0)
+            .toList(growable: false),
+        error: map['error'] as String?,
+      );
+}
+
 class DolbyVisionService {
   static const _channel = MethodChannel('com.himi/dolby_vision');
 
@@ -163,6 +216,36 @@ class DolbyVisionService {
 
   /// 是否支持 DV 硬件解码。探测异常时返回 false，调用方不应据此强制软件解码。
   static Future<bool> isSupported() async => (await probe()).hardware;
+
+  /// 让平台为给定格式预选解码器。
+  ///
+  /// 复用 `com.himi/dolby_vision` 通道（该原生插件本就是 MediaCodec 能力探测器），
+  /// 不再单开一套注册。结果随格式而变，故不做缓存。
+  static Future<CodecSelection> selectDecoder({
+    required String mime,
+    int? width,
+    int? height,
+    bool dolbyVision = false,
+  }) async {
+    if (!_isAndroid) {
+      return const CodecSelection(error: '非 Android 平台');
+    }
+    try {
+      final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'selectDecoder',
+        <String, Object?>{
+          'mime': mime,
+          'width': width,
+          'height': height,
+          'dolbyVision': dolbyVision,
+        },
+      );
+      if (raw == null) return CodecSelection.unknown;
+      return CodecSelection.fromMap(raw);
+    } catch (e) {
+      return CodecSelection(error: e.toString());
+    }
+  }
 
   @visibleForTesting
   static void resetCache() {

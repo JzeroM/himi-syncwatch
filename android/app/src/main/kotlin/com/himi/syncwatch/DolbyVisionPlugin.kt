@@ -2,6 +2,7 @@ package com.himi.syncwatch
 
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
+import android.media.MediaFormat
 import android.os.Build
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -50,8 +51,41 @@ class DolbyVisionPlugin : MethodChannel.MethodCallHandler {
         when (call.method) {
             "isDolbyVisionSupported" -> result.success(probe().supported)
             "getDolbyVisionInfo" -> result.success(probe().toMap())
+            "selectDecoder" -> result.success(
+                selectDecoder(
+                    mime = call.argument<String>("mime"),
+                    width = call.argument<Int>("width"),
+                    height = call.argument<Int>("height"),
+                    dolbyVision = call.argument<Boolean>("dolbyVision") ?: false
+                ).toMap()
+            )
             else -> result.notImplemented()
         }
+    }
+
+    /**
+     * 平台预选解码器。
+     *
+     * [MediaCodecList.findDecoderForFormat] 给出的是「Android 会为该格式选谁」，
+     * 属于推断而非「mdk 实际已选谁」的实证；上层据此标注置信度。
+     * 该 API 自 API 21 起可用，故此处不做 DV 能力（API 29）门控。
+     */
+    data class DecoderSelection(
+        val picked: String?,
+        val mime: String?,
+        val isSoftware: Boolean?,
+        val supported: List<String>,
+        val dvProfiles: List<Int>,
+        val error: String?
+    ) {
+        fun toMap(): Map<String, Any?> = mapOf(
+            "picked" to picked,
+            "mime" to mime,
+            "isSoftware" to isSoftware,
+            "supported" to supported,
+            "dvProfiles" to dvProfiles,
+            "error" to error
+        )
     }
 
     data class DvDecoder(
@@ -136,6 +170,105 @@ class DolbyVisionPlugin : MethodChannel.MethodCallHandler {
         } catch (e: Throwable) {
             DvProbe(false, false, emptyList(), e.toString())
         }
+    }
+
+    private fun selectDecoder(
+        mime: String?,
+        width: Int?,
+        height: Int?,
+        dolbyVision: Boolean
+    ): DecoderSelection {
+        if (mime.isNullOrEmpty()) {
+            return DecoderSelection(null, null, null, emptyList(), emptyList(), "缺少 mime")
+        }
+        // DV 内容优先用标准 MIME；骁龙等平台由 video/hevc 声明，再退到 avc 与厂商私有类型
+        val mimes = if (dolbyVision) {
+            listOf(MIME_DOLBY_VISION, MIME_HEVC, MIME_AVC) + DV_ALT_MIMES.toList()
+        } else {
+            listOf(mime)
+        }
+        return try {
+            val codecList = MediaCodecList(MediaCodecList.ALL_CODECS)
+
+            var picked: String? = null
+            var pickedMime: String? = null
+            var format: MediaFormat? = null
+            for (m in mimes) {
+                val f = buildFormat(m, width, height) ?: continue
+                val name = try {
+                    codecList.findDecoderForFormat(f)
+                } catch (_: Throwable) {
+                    null
+                }
+                if (name != null) {
+                    picked = name
+                    pickedMime = m
+                    format = f
+                    break
+                }
+            }
+
+            if (picked == null || format == null) {
+                return DecoderSelection(
+                    null, null, null, emptyList(), emptyList(), "无匹配解码器"
+                )
+            }
+            val chosen = picked
+            val fmt = format
+
+            // 逐个校验候选，给出「哪些 codec 真能吃下这个格式」的完整对照
+            val supported = mutableListOf<String>()
+            for (info in codecList.codecInfos) {
+                if (info.isEncoder) continue
+                if (mimes.any { supportsFormat(info, it, fmt) }) supported += info.name
+            }
+
+            val pickedInfo = codecList.codecInfos.firstOrNull { it.name == chosen }
+            val dvProfiles = pickedInfo?.let { info ->
+                mimes.flatMap { queryProfileLevels(info, it) ?: emptyList() }
+                    .filter { isDvProfile(it) }
+                    .distinct()
+            } ?: emptyList()
+
+            DecoderSelection(
+                picked = chosen,
+                mime = pickedMime,
+                isSoftware = isSoftwareName(chosen),
+                supported = supported,
+                dvProfiles = dvProfiles,
+                error = null
+            )
+        } catch (e: Throwable) {
+            DecoderSelection(null, null, null, emptyList(), emptyList(), e.toString())
+        }
+    }
+
+    /**
+     * 构造最小 MediaFormat。只在尺寸有效时写入 width/height，
+     * 避免用 0 或虚假尺寸把平台筛选范围限死。
+     */
+    private fun buildFormat(mime: String, width: Int?, height: Int?): MediaFormat? = try {
+        MediaFormat().apply {
+            setString(MediaFormat.KEY_MIME, mime)
+            val w = width ?: 0
+            val h = height ?: 0
+            if (w > 0 && h > 0) {
+                setInteger(MediaFormat.KEY_WIDTH, w)
+                setInteger(MediaFormat.KEY_HEIGHT, h)
+            }
+        }
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun supportsFormat(
+        info: MediaCodecInfo,
+        mime: String,
+        format: MediaFormat
+    ): Boolean = try {
+        info.getCapabilitiesForType(mime).isFormatSupported(format)
+    } catch (_: Throwable) {
+        false
     }
 
     private fun isDvCapableOs(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q

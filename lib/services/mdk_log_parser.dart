@@ -39,10 +39,21 @@ class MdkLogParser {
     'fail',
   ];
 
+  /// mdk 在 FINE 级输出的底层 codec 名，是硬解判定的**实证**，用来交叉
+  /// 验证平台预选（推断）的结论。字段特征明确，用模式而非关键词匹配——
+  /// `AMediaCodec selected video codec name` 不含既有关键词表中的任何词。
+  static final notablePatterns = <RegExp>[
+    RegExp(r'selected\s+(?:video|audio)\s+codec\s+name', caseSensitive: false),
+    RegExp(r'AMediaCodec_createCodecByName:\s*\S', caseSensitive: false),
+  ];
+
   static bool isNotableLine(String line) {
     final l = line.toLowerCase();
     for (final k in notableKeywords) {
       if (l.contains(k)) return true;
+    }
+    for (final p in notablePatterns) {
+      if (p.hasMatch(line)) return true;
     }
     return false;
   }

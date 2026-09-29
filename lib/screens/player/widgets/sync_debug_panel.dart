@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:himi_syncwatch/services/decoder_report.dart';
 
 class SyncDebugPanel extends ConsumerStatefulWidget {
   final bool isHost;
@@ -40,7 +41,17 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
 
   // 解码器
   final String decodeMode;
+
+  /// 用户配置的解码器列表
   final String actualVideoDecoders;
+
+  /// mdk `video.decoder` 属性原值。该字段名与内容不符（实测返回
+  /// `scale=3840x1608` 之类），单列展示以便与实际解码器对照。
+  final String mdkRawDecoder;
+
+  /// 实际生效的解码器：框架名来自 mdk 事件，底层 codec 名为平台预选推断
+  final DecoderReport decoderReport;
+
   final String audioBackend;
 
   /// 设备 Dolby Vision 硬件解码能力摘要（仅 DV 内容时非空）
@@ -83,6 +94,8 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.stereoDownmix,
     required this.decodeMode,
     required this.actualVideoDecoders,
+    required this.mdkRawDecoder,
+    required this.decoderReport,
     required this.audioBackend,
     required this.dvCapability,
     required this.stallSummary,
@@ -241,6 +254,9 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                   if (_sectionDecoder) ...[
                     _debugRow('模式', decodeModeLabel),
                     _debugRow('配置', widget.actualVideoDecoders),
+                    _debugRow('实际解码', widget.decoderReport.video.display),
+                    _debugRow('mdk原值', widget.mdkRawDecoder),
+                    _debugRow('音频实际', widget.decoderReport.audio.display),
                     if (widget.dvCapability.isNotEmpty)
                       _debugRow('DV硬解', widget.dvCapability),
                     _debugRow('音频后端', widget.audioBackend),
@@ -371,6 +387,9 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
     buf.writeln();
     buf.writeln('=== 解码器 ===');
     buf.writeln('模式: ${widget.decodeMode} | 配置: ${widget.actualVideoDecoders}');
+    buf.writeln('实际解码: ${widget.decoderReport.video.display}');
+    buf.writeln('mdk原值: ${widget.mdkRawDecoder}');
+    buf.writeln('音频实际: ${widget.decoderReport.audio.display}');
     if (widget.dvCapability.isNotEmpty) {
       buf.writeln('DV硬解能力: ${widget.dvCapability}');
     }

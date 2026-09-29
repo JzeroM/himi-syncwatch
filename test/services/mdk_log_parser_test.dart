@@ -28,6 +28,36 @@ void main() {
       );
     });
 
+    test('mdk 底层 codec 名单独由模式识别', () {
+      // 该行是硬解判定的实证，用来交叉验证平台预选的推断。
+      // 它不含既有关键词表中的任何词，必须靠模式匹配才能留住。
+      expect(
+        MdkLogParser.isNotableLine(
+          'AMediaCodec selected video codec name: c2.qti.hevc.decoder',
+        ),
+        isTrue,
+      );
+      expect(
+        MdkLogParser.isNotableLine(
+          'AMediaCodec selected audio codec name: c2.qti.audio.decoder',
+        ),
+        isTrue,
+      );
+      expect(
+        MdkLogParser.isNotableLine(
+          'video/hevc AMediaCodec_createCodecByName: c2.android.hevc.decoder',
+        ),
+        isTrue,
+      );
+    });
+
+    test('codec 名单参与保留但不计入速率限流', () {
+      // 速率安全阀只统计状态行；codec 名偶尔出现且信息量高，不该被限流丢弃
+      const line = 'AMediaCodec selected video codec name: c2.qti.hevc.decoder';
+      expect(MdkLogParser.shouldKeep(line), isTrue);
+      expect(MdkLogParser.isRateLimitedLine(line), isFalse);
+    });
+
     test('buffering progress 刷屏既非状态行也非关键行', () {
       // 这一行每秒会刷 10~30 条，早期版本因保留它而误触发 50 行/秒安全阀
       const line = 'buffering progress 12.5%';
