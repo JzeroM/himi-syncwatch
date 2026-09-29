@@ -160,4 +160,83 @@ void main() {
       expect(MdkLogParser.parseCacheSeconds('video info: fps: 24'), isNull);
     });
   });
+
+  group('MdkLogParser 实测解码器名解析', () {
+    // 真机样本：探测预测 c2.dolby.decoder.hevc，实测却是 c2.qti.hevc.decoder。
+    test('提取 selected video codec name（真机实测样本）', () {
+      expect(
+        MdkLogParser.parseSelectedCodec(
+          'AMediaCodec selected video codec name: c2.qti.hevc.decoder',
+          video: true,
+        ),
+        'c2.qti.hevc.decoder',
+      );
+    });
+
+    test('提取 createCodecByName 样本并带 mime 前缀', () {
+      expect(
+        MdkLogParser.parseSelectedCodec(
+          'video/hevc AMediaCodec_createCodecByName: c2.qti.hevc.decoder',
+          video: true,
+        ),
+        'c2.qti.hevc.decoder',
+      );
+    });
+
+    test('行首带 mdk 时间戳前缀时仍可提取', () {
+      expect(
+        MdkLogParser.parseSelectedCodec(
+          '[DD 12:00:01.234][720->0][ffmpeg] '
+          'video/hevc AMediaCodec_createCodecByName: c2.qti.hevc.decoder',
+          video: true,
+        ),
+        'c2.qti.hevc.decoder',
+      );
+    });
+
+    test('音频与视频按 kind 区分，不串台', () {
+      expect(
+        MdkLogParser.parseSelectedCodec(
+          'AMediaCodec selected audio codec name: c2.android.aac.decoder',
+          video: false,
+        ),
+        'c2.android.aac.decoder',
+      );
+      // 同一行用 video 解析应为 null
+      expect(
+        MdkLogParser.parseSelectedCodec(
+          'AMediaCodec selected audio codec name: c2.android.aac.decoder',
+          video: true,
+        ),
+        isNull,
+      );
+      expect(
+        MdkLogParser.parseSelectedCodec(
+          'audio/eac3 AMediaCodec_createCodecByName: c2.qti.eac3.decoder',
+          video: false,
+        ),
+        'c2.qti.eac3.decoder',
+      );
+    });
+
+    // FFmpeg 软解不产生 Android 组件名，必须返回 null 让调用方降级。
+    test('FFmpeg 行不产出 Android 组件名', () {
+      expect(
+        MdkLogParser.parseSelectedCodec('opening ffmpeg audio decoder: eac3',
+            video: false),
+        isNull,
+      );
+      expect(
+        MdkLogParser.parseSelectedCodec('opening ffmpeg audio decoder: eac3',
+            video: true),
+        isNull,
+      );
+    });
+
+    test('无关行返回 null', () {
+      expect(MdkLogParser.parseSelectedCodec('dropped 12 frames', video: true),
+          isNull);
+      expect(MdkLogParser.parseSelectedCodec('', video: true), isNull);
+    });
+  });
 }

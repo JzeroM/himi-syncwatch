@@ -70,17 +70,50 @@ void main() {
   });
 
   group('DecoderTrack.display', () {
-    test('包含框架、底层 codec、判定与 mdk error 码', () {
+    test('包含框架、实测底层 codec、判定与 mdk error 码', () {
       const t = DecoderTrack(
         framework: 'AMediaCodec',
         error: 0,
-        codec: 'c2.qti.hevc.decoder',
+        codec: 'c2.dolby.decoder.hevc',
         codecIsSoftware: false,
+        actualCodec: 'c2.qti.hevc.decoder',
       );
       expect(
         t.display,
         'AMediaCodec → c2.qti.hevc.decoder  硬解(推断)  code 0',
       );
+    });
+
+    // 回归保护：预测值曾被直接放进「实际解码」，真机上视频预测
+    // c2.dolby.decoder.hevc 而实际是 c2.qti.hevc.decoder，直接带偏结论。
+    test('预测值绝不进入 display，即便有实测值以外的 codec', () {
+      const t = DecoderTrack(
+        framework: 'AMediaCodec',
+        codec: 'c2.dolby.decoder.hevc',
+        codecIsSoftware: false,
+      );
+      expect(t.display, isNot(contains('c2.dolby.decoder.hevc')));
+      expect(t.display, 'AMediaCodec  硬解(推断)  code 0');
+    });
+
+    // 音频走 FFmpeg 软解时不涉及 Android 组件，此前输出
+    // `FFmpeg → c2.dolby.eac3.decoder.eac3` 属自相矛盾。
+    test('FFmpeg 软解无实测名时不硬塞 Android 组件名', () {
+      const t = DecoderTrack(
+        framework: 'FFmpeg',
+        codec: 'c2.dolby.eac3.decoder.eac3',
+        codecIsSoftware: true,
+      );
+      expect(t.display, 'FFmpeg  软解(确证)  code 0');
+    });
+
+    test('捕获到实测解码器名后替换显示', () {
+      const t = DecoderTrack(
+        framework: 'FFmpeg',
+        actualCodec: 'c2.some.audio.decoder',
+        codecIsSoftware: false,
+      );
+      expect(t.display, contains('FFmpeg → c2.some.audio.decoder'));
     });
 
     test('失败时保留 mdk 的实际错误码', () {
@@ -111,6 +144,21 @@ void main() {
       expect(n.framework, 'FFmpeg');
       expect(n.error, 3);
       expect(n.codec, 'c2.qti.hevc.decoder');
+      expect(n.codecIsSoftware, isFalse);
+      expect(n.actualCodec, isNull);
+    });
+
+    test('实测解码器名可单独写入且不影响预测值', () {
+      const t = DecoderTrack(
+        framework: 'AMediaCodec',
+        codec: 'c2.dolby.decoder.hevc',
+        codecIsSoftware: false,
+      );
+      expect(t.hasActualCodec, isFalse);
+      final n = t.copyWith(actualCodec: 'c2.qti.hevc.decoder');
+      expect(n.actualCodec, 'c2.qti.hevc.decoder');
+      expect(n.hasActualCodec, isTrue);
+      expect(n.codec, 'c2.dolby.decoder.hevc');
       expect(n.codecIsSoftware, isFalse);
     });
   });

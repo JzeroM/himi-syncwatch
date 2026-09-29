@@ -39,6 +39,7 @@ class DecoderTrack {
     this.error = 0,
     this.codec = '',
     this.codecIsSoftware,
+    this.actualCodec,
   });
 
   /// mdk `decoder.video` / `decoder.audio` 事件 detail，即实际生效的
@@ -48,13 +49,25 @@ class DecoderTrack {
   /// 上述 mdk 事件的 error 字段。成功为 0，失败为具体错误码。
   final int error;
 
-  /// 平台预选出的底层 codec 名，如 `c2.qti.hevc.decoder`；未探测到为空
+  /// **探测预测**的底层 codec 名（来自 DV 能力探测的 `picked`），非实测。
+  ///
+  /// 仅供对照：真机上视频预测 `c2.dolby.decoder.hevc` 而实际创建
+  /// `c2.qti.hevc.decoder`，两者不一致本身就是有用证据。
+  /// 展示时必须标注为预测，绝不可混进「实际解码」。
   final String codec;
 
   /// [codec] 是否为软件实现，由原生 `isSoftwareName` 判定
   final bool? codecIsSoftware;
 
+  /// mdk 日志实测**实际创建**的底层解码器名，如 `c2.qti.hevc.decoder`。
+  ///
+  /// 仅在深度诊断开启时可得（该行属 FINE 级日志）；null 表示尚未捕获。
+  final String? actualCodec;
+
   bool get hasFramework => framework.isNotEmpty;
+
+  /// 是否已捕获实测解码器名。
+  bool get hasActualCodec => actualCodec != null && actualCodec!.isNotEmpty;
 
   /// 判定硬解/软解。
   ///
@@ -87,9 +100,14 @@ class DecoderTrack {
   }
 
   /// `AMediaCodec → c2.qti.hevc.decoder  硬解(推断)  code 0`
+  ///
+  /// 只有 [actualCodec]（mdk 实测）会出现在这里。取不到时不输出 `→` 段——
+  /// FFmpeg 软解本就不涉及 Android 组件，而拿预测值顶替会让报告出现
+  /// `FFmpeg → c2.dolby.eac3.decoder.eac3` 这种自相矛盾的组合。
+  /// 预测值由调用方单独成行展示，标签写明「探测预选」。
   String get display {
     final sb = StringBuffer(hasFramework ? framework : '?');
-    if (codec.isNotEmpty) sb.write(' → $codec');
+    if (hasActualCodec) sb.write(' → $actualCodec');
     sb.write('  ${verdict.label}  code $error');
     return sb.toString();
   }
@@ -112,12 +130,14 @@ class DecoderTrack {
     int? error,
     String? codec,
     bool? codecIsSoftware,
+    String? actualCodec,
   }) =>
       DecoderTrack(
         framework: framework ?? this.framework,
         error: error ?? this.error,
         codec: codec ?? this.codec,
         codecIsSoftware: codecIsSoftware ?? this.codecIsSoftware,
+        actualCodec: actualCodec ?? this.actualCodec,
       );
 }
 

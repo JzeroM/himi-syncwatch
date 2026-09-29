@@ -556,6 +556,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
   }
 
+  /// 记录 mdk 日志里**实际创建**的底层解码器名。
+  ///
+  /// 这是唯一可信的真值来源：DV 能力探测返回的 `picked` 只是预测，
+  /// 真机上视频预测 `c2.dolby.decoder.hevc` 而实际创建 `c2.qti.hevc.decoder`，
+  /// 混进「实际解码」会直接把诊断带偏。该行属 FINE 级日志，
+  /// 仅在深度诊断开启时输出，故 [DecoderTrack.actualCodec] 可能长期为 null。
+  void _noteActualCodec(String line) {
+    final v = MdkLogParser.parseSelectedCodec(line, video: true);
+    final a = MdkLogParser.parseSelectedCodec(line, video: false);
+    if (v == null && a == null) return;
+    setState(() {
+      var r = _decoderReport;
+      if (v != null) r = r.withVideo(r.video.copyWith(actualCodec: v));
+      if (a != null) r = r.withAudio(r.audio.copyWith(actualCodec: a));
+      _decoderReport = r;
+    });
+  }
+
   /// 把 mdk MediaStatus 位标志映射为可读文本。
   /// buffered / stalled / buffering 均反映卡顿，必须显式呈现而非落到 '-'。
   static String _describeMediaStatus(mdk.MediaStatus ms) {
@@ -1264,6 +1282,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           while (_deepNoteLines.length > _deepNoteLineCap) {
             _deepNoteLines.removeAt(0);
           }
+          // 关键行里可能带 mdk 实际创建的解码器名（真值），一并采集。
+          _noteActualCodec(line);
         }
       });
       _deepLogActive = true;

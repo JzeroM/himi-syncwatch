@@ -105,4 +105,37 @@ class MdkLogParser {
     if (m == null) return null;
     return double.tryParse(m.group(1)!);
   }
+
+  /// 提取 mdk **实际创建**的底层解码器名（实测真值）。
+  ///
+  /// 这是唯一可信的来源：DV 能力探测返回的 `picked` 只是**预测**，
+  /// 与真值可能完全不同——真机上探测预测 `c2.dolby.decoder.hevc`，
+  /// 实际却创建了 `c2.qti.hevc.decoder`；音频预测 `c2.dolby.eac3.decoder.eac3`，
+  /// 实际走的是 FFmpeg 软解、根本不涉及 Android 组件。
+  ///
+  /// 真机样本（log.status=2 才输出，属 FINE 级）：
+  /// ```
+  /// AMediaCodec selected video codec name: c2.qti.hevc.decoder
+  /// video/hevc AMediaCodec_createCodecByName: c2.qti.hevc.decoder
+  /// AMediaCodec selected audio codec name: c2.dolby.eac3.decoder.eac3
+  /// audio/eac3 AMediaCodec_createCodecByName: XXX
+  /// ```
+  /// 取不到返回 null，由调用方决定降级展示，绝不回退到预测值冒充真值。
+  static String? parseSelectedCodec(String line, {required bool video}) {
+    final kind = video ? 'video' : 'audio';
+    final m = RegExp(
+      'selected\\s+$kind\\s+codec\\s+name:\\s*(\\S+)',
+      caseSensitive: false,
+    ).firstMatch(line);
+    if (m != null) return m.group(1);
+
+    // 形如 `video/hevc AMediaCodec_createCodecByName: c2.qti.hevc.decoder`，
+    // 行首可能带 mdk 自身的时间戳/标签前缀，故不锚定行首。
+    final m2 = RegExp(
+      '$kind/[a-z0-9._+-]+\\s+AMediaCodec_createCodecByName:\\s*(\\S+)',
+      caseSensitive: false,
+    ).firstMatch(line);
+    if (m2 != null) return m2.group(1);
+    return null;
+  }
 }

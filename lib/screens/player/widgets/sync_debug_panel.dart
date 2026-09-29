@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/decoder_report.dart';
+import 'package:himi_syncwatch/services/diagnostic_export.dart';
 
 class SyncDebugPanel extends ConsumerStatefulWidget {
   final bool isHost;
@@ -261,6 +262,9 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     _debugRow('实际解码', widget.decoderReport.video.display),
                     _debugRow('mdk原值', widget.mdkRawDecoder),
                     _debugRow('音频实际', widget.decoderReport.audio.display),
+                    _debugRow(
+                        '探测预选',
+                        DiagnosticExport.formatPredicted(widget.decoderReport)),
                     if (widget.dvCapability.isNotEmpty)
                       _debugRow('DV硬解', widget.dvCapability),
                     _debugRow('音频后端', widget.audioBackend),
@@ -395,6 +399,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
     buf.writeln('实际解码: ${widget.decoderReport.video.display}');
     buf.writeln('mdk原值: ${widget.mdkRawDecoder}');
     buf.writeln('音频实际: ${widget.decoderReport.audio.display}');
+    buf.writeln(DiagnosticExport.formatPredicted(widget.decoderReport));
     if (widget.dvCapability.isNotEmpty) {
       buf.writeln('DV硬解能力: ${widget.dvCapability}');
     }

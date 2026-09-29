@@ -47,8 +47,9 @@ void main() {
         decoderReport: const DecoderReport(
           video: DecoderTrack(
             framework: 'AMediaCodec',
-            codec: 'c2.qti.hevc.decoder',
+            codec: 'c2.dolby.decoder.hevc',
             codecIsSoftware: false,
+            actualCodec: 'c2.qti.hevc.decoder',
           ),
           audio: DecoderTrack(framework: 'FFmpeg'),
         ),
@@ -60,6 +61,45 @@ void main() {
       expect(report, contains('mdk原值: c2.qti.hevc.decoder'));
       expect(report, contains('音频实际: FFmpeg'));
       expect(report, contains('软解(确证)'));
+    });
+
+    // 回归保护：预测值曾被直接塞进「实际解码」，真机上与实测值
+    // 完全不同（c2.dolby.decoder.hevc vs c2.qti.hevc.decoder）。
+    test('预测值只出现在探测预选行，不进实际解码行', () {
+      final report = build(
+        decoderReport: const DecoderReport(
+          video: DecoderTrack(
+            framework: 'FFmpeg',
+            codec: 'c2.dolby.eac3.decoder.eac3',
+            codecIsSoftware: true,
+          ),
+        ),
+      );
+      final actualLine = report
+          .split('\n')
+          .firstWhere((l) => l.startsWith('实际解码:'));
+      expect(actualLine, startsWith('实际解码:'));
+      expect(actualLine, isNot(contains('c2.dolby.eac3.decoder.eac3')));
+      expect(report, contains('探测预选: video=c2.dolby.eac3.decoder.eac3'));
+    });
+
+    test('探测预选行同时列出视频与音频预测值', () {
+      final report = build(
+        decoderReport: const DecoderReport(
+          video: DecoderTrack(codec: 'c2.dolby.decoder.hevc'),
+          audio: DecoderTrack(codec: 'c2.dolby.eac3.decoder.eac3'),
+        ),
+      );
+      expect(
+        report,
+        contains('探测预选: video=c2.dolby.decoder.hevc '
+            'audio=c2.dolby.eac3.decoder.eac3'),
+      );
+    });
+
+    test('未探测时探测预选行给出占位符而非空白', () {
+      final report = build(decoderReport: DecoderReport.empty);
+      expect(report, contains('探测预选: 未探测'));
     });
 
     test('解码模式与视频解码器配置照常保留', () {

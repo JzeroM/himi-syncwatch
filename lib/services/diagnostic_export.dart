@@ -38,6 +38,7 @@ class DiagnosticExport {
         '实际解码: ${decoderReport.video.display}\n'
         'mdk原值: $mdkRawDecoder\n'
         '音频实际: ${decoderReport.audio.display}\n'
+        '${formatPredicted(decoderReport)}\n'
         'DV 内容: $isDolbyVisionContent\n'
         'DV 能力: $dvCapability\n'
         '${formatBufProgress(bufProgress)}\n\n'
@@ -58,5 +59,21 @@ class DiagnosticExport {
     if (bufProgress < 0) return '缓冲进度: 未知 (尚未收到 reader.buffering)';
     if (bufProgress > 100) return '缓冲进度: $bufProgress% (异常值)';
     return '缓冲进度: $bufProgress% (mdk reader.buffering, 0-100)';
+  }
+
+  /// 探测预选行：DV 能力探测的**预测**值，单列以与实测真值对照。
+  ///
+  /// 必须与「实际解码」分开——真机上二者并不一致（视频预测
+  /// `c2.dolby.decoder.hevc`、实测 `c2.qti.hevc.decoder`；音频预测
+  /// `c2.dolby.eac3.decoder.eac3`、实测走 FFmpeg），
+  /// 混成一行会给出 `FFmpeg → c2.dolby...` 这种自相矛盾的结论。
+  static String formatPredicted(DecoderReport report) {
+    final v = report.video.codec;
+    final a = report.audio.codec;
+    if (v.isEmpty && a.isEmpty) return '探测预选: 未探测';
+    final sb = StringBuffer('探测预选:');
+    if (v.isNotEmpty) sb.write(' video=$v');
+    if (a.isNotEmpty) sb.write(' audio=$a');
+    return sb.toString();
   }
 }
