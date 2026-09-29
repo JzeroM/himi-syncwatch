@@ -15,30 +15,30 @@ class GlassConfig {
   /// 模糊后叠加的饱和度增强系数。
   static const double saturation = 1.6;
 
-  /// 面板着色（底部导航胶囊 / 顶栏胶囊 / 浮动底栏）。
-  static const Color panelTint = Color(0x401A1D23);
+  /// 面板着色（底部导航胶囊 / 顶栏胶囊 / 浮动底栏），约 12% 以求透亮。
+  static const Color panelTint = Color(0x1F1A1D23);
 
   /// 页面顶栏着色（渐变上深下浅）。
-  static const Color barTint = Color(0x401A1D23);
-  static const Color barTintSoft = Color(0x261A1D23);
+  static const Color barTint = Color(0x1F1A1D23);
+  static const Color barTintSoft = Color(0x121A1D23);
 
   /// 关闭玻璃后的降级纯色。
   static const Color fallbackColor = Color(0xF01A1D24);
 
-  /// 高光描边基色（约 20% 白）。
-  static const Color rimColor = Color(0x33FFFFFF);
+  /// 高光描边基色（约 30% 白）。
+  static const Color rimColor = Color(0x4DFFFFFF);
 
   /// 内侧高光渐变（顶部更亮，底部渐隐）。
-  static const Color highlightTop = Color(0x8CFFFFFF);
+  static const Color highlightTop = Color(0xB3FFFFFF);
   static const Color highlightBottom = Color(0x00FFFFFF);
 
   /// 玻璃厚度暗线（外亮线内侧的 0.5px 折射暗边）。
   static const Color innerRimColor = Color(0x33000000);
 
-  /// 悬浮投影（让玻璃面板与背景产生距离感）。
+  /// 悬浮投影（让玻璃面板与背景产生距离感，轻量不压画面）。
   static const List<BoxShadow> panelShadow = [
     BoxShadow(
-      color: Color(0x59000000),
+      color: Color(0x4A000000),
       blurRadius: 16,
       offset: Offset(0, 6),
     ),

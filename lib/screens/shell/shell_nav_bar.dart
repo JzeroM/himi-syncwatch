@@ -3,8 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 选中态图标/文字主色（青色，仅跟随水珠所在格的图标，水珠本体为透明玻璃）。
-const Color kNavBlobColor = Color(0xFF2EE6C6);
+/// 选中态图标/文字主色（柔和薄荷青，仅跟随水珠所在格的图标，水珠本体为透明玻璃）。
+const Color kNavBlobColor = Color(0xFF86E3D6);
 
 /// 四标签底部导航内容（不含玻璃外壳）。
 ///
@@ -205,16 +205,16 @@ class _ShellNavBarState extends State<ShellNavBar>
                 child: DecoratedBox(
                   key: const ValueKey('navBlob'),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
+                    color: Colors.white.withValues(alpha: 0.10),
                     borderRadius:
                         BorderRadius.all(Radius.circular(_blobHeight / 2)),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.28),
+                      color: Colors.white.withValues(alpha: 0.42),
                       width: 1,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.white.withValues(alpha: 0.10),
+                        color: Colors.white.withValues(alpha: 0.16),
                         blurRadius: 14,
                       ),
                     ],

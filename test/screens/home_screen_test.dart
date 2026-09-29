@@ -144,12 +144,120 @@ void main() {
     expect(_capsuleOf(Icons.dns_outlined), findsOneWidget);
     expect(_capsuleOf(Icons.arrow_drop_down), findsOneWidget);
 
-    // 搜索 / 加入房间 / 开房间三个按钮同属一个玻璃椭圆
+    // 房间（合并后）/ 搜索两个按钮同属一个玻璃椭圆
     final search = tester.widgetList(_capsuleOf(Icons.search)).first;
-    final join = tester.widgetList(_capsuleOf(Icons.group_add)).first;
     final room =
-        tester.widgetList(_capsuleOf(Icons.add_circle_outline)).first;
-    expect(identical(search, join), isTrue);
-    expect(identical(room, join), isTrue);
+        tester.widgetList(_capsuleOf(Icons.meeting_room_outlined)).first;
+    expect(identical(search, room), isTrue);
+  });
+
+  testWidgets('服务器下拉为锚定标题的玻璃弹出层', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1', 's2'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        's2': _sessionJson(
+          id: 'srv_b',
+          serverId: 's2',
+          serverUrl: 'https://b',
+          name: '备用服务器',
+        ),
+      },
+    );
+    await _pumpScreen(tester, auth: auth);
+
+    expect(find.byType(GlassContainer), findsNWidgets(2));
+
+    await tester.tap(find.text('家庭NAS'));
+    await tester.pumpAndSettle();
+
+    // 弹出层本身也是玻璃容器（标题胶囊 + 操作胶囊 + 下拉层 = 3）
+    expect(find.byType(GlassContainer), findsNWidgets(3));
+    expect(find.text('备用服务器'), findsOneWidget);
+
+    // 点击遮罩关闭
+    await tester.tapAt(const Offset(400, 560));
+    await tester.pumpAndSettle();
+    expect(find.byType(GlassContainer), findsNWidgets(2));
+  });
+
+  testWidgets('房间按钮弹出玻璃卡片，加入房间分流到房间码弹窗', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    await _pumpScreen(tester, auth: auth);
+
+    await tester.tap(find.byIcon(Icons.meeting_room_outlined));
+    await tester.pumpAndSettle();
+
+    // 玻璃卡片含创建/加入两行
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.byType(GlassContainer),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('创建房间'), findsOneWidget);
+    expect(find.text('加入房间'), findsOneWidget);
+    expect(find.text('开一局同步观影'), findsOneWidget);
+    expect(find.text('粘贴或扫码加入'), findsOneWidget);
+
+    // 选择加入房间 → 打开房间码弹窗
+    await tester.tap(find.text('加入房间'));
+    await tester.pumpAndSettle();
+    expect(find.text('粘贴房间码'), findsOneWidget);
+    expect(find.text('取消'), findsOneWidget);
+  });
+
+  testWidgets('房间卡片中创建房间，声网未配置时给出提示', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    await _pumpScreen(tester, auth: auth);
+
+    await tester.tap(find.byIcon(Icons.meeting_room_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('创建房间'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('请先在「声网配置」页填写 App ID 和 App Certificate'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('无服务器时房间卡片创建行禁用、加入行可用', (tester) async {
+    await _pumpScreen(tester);
+
+    await tester.tap(find.byIcon(Icons.meeting_room_outlined));
+    await tester.pumpAndSettle();
+
+    final create = tester.widget<InkWell>(
+      find
+          .ancestor(
+            of: find.text('创建房间'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    expect(create.onTap, isNull);
+
+    final join = tester.widget<InkWell>(
+      find
+          .ancestor(
+            of: find.text('加入房间'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    expect(join.onTap, isNotNull);
   });
 }

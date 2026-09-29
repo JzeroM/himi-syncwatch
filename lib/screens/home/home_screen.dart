@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -151,20 +153,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    tooltip: '开房间',
+                    icon: const Icon(Icons.meeting_room_outlined),
+                    tooltip: '房间',
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
                         minWidth: 44, minHeight: 44),
-                    onPressed: hasServer ? () => _createEmptyRoom(context) : null,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.group_add),
-                    tooltip: '加入房间',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                        minWidth: 44, minHeight: 44),
-                    onPressed: () => _showJoinRoomDialog(context),
+                    onPressed: () => _showRoomCard(context,
+                        hasServer: hasServer),
                   ),
                   if (hasServer)
                     IconButton(
@@ -252,57 +247,251 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    return GlassContainer(
-      borderRadius: const BorderRadius.all(Radius.circular(24)),
-      padding: const EdgeInsets.only(left: 12, right: 2),
-      child: PopupMenuButton<String>(
-        tooltip: '切换服务器',
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-        onSelected: (id) {
-          for (final s in dedupedServers) {
-            if (s.id == id) {
-              _selectServer(s);
-              break;
-            }
-          }
-        },
-        itemBuilder: (context) => dedupedServers.map((s) {
-          final active = current?.id == s.id;
-          return PopupMenuItem(
-            value: s.id,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (active)
-                  const Icon(Icons.check_circle, size: 18, color: Colors.green)
-                else
+    return Builder(
+      builder: (titleContext) => GlassContainer(
+        borderRadius: const BorderRadius.all(Radius.circular(24)),
+        padding: const EdgeInsets.only(left: 12, right: 2),
+        child: Tooltip(
+          message: '切换服务器',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _showServerMenu(
+              titleContext,
+              current: current,
+              servers: dedupedServers,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   const Icon(Icons.dns_outlined, size: 18),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    s.label,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(label, overflow: TextOverflow.ellipsis),
+                  ),
+                  const Icon(Icons.arrow_drop_down),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 标题下方锚定的液态玻璃服务器下拉层（替代 Material PopupMenu）。
+  void _showServerMenu(
+    BuildContext titleContext, {
+    required EmbyServerConfig? current,
+    required List<EmbyServerConfig> servers,
+  }) {
+    final box = titleContext.findRenderObject();
+    if (box is! RenderBox || !box.attached) return;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    final screenW = MediaQuery.sizeOf(titleContext).width;
+
+    showGeneralDialog<void>(
+      context: titleContext,
+      barrierDismissible: true,
+      barrierLabel: '关闭服务器列表',
+      barrierColor: Colors.black.withValues(alpha: 0.30),
+      transitionDuration: const Duration(milliseconds: 160),
+      pageBuilder: (dialogContext, _, __) {
+        var left = rect.left < 12 ? 12.0 : rect.left;
+        var width =
+            math.min(math.max(rect.width, 220.0), screenW - left - 12);
+        if (left + width > screenW - 12) {
+          left = math.max(12.0, screenW - 12 - width);
+        }
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              top: rect.bottom + 8,
+              width: width,
+              child: Material(
+                type: MaterialType.transparency,
+                child: GlassContainer(
+                  borderRadius: const BorderRadius.all(Radius.circular(20)),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final s in servers)
+                            _buildServerRow(
+                              dialogContext,
+                              s,
+                              active: current?.id == s.id,
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
+              ),
+            ),
+          ],
+        );
+      },
+      transitionBuilder: (context, animation, _, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, -0.06),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildServerRow(
+    BuildContext dialogContext,
+    EmbyServerConfig server, {
+    required bool active,
+  }) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(dialogContext);
+        _selectServer(server);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: Row(
+          children: [
+            if (active)
+              const Icon(Icons.check_circle, size: 18, color: Colors.green)
+            else
+              const Icon(Icons.dns_outlined, size: 18, color: Colors.white70),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                server.label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 房间入口玻璃卡片：创建房间 / 加入房间二选一。
+  void _showRoomCard(BuildContext context, {required bool hasServer}) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+        child: Material(
+          type: MaterialType.transparency,
+          child: GlassContainer(
+            borderRadius: const BorderRadius.all(Radius.circular(20)),
+            padding: const EdgeInsets.fromLTRB(8, 14, 8, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(left: 12, bottom: 4),
+                  child: Text(
+                    '房间',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                _roomOption(
+                  dialogContext: dialogContext,
+                  icon: Icons.add_circle_outline,
+                  title: '创建房间',
+                  subtitle: '开一局同步观影',
+                  enabled: hasServer,
+                  run: () => _createEmptyRoom(context),
+                ),
+                _roomOption(
+                  dialogContext: dialogContext,
+                  icon: Icons.group_add,
+                  title: '加入房间',
+                  subtitle: '粘贴或扫码加入',
+                  enabled: true,
+                  run: () => _showJoinRoomDialog(context),
+                ),
               ],
             ),
-          );
-        }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _roomOption({
+    required BuildContext dialogContext,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool enabled,
+    required VoidCallback run,
+  }) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.38,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: enabled
+            ? () {
+                Navigator.pop(dialogContext);
+                run();
+              }
+            : null,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.dns_outlined, size: 18),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(label, overflow: TextOverflow.ellipsis),
+              Icon(icon, size: 24, color: Colors.white70),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.white60,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const Icon(Icons.arrow_drop_down),
+              const Icon(Icons.chevron_right, size: 20, color: Colors.white38),
             ],
           ),
         ),

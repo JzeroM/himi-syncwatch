@@ -162,10 +162,10 @@ void main() {
       expect(GlassConfig.shellBottomReserve, 96);
     });
 
-    test('玻璃着色透明度约 25%，背景尽量透出', () {
-      expect(GlassConfig.panelTint.a, closeTo(0x40 / 255, 0.001));
-      expect(GlassConfig.barTint.a, closeTo(0x40 / 255, 0.001));
-      expect(GlassConfig.barTintSoft.a, closeTo(0x26 / 255, 0.001));
+    test('玻璃着色透明度约 12%，背景尽量透出', () {
+      expect(GlassConfig.panelTint.a, closeTo(0x1F / 255, 0.001));
+      expect(GlassConfig.barTint.a, closeTo(0x1F / 255, 0.001));
+      expect(GlassConfig.barTintSoft.a, closeTo(0x12 / 255, 0.001));
       expect(GlassConfig.panelTint.a, lessThan(0.3));
       expect(GlassConfig.barTint.a, lessThan(0.3));
     });

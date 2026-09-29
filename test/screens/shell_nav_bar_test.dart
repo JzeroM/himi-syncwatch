@@ -161,9 +161,9 @@ void main() {
     await _pumpNav(tester, onSelect: (_) {});
 
     final d = _blobDecoration(tester);
-    expect(d.color, Colors.white.withValues(alpha: 0.18));
-    expect(d.border?.top.color, Colors.white.withValues(alpha: 0.28));
-    expect(d.boxShadow?.first.color, Colors.white.withValues(alpha: 0.10));
+    expect(d.color, Colors.white.withValues(alpha: 0.10));
+    expect(d.border?.top.color, Colors.white.withValues(alpha: 0.42));
+    expect(d.boxShadow?.first.color, Colors.white.withValues(alpha: 0.16));
 
     // 青色只出现在选中图标/文字，不给水珠
     expect(tester.widget<Icon>(find.byIcon(Icons.home)).color, kNavBlobColor);
