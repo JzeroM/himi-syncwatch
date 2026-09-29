@@ -3,12 +3,14 @@ class AppSettings {
   final bool showSyncDebug;
   final bool stereoDownmix;
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
+  final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
 
   const AppSettings({
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
     this.stereoDownmix = false,
     this.audioRenderer = 'OpenSL',
+    this.deepDiagnostics = false,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -18,12 +20,14 @@ class AppSettings {
     bool? showSyncDebug,
     bool? stereoDownmix,
     String? audioRenderer,
+    bool? deepDiagnostics,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
+      deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
     );
   }
 
@@ -32,6 +36,7 @@ class AppSettings {
         'showSyncDebug': showSyncDebug,
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
+        'deepDiagnostics': deepDiagnostics,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -53,6 +58,7 @@ class AppSettings {
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
       audioRenderer: json['audioRenderer'] as String? ?? 'auto',
+      deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
     );
   }
 

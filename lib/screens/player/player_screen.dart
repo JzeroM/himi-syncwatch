@@ -38,6 +38,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:himi_syncwatch/services/playback_diagnostics.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -326,12 +327,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _stereoDownmix = '关';
   String _actualVideoDecoders = '-';
   String _audioBackend = '-';
-  final ValueNotifier<int> _syncEventsVersion = ValueNotifier(0);
+  // 卡顿诊断
+  final PlaybackDiagnostics _diag = PlaybackDiagnostics();
+  String _diagSummary = '';
+  String _diagTimeline = '';
+  String _diagStalls = '';
+  String _diagNotes = '';
+  int _bufProgress = -1; // 缓冲进度 0-100，-1 表示未知
+  Timer? _sampleTimer;
+  bool _deepLogActive = false;
+  int _deepLogPerSecond = 0;
+  int _deepLogSecond = 0;
+  final List<String> _deepLogLines = <String>[];
   final GlobalKey _qrKey = GlobalKey();
 
   // 调试面板拖拽位置
   double _debugPanelX = 20;
   double _debugPanelY = 100;
+  final ValueNotifier<int> _syncEventsVersion = ValueNotifier(0);
 
   void _logSyncEvent(String event) {
     LogService().log('Sync', event);
@@ -356,6 +369,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _queryDiagnostics() {
     if (!mounted) return;
     try {
+      // 深度诊断开关可在播放中实时切换
+      _syncDeepDiagnostics();
       final mi = _player.mediaInfo;
       final buffered = _player.buffered();
       final pos = _player.position;
@@ -365,10 +380,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 播放状态
       String playState = st == mdk.PlaybackState.playing ? 'playing' :
                          st == mdk.PlaybackState.paused ? 'paused' : 'stopped';
-      String mediaSt = ms.test(mdk.MediaStatus.buffering) ? 'buffering' :
-                       ms.test(mdk.MediaStatus.seeking) ? 'seeking' :
-                       ms.test(mdk.MediaStatus.loaded) ? 'loaded' :
-                       ms.test(mdk.MediaStatus.end) ? 'end' : '-';
+      String mediaSt = _describeMediaStatus(ms);
 
       // 视频信息
       int vBitrate = 0;
@@ -430,8 +442,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _stereoDownmix = dm;
         _actualVideoDecoders = actualDec;
         _audioBackend = ab;
+        _diagSummary = _diag.summary();
       });
-    } catch (_) {}
+    } catch (e) {
+      LogService().log('Diag', '诊断采集失败: $e');
+    }
+  }
+
+  /// 把 mdk MediaStatus 位标志映射为可读文本。
+  /// buffered / stalled / buffering 均反映卡顿，必须显式呈现而非落到 '-'。
+  static String _describeMediaStatus(mdk.MediaStatus ms) {
+    if (ms.test(mdk.MediaStatus.invalid)) return 'invalid';
+    if (ms.test(mdk.MediaStatus.end)) return 'end';
+    if (ms.test(mdk.MediaStatus.buffering)) return 'buffering';
+    if (ms.test(mdk.MediaStatus.stalled)) return 'stalled';
+    if (ms.test(mdk.MediaStatus.seeking)) return 'seeking';
+    if (ms.test(mdk.MediaStatus.buffered)) return 'buffered';
+    if (ms.test(mdk.MediaStatus.loaded)) return 'loaded';
+    if (ms.test(mdk.MediaStatus.loading)) return 'loading';
+    if (ms.test(mdk.MediaStatus.unloaded)) return 'unloaded';
+    if (ms.test(mdk.MediaStatus.prepared)) return 'prepared';
+    return '-';
+  }
+
+  /// 250ms 轻量采样：只取 3 个廉价取值写入时间线，不触发 setState。
+  /// 目的是捕捉亚秒级缓冲波动，1 秒的重查询捕捉不到。
+  void _samplePlayback() {
+    if (!mounted) return;
+    try {
+      final ms = _player.mediaStatus;
+      final st = _player.state;
+      // 兜底：状态位未翻转导致卡顿计时悬挂时强制结算
+      _diag.reapStaleStall();
+      _diag.addSample(
+        pos: _player.position,
+        buffered: _player.buffered(),
+        state: st == mdk.PlaybackState.playing
+            ? 'playing'
+            : st == mdk.PlaybackState.paused
+                ? 'paused'
+                : 'stopped',
+        status: _describeMediaStatus(ms),
+        reloading: ms.test(mdk.MediaStatus.unloaded) ||
+            ms.test(mdk.MediaStatus.loading),
+      );
+    } catch (e) {
+      LogService().log('Diag', '采样失败: $e');
+    }
   }
 
   /// 在 prepare() 之前配置 DV 解码器（Android 设备不支持硬解时强制软解）
@@ -638,6 +695,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 第二步：根据 DV 信息配置解码器（prepare 之前）
       await _configureDecoderForDV();
 
+      // 换集：清空上一集的卡顿诊断，避免时间线跨集污染
+      _diag.reset();
+
       // 第三步：加载流（prepare 会使用已配置好的解码器）
       await _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
 
@@ -804,6 +864,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
       _videoNativeSize = null;
+      _diag.reset();
+      _bufProgress = -1;
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
@@ -904,6 +966,46 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         LogService().log('Player', '播放错误: ${event.newValue}');
         _addBroadcastMessage('播放出错');
       }
+
+      // 卡顿边沿检测：buffering 进入 / buffered 或 stalled 退出
+      final wasBuffering = event.oldValue.test(mdk.MediaStatus.buffering);
+      final isBuffering = event.newValue.test(mdk.MediaStatus.buffering);
+      if (!wasBuffering && isBuffering) {
+        _diag.onStallStart('buffering');
+        LogService().log('Diag', '开始缓冲');
+      }
+      final isRecovered = !event.newValue.test(mdk.MediaStatus.buffering) &&
+          !event.newValue.test(mdk.MediaStatus.stalled);
+      if (wasBuffering && isRecovered) {
+        _diag.onStallEnd();
+        LogService().log('Diag', '缓冲结束');
+      }
+      if (event.newValue.test(mdk.MediaStatus.stalled)) {
+        _diag.onStallStart('underflow');
+        _diag.note('underflow(数据供给中断)');
+      }
+    });
+
+    // 采集 mdk 运行时事件：缓冲进度、解码线程启停、解码错误、首帧
+    // 事件 category/detail 的具体取值官方未完整文档化，因此原样记录 detail，
+    // 便于拿到真机数据后确认语义。
+    _player.onEvent.listen((event) {
+      if (!mounted) return;
+      switch (event.category) {
+        case 'reader.buffering':
+          // error 即缓冲进度 0-100，可区分网络慢与解码慢
+          _bufProgress = event.error;
+        case 'thread.video':
+        case 'thread.audio':
+        case 'decoder.video':
+        case 'decoder.audio':
+        case 'render.video':
+          _diag.addEvent(event.category, event.detail, event.error);
+          if (event.detail.contains('error')) {
+            LogService().log('Diag',
+                '${event.category} 错误: ${event.detail} (${event.error})');
+          }
+      }
     });
 
     // 定时更新播放位置（fvp 没有直接的 position stream）
@@ -929,6 +1031,117 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _queryDiagnostics();
     });
+
+    // 250ms 轻量采样（时间线），捕捉亚秒级缓冲波动
+    _sampleTimer?.cancel();
+    _sampleTimer = Timer.periodic(const Duration(milliseconds: 250), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _samplePlayback();
+    });
+
+    _syncDeepDiagnostics();
+  }
+  /// 深度诊断：开启 mdk log.status 以获取实测 fps / 缓存占用。
+  ///
+  /// mdk 未暴露任何统计回调，这是唯一途径。但 log.status 的行格式官方未文档化，
+  /// 因此这里**原样保留**最近若干行原始文本，同时做防御式 fps 解析。
+  /// 拿到真机数据后可据此精确化解析规则。
+  ///
+  /// 安全阀：单秒内捕获行数超限则自动关闭，避免日志风暴影响播放。
+  void _syncDeepDiagnostics() {
+    final enabled = ref.read(settingsProvider).deepDiagnostics;
+    if (enabled == _deepLogActive) return;
+    if (enabled) {
+      _startDeepDiagnostics();
+    } else {
+      _deepLogActive = false;
+      _deepLogLines.clear();
+      _stopDeepDiagnostics();
+    }
+  }
+
+  void _startDeepDiagnostics() {
+    try {
+      _deepLogLines.clear();
+      // 2 = 启用（不依赖 log level）
+      mdk.setGlobalOption('log.status', 2);
+      mdk.setLogHandler((level, message) {
+        if (!_deepLogActive) return;
+        final now = DateTime.now();
+        if (now.second != _deepLogSecond) {
+          _deepLogSecond = now.second;
+          _deepLogPerSecond = 0;
+        }
+        _deepLogPerSecond++;
+        if (_deepLogPerSecond > 50) {
+          _deepLogActive = false;
+          _stopDeepDiagnostics();
+          _diag.note('深度诊断日志过密(>50行/秒)，已自动关闭');
+          LogService().log('Diag', '深度诊断日志过密，已自动关闭');
+          return;
+        }
+        final line = message.trim();
+        if (line.isEmpty) return;
+        _deepLogLines.add(line);
+        while (_deepLogLines.length > 60) {
+          _deepLogLines.removeAt(0);
+        }
+        final fps = _parseFps(line);
+        if (fps != null) _diag.updateFps(fps);
+      });
+      _deepLogActive = true;
+      LogService().log('Diag', '深度诊断已开启(log.status=2)');
+    } catch (e) {
+      LogService().log('Diag', '深度诊断开启失败: $e');
+    }
+  }
+
+  /// 关闭 log.status 并恢复一个转发到 LogService 的 handler。
+  /// 不用 setLogHandler(null)：fvp 启动时已注册自己的 handler，
+  /// 置空会永久关闭 mdk 内部日志。
+  void _stopDeepDiagnostics() {
+    try {
+      mdk.setGlobalOption('log.status', 0);
+      mdk.setLogHandler((level, message) {
+        if (level == mdk.LogLevel.error) {
+          LogService().log('mdk', message.trim());
+        }
+      });
+    } catch (e) {
+      LogService().log('Diag', '关闭深度诊断失败: $e');
+    }
+  }
+
+  /// 从 log.status 行中防御式提取帧率。
+  /// 兼容 "fps: 23.98"、"fps 23.98"、"23.98 fps"、"rfps: 24.500000" 等形式。
+  static double? _parseFps(String line) {
+    if (!line.toLowerCase().contains('fps')) return null;
+    final match =
+        RegExp(r'fps[^0-9]{0,3}([0-9]+\.?[0-9]*)', caseSensitive: false)
+            .firstMatch(line);
+    if (match == null) return null;
+    final fps = double.tryParse(match.group(1)!);
+    if (fps == null || fps <= 0 || fps > 1000) return null;
+    return fps;
+  }
+
+  /// 组装完整的诊断导出文本（时间线 + 卡顿 + 事件 + 媒体信息）。
+  String _exportFullDiagnostics() {
+    _diagTimeline = _diag.exportTimeline();
+    _diagStalls = _diag.exportStalls();
+    _diagNotes = _diag.exportNotes();
+    final raw = _deepLogLines.isEmpty
+        ? '(深度诊断未开启或无数据)'
+        : _deepLogLines.join('\n');
+    return '$_diagSummary\n\n'
+        '=== 时间线 ===\n$_diagTimeline\n'
+        '=== 卡顿事件 ===\n$_diagStalls\n'
+        '=== mdk 事件原文 ===\n${_diag.exportEvents()}'
+        '=== 诊断事件 ===\n$_diagNotes\n'
+        '=== mdk 原始状态日志 ===\n$raw';
   }
 
   void _autoSelectDefaultTracks() {
@@ -1965,6 +2178,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
+    _sampleTimer?.cancel();
     _hideControlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
@@ -1976,6 +2190,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _tracksSubscription?.cancel();
     _accelSub?.cancel();
     try { _broadcastScrollController.dispose(); } catch (_) {}
+
+    // 关闭深度诊断日志，避免全局 handler 泄漏
+    if (_deepLogActive) {
+      _deepLogActive = false;
+      _stopDeepDiagnostics();
+    }
 
     // 释放 ValueNotifier（包 try-catch 确保后续代码执行）
     try { _positionNotifier.dispose(); } catch (_) {}
@@ -2279,6 +2499,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualVideoDecoders: _actualVideoDecoders,
               audioBackend: _audioBackend,
+              // 卡顿诊断
+              stallSummary: _diagSummary,
+              bufProgress: _bufProgress,
+              deepLogActive: _deepLogActive,
+              onExportStutter: _exportFullDiagnostics,
               onDrag: (delta) {
                 setState(() {
                   _debugPanelX += delta.dx;

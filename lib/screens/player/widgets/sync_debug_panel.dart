@@ -43,6 +43,12 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   final String actualVideoDecoders;
   final String audioBackend;
 
+  // 卡顿诊断
+  final String stallSummary;
+  final int bufProgress;
+  final bool deepLogActive;
+  final String Function() onExportStutter;
+
   final ValueChanged<Offset> onDrag;
 
   const SyncDebugPanel({
@@ -75,6 +81,10 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.decodeMode,
     required this.actualVideoDecoders,
     required this.audioBackend,
+    required this.stallSummary,
+    required this.bufProgress,
+    required this.deepLogActive,
+    required this.onExportStutter,
     required this.onDrag,
   });
 
@@ -87,6 +97,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
   bool _sectionVideo = true;
   bool _sectionAudio = true;
   bool _sectionDecoder = false;
+  bool _sectionStutter = true;
   bool _sectionConnection = false;
   bool _sectionLog = false;
 
@@ -99,8 +110,14 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
     final stateColor = widget.playbackState == 'playing' ? Colors.green :
                        widget.playbackState == 'paused' ? Colors.amber : Colors.red;
     // 媒体状态颜色
-    final statusColor = widget.mediaStatusStr == 'buffering' ? Colors.amber :
-                        widget.mediaStatusStr == 'loaded' ? Colors.green : Colors.white54;
+    final statusColor = widget.mediaStatusStr == 'buffering' ||
+            widget.mediaStatusStr == 'stalled'
+        ? Colors.amber
+        : widget.mediaStatusStr == 'loaded' ||
+                widget.mediaStatusStr == 'buffered' ||
+                widget.mediaStatusStr == 'prepared'
+            ? Colors.green
+            : Colors.white54;
 
     return Container(
       width: 330,
@@ -221,6 +238,57 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     _debugRow('模式', decodeModeLabel),
                     _debugRow('配置', widget.actualVideoDecoders),
                     _debugRow('音频后端', widget.audioBackend),
+                  ],
+
+                  // ── 卡顿诊断 ──
+                  const SizedBox(height: 4),
+                  _buildSectionHeader('卡顿', _sectionStutter, () {
+                    setState(() => _sectionStutter = !_sectionStutter);
+                  }),
+                  if (_sectionStutter) ...[
+                    if (widget.stallSummary.isEmpty)
+                      _debugRow('状态', '采集中…')
+                    else
+                      ...widget.stallSummary
+                          .trim()
+                          .split('\n')
+                          .map((line) {
+                        final idx = line.indexOf(':');
+                        if (idx <= 0) return _debugRow('', line);
+                        return _debugRow(line.substring(0, idx).trim(),
+                            line.substring(idx + 1).trim());
+                      }),
+                    _debugRow(
+                        '缓冲进度',
+                        widget.bufProgress < 0
+                            ? '-'
+                            : '${widget.bufProgress}%'),
+                    _debugRow('深度诊断',
+                        widget.deepLogActive ? '开(实测fps)' : '关(设置中开启)'),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.copy, size: 16),
+                        label: const Text('复制卡顿诊断',
+                            style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.greenAccent,
+                          side: const BorderSide(color: Colors.greenAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        onPressed: () async {
+                          final text = widget.onExportStutter();
+                          await Clipboard.setData(ClipboardData(text: text));
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('卡顿诊断已复制到剪贴板'),
+                                duration: Duration(seconds: 2)),
+                          );
+                        },
+                      ),
+                    ),
                   ],
 
                   // ── 连接信息（仅房间模式）──

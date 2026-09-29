@@ -30,11 +30,13 @@ void main() {
         decodeMode: 'hw',
         showSyncDebug: true,
         stereoDownmix: true,
+        deepDiagnostics: true,
       );
       final json = settings.toJson();
       expect(json['decodeMode'], equals('hw'));
       expect(json['showSyncDebug'], isTrue);
       expect(json['stereoDownmix'], isTrue);
+      expect(json['deepDiagnostics'], isTrue);
     });
 
     test('fromJson 解析所有字段', () {
@@ -42,11 +44,32 @@ void main() {
         'decodeMode': 'hw',
         'showSyncDebug': true,
         'stereoDownmix': true,
+        'deepDiagnostics': true,
       };
       final settings = AppSettings.fromJson(json);
       expect(settings.decodeMode, equals('hw'));
       expect(settings.showSyncDebug, isTrue);
       expect(settings.stereoDownmix, isTrue);
+      expect(settings.deepDiagnostics, isTrue);
+    });
+
+    test('deepDiagnostics 缺省为关闭', () {
+      expect(const AppSettings().deepDiagnostics, isFalse);
+      expect(AppSettings.fromJson(const {}).deepDiagnostics, isFalse);
+    });
+
+    test('copyWith 透传 deepDiagnostics', () {
+      const settings = AppSettings();
+      expect(settings.copyWith(deepDiagnostics: true).deepDiagnostics, isTrue);
+      // 未指定时保持原值
+      expect(settings.copyWith(showSyncDebug: true).deepDiagnostics, isFalse);
+      expect(
+        settings
+            .copyWith(deepDiagnostics: true)
+            .copyWith(showSyncDebug: true)
+            .deepDiagnostics,
+        isTrue,
+      );
     });
 
     test('fromJson 默认值', () {

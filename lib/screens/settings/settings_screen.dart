@@ -97,6 +97,16 @@ class SettingsScreen extends ConsumerWidget {
                 ref.read(settingsProvider.notifier).update(showSyncDebug: v),
           ),
           const Divider(height: 1),
+          SwitchListTile(
+            title: const Text('深度诊断'),
+            subtitle: const Text(
+              '抓取 mdk 内部日志获取实测帧率。仅诊断卡顿时开启，可能增加少量开销',
+            ),
+            value: settings.deepDiagnostics,
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).update(deepDiagnostics: v),
+          ),
+          const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.bug_report),
             title: const Text('导出运行日志'),
