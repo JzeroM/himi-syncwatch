@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -84,7 +85,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (agoraConfig == null || !agoraConfig.isConfigured) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先在侧边栏配置声网 App ID 和 App Certificate')),
+          const SnackBar(
+              content: Text('请先在「声网配置」页填写 App ID 和 App Certificate')),
         );
       }
       return;
@@ -391,6 +393,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -420,19 +423,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   Widget _buildBottomBar() {
     return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: widget.roomMode
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: GlassContainer(
+          borderRadius: const BorderRadius.all(Radius.circular(24)),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: widget.roomMode
             ? Row(
                 children: [
                   Expanded(
@@ -497,6 +493,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                 ],
               ),
+        ),
       ),
     );
   }
@@ -510,9 +507,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         SliverAppBar(
           expandedHeight: 320,
           pinned: true,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.of(context).pop(),
+          leading: Padding(
+            padding: const EdgeInsets.all(4),
+            child: GlassContainer(
+              borderRadius: const BorderRadius.all(Radius.circular(24)),
+              padding: EdgeInsets.zero,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
           ),
           flexibleSpace: FlexibleSpaceBar(
             background: Stack(
@@ -716,7 +720,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 80),
+                const SizedBox(height: 120),
               ],
             ),
           ),

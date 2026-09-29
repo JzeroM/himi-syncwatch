@@ -18,6 +18,39 @@ class HimiSyncApp extends ConsumerWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        // 顶栏玻璃条需透明，由各页 GlassBackdrop 提供模糊背景
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+        ),
+        navigationBarTheme: const NavigationBarThemeData(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          indicatorColor: Color(0x33FFFFFF),
+          labelTextStyle: WidgetStatePropertyAll(
+            TextStyle(fontSize: 11, color: Colors.white),
+          ),
+        ),
+        // 弹层半透明近似（主题级，不加模糊以控制开销）
+        dialogTheme: const DialogThemeData(
+          backgroundColor: Color(0xF01A1D23),
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(24)),
+            side: BorderSide(color: Color(0x33FFFFFF)),
+          ),
+        ),
+        bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: Color(0xF21A1D23),
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            side: BorderSide(color: Color(0x33FFFFFF)),
+          ),
+        ),
       ),
       routerConfig: router,
     );

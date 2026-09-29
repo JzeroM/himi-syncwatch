@@ -4,6 +4,7 @@ class AppSettings {
   final bool stereoDownmix;
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
   final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
+  final bool glassUi; // 液态玻璃特效开关（低端设备可关闭）
 
   const AppSettings({
     this.decodeMode = 'auto',
@@ -11,6 +12,7 @@ class AppSettings {
     this.stereoDownmix = false,
     this.audioRenderer = 'OpenSL',
     this.deepDiagnostics = false,
+    this.glassUi = true,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -21,6 +23,7 @@ class AppSettings {
     bool? stereoDownmix,
     String? audioRenderer,
     bool? deepDiagnostics,
+    bool? glassUi,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
@@ -28,6 +31,7 @@ class AppSettings {
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
+      glassUi: glassUi ?? this.glassUi,
     );
   }
 
@@ -37,6 +41,7 @@ class AppSettings {
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
         'deepDiagnostics': deepDiagnostics,
+        'glassUi': glassUi,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -59,6 +64,7 @@ class AppSettings {
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
       audioRenderer: json['audioRenderer'] as String? ?? 'auto',
       deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
+      glassUi: json['glassUi'] as bool? ?? true,
     );
   }
 

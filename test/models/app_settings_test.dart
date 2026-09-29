@@ -121,5 +121,25 @@ void main() {
       const swSettings = AppSettings(decodeMode: 'sw');
       expect(swSettings.hardwareDecoding, isFalse);
     });
+
+    test('glassUi 缺省为开启', () {
+      expect(const AppSettings().glassUi, isTrue);
+      expect(AppSettings.fromJson(const {}).glassUi, isTrue);
+    });
+
+    test('copyWith 透传 glassUi', () {
+      const settings = AppSettings();
+      expect(settings.copyWith(glassUi: false).glassUi, isFalse);
+      expect(settings.copyWith(decodeMode: 'hw').glassUi, isTrue);
+    });
+
+    test('toJson/fromJson 往返保持 glassUi', () {
+      const original = AppSettings(glassUi: false);
+      final restored = AppSettings.fromJson(original.toJson());
+      expect(restored.glassUi, isFalse);
+
+      const enabled = AppSettings();
+      expect(AppSettings.fromJson(enabled.toJson()).glassUi, isTrue);
+    });
   });
 }

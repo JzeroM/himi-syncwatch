@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 String _decodeModeDescription(String mode) {
   switch (mode) {
@@ -40,8 +42,18 @@ class SettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text('设置'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: const GlassBackdrop(),
+      ),
       body: ListView(
+        padding: EdgeInsets.only(
+          top: GlassConfig.topInsetOf(context),
+          bottom: GlassConfig.bottomReserveOf(context),
+        ),
         children: [
           ListTile(
             title: const Text('解码方式'),
@@ -95,6 +107,14 @@ class SettingsScreen extends ConsumerWidget {
             value: settings.showSyncDebug,
             onChanged: (v) =>
                 ref.read(settingsProvider.notifier).update(showSyncDebug: v),
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            title: const Text('液态玻璃'),
+            subtitle: const Text('毛玻璃模糊与高光效果，低端设备可关闭以提升流畅度'),
+            value: settings.glassUi,
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).update(glassUi: v),
           ),
           const Divider(height: 1),
           SwitchListTile(

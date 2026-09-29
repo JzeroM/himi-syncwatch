@@ -7,6 +7,9 @@ import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/screens/room/room_screen.dart';
 import 'package:himi_syncwatch/screens/category/category_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
+import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
+import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
+import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 
 final routerKey = GlobalKey<NavigatorState>();
 
@@ -15,9 +18,36 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     navigatorKey: routerKey,
     initialLocation: '/',
     routes: [
-      GoRoute(
-        path: '/',
-        builder: (context, state) => const HomeScreen(),
+      // 四标签壳：首页 / Emby服务器 / 声网配置 / 设置
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            MainShell(shell: navigationShell),
+        branches: [
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/',
+              builder: (context, state) => const HomeScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/servers',
+              builder: (context, state) => const ServerManagerScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/agora',
+              builder: (context, state) => const AgoraConfigScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/settings',
+              builder: (context, state) => const SettingsScreen(),
+            ),
+          ]),
+        ],
       ),
       GoRoute(
         path: '/category/:id',
@@ -53,10 +83,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           roomCode: state.uri.queryParameters['code'] ?? '',
           audienceName: state.uri.queryParameters['name'] ?? '',
         ),
-      ),
-      GoRoute(
-        path: '/settings',
-        builder: (context, state) => const SettingsScreen(),
       ),
     ],
   );

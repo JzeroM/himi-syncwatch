@@ -24,14 +24,20 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     }
   }
 
-  Future<void> update({String? decodeMode, bool? showSyncDebug, bool? stereoDownmix, String? audioRenderer, bool? deepDiagnostics}) async {
+  Future<void> update({String? decodeMode, bool? showSyncDebug, bool? stereoDownmix, String? audioRenderer, bool? deepDiagnostics, bool? glassUi}) async {
     state = state.copyWith(
       decodeMode: decodeMode,
       showSyncDebug: showSyncDebug,
       stereoDownmix: stereoDownmix,
       audioRenderer: audioRenderer,
       deepDiagnostics: deepDiagnostics,
+      glassUi: glassUi,
     );
+    await persist();
+  }
+
+  /// 落盘当前设置（测试中可覆写以绕过平台通道）。
+  Future<void> persist() async {
     await _storage.write(key: _storageKey, value: jsonEncode(state.toJson()));
   }
 }
