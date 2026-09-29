@@ -4,19 +4,31 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity: FlutterActivity() {
-    private val dvChannel = MethodChannel(
-        flutterEngine!!.dartExecutor.binaryMessenger,
-        DolbyVisionPlugin.CHANNEL
-    )
+class MainActivity : FlutterActivity() {
+
+    /**
+     * 必须持有引用以便 cleanUp 时解绑；为 null 表示尚未绑定。
+     *
+     * 注意：不能在字段初始化器里创建 channel。
+     * FlutterActivity.flutterEngine 在 `onCreate` → `configureFlutterEngine`
+     * 之前为 null，此处用 `!!` 拿到的 messenger 与随后真正驱动 Dart 的
+     * engine 不是同一个，handler 实际从未注册上，Dart 侧只会收到
+     * MissingPluginException（表现为 DV 能力探测静默失败、被误判为不支持
+     * 而强制软件解码）。
+     */
+    private var dvChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        dvChannel.setMethodCallHandler(DolbyVisionPlugin())
+        dvChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DolbyVisionPlugin.CHANNEL
+        ).apply { setMethodCallHandler(DolbyVisionPlugin()) }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        dvChannel.setMethodCallHandler(null)
+        dvChannel?.setMethodCallHandler(null)
+        dvChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

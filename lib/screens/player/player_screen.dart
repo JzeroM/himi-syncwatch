@@ -426,8 +426,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         channels = ac.channels;
       }
 
-      // 实际解码器
-      final actualDec = _player.getProperty('video.decoder') ?? '-';
+      // mdk 上报的 video.decoder 不可靠（实测返回 `scale=3840x1608`
+      // 这类与解码器无关的值），配置项以 videoDecoders 为准。
+      final actualDec = _player.getProperty('video.decoder');
+      final decoders = _player.videoDecoders;
+      final actualDecoders = (actualDec != null && actualDec.isNotEmpty)
+          ? '${decoders.join(',')} (mdk: $actualDec)'
+          : decoders.join(',');
 
       // 降混设置
       final dm = ref.read(settingsProvider).stereoDownmix ? '开' : '关';
@@ -452,7 +457,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _audioCodecName = aCodec;
         _audioBitrate = aBitrate > 0 ? (aBitrate / 1000).round() : 0;
         _stereoDownmix = dm;
-        _actualVideoDecoders = actualDec;
+        _actualVideoDecoders = actualDecoders;
         _audioBackend = ab;
         _diagSummary = _diag.summary();
       });
@@ -1099,27 +1104,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
         // 只保留两类行：mdk 状态行（含 fps/cache）与值得关注的关键行
         // （解码器选择、丢帧、错误等）。`buffering progress` 这类每数十毫秒
-        // 一条的进度刷屏直接丢弃——它既无诊断价值，又会在一秒内堆出
-        // 数十行把旧版安全阀误触发。
+        // 一条的进度刷屏直接丢弃——它既无诊断价值，又无谓占用缓冲。
         final isStatus = _isStatusLine(line);
         if (!isStatus && !_isNotableLine(line)) return;
 
-        final now = DateTime.now();
-        if (now.difference(_deepWindowStart) >=
-            const Duration(milliseconds: 1000)) {
-          _deepWindowStart = now;
-          _deepPerSecond = 0;
-        }
-        _deepPerSecond++;
-        if (_deepPerSecond > _deepLinesPerSecondLimit) {
-          _deepLogActive = false;
-          _stopDeepDiagnostics();
-          _diag.note('深度诊断日志过密(>$_deepLinesPerSecondLimit 行/秒)，已自动关闭');
-          LogService().log('Diag', '深度诊断日志过密，已自动关闭');
-          return;
-        }
-
         if (isStatus) {
+          // 速率安全阀只统计状态行。关键行在 prepare 阶段会突发上千行
+          // （解码器初始化），若一并统计会在开启后 0.04 秒内误触发，
+          // 导致深度诊断立刻关闭、一条数据都留不下。
+          final now = DateTime.now();
+          if (now.difference(_deepWindowStart) >=
+              const Duration(milliseconds: 1000)) {
+            _deepWindowStart = now;
+            _deepPerSecond = 0;
+          }
+          _deepPerSecond++;
+          if (_deepPerSecond > _deepLinesPerSecondLimit) {
+            _deepLogActive = false;
+            _stopDeepDiagnostics();
+            _diag.note('状态行过密(>$_deepLinesPerSecondLimit 行/秒)，已自动关闭');
+            LogService().log('Diag', '深度诊断日志过密，已自动关闭');
+            return;
+          }
+
           _deepLogLines.add(line);
           while (_deepLogLines.length > _deepStatusLineCap) {
             _deepLogLines.removeAt(0);

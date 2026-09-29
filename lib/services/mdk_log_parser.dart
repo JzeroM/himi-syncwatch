@@ -51,6 +51,14 @@ class MdkLogParser {
   static bool shouldKeep(String line) =>
       isStatusLine(line) || isNotableLine(line);
 
+  /// 该行是否参与速率安全阀统计。
+  ///
+  /// 只有状态行（周期性刷新的播放统计）参与：正常约 4 行/秒，异常时可达
+  /// 数百行/秒。`decoder.*` / `ffmpeg.*` 这类关键行在 prepare 阶段会突发
+  /// 成百上千行（解码器初始化），若计入速率统计，安全阀会在开启后
+  /// 0.04 秒内立刻误触发，反而一条数据都留不下。
+  static bool isRateLimitedLine(String line) => isStatusLine(line);
+
   static final _fpsPatterns = <RegExp>[
     // 状态行内 fps 通常写作 `26.4fps`（数值在前），优先匹配该形式
     RegExp(r'([0-9]+(?:\.[0-9]+)?)\s*fps\b', caseSensitive: false),

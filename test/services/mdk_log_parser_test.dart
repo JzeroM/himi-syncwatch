@@ -40,6 +40,33 @@ void main() {
       expect(MdkLogParser.shouldKeep(''), isFalse);
       expect(MdkLogParser.shouldKeep('   '), isFalse);
     });
+
+    group('速率安全阀范围', () {
+      test('prepare 阶段爆发的解码器初始化行不计入速率统计', () {
+        // 旧实现把关键行也计入速率统计，导致深度诊断在开启后 0.04 秒
+        // 就被安全阀关闭，反而一条数据都留不下。
+        for (var i = 0; i < 500; i++) {
+          const line =
+              '[DD 12:00:00.000][info][ffmpeg] decoder.video | FFmpeg | 0';
+          expect(MdkLogParser.shouldKeep(line), isTrue, reason: '应保留');
+          expect(MdkLogParser.isRateLimitedLine(line), isFalse,
+              reason: '不应计入速率统计');
+        }
+      });
+
+      test('状态行计入速率统计', () {
+        const line = '[DD 12:00:00.000][0][0] | 24.0fps cache 0v 1.0s';
+        expect(MdkLogParser.isRateLimitedLine(line), isTrue);
+      });
+
+      test('ffmpeg / dovi 关键行保留但不限速', () {
+        for (final k in ['ffmpeg', 'dovi', 'rpu', 'dropped', 'av_sync']) {
+          final line = 'some $k line here';
+          expect(MdkLogParser.shouldKeep(line), isTrue);
+          expect(MdkLogParser.isRateLimitedLine(line), isFalse);
+        }
+      });
+    });
   });
 
   group('MdkLogParser 实测帧率解析', () {
