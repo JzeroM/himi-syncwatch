@@ -364,4 +364,106 @@ void main() {
       expect(summary, contains('需开启深度诊断'));
     });
   });
+
+  // cache 与缓冲进度是区分「网络喂不进」与「解码跟不上」的两列证据：
+  // 卡顿时 cache 归零说明数据侧断供；cache 仍有余量而 fps 塌陷则指向解码。
+  group('时间线 缓存与缓冲进度列', () {
+    test('表头包含 cache 与 buf 列', () {
+      final head = PlaybackDiagnostics().exportTimeline().split('\n').first;
+      expect(head, contains('cache(s)'));
+      expect(head, contains('buf%'));
+      expect(head, contains('ahead(ms)'));
+    });
+
+    test('未传新参数时保持未知，现有调用方无需改动', () {
+      final diag = PlaybackDiagnostics();
+      diag.addSample(
+          pos: 0, buffered: 4000, state: 'playing', status: 'loaded');
+
+      final sample = diag.exportTimeline();
+      expect(sample, contains(' -')); // cache 缺省
+      expect(sample, contains('   -')); // buf 缺省
+      final cols = sample.trim().split('\n').last.trim().split(RegExp(r'\s+'));
+      expect(cols[2], '-', reason: 'cache 列应为占位符');
+      expect(cols[3], '-', reason: 'buf 列应为占位符');
+    });
+
+    test('记录缓存秒数与缓冲进度', () {
+      final diag = PlaybackDiagnostics();
+      diag.addSample(
+        pos: 0,
+        buffered: 0,
+        state: 'playing',
+        status: 'buffering',
+        cacheSeconds: 0.0,
+        bufProgress: 0,
+      );
+
+      final cols = diag
+          .exportTimeline()
+          .trim()
+          .split('\n')
+          .last
+          .trim()
+          .split(RegExp(r'\s+'));
+      expect(cols[1], '0', reason: 'ahead');
+      expect(double.parse(cols[2]), 0.0, reason: '卡顿时缓存应为 0');
+      expect(cols[3], '0%', reason: '缓冲进度应为 0%');
+    });
+
+    test('缓存秒数保留一位小数', () {
+      final diag = PlaybackDiagnostics();
+      diag.addSample(
+          pos: 0,
+          buffered: 4000,
+          state: 'playing',
+          status: 'loaded',
+          cacheSeconds: 1.0);
+
+      final cols = diag
+          .exportTimeline()
+          .trim()
+          .split('\n')
+          .last
+          .trim()
+          .split(RegExp(r'\s+'));
+      expect(cols[2], '1.0');
+    });
+
+    test('缓冲进度越界仍如实显示，不静默修正', () {
+      final diag = PlaybackDiagnostics();
+      diag.addSample(
+          pos: 0,
+          buffered: 4000,
+          state: 'playing',
+          status: 'loaded',
+          bufProgress: 100);
+      expect(diag.exportTimeline(), contains('100%'));
+    });
+
+    test('新建样本不会污染上一次的缓存值', () {
+      final diag = PlaybackDiagnostics();
+      diag.addSample(
+          pos: 0,
+          buffered: 4000,
+          state: 'playing',
+          status: 'loaded',
+          cacheSeconds: 3.5,
+          bufProgress: 80);
+      diag.addSample(
+          pos: 250,
+          buffered: 4000,
+          state: 'playing',
+          status: 'loaded',
+          cacheSeconds: 0.0,
+          bufProgress: 0);
+
+      final rows = diag.exportTimeline().trim().split('\n').skip(1).toList();
+      expect(rows.length, 2);
+      expect(rows.first, contains('3.5'));
+      expect(rows.last, contains('0.0'));
+      expect(rows.first, contains('80%'));
+      expect(rows.last, contains('0%'));
+    });
+  });
 }

@@ -57,6 +57,9 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   /// 设备 Dolby Vision 硬件解码能力摘要（仅 DV 内容时非空）
   final String dvCapability;
 
+  /// 产物身份自证（版本 + 原生通道是否进包），与完整诊断报告共用
+  final String buildSummary;
+
   // 卡顿诊断
   final String stallSummary;
   final int bufProgress;
@@ -98,6 +101,7 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.decoderReport,
     required this.audioBackend,
     required this.dvCapability,
+    required this.buildSummary,
     required this.stallSummary,
     required this.bufProgress,
     required this.deepLogActive,
@@ -368,6 +372,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
 
   String _exportDiagnostics() {
     final buf = StringBuffer();
+    buf.writeln(widget.buildSummary);
     buf.writeln('=== 播放诊断 ===');
     buf.writeln('状态: ${widget.playbackState} | 媒体: ${widget.mediaStatusStr}');
     buf.writeln('位置: ${_formatMs(widget.positionMs)} / ${_formatMs(widget.durationMs)}');

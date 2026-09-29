@@ -21,6 +21,14 @@ class DiagSample {
   /// 实测帧率，未开启深度诊断时为 null
   final double? fps;
 
+  /// mdk 状态行的视频缓存时长（秒），样本形如 `cache 0v 1.0s`。
+  /// 卡顿时该值归零即说明数据喂不进（网络/demux 侧），而解码阻塞时
+  /// 它仍有余量——这是区分两类根因的关键列。未开深度诊断时为 null。
+  final double? cacheSeconds;
+
+  /// mdk `reader.buffering` 上报的缓冲进度 0-100，-1 表示尚未收到。
+  final int bufProgress;
+
   const DiagSample({
     required this.t,
     required this.pos,
@@ -28,6 +36,8 @@ class DiagSample {
     required this.state,
     required this.status,
     this.fps,
+    this.cacheSeconds,
+    this.bufProgress = -1,
   });
 }
 
@@ -124,6 +134,8 @@ class PlaybackDiagnostics {
     required String state,
     required String status,
     bool reloading = false,
+    double? cacheSeconds,
+    int bufProgress = -1,
   }) {
     if (_sessionStart == null) _sessionStart = _clock();
 
@@ -151,6 +163,8 @@ class PlaybackDiagnostics {
       state: state,
       status: status,
       fps: _latestFps,
+      cacheSeconds: cacheSeconds,
+      bufProgress: bufProgress,
     ));
     if (_samples.length > maxSamples) {
       _samples.removeAt(0);
@@ -248,19 +262,25 @@ class PlaybackDiagnostics {
 
   /// 导出时间线表格。样本过多时降采样，保留首尾细节。
   String exportTimeline({int maxRows = exportMaxRows}) {
-    if (_samples.isEmpty) return 't(s)  ahead(ms)  state  status  fps\n(无采样数据)\n';
+    const head = 't(s)  ahead(ms)  cache(s)  buf%  state  status  fps';
+    if (_samples.isEmpty) return '$head\n(无采样数据)\n';
     final rows = _downsample(_samples, maxRows);
-    final sb = StringBuffer()
-      ..writeln('t(s)  ahead(ms)  state  status  fps');
+    final sb = StringBuffer()..writeln(head);
     for (final s in rows) {
       sb.writeln('${(s.t / 1000).toStringAsFixed(0).padLeft(4)}  '
           '${s.ahead.toString().padLeft(8)}  '
+          '${(s.cacheSeconds?.toStringAsFixed(1) ?? '-').padLeft(8)}  '
+          '${_bufLabel(s.bufProgress).padLeft(4)}  '
           '${s.state.padRight(9)} '
           '${s.status.padRight(14)} '
           '${s.fps?.toStringAsFixed(1) ?? '-'}');
     }
     return sb.toString();
   }
+
+  /// 缓冲进度列的展示：-1 表示尚未收到 reader.buffering 事件。
+  static String _bufLabel(int bufProgress) =>
+      bufProgress < 0 ? '-' : '$bufProgress%';
 
   /// 导出卡顿事件列表。
   String exportStalls() {

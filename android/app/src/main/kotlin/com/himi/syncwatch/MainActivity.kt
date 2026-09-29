@@ -23,7 +23,10 @@ class MainActivity : FlutterActivity() {
         dvChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             DolbyVisionPlugin.CHANNEL
-        ).apply { setMethodCallHandler(DolbyVisionPlugin()) }
+        ).apply {
+            // applicationContext 供 getAppVersion 读 PackageManager
+            setMethodCallHandler(DolbyVisionPlugin(applicationContext))
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {

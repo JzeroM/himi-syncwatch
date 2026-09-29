@@ -302,4 +302,113 @@ void main() {
       expect(calls, 2);
     });
   });
+
+  group('DolbyVisionService.buildIdentity', () {
+    const channel = MethodChannel('com.himi/dolby_vision');
+
+    setUp(() => DolbyVisionService.isAndroidOverride = true);
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    void mockVersion(Map<Object?, Object?> result) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        expect(call.method, 'getAppVersion');
+        return result;
+      });
+    }
+
+    test('解析版本号并确认通道已注册', () async {
+      mockVersion(const {'versionName': '1.1.16', 'versionCode': 186, 'error': null});
+
+      final id = await DolbyVisionService.buildIdentity();
+      expect(id.channelOk, isTrue);
+      expect(id.channelMissing, isFalse);
+      expect(id.versionName, '1.1.16');
+      expect(id.versionCode, 186);
+      expect(id.hasVersion, isTrue);
+      expect(id.summary, '1.1.16+186 | DV通道已注册');
+    });
+
+    test('版本号为空串时回落到未知，不输出空版本', () async {
+      mockVersion(const {'versionName': '', 'versionCode': 0, 'error': null});
+
+      final id = await DolbyVisionService.buildIdentity();
+      expect(id.channelOk, isTrue);
+      expect(id.hasVersion, isFalse);
+      expect(id.summary, '未知 | DV通道已注册');
+    });
+
+    test('原生报错时保留错误文本', () async {
+      mockVersion(const {
+        'versionName': null,
+        'versionCode': null,
+        'error': 'java.lang.IllegalStateException',
+      });
+
+      final id = await DolbyVisionService.buildIdentity();
+      expect(id.channelOk, isTrue);
+      expect(id.summary, contains('java.lang.IllegalStateException'));
+    });
+
+    test('versionCode 为小数也能解析', () async {
+      mockVersion(const {'versionName': '1.1.16', 'versionCode': 186.0, 'error': null});
+      final id = await DolbyVisionService.buildIdentity();
+      expect(id.versionCode, 186);
+    });
+
+    // 核心场景：CI 曾整体覆盖 android/ 导致原生插件未随包发布，
+    // 真机表现为 MissingPluginException。报告必须一眼看出这一点。
+    test('通道未注册时点明产物缺原生插件', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+
+      final id = await DolbyVisionService.buildIdentity();
+      expect(id.channelOk, isFalse);
+      expect(id.channelMissing, isTrue);
+      expect(id.versionName, isNull);
+      expect(id.summary, '未知 | DV通道未注册(产物缺原生插件)');
+      expect(id.error, contains('MissingPluginException'));
+    });
+
+    test('原生抛异常同样判为通道未应答', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'ERR');
+      });
+
+      final id = await DolbyVisionService.buildIdentity();
+      expect(id.channelOk, isFalse);
+      expect(id.summary, '未知 | DV通道未注册(产物缺原生插件)');
+    });
+
+    test('非 Android 平台不调用平台通道', () async {
+      DolbyVisionService.isAndroidOverride = false;
+      var called = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        called = true;
+        return const {};
+      });
+
+      final id = await DolbyVisionService.buildIdentity();
+      expect(called, isFalse);
+      expect(id.channelOk, isFalse);
+      expect(id.error, '非 Android 平台');
+    });
+
+    test('原生返回空数据时不误报版本，通道仍视为已注册', () async {
+      // 通道应答了就说明插件在包里；数据缺失只影响版本展示，
+      // 不能因此把「通道未注册」的结论写进报告。
+      mockVersion(const <Object?, Object?>{});
+
+      final id = await DolbyVisionService.buildIdentity();
+      expect(id.channelOk, isTrue);
+      expect(id.hasVersion, isFalse);
+      expect(id.summary, '未知 | DV通道已注册');
+    });
+  });
 }

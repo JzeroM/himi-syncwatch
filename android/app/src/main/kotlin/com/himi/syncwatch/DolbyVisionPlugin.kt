@@ -1,5 +1,6 @@
 package com.himi.syncwatch
 
+import android.content.Context
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
@@ -19,7 +20,10 @@ import io.flutter.plugin.common.MethodChannel
  * 只探测 video/dolby-vision 会漏判，导致上层误以为设备不支持而
  * 强制走软件解码，进而在 4K 10bit 场景下解码不及而卡顿。
  */
-class DolbyVisionPlugin : MethodChannel.MethodCallHandler {
+class DolbyVisionPlugin(private val context: Context?) : MethodChannel.MethodCallHandler {
+
+    /** 无 Context 的构造：仅用于不需要 PackageManager 的场景与测试。 */
+    constructor() : this(null)
 
     companion object {
         const val CHANNEL = "com.himi/dolby_vision"
@@ -59,7 +63,32 @@ class DolbyVisionPlugin : MethodChannel.MethodCallHandler {
                     dolbyVision = call.argument<Boolean>("dolbyVision") ?: false
                 ).toMap()
             )
+            "getAppVersion" -> result.success(appVersion())
             else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * 产物版本自证。
+     *
+     * 诊断报告需要能一眼看出自己来自哪个构建：CI 曾整体覆盖 android/ 导致
+     * 本插件在发布包中消失，问题只表现为真机上的 MissingPluginException。
+     * 通道能应答即证明插件已进包，versionName+versionCode 精确定位到 tag。
+     */
+    private fun appVersion(): Map<String, Any?> {
+        val ctx = context
+            ?: return mapOf("versionName" to null, "versionCode" to null, "error" to "缺少 Context")
+        return try {
+            val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+            val code: Long = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+            mapOf("versionName" to (info.versionName ?: ""), "versionCode" to code, "error" to null)
+        } catch (e: Throwable) {
+            mapOf("versionName" to null, "versionCode" to null, "error" to e.toString())
         }
     }
 

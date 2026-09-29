@@ -247,10 +247,77 @@ class DolbyVisionService {
     }
   }
 
+  /// 产物身份自证：应用版本 + 原生通道是否真正进包。
+  ///
+  /// 通道能应答本身就证明原生插件已随包发布。CI 曾整体覆盖 android/ 导致
+  /// 插件在发布包中消失，那时这里会拿到 MissingPluginException——诊断报告
+  /// 首行据此直接说明「这份日志来自缺插件的旧包」，避免再误判为代码 bug。
+  static Future<BuildIdentity> buildIdentity() async {
+    if (!_isAndroid) {
+      return const BuildIdentity(error: '非 Android 平台');
+    }
+    try {
+      final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'getAppVersion',
+      );
+      if (raw == null) {
+        return const BuildIdentity(error: '原生未返回版本信息');
+      }
+      return BuildIdentity(
+        versionName: (raw['versionName'] as String?) ?? '',
+        versionCode: (raw['versionCode'] as num?)?.toInt(),
+        error: raw['error'] as String?,
+        channelOk: true,
+      );
+    } on MissingPluginException catch (e) {
+      return BuildIdentity(channelOk: false, error: e.toString());
+    } catch (e) {
+      return BuildIdentity(channelOk: false, error: e.toString());
+    }
+  }
+
   @visibleForTesting
   static void resetCache() {
     _cached = Future.value(DvProbeResult.unknown);
     _initialized = false;
     isAndroidOverride = null;
+  }
+}
+
+/// 当前构建的身份信息。
+class BuildIdentity {
+  const BuildIdentity({
+    this.versionName,
+    this.versionCode,
+    this.error,
+    this.channelOk = false,
+  });
+
+  /// 应用版本号，如 `1.1.16`；取不到时为 null 或空串。
+  final String? versionName;
+
+  /// 构建号，如 `186`。
+  final int? versionCode;
+
+  /// 原生侧错误；通道未注册时为 MissingPluginException 全文。
+  final String? error;
+
+  /// `com.himi/dolby_vision` 通道是否应答。false 即产物缺原生插件。
+  final bool channelOk;
+
+  bool get hasVersion => versionName != null && versionName!.isNotEmpty;
+
+  /// 是否因通道未注册而无法确认版本——诊断报告必须醒目提示这种情况。
+  bool get channelMissing => !channelOk;
+
+  /// 报告首行的一行摘要。
+  String get summary {
+    if (!channelOk) {
+      return '未知 | DV通道未注册(产物缺原生插件)';
+    }
+    final v = hasVersion
+        ? '$versionName+${versionCode ?? '?'}'
+        : (error == null ? '未知' : '未知($error)');
+    return '$v | DV通道已注册';
   }
 }

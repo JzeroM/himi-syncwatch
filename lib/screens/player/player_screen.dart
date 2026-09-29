@@ -23,6 +23,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/decoder_report.dart';
+import 'package:himi_syncwatch/services/diagnostic_export.dart';
 import 'package:himi_syncwatch/services/codec_mime_map.dart';
 import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
@@ -343,6 +344,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String _diagStalls = '';
   String _diagNotes = '';
   int _bufProgress = -1; // 缓冲进度 0-100，-1 表示未知
+
+  /// mdk 状态行解析出的视频缓存秒数。深度诊断未开或未收到状态行时为 null。
+  double? _latestCacheSeconds;
+
+  /// 产物身份自证（版本 + DV 通道是否进包），读取一次后缓存。
+  String _buildSummary = '产物身份: 读取中...';
+  bool _buildIdentityLoaded = false;
+
   Timer? _sampleTimer;
   bool _deepLogActive = false;
   DateTime _deepWindowStart = DateTime.now();
@@ -583,9 +592,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         status: _describeMediaStatus(ms),
         reloading: ms.test(mdk.MediaStatus.unloaded) ||
             ms.test(mdk.MediaStatus.loading),
+        cacheSeconds: _latestCacheSeconds,
+        bufProgress: _bufProgress,
       );
     } catch (e) {
       LogService().log('Diag', '采样失败: $e');
+    }
+  }
+
+  /// 读取产物身份并缓存。
+  ///
+  /// 通道能应答即证明原生插件随包发布；应答不了就说明这份日志来自缺插件的
+  /// 构建（CI 曾整体覆盖 android/ 造成过这种情况），报告首行直接写明，
+  /// 免得把打包事故误当成代码 bug 反复排查。
+  Future<void> _loadBuildIdentity() async {
+    if (_buildIdentityLoaded) return;
+    _buildIdentityLoaded = true;
+    final identity = await DolbyVisionService.buildIdentity();
+    if (!mounted) return;
+    setState(() => _buildSummary = '产物身份: ${identity.summary}');
+    if (identity.channelMissing) {
+      LogService().log('Diag', 'DV 通道未注册，产物缺原生插件: ${identity.error}');
     }
   }
 
@@ -802,6 +829,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // 第二步：探测 DV 解码能力（不覆盖解码器配置）
       await _probeDvCapability();
+      await _loadBuildIdentity();
 
       // 换集：清空上一集的卡顿诊断，避免时间线跨集污染
       _diag.reset();
@@ -986,6 +1014,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // prepare 前探测 DV 解码能力
       await _probeDvCapability();
+      await _loadBuildIdentity();
 
       _isSwitchingMedia = true;
       _player.media = playUrl;
@@ -1225,6 +1254,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           }
           final fps = _parseFps(line);
           if (fps != null) _diag.updateFps(fps);
+
+          // 视频缓存秒数：卡顿时是否归零是区分「网络喂不进」与
+          // 「解码跟不上」的直接证据，一并进时间线。
+          final cache = MdkLogParser.parseCacheSeconds(line);
+          if (cache != null) _latestCacheSeconds = cache;
         } else {
           _deepNoteLines.add(line);
           while (_deepNoteLines.length > _deepNoteLineCap) {
@@ -1278,18 +1312,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final notable = _deepNoteLines.isEmpty
         ? '(无)'
         : _deepNoteLines.join('\n');
-    return '$_diagSummary\n\n'
-        '=== 解码环境 ===\n'
-        '解码模式: ${AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-'} | '
-        'videoDecoders: ${_player.videoDecoders.join(',')}\n'
-        'DV 内容: ${_embyVideoStream?.isDolbyVision == true}\n'
-        'DV 能力: ${_dvProbe.summary}\n\n'
-        '=== 时间线 ===\n$_diagTimeline\n'
-        '=== 卡顿事件 ===\n$_diagStalls\n'
-        '=== mdk 事件原文 ===\n${_diag.exportEvents()}'
-        '=== 诊断事件 ===\n$_diagNotes\n'
-        '=== mdk 状态行 (fps/cache) ===\n$raw\n\n'
-        '=== mdk 关键行 (解码器/丢帧/错误) ===\n$notable';
+    return DiagnosticExport.build(
+      buildSummary: _buildSummary,
+      diagSummary: _diagSummary,
+      decodeMode:
+          AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ??
+              '-',
+      videoDecoders: _player.videoDecoders.join(','),
+      isDolbyVisionContent: _embyVideoStream?.isDolbyVision == true,
+      dvCapability: _dvProbe.summary,
+      decoderReport: _decoderReport,
+      mdkRawDecoder: _mdkRawDecoder,
+      bufProgress: _bufProgress,
+      timeline: _diagTimeline,
+      stalls: _diagStalls,
+      events: _diag.exportEvents(),
+      notes: _diagNotes,
+      statusLines: raw,
+      notableLines: notable,
+    );
   }
 
   void _autoSelectDefaultTracks() {
@@ -2652,6 +2693,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               dvCapability: _embyVideoStream?.isDolbyVision == true
                   ? _dvProbe.summary
                   : '',
+              buildSummary: _buildSummary,
               // 卡顿诊断
               stallSummary: _diagSummary,
               bufProgress: _bufProgress,
