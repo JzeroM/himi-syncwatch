@@ -7,6 +7,60 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:himi_windows_rtm/himi_windows_rtm.dart';
+
+/// RTM 冒烟自检（CI/故障排查用）：设置环境变量 HIMI_RTM_SMOKE=1 后启动，
+/// 直连插件跑 initialize → login → subscribe → publish → release，
+/// 进度实时写入 LogService（himi_runtime.log 闪退后可取证），退出码 0=通过。
+Future<int> _runRtmSmoke() async {
+  final env = Platform.environment;
+  const fallbackAppId = '0123456789abcdef0123456789abcdef';
+  final appId = env['HIMI_RTM_SMOKE_APP_ID'] ?? fallbackAppId;
+  var stepNo = 0;
+  void step(String msg) {
+    stepNo++;
+    LogService().log('SMOKE', '[$stepNo] $msg');
+    // ignore: avoid_print
+    stdout.writeln('[SMOKE][$stepNo] $msg');
+  }
+
+  try {
+    final userId = 'smoke${DateTime.now().millisecondsSinceEpoch % 1000000}';
+    step('initialize start userId=$userId appId=$appId');
+    final initOk =
+        await WindowsRtmClient.initialize(appId: appId, userId: userId);
+    step('initialize ok=$initOk');
+    if (!initOk) return 2;
+
+    step('login start');
+    final loginOk = await WindowsRtmClient.login(token: '');
+    step('login ok=$loginOk (false=错误码回调已到达，链路通)');
+
+    step('subscribe start');
+    final subOk = await WindowsRtmClient.subscribe('smoke_channel');
+    step('subscribe ok=$subOk');
+
+    step('publish start');
+    final pubOk = await WindowsRtmClient.publish('smoke_channel',
+        '{"type":"smoke","ts":${DateTime.now().millisecondsSinceEpoch}}');
+    step('publish ok=$pubOk');
+
+    // 覆盖 SDK 首轮网络回调/心跳窗口（悬垂类崩溃多在数秒内触发）
+    step('wait 20s for async callbacks/heartbeats');
+    await Future<void>.delayed(const Duration(seconds: 20));
+
+    step('release start');
+    await WindowsRtmClient.release();
+    step('release done');
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    step('SMOKE PASS');
+    return 0;
+  } catch (e, st) {
+    step('EXCEPTION: $e\n$st');
+    return 1;
+  }
+}
 
 class _SelfSignedHttpOverrides extends HttpOverrides {
   @override
@@ -19,6 +73,11 @@ class _SelfSignedHttpOverrides extends HttpOverrides {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isWindows &&
+      Platform.environment.containsKey('HIMI_RTM_SMOKE')) {
+    final smokeCode = await _runRtmSmoke();
+    exit(smokeCode);
+  }
   HttpOverrides.global = _SelfSignedHttpOverrides();
   fvp.registerWith();
 

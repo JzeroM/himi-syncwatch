@@ -35,3 +35,35 @@ jobs:
         with:
           name: windows-rtm-exe
           path: build/windows/x64/runner/Release/
+
+  # 在 runner 上真实运行冒烟：初始化/登录/订阅/发布全链路，崩溃时从
+  # Windows 事件日志取 faulting module 定位
+  smoke-rtm:
+    needs: build-windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-rtm-exe
+          path: app
+
+      - name: Run RTM smoke (HIMI_RTM_SMOKE=1)
+        id: smoke
+        shell: pwsh
+        run: |
+          $env:HIMI_RTM_SMOKE = '1'
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'app\himi_syncwatch.exe'
+          if (!(Test-Path $exe)) { throw "找不到 $exe" }
+          $p = Start-Process -FilePath $exe -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw '冒烟超时120s' }
+          Write-Host "exit=$($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "冒烟失败 exit=$($p.ExitCode)" }
+
+      - name: Dump crash event log
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000} -MaxEvents 5 |
+            ForEach-Object { $_.Message; '---' }
+          Get-ChildItem $env:TEMP -Filter 'himi_runtime.log' -Recurse -ErrorAction SilentlyContinue |
+            ForEach-Object { "LOG: $($_.FullName)"; Get-Content $_.FullName -Tail 40 }

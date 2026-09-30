@@ -12,6 +12,10 @@ class LogService {
   final List<String> _logs = [];
   final DateFormat _fmt = DateFormat('HH:mm:ss.SSS');
 
+  // 实时落盘：进程闪退时内存日志丢失，追加写入 himi_runtime.log 保留现场
+  File? _runtimeFile;
+  Future<void>? _runtimeInit;
+
   List<String> get entries => List.unmodifiable(_logs);
 
   void log(String tag, String message) {
@@ -21,6 +25,22 @@ class LogService {
     if (_logs.length > _maxLogs) _logs.removeAt(0);
     // ignore: avoid_print
     print(entry);
+    _appendToRuntime(entry);
+  }
+
+  void _appendToRuntime(String entry) {
+    _runtimeInit ??= _initRuntimeFile();
+    _runtimeInit!.then(
+      (_) {
+        _runtimeFile?.writeAsString('$entry\n', mode: FileMode.append);
+      },
+      onError: (_) {},
+    );
+  }
+
+  Future<void> _initRuntimeFile() async {
+    final dir = await getTemporaryDirectory();
+    _runtimeFile = File('${dir.path}/himi_runtime.log');
   }
 
   String exportAll() => _logs.join('\n');
