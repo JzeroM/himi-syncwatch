@@ -63,6 +63,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           itemId: state.pathParameters['id']!,
           roomMode: state.uri.queryParameters['roomMode'] == 'true',
           roomCode: state.uri.queryParameters['roomCode'],
+          serverId: state.uri.queryParameters['server'],
         ),
       ),
       GoRoute(
@@ -74,6 +75,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             mediaSourceId: state.uri.queryParameters['mediaSourceId'],
             isHost: state.uri.queryParameters['isHost'] == 'true',
             audienceName: state.uri.queryParameters['name'] ?? '',
+            serverId: state.uri.queryParameters['server'],
           );
         },
       ),

@@ -27,6 +27,7 @@ import 'package:himi_syncwatch/services/diagnostic_export.dart';
 import 'package:himi_syncwatch/services/codec_mime_map.dart';
 import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
+import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
@@ -51,6 +52,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final bool isHost;
   final String audienceName;
 
+  /// 来源服务器本地配置 id（跨服务器播放）；null = 当前激活服务器。
+  final String? serverId;
+
   const PlayerScreen({
     super.key,
     required this.itemId,
@@ -58,6 +62,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.mediaSourceId,
     this.isHost = false,
     this.audienceName = '',
+    this.serverId,
   });
 
   @override
@@ -95,6 +100,9 @@ class EpisodeInfo {
   final String seriesName;
   final String? mediaSourceId;
 
+  /// 来源服务器本地配置 id；null = 当前激活服务器。
+  final String? serverId;
+
   const EpisodeInfo({
     required this.id,
     required this.name,
@@ -103,6 +111,7 @@ class EpisodeInfo {
     this.poster = '',
     this.seriesName = '',
     this.mediaSourceId,
+    this.serverId,
   });
 
   bool get isMovie => season == 0 && number == 0 && seriesName.isEmpty;
@@ -721,6 +730,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           number: e['number'] as int? ?? 0,
           poster: e['poster'] as String? ?? '',
           seriesName: e['seriesName'] as String? ?? '',
+          serverId: (e['serverId'] as String?) ?? widget.serverId,
         )).toList();
         _seriesName = pendingEpisodes.first['seriesName'] as String? ?? '';
         _hasEpisodeList = true;
@@ -731,6 +741,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           name: pendingMovie['name'] as String? ?? '电影',
           poster: pendingMovie['poster'] as String? ?? '',
           mediaSourceId: widget.mediaSourceId,
+          serverId: (pendingMovie['serverId'] as String?) ?? widget.serverId,
         )];
         _seriesName = '';
         _hasEpisodeList = true;
@@ -819,8 +830,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
 
     try {
-      final embyService = ref.read(embyServiceProvider);
-      final config = ref.read(embyConfigProvider);
+      // 来源服务器（集可能来自其他服务器）
+      final epServerId = ep.serverId ?? widget.serverId;
+      final embyService = ref.read(embyServiceForProvider(epServerId));
+      final config = ref.read(embyConfigForProvider(epServerId));
 
       // 第一步：先获取 Emby 详情（获取 DV 信息，用于解码器选择）
       try {
@@ -855,7 +868,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _codecProbeKey = '';
 
       // 第三步：加载流（prepare 会使用已配置好的解码器）
-      await _loadStream(itemId: itemId, mediaSourceId: epMediaSourceId);
+      await _loadStream(
+          itemId: itemId,
+          mediaSourceId: epMediaSourceId,
+          serverId: epServerId);
 
       // _loadStream 已在 updateTexture() 后设置播放状态，此处仅同步 UI
       if (mounted) {
@@ -885,8 +901,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (nextIndex >= _episodes.length) return;
 
     final nextEp = _episodes[nextIndex];
-    final embyService = ref.read(embyServiceProvider);
-    final config = ref.read(embyConfigProvider);
+    final nextServerId = nextEp.serverId ?? widget.serverId;
+    final embyService = ref.read(embyServiceForProvider(nextServerId));
+    final config = ref.read(embyConfigForProvider(nextServerId));
     final token = config?.accessToken ?? '';
 
     final nextUrl = embyService.getStreamUrl(
@@ -928,13 +945,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     String? itemId,
     int? subtitleStreamIndex,
     String? mediaSourceId,
+    String? serverId,
   }) async {
     final targetItemId = itemId ?? widget.itemId;
     final effectiveMediaSourceId = mediaSourceId ??
         (targetItemId == widget.itemId ? widget.mediaSourceId : null);
 
-    final embyService = ref.read(embyServiceProvider);
-    final config = ref.read(embyConfigProvider);
+    final effectiveServerId = serverId ?? widget.serverId;
+    final embyService = ref.read(embyServiceForProvider(effectiveServerId));
+    final config = ref.read(embyConfigForProvider(effectiveServerId));
     final token = config?.accessToken ?? '';
 
     try {
@@ -1552,6 +1571,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             LogService().log('Room', '主持人发送 roomInfo, episodeCount=${_episodes.length}');
             await rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
+              serverId: widget.serverId,
               mediaItemId: widget.itemId,
               mediaSourceId: widget.mediaSourceId,
               mediaItemName: _episodes.isNotEmpty
@@ -1594,6 +1614,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           if (_isHost) {
             rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
+              serverId: widget.serverId,
               mediaItemId: widget.itemId,
               mediaSourceId: widget.mediaSourceId,
               mediaItemName: _episodes.isNotEmpty
@@ -1790,6 +1811,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     LogService().log('Room', '_handleRoomInfo: keys=${message.keys.toList()}');
     final epIds = message['episodeIds'];
+    final roomServerId = message['serverId'] as String?;
     LogService().log('Room', '_handleRoomInfo: epIds type=${epIds.runtimeType}, len=${epIds is List ? epIds.length : "N/A"}');
     if (epIds is List && epIds.isNotEmpty) {
       // 电视剧：接收完整剧集列表
@@ -1806,6 +1828,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           number: i < numbers.length ? numbers[i] : 0,
           poster: i < posters.length ? posters[i] : '',
           seriesName: i < seriesNames.length ? seriesNames[i] : '',
+          serverId: roomServerId,
         ));
         _seriesName = message['seriesName'] ?? '';
         _hasEpisodeList = true;
@@ -1819,6 +1842,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _episodes = [EpisodeInfo(
             id: mediaItemId,
             name: mediaItemName ?? '电影',
+            serverId: roomServerId,
           )];
           _seriesName = '';
           _hasEpisodeList = true;
@@ -2164,6 +2188,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final name = data['name'] as String? ?? '';
     final poster = data['poster'] as String? ?? '';
     final seriesName = data['seriesName'] as String? ?? '';
+    final serverId = data['serverId'] as String?;
 
     if (isSeries) {
       final episodes = data['episodes'] as List<dynamic>?;
@@ -2178,6 +2203,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             number: epMap['number'] as int? ?? 0,
             poster: epMap['poster'] as String? ?? '',
             seriesName: seriesName,
+            serverId: (epMap['serverId'] as String?) ?? serverId,
           ));
         }
         if (_seriesName.isEmpty) {
@@ -2194,6 +2220,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           name: name,
           poster: poster,
           mediaSourceId: data['mediaSourceId'] as String?,
+          serverId: serverId,
         ));
         _hasEpisodeList = true;
         _addBroadcastMessage('已添加: $name');
@@ -2213,6 +2240,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       isSeries: isSeries,
       seriesName: data['seriesName'] as String? ?? '',
       episodes: isSeries ? (data['episodes'] as List<Map<String, dynamic>>?) : null,
+      serverId: data['serverId'] as String?,
     );
   }
 
@@ -2842,7 +2870,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _onDoubleTap() {
     if (!_canControlPlayback) return;
     _togglePlayPause();
-    _showGestureIcon(_player.state == mdk.PlaybackState.playing ? Icons.play_arrow : Icons.pause);
+    // 指示器显示切换后的「当前可执行动作」，与底部控制栏按钮语义一致
+    _showGestureIcon(
+        playPauseHintIcon(_player.state == mdk.PlaybackState.playing));
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
@@ -3414,8 +3444,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
                       _switchToLandscape(_OrientationMode.landscapeLeft);
                       if (itemData != null && mounted) {
+                        final serverParam = itemData['serverId'] != null
+                            ? '&server=${Uri.encodeComponent(itemData['serverId'] as String)}'
+                            : '';
                         final resourceData = await context.push<Map<String, dynamic>>(
-                          '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}',
+                          '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}$serverParam',
                         );
                         if (resourceData != null && mounted) {
                           _addResourceLocally(resourceData);
@@ -3784,11 +3817,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     if (isExternal) {
       // 外挂字幕：用 fvp setMedia 加载外部文件，不重载流
-      final itemId = _episodes.isNotEmpty
-          ? _episodes[_currentEpisodeIndex].id
-          : widget.itemId;
-      final embyService = ref.read(embyServiceProvider);
-      final config = ref.read(embyConfigProvider);
+      final hasCurrentEp = _episodes.isNotEmpty &&
+          _currentEpisodeIndex >= 0 &&
+          _currentEpisodeIndex < _episodes.length;
+      final itemId =
+          hasCurrentEp ? _episodes[_currentEpisodeIndex].id : widget.itemId;
+      final subtitleServerId =
+          hasCurrentEp ? _episodes[_currentEpisodeIndex].serverId : null;
+      final embyService =
+          ref.read(embyServiceForProvider(subtitleServerId ?? widget.serverId));
+      final config =
+          ref.read(embyConfigForProvider(subtitleServerId ?? widget.serverId));
       final subtitleUrl = embyService.getSubtitleUrl(
         itemId,
         subtitleIndex: stream.index,

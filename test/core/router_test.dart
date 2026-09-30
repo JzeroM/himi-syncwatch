@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -16,9 +17,22 @@ import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 
 import '../helpers/test_fakes.dart';
+
+EmbyServerConfig _serverConfig(String id, {String? name}) {
+  return EmbyServerConfig(
+    id: id,
+    serverUrl: 'https://$id.example.com',
+    serverName: name ?? '服务器$id',
+    serverId: 'srv-$id',
+    username: 'user',
+    accessToken: 'token',
+    userId: 'uid',
+  );
+}
 
 Future<GoRouter> _pumpApp(
   WidgetTester tester, {
@@ -26,6 +40,9 @@ Future<GoRouter> _pumpApp(
   FakeEmbyService? emby,
   EdgeInsets viewPadding = EdgeInsets.zero,
   AppSettings settings = const AppSettings(),
+  List<EmbyServerConfig> serverList = const [],
+  EmbyServerConfig? currentServer,
+  GlobalSearchService? globalSearch,
 }) async {
   late GoRouter router;
   await tester.pumpWidget(
@@ -35,6 +52,16 @@ Future<GoRouter> _pumpApp(
         embyAuthServiceProvider
             .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
         embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
+        if (serverList.isNotEmpty)
+          embyServerListProvider.overrideWith(
+            (ref) => EmbyServerListNotifier()..setList(serverList),
+          ),
+        if (currentServer != null)
+          embyConfigProvider.overrideWith(
+            (ref) => EmbyConfigNotifier()..setConfig(currentServer),
+          ),
+        if (globalSearch != null)
+          globalSearchProvider.overrideWithValue(globalSearch),
       ],
       child: Consumer(
         builder: (context, ref, _) {
@@ -336,4 +363,72 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
   });
 
+  testWidgets('detail 路由解析 server 参数注入 DetailScreen', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.push('/detail/42?server=srv-b');
+    await tester.pumpAndSettle();
+    final detail = tester.widget<DetailScreen>(find.byType(DetailScreen));
+    expect(detail.itemId, '42');
+    expect(detail.serverId, 'srv-b');
+    router.pop();
+    await tester.pumpAndSettle();
+
+    // player 依赖 libmdk FFI 无法在测试环境挂载，仅断言路由可解析
+    // （builder 以 queryParameters['server'] 注入 PlayerScreen.serverId）
+    expect(
+      router.configuration
+          .findMatch(Uri.parse('/player/42?server=srv-b'))
+          .isNotEmpty,
+      isTrue,
+    );
+  });
+
+  testWidgets('首页聚合搜索：结果带服务器名，点击不切换激活服务器进详情', (tester) async {
+    final serverA = _serverConfig('a', name: '服务器甲');
+    final serverB = _serverConfig('b', name: '服务器乙');
+    final globalSearch = GlobalSearchService(
+      serviceFactory: (cfg) => FakeEmbyService(
+        searchResults: [
+          MediaItem(
+            id: '${cfg.id}-1',
+            name: '${cfg.serverName}的影片',
+            type: 'Movie',
+          ),
+        ],
+      ),
+    );
+    final router = await _pumpApp(
+      tester,
+      serverList: [serverA, serverB],
+      currentServer: serverA,
+      globalSearch: globalSearch,
+    );
+
+    // 首页搜索入口（需要已认证的当前服务器）
+    await tester.tap(find.byIcon(Icons.search));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '影片');
+    await tester.pumpAndSettle();
+
+    // 两台服务器的结果都出现，副标题为服务器名
+    expect(find.text('服务器甲的影片'), findsOneWidget);
+    expect(find.text('服务器乙的影片'), findsOneWidget);
+    expect(find.text('服务器乙'), findsOneWidget);
+
+    // 点击另一台服务器的结果：携带 server 参数进详情，激活服务器不切换
+    await tester.tap(find.text('服务器乙的影片'));
+    await tester.pumpAndSettle();
+
+    final detail = tester.widget<DetailScreen>(find.byType(DetailScreen));
+    expect(detail.serverId, 'b');
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(DetailScreen)),
+    );
+    expect(container.read(embyConfigProvider)?.id, 'a',
+        reason: 'Q1=B：搜索不切换激活服务器');
+
+    router.pop();
+    await tester.pumpAndSettle();
+  });
 }

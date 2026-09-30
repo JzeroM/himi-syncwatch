@@ -364,6 +364,7 @@ class RtmService {
     String seriesName = '',
     List<Map<String, dynamic>>? episodes,
     String? mediaSourceId,
+    String? serverId,
   }) async {
     if (_client == null || _currentChannelId == null) return;
 
@@ -378,6 +379,7 @@ class RtmService {
       'seriesName': seriesName,
       if (episodes != null) 'episodes': episodes,
       if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
+      if (serverId != null) 'serverId': serverId,
     };
 
     await _publishMessage(message);
@@ -402,12 +404,14 @@ class RtmService {
     List<Map<String, dynamic>>? audioStreams,
     Map<String, dynamic>? videoStream,
     int? defaultAudioStreamIndex,
+    String? serverId,
   }) async {
     if (_client == null) return;
 
     final message = {
       'type': AppConstants.msgTypeRoomInfo,
       'userId': _currentUserId,
+      if (serverId != null) 'serverId': serverId,
       if (mediaItemId != null) 'mediaItemId': mediaItemId,
       if (mediaSourceId != null) 'mediaSourceId': mediaSourceId,
       if (mediaItemName != null) 'mediaItemName': mediaItemName,

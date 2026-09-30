@@ -15,7 +15,17 @@ class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
   final bool roomMode;
   final String? roomCode;
-  const DetailScreen({super.key, required this.itemId, this.roomMode = false, this.roomCode});
+
+  /// 来源服务器本地配置 id（跨服务器详情）；null = 当前激活服务器。
+  final String? serverId;
+
+  const DetailScreen({
+    super.key,
+    required this.itemId,
+    this.roomMode = false,
+    this.roomCode,
+    this.serverId,
+  });
 
   @override
   ConsumerState<DetailScreen> createState() => _DetailScreenState();
@@ -35,6 +45,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     _loadDetails();
   }
 
+  /// 跨服务器路由透传参数
+  String get _serverQuery => widget.serverId != null ? '&server=${Uri.encodeComponent(widget.serverId!)}' : '';
+
   Future<void> _loadDetails() async {
     setState(() {
       _isLoading = true;
@@ -42,7 +55,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     });
 
     try {
-      final embyService = ref.read(embyServiceProvider);
+      final embyService = ref.read(embyServiceForProvider(widget.serverId));
       final item = await embyService.getItemDetails(widget.itemId);
 
       if (item != null) {
@@ -124,7 +137,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
     if (mounted) {
       final query = StringBuffer(
-        'roomCode=${Uri.encodeComponent(roomCode)}&isHost=true',
+        'roomCode=${Uri.encodeComponent(roomCode)}&isHost=true$_serverQuery',
       );
       if (selectedSource != null) {
         query.write('&mediaSourceId=${selectedSource.id}');
@@ -139,6 +152,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           'number': e.indexNumber ?? 0,
           'poster': e.posterUrl ?? '',
           'seriesName': seriesName,
+          if (widget.serverId != null) 'serverId': widget.serverId,
         }).toList();
         ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
       }
@@ -148,6 +162,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           'id': _item!.id,
           'name': _item!.name,
           'poster': _item!.posterUrl ?? '',
+          if (widget.serverId != null) 'serverId': widget.serverId,
         };
         ref.read(pendingRoomMovieProvider.notifier).state = movieData;
       }
@@ -181,6 +196,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         'isSeries': true,
         'seriesName': _item!.name,
         'episodes': episodesJson,
+        if (widget.serverId != null) 'serverId': widget.serverId,
       };
     } else {
       // 电影：支持版本选择
@@ -196,6 +212,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         'poster': _item!.posterUrl ?? '',
         'isSeries': false,
         if (selectedMediaSourceId != null) 'mediaSourceId': selectedMediaSourceId,
+        if (widget.serverId != null) 'serverId': widget.serverId,
       };
     }
 
@@ -476,9 +493,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             'id': _item!.id,
                             'name': _item!.name,
                             'poster': _item!.posterUrl ?? '',
+                            if (widget.serverId != null)
+                              'serverId': widget.serverId,
                           };
 
-                          final query = StringBuffer('isHost=true');
+                          final query = StringBuffer('isHost=true$_serverQuery');
                           if (source != null) {
                             query.write('&mediaSourceId=${source.id}');
                           }
@@ -704,7 +723,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             'seriesName': seriesName,
                           }).toList();
                           ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
-                          context.push('/player/${ep.id}?isHost=true');
+                          context.push('/player/${ep.id}?isHost=true$_serverQuery');
                         },
                       )),
                   const SizedBox(height: 20),
@@ -729,7 +748,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             child: _SimilarCard(
                               item: sim,
                               onTap: () {
-                                context.push('/detail/${sim.id}');
+                                final q = widget.serverId != null
+                                    ? '?server=${Uri.encodeComponent(widget.serverId!)}'
+                                    : '';
+                                context.push('/detail/${sim.id}$q');
                               },
                             ),
                           ),

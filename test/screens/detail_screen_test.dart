@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
@@ -70,6 +71,51 @@ void main() {
     final gradient = _pageGradient(tester);
     final base = ThemeData.dark().scaffoldBackgroundColor;
     expect(gradient.colors.toSet(), {base});
+    expect(find.text('测试影片'), findsWidgets);
+  });
+
+  testWidgets('跨服务器详情按 serverId 使用来源服务器的服务', (tester) async {
+    final target = EmbyServerConfig(
+      id: 'srv-b',
+      serverUrl: 'https://b.example.com',
+      serverName: '服务器B',
+      serverId: 'srv-b',
+      username: 'user',
+      accessToken: 'token',
+      userId: 'uid',
+    );
+    EmbyServerConfig? used;
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+        // 当前激活服务器返回 null：若误用当前服务会加载失败
+        embyServiceProvider.overrideWith((ref) => FakeEmbyService(item: null)),
+        embyServiceFactoryProvider.overrideWithValue((cfg) {
+          used = cfg;
+          return FakeEmbyService(item: _item);
+        }),
+        posterColorProvider(_posterUrl).overrideWith((ref) async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(embyServerListProvider.notifier)
+        .setList([target]);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: ThemeData.dark(),
+          home: const DetailScreen(itemId: 'm1', serverId: 'srv-b'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(used?.id, 'srv-b');
     expect(find.text('测试影片'), findsWidgets);
   });
 }

@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -938,6 +939,21 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
   final WidgetRef ref;
   _MediaSearchDelegate(this.ref);
 
+  Future<List<GlobalSearchResult>>? _cachedFuture;
+  String? _cachedQuery;
+
+  /// 聚合搜索全部已认证服务器；缓存避免 rebuild 重复触发。
+  Future<List<GlobalSearchResult>> _search() {
+    final q = query.trim();
+    if (_cachedQuery != q || _cachedFuture == null) {
+      _cachedQuery = q;
+      _cachedFuture = ref
+          .read(globalSearchProvider)
+          .search(q, ref.read(embyServerListProvider));
+    }
+    return _cachedFuture!;
+  }
+
   @override
   List<Widget> buildActions(BuildContext context) {
     return [
@@ -963,21 +979,25 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
   Widget buildSuggestions(BuildContext context) => _buildSearchResults();
 
   Widget _buildSearchResults() {
-    if (query.length < 1) {
-      return const Center(child: Text('输入关键词进行搜索'));
+    if (query.trim().isEmpty) {
+      return const Center(child: Text('输入关键词搜索全部服务器'));
     }
-    return FutureBuilder<List<MediaItem>>(
-      future: ref.read(embyServiceProvider).searchItems(query),
+    return FutureBuilder<List<GlobalSearchResult>>(
+      future: _search(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final items = snapshot.data ?? [];
-        if (items.isEmpty) return const Center(child: Text('未找到结果'));
+        final results = snapshot.data ?? [];
+        if (results.isEmpty) return const Center(child: Text('未找到结果'));
         return ListView.builder(
-          itemCount: items.length,
+          itemCount: results.length,
           itemBuilder: (context, index) {
-            final item = items[index];
+            final r = results[index];
+            final item = r.item;
+            final meta = item.year != null
+                ? '${r.server.serverName} · ${item.year}'
+                : r.server.serverName;
             return ListTile(
               leading: SizedBox(
                 width: 50,
@@ -985,10 +1005,12 @@ class _MediaSearchDelegate extends SearchDelegate<String> {
                 child: EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
               ),
               title: Text(item.name),
-              subtitle: Text(item.year ?? ''),
+              subtitle: Text(meta),
               onTap: () {
                 close(context, '');
-                context.push('/detail/${item.id}');
+                context.push(
+                  '/detail/${item.id}?server=${Uri.encodeComponent(r.server.id)}',
+                );
               },
             );
           },

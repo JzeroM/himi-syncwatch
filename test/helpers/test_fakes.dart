@@ -93,6 +93,7 @@ class FakeEmbyService extends EmbyService {
     this.libraries = const [],
     this.items = const [],
     this.itemsByParent = const {},
+    this.searchResults = const [],
   });
 
   final MediaItem? item;
@@ -102,6 +103,12 @@ class FakeEmbyService extends EmbyService {
 
   /// 按 parentId 精确返回（用于模拟空媒体库）；未命中的库回退到 [items]。
   final Map<String, List<MediaItem>> itemsByParent;
+
+  /// searchItems 返回结果（聚合搜索测试用）。
+  final List<MediaItem> searchResults;
+
+  @override
+  Future<List<MediaItem>> searchItems(String query) async => searchResults;
 
   @override
   Future<MediaItem?> getItemDetails(String id) async => item;
