@@ -52,37 +52,20 @@ void main() {
     expect(card.height, lessThan(80));
   });
 
-  testWidgets('数字为白色，标签下方三色点缀条各归其位', (tester) async {
+  testWidgets('数字与标签为纯白样式，无点缀条', (tester) async {
     await tester.pumpWidget(panel());
 
-    // 数字纯白（不使用渐变/主题色）
+    // 数字纯白
     for (final text in ['2565', '2415', '73462']) {
       final t = tester.widget<Text>(find.text(text));
       expect(t.style?.color, Colors.white);
     }
 
-    // 三条点缀条：青绿 / 琥珀 / 紫罗兰
-    final bars = {
-      'statBar_电影': const Color(0xFF2DD4BF),
-      'statBar_电视剧': const Color(0xFFFBBF24),
-      'statBar_集': const Color(0xFFA78BFA),
-    };
-    for (final entry in bars.entries) {
-      final bar = find.byKey(ValueKey(entry.key));
-      expect(bar, findsOneWidget);
-      final box = tester.widget<Container>(bar);
-      expect(box.decoration, isA<BoxDecoration>());
-      expect((box.decoration as BoxDecoration).color, entry.value);
-      expect(tester.getSize(bar).height, 3);
-    }
-
-    // 色条在对应标签下方
+    // 三色点缀条已移除
     for (final label in ['电影', '电视剧', '集']) {
-      final bar = find.byKey(ValueKey('statBar_$label'));
-      expect(
-        tester.getTopLeft(bar).dy,
-        greaterThanOrEqualTo(tester.getBottomRight(find.text(label)).dy),
-      );
+      expect(find.byKey(ValueKey('statBar_$label')), findsNothing);
     }
+    expect(find.byType(ShaderMask), findsNothing);
+    expect(find.byType(Container), findsNothing);
   });
 }

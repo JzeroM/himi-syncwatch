@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
-/// 首页底部统计面板：横排三张玻璃卡片，白色数字 + 三色点缀条。
+/// 首页底部统计面板：横排三张玻璃卡片，白色数字与标签。
 class StatsPanel extends StatelessWidget {
   const StatsPanel({super.key, required this.counts});
 
@@ -14,23 +14,11 @@ class StatsPanel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
-          _StatCard(
-            label: '电影',
-            value: counts.movies,
-            barColor: const Color(0xFF2DD4BF), // 青绿
-          ),
+          _StatCard(label: '电影', value: counts.movies),
           const SizedBox(width: 10),
-          _StatCard(
-            label: '电视剧',
-            value: counts.series,
-            barColor: const Color(0xFFFBBF24), // 琥珀
-          ),
+          _StatCard(label: '电视剧', value: counts.series),
           const SizedBox(width: 10),
-          _StatCard(
-            label: '集',
-            value: counts.episodes,
-            barColor: const Color(0xFFA78BFA), // 紫罗兰
-          ),
+          _StatCard(label: '集', value: counts.episodes),
         ],
       ),
     );
@@ -38,15 +26,10 @@ class StatsPanel extends StatelessWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.barColor,
-  });
+  const _StatCard({required this.label, required this.value});
 
   final String label;
   final int value;
-  final Color barColor;
 
   @override
   Widget build(BuildContext context) {
@@ -72,15 +55,6 @@ class _StatCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 color: Colors.white.withValues(alpha: 0.75),
-              ),
-            ),
-            const SizedBox(height: 5),
-            Container(
-              key: ValueKey('statBar_$label'),
-              height: 3,
-              decoration: BoxDecoration(
-                color: barColor,
-                borderRadius: const BorderRadius.all(Radius.circular(1.5)),
               ),
             ),
           ],
