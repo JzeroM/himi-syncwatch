@@ -25,29 +25,24 @@ void HimiWindowsRtmPlugin::RegisterWithRegistrar(
   auto event_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
       registrar->messenger(), std::string(kChannelName) + "/events",
       &flutter::StandardMethodCodec::GetInstance());
-  auto plugin_weak = std::weak_ptr<HimiWindowsRtmPlugin>();
-  // plugin 由 registrar 持有；用 raw 指针经 lambda 捕获 sink 设置
-  auto sink_holder = [plugin_pointer = plugin.get()](
-                         const void*, std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events)
-      -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
-    plugin_pointer->event_sink_ = std::move(events);
-    return nullptr;
-  };
-  auto cancel_holder = [plugin_pointer = plugin.get()](
-                           const void*, const void*)
-      -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
-    std::lock_guard<std::mutex> lock(plugin_pointer->sink_mutex_);
-    plugin_pointer->event_sink_.reset();
-    return nullptr;
-  };
   auto handler = std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
-      std::move(sink_holder), std::move(cancel_holder));
+      [plugin_pointer = plugin.get()](
+          const void* /*arguments*/,
+          std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events)
+          -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
+        plugin_pointer->event_sink_ = std::move(events);
+        return nullptr;
+      },
+      [plugin_pointer = plugin.get()](
+          const void* /*arguments*/)
+          -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
+        std::lock_guard<std::mutex> lock(plugin_pointer->sink_mutex_);
+        plugin_pointer->event_sink_.reset();
+        return nullptr;
+      });
   event_channel->SetStreamHandler(std::move(handler));
 
   registrar->AddPlugin(std::move(plugin));
-  // method/event channel 的生命周期由 registrar 管理（messenger 存活期）
-  (void)method_channel;
-  (void)event_channel;
 }
 
 HimiWindowsRtmPlugin::HimiWindowsRtmPlugin(flutter::PluginRegistrarWindows* registrar)

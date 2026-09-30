@@ -31,7 +31,6 @@ class HimiWindowsRtmPlugin : public flutter::Plugin {
   void SendEvent(const flutter::EncodableMap& event);
 
   flutter::MethodChannel<flutter::EncodableValue> method_channel_;
-  std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> event_channel_;
   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> event_sink_;
   std::mutex sink_mutex_;
 };
