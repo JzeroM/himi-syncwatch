@@ -81,6 +81,33 @@ void main() {
       );
     });
 
+    testWidgets('showShadow 为 false 时不绘制悬浮投影', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const GlassContainer(
+            showShadow: false,
+            child: Text('面板内容'),
+          ),
+          const AppSettings(glassUi: true),
+        ),
+      );
+
+      final decorations = tester.widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byType(GlassContainer),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      expect(
+        decorations.any((d) {
+          final box = d.decoration as BoxDecoration;
+          return box.boxShadow != null && box.boxShadow!.isNotEmpty;
+        }),
+        isFalse,
+      );
+      expect(find.text('面板内容'), findsOneWidget);
+    });
+
     testWidgets('玻璃着色为三段渐变（上亮、中主体、下透）', (tester) async {
       await tester.pumpWidget(
         _wrap(

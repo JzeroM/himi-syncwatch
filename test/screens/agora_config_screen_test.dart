@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
@@ -101,5 +102,46 @@ void main() {
 
     await tester.tap(find.text('关闭'));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('已配置时默认收起表单，点编辑按钮展开', (tester) async {
+    await _pumpScreen(
+      tester,
+      agora: FakeAgoraConfigNotifier(
+        AgoraConfigModel(appId: 'a' * 32, appCertificate: 'certificate'),
+      ),
+    );
+
+    // 默认收起：无输入框与保存按钮，状态卡带编辑按钮
+    expect(find.text('已配置'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('保存'), findsNothing);
+    expect(find.byKey(const ValueKey('agoraEditButton')), findsOneWidget);
+    // 配置说明 / 清空始终可见
+    expect(find.widgetWithText(TextButton, '清空'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('agoraEditButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextField), findsNWidgets(2));
+    expect(find.text('保存'), findsOneWidget);
+  });
+
+  testWidgets('编辑后保存成功自动收起表单', (tester) async {
+    final agora = FakeAgoraConfigNotifier(
+      AgoraConfigModel(appId: 'a' * 32, appCertificate: 'old_cert'),
+    );
+    await _pumpScreen(tester, agora: agora);
+
+    await tester.tap(find.byKey(const ValueKey('agoraEditButton')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).at(1), 'new_cert');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(agora.state?.appCertificate, 'new_cert');
+    expect(find.byType(TextField), findsNothing);
+    await _settleSnackbars(tester);
   });
 }

@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/screens/room/room_screen.dart';
+import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/screens/category/category_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
@@ -85,6 +86,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           roomCode: state.uri.queryParameters['code'] ?? '',
           audienceName: state.uri.queryParameters['name'] ?? '',
         ),
+      ),
+      GoRoute(
+        path: '/scan',
+        builder: (context, state) => const QrScannerScreen(),
       ),
     ],
   );

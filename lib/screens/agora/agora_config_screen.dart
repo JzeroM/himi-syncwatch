@@ -17,6 +17,9 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
   late final TextEditingController _appIdController;
   late final TextEditingController _certController;
 
+  /// 已配置时默认收起表单，通过状态卡「编辑」按钮展开。
+  late bool _editing;
+
   @override
   void initState() {
     super.initState();
@@ -24,6 +27,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
     _appIdController = TextEditingController(text: config?.appId ?? '');
     _certController =
         TextEditingController(text: config?.appCertificate ?? '');
+    _editing = config?.isConfigured != true;
   }
 
   @override
@@ -49,6 +53,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
           ),
         );
     if (!mounted) return;
+    setState(() => _editing = false);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('声网配置已保存')),
     );
@@ -59,6 +64,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
     _appIdController.clear();
     _certController.clear();
     if (!mounted) return;
+    setState(() => _editing = true);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('声网配置已清空')),
     );
@@ -98,51 +104,56 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
             _StatusCard(
               configured: configured,
               appId: agoraConfig?.appId ?? '',
+              onEdit: configured
+                  ? () => setState(() => _editing = true)
+                  : null,
             ),
             const SizedBox(height: 20),
-            const Text(
-              'App ID',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _appIdController,
-              decoration: const InputDecoration(
-                hintText: '声网 App ID',
-                prefixIcon: Icon(Icons.vpn_key),
-                border: OutlineInputBorder(),
-                isDense: true,
+            if (_editing || !configured) ...[
+              const Text(
+                'App ID',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'App Certificate',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _certController,
-              decoration: const InputDecoration(
-                hintText: '声网 App Certificate',
-                prefixIcon: Icon(Icons.lock),
-                border: OutlineInputBorder(),
-                isDense: true,
+              const SizedBox(height: 8),
+              TextField(
+                controller: _appIdController,
+                decoration: const InputDecoration(
+                  hintText: '声网 App ID',
+                  prefixIcon: Icon(Icons.vpn_key),
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '开房 / 加入房间需要声网 RTM 凭证，填写后点击保存。',
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 44,
-              child: FilledButton.icon(
-                onPressed: _save,
-                icon: const Icon(Icons.save, size: 18),
-                label: const Text('保存'),
+              const SizedBox(height: 16),
+              const Text(
+                'App Certificate',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
-            ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _certController,
+                decoration: const InputDecoration(
+                  hintText: '声网 App Certificate',
+                  prefixIcon: Icon(Icons.lock),
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '开房 / 加入房间需要声网 RTM 凭证，填写后点击保存。',
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 44,
+                child: FilledButton.icon(
+                  onPressed: _save,
+                  icon: const Icon(Icons.save, size: 18),
+                  label: const Text('保存'),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [
@@ -358,10 +369,15 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.configured, required this.appId});
+  const _StatusCard({
+    required this.configured,
+    required this.appId,
+    this.onEdit,
+  });
 
   final bool configured;
   final String appId;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -397,6 +413,13 @@ class _StatusCard extends StatelessWidget {
               ],
             ),
           ),
+          if (onEdit != null)
+            IconButton(
+              key: const ValueKey('agoraEditButton'),
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              tooltip: '编辑',
+              onPressed: onEdit,
+            ),
         ],
       ),
     );

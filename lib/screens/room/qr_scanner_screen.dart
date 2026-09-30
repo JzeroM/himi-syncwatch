@@ -24,17 +24,24 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   }
 
   Future<void> _initCamera() async {
-    final status = await Permission.camera.status;
-    if (status.isGranted) {
-      _startCamera();
-    } else if (status.isPermanentlyDenied) {
-      setState(() => _error = '相机权限被拒绝，请在设置中开启');
-    } else {
-      final result = await Permission.camera.request();
-      if (result.isGranted) {
+    try {
+      final status = await Permission.camera.status;
+      if (status.isGranted) {
         _startCamera();
+      } else if (status.isPermanentlyDenied) {
+        setState(() => _error = '相机权限被拒绝，请在设置中开启');
       } else {
-        setState(() => _error = '需要相机权限扫描二维码');
+        final result = await Permission.camera.request();
+        if (result.isGranted) {
+          _startCamera();
+        } else {
+          setState(() => _error = '需要相机权限扫描二维码');
+        }
+      }
+    } catch (_) {
+      // 权限通道不可用（如测试环境）时降级为错误页，避免页面崩溃
+      if (mounted) {
+        setState(() => _error = '无法访问相机，请检查权限后重试');
       }
     }
   }

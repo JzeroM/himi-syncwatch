@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,6 +36,7 @@ Future<ProviderContainer> _pumpScreen(
   FakeEmbyAuthService? auth,
   FakeEmbyService? emby,
   AppSettings settings = const AppSettings(),
+  Future<String?> Function()? qrScan,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -47,7 +50,7 @@ Future<ProviderContainer> _pumpScreen(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: HomeScreen()),
+      child: MaterialApp(home: HomeScreen(qrScan: qrScan)),
     ),
   );
   await tester.pumpAndSettle();
@@ -66,6 +69,20 @@ Finder _capsuleOf(IconData icon) => find.ancestor(
       of: find.byIcon(icon),
       matching: find.byType(GlassContainer),
     );
+
+/// 手工构造可被 `RoomCode.decode` 解析的合法房间码（不依赖 token 生成）。
+String _validRoomCode() => 'HIMI:${base64Url.encode(utf8.encode(jsonEncode({
+          'v': 1,
+          'appId': 'a' * 32,
+          'channel': 'himi_test',
+          't': <dynamic>[],
+        })))}';
+
+/// 等 SnackBar 的 5 秒自动消失计时器走完，避免挂起 timer。
+Future<void> _settleSnackbars(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 5));
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('无服务器时显示引导到 Emby 服务器标签的空态', (tester) async {
@@ -93,6 +110,29 @@ void main() {
     expect(find.text('HIMI'), findsOneWidget);
     // 空态标题同样被玻璃椭圆包裹
     expect(_capsuleOf(Icons.dns_outlined), findsOneWidget);
+    // 顶栏两个椭圆都不绘制黑色悬浮投影
+    for (final capsule
+        in tester.widgetList<GlassContainer>(find.byType(GlassContainer))) {
+      expect(capsule.showShadow, isFalse);
+    }
+  });
+
+  testWidgets('已有服务器时顶栏两个玻璃椭圆同样无悬浮投影', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    await _pumpScreen(tester, auth: auth);
+
+    final capsules = tester.widgetList<GlassContainer>(
+      find.byType(GlassContainer),
+    );
+    expect(capsules.length, 2);
+    for (final capsule in capsules) {
+      expect(capsule.showShadow, isFalse);
+    }
   });
 
   testWidgets('已有服务器时加载媒体库且不报错', (tester) async {
@@ -225,6 +265,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('粘贴房间码'), findsOneWidget);
     expect(find.text('取消'), findsOneWidget);
+  });
+
+  testWidgets('扫码返回后房间码写回输入框，昵称为空时留在弹窗提示', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final code = _validRoomCode();
+    await _pumpScreen(tester, auth: auth, qrScan: () async => code);
+
+    await tester.tap(find.byIcon(Icons.meeting_room_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('加入房间'));
+    await tester.pumpAndSettle();
+    expect(find.text('粘贴房间码'), findsOneWidget);
+
+    await tester.tap(find.text('扫码加入'));
+    await tester.pumpAndSettle();
+
+    // 扫码码写回输入框，弹窗保持打开并提示补昵称（不再丢失房间码）
+    final codeField = tester.widget<TextField>(find.byType(TextField).at(0));
+    expect(codeField.controller!.text, code);
+    expect(find.text('粘贴房间码'), findsOneWidget);
+    expect(find.text('已扫描到房间码，请填写昵称后加入'), findsOneWidget);
+    await _settleSnackbars(tester);
+  });
+
+  testWidgets('码与昵称齐全时点加入关闭弹窗并发起进房路由', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    await _pumpScreen(tester, auth: auth);
+
+    await tester.tap(find.byIcon(Icons.meeting_room_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('加入房间'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).at(0), _validRoomCode());
+    await tester.enterText(find.byType(TextField).at(1), '小明');
+    await tester.tap(find.text('加入'));
+    await tester.pump();
+
+    // 成功分支先关弹窗再 push /player/_（测试环境无 GoRouter/无法挂载
+    // PlayerScreen，此处以 takeException 证明进房调用已发生）
+    final exception = tester.takeException();
+    expect(exception, isNotNull);
+    expect(exception.toString(), contains('GoRouter'));
+    await tester.pumpAndSettle();
+    expect(find.text('粘贴房间码'), findsNothing);
   });
 
   testWidgets('房间卡片中创建房间，声网未配置时给出提示', (tester) async {

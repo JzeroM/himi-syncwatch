@@ -12,6 +12,7 @@ import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
 import 'package:himi_syncwatch/screens/category/category_screen.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
+import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
@@ -202,6 +203,27 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
   });
 
+  testWidgets('扫码页为顶层路由，覆盖底部导航', (tester) async {
+    final router = await _pumpApp(tester);
+
+    // 权限流程在测试环境挂起（页面停在加载态），不能 pumpAndSettle，
+    // 用固定步长推进转场动画
+    router.push('/scan');
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byType(QrScannerScreen), findsOneWidget);
+    expect(find.byType(ShellNavBar), findsNothing);
+
+    router.pop();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(QrScannerScreen), findsNothing);
+    expect(find.byType(ShellNavBar), findsOneWidget);
+    expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
   testWidgets('底部导航胶囊贴近屏幕底，无安全区时仅留 4 间距', (tester) async {
     await _pumpApp(tester);
 
@@ -285,7 +307,7 @@ void main() {
     expect(find.byType(AgoraConfigScreen), findsOneWidget);
   });
 
-  testWidgets('顶层路由表包含分类 / 详情 / 播放 / 房间', (tester) async {
+  testWidgets('顶层路由表包含分类 / 详情 / 播放 / 房间 / 扫码', (tester) async {
     final router = await _pumpApp(tester);
 
     final paths = <String>[
@@ -293,6 +315,7 @@ void main() {
       '/detail/99',
       '/player/99?isHost=true',
       '/room?code=abc&name=tom',
+      '/scan',
     ];
     for (final path in paths) {
       expect(

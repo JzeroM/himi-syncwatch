@@ -17,6 +17,7 @@ class GlassContainer extends ConsumerWidget {
         const BorderRadius.all(Radius.circular(20)),
     this.tint = GlassConfig.panelTint,
     this.blurSigma = GlassConfig.blurSigma,
+    this.showShadow = true,
   });
 
   final Widget child;
@@ -25,6 +26,9 @@ class GlassContainer extends ConsumerWidget {
   final BorderRadius borderRadius;
   final Color tint;
   final double blurSigma;
+
+  /// 是否绘制悬浮投影（顶栏等贴边胶囊传 false，避免黑影）。
+  final bool showShadow;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -68,7 +72,7 @@ class GlassContainer extends ConsumerWidget {
     content = ClipRRect(borderRadius: borderRadius, child: content);
 
     // 悬浮投影画在裁剪层之外，避免被 ClipRRect 吃掉
-    if (glassEnabled) {
+    if (glassEnabled && showShadow) {
       content = DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: borderRadius,

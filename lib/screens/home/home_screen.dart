@@ -12,13 +12,16 @@ import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
-import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.qrScan});
+
+  /// 测试注入点：返回房间码模拟扫码结果；为 null 时走真实 `/scan` 路由。
+  @visibleForTesting
+  final Future<String?> Function()? qrScan;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -170,6 +173,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: GlassContainer(
               borderRadius: const BorderRadius.all(Radius.circular(24)),
               padding: const EdgeInsets.symmetric(horizontal: 4),
+              showShadow: false,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -276,6 +280,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return GlassContainer(
         borderRadius: const BorderRadius.all(Radius.circular(24)),
         padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+        showShadow: false,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -293,6 +298,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       builder: (titleContext) => GlassContainer(
         borderRadius: const BorderRadius.all(Radius.circular(24)),
         padding: const EdgeInsets.only(left: 12, right: 2),
+        showShadow: false,
         child: Tooltip(
           message: '切换服务器',
           child: GestureDetector(
@@ -585,31 +591,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: () async {
-                  Navigator.pop(dialogContext);
-                  final navigator = Navigator.of(context);
                   final messenger = ScaffoldMessenger.of(context);
-                  final result = await navigator.push<String>(
-                    MaterialPageRoute(
-                      builder: (_) => const QrScannerScreen(),
-                    ),
-                  );
-                  if (result != null && context.mounted) {
-                    final roomData = RoomCode.decode(result);
-                    if (roomData == null) {
-                      messenger.showSnackBar(
-                        const SnackBar(content: Text('扫码结果无效')),
-                      );
-                      return;
-                    }
-                    final name = nameController.text.trim();
-                    if (name.isEmpty) {
-                      _showJoinRoomDialog(context);
-                      return;
-                    }
-                    context.push(
-                      '/player/_?roomCode=${Uri.encodeComponent(result)}&isHost=false&name=${Uri.encodeComponent(name)}',
+                  final result = await (widget.qrScan?.call() ??
+                      context.push<String>('/scan'));
+                  if (result == null || !context.mounted) return;
+                  final roomData = RoomCode.decode(result);
+                  if (roomData == null) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('扫码结果无效')),
                     );
+                    return;
                   }
+                  final name = nameController.text.trim();
+                  if (name.isEmpty) {
+                    // 弹窗保持打开，把码写回输入框，等昵称填好后点「加入」
+                    codeController.text = result;
+                    messenger.showSnackBar(
+                      const SnackBar(
+                          content: Text('已扫描到房间码，请填写昵称后加入')),
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogContext);
+                  context.push(
+                    '/player/_?roomCode=${Uri.encodeComponent(result)}&isHost=false&name=${Uri.encodeComponent(name)}',
+                  );
                 },
                 icon: const Icon(Icons.qr_code_scanner, size: 18),
                 label: const Text('扫码加入'),
