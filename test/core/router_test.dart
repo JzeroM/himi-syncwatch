@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
+import 'package:himi_syncwatch/screens/category/category_screen.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
@@ -270,5 +271,24 @@ void main() {
         reason: '路由 $path 应可解析',
       );
     }
+  });
+
+  testWidgets('点击首页媒体库卡片进入对应分类海报墙', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {'s1': _sessionJson()},
+    );
+    await _pumpApp(tester, auth: auth, emby: _scrollableEmby());
+
+    // 媒体库栏按服务端顺序展示 4 张卡片
+    expect(find.byKey(const ValueKey('libraryCard_lib0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('libraryCard_lib3')), findsOneWidget);
+    expect(find.text('媒体库'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('libraryCard_lib2')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CategoryScreen), findsOneWidget);
+    expect(find.byType(ShellNavBar), findsNothing); // 顶层路由覆盖导航
   });
 }

@@ -29,6 +29,7 @@ class _CategoryData {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<_CategoryData> _categories = [];
+  List<LibraryFolder> _libraries = [];
   bool _isLoading = true;
   String? _error;
   bool _initialized = false;
@@ -89,9 +90,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     try {
       final embyService = ref.read(embyServiceProvider);
-      final libraries = await embyService.getLibraries();
+      final libs = await embyService.getLibraries();
 
-      final futures = libraries.map((lib) async {
+      final futures = libs.map((lib) async {
         final items = await embyService.getItems(
           parentId: lib.id,
           limit: 20,
@@ -106,8 +107,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final results = await Future.wait(futures);
       final categories = results.where((c) => c.items.isNotEmpty).toList();
 
+      // 媒体库栏：剔除空库，其余严格保持服务端排序
+      final nonEmptyIds = {for (final c in categories) c.folder.id};
+      final libraries = [
+        for (final lib in libs)
+          if (nonEmptyIds.contains(lib.id)) lib
+      ];
+
       setState(() {
         _categories = categories;
+        _libraries = libraries;
         _isLoading = false;
       });
     } catch (e) {
@@ -201,9 +210,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           top: GlassConfig.topInsetOf(context),
                           bottom: GlassConfig.bottomReserveOf(context),
                         ),
-                        itemCount: _categories.length,
+                        itemCount: _categories.length +
+                            (_libraries.isNotEmpty ? 1 : 0),
                         itemBuilder: (context, index) {
-                          final cat = _categories[index];
+                          final headerCount =
+                              _libraries.isNotEmpty ? 1 : 0;
+                          if (index < headerCount) {
+                            return _LibraryBar(
+                              libraries: _libraries,
+                              onOpen: (lib) => context.push(
+                                '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
+                              ),
+                            );
+                          }
+                          final cat = _categories[index - headerCount];
                           return _CategorySection(
                             category: cat,
                             onViewAll: () => context.push(
@@ -700,6 +720,88 @@ class _EmptyState extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 首页「媒体库」横向栏：库封面卡片按服务端排序排列，
+/// 点击进入对应分类海报墙。
+class _LibraryBar extends StatelessWidget {
+  const _LibraryBar({required this.libraries, required this.onOpen});
+
+  final List<LibraryFolder> libraries;
+  final void Function(LibraryFolder library) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Text(
+            '媒体库',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
+        SizedBox(
+          height: 96,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: libraries.length,
+            itemBuilder: (context, index) {
+              final lib = libraries[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: GestureDetector(
+                  key: ValueKey('libraryCard_${lib.id}'),
+                  onTap: () => onOpen(lib),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      width: 160,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          EmbyImage(url: lib.posterUrl, fit: BoxFit.cover),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.0),
+                                  Colors.black.withValues(alpha: 0.62),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 10,
+                            right: 10,
+                            bottom: 8,
+                            child: Text(
+                              lib.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

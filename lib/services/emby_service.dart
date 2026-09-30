@@ -210,9 +210,16 @@ class EmbyService {
     }
   }
 
+  /// 获取媒体库列表。
+  ///
+  /// 严格保持服务端 `/Users/{id}/Views` 返回顺序（即 Emby 服务器设定的
+  /// 媒体库排序），不做任何本地排序。
   Future<List<LibraryFolder>> getLibraries() async {
     try {
-      final response = await _dio.get('/Users/$_userId/Views');
+      final response = await _dio.get(
+        '/Users/$_userId/Views',
+        queryParameters: {'Fields': 'ImageTags'},
+      );
       final items = response.data['Items'] as List<dynamic>? ?? [];
       final folders = <LibraryFolder>[];
       for (final f in items) {
@@ -220,8 +227,13 @@ class EmbyService {
         final itemId = (f['ItemId'] ?? f['Id'])?.toString() ?? '';
         final collectionType = f['CollectionType'] as String? ?? '';
         if (name.isNotEmpty && itemId.isNotEmpty) {
-          final posterUrl =
+          var posterUrl =
               '$_serverUrl/Items/$itemId/Images/Primary?maxHeight=300';
+          final imageTags = f['ImageTags'] as Map<String, dynamic>?;
+          final primaryTag = imageTags?['Primary'] as String?;
+          if (primaryTag != null && primaryTag.isNotEmpty) {
+            posterUrl += '&tag=$primaryTag';
+          }
           folders.add(LibraryFolder(
             id: itemId,
             name: name,

@@ -92,12 +92,16 @@ class FakeEmbyService extends EmbyService {
     this.similar = const [],
     this.libraries = const [],
     this.items = const [],
+    this.itemsByParent = const {},
   });
 
   final MediaItem? item;
   final List<MediaItem> similar;
   final List<LibraryFolder> libraries;
   final List<MediaItem> items;
+
+  /// 按 parentId 精确返回（用于模拟空媒体库）；未命中的库回退到 [items]。
+  final Map<String, List<MediaItem>> itemsByParent;
 
   @override
   Future<MediaItem?> getItemDetails(String id) async => item;
@@ -115,7 +119,9 @@ class FakeEmbyService extends EmbyService {
     String? sortBy,
     String? sortOrder,
   }) async =>
-      items;
+      (parentId != null && itemsByParent.containsKey(parentId))
+          ? itemsByParent[parentId]!
+          : items;
 
   @override
   Future<List<MediaItem>> getSimilarItems(String itemId, {int limit = 10}) async =>

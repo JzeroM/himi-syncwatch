@@ -19,8 +19,12 @@ void main() {
   late List<_CapturedRequest> captured;
   late EmbyService service;
 
+  /// 可按测试用例替换的响应体生成器（默认空 Items）。
+  late Map<String, dynamic> Function(String path) respondWith;
+
   setUp(() async {
     captured = <_CapturedRequest>[];
+    respondWith = (_) => {'Items': <dynamic>[]};
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
 
     unawaited(() async {
@@ -31,7 +35,7 @@ void main() {
         request.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
-          ..write(jsonEncode({'Items': <dynamic>[]}));
+          ..write(jsonEncode(respondWith(request.uri.path)));
         await request.response.close();
       }
     }());
@@ -103,6 +107,65 @@ void main() {
     test('空 Items 响应返回空列表', () async {
       final items = await service.getItems(parentId: 'lib-1');
       expect(items, isEmpty);
+    });
+  });
+
+  group('getLibraries 保持服务端媒体库排序', () {
+    test('请求带 Fields=ImageTags、不注入 SortBy，顺序与服务端一致', () async {
+      respondWith = (_) => {
+            'Items': [
+              {
+                'Name': '动画电影',
+                'ItemId': 'L2',
+                'CollectionType': 'movies',
+                'ImageTags': {'Primary': 'tag-2'},
+              },
+              {
+                'Name': '华语电影',
+                'Id': 'L1',
+                'CollectionType': 'movies',
+                'ImageTags': <String, dynamic>{},
+              },
+              {
+                'Name': '外语电影',
+                'ItemId': 'L3',
+                'CollectionType': 'movies',
+              },
+            ],
+          };
+
+      final libs = await service.getLibraries();
+
+      final req = captured.single;
+      expect(req.path, '/Users/user-1/Views');
+      expect(req.param('Fields'), 'ImageTags');
+      expect(req.param('SortBy'), isNull);
+      expect(req.param('SortOrder'), isNull);
+
+      // 顺序与服务端下发完全一致（不做本地排序）
+      expect(libs.map((l) => l.id).toList(), ['L2', 'L1', 'L3']);
+      expect(
+        libs.map((l) => l.name).toList(),
+        ['动画电影', '华语电影', '外语电影'],
+      );
+
+      // 服务器给了 Primary tag 则拼入封面 URL，没有则不带 tag 参数
+      expect(libs[0].posterUrl, contains('&tag=tag-2'));
+      expect(libs[1].posterUrl, isNot(contains('tag=')));
+      expect(libs[2].posterUrl, isNot(contains('tag=')));
+    });
+
+    test('无效条目（缺名/缺 id）被过滤且不影响其余顺序', () async {
+      respondWith = (_) => {
+            'Items': [
+              {'Name': '', 'ItemId': 'Lx'},
+              {'Name': '华语电影', 'Id': 'L1'},
+              {'Name': '无ID'},
+            ],
+          };
+
+      final libs = await service.getLibraries();
+      expect(libs.map((l) => l.id).toList(), ['L1']);
     });
   });
 }

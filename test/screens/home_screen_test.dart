@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
+import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 import '../helpers/test_fakes.dart';
@@ -28,12 +30,13 @@ Map<String, dynamic> _sessionJson({
 Future<ProviderContainer> _pumpScreen(
   WidgetTester tester, {
   FakeEmbyAuthService? auth,
+  FakeEmbyService? emby,
 }) async {
   final container = ProviderContainer(
     overrides: [
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
       embyAuthServiceProvider.overrideWith((ref) => auth ?? FakeEmbyAuthService()),
-      embyServiceProvider.overrideWith((ref) => FakeEmbyService()),
+      embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
     ],
   );
   addTearDown(container.dispose);
@@ -259,5 +262,58 @@ void main() {
           .first,
     );
     expect(join.onTap, isNotNull);
+  });
+
+  testWidgets('首页媒体库栏：按服务端排序展示且过滤空库', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: const [
+        LibraryFolder(
+          id: 'lb2',
+          name: '华语电影',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+        LibraryFolder(
+          id: 'lbEmpty',
+          name: '空库',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+        LibraryFolder(
+          id: 'lb1',
+          name: '动画电影',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+      ],
+      itemsByParent: {'lbEmpty': <MediaItem>[]},
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    expect(find.text('媒体库'), findsOneWidget);
+
+    // 空库不显示，其余按服务端下发顺序（华语 → 动画）
+    expect(find.byKey(const ValueKey('libraryCard_lb2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('libraryCard_lb1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('libraryCard_lbEmpty')), findsNothing);
+
+    final first =
+        tester.getTopLeft(find.byKey(const ValueKey('libraryCard_lb2')));
+    final second =
+        tester.getTopLeft(find.byKey(const ValueKey('libraryCard_lb1')));
+    expect(first.dx, lessThan(second.dx));
+
+    // 卡片不包玻璃容器，顶部玻璃椭圆计数保持 2
+    expect(find.byType(GlassContainer), findsNWidgets(2));
+    // 下方媒体库分区与栏同时存在
+    expect(find.text('华语电影'), findsWidgets);
+    expect(find.text('动画电影'), findsWidgets);
   });
 }
