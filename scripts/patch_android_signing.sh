@@ -47,9 +47,12 @@ for path in paths:
     is_kts = path.endswith('.kts')
 
     if is_kts:
-        # kts 的 import 必须位于文件最顶（plugins 块之前），改用全限定名避免语法错误
+        # kts 的 import 必须在文件最顶（plugins 之前）；写在 android{} 前的裸
+        # java.util.Properties 会被脚本作用域里的扩展名遮蔽，编译报 Unresolved。
+        if 'import java.util.Properties' not in t:
+            t = 'import java.util.Properties\n' + t
         key_props_block = (
-            "val keyProperties = java.util.Properties().apply {\n"
+            "val keyProperties = Properties().apply {\n"
             "    val f = rootProject.file(\"key.properties\")\n"
             "    if (f.exists()) f.inputStream().use { load(it) }\n"
             "}\n\n"

@@ -133,7 +133,8 @@ make_workspace; ws=$WS_DIR
 printf '%s' "$KTS_TEMPLATE" > "$ws/android/app/build.gradle.kts"
 (cd "$ws" && bash "$PATCH" >/dev/null)
 out=$(cat "$ws/android/app/build.gradle.kts")
-assert_contains "注入 val keyProperties（全限定名，不依赖 import 位置）" "$out" "val keyProperties = java.util.Properties()"
+assert_contains "文件顶部 import java.util.Properties" "$(head -1 "$ws/android/app/build.gradle.kts")" "import java.util.Properties"
+assert_contains "注入 val keyProperties" "$out" "val keyProperties = Properties()"
 assert_contains "注入 create(\"release\") 签名配置" "$out" 'create("release")'
 assert_contains "release 使用 getByName 条件签名" "$out" 'signingConfigs.getByName("release")'
 assert_contains "保留 debug 回退分支" "$out" 'else signingConfigs.getByName("debug")'
@@ -154,8 +155,10 @@ echo ""
 echo "=== 测试 4: 重复执行幂等（不重复注入、不报错）==="
 (cd "$ws" && bash "$PATCH" >/dev/null)
 k_out=$(cat "$ws/android/app/build.gradle.kts")
-count=$(echo "$k_out" | grep -cF 'val keyProperties = java.util.Properties()')
+count=$(echo "$k_out" | grep -cF 'val keyProperties = Properties()')
 assert_eq "keyProperties 只出现一次" "1" "$count"
+count=$(echo "$k_out" | grep -cF 'import java.util.Properties')
+assert_eq "import 只出现一次" "1" "$count"
 count=$(echo "$k_out" | grep -cF 'create("release")')
 assert_eq "create(\"release\") 只出现一次" "1" "$count"
 
