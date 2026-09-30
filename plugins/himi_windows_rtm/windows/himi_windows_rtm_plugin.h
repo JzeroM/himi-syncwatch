@@ -1,6 +1,7 @@
 #ifndef FLUTTER_PLUGIN_HIMI_WINDOWS_RTM_PLUGIN_H_
 #define FLUTTER_PLUGIN_HIMI_WINDOWS_RTM_PLUGIN_H_
 
+#include <flutter/encodable_value.h>
 #include <flutter/event_channel.h>
 #include <flutter/event_stream_handler_functions.h>
 #include <flutter/method_channel.h>
