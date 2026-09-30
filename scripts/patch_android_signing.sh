@@ -80,10 +80,12 @@ for path in paths:
             pos = m.start()
             t = t[:pos] + signing_configs_block + t[pos:]
 
+        # 模板两种写法都兼容：旧版 signingConfigs.debug、3.29+ kts 的 getByName("debug")
         t, n = re.subn(
-            r'(buildTypes\s*\{[^}]*release\s*\{[^}]*?)signingConfig\s*=\s*signingConfigs\.debug',
+            r'(buildTypes\s*\{[^}]*release\s*\{[^}]*?)signingConfig\s*=\s*'
+            r'signingConfigs\.(?:getByName\("debug"\)|debug)',
             r'\1signingConfig = if (keyProperties["storeFile"] != null) '
-            r'signingConfigs.getByName("release") else signingConfigs.debug',
+            r'signingConfigs.getByName("release") else signingConfigs.getByName("debug")',
             t,
             flags=re.DOTALL,
         )
@@ -127,7 +129,8 @@ for path in paths:
             t = t[:pos] + signing_configs_block + t[pos:]
 
         t, n = re.subn(
-            r'(buildTypes\s*\{[^}]*release\s*\{[^}]*?)signingConfig\s*=\s*signingConfigs\.debug',
+            r'(buildTypes\s*\{[^}]*release\s*\{[^}]*?)signingConfig\s*=\s*'
+            r'signingConfigs\.(?:getByName\("debug"\)|debug)',
             r"\1signingConfig = keyProperties['storeFile'] ? signingConfigs.release : signingConfigs.debug",
             t,
             flags=re.DOTALL,

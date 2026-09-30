@@ -80,19 +80,21 @@ android {
 }
 '
 
+# 与 Flutter 3.47.4 真实模板一致：signingConfig 用 getByName("debug") 写法
 KTS_TEMPLATE='plugins {
-    id "com.android.application"
-    id "kotlin-android"
-    id "dev.flutter.flutter-gradle-plugin"
+    id("com.android.application")
+    id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
     namespace = "com.himi.syncwatch"
+    compileSdk = flutter.compileSdkVersion
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.debug
+            // TODO: Add your own signing config for the release build.
+            // Signing with the debug keys for now, so `flutter run --release` works.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }
@@ -134,7 +136,8 @@ out=$(cat "$ws/android/app/build.gradle.kts")
 assert_contains "注入 val keyProperties（全限定名，不依赖 import 位置）" "$out" "val keyProperties = java.util.Properties()"
 assert_contains "注入 create(\"release\") 签名配置" "$out" 'create("release")'
 assert_contains "release 使用 getByName 条件签名" "$out" 'signingConfigs.getByName("release")'
-assert_not_contains "release 不再写死 debug" "$out" "signingConfig = signingConfigs.debug"
+assert_contains "保留 debug 回退分支" "$out" 'else signingConfigs.getByName("debug")'
+assert_not_contains "不再无条件写死 debug" "$out" 'signingConfig = signingConfigs.getByName("debug")'
 
 echo ""
 echo "=== 测试 3: 两种 DSL 同时存在时全部注入 ==="
