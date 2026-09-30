@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -20,11 +21,16 @@ final _item = MediaItem(
   overview: '这是一段测试简介。',
 );
 
-Future<void> _pumpDetail(WidgetTester tester, {Color? accent}) async {
+Future<void> _pumpDetail(
+  WidgetTester tester, {
+  Color? accent,
+  FakeEmbyService? emby,
+}) async {
   final container = ProviderContainer(
     overrides: [
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
-      embyServiceProvider.overrideWith((ref) => FakeEmbyService(item: _item)),
+      embyServiceProvider
+          .overrideWith((ref) => emby ?? FakeEmbyService(item: _item)),
       posterColorProvider(_posterUrl).overrideWith((ref) async => accent),
     ],
   );
@@ -117,5 +123,49 @@ void main() {
 
     expect(used?.id, 'srv-b');
     expect(find.text('测试影片'), findsWidgets);
+  });
+
+  testWidgets('相似推荐卡片：无黑底 Card、标题在海报下方、评分与集数角标', (tester) async {
+    await _pumpDetail(
+      tester,
+      emby: FakeEmbyService(
+        item: _item,
+        similar: [
+          MediaItem(
+            id: 's1',
+            name: '相似影片',
+            type: 'Movie',
+            posterUrl: '',
+            year: '2024',
+            communityRating: 7.2,
+            indexNumber: 5,
+          ),
+        ],
+      ),
+    );
+
+    expect(find.text('相似推荐'), findsOneWidget);
+    expect(find.byType(Card), findsNothing);
+
+    final card = find.byKey(const ValueKey('posterCard_s1'));
+    expect(card, findsOneWidget);
+
+    final poster = tester.getRect(
+      find.descendant(of: card, matching: find.byType(EmbyImage)),
+    );
+    final title = tester.getRect(
+      find.descendant(of: card, matching: find.text('相似影片')),
+    );
+    expect(title.top, greaterThanOrEqualTo(poster.bottom));
+    expect(poster.height, closeTo(poster.width * 1.5, 0.5));
+
+    expect(
+      find.descendant(of: card, matching: find.text('7.2')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: card, matching: find.text('5')),
+      findsOneWidget,
+    );
   });
 }

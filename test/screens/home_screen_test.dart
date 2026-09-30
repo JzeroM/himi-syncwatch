@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 import '../helpers/test_fakes.dart';
@@ -415,11 +416,84 @@ void main() {
         tester.getTopLeft(find.byKey(const ValueKey('libraryCard_lb1')));
     expect(first.dx, lessThan(second.dx));
 
+    // 标题移到封面下方，不再用黑渐变盖在封面上
+    final card = find.byKey(const ValueKey('libraryCard_lb2'));
+    final cover = tester.getRect(
+      find.descendant(of: card, matching: find.byType(EmbyImage)),
+    );
+    final title = tester.getRect(
+      find.descendant(of: card, matching: find.text('华语电影')),
+    );
+    expect(title.top, greaterThanOrEqualTo(cover.bottom));
+
     // 卡片不包玻璃容器，顶部玻璃椭圆计数保持 2
     expect(find.byType(GlassContainer), findsNWidgets(2));
     // 下方媒体库分区与栏同时存在
     expect(find.text('华语电影'), findsWidgets);
     expect(find.text('动画电影'), findsWidgets);
+  });
+
+  testWidgets('首页分类卡片：海报完整 2:3、标题在海报下方、带评分与集数角标',
+      (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: const [
+        LibraryFolder(
+          id: 'lb2',
+          name: '华语电影',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+      ],
+      items: [
+        MediaItem(
+          id: 'm1',
+          name: '测试影片',
+          type: 'Movie',
+          posterUrl: '',
+          year: '2026',
+          communityRating: 8.5,
+          indexNumber: 12,
+        ),
+      ],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    // 不再套黑底 Card
+    expect(find.byType(Card), findsNothing);
+
+    final card = find.byKey(const ValueKey('posterCard_m1'));
+    expect(card, findsOneWidget);
+
+    final poster = tester.getRect(
+      find.descendant(of: card, matching: find.byType(EmbyImage)),
+    );
+    final title = tester.getRect(
+      find.descendant(of: card, matching: find.text('测试影片')),
+    );
+    final year = tester.getRect(
+      find.descendant(of: card, matching: find.text('2026')),
+    );
+
+    // 海报完整 2:3，标题与年份依次排在海报下方
+    expect(poster.height, closeTo(poster.width * 1.5, 0.5));
+    expect(title.top, greaterThanOrEqualTo(poster.bottom));
+    expect(year.top, greaterThanOrEqualTo(title.bottom));
+
+    // 评分在海报右下、集数在左上
+    expect(
+      find.descendant(of: card, matching: find.text('8.5')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: card, matching: find.text('12')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('首页背景为三段渐变容器（默认=应用底色同色三段）', (tester) async {

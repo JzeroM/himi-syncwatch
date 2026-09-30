@@ -170,7 +170,7 @@ class EmbyService {
         '/Items/$itemId/Similar',
         queryParameters: {
           'Limit': limit,
-          'Fields': 'CommunityRating,ProductionYear,ImageTags',
+          'Fields': 'CommunityRating,ProductionYear,IndexNumber,ImageTags',
           'ImageTypeLimit': 1,
         },
       );

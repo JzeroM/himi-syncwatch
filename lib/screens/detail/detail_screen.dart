@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/poster_card.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -735,7 +736,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
-                    height: 160,
+                    height: PosterCard.heightFor(102),
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       itemCount: _similarItems.length,
@@ -745,8 +746,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           width: 110,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: _SimilarCard(
+                            child: PosterCard(
+                              key: ValueKey('posterCard_${sim.id}'),
                               item: sim,
+                              width: 102,
                               onTap: () {
                                 final q = widget.serverId != null
                                     ? '?server=${Uri.encodeComponent(widget.serverId!)}'
@@ -844,73 +847,6 @@ class _MediaInfoRow extends StatelessWidget {
             child: Text(value, style: const TextStyle(fontSize: 14)),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SimilarCard extends StatelessWidget {
-  final MediaItem item;
-  final VoidCallback? onTap;
-  const _SimilarCard({required this.item, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
-                  if (item.communityRating != null)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.star,
-                                size: 12, color: Colors.amber),
-                            const SizedBox(width: 2),
-                            Text(
-                              item.communityRating!.toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(4),
-              child: Text(
-                item.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/poster_card.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key, this.qrScan});
@@ -103,7 +104,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           parentId: lib.id,
           limit: 20,
           includeItemTypes: 'Movie,Series',
-          fields: 'ImageTags,PrimaryImageAspectRatio,ProductionYear',
+          fields:
+              'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber',
           sortBy: 'DateCreated',
           sortOrder: 'Descending',
         );
@@ -773,7 +775,7 @@ class _LibraryBar extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 96,
+          height: 126,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -785,43 +787,33 @@ class _LibraryBar extends StatelessWidget {
                 child: GestureDetector(
                   key: ValueKey('libraryCard_${lib.id}'),
                   onTap: () => onOpen(lib),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: SizedBox(
-                      width: 160,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          EmbyImage(url: lib.posterUrl, fit: BoxFit.cover),
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.0),
-                                  Colors.black.withValues(alpha: 0.62),
-                                ],
-                              ),
-                            ),
+                  child: SizedBox(
+                    width: 160,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: SizedBox(
+                            height: 96,
+                            child:
+                                EmbyImage(url: lib.posterUrl, fit: BoxFit.cover),
                           ),
-                          Positioned(
-                            left: 10,
-                            right: 10,
-                            bottom: 8,
-                            child: Text(
-                              lib.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          lib.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -870,7 +862,7 @@ class _CategorySection extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 200,
+          height: PosterCard.heightFor(122),
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -881,8 +873,10 @@ class _CategorySection extends StatelessWidget {
                 width: 130,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: _PosterCard(
+                  child: PosterCard(
+                    key: ValueKey('posterCard_${item.id}'),
                     item: item,
+                    width: 122,
                     onTap: () => onItemTap(item),
                   ),
                 ),
@@ -891,52 +885,6 @@ class _CategorySection extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _PosterCard extends StatelessWidget {
-  final MediaItem item;
-  final VoidCallback? onTap;
-  const _PosterCard({required this.item, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (item.year != null)
-                    Text(
-                      item.year!,
-                      style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

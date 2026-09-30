@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
-import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/poster_card.dart';
 
 enum SortOption {
   dateDesc('最近添加', 'DateCreated', 'Descending'),
@@ -113,7 +113,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         startIndex: 0,
         includeItemTypes: _filterOption.embyValue,
         fields:
-            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating',
+            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber',
         sortBy: _sortOption.sortBy,
         sortOrder: _sortOption.sortOrder,
       );
@@ -144,7 +144,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         startIndex: _startIndex,
         includeItemTypes: _filterOption.embyValue,
         fields:
-            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating',
+            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber',
         sortBy: _sortOption.sortBy,
         sortOrder: _sortOption.sortOrder,
       );
@@ -272,6 +272,13 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
           final columns = isPC
               ? (constraints.maxWidth / 180).floor().clamp(2, 12)
               : 3;
+          // 按列宽精确匹配 2:3 海报 + 文字区，海报完整不裁切
+          final cellWidth = (constraints.maxWidth -
+                  8 * 2 -
+                  8 * (columns - 1)) /
+              columns;
+          final childAspectRatio =
+              cellWidth / PosterCard.heightFor(cellWidth);
 
           return CustomScrollView(
             controller: _scrollController,
@@ -281,13 +288,15 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
                 sliver: SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: columns,
-                    childAspectRatio: 0.56,
+                    childAspectRatio: childAspectRatio,
                     crossAxisSpacing: 8,
                     mainAxisSpacing: 8,
                   ),
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) => _GridCard(
+                    (context, index) => PosterCard(
+                      key: ValueKey('posterCard_${_items[index].id}'),
                       item: _items[index],
+                      width: cellWidth,
                       onTap: () => context.push('/detail/${_items[index].id}'),
                     ),
                     childCount: _items.length,
@@ -328,51 +337,5 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
     }
 
     return const SizedBox.shrink();
-  }
-}
-
-class _GridCard extends StatelessWidget {
-  final MediaItem item;
-  final VoidCallback? onTap;
-  const _GridCard({required this.item, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (item.year != null)
-                    Text(
-                      item.year!,
-                      style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
