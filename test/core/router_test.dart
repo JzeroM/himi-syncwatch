@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/core/router.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -15,6 +16,7 @@ import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -23,12 +25,13 @@ Future<GoRouter> _pumpApp(
   FakeEmbyAuthService? auth,
   FakeEmbyService? emby,
   EdgeInsets viewPadding = EdgeInsets.zero,
+  AppSettings settings = const AppSettings(),
 }) async {
   late GoRouter router;
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+        settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
         embyAuthServiceProvider
             .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
         embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
@@ -291,4 +294,46 @@ void main() {
     expect(find.byType(CategoryScreen), findsOneWidget);
     expect(find.byType(ShellNavBar), findsNothing); // 顶层路由覆盖导航
   });
+
+  testWidgets('壳层带主题色三段渐变背景，默认为应用底色同色三段', (tester) async {
+    await _pumpApp(tester);
+
+    final shell = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('shellBackground')),
+    );
+    final gradient =
+        (shell.decoration! as BoxDecoration).gradient! as LinearGradient;
+    expect(gradient.colors, hasLength(3));
+    expect(
+      gradient.colors.toSet(),
+      {ThemeData.light().scaffoldBackgroundColor},
+    );
+  });
+
+  testWidgets('主题色写入后壳层渐变为压暗主题色，切标签仍在', (tester) async {
+    await _pumpApp(
+      tester,
+      settings: const AppSettings(themeColor: 0xFF22D3EE),
+    );
+
+    LinearGradient shellGradient() {
+      final shell = tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey('shellBackground')),
+      );
+      return (shell.decoration! as BoxDecoration).gradient! as LinearGradient;
+    }
+
+    expect(
+      shellGradient().colors.first,
+      PosterPalette.darkenForPage(const Color(0xFF22D3EE)),
+    );
+    expect(shellGradient().colors.toSet().length, 3);
+
+    // 切到设置页，壳层渐变仍存在
+    await tester.tap(find.text('设置'));
+    await tester.pumpAndSettle();
+    expect(shellGradient(), isA<LinearGradient>());
+    expect(find.byType(SettingsScreen), findsOneWidget);
+  });
+
 }

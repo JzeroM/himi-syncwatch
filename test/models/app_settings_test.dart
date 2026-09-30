@@ -141,5 +141,40 @@ void main() {
       const enabled = AppSettings();
       expect(AppSettings.fromJson(enabled.toJson()).glassUi, isTrue);
     });
+
+    test('themeColor 缺省为 null（跟随默认底色）', () {
+      expect(const AppSettings().themeColor, isNull);
+      expect(AppSettings.fromJson(const {}).themeColor, isNull);
+    });
+
+    test('copyWith 设置与显式清空 themeColor', () {
+      const settings = AppSettings();
+      final set = settings.copyWith(themeColor: 0xFF6366F1);
+      expect(set.themeColor, equals(0xFF6366F1));
+
+      // 其他字段更新不清掉 themeColor
+      final kept = set.copyWith(decodeMode: 'hw');
+      expect(kept.themeColor, equals(0xFF6366F1));
+
+      // 显式清空为 null（依赖 unsetValue 哨兵区分「未传」）
+      final cleared = kept.copyWith(themeColor: null);
+      expect(cleared.themeColor, isNull);
+
+      // 未传 themeColor 的 copyWith 不改变原值
+      expect(set.copyWith(decodeMode: 'sw').themeColor, equals(0xFF6366F1));
+    });
+
+    test('toJson/fromJson 往返保持 themeColor', () {
+      const withColor = AppSettings(themeColor: 0xFF22D3EE);
+      expect(withColor.toJson()['themeColor'], equals(0xFF22D3EE));
+      expect(
+        AppSettings.fromJson(withColor.toJson()).themeColor,
+        equals(0xFF22D3EE),
+      );
+
+      const withoutColor = AppSettings();
+      expect(withoutColor.toJson().containsKey('themeColor'), isFalse);
+      expect(AppSettings.fromJson(withoutColor.toJson()).themeColor, isNull);
+    });
   });
 }

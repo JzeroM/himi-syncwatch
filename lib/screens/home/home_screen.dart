@@ -7,7 +7,9 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -143,7 +145,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final hasServer = ref.watch(embyConfigProvider)?.isAuthenticated == true;
 
+    // 主题色三段渐变背景（null 时保持应用底色）
+    final themeColorValue =
+        ref.watch(settingsProvider.select((s) => s.themeColor));
+    final accent = themeColorValue == null
+        ? null
+        : PosterPalette.darkenForPage(Color(themeColorValue));
+    final base = Theme.of(context).scaffoldBackgroundColor;
+
     return Scaffold(
+      backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Align(
@@ -184,57 +195,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: !hasServer
-          ? const _EmptyState()
-          : _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(_error!,
-                              style: const TextStyle(color: Colors.red)),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _loadMedia,
-                            child: const Text('重试'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _loadMedia,
-                      child: ListView.builder(
-                        padding: EdgeInsets.only(
-                          top: GlassConfig.topInsetOf(context),
-                          bottom: GlassConfig.bottomReserveOf(context),
-                        ),
-                        itemCount: _categories.length +
-                            (_libraries.isNotEmpty ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          final headerCount =
-                              _libraries.isNotEmpty ? 1 : 0;
-                          if (index < headerCount) {
-                            return _LibraryBar(
-                              libraries: _libraries,
-                              onOpen: (lib) => context.push(
-                                '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
-                              ),
-                            );
-                          }
-                          final cat = _categories[index - headerCount];
-                          return _CategorySection(
-                            category: cat,
-                            onViewAll: () => context.push(
-                              '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
+      body: AnimatedContainer(
+        key: const Key('homeBackground'),
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          gradient: PosterPalette.pageGradient(accent, base),
+        ),
+        child: !hasServer
+            ? const _EmptyState()
+            : _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: Colors.red),
                             ),
-                            onItemTap: (item) =>
-                                context.push('/detail/${item.id}'),
-                          );
-                        },
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _loadMedia,
+                              child: const Text('重试'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _loadMedia,
+                        child: ListView.builder(
+                          padding: EdgeInsets.only(
+                            top: GlassConfig.topInsetOf(context),
+                            bottom: GlassConfig.bottomReserveOf(context),
+                          ),
+                          itemCount: _categories.length +
+                              (_libraries.isNotEmpty ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            final headerCount =
+                                _libraries.isNotEmpty ? 1 : 0;
+                            if (index < headerCount) {
+                              return _LibraryBar(
+                                libraries: _libraries,
+                                onOpen: (lib) => context.push(
+                                  '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
+                                ),
+                              );
+                            }
+                            final cat = _categories[index - headerCount];
+                            return _CategorySection(
+                              category: cat,
+                              onViewAll: () => context.push(
+                                '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
+                              ),
+                              onItemTap: (item) =>
+                                  context.push('/detail/${item.id}'),
+                            );
+                          },
+                        ),
                       ),
-                    ),
+      ),
     );
   }
 

@@ -33,6 +33,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     }
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Emby 服务器'),

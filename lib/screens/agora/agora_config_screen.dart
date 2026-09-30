@@ -70,6 +70,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
     final configured = agoraConfig?.isConfigured == true;
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('声网配置'),

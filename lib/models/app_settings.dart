@@ -5,6 +5,10 @@ class AppSettings {
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
   final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
   final bool glassUi; // 液态玻璃特效开关（低端设备可关闭）
+  final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
+
+  /// copyWith/update 区分「未传」与「显式清空为 null」的占位值。
+  static const Object unsetValue = Object();
 
   const AppSettings({
     this.decodeMode = 'auto',
@@ -13,6 +17,7 @@ class AppSettings {
     this.audioRenderer = 'OpenSL',
     this.deepDiagnostics = false,
     this.glassUi = true,
+    this.themeColor,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -24,6 +29,7 @@ class AppSettings {
     String? audioRenderer,
     bool? deepDiagnostics,
     bool? glassUi,
+    Object? themeColor = unsetValue,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
@@ -32,6 +38,8 @@ class AppSettings {
       audioRenderer: audioRenderer ?? this.audioRenderer,
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
       glassUi: glassUi ?? this.glassUi,
+      themeColor:
+          identical(themeColor, unsetValue) ? this.themeColor : themeColor as int?,
     );
   }
 
@@ -42,6 +50,7 @@ class AppSettings {
         'audioRenderer': audioRenderer,
         'deepDiagnostics': deepDiagnostics,
         'glassUi': glassUi,
+        if (themeColor != null) 'themeColor': themeColor,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -65,6 +74,7 @@ class AppSettings {
       audioRenderer: json['audioRenderer'] as String? ?? 'auto',
       deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
       glassUi: json['glassUi'] as bool? ?? true,
+      themeColor: json['themeColor'] as int?,
     );
   }
 

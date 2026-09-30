@@ -24,7 +24,15 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     }
   }
 
-  Future<void> update({String? decodeMode, bool? showSyncDebug, bool? stereoDownmix, String? audioRenderer, bool? deepDiagnostics, bool? glassUi}) async {
+  Future<void> update({
+    String? decodeMode,
+    bool? showSyncDebug,
+    bool? stereoDownmix,
+    String? audioRenderer,
+    bool? deepDiagnostics,
+    bool? glassUi,
+    Object? themeColor = AppSettings.unsetValue,
+  }) async {
     state = state.copyWith(
       decodeMode: decodeMode,
       showSyncDebug: showSyncDebug,
@@ -32,6 +40,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       audioRenderer: audioRenderer,
       deepDiagnostics: deepDiagnostics,
       glassUi: glassUi,
+      themeColor: themeColor,
     );
     await persist();
   }

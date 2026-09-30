@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 import '../helpers/test_fakes.dart';
@@ -31,10 +33,11 @@ Future<ProviderContainer> _pumpScreen(
   WidgetTester tester, {
   FakeEmbyAuthService? auth,
   FakeEmbyService? emby,
+  AppSettings settings = const AppSettings(),
 }) async {
   final container = ProviderContainer(
     overrides: [
-      settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+      settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
       embyAuthServiceProvider.overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
     ],
@@ -49,6 +52,13 @@ Future<ProviderContainer> _pumpScreen(
   );
   await tester.pumpAndSettle();
   return container;
+}
+
+LinearGradient _bgGradient(WidgetTester tester) {
+  final container =
+      tester.widget<AnimatedContainer>(find.byKey(const Key('homeBackground')));
+  final decoration = container.decoration! as BoxDecoration;
+  return decoration.gradient! as LinearGradient;
 }
 
 /// 包裹指定图标的玻璃容器（椭圆胶囊）。
@@ -315,5 +325,35 @@ void main() {
     // 下方媒体库分区与栏同时存在
     expect(find.text('华语电影'), findsWidgets);
     expect(find.text('动画电影'), findsWidgets);
+  });
+
+  testWidgets('首页背景为三段渐变容器（默认=应用底色同色三段）', (tester) async {
+    final container = await _pumpScreen(tester);
+
+    final bg = find.byKey(const Key('homeBackground'));
+    expect(bg, findsOneWidget);
+    expect(container.read(settingsProvider).themeColor, isNull);
+
+    final gradient = _bgGradient(tester);
+    expect(gradient.colors, hasLength(3));
+    expect(
+      gradient.colors.toSet(),
+      {ThemeData.light().scaffoldBackgroundColor},
+    );
+  });
+
+  testWidgets('主题色写入后首页背景变为压暗主题色渐变', (tester) async {
+    await _pumpScreen(
+      tester,
+      settings: const AppSettings(themeColor: 0xFF6366F1),
+    );
+
+    final gradient = _bgGradient(tester);
+    expect(gradient.colors, hasLength(3));
+    expect(
+      gradient.colors.first,
+      PosterPalette.darkenForPage(const Color(0xFF6366F1)),
+    );
+    expect(gradient.colors.toSet().length, 3);
   });
 }

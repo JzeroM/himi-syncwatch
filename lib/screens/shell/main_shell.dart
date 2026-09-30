@@ -1,22 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 /// 四标签底部导航壳：首页 / Emby服务器 / 声网配置 / 设置。
 ///
 /// 浮动玻璃胶囊导航，`extendBody` 让页面内容延伸到导航之下。
+/// 壳层绘制主题色三段渐变背景（各标签页透明以透出）。
 /// 仅首页：滑到底部时胶囊淡出隐藏，回滚立即恢复。
-class MainShell extends StatefulWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key, required this.shell});
 
   final StatefulNavigationShell shell;
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends ConsumerState<MainShell> {
   bool _navVisible = true;
 
   bool _handleScroll(ScrollNotification notification) {
@@ -44,11 +48,27 @@ class _MainShellState extends State<MainShell> {
         ? bottomInset + 2
         : (bottomInset > 0 ? 6.0 : 4.0);
 
+    // 主题色三段渐变（null 时保持应用底色）
+    final themeColorValue =
+        ref.watch(settingsProvider.select((s) => s.themeColor));
+    final accent = themeColorValue == null
+        ? null
+        : PosterPalette.darkenForPage(Color(themeColorValue));
+    final base = Theme.of(context).scaffoldBackgroundColor;
+
     return Scaffold(
       extendBody: true,
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _handleScroll,
-        child: widget.shell,
+      body: AnimatedContainer(
+        key: const ValueKey('shellBackground'),
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          gradient: PosterPalette.pageGradient(accent, base),
+        ),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScroll,
+          child: widget.shell,
+        ),
       ),
       bottomNavigationBar: AnimatedSlide(
         duration: const Duration(milliseconds: 300),
