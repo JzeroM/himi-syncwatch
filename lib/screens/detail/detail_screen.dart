@@ -736,20 +736,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
-                    height: PosterCard.heightFor(102),
+                    height: PosterCard.heightFor(88),
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       itemCount: _similarItems.length,
                       itemBuilder: (context, index) {
                         final sim = _similarItems[index];
                         return SizedBox(
-                          width: 110,
+                          width: 96,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: PosterCard(
                               key: ValueKey('posterCard_${sim.id}'),
                               item: sim,
-                              width: 102,
+                              width: 88,
                               onTap: () {
                                 final q = widget.serverId != null
                                     ? '?server=${Uri.encodeComponent(widget.serverId!)}'

@@ -271,7 +271,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
           final isPC = constraints.maxWidth > 600;
           final columns = isPC
               ? (constraints.maxWidth / 180).floor().clamp(2, 12)
-              : 3;
+              : 4;
           // 按列宽精确匹配 2:3 海报 + 文字区，海报完整不裁切
           final cellWidth = (constraints.maxWidth -
                   8 * 2 -

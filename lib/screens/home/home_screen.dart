@@ -862,7 +862,7 @@ class _CategorySection extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: PosterCard.heightFor(122),
+          height: PosterCard.heightFor(102),
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -870,13 +870,13 @@ class _CategorySection extends StatelessWidget {
             itemBuilder: (context, index) {
               final item = category.items[index];
               return SizedBox(
-                width: 130,
+                width: 110,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: PosterCard(
                     key: ValueKey('posterCard_${item.id}'),
                     item: item,
-                    width: 122,
+                    width: 102,
                     onTap: () => onItemTap(item),
                   ),
                 ),
