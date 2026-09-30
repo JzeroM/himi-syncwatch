@@ -78,8 +78,10 @@ class WindowsRtmBackend implements RtmBackend {
   @override
   Future<bool> login(String appId, {String? token}) async {
     if (!_ready) return false;
-    final ok = await WindowsRtmClient.login(token: token);
-    LogService().log('RTM', ok ? '登录成功' : '登录失败');
+    final result =
+        await WindowsRtmClient.invokeForResult('login', {'token': token ?? ''});
+    final ok = result['ok'] == true;
+    LogService().log('RTM', ok ? '登录成功' : '登录失败: ${result['reason']}');
     return ok;
   }
 
@@ -93,11 +95,13 @@ class WindowsRtmBackend implements RtmBackend {
   @override
   Future<bool> subscribe(String channel) async {
     if (!_ready) return false;
-    final ok = await WindowsRtmClient.subscribe(channel);
+    final result =
+        await WindowsRtmClient.invokeForResult('subscribe', {'channel': channel});
+    final ok = result['ok'] == true;
     if (ok) {
       LogService().log('RTM', '订阅频道: $channel');
     } else {
-      LogService().log('RTM', '订阅失败');
+      LogService().log('RTM', '订阅失败: ${result['reason']}');
     }
     return ok;
   }

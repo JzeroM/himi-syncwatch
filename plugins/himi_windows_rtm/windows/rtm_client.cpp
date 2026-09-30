@@ -104,7 +104,10 @@ uint64_t RtmClient::Subscribe(const std::string& channel) {
   }
   SubscribeOptions options;
   options.withMessage = true;
-  options.withMetadata = true;
+  // 对齐手机端(agora_rtm)：不订阅 metadata 变更事件（metadata 经
+  // get/setChannelMetadata 主动接口收发，本插件未实现 onMetadataEvent）；
+  // withMetadata=true 曾导致订阅被 SDK 立即拒绝
+  options.withMetadata = false;
   options.withPresence = true;
   uint64_t requestId = 0;
   client_->subscribe(channel.c_str(), options, requestId);

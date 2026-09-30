@@ -34,12 +34,14 @@ Future<int> _runRtmSmoke() async {
     if (!initOk) return 2;
 
     step('login start');
-    final loginOk = await WindowsRtmClient.login(token: '');
-    step('login ok=$loginOk (false=错误码回调已到达，链路通)');
+    final loginResult = await WindowsRtmClient.invokeForResult(
+        'login', {'token': ''});
+    step('login ok=${loginResult['ok']} reason=${loginResult['reason']}');
 
     step('subscribe start');
-    final subOk = await WindowsRtmClient.subscribe('smoke_channel');
-    step('subscribe ok=$subOk');
+    final subResult =
+        await WindowsRtmClient.invokeForResult('subscribe', {'channel': 'smoke_channel'});
+    step('subscribe ok=${subResult['ok']} reason=${subResult['reason']}');
 
     step('publish start');
     final pubOk = await WindowsRtmClient.publish('smoke_channel',
