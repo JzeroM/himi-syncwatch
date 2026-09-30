@@ -180,7 +180,10 @@ void HimiWindowsRtmPlugin::HandleMethodCall(
   const auto& method = method_call.method_name();
   const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
-  auto rid_result = [result = std::move(result)](uint64_t rid) mutable {
+  // 引用捕获：result 的生命周期覆盖整个 HandleMethodCall；
+  // 若用 std::move 捕获会移空外层 result，initialize 等直接
+  // result->Success 的分支将空指针解引用(0xC0000005)
+  auto rid_result = [&result](uint64_t rid) {
     if (rid == 0) {
       result->Error("rtm_error", "客户端未就绪");
       return;

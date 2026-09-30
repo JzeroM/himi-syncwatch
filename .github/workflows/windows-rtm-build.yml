@@ -54,9 +54,12 @@ jobs:
           $env:HIMI_RTM_SMOKE = '1'
           $exe = Join-Path $env:GITHUB_WORKSPACE 'app\himi_syncwatch.exe'
           if (!(Test-Path $exe)) { throw "找不到 $exe" }
-          $p = Start-Process -FilePath $exe -PassThru
+          $p = Start-Process -FilePath $exe -PassThru `
+            -RedirectStandardOutput smoke_out.txt -RedirectStandardError smoke_err.txt
           if (-not $p.WaitForExit(120000)) { $p.Kill(); throw '冒烟超时120s' }
           Write-Host "exit=$($p.ExitCode)"
+          Write-Host '--- smoke stdout ---'
+          Get-Content smoke_out.txt -Tail 50 -ErrorAction SilentlyContinue
           if ($p.ExitCode -ne 0) { throw "冒烟失败 exit=$($p.ExitCode)" }
 
       - name: Dump crash event log
@@ -65,5 +68,6 @@ jobs:
         run: |
           Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000} -MaxEvents 5 |
             ForEach-Object { $_.Message; '---' }
+          Get-Content smoke_err.txt -Tail 30 -ErrorAction SilentlyContinue
           Get-ChildItem $env:TEMP -Filter 'himi_runtime.log' -Recurse -ErrorAction SilentlyContinue |
             ForEach-Object { "LOG: $($_.FullName)"; Get-Content $_.FullName -Tail 40 }
