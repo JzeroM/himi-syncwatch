@@ -43,6 +43,7 @@ endif()
 add_library(${PLUGIN_NAME} SHARED
   "himi_windows_rtm_plugin.cpp"
   "himi_windows_rtm_plugin_c_api.cc"
+  "rtm_client.cpp"
   "include/himi_windows_rtm/himi_windows_rtm_plugin_c_api.h"
 )
 apply_standard_settings(${PLUGIN_NAME})
