@@ -77,13 +77,42 @@ jobs:
 
       - name: 验证 APK 签名
         run: |
+          set -euo pipefail
           echo "=== 验证 keystore 文件 ==="
           ls -la android/app/himi-release.jks
-          keytool -list -keystore android/app/himi-release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" -alias "${{ secrets.ANDROID_KEY_ALIAS }}" 2>&1 | head -5
           echo "=== 验证 key.properties ==="
           cat android/key.properties
-          echo "=== 验证 build.gradle 签名配置 ==="
-          grep -A 10 'signingConfigs' android/app/build.gradle || true
+          echo "=== 验证签名注入到 build 文件 ==="
+          GRADLE_FILE=$(ls android/app/build.gradle android/app/build.gradle.kts 2>/dev/null | head -1 || true)
+          if [ -z "$GRADLE_FILE" ]; then
+            echo "❌ 找不到 android/app/build.gradle(.kts)"
+            exit 1
+          fi
+          echo "目标文件: $GRADLE_FILE"
+          grep -A 14 'signingConfigs' "$GRADLE_FILE"
+          grep -E 'signingConfigs\.release|getByName\("release"\)' "$GRADLE_FILE"
+          echo "=== 比对 APK 与 keystore 签名指纹 ==="
+          KS_FP=$(keytool -list -v -keystore android/app/himi-release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" -alias "${{ secrets.ANDROID_KEY_ALIAS }}" 2>/dev/null | sed -n 's/^SHA256: //p' | head -1 | tr -d '[:space:]')
+          if [ -z "$KS_FP" ]; then
+            echo "❌ 读取 keystore 指纹失败"
+            exit 1
+          fi
+          echo "keystore SHA-256: $KS_FP"
+          shopt -s nullglob
+          APKS=(build/app/outputs/flutter-apk/*-release.apk)
+          if [ ${#APKS[@]} -eq 0 ]; then
+            echo "❌ 未找到 release APK 产物"
+            exit 1
+          fi
+          for apk in "${APKS[@]}"; do
+            APK_FP=$(keytool -printcert -jarfile "$apk" 2>/dev/null | sed -n 's/^ *SHA256: //p' | head -1 | tr -d '[:space:]')
+            echo "$apk SHA-256: $APK_FP"
+            if [ -z "$APK_FP" ] || [ "${KS_FP^^}" != "${APK_FP^^}" ]; then
+              echo "❌ $apk 签名与 keystore 不一致，禁止发布"
+              exit 1
+            fi
+          done
+          echo "✅ 全部 release APK 签名与 keystore 指纹一致"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -1,8 +1,11 @@
 #!/bin/bash
-# 测试 patch_android_signing.sh 的 storeFile 路径修复
-# 验证: file() 在 :app 模块中能正确找到 keystore 文件
-
+# 真实调用 scripts/patch_android_signing.sh 的签名注入测试
+# 覆盖：Groovy 注入、Kotlin DSL (.kts) 注入、无 build 文件 fail fast、幂等重跑
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PATCH="$REPO_ROOT/scripts/patch_android_signing.sh"
 
 PASS=0
 FAIL=0
@@ -22,7 +25,7 @@ assert_eq() {
 
 assert_contains() {
     local desc="$1" haystack="$2" needle="$3"
-    if echo "$haystack" | grep -q "$needle"; then
+    if echo "$haystack" | grep -qF "$needle"; then
         echo "  ✅ $desc"
         PASS=$((PASS+1))
     else
@@ -32,126 +35,157 @@ assert_contains() {
     fi
 }
 
-echo "=== 测试 1: storeFile 路径在 key.properties 中 ==="
-# 模拟 patch_android_signing.sh 生成 key.properties
-STORE_FILE="himi-release.jks"
-assert_eq "storeFile 使用相对路径(不含 app/ 前缀)" "himi-release.jks" "$STORE_FILE"
+assert_not_contains() {
+    local desc="$1" haystack="$2" needle="$3"
+    if echo "$haystack" | grep -qF "$needle"; then
+        echo "  ❌ $desc"
+        echo "     不应存在: $needle"
+        FAIL=$((FAIL+1))
+    else
+        echo "  ✅ $desc"
+        PASS=$((PASS+1))
+    fi
+}
 
-echo ""
-echo "=== 测试 2: Gradle file() 在 :app 模块中的路径解析 ==="
-# 模拟 Gradle :app 模块的 file() 解析
-APP_PROJECT_DIR="/tmp/test_signing_verification/android/app"
-STORE_FILE_RELATIVE="$STORE_FILE"
-RESOLVED_PATH=$(python3 -c "
-import os
-app_dir = '$APP_PROJECT_DIR'
-store_file = '$STORE_FILE_RELATIVE'
-print(os.path.normpath(os.path.join(app_dir, store_file)))
-")
-assert_eq "file('$STORE_FILE') 解析到 android/app/himi-release.jks" \
-    "/tmp/test_signing_verification/android/app/himi-release.jks" \
-    "$RESOLVED_PATH"
+export ANDROID_KEYSTORE_BASE64
+ANDROID_KEYSTORE_BASE64=$(printf 'fake-keystore-bytes' | base64)
+export ANDROID_KEYSTORE_PASSWORD=storepw
+export ANDROID_KEY_PASSWORD=keypw
+export ANDROID_KEY_ALIAS=himi
 
-echo ""
-echo "=== 测试 3: 旧路径会解析到错误位置 ==="
-OLD_STORE_FILE="app/himi-release.jks"
-OLD_RESOLVED_PATH=$(python3 -c "
-import os
-app_dir = '$APP_PROJECT_DIR'
-store_file = '$OLD_STORE_FILE'
-print(os.path.normpath(os.path.join(app_dir, store_file)))
-")
-assert_eq "旧 file('app/himi-release.jks') 会解析到 android/app/app/himi-release.jks (不存在!)" \
-    "/tmp/test_signing_verification/android/app/app/himi-release.jks" \
-    "$OLD_RESOLVED_PATH"
+WORKSPACES=()
+WS_DIR=""
+# 注意：不能在 $() 里调用（子 shell 会丢 WORKSPACES 累积，临时目录将无法清理）
+make_workspace() {
+    WS_DIR=$(mktemp -d)
+    mkdir -p "$WS_DIR/android/app"
+    WORKSPACES+=("$WS_DIR")
+}
 
-echo ""
-echo "=== 测试 4: build.gradle 中 signingConfigs 注入 ==="
-# 用 Python 模拟注入逻辑
-RESULT=$(python3 -c "
-import re
-
-template = '''plugins {
-    id \"com.android.application\"
-    id \"kotlin-android\"
-    id \"dev.flutter.flutter-gradle-plugin\"
+GROOVY_TEMPLATE='plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
 }
 
 android {
-    namespace = \"com.himi.himi_syncwatch\"
-    compileSdk = flutter.compileSdkVersion
-
-    defaultConfig {
-        applicationId = \"com.himi.himi_syncwatch\"
-    }
+    namespace = "com.himi.syncwatch"
 
     buildTypes {
         release {
+            // TODO: Add your own signing config for the release build.
             signingConfig = signingConfigs.debug
         }
     }
 }
-'''
+'
 
-t = template
-
-# Insert keyProperties
-key_props_block = '''def keyProperties = new Properties()
-def keyPropertiesFile = rootProject.file('key.properties')
-if (keyPropertiesFile.exists()) {
-    keyProperties.load(keyPropertiesFile.newDataInputStream())
+KTS_TEMPLATE='plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
 }
 
-'''
-if 'def keyProperties' not in t:
-    anchor = 'android {'
-    pos = t.find(anchor)
-    if pos != -1:
-        t = t[:pos] + key_props_block + t[pos:]
+android {
+    namespace = "com.himi.syncwatch"
 
-# Insert signingConfigs
-signing_configs_block = '''    signingConfigs {
+    buildTypes {
         release {
-            keyAlias keyProperties['keyAlias']
-            keyPassword keyProperties['keyPassword']
-            storeFile keyProperties['storeFile'] ? file(keyProperties['storeFile']) : null
-            storePassword keyProperties['storePassword']
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.debug
         }
     }
+}
+'
 
-'''
-if 'signingConfigs {' not in t:
-    anchor = '    buildTypes {'
-    pos = t.find(anchor)
-    if pos != -1:
-        t = t[:pos] + signing_configs_block + t[pos:]
+cleanup() {
+    for d in "${WORKSPACES[@]}"; do
+        if [ -n "$d" ] && [ -d "$d" ]; then rm -rf "$d"; fi
+    done
+    return 0
+}
+trap cleanup EXIT
 
-# Replace signingConfig
-t = re.sub(
-    r'(buildTypes\s*\{[^}]*release\s*\{[^}]*?)signingConfig\s*=\s*signingConfigs\.debug',
-    r\"\\1signingConfig = keyProperties['storeFile'] ? signingConfigs.release : signingConfigs.debug\",
-    t,
-    flags=re.DOTALL
-)
+echo "=== 测试 1: Groovy build.gradle 注入 ==="
+make_workspace; ws=$WS_DIR
+printf '%s' "$GROOVY_TEMPLATE" > "$ws/android/app/build.gradle"
+(cd "$ws" && bash "$PATCH" >/dev/null)
+out=$(cat "$ws/android/app/build.gradle")
+assert_contains "注入 keyProperties 加载" "$out" "def keyProperties"
+assert_contains "注入 release signingConfigs 块" "$out" "signingConfigs {"
+assert_contains "release 使用条件签名(有 keystore 走 release)" "$out" "signingConfigs.release"
+assert_not_contains "release 不再写死 debug" "$out" "signingConfig = signingConfigs.debug"
+keyprops=$(cat "$ws/android/key.properties")
+assert_contains "key.properties storeFile 相对路径" "$keyprops" "storeFile=himi-release.jks"
+if [ -f "$ws/android/app/himi-release.jks" ]; then
+    echo "  ✅ keystore 解码落盘到 android/app/"
+    PASS=$((PASS+1))
+else
+    echo "  ❌ keystore 未生成"
+    FAIL=$((FAIL+1))
+fi
 
-# Output key checks
-lines = t.split('\n')
-checks = []
-for i, line in enumerate(lines):
-    stripped = line.strip()
-    if 'signingConfigs {' in stripped and 'release' not in stripped:
-        checks.append('BLOCK:signingConfigs')
-    if 'storeFile' in stripped and 'keyProperties' in stripped:
-        checks.append('STORE_FILE:' + stripped)
-    if 'signingConfig = ' in stripped and 'release' in stripped:
-        checks.append('SIGNING_CONFIG:' + stripped)
+echo ""
+echo "=== 测试 2: Kotlin DSL build.gradle.kts 注入（CI 实际场景）==="
+make_workspace; ws=$WS_DIR
+printf '%s' "$KTS_TEMPLATE" > "$ws/android/app/build.gradle.kts"
+(cd "$ws" && bash "$PATCH" >/dev/null)
+out=$(cat "$ws/android/app/build.gradle.kts")
+assert_contains "注入 val keyProperties（全限定名，不依赖 import 位置）" "$out" "val keyProperties = java.util.Properties()"
+assert_contains "注入 create(\"release\") 签名配置" "$out" 'create("release")'
+assert_contains "release 使用 getByName 条件签名" "$out" 'signingConfigs.getByName("release")'
+assert_not_contains "release 不再写死 debug" "$out" "signingConfig = signingConfigs.debug"
 
-print('|'.join(checks))
-")
+echo ""
+echo "=== 测试 3: 两种 DSL 同时存在时全部注入 ==="
+make_workspace; ws=$WS_DIR
+printf '%s' "$GROOVY_TEMPLATE" > "$ws/android/app/build.gradle"
+printf '%s' "$KTS_TEMPLATE" > "$ws/android/app/build.gradle.kts"
+(cd "$ws" && bash "$PATCH" >/dev/null)
+g_out=$(cat "$ws/android/app/build.gradle")
+k_out=$(cat "$ws/android/app/build.gradle.kts")
+assert_contains "groovy 注入成功" "$g_out" "signingConfigs.release"
+assert_contains "kts 注入成功" "$k_out" 'signingConfigs.getByName("release")'
 
-assert_contains "注入了 signingConfigs 块" "$RESULT" "BLOCK:signingConfigs"
-assert_contains "storeFile 使用 file(keyProperties['storeFile'])" "$RESULT" "storeFile keyProperties"
-assert_contains "release buildType 使用 signingConfigs.release" "$RESULT" "SIGNING_CONFIG:signingConfig = keyProperties"
+echo ""
+echo "=== 测试 4: 重复执行幂等（不重复注入、不报错）==="
+(cd "$ws" && bash "$PATCH" >/dev/null)
+k_out=$(cat "$ws/android/app/build.gradle.kts")
+count=$(echo "$k_out" | grep -cF 'val keyProperties = java.util.Properties()')
+assert_eq "keyProperties 只出现一次" "1" "$count"
+count=$(echo "$k_out" | grep -cF 'create("release")')
+assert_eq "create(\"release\") 只出现一次" "1" "$count"
+
+echo ""
+echo "=== 测试 5: 无 build 文件时 fail fast（非 0 退出）==="
+make_workspace; ws=$WS_DIR
+set +e
+(cd "$ws" && bash "$PATCH" >/dev/null 2>&1)
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
+    echo "  ✅ 退出码非 0（实际 $rc）"
+    PASS=$((PASS+1))
+else
+    echo "  ❌ 无 build 文件时应失败，实际成功了"
+    FAIL=$((FAIL+1))
+fi
+
+echo ""
+echo "=== 测试 6: 未设置 ANDROID_KEYSTORE_BASE64 时 fail fast ==="
+make_workspace; ws=$WS_DIR
+printf '%s' "$KTS_TEMPLATE" > "$ws/android/app/build.gradle.kts"
+set +e
+(cd "$ws" && env -u ANDROID_KEYSTORE_BASE64 bash "$PATCH" >/dev/null 2>&1)
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
+    echo "  ✅ 退出码非 0（实际 $rc）"
+    PASS=$((PASS+1))
+else
+    echo "  ❌ 缺少 keystore 环境变量时应失败"
+    FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "================================"
