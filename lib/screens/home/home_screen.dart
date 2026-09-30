@@ -41,6 +41,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _error;
   bool _initialized = false;
 
+  /// 加载请求序号：切换/刷新并发时丢弃过期结果，防止旧数据覆盖新内容。
+  int _loadSeq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -89,14 +92,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _initialized = true);
   }
 
-  Future<void> _loadMedia() async {
+  Future<void> _loadMedia([EmbyService? serviceOverride]) async {
+    final seq = ++_loadSeq;
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      final embyService = ref.read(embyServiceProvider);
+      final EmbyService embyService =
+          serviceOverride ?? ref.read(embyServiceProvider);
       final libs = await embyService.getLibraries();
 
       final futures = libs.map((lib) async {
@@ -122,12 +127,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           if (nonEmptyIds.contains(lib.id)) lib
       ];
 
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _categories = categories;
         _libraries = libraries;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -140,7 +147,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // 服务器在「Emby服务器」标签页切换 / 增删后，重新加载首页媒体
     ref.listen<EmbyServerConfig?>(embyConfigProvider, (prev, next) {
       if (!_initialized || next == null || identical(prev, next)) return;
-      _loadMedia();
+      // 显式用新配置构建服务：listen 回调先于 embyServiceProvider 失效执行，
+      // 此刻 ref.read(embyServiceProvider) 拿到的仍是旧实例（切换竞态根因）
+      _loadMedia(ref.read(embyServiceFactoryProvider)(next));
     });
 
     if (!_initialized) {

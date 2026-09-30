@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -36,6 +38,7 @@ Future<ProviderContainer> _pumpScreen(
   WidgetTester tester, {
   FakeEmbyAuthService? auth,
   FakeEmbyService? emby,
+  EmbyService Function(EmbyServerConfig server)? serviceFactory,
   AppSettings settings = const AppSettings(),
   Future<String?> Function()? qrScan,
 }) async {
@@ -44,6 +47,8 @@ Future<ProviderContainer> _pumpScreen(
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
       embyAuthServiceProvider.overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
+      if (serviceFactory != null)
+        embyServiceFactoryProvider.overrideWithValue(serviceFactory),
     ],
   );
   addTearDown(container.dispose);
@@ -84,6 +89,30 @@ Future<void> _settleSnackbars(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 5));
   await tester.pumpAndSettle();
 }
+
+/// getLibraries 挂起在 [gate] 上的 Fake：模拟慢服务器（迟到结果竞态用）。
+class _GatedFakeService extends FakeEmbyService {
+  _GatedFakeService({
+    required super.libraries,
+    required super.items,
+    required this.gate,
+  });
+
+  final Future<void> gate;
+
+  @override
+  Future<List<LibraryFolder>> getLibraries() async {
+    await gate;
+    return libraries;
+  }
+}
+
+LibraryFolder _lib(String id, String name) => LibraryFolder(
+      id: id,
+      name: name,
+      collectionType: 'movies',
+      posterUrl: '',
+    );
 
 void main() {
   testWidgets('无服务器时显示引导到 Emby 服务器标签的空态', (tester) async {
@@ -183,6 +212,106 @@ void main() {
     expect(container.read(embyConfigProvider)?.id, 'srv_b');
     expect(auth.selectedServerId, 'srv_b');
     expect(find.text('备用服务器'), findsOneWidget);
+  });
+
+  testWidgets('切换服务器后首页内容跟随切换到新服务器数据', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1', 's2'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        's2': _sessionJson(
+          id: 'srv_b',
+          serverId: 's2',
+          serverUrl: 'https://b',
+          name: '备用服务器',
+        ),
+      },
+    );
+    final fakeA = FakeEmbyService(
+      libraries: [_lib('lbA', 'A库')],
+      items: [MediaItem(id: 'ma', name: '影片A', type: 'Movie')],
+    );
+    final fakeB = FakeEmbyService(
+      libraries: [_lib('lbB', 'B库')],
+      items: [MediaItem(id: 'mb', name: '影片B', type: 'Movie')],
+    );
+    final container = await _pumpScreen(
+      tester,
+      auth: auth,
+      emby: fakeA,
+      serviceFactory: (server) => server.id == 'srv_b' ? fakeB : fakeA,
+    );
+
+    expect(find.text('A库'), findsWidgets);
+    expect(find.text('B库'), findsNothing);
+
+    // 顶栏下拉切到备用服务器
+    await tester.tap(find.text('家庭NAS'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('备用服务器'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(embyConfigProvider)?.id, 'srv_b');
+    // 内容必须跟随切换（竞态修复守护：不能仍是旧服务器数据）
+    expect(find.text('B库'), findsWidgets);
+    expect(find.text('A库'), findsNothing);
+  });
+
+  testWidgets('快速切换时迟到的旧服务器结果不覆盖新内容', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1', 's2'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        's2': _sessionJson(
+          id: 'srv_b',
+          serverId: 's2',
+          serverUrl: 'https://b',
+          name: '备用服务器',
+        ),
+      },
+    );
+    final fakeA = FakeEmbyService(
+      libraries: [_lib('lbA', 'A库')],
+      items: [MediaItem(id: 'ma', name: '影片A', type: 'Movie')],
+    );
+    final gateB = Completer<void>();
+    final fakeB = _GatedFakeService(
+      libraries: [_lib('lbB', 'B库')],
+      items: [MediaItem(id: 'mb', name: '影片B', type: 'Movie')],
+      gate: gateB.future,
+    );
+    final container = await _pumpScreen(
+      tester,
+      auth: auth,
+      emby: fakeA,
+      serviceFactory: (server) => server.id == 'srv_b' ? fakeB : fakeA,
+    );
+
+    expect(find.text('A库'), findsWidgets);
+
+    // 切到 B（慢服务器，请求挂起，spinner 转动中不能 pumpAndSettle）
+    await tester.tap(find.text('家庭NAS'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('备用服务器'));
+    // 下拉关闭动画需两帧推进走完（spinner 转动中不能 pumpAndSettle）
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(seconds: 1));
+
+    // 趁 B 加载中切回 A（A 立即返回）
+    await tester.tap(find.text('备用服务器'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('家庭NAS'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(embyConfigProvider)?.id, 'srv_a');
+    expect(find.text('A库'), findsWidgets);
+
+    // B 的迟到结果此刻返回，必须被丢弃
+    gateB.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('A库'), findsWidgets);
+    expect(find.text('B库'), findsNothing);
   });
 
   testWidgets('服务器标题与顶部操作按钮各包进玻璃椭圆', (tester) async {

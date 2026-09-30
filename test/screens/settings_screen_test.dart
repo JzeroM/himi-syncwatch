@@ -154,4 +154,15 @@ void main() {
     expect(color, isNotNull);
     expect(color, isNot(equals(0xFF6366F1)));
   });
+
+  testWidgets('音频后端默认为 AudioTrack', (tester) async {
+    final container = await _pumpScreen(tester);
+
+    expect(find.text('音频后端'), findsOneWidget);
+    expect(
+      find.text('AudioTrack：兼容性最好的传统后端（默认）'),
+      findsOneWidget,
+    );
+    expect(container.read(settingsProvider).audioRenderer, 'AudioTrack');
+  });
 }

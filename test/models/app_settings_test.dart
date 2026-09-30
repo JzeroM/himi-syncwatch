@@ -8,6 +8,7 @@ void main() {
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
       expect(settings.stereoDownmix, isFalse);
+      expect(settings.audioRenderer, equals('AudioTrack'));
     });
 
     test('copyWith 保留未指定字段', () {
@@ -78,6 +79,7 @@ void main() {
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
       expect(settings.stereoDownmix, isFalse);
+      expect(settings.audioRenderer, equals('AudioTrack'));
     });
 
     test('fromJson 兼容旧版 bool hardwareDecoding', () {

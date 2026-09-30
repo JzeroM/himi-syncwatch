@@ -45,6 +45,12 @@ import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
 
+/// 播放器默认音量（0-1）：进入播放器即为 80%。
+const kPlayerDefaultVolume = 0.8;
+
+/// 播放器默认亮度（0-1）：进入播放器即为 80%。
+const kPlayerDefaultBrightness = 0.8;
+
 class PlayerScreen extends ConsumerStatefulWidget {
   final String itemId;
   final String? roomCode;
@@ -173,10 +179,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String? _rtmAppId;
   String? _hostUserId;
 
-  double _volume = 80;
-  double _brightness = 0.65;
-  final ValueNotifier<double> _brightnessNotifier = ValueNotifier(0.65);
-  final ValueNotifier<double> _volumeNotifier = ValueNotifier(80);
+  double _volume = kPlayerDefaultVolume * 100;
+  double _brightness = kPlayerDefaultBrightness;
+  final ValueNotifier<double> _brightnessNotifier =
+      ValueNotifier(kPlayerDefaultBrightness);
+  final ValueNotifier<double> _volumeNotifier =
+      ValueNotifier(kPlayerDefaultVolume * 100);
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
@@ -709,7 +717,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.audioBackends = [settings.audioRenderer];
     }
     // 音量默认 80%
-    _player.volume = 0.8;
+    _player.volume = kPlayerDefaultVolume;
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
 
     _isHost = widget.isHost;
@@ -761,11 +769,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     // 先完成硬件解码设置，再启动播放，避免竞态
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // 并行执行：亮度读取 + 播放器属性初始化
+      // 并行执行：亮度设为默认 + 播放器属性初始化
       await Future.wait([
         Future(() async {
+          _brightness = kPlayerDefaultBrightness;
+          _brightnessNotifier.value = kPlayerDefaultBrightness;
           try {
-            _brightness = await ScreenBrightness().application;
+            await ScreenBrightness()
+                .setApplicationScreenBrightness(kPlayerDefaultBrightness);
           } catch (_) {}
         }),
         _initPlayerProperties(),
