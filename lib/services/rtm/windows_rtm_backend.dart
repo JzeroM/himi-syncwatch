@@ -95,13 +95,21 @@ class WindowsRtmBackend implements RtmBackend {
   @override
   Future<bool> subscribe(String channel) async {
     if (!_ready) return false;
-    final result =
+    var result =
         await WindowsRtmClient.invokeForResult('subscribe', {'channel': channel});
+    if (result['ok'] != true) {
+      // 竞态防御：onLoginResult 与 connection connected 几乎同时到达，
+      // 首次订阅可能早于服务真正就绪，500ms 后重试一次
+      LogService().log('RTM', '订阅失败: ${result['reason']}，500ms 后重试');
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      result =
+          await WindowsRtmClient.invokeForResult('subscribe', {'channel': channel});
+    }
     final ok = result['ok'] == true;
     if (ok) {
       LogService().log('RTM', '订阅频道: $channel');
     } else {
-      LogService().log('RTM', '订阅失败: ${result['reason']}');
+      LogService().log('RTM', '订阅失败(重试后): ${result['reason']}');
     }
     return ok;
   }
