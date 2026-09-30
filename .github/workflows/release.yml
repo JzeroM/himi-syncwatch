@@ -223,21 +223,21 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
 
-      - name: 生成 Windows 平台文件
-        run: |
-          Copy-Item -Recurse lib /tmp/lib_backup
-          Copy-Item pubspec.yaml /tmp/pubspec.yaml.bak -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force android,ios,windows,macos,linux,web,build,.dart_tool -ErrorAction SilentlyContinue
-          flutter create --project-name himi_syncwatch --org com.himi --platforms windows C:/temp_proj
-          New-Item -ItemType Directory -Force -Path windows
-          Copy-Item -Recurse C:/temp_proj/windows/* windows/
-          Remove-Item -Recurse -Force C:/temp_proj
-          Remove-Item -Recurse -Force lib
-          Copy-Item -Recurse /tmp/lib_backup lib
-          Copy-Item /tmp/pubspec.yaml.bak pubspec.yaml -ErrorAction SilentlyContinue
-
+      # 仓库内 windows/ 为事实来源（HIMI 窗口标题、app_icon、插件注册由
+      # flutter pub get 生成），不再用模板重建覆盖本地定制
       - run: flutter pub get
       - run: flutter build windows --release
+
+      - name: 验证插件与 Agora DLL 已打进产物
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = 'build/windows/x64/runner/Release'
+          foreach ($f in @('himi_windows_rtm_plugin.dll', 'agora_rtm_sdk.dll', 'libaosl.dll')) {
+            $p = Join-Path $rel $f
+            if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
+            Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
