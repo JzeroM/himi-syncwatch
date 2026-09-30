@@ -18,6 +18,7 @@ class WindowsRtmClient {
   static final StreamController<Map<String, dynamic>> _controller =
       StreamController<Map<String, dynamic>>.broadcast();
   static final Map<int, Completer<Map<String, dynamic>>> _pending = {};
+  static StreamSubscription<dynamic>? _eventSubscription;
   static bool _listening = false;
 
   /// SDK 事件流（广播）。
@@ -26,7 +27,8 @@ class WindowsRtmClient {
   static void _ensureListening() {
     if (_listening) return;
     _listening = true;
-    eventChannel.receiveBroadcastStream().listen((event) {
+    _eventSubscription =
+        eventChannel.receiveBroadcastStream().listen((event) {
       final map = Map<String, dynamic>.from(event as Map);
       _controller.add(map);
       final requestId = map['requestId'];
@@ -36,19 +38,38 @@ class WindowsRtmClient {
     }, onError: (Object error) {
       _controller.addError(error);
       for (final completer in _pending.values) {
-        completer.complete({'event': 'result', 'ok': false, 'reason': '$error'});
+        completer
+            .complete({'event': 'result', 'ok': false, 'reason': '$error'});
       }
       _pending.clear();
     });
   }
 
-  static const Duration _resultTimeout = Duration(seconds: 12);
+  /// 测试专用：断开事件订阅并清空待决请求，允许下一次测试重建 listen。
+  static Future<void> debugReset() async {
+    await _eventSubscription?.cancel();
+    _eventSubscription = null;
+    _listening = false;
+    for (final completer in _pending.values) {
+      if (!completer.isCompleted) {
+        completer.complete({
+          'event': 'result',
+          'ok': false,
+          'reason': 'debugReset',
+        });
+      }
+    }
+    _pending.clear();
+  }
+
+  static const Duration defaultResultTimeout = Duration(seconds: 12);
 
   /// 发起需要结果的方法并按 rid 等待结果事件。
   /// 返回结果 map；超时/通道失败返回 `{ok: false, reason: ...}`。
   static Future<Map<String, dynamic>> invokeForResult(
     String method, [
     Map<String, dynamic>? arguments,
+    Duration? timeout,
   ]) async {
     _ensureListening();
     final Map<dynamic, dynamic>? response;
@@ -68,7 +89,7 @@ class WindowsRtmClient {
     final completer = Completer<Map<String, dynamic>>();
     _pending[rid] = completer;
     try {
-      return await completer.future.timeout(_resultTimeout);
+      return await completer.future.timeout(timeout ?? defaultResultTimeout);
     } on TimeoutException {
       _pending.remove(rid);
       return {

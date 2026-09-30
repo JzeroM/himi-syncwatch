@@ -1411,6 +1411,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_roomSyncInitializing) return;
     _roomSyncInitializing = true;
 
+    // 平台能力检查：macOS/Linux 无 agora_rtm 原生实现，Windows 走
+    // himi_windows_rtm；不支持时明确提示，避免静默卡死
+    final rtmService = ref.read(rtmServiceProvider);
+    if (!rtmService.isSupported) {
+      _roomSyncInitializing = false;
+      if (!mounted) return;
+      setState(() => _syncRtmStatus = '不支持此平台');
+      _logSyncEvent('当前平台不支持房间同步信令');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前平台暂不支持房间同步')),
+      );
+      return;
+    }
+
     // 仅主持人需要检查声网配置
     if (_isHost) {
       final agoraConfig = ref.read(agoraConfigProvider);
@@ -1448,8 +1462,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       return;
     }
-
-    final rtmService = ref.read(rtmServiceProvider);
 
     // Host: 使用自己的 userId 初始化; Audience: 从 token 中获取 tokenId
     String? loginToken;
@@ -2051,6 +2063,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           flipCount = 0;
         }
       }
+    }, onError: (Object error) {
+      // sensors_plus 无 Windows/macOS/Linux 实现：吞掉 MissingPluginException，
+      // 摇一摇翻转在桌面端自然失效
+      LogService().log('Sensor', '加速度计事件流错误: $error');
     });
   }
 

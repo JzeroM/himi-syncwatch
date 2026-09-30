@@ -9,11 +9,14 @@ import 'package:himi_syncwatch/services/rtm/rtm_backend_factory.dart';
 /// 房间同步信令门面：JSON 协议组装与事件分发保持不变，
 /// 传输层按平台委托给 [RtmBackend]（agora_rtm / Windows 插件 / 降级）。
 class RtmService {
-  RtmService({RtmBackend? backend}) : _backend = backend ?? createRtmBackend() {
+  RtmService({RtmBackend? backend, Duration? initializeTimeout})
+      : _backend = backend ?? createRtmBackend(),
+        _initializeTimeout = initializeTimeout ?? const Duration(seconds: 15) {
     _bindBackend();
   }
 
   final RtmBackend _backend;
+  final Duration _initializeTimeout;
   String? _currentUserId;
   String? _currentChannelId;
   final StreamController<Map<String, dynamic>> _messageController =
@@ -57,7 +60,13 @@ class RtmService {
     required String userId,
   }) async {
     _currentUserId = userId;
-    await _backend.initialize(appId: appId, userId: userId);
+    // 超时兜底：底层平台通道/插件万一挂起，也不能让房间同步入口永久卡死
+    await _backend.initialize(appId: appId, userId: userId).timeout(
+      _initializeTimeout,
+      onTimeout: () {
+        LogService().log('RTM', 'initialize 超时(${_initializeTimeout.inSeconds}s)');
+      },
+    );
   }
 
   Future<bool> login(String appId, {String? token}) async {

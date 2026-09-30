@@ -14,6 +14,7 @@ class FakeRtmBackend implements RtmBackend {
   bool ready = true;
   bool supported = true;
   bool initialized = false;
+  bool hangOnInitialize = false;
   bool loggedIn = false;
   bool loggedOut = false;
   int onlineCount = 3;
@@ -39,6 +40,10 @@ class FakeRtmBackend implements RtmBackend {
 
   @override
   Future<void> initialize({required String appId, required String userId}) async {
+    if (hangOnInitialize) {
+      // 模拟底层平台通道永久挂起
+      await Completer<void>().future;
+    }
     initialized = true;
     lastInitializedAppId = appId;
     lastInitializedUserId = userId;
@@ -249,6 +254,25 @@ void main() {
     test('testMetadata 通过写读返回自检结果', () async {
       final result = await service.testMetadata('ch');
       expect(result, contains('自检通过'));
+    });
+
+    test('initialize 挂起时超时兜底不永久卡死', () async {
+      final hangBackend = FakeRtmBackend()
+        ..hangOnInitialize = true
+        ..ready = false;
+      final hangService = RtmService(
+        backend: hangBackend,
+        initializeTimeout: const Duration(milliseconds: 50),
+      );
+
+      await hangService
+          .initialize(appId: 'app', userId: 'u1')
+          .timeout(const Duration(seconds: 2));
+
+      // 超时后登录按未就绪快速失败，不会卡死
+      expect(await hangService.login('app'), isFalse);
+
+      hangService.dispose();
     });
 
     test('metadata 写入返回 unsupported 时 testMetadata 报写入失败', () async {
