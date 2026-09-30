@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 
 class EmbyService {
@@ -135,6 +136,34 @@ class EmbyService {
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
       return [];
+    }
+  }
+
+  /// 统计电影 / 电视剧 / 集的总数量。
+  ///
+  /// 并发三次 `GET /Items`（`Limit=1` 只取 `TotalRecords`，响应体积极小）。
+  /// 统计属锦上添花：任何请求/解析失败都返回 null，不抛错、不阻塞调用方。
+  Future<MediaCounts?> getItemCounts() async {
+    try {
+      const types = ['Movie', 'Series', 'Episode'];
+      final responses = await Future.wait([
+        for (final type in types)
+          _dio.get('/Items', queryParameters: {
+            if (_userId != null) 'UserId': _userId,
+            'Recursive': true,
+            'IncludeItemTypes': type,
+            'Limit': 1,
+          }),
+      ]);
+      int countOf(int index) =>
+          (responses[index].data['TotalRecords'] as num?)?.toInt() ?? 0;
+      return MediaCounts(
+        movies: countOf(0),
+        series: countOf(1),
+        episodes: countOf(2),
+      );
+    } catch (_) {
+      return null;
     }
   }
 

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
+import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -653,5 +654,78 @@ void main() {
       PosterPalette.darkenForPage(const Color(0xFF6366F1)),
     );
     expect(gradient.colors.toSet().length, 3);
+  });
+
+  testWidgets('底部统计面板：计数成功时渲染在分类行之后', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: const [
+        LibraryFolder(
+          id: 'lb1',
+          name: '影库',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+      ],
+      items: [
+        MediaItem(id: 'm1', name: '测试影片', type: 'Movie', posterUrl: ''),
+      ],
+      itemCounts: const MediaCounts(
+        movies: 2565,
+        series: 2415,
+        episodes: 73462,
+      ),
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    final panel = find.byKey(const ValueKey('statsPanel'));
+    expect(panel, findsOneWidget);
+    expect(find.text('2565'), findsOneWidget);
+    expect(find.text('2415'), findsOneWidget);
+    expect(find.text('73462'), findsOneWidget);
+    expect(find.text('电影'), findsOneWidget);
+    expect(find.text('电视剧'), findsOneWidget);
+    expect(find.text('集'), findsOneWidget);
+
+    // 面板排在分类海报卡之后（列表收尾）
+    final poster = find.byKey(const ValueKey('posterCard_m1'));
+    expect(
+      tester.getTopLeft(panel).dy,
+      greaterThanOrEqualTo(tester.getBottomRight(poster).dy),
+    );
+  });
+
+  testWidgets('统计失败（getItemCounts 返 null）时隐藏底部面板', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: const [
+        LibraryFolder(
+          id: 'lb1',
+          name: '影库',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+      ],
+      items: [
+        MediaItem(id: 'm1', name: '测试影片', type: 'Movie', posterUrl: ''),
+      ],
+      itemCounts: null,
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    expect(find.byKey(const ValueKey('statsPanel')), findsNothing);
+    expect(find.text('电影'), findsNothing);
+    // 内容不受统计失败影响
+    expect(find.byKey(const ValueKey('posterCard_m1')), findsOneWidget);
   });
 }

@@ -1,5 +1,6 @@
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -94,6 +95,7 @@ class FakeEmbyService extends EmbyService {
     this.items = const [],
     this.itemsByParent = const {},
     this.searchResults = const [],
+    this.itemCounts,
   });
 
   final MediaItem? item;
@@ -106,6 +108,12 @@ class FakeEmbyService extends EmbyService {
 
   /// searchItems 返回结果（聚合搜索测试用）。
   final List<MediaItem> searchResults;
+
+  /// getItemCounts 返回结果；null = 统计失败（首页不渲染底部面板）。
+  final MediaCounts? itemCounts;
+
+  @override
+  Future<MediaCounts?> getItemCounts() async => itemCounts;
 
   @override
   Future<List<MediaItem>> searchItems(String query) async => searchResults;

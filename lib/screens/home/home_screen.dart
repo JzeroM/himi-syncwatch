@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
+import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -16,6 +17,7 @@ import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
+import 'package:himi_syncwatch/widgets/stats_panel.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key, this.qrScan});
@@ -37,6 +39,9 @@ class _CategoryData {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<_CategoryData> _categories = [];
   List<LibraryFolder> _libraries = [];
+
+  /// 电影/电视剧/集计数（null = 未加载或加载失败，底部面板隐藏）。
+  MediaCounts? _counts;
   bool _isLoading = true;
   String? _error;
   bool _initialized = false;
@@ -102,7 +107,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final EmbyService embyService =
           serviceOverride ?? ref.read(embyServiceProvider);
-      final libs = await embyService.getLibraries();
+      // 库列表与计数并发发起，计数失败返回 null 不阻塞内容
+      final libsFuture = embyService.getLibraries();
+      final countsFuture = embyService.getItemCounts();
+      final libs = await libsFuture;
 
       final futures = libs.map((lib) async {
         final items = await embyService.getItems(
@@ -118,6 +126,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }).toList();
 
       final results = await Future.wait(futures);
+      final counts = await countsFuture;
       final categories = results.where((c) => c.items.isNotEmpty).toList();
 
       // 媒体库栏：剔除空库，其余严格保持服务端排序
@@ -131,6 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       setState(() {
         _categories = categories;
         _libraries = libraries;
+        _counts = counts;
         _isLoading = false;
       });
     } catch (e) {
@@ -247,7 +257,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             bottom: GlassConfig.bottomReserveOf(context),
                           ),
                           itemCount: _categories.length +
-                              (_libraries.isNotEmpty ? 1 : 0),
+                              (_libraries.isNotEmpty ? 1 : 0) +
+                              (_counts != null ? 1 : 0),
                           itemBuilder: (context, index) {
                             final headerCount =
                                 _libraries.isNotEmpty ? 1 : 0;
@@ -259,14 +270,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ),
                               );
                             }
-                            final cat = _categories[index - headerCount];
-                            return _CategorySection(
-                              category: cat,
-                              onViewAll: () => context.push(
-                                '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
-                              ),
-                              onItemTap: (item) =>
-                                  context.push('/detail/${item.id}'),
+                            final catIndex = index - headerCount;
+                            if (catIndex < _categories.length) {
+                              final cat = _categories[catIndex];
+                              return _CategorySection(
+                                category: cat,
+                                onViewAll: () => context.push(
+                                  '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
+                                ),
+                                onItemTap: (item) =>
+                                    context.push('/detail/${item.id}'),
+                              );
+                            }
+                            // 列表收尾：媒体统计面板（计数加载成功才渲染）
+                            return StatsPanel(
+                              key: const ValueKey('statsPanel'),
+                              counts: _counts!,
                             );
                           },
                         ),

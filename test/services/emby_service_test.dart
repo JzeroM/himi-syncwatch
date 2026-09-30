@@ -168,6 +168,54 @@ void main() {
       expect(libs.map((l) => l.id).toList(), ['L1']);
     });
   });
+
+  group('getItemCounts 电影/电视剧/集计数', () {
+    test('并发三个 /Items 请求各带 Limit=1，解析 TotalRecords', () async {
+      respondWith = (_) => {'TotalRecords': 42};
+
+      final counts = await service.getItemCounts();
+
+      expect(counts, isNotNull);
+      expect(counts!.movies, 42);
+      expect(counts.series, 42);
+      expect(counts.episodes, 42);
+
+      // 三个并发请求：Movie / Series / Episode 各一次
+      expect(captured, hasLength(3));
+      expect(
+        captured.map((r) => r.param('IncludeItemTypes')).toSet(),
+        {'Movie', 'Series', 'Episode'},
+      );
+      for (final r in captured) {
+        expect(r.path, '/Items');
+        expect(r.param('Limit'), '1');
+        expect(r.param('Recursive'), 'true');
+        expect(r.param('UserId'), 'user-1');
+      }
+    });
+
+    test('TotalRecords 缺失时按 0 计', () async {
+      respondWith = (_) => {'Items': <dynamic>[]};
+
+      final counts = await service.getItemCounts();
+      expect(counts, isNotNull);
+      expect(counts!.movies, 0);
+      expect(counts.series, 0);
+      expect(counts.episodes, 0);
+    });
+
+    test('连接失败返回 null 不抛错（统计不阻塞调用方）', () async {
+      final unreachable = EmbyService();
+      unreachable.configure(
+        serverUrl: 'http://127.0.0.1:1',
+        accessToken: 't',
+        userId: 'u',
+        serverId: 's',
+      );
+
+      expect(await unreachable.getItemCounts(), isNull);
+    });
+  });
 }
 
 /// 忽略未使用的 future，避免 lint 告警。
