@@ -119,7 +119,7 @@ jobs:
           fi
           for apk in "${APKS[@]}"; do
             AP_RAW=$("$APKSIGNER" verify --print-certs "$apk" 2>&1 || true)
-            APK_FP=$(echo "$AP_RAW" | sed -n 's/^Signer #1 certificate SHA-256 digest:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
+            APK_FP=$(echo "$AP_RAW" | sed -n 's/^.*certificate SHA-256 digest:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
             echo "$apk SHA-256: $APK_FP"
             if [ -z "$APK_FP" ] || [ "$KS_N" != "$(echo "$APK_FP" | tr 'A-F' 'a-f')" ]; then
               echo "❌ $apk 签名与 keystore 不一致（或无法读取 APK 指纹），禁止发布"
