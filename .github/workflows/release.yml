@@ -102,6 +102,15 @@ jobs:
             exit 1
           fi
           echo "keystore SHA-256: $KS_FP"
+          KS_N=$(echo "$KS_FP" | tr -d ':' | tr 'A-F' 'a-f')
+          # 现代 AGP 只写 v2/v3 签名块，keytool -printcert -jarfile 报 "Not a signed
+          # jar file"，改用 apksigner（SDK build-tools 自带，输出小写无冒号）
+          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "❌ 找不到 apksigner（ANDROID_HOME=${ANDROID_HOME:-unset}）"
+            exit 1
+          fi
+          echo "apksigner: $APKSIGNER"
           shopt -s nullglob
           APKS=(build/app/outputs/flutter-apk/*-release.apk)
           if [ ${#APKS[@]} -eq 0 ]; then
@@ -109,10 +118,10 @@ jobs:
             exit 1
           fi
           for apk in "${APKS[@]}"; do
-            AP_RAW=$(keytool -printcert -jarfile "$apk" 2>&1 || true)
-            APK_FP=$(echo "$AP_RAW" | sed -n 's/.*SHA256:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
+            AP_RAW=$("$APKSIGNER" verify --print-certs "$apk" 2>&1 || true)
+            APK_FP=$(echo "$AP_RAW" | sed -n 's/^Signer #1 certificate SHA-256 digest:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
             echo "$apk SHA-256: $APK_FP"
-            if [ -z "$APK_FP" ] || [ "${KS_FP^^}" != "${APK_FP^^}" ]; then
+            if [ -z "$APK_FP" ] || [ "$KS_N" != "$(echo "$APK_FP" | tr 'A-F' 'a-f')" ]; then
               echo "❌ $apk 签名与 keystore 不一致（或无法读取 APK 指纹），禁止发布"
               echo "$AP_RAW"
               exit 1
@@ -183,7 +192,15 @@ jobs:
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' ios/Runner.xcodeproj/project.pbxproj
 
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
+      - name: Run flutter build ios --release --no-codesign
+        run: |
+          # Agora 等 pod 走 download.agora.io，runner 偶发 DNS 解析失败（curl 6），重试 3 次
+          for i in 1 2 3; do
+            if flutter build ios --release --no-codesign; then exit 0; fi
+            echo "❌ iOS 构建失败，15 秒后重试（$i/3）"
+            sleep 15
+          done
+          exit 1
 
       - name: 打包未签名 IPA
         run: |
