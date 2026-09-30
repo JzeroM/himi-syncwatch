@@ -1,0 +1,37 @@
+name: Windows RTM Plugin Build
+
+# 仅手动触发：验证 himi_windows_rtm 插件在 Windows 上编译、SDK 下载链接、
+# 运行时 DLL 打包；不发版（发版走 release.yml tag 流程）。
+on:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: 验证插件与 Agora DLL 已打进产物
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = 'build/windows/x64/runner/Release'
+          foreach ($f in @('himi_windows_rtm_plugin.dll', 'agora_rtm_sdk.dll', 'libaosl.dll')) {
+            $p = Join-Path $rel $f
+            if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
+            Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-rtm-exe
+          path: build/windows/x64/runner/Release/

@@ -18,6 +18,9 @@ dependencies:
   fvp: ^0.38.1
   # 声网 RTM（中国区）
   agora_rtm: ^2.2.5
+  # Windows 端 RTM（agora_rtm 仅支持 android/ios）
+  himi_windows_rtm:
+    path: plugins/himi_windows_rtm
   # 声网 Token 生成（纯 Dart，客户端签名）
   agora_token_generator: ^1.0.0
   # 分享

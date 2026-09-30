@@ -1,0 +1,13 @@
+name: himi_windows_rtm
+description: Windows implementation of room signaling using Agora RTM C++ SDK 2.2.5.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.6.0
+
+flutter:
+  plugin:
+    platforms:
+      windows:
+        pluginClass: HimiWindowsRtmPluginCApi
