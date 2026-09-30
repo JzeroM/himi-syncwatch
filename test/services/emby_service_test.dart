@@ -170,8 +170,28 @@ void main() {
   });
 
   group('getItemCounts 电影/电视剧/集计数', () {
-    test('并发三个 /Items 请求各带 Limit=1，解析 TotalRecords', () async {
-      respondWith = (_) => {'TotalRecords': 42};
+    test('优先走 /Items/Counts 专用端点，一次请求解析三个计数', () async {
+      respondWith = (_) => {
+            'MovieCount': 2565,
+            'SeriesCount': 2415,
+            'EpisodeCount': 73462,
+          };
+
+      final counts = await service.getItemCounts();
+
+      expect(counts, isNotNull);
+      expect(counts!.movies, 2565);
+      expect(counts.series, 2415);
+      expect(counts.episodes, 73462);
+
+      // 只发一个请求，命中专用端点
+      expect(captured, hasLength(1));
+      expect(captured.single.path, '/Items/Counts');
+      expect(captured.single.param('UserId'), 'user-1');
+    });
+
+    test('Counts 端点缺字段时回退 /Items 并读 TotalRecordCount', () async {
+      respondWith = (_) => {'TotalRecordCount': 42};
 
       final counts = await service.getItemCounts();
 
@@ -180,21 +200,32 @@ void main() {
       expect(counts.series, 42);
       expect(counts.episodes, 42);
 
-      // 三个并发请求：Movie / Series / Episode 各一次
-      expect(captured, hasLength(3));
+      // 1 次 Counts（缺字段） + 3 次 /Items 回退
+      expect(captured, hasLength(4));
+      expect(captured.first.path, '/Items/Counts');
+      final itemsRequests = captured.skip(1).toList();
       expect(
-        captured.map((r) => r.param('IncludeItemTypes')).toSet(),
+        itemsRequests.map((r) => r.param('IncludeItemTypes')).toSet(),
         {'Movie', 'Series', 'Episode'},
       );
-      for (final r in captured) {
+      for (final r in itemsRequests) {
         expect(r.path, '/Items');
         expect(r.param('Limit'), '1');
         expect(r.param('Recursive'), 'true');
-        expect(r.param('UserId'), 'user-1');
       }
     });
 
-    test('TotalRecords 缺失时按 0 计', () async {
+    test('回退路径兼容旧键名 TotalRecords', () async {
+      respondWith = (_) => {'TotalRecords': 7};
+
+      final counts = await service.getItemCounts();
+      expect(counts, isNotNull);
+      expect(counts!.movies, 7);
+      expect(counts.series, 7);
+      expect(counts.episodes, 7);
+    });
+
+    test('两个端点都缺计数字段时按 0 计', () async {
       respondWith = (_) => {'Items': <dynamic>[]};
 
       final counts = await service.getItemCounts();

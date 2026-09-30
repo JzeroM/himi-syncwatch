@@ -41,6 +41,10 @@ void main() {
     final episodes = tester.getTopLeft(find.text('73462'));
     expect(movies.dx, lessThan(series.dx));
     expect(series.dx, lessThan(episodes.dx));
+
+    // 卡片扁平：整体高度明显小于 80
+    final card = tester.getRect(find.byType(GlassContainer).first);
+    expect(card.height, lessThan(80));
   });
 
   testWidgets('设置了主题色时数字使用主题色', (tester) async {

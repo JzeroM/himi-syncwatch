@@ -141,30 +141,67 @@ class EmbyService {
 
   /// 统计电影 / 电视剧 / 集的总数量。
   ///
-  /// 并发三次 `GET /Items`（`Limit=1` 只取 `TotalRecords`，响应体积极小）。
-  /// 统计属锦上添花：任何请求/解析失败都返回 null，不抛错、不阻塞调用方。
+  /// 优先走专用端点 `GET /Items/Counts`（一次请求返回 MovieCount 等字段）；
+  /// 老版本响应缺字段时回退为三次 `GET /Items` 读 `TotalRecordCount`
+  /// （兼容旧键名 `TotalRecords`）。任何失败返回 null，不抛错、不阻塞调用方。
   Future<MediaCounts?> getItemCounts() async {
     try {
-      const types = ['Movie', 'Series', 'Episode'];
-      final responses = await Future.wait([
-        for (final type in types)
-          _dio.get('/Items', queryParameters: {
-            if (_userId != null) 'UserId': _userId,
-            'Recursive': true,
-            'IncludeItemTypes': type,
-            'Limit': 1,
-          }),
-      ]);
-      int countOf(int index) =>
-          (responses[index].data['TotalRecords'] as num?)?.toInt() ?? 0;
+      final direct = await _countsFromEndpoint();
+      if (direct != null) return direct;
+      return await _countsFromItemsQuery();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// `GET /Items/Counts` → ItemCounts（MovieCount/SeriesCount/EpisodeCount）。
+  /// 三个计数字段任一缺失则视为该端点不可用，返回 null 触发回退。
+  Future<MediaCounts?> _countsFromEndpoint() async {
+    try {
+      final resp = await _dio.get(
+        '/Items/Counts',
+        queryParameters: {if (_userId != null) 'UserId': _userId},
+      );
+      final data = resp.data;
+      if (data is! Map) return null;
+      final movies = data['MovieCount'];
+      final series = data['SeriesCount'];
+      final episodes = data['EpisodeCount'];
+      if (movies is! num || series is! num || episodes is! num) return null;
       return MediaCounts(
-        movies: countOf(0),
-        series: countOf(1),
-        episodes: countOf(2),
+        movies: movies.toInt(),
+        series: series.toInt(),
+        episodes: episodes.toInt(),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// 回退：并发三次 `/Items`（Limit=1）读 TotalRecordCount（兼容 TotalRecords）。
+  Future<MediaCounts?> _countsFromItemsQuery() async {
+    const types = ['Movie', 'Series', 'Episode'];
+    final responses = await Future.wait([
+      for (final type in types)
+        _dio.get('/Items', queryParameters: {
+          if (_userId != null) 'UserId': _userId,
+          'Recursive': true,
+          'IncludeItemTypes': type,
+          'Limit': 1,
+        }),
+    ]);
+    int countOf(int index) {
+      final data = responses[index].data;
+      if (data is! Map) return 0;
+      final total = data['TotalRecordCount'] ?? data['TotalRecords'];
+      return total is num ? total.toInt() : 0;
+    }
+
+    return MediaCounts(
+      movies: countOf(0),
+      series: countOf(1),
+      episodes: countOf(2),
+    );
   }
 
   Future<List<MediaItem>> getLatestItems({

@@ -19,7 +19,7 @@ class StatsPanel extends ConsumerWidget {
         : Color(themeColorValue);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
           _StatCard(label: '电影', value: counts.movies, accent: accent),
@@ -48,8 +48,8 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: GlassContainer(
-        borderRadius: const BorderRadius.all(Radius.circular(16)),
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -57,15 +57,18 @@ class _StatCard extends StatelessWidget {
               '$value',
               key: ValueKey('stat_$label'),
               style: TextStyle(
-                fontSize: 26,
+                fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: accent,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 2),
             Text(
               label,
-              style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.75)),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white.withValues(alpha: 0.75),
+              ),
             ),
           ],
         ),
