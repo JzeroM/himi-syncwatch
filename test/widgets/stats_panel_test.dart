@@ -23,8 +23,41 @@ Widget _wrap(Widget child, AppSettings settings) {
 void main() {
   const counts = MediaCounts(movies: 2565, series: 2415, episodes: 73462);
 
+  group('buildRainbowStripeGradient 彩虹条纹', () {
+    test('七色、14 个 stop、相邻同色形成硬边条纹', () {
+      final g = buildRainbowStripeGradient();
+
+      expect(g.colors, hasLength(14));
+      expect(g.stops, hasLength(14));
+
+      // 七个色段，每色连续出现两次（硬边突变而非平滑过渡）
+      final uniqueColors = <Color>{};
+      for (var i = 0; i < g.colors.length; i += 2) {
+        expect(g.colors[i], g.colors[i + 1]);
+        uniqueColors.add(g.colors[i]);
+      }
+      expect(uniqueColors, hasLength(7));
+
+      // stops 成对重复：[..., a, a, b, b, ...]
+      for (var i = 1; i < g.stops!.length - 1; i += 2) {
+        expect(g.stops![i], g.stops![i + 1]);
+      }
+      expect(g.stops!.first, 0);
+      expect(g.stops!.last, 1);
+
+      // 横向：左 → 右
+      expect(g.begin, Alignment.centerLeft);
+      expect(g.end, Alignment.centerRight);
+    });
+  });
+
   testWidgets('横排展示电影/电视剧/集三个数字与标签', (tester) async {
-    await tester.pumpWidget(_wrap(const StatsPanel(key: ValueKey('statsPanel'), counts: counts), const AppSettings()));
+    await tester.pumpWidget(
+      _wrap(
+        const StatsPanel(key: ValueKey('statsPanel'), counts: counts),
+        const AppSettings(),
+      ),
+    );
 
     expect(find.byKey(const ValueKey('statsPanel')), findsOneWidget);
     expect(find.text('2565'), findsOneWidget);
@@ -47,24 +80,24 @@ void main() {
     expect(card.height, lessThan(80));
   });
 
-  testWidgets('设置了主题色时数字使用主题色', (tester) async {
+  testWidgets('每个数字由 ShaderMask 条纹着色（srcIn + 白色底字）', (tester) async {
     await tester.pumpWidget(
       _wrap(
         const StatsPanel(key: ValueKey('statsPanel'), counts: counts),
-        const AppSettings(themeColor: 0xFF2DD4BF),
+        const AppSettings(),
       ),
     );
 
-    expect(
-      tester.widget<Text>(find.text('2565')).style?.color,
-      const Color(0xFF2DD4BF),
-    );
-  });
+    final masks = find.byType(ShaderMask);
+    expect(masks, findsNWidgets(3));
+    for (final mask in tester.widgetList<ShaderMask>(masks)) {
+      expect(mask.blendMode, BlendMode.srcIn);
+    }
 
-  testWidgets('未设置主题色时数字使用主题默认色', (tester) async {
-    await tester.pumpWidget(_wrap(const StatsPanel(key: ValueKey('statsPanel'), counts: counts), const AppSettings()));
-
-    final color = tester.widget<Text>(find.text('2565')).style?.color;
-    expect(color, isNotNull);
+    // 数字本体为白色（由条纹 shader 着色）
+    for (final text in ['2565', '2415', '73462']) {
+      final t = tester.widget<Text>(find.text(text));
+      expect(t.style?.color, Colors.white);
+    }
   });
 }
