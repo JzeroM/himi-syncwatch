@@ -92,9 +92,13 @@ jobs:
           grep -A 14 'signingConfigs' "$GRADLE_FILE"
           grep -E 'signingConfigs\.release|getByName\("release"\)' "$GRADLE_FILE"
           echo "=== 比对 APK 与 keystore 签名指纹 ==="
-          KS_FP=$(keytool -list -v -keystore android/app/himi-release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" -alias "${{ secrets.ANDROID_KEY_ALIAS }}" 2>/dev/null | sed -n 's/^SHA256: //p' | head -1 | tr -d '[:space:]')
+          # 不带 -v 的输出格式为 `Certificate fingerprint (SHA-256): xx`（v1.1.32 实测）；
+          # -list -v 的 `SHA256:` 行在此环境解析不到。失败时打印原始输出便于诊断。
+          KS_RAW=$(keytool -list -keystore android/app/himi-release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" -alias "${{ secrets.ANDROID_KEY_ALIAS }}" 2>&1 || true)
+          KS_FP=$(echo "$KS_RAW" | sed -n 's/^.*Certificate fingerprint (SHA-256):[[:space:]]*//p' | head -1 | tr -d '[:space:]')
           if [ -z "$KS_FP" ]; then
-            echo "❌ 读取 keystore 指纹失败"
+            echo "❌ 读取 keystore 指纹失败，keytool 输出："
+            echo "$KS_RAW"
             exit 1
           fi
           echo "keystore SHA-256: $KS_FP"
@@ -105,10 +109,12 @@ jobs:
             exit 1
           fi
           for apk in "${APKS[@]}"; do
-            APK_FP=$(keytool -printcert -jarfile "$apk" 2>/dev/null | sed -n 's/^ *SHA256: //p' | head -1 | tr -d '[:space:]')
+            AP_RAW=$(keytool -printcert -jarfile "$apk" 2>&1 || true)
+            APK_FP=$(echo "$AP_RAW" | sed -n 's/.*SHA256:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
             echo "$apk SHA-256: $APK_FP"
             if [ -z "$APK_FP" ] || [ "${KS_FP^^}" != "${APK_FP^^}" ]; then
-              echo "❌ $apk 签名与 keystore 不一致，禁止发布"
+              echo "❌ $apk 签名与 keystore 不一致（或无法读取 APK 指纹），禁止发布"
+              echo "$AP_RAW"
               exit 1
             fi
           done
