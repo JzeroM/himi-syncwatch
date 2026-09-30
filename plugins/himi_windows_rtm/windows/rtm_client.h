@@ -102,6 +102,10 @@ class RtmClient : public agora::rtm::IRtmEventHandler {
   agora::rtm::IRtmStorage* storage_ = nullptr;
   agora::rtm::IRtmPresence* presence_ = nullptr;
   std::unordered_map<uint64_t, std::string> pending_;
+  // RtmConfig 以 const char* 持有 appId/userId：存为成员保证与 client
+  // 同生命周期，避免指向调用方临时字符串的悬垂指针
+  std::string app_id_;
+  std::string user_id_;
 };
 
 }  // namespace himi_windows_rtm

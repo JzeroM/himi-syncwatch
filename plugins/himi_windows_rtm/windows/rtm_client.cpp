@@ -58,9 +58,12 @@ std::string RtmClient::TakeMethod(uint64_t requestId) {
 bool RtmClient::Initialize(const std::string& appId, const std::string& userId) {
   Release();
 
+  app_id_ = appId;
+  user_id_ = userId;
+
   RtmConfig config;
-  config.appId = appId.c_str();
-  config.userId = userId.c_str();
+  config.appId = app_id_.c_str();
+  config.userId = user_id_.c_str();
   config.areaCode = RTM_AREA_CODE_GLOB;
   config.useStringUserId = true;
   config.presenceTimeout = 300;
