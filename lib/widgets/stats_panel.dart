@@ -2,36 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
-/// 彩虹条纹渐变：红橙黄绿青蓝紫七色，硬边 stops 形成条纹而非平滑过渡。
-///
-/// 每个色段占 1/7 宽度，通过「同色重复两个 stop」在段界突变。
-LinearGradient buildRainbowStripeGradient() {
-  const colors = <Color>[
-    Color(0xFFF43F5E), // 红
-    Color(0xFFFBBF24), // 橙
-    Color(0xFFFDE047), // 黄
-    Color(0xFF4ADE80), // 绿
-    Color(0xFF22D3EE), // 青
-    Color(0xFF60A5FA), // 蓝
-    Color(0xFFA78BFA), // 紫
-  ];
-  return LinearGradient(
-    begin: Alignment.centerLeft,
-    end: Alignment.centerRight,
-    colors: [for (final c in colors) ...[c, c]],
-    stops: [
-      0, 1 / 7, //
-      1 / 7, 2 / 7, //
-      2 / 7, 3 / 7, //
-      3 / 7, 4 / 7, //
-      4 / 7, 5 / 7, //
-      5 / 7, 6 / 7, //
-      6 / 7, 1,
-    ],
-  );
-}
-
-/// 首页底部统计面板：横排三张玻璃卡片，数字为彩虹条纹。
+/// 首页底部统计面板：横排三张玻璃卡片，白色数字 + 三色点缀条。
 class StatsPanel extends StatelessWidget {
   const StatsPanel({super.key, required this.counts});
 
@@ -43,11 +14,23 @@ class StatsPanel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
-          _StatCard(label: '电影', value: counts.movies),
+          _StatCard(
+            label: '电影',
+            value: counts.movies,
+            barColor: const Color(0xFF2DD4BF), // 青绿
+          ),
           const SizedBox(width: 10),
-          _StatCard(label: '电视剧', value: counts.series),
+          _StatCard(
+            label: '电视剧',
+            value: counts.series,
+            barColor: const Color(0xFFFBBF24), // 琥珀
+          ),
           const SizedBox(width: 10),
-          _StatCard(label: '集', value: counts.episodes),
+          _StatCard(
+            label: '集',
+            value: counts.episodes,
+            barColor: const Color(0xFFA78BFA), // 紫罗兰
+          ),
         ],
       ),
     );
@@ -55,10 +38,15 @@ class StatsPanel extends StatelessWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({required this.label, required this.value});
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.barColor,
+  });
 
   final String label;
   final int value;
+  final Color barColor;
 
   @override
   Widget build(BuildContext context) {
@@ -69,18 +57,13 @@ class _StatCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ShaderMask(
-              blendMode: BlendMode.srcIn,
-              shaderCallback: (bounds) =>
-                  buildRainbowStripeGradient().createShader(bounds),
-              child: Text(
-                '$value',
-                key: ValueKey('stat_$label'),
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+            Text(
+              '$value',
+              key: ValueKey('stat_$label'),
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 2),
@@ -89,6 +72,15 @@ class _StatCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 color: Colors.white.withValues(alpha: 0.75),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Container(
+              key: ValueKey('statBar_$label'),
+              height: 3,
+              decoration: BoxDecoration(
+                color: barColor,
+                borderRadius: const BorderRadius.all(Radius.circular(1.5)),
               ),
             ),
           ],
