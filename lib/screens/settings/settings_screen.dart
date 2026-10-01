@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -86,25 +87,29 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) =>
                 ref.read(settingsProvider.notifier).update(stereoDownmix: v),
           ),
-          const Divider(height: 1),
-          ListTile(
-            title: const Text('音频后端'),
-            subtitle: Text(_audioRendererDescription(settings.audioRenderer)),
-            trailing: DropdownButton<String>(
-              value: settings.audioRenderer,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(settingsProvider.notifier).update(audioRenderer: value);
-                }
-              },
-              items: AppSettings.audioRendererLabels.entries.map((e) {
-                return DropdownMenuItem(
-                  value: e.key,
-                  child: Text(e.value),
-                );
-              }).toList(),
+          // Windows 固定使用自动音频后端，不提供设置项
+          if (defaultTargetPlatform != TargetPlatform.windows) ...[
+            const Divider(height: 1),
+            ListTile(
+              title: const Text('音频后端'),
+              subtitle: Text(_audioRendererDescription(settings.audioRenderer)),
+              trailing: DropdownButton<String>(
+                value: settings.audioRenderer,
+                onChanged: (value) {
+                  if (value != null) {
+                    ref.read(settingsProvider.notifier)
+                        .update(audioRenderer: value);
+                  }
+                },
+                items: AppSettings.audioRendererLabels.entries.map((e) {
+                  return DropdownMenuItem(
+                    value: e.key,
+                    child: Text(e.value),
+                  );
+                }).toList(),
+              ),
             ),
-          ),
+          ],
           const Divider(height: 1),
           SwitchListTile(
             title: const Text('播放调试面板'),

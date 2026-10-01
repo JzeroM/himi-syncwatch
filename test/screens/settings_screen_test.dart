@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -164,5 +165,19 @@ void main() {
       findsOneWidget,
     );
     expect(container.read(settingsProvider).audioRenderer, 'AudioTrack');
+  });
+
+  testWidgets('Windows 平台隐藏音频后端设置项', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await _pumpScreen(tester);
+
+      expect(find.text('音频后端'), findsNothing);
+      // 相邻设置项仍正常展示（分隔线未错乱）
+      expect(find.text('立体声降混'), findsOneWidget);
+      expect(find.text('播放调试面板'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 }

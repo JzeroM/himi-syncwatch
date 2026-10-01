@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class AppSettings {
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
@@ -6,6 +8,15 @@ class AppSettings {
   final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
   final bool glassUi; // 液态玻璃特效开关（低端设备可关闭）
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
+
+  /// 生效的音频后端：Windows 固定为自动（mdk 无 AudioTrack/OpenSL 等
+  /// Android 专属后端），设置项在 Windows 上也不再展示；其余平台用用户设置。
+  static String effectiveAudioRenderer(String setting) {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return 'auto';
+    }
+    return setting;
+  }
 
   /// copyWith/update 区分「未传」与「显式清空为 null」的占位值。
   static const Object unsetValue = Object();

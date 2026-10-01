@@ -469,7 +469,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // 降混设置
       final dm = ref.read(settingsProvider).stereoDownmix ? '开' : '关';
-      final ab = ref.read(settingsProvider).audioRenderer;
+      final ab =
+          AppSettings.effectiveAudioRenderer(ref.read(settingsProvider).audioRenderer);
 
       // 平台预选解码器：签名未变则跳过，避免每个采样周期跨 MethodChannel
       _maybeProbeCodecs(vCodec, vWidth, vHeight, dovi, aCodec);
@@ -715,8 +716,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
     }
     // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度
-    if (settings.audioRenderer != 'auto') {
-      _player.audioBackends = [settings.audioRenderer];
+    // Windows 固定走 auto（mdk 无 Android 后端）
+    final renderer = AppSettings.effectiveAudioRenderer(settings.audioRenderer);
+    if (renderer != 'auto') {
+      _player.audioBackends = [renderer];
     }
     // 音量默认 80%
     _player.volume = kPlayerDefaultVolume;

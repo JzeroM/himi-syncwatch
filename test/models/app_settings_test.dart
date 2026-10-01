@@ -1,7 +1,29 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 
 void main() {
+  group('effectiveAudioRenderer（音频后端生效值）', () {
+    test('Windows 固定为自动，忽略存档的 Android 后端', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      expect(AppSettings.effectiveAudioRenderer('AudioTrack'), 'auto');
+      expect(AppSettings.effectiveAudioRenderer('aaudio'), 'auto');
+      expect(AppSettings.effectiveAudioRenderer('opensl'), 'auto');
+      expect(AppSettings.effectiveAudioRenderer('auto'), 'auto');
+    });
+
+    test('非 Windows 平台保持用户设置', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      expect(AppSettings.effectiveAudioRenderer('AudioTrack'), 'AudioTrack');
+      expect(AppSettings.effectiveAudioRenderer('aaudio'), 'aaudio');
+      expect(AppSettings.effectiveAudioRenderer('auto'), 'auto');
+    });
+  });
+
   group('AppSettings', () {
     test('默认值', () {
       const settings = AppSettings();
