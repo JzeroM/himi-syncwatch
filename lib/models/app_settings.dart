@@ -8,6 +8,7 @@ class AppSettings {
   final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
   final bool glassUi; // 液态玻璃特效开关（低端设备可关闭）
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
+  final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
 
   /// 生效的音频后端：Windows 固定为自动（mdk 无 AudioTrack/OpenSL 等
   /// Android 专属后端），设置项在 Windows 上也不再展示；其余平台用用户设置。
@@ -29,6 +30,7 @@ class AppSettings {
     this.deepDiagnostics = false,
     this.glassUi = true,
     this.themeColor,
+    this.tvMode = false,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -40,6 +42,7 @@ class AppSettings {
     String? audioRenderer,
     bool? deepDiagnostics,
     bool? glassUi,
+    bool? tvMode,
     Object? themeColor = unsetValue,
   }) {
     return AppSettings(
@@ -49,8 +52,10 @@ class AppSettings {
       audioRenderer: audioRenderer ?? this.audioRenderer,
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
       glassUi: glassUi ?? this.glassUi,
-      themeColor:
-          identical(themeColor, unsetValue) ? this.themeColor : themeColor as int?,
+      tvMode: tvMode ?? this.tvMode,
+      themeColor: identical(themeColor, unsetValue)
+          ? this.themeColor
+          : themeColor as int?,
     );
   }
 
@@ -61,6 +66,7 @@ class AppSettings {
         'audioRenderer': audioRenderer,
         'deepDiagnostics': deepDiagnostics,
         'glassUi': glassUi,
+        'tvMode': tvMode,
         if (themeColor != null) 'themeColor': themeColor,
       };
 
@@ -85,6 +91,7 @@ class AppSettings {
       audioRenderer: json['audioRenderer'] as String? ?? 'AudioTrack',
       deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
       glassUi: json['glassUi'] as bool? ?? true,
+      tvMode: json['tvMode'] as bool? ?? false,
       themeColor: json['themeColor'] as int?,
     );
   }

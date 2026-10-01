@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
@@ -202,17 +203,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     icon: const Icon(Icons.meeting_room_outlined),
                     tooltip: '房间',
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                        minWidth: 44, minHeight: 44),
-                    onPressed: () => _showRoomCard(context,
-                        hasServer: hasServer),
+                    constraints:
+                        const BoxConstraints(minWidth: 44, minHeight: 44),
+                    onPressed: () =>
+                        _showRoomCard(context, hasServer: hasServer),
                   ),
                   if (hasServer)
                     IconButton(
                       icon: const Icon(Icons.search),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                          minWidth: 44, minHeight: 44),
+                      constraints:
+                          const BoxConstraints(minWidth: 44, minHeight: 44),
                       onPressed: () => _showSearch(context),
                     ),
                 ],
@@ -260,8 +261,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               (_libraries.isNotEmpty ? 1 : 0) +
                               (_counts != null ? 1 : 0),
                           itemBuilder: (context, index) {
-                            final headerCount =
-                                _libraries.isNotEmpty ? 1 : 0;
+                            final headerCount = _libraries.isNotEmpty ? 1 : 0;
                             if (index < headerCount) {
                               return _LibraryBar(
                                 libraries: _libraries,
@@ -331,8 +331,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         showShadow: false,
         child: Tooltip(
           message: '切换服务器',
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
+          child: TvFocusable(
             onTap: () => _showServerMenu(
               titleContext,
               current: current,
@@ -377,8 +376,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       transitionDuration: const Duration(milliseconds: 160),
       pageBuilder: (dialogContext, _, __) {
         var left = rect.left < 12 ? 12.0 : rect.left;
-        var width =
-            math.min(math.max(rect.width, 220.0), screenW - left - 12);
+        var width = math.min(math.max(rect.width, 220.0), screenW - left - 12);
         if (left + width > screenW - 12) {
           left = math.max(12.0, screenW - 12 - width);
         }
@@ -637,8 +635,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     // 弹窗保持打开，把码写回输入框，等昵称填好后点「加入」
                     codeController.text = result;
                     messenger.showSnackBar(
-                      const SnackBar(
-                          content: Text('已扫描到房间码，请填写昵称后加入')),
+                      const SnackBar(content: Text('已扫描到房间码，请填写昵称后加入')),
                     );
                     return;
                   }
@@ -812,7 +809,7 @@ class _LibraryBar extends StatelessWidget {
               final lib = libraries[index];
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: GestureDetector(
+                child: TvFocusable(
                   key: ValueKey('libraryCard_${lib.id}'),
                   onTap: () => onOpen(lib),
                   child: SizedBox(
@@ -825,8 +822,8 @@ class _LibraryBar extends StatelessWidget {
                           borderRadius: BorderRadius.circular(14),
                           child: SizedBox(
                             height: 96,
-                            child:
-                                EmbyImage(url: lib.posterUrl, fit: BoxFit.cover),
+                            child: EmbyImage(
+                                url: lib.posterUrl, fit: BoxFit.cover),
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -872,7 +869,7 @@ class _CategorySection extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-          child: GestureDetector(
+          child: TvFocusable(
             onTap: onViewAll,
             child: Row(
               children: [

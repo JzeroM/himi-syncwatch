@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 桌面宽度断点：≥ 此宽度走左侧分栏抽屉导航，否则回退底部胶囊导航。
 const double kShellDesktopBreakpoint = 1000.0;
@@ -118,7 +119,8 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
                 margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: selected ? const Color(0x33FFFFFF) : Colors.transparent,
+                  color:
+                      selected ? const Color(0x33FFFFFF) : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -185,7 +187,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
       top: MediaQuery.sizeOf(context).height / 2 - 32,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        child: GestureDetector(
+        child: TvFocusable(
           key: const ValueKey('drawerToggle'),
           onTap: _toggle,
           child: AnimatedBuilder(
@@ -225,8 +227,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
         AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
-            final curve =
-                Curves.easeOutCubic.transform(_controller.value);
+            final curve = Curves.easeOutCubic.transform(_controller.value);
             final width = _panelWidth * curve;
             return Row(
               children: [
@@ -277,15 +278,17 @@ class _PressableState extends State<_Pressable> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) => setState(() => _pressed = false),
+    return TvFocusable(
       onTap: widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        color: _pressed ? const Color(0x14FFFFFF) : Colors.transparent,
-        child: widget.child,
+      child: Listener(
+        onPointerDown: (_) => setState(() => _pressed = true),
+        onPointerUp: (_) => setState(() => _pressed = false),
+        onPointerCancel: (_) => setState(() => _pressed = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          color: _pressed ? const Color(0x14FFFFFF) : Colors.transparent,
+          child: widget.child,
+        ),
       ),
     );
   }

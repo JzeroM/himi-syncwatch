@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 资源海报卡片：完整 2:3 圆角海报（右下评分角标、左上集数角标），
 /// 标题与年份显示在海报正下方，直接落在页面背景上，不套黑底卡片。
@@ -28,7 +29,8 @@ class PosterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return TvFocusable(
+      radius: 12,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,

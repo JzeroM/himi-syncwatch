@@ -30,6 +30,7 @@ import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
 import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
 import 'package:himi_syncwatch/screens/player/player_platform.dart';
@@ -154,7 +155,8 @@ class _ResourceGroup {
   int get totalCount => seasons.fold(0, (sum, s) => sum + s.episodes.length);
 }
 
-class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
+class _PlayerScreenState extends ConsumerState<PlayerScreen>
+    with WidgetsBindingObserver {
   static const _videoFitModes = [
     BoxFit.contain,
     BoxFit.cover,
@@ -176,9 +178,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _isHost = false;
   bool _showControls = true;
   Duration _position = Duration.zero;
-  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(Duration.zero);
+  final ValueNotifier<Duration> _positionNotifier =
+      ValueNotifier(Duration.zero);
   Duration _duration = Duration.zero;
-  final ValueNotifier<Duration> _durationNotifier = ValueNotifier(Duration.zero);
+  final ValueNotifier<Duration> _durationNotifier =
+      ValueNotifier(Duration.zero);
   String? _myUserId;
   String? _rtmChannel;
   String? _rtmAppId;
@@ -281,17 +285,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         seriesName: ep.seriesName,
       );
 
-      groups.putIfAbsent(groupName, () => _ResourceGroup(
-        name: groupName,
-        isMovie: ep.isMovie,
-        seasons: [],
-      ));
+      groups.putIfAbsent(
+          groupName,
+          () => _ResourceGroup(
+                name: groupName,
+                isMovie: ep.isMovie,
+                seasons: [],
+              ));
 
       final group = groups[groupName]!;
       _SeasonGroup seasonGroup = group.seasons.cast<_SeasonGroup?>().firstWhere(
-        (s) => s!.seasonNumber == ep.season,
-        orElse: () => _SeasonGroup(seasonNumber: ep.season, episodes: []),
-      )!;
+            (s) => s!.seasonNumber == ep.season,
+            orElse: () => _SeasonGroup(seasonNumber: ep.season, episodes: []),
+          )!;
 
       if (!group.seasons.any((s) => s.seasonNumber == ep.season)) {
         group.seasons.add(seasonGroup);
@@ -325,6 +331,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
     }
   }
+
   bool _roomSyncInitializing = false;
 
   // 同步调试面板
@@ -358,9 +365,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   int _audioBitrate = 0;
   String _stereoDownmix = '关';
   String _actualVideoDecoders = '-';
+
   /// mdk `video.decoder` 属性原值，字段名与内容不符，如实单列展示
   String _mdkRawDecoder = '-';
   String _audioBackend = '-';
+
   /// 实际生效的解码器（框架名由 mdk 事件给出，底层 codec 名由平台预选推断）
   DecoderReport _decoderReport = DecoderReport.empty;
   String _codecProbeKey = '';
@@ -392,6 +401,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   /// mdk 状态行（fps / cache），按时间顺序保留最近若干条
   final List<String> _deepLogLines = <String>[];
+
   /// 解码器选择 / 丢帧 / 错误等关键行
   final List<String> _deepNoteLines = <String>[];
   final GlobalKey _qrKey = GlobalKey();
@@ -404,7 +414,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _logSyncEvent(String event) {
     LogService().log('Sync', event);
     final now = DateTime.now();
-    final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+    final time =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
     _syncEvents.add('[$time] $event');
     if (_syncEvents.length > 15) _syncEvents.removeAt(0);
     _syncEventsVersion.value++;
@@ -433,8 +444,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final ms = _player.mediaStatus;
 
       // 播放状态
-      String playState = st == mdk.PlaybackState.playing ? 'playing' :
-                         st == mdk.PlaybackState.paused ? 'paused' : 'stopped';
+      String playState = st == mdk.PlaybackState.playing
+          ? 'playing'
+          : st == mdk.PlaybackState.paused
+              ? 'paused'
+              : 'stopped';
       String mediaSt = _describeMediaStatus(ms);
 
       // 视频信息
@@ -477,8 +491,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // 降混设置
       final dm = ref.read(settingsProvider).stereoDownmix ? '开' : '关';
-      final ab =
-          AppSettings.effectiveAudioRenderer(ref.read(settingsProvider).audioRenderer);
+      final ab = AppSettings.effectiveAudioRenderer(
+          ref.read(settingsProvider).audioRenderer);
 
       // 平台预选解码器：签名未变则跳过，避免每个采样周期跨 MethodChannel
       _maybeProbeCodecs(vCodec, vWidth, vHeight, dovi, aCodec);
@@ -495,7 +509,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _positionMs = pos;
         _durationMs = mi.duration;
         _videoCodecName = vCodec;
-        _videoResolution = vWidth > 0 && vHeight > 0 ? '${vWidth}x$vHeight' : '-';
+        _videoResolution =
+            vWidth > 0 && vHeight > 0 ? '${vWidth}x$vHeight' : '-';
         _videoBitrate = vBitrate > 0 ? (vBitrate / 1000).round() : 0;
         _pixelFormat = pixFmt;
         _doviProfile = dovi;
@@ -543,8 +558,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             height: height > 0 ? height : null,
             dolbyVision: isDv,
           );
-    final audio =
-        aMime == null ? null : await DolbyVisionService.selectDecoder(mime: aMime);
+    final audio = aMime == null
+        ? null
+        : await DolbyVisionService.selectDecoder(mime: aMime);
 
     if (!mounted) return;
     setState(() {
@@ -694,7 +710,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (_embyVideoStream != null) {
         isDV = _embyVideoStream!.isDolbyVision;
         hdrType = _embyVideoStream!.hdrLabel;
-        LogService().log('Player', 'DV 检测(Emby API): isDV=$isDV, hdrType=$hdrType');
+        LogService()
+            .log('Player', 'DV 检测(Emby API): isDV=$isDV, hdrType=$hdrType');
       }
 
       if (!mounted) return;
@@ -744,26 +761,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final pendingMovie = ref.read(pendingRoomMovieProvider);
       if (pendingEpisodes != null && pendingEpisodes.isNotEmpty) {
         // 电视剧：从完整数据提取所有字段
-        _episodes = pendingEpisodes.map((e) => EpisodeInfo(
-          id: e['id'] as String? ?? '',
-          name: e['name'] as String? ?? '',
-          season: e['season'] as int? ?? 0,
-          number: e['number'] as int? ?? 0,
-          poster: e['poster'] as String? ?? '',
-          seriesName: e['seriesName'] as String? ?? '',
-          serverId: (e['serverId'] as String?) ?? widget.serverId,
-        )).toList();
+        _episodes = pendingEpisodes
+            .map((e) => EpisodeInfo(
+                  id: e['id'] as String? ?? '',
+                  name: e['name'] as String? ?? '',
+                  season: e['season'] as int? ?? 0,
+                  number: e['number'] as int? ?? 0,
+                  poster: e['poster'] as String? ?? '',
+                  seriesName: e['seriesName'] as String? ?? '',
+                  serverId: (e['serverId'] as String?) ?? widget.serverId,
+                ))
+            .toList();
         _seriesName = pendingEpisodes.first['seriesName'] as String? ?? '';
         _hasEpisodeList = true;
         ref.read(pendingRoomEpisodesProvider.notifier).state = null;
       } else if (pendingMovie != null) {
-        _episodes = [EpisodeInfo(
-          id: pendingMovie['id'] as String? ?? '',
-          name: pendingMovie['name'] as String? ?? '电影',
-          poster: pendingMovie['poster'] as String? ?? '',
-          mediaSourceId: widget.mediaSourceId,
-          serverId: (pendingMovie['serverId'] as String?) ?? widget.serverId,
-        )];
+        _episodes = [
+          EpisodeInfo(
+            id: pendingMovie['id'] as String? ?? '',
+            name: pendingMovie['name'] as String? ?? '电影',
+            poster: pendingMovie['poster'] as String? ?? '',
+            mediaSourceId: widget.mediaSourceId,
+            serverId: (pendingMovie['serverId'] as String?) ?? widget.serverId,
+          )
+        ];
         _seriesName = '';
         _hasEpisodeList = true;
         ref.read(pendingRoomMovieProvider.notifier).state = null;
@@ -809,12 +830,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }),
         _initPlayerProperties(),
       ]);
-      if (_isHost && _hasEpisodeList && _episodes.isNotEmpty && widget.roomCode == null) {
+      if (_isHost &&
+          _hasEpisodeList &&
+          _episodes.isNotEmpty &&
+          widget.roomCode == null) {
         final targetIndex = _episodes.indexWhere((e) => e.id == widget.itemId);
         try {
           await _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
         } catch (_) {
-          LogService().log('Player', '_loadEpisodeStream 异常，强制设置 _isPlayerReady');
+          LogService()
+              .log('Player', '_loadEpisodeStream 异常，强制设置 _isPlayerReady');
           if (mounted) {
             setState(() {
               _isPlayerReady = true;
@@ -833,9 +858,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _player.videoDecoders = decoders;
 
     // avformat 缓冲配置：平衡起播速度与播放稳定性
-    _player.setProperty('avformat.probesize', '1048576');      // 1MB
-    _player.setProperty('avformat.analyzeduration', '500000');  // 500ms
-    _player.setProperty('avformat.fflags', '+fastseek');         // 允许快速 seek
+    _player.setProperty('avformat.probesize', '1048576'); // 1MB
+    _player.setProperty('avformat.analyzeduration', '500000'); // 500ms
+    _player.setProperty('avformat.fflags', '+fastseek'); // 允许快速 seek
     _player.setProperty('avformat.fpsprobesize', '0');
 
     // FFmpeg 解码线程数：匹配设备核心数提升并行解码能力
@@ -846,7 +871,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       await WakelockPlus.enable();
     } catch (_) {}
   }
-
 
   Future<void> _loadEpisodeStream(int episodeIndex) async {
     if (episodeIndex < 0 || episodeIndex >= _episodes.length) return;
@@ -886,7 +910,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           final source = details.mediaSources.firstWhere(
             (s) => s.id == epMediaSourceId,
             orElse: () =>
-                details.mediaSources.firstOrNull ?? MediaSource(id: '', name: ''),
+                details.mediaSources.firstOrNull ??
+                MediaSource(id: '', name: ''),
           );
           setState(() {
             _embyAudioStreams = source.audioStreams;
@@ -908,9 +933,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // 第三步：加载流（prepare 会使用已配置好的解码器）
       await _loadStream(
-          itemId: itemId,
-          mediaSourceId: epMediaSourceId,
-          serverId: epServerId);
+          itemId: itemId, mediaSourceId: epMediaSourceId, serverId: epServerId);
 
       // _loadStream 已在 updateTexture() 后设置播放状态，此处仅同步 UI
       if (mounted) {
@@ -963,7 +986,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final size = await _player.textureSize;
       if (size != null && mounted) {
         if (_videoNativeSize != size) {
-          setState(() { _videoNativeSize = size; });
+          setState(() {
+            _videoNativeSize = size;
+          });
         }
       }
     } catch (_) {}
@@ -1053,7 +1078,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-
   /// 观众播放：从 syncPlay 消息中的 playUrl 直接播放
   void _playFromUrl({
     required String playUrl,
@@ -1117,7 +1141,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       // 仅在 texture 就绪时启动播放，避免有声无画
       if (_player.textureId.value != null) {
         if (position > 0) {
-          await _player.seek(position: (position * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+          await _player.seek(
+              position: (position * 1000).toInt(),
+              flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
         }
 
         _player.state = mdk.PlaybackState.playing;
@@ -1155,7 +1181,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // 使用 onMediaStatus 监听媒体状态变化
     _player.onMediaStatus.listen((event) {
       if (!mounted) return;
-      
+
       // 检查是否加载完成
       if (event.newValue.test(mdk.MediaStatus.loaded)) {
         _duration = Duration(milliseconds: _player.mediaInfo.duration);
@@ -1165,7 +1191,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         // loaded 通过 ReceivePort 异步到达，此时 updateTexture() 可能还没创建 texture
         // 播放状态由 _loadStream 在 updateTexture() 之后统一设置
       }
-      
+
       // 检查是否播放结束
       if (event.newValue.test(mdk.MediaStatus.end)) {
         if (_isSwitchingMedia) return;
@@ -1268,6 +1294,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     _syncDeepDiagnostics();
   }
+
   /// 深度诊断：开启 mdk log.status 以获取实测 fps / 缓存占用。
   ///
   /// mdk 未暴露任何统计回调，这是唯一途径。但 log.status 的行格式官方未文档化，
@@ -1384,12 +1411,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _diagTimeline = _diag.exportTimeline();
     _diagStalls = _diag.exportStalls();
     _diagNotes = _diag.exportNotes();
-    final raw = _deepLogLines.isEmpty
-        ? '(深度诊断未开启或无数据)'
-        : _deepLogLines.join('\n');
-    final notable = _deepNoteLines.isEmpty
-        ? '(无)'
-        : _deepNoteLines.join('\n');
+    final raw =
+        _deepLogLines.isEmpty ? '(深度诊断未开启或无数据)' : _deepLogLines.join('\n');
+    final notable = _deepNoteLines.isEmpty ? '(无)' : _deepNoteLines.join('\n');
     return DiagnosticExport.build(
       buildSummary: _buildSummary,
       diagSummary: _diagSummary,
@@ -1595,7 +1619,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
 
     // 1. 设置消息监听器（subscribe 之后立即设置，确保不丢消息）
-    LogService().log('Room', '${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodes.length}');
+    LogService().log('Room',
+        '${_isHost ? "主持人" : "观众"} 设置消息监听器, userId=$_myUserId, channel=$_rtmChannel, episodes=${_episodes.length}');
     _rtmSubscription = rtmService.messageStream.listen((message) async {
       if (!mounted) return;
       final senderId = message['userId'];
@@ -1606,7 +1631,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (type == AppConstants.msgTypeHeartbeat) {
         _handleHeartbeat(message);
       } else if (type == AppConstants.msgTypeRoomInfo) {
-        LogService().log('Room', '收到 roomInfo, episodeIds=${message['episodeIds']?.length ?? 0}');
+        LogService().log('Room',
+            '收到 roomInfo, episodeIds=${message['episodeIds']?.length ?? 0}');
         _logSyncEvent('收到 roomInfo (${message['episodeIds']?.length ?? 0}集)');
         _handleRoomInfo(message);
       } else if (type == AppConstants.msgTypeCommand) {
@@ -1619,15 +1645,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           _countRetryScheduler.restart();
           // 主持人发送房间信息（含媒体数据 + 剧集列表 + playUrl）
           if (_isHost) {
-            LogService().log('Room', '主持人发送 roomInfo, episodeCount=${_episodes.length}');
+            LogService().log(
+                'Room', '主持人发送 roomInfo, episodeCount=${_episodes.length}');
             await rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
               serverId: widget.serverId,
               mediaItemId: RoomInfoCodec.normalizeMediaItemId(widget.itemId),
               mediaSourceId: widget.mediaSourceId,
-              mediaItemName: _episodes.isNotEmpty
-                  ? _episodes.first.name
-                  : null,
+              mediaItemName: _episodes.isNotEmpty ? _episodes.first.name : null,
               seriesName: _seriesName,
               episodeIds: _episodes.map((e) => e.id).toList(),
               episodeNames: _episodes.map((e) => e.name).toList(),
@@ -1637,7 +1662,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
               playUrl: _currentPlayUrl,
               token: _currentToken,
-              subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
+              subtitleStreams:
+                  _embySubtitleStreams.map((s) => s.toJson()).toList(),
               audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
               videoStream: _embyVideoStream?.toJson(),
               defaultAudioStreamIndex: _embyDefaultAudioIndex,
@@ -1645,7 +1671,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady && _currentEpisodeIndex >= 0) {
               final position = _player.position / 1000.0;
-              LogService().log('Room', '主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
+              LogService().log('Room',
+                  '主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
               await rtmService.sendCommand(
                 action: AppConstants.actionSyncPlay,
                 episodeIndex: _currentEpisodeIndex,
@@ -1668,9 +1695,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               serverId: widget.serverId,
               mediaItemId: RoomInfoCodec.normalizeMediaItemId(widget.itemId),
               mediaSourceId: widget.mediaSourceId,
-              mediaItemName: _episodes.isNotEmpty
-                  ? _episodes.first.name
-                  : null,
+              mediaItemName: _episodes.isNotEmpty ? _episodes.first.name : null,
               seriesName: _seriesName,
               episodeIds: _episodes.map((e) => e.id).toList(),
               episodeNames: _episodes.map((e) => e.name).toList(),
@@ -1680,7 +1705,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
               playUrl: _currentPlayUrl,
               token: _currentToken,
-              subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
+              subtitleStreams:
+                  _embySubtitleStreams.map((s) => s.toJson()).toList(),
               audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
               videoStream: _embyVideoStream?.toJson(),
               defaultAudioStreamIndex: _embyDefaultAudioIndex,
@@ -1699,7 +1725,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         final publisher = event['publisher'] as String?;
         if (publisher == _hostUserId &&
             (type == RtmPresenceEventType.remoteLeaveChannel ||
-             type == RtmPresenceEventType.remoteTimeout)) {
+                type == RtmPresenceEventType.remoteTimeout)) {
           _showRoomDestroyedDialog();
           return;
         }
@@ -1792,7 +1818,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       _lastSeekTime = DateTime.now();
       try {
-        _player.seek(position: (expectedPos * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+        _player.seek(
+            position: (expectedPos * 1000).toInt(),
+            flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
       } catch (_) {}
     }
 
@@ -1827,7 +1855,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       case AppConstants.actionSeek:
         final pos = (message['position'] as num?)?.toDouble() ?? 0.0;
         try {
-          _player.seek(position: (pos * 1000).toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+          _player.seek(
+              position: (pos * 1000).toInt(),
+              flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
         } catch (_) {}
         break;
       case AppConstants.actionRate:
@@ -1839,9 +1869,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         final playUrl = message['playUrl'] as String?;
         final token = message['token'] as String?;
         final epIndex = message['episodeIndex'] as int?;
-        _logSyncEvent('收到 syncPlay, pos=${position.toStringAsFixed(1)}s, urlLen=${playUrl?.length ?? 0}');
+        _logSyncEvent(
+            '收到 syncPlay, pos=${position.toStringAsFixed(1)}s, urlLen=${playUrl?.length ?? 0}');
         if (playUrl != null && playUrl.isNotEmpty) {
-          _playFromUrl(playUrl: playUrl, token: token ?? '', position: position, epIndex: epIndex);
+          _playFromUrl(
+              playUrl: playUrl,
+              token: token ?? '',
+              position: position,
+              epIndex: epIndex);
         }
         break;
       case AppConstants.actionRemoveEpisode:
@@ -1876,24 +1911,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     LogService().log('Room', '_handleRoomInfo: keys=${message.keys.toList()}');
     final epIds = message['episodeIds'];
     final roomServerId = message['serverId'] as String?;
-    LogService().log('Room', '_handleRoomInfo: epIds type=${epIds.runtimeType}, len=${epIds is List ? epIds.length : "N/A"}');
+    LogService().log('Room',
+        '_handleRoomInfo: epIds type=${epIds.runtimeType}, len=${epIds is List ? epIds.length : "N/A"}');
     if (epIds is List && epIds.isNotEmpty) {
       // 电视剧：接收完整剧集列表
       final names = List<String>.from(message['episodeNames'] ?? []);
       final seasons = List<int>.from(message['episodeSeasons'] ?? []);
       final numbers = List<int>.from(message['episodeNumbers'] ?? []);
       final posters = List<String>.from(message['episodePosters'] ?? []);
-      final seriesNames = List<String>.from(message['episodeSeriesNames'] ?? []);
+      final seriesNames =
+          List<String>.from(message['episodeSeriesNames'] ?? []);
       setState(() {
-        _episodes = List.generate(epIds.length, (i) => EpisodeInfo(
-          id: epIds[i] as String? ?? '',
-          name: i < names.length ? names[i] : '',
-          season: i < seasons.length ? seasons[i] : 0,
-          number: i < numbers.length ? numbers[i] : 0,
-          poster: i < posters.length ? posters[i] : '',
-          seriesName: i < seriesNames.length ? seriesNames[i] : '',
-          serverId: roomServerId,
-        ));
+        _episodes = List.generate(
+            epIds.length,
+            (i) => EpisodeInfo(
+                  id: epIds[i] as String? ?? '',
+                  name: i < names.length ? names[i] : '',
+                  season: i < seasons.length ? seasons[i] : 0,
+                  number: i < numbers.length ? numbers[i] : 0,
+                  poster: i < posters.length ? posters[i] : '',
+                  seriesName: i < seriesNames.length ? seriesNames[i] : '',
+                  serverId: roomServerId,
+                ));
         _seriesName = message['seriesName'] ?? '';
         _hasEpisodeList = true;
       });
@@ -1904,11 +1943,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final mediaItemName = message['mediaItemName'] as String?;
       if (mediaItemId != null) {
         setState(() {
-          _episodes = [EpisodeInfo(
-            id: mediaItemId,
-            name: mediaItemName ?? '电影',
-            serverId: roomServerId,
-          )];
+          _episodes = [
+            EpisodeInfo(
+              id: mediaItemId,
+              name: mediaItemName ?? '电影',
+              serverId: roomServerId,
+            )
+          ];
           _seriesName = '';
           _hasEpisodeList = true;
         });
@@ -1940,7 +1981,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _embyVideoStream = MediaStream.fromJson(videoStreamRaw);
       }
       _embyDefaultAudioIndex = message['defaultAudioStreamIndex'] as int?;
-      LogService().log('Room', '字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条, 视频=${_embyVideoStream?.codec ?? "无"}');
+      LogService().log('Room',
+          '字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条, 视频=${_embyVideoStream?.codec ?? "无"}');
 
       // 从 roomInfo 消息中获取 playUrl 并播放
       final playUrl = message['playUrl'] as String?;
@@ -2086,6 +2128,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (mounted) setState(() => _isWindowFullscreen = false);
   }
 
+  /// 遥控器上下键：±5% 音量，并显示左侧音量柱 1 秒
+  void _handleHotkeyVolumeDelta(double deltaPercent) {
+    final newVol = (_volume + deltaPercent).clamp(0.0, 100.0);
+    _volume = newVol;
+    _player.volume = newVol / 100.0;
+    _volumeNotifier.value = newVol;
+    _showVolumeBarNotifier.value = true;
+    _showBrightnessBarNotifier.value = false;
+    _startGestureBarTimer();
+  }
+
   void _syncPlayState() {
     final playing = _player.state == mdk.PlaybackState.playing;
     if (_isPlayingNotifier.value != playing) {
@@ -2171,7 +2224,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _position = Duration(milliseconds: value.toInt());
     _positionNotifier.value = _position;
     try {
-      _player.seek(position: value.toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+      _player.seek(
+          position: value.toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
     } catch (_) {}
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
@@ -2224,7 +2278,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
       final position = _player.position / 1000.0;
-      _logSyncEvent('发送 syncPlay: ep=$index, pos=${position.toStringAsFixed(1)}s');
+      _logSyncEvent(
+          '发送 syncPlay: ep=$index, pos=${position.toStringAsFixed(1)}s');
       await rtmService.sendCommand(
         action: AppConstants.actionSyncPlay,
         episodeIndex: index,
@@ -2257,14 +2312,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     _hasEpisodeList = _episodes.isNotEmpty;
     _addBroadcastMessage('已移除: $removedName');
-    setState(() { _rebuildGroups(); });
+    setState(() {
+      _rebuildGroups();
+    });
 
     // 房主发送删除命令
     if (sendRtm && _rtmChannel != null) {
       ref.read(rtmServiceProvider).sendCommand(
-        action: AppConstants.actionRemoveEpisode,
-        episodeIndex: index,
-      );
+            action: AppConstants.actionRemoveEpisode,
+            episodeIndex: index,
+          );
     }
   }
 
@@ -2315,7 +2372,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _addBroadcastMessage('已添加: $name');
       }
     }
-    setState(() { _rebuildGroups(); });
+    setState(() {
+      _rebuildGroups();
+    });
   }
 
   void _sendAddResourceRTM(Map<String, dynamic> data) {
@@ -2328,7 +2387,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       poster: data['poster'] as String? ?? '',
       isSeries: isSeries,
       seriesName: data['seriesName'] as String? ?? '',
-      episodes: isSeries ? (data['episodes'] as List<Map<String, dynamic>>?) : null,
+      episodes:
+          isSeries ? (data['episodes'] as List<Map<String, dynamic>>?) : null,
       serverId: data['serverId'] as String?,
     );
   }
@@ -2344,7 +2404,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   Future<Uint8List?> _captureQrImage() async {
     try {
-      final boundary = _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary =
+          _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return null;
       final image = await boundary.toImage(pixelRatio: 3.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -2359,7 +2420,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (bytes == null || !mounted) return;
     try {
       final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
+      final file = File(
+          '${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
       await file.writeAsBytes(bytes);
       if (Platform.isAndroid) {
         final dcimDir = Directory('/storage/emulated/0/DCIM/Himi');
@@ -2413,14 +2475,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(ctx).padding.bottom),
+        padding: EdgeInsets.fromLTRB(
+            24, 24, 24, 24 + MediaQuery.of(ctx).padding.bottom),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
                 '分享加入房间',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
               ),
               const SizedBox(height: 16),
               RepaintBoundary(
@@ -2464,7 +2530,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () { Navigator.pop(ctx); _saveQrToGallery(); },
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _saveQrToGallery();
+                      },
                       icon: const Icon(Icons.save_alt, size: 18),
                       label: const Text('保存图片'),
                     ),
@@ -2472,16 +2541,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () { Navigator.pop(ctx); _shareQrImage(); },
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _shareQrImage();
+                      },
                       icon: const Icon(Icons.share, size: 18),
                       label: const Text('分享图片'),
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+                      style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF6366F1)),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () { Navigator.pop(ctx); _copyRoomCode(); },
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _copyRoomCode();
+                      },
                       icon: const Icon(Icons.copy, size: 18),
                       label: const Text('复制'),
                     ),
@@ -2516,7 +2592,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
     _accelSub?.cancel();
-    try { _broadcastScrollController.dispose(); } catch (_) {}
+    try {
+      _broadcastScrollController.dispose();
+    } catch (_) {}
 
     // 关闭深度诊断日志，避免全局 handler 泄漏
     if (_deepLogActive) {
@@ -2525,15 +2603,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
 
     // 释放 ValueNotifier（包 try-catch 确保后续代码执行）
-    try { _positionNotifier.dispose(); } catch (_) {}
-    try { _durationNotifier.dispose(); } catch (_) {}
-    try { _brightnessNotifier.dispose(); } catch (_) {}
-    try { _volumeNotifier.dispose(); } catch (_) {}
-    try { _isPlayingNotifier.dispose(); } catch (_) {}
-    try { _broadcastVersion.dispose(); } catch (_) {}
-    try { _syncEventsVersion.dispose(); } catch (_) {}
-    try { _showBrightnessBarNotifier.dispose(); } catch (_) {}
-    try { _showVolumeBarNotifier.dispose(); } catch (_) {}
+    try {
+      _positionNotifier.dispose();
+    } catch (_) {}
+    try {
+      _durationNotifier.dispose();
+    } catch (_) {}
+    try {
+      _brightnessNotifier.dispose();
+    } catch (_) {}
+    try {
+      _volumeNotifier.dispose();
+    } catch (_) {}
+    try {
+      _isPlayingNotifier.dispose();
+    } catch (_) {}
+    try {
+      _broadcastVersion.dispose();
+    } catch (_) {}
+    try {
+      _syncEventsVersion.dispose();
+    } catch (_) {}
+    try {
+      _showBrightnessBarNotifier.dispose();
+    } catch (_) {}
+    try {
+      _showVolumeBarNotifier.dispose();
+    } catch (_) {}
 
     // 恢复屏幕亮度
     try {
@@ -2570,7 +2666,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
     WidgetsBinding.instance.removeObserver(this);
-    try { _player.dispose(); } catch (_) {}
+    try {
+      _player.dispose();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -2591,44 +2689,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       child: PlayerHotkey(
         onTogglePlayPause: _handleHotkeyTogglePlayPause,
         onEscape: _isWindowFullscreen ? _exitWindowFullscreen : null,
+        tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
+        controlsVisible: _showControls,
+        onSeekRelative: (deltaMs) => _seekRelative(deltaMs),
+        onVolumeDelta: _handleHotkeyVolumeDelta,
         child: Scaffold(
           backgroundColor: Colors.black,
-        body: GestureDetector(
-          onTap: () {
-            if (_showSubtitleMenu || _showAudioMenu || _showDecodeModeMenu || _showBrightnessBarNotifier.value || _showVolumeBarNotifier.value) {
-              _closeAllMenus();
-            } else {
-              _toggleControls();
-            }
-          },
-          onDoubleTap: _onDoubleTap,
-          onHorizontalDragUpdate: _onHorizontalDragUpdate,
-          onHorizontalDragEnd: _onHorizontalDragEnd,
-          // Windows 取消音量/亮度垂直手势（改用控制条滑杆），移动平台保留
-          onVerticalDragStart:
-              PlayerPlatform.verticalVolumeBrightnessGesture
-                  ? _onVerticalDragStart
-                  : null,
-          onVerticalDragUpdate:
-              PlayerPlatform.verticalVolumeBrightnessGesture
-                  ? _onVerticalDragUpdate
-                  : null,
-          onVerticalDragEnd:
-              PlayerPlatform.verticalVolumeBrightnessGesture
-                  ? _onVerticalDragEnd
-                  : null,
-          behavior: HitTestBehavior.opaque,
-          child: _buildResponsiveLayout(),
-        ),
+          body: GestureDetector(
+            onTap: () {
+              if (_showSubtitleMenu ||
+                  _showAudioMenu ||
+                  _showDecodeModeMenu ||
+                  _showBrightnessBarNotifier.value ||
+                  _showVolumeBarNotifier.value) {
+                _closeAllMenus();
+              } else {
+                _toggleControls();
+              }
+            },
+            onDoubleTap: _onDoubleTap,
+            onHorizontalDragUpdate: _onHorizontalDragUpdate,
+            onHorizontalDragEnd: _onHorizontalDragEnd,
+            // Windows 取消音量/亮度垂直手势（改用控制条滑杆），移动平台保留
+            onVerticalDragStart: PlayerPlatform.verticalVolumeBrightnessGesture
+                ? _onVerticalDragStart
+                : null,
+            onVerticalDragUpdate: PlayerPlatform.verticalVolumeBrightnessGesture
+                ? _onVerticalDragUpdate
+                : null,
+            onVerticalDragEnd: PlayerPlatform.verticalVolumeBrightnessGesture
+                ? _onVerticalDragEnd
+                : null,
+            behavior: HitTestBehavior.opaque,
+            child: _buildResponsiveLayout(),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildResponsiveLayout() {
-    final isPortrait = MediaQuery.of(context).orientation ==
-            Orientation.portrait &&
-        (Platform.isAndroid || Platform.isIOS);
+    final isPortrait =
+        MediaQuery.of(context).orientation == Orientation.portrait &&
+            (Platform.isAndroid || Platform.isIOS);
 
     final showPanel = widget.roomCode != null && _showPanel;
 
@@ -2708,7 +2811,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                           ),
                         );
                       case BoxFit.cover:
-                        final scale = max(containerW / renderW, containerH / renderH);
+                        final scale =
+                            max(containerW / renderW, containerH / renderH);
                         return ClipRect(
                           child: Center(
                             child: Transform.scale(
@@ -2780,17 +2884,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         // 亮度柱式进度条（右侧）
         ValueListenableBuilder<bool>(
           valueListenable: _showBrightnessBarNotifier,
-          builder: (context, show, _) => show ? _buildBrightnessBar() : const SizedBox.shrink(),
+          builder: (context, show, _) =>
+              show ? _buildBrightnessBar() : const SizedBox.shrink(),
         ),
 
         // 音量柱式进度条（左侧）
         ValueListenableBuilder<bool>(
           valueListenable: _showVolumeBarNotifier,
-          builder: (context, show, _) => show ? _buildVolumeBar() : const SizedBox.shrink(),
+          builder: (context, show, _) =>
+              show ? _buildVolumeBar() : const SizedBox.shrink(),
         ),
 
         // Controls（底部渐变浮层，仅视频区域底部）
-        if (_showControls && (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
+        if (_showControls &&
+            (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
           Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
 
         // 加载指示器
@@ -2897,8 +3004,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           ),
           const Spacer(),
           // 解码模式按钮
-          GestureDetector(
-            onTap: () => setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
+          TvFocusable(
+            radius: 12,
+            onTap: () =>
+                setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -2913,7 +3022,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   const Icon(Icons.memory, color: Colors.white, size: 14),
                   const SizedBox(width: 4),
                   Text(
-                    AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? 'Auto',
+                    AppSettings.decodeModeLabels[
+                            ref.read(settingsProvider).decodeMode] ??
+                        'Auto',
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ],
@@ -2990,12 +3101,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _horizontalDragAccumulator += details.primaryDelta ?? 0;
     // 每累计 100 像素显示一次预览
     if (_horizontalDragAccumulator.abs() > 100) {
-      final deltaMs = (_horizontalDragAccumulator / 100 * 5000).round().clamp(-60000, 60000);
+      final deltaMs = (_horizontalDragAccumulator / 100 * 5000)
+          .round()
+          .clamp(-60000, 60000);
       final currentMs = _position.inMilliseconds;
-      final previewMs = (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
+      final previewMs =
+          (currentMs + deltaMs).clamp(0, _duration.inMilliseconds);
       final previewDuration = Duration(milliseconds: previewMs);
       final minutes = previewDuration.inMinutes;
-      final seconds = (previewDuration.inSeconds % 60).toString().padLeft(2, '0');
+      final seconds =
+          (previewDuration.inSeconds % 60).toString().padLeft(2, '0');
       _showGestureHint('$minutes:$seconds');
     }
   }
@@ -3003,7 +3118,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _onHorizontalDragEnd(DragEndDetails details) {
     if (!_canControlPlayback) return;
     // 使用与预览相同的累加器计算，确保预览与实际 seek 位置一致
-    final deltaMs = (_horizontalDragAccumulator / 100 * 5000).round().clamp(-60000, 60000);
+    final deltaMs =
+        (_horizontalDragAccumulator / 100 * 5000).round().clamp(-60000, 60000);
     _horizontalDragAccumulator = 0;
     if (deltaMs != 0) {
       _seekRelative(deltaMs);
@@ -3019,14 +3135,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // 限制最大跳转 ±60 秒
     final clampedDelta = deltaMs.clamp(-60000, 60000);
     final currentMs = _position.inMilliseconds;
-    final targetMs = (currentMs + clampedDelta).clamp(0, _duration.inMilliseconds);
+    final targetMs =
+        (currentMs + clampedDelta).clamp(0, _duration.inMilliseconds);
 
     // 立即更新 UI
     _position = Duration(milliseconds: targetMs);
     _positionNotifier.value = _position;
 
     try {
-      _player.seek(position: targetMs, flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+      _player.seek(
+          position: targetMs, flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
     } catch (_) {}
 
     final seconds = (clampedDelta / 1000).round();
@@ -3197,9 +3315,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   activeTrackColor: color,
                   inactiveTrackColor: Colors.white24,
                   thumbColor: color,
-                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 6),
                   trackHeight: 3,
-                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 10),
                 ),
                 child: Slider(
                   value: value,
@@ -3246,8 +3366,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 activeTrackColor: const Color(0xFF6366F1),
                 inactiveTrackColor: Colors.white24,
                 thumbColor: const Color(0xFF6366F1),
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 6),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 trackHeight: 3,
               ),
               child: ValueListenableBuilder2<Duration, Duration>(
@@ -3265,7 +3384,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         : 1,
                     onChangeStart: _canControlPlayback ? _onSeekStart : null,
                     onChanged: (v) {
-                      _positionNotifier.value = Duration(milliseconds: v.toInt());
+                      _positionNotifier.value =
+                          Duration(milliseconds: v.toInt());
                     },
                     onChangeEnd: _canControlPlayback ? _onSeekEnd : null,
                   );
@@ -3290,7 +3410,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 ],
               ),
             ),
-
             if (_showSubtitleMenu) ...[
               _buildExpandablePanel(
                 maxHeight: 180,
@@ -3299,7 +3418,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   subtitleStreams: _embySubtitleStreams,
                   activeSubtitleIndex: _activeSubtitleIndex,
                   useServerBurnIn: _useServerSubtitleBurnIn,
-                    itemId: _episodes.isNotEmpty && _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length ? _episodes[_currentEpisodeIndex].id : widget.itemId,
+                  itemId: _episodes.isNotEmpty &&
+                          _currentEpisodeIndex >= 0 &&
+                          _currentEpisodeIndex < _episodes.length
+                      ? _episodes[_currentEpisodeIndex].id
+                      : widget.itemId,
                   mediaSourceId: widget.mediaSourceId,
                   token: _currentToken,
                   onSubtitleSelected: (index) {
@@ -3329,14 +3452,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               ),
               const SizedBox(height: 8),
             ],
-
             Row(
               children: [
                 // 上一集
                 if (_canControlPlayback &&
                     _hasEpisodeList &&
                     _totalEpisodeCount > 1)
-                  GestureDetector(
+                  TvFocusable(
                     onTap: _currentEpisodeIndex > 0
                         ? () => _switchToEpisode(_currentEpisodeIndex - 1)
                         : null,
@@ -3355,8 +3477,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
                 // 播放/暂停
                 if (_canControlPlayback)
-                  GestureDetector(
+                  TvFocusable(
                     onTap: _togglePlayPause,
+                    autofocus: true,
                     child: ValueListenableBuilder<bool>(
                       valueListenable: _isPlayingNotifier,
                       builder: (context, isPlaying, child) {
@@ -3376,10 +3499,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 if (_canControlPlayback &&
                     _hasEpisodeList &&
                     _totalEpisodeCount > 1)
-                  GestureDetector(
+                  TvFocusable(
                     onTap: _currentEpisodeIndex < _totalEpisodeCount - 1
-                        ? () =>
-                            _switchToEpisode(_currentEpisodeIndex + 1)
+                        ? () => _switchToEpisode(_currentEpisodeIndex + 1)
                         : null,
                     child: Icon(
                       Icons.skip_next,
@@ -3512,89 +3634,97 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   /// 控制条音量滑杆（0-100，实时写入播放器）
   Widget _buildVolumeSlider() {
-    return ValueListenableBuilder<double>(
-      valueListenable: _volumeNotifier,
-      builder: (context, volume, _) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              volume <= 0
-                  ? Icons.volume_off
-                  : volume < 50
-                      ? Icons.volume_down
-                      : Icons.volume_up,
-              color: Colors.white70,
-              size: 18,
-            ),
-            const SizedBox(width: 4),
-            SizedBox(
-              width: 96,
-              height: 24,
-              child: SliderTheme(
-                data: _miniSliderTheme,
-                child: Slider(
-                  value: volume.clamp(0.0, 100.0),
-                  max: 100,
-                  onChanged: (v) {
-                    _volume = v;
-                    _player.volume = v / 100.0;
-                    _volumeNotifier.value = v;
-                  },
+    return TvFocusable(
+      onTap: null,
+      radius: 6,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _volumeNotifier,
+        builder: (context, volume, _) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                volume <= 0
+                    ? Icons.volume_off
+                    : volume < 50
+                        ? Icons.volume_down
+                        : Icons.volume_up,
+                color: Colors.white70,
+                size: 18,
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 96,
+                height: 24,
+                child: SliderTheme(
+                  data: _miniSliderTheme,
+                  child: Slider(
+                    value: volume.clamp(0.0, 100.0),
+                    max: 100,
+                    onChanged: (v) {
+                      _volume = v;
+                      _player.volume = v / 100.0;
+                      _volumeNotifier.value = v;
+                    },
+                  ),
                 ),
               ),
-            ),
-            SizedBox(
-              width: 28,
-              child: Text(
-                '${volume.round()}',
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
-                textAlign: TextAlign.right,
+              SizedBox(
+                width: 28,
+                child: Text(
+                  '${volume.round()}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  textAlign: TextAlign.right,
+                ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 
   /// 控制条亮度滑杆（0-1，拖动才写入应用亮度）
   Widget _buildBrightnessSlider() {
-    return ValueListenableBuilder<double>(
-      valueListenable: _brightnessNotifier,
-      builder: (context, brightness, _) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.brightness_6,
-                color: Color(0xFFFFD54F), size: 18),
-            const SizedBox(width: 4),
-            SizedBox(
-              width: 96,
-              height: 24,
-              child: SliderTheme(
-                data: _miniSliderTheme,
-                child: Slider(
-                  value: brightness.clamp(0.0, 1.0),
-                  onChanged: (v) {
-                    _brightness = v;
-                    _brightnessNotifier.value = v;
-                    _setBrightness(v);
-                  },
+    return TvFocusable(
+      onTap: null,
+      radius: 6,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _brightnessNotifier,
+        builder: (context, brightness, _) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.brightness_6,
+                  color: Color(0xFFFFD54F), size: 18),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 96,
+                height: 24,
+                child: SliderTheme(
+                  data: _miniSliderTheme,
+                  child: Slider(
+                    value: brightness.clamp(0.0, 1.0),
+                    onChanged: (v) {
+                      _brightness = v;
+                      _brightnessNotifier.value = v;
+                      _setBrightness(v);
+                    },
+                  ),
                 ),
               ),
-            ),
-            SizedBox(
-              width: 34,
-              child: Text(
-                '${(brightness * 100).round()}%',
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
-                textAlign: TextAlign.right,
+              SizedBox(
+                width: 34,
+                child: Text(
+                  '${(brightness * 100).round()}%',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  textAlign: TextAlign.right,
+                ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -3603,7 +3733,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     required VoidCallback onTap,
     String? badge,
   }) {
-    return GestureDetector(
+    return TvFocusable(
       onTap: onTap,
       child: Stack(
         clipBehavior: Clip.none,
@@ -3621,8 +3751,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 ),
                 child: Text(
                   badge,
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 9),
+                  style: const TextStyle(color: Colors.white, fontSize: 9),
                 ),
               ),
             ),
@@ -3639,8 +3768,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         children: [
           // 面板头部
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: Colors.white12)),
             ),
@@ -3657,24 +3785,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (_roomData != null && _isHost && _player.state != mdk.PlaybackState.playing) ...[
-                  GestureDetector(
+                if (_roomData != null &&
+                    _isHost &&
+                    _player.state != mdk.PlaybackState.playing) ...[
+                  TvFocusable(
                     onTap: () async {
                       SystemChrome.setPreferredOrientations([
                         DeviceOrientation.portraitUp,
                       ]);
-                      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+                      SystemChrome.setEnabledSystemUIMode(
+                          SystemUiMode.edgeToEdge);
                       final itemData = await showSearch<Map<String, dynamic>?>(
                         context: context,
-                        delegate: RoomSearchDelegate(ref, roomCode: widget.roomCode!),
+                        delegate:
+                            RoomSearchDelegate(ref, roomCode: widget.roomCode!),
                       );
-                      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+                      SystemChrome.setEnabledSystemUIMode(
+                          SystemUiMode.immersiveSticky);
                       _switchToLandscape(_OrientationMode.landscapeLeft);
                       if (itemData != null && mounted) {
                         final serverParam = itemData['serverId'] != null
                             ? '&server=${Uri.encodeComponent(itemData['serverId'] as String)}'
                             : '';
-                        final resourceData = await context.push<Map<String, dynamic>>(
+                        final resourceData =
+                            await context.push<Map<String, dynamic>>(
                           '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}$serverParam',
                         );
                         if (resourceData != null && mounted) {
@@ -3683,14 +3817,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         }
                       }
                     },
-                    child: const Icon(Icons.search, color: Colors.white70, size: 20),
+                    child: const Icon(Icons.search,
+                        color: Colors.white70, size: 20),
                   ),
                   const SizedBox(width: 12),
                 ],
                 if (_roomData != null) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.white12,
                       borderRadius: BorderRadius.circular(8),
@@ -3711,17 +3846,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 ],
                 if (_roomData != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color:
-                          _isHost ? const Color(0xFF6366F1) : Colors.red,
+                      color: _isHost ? const Color(0xFF6366F1) : Colors.red,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       _isHost ? '房主' : (_audienceName ?? '观众'),
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 11),
+                      style: const TextStyle(color: Colors.white, fontSize: 11),
                     ),
                   ),
               ],
@@ -3733,13 +3866,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             child: _resourceGroups.isEmpty
                 ? const Center(
                     child: Text('暂无资源',
-                        style: TextStyle(
-                            color: Colors.white24, fontSize: 13)),
+                        style: TextStyle(color: Colors.white24, fontSize: 13)),
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     itemCount: _resourceGroups.length,
-                    itemBuilder: (ctx, i) => _buildGroupWidget(_resourceGroups[i]),
+                    itemBuilder: (ctx, i) =>
+                        _buildGroupWidget(_resourceGroups[i]),
                   ),
           ),
 
@@ -3780,7 +3913,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   ),
                 ),
                 Text(
-                  group.isMovie ? '(${group.totalCount})' : '(${group.totalCount}集)',
+                  group.isMovie
+                      ? '(${group.totalCount})'
+                      : '(${group.totalCount}集)',
                   style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
               ],
@@ -3814,7 +3949,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         InkWell(
           onTap: () => setState(() => season.collapsed = !season.collapsed),
           child: Container(
-            padding: const EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6),
+            padding:
+                const EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6),
             color: const Color(0xFF1A1A2E),
             child: Row(
               children: [
@@ -3871,17 +4007,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       },
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: isPlaying
-              ? const Color(0xFF6366F1).withValues(alpha: 0.3)
-              : null,
+          color:
+              isPlaying ? const Color(0xFF6366F1).withValues(alpha: 0.3) : null,
           border: Border(
             left: BorderSide(
-              color: isPlaying
-                  ? const Color(0xFF6366F1)
-                  : Colors.transparent,
+              color: isPlaying ? const Color(0xFF6366F1) : Colors.transparent,
               width: 3,
             ),
           ),
@@ -3890,7 +4022,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           children: [
             // 播放/暂停按钮（仅房主）
             if (_isHost)
-              GestureDetector(
+              TvFocusable(
                 onTap: () {
                   if (isPlaying) {
                     _togglePlayPause();
@@ -3905,9 +4037,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                       isPlaying && isPlayingNow
                           ? Icons.pause_circle
                           : Icons.play_circle,
-                      color: isPlaying
-                          ? const Color(0xFF6366F1)
-                          : Colors.white54,
+                      color:
+                          isPlaying ? const Color(0xFF6366F1) : Colors.white54,
                       size: 22,
                     );
                   },
@@ -3961,9 +4092,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                         Text(
                           item.name,
                           style: TextStyle(
-                            color: isPlaying
-                                ? Colors.white
-                                : Colors.white54,
+                            color: isPlaying ? Colors.white : Colors.white54,
                             fontSize: 12,
                           ),
                           maxLines: 1,
@@ -3975,10 +4104,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
             // 删除按钮（仅房主）
             if (_isHost)
-              GestureDetector(
+              TvFocusable(
                 onTap: () => _removeEpisode(flatIndex),
-                child: const Icon(Icons.close,
-                    color: Colors.white24, size: 18),
+                child: const Icon(Icons.close, color: Colors.white24, size: 18),
               ),
           ],
         ),
@@ -4002,8 +4130,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 child: Row(
                   children: [
-                    const Icon(Icons.campaign,
-                        color: Colors.white70, size: 12),
+                    const Icon(Icons.campaign, color: Colors.white70, size: 12),
                     const SizedBox(width: 4),
                     Text('播报 (${_broadcastMessages.length})',
                         style: const TextStyle(
@@ -4015,13 +4142,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 child: _broadcastMessages.isEmpty
                     ? const Center(
                         child: Text('暂无消息',
-                            style: TextStyle(
-                                color: Colors.white24, fontSize: 11)),
+                            style:
+                                TextStyle(color: Colors.white24, fontSize: 11)),
                       )
                     : ListView.builder(
                         controller: _broadcastScrollController,
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
                         itemCount: _broadcastMessages.length,
                         itemBuilder: (ctx, i) => Text(
                           _broadcastMessages[i],
@@ -4039,8 +4165,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   void _selectEmbySubtitle(int embyIndex) {
     final stream = _embySubtitleStreams[embyIndex];
-    final isExternal = stream.isExternal ||
-        stream.subtitleLocationType == 'ExternalStream';
+    final isExternal =
+        stream.isExternal || stream.subtitleLocationType == 'ExternalStream';
 
     if (isExternal) {
       // 外挂字幕：用 fvp setMedia 加载外部文件，不重载流

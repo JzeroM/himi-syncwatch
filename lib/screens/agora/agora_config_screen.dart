@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -25,8 +26,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
     super.initState();
     final config = ref.read(agoraConfigProvider);
     _appIdController = TextEditingController(text: config?.appId ?? '');
-    _certController =
-        TextEditingController(text: config?.appCertificate ?? '');
+    _certController = TextEditingController(text: config?.appCertificate ?? '');
     _editing = config?.isConfigured != true;
   }
 
@@ -104,9 +104,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
             _StatusCard(
               configured: configured,
               appId: agoraConfig?.appId ?? '',
-              onEdit: configured
-                  ? () => setState(() => _editing = true)
-                  : null,
+              onEdit: configured ? () => setState(() => _editing = true) : null,
             ),
             const SizedBox(height: 20),
             if (_editing || !configured) ...[
@@ -168,8 +166,8 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                   const SizedBox(width: 12),
                   TextButton(
                     onPressed: _clear,
-                    child: const Text('清空',
-                        style: TextStyle(color: Colors.red)),
+                    child:
+                        const Text('清空', style: TextStyle(color: Colors.red)),
                   ),
                 ],
               ],
@@ -262,7 +260,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                               ),
                             ),
                             const SizedBox(height: 12),
-                            GestureDetector(
+                            TvFocusable(
                               onTap: () => _showFullImage(context, step.image),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
@@ -299,8 +297,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                             const SizedBox(height: 12),
                             Text(
                               step.description,
-                              style:
-                                  const TextStyle(fontSize: 13, height: 1.5),
+                              style: const TextStyle(fontSize: 13, height: 1.5),
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -326,8 +323,8 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                               );
                             }
                           : () => Navigator.pop(ctx),
-                      child: Text(
-                          currentPage < steps.length - 1 ? '下一步' : '完成'),
+                      child:
+                          Text(currentPage < steps.length - 1 ? '下一步' : '完成'),
                     ),
                   ],
                 ),
@@ -356,8 +353,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                 imagePath,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const Center(
-                  child:
-                      Text('图片加载失败', style: TextStyle(color: Colors.white)),
+                  child: Text('图片加载失败', style: TextStyle(color: Colors.white)),
                 ),
               ),
             ),

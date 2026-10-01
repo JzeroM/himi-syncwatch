@@ -8,11 +8,23 @@ void main() {
   int toggled = 0;
   int escaped = 0;
 
-  Widget wrap({VoidCallback? onEscape}) => Directionality(
+  int seekMs = 0;
+  double volumeDelta = 0;
+
+  Widget wrap({
+    VoidCallback? onEscape,
+    bool tvMode = false,
+    bool controlsVisible = true,
+  }) =>
+      Directionality(
         textDirection: TextDirection.ltr,
         child: PlayerHotkey(
           onTogglePlayPause: () => toggled++,
           onEscape: onEscape,
+          tvMode: tvMode,
+          controlsVisible: controlsVisible,
+          onSeekRelative: (ms) => seekMs += ms,
+          onVolumeDelta: (v) => volumeDelta += v,
           child: const SizedBox(width: 100, height: 100),
         ),
       );
@@ -20,6 +32,8 @@ void main() {
   setUp(() {
     toggled = 0;
     escaped = 0;
+    seekMs = 0;
+    volumeDelta = 0;
   });
 
   tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -114,6 +128,102 @@ void main() {
       await simulateKeyUpEvent(LogicalKeyboardKey.escape);
       expect(escaped, 0);
       expect(toggled, 0);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：中键 Enter 暂停/播放', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.enter);
+      await simulateKeyUpEvent(LogicalKeyboardKey.enter);
+      expect(toggled, 1);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：媒体键 mediaPlayPause 暂停/播放', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.mediaPlayPause);
+      await simulateKeyUpEvent(LogicalKeyboardKey.mediaPlayPause);
+      expect(toggled, 1);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：非 TV 模式 Enter 不触发', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: false));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.enter);
+      await simulateKeyUpEvent(LogicalKeyboardKey.enter);
+      expect(toggled, 0);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：控制条隐藏时左右键 seek ±10 秒', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true, controlsVisible: false));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      expect(seekMs, 10000);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowLeft);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowLeft);
+      expect(seekMs, 0, reason: '+10s 后 -10s 回到 0');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：控制条可见时方向键不拦截（让位焦点导航）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true, controlsVisible: true));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      expect(seekMs, 0);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowUp);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowUp);
+      expect(volumeDelta, 0);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：控制条隐藏时上下键 ±5% 音量', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true, controlsVisible: false));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowUp);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowUp);
+      expect(volumeDelta, 5);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowDown);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowDown);
+      expect(volumeDelta, 0);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

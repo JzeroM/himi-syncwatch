@@ -97,7 +97,8 @@ class SettingsScreen extends ConsumerWidget {
                 value: settings.audioRenderer,
                 onChanged: (value) {
                   if (value != null) {
-                    ref.read(settingsProvider.notifier)
+                    ref
+                        .read(settingsProvider.notifier)
                         .update(audioRenderer: value);
                   }
                 },
@@ -125,6 +126,14 @@ class SettingsScreen extends ConsumerWidget {
             value: settings.glassUi,
             onChanged: (v) =>
                 ref.read(settingsProvider.notifier).update(glassUi: v),
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            title: const Text('TV 模式'),
+            subtitle: const Text('适配遥控器：方向键导航，OK 键选择，中键暂停/播放'),
+            value: settings.tvMode,
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).update(tvMode: v),
           ),
           const Divider(height: 1),
           SwitchListTile(
@@ -157,8 +166,7 @@ class _ThemeColorSection extends ConsumerStatefulWidget {
   const _ThemeColorSection();
 
   @override
-  ConsumerState<_ThemeColorSection> createState() =>
-      _ThemeColorSectionState();
+  ConsumerState<_ThemeColorSection> createState() => _ThemeColorSectionState();
 }
 
 class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
@@ -243,8 +251,9 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                 key: const ValueKey('themeColorDefault'),
                 color: null,
                 selected: current == null,
-                onTap: () =>
-                    ref.read(settingsProvider.notifier).update(themeColor: null),
+                onTap: () => ref
+                    .read(settingsProvider.notifier)
+                    .update(themeColor: null),
                 child: const Text(
                   '默认',
                   style: TextStyle(fontSize: 11, color: Colors.white70),
@@ -256,7 +265,8 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                   color: Color(_presets[i]),
                   selected: current == _presets[i],
                   onTap: () {
-                    setState(() => _hsv = HSVColor.fromColor(Color(_presets[i])));
+                    setState(
+                        () => _hsv = HSVColor.fromColor(Color(_presets[i])));
                     _commit(Color(_presets[i]));
                   },
                 ),

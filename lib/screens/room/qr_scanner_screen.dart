@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -121,7 +122,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       body: _error != null
           ? _buildError()
           : !_hasPermission
-              ? const Center(child: CircularProgressIndicator(color: Colors.white))
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white))
               : _buildScanner(),
     );
   }
@@ -135,7 +137,9 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           children: [
             const Icon(Icons.error_outline, color: Colors.red, size: 48),
             const SizedBox(height: 16),
-            Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white)),
+            Text(_error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white)),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: () => Navigator.pop(context),
@@ -172,7 +176,10 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.8)
+                ],
               ),
             ),
             child: Column(
@@ -211,14 +218,15 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     required String label,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return TvFocusable(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: Colors.white, size: 28),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          Text(label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12)),
         ],
       ),
     );

@@ -85,6 +85,32 @@ void main() {
     expect(container.read(settingsProvider).glassUi, isTrue);
   });
 
+  testWidgets('TV 模式开关默认关，切换后 tvMode 为 true', (tester) async {
+    final container = await _pumpScreen(tester);
+    await tester.scrollUntilVisible(
+      find.text('TV 模式'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('TV 模式'), findsOneWidget);
+    expect(container.read(settingsProvider).tvMode, isFalse);
+
+    final tvSwitch = find.descendant(
+      of: find.ancestor(
+        of: find.text('TV 模式'),
+        matching: find.byType(SwitchListTile),
+      ),
+      matching: find.byType(Switch),
+    );
+    expect(tester.widget<Switch>(tvSwitch).value, isFalse);
+
+    await tester.tap(tvSwitch);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).tvMode, isTrue);
+  });
+
   testWidgets('展示主题色分节（标题+默认块+12色块+预览+三滑块）', (tester) async {
     final container = await _pumpScreen(tester);
 

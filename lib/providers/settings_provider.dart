@@ -31,6 +31,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     String? audioRenderer,
     bool? deepDiagnostics,
     bool? glassUi,
+    bool? tvMode,
     Object? themeColor = AppSettings.unsetValue,
   }) async {
     state = state.copyWith(
@@ -40,6 +41,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       audioRenderer: audioRenderer,
       deepDiagnostics: deepDiagnostics,
       glassUi: glassUi,
+      tvMode: tvMode,
       themeColor: themeColor,
     );
     await persist();

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:flutter/services.dart';
 
 /// 选中态图标/文字主色（柔和薄荷青，仅跟随水珠所在格的图标，水珠本体为透明玻璃）。
@@ -72,8 +73,7 @@ class _ShellNavBarState extends State<ShellNavBar>
   static double _centerT(int index) => (index + 0.5) / _tabCount;
 
   /// 视觉激活格：以水珠中心所在格为准（拖动/飞行中实时跟随）。
-  int get _activeIndex =>
-      (_blobT * _tabCount).floor().clamp(0, _tabCount - 1);
+  int get _activeIndex => (_blobT * _tabCount).floor().clamp(0, _tabCount - 1);
 
   @override
   void initState() {
@@ -104,8 +104,8 @@ class _ShellNavBarState extends State<ShellNavBar>
     final p = Curves.easeOutBack.transform(raw);
     setState(() {
       _blobT = _fromT + (_toT - _fromT) * p;
-      _blobFactor =
-          (_fromFactor + (1 - _fromFactor) * p) + _peak * math.sin(math.pi * raw);
+      _blobFactor = (_fromFactor + (1 - _fromFactor) * p) +
+          _peak * math.sin(math.pi * raw);
     });
   }
 
@@ -227,45 +227,48 @@ class _ShellNavBarState extends State<ShellNavBar>
                     final selected = i == _activeIndex;
                     final color = selected ? kNavBlobColor : Colors.white70;
                     return Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
+                      child: TvFocusable(
                         onTap: () => _select(i),
-                        onHorizontalDragStart: (d) =>
-                            _beginDrag(d.globalPosition.dx),
-                        onHorizontalDragUpdate: (d) =>
-                            _moveDrag(d.globalPosition.dx),
-                        onHorizontalDragEnd: (d) =>
-                            _endDrag(d.globalPosition.dx),
-                        onHorizontalDragCancel: _cancelDrag,
-                        onLongPressStart: (d) =>
-                            _beginDrag(d.globalPosition.dx),
-                        onLongPressMoveUpdate: (d) =>
-                            _moveDrag(d.globalPosition.dx),
-                        onLongPressEnd: (d) => _endDrag(d.globalPosition.dx),
-                        child: SizedBox(
-                          height: _navHeight,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                selected ? _selectedIcons[i] : _icons[i],
-                                size: 24,
-                                color: color,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _labels[i],
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onHorizontalDragStart: (d) =>
+                              _beginDrag(d.globalPosition.dx),
+                          onHorizontalDragUpdate: (d) =>
+                              _moveDrag(d.globalPosition.dx),
+                          onHorizontalDragEnd: (d) =>
+                              _endDrag(d.globalPosition.dx),
+                          onHorizontalDragCancel: _cancelDrag,
+                          onLongPressStart: (d) =>
+                              _beginDrag(d.globalPosition.dx),
+                          onLongPressMoveUpdate: (d) =>
+                              _moveDrag(d.globalPosition.dx),
+                          onLongPressEnd: (d) => _endDrag(d.globalPosition.dx),
+                          child: SizedBox(
+                            height: _navHeight,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  selected ? _selectedIcons[i] : _icons[i],
+                                  size: 24,
                                   color: color,
-                                  fontWeight:
-                                      selected ? FontWeight.bold : FontWeight.normal,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 2),
+                                Text(
+                                  _labels[i],
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: color,
+                                    fontWeight: selected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

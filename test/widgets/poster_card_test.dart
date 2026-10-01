@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 
@@ -11,6 +12,7 @@ import '../helpers/test_fakes.dart';
 Widget _wrap(Widget child) => ProviderScope(
       overrides: [
         embyServiceProvider.overrideWith((ref) => FakeEmbyService()),
+        settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
       ],
       child: MaterialApp(
         home: Scaffold(
@@ -46,8 +48,7 @@ void main() {
       );
     });
 
-    testWidgets('海报完整 2:3，标题与年份在海报下方且不套 Card 黑底',
-        (tester) async {
+    testWidgets('海报完整 2:3，标题与年份在海报下方且不套 Card 黑底', (tester) async {
       await tester.pumpWidget(_wrap(PosterCard(item: _item(), width: 122)));
       await tester.pumpAndSettle();
 

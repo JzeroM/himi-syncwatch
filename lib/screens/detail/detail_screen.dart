@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
@@ -48,7 +49,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   /// 跨服务器路由透传参数
-  String get _serverQuery => widget.serverId != null ? '&server=${Uri.encodeComponent(widget.serverId!)}' : '';
+  String get _serverQuery => widget.serverId != null
+      ? '&server=${Uri.encodeComponent(widget.serverId!)}'
+      : '';
 
   Future<void> _loadDetails() async {
     setState(() {
@@ -65,10 +68,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
         if (item.isSeries) {
           futures.add(
-            embyService.getItems(
+            embyService
+                .getItems(
               parentId: widget.itemId,
               includeItemTypes: 'Episode',
-            ).then((episodes) {
+            )
+                .then((episodes) {
               _episodes = episodes;
             }),
           );
@@ -147,15 +152,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       // 电视剧：通过 Riverpod provider 传递完整剧集数据（避免 URL 编码问题）
       if (selectedEpisodes != null && selectedEpisodes.isNotEmpty) {
         final seriesName = _item!.name;
-        final episodesJson = selectedEpisodes.map((e) => {
-          'id': e.id,
-          'name': e.name,
-          'season': e.parentIndexNumber ?? 0,
-          'number': e.indexNumber ?? 0,
-          'poster': e.posterUrl ?? '',
-          'seriesName': seriesName,
-          if (widget.serverId != null) 'serverId': widget.serverId,
-        }).toList();
+        final episodesJson = selectedEpisodes
+            .map((e) => {
+                  'id': e.id,
+                  'name': e.name,
+                  'season': e.parentIndexNumber ?? 0,
+                  'number': e.indexNumber ?? 0,
+                  'poster': e.posterUrl ?? '',
+                  'seriesName': seriesName,
+                  if (widget.serverId != null) 'serverId': widget.serverId,
+                })
+            .toList();
         ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
       }
       // 电影：通过 Riverpod provider 传递电影数据
@@ -182,14 +189,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       final selectedEpisodes = await _showEpisodePicker();
       if (selectedEpisodes == null || selectedEpisodes.isEmpty) return;
 
-      final episodesJson = selectedEpisodes.map((e) => {
-        'id': e.id,
-        'name': e.name,
-        'season': e.parentIndexNumber ?? 0,
-        'number': e.indexNumber ?? 0,
-        'poster': e.posterUrl ?? '',
-        'seriesName': _item!.name,
-      }).toList();
+      final episodesJson = selectedEpisodes
+          .map((e) => {
+                'id': e.id,
+                'name': e.name,
+                'season': e.parentIndexNumber ?? 0,
+                'number': e.indexNumber ?? 0,
+                'poster': e.posterUrl ?? '',
+                'seriesName': _item!.name,
+              })
+          .toList();
 
       result = {
         'itemId': _item!.id,
@@ -213,7 +222,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         'name': _item!.name,
         'poster': _item!.posterUrl ?? '',
         'isSeries': false,
-        if (selectedMediaSourceId != null) 'mediaSourceId': selectedMediaSourceId,
+        if (selectedMediaSourceId != null)
+          'mediaSourceId': selectedMediaSourceId,
         if (widget.serverId != null) 'serverId': widget.serverId,
       };
     }
@@ -291,9 +301,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             });
                           },
                           child: Text(
-                            selected.length == _episodes.length
-                                ? '取消全选'
-                                : '全选',
+                            selected.length == _episodes.length ? '取消全选' : '全选',
                           ),
                         ),
                       ],
@@ -450,8 +458,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   )
                 : _buildContent(accent, base),
       ),
-      bottomNavigationBar:
-          _item != null ? _buildBottomBar() : null,
+      bottomNavigationBar: _item != null ? _buildBottomBar() : null,
     );
   }
 
@@ -463,66 +470,69 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           borderRadius: const BorderRadius.all(Radius.circular(24)),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: widget.roomMode
-            ? Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _addResourceToRoom,
-                      icon: const Icon(Icons.add),
-                      label: const Text('加入资源'),
-                      style: readableFilledButtonStyle(
-                          Theme.of(context).colorScheme),
-                    ),
-                  ),
-                ],
-              )
-            : Row(
-                children: [
-                  if (!_item!.isSeries)
+              ? Row(
+                  children: [
                     Expanded(
                       child: FilledButton.icon(
-                        onPressed: () async {
-                          MediaSource? source;
-                          if (_item!.hasMultipleVersions) {
-                            source = await _showVersionPicker();
-                            if (source == null) return;
-                          }
-
-                          ref.read(pendingRoomMovieProvider.notifier).state = {
-                            'id': _item!.id,
-                            'name': _item!.name,
-                            'poster': _item!.posterUrl ?? '',
-                            if (widget.serverId != null)
-                              'serverId': widget.serverId,
-                          };
-
-                          final query = StringBuffer('isHost=true$_serverQuery');
-                          if (source != null) {
-                            query.write('&mediaSourceId=${source.id}');
-                          }
-                          if (mounted) {
-                            context.push('/player/${_item!.id}?${query.toString()}');
-                          }
-                        },
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('开始播放'),
+                        onPressed: _addResourceToRoom,
+                        icon: const Icon(Icons.add),
+                        label: const Text('加入资源'),
                         style: readableFilledButtonStyle(
                             Theme.of(context).colorScheme),
                       ),
                     ),
-                  if (!_item!.isSeries) const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _createRoom,
-                      icon: const Icon(Icons.group_add),
-                      label: const Text('建房'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                  ],
+                )
+              : Row(
+                  children: [
+                    if (!_item!.isSeries)
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () async {
+                            MediaSource? source;
+                            if (_item!.hasMultipleVersions) {
+                              source = await _showVersionPicker();
+                              if (source == null) return;
+                            }
+
+                            ref.read(pendingRoomMovieProvider.notifier).state =
+                                {
+                              'id': _item!.id,
+                              'name': _item!.name,
+                              'poster': _item!.posterUrl ?? '',
+                              if (widget.serverId != null)
+                                'serverId': widget.serverId,
+                            };
+
+                            final query =
+                                StringBuffer('isHost=true$_serverQuery');
+                            if (source != null) {
+                              query.write('&mediaSourceId=${source.id}');
+                            }
+                            if (mounted) {
+                              context.push(
+                                  '/player/${_item!.id}?${query.toString()}');
+                            }
+                          },
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('开始播放'),
+                          style: readableFilledButtonStyle(
+                              Theme.of(context).colorScheme),
+                        ),
+                      ),
+                    if (!_item!.isSeries) const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _createRoom,
+                        icon: const Icon(Icons.group_add),
+                        label: const Text('建房'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
         ),
       ),
     );
@@ -593,7 +603,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       Row(
                         children: [
                           if (item.communityRating != null) ...[
-                            const Icon(Icons.star, size: 16, color: Colors.amber),
+                            const Icon(Icons.star,
+                                size: 16, color: Colors.amber),
                             const SizedBox(width: 4),
                             Text(
                               item.communityRating!.toStringAsFixed(1),
@@ -637,7 +648,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     runSpacing: 8,
                     children: item.genres
                         .map((g) => Chip(
-                              label: Text(g, style: const TextStyle(fontSize: 13)),
+                              label:
+                                  Text(g, style: const TextStyle(fontSize: 13)),
                               materialTapTargetSize:
                                   MaterialTapTargetSize.shrinkWrap,
                               visualDensity: VisualDensity.compact,
@@ -669,9 +681,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     duration: const Duration(milliseconds: 200),
                   ),
                   if (item.overview!.length > 100)
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _overviewExpanded = !_overviewExpanded),
+                    TvFocusable(
+                      onTap: () => setState(
+                          () => _overviewExpanded = !_overviewExpanded),
                       child: Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
@@ -710,16 +722,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             : null,
                         onTap: () {
                           final seriesName = _item!.name;
-                          final episodesJson = _episodes.map((e) => {
-                            'id': e.id,
-                            'name': e.name,
-                            'season': e.parentIndexNumber ?? 0,
-                            'number': e.indexNumber ?? 0,
-                            'poster': e.posterUrl ?? '',
-                            'seriesName': seriesName,
-                          }).toList();
-                          ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
-                          context.push('/player/${ep.id}?isHost=true$_serverQuery');
+                          final episodesJson = _episodes
+                              .map((e) => {
+                                    'id': e.id,
+                                    'name': e.name,
+                                    'season': e.parentIndexNumber ?? 0,
+                                    'number': e.indexNumber ?? 0,
+                                    'poster': e.posterUrl ?? '',
+                                    'seriesName': seriesName,
+                                  })
+                              .toList();
+                          ref.read(pendingRoomEpisodesProvider.notifier).state =
+                              episodesJson;
+                          context.push(
+                              '/player/${ep.id}?isHost=true$_serverQuery');
                         },
                       )),
                   const SizedBox(height: 20),

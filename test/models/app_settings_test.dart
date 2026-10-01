@@ -166,6 +166,26 @@ void main() {
       expect(AppSettings.fromJson(enabled.toJson()).glassUi, isTrue);
     });
 
+    test('tvMode 缺省为关闭', () {
+      expect(const AppSettings().tvMode, isFalse);
+      expect(AppSettings.fromJson(const {}).tvMode, isFalse);
+    });
+
+    test('copyWith 透传 tvMode', () {
+      const settings = AppSettings();
+      expect(settings.copyWith(tvMode: true).tvMode, isTrue);
+      expect(settings.copyWith(decodeMode: 'hw').tvMode, isFalse);
+    });
+
+    test('toJson/fromJson 往返保持 tvMode', () {
+      const original = AppSettings(tvMode: true);
+      final restored = AppSettings.fromJson(original.toJson());
+      expect(restored.tvMode, isTrue);
+
+      const disabled = AppSettings();
+      expect(AppSettings.fromJson(disabled.toJson()).tvMode, isFalse);
+    });
+
     test('themeColor 缺省为 null（跟随默认底色）', () {
       expect(const AppSettings().themeColor, isNull);
       expect(AppSettings.fromJson(const {}).themeColor, isNull);

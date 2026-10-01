@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+
+import '../helpers/test_fakes.dart';
 
 Future<void> _pumpNav(
   WidgetTester tester, {
@@ -8,13 +12,18 @@ Future<void> _pumpNav(
   required ValueChanged<int> onSelect,
 }) async {
   await tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
-        body: Align(
-          alignment: Alignment.bottomCenter,
-          child: SizedBox(
-            width: 800,
-            child: ShellNavBar(currentIndex: initial, onSelect: onSelect),
+    ProviderScope(
+      overrides: [
+        settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              width: 800,
+              child: ShellNavBar(currentIndex: initial, onSelect: onSelect),
+            ),
           ),
         ),
       ),
@@ -48,7 +57,8 @@ void main() {
 
     double centerY(Finder f) {
       final box = tester.renderObject<RenderBox>(f);
-      final c = box.localToGlobal(Offset(box.size.width / 2, box.size.height / 2));
+      final c =
+          box.localToGlobal(Offset(box.size.width / 2, box.size.height / 2));
       return c.dy - navTop;
     }
 
@@ -77,9 +87,8 @@ void main() {
             .dy -
         navTop;
     final labelBox = tester.renderObject<RenderBox>(find.text('首页'));
-    final labelBottom = labelBox.localToGlobal(Offset.zero).dy +
-        labelBox.size.height -
-        navTop;
+    final labelBottom =
+        labelBox.localToGlobal(Offset.zero).dy + labelBox.size.height - navTop;
     expect((iconTop + labelBottom) / 2, closeTo(30, 1.0));
   });
 

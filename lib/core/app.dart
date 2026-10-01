@@ -18,6 +18,9 @@ class HimiSyncApp extends ConsumerWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        // 聚焦可见反馈（TV 遥控器导航：ListTile/Switch/IconButton 等）
+        focusColor: const Color(0x886366F1),
+        hoverColor: const Color(0x336366F1),
         // 顶栏玻璃条需透明，由各页 GlassBackdrop 提供模糊背景
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent,
