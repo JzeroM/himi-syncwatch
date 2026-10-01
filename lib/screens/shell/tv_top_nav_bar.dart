@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
+import 'package:himi_syncwatch/widgets/media_search_button.dart';
+import 'package:himi_syncwatch/widgets/room_menu_button.dart';
+import 'package:himi_syncwatch/widgets/server_title_dropdown.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// TV 模式专属顶部横排导航栏（固定常驻，不随滚动隐藏）。
 ///
-/// 形态：通栏玻璃条，左侧 HIMI 标题，右侧四个横排导航项；
+/// 形态：通栏玻璃条，左侧服务器标题胶囊（合并首页入口：
+/// 名称 OK 回首页，▾ OK 打开服务器下拉），右侧依次
+/// 搜索 / 房间 / 三个横排导航项（首页已并入标题，故从 index 1 起）；
 /// 每项 [TvFocusable] 获得 D-pad 焦点，左右键切换、OK 进入。
 /// 复用壳层导航数据（kShellNavLabels/Icons/SelectedIcons）与薄荷青选中色。
 class TvTopNavBar extends StatelessWidget {
@@ -32,30 +37,22 @@ class TvTopNavBar extends StatelessWidget {
         height: 60,
         child: Row(
           children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 24, right: 16),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'HIMI',
-                    style: TextStyle(
-                      color: kNavBlobColor,
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
+            // 标题占满剩余空间的左对齐区：空间不足时内部省略号收缩，
+            // 右侧按钮与导航项始终贴右
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 24),
+                  child: ServerTitleDropdown(
+                    onTitleTap: () => onSelect(0),
                   ),
-                  SizedBox(width: 10),
-                  Text(
-                    '同步观影',
-                    style: TextStyle(color: Colors.white54, fontSize: 11),
-                  ),
-                ],
+                ),
               ),
             ),
-            const Spacer(),
-            for (var i = 0; i < kShellNavLabels.length; i++)
+            const MediaSearchButton(),
+            const RoomMenuButton(),
+            for (var i = 1; i < kShellNavLabels.length; i++)
               _TvTopNavItem(
                 index: i,
                 selected: i == currentIndex,

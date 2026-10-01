@@ -46,7 +46,8 @@ Future<ProviderContainer> _pumpScreen(
   final container = ProviderContainer(
     overrides: [
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
-      embyAuthServiceProvider.overrideWith((ref) => auth ?? FakeEmbyAuthService()),
+      embyAuthServiceProvider
+          .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
       if (serviceFactory != null)
         embyServiceFactoryProvider.overrideWithValue(serviceFactory),
@@ -131,6 +132,28 @@ void main() {
 
     expect(find.byType(Drawer), findsNothing);
     expect(find.byIcon(Icons.menu), findsNothing);
+  });
+
+  testWidgets('TV 模式首页不渲染顶栏（标题/搜索/房间上移壳层顶栏）', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    await _pumpScreen(
+      tester,
+      auth: auth,
+      settings: const AppSettings(tvMode: true),
+    );
+
+    // 顶栏职责全部由壳层 TvTopNavBar 承担，首页自身无 AppBar 与入口按钮
+    expect(find.byType(AppBar), findsNothing);
+    expect(find.byIcon(Icons.search), findsNothing);
+    expect(find.byIcon(Icons.meeting_room_outlined), findsNothing);
+    expect(find.text('家庭NAS'), findsNothing);
+    // 正常加载内容
+    expect(find.byType(RefreshIndicator), findsOneWidget);
   });
 
   testWidgets('顶栏无通栏玻璃条，仅标题与操作两个玻璃椭圆', (tester) async {
@@ -563,8 +586,7 @@ void main() {
     expect(find.text('动画电影'), findsWidgets);
   });
 
-  testWidgets('首页分类卡片：海报完整 2:3、标题在海报下方、带评分与集数角标',
-      (tester) async {
+  testWidgets('首页分类卡片：海报完整 2:3、标题在海报下方、带评分与集数角标', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1'],
       sessions: {
