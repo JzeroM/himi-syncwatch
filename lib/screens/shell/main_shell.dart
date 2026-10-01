@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/shell/shell_blind_nav.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
-/// 四标签底部导航壳：首页 / Emby服务器 / 声网配置 / 设置。
+/// 四标签壳：首页 / Emby服务器 / 声网配置 / 设置。
 ///
-/// 浮动玻璃胶囊导航，`extendBody` 让页面内容延伸到导航之下。
+/// - 宽窗口（≥1000px，桌面）：左缘吊绳 + 百叶窗抽屉导航
+/// - 窄窗口（手机/小窗）：浮动玻璃胶囊底部导航，滑到底部时胶囊淡出
 /// 壳层绘制主题色三段渐变背景（各标签页透明以透出）。
-/// 仅首页：滑到底部时胶囊淡出隐藏，回滚立即恢复。
 class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key, required this.shell});
 
@@ -39,6 +40,14 @@ class _MainShellState extends ConsumerState<MainShell> {
     return false;
   }
 
+  void _goBranch(int index) {
+    widget.shell.goBranch(
+      index,
+      initialLocation: index == widget.shell.currentIndex,
+    );
+    if (!_navVisible) setState(() => _navVisible = true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
@@ -56,20 +65,42 @@ class _MainShellState extends ConsumerState<MainShell> {
         : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
 
+    final content = AnimatedContainer(
+      key: const ValueKey('shellBackground'),
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        gradient: PosterPalette.pageGradient(accent, base),
+      ),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _handleScroll,
+        child: widget.shell,
+      ),
+    );
+
+    final isDesktop = MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint;
+    if (isDesktop) {
+      // 桌面：左缘吊绳百叶窗导航，无底部胶囊、无滚动隐藏
+      return Scaffold(
+        extendBody: true,
+        body: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(child: content),
+            Positioned.fill(
+              child: ShellBlindNav(
+                currentIndex: widget.shell.currentIndex,
+                onSelect: _goBranch,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       extendBody: true,
-      body: AnimatedContainer(
-        key: const ValueKey('shellBackground'),
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          gradient: PosterPalette.pageGradient(accent, base),
-        ),
-        child: NotificationListener<ScrollNotification>(
-          onNotification: _handleScroll,
-          child: widget.shell,
-        ),
-      ),
+      body: content,
       bottomNavigationBar: AnimatedSlide(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInCubic,
@@ -87,13 +118,7 @@ class _MainShellState extends ConsumerState<MainShell> {
                 padding: EdgeInsets.zero,
                 child: ShellNavBar(
                   currentIndex: widget.shell.currentIndex,
-                  onSelect: (index) {
-                    widget.shell.goBranch(
-                      index,
-                      initialLocation: index == widget.shell.currentIndex,
-                    );
-                    if (!_navVisible) setState(() => _navVisible = true);
-                  },
+                  onSelect: _goBranch,
                 ),
               ),
             ),

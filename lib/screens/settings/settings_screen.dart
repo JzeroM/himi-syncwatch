@@ -43,6 +43,7 @@ class SettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
 
     return Scaffold(
+      key: const ValueKey('settingsPage'),
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
