@@ -51,21 +51,30 @@ Widget _host({
 }
 
 void main() {
-  testWidgets('渲染服务器标题与三个横排导航项（首页并入标题）', (tester) async {
-    await tester.pumpWidget(_host());
-    await tester.pump();
+  testWidgets('渲染服务器标题与三个纯图标导航项（首页并入标题）', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(_host());
+      await tester.pump();
 
-    // 无配置兜底标题；首页项并入标题，顶栏无「首页」字样
-    expect(find.text('HIMI'), findsOneWidget);
-    expect(find.text('同步观影'), findsNothing);
-    expect(find.text('首页'), findsNothing);
-    for (var i = 1; i < kShellNavLabels.length; i++) {
-      expect(find.text(kShellNavLabels[i]), findsOneWidget);
+      // 无配置兜底标题；首页项并入标题，顶栏无「首页」字样
+      expect(find.text('HIMI'), findsOneWidget);
+      expect(find.text('同步观影'), findsNothing);
+      expect(find.text('首页'), findsNothing);
+      // 导航项去文字：仅图标，文字经 Semantics 保留无障碍标签
+      // （dns_outlined 与标题胶囊同图标，故用 findsWidgets）
+      for (var i = 1; i < kShellNavLabels.length; i++) {
+        expect(find.text(kShellNavLabels[i]), findsNothing);
+        expect(find.byIcon(kShellNavIcons[i]), findsWidgets);
+        expect(find.bySemanticsLabel(kShellNavLabels[i]), findsOneWidget);
+      }
+      // 搜索/房间常驻顶栏
+      expect(find.byIcon(Icons.meeting_room_outlined), findsOneWidget);
+      // 无已认证服务器时不显示搜索入口
+      expect(find.byIcon(Icons.search), findsNothing);
+    } finally {
+      semantics.dispose();
     }
-    // 搜索/房间常驻顶栏
-    expect(find.byIcon(Icons.meeting_room_outlined), findsOneWidget);
-    // 无已认证服务器时不显示搜索入口
-    expect(find.byIcon(Icons.search), findsNothing);
   });
 
   testWidgets('点击导航项回调 onSelect', (tester) async {
@@ -73,11 +82,11 @@ void main() {
     await tester.pumpWidget(_host(onSelect: (i) => selected = i));
     await tester.pump();
 
-    await tester.tap(find.text('设置'));
+    await tester.tap(find.byIcon(kShellNavIcons[3]));
     await tester.pump();
     expect(selected, 3);
 
-    await tester.tap(find.text('声网配置'));
+    await tester.tap(find.byIcon(kShellNavIcons[2]));
     await tester.pump();
     expect(selected, 2);
   });

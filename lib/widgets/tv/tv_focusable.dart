@@ -115,7 +115,10 @@ class _TvFocusableActiveState extends State<_TvFocusableActive> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               curve: Curves.easeOut,
-              decoration: focused
+              // foregroundDecoration：描边画在 child 之上且不参与布局。
+              // 若用 decoration，border 会按 Container 规则挤占 child 约束，
+              // 聚焦时高内容子项（如媒体库卡片）被压缩而触发布局溢出。
+              foregroundDecoration: focused
                   ? BoxDecoration(
                       borderRadius: BorderRadius.circular(widget.radius),
                       border:

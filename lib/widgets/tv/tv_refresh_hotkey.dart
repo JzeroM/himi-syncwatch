@@ -25,7 +25,12 @@ class TvRefreshHotkey extends ConsumerWidget {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     if (!tvMode) return child;
 
+    // canRequestFocus: false —— 本层 Focus 包住整个页面内容，rect 是
+    // 全屏 body；若可聚焦，方向遍历会把它当巨大候选抢占焦点，焦点落上
+    // 后按上键「源上方无候选」→ 遍历失败 + 列表已到顶 → 吞键，焦点再也
+    // 回不到顶栏。禁用 request 后仍留在焦点祖先链上，菜单键照常冒泡。
     return Focus(
+      canRequestFocus: false,
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.contextMenu) {

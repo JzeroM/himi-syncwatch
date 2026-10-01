@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:himi_syncwatch/services/tv_detection_service.dart';
 import 'package:himi_windows_rtm/himi_windows_rtm.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -35,14 +36,14 @@ Future<int> _runRtmSmoke() async {
     if (!initOk) return 2;
 
     step('login start');
-    final loginResult = await WindowsRtmClient.invokeForResult(
-        'login', {'token': ''});
+    final loginResult =
+        await WindowsRtmClient.invokeForResult('login', {'token': ''});
     step('login ok=${loginResult['ok']} reason=${loginResult['reason']}');
     final loginOk = loginResult['ok'] == true;
 
     step('subscribe start');
-    final subResult =
-        await WindowsRtmClient.invokeForResult('subscribe', {'channel': 'smoke_channel'});
+    final subResult = await WindowsRtmClient.invokeForResult(
+        'subscribe', {'channel': 'smoke_channel'});
     step('subscribe ok=${subResult['ok']} reason=${subResult['reason']}');
 
     // 在线人数查询链路（rid/回调/解析）。仅在真实 AppId 登录成功时硬断言；
@@ -52,12 +53,13 @@ Future<int> _runRtmSmoke() async {
     for (var i = 0; i < 5; i++) {
       final usersResult = await WindowsRtmClient.invokeForResult(
           'getOnlineUsers', {'channel': 'smoke_channel'});
-      onlineCount = usersResult['count'] is int
-          ? usersResult['count'] as int
-          : null;
+      onlineCount =
+          usersResult['count'] is int ? usersResult['count'] as int : null;
       step('getOnlineUsers try=${i + 1} ok=${usersResult['ok']} '
           'reason=${usersResult['reason']} count=$onlineCount');
-      if (usersResult['ok'] == true && onlineCount != null && onlineCount >= 1) {
+      if (usersResult['ok'] == true &&
+          onlineCount != null &&
+          onlineCount >= 1) {
         break;
       }
       await Future<void>.delayed(const Duration(seconds: 1));
@@ -125,6 +127,9 @@ void main() async {
 
   final settingsNotifier = SettingsNotifier();
   await settingsNotifier.load();
+  // TV 自动识别（策略 A）：用户手动设置过则内部直接跳过，不覆盖
+  final isTv = await const TvDetectionService().isTelevision();
+  await settingsNotifier.applyTvAutoDetection(isTelevision: isTv);
 
   runApp(
     ProviderScope(

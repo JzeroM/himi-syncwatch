@@ -117,7 +117,8 @@ void main() {
     await tester.pumpWidget(wrap(const AppSettings(tvMode: true)));
     await tester.pump();
 
-    // 找到聚焦中的 TvFocusable 内 AnimatedContainer，其 decoration 应有边框
+    // 找到聚焦中的 TvFocusable 内 AnimatedContainer，
+    // 前景描边（不挤占布局）应有边框
     final containers = tester.widgetList<AnimatedContainer>(
       find.descendant(
         of: find.byWidgetPredicate(
@@ -126,8 +127,8 @@ void main() {
       ),
     );
     expect(containers, isNotEmpty);
-    expect(containers.first.decoration, isA<BoxDecoration>());
-    final deco = containers.first.decoration! as BoxDecoration;
+    expect(containers.first.foregroundDecoration, isA<BoxDecoration>());
+    final deco = containers.first.foregroundDecoration! as BoxDecoration;
     expect(deco.border, isNotNull, reason: '聚焦项应有高亮描边');
   });
 

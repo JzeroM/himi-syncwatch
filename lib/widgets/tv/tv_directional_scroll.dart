@@ -47,6 +47,21 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
     final node = FocusManager.instance.primaryFocus;
     if (node == null) return null;
 
+    if (node.focusInDirection(intent.direction)) return null;
+
+    // 跨祖先 scope 兜底：Flutter inDirection 只在 nearestScope 内找候选，
+    // 而 GoRouter 嵌套 Navigator 的页面 ModalScope 不含壳层顶栏——内容区
+    // 到达 scope 边界（首/末项）时上/下键找不到顶栏 → 失败 → 落到滚动
+    // 边界吞键，焦点再也回不到顶栏。仅纵向（问题场景），横向保持原滚动。
+    if (intent.direction == TraversalDirection.up ||
+        intent.direction == TraversalDirection.down) {
+      final cross = _findCrossScope(node, intent.direction);
+      if (cross != null) {
+        cross.requestFocus();
+        return null;
+      }
+    }
+
     for (var attempt = 0; attempt < _maxAttempts; attempt++) {
       if (node.focusInDirection(intent.direction)) return null;
       if (node.context == null) return null;
@@ -60,6 +75,89 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
       pos.jumpTo(target);
     }
     return null;
+  }
+
+  /// 沿 nearestScope 的祖先 scope 链收集候选，复刻 Flutter 方向带算法挑
+  /// 最近节点（跨页面 ModalScope 与壳层之间的查找）。
+  static FocusNode? _findCrossScope(
+    FocusNode node,
+    TraversalDirection direction,
+  ) {
+    final target = node.rect;
+    final seen = <FocusNode>{node};
+    final candidates = <FocusNode>[];
+    FocusNode? scope = node.nearestScope;
+    while (scope != null) {
+      if (scope is FocusScopeNode) {
+        for (final n in scope.traversalDescendants) {
+          if (seen.add(n) && n.canRequestFocus && n.context != null) {
+            candidates.add(n);
+          }
+        }
+      }
+      scope = scope.parent;
+    }
+
+    bool inDirection(FocusNode n) {
+      if (n.rect == target) return false;
+      switch (direction) {
+        case TraversalDirection.up:
+          return n.rect.center.dy <= target.top;
+        case TraversalDirection.down:
+          return n.rect.center.dy >= target.bottom;
+        case TraversalDirection.left:
+          return n.rect.center.dx <= target.left;
+        case TraversalDirection.right:
+          return n.rect.center.dx >= target.right;
+      }
+    }
+
+    final eligible = candidates.where(inDirection).toList();
+    if (eligible.isEmpty) return null;
+
+    final vertical = direction == TraversalDirection.up ||
+        direction == TraversalDirection.down;
+    // 方向带：与源在垂直（up/down）或水平（left/right）投影重叠
+    final band = vertical
+        ? Rect.fromLTRB(
+            target.left, double.negativeInfinity, target.right, double.infinity)
+        : Rect.fromLTRB(double.negativeInfinity, target.top, double.infinity,
+            target.bottom);
+    final inBand =
+        eligible.where((n) => !n.rect.intersect(band).isEmpty).toList();
+
+    double mainDistance(FocusNode n) => vertical
+        ? (n.rect.center.dy - target.center.dy).abs()
+        : (n.rect.center.dx - target.center.dx).abs();
+    double edgeDistance(FocusNode n) => vertical
+        ? (direction == TraversalDirection.up
+                ? target.top - n.rect.bottom
+                : n.rect.top - target.bottom)
+            .abs()
+        : (direction == TraversalDirection.left
+                ? target.left - n.rect.right
+                : n.rect.left - target.right)
+            .abs();
+    int crossDistance(FocusNode a, FocusNode b) => vertical
+        ? (a.rect.center.dx - target.center.dx)
+            .abs()
+            .compareTo((b.rect.center.dx - target.center.dx).abs())
+        : (a.rect.center.dy - target.center.dy)
+            .abs()
+            .compareTo((b.rect.center.dy - target.center.dy).abs());
+
+    if (inBand.isNotEmpty) {
+      inBand.sort((a, b) {
+        final c = mainDistance(a).compareTo(mainDistance(b));
+        return c != 0 ? c : crossDistance(a, b);
+      });
+      return inBand.first;
+    }
+    eligible.sort((a, b) {
+      final c = edgeDistance(a).compareTo(edgeDistance(b));
+      return c != 0 ? c : crossDistance(a, b);
+    });
+    return eligible.first;
   }
 
   /// 从焦点节点向上找**轴匹配**的最近祖先滚动容器。
@@ -109,9 +207,69 @@ class TvScopeEnterAction extends ContextAction<TvScopeEnterIntent> {
   Object? invoke(TvScopeEnterIntent intent, [BuildContext? context]) {
     final scope = FocusManager.instance.primaryFocus;
     if (scope is! FocusScopeNode) return null;
+    // 壳层优先：GoRouter 嵌套 Navigator 下页面 ModalScope 不含壳层顶栏，
+    // 冷启动 OK 若走原生 findFirst 只会落页面第一项——先在祖先 route scope
+    // （壳层）里取 topmost 落焦。Dialog 无祖先 route scope → 候选为空，
+    // 自动回退原生两段式（Dialog 内先落主按钮）。
+    final shell = _findShellTopmost(scope);
+    if (shell != null) {
+      shell.requestFocus();
+      return null;
+    }
     if (scope.focusInDirection(TraversalDirection.down)) return null;
     scope.focusInDirection(TraversalDirection.up);
     return null;
+  }
+
+  /// 取严格祖先 route scope 内、topmost 的可聚焦节点（如顶栏）。
+  static FocusNode? _findShellTopmost(FocusScopeNode scope) {
+    final ancestorRoutes = <ModalRoute>{};
+    FocusNode? p = scope.parent;
+    while (p != null) {
+      if (p is FocusScopeNode) {
+        final r = _routeOf(p);
+        if (r != null) ancestorRoutes.add(r);
+      }
+      p = p.parent;
+    }
+    if (ancestorRoutes.isEmpty) return null;
+
+    FocusNode? parent = scope.parent;
+    while (parent != null && parent is! FocusScopeNode) {
+      parent = parent.parent;
+    }
+    if (parent is! FocusScopeNode) return null;
+
+    final candidates = <FocusNode>[];
+    for (final n in parent.traversalDescendants) {
+      if (n.context == null || !n.canRequestFocus) continue;
+      final r = _nearestRoute(n);
+      if (r != null && ancestorRoutes.contains(r)) candidates.add(n);
+    }
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) {
+      final c = a.rect.top.compareTo(b.rect.top);
+      return c != 0 ? c : a.rect.left.compareTo(b.rect.left);
+    });
+    return candidates.first;
+  }
+
+  /// 节点所属的最近 ModalRoute（无则 null）。
+  static ModalRoute? _nearestRoute(FocusNode n) {
+    FocusNode? p = n is FocusScopeNode ? n : n.parent;
+    while (p != null) {
+      if (p is FocusScopeNode) {
+        final r = _routeOf(p);
+        if (r != null) return r;
+      }
+      p = p.parent;
+    }
+    return null;
+  }
+
+  static ModalRoute? _routeOf(FocusScopeNode s) {
+    final ctx = s.context;
+    return ctx == null ? null : ModalRoute.of(ctx);
   }
 }
 

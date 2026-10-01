@@ -409,6 +409,8 @@ class _CategorySection extends StatelessWidget {
           child: TvFocusable(
             onTap: onViewAll,
             child: Row(
+              // 收缩到内容宽：否则 Row 撑满整行，焦点环横贯全屏很难看
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   category.folder.name,

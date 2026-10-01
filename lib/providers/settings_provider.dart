@@ -42,8 +42,18 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       deepDiagnostics: deepDiagnostics,
       glassUi: glassUi,
       tvMode: tvMode,
+      // 手动改动 TV 开关即标记「用户已设置」，此后自动识别不再覆盖
+      tvModeUserSet: tvMode != null ? true : null,
       themeColor: themeColor,
     );
+    await persist();
+  }
+
+  /// TV 自动识别（策略 A）：仅当检测为 TV 设备、用户从未手动设置过
+  /// 且当前未开启时，静默开启 TV 模式并落盘；其余情况无任何副作用。
+  Future<void> applyTvAutoDetection({required bool isTelevision}) async {
+    if (!isTelevision || state.tvModeUserSet || state.tvMode) return;
+    state = state.copyWith(tvMode: true);
     await persist();
   }
 

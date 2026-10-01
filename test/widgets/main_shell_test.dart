@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 
 import '../helpers/test_fakes.dart';
@@ -153,8 +154,8 @@ void main() {
       findsOneWidget,
     );
 
-    // 点顶部导航切分支
-    await tester.tap(find.text('设置'));
+    // 点顶部导航切分支（纯图标导航项按图标定位）
+    await tester.tap(find.byIcon(kShellNavIcons[3]));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);

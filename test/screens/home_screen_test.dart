@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -584,6 +585,43 @@ void main() {
     // 下方媒体库分区与栏同时存在
     expect(find.text('华语电影'), findsWidgets);
     expect(find.text('动画电影'), findsWidgets);
+  });
+
+  testWidgets('分类标题行焦点环只包标题文字（不撑满整行）', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: const [
+        LibraryFolder(
+          id: 'lb1',
+          name: '动画电影',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+      ],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    // 分类标题行 = TvFocusable → Row(标题 + chevron)
+    final header = find.ancestor(
+      of: find.byIcon(Icons.chevron_right),
+      matching: find.byType(TvFocusable),
+    );
+    expect(header, findsOneWidget);
+
+    // 焦点环只包住「动画电影 ›」：宽度远小于屏宽（修复前 Row 撑满整行）
+    final w = tester.getSize(header).width;
+    expect(w, lessThan(tester.view.physicalSize.width * 0.5));
+    // 标题确实在焦点块内
+    expect(
+      find.descendant(of: header, matching: find.text('动画电影')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('首页分类卡片：海报完整 2:3、标题在海报下方、带评分与集数角标', (tester) async {

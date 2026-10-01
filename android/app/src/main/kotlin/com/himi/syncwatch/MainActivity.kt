@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
      * 而强制软件解码）。
      */
     private var dvChannel: MethodChannel? = null
+    private var piChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -27,11 +28,20 @@ class MainActivity : FlutterActivity() {
             // applicationContext 供 getAppVersion 读 PackageManager
             setMethodCallHandler(DolbyVisionPlugin(applicationContext))
         }
+        piChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PlatformInfoPlugin.CHANNEL
+        ).apply {
+            // TV 设备识别（自动开启 TV 模式的判定来源）
+            setMethodCallHandler(PlatformInfoPlugin(applicationContext))
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         dvChannel?.setMethodCallHandler(null)
         dvChannel = null
+        piChannel?.setMethodCallHandler(null)
+        piChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

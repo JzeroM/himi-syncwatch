@@ -10,6 +10,9 @@ class AppSettings {
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
   final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
 
+  /// 用户是否手动设置过 TV 开关（策略 A：设置过则自动识别不再覆盖）。
+  final bool tvModeUserSet;
+
   /// 生效的音频后端：Windows 固定为自动（mdk 无 AudioTrack/OpenSL 等
   /// Android 专属后端），设置项在 Windows 上也不再展示；其余平台用用户设置。
   static String effectiveAudioRenderer(String setting) {
@@ -31,6 +34,7 @@ class AppSettings {
     this.glassUi = true,
     this.themeColor,
     this.tvMode = false,
+    this.tvModeUserSet = false,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -43,6 +47,7 @@ class AppSettings {
     bool? deepDiagnostics,
     bool? glassUi,
     bool? tvMode,
+    bool? tvModeUserSet,
     Object? themeColor = unsetValue,
   }) {
     return AppSettings(
@@ -53,6 +58,7 @@ class AppSettings {
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
       glassUi: glassUi ?? this.glassUi,
       tvMode: tvMode ?? this.tvMode,
+      tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       themeColor: identical(themeColor, unsetValue)
           ? this.themeColor
           : themeColor as int?,
@@ -67,6 +73,7 @@ class AppSettings {
         'deepDiagnostics': deepDiagnostics,
         'glassUi': glassUi,
         'tvMode': tvMode,
+        'tvModeUserSet': tvModeUserSet,
         if (themeColor != null) 'themeColor': themeColor,
       };
 
@@ -92,6 +99,9 @@ class AppSettings {
       deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
       glassUi: json['glassUi'] as bool? ?? true,
       tvMode: json['tvMode'] as bool? ?? false,
+      // 旧数据无此字段：tvMode=true 说明用户当时手动开过 → 视为已设置，
+      // 避免自动识别把用户手动关掉的 TV 模式重新打开。
+      tvModeUserSet: json['tvModeUserSet'] as bool? ?? (json['tvMode'] == true),
       themeColor: json['themeColor'] as int?,
     );
   }

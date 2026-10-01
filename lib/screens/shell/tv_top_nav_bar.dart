@@ -11,7 +11,8 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 ///
 /// 形态：通栏玻璃条，左侧服务器标题胶囊（合并首页入口：
 /// 名称 OK 回首页，▾ OK 打开服务器下拉），右侧依次
-/// 搜索 / 房间 / 三个横排导航项（首页已并入标题，故从 index 1 起）；
+/// 搜索 / 房间 / 三个纯图标导航项（首页已并入标题，故从 index 1 起；
+/// 图标经 Semantics 保留无障碍标签）；
 /// 每项 [TvFocusable] 获得 D-pad 焦点，左右键切换、OK 进入。
 /// 复用壳层导航数据（kShellNavLabels/Icons/SelectedIcons）与薄荷青选中色。
 class TvTopNavBar extends StatelessWidget {
@@ -80,39 +81,31 @@ class _TvTopNavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? kNavBlobColor : Colors.white70;
+    // 纯图标（文字仅经 Semantics 供屏幕阅读器读出）：
+    // 固定 44×44 方块便于 D-pad 焦点对齐
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       child: TvFocusable(
         radius: 12,
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? const Color(0x33FFFFFF) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                selected
-                    ? kShellNavSelectedIcons[index]
-                    : kShellNavIcons[index],
-                size: 20,
-                color: color,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                kShellNavLabels[index],
-                style: TextStyle(
-                  color: color,
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-            ],
+        child: Semantics(
+          label: kShellNavLabels[index],
+          button: true,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: selected ? const Color(0x33FFFFFF) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              selected ? kShellNavSelectedIcons[index] : kShellNavIcons[index],
+              size: 20,
+              color: color,
+            ),
           ),
         ),
       ),
