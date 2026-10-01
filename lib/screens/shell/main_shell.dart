@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/screens/shell/shell_blind_nav.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
@@ -80,20 +80,13 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     final isDesktop = MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint;
     if (isDesktop) {
-      // 桌面：左缘吊绳百叶窗导航，无底部胶囊、无滚动隐藏
+      // 桌面：左右分栏抽屉导航（展开时内容右移不遮挡），无底部胶囊
       return Scaffold(
         extendBody: true,
-        body: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(child: content),
-            Positioned.fill(
-              child: ShellBlindNav(
-                currentIndex: widget.shell.currentIndex,
-                onSelect: _goBranch,
-              ),
-            ),
-          ],
+        body: ShellDesktopLayout(
+          content: content,
+          currentIndex: widget.shell.currentIndex,
+          onSelect: _goBranch,
         ),
       );
     }
