@@ -31,6 +31,8 @@ import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
+import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
+import 'package:himi_syncwatch/screens/player/player_platform.dart';
 import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
@@ -46,6 +48,7 @@ import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
 import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
+import 'package:himi_syncwatch/services/window_fullscreen_service.dart';
 
 /// 播放器默认音量（0-1）：进入播放器即为 80%。
 const kPlayerDefaultVolume = 0.8;
@@ -226,6 +229,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
   BoxFit _videoFit = BoxFit.contain;
   Size? _videoNativeSize;
+
+  // 窗口全屏（桌面）
+  bool _isWindowFullscreen = false;
+  final WindowFullscreenService _windowFullscreenService =
+      WindowFullscreenService();
 
   // 传感器
   StreamSubscription? _accelSub;
@@ -774,15 +782,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
     // 先完成硬件解码设置，再启动播放，避免竞态
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // 并行执行：亮度设为默认 + 播放器属性初始化
+      // 并行执行：亮度初始化 + 播放器属性初始化
       await Future.wait([
         Future(() async {
-          _brightness = kPlayerDefaultBrightness;
-          _brightnessNotifier.value = kPlayerDefaultBrightness;
-          try {
-            await ScreenBrightness()
-                .setApplicationScreenBrightness(kPlayerDefaultBrightness);
-          } catch (_) {}
+          // Windows 亮度默认跟随系统（仅读取展示，不覆盖系统亮度）；
+          // 其他平台维持原行为：强制设为默认 0.8
+          if (PlayerPlatform.brightnessFollowsSystem) {
+            double current = kPlayerDefaultBrightness;
+            try {
+              current = await ScreenBrightness().application;
+            } catch (_) {}
+            _brightness = PlayerPlatform.initialBrightness(
+              current: current,
+              followSystem: true,
+              fallback: kPlayerDefaultBrightness,
+            );
+            _brightnessNotifier.value = _brightness;
+          } else {
+            _brightness = kPlayerDefaultBrightness;
+            _brightnessNotifier.value = kPlayerDefaultBrightness;
+            try {
+              await ScreenBrightness()
+                  .setApplicationScreenBrightness(kPlayerDefaultBrightness);
+            } catch (_) {}
+          }
         }),
         _initPlayerProperties(),
       ]);
@@ -2043,6 +2066,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _syncPlayState();
   }
 
+  /// 空格键播放/暂停（仅房主/本地可控制）
+  void _handleHotkeyTogglePlayPause() {
+    if (!_canControlPlayback) return;
+    _togglePlayPause();
+  }
+
+  /// 切换窗口全屏（桌面），读回真实状态刷新图标
+  Future<void> _toggleWindowFullscreen() async {
+    await _windowFullscreenService.setFullScreen(!_isWindowFullscreen);
+    final now = await _windowFullscreenService.isFullScreen();
+    if (mounted) setState(() => _isWindowFullscreen = now);
+  }
+
+  /// 退出窗口全屏（ESC 热键入口；非全屏时为空操作）
+  Future<void> _exitWindowFullscreen() async {
+    if (!_isWindowFullscreen) return;
+    await _windowFullscreenService.setFullScreen(false);
+    if (mounted) setState(() => _isWindowFullscreen = false);
+  }
+
   void _syncPlayState() {
     final playing = _player.state == mdk.PlaybackState.playing;
     if (_isPlayingNotifier.value != playing) {
@@ -2497,6 +2540,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       ScreenBrightness().resetApplicationScreenBrightness();
     } catch (_) {}
 
+    // 离开播放器时退出窗口全屏，回到普通窗口
+    if (_isWindowFullscreen) {
+      _isWindowFullscreen = false;
+      _windowFullscreenService.setFullScreen(false);
+    }
+
     // 释放锁屏保持
     try {
       WakelockPlus.disable();
@@ -2539,8 +2588,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         final shouldPop = await _confirmLeaveRoom();
         if (shouldPop && context.mounted) Navigator.pop(context);
       },
-      child: Scaffold(
-        backgroundColor: Colors.black,
+      child: PlayerHotkey(
+        onTogglePlayPause: _handleHotkeyTogglePlayPause,
+        onEscape: _isWindowFullscreen ? _exitWindowFullscreen : null,
+        child: Scaffold(
+          backgroundColor: Colors.black,
         body: GestureDetector(
           onTap: () {
             if (_showSubtitleMenu || _showAudioMenu || _showDecodeModeMenu || _showBrightnessBarNotifier.value || _showVolumeBarNotifier.value) {
@@ -2552,11 +2604,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           onDoubleTap: _onDoubleTap,
           onHorizontalDragUpdate: _onHorizontalDragUpdate,
           onHorizontalDragEnd: _onHorizontalDragEnd,
-          onVerticalDragStart: _onVerticalDragStart,
-          onVerticalDragUpdate: _onVerticalDragUpdate,
-          onVerticalDragEnd: _onVerticalDragEnd,
+          // Windows 取消音量/亮度垂直手势（改用控制条滑杆），移动平台保留
+          onVerticalDragStart:
+              PlayerPlatform.verticalVolumeBrightnessGesture
+                  ? _onVerticalDragStart
+                  : null,
+          onVerticalDragUpdate:
+              PlayerPlatform.verticalVolumeBrightnessGesture
+                  ? _onVerticalDragUpdate
+                  : null,
+          onVerticalDragEnd:
+              PlayerPlatform.verticalVolumeBrightnessGesture
+                  ? _onVerticalDragEnd
+                  : null,
           behavior: HitTestBehavior.opaque,
           child: _buildResponsiveLayout(),
+        ),
         ),
       ),
     );
@@ -3331,6 +3394,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     _totalEpisodeCount > 1)
                   const SizedBox(width: 8),
 
+                // 音量/亮度滑杆（仅 Windows，替代已取消的垂直手势）
+                if (PlayerPlatform.volumeBrightnessSliders) ...[
+                  const SizedBox(width: 16),
+                  _buildVolumeSlider(),
+                  const SizedBox(width: 16),
+                  _buildBrightnessSlider(),
+                ],
+
                 const Spacer(),
 
                 // 字幕
@@ -3393,6 +3464,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
                   ),
                 ],
+
+                // 窗口全屏（桌面三端）
+                if (PlayerPlatform.windowFullscreenButton) ...[
+                  const SizedBox(width: 20),
+                  _buildControlButton(
+                    icon: _isWindowFullscreen
+                        ? Icons.fullscreen_exit
+                        : Icons.fullscreen,
+                    onTap: _toggleWindowFullscreen,
+                  ),
+                ],
               ],
             ),
           ],
@@ -3415,6 +3497,104 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         borderRadius: BorderRadius.circular(8),
         child: child,
       ),
+    );
+  }
+
+  /// 控制条小滑杆主题（与进度条风格一致）
+  static const SliderThemeData _miniSliderTheme = SliderThemeData(
+    activeTrackColor: Color(0xFF6366F1),
+    inactiveTrackColor: Colors.white24,
+    thumbColor: Color(0xFF6366F1),
+    thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
+    trackHeight: 3,
+    overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
+  );
+
+  /// 控制条音量滑杆（0-100，实时写入播放器）
+  Widget _buildVolumeSlider() {
+    return ValueListenableBuilder<double>(
+      valueListenable: _volumeNotifier,
+      builder: (context, volume, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              volume <= 0
+                  ? Icons.volume_off
+                  : volume < 50
+                      ? Icons.volume_down
+                      : Icons.volume_up,
+              color: Colors.white70,
+              size: 18,
+            ),
+            const SizedBox(width: 4),
+            SizedBox(
+              width: 96,
+              height: 24,
+              child: SliderTheme(
+                data: _miniSliderTheme,
+                child: Slider(
+                  value: volume.clamp(0.0, 100.0),
+                  max: 100,
+                  onChanged: (v) {
+                    _volume = v;
+                    _player.volume = v / 100.0;
+                    _volumeNotifier.value = v;
+                  },
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 28,
+              child: Text(
+                '${volume.round()}',
+                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                textAlign: TextAlign.right,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 控制条亮度滑杆（0-1，拖动才写入应用亮度）
+  Widget _buildBrightnessSlider() {
+    return ValueListenableBuilder<double>(
+      valueListenable: _brightnessNotifier,
+      builder: (context, brightness, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.brightness_6,
+                color: Color(0xFFFFD54F), size: 18),
+            const SizedBox(width: 4),
+            SizedBox(
+              width: 96,
+              height: 24,
+              child: SliderTheme(
+                data: _miniSliderTheme,
+                child: Slider(
+                  value: brightness.clamp(0.0, 1.0),
+                  onChanged: (v) {
+                    _brightness = v;
+                    _brightnessNotifier.value = v;
+                    _setBrightness(v);
+                  },
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 34,
+              child: Text(
+                '${(brightness * 100).round()}%',
+                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                textAlign: TextAlign.right,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

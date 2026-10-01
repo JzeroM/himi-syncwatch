@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_windows_rtm/himi_windows_rtm.dart';
+import 'package:window_manager/window_manager.dart';
 
 /// RTM 冒烟自检（CI/故障排查用）：设置环境变量 HIMI_RTM_SMOKE=1 后启动，
 /// 直连插件跑 initialize → login → subscribe → publish → release，
@@ -106,6 +107,12 @@ void main() async {
       Platform.environment.containsKey('HIMI_RTM_SMOKE')) {
     final smokeCode = await _runRtmSmoke();
     exit(smokeCode);
+  }
+  // 桌面三端：窗口管理（播放器窗口全屏）依赖
+  if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+    try {
+      await windowManager.ensureInitialized();
+    } catch (_) {}
   }
   HttpOverrides.global = _SelfSignedHttpOverrides();
   fvp.registerWith();
