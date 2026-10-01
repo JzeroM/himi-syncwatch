@@ -41,6 +41,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:himi_syncwatch/services/count_retry.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
@@ -1589,7 +1590,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 加入了房间');
           _logSyncEvent('$name 加入房间');
-          _refreshOnlineCount(rtmService);
+          _countRetryScheduler.restart();
           // 主持人发送房间信息（含媒体数据 + 剧集列表 + playUrl）
           if (_isHost) {
             LogService().log('Room', '主持人发送 roomInfo, episodeCount=${_episodes.length}');
@@ -1632,7 +1633,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         } else if (action == 'leave') {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 离开了房间');
-          _refreshOnlineCount(rtmService);
+          _countRetryScheduler.restart();
         } else if (action == AppConstants.actionRequestRoomInfo) {
           // 观众请求房间信息，主持人重新发送
           if (_isHost) {
@@ -1678,7 +1679,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       }
       if (mounted) {
-        _refreshOnlineCount(rtmService);
+        _countRetryScheduler.restart();
       }
     });
 
@@ -1713,8 +1714,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       setState(() {
         _onlineUserCount = count;
       });
+      _logSyncEvent('在线人数更新: $count');
+      LogService().log('Room', '在线人数更新: $count, channel: $_rtmChannel');
     }
   }
+
+  /// 成员变化（join/leave/presence）后的重查序列：
+  /// presence 同步延迟由 1s/2s/3s/5s 兜底重查覆盖，新事件重排序列。
+  late final CountRetryScheduler _countRetryScheduler = CountRetryScheduler(
+    delaysSec: const [1, 2, 3, 5],
+    onTick: () {
+      if (mounted) {
+        _refreshOnlineCount(ref.read(rtmServiceProvider));
+      }
+    },
+  );
 
   void _handleHeartbeat(Map<String, dynamic> message) {
     if (_isHost) return;
@@ -2451,6 +2465,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _gestureHintTimer?.cancel();
     _gestureBarTimer?.cancel();
     _roomInfoTimeout?.cancel();
+    _countRetryScheduler.cancel();
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();

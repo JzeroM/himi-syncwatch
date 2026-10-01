@@ -43,6 +43,27 @@ Future<int> _runRtmSmoke() async {
         await WindowsRtmClient.invokeForResult('subscribe', {'channel': 'smoke_channel'});
     step('subscribe ok=${subResult['ok']} reason=${subResult['reason']}');
 
+    // 在线人数查询链路（rid/回调/解析）——presence 登记有延迟，重试至多 5s
+    step('getOnlineUsers start');
+    int? onlineCount;
+    for (var i = 0; i < 5; i++) {
+      final usersResult = await WindowsRtmClient.invokeForResult(
+          'getOnlineUsers', {'channel': 'smoke_channel'});
+      onlineCount = usersResult['count'] is int
+          ? usersResult['count'] as int
+          : null;
+      step('getOnlineUsers try=${i + 1} ok=${usersResult['ok']} '
+          'reason=${usersResult['reason']} count=$onlineCount');
+      if (usersResult['ok'] == true && onlineCount != null && onlineCount >= 1) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+    if (onlineCount == null || onlineCount < 1) {
+      step('getOnlineUsers ASSERT FAILED (count=$onlineCount)');
+      return 3;
+    }
+
     step('publish start');
     final pubOk = await WindowsRtmClient.publish('smoke_channel',
         '{"type":"smoke","ts":${DateTime.now().millisecondsSinceEpoch}}');
