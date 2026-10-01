@@ -139,6 +139,44 @@ class FakeEmbyService extends EmbyService {
           : items;
 
   @override
-  Future<List<MediaItem>> getSimilarItems(String itemId, {int limit = 10}) async =>
+  Future<List<MediaItem>> getSimilarItems(String itemId,
+          {int limit = 10}) async =>
       similar;
+
+  // ---- 添加服务器流程（pingServer / authenticate）----
+  Map<String, dynamic> pingResult = const {
+    'ServerName': '测试服务器',
+    'Id': 'srv_ping_1',
+  };
+  Object? pingError;
+  Map<String, dynamic>? authResult;
+  Object? authError;
+  String? lastAuthUsername;
+  String? lastAuthPassword;
+
+  @override
+  Future<Map<String, dynamic>> pingServer(String serverUrl) async {
+    final err = pingError;
+    if (err != null) throw err;
+    return pingResult;
+  }
+
+  @override
+  Future<Map<String, dynamic>> authenticate({
+    required String serverUrl,
+    required String username,
+    required String password,
+    required String deviceId,
+  }) async {
+    lastAuthUsername = username;
+    lastAuthPassword = password;
+    final err = authError;
+    if (err != null) throw err;
+    return authResult ??
+        const {
+          'User': {'Id': 'user_1'},
+          'AccessToken': 'token_1',
+          'ServerId': 'srv_ping_1',
+        };
+  }
 }

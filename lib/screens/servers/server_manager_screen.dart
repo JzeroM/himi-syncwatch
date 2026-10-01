@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
-import 'package:uuid/uuid.dart';
 
 /// Emby 服务器管理页（原侧边栏服务器区域，现为独立标签页）。
 class ServerManagerScreen extends ConsumerStatefulWidget {
@@ -42,6 +43,15 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         flexibleSpace: const GlassBackdrop(),
         actions: [
           IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: '手机扫码配置',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const QrConfigScreen(mode: 'emby'),
+              ),
+            ),
+          ),
+          IconButton(
             icon: Icon(_showAddServerForm ? Icons.close : Icons.add),
             tooltip: _showAddServerForm ? '取消添加' : '添加服务器',
             onPressed: () =>
@@ -56,8 +66,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
           if (_showAddServerForm)
             Expanded(
               child: SingleChildScrollView(
-                padding:
-                    EdgeInsets.only(bottom: GlassConfig.bottomReserveOf(context)),
+                padding: EdgeInsets.only(
+                    bottom: GlassConfig.bottomReserveOf(context)),
                 child: _AddServerForm(
                   onSuccess: () {
                     if (!mounted) return;
@@ -84,9 +94,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                         return _ServerTile(
                           server: server,
                           isActive: isActive,
-                          onTap: isActive
-                              ? null
-                              : () => _switchServer(server),
+                          onTap: isActive ? null : () => _switchServer(server),
                           onEdit: isActive
                               ? () => _showEditServerDialog(server)
                               : null,
@@ -102,9 +110,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
 
   Future<void> _switchServer(EmbyServerConfig server) async {
     ref.read(embyConfigProvider.notifier).setConfig(server);
-    await ref
-        .read(embyAuthServiceProvider)
-        .saveSelectedServerId(server.id);
+    await ref.read(embyAuthServiceProvider).saveSelectedServerId(server.id);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已切换到「${server.label}」')),
@@ -257,9 +263,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         for (final other in existingServers) {
           if (other.id != server.id && other.serverId == newServerId) {
             await authService.deleteSession(other.serverId);
-            ref
-                .read(embyServerListProvider.notifier)
-                .removeServer(other.id);
+            ref.read(embyServerListProvider.notifier).removeServer(other.id);
           }
         }
 
@@ -425,72 +429,19 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     });
 
     try {
-      final authService = ref.read(embyAuthServiceProvider);
-      final url = _urlController.text.trim();
-
-      final info = await EmbyService().pingServer(url);
-      final serverName = info['ServerName'] ?? url;
-      final serverId = info['Id'] ?? '';
-
-      setState(() => _serverName = serverName);
-
-      final authResult = await EmbyService().authenticate(
-        serverUrl: url,
-        username: _usernameController.text.trim(),
-        password: _passwordController.text,
-        deviceId: authService.deviceId,
-      );
-
-      final user = authResult['User'] as Map<String, dynamic>?;
-      final userId = user?['Id'] as String? ?? '';
-      final accessToken = authResult['AccessToken'] as String? ?? '';
-      final returnedServerId = authResult['ServerId'] as String? ?? serverId;
-
-      if (userId.isEmpty || accessToken.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('登录失败：服务端返回数据异常')),
+      await ref.read(embySetupServiceProvider).addAndActivate(
+            serverUrl: _urlController.text,
+            username: _usernameController.text,
+            password: _passwordController.text,
+            serverName: _nameController.text,
+            onServerInfo: (name) {
+              if (mounted) setState(() => _serverName = name);
+            },
           );
-        }
-        return;
-      }
-
-      final configId = 'srv_${const Uuid().v4().substring(0, 8)}';
-
-      final existingServers = ref.read(embyServerListProvider);
-      final duplicate =
-          existingServers.where((s) => s.serverId == returnedServerId).toList();
-      for (final old in duplicate) {
-        await authService.deleteSession(old.serverId);
-        ref.read(embyServerListProvider.notifier).removeServer(old.id);
-      }
-
-      final config = EmbyServerConfig(
-        id: configId,
-        serverUrl: url,
-        serverName: serverName,
-        serverId: returnedServerId,
-        username: _usernameController.text.trim(),
-        accessToken: accessToken,
-        userId: userId,
-      );
-
-      await authService.saveSession(
-        serverId: returnedServerId,
-        serverUrl: url,
-        serverName: serverName,
-        userId: userId,
-        username: _usernameController.text.trim(),
-        accessToken: accessToken,
-        id: config.id,
-      );
-
-      ref.read(embyServerListProvider.notifier).addServer(config);
-      ref.read(embyConfigProvider.notifier).setConfig(config);
-      await authService.saveSelectedServerId(config.id);
 
       widget.onSuccess();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -561,7 +512,8 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            Text(_error!,
+                style: const TextStyle(color: Colors.red, fontSize: 12)),
           ],
           const SizedBox(height: 16),
           SizedBox(

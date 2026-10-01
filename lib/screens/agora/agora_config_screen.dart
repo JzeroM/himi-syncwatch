@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
@@ -84,6 +85,15 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
         elevation: 0,
         flexibleSpace: const GlassBackdrop(),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: '手机扫码配置',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const QrConfigScreen(mode: 'agora'),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.help_outline),
             tooltip: '配置说明',

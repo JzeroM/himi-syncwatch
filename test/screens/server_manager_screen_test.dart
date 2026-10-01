@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 
 import '../helpers/test_fakes.dart';
@@ -95,10 +96,25 @@ void main() {
     await _settleSnackbars(tester);
   });
 
+  testWidgets('扫码图标进入手机配置页', (tester) async {
+    await _pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('手机扫码配置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byType(QrConfigScreen), findsOneWidget);
+
+    Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byType(QrConfigScreen), findsNothing);
+  });
+
   testWidgets('点击 + 展开添加服务器表单', (tester) async {
     await _pumpScreen(tester);
 
-    await tester.tap(find.byType(IconButton).first);
+    await tester.tap(find.byTooltip('添加服务器'));
     await tester.pumpAndSettle();
 
     expect(find.text('连接并登录'), findsOneWidget);

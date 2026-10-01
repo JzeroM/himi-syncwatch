@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -43,6 +44,21 @@ void main() {
     expect(find.text('未配置'), findsOneWidget);
     expect(find.text('填写 App ID 后即可开房与加入房间'), findsOneWidget);
     expect(find.widgetWithText(TextButton, '清空'), findsNothing);
+  });
+
+  testWidgets('扫码图标进入手机配置页', (tester) async {
+    await _pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('手机扫码配置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byType(QrConfigScreen), findsOneWidget);
+
+    Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byType(QrConfigScreen), findsNothing);
   });
 
   testWidgets('App ID 为空时保存被拒绝', (tester) async {
