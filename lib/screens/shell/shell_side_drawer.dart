@@ -154,13 +154,11 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
   }
 
   Widget _buildDrawer() {
+    // 面板透明：直接透出底层全宽主题渐变（与首页同一张背景），仅留分隔线
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xF01A1D23),
-        border: Border(right: BorderSide(color: Color(0x33FFFFFF))),
-        boxShadow: [
-          BoxShadow(color: Colors.black38, blurRadius: 14, spreadRadius: 1),
-        ],
+        color: Color(0x0AFFFFFF),
+        border: Border(right: BorderSide(color: Color(0x26FFFFFF))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -180,10 +178,11 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
     );
   }
 
+  /// 左缘垂直居中的窄把手：只露出 18px，点击展开/收回分栏。
   Widget _buildToggleButton() {
     return Positioned(
-      left: 8,
-      top: MediaQuery.viewPaddingOf(context).top + 6,
+      left: 0,
+      top: MediaQuery.sizeOf(context).height / 2 - 32,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -194,16 +193,20 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
             builder: (context, _) {
               final open = _expanded;
               return Container(
-                width: 40,
-                height: 40,
+                width: 18,
+                height: 64,
                 decoration: BoxDecoration(
                   color: const Color(0x66000000),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0x33FFFFFF)),
+                  borderRadius: const BorderRadius.horizontal(
+                    right: Radius.circular(9),
+                  ),
+                  border: const Border(
+                    right: BorderSide(color: Color(0x33FFFFFF), width: 0.5),
+                  ),
                 ),
                 child: Icon(
-                  open ? Icons.close : Icons.menu,
-                  size: 22,
+                  open ? Icons.chevron_left : Icons.chevron_right,
+                  size: 16,
                   color: open ? kNavBlobColor : Colors.white70,
                 ),
               );

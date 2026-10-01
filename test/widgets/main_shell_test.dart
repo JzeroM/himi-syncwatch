@@ -46,13 +46,28 @@ void main() {
   testWidgets('桌面展开抽屉时主内容右移分栏不遮挡，汉堡收回', (tester) async {
     await pumpApp(tester, const Size(1280, 720));
 
-    // 桌面：无底部胶囊导航，有汉堡按钮；抽屉收起时内容占满
+    // 桌面：无底部胶囊导航，有左缘窄把手；抽屉收起时内容占满
     expect(find.byKey(const ValueKey('shellNavBarPadding')), findsNothing);
     expect(find.byKey(const ValueKey('drawerToggle')), findsOneWidget);
     expect(find.text('Emby服务器'), findsNothing);
     expect(contentWidth(tester), 1280);
 
-    // 点汉堡 → 抽屉展开，主内容区右移 240（1280-240=1040，零遮挡）
+    // 把手：左缘垂直居中，只露 18×64
+    final handle = tester.renderObject<RenderBox>(
+      find.byKey(const ValueKey('drawerToggle')),
+    );
+    expect(handle.size.width, 18);
+    expect(handle.size.height, 64);
+    expect(handle.localToGlobal(Offset.zero).dx, 0);
+    expect(handle.localToGlobal(Offset.zero).dy, closeTo(720 / 2 - 32, 1));
+
+    // 底层渐变全宽（抽屉区与内容区同一张背景）
+    final bg = tester.renderObject<RenderBox>(
+      find.byKey(const ValueKey('shellBackground')),
+    );
+    expect(bg.size.width, 1280);
+
+    // 点把手 → 抽屉展开，主内容区右移 240（1280-240=1040，零遮挡）
     await tester.tap(find.byKey(const ValueKey('drawerToggle')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -62,7 +77,10 @@ void main() {
     expect(find.text('设置'), findsOneWidget);
     expect(contentWidth(tester), 1040);
 
-    // 再点汉堡 → 收回，内容回填占满
+    // 展开后渐变仍全宽连续
+    expect(bg.size.width, 1280);
+
+    // 再点把手 → 收回，内容回填占满
     await tester.tap(find.byKey(const ValueKey('drawerToggle')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));

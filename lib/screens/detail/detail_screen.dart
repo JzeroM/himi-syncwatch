@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/services/ui/button_styles.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -469,11 +470,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       onPressed: _addResourceToRoom,
                       icon: const Icon(Icons.add),
                       label: const Text('加入资源'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Colors.white,
-                      ),
+                      style: readableFilledButtonStyle(
+                          Theme.of(context).colorScheme),
                     ),
                   ),
                 ],
@@ -482,7 +480,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 children: [
                   if (!_item!.isSeries)
                     Expanded(
-                      child: ElevatedButton.icon(
+                      child: FilledButton.icon(
                         onPressed: () async {
                           MediaSource? source;
                           if (_item!.hasMultipleVersions) {
@@ -508,11 +506,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         },
                         icon: const Icon(Icons.play_arrow),
                         label: const Text('开始播放'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: Theme.of(context).colorScheme.primary,
-                          foregroundColor: Colors.white,
-                        ),
+                        style: readableFilledButtonStyle(
+                            Theme.of(context).colorScheme),
                       ),
                     ),
                   if (!_item!.isSeries) const SizedBox(width: 12),

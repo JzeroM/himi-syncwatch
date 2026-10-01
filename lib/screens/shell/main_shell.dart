@@ -65,6 +65,40 @@ class _MainShellState extends ConsumerState<MainShell> {
         : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
 
+    final gradientBg = AnimatedContainer(
+      key: const ValueKey('shellBackground'),
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        gradient: PosterPalette.pageGradient(accent, base),
+      ),
+    );
+
+    final scrollable = NotificationListener<ScrollNotification>(
+      onNotification: _handleScroll,
+      child: widget.shell,
+    );
+
+    final isDesktop = MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint;
+    if (isDesktop) {
+      // 桌面：左右分栏抽屉导航（展开时内容右移不遮挡），无底部胶囊。
+      // 渐变铺在最底层全宽，抽屉区与内容区共用同一张连续背景
+      return Scaffold(
+        extendBody: true,
+        body: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(child: gradientBg),
+            ShellDesktopLayout(
+              content: scrollable,
+              currentIndex: widget.shell.currentIndex,
+              onSelect: _goBranch,
+            ),
+          ],
+        ),
+      );
+    }
+
     final content = AnimatedContainer(
       key: const ValueKey('shellBackground'),
       duration: const Duration(milliseconds: 500),
@@ -72,24 +106,8 @@ class _MainShellState extends ConsumerState<MainShell> {
       decoration: BoxDecoration(
         gradient: PosterPalette.pageGradient(accent, base),
       ),
-      child: NotificationListener<ScrollNotification>(
-        onNotification: _handleScroll,
-        child: widget.shell,
-      ),
+      child: scrollable,
     );
-
-    final isDesktop = MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint;
-    if (isDesktop) {
-      // 桌面：左右分栏抽屉导航（展开时内容右移不遮挡），无底部胶囊
-      return Scaffold(
-        extendBody: true,
-        body: ShellDesktopLayout(
-          content: content,
-          currentIndex: widget.shell.currentIndex,
-          onSelect: _goBranch,
-        ),
-      );
-    }
 
     return Scaffold(
       extendBody: true,
