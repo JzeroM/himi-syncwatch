@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
@@ -97,6 +98,33 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _error = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  /// 开始播放（多版本先弹选择）。胶囊底栏与 TV 内联按钮共用一份逻辑。
+  Future<void> _startPlay() async {
+    final item = _item;
+    if (item == null) return;
+
+    MediaSource? source;
+    if (item.hasMultipleVersions) {
+      source = await _showVersionPicker();
+      if (source == null) return;
+    }
+
+    ref.read(pendingRoomMovieProvider.notifier).state = {
+      'id': item.id,
+      'name': item.name,
+      'poster': item.posterUrl ?? '',
+      if (widget.serverId != null) 'serverId': widget.serverId,
+    };
+
+    final query = StringBuffer('isHost=true$_serverQuery');
+    if (source != null) {
+      query.write('&mediaSourceId=${source.id}');
+    }
+    if (mounted) {
+      context.push('/player/${item.id}?${query.toString()}');
     }
   }
 
@@ -424,6 +452,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final accentUrl = _item?.backdropUrl ?? _item?.posterUrl ?? '';
     final accent = ref.watch(posterColorProvider(accentUrl)).valueOrNull;
     final base = Theme.of(context).scaffoldBackgroundColor;
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     return Scaffold(
       extendBody: true,
@@ -458,7 +487,82 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   )
                 : _buildContent(accent, base),
       ),
-      bottomNavigationBar: _item != null ? _buildBottomBar() : null,
+      // TV 模式不渲染胶囊底栏：操作按钮移到简介上方的内容流中
+      // （_buildTvActions），带焦点环与 autofocus，遥控器进页即可用。
+      bottomNavigationBar: !tvMode && _item != null ? _buildBottomBar() : null,
+    );
+  }
+
+  /// TV 模式内联操作行（简介上方）：无玻璃胶囊托盘，按钮直接进内容流。
+  /// TvFocusable 提供焦点环/放大，第一个按钮 autofocus；ExcludeFocus 防止
+  /// 内外双焦点节点浪费方向键（Enter 走外层 onTap，触摸走按钮 onPressed，
+  /// 两处引用同一方法，各只触发一次）。
+  Widget _buildTvActions() {
+    final item = _item!;
+    var isFirst = true;
+
+    Widget action({
+      required Future<void> Function() run,
+      required double radius,
+      required Widget button,
+    }) {
+      final autofocus = isFirst;
+      isFirst = false;
+      return TvFocusable(
+        autofocus: autofocus,
+        radius: radius,
+        onTap: run,
+        child: ExcludeFocus(child: button),
+      );
+    }
+
+    final children = <Widget>[];
+    if (widget.roomMode) {
+      children.add(action(
+        run: _addResourceToRoom,
+        radius: 12,
+        button: FilledButton.icon(
+          onPressed: _addResourceToRoom,
+          icon: const Icon(Icons.add),
+          label: const Text('加入资源'),
+          style: readableFilledButtonStyle(Theme.of(context).colorScheme),
+        ),
+      ));
+    } else {
+      if (!item.isSeries) {
+        children.add(action(
+          run: _startPlay,
+          radius: 12,
+          button: FilledButton.icon(
+            onPressed: _startPlay,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('开始播放'),
+            style: readableFilledButtonStyle(Theme.of(context).colorScheme),
+          ),
+        ));
+      }
+      children.add(action(
+        run: _createRoom,
+        radius: 12,
+        button: OutlinedButton.icon(
+          onPressed: _createRoom,
+          icon: const Icon(Icons.group_add),
+          label: const Text('建房'),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ));
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) const SizedBox(width: 12),
+          children[i],
+        ],
+      ],
     );
   }
 
@@ -488,32 +592,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     if (!_item!.isSeries)
                       Expanded(
                         child: FilledButton.icon(
-                          onPressed: () async {
-                            MediaSource? source;
-                            if (_item!.hasMultipleVersions) {
-                              source = await _showVersionPicker();
-                              if (source == null) return;
-                            }
-
-                            ref.read(pendingRoomMovieProvider.notifier).state =
-                                {
-                              'id': _item!.id,
-                              'name': _item!.name,
-                              'poster': _item!.posterUrl ?? '',
-                              if (widget.serverId != null)
-                                'serverId': widget.serverId,
-                            };
-
-                            final query =
-                                StringBuffer('isHost=true$_serverQuery');
-                            if (source != null) {
-                              query.write('&mediaSourceId=${source.id}');
-                            }
-                            if (mounted) {
-                              context.push(
-                                  '/player/${_item!.id}?${query.toString()}');
-                            }
-                          },
+                          onPressed: _startPlay,
                           icon: const Icon(Icons.play_arrow),
                           label: const Text('开始播放'),
                           style: readableFilledButtonStyle(
@@ -656,6 +735,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             ))
                         .toList(),
                   ),
+                  const SizedBox(height: 16),
+                ],
+                if (ref.watch(settingsProvider.select((s) => s.tvMode))) ...[
+                  _buildTvActions(),
                   const SizedBox(height: 16),
                 ],
                 if (item.overview != null && item.overview!.isNotEmpty) ...[

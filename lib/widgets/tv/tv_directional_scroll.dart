@@ -47,7 +47,23 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
     final node = FocusManager.instance.primaryFocus;
     if (node == null) return null;
 
-    if (node.focusInDirection(intent.direction)) return null;
+    // 冷启动/路由切换后焦点停在页面 scope（focusedChild=null）：数据未
+    // 加载时 scope 内无候选，原生 focusInDirection 返回 true（仍聚自身）
+    // → 按键石沉大海、屏幕上不出现焦点。与 OK 键一致，方向键在 scope 态
+    // 先落壳层 topmost（顶栏）。Dialog 等无祖先 route scope → 候选为空，
+    // 回退原生 findFirst（Dialog 内第一项）。
+    if (node is FocusScopeNode) {
+      final shell = TvScopeEnterAction._findShellTopmost(node);
+      if (shell != null) {
+        shell.requestFocus();
+        return null;
+      }
+    }
+
+    if (node.focusInDirection(intent.direction)) {
+      _rejectEmptyScopeLanding(node);
+      return null;
+    }
 
     // 跨祖先 scope 兜底：Flutter inDirection 只在 nearestScope 内找候选，
     // 而 GoRouter 嵌套 Navigator 的页面 ModalScope 不含壳层顶栏——内容区
@@ -58,12 +74,16 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
       final cross = _findCrossScope(node, intent.direction);
       if (cross != null) {
         cross.requestFocus();
+        _rejectEmptyScopeLanding(node);
         return null;
       }
     }
 
     for (var attempt = 0; attempt < _maxAttempts; attempt++) {
-      if (node.focusInDirection(intent.direction)) return null;
+      if (node.focusInDirection(intent.direction)) {
+        _rejectEmptyScopeLanding(node);
+        return null;
+      }
       if (node.context == null) return null;
       final scrollable = _matchingScrollable(node.context, intent.direction);
       if (scrollable == null) return null;
@@ -75,6 +95,21 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
       pos.jumpTo(target);
     }
     return null;
+  }
+
+  /// 落点是「空 scope」时回退到原节点。空数据时页面 ModalScope 是方向
+  /// 遍历的唯一候选，scope 获得焦点但无焦点子 → 屏幕上没有焦点环，用户
+  /// 感知仍是按键无反应；回退保持原节点的可见焦点。
+  static void _rejectEmptyScopeLanding(FocusNode from) {
+    // focusInDirection/_findCrossScope 的 requestFocus 是异步应用的，
+    // 先同步 flush 才能读到真实落点（MenuAnchor 同款公开 API 用法）。
+    FocusManager.instance.applyFocusChangesIfNeeded();
+    final landed = FocusManager.instance.primaryFocus;
+    if (landed is FocusScopeNode &&
+        !identical(landed, from) &&
+        landed.focusedChild == null) {
+      from.requestFocus();
+    }
   }
 
   /// 沿 nearestScope 的祖先 scope 链收集候选，复刻 Flutter 方向带算法挑

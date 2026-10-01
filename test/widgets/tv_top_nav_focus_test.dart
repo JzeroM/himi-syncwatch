@@ -150,25 +150,29 @@ Map<String, dynamic> _sessionJson() => {
     };
 
 /// 真实结构（main_shell TV 分支 + 首页数据，960×540 盒子视口）。
-Future<void> _pumpRealApp(WidgetTester tester) async {
+/// [empty] = Emby 数据未加载（首页无任何可聚焦内容节点），模拟冷启动
+/// 刚进软件、数据还在路上的真实时序。
+Future<void> _pumpRealApp(WidgetTester tester, {bool empty = false}) async {
   tester.view.physicalSize = const Size(960, 540);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  final emby = FakeEmbyService(
-    libraries: const [
-      LibraryFolder(
-        id: 'lb1',
-        name: '动画电影',
-        collectionType: 'movies',
-        posterUrl: '',
-      ),
-    ],
-    items: [
-      for (var i = 0; i < 12; i++)
-        MediaItem(id: 'm$i', name: '影片$i', type: 'Movie'),
-    ],
-  );
+  final emby = empty
+      ? FakeEmbyService()
+      : FakeEmbyService(
+          libraries: const [
+            LibraryFolder(
+              id: 'lb1',
+              name: '动画电影',
+              collectionType: 'movies',
+              posterUrl: '',
+            ),
+          ],
+          items: [
+            for (var i = 0; i < 12; i++)
+              MediaItem(id: 'm$i', name: '影片$i', type: 'Movie'),
+          ],
+        );
 
   await tester.pumpWidget(
     ProviderScope(
@@ -313,5 +317,24 @@ void main() {
     expect(_focusInTopBar(), isTrue,
         reason: '从内容按上键应回到顶栏（当前 primaryFocus='
             '${FocusManager.instance.primaryFocus?.debugLabel}）');
+  });
+
+  testWidgets('复现：冷启动数据未加载，方向键直接落焦顶栏（不卡 scope）', (tester) async {
+    // 数据未加载时首页内容无任何可聚焦节点：修复前方向键在页面 scope 内
+    // findFirst 返回 null → 返回 true（仍聚 scope 自身）→ 按键石沉大海，
+    // 屏幕上不出现任何焦点环。
+    await _pumpRealApp(tester, empty: true);
+    expect(find.byType(TvTopNavBar), findsOneWidget);
+
+    // 不按 OK，直接按方向键——应与 OK 一致先落壳层顶栏
+    await _press(tester, LogicalKeyboardKey.arrowDown);
+    expect(_focusInTopBar(), isTrue, reason: '空数据时方向键应先落壳层顶栏，焦点环立即出现');
+
+    // 空内容继续按键：焦点保持在顶栏，不丢失、不吞键卡死
+    await _press(tester, LogicalKeyboardKey.arrowDown);
+    expect(_focusInTopBar(), isTrue, reason: '空内容下键焦点保持顶栏');
+
+    await _press(tester, LogicalKeyboardKey.arrowUp);
+    expect(_focusInTopBar(), isTrue, reason: '顶栏上边界焦点保持不越界');
   });
 }
