@@ -1,6 +1,5 @@
 package com.himi.syncwatch
 
-import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -11,8 +10,9 @@ import io.flutter.plugin.common.MethodChannel
  * 平台设备信息探测：TV 设备识别（Android TV / 盒子）。
  *
  * 判定顺序：
- * 1. UiModeManager#uiModeType == UI_MODE_TYPE_TELEVISION（系统声明的
- *    电视模式，最直接）；
+ * 1. Configuration#uiMode 的设备类型段 == UI_MODE_TYPE_TELEVISION
+ *    （系统声明的电视模式，最直接；UiModeManager#getUiModeType 是
+ *    隐藏 API 不可用，故读公开字段）；
  * 2. PackageManager.FEATURE_LEANBACK（电视特性，无遥控器的盒子也常带）。
  *
  * 检测失败一律返回 false——上层按「非 TV」处理，绝不静默误开 TV 模式
@@ -38,9 +38,12 @@ class PlatformInfoPlugin(private val context: Context?) :
     private fun isTelevision(): Boolean {
         val ctx = context ?: return false
         return try {
-            val uiMode = ctx.getSystemService(Context.UI_MODE_SERVICE)
-                as? UiModeManager
-            if (uiMode?.uiModeType == Configuration.UI_MODE_TYPE_TELEVISION) {
+            // UiModeManager#getUiModeType 是隐藏 API，改读公开的
+            // Configuration#uiMode（UI_MODE_TYPE_MASK 段即设备类型）
+            val uiMode = ctx.resources.configuration.uiMode
+            if ((uiMode and Configuration.UI_MODE_TYPE_MASK) ==
+                Configuration.UI_MODE_TYPE_TELEVISION
+            ) {
                 return true
             }
             ctx.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
