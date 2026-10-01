@@ -246,6 +246,18 @@ void main() {
       expect(msg['episodeIds'], ['e1', 'e2']);
     });
 
+    test('sendRoomInfo 空房间不携带 mediaItemId 键', () async {
+      await service.sendRoomInfo(
+        channelName: 'ch10',
+        episodeIds: const [],
+      );
+
+      final msg = jsonDecode(backend.published.single.message)
+          as Map<String, dynamic>;
+      expect(msg['type'], 'roomInfo');
+      expect(msg.containsKey('mediaItemId'), isFalse);
+    });
+
     test('在线人数与用户 ID 透传', () async {
       expect(await service.getOnlineUserCount('ch'), 3);
       expect(await service.getOnlineUserIds('ch'), ['a', 'b', 'c']);

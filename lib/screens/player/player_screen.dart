@@ -44,6 +44,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
+import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
 
 /// 播放器默认音量（0-1）：进入播放器即为 80%。
 const kPlayerDefaultVolume = 0.8;
@@ -1595,7 +1596,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             await rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
               serverId: widget.serverId,
-              mediaItemId: widget.itemId,
+              mediaItemId: RoomInfoCodec.normalizeMediaItemId(widget.itemId),
               mediaSourceId: widget.mediaSourceId,
               mediaItemName: _episodes.isNotEmpty
                   ? _episodes.first.name
@@ -1638,7 +1639,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             rtmService.sendRoomInfo(
               channelName: _rtmChannel!,
               serverId: widget.serverId,
-              mediaItemId: widget.itemId,
+              mediaItemId: RoomInfoCodec.normalizeMediaItemId(widget.itemId),
               mediaSourceId: widget.mediaSourceId,
               mediaItemName: _episodes.isNotEmpty
                   ? _episodes.first.name
@@ -1857,10 +1858,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _hasEpisodeList = true;
       });
     } else {
-      // 电影：用 mediaItemId 构建单集
-      final mediaItemId = message['mediaItemId'] as String?;
+      // 电影：用 mediaItemId 构建单集（过滤占位符 `_`，防空房间凭空建条目）
+      final mediaItemId =
+          RoomInfoCodec.normalizeMediaItemId(message['mediaItemId'] as String?);
       final mediaItemName = message['mediaItemName'] as String?;
-      if (mediaItemId != null && mediaItemId.isNotEmpty) {
+      if (mediaItemId != null) {
         setState(() {
           _episodes = [EpisodeInfo(
             id: mediaItemId,
