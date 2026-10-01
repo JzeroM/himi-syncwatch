@@ -11,6 +11,9 @@ env:
 jobs:
   build-windows:
     runs-on: windows-2022
+    env:
+      # mdk-sdk 下载源：SourceForge 服务故障时用官方 GitHub Release 备源
+      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.36.0
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
