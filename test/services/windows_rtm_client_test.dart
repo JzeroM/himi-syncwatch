@@ -189,6 +189,85 @@ void main() {
       await backend.dispose();
     });
 
+    test('查询失败时保留上次成功人数不清零', () async {
+      final backend = WindowsRtmBackend();
+      await backend.initialize(appId: 'app', userId: 'u1');
+      await pumpEvents();
+
+      // 第一次成功：5
+      final first = backend.getOnlineCount('ch');
+      await pumpEvents();
+      eventSink!.success({
+        'event': 'result',
+        'requestId': 77,
+        'method': 'getOnlineUsers',
+        'ok': true,
+        'reason': 'ok',
+        'count': 5,
+        'userIds': ['a', 'b'],
+      });
+      expect(await first, 5);
+
+      // 第二次失败：应返回上次成功值 5 而非 0
+      final second = backend.getOnlineCount('ch');
+      await pumpEvents();
+      eventSink!.success({
+        'event': 'result',
+        'requestId': 77,
+        'method': 'getOnlineUsers',
+        'ok': false,
+        'reason': '错误码 SomeFailure',
+      });
+      expect(await second, 5);
+
+      // 在线用户列表：先成功建立缓存
+      final idsOk = backend.getOnlineIds('ch');
+      await pumpEvents();
+      eventSink!.success({
+        'event': 'result',
+        'requestId': 77,
+        'method': 'getOnlineUsers',
+        'ok': true,
+        'reason': 'ok',
+        'count': 5,
+        'userIds': ['a', 'b'],
+      });
+      expect(await idsOk, ['a', 'b']);
+
+      // 再失败：同样保留上次成功值
+      final ids = backend.getOnlineIds('ch');
+      await pumpEvents();
+      eventSink!.success({
+        'event': 'result',
+        'requestId': 77,
+        'method': 'getOnlineUsers',
+        'ok': false,
+        'reason': '错误码 SomeFailure',
+      });
+      expect(await ids, ['a', 'b']);
+
+      await backend.dispose();
+    });
+
+    test('首次查询即失败返回 0/空', () async {
+      final backend = WindowsRtmBackend();
+      await backend.initialize(appId: 'app', userId: 'u1');
+      await pumpEvents();
+
+      final count = backend.getOnlineCount('ch');
+      await pumpEvents();
+      eventSink!.success({
+        'event': 'result',
+        'requestId': 77,
+        'method': 'getOnlineUsers',
+        'ok': false,
+        'reason': '错误码 SomeFailure',
+      });
+      expect(await count, 0);
+
+      await backend.dispose();
+    });
+
     test('未就绪时各操作快速失败', () async {
       final backend = WindowsRtmBackend();
       expect(backend.isReady, isFalse);

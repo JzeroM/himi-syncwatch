@@ -11,6 +11,9 @@ import 'package:himi_windows_rtm/himi_windows_rtm.dart';
 /// 与 RtmPresenceEventType 枚举索引一一对应（@JsonValue 同序）。
 class WindowsRtmBackend implements RtmBackend {
   bool _ready = false;
+  // 查询失败时保留上次成功值，避免一次失败把正确人数清成 0
+  int _lastOnlineCount = 0;
+  List<String> _lastOnlineIds = const [];
 
   final StreamController<Map<String, dynamic>> _messageController =
       StreamController.broadcast();
@@ -129,18 +132,30 @@ class WindowsRtmBackend implements RtmBackend {
 
   @override
   Future<int> getOnlineCount(String channel) async {
-    if (!_ready) return 0;
-    final result = await WindowsRtmClient.getOnlineUsers(channel);
-    if (result == null) return 0;
-    return result['count'] is int ? result['count'] as int : 0;
+    if (!_ready) return _lastOnlineCount;
+    final result = await WindowsRtmClient.invokeForResult(
+        'getOnlineUsers', {'channel': channel});
+    if (result['ok'] != true) {
+      LogService().log('RTM', '查询在线人数失败: ${result['reason']}');
+      return _lastOnlineCount;
+    }
+    final count = result['count'] is int ? result['count'] as int : 0;
+    _lastOnlineCount = count;
+    return count;
   }
 
   @override
   Future<List<String>> getOnlineIds(String channel) async {
-    if (!_ready) return [];
-    final result = await WindowsRtmClient.getOnlineUsers(channel);
-    if (result == null) return [];
-    return (result['userIds'] as List?)?.cast<String>() ?? const <String>[];
+    if (!_ready) return _lastOnlineIds;
+    final result = await WindowsRtmClient.invokeForResult(
+        'getOnlineUsers', {'channel': channel});
+    if (result['ok'] != true) {
+      LogService().log('RTM', '查询在线用户失败: ${result['reason']}');
+      return _lastOnlineIds;
+    }
+    final ids = (result['userIds'] as List?)?.cast<String>() ?? const <String>[];
+    _lastOnlineIds = ids;
+    return ids;
   }
 
   @override
