@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
 void main() {
   int toggled = 0;
   int escaped = 0;
+  int showControls = 0;
 
   int seekMs = 0;
   double volumeDelta = 0;
@@ -15,6 +16,8 @@ void main() {
     VoidCallback? onEscape,
     bool tvMode = false,
     bool controlsVisible = true,
+    VoidCallback? onShowControls,
+    FocusNode? focusNode,
   }) =>
       Directionality(
         textDirection: TextDirection.ltr,
@@ -25,6 +28,8 @@ void main() {
           controlsVisible: controlsVisible,
           onSeekRelative: (ms) => seekMs += ms,
           onVolumeDelta: (v) => volumeDelta += v,
+          onShowControls: onShowControls,
+          focusNode: focusNode,
           child: const SizedBox(width: 100, height: 100),
         ),
       );
@@ -32,6 +37,7 @@ void main() {
   setUp(() {
     toggled = 0;
     escaped = 0;
+    showControls = 0;
     seekMs = 0;
     volumeDelta = 0;
   });
@@ -227,5 +233,59 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
+  });
+
+  testWidgets('TV：中键与媒体键暂停播放同时唤出控制条', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(
+        wrap(tvMode: true, onShowControls: () => showControls++),
+      );
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.enter);
+      await simulateKeyUpEvent(LogicalKeyboardKey.enter);
+      expect(toggled, 1);
+      expect(showControls, 1);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.mediaPlayPause);
+      await simulateKeyUpEvent(LogicalKeyboardKey.mediaPlayPause);
+      expect(toggled, 2);
+      expect(showControls, 2);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('非 TV 模式中键不唤出控制条', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(
+        wrap(tvMode: false, onShowControls: () => showControls++),
+      );
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.enter);
+      await simulateKeyUpEvent(LogicalKeyboardKey.enter);
+      expect(toggled, 0);
+      expect(showControls, 0);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('外部 focusNode 由调用方管理（卸载不重复释放）', (tester) async {
+    final node = FocusNode(debugLabel: 'externalHotkey');
+    await tester.pumpWidget(wrap(tvMode: true, focusNode: node));
+    await tester.pump();
+
+    // 卸载：组件不得 dispose 外部传入节点
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    // 调用方手动释放：若组件已释放会抛 double-dispose
+    node.dispose();
+    expect(tester.takeException(), isNull);
   });
 }

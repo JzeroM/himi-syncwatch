@@ -122,15 +122,15 @@ class _TvFocusableActiveState extends State<_TvFocusableActive> {
                           Border.all(color: widget.highlightColor, width: 3),
                       boxShadow: [
                         BoxShadow(
-                          color: widget.highlightColor.withValues(alpha: 0.45),
-                          blurRadius: 10,
-                          spreadRadius: 1,
+                          color: widget.highlightColor.withValues(alpha: 0.55),
+                          blurRadius: 14,
+                          spreadRadius: 1.5,
                         ),
                       ],
                     )
                   : null,
               child: AnimatedScale(
-                scale: focused ? 1.04 : 1.0,
+                scale: focused ? 1.06 : 1.0,
                 duration: const Duration(milliseconds: 120),
                 curve: Curves.easeOut,
                 child: widget.child,

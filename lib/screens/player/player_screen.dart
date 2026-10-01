@@ -177,6 +177,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   StreamSubscription? _rtmSubscription;
   bool _isHost = false;
   bool _showControls = true;
+
+  /// 热键层焦点（PlayerHotkey 外部节点）：控制条隐藏后焦点回落于此，
+  /// 遥控器方向键恢复 seek/音量语义
+  final FocusNode _hotkeyFocusNode = FocusNode(debugLabel: 'PlayerHotkey');
+
+  /// 控制条进度滑杆焦点：TV 唤出控制条后焦点落位点
+  final FocusNode _controlsFocusNode =
+      FocusNode(debugLabel: 'PlayerSeekSlider');
   Duration _position = Duration.zero;
   final ValueNotifier<Duration> _positionNotifier =
       ValueNotifier(Duration.zero);
@@ -2030,6 +2038,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
+            // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成确认
+            autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
             child: const Text('确定离开'),
           ),
         ],
@@ -2237,6 +2247,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _resetHideTimer();
   }
 
+  /// TV 中键/媒体键唤出控制条：显示 + 重置自动隐藏计时 + 焦点落进度滑杆
+  /// （焦点在滑杆时左右键调进度，上下键移动到控制条按钮）
+  void _showControlsForTv() {
+    if (!_showControls) setState(() => _showControls = true);
+    _resetHideTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _showControls) _controlsFocusNode.requestFocus();
+    });
+  }
+
   void _resetHideTimer() {
     _hideControlsTimer?.cancel();
     if (_showControls) {
@@ -2248,6 +2268,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _showAudioMenu = false;
             _showDecodeModeMenu = false;
           });
+          // 焦点从滑杆回落到热键层（滑杆即将卸载），恢复 seek/音量按键
+          if (_controlsFocusNode.hasFocus) {
+            _hotkeyFocusNode.requestFocus();
+          }
         }
       });
     }
@@ -2582,6 +2606,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
     _hideControlsTimer?.cancel();
+    _hotkeyFocusNode.dispose();
+    _controlsFocusNode.dispose();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
     _gestureHintTimer?.cancel();
@@ -2693,6 +2719,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         controlsVisible: _showControls,
         onSeekRelative: (deltaMs) => _seekRelative(deltaMs),
         onVolumeDelta: _handleHotkeyVolumeDelta,
+        onShowControls: _showControlsForTv,
+        focusNode: _hotkeyFocusNode,
         child: Scaffold(
           backgroundColor: Colors.black,
           body: GestureDetector(
@@ -3374,6 +3402,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 second: _durationNotifier,
                 builder: (context, pos, dur, _) {
                   return Slider(
+                    focusNode: _controlsFocusNode,
                     value: dur.inMilliseconds > 0
                         ? pos.inMilliseconds
                             .toDouble()

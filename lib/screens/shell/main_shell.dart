@@ -4,11 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
+import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 /// 四标签壳：首页 / Emby服务器 / 声网配置 / 设置。
 ///
+/// - TV 模式（任意宽度）：顶部横排导航栏（遥控器左右键切换，常驻不隐藏）
 /// - 宽窗口（≥1000px，桌面）：左缘吊绳 + 百叶窗抽屉导航
 /// - 窄窗口（手机/小窗）：浮动玻璃胶囊底部导航，滑到底部时胶囊淡出
 /// 壳层绘制主题色三段渐变背景（各标签页透明以透出）。
@@ -53,9 +55,8 @@ class _MainShellState extends ConsumerState<MainShell> {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     // 三键虚拟按键（≥40）：紧贴其上沿 +2，避免被遮挡又不留空隙；
     // 手势条（≤34，透明）或无安全区：贴近屏底保留少量空间
-    final bottomGap = bottomInset >= 40
-        ? bottomInset + 2
-        : (bottomInset > 0 ? 6.0 : 4.0);
+    final bottomGap =
+        bottomInset >= 40 ? bottomInset + 2 : (bottomInset > 0 ? 6.0 : 4.0);
 
     // 主题色三段渐变（null 时保持应用底色）
     final themeColorValue =
@@ -79,7 +80,33 @@ class _MainShellState extends ConsumerState<MainShell> {
       child: widget.shell,
     );
 
-    final isDesktop = MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint;
+    final isDesktop =
+        MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint;
+
+    // TV 模式优先于宽度断点：任意宽度都用顶部横排导航（遥控器友好），
+    // 彻底避开高 DPI 电视盒子逻辑宽度不足 1000 而落入底部胶囊的问题
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    if (tvMode) {
+      return Scaffold(
+        extendBody: true,
+        body: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(child: gradientBg),
+            Column(
+              children: [
+                TvTopNavBar(
+                  currentIndex: widget.shell.currentIndex,
+                  onSelect: _goBranch,
+                ),
+                Expanded(child: scrollable),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     if (isDesktop) {
       // 桌面：左右分栏抽屉导航（展开时内容右移不遮挡），无底部胶囊。
       // 渐变铺在最底层全宽，抽屉区与内容区共用同一张连续背景

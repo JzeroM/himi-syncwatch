@@ -1,16 +1,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_directional_scroll.dart';
 
 import '../helpers/test_fakes.dart';
 
 Future<ProviderContainer> _pumpScreen(
   WidgetTester tester, {
   AppSettings initial = const AppSettings(),
+  bool remote = false,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -19,10 +22,11 @@ Future<ProviderContainer> _pumpScreen(
   );
   addTearDown(container.dispose);
 
+  const Widget page = MaterialApp(home: SettingsScreen());
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: SettingsScreen()),
+      child: remote ? TvRemoteShortcuts(child: page) : page,
     ),
   );
   await tester.pumpAndSettle();
@@ -109,6 +113,26 @@ void main() {
     await tester.tap(tvSwitch);
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).tvMode, isTrue);
+  });
+
+  testWidgets('TV 遥控器 OK 两段式：作用域落焦首个交互项并激活', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      initial: const AppSettings(themeColor: 0xFF86E3D6),
+      remote: true,
+    );
+    expect(container.read(settingsProvider).themeColor, isNotNull);
+
+    // 第一段：焦点停在页面作用域，OK 落焦到首个交互项（主题色默认块）
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus, isNot(isA<FocusScopeNode>()));
+    expect(container.read(settingsProvider).themeColor, isNotNull);
+
+    // 第二段：焦点在默认色块上，OK 激活（清空主题色）
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).themeColor, isNull);
   });
 
   testWidgets('展示主题色分节（标题+默认块+12色块+预览+三滑块）', (tester) async {

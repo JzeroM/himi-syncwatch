@@ -7,7 +7,8 @@ import 'player_platform.dart';
 /// - 空格 = 暂停/播放（仅 Windows；KeyRepeatEvent 非 KeyDownEvent，长按自动忽略）
 /// - ESC = 退出全屏（onEscape 提供时响应）
 /// - TV 模式（Android 遥控器）：
-///   * 中键 Enter/Select、媒体键 mediaPlayPause = 暂停/播放
+///   * 中键 Enter/Select、媒体键 mediaPlayPause = 暂停/播放 + 唤出控制条
+///     （onShowControls 提供时；控制条 5 秒后自动隐藏，隐藏期间再次唤出）
 ///   * 左右 = ±10 秒快进退（控制条隐藏时；可见时让位给焦点导航）
 ///   * 上下 = ±5% 音量（控制条隐藏时；可见时让位给焦点导航）
 class PlayerHotkey extends StatefulWidget {
@@ -19,6 +20,8 @@ class PlayerHotkey extends StatefulWidget {
     this.controlsVisible = true,
     this.onSeekRelative,
     this.onVolumeDelta,
+    this.onShowControls,
+    this.focusNode,
     required this.child,
   });
 
@@ -35,6 +38,13 @@ class PlayerHotkey extends StatefulWidget {
   /// ±百分比音量回调（如 +5 / -5）
   final ValueChanged<double>? onVolumeDelta;
 
+  /// TV 中键/媒体键暂停播放时同步唤出控制条
+  final VoidCallback? onShowControls;
+
+  /// 外部持有的焦点节点：控制条隐藏后焦点回落到热键层，
+  /// 方向键恢复 seek/音量语义（不传则内部创建）
+  final FocusNode? focusNode;
+
   final Widget child;
 
   @override
@@ -42,11 +52,13 @@ class PlayerHotkey extends StatefulWidget {
 }
 
 class _PlayerHotkeyState extends State<PlayerHotkey> {
-  final FocusNode _focusNode = FocusNode(debugLabel: 'PlayerHotkey');
+  late final FocusNode _focusNode =
+      widget.focusNode ?? FocusNode(debugLabel: 'PlayerHotkey');
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    // 仅释放内部创建的节点，外部传入的由持有者管理
+    if (widget.focusNode == null) _focusNode.dispose();
     super.dispose();
   }
 
@@ -72,7 +84,7 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
     }
 
     if (widget.tvMode) {
-      // 中键（OK 键）与媒体键 = 暂停/播放
+      // 中键（OK 键）与媒体键 = 暂停/播放 + 唤出控制条
       if (key == LogicalKeyboardKey.enter ||
           key == LogicalKeyboardKey.numpadEnter ||
           key == LogicalKeyboardKey.select ||
@@ -80,6 +92,7 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
           key == LogicalKeyboardKey.mediaPlay ||
           key == LogicalKeyboardKey.mediaPause) {
         widget.onTogglePlayPause();
+        widget.onShowControls?.call();
         return KeyEventResult.handled;
       }
 

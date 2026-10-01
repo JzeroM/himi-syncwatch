@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
@@ -130,6 +131,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
+            // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成删除
+            autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
             child: const Text('删除', style: TextStyle(color: Colors.red)),
           ),
         ],

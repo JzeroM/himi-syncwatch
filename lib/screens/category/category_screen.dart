@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 
 enum SortOption {
   dateDesc('最近添加', 'DateCreated', 'Descending'),
@@ -264,54 +265,56 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
       return const Center(child: Text('暂无内容'));
     }
 
-    return RefreshIndicator(
+    return TvRefreshHotkey(
       onRefresh: _loadFirstPage,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isPC = constraints.maxWidth > 600;
-          final columns = isPC
-              ? (constraints.maxWidth / 180).floor().clamp(2, 12)
-              : 4;
-          // 按列宽精确匹配 2:3 海报 + 文字区，海报完整不裁切
-          final cellWidth = (constraints.maxWidth -
-                  8 * 2 -
-                  8 * (columns - 1)) /
-              columns;
-          final childAspectRatio =
-              cellWidth / PosterCard.heightFor(cellWidth);
+      child: RefreshIndicator(
+        onRefresh: _loadFirstPage,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isPC = constraints.maxWidth > 600;
+            final columns =
+                isPC ? (constraints.maxWidth / 180).floor().clamp(2, 12) : 4;
+            // 按列宽精确匹配 2:3 海报 + 文字区，海报完整不裁切
+            final cellWidth =
+                (constraints.maxWidth - 8 * 2 - 8 * (columns - 1)) / columns;
+            final childAspectRatio =
+                cellWidth / PosterCard.heightFor(cellWidth);
 
-          return CustomScrollView(
-            controller: _scrollController,
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.all(8),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    childAspectRatio: childAspectRatio,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => PosterCard(
-                      key: ValueKey('posterCard_${_items[index].id}'),
-                      item: _items[index],
-                      width: cellWidth,
-                      onTap: () => context.push('/detail/${_items[index].id}'),
+            return CustomScrollView(
+              controller: _scrollController,
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.all(8),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      childAspectRatio: childAspectRatio,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
                     ),
-                    childCount: _items.length,
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => PosterCard(
+                        key: ValueKey('posterCard_${_items[index].id}'),
+                        item: _items[index],
+                        width: cellWidth,
+                        onTap: () =>
+                            context.push('/detail/${_items[index].id}'),
+                      ),
+                      childCount: _items.length,
+                    ),
                   ),
                 ),
-              ),
-              SliverToBoxAdapter(
-                child: _buildFooter(),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(height: MediaQuery.of(context).padding.bottom),
-              ),
-            ],
-          );
-        },
+                SliverToBoxAdapter(
+                  child: _buildFooter(),
+                ),
+                SliverToBoxAdapter(
+                  child:
+                      SizedBox(height: MediaQuery.of(context).padding.bottom),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/router.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_directional_scroll.dart';
 
 class HimiSyncApp extends ConsumerWidget {
   const HimiSyncApp({super.key});
@@ -8,10 +10,16 @@ class HimiSyncApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     return MaterialApp.router(
       title: 'HIMI',
       debugShowCheckedModeBanner: false,
+      // TV 模式：焦点事件链上挂遥控器按键层（方向键滚动贯通 + OK 作用域落焦）
+      builder: (context, child) {
+        final subtree = child ?? const SizedBox.shrink();
+        return tvMode ? TvRemoteShortcuts(child: subtree) : subtree;
+      },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6366F1),

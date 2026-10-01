@@ -6,10 +6,15 @@ import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 
 import '../helpers/test_fakes.dart';
 
-Future<void> pumpApp(WidgetTester tester, Size size) async {
+Future<void> pumpApp(
+  WidgetTester tester,
+  Size size, {
+  AppSettings settings = const AppSettings(),
+}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -17,8 +22,7 @@ Future<void> pumpApp(WidgetTester tester, Size size) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        settingsProvider.overrideWith(
-            (ref) => FakeSettingsNotifier(const AppSettings())),
+        settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
         embyAuthServiceProvider.overrideWith((ref) => FakeEmbyAuthService()),
         embyServiceProvider.overrideWith((ref) => FakeEmbyService()),
       ],
@@ -117,6 +121,45 @@ void main() {
 
     expect(find.byKey(const ValueKey('shellNavBarPadding')), findsOneWidget);
     expect(find.byKey(const ValueKey('drawerToggle')), findsNothing);
+    expect(find.byKey(const ValueKey('shellContentArea')), findsNothing);
+  });
+
+  testWidgets('TV 模式窄宽度（<1000）用顶部横排导航，无底部胶囊无桌面把手', (tester) async {
+    // 模拟高 DPI 盒子：逻辑宽度 960 < 1000，未特判会落入底部胶囊
+    await pumpApp(
+      tester,
+      const Size(960, 540),
+      settings: const AppSettings(tvMode: true),
+    );
+    await tester.pump();
+
+    expect(find.byType(TvTopNavBar), findsOneWidget);
+    expect(find.byKey(const ValueKey('shellNavBarPadding')), findsNothing);
+    expect(find.byKey(const ValueKey('drawerToggle')), findsNothing);
+    expect(
+      find.descendant(
+          of: find.byType(TvTopNavBar), matching: find.text('HIMI')),
+      findsOneWidget,
+    );
+
+    // 点顶部导航切分支
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
+  });
+
+  testWidgets('TV 模式宽宽度（≥1000）同样用顶部导航，覆盖桌面抽屉', (tester) async {
+    await pumpApp(
+      tester,
+      const Size(1280, 720),
+      settings: const AppSettings(tvMode: true),
+    );
+    await tester.pump();
+
+    expect(find.byType(TvTopNavBar), findsOneWidget);
+    expect(find.byKey(const ValueKey('drawerToggle')), findsNothing);
+    expect(find.byKey(const ValueKey('shellNavBarPadding')), findsNothing);
     expect(find.byKey(const ValueKey('shellContentArea')), findsNothing);
   });
 }

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
@@ -250,44 +251,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ],
                         ),
                       )
-                    : RefreshIndicator(
+                    : TvRefreshHotkey(
                         onRefresh: _loadMedia,
-                        child: ListView.builder(
-                          padding: EdgeInsets.only(
-                            top: GlassConfig.topInsetOf(context),
-                            bottom: GlassConfig.bottomReserveOf(context),
+                        child: RefreshIndicator(
+                          onRefresh: _loadMedia,
+                          child: ListView.builder(
+                            padding: EdgeInsets.only(
+                              top: GlassConfig.topInsetOf(context),
+                              bottom: GlassConfig.bottomReserveOf(context),
+                            ),
+                            itemCount: _categories.length +
+                                (_libraries.isNotEmpty ? 1 : 0) +
+                                (_counts != null ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              final headerCount = _libraries.isNotEmpty ? 1 : 0;
+                              if (index < headerCount) {
+                                return _LibraryBar(
+                                  libraries: _libraries,
+                                  onOpen: (lib) => context.push(
+                                    '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
+                                  ),
+                                );
+                              }
+                              final catIndex = index - headerCount;
+                              if (catIndex < _categories.length) {
+                                final cat = _categories[catIndex];
+                                return _CategorySection(
+                                  category: cat,
+                                  onViewAll: () => context.push(
+                                    '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
+                                  ),
+                                  onItemTap: (item) =>
+                                      context.push('/detail/${item.id}'),
+                                );
+                              }
+                              // 列表收尾：媒体统计面板（计数加载成功才渲染）
+                              return StatsPanel(
+                                key: const ValueKey('statsPanel'),
+                                counts: _counts!,
+                              );
+                            },
                           ),
-                          itemCount: _categories.length +
-                              (_libraries.isNotEmpty ? 1 : 0) +
-                              (_counts != null ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            final headerCount = _libraries.isNotEmpty ? 1 : 0;
-                            if (index < headerCount) {
-                              return _LibraryBar(
-                                libraries: _libraries,
-                                onOpen: (lib) => context.push(
-                                  '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
-                                ),
-                              );
-                            }
-                            final catIndex = index - headerCount;
-                            if (catIndex < _categories.length) {
-                              final cat = _categories[catIndex];
-                              return _CategorySection(
-                                category: cat,
-                                onViewAll: () => context.push(
-                                  '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
-                                ),
-                                onItemTap: (item) =>
-                                    context.push('/detail/${item.id}'),
-                              );
-                            }
-                            // 列表收尾：媒体统计面板（计数加载成功才渲染）
-                            return StatsPanel(
-                              key: const ValueKey('statsPanel'),
-                              counts: _counts!,
-                            );
-                          },
                         ),
                       ),
       ),
