@@ -14,6 +14,8 @@ class DiagnosticExport {
   ///
   /// 各段内容由调用方从 [PlaybackDiagnostics] 与状态采集器取来传入，
   /// 本类只负责拼装与排序，不持有任何状态。
+  /// [quickSnapshot]：可选的快速快照（[buildQuick] 输出），插在摘要之后、
+  /// 解码环境之前——完整报告此前没有播放状态/帧率/码率段。
   static String build({
     required String buildSummary,
     required String diagSummary,
@@ -30,9 +32,14 @@ class DiagnosticExport {
     required String notes,
     required String statusLines,
     required String notableLines,
+    String? quickSnapshot,
   }) {
+    final quick = (quickSnapshot == null || quickSnapshot.isEmpty)
+        ? ''
+        : '$quickSnapshot\n\n';
     return '$buildSummary\n\n'
         '$diagSummary\n\n'
+        '$quick'
         '=== 解码环境 ===\n'
         '解码模式: $decodeMode | videoDecoders: $videoDecoders\n'
         '实际解码: ${decoderReport.video.display}\n'
@@ -48,6 +55,73 @@ class DiagnosticExport {
         '=== 诊断事件 ===\n$notes\n'
         '=== mdk 状态行 (fps/cache) ===\n$statusLines\n\n'
         '=== mdk 关键行 (解码器/丢帧/错误) ===\n$notableLines';
+  }
+
+  /// 时长/位置的时钟格式：`01:02.3`，超 1 小时为 `1h02m03s`。
+  static String formatClock(int ms) {
+    final h = ms ~/ 3600000;
+    final m = (ms % 3600000) ~/ 60000;
+    final s = (ms % 60000) ~/ 1000;
+    final milli = ms % 1000;
+    if (h > 0) {
+      return '${h}h${m.toString().padLeft(2, '0')}m'
+          '${s.toString().padLeft(2, '0')}s';
+    }
+    return '${m.toString().padLeft(2, '0')}:'
+        '${s.toString().padLeft(2, '0')}.${(milli ~/ 100)}';
+  }
+
+  /// 帧率行值：保留 1 位小数；取不到（0 或负值，探测未完成）显示 `-`，
+  /// 避免导出报告出现 `0.0fps` 与 `59.940000000000005fps` 这类噪音。
+  static String formatFps(double fps) =>
+      fps > 0 ? '${fps.toStringAsFixed(1)}fps' : '-';
+
+  /// 码率行值：0 表示 mediaInfo 未给出码率，显示 `-` 而非误导的 `0 kbps`。
+  static String formatBitrate(int kbps) => kbps > 0 ? '$kbps kbps' : '-';
+
+  /// 快速诊断快照：播放诊断 / 视频 / 音频 三段。
+  ///
+  /// 面板「复制诊断」与播放器完整报告共用（经 [build] 的 quickSnapshot
+  /// 参数），保证两处字段与格式化完全一致——此前面板导出用原始插值，
+  /// 帧率输出 `0.0fps`/长小数、码率 0 输出 `0kbps`，与面板 UI 行的
+  /// `-` 格式互相矛盾。
+  static String buildQuick({
+    required String playbackState,
+    required String mediaStatus,
+    required String position,
+    required String duration,
+    required int bufferedMs,
+    required int mediaBitrate,
+    required String mediaFormat,
+    required String videoCodec,
+    required String videoResolution,
+    required double videoFps,
+    required int videoBitrate,
+    required String pixelFormat,
+    required int doviProfile,
+    required String hdrType,
+    required String audioCodec,
+    required int audioSampleRate,
+    required int audioChannels,
+    required int audioBitrate,
+    required String stereoDownmix,
+  }) {
+    return '=== 播放诊断 ===\n'
+        '状态: $playbackState | 媒体: $mediaStatus\n'
+        '位置: $position / $duration\n'
+        '缓冲区: ${bufferedMs}ms\n'
+        '码率: ${formatBitrate(mediaBitrate)} | '
+        '封装: ${mediaFormat.isEmpty ? '-' : mediaFormat}\n\n'
+        '=== 视频 ===\n'
+        '编码: $videoCodec | 分辨率: $videoResolution\n'
+        '帧率: ${formatFps(videoFps)} | 码率: ${formatBitrate(videoBitrate)}\n'
+        '像素: $pixelFormat | DOVI: ${doviProfile > 0 ? 'P$doviProfile' : '-'}\n'
+        'HDR: $hdrType\n\n'
+        '=== 音频 ===\n'
+        '编码: $audioCodec | 采样率: ${audioSampleRate > 0 ? '${audioSampleRate}Hz' : '-'}\n'
+        '声道: ${audioChannels > 0 ? '${audioChannels}ch' : '-'} | '
+        '码率: ${formatBitrate(audioBitrate)}\n'
+        '降混: $stereoDownmix';
   }
 
   /// 缓冲进度行。

@@ -22,9 +22,9 @@ class DvDecoder {
   factory DvDecoder.fromMap(Map<Object?, Object?> map) => DvDecoder(
         name: (map['name'] as String?) ?? '?',
         mime: (map['mime'] as String?) ?? '',
-        dvProfiles:
-            ((map['dvProfiles'] as List<Object?>?) ?? const []).map((e) =>
-                (e as num?)?.toInt() ?? 0).toList(growable: false),
+        dvProfiles: ((map['dvProfiles'] as List<Object?>?) ?? const [])
+            .map((e) => (e as num?)?.toInt() ?? 0)
+            .toList(growable: false),
         isSoftware: (map['isSoftware'] as bool?) ?? false,
       );
 
@@ -45,7 +45,8 @@ class DvDecoder {
     // 去掉厂商/平台段（如 qti / MS / RTK / android），但保留有意义的后续段
     if (parts.length > 1 &&
         parts.first.length <= 8 &&
-        (!_isKnownCodec(parts.first) || _notVendor.contains(parts.first.toLowerCase()))) {
+        (!_isKnownCodec(parts.first) ||
+            _notVendor.contains(parts.first.toLowerCase()))) {
       parts.removeAt(0);
     }
     return parts.join('.');
@@ -63,9 +64,8 @@ class DvDecoder {
   String get display {
     final b = StringBuffer('$shortName (${mime.replaceFirst('video/', '')}');
     if (dvProfiles.isNotEmpty) {
-      final hex = dvProfiles
-          .map((p) => p.toRadixString(16).padLeft(4, '0'))
-          .join('/');
+      final hex =
+          dvProfiles.map((p) => p.toRadixString(16).padLeft(4, '0')).join('/');
       b.write(', p$hex');
     }
     b.write(')');
@@ -137,8 +137,7 @@ class CodecSelection {
 
   bool get hasPicked => picked != null && picked!.isNotEmpty;
 
-  String get display =>
-      hasPicked ? picked! : (error == null ? '未探测' : '探测失败');
+  String get display => hasPicked ? picked! : (error == null ? '未探测' : '探测失败');
 
   factory CodecSelection.fromMap(Map<Object?, Object?> map) => CodecSelection(
         picked: map['picked'] as String?,
@@ -254,7 +253,9 @@ class DolbyVisionService {
   /// 首行据此直接说明「这份日志来自缺插件的旧包」，避免再误判为代码 bug。
   static Future<BuildIdentity> buildIdentity() async {
     if (!_isAndroid) {
-      return const BuildIdentity(error: '非 Android 平台');
+      // 通道仅 Android 注册：channelOk=false 是平台差异而非缺插件，
+      // applicable=false 让 summary/channelMissing 不再误报
+      return const BuildIdentity(error: '非 Android 平台', applicable: false);
     }
     try {
       final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
@@ -291,6 +292,7 @@ class BuildIdentity {
     this.versionCode,
     this.error,
     this.channelOk = false,
+    this.applicable = true,
   });
 
   /// 应用版本号，如 `1.1.16`；取不到时为 null 或空串。
@@ -305,13 +307,21 @@ class BuildIdentity {
   /// `com.himi/dolby_vision` 通道是否应答。false 即产物缺原生插件。
   final bool channelOk;
 
+  /// 通道在当前平台是否适用（原生插件仅注册在 Android）。
+  /// false = 非 Android，此时 channelOk=false 属正常，不是缺插件。
+  final bool applicable;
+
   bool get hasVersion => versionName != null && versionName!.isNotEmpty;
 
   /// 是否因通道未注册而无法确认版本——诊断报告必须醒目提示这种情况。
-  bool get channelMissing => !channelOk;
+  /// 非 Android 平台通道本就不存在，不构成「缺插件」问题。
+  bool get channelMissing => applicable && !channelOk;
 
   /// 报告首行的一行摘要。
   String get summary {
+    if (!applicable) {
+      return '不适用 | DV通道仅Android';
+    }
     if (!channelOk) {
       return '未知 | DV通道未注册(产物缺原生插件)';
     }

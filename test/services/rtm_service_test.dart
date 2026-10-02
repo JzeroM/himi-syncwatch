@@ -35,11 +35,11 @@ class FakeRtmBackend implements RtmBackend {
   Stream<Map<String, dynamic>> get messageStream => messageController.stream;
 
   @override
-  Stream<Map<String, dynamic>> get presenceStream =>
-      presenceController.stream;
+  Stream<Map<String, dynamic>> get presenceStream => presenceController.stream;
 
   @override
-  Future<void> initialize({required String appId, required String userId}) async {
+  Future<void> initialize(
+      {required String appId, required String userId}) async {
     if (hangOnInitialize) {
       // 模拟底层平台通道永久挂起
       await Completer<void>().future;
@@ -203,8 +203,8 @@ void main() {
       expect(backend.published, hasLength(1));
       expect(backend.published.single.channel, 'ch1');
 
-      final msg = jsonDecode(backend.published.single.message)
-          as Map<String, dynamic>;
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
       expect(msg['type'], 'heartbeat');
       expect(msg['position'], 63.5);
       expect(msg['playing'], isTrue);
@@ -221,8 +221,8 @@ void main() {
         itemId: 'item1',
       );
 
-      final msg = jsonDecode(backend.published.single.message)
-          as Map<String, dynamic>;
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
       expect(msg['type'], 'command');
       expect(msg['action'], 'seek');
       expect(msg['position'], 99);
@@ -240,10 +240,39 @@ void main() {
       );
 
       expect(backend.published.single.channel, 'ch9');
-      final msg = jsonDecode(backend.published.single.message)
-          as Map<String, dynamic>;
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
       expect(msg['type'], 'roomInfo');
       expect(msg['episodeIds'], ['e1', 'e2']);
+    });
+
+    test('sendRoomInfo 携带逐集版本列表（与 episodeIds 索引对齐，null = 默认）', () async {
+      await service.sendRoomInfo(
+        channelName: 'ch9b',
+        episodeIds: const ['e1', 'e2', 'e3'],
+        episodeMediaSourceIds: const ['sv_b', null, 'sv_a'],
+      );
+
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
+      expect(msg['episodeMediaSourceIds'], ['sv_b', null, 'sv_a'],
+          reason: '逐集单选版本按索引对齐下发，观众侧据此选集版本');
+      expect(
+        (msg['episodeMediaSourceIds'] as List).length,
+        (msg['episodeIds'] as List).length,
+        reason: '两个列表长度必须一致（索引对齐约定）',
+      );
+    });
+
+    test('sendRoomInfo 未传逐集版本时不带该键（兼容旧调用方）', () async {
+      await service.sendRoomInfo(
+        channelName: 'ch9c',
+        episodeIds: const ['e1'],
+      );
+
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
+      expect(msg.containsKey('episodeMediaSourceIds'), isFalse);
     });
 
     test('sendRoomInfo 空房间不携带 mediaItemId 键', () async {
@@ -252,8 +281,8 @@ void main() {
         episodeIds: const [],
       );
 
-      final msg = jsonDecode(backend.published.single.message)
-          as Map<String, dynamic>;
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
       expect(msg['type'], 'roomInfo');
       expect(msg.containsKey('mediaItemId'), isFalse);
     });

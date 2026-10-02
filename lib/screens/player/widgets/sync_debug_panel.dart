@@ -126,11 +126,16 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
   @override
   Widget build(BuildContext context) {
     final logs = LogService().entries;
-    final decodeModeLabel = AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ?? '-';
+    final decodeModeLabel =
+        AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ??
+            '-';
 
     // 播放状态颜色
-    final stateColor = widget.playbackState == 'playing' ? Colors.green :
-                       widget.playbackState == 'paused' ? Colors.amber : Colors.red;
+    final stateColor = widget.playbackState == 'playing'
+        ? Colors.green
+        : widget.playbackState == 'paused'
+            ? Colors.amber
+            : Colors.red;
     // 媒体状态颜色
     final statusColor = widget.mediaStatusStr == 'buffering' ||
             widget.mediaStatusStr == 'stalled'
@@ -149,7 +154,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
+        border:
+            Border.all(color: Colors.green.withValues(alpha: 0.5), width: 1),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -159,7 +165,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.green.withValues(alpha: 0.15),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(8)),
             ),
             child: Row(
               children: [
@@ -171,27 +178,39 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     children: [
                       Icon(Icons.drag_indicator, color: Colors.green, size: 16),
                       SizedBox(width: 6),
-                      Text('播放调试', style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
+                      Text('播放调试',
+                          style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
                 const Spacer(),
                 GestureDetector(
                   onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: _exportDiagnostics()));
-                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('诊断信息已复制')));
+                    await Clipboard.setData(
+                        ClipboardData(text: _exportDiagnostics()));
+                    if (mounted)
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('诊断信息已复制')));
                   },
-                  child: const Icon(Icons.copy, color: Colors.white54, size: 16),
+                  child:
+                      const Icon(Icons.copy, color: Colors.white54, size: 16),
                 ),
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => LogService().shareLogs(),
-                  child: const Icon(Icons.share, color: Colors.white54, size: 16),
+                  child:
+                      const Icon(Icons.share, color: Colors.white54, size: 16),
                 ),
                 const SizedBox(width: 8),
                 GestureDetector(
-                  onTap: () => ref.read(settingsProvider.notifier).update(showSyncDebug: false),
-                  child: const Icon(Icons.close, color: Colors.white54, size: 16),
+                  onTap: () => ref
+                      .read(settingsProvider.notifier)
+                      .update(showSyncDebug: false),
+                  child:
+                      const Icon(Icons.close, color: Colors.white54, size: 16),
                 ),
               ],
             ),
@@ -209,13 +228,19 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     setState(() => _sectionPlayback = !_sectionPlayback);
                   }),
                   if (_sectionPlayback) ...[
-                    _debugRowColored('状态', widget.playbackState.toUpperCase(), stateColor),
+                    _debugRowColored(
+                        '状态', widget.playbackState.toUpperCase(), stateColor),
                     _debugRowColored('媒体', widget.mediaStatusStr, statusColor),
                     _debugRow('位置', _formatMs(widget.positionMs)),
                     _debugRow('时长', _formatMs(widget.durationMs)),
                     _debugRow('缓冲区', '${widget.bufferedMs}ms'),
-                    _debugRow('码率', widget.mediaBitrate > 0 ? '${widget.mediaBitrate}kbps' : '-'),
-                    _debugRow('封装', widget.mediaFormat.isNotEmpty ? widget.mediaFormat : '-'),
+                    _debugRow('码率',
+                        DiagnosticExport.formatBitrate(widget.mediaBitrate)),
+                    _debugRow(
+                        '封装',
+                        widget.mediaFormat.isNotEmpty
+                            ? widget.mediaFormat
+                            : '-'),
                   ],
 
                   const SizedBox(height: 4),
@@ -227,8 +252,10 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                   if (_sectionVideo) ...[
                     _debugRow('编码', widget.videoCodecName),
                     _debugRow('分辨率', widget.videoResolution),
-                    _debugRow('帧率', widget.videoFps > 0 ? '${widget.videoFps.toStringAsFixed(1)}fps' : '-'),
-                    _debugRow('码率', widget.videoBitrate > 0 ? '${widget.videoBitrate}kbps' : '-'),
+                    _debugRow(
+                        '帧率', DiagnosticExport.formatFps(widget.videoFps)),
+                    _debugRow('码率',
+                        DiagnosticExport.formatBitrate(widget.videoBitrate)),
                     _debugRow('像素格式', widget.pixelFormat),
                     if (widget.doviProfile > 0)
                       _debugRow('DOVI', 'P${widget.doviProfile}'),
@@ -244,9 +271,18 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                   }),
                   if (_sectionAudio) ...[
                     _debugRow('编码', widget.audioCodecName),
-                    _debugRow('采样率', widget.audioSampleRate > 0 ? '${widget.audioSampleRate}Hz' : '-'),
-                    _debugRow('声道', widget.audioChannels > 0 ? '${widget.audioChannels}ch' : '-'),
-                    _debugRow('码率', widget.audioBitrate > 0 ? '${widget.audioBitrate}kbps' : '-'),
+                    _debugRow(
+                        '采样率',
+                        widget.audioSampleRate > 0
+                            ? '${widget.audioSampleRate}Hz'
+                            : '-'),
+                    _debugRow(
+                        '声道',
+                        widget.audioChannels > 0
+                            ? '${widget.audioChannels}ch'
+                            : '-'),
+                    _debugRow('码率',
+                        DiagnosticExport.formatBitrate(widget.audioBitrate)),
                     _debugRow('降混', widget.stereoDownmix),
                   ],
 
@@ -262,8 +298,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     _debugRow('实际解码', widget.decoderReport.video.display),
                     _debugRow('mdk原值', widget.mdkRawDecoder),
                     _debugRow('音频实际', widget.decoderReport.audio.display),
-                    _debugRow(
-                        '探测预选',
+                    _debugRow('探测预选',
                         DiagnosticExport.formatPredicted(widget.decoderReport)),
                     if (widget.dvCapability.isNotEmpty)
                       _debugRow('DV硬解', widget.dvCapability),
@@ -279,10 +314,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     if (widget.stallSummary.isEmpty)
                       _debugRow('状态', '采集中…')
                     else
-                      ...widget.stallSummary
-                          .trim()
-                          .split('\n')
-                          .map((line) {
+                      ...widget.stallSummary.trim().split('\n').map((line) {
                         final idx = line.indexOf(':');
                         if (idx <= 0) return _debugRow('', line);
                         return _debugRow(line.substring(0, idx).trim(),
@@ -293,8 +325,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                         widget.bufProgress < 0
                             ? '-'
                             : '${widget.bufProgress}%'),
-                    _debugRow('深度诊断',
-                        widget.deepLogActive ? '开(实测fps)' : '关(设置中开启)'),
+                    _debugRow(
+                        '深度诊断', widget.deepLogActive ? '开(实测fps)' : '关(设置中开启)'),
                     const SizedBox(height: 6),
                     SizedBox(
                       width: double.infinity,
@@ -351,7 +383,10 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                           final idx = logs.length - 1 - i;
                           return Text(
                             logs[idx],
-                            style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
+                            style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 9,
+                                fontFamily: 'monospace'),
                           );
                         },
                       ),
@@ -365,34 +400,37 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
     );
   }
 
-  String _formatMs(int ms) {
-    final h = ms ~/ 3600000;
-    final m = (ms % 3600000) ~/ 60000;
-    final s = (ms % 60000) ~/ 1000;
-    final milli = ms % 1000;
-    if (h > 0) return '${h}h${m.toString().padLeft(2, '0')}m${s.toString().padLeft(2, '0')}s';
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}.${(milli ~/ 100)}';
-  }
+  String _formatMs(int ms) => DiagnosticExport.formatClock(ms);
+
+  /// 播放诊断/视频/音频三段：与播放器完整报告共用同一组装函数，
+  /// 帧率/码率 0 时统一输出 `-`（此前这里用原始插值，`0kbps`/长小数
+  /// 与面板 UI 行互相矛盾）。
+  String _buildQuickSnapshot() => DiagnosticExport.buildQuick(
+        playbackState: widget.playbackState,
+        mediaStatus: widget.mediaStatusStr,
+        position: _formatMs(widget.positionMs),
+        duration: _formatMs(widget.durationMs),
+        bufferedMs: widget.bufferedMs,
+        mediaBitrate: widget.mediaBitrate,
+        mediaFormat: widget.mediaFormat,
+        videoCodec: widget.videoCodecName,
+        videoResolution: widget.videoResolution,
+        videoFps: widget.videoFps,
+        videoBitrate: widget.videoBitrate,
+        pixelFormat: widget.pixelFormat,
+        doviProfile: widget.doviProfile,
+        hdrType: widget.hdrType,
+        audioCodec: widget.audioCodecName,
+        audioSampleRate: widget.audioSampleRate,
+        audioChannels: widget.audioChannels,
+        audioBitrate: widget.audioBitrate,
+        stereoDownmix: widget.stereoDownmix,
+      );
 
   String _exportDiagnostics() {
     final buf = StringBuffer();
     buf.writeln(widget.buildSummary);
-    buf.writeln('=== 播放诊断 ===');
-    buf.writeln('状态: ${widget.playbackState} | 媒体: ${widget.mediaStatusStr}');
-    buf.writeln('位置: ${_formatMs(widget.positionMs)} / ${_formatMs(widget.durationMs)}');
-    buf.writeln('缓冲区: ${widget.bufferedMs}ms');
-    buf.writeln('码率: ${widget.mediaBitrate}kbps | 封装: ${widget.mediaFormat}');
-    buf.writeln();
-    buf.writeln('=== 视频 ===');
-    buf.writeln('编码: ${widget.videoCodecName} | 分辨率: ${widget.videoResolution}');
-    buf.writeln('帧率: ${widget.videoFps}fps | 码率: ${widget.videoBitrate}kbps');
-    buf.writeln('像素: ${widget.pixelFormat} | DOVI: ${widget.doviProfile > 0 ? "P${widget.doviProfile}" : "-"}');
-    buf.writeln('HDR: ${widget.hdrType}');
-    buf.writeln();
-    buf.writeln('=== 音频 ===');
-    buf.writeln('编码: ${widget.audioCodecName} | 采样率: ${widget.audioSampleRate}Hz');
-    buf.writeln('声道: ${widget.audioChannels}ch | 码率: ${widget.audioBitrate}kbps');
-    buf.writeln('降混: ${widget.stereoDownmix}');
+    buf.writeln(_buildQuickSnapshot());
     buf.writeln();
     buf.writeln('=== 解码器 ===');
     buf.writeln('模式: ${widget.decodeMode} | 配置: ${widget.actualVideoDecoders}');
@@ -419,9 +457,14 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
       onTap: onTap,
       child: Row(
         children: [
-          Icon(expanded ? Icons.expand_more : Icons.chevron_right, color: Colors.green, size: 16),
+          Icon(expanded ? Icons.expand_more : Icons.chevron_right,
+              color: Colors.green, size: 16),
           const SizedBox(width: 4),
-          Text(title, style: const TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(title,
+              style: const TextStyle(
+                  color: Colors.green,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -435,10 +478,12 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
         children: [
           SizedBox(
             width: 65,
-            child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+            child: Text(label,
+                style: const TextStyle(color: Colors.white54, fontSize: 10)),
           ),
           Expanded(
-            child: Text(value, style: const TextStyle(color: Colors.white70, fontSize: 10)),
+            child: Text(value,
+                style: const TextStyle(color: Colors.white70, fontSize: 10)),
           ),
         ],
       ),
@@ -453,10 +498,13 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
         children: [
           SizedBox(
             width: 65,
-            child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+            child: Text(label,
+                style: const TextStyle(color: Colors.white54, fontSize: 10)),
           ),
           Expanded(
-            child: Text(value, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+            child: Text(value,
+                style: TextStyle(
+                    color: color, fontSize: 10, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

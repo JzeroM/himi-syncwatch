@@ -24,6 +24,7 @@ import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/audio_filter_policy.dart';
+import 'package:himi_syncwatch/services/orientation_sensor_gate.dart';
 import 'package:himi_syncwatch/services/decoder_report.dart';
 import 'package:himi_syncwatch/services/diagnostic_export.dart';
 import 'package:himi_syncwatch/services/codec_mime_map.dart';
@@ -795,6 +796,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   number: e['number'] as int? ?? 0,
                   poster: e['poster'] as String? ?? '',
                   seriesName: e['seriesName'] as String? ?? '',
+                  // 建房选集面板逐集单选的版本（缺省 = 服务端默认）
+                  mediaSourceId: e['mediaSourceId'] as String?,
                   serverId: (e['serverId'] as String?) ?? widget.serverId,
                 ))
             .toList();
@@ -1542,6 +1545,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return DiagnosticExport.build(
       buildSummary: _buildSummary,
       diagSummary: _diagSummary,
+      // 完整报告此前没有播放状态/帧率/码率段，补同一份快照，
+      // 帧率/码率 0 时统一输出 `-`（与面板复制诊断一致）
+      quickSnapshot: DiagnosticExport.buildQuick(
+        playbackState: _playbackState,
+        mediaStatus: _mediaStatusStr,
+        position: DiagnosticExport.formatClock(_positionMs),
+        duration: DiagnosticExport.formatClock(_durationMs),
+        bufferedMs: _bufferedMs,
+        mediaBitrate: _mediaBitrate,
+        mediaFormat: _mediaFormat,
+        videoCodec: _videoCodecName,
+        videoResolution: _videoResolution,
+        videoFps: _videoFps,
+        videoBitrate: _videoBitrate,
+        pixelFormat: _pixelFormat,
+        doviProfile: _doviProfile,
+        hdrType: _hdrType,
+        audioCodec: _audioCodecName,
+        audioSampleRate: _audioSampleRate,
+        audioChannels: _audioChannels,
+        audioBitrate: _audioBitrate,
+        stereoDownmix: _stereoDownmix,
+      ),
       decodeMode:
           AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ??
               '-',
@@ -1828,6 +1854,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               episodeNumbers: _episodes.map((e) => e.number).toList(),
               episodePosters: _episodes.map((e) => e.poster).toList(),
               episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
+              // 逐集版本：观众按索引对齐应用
+              episodeMediaSourceIds:
+                  _episodes.map((e) => e.mediaSourceId).toList(),
               playUrl: _currentPlayUrl,
               token: _currentToken,
               subtitleStreams:
@@ -1871,6 +1900,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               episodeNumbers: _episodes.map((e) => e.number).toList(),
               episodePosters: _episodes.map((e) => e.poster).toList(),
               episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
+              // 逐集版本：观众按索引对齐应用
+              episodeMediaSourceIds:
+                  _episodes.map((e) => e.mediaSourceId).toList(),
               playUrl: _currentPlayUrl,
               token: _currentToken,
               subtitleStreams:
@@ -2089,6 +2121,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final posters = List<String>.from(message['episodePosters'] ?? []);
       final seriesNames =
           List<String>.from(message['episodeSeriesNames'] ?? []);
+      // 逐集版本（与 episodeIds 索引对齐，缺省 null = 默认版本）
+      final sourceIdsRaw = message['episodeMediaSourceIds'];
+      final sourceIds = sourceIdsRaw is List
+          ? List<dynamic>.from(sourceIdsRaw)
+          : const <dynamic>[];
       setState(() {
         _episodes = List.generate(
             epIds.length,
@@ -2099,6 +2136,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   number: i < numbers.length ? numbers[i] : 0,
                   poster: i < posters.length ? posters[i] : '',
                   seriesName: i < seriesNames.length ? seriesNames[i] : '',
+                  mediaSourceId:
+                      i < sourceIds.length ? sourceIds[i] as String? : null,
                   serverId: roomServerId,
                 ));
         _seriesName = message['seriesName'] ?? '';
@@ -2317,6 +2356,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _startOrientationSensor() {
+    // sensors_plus 仅 android/ios/web 有原生实现：桌面端订阅前的
+    // invokeMethod 会抛未处理的 MissingPluginException → FATAL 误报
+    if (!OrientationSensorGate.shouldSubscribeOrientationSensor(
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+    )) {
+      LogService().log('Sensor', '当前平台无加速度计实现，跳过摇一摇翻转');
+      return;
+    }
     double filteredX = 0;
     const alpha = 0.2;
     int flipCount = 0;
@@ -2533,6 +2581,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             number: epMap['number'] as int? ?? 0,
             poster: epMap['poster'] as String? ?? '',
             seriesName: seriesName,
+            // 加入资源时逐集单选的版本
+            mediaSourceId: epMap['mediaSourceId'] as String?,
             serverId: (epMap['serverId'] as String?) ?? serverId,
           ));
         }

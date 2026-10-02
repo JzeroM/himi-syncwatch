@@ -20,6 +20,7 @@ void main() {
     String notes = '(无诊断事件)\n',
     String statusLines = '(深度诊断未开启或无数据)',
     String notableLines = '(无)',
+    String? quickSnapshot,
   }) =>
       DiagnosticExport.build(
         buildSummary: buildSummary,
@@ -37,6 +38,7 @@ void main() {
         notes: notes,
         statusLines: statusLines,
         notableLines: notableLines,
+        quickSnapshot: quickSnapshot,
       );
 
   group('DiagnosticExport 解码环境', () {
@@ -202,6 +204,114 @@ void main() {
       expect(lines[0], '产物身份: 1.1.16+186 | DV通道已注册');
       expect(lines.any((l) => l == '卡顿次数: 11'), isTrue);
       expect(lines.any((l) => l == '累计卡顿: 19412ms'), isTrue);
+    });
+
+    test('quickSnapshot 插在摘要之后、解码环境之前', () {
+      final report = build(quickSnapshot: '=== 播放诊断 ===\n状态: playing');
+      expect(
+        report.indexOf('=== 播放诊断 ==='),
+        greaterThan(report.indexOf('卡顿次数')),
+      );
+      expect(
+        report.indexOf('=== 播放诊断 ==='),
+        lessThan(report.indexOf('=== 解码环境 ===')),
+      );
+    });
+
+    test('未传 quickSnapshot 时不出现快照段（回归旧行为）', () {
+      final report = build();
+      expect(report, isNot(contains('=== 播放诊断 ===')));
+      expect(report, contains('=== 解码环境 ==='));
+    });
+  });
+
+  group('DiagnosticExport 格式化函数', () {
+    test('formatFps：0/负值显示 -，正常值保留 1 位小数', () {
+      expect(DiagnosticExport.formatFps(0), '-');
+      expect(DiagnosticExport.formatFps(-1), '-');
+      expect(DiagnosticExport.formatFps(24), '24.0fps');
+      expect(DiagnosticExport.formatFps(29.97), '30.0fps');
+      // mdk 上报的浮点噪音不得整串输出
+      expect(DiagnosticExport.formatFps(59.940000000000005), '59.9fps');
+    });
+
+    test('formatBitrate：0 显示 -，不输出误导的 0 kbps', () {
+      expect(DiagnosticExport.formatBitrate(0), '-');
+      expect(DiagnosticExport.formatBitrate(-5), '-');
+      expect(DiagnosticExport.formatBitrate(38500), '38500 kbps');
+    });
+
+    test('formatClock：分钟内与超 1 小时两种格式', () {
+      expect(DiagnosticExport.formatClock(0), '00:00.0');
+      expect(DiagnosticExport.formatClock(125300), '02:05.3');
+      expect(DiagnosticExport.formatClock(3661000), '1h01m01s');
+    });
+  });
+
+  group('DiagnosticExport.buildQuick', () {
+    /// 只关心帧率/码率格式时的最小快照。
+    String quick({
+      double videoFps = 0,
+      int mediaBitrate = 0,
+      int videoBitrate = 0,
+      int audioBitrate = 0,
+      String mediaFormat = '',
+    }) =>
+        DiagnosticExport.buildQuick(
+          playbackState: 'playing',
+          mediaStatus: 'ok',
+          position: '00:10.0',
+          duration: '01:00.0',
+          bufferedMs: 1000,
+          mediaBitrate: mediaBitrate,
+          mediaFormat: mediaFormat,
+          videoCodec: 'hevc',
+          videoResolution: '3840x1608',
+          videoFps: videoFps,
+          videoBitrate: videoBitrate,
+          pixelFormat: 'yuv420p',
+          doviProfile: 0,
+          hdrType: 'SDR',
+          audioCodec: 'truehd',
+          audioSampleRate: 0,
+          audioChannels: 0,
+          audioBitrate: audioBitrate,
+          stereoDownmix: '关',
+        );
+
+    test('帧率/码率未取到（0）时输出 - 而非 0.0fps / 0kbps', () {
+      final text = quick();
+      expect(text, contains('帧率: -'));
+      expect(text, contains('码率: -'));
+      expect(text, isNot(contains('0.0fps')));
+      expect(text, isNot(contains('0kbps')));
+      expect(text, isNot(contains('0 kbps')));
+      // 采样率/声道同样为 0 时显示 -
+      expect(text, contains('采样率: -'));
+      expect(text, contains('声道: -'));
+    });
+
+    test('有值时带单位输出，封装为空显示 -', () {
+      final text = quick(
+        videoFps: 23.976,
+        mediaBitrate: 70000,
+        videoBitrate: 68000,
+        audioBitrate: 2000,
+        mediaFormat: 'mkv',
+      );
+      expect(text, contains('帧率: 24.0fps | 码率: 68000 kbps'));
+      expect(text, contains('码率: 70000 kbps | 封装: mkv'));
+      expect(text, contains('码率: 2000 kbps'));
+      expect(quick(), contains('封装: -'));
+    });
+
+    test('三段标题齐全（播放诊断/视频/音频）', () {
+      final text = quick();
+      expect(text, contains('=== 播放诊断 ==='));
+      expect(text, contains('=== 视频 ==='));
+      expect(text, contains('=== 音频 ==='));
+      expect(text, contains('位置: 00:10.0 / 01:00.0'));
+      expect(text, contains('降混: 关'));
     });
   });
 }

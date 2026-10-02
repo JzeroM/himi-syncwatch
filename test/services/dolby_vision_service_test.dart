@@ -398,6 +398,10 @@ void main() {
       expect(called, isFalse);
       expect(id.channelOk, isFalse);
       expect(id.error, '非 Android 平台');
+      // 非 Android：通道本就不存在，不得误报「产物缺原生插件」
+      expect(id.applicable, isFalse);
+      expect(id.channelMissing, isFalse);
+      expect(id.summary, '不适用 | DV通道仅Android');
     });
 
     test('原生返回空数据时不误报版本，通道仍视为已注册', () async {

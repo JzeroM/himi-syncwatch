@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
@@ -59,6 +61,58 @@ Future<ProviderContainer> _pumpDetail(
   );
   // 图片占位转圈动画不会 settle，改为固定帧推进：
   // 首帧处理加载微任务，再推进超过 500ms 的渐变过渡动画。
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
+  await tester.pump(const Duration(milliseconds: 600));
+  return container;
+}
+
+/// 带最小 GoRouter 的详情页：`/detail` → DetailScreen，`/player/:id` 落到
+/// 一个把路由参数打印出来的桩页，用于断言播放跳转的 query。
+Future<ProviderContainer> _pumpDetailInRouter(
+  WidgetTester tester, {
+  required MediaItem item,
+  FakeEmbyService? emby,
+  List<Override> extraOverrides = const [],
+}) async {
+  final container = ProviderContainer(
+    overrides: [
+      settingsProvider
+          .overrideWith((ref) => FakeSettingsNotifier(const AppSettings())),
+      embyServiceProvider
+          .overrideWith((ref) => emby ?? FakeEmbyService(item: item)),
+      posterColorProvider(_posterUrl).overrideWith((ref) async => null),
+      ...extraOverrides,
+    ],
+  );
+  addTearDown(container.dispose);
+
+  final router = GoRouter(
+    initialLocation: '/detail',
+    routes: [
+      GoRoute(
+        path: '/detail',
+        builder: (ctx, st) => DetailScreen(itemId: item.id),
+      ),
+      GoRoute(
+        path: '/player/:id',
+        builder: (ctx, st) => Scaffold(
+          body: Text('PLAYER:${st.pathParameters['id']}|${st.uri.query}'),
+        ),
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(
+        routerConfig: router,
+        theme: ThemeData.dark(),
+      ),
+    ),
+  );
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 100));
   await tester.pump(const Duration(milliseconds: 600));
@@ -1151,6 +1205,587 @@ void main() {
         expect(r.bottom, lessThanOrEqualTo(logicalHeight),
             reason: '$label 完整可见（锚点不过分靠下）');
       }
+    });
+  });
+
+  // ---- 每集选择器（方案 A）：版本/字幕/音轨绑选中集 ----
+
+  group('剧集每集选择器（方案 A）', () {
+    MediaStream audio(int idx, String lang) =>
+        MediaStream(type: 'Audio', codec: 'aac', language: lang, index: idx);
+    MediaStream sub(int idx, String lang) =>
+        MediaStream(type: 'Subtitle', codec: 'srt', language: lang, index: idx);
+
+    final seriesItem = MediaItem(
+      id: 'sv9',
+      name: '每集选择剧集',
+      type: 'Series',
+      posterUrl: _posterUrl,
+      overview: '简介。',
+    );
+
+    final ep1 = MediaItem(
+      id: 'p1',
+      name: '第1集',
+      type: 'Episode',
+      parentIndexNumber: 1,
+      indexNumber: 1,
+      posterUrl: _posterUrl,
+      mediaStreams: [audio(0, 'chi'), audio(1, 'eng'), sub(3, 'chi')],
+    );
+    final ep2 = MediaItem(
+      id: 'p2',
+      name: '第2集',
+      type: 'Episode',
+      parentIndexNumber: 1,
+      indexNumber: 2,
+      posterUrl: _posterUrl,
+      mediaStreams: [audio(0, 'chi'), audio(7, 'jpn'), sub(4, 'chi')],
+    );
+    final seasons9 = [
+      MediaItem(
+          id: 'sea9',
+          name: '第1季',
+          type: 'Season',
+          indexNumber: 1,
+          childCount: 2),
+    ];
+    final itemsByParent9 = {
+      'sv9': [ep1, ep2],
+    };
+
+    FakeEmbyService fake() => FakeEmbyService(
+          item: seriesItem,
+          itemsByParent: itemsByParent9,
+          seasons: seasons9,
+        );
+
+    /// 关闭底部弹窗（点遮罩），不改当前选择。
+    Future<void> dismissSheet(WidgetTester tester) async {
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+    }
+
+    /// 点音轨图标 → 选 [optionKey] → 关闭动画。
+    Future<void> pickAudio(WidgetTester tester, String optionKey) async {
+      final btn = find.byKey(const Key('audioSelectorButton'));
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.byKey(Key('trackOption_$optionKey')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+    }
+
+    /// 打开音轨 sheet 断言用：开 sheet 后返回。
+    Future<void> openAudioSheet(WidgetTester tester) async {
+      final btn = find.byKey(const Key('audioSelectorButton'));
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+    }
+
+    /// 点横卡选集。
+    Future<void> tapCard(WidgetTester tester, String id) async {
+      final card = find.byKey(Key('episodeCard_$id'));
+      await tester.ensureVisible(card);
+      await tester.pump();
+      await tester.tap(card);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    testWidgets('预选按集隔离：e1 选轨写 e1 的 map，e2 独立，全局 provider 不动', (tester) async {
+      final container =
+          await _pumpDetail(tester, item: seriesItem, emby: fake());
+
+      // 默认目标集 = 第1季第1集：字幕/音轨图标显示，单版本无版本图标
+      expect(find.byKey(const Key('subtitleSelectorButton')), findsOneWidget);
+      expect(find.byKey(const Key('audioSelectorButton')), findsOneWidget);
+      expect(find.byKey(const Key('versionSelectorButton')), findsNothing);
+
+      // e1 选 eng 轨（index 1）→ 写入 per-episode map，不动全局 provider
+      await pickAudio(tester, '1');
+      expect(container.read(pendingTrackSelectionProvider), isNull,
+          reason: '剧集预选不写全局槽（播放时才写）');
+      var audioBtn = tester
+          .widget<IconButton>(find.byKey(const Key('audioSelectorButton')));
+      expect(audioBtn.color, ThemeData.dark().colorScheme.primary,
+          reason: 'e1 已选轨，图标高亮');
+
+      // 切到 e2 → 选 jpn 轨（index 7），与 e1 互不覆盖
+      await tapCard(tester, 'p2');
+      await openAudioSheet(tester);
+      expect(
+          tester
+              .widget<RadioListTile<int?>>(
+                  find.byKey(const Key('trackOption_7')))
+              .groupValue,
+          isNull,
+          reason: 'e2 尚未预选');
+      await tester.tap(find.byKey(const Key('trackOption_7')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(container.read(pendingTrackSelectionProvider), isNull);
+
+      // 切回 e1 → 打开音轨 sheet，高亮仍是 e1 自己的 index 1
+      await tapCard(tester, 'p1');
+      await openAudioSheet(tester);
+      expect(
+        tester
+            .widget<RadioListTile<int?>>(find.byKey(const Key('trackOption_1')))
+            .groupValue,
+        1,
+        reason: 'e1 预选未被 e2 覆盖',
+      );
+      await dismissSheet(tester);
+
+      // e1 图标仍高亮、e2 的选择在切回 e2 后可见（互不覆盖）
+      audioBtn = tester
+          .widget<IconButton>(find.byKey(const Key('audioSelectorButton')));
+      expect(audioBtn.color, ThemeData.dark().colorScheme.primary);
+      await tapCard(tester, 'p2');
+      await openAudioSheet(tester);
+      expect(
+        tester
+            .widget<RadioListTile<int?>>(find.byKey(const Key('trackOption_7')))
+            .groupValue,
+        7,
+        reason: 'e2 预选未被 e1 覆盖',
+      );
+      await dismissSheet(tester);
+    });
+
+    testWidgets('选中集变化时图标行绑定跟随（字幕轨按集显示）', (tester) async {
+      await _pumpDetail(tester, item: seriesItem, emby: fake());
+
+      // e1 字幕 index 3、e2 字幕 index 4：sheet 选项跟随选中集
+      final subBtn = find.byKey(const Key('subtitleSelectorButton'));
+      await tester.ensureVisible(subBtn);
+      await tester.pump();
+      await tester.tap(subBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byKey(const Key('trackOption_3')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_4')), findsNothing);
+      await dismissSheet(tester);
+
+      await tapCard(tester, 'p2');
+      await tester.ensureVisible(subBtn);
+      await tester.pump();
+      await tester.tap(subBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byKey(const Key('trackOption_4')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_3')), findsNothing);
+      await dismissSheet(tester);
+    });
+
+    testWidgets('TV 模式：每集图标被 TvFocusable 包裹', (tester) async {
+      await _pumpDetail(tester, tv: true, item: seriesItem, emby: fake());
+
+      for (final key in [
+        const Key('subtitleSelectorButton'),
+        const Key('audioSelectorButton'),
+      ]) {
+        expect(
+          find.ancestor(
+              of: find.byKey(key), matching: find.byType(TvFocusable)),
+          findsOneWidget,
+        );
+      }
+    });
+  });
+
+  // ---- 每集播放链路：预选/版本 → 播放器（provider + mediaSourceId） ----
+
+  group('每集播放链路', () {
+    MediaStream audio(int idx, String lang) =>
+        MediaStream(type: 'Audio', codec: 'aac', language: lang, index: idx);
+    MediaStream sub(int idx, String lang) =>
+        MediaStream(type: 'Subtitle', codec: 'srt', language: lang, index: idx);
+
+    final seriesMv = MediaItem(
+      id: 'sv10',
+      name: '多版本剧集',
+      type: 'Series',
+      posterUrl: _posterUrl,
+      overview: '简介。',
+    );
+
+    final epMv = MediaItem(
+      id: 'mv1',
+      name: '第1集',
+      type: 'Episode',
+      parentIndexNumber: 1,
+      indexNumber: 1,
+      posterUrl: _posterUrl,
+      // 顶层流（未选版本时的回退）
+      mediaStreams: [audio(0, 'chi'), audio(1, 'eng'), sub(3, 'chi')],
+      mediaSources: [
+        MediaSource(
+          id: 'sv_a',
+          name: '版本A',
+          width: 1920,
+          mediaStreams: [audio(0, 'chi'), audio(1, 'eng'), sub(3, 'chi')],
+        ),
+        MediaSource(
+          id: 'sv_b',
+          name: '版本B',
+          width: 3840,
+          mediaStreams: [audio(7, 'eng'), audio(8, 'chi'), sub(9, 'eng')],
+        ),
+      ],
+    );
+
+    final epPlain = MediaItem(
+      id: 'pl1',
+      name: '第1集',
+      type: 'Episode',
+      parentIndexNumber: 1,
+      indexNumber: 1,
+      posterUrl: _posterUrl,
+      mediaStreams: [audio(0, 'chi'), audio(1, 'eng')],
+    );
+
+    final seasonsMv = [
+      MediaItem(
+          id: 'seaMv',
+          name: '第1季',
+          type: 'Season',
+          indexNumber: 1,
+          childCount: 1),
+    ];
+
+    Future<void> tapStartPlay(WidgetTester tester) async {
+      final btn = find.text('开始播放');
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    testWidgets('多版本集：选版本 B 后音轨列表切换，播放带 mediaSourceId 与该集预选', (tester) async {
+      final container = await _pumpDetailInRouter(
+        tester,
+        item: seriesMv,
+        emby: FakeEmbyService(
+          item: seriesMv,
+          itemsByParent: {
+            'sv10': [epMv],
+          },
+          seasons: seasonsMv,
+        ),
+      );
+
+      // 多版本集显示版本图标
+      expect(find.byKey(const Key('versionSelectorButton')), findsOneWidget);
+
+      // 选版本 B → 图标高亮、音轨列表切到版本 B 的轨（7/8，无 0/1）
+      await tester
+          .ensureVisible(find.byKey(const Key('versionSelectorButton')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('versionSelectorButton')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byKey(const Key('versionOption_sv_a')), findsOneWidget);
+      expect(find.byKey(const Key('versionOption_sv_b')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('versionOption_sv_b')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final versionBtn = tester
+          .widget<IconButton>(find.byKey(const Key('versionSelectorButton')));
+      expect(versionBtn.color, ThemeData.dark().colorScheme.primary,
+          reason: '已选版本图标高亮');
+
+      final audioBtn = find.byKey(const Key('audioSelectorButton'));
+      await tester.ensureVisible(audioBtn);
+      await tester.pump();
+      await tester.tap(audioBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byKey(const Key('trackOption_7')), findsOneWidget,
+          reason: '音轨列表已切换为版本 B 的轨');
+      expect(find.byKey(const Key('trackOption_0')), findsNothing);
+      await tester.tap(find.byKey(const Key('trackOption_7')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      await tapStartPlay(tester);
+
+      // 路由：该集 id + 选中版本
+      expect(find.textContaining('PLAYER:mv1'), findsOneWidget);
+      expect(
+        find.textContaining('mediaSourceId=sv_b'),
+        findsOneWidget,
+        reason: '播放跳转带该集选中版本',
+      );
+      // 该集预选在播放时写入全局槽供播放器消费
+      final selection = container.read(pendingTrackSelectionProvider);
+      expect(selection, isNotNull);
+      expect(selection?.audioIndex, 7);
+    });
+
+    testWidgets('无预选的集播放：清掉残留预选、路由不带 mediaSourceId', (tester) async {
+      final container = await _pumpDetailInRouter(
+        tester,
+        item: seriesMv,
+        emby: FakeEmbyService(
+          item: seriesMv,
+          itemsByParent: {
+            'sv10': [epPlain],
+          },
+          seasons: seasonsMv,
+        ),
+      );
+
+      // 人为残留（如上一次电影页的预选）
+      container.read(pendingTrackSelectionProvider.notifier).state =
+          const TrackSelection(audioIndex: 9);
+      expect(container.read(pendingTrackSelectionProvider), isNotNull);
+
+      await tapStartPlay(tester);
+
+      expect(find.textContaining('PLAYER:pl1'), findsOneWidget);
+      expect(find.textContaining('mediaSourceId'), findsNothing);
+      expect(container.read(pendingTrackSelectionProvider), isNull,
+          reason: '该集无预选时显式清空，防止残留串集');
+    });
+  });
+
+  // ---- 建房选集面板：逐集版本单选 → episodesJson 下发 ----
+
+  group('建房选集面板逐集版本', () {
+    MediaStream audio(int idx) =>
+        MediaStream(type: 'Audio', codec: 'aac', index: idx);
+
+    final seriesRoom = MediaItem(
+      id: 'sv20',
+      name: '房间剧集',
+      type: 'Series',
+      posterUrl: _posterUrl,
+      overview: '简介。',
+    );
+
+    // 多版本集：两个版本可单选
+    final epMulti = MediaItem(
+      id: 'eA',
+      name: '第1集',
+      type: 'Episode',
+      parentIndexNumber: 1,
+      indexNumber: 1,
+      posterUrl: _posterUrl,
+      mediaStreams: [audio(0)],
+      mediaSources: [
+        MediaSource(
+            id: 'a2', name: '版本A', width: 1920, mediaStreams: [audio(0)]),
+        MediaSource(
+            id: 'b2', name: '版本B', width: 3840, mediaStreams: [audio(1)]),
+      ],
+    );
+
+    // 单版本集：面板内无版本控件
+    final epSingle = MediaItem(
+      id: 'eB',
+      name: '第2集',
+      type: 'Episode',
+      parentIndexNumber: 1,
+      indexNumber: 2,
+      posterUrl: _posterUrl,
+      mediaStreams: [audio(0)],
+    );
+
+    final seasonsRoom = [
+      MediaItem(
+          id: 'sea20',
+          name: '第1季',
+          type: 'Season',
+          indexNumber: 1,
+          childCount: 2),
+    ];
+
+    final agoraOverride = agoraConfigProvider.overrideWith(
+      (ref) => FakeAgoraConfigNotifier(
+        AgoraConfigModel(
+          appId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          appCertificate: 'certificate',
+        ),
+      ),
+    );
+
+    Future<ProviderContainer> pumpRoomDetail(WidgetTester tester) {
+      return _pumpDetailInRouter(
+        tester,
+        item: seriesRoom,
+        emby: FakeEmbyService(
+          item: seriesRoom,
+          itemsByParent: {
+            'sv20': [epMulti, epSingle]
+          },
+          seasons: seasonsRoom,
+        ),
+        extraOverrides: [agoraOverride],
+      );
+    }
+
+    Future<void> openEpisodePicker(WidgetTester tester) async {
+      final btn = find.text('建房');
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+    }
+
+    testWidgets('多版本集行尾版本单选，选 B 后确认建房 episodesJson 带该集 mediaSourceId',
+        (tester) async {
+      final container = await pumpRoomDetail(tester);
+      await openEpisodePicker(tester);
+
+      // 多版本集有版本单选入口，单版本集没有
+      expect(find.byKey(const Key('episodeVersionPick_eA')), findsOneWidget);
+      expect(find.byKey(const Key('episodeVersionPick_eB')), findsNothing);
+
+      // 打开版本单选弹窗：默认 + 两个版本，radio 单选
+      await tester
+          .ensureVisible(find.byKey(const Key('episodeVersionPick_eA')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('episodeVersionPick_eA')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byKey(const Key('epVersionDefault_eA')), findsOneWidget);
+      expect(find.byKey(const Key('epVersion_eA_a2')), findsOneWidget);
+      expect(find.byKey(const Key('epVersion_eA_b2')), findsOneWidget);
+
+      // 选版本 B → 弹窗关闭、行尾 label 更新
+      await tester.ensureVisible(find.byKey(const Key('epVersion_eA_b2')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('epVersion_eA_b2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byKey(const Key('epVersionDefault_eA')), findsNothing);
+      expect(find.text('版本: 版本B'), findsOneWidget);
+
+      // 确认全选两集 → token 弹窗 → 确定 → 跳播放器
+      await tester.ensureVisible(find.text('确认'));
+      await tester.pump();
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('建房设置'), findsOneWidget);
+      await tester.tap(find.text('确定'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('PLAYER:sv20'), findsOneWidget);
+
+      // episodesJson：选版本的集带 mediaSourceId，未选的不下发该键
+      final pending = container.read(pendingRoomEpisodesProvider);
+      expect(pending, isNotNull);
+      expect(pending!, hasLength(2));
+      expect(pending.first['id'], 'eA');
+      expect(pending.first['mediaSourceId'], 'b2',
+          reason: '面板单选的版本随 episodesJson 下发');
+      expect(pending.last['id'], 'eB');
+      expect(pending.last.containsKey('mediaSourceId'), isFalse,
+          reason: '默认版本不下发 mediaSourceId');
+    });
+
+    testWidgets('确认后版本选择回写：再次打开面板回填上次单选', (tester) async {
+      await pumpRoomDetail(tester);
+      await openEpisodePicker(tester);
+
+      // 选版本 B 后确认（token 弹窗取消，不进播放器）
+      await tester
+          .ensureVisible(find.byKey(const Key('episodeVersionPick_eA')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('episodeVersionPick_eA')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.ensureVisible(find.byKey(const Key('epVersion_eA_b2')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('epVersion_eA_b2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      await tester.ensureVisible(find.text('确认'));
+      await tester.pump();
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('建房设置'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // 回到详情页，再次打开建房面板 → 版本回填为「版本: 版本B」
+      await openEpisodePicker(tester);
+      expect(find.text('版本: 版本B'), findsOneWidget);
+      expect(find.byKey(const Key('episodeVersionPick_eB')), findsNothing,
+          reason: '单版本集始终无版本控件');
+      expect(find.text('版本: 默认'), findsNothing, reason: '已选版本的集不再显示默认');
+    });
+
+    testWidgets('版本单选可切回默认：label 恢复且建房不下发 mediaSourceId', (tester) async {
+      final container = await pumpRoomDetail(tester);
+      await openEpisodePicker(tester);
+
+      await tester
+          .ensureVisible(find.byKey(const Key('episodeVersionPick_eA')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('episodeVersionPick_eA')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.ensureVisible(find.byKey(const Key('epVersion_eA_b2')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('epVersion_eA_b2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('版本: 版本B'), findsOneWidget);
+
+      // 再开单选 → 切回「默认（服务器选择）」
+      await tester
+          .ensureVisible(find.byKey(const Key('episodeVersionPick_eA')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('episodeVersionPick_eA')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(
+        tester
+            .widget<RadioListTile<String?>>(
+              find.byKey(const Key('epVersionDefault_eA')),
+            )
+            .groupValue,
+        'b2',
+        reason: '重开弹窗时 groupValue 回填当前单选',
+      );
+      await tester.ensureVisible(find.byKey(const Key('epVersionDefault_eA')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('epVersionDefault_eA')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('版本: 默认'), findsOneWidget);
+
+      // 确认 → token 确定 → episodesJson 不含 mediaSourceId
+      await tester.ensureVisible(find.text('确认'));
+      await tester.pump();
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.text('确定'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('PLAYER:sv20'), findsOneWidget);
+
+      final pending = container.read(pendingRoomEpisodesProvider);
+      expect(pending, isNotNull);
+      expect(pending!.first.containsKey('mediaSourceId'), isFalse);
     });
   });
 }

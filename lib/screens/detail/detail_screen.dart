@@ -60,6 +60,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 选中后字幕/音轨列表切换为该版本的轨，播放入口直接使用该版本。
   String? _selectedMediaSourceId;
 
+  /// 每集的预选轨（key = 集 id）。按集隔离，多集分别设置互不覆盖；
+  /// 播放该集时才写入全局 [pendingTrackSelectionProvider] 供播放器消费。
+  final Map<String, TrackSelection> _episodeSelections = {};
+
+  /// 每集选中的版本 source id（key = 集 id；null = 服务端默认版本）。
+  final Map<String, String?> _episodeSourceIds = {};
+
   /// 横卡行挂点与水平滚动控制器：选集后定位高亮卡。
   final _episodeRowKey = GlobalKey();
   final _episodeRowController = ScrollController();
@@ -177,6 +184,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   /// 从指定集开播：整部序列化进 [pendingRoomEpisodesProvider] 后跳播放器。
   void _playEpisode(MediaItem ep) {
+    // 该集的预选轨写入全局槽（播放器 _autoSelectDefaultTracks 消费一次）；
+    // 无选择时显式置 null，防止残留上一次的电影/他集预选
+    final selection = _episodeSelections[ep.id];
+    ref.read(pendingTrackSelectionProvider.notifier).state =
+        (selection != null && !selection.isEmpty) ? selection : null;
     final episodesJson = _episodes
         .map((e) => {
               'id': e.id,
@@ -190,7 +202,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         .toList();
     ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
     if (mounted) {
-      context.push('/player/${ep.id}?isHost=true$_serverQuery');
+      final query = StringBuffer('isHost=true$_serverQuery');
+      final sourceId = _episodeSourceIds[ep.id];
+      if (sourceId != null) {
+        query.write('&mediaSourceId=$sourceId');
+      }
+      context.push('/player/${ep.id}?$query');
     }
   }
 
@@ -228,57 +245,105 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return item.mediaStreams.where((s) => s.type == 'Audio').toList();
   }
 
+  // ---- 每集（方案 A）：选择器绑到选中集 ----
+
+  /// 目标集（选择器与播放入口绑它）：选中集 → 当前季第一集（与
+  /// [_startPlaySeries] 的回退一致）；非剧集或无集时 null。
+  MediaItem? _targetEpisode() {
+    if (_item?.isSeries != true || _episodes.isEmpty) return null;
+    final selected = _selectedEpisodeId;
+    if (selected != null) {
+      for (final e in _episodes) {
+        if (e.id == selected) return e;
+      }
+    }
+    final seasonEpisodes = _seasonEpisodesOf(_selectedSeason);
+    if (seasonEpisodes.isNotEmpty) return seasonEpisodes.first;
+    return _episodes.first;
+  }
+
+  /// 目标集选中版本的字幕流；未选版本回退该集顶层流。
+  List<MediaStream> _episodeSubtitleStreams(MediaItem ep) {
+    final sourceId = _episodeSourceIds[ep.id];
+    if (sourceId != null) {
+      for (final s in ep.mediaSources) {
+        if (s.id == sourceId) return s.subtitleStreams;
+      }
+    }
+    return ep.mediaStreams.where((s) => s.type == 'Subtitle').toList();
+  }
+
+  /// 目标集选中版本的音轨流（同上）。
+  List<MediaStream> _episodeAudioStreams(MediaItem ep) {
+    final sourceId = _episodeSourceIds[ep.id];
+    if (sourceId != null) {
+      for (final s in ep.mediaSources) {
+        if (s.id == sourceId) return s.audioStreams;
+      }
+    }
+    return ep.mediaStreams.where((s) => s.type == 'Audio').toList();
+  }
+
+  /// 打开目标集的版本选择器；预选轨按语言迁移到新版本。
+  void _openEpisodeVersionSelector(MediaItem ep) {
+    showVersionSelector(
+      context,
+      sources: ep.mediaSources,
+      currentId: _episodeSourceIds[ep.id],
+      onSelected: (source) {
+        // setState 前取切换前的流，供语言迁移比对
+        final oldSelection = _episodeSelections[ep.id];
+        final oldAudio = _episodeAudioStreams(ep);
+        final oldSubtitle = _episodeSubtitleStreams(ep);
+        setState(() {
+          _episodeSourceIds[ep.id] = source.id;
+          if (oldSelection != null && !oldSelection.isEmpty) {
+            final migrated = migrateTrackSelection(
+              oldSelection,
+              oldAudio: oldAudio,
+              newAudio: source.audioStreams,
+              oldSubtitle: oldSubtitle,
+              newSubtitle: source.subtitleStreams,
+            );
+            if (migrated == null) {
+              _episodeSelections.remove(ep.id);
+            } else {
+              _episodeSelections[ep.id] = migrated;
+            }
+          }
+        });
+      },
+    );
+  }
+
+  /// 写目标集的预选轨（[TrackActionRow] 的 onSelectionChanged）。
+  void _setEpisodeSelection(String episodeId, TrackSelection next) {
+    setState(() {
+      if (next.isEmpty) {
+        _episodeSelections.remove(episodeId);
+      } else {
+        _episodeSelections[episodeId] = next;
+      }
+    });
+  }
+
   /// 打开版本选择器（与字幕/音轨同一图标行，选择后联动轨列表与播放入口）。
   void _openVersionSelector() {
     final item = _item;
     if (item == null) return;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(
-                '选择版本',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-            for (final source in item.mediaSources)
-              ListTile(
-                key: Key('versionOption_${source.id}'),
-                leading: Icon(
-                  _selectedMediaSourceId == source.id
-                      ? Icons.check_circle
-                      : Icons.movie_outlined,
-                  color: _selectedMediaSourceId == source.id
-                      ? Theme.of(ctx).colorScheme.primary
-                      : null,
-                ),
-                title: Text(source.name),
-                subtitle: Text(source.displayLabel),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _onVersionSelected(source);
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+    showVersionSelector(
+      context,
+      sources: item.mediaSources,
+      currentId: _selectedMediaSourceId,
+      onSelected: _onVersionSelected,
     );
   }
 
   /// 切换版本（联动核心）：
   /// 1. 记录选中版本，字幕/音轨图标与选择器的流列表随之切换
   /// 2. 已有预选轨按「语言 + 类型」迁移到新版本；匹配不到则清空该轨预选
-  ///    （不同版本的 `MediaStream.index` 归属不同流集，直接沿用会错轨）
+  ///    （迁移逻辑见 [migrateTrackSelection] 纯函数，与每集版本切换共用）
   void _onVersionSelected(MediaSource source) {
-    final item = _item;
-    if (item == null) return;
     final selection = ref.read(pendingTrackSelectionProvider);
     // setState 前取切换前的流，供迁移比对
     final oldAudio = _currentAudioStreams();
@@ -287,49 +352,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     setState(() => _selectedMediaSourceId = source.id);
     if (selection == null || selection.isEmpty) return;
 
-    int? migrate(
-      int? index,
-      List<MediaStream> from,
-      List<MediaStream> to, {
-      bool keepNegative = false,
-    }) {
-      if (index == null) return null;
-      if (index < 0) return keepNegative ? index : null;
-      MediaStream? old;
-      for (final s in from) {
-        if (s.index == index) {
-          old = s;
-          break;
-        }
-      }
-      if (old == null) return null;
-      final lang = old.language ?? old.displayLanguage;
-      if (lang == null || lang.isEmpty) return null;
-      for (final s in to) {
-        final l = s.language ?? s.displayLanguage;
-        if (l == lang) return s.index;
-      }
-      return null;
-    }
-
-    final newAudio =
-        migrate(selection.audioIndex, oldAudio, source.audioStreams);
-    final newSubtitle = migrate(
-      selection.subtitleIndex,
-      oldSubtitle,
-      source.subtitleStreams,
-      keepNegative: true,
+    final migrated = migrateTrackSelection(
+      selection,
+      oldAudio: oldAudio,
+      newAudio: source.audioStreams,
+      oldSubtitle: oldSubtitle,
+      newSubtitle: source.subtitleStreams,
     );
-
-    final notifier = ref.read(pendingTrackSelectionProvider.notifier);
-    if (newAudio == null && newSubtitle == null) {
-      notifier.state = null;
-    } else {
-      notifier.state = TrackSelection(
-        audioIndex: newAudio,
-        subtitleIndex: newSubtitle,
-      );
-    }
+    ref.read(pendingTrackSelectionProvider.notifier).state = migrated;
   }
 
   /// 当前版本已选中则直接使用，否则（多版本）弹选择器。
@@ -478,11 +508,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     MediaSource? selectedSource = await _resolveSourceForPlayback(_item!);
     if (_item!.hasMultipleVersions && selectedSource == null) return;
 
-    // 2. 电视剧 → 集数多选弹窗
-    List<MediaItem>? selectedEpisodes;
+    // 2. 电视剧 → 集数多选弹窗（含每集版本单选）
+    _EpisodePickResult? episodePick;
     if (_item!.isSeries && _episodes.isNotEmpty) {
-      selectedEpisodes = await _showEpisodePicker();
-      if (selectedEpisodes == null) return;
+      episodePick = await _showEpisodePicker();
+      if (episodePick == null) return;
     }
 
     // 3. Token 数量弹窗
@@ -507,9 +537,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         query.write('&mediaSourceId=${selectedSource.id}');
       }
       // 电视剧：通过 Riverpod provider 传递完整剧集数据（避免 URL 编码问题）
-      if (selectedEpisodes != null && selectedEpisodes.isNotEmpty) {
+      if (episodePick != null && episodePick.episodes.isNotEmpty) {
+        final pick = episodePick; // 闭包内使用，避免可空类型丢失提升
         final seriesName = _item!.name;
-        final episodesJson = selectedEpisodes
+        final episodesJson = pick.episodes
             .map((e) => {
                   'id': e.id,
                   'name': e.name,
@@ -517,6 +548,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   'number': e.indexNumber ?? 0,
                   'poster': e.posterUrl ?? '',
                   'seriesName': seriesName,
+                  // 该集单选的版本（null = 默认，不下发）
+                  if (pick.sourceIds[e.id] != null)
+                    'mediaSourceId': pick.sourceIds[e.id],
                   if (widget.serverId != null) 'serverId': widget.serverId,
                 })
             .toList();
@@ -542,11 +576,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     Map<String, dynamic> result;
 
     if (_item!.isSeries && _episodes.isNotEmpty) {
-      // 电视剧：弹出集数选择
-      final selectedEpisodes = await _showEpisodePicker();
-      if (selectedEpisodes == null || selectedEpisodes.isEmpty) return;
+      // 电视剧：弹出集数选择（含每集版本单选）
+      final episodePick = await _showEpisodePicker();
+      if (episodePick == null || episodePick.episodes.isEmpty) return;
 
-      final episodesJson = selectedEpisodes
+      final episodesJson = episodePick.episodes
           .map((e) => {
                 'id': e.id,
                 'name': e.name,
@@ -554,6 +588,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 'number': e.indexNumber ?? 0,
                 'poster': e.posterUrl ?? '',
                 'seriesName': _item!.name,
+                // 该集单选的版本（null = 默认，不下发）
+                if (episodePick.sourceIds[e.id] != null)
+                  'mediaSourceId': episodePick.sourceIds[e.id],
               })
           .toList();
 
@@ -623,10 +660,78 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  Future<List<MediaItem>?> _showEpisodePicker() async {
-    final selected = Set<String>.from(_episodes.map((e) => e.id));
+  /// 选集面板行尾的版本标签：未选显示「默认」，选中显示版本名。
+  String _pickedVersionLabel(MediaItem ep, String? sourceId) {
+    if (sourceId == null) return '默认';
+    for (final s in ep.mediaSources) {
+      if (s.id == sourceId) return s.name;
+    }
+    return '默认';
+  }
 
-    return showModalBottomSheet<List<MediaItem>>(
+  /// 选集面板的每集版本单选弹窗：Radio 组，每集只能勾一个版本。
+  void _openPickerVersionSelector(
+    MediaItem ep,
+    Map<String, String?> versionByEp,
+    void Function(void Function()) setSheetState,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                '选择版本 - S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0}',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            RadioListTile<String?>(
+              key: Key('epVersionDefault_${ep.id}'),
+              title: const Text('默认（服务器选择）'),
+              value: null,
+              groupValue: versionByEp[ep.id],
+              onChanged: (v) {
+                versionByEp[ep.id] = v;
+                setSheetState(() {});
+                Navigator.pop(ctx);
+              },
+            ),
+            for (final source in ep.mediaSources)
+              RadioListTile<String?>(
+                key: Key('epVersion_${ep.id}_${source.id}'),
+                title: Text(source.name),
+                subtitle: Text(source.displayLabel),
+                value: source.id,
+                groupValue: versionByEp[ep.id],
+                onChanged: (v) {
+                  versionByEp[ep.id] = v;
+                  setSheetState(() {});
+                  Navigator.pop(ctx);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 选集面板结果：所选集 + 每集选中的版本 source id（null = 默认版本）。
+  /// 每集只能单选一个版本（面板内 Radio 单选组）。
+  Future<_EpisodePickResult?> _showEpisodePicker() async {
+    final selected = Set<String>.from(_episodes.map((e) => e.id));
+    // 面板内每集版本选择（初始继承方案 A 的 per-episode 版本，确认后回写）
+    final versionByEp = <String, String?>{
+      for (final e in _episodes) e.id: _episodeSourceIds[e.id],
+    };
+
+    return showModalBottomSheet<_EpisodePickResult>(
       context: context,
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
@@ -699,6 +804,30 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             'S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0} - ${ep.name}',
                             style: const TextStyle(fontSize: 14),
                           ),
+                          subtitle: ep.hasMultipleVersions
+                              ? InkWell(
+                                  key: Key('episodeVersionPick_${ep.id}'),
+                                  onTap: () => _openPickerVersionSelector(
+                                    ep,
+                                    versionByEp,
+                                    setSheetState,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.layers, size: 14),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '版本: ${_pickedVersionLabel(ep, versionByEp[ep.id])}',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : null,
                         );
                       },
                     ),
@@ -720,10 +849,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           onPressed: selected.isEmpty
                               ? null
                               : () {
+                                  // 版本选择回写 per-episode map（与方案 A 互通）
+                                  setState(() {
+                                    _episodeSourceIds.addAll(versionByEp);
+                                  });
                                   final result = _episodes
                                       .where((e) => selected.contains(e.id))
                                       .toList();
-                                  Navigator.pop(ctx, result);
+                                  Navigator.pop(
+                                    ctx,
+                                    _EpisodePickResult(
+                                      result,
+                                      Map<String, String?>.of(versionByEp),
+                                    ),
+                                  );
                                 },
                           child: const Text('确认'),
                         ),
@@ -931,14 +1070,36 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ],
         ),
         const SizedBox(height: 4),
-        TrackActionRow(
-          item: item,
-          selectedMediaSourceId: _selectedMediaSourceId,
-          onOpenVersion: item.hasMultipleVersions ? _openVersionSelector : null,
-          subtitleStreams: _currentSubtitleStreams(),
-          audioStreams: _currentAudioStreams(),
-        ),
+        _buildTrackActionRow(item),
       ],
+    );
+  }
+
+  /// 选择器图标行：电影绑主条目（全局预选 provider）；剧集绑选中集
+  /// （方案 A：每集独立的版本/预选，见 [_episodeSelections]/
+  /// [_episodeSourceIds]，互不覆盖）。
+  Widget _buildTrackActionRow(MediaItem item) {
+    final target = item.isSeries ? _targetEpisode() : null;
+    if (target == null) {
+      return TrackActionRow(
+        item: item,
+        selectedMediaSourceId: _selectedMediaSourceId,
+        onOpenVersion: item.hasMultipleVersions ? _openVersionSelector : null,
+        subtitleStreams: _currentSubtitleStreams(),
+        audioStreams: _currentAudioStreams(),
+      );
+    }
+    return TrackActionRow(
+      item: target,
+      selectedMediaSourceId: _episodeSourceIds[target.id],
+      onOpenVersion: target.hasMultipleVersions
+          ? () => _openEpisodeVersionSelector(target)
+          : null,
+      subtitleStreams: _episodeSubtitleStreams(target),
+      audioStreams: _episodeAudioStreams(target),
+      // 非 null（可能是空选择）以区别于电影模式的「读全局 provider」
+      selection: _episodeSelections[target.id] ?? const TrackSelection(),
+      onSelectionChanged: (next) => _setEpisodeSelection(target.id, next),
     );
   }
 
@@ -1323,4 +1484,11 @@ class _MediaInfoRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 选集面板（建房/加入资源）的结果：所选集 + 每集单选的版本。
+class _EpisodePickResult {
+  final List<MediaItem> episodes;
+  final Map<String, String?> sourceIds;
+  const _EpisodePickResult(this.episodes, this.sourceIds);
 }
