@@ -60,6 +60,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 选中后字幕/音轨列表切换为该版本的轨，播放入口直接使用该版本。
   String? _selectedMediaSourceId;
 
+  /// 横卡行挂点与水平滚动控制器：选集后定位高亮卡。
+  final _episodeRowKey = GlobalKey();
+  final _episodeRowController = ScrollController();
+
   bool _isLoading = true;
   String? _error;
   bool _overviewExpanded = false;
@@ -68,6 +72,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   void initState() {
     super.initState();
     _loadDetails();
+  }
+
+  @override
+  void dispose() {
+    _episodeRowController.dispose();
+    super.dispose();
   }
 
   /// 跨服务器路由透传参数
@@ -154,9 +164,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     ];
   }
 
-  /// 点击剧集卡：整部序列化进 [pendingRoomEpisodesProvider] 后从该集开播
-  /// （沿用原「剧集」ListTile 的一起看语义）。
+  /// 点击剧集卡：设为选中集（描边高亮）后整部序列化进
+  /// [pendingRoomEpisodesProvider] 从该集开播。
   void _onEpisodeTap(MediaItem ep) {
+    if (_selectedEpisodeId != ep.id) {
+      setState(() => _selectedEpisodeId = ep.id);
+    }
     final episodesJson = _episodes
         .map((e) => {
               'id': e.id,
@@ -350,9 +363,37 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       highlightEpisodeId: _highlightEpisodeId(seasonEpisodes),
       sortDescending: _sortDescending,
       onToggleSort: () => setState(() => _sortDescending = !_sortDescending),
-      onSelect: (ep) => setState(() => _selectedEpisodeId = ep.id),
+      onSelect: (ep) {
+        setState(() => _selectedEpisodeId = ep.id);
+        // 等 sheet 关闭动画（350ms）结束后再滚动定位横卡
+        Future<void>.delayed(const Duration(milliseconds: 350), () {
+          if (mounted) _scrollToEpisode(ep);
+        });
+      },
       tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
     );
+  }
+
+  /// 选集后把详情页滚到该集横卡：水平 jumpTo 该卡 + 垂直滚动到行可见。
+  void _scrollToEpisode(MediaItem ep) {
+    final list = _seasonEpisodesOf(_selectedSeason);
+    final ordered = _sortDescending ? list.reversed.toList() : list;
+    final index = ordered.indexWhere((e) => e.id == ep.id);
+    if (index >= 0 && _episodeRowController.hasClients) {
+      final max = _episodeRowController.position.maxScrollExtent;
+      final target = (index * SeriesSections.episodeCardStride).clamp(0.0, max);
+      if (_episodeRowController.offset != target) {
+        _episodeRowController.jumpTo(target);
+      }
+    }
+    final rowCtx = _episodeRowKey.currentContext;
+    if (rowCtx != null) {
+      Scrollable.ensureVisible(
+        rowCtx,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   /// 剧集页「开始播放」：播选集器选中的集（未选则该季第一集）。
@@ -1088,6 +1129,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         setState(() => _sortDescending = !_sortDescending),
                     onOpenEpisodePicker: _openEpisodePicker,
                     sortDescending: _sortDescending,
+                    highlightEpisodeId: _selectedEpisodeId,
+                    episodeRowKey: _episodeRowKey,
+                    episodeRowController: _episodeRowController,
                     tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
                   ),
                 ],

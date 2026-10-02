@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
+import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -849,6 +850,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.byKey(const Key('episodePickerTitle')), findsNothing,
           reason: '选中后 sheet 关闭');
+      // 选中触发的定位滚动（350ms 延迟 + 250ms ensureVisible 动画）结束
+      await tester.pump(const Duration(milliseconds: 600));
 
       await openPicker();
       final tile =
@@ -941,6 +944,106 @@ void main() {
             matching: find.byType(TvFocusable)),
         findsOneWidget,
       );
+    });
+  });
+
+  // ---- 选集定位与横卡高亮 ----
+
+  group('选集定位与横卡高亮', () {
+    Future<ProviderContainer> pumpSeries(WidgetTester tester) {
+      return _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: episodesByParent,
+          seasons: seasons,
+        ),
+      );
+    }
+
+    /// 打开网格 → 点 [episodeKey] → 关 sheet 并等定位动画（350 延迟 + 250 滚动）。
+    Future<void> pickViaGrid(WidgetTester tester, String episodeKey) async {
+      final btn = find.byKey(const Key('episodePickerButton'));
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.byKey(Key('episodeNumber_$episodeKey')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump(const Duration(milliseconds: 600));
+    }
+
+    BoxDecoration borderOf(WidgetTester tester, Key key) {
+      final card = tester.widget<Container>(find.byKey(key));
+      return card.decoration! as BoxDecoration;
+    }
+
+    testWidgets('网格选中集 → 对应横卡主色描边', (tester) async {
+      await pumpSeries(tester);
+
+      expect(borderOf(tester, const Key('episodeCard_e1')).border?.top.color,
+          Colors.transparent,
+          reason: '未选中时无描边');
+
+      await pickViaGrid(tester, 'e2');
+
+      expect(borderOf(tester, const Key('episodeCard_e2')).border?.top.color,
+          ThemeData.dark().colorScheme.primary,
+          reason: '选中集描边高亮');
+      expect(borderOf(tester, const Key('episodeCard_e1')).border?.top.color,
+          Colors.transparent);
+    });
+
+    testWidgets('点横卡直接播放 → 该集设为选中描边', (tester) async {
+      await pumpSeries(tester);
+
+      final card = find.byKey(const Key('episodeCard_e2'));
+      await tester.ensureVisible(card);
+      await tester.pump();
+      await tester.tap(card);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      // 测试环境无 GoRouter，context.push 抛出；选中已在 push 前完成
+      tester.takeException();
+
+      expect(borderOf(tester, const Key('episodeCard_e2')).border?.top.color,
+          ThemeData.dark().colorScheme.primary,
+          reason: '点横卡播放也设为选中');
+    });
+
+    testWidgets('选中视口外远集 → 横卡行滚动定位该集', (tester) async {
+      final farEpisodes = [
+        for (var i = 1; i <= 7; i++) ep('e$i', season: 1, number: i),
+      ];
+      await _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: {'sv1': farEpisodes},
+          seasons: [seasons.first],
+        ),
+      );
+
+      expect(find.byKey(const Key('episodeCard_e7')), findsNothing,
+          reason: '视口+缓存范围外初始不构建');
+
+      await pickViaGrid(tester, 'e7');
+
+      expect(find.byKey(const Key('episodeCard_e7')), findsOneWidget,
+          reason: '水平滚动到第 7 集');
+      expect(borderOf(tester, const Key('episodeCard_e7')).border?.top.color,
+          ThemeData.dark().colorScheme.primary);
+
+      // 垂直：分季区块滚入逻辑视口（600 高）
+      final logicalHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final sectionRect = tester.getRect(find.byType(SeriesSections));
+      expect(sectionRect.top, lessThan(logicalHeight), reason: '横卡行区块在视口内');
+      expect(sectionRect.bottom, greaterThan(0));
     });
   });
 }

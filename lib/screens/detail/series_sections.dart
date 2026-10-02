@@ -24,6 +24,15 @@ class SeriesSections extends StatelessWidget {
   /// 打开数字网格选集器（由详情页持有选中集状态）。
   final VoidCallback onOpenEpisodePicker;
 
+  /// 选中集 id：横卡主色描边高亮（null = 无描边）。
+  final String? highlightEpisodeId;
+
+  /// 横卡行挂点：详情页选集后对其 `Scrollable.ensureVisible` 垂直定位。
+  final GlobalKey? episodeRowKey;
+
+  /// 横卡行水平滚动控制器（详情页选集后 jumpTo 定位高亮卡）。
+  final ScrollController? episodeRowController;
+
   const SeriesSections({
     super.key,
     required this.seasons,
@@ -35,7 +44,14 @@ class SeriesSections extends StatelessWidget {
     required this.onOpenEpisodePicker,
     this.sortDescending = false,
     this.tvMode = false,
+    this.highlightEpisodeId,
+    this.episodeRowKey,
+    this.episodeRowController,
   });
+
+  /// 横卡水平步长：卡宽 240 + 右侧间距 12。
+  static const double episodeCardStride =
+      _SeasonEpisodeRow._cardWidth + _SeasonEpisodeRow._cardGap;
 
   /// 季号：优先季自身的 `indexNumber`，缺失回退列表序号（1 起）。
   static int seasonNumber(MediaItem season, int index) =>
@@ -67,9 +83,12 @@ class SeriesSections extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _SeasonEpisodeRow(
+          rowKey: episodeRowKey,
           episodes: _seasonEpisodes,
           onEpisodeTap: onEpisodeTap,
           tvMode: tvMode,
+          highlightEpisodeId: highlightEpisodeId,
+          controller: episodeRowController,
         ),
         const SizedBox(height: 20),
         const Text(
@@ -210,18 +229,28 @@ class _SeasonSelector extends StatelessWidget {
 }
 
 /// 该季剧集横卡行：缩略图 + 「第N集 标题」+ 日期·时长 + 简介。
+/// 选中集（[highlightEpisodeId]）主色描边高亮。
 class _SeasonEpisodeRow extends StatelessWidget {
   final List<MediaItem> episodes;
   final ValueChanged<MediaItem> onEpisodeTap;
   final bool tvMode;
+  final String? highlightEpisodeId;
+  final ScrollController? controller;
+
+  /// 行挂点（只挂到内部 SizedBox，勿同时作 widget key）。
+  final GlobalKey? rowKey;
 
   const _SeasonEpisodeRow({
     required this.episodes,
     required this.onEpisodeTap,
     required this.tvMode,
+    this.highlightEpisodeId,
+    this.controller,
+    this.rowKey,
   });
 
   static const double _cardWidth = 240;
+  static const double _cardGap = 12;
 
   @override
   Widget build(BuildContext context) {
@@ -232,16 +261,29 @@ class _SeasonEpisodeRow extends StatelessWidget {
       );
     }
 
+    final primary = Theme.of(context).colorScheme.primary;
+
     return SizedBox(
+      key: rowKey,
       height: 240,
       child: ListView.builder(
+        controller: controller,
         scrollDirection: Axis.horizontal,
         itemCount: episodes.length,
         itemBuilder: (context, index) {
           final ep = episodes[index];
-          final card = SizedBox(
+          final selected = ep.id == highlightEpisodeId;
+          final card = Container(
             key: Key('episodeCard_${ep.id}'),
             width: _cardWidth,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected ? primary : Colors.transparent,
+                width: 2,
+              ),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -281,7 +323,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
           );
 
           return Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.only(right: _cardGap),
             child: tvMode
                 ? TvFocusable(
                     radius: 12,
