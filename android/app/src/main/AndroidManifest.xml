@@ -58,14 +58,18 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Impeller 显式开启（与引擎 Android 默认一致）。
-             fvp 插件 FvpPlugin.java 读取本 meta-data 判断渲染后端，缺省值
-             为 false：缺省时引擎跑 Impeller、插件却按 Skia 注册
-             SurfaceTextureEntry 而非 SurfaceProducer，错配导致部分设备
-             （Android TV 盒子）视频纹理黑帧——故必须显式声明 true。 -->
+        <!-- Impeller 显式关闭（不可删除本 meta-data）。
+             fvp 插件 FvpPlugin.java 读取本 meta-data 判断渲染后端，读不到时
+             按 false（SurfaceTexture）注册，而引擎缺省开启 Impeller，删除会
+             重新错配。v1.1.61 曾显式 true（引擎与插件均 Impeller/
+             SurfaceProducer），盒子（RK3528/Mali, Android 13）实测仍黑屏有声：
+             调试面板显示「纹理 0 | 3840x1598」、c2.rk 硬解正常，即纹理已建、
+             解码正常但 Impeller 外部纹理合不出帧。改为显式 false → 引擎走
+             Skia + 插件走 SurfaceTexture（Impeller 前的经典组合），
+             依据 fvp#235、flutter#159503/#145531/#141636。 -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="true" />
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
