@@ -5,6 +5,9 @@ class AppSettings {
   final bool showSyncDebug;
   final bool stereoDownmix;
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
+  /// 用户是否手动设置过音频后端（用于把旧版落盘默认值 'AudioTrack'
+  /// 迁移为新默认 'auto'，同时保护用户主动选择的 AudioTrack）。
+  final bool audioRendererUserSet;
   final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
   final bool glassUi; // 液态玻璃特效开关（低端设备可关闭）
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
@@ -31,7 +34,8 @@ class AppSettings {
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
     this.stereoDownmix = false,
-    this.audioRenderer = 'AudioTrack',
+    this.audioRenderer = 'auto',
+    this.audioRendererUserSet = false,
     this.deepDiagnostics = false,
     this.glassUi = true,
     this.themeColor,
@@ -46,6 +50,7 @@ class AppSettings {
     bool? showSyncDebug,
     bool? stereoDownmix,
     String? audioRenderer,
+    bool? audioRendererUserSet,
     bool? deepDiagnostics,
     bool? glassUi,
     bool? tvMode,
@@ -57,6 +62,7 @@ class AppSettings {
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
+      audioRendererUserSet: audioRendererUserSet ?? this.audioRendererUserSet,
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
       glassUi: glassUi ?? this.glassUi,
       tvMode: tvMode ?? this.tvMode,
@@ -72,6 +78,7 @@ class AppSettings {
         'showSyncDebug': showSyncDebug,
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
+        'audioRendererUserSet': audioRendererUserSet,
         'deepDiagnostics': deepDiagnostics,
         'glassUi': glassUi,
         'tvMode': tvMode,
@@ -93,11 +100,21 @@ class AppSettings {
     } else {
       mode = 'auto';
     }
+    final rawRenderer = json['audioRenderer'] as String?;
+    final rendererUserSet = json['audioRendererUserSet'] as bool? ?? false;
+    // 旧版默认值迁移：存盘值为 'AudioTrack' 且用户从未手动设置过
+    // → 新默认 'auto'（AudioTrack ERROR 是 Android 卡顿诱因之一）。
+    // 用户主动选过 AudioTrack（audioRendererUserSet=true）则保留。
+    String renderer = rawRenderer ?? 'auto';
+    if (!rendererUserSet && renderer == 'AudioTrack') {
+      renderer = 'auto';
+    }
     return AppSettings(
       decodeMode: mode,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
-      audioRenderer: json['audioRenderer'] as String? ?? 'AudioTrack',
+      audioRenderer: renderer,
+      audioRendererUserSet: rendererUserSet,
       deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
       glassUi: json['glassUi'] as bool? ?? true,
       tvMode: json['tvMode'] as bool? ?? false,

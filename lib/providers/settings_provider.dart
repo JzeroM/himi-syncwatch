@@ -39,6 +39,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       showSyncDebug: showSyncDebug,
       stereoDownmix: stereoDownmix,
       audioRenderer: audioRenderer,
+      // 手动改动音频后端即标记「用户已设置」，旧默认值迁移不再覆盖
+      audioRendererUserSet: audioRenderer != null ? true : null,
       deepDiagnostics: deepDiagnostics,
       glassUi: glassUi,
       tvMode: tvMode,

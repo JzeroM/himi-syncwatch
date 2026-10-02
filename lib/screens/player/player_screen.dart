@@ -23,6 +23,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
+import 'package:himi_syncwatch/services/audio_filter_policy.dart';
 import 'package:himi_syncwatch/services/decoder_report.dart';
 import 'package:himi_syncwatch/services/diagnostic_export.dart';
 import 'package:himi_syncwatch/services/codec_mime_map.dart';
@@ -384,6 +385,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _mdkRawDecoder = '-';
   String _audioBackend = '-';
 
+  /// 上次写入 mdk 的 `audio.avfilter` 值，用于去重（诊断每秒回调）。
+  String? _lastAudioFilter;
+
   /// 实际生效的解码器（框架名由 mdk 事件给出，底层 codec 名由平台预选推断）
   DecoderReport _decoderReport = DecoderReport.empty;
   String _codecProbeKey = '';
@@ -510,6 +514,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 平台预选解码器：签名未变则跳过，避免每个采样周期跨 MethodChannel
       _maybeProbeCodecs(vCodec, vWidth, vHeight, dovi, aCodec);
+
+      // 音轨编码随 mediaInfo 就绪后才可判定，每采样周期兜底刷新一次
+      // （内部按值去重，值不变不写 mdk 属性）
+      _applyAudioFilterPolicy();
 
       setState(() {
         _bufferedMs = buffered;
@@ -751,13 +759,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _player.setProperty('subtitle.border', '2');
     _player.setProperty('subtitle.shadow', '1');
     _player.setProperty('subtitle.margin.y', '22');
-    // 立体声降混：将多声道音频降混为立体声（用户可选）
+    // 音频滤镜（立体声降混 / iOS TrueHD 无声规避）统一走策略，
+    // 初始化时音轨编码未知，先按开关落一次；选轨/诊断再按编码刷新
     final settings = ref.read(settingsProvider);
-    // 先清除旧滤镜，避免残留
-    _player.setProperty('audio.avfilter', '');
-    if (settings.stereoDownmix) {
-      _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
-    }
+    _applyAudioFilterPolicy();
     // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度。
     // AAudio/OpenSL/AudioTrack 为 Android 专属（其余平台自动归一为 auto），
     // 生效值落盘取证：iOS 曾因默认 AudioTrack 无效导致无声
@@ -898,6 +903,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       await WakelockPlus.enable();
     } catch (_) {}
+  }
+
+  /// 当前活跃音轨的编码名（小写），取不到返回 ''。
+  ///
+  /// 优先取 mdk 实测（mediaInfo 活跃轨），回退 Emby 元数据。
+  String _currentAudioCodec() {
+    try {
+      final audio = _player.mediaInfo.audio;
+      if (audio != null && audio.isNotEmpty) {
+        final act = _player.activeAudioTracks;
+        final idx =
+            (act.isNotEmpty && act.first >= 0 && act.first < audio.length)
+                ? act.first
+                : 0;
+        final c = audio[idx].codec.codec;
+        if (c.isNotEmpty) return c;
+      }
+    } catch (_) {}
+    final act = _player.activeAudioTracks;
+    if (act.isNotEmpty &&
+        act.first >= 0 &&
+        act.first < _embyAudioStreams.length) {
+      return _embyAudioStreams[act.first].codec;
+    }
+    return '';
+  }
+
+  /// 按 [AudioFilterPolicy] 刷新 `audio.avfilter`（音轨切换 / 诊断采样 /
+  /// 设置变化时调用；值未变化则跳过，避免每秒重复写属性）。
+  ///
+  /// iOS 上 TrueHD/MLP 经 FFmpeg 解出的 s32/多声道 PCM 在 AudioQueue
+  /// 后端无声（上游 mdk-sdk#364 未修），仅 iOS 需要规避滤镜。
+  void _applyAudioFilterPolicy({String? codec}) {
+    final settings = ref.read(settingsProvider);
+    final effectiveCodec = codec ?? _currentAudioCodec();
+    final filter = AudioFilterPolicy.resolve(
+      codec: effectiveCodec,
+      stereoDownmix: settings.stereoDownmix,
+      isIOS: Platform.isIOS,
+    );
+    if (filter == _lastAudioFilter) return;
+    _lastAudioFilter = filter;
+    _player.setProperty('audio.avfilter', filter);
+    LogService().log(
+      'Player',
+      '音频滤镜: ${filter.isEmpty ? "(无)" : filter} '
+          '| codec=${effectiveCodec.isEmpty ? "未知" : effectiveCodec} '
+          '| 降混=${settings.stereoDownmix ? "开" : "关"} 平台=${Platform.isIOS ? "iOS" : "其他"}',
+    );
   }
 
   Future<void> _loadEpisodeStream(int episodeIndex) async {
@@ -1533,12 +1587,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         if (resolved.applyAudio && resolved.audioPosition != null) {
           _player.activeAudioTracks = [resolved.audioPosition!];
+          _applyAudioFilterPolicy();
         } else if (_embyDefaultAudioIndex != null) {
           final embyIdx = _embyAudioStreams.indexWhere(
             (s) => s.index == _embyDefaultAudioIndex!,
           );
           if (embyIdx >= 0) {
             _player.activeAudioTracks = [embyIdx];
+            _applyAudioFilterPolicy();
           }
         }
         return;
@@ -1557,6 +1613,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _player.activeAudioTracks = [embyIdx];
       }
     }
+    // 音轨编码此时才随 mediaInfo 可得，按策略刷新滤镜
+    _applyAudioFilterPolicy();
   }
 
   void _refreshTracks() {
@@ -4338,6 +4396,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _selectEmbyAudio(int embyIndex) {
     // fvp: 通过 activeAudioTracks 选择音轨
     _player.activeAudioTracks = [embyIndex];
+    // iOS TrueHD 无声规避：按新音轨编码刷新 audio.avfilter
+    _applyAudioFilterPolicy(
+      codec: embyIndex >= 0 && embyIndex < _embyAudioStreams.length
+          ? _embyAudioStreams[embyIndex].codec
+          : null,
+    );
   }
 
   Future<void> _loadLocalSubtitle() async {

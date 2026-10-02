@@ -48,7 +48,8 @@ void main() {
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
       expect(settings.stereoDownmix, isFalse);
-      expect(settings.audioRenderer, equals('AudioTrack'));
+      expect(settings.audioRenderer, equals('auto'));
+      expect(settings.audioRendererUserSet, isFalse);
     });
 
     test('copyWith 保留未指定字段', () {
@@ -119,7 +120,36 @@ void main() {
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
       expect(settings.stereoDownmix, isFalse);
+      expect(settings.audioRenderer, equals('auto'));
+    });
+
+    test('旧版落盘默认 AudioTrack 迁移为 auto（用户未手动设置过）', () {
+      final settings = AppSettings.fromJson({'audioRenderer': 'AudioTrack'});
+      expect(settings.audioRenderer, equals('auto'));
+      expect(settings.audioRendererUserSet, isFalse);
+    });
+
+    test('用户主动选择的 AudioTrack 保留（已标记手动设置过）', () {
+      final settings = AppSettings.fromJson({
+        'audioRenderer': 'AudioTrack',
+        'audioRendererUserSet': true,
+      });
       expect(settings.audioRenderer, equals('AudioTrack'));
+      expect(settings.audioRendererUserSet, isTrue);
+    });
+
+    test('用户主动选择的其他后端保留（AAudio 不受迁移影响）', () {
+      final settings = AppSettings.fromJson({'audioRenderer': 'AAudio'});
+      expect(settings.audioRenderer, equals('AAudio'));
+    });
+
+    test('toJson/fromJson 往返保留手动设置标记', () {
+      final json = const AppSettings()
+          .copyWith(audioRenderer: 'OpenSL', audioRendererUserSet: true)
+          .toJson();
+      final settings = AppSettings.fromJson(json);
+      expect(settings.audioRenderer, equals('OpenSL'));
+      expect(settings.audioRendererUserSet, isTrue);
     });
 
     test('fromJson 兼容旧版 bool hardwareDecoding', () {

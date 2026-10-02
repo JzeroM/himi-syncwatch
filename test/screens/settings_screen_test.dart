@@ -208,15 +208,15 @@ void main() {
     expect(color, isNot(equals(0xFF6366F1)));
   });
 
-  testWidgets('音频后端默认为 AudioTrack', (tester) async {
+  testWidgets('音频后端默认为自动', (tester) async {
     final container = await _pumpScreen(tester);
 
     expect(find.text('音频后端'), findsOneWidget);
     expect(
-      find.text('AudioTrack：兼容性最好的传统后端（默认）'),
+      find.text('使用系统默认音频后端（默认）'),
       findsOneWidget,
     );
-    expect(container.read(settingsProvider).audioRenderer, 'AudioTrack');
+    expect(container.read(settingsProvider).audioRenderer, 'auto');
   });
 
   testWidgets('Windows 平台隐藏音频后端设置项', (tester) async {

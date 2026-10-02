@@ -24,13 +24,13 @@ String _decodeModeDescription(String mode) {
 String _audioRendererDescription(String renderer) {
   switch (renderer) {
     case 'auto':
-      return '使用系统默认音频后端';
+      return '使用系统默认音频后端（默认）';
     case 'AAudio':
       return 'AAudio：现代低延迟后端';
     case 'OpenSL':
       return 'OpenSL：时钟精度更高，改善 TrueHD 等音频流畅度';
     case 'AudioTrack':
-      return 'AudioTrack：兼容性最好的传统后端（默认）';
+      return 'AudioTrack：兼容性最好的传统后端';
     default:
       return '建议默认使用自动';
   }
