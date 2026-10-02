@@ -21,6 +21,12 @@ EmbyServerConfig _server(String id, String name) => EmbyServerConfig(
       userId: 'uid',
     );
 
+/// 顶栏导航项图标 finder：标题胶囊同用 `dns_outlined`（size 18），
+/// 按导航项的 20 号图标尺寸限定，避免撞图标歧义。
+Finder _navIcon(IconData icon) => find.byWidgetPredicate(
+      (w) => w is Icon && w.icon == icon && w.size == 20,
+    );
+
 Widget _host({
   int index = 0,
   ValueChanged<int>? onSelect,
@@ -51,7 +57,7 @@ Widget _host({
 }
 
 void main() {
-  testWidgets('渲染服务器标题与三个纯图标导航项（首页并入标题）', (tester) async {
+  testWidgets('渲染服务器标题与纯图标导航项，声网配置隐藏（首页并入标题）', (tester) async {
     final semantics = tester.ensureSemantics();
     try {
       await tester.pumpWidget(_host());
@@ -64,10 +70,20 @@ void main() {
       // 导航项去文字：仅图标，文字经 Semantics 保留无障碍标签
       // （dns_outlined 与标题胶囊同图标，故用 findsWidgets）
       for (var i = 1; i < kShellNavLabels.length; i++) {
+        if (i == TvTopNavBar.hiddenAgoraIndex) continue;
         expect(find.text(kShellNavLabels[i]), findsNothing);
         expect(find.byIcon(kShellNavIcons[i]), findsWidgets);
         expect(find.bySemanticsLabel(kShellNavLabels[i]), findsOneWidget);
       }
+      // TV 模式隐藏声网配置入口：图标与语义标签均不渲染
+      expect(
+        find.byIcon(kShellNavIcons[TvTopNavBar.hiddenAgoraIndex]),
+        findsNothing,
+      );
+      expect(
+        find.bySemanticsLabel(kShellNavLabels[TvTopNavBar.hiddenAgoraIndex]),
+        findsNothing,
+      );
       // 搜索常驻顶栏；TV 模式取消房间模式，无房间入口
       expect(find.byIcon(Icons.meeting_room_outlined), findsNothing);
       // 无已认证服务器时不显示搜索入口
@@ -77,32 +93,35 @@ void main() {
     }
   });
 
-  testWidgets('点击导航项回调 onSelect', (tester) async {
+  testWidgets('点击导航项回调 onSelect，隐藏项不可点', (tester) async {
     int? selected;
     await tester.pumpWidget(_host(onSelect: (i) => selected = i));
     await tester.pump();
 
-    await tester.tap(find.byIcon(kShellNavIcons[3]));
+    await tester.tap(_navIcon(kShellNavIcons[3]));
     await tester.pump();
     expect(selected, 3);
 
-    await tester.tap(find.byIcon(kShellNavIcons[2]));
+    await tester.tap(_navIcon(kShellNavIcons[1]));
     await tester.pump();
-    expect(selected, 2);
+    expect(selected, 1);
+
+    // 声网配置图标未渲染，无法被点到
+    expect(_navIcon(kShellNavIcons[2]), findsNothing);
   });
 
   testWidgets('选中项使用实心图标与高亮色，非选中为线框图标', (tester) async {
-    await tester.pumpWidget(_host(index: 2));
+    await tester.pumpWidget(_host(index: 3));
     await tester.pump();
 
-    // currentIndex=2：声网配置选中（实心 key 图标），设置回退线框
+    // currentIndex=3：设置选中（实心 key 图标），Emby 服务器回退线框
     // （避开 dns_outlined——标题胶囊同用该图标）
-    expect(find.byIcon(kShellNavSelectedIcons[2]), findsOneWidget);
-    expect(find.byIcon(kShellNavIcons[3]), findsOneWidget);
-    expect(find.byIcon(kShellNavSelectedIcons[3]), findsNothing);
+    expect(_navIcon(kShellNavSelectedIcons[3]), findsOneWidget);
+    expect(_navIcon(kShellNavIcons[1]), findsOneWidget);
+    expect(_navIcon(kShellNavSelectedIcons[1]), findsNothing);
     // 首页已并入标题，不渲染首页导航图标
-    expect(find.byIcon(kShellNavSelectedIcons[0]), findsNothing);
-    expect(find.byIcon(kShellNavIcons[0]), findsNothing);
+    expect(_navIcon(kShellNavSelectedIcons[0]), findsNothing);
+    expect(_navIcon(kShellNavIcons[0]), findsNothing);
   });
 
   testWidgets('标题名称点击回首页（onSelect(0)）', (tester) async {

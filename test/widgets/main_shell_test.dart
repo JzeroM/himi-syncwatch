@@ -6,6 +6,9 @@ import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
+import 'package:himi_syncwatch/screens/home/home_screen.dart';
+import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 
@@ -123,6 +126,28 @@ void main() {
     expect(find.byKey(const ValueKey('shellNavBarPadding')), findsOneWidget);
     expect(find.byKey(const ValueKey('drawerToggle')), findsNothing);
     expect(find.byKey(const ValueKey('shellContentArea')), findsNothing);
+  });
+
+  testWidgets('TV 模式隐藏声网分支：停在声网页时自动回首页', (tester) async {
+    // 非 TV 进入声网分支（currentIndex==2），再打开 TV 模式
+    await pumpApp(tester, const Size(390, 844));
+    await tester.tap(find.text('声网配置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(AgoraConfigScreen), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MainShell)),
+    );
+    container.read(settingsProvider.notifier).update(tvMode: true);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 顶栏接管 + 声网页不可达，兜底回首页
+    expect(find.byType(TvTopNavBar), findsOneWidget);
+    expect(find.byType(AgoraConfigScreen), findsNothing);
+    expect(find.byType(HomeScreen), findsOneWidget);
   });
 
   testWidgets('TV 模式窄宽度（<1000）用顶部横排导航，无底部胶囊无桌面把手', (tester) async {

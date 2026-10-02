@@ -58,6 +58,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Impeller 显式开启（与引擎 Android 默认一致）。
+             fvp 插件 FvpPlugin.java 读取本 meta-data 判断渲染后端，缺省值
+             为 false：缺省时引擎跑 Impeller、插件却按 Skia 注册
+             SurfaceTextureEntry 而非 SurfaceProducer，错配导致部分设备
+             （Android TV 盒子）视频纹理黑帧——故必须显式声明 true。 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="true" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

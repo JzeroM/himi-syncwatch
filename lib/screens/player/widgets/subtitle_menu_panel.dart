@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 class SubtitleMenuPanel extends StatelessWidget {
   final mdk.Player player;
@@ -78,14 +79,18 @@ class SubtitleMenuPanel extends StatelessWidget {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    return InkWell(
+    // TV 遥控：选项行可聚焦（焦点环 + Enter 选择），触摸行为不变
+    return TvFocusable(
+      radius: 4,
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
             Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              isSelected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
               color: isSelected ? const Color(0xFF6366F1) : Colors.white54,
               size: 16,
             ),

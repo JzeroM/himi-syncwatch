@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 String _decodeModeDescription(String mode) {
   switch (mode) {
@@ -36,6 +37,81 @@ String _audioRendererDescription(String renderer) {
   }
 }
 
+/// 设置项下拉选择（解码方式/音频后端共用）。
+///
+/// - 非 TV 模式：[DropdownButton]（触摸交互，与旧版一致）
+/// - TV 模式：整行 [TvFocusable]（D-pad 聚焦 + OK 打开），选择层为
+///   底部弹窗 RadioListTile——与轨道选择器同交互，TV 遥控经
+///   MaterialApp.builder 层的 TvRemoteShortcuts 可正常操作。
+Widget _settingOptionTile({
+  required BuildContext context,
+  required bool tvMode,
+  required String title,
+  required String subtitle,
+  required Map<String, String> labels,
+  required String value,
+  required ValueChanged<String> onSelected,
+}) {
+  if (!tvMode) {
+    return ListTile(
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: DropdownButton<String>(
+        value: value,
+        onChanged: (v) {
+          if (v != null) onSelected(v);
+        },
+        items: labels.entries
+            .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+            .toList(),
+      ),
+    );
+  }
+  return TvFocusable(
+    onTap: () => showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            for (final e in labels.entries)
+              RadioListTile<String>(
+                key: Key('settingOption_${e.key}'),
+                title: Text(e.value),
+                value: e.key,
+                groupValue: value,
+                onChanged: (v) {
+                  if (v != null) onSelected(v);
+                  Navigator.of(ctx).pop();
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ),
+    child: ListTile(
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(labels[value] ?? value),
+          const Icon(Icons.chevron_right, size: 18, color: Colors.white54),
+        ],
+      ),
+    ),
+  );
+}
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -61,23 +137,15 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           const _ThemeColorSection(),
           const Divider(height: 1),
-          ListTile(
-            title: const Text('解码方式'),
-            subtitle: Text(_decodeModeDescription(settings.decodeMode)),
-            trailing: DropdownButton<String>(
-              value: settings.decodeMode,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(settingsProvider.notifier).update(decodeMode: value);
-                }
-              },
-              items: AppSettings.decodeModeLabels.entries.map((e) {
-                return DropdownMenuItem(
-                  value: e.key,
-                  child: Text(e.value),
-                );
-              }).toList(),
-            ),
+          _settingOptionTile(
+            context: context,
+            tvMode: settings.tvMode,
+            title: '解码方式',
+            subtitle: _decodeModeDescription(settings.decodeMode),
+            labels: AppSettings.decodeModeLabels,
+            value: settings.decodeMode,
+            onSelected: (v) =>
+                ref.read(settingsProvider.notifier).update(decodeMode: v),
           ),
           const Divider(height: 1),
           SwitchListTile(
@@ -91,25 +159,15 @@ class SettingsScreen extends ConsumerWidget {
           // 自动（iOS 曾因默认 AudioTrack 无效导致无声），不提供设置项
           if (defaultTargetPlatform == TargetPlatform.android) ...[
             const Divider(height: 1),
-            ListTile(
-              title: const Text('音频后端'),
-              subtitle: Text(_audioRendererDescription(settings.audioRenderer)),
-              trailing: DropdownButton<String>(
-                value: settings.audioRenderer,
-                onChanged: (value) {
-                  if (value != null) {
-                    ref
-                        .read(settingsProvider.notifier)
-                        .update(audioRenderer: value);
-                  }
-                },
-                items: AppSettings.audioRendererLabels.entries.map((e) {
-                  return DropdownMenuItem(
-                    value: e.key,
-                    child: Text(e.value),
-                  );
-                }).toList(),
-              ),
+            _settingOptionTile(
+              context: context,
+              tvMode: settings.tvMode,
+              title: '音频后端',
+              subtitle: _audioRendererDescription(settings.audioRenderer),
+              labels: AppSettings.audioRendererLabels,
+              value: settings.audioRenderer,
+              onSelected: (v) =>
+                  ref.read(settingsProvider.notifier).update(audioRenderer: v),
             ),
           ],
           const Divider(height: 1),

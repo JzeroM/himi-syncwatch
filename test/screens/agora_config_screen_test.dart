@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
@@ -12,10 +13,11 @@ import '../helpers/test_fakes.dart';
 Future<ProviderContainer> _pumpScreen(
   WidgetTester tester, {
   FakeAgoraConfigNotifier? agora,
+  AppSettings settings = const AppSettings(),
 }) async {
   final container = ProviderContainer(
     overrides: [
-      settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+      settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
       agoraConfigProvider
           .overrideWith((ref) => agora ?? FakeAgoraConfigNotifier()),
     ],
@@ -59,6 +61,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.byType(QrConfigScreen), findsNothing);
+  });
+
+  testWidgets('TV 模式隐藏扫码入口（声网配置整体不暴露给 TV）', (tester) async {
+    await _pumpScreen(tester, settings: const AppSettings(tvMode: true));
+
+    expect(find.byTooltip('手机扫码配置'), findsNothing);
   });
 
   testWidgets('App ID 为空时保存被拒绝', (tester) async {

@@ -25,6 +25,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   Widget build(BuildContext context) {
     final servers = ref.watch(embyServerListProvider);
     final currentConfig = ref.watch(embyConfigProvider);
+    // 扫码配置入口仅 TV 模式（遥控器无输入法）：手机/桌面走手动输入
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     final seenServerIds = <String>{};
     final dedupedServers = <EmbyServerConfig>[];
@@ -43,15 +45,16 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         elevation: 0,
         flexibleSpace: const GlassBackdrop(),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner),
-            tooltip: '手机扫码配置',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const QrConfigScreen(mode: 'emby'),
+          if (tvMode)
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner),
+              tooltip: '手机扫码配置',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const QrConfigScreen(mode: 'emby'),
+                ),
               ),
             ),
-          ),
           IconButton(
             icon: Icon(_showAddServerForm ? Icons.close : Icons.add),
             tooltip: _showAddServerForm ? '取消添加' : '添加服务器',

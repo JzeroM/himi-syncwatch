@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 /// 形态：通栏玻璃条，左侧服务器标题胶囊（合并首页入口：
 /// 名称 OK 回首页，▾ OK 打开服务器下拉），右侧依次
 /// 搜索 / 三个纯图标导航项（首页已并入标题，故从 index 1 起；
+/// 声网配置（index 2）TV 模式整体隐藏，不参与遍历；
 /// 图标经 Semantics 保留无障碍标签；TV 模式不提供房间入口）；
 /// 每项 [TvFocusable] 获得 D-pad 焦点，左右键切换、OK 进入。
 /// 复用壳层导航数据（kShellNavLabels/Icons/SelectedIcons）与薄荷青选中色。
@@ -23,6 +24,10 @@ class TvTopNavBar extends StatelessWidget {
 
   final int currentIndex;
   final ValueChanged<int> onSelect;
+
+  /// TV 模式隐藏的导航分支（声网配置）：顶栏不渲染；
+  /// [MainShell] 据此在 currentIndex 命中时兜底回首页。
+  static const int hiddenAgoraIndex = 2;
 
   @override
   Widget build(BuildContext context) {
@@ -52,11 +57,12 @@ class TvTopNavBar extends StatelessWidget {
             ),
             const MediaSearchButton(),
             for (var i = 1; i < kShellNavLabels.length; i++)
-              _TvTopNavItem(
-                index: i,
-                selected: i == currentIndex,
-                onTap: () => onSelect(i),
-              ),
+              if (i != hiddenAgoraIndex)
+                _TvTopNavItem(
+                  index: i,
+                  selected: i == currentIndex,
+                  onTap: () => onSelect(i),
+                ),
             const SizedBox(width: 20),
           ],
         ),

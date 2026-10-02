@@ -250,6 +250,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   BoxFit _videoFit = BoxFit.contain;
   Size? _videoNativeSize;
 
+  /// 黑帧取证用纹理尺寸文本：textureSize 未 resolve 时显示 '-'。
+  String get _textureSizeText => _videoNativeSize == null
+      ? '-'
+      : '${_videoNativeSize!.width.toInt()}x${_videoNativeSize!.height.toInt()}';
+
   // 窗口全屏（桌面）
   bool _isWindowFullscreen = false;
   final WindowFullscreenService _windowFullscreenService =
@@ -1583,6 +1588,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         audioBitrate: _audioBitrate,
         stereoDownmix: _stereoDownmix,
         audioFilter: _audioFilterText,
+        textureId: _player.textureId.value,
+        textureSize: _textureSizeText,
       ),
       decodeMode:
           AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ??
@@ -3206,6 +3213,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               audioBitrate: _audioBitrate,
               stereoDownmix: _stereoDownmix,
               audioFilter: _audioFilterText,
+              textureId: _player.textureId.value,
+              textureSize: _textureSizeText,
               // 解码器
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualVideoDecoders: _actualVideoDecoders,

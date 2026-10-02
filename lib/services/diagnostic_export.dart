@@ -106,6 +106,8 @@ class DiagnosticExport {
     required int audioBitrate,
     required String stereoDownmix,
     required String audioFilter,
+    required int? textureId,
+    required String textureSize,
   }) {
     return '=== 播放诊断 ===\n'
         '状态: $playbackState | 媒体: $mediaStatus\n'
@@ -117,7 +119,10 @@ class DiagnosticExport {
         '编码: $videoCodec | 分辨率: $videoResolution\n'
         '帧率: ${formatFps(videoFps)} | 码率: ${formatBitrate(videoBitrate)}\n'
         '像素: $pixelFormat | DOVI: ${doviProfile > 0 ? 'P$doviProfile' : '-'}\n'
-        'HDR: $hdrType\n\n'
+        'HDR: $hdrType\n'
+        // Android 盒子黑帧取证：textureId null=纹理未创建（UI 转圈），
+        // 非 null 仍黑=纹理存在但无帧合成（Impeller/插件错配方向）
+        '纹理: ${textureId ?? 'null'} | 尺寸: $textureSize\n\n'
         '=== 音频 ===\n'
         '编码: $audioCodec | 采样率: ${audioSampleRate > 0 ? '${audioSampleRate}Hz' : '-'}\n'
         '声道: ${audioChannels > 0 ? '${audioChannels}ch' : '-'} | '

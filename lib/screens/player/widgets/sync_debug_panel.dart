@@ -44,6 +44,13 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   /// 无声排障用：区分「滤镜没写入」vs「写入了仍无声」。
   final String audioFilter;
 
+  /// fvp 纹理句柄：null=纹理未创建（UI 转圈），非 null 仍黑=纹理存在
+  /// 但无帧合成——Android 盒子黑帧（Impeller/插件错配）屏上取证用。
+  final int? textureId;
+
+  /// `textureSize`（GL FBO 尺寸），未 resolve 时为 '-'。
+  final String textureSize;
+
   // 解码器
   final String decodeMode;
 
@@ -101,6 +108,8 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.audioBitrate,
     required this.stereoDownmix,
     required this.audioFilter,
+    required this.textureId,
+    required this.textureSize,
     required this.decodeMode,
     required this.actualVideoDecoders,
     required this.mdkRawDecoder,
@@ -266,6 +275,9 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                       _debugRow('DOVI', 'P${widget.doviProfile}'),
                     if (widget.hdrType != 'SDR')
                       _debugRow('HDR', widget.hdrType),
+                    // 黑帧分叉取证：null=纹理未创建；非 null 仍黑=无帧合成
+                    _debugRow('纹理',
+                        '${widget.textureId ?? 'null'} | ${widget.textureSize}'),
                   ],
 
                   const SizedBox(height: 4),
@@ -432,6 +444,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
         audioBitrate: widget.audioBitrate,
         stereoDownmix: widget.stereoDownmix,
         audioFilter: widget.audioFilter,
+        textureId: widget.textureId,
+        textureSize: widget.textureSize,
       );
 
   String _exportDiagnostics() {

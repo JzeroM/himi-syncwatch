@@ -325,4 +325,57 @@ void main() {
     await _pumpScreen(tester);
     expect(find.byType(TvRemoteShell), findsNothing);
   });
+
+  // ---- TV 模式 × 解码方式/音频后端（DropdownButton 遥控不可选 → 弹窗） ----
+
+  testWidgets('非 TV：解码方式仍为 DropdownButton 下拉', (tester) async {
+    await _pumpScreen(tester);
+    // Android 平台：解码方式 + 音频后端 两个下拉
+    expect(find.byType(DropdownButton<String>), findsNWidgets(2));
+    expect(find.text('解码方式'), findsOneWidget);
+  });
+
+  testWidgets('TV：解码方式行点开底部弹窗，选择软解写入', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      initial: const AppSettings(tvMode: true),
+    );
+    // 非 TV 的 DropdownButton 不再出现
+    expect(find.byType(DropdownButton<String>), findsNothing);
+
+    await tester.tap(find.text('解码方式'));
+    await tester.pumpAndSettle();
+
+    // 底部弹窗：RadioListTile 三选项（遥控器经 TvRemoteShortcuts 可选）
+    expect(find.byKey(const Key('settingOption_auto')), findsOneWidget);
+    expect(find.byKey(const Key('settingOption_hw')), findsOneWidget);
+    expect(find.byKey(const Key('settingOption_sw')), findsOneWidget);
+    expect(container.read(settingsProvider).decodeMode, 'auto');
+
+    await tester.tap(find.byKey(const Key('settingOption_sw')));
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).decodeMode, 'sw');
+    expect(find.byKey(const Key('settingOption_sw')), findsNothing,
+        reason: '选中后弹窗应关闭');
+    expect(find.text('软解'), findsWidgets, reason: '行尾显示当前值');
+  });
+
+  testWidgets('TV：音频后端行点开底部弹窗，选择 AAudio 写入', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      initial: const AppSettings(tvMode: true),
+    );
+    expect(find.text('音频后端'), findsOneWidget);
+
+    await tester.tap(find.text('音频后端'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('settingOption_AAudio')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('settingOption_AAudio')));
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).audioRenderer, 'AAudio');
+    expect(find.byKey(const Key('settingOption_AAudio')), findsNothing);
+  });
 }

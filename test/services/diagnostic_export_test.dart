@@ -274,6 +274,8 @@ void main() {
           audioBitrate: audioBitrate,
           stereoDownmix: '关',
           audioFilter: '(无) | codec=未知',
+          textureId: null,
+          textureSize: '-',
         );
 
     test('帧率/码率未取到（0）时输出 - 而非 0.0fps / 0kbps', () {
@@ -336,12 +338,43 @@ void main() {
         stereoDownmix: '关',
         audioFilter:
             'aformat=sample_fmts=s16|flt:channel_layouts=stereo | codec=truehd',
+        textureId: 7,
+        textureSize: '3840x1608',
       );
       expect(
         withFilter,
         contains(
             '滤镜: aformat=sample_fmts=s16|flt:channel_layouts=stereo | codec=truehd'),
       );
+    });
+
+    test('纹理行：null=未创建（转圈）/ 非 null 带尺寸（黑帧分叉取证）', () {
+      expect(quick(), contains('纹理: null | 尺寸: -'));
+      final withTexture = DiagnosticExport.buildQuick(
+        playbackState: 'playing',
+        mediaStatus: 'ok',
+        position: '00:10.0',
+        duration: '01:00.0',
+        bufferedMs: 1000,
+        mediaBitrate: 0,
+        mediaFormat: '',
+        videoCodec: 'hevc',
+        videoResolution: '3840x1608',
+        videoFps: 0,
+        videoBitrate: 0,
+        pixelFormat: 'yuv420p',
+        doviProfile: 0,
+        hdrType: 'SDR',
+        audioCodec: 'aac',
+        audioSampleRate: 0,
+        audioChannels: 0,
+        audioBitrate: 0,
+        stereoDownmix: '关',
+        audioFilter: '(无) | codec=未知',
+        textureId: 3,
+        textureSize: '1920x1080',
+      );
+      expect(withTexture, contains('纹理: 3 | 尺寸: 1920x1080'));
     });
   });
 }

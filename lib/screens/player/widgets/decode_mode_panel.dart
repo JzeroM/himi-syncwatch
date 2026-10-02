@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 class DecodeModePanel extends ConsumerWidget {
   final ValueChanged<String> onSwitchMode;
@@ -34,20 +35,29 @@ class DecodeModePanel extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: modes.map((mode) {
             final isSelected = currentMode == mode;
-            return InkWell(
+            // TV 遥控：选项行可聚焦（焦点环 + Enter 选择），触摸行为不变
+            return TvFocusable(
+              autofocus: modes.first == mode,
               onTap: () => onSwitchMode(mode),
-              borderRadius: BorderRadius.circular(8),
+              radius: 4,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF6366F1).withValues(alpha: 0.3) : null,
-                  border: const Border(bottom: BorderSide(color: Colors.white12, width: 0.5)),
+                  color: isSelected
+                      ? const Color(0xFF6366F1).withValues(alpha: 0.3)
+                      : null,
+                  border: const Border(
+                      bottom: BorderSide(color: Colors.white12, width: 0.5)),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                      isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                      color: isSelected ? const Color(0xFF6366F1) : Colors.white54,
+                      isSelected
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color:
+                          isSelected ? const Color(0xFF6366F1) : Colors.white54,
                       size: 16,
                     ),
                     const SizedBox(width: 8),
@@ -55,11 +65,17 @@ class DecodeModePanel extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(labels[mode]!, style: TextStyle(
-                            color: Colors.white, fontSize: 13,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          )),
-                          Text(descriptions[mode]!, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                          Text(labels[mode]!,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              )),
+                          Text(descriptions[mode]!,
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 10)),
                         ],
                       ),
                     ),

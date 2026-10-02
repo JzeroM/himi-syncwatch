@@ -87,6 +87,17 @@ class _MainShellState extends ConsumerState<MainShell> {
     // 彻底避开高 DPI 电视盒子逻辑宽度不足 1000 而落入底部胶囊的问题
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     if (tvMode) {
+      // TV 模式隐藏声网配置分支：若当前正停在该页（切换 TV 模式时
+      // 恰好在声网页），顶栏已无对应入口 → 兜底回首页，避免"无选中项
+      // 且无路可回"的死页。build 中不可直接导航，延迟到帧后执行。
+      if (widget.shell.currentIndex == TvTopNavBar.hiddenAgoraIndex) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              widget.shell.currentIndex == TvTopNavBar.hiddenAgoraIndex) {
+            _goBranch(0);
+          }
+        });
+      }
       return Scaffold(
         extendBody: true,
         body: Stack(
