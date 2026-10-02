@@ -105,6 +105,7 @@ class DiagnosticExport {
     required int audioChannels,
     required int audioBitrate,
     required String stereoDownmix,
+    required String audioFilter,
   }) {
     return '=== 播放诊断 ===\n'
         '状态: $playbackState | 媒体: $mediaStatus\n'
@@ -121,7 +122,9 @@ class DiagnosticExport {
         '编码: $audioCodec | 采样率: ${audioSampleRate > 0 ? '${audioSampleRate}Hz' : '-'}\n'
         '声道: ${audioChannels > 0 ? '${audioChannels}ch' : '-'} | '
         '码率: ${formatBitrate(audioBitrate)}\n'
-        '降混: $stereoDownmix';
+        '降混: $stereoDownmix\n'
+        // iOS TrueHD 无声取证：区分「滤镜没写入」vs「写入了仍无声」
+        '滤镜: $audioFilter';
   }
 
   /// 缓冲进度行。

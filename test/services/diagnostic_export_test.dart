@@ -77,9 +77,8 @@ void main() {
           ),
         ),
       );
-      final actualLine = report
-          .split('\n')
-          .firstWhere((l) => l.startsWith('实际解码:'));
+      final actualLine =
+          report.split('\n').firstWhere((l) => l.startsWith('实际解码:'));
       expect(actualLine, startsWith('实际解码:'));
       expect(actualLine, isNot(contains('c2.dolby.eac3.decoder.eac3')));
       expect(report, contains('探测预选: video=c2.dolby.eac3.decoder.eac3'));
@@ -123,16 +122,14 @@ void main() {
       final report = build(
         buildSummary: '产物身份: 1.1.16+186 | DV通道已注册',
       );
-      expect(report.split('\n').first,
-          '产物身份: 1.1.16+186 | DV通道已注册');
+      expect(report.split('\n').first, '产物身份: 1.1.16+186 | DV通道已注册');
     });
 
     test('产物缺原生插件时首行直接点明', () {
       final report = build(
         buildSummary: '产物身份: 未知 | DV通道未注册(产物缺原生插件)',
       );
-      expect(report.split('\n').first,
-          '产物身份: 未知 | DV通道未注册(产物缺原生插件)');
+      expect(report.split('\n').first, '产物身份: 未知 | DV通道未注册(产物缺原生插件)');
     });
   });
 
@@ -150,8 +147,7 @@ void main() {
     });
 
     test('越界值不吞掉，如实标注', () {
-      expect(DiagnosticExport.formatBufProgress(150),
-          '缓冲进度: 150% (异常值)');
+      expect(DiagnosticExport.formatBufProgress(150), '缓冲进度: 150% (异常值)');
     });
 
     test('缓冲进度行进入报告', () {
@@ -277,6 +273,7 @@ void main() {
           audioChannels: 0,
           audioBitrate: audioBitrate,
           stereoDownmix: '关',
+          audioFilter: '(无) | codec=未知',
         );
 
     test('帧率/码率未取到（0）时输出 - 而非 0.0fps / 0kbps', () {
@@ -312,6 +309,39 @@ void main() {
       expect(text, contains('=== 音频 ==='));
       expect(text, contains('位置: 00:10.0 / 01:00.0'));
       expect(text, contains('降混: 关'));
+    });
+
+    test('音频段含滤镜取证行（iOS TrueHD 无声排障）', () {
+      // 区分「滤镜没写入」vs「写入了仍无声」——报告里必须能看到
+      expect(quick(), contains('滤镜: (无) | codec=未知'));
+      final withFilter = DiagnosticExport.buildQuick(
+        playbackState: 'playing',
+        mediaStatus: 'ok',
+        position: '00:10.0',
+        duration: '01:00.0',
+        bufferedMs: 1000,
+        mediaBitrate: 0,
+        mediaFormat: '',
+        videoCodec: 'hevc',
+        videoResolution: '3840x1608',
+        videoFps: 0,
+        videoBitrate: 0,
+        pixelFormat: 'yuv420p',
+        doviProfile: 0,
+        hdrType: 'SDR',
+        audioCodec: 'truehd',
+        audioSampleRate: 48000,
+        audioChannels: 8,
+        audioBitrate: 0,
+        stereoDownmix: '关',
+        audioFilter:
+            'aformat=sample_fmts=s16|flt:channel_layouts=stereo | codec=truehd',
+      );
+      expect(
+        withFilter,
+        contains(
+            '滤镜: aformat=sample_fmts=s16|flt:channel_layouts=stereo | codec=truehd'),
+      );
     });
   });
 }

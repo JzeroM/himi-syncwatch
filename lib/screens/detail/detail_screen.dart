@@ -115,8 +115,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               parentId: widget.itemId,
               includeItemTypes: 'Episode',
               sortBy: 'ParentIndexNumber,IndexNumber',
+              // AlternateMediaSources：Emby 4.9.x 起批量端点对非管理员
+              // 每条只回 1 个 MediaSource，需显式请求该字段才返回全部版本
               fields:
-                  'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,PremiereDate',
+                  'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,PremiereDate',
             )
                 .then((episodes) {
               _episodes = episodes;

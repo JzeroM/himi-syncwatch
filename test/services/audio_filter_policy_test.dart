@@ -82,4 +82,25 @@ void main() {
       );
     });
   });
+
+  group('滤镜串字面量', () {
+    // 锁定 aformat 写法：aresample 的 ochl 是 FFmpeg 7.x 才有的选项名，
+    // 旧版解析失败会让整条滤镜失效（iOS TrueHD 无声规避曾因此无效）。
+    test('TrueHD 规避滤镜为 aformat 兼容写法', () {
+      expect(
+        AudioFilterPolicy.truehdIosFilter,
+        'aformat=sample_fmts=s16|flt:channel_layouts=stereo',
+      );
+      expect(AudioFilterPolicy.truehdIosFilter, isNot(contains('ochl')));
+      expect(AudioFilterPolicy.truehdIosFilter, isNot(contains('aresample')));
+    });
+
+    test('降混滤镜为 aformat 兼容写法', () {
+      expect(
+        AudioFilterPolicy.stereoDownmixFilter,
+        'aformat=channel_layouts=stereo',
+      );
+      expect(AudioFilterPolicy.stereoDownmixFilter, isNot(contains('ochl')));
+    });
+  });
 }

@@ -1788,4 +1788,53 @@ void main() {
       expect(pending!.first.containsKey('mediaSourceId'), isFalse);
     });
   });
+
+  group('AlternateMediaSources（Emby 4.9.x 非管理员多版本）', () {
+    // Emby 4.9.x 起批量端点对非管理员每条只回 1 个 MediaSource，
+    // 详情页集列表查询必须显式请求该字段，否则每集版本图标不出现
+    // （v1.1.59 用户反馈：Emby Web 有 3 个版本、app 里没版本选择器）。
+    testWidgets('集列表 getItems 的 fields 含 AlternateMediaSources',
+        (tester) async {
+      final series = MediaItem(
+        id: 'sv-alt',
+        name: '多版本剧集',
+        type: 'Series',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+      );
+      final ep = MediaItem(
+        id: 'ep-alt',
+        name: '第1集',
+        type: 'Episode',
+        parentIndexNumber: 1,
+        indexNumber: 1,
+        posterUrl: _posterUrl,
+        mediaSources: [
+          MediaSource(id: 'v1', name: '1080p'),
+          MediaSource(id: 'v2', name: '2160p'),
+        ],
+      );
+      final fake = FakeEmbyService(
+        item: series,
+        itemsByParent: {
+          'sv-alt': [ep],
+        },
+        seasons: [
+          MediaItem(
+              id: 'sea-alt',
+              name: '第1季',
+              type: 'Season',
+              indexNumber: 1,
+              childCount: 1),
+        ],
+      );
+
+      await _pumpDetail(tester, item: series, emby: fake);
+
+      final fields = fake.lastGetItemsFields;
+      expect(fields, isNotNull, reason: '集列表查询必须发出');
+      expect(fields, contains('MediaSources'));
+      expect(fields, contains('AlternateMediaSources'));
+    });
+  });
 }

@@ -5,20 +5,23 @@
 /// 背景：iOS 上 TrueHD/MLP 音轨无声（上游 mdk-sdk issue #364 至今未修复）。
 /// FFmpeg 解出 `s32 7.1` PCM 后送入 Apple AudioQueue 后端无法出声；
 /// Android/Windows 同片源有声，故仅 iOS 规避。做法是在音频进入渲染器
-/// 之前转成立体声 + `s16|flt`：`aresample=ochl=stereo` 降混、
-/// `aformat=sample_fmts=s16|flt` 转采样格式——两段选项均为上游建议
-/// 或本项目既有已验证的写法。
+/// 之前转成立体声 + `s16|flt`：`aformat` 一次性完成降混与采样格式转换
+/// （`channel_layouts`/`sample_fmts` 为各 FFmpeg 版本均支持的选项，
+/// 上游作者在 issue #294 中建议的写法；早前的
+/// `aresample=ochl=stereo` 用的 `ochl` 是 FFmpeg 7.x 才有的选项名，
+/// 旧版解析失败会让整条滤镜失效）。
 library;
 
 class AudioFilterPolicy {
   const AudioFilterPolicy._();
 
-  /// iOS TrueHD/MLP 无声规避滤镜：先降混立体声，再转采样格式。
+  /// iOS TrueHD/MLP 无声规避滤镜：降混立体声 + 转采样格式。
+  /// `aformat` 的 `channel_layouts`/`sample_fmts` 各 FFmpeg 版本均支持。
   static const String truehdIosFilter =
-      'aresample=ochl=stereo,aformat=sample_fmts=s16|flt';
+      'aformat=sample_fmts=s16|flt:channel_layouts=stereo';
 
   /// 用户「立体声降混」开关的滤镜。
-  static const String stereoDownmixFilter = 'aresample=ochl=stereo';
+  static const String stereoDownmixFilter = 'aformat=channel_layouts=stereo';
 
   /// 会触发 iOS 无声的音轨编码（FFmpeg/Emby 惯例为小写，比较前统一处理）。
   static const Set<String> iosSilentCodecs = {'truehd', 'mlp'};

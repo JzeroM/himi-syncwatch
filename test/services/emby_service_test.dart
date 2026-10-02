@@ -110,6 +110,30 @@ void main() {
     });
   });
 
+  group('AlternateMediaSources（Emby 4.9.x 非管理员多版本）', () {
+    // Emby 4.9.x 起批量端点对非管理员每条只回 1 个 MediaSource，
+    // 需显式请求该字段才返回全部版本（官方 Luke 给出的 workaround）。
+    test('getItems 默认 Fields 含 AlternateMediaSources', () async {
+      await service.getItems(parentId: 'series-1', includeItemTypes: 'Episode');
+
+      final fields = captured.single.param('Fields')!;
+      expect(fields, contains('MediaSources'));
+      expect(fields, contains('AlternateMediaSources'));
+    });
+
+    test('getItemDetails Fields 含 AlternateMediaSources', () async {
+      respondWith = (_) => {'Id': 'ep-1', 'Type': 'Episode', 'Name': 'E1'};
+
+      await service.getItemDetails('ep-1');
+
+      final req = captured.single;
+      expect(req.path, '/Users/user-1/Items/ep-1');
+      final fields = req.param('Fields')!;
+      expect(fields, contains('MediaSources'));
+      expect(fields, contains('AlternateMediaSources'));
+    });
+  });
+
   group('getLibraries 保持服务端媒体库排序', () {
     test('请求带 Fields=ImageTags、不注入 SortBy，顺序与服务端一致', () async {
       respondWith = (_) => {

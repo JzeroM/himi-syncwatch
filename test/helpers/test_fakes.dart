@@ -116,6 +116,10 @@ class FakeEmbyService extends EmbyService {
   /// getSeasons 返回结果（剧集详情页分季兜底测试用）。
   final List<MediaItem> seasons;
 
+  /// 最近一次 getItems 收到的 fields（断言 AlternateMediaSources 等
+  /// Emby 4.9.x 非管理员多版本字段透传用）。
+  String? lastGetItemsFields;
+
   @override
   Future<List<MediaItem>> getSeasons(String seriesId) async => seasons;
 
@@ -140,10 +144,12 @@ class FakeEmbyService extends EmbyService {
     String? fields,
     String? sortBy,
     String? sortOrder,
-  }) async =>
-      (parentId != null && itemsByParent.containsKey(parentId))
-          ? itemsByParent[parentId]!
-          : items;
+  }) async {
+    lastGetItemsFields = fields;
+    return (parentId != null && itemsByParent.containsKey(parentId))
+        ? itemsByParent[parentId]!
+        : items;
+  }
 
   @override
   Future<List<MediaItem>> getSimilarItems(String itemId,

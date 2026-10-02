@@ -40,6 +40,10 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   final int audioBitrate;
   final String stereoDownmix;
 
+  /// 当前生效的 `audio.avfilter` 取证（含判定用 codec），iOS TrueHD
+  /// 无声排障用：区分「滤镜没写入」vs「写入了仍无声」。
+  final String audioFilter;
+
   // 解码器
   final String decodeMode;
 
@@ -96,6 +100,7 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.audioChannels,
     required this.audioBitrate,
     required this.stereoDownmix,
+    required this.audioFilter,
     required this.decodeMode,
     required this.actualVideoDecoders,
     required this.mdkRawDecoder,
@@ -284,6 +289,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     _debugRow('码率',
                         DiagnosticExport.formatBitrate(widget.audioBitrate)),
                     _debugRow('降混', widget.stereoDownmix),
+                    _debugRow('音频滤镜', widget.audioFilter),
                   ],
 
                   const SizedBox(height: 4),
@@ -425,6 +431,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
         audioChannels: widget.audioChannels,
         audioBitrate: widget.audioBitrate,
         stereoDownmix: widget.stereoDownmix,
+        audioFilter: widget.audioFilter,
       );
 
   String _exportDiagnostics() {

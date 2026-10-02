@@ -389,6 +389,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 上次写入 mdk 的 `audio.avfilter` 值，用于去重（诊断每秒回调）。
   String? _lastAudioFilter;
 
+  /// 判定 [_lastAudioFilter] 时用的音轨编码，进诊断面板取证。
+  String _lastAudioFilterCodec = '';
+
+  /// 滤镜取证文案：面板/导出用，区分「滤镜没写入」vs「写入了仍无声」。
+  String get _audioFilterText {
+    final f = _lastAudioFilter;
+    if (f == null) return '(未写入)';
+    final codec = _lastAudioFilterCodec.isEmpty ? '未知' : _lastAudioFilterCodec;
+    return '${f.isEmpty ? '(无)' : f} | codec=$codec';
+  }
+
   /// 实际生效的解码器（框架名由 mdk 事件给出，底层 codec 名由平台预选推断）
   DecoderReport _decoderReport = DecoderReport.empty;
   String _codecProbeKey = '';
@@ -948,6 +959,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     if (filter == _lastAudioFilter) return;
     _lastAudioFilter = filter;
+    _lastAudioFilterCodec = effectiveCodec;
     _player.setProperty('audio.avfilter', filter);
     LogService().log(
       'Player',
@@ -1004,6 +1016,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _embyVideoStream = source.videoStream;
             _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
           });
+          // iOS TrueHD 无声规避：Emby 元数据已知默认音轨编码，load 前
+          // 预写滤镜，不必等 mediaInfo 就绪后的诊断回调（首个缓冲段无声）
+          _applyAudioFilterPolicy(codec: source.defaultAudioStream?.codec);
         }
       } catch (_) {}
 
@@ -1567,6 +1582,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         audioChannels: _audioChannels,
         audioBitrate: _audioBitrate,
         stereoDownmix: _stereoDownmix,
+        audioFilter: _audioFilterText,
       ),
       decodeMode:
           AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ??
@@ -3189,6 +3205,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               audioChannels: _audioChannels,
               audioBitrate: _audioBitrate,
               stereoDownmix: _stereoDownmix,
+              audioFilter: _audioFilterText,
               // 解码器
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualVideoDecoders: _actualVideoDecoders,

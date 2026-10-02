@@ -125,7 +125,9 @@ class EmbyService {
           if (sortOrder != null) 'SortOrder': sortOrder,
           'Recursive': true,
           'Fields': fields ??
-              'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources',
+              // AlternateMediaSources：Emby 4.9.x 批量端点对非管理员每条
+              // 只回 1 个 MediaSource，需显式请求才返回全部版本
+              'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources',
           'ImageTypeLimit': 1,
         },
       );
@@ -347,7 +349,7 @@ class EmbyService {
         '/Users/$_userId/Items/$id',
         queryParameters: {
           'Fields':
-              'Overview,Genres,MediaStreams,MediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks',
+              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks',
         },
       );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
