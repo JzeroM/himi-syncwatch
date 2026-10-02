@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/fvp.dart' as fvp;
@@ -103,8 +105,24 @@ class _SelfSignedHttpOverrides extends HttpOverrides {
   }
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+/// 闪退取证与存活兜底：
+/// - 未捕获异步/框架异常全部落盘 `himi_runtime.log`（原生闪退也可用
+///   最后一条日志定位阶段）
+/// - [PlatformDispatcher.onError] 返回 true = 应用已处理，进程不直接终止
+void _installErrorHooks() {
+  final prevPresent = FlutterError.onError;
+  FlutterError.onError = (details) {
+    LogService().log('FATAL',
+        'FlutterError: ${details.exceptionAsString()}\n${details.stack}');
+    prevPresent?.call(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    LogService().log('FATAL', 'Uncaught async error: $error\n$stack');
+    return true;
+  };
+}
+
+Future<void> _bootstrap() async {
   if (Platform.isWindows &&
       Platform.environment.containsKey('HIMI_RTM_SMOKE')) {
     final smokeCode = await _runRtmSmoke();
@@ -141,4 +159,12 @@ void main() async {
       child: const HimiSyncApp(),
     ),
   );
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  _installErrorHooks();
+  runZonedGuarded(_bootstrap, (error, stack) {
+    LogService().log('FATAL', 'Zone error: $error\n$stack');
+  });
 }

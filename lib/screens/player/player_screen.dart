@@ -232,6 +232,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // fvp: 轨道信息通过 Emby API 获取，不需要 media_kit 的 SubtitleTrack/AudioTrack
   StreamSubscription? _tracksSubscription;
+
+  /// mdk 播放状态/媒体状态监听（dispose 时取消）。
+  StreamSubscription? _stateSub;
+  StreamSubscription? _statusSub;
   bool _subtitleAutoSelected = false;
 
   List<MediaStream> _embySubtitleStreams = [];
@@ -813,9 +817,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // 先完成硬件解码设置，再启动播放，避免竞态
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
       // 并行执行：亮度初始化 + 播放器属性初始化
       await Future.wait([
         Future(() async {
+          if (!mounted) return;
           // Windows 亮度默认跟随系统（仅读取展示，不覆盖系统亮度）；
           // 其他平台维持原行为：强制设为默认 0.8
           if (PlayerPlatform.brightnessFollowsSystem) {
@@ -840,6 +846,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }),
         _initPlayerProperties(),
       ]);
+      if (!mounted) return;
       if (_isHost &&
           _hasEpisodeList &&
           _episodes.isNotEmpty &&
@@ -861,6 +868,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<void> _initPlayerProperties() async {
+    if (!mounted) return;
     final settings = ref.read(settingsProvider);
 
     // 配置解码器
@@ -942,6 +950,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _codecProbeKey = '';
 
       // 第三步：加载流（prepare 会使用已配置好的解码器）
+      if (!mounted) return;
       await _loadStream(
           itemId: itemId, mediaSourceId: epMediaSourceId, serverId: epServerId);
 
@@ -960,6 +969,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
     }
 
+    if (!mounted) return;
     _rebuildGroups();
 
     // 预加载下一集（不阻塞当前集播放）
@@ -968,6 +978,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 预加载下一集（gapless 播放）
   void _preloadNextEpisode() {
+    if (!mounted) return;
     if (!_hasEpisodeList) return;
     final nextIndex = _currentEpisodeIndex + 1;
     if (nextIndex >= _episodes.length) return;
@@ -1007,6 +1018,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 确保纹理存在：首次播放时创建，后续复用现有纹理避免黑屏
   Future<void> _ensureTexture() async {
     if (_player.textureId.value != null) return;
+    if (!mounted) return;
     try {
       await _player.updateTexture().timeout(const Duration(seconds: 5));
     } catch (_) {
@@ -1015,22 +1027,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 加载流并返回 texture 是否就绪
+  ///
+  /// 加载中返回（dispose）会与本协程竞争：每个 native 调用与 `await` 续体
+  /// 前都必须查 `mounted`，否则会对已销毁的 mdk 对象发起调用导致原生崩溃。
   Future<bool> _loadStream({
     String? itemId,
     int? subtitleStreamIndex,
     String? mediaSourceId,
     String? serverId,
   }) async {
+    if (!mounted) return false;
     final targetItemId = itemId ?? widget.itemId;
     final effectiveMediaSourceId = mediaSourceId ??
         (targetItemId == widget.itemId ? widget.mediaSourceId : null);
 
     final effectiveServerId = serverId ?? widget.serverId;
-    final embyService = ref.read(embyServiceForProvider(effectiveServerId));
-    final config = ref.read(embyConfigForProvider(effectiveServerId));
-    final token = config?.accessToken ?? '';
-
     try {
+      if (!mounted) return false;
+      final embyService = ref.read(embyServiceForProvider(effectiveServerId));
+      final config = ref.read(embyConfigForProvider(effectiveServerId));
+      final token = config?.accessToken ?? '';
+
       final streamUrl = embyService.getStreamUrl(
         targetItemId,
         mediaSourceId: effectiveMediaSourceId,
@@ -1045,7 +1062,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _positionNotifier.value = Duration.zero;
       _videoNativeSize = null;
 
-      // 设置媒体并准备播放
+      // 设置媒体并准备播放（native 调用前必须 mounted）
+      if (!mounted) return false;
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
@@ -1053,9 +1071,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _isSwitchingMedia = true;
       _player.media = streamUrl;
       await _player.prepare();
+      // prepare 期间可能已 dispose：后续 texture/状态操作一律中止
+      if (!mounted) return false;
 
       // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
       await _ensureTexture();
+      if (!mounted) return false;
 
       // 同步设置视频原生尺寸（从 mediaInfo 读取）
       _syncVideoNativeSize();
@@ -1067,11 +1088,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         setState(() {});
       }
       Future.delayed(const Duration(seconds: 2), () async {
+        if (!mounted) return;
         await _detectDolbyVision();
       });
 
       // 延迟清除切换锁，确保旧媒体的 MediaStatus.end 事件被完全过滤
       Future.delayed(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
         _isSwitchingMedia = false;
       });
 
@@ -1125,13 +1148,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // prepare 前探测 DV 解码能力
       await _probeDvCapability();
       await _loadBuildIdentity();
+      if (!mounted) return;
 
       _isSwitchingMedia = true;
       _player.media = playUrl;
       await _player.prepare();
+      if (!mounted) return;
 
       // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
       await _ensureTexture();
+      if (!mounted) return;
       // 同步设置视频原生尺寸（从 mediaInfo 读取）
       _syncVideoNativeSize();
 
@@ -1161,11 +1187,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       _rebuildGroups();
       _logSyncEvent('播放器打开成功');
-      Future.delayed(const Duration(seconds: 2), _queryHwdecStatus);
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        _queryHwdecStatus();
+      });
       LogService().log('Sync', '播放器打开成功');
 
       // 延迟清除切换锁，确保旧媒体的 MediaStatus.end 事件被完全过滤
       Future.delayed(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
         _isSwitchingMedia = false;
       });
     } catch (e) {
@@ -1180,7 +1210,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _setupPlayerListeners() {
     // 使用 onStateChanged 监听播放状态变化
-    _player.onStateChanged.listen((event) {
+    _stateSub = _player.onStateChanged.listen((event) {
       if (!mounted) return;
       // 更新音量
       _volume = _player.volume * 100;
@@ -1189,7 +1219,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
 
     // 使用 onMediaStatus 监听媒体状态变化
-    _player.onMediaStatus.listen((event) {
+    _statusSub = _player.onMediaStatus.listen((event) {
       if (!mounted) return;
 
       // 检查是否加载完成
@@ -2659,6 +2689,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
     _accelSub?.cancel();
+    _stateSub?.cancel();
+    _statusSub?.cancel();
     try {
       _broadcastScrollController.dispose();
     } catch (_) {}
