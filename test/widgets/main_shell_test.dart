@@ -142,7 +142,8 @@ void main() {
           of: find.byType(TvTopNavBar), matching: find.text('HIMI')),
       findsOneWidget,
     );
-    // 首页并入标题：顶栏不再有「首页」导航项，房间入口常驻
+    // 首页并入标题：顶栏不再有「首页」导航项；TV 取消房间模式，
+    // 顶栏也不再渲染房间入口
     expect(
       find.descendant(of: find.byType(TvTopNavBar), matching: find.text('首页')),
       findsNothing,
@@ -151,7 +152,7 @@ void main() {
       find.descendant(
           of: find.byType(TvTopNavBar),
           matching: find.byIcon(Icons.meeting_room_outlined)),
-      findsOneWidget,
+      findsNothing,
     );
 
     // 点顶部导航切分支（纯图标导航项按图标定位）

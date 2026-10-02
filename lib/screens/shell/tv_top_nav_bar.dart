@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/widgets/media_search_button.dart';
-import 'package:himi_syncwatch/widgets/room_menu_button.dart';
 import 'package:himi_syncwatch/widgets/server_title_dropdown.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -11,8 +10,8 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 ///
 /// 形态：通栏玻璃条，左侧服务器标题胶囊（合并首页入口：
 /// 名称 OK 回首页，▾ OK 打开服务器下拉），右侧依次
-/// 搜索 / 房间 / 三个纯图标导航项（首页已并入标题，故从 index 1 起；
-/// 图标经 Semantics 保留无障碍标签）；
+/// 搜索 / 三个纯图标导航项（首页已并入标题，故从 index 1 起；
+/// 图标经 Semantics 保留无障碍标签；TV 模式不提供房间入口）；
 /// 每项 [TvFocusable] 获得 D-pad 焦点，左右键切换、OK 进入。
 /// 复用壳层导航数据（kShellNavLabels/Icons/SelectedIcons）与薄荷青选中色。
 class TvTopNavBar extends StatelessWidget {
@@ -52,7 +51,6 @@ class TvTopNavBar extends StatelessWidget {
               ),
             ),
             const MediaSearchButton(),
-            const RoomMenuButton(),
             for (var i = 1; i < kShellNavLabels.length; i++)
               _TvTopNavItem(
                 index: i,

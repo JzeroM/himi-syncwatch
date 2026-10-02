@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_directional_scroll.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -26,7 +26,9 @@ Future<ProviderContainer> _pumpScreen(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: remote ? TvRemoteShortcuts(child: page) : page,
+      // TV 壳与生产（MaterialApp.builder）同款：遥控器按键层 +
+      // directional 导航模式（Slider 上下键放行）
+      child: remote ? TvRemoteShell(child: page) : page,
     ),
   );
   await tester.pumpAndSettle();
@@ -229,5 +231,98 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
+  });
+
+  testWidgets('iOS 平台隐藏音频后端设置项（Android 专属后端）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    try {
+      await _pumpScreen(tester);
+
+      expect(find.text('音频后端'), findsNothing);
+      expect(find.text('立体声降混'), findsOneWidget);
+      expect(find.text('播放调试面板'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  // ---- TV 遥控器 × 主题色滑块（directional 注入回归） ----
+
+  /// 焦点是否位于 [finder] 所指子树内。
+  bool focusWithin(Finder finder) {
+    final top = finder.evaluate().firstOrNull;
+    if (top == null) return false;
+    final node = FocusManager.instance.primaryFocus?.context;
+    if (node is! Element) return false;
+    var found = false;
+    node.visitAncestorElements((a) {
+      if (a == top) {
+        found = true;
+        return false;
+      }
+      return true;
+    });
+    return found || node == top;
+  }
+
+  Future<void> moveToHueSlider(WidgetTester tester) async {
+    // OK 两段式：先落焦首个交互项（主题色默认块）
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    final hue = find.byKey(const ValueKey('themeHueSlider'));
+    var guard = 0;
+    while (!focusWithin(hue) && guard < 30) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      guard++;
+    }
+    expect(focusWithin(hue), isTrue, reason: '方向键应能走到色相滑块');
+  }
+
+  testWidgets('TV：滑块上按↓焦点下移且不改主题色（上下键放行）', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      remote: true,
+      initial: const AppSettings(tvMode: true),
+    );
+    await moveToHueSlider(tester);
+    expect(container.read(settingsProvider).themeColor, isNull,
+        reason: '焦点移动不应触发调值');
+
+    // directional 模式：Slider 只消费左右键，↑↓放行给焦点导航
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(focusWithin(find.byKey(const ValueKey('themeHueSlider'))), isFalse,
+        reason: '上/下键不应被滑块吞掉');
+    expect(container.read(settingsProvider).themeColor, isNull,
+        reason: '上/下键不改变滑块值');
+
+    // 焦点还能继续下移（不卡死在滑块上）
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus, isNot(isA<FocusScopeNode>()));
+  });
+
+  testWidgets('TV：滑块上按←→调值（左右键保留滑块交互）', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      remote: true,
+      initial: const AppSettings(tvMode: true),
+    );
+    await moveToHueSlider(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    final color = container.read(settingsProvider).themeColor;
+    expect(color, isNotNull, reason: '左右键应调整滑块值写入主题色');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(container.read(settingsProvider).themeColor, isNotNull);
+  });
+
+  testWidgets('非 TV：未挂载 TV 遥控壳（不注入 directional）', (tester) async {
+    await _pumpScreen(tester);
+    expect(find.byType(TvRemoteShell), findsNothing);
   });
 }

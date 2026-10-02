@@ -87,8 +87,9 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) =>
                 ref.read(settingsProvider.notifier).update(stereoDownmix: v),
           ),
-          // Windows 固定使用自动音频后端，不提供设置项
-          if (defaultTargetPlatform != TargetPlatform.windows) ...[
+          // AAudio/OpenSL/AudioTrack 为 Android 专属后端，其余平台固定
+          // 自动（iOS 曾因默认 AudioTrack 无效导致无声），不提供设置项
+          if (defaultTargetPlatform == TargetPlatform.android) ...[
             const Divider(height: 1),
             ListTile(
               title: const Text('音频后端'),

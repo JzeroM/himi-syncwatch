@@ -13,13 +13,15 @@ class AppSettings {
   /// 用户是否手动设置过 TV 开关（策略 A：设置过则自动识别不再覆盖）。
   final bool tvModeUserSet;
 
-  /// 生效的音频后端：Windows 固定为自动（mdk 无 AudioTrack/OpenSL 等
-  /// Android 专属后端），设置项在 Windows 上也不再展示；其余平台用用户设置。
+  /// 生效的音频后端：AAudio/OpenSL/AudioTrack 均为 Android 专属后端
+  /// （fvp 文档明确 "on android"），iOS/macOS/Linux/Windows 上设置会
+  /// 导致 mdk 找不到音频渲染器（iOS 无声根因），故仅 Android 放行
+  /// 用户设置，其余平台固定自动；设置项也只在 Android 展示。
   static String effectiveAudioRenderer(String setting) {
-    if (defaultTargetPlatform == TargetPlatform.windows) {
-      return 'auto';
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return setting;
     }
-    return setting;
+    return 'auto';
   }
 
   /// copyWith/update 区分「未传」与「显式清空为 null」的占位值。

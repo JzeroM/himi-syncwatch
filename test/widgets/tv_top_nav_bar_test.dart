@@ -68,8 +68,8 @@ void main() {
         expect(find.byIcon(kShellNavIcons[i]), findsWidgets);
         expect(find.bySemanticsLabel(kShellNavLabels[i]), findsOneWidget);
       }
-      // 搜索/房间常驻顶栏
-      expect(find.byIcon(Icons.meeting_room_outlined), findsOneWidget);
+      // 搜索常驻顶栏；TV 模式取消房间模式，无房间入口
+      expect(find.byIcon(Icons.meeting_room_outlined), findsNothing);
       // 无已认证服务器时不显示搜索入口
       expect(find.byIcon(Icons.search), findsNothing);
     } finally {
@@ -158,17 +158,16 @@ void main() {
     expect(find.text('输入关键词搜索全部服务器'), findsOneWidget);
   });
 
-  testWidgets('点击房间按钮弹出房间卡片', (tester) async {
+  testWidgets('TV 取消房间模式：顶栏不渲染房间入口', (tester) async {
     final servers = [_server('a', '家庭NAS')];
     await tester.pumpWidget(
       _host(servers: servers, current: servers.first),
     );
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.meeting_room_outlined));
-    await tester.pumpAndSettle();
-    expect(find.text('创建房间'), findsOneWidget);
-    expect(find.text('加入房间'), findsOneWidget);
+    expect(find.byIcon(Icons.meeting_room_outlined), findsNothing);
+    expect(find.text('创建房间'), findsNothing);
+    expect(find.text('加入房间'), findsNothing);
   });
 
   testWidgets('顶栏为通栏玻璃条，标题胶囊被玻璃包裹', (tester) async {

@@ -46,7 +46,8 @@ void main() {
     });
 
     test('无框架名时判为未知，不猜', () {
-      const t = DecoderTrack(codec: 'c2.qti.hevc.decoder', codecIsSoftware: false);
+      const t =
+          DecoderTrack(codec: 'c2.qti.hevc.decoder', codecIsSoftware: false);
       expect(t.verdict.kind, DecoderKind.unknown);
       expect(t.verdict.label, '未知');
     });
@@ -66,6 +67,33 @@ void main() {
         codecIsSoftware: false,
       );
       expect(t.verdict.kind, DecoderKind.unknown);
+    });
+
+    // Windows 面板曾把 D3D11 显示为「未知」，看起来像硬解没生效
+    test('D3D11 + code 0 判为硬解确证（无需深度诊断的实际 codec）', () {
+      const t = DecoderTrack(framework: 'D3D11');
+      expect(t.verdict.kind, DecoderKind.hardware);
+      expect(t.verdict.confirmed, isTrue);
+      expect(t.verdict.label, '硬解(确证)');
+      expect(t.display, 'D3D11  硬解(确证)  code 0');
+    });
+
+    test('DXVA 同为硬解专用框架，code 0 即确证', () {
+      const t = DecoderTrack(framework: 'DXVA');
+      expect(t.verdict.kind, DecoderKind.hardware);
+      expect(t.verdict.confirmed, isTrue);
+    });
+
+    test('VideoToolbox 同为硬解专用框架，code 0 即确证', () {
+      const t = DecoderTrack(framework: 'VideoToolbox');
+      expect(t.verdict.kind, DecoderKind.hardware);
+      expect(t.verdict.confirmed, isTrue);
+    });
+
+    test('硬解专用框架 code 非 0（该次尝试失败）保守判未知', () {
+      const t = DecoderTrack(framework: 'D3D11', error: -10002);
+      expect(t.verdict.kind, DecoderKind.unknown);
+      expect(t.display, contains('code -10002'));
     });
   });
 
@@ -171,7 +199,10 @@ void main() {
     });
 
     test('withVideo/withAudio 互不覆盖', () {
-      const v = DecoderTrack(framework: 'AMediaCodec', codec: 'c2.qti.hevc.decoder', codecIsSoftware: false);
+      const v = DecoderTrack(
+          framework: 'AMediaCodec',
+          codec: 'c2.qti.hevc.decoder',
+          codecIsSoftware: false);
       const a = DecoderTrack(framework: 'FFmpeg');
       final r = DecoderReport.empty.withVideo(v).withAudio(a);
       expect(r.video.framework, 'AMediaCodec');
@@ -179,13 +210,17 @@ void main() {
     });
 
     test('任一轨道有框架即非空', () {
-      final r = DecoderReport.empty.withAudio(const DecoderTrack(framework: 'AMediaCodec'));
+      final r = DecoderReport.empty
+          .withAudio(const DecoderTrack(framework: 'AMediaCodec'));
       expect(r.isEmpty, isFalse);
     });
 
     test('换集重置后回落到未知，不残留上一集解码器', () {
       final before = DecoderReport.empty
-          .withVideo(const DecoderTrack(framework: 'AMediaCodec', codec: 'c2.qti.hevc.decoder', codecIsSoftware: false))
+          .withVideo(const DecoderTrack(
+              framework: 'AMediaCodec',
+              codec: 'c2.qti.hevc.decoder',
+              codecIsSoftware: false))
           .withAudio(const DecoderTrack(framework: 'FFmpeg'));
       const after = DecoderReport.empty;
       expect(after.video.verdict.kind, DecoderKind.unknown);

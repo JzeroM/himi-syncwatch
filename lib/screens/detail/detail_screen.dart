@@ -876,16 +876,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
     final children = <Widget>[];
     if (widget.roomMode) {
-      children.add(action(
-        run: _addResourceToRoom,
-        radius: 14,
-        button: FilledButton.icon(
-          onPressed: _addResourceToRoom,
-          icon: Icon(Icons.add, color: scheme.primary),
-          label: const Text('加入资源'),
-          style: glassStyle(),
-        ),
-      ));
+      // TV 模式取消房间模式：房间相关操作全部隐藏
+      if (!tvMode) {
+        children.add(action(
+          run: _addResourceToRoom,
+          radius: 14,
+          button: FilledButton.icon(
+            onPressed: _addResourceToRoom,
+            icon: Icon(Icons.add, color: scheme.primary),
+            label: const Text('加入资源'),
+            style: glassStyle(),
+          ),
+        ));
+      }
     } else {
       // 剧集无集数据时隐藏播放按钮（点了无事发生会误导）
       if (!item.isSeries || _episodes.isNotEmpty) {
@@ -900,16 +903,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ),
         ));
       }
-      children.add(action(
-        run: _createRoom,
-        radius: 14,
-        button: FilledButton.icon(
-          onPressed: _createRoom,
-          icon: Icon(Icons.group_add, color: scheme.primary),
-          label: const Text('建房'),
-          style: glassStyle(),
-        ),
-      ));
+      // TV 模式取消房间模式：不提供建房入口
+      if (!tvMode) {
+        children.add(action(
+          run: _createRoom,
+          radius: 14,
+          button: FilledButton.icon(
+            onPressed: _createRoom,
+            icon: Icon(Icons.group_add, color: scheme.primary),
+            label: const Text('建房'),
+            style: glassStyle(),
+          ),
+        ));
+      }
     }
 
     return Column(

@@ -75,7 +75,8 @@ class DecoderTrack {
   /// 绝不猜测。理由见 [_knownFrameworks]。
   DecoderVerdict get verdict {
     final fw = framework.trim().toLowerCase();
-    if (fw.isEmpty) return const DecoderVerdict(DecoderKind.unknown, confirmed: false);
+    if (fw.isEmpty)
+      return const DecoderVerdict(DecoderKind.unknown, confirmed: false);
 
     // mdk 事件直接点名 FFmpeg，即软件解码，无歧义。
     if (fw == 'ffmpeg') {
@@ -86,6 +87,16 @@ class DecoderTrack {
     // 而 fvp issue #266 的日志里同一字段填的是状态（open）。
     // 不在白名单内就视为不可信，宁可显示未知也不输出错值。
     if (!_knownFrameworks.contains(fw)) {
+      return const DecoderVerdict(DecoderKind.unknown, confirmed: false);
+    }
+
+    // 硬解专用框架本身就是硬件加速 API，不存在软件实现；回退时 mdk
+    // 会再发一条事件（面板取最新值），故「最新为硬件框架 + code 0」
+    // 即硬解成功的直接证据。error 非 0 视为该次尝试失败，保守判未知。
+    if (_hardwareOnlyFrameworks.contains(fw)) {
+      if (error == 0) {
+        return const DecoderVerdict(DecoderKind.hardware, confirmed: true);
+      }
       return const DecoderVerdict(DecoderKind.unknown, confirmed: false);
     }
 
@@ -123,6 +134,34 @@ class DecoderTrack {
     'opensl',
     'audiotrack',
     'coreaudio',
+    'd3d11',
+    'dxva',
+    'vaapi',
+    'vdpau',
+    'nvdec',
+    'qsv',
+    'amf',
+    'cuda',
+  };
+
+  /// 硬解专用框架（本身即硬件加速 API，无软件实现）。
+  ///
+  /// 命中白名单 + error 0 即硬解确证，不再依赖深度诊断才能捕获的
+  /// [actualCodec]——Windows 的 D3D11/DXVA、Apple 的 VT 等此前因
+  /// 白名单缺项被判「未知」，面板看起来像硬解没生效。
+  static const _hardwareOnlyFrameworks = {
+    'd3d11',
+    'dxva',
+    'vaapi',
+    'vdpau',
+    'nvdec',
+    'qsv',
+    'amf',
+    'cuda',
+    'videotoolbox',
+    'vt',
+    'vda',
+    'mmal',
   };
 
   DecoderTrack copyWith({

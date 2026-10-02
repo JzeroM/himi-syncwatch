@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_directional_scroll.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
 class HimiSyncApp extends ConsumerWidget {
   const HimiSyncApp({super.key});
@@ -16,9 +16,10 @@ class HimiSyncApp extends ConsumerWidget {
       title: 'HIMI',
       debugShowCheckedModeBanner: false,
       // TV 模式：焦点事件链上挂遥控器按键层（方向键滚动贯通 + OK 作用域落焦）
+      // + directional 导航模式（Slider 只消费左右键，上下放行给焦点导航）
       builder: (context, child) {
         final subtree = child ?? const SizedBox.shrink();
-        return tvMode ? TvRemoteShortcuts(child: subtree) : subtree;
+        return tvMode ? TvRemoteShell(child: subtree) : subtree;
       },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(

@@ -14,7 +14,25 @@ void main() {
       expect(AppSettings.effectiveAudioRenderer('auto'), 'auto');
     });
 
-    test('非 Windows 平台保持用户设置', () {
+    test('iOS 固定为自动——AudioTrack 是 Android 专属后端，设了会无声', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      expect(AppSettings.effectiveAudioRenderer('AudioTrack'), 'auto');
+      expect(AppSettings.effectiveAudioRenderer('aaudio'), 'auto');
+      expect(AppSettings.effectiveAudioRenderer('auto'), 'auto');
+    });
+
+    test('macOS/Linux 固定为自动', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(AppSettings.effectiveAudioRenderer('AudioTrack'), 'auto');
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      expect(AppSettings.effectiveAudioRenderer('OpenSL'), 'auto');
+    });
+
+    test('Android 放行用户设置（AAudio/OpenSL/AudioTrack 专属平台）', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
 

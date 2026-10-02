@@ -603,8 +603,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// mdk 每尝试一个解码器就发一次事件（含失败回退），因此取**最新值**，
   /// 回退过程在面板上直接可见。error 字段一并保留，成功为 0。
+  /// 成功事件同样落盘：Windows 硬解是否生效、iOS 视频走没走硬解，
+  /// 全靠这行取证（此前仅 error 落盘，正常路径无日志可查）。
   void _noteDecoderEvent(mdk.MediaEvent event) {
     final isVideo = event.category == 'decoder.video';
+    LogService()
+        .log('Diag', '${event.category}: ${event.detail} code ${event.error}');
     final current = isVideo ? _decoderReport.video : _decoderReport.audio;
     final next = current.copyWith(framework: event.detail, error: event.error);
     setState(() {
@@ -754,9 +758,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (settings.stereoDownmix) {
       _player.setProperty('audio.avfilter', 'aresample=ochl=stereo');
     }
-    // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度
-    // Windows 固定走 auto（mdk 无 Android 后端）
+    // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度。
+    // AAudio/OpenSL/AudioTrack 为 Android 专属（其余平台自动归一为 auto），
+    // 生效值落盘取证：iOS 曾因默认 AudioTrack 无效导致无声
     final renderer = AppSettings.effectiveAudioRenderer(settings.audioRenderer);
+    LogService()
+        .log('Player', '音频后端: 设置=${settings.audioRenderer} 生效=$renderer');
     if (renderer != 'auto') {
       _player.audioBackends = [renderer];
     }
@@ -874,6 +881,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 配置解码器
     final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
     _player.videoDecoders = decoders;
+    // 落盘配置值取证：Windows「硬解没生效」类问题先核对配置与
+    // decoder.video 事件（实际生效框架）是否一致
+    LogService().log('Player', '解码配置: ${settings.decodeMode} → $decoders');
 
     // avformat 缓冲配置：平衡起播速度与播放稳定性
     _player.setProperty('avformat.probesize', '1048576'); // 1MB
@@ -1016,13 +1026,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 确保纹理存在：首次播放时创建，后续复用现有纹理避免黑屏
+  ///
+  /// 落盘 updateTexture 返回值/textureId/textureSize/视频流数：
+  /// iOS 曾出现「无画面」，纹理链路是否走通全靠这行取证——
+  /// 返回 -1 表示 fvp 内部 _videoSize 未就绪（媒体未 loaded 或
+  /// 视频流为空），此时纹理恒为 null，UI 永远转圈。
   Future<void> _ensureTexture() async {
     if (_player.textureId.value != null) return;
     if (!mounted) return;
     try {
-      await _player.updateTexture().timeout(const Duration(seconds: 5));
-    } catch (_) {
-      LogService().log('Player', 'updateTexture 失败');
+      final texId =
+          await _player.updateTexture().timeout(const Duration(seconds: 5));
+      // 返回 -1 说明 _videoSize 未 resolve：短暂等待 loaded 事件后重试一次
+      if (texId < 0 && mounted) {
+        LogService().log('Player', 'updateTexture 返回 $texId，200ms 后重试');
+        await Future.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return;
+        if (_player.textureId.value == null) {
+          await _player.updateTexture().timeout(const Duration(seconds: 5));
+        }
+      }
+      String videoStreams = '?';
+      try {
+        videoStreams = '${_player.mediaInfo.video?.length ?? 0} 路';
+      } catch (_) {}
+      LogService().log('Player',
+          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams');
+    } catch (e) {
+      LogService().log('Player', 'updateTexture 失败: $e');
     }
   }
 
@@ -3164,6 +3195,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Step2: 切换解码器
       final decoders = DecodeModeService.resolveDecoders(mode);
       _player.videoDecoders = decoders;
+      LogService().log('Player', '切换解码配置: $mode → $decoders');
 
       // Step3: seek 触发帧刷新（强制新解码器解码当前帧）
       if (currentPos > 0) {

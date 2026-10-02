@@ -224,10 +224,8 @@ void main() {
             of: find.text('开始播放'), matching: find.byType(TvFocusable)),
         findsOneWidget,
       );
-      expect(
-        find.ancestor(of: find.text('建房'), matching: find.byType(TvFocusable)),
-        findsOneWidget,
-      );
+      // TV 取消房间模式：不渲染建房入口
+      expect(find.text('建房'), findsNothing);
 
       // 进页 autofocus：焦点直接落在开始播放（解决有时无法聚焦）
       expect(
@@ -238,7 +236,7 @@ void main() {
       );
     });
 
-    testWidgets('电视剧：无开始播放，autofocus 落建房', (tester) async {
+    testWidgets('电视剧（无集数据）：TV 取消房间模式后无建房入口', (tester) async {
       final series = MediaItem(
         id: 'm1',
         name: '测试剧集',
@@ -249,30 +247,16 @@ void main() {
       await _pumpDetail(tester, tv: true, item: series);
 
       expect(find.text('开始播放'), findsNothing);
-      expect(find.text('建房'), findsOneWidget);
-      expect(
-        _focusWithin(find.ancestor(
-            of: find.text('建房'), matching: find.byType(TvFocusable))),
-        isTrue,
-        reason: '电视剧进页应自动聚焦建房',
-      );
+      expect(find.text('建房'), findsNothing);
     });
 
-    testWidgets('roomMode：加入资源移到简介上方且无底栏', (tester) async {
+    testWidgets('roomMode：TV 取消房间模式后无「加入资源」入口', (tester) async {
       await _pumpDetail(tester, tv: true, roomMode: true);
 
       final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
       expect(scaffold.bottomNavigationBar, isNull);
       expect(find.text('开始播放'), findsNothing);
-      expect(find.text('加入资源'), findsOneWidget);
-      expect(
-        find.ancestor(
-            of: find.text('加入资源'), matching: find.byType(TvFocusable)),
-        findsOneWidget,
-      );
-      final btn = tester.getRect(find.text('加入资源'));
-      final desc = tester.getRect(find.text('简介'));
-      expect(btn.top, lessThan(desc.top));
+      expect(find.text('加入资源'), findsNothing);
     });
 
     testWidgets('非 TV 回归：胶囊底栏取消，播放按钮进内容流（简介上方）', (tester) async {
