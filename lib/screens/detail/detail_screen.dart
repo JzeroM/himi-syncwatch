@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/detail/episode_number_picker.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
@@ -47,6 +48,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   /// 当前选中季号（与选季下拉/季卡/剧集行联动）。
   int? _selectedSeason;
+
+  /// 选集器选中的集 id（「开始播放」播这一集；切季时重置）。
+  String? _selectedEpisodeId;
+
+  /// 剧集正序/倒序（横卡行与选集网格共用）。
+  bool _sortDescending = false;
 
   bool _isLoading = true;
   String? _error;
@@ -162,13 +169,59 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
   }
 
-  /// 剧集页「开始播放」：播当前选中季的第一集。
-  Future<void> _startPlaySeries() async {
-    final seasonEpisodes = _episodes
-        .where((e) => (e.parentIndexNumber ?? 0) == (_selectedSeason ?? 0))
-        .toList();
+  /// 当前选中季的集（按集号正序）。
+  List<MediaItem> _seasonEpisodesOf(int? season) => _episodes
+      .where((e) => (e.parentIndexNumber ?? 0) == (season ?? 0))
+      .toList()
+    ..sort((a, b) => (a.indexNumber ?? 0).compareTo(b.indexNumber ?? 0));
+
+  /// 高亮集：选中集属于当前季则用它，否则回退该季第一集。
+  String? _highlightEpisodeId(List<MediaItem> seasonEpisodes) {
+    if (seasonEpisodes.isEmpty) return null;
+    final selected = _selectedEpisodeId;
+    if (selected != null && seasonEpisodes.any((e) => e.id == selected)) {
+      return selected;
+    }
+    return seasonEpisodes.first.id;
+  }
+
+  /// 切换选中季：高亮/选中集随季重置。
+  void _onSeasonChanged(int n) {
+    setState(() {
+      _selectedSeason = n;
+      _selectedEpisodeId = null;
+    });
+  }
+
+  /// 打开数字网格选集器（仅选中高亮，不直接播放）。
+  void _openEpisodePicker() {
+    final season = _selectedSeason ?? 0;
+    final seasonEpisodes = _seasonEpisodesOf(_selectedSeason);
     if (seasonEpisodes.isEmpty) return;
-    _onEpisodeTap(seasonEpisodes.first);
+    showEpisodeNumberPicker(
+      context,
+      seasonNumber: season,
+      episodes: seasonEpisodes,
+      highlightEpisodeId: _highlightEpisodeId(seasonEpisodes),
+      sortDescending: _sortDescending,
+      onToggleSort: () => setState(() => _sortDescending = !_sortDescending),
+      onSelect: (ep) => setState(() => _selectedEpisodeId = ep.id),
+      tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
+    );
+  }
+
+  /// 剧集页「开始播放」：播选集器选中的集（未选则该季第一集）。
+  Future<void> _startPlaySeries() async {
+    final seasonEpisodes = _seasonEpisodesOf(_selectedSeason);
+    if (seasonEpisodes.isEmpty) return;
+    final selected = _selectedEpisodeId;
+    final target = selected != null
+        ? seasonEpisodes.firstWhere(
+            (e) => e.id == selected,
+            orElse: () => seasonEpisodes.first,
+          )
+        : seasonEpisodes.first;
+    _onEpisodeTap(target);
   }
 
   /// 开始播放（多版本先弹选择）。胶囊底栏与 TV 内联按钮共用一份逻辑。
@@ -565,30 +618,48 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  /// 操作区（简介上方，全平台统一）：第一行播放/建房主按钮，第二行
-  /// 字幕/音轨选择器图标行（[TrackActionRow] 内部按轨道有无自适应显隐）。
+  /// 操作区（简介上方，全平台统一）：第一行播放/建房主按钮（玻璃质感、
+  /// 各占约半行），第二行字幕/音轨选择器图标行（[TrackActionRow] 内部按
+  /// 轨道有无自适应显隐）。
   ///
-  /// TV 模式下 [TvFocusable] 提供焦点环/放大，第一个按钮 autofocus；
+  /// 按钮外层 [GlassContainer] 提供模糊+高光描边（glassUi 关闭时降级深色
+  /// 纯色）。TV 模式下 [TvFocusable] 提供焦点环/放大，第一个按钮 autofocus；
   /// ExcludeFocus 防止内外双焦点节点浪费方向键（Enter 走外层 onTap，
   /// 触摸走按钮 onPressed，两处引用同一方法，各只触发一次）。
   Widget _buildActionRow() {
     final item = _item!;
+    final scheme = Theme.of(context).colorScheme;
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     var isFirst = true;
+
+    // 玻璃按钮统一外观：透明底、白字、主色图标、48 高
+    ButtonStyle glassStyle() => FilledButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          shadowColor: Colors.transparent,
+        );
 
     Widget action({
       required Future<void> Function() run,
       required double radius,
       required Widget button,
     }) {
-      if (!tvMode) return button;
+      final glass = GlassContainer(
+        borderRadius: BorderRadius.circular(radius),
+        padding: EdgeInsets.zero,
+        child: button,
+      );
+      if (!tvMode) return glass;
       final autofocus = isFirst;
       isFirst = false;
       return TvFocusable(
         autofocus: autofocus,
         radius: radius,
         onTap: run,
-        child: ExcludeFocus(child: button),
+        child: ExcludeFocus(child: glass),
       );
     }
 
@@ -596,12 +667,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (widget.roomMode) {
       children.add(action(
         run: _addResourceToRoom,
-        radius: 12,
+        radius: 14,
         button: FilledButton.icon(
           onPressed: _addResourceToRoom,
-          icon: const Icon(Icons.add),
+          icon: Icon(Icons.add, color: scheme.primary),
           label: const Text('加入资源'),
-          style: readableFilledButtonStyle(Theme.of(context).colorScheme),
+          style: glassStyle(),
         ),
       ));
     } else {
@@ -609,25 +680,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       if (!item.isSeries || _episodes.isNotEmpty) {
         children.add(action(
           run: item.isSeries ? _startPlaySeries : _startPlay,
-          radius: 12,
+          radius: 14,
           button: FilledButton.icon(
             onPressed: item.isSeries ? _startPlaySeries : _startPlay,
-            icon: const Icon(Icons.play_arrow),
+            icon: Icon(Icons.play_arrow, color: scheme.primary),
             label: const Text('开始播放'),
-            style: readableFilledButtonStyle(Theme.of(context).colorScheme),
+            style: glassStyle(),
           ),
         ));
       }
       children.add(action(
         run: _createRoom,
-        radius: 12,
-        button: OutlinedButton.icon(
+        radius: 14,
+        button: FilledButton.icon(
           onPressed: _createRoom,
-          icon: const Icon(Icons.group_add),
+          icon: Icon(Icons.group_add, color: scheme.primary),
           label: const Text('建房'),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
+          style: glassStyle(),
         ),
       ));
     }
@@ -637,11 +706,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             for (var i = 0; i < children.length; i++) ...[
               if (i > 0) const SizedBox(width: 12),
-              children[i],
+              Expanded(child: children[i]),
             ],
           ],
         ),
@@ -805,8 +873,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                _buildActionRow(),
-                const SizedBox(height: 16),
+                // 非 TV roomMode 的入口统一走底部胶囊（避免双入口）
+                if (!(widget.roomMode &&
+                    !ref.watch(settingsProvider.select((s) => s.tvMode)))) ...[
+                  _buildActionRow(),
+                  const SizedBox(height: 16),
+                ],
                 if (item.overview != null && item.overview!.isNotEmpty) ...[
                   const Text(
                     '简介',
@@ -859,10 +931,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     seasons: _seasons,
                     episodes: _episodes,
                     selectedSeason: _selectedSeason,
-                    onSeasonSelected: (n) => setState(() {
-                      _selectedSeason = n;
-                    }),
+                    onSeasonSelected: _onSeasonChanged,
                     onEpisodeTap: _onEpisodeTap,
+                    onToggleSort: () =>
+                        setState(() => _sortDescending = !_sortDescending),
+                    onOpenEpisodePicker: _openEpisodePicker,
+                    sortDescending: _sortDescending,
                     tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
                   ),
                 ],

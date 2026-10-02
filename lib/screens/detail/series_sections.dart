@@ -15,6 +15,15 @@ class SeriesSections extends StatelessWidget {
   final ValueChanged<MediaItem> onEpisodeTap;
   final bool tvMode;
 
+  /// 倒序排列（横卡行与选集网格共用，见详情页排序切换）。
+  final bool sortDescending;
+
+  /// 切换正序/倒序（由详情页持有状态并 setState）。
+  final VoidCallback onToggleSort;
+
+  /// 打开数字网格选集器（由详情页持有选中集状态）。
+  final VoidCallback onOpenEpisodePicker;
+
   const SeriesSections({
     super.key,
     required this.seasons,
@@ -22,6 +31,9 @@ class SeriesSections extends StatelessWidget {
     required this.selectedSeason,
     required this.onSeasonSelected,
     required this.onEpisodeTap,
+    required this.onToggleSort,
+    required this.onOpenEpisodePicker,
+    this.sortDescending = false,
     this.tvMode = false,
   });
 
@@ -29,10 +41,14 @@ class SeriesSections extends StatelessWidget {
   static int seasonNumber(MediaItem season, int index) =>
       season.indexNumber ?? index + 1;
 
-  /// 该季的集（已按集号排序；调用方保证 episodes 全量）。
-  List<MediaItem> get _seasonEpisodes => episodes
-      .where((e) => (e.parentIndexNumber ?? 0) == (selectedSeason ?? 0))
-      .toList();
+  /// 该季的集：按集号排序后按 [sortDescending] 决定正/倒序。
+  List<MediaItem> get _seasonEpisodes {
+    final list = episodes
+        .where((e) => (e.parentIndexNumber ?? 0) == (selectedSeason ?? 0))
+        .toList()
+      ..sort((a, b) => (a.indexNumber ?? 0).compareTo(b.indexNumber ?? 0));
+    return sortDescending ? list.reversed.toList() : list;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +61,8 @@ class SeriesSections extends StatelessWidget {
           seasons: seasons,
           selectedSeason: selectedSeason,
           onSeasonSelected: onSeasonSelected,
+          onToggleSort: onToggleSort,
+          onOpenEpisodePicker: onOpenEpisodePicker,
           tvMode: tvMode,
         ),
         const SizedBox(height: 12),
@@ -71,17 +89,21 @@ class SeriesSections extends StatelessWidget {
   }
 }
 
-/// 「第 N 季 ▼」快速选季下拉。
+/// 「第 N 季 ▼」快速选季下拉 + 右侧排序/选集入口。
 class _SeasonSelector extends StatelessWidget {
   final List<MediaItem> seasons;
   final int? selectedSeason;
   final ValueChanged<int> onSeasonSelected;
+  final VoidCallback onToggleSort;
+  final VoidCallback onOpenEpisodePicker;
   final bool tvMode;
 
   const _SeasonSelector({
     required this.seasons,
     required this.selectedSeason,
     required this.onSeasonSelected,
+    required this.onToggleSort,
+    required this.onOpenEpisodePicker,
     required this.tvMode,
   });
 
@@ -112,14 +134,50 @@ class _SeasonSelector extends StatelessWidget {
       },
     );
 
-    if (!tvMode) return dropdown;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: TvFocusable(
-        radius: 8,
-        onTap: () => _showMenu(context),
-        child: ExcludeFocus(child: dropdown),
-      ),
+    Widget iconBtn({
+      required Key key,
+      required IconData icon,
+      required String tooltip,
+      required VoidCallback onTap,
+    }) {
+      final btn = IconButton(
+        key: key,
+        icon: Icon(icon),
+        tooltip: tooltip,
+        onPressed: onTap,
+      );
+      if (!tvMode) return btn;
+      return TvFocusable(
+        radius: 10,
+        onTap: onTap,
+        child: ExcludeFocus(child: btn),
+      );
+    }
+
+    return Row(
+      children: [
+        if (tvMode)
+          TvFocusable(
+            radius: 8,
+            onTap: () => _showMenu(context),
+            child: ExcludeFocus(child: dropdown),
+          )
+        else
+          dropdown,
+        const Spacer(),
+        iconBtn(
+          key: const Key('episodeSortToggle'),
+          icon: Icons.swap_vert,
+          tooltip: '切换正序/倒序',
+          onTap: onToggleSort,
+        ),
+        iconBtn(
+          key: const Key('episodePickerButton'),
+          icon: Icons.grid_view,
+          tooltip: '选集',
+          onTap: onOpenEpisodePicker,
+        ),
+      ],
     );
   }
 
@@ -265,7 +323,7 @@ class _SeasonCardRow extends StatelessWidget {
     required this.tvMode,
   });
 
-  static const double _posterWidth = 88;
+  static const double _posterWidth = 104;
 
   @override
   Widget build(BuildContext context) {

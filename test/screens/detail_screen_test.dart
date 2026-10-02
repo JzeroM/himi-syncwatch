@@ -202,11 +202,12 @@ void main() {
       final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
       expect(scaffold.bottomNavigationBar, isNull, reason: 'TV 不渲染胶囊底栏');
 
-      // 无胶囊托盘：按钮祖先链里不应有 GlassContainer
+      // 页面级胶囊托盘已取消，按钮自身为玻璃质感（GlassContainer 外壳）
       expect(
         find.ancestor(
             of: find.text('开始播放'), matching: find.byType(GlassContainer)),
-        findsNothing,
+        findsOneWidget,
+        reason: '播放按钮应带玻璃外壳',
       );
 
       // 在简介标题上方
@@ -277,13 +278,12 @@ void main() {
       final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
       expect(scaffold.bottomNavigationBar, isNull,
           reason: '播放/建房已进内容流，非 roomMode 不再渲染胶囊底栏');
-      // 按钮不被 GlassContainer 托盘包裹
+      // 按钮为玻璃质感（GlassContainer 外壳），且非 TV 不包 TvFocusable
       expect(
         find.ancestor(
             of: find.text('开始播放'), matching: find.byType(GlassContainer)),
-        findsNothing,
+        findsOneWidget,
       );
-      // 非 TV 不包 TvFocusable（触摸直接点按钮）
       expect(
         find.ancestor(
             of: find.text('开始播放'), matching: find.byType(TvFocusable)),
@@ -568,5 +568,225 @@ void main() {
 
     expect(find.text('TV-MA'), findsOneWidget);
     expect(find.text('4K'), findsOneWidget);
+  });
+
+  // ---- 玻璃按钮行 ----
+
+  group('玻璃按钮行', () {
+    testWidgets('开始播放/建房各占约半行且带玻璃外壳', (tester) async {
+      await _pumpDetail(tester);
+
+      // FilledButton.icon 是私有子类，byType 不命中，用玻璃外壳 rect 断言
+      final playGlass = find
+          .ancestor(
+              of: find.text('开始播放'), matching: find.byType(GlassContainer))
+          .last;
+      final roomGlass = find
+          .ancestor(of: find.text('建房'), matching: find.byType(GlassContainer))
+          .last;
+      final play = tester.getRect(playGlass);
+      final room = tester.getRect(roomGlass);
+
+      // 内容区左右 padding 16，两按钮间距 12：每侧约 (800-32-12)/2
+      expect(play.width, greaterThan(340));
+      expect(room.width, greaterThan(340));
+      expect(play.width, closeTo(room.width, 1), reason: '两按钮等宽');
+
+      // 玻璃外壳（GlassContainer）包裹
+      expect(
+        find.ancestor(
+            of: find.text('开始播放'), matching: find.byType(GlassContainer)),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(
+            of: find.text('建房'), matching: find.byType(GlassContainer)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('非 TV roomMode 单一入口：仅底栏加入资源，内容流无重复', (tester) async {
+      await _pumpDetail(tester, roomMode: true);
+
+      expect(find.text('加入资源'), findsOneWidget,
+          reason: '内容流操作行在非 TV roomMode 下隐藏，入口只在底栏');
+      expect(find.text('开始播放'), findsNothing);
+    });
+  });
+
+  // ---- 播出季卡宽度 ----
+
+  testWidgets('播出季卡加宽（约 104）', (tester) async {
+    await _pumpDetail(
+      tester,
+      item: series,
+      emby: FakeEmbyService(
+        item: series,
+        itemsByParent: episodesByParent,
+        seasons: seasons,
+      ),
+    );
+
+    final card = find.byKey(const Key('seasonCard_sea1'));
+    await tester.ensureVisible(card);
+    await tester.pump();
+    expect(tester.getRect(card).width, closeTo(104, 1));
+  });
+
+  // ---- 数字网格选集器 ----
+
+  group('数字网格选集器', () {
+    Future<ProviderContainer> pumpSeries(WidgetTester tester) {
+      return _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: episodesByParent,
+          seasons: seasons,
+        ),
+      );
+    }
+
+    testWidgets('入口打开 sheet：标题/该季数字格/首集高亮', (tester) async {
+      await pumpSeries(tester);
+
+      final btn = find.byKey(const Key('episodePickerButton'));
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.byKey(const Key('episodePickerTitle')), findsOneWidget);
+      // 第 1 季两集，第 2 季集不出现
+      expect(find.byKey(const Key('episodeNumber_e1')), findsOneWidget);
+      expect(find.byKey(const Key('episodeNumber_e2')), findsOneWidget);
+      expect(find.byKey(const Key('episodeNumber_e3')), findsNothing);
+
+      // 首集高亮：边框为主色
+      final tile =
+          tester.widget<Container>(find.byKey(const Key('episodeNumber_e1')));
+      final deco = tile.decoration! as BoxDecoration;
+      expect(deco.border?.top.color, ThemeData.dark().colorScheme.primary);
+
+      // 未选集的另一集无高亮
+      final plain =
+          tester.widget<Container>(find.byKey(const Key('episodeNumber_e2')));
+      expect((plain.decoration! as BoxDecoration).border?.top.color,
+          Colors.transparent);
+    });
+
+    testWidgets('点数字仅选中：sheet 关闭，再次打开高亮跟随', (tester) async {
+      await pumpSeries(tester);
+
+      Future<void> openPicker() async {
+        final btn = find.byKey(const Key('episodePickerButton'));
+        await tester.ensureVisible(btn);
+        await tester.pump();
+        await tester.tap(btn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+      }
+
+      await openPicker();
+      await tester.tap(find.byKey(const Key('episodeNumber_e2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byKey(const Key('episodePickerTitle')), findsNothing,
+          reason: '选中后 sheet 关闭');
+
+      await openPicker();
+      final tile =
+          tester.widget<Container>(find.byKey(const Key('episodeNumber_e2')));
+      expect((tile.decoration! as BoxDecoration).border?.top.color,
+          ThemeData.dark().colorScheme.primary,
+          reason: '高亮跟随到点选的第 2 集');
+    });
+
+    testWidgets('sheet 内排序切换：网格顺序翻转', (tester) async {
+      await pumpSeries(tester);
+
+      final btn = find.byKey(const Key('episodePickerButton'));
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // 正序：e1 在左、e2 在右
+      final e1a = tester.getRect(find.byKey(const Key('episodeNumber_e1')));
+      final e2a = tester.getRect(find.byKey(const Key('episodeNumber_e2')));
+      expect(e1a.left, lessThan(e2a.left));
+
+      await tester.tap(find.byKey(const Key('episodeSortToggleInSheet')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final e1b = tester.getRect(find.byKey(const Key('episodeNumber_e1')));
+      final e2b = tester.getRect(find.byKey(const Key('episodeNumber_e2')));
+      expect(e2b.left, lessThan(e1b.left), reason: '倒序后 e2 在左');
+    });
+
+    testWidgets('外部排序入口：剧集横卡行顺序翻转', (tester) async {
+      await pumpSeries(tester);
+
+      final row = find.byKey(const Key('episodeCard_e1'));
+      final row2 = find.byKey(const Key('episodeCard_e2'));
+      expect(tester.getRect(row).left, lessThan(tester.getRect(row2).left),
+          reason: '默认正序');
+
+      final toggle = find.byKey(const Key('episodeSortToggle'));
+      await tester.ensureVisible(toggle);
+      await tester.pump();
+      await tester.tap(toggle);
+      await tester.pump();
+
+      expect(
+          tester.getRect(find.byKey(const Key('episodeCard_e2'))).left,
+          lessThan(
+              tester.getRect(find.byKey(const Key('episodeCard_e1'))).left),
+          reason: '倒序后第 2 集在左');
+    });
+
+    testWidgets('TV：入口与数字格被 TvFocusable 包裹', (tester) async {
+      await _pumpDetail(
+        tester,
+        tv: true,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: episodesByParent,
+          seasons: seasons,
+        ),
+      );
+
+      expect(
+        find.ancestor(
+            of: find.byKey(const Key('episodePickerButton')),
+            matching: find.byType(TvFocusable)),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(
+            of: find.byKey(const Key('episodeSortToggle')),
+            matching: find.byType(TvFocusable)),
+        findsOneWidget,
+      );
+
+      final btn = find.byKey(const Key('episodePickerButton'));
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(
+        find.ancestor(
+            of: find.byKey(const Key('episodeNumber_e1')),
+            matching: find.byType(TvFocusable)),
+        findsOneWidget,
+      );
+    });
   });
 }
