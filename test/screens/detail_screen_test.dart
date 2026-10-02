@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
+import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
@@ -981,23 +983,32 @@ void main() {
       return card.decoration! as BoxDecoration;
     }
 
-    testWidgets('网格选中集 → 对应横卡主色描边', (tester) async {
+    testWidgets('网格选中集 → 横卡图片描边，文字区不描边', (tester) async {
       await pumpSeries(tester);
 
-      expect(borderOf(tester, const Key('episodeCard_e1')).border?.top.color,
+      expect(
+          borderOf(tester, const Key('episodeCardImage_e1')).border?.top.color,
           Colors.transparent,
           reason: '未选中时无描边');
+      expect(
+          tester
+              .widget<Container>(find.byKey(const Key('episodeCard_e1')))
+              .decoration,
+          isNull,
+          reason: '整卡（文字/简介区）不描边');
 
       await pickViaGrid(tester, 'e2');
 
-      expect(borderOf(tester, const Key('episodeCard_e2')).border?.top.color,
+      expect(
+          borderOf(tester, const Key('episodeCardImage_e2')).border?.top.color,
           ThemeData.dark().colorScheme.primary,
-          reason: '选中集描边高亮');
-      expect(borderOf(tester, const Key('episodeCard_e1')).border?.top.color,
+          reason: '选中集图片描边高亮');
+      expect(
+          borderOf(tester, const Key('episodeCardImage_e1')).border?.top.color,
           Colors.transparent);
     });
 
-    testWidgets('点横卡直接播放 → 该集设为选中描边', (tester) async {
+    testWidgets('点横卡仅选中描边，不进播放器', (tester) async {
       await pumpSeries(tester);
 
       final card = find.byKey(const Key('episodeCard_e2'));
@@ -1006,12 +1017,111 @@ void main() {
       await tester.tap(card);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      // 测试环境无 GoRouter，context.push 抛出；选中已在 push 前完成
-      tester.takeException();
 
-      expect(borderOf(tester, const Key('episodeCard_e2')).border?.top.color,
+      // 测试环境无 GoRouter，若走到 context.push 必然抛出；
+      // 无异常 = 仅选中、未触发播放跳转
+      expect(tester.takeException(), isNull, reason: '点横卡不跳播放器');
+      expect(
+          borderOf(tester, const Key('episodeCardImage_e2')).border?.top.color,
           ThemeData.dark().colorScheme.primary,
-          reason: '点横卡播放也设为选中');
+          reason: '点横卡设为选中');
+      expect(
+          borderOf(tester, const Key('episodeCardImage_e1')).border?.top.color,
+          Colors.transparent);
+    });
+
+    testWidgets('选季卡：描边仅海报图，第N季文字不随选中高亮', (tester) async {
+      await pumpSeries(tester);
+
+      expect(
+          borderOf(tester, const Key('seasonCardImage_sea1')).border?.top.color,
+          ThemeData.dark().colorScheme.primary,
+          reason: '默认选中第 1 季，描边在海报图上');
+      expect(
+          borderOf(tester, const Key('seasonCardImage_sea2')).border?.top.color,
+          Colors.transparent);
+      expect(
+          tester
+              .widget<Container>(find.byKey(const Key('seasonCard_sea1')))
+              .decoration,
+          isNull,
+          reason: '整张季卡不描边');
+
+      final sea2 = find.byKey(const Key('seasonCard_sea2'));
+      await tester.ensureVisible(sea2);
+      await tester.pump();
+      await tester.tap(sea2);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(
+          borderOf(tester, const Key('seasonCardImage_sea2')).border?.top.color,
+          ThemeData.dark().colorScheme.primary,
+          reason: '切季后海报描边跟随');
+      expect(
+          borderOf(tester, const Key('seasonCardImage_sea1')).border?.top.color,
+          Colors.transparent);
+
+      final label = tester.widget<Text>(
+          find.descendant(of: sea2, matching: find.text('第 2 季')));
+      expect(label.style?.color, Colors.white70, reason: '文字不随选中变主色');
+      expect(label.style?.fontWeight ?? FontWeight.normal, FontWeight.normal,
+          reason: '文字不随选中加粗');
+      // 切季联动：第 2 季的集替换第 1 季
+      expect(find.byKey(const Key('episodeCard_e3')), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_e1')), findsNothing);
+    });
+
+    testWidgets('点开始播放：序列化整部并跳播放器', (tester) async {
+      // 本用例单独挂最小 GoRouter：push 到假 player 路由，以「路由实际
+      // 跳转 + pendingRoomEpisodes 序列化」双重断言播放入口。
+      final container = ProviderContainer(overrides: [
+        settingsProvider
+            .overrideWith((ref) => FakeSettingsNotifier(const AppSettings())),
+        embyServiceProvider.overrideWith((ref) => FakeEmbyService(
+            item: series, itemsByParent: episodesByParent, seasons: seasons)),
+        posterColorProvider(_posterUrl).overrideWith((ref) async => null),
+      ]);
+      addTearDown(container.dispose);
+      final router = GoRouter(
+        initialLocation: '/detail',
+        routes: [
+          GoRoute(
+            path: '/detail',
+            builder: (c, s) => DetailScreen(itemId: series.id),
+          ),
+          GoRoute(
+            path: '/player/:id',
+            builder: (c, s) => const SizedBox(key: Key('fakePlayer')),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          theme: ThemeData.dark(),
+          routerConfig: router,
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 600));
+
+      final btn = find.text('开始播放');
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byKey(const Key('fakePlayer')), findsOneWidget,
+          reason: '点开始播放跳转播放器');
+
+      final pending = container.read(pendingRoomEpisodesProvider);
+      expect(pending, isNotNull, reason: '整部已序列化');
+      expect(pending!.length, 3, reason: 'fixture 共 3 集全部入列');
+      expect(pending.first['id'], 'e1', reason: '正序首集在前');
     });
 
     testWidgets('选中视口外远集 → 横卡行滚动定位该集', (tester) async {
@@ -1035,7 +1145,8 @@ void main() {
 
       expect(find.byKey(const Key('episodeCard_e7')), findsOneWidget,
           reason: '水平滚动到第 7 集');
-      expect(borderOf(tester, const Key('episodeCard_e7')).border?.top.color,
+      expect(
+          borderOf(tester, const Key('episodeCardImage_e7')).border?.top.color,
           ThemeData.dark().colorScheme.primary);
 
       // 垂直：分季区块滚入逻辑视口（600 高）
@@ -1044,6 +1155,18 @@ void main() {
       final sectionRect = tester.getRect(find.byType(SeriesSections));
       expect(sectionRect.top, lessThan(logicalHeight), reason: '横卡行区块在视口内');
       expect(sectionRect.bottom, greaterThan(0));
+
+      // 锚定操作行：高亮图片卡顶可见 + 开始播放/建房完整可见
+      final imgRect =
+          tester.getRect(find.byKey(const Key('episodeCardImage_e7')));
+      expect(imgRect.top, greaterThanOrEqualTo(0), reason: '高亮图片卡顶部进入视口');
+      expect(imgRect.top, lessThan(logicalHeight), reason: '高亮图片卡在视口上方边界内');
+      for (final label in ['开始播放', '建房']) {
+        final r = tester.getRect(find.text(label));
+        expect(r.top, greaterThanOrEqualTo(0), reason: '$label 可见');
+        expect(r.bottom, lessThanOrEqualTo(logicalHeight),
+            reason: '$label 完整可见（锚点不过分靠下）');
+      }
     });
   });
 }

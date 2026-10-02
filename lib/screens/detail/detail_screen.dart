@@ -64,6 +64,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   final _episodeRowKey = GlobalKey();
   final _episodeRowController = ScrollController();
 
+  /// 操作行（开始播放/建房）挂点：选集后垂直滚动的锚，保证按钮可见。
+  final _actionRowKey = GlobalKey();
+
   bool _isLoading = true;
   String? _error;
   bool _overviewExpanded = false;
@@ -164,12 +167,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     ];
   }
 
-  /// 点击剧集卡：设为选中集（描边高亮）后整部序列化进
-  /// [pendingRoomEpisodesProvider] 从该集开播。
-  void _onEpisodeTap(MediaItem ep) {
+  /// 点击剧集卡：仅设为选中集（图片描边高亮），不进播放器。
+  /// 播放统一走「开始播放」→ [_playEpisode]。
+  void _selectEpisode(MediaItem ep) {
     if (_selectedEpisodeId != ep.id) {
       setState(() => _selectedEpisodeId = ep.id);
     }
+  }
+
+  /// 从指定集开播：整部序列化进 [pendingRoomEpisodesProvider] 后跳播放器。
+  void _playEpisode(MediaItem ep) {
     final episodesJson = _episodes
         .map((e) => {
               'id': e.id,
@@ -374,7 +381,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  /// 选集后把详情页滚到该集横卡：水平 jumpTo 该卡 + 垂直滚动到行可见。
+  /// 选集后定位：水平 jumpTo 该集图片卡；垂直以操作行（开始播放/建房）
+  /// 为锚滚动，保证按钮完整可见且页面不过分靠下（无操作行时锚横卡行）。
   void _scrollToEpisode(MediaItem ep) {
     final list = _seasonEpisodesOf(_selectedSeason);
     final ordered = _sortDescending ? list.reversed.toList() : list;
@@ -386,10 +394,27 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _episodeRowController.jumpTo(target);
       }
     }
-    final rowCtx = _episodeRowKey.currentContext;
-    if (rowCtx != null) {
-      Scrollable.ensureVisible(
-        rowCtx,
+
+    final actionCtx = _actionRowKey.currentContext;
+    final anchorCtx = actionCtx ?? _episodeRowKey.currentContext;
+    if (anchorCtx == null) return;
+    final scrollable = Scrollable.maybeOf(anchorCtx);
+    if (scrollable == null) return;
+    final position = scrollable.position;
+    final viewport = scrollable.context.findRenderObject() as RenderBox?;
+    final anchorBox = anchorCtx.findRenderObject() as RenderBox?;
+    if (viewport == null || anchorBox == null) return;
+    final anchorTop =
+        anchorBox.localToGlobal(Offset.zero, ancestor: viewport).dy;
+    // 操作行顶贴 pinned SliverAppBar 下沿留 8px；锚横卡行时直接顶对齐+8
+    final topInset = MediaQuery.of(anchorCtx).padding.top;
+    final barHeight = kToolbarHeight;
+    final targetOffset =
+        (position.pixels + anchorTop - (topInset + barHeight + 8))
+            .clamp(0.0, position.maxScrollExtent);
+    if (position.pixels != targetOffset) {
+      position.animateTo(
+        targetOffset,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
@@ -407,7 +432,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             orElse: () => seasonEpisodes.first,
           )
         : seasonEpisodes.first;
-    _onEpisodeTap(target);
+    _playEpisode(target);
   }
 
   /// 开始播放（多版本先弹选择）。胶囊底栏与 TV 内联按钮共用一份逻辑。
@@ -1068,7 +1093,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 // 非 TV roomMode 的入口统一走底部胶囊（避免双入口）
                 if (!(widget.roomMode &&
                     !ref.watch(settingsProvider.select((s) => s.tvMode)))) ...[
-                  _buildActionRow(),
+                  KeyedSubtree(
+                    key: _actionRowKey,
+                    child: _buildActionRow(),
+                  ),
                   const SizedBox(height: 16),
                 ],
                 if (item.overview != null && item.overview!.isNotEmpty) ...[
@@ -1124,7 +1152,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     episodes: _episodes,
                     selectedSeason: _selectedSeason,
                     onSeasonSelected: _onSeasonChanged,
-                    onEpisodeTap: _onEpisodeTap,
+                    onEpisodeSelect: _selectEpisode,
                     onToggleSort: () =>
                         setState(() => _sortDescending = !_sortDescending),
                     onOpenEpisodePicker: _openEpisodePicker,

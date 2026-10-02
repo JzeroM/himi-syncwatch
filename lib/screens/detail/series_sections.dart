@@ -12,7 +12,7 @@ class SeriesSections extends StatelessWidget {
   final List<MediaItem> episodes;
   final int? selectedSeason;
   final ValueChanged<int> onSeasonSelected;
-  final ValueChanged<MediaItem> onEpisodeTap;
+  final ValueChanged<MediaItem> onEpisodeSelect;
   final bool tvMode;
 
   /// 倒序排列（横卡行与选集网格共用，见详情页排序切换）。
@@ -39,7 +39,7 @@ class SeriesSections extends StatelessWidget {
     required this.episodes,
     required this.selectedSeason,
     required this.onSeasonSelected,
-    required this.onEpisodeTap,
+    required this.onEpisodeSelect,
     required this.onToggleSort,
     required this.onOpenEpisodePicker,
     this.sortDescending = false,
@@ -85,7 +85,7 @@ class SeriesSections extends StatelessWidget {
         _SeasonEpisodeRow(
           rowKey: episodeRowKey,
           episodes: _seasonEpisodes,
-          onEpisodeTap: onEpisodeTap,
+          onEpisodeSelect: onEpisodeSelect,
           tvMode: tvMode,
           highlightEpisodeId: highlightEpisodeId,
           controller: episodeRowController,
@@ -232,7 +232,7 @@ class _SeasonSelector extends StatelessWidget {
 /// 选中集（[highlightEpisodeId]）主色描边高亮。
 class _SeasonEpisodeRow extends StatelessWidget {
   final List<MediaItem> episodes;
-  final ValueChanged<MediaItem> onEpisodeTap;
+  final ValueChanged<MediaItem> onEpisodeSelect;
   final bool tvMode;
   final String? highlightEpisodeId;
   final ScrollController? controller;
@@ -242,7 +242,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
 
   const _SeasonEpisodeRow({
     required this.episodes,
-    required this.onEpisodeTap,
+    required this.onEpisodeSelect,
     required this.tvMode,
     this.highlightEpisodeId,
     this.controller,
@@ -277,21 +277,25 @@ class _SeasonEpisodeRow extends StatelessWidget {
             key: Key('episodeCard_${ep.id}'),
             width: _cardWidth,
             padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: selected ? primary : Colors.transparent,
-                width: 2,
-              ),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: EmbyImage(url: ep.posterUrl, fit: BoxFit.cover),
+                // 选中描边仅包图片，不包文字/简介区
+                Container(
+                  key: Key('episodeCardImage_${ep.id}'),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected ? primary : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: EmbyImage(url: ep.posterUrl, fit: BoxFit.cover),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -327,11 +331,13 @@ class _SeasonEpisodeRow extends StatelessWidget {
             child: tvMode
                 ? TvFocusable(
                     radius: 12,
-                    onTap: () => onEpisodeTap(ep),
+                    onTap: () => onEpisodeSelect(ep),
                     child: card,
                   )
                 : GestureDetector(
-                    onTap: () => onEpisodeTap(ep),
+                    // opaque：占位图窄/未加载时卡片中心也命中
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onEpisodeSelect(ep),
                     child: card,
                   ),
           );
@@ -381,18 +387,28 @@ class _SeasonCardRow extends StatelessWidget {
           final number = SeriesSections.seasonNumber(season, index);
           final selected = number == selectedSeason;
 
-          // 集数徽章：覆盖在海报右下角
-          final poster = ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              height: _posterWidth * 1.5,
-              child: season.posterUrl != null
-                  ? EmbyImage(url: season.posterUrl, fit: BoxFit.cover)
-                  : Container(
-                      color: Colors.white10,
-                      child:
-                          const Icon(Icons.tv, color: Colors.white38, size: 32),
-                    ),
+          // 集数徽章：覆盖在海报右下角；选中描边仅包海报图
+          final poster = Container(
+            key: Key('seasonCardImage_${season.id}'),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: selected ? primary : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                height: _posterWidth * 1.5,
+                child: season.posterUrl != null
+                    ? EmbyImage(url: season.posterUrl, fit: BoxFit.cover)
+                    : Container(
+                        color: Colors.white10,
+                        child: const Icon(Icons.tv,
+                            color: Colors.white38, size: 32),
+                      ),
+              ),
             ),
           );
 
@@ -400,13 +416,6 @@ class _SeasonCardRow extends StatelessWidget {
             key: Key('seasonCard_${season.id}'),
             width: _posterWidth,
             padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: selected ? primary : Colors.transparent,
-                width: 2,
-              ),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -435,15 +444,15 @@ class _SeasonCardRow extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
+                // 「第N季」不随选中高亮：仅图片描边表达选中态
                 Text(
                   '第 $number 季',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 12,
-                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                    color: selected ? primary : Colors.white70,
+                    color: Colors.white70,
                   ),
                 ),
               ],
@@ -459,6 +468,8 @@ class _SeasonCardRow extends StatelessWidget {
                     child: card,
                   )
                 : GestureDetector(
+                    // opaque：占位图窄/未加载时卡片中心也命中
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => onSeasonSelected(number),
                     child: card,
                   ),
