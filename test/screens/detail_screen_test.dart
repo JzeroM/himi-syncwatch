@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -24,7 +25,7 @@ final _item = MediaItem(
   overview: '这是一段测试简介。',
 );
 
-Future<void> _pumpDetail(
+Future<ProviderContainer> _pumpDetail(
   WidgetTester tester, {
   Color? accent,
   FakeEmbyService? emby,
@@ -58,6 +59,7 @@ Future<void> _pumpDetail(
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 100));
   await tester.pump(const Duration(milliseconds: 600));
+  return container;
 }
 
 /// 焦点是否位于 [finder] 所指子树内。
@@ -269,23 +271,302 @@ void main() {
       expect(btn.top, lessThan(desc.top));
     });
 
-    testWidgets('非 TV 回归：保持胶囊底栏不变', (tester) async {
+    testWidgets('非 TV 回归：胶囊底栏取消，播放按钮进内容流（简介上方）', (tester) async {
       await _pumpDetail(tester, tv: false);
 
       final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
-      expect(scaffold.bottomNavigationBar, isNotNull);
-      // 按钮仍在底栏的 GlassContainer 胶囊内
+      expect(scaffold.bottomNavigationBar, isNull,
+          reason: '播放/建房已进内容流，非 roomMode 不再渲染胶囊底栏');
+      // 按钮不被 GlassContainer 托盘包裹
       expect(
         find.ancestor(
             of: find.text('开始播放'), matching: find.byType(GlassContainer)),
-        findsOneWidget,
+        findsNothing,
       );
-      // 内容流中不出现内联按钮行
+      // 非 TV 不包 TvFocusable（触摸直接点按钮）
       expect(
         find.ancestor(
             of: find.text('开始播放'), matching: find.byType(TvFocusable)),
         findsNothing,
       );
+      // 按钮位于简介上方
+      final btn = tester.getRect(find.text('开始播放'));
+      final desc = tester.getRect(find.text('简介'));
+      expect(btn.top, lessThan(desc.top));
     });
+
+    testWidgets('非 TV roomMode：胶囊底栏保留「加入资源」', (tester) async {
+      await _pumpDetail(tester, tv: false, roomMode: true);
+
+      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+      expect(scaffold.bottomNavigationBar, isNotNull);
+      expect(
+        find.ancestor(
+            of: find.text('加入资源'), matching: find.byType(GlassContainer)),
+        findsOneWidget,
+      );
+      expect(find.text('开始播放'), findsNothing);
+    });
+  });
+
+  // ---- 剧集分季（选季下拉 / 该季剧集 / 播出季季卡） ----
+
+  final series = MediaItem(
+    id: 'sv1',
+    name: '测试剧集',
+    type: 'Series',
+    posterUrl: _posterUrl,
+    overview: '剧集简介。',
+  );
+
+  MediaItem ep(String id,
+          {int season = 1, int number = 1, DateTime? premiere}) =>
+      MediaItem(
+        id: id,
+        name: '第$number集',
+        type: 'Episode',
+        parentIndexNumber: season,
+        indexNumber: number,
+        premiereDate: premiere,
+        overview: '剧情简介$id',
+      );
+
+  final seasons = [
+    MediaItem(
+        id: 'sea1', name: '第1季', type: 'Season', indexNumber: 1, childCount: 2),
+    MediaItem(
+        id: 'sea2', name: '第2季', type: 'Season', indexNumber: 2, childCount: 1),
+  ];
+
+  final episodesByParent = {
+    'sv1': [
+      ep('e1', season: 1, number: 1, premiere: DateTime(2022, 3, 31)),
+      ep('e2', season: 1, number: 2),
+      ep('e3', season: 2, number: 1),
+    ],
+  };
+
+  group('剧集分季详情页', () {
+    testWidgets('渲染选季器/播出季季卡/该季剧集，默认第1季', (tester) async {
+      await _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: episodesByParent,
+          seasons: seasons,
+        ),
+      );
+
+      expect(find.byKey(const Key('seriesSeasonSelector')), findsOneWidget);
+      expect(find.text('播出季'), findsOneWidget);
+      expect(find.byKey(const Key('seasonCard_sea1')), findsOneWidget);
+      expect(find.byKey(const Key('seasonCard_sea2')), findsOneWidget);
+
+      // 第1季两集可见，第2季集不在列表
+      expect(find.byKey(const Key('episodeCard_e1')), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_e2')), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_e3')), findsNothing);
+
+      // 剧集卡：日期 meta + 简介
+      expect(find.text('2022年3月31日'), findsOneWidget);
+      expect(find.text('剧情简介e1'), findsOneWidget);
+
+      // 有集时剧集页显示播放按钮
+      expect(find.text('开始播放'), findsOneWidget);
+      expect(find.text('第 1 季'), findsWidgets);
+    });
+
+    testWidgets('点第2季卡 → 上方剧集列表切换为第2季', (tester) async {
+      await _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: episodesByParent,
+          seasons: seasons,
+        ),
+      );
+
+      final card = find.byKey(const Key('seasonCard_sea2'));
+      await tester.ensureVisible(card);
+      await tester.pump();
+      await tester.tap(card);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byKey(const Key('episodeCard_e3')), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_e1')), findsNothing);
+      expect(find.byKey(const Key('episodeCard_e2')), findsNothing);
+      // 选季器跟随切换
+      expect(find.text('第 2 季'), findsWidgets);
+    });
+
+    testWidgets('Seasons 接口为空时按集分组兜底出合成季', (tester) async {
+      await _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: episodesByParent,
+          seasons: const [],
+        ),
+      );
+
+      expect(find.byKey(const Key('seasonCard_season_1')), findsOneWidget);
+      expect(find.byKey(const Key('seasonCard_season_2')), findsOneWidget);
+      // 合成季集数徽章
+      expect(find.text('2集'), findsOneWidget);
+      expect(find.text('1集'), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_e1')), findsOneWidget);
+    });
+
+    testWidgets('下拉选季切换（非 TV 点 DropdownButton）', (tester) async {
+      await _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: episodesByParent,
+          seasons: seasons,
+        ),
+      );
+
+      final selector = find.byKey(const Key('seriesSeasonSelector'));
+      await tester.ensureVisible(selector);
+      await tester.pump();
+      await tester.tap(selector);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.text('第 2 季').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.byKey(const Key('episodeCard_e3')), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_e1')), findsNothing);
+    });
+
+    testWidgets('电影页不渲染分季区块', (tester) async {
+      await _pumpDetail(tester);
+
+      expect(find.byKey(const Key('seriesSeasonSelector')), findsNothing);
+      expect(find.byKey(const Key('seasonCard_sea1')), findsNothing);
+      expect(find.text('播出季'), findsNothing);
+    });
+  });
+
+  // ---- 字幕/音轨选择器（操作图标行） ----
+
+  group('字幕/音轨选择器', () {
+    final trackItem = MediaItem(
+      id: 'm1',
+      name: '测试影片',
+      type: 'Movie',
+      posterUrl: _posterUrl,
+      overview: '简介。',
+      mediaStreams: [
+        MediaStream(type: 'Video', codec: 'hevc', width: 1920, height: 1080),
+        MediaStream(type: 'Audio', codec: 'aac', language: 'chi', index: 0),
+        MediaStream(type: 'Audio', codec: 'ac3', language: 'eng', index: 1),
+        MediaStream(type: 'Subtitle', codec: 'srt', language: 'chi', index: 3),
+      ],
+    );
+
+    testWidgets('有字幕/多音轨时显示两个图标；选中写入预选 provider', (tester) async {
+      final container = await _pumpDetail(
+        tester,
+        item: trackItem,
+        emby: FakeEmbyService(item: trackItem),
+      );
+
+      expect(find.byKey(const Key('subtitleSelectorButton')), findsOneWidget);
+      expect(find.byKey(const Key('audioSelectorButton')), findsOneWidget);
+
+      // 字幕选择器（图片占位转圈动画永动，不能 pumpAndSettle，用固定帧）
+      final subtitleBtn = find.byKey(const Key('subtitleSelectorButton'));
+      await tester.ensureVisible(subtitleBtn);
+      await tester.pump();
+      await tester.tap(subtitleBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('字幕'), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_auto')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_-1')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_3')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('trackOption_-1')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(
+        container.read(pendingTrackSelectionProvider)?.subtitleIndex,
+        -1,
+        reason: '关闭字幕写入 -1',
+      );
+
+      // 音轨选择器：写入音轨且保留字幕预选
+      final audioBtn = find.byKey(const Key('audioSelectorButton'));
+      await tester.ensureVisible(audioBtn);
+      await tester.pump();
+      await tester.tap(audioBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('音轨'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('trackOption_1')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final selection = container.read(pendingTrackSelectionProvider);
+      expect(selection?.audioIndex, 1);
+      expect(selection?.subtitleIndex, -1, reason: '音轨选择不冲掉字幕预选');
+    });
+
+    testWidgets('无字幕且单音轨时隐藏两个图标', (tester) async {
+      final single = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        mediaStreams: [
+          MediaStream(type: 'Video', codec: 'hevc'),
+          MediaStream(type: 'Audio', codec: 'aac', index: 0),
+        ],
+      );
+      await _pumpDetail(tester,
+          item: single, emby: FakeEmbyService(item: single));
+
+      expect(find.byKey(const Key('subtitleSelectorButton')), findsNothing);
+      expect(find.byKey(const Key('audioSelectorButton')), findsNothing);
+    });
+
+    testWidgets('TV 模式图标被 TvFocusable 包裹', (tester) async {
+      await _pumpDetail(tester,
+          tv: true, item: trackItem, emby: FakeEmbyService(item: trackItem));
+
+      expect(
+        find.ancestor(
+            of: find.byKey(const Key('subtitleSelectorButton')),
+            matching: find.byType(TvFocusable)),
+        findsOneWidget,
+      );
+    });
+  });
+
+  // ---- 顶部徽章 TV-MA / 4K ----
+
+  testWidgets('顶部 meta 显示 TV-MA 与 4K 徽章', (tester) async {
+    final item = MediaItem(
+      id: 'm1',
+      name: '测试影片',
+      type: 'Movie',
+      posterUrl: _posterUrl,
+      officialRating: 'TV-MA',
+      mediaStreams: [
+        MediaStream(type: 'Video', codec: 'hevc', width: 3840, height: 2160),
+      ],
+    );
+    await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+
+    expect(find.text('TV-MA'), findsOneWidget);
+    expect(find.text('4K'), findsOneWidget);
   });
 }

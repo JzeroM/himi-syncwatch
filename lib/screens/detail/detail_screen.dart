@@ -8,6 +8,8 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/detail/series_sections.dart';
+import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
@@ -39,6 +41,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   MediaItem? _item;
   List<MediaItem> _episodes = [];
   List<MediaItem> _similarItems = [];
+
+  /// 剧集的季列表（服务端 Seasons 优先，为空则从集分组合成，见 [_synthSeasons]）。
+  List<MediaItem> _seasons = [];
+
+  /// 当前选中季号（与选季下拉/季卡/剧集行联动）。
+  int? _selectedSeason;
+
   bool _isLoading = true;
   String? _error;
   bool _overviewExpanded = false;
@@ -73,11 +82,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 .getItems(
               parentId: widget.itemId,
               includeItemTypes: 'Episode',
+              sortBy: 'ParentIndexNumber,IndexNumber',
+              fields:
+                  'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,PremiereDate',
             )
                 .then((episodes) {
               _episodes = episodes;
             }),
           );
+          futures.add(embyService.getSeasons(widget.itemId).then((seasons) {
+            _seasons = seasons;
+          }));
         }
 
         futures.add(
@@ -87,6 +102,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         );
 
         await Future.wait(futures);
+      }
+
+      if (item != null && item.isSeries) {
+        // 服务端季列表为空时按集分组兜底，保证分季 UI 永远可用
+        if (_seasons.isEmpty) _seasons = _synthSeasons(_episodes);
+        _selectedSeason = _seasons.isEmpty
+            ? null
+            : SeriesSections.seasonNumber(_seasons.first, 0);
       }
 
       setState(() {
@@ -99,6 +122,53 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  /// 服务端季列表为空时的兜底：按集的 `parentIndexNumber` 分组合成季
+  /// （无季海报，`childCount` = 组内集数），保证分季 UI 始终可用。
+  List<MediaItem> _synthSeasons(List<MediaItem> episodes) {
+    final numbers =
+        episodes.map((e) => e.parentIndexNumber ?? 0).toSet().toList()..sort();
+    return [
+      for (final n in numbers)
+        MediaItem(
+          id: 'season_$n',
+          name: '第$n季',
+          type: 'Season',
+          indexNumber: n,
+          childCount:
+              episodes.where((e) => (e.parentIndexNumber ?? 0) == n).length,
+        ),
+    ];
+  }
+
+  /// 点击剧集卡：整部序列化进 [pendingRoomEpisodesProvider] 后从该集开播
+  /// （沿用原「剧集」ListTile 的一起看语义）。
+  void _onEpisodeTap(MediaItem ep) {
+    final episodesJson = _episodes
+        .map((e) => {
+              'id': e.id,
+              'name': e.name,
+              'season': e.parentIndexNumber ?? 0,
+              'number': e.indexNumber ?? 0,
+              'poster': e.posterUrl ?? '',
+              'seriesName': _item!.name,
+              if (widget.serverId != null) 'serverId': widget.serverId,
+            })
+        .toList();
+    ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
+    if (mounted) {
+      context.push('/player/${ep.id}?isHost=true$_serverQuery');
+    }
+  }
+
+  /// 剧集页「开始播放」：播当前选中季的第一集。
+  Future<void> _startPlaySeries() async {
+    final seasonEpisodes = _episodes
+        .where((e) => (e.parentIndexNumber ?? 0) == (_selectedSeason ?? 0))
+        .toList();
+    if (seasonEpisodes.isEmpty) return;
+    _onEpisodeTap(seasonEpisodes.first);
   }
 
   /// 开始播放（多版本先弹选择）。胶囊底栏与 TV 内联按钮共用一份逻辑。
@@ -487,18 +557,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   )
                 : _buildContent(accent, base),
       ),
-      // TV 模式不渲染胶囊底栏：操作按钮移到简介上方的内容流中
-      // （_buildTvActions），带焦点环与 autofocus，遥控器进页即可用。
-      bottomNavigationBar: !tvMode && _item != null ? _buildBottomBar() : null,
+      // 播放/建房按钮已统一进内容流（_buildActionRow），仅一起看房间
+      // （roomMode）手机端保留胶囊底栏的「加入资源」入口。
+      bottomNavigationBar: !tvMode && _item != null && widget.roomMode
+          ? _buildBottomBar()
+          : null,
     );
   }
 
-  /// TV 模式内联操作行（简介上方）：无玻璃胶囊托盘，按钮直接进内容流。
-  /// TvFocusable 提供焦点环/放大，第一个按钮 autofocus；ExcludeFocus 防止
-  /// 内外双焦点节点浪费方向键（Enter 走外层 onTap，触摸走按钮 onPressed，
-  /// 两处引用同一方法，各只触发一次）。
-  Widget _buildTvActions() {
+  /// 操作区（简介上方，全平台统一）：第一行播放/建房主按钮，第二行
+  /// 字幕/音轨选择器图标行（[TrackActionRow] 内部按轨道有无自适应显隐）。
+  ///
+  /// TV 模式下 [TvFocusable] 提供焦点环/放大，第一个按钮 autofocus；
+  /// ExcludeFocus 防止内外双焦点节点浪费方向键（Enter 走外层 onTap，
+  /// 触摸走按钮 onPressed，两处引用同一方法，各只触发一次）。
+  Widget _buildActionRow() {
     final item = _item!;
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     var isFirst = true;
 
     Widget action({
@@ -506,6 +581,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       required double radius,
       required Widget button,
     }) {
+      if (!tvMode) return button;
       final autofocus = isFirst;
       isFirst = false;
       return TvFocusable(
@@ -529,12 +605,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ),
       ));
     } else {
-      if (!item.isSeries) {
+      // 剧集无集数据时隐藏播放按钮（点了无事发生会误导）
+      if (!item.isSeries || _episodes.isNotEmpty) {
         children.add(action(
-          run: _startPlay,
+          run: item.isSeries ? _startPlaySeries : _startPlay,
           radius: 12,
           button: FilledButton.icon(
-            onPressed: _startPlay,
+            onPressed: item.isSeries ? _startPlaySeries : _startPlay,
             icon: const Icon(Icons.play_arrow),
             label: const Text('开始播放'),
             style: readableFilledButtonStyle(Theme.of(context).colorScheme),
@@ -555,17 +632,26 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       ));
     }
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (var i = 0; i < children.length; i++) ...[
-          if (i > 0) const SizedBox(width: 12),
-          children[i],
-        ],
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              children[i],
+            ],
+          ],
+        ),
+        const SizedBox(height: 4),
+        TrackActionRow(item: item),
       ],
     );
   }
 
+  /// roomMode 胶囊底栏（仅手机端渲染）：一起看房间下唯一入口「加入资源」。
   Widget _buildBottomBar() {
     return SafeArea(
       child: Padding(
@@ -573,45 +659,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         child: GlassContainer(
           borderRadius: const BorderRadius.all(Radius.circular(24)),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: widget.roomMode
-              ? Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _addResourceToRoom,
-                        icon: const Icon(Icons.add),
-                        label: const Text('加入资源'),
-                        style: readableFilledButtonStyle(
-                            Theme.of(context).colorScheme),
-                      ),
-                    ),
-                  ],
-                )
-              : Row(
-                  children: [
-                    if (!_item!.isSeries)
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _startPlay,
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text('开始播放'),
-                          style: readableFilledButtonStyle(
-                              Theme.of(context).colorScheme),
-                        ),
-                      ),
-                    if (!_item!.isSeries) const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _createRoom,
-                        icon: const Icon(Icons.group_add),
-                        label: const Text('建房'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                      ),
-                    ),
-                  ],
+          child: Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _addResourceToRoom,
+                  icon: const Icon(Icons.add),
+                  label: const Text('加入资源'),
+                  style:
+                      readableFilledButtonStyle(Theme.of(context).colorScheme),
                 ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -694,6 +754,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             ),
                             const SizedBox(width: 16),
                           ],
+                          if (item.officialRating != null) ...[
+                            _MetaBadge(text: item.officialRating!),
+                            const SizedBox(width: 16),
+                          ],
                           if (item.year != null)
                             Text(
                               item.year!,
@@ -705,6 +769,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                               item.runtimeText!,
                               style: const TextStyle(color: Colors.white70),
                             ),
+                          ],
+                          if (_has4k(item)) ...[
+                            const SizedBox(width: 16),
+                            const _MetaBadge(text: '4K'),
                           ],
                         ],
                       ),
@@ -737,10 +805,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                if (ref.watch(settingsProvider.select((s) => s.tvMode))) ...[
-                  _buildTvActions(),
-                  const SizedBox(height: 16),
-                ],
+                _buildActionRow(),
+                const SizedBox(height: 16),
                 if (item.overview != null && item.overview!.isNotEmpty) ...[
                   const Text(
                     '简介',
@@ -788,40 +854,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   _buildMediaSources(item),
                   const SizedBox(height: 20),
                 ],
-                if (_episodes.isNotEmpty) ...[
-                  const Text(
-                    '剧集',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                if (item.isSeries && _seasons.isNotEmpty) ...[
+                  SeriesSections(
+                    seasons: _seasons,
+                    episodes: _episodes,
+                    selectedSeason: _selectedSeason,
+                    onSeasonSelected: (n) => setState(() {
+                      _selectedSeason = n;
+                    }),
+                    onEpisodeTap: _onEpisodeTap,
+                    tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
                   ),
-                  const SizedBox(height: 8),
-                  ..._episodes.map((ep) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          'S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0} - ${ep.name}',
-                        ),
-                        subtitle: ep.overview != null
-                            ? Text(ep.overview!,
-                                maxLines: 2, overflow: TextOverflow.ellipsis)
-                            : null,
-                        onTap: () {
-                          final seriesName = _item!.name;
-                          final episodesJson = _episodes
-                              .map((e) => {
-                                    'id': e.id,
-                                    'name': e.name,
-                                    'season': e.parentIndexNumber ?? 0,
-                                    'number': e.indexNumber ?? 0,
-                                    'poster': e.posterUrl ?? '',
-                                    'seriesName': seriesName,
-                                  })
-                              .toList();
-                          ref.read(pendingRoomEpisodesProvider.notifier).state =
-                              episodesJson;
-                          context.push(
-                              '/player/${ep.id}?isHost=true$_serverQuery');
-                        },
-                      )),
-                  const SizedBox(height: 20),
                 ],
                 if (_similarItems.isNotEmpty) ...[
                   const Text(
@@ -914,6 +957,39 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             value: subtitleStreams.map((s) => s.displayInfo).join('，'),
           ),
       ],
+    );
+  }
+
+  /// 是否含 4K 资源（`MediaSource.displayLabel` 对 width>=3840 输出 '4K'，
+  /// 或直接看视频流宽度）。
+  bool _has4k(MediaItem item) {
+    if (item.mediaSources.any((s) => s.displayLabel == '4K')) return true;
+    return item.mediaStreams
+        .any((s) => s.type == 'Video' && (s.width ?? 0) >= 3840);
+  }
+}
+
+/// 顶部徽章（TV-MA / 4K）：半透明白描边小胶囊。
+class _MetaBadge extends StatelessWidget {
+  final String text;
+  const _MetaBadge({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.white38),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

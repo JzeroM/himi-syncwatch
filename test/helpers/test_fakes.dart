@@ -96,6 +96,7 @@ class FakeEmbyService extends EmbyService {
     this.itemsByParent = const {},
     this.searchResults = const [],
     this.itemCounts,
+    this.seasons = const [],
   });
 
   final MediaItem? item;
@@ -111,6 +112,12 @@ class FakeEmbyService extends EmbyService {
 
   /// getItemCounts 返回结果；null = 统计失败（首页不渲染底部面板）。
   final MediaCounts? itemCounts;
+
+  /// getSeasons 返回结果（剧集详情页分季兜底测试用）。
+  final List<MediaItem> seasons;
+
+  @override
+  Future<List<MediaItem>> getSeasons(String seriesId) async => seasons;
 
   @override
   Future<MediaCounts?> getItemCounts() async => itemCounts;

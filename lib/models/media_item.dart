@@ -18,7 +18,8 @@ class MediaStream {
   final int? sampleRate;
   final String? videoRange;
   final String? extendedVideoType;
-  final String? extendedVideoSubType; // DV Profile: DoviProfile50/DoviProfile81 等
+  final String?
+      extendedVideoSubType; // DV Profile: DoviProfile50/DoviProfile81 等
 
   MediaStream({
     required this.type,
@@ -83,25 +84,27 @@ class MediaStream {
       'IsExternal': isExternal,
       if (displayTitle != null) 'DisplayTitle': displayTitle,
       if (displayLanguage != null) 'DisplayLanguage': displayLanguage,
-      if (subtitleLocationType != null) 'SubtitleLocationType': subtitleLocationType,
+      if (subtitleLocationType != null)
+        'SubtitleLocationType': subtitleLocationType,
       if (channelLayout != null) 'ChannelLayout': channelLayout,
       if (bitRate != null) 'BitRate': bitRate,
       if (sampleRate != null) 'SampleRate': sampleRate,
       if (videoRange != null) 'VideoRange': videoRange,
       if (extendedVideoType != null) 'ExtendedVideoType': extendedVideoType,
-      if (extendedVideoSubType != null) 'ExtendedVideoSubType': extendedVideoSubType,
+      if (extendedVideoSubType != null)
+        'ExtendedVideoSubType': extendedVideoSubType,
     };
   }
 
   bool get isTextSubtitle => type == 'Subtitle';
   bool get isInternalStream => subtitleLocationType == 'InternalStream';
-  
+
   /// 杜比视界检测
   bool get isDolbyVision => extendedVideoType == 'DolbyVision';
-  
+
   /// HDR 类型检测（HDR10/HLG/Dolby Vision）
   bool get isHDR => videoRange == 'HDR' || videoRange == 'PQ' || isDolbyVision;
-  
+
   /// HDR 类型标签
   String get hdrLabel {
     if (isDolbyVision) {
@@ -130,8 +133,7 @@ class MediaStream {
         return codec;
       case 'Audio':
         final ch = channelLayout ?? (channels != null ? '$channels ch' : '');
-        final lang =
-            language != null && language != 'und' ? ' $language' : '';
+        final lang = language != null && language != 'und' ? ' $language' : '';
         final t = title != null && title!.isNotEmpty ? ' $title' : '';
         return '$codec$lang$t $ch'.trim();
       case 'Subtitle':
@@ -258,6 +260,9 @@ class MediaItem {
   final double? primaryImageAspectRatio;
   final List<MediaSource> mediaSources;
 
+  /// 首播/上映日期（`PremiereDate` ISO 字符串），剧集卡展示「2022年3月31日」用。
+  final DateTime? premiereDate;
+
   MediaItem({
     required this.id,
     required this.name,
@@ -277,6 +282,7 @@ class MediaItem {
     this.childCount,
     this.primaryImageAspectRatio,
     this.mediaSources = const [],
+    this.premiereDate,
   });
 
   factory MediaItem.fromJson(Map<String, dynamic> json, {String? serverUrl}) {
@@ -322,6 +328,7 @@ class MediaItem {
               ?.map((s) => MediaSource.fromJson(s))
               .toList() ??
           [],
+      premiereDate: DateTime.tryParse(json['PremiereDate'] as String? ?? ''),
     );
   }
 

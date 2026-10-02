@@ -124,11 +124,37 @@ class EmbyService {
           if (sortBy != null) 'SortBy': sortBy,
           if (sortOrder != null) 'SortOrder': sortOrder,
           'Recursive': true,
-          'Fields': fields ?? 'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources',
+          'Fields': fields ??
+              'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources',
           'ImageTypeLimit': 1,
         },
       );
 
+      final items = response.data['Items'] as List<dynamic>? ?? [];
+      return items
+          .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
+          .toList();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
+      return [];
+    }
+  }
+
+  /// 获取剧集的季列表（`GET /Shows/{seriesId}/Seasons`）。
+  ///
+  /// 返回的季为 `Type:Season` 的 MediaItem：`childCount` = 该季集数，
+  /// `posterUrl` 来自 `ImageTags.Primary`（季海报）。失败返回空列表，
+  /// 调用方应从已有集按 `parentIndexNumber` 分组兜底。
+  Future<List<MediaItem>> getSeasons(String seriesId) async {
+    try {
+      final response = await _dio.get(
+        '/Shows/$seriesId/Seasons',
+        queryParameters: {
+          if (_userId != null) 'UserId': _userId,
+          'Fields': 'ImageTags,ChildCount',
+          'ImageTypeLimit': 1,
+        },
+      );
       final items = response.data['Items'] as List<dynamic>? ?? [];
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
@@ -331,7 +357,8 @@ class EmbyService {
     }
   }
 
-  String getStreamUrl(String itemId, {String? mediaSourceId, int? subtitleStreamIndex}) {
+  String getStreamUrl(String itemId,
+      {String? mediaSourceId, int? subtitleStreamIndex}) {
     if (subtitleStreamIndex != null) {
       final base = '$_serverUrl/Videos/$itemId/stream';
       final params = <String>[
@@ -351,12 +378,14 @@ class EmbyService {
   }
 
   /// 获取单个字幕轨道的直接下载 URL（用于 fvp 原生字幕加载）
-  String getSubtitleUrl(String itemId, {
+  String getSubtitleUrl(
+    String itemId, {
     required int subtitleIndex,
     String? mediaSourceId,
     String format = 'srt',
   }) {
-    var url = '$_serverUrl/Videos/$itemId/Subtitles/$subtitleIndex/Stream.$format';
+    var url =
+        '$_serverUrl/Videos/$itemId/Subtitles/$subtitleIndex/Stream.$format';
     if (mediaSourceId != null) {
       url += '?MediaSourceId=$mediaSourceId';
     }

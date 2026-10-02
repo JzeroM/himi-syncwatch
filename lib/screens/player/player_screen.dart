@@ -20,6 +20,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/decoder_report.dart';
@@ -34,6 +35,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
 import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
 import 'package:himi_syncwatch/screens/player/player_platform.dart';
+import 'package:himi_syncwatch/screens/player/track_initial_selection.dart';
 import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
@@ -1444,6 +1446,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _autoSelectDefaultTracks() {
+    // 详情页预选（字幕/音轨选择器）优先：消费后清空，下次切集回退默认
+    final pending = ref.read(pendingTrackSelectionProvider);
+    if (pending != null) {
+      ref.read(pendingTrackSelectionProvider.notifier).state = null;
+      final resolved = resolveInitialTracks(
+        pending: pending,
+        audioStreams: _embyAudioStreams,
+        subtitleStreams: _embySubtitleStreams,
+      );
+      if (resolved != null) {
+        if (resolved.applySubtitle) {
+          final pos = resolved.subtitlePosition;
+          if (pos == null) {
+            // 预选「关闭字幕」
+            _player.activeSubtitleTracks = [];
+          } else {
+            // 复用面板选择逻辑（含外挂轨 setMedia 分支）
+            _selectEmbySubtitle(pos);
+          }
+        } else {
+          // 字幕预选未匹配到轨 → 回退现状默认
+          _player.activeSubtitleTracks = [0];
+        }
+
+        if (resolved.applyAudio && resolved.audioPosition != null) {
+          _player.activeAudioTracks = [resolved.audioPosition!];
+        } else if (_embyDefaultAudioIndex != null) {
+          final embyIdx = _embyAudioStreams.indexWhere(
+            (s) => s.index == _embyDefaultAudioIndex!,
+          );
+          if (embyIdx >= 0) {
+            _player.activeAudioTracks = [embyIdx];
+          }
+        }
+        return;
+      }
+      // resolved == null：预选全部未匹配，落回下方默认逻辑
+    }
+
     // fvp: 自动选择第一个字幕轨道
     _player.activeSubtitleTracks = [0];
 

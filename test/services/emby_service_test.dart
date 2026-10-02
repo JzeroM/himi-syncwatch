@@ -169,6 +169,62 @@ void main() {
     });
   });
 
+  group('getSeasons 剧集季列表', () {
+    test('请求 /Shows/{id}/Seasons 且带 UserId/Fields', () async {
+      respondWith = (_) => {
+            'Items': [
+              {
+                'Id': 'sea1',
+                'Name': '第1季',
+                'Type': 'Season',
+                'IndexNumber': 1,
+                'ChildCount': 6,
+                'ImageTags': {'Primary': 'tag-s1'},
+              },
+              {
+                'Id': 'sea2',
+                'Name': '第2季',
+                'Type': 'Season',
+                'IndexNumber': 2,
+                'ChildCount': 8,
+              },
+            ],
+          };
+
+      final seasons = await service.getSeasons('sv1');
+
+      final req = captured.single;
+      expect(req.path, '/Shows/sv1/Seasons');
+      expect(req.param('UserId'), 'user-1');
+      expect(req.param('Fields'), 'ImageTags,ChildCount');
+
+      expect(seasons, hasLength(2));
+      expect(seasons[0].id, 'sea1');
+      expect(seasons[0].childCount, 6);
+      expect(seasons[0].posterUrl, contains('/Items/sea1/Images/Primary'));
+      expect(seasons[0].posterUrl, contains('tag=tag-s1'));
+      expect(seasons[1].childCount, 8);
+      expect(seasons[1].posterUrl, isNull, reason: '无 Primary tag 则无海报');
+    });
+
+    test('空 Items 返回空列表', () async {
+      final seasons = await service.getSeasons('sv1');
+      expect(seasons, isEmpty);
+    });
+
+    test('请求失败（401 除外）返回空列表不抛错', () async {
+      final unreachable = EmbyService();
+      unreachable.configure(
+        serverUrl: 'http://127.0.0.1:1',
+        accessToken: 't',
+        userId: 'u',
+        serverId: 's',
+      );
+
+      expect(await unreachable.getSeasons('sv1'), isEmpty);
+    });
+  });
+
   group('getItemCounts 电影/电视剧/集计数', () {
     test('优先走 /Items/Counts 专用端点，一次请求解析三个计数', () async {
       respondWith = (_) => {
