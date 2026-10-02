@@ -551,6 +551,160 @@ void main() {
     });
   });
 
+  // ---- 版本选择器与字幕/音轨联动 ----
+
+  group('版本选择器', () {
+    final src1 = MediaSource(
+      id: 'src1',
+      name: '1080p版',
+      mediaStreams: [
+        MediaStream(type: 'Video', codec: 'hevc'),
+        MediaStream(type: 'Audio', codec: 'aac', language: 'chi', index: 1),
+        MediaStream(type: 'Audio', codec: 'ac3', language: 'eng', index: 2),
+        MediaStream(type: 'Subtitle', codec: 'srt', language: 'chi', index: 3),
+        MediaStream(type: 'Subtitle', codec: 'srt', language: 'jpn', index: 4),
+      ],
+    );
+    final src2 = MediaSource(
+      id: 'src2',
+      name: '4K版',
+      mediaStreams: [
+        MediaStream(type: 'Video', codec: 'hevc'),
+        MediaStream(type: 'Audio', codec: 'eac3', language: 'eng', index: 1),
+        MediaStream(type: 'Subtitle', codec: 'ass', language: 'jpn', index: 5),
+      ],
+    );
+    final multi = MediaItem(
+      id: 'mv1',
+      name: '多版本影片',
+      type: 'Movie',
+      posterUrl: _posterUrl,
+      mediaStreams: [...src1.mediaStreams],
+      mediaSources: [src1, src2],
+    );
+
+    Future<ProviderContainer> pumpMulti(WidgetTester t, {bool tv = false}) =>
+        _pumpDetail(t, item: multi, emby: FakeEmbyService(item: multi), tv: tv);
+
+    Future<void> openSheet(WidgetTester t, Key key) async {
+      final btn = find.byKey(key);
+      await t.ensureVisible(btn);
+      await t.pump();
+      await t.tap(btn);
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 350));
+    }
+
+    Future<void> closeSheet(WidgetTester t) async {
+      t.state<NavigatorState>(find.byType(Navigator)).pop();
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 350));
+    }
+
+    testWidgets('单版本资源隐藏版本图标', (tester) async {
+      await _pumpDetail(tester);
+      expect(find.byKey(const Key('versionSelectorButton')), findsNothing);
+    });
+
+    testWidgets('多版本显示图标且排在字幕前', (tester) async {
+      await pumpMulti(tester);
+      final versionBtn = find.byKey(const Key('versionSelectorButton'));
+      final subtitleBtn = find.byKey(const Key('subtitleSelectorButton'));
+      expect(versionBtn, findsOneWidget);
+      await tester.ensureVisible(versionBtn);
+      await tester.ensureVisible(subtitleBtn);
+      expect(
+        tester.getRect(versionBtn).left,
+        lessThan(tester.getRect(subtitleBtn).left),
+        reason: '版本图标在字幕图标前',
+      );
+    });
+
+    testWidgets('点图标弹版本 sheet，选中后图标高亮', (tester) async {
+      await pumpMulti(tester);
+
+      await openSheet(tester, const Key('versionSelectorButton'));
+      expect(find.text('选择版本'), findsOneWidget);
+      expect(find.byKey(const Key('versionOption_src1')), findsOneWidget);
+      expect(find.byKey(const Key('versionOption_src2')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('versionOption_src2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byKey(const Key('versionOption_src2')), findsNothing);
+
+      final icon = tester
+          .widget<IconButton>(find.byKey(const Key('versionSelectorButton')));
+      expect(icon.color, ThemeData.dark().colorScheme.primary,
+          reason: '已选版本高亮主色');
+    });
+
+    testWidgets('切版本后字幕/音轨流列表跟随新版本', (tester) async {
+      await pumpMulti(tester);
+
+      // 未选版本：回退顶层流（= src1 流集）
+      await openSheet(tester, const Key('subtitleSelectorButton'));
+      expect(find.byKey(const Key('trackOption_3')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_4')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_5')), findsNothing);
+      await closeSheet(tester);
+
+      // 切到 src2：字幕仅 jpn(5)，音轨仅 eng(1)
+      await openSheet(tester, const Key('versionSelectorButton'));
+      await tester.tap(find.byKey(const Key('versionOption_src2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      await openSheet(tester, const Key('subtitleSelectorButton'));
+      expect(find.byKey(const Key('trackOption_5')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_3')), findsNothing);
+      expect(find.byKey(const Key('trackOption_4')), findsNothing);
+      await closeSheet(tester);
+
+      // src2 仅一条音轨 → 音轨图标按规则隐藏
+      expect(find.byKey(const Key('audioSelectorButton')), findsNothing);
+    });
+
+    testWidgets('切版本预选按语言迁移，无同语言轨则清空', (tester) async {
+      final container = await pumpMulti(tester);
+
+      // src1 预选：字幕 jpn(4)、音轨 chi(1)
+      await openSheet(tester, const Key('subtitleSelectorButton'));
+      await tester.tap(find.byKey(const Key('trackOption_4')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await openSheet(tester, const Key('audioSelectorButton'));
+      await tester.tap(find.byKey(const Key('trackOption_1')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final before = container.read(pendingTrackSelectionProvider);
+      expect(before?.subtitleIndex, 4);
+      expect(before?.audioIndex, 1);
+
+      // 切 src2：jpn 字幕存在 → 迁移到 5；chi 音轨不存在 → 清空
+      await openSheet(tester, const Key('versionSelectorButton'));
+      await tester.tap(find.byKey(const Key('versionOption_src2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final after = container.read(pendingTrackSelectionProvider);
+      expect(after?.subtitleIndex, 5, reason: 'jpn 字幕迁移到 src2 的 index');
+      expect(after?.audioIndex, isNull, reason: 'src2 无 chi 音轨 → 清空');
+    });
+
+    testWidgets('TV 模式版本图标被 TvFocusable 包裹', (tester) async {
+      await pumpMulti(tester, tv: true);
+
+      expect(
+        find.ancestor(
+            of: find.byKey(const Key('versionSelectorButton')),
+            matching: find.byType(TvFocusable)),
+        findsOneWidget,
+      );
+    });
+  });
+
   // ---- 顶部徽章 TV-MA / 4K ----
 
   testWidgets('顶部 meta 显示 TV-MA 与 4K 徽章', (tester) async {

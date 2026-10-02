@@ -5,27 +5,45 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
-/// 详情页操作图标行：字幕 / 音轨选择器入口（电影与剧集页共用）。
+/// 详情页操作图标行：版本 / 字幕 / 音轨选择器入口（电影与剧集页共用）。
 ///
-/// - 字幕图标：存在 `type=='Subtitle'` 轨时显示
-/// - 音轨图标：存在多于一条 `type=='Audio'` 轨时显示
+/// - 版本图标：`onOpenVersion` 非空（多版本资源）时显示在最前；
+///   选中版本后字幕/音轨的流列表切换为该版本的轨（联动）
+/// - 字幕图标：`subtitleStreams` 非空时显示
+/// - 音轨图标：音轨多于一条时显示
 /// - 点击弹出选择器 bottom sheet，选中写入 [pendingTrackSelectionProvider]，
 ///   播放时经 `resolveInitialTracks` 应用到播放器
 /// - TV 模式用 [TvFocusable] 包裹（焦点环 + Enter 走 onTap），触摸走内层按钮
 class TrackActionRow extends ConsumerWidget {
   final MediaItem item;
 
-  const TrackActionRow({super.key, required this.item});
+  /// 当前选中版本 id（null = 默认；非 null 时版本图标高亮）。
+  final String? selectedMediaSourceId;
+
+  /// 打开版本选择器；null = 不显示版本图标（单版本资源）。
+  final VoidCallback? onOpenVersion;
+
+  /// 当前版本的字幕/音轨流（由详情页按选中版本计算后传入）。
+  final List<MediaStream> subtitleStreams;
+  final List<MediaStream> audioStreams;
+
+  const TrackActionRow({
+    super.key,
+    required this.item,
+    this.selectedMediaSourceId,
+    this.onOpenVersion,
+    this.subtitleStreams = const [],
+    this.audioStreams = const [],
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final subtitles =
-        item.mediaStreams.where((s) => s.type == 'Subtitle').toList();
-    final audios = item.mediaStreams.where((s) => s.type == 'Audio').toList();
-
-    final showSubtitle = subtitles.isNotEmpty;
-    final showAudio = audios.length > 1;
-    if (!showSubtitle && !showAudio) return const SizedBox.shrink();
+    final showVersion = onOpenVersion != null;
+    final showSubtitle = subtitleStreams.isNotEmpty;
+    final showAudio = audioStreams.length > 1;
+    if (!showVersion && !showSubtitle && !showAudio) {
+      return const SizedBox.shrink();
+    }
 
     final selection = ref.watch(pendingTrackSelectionProvider);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
@@ -54,19 +72,26 @@ class TrackActionRow extends ConsumerWidget {
     }
 
     final children = <Widget>[
+      if (showVersion)
+        button(
+          key: const Key('versionSelectorButton'),
+          icon: Icons.layers,
+          active: selectedMediaSourceId != null,
+          onTap: onOpenVersion!,
+        ),
       if (showSubtitle)
         button(
           key: const Key('subtitleSelectorButton'),
           icon: Icons.subtitles_outlined,
           active: selection?.subtitleIndex != null,
-          onTap: () => showSubtitleSelector(context, ref, item),
+          onTap: () => showSubtitleSelector(context, ref, subtitleStreams),
         ),
       if (showAudio)
         button(
           key: const Key('audioSelectorButton'),
           icon: Icons.audiotrack,
           active: selection?.audioIndex != null,
-          onTap: () => showAudioSelector(context, ref, item),
+          onTap: () => showAudioSelector(context, ref, audioStreams),
         ),
     ];
 
@@ -91,16 +116,16 @@ class TrackOption {
   const TrackOption(this.label, this.value);
 }
 
-/// 字幕选择器：「跟随默认」+「关闭字幕」+ 各字幕轨。
+/// 字幕选择器：「跟随默认」+「关闭字幕」+ 当前版本各字幕轨。
 Future<void> showSubtitleSelector(
   BuildContext context,
   WidgetRef ref,
-  MediaItem item,
+  List<MediaStream> streams,
 ) {
   final options = <TrackOption>[
     const TrackOption('跟随默认', null),
     const TrackOption('关闭字幕', -1),
-    ...item.mediaStreams
+    ...streams
         .where((s) => s.type == 'Subtitle')
         .map((s) => TrackOption(s.displayInfo, s.index)),
   ];
@@ -119,15 +144,15 @@ Future<void> showSubtitleSelector(
   );
 }
 
-/// 音轨选择器：「跟随默认」+ 各音轨。
+/// 音轨选择器：「跟随默认」+ 当前版本各音轨。
 Future<void> showAudioSelector(
   BuildContext context,
   WidgetRef ref,
-  MediaItem item,
+  List<MediaStream> streams,
 ) {
   final options = <TrackOption>[
     const TrackOption('跟随默认', null),
-    ...item.mediaStreams
+    ...streams
         .where((s) => s.type == 'Audio')
         .map((s) => TrackOption(s.displayInfo, s.index)),
   ];
