@@ -66,4 +66,29 @@ void main() {
       expect(eglFaultDetector.fault, isFalse);
     });
   });
+
+  group('waitForMediaSwitch', () {
+    test('未在切换时立即返回 true', () async {
+      expect(await waitForMediaSwitch(() => false), isTrue);
+    });
+
+    test('切换中等待直到释放', () async {
+      var calls = 0;
+      final ok = await waitForMediaSwitch(
+        () => ++calls < 3, // 前两次 true，第三次 false
+        step: const Duration(milliseconds: 1),
+      );
+      expect(ok, isTrue);
+      expect(calls, greaterThanOrEqualTo(3));
+    });
+
+    test('一直未释放则超时返回 false', () async {
+      final ok = await waitForMediaSwitch(
+        () => true,
+        timeout: const Duration(milliseconds: 30),
+        step: const Duration(milliseconds: 5),
+      );
+      expect(ok, isFalse);
+    });
+  });
 }

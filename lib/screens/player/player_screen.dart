@@ -1160,6 +1160,57 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ));
       } catch (_) {}
     }
+    // 关键第二步（himi_logs_3 定案）：切档只换 decoder 输出目标，
+    // mdk Player 内残留的无效 GL renderer 仍在 sync 路径丢帧
+    // （`not rendered` + `releaseOutputBuffer false`）。mdk
+    // setState(Stopped) 释放全部资源（含 renderer）→ 按原 URL/进度
+    // 重新 prepare，让管线在 directSurface 上从零建立。
+    unawaited(_rebuildPipelineAfterEglFault());
+  }
+
+  /// EGL 自愈第二步：停掉残留无效 GL renderer 并重建播放管线。
+  ///
+  /// 时序（himi_logs_3）：SurfaceView 直写参数（image=0:surface=）
+  /// 已到位，但帧仍被 texture 档遗留的 GL renderer（无效 EGL context）
+  /// 判定 not rendered 后 releaseOutputBuffer(false) 丢弃 → 黑屏。
+  /// `state = stopped` 触发 mdk `setState(State::Stopped)` 释放全部
+  /// 资源（含 renderer），随后同 URL 重载；此时 platform view 已按
+  /// tunnel=true 建立，decoder 从零直写 SurfaceView，不再有 GL 参与。
+  Future<void> _rebuildPipelineAfterEglFault() async {
+    // 等进行中的首播/切集完成，避免与 _loadStream/_playFromUrl 交织
+    final ok = await waitForMediaSwitch(() => _isSwitchingMedia);
+    if (!mounted || !ok) {
+      LogService().log('Player', 'EGL 自愈：切换未释放，跳过管线重建');
+      return;
+    }
+    final url = _currentPlayUrl;
+    if (url.isEmpty) return;
+    final rid = _playRequestId;
+    final posMs = _player.position;
+    try {
+      // mdk Stopped 释放全部资源 → 残留无效 GL renderer 销毁
+      _player.state = mdk.PlaybackState.stopped;
+      LogService().log('Player', 'EGL 自愈：stop 释放残留渲染器，重建管线 pos=${posMs}ms');
+      if (_currentToken.isNotEmpty) {
+        _player.setProperty('avio.headers', 'X-Emby-Token: $_currentToken');
+      }
+      _player.media = url;
+      final ret = await _player.prepare(position: posMs > 0 ? posMs : 0);
+      if (!mounted) return;
+      if (rid != _playRequestId) {
+        // 重建期间用户切了集：新流程接管，不覆盖
+        LogService().log('Player', 'EGL 自愈：已被新播放请求抢占');
+        return;
+      }
+      LogService().log('Player', 'EGL 自愈：prepare 返回 $ret');
+      await _syncVideoNativeSize();
+      if (!mounted || rid != _playRequestId) return;
+      _player.state = mdk.PlaybackState.playing;
+      _diag.note('EGL 自愈：管线重建完成（SurfaceView 直写）');
+      LogService().log('Player', 'EGL 自愈：管线重建完成');
+    } catch (e) {
+      LogService().log('Player', 'EGL 自愈管线重建失败: $e');
+    }
   }
 
   /// 喂 EGL 检测器；命中则在事件循环里执行自愈（log handler 可能来自

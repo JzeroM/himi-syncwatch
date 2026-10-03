@@ -52,3 +52,20 @@ class EglFaultDetector {
 /// 进程级共享实例：`main._bootstrap` 的初始 log handler 与播放器的
 /// 深度诊断/精简 handler 均向它 feed，任一入口命中即全局可见。
 final eglFaultDetector = EglFaultDetector();
+
+/// 等待进行中的媒体切换（`_isSwitchingMedia`）释放，最长 [timeout]。
+///
+/// EGL 自愈重建管线前必须等首播/切集完成，否则 stop/prepare 会与
+/// 进行中的 `_loadStream`/`_playFromUrl` 交织。返回 true 表示可以
+/// 安全重建；false 表示超时放弃。
+Future<bool> waitForMediaSwitch(
+  bool Function() isSwitching, {
+  Duration timeout = const Duration(seconds: 8),
+  Duration step = const Duration(milliseconds: 100),
+}) async {
+  final sw = Stopwatch()..start();
+  while (isSwitching() && sw.elapsed < timeout) {
+    await Future<void>.delayed(step);
+  }
+  return !isSwitching();
+}
