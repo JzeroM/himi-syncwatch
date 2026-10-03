@@ -39,4 +39,28 @@ void main() {
       expect(notifier.state.showSyncDebug, isTrue);
     });
   });
+
+  group('update(videoOutput)（手动输出标记置位）', () {
+    test('默认未标记', () {
+      final notifier = FakeSettingsNotifier();
+      expect(notifier.state.videoOutputUserSet, isFalse);
+    });
+
+    test('update(videoOutput:) 置位 videoOutputUserSet 并落盘', () async {
+      final notifier = FakeSettingsNotifier();
+      await notifier.update(videoOutput: 'texture');
+
+      expect(notifier.state.videoOutput, 'texture');
+      expect(notifier.state.videoOutputUserSet, isTrue);
+      expect(notifier.persistCount, 1);
+    });
+
+    test('update 其他字段不误置位 videoOutputUserSet', () async {
+      final notifier = FakeSettingsNotifier();
+      await notifier.update(eglFaultSeen: true);
+
+      expect(notifier.state.videoOutputUserSet, isFalse);
+      expect(notifier.state.eglFaultSeen, isTrue);
+    });
+  });
 }

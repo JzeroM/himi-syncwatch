@@ -1143,11 +1143,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 当前生效的视频输出通道（见 [AppSettings.eglAwareVideoOutput]）。
-  /// EGL 故障进程级持久：故障后本次进程内所有播放直写 SurfaceView，
-  /// 不再先建 texture GL（避免每次进片重复触发 3004 + 自愈 race 闪退）。
-  String _effectiveVideoOutput() =>
-      AppSettings.eglAwareVideoOutput(ref.read(settingsProvider).videoOutput,
-          eglFault: eglFaultDetector.fault);
+  /// EGL 故障进程级持久：故障后默认进片直写 SurfaceView（不再先建
+  /// texture GL，避免每次进片重复触发 3004 + 自愈 race 闪退）；
+  /// 用户手动改过输出则尊重手动选择（texture 档对照实验逃生口）。
+  String _effectiveVideoOutput() {
+    final settings = ref.read(settingsProvider);
+    return AppSettings.eglAwareVideoOutput(
+      settings.videoOutput,
+      eglFault: eglFaultDetector.fault,
+      userSet: settings.videoOutputUserSet,
+    );
+  }
 
   /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
   /// 媒体信息拿到视频尺寸即就绪。

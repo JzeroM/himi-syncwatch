@@ -54,6 +54,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       // 手动改动 TV 开关即标记「用户已设置」，此后自动识别不再覆盖
       tvModeUserSet: tvMode != null ? true : null,
       videoOutput: videoOutput,
+      // 手动改动视频输出即标记「用户已设置」，EGL 故障归一不再覆盖
+      videoOutputUserSet: videoOutput != null ? true : null,
       renderCompatMode: renderCompatMode,
       eglFaultSeen: eglFaultSeen,
       themeColor: themeColor,

@@ -22,6 +22,10 @@ class AppSettings {
   /// 'surfaceView'  — SurfaceView platform view（绕过 Flutter 合成，TV 全分辨率扫描输出）
   final String videoOutput;
 
+  /// 用户是否手动设置过视频输出（设置过则 EGL 故障归一不再覆盖
+  /// 手动选择，用于 texture 档对照实验与用户自主逃生）。
+  final bool videoOutputUserSet;
+
   /// 渲染兼容模式（实验，Android）：以 mdk 全局选项启用
   /// `gl.yuv_sampler=1`（mdk wiki 注明 for android/rockchip 硬解渲染）
   /// 与 `surfacetexture.glcontext=1`（SurfaceTexture 无有效上下文时
@@ -64,6 +68,7 @@ class AppSettings {
     this.tvMode = false,
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
+    this.videoOutputUserSet = false,
     this.renderCompatMode = false,
     this.eglFaultSeen = false,
   });
@@ -81,6 +86,7 @@ class AppSettings {
     bool? tvMode,
     bool? tvModeUserSet,
     String? videoOutput,
+    bool? videoOutputUserSet,
     bool? renderCompatMode,
     bool? eglFaultSeen,
     Object? themeColor = unsetValue,
@@ -96,6 +102,7 @@ class AppSettings {
       tvMode: tvMode ?? this.tvMode,
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
+      videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       themeColor: identical(themeColor, unsetValue)
@@ -115,6 +122,7 @@ class AppSettings {
         'tvMode': tvMode,
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
+        'videoOutputUserSet': videoOutputUserSet,
         'renderCompatMode': renderCompatMode,
         'eglFaultSeen': eglFaultSeen,
         if (themeColor != null) 'themeColor': themeColor,
@@ -161,6 +169,8 @@ class AppSettings {
               .contains(json['videoOutput'])
           ? json['videoOutput'] as String
           : 'texture',
+      // 旧数据无此字段 → 默认 false（未手动设置）
+      videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
@@ -198,10 +208,16 @@ class AppSettings {
 
   /// EGL 故障感知的生效输出通道：设备 EGL 损坏（`eglChooseConfig`
   /// 3004，进程级持久）后纹理/直通档必走坏 GL → 黑屏，强制归一为
-  /// SurfaceView 直写；无故障时按 [setting] 归一（非 Android 固定
-  /// 纹理，故障分支经同一归一避免返回不存在的通道）。
-  static String eglAwareVideoOutput(String setting, {required bool eglFault}) {
-    if (eglFault) return effectiveVideoOutput('surfaceView');
+  /// SurfaceView 直写；**用户手动改过输出（[userSet]=true）时尊重
+  /// 手动选择**（哪怕 texture 黑也由用户自行负责，可随时切回），
+  /// 用于 texture 档对照实验与自主逃生；无故障时按 [setting] 归一
+  /// （非 Android 固定纹理，故障分支经同一归一避免返回不存在的通道）。
+  static String eglAwareVideoOutput(
+    String setting, {
+    required bool eglFault,
+    bool userSet = false,
+  }) {
+    if (eglFault && !userSet) return effectiveVideoOutput('surfaceView');
     return effectiveVideoOutput(setting);
   }
 

@@ -390,6 +390,74 @@ void main() {
       );
     });
 
+    test('eglAwareVideoOutput userSet：手动改过输出则尊重，未手动仍归一', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      // 故障 + 未手动 → 保守归一 SurfaceView（与旧行为一致）
+      expect(
+        AppSettings.eglAwareVideoOutput('texture', eglFault: true),
+        'surfaceView',
+      );
+      expect(
+        AppSettings.eglAwareVideoOutput('tunnel',
+            eglFault: true, userSet: false),
+        'surfaceView',
+      );
+
+      // 故障 + 已手动 → 尊重手动选择（texture 档对照实验逃生口）
+      expect(
+        AppSettings.eglAwareVideoOutput('texture',
+            eglFault: true, userSet: true),
+        'texture',
+      );
+      expect(
+        AppSettings.eglAwareVideoOutput('tunnel',
+            eglFault: true, userSet: true),
+        'tunnel',
+      );
+      expect(
+        AppSettings.eglAwareVideoOutput(
+          'surfaceView',
+          eglFault: true,
+          userSet: true,
+        ),
+        'surfaceView',
+      );
+
+      // 无故障：userSet 不改变行为
+      expect(
+        AppSettings.eglAwareVideoOutput('texture',
+            eglFault: false, userSet: true),
+        'texture',
+      );
+
+      // 非 Android：手动选择也归一 texture（无 SurfaceView 通道）
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(
+        AppSettings.eglAwareVideoOutput('texture',
+            eglFault: true, userSet: true),
+        'texture',
+      );
+    });
+
+    test('videoOutputUserSet 往返与旧数据默认值', () {
+      // toJson/fromJson 往返保留手动标记
+      final json = const AppSettings()
+          .copyWith(videoOutput: 'texture', videoOutputUserSet: true)
+          .toJson();
+      final settings = AppSettings.fromJson(json);
+      expect(settings.videoOutput, 'texture');
+      expect(settings.videoOutputUserSet, isTrue);
+
+      // 旧数据无此字段 → 默认 false（未手动设置）
+      expect(
+        AppSettings.fromJson({'videoOutput': 'surfaceView'}).videoOutputUserSet,
+        isFalse,
+      );
+      expect(const AppSettings().videoOutputUserSet, isFalse);
+    });
+
     test('usesSurfaceView / textureTunnel 跟随生效值', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
