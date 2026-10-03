@@ -4,12 +4,14 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/fvp.dart' as fvp;
+import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/core/app.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
+import 'package:himi_syncwatch/services/egl_fault_detector.dart';
 import 'package:himi_syncwatch/services/fvp_options.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/tv_detection_service.dart';
@@ -154,12 +156,25 @@ Future<void> _bootstrap() async {
   // 前调用 → 移到设置加载后，按已存盘设置注入（audio.xa2.persistent：
   // Windows XAudio2 引擎不销毁，切集换源无瞬态；renderCompatMode：
   // rockchip GL 渲染变体，视频全黑机型实验开关）。详见 fvp_options.dart。
-  fvp.registerWith(
-      options: buildFvpOptions(
+  final fvpOptions = buildFvpOptions(
     xa2Persistent: Platform.isWindows,
     renderCompatMode: AppSettings.effectiveRenderCompatMode(
         settingsNotifier.snapshot.renderCompatMode),
-  ));
+  );
+  fvp.registerWith(options: fvpOptions);
+  // 注入取证行：真机上无法从其他途径证明 global 选项已生效
+  LogService().log('Diag', 'fvp options: $fvpOptions');
+
+  // mdk 初始 log handler（深度诊断未开时生效，开启后由播放器接管）：
+  // EGL 故障签名检测（黑屏自愈，见 EglFaultDetector）+ error 行转发。
+  // 不用 setLogHandler(null)：那会永久关闭 mdk 内部日志。
+  mdk.setLogHandler((level, message) {
+    if (eglFaultDetector.feed(message)) {
+      LogService().log('mdk', message.trim());
+    } else if (level == mdk.LogLevel.error) {
+      LogService().log('mdk', message.trim());
+    }
+  });
 
   runApp(
     ProviderScope(

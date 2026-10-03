@@ -29,6 +29,7 @@ import 'package:himi_syncwatch/services/snapshot_probe.dart';
 import 'package:himi_syncwatch/services/orientation_sensor_gate.dart';
 import 'package:himi_syncwatch/services/decoder_report.dart';
 import 'package:himi_syncwatch/services/diagnostic_export.dart';
+import 'package:himi_syncwatch/services/egl_fault_detector.dart';
 import 'package:himi_syncwatch/services/codec_mime_map.dart';
 import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
@@ -228,6 +229,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 截帧取证结果（面板展示，null = 未截过）。
   String? _snapshotInfo;
   DateTime? _lastSnapshotAt;
+
+  /// EGL 故障已处理（自动切 tunnel 自愈只做一次，防重入/防环）。
+  bool _eglFaultHandled = false;
   DateTime? _lastSeekTime;
   bool _showPanel = true;
   String _currentPlayUrl = '';
@@ -857,6 +861,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     _setupPlayerListeners();
+    // 防御：EGL 故障若在播放器创建前已被全局检测（bootstrap handler），
+    // 进入页面即触发自愈，不必等下一次日志喂入。
+    if (eglFaultDetector.fault) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onEglFault());
+    }
     _startOrientationSensor();
 
     if (widget.roomCode != null) {
@@ -1113,6 +1122,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return _videoNativeSize != null;
     }
     return _player.textureId.value != null;
+  }
+
+  /// EGL 故障自愈（真机黑屏根因）：设备 EGL 无法满足 mdk 的 config
+  /// attrib（`EGL ERROR (3004)`/`No EGL config found`）→ GL presenter
+  /// 无效 → 解码 buffer 全部 not rendered → 黑屏。tunnel 直通不经
+  /// GL/EGL（fvp：no GL renderer, no EGLConfig）→ 自动切档自愈，
+  /// 档位变更由 build 内 ref.listen 触发 [_applyVideoOutputMode] 重建。
+  /// 幂等：全局 `_eglFaultHandled` 防重入；已在直通档则仅记录。
+  void _onEglFault() {
+    if (_eglFaultHandled || !mounted) return;
+    _eglFaultHandled = true;
+    LogService().log('Player', '检测到 EGL 初始化失败（设备 GL 驱动不兼容）');
+    _diag.note('EGL 初始化失败 → 自动切换直通模式');
+    final current = ref.read(settingsProvider).videoOutput;
+    if (AppSettings.effectiveVideoOutput(current) != current) {
+      // 非 Android：无直通通道可切
+      return;
+    }
+    if (current == 'tunnel') {
+      // 已在直通档仍失败：无可自愈路径，留给诊断日志取证
+      return;
+    }
+    ref.read(settingsProvider.notifier).update(videoOutput: 'tunnel');
+    if (mounted) {
+      try {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('检测到设备 EGL 渲染异常，已自动切换直通模式重试'),
+        ));
+      } catch (_) {}
+    }
+  }
+
+  /// 喂 EGL 检测器；命中则在事件循环里执行自愈（log handler 可能来自
+  /// mdk 内部线程回调，widget 操作须回到 Dart 事件循环）。
+  void _feedEglDetector(String message) {
+    if (eglFaultDetector.feed(message)) {
+      Future.microtask(_onEglFault);
+    }
   }
 
   /// 设置切换视频输出档位后的即时应用（由 build 里的 ref.listen 触发）。
@@ -1681,6 +1728,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 2 = 启用（不依赖 log level）
       mdk.setGlobalOption('log.status', 2);
       mdk.setLogHandler((level, message) {
+        // EGL 故障检测不受深诊开关影响：放在 active 判断前
+        _feedEglDetector(message);
         if (!_deepLogActive) return;
         final line = message.trim();
         if (line.isEmpty) return;
@@ -1750,6 +1799,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       mdk.setGlobalOption('log.status', 0);
       mdk.setLogHandler((level, message) {
+        _feedEglDetector(message);
         if (level == mdk.LogLevel.error) {
           LogService().log('mdk', message.trim());
         }
