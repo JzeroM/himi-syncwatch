@@ -29,6 +29,15 @@ class AppSettings {
   /// 全局选项仅启动时读取注入，**修改后需重启应用生效**。
   final bool renderCompatMode;
 
+  /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
+  ///
+  /// 首次检测到 `EGL ERROR (3004)`/`No EGL config found` 时落盘 true；
+  /// `_bootstrap` 启动时读取并置位 `eglFaultDetector` → 故障设备
+  /// 从第二次启动起进片直接 SurfaceView 直写，全程不创建 texture GL，
+  /// 根除「3004 两轮全败 → 自愈 stop 与 EGL 创建流程并发 → 偶发
+  /// native crash（卡 00:00 后闪退回桌面）」。
+  final bool eglFaultSeen;
+
   /// 生效的音频后端：AAudio/OpenSL/AudioTrack 均为 Android 专属后端
   /// （fvp 文档明确 "on android"），iOS/macOS/Linux/Windows 上设置会
   /// 导致 mdk 找不到音频渲染器（iOS 无声根因），故仅 Android 放行
@@ -56,6 +65,7 @@ class AppSettings {
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
     this.renderCompatMode = false,
+    this.eglFaultSeen = false,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -72,6 +82,7 @@ class AppSettings {
     bool? tvModeUserSet,
     String? videoOutput,
     bool? renderCompatMode,
+    bool? eglFaultSeen,
     Object? themeColor = unsetValue,
   }) {
     return AppSettings(
@@ -86,6 +97,7 @@ class AppSettings {
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
+      eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       themeColor: identical(themeColor, unsetValue)
           ? this.themeColor
           : themeColor as int?,
@@ -104,6 +116,7 @@ class AppSettings {
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
         'renderCompatMode': renderCompatMode,
+        'eglFaultSeen': eglFaultSeen,
         if (themeColor != null) 'themeColor': themeColor,
       };
 
@@ -149,6 +162,8 @@ class AppSettings {
           ? json['videoOutput'] as String
           : 'texture',
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（未确认故障）
+      eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
     );
   }
 

@@ -61,6 +61,23 @@ void main() {
       expect(d.feed('No EGL config found'), isTrue);
     });
 
+    test('markFault 跨重启恢复：置位即故障，feed 不再返回 true', () {
+      d.markFault();
+      expect(d.fault, isTrue);
+      // 已置位 → 命中行不再触发一次性自愈（首次动作）
+      expect(d.feed('No EGL config found'), isFalse);
+      expect(d.feed('EGL ERROR (3004)'), isFalse);
+      expect(d.fault, isTrue);
+    });
+
+    test('markFault 幂等，可被 reset 清除（测试隔离）', () {
+      d.markFault();
+      d.markFault();
+      expect(d.fault, isTrue);
+      d.reset();
+      expect(d.fault, isFalse);
+    });
+
     test('全局实例可被共享访问', () {
       eglFaultDetector.reset();
       expect(eglFaultDetector.fault, isFalse);

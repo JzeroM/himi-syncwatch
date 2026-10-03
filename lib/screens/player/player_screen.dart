@@ -1144,7 +1144,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_eglFaultHandled || !mounted) return;
     _eglFaultHandled = true;
     LogService().log('Player', '检测到 EGL 初始化失败（设备 GL 驱动不兼容）');
-    _diag.note('EGL 初始化失败 → 自动切换 SurfaceView 直写');
+    _diag.note('EGL 初始化失败 → 切换 SurfaceView 直写（重启后完全生效）');
+    // 跨重启持久化：本次为冷启动首次故障（texture GL 已创建 → 可能已
+    // 触发 stop race），落盘后下次启动直接直写，此后不再有自愈流程。
+    unawaited(ref.read(settingsProvider.notifier).update(eglFaultSeen: true));
     final current = ref.read(settingsProvider).videoOutput;
     if (AppSettings.effectiveVideoOutput(current) != current) {
       // 非 Android：无 SurfaceView 通道
@@ -1159,66 +1162,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) {
       try {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('检测到设备 EGL 渲染异常，已切换 SurfaceView 直写重试'),
+          content: Text('检测到设备 EGL 渲染异常，已切换 SurfaceView 直写，重启应用后生效'),
         ));
       } catch (_) {}
     }
-    // 关键第二步（himi_logs_3 定案）：切档只换 decoder 输出目标，
-    // mdk Player 内残留的无效 GL renderer 仍在 sync 路径丢帧
-    // （`not rendered` + `releaseOutputBuffer false`）。mdk
-    // setState(Stopped) 释放全部资源（含 renderer）→ 按原 URL/进度
-    // 重新 prepare，让管线在 directSurface 上从零建立。
-    unawaited(_rebuildPipelineAfterEglFault());
-  }
-
-  /// EGL 自愈第二步：停掉残留无效 GL renderer 并重建播放管线。
-  ///
-  /// 时序（himi_logs_3）：SurfaceView 直写参数（image=0:surface=）
-  /// 已到位，但帧仍被 texture 档遗留的 GL renderer（无效 EGL context）
-  /// 判定 not rendered 后 releaseOutputBuffer(false) 丢弃 → 黑屏。
-  /// `state = stopped` 触发 mdk `setState(State::Stopped)` 释放全部
-  /// 资源（含 renderer），随后同 URL 重载；此时 platform view 已按
-  /// tunnel=true 建立，decoder 从零直写 SurfaceView，不再有 GL 参与。
-  Future<void> _rebuildPipelineAfterEglFault() async {
-    // 等 native EGL/presenter 创建流程自然收尾（日志4：检测后
-    // ~500ms 才完成 onDestroyContext/析构）。过早 stop 与创建线程
-    // 并发会偶发 native crash（闪退回桌面）。
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    // 等进行中的首播/切集完成，避免与 _loadStream/_playFromUrl 交织
-    final ok = await waitForMediaSwitch(() => _isSwitchingMedia);
-    if (!mounted || !ok) {
-      LogService().log('Player', 'EGL 自愈：切换未释放，跳过管线重建');
-      return;
-    }
-    final url = _currentPlayUrl;
-    if (url.isEmpty) return;
-    final rid = _playRequestId;
-    final posMs = _player.position;
-    try {
-      // mdk Stopped 释放全部资源 → 残留无效 GL renderer 销毁
-      _player.state = mdk.PlaybackState.stopped;
-      LogService().log('Player', 'EGL 自愈：stop 释放残留渲染器，重建管线 pos=${posMs}ms');
-      if (_currentToken.isNotEmpty) {
-        _player.setProperty('avio.headers', 'X-Emby-Token: $_currentToken');
-      }
-      _player.media = url;
-      final ret = await _player.prepare(position: posMs > 0 ? posMs : 0);
-      if (!mounted) return;
-      if (rid != _playRequestId) {
-        // 重建期间用户切了集：新流程接管，不覆盖
-        LogService().log('Player', 'EGL 自愈：已被新播放请求抢占');
-        return;
-      }
-      LogService().log('Player', 'EGL 自愈：prepare 返回 $ret');
-      await _syncVideoNativeSize();
-      if (!mounted || rid != _playRequestId) return;
-      _player.state = mdk.PlaybackState.playing;
-      _diag.note('EGL 自愈：管线重建完成（SurfaceView 直写）');
-      LogService().log('Player', 'EGL 自愈：管线重建完成');
-    } catch (e) {
-      LogService().log('Player', 'EGL 自愈管线重建失败: $e');
-    }
+    // 冷启动首次故障不做 stop/重建自愈（v1.1.69 定案）：himi_logs_4 中
+    // stop 与 native EGL 创建流程并发是偶发 native crash 主嫌（卡
+    // 00:00 后闪退回桌面）。故障已落盘 eglFaultSeen → 本次仅切档+
+    // 提示重启，下次启动直接 SurfaceView 直写，全程无 texture GL。
   }
 
   /// 喂 EGL 检测器；命中则在事件循环里执行自愈（log handler 可能来自
@@ -1736,6 +1687,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) {
         timer.cancel();
         return;
+      }
+      // 冻结实验（v1.1.69）：故障直写档下 fvp 未装 render callback，
+      // mdk renderer 可能在等外部驱动（himi_logs_4：帧被内部 renderer
+      // 持续 not rendered 丢弃、进度由音频时钟推进但画面冻结）。
+      // 手动 renderVideo() 补充推进；无效时无副作用（空渲染一次）。
+      if (eglFaultDetector.fault && _effectiveVideoOutput() == 'surfaceView') {
+        try {
+          _player.renderVideo();
+        } catch (_) {}
       }
       if (_isDraggingSlider) return; // 拖动中不更新，避免进度条回弹
       final pos = _player.position;
@@ -3265,9 +3225,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
     WidgetsBinding.instance.removeObserver(this);
-    try {
-      _player.dispose();
-    } catch (_) {}
+    // 延迟释放 native player（v1.1.69）：state=stopped 已在 dispose 开头
+    // 同步执行（音频立即停）；fvp dispose 内部 updateTexture(width:-1)
+    // 会触发 ReleaseRT，与 platform view 销毁时序的 surfaceDestroyed
+    // 并发是「返回播放页闪退回桌面」的主嫌。错开 150ms 让 surface 先
+    // 释放。此段各 timer/sub 已全部 cancel，延迟期内无 _player 访问者。
+    Future.delayed(const Duration(milliseconds: 150), () {
+      try {
+        _player.dispose();
+      } catch (_) {}
+    });
     super.dispose();
   }
 

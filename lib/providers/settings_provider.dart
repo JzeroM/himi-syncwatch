@@ -38,6 +38,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? tvMode,
     String? videoOutput,
     bool? renderCompatMode,
+    bool? eglFaultSeen,
     Object? themeColor = AppSettings.unsetValue,
   }) async {
     state = state.copyWith(
@@ -54,6 +55,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       tvModeUserSet: tvMode != null ? true : null,
       videoOutput: videoOutput,
       renderCompatMode: renderCompatMode,
+      eglFaultSeen: eglFaultSeen,
       themeColor: themeColor,
     );
     await persist();

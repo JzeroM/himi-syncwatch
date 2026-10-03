@@ -50,6 +50,35 @@ void main() {
       expect(settings.stereoDownmix, isFalse);
       expect(settings.audioRenderer, equals('auto'));
       expect(settings.audioRendererUserSet, isFalse);
+      expect(settings.eglFaultSeen, isFalse);
+    });
+
+    test('eglFaultSeen 旧数据缺字段 → 默认 false（未确认故障）', () {
+      expect(AppSettings.fromJson(const {}).eglFaultSeen, isFalse);
+      expect(
+        AppSettings.fromJson(const {'videoOutput': 'surfaceView'}).eglFaultSeen,
+        isFalse,
+      );
+    });
+
+    test('eglFaultSeen toJson/fromJson 往返保留故障标记', () {
+      final json = const AppSettings().copyWith(eglFaultSeen: true).toJson();
+      expect(json['eglFaultSeen'], isTrue);
+      expect(AppSettings.fromJson(json).eglFaultSeen, isTrue);
+    });
+
+    test('copyWith 透传 eglFaultSeen', () {
+      const settings = AppSettings();
+      expect(settings.copyWith(eglFaultSeen: true).eglFaultSeen, isTrue);
+      // 未指定 → 保留原值，不被覆盖
+      expect(
+        settings
+            .copyWith(eglFaultSeen: true)
+            .copyWith(showSyncDebug: true)
+            .eglFaultSeen,
+        isTrue,
+      );
+      expect(settings.copyWith(showSyncDebug: true).eglFaultSeen, isFalse);
     });
 
     test('copyWith 保留未指定字段', () {

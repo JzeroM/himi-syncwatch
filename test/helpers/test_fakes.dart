@@ -13,11 +13,14 @@ class FakeSettingsNotifier extends SettingsNotifier {
     state = initial;
   }
 
+  /// persist 调用计数（验证 update 确实触发落盘）。
+  int persistCount = 0;
+
   @override
   Future<void> load() async {}
 
   @override
-  Future<void> persist() async {}
+  Future<void> persist() async => persistCount++;
 }
 
 /// 不触碰平台通道的声网配置通知器。

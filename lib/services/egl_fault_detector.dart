@@ -45,6 +45,11 @@ class EglFaultDetector {
     return false;
   }
 
+  /// 跨重启恢复：启动时从已落盘的 `AppSettings.eglFaultSeen` 置位，
+  /// 故障设备后续每次启动进片即为 SurfaceView 直写，不再经历
+  /// texture GL → 3004 → 自愈 stop 的 race 链。幂等。
+  void markFault() => _fault = true;
+
   /// 测试用：重置状态。
   void reset() => _fault = false;
 }

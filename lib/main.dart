@@ -148,6 +148,13 @@ Future<void> _bootstrap() async {
 
   final settingsNotifier = SettingsNotifier();
   await settingsNotifier.load();
+  // EGL 故障跨重启持久化（H96_Max_RK3528）：已确认故障的设备启动即
+  // 置位检测器 → 首次进片走 SurfaceView 直写，跳过 texture GL 创建，
+  // 根除「3004 → 自愈 stop 与 EGL 创建并发 → native crash」链路。
+  if (settingsNotifier.snapshot.eglFaultSeen) {
+    eglFaultDetector.markFault();
+    LogService().log('Diag', 'EGL 故障持久化标记命中 → 直写模式启动');
+  }
   // TV 自动识别（策略 A）：用户手动设置过则内部直接跳过，不覆盖
   final isTv = await const TvDetectionService().isTelevision();
   await settingsNotifier.applyTvAutoDetection(isTelevision: isTv);
