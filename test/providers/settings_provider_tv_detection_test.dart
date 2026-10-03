@@ -45,6 +45,85 @@ void main() {
     });
   });
 
+  group('TV 默认 SurfaceView（tvMode 键控，v1.1.75）', () {
+    test('TV 设备自动开 tvMode → 同时默认 videoOutput=surfaceView 并落盘', () async {
+      final notifier = FakeSettingsNotifier();
+      await notifier.applyTvAutoDetection(isTelevision: true);
+
+      expect(notifier.state.tvMode, isTrue);
+      expect(notifier.state.videoOutput, 'surfaceView');
+      expect(notifier.state.videoOutputUserSet, isFalse, reason: '自动默认不标记手动');
+      expect(notifier.persistCount, 1);
+    });
+
+    test('手动关过 tvMode → tvMode 与输出皆保持不动', () async {
+      final notifier = FakeSettingsNotifier(
+        const AppSettings(tvMode: false, tvModeUserSet: true),
+      );
+      await notifier.applyTvAutoDetection(isTelevision: true);
+
+      expect(notifier.state.tvMode, isFalse);
+      expect(notifier.state.videoOutput, 'texture');
+    });
+
+    test('手动选过输出（userSet=true, texture）→ 输出尊重不动，tvMode 照翻', () async {
+      final notifier = FakeSettingsNotifier(
+        const AppSettings(videoOutput: 'texture', videoOutputUserSet: true),
+      );
+      await notifier.applyTvAutoDetection(isTelevision: true);
+
+      expect(notifier.state.tvMode, isTrue);
+      expect(notifier.state.videoOutput, 'texture', reason: 'E4 逃生口：手动档位一律优先');
+    });
+
+    test('非 TV 设备但 tvMode 已开启 → 输出翻 surfaceView（mode 键控语义）', () async {
+      final notifier = FakeSettingsNotifier(const AppSettings(tvMode: true));
+      await notifier.applyTvAutoDetection(isTelevision: false);
+
+      expect(notifier.state.videoOutput, 'surfaceView');
+      expect(notifier.state.tvMode, isTrue);
+    });
+
+    test('非 TV 且 tvMode 关闭 → 全部不动', () async {
+      final notifier = FakeSettingsNotifier();
+      await notifier.applyTvAutoDetection(isTelevision: false);
+
+      expect(notifier.state.tvMode, isFalse);
+      expect(notifier.state.videoOutput, 'texture');
+      expect(notifier.persistCount, 0, reason: '无变更不落盘');
+    });
+
+    test('幂等：已是 tvMode+surfaceView → 无变更不落盘', () async {
+      final notifier = FakeSettingsNotifier(
+        const AppSettings(tvMode: true, videoOutput: 'surfaceView'),
+      );
+      await notifier.applyTvAutoDetection(isTelevision: true);
+
+      expect(notifier.state.tvMode, isTrue);
+      expect(notifier.state.videoOutput, 'surfaceView');
+      expect(notifier.persistCount, 0);
+    });
+
+    test('老装机迁移：tvMode 已 true + texture → 下次引导翻 surfaceView', () async {
+      final notifier = FakeSettingsNotifier(const AppSettings(tvMode: true));
+      expect(notifier.state.videoOutput, 'texture');
+
+      await notifier.applyTvAutoDetection(isTelevision: true);
+      expect(notifier.state.videoOutput, 'surfaceView');
+    });
+
+    test('关闭 TV 模式不回写输出（单向默认）', () async {
+      final notifier = FakeSettingsNotifier(
+        const AppSettings(tvMode: true, videoOutput: 'surfaceView'),
+      );
+      await notifier.update(tvMode: false);
+
+      expect(notifier.state.tvMode, isFalse);
+      expect(notifier.state.videoOutput, 'surfaceView',
+          reason: '关 tvMode 不自动回写 texture');
+    });
+  });
+
   group('手动路径', () {
     test('update(tvMode) 标记用户已设置，之后自动识别不再覆盖', () async {
       final notifier = FakeSettingsNotifier();

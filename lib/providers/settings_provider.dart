@@ -63,11 +63,30 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await persist();
   }
 
-  /// TV 自动识别（策略 A）：仅当检测为 TV 设备、用户从未手动设置过
-  /// 且当前未开启时，静默开启 TV 模式并落盘；其余情况无任何副作用。
+  /// TV 自动识别（策略 A）+ TV 默认输出（v1.1.75，`tvMode` 键控）：
+  /// - 检测为 TV 设备且用户从未手动设置过、当前未开启 → 静默开启 TV 模式；
+  /// - TV 模式开启且用户从未手动选过视频输出 → 默认 SurfaceView 直写
+  ///   （RK3528 等盒子 texture 档 3004 全黑，首播即出画，免黑屏自愈
+  ///   一轮）。走 copyWith+persist 而非 update()，避免误标
+  ///   [AppSettings.videoOutputUserSet]；关闭 TV 模式不回写输出
+  ///   （单向默认，回改需手动设置）。
+  ///
+  /// 其余情况无任何副作用（手动设置一律优先）。
   Future<void> applyTvAutoDetection({required bool isTelevision}) async {
-    if (!isTelevision || state.tvModeUserSet || state.tvMode) return;
-    state = state.copyWith(tvMode: true);
+    var next = state;
+    var changed = false;
+    if (isTelevision && !next.tvModeUserSet && !next.tvMode) {
+      next = next.copyWith(tvMode: true);
+      changed = true;
+    }
+    if (next.tvMode &&
+        !next.videoOutputUserSet &&
+        next.videoOutput != 'surfaceView') {
+      next = next.copyWith(videoOutput: 'surfaceView');
+      changed = true;
+    }
+    if (!changed) return;
+    state = next;
     await persist();
   }
 
