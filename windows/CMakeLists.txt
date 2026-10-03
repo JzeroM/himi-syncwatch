@@ -32,6 +32,11 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# VS2026 (MSVC 14.51) 起 <experimental/coroutine> 触发硬错误 STL1011；
+# permission_handler_windows 0.2.2 仍带 /await（上游 PR #1569 修复未发布）。
+# 按 MSVC 提示定义此宏抑制错误，目录级定义随 add_subdirectory 传递给全部插件。
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by
