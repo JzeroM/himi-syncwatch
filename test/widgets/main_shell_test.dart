@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,24 @@ import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 
 import '../helpers/test_fakes.dart';
+
+/// 捕获 SystemChannels.platform 调用（断言 SystemNavigator.pop 是否触发）。
+List<MethodCall> _mockPlatform(WidgetTester tester) {
+  final calls = <MethodCall>[];
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      calls.add(call);
+      return null;
+    },
+  );
+  addTearDown(() => tester.binding.defaultBinaryMessenger
+      .setMockMethodCallHandler(SystemChannels.platform, null));
+  return calls;
+}
+
+bool _exited(List<MethodCall> calls) =>
+    calls.any((c) => c.method == 'SystemNavigator.pop');
 
 Future<void> pumpApp(
   WidgetTester tester,
@@ -199,5 +218,63 @@ void main() {
     expect(find.byKey(const ValueKey('drawerToggle')), findsNothing);
     expect(find.byKey(const ValueKey('shellNavBarPadding')), findsNothing);
     expect(find.byKey(const ValueKey('shellContentArea')), findsNothing);
+  });
+
+  testWidgets('TV：设置标签按返回 → 回首页，不退出', (tester) async {
+    final calls = _mockPlatform(tester);
+    await pumpApp(
+      tester,
+      const Size(720, 480),
+      settings: const AppSettings(tvMode: true),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(kShellNavIcons[3]));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(HomeScreen), findsNothing);
+    expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('settingsPage')), findsNothing);
+    expect(_exited(calls), isFalse, reason: '回首页不退出');
+    expect(find.text('再按一次返回退出应用'), findsNothing, reason: '非首页静默回首页，不弹提示');
+  });
+
+  testWidgets('TV：首页首按返回仅提示，窗口内再按才退出到桌面', (tester) async {
+    final calls = _mockPlatform(tester);
+    await pumpApp(
+      tester,
+      const Size(720, 480),
+      settings: const AppSettings(tvMode: true),
+    );
+    await tester.pump();
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('再按一次返回退出应用'), findsOneWidget);
+    expect(_exited(calls), isFalse, reason: '首按不退出');
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(_exited(calls), isTrue, reason: '窗口内第二按退出到桌面');
+  });
+
+  testWidgets('非 TV：返回不拦截（平台默认退出，无提示）', (tester) async {
+    final calls = _mockPlatform(tester);
+    await pumpApp(tester, const Size(390, 844));
+    await tester.pump();
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(_exited(calls), isTrue, reason: '保持平台默认行为');
+    expect(find.text('再按一次返回退出应用'), findsNothing);
   });
 }

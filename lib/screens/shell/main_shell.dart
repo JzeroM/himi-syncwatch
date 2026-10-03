@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -26,6 +27,12 @@ class MainShell extends ConsumerStatefulWidget {
 class _MainShellState extends ConsumerState<MainShell> {
   bool _navVisible = true;
 
+  /// TV 模式双击返回退出的判定窗口。
+  static const _exitBackWindow = Duration(seconds: 2);
+
+  /// 上次在首页拦截返回的时刻（null = 当前没有待确认的返回）。
+  DateTime? _backAt;
+
   bool _handleScroll(ScrollNotification notification) {
     // 仅首页标签响应滚动显隐
     if (widget.shell.currentIndex != 0) return false;
@@ -47,11 +54,49 @@ class _MainShellState extends ConsumerState<MainShell> {
       index,
       initialLocation: index == widget.shell.currentIndex,
     );
+    _backAt = null;
     if (!_navVisible) setState(() => _navVisible = true);
+  }
+
+  /// TV 模式返回键策略：非首页标签 → 回首页；首页 → 2 秒内连按两次
+  /// 退出到桌面（首按仅提示）。非 TV 模式不拦截（保持平台默认）。
+  void _handleTvBack() {
+    if (widget.shell.currentIndex != 0) {
+      _goBranch(0);
+      return;
+    }
+    final now = DateTime.now();
+    final withinWindow =
+        _backAt != null && now.difference(_backAt!) < _exitBackWindow;
+    _backAt = now;
+    if (withinWindow) {
+      SystemNavigator.pop();
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('再按一次返回退出应用'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final shellBody = _buildShellBody(context);
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    if (!tvMode) return shellBody;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || !mounted) return;
+        _handleTvBack();
+      },
+      child: shellBody,
+    );
+  }
+
+  Widget _buildShellBody(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     // 三键虚拟按键（≥40）：紧贴其上沿 +2，避免被遮挡又不留空隙；
     // 手势条（≤34，透明）或无安全区：贴近屏底保留少量空间
