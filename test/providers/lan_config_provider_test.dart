@@ -138,30 +138,17 @@ void main() {
     expect(state.lastMessage, '登录失败：用户名或密码错误');
   });
 
-  test('声网空字段被拒绝，不落库', () async {
-    await container.read(lanConfigProvider.notifier).start();
-
-    final res = await post('/api/agora', {'appId': '', 'appCertificate': ''});
-    expect(res.statusCode, HttpStatus.badRequest);
-
-    final agora = container.read(agoraConfigProvider);
-    expect(agora, isNull);
-    expect(container.read(lanConfigProvider).lastOk, isFalse);
-  });
-
-  test('声网提交成功 → AgoraConfigModel 落库且状态成功', () async {
+  test('POST /api/agora → 404（声网扫码已移除，仅保留手动配置）', () async {
     await container.read(lanConfigProvider.notifier).start();
 
     final res = await post('/api/agora', {
       'appId': 'app_id_1',
       'appCertificate': 'cert_1',
     });
-    expect(res.statusCode, HttpStatus.ok);
+    expect(res.statusCode, HttpStatus.notFound);
+    await jsonOf(res);
 
-    final agora = container.read(agoraConfigProvider);
-    expect(agora, isNotNull);
-    expect(agora!.appId, 'app_id_1');
-    expect(agora.appCertificate, 'cert_1');
-    expect(container.read(lanConfigProvider).lastOk, isTrue);
+    expect(container.read(agoraConfigProvider), isNull, reason: '不落库');
+    expect(container.read(lanConfigProvider).lastOk, isNull, reason: '不触碰提交状态');
   });
 }

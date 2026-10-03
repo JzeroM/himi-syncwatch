@@ -1,8 +1,8 @@
 /// 局域网扫码配置的手机端单页（内嵌 HTML，无外部依赖）。
 ///
-/// [mode] 为 `emby` / `agora` 时高亮并滚动到对应区块，且**只保留该
-/// 模式的区块**（TV 扫码配置只配 Emby，页面不出现声网配置；声网扫码
-/// 反之）；`mode` 为空时两区块全显（旧链接兼容）。
+/// 只提供 Emby 服务器配置（声网仅手动配置，扫码管道已整体移除）。
+/// [mode] 为 `emby` 时高亮并滚动到区块；其余（含旧链接的 `agora`）
+/// 不高亮，页面恒为同一份 Emby 配置页。
 /// 页脚提供全部备选 IP 链接（带 token，供多网卡场景切换）。
 String buildLanConfigHtml({
   required List<String> ips,
@@ -15,16 +15,7 @@ String buildLanConfigHtml({
     return '<a href="$href">$ip</a>';
   }).join(' · ');
 
-  final highlightJs = switch (mode) {
-    'emby' => _highlightJs('emby'),
-    'agora' => _highlightJs('agora'),
-    _ => '',
-  };
-
-  // 区块与对应提交函数按 mode 裁剪：emby 模式不出现声网配置，
-  // agora 模式反之（隐藏区块的同时清掉 getElementById 引用）
-  final showEmby = mode != 'agora';
-  final showAgora = mode != 'emby';
+  final highlightJs = mode == 'emby' ? _highlightJs('emby') : '';
 
   return '''
 <!doctype html>
@@ -61,7 +52,6 @@ String buildLanConfigHtml({
 <h1>HIMI 手机配置</h1>
 <p class="tip">请确保手机与电视/电脑连接同一 WiFi，配置成功后本页会显示结果。</p>
 
-${showEmby ? '''
 <section id="emby">
   <h2>配置 Emby 服务器</h2>
   <label>服务器地址</label>
@@ -75,19 +65,6 @@ ${showEmby ? '''
   <button id="emby_btn" onclick="submitEmby()">连接并登录</button>
   <div class="msg" id="emby_msg"></div>
 </section>
-''' : ''}
-
-${showAgora ? '''
-<section id="agora">
-  <h2>配置声网（Agora）</h2>
-  <label>App ID</label>
-  <input id="agora_id" type="text" spellcheck="false">
-  <label>App Certificate</label>
-  <input id="agora_cert" type="text" spellcheck="false">
-  <button id="agora_btn" onclick="submitAgora()">保存声网配置</button>
-  <div class="msg" id="agora_msg"></div>
-</section>
-''' : ''}
 
 <footer>备选地址：$alternates</footer>
 
@@ -116,7 +93,6 @@ async function post(path, data, btn, msgId) {
     b.disabled = false;
   }
 }
-${showEmby ? '''
 function submitEmby() {
   post('/api/emby', {
     url: document.getElementById('emby_url').value.trim(),
@@ -125,14 +101,6 @@ function submitEmby() {
     password: document.getElementById('emby_pass').value
   }, 'emby_btn', 'emby_msg');
 }
-''' : ''}${showAgora ? '''
-function submitAgora() {
-  post('/api/agora', {
-    appId: document.getElementById('agora_id').value.trim(),
-    appCertificate: document.getElementById('agora_cert').value.trim()
-  }, 'agora_btn', 'agora_msg');
-}
-''' : ''}
 function highlight(id) {
   const el = document.getElementById(id);
   if (!el) return;

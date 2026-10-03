@@ -9,34 +9,27 @@ void main() {
         mode: mode,
       );
 
-  test('mode 为空：两区块全显（旧链接兼容）', () {
-    final text = html();
-    expect(text, contains('<section id="emby">'));
-    expect(text, contains('<section id="agora">'));
-    expect(text, contains('emby_url'));
-    expect(text, contains('agora_id'));
+  test('任意 mode：恒为 Emby 配置页，不出现声网任何痕迹', () {
+    for (final mode in ['', 'emby', 'agora']) {
+      final text = html(mode: mode);
+      expect(text, contains('<section id="emby">'));
+      expect(text, contains('emby_url'));
+      expect(text, isNot(contains('<section id="agora">')));
+      expect(text, isNot(contains('agora_id')));
+      expect(text, isNot(contains('submitAgora()')));
+      expect(text, isNot(contains("highlight('agora')")));
+    }
   });
 
-  test('mode=emby：只保留 Emby 配置，不出现声网区块', () {
-    // TV 扫码配置只配 Emby——页面不得出现声网配置入口
+  test('mode=emby：高亮滚动指向 emby', () {
     final text = html(mode: 'emby');
-    expect(text, contains('<section id="emby">'));
-    expect(text, contains('emby_url'));
-    expect(text, isNot(contains('<section id="agora">')));
-    expect(text, isNot(contains('agora_id')));
-    expect(text, isNot(contains('submitAgora()')));
-    // 高亮滚动仍指向 emby
     expect(text, contains("highlight('emby')"));
   });
 
-  test('mode=agora：只保留声网配置，不出现 Emby 区块', () {
-    final text = html(mode: 'agora');
-    expect(text, contains('<section id="agora">'));
-    expect(text, contains('agora_id'));
-    expect(text, isNot(contains('<section id="emby">')));
-    expect(text, isNot(contains('emby_url')));
-    expect(text, isNot(contains('submitEmby()')));
-    expect(text, contains("highlight('agora')"));
+  test('mode 为空（旧链接）：不高亮、提交函数齐全', () {
+    final text = html();
+    expect(text, isNot(contains("highlight('")));
+    expect(text, contains('submitEmby()'));
   });
 
   test('页脚备选链接带 token（各 mode 均保留）', () {

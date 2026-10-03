@@ -4,9 +4,37 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/emby_server_config.dart';
+import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/lan_config_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
+import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+
+import '../helpers/test_fakes.dart';
+
+/// 空字段提交直接抛业务异常（绕开真实服务的平台通道依赖）。
+class _ThrowingEmbySetup extends EmbySetupService {
+  _ThrowingEmbySetup()
+      : super(
+          embyService: FakeEmbyService(),
+          authService: FakeEmbyAuthService(),
+          serverListNotifier: EmbyServerListNotifier(),
+          configNotifier: EmbyConfigNotifier(),
+          readServers: () => const [],
+        );
+
+  @override
+  Future<EmbyServerConfig> addAndActivate({
+    required String serverUrl,
+    required String username,
+    required String password,
+    String? serverName,
+    void Function(String serverName)? onServerInfo,
+  }) async {
+    throw EmbySetupException('服务器地址和用户名不能为空');
+  }
+}
 
 void main() {
   /// 真实 IO（端口绑定/网络接口枚举）需在 runAsync 窗口执行。
@@ -20,6 +48,7 @@ void main() {
         ProviderScope(
           overrides: [
             lanConfigBasePortProvider.overrideWithValue(0),
+            embySetupServiceProvider.overrideWith((_) => _ThrowingEmbySetup()),
           ],
           child: MaterialApp(home: _Entry(mode: mode)),
         ),
@@ -65,11 +94,11 @@ void main() {
       return HttpOverrides.runWithHttpOverrides(() async {
         final client = HttpClient()..findProxy = ((_) => 'DIRECT');
         final postUri = Uri.parse(
-          'http://127.0.0.1:${state.port}/api/agora?t=$token',
+          'http://127.0.0.1:${state.port}/api/emby?t=$token',
         );
         final req = await client.openUrl('POST', postUri);
         req.headers.contentType = ContentType.json;
-        req.write(jsonEncode({'appId': '', 'appCertificate': ''}));
+        req.write(jsonEncode({'url': '', 'username': ''}));
         final res = await req.close();
         final bodyText = await utf8.decoder.bind(res).join();
         expect(res.statusCode, HttpStatus.badRequest, reason: bodyText);
@@ -78,7 +107,7 @@ void main() {
     });
 
     await tester.pump();
-    expect(find.text('App ID 与 Certificate 不能为空'), findsOneWidget);
+    expect(find.textContaining('服务器地址和用户名不能为空'), findsOneWidget);
   });
 
   testWidgets('返回页面时自动停止服务', (tester) async {

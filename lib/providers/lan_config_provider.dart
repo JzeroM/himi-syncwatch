@@ -1,6 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:himi_syncwatch/models/agora_config_model.dart';
-import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/services/lan_config/lan_config_server.dart';
 
@@ -45,18 +43,16 @@ class LanConfigState {
 
 /// 扫码配置服务生命周期 + 手机提交结果。
 ///
-/// 构造注入 [embyHandler]/[agoraHandler]（由 provider 层接真实落库逻辑），
+/// 构造注入 [embyHandler]（由 provider 层接真实落库逻辑），
 /// 内部包装一层记录成功/失败到状态，供二维码页展示。
 class LanConfigNotifier extends StateNotifier<LanConfigState> {
   LanConfigNotifier({
     required Future<String?> Function(Map<String, dynamic> body) embyHandler,
-    required Future<String?> Function(Map<String, dynamic> body) agoraHandler,
     int basePort = 17890,
   }) : super(const LanConfigState()) {
     _server = LanConfigServer(
       basePort: basePort,
       onEmby: (body) => _guard(embyHandler, body),
-      onAgora: (body) => _guard(agoraHandler, body),
     );
   }
 
@@ -120,17 +116,6 @@ final lanConfigProvider =
             username: asString(body['username']),
             password: asString(body['password']),
             serverName: asString(body['name']),
-          );
-      return null;
-    },
-    agoraHandler: (body) async {
-      final appId = asString(body['appId']);
-      final cert = asString(body['appCertificate']);
-      if (appId.isEmpty || cert.isEmpty) {
-        return 'App ID 与 Certificate 不能为空';
-      }
-      await ref.read(agoraConfigProvider.notifier).save(
-            AgoraConfigModel(appId: appId, appCertificate: cert),
           );
       return null;
     },

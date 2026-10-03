@@ -6,7 +6,6 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
-import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -48,25 +47,18 @@ void main() {
     expect(find.widgetWithText(TextButton, '清空'), findsNothing);
   });
 
-  testWidgets('扫码图标进入手机配置页', (tester) async {
+  testWidgets('无扫码入口（声网仅手动配置，非 TV 同样无）', (tester) async {
     await _pumpScreen(tester);
 
-    await tester.tap(find.byTooltip('手机扫码配置'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-
-    expect(find.byType(QrConfigScreen), findsOneWidget);
-
-    Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(find.byType(QrConfigScreen), findsNothing);
+    expect(find.byTooltip('手机扫码配置'), findsNothing);
+    expect(find.byIcon(Icons.qr_code_scanner), findsNothing);
   });
 
-  testWidgets('TV 模式隐藏扫码入口（声网配置整体不暴露给 TV）', (tester) async {
+  testWidgets('TV 模式同样无扫码入口', (tester) async {
     await _pumpScreen(tester, settings: const AppSettings(tvMode: true));
 
     expect(find.byTooltip('手机扫码配置'), findsNothing);
+    expect(find.byIcon(Icons.qr_code_scanner), findsNothing);
   });
 
   testWidgets('App ID 为空时保存被拒绝', (tester) async {
@@ -126,6 +118,24 @@ void main() {
 
     await tester.tap(find.text('关闭'));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('引导弹窗内图片放大可用「关闭」按钮退出', (tester) async {
+    await _pumpScreen(tester);
+
+    await tester.tap(find.text('配置说明'));
+    await tester.pumpAndSettle();
+
+    // 点步骤图 → 图片放大弹窗（此前只有点图手势，遥控器进不去）
+    await tester.tap(find.byType(Image).first);
+    await tester.pumpAndSettle();
+    expect(find.text('关闭'), findsNWidgets(2), reason: '放大弹窗关闭 + 引导弹窗关闭');
+
+    await tester.tap(find.text('关闭').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('关闭'), findsOneWidget, reason: '放大弹窗已关');
+    expect(find.text('步骤 1: 注册登录并创建通用项目'), findsOneWidget);
   });
 
   testWidgets('已配置时默认收起表单，点编辑按钮展开', (tester) async {

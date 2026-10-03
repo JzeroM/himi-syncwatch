@@ -7,23 +7,16 @@ import 'package:himi_syncwatch/services/lan_config/lan_config_server.dart';
 void main() {
   late LanConfigServer server;
   late Map<String, dynamic> capturedEmby;
-  late Map<String, dynamic> capturedAgora;
   String? embyError;
-  String? agoraError;
 
   setUp(() async {
     capturedEmby = {};
-    capturedAgora = {};
     embyError = null;
     server = LanConfigServer(
       basePort: 0,
       onEmby: (body) async {
         capturedEmby = body;
         return embyError;
-      },
-      onAgora: (body) async {
-        capturedAgora = body;
-        return agoraError;
       },
     );
     await server.start();
@@ -69,7 +62,7 @@ void main() {
     expect(res.headers.contentType!.mimeType, 'text/html');
     final html = await bodyOf(res);
     expect(html, contains('emby_url'));
-    expect(html, contains('agora_id'));
+    expect(html, isNot(contains('agora_id')));
     expect(html, contains('连接并登录'));
     expect(res.headers.value(HttpHeaders.setCookieHeader),
         contains('himi_cfg=${server.token}'));
@@ -123,7 +116,6 @@ void main() {
     server = LanConfigServer(
       basePort: 0,
       onEmby: (body) async => throw Exception('连接超时'),
-      onAgora: (body) async => agoraError,
     );
     await server.start();
     final res = await request(
@@ -137,15 +129,14 @@ void main() {
     expect(json['error'], contains('连接超时'));
   });
 
-  test('POST /api/agora → 声网回调收到字段', () async {
+  test('POST /api/agora → 404（声网扫码管道已移除）', () async {
     final res = await request(
       'POST',
       '/api/agora?t=${server.token}',
       body: {'appId': 'id123', 'appCertificate': 'cert456'},
     );
-    expect(res.statusCode, HttpStatus.ok);
-    expect(capturedAgora['appId'], 'id123');
-    expect(capturedAgora['appCertificate'], 'cert456');
+    expect(res.statusCode, HttpStatus.notFound);
+    await bodyOf(res);
   });
 
   test('POST 无凭据 → 403，回调不触发', () async {

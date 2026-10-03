@@ -6,8 +6,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 /// 局域网扫码配置页：展示二维码与地址，手机浏览器打开后提交即落到本机。
 ///
-/// [mode] 为 `emby` / `agora` 时二维码指向配置页并高亮对应区块。
-/// 进入自动启动服务，离开（返回）自动停止。
+/// 仅提供 Emby 配置（[mode] 为 `emby` 时二维码高亮对应区块；声网扫码
+/// 已移除，仅保留手动配置）。进入自动启动服务，离开（返回）自动停止。
 class QrConfigScreen extends ConsumerStatefulWidget {
   const QrConfigScreen({super.key, this.mode = ''});
 
@@ -37,7 +37,7 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.mode == 'agora' ? '扫码配置声网' : '扫码配置 Emby'),
+          title: const Text('扫码配置 Emby'),
         ),
         body: SafeArea(
           child: Center(

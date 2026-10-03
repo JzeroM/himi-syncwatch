@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
-import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
@@ -76,9 +74,6 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
   Widget build(BuildContext context) {
     final agoraConfig = ref.watch(agoraConfigProvider);
     final configured = agoraConfig?.isConfigured == true;
-    // TV 模式彻底隐藏声网配置（含扫码入口）：正常路径本页不可达，
-    // 此处兜底防御（如深链/状态残留）
-    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -89,16 +84,6 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
         elevation: 0,
         flexibleSpace: const GlassBackdrop(),
         actions: [
-          if (!tvMode)
-            IconButton(
-              icon: const Icon(Icons.qr_code_scanner),
-              tooltip: '手机扫码配置',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const QrConfigScreen(mode: 'agora'),
-                ),
-              ),
-            ),
           IconButton(
             icon: const Icon(Icons.help_outline),
             tooltip: '配置说明',
@@ -358,21 +343,36 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
       builder: (ctx) => Dialog(
         insetPadding: EdgeInsets.zero,
         backgroundColor: Colors.black,
-        child: GestureDetector(
-          onTap: () => Navigator.pop(ctx),
-          child: InteractiveViewer(
-            minScale: 0.5,
-            maxScale: 5.0,
-            child: Center(
-              child: Image.asset(
-                imagePath,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Center(
-                  child: Text('图片加载失败', style: TextStyle(color: Colors.white)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Expanded(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5.0,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  child: Center(
+                    child: Image.asset(
+                      imagePath,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Text('图片加载失败',
+                            style: TextStyle(color: Colors.white)),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('关闭'),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -11,18 +11,16 @@ typedef LanConfigHandler = Future<String?> Function(Map<String, dynamic> body);
 /// 局域网扫码配置服务（纯 Dart，不依赖 Flutter）。
 ///
 /// 手机扫码打开 `url`（含随机 token），GET 返回配置页并下发会话 Cookie，
-/// POST /api/emby、/api/agora 经回调交给上层（注入 [onEmby]/[onAgora]）落库。
+/// POST /api/emby 经回调交给上层（注入 [onEmby]）落库。
 /// 服务生命周期跟随二维码页：`stop()` 后端口立即释放。
 class LanConfigServer {
   LanConfigServer({
     required this.onEmby,
-    required this.onAgora,
     this.basePort = 17890,
     this.portProbeCount = 10,
   });
 
   final LanConfigHandler onEmby;
-  final LanConfigHandler onAgora;
 
   /// 首选端口；被占用时依次探测 `basePort + 1 ... + [portProbeCount] - 1`。
   final int basePort;
@@ -136,10 +134,6 @@ class LanConfigServer {
       }
       if (req.method == 'POST' && path == '/api/emby') {
         await _handleAction(req, onEmby, success: 'Emby 服务器已连接并激活');
-        return;
-      }
-      if (req.method == 'POST' && path == '/api/agora') {
-        await _handleAction(req, onAgora, success: '声网配置已保存');
         return;
       }
       await _sendJson(req, 404, {'ok': false, 'error': 'Not Found'});
