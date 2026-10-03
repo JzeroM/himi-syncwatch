@@ -29,8 +29,10 @@ class FvpSurfaceView extends StatelessWidget {
   final int videoWidth;
   final int videoHeight;
 
-  /// 解码器直通（sideband）——texture 档 tunnel 同语义；
-  /// platform view 档暂恒为 false（直通档留作后续）。
+  /// 解码器直通——texture 档 tunnel 同语义：nativeSetSurface 走
+  /// directSurface 分支，MediaCodec 直写 SurfaceView 的 buffer queue，
+  /// 完全不经 mdk GL/EGL（EGL 故障设备的自愈通路）。false 时走
+  /// GL presenter（支持 snapshot 等需要渲染器的能力）。
   final bool tunnel;
 
   @override
@@ -48,9 +50,11 @@ class FvpSurfaceView extends StatelessWidget {
         final layoutDirection =
             Directionality.maybeOf(context) ?? TextDirection.ltr;
         return PlatformViewLink(
-          // 分辨率变化（换集）时重建 platform view，让 surfaceChanged
-          // /setFixedSize 按新视频尺寸重新配置
-          key: ValueKey<String>('fvp-video-view-${videoWidth}x$videoHeight'),
+          // 分辨率变化（换集）或 tunnel 变化（EGL 故障自愈）时重建
+          // platform view：surfaceDestroyed → surfaceCreated 按新
+          // tunnel 参数重新 nativeSetSurface
+          key: ValueKey<String>(
+              'fvp-video-view-${videoWidth}x$videoHeight-t$tunnel'),
           viewType: 'fvp/video-view',
           surfaceFactory: (context, controller) {
             return AndroidViewSurface(

@@ -1126,29 +1126,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// EGL 故障自愈（真机黑屏根因）：设备 EGL 无法满足 mdk 的 config
   /// attrib（`EGL ERROR (3004)`/`No EGL config found`）→ GL presenter
-  /// 无效 → 解码 buffer 全部 not rendered → 黑屏。tunnel 直通不经
-  /// GL/EGL（fvp：no GL renderer, no EGLConfig）→ 自动切档自愈，
-  /// 档位变更由 build 内 ref.listen 触发 [_applyVideoOutputMode] 重建。
-  /// 幂等：全局 `_eglFaultHandled` 防重入；已在直通档则仅记录。
+  /// 无效 → 解码 buffer 全部 not rendered → 黑屏。
+  ///
+  /// 自愈目标是 **SurfaceView 直写**（himi_logs_2 实测纹理档直写
+  /// SurfaceTexture 也黑——帧未消费 29 秒后 decode error）：SurfaceView
+  /// 的 buffer queue 由窗口系统合成，既不经 mdk EGL 也不经 Flutter
+  /// 纹理/合成，是该故障下唯一完全隔离的通路。切档后 build 里
+  /// `tunnel: eglFaultDetector.fault` 使 key 变化强制 platform view
+  /// 按直写参数重建。
+  ///
+  /// 幂等：`_eglFaultHandled` 防重入；已在 SurfaceView 档则仅强制
+  /// rebuild（surface 可能已按 tunnel=false 建立）。
   void _onEglFault() {
     if (_eglFaultHandled || !mounted) return;
     _eglFaultHandled = true;
     LogService().log('Player', '检测到 EGL 初始化失败（设备 GL 驱动不兼容）');
-    _diag.note('EGL 初始化失败 → 自动切换直通模式');
+    _diag.note('EGL 初始化失败 → 自动切换 SurfaceView 直写');
     final current = ref.read(settingsProvider).videoOutput;
     if (AppSettings.effectiveVideoOutput(current) != current) {
-      // 非 Android：无直通通道可切
+      // 非 Android：无 SurfaceView 通道
       return;
     }
-    if (current == 'tunnel') {
-      // 已在直通档仍失败：无可自愈路径，留给诊断日志取证
-      return;
+    if (current != 'surfaceView') {
+      ref.read(settingsProvider.notifier).update(videoOutput: 'surfaceView');
     }
-    ref.read(settingsProvider.notifier).update(videoOutput: 'tunnel');
+    // 已在 SurfaceView 档时 update 不触发 ref.listen → 手动 rebuild，
+    // 让 tunnel:true 的新 key 重建 platform view
+    if (mounted) setState(() {});
     if (mounted) {
       try {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('检测到设备 EGL 渲染异常，已自动切换直通模式重试'),
+          content: Text('检测到设备 EGL 渲染异常，已切换 SurfaceView 直写重试'),
         ));
       } catch (_) {}
     }
@@ -3327,6 +3335,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           nativeHandle: _player.nativeHandle,
           videoWidth: size.width.toInt(),
           videoHeight: size.height.toInt(),
+          // EGL 故障（mdk eglChooseConfig 3004）→ GL presenter 无效 →
+          // SurfaceView 档也须直写，绕开 mdk EGL；正常时走 GL 支持
+          // snapshot 回读等能力
+          tunnel: eglFaultDetector.fault,
         ),
       ),
     );

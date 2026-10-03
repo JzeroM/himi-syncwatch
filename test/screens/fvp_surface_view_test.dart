@@ -77,4 +77,57 @@ void main() {
     expect(lastParams['width'], 1280);
     expect(lastParams['height'], 720);
   });
+
+  testWidgets('tunnel=true 进 creationParams 且 key 随之变化（EGL 自愈重建）',
+      (tester) async {
+    final log = <MethodCall>[];
+    final channel = const MethodChannel('flutter/platform_views');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (call) async {
+        log.add(call);
+        return null;
+      },
+    );
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+
+    Widget build(bool tunnel) => MaterialApp(
+          home: Scaffold(
+            body: FvpSurfaceView(
+              nativeHandle: 777,
+              videoWidth: 3840,
+              videoHeight: 1598,
+              tunnel: tunnel,
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(build(false));
+    await tester.pump();
+    await tester.pump();
+    final keyGl =
+        tester.widget<PlatformViewLink>(find.byType(PlatformViewLink));
+    final paramsGl = const StandardMessageCodec().decodeMessage(
+        ByteData.sublistView((log
+            .lastWhere((c) => c.method == 'create')
+            .arguments as Map)['params'] as Uint8List)) as Map;
+    expect(paramsGl['tunnel'], isFalse);
+
+    // EGL 故障自愈：tunnel 翻转 → key 变化 → platform view 重建，
+    // surfaceDestroyed → surfaceCreated 按直写参数重新 nativeSetSurface
+    await tester.pumpWidget(build(true));
+    await tester.pump();
+    final keyTunnel =
+        tester.widget<PlatformViewLink>(find.byType(PlatformViewLink));
+    expect(keyTunnel.key, isNot(equals(keyGl.key)),
+        reason: 'tunnel 变化须换 key 重建 platform view');
+    final paramsTunnel = const StandardMessageCodec().decodeMessage(
+        ByteData.sublistView((log
+            .lastWhere((c) => c.method == 'create')
+            .arguments as Map)['params'] as Uint8List)) as Map;
+    expect(paramsTunnel['tunnel'], isTrue,
+        reason: '直写参数必须进 creationParams（directSurface 分支）');
+    expect(paramsTunnel['player'], 777);
+  });
 }
