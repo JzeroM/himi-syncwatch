@@ -1177,6 +1177,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 幂等：`_eglFaultHandled` 防重入；已在 SurfaceView 档则仅强制
   /// rebuild（surface 可能已按 tunnel=false 建立）。
+  /// v1.1.75：播放中自愈静音——不再弹 SnackBar（3 条提示全删），
+  /// 提示只留诊断面板 `_diag.note` 与日志，切档/落盘行为不变。
   void _onEglFault() {
     if (_eglFaultHandled || !mounted) return;
     _eglFaultHandled = true;
@@ -1192,27 +1194,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (writeBack != null) {
       ref.read(settingsProvider.notifier).update(videoOutput: writeBack);
       _diag.note('EGL 初始化失败 → 切换 SurfaceView 直写（重启后完全生效）');
-      if (mounted) {
-        try {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('检测到设备 EGL 渲染异常，已切换 SurfaceView 直写，重启应用后生效'),
-          ));
-        } catch (_) {}
-      }
     } else {
       final manual = settings.videoOutputUserSet;
       _diag.note(manual
           ? 'EGL 初始化失败 → 保持手动档位（若画面异常请切 SurfaceView）'
           : 'EGL 初始化失败 → 保持当前档位');
-      if (mounted) {
-        try {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(manual
-                ? '检测到设备 EGL 渲染异常，已保持手动选择的档位；若画面异常请切换 SurfaceView'
-                : '检测到设备 EGL 渲染异常，已保持当前视频输出档位'),
-          ));
-        } catch (_) {}
-      }
     }
     if (mounted) setState(() {});
     // 冷启动首次故障不做 stop/重建自愈（v1.1.69 定案）：himi_logs_4 中
