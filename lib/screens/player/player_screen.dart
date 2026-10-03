@@ -1111,9 +1111,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } catch (_) {}
   }
 
-  /// 当前生效的视频输出通道（见 [AppSettings.effectiveVideoOutput]）。
+  /// 当前生效的视频输出通道（见 [AppSettings.eglAwareVideoOutput]）。
+  /// EGL 故障进程级持久：故障后本次进程内所有播放直写 SurfaceView，
+  /// 不再先建 texture GL（避免每次进片重复触发 3004 + 自愈 race 闪退）。
   String _effectiveVideoOutput() =>
-      AppSettings.effectiveVideoOutput(ref.read(settingsProvider).videoOutput);
+      AppSettings.eglAwareVideoOutput(ref.read(settingsProvider).videoOutput,
+          eglFault: eglFaultDetector.fault);
 
   /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
   /// 媒体信息拿到视频尺寸即就绪。
@@ -1177,6 +1180,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 资源（含 renderer），随后同 URL 重载；此时 platform view 已按
   /// tunnel=true 建立，decoder 从零直写 SurfaceView，不再有 GL 参与。
   Future<void> _rebuildPipelineAfterEglFault() async {
+    // 等 native EGL/presenter 创建流程自然收尾（日志4：检测后
+    // ~500ms 才完成 onDestroyContext/析构）。过早 stop 与创建线程
+    // 并发会偶发 native crash（闪退回桌面）。
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
     // 等进行中的首播/切集完成，避免与 _loadStream/_playFromUrl 交织
     final ok = await waitForMediaSwitch(() => _isSwitchingMedia);
     if (!mounted || !ok) {
@@ -3401,7 +3409,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 视频 / 占位文字
         if (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null))
           Center(
-            child: ref.watch(settingsProvider).usesSurfaceView
+            child: _effectiveVideoOutput() == 'surfaceView'
                 ? _buildSurfaceViewVideo()
                 : ValueListenableBuilder<int?>(
                     valueListenable: _player.textureId,

@@ -181,6 +181,15 @@ class AppSettings {
     return 'texture';
   }
 
+  /// EGL 故障感知的生效输出通道：设备 EGL 损坏（`eglChooseConfig`
+  /// 3004，进程级持久）后纹理/直通档必走坏 GL → 黑屏，强制归一为
+  /// SurfaceView 直写；无故障时按 [setting] 归一（非 Android 固定
+  /// 纹理，故障分支经同一归一避免返回不存在的通道）。
+  static String eglAwareVideoOutput(String setting, {required bool eglFault}) {
+    if (eglFault) return effectiveVideoOutput('surfaceView');
+    return effectiveVideoOutput(setting);
+  }
+
   /// 是否走 fvp/video-view platform view（SurfaceView）通道。
   bool get usesSurfaceView =>
       effectiveVideoOutput(videoOutput) == 'surfaceView';

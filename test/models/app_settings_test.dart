@@ -325,6 +325,42 @@ void main() {
       expect(AppSettings.effectiveVideoOutput('tunnel'), 'texture');
     });
 
+    test('eglAwareVideoOutput：EGL 故障强制直写 SurfaceView，无故障按档位', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      // 故障持久：任意档位归一 SurfaceView（含已是 surfaceView 的幂等）
+      expect(
+        AppSettings.eglAwareVideoOutput('texture', eglFault: true),
+        'surfaceView',
+      );
+      expect(
+        AppSettings.eglAwareVideoOutput('tunnel', eglFault: true),
+        'surfaceView',
+      );
+      expect(
+        AppSettings.eglAwareVideoOutput('surfaceView', eglFault: true),
+        'surfaceView',
+      );
+
+      // 无故障：行为与 effectiveVideoOutput 一致
+      expect(
+        AppSettings.eglAwareVideoOutput('texture', eglFault: false),
+        'texture',
+      );
+      expect(
+        AppSettings.eglAwareVideoOutput('tunnel', eglFault: false),
+        'tunnel',
+      );
+
+      // 非 Android：即使故障也归一 texture（无 SurfaceView 通道）
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(
+        AppSettings.eglAwareVideoOutput('texture', eglFault: true),
+        'texture',
+      );
+    });
+
     test('usesSurfaceView / textureTunnel 跟随生效值', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
