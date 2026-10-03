@@ -372,8 +372,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 视频输出是页面最后一个下拉（解码方式/音频后端之后）
-    await tester.tap(find.byType(DropdownButton<String>).last);
+    // scrollUntilVisible 末尾自动 ensureVisible 会把行顶到视口顶部，
+    // 藏进 AppBar（透明但拦截 hit test）；手动下移让出行再点下拉
+    final dd = find.byType(DropdownButton<String>).last;
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 120));
+    await tester.pumpAndSettle();
+    await tester.tap(dd);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('SurfaceView'));
@@ -399,6 +403,9 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
+    // 同非 TV 用例：行被 ensureVisible 顶到 AppBar 下，下移让出后再点
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 120));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('视频输出'));
     await tester.pumpAndSettle();
@@ -421,12 +428,49 @@ void main() {
       await _pumpScreen(tester);
 
       expect(find.text('视频输出'), findsNothing);
+      expect(find.text('渲染兼容模式（实验）'), findsNothing);
       // 相邻设置项仍正常展示
       expect(find.text('解码方式'), findsOneWidget);
       expect(find.text('播放调试面板'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
+  });
+
+  testWidgets('Android 展示渲染兼容模式开关，默认关闭', (tester) async {
+    final container = await _pumpScreen(tester);
+    await tester.scrollUntilVisible(
+      find.text('渲染兼容模式（实验）'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('渲染兼容模式（实验）'), findsOneWidget);
+    expect(find.textContaining('需重启应用生效'), findsOneWidget);
+    expect(container.read(settingsProvider).renderCompatMode, isFalse);
+  });
+
+  testWidgets('渲染兼容模式开关切换写入设置', (tester) async {
+    final container = await _pumpScreen(tester);
+    final row = find.ancestor(
+      of: find.text('渲染兼容模式（实验）'),
+      matching: find.byType(SwitchListTile),
+    );
+    await tester.scrollUntilVisible(
+      find.text('渲染兼容模式（实验）'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.descendant(
+      of: row,
+      matching: find.byType(Switch),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).renderCompatMode, isTrue);
   });
 
   testWidgets('TV：解码方式行点开底部弹窗，选择软解写入', (tester) async {

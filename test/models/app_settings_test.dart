@@ -359,4 +359,47 @@ void main() {
       expect(AppSettings.videoOutputLabels['surfaceView'], 'SurfaceView');
     });
   });
+
+  group('renderCompatMode（渲染兼容模式）', () {
+    test('默认关闭', () {
+      expect(const AppSettings().renderCompatMode, isFalse);
+      expect(AppSettings.fromJson(const {}).renderCompatMode, isFalse);
+    });
+
+    test('copyWith 透传 renderCompatMode', () {
+      const settings = AppSettings();
+      expect(
+        settings.copyWith(renderCompatMode: true).renderCompatMode,
+        isTrue,
+      );
+      expect(
+        settings
+            .copyWith(renderCompatMode: true)
+            .copyWith(decodeMode: 'hw')
+            .renderCompatMode,
+        isTrue,
+      );
+      expect(settings.copyWith(decodeMode: 'hw').renderCompatMode, isFalse);
+    });
+
+    test('toJson/fromJson 往返保持 renderCompatMode', () {
+      const original = AppSettings(renderCompatMode: true);
+      expect(
+        AppSettings.fromJson(original.toJson()).renderCompatMode,
+        isTrue,
+      );
+    });
+
+    test('effectiveRenderCompatMode：Android 放行、其余平台固定关闭', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      expect(AppSettings.effectiveRenderCompatMode(true), isTrue);
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(AppSettings.effectiveRenderCompatMode(true), isFalse);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(AppSettings.effectiveRenderCompatMode(true), isFalse);
+    });
+  });
 }

@@ -56,6 +56,7 @@ import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
 import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
+import 'package:himi_syncwatch/services/switch_volume_guard.dart';
 import 'package:himi_syncwatch/services/window_fullscreen_service.dart';
 
 /// 播放器默认音量（0-1）：进入播放器即为 80%。
@@ -215,6 +216,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 换源音量渐变（切集爆音修复）。
   final AudioFader _fader = AudioFader();
+
+  /// 换源音量守卫（切集静音回归修复）：渐出前记录目标音量、
+  /// 换源窗口内拒绝 player.volume 回写污染 UI 音量。
+  final SwitchVolumeGuard _volGuard = SwitchVolumeGuard();
 
   /// 纹理通道实际创建时的档位（'texture'/'tunnel'）；
   /// 设置切换后据此决定是否重建纹理。
@@ -1215,6 +1220,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_player.state != mdk.PlaybackState.playing) return false;
     final from = _player.volume;
     if (from <= 0) return false;
+    // 渐出前记录用户目标音量：窗口内 _volume 若被污染，渐入仍收敛到此值
+    _volGuard.markFadeOutStart(_volume / 100);
     await _fader.fadeTo((v) {
       if (mounted) _player.volume = v;
     }, from, 0);
@@ -1222,15 +1229,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 起播渐入：从当前音量（渐出后为 0）线性恢复到用户音量。
+  /// 目标以 [SwitchVolumeGuard] 记录值优先（防换源窗口回写污染）；
   /// 已在目标音量时直接跳过（首播、未渐出的换源均走此短路）。
   Future<void> _fadeInForSwitch() async {
     if (!mounted) return;
-    final target = (_volume / 100).clamp(0.0, 1.0);
+    final target = _volGuard.fadeInTarget(_volume / 100);
     final from = _player.volume;
-    if ((from - target).abs() < 0.001) return;
-    await _fader.fadeTo((v) {
-      if (mounted) _player.volume = v;
-    }, from, target);
+    if ((from - target).abs() >= 0.001) {
+      await _fader.fadeTo((v) {
+        if (mounted) _player.volume = v;
+      }, from, target);
+    }
+    // 渐入结束（含短路）即换源音量窗口关闭；期间 _volume 可能已被
+    // 污染为 0，此处对齐回目标（其后 switching 尚未清除时回写仍被挡），
+    // 残留的 switching 期回写会写入 player.volume(=target) 自洽值。
+    _volGuard.endSwitch();
+    if (mounted && (_volume / 100 - target).abs() >= 0.001) {
+      _volume = target * 100;
+      _volumeNotifier.value = _volume;
+    }
   }
 
   /// 截帧取证（面板相机按钮）：mdk snapshot 双调用后取平均亮度。
@@ -1253,7 +1270,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         setState(() => _snapshotInfo = 'tunnel 档无渲染器，不支持回读');
         return;
       }
-      await _player.snapshot(); // wiki：首调往往无帧
+      // wiki：首调往往无帧；3s 超时防黑屏设备 readback 挂死（实测
+      // 该机型纹理档 snapshot 触发 native crash，按钮已在 Android 隐藏）
+      await _player.snapshot().timeout(const Duration(seconds: 3));
       if (!mounted) return;
       final data = await _player.snapshot().timeout(const Duration(seconds: 3));
       if (!mounted) return;
@@ -1354,8 +1373,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _isSwitchingMedia = false;
       // 换源途中失败：把渐出到 0 的音量恢复，避免整场静音
       _fader.cancel();
+      final restore = _volGuard.fadeInTarget(_volume / 100);
+      _volGuard.endSwitch();
       if (mounted) {
-        _player.volume = (_volume / 100).clamp(0.0, 1.0);
+        _player.volume = restore;
+        if ((_volume / 100 - restore).abs() >= 0.001) {
+          _volume = restore * 100;
+          _volumeNotifier.value = _volume;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('播放失败: $e')),
         );
@@ -1404,9 +1429,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) return;
 
       // 换源前渐出（同 player 硬切 media 的爆音修复），渐出后复查抢占：
-      // 被新请求抢占时交由赢家流程接管音量，此处不再换源。
+      // 被新请求抢占时恢复音量并交给赢家流程接管。
       await _fadeOutForSwitch();
-      if (requestId != _playRequestId || !mounted) return;
+      if (requestId != _playRequestId || !mounted) {
+        final restore = _volGuard.fadeInTarget(_volume / 100);
+        _volGuard.endSwitch();
+        if (mounted) {
+          _fader.cancel();
+          _player.volume = restore;
+        }
+        return;
+      }
 
       _isSwitchingMedia = true;
       _player.media = playUrl;
@@ -1447,7 +1480,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } else if (mounted) {
         // 输出未就绪不启动播放：把可能的渐出音量恢复，避免误判为静音故障
         _fader.cancel();
-        _player.volume = (_volume / 100).clamp(0.0, 1.0);
+        final restore = _volGuard.fadeInTarget(_volume / 100);
+        _volGuard.endSwitch();
+        _player.volume = restore;
+        if ((_volume / 100 - restore).abs() >= 0.001) {
+          _volume = restore * 100;
+          _volumeNotifier.value = _volume;
+        }
       }
       _rebuildGroups();
       _logSyncEvent('播放器打开成功');
@@ -1464,6 +1503,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
     } catch (e) {
       _isSwitchingMedia = false;
+      // 渐出后异常退出：恢复音量，避免整场静音
+      _fader.cancel();
+      final restore = _volGuard.fadeInTarget(_volume / 100);
+      _volGuard.endSwitch();
+      if (mounted) {
+        _player.volume = restore;
+        if ((_volume / 100 - restore).abs() >= 0.001) {
+          _volume = restore * 100;
+          _volumeNotifier.value = _volume;
+        }
+      }
       _logSyncEvent('播放器打开失败: $e');
       LogService().log('Sync', '播放器打开失败: $e');
       _addBroadcastMessage('同步播放失败: $e');
@@ -1477,8 +1527,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _stateSub = _player.onStateChanged.listen((event) {
       if (!mounted) return;
       // 更新音量（换源渐变期间跳过：渐变把 player.volume 压到 0，
-      // 回写会让音量条跟着跳 0 且目标音量丢失）
-      if (!_fader.active) {
+      // 回写会让音量条跟着跳 0 且目标音量丢失；换源窗口同理——渐出
+      // 完成→渐入开始之间回写 0 会污染渐入目标导致永久静音）
+      if (_volGuard.canWriteBack(
+          fading: _fader.active, switching: _isSwitchingMedia)) {
         _volume = _player.volume * 100;
         _volumeNotifier.value = _volume;
       }
@@ -3425,7 +3477,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               textureSize: _textureSizeText,
               videoOutput: _effectiveVideoOutput(),
               snapshotInfo: _snapshotInfo,
-              onSnapshot: _probeSnapshot,
+              // Android：mdk snapshot 在 GL 异常设备上触发 native crash
+              // （无法 try/catch），隐藏截帧入口；其他平台保留取证能力
+              onSnapshot: Platform.isAndroid ? null : _probeSnapshot,
               // 解码器
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualVideoDecoders: _actualVideoDecoders,

@@ -195,6 +195,20 @@ class SettingsScreen extends ConsumerWidget {
               onSelected: (v) =>
                   ref.read(settingsProvider.notifier).update(videoOutput: v),
             ),
+            const Divider(height: 1),
+            // 渲染兼容模式：mdk 全局 GL 选项（rockchip 硬解渲染 /
+            // SurfaceTexture 上下文），仅启动时读取注入 → 重启生效
+            SwitchListTile(
+              title: const Text('渲染兼容模式（实验）'),
+              subtitle: const Text(
+                '启用 rockchip GL 渲染变体（yuv 采样 / SurfaceTexture 上下文）。'
+                '视频全黑时尝试，修改后需重启应用生效',
+              ),
+              value: settings.renderCompatMode,
+              onChanged: (v) => ref
+                  .read(settingsProvider.notifier)
+                  .update(renderCompatMode: v),
+            ),
           ],
           const Divider(height: 1),
           SwitchListTile(

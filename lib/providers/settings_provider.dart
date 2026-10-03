@@ -15,6 +15,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   final _storage = const FlutterSecureStorage();
 
+  /// 当前设置快照（bootstrap 在 runApp 前读取注入 fvp 全局选项，
+  /// `state` 为 protected 成员，子类内访问合法）。
+  AppSettings get snapshot => state;
+
   Future<void> load() async {
     final raw = await _storage.read(key: _storageKey);
     if (raw != null) {
@@ -33,6 +37,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? glassUi,
     bool? tvMode,
     String? videoOutput,
+    bool? renderCompatMode,
     Object? themeColor = AppSettings.unsetValue,
   }) async {
     state = state.copyWith(
@@ -48,6 +53,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       // 手动改动 TV 开关即标记「用户已设置」，此后自动识别不再覆盖
       tvModeUserSet: tvMode != null ? true : null,
       videoOutput: videoOutput,
+      renderCompatMode: renderCompatMode,
       themeColor: themeColor,
     );
     await persist();

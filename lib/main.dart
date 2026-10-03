@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:himi_syncwatch/core/app.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
+import 'package:himi_syncwatch/services/fvp_options.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/tv_detection_service.dart';
 import 'package:himi_windows_rtm/himi_windows_rtm.dart';
@@ -135,13 +137,6 @@ Future<void> _bootstrap() async {
     } catch (_) {}
   }
   HttpOverrides.global = _SelfSignedHttpOverrides();
-  // audio.xa2.persistent：Windows XAudio2 停止时不销毁 master voice/
-  // 引擎，切集换源（音频格式变化需重建设备）更快且减少设备重启瞬态，
-  // 配合换源音量渐变消除切集爆音（mdk wiki: Global Options）。
-  fvp.registerWith(options: {
-    if (Platform.isWindows)
-      'global': <String, Object>{'audio.xa2.persistent': 1},
-  });
 
   final authService = EmbyAuthService();
   await authService.init();
@@ -154,6 +149,17 @@ Future<void> _bootstrap() async {
   // TV 自动识别（策略 A）：用户手动设置过则内部直接跳过，不覆盖
   final isTv = await const TvDetectionService().isTelevision();
   await settingsNotifier.applyTvAutoDetection(isTelevision: isTv);
+
+  // fvp/mdk 全局选项：registerWith 全局生效一次且须在首个播放器创建
+  // 前调用 → 移到设置加载后，按已存盘设置注入（audio.xa2.persistent：
+  // Windows XAudio2 引擎不销毁，切集换源无瞬态；renderCompatMode：
+  // rockchip GL 渲染变体，视频全黑机型实验开关）。详见 fvp_options.dart。
+  fvp.registerWith(
+      options: buildFvpOptions(
+    xa2Persistent: Platform.isWindows,
+    renderCompatMode: AppSettings.effectiveRenderCompatMode(
+        settingsNotifier.snapshot.renderCompatMode),
+  ));
 
   runApp(
     ProviderScope(

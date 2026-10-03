@@ -22,6 +22,13 @@ class AppSettings {
   /// 'surfaceView'  — SurfaceView platform view（绕过 Flutter 合成，TV 全分辨率扫描输出）
   final String videoOutput;
 
+  /// 渲染兼容模式（实验，Android）：以 mdk 全局选项启用
+  /// `gl.yuv_sampler=1`（mdk wiki 注明 for android/rockchip 硬解渲染）
+  /// 与 `surfacetexture.glcontext=1`（SurfaceTexture 无有效上下文时
+  /// 创建 GL context），针对 RK3528 类设备视频全黑的渲染层 workaround。
+  /// 全局选项仅启动时读取注入，**修改后需重启应用生效**。
+  final bool renderCompatMode;
+
   /// 生效的音频后端：AAudio/OpenSL/AudioTrack 均为 Android 专属后端
   /// （fvp 文档明确 "on android"），iOS/macOS/Linux/Windows 上设置会
   /// 导致 mdk 找不到音频渲染器（iOS 无声根因），故仅 Android 放行
@@ -48,6 +55,7 @@ class AppSettings {
     this.tvMode = false,
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
+    this.renderCompatMode = false,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -63,6 +71,7 @@ class AppSettings {
     bool? tvMode,
     bool? tvModeUserSet,
     String? videoOutput,
+    bool? renderCompatMode,
     Object? themeColor = unsetValue,
   }) {
     return AppSettings(
@@ -76,6 +85,7 @@ class AppSettings {
       tvMode: tvMode ?? this.tvMode,
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
+      renderCompatMode: renderCompatMode ?? this.renderCompatMode,
       themeColor: identical(themeColor, unsetValue)
           ? this.themeColor
           : themeColor as int?,
@@ -93,6 +103,7 @@ class AppSettings {
         'tvMode': tvMode,
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
+        'renderCompatMode': renderCompatMode,
         if (themeColor != null) 'themeColor': themeColor,
       };
 
@@ -137,6 +148,7 @@ class AppSettings {
               .contains(json['videoOutput'])
           ? json['videoOutput'] as String
           : 'texture',
+      renderCompatMode: json['renderCompatMode'] as bool? ?? false,
     );
   }
 
@@ -175,4 +187,13 @@ class AppSettings {
 
   /// 纹理通道是否启用解码器直通（tunnel）。
   bool get textureTunnel => effectiveVideoOutput(videoOutput) == 'tunnel';
+
+  /// 渲染兼容模式生效值：相关 mdk 全局选项均为 Android/rockchip 能力，
+  /// 其余平台固定关闭；设置项也只在 Android 展示。
+  static bool effectiveRenderCompatMode(bool setting) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return setting;
+    }
+    return false;
+  }
 }
