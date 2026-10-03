@@ -1181,32 +1181,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_eglFaultHandled || !mounted) return;
     _eglFaultHandled = true;
     LogService().log('Player', '检测到 EGL 初始化失败（设备 GL 驱动不兼容）');
-    _diag.note('EGL 初始化失败 → 切换 SurfaceView 直写（重启后完全生效）');
     // 跨重启持久化：本次为冷启动首次故障（texture GL 已创建 → 可能已
     // 触发 stop race），落盘后下次启动直接直写，此后不再有自愈流程。
     unawaited(ref.read(settingsProvider.notifier).update(eglFaultSeen: true));
-    final current = ref.read(settingsProvider).videoOutput;
-    if (AppSettings.effectiveVideoOutput(current) != current) {
-      // 非 Android：无 SurfaceView 通道
-      return;
+    final settings = ref.read(settingsProvider);
+    // 尊重手动选择（v1.1.72）：用户改过输出档位则不写回 surfaceView，
+    // 保留 texture 档对照实验逃生口；未手动才执行老自愈自动切档。
+    final writeBack = AppSettings.eglFaultWriteBack(settings.videoOutput,
+        userSet: settings.videoOutputUserSet);
+    if (writeBack != null) {
+      ref.read(settingsProvider.notifier).update(videoOutput: writeBack);
+      _diag.note('EGL 初始化失败 → 切换 SurfaceView 直写（重启后完全生效）');
+      if (mounted) {
+        try {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('检测到设备 EGL 渲染异常，已切换 SurfaceView 直写，重启应用后生效'),
+          ));
+        } catch (_) {}
+      }
+    } else {
+      final manual = settings.videoOutputUserSet;
+      _diag.note(manual
+          ? 'EGL 初始化失败 → 保持手动档位（若画面异常请切 SurfaceView）'
+          : 'EGL 初始化失败 → 保持当前档位');
+      if (mounted) {
+        try {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(manual
+                ? '检测到设备 EGL 渲染异常，已保持手动选择的档位；若画面异常请切换 SurfaceView'
+                : '检测到设备 EGL 渲染异常，已保持当前视频输出档位'),
+          ));
+        } catch (_) {}
+      }
     }
-    if (current != 'surfaceView') {
-      ref.read(settingsProvider.notifier).update(videoOutput: 'surfaceView');
-    }
-    // 已在 SurfaceView 档时 update 不触发 ref.listen → 手动 rebuild，
-    // 让 tunnel:true 的新 key 重建 platform view
     if (mounted) setState(() {});
-    if (mounted) {
-      try {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('检测到设备 EGL 渲染异常，已切换 SurfaceView 直写，重启应用后生效'),
-        ));
-      } catch (_) {}
-    }
     // 冷启动首次故障不做 stop/重建自愈（v1.1.69 定案）：himi_logs_4 中
     // stop 与 native EGL 创建流程并发是偶发 native crash 主嫌（卡
-    // 00:00 后闪退回桌面）。故障已落盘 eglFaultSeen → 本次仅切档+
-    // 提示重启，下次启动直接 SurfaceView 直写，全程无 texture GL。
+    // 00:00 后闪退回桌面）。故障已落盘 eglFaultSeen → 本次仅记日志+
+    // 按需切档，下次启动按 eglFaultSeen/userSet 决定档位。
   }
 
   /// 喂 EGL 检测器；命中则在事件循环里执行自愈（log handler 可能来自

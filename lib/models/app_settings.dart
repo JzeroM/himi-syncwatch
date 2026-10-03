@@ -221,6 +221,19 @@ class AppSettings {
     return effectiveVideoOutput(setting);
   }
 
+  /// EGL 故障触发时应写回的视频输出档位（null = 不改写设置值）。
+  ///
+  /// - 用户手动改过输出（[userSet]=true）→ null，尊重手动选择
+  ///   （texture 档对照实验逃生口，v1.1.72：修掉老自愈无条件把
+  ///   `videoOutput` 写回 surfaceView 覆盖手动设置的 bug）；
+  /// - 未手动且当前非 SurfaceView → 'surfaceView'（老自愈行为）；
+  /// - 非 Android → null（无 SurfaceView 通道，不写回无效值）。
+  static String? eglFaultWriteBack(String current, {required bool userSet}) {
+    if (userSet) return null;
+    if (defaultTargetPlatform != TargetPlatform.android) return null;
+    return current != 'surfaceView' ? 'surfaceView' : null;
+  }
+
   /// 是否走 fvp/video-view platform view（SurfaceView）通道。
   bool get usesSurfaceView =>
       effectiveVideoOutput(videoOutput) == 'surfaceView';

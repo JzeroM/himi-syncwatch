@@ -441,6 +441,48 @@ void main() {
       );
     });
 
+    test('eglFaultWriteBack：手动改过不写回，未手动才自动切档', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      // 手动改过 → 一律不写回（尊重手动选择，逃生口）
+      expect(
+        AppSettings.eglFaultWriteBack('texture', userSet: true),
+        isNull,
+      );
+      expect(
+        AppSettings.eglFaultWriteBack('tunnel', userSet: true),
+        isNull,
+      );
+      expect(
+        AppSettings.eglFaultWriteBack('surfaceView', userSet: true),
+        isNull,
+      );
+
+      // 未手动 → 非 SurfaceView 写回 surfaceView（老自愈行为）
+      expect(
+        AppSettings.eglFaultWriteBack('texture', userSet: false),
+        'surfaceView',
+      );
+      expect(
+        AppSettings.eglFaultWriteBack('tunnel', userSet: false),
+        'surfaceView',
+      );
+
+      // 未手动 → 已在 surfaceView 幂等不写回
+      expect(
+        AppSettings.eglFaultWriteBack('surfaceView', userSet: false),
+        isNull,
+      );
+
+      // 非 Android：无 SurfaceView 通道，一律不写回
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(
+        AppSettings.eglFaultWriteBack('texture', userSet: false),
+        isNull,
+      );
+    });
+
     test('videoOutputUserSet 往返与旧数据默认值', () {
       // toJson/fromJson 往返保留手动标记
       final json = const AppSettings()
