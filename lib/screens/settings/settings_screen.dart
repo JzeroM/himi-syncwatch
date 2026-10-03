@@ -37,6 +37,19 @@ String _audioRendererDescription(String renderer) {
   }
 }
 
+String _videoOutputDescription(String output) {
+  switch (output) {
+    case 'tunnel':
+      return '解码器直写纹理，绕过 mdk GL 渲染（画面异常时尝试）';
+    case 'surfaceView':
+      return '独立显示层，绕过 Flutter 合成，TV 全分辨率输出（黑屏时尝试）';
+    case 'texture':
+      return 'Flutter 纹理通道（默认）';
+    default:
+      return '建议默认使用纹理通道';
+  }
+}
+
 /// 设置项下拉选择（解码方式/音频后端共用）。
 ///
 /// - 非 TV 模式：[DropdownButton]（触摸交互，与旧版一致）
@@ -168,6 +181,19 @@ class SettingsScreen extends ConsumerWidget {
               value: settings.audioRenderer,
               onSelected: (v) =>
                   ref.read(settingsProvider.notifier).update(audioRenderer: v),
+            ),
+            const Divider(height: 1),
+            // 视频输出通道（纹理/tunnel/SurfaceView）均为 Android 能力，
+            // 其余平台固定纹理通道，不提供设置项
+            _settingOptionTile(
+              context: context,
+              tvMode: settings.tvMode,
+              title: '视频输出',
+              subtitle: _videoOutputDescription(settings.videoOutput),
+              labels: AppSettings.videoOutputLabels,
+              value: settings.videoOutput,
+              onSelected: (v) =>
+                  ref.read(settingsProvider.notifier).update(videoOutput: v),
             ),
           ],
           const Divider(height: 1),

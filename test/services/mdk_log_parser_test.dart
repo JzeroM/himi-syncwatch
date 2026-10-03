@@ -4,8 +4,7 @@ import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 void main() {
   group('MdkLogParser 状态行识别', () {
     test('真机状态行被识别', () {
-      const line =
-          '[DD 21:26:53.580][720->0][ffmpeg] | 26.4fps cache 0v 1.0s';
+      const line = '[DD 21:26:53.580][720->0][ffmpeg] | 26.4fps cache 0v 1.0s';
       expect(MdkLogParser.isStatusLine(line), isTrue);
     });
 
@@ -58,6 +57,23 @@ void main() {
       expect(MdkLogParser.isRateLimitedLine(line), isFalse);
     });
 
+    test('RenderAPI / Surface 渲染链路行被识别（黑屏分叉取证）', () {
+      // 深诊报告里要靠这两类行区分「mdk 渲染输出黑帧」vs「Flutter
+      // 合成黑屏」，关键词表必须能留住它们。
+      expect(MdkLogParser.isNotableLine('RenderAPI.type: 1'), isTrue);
+      expect(
+        MdkLogParser.isNotableLine('setVideoSurfaceSize(1920x1080, 0)'),
+        isTrue,
+      );
+      expect(
+        MdkLogParser.isNotableLine('present: SurfaceFlinger overlay'),
+        isTrue,
+      );
+      expect(MdkLogParser.shouldKeep('RenderAPI.type: 0'), isTrue);
+      // 普通行仍被丢弃（关键词扩展不能放大到刷屏）
+      expect(MdkLogParser.isNotableLine('media info opened ok'), isFalse);
+    });
+
     test('buffering progress 刷屏既非状态行也非关键行', () {
       // 这一行每秒会刷 10~30 条，早期版本因保留它而误触发 50 行/秒安全阀
       const line = 'buffering progress 12.5%';
@@ -104,8 +120,7 @@ void main() {
       const mediaInfo = 'video info: 3840x2160 fps: 24';
       const status = '| 7.7fps cache 0v 0.0s';
 
-      expect(MdkLogParser.parseFps(mediaInfo), isNull,
-          reason: '声明帧率不得进入诊断时间线');
+      expect(MdkLogParser.parseFps(mediaInfo), isNull, reason: '声明帧率不得进入诊断时间线');
       expect(MdkLogParser.parseFps(status), closeTo(7.7, 0.01));
     });
 

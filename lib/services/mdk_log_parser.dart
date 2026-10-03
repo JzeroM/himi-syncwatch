@@ -37,6 +37,12 @@ class MdkLogParser {
     'rpu',
     'error',
     'fail',
+    // 渲染链路取证：黑屏分叉定案需要 RenderAPI/Presenter/Surface 行
+    // （"mdk 渲染输出黑帧" vs "Flutter 合成黑屏" 的直接证据）。
+    'renderapi',
+    'presenter',
+    'surface',
+    'render',
   ];
 
   /// mdk 在 FINE 级输出的底层 codec 名，是硬解判定的**实证**，用来交叉

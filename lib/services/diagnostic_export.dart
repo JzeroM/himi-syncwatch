@@ -20,6 +20,7 @@ class DiagnosticExport {
     required String buildSummary,
     required String diagSummary,
     required String decodeMode,
+    String videoOutput = '',
     required String videoDecoders,
     required bool isDolbyVisionContent,
     required String dvCapability,
@@ -41,7 +42,8 @@ class DiagnosticExport {
         '$diagSummary\n\n'
         '$quick'
         '=== 解码环境 ===\n'
-        '解码模式: $decodeMode | videoDecoders: $videoDecoders\n'
+        '解码模式: $decodeMode | videoDecoders: $videoDecoders'
+        '${videoOutput.isEmpty ? '' : ' | 视频输出: $videoOutput'}\n'
         '实际解码: ${decoderReport.video.display}\n'
         'mdk原值: $mdkRawDecoder\n'
         '音频实际: ${decoderReport.audio.display}\n'

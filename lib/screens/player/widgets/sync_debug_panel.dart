@@ -51,6 +51,18 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   /// `textureSize`（GL FBO 尺寸），未 resolve 时为 '-'。
   final String textureSize;
 
+  /// 生效的视频输出通道（texture/tunnel/surfaceView）——黑屏分叉时的
+  /// 产物身份项：同一台设备哪一档出画面直接记进导出报告。
+  final String videoOutput;
+
+  /// 截帧取证结果（mdk snapshot 平均亮度）：null=未截过。
+  /// 判读：非黑=mdk 已渲染出帧、黑在 Flutter 合成侧；黑/null=mdk
+  /// 渲染输出即黑。
+  final String? snapshotInfo;
+
+  /// 触发截帧取证（面板相机按钮），null=隐藏按钮。
+  final VoidCallback? onSnapshot;
+
   // 解码器
   final String decodeMode;
 
@@ -110,6 +122,9 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.audioFilter,
     required this.textureId,
     required this.textureSize,
+    this.videoOutput = 'texture',
+    this.snapshotInfo,
+    this.onSnapshot,
     required this.decodeMode,
     required this.actualVideoDecoders,
     required this.mdkRawDecoder,
@@ -278,6 +293,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     // 黑帧分叉取证：null=纹理未创建；非 null 仍黑=无帧合成
                     _debugRow('纹理',
                         '${widget.textureId ?? 'null'} | ${widget.textureSize}'),
+                    _debugRow('输出', widget.videoOutput),
+                    if (widget.onSnapshot != null) _snapshotRow(),
                   ],
 
                   const SizedBox(height: 4),
@@ -505,6 +522,36 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
           Expanded(
             child: Text(value,
                 style: const TextStyle(color: Colors.white70, fontSize: 10)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 截帧取证行：显示最近一次 snapshot 亮度结果 + 触发按钮。
+  Widget _snapshotRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(
+            width: 65,
+            child: Text('截帧',
+                style: TextStyle(color: Colors.white54, fontSize: 10)),
+          ),
+          Expanded(
+            child: Text(widget.snapshotInfo ?? '点击右侧取帧',
+                style: const TextStyle(color: Colors.white70, fontSize: 10)),
+          ),
+          GestureDetector(
+            key: const Key('snapshotProbeButton'),
+            onTap: widget.onSnapshot,
+            child: const Padding(
+              padding: EdgeInsets.all(2),
+              child: Icon(Icons.camera_alt_outlined,
+                  size: 14, color: Colors.white54),
+            ),
           ),
         ],
       ),

@@ -8,6 +8,7 @@ void main() {
     String buildSummary = '产物身份: 1.1.16+186 | DV通道已注册',
     String diagSummary = '卡顿次数: 11',
     String decodeMode = '智能',
+    String videoOutput = '',
     String videoDecoders = 'AMediaCodec,FFmpeg',
     bool isDolbyVisionContent = true,
     String dvCapability = '支持 DV 硬解',
@@ -26,6 +27,7 @@ void main() {
         buildSummary: buildSummary,
         diagSummary: diagSummary,
         decodeMode: decodeMode,
+        videoOutput: videoOutput,
         videoDecoders: videoDecoders,
         isDolbyVisionContent: isDolbyVisionContent,
         dvCapability: dvCapability,
@@ -108,6 +110,20 @@ void main() {
       expect(report, contains('解码模式: 智能 | videoDecoders: AMediaCodec,FFmpeg'));
       expect(report, contains('DV 内容: true'));
       expect(report, contains('DV 能力: 支持 DV 硬解'));
+    });
+
+    test('视频输出通道进入解码环境行（黑屏档位身份项）', () {
+      final report = build(videoOutput: 'surfaceView');
+      expect(
+        report,
+        contains('视频输出: surfaceView'),
+      );
+    });
+
+    test('未传视频输出时不残留空的身份字段（旧报告格式兼容）', () {
+      final report = build();
+      expect(report, isNot(contains('视频输出')));
+      expect(report, contains('解码模式: 智能 | videoDecoders: AMediaCodec,FFmpeg'));
     });
 
     test('无解码器数据时输出占位符而非空行', () {

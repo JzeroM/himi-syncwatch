@@ -269,4 +269,94 @@ void main() {
       expect(AppSettings.fromJson(withoutColor.toJson()).themeColor, isNull);
     });
   });
+
+  group('videoOutput（视频输出通道）', () {
+    test('默认 texture', () {
+      expect(const AppSettings().videoOutput, 'texture');
+      expect(AppSettings.fromJson(const {}).videoOutput, 'texture');
+    });
+
+    test('copyWith 透传 videoOutput', () {
+      const settings = AppSettings();
+      expect(
+        settings.copyWith(videoOutput: 'surfaceView').videoOutput,
+        'surfaceView',
+      );
+      // 未指定时保持原值
+      expect(
+        settings
+            .copyWith(videoOutput: 'surfaceView')
+            .copyWith(decodeMode: 'hw')
+            .videoOutput,
+        'surfaceView',
+      );
+      expect(settings.copyWith(decodeMode: 'hw').videoOutput, 'texture');
+    });
+
+    test('toJson/fromJson 往返保持 videoOutput', () {
+      const original = AppSettings(videoOutput: 'tunnel');
+      expect(
+        AppSettings.fromJson(original.toJson()).videoOutput,
+        'tunnel',
+      );
+    });
+
+    test('fromJson 非法值回退 texture（不落三档之外的值）', () {
+      expect(
+        AppSettings.fromJson({'videoOutput': 'hdmi'}).videoOutput,
+        'texture',
+      );
+      expect(
+        AppSettings.fromJson({'videoOutput': 42}).videoOutput,
+        'texture',
+      );
+    });
+
+    test('Android 放行用户档位，其余平台固定 texture', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      expect(AppSettings.effectiveVideoOutput('surfaceView'), 'surfaceView');
+      expect(AppSettings.effectiveVideoOutput('tunnel'), 'tunnel');
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(AppSettings.effectiveVideoOutput('surfaceView'), 'texture');
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(AppSettings.effectiveVideoOutput('tunnel'), 'texture');
+    });
+
+    test('usesSurfaceView / textureTunnel 跟随生效值', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      const surface = AppSettings(videoOutput: 'surfaceView');
+      expect(surface.usesSurfaceView, isTrue);
+      expect(surface.textureTunnel, isFalse);
+
+      const tunnel = AppSettings(videoOutput: 'tunnel');
+      expect(tunnel.usesSurfaceView, isFalse);
+      expect(tunnel.textureTunnel, isTrue);
+
+      const texture = AppSettings();
+      expect(texture.usesSurfaceView, isFalse);
+      expect(texture.textureTunnel, isFalse);
+    });
+
+    test('非 Android 平台存了 surfaceView 也不进 platform view 分支', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      const saved = AppSettings(videoOutput: 'surfaceView');
+      expect(saved.usesSurfaceView, isFalse,
+          reason: '非 Android 固定纹理通道，避免误走 SurfaceView 分支');
+      expect(saved.textureTunnel, isFalse);
+    });
+
+    test('三档标签齐全', () {
+      expect(AppSettings.videoOutputLabels.keys,
+          containsAll(['texture', 'tunnel', 'surfaceView']));
+      expect(AppSettings.videoOutputLabels['texture'], '纹理（默认）');
+      expect(AppSettings.videoOutputLabels['surfaceView'], 'SurfaceView');
+    });
+  });
 }

@@ -135,7 +135,13 @@ Future<void> _bootstrap() async {
     } catch (_) {}
   }
   HttpOverrides.global = _SelfSignedHttpOverrides();
-  fvp.registerWith();
+  // audio.xa2.persistent：Windows XAudio2 停止时不销毁 master voice/
+  // 引擎，切集换源（音频格式变化需重建设备）更快且减少设备重启瞬态，
+  // 配合换源音量渐变消除切集爆音（mdk wiki: Global Options）。
+  fvp.registerWith(options: {
+    if (Platform.isWindows)
+      'global': <String, Object>{'audio.xa2.persistent': 1},
+  });
 
   final authService = EmbyAuthService();
   await authService.init();

@@ -16,6 +16,12 @@ class AppSettings {
   /// 用户是否手动设置过 TV 开关（策略 A：设置过则自动识别不再覆盖）。
   final bool tvModeUserSet;
 
+  /// Android 视频输出通道：
+  /// 'texture'      — Flutter 纹理（默认，mdk GL 渲染 → SurfaceTexture → Flutter 合成）
+  /// 'tunnel'       — 纹理+直通（解码器直写 SurfaceTexture，绕过 mdk GL 渲染器）
+  /// 'surfaceView'  — SurfaceView platform view（绕过 Flutter 合成，TV 全分辨率扫描输出）
+  final String videoOutput;
+
   /// 生效的音频后端：AAudio/OpenSL/AudioTrack 均为 Android 专属后端
   /// （fvp 文档明确 "on android"），iOS/macOS/Linux/Windows 上设置会
   /// 导致 mdk 找不到音频渲染器（iOS 无声根因），故仅 Android 放行
@@ -41,6 +47,7 @@ class AppSettings {
     this.themeColor,
     this.tvMode = false,
     this.tvModeUserSet = false,
+    this.videoOutput = 'texture',
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -55,6 +62,7 @@ class AppSettings {
     bool? glassUi,
     bool? tvMode,
     bool? tvModeUserSet,
+    String? videoOutput,
     Object? themeColor = unsetValue,
   }) {
     return AppSettings(
@@ -67,6 +75,7 @@ class AppSettings {
       glassUi: glassUi ?? this.glassUi,
       tvMode: tvMode ?? this.tvMode,
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
+      videoOutput: videoOutput ?? this.videoOutput,
       themeColor: identical(themeColor, unsetValue)
           ? this.themeColor
           : themeColor as int?,
@@ -83,6 +92,7 @@ class AppSettings {
         'glassUi': glassUi,
         'tvMode': tvMode,
         'tvModeUserSet': tvModeUserSet,
+        'videoOutput': videoOutput,
         if (themeColor != null) 'themeColor': themeColor,
       };
 
@@ -122,6 +132,11 @@ class AppSettings {
       // 避免自动识别把用户手动关掉的 TV 模式重新打开。
       tvModeUserSet: json['tvModeUserSet'] as bool? ?? (json['tvMode'] == true),
       themeColor: json['themeColor'] as int?,
+      // 旧数据无此字段 / 非法值 → 默认纹理通道
+      videoOutput: const ['texture', 'tunnel', 'surfaceView']
+              .contains(json['videoOutput'])
+          ? json['videoOutput'] as String
+          : 'texture',
     );
   }
 
@@ -137,4 +152,27 @@ class AppSettings {
     'OpenSL': 'OpenSL',
     'AudioTrack': 'AudioTrack',
   };
+
+  static const videoOutputLabels = {
+    'texture': '纹理（默认）',
+    'tunnel': '纹理+直通',
+    'surfaceView': 'SurfaceView',
+  };
+
+  /// 生效的视频输出通道：tunnel（AMediaCodec sideband）与 SurfaceView
+  /// 均为 Android 专属能力，其余平台固定纹理通道；设置项也只在
+  /// Android 展示。
+  static String effectiveVideoOutput(String setting) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return setting;
+    }
+    return 'texture';
+  }
+
+  /// 是否走 fvp/video-view platform view（SurfaceView）通道。
+  bool get usesSurfaceView =>
+      effectiveVideoOutput(videoOutput) == 'surfaceView';
+
+  /// 纹理通道是否启用解码器直通（tunnel）。
+  bool get textureTunnel => effectiveVideoOutput(videoOutput) == 'tunnel';
 }

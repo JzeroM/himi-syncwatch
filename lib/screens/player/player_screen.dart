@@ -24,6 +24,8 @@ import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/audio_filter_policy.dart';
+import 'package:himi_syncwatch/services/audio_fade.dart';
+import 'package:himi_syncwatch/services/snapshot_probe.dart';
 import 'package:himi_syncwatch/services/orientation_sensor_gate.dart';
 import 'package:himi_syncwatch/services/decoder_report.dart';
 import 'package:himi_syncwatch/services/diagnostic_export.dart';
@@ -42,6 +44,7 @@ import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -209,6 +212,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
+
+  /// 换源音量渐变（切集爆音修复）。
+  final AudioFader _fader = AudioFader();
+
+  /// 纹理通道实际创建时的档位（'texture'/'tunnel'）；
+  /// 设置切换后据此决定是否重建纹理。
+  String? _textureOutputApplied;
+
+  /// 截帧取证结果（面板展示，null = 未截过）。
+  String? _snapshotInfo;
+  DateTime? _lastSnapshotAt;
   DateTime? _lastSeekTime;
   bool _showPanel = true;
   String _currentPlayUrl = '';
@@ -1059,37 +1073,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted) return;
     _rebuildGroups();
 
-    // 预加载下一集（不阻塞当前集播放）
-    _preloadNextEpisode();
-  }
-
-  /// 预加载下一集（gapless 播放）
-  void _preloadNextEpisode() {
-    if (!mounted) return;
-    if (!_hasEpisodeList) return;
-    final nextIndex = _currentEpisodeIndex + 1;
-    if (nextIndex >= _episodes.length) return;
-
-    final nextEp = _episodes[nextIndex];
-    final nextServerId = nextEp.serverId ?? widget.serverId;
-    final embyService = ref.read(embyServiceForProvider(nextServerId));
-    final config = ref.read(embyConfigForProvider(nextServerId));
-    final token = config?.accessToken ?? '';
-
-    final nextUrl = embyService.getStreamUrl(
-      nextEp.id,
-      mediaSourceId: nextEp.mediaSourceId,
-    );
-
-    if (token.isNotEmpty) {
-      _player.setProperty('avio.headers', 'X-Emby-Token: $token');
-    }
-    _player.setNext(nextUrl);
+    // 不做 setNext 预加载（gapless）：MediaStatus.end → _switchToEpisode
+    // 是自动连播的既定路径（v1.0.92 曾因 gapless 导致切集自动播放丢失
+    // 而回退），setNext 与之并存会造成双重换源——mdk 先 gapless 过渡、
+    // end 处理器又硬切 media，既爆音又重复加载。
   }
 
   /// 从 fvp textureSize 获取实际纹理尺寸（与 GL FBO 完全一致）
-  /// 必须在 _ensureTexture() 之后调用，此时 textureSize.future 已 resolve
-  void _syncVideoNativeSize() async {
+  ///
+  /// 纹理通道须在 _ensureTexture() 之后调用（textureSize.future 已
+  /// resolve）；SurfaceView 通道无纹理，但 textureSize 由媒体信息驱动，
+  /// prepare 后同样可用。
+  Future<void> _syncVideoNativeSize() async {
     try {
       final size = await _player.textureSize;
       if (size != null && mounted) {
@@ -1102,36 +1097,177 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } catch (_) {}
   }
 
+  /// 当前生效的视频输出通道（见 [AppSettings.effectiveVideoOutput]）。
+  String _effectiveVideoOutput() =>
+      AppSettings.effectiveVideoOutput(ref.read(settingsProvider).videoOutput);
+
+  /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
+  /// 媒体信息拿到视频尺寸即就绪。
+  bool _videoOutputReady() {
+    if (_effectiveVideoOutput() == 'surfaceView') {
+      return _videoNativeSize != null;
+    }
+    return _player.textureId.value != null;
+  }
+
+  /// 设置切换视频输出档位后的即时应用（由 build 里的 ref.listen 触发）。
+  ///
+  /// - 切到 SurfaceView：释放纹理（platform view 通道不经 Flutter 合成），
+  ///   widget 分支随后重建出 fvp/video-view；
+  /// - 切到纹理/直通：platform view 由 widget 分支卸载（surfaceDestroyed
+  ///   自动释放原生 surface），随后按新档位重建纹理。
+  Future<void> _applyVideoOutputMode() async {
+    if (!mounted) return;
+    final mode = _effectiveVideoOutput();
+    LogService().log('Player', '视频输出档位切换 → $mode');
+    if (mode == 'surfaceView') {
+      if (_player.textureId.value != null) {
+        try {
+          await _player
+              .updateTexture(width: -1)
+              .timeout(const Duration(seconds: 3));
+        } catch (e) {
+          LogService().log('Player', '释放纹理失败: $e');
+        }
+        _textureOutputApplied = null;
+      }
+    } else {
+      // 档位变化需要按 tunnel 参数重建；_ensureTexture 内部比对
+      // _textureOutputApplied 决定是否释放重建。
+      await _ensureTexture();
+    }
+    if (mounted) setState(() {});
+  }
+
   /// 确保纹理存在：首次播放时创建，后续复用现有纹理避免黑屏
+  ///
+  /// 按设置档位区分：
+  /// - 'texture' / 'tunnel'：创建（或在 tunnel 档位变化时重建）纹理，
+  ///   tunnel 档位走 updateTexture(tunnel: true)——解码器直写
+  ///   SurfaceTexture，绕过 mdk GL 渲染器；
+  /// - 'surfaceView'：不创建纹理，反向释放已存在的纹理（platform
+  ///   view 通道由 _buildVideoArea 构建 fvp/video-view）。
   ///
   /// 落盘 updateTexture 返回值/textureId/textureSize/视频流数：
   /// iOS 曾出现「无画面」，纹理链路是否走通全靠这行取证——
   /// 返回 -1 表示 fvp 内部 _videoSize 未就绪（媒体未 loaded 或
   /// 视频流为空），此时纹理恒为 null，UI 永远转圈。
   Future<void> _ensureTexture() async {
-    if (_player.textureId.value != null) return;
+    if (!mounted) return;
+    final mode = _effectiveVideoOutput();
+
+    if (mode == 'surfaceView') {
+      if (_player.textureId.value != null) {
+        try {
+          await _player
+              .updateTexture(width: -1)
+              .timeout(const Duration(seconds: 3));
+        } catch (_) {}
+        _textureOutputApplied = null;
+        LogService().log('Player', 'SurfaceView 通道：已释放纹理');
+      }
+      return;
+    }
+
+    final tunnel = mode == 'tunnel';
+    if (_player.textureId.value != null) {
+      if (_textureOutputApplied == mode) return;
+      // 档位（tunnel 开关）变化：释放旧纹理后按新参数重建
+      LogService().log('Player', '纹理档位 $_textureOutputApplied → $mode，重建纹理');
+      try {
+        await _player
+            .updateTexture(width: -1)
+            .timeout(const Duration(seconds: 3));
+      } catch (_) {}
+      _textureOutputApplied = null;
+    }
     if (!mounted) return;
     try {
-      final texId =
-          await _player.updateTexture().timeout(const Duration(seconds: 5));
+      final texId = await _player
+          .updateTexture(tunnel: tunnel)
+          .timeout(const Duration(seconds: 5));
       // 返回 -1 说明 _videoSize 未 resolve：短暂等待 loaded 事件后重试一次
       if (texId < 0 && mounted) {
         LogService().log('Player', 'updateTexture 返回 $texId，200ms 后重试');
         await Future.delayed(const Duration(milliseconds: 200));
         if (!mounted) return;
         if (_player.textureId.value == null) {
-          await _player.updateTexture().timeout(const Duration(seconds: 5));
+          await _player
+              .updateTexture(tunnel: tunnel)
+              .timeout(const Duration(seconds: 5));
         }
       }
+      if (_player.textureId.value != null) _textureOutputApplied = mode;
       String videoStreams = '?';
       try {
         videoStreams = '${_player.mediaInfo.video?.length ?? 0} 路';
       } catch (_) {}
       LogService().log('Player',
-          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams');
+          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams, tunnel $tunnel');
     } catch (e) {
       LogService().log('Player', 'updateTexture 失败: $e');
     }
+  }
+
+  /// 换源渐出：仅在有声音播放时渐出到 0，避免首播/暂停态做无意义延迟。
+  /// 返回是否真的执行了渐出（调用方据此决定是否渐入）。
+  Future<bool> _fadeOutForSwitch() async {
+    if (_player.state != mdk.PlaybackState.playing) return false;
+    final from = _player.volume;
+    if (from <= 0) return false;
+    await _fader.fadeTo((v) {
+      if (mounted) _player.volume = v;
+    }, from, 0);
+    return true;
+  }
+
+  /// 起播渐入：从当前音量（渐出后为 0）线性恢复到用户音量。
+  /// 已在目标音量时直接跳过（首播、未渐出的换源均走此短路）。
+  Future<void> _fadeInForSwitch() async {
+    if (!mounted) return;
+    final target = (_volume / 100).clamp(0.0, 1.0);
+    final from = _player.volume;
+    if ((from - target).abs() < 0.001) return;
+    await _fader.fadeTo((v) {
+      if (mounted) _player.volume = v;
+    }, from, target);
+  }
+
+  /// 截帧取证（面板相机按钮）：mdk snapshot 双调用后取平均亮度。
+  ///
+  /// mdk wiki：首调常因无已渲染帧返回 null，须连调两次。判读：
+  /// - 亮度非黑 → mdk 已渲染出帧，黑屏在 Flutter 合成侧（SurfaceView 档可解）；
+  /// - null/全黑 → mdk 渲染输出即黑（tunnel/解码侧问题）。
+  /// tunnel 档无 GL 渲染器不支持回读，直接标注。
+  Future<void> _probeSnapshot() async {
+    if (!mounted) return;
+    final now = DateTime.now();
+    if (_lastSnapshotAt != null &&
+        now.difference(_lastSnapshotAt!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastSnapshotAt = now;
+    setState(() => _snapshotInfo = '取帧中…');
+    try {
+      if (_effectiveVideoOutput() == 'tunnel') {
+        setState(() => _snapshotInfo = 'tunnel 档无渲染器，不支持回读');
+        return;
+      }
+      await _player.snapshot(); // wiki：首调往往无帧
+      if (!mounted) return;
+      final data = await _player.snapshot().timeout(const Duration(seconds: 3));
+      if (!mounted) return;
+      if (data == null || data.isEmpty) {
+        setState(() => _snapshotInfo = 'null（无已渲染帧）');
+      } else {
+        final lum = SnapshotProbe.avgLuminancePercent(data);
+        setState(() =>
+            _snapshotInfo = '${data.length}B · 亮度 ${lum.toStringAsFixed(1)}%');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _snapshotInfo = '失败: $e');
+    }
+    if (mounted) LogService().log('Diag', '截帧: $_snapshotInfo');
   }
 
   /// 加载流并返回 texture 是否就绪
@@ -1176,6 +1312,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
 
+      // 换源前渐出：同 player 硬切 media 时新旧音频波形不连续会爆音
+      // （Windows XAudio2 已复现），渐出→换源→起播渐入消除爆音。
+      await _fadeOutForSwitch();
+
       _isSwitchingMedia = true;
       _player.media = streamUrl;
       await _player.prepare();
@@ -1187,7 +1327,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) return false;
 
       // 同步设置视频原生尺寸（从 mediaInfo 读取）
-      _syncVideoNativeSize();
+      await _syncVideoNativeSize();
 
       // 启动播放（无条件，首播和切集都需要）
       if (mounted) {
@@ -1195,6 +1335,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _syncPlayState();
         setState(() {});
       }
+      // 起播渐入恢复用户音量（未渐出/已在目标音量时内部直接跳过）
+      await _fadeInForSwitch();
       Future.delayed(const Duration(seconds: 2), () async {
         if (!mounted) return;
         await _detectDolbyVision();
@@ -1206,11 +1348,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _isSwitchingMedia = false;
       });
 
-      return _player.textureId.value != null;
+      return _videoOutputReady();
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
       _isSwitchingMedia = false;
+      // 换源途中失败：把渐出到 0 的音量恢复，避免整场静音
+      _fader.cancel();
       if (mounted) {
+        _player.volume = (_volume / 100).clamp(0.0, 1.0);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('播放失败: $e')),
         );
@@ -1258,6 +1403,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _loadBuildIdentity();
       if (!mounted) return;
 
+      // 换源前渐出（同 player 硬切 media 的爆音修复），渐出后复查抢占：
+      // 被新请求抢占时交由赢家流程接管音量，此处不再换源。
+      await _fadeOutForSwitch();
+      if (requestId != _playRequestId || !mounted) return;
+
       _isSwitchingMedia = true;
       _player.media = playUrl;
       await _player.prepare();
@@ -1267,7 +1417,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _ensureTexture();
       if (!mounted) return;
       // 同步设置视频原生尺寸（从 mediaInfo 读取）
-      _syncVideoNativeSize();
+      await _syncVideoNativeSize();
 
       // 单人模式自动横屏
       if (widget.roomCode == null && mounted) {
@@ -1282,8 +1432,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _isPlayerReady = true;
       });
 
-      // 仅在 texture 就绪时启动播放，避免有声无画
-      if (_player.textureId.value != null) {
+      // 仅在视频输出就绪时启动播放，避免有声无画
+      if (_videoOutputReady()) {
         if (position > 0) {
           await _player.seek(
               position: (position * 1000).toInt(),
@@ -1292,6 +1442,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         _player.state = mdk.PlaybackState.playing;
         _syncPlayState();
+        // 起播渐入恢复用户音量（无渐出时内部直接跳过）
+        await _fadeInForSwitch();
+      } else if (mounted) {
+        // 输出未就绪不启动播放：把可能的渐出音量恢复，避免误判为静音故障
+        _fader.cancel();
+        _player.volume = (_volume / 100).clamp(0.0, 1.0);
       }
       _rebuildGroups();
       _logSyncEvent('播放器打开成功');
@@ -1320,9 +1476,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 使用 onStateChanged 监听播放状态变化
     _stateSub = _player.onStateChanged.listen((event) {
       if (!mounted) return;
-      // 更新音量
-      _volume = _player.volume * 100;
-      _volumeNotifier.value = _volume;
+      // 更新音量（换源渐变期间跳过：渐变把 player.volume 压到 0，
+      // 回写会让音量条跟着跳 0 且目标音量丢失）
+      if (!_fader.active) {
+        _volume = _player.volume * 100;
+        _volumeNotifier.value = _volume;
+      }
       _syncPlayState();
     });
 
@@ -1517,6 +1676,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
           // 关键行里可能带 mdk 实际创建的解码器名（真值），一并采集。
           _noteActualCodec(line);
+          // 关键行同时转发到 LogService：面板「日志」区与 adb logcat
+          // 都能实时看到（原实现只进内存导出，RenderAPI/Surface 这类
+          // 黑屏定案证据无法从 logcat 观察）。
+          LogService().log('mdk', line);
         }
       });
       _deepLogActive = true;
@@ -1594,6 +1757,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       decodeMode:
           AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ??
               '-',
+      videoOutput: _effectiveVideoOutput(),
       videoDecoders: _player.videoDecoders.join(','),
       isDolbyVisionContent: _embyVideoStream?.isDolbyVision == true,
       dvCapability: _dvProbe.summary,
@@ -1603,7 +1767,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       timeline: _diagTimeline,
       stalls: _diagStalls,
       events: _diag.exportEvents(),
-      notes: _diagNotes,
+      notes: _snapshotInfo == null
+          ? _diagNotes
+          : '$_diagNotes\n截帧: $_snapshotInfo',
       statusLines: raw,
       notableLines: notable,
     );
@@ -2863,6 +3029,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _stopDeepDiagnostics();
     }
 
+    // 作废进行中的换源音量渐变，避免 dispose 续体继续写音量
+    _fader.cancel();
+
     // 释放 ValueNotifier（包 try-catch 确保后续代码执行）
     try {
       _positionNotifier.dispose();
@@ -2940,6 +3109,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 视频输出档位（设置页/TV 底部弹窗）变化时即时应用：
+    // 切纹理/直通档 → 按 tunnel 参数重建纹理；切 SurfaceView 档 →
+    // 释放纹理并由 _buildVideoArea 分支重建 platform view。
+    ref.listen(settingsProvider.select((s) => s.videoOutput), (prev, next) {
+      if (prev != next) {
+        _applyVideoOutputMode();
+      }
+    });
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -3025,85 +3202,116 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// SurfaceView 通道视频内容：fvp/video-view platform view（绕过
+  /// Flutter 纹理合成，独立显示层，TV 全分辨率扫描输出）。
+  ///
+  /// - 尺寸未知时先转圈，_syncVideoNativeSize 拿到 mediaInfo 尺寸后
+  ///   setState 重建；
+  /// - 用 AspectRatio 按视频比例给 platform view 定框（SurfaceView
+  ///   surface buffer 固定为 creationParams 的视频分辨率，合成器按
+  ///   视图矩形缩放）；_videoFit 的 fill/cover 裁剪在此档位不生效，
+  ///   统一按 contain——platform view 不参与 Flutter Transform。
+  Widget _buildSurfaceViewVideo() {
+    final size = _videoNativeSize;
+    if (size == null || size.width <= 0 || size.height <= 0) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white54),
+      );
+    }
+    return Center(
+      child: AspectRatio(
+        aspectRatio: size.width / size.height,
+        child: FvpSurfaceView(
+          nativeHandle: _player.nativeHandle,
+          videoWidth: size.width.toInt(),
+          videoHeight: size.height.toInt(),
+        ),
+      ),
+    );
+  }
+
   Widget _buildVideoArea() {
     return Stack(
       children: [
         // 视频 / 占位文字
         if (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null))
           Center(
-            child: ValueListenableBuilder<int?>(
-              valueListenable: _player.textureId,
-              builder: (context, textureId, child) {
-                if (textureId == null) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: Colors.white54),
-                  );
-                }
-                // 无视频尺寸时先按原尺寸渲染，拿到尺寸后 setState 重新渲染
-                if (_videoNativeSize == null) {
-                  return Center(
-                    child: Texture(textureId: textureId),
-                  );
-                }
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final containerW = constraints.maxWidth;
-                    final containerH = constraints.maxHeight;
-                    final renderW = _videoNativeSize!.width;
-                    final renderH = _videoNativeSize!.height;
-
-                    switch (_videoFit) {
-                      case BoxFit.none:
-                        return Texture(textureId: textureId);
-                      case BoxFit.fill:
-                        return Center(
-                          child: Transform(
-                            alignment: Alignment.center,
-                            transform: Matrix4.diagonal3Values(
-                              containerW / renderW,
-                              containerH / renderH,
-                              1.0,
-                            ),
-                            child: UnconstrainedBox(
-                              child: SizedBox(
-                                width: renderW,
-                                height: renderH,
-                                child: Texture(textureId: textureId),
-                              ),
-                            ),
-                          ),
+            child: ref.watch(settingsProvider).usesSurfaceView
+                ? _buildSurfaceViewVideo()
+                : ValueListenableBuilder<int?>(
+                    valueListenable: _player.textureId,
+                    builder: (context, textureId, child) {
+                      if (textureId == null) {
+                        return const Center(
+                          child:
+                              CircularProgressIndicator(color: Colors.white54),
                         );
-                      case BoxFit.cover:
-                        final scale =
-                            max(containerW / renderW, containerH / renderH);
-                        return ClipRect(
-                          child: Center(
-                            child: Transform.scale(
-                              scale: scale,
-                              child: UnconstrainedBox(
+                      }
+                      // 无视频尺寸时先按原尺寸渲染，拿到尺寸后 setState 重新渲染
+                      if (_videoNativeSize == null) {
+                        return Center(
+                          child: Texture(textureId: textureId),
+                        );
+                      }
+                      return LayoutBuilder(
+                        builder: (context, constraints) {
+                          final containerW = constraints.maxWidth;
+                          final containerH = constraints.maxHeight;
+                          final renderW = _videoNativeSize!.width;
+                          final renderH = _videoNativeSize!.height;
+
+                          switch (_videoFit) {
+                            case BoxFit.none:
+                              return Texture(textureId: textureId);
+                            case BoxFit.fill:
+                              return Center(
+                                child: Transform(
+                                  alignment: Alignment.center,
+                                  transform: Matrix4.diagonal3Values(
+                                    containerW / renderW,
+                                    containerH / renderH,
+                                    1.0,
+                                  ),
+                                  child: UnconstrainedBox(
+                                    child: SizedBox(
+                                      width: renderW,
+                                      height: renderH,
+                                      child: Texture(textureId: textureId),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            case BoxFit.cover:
+                              final scale = max(
+                                  containerW / renderW, containerH / renderH);
+                              return ClipRect(
+                                child: Center(
+                                  child: Transform.scale(
+                                    scale: scale,
+                                    child: UnconstrainedBox(
+                                      child: SizedBox(
+                                        width: renderW,
+                                        height: renderH,
+                                        child: Texture(textureId: textureId),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            default: // contain
+                              return FittedBox(
+                                fit: BoxFit.contain,
                                 child: SizedBox(
                                   width: renderW,
                                   height: renderH,
                                   child: Texture(textureId: textureId),
                                 ),
-                              ),
-                            ),
-                          ),
-                        );
-                      default: // contain
-                        return FittedBox(
-                          fit: BoxFit.contain,
-                          child: SizedBox(
-                            width: renderW,
-                            height: renderH,
-                            child: Texture(textureId: textureId),
-                          ),
-                        );
-                    }
-                  },
-                );
-              },
-            ),
+                              );
+                          }
+                        },
+                      );
+                    },
+                  ),
           )
         else
           Center(
@@ -3215,6 +3423,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               audioFilter: _audioFilterText,
               textureId: _player.textureId.value,
               textureSize: _textureSizeText,
+              videoOutput: _effectiveVideoOutput(),
+              snapshotInfo: _snapshotInfo,
+              onSnapshot: _probeSnapshot,
               // 解码器
               decodeMode: ref.read(settingsProvider).decodeMode,
               actualVideoDecoders: _actualVideoDecoders,

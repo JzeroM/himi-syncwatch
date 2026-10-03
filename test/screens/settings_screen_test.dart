@@ -330,9 +330,103 @@ void main() {
 
   testWidgets('非 TV：解码方式仍为 DropdownButton 下拉', (tester) async {
     await _pumpScreen(tester);
-    // Android 平台：解码方式 + 音频后端 两个下拉
-    expect(find.byType(DropdownButton<String>), findsNWidgets(2));
+    // ListView 按可见区 mount，不数全页下拉总数，只断言解码方式行内
+    // 是下拉（触摸交互），而非 TV 弹窗
     expect(find.text('解码方式'), findsOneWidget);
+    final decodeDropdown = find.descendant(
+      of: find.ancestor(
+        of: find.text('解码方式'),
+        matching: find.byType(ListTile),
+      ),
+      matching: find.byType(DropdownButton<String>),
+    );
+    expect(decodeDropdown, findsOneWidget);
+  });
+
+  // ---- 视频输出通道（Android 黑屏多档取证） ----
+
+  testWidgets('Android 展示视频输出设置，默认纹理', (tester) async {
+    final container = await _pumpScreen(tester);
+    await tester.scrollUntilVisible(
+      find.text('视频输出'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('视频输出'), findsOneWidget);
+    expect(
+      find.text('Flutter 纹理通道（默认）'),
+      findsOneWidget,
+      reason: '默认档描述',
+    );
+    expect(container.read(settingsProvider).videoOutput, 'texture');
+  });
+
+  testWidgets('非 TV：视频输出下拉切换写入 surfaceView', (tester) async {
+    final container = await _pumpScreen(tester);
+    await tester.scrollUntilVisible(
+      find.text('视频输出'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    // 视频输出是页面最后一个下拉（解码方式/音频后端之后）
+    await tester.tap(find.byType(DropdownButton<String>).last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('SurfaceView'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).videoOutput, 'surfaceView');
+    expect(
+      find.text('独立显示层，绕过 Flutter 合成，TV 全分辨率输出（黑屏时尝试）'),
+      findsOneWidget,
+      reason: '行尾描述随档位更新',
+    );
+  });
+
+  testWidgets('TV：视频输出行点开底部弹窗，选择纹理+直通写入', (tester) async {
+    final container =
+        await _pumpScreen(tester, initial: const AppSettings(tvMode: true));
+    expect(find.byType(DropdownButton<String>), findsNothing,
+        reason: 'TV 模式全部走底部弹窗');
+
+    await tester.scrollUntilVisible(
+      find.text('视频输出'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('视频输出'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('settingOption_texture')), findsOneWidget);
+    expect(find.byKey(const Key('settingOption_tunnel')), findsOneWidget);
+    expect(find.byKey(const Key('settingOption_surfaceView')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('settingOption_tunnel')));
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).videoOutput, 'tunnel');
+    expect(find.byKey(const Key('settingOption_tunnel')), findsNothing,
+        reason: '选中后弹窗应关闭');
+  });
+
+  testWidgets('Windows 平台隐藏视频输出设置项（Android 专属）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await _pumpScreen(tester);
+
+      expect(find.text('视频输出'), findsNothing);
+      // 相邻设置项仍正常展示
+      expect(find.text('解码方式'), findsOneWidget);
+      expect(find.text('播放调试面板'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('TV：解码方式行点开底部弹窗，选择软解写入', (tester) async {
