@@ -24,8 +24,12 @@ jobs:
     needs: [flutter-analyze]
     runs-on: ubuntu-latest
     env:
-      # mdk-sdk 下载源：SourceForge 服务故障时用官方 GitHub Release 备源
-      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.36.0
+      # mdk-sdk v0.39.0 版本锁定（GitHub Release，SHA 校验防资产替换）。
+      # v0.39.0 含 "Fix EGL platform apis attribute type in EGL 1.4~1.5"
+      # 修复，是盒子 eglChooseConfig 3004 黑屏实验（E0）的目标版本；
+      # 不用 SF nightly 是因 522 故障史（commit ab70fb6）且内容不可控。
+      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.39.0
+      FVP_DEPS_SHA256: cd196c9f6fb1872c4f35184848522ca3ab9c91196da47ca9761d8fb50e3e9cf3
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -219,10 +223,17 @@ jobs:
 
   build-windows:
     needs: [flutter-analyze]
-    runs-on: windows-2022
+    # windows-latest = VS18/MSVC 14.51，与 mdk v0.39.0（vs2026 工具链构建）
+    # 同家族配对（fvp.dll 与 mdk.dll 跨 DLL 交互 C++ 对象，须同工具链），
+    # 对齐 fvp 上游 CI 成功配置；windows-2022 系初始模板遗留。
+    runs-on: windows-latest
     env:
-      # mdk-sdk 下载源：SourceForge 服务故障时用官方 GitHub Release 备源
-      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.36.0
+      # mdk-sdk v0.39.0 自托管改名副本：上游 v0.37.0+ 资产改名
+      # mdk-sdk-windows-x64-vs2026.7z，与 fvp deps.cmake 硬编码的
+      # mdk-sdk-windows-x64.7z 不匹配（直指上游 v0.39.0 会 404），
+      # 故用本仓库 deps-mirror release 存改名副本并 SHA 锁定。
+      FVP_DEPS_URL: https://github.com/JzeroM/himi-syncwatch/releases/download/deps-mirror
+      FVP_DEPS_SHA256: e492fd45f3a6828e44f75ce665708c9040abaa60602605437b71c95c714808e3
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -291,8 +302,9 @@ jobs:
     needs: [flutter-analyze]
     runs-on: ubuntu-latest
     env:
-      # mdk-sdk 下载源：SourceForge 服务故障时用官方 GitHub Release 备源
-      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.36.0
+      # mdk-sdk v0.39.0 版本锁定（同 build-android，SHA 校验防资产替换）
+      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.39.0
+      FVP_DEPS_SHA256: 0394c7443060f29bb420aa0ec8b278ec5ef61d3e84d1d3877c41c967c614980a
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2

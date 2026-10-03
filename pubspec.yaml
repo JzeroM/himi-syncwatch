@@ -15,7 +15,7 @@ dependencies:
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
   # 播放器
-  fvp: ^0.38.1
+  fvp: ^0.39.0
   # 声网 RTM（中国区）
   agora_rtm: ^2.2.5
   # Windows 端 RTM（agora_rtm 仅支持 android/ios）

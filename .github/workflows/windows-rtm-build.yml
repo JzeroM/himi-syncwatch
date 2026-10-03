@@ -10,10 +10,11 @@ env:
 
 jobs:
   build-windows:
-    runs-on: windows-2022
+    runs-on: windows-latest
     env:
-      # mdk-sdk 下载源：SourceForge 服务故障时用官方 GitHub Release 备源
-      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.36.0
+      # 与 release.yml build-windows 一致：mdk v0.39.0 自托管改名副本 + SHA 锁定
+      FVP_DEPS_URL: https://github.com/JzeroM/himi-syncwatch/releases/download/deps-mirror
+      FVP_DEPS_SHA256: e492fd45f3a6828e44f75ce665708c9040abaa60602605437b71c95c714808e3
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
