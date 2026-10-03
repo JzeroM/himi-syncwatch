@@ -53,12 +53,23 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
     // 先落壳层 topmost（顶栏）。Dialog 等无祖先 route scope → 候选为空，
     // 回退原生 findFirst（Dialog 内第一项）。
     if (node is FocusScopeNode) {
+      // 顶层弹窗/面板 scope：先落其自身第一个可聚焦项。绝不能走
+      // _findShellTopmost——弹窗压在分支路由上时祖先链含 shell route，
+      // 焦点会被抢到壳层顶栏，表现为「弹窗焦点进不去」。
+      if (_isTopModalScope(node)) {
+        _landFirst(node);
+        return null;
+      }
       final shell = TvScopeEnterAction._findShellTopmost(node);
       if (shell != null) {
         shell.requestFocus();
         return null;
       }
     }
+
+    // 焦点在顶层弹窗内部：方向键不跨出弹窗（防止焦点逃到壳层顶栏/
+    // 背后页面），滚动也仅限弹窗自身的滚动容器。
+    final inTopModal = _insideTopModal(node);
 
     if (node.focusInDirection(intent.direction)) {
       _rejectEmptyScopeLanding(node);
@@ -69,8 +80,9 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
     // 而 GoRouter 嵌套 Navigator 的页面 ModalScope 不含壳层顶栏——内容区
     // 到达 scope 边界（首/末项）时上/下键找不到顶栏 → 失败 → 落到滚动
     // 边界吞键，焦点再也回不到顶栏。仅纵向（问题场景），横向保持原滚动。
-    if (intent.direction == TraversalDirection.up ||
-        intent.direction == TraversalDirection.down) {
+    if (!inTopModal &&
+        (intent.direction == TraversalDirection.up ||
+            intent.direction == TraversalDirection.down)) {
       final cross = _findCrossScope(node, intent.direction);
       if (cross != null) {
         cross.requestFocus();
@@ -87,6 +99,10 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
       if (node.context == null) return null;
       final scrollable = _matchingScrollable(node.context, intent.direction);
       if (scrollable == null) return null;
+      // 弹窗打开时只允许滚动弹窗自身的列表，不滚动其后面的页面
+      if (inTopModal && !_sameModalRoute(node.context, scrollable.context)) {
+        return null;
+      }
       final pos = scrollable.position;
       final delta = _stepFor(intent.direction, pos.viewportDimension);
       final target =
@@ -95,6 +111,41 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
       pos.jumpTo(target);
     }
     return null;
+  }
+
+  /// scope 是「压在页面之上的顶层弹窗/面板」（Dialog/BottomSheet 等
+  /// ModalRoute：isCurrent 且非栈底）。分支路由自身（isFirst）不算。
+  static bool _isTopModalScope(FocusScopeNode scope) {
+    final ctx = scope.context;
+    if (ctx == null) return false;
+    final route = ModalRoute.of(ctx);
+    return route != null && route.isCurrent && !route.isFirst;
+  }
+
+  /// 普通焦点节点是否位于顶层弹窗内部（跨 scope/滚动兜底的开关）。
+  static bool _insideTopModal(FocusNode node) {
+    final ctx = node.context;
+    if (ctx == null) return false;
+    final route = ModalRoute.of(ctx);
+    return route != null && route.isCurrent && !route.isFirst;
+  }
+
+  static bool _sameModalRoute(BuildContext? a, BuildContext? b) {
+    if (a == null || b == null) return false;
+    final ra = ModalRoute.of(a);
+    return ra != null && identical(ra, ModalRoute.of(b));
+  }
+
+  /// 确定性落焦：取 scope 遍历序中第一个可聚焦后代并聚焦。
+  /// 返回是否落焦成功（空内容弹窗返回 false）。
+  static bool _landFirst(FocusScopeNode scope) {
+    for (final n in scope.traversalDescendants) {
+      if (n.canRequestFocus && n.context != null) {
+        n.requestFocus();
+        return true;
+      }
+    }
+    return false;
   }
 
   /// 落点是「空 scope」时回退到原节点。空数据时页面 ModalScope 是方向
@@ -242,6 +293,15 @@ class TvScopeEnterAction extends ContextAction<TvScopeEnterIntent> {
   Object? invoke(TvScopeEnterIntent intent, [BuildContext? context]) {
     final scope = FocusManager.instance.primaryFocus;
     if (scope is! FocusScopeNode) return null;
+    // 顶层弹窗/面板 scope：OK 直接落其第一个可聚焦项（同方向键），
+    // 不得走 _findShellTopmost——否则焦点被抢到壳层顶栏，弹窗进不去。
+    if (TvDirectionalAction._isTopModalScope(scope)) {
+      if (!TvDirectionalAction._landFirst(scope)) {
+        scope.focusInDirection(TraversalDirection.down);
+        scope.focusInDirection(TraversalDirection.up);
+      }
+      return null;
+    }
     // 壳层优先：GoRouter 嵌套 Navigator 下页面 ModalScope 不含壳层顶栏，
     // 冷启动 OK 若走原生 findFirst 只会落页面第一项——先在祖先 route scope
     // （壳层）里取 topmost 落焦。Dialog 无祖先 route scope → 候选为空，

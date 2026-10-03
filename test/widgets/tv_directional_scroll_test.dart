@@ -40,6 +40,52 @@ Widget _listPage() => MaterialApp(
       ),
     );
 
+/// 真实结构缩影：外层路由内嵌套 Navigator（分支），弹窗推到内层路由。
+/// 旧逻辑下弹窗 scope 的祖先链含外层路由 → _findShellTopmost 把焦点抢到
+/// 外层「壳层顶栏替身」，弹窗进不去——此结构用于防回归。
+Widget _nestedShellApp({
+  required FocusNode shellFocus,
+  required FocusNode dialogFocus,
+  required VoidCallback onConfirm,
+}) =>
+    MaterialApp(
+      home: Scaffold(
+        body: Column(
+          children: [
+            ElevatedButton(
+              focusNode: shellFocus,
+              onPressed: () {},
+              child: const Text('壳层顶栏替身'),
+            ),
+            Expanded(
+              child: Navigator(
+                onGenerateRoute: (_) => MaterialPageRoute<void>(
+                  builder: (pageCtx) => Center(
+                    child: ElevatedButton(
+                      onPressed: () => showDialog<void>(
+                        context: pageCtx,
+                        builder: (dialogCtx) => AlertDialog(
+                          title: const Text('删除'),
+                          actions: [
+                            TextButton(
+                              focusNode: dialogFocus,
+                              onPressed: onConfirm,
+                              child: const Text('确认'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      child: const Text('打开弹窗'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
 /// 焦点节点是否位于 [ancestor] 子树内（含自身）。
 bool _isWithin(Element node, Element ancestor) {
   if (node == ancestor) return true;
@@ -190,6 +236,63 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(confirmed, isTrue);
+  });
+
+  testWidgets('嵌套分支弹窗：方向键落焦弹窗，不被壳层节点抢走', (tester) async {
+    final shellFocus = FocusNode(debugLabel: 'shell');
+    final dialogFocus = FocusNode(debugLabel: 'dialogBtn');
+    addTearDown(shellFocus.dispose);
+    addTearDown(dialogFocus.dispose);
+    var confirmed = false;
+
+    await tester.pumpWidget(_wrap(_nestedShellApp(
+      shellFocus: shellFocus,
+      dialogFocus: dialogFocus,
+      onConfirm: () => confirmed = true,
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('打开弹窗'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(dialogFocus.hasFocus, isTrue, reason: '方向键应把焦点落进弹窗第一项');
+    expect(shellFocus.hasFocus, isFalse, reason: '不得被外层壳层节点抢焦');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(confirmed, isTrue);
+  });
+
+  testWidgets('嵌套分支弹窗：OK 两段式（先落焦再激活），不逃向外层', (tester) async {
+    final shellFocus = FocusNode(debugLabel: 'shell');
+    final dialogFocus = FocusNode(debugLabel: 'dialogBtn');
+    addTearDown(shellFocus.dispose);
+    addTearDown(dialogFocus.dispose);
+    var confirmed = false;
+
+    await tester.pumpWidget(_wrap(_nestedShellApp(
+      shellFocus: shellFocus,
+      dialogFocus: dialogFocus,
+      onConfirm: () => confirmed = true,
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('打开弹窗'));
+    await tester.pumpAndSettle();
+
+    // 第一段：焦点在弹窗 scope → OK 落焦弹窗按钮
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(dialogFocus.hasFocus, isTrue);
+    expect(shellFocus.hasFocus, isFalse);
+    expect(confirmed, isFalse);
+
+    // 第二段：OK 激活
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(confirmed, isTrue);
