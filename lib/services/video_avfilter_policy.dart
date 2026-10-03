@@ -1,32 +1,24 @@
-/// 视频尺寸规范化滤镜（v1.1.70 实验：非标尺寸黑屏验证/规避）。
+/// 视频尺寸规范化滤镜策略（**v1.1.74 起停用生成**，E4 实验）。
 ///
-/// 真机对照（H96_Max_RK3528，v1.1.69 截图+日志）：
-/// - `3840x1598` HEVC → 直写档建立后仍全黑，帧被 mdk renderer 持续
-///   丢弃（`VideoFrame ... not rendered`）；
-/// - `3840x2160` HEVC / 普通 1080p → 正常出画。
+/// 沿革：
+/// - **v1.1.70 实装**（mdk 0.36.0）：非标尺寸（如 3840x1598）不加滤镜时
+///   mdk renderer 持续丢帧（`VideoFrame ... not rendered`）全黑，
+///   `scale=ceil16:flags=neighbor` 对齐后恢复；对齐尺寸零干预；
+/// - **v1.1.73**（mdk 0.36.0 → 0.39.0）：同一滤镜反成黑屏因——非标
+///   资源全平台 × 全档黑屏，而不触发滤镜的标尺寸资源全部正常（疑
+///   0.39.0 `FFmpeg: Guess color space, fix scale error` 滤镜链回归）；
+/// - **v1.1.74 / E4**：去滤镜直接出画验证（O1）→ 停用生成；mdk 0.39.0
+///   原生处理非标尺寸，滤镜既不必要又有害。
 ///
-/// 判定分两级（实测集合反推，最小干预）：
-/// - **触发**：任一维非 **8** 对齐——1080p（1080/8=135）与 4K
-///   （2160/8=270）全部放行不写属性，仅 1598（1598/8=199.75）等
-///   真非标尺寸触发，正常片源零干预；
-/// - **目标**：触发后两维均 **ceil 到 16**（宏块粒度假设：1598→1600，
-///   拉伸 0.125% 不可感知），得到的滤镜串写入 `video.avfilter`。
+/// 恢复路径：如 mdk 修复滤镜链后需重新启用，参考 git 历史 v1.1.73 及
+/// 以前版本中的 ceil16 对齐实现。
 ///
-/// `flags=neighbor` 对齐 fvp#333 实证用法，代价最低。
 /// 纯 Dart、无插件依赖，便于单测。
 class VideoAvfilterPolicy {
   const VideoAvfilterPolicy._();
 
-  /// 尺寸 [width]x[height] 需要规范化时返回滤镜串，否则返回 null。
+  /// 恒为 null：任何尺寸均不写 `video.avfilter`。
   ///
-  /// - 宽高均为 8 的倍数 → null（不写属性，对既有播放零影响）；
-  /// - 任一维非 8 对齐 → `scale=<ceil16w>:<ceil16h>:flags=neighbor`；
-  /// - 非法尺寸（<=0）→ null。
-  static String? resolve(int width, int height) {
-    if (width <= 0 || height <= 0) return null;
-    if (width % 8 == 0 && height % 8 == 0) return null;
-    return 'scale=${_ceil16(width)}:${_ceil16(height)}:flags=neighbor';
-  }
-
-  static int _ceil16(int v) => (v + 15) ~/ 16 * 16;
+  /// 参数保留以兼容调用方签名（[width]/[height] 现仅作文档语义）。
+  static String? resolve(int width, int height) => null;
 }
