@@ -392,5 +392,41 @@ void main() {
       );
       expect(withTexture, contains('纹理: 3 | 尺寸: 1920x1080'));
     });
+
+    test('视频滤镜行：默认 (未写入) / 显式传入实际滤镜串（非标尺寸实验）', () {
+      // 未传参数 → 向后兼容默认值，报告不缺行
+      expect(quick(), contains('视频滤镜: (未写入)'));
+      final withFilter = DiagnosticExport.buildQuick(
+        playbackState: 'playing',
+        mediaStatus: 'ok',
+        position: '00:10.0',
+        duration: '01:00.0',
+        bufferedMs: 1000,
+        mediaBitrate: 0,
+        mediaFormat: '',
+        videoCodec: 'hevc',
+        videoResolution: '3840x1598',
+        videoFps: 25,
+        videoBitrate: 0,
+        pixelFormat: 'yuv420p',
+        doviProfile: 0,
+        hdrType: 'SDR',
+        audioCodec: 'aac',
+        audioSampleRate: 48000,
+        audioChannels: 2,
+        audioBitrate: 0,
+        stereoDownmix: '关',
+        audioFilter: '(无) | codec=未知',
+        textureId: null,
+        textureSize: '3840x1598',
+        videoFilter: 'scale=3840:1600:flags=neighbor',
+      );
+      expect(withFilter, contains('视频滤镜: scale=3840:1600:flags=neighbor'));
+      // 行在视频段内（HDR 之后、纹理之前）
+      expect(
+        withFilter.indexOf('视频滤镜:'),
+        lessThan(withFilter.indexOf('纹理:')),
+      );
+    });
   });
 }

@@ -13,6 +13,7 @@ import '../helpers/test_fakes.dart';
 void main() {
   Widget buildPanel({
     String videoOutput = 'surfaceView',
+    String videoFilter = '(未写入)',
     String? snapshotInfo,
     VoidCallback? onSnapshot,
   }) {
@@ -52,6 +53,7 @@ void main() {
             textureId: 7,
             textureSize: '1920x1080',
             videoOutput: videoOutput,
+            videoFilter: videoFilter,
             snapshotInfo: snapshotInfo,
             onSnapshot: onSnapshot,
             decodeMode: 'auto',
@@ -87,6 +89,24 @@ void main() {
     await tester.pump();
 
     expect(find.text('tunnel'), findsOneWidget);
+  });
+
+  testWidgets('视频滤镜行展示规范化滤镜取证（非标尺寸黑屏实验）', (tester) async {
+    await tester.pumpWidget(buildPanel(
+      videoFilter: 'scale=3840:1600:flags=neighbor',
+    ));
+    await tester.pump();
+
+    expect(find.text('视频滤镜'), findsOneWidget);
+    expect(find.text('scale=3840:1600:flags=neighbor'), findsOneWidget);
+  });
+
+  testWidgets('视频滤镜默认 (未写入)——未触发过规范化', (tester) async {
+    await tester.pumpWidget(buildPanel());
+    await tester.pump();
+
+    expect(find.text('视频滤镜'), findsOneWidget);
+    expect(find.text('(未写入)'), findsOneWidget);
   });
 
   testWidgets('截帧行展示取帧结果并可触发取证', (tester) async {

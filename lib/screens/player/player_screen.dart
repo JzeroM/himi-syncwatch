@@ -58,6 +58,7 @@ import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
 import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
 import 'package:himi_syncwatch/services/switch_volume_guard.dart';
+import 'package:himi_syncwatch/services/video_avfilter_policy.dart';
 import 'package:himi_syncwatch/services/window_fullscreen_service.dart';
 
 /// 播放器默认音量（0-1）：进入播放器即为 80%。
@@ -1106,9 +1107,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           setState(() {
             _videoNativeSize = size;
           });
+          _applyVideoAvfilter(size);
         }
       }
     } catch (_) {}
+  }
+
+  /// 上次写入 mdk 的 `video.avfilter` 值，用于去重（尺寸同步可多次触发）。
+  String? _lastVideoFilter;
+
+  /// 非标尺寸规范化滤镜（v1.1.70 实验）：任一维非 8 对齐时在解码后
+  /// scale 补到 16 对齐（3840x1598 黑屏 vs 3840x2160/1080p 正常的
+  /// 根因验证 + 规避一体；8 对齐触发条件放过全部正常片源）。
+  /// 触发值变化时显式写入，对齐时显式清空（换片尺寸变小路径）。
+  void _applyVideoAvfilter(Size size) {
+    final filter = VideoAvfilterPolicy.resolve(
+      size.width.toInt(),
+      size.height.toInt(),
+    );
+    if (filter == _lastVideoFilter) return;
+    _lastVideoFilter = filter;
+    _player.setProperty('video.avfilter', filter ?? '');
+    LogService().log(
+      'Player',
+      '视频滤镜: ${filter ?? "(无)"} '
+          '| 尺寸=${size.width.toInt()}x${size.height.toInt()}',
+    );
+  }
+
+  /// 滤镜取证文案：面板/导出用，区分「没触发过」vs「对齐已清」vs 实际串。
+  String get _videoFilterText {
+    final f = _lastVideoFilter;
+    if (f == null) return '(未写入)';
+    return f.isEmpty ? '(无)' : f;
   }
 
   /// 当前生效的视频输出通道（见 [AppSettings.eglAwareVideoOutput]）。
@@ -1882,6 +1913,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         audioFilter: _audioFilterText,
         textureId: _player.textureId.value,
         textureSize: _textureSizeText,
+        videoFilter: _videoFilterText,
       ),
       decodeMode:
           AppSettings.decodeModeLabels[ref.read(settingsProvider).decodeMode] ??
@@ -3564,6 +3596,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               textureId: _player.textureId.value,
               textureSize: _textureSizeText,
               videoOutput: _effectiveVideoOutput(),
+              videoFilter: _videoFilterText,
               snapshotInfo: _snapshotInfo,
               // Android：mdk snapshot 在 GL 异常设备上触发 native crash
               // （无法 try/catch），隐藏截帧入口；其他平台保留取证能力

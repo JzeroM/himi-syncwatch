@@ -55,6 +55,10 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   /// 产物身份项：同一台设备哪一档出画面直接记进导出报告。
   final String videoOutput;
 
+  /// 当前生效的 `video.avfilter` 取证（非标尺寸规范化滤镜）：
+  /// `(未写入)`=没触发过；`(无)`=尺寸已对齐或已清；串=实际写入值。
+  final String videoFilter;
+
   /// 截帧取证结果（mdk snapshot 平均亮度）：null=未截过。
   /// 判读：非黑=mdk 已渲染出帧、黑在 Flutter 合成侧；黑/null=mdk
   /// 渲染输出即黑。
@@ -123,6 +127,7 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.textureId,
     required this.textureSize,
     this.videoOutput = 'texture',
+    this.videoFilter = '(未写入)',
     this.snapshotInfo,
     this.onSnapshot,
     required this.decodeMode,
@@ -294,6 +299,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     _debugRow('纹理',
                         '${widget.textureId ?? 'null'} | ${widget.textureSize}'),
                     _debugRow('输出', widget.videoOutput),
+                    _debugRow('视频滤镜', widget.videoFilter),
                     if (widget.onSnapshot != null) _snapshotRow(),
                   ],
 
@@ -463,6 +469,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
         audioFilter: widget.audioFilter,
         textureId: widget.textureId,
         textureSize: widget.textureSize,
+        videoFilter: widget.videoFilter,
       );
 
   String _exportDiagnostics() {

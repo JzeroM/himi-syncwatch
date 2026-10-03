@@ -110,6 +110,7 @@ class DiagnosticExport {
     required String audioFilter,
     required int? textureId,
     required String textureSize,
+    String videoFilter = '(未写入)',
   }) {
     return '=== 播放诊断 ===\n'
         '状态: $playbackState | 媒体: $mediaStatus\n'
@@ -122,6 +123,8 @@ class DiagnosticExport {
         '帧率: ${formatFps(videoFps)} | 码率: ${formatBitrate(videoBitrate)}\n'
         '像素: $pixelFormat | DOVI: ${doviProfile > 0 ? 'P$doviProfile' : '-'}\n'
         'HDR: $hdrType\n'
+        // 非标尺寸黑屏取证：滤镜串=null(未写入)/(无)=已对齐或已清
+        '视频滤镜: $videoFilter\n'
         // Android 盒子黑帧取证：textureId null=纹理未创建（UI 转圈），
         // 非 null 仍黑=纹理存在但无帧合成（Impeller/插件错配方向）
         '纹理: ${textureId ?? 'null'} | 尺寸: $textureSize\n\n'
