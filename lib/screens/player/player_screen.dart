@@ -103,20 +103,48 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// - TV 且控件可见：postFrame 落焦 seek 滑杆。热键层 autofocus 会先把
   ///   焦点抢到无描边的裸 Focus 节点（屏幕无焦点环），而 `_showControlsForTv`
   ///   的落焦只挂在"隐藏→显示"翻转分支、初进不经过——故此处补落焦，
-  ///   落点与"调出控件"完全一致。postFrame 晚于 autofocus 应用，覆盖安全。
+  ///   落点与"调出控件"完全一致。
+  /// - 守卫重试：控制条仅在 `_isPlayerReady` 后构建（首帧滑杆未挂树、
+  ///   seekNode.context 为 null），未附着时逐帧重试直到控件出现；
+  ///   [shouldRetry] 返回 false（页面已销毁/控件已隐藏）或达到
+  ///   [maxAttempts] 上限即放弃。
   @visibleForTesting
   static void scheduleInitialControlsSetup({
     required bool tvMode,
     required bool controlsVisible,
     required FocusNode seekNode,
     required VoidCallback onStartHideTimer,
+    bool Function()? shouldRetry,
+    int maxAttempts = 600,
   }) {
     onStartHideTimer();
     if (!tvMode || !controlsVisible) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (seekNode.context != null) seekNode.requestFocus();
-    });
+    var attempts = 0;
+    void attempt() {
+      if (seekNode.context != null) {
+        seekNode.requestFocus();
+        return;
+      }
+      attempts++;
+      if (attempts >= maxAttempts) return;
+      if (shouldRetry != null && !shouldRetry()) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) => attempt());
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => attempt());
   }
+
+  /// 控制条横竖屏切换按钮是否显示：移动端需要，TV 全程横屏无需旋转控制。
+  @visibleForTesting
+  static bool showRotateButton({
+    required bool tvMode,
+    required bool mobilePlatform,
+  }) =>
+      mobilePlatform && !tvMode;
+
+  /// 顶栏解码模式按钮是否显示：TV 模式隐藏（解码模式仅走设置页）。
+  @visibleForTesting
+  static bool showDecodeButton({required bool tvMode}) => !tvMode;
 }
 
 enum _OrientationMode { portraitUp, landscapeLeft, landscapeRight }
@@ -897,6 +925,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       controlsVisible: _showControls,
       seekNode: _controlsFocusNode,
       onStartHideTimer: _resetHideTimer,
+      // 控件未就绪时逐帧重试；页面销毁/控件被隐藏即放弃
+      shouldRetry: () => mounted && _showControls,
     );
     // 防御：EGL 故障若在播放器创建前已被全局检测（bootstrap handler），
     // 进入页面即触发自愈，不必等下一次日志喂入。
@@ -3358,6 +3388,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         onVolumeDelta: _handleHotkeyVolumeDelta,
         onShowControls: _showControlsForTv,
         focusNode: _hotkeyFocusNode,
+        seekFocusNode: _controlsFocusNode,
         child: Scaffold(
           backgroundColor: Colors.black,
           body: GestureDetector(
@@ -3712,34 +3743,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             },
           ),
           const Spacer(),
-          // 解码模式按钮
-          TvFocusable(
-            radius: 12,
-            onTap: () =>
-                setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _showDecodeModeMenu
-                    ? const Color(0xFF6366F1)
-                    : Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.memory, color: Colors.white, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    AppSettings.decodeModeLabels[
-                            ref.read(settingsProvider).decodeMode] ??
-                        'Auto',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
+          // 解码模式按钮（TV 隐藏：解码模式仅走设置页切换）
+          if (PlayerScreen.showDecodeButton(
+            tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
+          )) ...[
+            TvFocusable(
+              radius: 12,
+              onTap: () =>
+                  setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _showDecodeModeMenu
+                      ? const Color(0xFF6366F1)
+                      : Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.memory, color: Colors.white, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      AppSettings.decodeModeLabels[
+                              ref.read(settingsProvider).decodeMode] ??
+                          'Auto',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
           if (widget.roomCode != null) ...[
             const SizedBox(width: 8),
             IconButton(
@@ -4071,36 +4106,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SliderTheme(
-              data: SliderThemeData(
-                activeTrackColor: const Color(0xFF6366F1),
-                inactiveTrackColor: Colors.white24,
-                thumbColor: const Color(0xFF6366F1),
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                trackHeight: 3,
-              ),
-              child: ValueListenableBuilder2<Duration, Duration>(
-                first: _positionNotifier,
-                second: _durationNotifier,
-                builder: (context, pos, dur, _) {
-                  return Slider(
-                    focusNode: _controlsFocusNode,
-                    value: dur.inMilliseconds > 0
-                        ? pos.inMilliseconds
-                            .toDouble()
-                            .clamp(0, dur.inMilliseconds.toDouble())
-                        : 0,
-                    max: dur.inMilliseconds > 0
-                        ? dur.inMilliseconds.toDouble()
-                        : 1,
-                    onChangeStart: _canControlPlayback ? _onSeekStart : null,
-                    onChanged: (v) {
-                      _positionNotifier.value =
-                          Duration(milliseconds: v.toInt());
+            // 焦点承载在滑杆外层：TV 描边环显示在进度条上，且 Slider 自带
+            // Shortcuts（_AdjustSliderIntent）脱离焦点冒泡链——左右键改由
+            // PlayerHotkey 接管（单击 ±5 秒 / 长按每步 ±10 秒）；
+            // ExcludeFocus 屏蔽 Slider 内部焦点节点（防同 rect 双候选，
+            // 触摸拖动不受影响）
+            TvFocusable(
+              focusNode: _controlsFocusNode,
+              onTap: null, // OK 键放行冒泡到 PlayerHotkey 播放/暂停
+              scale: 1.0,
+              child: ExcludeFocus(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    activeTrackColor: const Color(0xFF6366F1),
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: const Color(0xFF6366F1),
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    trackHeight: 3,
+                  ),
+                  child: ValueListenableBuilder2<Duration, Duration>(
+                    first: _positionNotifier,
+                    second: _durationNotifier,
+                    builder: (context, pos, dur, _) {
+                      return Slider(
+                        value: dur.inMilliseconds > 0
+                            ? pos.inMilliseconds
+                                .toDouble()
+                                .clamp(0, dur.inMilliseconds.toDouble())
+                            : 0,
+                        max: dur.inMilliseconds > 0
+                            ? dur.inMilliseconds.toDouble()
+                            : 1,
+                        onChangeStart:
+                            _canControlPlayback ? _onSeekStart : null,
+                        onChanged: (v) {
+                          _positionNotifier.value =
+                              Duration(milliseconds: v.toInt());
+                        },
+                        onChangeEnd: _canControlPlayback ? _onSeekEnd : null,
+                      );
                     },
-                    onChangeEnd: _canControlPlayback ? _onSeekEnd : null,
-                  );
-                },
+                  ),
+                ),
               ),
             ),
             Padding(
@@ -4277,8 +4325,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ),
                 ],
 
-                // 横竖屏（移动端都显示）
-                if (Platform.isAndroid || Platform.isIOS) ...[
+                // 横竖屏（移动端；TV 全程横屏无需旋转控制）
+                if (PlayerScreen.showRotateButton(
+                  tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
+                  mobilePlatform: Platform.isAndroid || Platform.isIOS,
+                )) ...[
                   const SizedBox(width: 20),
                   _buildControlButton(
                     icon: _orientationMode == _OrientationMode.portraitUp

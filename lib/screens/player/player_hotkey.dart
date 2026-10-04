@@ -25,6 +25,7 @@ class PlayerHotkey extends StatefulWidget {
     this.onVolumeDelta,
     this.onShowControls,
     this.focusNode,
+    this.seekFocusNode,
     required this.child,
   });
 
@@ -47,6 +48,10 @@ class PlayerHotkey extends StatefulWidget {
   /// 外部持有的焦点节点：控制条隐藏后焦点回落到热键层，
   /// 方向键恢复 seek/唤出控制条语义（不传则内部创建）
   final FocusNode? focusNode;
+
+  /// 进度条焦点节点：焦点在其上时左右键接管为快进退
+  /// （单击 ±5 秒，长按 KeyRepeat 每步 ±10 秒），不再走焦点导航
+  final FocusNode? seekFocusNode;
 
   final Widget child;
 
@@ -88,6 +93,23 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
         final onVolume = widget.onVolumeDelta;
         if (onVolume == null) return KeyEventResult.ignored;
         onVolume(direction * _volumeStep);
+        return KeyEventResult.handled;
+      }
+    }
+
+    // 进度条焦点：左右键接管为快进退（单击 ±5 秒；长按 KeyRepeat 每步
+    // ±10 秒快速拖动）。事件从滑杆外层包装节点冒泡至此（Slider 自带
+    // Shortcuts 已随内部焦点节点一起被 ExcludeFocus 屏蔽、脱离冒泡链）。
+    if (widget.tvMode &&
+        (key == LogicalKeyboardKey.arrowLeft ||
+            key == LogicalKeyboardKey.arrowRight)) {
+      final seekNode = widget.seekFocusNode;
+      final onSeek = widget.onSeekRelative;
+      if (seekNode != null && onSeek != null && seekNode.hasPrimaryFocus) {
+        final dir = key == LogicalKeyboardKey.arrowLeft ? -1 : 1;
+        onSeek(dir * (isRepeat ? 10000 : 5000));
+        // 正在操作进度条 = 与控件交互，顺延自动隐藏
+        widget.onShowControls?.call();
         return KeyEventResult.handled;
       }
     }

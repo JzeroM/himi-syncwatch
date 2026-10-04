@@ -40,4 +40,33 @@ void main() {
         reason: '其他路由焦点不能被抢');
     expect(PlayerScreen.focusWithin(hotkey, null), isFalse, reason: '空焦点安全');
   });
+
+  group('TV 控件可见性', () {
+    test('横竖屏按钮：移动端显示，TV 隐藏，桌面端隐藏', () {
+      expect(
+        PlayerScreen.showRotateButton(tvMode: false, mobilePlatform: true),
+        isTrue,
+        reason: '移动端非 TV 需要旋转控制',
+      );
+      expect(
+        PlayerScreen.showRotateButton(tvMode: true, mobilePlatform: true),
+        isFalse,
+        reason: 'TV 全程横屏无需旋转控制',
+      );
+      expect(
+        PlayerScreen.showRotateButton(tvMode: false, mobilePlatform: false),
+        isFalse,
+        reason: '桌面端无旋转控制',
+      );
+      expect(
+        PlayerScreen.showRotateButton(tvMode: true, mobilePlatform: false),
+        isFalse,
+      );
+    });
+
+    test('解码按钮：非 TV 显示，TV 隐藏（解码模式仅走设置页）', () {
+      expect(PlayerScreen.showDecodeButton(tvMode: false), isTrue);
+      expect(PlayerScreen.showDecodeButton(tvMode: true), isFalse);
+    });
+  });
 }

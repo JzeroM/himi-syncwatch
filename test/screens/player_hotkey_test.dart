@@ -19,6 +19,7 @@ void main() {
     VoidCallback? onShowControls,
     FocusNode? focusNode,
     bool provideVolume = true,
+    FocusNode? seekFocusNode,
   }) =>
       Directionality(
         textDirection: TextDirection.ltr,
@@ -31,7 +32,12 @@ void main() {
           onVolumeDelta: provideVolume ? (v) => volumeDelta += v : null,
           onShowControls: onShowControls,
           focusNode: focusNode,
-          child: const SizedBox(width: 100, height: 100),
+          seekFocusNode: seekFocusNode,
+          child: seekFocusNode != null
+              ? Focus(
+                  focusNode: seekFocusNode,
+                  child: const SizedBox(width: 100, height: 100))
+              : const SizedBox(width: 100, height: 100),
         ),
       );
 
@@ -408,5 +414,128 @@ void main() {
     // 调用方手动释放：若组件已释放会抛 double-dispose
     node.dispose();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('TV：焦点在进度条时单击左右键 = 快进退 5 秒', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final seekNode = FocusNode(debugLabel: 'seek');
+    try {
+      await tester.pumpWidget(
+          wrap(tvMode: true, controlsVisible: true, seekFocusNode: seekNode));
+      await tester.pump();
+      seekNode.requestFocus();
+      await tester.pump();
+      expect(seekNode.hasPrimaryFocus, isTrue);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      expect(seekMs, 5000);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowLeft);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowLeft);
+      expect(seekMs, 0, reason: '+5s 后 -5s 回到 0');
+    } finally {
+      seekNode.dispose();
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：焦点在进度条时长按左右键 = 每步 10 秒连续拖动', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final seekNode = FocusNode(debugLabel: 'seek');
+    try {
+      await tester.pumpWidget(
+          wrap(tvMode: true, controlsVisible: true, seekFocusNode: seekNode));
+      await tester.pump();
+      seekNode.requestFocus();
+      await tester.pump();
+      expect(seekNode.hasPrimaryFocus, isTrue);
+
+      // 单击 +5s，随后两步长按各 +10s
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      expect(seekMs, 25000);
+
+      // 长按左键回退
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowLeft);
+      await simulateKeyRepeatEvent(LogicalKeyboardKey.arrowLeft);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowLeft);
+      expect(seekMs, 10000, reason: '25s -5s -10s = 10s');
+    } finally {
+      seekNode.dispose();
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：焦点在进度条时 KeyUp 不触发 seek，且左右键顺延自动隐藏', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final seekNode = FocusNode(debugLabel: 'seek');
+    try {
+      await tester.pumpWidget(wrap(
+          tvMode: true,
+          controlsVisible: true,
+          seekFocusNode: seekNode,
+          onShowControls: () => showControls++));
+      await tester.pump();
+      seekNode.requestFocus();
+      await tester.pump();
+      expect(seekNode.hasPrimaryFocus, isTrue);
+
+      // 单击：seek + 顺延隐藏计时
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowLeft);
+      expect(seekMs, -5000);
+      expect(showControls, 1, reason: '操作进度条顺延自动隐藏');
+      // KeyUp 放行，不重复 seek
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowLeft);
+      expect(seekMs, -5000);
+      expect(showControls, 1, reason: 'KeyUp 不触发任何回调');
+    } finally {
+      seekNode.dispose();
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：焦点不在进度条时左右键语义不变（让位焦点导航）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final seekNode = FocusNode(debugLabel: 'seek');
+    try {
+      await tester.pumpWidget(wrap(
+          tvMode: true,
+          controlsVisible: true,
+          seekFocusNode: seekNode,
+          onShowControls: () => showControls++));
+      await tester.pump();
+      // 焦点留在热键层（autofocus），seekNode 未获焦
+      expect(seekNode.hasPrimaryFocus, isFalse);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      expect(seekMs, 0, reason: '焦点不在进度条不接管 seek');
+      expect(showControls, 1, reason: '可见时左右键仍顺延自动隐藏');
+    } finally {
+      seekNode.dispose();
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('非 TV：焦点在进度条时左右键不接管（不走 TV seek 语义）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final seekNode = FocusNode(debugLabel: 'seek');
+    try {
+      await tester.pumpWidget(wrap(tvMode: false, seekFocusNode: seekNode));
+      await tester.pump();
+      seekNode.requestFocus();
+      await tester.pump();
+      expect(seekNode.hasPrimaryFocus, isTrue);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      expect(seekMs, 0, reason: '非 TV 模式不接管左右键');
+    } finally {
+      seekNode.dispose();
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 }

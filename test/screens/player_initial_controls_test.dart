@@ -144,4 +144,101 @@ void main() {
     expect(seek.hasPrimaryFocus, isTrue);
     expect(timerStarted, 1);
   });
+
+  // ---- 守卫重试：控制条在 _isPlayerReady 后才构建 ----
+
+  testWidgets('TV：seek 未挂树（控件未就绪）时逐帧重试，控件出现后落焦', (tester) async {
+    final seek = FocusNode(debugLabel: 'PlayerSeekSlider');
+    final other = FocusNode(debugLabel: 'hotkey');
+    addTearDown(seek.dispose);
+    addTearDown(other.dispose);
+    var timerStarted = 0;
+
+    // 首帧：控制条未构建（seek 未挂树）
+    await tester.pumpWidget(MaterialApp(
+      home: Focus(focusNode: other, autofocus: true, child: const SizedBox()),
+    ));
+    await tester.pumpAndSettle();
+    expect(other.hasPrimaryFocus, isTrue);
+
+    PlayerScreen.scheduleInitialControlsSetup(
+      tvMode: true,
+      controlsVisible: true,
+      seekNode: seek,
+      onStartHideTimer: () => timerStarted++,
+      shouldRetry: () => true,
+    );
+    WidgetsBinding.instance.scheduleFrame();
+    await tester.pump(); // attempt1：未附着 → 注册下一帧重试
+    expect(seek.hasPrimaryFocus, isFalse, reason: '控件未就绪不能落焦');
+
+    // 控件就绪：seek 挂树
+    await tester.pumpWidget(MaterialApp(
+      home: Focus(
+        focusNode: other,
+        autofocus: true,
+        child: Focus(focusNode: seek, child: const SizedBox()),
+      ),
+    ));
+    WidgetsBinding.instance.scheduleFrame();
+    await tester.pump(); // attempt2：附着 → requestFocus
+    await tester.pumpAndSettle();
+
+    expect(seek.hasPrimaryFocus, isTrue, reason: '重试后控件就绪落焦');
+    expect(timerStarted, 1, reason: '隐藏计时只启动一次');
+  });
+
+  testWidgets('shouldRetry 返回 false 时放弃重试（控件隐藏/页面销毁）', (tester) async {
+    final seek = FocusNode(debugLabel: 'PlayerSeekSlider');
+    addTearDown(seek.dispose);
+    var timerStarted = 0;
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    PlayerScreen.scheduleInitialControlsSetup(
+      tvMode: true,
+      controlsVisible: true,
+      seekNode: seek,
+      onStartHideTimer: () => timerStarted++,
+      shouldRetry: () => false,
+    );
+    WidgetsBinding.instance.scheduleFrame();
+    await tester.pump(); // attempt1：未附着 → shouldRetry false → 放弃
+
+    // 后续控件就绪也不再落焦
+    await tester.pumpWidget(MaterialApp(
+      home: Focus(focusNode: seek, child: const SizedBox()),
+    ));
+    WidgetsBinding.instance.scheduleFrame();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(seek.hasPrimaryFocus, isFalse, reason: '已放弃重试');
+    expect(timerStarted, 1);
+  });
+
+  testWidgets('达到 maxAttempts 上限后停止重试', (tester) async {
+    final seek = FocusNode(debugLabel: 'PlayerSeekSlider');
+    addTearDown(seek.dispose);
+    var timerStarted = 0;
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    PlayerScreen.scheduleInitialControlsSetup(
+      tvMode: true,
+      controlsVisible: true,
+      seekNode: seek,
+      onStartHideTimer: () => timerStarted++,
+      shouldRetry: () => true,
+      maxAttempts: 1,
+    );
+    WidgetsBinding.instance.scheduleFrame();
+    await tester.pump(); // attempt1：未附着 → attempts=1 达上限 → 停止
+
+    await tester.pumpWidget(MaterialApp(
+      home: Focus(focusNode: seek, child: const SizedBox()),
+    ));
+    WidgetsBinding.instance.scheduleFrame();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(seek.hasPrimaryFocus, isFalse, reason: '上限后不再重试');
+    expect(timerStarted, 1);
+  });
 }
