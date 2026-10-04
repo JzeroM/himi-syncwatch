@@ -21,7 +21,7 @@ class GlassParamSpec {
   final double min;
   final double max;
 
-  /// 包默认值（滑杆回显与「恢复默认」的目标值）。
+  /// 应用默认值（滑杆回显与「恢复默认」目标；null 字段的渲染兜底）。
   final double defaultValue;
   final int divisions;
 
@@ -50,13 +50,18 @@ class GlassParamSpec {
 }
 
 /// 液态玻璃可调参数规格（设置页滑杆的展示顺序即列表顺序）。
+///
+/// [GlassParamSpec.defaultValue] 是「应用默认」的单一事实源：滑杆回显
+/// （null 时）与 [GlassTuning.toThemeData] 对 null 字段的兜底都取这里，
+/// 保证设置为 null（恢复默认）时渲染出的目标观感 = 滑杆显示的默认值。
+/// 目标观感对齐 Kyant 液态玻璃 demo：强镜片折射 + 明显彩虹色散圈。
 const List<GlassParamSpec> glassParamSpecs = [
   GlassParamSpec(
     key: 'glassBlur',
     label: '磨砂模糊',
     min: 0,
     max: 20,
-    defaultValue: 5,
+    defaultValue: 4,
     divisions: 40,
   ),
   GlassParamSpec(
@@ -64,7 +69,7 @@ const List<GlassParamSpec> glassParamSpecs = [
     label: '玻璃厚度',
     min: 0,
     max: 60,
-    defaultValue: 20,
+    defaultValue: 28,
     divisions: 60,
   ),
   GlassParamSpec(
@@ -72,27 +77,32 @@ const List<GlassParamSpec> glassParamSpecs = [
     label: '饱和增强',
     min: 1.0,
     max: 2.5,
-    defaultValue: 1.5,
+    defaultValue: 1.7,
     divisions: 30,
   ),
   GlassParamSpec(
     key: 'glassChromatic',
     label: '色散',
     min: 0,
-    max: 0.1,
-    defaultValue: 0.01,
-    divisions: 20,
+    max: 0.5,
+    defaultValue: 0.15,
+    divisions: 50,
     decimals: 3,
   ),
   GlassParamSpec(
     key: 'glassLightIntensity',
     label: '高光强度',
     min: 0,
-    max: 1,
-    defaultValue: 0.5,
-    divisions: 20,
+    max: 2,
+    defaultValue: 1.2,
+    divisions: 40,
   ),
 ];
+
+/// 取 [key] 对应参数的应用默认值——滑杆回显、渲染兜底与调用方
+/// （如导航水珠镜片的显式 settings）同源，避免字面量重复。
+double glassDefault(String key) =>
+    glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
 
 /// 玻璃参数快照：settings 的 5 个可调字段 → 包主题的映射边界。
 class GlassTuning {
@@ -126,13 +136,15 @@ class GlassTuning {
       chromatic == null &&
       lightIntensity == null;
 
-  /// 映射为包主题（null 字段 = 沿用包默认，GlassThemeSettings.copy 忽略 null）。
+  /// 映射为包主题：null 字段（恢复默认态）兜底到 [glassParamSpecs] 的
+  /// 应用默认值，保证默认观感 = 图中 Kyant 效果（强折射 + 彩虹色散圈），
+  /// 而不是包 variant 的保守默认（色散 0.01、高光 0.7）。
   GlassThemeData toThemeData() => GlassThemeData.simple(
-        blur: blur,
-        thickness: thickness,
-        saturation: saturation,
-        chromaticAberration: chromatic,
-        lightIntensity: lightIntensity,
+        blur: blur ?? glassDefault('glassBlur'),
+        thickness: thickness ?? glassDefault('glassThickness'),
+        saturation: saturation ?? glassDefault('glassSaturation'),
+        chromaticAberration: chromatic ?? glassDefault('glassChromatic'),
+        lightIntensity: lightIntensity ?? glassDefault('glassLightIntensity'),
       );
 }
 

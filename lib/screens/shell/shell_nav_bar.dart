@@ -1,8 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:flutter/services.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 /// 选中态图标/文字主色（柔和薄荷青，仅跟随水珠所在格的图标，水珠本体为透明玻璃）。
 const Color kNavBlobColor = Color(0xFF86E3D6);
@@ -12,7 +16,7 @@ const Color kNavBlobColor = Color(0xFF86E3D6);
 /// - 每格 icon+label 组在胶囊内上下左右严格居中，四格对齐
 /// - 单个半透明水珠指示器：点击平滑移形；横向滑动或长按均可跟手拖动，
 ///   拖动中水珠所在格图标实时点亮青色，松手按落点切换
-class ShellNavBar extends StatefulWidget {
+class ShellNavBar extends ConsumerStatefulWidget {
   const ShellNavBar({
     super.key,
     required this.currentIndex,
@@ -23,10 +27,10 @@ class ShellNavBar extends StatefulWidget {
   final ValueChanged<int> onSelect;
 
   @override
-  State<ShellNavBar> createState() => _ShellNavBarState();
+  ConsumerState<ShellNavBar> createState() => _ShellNavBarState();
 }
 
-class _ShellNavBarState extends State<ShellNavBar>
+class _ShellNavBarState extends ConsumerState<ShellNavBar>
     with SingleTickerProviderStateMixin {
   static const int _tabCount = 4;
   static const double _navHeight = 60;
@@ -183,6 +187,51 @@ class _ShellNavBarState extends State<ShellNavBar>
     _animateTo(widget.currentIndex);
   }
 
+  /// 水珠本体。
+  ///
+  /// `glassUi` 开启时以 liquid_glass_widgets 真折射镜片为底（`useOwnLayer`
+  /// 绕过胶囊外壳给子级设置的 avoidRefraction；blur 恒 0——指示器是透明
+  /// 镜片而非磨砂面），厚/色散/高光等取设置滑杆实时值；关闭时降级为原
+  /// 半透明白色装饰。navBlob key 与装饰参数保持不变（测试与视觉约定）。
+  Widget _buildBlob() {
+    final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
+    final tuning = ref.watch(glassTuningProvider);
+
+    final blob = DecoratedBox(
+      key: const ValueKey('navBlob'),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.all(Radius.circular(_blobHeight / 2)),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.42),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.16),
+            blurRadius: 14,
+          ),
+        ],
+      ),
+    );
+
+    if (!glassEnabled) return blob;
+
+    return lg.GlassContainer(
+      useOwnLayer: true,
+      shape: lg.LiquidRoundedSuperellipse(borderRadius: _blobHeight / 2),
+      settings: lg.LiquidGlassSettings(
+        blur: 0,
+        thickness: tuning.thickness ?? glassDefault('glassThickness'),
+        saturation: tuning.saturation ?? glassDefault('glassSaturation'),
+        chromaticAberration: tuning.chromatic ?? glassDefault('glassChromatic'),
+        lightIntensity:
+            tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
+      ),
+      child: blob,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -202,24 +251,7 @@ class _ShellNavBarState extends State<ShellNavBar>
                 top: (_navHeight - _blobHeight) / 2,
                 width: blobWidth,
                 height: _blobHeight,
-                child: DecoratedBox(
-                  key: const ValueKey('navBlob'),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.10),
-                    borderRadius:
-                        BorderRadius.all(Radius.circular(_blobHeight / 2)),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.42),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withValues(alpha: 0.16),
-                        blurRadius: 14,
-                      ),
-                    ],
-                  ),
-                ),
+                child: _buildBlob(),
               ),
               Positioned.fill(
                 child: Row(

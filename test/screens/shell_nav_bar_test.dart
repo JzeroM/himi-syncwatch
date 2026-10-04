@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 import '../helpers/test_fakes.dart';
 
 Future<void> _pumpNav(
   WidgetTester tester, {
   int initial = 0,
+  AppSettings settings = const AppSettings(),
   required ValueChanged<int> onSelect,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+        settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
       ],
       child: MaterialApp(
         home: Scaffold(
@@ -191,6 +194,41 @@ void main() {
       _blobDecoration(tester).borderRadius,
       BorderRadius.all(Radius.circular(25)),
     );
+  });
+
+  testWidgets('glassUi 开启：水珠外包真折射镜片（useOwnLayer + blur 0）', (tester) async {
+    await _pumpNav(tester, onSelect: (_) {});
+
+    final glass = tester.widget<lg.GlassContainer>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('navBlob')),
+        matching: find.byType(lg.GlassContainer),
+      ),
+    );
+    expect(glass.useOwnLayer, isTrue, reason: '嵌套玻璃必须独立成层，否则走 vibrancy 快路径无折射');
+    expect(glass.settings?.blur, 0, reason: '指示器是透明镜片，非磨砂面');
+    expect(glass.settings?.chromaticAberration, 0.15,
+        reason: '默认色散取应用默认（对齐图中彩虹圈）');
+    expect(
+      glass.shape,
+      const lg.LiquidRoundedSuperellipse(borderRadius: 25),
+      reason: '镜片轮廓与水珠 25 圆角一致',
+    );
+    // 原装饰仍在（图标底光、白描边）
+    expect(_blobDecoration(tester).color, Colors.white.withValues(alpha: 0.10));
+  });
+
+  testWidgets('glassUi 关闭：水珠降级为纯装饰，无包玻璃', (tester) async {
+    await _pumpNav(
+      tester,
+      settings: const AppSettings(glassUi: false),
+      onSelect: (_) {},
+    );
+
+    expect(find.byType(lg.GlassContainer), findsNothing);
+    // 原装饰不变
+    expect(_blobDecoration(tester).color, Colors.white.withValues(alpha: 0.10));
+    expect(_blob(tester).height, 50);
   });
 
   testWidgets('短时横向滑动即可拖动水珠（无需长按），跟手且松手落点切换', (tester) async {

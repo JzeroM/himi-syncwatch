@@ -417,13 +417,22 @@ class _GlassTuningSection extends ConsumerWidget {
             max: spec.max,
             divisions: spec.divisions,
             value: value.clamp(spec.min, spec.max),
+            // 非匹配字段必须传 unsetValue 而非 null：update 形参默认
+            // unsetValue，显式 null 在 copyWith 语义下 = 清空该字段，
+            // 会把其余 4 个已调参数一并抹掉（v1.1.84 踩坑）。
             onChanged: (v) => ref.read(settingsProvider.notifier).update(
-                  glassBlur: spec.key == 'glassBlur' ? v : null,
-                  glassThickness: spec.key == 'glassThickness' ? v : null,
-                  glassSaturation: spec.key == 'glassSaturation' ? v : null,
-                  glassChromatic: spec.key == 'glassChromatic' ? v : null,
-                  glassLightIntensity:
-                      spec.key == 'glassLightIntensity' ? v : null,
+                  glassBlur:
+                      spec.key == 'glassBlur' ? v : AppSettings.unsetValue,
+                  glassThickness:
+                      spec.key == 'glassThickness' ? v : AppSettings.unsetValue,
+                  glassSaturation: spec.key == 'glassSaturation'
+                      ? v
+                      : AppSettings.unsetValue,
+                  glassChromatic:
+                      spec.key == 'glassChromatic' ? v : AppSettings.unsetValue,
+                  glassLightIntensity: spec.key == 'glassLightIntensity'
+                      ? v
+                      : AppSettings.unsetValue,
                 ),
           ),
         ),

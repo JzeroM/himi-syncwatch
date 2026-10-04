@@ -300,7 +300,7 @@ void main() {
   });
 
   group('玻璃可调参数（v1.1.84）', () {
-    test('默认全 null（跟随 liquid_glass_widgets 包默认）', () {
+    test('默认全 null（渲染走 glassParamSpecs 应用默认，v1.1.85）', () {
       const s = AppSettings();
       expect(s.glassBlur, isNull);
       expect(s.glassThickness, isNull);

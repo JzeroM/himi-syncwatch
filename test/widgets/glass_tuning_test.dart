@@ -88,6 +88,53 @@ void main() {
       ).toThemeData();
       expect(const GlassTuning().toThemeData(), isA<GlassThemeData>());
     });
+
+    test('toThemeData：null 字段兜底到应用默认（Kyant 目标观感，v1.1.85）', () {
+      final s = const GlassTuning().toThemeData().light.settings!;
+      expect(s.blur, glassDefault('glassBlur'));
+      expect(s.blur, 4, reason: '磨砂默认 4');
+      expect(s.thickness, glassDefault('glassThickness'));
+      expect(s.thickness, 28, reason: '厚度默认 28');
+      expect(s.saturation, glassDefault('glassSaturation'));
+      expect(s.saturation, 1.7);
+      expect(s.chromaticAberration, glassDefault('glassChromatic'));
+      expect(s.chromaticAberration, 0.15, reason: '色散默认 0.15（对齐图中彩虹圈）');
+      expect(s.lightIntensity, glassDefault('glassLightIntensity'));
+      expect(s.lightIntensity, 1.2, reason: '高光默认 1.2');
+    });
+
+    test('toThemeData：显式值优先于默认兜底', () {
+      final s = const GlassTuning(chromatic: 0.3, blur: 9)
+          .toThemeData()
+          .light
+          .settings!;
+      expect(s.chromaticAberration, 0.3);
+      expect(s.blur, 9);
+      expect(s.thickness, glassDefault('glassThickness'),
+          reason: '未显式设置的字段仍走默认兜底');
+    });
+  });
+
+  group('glassDefault（应用默认值 helper）', () {
+    test('5 个 key 返回与 spec 一致的默认值', () {
+      for (final key in const [
+        'glassBlur',
+        'glassThickness',
+        'glassSaturation',
+        'glassChromatic',
+        'glassLightIntensity',
+      ]) {
+        expect(
+          glassDefault(key),
+          glassParamSpecs.firstWhere((s) => s.key == key).defaultValue,
+          reason: '$key 与 spec 同源',
+        );
+      }
+    });
+
+    test('未知 key 抛 StateError', () {
+      expect(() => glassDefault('nope'), throwsStateError);
+    });
   });
 
   group('glassTuningProvider（settings → tuning 实时联动）', () {
@@ -117,7 +164,7 @@ void main() {
       final t = c.read(glassTuningProvider);
       expect(t.thickness, 35);
       expect(t.saturation, 2.0);
-      expect(t.blur, isNull, reason: '未动的字段保持包默认（null）');
+      expect(t.blur, isNull, reason: '未动的字段保持 null（渲染走应用默认）');
     });
 
     test('恢复默认（显式 null）后回到 isDefault', () async {

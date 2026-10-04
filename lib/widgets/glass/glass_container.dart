@@ -49,14 +49,13 @@ class GlassContainer extends ConsumerWidget {
               )
             : null,
         borderRadius: borderRadius,
-        border: Border.all(color: GlassConfig.rimColor, width: 1),
+        // 玻璃开启时不加本层白描边：包折射管线自带菲涅尔高光边缘，
+        // 双描边会压灰、破坏 Kyant 镜片观感；纯色降级态才需要边线定界。
+        border: glassEnabled ? null : Border.all(color: GlassConfig.rimColor),
       ),
-      child: CustomPaint(
-        foregroundPainter: glassEnabled ? GlassRimPainter(borderRadius) : null,
-        child: Padding(
-          padding: padding ?? EdgeInsets.zero,
-          child: child,
-        ),
+      child: Padding(
+        padding: padding ?? EdgeInsets.zero,
+        child: child,
       ),
     );
 
@@ -108,8 +107,8 @@ class GlassBackdrop extends ConsumerWidget {
     }
 
     return ClipRect(
-      child: BackdropFilter(
-        filter: GlassConfig.filter(),
+      child: lg.GlassContainer(
+        shape: const lg.LiquidRoundedSuperellipse(borderRadius: 0),
         child: DecoratedBox(
           decoration: const BoxDecoration(
             gradient: LinearGradient(

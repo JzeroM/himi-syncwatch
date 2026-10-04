@@ -744,7 +744,7 @@ void main() {
 
       final v = container.read(settingsProvider).glassBlur;
       expect(v, isNotNull, reason: '拖动后写入');
-      expect(v, greaterThan(5), reason: '向右拖增大（默认 5）');
+      expect(v, greaterThan(4), reason: '向右拖增大（应用默认 4）');
       final notifier =
           container.read(settingsProvider.notifier) as FakeSettingsNotifier;
       expect(notifier.persistCount, greaterThan(persistBefore),
@@ -754,7 +754,7 @@ void main() {
         tester
             .widget<Text>(find.byKey(const ValueKey('glassValue_glassBlur')))
             .data,
-        isNot(equals('5.0')),
+        isNot(equals('4.0')),
       );
       expect(
         tester
@@ -763,6 +763,30 @@ void main() {
             .onPressed,
         isNotNull,
       );
+    });
+
+    testWidgets('拖动玻璃滑杆不抹掉其余已设参数（v1.1.85 回归：清空 bug）', (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        initial: const AppSettings(
+          glassThickness: 40,
+          glassSaturation: 2.2,
+          glassChromatic: 0.3,
+          glassLightIntensity: 1.6,
+        ),
+      );
+      await _scrollToText(tester, '玻璃参数');
+
+      final slider = find.byKey(const ValueKey('glassBlurSlider'));
+      await tester.drag(slider, const Offset(60, 0));
+      await tester.pumpAndSettle();
+
+      final s = container.read(settingsProvider);
+      expect(s.glassBlur, isNotNull, reason: '拖动字段写入');
+      expect(s.glassThickness, 40, reason: '其余字段不能被清空');
+      expect(s.glassSaturation, 2.2);
+      expect(s.glassChromatic, 0.3);
+      expect(s.glassLightIntensity, 1.6);
     });
 
     testWidgets('恢复默认清空全部 5 参数并禁用按钮', (tester) async {

@@ -110,18 +110,67 @@ void main() {
         reason: '本层着色为三段渐变（上亮、中主体、下透）',
       );
     });
+
+    testWidgets('玻璃开启时不再叠本层白描边与 GlassRimPainter（v1.1.85 弱化）', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const GlassContainer(child: Text('面板内容')),
+          const AppSettings(glassUi: true),
+        ),
+      );
+
+      final boxes = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>()
+          .toList();
+      expect(boxes.any((b) => b.border != null), isFalse,
+          reason: '包折射自带菲涅尔边缘，本层白描边压灰观感');
+      expect(
+        tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .any((p) => p.foregroundPainter is GlassRimPainter),
+        isFalse,
+        reason: '玻璃开启不再叠 GlassRimPainter 双描边',
+      );
+    });
+
+    testWidgets('纯色降级态保留 rim 边线定界', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const GlassContainer(child: Text('面板内容')),
+          const AppSettings(glassUi: false),
+        ),
+      );
+
+      final boxes = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>()
+          .toList();
+      expect(
+        boxes.any((b) => b.border?.top.color == GlassConfig.rimColor),
+        isTrue,
+        reason: '关闭玻璃后不透明纯色需要边线与背景区分',
+      );
+    });
   });
 
   group('GlassBackdrop', () {
-    testWidgets('开启玻璃时渲染 BackdropFilter', (tester) async {
+    testWidgets('开启玻璃时渲染包真折射玻璃条', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassBackdrop(),
           const AppSettings(glassUi: true),
         ),
       );
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(find.byType(lg.GlassContainer), findsOneWidget);
       expect(find.byType(ClipRect), findsOneWidget);
+      expect(
+        find.byType(BackdropFilter),
+        findsNothing,
+        reason: 'v1.1.85 起顶栏由包折射管线取代 BackdropFilter',
+      );
     });
 
     testWidgets('关闭玻璃时降级为纯色条', (tester) async {
@@ -131,6 +180,7 @@ void main() {
           const AppSettings(glassUi: false),
         ),
       );
+      expect(find.byType(lg.GlassContainer), findsNothing);
       expect(find.byType(BackdropFilter), findsNothing);
     });
   });
