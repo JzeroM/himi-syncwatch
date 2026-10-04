@@ -41,6 +41,87 @@ void main() {
     expect(PlayerScreen.focusWithin(hotkey, null), isFalse, reason: '空焦点安全');
   });
 
+  testWidgets('shouldHideControlsNow：焦点在控制条内顺延，外部/无焦点才隐藏', (tester) async {
+    final root = FocusNode(debugLabel: 'controlsRoot');
+    final inside = FocusNode(debugLabel: 'playButton');
+    final outside = FocusNode(debugLabel: 'other');
+    addTearDown(root.dispose);
+    addTearDown(inside.dispose);
+    addTearDown(outside.dispose);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Column(
+        children: [
+          Focus(
+            focusNode: root,
+            skipTraversal: true,
+            child: Focus(focusNode: inside, child: const SizedBox()),
+          ),
+          Focus(focusNode: outside, child: const SizedBox()),
+        ],
+      ),
+    ));
+    await tester.pump();
+
+    expect(
+      PlayerScreen.shouldHideControlsNow(
+          controlsRoot: root, primaryFocus: inside),
+      isFalse,
+      reason: '焦点在控制条按钮上：顺延不隐藏（否则遥控器停不在按钮上）',
+    );
+    expect(
+      PlayerScreen.shouldHideControlsNow(
+          controlsRoot: root, primaryFocus: root),
+      isFalse,
+      reason: 'root 自身视为控制条内',
+    );
+    expect(
+      PlayerScreen.shouldHideControlsNow(
+          controlsRoot: root, primaryFocus: outside),
+      isTrue,
+      reason: '焦点已离开控制条：正常执行隐藏',
+    );
+    expect(
+      PlayerScreen.shouldHideControlsNow(
+          controlsRoot: root, primaryFocus: null),
+      isTrue,
+      reason: '无焦点：正常执行隐藏',
+    );
+  });
+
+  group('resolveVideoSize（SurfaceView 尺寸回退源）', () {
+    test('无效尺寸（宽高<=0）返回 null', () {
+      expect(PlayerScreen.resolveVideoSize(width: 0, height: 1080), isNull);
+      expect(PlayerScreen.resolveVideoSize(width: 1920, height: -1), isNull);
+      expect(PlayerScreen.resolveVideoSize(width: 0, height: 0), isNull);
+    });
+
+    test('正常尺寸直传；par 归一化高度，par<=0 视为 1', () {
+      expect(PlayerScreen.resolveVideoSize(width: 1920, height: 1080),
+          const Size(1920, 1080));
+      expect(PlayerScreen.resolveVideoSize(width: 1920, height: 1080, par: 2.0),
+          const Size(1920, 540));
+      expect(PlayerScreen.resolveVideoSize(width: 1920, height: 1080, par: 0),
+          const Size(1920, 1080),
+          reason: 'par<=0 防御性按 1 处理，避免除零');
+    });
+
+    test('rotation 90/270 交换宽高，180 不交换', () {
+      expect(
+          PlayerScreen.resolveVideoSize(
+              width: 1920, height: 1080, rotation: 90),
+          const Size(1080, 1920));
+      expect(
+          PlayerScreen.resolveVideoSize(
+              width: 1920, height: 1080, rotation: 270),
+          const Size(1080, 1920));
+      expect(
+          PlayerScreen.resolveVideoSize(
+              width: 1920, height: 1080, rotation: 180),
+          const Size(1920, 1080));
+    });
+  });
+
   group('TV 控件可见性', () {
     test('横竖屏按钮：移动端显示，TV 隐藏，桌面端隐藏', () {
       expect(

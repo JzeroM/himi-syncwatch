@@ -36,6 +36,7 @@ import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
 import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
@@ -96,6 +97,34 @@ class PlayerScreen extends ConsumerStatefulWidget {
   static bool focusWithin(FocusNode root, FocusNode? candidate) =>
       candidate != null &&
       (candidate == root || candidate.ancestors.contains(root));
+
+  /// 控制条 5 秒到期时是否执行隐藏。
+  /// 焦点仍停留在控制条内（滑杆/播放/切集按钮/菜单面板）时顺延——
+  /// 隐藏会把焦点拉回热键层，遥控器永远停不在播放/切集按钮上。
+  @visibleForTesting
+  static bool shouldHideControlsNow({
+    required FocusNode controlsRoot,
+    required FocusNode? primaryFocus,
+  }) =>
+      !focusWithin(controlsRoot, primaryFocus);
+
+  /// 视频尺寸解析（与 fvp _setVideoSize 同规则）：
+  /// 宽高无效（<=0，如 probesize 未解析出）→ null；
+  /// par 归一化高度；rotation 90/270 时交换宽高。
+  @visibleForTesting
+  static Size? resolveVideoSize({
+    required int width,
+    required int height,
+    double par = 1.0,
+    int rotation = 0,
+  }) {
+    if (width <= 0 || height <= 0) return null;
+    final h = (height / (par > 0 ? par : 1.0)).round();
+    if (rotation % 180 == 90) {
+      return Size(h.toDouble(), width.toDouble());
+    }
+    return Size(width.toDouble(), h.toDouble());
+  }
 
   /// 进入播放器的初始控制条设置：
   /// - 全模式启动自动隐藏计时（此前初进无人调 `_resetHideTimer`，控件
@@ -251,6 +280,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 控制条进度滑杆焦点：TV 唤出控制条后焦点落位点
   final FocusNode _controlsFocusNode =
       FocusNode(debugLabel: 'PlayerSeekSlider');
+
+  /// 播放/暂停按钮焦点：滑杆按落键的定向落点（按钮行左侧组无法被
+  /// 几何方向导航直达，由 PlayerHotkey 拦截滑杆 Down 转投此节点）
+  final FocusNode _playPauseFocusNode =
+      FocusNode(debugLabel: 'PlayerPlayPause');
+
+  /// 控制条根焦点（skipTraversal 不参与遍历）：自动隐藏前判定焦点
+  /// 是否停留在控制条内（滑杆/按钮/菜单面板）
+  final FocusNode _controlsRootFocusNode =
+      FocusNode(debugLabel: 'PlayerControlsRoot');
   Duration _position = Duration.zero;
   final ValueNotifier<Duration> _positionNotifier =
       ValueNotifier(Duration.zero);
@@ -362,6 +401,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _seriesName = '';
   int _currentEpisodeIndex = -1;
   bool _isSwitchingMedia = false;
+
+  /// 视频尺寸同步重试（见 _syncVideoNativeSize）：计数防风暴、
+  /// pending 防多入口并发调度重复链
+  int _videoSizeRetry = 0;
+  bool _videoSizeRetryPending = false;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
   final ValueNotifier<bool> _isPlayingNotifier = ValueNotifier(false);
@@ -1166,17 +1210,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// resolve）；SurfaceView 通道无纹理，但 textureSize 由媒体信息驱动，
   /// prepare 后同样可用。
   Future<void> _syncVideoNativeSize() async {
+    // textureSize 依赖 fvp 的 loaded/decoder.video 事件补齐：SurfaceView
+    // 档 _ensureTexture 直接跳过（不触发 native 补尺寸），切集未起播前
+    // 该 future 可能永不 resolve——无超时会卡死 _loadStream，切集遮罩
+    // （_isSwitchingMedia）与黑屏转圈永挂。3 秒超时后回退 mediaInfo 直读。
+    Size? size;
     try {
-      final size = await _player.textureSize;
-      if (size != null && mounted) {
-        if (_videoNativeSize != size) {
-          setState(() {
-            _videoNativeSize = size;
-          });
-          _applyVideoAvfilter(size);
-        }
-      }
+      size = await _player.textureSize.timeout(const Duration(seconds: 3));
     } catch (_) {}
+    if (!mounted) return;
+    size ??= _readMediaInfoVideoSize();
+    if (size == null) {
+      // mediaInfo 也未就绪（decoder.video 晚于起播到达）：延迟重试
+      _scheduleVideoSizeRetry();
+      return;
+    }
+    _videoSizeRetry = 0;
+    if (_videoNativeSize != size) {
+      setState(() {
+        _videoNativeSize = size;
+      });
+      _applyVideoAvfilter(size);
+    }
+  }
+
+  /// 尺寸未就绪时 1 秒后重试（最多 10 次）：覆盖 decoder.video /
+  /// mediaInfo 晚于起播到达的场景；单链防抖避免多入口叠加定时器。
+  void _scheduleVideoSizeRetry() {
+    if (_videoSizeRetryPending || _videoSizeRetry >= 10) return;
+    _videoSizeRetryPending = true;
+    _videoSizeRetry++;
+    Future.delayed(const Duration(seconds: 1), () {
+      _videoSizeRetryPending = false;
+      if (mounted) _syncVideoNativeSize();
+    });
+  }
+
+  /// mediaInfo 直读视频尺寸（textureSize 超时后的回退源）。
+  /// 取最宽流，[resolveVideoSize] 统一 par/rotation 规则；无效 → null。
+  Size? _readMediaInfoVideoSize() {
+    try {
+      final videos = _player.mediaInfo.video;
+      if (videos == null || videos.isEmpty) return null;
+      var v = videos.first;
+      for (final i in videos) {
+        if (i.codec.width > v.codec.width) v = i;
+      }
+      return PlayerScreen.resolveVideoSize(
+        width: v.codec.width,
+        height: v.codec.height,
+        par: v.codec.par,
+        rotation: v.rotation,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 上次写入 mdk 的 `video.avfilter` 值，用于去重（尺寸同步可多次触发）。
@@ -1225,7 +1313,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 媒体信息拿到视频尺寸即就绪。
   bool _videoOutputReady() {
     if (_effectiveVideoOutput() == 'surfaceView') {
-      return _videoNativeSize != null;
+      // textureSize 可能仍在超时等待中：mediaInfo 已有有效尺寸即视为
+      // 可起播（观众路径据此决定 state=playing，不能卡到尺寸 future）
+      return _videoNativeSize != null || _readMediaInfoVideoSize() != null;
     }
     return _player.textureId.value != null;
   }
@@ -1490,6 +1580,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
       _videoNativeSize = null;
+      _videoSizeRetry = 0;
+      _videoSizeRetryPending = false;
 
       // 设置媒体并准备播放（native 调用前必须 mounted）
       if (!mounted) return false;
@@ -1579,6 +1671,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
       _videoNativeSize = null;
+      _videoSizeRetry = 0;
+      _videoSizeRetryPending = false;
       _diag.reset();
       _decoderReport = DecoderReport.empty;
       _codecProbeKey = '';
@@ -2909,6 +3003,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_showControls) {
       _hideControlsTimer = Timer(const Duration(seconds: 5), () {
         if (mounted && _player.state == mdk.PlaybackState.playing) {
+          // 焦点仍在控制条内：顺延计时，不隐藏不抢焦点（否则焦点被
+          // 拉回热键层，再次唤出又落回滑杆，遥控器停不在播放/切集按钮上）
+          if (!PlayerScreen.shouldHideControlsNow(
+            controlsRoot: _controlsRootFocusNode,
+            primaryFocus: FocusManager.instance.primaryFocus,
+          )) {
+            _resetHideTimer();
+            return;
+          }
           // 先转移焦点再卸载，防止按钮/面板焦点悬空
           _releaseFocusFromControls();
           setState(() {
@@ -3255,6 +3358,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _hideControlsTimer?.cancel();
     _hotkeyFocusNode.dispose();
     _controlsFocusNode.dispose();
+    _playPauseFocusNode.dispose();
+    _controlsRootFocusNode.dispose();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
     _gestureHintTimer?.cancel();
@@ -3372,12 +3477,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _applyVideoOutputMode();
       }
     });
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
+    return TvBackConfirm(
+      // TV：首按提示、2 秒窗口内第二按才确认退出；非 TV 直接确认（现状）
+      enabled: ref.watch(settingsProvider.select((s) => s.tvMode)),
+      onConfirm: () async {
         final shouldPop = await _confirmLeaveRoom();
-        if (shouldPop && context.mounted) Navigator.pop(context);
+        if (shouldPop && mounted) Navigator.pop(context);
       },
       child: PlayerHotkey(
         onTogglePlayPause: _handleHotkeyTogglePlayPause,
@@ -3389,6 +3494,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         onShowControls: _showControlsForTv,
         focusNode: _hotkeyFocusNode,
         seekFocusNode: _controlsFocusNode,
+        playPauseFocusNode: _playPauseFocusNode,
         child: Scaffold(
           backgroundColor: Colors.black,
           body: GestureDetector(
@@ -4084,284 +4190,292 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildControls() {
-    return GestureDetector(
-      onTap: () {},
-      child: Container(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          10,
-          16,
-          12 + MediaQuery.of(context).padding.bottom,
-        ),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.transparent,
-              Colors.black.withValues(alpha: 0.85),
-            ],
+    // 控制条根焦点：仅作"焦点是否停留在控制条内"的判定锚点
+    // （自动隐藏顺延），skipTraversal 不参与方向遍历
+    return Focus(
+      focusNode: _controlsRootFocusNode,
+      skipTraversal: true,
+      child: GestureDetector(
+        onTap: () {},
+        child: Container(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            10,
+            16,
+            12 + MediaQuery.of(context).padding.bottom,
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 焦点承载在滑杆外层：TV 描边环显示在进度条上，且 Slider 自带
-            // Shortcuts（_AdjustSliderIntent）脱离焦点冒泡链——左右键改由
-            // PlayerHotkey 接管（单击 ±5 秒 / 长按每步 ±10 秒）；
-            // ExcludeFocus 屏蔽 Slider 内部焦点节点（防同 rect 双候选，
-            // 触摸拖动不受影响）
-            TvFocusable(
-              focusNode: _controlsFocusNode,
-              onTap: null, // OK 键放行冒泡到 PlayerHotkey 播放/暂停
-              scale: 1.0,
-              child: ExcludeFocus(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    activeTrackColor: const Color(0xFF6366F1),
-                    inactiveTrackColor: Colors.white24,
-                    thumbColor: const Color(0xFF6366F1),
-                    thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    trackHeight: 3,
-                  ),
-                  child: ValueListenableBuilder2<Duration, Duration>(
-                    first: _positionNotifier,
-                    second: _durationNotifier,
-                    builder: (context, pos, dur, _) {
-                      return Slider(
-                        value: dur.inMilliseconds > 0
-                            ? pos.inMilliseconds
-                                .toDouble()
-                                .clamp(0, dur.inMilliseconds.toDouble())
-                            : 0,
-                        max: dur.inMilliseconds > 0
-                            ? dur.inMilliseconds.toDouble()
-                            : 1,
-                        onChangeStart:
-                            _canControlPlayback ? _onSeekStart : null,
-                        onChanged: (v) {
-                          _positionNotifier.value =
-                              Duration(milliseconds: v.toInt());
-                        },
-                        onChangeEnd: _canControlPlayback ? _onSeekEnd : null,
-                      );
-                    },
-                  ),
-                ),
-              ),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.black.withValues(alpha: 0.85),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  ValueListenableBuilder2<Duration, Duration>(
-                    first: _positionNotifier,
-                    second: _durationNotifier,
-                    builder: (context, pos, dur, _) {
-                      return Text(
-                        '${_formatDuration(pos)} / ${_formatDuration(dur)}',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            if (_showSubtitleMenu) ...[
-              _buildExpandablePanel(
-                maxHeight: 180,
-                child: SubtitleMenuPanel(
-                  player: _player,
-                  subtitleStreams: _embySubtitleStreams,
-                  activeSubtitleIndex: _activeSubtitleIndex,
-                  useServerBurnIn: _useServerSubtitleBurnIn,
-                  itemId: _episodes.isNotEmpty &&
-                          _currentEpisodeIndex >= 0 &&
-                          _currentEpisodeIndex < _episodes.length
-                      ? _episodes[_currentEpisodeIndex].id
-                      : widget.itemId,
-                  mediaSourceId: widget.mediaSourceId,
-                  token: _currentToken,
-                  onSubtitleSelected: (index) {
-                    if (index == null) {
-                      _player.activeSubtitleTracks = [];
-                      _useServerSubtitleBurnIn = false;
-                      _activeSubtitleIndex = null;
-                    } else {
-                      _selectEmbySubtitle(index);
-                    }
-                  },
-                  onLoadLocal: _loadLocalSubtitle,
-                  onClose: () => setState(() => _showSubtitleMenu = false),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            if (_showAudioMenu) ...[
-              _buildExpandablePanel(
-                maxHeight: 180,
-                child: AudioTrackMenuPanel(
-                  player: _player,
-                  audioStreams: _embyAudioStreams,
-                  onAudioSelected: _selectEmbyAudio,
-                  onClose: () => setState(() => _showAudioMenu = false),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            Row(
-              children: [
-                // 上一集
-                if (_canControlPlayback &&
-                    _hasEpisodeList &&
-                    _totalEpisodeCount > 1)
-                  TvFocusable(
-                    onTap: _currentEpisodeIndex > 0
-                        ? () => _switchToEpisode(_currentEpisodeIndex - 1)
-                        : null,
-                    child: Icon(
-                      Icons.skip_previous,
-                      color: _currentEpisodeIndex > 0
-                          ? Colors.white
-                          : Colors.white24,
-                      size: 28,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 焦点承载在滑杆外层：TV 描边环显示在进度条上，且 Slider 自带
+              // Shortcuts（_AdjustSliderIntent）脱离焦点冒泡链——左右键改由
+              // PlayerHotkey 接管（单击 ±5 秒 / 长按每步 ±10 秒）；
+              // ExcludeFocus 屏蔽 Slider 内部焦点节点（防同 rect 双候选，
+              // 触摸拖动不受影响）
+              TvFocusable(
+                focusNode: _controlsFocusNode,
+                onTap: null, // OK 键放行冒泡到 PlayerHotkey 播放/暂停
+                scale: 1.0,
+                child: ExcludeFocus(
+                  child: SliderTheme(
+                    data: SliderThemeData(
+                      activeTrackColor: const Color(0xFF6366F1),
+                      inactiveTrackColor: Colors.white24,
+                      thumbColor: const Color(0xFF6366F1),
+                      thumbShape:
+                          const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      trackHeight: 3,
                     ),
-                  ),
-                if (_canControlPlayback &&
-                    _hasEpisodeList &&
-                    _totalEpisodeCount > 1)
-                  const SizedBox(width: 8),
-
-                // 播放/暂停（焦点落点统一由 _showControlsForTv 决定，
-                // 不再 autofocus——与 postFrame 落焦滑杆竞争导致"有时选不到"）
-                if (_canControlPlayback)
-                  TvFocusable(
-                    onTap: _togglePlayPause,
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: _isPlayingNotifier,
-                      builder: (context, isPlaying, child) {
-                        return Icon(
-                          isPlaying
-                              ? Icons.pause_circle_filled
-                              : Icons.play_circle_fill,
-                          color: Colors.white,
-                          size: 36,
+                    child: ValueListenableBuilder2<Duration, Duration>(
+                      first: _positionNotifier,
+                      second: _durationNotifier,
+                      builder: (context, pos, dur, _) {
+                        return Slider(
+                          value: dur.inMilliseconds > 0
+                              ? pos.inMilliseconds
+                                  .toDouble()
+                                  .clamp(0, dur.inMilliseconds.toDouble())
+                              : 0,
+                          max: dur.inMilliseconds > 0
+                              ? dur.inMilliseconds.toDouble()
+                              : 1,
+                          onChangeStart:
+                              _canControlPlayback ? _onSeekStart : null,
+                          onChanged: (v) {
+                            _positionNotifier.value =
+                                Duration(milliseconds: v.toInt());
+                          },
+                          onChangeEnd: _canControlPlayback ? _onSeekEnd : null,
                         );
                       },
                     ),
                   ),
-                if (_canControlPlayback) const SizedBox(width: 8),
-
-                // 下一集
-                if (_canControlPlayback &&
-                    _hasEpisodeList &&
-                    _totalEpisodeCount > 1)
-                  TvFocusable(
-                    onTap: _currentEpisodeIndex < _totalEpisodeCount - 1
-                        ? () => _switchToEpisode(_currentEpisodeIndex + 1)
-                        : null,
-                    child: Icon(
-                      Icons.skip_next,
-                      color: _currentEpisodeIndex < _totalEpisodeCount - 1
-                          ? Colors.white
-                          : Colors.white24,
-                      size: 28,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    ValueListenableBuilder2<Duration, Duration>(
+                      first: _positionNotifier,
+                      second: _durationNotifier,
+                      builder: (context, pos, dur, _) {
+                        return Text(
+                          '${_formatDuration(pos)} / ${_formatDuration(dur)}',
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 12),
+                        );
+                      },
                     ),
-                  ),
-                if (_canControlPlayback &&
-                    _hasEpisodeList &&
-                    _totalEpisodeCount > 1)
-                  const SizedBox(width: 8),
-
-                // 音量/亮度滑杆（仅 Windows，替代已取消的垂直手势）
-                if (PlayerPlatform.volumeBrightnessSliders) ...[
-                  const SizedBox(width: 16),
-                  _buildVolumeSlider(),
-                  const SizedBox(width: 16),
-                  _buildBrightnessSlider(),
-                ],
-
-                const Spacer(),
-
-                // 字幕
-                _buildControlButton(
-                  icon: Icons.subtitles,
-                  onTap: () {
-                    setState(() {
-                      _showSubtitleMenu = !_showSubtitleMenu;
-                      _showAudioMenu = false;
-                    });
-                  },
-                  badge: _embySubtitleStreams.isNotEmpty
-                      ? '${_embySubtitleStreams.length}'
-                      : null,
+                  ],
                 ),
-                const SizedBox(width: 20),
-
-                // 音轨
-                _buildControlButton(
-                  icon: Icons.audiotrack,
-                  onTap: () {
-                    setState(() {
-                      _showAudioMenu = !_showAudioMenu;
-                      _showSubtitleMenu = false;
-                    });
-                  },
-                  badge: _embyAudioStreams.isNotEmpty
-                      ? '${_embyAudioStreams.length}'
-                      : null,
+              ),
+              if (_showSubtitleMenu) ...[
+                _buildExpandablePanel(
+                  maxHeight: 180,
+                  child: SubtitleMenuPanel(
+                    player: _player,
+                    subtitleStreams: _embySubtitleStreams,
+                    activeSubtitleIndex: _activeSubtitleIndex,
+                    useServerBurnIn: _useServerSubtitleBurnIn,
+                    itemId: _episodes.isNotEmpty &&
+                            _currentEpisodeIndex >= 0 &&
+                            _currentEpisodeIndex < _episodes.length
+                        ? _episodes[_currentEpisodeIndex].id
+                        : widget.itemId,
+                    mediaSourceId: widget.mediaSourceId,
+                    token: _currentToken,
+                    onSubtitleSelected: (index) {
+                      if (index == null) {
+                        _player.activeSubtitleTracks = [];
+                        _useServerSubtitleBurnIn = false;
+                        _activeSubtitleIndex = null;
+                      } else {
+                        _selectEmbySubtitle(index);
+                      }
+                    },
+                    onLoadLocal: _loadLocalSubtitle,
+                    onClose: () => setState(() => _showSubtitleMenu = false),
+                  ),
                 ),
-
-                // 面板切换（仅房间模式）
-                if (widget.roomCode != null) ...[
-                  const SizedBox(width: 20),
-                  _buildControlButton(
-                    icon: _showPanel
-                        ? Icons.close_fullscreen
-                        : Icons.open_in_full,
-                    onTap: () => setState(() => _showPanel = !_showPanel),
-                  ),
-                ],
-
-                // 横竖屏（移动端；TV 全程横屏无需旋转控制）
-                if (PlayerScreen.showRotateButton(
-                  tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
-                  mobilePlatform: Platform.isAndroid || Platform.isIOS,
-                )) ...[
-                  const SizedBox(width: 20),
-                  _buildControlButton(
-                    icon: _orientationMode == _OrientationMode.portraitUp
-                        ? Icons.screen_lock_landscape
-                        : Icons.screen_lock_portrait,
-                    onTap: _toggleOrientation,
-                  ),
-                ],
-
-                // 画面比例（仅本地单人模式）
-                if (widget.roomCode == null) ...[
-                  const SizedBox(width: 20),
-                  _buildControlButton(
-                    icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
-                    onTap: _cycleVideoFit,
-                    badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
-                  ),
-                ],
-
-                // 窗口全屏（桌面三端）
-                if (PlayerPlatform.windowFullscreenButton) ...[
-                  const SizedBox(width: 20),
-                  _buildControlButton(
-                    icon: _isWindowFullscreen
-                        ? Icons.fullscreen_exit
-                        : Icons.fullscreen,
-                    onTap: _toggleWindowFullscreen,
-                  ),
-                ],
+                const SizedBox(height: 8),
               ],
-            ),
-          ],
+              if (_showAudioMenu) ...[
+                _buildExpandablePanel(
+                  maxHeight: 180,
+                  child: AudioTrackMenuPanel(
+                    player: _player,
+                    audioStreams: _embyAudioStreams,
+                    onAudioSelected: _selectEmbyAudio,
+                    onClose: () => setState(() => _showAudioMenu = false),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Row(
+                children: [
+                  // 上一集
+                  if (_canControlPlayback &&
+                      _hasEpisodeList &&
+                      _totalEpisodeCount > 1)
+                    TvFocusable(
+                      onTap: _currentEpisodeIndex > 0
+                          ? () => _switchToEpisode(_currentEpisodeIndex - 1)
+                          : null,
+                      child: Icon(
+                        Icons.skip_previous,
+                        color: _currentEpisodeIndex > 0
+                            ? Colors.white
+                            : Colors.white24,
+                        size: 28,
+                      ),
+                    ),
+                  if (_canControlPlayback &&
+                      _hasEpisodeList &&
+                      _totalEpisodeCount > 1)
+                    const SizedBox(width: 8),
+
+                  // 播放/暂停（焦点落点统一由 _showControlsForTv 决定，
+                  // 不再 autofocus——与 postFrame 落焦滑杆竞争导致"有时选不到"；
+                  // 滑杆按落键由 PlayerHotkey 定向落到此节点）
+                  if (_canControlPlayback)
+                    TvFocusable(
+                      focusNode: _playPauseFocusNode,
+                      onTap: _togglePlayPause,
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _isPlayingNotifier,
+                        builder: (context, isPlaying, child) {
+                          return Icon(
+                            isPlaying
+                                ? Icons.pause_circle_filled
+                                : Icons.play_circle_fill,
+                            color: Colors.white,
+                            size: 36,
+                          );
+                        },
+                      ),
+                    ),
+                  if (_canControlPlayback) const SizedBox(width: 8),
+
+                  // 下一集
+                  if (_canControlPlayback &&
+                      _hasEpisodeList &&
+                      _totalEpisodeCount > 1)
+                    TvFocusable(
+                      onTap: _currentEpisodeIndex < _totalEpisodeCount - 1
+                          ? () => _switchToEpisode(_currentEpisodeIndex + 1)
+                          : null,
+                      child: Icon(
+                        Icons.skip_next,
+                        color: _currentEpisodeIndex < _totalEpisodeCount - 1
+                            ? Colors.white
+                            : Colors.white24,
+                        size: 28,
+                      ),
+                    ),
+                  if (_canControlPlayback &&
+                      _hasEpisodeList &&
+                      _totalEpisodeCount > 1)
+                    const SizedBox(width: 8),
+
+                  // 音量/亮度滑杆（仅 Windows，替代已取消的垂直手势）
+                  if (PlayerPlatform.volumeBrightnessSliders) ...[
+                    const SizedBox(width: 16),
+                    _buildVolumeSlider(),
+                    const SizedBox(width: 16),
+                    _buildBrightnessSlider(),
+                  ],
+
+                  const Spacer(),
+
+                  // 字幕
+                  _buildControlButton(
+                    icon: Icons.subtitles,
+                    onTap: () {
+                      setState(() {
+                        _showSubtitleMenu = !_showSubtitleMenu;
+                        _showAudioMenu = false;
+                      });
+                    },
+                    badge: _embySubtitleStreams.isNotEmpty
+                        ? '${_embySubtitleStreams.length}'
+                        : null,
+                  ),
+                  const SizedBox(width: 20),
+
+                  // 音轨
+                  _buildControlButton(
+                    icon: Icons.audiotrack,
+                    onTap: () {
+                      setState(() {
+                        _showAudioMenu = !_showAudioMenu;
+                        _showSubtitleMenu = false;
+                      });
+                    },
+                    badge: _embyAudioStreams.isNotEmpty
+                        ? '${_embyAudioStreams.length}'
+                        : null,
+                  ),
+
+                  // 面板切换（仅房间模式）
+                  if (widget.roomCode != null) ...[
+                    const SizedBox(width: 20),
+                    _buildControlButton(
+                      icon: _showPanel
+                          ? Icons.close_fullscreen
+                          : Icons.open_in_full,
+                      onTap: () => setState(() => _showPanel = !_showPanel),
+                    ),
+                  ],
+
+                  // 横竖屏（移动端；TV 全程横屏无需旋转控制）
+                  if (PlayerScreen.showRotateButton(
+                    tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
+                    mobilePlatform: Platform.isAndroid || Platform.isIOS,
+                  )) ...[
+                    const SizedBox(width: 20),
+                    _buildControlButton(
+                      icon: _orientationMode == _OrientationMode.portraitUp
+                          ? Icons.screen_lock_landscape
+                          : Icons.screen_lock_portrait,
+                      onTap: _toggleOrientation,
+                    ),
+                  ],
+
+                  // 画面比例（仅本地单人模式）
+                  if (widget.roomCode == null) ...[
+                    const SizedBox(width: 20),
+                    _buildControlButton(
+                      icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
+                      onTap: _cycleVideoFit,
+                      badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
+                    ),
+                  ],
+
+                  // 窗口全屏（桌面三端）
+                  if (PlayerPlatform.windowFullscreenButton) ...[
+                    const SizedBox(width: 20),
+                    _buildControlButton(
+                      icon: _isWindowFullscreen
+                          ? Icons.fullscreen_exit
+                          : Icons.fullscreen,
+                      onTap: _toggleWindowFullscreen,
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

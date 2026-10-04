@@ -20,6 +20,7 @@ void main() {
     FocusNode? focusNode,
     bool provideVolume = true,
     FocusNode? seekFocusNode,
+    FocusNode? playPauseFocusNode,
   }) =>
       Directionality(
         textDirection: TextDirection.ltr,
@@ -33,11 +34,22 @@ void main() {
           onShowControls: onShowControls,
           focusNode: focusNode,
           seekFocusNode: seekFocusNode,
-          child: seekFocusNode != null
-              ? Focus(
-                  focusNode: seekFocusNode,
-                  child: const SizedBox(width: 100, height: 100))
-              : const SizedBox(width: 100, height: 100),
+          playPauseFocusNode: playPauseFocusNode,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (seekFocusNode != null)
+                Focus(
+                    focusNode: seekFocusNode,
+                    child: const SizedBox(width: 100, height: 100)),
+              if (playPauseFocusNode != null)
+                Focus(
+                    focusNode: playPauseFocusNode,
+                    child: const SizedBox(width: 100, height: 100)),
+              if (seekFocusNode == null && playPauseFocusNode == null)
+                const SizedBox(width: 100, height: 100),
+            ],
+          ),
         ),
       );
 
@@ -249,6 +261,68 @@ void main() {
       await simulateKeyUpEvent(LogicalKeyboardKey.arrowDown);
       expect(showControls, 2, reason: '下键同样唤出控制条');
       expect(volumeDelta, 0);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：滑杆焦点按落键定向落到播放/暂停按钮', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final seek = FocusNode(debugLabel: 'seek');
+    final play = FocusNode(debugLabel: 'play');
+    addTearDown(seek.dispose);
+    addTearDown(play.dispose);
+    try {
+      await tester.pumpWidget(wrap(
+        tvMode: true,
+        controlsVisible: true,
+        seekFocusNode: seek,
+        playPauseFocusNode: play,
+        onShowControls: () => showControls++,
+      ));
+      seek.requestFocus();
+      await tester.pump();
+      expect(seek.hasPrimaryFocus, isTrue, reason: '初始焦点在滑杆');
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowDown);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+
+      expect(play.hasPrimaryFocus, isTrue,
+          reason: '滑杆 Down 定向落到播放按钮（几何导航会落右侧组）');
+      expect(showControls, 1, reason: '落焦点属于控件交互，顺延自动隐藏');
+      expect(seekMs, 0, reason: 'Down 不触发 seek');
+      expect(toggled, 0, reason: 'Down 不触发播放/暂停');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：焦点不在滑杆时 Down 不拦截（焦点导航照常）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final seek = FocusNode(debugLabel: 'seek');
+    final play = FocusNode(debugLabel: 'play');
+    addTearDown(seek.dispose);
+    addTearDown(play.dispose);
+    try {
+      await tester.pumpWidget(wrap(
+        tvMode: true,
+        controlsVisible: true,
+        seekFocusNode: seek,
+        playPauseFocusNode: play,
+        onShowControls: () => showControls++,
+      ));
+      play.requestFocus();
+      await tester.pump();
+      expect(play.hasPrimaryFocus, isTrue);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowDown);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+
+      expect(play.hasPrimaryFocus, isTrue,
+          reason: '焦点已在播放按钮（非滑杆），Down 放行给焦点导航');
+      expect(showControls, 1, reason: '可见时方向键仍顺延自动隐藏');
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

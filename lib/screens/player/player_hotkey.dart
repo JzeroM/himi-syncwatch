@@ -26,6 +26,7 @@ class PlayerHotkey extends StatefulWidget {
     this.onShowControls,
     this.focusNode,
     this.seekFocusNode,
+    this.playPauseFocusNode,
     required this.child,
   });
 
@@ -52,6 +53,11 @@ class PlayerHotkey extends StatefulWidget {
   /// 进度条焦点节点：焦点在其上时左右键接管为快进退
   /// （单击 ±5 秒，长按 KeyRepeat 每步 ±10 秒），不再走焦点导航
   final FocusNode? seekFocusNode;
+
+  /// 播放/暂停按钮焦点节点：滑杆焦点按下键时定向落到此节点。
+  /// 按钮行左侧组（上一集/播放/下一集）离滑杆中心的几何距离远于
+  /// 右侧按钮（字幕等），框架方向导航会落到右侧组、左侧组无法直达。
+  final FocusNode? playPauseFocusNode;
 
   final Widget child;
 
@@ -168,6 +174,15 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
             }
           }
         } else {
+          // 滑杆焦点按下键：定向落到播放/暂停按钮（左侧组无法被几何
+          // 方向导航直达，见 playPauseFocusNode 注释）
+          if (key == LogicalKeyboardKey.arrowDown &&
+              (widget.seekFocusNode?.hasPrimaryFocus ?? false) &&
+              widget.playPauseFocusNode != null) {
+            widget.playPauseFocusNode!.requestFocus();
+            widget.onShowControls?.call();
+            return KeyEventResult.handled;
+          }
           // 可见：仅顺延自动隐藏，不拦按键（焦点导航照常），故不 handled
           widget.onShowControls?.call();
         }
