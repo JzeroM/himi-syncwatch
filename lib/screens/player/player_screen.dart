@@ -57,6 +57,7 @@ import 'package:himi_syncwatch/services/count_retry.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
+import 'package:himi_syncwatch/services/render_storm_detector.dart';
 import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
 import 'package:himi_syncwatch/services/switch_volume_guard.dart';
 import 'package:himi_syncwatch/services/video_avfilter_policy.dart';
@@ -140,6 +141,24 @@ class PlayerScreen extends ConsumerStatefulWidget {
     }
     return Size(width.toDouble(), h.toDouble());
   }
+
+  /// SurfaceView 是否需要两阶段重建（见 [_remountSurfaceView]）：
+  /// 仅分辨率变化时 true。
+  ///
+  /// 同尺寸切集恒 false（v1.1.82 根修）：切集拆建 view 会让 mdk
+  /// renderer 在重建的 EGL 上下文上渲 1 帧后永久丢帧，画面定格、
+  /// 音频进度正常。texture/tunnel 档与首播（oldSize 为 null）不涉及
+  /// platform view 拆建，同样 false。
+  @visibleForTesting
+  static bool surfaceViewNeedsRemount({
+    required String output,
+    required Size? oldSize,
+    required Size? newSize,
+  }) =>
+      output == 'surfaceView' &&
+      oldSize != null &&
+      newSize != null &&
+      oldSize != newSize;
 
   /// 进入播放器的初始控制条设置：
   /// - 全模式启动自动隐藏计时（此前初进无人调 `_resetHideTimer`，控件
@@ -431,13 +450,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   int _videoSizeRetry = 0;
   bool _videoSizeRetryPending = false;
 
-  /// SurfaceView platform view 世代：切集 +1 强制销毁重建（key 变化）。
-  /// 旧 view 的 surfaceDestroyed（fvp setDecoders 清码）必须先于新 view
-  /// 的 surfaceCreated（setDecoders(surface) 重开）落定，否则 destroy
-  /// 晚到会清掉新集解码器 → 新集出帧后声画全停。
+  /// SurfaceView platform view 世代：**必要重建**（分辨率/档位/tunnel
+  /// 变化）时由 [_remountSurfaceView] 在 attach 阶段 +1。同分辨率切集
+  /// 恒不递增——view/surface/EGL 上下文全程复用（v1.1.82 根修：
+  /// 切集拆建 view 让 mdk renderer 在新上下文上永久丢帧，画面定格
+  /// 首帧、音频进度正常，himi_logs_5 实证）。
   int _videoSurfaceEpoch = 0;
 
-  /// 新 surface 是否已完成 surfaceCreated（nativeSetSurface 绑定）。
+  /// SurfaceView 两阶段重建的 detach 门：true 时 build 卸下 platform
+  /// view（触发 surfaceDestroyed/nativeSetSurface 解绑），settle 后由
+  /// [_remountSurfaceView] attach 复位。
+  bool _surfaceDetached = false;
+
+  /// 渲染风暴计数（log handler 喂入；见 [RenderStormDetector]）。
+  final RenderStormDetector _renderStorm = RenderStormDetector();
+
+  /// 新 surface 是否已完成 surfaceCreated 绑定（nativeSetSurface 绑定）。
   /// 起播前等待此标志，避免 state=playing 抢在绑定之前。
   bool _surfaceViewCreated = false;
   bool _hasEpisodeList = false;
@@ -1238,34 +1266,64 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // end 处理器又硬切 media，既爆音又重复加载。
   }
 
-  /// 从 fvp textureSize 获取实际纹理尺寸（与 GL FBO 完全一致）
+  /// 同步视频原生尺寸：**mediaInfo 直读优先**，textureSize 兜底。
   ///
-  /// 纹理通道须在 _ensureTexture() 之后调用（textureSize.future 已
-  /// resolve）；SurfaceView 通道无纹理，但 textureSize 由媒体信息驱动，
-  /// prepare 后同样可用。
+  /// 换序动机（v1.1.82，himi_logs_5 实测）：textureSize 依赖 fvp 的
+  /// loaded/decoder.video 事件填 completer，SurfaceView 档切集时可能
+  /// 整 3 秒超时才回退 mediaInfo——期间帧已就绪、view 未挂，surface
+  /// 迟到是 renderer 定格根因之一。mediaInfo 在 prepare 返回后即可用，
+  /// 与 textureSize 同源（均读 mediaInfo.video + par/rotation），即时
+  /// resolve 消除固定 3 秒卡顿。mediaInfo 未就绪时才等 textureSize
+  /// （3 秒兜底），二者皆空走 1 秒重试链。
+  ///
+  /// 尺寸变化时：texture/tunnel 档普通 setState；SurfaceView 档且旧
+  /// view 在场则走 [_remountSurfaceView] 两阶段重建（同尺寸不拆）。
   Future<void> _syncVideoNativeSize() async {
-    // textureSize 依赖 fvp 的 loaded/decoder.video 事件补齐：SurfaceView
-    // 档 _ensureTexture 直接跳过（不触发 native 补尺寸），切集未起播前
-    // 该 future 可能永不 resolve——无超时会卡死 _loadStream，切集遮罩
-    // （_isSwitchingMedia）与黑屏转圈永挂。3 秒超时后回退 mediaInfo 直读。
-    Size? size;
-    try {
-      size = await _player.textureSize.timeout(const Duration(seconds: 3));
-    } catch (_) {}
-    if (!mounted) return;
-    size ??= _readMediaInfoVideoSize();
+    final sw = Stopwatch()..start();
+    Size? size = _readMediaInfoVideoSize();
+    var source = 'mediaInfo';
     if (size == null) {
-      // mediaInfo 也未就绪（decoder.video 晚于起播到达）：延迟重试
+      try {
+        size = await _player.textureSize.timeout(const Duration(seconds: 3));
+        source = size != null ? 'textureSize' : 'timeout';
+      } catch (_) {
+        source = 'timeout';
+      }
+      if (!mounted) return;
+      size ??= _readMediaInfoVideoSize();
+      if (size != null) source = 'mediaInfo(兜底)';
+    }
+    if (!mounted) return;
+    if (size == null) {
       _scheduleVideoSizeRetry();
+      LogService().log('Diag',
+          '尺寸同步: 未就绪 (${sw.elapsedMilliseconds}ms) → 1s 后重试 #$_videoSizeRetry');
       return;
     }
     _videoSizeRetry = 0;
-    if (_videoNativeSize != size) {
-      setState(() {
-        _videoNativeSize = size;
-      });
-      _applyVideoAvfilter(size);
+    final old = _videoNativeSize;
+    if (old == size) {
+      LogService()
+          .log('Diag', '尺寸同步: $source $size 无变化 (${sw.elapsedMilliseconds}ms)');
+      return;
     }
+    final remount = PlayerScreen.surfaceViewNeedsRemount(
+      output: _effectiveVideoOutput(),
+      oldSize: old,
+      newSize: size,
+    );
+    LogService().log(
+        'Diag',
+        '尺寸同步: $source ${old ?? '(首播)'} → $size '
+            '(${sw.elapsedMilliseconds}ms) remount=$remount');
+    if (remount) {
+      await _remountSurfaceView(applySize: size);
+      return;
+    }
+    setState(() {
+      _videoNativeSize = size;
+    });
+    _applyVideoAvfilter(size);
   }
 
   /// 尺寸未就绪时 1 秒后重试（最多 10 次）：覆盖 decoder.video /
@@ -1286,6 +1344,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<bool> _waitSurfaceCreated() async {
     if (_effectiveVideoOutput() != 'surfaceView') return true;
     return PlayerScreen.waitUntil(() => _surfaceViewCreated || !mounted);
+  }
+
+  /// SurfaceView 必要重建（分辨率变化 / EGL tunnel 翻转）的两阶段收口：
+  ///
+  /// 1. **detach**：卸下 platform view → surfaceDestroyed 异步到达 →
+  ///    native `updateNativeSurface(nullptr)` 解绑落定；
+  /// 2. **settle 300ms**：确保 destroy 不会晚到打掉即将创建的新 view；
+  /// 3. **attach**：epoch+1（key 变化）挂新 view，[applySize] 生效后
+  ///    等 surfaceCreated 绑定。
+  ///
+  /// 同分辨率切集**不走这里**——view 全程复用（v1.1.82 根修：迟到
+  /// surface + EGL 上下文重建会让 mdk renderer 永久丢帧、画面定格）。
+  Future<bool> _remountSurfaceView({Size? applySize}) async {
+    if (!mounted || _effectiveVideoOutput() != 'surfaceView') return true;
+    LogService()
+        .log('Diag', 'surface 两阶段重建: detach (epoch=$_videoSurfaceEpoch)');
+    setState(() {
+      _surfaceDetached = true;
+      _surfaceViewCreated = false;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return false;
+    setState(() {
+      _videoSurfaceEpoch++;
+      _surfaceDetached = false;
+      if (applySize != null) {
+        _videoNativeSize = applySize;
+        _applyVideoAvfilter(applySize);
+      }
+    });
+    LogService().log('Diag',
+        'surface 两阶段重建: attach (epoch=$_videoSurfaceEpoch, size=$applySize)');
+    return _waitSurfaceCreated();
   }
 
   /// mediaInfo 直读视频尺寸（textureSize 超时后的回退源）。
@@ -1403,6 +1494,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // stop 与 native EGL 创建流程并发是偶发 native crash 主嫌（卡
     // 00:00 后闪退回桌面）。故障已落盘 eglFaultSeen → 本次仅记日志+
     // 按需切档，下次启动按 eglFaultSeen/userSet 决定档位。
+    //
+    // tunnel 参数变化（tunnel: eglFaultDetector.fault 进 surfaceKey）
+    // 会让 view key 失配：两阶段重建让 destroy 先落定再挂直写参数，
+    // 防同帧拆建竞态（EGL 翻转是播放中唯一会改 key 的路径）。
+    if (_effectiveVideoOutput() == 'surfaceView' &&
+        _videoNativeSize != null &&
+        !_surfaceDetached) {
+      unawaited(_remountSurfaceView());
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// 喂渲染风暴检测器；命中（1s 内丢帧达阈值）写诊断日志与时间线。
+  /// 只记日志不动作（v1.1.82 定案：主动重挂 view 可能触发同一 mdk
+  /// renderer 缺陷）。log handler 可能来自 mdk 内部线程，LogService/
+  /// _diag 均为纯 Dart 集合，可直接调用。
+  void _feedRenderStorm(String message) {
+    final line = _renderStorm.feed(message);
+    if (line == null) return;
+    _diag.note(line);
+    LogService().log('Diag', line);
   }
 
   /// 喂 EGL 检测器；命中则在事件循环里执行自愈（log handler 可能来自
@@ -1623,12 +1735,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
-      // 切集前记录是否持有旧 SurfaceView view（用于销毁串行等待）
-      final rebuildSurface =
-          _effectiveVideoOutput() == 'surfaceView' && _videoNativeSize != null;
-      _videoNativeSize = null;
+      // 切集零重建（v1.1.82 根修）：不拆 FvpSurfaceView、不置空尺寸、
+      // 不动 epoch——旧 view/surface/EGL 上下文在遮罩下全程复用。
+      // 此前 epoch+1 拆建会让 mdk renderer 在重建上下文上渲 1 帧后
+      // 永久丢帧（himi_logs_5：切集后画面定格首帧、音频进度正常）。
+      // 分辨率变化由 _syncVideoNativeSize 探测后走 _remountSurfaceView
+      // 两阶段重建；textureSize/重试计数照常复位。
       _videoSizeRetry = 0;
       _videoSizeRetryPending = false;
+      _renderStorm.reset();
 
       // 设置媒体并准备播放（native 调用前必须 mounted）
       if (!mounted) return false;
@@ -1641,18 +1756,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _fadeOutForSwitch();
 
       _isSwitchingMedia = true;
-      if (rebuildSurface) {
-        // epoch+1 强制销毁旧 FvpSurfaceView；setState 让本帧就渲染
-        // （遮罩 + 转圈）。旧 view 的 surfaceDestroyed 在 Android 侧异步
-        // 到达，fvp 对同一 player handle 执行 setDecoders({}) 清码——
-        // 必须先等它落定再 set media / 创建新 view，否则晚到的 destroy
-        // 会清掉新集解码器（新集出帧后声画全停，必现）。
-        _videoSurfaceEpoch++;
-        _surfaceViewCreated = false;
-        setState(() {});
-        await Future<void>.delayed(const Duration(milliseconds: 300));
-        if (!mounted) return false;
-      }
       _player.media = streamUrl;
       await _player.prepare();
       // prepare 期间可能已 dispose：后续 texture/状态操作一律中止
@@ -1736,12 +1839,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 切换视频前重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
-      // 切集前记录是否持有旧 SurfaceView view（用于销毁串行等待）
-      final rebuildSurface =
-          _effectiveVideoOutput() == 'surfaceView' && _videoNativeSize != null;
-      _videoNativeSize = null;
+      // 切集零重建（v1.1.82 根修，同 _loadStream）：view/surface/
+      // EGL 上下文全程复用，尺寸变化才走 _remountSurfaceView。
       _videoSizeRetry = 0;
       _videoSizeRetryPending = false;
+      _renderStorm.reset();
       _diag.reset();
       _decoderReport = DecoderReport.empty;
       _codecProbeKey = '';
@@ -1771,16 +1873,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       _isSwitchingMedia = true;
-      if (rebuildSurface) {
-        // 同 _loadStream：epoch+1 强制销毁旧 view，等 surfaceDestroyed
-        // （fvp setDecoders 清码）先落定再 set media，防晚到 destroy
-        // 清掉新集解码器（声画全停）
-        _videoSurfaceEpoch++;
-        _surfaceViewCreated = false;
-        setState(() {});
-        await Future<void>.delayed(const Duration(milliseconds: 300));
-        if (!mounted) return;
-      }
       _player.media = playUrl;
       await _player.prepare();
       if (!mounted) return;
@@ -2034,8 +2126,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 2 = 启用（不依赖 log level）
       mdk.setGlobalOption('log.status', 2);
       mdk.setLogHandler((level, message) {
-        // EGL 故障检测不受深诊开关影响：放在 active 判断前
+        // EGL 故障检测与渲染风暴计数不受深诊开关影响（但丢帧行本身为
+        // FINE 级，仍依赖 log.status=2 才产出）
         _feedEglDetector(message);
+        _feedRenderStorm(message);
         if (!_deepLogActive) return;
         final line = message.trim();
         if (line.isEmpty) return;
@@ -2106,6 +2200,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       mdk.setGlobalOption('log.status', 0);
       mdk.setLogHandler((level, message) {
         _feedEglDetector(message);
+        _feedRenderStorm(message);
         if (level == mdk.LogLevel.error) {
           LogService().log('mdk', message.trim());
         }
@@ -3673,6 +3768,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///   视图矩形缩放）；_videoFit 的 fill/cover 裁剪在此档位不生效，
   ///   统一按 contain——platform view 不参与 Flutter Transform。
   Widget _buildSurfaceViewVideo() {
+    // 两阶段重建的 detach 窗口：旧 view 已卸下，等 settle 后 attach
+    if (_surfaceDetached) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white54),
+      );
+    }
     final size = _videoNativeSize;
     if (size == null || size.width <= 0 || size.height <= 0) {
       return const Center(
@@ -3692,7 +3793,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           tunnel: eglFaultDetector.fault,
           epoch: _videoSurfaceEpoch,
           onCreated: () {
-            if (mounted) _surfaceViewCreated = true;
+            if (!mounted) return;
+            _surfaceViewCreated = true;
+            LogService().log(
+                'Diag',
+                'surfaceCreated 绑定完成 (epoch=$_videoSurfaceEpoch '
+                    '${size.width.toInt()}x${size.height.toInt()})');
           },
         ),
       ),

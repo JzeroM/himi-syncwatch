@@ -157,6 +157,71 @@ void main() {
     });
   });
 
+  group('surfaceViewNeedsRemount（切集零重建判定，v1.1.82 根修）', () {
+    test('同分辨率切集：false——view/surface/EGL 上下文全程复用', () {
+      expect(
+        PlayerScreen.surfaceViewNeedsRemount(
+          output: 'surfaceView',
+          oldSize: const Size(3840, 2160),
+          newSize: const Size(3840, 2160),
+        ),
+        isFalse,
+        reason: '拆建 view 会让 mdk renderer 永久丢帧、画面定格首帧',
+      );
+    });
+
+    test('分辨率变化：true——走两阶段 detach→settle→attach', () {
+      expect(
+        PlayerScreen.surfaceViewNeedsRemount(
+          output: 'surfaceView',
+          oldSize: const Size(1920, 1080),
+          newSize: const Size(3840, 2160),
+        ),
+        isTrue,
+      );
+    });
+
+    test('texture/tunnel 档：false（无 platform view 拆建）', () {
+      expect(
+        PlayerScreen.surfaceViewNeedsRemount(
+          output: 'texture',
+          oldSize: const Size(1920, 1080),
+          newSize: const Size(3840, 2160),
+        ),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.surfaceViewNeedsRemount(
+          output: 'tunnel',
+          oldSize: const Size(1920, 1080),
+          newSize: const Size(3840, 2160),
+        ),
+        isFalse,
+      );
+    });
+
+    test('首播（oldSize=null）/ 尺寸未探得（newSize=null）：false', () {
+      expect(
+        PlayerScreen.surfaceViewNeedsRemount(
+          output: 'surfaceView',
+          oldSize: null,
+          newSize: const Size(3840, 2160),
+        ),
+        isFalse,
+        reason: '首播 view 尚未挂载，直接 setState 挂载即可',
+      );
+      expect(
+        PlayerScreen.surfaceViewNeedsRemount(
+          output: 'surfaceView',
+          oldSize: const Size(1920, 1080),
+          newSize: null,
+        ),
+        isFalse,
+        reason: '探测失败走重试链，不拆现有 view',
+      );
+    });
+  });
+
   group('TV 控件可见性', () {
     test('横竖屏按钮：移动端显示，TV 隐藏，桌面端隐藏', () {
       expect(

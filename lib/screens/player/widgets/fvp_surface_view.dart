@@ -37,14 +37,35 @@ class FvpSurfaceView extends StatelessWidget {
   /// GL presenter（支持 snapshot 等需要渲染器的能力）。
   final bool tunnel;
 
-  /// surface 世代：切集 +1 强制销毁重建 platform view（key 变化）。
-  /// 旧 view 的 surfaceDestroyed（fvp native setDecoders 清码）必须先于
-  /// 新 view 的 surfaceCreated（setDecoders(surface) 重开）落定，否则
-  /// destroy 晚到会清掉新集解码器（声画全停）。
+  /// surface 世代：**必要重建**（分辨率/档位/tunnel 变化）时由两阶段
+  /// 协调器在 attach 阶段 +1；同分辨率切集恒不递增——view/surface/
+  /// EGL 上下文全程复用（v1.1.82 根修：迟到 surface + 上下文重建会让
+  /// mdk renderer 永久丢帧，画面定格在首帧）。
   final int epoch;
 
   /// platform view 创建完成（surfaceCreated 已绑定）回调。
   final VoidCallback? onCreated;
+
+  /// platform view viewType（与 fvp `buildViewWithOptions` 一致）。
+  static const String platformViewType = 'fvp/video-view';
+
+  /// nativeSetSurface creationParams 协议（键名须与上游 fvp
+  /// `FvpVideoView` Java 侧读取一致，升版 fvp 时对照测试防失配）：
+  /// - `player`: mdk.Player 原生句柄
+  /// - `width`/`height`: surface buffer 尺寸（视频分辨率）
+  /// - `tunnel`: 解码器直通开关
+  static Map<String, Object> creationParams({
+    required int nativeHandle,
+    required int videoWidth,
+    required int videoHeight,
+    required bool tunnel,
+  }) =>
+      <String, Object>{
+        'player': nativeHandle,
+        'width': videoWidth,
+        'height': videoHeight,
+        'tunnel': tunnel,
+      };
 
   /// platform view key（含世代）：同参同 key 复用，epoch 变化必重建。
   static String surfaceKey({
@@ -57,12 +78,12 @@ class FvpSurfaceView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final creationParams = <String, Object>{
-      'player': nativeHandle,
-      'width': videoWidth,
-      'height': videoHeight,
-      'tunnel': tunnel,
-    };
+    final creationParams = FvpSurfaceView.creationParams(
+      nativeHandle: nativeHandle,
+      videoWidth: videoWidth,
+      videoHeight: videoHeight,
+      tunnel: tunnel,
+    );
     return Builder(
       builder: (context) {
         // RTL 应用里方向须取自 context，硬编码 ltr 会布局错位
@@ -79,7 +100,7 @@ class FvpSurfaceView extends StatelessWidget {
             tunnel: tunnel,
             epoch: epoch,
           )),
-          viewType: 'fvp/video-view',
+          viewType: platformViewType,
           surfaceFactory: (context, controller) {
             return AndroidViewSurface(
               controller: controller as AndroidViewController,
@@ -91,7 +112,7 @@ class FvpSurfaceView extends StatelessWidget {
           onCreatePlatformView: (params) {
             final controller = PlatformViewsService.initExpensiveAndroidView(
               id: params.id,
-              viewType: 'fvp/video-view',
+              viewType: platformViewType,
               layoutDirection: layoutDirection,
               creationParams: creationParams,
               creationParamsCodec: const StandardMessageCodec(),

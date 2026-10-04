@@ -68,6 +68,18 @@ class MdkLogParser {
   static bool shouldKeep(String line) =>
       isStatusLine(line) || isNotableLine(line);
 
+  /// 渲染器丢帧签名行（mdk FINE 级，需 `log.status=2`）。
+  ///
+  /// 两种已知形态（himi_logs_5 实测）：
+  /// ```text
+  /// VideoFrame 25 to be destroyed is not rendered by 0x...
+  /// release MediaCodec output buffer which was not rendered @0
+  /// ```
+  /// 二者均含 `not rendered`：decoder 正常出帧但 renderer 全部丢弃 →
+  /// 画面定格、音频/进度正常（[RenderStormDetector] 据此计数）。
+  static bool isNotRenderedLine(String line) =>
+      line.toLowerCase().contains('not rendered');
+
   /// 该行是否参与速率安全阀统计。
   ///
   /// 只有状态行（周期性刷新的播放统计）参与：正常约 4 行/秒，异常时可达
