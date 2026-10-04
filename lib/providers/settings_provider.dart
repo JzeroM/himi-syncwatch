@@ -40,6 +40,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? renderCompatMode,
     bool? eglFaultSeen,
     Object? themeColor = AppSettings.unsetValue,
+    Object? categoryColumns = AppSettings.unsetValue,
   }) async {
     state = state.copyWith(
       decodeMode: decodeMode,
@@ -59,6 +60,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       renderCompatMode: renderCompatMode,
       eglFaultSeen: eglFaultSeen,
       themeColor: themeColor,
+      categoryColumns: categoryColumns,
     );
     await persist();
   }

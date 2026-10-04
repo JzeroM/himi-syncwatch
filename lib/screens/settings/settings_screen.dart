@@ -321,8 +321,81 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
+          // 分类页列数放列表尾部：前部行的初始视口位置是既有焦点/滚动
+          // 测试的基准，插入前部会把它们顶出视口
+          const _CategoryColumnsSection(),
+          const Divider(height: 1),
         ],
       ),
+    );
+  }
+}
+
+/// 分类页每行海报数分节：滑块 0 = 自动，1~14 = 指定列数。
+///
+/// 写入 [AppSettings.categoryColumns]（null = 自动跟随屏幕）；手动指定
+/// 后屏幕放不下时由 `CategoryScreen.gridColumns` 按最小列宽自动压回。
+class _CategoryColumnsSection extends ConsumerWidget {
+  const _CategoryColumnsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final columns =
+        ref.watch(settingsProvider.select((s) => s.categoryColumns));
+    // 滑块用 0 表示「自动」，1~14 直接为列数
+    final sliderValue = (columns ?? 0).toDouble();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 2),
+          child: Text(
+            '分类页每行海报数',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Text(
+            '0 = 自动跟随屏幕（TV 默认每行 8 个）；指定后屏幕放不下时'
+            '自动压缩为可显示的最大列数',
+            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.4),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 72,
+                child: Text(
+                  columns == null ? '自动' : '每行 $columns 个',
+                  key: const ValueKey('categoryColumnsValue'),
+                  style: const TextStyle(fontSize: 13, color: Colors.white70),
+                ),
+              ),
+              Expanded(
+                child: Slider(
+                  key: const ValueKey('categoryColumnsSlider'),
+                  label: columns == null ? '自动' : '$columns',
+                  min: 0,
+                  max: 14,
+                  divisions: 14,
+                  value: sliderValue,
+                  onChanged: (v) {
+                    final n = v.round();
+                    ref
+                        .read(settingsProvider.notifier)
+                        .update(categoryColumns: n == 0 ? null : n);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 }

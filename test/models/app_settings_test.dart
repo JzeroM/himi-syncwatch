@@ -577,4 +577,50 @@ void main() {
       expect(AppSettings.effectiveRenderCompatMode(true), isFalse);
     });
   });
+
+  group('categoryColumns（分类页每行海报数）', () {
+    test('默认 null（自动跟随屏幕）', () {
+      expect(const AppSettings().categoryColumns, isNull);
+      expect(AppSettings.fromJson(const {}).categoryColumns, isNull);
+    });
+
+    test('copyWith：未传保留、显式 null 清回自动、数字覆盖', () {
+      const withValue = AppSettings(categoryColumns: 8);
+
+      expect(withValue.copyWith().categoryColumns, 8, reason: '未传应保留原值');
+      expect(withValue.copyWith(categoryColumns: 10).categoryColumns, 10);
+      expect(
+        withValue.copyWith(categoryColumns: null).categoryColumns,
+        isNull,
+        reason: '显式 null 应回到自动（unsetValue 语义）',
+      );
+      expect(
+        withValue.copyWith(decodeMode: 'hw').categoryColumns,
+        8,
+        reason: '无关字段更新不得丢值',
+      );
+    });
+
+    test('toJson/fromJson 往返；null 不落键；double 归一为 int', () {
+      expect(
+        const AppSettings().toJson().containsKey('categoryColumns'),
+        isFalse,
+        reason: 'null（自动）不写盘',
+      );
+
+      final restored =
+          AppSettings.fromJson(const AppSettings(categoryColumns: 6).toJson());
+      expect(restored.categoryColumns, 6);
+
+      expect(
+        AppSettings.fromJson(const {'categoryColumns': 10}).categoryColumns,
+        10,
+      );
+      expect(
+        AppSettings.fromJson(const {'categoryColumns': 10.0}).categoryColumns,
+        10,
+        reason: '外部写成 double 也应归一',
+      );
+    });
+  });
 }

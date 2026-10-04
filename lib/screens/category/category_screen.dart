@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 
@@ -53,6 +56,36 @@ class CategoryScreen extends ConsumerStatefulWidget {
     this.libraryName,
     this.collectionType,
   });
+
+  /// 分类页网格列数（全平台）：见设置项「分类页每行海报数」。
+  ///
+  /// - [columns] 指定值优先（null = 自动）；
+  /// - 自动：TV 每行基准 120 逻辑px（1080p 盒子 960 宽 → 8 列），
+  ///   宽屏 180（现状），窄屏固定 4（现状）；
+  /// - 屏幕保护：每列不低于 80 逻辑px，指定列数放不下时压回
+  ///   可显示的最大值（各分支另有上限封顶）。
+  @visibleForTesting
+  static int gridColumns({
+    required double width,
+    required bool tvMode,
+    int? columns,
+  }) {
+    final int target;
+    if (columns != null) {
+      target = columns;
+    } else if (tvMode) {
+      target = (width / 120).floor();
+    } else if (width > 600) {
+      target = (width / 180).floor();
+    } else {
+      target = 4;
+    }
+
+    final maxFit = (width / 80).floor();
+    final upper = tvMode ? 14 : (width > 600 ? 12 : 6);
+    final cap = maxFit > upper ? upper : maxFit;
+    return target.clamp(1, cap < 1 ? 1 : cap);
+  }
 
   @override
   ConsumerState<CategoryScreen> createState() => _CategoryScreenState();
@@ -178,8 +211,20 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 主题色三段渐变背景（null 时保持应用底色，与首页/详情页一致）
+    final themeColorValue =
+        ref.watch(settingsProvider.select((s) => s.themeColor));
+    final accent = themeColorValue == null
+        ? null
+        : PosterPalette.darkenForPage(Color(themeColorValue));
+    final base = Theme.of(context).scaffoldBackgroundColor;
+
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
@@ -208,11 +253,21 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          if (_showFilterChips) _buildFilterChips(),
-          Expanded(child: _buildBody()),
-        ],
+      body: AnimatedContainer(
+        key: const Key('categoryBackground'),
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          gradient: PosterPalette.pageGradient(accent, base),
+        ),
+        child: Column(
+          children: [
+            // extendBodyBehindAppBar：内容从屏顶开始，先给 AppBar 留位
+            SizedBox(height: GlassConfig.topInsetOf(context)),
+            if (_showFilterChips) _buildFilterChips(),
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }
@@ -271,9 +326,12 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         onRefresh: _loadFirstPage,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final isPC = constraints.maxWidth > 600;
-            final columns =
-                isPC ? (constraints.maxWidth / 180).floor().clamp(2, 12) : 4;
+            final columns = CategoryScreen.gridColumns(
+              width: constraints.maxWidth,
+              tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
+              columns:
+                  ref.watch(settingsProvider.select((s) => s.categoryColumns)),
+            );
             // 按列宽精确匹配 2:3 海报 + 文字区，海报完整不裁切
             final cellWidth =
                 (constraints.maxWidth - 8 * 2 - 8 * (columns - 1)) / columns;

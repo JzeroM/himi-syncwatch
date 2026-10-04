@@ -11,6 +11,10 @@ class AppSettings {
   final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
   final bool glassUi; // 液态玻璃特效开关（低端设备可关闭）
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
+
+  /// 分类页网格每行海报数（全平台）：null = 自动跟随屏幕，
+  /// 数字 = 指定列数（屏幕放不下时按最小列宽自动压回）。
+  final int? categoryColumns;
   final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
 
   /// 用户是否手动设置过 TV 开关（策略 A：设置过则自动识别不再覆盖）。
@@ -65,6 +69,7 @@ class AppSettings {
     this.deepDiagnostics = false,
     this.glassUi = true,
     this.themeColor,
+    this.categoryColumns,
     this.tvMode = false,
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
@@ -90,6 +95,7 @@ class AppSettings {
     bool? renderCompatMode,
     bool? eglFaultSeen,
     Object? themeColor = unsetValue,
+    Object? categoryColumns = unsetValue,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
@@ -108,6 +114,9 @@ class AppSettings {
       themeColor: identical(themeColor, unsetValue)
           ? this.themeColor
           : themeColor as int?,
+      categoryColumns: identical(categoryColumns, unsetValue)
+          ? this.categoryColumns
+          : categoryColumns as int?,
     );
   }
 
@@ -126,6 +135,7 @@ class AppSettings {
         'renderCompatMode': renderCompatMode,
         'eglFaultSeen': eglFaultSeen,
         if (themeColor != null) 'themeColor': themeColor,
+        if (categoryColumns != null) 'categoryColumns': categoryColumns,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -164,6 +174,9 @@ class AppSettings {
       // 避免自动识别把用户手动关掉的 TV 模式重新打开。
       tvModeUserSet: json['tvModeUserSet'] as bool? ?? (json['tvMode'] == true),
       themeColor: json['themeColor'] as int?,
+      // 旧数据无此字段 / 非法值 → null（自动）；存盘 int 也可能被
+      // 外部写成 double，统一转 int
+      categoryColumns: (json['categoryColumns'] as num?)?.toInt(),
       // 旧数据无此字段 / 非法值 → 默认纹理通道
       videoOutput: const ['texture', 'tunnel', 'surfaceView']
               .contains(json['videoOutput'])

@@ -464,10 +464,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.descendant(
-      of: row,
-      matching: find.byType(Switch),
-    ));
+    // 列表尾部内容变化会使 scrollUntilVisible 停点漂移到 AppBar 下，
+    // 物理 tap 可能被遮挡——直接调 onChanged 验证写入链路
+    final sw = tester.widget<Switch>(
+        find.descendant(of: row, matching: find.byType(Switch)));
+    sw.onChanged!(true);
     await tester.pumpAndSettle();
 
     expect(container.read(settingsProvider).renderCompatMode, isTrue);
@@ -597,5 +598,60 @@ void main() {
     expect(nextNode?.debugLabel, 'TvFocusable');
     expect(nextNode, isNot(stereoNode), reason: '焦点继续下移');
     expect(outlineCount(), 1);
+  });
+
+  testWidgets('分类页每行海报数滑块：默认自动，改值落盘，0 回自动', (tester) async {
+    final container = await _pumpScreen(tester);
+
+    // 分节在列表尾部：SliverList extent 滚动中动态增长，scrollUntilVisible
+    // 可能停在元素将被回收的位置——用 dragUntilVisible 兜底滚到可见
+    final sliderFinder = find.byKey(const ValueKey('categoryColumnsSlider'));
+    if (sliderFinder.evaluate().isEmpty) {
+      await tester.dragUntilVisible(
+        sliderFinder,
+        find.byType(Scrollable).first,
+        const Offset(0, -250),
+      );
+    }
+    await tester.pumpAndSettle();
+    expect(sliderFinder.evaluate(), isNotEmpty, reason: '滑块应挂载到元素树');
+
+    expect(
+      find.byKey(const ValueKey('categoryColumnsSlider')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('categoryColumnsValue')),
+      findsOneWidget,
+    );
+    expect(container.read(settingsProvider).categoryColumns, isNull,
+        reason: '默认自动');
+
+    // key 直接挂在 Text 上：byKey 即文本 finder（descendant 不含自身）
+    final valueText = find.byKey(const ValueKey('categoryColumnsValue'));
+    expect(tester.widget<Text>(valueText).data, '自动');
+
+    final slider = tester.widget<Slider>(
+      find.byKey(const ValueKey('categoryColumnsSlider')),
+    );
+    expect(slider.value, 0, reason: '自动对应滑块 0 档');
+    expect(slider.max, 14);
+    expect(slider.divisions, 14);
+
+    // 拖到 8 → 落盘指定值，文案更新
+    slider.onChanged!(8);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).categoryColumns, 8);
+    expect(tester.widget<Text>(valueText).data, '每行 8 个');
+
+    // 回 0 → 清回自动（null），不落键
+    slider.onChanged!(0);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).categoryColumns, isNull);
+    expect(tester.widget<Text>(valueText).data, '自动');
+    expect(
+      container.read(settingsProvider).toJson().containsKey('categoryColumns'),
+      isFalse,
+    );
   });
 }
