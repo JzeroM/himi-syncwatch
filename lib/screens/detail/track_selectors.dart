@@ -248,17 +248,25 @@ Future<void> showTrackSelector(
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
-          for (final option in options)
-            RadioListTile<int?>(
-              key: Key('trackOption_${option.value ?? 'auto'}'),
-              title: Text(option.label),
-              value: option.value,
-              groupValue: currentValue,
-              onChanged: (v) {
-                onSelected(v);
-                Navigator.of(ctx).pop();
-              },
+          RadioGroup<int?>(
+            groupValue: currentValue,
+            onChanged: (v) {
+              onSelected(v);
+              Navigator.of(ctx).pop();
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final option in options)
+                  RadioListTile<int?>(
+                    key: Key('trackOption_${option.value ?? 'auto'}'),
+                    title: Text(option.label),
+                    value: option.value,
+                  ),
+              ],
             ),
+          ),
           const SizedBox(height: 8),
         ],
       ),

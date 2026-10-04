@@ -108,8 +108,7 @@ void main() {
     expect(find.byType(QrConfigScreen), findsOneWidget);
 
     Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
     expect(find.byType(QrConfigScreen), findsNothing);
   });
 

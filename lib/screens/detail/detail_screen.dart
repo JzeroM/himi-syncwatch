@@ -711,30 +711,31 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
-            RadioListTile<String?>(
-              key: Key('epVersionDefault_${ep.id}'),
-              title: const Text('默认（服务器选择）'),
-              value: null,
+            RadioGroup<String?>(
               groupValue: versionByEp[ep.id],
               onChanged: (v) {
                 versionByEp[ep.id] = v;
                 setSheetState(() {});
                 Navigator.pop(ctx);
               },
-            ),
-            for (final source in ep.mediaSources)
-              RadioListTile<String?>(
-                key: Key('epVersion_${ep.id}_${source.id}'),
-                title: Text(source.name),
-                subtitle: Text(source.displayLabel),
-                value: source.id,
-                groupValue: versionByEp[ep.id],
-                onChanged: (v) {
-                  versionByEp[ep.id] = v;
-                  setSheetState(() {});
-                  Navigator.pop(ctx);
-                },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RadioListTile<String?>(
+                    key: Key('epVersionDefault_${ep.id}'),
+                    title: const Text('默认（服务器选择）'),
+                    value: null,
+                  ),
+                  for (final source in ep.mediaSources)
+                    RadioListTile<String?>(
+                      key: Key('epVersion_${ep.id}_${source.id}'),
+                      title: Text(source.name),
+                      subtitle: Text(source.displayLabel),
+                      value: source.id,
+                    ),
+                ],
               ),
+            ),
             const SizedBox(height: 8),
           ],
         ),

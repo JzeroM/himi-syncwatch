@@ -120,6 +120,19 @@ Future<ProviderContainer> _pumpDetailInRouter(
 }
 
 /// 焦点是否位于 [finder] 所指子树内。
+/// 读取某选项所属 RadioGroup 的 groupValue（v3.47 Radio 重构后
+/// groupValue 从 RadioListTile 移到了 RadioGroup 祖先）。
+T? _groupValueOf<T>(WidgetTester tester, Key optionKey) {
+  return tester
+      .widget<RadioGroup<T>>(
+        find.ancestor(
+          of: find.byKey(optionKey),
+          matching: find.byType(RadioGroup<T>),
+        ),
+      )
+      .groupValue;
+}
+
 bool _focusWithin(Finder finder) {
   final top = finder.evaluate().firstOrNull;
   final node = FocusManager.instance.primaryFocus?.context;
@@ -1322,11 +1335,7 @@ void main() {
       await tapCard(tester, 'p2');
       await openAudioSheet(tester);
       expect(
-          tester
-              .widget<RadioListTile<int?>>(
-                  find.byKey(const Key('trackOption_7')))
-              .groupValue,
-          isNull,
+          _groupValueOf<int?>(tester, const Key('trackOption_7')), isNull,
           reason: 'e2 尚未预选');
       await tester.tap(find.byKey(const Key('trackOption_7')));
       await tester.pump();
@@ -1337,9 +1346,7 @@ void main() {
       await tapCard(tester, 'p1');
       await openAudioSheet(tester);
       expect(
-        tester
-            .widget<RadioListTile<int?>>(find.byKey(const Key('trackOption_1')))
-            .groupValue,
+        _groupValueOf<int?>(tester, const Key('trackOption_1')),
         1,
         reason: 'e1 预选未被 e2 覆盖',
       );
@@ -1352,9 +1359,7 @@ void main() {
       await tapCard(tester, 'p2');
       await openAudioSheet(tester);
       expect(
-        tester
-            .widget<RadioListTile<int?>>(find.byKey(const Key('trackOption_7')))
-            .groupValue,
+        _groupValueOf<int?>(tester, const Key('trackOption_7')),
         7,
         reason: 'e2 预选未被 e1 覆盖',
       );
@@ -1757,11 +1762,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       expect(
-        tester
-            .widget<RadioListTile<String?>>(
-              find.byKey(const Key('epVersionDefault_eA')),
-            )
-            .groupValue,
+        _groupValueOf<String?>(tester, const Key('epVersionDefault_eA')),
         'b2',
         reason: '重开弹窗时 groupValue 回填当前单选',
       );

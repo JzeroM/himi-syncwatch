@@ -126,6 +126,13 @@ void main() {
     await tester.tap(find.text('配置说明'));
     await tester.pumpAndSettle();
 
+    // 3.47 起测试环境 asset decode 为真实异步，pumpAndSettle 等不到 →
+    // runAsync 预缓存步骤图，否则 Image 宽为 0，tap 必 miss。
+    final ctx = tester.element(find.byType(MaterialApp));
+    await tester.runAsync(() =>
+        precacheImage(const AssetImage('assets/images/agora_step1.png'), ctx));
+    await tester.pumpAndSettle();
+
     // 点步骤图 → 图片放大弹窗（此前只有点图手势，遥控器进不去）
     await tester.tap(find.byType(Image).first);
     await tester.pumpAndSettle();

@@ -97,17 +97,25 @@ Widget _settingOptionTile({
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.bold)),
             ),
-            for (final e in labels.entries)
-              RadioListTile<String>(
-                key: Key('settingOption_${e.key}'),
-                title: Text(e.value),
-                value: e.key,
-                groupValue: value,
-                onChanged: (v) {
-                  if (v != null) onSelected(v);
-                  Navigator.of(ctx).pop();
-                },
+            RadioGroup<String>(
+              groupValue: value,
+              onChanged: (v) {
+                if (v != null) onSelected(v);
+                Navigator.of(ctx).pop();
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final e in labels.entries)
+                    RadioListTile<String>(
+                      key: Key('settingOption_${e.key}'),
+                      title: Text(e.value),
+                      value: e.key,
+                    ),
+                ],
               ),
+            ),
             const SizedBox(height: 8),
           ],
         ),
