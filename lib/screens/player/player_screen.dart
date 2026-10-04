@@ -108,6 +108,21 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       !focusWithin(controlsRoot, primaryFocus);
 
+  /// 轮询等待 [ready] 为 true（超时返回 false）。
+  @visibleForTesting
+  static Future<bool> waitUntil(
+    bool Function() ready, {
+    Duration timeout = const Duration(seconds: 2),
+    Duration pollMs = const Duration(milliseconds: 50),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (ready()) return true;
+      await Future<void>.delayed(pollMs);
+    }
+    return ready();
+  }
+
   /// 视频尺寸解析（与 fvp _setVideoSize 同规则）：
   /// 宽高无效（<=0，如 probesize 未解析出）→ null；
   /// par 归一化高度；rotation 90/270 时交换宽高。
@@ -286,6 +301,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   final FocusNode _playPauseFocusNode =
       FocusNode(debugLabel: 'PlayerPlayPause');
 
+  /// 下一集按钮焦点：左组尾——Right 跨满宽 Spacer 时由 PlayerHotkey
+  /// 定向到字幕（几何导航会跳回上方滑杆）
+  final FocusNode _nextEpisodeFocusNode =
+      FocusNode(debugLabel: 'PlayerNextEpisode');
+
+  /// 字幕按钮焦点：右组头——Left 跨回左组的定向落点
+  final FocusNode _subtitleButtonFocusNode =
+      FocusNode(debugLabel: 'PlayerSubtitleButton');
+
   /// 控制条根焦点（skipTraversal 不参与遍历）：自动隐藏前判定焦点
   /// 是否停留在控制条内（滑杆/按钮/菜单面板）
   final FocusNode _controlsRootFocusNode =
@@ -406,6 +430,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// pending 防多入口并发调度重复链
   int _videoSizeRetry = 0;
   bool _videoSizeRetryPending = false;
+
+  /// SurfaceView platform view 世代：切集 +1 强制销毁重建（key 变化）。
+  /// 旧 view 的 surfaceDestroyed（fvp setDecoders 清码）必须先于新 view
+  /// 的 surfaceCreated（setDecoders(surface) 重开）落定，否则 destroy
+  /// 晚到会清掉新集解码器 → 新集出帧后声画全停。
+  int _videoSurfaceEpoch = 0;
+
+  /// 新 surface 是否已完成 surfaceCreated（nativeSetSurface 绑定）。
+  /// 起播前等待此标志，避免 state=playing 抢在绑定之前。
+  bool _surfaceViewCreated = false;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
   final ValueNotifier<bool> _isPlayingNotifier = ValueNotifier(false);
@@ -1246,6 +1280,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
   }
 
+  /// 等待 SurfaceView 完成 surfaceCreated 绑定（tunnel 档
+  /// setDecoders(surface) 在此重开解码器）后再起播。
+  /// 非 SurfaceView 档立即返回 true。
+  Future<bool> _waitSurfaceCreated() async {
+    if (_effectiveVideoOutput() != 'surfaceView') return true;
+    return PlayerScreen.waitUntil(() => _surfaceViewCreated || !mounted);
+  }
+
   /// mediaInfo 直读视频尺寸（textureSize 超时后的回退源）。
   /// 取最宽流，[resolveVideoSize] 统一 par/rotation 规则；无效 → null。
   Size? _readMediaInfoVideoSize() {
@@ -1381,6 +1423,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted) return;
     final mode = _effectiveVideoOutput();
     LogService().log('Player', '视频输出档位切换 → $mode');
+    // 档位切换销毁/重建 platform view：绑定标志复位，下次起播重新等待
+    _surfaceViewCreated = false;
     if (mode == 'surfaceView') {
       if (_player.textureId.value != null) {
         try {
@@ -1579,6 +1623,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
+      // 切集前记录是否持有旧 SurfaceView view（用于销毁串行等待）
+      final rebuildSurface =
+          _effectiveVideoOutput() == 'surfaceView' && _videoNativeSize != null;
       _videoNativeSize = null;
       _videoSizeRetry = 0;
       _videoSizeRetryPending = false;
@@ -1594,6 +1641,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _fadeOutForSwitch();
 
       _isSwitchingMedia = true;
+      if (rebuildSurface) {
+        // epoch+1 强制销毁旧 FvpSurfaceView；setState 让本帧就渲染
+        // （遮罩 + 转圈）。旧 view 的 surfaceDestroyed 在 Android 侧异步
+        // 到达，fvp 对同一 player handle 执行 setDecoders({}) 清码——
+        // 必须先等它落定再 set media / 创建新 view，否则晚到的 destroy
+        // 会清掉新集解码器（新集出帧后声画全停，必现）。
+        _videoSurfaceEpoch++;
+        _surfaceViewCreated = false;
+        setState(() {});
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return false;
+      }
       _player.media = streamUrl;
       await _player.prepare();
       // prepare 期间可能已 dispose：后续 texture/状态操作一律中止
@@ -1605,6 +1664,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 同步设置视频原生尺寸（从 mediaInfo 读取）
       await _syncVideoNativeSize();
+      if (!mounted) return false;
+
+      // SurfaceView：等 surfaceCreated 完成 nativeSetSurface 绑定后再
+      // 起播（tunnel 档 setDecoders(surface) 在此重开新集解码器）；
+      // 非 SurfaceView 档立即通过，超时兜底不阻塞起播
+      await _waitSurfaceCreated();
+      if (!mounted) return false;
 
       // 启动播放（无条件，首播和切集都需要）
       if (mounted) {
@@ -1670,6 +1736,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 切换视频前重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
+      // 切集前记录是否持有旧 SurfaceView view（用于销毁串行等待）
+      final rebuildSurface =
+          _effectiveVideoOutput() == 'surfaceView' && _videoNativeSize != null;
       _videoNativeSize = null;
       _videoSizeRetry = 0;
       _videoSizeRetryPending = false;
@@ -1702,6 +1771,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       _isSwitchingMedia = true;
+      if (rebuildSurface) {
+        // 同 _loadStream：epoch+1 强制销毁旧 view，等 surfaceDestroyed
+        // （fvp setDecoders 清码）先落定再 set media，防晚到 destroy
+        // 清掉新集解码器（声画全停）
+        _videoSurfaceEpoch++;
+        _surfaceViewCreated = false;
+        setState(() {});
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+      }
       _player.media = playUrl;
       await _player.prepare();
       if (!mounted) return;
@@ -1711,6 +1790,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) return;
       // 同步设置视频原生尺寸（从 mediaInfo 读取）
       await _syncVideoNativeSize();
+      if (!mounted) return;
+
+      // SurfaceView：等 surfaceCreated 绑定完成后再起播（超时兜底）
+      await _waitSurfaceCreated();
+      if (!mounted) return;
 
       // 单人模式自动横屏
       if (widget.roomCode == null && mounted) {
@@ -3360,6 +3444,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _controlsFocusNode.dispose();
     _playPauseFocusNode.dispose();
     _controlsRootFocusNode.dispose();
+    _nextEpisodeFocusNode.dispose();
+    _subtitleButtonFocusNode.dispose();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
     _gestureHintTimer?.cancel();
@@ -3495,6 +3581,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         focusNode: _hotkeyFocusNode,
         seekFocusNode: _controlsFocusNode,
         playPauseFocusNode: _playPauseFocusNode,
+        // 左右组跨界定向：满宽 Spacer 使几何导航跳回上方滑杆
+        hopRight: (
+          from: (_hasEpisodeList && _totalEpisodeCount > 1)
+              ? _nextEpisodeFocusNode
+              : _playPauseFocusNode,
+          to: _subtitleButtonFocusNode,
+        ),
+        hopLeft: (
+          from: _subtitleButtonFocusNode,
+          to: (_hasEpisodeList && _totalEpisodeCount > 1)
+              ? _nextEpisodeFocusNode
+              : _playPauseFocusNode,
+        ),
         child: Scaffold(
           backgroundColor: Colors.black,
           body: GestureDetector(
@@ -3591,6 +3690,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // SurfaceView 档也须直写，绕开 mdk EGL；正常时走 GL 支持
           // snapshot 回读等能力
           tunnel: eglFaultDetector.fault,
+          epoch: _videoSurfaceEpoch,
+          onCreated: () {
+            if (mounted) _surfaceViewCreated = true;
+          },
         ),
       ),
     );
@@ -4372,6 +4475,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       _hasEpisodeList &&
                       _totalEpisodeCount > 1)
                     TvFocusable(
+                      focusNode: _nextEpisodeFocusNode,
                       onTap: _currentEpisodeIndex < _totalEpisodeCount - 1
                           ? () => _switchToEpisode(_currentEpisodeIndex + 1)
                           : null,
@@ -4401,6 +4505,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   // 字幕
                   _buildControlButton(
                     icon: Icons.subtitles,
+                    focusNode: _subtitleButtonFocusNode,
                     onTap: () {
                       setState(() {
                         _showSubtitleMenu = !_showSubtitleMenu;
@@ -4608,8 +4713,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     required IconData icon,
     required VoidCallback onTap,
     String? badge,
+    FocusNode? focusNode,
   }) {
     return TvFocusable(
+      focusNode: focusNode,
       onTap: onTap,
       child: Padding(
         // 内边距扩大焦点热区：24px 图标贴边框时描边环几乎不可见

@@ -89,6 +89,41 @@ void main() {
     );
   });
 
+  group('waitUntil（surface 绑定等待原语）', () {
+    test('ready 已满足：立即返回 true，不轮询', () async {
+      var polls = 0;
+      final ok = await PlayerScreen.waitUntil(
+        () {
+          polls++;
+          return true;
+        },
+        timeout: const Duration(milliseconds: 100),
+      );
+      expect(ok, isTrue);
+      expect(polls, 1, reason: '首查即满足不应继续轮询');
+    });
+
+    test('ready 延迟满足：轮询至 true', () async {
+      var calls = 0;
+      final ok = await PlayerScreen.waitUntil(
+        () => ++calls >= 3,
+        timeout: const Duration(seconds: 2),
+        pollMs: const Duration(milliseconds: 1),
+      );
+      expect(ok, isTrue);
+      expect(calls, greaterThanOrEqualTo(3));
+    });
+
+    test('超时未满足：返回 false 不永久挂起', () async {
+      final ok = await PlayerScreen.waitUntil(
+        () => false,
+        timeout: const Duration(milliseconds: 30),
+        pollMs: const Duration(milliseconds: 5),
+      );
+      expect(ok, isFalse, reason: 'surface 创建失败时不能卡死起播链（超时兜底放行）');
+    });
+  });
+
   group('resolveVideoSize（SurfaceView 尺寸回退源）', () {
     test('无效尺寸（宽高<=0）返回 null', () {
       expect(PlayerScreen.resolveVideoSize(width: 0, height: 1080), isNull);

@@ -21,6 +21,10 @@ void main() {
     bool provideVolume = true,
     FocusNode? seekFocusNode,
     FocusNode? playPauseFocusNode,
+    FocusNode? nextFocusNode,
+    FocusNode? subtitleFocusNode,
+    ({FocusNode? from, FocusNode? to})? hopRight,
+    ({FocusNode? from, FocusNode? to})? hopLeft,
   }) =>
       Directionality(
         textDirection: TextDirection.ltr,
@@ -35,6 +39,8 @@ void main() {
           focusNode: focusNode,
           seekFocusNode: seekFocusNode,
           playPauseFocusNode: playPauseFocusNode,
+          hopRight: hopRight,
+          hopLeft: hopLeft,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -46,7 +52,17 @@ void main() {
                 Focus(
                     focusNode: playPauseFocusNode,
                     child: const SizedBox(width: 100, height: 100)),
-              if (seekFocusNode == null && playPauseFocusNode == null)
+              if (nextFocusNode != null)
+                Focus(
+                    focusNode: nextFocusNode,
+                    child: const SizedBox(width: 100, height: 100)),
+              if (subtitleFocusNode != null)
+                Focus(
+                    focusNode: subtitleFocusNode,
+                    child: const SizedBox(width: 100, height: 100)),
+              if (seekFocusNode == null &&
+                  playPauseFocusNode == null &&
+                  nextFocusNode == null)
                 const SizedBox(width: 100, height: 100),
             ],
           ),
@@ -323,6 +339,111 @@ void main() {
       expect(play.hasPrimaryFocus, isTrue,
           reason: '焦点已在播放按钮（非滑杆），Down 放行给焦点导航');
       expect(showControls, 1, reason: '可见时方向键仍顺延自动隐藏');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：左组尾按 Right 跨 Spacer 定向到字幕按钮', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final next = FocusNode(debugLabel: 'next');
+    final subtitle = FocusNode(debugLabel: 'subtitle');
+    addTearDown(next.dispose);
+    addTearDown(subtitle.dispose);
+    try {
+      await tester.pumpWidget(wrap(
+        tvMode: true,
+        controlsVisible: true,
+        nextFocusNode: next,
+        subtitleFocusNode: subtitle,
+        hopRight: (from: next, to: subtitle),
+        onShowControls: () => showControls++,
+      ));
+      next.requestFocus();
+      await tester.pump();
+      expect(next.hasPrimaryFocus, isTrue);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+
+      expect(subtitle.hasPrimaryFocus, isTrue,
+          reason: '满宽 Spacer 使几何导航跳回滑杆，跨界必须定向');
+      expect(showControls, 1, reason: '跨界也顺延自动隐藏');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：字幕组头按 Left 定向回左组尾', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final next = FocusNode(debugLabel: 'next');
+    final subtitle = FocusNode(debugLabel: 'subtitle');
+    addTearDown(next.dispose);
+    addTearDown(subtitle.dispose);
+    try {
+      await tester.pumpWidget(wrap(
+        tvMode: true,
+        controlsVisible: true,
+        nextFocusNode: next,
+        subtitleFocusNode: subtitle,
+        hopRight: (from: next, to: subtitle),
+        hopLeft: (from: subtitle, to: next),
+        onShowControls: () => showControls++,
+      ));
+      subtitle.requestFocus();
+      await tester.pump();
+      expect(subtitle.hasPrimaryFocus, isTrue);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowLeft);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+
+      expect(next.hasPrimaryFocus, isTrue, reason: '字幕 Left 回左组尾');
+      expect(showControls, 1);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：hop 条件不满足时放行（焦点不在 from、to 未挂树）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final next = FocusNode(debugLabel: 'next');
+    final subtitle = FocusNode(debugLabel: 'subtitle');
+    final orphan = FocusNode(debugLabel: 'orphan'); // 不挂树，context 为 null
+    addTearDown(next.dispose);
+    addTearDown(subtitle.dispose);
+    addTearDown(orphan.dispose);
+    try {
+      await tester.pumpWidget(wrap(
+        tvMode: true,
+        controlsVisible: true,
+        nextFocusNode: next,
+        subtitleFocusNode: subtitle,
+        // to 故意指向未挂树节点：requestFocus 不应被调用
+        hopRight: (from: next, to: orphan),
+        hopLeft: (from: subtitle, to: next),
+        onShowControls: () => showControls++,
+      ));
+      next.requestFocus();
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+
+      expect(next.hasPrimaryFocus, isTrue, reason: 'to 未挂树时不 hop，焦点保持（框架导航照常）');
+      expect(orphan.hasPrimaryFocus, isFalse);
+
+      // 焦点不在 from（在 subtitle 上按 Right）：hopRight 不触发
+      subtitle.requestFocus();
+      await tester.pump();
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(subtitle.hasPrimaryFocus, isTrue, reason: 'from 不匹配不 hop');
+      expect(showControls, greaterThanOrEqualTo(2),
+          reason: '方向键仍调用 onShowControls 顺延');
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

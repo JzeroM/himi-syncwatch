@@ -27,6 +27,8 @@ class PlayerHotkey extends StatefulWidget {
     this.focusNode,
     this.seekFocusNode,
     this.playPauseFocusNode,
+    this.hopRight,
+    this.hopLeft,
     required this.child,
   });
 
@@ -58,6 +60,13 @@ class PlayerHotkey extends StatefulWidget {
   /// 按钮行左侧组（上一集/播放/下一集）离滑杆中心的几何距离远于
   /// 右侧按钮（字幕等），框架方向导航会落到右侧组、左侧组无法直达。
   final FocusNode? playPauseFocusNode;
+
+  /// 控制条左右两组跨界定向：按钮行中间隔满宽 Spacer，几何导航从
+  /// 左组尾（下一集/播放）按 Right 会跳回上方滑杆（Δy 小、Δx 小于
+  /// 右组），到不了字幕/音轨/比例；hopRight/hopLeft 在跨界点强制
+  /// requestFocus，组内导航仍走框架。
+  final ({FocusNode? from, FocusNode? to})? hopRight;
+  final ({FocusNode? from, FocusNode? to})? hopLeft;
 
   final Widget child;
 
@@ -174,6 +183,24 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
             }
           }
         } else {
+          // 跨界定向：左组尾 Right → 右组头（字幕），右组头 Left → 左组尾
+          final hop = key == LogicalKeyboardKey.arrowRight
+              ? widget.hopRight
+              : key == LogicalKeyboardKey.arrowLeft
+                  ? widget.hopLeft
+                  : null;
+          if (hop != null) {
+            final from = hop.from;
+            final to = hop.to;
+            if (from != null &&
+                to != null &&
+                from.hasPrimaryFocus &&
+                to.context != null) {
+              to.requestFocus();
+              widget.onShowControls?.call();
+              return KeyEventResult.handled;
+            }
+          }
           // 滑杆焦点按下键：定向落到播放/暂停按钮（左侧组无法被几何
           // 方向导航直达，见 playPauseFocusNode 注释）
           if (key == LogicalKeyboardKey.arrowDown &&
