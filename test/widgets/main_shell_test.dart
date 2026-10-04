@@ -145,17 +145,16 @@ void main() {
     expect(find.byKey(const ValueKey('shellNavBarPadding')), findsOneWidget);
     expect(find.byKey(const ValueKey('drawerToggle')), findsNothing);
     expect(find.byKey(const ValueKey('shellContentArea')), findsNothing);
-    // 胶囊底距上移（v1.1.83）：测试环境无安全区 → 12（原 4）
+    // 胶囊底距上移（v1.1.84）：测试环境无安全区 → 20（原 4）
     final padding = tester
         .widget<Padding>(find.byKey(const ValueKey('shellNavBarPadding')));
-    expect((padding.padding as EdgeInsets).bottom, 12,
-        reason: '胶囊整体小幅上移，不再贴屏底');
+    expect((padding.padding as EdgeInsets).bottom, 20, reason: '胶囊继续上移，不贴屏底');
   });
 
-  group('navBottomGap（胶囊底距上移 v1.1.83）', () {
-    test('无安全区 / 手势条（<40）：统一 12', () {
-      expect(MainShell.navBottomGap(0), 12, reason: '原 4，上移');
-      expect(MainShell.navBottomGap(34), 12, reason: '原 6，上移');
+  group('navBottomGap（胶囊底距上移 v1.1.84）', () {
+    test('无安全区 / 手势条（<40）：统一 20', () {
+      expect(MainShell.navBottomGap(0), 20, reason: '原 4，两轮上移');
+      expect(MainShell.navBottomGap(34), 20, reason: '原 6，两轮上移');
     });
 
     test('三键虚拟按键（≥40）：紧贴其上沿 +12', () {
