@@ -16,6 +16,7 @@ import 'package:himi_syncwatch/services/fvp_options.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/tv_detection_service.dart';
 import 'package:himi_windows_rtm/himi_windows_rtm.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// RTM 冒烟自检（CI/故障排查用）：设置环境变量 HIMI_RTM_SMOKE=1 后启动，
@@ -182,6 +183,10 @@ Future<void> _bootstrap() async {
       LogService().log('mdk', message.trim());
     }
   });
+
+  // 液态玻璃 shader 预热（纯异步磁盘 I/O，不阻塞窗口首帧；
+  // 不预热则首次出现玻璃面板时有占位帧/白闪）。
+  await LiquidGlassWidgets.initialize();
 
   runApp(
     ProviderScope(

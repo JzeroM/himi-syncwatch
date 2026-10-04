@@ -299,6 +299,55 @@ void main() {
     });
   });
 
+  group('玻璃可调参数（v1.1.84）', () {
+    test('默认全 null（跟随 liquid_glass_widgets 包默认）', () {
+      const s = AppSettings();
+      expect(s.glassBlur, isNull);
+      expect(s.glassThickness, isNull);
+      expect(s.glassSaturation, isNull);
+      expect(s.glassChromatic, isNull);
+      expect(s.glassLightIntensity, isNull);
+    });
+
+    test('json roundtrip：写入读回', () {
+      const s = AppSettings(
+        glassBlur: 8.5,
+        glassThickness: 30,
+        glassSaturation: 2.0,
+        glassChromatic: 0.05,
+        glassLightIntensity: 0.8,
+      );
+      final back = AppSettings.fromJson(s.toJson());
+      expect(back.glassBlur, 8.5);
+      expect(back.glassThickness, 30);
+      expect(back.glassSaturation, 2.0);
+      expect(back.glassChromatic, 0.05);
+      expect(back.glassLightIntensity, 0.8);
+    });
+
+    test('缺字段 → null；存盘 int → double 归一', () {
+      expect(AppSettings.fromJson(const {}).glassBlur, isNull);
+      final fromInt = AppSettings.fromJson(const {'glassBlur': 10});
+      expect(fromInt.glassBlur, 10.0);
+      expect(fromInt.glassBlur, isA<double>());
+    });
+
+    test('toJson 仅输出非 null 字段（默认态不落盘）', () {
+      expect(const AppSettings().toJson().containsKey('glassBlur'), isFalse);
+      expect(
+          const AppSettings().toJson().containsKey('glassThickness'), isFalse);
+      expect(const AppSettings(glassBlur: 7).toJson()['glassBlur'], 7);
+    });
+
+    test('copyWith：未传保留，显式 null 清空（unsetValue 语义）', () {
+      const s = AppSettings(glassBlur: 5, tvMode: true);
+      expect(s.copyWith().glassBlur, 5, reason: '未传保留');
+      expect(s.copyWith(decodeMode: 'hw').glassBlur, 5, reason: '无关字段');
+      expect(s.copyWith(glassBlur: null).glassBlur, isNull,
+          reason: '显式 null 恢复包默认');
+    });
+  });
+
   group('videoOutput（视频输出通道）', () {
     test('默认 texture', () {
       expect(const AppSettings().videoOutput, 'texture');

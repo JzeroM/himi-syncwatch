@@ -2,21 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
-/// 液态玻璃面板。
+/// 液态玻璃面板（适配层）。
 ///
-/// 开启时：背景模糊 + 饱和增强 + 半透明着色 + 高光描边；
-/// 设置中关闭 `glassUi` 后降级为不透明纯色，不产生 BackdropFilter 开销。
+/// 开启时：以 liquid_glass_widgets 的真折射玻璃为底（磨砂/厚度/色散等
+/// 参数由设置页滑杆经 GlassTheme 全局调节），叠加本层的半透明着色渐变、
+/// 高光描边与悬浮投影；设置中关闭 `glassUi` 后降级为不透明纯色，
+/// 不渲染任何玻璃折射。调用方 API 与旧版保持一致。
 class GlassContainer extends ConsumerWidget {
   const GlassContainer({
     super.key,
     required this.child,
     this.padding,
     this.margin,
-    this.borderRadius =
-        const BorderRadius.all(Radius.circular(20)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(20)),
     this.tint = GlassConfig.panelTint,
-    this.blurSigma = GlassConfig.blurSigma,
     this.showShadow = true,
   });
 
@@ -25,15 +26,13 @@ class GlassContainer extends ConsumerWidget {
   final EdgeInsetsGeometry? margin;
   final BorderRadius borderRadius;
   final Color tint;
-  final double blurSigma;
 
   /// 是否绘制悬浮投影（顶栏等贴边胶囊传 false，避免黑影）。
   final bool showShadow;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final glassEnabled =
-        ref.watch(settingsProvider.select((s) => s.glassUi));
+    final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
 
     Widget content = DecoratedBox(
       decoration: BoxDecoration(
@@ -53,8 +52,7 @@ class GlassContainer extends ConsumerWidget {
         border: Border.all(color: GlassConfig.rimColor, width: 1),
       ),
       child: CustomPaint(
-        foregroundPainter:
-            glassEnabled ? GlassRimPainter(borderRadius) : null,
+        foregroundPainter: glassEnabled ? GlassRimPainter(borderRadius) : null,
         child: Padding(
           padding: padding ?? EdgeInsets.zero,
           child: child,
@@ -63,8 +61,13 @@ class GlassContainer extends ConsumerWidget {
     );
 
     if (glassEnabled) {
-      content = BackdropFilter(
-        filter: GlassConfig.filter(sigma: blurSigma),
+      // 真折射液态玻璃底（liquid_glass_widgets）：磨砂/厚度/色散等
+      // 由设置页滑杆经 GlassTheme 全局调节（见 glass_tuning.dart）；
+      // 原「模糊+饱和 BackdropFilter」由包内折射管线取代。
+      content = lg.GlassContainer(
+        shape: lg.LiquidRoundedSuperellipse(
+          borderRadius: borderRadius.topLeft.x,
+        ),
         child: content,
       );
     }
@@ -95,8 +98,7 @@ class GlassBackdrop extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final glassEnabled =
-        ref.watch(settingsProvider.select((s) => s.glassUi));
+    final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
 
     if (!glassEnabled) {
       return DecoratedBox(

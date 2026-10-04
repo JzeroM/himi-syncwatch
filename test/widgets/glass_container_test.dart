@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 import '../helpers/test_fakes.dart';
 
@@ -23,7 +24,7 @@ Widget _wrap(Widget child, AppSettings settings) {
 
 void main() {
   group('GlassContainer', () {
-    testWidgets('开启玻璃时渲染 BackdropFilter 与子组件', (tester) async {
+    testWidgets('开启玻璃时渲染包折射玻璃底与子组件', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -31,12 +32,13 @@ void main() {
         ),
       );
 
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      // 真折射由 liquid_glass_widgets 承担（v1.1.84 起取代 BackdropFilter）
+      expect(find.byType(lg.GlassContainer), findsOneWidget);
       expect(find.text('面板内容'), findsOneWidget);
       expect(find.byType(ClipRRect), findsOneWidget);
     });
 
-    testWidgets('关闭玻璃时降级为纯色，不产生 BackdropFilter', (tester) async {
+    testWidgets('关闭玻璃时降级为纯色，不渲染任何玻璃层', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -45,6 +47,7 @@ void main() {
       );
 
       expect(find.byType(BackdropFilter), findsNothing);
+      expect(find.byType(lg.GlassContainer), findsNothing);
       expect(find.text('面板内容'), findsOneWidget);
 
       final decoration = tester.widget<DecoratedBox>(
@@ -58,7 +61,7 @@ void main() {
       expect(box.gradient, isNull);
     });
 
-    testWidgets('开启玻璃时面板带悬浮投影', (tester) async {
+    testWidgets('开启玻璃时面板带本层悬浮投影', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -66,22 +69,10 @@ void main() {
         ),
       );
 
-      final decorations = tester.widgetList<DecoratedBox>(
-        find.descendant(
-          of: find.byType(GlassContainer),
-          matching: find.byType(DecoratedBox),
-        ),
-      );
-      expect(
-        decorations.any((d) {
-          final box = d.decoration as BoxDecoration;
-          return box.boxShadow != null && box.boxShadow!.isNotEmpty;
-        }),
-        isTrue,
-      );
+      expect(_hasOwnPanelShadow(tester), isTrue);
     });
 
-    testWidgets('showShadow 为 false 时不绘制悬浮投影', (tester) async {
+    testWidgets('showShadow 为 false 时不绘制本层悬浮投影', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(
@@ -92,19 +83,8 @@ void main() {
         ),
       );
 
-      final decorations = tester.widgetList<DecoratedBox>(
-        find.descendant(
-          of: find.byType(GlassContainer),
-          matching: find.byType(DecoratedBox),
-        ),
-      );
-      expect(
-        decorations.any((d) {
-          final box = d.decoration as BoxDecoration;
-          return box.boxShadow != null && box.boxShadow!.isNotEmpty;
-        }),
-        isFalse,
-      );
+      // 只认 GlassConfig.panelShadow 精确样式（包玻璃内部装饰不计）
+      expect(_hasOwnPanelShadow(tester), isFalse);
       expect(find.text('面板内容'), findsOneWidget);
     });
 
@@ -116,15 +96,19 @@ void main() {
         ),
       );
 
-      final decoration = tester.widget<DecoratedBox>(
-        find.descendant(
-          of: find.byType(ClipRRect),
-          matching: find.byType(DecoratedBox),
-        ),
+      final boxes = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>()
+          .toList();
+      expect(
+        boxes.any((b) {
+          final g = b.gradient;
+          return g is LinearGradient && g.colors.length == 3;
+        }),
+        isTrue,
+        reason: '本层着色为三段渐变（上亮、中主体、下透）',
       );
-      final box = decoration.decoration as BoxDecoration;
-      expect(box.gradient, isA<LinearGradient>());
-      expect((box.gradient! as LinearGradient).colors.length, 3);
     });
   });
 
@@ -157,8 +141,10 @@ void main() {
       final recorder = PictureRecorder();
       final canvas = Canvas(recorder);
       painter.paint(canvas, Size.zero);
-      expect(painter.shouldRepaint(const GlassRimPainter(
-          BorderRadius.all(Radius.circular(12)))), isFalse);
+      expect(
+          painter.shouldRepaint(
+              const GlassRimPainter(BorderRadius.all(Radius.circular(12)))),
+          isFalse);
       expect(
         painter.shouldRepaint(
             const GlassRimPainter(BorderRadius.all(Radius.circular(20)))),
@@ -196,5 +182,25 @@ void main() {
       expect(GlassConfig.panelTint.a, lessThan(0.3));
       expect(GlassConfig.barTint.a, lessThan(0.3));
     });
+  });
+}
+
+/// 本层悬浮投影（GlassConfig.panelShadow）是否存在——按样式精确匹配，
+/// 避免把包玻璃内部装饰误判为投影。
+bool _hasOwnPanelShadow(WidgetTester tester) {
+  final panels = GlassConfig.panelShadow;
+  return tester.widgetList<DecoratedBox>(find.byType(DecoratedBox)).any((d) {
+    final box = d.decoration;
+    if (box is! BoxDecoration) return false;
+    final shadow = box.boxShadow;
+    if (shadow == null || shadow.length != panels.length) return false;
+    for (var i = 0; i < shadow.length; i++) {
+      if (shadow[i].color != panels[i].color ||
+          shadow[i].blurRadius != panels[i].blurRadius ||
+          shadow[i].offset != panels[i].offset) {
+        return false;
+      }
+    }
+    return true;
   });
 }

@@ -10,6 +10,22 @@ class AppSettings {
   final bool audioRendererUserSet;
   final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
   final bool glassUi; // 液态玻璃特效开关（低端设备可关闭）
+
+  // ── 液态玻璃可调参数（v1.1.84，null = 使用 liquid_glass_widgets 默认）──
+  /// 磨砂模糊强度（逻辑像素，包默认 5）。
+  final double? glassBlur;
+
+  /// 玻璃厚度/折射深度（包默认 20）。
+  final double? glassThickness;
+
+  /// 玻璃内饱和增强（1.0 = 关，包默认 1.5）。
+  final double? glassSaturation;
+
+  /// 色散强度（0 = 关，包默认 0.01）。
+  final double? glassChromatic;
+
+  /// 高光强度（0~1，包默认 0.5）。
+  final double? glassLightIntensity;
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
 
   /// 分类页网格每行海报数（全平台）：null = 自动跟随屏幕，
@@ -68,6 +84,11 @@ class AppSettings {
     this.audioRendererUserSet = false,
     this.deepDiagnostics = false,
     this.glassUi = true,
+    this.glassBlur,
+    this.glassThickness,
+    this.glassSaturation,
+    this.glassChromatic,
+    this.glassLightIntensity,
     this.themeColor,
     this.categoryColumns,
     this.tvMode = false,
@@ -96,6 +117,11 @@ class AppSettings {
     bool? eglFaultSeen,
     Object? themeColor = unsetValue,
     Object? categoryColumns = unsetValue,
+    Object? glassBlur = unsetValue,
+    Object? glassThickness = unsetValue,
+    Object? glassSaturation = unsetValue,
+    Object? glassChromatic = unsetValue,
+    Object? glassLightIntensity = unsetValue,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
@@ -117,6 +143,21 @@ class AppSettings {
       categoryColumns: identical(categoryColumns, unsetValue)
           ? this.categoryColumns
           : categoryColumns as int?,
+      glassBlur: identical(glassBlur, unsetValue)
+          ? this.glassBlur
+          : (glassBlur as num?)?.toDouble(),
+      glassThickness: identical(glassThickness, unsetValue)
+          ? this.glassThickness
+          : (glassThickness as num?)?.toDouble(),
+      glassSaturation: identical(glassSaturation, unsetValue)
+          ? this.glassSaturation
+          : (glassSaturation as num?)?.toDouble(),
+      glassChromatic: identical(glassChromatic, unsetValue)
+          ? this.glassChromatic
+          : (glassChromatic as num?)?.toDouble(),
+      glassLightIntensity: identical(glassLightIntensity, unsetValue)
+          ? this.glassLightIntensity
+          : (glassLightIntensity as num?)?.toDouble(),
     );
   }
 
@@ -136,6 +177,12 @@ class AppSettings {
         'eglFaultSeen': eglFaultSeen,
         if (themeColor != null) 'themeColor': themeColor,
         if (categoryColumns != null) 'categoryColumns': categoryColumns,
+        if (glassBlur != null) 'glassBlur': glassBlur,
+        if (glassThickness != null) 'glassThickness': glassThickness,
+        if (glassSaturation != null) 'glassSaturation': glassSaturation,
+        if (glassChromatic != null) 'glassChromatic': glassChromatic,
+        if (glassLightIntensity != null)
+          'glassLightIntensity': glassLightIntensity,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -187,6 +234,12 @@ class AppSettings {
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
+      // 玻璃可调参数：缺失/null = 走包默认；存盘可能为 int → num 归一
+      glassBlur: (json['glassBlur'] as num?)?.toDouble(),
+      glassThickness: (json['glassThickness'] as num?)?.toDouble(),
+      glassSaturation: (json['glassSaturation'] as num?)?.toDouble(),
+      glassChromatic: (json['glassChromatic'] as num?)?.toDouble(),
+      glassLightIntensity: (json['glassLightIntensity'] as num?)?.toDouble(),
     );
   }
 

@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -290,6 +291,8 @@ class SettingsScreen extends ConsumerWidget {
                   ref.read(settingsProvider.notifier).update(glassUi: v),
             ),
           ),
+          // 玻璃参数滑杆紧跟开关（关闭玻璃时滑杆仍在，便于重开前调好）
+          const _GlassTuningSection(),
           const Divider(height: 1),
           _tvWrapRow(
             tvMode: settings.tvMode,
@@ -343,6 +346,101 @@ class SettingsScreen extends ConsumerWidget {
 ///
 /// 写入 [AppSettings.categoryColumns]（null = 自动跟随屏幕）；手动指定
 /// 后屏幕放不下时由 `CategoryScreen.gridColumns` 按最小列宽自动压回。
+/// 液态玻璃参数滑杆分组（v1.1.84）：5 个参数实时写入设置 →
+/// glassTuningProvider → wrap(theme:) 重建，全 App 玻璃即时生效。
+class _GlassTuningSection extends ConsumerWidget {
+  const _GlassTuningSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tuning = ref.watch(glassTuningProvider);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                '玻璃参数',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              TextButton(
+                key: const ValueKey('glassResetDefaults'),
+                onPressed: tuning.isDefault
+                    ? null
+                    : () => ref.read(settingsProvider.notifier).update(
+                          glassBlur: null,
+                          glassThickness: null,
+                          glassSaturation: null,
+                          glassChromatic: null,
+                          glassLightIntensity: null,
+                        ),
+                child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
+              ),
+            ],
+          ),
+          const Text(
+            '实时调节磨砂与折射效果，拖动即生效',
+            style: TextStyle(fontSize: 12, color: Colors.white60),
+          ),
+          const SizedBox(height: 4),
+          for (final spec in glassParamSpecs)
+            _glassSliderRow(ref, spec, spec.read(tuning)),
+        ],
+      ),
+    );
+  }
+
+  Widget _glassSliderRow(
+    WidgetRef ref,
+    GlassParamSpec spec,
+    double value,
+  ) {
+    return Row(
+      key: ValueKey('glassParam_${spec.key}'),
+      children: [
+        SizedBox(
+          width: 72,
+          child: Text(
+            spec.label,
+            style: const TextStyle(fontSize: 13, color: Colors.white70),
+          ),
+        ),
+        Expanded(
+          child: Slider(
+            key: ValueKey('${spec.key}Slider'),
+            label: value.toStringAsFixed(spec.decimals),
+            min: spec.min,
+            max: spec.max,
+            divisions: spec.divisions,
+            value: value.clamp(spec.min, spec.max),
+            onChanged: (v) => ref.read(settingsProvider.notifier).update(
+                  glassBlur: spec.key == 'glassBlur' ? v : null,
+                  glassThickness: spec.key == 'glassThickness' ? v : null,
+                  glassSaturation: spec.key == 'glassSaturation' ? v : null,
+                  glassChromatic: spec.key == 'glassChromatic' ? v : null,
+                  glassLightIntensity:
+                      spec.key == 'glassLightIntensity' ? v : null,
+                ),
+          ),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(
+            value.toStringAsFixed(spec.decimals),
+            key: ValueKey('glassValue_${spec.key}'),
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 12, color: Colors.white70),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _CategoryColumnsSection extends ConsumerWidget {
   const _CategoryColumnsSection();
 

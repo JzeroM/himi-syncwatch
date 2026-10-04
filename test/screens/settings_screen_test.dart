@@ -46,14 +46,20 @@ Finder _glassSwitch(WidgetTester tester) {
 }
 
 void main() {
-  Future<void> _scrollToGlass(WidgetTester tester) async {
+  /// 滚到目标文本并回滚一段：滚动停点常把目标顶到视口最上沿
+  /// （y≈0，被透明 AppBar 遮挡，tap/drag 必 miss）。
+  Future<void> _scrollToText(WidgetTester tester, String text) async {
     await tester.scrollUntilVisible(
-      find.text('液态玻璃'),
+      find.text(text),
       200,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 120));
     await tester.pumpAndSettle();
   }
+
+  Future<void> _scrollToGlass(WidgetTester tester) =>
+      _scrollToText(tester, '液态玻璃');
 
   testWidgets('设置页展示液态玻璃开关（默认开）', (tester) async {
     final container = await _pumpScreen(tester);
@@ -700,5 +706,93 @@ void main() {
       container.read(settingsProvider).toJson().containsKey('categoryColumns'),
       isFalse,
     );
+  });
+  group('玻璃参数滑杆分组（v1.1.84）', () {
+    testWidgets('展示标题、5 个滑杆与恢复默认（默认态禁用）', (tester) async {
+      final container = await _pumpScreen(tester);
+      await _scrollToText(tester, '玻璃参数');
+
+      expect(find.text('玻璃参数'), findsOneWidget);
+      expect(find.text('实时调节磨砂与折射效果，拖动即生效'), findsOneWidget);
+      for (final key in const [
+        'glassBlur',
+        'glassThickness',
+        'glassSaturation',
+        'glassChromatic',
+        'glassLightIntensity',
+      ]) {
+        expect(find.byKey(ValueKey('${key}Slider')), findsOneWidget,
+            reason: '$key 滑杆缺失');
+      }
+      // 默认态（全包默认）：恢复默认按钮禁用
+      final reset = tester
+          .widget<TextButton>(find.byKey(const ValueKey('glassResetDefaults')));
+      expect(reset.onPressed, isNull);
+      expect(container.read(settingsProvider).glassBlur, isNull);
+    });
+
+    testWidgets('拖动磨砂滑杆写入 glassBlur 并落盘', (tester) async {
+      final container = await _pumpScreen(tester);
+      await _scrollToText(tester, '玻璃参数');
+
+      final persistBefore =
+          (container.read(settingsProvider.notifier) as FakeSettingsNotifier)
+              .persistCount;
+      final slider = find.byKey(const ValueKey('glassBlurSlider'));
+      await tester.drag(slider, const Offset(60, 0));
+      await tester.pumpAndSettle();
+
+      final v = container.read(settingsProvider).glassBlur;
+      expect(v, isNotNull, reason: '拖动后写入');
+      expect(v, greaterThan(5), reason: '向右拖增大（默认 5）');
+      final notifier =
+          container.read(settingsProvider.notifier) as FakeSettingsNotifier;
+      expect(notifier.persistCount, greaterThan(persistBefore),
+          reason: 'update 触发落盘');
+      // 回显文本更新 + 恢复默认按钮可用
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('glassValue_glassBlur')))
+            .data,
+        isNot(equals('5.0')),
+      );
+      expect(
+        tester
+            .widget<TextButton>(
+                find.byKey(const ValueKey('glassResetDefaults')))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('恢复默认清空全部 5 参数并禁用按钮', (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        initial: const AppSettings(
+          glassBlur: 9,
+          glassThickness: 40,
+          glassSaturation: 2.2,
+          glassChromatic: 0.06,
+          glassLightIntensity: 0.9,
+        ),
+      );
+      await _scrollToText(tester, '玻璃参数');
+
+      final reset = find.byKey(const ValueKey('glassResetDefaults'));
+      expect(tester.widget<TextButton>(reset).onPressed, isNotNull,
+          reason: '非默认态可用');
+
+      await tester.tap(reset);
+      await tester.pumpAndSettle();
+
+      final s = container.read(settingsProvider);
+      expect(s.glassBlur, isNull);
+      expect(s.glassThickness, isNull);
+      expect(s.glassSaturation, isNull);
+      expect(s.glassChromatic, isNull);
+      expect(s.glassLightIntensity, isNull);
+      expect(tester.widget<TextButton>(reset).onPressed, isNull,
+          reason: '已回默认 → 禁用');
+    });
   });
 }

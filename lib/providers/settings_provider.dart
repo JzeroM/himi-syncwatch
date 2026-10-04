@@ -41,6 +41,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? eglFaultSeen,
     Object? themeColor = AppSettings.unsetValue,
     Object? categoryColumns = AppSettings.unsetValue,
+    Object? glassBlur = AppSettings.unsetValue,
+    Object? glassThickness = AppSettings.unsetValue,
+    Object? glassSaturation = AppSettings.unsetValue,
+    Object? glassChromatic = AppSettings.unsetValue,
+    Object? glassLightIntensity = AppSettings.unsetValue,
   }) async {
     state = state.copyWith(
       decodeMode: decodeMode,
@@ -61,6 +66,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       eglFaultSeen: eglFaultSeen,
       themeColor: themeColor,
       categoryColumns: categoryColumns,
+      glassBlur: glassBlur,
+      glassThickness: glassThickness,
+      glassSaturation: glassSaturation,
+      glassChromatic: glassChromatic,
+      glassLightIntensity: glassLightIntensity,
     );
     await persist();
   }
