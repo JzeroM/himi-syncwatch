@@ -267,10 +267,10 @@ void main() {
         reason: '播放按钮应带玻璃外壳',
       );
 
-      // 在简介标题上方
-      final btn = tester.getRect(find.text('开始播放'));
+      // 简介入口已移至海报（页面顶部），位于开始播放上方
       final desc = tester.getRect(find.text('简介'));
-      expect(btn.top, lessThan(desc.top));
+      final btn = tester.getRect(find.text('开始播放'));
+      expect(desc.top, lessThan(btn.top), reason: '简介控件在海报上，操作区在正文（其下方）');
 
       // TvFocusable 包裹（焦点环/OK 键激活）
       expect(
@@ -330,10 +330,10 @@ void main() {
             of: find.text('开始播放'), matching: find.byType(TvFocusable)),
         findsNothing,
       );
-      // 按钮位于简介上方
-      final btn = tester.getRect(find.text('开始播放'));
+      // 简介控件在海报（顶部），位于开始播放上方
       final desc = tester.getRect(find.text('简介'));
-      expect(btn.top, lessThan(desc.top));
+      final btn = tester.getRect(find.text('开始播放'));
+      expect(desc.top, lessThan(btn.top), reason: '简介入口已移至海报，正文区不再渲染简介块');
     });
 
     testWidgets('非 TV roomMode：胶囊底栏保留「加入资源」', (tester) async {
@@ -1852,23 +1852,93 @@ void main() {
       expect(bar.expandedHeight, 320, reason: '非 TV 保持原横幅高度');
     });
 
-    testWidgets('TV 分区标题 16、简介正文 14', (tester) async {
+    testWidgets('TV 浮层标题 16、简介正文 14（默认隐藏）', (tester) async {
       await _pumpDetail(tester, tv: true);
-      final title = tester.widget<Text>(find.text('简介')).style;
-      expect(title?.fontSize, 16, reason: 'TV 分区标题降档');
+      expect(find.text('这是一段测试简介。'), findsNothing, reason: '简介默认隐藏在海报上');
 
-      // AnimatedCrossFade 折叠/完整两份正文并存 → 取 first
-      final body = tester.widget<Text>(find.text('这是一段测试简介。').first).style;
+      await tester.tap(find.text('简介'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final title = tester.widget<Text>(find.text('简介')).style;
+      expect(title?.fontSize, 16, reason: 'TV 浮层标题降档');
+
+      final body = tester.widget<Text>(find.text('这是一段测试简介。')).style;
       expect(body?.fontSize, 14, reason: '简介正文保持 14 可读');
     });
 
-    testWidgets('非 TV 分区标题 18、简介正文 14', (tester) async {
+    testWidgets('非 TV 浮层标题 18、简介正文 14', (tester) async {
       await _pumpDetail(tester, tv: false);
+      await tester.tap(find.text('简介'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       final title = tester.widget<Text>(find.text('简介')).style;
-      expect(title?.fontSize, 18, reason: '非 TV 标题保持 18');
+      expect(title?.fontSize, 18, reason: '非 TV 浮层标题保持 18');
 
-      final body = tester.widget<Text>(find.text('这是一段测试简介。').first).style;
+      final body = tester.widget<Text>(find.text('这是一段测试简介。')).style;
       expect(body?.fontSize, 14, reason: '简介正文保持 14 可读');
+    });
+  });
+
+  group('海报内简介浮层（v1.1.83 默认隐藏）', () {
+    testWidgets('默认隐藏：海报有「简介」控件，正文无简介文字', (tester) async {
+      await _pumpDetail(tester);
+      expect(find.text('简介'), findsOneWidget, reason: '海报入口控件');
+      expect(find.text('这是一段测试简介。'), findsNothing);
+    });
+
+    testWidgets('点「简介」展开浮层；点「收起」关闭', (tester) async {
+      await _pumpDetail(tester);
+      await tester.tap(find.text('简介'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('这是一段测试简介。'), findsOneWidget, reason: '浮层内显示完整简介');
+      // 控件切「收起」+ 浮层收起按钮 = 2 个
+      expect(find.text('收起'), findsNWidgets(2));
+
+      await tester.tap(find.text('收起').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('这是一段测试简介。'), findsNothing);
+      expect(find.text('简介'), findsOneWidget, reason: '回到海报入口');
+    });
+
+    testWidgets('点浮层遮罩空白区收起', (tester) async {
+      await _pumpDetail(tester);
+      await tester.tap(find.text('简介'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // 浮层覆盖海报区（pinned SliverAppBar 顶部空白，无控件/文字）
+      final size = tester.getSize(find.byType(DetailScreen));
+      await tester.tapAt(Offset(size.width / 2, 40));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('这是一段测试简介。'), findsNothing);
+    });
+
+    testWidgets('overview 为空：不渲染简介入口', (tester) async {
+      final item = MediaItem(
+        id: 'm1',
+        name: '无简介影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '',
+      );
+      await _pumpDetail(tester, item: item);
+      expect(find.text('简介'), findsNothing);
+      expect(find.text('收起'), findsNothing);
+    });
+
+    testWidgets('TV 打开后焦点移入浮层收起按钮', (tester) async {
+      await _pumpDetail(tester, tv: true);
+      await tester.tap(find.text('简介'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final closeFinder = find.byWidgetPredicate((w) =>
+          w is TvFocusable && w.focusNode?.debugLabel == 'overviewClose');
+      expect(closeFinder, findsOneWidget);
+      expect(_focusWithin(closeFinder), isTrue,
+          reason: '遥控器 OK 可直接收起（原入口被浮层遮盖）');
     });
   });
 }

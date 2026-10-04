@@ -76,7 +76,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   bool _isLoading = true;
   String? _error;
-  bool _overviewExpanded = false;
+
+  /// 海报内简介浮层开合（v1.1.83：简介默认隐藏，海报上「简介」控件展开，
+  /// 正文区原简介块移除——简介只此一份）。
+  bool _overviewVisible = false;
+
+  /// 浮层收起按钮焦点：打开后焦点移入浮层（原控件被浮层遮盖），
+  /// 关闭随节点销毁由焦点系统回落。
+  final _overviewCloseNode = FocusNode(debugLabel: 'overviewClose');
 
   @override
   void initState() {
@@ -87,7 +94,18 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   @override
   void dispose() {
     _episodeRowController.dispose();
+    _overviewCloseNode.dispose();
     super.dispose();
+  }
+
+  /// 开关简介浮层；打开后 postFrame 把焦点移入浮层收起按钮（TV 遥控器
+  /// 可控；手机端 requestFocus 无副作用）。
+  void _toggleOverview() {
+    setState(() => _overviewVisible = !_overviewVisible);
+    if (!_overviewVisible) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _overviewVisible) _overviewCloseNode.requestFocus();
+    });
   }
 
   /// 跨服务器路由透传参数
@@ -1232,9 +1250,122 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           ],
                         ],
                       ),
+                      if (item.overview != null &&
+                          item.overview!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        // 简介入口（v1.1.83：默认隐藏，浮层展开在海报内）
+                        Row(
+                          children: [
+                            TvFocusable(
+                              onTap: _toggleOverview,
+                              child: GlassContainer(
+                                borderRadius:
+                                    const BorderRadius.all(Radius.circular(14)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 3),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.subject,
+                                        size: 14, color: Colors.white70),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      _overviewVisible ? '收起' : '简介',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Icon(
+                                      _overviewVisible
+                                          ? Icons.expand_less
+                                          : Icons.expand_more,
+                                      size: 14,
+                                      color: Colors.white70,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
+                // 简介浮层：盖满海报，半透明黑底白字，限高滚动；点遮罩
+                // 或收起按钮关闭（TV 焦点打开时已移入收起按钮）
+                if (_overviewVisible &&
+                    item.overview != null &&
+                    item.overview!.isNotEmpty)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      onTap: _toggleOverview,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.72),
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  '简介',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: tv ? 16 : 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Spacer(),
+                                TvFocusable(
+                                  onTap: _toggleOverview,
+                                  focusNode: _overviewCloseNode,
+                                  child: GlassContainer(
+                                    borderRadius: const BorderRadius.all(
+                                        Radius.circular(14)),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 3),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.expand_less,
+                                            size: 14, color: Colors.white70),
+                                        const SizedBox(width: 5),
+                                        const Text(
+                                          '收起',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: Text(
+                                  item.overview!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1270,48 +1401,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                   SizedBox(height: tv ? 12 : 16),
                 ],
-                if (item.overview != null && item.overview!.isNotEmpty) ...[
-                  Text(
-                    '简介',
-                    style: TextStyle(
-                      fontSize: tv ? 16 : 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  AnimatedCrossFade(
-                    firstChild: Text(
-                      item.overview!,
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, height: 1.5),
-                    ),
-                    secondChild: Text(
-                      item.overview!,
-                      style: const TextStyle(fontSize: 14, height: 1.5),
-                    ),
-                    crossFadeState: _overviewExpanded
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    duration: const Duration(milliseconds: 200),
-                  ),
-                  if (item.overview!.length > 100)
-                    TvFocusable(
-                      onTap: () => setState(
-                          () => _overviewExpanded = !_overviewExpanded),
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          _overviewExpanded ? '收起' : '更多',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  SizedBox(height: tv ? 14 : 20),
-                ],
+                // 简介已移至海报内浮层（v1.1.83：海报上「简介」控件展开，
+                // 正文区不再重复渲染）
                 if (item.mediaStreams.isNotEmpty) ...[
                   _buildMediaInfo(item),
                   SizedBox(height: tv ? 14 : 20),
