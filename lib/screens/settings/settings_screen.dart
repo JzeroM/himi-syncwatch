@@ -81,6 +81,8 @@ Widget _settingOptionTile({
     );
   }
   return TvFocusable(
+    // 满宽行：关闭聚焦微放大，避免超宽内容按中心放大后两端文字出屏裁切
+    scale: 1.0,
     onTap: () => showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -111,17 +113,43 @@ Widget _settingOptionTile({
         ),
       ),
     ),
-    child: ListTile(
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(labels[value] ?? value),
-          const Icon(Icons.chevron_right, size: 18, color: Colors.white54),
-        ],
+    // ExcludeFocus：屏蔽 ListTile 内嵌 InkWell 自带焦点节点。同 rect 双
+    // 候选下（FocusNode.descendants 为后序遍历，内层反而排在外层 wrapper
+    // 之前），方向导航会选中内层而非描边 wrapper，焦点随即异常跳回原行、
+    // 表现为"方向键走不动"；触摸与内层手势不受影响（与 _tvWrapRow 一致）。
+    child: ExcludeFocus(
+      child: ListTile(
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(labels[value] ?? value),
+            const Icon(Icons.chevron_right, size: 18, color: Colors.white54),
+          ],
+        ),
       ),
     ),
+  );
+}
+
+/// TV 模式把裸 Material 行统一为 TvFocusable 描边焦点（全页单一焦点样式）。
+/// - [ExcludeFocus] 屏蔽行内 InkWell/Switch 自带焦点节点，否则外层描边与
+///   内层蓝色 focusColor 填充同屏双显（"两个焦点框"）；
+/// - 触摸仍由行内控件响应（手势竞技内层优先，行为与包装前一致）；
+/// - OK 键走外层 [TvFocusable.onTap]（调用方手动 toggle/触发）；
+/// - 满宽行 [scale] 默认 1.0，关闭聚焦微放大防止两端文字出屏裁切。
+Widget _tvWrapRow({
+  required bool tvMode,
+  required VoidCallback onTap,
+  required Widget child,
+  double scale = 1.0,
+}) {
+  if (!tvMode) return child;
+  return TvFocusable(
+    onTap: onTap,
+    scale: scale,
+    child: ExcludeFocus(child: child),
   );
 }
 
@@ -161,12 +189,18 @@ class SettingsScreen extends ConsumerWidget {
                 ref.read(settingsProvider.notifier).update(decodeMode: v),
           ),
           const Divider(height: 1),
-          SwitchListTile(
-            title: const Text('立体声降混'),
-            subtitle: const Text('将多声道音频降混为立体声（解决部分声道无声问题）'),
-            value: settings.stereoDownmix,
-            onChanged: (v) =>
-                ref.read(settingsProvider.notifier).update(stereoDownmix: v),
+          _tvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => ref
+                .read(settingsProvider.notifier)
+                .update(stereoDownmix: !settings.stereoDownmix),
+            child: SwitchListTile(
+              title: const Text('立体声降混'),
+              subtitle: const Text('将多声道音频降混为立体声（解决部分声道无声问题）'),
+              value: settings.stereoDownmix,
+              onChanged: (v) =>
+                  ref.read(settingsProvider.notifier).update(stereoDownmix: v),
+            ),
           ),
           // AAudio/OpenSL/AudioTrack 为 Android 专属后端，其余平台固定
           // 自动（iOS 曾因默认 AudioTrack 无效导致无声），不提供设置项
@@ -198,58 +232,93 @@ class SettingsScreen extends ConsumerWidget {
             const Divider(height: 1),
             // 渲染兼容模式：mdk 全局 GL 选项（rockchip 硬解渲染 /
             // SurfaceTexture 上下文），仅启动时读取注入 → 重启生效
-            SwitchListTile(
-              title: const Text('渲染兼容模式（实验）'),
-              subtitle: const Text(
-                '启用 rockchip GL 渲染变体（yuv 采样 / SurfaceTexture 上下文）。'
-                '视频全黑时尝试，修改后需重启应用生效',
-              ),
-              value: settings.renderCompatMode,
-              onChanged: (v) => ref
+            _tvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => ref
                   .read(settingsProvider.notifier)
-                  .update(renderCompatMode: v),
+                  .update(renderCompatMode: !settings.renderCompatMode),
+              child: SwitchListTile(
+                title: const Text('渲染兼容模式（实验）'),
+                subtitle: const Text(
+                  '启用 rockchip GL 渲染变体（yuv 采样 / SurfaceTexture 上下文）。'
+                  '视频全黑时尝试，修改后需重启应用生效',
+                ),
+                value: settings.renderCompatMode,
+                onChanged: (v) => ref
+                    .read(settingsProvider.notifier)
+                    .update(renderCompatMode: v),
+              ),
             ),
           ],
           const Divider(height: 1),
-          SwitchListTile(
-            title: const Text('播放调试面板'),
-            subtitle: const Text('实时显示播放诊断信息，可拖拽移动'),
-            value: settings.showSyncDebug,
-            onChanged: (v) =>
-                ref.read(settingsProvider.notifier).update(showSyncDebug: v),
-          ),
-          const Divider(height: 1),
-          SwitchListTile(
-            title: const Text('液态玻璃'),
-            subtitle: const Text('毛玻璃模糊与高光效果，低端设备可关闭以提升流畅度'),
-            value: settings.glassUi,
-            onChanged: (v) =>
-                ref.read(settingsProvider.notifier).update(glassUi: v),
-          ),
-          const Divider(height: 1),
-          SwitchListTile(
-            title: const Text('TV 模式'),
-            subtitle: const Text('适配遥控器：方向键导航，OK 键选择，中键暂停/播放'),
-            value: settings.tvMode,
-            onChanged: (v) =>
-                ref.read(settingsProvider.notifier).update(tvMode: v),
-          ),
-          const Divider(height: 1),
-          SwitchListTile(
-            title: const Text('深度诊断'),
-            subtitle: const Text(
-              '抓取 mdk 内部日志获取实测帧率。仅诊断卡顿时开启，可能增加少量开销',
+          _tvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => ref
+                .read(settingsProvider.notifier)
+                .update(showSyncDebug: !settings.showSyncDebug),
+            child: SwitchListTile(
+              title: const Text('播放调试面板'),
+              subtitle: const Text('实时显示播放诊断信息，可拖拽移动'),
+              value: settings.showSyncDebug,
+              onChanged: (v) =>
+                  ref.read(settingsProvider.notifier).update(showSyncDebug: v),
             ),
-            value: settings.deepDiagnostics,
-            onChanged: (v) =>
-                ref.read(settingsProvider.notifier).update(deepDiagnostics: v),
           ),
           const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.bug_report),
-            title: const Text('导出运行日志'),
-            subtitle: const Text('保存最近 1000 条日志并分享'),
+          _tvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => ref
+                .read(settingsProvider.notifier)
+                .update(glassUi: !settings.glassUi),
+            child: SwitchListTile(
+              title: const Text('液态玻璃'),
+              subtitle: const Text('毛玻璃模糊与高光效果，低端设备可关闭以提升流畅度'),
+              value: settings.glassUi,
+              onChanged: (v) =>
+                  ref.read(settingsProvider.notifier).update(glassUi: v),
+            ),
+          ),
+          const Divider(height: 1),
+          _tvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => ref
+                .read(settingsProvider.notifier)
+                .update(tvMode: !settings.tvMode),
+            child: SwitchListTile(
+              title: const Text('TV 模式'),
+              subtitle: const Text('适配遥控器：方向键导航，OK 键选择，中键暂停/播放'),
+              value: settings.tvMode,
+              onChanged: (v) =>
+                  ref.read(settingsProvider.notifier).update(tvMode: v),
+            ),
+          ),
+          const Divider(height: 1),
+          _tvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => ref
+                .read(settingsProvider.notifier)
+                .update(deepDiagnostics: !settings.deepDiagnostics),
+            child: SwitchListTile(
+              title: const Text('深度诊断'),
+              subtitle: const Text(
+                '抓取 mdk 内部日志获取实测帧率。仅诊断卡顿时开启，可能增加少量开销',
+              ),
+              value: settings.deepDiagnostics,
+              onChanged: (v) => ref
+                  .read(settingsProvider.notifier)
+                  .update(deepDiagnostics: v),
+            ),
+          ),
+          const Divider(height: 1),
+          _tvWrapRow(
+            tvMode: settings.tvMode,
             onTap: () => LogService().shareLogs(),
+            child: ListTile(
+              leading: const Icon(Icons.bug_report),
+              title: const Text('导出运行日志'),
+              subtitle: const Text('保存最近 1000 条日志并分享'),
+              onTap: () => LogService().shareLogs(),
+            ),
           ),
           const Divider(height: 1),
         ],

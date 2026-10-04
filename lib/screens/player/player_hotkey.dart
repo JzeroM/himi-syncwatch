@@ -10,7 +10,10 @@ import 'player_platform.dart';
 ///   * 中键 Enter/Select、媒体键 mediaPlayPause = 暂停/播放 + 唤出控制条
 ///     （onShowControls 提供时；控制条 5 秒后自动隐藏，隐藏期间再次唤出）
 ///   * 左右 = ±10 秒快进退（控制条隐藏时；可见时让位给焦点导航）
-///   * 上下 = ±5% 音量（控制条隐藏时；可见时让位给焦点导航）
+///   * 上下 = 唤出控制条（控制条隐藏时；可见时让位给焦点导航并顺延自动隐藏）
+///   * 音量键 audioVolumeUp/audioVolumeDown（Android 遥控器音量键与 PC 多媒体键同映射）
+///     = ±5% 应用内音量，任意时刻生效，长按（KeyRepeatEvent）连续调节；
+///     onVolumeDelta 未提供时放行给系统音量
 class PlayerHotkey extends StatefulWidget {
   const PlayerHotkey({
     super.key,
@@ -29,7 +32,7 @@ class PlayerHotkey extends StatefulWidget {
   final VoidCallback? onEscape;
   final bool tvMode;
 
-  /// 控制条是否可见：可见时方向键交给焦点导航（seek/音量让位）
+  /// 控制条是否可见：可见时方向键交给焦点导航（seek/唤出控制条让位）
   final bool controlsVisible;
 
   /// ±毫秒快进退回调（如 -10000）
@@ -42,7 +45,7 @@ class PlayerHotkey extends StatefulWidget {
   final VoidCallback? onShowControls;
 
   /// 外部持有的焦点节点：控制条隐藏后焦点回落到热键层，
-  /// 方向键恢复 seek/音量语义（不传则内部创建）
+  /// 方向键恢复 seek/唤出控制条语义（不传则内部创建）
   final FocusNode? focusNode;
 
   final Widget child;
@@ -66,9 +69,31 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
   static const _volumeStep = 5.0;
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    // KeyUpEvent/KeyRepeatEvent 非 KeyDownEvent：放行，长按不重复触发
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final isDown = event is KeyDownEvent;
+    final isRepeat = event is KeyRepeatEvent;
+    // KeyUpEvent 放行；KeyRepeatEvent 仅音量键消费（见下），其余放行
+    if (!isDown && !isRepeat) return KeyEventResult.ignored;
     final key = event.logicalKey;
+
+    // 音量键（TV 模式）：任意时刻生效，长按 KeyRepeatEvent 连续调节；
+    // 未提供 onVolumeDelta 时放行给系统音量。
+    // Android KEYCODE_VOLUME_UP/DOWN 与 PC 多媒体键均映射到 audioVolume*
+    if (widget.tvMode) {
+      final double? direction = key == LogicalKeyboardKey.audioVolumeUp
+          ? 1.0
+          : key == LogicalKeyboardKey.audioVolumeDown
+              ? -1.0
+              : null;
+      if (direction != null) {
+        final onVolume = widget.onVolumeDelta;
+        if (onVolume == null) return KeyEventResult.ignored;
+        onVolume(direction * _volumeStep);
+        return KeyEventResult.handled;
+      }
+    }
+
+    // 其余热键仅 KeyDownEvent：KeyRepeatEvent 放行，长按不重复触发
+    if (!isDown) return KeyEventResult.ignored;
 
     if (key == LogicalKeyboardKey.space) {
       if (!PlayerPlatform.spaceKeyPlayPause) return KeyEventResult.ignored;
@@ -96,31 +121,33 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
         return KeyEventResult.handled;
       }
 
-      // 方向键：控制条可见时让位给焦点导航；隐藏时 seek/音量
-      if (!widget.controlsVisible) {
-        final onSeek = widget.onSeekRelative;
-        final onVolume = widget.onVolumeDelta;
-        switch (key) {
-          case LogicalKeyboardKey.arrowLeft:
-            if (onSeek != null) {
-              onSeek(-_seekStepMs);
+      // 方向键：控制条可见时让位给焦点导航（并顺延自动隐藏计时）；
+      // 隐藏时左右 seek、上下唤出控制条
+      if (key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.arrowRight ||
+          key == LogicalKeyboardKey.arrowUp ||
+          key == LogicalKeyboardKey.arrowDown) {
+        if (!widget.controlsVisible) {
+          final onSeek = widget.onSeekRelative;
+          if (key == LogicalKeyboardKey.arrowLeft && onSeek != null) {
+            onSeek(-_seekStepMs);
+            return KeyEventResult.handled;
+          }
+          if (key == LogicalKeyboardKey.arrowRight && onSeek != null) {
+            onSeek(_seekStepMs);
+            return KeyEventResult.handled;
+          }
+          if (key == LogicalKeyboardKey.arrowUp ||
+              key == LogicalKeyboardKey.arrowDown) {
+            final onShow = widget.onShowControls;
+            if (onShow != null) {
+              onShow();
               return KeyEventResult.handled;
             }
-          case LogicalKeyboardKey.arrowRight:
-            if (onSeek != null) {
-              onSeek(_seekStepMs);
-              return KeyEventResult.handled;
-            }
-          case LogicalKeyboardKey.arrowUp:
-            if (onVolume != null) {
-              onVolume(_volumeStep);
-              return KeyEventResult.handled;
-            }
-          case LogicalKeyboardKey.arrowDown:
-            if (onVolume != null) {
-              onVolume(-_volumeStep);
-              return KeyEventResult.handled;
-            }
+          }
+        } else {
+          // 可见：仅顺延自动隐藏，不拦按键（焦点导航照常），故不 handled
+          widget.onShowControls?.call();
         }
       }
     }

@@ -516,4 +516,86 @@ void main() {
     expect(container.read(settingsProvider).audioRenderer, 'AAudio');
     expect(find.byKey(const Key('settingOption_AAudio')), findsNothing);
   });
+
+  // ---- TV 焦点样式统一（"同屏两个焦点框"回归） ----
+
+  testWidgets('TV：设置行移动焦点后同屏仅一个描边，落点为 TvFocusable 包装', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      remote: true,
+      initial: const AppSettings(tvMode: true),
+    );
+    // 不滚动：初始视口内 解码方式/立体声降混/音频后端 三行均可见，
+    // scrollUntilVisible 会把解码行顶出视口（元素卸载）破坏落焦
+
+    // 所有开关行必须 ExcludeFocus：行内 Switch/InkWell 焦点节点若可聚焦，
+    // 内层蓝色 focusColor 会与外层描边同屏双显
+    final switchTiles = find.byType(SwitchListTile);
+    expect(switchTiles, findsWidgets);
+    for (final tile in tester.widgetList<SwitchListTile>(switchTiles)) {
+      expect(
+        find.ancestor(
+            of: find.byWidget(tile), matching: find.byType(ExcludeFocus)),
+        findsWidgets,
+        reason: 'TV 模式开关行应 ExcludeFocus（防内层蓝底双显）',
+      );
+    }
+
+    Finder tvWrappers() => find.byWidgetPredicate(
+        (w) => w is Focus && w.focusNode?.debugLabel == 'TvFocusable');
+
+    int outlineCount() => tester
+        .widgetList<AnimatedContainer>(find.descendant(
+          of: tvWrappers(),
+          matching: find.byType(AnimatedContainer),
+        ))
+        .where((c) => c.foregroundDecoration != null)
+        .length;
+
+    // 直接落焦解码方式行（跳过主题色区裸 InkWell/滑块）：
+    // 包装 Focus 是文本的祖先（Focus > ... > ListTile > Text）
+    final decodeWrapper = find.ancestor(
+      of: find.text('解码方式'),
+      matching: tvWrappers(),
+    );
+    final decodeNode = tester.widget<Focus>(decodeWrapper).focusNode!;
+    decodeNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(outlineCount(), 1, reason: '落焦后仅该行有描边');
+
+    // ↓ 移到立体声降混（原裸 SwitchListTile）：落点应为外层包装而非行内蓝底
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    final stereoNode = FocusManager.instance.primaryFocus;
+    expect(stereoNode?.debugLabel, 'TvFocusable',
+        reason: '焦点应落在 TvFocusable 包装上（而非 SwitchListTile 内层）');
+    expect(stereoNode, isNot(decodeNode), reason: '焦点确实移动了');
+    expect(outlineCount(), 1, reason: '同屏仅一个焦点描边目标（失焦行零时长瞬时移除）');
+    // 动画时长语义：失焦行 duration 必须为 0，聚焦行 120ms
+    final durations = tester
+        .widgetList<AnimatedContainer>(find.descendant(
+          of: tvWrappers(),
+          matching: find.byType(AnimatedContainer),
+        ))
+        .map((c) => c.duration)
+        .toList();
+    expect(durations,
+        [Duration.zero, const Duration(milliseconds: 120), Duration.zero],
+        reason: '解码行失焦瞬时移除、立体声行聚焦淡入、音频后端行未聚焦（防双焦点框）');
+
+    // OK 键经外层 onTap 切换开关
+    final initial = container.read(settingsProvider).stereoDownmix;
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).stereoDownmix, isNot(initial),
+        reason: 'TV OK 键应切换开关');
+
+    // 继续 ↓ 到下一行（音频后端，Android 专属），同样保持唯一描边
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    final nextNode = FocusManager.instance.primaryFocus;
+    expect(nextNode?.debugLabel, 'TvFocusable');
+    expect(nextNode, isNot(stereoNode), reason: '焦点继续下移');
+    expect(outlineCount(), 1);
+  });
 }

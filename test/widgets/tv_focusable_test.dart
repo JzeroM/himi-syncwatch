@@ -148,4 +148,116 @@ void main() {
     final anyFocused = nodeOf(0).hasFocus || nodeOf(1).hasFocus;
     expect(anyFocused, isTrue, reason: '无焦点时方向键应让某项获得焦点（否则 TV 无法起步）');
   });
+
+  Finder _tvContainers(WidgetTester tester) => find.descendant(
+        of: find.byWidgetPredicate(
+            (w) => w is Focus && w.focusNode?.debugLabel == 'TvFocusable'),
+        matching: find.byType(AnimatedContainer),
+      );
+
+  int _outlineCount(WidgetTester tester) => tester
+      .widgetList<AnimatedContainer>(_tvContainers(tester))
+      .where((c) => c.foregroundDecoration != null)
+      .length;
+
+  testWidgets('TV 开启：失焦描边瞬时移除（同屏不允许两个焦点框）', (tester) async {
+    await tester.pumpWidget(wrap(const AppSettings(tvMode: true)));
+    await tester.pump();
+
+    expect(_outlineCount(tester), 1, reason: '初始仅焦点项有描边');
+
+    // 移动焦点并 settle（等 rebuild 落地）。直接断言动画时长语义：
+    // 失焦项 duration 必须为 0（零时长瞬时移除），否则旧环 120ms 淡出
+    // 与新焦点淡入交叉，同屏出现"两个焦点框"（历史 bug）
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(_outlineCount(tester), 1);
+    final durations = tester
+        .widgetList<AnimatedContainer>(_tvContainers(tester))
+        .map((c) => c.duration)
+        .toList();
+    expect(durations, [Duration.zero, const Duration(milliseconds: 120)],
+        reason: '失焦项（A）零时长瞬时移除，聚焦项（B）保留 120ms 淡入');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(_outlineCount(tester), 1, reason: '反向移动同理');
+    final durationsUp = tester
+        .widgetList<AnimatedContainer>(_tvContainers(tester))
+        .map((c) => c.duration)
+        .toList();
+    expect(durationsUp, [const Duration(milliseconds: 120), Duration.zero],
+        reason: '反向后 A 聚焦淡入、B 失焦瞬时移除');
+  });
+
+  testWidgets('TV 开启：描边画在缩放内层（环与内容同步缩放不露边）', (tester) async {
+    await tester.pumpWidget(wrap(const AppSettings(tvMode: true)));
+    await tester.pump();
+
+    final tvFocusables = find.byWidgetPredicate(
+        (w) => w is Focus && w.focusNode?.debugLabel == 'TvFocusable');
+    final containers = find.descendant(
+        of: tvFocusables, matching: find.byType(AnimatedContainer));
+    final scales =
+        find.descendant(of: tvFocusables, matching: find.byType(AnimatedScale));
+    expect(containers, findsNWidgets(2));
+    expect(scales, findsNWidgets(2));
+
+    // 结构不变量：AnimatedScale 必须是 AnimatedContainer 的祖先，
+    // 否则内容被 Transform 放大后会溢出描边环（焦点框"露边"）
+    for (final container in tester.widgetList<AnimatedContainer>(containers)) {
+      expect(
+        find.ancestor(
+          of: find.byWidget(container),
+          matching: find.byType(AnimatedScale),
+        ),
+        findsOneWidget,
+        reason: '描边容器必须位于 AnimatedScale 内层',
+      );
+    }
+
+    // 聚焦项放大目标为默认 1.06，未聚焦项回到 1.0
+    final scaleValues =
+        tester.widgetList<AnimatedScale>(scales).map((s) => s.scale).toList();
+    expect(scaleValues, [1.06, 1.0], reason: '焦点项微放大、非焦点项不放大（顺序同 A/B 两项）');
+  });
+
+  testWidgets('TV 开启：scale=1.0 关闭微放大（满宽行防两端文字出屏）', (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(
+            (ref) => FakeSettingsNotifier(const AppSettings(tvMode: true))),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: TvFocusable(
+                onTap: () {},
+                scale: 1.0,
+                autofocus: true,
+                child:
+                    const SizedBox(width: 400, height: 40, child: Text('row')),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final tvFocusable = find.byWidgetPredicate(
+        (w) => w is Focus && w.focusNode?.debugLabel == 'TvFocusable');
+    final scale = tester.widget<AnimatedScale>(
+        find.descendant(of: tvFocusable, matching: find.byType(AnimatedScale)));
+    expect(scale.scale, 1.0, reason: '聚焦也保持 1.0，不做 Transform 放大');
+    // 描边仍随焦点出现
+    final outline = tester.widget<AnimatedContainer>(find.descendant(
+        of: tvFocusable, matching: find.byType(AnimatedContainer)));
+    expect(outline.foregroundDecoration, isA<BoxDecoration>());
+  });
 }

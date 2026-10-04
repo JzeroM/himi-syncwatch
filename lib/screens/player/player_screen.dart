@@ -89,6 +89,13 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
+
+  /// 焦点 [candidate] 是否位于 [root] 子树内（含 root 自身）。
+  /// 控制条卸载前据此判断是否回落热键层，防止焦点悬空（方向键"选不到"）。
+  @visibleForTesting
+  static bool focusWithin(FocusNode root, FocusNode? candidate) =>
+      candidate != null &&
+      (candidate == root || candidate.ancestors.contains(root));
 }
 
 enum _OrientationMode { portraitUp, landscapeLeft, landscapeRight }
@@ -189,7 +196,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showControls = true;
 
   /// 热键层焦点（PlayerHotkey 外部节点）：控制条隐藏后焦点回落于此，
-  /// 遥控器方向键恢复 seek/音量语义
+  /// 遥控器方向键恢复 seek/唤出控制条语义
   final FocusNode _hotkeyFocusNode = FocusNode(debugLabel: 'PlayerHotkey');
 
   /// 控制条进度滑杆焦点：TV 唤出控制条后焦点落位点
@@ -2691,7 +2698,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) setState(() => _isWindowFullscreen = false);
   }
 
-  /// 遥控器上下键：±5% 音量，并显示左侧音量柱 1 秒
+  /// 音量键：±5% 应用内音量，并显示左侧音量柱 1 秒
   void _handleHotkeyVolumeDelta(double deltaPercent) {
     final newVol = (_volume + deltaPercent).clamp(0.0, 100.0);
     _volume = newVol;
@@ -2809,14 +2816,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _resetHideTimer();
   }
 
-  /// TV 中键/媒体键唤出控制条：显示 + 重置自动隐藏计时 + 焦点落进度滑杆
-  /// （焦点在滑杆时左右键调进度，上下键移动到控制条按钮）
+  /// TV 唤出控制条：隐藏时显示 + 重置自动隐藏计时 + 焦点落进度滑杆
+  /// （焦点在滑杆时左右键调进度，上下键移动到控制条按钮）；
+  /// 已可见时仅顺延自动隐藏——不抢焦点，否则按钮上按 OK 打开菜单后
+  /// 焦点被拽回滑杆（"很难选到"）。
   void _showControlsForTv() {
-    if (!_showControls) setState(() => _showControls = true);
-    _resetHideTimer();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _showControls) _controlsFocusNode.requestFocus();
-    });
+    if (!_showControls) {
+      setState(() => _showControls = true);
+      _resetHideTimer();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _showControls) _controlsFocusNode.requestFocus();
+      });
+    } else {
+      _resetHideTimer();
+    }
+  }
+
+  /// 控制条/顶栏即将卸载：若焦点在其子树内（滑杆、按钮、菜单面板），
+  /// 先回落热键层，避免卸载后焦点悬空（方向键"选不到"）。
+  /// 焦点在底部弹窗等其他路由时不抢。
+  void _releaseFocusFromControls() {
+    if (PlayerScreen.focusWithin(
+        _hotkeyFocusNode, FocusManager.instance.primaryFocus)) {
+      _hotkeyFocusNode.requestFocus();
+    }
   }
 
   void _resetHideTimer() {
@@ -2824,16 +2847,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_showControls) {
       _hideControlsTimer = Timer(const Duration(seconds: 5), () {
         if (mounted && _player.state == mdk.PlaybackState.playing) {
+          // 先转移焦点再卸载，防止按钮/面板焦点悬空
+          _releaseFocusFromControls();
           setState(() {
             _showControls = false;
             _showSubtitleMenu = false;
             _showAudioMenu = false;
             _showDecodeModeMenu = false;
           });
-          // 焦点从滑杆回落到热键层（滑杆即将卸载），恢复 seek/音量按键
-          if (_controlsFocusNode.hasFocus) {
-            _hotkeyFocusNode.requestFocus();
-          }
         }
       });
     }
@@ -4133,11 +4154,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     _totalEpisodeCount > 1)
                   const SizedBox(width: 8),
 
-                // 播放/暂停
+                // 播放/暂停（焦点落点统一由 _showControlsForTv 决定，
+                // 不再 autofocus——与 postFrame 落焦滑杆竞争导致"有时选不到"）
                 if (_canControlPlayback)
                   TvFocusable(
                     onTap: _togglePlayPause,
-                    autofocus: true,
                     child: ValueListenableBuilder<bool>(
                       valueListenable: _isPlayingNotifier,
                       builder: (context, isPlaying, child) {
@@ -4393,27 +4414,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }) {
     return TvFocusable(
       onTap: onTap,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(icon, color: Colors.white, size: 24),
-          if (badge != null)
-            Positioned(
-              right: -6,
-              top: -4,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF6366F1),
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  badge,
-                  style: const TextStyle(color: Colors.white, fontSize: 9),
+      child: Padding(
+        // 内边距扩大焦点热区：24px 图标贴边框时描边环几乎不可见
+        padding: const EdgeInsets.all(4),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(icon, color: Colors.white, size: 24),
+            if (badge != null)
+              Positioned(
+                right: -6,
+                top: -4,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF6366F1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    badge,
+                    style: const TextStyle(color: Colors.white, fontSize: 9),
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

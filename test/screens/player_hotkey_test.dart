@@ -18,6 +18,7 @@ void main() {
     bool controlsVisible = true,
     VoidCallback? onShowControls,
     FocusNode? focusNode,
+    bool provideVolume = true,
   }) =>
       Directionality(
         textDirection: TextDirection.ltr,
@@ -27,7 +28,7 @@ void main() {
           tvMode: tvMode,
           controlsVisible: controlsVisible,
           onSeekRelative: (ms) => seekMs += ms,
-          onVolumeDelta: (v) => volumeDelta += v,
+          onVolumeDelta: provideVolume ? (v) => volumeDelta += v : null,
           onShowControls: onShowControls,
           focusNode: focusNode,
           child: const SizedBox(width: 100, height: 100),
@@ -199,37 +200,157 @@ void main() {
     }
   });
 
-  testWidgets('TV：控制条可见时方向键不拦截（让位焦点导航）', (tester) async {
+  testWidgets('TV：控制条可见时方向键不拦截（让位焦点导航）并顺延自动隐藏', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
-      await tester.pumpWidget(wrap(tvMode: true, controlsVisible: true));
+      await tester.pumpWidget(wrap(
+        tvMode: true,
+        controlsVisible: true,
+        onShowControls: () => showControls++,
+      ));
       await tester.pump();
 
       await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
       await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
-      expect(seekMs, 0);
+      expect(seekMs, 0, reason: '可见时左右键不 seek（焦点导航用）');
+      expect(showControls, 1, reason: '可见时方向键顺延自动隐藏计时');
 
       await simulateKeyDownEvent(LogicalKeyboardKey.arrowUp);
       await simulateKeyUpEvent(LogicalKeyboardKey.arrowUp);
+      expect(volumeDelta, 0, reason: '上下键不再调音量');
+      expect(showControls, 2, reason: '上下键同样顺延自动隐藏计时');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：控制条隐藏时上下键唤出控制条（不再调音量）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(
+        tvMode: true,
+        controlsVisible: false,
+        onShowControls: () => showControls++,
+      ));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowUp);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowUp);
+      expect(showControls, 1, reason: '上键唤出控制条');
+      expect(volumeDelta, 0, reason: '上下键音量语义已迁移到音量键');
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.arrowDown);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowDown);
+      expect(showControls, 2, reason: '下键同样唤出控制条');
       expect(volumeDelta, 0);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
   });
 
-  testWidgets('TV：控制条隐藏时上下键 ±5% 音量', (tester) async {
+  testWidgets('TV：音量键 audioVolumeUp/Down 调应用内音量（控制条可见也生效）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true, controlsVisible: true));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeUp);
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeUp);
+      expect(volumeDelta, 5);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeDown);
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeDown);
+      expect(volumeDelta, 0, reason: '+5 后 -5 回到 0');
+      expect(toggled, 0, reason: '音量键不应触发播放/暂停');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：控制条隐藏时音量键同样生效（不受显隐门控）', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
       await tester.pumpWidget(wrap(tvMode: true, controlsVisible: false));
       await tester.pump();
 
-      await simulateKeyDownEvent(LogicalKeyboardKey.arrowUp);
-      await simulateKeyUpEvent(LogicalKeyboardKey.arrowUp);
+      await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeDown);
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeDown);
+      expect(volumeDelta, -5);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：PC 多媒体键 audioVolumeUp/Down 同样生效', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeUp);
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeUp);
       expect(volumeDelta, 5);
 
-      await simulateKeyDownEvent(LogicalKeyboardKey.arrowDown);
-      await simulateKeyUpEvent(LogicalKeyboardKey.arrowDown);
+      await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeDown);
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeDown);
       expect(volumeDelta, 0);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：音量键长按 KeyRepeatEvent 连续调节', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true));
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeUp);
+      expect(volumeDelta, 5);
+      await simulateKeyRepeatEvent(LogicalKeyboardKey.audioVolumeUp);
+      expect(volumeDelta, 10, reason: '长按 repeat 应连续加音量');
+      await simulateKeyRepeatEvent(LogicalKeyboardKey.audioVolumeUp);
+      expect(volumeDelta, 15);
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeUp);
+      expect(volumeDelta, 15, reason: '松键停止');
+
+      // 对照：其他热键长按仍不重复（空格在 Android 不生效，用中键验证）
+      await simulateKeyDownEvent(LogicalKeyboardKey.enter);
+      await simulateKeyRepeatEvent(LogicalKeyboardKey.enter);
+      await simulateKeyUpEvent(LogicalKeyboardKey.enter);
+      expect(toggled, 1, reason: '中键长按只触发一次');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：无 onVolumeDelta 时音量键放行（返回未处理给系统）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: true, provideVolume: false));
+      await tester.pump();
+
+      final handled =
+          await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeUp);
+      expect(handled, isFalse, reason: '未提供回调应放行系统音量');
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeUp);
+      expect(volumeDelta, 0);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('非 TV 模式音量键不拦截（保持系统音量）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(wrap(tvMode: false));
+      await tester.pump();
+
+      final handled =
+          await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeUp);
+      expect(handled, isFalse);
+      expect(volumeDelta, 0);
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeUp);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
