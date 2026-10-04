@@ -22,6 +22,13 @@ class MainShell extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<MainShell> createState() => _MainShellState();
+
+  /// 手机端底部胶囊的底距（v1.1.83 整体小幅上移）：
+  /// - 三键虚拟按键（inset≥40）：紧贴其上沿 +12（原 +2，胶囊离屏底更远）
+  /// - 手势条 / 无安全区：统一 12（原 6 / 4）
+  @visibleForTesting
+  static double navBottomGap(double bottomInset) =>
+      bottomInset >= 40 ? bottomInset + 12 : 12.0;
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
@@ -98,10 +105,9 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   Widget _buildShellBody(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    // 三键虚拟按键（≥40）：紧贴其上沿 +2，避免被遮挡又不留空隙；
-    // 手势条（≤34，透明）或无安全区：贴近屏底保留少量空间
-    final bottomGap =
-        bottomInset >= 40 ? bottomInset + 2 : (bottomInset > 0 ? 6.0 : 4.0);
+    // 胶囊底距整体小幅上移（v1.1.83，见 MainShell.navBottomGap）：
+    // 三键贴其上沿 +12；手势条/无安全区统一 12（原 6/4，太贴屏底）
+    final bottomGap = MainShell.navBottomGap(bottomInset);
 
     // 主题色三段渐变（null 时保持应用底色）
     final themeColorValue =

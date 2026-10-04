@@ -145,6 +145,23 @@ void main() {
     expect(find.byKey(const ValueKey('shellNavBarPadding')), findsOneWidget);
     expect(find.byKey(const ValueKey('drawerToggle')), findsNothing);
     expect(find.byKey(const ValueKey('shellContentArea')), findsNothing);
+    // 胶囊底距上移（v1.1.83）：测试环境无安全区 → 12（原 4）
+    final padding = tester
+        .widget<Padding>(find.byKey(const ValueKey('shellNavBarPadding')));
+    expect((padding.padding as EdgeInsets).bottom, 12,
+        reason: '胶囊整体小幅上移，不再贴屏底');
+  });
+
+  group('navBottomGap（胶囊底距上移 v1.1.83）', () {
+    test('无安全区 / 手势条（<40）：统一 12', () {
+      expect(MainShell.navBottomGap(0), 12, reason: '原 4，上移');
+      expect(MainShell.navBottomGap(34), 12, reason: '原 6，上移');
+    });
+
+    test('三键虚拟按键（≥40）：紧贴其上沿 +12', () {
+      expect(MainShell.navBottomGap(40), 52, reason: '原 +2，上移 10');
+      expect(MainShell.navBottomGap(80), 92);
+    });
   });
 
   testWidgets('TV 模式隐藏声网分支：停在声网页时自动回首页', (tester) async {

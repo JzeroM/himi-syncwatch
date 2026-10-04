@@ -224,7 +224,7 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
   });
 
-  testWidgets('底部导航胶囊贴近屏幕底，无安全区时仅留 4 间距', (tester) async {
+  testWidgets('底部导航胶囊上移，无安全区时留 12 间距', (tester) async {
     await _pumpApp(tester);
 
     final padding = tester.widget<Padding>(
@@ -233,25 +233,27 @@ void main() {
     final insets = padding.padding as EdgeInsets;
     expect(insets.left, 12);
     expect(insets.right, 12);
-    expect(insets.bottom, 4);
+    expect(insets.bottom, 12, reason: 'v1.1.83 胶囊整体小幅上移（原 4）');
   });
 
-  testWidgets('三键虚拟按键(48)时胶囊贴其上沿 +2，避免被遮挡', (tester) async {
+  testWidgets('三键虚拟按键(48)时胶囊贴其上沿 +12，避免被遮挡', (tester) async {
     await _pumpApp(tester, viewPadding: const EdgeInsets.only(bottom: 48));
 
     final padding = tester.widget<Padding>(
       find.byKey(const ValueKey('shellNavBarPadding')),
     );
-    expect((padding.padding as EdgeInsets).bottom, 50);
+    expect((padding.padding as EdgeInsets).bottom, 60,
+        reason: 'v1.1.83 上沿留白 +2 → +12');
   });
 
-  testWidgets('手势导航条(34)时胶囊贴近屏底留 6 间距', (tester) async {
+  testWidgets('手势导航条(34)时胶囊留 12 间距（按无安全区处理）', (tester) async {
     await _pumpApp(tester, viewPadding: const EdgeInsets.only(bottom: 34));
 
     final padding = tester.widget<Padding>(
       find.byKey(const ValueKey('shellNavBarPadding')),
     );
-    expect((padding.padding as EdgeInsets).bottom, 6);
+    expect((padding.padding as EdgeInsets).bottom, 12,
+        reason: 'v1.1.83 手势条不再单独贴底 6');
   });
 
   testWidgets('首页滑到底部导航胶囊淡出隐藏，回滚立即显示', (tester) async {
