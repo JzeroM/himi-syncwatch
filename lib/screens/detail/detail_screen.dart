@@ -1134,11 +1134,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Widget _buildContent(Color? accent, Color base) {
     if (_item == null) return const SizedBox();
     final item = _item!;
+    // TV 适配：横幅降高、标题降档、间距收紧（540 逻辑高屏）
+    final tv = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     return CustomScrollView(
       slivers: [
         SliverAppBar(
-          expandedHeight: 320,
+          expandedHeight: tv ? 220 : 320,
           pinned: true,
           leading: Padding(
             padding: const EdgeInsets.all(4),
@@ -1186,9 +1188,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     children: [
                       Text(
                         item.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
-                          fontSize: 24,
+                          fontSize: tv ? 20 : 24,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1257,7 +1259,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             ))
                         .toList(),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: tv ? 12 : 16),
                 ],
                 // 非 TV roomMode 的入口统一走底部胶囊（避免双入口）
                 if (!(widget.roomMode &&
@@ -1266,12 +1268,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     key: _actionRowKey,
                     child: _buildActionRow(),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: tv ? 12 : 16),
                 ],
                 if (item.overview != null && item.overview!.isNotEmpty) ...[
-                  const Text(
+                  Text(
                     '简介',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: tv ? 16 : 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   AnimatedCrossFade(
@@ -1305,15 +1310,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         ),
                       ),
                     ),
-                  const SizedBox(height: 20),
+                  SizedBox(height: tv ? 14 : 20),
                 ],
                 if (item.mediaStreams.isNotEmpty) ...[
                   _buildMediaInfo(item),
-                  const SizedBox(height: 20),
+                  SizedBox(height: tv ? 14 : 20),
                 ],
                 if (item.hasMultipleVersions) ...[
                   _buildMediaSources(item),
-                  const SizedBox(height: 20),
+                  SizedBox(height: tv ? 14 : 20),
                 ],
                 if (item.isSeries && _seasons.isNotEmpty) ...[
                   SeriesSections(
@@ -1333,9 +1338,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                 ],
                 if (_similarItems.isNotEmpty) ...[
-                  const Text(
+                  Text(
                     '相似推荐',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: tv ? 16 : 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
@@ -1366,7 +1374,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 120),
+                SizedBox(height: tv ? 48 : 120),
               ],
             ),
           ),
@@ -1376,12 +1384,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Widget _buildMediaSources(MediaItem item) {
+    final tv = ref.watch(settingsProvider.select((s) => s.tvMode));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           '可用版本',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontSize: tv ? 16 : 18,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 8),
         ...item.mediaSources.map((source) => Card(

@@ -1837,4 +1837,38 @@ void main() {
       expect(fields, contains('AlternateMediaSources'));
     });
   });
+
+  group('TV 适配：横幅与字号', () {
+    // 详情页含永续动画（settle 会超时），各断言用独立单 pump 用例
+    testWidgets('TV 横幅 expandedHeight=220', (tester) async {
+      await _pumpDetail(tester, tv: true);
+      final bar = tester.widget<SliverAppBar>(find.byType(SliverAppBar));
+      expect(bar.expandedHeight, 220, reason: 'TV 540 逻辑高下横幅降高让位正文');
+    });
+
+    testWidgets('非 TV 横幅 expandedHeight=320', (tester) async {
+      await _pumpDetail(tester, tv: false);
+      final bar = tester.widget<SliverAppBar>(find.byType(SliverAppBar));
+      expect(bar.expandedHeight, 320, reason: '非 TV 保持原横幅高度');
+    });
+
+    testWidgets('TV 分区标题 16、简介正文 14', (tester) async {
+      await _pumpDetail(tester, tv: true);
+      final title = tester.widget<Text>(find.text('简介')).style;
+      expect(title?.fontSize, 16, reason: 'TV 分区标题降档');
+
+      // AnimatedCrossFade 折叠/完整两份正文并存 → 取 first
+      final body = tester.widget<Text>(find.text('这是一段测试简介。').first).style;
+      expect(body?.fontSize, 14, reason: '简介正文保持 14 可读');
+    });
+
+    testWidgets('非 TV 分区标题 18、简介正文 14', (tester) async {
+      await _pumpDetail(tester, tv: false);
+      final title = tester.widget<Text>(find.text('简介')).style;
+      expect(title?.fontSize, 18, reason: '非 TV 标题保持 18');
+
+      final body = tester.widget<Text>(find.text('这是一段测试简介。').first).style;
+      expect(body?.fontSize, 14, reason: '简介正文保持 14 可读');
+    });
+  });
 }

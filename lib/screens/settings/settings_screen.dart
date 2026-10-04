@@ -178,6 +178,10 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           const _ThemeColorSection(),
           const Divider(height: 1),
+          // 分类页列数紧跟主题色（外观设置相邻）；后部行整体下移，
+          // 相关视口/焦点测试已配套修复
+          const _CategoryColumnsSection(),
+          const Divider(height: 1),
           _settingOptionTile(
             context: context,
             tvMode: settings.tvMode,
@@ -320,10 +324,6 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => LogService().shareLogs(),
             ),
           ),
-          const Divider(height: 1),
-          // 分类页列数放列表尾部：前部行的初始视口位置是既有焦点/滚动
-          // 测试的基准，插入前部会把它们顶出视口
-          const _CategoryColumnsSection(),
           const Divider(height: 1),
         ],
       ),

@@ -210,6 +210,13 @@ void main() {
 
   testWidgets('音频后端默认为自动', (tester) async {
     final container = await _pumpScreen(tester);
+    // 分类页列数分节插入前部后，音频后端行已超出初始视口（视口外不 mount）
+    await tester.scrollUntilVisible(
+      find.text('音频后端'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
 
     expect(find.text('音频后端'), findsOneWidget);
     expect(
@@ -227,6 +234,12 @@ void main() {
       expect(find.text('音频后端'), findsNothing);
       // 相邻设置项仍正常展示（分隔线未错乱）
       expect(find.text('立体声降混'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('播放调试面板'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       expect(find.text('播放调试面板'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
@@ -240,6 +253,12 @@ void main() {
 
       expect(find.text('音频后端'), findsNothing);
       expect(find.text('立体声降混'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('播放调试面板'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       expect(find.text('播放调试面板'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
@@ -429,8 +448,14 @@ void main() {
 
       expect(find.text('视频输出'), findsNothing);
       expect(find.text('渲染兼容模式（实验）'), findsNothing);
-      // 相邻设置项仍正常展示
+      // 近处相邻设置项初始视口内展示
       expect(find.text('解码方式'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('播放调试面板'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       expect(find.text('播放调试面板'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
@@ -501,6 +526,12 @@ void main() {
   });
 
   testWidgets('TV：音频后端行点开底部弹窗，选择 AAudio 写入', (tester) async {
+    // 分类页列数分节插入前部后，音频后端行超出 600 默认视口——
+    // 加高视口使初始即可见（与焦点描边用例同策略）
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
     final container = await _pumpScreen(
       tester,
       initial: const AppSettings(tvMode: true),
@@ -521,6 +552,13 @@ void main() {
   // ---- TV 焦点样式统一（"同屏两个焦点框"回归） ----
 
   testWidgets('TV：设置行移动焦点后同屏仅一个描边，落点为 TvFocusable 包装', (tester) async {
+    // 结构性依赖"初始视口内 解码/立体声降混/音频后端 三行可见"（不能滚动，
+    // scrollUntilVisible 会把解码行顶出视口破坏落焦）：分类页列数分节插入
+    // 前部后三行整体下移，加高视口让三行回到初始视口内
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
     final container = await _pumpScreen(
       tester,
       remote: true,
@@ -572,7 +610,9 @@ void main() {
         reason: '焦点应落在 TvFocusable 包装上（而非 SwitchListTile 内层）');
     expect(stereoNode, isNot(decodeNode), reason: '焦点确实移动了');
     expect(outlineCount(), 1, reason: '同屏仅一个焦点描边目标（失焦行零时长瞬时移除）');
-    // 动画时长语义：失焦行 duration 必须为 0，聚焦行 120ms
+    // 动画时长语义：失焦行 duration 必须为 0，聚焦行 120ms。
+    // 加高视口后可见行数不定（不再硬编码 3 行），按语义断言：
+    // 恰好一个聚焦行、其余全部失焦瞬时移除
     final durations = tester
         .widgetList<AnimatedContainer>(find.descendant(
           of: tvWrappers(),
@@ -580,9 +620,16 @@ void main() {
         ))
         .map((c) => c.duration)
         .toList();
-    expect(durations,
-        [Duration.zero, const Duration(milliseconds: 120), Duration.zero],
-        reason: '解码行失焦瞬时移除、立体声行聚焦淡入、音频后端行未聚焦（防双焦点框）');
+    expect(
+      durations.where((d) => d == const Duration(milliseconds: 120)).length,
+      1,
+      reason: '解码/立体声/音频后端…全部可见行中仅立体声行聚焦淡入（120ms）',
+    );
+    expect(
+      durations.where((d) => d != Duration.zero).length,
+      1,
+      reason: '其余行全部失焦 0ms 瞬时移除（防双焦点框）',
+    );
 
     // OK 键经外层 onTap 切换开关
     final initial = container.read(settingsProvider).stereoDownmix;
