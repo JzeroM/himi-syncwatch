@@ -96,6 +96,27 @@ class PlayerScreen extends ConsumerStatefulWidget {
   static bool focusWithin(FocusNode root, FocusNode? candidate) =>
       candidate != null &&
       (candidate == root || candidate.ancestors.contains(root));
+
+  /// 进入播放器的初始控制条设置：
+  /// - 全模式启动自动隐藏计时（此前初进无人调 `_resetHideTimer`，控件
+  ///   永不自动隐藏——非 TV 模式同样需要"播放中 5 秒隐藏"）；
+  /// - TV 且控件可见：postFrame 落焦 seek 滑杆。热键层 autofocus 会先把
+  ///   焦点抢到无描边的裸 Focus 节点（屏幕无焦点环），而 `_showControlsForTv`
+  ///   的落焦只挂在"隐藏→显示"翻转分支、初进不经过——故此处补落焦，
+  ///   落点与"调出控件"完全一致。postFrame 晚于 autofocus 应用，覆盖安全。
+  @visibleForTesting
+  static void scheduleInitialControlsSetup({
+    required bool tvMode,
+    required bool controlsVisible,
+    required FocusNode seekNode,
+    required VoidCallback onStartHideTimer,
+  }) {
+    onStartHideTimer();
+    if (!tvMode || !controlsVisible) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (seekNode.context != null) seekNode.requestFocus();
+    });
+  }
 }
 
 enum _OrientationMode { portraitUp, landscapeLeft, landscapeRight }
@@ -869,6 +890,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     _setupPlayerListeners();
+    // 初进控制条设置：全模式启动 5 秒自动隐藏；TV 模式补落焦 seek 滑杆
+    //（热键层 autofocus 抢走焦点且无焦点环，翻转分支初进不经过）
+    PlayerScreen.scheduleInitialControlsSetup(
+      tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
+      controlsVisible: _showControls,
+      seekNode: _controlsFocusNode,
+      onStartHideTimer: _resetHideTimer,
+    );
     // 防御：EGL 故障若在播放器创建前已被全局检测（bootstrap handler），
     // 进入页面即触发自愈，不必等下一次日志喂入。
     if (eglFaultDetector.fault) {
@@ -2713,6 +2742,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final playing = _player.state == mdk.PlaybackState.playing;
     if (_isPlayingNotifier.value != playing) {
       _isPlayingNotifier.value = playing;
+      // 开播边沿重启自动隐藏计时：初进计时若在加载期（非 playing）烧掉，
+      // 此后无人续期 → 控件常显；此处保证"播放中 5 秒隐藏"始终成立。
+      if (playing) _resetHideTimer();
     }
   }
 
