@@ -232,9 +232,9 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   ///   （纯整体放大，不拉长不压扁），真折射镜片挂载（`blur: 0.01`
   ///   打开 Skia 背景捕获），矩形上下各外扩 6px 超出胶囊；采样
   ///   [_navCaptureKey] 导航边界（胶囊+图标）→ 图标被物理折射弯折，
-  ///   沿边 18px 光学带出纯物理色散彩虹（vendored 包 [PATCH himi]
-  ///   ×4.0，无自发光色环），折射只在移动过程出现，jelly 果冻形变
-  ///   吃 [_blobVelocity]；
+  ///   沿边 28px 光学带（线性衰减、无二次压缩）出纯物理色散彩虹
+  ///   （vendored 包 [PATCH himi] ×4.0，无自发光色环），折射只在移动
+  ///   过程出现，jelly 果冻形变吃 [_blobVelocity]；
   /// - `settings.thickness/saturation/lightIntensity` 取设置滑杆实时值，
   ///   `ambientRim/glowIntensity/ambientStrength/edgeAbsorption` 出
   ///   柔和中性微边与结构亮圈（补偿包内标准路径归一化，位置无关可见）；

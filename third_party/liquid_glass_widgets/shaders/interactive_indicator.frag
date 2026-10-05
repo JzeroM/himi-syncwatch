@@ -202,18 +202,19 @@ void main() {
   // TWEAK: edgeZone - How far from the edge the distortion extends (logical px)
   //   Smaller = sharper transition, concentrated at very edge
   //   Larger = softer, more gradual effect spreading inward
-  // [PATCH himi] 14 → 18: 更宽的折射/色散/彩虹光晕带（参考目标：气泡
-  // 边缘 ~8px 宽的软光学区，而非贴边发丝线）。
-  float edgeZone = 18.0;
+  // [PATCH himi] 14 → 28: 折射/色散影响带从边缘向内 28px（设备反馈
+  // round-5：大小不变、折射范围再大一点 —— 移动态 72px 高上下带
+  // 28+28 接近全高，水珠盖住的区域几乎全域弯折）。
+  float edgeZone = 28.0;
   
   // Calculate influence: 1.0 at edge, 0.0 at edgeZone pixels inward
   float edgeInfluence = smoothstep(edgeZone, 0.0, distFromEdge);
   
   // TWEAK: Quadratic falloff makes the bend gentler (less abrupt)
-  //   Use edgeInfluence directly for sharper edge effect
-  //   Use edgeInfluence * edgeInfluence for gentler, more natural curve
-  //   Use pow(edgeInfluence, 3.0) for even gentler effect
-  edgeInfluence = edgeInfluence * edgeInfluence;
+  // [PATCH himi] 撤销平方衰减（设备反馈 round-5）：upstream 二次衰减把
+  // edgeZone 带再压缩 ~一半，中带弯折迅速归零 → 折射只贴着边缘一圈。
+  // 保留 smoothstep 原始输出（平滑线性 falloff），带宽与中带强度同时
+  // 提升，折射从边缘连续饱满过渡到接近中心；峰值位移不变（幅度不加大）。
   
   // TWEAK: bendStrength - Overall refraction intensity
   //   Base (0.9): stronger edge lens distortion, closer to Impeller volumetric warp

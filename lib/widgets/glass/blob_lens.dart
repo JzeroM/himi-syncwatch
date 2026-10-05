@@ -21,8 +21,9 @@ import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 ///   零 shader 开销），1 活动（pill 淡出、镜片挂载、矩形上下外扩
 ///   [expansionV]、jelly 果冻形变吃 [velocity]）；
 /// - **彩虹 = 纯物理色散**（vendored 包 [PATCH himi] 补丁，色散 0.12→4.0）：
-///   沿边 18px 光学带把捕获内容的 RGB 通道分开 —— 只在背后有对比处
-///   （图标边、胶囊边线）出彩边，随果冻形变流动；无任何自发光色环；
+///   沿边 28px 光学带（线性衰减，range 比 round-4 更宽）把捕获内容的
+///   RGB 通道分开 —— 只在背后有对比处（图标边、胶囊边线）出彩边，
+///   随果冻形变流动；无任何自发光色环；
 /// - quality 按引擎分流：Impeller → premium（原生折射层），
 ///   Skia/Web → standard（interactive_indicator.frag 捕获折射）。
 ///

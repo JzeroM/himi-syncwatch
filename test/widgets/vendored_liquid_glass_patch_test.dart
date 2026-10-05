@@ -64,8 +64,11 @@ void main() {
 
     expect(frag.contains('bendStrength = 1.25 *'), isTrue,
         reason: '折射强度 1.25（upstream 0.9 → 设备反馈需更强折射）');
-    expect(frag.contains('edgeZone = 18.0'), isTrue,
-        reason: '光学边带 18px（upstream 14 → 宽软折射/色散带）');
+    expect(frag.contains('edgeZone = 28.0'), isTrue,
+        reason: '光学边带 28px（upstream 14 → round-5 折射范围再加大）');
+    expect(
+        frag.contains('edgeInfluence = edgeInfluence * edgeInfluence'), isFalse,
+        reason: '二次衰减已撤销：中带弯折不再迅速归零，范围连续到接近中心');
     expect(frag.contains('uSize.y * 0.45'), isTrue,
         reason: '弯折高度比 0.45（upstream 0.35，配合 1.25 → ×1.79 折射）');
     expect(frag.contains('rimColor * borderMask * 1.2'), isTrue,
@@ -81,7 +84,7 @@ void main() {
     );
 
     final markers = RegExp(r'\[PATCH himi\]').allMatches(frag).length;
-    expect(markers, greaterThanOrEqualTo(9), reason: '全部 [PATCH himi] 补丁标记齐全');
+    expect(markers, greaterThanOrEqualTo(10), reason: '全部 [PATCH himi] 补丁标记齐全');
   });
 
   test('vendored 包带 LICENSE 且包名未变', () {
