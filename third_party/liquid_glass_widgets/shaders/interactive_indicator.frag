@@ -248,13 +248,14 @@ void main() {
   // Red shifts one way, blue shifts the opposite, green stays centered.
   
   // TWEAK: (0.12) - subtle chromatic shift for "Apple style" refraction
-  // [PATCH himi] 0.12 → 2.0: upstream 0.12 is sub-pixel invisible (at
-  // uChromaticAberration=0.5 the shift is only 0.06 logical px). 2.0 gives a
-  // ~1px/side RGB split at the edge, decaying with edgeInfluence^2 over the
-  // edgeZone band — real dispersion of the captured background, so the fringe
-  // only appears where the content behind has contrast.
+  // [PATCH himi] 0.12 → 4.0: upstream 0.12 is sub-pixel invisible (at
+  // uChromaticAberration=0.5 the shift is only 0.06 logical px). 4.0 gives a
+  // ~2px/side RGB split at the edge, decaying with edgeInfluence^2 over the
+  // edgeZone band — real dispersion of the captured background (navigation
+  // icons + capsule), so the rainbow fringe only appears where the content
+  // behind has contrast. No emissive halo anywhere: the rainbow IS this.
   vec2 distort = surfaceNormal * edgeInfluence * uChromaticAberration;
-  vec2 chromaticShift = distort * 2.0; 
+  vec2 chromaticShift = distort * 4.0; 
   
   vec3 bg;
   if (uHasBackground > 0.5) {
@@ -300,8 +301,8 @@ void main() {
   float kickHighlight = kc8 * kc4 * uLightIntensity * 0.5; // kc^12
   
   // TWEAK: ambientRim - minimum rim brightness regardless of light direction
-  // [PATCH himi] 白色高光瓣 ×0.4：rim 主要由 ambientRim 驱动的光谱色
-  // 构成，key/kick 白色镜面瓣只留 40% —— 边缘是彩色光晕而不是白框。
+  // [PATCH himi] 白色高光瓣 ×0.4：rim 由 ambientRim 驱动的中性微光构成，
+  // key/kick 白色镜面瓣只留 40% —— 边缘是柔和微光而不是白框。
   float rimBrightness = uAmbientRim + (keyHighlight + kickHighlight) * 0.4;
   
   // ==========================================================================
@@ -345,17 +346,10 @@ void main() {
   float modifiedRimBrightness = max(0.0, rimBrightness + bevelGradient * borderMask);
 
   // Scale rim brightness with ambientRim parameter
-  // [PATCH himi] white rim → spectral rim: hue from the perimeter angle
-  // relative to the light direction (IQ cosine palette). Keeps the existing
-  // key/kick brightness lobes + bevel gradient (organic strong/weak variation
-  // around the ring), and rotating uLightDirection (lightAngle) sweeps the
-  // hue around the rim while the jelly transform warps it during motion.
-  // mix 0.85 → highlights stay bright, colors vivid but not neon.
-  float rimAngle = atan(surfaceNormal.y, surfaceNormal.x)
-      - atan(uLightDirection.y, uLightDirection.x);
-  vec3 rimSpectrum = 0.5 + 0.5 * cos(rimAngle + vec3(0.0, 2.094, 4.189));
-  vec3 rimTint = mix(vec3(1.0), rimSpectrum, 0.85);
-  vec3 rimColor = rimTint * modifiedRimBrightness * (uAmbientRim * 10.0);
+  // [PATCH himi] 纯中性 rim（撤销 v1.1.91 的人造光谱色环 rimSpectrum）：
+  // 彩虹全部来自捕获内容的真色散（chromaticShift ×4.0），rim 只做低
+  // 强度中性微光（ambientRim 驱动，随 lightAngle 亮瓣流动）。
+  vec3 rimColor = vec3(1.0) * modifiedRimBrightness * (uAmbientRim * 10.0);
   
   // ==========================================================================
   // COMPOSITE FINAL COLOR
@@ -366,11 +360,10 @@ void main() {
   vec3 finalColor = (uHasBackground > 0.5) ? (bg * bgBoost) : bg;
   
   // Rim highlight: primary + secondary bevel definition collapsed to one operation.
-  // [PATCH himi] 宽软彩虹光晕（参考目标）：谱色带从发丝 hairline 扩展到
-  // haloBand（edgeInfluence 的四次衰减，≈8px 软晕），max() 保留 hairline
-  // 核心。系数 1.5 → 1.2：配合光谱 rimColor（非纯白）避免过曝白框。
-  float haloBand = edgeInfluence * edgeInfluence;
-  finalColor += rimColor * max(borderMask, haloBand) * 1.2;
+  // [PATCH himi] 只保留 hairline 核心（1.5 → 1.2）：宽软彩色光晕不再用
+  // 自发光色带（v1.1.91 haloBand 已撤销），交给真色散 chromaticShift
+  // ×4.0 —— 光晕随捕获内容的对比自然出现（物理色散光晕）。
+  finalColor += rimColor * borderMask * 1.2;
 
   // Add fresnel glow — uGlowIntensity controls how visible the glass-edge luminosity is.
   finalColor += vec3(1.0) * fresnel * uGlowIntensity;

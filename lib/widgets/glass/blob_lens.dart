@@ -11,20 +11,22 @@ import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 /// 直连包内 [GlassEffect]，绕过 `AnimatedGlassIndicator`（其内部强制
 /// `blur: 0` 导致 Skia 上背景捕获永不启动，折射与彩虹色散全部失效）：
 /// - `settings.blur = 0.01` 满足 GlassEffect 捕获门槛
-///   （`interactionIntensity > 0.01 && scopeKey != null && blur > 0`），
-///   移动中每帧采样 GlassBackgroundSource，shader 拿到真背景后
-///   折射与 RGB 色散才真正生效；0.01 的模糊量不可感知；
+///   （`interactionIntensity > 0.01 && key != null && blur > 0`），
+///   移动中每帧对 [backgroundKey] 边界（胶囊+导航图标）toImageSync，
+///   shader 拿到真背景后折射形变与 RGB 色散才真正生效；
+/// - [backgroundKey] 指向导航 RepaintBoundary（非默认 body 边界）：
+///   图标在采样纹理内 → 水珠划过时图标被物理折射弯折；水珠自身在
+///   边界之外，不会自采样产生反馈环；越界像素由纹理钳边兜底；
 /// - [activity] 由外部弹簧驱动 0..1：0 静止（仅扁平实心 pill、镜片不挂载、
 ///   零 shader 开销），1 活动（pill 淡出、镜片挂载、矩形上下外扩
 ///   [expansionV]、jelly 果冻形变吃 [velocity]）；
-/// - **彩虹圈 = shader 真色散 + 光谱边光**（vendored 包 [PATCH himi] 补丁）：
-///   色散系数 0.12→2.0，沿边 14px 带采样真实捕获背景出彩边（只在背后
-///   有对比处出现，随果冻形变流动）；边光按周向角上光谱色、亮瓣随
-///   [LiquidGlassSettings.lightAngle] 扫动 —— 醒目但有机，非贴纸描边；
+/// - **彩虹 = 纯物理色散**（vendored 包 [PATCH himi] 补丁，色散 0.12→4.0）：
+///   沿边 18px 光学带把捕获内容的 RGB 通道分开 —— 只在背后有对比处
+///   （图标边、胶囊边线）出彩边，随果冻形变流动；无任何自发光色环；
 /// - quality 按引擎分流：Impeller → premium（原生折射层），
 ///   Skia/Web → standard（interactive_indicator.frag 捕获折射）。
 ///
-/// 作为导航 Stack 的直接子级渲染：胶囊玻璃是它的兄弟层而非祖先，
+/// 作为导航 Stack 的直接子级渲染：胶囊与图标是它的兄弟层而非祖先，
 /// 适配层与包内 `LightweightLiquidGlass` 对各自子级的无条件裁剪
 /// 都碰不到这里，水珠才能溢出胶囊。
 class LiquidBlobLens extends StatelessWidget {
@@ -36,6 +38,7 @@ class LiquidBlobLens extends StatelessWidget {
     required this.velocity,
     required this.settings,
     required this.pillColor,
+    this.backgroundKey,
     this.pillShadows = const [
       BoxShadow(color: Color(0x29FFFFFF), blurRadius: 14),
     ],
@@ -59,6 +62,13 @@ class LiquidBlobLens extends StatelessWidget {
   /// 镜片玻璃参数（调用方从 baseIndicatorSettings 组装，
   /// 含 Skia 捕获钥匙 `blur: 0.01` 与固定 0.5 色散）。
   final lg.LiquidGlassSettings settings;
+
+  /// 采样边界钥匙：导航 [RepaintBoundary]（胶囊+图标，不含水珠自身）。
+  ///
+  /// 覆盖 `LiquidGlassScope` 默认的 body 边界 —— 只有图标在采样纹理内，
+  /// 水珠移动时导航图标才会被真实折射形变；水珠本身在边界之外，
+  /// 不会自采样成反馈环。
+  final GlobalKey? backgroundKey;
 
   /// 静止实心胶囊底色（白 0.10）。
   final Color pillColor;
@@ -94,87 +104,90 @@ class LiquidBlobLens extends StatelessWidget {
     )!;
 
     return Positioned.fill(
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: paddingV),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              left: left,
-              top: 0,
-              bottom: 0,
-              width: width,
-              child: lg.InheritedLiquidGlass(
-                settings: settings,
-                quality: q,
-                avoidsRefraction: false,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (bgOpacity > 0)
-                      Positioned.fromRelativeRect(
-                        rect: rect,
-                        child: IgnorePointer(
-                          child: Opacity(
-                            opacity: bgOpacity,
-                            child: DecoratedBox(
-                              decoration: ShapeDecoration(
-                                color: pillColor,
-                                shape: lg.LiquidRoundedRectangle(
-                                  borderRadius: borderRadius,
+      // 纯视觉层：水珠盖在图标之上（参考效果），放行所有点击给下层图标
+      child: IgnorePointer(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: paddingV),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: left,
+                top: 0,
+                bottom: 0,
+                width: width,
+                child: lg.InheritedLiquidGlass(
+                  settings: settings,
+                  quality: q,
+                  avoidsRefraction: false,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      if (bgOpacity > 0)
+                        Positioned.fromRelativeRect(
+                          rect: rect,
+                          child: IgnorePointer(
+                            child: Opacity(
+                              opacity: bgOpacity,
+                              child: DecoratedBox(
+                                decoration: ShapeDecoration(
+                                  color: pillColor,
+                                  shape: lg.LiquidRoundedRectangle(
+                                    borderRadius: borderRadius,
+                                  ),
+                                  shadows: pillShadows,
                                 ),
-                                shadows: pillShadows,
+                                child: const SizedBox.expand(),
                               ),
-                              child: const SizedBox.expand(),
                             ),
                           ),
                         ),
-                      ),
-                    if (activity > 0.05)
-                      Positioned.fromRelativeRect(
-                        rect: rect,
-                        child: Transform(
-                          alignment: Alignment.center,
-                          transform:
-                              DraggableIndicatorPhysics.buildJellyTransform(
-                            velocity: Offset(velocity, 0),
-                            maxDistortion: isStd ? 0.35 : 0.8,
-                            velocityScale: 10,
-                          ),
-                          child: GlassEffect(
-                            shape: lg.LiquidRoundedRectangle(
-                              borderRadius: borderRadius,
+                      if (activity > 0.05)
+                        Positioned.fromRelativeRect(
+                          rect: rect,
+                          child: Transform(
+                            alignment: Alignment.center,
+                            transform:
+                                DraggableIndicatorPhysics.buildJellyTransform(
+                              velocity: Offset(velocity, 0),
+                              maxDistortion: isStd ? 0.35 : 0.8,
+                              velocityScale: 10,
                             ),
-                            settings: settings.copyWith(visibility: activity),
-                            quality: q,
-                            interactionIntensity: activity,
-                            clipExpansion: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 15,
-                            ),
-                            // std 输入 2.0：×0.35 归一化后 ~0.7px
-                            // 光谱光晕 hairline 核心（宽软部分由 shader
-                            // haloBand 承担，边框感弱化）
-                            rimThickness: isStd
-                                ? 2.0
-                                : settings.effectiveThickness.clamp(0.8, 8.0),
-                            ambientRim: settings.ambientRim > 0
-                                ? settings.ambientRim
-                                : (isStd ? 0.08 : 0.1),
-                            baseAlphaMultiplier: isStd ? 0.08 : 0.2,
-                            edgeAlphaMultiplier: isStd ? 0.15 : 0.4,
-                            child: const lg.GlassGlow(
-                              glowColor: Color(0x00000000),
-                              child: SizedBox.expand(),
+                            child: GlassEffect(
+                              shape: lg.LiquidRoundedRectangle(
+                                borderRadius: borderRadius,
+                              ),
+                              settings: settings.copyWith(visibility: activity),
+                              quality: q,
+                              interactionIntensity: activity,
+                              // 采样导航边界（胶囊+图标）→ 图标被真实折射形变
+                              backgroundKey: backgroundKey,
+                              clipExpansion: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 15,
+                              ),
+                              // std 输入 2.0：×0.35 归一化后 ~0.7px 中性软边
+                              rimThickness: isStd
+                                  ? 2.0
+                                  : settings.effectiveThickness.clamp(0.8, 8.0),
+                              ambientRim: settings.ambientRim > 0
+                                  ? settings.ambientRim
+                                  : (isStd ? 0.08 : 0.1),
+                              baseAlphaMultiplier: isStd ? 0.08 : 0.2,
+                              edgeAlphaMultiplier: isStd ? 0.15 : 0.4,
+                              child: const lg.GlassGlow(
+                                glowColor: Color(0x00000000),
+                                child: SizedBox.expand(),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

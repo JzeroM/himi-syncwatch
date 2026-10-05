@@ -179,7 +179,8 @@ void main() {
     // 拖到第二格：水珠中心跟手，等弹簧把整体放大拉满
     await gesture.moveTo(Offset(nav.left + 300, nav.center.dy));
     await tester.pump();
-    await tester.pumpAndSettle();
+    // 按住期间捕获 ticker 每帧活跃 → pumpAndSettle 会死等，改有界推进
+    await tester.pump(const Duration(milliseconds: 450));
 
     final dragging = _blob(tester);
     expect(dragging.left, closeTo(300 - dragging.width! / 2, 1),
@@ -285,9 +286,10 @@ void main() {
     expect(lens.settings.thickness, 28, reason: '镜片深度跟随玻璃厚度滑杆（应用默认 28）');
     expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.14),
         reason: '白色镜片底色略提亮，配合结构参数增强折射观感');
-    // 结构参数（补偿包内标准路径归一化）：ambientRim 驱动光谱彩虹光晕；
+    // 结构参数（补偿包内标准路径归一化）：ambientRim 驱动中性白微光；
     // glow/ambient 收低弱化白色边框感；edgeAbsorption 收低淡化边缘暗带
-    expect(lens.settings.ambientRim, 0.35, reason: '光谱彩虹光晕驱动（×0.7 归一化后 0.245）');
+    expect(lens.settings.ambientRim, 0.18,
+        reason: '中性白微边驱动（×0.7 归一化后 0.126，非硬边框）');
     expect(lens.settings.glowIntensity, 1.2, reason: '白色菲涅尔光晕收敛，弱化边框感');
     expect(lens.settings.ambientStrength, 0.4, reason: '内壁白光提亮收敛');
     expect(lens.settings.edgeAbsorption, 0.10, reason: '边缘暗带淡化，非硬边框');
@@ -295,14 +297,14 @@ void main() {
         reason:
             '测试环境 isShaderFilterSupported=false → standard（真机 Impeller → premium）');
 
-    // 静止镜片不挂载（折射/光谱边光只在移动出现）
+    // 静止镜片不挂载（折射/物理色散只在移动出现）
     expect(find.byType(GlassEffect), findsNothing);
 
     // 光源相位随水珠位置：首格 t=0.125 → π/2 + (0.125-0.5)π
     expect(
       lens.settings.lightAngle,
       closeTo(math.pi / 2 + (0.125 - 0.5) * math.pi, 1e-9),
-      reason: 'lightAngle 随水珠位置扫动（光谱边光随移动流动的驱动）',
+      reason: 'lightAngle 随水珠位置扫动（key/kick 亮瓣随移动流动的驱动）',
     );
 
     // 镜片就近提供 avoidsRefraction: false，GlassEffect 走真折射而非 vibrancy
@@ -345,15 +347,17 @@ void main() {
     expect(_expandedRect(tester), findsNothing);
     expect(find.byType(GlassEffect), findsNothing);
 
-    // 长按进入拖动态，等弹簧把活动量拉到 1
+    // 长按进入拖动态，等弹簧把活动量拉到 1（按住中捕获 ticker 活跃，
+    // 不能 pumpAndSettle，用有界帧推进）
     final gesture = await tester.startGesture(
       Offset(nav.left + 100, nav.center.dy),
     );
     await tester.pump(const Duration(milliseconds: 600));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 450));
 
     final moving = tester.widget<LiquidBlobLens>(find.byKey(_navBlob));
-    expect(moving.activity, 1.0, reason: '拖动中弹簧拉到 1');
+    expect(moving.activity, closeTo(1.0, 0.02),
+        reason: '拖动中弹簧拉满（有界帧推进，允许微量过冲）');
     expect(_restBackground(tester), findsNothing,
         reason: '活动量 >0.15 后实心底卸载，交棒玻璃镜片');
     expect(_expandedRect(tester), findsOneWidget,
@@ -372,12 +376,15 @@ void main() {
 
     // 镜片挂载且捕获参数就位（折射/真色散只在移动过程出现）
     final effect = tester.widget<GlassEffect>(find.byType(GlassEffect));
-    expect(effect.interactionIntensity, 1.0, reason: '镜片活动强度随弹簧到 1');
+    expect(effect.interactionIntensity, closeTo(1.0, 0.02),
+        reason: '镜片活动强度随弹簧拉满（允许微量过冲）');
+    expect(effect.backgroundKey, isNotNull,
+        reason: '采样导航边界（胶囊+图标），非默认 body 边界');
     expect(effect.settings.blur, 0.01, reason: '拷贝态保留 blur 原值供捕获门槛判定');
     expect(effect.settings.chromaticAberration, 0.5,
-        reason: '色散输入 0.5，配合 vendored shader ×2.0 出 ~1px 彩边');
-    expect(effect.settings.visibility, 1.0,
-        reason: 'visibility=activity 已淡入完成');
+        reason: '色散输入 0.5，配合 vendored shader ×4.0 出 ~2px 物理彩边');
+    expect(effect.settings.visibility, closeTo(1.0, 0.02),
+        reason: 'visibility=activity 已淡入完成（允许微量过冲）');
     expect(effect.quality, lg.GlassQuality.standard,
         reason: '测试环境 standard → 无捕获降级安全（真机走捕获折射）');
 
@@ -401,6 +408,46 @@ void main() {
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
     expect(find.byType(GlassEffect), findsNothing);
+  });
+
+  testWidgets('捕获边界含胶囊与全部图标、水珠在边界之外', (tester) async {
+    await _pumpNav(tester, onSelect: (_) {});
+
+    final lens = _lensOrNull(tester);
+    expect(lens, isNotNull);
+    final bgKey = lens!.backgroundKey;
+    expect(bgKey, isNotNull, reason: '镜片必须显式采样导航边界（body 边界不含图标）');
+
+    final boundary = find.byWidgetPredicate(
+      (w) => w is RepaintBoundary && identical(w.key, bgKey),
+    );
+    expect(boundary, findsOneWidget, reason: '导航自建捕获边界（胶囊+图标）');
+
+    // 图标与胶囊在采样纹理内 → 被镜片采样，划过时图标被物理折射形变
+    expect(find.descendant(of: boundary, matching: find.byIcon(Icons.home)),
+        findsOneWidget);
+    expect(
+        find.descendant(
+            of: boundary, matching: find.byIcon(Icons.settings_outlined)),
+        findsOneWidget);
+    expect(find.descendant(of: boundary, matching: find.text('设置')),
+        findsOneWidget);
+    expect(find.descendant(of: boundary, matching: find.byType(GlassContainer)),
+        findsOneWidget,
+        reason: '胶囊外壳也在采样纹理内');
+
+    // 水珠镜片不在边界内 → 不自采样，无反馈环
+    expect(find.descendant(of: boundary, matching: find.byKey(_navBlob)),
+        findsNothing,
+        reason: '镜片是边界之外的兄弟层 → 采样绝不含自身');
+
+    // 水珠放行点击给下层图标（镜片盖在图标之上仍可点按/拖动）
+    // 根级 IgnorePointer + 淡出 pill 的 IgnorePointer 都在镜片子树内
+    expect(
+        find.descendant(
+            of: find.byKey(_navBlob), matching: find.byType(IgnorePointer)),
+        findsWidgets,
+        reason: '纯视觉层，点击穿透到图标');
   });
 
   testWidgets('glassUi 关闭：水珠降级为纯装饰，无包玻璃', (tester) async {

@@ -15,9 +15,11 @@ const Color kNavBlobColor = Color(0xFF86E3D6);
 
 /// 四标签底部导航（含胶囊玻璃底与移动态镜片水珠）。
 ///
-/// - 胶囊玻璃 [GlassContainer] 作为导航 Stack 的第一层（兄弟层而非祖先），
-///   水珠镜片才能溢出胶囊不被裁剪（适配层与包内 Lightweight 对子级
-///   无条件 ClipRRect/ClipPath 裁剪）
+/// - 胶囊玻璃 [GlassContainer] 与全部 icon+label 图标包在同一个
+///   `RepaintBoundary`（[_navCaptureKey]）内作镜片采样纹理；
+///   水珠镜片在边界之外的顶层兄弟 → 溢出胶囊不被裁剪、图标被真实
+///   折射形变、镜片不自采样（无反馈环），镜片内 [IgnorePointer]
+///   放行点击给下层图标
 /// - 每格 icon+label 组在胶囊内上下左右严格居中，四格对齐
 /// - 单个水珠指示器：点击平滑移形；横向滑动或长按均可跟手拖动，
 ///   拖动中水珠所在格图标实时点亮青色，松手按落点切换
@@ -65,6 +67,10 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
 
   /// 水珠中心（相对导航宽 0..1）。
   double _blobT = 0;
+
+  /// 导航捕获边界钥匙（胶囊+图标）：镜片 [LiquidBlobLens.backgroundKey]
+  /// 采样此 RepaintBoundary → 水珠划过时图标被物理折射形变。
+  final GlobalKey _navCaptureKey = GlobalKey(debugLabel: 'navCapture');
 
   /// 静止水珠宽度占单格宽的比例（圆润度：~1.37:1 不显扁）。
   static const double _restWidthRatio = 0.75;
@@ -224,14 +230,18 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   ///   activity=0 扁平实心胶囊（无明显边框、镜片不挂载、零 shader 开销）；
   /// - 拖动/点击飞行 activity→1：宽高同弹簧放大 ×[_activeScale]
   ///   （纯整体放大，不拉长不压扁），真折射镜片挂载（`blur: 0.01`
-  ///   打开 Skia 背景捕获），矩形上下各外扩 6px 超出胶囊；真色散
-  ///   彩边 + 光谱边光（vendored 包 [PATCH himi]）与折射只在移动
-  ///   过程出现，jelly 果冻形变吃 [_blobVelocity]；
+  ///   打开 Skia 背景捕获），矩形上下各外扩 6px 超出胶囊；采样
+  ///   [_navCaptureKey] 导航边界（胶囊+图标）→ 图标被物理折射弯折，
+  ///   沿边 18px 光学带出纯物理色散彩虹（vendored 包 [PATCH himi]
+  ///   ×4.0，无自发光色环），折射只在移动过程出现，jelly 果冻形变
+  ///   吃 [_blobVelocity]；
   /// - `settings.thickness/saturation/lightIntensity` 取设置滑杆实时值，
-  ///   `ambientRim/glowIntensity/ambientStrength/edgeAbsorption` 强化
-  ///   结构性亮边圈与内壁暗带（补偿包内标准路径归一化，位置无关可见）；
-  ///   `lightAngle` 随水珠位置扫动 → 光谱边光的色相/亮瓣随移动"流动"；
-  /// - 镜片作胶囊的兄弟层渲染，溢出不被任何裁剪层吃掉。
+  ///   `ambientRim/glowIntensity/ambientStrength/edgeAbsorption` 出
+  ///   柔和中性微边与结构亮圈（补偿包内标准路径归一化，位置无关可见）；
+  ///   `lightAngle` 随水珠位置扫动 → 亮瓣随移动"流动"；
+  /// - 镜片作 [_navCaptureKey] 边界的兄弟层渲染（自身不在采样纹理内，
+  ///   无自采样反馈），溢出不被任何裁剪层吃掉，[IgnorePointer]
+  ///   放行点击给下层图标。
   /// `glassUi` 关闭时降级为原半透明白色装饰（navBlob key 与装饰参数不变）。
   Widget _buildBlob(double left, double width) {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
@@ -272,21 +282,22 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
       // 色散固定加强（忽略滑杆）：配合 vendored shader 真色散补丁
-      //（×2.0）在边缘出 ~1px/侧 RGB 彩边
+      //（×4.0）在边缘出 ~2px/侧 RGB 彩边（纯物理、无自发光环）
       chromaticAberration: 0.5,
       lightIntensity:
           tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
       // Skia 捕获钥匙：GlassEffect 捕获门槛要求 blur > 0（0.01 无感）
       blur: 0.01,
       // 结构参数（输入值补偿包内标准路径归一化）：
-      // ambientRim 驱动光谱彩虹光晕（×0.7 归一化、×10 亮度）；
+      // ambientRim 驱动中性白 rim（×0.7 归一化、×10 亮度）→ 0.18 出
+      // 柔和灰白微边而非硬边框；
       // glow/ambient 降低白色菲涅尔与内壁提亮 → 边框感弱化（设备反馈）；
       // edgeAbsorption 收低 → 边缘暗带更淡。
-      ambientRim: 0.35,
+      ambientRim: 0.18,
       glowIntensity: 1.2,
       ambientStrength: 0.4,
       edgeAbsorption: 0.10,
-      // 光源相位随水珠位置扫动：光谱边光色相与 key/kick 亮瓣绕环流动
+      // 光源相位随水珠位置扫动：key/kick 亮瓣绕环流动
       lightAngle: math.pi / 2 + (_blobT - 0.5) * math.pi,
     );
 
@@ -307,6 +318,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
           velocity: _blobVelocity,
           settings: settings,
           pillColor: Colors.white.withValues(alpha: 0.10),
+          backgroundKey: _navCaptureKey,
         );
       },
     );
@@ -326,70 +338,89 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              // 胶囊玻璃底：作导航第一层兄弟，水珠镜片溢出其外不被裁剪
+              // 捕获边界：胶囊 + 导航图标（GlobalKey 供镜片 backgroundKey
+              // 采样 → 水珠划过时图标被物理折射形变）。水珠自身在边界
+              // 之外作兄弟层绘制，不会自采样产生反馈环。
               Positioned.fill(
-                child: GlassContainer(
-                  borderRadius: const BorderRadius.all(Radius.circular(28)),
-                  padding: EdgeInsets.zero,
-                  child: const SizedBox.expand(),
-                ),
-              ),
-              _buildBlob(restLeft, restWidth),
-              Positioned.fill(
-                child: Row(
-                  children: List.generate(_tabCount, (i) {
-                    final selected = i == _activeIndex;
-                    final color = selected ? kNavBlobColor : Colors.white70;
-                    return Expanded(
-                      child: TvFocusable(
-                        onTap: () => _select(i),
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onHorizontalDragStart: (d) =>
-                              _beginDrag(d.globalPosition.dx),
-                          onHorizontalDragUpdate: (d) =>
-                              _moveDrag(d.globalPosition.dx),
-                          onHorizontalDragEnd: (d) =>
-                              _endDrag(d.globalPosition.dx),
-                          onHorizontalDragCancel: _cancelDrag,
-                          onLongPressStart: (d) =>
-                              _beginDrag(d.globalPosition.dx),
-                          onLongPressMoveUpdate: (d) =>
-                              _moveDrag(d.globalPosition.dx),
-                          onLongPressEnd: (d) => _endDrag(d.globalPosition.dx),
-                          child: SizedBox(
-                            height: _navHeight,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  selected ? _selectedIcons[i] : _icons[i],
-                                  size: 24,
-                                  color: color,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _labels[i],
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: color,
-                                    fontWeight: selected
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                child: RepaintBoundary(
+                  key: _navCaptureKey,
+                  child: Stack(
+                    children: [
+                      // 胶囊玻璃底：水珠镜片溢出其外不被裁剪
+                      Positioned.fill(
+                        child: GlassContainer(
+                          borderRadius:
+                              const BorderRadius.all(Radius.circular(28)),
+                          padding: EdgeInsets.zero,
+                          child: const SizedBox.expand(),
                         ),
                       ),
-                    );
-                  }),
+                      Positioned.fill(
+                        child: Row(
+                          children: List.generate(_tabCount, (i) {
+                            final selected = i == _activeIndex;
+                            final color =
+                                selected ? kNavBlobColor : Colors.white70;
+                            return Expanded(
+                              child: TvFocusable(
+                                onTap: () => _select(i),
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onHorizontalDragStart: (d) =>
+                                      _beginDrag(d.globalPosition.dx),
+                                  onHorizontalDragUpdate: (d) =>
+                                      _moveDrag(d.globalPosition.dx),
+                                  onHorizontalDragEnd: (d) =>
+                                      _endDrag(d.globalPosition.dx),
+                                  onHorizontalDragCancel: _cancelDrag,
+                                  onLongPressStart: (d) =>
+                                      _beginDrag(d.globalPosition.dx),
+                                  onLongPressMoveUpdate: (d) =>
+                                      _moveDrag(d.globalPosition.dx),
+                                  onLongPressEnd: (d) =>
+                                      _endDrag(d.globalPosition.dx),
+                                  child: SizedBox(
+                                    height: _navHeight,
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          selected
+                                              ? _selectedIcons[i]
+                                              : _icons[i],
+                                          size: 24,
+                                          color: color,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _labels[i],
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: color,
+                                            fontWeight: selected
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+              // 水珠镜片：边界之外的顶层兄弟（IgnorePointer 在镜片内）
+              _buildBlob(restLeft, restWidth),
             ],
           ),
         );
