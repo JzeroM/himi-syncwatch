@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -156,6 +157,35 @@ void main() {
 
     test('未知 key 抛 StateError', () {
       expect(() => glassDefault('nope'), throwsStateError);
+    });
+  });
+
+  group('glassEdgeZoneVisible（折射范围滑杆可见性：仅 Android 非 TV）', () {
+    test('Android 非 TV 显示', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(glassEdgeZoneVisible(tvMode: false), isTrue);
+    });
+
+    test('TV 模式隐藏（遥控器方向键会被滑杆吞键）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(glassEdgeZoneVisible(tvMode: true), isFalse);
+    });
+
+    test('非 Android 平台一律隐藏', () {
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      for (final p in const [
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.fuchsia,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        expect(glassEdgeZoneVisible(tvMode: false), isFalse,
+            reason: '$p 不显示折射范围滑杆');
+      }
     });
   });
 

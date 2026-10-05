@@ -354,6 +354,7 @@ class _GlassTuningSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tuning = ref.watch(glassTuningProvider);
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -389,7 +390,10 @@ class _GlassTuningSection extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           for (final spec in glassParamSpecs)
-            _glassSliderRow(ref, spec, spec.read(tuning)),
+            // 折射范围仅 Android 非 TV 模式显示（iOS premium / TV 吞键隐藏）
+            if (spec.key != 'glassEdgeZone' ||
+                glassEdgeZoneVisible(tvMode: tvMode))
+              _glassSliderRow(ref, spec, spec.read(tuning)),
         ],
       ),
     );

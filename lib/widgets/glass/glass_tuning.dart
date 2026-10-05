@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -114,6 +115,16 @@ const List<GlassParamSpec> glassParamSpecs = [
 /// （如导航水珠镜片的显式 settings）同源，避免字面量重复。
 double glassDefault(String key) =>
     glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
+
+/// 折射范围（glassEdgeZone）滑杆可见性：仅 Android 非 TV 模式显示。
+///
+/// - Android 是唯一目标消费端：standard（Skia）路径读
+///   `interactive_indicator.frag` 的 `uEdgeZone` uniform；
+///   iOS premium（Impeller 3D bevel）不读该 uniform，拖动无效；
+/// - 其他平台（iOS / 桌面 / Web）一律隐藏；
+/// - TV 模式：遥控器方向键导航会被滑杆吞键 → 隐藏。
+bool glassEdgeZoneVisible({required bool tvMode}) =>
+    defaultTargetPlatform == TargetPlatform.android && !tvMode;
 
 /// 玻璃参数快照：settings 的可调字段 → 包主题的映射边界。
 class GlassTuning {

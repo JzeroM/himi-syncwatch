@@ -708,29 +708,34 @@ void main() {
     );
   });
   group('玻璃参数滑杆分组（v1.1.84）', () {
-    testWidgets('展示标题、6 个滑杆与恢复默认（默认态禁用）', (tester) async {
-      final container = await _pumpScreen(tester);
-      await _scrollToText(tester, '玻璃参数');
+    testWidgets('Android：展示标题、6 个滑杆与恢复默认（默认态禁用）', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        final container = await _pumpScreen(tester);
+        await _scrollToText(tester, '玻璃参数');
 
-      expect(find.text('玻璃参数'), findsOneWidget);
-      expect(find.text('实时调节磨砂与折射效果，拖动即生效'), findsOneWidget);
-      for (final key in const [
-        'glassBlur',
-        'glassThickness',
-        'glassEdgeZone',
-        'glassSaturation',
-        'glassChromatic',
-        'glassLightIntensity',
-      ]) {
-        expect(find.byKey(ValueKey('${key}Slider')), findsOneWidget,
-            reason: '$key 滑杆缺失');
+        expect(find.text('玻璃参数'), findsOneWidget);
+        expect(find.text('实时调节磨砂与折射效果，拖动即生效'), findsOneWidget);
+        for (final key in const [
+          'glassBlur',
+          'glassThickness',
+          'glassEdgeZone',
+          'glassSaturation',
+          'glassChromatic',
+          'glassLightIntensity',
+        ]) {
+          expect(find.byKey(ValueKey('${key}Slider')), findsOneWidget,
+              reason: '$key 滑杆缺失');
+        }
+        expect(find.text('折射范围'), findsOneWidget, reason: '折射范围滑杆标签');
+        // 默认态（全包默认）：恢复默认按钮禁用
+        final reset = tester.widget<TextButton>(
+            find.byKey(const ValueKey('glassResetDefaults')));
+        expect(reset.onPressed, isNull);
+        expect(container.read(settingsProvider).glassBlur, isNull);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
       }
-      expect(find.text('折射范围'), findsOneWidget, reason: '折射范围滑杆标签');
-      // 默认态（全包默认）：恢复默认按钮禁用
-      final reset = tester
-          .widget<TextButton>(find.byKey(const ValueKey('glassResetDefaults')));
-      expect(reset.onPressed, isNull);
-      expect(container.read(settingsProvider).glassBlur, isNull);
     });
 
     testWidgets('拖动磨砂滑杆写入 glassBlur 并落盘', (tester) async {
@@ -793,19 +798,69 @@ void main() {
       expect(s.glassLightIntensity, 1.6);
     });
 
-    testWidgets('拖动折射范围滑杆写入 glassEdgeZone（20~24 整数档）', (tester) async {
-      final container = await _pumpScreen(tester);
-      await _scrollToText(tester, '玻璃参数');
+    testWidgets('Android：拖动折射范围滑杆写入 glassEdgeZone（20~24 整数档）', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        final container = await _pumpScreen(tester);
+        await _scrollToText(tester, '玻璃参数');
 
-      final slider = find.byKey(const ValueKey('glassEdgeZoneSlider'));
-      await tester.drag(slider, const Offset(60, 0));
-      await tester.pumpAndSettle();
+        final slider = find.byKey(const ValueKey('glassEdgeZoneSlider'));
+        await tester.drag(slider, const Offset(60, 0));
+        await tester.pumpAndSettle();
 
-      final v = container.read(settingsProvider).glassEdgeZone;
-      expect(v, isNotNull, reason: '拖动后写入');
-      expect(v, inInclusiveRange(20, 24), reason: '值域 20~24');
-      expect(v, greaterThan(20), reason: '向右拖增档（默认 20）');
-      expect(v, equals(v!.roundToDouble()), reason: '整数四档');
+        final v = container.read(settingsProvider).glassEdgeZone;
+        expect(v, isNotNull, reason: '拖动后写入');
+        expect(v, inInclusiveRange(20, 24), reason: '值域 20~24');
+        expect(v, greaterThan(20), reason: '向右拖增档（默认 20）');
+        expect(v, equals(v!.roundToDouble()), reason: '整数四档');
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('iOS 隐藏折射范围滑杆（premium 路径无效），其余 5 个保留', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        await _pumpScreen(tester);
+        await _scrollToText(tester, '玻璃参数');
+
+        expect(find.text('玻璃参数'), findsOneWidget);
+        expect(find.byKey(const ValueKey('glassEdgeZoneSlider')), findsNothing,
+            reason: 'iOS premium 路径不读 uEdgeZone，滑杆无效须隐藏');
+        expect(find.text('折射范围'), findsNothing);
+        for (final key in const [
+          'glassBlur',
+          'glassThickness',
+          'glassSaturation',
+          'glassChromatic',
+          'glassLightIntensity',
+        ]) {
+          expect(find.byKey(ValueKey('${key}Slider')), findsOneWidget,
+              reason: '$key 滑杆在 iOS 保留');
+        }
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('TV 模式隐藏折射范围滑杆，其余 5 个保留', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        await _pumpScreen(
+          tester,
+          initial: const AppSettings(tvMode: true),
+        );
+        await _scrollToText(tester, '玻璃参数');
+
+        expect(find.text('玻璃参数'), findsOneWidget);
+        expect(find.byKey(const ValueKey('glassEdgeZoneSlider')), findsNothing,
+            reason: 'TV 模式滑杆吞方向键，须隐藏');
+        expect(find.text('折射范围'), findsNothing);
+        expect(find.byKey(const ValueKey('glassBlurSlider')), findsOneWidget,
+            reason: '其余滑杆在 TV 模式保留');
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('恢复默认清空全部 6 参数并禁用按钮', (tester) async {
