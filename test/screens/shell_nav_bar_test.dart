@@ -94,6 +94,16 @@ Finder _expandedRect(WidgetTester tester) {
   );
 }
 
+/// 自绘彩虹圈（静止不挂载，移动中随镜片出现）。
+Finder _ring(WidgetTester tester) {
+  return find.descendant(
+    of: find.byKey(_navBlob),
+    matching: find.byWidgetPredicate(
+      (w) => w is CustomPaint && w.painter is ChromaRingPainter,
+    ),
+  );
+}
+
 void main() {
   testWidgets('四格 icon+label 组在 60 高度内严格对齐且整体垂直居中', (tester) async {
     await _pumpNav(tester, onSelect: (_) {});
@@ -139,12 +149,12 @@ void main() {
     expect((iconTop + labelBottom) / 2, closeTo(30, 1.0));
   });
 
-  testWidgets('初始水珠位于首格中心', (tester) async {
+  testWidgets('初始水珠位于首格中心（静止宽 = 格宽 × 0.75 圆润比例）', (tester) async {
     await _pumpNav(tester, onSelect: (_) {});
 
     final pos = _blob(tester);
-    expect(pos.left, closeTo(0, 0.01));
-    expect(pos.width, closeTo(200, 0.01));
+    expect(pos.width, closeTo(150, 0.01), reason: '800/4 格宽 200 × 0.75');
+    expect(pos.left, closeTo(100 - 150 / 2, 0.01), reason: '首格中心 100 居中');
   });
 
   testWidgets('点击切换标签，水珠平滑移到目标格中心', (tester) async {
@@ -156,11 +166,13 @@ void main() {
 
     expect(selected, 3);
     final pos = _blob(tester);
-    expect(pos.left, closeTo(600, 0.5));
-    expect(pos.width, closeTo(200, 0.5));
+    expect(pos.width, closeTo(150, 0.5));
+    expect(pos.left, closeTo(700 - 150 / 2, 0.5), reason: '第四格中心 700');
   });
 
-  testWidgets('长按拖动水珠跟手并拉伸，松手落点才切换', (tester) async {
+  testWidgets('长按拖动水珠跟手并整体放大（宽高同比 ×1.44 不拉长），松手落点才切换', (
+    tester,
+  ) async {
     int? selected;
     await _pumpNav(tester, onSelect: (i) => selected = i);
     final nav = tester.getRect(find.byType(ShellNavBar));
@@ -172,13 +184,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(selected, isNull); // 长按本身不切换
 
-    // 拖到第二格：水珠中心跟手、宽度拉伸
+    // 拖到第二格：水珠中心跟手，等弹簧把整体放大拉满
     await gesture.moveTo(Offset(nav.left + 300, nav.center.dy));
     await tester.pump();
+    await tester.pumpAndSettle();
 
     final dragging = _blob(tester);
-    expect(dragging.left, closeTo(300 - dragging.width! / 2, 1));
-    expect(dragging.width, greaterThan(200));
+    expect(dragging.left, closeTo(300 - dragging.width! / 2, 1),
+        reason: '中心始终对准手指');
+    expect(dragging.width, closeTo(150 * 1.44, 0.5),
+        reason: '静止 150 整体放大到 ×1.44 = 216（而非拉长）');
     expect(selected, isNull); // 拖动中途不切换（松手落点才切）
 
     // 拖到第三格中部松手 → 落点切换
@@ -188,10 +203,10 @@ void main() {
 
     expect(selected, 2);
 
-    // 水珠回弹到第三格中心（left = 0.625*800 - 200/2 = 400）并收窄
+    // 水珠回弹到第三格中心（center = 0.625*800 = 500）并回落静止宽
     final settled = _blob(tester);
-    expect(settled.left, closeTo(400, 0.5));
-    expect(settled.width, closeTo(200, 0.5));
+    expect(settled.left, closeTo(500 - 150 / 2, 0.5));
+    expect(settled.width, closeTo(150, 0.5));
   });
 
   testWidgets('长按拖动后松手在原格，不切换', (tester) async {
@@ -209,8 +224,8 @@ void main() {
 
     expect(selected, isNull);
     final settled = _blob(tester);
-    expect(settled.left, closeTo(0, 0.5));
-    expect(settled.width, closeTo(200, 0.5));
+    expect(settled.left, closeTo(25, 0.5));
+    expect(settled.width, closeTo(150, 0.5));
   });
 
   testWidgets('玻璃开启：navBlob 是镜片而非白色装饰，青色仅用于选中图标', (
@@ -266,25 +281,30 @@ void main() {
     expect(lens.expansionV, 11, reason: '活动态外扩 11 → 上下各超出胶囊(60) 6px');
     expect(lens.paddingV, 5, reason: '60 高导航内水珠 50 高');
     expect(lens.borderRadius, 25);
-    expect(lens.left, closeTo(0, 0.01));
-    expect(lens.width, closeTo(200, 0.01));
+    expect(lens.left, closeTo(25, 0.01), reason: '首格中心 100 - 150/2');
+    expect(lens.width, closeTo(150, 0.01), reason: '静止宽 = 格宽 200 × 0.75');
     expect(lens.velocity, isA<double>());
     expect(lens.pillShadows.first.blurRadius, 14, reason: '静止外光晕替代旧边框');
     // Skia 捕获钥匙：GlassEffect 捕获门槛 interactionIntensity>0.01
     // && scopeKey≠null && blur>0 —— 无 blur 则背景捕获永不启动，
     // 折射与彩虹色散全部失效（v1.1.87 根因）
     expect(lens.settings.blur, 0.01, reason: '捕获钥匙，0.01 模糊不可感知');
-    expect(lens.settings.chromaticAberration, 0.5,
-        reason: '色散固定加强（忽略滑杆），彩虹圈肉眼明显');
+    expect(lens.settings.chromaticAberration, 0.5, reason: '色散固定加强（忽略滑杆）');
     expect(lens.settings.thickness, 28, reason: '镜片深度跟随玻璃厚度滑杆（应用默认 28）');
-    expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.10),
-        reason: '白色镜片底色恢复图标对比度');
+    expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.14),
+        reason: '白色镜片底色略提亮，配合结构参数增强折射观感');
+    // 结构性强化（补偿包内标准路径归一化，任何背景位置可见的亮边圈/光晕/内壁暗带）
+    expect(lens.settings.ambientRim, 0.5, reason: '环缘环境光（×0.7 归一化后仍可见）');
+    expect(lens.settings.glowIntensity, 2.0, reason: '光晕 ×0.5 归一化后仍有 1.0');
+    expect(lens.settings.ambientStrength, 0.6, reason: '内壁光 ×0.25 归一化后仍有 0.15');
+    expect(lens.settings.edgeAbsorption, 0.15, reason: '边缘暗带吸收，立体感');
     expect(LiquidBlobLens.quality, lg.GlassQuality.standard,
         reason:
             '测试环境 isShaderFilterSupported=false → standard（真机 Impeller → premium）');
 
     // 静止镜片不挂载（折射/彩虹只在移动出现）
     expect(find.byType(GlassEffect), findsNothing);
+    expect(_ring(tester), findsNothing, reason: '静止不画彩虹圈');
 
     // 镜片就近提供 avoidsRefraction: false，GlassEffect 走真折射而非 vibrancy
     final inherited = tester.widget<lg.InheritedLiquidGlass>(
@@ -321,10 +341,11 @@ void main() {
     await _pumpNav(tester, onSelect: (_) {});
     final nav = tester.getRect(find.byType(ShellNavBar));
 
-    // 静止：实心底胶囊（无明显边框）、镜片不挂载、无外扩矩形
+    // 静止：实心底胶囊（无明显边框）、镜片不挂载、无外扩矩形、无彩虹圈
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
     expect(find.byType(GlassEffect), findsNothing);
+    expect(_ring(tester), findsNothing);
 
     // 长按进入拖动态，等弹簧把活动量拉到 1
     final gesture = await tester.startGesture(
@@ -340,7 +361,24 @@ void main() {
     expect(_expandedRect(tester), findsOneWidget,
         reason: '活动态矩形外扩 top=-11，水滴整体放大上下各超出胶囊 6px');
 
-    // 镜片挂载且捕获参数就位（折射/彩虹圈只在移动过程出现）
+    // 整体放大：宽 150→216、高 50→72 同为 ×1.44，比例不变不拉长不压扁
+    expect(moving.width, closeTo(150 * 1.44, 0.5), reason: '宽同倍放大到 216');
+    final activeRect = tester.renderObject<RenderBox>(_expandedRect(tester));
+    expect(activeRect.size.height, closeTo(50 * 1.44, 0.5),
+        reason: '高 50→72 同倍放大');
+    expect(
+      (activeRect.size.width / 150) / (activeRect.size.height / 50),
+      closeTo(1.0, 0.01),
+      reason: '宽高放大倍数一致 → 纯整体放大，不变形',
+    );
+
+    // 自绘彩虹圈随移动挂载（静止无），活动量拉满
+    final ringPaints = _ring(tester);
+    expect(ringPaints, findsOneWidget, reason: '移动中画彩虹圈');
+    final ringPainter = (tester.widget<CustomPaint>(ringPaints).painter!);
+    expect((ringPainter as ChromaRingPainter).activity, closeTo(1.0, 0.01));
+
+    // 镜片挂载且捕获参数就位（折射只在移动过程出现）
     final effect = tester.widget<GlassEffect>(find.byType(GlassEffect));
     expect(effect.interactionIntensity, 1.0, reason: '镜片活动强度随弹簧到 1');
     expect(effect.settings.blur, 0.01, reason: '拷贝态保留 blur 原值供捕获门槛判定');
@@ -359,15 +397,17 @@ void main() {
       reason: '外扩矩形祖先链无 ClipRRect，水珠溢出胶囊可见',
     );
 
-    // 松手回落：恢复原大小的扁平静止胶囊
+    // 松手回落：恢复原大小的扁平静止胶囊，彩虹圈卸载
     await gesture.up();
     await tester.pumpAndSettle();
 
     final rest = tester.widget<LiquidBlobLens>(find.byKey(_navBlob));
     expect(rest.activity, 0.0, reason: '松手后弹簧回落到 0');
+    expect(rest.width, closeTo(150, 0.5), reason: '宽度回落静止比例');
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
     expect(find.byType(GlassEffect), findsNothing);
+    expect(_ring(tester), findsNothing, reason: '静止后彩虹圈卸载');
   });
 
   testWidgets('glassUi 关闭：水珠降级为纯装饰，无包玻璃', (tester) async {
@@ -384,6 +424,8 @@ void main() {
     // 原装饰不变
     expect(_blobDecoration(tester).color, Colors.white.withValues(alpha: 0.10));
     expect(_blob(tester).height, 50);
+    expect(_blob(tester).width, closeTo(150, 0.01),
+        reason: '降级装饰同样用静止 0.75 比例宽度');
   });
 
   testWidgets('短时横向滑动即可拖动水珠（无需长按），跟手且松手落点切换', (tester) async {
@@ -401,7 +443,9 @@ void main() {
 
     final dragging = _blob(tester);
     expect(dragging.left, closeTo(300 - dragging.width! / 2, 1));
-    expect(dragging.width, greaterThan(200));
+    expect(dragging.width!, greaterThanOrEqualTo(150), reason: '移动只放大不缩小');
+    expect(dragging.width!, lessThan(150 * 1.44 + 1),
+        reason: '封顶 ×1.44 整体放大，不做横向拉长');
     expect(selected, isNull); // 拖动中途不回调
 
     // 水珠中心已在第二格 → 该格图标实时点亮青色实心

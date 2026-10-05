@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -66,13 +64,15 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   /// 水珠中心（相对导航宽 0..1）。
   double _blobT = 0;
 
-  /// 水珠宽度倍数（相对单格宽）。
-  double _blobFactor = 1;
+  /// 静止水珠宽度占单格宽的比例（圆润度：~1.37:1 不显扁）。
+  static const double _restWidthRatio = 0.75;
+
+  /// 移动态整体放大倍数（宽高同倍，与镜片外扩 50→72 = ×1.44 对齐，
+  /// 纯整体放大、不拉长不压扁）。
+  static const double _activeScale = 1.44;
 
   double _fromT = 0;
   double _toT = 0;
-  double _fromFactor = 1;
-  double _peak = 0;
   bool _dragging = false;
 
   /// 抓取偏移（水珠中心 - 手指 x，相对导航左沿）。
@@ -124,8 +124,6 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     final p = Curves.easeOutBack.transform(raw);
     setState(() {
       _blobT = _fromT + (_toT - _fromT) * p;
-      _blobFactor = (_fromFactor + (1 - _fromFactor) * p) +
-          _peak * math.sin(math.pi * raw);
       _trackVelocity(_blobT);
     });
   }
@@ -150,10 +148,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
 
   void _animateTo(int index) {
     _fromT = _blobT;
-    _fromFactor = _blobFactor;
     _toT = _centerT(index);
-    final distanceTabs = (_toT - _fromT).abs() * _tabCount;
-    _peak = distanceTabs.clamp(0.0, 2.0) * 0.22;
     _controller.forward(from: 0);
   }
 
@@ -182,7 +177,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     _controller.stop();
     final x = _relativeX(globalX);
     final center = _blobT * _totalWidth;
-    final halfW = (_totalWidth / _tabCount) * _blobFactor / 2;
+    // 手指落在当前格内即相对跟手（与旧版静止半宽一致），别格则吸附手指
+    final halfW = (_totalWidth / _tabCount) / 2;
     _grabOffset = (x - center).abs() <= halfW ? center - x : 0;
     setState(() => _dragging = true);
     _applyDrag(x);
@@ -196,12 +192,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   void _applyDrag(double x) {
     if (_totalWidth <= 0) return;
     final t = ((x + _grabOffset) / _totalWidth).clamp(0.0, 1.0);
-    final tabW = _totalWidth / _tabCount;
-    final offsetPx = (t - _centerT(widget.currentIndex)).abs() * _totalWidth;
-    final factor = 1 + (offsetPx / (tabW * 2)).clamp(0.0, 1.0) * 0.6;
     setState(() {
       _blobT = t;
-      _blobFactor = factor;
       _trackVelocity(t);
     });
   }
@@ -226,11 +218,15 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   /// 水珠本体（返回值已自带定位，直接作为导航 Stack 的子级）。
   ///
   /// `glassUi` 开启时经 [lg.SpringBuilder] 弹簧驱动 [LiquidBlobLens]：
-  /// - 静止 activity=0：扁平实心胶囊（无明显边框、镜片不挂载、零 shader 开销）；
-  /// - 拖动/点击飞行 activity=1：真折射镜片挂载（`blur: 0.01` 打开 Skia
-  ///   背景捕获，折射与固定 0.5 色散彩虹圈只在移动过程出现），矩形上下
-  ///   各外扩 6px 超出胶囊，jelly 果冻形变吃 [_blobVelocity]；
-  /// - `settings.thickness/saturation/lightIntensity` 取设置滑杆实时值；
+  /// - 静止：宽 = 格宽 × [_restWidthRatio]（~1.37:1 圆润不显扁），
+  ///   activity=0 扁平实心胶囊（无明显边框、镜片不挂载、零 shader 开销）；
+  /// - 拖动/点击飞行 activity→1：宽高同弹簧放大 ×[_activeScale]
+  ///   （纯整体放大，不拉长不压扁），真折射镜片挂载（`blur: 0.01`
+  ///   打开 Skia 背景捕获），矩形上下各外扩 6px 超出胶囊，自绘彩虹圈
+  ///   与折射只在移动过程出现，jelly 果冻形变吃 [_blobVelocity]；
+  /// - `settings.thickness/saturation/lightIntensity` 取设置滑杆实时值，
+  ///   `ambientRim/glowIntensity/ambientStrength/edgeAbsorption` 强化
+  ///   结构性亮边圈与内壁暗带（补偿包内标准路径归一化，位置无关可见）；
   /// - 镜片作胶囊的兄弟层渲染，溢出不被任何裁剪层吃掉。
   /// `glassUi` 关闭时降级为原半透明白色装饰（navBlob key 与装饰参数不变）。
   Widget _buildBlob(double left, double width) {
@@ -264,19 +260,25 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     }
 
     // 活动量 0..1：静止 0（扁平实心胶囊、无镜片、零 shader 开销），
-    // 拖动/点击飞行中 1（镜片淡入 + 矩形外扩 + 背景胶囊淡出）。
+    // 拖动/点击飞行中 1（镜片淡入 + 整体放大 + 背景胶囊淡出）。
     final activity = (_dragging || _controller.isAnimating) ? 1.0 : 0.0;
 
     final settings = lg.AnimatedGlassIndicator.baseIndicatorSettings.copyWith(
-      glassColor: Colors.white.withValues(alpha: 0.10),
+      glassColor: Colors.white.withValues(alpha: 0.14),
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-      // 色散固定加强（忽略滑杆）：确保移动中彩虹色散圈肉眼明显
+      // 色散固定加强（忽略滑杆）：配合自绘彩虹圈保证移动中肉眼明显
       chromaticAberration: 0.5,
       lightIntensity:
           tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
       // Skia 捕获钥匙：GlassEffect 捕获门槛要求 blur > 0（0.01 无感）
       blur: 0.01,
+      // 结构强化（输入值补偿包内标准路径 ×0.7/×0.5/×0.25 归一化，
+      // 让亮边圈/光晕/内壁光在任何背景位置都可见）
+      ambientRim: 0.5,
+      glowIntensity: 2.0,
+      ambientStrength: 0.6,
+      edgeAbsorption: 0.15,
     );
 
     return lg.SpringBuilder(
@@ -284,15 +286,20 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
         duration: const Duration(milliseconds: 300),
       ),
       value: activity,
-      builder: (context, value, child) => LiquidBlobLens(
-        key: const ValueKey('navBlob'),
-        left: left,
-        width: width,
-        activity: value,
-        velocity: _blobVelocity,
-        settings: settings,
-        pillColor: Colors.white.withValues(alpha: 0.10),
-      ),
+      builder: (context, value, child) {
+        // 宽高同倍整体放大（宽与镜片外扩高度同比例），中心保持不动
+        final scale = 1 + (_activeScale - 1) * value;
+        final w = width * scale;
+        return LiquidBlobLens(
+          key: const ValueKey('navBlob'),
+          left: left + (width - w) / 2,
+          width: w,
+          activity: value,
+          velocity: _blobVelocity,
+          settings: settings,
+          pillColor: Colors.white.withValues(alpha: 0.10),
+        );
+      },
     );
   }
 
@@ -302,8 +309,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       builder: (context, constraints) {
         _totalWidth = constraints.maxWidth;
         final tabW = _totalWidth / _tabCount;
-        final blobWidth = (tabW * _blobFactor).clamp(0.0, _totalWidth);
-        final blobLeft = _blobT * _totalWidth - blobWidth / 2;
+        final restWidth = (tabW * _restWidthRatio).clamp(0.0, _totalWidth);
+        final restLeft = _blobT * _totalWidth - restWidth / 2;
 
         return SizedBox(
           height: _navHeight,
@@ -318,7 +325,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
                   child: const SizedBox.expand(),
                 ),
               ),
-              _buildBlob(blobLeft, blobWidth),
+              _buildBlob(restLeft, restWidth),
               Positioned.fill(
                 child: Row(
                   children: List.generate(_tabCount, (i) {
