@@ -33,6 +33,7 @@ import 'package:himi_syncwatch/services/egl_fault_detector.dart';
 import 'package:himi_syncwatch/services/codec_mime_map.dart';
 import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
+import 'package:himi_syncwatch/services/network_speed_meter.dart';
 import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -48,6 +49,8 @@ import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dar
 import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
+import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
+import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -211,6 +214,10 @@ class PlayerScreen extends ConsumerStatefulWidget {
   @visibleForTesting
   static bool showDecodeButton({required bool tvMode}) => !tvMode;
 
+  /// 左缘锁按钮是否显示：TV 模式无锁（遥控器语义下不提供锁定）。
+  @visibleForTesting
+  static bool showLockButton({required bool tvMode}) => !tvMode;
+
   /// 顶栏左上角影视信息：电影 = 片名；剧集 = `剧名 – S01E02`
   ///（剧名为空回退片名，直链播放等无元数据场景由调用方判空不渲染）。
   @visibleForTesting
@@ -224,11 +231,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
   static String episodeCode(int season, int number) =>
       'S${season.toString().padLeft(2, '0')}'
       'E${number.toString().padLeft(2, '0')}';
-
-  /// 网速回显：kbps → `12.34 Mbps`（0 码率 → `0.00 Mbps`）。
-  @visibleForTesting
-  static String formatMbps(int kbps) =>
-      '${(kbps / 1000).toStringAsFixed(2)} Mbps';
 }
 
 enum _OrientationMode { portraitUp, landscapeLeft, landscapeRight }
@@ -328,11 +330,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _isHost = false;
   bool _showControls = true;
 
-  /// 屏幕锁定状态机（会话态）：锁后屏蔽手势/热键，点屏浮现解锁钮
+  /// 屏幕锁定状态机（会话态）：锁后屏蔽手势/热键，左缘锁钮两形态切换
   final PlayerLockController _lockController = PlayerLockController();
 
-  /// 解锁钮自动隐藏计时（浮现 5 秒后收起）
-  Timer? _unlockHideTimer;
+  /// 真实下载速度计（整机下行流量，播放时 ≈ 视频流速度）；
+  /// 平台不支持/读取失败时保持 null，顶栏不渲染网速。
+  NetworkSpeedMeter? _speedMeter;
+  double? _networkSpeedBps;
 
   /// 热键层焦点（PlayerHotkey 外部节点）：控制条隐藏后焦点回落于此，
   /// 遥控器方向键恢复 seek/唤出控制条语义
@@ -410,6 +414,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
   bool _showDecodeModeMenu = false;
+  bool _showSpeedMenu = false;
+
+  /// 当前播放倍速（单人模式；初始取设置持久值，换集/重载后恢复）。
+  double _speed = 1.0;
 
   // 手势控制
   bool _showGestureOverlay = false;
@@ -994,6 +1002,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 音频滤镜（立体声降混 / iOS TrueHD 无声规避）统一走策略，
     // 初始化时音轨编码未知，先按开关落一次；选轨/诊断再按编码刷新
     final settings = ref.read(settingsProvider);
+    _speed = settings.playbackSpeed;
     _applyAudioFilterPolicy();
     // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度。
     // AAudio/OpenSL/AudioTrack 为 Android 专属（其余平台自动归一为 auto），
@@ -1006,6 +1015,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     // 音量默认 80%
     _player.volume = kPlayerDefaultVolume;
+    _startSpeedMeter();
     _myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';
 
     _isHost = widget.isHost;
@@ -1787,6 +1797,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _isSwitchingMedia = true;
       _player.media = streamUrl;
       await _player.prepare();
+      // 媒体重载不携带倍速：恢复用户所选档（fvp 侧为 Dart 状态）
+      _player.playbackRate = _speed;
       // prepare 期间可能已 dispose：后续 texture/状态操作一律中止
       if (!mounted) return false;
 
@@ -1904,6 +1916,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _isSwitchingMedia = true;
       _player.media = playUrl;
       await _player.prepare();
+      _player.playbackRate = _speed;
       if (!mounted) return;
 
       // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
@@ -3186,12 +3199,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// （焦点在滑杆时左右键调进度，上下键移动到控制条按钮）；
   /// 已可见时仅顺延自动隐藏——不抢焦点，否则按钮上按 OK 打开菜单后
   /// 焦点被拽回滑杆（"很难选到"）。
-  /// 锁定中：不唤出控制条，改为浮现解锁钮。
   void _showControlsForTv() {
-    if (_lockController.locked) {
-      _showUnlockFromTap();
-      return;
-    }
     if (!_showControls) {
       setState(() => _showControls = true);
       _resetHideTimer();
@@ -3234,6 +3242,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _showSubtitleMenu = false;
             _showAudioMenu = false;
             _showDecodeModeMenu = false;
+            _showSpeedMenu = false;
           });
         }
       });
@@ -3245,6 +3254,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSubtitleMenu = false;
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
+      _showSpeedMenu = false;
     });
     _showBrightnessBarNotifier.value = false;
     _showVolumeBarNotifier.value = false;
@@ -3571,7 +3581,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
     _hideControlsTimer?.cancel();
-    _unlockHideTimer?.cancel();
+    _speedMeter?.stop();
     _lockController.removeListener(_onLockStateChanged);
     _lockController.dispose();
     _hotkeyFocusNode.dispose();
@@ -3941,28 +3951,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ),
           ),
 
-        // TopBar（渐变浮层）
-        if (_showControls)
+        // TopBar（渐变浮层；锁定中隐藏，仅保留左缘锁钮）
+        if (_showControls && !_lockController.locked)
           Positioned(top: 0, left: 0, right: 0, child: _buildTopBar()),
 
-        // 锁定中点屏/TV OK 浮现的解锁钮（居中，5 秒无操作自动收起；
-        // TV 出现即落焦，遥控器方向键/OK 可直接操作）
-        if (_lockController.unlockButtonVisible)
-          Positioned.fill(
+        // 左缘锁/解锁钮（同位置两形态，跟随控制栏显隐；TV 无锁）
+        if (_showControls &&
+            PlayerScreen.showLockButton(
+              tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
+            ))
+          Positioned(
+            left: 16,
+            top: 0,
+            bottom: 0,
             child: Center(
-              child: TvFocusable(
-                autofocus: true,
-                onTap: _unlockScreen,
-                child: Container(
-                  key: const ValueKey('playerUnlockButton'),
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.lock_open,
-                      color: Colors.white, size: 30),
-                ),
+              child: PlayerLockButton(
+                locked: _lockController.locked,
+                onToggle: _toggleScreenLock,
               ),
             ),
           ),
@@ -4000,8 +4005,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               show ? _buildVolumeBar() : const SizedBox.shrink(),
         ),
 
-        // Controls（底部渐变浮层，仅视频区域底部）
+        // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏）
         if (_showControls &&
+            !_lockController.locked &&
             (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
           Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
 
@@ -4094,15 +4100,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final settings = ref.watch(settingsProvider);
     return PlayerTopBar(
       title: _currentEpisodeTitle,
-      networkSpeedText: settings.showNetworkSpeed
-          ? PlayerScreen.formatMbps(_mediaBitrate)
+      networkSpeedText: settings.showNetworkSpeed && _networkSpeedBps != null
+          ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
           : null,
       showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode),
       decodeModeLabel:
           AppSettings.decodeModeLabels[settings.decodeMode] ?? 'Auto',
       decodeMenuOpen: _showDecodeModeMenu,
       showShare: widget.roomCode != null,
-      locked: _lockController.locked,
       onBack: () async {
         final shouldPop = await _confirmLeaveRoom();
         if (shouldPop && context.mounted) Navigator.pop(context);
@@ -4110,7 +4115,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onToggleDecode: () =>
           setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
       onShare: _showShareRoomSheet,
-      onToggleLock: _toggleScreenLock,
     );
   }
 
@@ -4126,7 +4130,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) setState(() {});
   }
 
-  /// 顶栏锁按钮：上锁（收起控制栏/菜单，屏蔽手势与热键）。
+  /// 应用倍速：立即生效 + 关闭面板 + 持久化入设置（换集/重启保持）。
+  void _applySpeed(double speed) {
+    setState(() {
+      _speed = speed;
+      _showSpeedMenu = false;
+    });
+    _player.playbackRate = speed;
+    ref.read(settingsProvider.notifier).update(playbackSpeed: speed);
+  }
+
+  /// 启动真实下载速度计：平台不支持（counter 为 null）或首读失败时
+  /// 保持 `_networkSpeedBps = null`，顶栏不渲染网速。
+  void _startSpeedMeter() {
+    final counter = createDefaultRxCounter();
+    if (counter == null) return;
+    _speedMeter = NetworkSpeedMeter(
+      counter: counter,
+      onSpeed: (bps) {
+        if (!mounted) return;
+        setState(() => _networkSpeedBps = bps);
+      },
+    )..start();
+  }
+
+  /// 左缘锁按钮：上锁（收起控制栏/菜单，屏蔽手势与热键）。
   void _lockScreen() {
     _lockController.lock();
     _hideControlsTimer?.cancel();
@@ -4136,13 +4164,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSubtitleMenu = false;
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
+      _showSpeedMenu = false;
     });
   }
 
   /// 解锁并恢复控制栏。
   void _unlockScreen() {
     _lockController.unlock();
-    _unlockHideTimer?.cancel();
     setState(() => _showControls = true);
     _resetHideTimer();
   }
@@ -4155,23 +4183,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  /// 锁定中点屏/TV 按 OK：浮现解锁钮并起 5 秒自动隐藏；
-  /// 未锁定返回 false 表示交由调用方切换控制栏。
-  bool _showUnlockFromTap() {
-    if (!_lockController.onVideoTap()) return false;
-    _unlockHideTimer?.cancel();
-    _unlockHideTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted) _lockController.hideUnlockButton();
-    });
-    return true;
-  }
-
-  /// 视频区单击：锁分支浮现解锁钮，否则收菜单/切换控制栏。
+  /// 视频区单击：锁定中仅浮现左缘解锁钮（顶栏/控制条被 locked 门禁），
+  /// 否则收菜单/切换控制栏。
   void _onVideoAreaTap() {
-    if (_showUnlockFromTap()) return;
+    if (_lockController.locked) {
+      setState(() => _showControls = true);
+      _resetHideTimer();
+      return;
+    }
     if (_showSubtitleMenu ||
         _showAudioMenu ||
         _showDecodeModeMenu ||
+        _showSpeedMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       _closeAllMenus();
@@ -4609,6 +4632,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
                 const SizedBox(height: 8),
               ],
+              if (_showSpeedMenu) ...[
+                _buildExpandablePanel(
+                  maxHeight: 180,
+                  child: SpeedMenuPanel(
+                    current: _speed,
+                    onSelected: _applySpeed,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
                 children: [
                   // 上一集
@@ -4694,6 +4727,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       setState(() {
                         _showSubtitleMenu = !_showSubtitleMenu;
                         _showAudioMenu = false;
+                        _showSpeedMenu = false;
                       });
                     },
                     badge: _embySubtitleStreams.isNotEmpty
@@ -4709,12 +4743,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       setState(() {
                         _showAudioMenu = !_showAudioMenu;
                         _showSubtitleMenu = false;
+                        _showSpeedMenu = false;
                       });
                     },
                     badge: _embyAudioStreams.isNotEmpty
                         ? '${_embyAudioStreams.length}'
                         : null,
                   ),
+
+                  // 倍速（仅本地单人模式；房间联播由房主节奏接管）
+                  if (widget.roomCode == null) ...[
+                    const SizedBox(width: 20),
+                    TvFocusable(
+                      onTap: () => setState(() {
+                        _showSpeedMenu = !_showSpeedMenu;
+                        _showSubtitleMenu = false;
+                        _showAudioMenu = false;
+                      }),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.speed,
+                                color: Colors.white, size: 24),
+                            const SizedBox(width: 4),
+                            Text(
+                              SpeedMenuPanel.formatSpeedLabel(_speed),
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
 
                   // 面板切换（仅房间模式）
                   if (widget.roomCode != null) ...[

@@ -32,6 +32,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     String? decodeMode,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
+    double? playbackSpeed,
     bool? stereoDownmix,
     String? audioRenderer,
     bool? deepDiagnostics,
@@ -53,6 +54,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       decodeMode: decodeMode,
       showSyncDebug: showSyncDebug,
       showNetworkSpeed: showNetworkSpeed,
+      playbackSpeed: playbackSpeed,
       stereoDownmix: stereoDownmix,
       audioRenderer: audioRenderer,
       // 手动改动音频后端即标记「用户已设置」，旧默认值迁移不再覆盖

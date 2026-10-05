@@ -4,8 +4,11 @@ class AppSettings {
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
 
-  /// 播放页顶栏显示网速（播放码率，Mbps）。
+  /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
+
+  /// 播放倍速（0.5~3.0，跨会话持久化；房间联播时由房主节奏接管）。
+  final double playbackSpeed;
   final bool stereoDownmix;
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
   /// 用户是否手动设置过音频后端（用于把旧版落盘默认值 'AudioTrack'
@@ -87,6 +90,7 @@ class AppSettings {
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
+    this.playbackSpeed = 1.0,
     this.stereoDownmix = false,
     this.audioRenderer = 'auto',
     this.audioRendererUserSet = false,
@@ -114,6 +118,7 @@ class AppSettings {
     String? decodeMode,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
+    double? playbackSpeed,
     bool? stereoDownmix,
     String? audioRenderer,
     bool? audioRendererUserSet,
@@ -138,6 +143,7 @@ class AppSettings {
       decodeMode: decodeMode ?? this.decodeMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
+      playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
       audioRendererUserSet: audioRendererUserSet ?? this.audioRendererUserSet,
@@ -180,6 +186,7 @@ class AppSettings {
         'decodeMode': decodeMode,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
+        'playbackSpeed': playbackSpeed,
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
         'audioRendererUserSet': audioRendererUserSet,
@@ -229,6 +236,7 @@ class AppSettings {
       decodeMode: mode,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
+      playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
       audioRenderer: renderer,
       audioRendererUserSet: rendererUserSet,

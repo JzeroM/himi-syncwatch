@@ -65,6 +65,17 @@ void main() {
       expect(AppSettings.fromJson(json).showNetworkSpeed, isFalse);
     });
 
+    test('playbackSpeed：旧数据缺字段回退 1.0，可改档并往返', () {
+      expect(AppSettings.fromJson(const {}).playbackSpeed, 1.0);
+      expect(
+        const AppSettings().copyWith(playbackSpeed: 1.5).playbackSpeed,
+        1.5,
+      );
+      final json = const AppSettings(playbackSpeed: 2.5).toJson();
+      expect(json['playbackSpeed'], 2.5);
+      expect(AppSettings.fromJson(json).playbackSpeed, 2.5);
+    });
+
     test('eglFaultSeen 旧数据缺字段 → 默认 false（未确认故障）', () {
       expect(AppSettings.fromJson(const {}).eglFaultSeen, isFalse);
       expect(

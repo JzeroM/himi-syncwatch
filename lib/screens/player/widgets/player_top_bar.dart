@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
-/// 播放页顶栏：返回 + 左上角影视信息 + 网速 + 解码胶囊 + 分享 + 锁。
+/// 播放页顶栏：返回 + 左上角影视信息 + 网速 + 解码胶囊 + 分享。
 ///
 /// 纯参数 widget（不依赖 provider/状态），便于脱离 `mdk.Player` 单测
-/// 标题格式化回显、网速显隐与锁定回调。渐变底与内边距沿用原
-/// `_buildTopBar` 样式。
+/// 标题格式化回显与网速显隐。渐变底与内边距沿用原 `_buildTopBar` 样式。
+/// 锁按钮已移至画面左缘独立控件（`PlayerLockButton`）。
 class PlayerTopBar extends StatelessWidget {
   const PlayerTopBar({
     super.key,
@@ -16,11 +16,9 @@ class PlayerTopBar extends StatelessWidget {
     required this.decodeModeLabel,
     required this.decodeMenuOpen,
     required this.showShare,
-    required this.locked,
     required this.onBack,
     required this.onToggleDecode,
     required this.onShare,
-    required this.onToggleLock,
   });
 
   /// 左上角影视信息（电影名 / `剧名 – S01E02`）；空串不渲染。
@@ -33,12 +31,10 @@ class PlayerTopBar extends StatelessWidget {
   final String decodeModeLabel;
   final bool decodeMenuOpen;
   final bool showShare;
-  final bool locked;
 
   final VoidCallback onBack;
   final VoidCallback onToggleDecode;
   final VoidCallback onShare;
-  final VoidCallback onToggleLock;
 
   @override
   Widget build(BuildContext context) {
@@ -126,19 +122,6 @@ class PlayerTopBar extends StatelessWidget {
               onPressed: onShare,
             ),
           ],
-          TvFocusable(
-            radius: 12,
-            onTap: onToggleLock,
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Icon(
-                key: const ValueKey('playerLockButton'),
-                locked ? Icons.lock : Icons.lock_open,
-                color: Colors.white,
-                size: 22,
-              ),
-            ),
-          ),
         ],
       ),
     );

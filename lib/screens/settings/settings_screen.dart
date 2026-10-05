@@ -301,7 +301,7 @@ class SettingsScreen extends ConsumerWidget {
                 .update(showNetworkSpeed: !settings.showNetworkSpeed),
             child: SwitchListTile(
               title: const Text('显示网速'),
-              subtitle: const Text('播放页顶栏右侧显示当前播放码率'),
+              subtitle: const Text('播放页顶栏右侧显示真实下载速度（播放时≈视频流速度）'),
               value: settings.showNetworkSpeed,
               onChanged: (v) => ref
                   .read(settingsProvider.notifier)
