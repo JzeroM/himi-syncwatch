@@ -203,18 +203,19 @@ void main() {
   //   Smaller = sharper transition, concentrated at very edge
   //   Larger = softer, more gradual effect spreading inward
   // [PATCH himi] 14 → 28: 折射/色散影响带从边缘向内 28px（设备反馈
-  // round-5：大小不变、折射范围再大一点 —— 移动态 72px 高上下带
-  // 28+28 接近全高，水珠盖住的区域几乎全域弯折）。
+  // round-5：大小不变、折射范围再大一点 —— 带宽比 upstream 14 宽一倍）。
   float edgeZone = 28.0;
   
   // Calculate influence: 1.0 at edge, 0.0 at edgeZone pixels inward
   float edgeInfluence = smoothstep(edgeZone, 0.0, distFromEdge);
   
   // TWEAK: Quadratic falloff makes the bend gentler (less abrupt)
-  // [PATCH himi] 撤销平方衰减（设备反馈 round-5）：upstream 二次衰减把
-  // edgeZone 带再压缩 ~一半，中带弯折迅速归零 → 折射只贴着边缘一圈。
-  // 保留 smoothstep 原始输出（平滑线性 falloff），带宽与中带强度同时
-  // 提升，折射从边缘连续饱满过渡到接近中心；峰值位移不变（幅度不加大）。
+  // [PATCH himi] 平方衰减保留（设备反馈 round-6）：round-5 曾撤销它，
+  // 结果 28px 线性中带带着 ~17px 位移 + 大幅 RGB 色散全域作用，把内容
+  // 撕成彩色碎片噪点。恢复 edgeInfluence² → 中带强度压回 ~1/4，只有
+  // 贴边一圈明显弯折（v1.1.92 的干净透镜观感），带宽 28px 仍比
+  // v1.1.92（18px+平方）宽 55% → 范围加大与干净观感兼得。
+  edgeInfluence = edgeInfluence * edgeInfluence;
   
   // TWEAK: bendStrength - Overall refraction intensity
   //   Base (0.9): stronger edge lens distortion, closer to Impeller volumetric warp
