@@ -5,14 +5,15 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 打开数字网格选集器（底部玻璃 sheet）。
 ///
-/// - 标题「第 N 季」+ 排序切换（正序/倒序，key: [kSortToggleInSheet]）
+/// - 标题 = [seasonTitle]（Emby 自带季名，如「特别篇」）+ 排序切换
+///   （正序/倒序，key: [kSortToggleInSheet]）
 /// - 4 列数字格显示该季各集的 `indexNumber`，滚动支持 40+ 集
 /// - 高亮格 = [highlightEpisodeId]（无命中时由调用方给该季第一集）
 /// - 点击格子：仅选中（[onSelect] 通知调用方更新状态，不直接播放）并关闭
 /// - TV：每格 [TvFocusable] 包裹，方向键网格导航
 Future<void> showEpisodeNumberPicker(
   BuildContext context, {
-  required int seasonNumber,
+  required String seasonTitle,
   required List<MediaItem> episodes,
   required String? highlightEpisodeId,
   required bool sortDescending,
@@ -72,7 +73,7 @@ Future<void> showEpisodeNumberPicker(
                   Row(
                     children: [
                       Text(
-                        '第 $seasonNumber 季',
+                        seasonTitle,
                         key: const Key('episodePickerTitle'),
                         style: const TextStyle(
                           fontSize: 20,

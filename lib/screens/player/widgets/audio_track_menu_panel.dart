@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/models/media_item.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
+import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
+
+/// 音轨选择面板（放进 [SelectorSidePanel] 右侧浮层，滚动由外层提供）。
 class AudioTrackMenuPanel extends StatelessWidget {
   final mdk.Player player;
   final List<MediaStream> audioStreams;
@@ -22,13 +24,12 @@ class AudioTrackMenuPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      shrinkWrap: true,
       padding: const EdgeInsets.symmetric(vertical: 4),
       children: [
         for (int i = 0; i < audioStreams.length; i++)
-          _buildMenuItem(
+          SideOptionRow(
             label: audioStreams[i].displayInfo,
-            isSelected: player.activeAudioTracks.contains(i),
+            selected: player.activeAudioTracks.contains(i),
             onTap: () {
               onAudioSelected(i);
               onClose();
@@ -43,43 +44,6 @@ class AudioTrackMenuPanel extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-
-  Widget _buildMenuItem({
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    // TV 遥控：选项行可聚焦（焦点环 + Enter 选择），触摸行为不变
-    return TvFocusable(
-      radius: 4,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Icon(
-              isSelected
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_unchecked,
-              color: isSelected ? const Color(0xFF6366F1) : Colors.white54,
-              size: 16,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: isSelected ? const Color(0xFF6366F1) : Colors.white,
-                  fontSize: 14,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

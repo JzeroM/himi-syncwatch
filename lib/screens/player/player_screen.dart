@@ -51,6 +51,7 @@ import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -4007,6 +4008,60 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ),
           ),
 
+        // 字幕/音轨/倍速选择器：右侧玻璃浮层（可滚动；随控制条显隐）
+        if (_showControls &&
+            !_lockController.locked &&
+            (_showSubtitleMenu || _showAudioMenu || _showSpeedMenu))
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 48,
+            bottom: 132,
+            right: 12,
+            width: 260,
+            child: SelectorSidePanel(
+              title: _showSubtitleMenu
+                  ? '字幕'
+                  : _showAudioMenu
+                      ? '音轨'
+                      : '倍速',
+              child: _showSubtitleMenu
+                  ? SubtitleMenuPanel(
+                      player: _player,
+                      subtitleStreams: _embySubtitleStreams,
+                      activeSubtitleIndex: _activeSubtitleIndex,
+                      useServerBurnIn: _useServerSubtitleBurnIn,
+                      itemId: _episodes.isNotEmpty &&
+                              _currentEpisodeIndex >= 0 &&
+                              _currentEpisodeIndex < _episodes.length
+                          ? _episodes[_currentEpisodeIndex].id
+                          : widget.itemId,
+                      mediaSourceId: widget.mediaSourceId,
+                      token: _currentToken,
+                      onSubtitleSelected: (index) {
+                        if (index == null) {
+                          _player.activeSubtitleTracks = [];
+                          _useServerSubtitleBurnIn = false;
+                          _activeSubtitleIndex = null;
+                        } else {
+                          _selectEmbySubtitle(index);
+                        }
+                      },
+                      onLoadLocal: _loadLocalSubtitle,
+                      onClose: () => setState(() => _showSubtitleMenu = false),
+                    )
+                  : _showAudioMenu
+                      ? AudioTrackMenuPanel(
+                          player: _player,
+                          audioStreams: _embyAudioStreams,
+                          onAudioSelected: _selectEmbyAudio,
+                          onClose: () => setState(() => _showAudioMenu = false),
+                        )
+                      : SpeedMenuPanel(
+                          current: _speed,
+                          onSelected: _applySpeed,
+                        ),
+            ),
+          ),
+
         // 手势提示浮层（快进快退/双击播放暂停）
         if (_showGestureOverlay)
           Positioned(
@@ -4132,6 +4187,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       decodeModeLabel:
           AppSettings.decodeModeLabels[settings.decodeMode] ?? 'Auto',
       decodeMenuOpen: _showDecodeModeMenu,
+      showVideoFitButton: widget.roomCode == null && !settings.tvMode,
+      videoFitIcon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
+      videoFitLabel: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
+      onCycleVideoFit: _cycleVideoFit,
       showShare: widget.roomCode != null,
       onBack: () async {
         final shouldPop = await _confirmLeaveRoom();
@@ -4646,59 +4705,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ],
                 ),
               ),
-              if (_showSubtitleMenu) ...[
-                _buildExpandablePanel(
-                  maxHeight: 180,
-                  child: SubtitleMenuPanel(
-                    player: _player,
-                    subtitleStreams: _embySubtitleStreams,
-                    activeSubtitleIndex: _activeSubtitleIndex,
-                    useServerBurnIn: _useServerSubtitleBurnIn,
-                    itemId: _episodes.isNotEmpty &&
-                            _currentEpisodeIndex >= 0 &&
-                            _currentEpisodeIndex < _episodes.length
-                        ? _episodes[_currentEpisodeIndex].id
-                        : widget.itemId,
-                    mediaSourceId: widget.mediaSourceId,
-                    token: _currentToken,
-                    onSubtitleSelected: (index) {
-                      if (index == null) {
-                        _player.activeSubtitleTracks = [];
-                        _useServerSubtitleBurnIn = false;
-                        _activeSubtitleIndex = null;
-                      } else {
-                        _selectEmbySubtitle(index);
-                      }
-                    },
-                    onLoadLocal: _loadLocalSubtitle,
-                    onClose: () => setState(() => _showSubtitleMenu = false),
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-              if (_showAudioMenu) ...[
-                _buildExpandablePanel(
-                  maxHeight: 180,
-                  child: AudioTrackMenuPanel(
-                    player: _player,
-                    audioStreams: _embyAudioStreams,
-                    onAudioSelected: _selectEmbyAudio,
-                    onClose: () => setState(() => _showAudioMenu = false),
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-              if (_showSpeedMenu) ...[
-                _buildExpandablePanel(
-                  // 8 档 × ~33px ≈ 264px：180 会裁掉后 3 档（ClipRRect 裁剪）
-                  maxHeight: 288,
-                  child: SpeedMenuPanel(
-                    current: _speed,
-                    onSelected: _applySpeed,
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
+              // 字幕/音轨/倍速选择器已移至右侧玻璃浮层（SelectorSidePanel）
               Row(
                 children: [
                   // 上一集
@@ -4861,15 +4868,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     ),
                   ],
 
-                  // 画面比例（仅本地单人模式）
-                  if (widget.roomCode == null) ...[
-                    const SizedBox(width: 20),
-                    _buildControlButton(
-                      icon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
-                      onTap: _cycleVideoFit,
-                      badge: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
-                    ),
-                  ],
+                  // 画面比例已移至顶栏（解码控件右侧，TV 不显示）
 
                   // 窗口全屏（桌面三端）
                   if (PlayerPlatform.windowFullscreenButton) ...[
@@ -4886,23 +4885,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildExpandablePanel({
-    required double maxHeight,
-    required Widget child,
-  }) {
-    return Container(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: child,
       ),
     );
   }

@@ -53,15 +53,16 @@ void main() {
       }
     });
 
-    testWidgets('当前档高亮（仅一格 checked 且落在 1.5）', (tester) async {
+    testWidgets('当前档高亮（仅一格对勾且落在 1.5）', (tester) async {
       await tester.pumpWidget(_host(SpeedMenuPanel(
         current: 1.5,
         onSelected: (_) {},
       )));
-      final checked = tester
-          .widgetList<Icon>(find.byIcon(Icons.radio_button_checked))
-          .toList();
+      // 右侧对勾标识选中（无左侧 radio 图标）
+      final checked =
+          tester.widgetList<Icon>(find.byIcon(Icons.check)).toList();
       expect(checked, hasLength(1));
+      expect(find.byIcon(Icons.radio_button_checked), findsNothing);
       final rows = find.descendant(
         of: find.byType(SpeedMenuPanel),
         matching: find.text('1.5x'),

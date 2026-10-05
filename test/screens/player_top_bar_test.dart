@@ -12,6 +12,7 @@ PlayerTopBar _bar({
   String title = '',
   String? networkSpeedText,
   bool showDecodeButton = false,
+  bool showVideoFitButton = false,
   bool showShare = false,
 }) =>
     PlayerTopBar(
@@ -20,6 +21,10 @@ PlayerTopBar _bar({
       showDecodeButton: showDecodeButton,
       decodeModeLabel: 'Auto',
       decodeMenuOpen: false,
+      showVideoFitButton: showVideoFitButton,
+      videoFitIcon: Icons.fit_screen,
+      videoFitLabel: '自适应',
+      onCycleVideoFit: () {},
       showShare: showShare,
       onBack: () {},
       onToggleDecode: () {},
@@ -136,6 +141,14 @@ void main() {
       expect(find.byKey(const ValueKey('playerShareButton')), findsNothing);
       await tester.pumpWidget(_host(_bar(showShare: true)));
       expect(find.byKey(const ValueKey('playerShareButton')), findsOneWidget);
+    });
+
+    testWidgets('画面比例按钮按 showVideoFitButton 显隐（解码右侧）', (tester) async {
+      await tester.pumpWidget(_host(_bar(showVideoFitButton: false)));
+      expect(find.byIcon(Icons.fit_screen), findsNothing);
+      await tester.pumpWidget(_host(_bar(showVideoFitButton: true)));
+      expect(find.byIcon(Icons.fit_screen), findsOneWidget);
+      expect(find.byTooltip('自适应'), findsOneWidget);
     });
   });
 }

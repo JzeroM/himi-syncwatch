@@ -15,6 +15,10 @@ class PlayerTopBar extends StatelessWidget {
     required this.showDecodeButton,
     required this.decodeModeLabel,
     required this.decodeMenuOpen,
+    required this.showVideoFitButton,
+    required this.videoFitIcon,
+    required this.videoFitLabel,
+    required this.onCycleVideoFit,
     required this.showShare,
     required this.onBack,
     required this.onToggleDecode,
@@ -30,6 +34,15 @@ class PlayerTopBar extends StatelessWidget {
   final bool showDecodeButton;
   final String decodeModeLabel;
   final bool decodeMenuOpen;
+
+  /// 画面比例按钮（解码控件右侧；仅本地单人 + 非 TV）。
+  final bool showVideoFitButton;
+  final IconData videoFitIcon;
+
+  /// 当前比例模式名（自适应/裁剪/铺满/原始），作 tooltip。
+  final String videoFitLabel;
+  final VoidCallback onCycleVideoFit;
+
   final bool showShare;
 
   final VoidCallback onBack;
@@ -109,6 +122,21 @@ class PlayerTopBar extends StatelessWidget {
                       style: const TextStyle(color: Colors.white, fontSize: 12),
                     ),
                   ],
+                ),
+              ),
+            ),
+          ],
+          // 画面比例按钮（解码胶囊右侧；TV 隐藏）
+          if (showVideoFitButton) ...[
+            const SizedBox(width: 8),
+            TvFocusable(
+              radius: 12,
+              onTap: onCycleVideoFit,
+              child: Tooltip(
+                message: videoFitLabel,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(videoFitIcon, color: Colors.white, size: 22),
                 ),
               ),
             ),

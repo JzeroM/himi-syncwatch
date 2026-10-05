@@ -428,7 +428,7 @@ void main() {
 
       // 有集时剧集页显示播放按钮
       expect(find.text('开始播放'), findsOneWidget);
-      expect(find.text('第 1 季'), findsWidgets);
+      expect(find.text('第1季'), findsWidgets);
     });
 
     testWidgets('点第2季卡 → 上方剧集列表切换为第2季', (tester) async {
@@ -453,7 +453,7 @@ void main() {
       expect(find.byKey(const Key('episodeCard_e1')), findsNothing);
       expect(find.byKey(const Key('episodeCard_e2')), findsNothing);
       // 选季器跟随切换
-      expect(find.text('第 2 季'), findsWidgets);
+      expect(find.text('第2季'), findsWidgets);
     });
 
     testWidgets('Seasons 接口为空时按集分组兜底出合成季', (tester) async {
@@ -492,7 +492,7 @@ void main() {
       await tester.tap(selector);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
-      await tester.tap(find.text('第 2 季').last);
+      await tester.tap(find.text('第2季').last);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
@@ -1113,8 +1113,8 @@ void main() {
           borderOf(tester, const Key('seasonCardImage_sea1')).border?.top.color,
           Colors.transparent);
 
-      final label = tester.widget<Text>(
-          find.descendant(of: sea2, matching: find.text('第 2 季')));
+      final label = tester
+          .widget<Text>(find.descendant(of: sea2, matching: find.text('第2季')));
       expect(label.style?.color, Colors.white70, reason: '文字不随选中变主色');
       expect(label.style?.fontWeight ?? FontWeight.normal, FontWeight.normal,
           reason: '文字不随选中加粗');

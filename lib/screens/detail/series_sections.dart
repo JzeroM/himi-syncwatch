@@ -57,6 +57,13 @@ class SeriesSections extends StatelessWidget {
   static int seasonNumber(MediaItem season, int index) =>
       season.indexNumber ?? index + 1;
 
+  /// 季显示名：优先 Emby 自带季名（`Name`，如「特别篇」/自定义名），
+  /// 空名回退「第 N 季」。
+  static String seasonTitle(MediaItem season, int index) {
+    final name = season.name.trim();
+    return name.isEmpty ? '第 ${seasonNumber(season, index)} 季' : name;
+  }
+
   /// 该季的集：按集号排序后按 [sortDescending] 决定正/倒序。
   List<MediaItem> get _seasonEpisodes {
     final list = episodes
@@ -128,9 +135,8 @@ class _SeasonSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final numbers = seasons
-        .asMap()
-        .entries
+    final entries = seasons.asMap().entries.toList();
+    final numbers = entries
         .map((e) => SeriesSections.seasonNumber(e.value, e.key))
         .toList();
     final current =
@@ -142,10 +148,10 @@ class _SeasonSelector extends StatelessWidget {
       underline: const SizedBox.shrink(),
       isExpanded: false,
       items: [
-        for (final n in numbers)
+        for (final e in entries)
           DropdownMenuItem<int>(
-            value: n,
-            child: Text('第 $n 季'),
+            value: SeriesSections.seasonNumber(e.value, e.key),
+            child: Text(SeriesSections.seasonTitle(e.value, e.key)),
           ),
       ],
       onChanged: (v) {
@@ -202,11 +208,7 @@ class _SeasonSelector extends StatelessWidget {
 
   /// TV 下 dropdown 自身的展开菜单焦点链不可靠，改为弹出 PopupMenu。
   Future<void> _showMenu(BuildContext context) async {
-    final numbers = seasons
-        .asMap()
-        .entries
-        .map((e) => SeriesSections.seasonNumber(e.value, e.key))
-        .toList();
+    final entries = seasons.asMap().entries.toList();
     final picked = await showMenu<int>(
       context: context,
       position: RelativeRect.fromDirectional(
@@ -217,10 +219,10 @@ class _SeasonSelector extends StatelessWidget {
         bottom: 0,
       ),
       items: [
-        for (final n in numbers)
+        for (final e in entries)
           PopupMenuItem<int>(
-            value: n,
-            child: Text('第 $n 季'),
+            value: SeriesSections.seasonNumber(e.value, e.key),
+            child: Text(SeriesSections.seasonTitle(e.value, e.key)),
           ),
       ],
     );
@@ -444,9 +446,10 @@ class _SeasonCardRow extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                // 「第N季」不随选中高亮：仅图片描边表达选中态
+                // 季标签优先用 Emby 自带季名（如「特别篇」），不随选中
+                // 高亮：仅图片描边表达选中态
                 Text(
-                  '第 $number 季',
+                  SeriesSections.seasonTitle(season, index),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,

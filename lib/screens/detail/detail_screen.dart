@@ -412,14 +412,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     });
   }
 
+  /// 当前选中季的显示名（Emby 自带季名；按选中季号匹配季列表）。
+  String _seasonTitleOf(int? seasonNumber) {
+    for (var i = 0; i < _seasons.length; i++) {
+      if (SeriesSections.seasonNumber(_seasons[i], i) == seasonNumber) {
+        return SeriesSections.seasonTitle(_seasons[i], i);
+      }
+    }
+    return '第 ${seasonNumber ?? 0} 季';
+  }
+
   /// 打开数字网格选集器（仅选中高亮，不直接播放）。
   void _openEpisodePicker() {
-    final season = _selectedSeason ?? 0;
     final seasonEpisodes = _seasonEpisodesOf(_selectedSeason);
     if (seasonEpisodes.isEmpty) return;
     showEpisodeNumberPicker(
       context,
-      seasonNumber: season,
+      seasonTitle: _seasonTitleOf(_selectedSeason),
       episodes: seasonEpisodes,
       highlightEpisodeId: _highlightEpisodeId(seasonEpisodes),
       sortDescending: _sortDescending,
