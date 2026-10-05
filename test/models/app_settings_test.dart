@@ -47,10 +47,22 @@ void main() {
       const settings = AppSettings();
       expect(settings.decodeMode, equals('auto'));
       expect(settings.showSyncDebug, isFalse);
+      expect(settings.showNetworkSpeed, isTrue, reason: '网速显示默认开');
       expect(settings.stereoDownmix, isFalse);
       expect(settings.audioRenderer, equals('auto'));
       expect(settings.audioRendererUserSet, isFalse);
       expect(settings.eglFaultSeen, isFalse);
+    });
+
+    test('showNetworkSpeed：旧数据缺字段回退默认 true，可关闭并往返', () {
+      expect(AppSettings.fromJson(const {}).showNetworkSpeed, isTrue);
+      expect(
+        const AppSettings().copyWith(showNetworkSpeed: false).showNetworkSpeed,
+        isFalse,
+      );
+      final json = const AppSettings(showNetworkSpeed: false).toJson();
+      expect(json['showNetworkSpeed'], isFalse);
+      expect(AppSettings.fromJson(json).showNetworkSpeed, isFalse);
     });
 
     test('eglFaultSeen 旧数据缺字段 → 默认 false（未确认故障）', () {

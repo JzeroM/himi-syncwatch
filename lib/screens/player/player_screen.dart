@@ -47,6 +47,8 @@ import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
+import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
+import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -208,6 +210,25 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 顶栏解码模式按钮是否显示：TV 模式隐藏（解码模式仅走设置页）。
   @visibleForTesting
   static bool showDecodeButton({required bool tvMode}) => !tvMode;
+
+  /// 顶栏左上角影视信息：电影 = 片名；剧集 = `剧名 – S01E02`
+  ///（剧名为空回退片名，直链播放等无元数据场景由调用方判空不渲染）。
+  @visibleForTesting
+  static String formatMediaTitle(EpisodeInfo info) {
+    if (info.isMovie || info.seriesName.isEmpty) return info.name;
+    return '${info.seriesName} – ${episodeCode(info.season, info.number)}';
+  }
+
+  /// S01E02 风格集编号（电影 season/number 为 0，不走此格式）。
+  @visibleForTesting
+  static String episodeCode(int season, int number) =>
+      'S${season.toString().padLeft(2, '0')}'
+      'E${number.toString().padLeft(2, '0')}';
+
+  /// 网速回显：kbps → `12.34 Mbps`（0 码率 → `0.00 Mbps`）。
+  @visibleForTesting
+  static String formatMbps(int kbps) =>
+      '${(kbps / 1000).toStringAsFixed(2)} Mbps';
 }
 
 enum _OrientationMode { portraitUp, landscapeLeft, landscapeRight }
@@ -306,6 +327,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   StreamSubscription? _rtmSubscription;
   bool _isHost = false;
   bool _showControls = true;
+
+  /// 屏幕锁定状态机（会话态）：锁后屏蔽手势/热键，点屏浮现解锁钮
+  final PlayerLockController _lockController = PlayerLockController();
+
+  /// 解锁钮自动隐藏计时（浮现 5 秒后收起）
+  Timer? _unlockHideTimer;
 
   /// 热键层焦点（PlayerHotkey 外部节点）：控制条隐藏后焦点回落于此，
   /// 遥控器方向键恢复 seek/唤出控制条语义
@@ -955,6 +982,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 锁状态机变化 → 重建顶栏锁图标 / 解锁浮钮
+    _lockController.addListener(_onLockStateChanged);
     _player = mdk.Player();
     // 字幕属性配置
     _player.setProperty('subtitle', '1');
@@ -3012,6 +3041,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 空格键播放/暂停（仅房主/本地可控制）
   void _handleHotkeyTogglePlayPause() {
+    if (_lockController.locked) return;
     if (!_canControlPlayback) return;
     _togglePlayPause();
   }
@@ -3032,6 +3062,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 音量键：±5% 应用内音量，并显示左侧音量柱 1 秒
   void _handleHotkeyVolumeDelta(double deltaPercent) {
+    if (_lockController.locked) return;
     final newVol = (_volume + deltaPercent).clamp(0.0, 100.0);
     _volume = newVol;
     _player.volume = newVol / 100.0;
@@ -3155,7 +3186,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// （焦点在滑杆时左右键调进度，上下键移动到控制条按钮）；
   /// 已可见时仅顺延自动隐藏——不抢焦点，否则按钮上按 OK 打开菜单后
   /// 焦点被拽回滑杆（"很难选到"）。
+  /// 锁定中：不唤出控制条，改为浮现解锁钮。
   void _showControlsForTv() {
+    if (_lockController.locked) {
+      _showUnlockFromTap();
+      return;
+    }
     if (!_showControls) {
       setState(() => _showControls = true);
       _resetHideTimer();
@@ -3535,6 +3571,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
     _hideControlsTimer?.cancel();
+    _unlockHideTimer?.cancel();
+    _lockController.removeListener(_onLockStateChanged);
+    _lockController.dispose();
     _hotkeyFocusNode.dispose();
     _controlsFocusNode.dispose();
     _playPauseFocusNode.dispose();
@@ -3692,28 +3731,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         child: Scaffold(
           backgroundColor: Colors.black,
           body: GestureDetector(
-            onTap: () {
-              if (_showSubtitleMenu ||
-                  _showAudioMenu ||
-                  _showDecodeModeMenu ||
-                  _showBrightnessBarNotifier.value ||
-                  _showVolumeBarNotifier.value) {
-                _closeAllMenus();
-              } else {
-                _toggleControls();
-              }
-            },
-            onDoubleTap: _onDoubleTap,
-            onHorizontalDragUpdate: _onHorizontalDragUpdate,
-            onHorizontalDragEnd: _onHorizontalDragEnd,
+            onTap: _onVideoAreaTap,
+            // 锁定中：双击/横滑(进度)/纵滑(亮度音量)全部解除绑定
+            onDoubleTap: _lockController.locked ? null : _onDoubleTap,
+            onHorizontalDragUpdate:
+                _lockController.locked ? null : _onHorizontalDragUpdate,
+            onHorizontalDragEnd:
+                _lockController.locked ? null : _onHorizontalDragEnd,
             // Windows 取消音量/亮度垂直手势（改用控制条滑杆），移动平台保留
-            onVerticalDragStart: PlayerPlatform.verticalVolumeBrightnessGesture
-                ? _onVerticalDragStart
-                : null,
-            onVerticalDragUpdate: PlayerPlatform.verticalVolumeBrightnessGesture
-                ? _onVerticalDragUpdate
-                : null,
-            onVerticalDragEnd: PlayerPlatform.verticalVolumeBrightnessGesture
+            onVerticalDragStart:
+                PlayerPlatform.verticalVolumeBrightnessGesture &&
+                        !_lockController.locked
+                    ? _onVerticalDragStart
+                    : null,
+            onVerticalDragUpdate:
+                PlayerPlatform.verticalVolumeBrightnessGesture &&
+                        !_lockController.locked
+                    ? _onVerticalDragUpdate
+                    : null,
+            onVerticalDragEnd: PlayerPlatform.verticalVolumeBrightnessGesture &&
+                    !_lockController.locked
                 ? _onVerticalDragEnd
                 : null,
             behavior: HitTestBehavior.opaque,
@@ -3908,6 +3945,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (_showControls)
           Positioned(top: 0, left: 0, right: 0, child: _buildTopBar()),
 
+        // 锁定中点屏/TV OK 浮现的解锁钮（居中，5 秒无操作自动收起；
+        // TV 出现即落焦，遥控器方向键/OK 可直接操作）
+        if (_lockController.unlockButtonVisible)
+          Positioned.fill(
+            child: Center(
+              child: TvFocusable(
+                autofocus: true,
+                onTap: _unlockScreen,
+                child: Container(
+                  key: const ValueKey('playerUnlockButton'),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.lock_open,
+                      color: Colors.white, size: 30),
+                ),
+              ),
+            ),
+          ),
+
         // 解码模式选择面板
         if (_showDecodeModeMenu)
           Positioned(
@@ -4032,75 +4091,93 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildTopBar() {
-    return Container(
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top,
-        left: 12,
-        right: 12,
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.bottomCenter,
-          end: Alignment.topCenter,
-          colors: [
-            Colors.transparent,
-            Colors.black.withValues(alpha: 0.8),
-          ],
-        ),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () async {
-              final shouldPop = await _confirmLeaveRoom();
-              if (shouldPop && context.mounted) Navigator.pop(context);
-            },
-          ),
-          const Spacer(),
-          // 解码模式按钮（TV 隐藏：解码模式仅走设置页切换）
-          if (PlayerScreen.showDecodeButton(
-            tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
-          )) ...[
-            TvFocusable(
-              radius: 12,
-              onTap: () =>
-                  setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _showDecodeModeMenu
-                      ? const Color(0xFF6366F1)
-                      : Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.memory, color: Colors.white, size: 14),
-                    const SizedBox(width: 4),
-                    Text(
-                      AppSettings.decodeModeLabels[
-                              ref.read(settingsProvider).decodeMode] ??
-                          'Auto',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (widget.roomCode != null) ...[
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.share, color: Colors.white),
-              tooltip: '分享房间',
-              onPressed: _showShareRoomSheet,
-            ),
-          ],
-        ],
-      ),
+    final settings = ref.watch(settingsProvider);
+    return PlayerTopBar(
+      title: _currentEpisodeTitle,
+      networkSpeedText: settings.showNetworkSpeed
+          ? PlayerScreen.formatMbps(_mediaBitrate)
+          : null,
+      showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode),
+      decodeModeLabel:
+          AppSettings.decodeModeLabels[settings.decodeMode] ?? 'Auto',
+      decodeMenuOpen: _showDecodeModeMenu,
+      showShare: widget.roomCode != null,
+      locked: _lockController.locked,
+      onBack: () async {
+        final shouldPop = await _confirmLeaveRoom();
+        if (shouldPop && context.mounted) Navigator.pop(context);
+      },
+      onToggleDecode: () =>
+          setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
+      onShare: _showShareRoomSheet,
+      onToggleLock: _toggleScreenLock,
     );
+  }
+
+  /// 顶栏左上角影视信息；无片单（直链播放）返回空串不渲染。
+  String get _currentEpisodeTitle {
+    if (_episodes.isEmpty || _currentEpisodeIndex >= _episodes.length) {
+      return '';
+    }
+    return PlayerScreen.formatMediaTitle(_episodes[_currentEpisodeIndex]);
+  }
+
+  void _onLockStateChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 顶栏锁按钮：上锁（收起控制栏/菜单，屏蔽手势与热键）。
+  void _lockScreen() {
+    _lockController.lock();
+    _hideControlsTimer?.cancel();
+    _releaseFocusFromControls();
+    setState(() {
+      _showControls = false;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showDecodeModeMenu = false;
+    });
+  }
+
+  /// 解锁并恢复控制栏。
+  void _unlockScreen() {
+    _lockController.unlock();
+    _unlockHideTimer?.cancel();
+    setState(() => _showControls = true);
+    _resetHideTimer();
+  }
+
+  void _toggleScreenLock() {
+    if (_lockController.locked) {
+      _unlockScreen();
+    } else {
+      _lockScreen();
+    }
+  }
+
+  /// 锁定中点屏/TV 按 OK：浮现解锁钮并起 5 秒自动隐藏；
+  /// 未锁定返回 false 表示交由调用方切换控制栏。
+  bool _showUnlockFromTap() {
+    if (!_lockController.onVideoTap()) return false;
+    _unlockHideTimer?.cancel();
+    _unlockHideTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) _lockController.hideUnlockButton();
+    });
+    return true;
+  }
+
+  /// 视频区单击：锁分支浮现解锁钮，否则收菜单/切换控制栏。
+  void _onVideoAreaTap() {
+    if (_showUnlockFromTap()) return;
+    if (_showSubtitleMenu ||
+        _showAudioMenu ||
+        _showDecodeModeMenu ||
+        _showBrightnessBarNotifier.value ||
+        _showVolumeBarNotifier.value) {
+      _closeAllMenus();
+    } else {
+      _toggleControls();
+    }
   }
 
   Future<void> _switchDecodeMode(String mode) async {
@@ -4192,6 +4269,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _seekRelative(int deltaMs) {
+    if (_lockController.locked) return;
     // 限制最大跳转 ±60 秒
     final clampedDelta = deltaMs.clamp(-60000, 60000);
     final currentMs = _position.inMilliseconds;
@@ -5172,7 +5250,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'S${item.season.toString().padLeft(2, '0')}E${item.number.toString().padLeft(2, '0')}',
+                          PlayerScreen.episodeCode(item.season, item.number),
                           style: TextStyle(
                             color: isPlaying
                                 ? const Color(0xFF6366F1)

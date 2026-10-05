@@ -298,6 +298,21 @@ class SettingsScreen extends ConsumerWidget {
             tvMode: settings.tvMode,
             onTap: () => ref
                 .read(settingsProvider.notifier)
+                .update(showNetworkSpeed: !settings.showNetworkSpeed),
+            child: SwitchListTile(
+              title: const Text('显示网速'),
+              subtitle: const Text('播放页顶栏右侧显示当前播放码率'),
+              value: settings.showNetworkSpeed,
+              onChanged: (v) => ref
+                  .read(settingsProvider.notifier)
+                  .update(showNetworkSpeed: v),
+            ),
+          ),
+          const Divider(height: 1),
+          _tvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => ref
+                .read(settingsProvider.notifier)
                 .update(tvMode: !settings.tvMode),
             child: SwitchListTile(
               title: const Text('TV 模式'),

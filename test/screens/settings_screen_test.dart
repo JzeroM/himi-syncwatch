@@ -123,6 +123,36 @@ void main() {
     expect(container.read(settingsProvider).tvMode, isTrue);
   });
 
+  testWidgets('显示网速开关默认开，切换写入 settings', (tester) async {
+    final container = await _pumpScreen(tester);
+    await tester.scrollUntilVisible(
+      find.text('显示网速'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('显示网速'), findsOneWidget);
+    expect(container.read(settingsProvider).showNetworkSpeed, isTrue);
+
+    final speedSwitch = find.descendant(
+      of: find.ancestor(
+        of: find.text('显示网速'),
+        matching: find.byType(SwitchListTile),
+      ),
+      matching: find.byType(Switch),
+    );
+    expect(tester.widget<Switch>(speedSwitch).value, isTrue, reason: '默认开');
+
+    await tester.tap(speedSwitch);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).showNetworkSpeed, isFalse);
+
+    await tester.tap(speedSwitch);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).showNetworkSpeed, isTrue);
+  });
+
   testWidgets('TV 遥控器 OK 两段式：作用域落焦首个交互项并激活', (tester) async {
     final container = await _pumpScreen(
       tester,

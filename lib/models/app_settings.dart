@@ -3,6 +3,9 @@ import 'package:flutter/foundation.dart';
 class AppSettings {
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
+
+  /// 播放页顶栏显示网速（播放码率，Mbps）。
+  final bool showNetworkSpeed;
   final bool stereoDownmix;
   final String audioRenderer; // 'auto', 'aaudio', 'opensl', 'audiotrack'
   /// 用户是否手动设置过音频后端（用于把旧版落盘默认值 'AudioTrack'
@@ -83,6 +86,7 @@ class AppSettings {
   const AppSettings({
     this.decodeMode = 'auto',
     this.showSyncDebug = false,
+    this.showNetworkSpeed = true,
     this.stereoDownmix = false,
     this.audioRenderer = 'auto',
     this.audioRendererUserSet = false,
@@ -109,6 +113,7 @@ class AppSettings {
   AppSettings copyWith({
     String? decodeMode,
     bool? showSyncDebug,
+    bool? showNetworkSpeed,
     bool? stereoDownmix,
     String? audioRenderer,
     bool? audioRendererUserSet,
@@ -132,6 +137,7 @@ class AppSettings {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
+      showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
       audioRendererUserSet: audioRendererUserSet ?? this.audioRendererUserSet,
@@ -173,6 +179,7 @@ class AppSettings {
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
         'showSyncDebug': showSyncDebug,
+        'showNetworkSpeed': showNetworkSpeed,
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
         'audioRendererUserSet': audioRendererUserSet,
@@ -221,6 +228,7 @@ class AppSettings {
     return AppSettings(
       decodeMode: mode,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
+      showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
       audioRenderer: renderer,
       audioRendererUserSet: rendererUserSet,
