@@ -4140,14 +4140,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     ref.read(settingsProvider.notifier).update(playbackSpeed: speed);
   }
 
-  /// 启动真实下载速度计：平台不支持（counter 为 null）或首读失败时
+  /// 启动真实下载速度计：平台不支持（counter 为 null）或连续读取失败时
   /// 保持 `_networkSpeedBps = null`，顶栏不渲染网速。
+  /// 首个有效值/首次不可用各记一条日志，便于诊断设备兼容问题。
   void _startSpeedMeter() {
     final counter = createDefaultRxCounter();
-    if (counter == null) return;
+    if (counter == null) {
+      LogService().log('Speed', '数据源不支持，网速显示关闭');
+      return;
+    }
+    var loggedFirst = false;
+    var loggedNull = false;
     _speedMeter = NetworkSpeedMeter(
       counter: counter,
       onSpeed: (bps) {
+        if (bps != null && !loggedFirst) {
+          loggedFirst = true;
+          LogService()
+              .log('Speed', '首个网速采样: ${NetworkSpeedMeter.formatMBs(bps)}');
+        } else if (bps == null && !loggedNull) {
+          loggedNull = true;
+          LogService().log('Speed', '连续读取失败，网速显示停止');
+        }
         if (!mounted) return;
         setState(() => _networkSpeedBps = bps);
       },

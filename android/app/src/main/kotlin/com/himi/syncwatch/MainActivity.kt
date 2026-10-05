@@ -18,6 +18,7 @@ class MainActivity : FlutterActivity() {
      */
     private var dvChannel: MethodChannel? = null
     private var piChannel: MethodChannel? = null
+    private var ntChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -35,6 +36,13 @@ class MainActivity : FlutterActivity() {
             // TV 设备识别（自动开启 TV 模式的判定来源）
             setMethodCallHandler(PlatformInfoPlugin(applicationContext))
         }
+        ntChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            NetworkTrafficPlugin.CHANNEL
+        ).apply {
+            // 真实网速：TrafficStats 整机累计收字节（/proc 受 SELinux 限制）
+            setMethodCallHandler(NetworkTrafficPlugin())
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -42,6 +50,8 @@ class MainActivity : FlutterActivity() {
         dvChannel = null
         piChannel?.setMethodCallHandler(null)
         piChannel = null
+        ntChannel?.setMethodCallHandler(null)
+        ntChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

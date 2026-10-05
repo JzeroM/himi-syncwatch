@@ -3,20 +3,23 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart';
 
 /// 平台累计接收字节计数器。
 ///
 /// 返回网络栈的累计接收字节（整机口径，播放时 ≈ 视频流下载量）；
-/// 平台不支持或读取失败返回 null。
+/// 平台不支持或读取失败返回 null。异步是因为 Android 数据源为
+/// MethodChannel（TrafficStats），其余平台为同步读的 Future 包装。
 abstract class RxCounter {
-  int? readRxBytes();
+  Future<int?> readRxBytes();
 }
 
-/// Linux/Android：解析 `/proc/net/dev` 累计 rx 字节（排除回环 `lo`）。
+/// Linux：解析 `/proc/net/dev` 累计 rx 字节（排除回环 `lo`）。
 ///
-/// Android 上 `/proc/net/dev` 受 SELinux 限制（EACCES），回退应用可读的
-/// `/proc/self/net/dev`（同内容的本进程 netns 视图）；按 [paths] 顺序
-/// 逐个尝试，全部失败返回 null。
+/// 按 [paths] 顺序逐个尝试（`/proc/self/net/dev` 为同内容的
+/// self netns 视图），全部失败返回 null。Android 主路径不走此类
+///（SELinux 对 app 域拒读 proc_net，见 [AndroidTrafficStatsRxCounter]），
+/// 仅作 channel 不可用时的兜底。
 class ProcNetDevRxCounter implements RxCounter {
   ProcNetDevRxCounter({
     this.paths = const ['/proc/net/dev', '/proc/self/net/dev'],
@@ -25,7 +28,7 @@ class ProcNetDevRxCounter implements RxCounter {
   final List<String> paths;
 
   @override
-  int? readRxBytes() {
+  Future<int?> readRxBytes() async {
     for (final path in paths) {
       try {
         final parsed =
@@ -36,6 +39,34 @@ class ProcNetDevRxCounter implements RxCounter {
       }
     }
     return null;
+  }
+}
+
+/// Android：`TrafficStats.getTotalRxBytes()`（经 MethodChannel）读整机
+/// 累计收字节。
+///
+/// SELinux 下 untrusted_app 对 `/proc/net/dev`、`/proc/self/net/dev`
+/// 均 EACCES，故主路径走系统 API（无需权限，BPF/proc 由框架归一）；
+/// channel 不可用（MissingPluginException/旧引擎）时回退 [fallback]
+///（默认读 proc 文件——部分设备实际可读，读不到返回 null）。
+class AndroidTrafficStatsRxCounter implements RxCounter {
+  AndroidTrafficStatsRxCounter({RxCounter? fallback})
+      : _fallback = fallback ?? ProcNetDevRxCounter();
+
+  /// 与 `NetworkTrafficPlugin.CHANNEL` 对应。
+  static const MethodChannel channel = MethodChannel('himi/network_traffic');
+
+  final RxCounter _fallback;
+
+  @override
+  Future<int?> readRxBytes() async {
+    try {
+      final v = await channel.invokeMethod<int>('totalRxBytes');
+      if (v != null) return v;
+    } catch (_) {
+      // MissingPluginException / 通道异常 → 走回退
+    }
+    return _fallback.readRxBytes();
   }
 }
 
@@ -53,7 +84,7 @@ class WindowsRxCounter implements RxCounter {
   );
 
   @override
-  int? readRxBytes() {
+  Future<int?> readRxBytes() async {
     final out = calloc<Pointer<Uint8>>();
     try {
       if (_getTable(out) != 0) return null;
@@ -97,7 +128,7 @@ class DarwinRxCounter implements RxCounter {
           void Function(Pointer<DarwinIfaddrs>)>('freeifaddrs');
 
   @override
-  int? readRxBytes() {
+  Future<int?> readRxBytes() async {
     final head = calloc<Pointer<DarwinIfaddrs>>();
     try {
       if (_getIfaddrs(head) != 0) return null;
@@ -158,19 +189,16 @@ class NetworkSpeedMeter {
   Timer? _timer;
   int? _prev;
   int _failures = 0;
+  bool _ticking = false;
 
   static const int _maxFailures = 3;
 
   bool get isRunning => _timer != null;
 
+  /// 启动采样：首个 tick 仅记录基线（不出值），次 tick 起输出差分速度。
+  /// 数据源为异步（Android MethodChannel），不在此处预读。
   void start() {
     if (_timer != null) return;
-    _prev = counter.readRxBytes();
-    if (_prev == null) {
-      // 首读即失败（平台不支持/权限）：不启动，明确回吐不可用。
-      onSpeed(null);
-      return;
-    }
     _timer = Timer.periodic(interval, (_) => _tick());
   }
 
@@ -181,27 +209,33 @@ class NetworkSpeedMeter {
     _failures = 0;
   }
 
-  void _tick() {
-    final curr = counter.readRxBytes();
-    if (curr == null) {
-      _failures++;
-      if (_failures >= _maxFailures) {
-        stop();
-        onSpeed(null);
+  Future<void> _tick() async {
+    if (_ticking) return; // 上一 tick 未完成（慢 IO/channel）→ 跳过本拍
+    _ticking = true;
+    try {
+      final curr = await counter.readRxBytes();
+      if (curr == null) {
+        _failures++;
+        if (_failures >= _maxFailures) {
+          stop();
+          onSpeed(null);
+        }
+        return;
       }
-      return;
+      _failures = 0;
+      final prev = _prev;
+      _prev = curr;
+      if (prev == null) return; // 首 tick：仅记基线
+      final delta = curr - prev;
+      // 负差分（u32 回绕/接口重置）或离谱值 → 本 tick 报 0，基线已更新。
+      if (delta < 0 || delta > kMaxPlausibleBps * interval.inSeconds) {
+        onSpeed(0);
+        return;
+      }
+      onSpeed(delta / interval.inSeconds);
+    } finally {
+      _ticking = false;
     }
-    _failures = 0;
-    final prev = _prev;
-    _prev = curr;
-    if (prev == null) return;
-    final delta = curr - prev;
-    // 负差分（u32 回绕/接口重置）或离谱值 → 本 tick 报 0，基线已更新。
-    if (delta < 0 || delta > kMaxPlausibleBps * interval.inSeconds) {
-      onSpeed(0);
-      return;
-    }
-    onSpeed(delta / interval.inSeconds);
   }
 
   /// 字节数/秒 → `4.89 MB/s`（十进制 MB，两位小数）。
@@ -230,7 +264,8 @@ class NetworkSpeedMeter {
 
 /// 当前平台的累计收字节计数器；不支持的平台返回 null。
 RxCounter? createDefaultRxCounter() {
-  if (Platform.isAndroid || Platform.isLinux) return ProcNetDevRxCounter();
+  if (Platform.isAndroid) return AndroidTrafficStatsRxCounter();
+  if (Platform.isLinux) return ProcNetDevRxCounter();
   if (Platform.isWindows) return WindowsRxCounter();
   if (Platform.isIOS || Platform.isMacOS) return DarwinRxCounter();
   return null;
