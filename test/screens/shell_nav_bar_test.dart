@@ -67,6 +67,30 @@ BoxDecoration _blobDecoration(WidgetTester tester) {
   return box.decoration as BoxDecoration;
 }
 
+/// 静止实心底胶囊（ShapeDecoration 白 0.10 + 外光晕，无边框）。
+Finder _restBackground(WidgetTester tester) {
+  return find.descendant(
+    of: find.byKey(_navBlob),
+    matching: find.byWidgetPredicate(
+      (w) =>
+          w is DecoratedBox &&
+          w.decoration is ShapeDecoration &&
+          (w.decoration as ShapeDecoration).color ==
+              Colors.white.withValues(alpha: 0.10),
+    ),
+  );
+}
+
+/// 活动态外扩矩形（rect top = -7 → 50+14=64，上下各超出胶囊 2px）。
+Finder _expandedRect(WidgetTester tester) {
+  return find.descendant(
+    of: find.byKey(_navBlob),
+    matching: find.byWidgetPredicate(
+      (w) => w is Positioned && w.top != null && w.top! <= -6.0,
+    ),
+  );
+}
+
 void main() {
   testWidgets('四格 icon+label 组在 60 高度内严格对齐且整体垂直居中', (tester) async {
     await _pumpNav(tester, onSelect: (_) {});
@@ -237,18 +261,21 @@ void main() {
     final ind = tester.widget<lg.AnimatedGlassIndicator>(find.byKey(_navBlob));
     expect(ind.quality, lg.GlassQuality.premium,
         reason: '不再恒 standard（根因：standard 走 lightweight 无折射）');
-    expect(ind.thickness, 1.0, reason: '静止即镜片（参考图观感）');
-    expect(ind.expansion, EdgeInsets.zero,
-        reason: '禁用默认 all(8) 外扩，宽度由 exactWidth 驱动');
+    expect(ind.thickness, 0.0, reason: '静止活动量 0：扁平实心底、镜片不挂载（折射只在移动出现）');
+    expect(ind.expansion, const EdgeInsets.fromLTRB(0, 7, 0, 7),
+        reason: '活动态 50+2×7=64，上下各超出胶囊(60) 2px');
     expect(ind.padding, const EdgeInsets.symmetric(vertical: 5),
         reason: '60 高导航内水珠 50 高');
     expect(ind.borderRadius, 25);
-    expect(ind.paintBackground, isFalse);
+    expect(ind.paintBackground, isTrue, reason: '静止画实心胶囊，活动量 >0.15 后淡出交棒镜片');
     expect(ind.exactOffset, closeTo(0, 0.01));
     expect(ind.exactWidth, closeTo(200, 0.01));
     expect(ind.velocity, isA<double>());
-    expect(ind.settings?.chromaticAberration, 0.15,
-        reason: '彩虹色散取应用默认（对齐图中彩虹圈）');
+    expect(ind.shadows, isNotNull, reason: '静止外光晕替代旧边框（ShapeDecoration 无边框）');
+    expect(ind.shadows!.first.blurRadius, 14);
+    expect(ind.settings?.chromaticAberration, 0.5,
+        reason: '色散固定加强（忽略滑杆），彩虹圈肉眼明显');
+    expect(ind.settings?.thickness, 28, reason: '镜片深度跟随玻璃厚度滑杆（应用默认 28）');
     expect(ind.settings?.glassColor, Colors.white.withValues(alpha: 0.10),
         reason: '白色镜片底色恢复图标对比度');
 
@@ -264,6 +291,39 @@ void main() {
 
     // 不再用 GlassContainer 包装饰
     expect(find.byType(lg.GlassContainer), findsNothing);
+  });
+
+  testWidgets('静止实心无边框，拖动中外扩超出胶囊 2px，松手回落恢复', (tester) async {
+    await _pumpNav(tester, onSelect: (_) {});
+    final nav = tester.getRect(find.byType(ShellNavBar));
+
+    // 静止：实心底胶囊（无明显边框）且无外扩矩形
+    expect(_restBackground(tester), findsOneWidget);
+    expect(_expandedRect(tester), findsNothing);
+
+    // 长按进入拖动态，等弹簧把活动量拉到 1
+    final gesture = await tester.startGesture(
+      Offset(nav.left + 100, nav.center.dy),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+
+    final moving =
+        tester.widget<lg.AnimatedGlassIndicator>(find.byKey(_navBlob));
+    expect(moving.thickness, 1.0, reason: '拖动中弹簧拉到 1');
+    expect(_restBackground(tester), findsNothing,
+        reason: '活动量 >0.15 后实心底淡出，交棒玻璃镜片');
+    expect(_expandedRect(tester), findsOneWidget,
+        reason: '活动态矩形外扩 top=-7，水滴整体放大上下各超出胶囊 2px');
+
+    // 松手回落：恢复原大小的扁平静止胶囊
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final rest = tester.widget<lg.AnimatedGlassIndicator>(find.byKey(_navBlob));
+    expect(rest.thickness, 0.0, reason: '松手后弹簧回落到 0');
+    expect(_restBackground(tester), findsOneWidget);
+    expect(_expandedRect(tester), findsNothing);
   });
 
   testWidgets('glassUi 关闭：水珠降级为纯装饰，无包玻璃', (tester) async {

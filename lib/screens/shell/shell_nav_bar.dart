@@ -225,10 +225,12 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   /// - `exactOffset/exactWidth` 沿用本类 _blobT/_blobFactor 的位移与拉伸物理；
   /// - 外层 [lg.InheritedLiquidGlass] 遮蔽胶囊 GlassContainer 给子树设置的
   ///   `avoidsRefraction: true`，否则 GlassEffect 走 vibrancy 快路径无折射；
+  /// - [lg.SpringBuilder] 弹簧驱动活动量：静止=0（扁平实心胶囊、无镜片、
+  ///   无明显边框），拖动/点击飞行=1（镜片淡入、矩形上下各外扩 2px 超出胶囊，
+  ///   折射与彩虹色散圈只在移动过程出现）；
   /// - `quality: premium` 在 Impeller 上走原生折射层（live backdrop 真折射），
-  ///   `settings` 取设置滑杆实时值（厚度/色散/饱和/光强 + 白色镜片底色）；
-  /// - `velocity` 喂给包内 jelly 果冻形变；原先叠加的白色 DecoratedBox
-  ///   整体移除（半透明白填充会压制镜片观感）。
+  ///   `settings` 厚度/饱和/光强取设置滑杆实时值，色散固定 0.5 加强；
+  /// - `velocity` 喂给包内 jelly 果冻形变。
   /// `glassUi` 关闭时降级为原半透明白色装饰（navBlob key 与装饰参数不变）。
   Widget _buildBlob(double left, double width) {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
@@ -260,38 +262,59 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       );
     }
 
+    // 活动量 0..1：静止 0（扁平实心胶囊、无镜片、零 shader 开销），
+    // 拖动/点击飞行中 1（镜片淡入 + 矩形外扩 + 背景胶囊淡出）。
+    final activity = (_dragging || _controller.isAnimating) ? 1.0 : 0.0;
+
     return lg.InheritedLiquidGlass(
       settings: const lg.LiquidGlassSettings(),
       quality: lg.GlassQuality.premium,
       avoidsRefraction: false,
-      child: lg.AnimatedGlassIndicator(
-        key: const ValueKey('navBlob'),
-        exactOffset: left,
-        exactWidth: width,
-        // 60 高导航内水珠 50 高：上下各 5（水平必须 0，否则 exactOffset 偏移）
-        padding: EdgeInsets.symmetric(vertical: (_navHeight - _blobHeight) / 2),
-        // 恒定 1.0：静止即镜片（参考图观感），非 iOS 拖动才变液态
-        thickness: 1.0,
-        // 禁用默认 all(8) 外扩：宽度拉伸由 exactWidth 自己驱动
-        expansion: EdgeInsets.zero,
-        velocity: _blobVelocity,
-        itemCount: _tabCount,
-        alignment: Alignment(_blobT * 2 - 1, 0),
-        quality: lg.GlassQuality.premium,
-        borderRadius: _blobHeight / 2,
-        isBackgroundIndicator: false,
-        // thickness 恒 1 下实心底胶囊本就不画（backgroundOpacity=0）
-        paintBackground: false,
-        indicatorColor: Colors.white.withValues(alpha: 0.10),
-        settings: lg.LiquidGlassSettings(
-          // 白色镜片底色：恢复图标在镜片上的对比度
-          glassColor: Colors.white.withValues(alpha: 0.10),
-          thickness: tuning.thickness ?? glassDefault('glassThickness'),
-          saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-          chromaticAberration:
-              tuning.chromatic ?? glassDefault('glassChromatic'),
-          lightIntensity:
-              tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
+      child: lg.SpringBuilder(
+        spring: lg.GlassSpring.snappy(
+          duration: const Duration(milliseconds: 300),
+        ),
+        value: activity,
+        builder: (context, thickness, child) => lg.AnimatedGlassIndicator(
+          key: const ValueKey('navBlob'),
+          exactOffset: left,
+          exactWidth: width,
+          // 60 高导航内水珠 50 高：上下各 5（水平必须 0，否则 exactOffset 偏移）
+          padding:
+              EdgeInsets.symmetric(vertical: (_navHeight - _blobHeight) / 2),
+          // 弹簧活动量：静止 0 → 扁平实心底（无明显边框，ShapeDecoration
+          // 仅填充+外光晕）；拖动/飞行 1 → 玻璃镜片完全接管。
+          thickness: thickness,
+          // 活动态矩形 50+2×7=64，上下各超出胶囊(60) 2px；
+          // 水平 0，宽度拉伸由 exactWidth 自己驱动
+          expansion: const EdgeInsets.fromLTRB(0, 7, 0, 7),
+          velocity: _blobVelocity,
+          itemCount: _tabCount,
+          alignment: Alignment(_blobT * 2 - 1, 0),
+          quality: lg.GlassQuality.premium,
+          borderRadius: _blobHeight / 2,
+          isBackgroundIndicator: false,
+          // 静止画实心胶囊（活动量 0 时 backgroundOpacity=1，
+          // 活动量 >0.15 后自动淡出交棒给镜片）
+          paintBackground: true,
+          indicatorColor: Colors.white.withValues(alpha: 0.10),
+          // 静止外光晕（无边框）
+          shadows: [
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.16),
+              blurRadius: 14,
+            ),
+          ],
+          settings: lg.LiquidGlassSettings(
+            // 白色镜片底色：恢复图标在镜片上的对比度
+            glassColor: Colors.white.withValues(alpha: 0.10),
+            thickness: tuning.thickness ?? glassDefault('glassThickness'),
+            saturation: tuning.saturation ?? glassDefault('glassSaturation'),
+            // 色散固定加强（忽略滑杆）：确保移动中彩虹色散圈肉眼明显
+            chromaticAberration: 0.5,
+            lightIntensity:
+                tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
+          ),
         ),
       ),
     );
