@@ -4,7 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/widgets/glass/blob_lens.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
+import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -42,17 +45,17 @@ Widget? _keyedWidget(WidgetTester tester) {
   return elements.isEmpty ? null : elements.first.widget;
 }
 
-/// 玻璃开启时 navBlob 键挂在 AnimatedGlassIndicator 上；关闭时是 DecoratedBox。
-lg.AnimatedGlassIndicator? _indicatorOrNull(WidgetTester tester) {
+/// 玻璃开启时 navBlob 键挂在 LiquidBlobLens 上；关闭时是 DecoratedBox。
+LiquidBlobLens? _lensOrNull(WidgetTester tester) {
   final w = _keyedWidget(tester);
-  return w is lg.AnimatedGlassIndicator ? w : null;
+  return w is LiquidBlobLens ? w : null;
 }
 
-/// 水珠几何（left/width 随玻璃开关取自 indicator 参数或外层 Positioned）。
+/// 水珠几何（left/width 随玻璃开关取自镜片参数或外层 Positioned）。
 ({double? left, double? width, double? height}) _blob(WidgetTester tester) {
-  final ind = _indicatorOrNull(tester);
-  if (ind != null) {
-    return (left: ind.exactOffset, width: ind.exactWidth, height: null);
+  final lens = _lensOrNull(tester);
+  if (lens != null) {
+    return (left: lens.left, width: lens.width, height: null);
   }
   final pos = tester.widget<Positioned>(
     find.ancestor(of: find.byKey(_navBlob), matching: find.byType(Positioned)),
@@ -81,7 +84,7 @@ Finder _restBackground(WidgetTester tester) {
   );
 }
 
-/// 活动态外扩矩形（rect top = -7 → 50+14=64，上下各超出胶囊 2px）。
+/// 活动态外扩矩形（rect top = -11 → 50+22=72，上下各超出胶囊 6px）。
 Finder _expandedRect(WidgetTester tester) {
   return find.descendant(
     of: find.byKey(_navBlob),
@@ -210,13 +213,13 @@ void main() {
     expect(settled.width, closeTo(200, 0.5));
   });
 
-  testWidgets('玻璃开启：navBlob 是镜片指示器而非白色装饰，青色仅用于选中图标', (
+  testWidgets('玻璃开启：navBlob 是镜片而非白色装饰，青色仅用于选中图标', (
     tester,
   ) async {
     await _pumpNav(tester, onSelect: (_) {});
 
-    expect(_indicatorOrNull(tester), isNotNull,
-        reason: '玻璃开启时水珠由 AnimatedGlassIndicator 真折射镜片渲染');
+    expect(_lensOrNull(tester), isNotNull,
+        reason: '玻璃开启时水珠由 LiquidBlobLens 真折射镜片渲染');
     expect(_keyedWidget(tester), isNot(isA<DecoratedBox>()),
         reason: '白色装饰不再叠在镜片上（否则压制折射观感）');
 
@@ -231,11 +234,11 @@ void main() {
   testWidgets('水珠饱满：高 50、固定 25 圆角（两端半圆直边）', (tester) async {
     await _pumpNav(tester, onSelect: (_) {});
 
-    final ind = _indicatorOrNull(tester);
-    if (ind != null) {
-      // 玻璃开启：高度由 indicator 垂直 padding 决定（60 - 2×5 = 50）
-      expect(ind.padding, const EdgeInsets.symmetric(vertical: 5));
-      expect(ind.borderRadius, 25);
+    final lens = _lensOrNull(tester);
+    if (lens != null) {
+      // 玻璃开启：高度由镜片垂直留白决定（60 - 2×5 = 50）
+      expect(lens.paddingV, 5);
+      expect(lens.borderRadius, 25);
       final inner = find.descendant(
         of: find.byKey(_navBlob),
         matching: find.byWidgetPredicate(
@@ -253,53 +256,75 @@ void main() {
     }
   });
 
-  testWidgets('glassUi 开启：水珠为 premium 真折射指示器（非包装饰）', (
+  testWidgets('glassUi 开启：navBlob 是自研 LiquidBlobLens，胶囊作兄弟层不裁剪水珠', (
     tester,
   ) async {
     await _pumpNav(tester, onSelect: (_) {});
 
-    final ind = tester.widget<lg.AnimatedGlassIndicator>(find.byKey(_navBlob));
-    expect(ind.quality, lg.GlassQuality.premium,
-        reason: '不再恒 standard（根因：standard 走 lightweight 无折射）');
-    expect(ind.thickness, 0.0, reason: '静止活动量 0：扁平实心底、镜片不挂载（折射只在移动出现）');
-    expect(ind.expansion, const EdgeInsets.fromLTRB(0, 7, 0, 7),
-        reason: '活动态 50+2×7=64，上下各超出胶囊(60) 2px');
-    expect(ind.padding, const EdgeInsets.symmetric(vertical: 5),
-        reason: '60 高导航内水珠 50 高');
-    expect(ind.borderRadius, 25);
-    expect(ind.paintBackground, isTrue, reason: '静止画实心胶囊，活动量 >0.15 后淡出交棒镜片');
-    expect(ind.exactOffset, closeTo(0, 0.01));
-    expect(ind.exactWidth, closeTo(200, 0.01));
-    expect(ind.velocity, isA<double>());
-    expect(ind.shadows, isNotNull, reason: '静止外光晕替代旧边框（ShapeDecoration 无边框）');
-    expect(ind.shadows!.first.blurRadius, 14);
-    expect(ind.settings?.chromaticAberration, 0.5,
+    final lens = tester.widget<LiquidBlobLens>(find.byKey(_navBlob));
+    expect(lens.activity, 0.0, reason: '静止活动量 0：扁平实心底、镜片不挂载（折射只在移动出现）');
+    expect(lens.expansionV, 11, reason: '活动态外扩 11 → 上下各超出胶囊(60) 6px');
+    expect(lens.paddingV, 5, reason: '60 高导航内水珠 50 高');
+    expect(lens.borderRadius, 25);
+    expect(lens.left, closeTo(0, 0.01));
+    expect(lens.width, closeTo(200, 0.01));
+    expect(lens.velocity, isA<double>());
+    expect(lens.pillShadows.first.blurRadius, 14, reason: '静止外光晕替代旧边框');
+    // Skia 捕获钥匙：GlassEffect 捕获门槛 interactionIntensity>0.01
+    // && scopeKey≠null && blur>0 —— 无 blur 则背景捕获永不启动，
+    // 折射与彩虹色散全部失效（v1.1.87 根因）
+    expect(lens.settings.blur, 0.01, reason: '捕获钥匙，0.01 模糊不可感知');
+    expect(lens.settings.chromaticAberration, 0.5,
         reason: '色散固定加强（忽略滑杆），彩虹圈肉眼明显');
-    expect(ind.settings?.thickness, 28, reason: '镜片深度跟随玻璃厚度滑杆（应用默认 28）');
-    expect(ind.settings?.glassColor, Colors.white.withValues(alpha: 0.10),
+    expect(lens.settings.thickness, 28, reason: '镜片深度跟随玻璃厚度滑杆（应用默认 28）');
+    expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.10),
         reason: '白色镜片底色恢复图标对比度');
+    expect(LiquidBlobLens.quality, lg.GlassQuality.standard,
+        reason:
+            '测试环境 isShaderFilterSupported=false → standard（真机 Impeller → premium）');
 
-    // 就近遮蔽胶囊的 avoidsRefraction，否则 GlassEffect 走 vibrancy 无折射
+    // 静止镜片不挂载（折射/彩虹只在移动出现）
+    expect(find.byType(GlassEffect), findsNothing);
+
+    // 镜片就近提供 avoidsRefraction: false，GlassEffect 走真折射而非 vibrancy
     final inherited = tester.widget<lg.InheritedLiquidGlass>(
-      find.ancestor(
+      find.descendant(
         of: find.byKey(_navBlob),
         matching: find.byType(lg.InheritedLiquidGlass),
       ),
     );
     expect(inherited.avoidsRefraction, isFalse);
-    expect(inherited.quality, lg.GlassQuality.premium);
+    expect(inherited.quality, lg.GlassQuality.standard);
 
-    // 不再用 GlassContainer 包装饰
-    expect(find.byType(lg.GlassContainer), findsNothing);
+    // 胶囊玻璃底移入导航作为第一层兄弟；水珠不在其裁剪子树内
+    expect(find.byType(GlassContainer), findsOneWidget, reason: '胶囊外壳由导航自己绘制');
+    expect(find.byType(lg.GlassContainer), findsOneWidget,
+        reason: '胶囊真折射玻璃底在导航内');
+    expect(
+      tester.getSize(find.byType(lg.GlassContainer)),
+      const Size(800, 60),
+      reason: '胶囊铺满导航',
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(_navBlob),
+        matching: find.byType(lg.GlassContainer),
+      ),
+      findsNothing,
+      reason: '水珠与胶囊是兄弟层，包内对子级的无条件裁剪吃不到水珠',
+    );
   });
 
-  testWidgets('静止实心无边框，拖动中外扩超出胶囊 2px，松手回落恢复', (tester) async {
+  testWidgets('静止实心无边框，拖动中镜片挂载并外扩超出胶囊 6px，松手回落恢复', (
+    tester,
+  ) async {
     await _pumpNav(tester, onSelect: (_) {});
     final nav = tester.getRect(find.byType(ShellNavBar));
 
-    // 静止：实心底胶囊（无明显边框）且无外扩矩形
+    // 静止：实心底胶囊（无明显边框）、镜片不挂载、无外扩矩形
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
+    expect(find.byType(GlassEffect), findsNothing);
 
     // 长按进入拖动态，等弹簧把活动量拉到 1
     final gesture = await tester.startGesture(
@@ -308,22 +333,41 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
 
-    final moving =
-        tester.widget<lg.AnimatedGlassIndicator>(find.byKey(_navBlob));
-    expect(moving.thickness, 1.0, reason: '拖动中弹簧拉到 1');
+    final moving = tester.widget<LiquidBlobLens>(find.byKey(_navBlob));
+    expect(moving.activity, 1.0, reason: '拖动中弹簧拉到 1');
     expect(_restBackground(tester), findsNothing,
-        reason: '活动量 >0.15 后实心底淡出，交棒玻璃镜片');
+        reason: '活动量 >0.15 后实心底卸载，交棒玻璃镜片');
     expect(_expandedRect(tester), findsOneWidget,
-        reason: '活动态矩形外扩 top=-7，水滴整体放大上下各超出胶囊 2px');
+        reason: '活动态矩形外扩 top=-11，水滴整体放大上下各超出胶囊 6px');
+
+    // 镜片挂载且捕获参数就位（折射/彩虹圈只在移动过程出现）
+    final effect = tester.widget<GlassEffect>(find.byType(GlassEffect));
+    expect(effect.interactionIntensity, 1.0, reason: '镜片活动强度随弹簧到 1');
+    expect(effect.settings.blur, 0.01, reason: '拷贝态保留 blur 原值供捕获门槛判定');
+    expect(effect.settings.visibility, 1.0,
+        reason: 'visibility=activity 已淡入完成');
+    expect(effect.quality, lg.GlassQuality.standard,
+        reason: '测试环境 standard → 无捕获降级安全（真机走捕获折射）');
+
+    // 外溢不被任何裁剪层吃掉（根因：适配层与包内 Lightweight 均无条件裁剪子级）
+    expect(
+      find.ancestor(
+        of: _expandedRect(tester),
+        matching: find.byType(ClipRRect),
+      ),
+      findsNothing,
+      reason: '外扩矩形祖先链无 ClipRRect，水珠溢出胶囊可见',
+    );
 
     // 松手回落：恢复原大小的扁平静止胶囊
     await gesture.up();
     await tester.pumpAndSettle();
 
-    final rest = tester.widget<lg.AnimatedGlassIndicator>(find.byKey(_navBlob));
-    expect(rest.thickness, 0.0, reason: '松手后弹簧回落到 0');
+    final rest = tester.widget<LiquidBlobLens>(find.byKey(_navBlob));
+    expect(rest.activity, 0.0, reason: '松手后弹簧回落到 0');
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
+    expect(find.byType(GlassEffect), findsNothing);
   });
 
   testWidgets('glassUi 关闭：水珠降级为纯装饰，无包玻璃', (tester) async {
@@ -333,8 +377,10 @@ void main() {
       onSelect: (_) {},
     );
 
-    expect(_indicatorOrNull(tester), isNull);
+    expect(_lensOrNull(tester), isNull);
     expect(find.byType(lg.GlassContainer), findsNothing);
+    expect(find.byType(GlassContainer), findsOneWidget,
+        reason: '胶囊降级纯色外壳仍在导航内');
     // 原装饰不变
     expect(_blobDecoration(tester).color, Colors.white.withValues(alpha: 0.10));
     expect(_blob(tester).height, 50);

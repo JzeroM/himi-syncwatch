@@ -1,0 +1,176 @@
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
+import 'package:liquid_glass_widgets/utils/draggable_indicator_physics.dart';
+import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
+
+/// 移动态真折射水珠镜片。
+///
+/// 直连包内 [GlassEffect]，绕过 `AnimatedGlassIndicator`（其内部强制
+/// `blur: 0` 导致 Skia 上背景捕获永不启动，折射与彩虹色散全部失效）：
+/// - `settings.blur = 0.01` 满足 GlassEffect 捕获门槛
+///   （`interactionIntensity > 0.01 && scopeKey != null && blur > 0`），
+///   移动中每帧采样 GlassBackgroundSource，shader 拿到真背景后
+///   折射与 RGB 色散（彩虹圈）才真正生效；0.01 的模糊量不可感知；
+/// - [activity] 由外部弹簧驱动 0..1：0 静止（仅扁平实心 pill、镜片不挂载、
+///   零 shader 开销），1 活动（pill 淡出、镜片挂载、矩形上下外扩
+///   [expansionV]、jelly 果冻形变吃 [velocity]）；
+/// - quality 按引擎分流：Impeller → premium（原生折射层），
+///   Skia/Web → standard（interactive_indicator.frag 捕获折射）。
+///
+/// 作为导航 Stack 的直接子级渲染：胶囊玻璃是它的兄弟层而非祖先，
+/// 适配层与包内 `LightweightLiquidGlass` 对各自子级的无条件裁剪
+/// 都碰不到这里，水珠才能溢出胶囊。
+class LiquidBlobLens extends StatelessWidget {
+  const LiquidBlobLens({
+    super.key,
+    required this.left,
+    required this.width,
+    required this.activity,
+    required this.velocity,
+    required this.settings,
+    required this.pillColor,
+    this.pillShadows = const [
+      BoxShadow(color: Color(0x29FFFFFF), blurRadius: 14),
+    ],
+    this.paddingV = 5,
+    this.expansionV = 11,
+    this.borderRadius = 25,
+  });
+
+  /// 水珠左沿（导航局部坐标）。
+  final double left;
+
+  /// 水珠宽度（拉伸物理由调用方算好传入）。
+  final double width;
+
+  /// 弹簧活动量 0..1（0 静止实心，1 完全镜片 + 外扩）。
+  final double activity;
+
+  /// 横向速度（包内 jelly 坐标系，对齐值 -1..1 的每秒变化量）。
+  final double velocity;
+
+  /// 镜片玻璃参数（调用方从 baseIndicatorSettings 组装，
+  /// 含 Skia 捕获钥匙 `blur: 0.01` 与固定 0.5 色散）。
+  final lg.LiquidGlassSettings settings;
+
+  /// 静止实心胶囊底色（白 0.10）。
+  final Color pillColor;
+
+  /// 静止实心胶囊外光晕（无边框）。
+  final List<BoxShadow> pillShadows;
+
+  /// 水珠在 60 高导航内的上下留白（60 - 2×5 = 50 高）。
+  final double paddingV;
+
+  /// 活动态矩形外扩量（相对静止矩形上下各扩，11 → 超出胶囊各 6px）。
+  final double expansionV;
+
+  /// 水珠圆角（25 = 50 高半圆直边）。
+  final double borderRadius;
+
+  /// 引擎分流：Impeller（isShaderFilterSupported）→ premium，Skia/Web → standard。
+  static lg.GlassQuality get quality =>
+      !kIsWeb && ui.ImageFilter.isShaderFilterSupported
+          ? lg.GlassQuality.premium
+          : lg.GlassQuality.standard;
+
+  @override
+  Widget build(BuildContext context) {
+    final q = quality;
+    final isStd = q == lg.GlassQuality.standard || q == lg.GlassQuality.minimal;
+    // pill 活动量前 15% 淡出，交棒给镜片
+    final bgOpacity = (1.0 - activity / 0.15).clamp(0.0, 1.0);
+    final rect = RelativeRect.lerp(
+      RelativeRect.fill,
+      RelativeRect.fromLTRB(0, -expansionV, 0, -expansionV),
+      activity,
+    )!;
+
+    return Positioned.fill(
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: paddingV),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: left,
+              top: 0,
+              bottom: 0,
+              width: width,
+              child: lg.InheritedLiquidGlass(
+                settings: settings,
+                quality: q,
+                avoidsRefraction: false,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    if (bgOpacity > 0)
+                      Positioned.fromRelativeRect(
+                        rect: rect,
+                        child: IgnorePointer(
+                          child: Opacity(
+                            opacity: bgOpacity,
+                            child: DecoratedBox(
+                              decoration: ShapeDecoration(
+                                color: pillColor,
+                                shape: lg.LiquidRoundedRectangle(
+                                  borderRadius: borderRadius,
+                                ),
+                                shadows: pillShadows,
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (activity > 0.05)
+                      Positioned.fromRelativeRect(
+                        rect: rect,
+                        child: Transform(
+                          alignment: Alignment.center,
+                          transform:
+                              DraggableIndicatorPhysics.buildJellyTransform(
+                            velocity: Offset(velocity, 0),
+                            maxDistortion: isStd ? 0.35 : 0.8,
+                            velocityScale: 10,
+                          ),
+                          child: GlassEffect(
+                            shape: lg.LiquidRoundedRectangle(
+                              borderRadius: borderRadius,
+                            ),
+                            settings: settings.copyWith(visibility: activity),
+                            quality: q,
+                            interactionIntensity: activity,
+                            clipExpansion: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 15,
+                            ),
+                            rimThickness: isStd
+                                ? (settings.effectiveThickness * (0.5 / 30.0))
+                                    .clamp(0.35, 1.5)
+                                : settings.effectiveThickness.clamp(0.8, 8.0),
+                            ambientRim: settings.ambientRim > 0
+                                ? settings.ambientRim
+                                : (isStd ? 0.08 : 0.1),
+                            baseAlphaMultiplier: isStd ? 0.08 : 0.2,
+                            edgeAlphaMultiplier: isStd ? 0.15 : 0.4,
+                            child: const lg.GlassGlow(
+                              glowColor: Color(0x00000000),
+                              child: SizedBox.expand(),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

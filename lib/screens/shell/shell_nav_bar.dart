@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/widgets/glass/blob_lens.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:flutter/services.dart';
@@ -11,10 +13,13 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 /// 选中态图标/文字主色（柔和薄荷青，仅跟随水珠所在格的图标，水珠本体为透明玻璃）。
 const Color kNavBlobColor = Color(0xFF86E3D6);
 
-/// 四标签底部导航内容（不含玻璃外壳）。
+/// 四标签底部导航（含胶囊玻璃底与移动态镜片水珠）。
 ///
+/// - 胶囊玻璃 [GlassContainer] 作为导航 Stack 的第一层（兄弟层而非祖先），
+///   水珠镜片才能溢出胶囊不被裁剪（适配层与包内 Lightweight 对子级
+///   无条件 ClipRRect/ClipPath 裁剪）
 /// - 每格 icon+label 组在胶囊内上下左右严格居中，四格对齐
-/// - 单个半透明水珠指示器：点击平滑移形；横向滑动或长按均可跟手拖动，
+/// - 单个水珠指示器：点击平滑移形；横向滑动或长按均可跟手拖动，
 ///   拖动中水珠所在格图标实时点亮青色，松手按落点切换
 class ShellNavBar extends ConsumerStatefulWidget {
   const ShellNavBar({
@@ -75,8 +80,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   double _grabOffset = 0;
 
   /// 指示器果冻形变速度（包内坐标系：对齐值 -1..1 的每秒变化量，
-  /// 对齐 VelocitySpringBuilder 的 velocity 语义，喂给
-  /// `AnimatedGlassIndicator.velocity` 驱动 jelly squash）。
+  /// 喂给 [LiquidBlobLens.velocity] 驱动 jelly squash）。
   double _blobVelocity = 0;
 
   /// 速度采样时钟与上一帧状态（单调时钟，dt 异常时归零）。
@@ -221,16 +225,13 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
 
   /// 水珠本体（返回值已自带定位，直接作为导航 Stack 的子级）。
   ///
-  /// `glassUi` 开启时用包内 [lg.AnimatedGlassIndicator] 真折射镜片：
-  /// - `exactOffset/exactWidth` 沿用本类 _blobT/_blobFactor 的位移与拉伸物理；
-  /// - 外层 [lg.InheritedLiquidGlass] 遮蔽胶囊 GlassContainer 给子树设置的
-  ///   `avoidsRefraction: true`，否则 GlassEffect 走 vibrancy 快路径无折射；
-  /// - [lg.SpringBuilder] 弹簧驱动活动量：静止=0（扁平实心胶囊、无镜片、
-  ///   无明显边框），拖动/点击飞行=1（镜片淡入、矩形上下各外扩 2px 超出胶囊，
-  ///   折射与彩虹色散圈只在移动过程出现）；
-  /// - `quality: premium` 在 Impeller 上走原生折射层（live backdrop 真折射），
-  ///   `settings` 厚度/饱和/光强取设置滑杆实时值，色散固定 0.5 加强；
-  /// - `velocity` 喂给包内 jelly 果冻形变。
+  /// `glassUi` 开启时经 [lg.SpringBuilder] 弹簧驱动 [LiquidBlobLens]：
+  /// - 静止 activity=0：扁平实心胶囊（无明显边框、镜片不挂载、零 shader 开销）；
+  /// - 拖动/点击飞行 activity=1：真折射镜片挂载（`blur: 0.01` 打开 Skia
+  ///   背景捕获，折射与固定 0.5 色散彩虹圈只在移动过程出现），矩形上下
+  ///   各外扩 6px 超出胶囊，jelly 果冻形变吃 [_blobVelocity]；
+  /// - `settings.thickness/saturation/lightIntensity` 取设置滑杆实时值；
+  /// - 镜片作胶囊的兄弟层渲染，溢出不被任何裁剪层吃掉。
   /// `glassUi` 关闭时降级为原半透明白色装饰（navBlob key 与装饰参数不变）。
   Widget _buildBlob(double left, double width) {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
@@ -266,56 +267,31 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     // 拖动/点击飞行中 1（镜片淡入 + 矩形外扩 + 背景胶囊淡出）。
     final activity = (_dragging || _controller.isAnimating) ? 1.0 : 0.0;
 
-    return lg.InheritedLiquidGlass(
-      settings: const lg.LiquidGlassSettings(),
-      quality: lg.GlassQuality.premium,
-      avoidsRefraction: false,
-      child: lg.SpringBuilder(
-        spring: lg.GlassSpring.snappy(
-          duration: const Duration(milliseconds: 300),
-        ),
-        value: activity,
-        builder: (context, thickness, child) => lg.AnimatedGlassIndicator(
-          key: const ValueKey('navBlob'),
-          exactOffset: left,
-          exactWidth: width,
-          // 60 高导航内水珠 50 高：上下各 5（水平必须 0，否则 exactOffset 偏移）
-          padding:
-              EdgeInsets.symmetric(vertical: (_navHeight - _blobHeight) / 2),
-          // 弹簧活动量：静止 0 → 扁平实心底（无明显边框，ShapeDecoration
-          // 仅填充+外光晕）；拖动/飞行 1 → 玻璃镜片完全接管。
-          thickness: thickness,
-          // 活动态矩形 50+2×7=64，上下各超出胶囊(60) 2px；
-          // 水平 0，宽度拉伸由 exactWidth 自己驱动
-          expansion: const EdgeInsets.fromLTRB(0, 7, 0, 7),
-          velocity: _blobVelocity,
-          itemCount: _tabCount,
-          alignment: Alignment(_blobT * 2 - 1, 0),
-          quality: lg.GlassQuality.premium,
-          borderRadius: _blobHeight / 2,
-          isBackgroundIndicator: false,
-          // 静止画实心胶囊（活动量 0 时 backgroundOpacity=1，
-          // 活动量 >0.15 后自动淡出交棒给镜片）
-          paintBackground: true,
-          indicatorColor: Colors.white.withValues(alpha: 0.10),
-          // 静止外光晕（无边框）
-          shadows: [
-            BoxShadow(
-              color: Colors.white.withValues(alpha: 0.16),
-              blurRadius: 14,
-            ),
-          ],
-          settings: lg.LiquidGlassSettings(
-            // 白色镜片底色：恢复图标在镜片上的对比度
-            glassColor: Colors.white.withValues(alpha: 0.10),
-            thickness: tuning.thickness ?? glassDefault('glassThickness'),
-            saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-            // 色散固定加强（忽略滑杆）：确保移动中彩虹色散圈肉眼明显
-            chromaticAberration: 0.5,
-            lightIntensity:
-                tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
-          ),
-        ),
+    final settings = lg.AnimatedGlassIndicator.baseIndicatorSettings.copyWith(
+      glassColor: Colors.white.withValues(alpha: 0.10),
+      thickness: tuning.thickness ?? glassDefault('glassThickness'),
+      saturation: tuning.saturation ?? glassDefault('glassSaturation'),
+      // 色散固定加强（忽略滑杆）：确保移动中彩虹色散圈肉眼明显
+      chromaticAberration: 0.5,
+      lightIntensity:
+          tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
+      // Skia 捕获钥匙：GlassEffect 捕获门槛要求 blur > 0（0.01 无感）
+      blur: 0.01,
+    );
+
+    return lg.SpringBuilder(
+      spring: lg.GlassSpring.snappy(
+        duration: const Duration(milliseconds: 300),
+      ),
+      value: activity,
+      builder: (context, value, child) => LiquidBlobLens(
+        key: const ValueKey('navBlob'),
+        left: left,
+        width: width,
+        activity: value,
+        velocity: _blobVelocity,
+        settings: settings,
+        pillColor: Colors.white.withValues(alpha: 0.10),
       ),
     );
   }
@@ -334,6 +310,14 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
           child: Stack(
             clipBehavior: Clip.none,
             children: [
+              // 胶囊玻璃底：作导航第一层兄弟，水珠镜片溢出其外不被裁剪
+              Positioned.fill(
+                child: GlassContainer(
+                  borderRadius: const BorderRadius.all(Radius.circular(28)),
+                  padding: EdgeInsets.zero,
+                  child: const SizedBox.expand(),
+                ),
+              ),
               _buildBlob(blobLeft, blobWidth),
               Positioned.fill(
                 child: Row(
