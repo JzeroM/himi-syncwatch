@@ -246,6 +246,9 @@ class MediaItem {
   final String? overview;
   final String? posterUrl;
   final String? backdropUrl;
+
+  /// 标题艺术字图（`ImageTags.Logo`，透明宽幅 PNG）；无 Logo 资源为 null。
+  final String? logoUrl;
   final String? year;
   final String? officialRating;
   final double? communityRating;
@@ -269,6 +272,7 @@ class MediaItem {
     this.overview,
     this.posterUrl,
     this.backdropUrl,
+    this.logoUrl,
     this.year,
     this.officialRating,
     this.communityRating,
@@ -307,6 +311,10 @@ class MediaItem {
       backdropUrl: backdropTags != null && backdropTags.isNotEmpty
           ? buildUrl(
               '/Items/${json["Id"]}/Images/Backdrop?maxHeight=400&tag=${backdropTags[0]}')
+          : null,
+      logoUrl: imageTags?['Logo'] != null
+          ? buildUrl(
+              '/Items/${json["Id"]}/Images/Logo?tag=${imageTags!['Logo']}')
           : null,
       year: json['ProductionYear']?.toString(),
       officialRating: json['OfficialRating'],

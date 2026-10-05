@@ -77,6 +77,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             isHost: state.uri.queryParameters['isHost'] == 'true',
             audienceName: state.uri.queryParameters['name'] ?? '',
             serverId: state.uri.queryParameters['server'],
+            logoUrl: state.uri.queryParameters['logo'],
           );
         },
       ),

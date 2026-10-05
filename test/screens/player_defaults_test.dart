@@ -250,4 +250,31 @@ void main() {
       expect(PlayerScreen.showDecodeButton(tvMode: true), isFalse);
     });
   });
+
+  group('showLogoInControls（控制条标题艺术字，房间模式不加 logo）', () {
+    test('单人 + 有 logo → 显示', () {
+      expect(
+        PlayerScreen.showLogoInControls(
+            logoUrl: 'https://emby.test/Items/m1/Images/Logo?tag=L1',
+            isRoom: false),
+        isTrue,
+      );
+    });
+
+    test('房间模式 → 不显示', () {
+      expect(
+        PlayerScreen.showLogoInControls(
+            logoUrl: 'https://emby.test/Items/m1/Images/Logo?tag=L1',
+            isRoom: true),
+        isFalse,
+      );
+    });
+
+    test('无 logo / 空串 → 不显示', () {
+      expect(PlayerScreen.showLogoInControls(logoUrl: null, isRoom: false),
+          isFalse);
+      expect(
+          PlayerScreen.showLogoInControls(logoUrl: '', isRoom: false), isFalse);
+    });
+  });
 }

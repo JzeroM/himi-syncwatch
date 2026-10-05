@@ -66,4 +66,36 @@ void main() {
       expect(season.childCount, 6);
     });
   });
+
+  group('logoUrl（标题艺术字 ImageTags.Logo）', () {
+    test('有 Logo tag + serverUrl → Logo 图 URL', () {
+      final item = MediaItem.fromJson({
+        'Id': 'm1',
+        'Name': '完美世界',
+        'Type': 'Movie',
+        'ImageTags': {'Primary': 'p1', 'Logo': 'L1'},
+      }, serverUrl: 'https://emby.test');
+      expect(item.logoUrl, 'https://emby.test/Items/m1/Images/Logo?tag=L1');
+    });
+
+    test('无 Logo tag → null（hero 回退文字片名）', () {
+      final item = MediaItem.fromJson({
+        'Id': 'm1',
+        'Name': '完美世界',
+        'Type': 'Movie',
+        'ImageTags': {'Primary': 'p1'},
+      }, serverUrl: 'https://emby.test');
+      expect(item.logoUrl, isNull);
+    });
+
+    test('有 Logo tag 但无 serverUrl → null（buildUrl 无基址）', () {
+      final item = MediaItem.fromJson({
+        'Id': 'm1',
+        'Name': '完美世界',
+        'Type': 'Movie',
+        'ImageTags': {'Logo': 'L1'},
+      });
+      expect(item.logoUrl, isNull);
+    });
+  });
 }

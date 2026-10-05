@@ -348,8 +348,9 @@ class EmbyService {
       final response = await _dio.get(
         '/Users/$_userId/Items/$id',
         queryParameters: {
+          // ImageTags：详情页标题艺术字（ImageTags.Logo）依赖此字段
           'Fields':
-              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks',
+              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ImageTags',
         },
       );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);

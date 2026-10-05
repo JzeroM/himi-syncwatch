@@ -1334,8 +1334,7 @@ void main() {
       // 切到 e2 → 选 jpn 轨（index 7），与 e1 互不覆盖
       await tapCard(tester, 'p2');
       await openAudioSheet(tester);
-      expect(
-          _groupValueOf<int?>(tester, const Key('trackOption_7')), isNull,
+      expect(_groupValueOf<int?>(tester, const Key('trackOption_7')), isNull,
           reason: 'e2 尚未预选');
       await tester.tap(find.byKey(const Key('trackOption_7')));
       await tester.pump();
@@ -1940,6 +1939,54 @@ void main() {
       expect(closeFinder, findsOneWidget);
       expect(_focusWithin(closeFinder), isTrue,
           reason: '遥控器 OK 可直接收起（原入口被浮层遮盖）');
+    });
+  });
+
+  group('标题艺术字 Logo（hero 替换文字片名，房间模式不加）', () {
+    const logoUrl = 'https://emby.test/Items/m1/Images/Logo?tag=L1';
+    final movieWithLogo = MediaItem(
+      id: 'm1',
+      name: '完美世界剧场版',
+      type: 'Movie',
+      posterUrl: _posterUrl,
+      logoUrl: logoUrl,
+    );
+
+    Finder logoImage() =>
+        find.byWidgetPredicate((w) => w is EmbyImage && w.url == logoUrl);
+
+    testWidgets('有 logo：hero 渲染 Logo 图（替换文字片名位置）', (tester) async {
+      await _pumpDetail(tester, item: movieWithLogo);
+      expect(logoImage(), findsOneWidget);
+    });
+
+    testWidgets('无 logo：不渲染 Logo 图，走文字片名', (tester) async {
+      await _pumpDetail(tester, item: _item);
+      expect(logoImage(), findsNothing);
+      expect(find.text('测试影片'), findsOneWidget);
+    });
+
+    testWidgets('roomMode（房间模式）：不渲染 Logo 图', (tester) async {
+      await _pumpDetail(tester, item: movieWithLogo, roomMode: true);
+      expect(logoImage(), findsNothing);
+    });
+
+    testWidgets('开始播放：路由 query 携带 logo（URL 编码）', (tester) async {
+      await _pumpDetailInRouter(tester, item: movieWithLogo);
+
+      final btn = find.text('开始播放');
+      await tester.ensureVisible(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.textContaining('PLAYER:m1'), findsOneWidget);
+      expect(
+        find.textContaining('logo=https%3A%2F%2Femby.test'),
+        findsOneWidget,
+        reason: '播放跳转应携带编码后的 logo URL',
+      );
     });
   });
 }

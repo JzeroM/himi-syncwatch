@@ -227,6 +227,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       if (sourceId != null) {
         query.write('&mediaSourceId=$sourceId');
       }
+      final logo = !widget.roomMode ? _item?.logoUrl : null;
+      if (logo != null) {
+        query.write('&logo=${Uri.encodeComponent(logo)}');
+      }
       context.push('/player/${ep.id}?$query');
     }
   }
@@ -504,6 +508,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final query = StringBuffer('isHost=true$_serverQuery');
     if (source != null) {
       query.write('&mediaSourceId=${source.id}');
+    }
+    final logo = !widget.roomMode ? item.logoUrl : null;
+    if (logo != null) {
+      query.write('&logo=${Uri.encodeComponent(logo)}');
     }
     if (mounted) {
       context.push('/player/${item.id}?${query.toString()}');
@@ -1205,14 +1213,32 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        item.name,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: tv ? 20 : 24,
-                          fontWeight: FontWeight.bold,
+                      // 标题艺术字（Logo 图）：有则替换文字片名（房间模式
+                      // 不加 logo；图 404/加载失败回退文字片名）
+                      if (!widget.roomMode && item.logoUrl != null)
+                        EmbyImage(
+                          url: item.logoUrl,
+                          height: tv ? 44 : 60,
+                          fit: BoxFit.contain,
+                          placeholder: const SizedBox.shrink(),
+                          errorWidget: Text(
+                            item.name,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: tv ? 20 : 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        )
+                      else
+                        Text(
+                          item.name,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: tv ? 20 : 24,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 8),
                       Row(
                         children: [

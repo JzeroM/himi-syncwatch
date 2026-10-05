@@ -84,6 +84,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 来源服务器本地配置 id（跨服务器播放）；null = 当前激活服务器。
   final String? serverId;
 
+  /// 标题艺术字图 URL（详情页传入的 Logo 图）；null/房间模式不显示。
+  final String? logoUrl;
+
   const PlayerScreen({
     super.key,
     required this.itemId,
@@ -92,6 +95,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.isHost = false,
     this.audienceName = '',
     this.serverId,
+    this.logoUrl,
   });
 
   @override
@@ -209,6 +213,15 @@ class PlayerScreen extends ConsumerStatefulWidget {
     required bool mobilePlatform,
   }) =>
       mobilePlatform && !tvMode;
+
+  /// 控制条顶部标题艺术字（Logo 图）是否显示：仅单人播放且有 logo，
+  /// 房间联播不显示（房间模式不加 logo）。
+  @visibleForTesting
+  static bool showLogoInControls({
+    required String? logoUrl,
+    required bool isRoom,
+  }) =>
+      !isRoom && logoUrl != null && logoUrl.isNotEmpty;
 
   /// 顶栏解码模式按钮是否显示：TV 模式隐藏（解码模式仅走设置页）。
   @visibleForTesting
@@ -4549,6 +4562,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // 标题艺术字（Logo 图）：进度条上方左对齐，随控制条显隐；
+              // 房间模式不显示，404/加载失败静默隐藏
+              if (PlayerScreen.showLogoInControls(
+                logoUrl: widget.logoUrl,
+                isRoom: widget.roomCode != null,
+              )) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: 240,
+                    height: 44,
+                    child: EmbyImage(
+                      url: widget.logoUrl,
+                      fit: BoxFit.contain,
+                      placeholder: const SizedBox.shrink(),
+                      errorWidget: const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
               // 焦点承载在滑杆外层：TV 描边环显示在进度条上，且 Slider 自带
               // Shortcuts（_AdjustSliderIntent）脱离焦点冒泡链——左右键改由
               // PlayerHotkey 接管（单击 ±5 秒 / 长按每步 ±10 秒）；
