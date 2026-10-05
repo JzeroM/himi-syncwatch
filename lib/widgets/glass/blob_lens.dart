@@ -152,10 +152,11 @@ class LiquidBlobLens extends StatelessWidget {
                               horizontal: 20,
                               vertical: 15,
                             ),
-                            // std 输入 3.0：×0.35 归一化后 ~1.05px
-                            // 结构性亮边圈，任何背景位置可见
+                            // std 输入 2.0：×0.35 归一化后 ~0.7px
+                            // 光谱光晕 hairline 核心（宽软部分由 shader
+                            // haloBand 承担，边框感弱化）
                             rimThickness: isStd
-                                ? 3.0
+                                ? 2.0
                                 : settings.effectiveThickness.clamp(0.8, 8.0),
                             ambientRim: settings.ambientRim > 0
                                 ? settings.ambientRim

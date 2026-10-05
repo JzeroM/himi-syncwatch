@@ -278,12 +278,14 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
           tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
       // Skia 捕获钥匙：GlassEffect 捕获门槛要求 blur > 0（0.01 无感）
       blur: 0.01,
-      // 结构强化（输入值补偿包内标准路径 ×0.7/×0.5/×0.25 归一化，
-      // 让亮边圈/光晕/内壁光在任何背景位置都可见）
-      ambientRim: 0.5,
-      glowIntensity: 2.0,
-      ambientStrength: 0.6,
-      edgeAbsorption: 0.15,
+      // 结构参数（输入值补偿包内标准路径归一化）：
+      // ambientRim 驱动光谱彩虹光晕（×0.7 归一化、×10 亮度）；
+      // glow/ambient 降低白色菲涅尔与内壁提亮 → 边框感弱化（设备反馈）；
+      // edgeAbsorption 收低 → 边缘暗带更淡。
+      ambientRim: 0.35,
+      glowIntensity: 1.2,
+      ambientStrength: 0.4,
+      edgeAbsorption: 0.10,
       // 光源相位随水珠位置扫动：光谱边光色相与 key/kick 亮瓣绕环流动
       lightAngle: math.pi / 2 + (_blobT - 0.5) * math.pi,
     );

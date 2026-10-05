@@ -285,11 +285,12 @@ void main() {
     expect(lens.settings.thickness, 28, reason: '镜片深度跟随玻璃厚度滑杆（应用默认 28）');
     expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.14),
         reason: '白色镜片底色略提亮，配合结构参数增强折射观感');
-    // 结构性强化（补偿包内标准路径归一化，任何背景位置可见的亮边圈/光晕/内壁暗带）
-    expect(lens.settings.ambientRim, 0.5, reason: '环缘环境光（×0.7 归一化后仍可见）');
-    expect(lens.settings.glowIntensity, 2.0, reason: '光晕 ×0.5 归一化后仍有 1.0');
-    expect(lens.settings.ambientStrength, 0.6, reason: '内壁光 ×0.25 归一化后仍有 0.15');
-    expect(lens.settings.edgeAbsorption, 0.15, reason: '边缘暗带吸收，立体感');
+    // 结构参数（补偿包内标准路径归一化）：ambientRim 驱动光谱彩虹光晕；
+    // glow/ambient 收低弱化白色边框感；edgeAbsorption 收低淡化边缘暗带
+    expect(lens.settings.ambientRim, 0.35, reason: '光谱彩虹光晕驱动（×0.7 归一化后 0.245）');
+    expect(lens.settings.glowIntensity, 1.2, reason: '白色菲涅尔光晕收敛，弱化边框感');
+    expect(lens.settings.ambientStrength, 0.4, reason: '内壁白光提亮收敛');
+    expect(lens.settings.edgeAbsorption, 0.10, reason: '边缘暗带淡化，非硬边框');
     expect(LiquidBlobLens.quality, lg.GlassQuality.standard,
         reason:
             '测试环境 isShaderFilterSupported=false → standard（真机 Impeller → premium）');

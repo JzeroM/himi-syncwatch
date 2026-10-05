@@ -202,7 +202,9 @@ void main() {
   // TWEAK: edgeZone - How far from the edge the distortion extends (logical px)
   //   Smaller = sharper transition, concentrated at very edge
   //   Larger = softer, more gradual effect spreading inward
-  float edgeZone = 14.0;
+  // [PATCH himi] 14 → 18: 更宽的折射/色散/彩虹光晕带（参考目标：气泡
+  // 边缘 ~8px 宽的软光学区，而非贴边发丝线）。
+  float edgeZone = 18.0;
   
   // Calculate influence: 1.0 at edge, 0.0 at edgeZone pixels inward
   float edgeInfluence = smoothstep(edgeZone, 0.0, distFromEdge);
@@ -216,12 +218,15 @@ void main() {
   // TWEAK: bendStrength - Overall refraction intensity
   //   Base (0.9): stronger edge lens distortion, closer to Impeller volumetric warp
   //   Range: 0.45 (rest) → 1.17 (fully pressed)
-  float bendStrength = 0.9 * (0.5 + uInteractionIntensity * 0.7);
+  // [PATCH himi] 0.9 → 1.25: 移动态折射再强一点（设备反馈）。
+  float bendStrength = 1.25 * (0.5 + uInteractionIntensity * 0.7);
   
-  // TWEAK: The final multiplier (uSize.y * 0.35) scales by widget height
-  //   0.35 means max offset is 35% of widget height
+  // TWEAK: The final multiplier (uSize.y * 0.45) scales by widget height
+  //   0.45 means max offset is 45% of widget height
   //   Increase for more dramatic effect, decrease for subtler
-  vec2 edgeOffsetLogical = surfaceNormal * edgeInfluence * bendStrength * uSize.y * 0.35;
+  // [PATCH himi] 0.35 → 0.45: 配合 bendStrength 1.25，边缘峰值弯折
+  // ≈ 1.79×（0.9×0.35 → 1.25×0.45），内容被明显卷入镜片（参考图强度）。
+  vec2 edgeOffsetLogical = surfaceNormal * edgeInfluence * bendStrength * uSize.y * 0.45;
   vec2 edgeOffsetUV = edgeOffsetLogical / uBackgroundSize;
   
   // Apply refraction offset along the surface normal.
@@ -295,7 +300,9 @@ void main() {
   float kickHighlight = kc8 * kc4 * uLightIntensity * 0.5; // kc^12
   
   // TWEAK: ambientRim - minimum rim brightness regardless of light direction
-  float rimBrightness = uAmbientRim + keyHighlight + kickHighlight;
+  // [PATCH himi] 白色高光瓣 ×0.4：rim 主要由 ambientRim 驱动的光谱色
+  // 构成，key/kick 白色镜面瓣只留 40% —— 边缘是彩色光晕而不是白框。
+  float rimBrightness = uAmbientRim + (keyHighlight + kickHighlight) * 0.4;
   
   // ==========================================================================
   // FRESNEL GLOW
@@ -359,9 +366,11 @@ void main() {
   vec3 finalColor = (uHasBackground > 0.5) ? (bg * bgBoost) : bg;
   
   // Rim highlight: primary + secondary bevel definition collapsed to one operation.
-  // Was: finalColor += rimColor * borderMask; finalColor += rimColor * borderMask * 0.5;
-  // 1.5× is mathematically identical with one fewer MAD per border fragment.
-  finalColor += rimColor * borderMask * 1.5;
+  // [PATCH himi] 宽软彩虹光晕（参考目标）：谱色带从发丝 hairline 扩展到
+  // haloBand（edgeInfluence 的四次衰减，≈8px 软晕），max() 保留 hairline
+  // 核心。系数 1.5 → 1.2：配合光谱 rimColor（非纯白）避免过曝白框。
+  float haloBand = edgeInfluence * edgeInfluence;
+  finalColor += rimColor * max(borderMask, haloBand) * 1.2;
 
   // Add fresnel glow — uGlowIntensity controls how visible the glass-edge luminosity is.
   finalColor += vec3(1.0) * fresnel * uGlowIntensity;
@@ -438,11 +447,16 @@ void main() {
   // TWEAK: edgeAlpha - edge opacity (higher = more solid edges)
   // Standard mode: Keep a strong structural rim at rest to match 3D bevel.
   float standardEdgeAlpha = uEdgeAlphaMultiplier * mix(0.6, 1.0, uInteractionIntensity);
-  float edgeAlpha = (uHasBackground > 0.5) ? 0.95 : standardEdgeAlpha;
+  // [PATCH himi] 0.95 → 0.88: 边缘不再近乎实心 —— 边框感弱化，
+  // 内容透过镜片边缘依旧可见（参考图气泡无硬边框）。
+  float edgeAlpha = (uHasBackground > 0.5) ? 0.88 : standardEdgeAlpha;
   
   // Blend from center to edge
   float glassAlpha = mix(baseAlpha, edgeAlpha, edgeInfluence);
-  float ringOpacity = borderMask * 0.9 * clamp(uAmbientRim * 10.0, 0.0, 1.0);
+  // [PATCH himi] ringOpacity 0.9×/×10 → 0.5×/×3：hairline 实心环是
+  // 「边框感」主因 —— 降低其 alpha 上限并解除与 ambientRim 的饱和联动
+  // （旧式 ×10 在 ambientRim≥0.1 即钳满 0.9）。
+  float ringOpacity = borderMask * 0.5 * clamp(uAmbientRim * 3.0, 0.0, 1.0);
   glassAlpha = max(glassAlpha, ringOpacity);
 
 

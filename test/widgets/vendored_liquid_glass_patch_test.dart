@@ -5,10 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// vendored liquid_glass_widgets 本地补丁回归测试。
 ///
 /// third_party/liquid_glass_widgets 是 pub.dev 1.8.1 的 vendored 副本，
-/// 带两处 [PATCH himi] 补丁（interactive_indicator.frag 色散 ×2.0 与
-/// 光谱边光）。本测试防止包更新/误还原导致补丁悄悄丢失：
+/// 带多处 [PATCH himi] 补丁（interactive_indicator.frag：色散 ×2.0、
+/// 光谱边光、折射增强 ×1.79、边框弱化、宽软彩虹光晕）。本测试防止包
+/// 更新/误还原导致补丁悄悄丢失：
 /// - pubspec 必须是 path 依赖（hosted 包拿不到补丁）；
-/// - frag 必须保留两处补丁标记；
+/// - frag 必须保留全部补丁标记；
 /// - LICENSE 必须随包保留（MIT 再分发要求）。
 void main() {
   const fragPath =
@@ -51,9 +52,33 @@ void main() {
       isTrue,
       reason: '光谱边光着色系数保持 0.85',
     );
+  });
+
+  test('vendored frag 保留第二轮补丁（折射增强+边框弱化+宽软彩虹光晕）', () {
+    final frag = File(fragPath).readAsStringSync();
+
+    expect(frag.contains('bendStrength = 1.25 *'), isTrue,
+        reason: '折射强度 1.25（upstream 0.9 → 设备反馈需更强折射）');
+    expect(frag.contains('edgeZone = 18.0'), isTrue,
+        reason: '光学边带 18px（upstream 14 → 宽软折射/光晕带）');
+    expect(frag.contains('uSize.y * 0.45'), isTrue,
+        reason: '弯折高度比 0.45（upstream 0.35，配合 1.25 → ×1.79 折射）');
+    expect(frag.contains('haloBand'), isTrue,
+        reason: '宽软彩虹光晕带（upstream 仅发丝 borderMask → 边框感）');
+    expect(frag.contains('* max(borderMask, haloBand) * 1.2'), isTrue,
+        reason: '光晕合成走 haloBand 且系数 1.2（防过曝白框）');
+    expect(frag.contains('(keyHighlight + kickHighlight) * 0.4'), isTrue,
+        reason: '白色镜面瓣 ×0.4 → 边缘是彩色光晕不是白框');
+    expect(frag.contains('0.88 : standardEdgeAlpha'), isTrue,
+        reason: '边缘 alpha 0.95 → 0.88，不再近乎实心');
+    expect(
+      frag.contains('borderMask * 0.5 * clamp(uAmbientRim * 3.0'),
+      isTrue,
+      reason: 'ringOpacity 实心环 0.9/×10 → 0.5/×3，边框感主因被削弱',
+    );
 
     final markers = RegExp(r'\[PATCH himi\]').allMatches(frag).length;
-    expect(markers, greaterThanOrEqualTo(2), reason: '两处补丁标记齐全');
+    expect(markers, greaterThanOrEqualTo(9), reason: '全部 [PATCH himi] 补丁标记齐全');
   });
 
   test('vendored 包带 LICENSE 且包名未变', () {
