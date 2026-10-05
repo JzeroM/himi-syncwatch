@@ -13,18 +13,29 @@ abstract class RxCounter {
 }
 
 /// Linux/Android：解析 `/proc/net/dev` 累计 rx 字节（排除回环 `lo`）。
+///
+/// Android 上 `/proc/net/dev` 受 SELinux 限制（EACCES），回退应用可读的
+/// `/proc/self/net/dev`（同内容的本进程 netns 视图）；按 [paths] 顺序
+/// 逐个尝试，全部失败返回 null。
 class ProcNetDevRxCounter implements RxCounter {
-  ProcNetDevRxCounter({String path = '/proc/net/dev'}) : _file = File(path);
+  ProcNetDevRxCounter({
+    this.paths = const ['/proc/net/dev', '/proc/self/net/dev'],
+  });
 
-  final File _file;
+  final List<String> paths;
 
   @override
   int? readRxBytes() {
-    try {
-      return NetworkSpeedMeter.parseRxBytes(_file.readAsStringSync());
-    } catch (_) {
-      return null;
+    for (final path in paths) {
+      try {
+        final parsed =
+            NetworkSpeedMeter.parseRxBytes(File(path).readAsStringSync());
+        if (parsed != null) return parsed;
+      } catch (_) {
+        // EACCES/不存在 → 尝试下一路径
+      }
     }
+    return null;
   }
 }
 

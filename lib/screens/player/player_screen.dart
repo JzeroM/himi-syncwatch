@@ -4634,7 +4634,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ],
               if (_showSpeedMenu) ...[
                 _buildExpandablePanel(
-                  maxHeight: 180,
+                  // 8 档 × ~33px ≈ 264px：180 会裁掉后 3 档（ClipRRect 裁剪）
+                  maxHeight: 288,
                   child: SpeedMenuPanel(
                     current: _speed,
                     onSelected: _applySpeed,

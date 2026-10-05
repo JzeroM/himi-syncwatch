@@ -188,6 +188,35 @@ void main() {
     });
   });
 
+  group('ProcNetDevRxCounter（路径回退）', () {
+    test('首选路径不可读 → 回退次路径读到累计字节', () {
+      final dir = Directory.systemTemp.createTempSync('rx_counter_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final fallback = File('${dir.path}/netdev')
+        ..writeAsStringSync(_procNetDevSample);
+      final counter = ProcNetDevRxCounter(
+        paths: ['${dir.path}/does_not_exist', fallback.path],
+      );
+      expect(counter.readRxBytes(), 4998551918);
+    });
+
+    test('全部路径失败 → null（顶栏隐藏网速）', () {
+      final dir = Directory.systemTemp.createTempSync('rx_counter_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final counter = ProcNetDevRxCounter(
+        paths: ['${dir.path}/a', '${dir.path}/b'],
+      );
+      expect(counter.readRxBytes(), isNull);
+    });
+
+    test('默认路径含 Android SELinux 回退 /proc/self/net/dev', () {
+      expect(
+        ProcNetDevRxCounter().paths,
+        ['/proc/net/dev', '/proc/self/net/dev'],
+      );
+    });
+  });
+
   group('createDefaultRxCounter（平台分流）', () {
     test('Linux/Android → /proc/net/dev；其余已知平台均有实现', () {
       final counter = createDefaultRxCounter();
