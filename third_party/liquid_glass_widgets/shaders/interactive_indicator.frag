@@ -47,6 +47,7 @@ uniform vec4 uData6; // 24..27 (bgSize.width, bgSize.height, hasBackground, ambi
 uniform vec4 uData7; // 28..31 (baseAlphaMultiplier, edgeAlphaMultiplier, rimThickness, rimSmoothing)
 // 32:  uDpr (float)  — device pixel ratio for textureBilinear()
 // 33:  uEdgeAbsorption — Beer-Lambert meniscus rim darkening strength [0..1]
+// 34:  uEdgeZone — refraction/dispersion band width from the edge (logical px)
 
 uniform sampler2D uTexture;         // Captured background image
 
@@ -61,6 +62,12 @@ uniform float uDpr;
 // Range: 0.0 (flat, no absorption) → 1.0 (fully dark rim).
 // iOS 26 reference calibrated at ~0.15.
 uniform float uEdgeAbsorption;
+
+// 34: [PATCH himi] 折射范围（可调）：折射/色散影响带从边缘向内的宽度
+// （逻辑 px）。由 Dart _RenderInteractiveIndicator 末槽传入，App 端
+// 「折射范围」滑杆 20~24（默认 20）。追加在 uniform 序列末尾 →
+// 不动 uData0..7/uDpr/uEdgeAbsorption 的既有槽位索引。
+uniform float uEdgeZone;
 
 out vec4 fragColor;
 
@@ -202,9 +209,10 @@ void main() {
   // TWEAK: edgeZone - How far from the edge the distortion extends (logical px)
   //   Smaller = sharper transition, concentrated at very edge
   //   Larger = softer, more gradual effect spreading inward
-  // [PATCH himi] 14 → 28: 折射/色散影响带从边缘向内 28px（设备反馈
-  // round-5：大小不变、折射范围再大一点 —— 带宽比 upstream 14 宽一倍）。
-  float edgeZone = 28.0;
+  // [PATCH himi] 14 → uEdgeZone（默认 20，滑杆 20~24）：折射/色散影响带
+  // 由 App 端「折射范围」滑杆实时控制（设备反馈 round-7：范围可调）。
+  // 配合下方平方衰减（edgeInfluence²）→ 贴边一圈明显弯折、中带干净。
+  float edgeZone = uEdgeZone;
   
   // Calculate influence: 1.0 at edge, 0.0 at edgeZone pixels inward
   float edgeInfluence = smoothstep(edgeZone, 0.0, distFromEdge);

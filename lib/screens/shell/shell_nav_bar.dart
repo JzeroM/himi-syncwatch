@@ -232,7 +232,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   ///   （纯整体放大，不拉长不压扁），真折射镜片挂载（`blur: 0.01`
   ///   打开 Skia 背景捕获），矩形上下各外扩 6px 超出胶囊；采样
   ///   [_navCaptureKey] 导航边界（胶囊+图标）→ 图标被物理折射弯折，
-  ///   沿边 28px 光学带（平方衰减：贴边一圈明显弯折、中带干净）
+  ///   沿边折射带（edgeZone 滑杆 20~24，平方衰减：贴边一圈明显弯折、中带干净）
   ///   出纯物理色散彩虹（vendored 包 [PATCH himi] ×4.0，无自发光色环），
   ///   折射只在移动过程出现，jelly 果冻形变吃 [_blobVelocity]；
   /// - `settings.thickness/saturation/lightIntensity` 取设置滑杆实时值，
@@ -319,6 +319,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
           settings: settings,
           pillColor: Colors.white.withValues(alpha: 0.10),
           backgroundKey: _navCaptureKey,
+          edgeZone: tuning.edgeZone ?? glassDefault('glassEdgeZone'),
         );
       },
     );

@@ -293,6 +293,7 @@ void main() {
     expect(lens.settings.glowIntensity, 1.2, reason: '白色菲涅尔光晕收敛，弱化边框感');
     expect(lens.settings.ambientStrength, 0.4, reason: '内壁白光提亮收敛');
     expect(lens.settings.edgeAbsorption, 0.10, reason: '边缘暗带淡化，非硬边框');
+    expect(lens.edgeZone, 20, reason: '折射范围默认 20（设置滑杆 20~24，round-7）');
     expect(LiquidBlobLens.quality, lg.GlassQuality.standard,
         reason:
             '测试环境 isShaderFilterSupported=false → standard（真机 Impeller → premium）');
@@ -334,6 +335,32 @@ void main() {
       findsNothing,
       reason: '水珠与胶囊是兄弟层，包内对子级的无条件裁剪吃不到水珠',
     );
+  });
+
+  testWidgets('折射范围设置透传：glassEdgeZone=23 → lens → GlassEffect uniform', (
+    tester,
+  ) async {
+    await _pumpNav(
+      tester,
+      onSelect: (_) {},
+      settings: const AppSettings(glassEdgeZone: 23),
+    );
+    final nav = tester.getRect(find.byType(ShellNavBar));
+
+    final lens = tester.widget<LiquidBlobLens>(find.byKey(_navBlob));
+    expect(lens.edgeZone, 23, reason: '设置滑杆值读入镜片 widget');
+
+    // 按住拖动使镜片挂载（按住中捕获 ticker 活跃 → 有界帧推进）
+    final gesture = await tester.startGesture(
+      Offset(nav.left + 100, nav.center.dy),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 450));
+    final effect = tester.widget<GlassEffect>(find.byType(GlassEffect));
+    expect(effect.edgeZone, 23, reason: '透传到 GlassEffect → shader uEdgeZone');
+    await gesture.up();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('静止实心无边框，拖动中镜片挂载并外扩超出胶囊 6px，松手回落恢复', (
@@ -385,6 +412,7 @@ void main() {
         reason: '色散输入 0.5，配合 vendored shader ×4.0 出 ~2px 物理彩边');
     expect(effect.settings.visibility, closeTo(1.0, 0.02),
         reason: 'visibility=activity 已淡入完成（允许微量过冲）');
+    expect(effect.edgeZone, 20, reason: 'edgeZone 默认 20 透传给 shader uniform');
     expect(effect.quality, lg.GlassQuality.standard,
         reason: '测试环境 standard → 无捕获降级安全（真机走捕获折射）');
 

@@ -21,7 +21,8 @@ import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 ///   零 shader 开销），1 活动（pill 淡出、镜片挂载、矩形上下外扩
 ///   [expansionV]、jelly 果冻形变吃 [velocity]）；
 /// - **彩虹 = 纯物理色散**（vendored 包 [PATCH himi] 补丁，色散 0.12→4.0）：
-///   沿边 28px 光学带（平方衰减压中带 → 贴边一圈干净彩边）把捕获内容的
+///   沿边折射带（edgeZone 滑杆 20~24，默认 20，平方衰减压中带 → 贴边
+///   一圈干净彩边）把捕获内容的
 ///   RGB 通道分开 —— 只在背后有对比处（图标边、胶囊边线）出彩边，
 ///   随果冻形变流动；无任何自发光色环；
 /// - quality 按引擎分流：Impeller → premium（原生折射层），
@@ -40,6 +41,7 @@ class LiquidBlobLens extends StatelessWidget {
     required this.settings,
     required this.pillColor,
     this.backgroundKey,
+    this.edgeZone = 20,
     this.pillShadows = const [
       BoxShadow(color: Color(0x29FFFFFF), blurRadius: 14),
     ],
@@ -70,6 +72,10 @@ class LiquidBlobLens extends StatelessWidget {
   /// 水珠移动时导航图标才会被真实折射形变；水珠本身在边界之外，
   /// 不会自采样成反馈环。
   final GlobalKey? backgroundKey;
+
+  /// 折射范围（shader edgeZone，逻辑 px）：折射/色散影响带从边缘向内的
+  /// 宽度。App「折射范围」滑杆 20~24，默认 20；随调随生效。
+  final double edgeZone;
 
   /// 静止实心胶囊底色（白 0.10）。
   final Color pillColor;
@@ -163,6 +169,8 @@ class LiquidBlobLens extends StatelessWidget {
                               interactionIntensity: activity,
                               // 采样导航边界（胶囊+图标）→ 图标被真实折射形变
                               backgroundKey: backgroundKey,
+                              // 折射范围（滑杆 20~24，默认 20）
+                              edgeZone: edgeZone,
                               clipExpansion: const EdgeInsets.symmetric(
                                 horizontal: 20,
                                 vertical: 15,

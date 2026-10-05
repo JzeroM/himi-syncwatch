@@ -346,7 +346,7 @@ class SettingsScreen extends ConsumerWidget {
 ///
 /// 写入 [AppSettings.categoryColumns]（null = 自动跟随屏幕）；手动指定
 /// 后屏幕放不下时由 `CategoryScreen.gridColumns` 按最小列宽自动压回。
-/// 液态玻璃参数滑杆分组（v1.1.84）：5 个参数实时写入设置 →
+/// 液态玻璃参数滑杆分组（v1.1.84）：参数实时写入设置 →
 /// glassTuningProvider → wrap(theme:) 重建，全 App 玻璃即时生效。
 class _GlassTuningSection extends ConsumerWidget {
   const _GlassTuningSection();
@@ -374,6 +374,7 @@ class _GlassTuningSection extends ConsumerWidget {
                     : () => ref.read(settingsProvider.notifier).update(
                           glassBlur: null,
                           glassThickness: null,
+                          glassEdgeZone: null,
                           glassSaturation: null,
                           glassChromatic: null,
                           glassLightIntensity: null,
@@ -425,6 +426,8 @@ class _GlassTuningSection extends ConsumerWidget {
                       spec.key == 'glassBlur' ? v : AppSettings.unsetValue,
                   glassThickness:
                       spec.key == 'glassThickness' ? v : AppSettings.unsetValue,
+                  glassEdgeZone:
+                      spec.key == 'glassEdgeZone' ? v : AppSettings.unsetValue,
                   glassSaturation: spec.key == 'glassSaturation'
                       ? v
                       : AppSettings.unsetValue,

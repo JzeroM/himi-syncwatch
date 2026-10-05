@@ -9,15 +9,16 @@ import '../helpers/test_fakes.dart';
 
 void main() {
   group('GlassParamSpec（滑杆规格单一事实源）', () {
-    test('5 个参数、key 唯一、默认值均在范围内', () {
-      expect(glassParamSpecs, hasLength(5));
+    test('6 个参数、key 唯一、默认值均在范围内', () {
+      expect(glassParamSpecs, hasLength(6));
       final keys = glassParamSpecs.map((s) => s.key).toList();
-      expect(keys.toSet(), hasLength(5));
+      expect(keys.toSet(), hasLength(6));
       expect(
         keys,
         [
           'glassBlur',
           'glassThickness',
+          'glassEdgeZone',
           'glassSaturation',
           'glassChromatic',
           'glassLightIntensity',
@@ -33,6 +34,13 @@ void main() {
         3,
         reason: '色散数值极小，需 3 位小数回显',
       );
+      final edgeZone =
+          glassParamSpecs.firstWhere((s) => s.key == 'glassEdgeZone');
+      expect(edgeZone.min, 20, reason: '折射范围滑杆下限 20（设备 round-7）');
+      expect(edgeZone.max, 24, reason: '折射范围滑杆上限 24');
+      expect(edgeZone.defaultValue, 20, reason: '默认折射范围 20');
+      expect(edgeZone.divisions, 4, reason: '20~24 整数四档');
+      expect(edgeZone.decimals, 0, reason: '整数回显');
     });
 
     test('read：有值读值，null 回默认', () {
@@ -40,8 +48,12 @@ void main() {
       final blurSpec = glassParamSpecs.firstWhere((s) => s.key == 'glassBlur');
       final thicknessSpec =
           glassParamSpecs.firstWhere((s) => s.key == 'glassThickness');
+      final edgeZoneSpec =
+          glassParamSpecs.firstWhere((s) => s.key == 'glassEdgeZone');
       expect(blurSpec.read(tuning), 9);
       expect(thicknessSpec.read(tuning), thicknessSpec.defaultValue);
+      expect(edgeZoneSpec.read(tuning), 20, reason: 'null 回默认 20');
+      expect(edgeZoneSpec.read(const GlassTuning(edgeZone: 23)), 23);
     });
 
     test('apply：写回对应字段且不动其余字段', () {
@@ -52,14 +64,22 @@ void main() {
       expect(out.glassSaturation, 2.2);
       expect(out.glassBlur, 3, reason: '无关字段保留');
       expect(out.glassThickness, 44);
+
+      final edgeZoneSpec =
+          glassParamSpecs.firstWhere((s) => s.key == 'glassEdgeZone');
+      final out2 = edgeZoneSpec.apply(s, 22);
+      expect(out2.glassEdgeZone, 22);
+      expect(out2.glassBlur, 3, reason: '无关字段保留');
+      expect(out2.glassThickness, 44);
     });
   });
 
   group('GlassTuning', () {
-    test('fromSettings 映射 5 字段', () {
+    test('fromSettings 映射 6 字段', () {
       const s = AppSettings(
         glassBlur: 7,
         glassThickness: 25,
+        glassEdgeZone: 22,
         glassSaturation: 1.8,
         glassChromatic: 0.02,
         glassLightIntensity: 0.6,
@@ -67,6 +87,7 @@ void main() {
       final t = GlassTuning.fromSettings(s);
       expect(t.blur, 7);
       expect(t.thickness, 25);
+      expect(t.edgeZone, 22);
       expect(t.saturation, 1.8);
       expect(t.chromatic, 0.02);
       expect(t.lightIntensity, 0.6);
@@ -116,10 +137,11 @@ void main() {
   });
 
   group('glassDefault（应用默认值 helper）', () {
-    test('5 个 key 返回与 spec 一致的默认值', () {
+    test('6 个 key 返回与 spec 一致的默认值', () {
       for (final key in const [
         'glassBlur',
         'glassThickness',
+        'glassEdgeZone',
         'glassSaturation',
         'glassChromatic',
         'glassLightIntensity',
@@ -172,6 +194,7 @@ void main() {
       await c.read(settingsProvider.notifier).update(
             glassBlur: null,
             glassThickness: null,
+            glassEdgeZone: null,
             glassSaturation: null,
             glassChromatic: null,
             glassLightIntensity: null,

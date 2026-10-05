@@ -18,6 +18,10 @@ class AppSettings {
   /// 玻璃厚度/折射深度（包默认 20）。
   final double? glassThickness;
 
+  /// 折射范围（shader edgeZone，逻辑 px；null = 应用默认 20，
+  /// 滑杆 20~24，仅 Skia standard 路径生效）。
+  final double? glassEdgeZone;
+
   /// 玻璃内饱和增强（1.0 = 关，包默认 1.5）。
   final double? glassSaturation;
 
@@ -86,6 +90,7 @@ class AppSettings {
     this.glassUi = true,
     this.glassBlur,
     this.glassThickness,
+    this.glassEdgeZone,
     this.glassSaturation,
     this.glassChromatic,
     this.glassLightIntensity,
@@ -119,6 +124,7 @@ class AppSettings {
     Object? categoryColumns = unsetValue,
     Object? glassBlur = unsetValue,
     Object? glassThickness = unsetValue,
+    Object? glassEdgeZone = unsetValue,
     Object? glassSaturation = unsetValue,
     Object? glassChromatic = unsetValue,
     Object? glassLightIntensity = unsetValue,
@@ -149,6 +155,9 @@ class AppSettings {
       glassThickness: identical(glassThickness, unsetValue)
           ? this.glassThickness
           : (glassThickness as num?)?.toDouble(),
+      glassEdgeZone: identical(glassEdgeZone, unsetValue)
+          ? this.glassEdgeZone
+          : (glassEdgeZone as num?)?.toDouble(),
       glassSaturation: identical(glassSaturation, unsetValue)
           ? this.glassSaturation
           : (glassSaturation as num?)?.toDouble(),
@@ -179,6 +188,7 @@ class AppSettings {
         if (categoryColumns != null) 'categoryColumns': categoryColumns,
         if (glassBlur != null) 'glassBlur': glassBlur,
         if (glassThickness != null) 'glassThickness': glassThickness,
+        if (glassEdgeZone != null) 'glassEdgeZone': glassEdgeZone,
         if (glassSaturation != null) 'glassSaturation': glassSaturation,
         if (glassChromatic != null) 'glassChromatic': glassChromatic,
         if (glassLightIntensity != null)
@@ -237,6 +247,7 @@ class AppSettings {
       // 玻璃可调参数：缺失/null = 走包默认；存盘可能为 int → num 归一
       glassBlur: (json['glassBlur'] as num?)?.toDouble(),
       glassThickness: (json['glassThickness'] as num?)?.toDouble(),
+      glassEdgeZone: (json['glassEdgeZone'] as num?)?.toDouble(),
       glassSaturation: (json['glassSaturation'] as num?)?.toDouble(),
       glassChromatic: (json['glassChromatic'] as num?)?.toDouble(),
       glassLightIntensity: (json['glassLightIntensity'] as num?)?.toDouble(),

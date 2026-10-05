@@ -708,7 +708,7 @@ void main() {
     );
   });
   group('玻璃参数滑杆分组（v1.1.84）', () {
-    testWidgets('展示标题、5 个滑杆与恢复默认（默认态禁用）', (tester) async {
+    testWidgets('展示标题、6 个滑杆与恢复默认（默认态禁用）', (tester) async {
       final container = await _pumpScreen(tester);
       await _scrollToText(tester, '玻璃参数');
 
@@ -717,6 +717,7 @@ void main() {
       for (final key in const [
         'glassBlur',
         'glassThickness',
+        'glassEdgeZone',
         'glassSaturation',
         'glassChromatic',
         'glassLightIntensity',
@@ -724,6 +725,7 @@ void main() {
         expect(find.byKey(ValueKey('${key}Slider')), findsOneWidget,
             reason: '$key 滑杆缺失');
       }
+      expect(find.text('折射范围'), findsOneWidget, reason: '折射范围滑杆标签');
       // 默认态（全包默认）：恢复默认按钮禁用
       final reset = tester
           .widget<TextButton>(find.byKey(const ValueKey('glassResetDefaults')));
@@ -770,6 +772,7 @@ void main() {
         tester,
         initial: const AppSettings(
           glassThickness: 40,
+          glassEdgeZone: 22,
           glassSaturation: 2.2,
           glassChromatic: 0.3,
           glassLightIntensity: 1.6,
@@ -784,17 +787,34 @@ void main() {
       final s = container.read(settingsProvider);
       expect(s.glassBlur, isNotNull, reason: '拖动字段写入');
       expect(s.glassThickness, 40, reason: '其余字段不能被清空');
+      expect(s.glassEdgeZone, 22, reason: '折射范围不能被清空');
       expect(s.glassSaturation, 2.2);
       expect(s.glassChromatic, 0.3);
       expect(s.glassLightIntensity, 1.6);
     });
 
-    testWidgets('恢复默认清空全部 5 参数并禁用按钮', (tester) async {
+    testWidgets('拖动折射范围滑杆写入 glassEdgeZone（20~24 整数档）', (tester) async {
+      final container = await _pumpScreen(tester);
+      await _scrollToText(tester, '玻璃参数');
+
+      final slider = find.byKey(const ValueKey('glassEdgeZoneSlider'));
+      await tester.drag(slider, const Offset(60, 0));
+      await tester.pumpAndSettle();
+
+      final v = container.read(settingsProvider).glassEdgeZone;
+      expect(v, isNotNull, reason: '拖动后写入');
+      expect(v, inInclusiveRange(20, 24), reason: '值域 20~24');
+      expect(v, greaterThan(20), reason: '向右拖增档（默认 20）');
+      expect(v, equals(v!.roundToDouble()), reason: '整数四档');
+    });
+
+    testWidgets('恢复默认清空全部 6 参数并禁用按钮', (tester) async {
       final container = await _pumpScreen(
         tester,
         initial: const AppSettings(
           glassBlur: 9,
           glassThickness: 40,
+          glassEdgeZone: 23,
           glassSaturation: 2.2,
           glassChromatic: 0.06,
           glassLightIntensity: 0.9,
@@ -812,6 +832,7 @@ void main() {
       final s = container.read(settingsProvider);
       expect(s.glassBlur, isNull);
       expect(s.glassThickness, isNull);
+      expect(s.glassEdgeZone, isNull);
       expect(s.glassSaturation, isNull);
       expect(s.glassChromatic, isNull);
       expect(s.glassLightIntensity, isNull);

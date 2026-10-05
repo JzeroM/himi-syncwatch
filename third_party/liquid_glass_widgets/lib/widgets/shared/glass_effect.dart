@@ -39,6 +39,7 @@ class GlassEffect extends StatefulWidget {
     this.edgeAlphaMultiplier = 0.4,
     this.rimThickness = 0.5,
     this.rimSmoothing = 1.5,
+    this.edgeZone = 20.0,
     this.clipExpansion = EdgeInsets.zero,
     super.key,
   });
@@ -80,6 +81,11 @@ class GlassEffect extends StatefulWidget {
 
   /// Rim edge smoothing multiplier (default: 1.5)
   final double rimSmoothing;
+
+  /// [PATCH himi] 折射范围：折射/色散影响带从边缘向内的宽度（逻辑 px，
+  /// default: 20，App 滑杆 20~24）。仅 Skia standard 路径生效
+  /// （interactive_indicator.frag 槽 34）。
+  final double edgeZone;
 
   /// Extra clip budget forwarded to [LiquidGlass.withOwnLayer] on the Impeller
   /// premium path.  Use this to prevent the glass BackdropFilterLayer from
@@ -598,6 +604,7 @@ class _GlassEffectState extends State<GlassEffect>
         rimThickness: effectiveRimThickness,
         rimSmoothing: widget.rimSmoothing,
         edgeAbsorption: effectiveSettings.edgeAbsorption,
+        edgeZone: widget.edgeZone,
         clipExpansion: widget.clipExpansion,
         child: widget.child,
       );
@@ -625,6 +632,7 @@ class _GlassEffectState extends State<GlassEffect>
         rimThickness: effectiveRimThickness,
         rimSmoothing: widget.rimSmoothing,
         edgeAbsorption: effectiveSettings.edgeAbsorption,
+        edgeZone: widget.edgeZone,
         clipExpansion: widget.clipExpansion,
         child: widget.child,
       );
@@ -652,6 +660,7 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
     required this.rimThickness,
     required this.rimSmoothing,
     required this.edgeAbsorption,
+    required this.edgeZone,
     this.clipExpansion = EdgeInsets.zero,
     required super.child,
   });
@@ -671,6 +680,7 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
   final double rimThickness;
   final double rimSmoothing;
   final double edgeAbsorption;
+  final double edgeZone;
 
   /// Inflation budget matching the parent [AnimatedGlassIndicator._jellyClipExpansion].
   /// The shader drawRect is inflated by this amount so that pixels pushed
@@ -696,6 +706,7 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
       rimThickness: rimThickness,
       rimSmoothing: rimSmoothing,
       edgeAbsorption: edgeAbsorption,
+      edgeZone: edgeZone,
       clipExpansion: clipExpansion,
     );
   }
@@ -721,6 +732,7 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
       ..rimThickness = rimThickness
       ..rimSmoothing = rimSmoothing
       ..edgeAbsorption = edgeAbsorption
+      ..edgeZone = edgeZone
       ..clipExpansion = clipExpansion;
   }
 }
@@ -742,6 +754,7 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
     required double rimThickness,
     required double rimSmoothing,
     required double edgeAbsorption,
+    required double edgeZone,
     EdgeInsets clipExpansion = EdgeInsets.zero,
   })  : _shader = shader,
         _settings = settings,
@@ -758,6 +771,7 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
         _rimThickness = rimThickness,
         _rimSmoothing = rimSmoothing,
         _edgeAbsorption = edgeAbsorption,
+        _edgeZone = edgeZone,
         _clipExpansion = clipExpansion,
         _cachedLightCos = math.cos(settings.lightAngle),
         _cachedLightSin = -math.sin(settings.lightAngle);
@@ -880,6 +894,13 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
   set edgeAbsorption(double value) {
     if (_edgeAbsorption == value) return;
     _edgeAbsorption = value;
+    markNeedsPaint();
+  }
+
+  double _edgeZone;
+  set edgeZone(double value) {
+    if (_edgeZone == value) return;
+    _edgeZone = value;
     markNeedsPaint();
   }
 
@@ -1150,5 +1171,10 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
     // Slot 33: edgeAbsorption — Beer-Lambert meniscus rim darkening [0..1].
     // Passed directly — what the caller sets is what the shader gets.
     _shader.setFloat(index++, _edgeAbsorption.clamp(0.0, 1.0));
+
+    // Slot 34: [PATCH himi] edgeZone — refraction/dispersion band width
+    // (logical px from the edge). App slider 20..24 (default 20); clamped
+    // defensively — the shader divides by this value (r_norm).
+    _shader.setFloat(index++, _edgeZone.clamp(4.0, 64.0));
   }
 }

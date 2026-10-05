@@ -304,6 +304,7 @@ void main() {
       const s = AppSettings();
       expect(s.glassBlur, isNull);
       expect(s.glassThickness, isNull);
+      expect(s.glassEdgeZone, isNull);
       expect(s.glassSaturation, isNull);
       expect(s.glassChromatic, isNull);
       expect(s.glassLightIntensity, isNull);
@@ -313,6 +314,7 @@ void main() {
       const s = AppSettings(
         glassBlur: 8.5,
         glassThickness: 30,
+        glassEdgeZone: 22,
         glassSaturation: 2.0,
         glassChromatic: 0.05,
         glassLightIntensity: 0.8,
@@ -320,6 +322,7 @@ void main() {
       final back = AppSettings.fromJson(s.toJson());
       expect(back.glassBlur, 8.5);
       expect(back.glassThickness, 30);
+      expect(back.glassEdgeZone, 22);
       expect(back.glassSaturation, 2.0);
       expect(back.glassChromatic, 0.05);
       expect(back.glassLightIntensity, 0.8);
@@ -327,9 +330,13 @@ void main() {
 
     test('缺字段 → null；存盘 int → double 归一', () {
       expect(AppSettings.fromJson(const {}).glassBlur, isNull);
+      expect(AppSettings.fromJson(const {}).glassEdgeZone, isNull);
       final fromInt = AppSettings.fromJson(const {'glassBlur': 10});
       expect(fromInt.glassBlur, 10.0);
       expect(fromInt.glassBlur, isA<double>());
+      final edgeFromInt = AppSettings.fromJson(const {'glassEdgeZone': 22});
+      expect(edgeFromInt.glassEdgeZone, 22.0);
+      expect(edgeFromInt.glassEdgeZone, isA<double>());
     });
 
     test('toJson 仅输出非 null 字段（默认态不落盘）', () {

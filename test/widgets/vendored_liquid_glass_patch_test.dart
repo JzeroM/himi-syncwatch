@@ -64,8 +64,12 @@ void main() {
 
     expect(frag.contains('bendStrength = 1.25 *'), isTrue,
         reason: '折射强度 1.25（upstream 0.9 → 设备反馈需更强折射）');
-    expect(frag.contains('edgeZone = 28.0'), isTrue,
-        reason: '光学边带 28px（upstream 14 → round-5 折射范围加大）');
+    expect(frag.contains('uniform float uEdgeZone;'), isTrue,
+        reason: '折射范围 uniform 化（round-7 设置滑杆 20~24 驱动）');
+    expect(frag.contains('float edgeZone = uEdgeZone;'), isTrue,
+        reason: 'edgeZone 必须读 uniform，不得硬编码');
+    expect(frag.contains('edgeZone = 28.0'), isFalse,
+        reason: '硬编码 28 已废弃（round-5 固定 28 反馈不佳，改为滑杆 20~24）');
     expect(
         frag.contains('edgeInfluence = edgeInfluence * edgeInfluence'), isTrue,
         reason: '平方衰减必须保留：round-5 撤销后 28px 线性中带把内容撕成彩色碎片（设备反馈 round-6）');
@@ -85,6 +89,29 @@ void main() {
 
     final markers = RegExp(r'\[PATCH himi\]').allMatches(frag).length;
     expect(markers, greaterThanOrEqualTo(10), reason: '全部 [PATCH himi] 补丁标记齐全');
+  });
+
+  test('uniform 槽数与 glass_effect.dart setFloat 次数一致（35）', () {
+    // Flutter FragmentShader.setFloat 按 frag 声明顺序占槽：
+    // vec4 = 4 float 槽、float = 1 槽、sampler2D 不占（现有序列
+    // 0..31 uData0..7 + 32 uDpr + 33 uEdgeAbsorption 实测对位正确）。
+    // 追加 uniform 必须同步 Dart 上传，否则值静默错位。
+    final frag = File(fragPath).readAsStringSync();
+    final vec4Count =
+        RegExp(r'^uniform vec4', multiLine: true).allMatches(frag).length;
+    final floatCount =
+        RegExp(r'^uniform float', multiLine: true).allMatches(frag).length;
+    expect(vec4Count, 8, reason: 'uData0..uData7');
+    expect(floatCount, 3, reason: 'uDpr + uEdgeAbsorption + uEdgeZone');
+    final expectedSlots = vec4Count * 4 + floatCount;
+
+    final effect = File(
+            'third_party/liquid_glass_widgets/lib/widgets/shared/glass_effect.dart')
+        .readAsStringSync();
+    final setFloatCount = RegExp(r'setFloat\(').allMatches(effect).length;
+    expect(setFloatCount, expectedSlots,
+        reason: 'Dart setFloat 次数必须等于 frag float 槽数'
+            '（新增 uniform 漏传 → 整条 uniform 序列错位）');
   });
 
   test('vendored 包带 LICENSE 且包名未变', () {

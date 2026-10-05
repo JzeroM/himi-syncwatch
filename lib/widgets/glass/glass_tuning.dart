@@ -32,6 +32,7 @@ class GlassParamSpec {
   double read(GlassTuning tuning) => switch (key) {
         'glassBlur' => tuning.blur ?? defaultValue,
         'glassThickness' => tuning.thickness ?? defaultValue,
+        'glassEdgeZone' => tuning.edgeZone ?? defaultValue,
         'glassSaturation' => tuning.saturation ?? defaultValue,
         'glassChromatic' => tuning.chromatic ?? defaultValue,
         'glassLightIntensity' => tuning.lightIntensity ?? defaultValue,
@@ -42,6 +43,7 @@ class GlassParamSpec {
   AppSettings apply(AppSettings s, double value) => switch (key) {
         'glassBlur' => s.copyWith(glassBlur: value),
         'glassThickness' => s.copyWith(glassThickness: value),
+        'glassEdgeZone' => s.copyWith(glassEdgeZone: value),
         'glassSaturation' => s.copyWith(glassSaturation: value),
         'glassChromatic' => s.copyWith(glassChromatic: value),
         'glassLightIntensity' => s.copyWith(glassLightIntensity: value),
@@ -71,6 +73,15 @@ const List<GlassParamSpec> glassParamSpecs = [
     max: 60,
     defaultValue: 28,
     divisions: 60,
+  ),
+  GlassParamSpec(
+    key: 'glassEdgeZone',
+    label: '折射范围',
+    min: 20,
+    max: 24,
+    defaultValue: 20,
+    divisions: 4,
+    decimals: 0,
   ),
   GlassParamSpec(
     key: 'glassSaturation',
@@ -104,11 +115,12 @@ const List<GlassParamSpec> glassParamSpecs = [
 double glassDefault(String key) =>
     glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
 
-/// 玻璃参数快照：settings 的 5 个可调字段 → 包主题的映射边界。
+/// 玻璃参数快照：settings 的可调字段 → 包主题的映射边界。
 class GlassTuning {
   const GlassTuning({
     this.blur,
     this.thickness,
+    this.edgeZone,
     this.saturation,
     this.chromatic,
     this.lightIntensity,
@@ -116,6 +128,9 @@ class GlassTuning {
 
   final double? blur;
   final double? thickness;
+
+  /// 折射范围（shader edgeZone，20~24；null = 应用默认 20）。
+  final double? edgeZone;
   final double? saturation;
   final double? chromatic;
   final double? lightIntensity;
@@ -123,6 +138,7 @@ class GlassTuning {
   factory GlassTuning.fromSettings(AppSettings s) => GlassTuning(
         blur: s.glassBlur,
         thickness: s.glassThickness,
+        edgeZone: s.glassEdgeZone,
         saturation: s.glassSaturation,
         chromatic: s.glassChromatic,
         lightIntensity: s.glassLightIntensity,
@@ -132,6 +148,7 @@ class GlassTuning {
   bool get isDefault =>
       blur == null &&
       thickness == null &&
+      edgeZone == null &&
       saturation == null &&
       chromatic == null &&
       lightIntensity == null;
@@ -148,14 +165,15 @@ class GlassTuning {
       );
 }
 
-/// 监听设置中的玻璃参数（仅 5 个相关字段，无关设置变化不触发重建），
-/// 驱动 `LiquidGlassWidgets.wrap(theme:)` 实时生效。
+/// 监听设置中的玻璃参数（仅相关字段，无关设置变化不触发重建），
+/// 驱动 `LiquidGlassWidgets.wrap(theme:)` 与水珠镜片实时生效。
 final glassTuningProvider = Provider<GlassTuning>((ref) {
   final s = ref.watch(
     settingsProvider.select(
       (s) => (
         blur: s.glassBlur,
         thickness: s.glassThickness,
+        edgeZone: s.glassEdgeZone,
         saturation: s.glassSaturation,
         chromatic: s.glassChromatic,
         lightIntensity: s.glassLightIntensity,
@@ -165,6 +183,7 @@ final glassTuningProvider = Provider<GlassTuning>((ref) {
   return GlassTuning(
     blur: s.blur,
     thickness: s.thickness,
+    edgeZone: s.edgeZone,
     saturation: s.saturation,
     chromatic: s.chromatic,
     lightIntensity: s.lightIntensity,
