@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 /// 四标签壳：首页 / Emby服务器 / 声网配置 / 设置。
 ///
@@ -200,7 +201,9 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     return Scaffold(
       extendBody: true,
-      body: content,
+      // 标记页面内容为玻璃采样面（LiquidGlassScope 兜底，包内 GlassEffect
+      // 在 Skia/Web 上采样此 RepaintBoundary；Impeller 不需要）。
+      body: lg.GlassBackgroundSource(child: content),
       bottomNavigationBar: AnimatedSlide(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInCubic,

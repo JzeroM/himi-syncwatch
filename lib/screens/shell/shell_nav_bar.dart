@@ -74,6 +74,16 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   /// 手指落在当前水珠范围内时保持相对位置跟手，落在别格时吸附到手指。
   double _grabOffset = 0;
 
+  /// 指示器果冻形变速度（包内坐标系：对齐值 -1..1 的每秒变化量，
+  /// 对齐 VelocitySpringBuilder 的 velocity 语义，喂给
+  /// `AnimatedGlassIndicator.velocity` 驱动 jelly squash）。
+  double _blobVelocity = 0;
+
+  /// 速度采样时钟与上一帧状态（单调时钟，dt 异常时归零）。
+  final Stopwatch _velClock = Stopwatch()..start();
+  int _velLastUs = 0;
+  double _velLastT = 0;
+
   static double _centerT(int index) => (index + 0.5) / _tabCount;
 
   /// 视觉激活格：以水珠中心所在格为准（拖动/飞行中实时跟随）。
@@ -83,6 +93,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   void initState() {
     super.initState();
     _blobT = _centerT(widget.currentIndex);
+    _velLastT = _blobT;
+    _velLastUs = _velClock.elapsedMicroseconds;
     _controller.addListener(_onTick);
   }
 
@@ -110,7 +122,26 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       _blobT = _fromT + (_toT - _fromT) * p;
       _blobFactor = (_fromFactor + (1 - _fromFactor) * p) +
           _peak * math.sin(math.pi * raw);
+      _trackVelocity(_blobT);
     });
+  }
+
+  /// 跟踪水珠速度并换算成包内 jelly 坐标系（对齐值 -1..1 的每秒变化量）。
+  ///
+  /// _blobT 0..1 线性映射到 -1..1 故乘 2；dt 过短保留上一采样、
+  /// 过长（首帧/后台恢复）视为静止归零，幅度钳制避免测试环境下的
+  /// 墙钟极小间隔产生爆炸值。
+  void _trackVelocity(double newT) {
+    final nowUs = _velClock.elapsedMicroseconds;
+    final dt = (nowUs - _velLastUs) / 1e6;
+    if (dt <= 0) return;
+    if (dt >= 0.25) {
+      _blobVelocity = 0;
+    } else {
+      _blobVelocity = ((newT - _velLastT) * 2 / dt).clamp(-8.0, 8.0);
+    }
+    _velLastUs = nowUs;
+    _velLastT = newT;
   }
 
   void _animateTo(int index) {
@@ -167,6 +198,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     setState(() {
       _blobT = t;
       _blobFactor = factor;
+      _trackVelocity(t);
     });
   }
 
@@ -187,48 +219,81 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     _animateTo(widget.currentIndex);
   }
 
-  /// 水珠本体。
+  /// 水珠本体（返回值已自带定位，直接作为导航 Stack 的子级）。
   ///
-  /// `glassUi` 开启时以 liquid_glass_widgets 真折射镜片为底（`useOwnLayer`
-  /// 绕过胶囊外壳给子级设置的 avoidRefraction；blur 恒 0——指示器是透明
-  /// 镜片而非磨砂面），厚/色散/高光等取设置滑杆实时值；关闭时降级为原
-  /// 半透明白色装饰。navBlob key 与装饰参数保持不变（测试与视觉约定）。
-  Widget _buildBlob() {
+  /// `glassUi` 开启时用包内 [lg.AnimatedGlassIndicator] 真折射镜片：
+  /// - `exactOffset/exactWidth` 沿用本类 _blobT/_blobFactor 的位移与拉伸物理；
+  /// - 外层 [lg.InheritedLiquidGlass] 遮蔽胶囊 GlassContainer 给子树设置的
+  ///   `avoidsRefraction: true`，否则 GlassEffect 走 vibrancy 快路径无折射；
+  /// - `quality: premium` 在 Impeller 上走原生折射层（live backdrop 真折射），
+  ///   `settings` 取设置滑杆实时值（厚度/色散/饱和/光强 + 白色镜片底色）；
+  /// - `velocity` 喂给包内 jelly 果冻形变；原先叠加的白色 DecoratedBox
+  ///   整体移除（半透明白填充会压制镜片观感）。
+  /// `glassUi` 关闭时降级为原半透明白色装饰（navBlob key 与装饰参数不变）。
+  Widget _buildBlob(double left, double width) {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
     final tuning = ref.watch(glassTuningProvider);
 
-    final blob = DecoratedBox(
-      key: const ValueKey('navBlob'),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.all(Radius.circular(_blobHeight / 2)),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.42),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.white.withValues(alpha: 0.16),
-            blurRadius: 14,
+    if (!glassEnabled) {
+      return Positioned(
+        left: left,
+        top: (_navHeight - _blobHeight) / 2,
+        width: width,
+        height: _blobHeight,
+        child: DecoratedBox(
+          key: const ValueKey('navBlob'),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.all(Radius.circular(_blobHeight / 2)),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.42),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.16),
+                blurRadius: 14,
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ),
+      );
+    }
 
-    if (!glassEnabled) return blob;
-
-    return lg.GlassContainer(
-      useOwnLayer: true,
-      shape: lg.LiquidRoundedSuperellipse(borderRadius: _blobHeight / 2),
-      settings: lg.LiquidGlassSettings(
-        blur: 0,
-        thickness: tuning.thickness ?? glassDefault('glassThickness'),
-        saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-        chromaticAberration: tuning.chromatic ?? glassDefault('glassChromatic'),
-        lightIntensity:
-            tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
+    return lg.InheritedLiquidGlass(
+      settings: const lg.LiquidGlassSettings(),
+      quality: lg.GlassQuality.premium,
+      avoidsRefraction: false,
+      child: lg.AnimatedGlassIndicator(
+        key: const ValueKey('navBlob'),
+        exactOffset: left,
+        exactWidth: width,
+        // 60 高导航内水珠 50 高：上下各 5（水平必须 0，否则 exactOffset 偏移）
+        padding: EdgeInsets.symmetric(vertical: (_navHeight - _blobHeight) / 2),
+        // 恒定 1.0：静止即镜片（参考图观感），非 iOS 拖动才变液态
+        thickness: 1.0,
+        // 禁用默认 all(8) 外扩：宽度拉伸由 exactWidth 自己驱动
+        expansion: EdgeInsets.zero,
+        velocity: _blobVelocity,
+        itemCount: _tabCount,
+        alignment: Alignment(_blobT * 2 - 1, 0),
+        quality: lg.GlassQuality.premium,
+        borderRadius: _blobHeight / 2,
+        isBackgroundIndicator: false,
+        // thickness 恒 1 下实心底胶囊本就不画（backgroundOpacity=0）
+        paintBackground: false,
+        indicatorColor: Colors.white.withValues(alpha: 0.10),
+        settings: lg.LiquidGlassSettings(
+          // 白色镜片底色：恢复图标在镜片上的对比度
+          glassColor: Colors.white.withValues(alpha: 0.10),
+          thickness: tuning.thickness ?? glassDefault('glassThickness'),
+          saturation: tuning.saturation ?? glassDefault('glassSaturation'),
+          chromaticAberration:
+              tuning.chromatic ?? glassDefault('glassChromatic'),
+          lightIntensity:
+              tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
+        ),
       ),
-      child: blob,
     );
   }
 
@@ -246,13 +311,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              Positioned(
-                left: blobLeft,
-                top: (_navHeight - _blobHeight) / 2,
-                width: blobWidth,
-                height: _blobHeight,
-                child: _buildBlob(),
-              ),
+              _buildBlob(blobLeft, blobWidth),
               Positioned.fill(
                 child: Row(
                   children: List.generate(_tabCount, (i) {

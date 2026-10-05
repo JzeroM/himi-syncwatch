@@ -34,18 +34,35 @@ Future<void> _pumpNav(
   );
 }
 
-Positioned _blob(WidgetTester tester) {
-  return tester.widget<Positioned>(
-    find.ancestor(
-      of: find.byKey(const ValueKey('navBlob')),
-      matching: find.byType(Positioned),
-    ),
+const ValueKey<String> _navBlob = ValueKey('navBlob');
+
+/// navBlob 键当前挂载的 widget（不存在时为 null）。
+Widget? _keyedWidget(WidgetTester tester) {
+  final elements = find.byKey(_navBlob).evaluate();
+  return elements.isEmpty ? null : elements.first.widget;
+}
+
+/// 玻璃开启时 navBlob 键挂在 AnimatedGlassIndicator 上；关闭时是 DecoratedBox。
+lg.AnimatedGlassIndicator? _indicatorOrNull(WidgetTester tester) {
+  final w = _keyedWidget(tester);
+  return w is lg.AnimatedGlassIndicator ? w : null;
+}
+
+/// 水珠几何（left/width 随玻璃开关取自 indicator 参数或外层 Positioned）。
+({double? left, double? width, double? height}) _blob(WidgetTester tester) {
+  final ind = _indicatorOrNull(tester);
+  if (ind != null) {
+    return (left: ind.exactOffset, width: ind.exactWidth, height: null);
+  }
+  final pos = tester.widget<Positioned>(
+    find.ancestor(of: find.byKey(_navBlob), matching: find.byType(Positioned)),
   );
+  return (left: pos.left, width: pos.width, height: pos.height);
 }
 
 BoxDecoration _blobDecoration(WidgetTester tester) {
   final box = tester.widget<DecoratedBox>(
-    find.byKey(const ValueKey('navBlob')),
+    find.byKey(_navBlob),
   );
   return box.decoration as BoxDecoration;
 }
@@ -169,13 +186,15 @@ void main() {
     expect(settled.width, closeTo(200, 0.5));
   });
 
-  testWidgets('水珠为半透明白色玻璃，青色仅用于选中图标', (tester) async {
+  testWidgets('玻璃开启：navBlob 是镜片指示器而非白色装饰，青色仅用于选中图标', (
+    tester,
+  ) async {
     await _pumpNav(tester, onSelect: (_) {});
 
-    final d = _blobDecoration(tester);
-    expect(d.color, Colors.white.withValues(alpha: 0.10));
-    expect(d.border?.top.color, Colors.white.withValues(alpha: 0.42));
-    expect(d.boxShadow?.first.color, Colors.white.withValues(alpha: 0.16));
+    expect(_indicatorOrNull(tester), isNotNull,
+        reason: '玻璃开启时水珠由 AnimatedGlassIndicator 真折射镜片渲染');
+    expect(_keyedWidget(tester), isNot(isA<DecoratedBox>()),
+        reason: '白色装饰不再叠在镜片上（否则压制折射观感）');
 
     // 青色只出现在选中图标/文字，不给水珠
     expect(tester.widget<Icon>(find.byIcon(Icons.home)).color, kNavBlobColor);
@@ -183,39 +202,68 @@ void main() {
       tester.widget<Icon>(find.byIcon(Icons.dns_outlined)).color,
       Colors.white70,
     );
-    expect(d.color, isNot(kNavBlobColor));
   });
 
   testWidgets('水珠饱满：高 50、固定 25 圆角（两端半圆直边）', (tester) async {
     await _pumpNav(tester, onSelect: (_) {});
 
-    expect(_blob(tester).height, 50);
-    expect(
-      _blobDecoration(tester).borderRadius,
-      BorderRadius.all(Radius.circular(25)),
-    );
+    final ind = _indicatorOrNull(tester);
+    if (ind != null) {
+      // 玻璃开启：高度由 indicator 垂直 padding 决定（60 - 2×5 = 50）
+      expect(ind.padding, const EdgeInsets.symmetric(vertical: 5));
+      expect(ind.borderRadius, 25);
+      final inner = find.descendant(
+        of: find.byKey(_navBlob),
+        matching: find.byWidgetPredicate(
+          (w) => w is Positioned && w.left != null && w.width != null,
+        ),
+      );
+      expect(inner, findsOneWidget);
+      expect(tester.renderObject<RenderBox>(inner).size.height, 50);
+    } else {
+      expect(_blob(tester).height, 50);
+      expect(
+        _blobDecoration(tester).borderRadius,
+        BorderRadius.all(Radius.circular(25)),
+      );
+    }
   });
 
-  testWidgets('glassUi 开启：水珠外包真折射镜片（useOwnLayer + blur 0）', (tester) async {
+  testWidgets('glassUi 开启：水珠为 premium 真折射指示器（非包装饰）', (
+    tester,
+  ) async {
     await _pumpNav(tester, onSelect: (_) {});
 
-    final glass = tester.widget<lg.GlassContainer>(
+    final ind = tester.widget<lg.AnimatedGlassIndicator>(find.byKey(_navBlob));
+    expect(ind.quality, lg.GlassQuality.premium,
+        reason: '不再恒 standard（根因：standard 走 lightweight 无折射）');
+    expect(ind.thickness, 1.0, reason: '静止即镜片（参考图观感）');
+    expect(ind.expansion, EdgeInsets.zero,
+        reason: '禁用默认 all(8) 外扩，宽度由 exactWidth 驱动');
+    expect(ind.padding, const EdgeInsets.symmetric(vertical: 5),
+        reason: '60 高导航内水珠 50 高');
+    expect(ind.borderRadius, 25);
+    expect(ind.paintBackground, isFalse);
+    expect(ind.exactOffset, closeTo(0, 0.01));
+    expect(ind.exactWidth, closeTo(200, 0.01));
+    expect(ind.velocity, isA<double>());
+    expect(ind.settings?.chromaticAberration, 0.15,
+        reason: '彩虹色散取应用默认（对齐图中彩虹圈）');
+    expect(ind.settings?.glassColor, Colors.white.withValues(alpha: 0.10),
+        reason: '白色镜片底色恢复图标对比度');
+
+    // 就近遮蔽胶囊的 avoidsRefraction，否则 GlassEffect 走 vibrancy 无折射
+    final inherited = tester.widget<lg.InheritedLiquidGlass>(
       find.ancestor(
-        of: find.byKey(const ValueKey('navBlob')),
-        matching: find.byType(lg.GlassContainer),
+        of: find.byKey(_navBlob),
+        matching: find.byType(lg.InheritedLiquidGlass),
       ),
     );
-    expect(glass.useOwnLayer, isTrue, reason: '嵌套玻璃必须独立成层，否则走 vibrancy 快路径无折射');
-    expect(glass.settings?.blur, 0, reason: '指示器是透明镜片，非磨砂面');
-    expect(glass.settings?.chromaticAberration, 0.15,
-        reason: '默认色散取应用默认（对齐图中彩虹圈）');
-    expect(
-      glass.shape,
-      const lg.LiquidRoundedSuperellipse(borderRadius: 25),
-      reason: '镜片轮廓与水珠 25 圆角一致',
-    );
-    // 原装饰仍在（图标底光、白描边）
-    expect(_blobDecoration(tester).color, Colors.white.withValues(alpha: 0.10));
+    expect(inherited.avoidsRefraction, isFalse);
+    expect(inherited.quality, lg.GlassQuality.premium);
+
+    // 不再用 GlassContainer 包装饰
+    expect(find.byType(lg.GlassContainer), findsNothing);
   });
 
   testWidgets('glassUi 关闭：水珠降级为纯装饰，无包玻璃', (tester) async {
@@ -225,6 +273,7 @@ void main() {
       onSelect: (_) {},
     );
 
+    expect(_indicatorOrNull(tester), isNull);
     expect(find.byType(lg.GlassContainer), findsNothing);
     // 原装饰不变
     expect(_blobDecoration(tester).color, Colors.white.withValues(alpha: 0.10));

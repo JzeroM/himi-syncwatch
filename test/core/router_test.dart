@@ -20,6 +20,7 @@ import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 import '../helpers/test_fakes.dart';
 
@@ -67,12 +68,15 @@ Future<GoRouter> _pumpApp(
       child: Consumer(
         builder: (context, ref, _) {
           router = ref.watch(appRouterProvider);
-          return MaterialApp.router(
-            routerConfig: router,
-            // 模拟真机系统栏（edge-to-edge 下 padding 已被消费，仅 viewPadding 保留）
-            builder: (context, child) => MediaQuery(
-              data: MediaQuery.of(context).copyWith(viewPadding: viewPadding),
-              child: child ?? const SizedBox.shrink(),
+          // 与生产（core/app.dart）一致：提供 GlassBackgroundSource 所需的采样键
+          return lg.LiquidGlassScope(
+            child: MaterialApp.router(
+              routerConfig: router,
+              // 模拟真机系统栏（edge-to-edge 下 padding 已被消费，仅 viewPadding 保留）
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(viewPadding: viewPadding),
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           );
         },

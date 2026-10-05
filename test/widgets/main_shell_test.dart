@@ -12,6 +12,7 @@ import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 import '../helpers/test_fakes.dart';
 
@@ -52,7 +53,10 @@ Future<void> pumpApp(
       child: Consumer(
         builder: (context, ref, _) {
           router = ref.watch(appRouterProvider);
-          return MaterialApp.router(routerConfig: router);
+          // 与生产（core/app.dart）一致：提供 GlassBackgroundSource 所需的采样键
+          return lg.LiquidGlassScope(
+            child: MaterialApp.router(routerConfig: router),
+          );
         },
       ),
     ),
