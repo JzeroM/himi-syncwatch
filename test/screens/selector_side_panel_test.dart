@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -109,6 +110,35 @@ void main() {
       expect(tester.getRect(find.text('3.0x').last).bottom, lessThan(200),
           reason: '在面板可视范围内');
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('mouse 拖动可滚（桌面端根因回归：默认拖动设备无 mouse）', (tester) async {
+      await tester.pumpWidget(_host(
+        SelectorSidePanel(
+          title: '倍速',
+          child: SpeedMenuPanel(current: 1.0, onSelected: (_) {}),
+        ),
+        height: 200,
+      ));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('0.5x')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveBy(const Offset(0, -60));
+      await gesture.moveBy(const Offset(0, -60));
+      await gesture.moveBy(const Offset(0, -60));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position
+            .pixels,
+        greaterThan(0),
+        reason: '鼠标按下拖动应滚动面板',
+      );
     });
   });
 

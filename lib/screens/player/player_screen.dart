@@ -52,6 +52,7 @@ import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/video_gesture_layer.dart';
 import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -3766,32 +3767,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ),
         child: Scaffold(
           backgroundColor: Colors.black,
-          body: GestureDetector(
-            onTap: _onVideoAreaTap,
-            // 锁定中：双击/横滑(进度)/纵滑(亮度音量)全部解除绑定
-            onDoubleTap: _lockController.locked ? null : _onDoubleTap,
-            onHorizontalDragUpdate:
-                _lockController.locked ? null : _onHorizontalDragUpdate,
-            onHorizontalDragEnd:
-                _lockController.locked ? null : _onHorizontalDragEnd,
-            // Windows 取消音量/亮度垂直手势（改用控制条滑杆），移动平台保留
-            onVerticalDragStart:
-                PlayerPlatform.verticalVolumeBrightnessGesture &&
-                        !_lockController.locked
-                    ? _onVerticalDragStart
-                    : null,
-            onVerticalDragUpdate:
-                PlayerPlatform.verticalVolumeBrightnessGesture &&
-                        !_lockController.locked
-                    ? _onVerticalDragUpdate
-                    : null,
-            onVerticalDragEnd: PlayerPlatform.verticalVolumeBrightnessGesture &&
-                    !_lockController.locked
-                ? _onVerticalDragEnd
-                : null,
-            behavior: HitTestBehavior.opaque,
-            child: _buildResponsiveLayout(),
-          ),
+          // 视频手势（点屏/双击/拖动 seek/音量亮度）在 _buildVideoArea
+          // 内只包视频层：若放 body 层做浮层/控制条的祖先，拖动起点在
+          // 字幕/音轨/倍速面板内时祖先 drag recognizer 先进手势竞技场
+          // 并抢走拖动，面板 ListView 滚不动（且误触音量/亮度）。
+          body: _buildResponsiveLayout(),
         ),
       ),
     );
@@ -3879,11 +3859,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildVideoArea() {
-    return Stack(
-      children: [
-        // 视频 / 占位文字
-        if (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null))
-          Center(
+    // 视频 / 占位文字
+    final videoContent = _isPlayerReady ||
+            (!_hasEpisodeList && widget.roomCode == null)
+        ? Center(
             child: _effectiveVideoOutput() == 'surfaceView'
                 ? _buildSurfaceViewVideo()
                 : ValueListenableBuilder<int?>(
@@ -3961,8 +3940,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     },
                   ),
           )
-        else
-          Center(
+        : Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -3975,7 +3953,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
               ],
             ),
-          ),
+          );
+
+    return Stack(
+      children: [
+        // 视频手势层（VideoGestureLayer：只包视频层，见其类注释）
+        VideoGestureLayer(
+          onTap: _onVideoAreaTap,
+          // 锁定中：双击/横滑(进度)/纵滑(亮度音量)全部解除绑定
+          onDoubleTap: _lockController.locked ? null : _onDoubleTap,
+          onHorizontalDragUpdate:
+              _lockController.locked ? null : _onHorizontalDragUpdate,
+          onHorizontalDragEnd:
+              _lockController.locked ? null : _onHorizontalDragEnd,
+          // Windows 取消音量/亮度垂直手势（改用控制条滑杆），移动平台保留
+          onVerticalDragStart: PlayerPlatform.verticalVolumeBrightnessGesture &&
+                  !_lockController.locked
+              ? _onVerticalDragStart
+              : null,
+          onVerticalDragUpdate:
+              PlayerPlatform.verticalVolumeBrightnessGesture &&
+                      !_lockController.locked
+                  ? _onVerticalDragUpdate
+                  : null,
+          onVerticalDragEnd: PlayerPlatform.verticalVolumeBrightnessGesture &&
+                  !_lockController.locked
+              ? _onVerticalDragEnd
+              : null,
+          child: videoContent,
+        ),
 
         // TopBar（渐变浮层；锁定中隐藏，仅保留左缘锁钮）
         if (_showControls && !_lockController.locked)

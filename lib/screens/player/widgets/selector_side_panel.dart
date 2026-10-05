@@ -1,7 +1,17 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+
+/// 面板滚动行为：默认拖动设备只含 touch/stylus/trackpad（**不含 mouse**，
+/// 桌面端鼠标按下拖动列表不滚动），内容超视口时表现为「滚不动、显示
+/// 不全」。显式加 mouse；面板无文本选择需求，不受该默认限制影响。
+class _PanelScrollBehavior extends ScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices =>
+      {...super.dragDevices, PointerDeviceKind.mouse};
+}
 
 /// 右侧浮层选择面板：玻璃卡片（GlassContainer 透明玻璃，关闭时降级
 /// 深色纯色）+ 顶部标题 + 可上下滚动的选项列表。
@@ -46,7 +56,12 @@ class SelectorSidePanel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Expanded(child: child),
+            Expanded(
+              child: ScrollConfiguration(
+                behavior: _PanelScrollBehavior(),
+                child: child,
+              ),
+            ),
           ],
         ),
       ),
