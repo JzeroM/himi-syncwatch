@@ -1,0 +1,12 @@
+# 项目根分析配置：排除 vendored 依赖（本地补丁包不参与本项目静态检查）
+# 与构建产物/平台目录（其余条目由 flutter pub get 维护）。
+analyzer:
+  exclude:
+    - third_party/**
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**

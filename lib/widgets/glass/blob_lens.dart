@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -18,10 +17,10 @@ import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 /// - [activity] 由外部弹簧驱动 0..1：0 静止（仅扁平实心 pill、镜片不挂载、
 ///   零 shader 开销），1 活动（pill 淡出、镜片挂载、矩形上下外扩
 ///   [expansionV]、jelly 果冻形变吃 [velocity]）；
-/// - **彩虹圈自绘**（[ChromaRingPainter]）：包 shader 色散刻意微弱
-///   （chromatic × 0.12 → 0.06 逻辑像素，亚像素不可见），此环独立于
-///   shader 结构参数，屏混光谱环沿水珠内缘，透明度随 [activity] 淡入，
-///   静止不挂载、移动中任何背景与引擎下都肉眼可见；
+/// - **彩虹圈 = shader 真色散 + 光谱边光**（vendored 包 [PATCH himi] 补丁）：
+///   色散系数 0.12→2.0，沿边 14px 带采样真实捕获背景出彩边（只在背后
+///   有对比处出现，随果冻形变流动）；边光按周向角上光谱色、亮瓣随
+///   [LiquidGlassSettings.lightAngle] 扫动 —— 醒目但有机，非贴纸描边；
 /// - quality 按引擎分流：Impeller → premium（原生折射层），
 ///   Skia/Web → standard（interactive_indicator.frag 捕获折射）。
 ///
@@ -142,45 +141,31 @@ class LiquidBlobLens extends StatelessWidget {
                             maxDistortion: isStd ? 0.35 : 0.8,
                             velocityScale: 10,
                           ),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              GlassEffect(
-                                shape: lg.LiquidRoundedRectangle(
-                                  borderRadius: borderRadius,
-                                ),
-                                settings:
-                                    settings.copyWith(visibility: activity),
-                                quality: q,
-                                interactionIntensity: activity,
-                                clipExpansion: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 15,
-                                ),
-                                // std 输入 3.0：×0.35 归一化后 ~1.05px
-                                // 结构性亮边圈，任何背景位置可见
-                                rimThickness: isStd
-                                    ? 3.0
-                                    : settings.effectiveThickness
-                                        .clamp(0.8, 8.0),
-                                ambientRim: settings.ambientRim > 0
-                                    ? settings.ambientRim
-                                    : (isStd ? 0.08 : 0.1),
-                                baseAlphaMultiplier: isStd ? 0.08 : 0.2,
-                                edgeAlphaMultiplier: isStd ? 0.15 : 0.4,
-                                child: const lg.GlassGlow(
-                                  glowColor: Color(0x00000000),
-                                  child: SizedBox.expand(),
-                                ),
-                              ),
-                              // 自绘彩虹圈：屏混光谱环，覆盖在镜片上
-                              CustomPaint(
-                                painter: ChromaRingPainter(
-                                  activity: activity,
-                                  borderRadius: borderRadius,
-                                ),
-                              ),
-                            ],
+                          child: GlassEffect(
+                            shape: lg.LiquidRoundedRectangle(
+                              borderRadius: borderRadius,
+                            ),
+                            settings: settings.copyWith(visibility: activity),
+                            quality: q,
+                            interactionIntensity: activity,
+                            clipExpansion: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 15,
+                            ),
+                            // std 输入 3.0：×0.35 归一化后 ~1.05px
+                            // 结构性亮边圈，任何背景位置可见
+                            rimThickness: isStd
+                                ? 3.0
+                                : settings.effectiveThickness.clamp(0.8, 8.0),
+                            ambientRim: settings.ambientRim > 0
+                                ? settings.ambientRim
+                                : (isStd ? 0.08 : 0.1),
+                            baseAlphaMultiplier: isStd ? 0.08 : 0.2,
+                            edgeAlphaMultiplier: isStd ? 0.15 : 0.4,
+                            child: const lg.GlassGlow(
+                              glowColor: Color(0x00000000),
+                              child: SizedBox.expand(),
+                            ),
                           ),
                         ),
                       ),
@@ -193,64 +178,4 @@ class LiquidBlobLens extends StatelessWidget {
       ),
     );
   }
-}
-
-/// 自绘彩虹圈（屏混光谱环）：移动态沿水珠内缘，随 [activity] 淡入。
-///
-/// 包 shader 的色散刻意微弱（`chromatic × 0.12` → 0.06 逻辑像素，
-/// 亚像素不可见），标准/原生路径上都不可能肉眼可见；此环独立于
-/// shader 结构参数，在任何背景与引擎下都稳定显示，静止不挂载。
-class ChromaRingPainter extends CustomPainter {
-  const ChromaRingPainter({
-    required this.activity,
-    required this.borderRadius,
-  });
-
-  /// 活动量 0..1（环强度与透明度）。
-  final double activity;
-
-  /// 与镜片同圆角（25 = 半圆直边）。
-  final double borderRadius;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final t = activity.clamp(0.0, 1.0);
-    if (t <= 0.02 || size.isEmpty) return;
-    final alpha = 0.55 * t;
-    const colors = [
-      Color(0xFFFF453A), // 红
-      Color(0xFFFFD60A), // 黄
-      Color(0xFF32D74B), // 绿
-      Color(0xFF64D2FF), // 青
-      Color(0xFF0A84FF), // 蓝
-      Color(0xFFBF5AF2), // 紫
-      Color(0xFFFF453A), // 闭合回红
-    ];
-    final rect = Offset.zero & size;
-    final shader = SweepGradient(
-      colors: [for (final c in colors) c.withValues(alpha: c.a * alpha)],
-      transform: const GradientRotation(-math.pi / 2),
-    ).createShader(rect);
-
-    const strokeWidth = 9.0;
-    final rrect = RRect.fromRectAndRadius(
-      rect.deflate(strokeWidth / 2),
-      Radius.circular(
-        (borderRadius - strokeWidth / 2).clamp(0.0, double.infinity),
-      ),
-    );
-    final paint = Paint()
-      ..shader = shader
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      // 轻微羽化：环压在镜片边缘内，外沿带一点溢出光晕
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5)
-      // 屏混：暗背景上彩虹最亮，亮背景不发灰
-      ..blendMode = BlendMode.screen;
-    canvas.drawRRect(rrect, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant ChromaRingPainter old) =>
-      old.activity != activity || old.borderRadius != borderRadius;
 }

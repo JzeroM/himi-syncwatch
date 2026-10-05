@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -222,11 +224,13 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   ///   activity=0 扁平实心胶囊（无明显边框、镜片不挂载、零 shader 开销）；
   /// - 拖动/点击飞行 activity→1：宽高同弹簧放大 ×[_activeScale]
   ///   （纯整体放大，不拉长不压扁），真折射镜片挂载（`blur: 0.01`
-  ///   打开 Skia 背景捕获），矩形上下各外扩 6px 超出胶囊，自绘彩虹圈
-  ///   与折射只在移动过程出现，jelly 果冻形变吃 [_blobVelocity]；
+  ///   打开 Skia 背景捕获），矩形上下各外扩 6px 超出胶囊；真色散
+  ///   彩边 + 光谱边光（vendored 包 [PATCH himi]）与折射只在移动
+  ///   过程出现，jelly 果冻形变吃 [_blobVelocity]；
   /// - `settings.thickness/saturation/lightIntensity` 取设置滑杆实时值，
   ///   `ambientRim/glowIntensity/ambientStrength/edgeAbsorption` 强化
   ///   结构性亮边圈与内壁暗带（补偿包内标准路径归一化，位置无关可见）；
+  ///   `lightAngle` 随水珠位置扫动 → 光谱边光的色相/亮瓣随移动"流动"；
   /// - 镜片作胶囊的兄弟层渲染，溢出不被任何裁剪层吃掉。
   /// `glassUi` 关闭时降级为原半透明白色装饰（navBlob key 与装饰参数不变）。
   Widget _buildBlob(double left, double width) {
@@ -267,7 +271,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       glassColor: Colors.white.withValues(alpha: 0.14),
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-      // 色散固定加强（忽略滑杆）：配合自绘彩虹圈保证移动中肉眼明显
+      // 色散固定加强（忽略滑杆）：配合 vendored shader 真色散补丁
+      //（×2.0）在边缘出 ~1px/侧 RGB 彩边
       chromaticAberration: 0.5,
       lightIntensity:
           tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
@@ -279,6 +284,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       glowIntensity: 2.0,
       ambientStrength: 0.6,
       edgeAbsorption: 0.15,
+      // 光源相位随水珠位置扫动：光谱边光色相与 key/kick 亮瓣绕环流动
+      lightAngle: math.pi / 2 + (_blobT - 0.5) * math.pi,
     );
 
     return lg.SpringBuilder(

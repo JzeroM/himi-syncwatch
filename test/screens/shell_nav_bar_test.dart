@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -90,16 +92,6 @@ Finder _expandedRect(WidgetTester tester) {
     of: find.byKey(_navBlob),
     matching: find.byWidgetPredicate(
       (w) => w is Positioned && w.top != null && w.top! <= -6.0,
-    ),
-  );
-}
-
-/// 自绘彩虹圈（静止不挂载，移动中随镜片出现）。
-Finder _ring(WidgetTester tester) {
-  return find.descendant(
-    of: find.byKey(_navBlob),
-    matching: find.byWidgetPredicate(
-      (w) => w is CustomPaint && w.painter is ChromaRingPainter,
     ),
   );
 }
@@ -302,9 +294,15 @@ void main() {
         reason:
             '测试环境 isShaderFilterSupported=false → standard（真机 Impeller → premium）');
 
-    // 静止镜片不挂载（折射/彩虹只在移动出现）
+    // 静止镜片不挂载（折射/光谱边光只在移动出现）
     expect(find.byType(GlassEffect), findsNothing);
-    expect(_ring(tester), findsNothing, reason: '静止不画彩虹圈');
+
+    // 光源相位随水珠位置：首格 t=0.125 → π/2 + (0.125-0.5)π
+    expect(
+      lens.settings.lightAngle,
+      closeTo(math.pi / 2 + (0.125 - 0.5) * math.pi, 1e-9),
+      reason: 'lightAngle 随水珠位置扫动（光谱边光随移动流动的驱动）',
+    );
 
     // 镜片就近提供 avoidsRefraction: false，GlassEffect 走真折射而非 vibrancy
     final inherited = tester.widget<lg.InheritedLiquidGlass>(
@@ -341,11 +339,10 @@ void main() {
     await _pumpNav(tester, onSelect: (_) {});
     final nav = tester.getRect(find.byType(ShellNavBar));
 
-    // 静止：实心底胶囊（无明显边框）、镜片不挂载、无外扩矩形、无彩虹圈
+    // 静止：实心底胶囊（无明显边框）、镜片不挂载、无外扩矩形
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
     expect(find.byType(GlassEffect), findsNothing);
-    expect(_ring(tester), findsNothing);
 
     // 长按进入拖动态，等弹簧把活动量拉到 1
     final gesture = await tester.startGesture(
@@ -372,16 +369,12 @@ void main() {
       reason: '宽高放大倍数一致 → 纯整体放大，不变形',
     );
 
-    // 自绘彩虹圈随移动挂载（静止无），活动量拉满
-    final ringPaints = _ring(tester);
-    expect(ringPaints, findsOneWidget, reason: '移动中画彩虹圈');
-    final ringPainter = (tester.widget<CustomPaint>(ringPaints).painter!);
-    expect((ringPainter as ChromaRingPainter).activity, closeTo(1.0, 0.01));
-
-    // 镜片挂载且捕获参数就位（折射只在移动过程出现）
+    // 镜片挂载且捕获参数就位（折射/真色散只在移动过程出现）
     final effect = tester.widget<GlassEffect>(find.byType(GlassEffect));
     expect(effect.interactionIntensity, 1.0, reason: '镜片活动强度随弹簧到 1');
     expect(effect.settings.blur, 0.01, reason: '拷贝态保留 blur 原值供捕获门槛判定');
+    expect(effect.settings.chromaticAberration, 0.5,
+        reason: '色散输入 0.5，配合 vendored shader ×2.0 出 ~1px 彩边');
     expect(effect.settings.visibility, 1.0,
         reason: 'visibility=activity 已淡入完成');
     expect(effect.quality, lg.GlassQuality.standard,
@@ -397,7 +390,7 @@ void main() {
       reason: '外扩矩形祖先链无 ClipRRect，水珠溢出胶囊可见',
     );
 
-    // 松手回落：恢复原大小的扁平静止胶囊，彩虹圈卸载
+    // 松手回落：恢复原大小的扁平静止胶囊，镜片卸载
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -407,7 +400,6 @@ void main() {
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
     expect(find.byType(GlassEffect), findsNothing);
-    expect(_ring(tester), findsNothing, reason: '静止后彩虹圈卸载');
   });
 
   testWidgets('glassUi 关闭：水珠降级为纯装饰，无包玻璃', (tester) async {

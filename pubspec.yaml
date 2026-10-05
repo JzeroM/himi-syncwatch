@@ -31,7 +31,11 @@ dependencies:
   shimmer: ^3.0.0
   go_router: ^14.8.1
   # 液态玻璃（真折射 shader，参数可调）
-  liquid_glass_widgets: ^1.8.1
+  # vendored 1.8.1 + 本地补丁 [PATCH himi]：interactive_indicator.frag
+  # 色散系数 0.12→2.0（upstream 亚像素不可见）与光谱边光（醒目但有机）。
+  # 包更新需手动重新同步并重打补丁。
+  liquid_glass_widgets:
+    path: third_party/liquid_glass_widgets
   # QR Code
   qr_flutter: ^4.1.0
   mobile_scanner: ^6.0.11
