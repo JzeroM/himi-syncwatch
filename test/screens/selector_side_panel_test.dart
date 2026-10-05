@@ -87,29 +87,27 @@ void main() {
       expect(tapped, isTrue);
     });
 
-    testWidgets('长选项列表可上下滚动', (tester) async {
+    testWidgets('倍速面板矮容器下 8 档可滚动到达（回归：Column 裁剪）', (tester) async {
       await tester.pumpWidget(_host(
         SelectorSidePanel(
           title: '倍速',
-          // 20 档 × ~44px > 390px 可视高 → 必须滚动
-          child: ListView(
-            children: [
-              for (var i = 0; i < 20; i++)
-                SideOptionRow(label: '档位$i', selected: false, onTap: () {}),
-            ],
-          ),
+          child: SpeedMenuPanel(current: 1.0, onSelected: (_) {}),
         ),
-        height: 390,
+        // 200px 高度只够显示约 4 档：剩余档位必须靠滚动可达
+        height: 200,
       ));
 
-      final list = tester.state<ScrollableState>(
-        find.byType(Scrollable).first,
-      );
+      final list = tester.state<ScrollableState>(find.byType(Scrollable).first);
       expect(list.position.maxScrollExtent, greaterThan(0),
-          reason: '内容超高时应可滚动');
+          reason: '内容高于面板必须可滚动');
+      // ListView 懒构建：初始只有前几档在可视区
+      expect(find.text('3.0x'), findsNothing);
 
-      await tester.drag(find.text('档位1'), const Offset(0, -120));
+      await tester.drag(find.text('0.5x'), const Offset(0, -300));
       await tester.pumpAndSettle();
+      expect(find.text('3.0x'), findsOneWidget, reason: '滚到底后 3.0x 构建并进入可视区');
+      expect(tester.getRect(find.text('3.0x').last).bottom, lessThan(200),
+          reason: '在面板可视范围内');
       expect(tester.takeException(), isNull);
     });
   });

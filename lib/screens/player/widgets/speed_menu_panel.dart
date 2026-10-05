@@ -34,8 +34,10 @@ class SpeedMenuPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    // ListView（可上下滚动）：档位多、浮层高度有限时 Column 会把
+    // 超出部分直接裁掉（0.5x~1.25x 后不可见）。
+    return ListView(
+      padding: EdgeInsets.zero,
       children: speedOptions.map((speed) {
         final isSelected = (speed - current).abs() < 1e-9;
         return SideOptionRow(
