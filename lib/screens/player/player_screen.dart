@@ -226,6 +226,16 @@ class PlayerScreen extends ConsumerStatefulWidget {
     return '${info.seriesName} – ${episodeCode(info.season, info.number)}';
   }
 
+  /// 按下标取影视信息标题：[index] 为负（初进未选定集）或越界时返回
+  /// 空串。详情页开房 host 初进时 `_episodes` 已有数据而
+  /// `_currentEpisodeIndex` 仍为 -1，直取 `_episodes[index]` 会
+  /// RangeError 令整页白屏（v1.1.97 顶栏影视信息引入的回归）。
+  @visibleForTesting
+  static String mediaTitleAt(List<EpisodeInfo> episodes, int index) {
+    if (index < 0 || index >= episodes.length) return '';
+    return formatMediaTitle(episodes[index]);
+  }
+
   /// S01E02 风格集编号（电影 season/number 为 0，不走此格式）。
   @visibleForTesting
   static String episodeCode(int season, int number) =>
@@ -2601,7 +2611,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               defaultAudioStreamIndex: _embyDefaultAudioIndex,
             );
             // 主持人发送当前播放状态（同步播放进度）
-            if (_isPlayerReady && _currentEpisodeIndex >= 0) {
+            if (_isPlayerReady &&
+                _currentEpisodeIndex >= 0 &&
+                _currentEpisodeIndex < _episodes.length) {
               final position = _player.position / 1000.0;
               LogService().log('Room',
                   '主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
@@ -4119,12 +4131,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 顶栏左上角影视信息；无片单（直链播放）返回空串不渲染。
-  String get _currentEpisodeTitle {
-    if (_episodes.isEmpty || _currentEpisodeIndex >= _episodes.length) {
-      return '';
-    }
-    return PlayerScreen.formatMediaTitle(_episodes[_currentEpisodeIndex]);
-  }
+  String get _currentEpisodeTitle =>
+      PlayerScreen.mediaTitleAt(_episodes, _currentEpisodeIndex);
 
   void _onLockStateChanged() {
     if (mounted) setState(() {});

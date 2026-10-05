@@ -82,6 +82,37 @@ void main() {
     });
   });
 
+  group('mediaTitleAt（详情页开房白屏回归）', () {
+    const movie = EpisodeInfo(id: 'm1', name: '完美世界剧场版');
+    const series = EpisodeInfo(
+      id: 'e1',
+      name: '第一集',
+      season: 1,
+      number: 2,
+      seriesName: '剧名',
+    );
+    final episodes = [movie, series];
+
+    test('index=-1 + 非空列表 → 空串（初进开房的 RangeError 根因）', () {
+      expect(PlayerScreen.mediaTitleAt(episodes, -1), '');
+    });
+
+    test('index 越界 → 空串', () {
+      expect(PlayerScreen.mediaTitleAt(episodes, 2), '');
+      expect(PlayerScreen.mediaTitleAt(episodes, 99), '');
+    });
+
+    test('空列表 → 空串', () {
+      expect(PlayerScreen.mediaTitleAt(const [], -1), '');
+      expect(PlayerScreen.mediaTitleAt(const [], 0), '');
+    });
+
+    test('有效下标 → 正常标题', () {
+      expect(PlayerScreen.mediaTitleAt(episodes, 0), '完美世界剧场版');
+      expect(PlayerScreen.mediaTitleAt(episodes, 1), '剧名 – S01E02');
+    });
+  });
+
   group('PlayerTopBar', () {
     testWidgets('标题与网速回显渲染', (tester) async {
       await tester.pumpWidget(_host(_bar(
