@@ -41,14 +41,14 @@ void main() {
   setUp(PosterPalette.debugReset);
 
   group('compute', () {
-    test('纯色图提取主色并压暗混合', () {
-      final color = PosterPalette.compute(_solidBuffer(100, 100, 200, 60, 40),
-          100, 100)!;
+    test('纯色图提取原始主色', () {
+      final color =
+          PosterPalette.compute(_solidBuffer(100, 100, 200, 60, 40), 100, 100)!;
 
-      // mixed = lerp(原色, deepFallback, 0.45)
-      expect(_red(color), closeTo(200 * 0.55 + 15 * 0.45, 2));
-      expect(_green(color), closeTo(60 * 0.55 + 17 * 0.45, 2));
-      expect(_blue(color), closeTo(40 * 0.55 + 22 * 0.45, 2));
+      // compute 返回 raw（压暗/提亮由 darkenForPage/brightenForPage 派生）
+      expect(_red(color), 200);
+      expect(_green(color), 60);
+      expect(_blue(color), 40);
       expect(_red(color) > _green(color), isTrue);
       expect(_red(color) > _blue(color), isTrue);
     });
@@ -109,6 +109,37 @@ void main() {
     });
   });
 
+  group('brightenForPage', () {
+    test('亮度被夹在 0.5~0.55 区间', () {
+      final color = PosterPalette.brightenForPage(const Color(0xFF3366AA));
+      final lightness = HSLColor.fromColor(color).lightness;
+      expect(lightness, greaterThanOrEqualTo(0.5));
+      expect(lightness, lessThanOrEqualTo(0.55));
+    });
+
+    test('太暗的颜色被提亮到亮度下限', () {
+      final color = PosterPalette.brightenForPage(const Color(0xFF1A1A1A));
+      expect(HSLColor.fromColor(color).lightness, closeTo(0.5, 0.01));
+    });
+
+    test('过亮的颜色被压到亮度上限', () {
+      final color = PosterPalette.brightenForPage(const Color(0xFFF0F0F0));
+      expect(HSLColor.fromColor(color).lightness, closeTo(0.55, 0.01));
+    });
+
+    test('灰色提亮后饱和度保底', () {
+      final color = PosterPalette.brightenForPage(const Color(0xFF808080));
+      final hsl = HSLColor.fromColor(color);
+      expect(hsl.saturation, closeTo(0.25, 0.015));
+    });
+
+    test('饱和颜色提亮后色相保留', () {
+      final color = PosterPalette.brightenForPage(const Color(0xFFCC4422));
+      expect(_red(color), greaterThan(_green(color)));
+      expect(_red(color), greaterThan(_blue(color)));
+    });
+  });
+
   group('pageGradient', () {
     const base = Color(0xFF121212);
 
@@ -125,6 +156,29 @@ void main() {
       expect(gradient.colors.first, accent);
       expect(gradient.colors.last, base);
       expect(gradient.stops, PosterPalette.pageStops);
+    });
+  });
+
+  group('detailGradient', () {
+    const base = Color(0xFF121212);
+
+    test('无亮色时整页保持页面底色', () {
+      final gradient = PosterPalette.detailGradient(null, base);
+      expect(gradient.colors, [base, base, base]);
+      expect(gradient.stops, PosterPalette.detailStops);
+    });
+
+    test('有亮色时三段渐变：顶部亮主色、底部收深（1=A）', () {
+      const bright = Color(0xFF5588CC);
+      final gradient = PosterPalette.detailGradient(bright, base);
+      expect(gradient.colors.length, 3);
+      expect(gradient.colors.first, bright);
+      expect(gradient.stops, PosterPalette.detailStops);
+      // 底段 = lerp(亮色, 底色, 0.62)：收深但不直接触底
+      expect(gradient.colors.last, Color.lerp(bright, base, 0.62));
+      expect(gradient.colors.last, isNot(base));
+      // 中段介于亮色与底段之间
+      expect(gradient.colors[1], Color.lerp(bright, base, 0.30));
     });
   });
 
@@ -221,6 +275,65 @@ void main() {
       expect(PosterPalette.debugCacheLength(), 0);
       expect(PosterPalette.debugImageLoader, isNull);
       expect(PosterPalette.debugTimeout, PosterPalette.defaultTimeout);
+    });
+  });
+
+  group('extractBright', () {
+    test('空 URL 返回 null 且不触发加载', () async {
+      var calls = 0;
+      PosterPalette.debugImageLoader = (url, {headers}) async {
+        calls++;
+        return _solidImage(const Color(0xFFCC4422));
+      };
+
+      expect(await PosterPalette.extractBright(''), isNull);
+      expect(calls, 0);
+    });
+
+    test('与 extract 共享缓存：同图只解码一次、各自派生明暗', () async {
+      var calls = 0;
+      PosterPalette.debugImageLoader = (url, {headers}) async {
+        calls++;
+        return _solidImage(const Color(0xFFCC4422));
+      };
+
+      final dark = await PosterPalette.extract('http://x/1.jpg');
+      final bright = await PosterPalette.extractBright('http://x/1.jpg');
+
+      expect(calls, 1);
+      expect(PosterPalette.debugCacheLength(), 1);
+      // 缓存存 raw，两者均为对同一 raw 的派生
+      expect(dark, PosterPalette.darkenForPage(const Color(0xFFCC4422)));
+      expect(bright, PosterPalette.brightenForPage(const Color(0xFFCC4422)));
+      // 提亮版比压暗版亮
+      expect(HSLColor.fromColor(bright!).lightness,
+          greaterThan(HSLColor.fromColor(dark!).lightness));
+    });
+
+    test('与 extract 并发同 URL 单飞去重', () async {
+      var calls = 0;
+      PosterPalette.debugImageLoader = (url, {headers}) async {
+        calls++;
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        return _solidImage(const Color(0xFF336699));
+      };
+
+      final results = await Future.wait([
+        PosterPalette.extract('http://x/a.jpg'),
+        PosterPalette.extractBright('http://x/a.jpg'),
+      ]);
+
+      expect(calls, 1);
+      expect(results[0], isNotNull);
+      expect(results[1], isNotNull);
+      expect(results[0], isNot(results[1]));
+    });
+
+    test('加载失败返回 null', () async {
+      PosterPalette.debugImageLoader =
+          (url, {headers}) async => throw Exception('boom');
+      expect(await PosterPalette.extractBright('http://x/err.jpg'), isNull);
+      expect(PosterPalette.debugCacheLength(), 0);
     });
   });
 }

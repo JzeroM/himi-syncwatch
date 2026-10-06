@@ -14,6 +14,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -33,6 +34,7 @@ final _item = MediaItem(
 Future<ProviderContainer> _pumpDetail(
   WidgetTester tester, {
   Color? accent,
+  Color? bright,
   FakeEmbyService? emby,
   bool tv = false,
   bool roomMode = false,
@@ -46,6 +48,7 @@ Future<ProviderContainer> _pumpDetail(
       embyServiceProvider
           .overrideWith((ref) => emby ?? FakeEmbyService(item: targetItem)),
       posterColorProvider(_posterUrl).overrideWith((ref) async => accent),
+      posterBrightColorProvider(_posterUrl).overrideWith((ref) async => bright),
     ],
   );
   addTearDown(container.dispose);
@@ -82,6 +85,7 @@ Future<ProviderContainer> _pumpDetailInRouter(
       embyServiceProvider
           .overrideWith((ref) => emby ?? FakeEmbyService(item: item)),
       posterColorProvider(_posterUrl).overrideWith((ref) async => null),
+      posterBrightColorProvider(_posterUrl).overrideWith((ref) async => null),
       ...extraOverrides,
     ],
   );
@@ -158,24 +162,148 @@ LinearGradient _pageGradient(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('取色成功时背景为海报主色垂直渐变', (tester) async {
+  testWidgets('取色成功时背景为亮色主色垂直渐变（1=A）', (tester) async {
+    const bright = Color(0xFF5588CC);
+    await _pumpDetail(tester, bright: bright);
+
+    final gradient = _pageGradient(tester);
+    final base = ThemeData.dark().scaffoldBackgroundColor;
+    expect(gradient.colors.first, bright);
+    expect(gradient.stops, PosterPalette.detailStops);
+    expect(gradient.colors[1], Color.lerp(bright, base, 0.30));
+    expect(gradient.colors.last, Color.lerp(bright, base, 0.62));
+    expect(gradient.colors.last, isNot(base), reason: '底部收深但不触底');
+    expect(find.text('测试影片'), findsWidgets);
+  });
+
+  testWidgets('亮色取色失败回退压暗主色', (tester) async {
     const accent = Color(0xFF3366AA);
     await _pumpDetail(tester, accent: accent);
 
     final gradient = _pageGradient(tester);
     expect(gradient.colors.first, accent);
-    expect(gradient.colors.last, ThemeData.dark().scaffoldBackgroundColor);
-    expect(gradient.colors.length, 3);
+    expect(gradient.stops, PosterPalette.detailStops);
     expect(find.text('测试影片'), findsWidgets);
   });
 
-  testWidgets('取色失败时背景保持页面底色', (tester) async {
+  testWidgets('亮色与压暗取色均失败时背景保持页面底色', (tester) async {
     await _pumpDetail(tester, accent: null);
 
     final gradient = _pageGradient(tester);
     final base = ThemeData.dark().scaffoldBackgroundColor;
     expect(gradient.colors.toSet(), {base});
     expect(find.text('测试影片'), findsWidgets);
+  });
+
+  // ---- TV 详情页：海报整页背景 + 操作行合排 ----
+
+  group('TV 海报背景与操作行合排', () {
+    testWidgets('TV：透明渐变，整页海报背景 + 压暗罩', (tester) async {
+      await _pumpDetail(tester, tv: true);
+
+      final container = tester
+          .widget<AnimatedContainer>(find.byKey(const Key('detailBackground')));
+      final decoration = container.decoration! as BoxDecoration;
+      expect(decoration.gradient, isNull, reason: 'TV 背景由海报 Stack 承担，不再用页面渐变');
+
+      // 整页海报图层 + 上浅下深压暗罩存在
+      expect(find.byKey(const Key('detailBackdrop')), findsOneWidget);
+      expect(find.byKey(const Key('detailBackdropScrim')), findsOneWidget);
+
+      // SliverAppBar flexibleSpace 不再重复铺海报（与整页背景连成一张图）
+      expect(
+        find.descendant(
+          of: find.byType(FlexibleSpaceBar),
+          matching: find.byType(EmbyImage),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('非 TV 回归：渐变仍在且海报仍在 AppBar 内', (tester) async {
+      await _pumpDetail(tester, accent: const Color(0xFF3366AA));
+
+      final gradient = _pageGradient(tester);
+      expect(gradient.colors.first, const Color(0xFF3366AA));
+      expect(find.byKey(const Key('detailBackdrop')), findsNothing);
+      expect(find.byKey(const Key('detailBackdropScrim')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(FlexibleSpaceBar),
+          matching: find.byType(EmbyImage),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('TV：播放按钮缩小、居行首、与字幕音轨同排', (tester) async {
+      final trackItem = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+        mediaStreams: [
+          MediaStream(type: 'Video', codec: 'hevc', width: 1920, height: 1080),
+          MediaStream(type: 'Audio', codec: 'aac', language: 'chi', index: 0),
+          MediaStream(type: 'Audio', codec: 'ac3', language: 'eng', index: 1),
+          MediaStream(
+              type: 'Subtitle', codec: 'srt', language: 'chi', index: 3),
+        ],
+      );
+      await _pumpDetail(tester,
+          tv: true, item: trackItem, emby: FakeEmbyService(item: trackItem));
+
+      final play = find.widgetWithText(FilledButton, '开始播放');
+      final subtitle = find.byKey(const Key('subtitleSelectorButton'));
+      final audio = find.byKey(const Key('audioSelectorButton'));
+      expect(play, findsOneWidget);
+      expect(subtitle, findsOneWidget);
+      expect(audio, findsOneWidget);
+
+      final playRect = tester.getRect(play);
+      final subRect = tester.getRect(subtitle);
+
+      // 同排：中心线基本对齐（Row 居中对齐）
+      expect((playRect.center.dy - subRect.center.dy).abs(), lessThan(8),
+          reason: 'TV 播放与字幕/音轨应合为一行');
+      // 行首：播放在字幕左边
+      expect(playRect.center.dx, lessThan(subRect.center.dx));
+      // 缩小：不再 Expanded 占半行（800 宽下半行约 378）
+      expect(playRect.width, lessThan(250), reason: 'TV 播放按钮应为紧凑宽度');
+      expect(playRect.height, lessThanOrEqualTo(44),
+          reason: 'TV 播放按钮应缩小到约 40 高');
+    });
+
+    testWidgets('非 TV 回归：播放与选择器仍分两行、播放占半行', (tester) async {
+      final trackItem = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+        mediaStreams: [
+          MediaStream(type: 'Video', codec: 'hevc', width: 1920, height: 1080),
+          MediaStream(type: 'Audio', codec: 'aac', language: 'chi', index: 0),
+          MediaStream(type: 'Audio', codec: 'ac3', language: 'eng', index: 1),
+          MediaStream(
+              type: 'Subtitle', codec: 'srt', language: 'chi', index: 3),
+        ],
+      );
+      await _pumpDetail(tester,
+          item: trackItem, emby: FakeEmbyService(item: trackItem));
+
+      final playRect =
+          tester.getRect(find.widgetWithText(FilledButton, '开始播放'));
+      final subRect =
+          tester.getRect(find.byKey(const Key('subtitleSelectorButton')));
+
+      // 分两行：选择器在播放下方
+      expect(subRect.top, greaterThan(playRect.bottom));
+      expect((playRect.center.dy - subRect.center.dy).abs(), greaterThan(30));
+      // 半行宽（800 宽下 Expanded 约 378）
+      expect(playRect.width, greaterThan(300));
+    });
   });
 
   testWidgets('跨服务器详情按 serverId 使用来源服务器的服务', (tester) async {
@@ -199,6 +327,7 @@ void main() {
           return FakeEmbyService(item: _item);
         }),
         posterColorProvider(_posterUrl).overrideWith((ref) async => null),
+        posterBrightColorProvider(_posterUrl).overrideWith((ref) async => null),
       ],
     );
     addTearDown(container.dispose);
@@ -1157,6 +1286,7 @@ void main() {
         embyServiceProvider.overrideWith((ref) => FakeEmbyService(
             item: series, itemsByParent: episodesByParent, seasons: seasons)),
         posterColorProvider(_posterUrl).overrideWith((ref) async => null),
+        posterBrightColorProvider(_posterUrl).overrideWith((ref) async => null),
       ]);
       addTearDown(container.dispose);
       final router = GoRouter(

@@ -15,3 +15,16 @@ final posterColorProvider =
   };
   return PosterPalette.extract(url, headers: headers);
 });
+
+/// 详情页背景亮色主色（[PosterPalette.extractBright] 派生，与
+/// [posterColorProvider] 共享底层缓存，同图只解码一次）。
+final posterBrightColorProvider =
+    FutureProvider.autoDispose.family<Color?, String>((ref, url) async {
+  if (url.isEmpty) return null;
+  final config = ref.watch(embyConfigProvider);
+  final token = config?.accessToken;
+  final headers = <String, String>{
+    if (token != null && token.isNotEmpty) 'X-Emby-Token': token,
+  };
+  return PosterPalette.extractBright(url, headers: headers);
+});

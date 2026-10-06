@@ -962,8 +962,32 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Widget build(BuildContext context) {
     final accentUrl = _item?.backdropUrl ?? _item?.posterUrl ?? '';
     final accent = ref.watch(posterColorProvider(accentUrl)).valueOrNull;
+    final bright = ref.watch(posterBrightColorProvider(accentUrl)).valueOrNull;
     final base = Theme.of(context).scaffoldBackgroundColor;
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+
+    final content = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _loadDetails,
+                      child: const Text('重试'),
+                    ),
+                  ],
+                ),
+              )
+            : _buildContent(bright ?? accent, base);
 
     return Scaffold(
       extendBody: true,
@@ -971,32 +995,50 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         key: const Key('detailBackground'),
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          gradient: PosterPalette.pageGradient(accent, base),
-        ),
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back),
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(_error!,
-                            style: const TextStyle(color: Colors.red)),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _loadDetails,
-                          child: const Text('重试'),
-                        ),
-                      ],
+        // 非 TV：亮色主色垂直渐变（1=A，中上亮、底部收深）；
+        // TV：透明底，海报由下方 Stack 做整页固定背景。
+        decoration: tvMode
+            ? const BoxDecoration()
+            : BoxDecoration(
+                gradient: PosterPalette.detailGradient(bright ?? accent, base),
+              ),
+        child: !tvMode
+            ? content
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  // 图片加载失败兜底底色
+                  ColoredBox(color: base),
+                  if (_item != null) ...[
+                    // 整页海报（backdrop 优先），滚动内容叠其上
+                    Positioned.fill(
+                      child: EmbyImage(
+                        key: const Key('detailBackdrop'),
+                        url: _item!.backdropUrl ?? _item!.posterUrl,
+                        fit: BoxFit.cover,
+                        errorWidget: const SizedBox.shrink(),
+                      ),
                     ),
-                  )
-                : _buildContent(accent, base),
+                    // 压暗罩：上浅下深，保证标题与列表可读
+                    DecoratedBox(
+                      key: const Key('detailBackdropScrim'),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.35),
+                            Colors.black.withValues(alpha: 0.45),
+                            Colors.black.withValues(alpha: 0.85),
+                          ],
+                          stops: const [0.0, 0.4, 0.85],
+                        ),
+                      ),
+                    ),
+                  ],
+                  content,
+                ],
+              ),
       ),
       // 播放/建房按钮已统一进内容流（_buildActionRow），仅一起看房间
       // （roomMode）手机端保留胶囊底栏的「加入资源」入口。
@@ -1006,9 +1048,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  /// 操作区（简介上方，全平台统一）：第一行播放/建房主按钮（玻璃质感、
-  /// 各占约半行），第二行字幕/音轨选择器图标行（[TrackActionRow] 内部按
-  /// 轨道有无自适应显隐）。
+  /// 操作区（简介上方）：
+  /// - 非 TV：第一行播放/建房主按钮（玻璃质感、各占约半行），第二行
+  ///   字幕/音轨选择器图标行（[TrackActionRow] 内部按轨道有无自适应显隐）
+  /// - TV：单行合排——播放按钮缩小居行首，版本/字幕/音轨图标行紧随其后
   ///
   /// 按钮外层 [GlassContainer] 提供模糊+高光描边（glassUi 关闭时降级深色
   /// 纯色）。TV 模式下 [TvFocusable] 提供焦点环/放大，第一个按钮 autofocus；
@@ -1020,14 +1063,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     var isFirst = true;
 
-    // 玻璃按钮统一外观：透明底、白字、主色图标、48 高
-    ButtonStyle glassStyle() => FilledButton.styleFrom(
+    // 玻璃按钮统一外观：透明底、白字、主色图标；TV 合行时紧凑
+    // （shrinkWrap 去掉 48 最小点击区 → 约 40 高、宽度随内容），
+    // 非 TV 占半行高 48。
+    ButtonStyle glassStyle({bool compact = false}) => FilledButton.styleFrom(
           backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
-          minimumSize: const Size(0, 48),
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          minimumSize: Size(0, compact ? 40 : 48),
+          padding: EdgeInsets.symmetric(vertical: compact ? 10 : 14),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
           shadowColor: Colors.transparent,
+          tapTargetSize: compact
+              ? MaterialTapTargetSize.shrinkWrap
+              : MaterialTapTargetSize.padded,
         );
 
     Widget action({
@@ -1074,9 +1122,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           radius: 14,
           button: FilledButton.icon(
             onPressed: item.isSeries ? _startPlaySeries : _startPlay,
-            icon: Icon(Icons.play_arrow, color: scheme.primary),
+            icon: Icon(Icons.play_arrow,
+                color: scheme.primary, size: tvMode ? 20 : 24),
             label: const Text('开始播放'),
-            style: glassStyle(),
+            style: glassStyle(compact: tvMode),
           ),
         ));
       }
@@ -1095,6 +1144,24 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       }
     }
 
+    final trackRow = _buildTrackActionRow(item);
+
+    // TV：单行合排——播放（缩小）居行首，版本/字幕/音轨图标行紧随；
+    // 无可播放项（剧集无集数据 / TV 房间模式无入口）时仅图标行。
+    // TV 下 children 至多一个（建房/加入资源均为非 TV 才加入）。
+    if (tvMode) {
+      return Row(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            children[i],
+          ],
+          if (children.isNotEmpty) const SizedBox(width: 8),
+          trackRow,
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1108,7 +1175,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ],
         ),
         const SizedBox(height: 4),
-        _buildTrackActionRow(item),
+        trackRow,
       ],
     );
   }
@@ -1167,6 +1234,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
+  /// [accent] 为详情页亮色主色（[PosterPalette.detailGradient] 同源，
+  /// 取色失败回退 null → 底色/深色衔接）。
   Widget _buildContent(Color? accent, Color base) {
     if (_item == null) return const SizedBox();
     final item = _item!;
@@ -1193,27 +1262,31 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             background: Stack(
               fit: StackFit.expand,
               children: [
-                EmbyImage(
-                  url: item.backdropUrl ?? item.posterUrl,
-                  fit: BoxFit.cover,
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.4),
-                        if (accent != null)
-                          Color.lerp(accent, base, 0.6)!
-                        else
-                          Colors.black.withValues(alpha: 0.9),
-                      ],
-                      stops: const [0.0, 0.5, 1.0],
+                // TV：海报已做整页背景，此处不再重复铺图/渐变，
+                // 标题区直接坐在整页背景上。
+                if (!tv) ...[
+                  EmbyImage(
+                    url: item.backdropUrl ?? item.posterUrl,
+                    fit: BoxFit.cover,
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.4),
+                          if (accent != null)
+                            Color.lerp(accent, base, 0.5)!
+                          else
+                            Colors.black.withValues(alpha: 0.9),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ),
                     ),
                   ),
-                ),
+                ],
                 Positioned(
                   left: 16,
                   right: 16,
