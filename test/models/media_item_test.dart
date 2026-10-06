@@ -127,4 +127,33 @@ void main() {
       );
     });
   });
+
+  group('已观看态 UserData.Played 解析', () {
+    test('UserData.Played=true → isWatched=true', () {
+      final item = MediaItem.fromJson({
+        'Id': 'm1',
+        'Name': '电影',
+        'Type': 'Movie',
+        'UserData': {'Played': true},
+      });
+      expect(item.isWatched, isTrue);
+    });
+
+    test('缺 UserData / Played → isWatched=false', () {
+      expect(
+        MediaItem.fromJson({'Id': 'm1', 'Name': '电影', 'Type': 'Movie'})
+            .isWatched,
+        isFalse,
+      );
+      expect(
+        MediaItem.fromJson({
+          'Id': 'm1',
+          'Name': '电影',
+          'Type': 'Movie',
+          'UserData': <String, dynamic>{},
+        }).isWatched,
+        isFalse,
+      );
+    });
+  });
 }

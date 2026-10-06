@@ -269,6 +269,9 @@ class MediaItem {
   /// 当前用户是否已收藏（Emby `UserData.IsFavorite`；收藏功能用）。
   final bool isFavorite;
 
+  /// 当前用户是否已观看（Emby `UserData.Played`；标记已观看功能用）。
+  final bool isWatched;
+
   MediaItem({
     required this.id,
     required this.name,
@@ -291,6 +294,7 @@ class MediaItem {
     this.mediaSources = const [],
     this.premiereDate,
     this.isFavorite = false,
+    this.isWatched = false,
   });
 
   factory MediaItem.fromJson(Map<String, dynamic> json, {String? serverUrl}) {
@@ -343,6 +347,7 @@ class MediaItem {
       premiereDate: DateTime.tryParse(json['PremiereDate'] as String? ?? ''),
       isFavorite:
           (json['UserData'] as Map<String, dynamic>?)?['IsFavorite'] == true,
+      isWatched: (json['UserData'] as Map<String, dynamic>?)?['Played'] == true,
     );
   }
 

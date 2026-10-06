@@ -2201,4 +2201,103 @@ void main() {
       expect(find.byIcon(Icons.favorite), findsNothing);
     });
   });
+
+  group('标记已观看', () {
+    testWidgets('电影页：点对勾→实心、再点→线框，调用 setWatched', (tester) async {
+      final fake = FakeEmbyService(item: _item);
+      await _pumpDetail(tester, emby: fake);
+
+      final mark = find.byKey(const Key('watchedButton'));
+      expect(mark, findsOneWidget);
+      await tester.ensureVisible(mark);
+      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+
+      await tester.tap(mark);
+      await tester.pump();
+      await tester.pump();
+      expect(fake.watchedCalls.last.id, 'm1');
+      expect(fake.watchedCalls.last.watched, isTrue);
+      expect(find.byIcon(Icons.check_circle), findsOneWidget);
+
+      await tester.tap(mark);
+      await tester.pump();
+      await tester.pump();
+      expect(fake.watchedCalls.last.watched, isFalse);
+      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+    });
+
+    testWidgets('标记失败 → 回滚为线框', (tester) async {
+      final fake = FakeEmbyService(item: _item)..watchedSetResult = false;
+      await _pumpDetail(tester, emby: fake);
+
+      final mark = find.byKey(const Key('watchedButton'));
+      await tester.ensureVisible(mark);
+      await tester.tap(mark);
+      await tester.pump();
+      await tester.pump();
+
+      expect(fake.watchedCalls.single.watched, isTrue);
+      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+      expect(find.byIcon(Icons.check_circle), findsNothing);
+    });
+
+    testWidgets('剧集页：标记整部剧 → 调用系列 id 且所有集对勾实心', (tester) async {
+      final fake = FakeEmbyService(
+        item: series,
+        itemsByParent: episodesByParent,
+        seasons: seasons,
+      );
+      await _pumpDetail(tester, item: series, emby: fake);
+
+      final mark = find.byKey(const Key('watchedButton'));
+      await tester.ensureVisible(mark);
+      await tester.tap(mark);
+      await tester.pump();
+      await tester.pump();
+
+      expect(fake.watchedCalls.single.id, 'sv1');
+      expect(fake.watchedCalls.single.watched, isTrue);
+      // 第1季 e1/e2 对勾变实心
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('episodeWatched_e1')),
+          matching: find.byIcon(Icons.check_circle),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('episodeWatched_e2')),
+          matching: find.byIcon(Icons.check_circle),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('剧集页：点某集卡右下角对勾 → 只标记该集', (tester) async {
+      // 放大视口：剧集横卡在默认 600 高之外，需可见才能命中触摸控件
+      tester.view.physicalSize = const Size(900, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final fake = FakeEmbyService(
+        item: series,
+        itemsByParent: episodesByParent,
+        seasons: seasons,
+      );
+      await _pumpDetail(tester, item: series, emby: fake);
+
+      final e1 = find.byKey(const Key('episodeWatched_e1'));
+      expect(e1, findsOneWidget);
+      await tester.ensureVisible(e1);
+      await tester.tap(e1);
+      await tester.pump();
+      await tester.pump();
+
+      expect(fake.watchedCalls.last.id, 'e1');
+      expect(fake.watchedCalls.last.watched, isTrue);
+      // 只动该集，主对勾不受影响（仍线框）
+      expect(find.byIcon(Icons.check_circle_outline), findsWidgets);
+    });
+  });
 }

@@ -39,6 +39,12 @@ class SeriesSections extends StatelessWidget {
   /// 点击某集爱心（收藏/取消）；null = 不显示爱心。
   final ValueChanged<String>? onToggleFavorite;
 
+  /// 已观看的集 id（横卡右下角对勾实心/线框）。
+  final Set<String> watchedIds;
+
+  /// 点击某集对勾（标记/取消已观看）；null = 不显示对勾。
+  final ValueChanged<String>? onToggleWatched;
+
   const SeriesSections({
     super.key,
     required this.seasons,
@@ -55,6 +61,8 @@ class SeriesSections extends StatelessWidget {
     this.episodeRowController,
     this.favoriteIds = const {},
     this.onToggleFavorite,
+    this.watchedIds = const {},
+    this.onToggleWatched,
   });
 
   /// 横卡水平步长：卡宽 240 + 右侧间距 12。
@@ -106,6 +114,8 @@ class SeriesSections extends StatelessWidget {
           controller: episodeRowController,
           favoriteIds: favoriteIds,
           onToggleFavorite: onToggleFavorite,
+          watchedIds: watchedIds,
+          onToggleWatched: onToggleWatched,
         ),
         const SizedBox(height: 20),
         const Text(
@@ -261,10 +271,14 @@ class _SeasonEpisodeRow extends StatelessWidget {
     this.rowKey,
     this.favoriteIds = const {},
     this.onToggleFavorite,
+    this.watchedIds = const {},
+    this.onToggleWatched,
   });
 
   final Set<String> favoriteIds;
   final ValueChanged<String>? onToggleFavorite;
+  final Set<String> watchedIds;
+  final ValueChanged<String>? onToggleWatched;
 
   static const double _cardWidth = 240;
   static const double _cardGap = 12;
@@ -293,6 +307,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
           final ep = episodes[index];
           final selected = ep.id == highlightEpisodeId;
           final favorited = favoriteIds.contains(ep.id);
+          final watched = watchedIds.contains(ep.id);
           final card = Container(
             key: Key('episodeCard_${ep.id}'),
             width: _cardWidth,
@@ -345,6 +360,31 @@ class _SeasonEpisodeRow extends StatelessWidget {
                                         : Icons.favorite_border,
                                     size: 16,
                                     color: favorited ? primary : Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          // 每集已观看对勾（图片右下角；触摸操作）
+                          if (onToggleWatched != null)
+                            Positioned(
+                              bottom: 4,
+                              right: 4,
+                              child: GestureDetector(
+                                key: Key('episodeWatched_${ep.id}'),
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => onToggleWatched!(ep.id),
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    watched
+                                        ? Icons.check_circle
+                                        : Icons.check_circle_outline,
+                                    size: 16,
+                                    color: watched ? primary : Colors.white,
                                   ),
                                 ),
                               ),

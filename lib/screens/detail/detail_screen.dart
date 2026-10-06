@@ -87,6 +87,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 已收藏的集 id 集合（剧集页横卡爱心的乐观态）。
   final Set<String> _favoriteEpisodeIds = {};
 
+  /// 主条目已观看态（电影页=电影；电视剧页=整部剧）。
+  bool _isWatched = false;
+
+  /// 已观看的集 id 集合（剧集页横卡对勾的乐观态）。
+  final Set<String> _watchedEpisodeIds = {};
+
   /// 横卡行挂点与水平滚动控制器：选集后定位高亮卡。
   final _episodeRowKey = GlobalKey();
   final _episodeRowController = ScrollController();
@@ -190,6 +196,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _favoriteEpisodeIds
           ..clear()
           ..addAll(_episodes.where((e) => e.isFavorite).map((e) => e.id));
+        _isWatched = item?.isWatched ?? false;
+        _watchedEpisodeIds
+          ..clear()
+          ..addAll(_episodes.where((e) => e.isWatched).map((e) => e.id));
         _isLoading = false;
       });
     } catch (e) {
@@ -249,6 +259,68 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       return;
     }
     ref.read(favoritesRevisionProvider.notifier).state++;
+  }
+
+  /// 标记 / 取消已观看主条目（电影=电影；电视剧=整部剧）。电视剧标记时
+  /// 乐观地把该剧所有集的对勾一并置为已看/未看（Emby 会级联），失败整体回滚。
+  Future<void> _toggleWatched() async {
+    final item = _item;
+    if (item == null) return;
+    final next = !_isWatched;
+    final prevEpisodes = Set<String>.from(_watchedEpisodeIds);
+    setState(() {
+      _isWatched = next;
+      if (item.isSeries) {
+        if (next) {
+          _watchedEpisodeIds.addAll(_episodes.map((e) => e.id));
+        } else {
+          _watchedEpisodeIds.clear();
+        }
+      }
+    });
+    final ok = await ref
+        .read(embyServiceForProvider(widget.serverId))
+        .setWatched(item.id, next);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _isWatched = !next;
+        _watchedEpisodeIds
+          ..clear()
+          ..addAll(prevEpisodes);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('标记已观看失败，请检查网络')),
+      );
+    }
+  }
+
+  /// 标记 / 取消某一集已观看（剧集页横卡对勾）。乐观更新，失败回滚+提示。
+  Future<void> _toggleEpisodeWatched(String episodeId) async {
+    final next = !_watchedEpisodeIds.contains(episodeId);
+    setState(() {
+      if (next) {
+        _watchedEpisodeIds.add(episodeId);
+      } else {
+        _watchedEpisodeIds.remove(episodeId);
+      }
+    });
+    final ok = await ref
+        .read(embyServiceForProvider(widget.serverId))
+        .setWatched(episodeId, next);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        if (next) {
+          _watchedEpisodeIds.remove(episodeId);
+        } else {
+          _watchedEpisodeIds.add(episodeId);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('标记已观看失败，请检查网络')),
+      );
+    }
   }
 
   /// 服务端季列表为空时的兜底：按集的 `parentIndexNumber` 分组合成季
@@ -1336,6 +1408,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         // 主爱心：电影收藏电影、电视剧收藏整部剧（与选中集无关）
         isFavorite: _isFavorite,
         onToggleFavorite: _toggleFavorite,
+        isWatched: _isWatched,
+        onToggleWatched: _toggleWatched,
       );
     }
     return TrackActionRow(
@@ -1349,9 +1423,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       // 非 null（可能是空选择）以区别于电影模式的「读全局 provider」
       selection: _episodeSelections[target.id] ?? const TrackSelection(),
       onSelectionChanged: (next) => _setEpisodeSelection(target.id, next),
-      // 主爱心仍是整部剧（每集收藏在横卡上）
+      // 主爱心/已观看仍是整部剧（每集收藏/已看在横卡上）
       isFavorite: _isFavorite,
       onToggleFavorite: _toggleFavorite,
+      isWatched: _isWatched,
+      onToggleWatched: _toggleWatched,
     );
   }
 
@@ -1707,6 +1783,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     episodeRowController: _episodeRowController,
                     favoriteIds: _favoriteEpisodeIds,
                     onToggleFavorite: _toggleEpisodeFavorite,
+                    watchedIds: _watchedEpisodeIds,
+                    onToggleWatched: _toggleEpisodeWatched,
                     tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
                   ),
                 ],

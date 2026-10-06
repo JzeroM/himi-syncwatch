@@ -377,6 +377,24 @@ void main() {
       expect(items.single.isFavorite, isTrue);
     });
   });
+
+  group('已观看接口', () {
+    test('setWatched(true) 走 POST /Users/{id}/PlayedItems/{itemId}', () async {
+      final ok = await service.setWatched('item-9', true);
+      expect(ok, isTrue);
+      final req = captured.single;
+      expect(req.method, 'POST');
+      expect(req.path, '/Users/user-1/PlayedItems/item-9');
+    });
+
+    test('setWatched(false) 走 DELETE 同路径', () async {
+      final ok = await service.setWatched('item-9', false);
+      expect(ok, isTrue);
+      final req = captured.single;
+      expect(req.method, 'DELETE');
+      expect(req.path, '/Users/user-1/PlayedItems/item-9');
+    });
+  });
 }
 
 /// 忽略未使用的 future，避免 lint 告警。

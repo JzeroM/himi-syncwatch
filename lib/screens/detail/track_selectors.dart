@@ -40,6 +40,12 @@ class TrackActionRow extends ConsumerWidget {
   /// 点击收藏/取消收藏（非空即显示爱心控件）。
   final VoidCallback? onToggleFavorite;
 
+  /// 已观看态（配合 [onToggleWatched] 显示对勾控件）。
+  final bool? isWatched;
+
+  /// 点击标记/取消已观看（非空即显示对勾控件）。
+  final VoidCallback? onToggleWatched;
+
   const TrackActionRow({
     super.key,
     required this.item,
@@ -51,6 +57,8 @@ class TrackActionRow extends ConsumerWidget {
     this.onSelectionChanged,
     this.isFavorite,
     this.onToggleFavorite,
+    this.isWatched,
+    this.onToggleWatched,
   });
 
   @override
@@ -59,7 +67,12 @@ class TrackActionRow extends ConsumerWidget {
     final showSubtitle = subtitleStreams.isNotEmpty;
     final showAudio = audioStreams.length > 1;
     final showFavorite = onToggleFavorite != null;
-    if (!showVersion && !showSubtitle && !showAudio && !showFavorite) {
+    final showWatched = onToggleWatched != null;
+    if (!showVersion &&
+        !showSubtitle &&
+        !showAudio &&
+        !showFavorite &&
+        !showWatched) {
       return const SizedBox.shrink();
     }
 
@@ -131,6 +144,15 @@ class TrackActionRow extends ConsumerWidget {
           icon: (isFavorite ?? false) ? Icons.favorite : Icons.favorite_border,
           active: isFavorite ?? false,
           onTap: onToggleFavorite!,
+        ),
+      if (showWatched)
+        button(
+          key: const Key('watchedButton'),
+          icon: (isWatched ?? false)
+              ? Icons.check_circle
+              : Icons.check_circle_outline,
+          active: isWatched ?? false,
+          onTap: onToggleWatched!,
         ),
     ];
 

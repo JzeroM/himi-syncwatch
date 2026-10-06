@@ -117,6 +117,12 @@ class FakeEmbyService extends EmbyService {
   /// setFavorite 返回值（false 模拟失败 → 详情页应回滚）。
   bool favoriteSetResult = true;
 
+  /// setWatched 收到的调用记录（id + 目标已观看态）。
+  final List<({String id, bool watched})> watchedCalls = [];
+
+  /// setWatched 返回值（false 模拟失败 → 详情页应回滚）。
+  bool watchedSetResult = true;
+
   /// 按 parentId 精确返回（用于模拟空媒体库）；未命中的库回退到 [items]。
   final Map<String, List<MediaItem>> itemsByParent;
 
@@ -147,6 +153,12 @@ class FakeEmbyService extends EmbyService {
   Future<bool> setFavorite(String itemId, bool favorite) async {
     favoriteCalls.add((id: itemId, favorite: favorite));
     return favoriteSetResult;
+  }
+
+  @override
+  Future<bool> setWatched(String itemId, bool watched) async {
+    watchedCalls.add((id: itemId, watched: watched));
+    return watchedSetResult;
   }
 
   @override

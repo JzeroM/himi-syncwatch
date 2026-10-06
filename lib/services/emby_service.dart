@@ -377,6 +377,24 @@ class EmbyService {
     }
   }
 
+  /// 标记已观看 / 取消已观看：
+  /// Emby `POST|DELETE /Users/{userId}/PlayedItems/{itemId}`。
+  /// 对剧集 id 调用即标记整部剧（Emby 会级联到其各集）。
+  /// 成功返回 true；失败返回 false，由调用方回滚乐观 UI。
+  Future<bool> setWatched(String itemId, bool watched) async {
+    try {
+      final path = '/Users/$_userId/PlayedItems/$itemId';
+      if (watched) {
+        await _dio.post(path);
+      } else {
+        await _dio.delete(path);
+      }
+      return true;
+    } on DioException {
+      return false;
+    }
+  }
+
   /// 当前服务器全部收藏条目（电影/剧集/单集），供收藏页分组展示。
   /// `Filters=IsFavorite` 服务端过滤；字段含 `UserData` 以便回显收藏态。
   /// 失败返回空列表。
