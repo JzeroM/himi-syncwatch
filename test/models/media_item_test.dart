@@ -156,4 +156,29 @@ void main() {
       );
     });
   });
+
+  group('续播进度 UserData 解析', () {
+    test('PlaybackPositionTicks → playbackPositionMs，PlayedPercentage 透传', () {
+      final item = MediaItem.fromJson({
+        'Id': 'e1',
+        'Name': '第1集',
+        'Type': 'Episode',
+        'UserData': {
+          'PlaybackPositionTicks': 1690000000, // 169s
+          'PlayedPercentage': 12.5,
+          'Played': false,
+        },
+      });
+      expect(item.playbackPositionMs, 169000);
+      expect(item.playedPercentage, 12.5);
+      expect(item.isWatched, isFalse);
+    });
+
+    test('缺字段 → 0', () {
+      final item =
+          MediaItem.fromJson({'Id': 'm1', 'Name': '电影', 'Type': 'Movie'});
+      expect(item.playbackPositionMs, 0);
+      expect(item.playedPercentage, 0.0);
+    });
+  });
 }

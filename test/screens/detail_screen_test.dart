@@ -2300,4 +2300,63 @@ void main() {
       expect(find.byIcon(Icons.check_circle_outline), findsWidgets);
     });
   });
+
+  group('继续观看', () {
+    MediaItem resumeItem() => MediaItem(
+          id: 'm1',
+          name: '测试影片',
+          type: 'Movie',
+          posterUrl: _posterUrl,
+          overview: '简介。',
+          playbackPositionMs: 169000, // 02:49
+          playedPercentage: 20,
+        );
+
+    testWidgets('有进度：主控件显示「继续 MM:SS」并出现「从头播放」', (tester) async {
+      final item = resumeItem();
+      await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+
+      expect(find.text('继续 02:49'), findsOneWidget);
+      expect(find.byKey(const Key('playFromBeginningButton')), findsOneWidget);
+      expect(find.text('开始播放'), findsNothing);
+    });
+
+    testWidgets('无进度：仍为「开始播放」，无「从头播放」', (tester) async {
+      await _pumpDetail(tester);
+
+      expect(find.text('开始播放'), findsOneWidget);
+      expect(find.byKey(const Key('playFromBeginningButton')), findsNothing);
+    });
+
+    testWidgets('标记已观看后：恢复「开始播放」且「从头播放」消失', (tester) async {
+      final item = resumeItem();
+      final fake = FakeEmbyService(item: item);
+      await _pumpDetail(tester, item: item, emby: fake);
+
+      expect(find.text('继续 02:49'), findsOneWidget);
+
+      final mark = find.byKey(const Key('watchedButton'));
+      await tester.ensureVisible(mark);
+      await tester.tap(mark);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('开始播放'), findsOneWidget);
+      expect(find.textContaining('继续'), findsNothing);
+      expect(find.byKey(const Key('playFromBeginningButton')), findsNothing);
+    });
+
+    testWidgets('点「继续」：路由携带 startMs', (tester) async {
+      final item = resumeItem();
+      await _pumpDetailInRouter(tester, item: item);
+
+      final btn = find.text('继续 02:49');
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.textContaining('startMs=169000'), findsOneWidget);
+    });
+  });
 }

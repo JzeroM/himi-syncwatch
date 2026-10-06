@@ -93,6 +93,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 已观看的集 id 集合（剧集页横卡对勾的乐观态）。
   final Set<String> _watchedEpisodeIds = {};
 
+  /// 播放进度本地覆盖（标记已观看后置 0，隐藏「继续/从头播放」）。
+  int? _resumeMsOverride;
+
   /// 横卡行挂点与水平滚动控制器：选集后定位高亮卡。
   final _episodeRowKey = GlobalKey();
   final _episodeRowController = ScrollController();
@@ -200,6 +203,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _watchedEpisodeIds
           ..clear()
           ..addAll(_episodes.where((e) => e.isWatched).map((e) => e.id));
+        _resumeMsOverride = null;
         _isLoading = false;
       });
     } catch (e) {
@@ -268,8 +272,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (item == null) return;
     final next = !_isWatched;
     final prevEpisodes = Set<String>.from(_watchedEpisodeIds);
+    final prevResume = _resumeMsOverride;
     setState(() {
       _isWatched = next;
+      // 标记已观看/取消后清除本地续播进度 → 播放控件恢复原形态、隐藏「从头播放」
+      _resumeMsOverride = 0;
       if (item.isSeries) {
         if (next) {
           _watchedEpisodeIds.addAll(_episodes.map((e) => e.id));
@@ -285,6 +292,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (!ok) {
       setState(() {
         _isWatched = !next;
+        _resumeMsOverride = prevResume;
         _watchedEpisodeIds
           ..clear()
           ..addAll(prevEpisodes);
@@ -350,7 +358,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   /// 从指定集开播：整部序列化进 [pendingRoomEpisodesProvider] 后跳播放器。
-  void _playEpisode(MediaItem ep) {
+  /// [resume] 为真且该集有进度时携带 `startMs` 续播。
+  void _playEpisode(MediaItem ep, {bool resume = false}) {
     // 该集的预选轨写入全局槽（播放器 _autoSelectDefaultTracks 消费一次）；
     // 无选择时显式置 null，防止残留上一次的电影/他集预选
     final selection = _episodeSelections[ep.id];
@@ -377,6 +386,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       final logo = !widget.roomMode ? _item?.logoUrl : null;
       if (logo != null) {
         query.write('&logo=${Uri.encodeComponent(logo)}');
+      }
+      if (resume && ep.playbackPositionMs > 0) {
+        query.write('&startMs=${ep.playbackPositionMs}');
       }
       context.push('/player/${ep.id}?$query');
     }
@@ -431,6 +443,30 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final seasonEpisodes = _seasonEpisodesOf(_selectedSeason);
     if (seasonEpisodes.isNotEmpty) return seasonEpisodes.first;
     return _episodes.first;
+  }
+
+  /// 续播目标：电影=主条目；电视剧=当前选中集（播放按钮播的就是它）。
+  MediaItem? get _resumeItem =>
+      _item == null ? null : (_item!.isSeries ? _targetEpisode() : _item);
+
+  int get _resumeMs =>
+      _resumeMsOverride ?? _resumeItem?.playbackPositionMs ?? 0;
+
+  double get _resumePct =>
+      (_resumeItem?.playedPercentage ?? 0).clamp(0.0, 100.0);
+
+  /// 是否展示「继续」形态（有进度且未标记已观看）。
+  bool get _offerResume => _resumeMs > 0 && !_isWatched;
+
+  /// `mm:ss` / `h:mm:ss`。
+  String _formatPosition(int ms) {
+    final total = (ms / 1000).floor();
+    final h = total ~/ 3600;
+    final m = (total % 3600) ~/ 60;
+    final s = total % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = s.toString().padLeft(2, '0');
+    return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
   }
 
   /// 目标集选中版本的字幕流；未选版本回退该集顶层流。
@@ -632,7 +668,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   /// 剧集页「开始播放」：播选集器选中的集（未选则该季第一集）。
-  Future<void> _startPlaySeries() async {
+  Future<void> _startPlaySeries({bool resume = false}) async {
     final seasonEpisodes = _seasonEpisodesOf(_selectedSeason);
     if (seasonEpisodes.isEmpty) return;
     final selected = _selectedEpisodeId;
@@ -642,11 +678,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             orElse: () => seasonEpisodes.first,
           )
         : seasonEpisodes.first;
-    _playEpisode(target);
+    _playEpisode(target, resume: resume);
   }
 
   /// 开始播放（多版本先弹选择）。胶囊底栏与 TV 内联按钮共用一份逻辑。
-  Future<void> _startPlay() async {
+  /// [resume] 为真且当前条目有进度时携带 `startMs` 续播。
+  Future<void> _startPlay({bool resume = false}) async {
     final item = _item;
     if (item == null) return;
 
@@ -668,6 +705,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final logo = !widget.roomMode ? item.logoUrl : null;
     if (logo != null) {
       query.write('&logo=${Uri.encodeComponent(logo)}');
+    }
+    if (resume && item.playbackPositionMs > 0) {
+      query.write('&startMs=${item.playbackPositionMs}');
     }
     if (mounted) {
       context.push('/player/${item.id}?${query.toString()}');
@@ -1312,6 +1352,42 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       );
     }
 
+    // 「继续观看」按钮：玻璃底 + 进度填充（按已观看百分比）+ 图标文字。
+    Widget resumeButton({required Future<void> Function() onPressed}) {
+      final label = tvMode ? '继续' : '继续 ${_formatPosition(_resumeMs)}';
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: (_resumePct / 100).clamp(0.0, 1.0),
+              child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+          ),
+          FilledButton(
+            onPressed: onPressed,
+            style: glassStyle(compact: tvMode),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.play_arrow,
+                    color: scheme.primary, size: tvMode ? 20 : 24),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     final children = <Widget>[];
     if (widget.roomMode) {
       // TV 模式取消房间模式：房间相关操作全部隐藏
@@ -1330,16 +1406,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     } else {
       // 剧集无集数据时隐藏播放按钮（点了无事发生会误导）
       if (!item.isSeries || _episodes.isNotEmpty) {
+        final offerResume = _offerResume;
+        Future<void> play() => item.isSeries
+            ? _startPlaySeries(resume: offerResume)
+            : _startPlay(resume: offerResume);
         children.add(action(
-          run: item.isSeries ? _startPlaySeries : _startPlay,
+          run: play,
           radius: 14,
-          button: FilledButton.icon(
-            onPressed: item.isSeries ? _startPlaySeries : _startPlay,
-            icon: Icon(Icons.play_arrow,
-                color: scheme.primary, size: tvMode ? 20 : 24),
-            label: Text(tvMode ? '播放' : '开始播放'),
-            style: glassStyle(compact: tvMode),
-          ),
+          button: offerResume
+              ? resumeButton(onPressed: play)
+              : FilledButton.icon(
+                  onPressed: play,
+                  icon: Icon(Icons.play_arrow,
+                      color: scheme.primary, size: tvMode ? 20 : 24),
+                  label: Text(tvMode ? '播放' : '开始播放'),
+                  style: glassStyle(compact: tvMode),
+                ),
         ));
       }
       // TV 模式取消房间模式：不提供建房入口
@@ -1410,6 +1492,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         onToggleFavorite: _toggleFavorite,
         isWatched: _isWatched,
         onToggleWatched: _toggleWatched,
+        onPlayFromBeginning: _offerResume ? () => _startPlay() : null,
       );
     }
     return TrackActionRow(
@@ -1428,6 +1511,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       onToggleFavorite: _toggleFavorite,
       isWatched: _isWatched,
       onToggleWatched: _toggleWatched,
+      onPlayFromBeginning: _offerResume ? () => _startPlaySeries() : null,
     );
   }
 

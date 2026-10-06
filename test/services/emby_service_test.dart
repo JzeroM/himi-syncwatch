@@ -395,6 +395,35 @@ void main() {
       expect(req.path, '/Users/user-1/PlayedItems/item-9');
     });
   });
+
+  group('继续观看接口', () {
+    test('getResumeItems 请求 /Items/Resume 且带 MediaTypes=Video', () async {
+      await service.getResumeItems(limit: 8);
+      final req = captured.single;
+      expect(req.path, '/Users/user-1/Items/Resume');
+      expect(req.param('MediaTypes'), 'Video');
+      expect(req.param('Limit'), '8');
+    });
+
+    test('getResumeItems 解析进度字段', () async {
+      respondWith = (_) => {
+            'Items': [
+              {
+                'Id': 'e1',
+                'Name': '第1集',
+                'Type': 'Episode',
+                'UserData': {
+                  'PlaybackPositionTicks': 1690000000,
+                  'PlayedPercentage': 10.0,
+                },
+              },
+            ],
+          };
+      final items = await service.getResumeItems();
+      expect(items, hasLength(1));
+      expect(items.single.playbackPositionMs, 169000);
+    });
+  });
 }
 
 /// 忽略未使用的 future，避免 lint 告警。

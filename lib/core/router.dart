@@ -93,6 +93,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             audienceName: state.uri.queryParameters['name'] ?? '',
             serverId: state.uri.queryParameters['server'],
             logoUrl: state.uri.queryParameters['logo'],
+            startMs:
+                int.tryParse(state.uri.queryParameters['startMs'] ?? '') ?? 0,
           );
         },
       ),

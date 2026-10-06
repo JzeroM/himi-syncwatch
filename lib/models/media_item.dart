@@ -272,6 +272,12 @@ class MediaItem {
   /// 当前用户是否已观看（Emby `UserData.Played`；标记已观看功能用）。
   final bool isWatched;
 
+  /// 续播位置（毫秒；`UserData.PlaybackPositionTicks ÷ 10000`，缺省 0）。
+  final int playbackPositionMs;
+
+  /// 已观看百分比（0~100；`UserData.PlayedPercentage`，缺省 0）。
+  final double playedPercentage;
+
   MediaItem({
     required this.id,
     required this.name,
@@ -295,6 +301,8 @@ class MediaItem {
     this.premiereDate,
     this.isFavorite = false,
     this.isWatched = false,
+    this.playbackPositionMs = 0,
+    this.playedPercentage = 0,
   });
 
   factory MediaItem.fromJson(Map<String, dynamic> json, {String? serverUrl}) {
@@ -308,6 +316,7 @@ class MediaItem {
     final imageTags = json['ImageTags'] as Map<String, dynamic>?;
     final backdropTags = json['BackdropImageTags'] as List<dynamic>?;
 
+    final userData = json['UserData'] as Map<String, dynamic>?;
     return MediaItem(
       id: json['Id'] ?? '',
       name: json['Name'] ?? '',
@@ -345,9 +354,12 @@ class MediaItem {
               .toList() ??
           [],
       premiereDate: DateTime.tryParse(json['PremiereDate'] as String? ?? ''),
-      isFavorite:
-          (json['UserData'] as Map<String, dynamic>?)?['IsFavorite'] == true,
-      isWatched: (json['UserData'] as Map<String, dynamic>?)?['Played'] == true,
+      isFavorite: userData?['IsFavorite'] == true,
+      isWatched: userData?['Played'] == true,
+      playbackPositionMs:
+          ((userData?['PlaybackPositionTicks'] as num?)?.toInt() ?? 0) ~/ 10000,
+      playedPercentage:
+          (userData?['PlayedPercentage'] as num?)?.toDouble() ?? 0,
     );
   }
 

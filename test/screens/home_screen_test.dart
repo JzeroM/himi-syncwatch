@@ -235,6 +235,49 @@ void main() {
     expect(find.byKey(const ValueKey('statsPanel')), findsNothing);
   });
 
+  testWidgets('有续播条目时渲染「继续观看」栏，无则不渲染', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: [_lib('lib1', '电影库')],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+      resumeItems: [
+        MediaItem(
+          id: 'r1',
+          name: '续播电影',
+          type: 'Movie',
+          year: '2026',
+          playbackPositionMs: 169000,
+          playedPercentage: 20,
+        ),
+      ],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    expect(find.text('继续观看'), findsOneWidget);
+    expect(find.byKey(const ValueKey('continueCard_r1')), findsOneWidget);
+  });
+
+  testWidgets('无续播条目时不渲染「继续观看」栏', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: [_lib('lib1', '电影库')],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    expect(find.text('继续观看'), findsNothing);
+  });
+
   testWidgets('标题显示当前服务器名并可下拉切换', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1', 's2'],

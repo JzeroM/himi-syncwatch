@@ -101,6 +101,7 @@ class FakeEmbyService extends EmbyService {
     this.itemCounts,
     this.seasons = const [],
     this.favoriteItems = const [],
+    this.resumeItems = const [],
   });
 
   final MediaItem? item;
@@ -122,6 +123,9 @@ class FakeEmbyService extends EmbyService {
 
   /// setWatched 返回值（false 模拟失败 → 详情页应回滚）。
   bool watchedSetResult = true;
+
+  /// 「继续观看」数据源（getResumeItems）。
+  final List<MediaItem> resumeItems;
 
   /// 按 parentId 精确返回（用于模拟空媒体库）；未命中的库回退到 [items]。
   final Map<String, List<MediaItem>> itemsByParent;
@@ -148,6 +152,9 @@ class FakeEmbyService extends EmbyService {
 
   @override
   Future<List<MediaItem>> getFavoriteItems() async => favoriteItems;
+
+  @override
+  Future<List<MediaItem>> getResumeItems({int limit = 12}) async => resumeItems;
 
   @override
   Future<bool> setFavorite(String itemId, bool favorite) async {

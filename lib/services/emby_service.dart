@@ -424,6 +424,32 @@ class EmbyService {
     }
   }
 
+  /// 当前服务器「继续观看」条目（有播放进度的电影/剧集/单集）。
+  /// `GET /Users/{userId}/Items/Resume`；字段含 `UserData`（进度/百分比）。
+  /// 失败返回空列表。
+  Future<List<MediaItem>> getResumeItems({int limit = 12}) async {
+    try {
+      final response = await _dio.get(
+        '/Users/$_userId/Items/Resume',
+        queryParameters: {
+          if (_userId != null) 'UserId': _userId,
+          'MediaTypes': 'Video',
+          'Limit': limit,
+          'Fields':
+              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate',
+          'ImageTypeLimit': 1,
+        },
+      );
+      final items = response.data['Items'] as List<dynamic>? ?? [];
+      return items
+          .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
+          .toList();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
+      return [];
+    }
+  }
+
   String getStreamUrl(String itemId,
       {String? mediaSourceId, int? subtitleStreamIndex}) {
     if (subtitleStreamIndex != null) {

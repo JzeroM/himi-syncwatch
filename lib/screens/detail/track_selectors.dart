@@ -46,6 +46,9 @@ class TrackActionRow extends ConsumerWidget {
   /// 点击标记/取消已观看（非空即显示对勾控件）。
   final VoidCallback? onToggleWatched;
 
+  /// 从头播放（非空即显示，渲染在版本控件之前）。
+  final VoidCallback? onPlayFromBeginning;
+
   const TrackActionRow({
     super.key,
     required this.item,
@@ -59,6 +62,7 @@ class TrackActionRow extends ConsumerWidget {
     this.onToggleFavorite,
     this.isWatched,
     this.onToggleWatched,
+    this.onPlayFromBeginning,
   });
 
   @override
@@ -68,11 +72,13 @@ class TrackActionRow extends ConsumerWidget {
     final showAudio = audioStreams.length > 1;
     final showFavorite = onToggleFavorite != null;
     final showWatched = onToggleWatched != null;
+    final showFromBeginning = onPlayFromBeginning != null;
     if (!showVersion &&
         !showSubtitle &&
         !showAudio &&
         !showFavorite &&
-        !showWatched) {
+        !showWatched &&
+        !showFromBeginning) {
       return const SizedBox.shrink();
     }
 
@@ -105,6 +111,13 @@ class TrackActionRow extends ConsumerWidget {
     }
 
     final children = <Widget>[
+      if (showFromBeginning)
+        button(
+          key: const Key('playFromBeginningButton'),
+          icon: Icons.replay,
+          active: false,
+          onTap: onPlayFromBeginning!,
+        ),
       if (showVersion)
         button(
           key: const Key('versionSelectorButton'),

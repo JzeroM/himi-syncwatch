@@ -13,6 +13,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/continue_watching_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/media_search_button.dart';
@@ -41,6 +42,9 @@ class _CategoryData {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<_CategoryData> _categories = [];
   List<LibraryFolder> _libraries = [];
+
+  /// 「继续观看」条目（有播放进度的视频；空则不渲染该栏）。
+  List<MediaItem> _resumeItems = [];
 
   /// 电影/电视剧/集计数（null = 未加载或加载失败，底部面板隐藏）。
   MediaCounts? _counts;
@@ -124,6 +128,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       unawaited(embyService.getItemCounts().then((counts) {
         if (!mounted || seq != _loadSeq) return;
         setState(() => _counts = counts);
+      }));
+      // 继续观看（不阻塞首屏）
+      unawaited(embyService.getResumeItems().then((items) {
+        if (!mounted || seq != _loadSeq) return;
+        setState(() => _resumeItems = items);
       }));
       final libs = await libsFuture;
 
@@ -284,20 +293,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                             itemCount: _categories.length +
                                 (_libraries.isNotEmpty ? 1 : 0) +
+                                (_resumeItems.isNotEmpty ? 1 : 0) +
                                 (_counts != null ? 1 : 0),
                             itemBuilder: (context, index) {
-                              final headerCount = _libraries.isNotEmpty ? 1 : 0;
-                              if (index < headerCount) {
-                                return _LibraryBar(
-                                  libraries: _libraries,
-                                  onOpen: (lib) => context.push(
-                                    '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
-                                  ),
-                                );
+                              var i = index;
+                              if (_libraries.isNotEmpty) {
+                                if (i == 0) {
+                                  return _LibraryBar(
+                                    libraries: _libraries,
+                                    onOpen: (lib) => context.push(
+                                      '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
+                                    ),
+                                  );
+                                }
+                                i--;
                               }
-                              final catIndex = index - headerCount;
-                              if (catIndex < _categories.length) {
-                                final cat = _categories[catIndex];
+                              if (_resumeItems.isNotEmpty) {
+                                if (i == 0) {
+                                  return _ContinueWatchingBar(
+                                    items: _resumeItems,
+                                    onOpen: (item) =>
+                                        context.push('/detail/${item.id}'),
+                                  );
+                                }
+                                i--;
+                              }
+                              if (i < _categories.length) {
+                                final cat = _categories[i];
                                 return _CategorySection(
                                   category: cat,
                                   onViewAll: () => context.push(
@@ -349,6 +371,57 @@ class _EmptyState extends StatelessWidget {
 
 /// 首页「媒体库」横向栏：库封面卡片按服务端排序排列，
 /// 点击进入对应分类海报墙。
+/// 首页「继续观看」横向栏：有播放进度的电影/集，横版卡带进度条。
+class _ContinueWatchingBar extends StatelessWidget {
+  const _ContinueWatchingBar({required this.items, required this.onOpen});
+
+  final List<MediaItem> items;
+  final void Function(MediaItem item) onOpen;
+
+  static const double _cardWidth = 200;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            '继续观看',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
+        SizedBox(
+          height: ContinueWatchingCard.heightFor(_cardWidth),
+          child: ListView.builder(
+            // TV 焦点框放大溢出内容盒，默认 clip 会裁边
+            clipBehavior: Clip.none,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: SizedBox(
+                  width: _cardWidth,
+                  child: ContinueWatchingCard(
+                    key: ValueKey('continueCard_${item.id}'),
+                    item: item,
+                    width: _cardWidth,
+                    onTap: () => onOpen(item),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _LibraryBar extends StatelessWidget {
   const _LibraryBar({required this.libraries, required this.onOpen});
 

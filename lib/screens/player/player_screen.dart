@@ -91,6 +91,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 标题艺术字图 URL（详情页传入的 Logo 图）；null/房间模式不显示。
   final String? logoUrl;
 
+  /// 起播位置（毫秒；详情页「继续观看」传入，首次加载 seek 到此）。
+  final int startMs;
+
   const PlayerScreen({
     super.key,
     required this.itemId,
@@ -100,6 +103,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.audienceName = '',
     this.serverId,
     this.logoUrl,
+    this.startMs = 0,
   });
 
   @override
@@ -1178,7 +1182,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           widget.roomCode == null) {
         final targetIndex = _episodes.indexWhere((e) => e.id == widget.itemId);
         try {
-          await _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0);
+          await _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0,
+              startMs: widget.startMs);
         } catch (_) {
           LogService()
               .log('Player', '_loadEpisodeStream 异常，强制设置 _isPlayerReady');
@@ -1268,7 +1273,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  Future<void> _loadEpisodeStream(int episodeIndex) async {
+  Future<void> _loadEpisodeStream(int episodeIndex, {int startMs = 0}) async {
     if (episodeIndex < 0 || episodeIndex >= _episodes.length) return;
 
     final ep = _episodes[episodeIndex];
@@ -1333,7 +1338,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 第三步：加载流（prepare 会使用已配置好的解码器）
       if (!mounted) return;
       await _loadStream(
-          itemId: itemId, mediaSourceId: epMediaSourceId, serverId: epServerId);
+          itemId: itemId,
+          mediaSourceId: epMediaSourceId,
+          serverId: epServerId,
+          startMs: startMs);
 
       // _loadStream 已在 updateTexture() 后设置播放状态，此处仅同步 UI
       if (mounted) {
@@ -1803,6 +1811,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     int? subtitleStreamIndex,
     String? mediaSourceId,
     String? serverId,
+    int startMs = 0,
   }) async {
     if (!mounted) return false;
     final targetItemId = itemId ?? widget.itemId;
@@ -1869,6 +1878,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 非 SurfaceView 档立即通过，超时兜底不阻塞起播
       await _waitSurfaceCreated();
       if (!mounted) return false;
+
+      // 继续观看：首次加载 seek 到上次进度（切集不传 startMs，从 0 播）
+      if (startMs > 0 && mounted) {
+        try {
+          await _player.seek(
+            position: startMs,
+            flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame),
+          );
+          _position = Duration(milliseconds: startMs);
+          _positionNotifier.value = _position;
+        } catch (_) {}
+      }
 
       // 启动播放（无条件，首播和切集都需要）
       if (mounted) {
