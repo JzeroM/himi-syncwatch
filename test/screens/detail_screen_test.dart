@@ -2121,4 +2121,34 @@ void main() {
       );
     });
   });
+
+  group('hdImageUrlFor（TV 整页背景按需取图）', () {
+    const backdrop =
+        'https://e.test/Items/1/Images/Backdrop?maxHeight=400&tag=abc';
+
+    test('大屏目标宽被夹到上限 1280，并追加 quality', () {
+      final url = DetailScreen.hdImageUrlFor(backdrop, 1920)!;
+      expect(url, contains('maxWidth=1280'));
+      expect(url, isNot(contains('maxHeight=400')));
+      expect(url, contains('quality=85'));
+    });
+
+    test('小目标宽被抬到下限 720', () {
+      final url = DetailScreen.hdImageUrlFor(backdrop, 200)!;
+      expect(url, contains('maxWidth=720'));
+    });
+
+    test('已带 quality 参数不重复追加', () {
+      final url = DetailScreen.hdImageUrlFor(
+          'https://e.test/Items/1/Images/Backdrop?maxHeight=400&quality=70',
+          1000)!;
+      expect('quality='.allMatches(url).length, 1);
+      expect(url, contains('maxWidth=1000'));
+    });
+
+    test('空 URL 返回 null', () {
+      expect(DetailScreen.hdImageUrlFor(null, 1000), isNull);
+      expect(DetailScreen.hdImageUrlFor('', 1000), isNull);
+    });
+  });
 }

@@ -110,6 +110,17 @@ class _GatedFakeService extends FakeEmbyService {
   }
 }
 
+/// getItemCounts 永不返回的 Fake：验证首页首屏不被统计计数阻塞。
+class _PendingCountsFakeService extends FakeEmbyService {
+  _PendingCountsFakeService({
+    required super.libraries,
+    required super.items,
+  });
+
+  @override
+  Future<MediaCounts?> getItemCounts() => Completer<MediaCounts?>().future;
+}
+
 LibraryFolder _lib(String id, String name) => LibraryFolder(
       id: id,
       name: name,
@@ -203,6 +214,25 @@ void main() {
     expect(find.byType(RefreshIndicator), findsOneWidget);
     expect(find.text('重试'), findsNothing);
     expect(find.byIcon(Icons.search), findsOneWidget);
+  });
+
+  testWidgets('计数挂起时分类已渲染（首屏不被统计阻塞）', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = _PendingCountsFakeService(
+      libraries: [_lib('lib1', '电影库')],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    // 分类已出：内容不被 getItemCounts 阻塞
+    expect(find.text('电影库'), findsWidgets);
+    // 计数仍挂起 → 统计面板尚未渲染
+    expect(find.byKey(const ValueKey('statsPanel')), findsNothing);
   });
 
   testWidgets('标题显示当前服务器名并可下拉切换', (tester) async {

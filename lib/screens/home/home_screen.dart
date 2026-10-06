@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -59,42 +61,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final authService = ref.read(embyAuthServiceProvider);
     final serverIds = await authService.listServerIds();
 
-    if (serverIds.isNotEmpty) {
-      final configs = <EmbyServerConfig>[];
-      final seenServerIds = <String>{};
-      EmbyServerConfig? activeConfig;
-
-      final savedId = await authService.loadSelectedServerId();
-
-      for (final sid in serverIds) {
-        final session = await authService.loadSession(sid);
-        if (session != null) {
-          final config = EmbyServerConfig.fromJson(session);
-          if (seenServerIds.contains(config.serverId)) {
-            await authService.deleteSession(sid);
-            continue;
-          }
-          seenServerIds.add(config.serverId);
-          configs.add(config);
-          if (activeConfig == null || config.id == savedId) {
-            activeConfig = config;
-          }
-        }
-      }
-
-      ref.read(embyServerListProvider.notifier).setList(configs);
-
-      if (activeConfig != null) {
-        ref.read(embyConfigProvider.notifier).setConfig(activeConfig);
-        await _loadMedia();
-      } else {
-        setState(() => _isLoading = false);
-      }
-    } else {
-      setState(() => _isLoading = false);
+    if (serverIds.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _initialized = true;
+      });
+      return;
     }
 
-    setState(() => _initialized = true);
+    // 并行读取各服务器 session：顺序读在服务器多时明显拖慢首屏
+    final sessions = await Future.wait(
+      serverIds.map((sid) => authService.loadSession(sid)),
+    );
+    final savedId = await authService.loadSelectedServerId();
+
+    final configs = <EmbyServerConfig>[];
+    final seenServerIds = <String>{};
+    EmbyServerConfig? activeConfig;
+
+    for (var i = 0; i < serverIds.length; i++) {
+      final session = sessions[i];
+      if (session == null) continue;
+      final config = EmbyServerConfig.fromJson(session);
+      if (seenServerIds.contains(config.serverId)) {
+        await authService.deleteSession(serverIds[i]);
+        continue;
+      }
+      seenServerIds.add(config.serverId);
+      configs.add(config);
+      if (activeConfig == null || config.id == savedId) {
+        activeConfig = config;
+      }
+    }
+
+    ref.read(embyServerListProvider.notifier).setList(configs);
+
+    if (activeConfig != null) {
+      ref.read(embyConfigProvider.notifier).setConfig(activeConfig);
+      // 立即结束首屏全屏转圈，媒体内容由 _loadMedia 渐进填充
+      setState(() => _initialized = true);
+      unawaited(_loadMedia());
+    } else {
+      setState(() {
+        _isLoading = false;
+        _initialized = true;
+      });
+    }
   }
 
   Future<void> _loadMedia([EmbyService? serviceOverride]) async {
@@ -107,45 +119,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final EmbyService embyService =
           serviceOverride ?? ref.read(embyServiceProvider);
-      // 库列表与计数并发发起，计数失败返回 null 不阻塞内容
+      // 库列表与计数并发发起；计数到齐后单独填充统计面板，不阻塞首屏
       final libsFuture = embyService.getLibraries();
-      final countsFuture = embyService.getItemCounts();
+      unawaited(embyService.getItemCounts().then((counts) {
+        if (!mounted || seq != _loadSeq) return;
+        setState(() => _counts = counts);
+      }));
       final libs = await libsFuture;
 
-      final futures = libs.map((lib) async {
-        final items = await embyService.getItems(
-          parentId: lib.id,
-          limit: 20,
-          includeItemTypes: 'Movie,Series',
-          fields:
-              'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber',
-          // DateLastContentAdded：剧集有新集数入库时 Series 的该字段会
-          // 更新，更新过的剧集能浮到最前；DateCreated 是系列首次入库
-          // 时间，新集不会变——表现为"更新了还排在后面"
-          sortBy: 'DateLastContentAdded',
-          sortOrder: 'Descending',
-        );
-        return _CategoryData(folder: lib, items: items);
-      }).toList();
-
-      final results = await Future.wait(futures);
-      final counts = await countsFuture;
-      final categories = results.where((c) => c.items.isNotEmpty).toList();
-
-      // 媒体库栏：剔除空库，其余严格保持服务端排序
-      final nonEmptyIds = {for (final c in categories) c.folder.id};
-      final libraries = [
-        for (final lib in libs)
-          if (nonEmptyIds.contains(lib.id)) lib
+      // 每库并发取内容；哪个先回就先追加哪个分类，首屏尽快出内容。
+      // slots 按库顺序占位，避免乱序返回打乱服务端排序。
+      final slots = List<_CategoryData?>.filled(libs.length, null);
+      final futures = <Future<void>>[
+        for (var i = 0; i < libs.length; i++)
+          embyService
+              .getItems(
+            parentId: libs[i].id,
+            limit: 20,
+            includeItemTypes: 'Movie,Series',
+            fields:
+                'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber',
+            // DateLastContentAdded：剧集有新集数入库时 Series 的该字段会
+            // 更新，更新过的剧集能浮到最前；DateCreated 是系列首次入库
+            // 时间，新集不会变——表现为"更新了还排在后面"
+            sortBy: 'DateLastContentAdded',
+            sortOrder: 'Descending',
+          )
+              .then((items) {
+            if (!mounted || seq != _loadSeq) return;
+            slots[i] = _CategoryData(folder: libs[i], items: items);
+            _applyCategories(libs, slots);
+          }),
       ];
+      await Future.wait(futures);
 
       if (!mounted || seq != _loadSeq) return;
-      setState(() {
-        _categories = categories;
-        _libraries = libraries;
-        _counts = counts;
-        _isLoading = false;
-      });
+      // 兜底：库为空或全部同步完成时确保转圈结束
+      if (_isLoading) setState(() => _isLoading = false);
     } catch (e) {
       if (!mounted || seq != _loadSeq) return;
       setState(() {
@@ -153,6 +163,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  /// 按当前已返回的 [slots] 重建分类与媒体库栏（过滤空库、保持服务端排序），
+  /// 首个分类到达即结束转圈。
+  void _applyCategories(List<LibraryFolder> libs, List<_CategoryData?> slots) {
+    final categories = [
+      for (final s in slots)
+        if (s != null && s.items.isNotEmpty) s,
+    ];
+    final nonEmptyIds = {for (final c in categories) c.folder.id};
+    setState(() {
+      _categories = categories;
+      _libraries = [
+        for (final lib in libs)
+          if (nonEmptyIds.contains(lib.id)) lib,
+      ];
+      _isLoading = false;
+    });
   }
 
   @override
@@ -365,7 +393,11 @@ class _LibraryBar extends StatelessWidget {
                           child: SizedBox(
                             height: 96,
                             child: EmbyImage(
-                                url: lib.posterUrl, fit: BoxFit.cover),
+                                url: lib.posterUrl,
+                                fit: BoxFit.cover,
+                                cacheWidth: (160 *
+                                        MediaQuery.devicePixelRatioOf(context))
+                                    .round()),
                           ),
                         ),
                         const SizedBox(height: 6),

@@ -298,7 +298,13 @@ class _SeasonEpisodeRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
-                      child: EmbyImage(url: ep.posterUrl, fit: BoxFit.cover),
+                      child: EmbyImage(
+                        url: ep.posterUrl,
+                        fit: BoxFit.cover,
+                        cacheWidth: (_cardWidth *
+                                MediaQuery.devicePixelRatioOf(context))
+                            .round(),
+                      ),
                     ),
                   ),
                 ),
@@ -408,7 +414,13 @@ class _SeasonCardRow extends StatelessWidget {
               child: SizedBox(
                 height: _posterWidth * 1.5,
                 child: season.posterUrl != null
-                    ? EmbyImage(url: season.posterUrl, fit: BoxFit.cover)
+                    ? EmbyImage(
+                        url: season.posterUrl,
+                        fit: BoxFit.cover,
+                        cacheWidth: (_posterWidth *
+                                MediaQuery.devicePixelRatioOf(context))
+                            .round(),
+                      )
                     : Container(
                         color: Colors.white10,
                         child: const Icon(Icons.tv,

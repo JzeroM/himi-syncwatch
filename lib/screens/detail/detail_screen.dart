@@ -37,6 +37,19 @@ class DetailScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<DetailScreen> createState() => _DetailScreenState();
+
+  /// TV 整页背景图 URL：服务端默认把图缩到 400 高（`maxHeight=400`），全屏
+  /// 铺开会糊。按实际显示需要请求，目标宽度夹在 [720, 1280]（TV 整页背景叠有
+  /// 暗罩，1280 足够；避免拉 1920 大图导致弱设备下载/解码慢），并追加
+  /// `quality=85` 压缩。空 URL 返回 null。
+  @visibleForTesting
+  static String? hdImageUrlFor(String? url, int targetWidth) {
+    if (url == null || url.isEmpty) return null;
+    final w = targetWidth.clamp(720, 1280);
+    var out = url.replaceAll('maxHeight=400', 'maxWidth=$w');
+    if (!out.contains('quality=')) out += '&quality=85';
+    return out;
+  }
 }
 
 class _DetailScreenState extends ConsumerState<DetailScreen> {
@@ -836,6 +849,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             child: EmbyImage(
                               url: ep.posterUrl,
                               fit: BoxFit.cover,
+                              cacheWidth:
+                                  (48 * MediaQuery.devicePixelRatioOf(context))
+                                      .round(),
                             ),
                           ),
                           title: Text(
@@ -962,6 +978,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Widget build(BuildContext context) {
     final base = Theme.of(context).scaffoldBackgroundColor;
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    // TV 整页背景目标宽度：按显示宽×dpr，夹在 [720,1280]（详见 hdImageUrlFor）
+    final bgTargetW = (MediaQuery.sizeOf(context).width *
+            MediaQuery.devicePixelRatioOf(context))
+        .round()
+        .clamp(720, 1280)
+        .toInt();
 
     final content = _isLoading
         ? const Center(child: CircularProgressIndicator())
@@ -1002,17 +1024,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   // 图片加载失败兜底底色
                   ColoredBox(color: base),
                   if (_item != null) ...[
-                    // 整页海报（backdrop 优先），滚动内容叠其上；
-                    // 服务端默认图缩到 400 高，全屏拉伸会糊 → 升级高清 URL
+                    // 整页海报（backdrop 优先），滚动内容叠其上；按目标宽
+                    // 请求并同尺寸解码（避免拉大图再解大图的浪费）
                     Positioned.fill(
                       child: EmbyImage(
                         key: const Key('detailBackdrop'),
-                        url:
-                            _hdImageUrl(_item!.backdropUrl ?? _item!.posterUrl),
+                        url: DetailScreen.hdImageUrlFor(
+                            _item!.backdropUrl ?? _item!.posterUrl, bgTargetW),
                         fit: BoxFit.cover,
-                        cacheWidth: (MediaQuery.sizeOf(context).width *
-                                MediaQuery.devicePixelRatioOf(context))
-                            .round(),
+                        cacheWidth: bgTargetW,
                         errorWidget: const SizedBox.shrink(),
                       ),
                     ),
@@ -1100,17 +1120,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ),
       ],
     );
-  }
-
-  /// TV 整页背景高清图 URL：服务端默认把图缩到 400 高（`maxHeight=400`），
-  /// 全屏铺开会糊 → backdrop 升到 `maxWidth=1920`、海报升到 `maxHeight=1080`。
-  /// 无缩放参数的原样返回（取色/非 TV 仍用默认小图，不走此方法）。
-  String? _hdImageUrl(String? url) {
-    if (url == null || url.isEmpty) return null;
-    if (url.contains('/Images/Backdrop')) {
-      return url.replaceAll('maxHeight=400', 'maxWidth=1920');
-    }
-    return url.replaceAll('maxHeight=400', 'maxHeight=1080');
   }
 
   /// 操作区（简介上方）：
@@ -1386,6 +1395,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           url: item.logoUrl,
                           height: tv ? 44 : 60,
                           fit: BoxFit.contain,
+                          // logo 多为大尺寸透明 PNG，按显示需要限解码宽
+                          cacheWidth: (MediaQuery.sizeOf(context).width *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .clamp(300, 640)
+                              .toInt(),
                           placeholder: const SizedBox.shrink(),
                           errorWidget: Text(
                             item.name,
