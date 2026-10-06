@@ -9,11 +9,13 @@ Widget _harness({
   required bool enabled,
   required Future<void> Function() onConfirm,
   String confirmText = '再按一次退出播放器',
+  bool Function()? onBack,
 }) =>
     MaterialApp(
       home: TvBackConfirm(
         enabled: enabled,
         onConfirm: onConfirm,
+        onBack: onBack,
         confirmText: confirmText,
         now: () => _now,
         child: const Scaffold(body: Center(child: Text('body'))),
@@ -108,5 +110,38 @@ void main() {
 
     expect(find.text('再按一次返回退出应用'), findsOneWidget);
     expect(find.text('再按一次退出播放器'), findsNothing);
+  });
+
+  testWidgets('onBack 返回 true：本次返回被消费，不提示不退出', (tester) async {
+    var backCalls = 0;
+    await tester.pumpWidget(_harness(
+      enabled: true,
+      onConfirm: () async => confirmed++,
+      onBack: () {
+        backCalls++;
+        return true;
+      },
+    ));
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(backCalls, 1);
+    expect(confirmed, 0, reason: '被 onBack 消费，不进入退出确认');
+    expect(find.text('再按一次退出播放器'), findsNothing);
+  });
+
+  testWidgets('onBack 返回 false：继续正常退出确认流程', (tester) async {
+    await tester.pumpWidget(_harness(
+      enabled: true,
+      onConfirm: () async => confirmed++,
+      onBack: () => false,
+    ));
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('再按一次退出播放器'), findsOneWidget);
+    expect(confirmed, 0);
   });
 }

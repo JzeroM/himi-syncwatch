@@ -41,94 +41,10 @@ void main() {
     expect(PlayerScreen.focusWithin(hotkey, null), isFalse, reason: '空焦点安全');
   });
 
-  testWidgets('shouldHideControlsNow：焦点在控制条内顺延，外部/无焦点才隐藏', (tester) async {
-    final root = FocusNode(debugLabel: 'controlsRoot');
-    final inside = FocusNode(debugLabel: 'playButton');
-    final outside = FocusNode(debugLabel: 'other');
-    addTearDown(root.dispose);
-    addTearDown(inside.dispose);
-    addTearDown(outside.dispose);
-
-    await tester.pumpWidget(MaterialApp(
-      home: Column(
-        children: [
-          Focus(
-            focusNode: root,
-            skipTraversal: true,
-            child: Focus(focusNode: inside, child: const SizedBox()),
-          ),
-          Focus(focusNode: outside, child: const SizedBox()),
-        ],
-      ),
-    ));
-    await tester.pump();
-
-    expect(
-      PlayerScreen.shouldHideControlsNow(
-          controlsRoot: root, primaryFocus: inside),
-      isFalse,
-      reason: '焦点在控制条按钮上：顺延不隐藏（否则遥控器停不在按钮上）',
-    );
-    expect(
-      PlayerScreen.shouldHideControlsNow(
-          controlsRoot: root, primaryFocus: root),
-      isFalse,
-      reason: 'root 自身视为控制条内',
-    );
-    expect(
-      PlayerScreen.shouldHideControlsNow(
-          controlsRoot: root, primaryFocus: outside),
-      isTrue,
-      reason: '焦点已离开控制条：正常执行隐藏',
-    );
-    expect(
-      PlayerScreen.shouldHideControlsNow(
-          controlsRoot: root, primaryFocus: null),
-      isTrue,
-      reason: '无焦点：正常执行隐藏',
-    );
-  });
-
-  testWidgets('shouldHideControlsNow：焦点在选择器面板（panelRoot）内顺延', (tester) async {
-    final root = FocusNode(debugLabel: 'controlsRoot');
-    final panelRoot = FocusNode(debugLabel: 'SelectorPanelRoot');
-    final inPanel = FocusNode(debugLabel: 'SubtitleRow');
-    addTearDown(root.dispose);
-    addTearDown(panelRoot.dispose);
-    addTearDown(inPanel.dispose);
-
-    await tester.pumpWidget(MaterialApp(
-      home: Column(
-        children: [
-          Focus(focusNode: root, skipTraversal: true, child: const SizedBox()),
-          Focus(
-            focusNode: panelRoot,
-            skipTraversal: true,
-            child: Focus(focusNode: inPanel, child: const SizedBox()),
-          ),
-        ],
-      ),
-    ));
-    await tester.pump();
-
-    expect(
-      PlayerScreen.shouldHideControlsNow(
-        controlsRoot: root,
-        primaryFocus: inPanel,
-        panelRoot: panelRoot,
-      ),
-      isFalse,
-      reason: '焦点在面板行上：隐藏会连带收起面板，必须顺延',
-    );
-    expect(
-      PlayerScreen.shouldHideControlsNow(
-        controlsRoot: root,
-        primaryFocus: null,
-        panelRoot: panelRoot,
-      ),
-      isTrue,
-      reason: '无焦点：正常隐藏',
-    );
+  testWidgets('shouldHideControlsNow：5 秒无操作一律隐藏（TV 要求）', (tester) async {
+    // 语义变更（v1.1.122）：无论焦点是否在控制条/选择器面板上，5 秒到期
+    // 都隐藏全部控件。
+    expect(PlayerScreen.controlsAutoHideAfter, const Duration(seconds: 5));
   });
 
   test('rotateButtonIcon：语义直白的旋转图标，非 screen_lock 系', () {

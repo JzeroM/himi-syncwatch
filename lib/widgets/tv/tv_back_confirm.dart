@@ -15,6 +15,7 @@ class TvBackConfirm extends StatefulWidget {
     super.key,
     required this.enabled,
     required this.onConfirm,
+    this.onBack,
     this.confirmText = '再按一次退出播放器',
     this.window = const Duration(seconds: 2),
     this.now = DateTime.now,
@@ -23,6 +24,10 @@ class TvBackConfirm extends StatefulWidget {
 
   /// 是否启用双击确认（false = 直接 onConfirm）。
   final bool enabled;
+
+  /// 返回键优先拦截：返回 true 表示本次返回已被消费（如收起选择器面板），
+  /// 不再进入双击确认/退出流程。
+  final bool Function()? onBack;
 
   /// 确认后的退出动作（double-confirm 后异步执行，如房间解散确认）。
   final Future<void> Function() onConfirm;
@@ -52,6 +57,8 @@ class _TvBackConfirmState extends State<TvBackConfirm> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop || !mounted) return;
+        // 优先拦截：选择器面板等已消费本次返回 → 不进入退出确认
+        if (widget.onBack?.call() ?? false) return;
         if (!widget.enabled) {
           await widget.onConfirm();
           return;

@@ -116,18 +116,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
       candidate != null &&
       (candidate == root || candidate.ancestors.contains(root));
 
-  /// 控制条 5 秒到期时是否执行隐藏。
-  /// 焦点仍停留在控制条内（滑杆/播放/切集按钮）或选择器面板内
-  /// （[panelRoot] 子树，面板在 Stack 平级、不在控制条子树内）时顺延——
-  /// 隐藏会把焦点拉回热键层并连带收起面板，遥控器停不在选项上。
-  @visibleForTesting
-  static bool shouldHideControlsNow({
-    required FocusNode controlsRoot,
-    required FocusNode? primaryFocus,
-    FocusNode? panelRoot,
-  }) =>
-      !focusWithin(controlsRoot, primaryFocus) &&
-      (panelRoot == null || !focusWithin(panelRoot, primaryFocus));
+  /// 控制条自动隐藏时长（5 秒无操作后隐藏全部控件，含选择器面板）。
+  static const Duration controlsAutoHideAfter = Duration(seconds: 5);
 
   /// 轮询等待 [ready] 为 true（超时返回 false）。
   @visibleForTesting
@@ -3305,28 +3295,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _resetHideTimer() {
     _hideControlsTimer?.cancel();
     if (_showControls) {
-      _hideControlsTimer = Timer(const Duration(seconds: 5), () {
-        if (mounted && _player.state == mdk.PlaybackState.playing) {
-          // 焦点仍在控制条内：顺延计时，不隐藏不抢焦点（否则焦点被
-          // 拉回热键层，再次唤出又落回滑杆，遥控器停不在播放/切集按钮上）
-          if (!PlayerScreen.shouldHideControlsNow(
-            controlsRoot: _controlsRootFocusNode,
-            primaryFocus: FocusManager.instance.primaryFocus,
-            panelRoot: _selectorPanelRootFocusNode,
-          )) {
-            _resetHideTimer();
-            return;
-          }
-          // 先转移焦点再卸载，防止按钮/面板焦点悬空
-          _releaseFocusFromControls();
-          setState(() {
-            _showControls = false;
-            _showSubtitleMenu = false;
-            _showAudioMenu = false;
-            _showDecodeModeMenu = false;
-            _showSpeedMenu = false;
-          });
-        }
+      _hideControlsTimer = Timer(PlayerScreen.controlsAutoHideAfter, () {
+        if (!mounted || _player.state != mdk.PlaybackState.playing) return;
+        // 5 秒无操作：无论焦点是否停留在控制条/选择器面板上，一律隐藏全部
+        // 控件（TV 要求；选择器面板一并收起，返回键收起见 TvBackConfirm.onBack）。
+        _releaseFocusFromControls();
+        _selectorOpenerNode = null;
+        setState(() {
+          _showControls = false;
+          _showSubtitleMenu = false;
+          _showAudioMenu = false;
+          _showDecodeModeMenu = false;
+          _showSpeedMenu = false;
+        });
       });
     }
   }
@@ -3839,6 +3820,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return TvBackConfirm(
       // TV：首按提示、2 秒窗口内第二按才确认退出；非 TV 直接确认（现状）
       enabled: ref.watch(settingsProvider.select((s) => s.tvMode)),
+      // 选择器面板打开时：返回键收起面板并把焦点还给来源控件，不退出播放器
+      onBack: () {
+        if (_showSubtitleMenu || _showAudioMenu || _showSpeedMenu) {
+          _closeSelectorPanel();
+          _resetHideTimer();
+          return true;
+        }
+        return false;
+      },
       onConfirm: () async {
         final shouldPop = await _confirmLeaveRoom();
         if (shouldPop && mounted) Navigator.pop(context);
