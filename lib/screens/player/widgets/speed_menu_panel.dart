@@ -10,6 +10,7 @@ class SpeedMenuPanel extends StatelessWidget {
     super.key,
     required this.current,
     required this.onSelected,
+    this.focusNode,
   });
 
   /// 可选倍速档位。
@@ -29,25 +30,31 @@ class SpeedMenuPanel extends StatelessWidget {
 
   final ValueChanged<double> onSelected;
 
+  /// TV 打开面板后精确落焦的行：当前档位，无匹配回退第一档。
+  /// （autofocus 在同级按钮已持焦时不抢占，改由播放页显式 requestFocus）
+  final FocusNode? focusNode;
+
   /// 档位 → 按钮角标/回显文本：`1.0x`、`0.75x`。
   static String formatSpeedLabel(double speed) => '${speed}x';
 
   @override
   Widget build(BuildContext context) {
+    int targetIndex =
+        speedOptions.indexWhere((s) => (s - current).abs() < 1e-9);
+    if (targetIndex < 0) targetIndex = 0;
     // ListView（可上下滚动）：档位多、浮层高度有限时 Column 会把
     // 超出部分直接裁掉（0.5x~1.25x 后不可见）。
     return ListView(
       padding: EdgeInsets.zero,
-      children: speedOptions.map((speed) {
-        final isSelected = (speed - current).abs() < 1e-9;
-        return SideOptionRow(
-          label: formatSpeedLabel(speed),
-          selected: isSelected,
-          // TV 遥控：初进落焦第一档（焦点环 + Enter 选择）
-          autofocus: speedOptions.first == speed,
-          onTap: () => onSelected(speed),
-        );
-      }).toList(),
+      children: [
+        for (int i = 0; i < speedOptions.length; i++)
+          SideOptionRow(
+            label: formatSpeedLabel(speedOptions[i]),
+            selected: (speedOptions[i] - current).abs() < 1e-9,
+            focusNode: i == targetIndex ? focusNode : null,
+            onTap: () => onSelected(speedOptions[i]),
+          ),
+      ],
     );
   }
 }

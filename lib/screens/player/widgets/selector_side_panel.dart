@@ -78,6 +78,7 @@ class SideOptionRow extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.autofocus = false,
+    this.focusNode,
   });
 
   final String label;
@@ -85,10 +86,14 @@ class SideOptionRow extends StatelessWidget {
   final VoidCallback onTap;
   final bool autofocus;
 
+  /// 外部焦点节点（TV 打开面板后精确落焦选中行；由调用方持有）。
+  final FocusNode? focusNode;
+
   @override
   Widget build(BuildContext context) {
     return TvFocusable(
       autofocus: autofocus,
+      focusNode: focusNode,
       radius: 6,
       onTap: onTap,
       child: Padding(

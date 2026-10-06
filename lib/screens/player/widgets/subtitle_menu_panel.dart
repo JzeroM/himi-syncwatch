@@ -17,6 +17,9 @@ class SubtitleMenuPanel extends StatelessWidget {
   final VoidCallback onLoadLocal;
   final VoidCallback onClose;
 
+  /// TV 打开面板后精确落焦的行：当前选中行，无选中回退第一行。
+  final FocusNode? focusNode;
+
   const SubtitleMenuPanel({
     super.key,
     required this.player,
@@ -29,16 +32,26 @@ class SubtitleMenuPanel extends StatelessWidget {
     required this.onSubtitleSelected,
     required this.onLoadLocal,
     required this.onClose,
+    this.focusNode,
   });
 
   @override
   Widget build(BuildContext context) {
+    // 落焦行：选中的字幕轨（行序 = 关闭字幕 + 各流），无选中回退首行
+    int targetRow = 0;
+    if (activeSubtitleIndex != null) {
+      final streamRow =
+          subtitleStreams.indexWhere((s) => s.index == activeSubtitleIndex);
+      if (streamRow >= 0) targetRow = streamRow + 1;
+    }
+    int rowIndex = 0;
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 4),
       children: [
         SideOptionRow(
           label: '关闭字幕',
           selected: activeSubtitleIndex == null,
+          focusNode: rowIndex++ == targetRow ? focusNode : null,
           onTap: () {
             player.activeSubtitleTracks = [];
             onSubtitleSelected(null);
@@ -49,6 +62,7 @@ class SubtitleMenuPanel extends StatelessWidget {
           SideOptionRow(
             label: subtitleStreams[i].displayInfo,
             selected: activeSubtitleIndex == subtitleStreams[i].index,
+            focusNode: rowIndex++ == targetRow ? focusNode : null,
             onTap: () {
               onSubtitleSelected(i);
               onClose();
@@ -66,6 +80,7 @@ class SubtitleMenuPanel extends StatelessWidget {
         SideOptionRow(
           label: '加载本地字幕文件...',
           selected: false,
+          focusNode: rowIndex++ == targetRow ? focusNode : null,
           onTap: () {
             onLoadLocal();
             onClose();

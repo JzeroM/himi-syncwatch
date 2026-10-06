@@ -13,8 +13,8 @@ class PlayerTopBar extends StatelessWidget {
     required this.title,
     required this.networkSpeedText,
     required this.showDecodeButton,
-    required this.decodeModeLabel,
     required this.decodeMenuOpen,
+    required this.glassEnabled,
     required this.showVideoFitButton,
     required this.videoFitIcon,
     required this.videoFitLabel,
@@ -32,8 +32,10 @@ class PlayerTopBar extends StatelessWidget {
   final String? networkSpeedText;
 
   final bool showDecodeButton;
-  final String decodeModeLabel;
   final bool decodeMenuOpen;
+
+  /// 液态玻璃开关（设置页）；false 时解码方块降级纯色平底。
+  final bool glassEnabled;
 
   /// 画面比例按钮（解码控件右侧；仅本地单人 + 非 TV）。
   final bool showVideoFitButton;
@@ -48,6 +50,47 @@ class PlayerTopBar extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onToggleDecode;
   final VoidCallback onShare;
+
+  /// 解码方块装饰：
+  /// - 玻璃开：白 22%→10% 渐变 + 白 24% 细描边；展开态换 accent 1.5px
+  ///   描边 + accent 外发光（不用实心底，顶栏不突兀）
+  /// - 玻璃关（降级）：展开实心 accent / 收起白 15% 平底（旧观）
+  static BoxDecoration _decodeChipDecoration({
+    required bool open,
+    required bool glass,
+  }) {
+    const accent = Color(0xFF6366F1);
+    const radius = BorderRadius.all(Radius.circular(10));
+    if (glass) {
+      return BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: 0.22),
+            Colors.white.withValues(alpha: 0.10),
+          ],
+        ),
+        borderRadius: radius,
+        border: Border.all(
+          color: open ? accent : Colors.white.withValues(alpha: 0.24),
+          width: open ? 1.5 : 0.8,
+        ),
+        boxShadow: open
+            ? [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.40),
+                  blurRadius: 8,
+                ),
+              ]
+            : null,
+      );
+    }
+    return BoxDecoration(
+      color: open ? accent : Colors.white.withValues(alpha: 0.15),
+      borderRadius: radius,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,29 +143,19 @@ class PlayerTopBar extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           // 解码模式按钮（TV 隐藏：解码模式仅走设置页切换）
+          // 图标化玻璃方块：文字信息移入 DecodeModePanel 标题行
           if (showDecodeButton) ...[
             TvFocusable(
-              radius: 12,
+              key: const ValueKey('playerDecodeButton'),
+              radius: 10,
               onTap: onToggleDecode,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: decodeMenuOpen
-                      ? const Color(0xFF6366F1)
-                      : Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
+                padding: const EdgeInsets.all(6),
+                decoration: _decodeChipDecoration(
+                  open: decodeMenuOpen,
+                  glass: glassEnabled,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.memory, color: Colors.white, size: 14),
-                    const SizedBox(width: 4),
-                    Text(
-                      decodeModeLabel,
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
-                ),
+                child: const Icon(Icons.memory, color: Colors.white, size: 18),
               ),
             ),
           ],

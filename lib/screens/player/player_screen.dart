@@ -113,14 +113,17 @@ class PlayerScreen extends ConsumerStatefulWidget {
       (candidate == root || candidate.ancestors.contains(root));
 
   /// 控制条 5 秒到期时是否执行隐藏。
-  /// 焦点仍停留在控制条内（滑杆/播放/切集按钮/菜单面板）时顺延——
-  /// 隐藏会把焦点拉回热键层，遥控器永远停不在播放/切集按钮上。
+  /// 焦点仍停留在控制条内（滑杆/播放/切集按钮）或选择器面板内
+  /// （[panelRoot] 子树，面板在 Stack 平级、不在控制条子树内）时顺延——
+  /// 隐藏会把焦点拉回热键层并连带收起面板，遥控器停不在选项上。
   @visibleForTesting
   static bool shouldHideControlsNow({
     required FocusNode controlsRoot,
     required FocusNode? primaryFocus,
+    FocusNode? panelRoot,
   }) =>
-      !focusWithin(controlsRoot, primaryFocus);
+      !focusWithin(controlsRoot, primaryFocus) &&
+      (panelRoot == null || !focusWithin(panelRoot, primaryFocus));
 
   /// 轮询等待 [ready] 为 true（超时返回 false）。
   @visibleForTesting
@@ -217,6 +220,11 @@ class PlayerScreen extends ConsumerStatefulWidget {
     required bool mobilePlatform,
   }) =>
       mobilePlatform && !tvMode;
+
+  /// 旋转按钮图标：语义直白的「旋转屏幕」（原 screen_lock_* 是「锁定」
+  /// 语义，用户看不懂），保持无底纯图标与字幕/音轨按钮一致。
+  @visibleForTesting
+  static IconData get rotateButtonIcon => Icons.screen_rotation_alt;
 
   /// 控制条顶部标题艺术字（Logo 图）是否显示：仅单人播放且有 logo，
   /// 房间联播不显示（房间模式不加 logo）。
@@ -386,6 +394,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 字幕按钮焦点：右组头——Left 跨回左组的定向落点
   final FocusNode _subtitleButtonFocusNode =
       FocusNode(debugLabel: 'PlayerSubtitleButton');
+
+  /// 音轨/倍速按钮焦点（TV 打开选择器面板后原路返回的落点）
+  final FocusNode _audioButtonFocusNode =
+      FocusNode(debugLabel: 'PlayerAudioButton');
+  final FocusNode _speedButtonFocusNode =
+      FocusNode(debugLabel: 'PlayerSpeedButton');
+
+  /// 选择器面板落焦节点：打开面板后显式 requestFocus 精确落到选中行
+  /// （autofocus 在同级按钮已持焦时不抢占——这是"焦点进不了面板"的根因）
+  final FocusNode _selectorFirstFocusNode =
+      FocusNode(debugLabel: 'SelectorPanelFirstRow');
+
+  /// 选择器面板根锚点（skipTraversal 不参与遍历）：控制条自动隐藏判定
+  /// "焦点在菜单面板内"的依据（面板在 Stack 平级、不在控制条子树内）
+  final FocusNode _selectorPanelRootFocusNode =
+      FocusNode(debugLabel: 'SelectorPanelRoot');
+
+  /// 打开选择器面板的按钮节点：面板关闭后焦点原路返回该按钮
+  FocusNode? _selectorOpenerNode;
 
   /// 控制条根焦点（skipTraversal 不参与遍历）：自动隐藏前判定焦点
   /// 是否停留在控制条内（滑杆/按钮/菜单面板）
@@ -3264,6 +3291,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (!PlayerScreen.shouldHideControlsNow(
             controlsRoot: _controlsRootFocusNode,
             primaryFocus: FocusManager.instance.primaryFocus,
+            panelRoot: _selectorPanelRootFocusNode,
           )) {
             _resetHideTimer();
             return;
@@ -3282,13 +3310,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 打开字幕/音轨/倍速选择器面板：记录来源按钮，postFrame 把焦点精确
+  /// 送进面板选中行（TV 按钮已持焦时行内 autofocus 不抢占，必须显式
+  /// requestFocus）。
+  void _openSelectorPanel(FocusNode opener) {
+    _selectorOpenerNode = opener;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _selectorFirstFocusNode.enclosingScope != null) {
+        _selectorFirstFocusNode.requestFocus();
+      }
+    });
+  }
+
+  /// 关闭选择器面板并把焦点还给来源按钮（TV 遥控可立即 OK 重开）。
+  void _closeSelectorPanel() {
+    final opener = _selectorOpenerNode;
+    _selectorOpenerNode = null;
+    setState(() {
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showSpeedMenu = false;
+    });
+    _restoreSelectorOpenerFocus(opener, force: true);
+  }
+
+  /// 焦点在面板内时（或 [force]）把焦点还给来源按钮。
+  void _restoreSelectorOpenerFocus(FocusNode? opener, {bool force = false}) {
+    if (opener == null) return;
+    final focusInPanel = PlayerScreen.focusWithin(
+      _selectorPanelRootFocusNode,
+      FocusManager.instance.primaryFocus,
+    );
+    if (!force && !focusInPanel) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // enclosingScope == null：未挂树（非 TV 的 TvFocusable 不接管节点），
+      // 此时 requestFocus 会置 deferred 标记，须跳过防日后误抢焦
+      if (mounted && opener.enclosingScope != null) opener.requestFocus();
+    });
+  }
+
   void _closeAllMenus() {
+    final opener = _selectorOpenerNode;
+    _selectorOpenerNode = null;
     setState(() {
       _showSubtitleMenu = false;
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
     });
+    // 焦点正在面板行上（如 Back 关闭）：原路返回来源按钮，防悬空
+    _restoreSelectorOpenerFocus(opener);
     _showBrightnessBarNotifier.value = false;
     _showVolumeBarNotifier.value = false;
   }
@@ -3623,6 +3694,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _controlsRootFocusNode.dispose();
     _nextEpisodeFocusNode.dispose();
     _subtitleButtonFocusNode.dispose();
+    _audioButtonFocusNode.dispose();
+    _speedButtonFocusNode.dispose();
+    _selectorFirstFocusNode.dispose();
+    _selectorPanelRootFocusNode.dispose();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
     _gestureHintTimer?.cancel();
@@ -4029,48 +4104,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             bottom: 132,
             right: 12,
             width: 260,
-            child: SelectorSidePanel(
-              title: _showSubtitleMenu
-                  ? '字幕'
-                  : _showAudioMenu
-                      ? '音轨'
-                      : '倍速',
-              child: _showSubtitleMenu
-                  ? SubtitleMenuPanel(
-                      player: _player,
-                      subtitleStreams: _embySubtitleStreams,
-                      activeSubtitleIndex: _activeSubtitleIndex,
-                      useServerBurnIn: _useServerSubtitleBurnIn,
-                      itemId: _episodes.isNotEmpty &&
-                              _currentEpisodeIndex >= 0 &&
-                              _currentEpisodeIndex < _episodes.length
-                          ? _episodes[_currentEpisodeIndex].id
-                          : widget.itemId,
-                      mediaSourceId: widget.mediaSourceId,
-                      token: _currentToken,
-                      onSubtitleSelected: (index) {
-                        if (index == null) {
-                          _player.activeSubtitleTracks = [];
-                          _useServerSubtitleBurnIn = false;
-                          _activeSubtitleIndex = null;
-                        } else {
-                          _selectEmbySubtitle(index);
-                        }
-                      },
-                      onLoadLocal: _loadLocalSubtitle,
-                      onClose: () => setState(() => _showSubtitleMenu = false),
-                    )
-                  : _showAudioMenu
-                      ? AudioTrackMenuPanel(
-                          player: _player,
-                          audioStreams: _embyAudioStreams,
-                          onAudioSelected: _selectEmbyAudio,
-                          onClose: () => setState(() => _showAudioMenu = false),
-                        )
-                      : SpeedMenuPanel(
-                          current: _speed,
-                          onSelected: _applySpeed,
-                        ),
+            child: Focus(
+              // 面板根锚点：自动隐藏判定"焦点在面板内"的依据
+              focusNode: _selectorPanelRootFocusNode,
+              skipTraversal: true,
+              child: SelectorSidePanel(
+                title: _showSubtitleMenu
+                    ? '字幕'
+                    : _showAudioMenu
+                        ? '音轨'
+                        : '倍速',
+                child: _showSubtitleMenu
+                    ? SubtitleMenuPanel(
+                        player: _player,
+                        subtitleStreams: _embySubtitleStreams,
+                        activeSubtitleIndex: _activeSubtitleIndex,
+                        useServerBurnIn: _useServerSubtitleBurnIn,
+                        itemId: _episodes.isNotEmpty &&
+                                _currentEpisodeIndex >= 0 &&
+                                _currentEpisodeIndex < _episodes.length
+                            ? _episodes[_currentEpisodeIndex].id
+                            : widget.itemId,
+                        mediaSourceId: widget.mediaSourceId,
+                        token: _currentToken,
+                        focusNode: _selectorFirstFocusNode,
+                        onSubtitleSelected: (index) {
+                          if (index == null) {
+                            _player.activeSubtitleTracks = [];
+                            _useServerSubtitleBurnIn = false;
+                            _activeSubtitleIndex = null;
+                          } else {
+                            _selectEmbySubtitle(index);
+                          }
+                        },
+                        onLoadLocal: _loadLocalSubtitle,
+                        onClose: _closeSelectorPanel,
+                      )
+                    : _showAudioMenu
+                        ? AudioTrackMenuPanel(
+                            player: _player,
+                            audioStreams: _embyAudioStreams,
+                            focusNode: _selectorFirstFocusNode,
+                            onAudioSelected: _selectEmbyAudio,
+                            onClose: _closeSelectorPanel,
+                          )
+                        : SpeedMenuPanel(
+                            current: _speed,
+                            focusNode: _selectorFirstFocusNode,
+                            onSelected: _applySpeed,
+                          ),
+              ),
             ),
           ),
 
@@ -4196,9 +4279,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
           : null,
       showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode),
-      decodeModeLabel:
-          AppSettings.decodeModeLabels[settings.decodeMode] ?? 'Auto',
       decodeMenuOpen: _showDecodeModeMenu,
+      glassEnabled: settings.glassUi,
       showVideoFitButton: widget.roomCode == null && !settings.tvMode,
       videoFitIcon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
       videoFitLabel: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
@@ -4795,6 +4877,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _showAudioMenu = false;
                         _showSpeedMenu = false;
                       });
+                      if (_showSubtitleMenu) {
+                        _openSelectorPanel(_subtitleButtonFocusNode);
+                      }
                     },
                     badge: _embySubtitleStreams.isNotEmpty
                         ? '${_embySubtitleStreams.length}'
@@ -4805,12 +4890,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   // 音轨
                   _buildControlButton(
                     icon: Icons.audiotrack,
+                    focusNode: _audioButtonFocusNode,
                     onTap: () {
                       setState(() {
                         _showAudioMenu = !_showAudioMenu;
                         _showSubtitleMenu = false;
                         _showSpeedMenu = false;
                       });
+                      if (_showAudioMenu) {
+                        _openSelectorPanel(_audioButtonFocusNode);
+                      }
                     },
                     badge: _embyAudioStreams.isNotEmpty
                         ? '${_embyAudioStreams.length}'
@@ -4821,11 +4910,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   if (widget.roomCode == null) ...[
                     const SizedBox(width: 20),
                     TvFocusable(
-                      onTap: () => setState(() {
-                        _showSpeedMenu = !_showSpeedMenu;
-                        _showSubtitleMenu = false;
-                        _showAudioMenu = false;
-                      }),
+                      focusNode: _speedButtonFocusNode,
+                      onTap: () {
+                        setState(() {
+                          _showSpeedMenu = !_showSpeedMenu;
+                          _showSubtitleMenu = false;
+                          _showAudioMenu = false;
+                        });
+                        if (_showSpeedMenu) {
+                          _openSelectorPanel(_speedButtonFocusNode);
+                        }
+                      },
                       child: Padding(
                         padding: const EdgeInsets.all(4),
                         child: Row(
@@ -4863,9 +4958,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   )) ...[
                     const SizedBox(width: 20),
                     _buildControlButton(
-                      icon: _orientationMode == _OrientationMode.portraitUp
-                          ? Icons.screen_lock_landscape
-                          : Icons.screen_lock_portrait,
+                      icon: PlayerScreen.rotateButtonIcon,
                       onTap: _toggleOrientation,
                     ),
                   ],

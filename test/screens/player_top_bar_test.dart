@@ -12,6 +12,8 @@ PlayerTopBar _bar({
   String title = '',
   String? networkSpeedText,
   bool showDecodeButton = false,
+  bool decodeMenuOpen = false,
+  bool glassEnabled = true,
   bool showVideoFitButton = false,
   bool showShare = false,
 }) =>
@@ -19,8 +21,8 @@ PlayerTopBar _bar({
       title: title,
       networkSpeedText: networkSpeedText,
       showDecodeButton: showDecodeButton,
-      decodeModeLabel: 'Auto',
-      decodeMenuOpen: false,
+      decodeMenuOpen: decodeMenuOpen,
+      glassEnabled: glassEnabled,
       showVideoFitButton: showVideoFitButton,
       videoFitIcon: Icons.fit_screen,
       videoFitLabel: '自适应',
@@ -149,6 +151,82 @@ void main() {
       await tester.pumpWidget(_host(_bar(showVideoFitButton: true)));
       expect(find.byIcon(Icons.fit_screen), findsOneWidget);
       expect(find.byTooltip('自适应'), findsOneWidget);
+    });
+  });
+
+  group('解码图标方块（B2 图标化）', () {
+    BoxDecoration _chipDecoration(WidgetTester tester) {
+      final container = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('playerDecodeButton')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      return container.decoration! as BoxDecoration;
+    }
+
+    testWidgets('图标 only 无文字，点击触发 onToggleDecode', (tester) async {
+      var toggled = false;
+      await tester.pumpWidget(_host(PlayerTopBar(
+        title: '',
+        networkSpeedText: null,
+        showDecodeButton: true,
+        decodeMenuOpen: false,
+        glassEnabled: true,
+        showVideoFitButton: false,
+        videoFitIcon: Icons.fit_screen,
+        videoFitLabel: '自适应',
+        onCycleVideoFit: () {},
+        showShare: false,
+        onBack: () {},
+        onToggleDecode: () => toggled = true,
+        onShare: () {},
+      )));
+
+      expect(find.byKey(const ValueKey('playerDecodeButton')), findsOneWidget);
+      expect(find.byIcon(Icons.memory), findsOneWidget);
+      expect(find.byType(Text), findsNothing, reason: '文字已移入解码面板，顶栏纯图标');
+      await tester.tap(find.byKey(const ValueKey('playerDecodeButton')));
+      await tester.pumpAndSettle();
+      expect(toggled, isTrue);
+    });
+
+    testWidgets('玻璃开：收起白细描边无发光 / 展开 accent 描边 + 外发光', (tester) async {
+      await tester.pumpWidget(
+          _host(_bar(showDecodeButton: true, decodeMenuOpen: false)));
+      await tester.pumpAndSettle();
+      final closed = _chipDecoration(tester);
+      expect(closed.border!.top.width, 0.8);
+      expect(closed.border!.top.color, isNot(const Color(0xFF6366F1)));
+      expect(closed.boxShadow, isNull);
+      expect(closed.gradient, isNotNull, reason: '玻璃渐变底');
+
+      await tester.pumpWidget(
+          _host(_bar(showDecodeButton: true, decodeMenuOpen: true)));
+      await tester.pumpAndSettle();
+      final open = _chipDecoration(tester);
+      expect(open.border!.top.color, const Color(0xFF6366F1));
+      expect(open.border!.top.width, 1.5);
+      expect(open.boxShadow, isNotNull, reason: '展开态 accent 外发光');
+    });
+
+    testWidgets('玻璃关（降级）：收起白 15% 平底 / 展开实心 accent', (tester) async {
+      await tester.pumpWidget(_host(_bar(
+          showDecodeButton: true, decodeMenuOpen: false, glassEnabled: false)));
+      await tester.pumpAndSettle();
+      final closed = _chipDecoration(tester);
+      expect(closed.color, Colors.white.withValues(alpha: 0.15));
+      expect(closed.gradient, isNull);
+      expect(closed.border, isNull);
+
+      await tester.pumpWidget(_host(_bar(
+          showDecodeButton: true, decodeMenuOpen: true, glassEnabled: false)));
+      await tester.pumpAndSettle();
+      final open = _chipDecoration(tester);
+      expect(open.color, const Color(0xFF6366F1));
+      expect(open.boxShadow, isNull);
     });
   });
 }

@@ -7,6 +7,8 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
 
@@ -71,7 +73,8 @@ void main() {
     ));
     await tester.pump();
 
-    expect(find.text('智能'), findsOneWidget);
+    expect(find.text('解码模式'), findsOneWidget, reason: '顶栏图标化后标题移入面板');
+    expect(find.text('智能'), findsNWidgets(2), reason: '标题回显 + 选项行各一处');
     expect(find.text('硬解'), findsOneWidget);
     expect(find.text('软解'), findsOneWidget);
     expect(_focusCount(tester), 3, reason: '三选项均应有 D-pad 焦点');
@@ -211,5 +214,163 @@ void main() {
     await tester.tap(find.text('国语'));
     await tester.pump();
     expect(selected, 0);
+  });
+
+  // ---- 选择器面板 TV 落焦（打开后焦点直接进面板选中行） ----
+  // 根因：焦点停在控制条按钮上时，行内 autofocus 不抢占，D-pad 方向
+  // 键落到邻近按钮而非面板；播放页改为打开后显式 requestFocus。
+
+  bool _rowHoldsNode(WidgetTester tester, FocusNode node, String label) => find
+      .ancestor(
+        of: find.text(label),
+        matching:
+            find.byWidgetPredicate((w) => w is Focus && w.focusNode == node),
+      )
+      .evaluate()
+      .isNotEmpty;
+
+  testWidgets('TV：倍速面板落焦当前档位行，↓ + OK 直接换档', (tester) async {
+    final node = FocusNode(debugLabel: 'SelectorPanelFirstRow');
+    addTearDown(node.dispose);
+    double? picked;
+    await tester.pumpWidget(_host(
+      SelectorSidePanel(
+        title: '倍速',
+        child: SpeedMenuPanel(
+          current: 1.5,
+          focusNode: node,
+          onSelected: (s) => picked = s,
+        ),
+      ),
+      settings: const AppSettings(tvMode: true),
+    ));
+    await tester.pump();
+
+    expect(_rowHoldsNode(tester, node, '1.5x'), isTrue, reason: '焦点节点应挂在当前档位行');
+    node.requestFocus();
+    await tester.pump();
+    expect(node.hasFocus, isTrue, reason: 'requestFocus 后面板行持焦');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(picked, 2.0, reason: '落焦行 ↓ 即达 2.0x，OK 直接选中');
+  });
+
+  testWidgets('TV：倍速当前档不在档位表（1.75x）回退落焦第一档', (tester) async {
+    final node = FocusNode(debugLabel: 'SelectorPanelFirstRow');
+    addTearDown(node.dispose);
+    await tester.pumpWidget(_host(
+      SelectorSidePanel(
+        title: '倍速',
+        child: SpeedMenuPanel(
+          current: 1.75,
+          focusNode: node,
+          onSelected: (_) {},
+        ),
+      ),
+      settings: const AppSettings(tvMode: true),
+    ));
+    await tester.pump();
+    expect(_rowHoldsNode(tester, node, '0.5x'), isTrue);
+  });
+
+  testWidgets('TV：字幕面板无选中落焦「关闭字幕」行', (tester) async {
+    final node = FocusNode(debugLabel: 'SelectorPanelFirstRow');
+    addTearDown(node.dispose);
+    await tester.pumpWidget(_host(
+      SelectorSidePanel(
+        title: '字幕',
+        child: SubtitleMenuPanel(
+          player: _FakePlayer(),
+          subtitleStreams: [_stream('Subtitle', 0, label: '中字')],
+          activeSubtitleIndex: null,
+          focusNode: node,
+          onSubtitleSelected: (_) {},
+          onLoadLocal: () {},
+          onClose: () {},
+        ),
+      ),
+      settings: const AppSettings(tvMode: true),
+    ));
+    await tester.pump();
+    expect(_rowHoldsNode(tester, node, '关闭字幕'), isTrue);
+  });
+
+  testWidgets('TV：字幕面板有选中落焦对应字幕轨行', (tester) async {
+    final node = FocusNode(debugLabel: 'SelectorPanelFirstRow');
+    addTearDown(node.dispose);
+    await tester.pumpWidget(_host(
+      SelectorSidePanel(
+        title: '字幕',
+        child: SubtitleMenuPanel(
+          player: _FakePlayer(),
+          subtitleStreams: [
+            _stream('Subtitle', 0, label: '中字'),
+            _stream('Subtitle', 1, label: '英字'),
+          ],
+          activeSubtitleIndex: 1,
+          focusNode: node,
+          onSubtitleSelected: (_) {},
+          onLoadLocal: () {},
+          onClose: () {},
+        ),
+      ),
+      settings: const AppSettings(tvMode: true),
+    ));
+    await tester.pump();
+    expect(_rowHoldsNode(tester, node, '英字'), isTrue,
+        reason: '落焦当前生效的字幕轨，无需从头翻');
+    expect(_rowHoldsNode(tester, node, '关闭字幕'), isFalse);
+  });
+
+  testWidgets('TV：音轨面板落焦选中音轨行', (tester) async {
+    final node = FocusNode(debugLabel: 'SelectorPanelFirstRow');
+    addTearDown(node.dispose);
+    await tester.pumpWidget(_host(
+      SelectorSidePanel(
+        title: '音轨',
+        child: AudioTrackMenuPanel(
+          player: _FakePlayer(audioTracks: const [1]),
+          audioStreams: [
+            _stream('Audio', 0, label: '国语'),
+            _stream('Audio', 1, label: '英语'),
+          ],
+          focusNode: node,
+          onAudioSelected: (_) {},
+          onClose: () {},
+        ),
+      ),
+      settings: const AppSettings(tvMode: true),
+    ));
+    await tester.pump();
+    expect(_rowHoldsNode(tester, node, '英语'), isTrue);
+    expect(_rowHoldsNode(tester, node, '国语'), isFalse);
+  });
+
+  testWidgets('TV：音轨空列表节点未挂树，requestFocus 不抛（deferred 守卫）', (tester) async {
+    final node = FocusNode(debugLabel: 'SelectorPanelFirstRow');
+    addTearDown(node.dispose);
+    await tester.pumpWidget(_host(
+      SelectorSidePanel(
+        title: '音轨',
+        child: AudioTrackMenuPanel(
+          player: _FakePlayer(),
+          audioStreams: const [],
+          focusNode: node,
+          onAudioSelected: (_) {},
+          onClose: () {},
+        ),
+      ),
+      settings: const AppSettings(tvMode: true),
+    ));
+    await tester.pump();
+    expect(node.enclosingScope, isNull, reason: '无行可挂，节点不进焦点树');
+    expect(tester.takeException(), isNull);
+    node.requestFocus(); // 未挂树：置 deferred 标记，不抛
+    await tester.pump();
+    expect(node.hasFocus, isFalse);
+    expect(tester.takeException(), isNull);
   });
 }

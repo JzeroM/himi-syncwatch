@@ -89,6 +89,54 @@ void main() {
     );
   });
 
+  testWidgets('shouldHideControlsNow：焦点在选择器面板（panelRoot）内顺延', (tester) async {
+    final root = FocusNode(debugLabel: 'controlsRoot');
+    final panelRoot = FocusNode(debugLabel: 'SelectorPanelRoot');
+    final inPanel = FocusNode(debugLabel: 'SubtitleRow');
+    addTearDown(root.dispose);
+    addTearDown(panelRoot.dispose);
+    addTearDown(inPanel.dispose);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Column(
+        children: [
+          Focus(focusNode: root, skipTraversal: true, child: const SizedBox()),
+          Focus(
+            focusNode: panelRoot,
+            skipTraversal: true,
+            child: Focus(focusNode: inPanel, child: const SizedBox()),
+          ),
+        ],
+      ),
+    ));
+    await tester.pump();
+
+    expect(
+      PlayerScreen.shouldHideControlsNow(
+        controlsRoot: root,
+        primaryFocus: inPanel,
+        panelRoot: panelRoot,
+      ),
+      isFalse,
+      reason: '焦点在面板行上：隐藏会连带收起面板，必须顺延',
+    );
+    expect(
+      PlayerScreen.shouldHideControlsNow(
+        controlsRoot: root,
+        primaryFocus: null,
+        panelRoot: panelRoot,
+      ),
+      isTrue,
+      reason: '无焦点：正常隐藏',
+    );
+  });
+
+  test('rotateButtonIcon：语义直白的旋转图标，非 screen_lock 系', () {
+    expect(PlayerScreen.rotateButtonIcon, Icons.screen_rotation_alt);
+    expect(PlayerScreen.rotateButtonIcon, isNot(Icons.screen_lock_landscape));
+    expect(PlayerScreen.rotateButtonIcon, isNot(Icons.screen_lock_portrait));
+  });
+
   group('waitUntil（surface 绑定等待原语）', () {
     test('ready 已满足：立即返回 true，不轮询', () async {
       var polls = 0;

@@ -12,6 +12,9 @@ class AudioTrackMenuPanel extends StatelessWidget {
   final ValueChanged<int> onAudioSelected;
   final VoidCallback onClose;
 
+  /// TV 打开面板后精确落焦的行：当前选中音轨，无选中回退第一行。
+  final FocusNode? focusNode;
+
   const AudioTrackMenuPanel({
     super.key,
     required this.player,
@@ -19,10 +22,20 @@ class AudioTrackMenuPanel extends StatelessWidget {
     this.currentAudioIndex = -1,
     required this.onAudioSelected,
     required this.onClose,
+    this.focusNode,
   });
 
   @override
   Widget build(BuildContext context) {
+    // 落焦行：当前生效音轨（activeAudioTracks 存的是下标），无则回退首行
+    int targetRow = -1;
+    for (int i = 0; i < audioStreams.length; i++) {
+      if (player.activeAudioTracks.contains(i)) {
+        targetRow = i;
+        break;
+      }
+    }
+    if (targetRow < 0) targetRow = 0;
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 4),
       children: [
@@ -30,6 +43,7 @@ class AudioTrackMenuPanel extends StatelessWidget {
           SideOptionRow(
             label: audioStreams[i].displayInfo,
             selected: player.activeAudioTracks.contains(i),
+            focusNode: i == targetRow ? focusNode : null,
             onTap: () {
               onAudioSelected(i);
               onClose();
