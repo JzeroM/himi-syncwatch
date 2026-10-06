@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
+import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
@@ -2407,9 +2408,11 @@ void main() {
         playedPercentage: 20,
       );
       final fake = _SeqItemFakeService(sequence: [noResume, withResume]);
-      await _pumpDetailInRouter(tester, item: noResume, emby: fake);
+      final container =
+          await _pumpDetailInRouter(tester, item: noResume, emby: fake);
 
       expect(find.text('开始播放'), findsOneWidget);
+      final revBefore = container.read(resumeRevisionProvider);
 
       // 播放 → 返回（pop 播放器路由）
       final btn = find.text('开始播放');
@@ -2424,8 +2427,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       await tester.pump(const Duration(milliseconds: 600));
 
-      // 静默刷新读到新进度
+      // 静默刷新读到新进度 → 按钮变「继续」且 bump 续播修订号
       expect(find.text('继续 02:49'), findsOneWidget);
+      expect(container.read(resumeRevisionProvider), greaterThan(revBefore));
     });
   });
 

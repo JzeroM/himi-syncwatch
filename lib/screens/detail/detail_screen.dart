@@ -199,6 +199,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             : SeriesSections.seasonNumber(_seasons.first, 0);
       }
 
+      final wasOfferResume = _offerResume;
       setState(() {
         _item = item;
         _isFavorite = item?.isFavorite ?? false;
@@ -212,6 +213,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _resumeMsOverride = null;
         _isLoading = false;
       });
+      // 继续播放按钮状态（默认 ↔ 继续）发生变化 → 立即刷新首页「继续观看」栏
+      if (_offerResume != wasOfferResume) {
+        ref.read(resumeRevisionProvider.notifier).state++;
+      }
     } catch (e) {
       if (silent) return; // 静默刷新失败：保留原内容，不弹错误页
       setState(() {
