@@ -119,7 +119,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           includeItemTypes: 'Movie,Series',
           fields:
               'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber',
-          sortBy: 'DateCreated',
+          // DateLastContentAdded：剧集有新集数入库时 Series 的该字段会
+          // 更新，更新过的剧集能浮到最前；DateCreated 是系列首次入库
+          // 时间，新集不会变——表现为"更新了还排在后面"
+          sortBy: 'DateLastContentAdded',
           sortOrder: 'Descending',
         );
         return _CategoryData(folder: lib, items: items);

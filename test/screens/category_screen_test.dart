@@ -36,6 +36,25 @@ Future<void> _pumpScreen(
 }
 
 void main() {
+  testWidgets('最近添加排序：SortBy=DateLastContentAdded 下传服务端', (tester) async {
+    final emby = FakeEmbyService(items: [
+      MediaItem(id: 'm1', name: '剧', type: 'Series', posterUrl: ''),
+    ]);
+    await _pumpScreen(tester, emby: emby);
+
+    expect(SortOption.dateDesc.label, '最近添加');
+    expect(SortOption.dateDesc.sortOrder, 'Descending');
+    expect(
+      SortOption.dateDesc.sortBy,
+      'DateLastContentAdded',
+      reason: 'DateCreated 是系列首次入库时间、有新集也不变——更新过的'
+          '剧集排不到前面；DateLastContentAdded 随子项入库更新',
+    );
+    expect(emby.lastGetItemsSortBy, 'DateLastContentAdded',
+        reason: '默认排序应实际下传服务端');
+    expect(emby.lastGetItemsSortOrder, 'Descending');
+  });
+
   testWidgets('分类网格卡片：海报完整 2:3、标题在海报下方、带评分与集数角标', (tester) async {
     await _pumpScreen(
       tester,

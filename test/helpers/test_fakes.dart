@@ -123,6 +123,10 @@ class FakeEmbyService extends EmbyService {
   /// Emby 4.9.x 非管理员多版本字段透传用）。
   String? lastGetItemsFields;
 
+  /// 最近一次 getItems 收到的 sortBy/sortOrder（首页"最近添加"排序断言用）。
+  String? lastGetItemsSortBy;
+  String? lastGetItemsSortOrder;
+
   @override
   Future<List<MediaItem>> getSeasons(String seriesId) async => seasons;
 
@@ -149,6 +153,8 @@ class FakeEmbyService extends EmbyService {
     String? sortOrder,
   }) async {
     lastGetItemsFields = fields;
+    lastGetItemsSortBy = sortBy;
+    lastGetItemsSortOrder = sortOrder;
     return (parentId != null && itemsByParent.containsKey(parentId))
         ? itemsByParent[parentId]!
         : items;

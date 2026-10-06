@@ -10,7 +10,9 @@ import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 
 enum SortOption {
-  dateDesc('最近添加', 'DateCreated', 'Descending'),
+  // DateLastContentAdded：Series 有新集入库时该字段更新，更新过的剧集
+  // 排前（DateCreated 是系列首次入库时间，新集不变故排位不动）
+  dateDesc('最近添加', 'DateLastContentAdded', 'Descending'),
   nameAsc('名称 A-Z', 'SortName', 'Ascending'),
   nameDesc('名称 Z-A', 'SortName', 'Descending'),
   yearDesc('年份 ↓', 'ProductionYear', 'Descending'),

@@ -624,6 +624,43 @@ void main() {
     );
   });
 
+  testWidgets('首页分类行：最近添加按 DateLastContentAdded（有新集的剧排前）', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: const [
+        LibraryFolder(
+          id: 'lb1',
+          name: '国产剧',
+          collectionType: 'tvshows',
+          posterUrl: '',
+        ),
+      ],
+      items: [
+        MediaItem(
+          id: 'sv1',
+          name: '更新了的剧',
+          type: 'Series',
+          posterUrl: '',
+        ),
+      ],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    expect(
+      emby.lastGetItemsSortBy,
+      'DateLastContentAdded',
+      reason: 'DateCreated 是系列首次入库时间、有新集也不变——更新过的'
+          '剧集排不到最前；DateLastContentAdded 随子集入库更新',
+    );
+    expect(emby.lastGetItemsSortOrder, 'Descending');
+    expect(find.byKey(const ValueKey('posterCard_sv1')), findsOneWidget);
+  });
+
   testWidgets('首页分类卡片：海报完整 2:3、标题在海报下方、带评分与集数角标', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1'],
