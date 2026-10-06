@@ -4781,70 +4781,63 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               // 字幕/音轨/倍速选择器已移至右侧玻璃浮层（SelectorSidePanel）
               Row(
                 children: [
-                  // 上一集
-                  if (_canControlPlayback &&
-                      _hasEpisodeList &&
-                      _totalEpisodeCount > 1)
-                    TvFocusable(
-                      onTap: _currentEpisodeIndex > 0
-                          ? () => _switchToEpisode(_currentEpisodeIndex - 1)
-                          : null,
-                      child: Icon(
-                        Icons.skip_previous,
-                        color: _currentEpisodeIndex > 0
-                            ? Colors.white
-                            : Colors.white24,
-                        size: 28,
-                      ),
-                    ),
-                  if (_canControlPlayback &&
-                      _hasEpisodeList &&
-                      _totalEpisodeCount > 1)
+                  // 传输控制组：上一集 / 播放暂停 / 下一集，固定在进度条左数显
+                  // 下方。无剧集导航（电影/单集）时仍保留上一集/下一集占位宽度，
+                  // 保证播放/暂停按钮位置与剧集播放时完全一致（不漂移）。
+                  if (_canControlPlayback) ...[
+                    if (_hasEpisodeList && _totalEpisodeCount > 1)
+                      TvFocusable(
+                        onTap: _currentEpisodeIndex > 0
+                            ? () => _switchToEpisode(_currentEpisodeIndex - 1)
+                            : null,
+                        child: Icon(
+                          Icons.skip_previous,
+                          color: _currentEpisodeIndex > 0
+                              ? Colors.white
+                              : Colors.white24,
+                          size: 28,
+                        ),
+                      )
+                    else
+                      const SizedBox(width: 28),
                     const SizedBox(width: 8),
 
-                  // 播放/暂停（焦点落点统一由 _showControlsForTv 决定，
-                  // 不再 autofocus——与 postFrame 落焦滑杆竞争导致"有时选不到"；
-                  // 滑杆按落键由 PlayerHotkey 定向落到此节点）
-                  if (_canControlPlayback)
+                    // 播放/暂停（位置固定，焦点落点统一由 _showControlsForTv
+                    // 决定，不再 autofocus；滑杆按落键由 PlayerHotkey 定向落到此节点）
                     TvFocusable(
                       focusNode: _playPauseFocusNode,
                       onTap: _togglePlayPause,
                       child: ValueListenableBuilder<bool>(
                         valueListenable: _isPlayingNotifier,
-                        builder: (context, isPlaying, child) {
-                          return Icon(
-                            isPlaying
-                                ? Icons.pause_circle_filled
-                                : Icons.play_circle_fill,
-                            color: Colors.white,
-                            size: 36,
-                          );
-                        },
+                        builder: (context, isPlaying, child) => Icon(
+                          isPlaying
+                              ? Icons.pause_circle_filled
+                              : Icons.play_circle_fill,
+                          color: Colors.white,
+                          size: 36,
+                        ),
                       ),
                     ),
-                  if (_canControlPlayback) const SizedBox(width: 8),
-
-                  // 下一集
-                  if (_canControlPlayback &&
-                      _hasEpisodeList &&
-                      _totalEpisodeCount > 1)
-                    TvFocusable(
-                      focusNode: _nextEpisodeFocusNode,
-                      onTap: _currentEpisodeIndex < _totalEpisodeCount - 1
-                          ? () => _switchToEpisode(_currentEpisodeIndex + 1)
-                          : null,
-                      child: Icon(
-                        Icons.skip_next,
-                        color: _currentEpisodeIndex < _totalEpisodeCount - 1
-                            ? Colors.white
-                            : Colors.white24,
-                        size: 28,
-                      ),
-                    ),
-                  if (_canControlPlayback &&
-                      _hasEpisodeList &&
-                      _totalEpisodeCount > 1)
                     const SizedBox(width: 8),
+
+                    if (_hasEpisodeList && _totalEpisodeCount > 1)
+                      TvFocusable(
+                        focusNode: _nextEpisodeFocusNode,
+                        onTap: _currentEpisodeIndex < _totalEpisodeCount - 1
+                            ? () => _switchToEpisode(_currentEpisodeIndex + 1)
+                            : null,
+                        child: Icon(
+                          Icons.skip_next,
+                          color: _currentEpisodeIndex < _totalEpisodeCount - 1
+                              ? Colors.white
+                              : Colors.white24,
+                          size: 28,
+                        ),
+                      )
+                    else
+                      const SizedBox(width: 28),
+                    const SizedBox(width: 8),
+                  ],
 
                   // 音量/亮度滑杆（仅 Windows，替代已取消的垂直手势）
                   if (PlayerPlatform.volumeBrightnessSliders) ...[

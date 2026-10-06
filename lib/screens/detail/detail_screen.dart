@@ -1144,7 +1144,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
           minimumSize: Size(0, compact ? 40 : 48),
-          padding: EdgeInsets.symmetric(vertical: compact ? 10 : 14),
+          // TV 紧凑态补水平内边距：否则图标+文字贴到玻璃胶囊边缘，
+          // 文字看起来"溢出"胶囊；非 TV 靠 Expanded 撑宽居中，无需内边距
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 16 : 0,
+            vertical: compact ? 10 : 14,
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
           shadowColor: Colors.transparent,
           tapTargetSize: compact

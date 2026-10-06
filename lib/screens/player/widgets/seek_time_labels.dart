@@ -32,11 +32,15 @@ class SeekTimeLabels extends StatelessWidget {
   /// 中段进度条（滑杆本体）。
   final Widget child;
 
+  /// 单侧时间格宽度：时长 ≥1h 用 `HH:MM:SS` 8 字符档（78），否则
+  /// `MM:SS` 5 字符档（56）。左右同宽，逐秒更新不抖动；供外部（如
+  /// 播放/暂停控件对齐左数显）复用同一宽度。
+  static double cellWidth(Duration duration) =>
+      duration.inHours > 0 ? 78.0 : 56.0;
+
   @override
   Widget build(BuildContext context) {
-    // 时长 ≥1h → `HH:MM:SS` 8 字符档，否则 `MM:SS` 5 字符档；
-    // 左右同宽对称，pos ≤ dur 不会溢出
-    final cell = duration.inHours > 0 ? 78.0 : 56.0;
+    final cell = cellWidth(duration);
     const style = TextStyle(color: Colors.white70, fontSize: 12);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,

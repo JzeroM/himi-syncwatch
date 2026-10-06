@@ -29,6 +29,14 @@ void main() {
   });
 
   group('SeekTimeLabels', () {
+    test('cellWidth：<1h 为 56，≥1h 为 78（供播放控件对齐左数显）', () {
+      expect(SeekTimeLabels.cellWidth(const Duration(minutes: 59, seconds: 59)),
+          56.0);
+      expect(SeekTimeLabels.cellWidth(const Duration(hours: 1)), 78.0);
+      expect(
+          SeekTimeLabels.cellWidth(const Duration(hours: 2, minutes: 5)), 78.0);
+    });
+
     Widget wrap(Duration pos, Duration dur) => MaterialApp(
           home: Scaffold(
             body: SeekTimeLabels(

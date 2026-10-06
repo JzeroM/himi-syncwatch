@@ -284,6 +284,16 @@ void main() {
       // 半行宽（800 宽下 Expanded 约 378）
       expect(playRect.width, greaterThan(300));
     });
+
+    testWidgets('TV：播放按钮补水平内边距，文字不贴玻璃胶囊边', (tester) async {
+      await _pumpDetail(tester, tv: true);
+
+      final button =
+          tester.widget<FilledButton>(find.widgetWithText(FilledButton, '播放'));
+      final padding = button.style!.padding!.resolve(<WidgetState>{})!;
+      expect(padding.horizontal, greaterThan(0),
+          reason: 'TV 紧凑态需水平内边距，否则文字压到胶囊边缘');
+    });
   });
 
   testWidgets('跨服务器详情按 serverId 使用来源服务器的服务', (tester) async {
