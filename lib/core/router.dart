@@ -7,6 +7,8 @@ import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/screens/room/room_screen.dart';
 import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/screens/category/category_screen.dart';
+import 'package:himi_syncwatch/screens/favorites/favorites_screen.dart';
+import 'package:himi_syncwatch/screens/favorites/favorites_all_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
@@ -19,7 +21,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     navigatorKey: routerKey,
     initialLocation: '/',
     routes: [
-      // 四标签壳：首页 / Emby服务器 / 声网配置 / 设置
+      // 五标签壳：首页 / 收藏 / Emby服务器 / 声网配置 / 设置
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             MainShell(shell: navigationShell),
@@ -28,6 +30,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             GoRoute(
               path: '/',
               builder: (context, state) => const HomeScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/favorites',
+              builder: (context, state) => const FavoritesScreen(),
             ),
           ]),
           StatefulShellBranch(routes: [
@@ -49,6 +57,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ),
           ]),
         ],
+      ),
+      GoRoute(
+        path: '/favorites/all',
+        builder: (context, state) => FavoritesAllScreen(
+          type: state.uri.queryParameters['type'] ?? 'movie',
+          title: state.uri.queryParameters['title'] ?? '收藏',
+        ),
       ),
       GoRoute(
         path: '/category/:id',

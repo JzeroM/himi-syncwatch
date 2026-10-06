@@ -143,7 +143,7 @@ int _shellIndex(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('默认进入首页，壳提供四个标签且无侧边栏', (tester) async {
+  testWidgets('默认进入首页，壳提供五个标签且无侧边栏', (tester) async {
     await _pumpApp(tester);
 
     expect(find.byType(MainShell), findsOneWidget);
@@ -151,6 +151,7 @@ void main() {
     expect(find.byType(Drawer), findsNothing);
 
     expect(find.text('首页'), findsOneWidget);
+    expect(find.text('收藏'), findsOneWidget);
     expect(find.text('Emby服务器'), findsOneWidget);
     expect(find.text('声网配置'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
@@ -163,7 +164,7 @@ void main() {
     await tester.tap(find.text('Emby服务器'));
     await tester.pumpAndSettle();
 
-    expect(_shellIndex(tester), 1);
+    expect(_shellIndex(tester), 2);
     expect(find.byType(ServerManagerScreen), findsOneWidget);
     expect(find.byType(HomeScreen), findsNothing);
   });
@@ -174,7 +175,7 @@ void main() {
     await tester.tap(find.text('声网配置'));
     await tester.pumpAndSettle();
 
-    expect(_shellIndex(tester), 2);
+    expect(_shellIndex(tester), 3);
     expect(find.byType(AgoraConfigScreen), findsOneWidget);
     expect(find.byType(HomeScreen), findsNothing);
   });
@@ -185,7 +186,7 @@ void main() {
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
 
-    expect(_shellIndex(tester), 3);
+    expect(_shellIndex(tester), 4);
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(find.byType(HomeScreen), findsNothing);
   });
@@ -285,7 +286,7 @@ void main() {
 
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
-    expect(_shellIndex(tester), 3);
+    expect(_shellIndex(tester), 4);
 
     await tester.drag(find.byType(ListView).first, const Offset(0, -2000));
     await tester.pumpAndSettle();
@@ -301,7 +302,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 600));
 
-    // 拖到第三格中部松手
+    // 拖到第四格中部松手
     await gesture.moveTo(
       Offset(navRect.left + navRect.width * 0.62, navRect.center.dy),
     );
@@ -309,7 +310,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(_shellIndex(tester), 2);
+    expect(_shellIndex(tester), 3);
     expect(find.byType(AgoraConfigScreen), findsOneWidget);
   });
 

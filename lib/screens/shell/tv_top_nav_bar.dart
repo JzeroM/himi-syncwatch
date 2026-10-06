@@ -25,9 +25,9 @@ class TvTopNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onSelect;
 
-  /// TV 模式隐藏的导航分支（声网配置）：顶栏不渲染；
+  /// TV 模式隐藏的导航分支（声网配置，index 3）：顶栏不渲染；
   /// [MainShell] 据此在 currentIndex 命中时兜底回首页。
-  static const int hiddenAgoraIndex = 2;
+  static const int hiddenAgoraIndex = 3;
 
   @override
   Widget build(BuildContext context) {

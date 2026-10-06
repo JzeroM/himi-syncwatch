@@ -39,19 +39,21 @@ class ShellNavBar extends ConsumerStatefulWidget {
 
 class _ShellNavBarState extends ConsumerState<ShellNavBar>
     with SingleTickerProviderStateMixin {
-  static const int _tabCount = 4;
+  static const int _tabCount = 5;
   static const double _navHeight = 60;
   static const double _blobHeight = 50;
 
-  static const List<String> _labels = ['首页', 'Emby服务器', '声网配置', '设置'];
+  static const List<String> _labels = ['首页', '收藏', 'Emby服务器', '声网配置', '设置'];
   static const List<IconData> _icons = [
     Icons.home_outlined,
+    Icons.favorite_border,
     Icons.dns_outlined,
     Icons.key_outlined,
     Icons.settings_outlined,
   ];
   static const List<IconData> _selectedIcons = [
     Icons.home,
+    Icons.favorite,
     Icons.dns,
     Icons.key,
     Icons.settings,

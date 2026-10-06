@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/favorites_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
@@ -80,6 +81,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 每集选中的版本 source id（key = 集 id；null = 服务端默认版本）。
   final Map<String, String?> _episodeSourceIds = {};
 
+  /// 主条目收藏态（电影页=电影；电视剧页=整部剧）。
+  bool _isFavorite = false;
+
+  /// 已收藏的集 id 集合（剧集页横卡爱心的乐观态）。
+  final Set<String> _favoriteEpisodeIds = {};
+
   /// 横卡行挂点与水平滚动控制器：选集后定位高亮卡。
   final _episodeRowKey = GlobalKey();
   final _episodeRowController = ScrollController();
@@ -149,7 +156,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // AlternateMediaSources：Emby 4.9.x 起批量端点对非管理员
               // 每条只回 1 个 MediaSource，需显式请求该字段才返回全部版本
               fields:
-                  'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,PremiereDate',
+                  'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,PremiereDate,UserData',
             )
                 .then((episodes) {
               _episodes = episodes;
@@ -179,6 +186,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
       setState(() {
         _item = item;
+        _isFavorite = item?.isFavorite ?? false;
+        _favoriteEpisodeIds
+          ..clear()
+          ..addAll(_episodes.where((e) => e.isFavorite).map((e) => e.id));
         _isLoading = false;
       });
     } catch (e) {
@@ -187,6 +198,57 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  /// 收藏 / 取消收藏主条目（电影=电影；电视剧=整部剧）。乐观更新，
+  /// 失败回滚并提示；成功 bump 收藏修订号让收藏页重取。
+  Future<void> _toggleFavorite() async {
+    final item = _item;
+    if (item == null) return;
+    final next = !_isFavorite;
+    setState(() => _isFavorite = next);
+    final ok = await ref
+        .read(embyServiceForProvider(widget.serverId))
+        .setFavorite(item.id, next);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() => _isFavorite = !next);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('收藏操作失败，请检查网络')),
+      );
+      return;
+    }
+    ref.read(favoritesRevisionProvider.notifier).state++;
+  }
+
+  /// 收藏 / 取消收藏某一集（剧集页横卡爱心）。乐观更新，失败回滚+提示。
+  Future<void> _toggleEpisodeFavorite(String episodeId) async {
+    final next = !_favoriteEpisodeIds.contains(episodeId);
+    setState(() {
+      if (next) {
+        _favoriteEpisodeIds.add(episodeId);
+      } else {
+        _favoriteEpisodeIds.remove(episodeId);
+      }
+    });
+    final ok = await ref
+        .read(embyServiceForProvider(widget.serverId))
+        .setFavorite(episodeId, next);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        if (next) {
+          _favoriteEpisodeIds.remove(episodeId);
+        } else {
+          _favoriteEpisodeIds.add(episodeId);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('收藏操作失败，请检查网络')),
+      );
+      return;
+    }
+    ref.read(favoritesRevisionProvider.notifier).state++;
   }
 
   /// 服务端季列表为空时的兜底：按集的 `parentIndexNumber` 分组合成季
@@ -1271,6 +1333,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         onOpenVersion: item.hasMultipleVersions ? _openVersionSelector : null,
         subtitleStreams: _currentSubtitleStreams(),
         audioStreams: _currentAudioStreams(),
+        // 主爱心：电影收藏电影、电视剧收藏整部剧（与选中集无关）
+        isFavorite: _isFavorite,
+        onToggleFavorite: _toggleFavorite,
       );
     }
     return TrackActionRow(
@@ -1284,6 +1349,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       // 非 null（可能是空选择）以区别于电影模式的「读全局 provider」
       selection: _episodeSelections[target.id] ?? const TrackSelection(),
       onSelectionChanged: (next) => _setEpisodeSelection(target.id, next),
+      // 主爱心仍是整部剧（每集收藏在横卡上）
+      isFavorite: _isFavorite,
+      onToggleFavorite: _toggleFavorite,
     );
   }
 
@@ -1637,6 +1705,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     highlightEpisodeId: _selectedEpisodeId,
                     episodeRowKey: _episodeRowKey,
                     episodeRowController: _episodeRowController,
+                    favoriteIds: _favoriteEpisodeIds,
+                    onToggleFavorite: _toggleEpisodeFavorite,
                     tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
                   ),
                 ],

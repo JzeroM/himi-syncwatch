@@ -6,10 +6,11 @@ import 'package:himi_syncwatch/services/emby_service.dart';
 
 /// 启动一个本地 HTTP 服务，捕获 EmbyService 发出的请求路径与查询参数。
 class _CapturedRequest {
+  final String method;
   final String path;
   final Map<String, List<String>> query;
 
-  _CapturedRequest(this.path, this.query);
+  _CapturedRequest(this.method, this.path, this.query);
 
   String? param(String key) => query[key]?.first;
 }
@@ -30,7 +31,11 @@ void main() {
     unawaited(() async {
       await for (final request in server) {
         captured.add(
-          _CapturedRequest(request.uri.path, request.uri.queryParametersAll),
+          _CapturedRequest(
+            request.method,
+            request.uri.path,
+            request.uri.queryParametersAll,
+          ),
         );
         request.response
           ..statusCode = HttpStatus.ok
@@ -325,6 +330,51 @@ void main() {
       );
 
       expect(await unreachable.getItemCounts(), isNull);
+    });
+  });
+
+  group('收藏接口', () {
+    test('setFavorite(true) 走 POST /Users/{id}/FavoriteItems/{itemId}',
+        () async {
+      final ok = await service.setFavorite('item-9', true);
+      expect(ok, isTrue);
+      final req = captured.single;
+      expect(req.method, 'POST');
+      expect(req.path, '/Users/user-1/FavoriteItems/item-9');
+    });
+
+    test('setFavorite(false) 走 DELETE 同路径', () async {
+      final ok = await service.setFavorite('item-9', false);
+      expect(ok, isTrue);
+      final req = captured.single;
+      expect(req.method, 'DELETE');
+      expect(req.path, '/Users/user-1/FavoriteItems/item-9');
+    });
+
+    test('getFavoriteItems 带 Filters=IsFavorite 且限定类型', () async {
+      await service.getFavoriteItems();
+      final req = captured.single;
+      expect(req.path, '/Items');
+      expect(req.param('Filters'), 'IsFavorite');
+      expect(req.param('IncludeItemTypes'), 'Movie,Series,Episode');
+      expect(req.param('Recursive'), 'true');
+    });
+
+    test('getFavoriteItems 解析 UserData.IsFavorite', () async {
+      respondWith = (_) => {
+            'Items': [
+              {
+                'Id': 'm1',
+                'Name': '收藏电影',
+                'Type': 'Movie',
+                'UserData': {'IsFavorite': true},
+              },
+            ],
+          };
+      final items = await service.getFavoriteItems();
+      expect(items, hasLength(1));
+      expect(items.single.id, 'm1');
+      expect(items.single.isFavorite, isTrue);
     });
   });
 }

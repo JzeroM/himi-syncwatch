@@ -5,16 +5,18 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 /// 桌面宽度断点：≥ 此宽度走左侧分栏抽屉导航，否则回退底部胶囊导航。
 const double kShellDesktopBreakpoint = 1000.0;
 
-/// 桌面宽度下左侧导航项（与底部胶囊一致的四标签）。
-const List<String> kShellNavLabels = ['首页', 'Emby服务器', '声网配置', '设置'];
+/// 桌面宽度下左侧导航项（与底部胶囊一致的五标签）。
+const List<String> kShellNavLabels = ['首页', '收藏', 'Emby服务器', '声网配置', '设置'];
 const List<IconData> kShellNavIcons = [
   Icons.home_outlined,
+  Icons.favorite_border,
   Icons.dns_outlined,
   Icons.key_outlined,
   Icons.settings_outlined,
 ];
 const List<IconData> kShellNavSelectedIcons = [
   Icons.home,
+  Icons.favorite,
   Icons.dns,
   Icons.key,
   Icons.settings,

@@ -33,6 +33,12 @@ class SeriesSections extends StatelessWidget {
   /// 横卡行水平滚动控制器（详情页选集后 jumpTo 定位高亮卡）。
   final ScrollController? episodeRowController;
 
+  /// 已收藏的集 id（横卡右上角爱心实心/空心）。
+  final Set<String> favoriteIds;
+
+  /// 点击某集爱心（收藏/取消）；null = 不显示爱心。
+  final ValueChanged<String>? onToggleFavorite;
+
   const SeriesSections({
     super.key,
     required this.seasons,
@@ -47,6 +53,8 @@ class SeriesSections extends StatelessWidget {
     this.highlightEpisodeId,
     this.episodeRowKey,
     this.episodeRowController,
+    this.favoriteIds = const {},
+    this.onToggleFavorite,
   });
 
   /// 横卡水平步长：卡宽 240 + 右侧间距 12。
@@ -96,6 +104,8 @@ class SeriesSections extends StatelessWidget {
           tvMode: tvMode,
           highlightEpisodeId: highlightEpisodeId,
           controller: episodeRowController,
+          favoriteIds: favoriteIds,
+          onToggleFavorite: onToggleFavorite,
         ),
         const SizedBox(height: 20),
         const Text(
@@ -249,7 +259,12 @@ class _SeasonEpisodeRow extends StatelessWidget {
     this.highlightEpisodeId,
     this.controller,
     this.rowKey,
+    this.favoriteIds = const {},
+    this.onToggleFavorite,
   });
+
+  final Set<String> favoriteIds;
+  final ValueChanged<String>? onToggleFavorite;
 
   static const double _cardWidth = 240;
   static const double _cardGap = 12;
@@ -277,6 +292,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
         itemBuilder: (context, index) {
           final ep = episodes[index];
           final selected = ep.id == highlightEpisodeId;
+          final favorited = favoriteIds.contains(ep.id);
           final card = Container(
             key: Key('episodeCard_${ep.id}'),
             width: _cardWidth,
@@ -298,12 +314,42 @@ class _SeasonEpisodeRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
-                      child: EmbyImage(
-                        url: ep.posterUrl,
-                        fit: BoxFit.cover,
-                        cacheWidth: (_cardWidth *
-                                MediaQuery.devicePixelRatioOf(context))
-                            .round(),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          EmbyImage(
+                            url: ep.posterUrl,
+                            fit: BoxFit.cover,
+                            cacheWidth: (_cardWidth *
+                                    MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                          ),
+                          // 每集收藏爱心（图片右上角；触摸操作）
+                          if (onToggleFavorite != null)
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: GestureDetector(
+                                key: Key('episodeFavorite_${ep.id}'),
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => onToggleFavorite!(ep.id),
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    favorited
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    size: 16,
+                                    color: favorited ? primary : Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),

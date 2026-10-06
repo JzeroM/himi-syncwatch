@@ -2161,4 +2161,44 @@ void main() {
       expect(DetailScreen.hdImageUrlFor('', 1000), isNull);
     });
   });
+
+  group('收藏爱心', () {
+    testWidgets('电影页：点爱心收藏→实心、再点取消→空心，调用 setFavorite', (tester) async {
+      final fake = FakeEmbyService(item: _item);
+      await _pumpDetail(tester, emby: fake);
+
+      final heart = find.byKey(const Key('favoriteButton'));
+      expect(heart, findsOneWidget);
+      await tester.ensureVisible(heart);
+      expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+
+      await tester.tap(heart);
+      await tester.pump();
+      await tester.pump();
+      expect(fake.favoriteCalls.last.id, 'm1');
+      expect(fake.favoriteCalls.last.favorite, isTrue);
+      expect(find.byIcon(Icons.favorite), findsOneWidget);
+
+      await tester.tap(heart);
+      await tester.pump();
+      await tester.pump();
+      expect(fake.favoriteCalls.last.favorite, isFalse);
+      expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+    });
+
+    testWidgets('收藏失败 → 回滚为空心', (tester) async {
+      final fake = FakeEmbyService(item: _item)..favoriteSetResult = false;
+      await _pumpDetail(tester, emby: fake);
+
+      final heart = find.byKey(const Key('favoriteButton'));
+      await tester.ensureVisible(heart);
+      await tester.tap(heart);
+      await tester.pump();
+      await tester.pump();
+
+      expect(fake.favoriteCalls.single.favorite, isTrue);
+      expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+      expect(find.byIcon(Icons.favorite), findsNothing);
+    });
+  });
 }

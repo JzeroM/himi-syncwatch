@@ -266,6 +266,9 @@ class MediaItem {
   /// 首播/上映日期（`PremiereDate` ISO 字符串），剧集卡展示「2022年3月31日」用。
   final DateTime? premiereDate;
 
+  /// 当前用户是否已收藏（Emby `UserData.IsFavorite`；收藏功能用）。
+  final bool isFavorite;
+
   MediaItem({
     required this.id,
     required this.name,
@@ -287,6 +290,7 @@ class MediaItem {
     this.primaryImageAspectRatio,
     this.mediaSources = const [],
     this.premiereDate,
+    this.isFavorite = false,
   });
 
   factory MediaItem.fromJson(Map<String, dynamic> json, {String? serverUrl}) {
@@ -337,6 +341,8 @@ class MediaItem {
               .toList() ??
           [],
       premiereDate: DateTime.tryParse(json['PremiereDate'] as String? ?? ''),
+      isFavorite:
+          (json['UserData'] as Map<String, dynamic>?)?['IsFavorite'] == true,
     );
   }
 

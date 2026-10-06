@@ -220,7 +220,7 @@ void main() {
     );
 
     // 点顶部导航切分支（纯图标导航项按图标定位）
-    await tester.tap(find.byIcon(kShellNavIcons[3]));
+    await tester.tap(find.byIcon(kShellNavIcons[4]));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
@@ -249,7 +249,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byIcon(kShellNavIcons[3]));
+    await tester.tap(find.byIcon(kShellNavIcons[4]));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(HomeScreen), findsNothing);

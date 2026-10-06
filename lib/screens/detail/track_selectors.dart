@@ -34,6 +34,12 @@ class TrackActionRow extends ConsumerWidget {
   /// 选择变化回调（剧集模式传入；null = 写全局 provider）。
   final ValueChanged<TrackSelection>? onSelectionChanged;
 
+  /// 收藏态（null/未提供 = 不显示收藏入口）。
+  final bool? isFavorite;
+
+  /// 点击收藏/取消收藏（非空即显示爱心控件）。
+  final VoidCallback? onToggleFavorite;
+
   const TrackActionRow({
     super.key,
     required this.item,
@@ -43,6 +49,8 @@ class TrackActionRow extends ConsumerWidget {
     this.audioStreams = const [],
     this.selection,
     this.onSelectionChanged,
+    this.isFavorite,
+    this.onToggleFavorite,
   });
 
   @override
@@ -50,7 +58,8 @@ class TrackActionRow extends ConsumerWidget {
     final showVersion = onOpenVersion != null;
     final showSubtitle = subtitleStreams.isNotEmpty;
     final showAudio = audioStreams.length > 1;
-    if (!showVersion && !showSubtitle && !showAudio) {
+    final showFavorite = onToggleFavorite != null;
+    if (!showVersion && !showSubtitle && !showAudio && !showFavorite) {
       return const SizedBox.shrink();
     }
 
@@ -115,6 +124,13 @@ class TrackActionRow extends ConsumerWidget {
             current: selection,
             onChanged: onSelectionChanged,
           ),
+        ),
+      if (showFavorite)
+        button(
+          key: const Key('favoriteButton'),
+          icon: (isFavorite ?? false) ? Icons.favorite : Icons.favorite_border,
+          active: isFavorite ?? false,
+          onTap: onToggleFavorite!,
         ),
     ];
 

@@ -98,4 +98,33 @@ void main() {
       expect(item.logoUrl, isNull);
     });
   });
+
+  group('收藏态 UserData.IsFavorite 解析', () {
+    test('UserData.IsFavorite=true → isFavorite=true', () {
+      final item = MediaItem.fromJson({
+        'Id': 'm1',
+        'Name': '电影',
+        'Type': 'Movie',
+        'UserData': {'IsFavorite': true},
+      });
+      expect(item.isFavorite, isTrue);
+    });
+
+    test('缺 UserData / IsFavorite → isFavorite=false', () {
+      expect(
+        MediaItem.fromJson({'Id': 'm1', 'Name': '电影', 'Type': 'Movie'})
+            .isFavorite,
+        isFalse,
+      );
+      expect(
+        MediaItem.fromJson({
+          'Id': 'm1',
+          'Name': '电影',
+          'Type': 'Movie',
+          'UserData': <String, dynamic>{},
+        }).isFavorite,
+        isFalse,
+      );
+    });
+  });
 }

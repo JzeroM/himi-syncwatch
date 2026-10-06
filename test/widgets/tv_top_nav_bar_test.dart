@@ -101,25 +101,25 @@ void main() {
     await tester.pumpWidget(_host(onSelect: (i) => selected = i));
     await tester.pump();
 
-    await tester.tap(_navIcon(kShellNavIcons[3]));
+    await tester.tap(_navIcon(kShellNavIcons[4]));
     await tester.pump();
-    expect(selected, 3);
+    expect(selected, 4);
 
     await tester.tap(_navIcon(kShellNavIcons[1]));
     await tester.pump();
     expect(selected, 1);
 
     // 声网配置图标未渲染，无法被点到
-    expect(_navIcon(kShellNavIcons[2]), findsNothing);
+    expect(
+        _navIcon(kShellNavIcons[TvTopNavBar.hiddenAgoraIndex]), findsNothing);
   });
 
   testWidgets('选中项使用实心图标与高亮色，非选中为线框图标', (tester) async {
-    await tester.pumpWidget(_host(index: 3));
+    await tester.pumpWidget(_host(index: 4));
     await tester.pump();
 
-    // currentIndex=3：设置选中（实心 key 图标），Emby 服务器回退线框
-    // （避开 dns_outlined——标题胶囊同用该图标）
-    expect(_navIcon(kShellNavSelectedIcons[3]), findsOneWidget);
+    // currentIndex=4：设置选中（实心图标），收藏回退线框
+    expect(_navIcon(kShellNavSelectedIcons[4]), findsOneWidget);
     expect(_navIcon(kShellNavIcons[1]), findsOneWidget);
     expect(_navIcon(kShellNavSelectedIcons[1]), findsNothing);
     // 首页已并入标题，不渲染首页导航图标
@@ -132,7 +132,7 @@ void main() {
     final servers = [_server('a', '家庭NAS')];
     await tester.pumpWidget(
       _host(
-        index: 3,
+        index: 4,
         onSelect: (i) => selected = i,
         servers: servers,
         current: servers.first,

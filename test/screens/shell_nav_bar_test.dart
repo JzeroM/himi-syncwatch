@@ -97,7 +97,7 @@ Finder _expandedRect(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('四格 icon+label 组在 60 高度内严格对齐且整体垂直居中', (tester) async {
+  testWidgets('五格 icon+label 组在 60 高度内严格对齐且整体垂直居中', (tester) async {
     await _pumpNav(tester, onSelect: (_) {});
 
     final navBox = tester.renderObject<RenderBox>(find.byType(ShellNavBar));
@@ -111,18 +111,20 @@ void main() {
       return c.dy - navTop;
     }
 
-    // 四格 icon 中线一致（修复 NavigationBar 选中/未选中错位问题）
+    // 五格 icon 中线一致（修复 NavigationBar 选中/未选中错位问题）
     final iconCenters = [
       centerY(find.byIcon(Icons.home)),
+      centerY(find.byIcon(Icons.favorite_border)),
       centerY(find.byIcon(Icons.dns_outlined)),
       centerY(find.byIcon(Icons.key_outlined)),
       centerY(find.byIcon(Icons.settings_outlined)),
     ];
     expect(iconCenters.toSet().length, 1);
 
-    // 四格 label 中线一致
+    // 五格 label 中线一致
     final labelCenters = [
       centerY(find.text('首页')),
+      centerY(find.text('收藏')),
       centerY(find.text('Emby服务器')),
       centerY(find.text('声网配置')),
       centerY(find.text('设置')),
@@ -145,8 +147,8 @@ void main() {
     await _pumpNav(tester, onSelect: (_) {});
 
     final pos = _blob(tester);
-    expect(pos.width, closeTo(150, 0.01), reason: '800/4 格宽 200 × 0.75');
-    expect(pos.left, closeTo(100 - 150 / 2, 0.01), reason: '首格中心 100 居中');
+    expect(pos.width, closeTo(120, 0.01), reason: '800/5 格宽 160 × 0.75');
+    expect(pos.left, closeTo(80 - 120 / 2, 0.01), reason: '首格中心 80 居中');
   });
 
   testWidgets('点击切换标签，水珠平滑移到目标格中心', (tester) async {
@@ -156,10 +158,10 @@ void main() {
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
 
-    expect(selected, 3);
+    expect(selected, 4);
     final pos = _blob(tester);
-    expect(pos.width, closeTo(150, 0.5));
-    expect(pos.left, closeTo(700 - 150 / 2, 0.5), reason: '第四格中心 700');
+    expect(pos.width, closeTo(120, 0.5));
+    expect(pos.left, closeTo(720 - 120 / 2, 0.5), reason: '第五格中心 720');
   });
 
   testWidgets('长按拖动水珠跟手并整体放大（宽高同比 ×1.44 不拉长），松手落点才切换', (
@@ -171,7 +173,7 @@ void main() {
 
     // 长按第一格进入拖动
     final gesture = await tester.startGesture(
-      Offset(nav.left + 100, nav.center.dy),
+      Offset(nav.left + 80, nav.center.dy),
     );
     await tester.pump(const Duration(milliseconds: 600));
     expect(selected, isNull); // 长按本身不切换
@@ -185,21 +187,21 @@ void main() {
     final dragging = _blob(tester);
     expect(dragging.left, closeTo(300 - dragging.width! / 2, 1),
         reason: '中心始终对准手指');
-    expect(dragging.width, closeTo(150 * 1.44, 0.5),
-        reason: '静止 150 整体放大到 ×1.44 = 216（而非拉长）');
+    expect(dragging.width, closeTo(120 * 1.44, 0.5),
+        reason: '静止 120 整体放大到 ×1.44 = 172.8（而非拉长）');
     expect(selected, isNull); // 拖动中途不切换（松手落点才切）
 
-    // 拖到第三格中部松手 → 落点切换
+    // 拖到第四格中部松手 → 落点切换
     await gesture.moveTo(Offset(nav.left + 490, nav.center.dy));
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(selected, 2);
+    expect(selected, 3);
 
-    // 水珠回弹到第三格中心（center = 0.625*800 = 500）并回落静止宽
+    // 水珠回弹到第四格中心（center = 0.7*800 = 560）并回落静止宽
     final settled = _blob(tester);
-    expect(settled.left, closeTo(500 - 150 / 2, 0.5));
-    expect(settled.width, closeTo(150, 0.5));
+    expect(settled.left, closeTo(560 - 120 / 2, 0.5));
+    expect(settled.width, closeTo(120, 0.5));
   });
 
   testWidgets('长按拖动后松手在原格，不切换', (tester) async {
@@ -208,7 +210,7 @@ void main() {
     final nav = tester.getRect(find.byType(ShellNavBar));
 
     final gesture = await tester.startGesture(
-      Offset(nav.left + 100, nav.center.dy),
+      Offset(nav.left + 80, nav.center.dy),
     );
     await tester.pump(const Duration(milliseconds: 600));
     await gesture.moveTo(Offset(nav.left + 140, nav.center.dy));
@@ -217,8 +219,8 @@ void main() {
 
     expect(selected, isNull);
     final settled = _blob(tester);
-    expect(settled.left, closeTo(25, 0.5));
-    expect(settled.width, closeTo(150, 0.5));
+    expect(settled.left, closeTo(20, 0.5));
+    expect(settled.width, closeTo(120, 0.5));
   });
 
   testWidgets('玻璃开启：navBlob 是镜片而非白色装饰，青色仅用于选中图标', (
@@ -274,8 +276,8 @@ void main() {
     expect(lens.expansionV, 11, reason: '活动态外扩 11 → 上下各超出胶囊(60) 6px');
     expect(lens.paddingV, 5, reason: '60 高导航内水珠 50 高');
     expect(lens.borderRadius, 25);
-    expect(lens.left, closeTo(25, 0.01), reason: '首格中心 100 - 150/2');
-    expect(lens.width, closeTo(150, 0.01), reason: '静止宽 = 格宽 200 × 0.75');
+    expect(lens.left, closeTo(20, 0.01), reason: '首格中心 80 - 120/2');
+    expect(lens.width, closeTo(120, 0.01), reason: '静止宽 = 格宽 160 × 0.75');
     expect(lens.velocity, isA<double>());
     expect(lens.pillShadows.first.blurRadius, 14, reason: '静止外光晕替代旧边框');
     // Skia 捕获钥匙：GlassEffect 捕获门槛 interactionIntensity>0.01
@@ -301,10 +303,10 @@ void main() {
     // 静止镜片不挂载（折射/物理色散只在移动出现）
     expect(find.byType(GlassEffect), findsNothing);
 
-    // 光源相位随水珠位置：首格 t=0.125 → π/2 + (0.125-0.5)π
+    // 光源相位随水珠位置：首格 t=0.1 → π/2 + (0.1-0.5)π
     expect(
       lens.settings.lightAngle,
-      closeTo(math.pi / 2 + (0.125 - 0.5) * math.pi, 1e-9),
+      closeTo(math.pi / 2 + (0.1 - 0.5) * math.pi, 1e-9),
       reason: 'lightAngle 随水珠位置扫动（key/kick 亮瓣随移动流动的驱动）',
     );
 
@@ -352,7 +354,7 @@ void main() {
 
     // 按住拖动使镜片挂载（按住中捕获 ticker 活跃 → 有界帧推进）
     final gesture = await tester.startGesture(
-      Offset(nav.left + 100, nav.center.dy),
+      Offset(nav.left + 80, nav.center.dy),
     );
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 600));
@@ -377,7 +379,7 @@ void main() {
     // 长按进入拖动态，等弹簧把活动量拉到 1（按住中捕获 ticker 活跃，
     // 不能 pumpAndSettle，用有界帧推进）
     final gesture = await tester.startGesture(
-      Offset(nav.left + 100, nav.center.dy),
+      Offset(nav.left + 80, nav.center.dy),
     );
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump(const Duration(milliseconds: 450));
@@ -390,13 +392,13 @@ void main() {
     expect(_expandedRect(tester), findsOneWidget,
         reason: '活动态矩形外扩 top=-11，水滴整体放大上下各超出胶囊 6px');
 
-    // 整体放大：宽 150→216、高 50→72 同为 ×1.44，比例不变不拉长不压扁
-    expect(moving.width, closeTo(150 * 1.44, 0.5), reason: '宽同倍放大到 216');
+    // 整体放大：宽 120→172.8、高 50→72 同为 ×1.44，比例不变不拉长不压扁
+    expect(moving.width, closeTo(120 * 1.44, 0.5), reason: '宽同倍放大到 172.8');
     final activeRect = tester.renderObject<RenderBox>(_expandedRect(tester));
     expect(activeRect.size.height, closeTo(50 * 1.44, 0.5),
         reason: '高 50→72 同倍放大');
     expect(
-      (activeRect.size.width / 150) / (activeRect.size.height / 50),
+      (activeRect.size.width / 120) / (activeRect.size.height / 50),
       closeTo(1.0, 0.01),
       reason: '宽高放大倍数一致 → 纯整体放大，不变形',
     );
@@ -432,7 +434,7 @@ void main() {
 
     final rest = tester.widget<LiquidBlobLens>(find.byKey(_navBlob));
     expect(rest.activity, 0.0, reason: '松手后弹簧回落到 0');
-    expect(rest.width, closeTo(150, 0.5), reason: '宽度回落静止比例');
+    expect(rest.width, closeTo(120, 0.5), reason: '宽度回落静止比例');
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
     expect(find.byType(GlassEffect), findsNothing);
@@ -492,7 +494,7 @@ void main() {
     // 原装饰不变
     expect(_blobDecoration(tester).color, Colors.white.withValues(alpha: 0.10));
     expect(_blob(tester).height, 50);
-    expect(_blob(tester).width, closeTo(150, 0.01),
+    expect(_blob(tester).width, closeTo(120, 0.01),
         reason: '降级装饰同样用静止 0.75 比例宽度');
   });
 
@@ -503,7 +505,7 @@ void main() {
 
     // 按下后立即横滑（远小于长按 500ms 阈值）→ 直接进入拖动
     final gesture = await tester.startGesture(
-      Offset(nav.left + 100, nav.center.dy),
+      Offset(nav.left + 80, nav.center.dy),
     );
     await tester.pump();
     await gesture.moveTo(Offset(nav.left + 300, nav.center.dy));
@@ -511,23 +513,24 @@ void main() {
 
     final dragging = _blob(tester);
     expect(dragging.left, closeTo(300 - dragging.width! / 2, 1));
-    expect(dragging.width!, greaterThanOrEqualTo(150), reason: '移动只放大不缩小');
-    expect(dragging.width!, lessThan(150 * 1.44 + 1),
+    expect(dragging.width!, greaterThanOrEqualTo(120), reason: '移动只放大不缩小');
+    expect(dragging.width!, lessThan(120 * 1.44 + 1),
         reason: '封顶 ×1.44 整体放大，不做横向拉长');
     expect(selected, isNull); // 拖动中途不回调
 
-    // 水珠中心已在第二格 → 该格图标实时点亮青色实心
-    expect(find.byIcon(Icons.dns), findsOneWidget);
-    expect(tester.widget<Icon>(find.byIcon(Icons.dns)).color, kNavBlobColor);
+    // 水珠中心已在第二格 → 该格图标（收藏）实时点亮青色实心
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+    expect(
+        tester.widget<Icon>(find.byIcon(Icons.favorite)).color, kNavBlobColor);
 
-    // 拖到第三格中部松手 → 落点切换
+    // 拖到第四格中部松手 → 落点切换
     await gesture.moveTo(Offset(nav.left + 490, nav.center.dy));
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(selected, 2);
+    expect(selected, 3);
     expect(tester.widget<Icon>(find.byIcon(Icons.key)).color, kNavBlobColor);
-    expect(find.byIcon(Icons.dns_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
   });
 
   testWidgets('手指落在非水珠格横向滑动，水珠吸附到手指跟手', (tester) async {
@@ -549,6 +552,6 @@ void main() {
 
     await gesture.up();
     await tester.pumpAndSettle();
-    expect(selected, 2); // 落点在第三格
+    expect(selected, 3); // 落点在第四格
   });
 }

@@ -100,12 +100,22 @@ class FakeEmbyService extends EmbyService {
     this.searchResults = const [],
     this.itemCounts,
     this.seasons = const [],
+    this.favoriteItems = const [],
   });
 
   final MediaItem? item;
   final List<MediaItem> similar;
   final List<LibraryFolder> libraries;
   final List<MediaItem> items;
+
+  /// 收藏页数据源（getFavoriteItems）；测试按类型预置。
+  final List<MediaItem> favoriteItems;
+
+  /// setFavorite 收到的调用记录（id + 目标收藏态）。
+  final List<({String id, bool favorite})> favoriteCalls = [];
+
+  /// setFavorite 返回值（false 模拟失败 → 详情页应回滚）。
+  bool favoriteSetResult = true;
 
   /// 按 parentId 精确返回（用于模拟空媒体库）；未命中的库回退到 [items]。
   final Map<String, List<MediaItem>> itemsByParent;
@@ -129,6 +139,15 @@ class FakeEmbyService extends EmbyService {
 
   @override
   Future<List<MediaItem>> getSeasons(String seriesId) async => seasons;
+
+  @override
+  Future<List<MediaItem>> getFavoriteItems() async => favoriteItems;
+
+  @override
+  Future<bool> setFavorite(String itemId, bool favorite) async {
+    favoriteCalls.add((id: itemId, favorite: favorite));
+    return favoriteSetResult;
+  }
 
   @override
   Future<MediaCounts?> getItemCounts() async => itemCounts;

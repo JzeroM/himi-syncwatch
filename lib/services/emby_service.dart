@@ -349,14 +349,60 @@ class EmbyService {
         '/Users/$_userId/Items/$id',
         queryParameters: {
           // ImageTags：详情页标题艺术字（ImageTags.Logo）依赖此字段
+          // UserData：收藏状态（UserData.IsFavorite）
           'Fields':
-              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ImageTags',
+              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ImageTags,UserData',
         },
       );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
       return null;
+    }
+  }
+
+  /// 收藏 / 取消收藏：Emby `POST|DELETE /Users/{userId}/FavoriteItems/{itemId}`。
+  /// 成功返回 true；失败（网络/鉴权）返回 false，由调用方回滚乐观 UI。
+  Future<bool> setFavorite(String itemId, bool favorite) async {
+    try {
+      final path = '/Users/$_userId/FavoriteItems/$itemId';
+      if (favorite) {
+        await _dio.post(path);
+      } else {
+        await _dio.delete(path);
+      }
+      return true;
+    } on DioException {
+      return false;
+    }
+  }
+
+  /// 当前服务器全部收藏条目（电影/剧集/单集），供收藏页分组展示。
+  /// `Filters=IsFavorite` 服务端过滤；字段含 `UserData` 以便回显收藏态。
+  /// 失败返回空列表。
+  Future<List<MediaItem>> getFavoriteItems() async {
+    try {
+      final response = await _dio.get(
+        '/Items',
+        queryParameters: {
+          if (_userId != null) 'UserId': _userId,
+          'Recursive': true,
+          'IncludeItemTypes': 'Movie,Series,Episode',
+          'Filters': 'IsFavorite',
+          'Fields':
+              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate',
+          'ImageTypeLimit': 1,
+          'SortBy': 'SortName',
+          'SortOrder': 'Ascending',
+        },
+      );
+      final items = response.data['Items'] as List<dynamic>? ?? [];
+      return items
+          .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
+          .toList();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
+      return [];
     }
   }
 
