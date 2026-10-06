@@ -1,17 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// 详情页底部「外部链接 / 工作室 / 媒体信息」区块（仅非 TV 渲染）。
-/// 数据来自 Emby 详情字段：`ExternalUrls/ProviderIds/Studios/Path/DateCreated`
-/// 与 `MediaStreams` 的编解码细节。
+/// 详情页底部「相似推荐 / 外部链接 / 工作室 / 媒体信息 / 视频 / 音频」区块
+/// （仅非 TV 渲染）。数据来自 Emby 详情字段与 `MediaStreams`。
 class MediaDetailsSection extends StatelessWidget {
-  const MediaDetailsSection({super.key, required this.item});
+  const MediaDetailsSection({
+    super.key,
+    required this.item,
+    this.similarItems = const [],
+    this.onOpenSimilar,
+  });
 
   final MediaItem item;
 
+  /// 相似推荐条目（渲染在「外部链接」之上；空则不显示）。
+  final List<MediaItem> similarItems;
+
+  /// 点击相似推荐卡片。
+  final void Function(MediaItem item)? onOpenSimilar;
+
   /// 有可展示内容才渲染。
-  static bool hasContent(MediaItem item) =>
+  static bool hasContent(MediaItem item,
+          {List<MediaItem> similarItems = const []}) =>
+      similarItems.isNotEmpty ||
       item.externalUrls.isNotEmpty ||
       item.providerIds.isNotEmpty ||
       item.studios.isNotEmpty ||
@@ -87,6 +101,33 @@ class MediaDetailsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (similarItems.isNotEmpty) ...[
+          const _SectionTitle('相似推荐'),
+          SizedBox(
+            height: PosterCard.heightFor(88),
+            child: ListView.builder(
+              clipBehavior: Clip.none,
+              scrollDirection: Axis.horizontal,
+              itemCount: similarItems.length,
+              itemBuilder: (context, index) {
+                final sim = similarItems[index];
+                return SizedBox(
+                  width: 96,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: PosterCard(
+                      key: ValueKey('posterCard_${sim.id}'),
+                      item: sim,
+                      width: 88,
+                      onTap: () => onOpenSimilar?.call(sim),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
         if (links.isNotEmpty) ...[
           const _SectionTitle('外部链接'),
           Wrap(
@@ -102,12 +143,7 @@ class MediaDetailsSection extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final s in item.studios)
-                Chip(
-                  label: Text(s, style: const TextStyle(fontSize: 13)),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
+              for (final s in item.studios) _GlassChip(label: s),
             ],
           ),
           const SizedBox(height: 20),
@@ -159,15 +195,22 @@ class _VideoAudioCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        for (final v in video)
-          _StreamCard(title: '视频', icon: Icons.movie, rows: _videoRows(v)),
-        for (final a in audios)
-          _StreamCard(title: '音频', icon: Icons.music_note, rows: _audioRows(a)),
-      ],
+    final cards = <Widget>[
+      for (final v in video)
+        _StreamCard(title: '视频', icon: Icons.movie, rows: _videoRows(v)),
+      for (final a in audios)
+        _StreamCard(title: '音频', icon: Icons.music_note, rows: _audioRows(a)),
+    ];
+    // 横向排列、可左右滑动
+    return SizedBox(
+      height: 360,
+      child: ListView.separated(
+        clipBehavior: Clip.none,
+        scrollDirection: Axis.horizontal,
+        itemCount: cards.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, i) => SizedBox(width: 300, child: cards[i]),
+      ),
     );
   }
 }
@@ -229,14 +272,9 @@ class _StreamCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) return const SizedBox.shrink();
-    return Container(
-      width: 320,
+    return GlassContainer(
+      borderRadius: const BorderRadius.all(Radius.circular(12)),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -297,12 +335,39 @@ class _LinkChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ActionChip(
-      avatar: const Icon(Icons.open_in_new, size: 14),
-      label: Text(link.name, style: const TextStyle(fontSize: 13)),
-      onPressed: () {
+    return GestureDetector(
+      onTap: () {
         launchUrl(Uri.parse(link.url), mode: LaunchMode.externalApplication);
       },
+      child: GlassContainer(
+        borderRadius: const BorderRadius.all(Radius.circular(20)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.open_in_new, size: 14, color: Colors.white),
+            const SizedBox(width: 6),
+            Text(link.name,
+                style: const TextStyle(fontSize: 13, color: Colors.white)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 玻璃胶囊（工作室等纯展示项）。
+class _GlassChip extends StatelessWidget {
+  const _GlassChip({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassContainer(
+      borderRadius: const BorderRadius.all(Radius.circular(20)),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Text(label,
+          style: const TextStyle(fontSize: 13, color: Colors.white)),
     );
   }
 }

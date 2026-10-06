@@ -1,7 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/detail/media_details_section.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+
+import '../helpers/test_fakes.dart';
+
+Widget _host(Widget child) => ProviderScope(
+      overrides: [
+        settingsProvider
+            .overrideWith((ref) => FakeSettingsNotifier(const AppSettings())),
+      ],
+      child: MaterialApp(
+          home: Scaffold(body: SingleChildScrollView(child: child))),
+    );
 
 void main() {
   group('externalLinksFor', () {
@@ -90,11 +105,7 @@ void main() {
     );
 
     expect(MediaDetailsSection.hasContent(item), isTrue);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SingleChildScrollView(child: MediaDetailsSection(item: item)),
-      ),
-    ));
+    await tester.pumpWidget(_host(MediaDetailsSection(item: item)));
     await tester.pump();
 
     expect(find.text('外部链接'), findsOneWidget);
@@ -111,5 +122,49 @@ void main() {
           MediaItem(id: 'm1', name: '电影', type: 'Movie')),
       isFalse,
     );
+  });
+
+  test('hasContent：仅有相似推荐也算有内容', () {
+    expect(
+      MediaDetailsSection.hasContent(
+        MediaItem(id: 'm1', name: '电影', type: 'Movie'),
+        similarItems: [MediaItem(id: 's1', name: '相似', type: 'Movie')],
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('相似推荐渲染在外部链接之上；视频/音频横滑；胶囊/卡片为玻璃', (tester) async {
+    final item = MediaItem(
+      id: 'm1',
+      name: '电影',
+      type: 'Movie',
+      studios: const ['Netflix'],
+      providerIds: const {'Imdb': 'tt1'},
+      mediaStreams: [
+        MediaStream(type: 'Video', codec: 'hevc', width: 1920, height: 1080),
+        MediaStream(type: 'Audio', codec: 'eac3', channels: 2),
+      ],
+    );
+    final similar = [MediaItem(id: 's1', name: '相似', type: 'Movie')];
+
+    await tester.pumpWidget(
+      _host(MediaDetailsSection(item: item, similarItems: similar)),
+    );
+    await tester.pump();
+
+    final similarY = tester.getTopLeft(find.text('相似推荐')).dy;
+    final linksY = tester.getTopLeft(find.text('外部链接')).dy;
+    expect(similarY, lessThan(linksY), reason: '相似推荐在外部链接之上');
+
+    // 视频/音频卡横向可滑动
+    final horizontals = tester
+        .widgetList<ListView>(find.byType(ListView))
+        .where((w) => w.scrollDirection == Axis.horizontal);
+    expect(horizontals, isNotEmpty, reason: '视频/音频面板横向滚动');
+
+    // 玻璃化：胶囊与卡片使用 GlassContainer
+    expect(find.byType(GlassContainer), findsWidgets);
+    expect(find.byType(Chip), findsNothing, reason: '工作室已改玻璃胶囊');
   });
 }

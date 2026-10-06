@@ -492,6 +492,15 @@ void main() {
       expect(await service.getPlaySessionId(itemId: 'i1'), isNull);
     });
   });
+
+  group('相似推荐接口', () {
+    test('getSimilarItems 带 UserId（否则 Emby 返回空）', () async {
+      await service.getSimilarItems('i1');
+      final req = captured.single;
+      expect(req.path, '/Items/i1/Similar');
+      expect(req.param('UserId'), 'user-1');
+    });
+  });
 }
 
 /// 忽略未使用的 future，避免 lint 告警。

@@ -263,6 +263,8 @@ class EmbyService {
       final response = await _dio.get(
         '/Items/$itemId/Similar',
         queryParameters: {
+          // Emby 该端点需要 UserId 才返回结果（缺失会返回空）
+          if (_userId != null) 'UserId': _userId,
           'Limit': limit,
           'Fields': 'CommunityRating,ProductionYear,IndexNumber,ImageTags',
           'ImageTypeLimit': 1,

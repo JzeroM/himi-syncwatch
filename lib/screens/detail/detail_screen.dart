@@ -1845,12 +1845,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: item.genres
-                        .map((g) => Chip(
-                              label:
-                                  Text(g, style: const TextStyle(fontSize: 13)),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
+                        .map((g) => GlassContainer(
+                              borderRadius:
+                                  const BorderRadius.all(Radius.circular(20)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 7),
+                              child: Text(g,
+                                  style: const TextStyle(
+                                      fontSize: 13, color: Colors.white)),
                             ))
                         .toList(),
                   ),
@@ -1896,7 +1898,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
                   ),
                 ],
-                if (_similarItems.isNotEmpty) ...[
+                // 相似推荐：仅 TV 保留在正文（非 TV 移入底部媒体信息区块顶部）
+                if (tv && _similarItems.isNotEmpty) ...[
                   Text(
                     '相似推荐',
                     style: TextStyle(
@@ -1935,10 +1938,21 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     ),
                   ),
                 ],
-                // 底部媒体信息（外部链接/工作室/媒体信息/视频/音频；TV 不渲染）
-                if (!tv && MediaDetailsSection.hasContent(item)) ...[
+                // 底部媒体信息（相似推荐/外部链接/工作室/媒体信息/视频/音频；TV 不渲染）
+                if (!tv &&
+                    MediaDetailsSection.hasContent(item,
+                        similarItems: _similarItems)) ...[
                   const SizedBox(height: 20),
-                  MediaDetailsSection(item: item),
+                  MediaDetailsSection(
+                    item: item,
+                    similarItems: _similarItems,
+                    onOpenSimilar: (sim) {
+                      final q = widget.serverId != null
+                          ? '?server=${Uri.encodeComponent(widget.serverId!)}'
+                          : '';
+                      context.push('/detail/${sim.id}$q');
+                    },
+                  ),
                 ],
                 SizedBox(height: tv ? 48 : 120),
               ],
