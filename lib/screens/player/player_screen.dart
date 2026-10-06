@@ -38,7 +38,7 @@ import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
-import 'package:himi_syncwatch/screens/search/global_search_screen.dart';
+import 'package:himi_syncwatch/screens/player/room_resource_search.dart';
 import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
 import 'package:himi_syncwatch/screens/player/player_orientation.dart';
 import 'package:himi_syncwatch/screens/player/player_platform.dart';
@@ -5150,15 +5150,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     _player.state != mdk.PlaybackState.playing) ...[
                   TvFocusable(
                     onTap: () async {
-                      // 房间模式聚合搜索：选片进 roomMode 详情挑资源，
-                      // 资源数据经搜索页带回（搜索页内已拼 roomMode/roomCode 参数）。
-                      final resourceData = await Navigator.of(context)
-                          .push<Map<String, dynamic>>(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              GlobalSearchScreen(roomCode: widget.roomCode!),
-                        ),
+                      // 房间模式聚合搜索（竖屏窗口见 pushRoomResourceSearch）：
+                      // 选片进 roomMode 详情挑资源，数据经搜索页带回。
+                      final resourceData = await pushRoomResourceSearch(
+                        context,
+                        roomCode: widget.roomCode!,
                       );
+                      // 同步播放页横屏状态（方向已在函数内恢复，幂等重申）
+                      _switchToLandscape(_OrientationMode.landscapeLeft);
                       if (resourceData != null && mounted) {
                         _addResourceLocally(resourceData);
                         _sendAddResourceRTM(resourceData);

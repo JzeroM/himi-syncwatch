@@ -269,6 +269,8 @@ class _SeasonEpisodeRow extends StatelessWidget {
       key: rowKey,
       height: 240,
       child: ListView.builder(
+        // TV 焦点框放大溢出内容盒，默认 clip 会裁边
+        clipBehavior: Clip.none,
         controller: controller,
         scrollDirection: Axis.horizontal,
         itemCount: episodes.length,
@@ -382,6 +384,8 @@ class _SeasonCardRow extends StatelessWidget {
     return SizedBox(
       height: _posterWidth * 1.5 + 44,
       child: ListView.builder(
+        // TV 焦点框放大溢出内容盒，默认 clip 会裁边
+        clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
         itemCount: seasons.length,
         itemBuilder: (context, index) {

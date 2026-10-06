@@ -342,6 +342,8 @@ class _LibraryBar extends StatelessWidget {
         SizedBox(
           height: 126,
           child: ListView.builder(
+            // TV 焦点框随 1.06 放大溢出内容盒，默认 clip 裁掉上下边
+            clipBehavior: Clip.none,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             itemCount: libraries.length,
@@ -431,6 +433,8 @@ class _CategorySection extends StatelessWidget {
         SizedBox(
           height: PosterCard.heightFor(102),
           child: ListView.builder(
+            // TV 焦点框随 1.06 放大溢出内容盒，默认 clip 裁掉上下边
+            clipBehavior: Clip.none,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             itemCount: category.items.length,

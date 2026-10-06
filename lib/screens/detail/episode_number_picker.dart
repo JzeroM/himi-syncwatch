@@ -106,6 +106,8 @@ Future<void> showEpisodeNumberPicker(
                   const SizedBox(height: 8),
                   Expanded(
                     child: GridView.builder(
+                      // TV 焦点框放大溢出单元格，默认 clip 会裁边
+                      clipBehavior: Clip.none,
                       padding: EdgeInsets.zero,
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(

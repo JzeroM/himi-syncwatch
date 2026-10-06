@@ -263,6 +263,15 @@ void main() {
       find.descendant(of: card, matching: find.text('5')),
       findsOneWidget,
     );
+
+    // TV 焦点框 1.06 放大溢出内容盒：横行必须 Clip.none，否则裁掉上下边
+    final horizontals = tester
+        .widgetList<ListView>(find.byType(ListView))
+        .where((w) => w.scrollDirection == Axis.horizontal);
+    expect(horizontals, isNotEmpty);
+    for (final lv in horizontals) {
+      expect(lv.clipBehavior, Clip.none);
+    }
   });
 
   group('TV 模式操作按钮（取消胶囊、移到简介上方）', () {
@@ -429,6 +438,15 @@ void main() {
       // 有集时剧集页显示播放按钮
       expect(find.text('开始播放'), findsOneWidget);
       expect(find.text('第1季'), findsWidgets);
+
+      // 季行 + 剧集行：TV 焦点框放大溢出内容盒，Clip.none 才不裁边
+      final horizontals = tester
+          .widgetList<ListView>(find.byType(ListView))
+          .where((w) => w.scrollDirection == Axis.horizontal);
+      expect(horizontals, isNotEmpty);
+      for (final lv in horizontals) {
+        expect(lv.clipBehavior, Clip.none);
+      }
     });
 
     testWidgets('点第2季卡 → 上方剧集列表切换为第2季', (tester) async {
@@ -871,6 +889,13 @@ void main() {
       expect(find.byKey(const Key('episodeNumber_e1')), findsOneWidget);
       expect(find.byKey(const Key('episodeNumber_e2')), findsOneWidget);
       expect(find.byKey(const Key('episodeNumber_e3')), findsNothing);
+
+      // TV 焦点框放大溢出单元格：网格 Clip.none 才不裁边
+      final grids = tester.widgetList<GridView>(find.byType(GridView));
+      expect(grids, isNotEmpty);
+      for (final g in grids) {
+        expect(g.clipBehavior, Clip.none);
+      }
 
       // 首集高亮：边框为主色
       final tile =

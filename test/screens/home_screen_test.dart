@@ -587,6 +587,39 @@ void main() {
     expect(find.text('动画电影'), findsWidgets);
   });
 
+  testWidgets('TV 焦点框不被裁：首页横条列表全部 Clip.none', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: const [
+        LibraryFolder(
+          id: 'lb1',
+          name: '动画电影',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+      ],
+      items: [
+        MediaItem(id: 'm1', name: '影片1', type: 'Movie'),
+      ],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    final horizontals = tester
+        .widgetList<ListView>(find.byType(ListView))
+        .where((w) => w.scrollDirection == Axis.horizontal)
+        .toList();
+    expect(horizontals, isNotEmpty, reason: '首页存在横条列表');
+    for (final lv in horizontals) {
+      expect(lv.clipBehavior, Clip.none,
+          reason: 'TV 焦点框 1.06 放大溢出内容盒，clip 会裁掉上下边');
+    }
+  });
+
   testWidgets('分类标题行焦点环只包标题文字（不撑满整行）', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1'],

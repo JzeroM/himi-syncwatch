@@ -1476,6 +1476,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   SizedBox(
                     height: PosterCard.heightFor(88),
                     child: ListView.builder(
+                      // TV 焦点框放大溢出内容盒，默认 clip 会裁边
+                      clipBehavior: Clip.none,
                       scrollDirection: Axis.horizontal,
                       itemCount: _similarItems.length,
                       itemBuilder: (context, index) {
