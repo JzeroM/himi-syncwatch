@@ -21,7 +21,11 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 /// - 输入防抖 280ms：非空打字期间零网络、主区零重建；清空立即回落提示态
 /// - 换词保留上一批结果 + 顶部细进度条；结果增量到达（先到先出）
 class GlobalSearchScreen extends ConsumerStatefulWidget {
-  const GlobalSearchScreen({super.key});
+  const GlobalSearchScreen({super.key, this.roomCode});
+
+  /// 非空 = 房间模式：选片打开 roomMode 详情挑资源，
+  /// 资源数据经本页 pop 带回（资源面板 await 本页 push 的结果）。
+  final String? roomCode;
 
   @override
   ConsumerState<GlobalSearchScreen> createState() => _GlobalSearchScreenState();
@@ -130,11 +134,22 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
     });
   }
 
-  void _openDetail(GlobalSearchResult r) {
+  Future<void> _openDetail(GlobalSearchResult r) async {
     final serverId = r.server.id;
     final itemId = r.item.id;
-    Navigator.of(context).pop();
-    context.push('/detail/$itemId?server=${Uri.encodeComponent(serverId)}');
+    final roomCode = widget.roomCode;
+    if (roomCode == null) {
+      Navigator.of(context).pop();
+      context.push('/detail/$itemId?server=${Uri.encodeComponent(serverId)}');
+      return;
+    }
+    // 房间模式：详情打开挑资源，返回的资源数据带回调用方（资源面板）。
+    // 详情直接返回 null（未选资源）时留在本页，可继续挑选。
+    final data = await context.push<Map<String, dynamic>>(
+      '/detail/$itemId?server=${Uri.encodeComponent(serverId)}'
+      '&roomMode=true&roomCode=${Uri.encodeComponent(roomCode)}',
+    );
+    if (data != null && mounted) Navigator.of(context).pop(data);
   }
 
   @override

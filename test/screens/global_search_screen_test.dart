@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -246,6 +247,177 @@ void main() {
     expect(find.byKey(const Key('searchProgressLine')), findsNothing,
         reason: '完成后移除进度线');
   });
+
+  testWidgets('房间模式：选片进 roomMode 详情，资源数据带回资源面板', (tester) async {
+    final harness = await _pumpRoom(
+      tester,
+      servers: [_server('a', '服务器甲')],
+      search: _searchService(fromA: [_item('a1', '甲的影片')]),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('openRoomSearch')));
+    await tester.pumpAndSettle();
+    expect(find.byType(GlobalSearchScreen), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('posterCard_a1_a')));
+    await tester.pumpAndSettle();
+
+    // 详情带全 roomMode/roomCode/server 参数
+    expect(find.text('detail:a1'), findsOneWidget);
+    expect(find.textContaining('roomMode=true'), findsOneWidget);
+    expect(find.textContaining('roomCode=rc1'), findsOneWidget);
+    expect(find.textContaining('server=a'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('returnResource')));
+    await tester.pumpAndSettle();
+
+    expect(harness.received, {'resourceId': 'r1'}, reason: '数据带回面板');
+    expect(find.byType(GlobalSearchScreen), findsNothing, reason: '搜索页已退场');
+    expect(find.text('资源面板'), findsOneWidget);
+  });
+
+  testWidgets('房间模式：详情未选资源直接返回，留在搜索页继续挑', (tester) async {
+    final harness = await _pumpRoom(
+      tester,
+      servers: [_server('a', '服务器甲')],
+      search: _searchService(fromA: [_item('a1', '甲的影片')]),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('openRoomSearch')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('posterCard_a1_a')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('returnNull')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GlobalSearchScreen), findsOneWidget, reason: '留在搜索页');
+    expect(harness.received, isNull, reason: '面板未收到数据');
+    expect(find.text('甲的影片'), findsOneWidget, reason: '结果仍在，可继续选');
+  });
+}
+
+/// 房间模式 harness：面板 push 搜索页，fake 详情按 query 参数渲染。
+Future<_RoomHarness> _pumpRoom(
+  WidgetTester tester, {
+  GlobalSearchService? search,
+  List<EmbyServerConfig> servers = const [],
+}) async {
+  final container = ProviderContainer(
+    overrides: [
+      settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+      if (servers.isNotEmpty)
+        embyServerListProvider.overrideWith(
+          (ref) => EmbyServerListNotifier()..setList(servers),
+        ),
+      globalSearchProvider.overrideWithValue(
+        search ?? GlobalSearchService(serviceFactory: (_) => FakeEmbyService()),
+      ),
+    ],
+  );
+  addTearDown(container.dispose);
+  final harness = _RoomHarness();
+  final router = GoRouter(
+    initialLocation: '/',
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (_, __) => _PanelPage(harness: harness),
+      ),
+      GoRoute(
+        path: '/detail/:id',
+        builder: (_, state) => _FakeDetailPage(state: state),
+      ),
+    ],
+  );
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(routerConfig: router),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return harness;
+}
+
+class _RoomHarness {
+  Object? received;
+}
+
+/// 房间资源面板替身：push 房间模式搜索页，接收带回的资源数据。
+class _PanelPage extends StatefulWidget {
+  const _PanelPage({required this.harness});
+
+  final _RoomHarness harness;
+
+  @override
+  State<_PanelPage> createState() => _PanelPageState();
+}
+
+class _PanelPageState extends State<_PanelPage> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('资源面板'),
+          ElevatedButton(
+            key: const ValueKey('openRoomSearch'),
+            onPressed: () async {
+              final data = await Navigator.of(context).push<Object?>(
+                MaterialPageRoute(
+                  builder: (_) => const GlobalSearchScreen(roomCode: 'rc1'),
+                ),
+              );
+              if (data != null) {
+                setState(() => widget.harness.received = data);
+              }
+            },
+            child: const Text('打开搜索'),
+          ),
+          if (widget.harness.received != null)
+            Text('received:${widget.harness.received}'),
+        ],
+      ),
+    );
+  }
+}
+
+/// roomMode 详情替身：展示命中的 query 参数；返回资源数据或 null。
+class _FakeDetailPage extends StatelessWidget {
+  const _FakeDetailPage({required this.state});
+
+  final GoRouterState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('detail:${state.pathParameters['id']}'),
+          Text('query:${state.uri.query}', key: const ValueKey('detailQuery')),
+          ElevatedButton(
+            key: const ValueKey('returnResource'),
+            onPressed: () => Navigator.of(context).pop({'resourceId': 'r1'}),
+            child: const Text('返回资源'),
+          ),
+          ElevatedButton(
+            key: const ValueKey('returnNull'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('直接返回'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// 只计数的搜索服务：验证防抖调用次数。

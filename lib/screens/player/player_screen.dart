@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
@@ -39,7 +38,7 @@ import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
-import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
+import 'package:himi_syncwatch/screens/search/global_search_screen.dart';
 import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
 import 'package:himi_syncwatch/screens/player/player_orientation.dart';
 import 'package:himi_syncwatch/screens/player/player_platform.dart';
@@ -5151,31 +5150,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     _player.state != mdk.PlaybackState.playing) ...[
                   TvFocusable(
                     onTap: () async {
-                      SystemChrome.setPreferredOrientations([
-                        DeviceOrientation.portraitUp,
-                      ]);
-                      SystemChrome.setEnabledSystemUIMode(
-                          SystemUiMode.edgeToEdge);
-                      final itemData = await showSearch<Map<String, dynamic>?>(
-                        context: context,
-                        delegate:
-                            RoomSearchDelegate(ref, roomCode: widget.roomCode!),
+                      // 房间模式聚合搜索：选片进 roomMode 详情挑资源，
+                      // 资源数据经搜索页带回（搜索页内已拼 roomMode/roomCode 参数）。
+                      final resourceData = await Navigator.of(context)
+                          .push<Map<String, dynamic>>(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              GlobalSearchScreen(roomCode: widget.roomCode!),
+                        ),
                       );
-                      SystemChrome.setEnabledSystemUIMode(
-                          SystemUiMode.immersiveSticky);
-                      _switchToLandscape(_OrientationMode.landscapeLeft);
-                      if (itemData != null && mounted) {
-                        final serverParam = itemData['serverId'] != null
-                            ? '&server=${Uri.encodeComponent(itemData['serverId'] as String)}'
-                            : '';
-                        final resourceData =
-                            await context.push<Map<String, dynamic>>(
-                          '/detail/${itemData['itemId']}?roomMode=true&roomCode=${Uri.encodeComponent(widget.roomCode!)}$serverParam',
-                        );
-                        if (resourceData != null && mounted) {
-                          _addResourceLocally(resourceData);
-                          _sendAddResourceRTM(resourceData);
-                        }
+                      if (resourceData != null && mounted) {
+                        _addResourceLocally(resourceData);
+                        _sendAddResourceRTM(resourceData);
                       }
                     },
                     child: const Icon(Icons.search,
