@@ -1463,6 +1463,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     // TV 下 children 至多一个（建房/加入资源均为非 TV 才加入）。
     if (tvMode) {
       return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           for (var i = 0; i < children.length; i++) ...[
             if (i > 0) const SizedBox(width: 8),
@@ -1487,7 +1488,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ],
         ),
         const SizedBox(height: 4),
-        trackRow,
+        // 图标行整行居中（版本/字幕/音轨/收藏/已观看）
+        Align(alignment: Alignment.center, child: trackRow),
       ],
     );
   }
@@ -1955,12 +1957,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        ...item.mediaSources.map((source) => Card(
-              child: ListTile(
-                leading: const Icon(Icons.movie_creation_outlined),
-                title: Text(source.name),
-                subtitle: Text(source.displayLabel),
-                dense: true,
+        ...item.mediaSources.map((source) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: GlassContainer(
+                borderRadius: const BorderRadius.all(Radius.circular(14)),
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  leading: const Icon(Icons.movie_creation_outlined),
+                  title: Text(source.name),
+                  subtitle: Text(source.displayLabel),
+                  dense: true,
+                ),
               ),
             )),
       ],
