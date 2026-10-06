@@ -41,9 +41,11 @@ import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/screens/player/room_search_delegate.dart';
 import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
+import 'package:himi_syncwatch/screens/player/player_orientation.dart';
 import 'package:himi_syncwatch/screens/player/player_platform.dart';
 import 'package:himi_syncwatch/screens/player/track_initial_selection.dart';
 import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
@@ -3173,10 +3175,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _switchToLandscape(_OrientationMode mode) {
     if (!mounted) return;
     setState(() => _orientationMode = mode);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // 单方向强制：双方向列表在引擎侧解码为 USER_LANDSCAPE（尊重系统
+    // 旋转锁，系统关转屏时不生效）；单方向 → LANDSCAPE/REVERSE_LANDSCAPE
+    // 固定值，锁转屏下也能 180° 翻转。
+    requestPlayerLandscape(
+      mode == _OrientationMode.landscapeRight
+          ? PlayerLandscapeSide.right
+          : PlayerLandscapeSide.left,
+    );
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
@@ -4572,15 +4578,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             child: RotatedBox(
               quarterTurns: -1,
               child: SliderTheme(
-                data: SliderThemeData(
-                  activeTrackColor: color,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: color,
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  trackHeight: 3,
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 10),
+                data: glassSliderTheme(
+                  accent: color,
+                  trackHeight: 4,
+                  thumbRadius: 6,
+                  overlayRadius: 10,
+                  glassEnabled: _glassUiOn,
                 ),
                 child: Slider(
                   value: value,
@@ -4659,14 +4662,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 scale: 1.0,
                 child: ExcludeFocus(
                   child: SliderTheme(
-                    data: SliderThemeData(
-                      activeTrackColor: const Color(0xFF6366F1),
-                      inactiveTrackColor: Colors.white24,
-                      thumbColor: const Color(0xFF6366F1),
-                      thumbShape:
-                          const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      trackHeight: 3,
-                    ),
+                    data: glassSliderTheme(glassEnabled: _glassUiOn),
                     child: ValueListenableBuilder2<Duration, Duration>(
                       first: _positionNotifier,
                       second: _durationNotifier,
@@ -4895,18 +4891,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  /// 控制条小滑杆主题（与进度条风格一致）
-  static const SliderThemeData _miniSliderTheme = SliderThemeData(
-    activeTrackColor: Color(0xFF6366F1),
-    inactiveTrackColor: Colors.white24,
-    thumbColor: Color(0xFF6366F1),
-    thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
-    trackHeight: 3,
-    overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
-  );
+  /// 玻璃滑杆主题（设置页"液态玻璃"关闭时回退纯色旧观）
+  bool get _glassUiOn => ref.watch(settingsProvider.select((s) => s.glassUi));
+
+  /// 控制条小滑杆主题（与进度条统一玻璃观）；须在 build 期间求值，
+  /// 调用方在方法顶部取值，勿放进 ValueListenableBuilder 回调。
+  SliderThemeData _miniSliderTheme() => glassSliderTheme(
+        thumbRadius: 7,
+        overlayRadius: 12,
+        glassEnabled: _glassUiOn,
+      );
 
   /// 控制条音量滑杆（0-100，实时写入播放器）
   Widget _buildVolumeSlider() {
+    final theme = _miniSliderTheme();
     return TvFocusable(
       onTap: null,
       radius: 6,
@@ -4930,7 +4928,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 width: 96,
                 height: 24,
                 child: SliderTheme(
-                  data: _miniSliderTheme,
+                  data: theme,
                   child: Slider(
                     value: volume.clamp(0.0, 100.0),
                     max: 100,
@@ -4959,6 +4957,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 控制条亮度滑杆（0-1，拖动才写入应用亮度）
   Widget _buildBrightnessSlider() {
+    final theme = _miniSliderTheme();
     return TvFocusable(
       onTap: null,
       radius: 6,
@@ -4975,7 +4974,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 width: 96,
                 height: 24,
                 child: SliderTheme(
-                  data: _miniSliderTheme,
+                  data: theme,
                   child: Slider(
                     value: brightness.clamp(0.0, 1.0),
                     onChanged: (v) {
