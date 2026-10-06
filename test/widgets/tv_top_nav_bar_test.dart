@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/remote_search_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
+import 'package:himi_syncwatch/screens/search/remote_search_screen.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
@@ -37,6 +39,7 @@ Widget _host({
     overrides: [
       settingsProvider.overrideWith(
           (ref) => FakeSettingsNotifier(const AppSettings(tvMode: true))),
+      remoteSearchBasePortProvider.overrideWithValue(0),
       embyAuthServiceProvider.overrideWith((ref) => FakeEmbyAuthService()),
       if (servers.isNotEmpty)
         embyServerListProvider
@@ -164,7 +167,7 @@ void main() {
     expect(find.text('家庭NAS'), findsNothing);
   });
 
-  testWidgets('已认证服务器时显示搜索入口，点击打开聚合搜索', (tester) async {
+  testWidgets('已认证服务器时显示搜索入口，点击打开远程扫码搜索', (tester) async {
     final servers = [_server('a', '家庭NAS')];
     await tester.pumpWidget(
       _host(servers: servers, current: servers.first),
@@ -173,8 +176,11 @@ void main() {
 
     expect(find.byIcon(Icons.search), findsOneWidget);
     await tester.tap(find.byIcon(Icons.search));
-    await tester.pumpAndSettle();
-    expect(find.text('输入关键词搜索全部服务器'), findsOneWidget);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350)); // push 转场
+    await tester.pump();
+    expect(find.byType(RemoteSearchScreen), findsOneWidget);
+    expect(find.text('手机扫码搜索'), findsOneWidget);
   });
 
   testWidgets('TV 取消房间模式：顶栏不渲染房间入口', (tester) async {
