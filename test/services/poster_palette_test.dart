@@ -41,42 +41,112 @@ void main() {
   setUp(PosterPalette.debugReset);
 
   group('compute', () {
-    test('纯色图提取原始主色', () {
-      final color =
-          PosterPalette.compute(_solidBuffer(100, 100, 200, 60, 40), 100, 100)!;
+    test('纯色图返回三色组：首色为原始主色（不足用首色补齐）', () {
+      final trio =
+          PosterPalette.compute(_solidBuffer(100, 100, 200, 60, 40), 100, 100);
 
-      // compute 返回 raw（压暗/提亮由 darkenForPage/brightenForPage 派生）
-      expect(_red(color), 200);
-      expect(_green(color), 60);
-      expect(_blue(color), 40);
-      expect(_red(color) > _green(color), isTrue);
-      expect(_red(color) > _blue(color), isTrue);
+      // 首色 = raw（压暗/提亮/中深由各入口派生）
+      expect(trio, hasLength(PosterPalette.trioCount));
+      expect(_red(trio[0]), 200);
+      expect(_green(trio[0]), 60);
+      expect(_blue(trio[0]), 40);
+      expect(_red(trio[0]) > _green(trio[0]), isTrue);
+      expect(_red(trio[0]) > _blue(trio[0]), isTrue);
+      // 纯色图无第二主色：三色全部为首色（同色系明度渐变）
+      expect(trio[1], trio[0]);
+      expect(trio[2], trio[0]);
+    });
+
+    test('多色区域图返回互异三色（频次降序、色差达标）', () {
+      const width = 120, height = 90;
+      final buffer = Uint8List(width * height * 4);
+      // 三竖条：红 60%、绿 25%、蓝 15%（均在严格亮度池内）
+      for (var y = 0; y < height; y++) {
+        for (var x = 0; x < width; x++) {
+          final i = (y * width + x) * 4;
+          final Color c;
+          if (x < 72) {
+            c = const Color(0xFFCC4422);
+          } else if (x < 102) {
+            c = const Color(0xFF44BB55);
+          } else {
+            c = const Color(0xFF3366CC);
+          }
+          buffer[i] = (c.r * 255).round();
+          buffer[i + 1] = (c.g * 255).round();
+          buffer[i + 2] = (c.b * 255).round();
+          buffer[i + 3] = 255;
+        }
+      }
+
+      final trio = PosterPalette.compute(buffer, width, height);
+      expect(trio, hasLength(3));
+      // 频次最高（红条最宽）为首色
+      expect(_red(trio[0]), greaterThan(_green(trio[0])));
+      expect(_red(trio[0]), greaterThan(_blue(trio[0])));
+      // 三色互异（色差 ≥ colorSeparation）
+      for (var i = 0; i < 3; i++) {
+        for (var j = i + 1; j < 3; j++) {
+          final dr = (_red(trio[i]) - _red(trio[j])).toDouble();
+          final dg = (_green(trio[i]) - _green(trio[j])).toDouble();
+          final db = (_blue(trio[i]) - _blue(trio[j])).toDouble();
+          final dist = dr * dr + dg * dg + db * db;
+          expect(
+              dist,
+              greaterThanOrEqualTo(PosterPalette.colorSeparation *
+                  PosterPalette.colorSeparation),
+              reason: '色 $i 与色 $j 应达到最小色差');
+        }
+      }
+      // 含绿/蓝色相（候选按频次入齐）
+      expect(trio.any((c) => _green(c) > _red(c)), isTrue);
+      expect(trio.any((c) => _blue(c) > _green(c)), isTrue);
+    });
+
+    test('严格池不足时宽池参与补色（近白区域入第二色）', () {
+      const width = 100, height = 100;
+      final buffer = Uint8List(width * height * 4);
+      for (var i = 0; i < width * height; i++) {
+        // 70% 中灰（严格池内）、30% 近白（L≈0.96，仅宽池）
+        final nearWhite = i % 10 >= 7;
+        final v = nearWhite ? 245 : 128;
+        buffer[i * 4] = v;
+        buffer[i * 4 + 1] = v;
+        buffer[i * 4 + 2] = v;
+        buffer[i * 4 + 3] = 255;
+      }
+
+      final trio = PosterPalette.compute(buffer, width, height);
+      expect(trio, hasLength(3));
+      // 首色 = 严格池最高频（中灰），第二色 = 宽池近白
+      expect(_red(trio[0]), 128);
+      expect(_red(trio[1]), 245);
     });
 
     test('近黑像素全部被过滤', () {
       expect(
         PosterPalette.compute(_solidBuffer(64, 64, 5, 5, 5), 64, 64),
-        isNull,
+        isEmpty,
       );
     });
 
     test('近白像素全部被过滤', () {
       expect(
         PosterPalette.compute(_solidBuffer(64, 64, 250, 250, 250), 64, 64),
-        isNull,
+        isEmpty,
       );
     });
 
     test('透明像素被忽略', () {
       expect(
         PosterPalette.compute(_solidBuffer(64, 64, 200, 60, 40, a: 0), 64, 64),
-        isNull,
+        isEmpty,
       );
     });
 
-    test('buffer 长度不足返回 null', () {
-      expect(PosterPalette.compute(Uint8List(10), 100, 100), isNull);
-      expect(PosterPalette.compute(Uint8List(400), 0, 100), isNull);
+    test('buffer 长度不足返回空表', () {
+      expect(PosterPalette.compute(Uint8List(10), 100, 100), isEmpty);
+      expect(PosterPalette.compute(Uint8List(400), 0, 100), isEmpty);
     });
 
     test('少量异色像素不干扰主导色', () {
@@ -89,9 +159,9 @@ void main() {
         buffer[i * 4 + 2] = 255;
       }
 
-      final color = PosterPalette.compute(buffer, width, height)!;
-      expect(_red(color) > _blue(color), isTrue);
-      expect(_green(color) < _red(color), isTrue);
+      final trio = PosterPalette.compute(buffer, width, height);
+      expect(_red(trio[0]) > _blue(trio[0]), isTrue);
+      expect(_green(trio[0]) < _red(trio[0]), isTrue);
     });
   });
 
@@ -162,23 +232,53 @@ void main() {
   group('detailGradient', () {
     const base = Color(0xFF121212);
 
-    test('无亮色时整页保持页面底色', () {
+    test('无色组时整页保持页面底色', () {
       final gradient = PosterPalette.detailGradient(null, base);
       expect(gradient.colors, [base, base, base]);
       expect(gradient.stops, PosterPalette.detailStops);
     });
 
-    test('有亮色时三段渐变：顶部亮主色、底部收深（1=A）', () {
-      const bright = Color(0xFF5588CC);
-      final gradient = PosterPalette.detailGradient(bright, base);
-      expect(gradient.colors.length, 3);
-      expect(gradient.colors.first, bright);
+    test('空色组时整页保持页面底色', () {
+      final gradient = PosterPalette.detailGradient(const [], base);
+      expect(gradient.colors, [base, base, base]);
       expect(gradient.stops, PosterPalette.detailStops);
-      // 底段 = lerp(亮色, 底色, 0.62)：收深但不直接触底
-      expect(gradient.colors.last, Color.lerp(bright, base, 0.62));
-      expect(gradient.colors.last, isNot(base));
-      // 中段介于亮色与底段之间
-      expect(gradient.colors[1], Color.lerp(bright, base, 0.30));
+    });
+
+    test('三色组时三段异色：顶亮、中深、底收深', () {
+      const top1 = Color(0xFFCC4422);
+      const top2 = Color(0xFF44BB55);
+      const top3 = Color(0xFF3366CC);
+      final gradient =
+          PosterPalette.detailGradient(const [top1, top2, top3], base);
+
+      expect(gradient.colors.length, 3);
+      expect(gradient.stops, PosterPalette.detailStops);
+      // 顶段 = 亮色派生，且为至少一个亮色
+      expect(gradient.colors.first, PosterPalette.brightenForPage(top1));
+      expect(HSLColor.fromColor(gradient.colors.first).lightness,
+          greaterThanOrEqualTo(PosterPalette.brightLightnessFloor));
+      // 中段 = 第二主色中深保色相
+      expect(gradient.colors[1], PosterPalette.toneForPage(top2));
+      // 底段 = 第三主色压深后混底色（detailBaseMix）
+      expect(
+          gradient.colors.last,
+          Color.lerp(PosterPalette.deepenForPage(top3), base,
+              PosterPalette.detailBaseMix));
+      // 三段互不相同
+      expect(gradient.colors.toSet(), hasLength(3));
+    });
+
+    test('色组不足三色时用首色补齐派生', () {
+      const top1 = Color(0xFFCC4422);
+      final gradient = PosterPalette.detailGradient(const [top1], base);
+
+      expect(gradient.colors.length, 3);
+      expect(gradient.colors.first, PosterPalette.brightenForPage(top1));
+      expect(gradient.colors[1], PosterPalette.toneForPage(top1));
+      expect(
+          gradient.colors.last,
+          Color.lerp(PosterPalette.deepenForPage(top1), base,
+              PosterPalette.detailBaseMix));
     });
   });
 
@@ -334,6 +434,59 @@ void main() {
           (url, {headers}) async => throw Exception('boom');
       expect(await PosterPalette.extractBright('http://x/err.jpg'), isNull);
       expect(PosterPalette.debugCacheLength(), 0);
+    });
+  });
+
+  group('extractTrio', () {
+    test('空 URL 返回 null 且不触发加载', () async {
+      var calls = 0;
+      PosterPalette.debugImageLoader = (url, {headers}) async {
+        calls++;
+        return _solidImage(const Color(0xFFCC4422));
+      };
+
+      expect(await PosterPalette.extractTrio(''), isNull);
+      expect(calls, 0);
+    });
+
+    test('图片可加载时保证返回 3 色（图能加载→必有色组）', () async {
+      PosterPalette.debugImageLoader =
+          (url, {headers}) async => _solidImage(const Color(0xFFCC4422));
+
+      final trio = await PosterPalette.extractTrio('http://x/1.jpg');
+      expect(trio, isNotNull);
+      expect(trio, hasLength(PosterPalette.trioCount));
+    });
+
+    test('与 extract/extractBright 共享缓存：同图只解码一次', () async {
+      var calls = 0;
+      PosterPalette.debugImageLoader = (url, {headers}) async {
+        calls++;
+        return _solidImage(const Color(0xFFCC4422));
+      };
+
+      await PosterPalette.extract('http://x/1.jpg');
+      await PosterPalette.extractBright('http://x/1.jpg');
+      await PosterPalette.extractTrio('http://x/1.jpg');
+
+      expect(calls, 1);
+      expect(PosterPalette.debugCacheLength(), 1);
+    });
+
+    test('加载抛错返回 null 且不缓存', () async {
+      PosterPalette.debugImageLoader =
+          (url, {headers}) async => throw Exception('boom');
+
+      expect(await PosterPalette.extractTrio('http://x/err.jpg'), isNull);
+      expect(PosterPalette.debugCacheLength(), 0);
+    });
+
+    test('超时返回 null', () async {
+      PosterPalette.debugTimeout = const Duration(milliseconds: 20);
+      PosterPalette.debugImageLoader =
+          (url, {headers}) => Completer<ui.Image?>().future;
+
+      expect(await PosterPalette.extractTrio('http://x/timeout.jpg'), isNull);
     });
   });
 }

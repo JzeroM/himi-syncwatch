@@ -8,10 +8,12 @@ import 'dart:ui' as ui;
 /// 海报主色提取（零依赖自研）。
 ///
 /// 图片（多已磁盘缓存）→ 解码 → 缩至 64×64 → RGBA 采样 →
-/// 过滤过暗/过亮像素 → 4-bit 量化取高频色 → 原始主色入缓存。
-/// 对外按需派生压暗主色（[extract]，页面背景）或提亮主色
-/// （[extractBright]，详情页背景），两者共享缓存、同图只解码一次。
-/// 内置内存 LRU 缓存、同 URL 单飞去重、超时兜底（失败返回 null）。
+/// 4-bit 量化分桶 → 严格池（防近黑/近白主导）选首色，候选按频次
+/// 与色差贪心凑满 [trioCount] 色，不足用首色重复补齐——**只要图片能
+/// 加载成功必返回 3 色**；仅加载失败/超时/无有效像素返回 null。
+/// 对外派生：[extract] 压暗首色（页面背景）、[extractBright] 提亮首色、
+/// [extractTrio] 原始三色组（详情页渐变），共享缓存与单飞，同图只解码一次。
+/// 内置内存 LRU 缓存、同 URL 单飞去重、超时兜底。
 class PosterPalette {
   PosterPalette._();
 
@@ -23,9 +25,21 @@ class PosterPalette {
   static const int sampleSize = 64;
   static const int targetSamples = 4096;
 
-  /// 亮度过滤阈值：L<0.12 视为近黑、L>0.92 视为近白，均不参与取色。
+  /// 每次提取的目标色数（详情页三段渐变）。
+  static const int trioCount = 3;
+
+  /// 首色严格亮度过滤：L<0.12 视为近黑、L>0.92 视为近白，不参与首色竞争
+  /// （防噪点/大块近白主导）。
   static const double minLuma = 0.12;
   static const double maxLuma = 0.92;
+
+  /// 第 2/3 色宽池过滤：暗色区/亮色区也参与（底段本来就要近黑），
+  /// 仅挡纯噪点。
+  static const double wideMinLuma = 0.05;
+  static const double wideMaxLuma = 0.97;
+
+  /// 入选色之间的最小 RGB 欧氏距离（平方比较，保证三色真的不同）。
+  static const double colorSeparation = 48;
 
   /// 主色与深色底的混合比例（0=保留主色，1=完全深色）。
   static const double deepMix = 0.45;
@@ -33,10 +47,10 @@ class PosterPalette {
   /// 页面渐变的分段位置（顶部主色 → 中段过渡 → 底部底色）。
   static const List<double> pageStops = [0.0, 0.4, 0.8];
 
-  /// 详情页亮色渐变的分段位置（顶部亮主色 → 中段 → 底部收深）。
+  /// 详情页三色渐变的分段位置（顶亮 → 中深 → 底近黑）。
   static const List<double> detailStops = [0.0, 0.4, 0.9];
 
-  /// 提亮版：与深色底的混合比例（轻压防止刺眼）。
+  /// 提亮版（渐变顶段）：与深色底的混合比例（轻压防止刺眼）。
   static const double brightMix = 0.15;
 
   /// 提亮版：亮度下限（主色太暗时提亮到此值）与上限（防刺眼）。
@@ -46,13 +60,27 @@ class PosterPalette {
   /// 提亮版：饱和度下限（保证彩色感）。
   static const double brightSaturationFloor = 0.25;
 
+  /// 中段（渐变中段，保色相中深色）：混深比例、亮度区间、饱和度保底。
+  static const double toneMix = 0.45;
+  static const double toneLightnessFloor = 0.32;
+  static const double toneLightnessCap = 0.46;
+  static const double toneSaturationFloor = 0.18;
+
+  /// 底段（渐变底段，近黑带色相）：更重混深、更低亮度上限、饱和保底。
+  static const double deepMixStrong = 0.60;
+  static const double deepLightnessCap = 0.35;
+  static const double deepSaturationFloor = 0.12;
+
+  /// 底段与页面底色的最终融合比例（收向底色但保留色相）。
+  static const double detailBaseMix = 0.35;
+
   static Duration debugTimeout = defaultTimeout;
   static Future<ui.Image?> Function(String url, {Map<String, String>? headers})?
       debugImageLoader;
 
-  static final Map<String, Color> _cache = <String, Color>{};
-  static final Map<String, Future<Color?>> _inflight =
-      <String, Future<Color?>>{};
+  static final Map<String, List<Color>> _cache = <String, List<Color>>{};
+  static final Map<String, Future<List<Color>?>> _inflight =
+      <String, Future<List<Color>?>>{};
 
   /// 清空缓存与调试注入（测试用）。
   static void debugReset() {
@@ -67,20 +95,28 @@ class PosterPalette {
   /// 提取 [url] 图片的压暗主色（页面背景用）；空 URL、超时、解码失败均返回 null。
   static Future<Color?> extract(String url,
       {Map<String, String>? headers}) async {
-    final raw = await _raw(url, headers: headers);
-    return raw == null ? null : darkenForPage(raw);
+    final trio = await _raw(url, headers: headers);
+    return trio == null ? null : darkenForPage(trio.first);
   }
 
-  /// 提取 [url] 图片的提亮主色（详情页背景用）；与 [extract] 共享缓存与
-  /// 单飞，同一 URL 不会重复解码。失败返回 null。
+  /// 提取 [url] 图片的提亮主色；与 [extract] 共享缓存与单飞，
+  /// 同一 URL 不会重复解码。失败返回 null。
   static Future<Color?> extractBright(String url,
       {Map<String, String>? headers}) async {
-    final raw = await _raw(url, headers: headers);
-    return raw == null ? null : brightenForPage(raw);
+    final trio = await _raw(url, headers: headers);
+    return trio == null ? null : brightenForPage(trio.first);
   }
 
-  /// 读取原始主色（缓存存 raw，压暗/提亮在各入口按需派生）。
-  static Future<Color?> _raw(String url, {Map<String, String>? headers}) async {
+  /// 提取 [url] 图片的原始三色组（频次降序，保证 [trioCount] 色，
+  /// 见 [compute]）；失败（图加载不了/无有效像素）返回 null。
+  static Future<List<Color>?> extractTrio(String url,
+      {Map<String, String>? headers}) {
+    return _raw(url, headers: headers);
+  }
+
+  /// 读取原始三色组（缓存存 raw，压暗/提亮/中深在各入口按需派生）。
+  static Future<List<Color>?> _raw(String url,
+      {Map<String, String>? headers}) async {
     if (url.isEmpty) return null;
     final hit = _cache.remove(url);
     if (hit != null) {
@@ -98,7 +134,7 @@ class PosterPalette {
     }
   }
 
-  static Future<Color?> _load(String url,
+  static Future<List<Color>?> _load(String url,
       {Map<String, String>? headers}) async {
     try {
       final source =
@@ -109,10 +145,11 @@ class PosterPalette {
       try {
         final data = await small.toByteData(format: ui.ImageByteFormat.rawRgba);
         if (data == null) return null;
-        final color =
+        final colors =
             compute(data.buffer.asUint8List(), small.width, small.height);
-        if (color != null) _putCache(url, color);
-        return color;
+        if (colors.isEmpty) return null;
+        _putCache(url, colors);
+        return colors;
       } finally {
         small.dispose();
       }
@@ -156,12 +193,18 @@ class PosterPalette {
     return image;
   }
 
-  /// 对 RGBA 像素做采样取原始主色；无有效像素返回 null。
-  /// （压暗/提亮由 [darkenForPage]/[brightenForPage] 派生。）
-  static Color? compute(Uint8List rgba, int width, int height) {
-    if (width <= 0 || height <= 0) return null;
+  /// 对 RGBA 像素做采样取原始三色组（频次降序，保证 [trioCount] 色）：
+  /// 1. 宽池过滤（[wideMinLuma]~[wideMaxLuma]）分桶求平均色
+  /// 2. 首色取严格池（[minLuma]~[maxLuma]）最高频桶（严格池空则全池最高频）
+  /// 3. 候选按「严格池频次序 → 宽池其余频次序」贪心选入，与已选色
+  ///    RGB 距离 ≥ [colorSeparation] 才入选（保证三色互异）
+  /// 4. 不足 [trioCount] 用首色重复补齐（纯色图 → 同色系明度渐变）
+  ///
+  /// 无有效像素（全透明/全噪点）返回空表（调用方视为提取失败）。
+  static List<Color> compute(Uint8List rgba, int width, int height) {
+    if (width <= 0 || height <= 0) return const [];
     final total = width * height;
-    if (rgba.length < total * 4) return null;
+    if (rgba.length < total * 4) return const [];
 
     var stride = (total / targetSamples).ceil();
     if (stride < 1) stride = 1;
@@ -175,7 +218,7 @@ class PosterPalette {
       final g = rgba[offset + 1];
       final b = rgba[offset + 2];
       final luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-      if (luma < minLuma || luma > maxLuma) continue;
+      if (luma < wideMinLuma || luma > wideMaxLuma) continue;
       final key = (r >> 4) << 8 | (g >> 4) << 4 | (b >> 4);
       counts[key] = (counts[key] ?? 0) + 1;
       final sum = sums[key] ??= <int>[0, 0, 0];
@@ -183,20 +226,59 @@ class PosterPalette {
       sum[1] += g;
       sum[2] += b;
     }
-    if (counts.isEmpty) return null;
+    if (counts.isEmpty) return const [];
 
-    var bestKey = 0;
-    var bestCount = -1;
+    final strict = <_Bucket>[];
+    final byCount = <_Bucket>[];
     counts.forEach((key, count) {
-      if (count > bestCount) {
-        bestCount = count;
-        bestKey = key;
-      }
+      final sum = sums[key]!;
+      final r = sum[0] ~/ count;
+      final g = sum[1] ~/ count;
+      final b = sum[2] ~/ count;
+      final luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+      final bucket = _Bucket(Color.fromARGB(255, r, g, b), luma, count);
+      byCount.add(bucket);
+      if (luma >= minLuma && luma <= maxLuma) strict.add(bucket);
     });
+    byCount.sort((a, b) => b.count.compareTo(a.count));
+    strict.sort((a, b) => b.count.compareTo(a.count));
 
-    final sum = sums[bestKey]!;
-    return Color.fromARGB(
-        255, sum[0] ~/ bestCount, sum[1] ~/ bestCount, sum[2] ~/ bestCount);
+    final selected = <Color>[];
+    // 首色：优先严格池最高频；严格池空（整图近黑/近白）则全池最高频
+    selected.add((strict.isNotEmpty ? strict : byCount).first.color);
+
+    // 候选序：严格池频次序 → 宽池其余频次序；色差达标才入选
+    final candidates = <Color>[
+      ...strict.map((e) => e.color),
+      for (final e in byCount)
+        if (e.luma < minLuma || e.luma > maxLuma) e.color,
+    ];
+    final minSepSq = colorSeparation * colorSeparation;
+    for (final candidate in candidates) {
+      if (selected.length >= trioCount) break;
+      var ok = true;
+      for (final chosen in selected) {
+        if (_distanceSq(candidate, chosen) < minSepSq) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) selected.add(candidate);
+    }
+
+    // 补齐：不足三色用首色重复（detailGradient 对三段做不同明度派生）
+    while (selected.length < trioCount) {
+      selected.add(selected.first);
+    }
+    return selected;
+  }
+
+  /// RGB 欧氏距离平方（0~195075）。
+  static double _distanceSq(Color a, Color b) {
+    final dr = (a.r - b.r) * 255;
+    final dg = (a.g - b.g) * 255;
+    final db = (a.b - b.b) * 255;
+    return dr * dr + dg * dg + db * db;
   }
 
   /// 将任意主色压暗为适合做页面背景的色调。
@@ -209,7 +291,7 @@ class PosterPalette {
     return mixed;
   }
 
-  /// 将任意主色提亮为适合做详情页背景的色调：
+  /// 将任意主色提亮为适合做详情页渐变顶段的色调：
   /// 轻混深色（防刺眼）→ 亮度夹在 [brightLightnessFloor, brightLightnessCap]
   /// → 饱和度保底 [brightSaturationFloor]（保证彩色感）。
   static Color brightenForPage(Color color) {
@@ -227,7 +309,38 @@ class PosterPalette {
     return hsl.withLightness(lightness).toColor();
   }
 
-  /// 详情页背景垂直渐变：顶部 [accent] 主色 → 底部 [base] 页面底色。
+  /// 将任意主色处理为详情页渐变中段的保色相中深色：
+  /// 混深 → 亮度夹在 [toneLightnessFloor, toneLightnessCap] → 饱和保底。
+  static Color toneForPage(Color color) {
+    final mixed = Color.lerp(color, deepFallback, toneMix)!;
+    var hsl = HSLColor.fromColor(mixed);
+    if (hsl.saturation < toneSaturationFloor) {
+      hsl = hsl.withSaturation(toneSaturationFloor);
+    }
+    var lightness = hsl.lightness;
+    if (lightness < toneLightnessFloor) {
+      lightness = toneLightnessFloor;
+    } else if (lightness > toneLightnessCap) {
+      lightness = toneLightnessCap;
+    }
+    return hsl.withLightness(lightness).toColor();
+  }
+
+  /// 将任意主色处理为详情页渐变底段的近黑色（带色相）：
+  /// 重混深 → 亮度封顶 [deepLightnessCap] → 饱和保底防灰化。
+  static Color deepenForPage(Color color) {
+    final mixed = Color.lerp(color, deepFallback, deepMixStrong)!;
+    var hsl = HSLColor.fromColor(mixed);
+    if (hsl.saturation < deepSaturationFloor) {
+      hsl = hsl.withSaturation(deepSaturationFloor);
+    }
+    if (hsl.lightness > deepLightnessCap) {
+      return hsl.withLightness(deepLightnessCap).toColor();
+    }
+    return hsl.toColor();
+  }
+
+  /// 页面背景垂直渐变：顶部 [accent] 主色 → 底部 [base] 页面底色。
   /// [accent] 为 null 时整页保持 [base]（与取色前视觉一致）。
   static LinearGradient pageGradient(Color? accent, Color base) {
     if (accent == null) {
@@ -247,11 +360,14 @@ class PosterPalette {
     );
   }
 
-  /// 详情页背景垂直渐变（亮色版，1=A 方案）：顶部 [bright] 亮主色 →
-  /// 中段轻混底色 → 底部收深（约 62% 底色），分段见 [detailStops]。
-  /// [bright] 为 null 时整页保持 [base]（与取色前视觉一致）。
-  static LinearGradient detailGradient(Color? bright, Color base) {
-    if (bright == null) {
+  /// 详情页背景三段异色渐变（[detailStops]）：
+  /// 顶 = [brightenForPage] 亮色段（三色至少一亮）、
+  /// 中 = [toneForPage] 保色相中深、
+  /// 底 = [deepenForPage] 再混底色（[detailBaseMix]）近黑收深。
+  /// [trio] 为 null/空（图提取失败）时整页保持 [base]；
+  /// 非空时按 [compute] 保证的三色直接派生，无逐段回退。
+  static LinearGradient detailGradient(List<Color>? trio, Color base) {
+    if (trio == null || trio.isEmpty) {
       return LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
@@ -259,21 +375,31 @@ class PosterPalette {
         stops: detailStops,
       );
     }
-    final mid = Color.lerp(bright, base, 0.30)!;
-    final low = Color.lerp(bright, base, 0.62)!;
+    final top = brightenForPage(trio[0]);
+    final mid = toneForPage(trio.length > 1 ? trio[1] : trio[0]);
+    final low = Color.lerp(deepenForPage(trio.length > 2 ? trio[2] : trio[0]),
+        base, detailBaseMix)!;
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
-      colors: [bright, mid, low],
+      colors: [top, mid, low],
       stops: detailStops,
     );
   }
 
-  static void _putCache(String url, Color color) {
+  static void _putCache(String url, List<Color> colors) {
     _cache.remove(url);
-    _cache[url] = color;
+    _cache[url] = colors;
     while (_cache.length > maxCacheEntries) {
       _cache.remove(_cache.keys.first);
     }
   }
+}
+
+/// 采样分桶的候选色：桶平均色 + 平均亮度 + 像素频次。
+class _Bucket {
+  const _Bucket(this.color, this.luma, this.count);
+  final Color color;
+  final double luma;
+  final int count;
 }

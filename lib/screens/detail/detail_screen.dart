@@ -961,8 +961,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   @override
   Widget build(BuildContext context) {
     final accentUrl = _item?.backdropUrl ?? _item?.posterUrl ?? '';
-    final accent = ref.watch(posterColorProvider(accentUrl)).valueOrNull;
-    final bright = ref.watch(posterBrightColorProvider(accentUrl)).valueOrNull;
+    final trio = ref.watch(posterTrioProvider(accentUrl)).valueOrNull;
+    // 渐变顶段亮色（与 detailGradient 顶段同源），供 SliverAppBar 衔接用
+    final bright = (trio == null || trio.isEmpty)
+        ? null
+        : PosterPalette.brightenForPage(trio[0]);
     final base = Theme.of(context).scaffoldBackgroundColor;
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
@@ -987,7 +990,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ],
                 ),
               )
-            : _buildContent(bright ?? accent, base);
+            : _buildContent(bright, base);
 
     return Scaffold(
       extendBody: true,
@@ -995,12 +998,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         key: const Key('detailBackground'),
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
-        // 非 TV：亮色主色垂直渐变（1=A，中上亮、底部收深）；
+        // 非 TV：海报三色三段渐变（顶亮/中深保色相/底近黑收深）；
         // TV：透明底，海报由下方 Stack 做整页固定背景。
         decoration: tvMode
             ? const BoxDecoration()
             : BoxDecoration(
-                gradient: PosterPalette.detailGradient(bright ?? accent, base),
+                gradient: PosterPalette.detailGradient(trio, base),
               ),
         child: !tvMode
             ? content
@@ -1010,12 +1013,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   // 图片加载失败兜底底色
                   ColoredBox(color: base),
                   if (_item != null) ...[
-                    // 整页海报（backdrop 优先），滚动内容叠其上
+                    // 整页海报（backdrop 优先），滚动内容叠其上；
+                    // 服务端默认图缩到 400 高，全屏拉伸会糊 → 升级高清 URL
                     Positioned.fill(
                       child: EmbyImage(
                         key: const Key('detailBackdrop'),
-                        url: _item!.backdropUrl ?? _item!.posterUrl,
+                        url:
+                            _hdImageUrl(_item!.backdropUrl ?? _item!.posterUrl),
                         fit: BoxFit.cover,
+                        cacheWidth: (MediaQuery.sizeOf(context).width *
+                                MediaQuery.devicePixelRatioOf(context))
+                            .round(),
                         errorWidget: const SizedBox.shrink(),
                       ),
                     ),
@@ -1046,6 +1054,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ? _buildBottomBar()
           : null,
     );
+  }
+
+  /// TV 整页背景高清图 URL：服务端默认把图缩到 400 高（`maxHeight=400`），
+  /// 全屏铺开会糊 → backdrop 升到 `maxWidth=1920`、海报升到 `maxHeight=1080`。
+  /// 无缩放参数的原样返回（取色/非 TV 仍用默认小图，不走此方法）。
+  String? _hdImageUrl(String? url) {
+    if (url == null || url.isEmpty) return null;
+    if (url.contains('/Images/Backdrop')) {
+      return url.replaceAll('maxHeight=400', 'maxWidth=1920');
+    }
+    return url.replaceAll('maxHeight=400', 'maxHeight=1080');
   }
 
   /// 操作区（简介上方）：
@@ -1124,7 +1143,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             onPressed: item.isSeries ? _startPlaySeries : _startPlay,
             icon: Icon(Icons.play_arrow,
                 color: scheme.primary, size: tvMode ? 20 : 24),
-            label: const Text('开始播放'),
+            label: Text(tvMode ? '播放' : '开始播放'),
             style: glassStyle(compact: tvMode),
           ),
         ));

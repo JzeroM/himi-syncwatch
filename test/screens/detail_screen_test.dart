@@ -33,8 +33,7 @@ final _item = MediaItem(
 
 Future<ProviderContainer> _pumpDetail(
   WidgetTester tester, {
-  Color? accent,
-  Color? bright,
+  List<Color>? trio,
   FakeEmbyService? emby,
   bool tv = false,
   bool roomMode = false,
@@ -47,8 +46,7 @@ Future<ProviderContainer> _pumpDetail(
           tv ? const AppSettings(tvMode: true) : const AppSettings())),
       embyServiceProvider
           .overrideWith((ref) => emby ?? FakeEmbyService(item: targetItem)),
-      posterColorProvider(_posterUrl).overrideWith((ref) async => accent),
-      posterBrightColorProvider(_posterUrl).overrideWith((ref) async => bright),
+      posterTrioProvider(_posterUrl).overrideWith((ref) async => trio),
     ],
   );
   addTearDown(container.dispose);
@@ -84,8 +82,7 @@ Future<ProviderContainer> _pumpDetailInRouter(
           .overrideWith((ref) => FakeSettingsNotifier(const AppSettings())),
       embyServiceProvider
           .overrideWith((ref) => emby ?? FakeEmbyService(item: item)),
-      posterColorProvider(_posterUrl).overrideWith((ref) async => null),
-      posterBrightColorProvider(_posterUrl).overrideWith((ref) async => null),
+      posterTrioProvider(_posterUrl).overrideWith((ref) async => null),
       ...extraOverrides,
     ],
   );
@@ -162,32 +159,38 @@ LinearGradient _pageGradient(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('取色成功时背景为亮色主色垂直渐变（1=A）', (tester) async {
-    const bright = Color(0xFF5588CC);
-    await _pumpDetail(tester, bright: bright);
+  testWidgets('取色成功时背景为三色三段异色渐变', (tester) async {
+    const top1 = Color(0xFFCC4422);
+    const top2 = Color(0xFF44BB55);
+    const top3 = Color(0xFF3366CC);
+    await _pumpDetail(tester, trio: const [top1, top2, top3]);
 
     final gradient = _pageGradient(tester);
     final base = ThemeData.dark().scaffoldBackgroundColor;
-    expect(gradient.colors.first, bright);
+    expect(gradient.colors.first, PosterPalette.brightenForPage(top1));
     expect(gradient.stops, PosterPalette.detailStops);
-    expect(gradient.colors[1], Color.lerp(bright, base, 0.30));
-    expect(gradient.colors.last, Color.lerp(bright, base, 0.62));
-    expect(gradient.colors.last, isNot(base), reason: '底部收深但不触底');
+    expect(gradient.colors[1], PosterPalette.toneForPage(top2));
+    expect(
+        gradient.colors.last,
+        Color.lerp(PosterPalette.deepenForPage(top3), base,
+            PosterPalette.detailBaseMix));
+    expect(gradient.colors.toSet(), hasLength(3), reason: '三段应为互不相同的颜色');
     expect(find.text('测试影片'), findsWidgets);
   });
 
-  testWidgets('亮色取色失败回退压暗主色', (tester) async {
-    const accent = Color(0xFF3366AA);
-    await _pumpDetail(tester, accent: accent);
+  testWidgets('单色组时用首色补齐派生明度三段', (tester) async {
+    const top1 = Color(0xFF3366AA);
+    await _pumpDetail(tester, trio: const [top1]);
 
     final gradient = _pageGradient(tester);
-    expect(gradient.colors.first, accent);
+    expect(gradient.colors.first, PosterPalette.brightenForPage(top1));
     expect(gradient.stops, PosterPalette.detailStops);
+    expect(gradient.colors[1], PosterPalette.toneForPage(top1));
     expect(find.text('测试影片'), findsWidgets);
   });
 
-  testWidgets('亮色与压暗取色均失败时背景保持页面底色', (tester) async {
-    await _pumpDetail(tester, accent: null);
+  testWidgets('取色失败时背景保持页面底色', (tester) async {
+    await _pumpDetail(tester, trio: null);
 
     final gradient = _pageGradient(tester);
     final base = ThemeData.dark().scaffoldBackgroundColor;
@@ -221,10 +224,11 @@ void main() {
     });
 
     testWidgets('非 TV 回归：渐变仍在且海报仍在 AppBar 内', (tester) async {
-      await _pumpDetail(tester, accent: const Color(0xFF3366AA));
+      const top1 = Color(0xFF3366AA);
+      await _pumpDetail(tester, trio: const [top1]);
 
       final gradient = _pageGradient(tester);
-      expect(gradient.colors.first, const Color(0xFF3366AA));
+      expect(gradient.colors.first, PosterPalette.brightenForPage(top1));
       expect(find.byKey(const Key('detailBackdrop')), findsNothing);
       expect(find.byKey(const Key('detailBackdropScrim')), findsNothing);
       expect(
@@ -254,7 +258,7 @@ void main() {
       await _pumpDetail(tester,
           tv: true, item: trackItem, emby: FakeEmbyService(item: trackItem));
 
-      final play = find.widgetWithText(FilledButton, '开始播放');
+      final play = find.widgetWithText(FilledButton, '播放');
       final subtitle = find.byKey(const Key('subtitleSelectorButton'));
       final audio = find.byKey(const Key('audioSelectorButton'));
       expect(play, findsOneWidget);
@@ -326,8 +330,7 @@ void main() {
           used = cfg;
           return FakeEmbyService(item: _item);
         }),
-        posterColorProvider(_posterUrl).overrideWith((ref) async => null),
-        posterBrightColorProvider(_posterUrl).overrideWith((ref) async => null),
+        posterTrioProvider(_posterUrl).overrideWith((ref) async => null),
       ],
     );
     addTearDown(container.dispose);
@@ -413,20 +416,20 @@ void main() {
       // 页面级胶囊托盘已取消，按钮自身为玻璃质感（GlassContainer 外壳）
       expect(
         find.ancestor(
-            of: find.text('开始播放'), matching: find.byType(GlassContainer)),
+            of: find.text('播放'), matching: find.byType(GlassContainer)),
         findsOneWidget,
         reason: '播放按钮应带玻璃外壳',
       );
 
       // 简介入口已移至海报（页面顶部），位于开始播放上方
       final desc = tester.getRect(find.text('简介'));
-      final btn = tester.getRect(find.text('开始播放'));
+      final btn = tester.getRect(find.text('播放'));
       expect(desc.top, lessThan(btn.top), reason: '简介控件在海报上，操作区在正文（其下方）');
 
       // TvFocusable 包裹（焦点环/OK 键激活）
       expect(
         find.ancestor(
-            of: find.text('开始播放'), matching: find.byType(TvFocusable)),
+            of: find.text('播放'), matching: find.byType(TvFocusable)),
         findsOneWidget,
       );
       // TV 取消房间模式：不渲染建房入口
@@ -435,7 +438,7 @@ void main() {
       // 进页 autofocus：焦点直接落在开始播放（解决有时无法聚焦）
       expect(
         _focusWithin(find.ancestor(
-            of: find.text('开始播放'), matching: find.byType(TvFocusable))),
+            of: find.text('播放'), matching: find.byType(TvFocusable))),
         isTrue,
         reason: '进页应自动聚焦开始播放',
       );
@@ -1285,8 +1288,7 @@ void main() {
             .overrideWith((ref) => FakeSettingsNotifier(const AppSettings())),
         embyServiceProvider.overrideWith((ref) => FakeEmbyService(
             item: series, itemsByParent: episodesByParent, seasons: seasons)),
-        posterColorProvider(_posterUrl).overrideWith((ref) async => null),
-        posterBrightColorProvider(_posterUrl).overrideWith((ref) async => null),
+        posterTrioProvider(_posterUrl).overrideWith((ref) async => null),
       ]);
       addTearDown(container.dispose);
       final router = GoRouter(
