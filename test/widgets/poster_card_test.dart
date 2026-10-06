@@ -127,5 +127,17 @@ void main() {
       await tester.tap(find.text('测试影片'));
       expect(tapped, isTrue);
     });
+
+    testWidgets('海报按显示宽×dpr 传入 cacheWidth（避免全尺寸解码）', (tester) async {
+      await tester.pumpWidget(_wrap(PosterCard(item: _item(), width: 122)));
+      await tester.pumpAndSettle();
+
+      final img = tester.widget<EmbyImage>(find.byType(EmbyImage));
+      final dpr = MediaQuery.devicePixelRatioOf(
+        tester.element(find.byType(PosterCard)),
+      );
+      expect(img.cacheWidth, (122 * dpr).round());
+      expect(img.cacheWidth, isNotNull);
+    });
   });
 }

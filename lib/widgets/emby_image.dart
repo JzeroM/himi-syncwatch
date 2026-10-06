@@ -11,6 +11,10 @@ class EmbyImage extends ConsumerWidget {
   final Widget? errorWidget;
   final Widget? placeholder;
 
+  /// 解码目标宽（像素，已含 dpr）：非空时按此宽度解码，
+  /// 避免原图全尺寸解码的主线程开销（网格/列表海报按显示宽传入）。
+  final int? cacheWidth;
+
   const EmbyImage({
     super.key,
     required this.url,
@@ -19,6 +23,7 @@ class EmbyImage extends ConsumerWidget {
     this.fit = BoxFit.cover,
     this.errorWidget,
     this.placeholder,
+    this.cacheWidth,
   });
 
   @override
@@ -40,6 +45,7 @@ class EmbyImage extends ConsumerWidget {
       width: width,
       height: height,
       fit: fit,
+      memCacheWidth: cacheWidth,
       placeholder: (_, __) =>
           placeholder ??
           Container(

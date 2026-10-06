@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +18,8 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 /// - 右栏：2+ 列海报网格，卡片左上带服务器名角标（「全部」视图区分来源）
 /// - 底色与首页/分类页一致：主题色三段渐变（未设主题色时应用底色）
 /// - 结果携带 server 参数进详情，不切换激活服务器
+/// - 输入防抖 280ms：非空打字期间零网络、主区零重建；清空立即回落提示态
+/// - 换词保留上一批结果 + 顶部细进度条；结果增量到达（先到先出）
 class GlobalSearchScreen extends ConsumerStatefulWidget {
   const GlobalSearchScreen({super.key});
 
@@ -25,30 +29,105 @@ class GlobalSearchScreen extends ConsumerStatefulWidget {
 
 class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
   final TextEditingController _controller = TextEditingController();
-  String _query = '';
 
-  /// 结果缓存（同词不重复请求，与原委托行为一致）。
-  String? _cachedQuery;
-  Future<List<GlobalSearchResult>>? _cachedFuture;
+  /// 实时输入值：仅驱动清空按钮（ValueListenableBuilder 局部刷新），
+  /// 打字过程不触发整屏 setState。
+  final ValueNotifier<String> _liveQuery = ValueNotifier<String>('');
+
+  /// 防抖后的搜索词（驱动搜索与主体切换）。
+  String _debouncedQuery = '';
+
+  /// 是否已有输入（false = 显示空词提示；空→非空边界时才翻转）。
+  bool _hasInput = false;
+
+  Timer? _debounceTimer;
+  StreamSubscription<List<GlobalSearchResult>>? _subscription;
+
+  /// 最近一批结果（null = 尚无）；换词期间保留旧果不闪空。
+  List<GlobalSearchResult>? _results;
+  bool _loading = false;
 
   /// 左栏选中服务器（null = 全部）。
   String? _selectedServerId;
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
+    _subscription?.cancel();
     _controller.dispose();
+    _liveQuery.dispose();
     super.dispose();
   }
 
-  Future<List<GlobalSearchResult>> _search() {
-    final q = _query.trim();
-    if (_cachedQuery != q || _cachedFuture == null) {
-      _cachedQuery = q;
-      _cachedFuture = ref
-          .read(globalSearchProvider)
-          .search(q, ref.read(embyServerListProvider));
+  /// 启动（或清空）搜索订阅：保留旧 [_results]，首批快照到达后替换。
+  void _startSearch(String q) {
+    _subscription?.cancel();
+    _subscription = null;
+    if (q.isEmpty) {
+      _results = null;
+      _loading = false;
+      return;
     }
-    return _cachedFuture!;
+    _loading = true;
+    _subscription = ref
+        .read(globalSearchProvider)
+        .searchStream(q, ref.read(embyServerListProvider))
+        .listen(
+      (snap) {
+        if (mounted) setState(() => _results = snap);
+      },
+      onDone: () {
+        if (mounted) setState(() => _loading = false);
+      },
+      onError: (_) {
+        if (mounted) setState(() => _loading = false);
+      },
+    );
+  }
+
+  void _onChanged(String v) {
+    final wasEmpty = _liveQuery.value.trim().isEmpty;
+    _liveQuery.value = v;
+    _debounceTimer?.cancel();
+
+    if (v.trim().isEmpty) {
+      // 删到空：立即回落提示态（高频动作不防抖）
+      if (_hasInput) {
+        setState(() {
+          _hasInput = false;
+          _debouncedQuery = '';
+          _selectedServerId = null;
+          _startSearch('');
+        });
+      }
+      return;
+    }
+
+    if (wasEmpty) {
+      // 空→非空边界：仅此翻转（提示态→等待）；其余打字零重建
+      setState(() => _hasInput = true);
+    }
+    _debounceTimer = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      final q = v.trim();
+      if (q == _debouncedQuery) return;
+      setState(() {
+        _debouncedQuery = q;
+        _startSearch(q);
+      });
+    });
+  }
+
+  void _clear() {
+    _debounceTimer?.cancel();
+    _controller.clear();
+    _liveQuery.value = '';
+    setState(() {
+      _hasInput = false;
+      _debouncedQuery = '';
+      _selectedServerId = null;
+      _startSearch('');
+    });
   }
 
   void _openDetail(GlobalSearchResult r) {
@@ -104,25 +183,19 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
-                          suffixIcon: _query.isEmpty
-                              ? null
-                              : IconButton(
-                                  key: const ValueKey('globalSearchClear'),
-                                  icon: const Icon(Icons.clear,
-                                      color: Colors.white70),
-                                  onPressed: () {
-                                    _controller.clear();
-                                    setState(() {
-                                      _query = '';
-                                      _selectedServerId = null;
-                                    });
-                                  },
-                                ),
+                          suffixIcon: ValueListenableBuilder<String>(
+                            valueListenable: _liveQuery,
+                            builder: (context, v, _) => v.isEmpty
+                                ? const SizedBox.shrink()
+                                : IconButton(
+                                    key: const ValueKey('globalSearchClear'),
+                                    icon: const Icon(Icons.clear,
+                                        color: Colors.white70),
+                                    onPressed: _clear,
+                                  ),
+                          ),
                         ),
-                        onChanged: (v) => setState(() {
-                          _query = v;
-                          if (v.trim().isEmpty) _selectedServerId = null;
-                        }),
+                        onChanged: _onChanged,
                       ),
                     ),
                   ],
@@ -137,45 +210,55 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
   }
 
   Widget _buildBody() {
-    if (_query.trim().isEmpty) {
+    if (!_hasInput) {
       return const Center(
         child: Text('输入关键词，搜索所有服务器', style: TextStyle(color: Colors.white70)),
       );
     }
-    return FutureBuilder<List<GlobalSearchResult>>(
-      future: _search(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final results = snapshot.data ?? [];
-        if (results.isEmpty) {
-          return const Center(
-            child: Text('未找到结果', style: TextStyle(color: Colors.white70)),
-          );
-        }
+    final results = _results;
+    if (results == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (results.isEmpty) {
+      return _loading
+          ? const Center(child: CircularProgressIndicator())
+          : const Center(
+              child: Text('未找到结果', style: TextStyle(color: Colors.white70)),
+            );
+    }
 
-        // 按服务器分组（保持服务端返回顺序，去重）
-        final servers = <EmbyServerConfig>[];
-        for (final r in results) {
-          if (!servers.any((s) => s.id == r.server.id)) servers.add(r.server);
-        }
-        // 选中服务器在新结果中消失（换词后无结果）→ 回落全部
-        final selectedId = servers.any((s) => s.id == _selectedServerId)
-            ? _selectedServerId
-            : null;
-        final shown = selectedId == null
-            ? results
-            : results.where((r) => r.server.id == selectedId).toList();
+    // 按服务器分组（保持服务端返回顺序，去重）
+    final servers = <EmbyServerConfig>[];
+    for (final r in results) {
+      if (!servers.any((s) => s.id == r.server.id)) servers.add(r.server);
+    }
+    // 选中服务器在新结果中消失（换词后无结果）→ 回落全部
+    final selectedId = servers.any((s) => s.id == _selectedServerId)
+        ? _selectedServerId
+        : null;
+    final shown = selectedId == null
+        ? results
+        : results.where((r) => r.server.id == selectedId).toList();
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(width: 116, child: _buildServerRail(servers, selectedId)),
-            Expanded(child: _buildGrid(shown)),
-          ],
-        );
-      },
+    return Column(
+      children: [
+        // 换词/增量搜索中：保留上一批结果，仅顶部细进度条示意
+        if (_loading)
+          const LinearProgressIndicator(
+            key: Key('searchProgressLine'),
+            minHeight: 2,
+          ),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                  width: 116, child: _buildServerRail(servers, selectedId)),
+              Expanded(child: _buildGrid(shown)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

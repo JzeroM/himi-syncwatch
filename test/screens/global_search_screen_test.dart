@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -78,6 +80,7 @@ void main() {
     expect(find.text('输入关键词，搜索所有服务器'), findsOneWidget, reason: '空词提示态');
 
     await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320)); // 防抖到期
     await tester.pumpAndSettle();
 
     // 左栏：全部 + 各服务器筛选片
@@ -101,6 +104,7 @@ void main() {
       ),
     );
     await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320)); // 防抖到期
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('serverChip_b')));
@@ -123,6 +127,7 @@ void main() {
       servers: [_server('a', '服务器甲')],
     );
     await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320)); // 防抖到期
     await tester.pumpAndSettle();
 
     final gradient = (tester
@@ -138,6 +143,7 @@ void main() {
   testWidgets('未设主题色：保持应用底色三段（与首页一致）', (tester) async {
     await _pump(tester, search: _searchService());
     await tester.enterText(find.byType(TextField), '无结果词');
+    await tester.pump(const Duration(milliseconds: 320)); // 防抖到期
     await tester.pumpAndSettle();
 
     final gradient = (tester
@@ -153,6 +159,7 @@ void main() {
   testWidgets('无结果 → 未找到结果', (tester) async {
     await _pump(tester, search: _searchService());
     await tester.enterText(find.byType(TextField), 'zzz没有');
+    await tester.pump(const Duration(milliseconds: 320)); // 防抖到期
     await tester.pumpAndSettle();
     expect(find.text('未找到结果'), findsOneWidget);
   });
@@ -164,6 +171,7 @@ void main() {
       search: _searchService(fromA: [_item('a1', '甲的影片')]),
     );
     await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320)); // 防抖到期
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('globalSearchClear')), findsOneWidget);
 
@@ -172,4 +180,113 @@ void main() {
     expect(find.text('输入关键词，搜索所有服务器'), findsOneWidget);
     expect(find.text('甲的影片'), findsNothing);
   });
+
+  testWidgets('输入防抖：280ms 内零请求，停顿后按终词只发一次', (tester) async {
+    final counting = _CountingSearch(
+      serviceFactory: (cfg) => FakeEmbyService(
+        searchResults: cfg.id == 'a' ? [_item('a1', '甲的影片')] : const [],
+      ),
+    );
+    await _pump(
+      tester,
+      servers: [_server('a', '服务器甲')],
+      search: counting,
+    );
+
+    await tester.enterText(find.byType(TextField), '影');
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(counting.searchStreamCalls, 0, reason: '防抖窗口内零请求');
+
+    await tester.enterText(find.byType(TextField), '影片甲');
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(counting.searchStreamCalls, 0, reason: '再次输入重置防抖');
+
+    await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(counting.searchStreamCalls, 1, reason: '停顿后只发一次（终词）');
+    await tester.pumpAndSettle();
+    expect(find.text('甲的影片'), findsOneWidget);
+  });
+
+  testWidgets('换词期间保留上一批结果 + 顶部进度线，新结果到达后替换', (tester) async {
+    final gated = _GatedSearch(
+      serviceFactory: (cfg) => FakeEmbyService(
+        searchResults: cfg.id == 'a' ? [_item('a1', '甲的影片')] : const [],
+      ),
+    );
+    await _pump(
+      tester,
+      servers: [_server('a', '服务器甲')],
+      search: gated,
+    );
+
+    await tester.enterText(find.byType(TextField), '第一词');
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pumpAndSettle();
+    expect(find.text('甲的影片'), findsOneWidget, reason: '首批结果就位');
+
+    // 第二词被闸门挂起：旧果保留 + 进度线
+    await tester.enterText(find.byType(TextField), '第二词');
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(find.byKey(const Key('searchProgressLine')), findsOneWidget,
+        reason: '换词加载中显示顶部细进度条');
+    expect(find.text('甲的影片'), findsOneWidget, reason: '保留上一批结果不闪空');
+
+    // 放行新结果
+    gated.open(
+      '第二词',
+      [
+        GlobalSearchResult(
+            server: _server('a', '服务器甲'), item: _item('a2', '第二词的影片'))
+      ],
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('第二词的影片'), findsOneWidget);
+    expect(find.text('甲的影片'), findsNothing, reason: '新果替换旧果');
+    expect(find.byKey(const Key('searchProgressLine')), findsNothing,
+        reason: '完成后移除进度线');
+  });
+}
+
+/// 只计数的搜索服务：验证防抖调用次数。
+class _CountingSearch extends GlobalSearchService {
+  _CountingSearch({required super.serviceFactory});
+
+  int searchStreamCalls = 0;
+
+  @override
+  Stream<List<GlobalSearchResult>> searchStream(
+    String query,
+    List<EmbyServerConfig> servers,
+  ) {
+    searchStreamCalls++;
+    return super.searchStream(query, servers);
+  }
+}
+
+/// 第二词挂闸（不发首快照）的搜索服务：验证换词保旧果/进度线。
+class _GatedSearch extends GlobalSearchService {
+  _GatedSearch({required super.serviceFactory});
+
+  final Map<String, StreamController<List<GlobalSearchResult>>> _gates = {};
+
+  void open(String query, List<GlobalSearchResult> results) {
+    final c = _gates[query];
+    if (c == null) return;
+    c.add(results);
+    c.close();
+  }
+
+  @override
+  Stream<List<GlobalSearchResult>> searchStream(
+    String query,
+    List<EmbyServerConfig> servers,
+  ) {
+    if (query == '第二词') {
+      final c = StreamController<List<GlobalSearchResult>>();
+      _gates[query] = c;
+      return c.stream;
+    }
+    return super.searchStream(query, servers);
+  }
 }

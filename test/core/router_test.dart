@@ -438,6 +438,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.search));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320)); // 搜索防抖到期
     await tester.pumpAndSettle();
 
     // 两台服务器的结果都出现；服务器名在左栏筛选片与卡片角标

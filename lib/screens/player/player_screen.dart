@@ -54,6 +54,7 @@ import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/seek_time_labels.dart';
 import 'package:himi_syncwatch/screens/player/widgets/video_gesture_layer.dart';
 import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
 import 'package:path_provider/path_provider.dart';
@@ -4737,58 +4738,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               // Shortcuts（_AdjustSliderIntent）脱离焦点冒泡链——左右键改由
               // PlayerHotkey 接管（单击 ±5 秒 / 长按每步 ±10 秒）；
               // ExcludeFocus 屏蔽 Slider 内部焦点节点（防同 rect 双候选，
-              // 触摸拖动不受影响）
-              TvFocusable(
-                focusNode: _controlsFocusNode,
-                onTap: null, // OK 键放行冒泡到 PlayerHotkey 播放/暂停
-                scale: 1.0,
-                child: ExcludeFocus(
-                  child: SliderTheme(
-                    data: glassSliderTheme(glassEnabled: _glassUiOn),
-                    child: ValueListenableBuilder2<Duration, Duration>(
-                      first: _positionNotifier,
-                      second: _durationNotifier,
-                      builder: (context, pos, dur, _) {
-                        return Slider(
-                          value: dur.inMilliseconds > 0
-                              ? pos.inMilliseconds
-                                  .toDouble()
-                                  .clamp(0, dur.inMilliseconds.toDouble())
-                              : 0,
-                          max: dur.inMilliseconds > 0
-                              ? dur.inMilliseconds.toDouble()
-                              : 1,
-                          onChangeStart:
-                              _canControlPlayback ? _onSeekStart : null,
-                          onChanged: (v) {
-                            _positionNotifier.value =
-                                Duration(milliseconds: v.toInt());
-                          },
-                          onChangeEnd: _canControlPlayback ? _onSeekEnd : null,
-                        );
-                      },
+              // 触摸拖动不受影响）。数显拆分至进度条左右两侧（同水平中线），
+              // 焦点环仍只框滑杆本体
+              ValueListenableBuilder2<Duration, Duration>(
+                first: _positionNotifier,
+                second: _durationNotifier,
+                builder: (context, pos, dur, _) {
+                  return SeekTimeLabels(
+                    position: pos,
+                    duration: dur,
+                    child: TvFocusable(
+                      focusNode: _controlsFocusNode,
+                      onTap: null, // OK 键放行冒泡到 PlayerHotkey 播放/暂停
+                      scale: 1.0,
+                      child: ExcludeFocus(
+                        child: SliderTheme(
+                          data: glassSliderTheme(glassEnabled: _glassUiOn),
+                          child: Slider(
+                            value: dur.inMilliseconds > 0
+                                ? pos.inMilliseconds
+                                    .toDouble()
+                                    .clamp(0, dur.inMilliseconds.toDouble())
+                                : 0,
+                            max: dur.inMilliseconds > 0
+                                ? dur.inMilliseconds.toDouble()
+                                : 1,
+                            onChangeStart:
+                                _canControlPlayback ? _onSeekStart : null,
+                            onChanged: (v) {
+                              _positionNotifier.value =
+                                  Duration(milliseconds: v.toInt());
+                            },
+                            onChangeEnd:
+                                _canControlPlayback ? _onSeekEnd : null,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    ValueListenableBuilder2<Duration, Duration>(
-                      first: _positionNotifier,
-                      second: _durationNotifier,
-                      builder: (context, pos, dur, _) {
-                        return Text(
-                          '${_formatDuration(pos)} / ${_formatDuration(dur)}',
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 12),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
+              const SizedBox(height: 8),
               // 字幕/音轨/倍速选择器已移至右侧玻璃浮层（SelectorSidePanel）
               Row(
                 children: [
@@ -5622,16 +5612,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         );
       }
     }
-  }
-
-  String _formatDuration(Duration duration) {
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    final seconds = duration.inSeconds.remainder(60);
-    if (hours > 0) {
-      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-    }
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 }
 

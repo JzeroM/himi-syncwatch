@@ -48,7 +48,13 @@ class PosterCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
+                  EmbyImage(
+                    url: item.posterUrl,
+                    fit: BoxFit.cover,
+                    // 按显示宽×dpr 解码，避免原图全尺寸解码卡顿
+                    cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
+                        .round(),
+                  ),
                   if (serverBadge != null)
                     Positioned(
                       top: 6,
