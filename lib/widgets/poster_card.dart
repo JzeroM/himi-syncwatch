@@ -11,6 +11,7 @@ class PosterCard extends StatelessWidget {
     required this.item,
     required this.width,
     this.onTap,
+    this.serverBadge,
   });
 
   /// 资源数据。
@@ -20,6 +21,10 @@ class PosterCard extends StatelessWidget {
   final double width;
 
   final VoidCallback? onTap;
+
+  /// 左上服务器名角标（聚合搜索「全部」视图区分来源）；设置后
+  /// 集数角标让位（同为左上角，来源归属优先）。
+  final String? serverBadge;
 
   /// 海报下方文字区预留高度（标题 + 年份 + 间距，含少量余量）。
   static const double textReservedHeight = 46;
@@ -44,7 +49,29 @@ class PosterCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   EmbyImage(url: item.posterUrl, fit: BoxFit.cover),
-                  if (item.indexNumber != null)
+                  if (serverBadge != null)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: (width * 0.66).clamp(56, 180),
+                        ),
+                        child: _PosterBadge(
+                          child: Text(
+                            serverBadge!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (item.indexNumber != null)
                     Positioned(
                       top: 6,
                       left: 6,

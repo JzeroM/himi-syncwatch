@@ -440,10 +440,11 @@ void main() {
     await tester.enterText(find.byType(TextField), '影片');
     await tester.pumpAndSettle();
 
-    // 两台服务器的结果都出现，副标题为服务器名
+    // 两台服务器的结果都出现；服务器名在左栏筛选片与卡片角标
     expect(find.text('服务器甲的影片'), findsOneWidget);
     expect(find.text('服务器乙的影片'), findsOneWidget);
-    expect(find.text('服务器乙'), findsOneWidget);
+    expect(find.text('服务器乙'), findsWidgets, reason: '左栏筛选片 + 卡片角标');
+    expect(find.text('全部'), findsOneWidget, reason: '左栏顶部全部筛选片');
 
     // 点击另一台服务器的结果：携带 server 参数进详情，激活服务器不切换
     await tester.tap(find.text('服务器乙的影片'));
