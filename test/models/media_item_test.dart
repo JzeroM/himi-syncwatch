@@ -181,4 +181,52 @@ void main() {
       expect(item.playedPercentage, 0.0);
     });
   });
+
+  group('媒体信息字段解析', () {
+    test('ProviderIds/Studios/Path/DateCreated/ExternalUrls', () {
+      final item = MediaItem.fromJson({
+        'Id': 'm1',
+        'Name': '电影',
+        'Type': 'Movie',
+        'ProviderIds': {'Imdb': 'tt123', 'Tmdb': '456'},
+        'Studios': [
+          {'Name': 'Netflix'}
+        ],
+        'Path': '/media/x.mkv',
+        'DateCreated': '2026-06-12T19:00:00.000Z',
+        'ExternalUrls': [
+          {'Name': 'IMDb', 'Url': 'https://www.imdb.com/title/tt123/'}
+        ],
+      });
+      expect(item.providerIds['Imdb'], 'tt123');
+      expect(item.studios, ['Netflix']);
+      expect(item.path, '/media/x.mkv');
+      expect(item.dateCreated, isNotNull);
+      expect(item.externalUrls.single.name, 'IMDb');
+    });
+
+    test('MediaStream 编解码细节字段', () {
+      final s = MediaStream.fromJson({
+        'Type': 'Video',
+        'Codec': 'hevc',
+        'Profile': 'Main 10',
+        'Level': 150,
+        'BitDepth': 10,
+        'PixelFormat': 'yuv420p10le',
+        'RefFrames': 1,
+        'RealFrameRate': 23.976025,
+        'IsInterlaced': false,
+        'Width': 1920,
+        'Height': 1080,
+        'VideoRange': 'HDR',
+      });
+      expect(s.profile, 'Main 10');
+      expect(s.level, 150);
+      expect(s.bitDepth, 10);
+      expect(s.pixelFormat, 'yuv420p10le');
+      expect(s.refFrames, 1);
+      expect(s.frameRate, closeTo(23.976025, 1e-6));
+      expect(s.isInterlaced, isFalse);
+    });
+  });
 }

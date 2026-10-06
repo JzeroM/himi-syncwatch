@@ -13,6 +13,7 @@ import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/screens/detail/episode_number_picker.dart';
+import 'package:himi_syncwatch/screens/detail/media_details_section.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
@@ -1926,6 +1927,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       },
                     ),
                   ),
+                ],
+                // 底部媒体信息（外部链接/工作室/媒体信息/视频/音频；TV 不渲染）
+                if (!tv && MediaDetailsSection.hasContent(item)) ...[
+                  const SizedBox(height: 20),
+                  MediaDetailsSection(item: item),
                 ],
                 SizedBox(height: tv ? 48 : 120),
               ],

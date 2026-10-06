@@ -122,6 +122,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 控制条自动隐藏时长（5 秒无操作后隐藏全部控件，含选择器面板）。
   static const Duration controlsAutoHideAfter = Duration(seconds: 5);
 
+  /// Emby 播放进度上报间隔（3 秒）。
+  static const Duration playbackReportInterval = Duration(seconds: 3);
+
   /// 轮询等待 [ready] 为 true（超时返回 false）。
   @visibleForTesting
   static Future<bool> waitUntil(
@@ -470,6 +473,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String? _reportItemId;
   String? _reportMediaSourceId;
   bool _reportStarted = false;
+
+  /// 进度上报触发续播栏刷新的节流时刻（≤1 次/2s）。
+  DateTime? _lastProgressBump;
 
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
@@ -1840,9 +1846,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _reportService = embyService;
       _reportItemId = targetItemId;
       _reportMediaSourceId = effectiveMediaSourceId;
-      _playSessionId = const Uuid().v4();
       _reportStarted = false;
       _stopReportTimer();
+      // 官方 PlaySessionId（Emby 据此把进度写入 UserData）；失败回退本地生成
+      _playSessionId = await embyService.getPlaySessionId(
+            itemId: targetItemId,
+            mediaSourceId: effectiveMediaSourceId,
+          ) ??
+          const Uuid().v4();
 
       // 重置进度（与首次播放状态一致）
       _position = Duration.zero;
@@ -3212,13 +3223,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         id == null) {
       return;
     }
-    await svc.reportPlaybackProgress(
+    final ok = await svc.reportPlaybackProgress(
       itemId: id,
       playSessionId: _playSessionId,
       mediaSourceId: _reportMediaSourceId,
       positionMs: _player.position,
       isPaused: _player.state == mdk.PlaybackState.paused,
     );
+    // 进度变化即刷新续播栏（节流 ≤1 次/2s）
+    if (ok && mounted) _bumpResumeThrottled();
+  }
+
+  /// 节流 bump 续播修订号（≤1 次/2s，避免 3s 上报导致首页每 3s 重取）。
+  void _bumpResumeThrottled() {
+    final now = DateTime.now();
+    if (_lastProgressBump != null &&
+        now.difference(_lastProgressBump!).inMilliseconds < 2000) {
+      return;
+    }
+    _lastProgressBump = now;
+    ref.read(resumeRevisionProvider.notifier).state++;
   }
 
   /// 停止上报并（成功时）bump 续播修订号 → 首页「继续观看」即时刷新。
@@ -3240,6 +3264,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       positionMs: _player.position,
     );
     if (ok && mounted) {
+      _lastProgressBump = null;
       ref.read(resumeRevisionProvider.notifier).state++;
     }
   }
@@ -3247,7 +3272,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _startReportTimer() {
     _reportTimer?.cancel();
     _reportTimer = Timer.periodic(
-      const Duration(seconds: 10),
+      PlayerScreen.playbackReportInterval,
       (_) => _reportProgress(),
     );
   }

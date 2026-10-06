@@ -2428,4 +2428,50 @@ void main() {
       expect(find.text('继续 02:49'), findsOneWidget);
     });
   });
+
+  group('底部媒体信息（非 TV）', () {
+    MediaItem infoItem() => MediaItem(
+          id: 'm1',
+          name: '测试影片',
+          type: 'Movie',
+          posterUrl: _posterUrl,
+          overview: '简介。',
+          path: '/media/x.mkv',
+          studios: const ['Netflix'],
+          providerIds: const {'Imdb': 'tt1'},
+          mediaStreams: [
+            MediaStream(
+              type: 'Video',
+              codec: 'hevc',
+              width: 1920,
+              height: 1080,
+              profile: 'Main 10',
+              bitDepth: 10,
+              pixelFormat: 'yuv420p10le',
+              frameRate: 23.976025,
+            ),
+            MediaStream(type: 'Audio', codec: 'eac3', channels: 2),
+          ],
+        );
+
+    testWidgets('非 TV 渲染外部链接/工作室/媒体信息', (tester) async {
+      final item = infoItem();
+      await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+
+      expect(find.text('外部链接'), findsOneWidget);
+      expect(find.text('工作室'), findsOneWidget);
+      expect(find.text('媒体信息'), findsOneWidget);
+      expect(find.text('Netflix'), findsOneWidget);
+    });
+
+    testWidgets('TV 模式不渲染底部媒体信息', (tester) async {
+      final item = infoItem();
+      await _pumpDetail(tester,
+          tv: true, item: item, emby: FakeEmbyService(item: item));
+
+      expect(find.text('外部链接'), findsNothing);
+      expect(find.text('工作室'), findsNothing);
+      expect(find.text('媒体信息'), findsNothing);
+    });
+  });
 }

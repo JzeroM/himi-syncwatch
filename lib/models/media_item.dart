@@ -21,6 +21,15 @@ class MediaStream {
   final String?
       extendedVideoSubType; // DV Profile: DoviProfile50/DoviProfile81 等
 
+  // ---- 详情页「媒体信息」展示用（Emby 流字段）----
+  final String? profile;
+  final int? level;
+  final int? bitDepth;
+  final String? pixelFormat;
+  final int? refFrames;
+  final double? frameRate;
+  final bool? isInterlaced;
+
   MediaStream({
     required this.type,
     required this.codec,
@@ -42,6 +51,13 @@ class MediaStream {
     this.videoRange,
     this.extendedVideoType,
     this.extendedVideoSubType,
+    this.profile,
+    this.level,
+    this.bitDepth,
+    this.pixelFormat,
+    this.refFrames,
+    this.frameRate,
+    this.isInterlaced,
   });
 
   factory MediaStream.fromJson(Map<String, dynamic> json) {
@@ -66,6 +82,14 @@ class MediaStream {
       videoRange: json['VideoRange'],
       extendedVideoType: json['ExtendedVideoType'],
       extendedVideoSubType: json['ExtendedVideoSubType'],
+      profile: json['Profile'],
+      level: json['Level'] as int?,
+      bitDepth: json['BitDepth'] as int?,
+      pixelFormat: json['PixelFormat'],
+      refFrames: json['RefFrames'] as int?,
+      frameRate: ((json['RealFrameRate'] ?? json['AverageFrameRate']) as num?)
+          ?.toDouble(),
+      isInterlaced: json['IsInterlaced'] as bool?,
     );
   }
 
@@ -240,6 +264,14 @@ class MediaSource {
   }
 }
 
+/// 外部链接（IMDb/TMDb/TVDB…）。
+class ExternalUrl {
+  const ExternalUrl({required this.name, required this.url});
+
+  final String name;
+  final String url;
+}
+
 class MediaItem {
   final String id;
   final String name;
@@ -278,6 +310,21 @@ class MediaItem {
   /// 已观看百分比（0~100；`UserData.PlayedPercentage`，缺省 0）。
   final double playedPercentage;
 
+  /// 外部链接（Emby `ExternalUrls`：Name/Url，如 IMDb/TMDb/TVDB）。
+  final List<ExternalUrl> externalUrls;
+
+  /// 外部 id（Emby `ProviderIds`：Imdb/Tmdb/Tvdb…）。
+  final Map<String, String> providerIds;
+
+  /// 工作室（Emby `Studios[].Name`）。
+  final List<String> studios;
+
+  /// 文件路径（Emby `Path`；详情页媒体信息展示）。
+  final String? path;
+
+  /// 入库时间（Emby `DateCreated`）。
+  final DateTime? dateCreated;
+
   MediaItem({
     required this.id,
     required this.name,
@@ -303,6 +350,11 @@ class MediaItem {
     this.isWatched = false,
     this.playbackPositionMs = 0,
     this.playedPercentage = 0,
+    this.externalUrls = const [],
+    this.providerIds = const {},
+    this.studios = const [],
+    this.path,
+    this.dateCreated,
   });
 
   factory MediaItem.fromJson(Map<String, dynamic> json, {String? serverUrl}) {
@@ -360,6 +412,25 @@ class MediaItem {
           ((userData?['PlaybackPositionTicks'] as num?)?.toInt() ?? 0) ~/ 10000,
       playedPercentage:
           (userData?['PlayedPercentage'] as num?)?.toDouble() ?? 0,
+      externalUrls: (json['ExternalUrls'] as List<dynamic>?)
+              ?.map((e) => ExternalUrl(
+                    name: (e as Map)['Name'] as String? ?? '',
+                    url: e['Url'] as String? ?? '',
+                  ))
+              .where((e) => e.url.isNotEmpty)
+              .toList() ??
+          const [],
+      providerIds: (json['ProviderIds'] as Map<String, dynamic>?)?.map(
+            (k, v) => MapEntry(k, v?.toString() ?? ''),
+          ) ??
+          const {},
+      studios: (json['Studios'] as List<dynamic>?)
+              ?.map((e) => (e as Map)['Name'] as String? ?? '')
+              .where((n) => n.isNotEmpty)
+              .toList() ??
+          const [],
+      path: json['Path'] as String?,
+      dateCreated: DateTime.tryParse(json['DateCreated'] as String? ?? ''),
     );
   }
 

@@ -351,7 +351,7 @@ class EmbyService {
           // ImageTags：详情页标题艺术字（ImageTags.Logo）依赖此字段
           // UserData：收藏状态（UserData.IsFavorite）
           'Fields':
-              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ImageTags,UserData',
+              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ImageTags,UserData,ProviderIds,ExternalUrls,Studios,Path,DateCreated',
         },
       );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
@@ -447,6 +447,30 @@ class EmbyService {
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
       return [];
+    }
+  }
+
+  /// 取官方 `PlaySessionId`（`POST /Items/{id}/PlaybackInfo`）。Emby 需要用它
+  /// 关联播放会话，`Sessions/Playing*` 上报才能把进度写入 `UserData`（Resume）。
+  /// 失败返回 null（调用方回退本地生成 id）。
+  Future<String?> getPlaySessionId({
+    required String itemId,
+    String? mediaSourceId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/Items/$itemId/PlaybackInfo',
+        queryParameters: {
+          if (_userId != null) 'UserId': _userId,
+          if (mediaSourceId != null && mediaSourceId.isNotEmpty)
+            'MediaSourceId': mediaSourceId,
+        },
+        data: <String, dynamic>{},
+      );
+      final id = (response.data as Map?)?['PlaySessionId'];
+      return id is String && id.isNotEmpty ? id : null;
+    } on DioException {
+      return null;
     }
   }
 

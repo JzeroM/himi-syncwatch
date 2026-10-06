@@ -473,6 +473,24 @@ void main() {
       expect(req.path, '/Sessions/Playing/Stopped');
       expect(req.body['PositionTicks'], 3000 * 10000);
     });
+
+    test('getPlaySessionId → POST PlaybackInfo 解析 PlaySessionId', () async {
+      respondWith = (_) => {'PlaySessionId': 'ps-abc', 'MediaSources': []};
+      final id = await service.getPlaySessionId(
+        itemId: 'i1',
+        mediaSourceId: 'ms1',
+      );
+      expect(id, 'ps-abc');
+      final req = captured.single;
+      expect(req.method, 'POST');
+      expect(req.path, '/Items/i1/PlaybackInfo');
+      expect(req.param('MediaSourceId'), 'ms1');
+    });
+
+    test('getPlaySessionId 缺字段 → null', () async {
+      respondWith = (_) => {'MediaSources': []};
+      expect(await service.getPlaySessionId(itemId: 'i1'), isNull);
+    });
   });
 }
 

@@ -9,6 +9,10 @@ void main() {
     expect((kPlayerDefaultVolume * 100).round(), equals(80));
   });
 
+  test('Emby 播放进度上报间隔为 3 秒', () {
+    expect(PlayerScreen.playbackReportInterval, const Duration(seconds: 3));
+  });
+
   testWidgets('PlayerScreen.focusWithin：判定焦点是否在热键层子树内', (tester) async {
     final hotkey = FocusNode(debugLabel: 'hotkey');
     final inControls = FocusNode(debugLabel: 'inControls');
