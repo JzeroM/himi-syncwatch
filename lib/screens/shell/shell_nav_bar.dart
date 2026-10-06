@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -279,26 +281,30 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     // 拖动/点击飞行中 1（镜片淡入 + 整体放大 + 背景胶囊淡出）。
     final activity = (_dragging || _controller.isAnimating) ? 1.0 : 0.0;
 
+    // iOS premium（Impeller）与安卓 standard（Skia）着色器不同：安卓那套结构
+    // 参数是给 interactive_indicator.frag 归一化补偿的，iOS 用 premium 取向值
+    // （强折射 + 可见色散），尽量贴近安卓观感。
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
+
     final settings = lg.AnimatedGlassIndicator.baseIndicatorSettings.copyWith(
-      glassColor: Colors.white.withValues(alpha: 0.14),
+      glassColor: Colors.white.withValues(alpha: isIOS ? 0.16 : 0.14),
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-      // 色散固定加强（忽略滑杆）：配合 vendored shader 真色散补丁
-      //（×4.0）在边缘出 ~2px/侧 RGB 彩边（纯物理、无自发光环）
-      chromaticAberration: 0.5,
+      // 色散：iOS premium 用可调值（默认给得更高）；安卓沿用固定加强值
+      chromaticAberration:
+          isIOS ? (tuning.chromatic ?? glassDefault('glassChromatic')) : 0.5,
+      // 折射率（premium 路径）：iOS 更高折射
+      refractiveIndex:
+          tuning.refractiveIndex ?? glassDefault('glassRefractiveIndex'),
       lightIntensity:
           tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
       // Skia 捕获钥匙：GlassEffect 捕获门槛要求 blur > 0（0.01 无感）
       blur: 0.01,
-      // 结构参数（输入值补偿包内标准路径归一化）：
-      // ambientRim 驱动中性白 rim（×0.7 归一化、×10 亮度）→ 0.18 出
-      // 柔和灰白微边而非硬边框；
-      // glow/ambient 降低白色菲涅尔与内壁提亮 → 边框感弱化（设备反馈）；
-      // edgeAbsorption 收低 → 边缘暗带更淡。
-      ambientRim: 0.18,
-      glowIntensity: 1.2,
-      ambientStrength: 0.4,
-      edgeAbsorption: 0.10,
+      // 结构参数：iOS premium / 安卓 standard 分别取值
+      ambientRim: isIOS ? 0.12 : 0.18,
+      glowIntensity: isIOS ? 1.0 : 1.2,
+      ambientStrength: isIOS ? 0.5 : 0.4,
+      edgeAbsorption: isIOS ? 0.06 : 0.10,
       // 光源相位随水珠位置扫动：key/kick 亮瓣绕环流动
       lightAngle: math.pi / 2 + (_blobT - 0.5) * math.pi,
     );

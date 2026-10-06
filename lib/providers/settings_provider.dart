@@ -49,6 +49,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     Object? glassSaturation = AppSettings.unsetValue,
     Object? glassChromatic = AppSettings.unsetValue,
     Object? glassLightIntensity = AppSettings.unsetValue,
+    Object? glassRefractiveIndex = AppSettings.unsetValue,
   }) async {
     state = state.copyWith(
       decodeMode: decodeMode,
@@ -77,6 +78,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       glassSaturation: glassSaturation,
       glassChromatic: glassChromatic,
       glassLightIntensity: glassLightIntensity,
+      glassRefractiveIndex: glassRefractiveIndex,
     );
     await persist();
   }

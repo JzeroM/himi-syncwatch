@@ -36,6 +36,9 @@ class AppSettings {
 
   /// 高光强度（0~1，包默认 0.5）。
   final double? glassLightIntensity;
+
+  /// 折射率（premium/iOS Impeller 路径的镜片折射强度，包默认 1.2；1.0 = 无折射）。
+  final double? glassRefractiveIndex;
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
 
   /// 分类页网格每行海报数（全平台）：null = 自动跟随屏幕，
@@ -102,6 +105,7 @@ class AppSettings {
     this.glassSaturation,
     this.glassChromatic,
     this.glassLightIntensity,
+    this.glassRefractiveIndex,
     this.themeColor,
     this.categoryColumns,
     this.tvMode = false,
@@ -138,6 +142,7 @@ class AppSettings {
     Object? glassSaturation = unsetValue,
     Object? glassChromatic = unsetValue,
     Object? glassLightIntensity = unsetValue,
+    Object? glassRefractiveIndex = unsetValue,
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
@@ -179,6 +184,9 @@ class AppSettings {
       glassLightIntensity: identical(glassLightIntensity, unsetValue)
           ? this.glassLightIntensity
           : (glassLightIntensity as num?)?.toDouble(),
+      glassRefractiveIndex: identical(glassRefractiveIndex, unsetValue)
+          ? this.glassRefractiveIndex
+          : (glassRefractiveIndex as num?)?.toDouble(),
     );
   }
 
@@ -207,6 +215,8 @@ class AppSettings {
         if (glassChromatic != null) 'glassChromatic': glassChromatic,
         if (glassLightIntensity != null)
           'glassLightIntensity': glassLightIntensity,
+        if (glassRefractiveIndex != null)
+          'glassRefractiveIndex': glassRefractiveIndex,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -267,6 +277,7 @@ class AppSettings {
       glassSaturation: (json['glassSaturation'] as num?)?.toDouble(),
       glassChromatic: (json['glassChromatic'] as num?)?.toDouble(),
       glassLightIntensity: (json['glassLightIntensity'] as num?)?.toDouble(),
+      glassRefractiveIndex: (json['glassRefractiveIndex'] as num?)?.toDouble(),
     );
   }
 

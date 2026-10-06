@@ -521,7 +521,10 @@ void main() {
             refractColor = mix(refractColor, (refractColor + side) / 3.0, hairline);
         }
     } else {
-        float dispersionStrength = uChromaticAberration * 0.5;
+        // [PATCH himi] 0.5 → 3.0：premium 默认色散过弱（uChromaticAberration
+        // 0.3 时位移仅 ±15% 亚像素不可见）。×3.0 让 iOS(Impeller) 出与安卓
+        // standard 补丁相当的可见彩虹色散圈（纯物理 RGB 分离，无自发光环）。
+        float dispersionStrength = uChromaticAberration * 3.0;
         vec2 redOffset  = displacement * (1.0 + dispersionStrength);
         vec2 blueOffset = displacement * (1.0 - dispersionStrength);
 

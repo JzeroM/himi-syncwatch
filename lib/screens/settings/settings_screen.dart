@@ -394,6 +394,7 @@ class _GlassTuningSection extends ConsumerWidget {
                           glassSaturation: null,
                           glassChromatic: null,
                           glassLightIntensity: null,
+                          glassRefractiveIndex: null,
                         ),
                 child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
               ),
@@ -405,9 +406,11 @@ class _GlassTuningSection extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           for (final spec in glassParamSpecs)
-            // 折射范围仅 Android 非 TV 模式显示（iOS premium / TV 吞键隐藏）
-            if (spec.key != 'glassEdgeZone' ||
-                glassEdgeZoneVisible(tvMode: tvMode))
+            // 折射范围仅 Android 非 TV；折射强度仅 iOS 非 TV
+            if ((spec.key != 'glassEdgeZone' ||
+                    glassEdgeZoneVisible(tvMode: tvMode)) &&
+                (spec.key != 'glassRefractiveIndex' ||
+                    glassRefractiveIndexVisible(tvMode: tvMode)))
               _glassSliderRow(ref, spec, spec.read(tuning)),
         ],
       ),
@@ -453,6 +456,9 @@ class _GlassTuningSection extends ConsumerWidget {
                   glassChromatic:
                       spec.key == 'glassChromatic' ? v : AppSettings.unsetValue,
                   glassLightIntensity: spec.key == 'glassLightIntensity'
+                      ? v
+                      : AppSettings.unsetValue,
+                  glassRefractiveIndex: spec.key == 'glassRefractiveIndex'
                       ? v
                       : AppSettings.unsetValue,
                 ),

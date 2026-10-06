@@ -331,6 +331,7 @@ void main() {
       expect(s.glassSaturation, isNull);
       expect(s.glassChromatic, isNull);
       expect(s.glassLightIntensity, isNull);
+      expect(s.glassRefractiveIndex, isNull);
     });
 
     test('json roundtrip：写入读回', () {
@@ -341,6 +342,7 @@ void main() {
         glassSaturation: 2.0,
         glassChromatic: 0.05,
         glassLightIntensity: 0.8,
+        glassRefractiveIndex: 1.4,
       );
       final back = AppSettings.fromJson(s.toJson());
       expect(back.glassBlur, 8.5);
@@ -349,6 +351,7 @@ void main() {
       expect(back.glassSaturation, 2.0);
       expect(back.glassChromatic, 0.05);
       expect(back.glassLightIntensity, 0.8);
+      expect(back.glassRefractiveIndex, 1.4);
     });
 
     test('缺字段 → null；存盘 int → double 归一', () {

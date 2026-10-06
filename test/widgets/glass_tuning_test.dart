@@ -10,10 +10,10 @@ import '../helpers/test_fakes.dart';
 
 void main() {
   group('GlassParamSpec（滑杆规格单一事实源）', () {
-    test('6 个参数、key 唯一、默认值均在范围内', () {
-      expect(glassParamSpecs, hasLength(6));
+    test('7 个参数、key 唯一、默认值均在范围内', () {
+      expect(glassParamSpecs, hasLength(7));
       final keys = glassParamSpecs.map((s) => s.key).toList();
-      expect(keys.toSet(), hasLength(6));
+      expect(keys.toSet(), hasLength(7));
       expect(
         keys,
         [
@@ -23,6 +23,7 @@ void main() {
           'glassSaturation',
           'glassChromatic',
           'glassLightIntensity',
+          'glassRefractiveIndex',
         ],
       );
       for (final spec in glassParamSpecs) {
@@ -146,6 +147,7 @@ void main() {
         'glassSaturation',
         'glassChromatic',
         'glassLightIntensity',
+        'glassRefractiveIndex',
       ]) {
         expect(
           glassDefault(key),
@@ -189,6 +191,61 @@ void main() {
     });
   });
 
+  group('glassRefractiveIndexVisible（折射强度滑杆可见性：仅 iOS 非 TV）', () {
+    test('iOS 非 TV 显示', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(glassRefractiveIndexVisible(tvMode: false), isTrue);
+    });
+
+    test('TV 模式隐藏', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(glassRefractiveIndexVisible(tvMode: true), isFalse);
+    });
+
+    test('非 iOS 平台一律隐藏', () {
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      for (final p in const [
+        TargetPlatform.android,
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        expect(glassRefractiveIndexVisible(tvMode: false), isFalse,
+            reason: '$p 不显示折射强度滑杆');
+      }
+    });
+  });
+
+  group('iOS premium 默认值（逼真取向）', () {
+    test('iOS 上玻璃默认值提升（厚/色散/折射率高于安卓 spec 默认）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(glassDefault('glassThickness'), GlassIosPremium.thickness);
+      expect(glassDefault('glassChromatic'), GlassIosPremium.chromatic);
+      expect(glassDefault('glassRefractiveIndex'),
+          GlassIosPremium.refractiveIndex);
+      expect(
+          glassDefault('glassThickness'),
+          greaterThan(glassParamSpecs
+              .firstWhere((s) => s.key == 'glassThickness')
+              .defaultValue));
+    });
+
+    test('安卓沿用 spec 默认', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(
+        glassDefault('glassThickness'),
+        glassParamSpecs
+            .firstWhere((s) => s.key == 'glassThickness')
+            .defaultValue,
+      );
+    });
+  });
+
   group('glassTuningProvider（settings → tuning 实时联动）', () {
     ProviderContainer makeContainer(AppSettings initial) {
       final c = ProviderContainer(
@@ -228,6 +285,7 @@ void main() {
             glassSaturation: null,
             glassChromatic: null,
             glassLightIntensity: null,
+            glassRefractiveIndex: null,
           );
       expect(c.read(glassTuningProvider).isDefault, isTrue);
     });

@@ -29,14 +29,18 @@ class GlassParamSpec {
   /// 值回显小数位（色散需要 3 位）。
   final int decimals;
 
-  /// 读取 [GlassTuning] 中该参数的当前值。
+  /// 读取 [GlassTuning] 中该参数的当前值（null 回退平台默认 [glassDefault]）。
   double read(GlassTuning tuning) => switch (key) {
-        'glassBlur' => tuning.blur ?? defaultValue,
-        'glassThickness' => tuning.thickness ?? defaultValue,
-        'glassEdgeZone' => tuning.edgeZone ?? defaultValue,
-        'glassSaturation' => tuning.saturation ?? defaultValue,
-        'glassChromatic' => tuning.chromatic ?? defaultValue,
-        'glassLightIntensity' => tuning.lightIntensity ?? defaultValue,
+        'glassBlur' => tuning.blur ?? glassDefault('glassBlur'),
+        'glassThickness' => tuning.thickness ?? glassDefault('glassThickness'),
+        'glassEdgeZone' => tuning.edgeZone ?? glassDefault('glassEdgeZone'),
+        'glassSaturation' =>
+          tuning.saturation ?? glassDefault('glassSaturation'),
+        'glassChromatic' => tuning.chromatic ?? glassDefault('glassChromatic'),
+        'glassLightIntensity' =>
+          tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
+        'glassRefractiveIndex' =>
+          tuning.refractiveIndex ?? glassDefault('glassRefractiveIndex'),
         _ => defaultValue,
       };
 
@@ -48,6 +52,7 @@ class GlassParamSpec {
         'glassSaturation' => s.copyWith(glassSaturation: value),
         'glassChromatic' => s.copyWith(glassChromatic: value),
         'glassLightIntensity' => s.copyWith(glassLightIntensity: value),
+        'glassRefractiveIndex' => s.copyWith(glassRefractiveIndex: value),
         _ => s,
       };
 }
@@ -109,12 +114,52 @@ const List<GlassParamSpec> glassParamSpecs = [
     defaultValue: 1.2,
     divisions: 40,
   ),
+  GlassParamSpec(
+    key: 'glassRefractiveIndex',
+    label: '折射强度',
+    min: 1.0,
+    max: 2.0,
+    defaultValue: 1.25,
+    divisions: 20,
+  ),
 ];
 
-/// 取 [key] 对应参数的应用默认值——滑杆回显、渲染兜底与调用方
+/// iOS premium（Impeller）逼真取向默认值。
+///
+/// 安卓 standard（Skia）路径的滑杆默认是给 `interactive_indicator.frag`
+/// 归一化补偿用的；iOS 走 premium（`liquid_glass_render.frag` + Impeller
+/// 原生折射），同一数值观感偏弱。这里给 iOS 一组更接近实体玻璃的默认值
+/// （强折射 + 可见色散），并让滑杆回显/渲染兜底同源，尽量贴近安卓观感。
+class GlassIosPremium {
+  const GlassIosPremium._();
+
+  static const double thickness = 36;
+  static const double saturation = 1.85;
+  static const double chromatic = 0.30;
+  static const double refractiveIndex = 1.40;
+  static const double lightIntensity = 1.3;
+}
+
+/// 取 [key] 对应参数的平台默认值（iOS premium 用 [GlassIosPremium]，
+/// 其余平台用 [glassParamSpecs] 的应用默认）——滑杆回显、渲染兜底与调用方
 /// （如导航水珠镜片的显式 settings）同源，避免字面量重复。
-double glassDefault(String key) =>
-    glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
+double glassDefault(String key) {
+  if (defaultTargetPlatform == TargetPlatform.iOS) {
+    switch (key) {
+      case 'glassThickness':
+        return GlassIosPremium.thickness;
+      case 'glassSaturation':
+        return GlassIosPremium.saturation;
+      case 'glassChromatic':
+        return GlassIosPremium.chromatic;
+      case 'glassRefractiveIndex':
+        return GlassIosPremium.refractiveIndex;
+      case 'glassLightIntensity':
+        return GlassIosPremium.lightIntensity;
+    }
+  }
+  return glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
+}
 
 /// 折射范围（glassEdgeZone）滑杆可见性：仅 Android 非 TV 模式显示。
 ///
@@ -126,6 +171,11 @@ double glassDefault(String key) =>
 bool glassEdgeZoneVisible({required bool tvMode}) =>
     defaultTargetPlatform == TargetPlatform.android && !tvMode;
 
+/// 折射强度（glassRefractiveIndex）滑杆可见性：仅 iOS 非 TV 显示
+/// （premium/Impeller 路径读 refractiveIndex；安卓 standard 不读）。
+bool glassRefractiveIndexVisible({required bool tvMode}) =>
+    defaultTargetPlatform == TargetPlatform.iOS && !tvMode;
+
 /// 玻璃参数快照：settings 的可调字段 → 包主题的映射边界。
 class GlassTuning {
   const GlassTuning({
@@ -135,6 +185,7 @@ class GlassTuning {
     this.saturation,
     this.chromatic,
     this.lightIntensity,
+    this.refractiveIndex,
   });
 
   final double? blur;
@@ -146,6 +197,9 @@ class GlassTuning {
   final double? chromatic;
   final double? lightIntensity;
 
+  /// 折射率（premium/iOS 路径；null = 平台默认）。
+  final double? refractiveIndex;
+
   factory GlassTuning.fromSettings(AppSettings s) => GlassTuning(
         blur: s.glassBlur,
         thickness: s.glassThickness,
@@ -153,6 +207,7 @@ class GlassTuning {
         saturation: s.glassSaturation,
         chromatic: s.glassChromatic,
         lightIntensity: s.glassLightIntensity,
+        refractiveIndex: s.glassRefractiveIndex,
       );
 
   /// 是否全部为包默认（决定「恢复默认」按钮的可用性）。
@@ -162,18 +217,26 @@ class GlassTuning {
       edgeZone == null &&
       saturation == null &&
       chromatic == null &&
-      lightIntensity == null;
+      lightIntensity == null &&
+      refractiveIndex == null;
 
-  /// 映射为包主题：null 字段（恢复默认态）兜底到 [glassParamSpecs] 的
-  /// 应用默认值，保证默认观感 = 图中 Kyant 效果（强折射 + 彩虹色散圈），
-  /// 而不是包 variant 的保守默认（色散 0.01、高光 0.7）。
-  GlassThemeData toThemeData() => GlassThemeData.simple(
-        blur: blur ?? glassDefault('glassBlur'),
-        thickness: thickness ?? glassDefault('glassThickness'),
-        saturation: saturation ?? glassDefault('glassSaturation'),
-        chromaticAberration: chromatic ?? glassDefault('glassChromatic'),
-        lightIntensity: lightIntensity ?? glassDefault('glassLightIntensity'),
-      );
+  /// 映射为包主题：null 字段（恢复默认态）兜底到 [glassDefault]（iOS premium
+  /// 取向），保证默认观感 = 目标效果而非包 variant 的保守默认。
+  GlassThemeData toThemeData() {
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
+    return GlassThemeData.simple(
+      blur: blur ?? glassDefault('glassBlur'),
+      thickness: thickness ?? glassDefault('glassThickness'),
+      saturation: saturation ?? glassDefault('glassSaturation'),
+      chromaticAberration: chromatic ?? glassDefault('glassChromatic'),
+      lightIntensity: lightIntensity ?? glassDefault('glassLightIntensity'),
+      refractiveIndex: refractiveIndex ?? glassDefault('glassRefractiveIndex'),
+      // iOS premium 明确指定画质，保证全玻璃面走 Impeller 折射路径
+      quality: isIOS ? GlassQuality.premium : null,
+      // iOS premium 内壁环境光提亮，减少灰边
+      ambientStrength: isIOS ? 0.5 : null,
+    );
+  }
 }
 
 /// 监听设置中的玻璃参数（仅相关字段，无关设置变化不触发重建），
@@ -188,6 +251,7 @@ final glassTuningProvider = Provider<GlassTuning>((ref) {
         saturation: s.glassSaturation,
         chromatic: s.glassChromatic,
         lightIntensity: s.glassLightIntensity,
+        refractiveIndex: s.glassRefractiveIndex,
       ),
     ),
   );
@@ -198,5 +262,6 @@ final glassTuningProvider = Provider<GlassTuning>((ref) {
     saturation: s.saturation,
     chromatic: s.chromatic,
     lightIntensity: s.lightIntensity,
+    refractiveIndex: s.refractiveIndex,
   );
 });
