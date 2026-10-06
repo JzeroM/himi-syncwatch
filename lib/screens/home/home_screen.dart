@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
@@ -174,6 +175,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  /// 只刷新「继续观看」栏（不触发整页 loading，避免闪转圈）。
+  Future<void> _refreshResume() async {
+    final seq = _loadSeq;
+    try {
+      final items = await ref.read(embyServiceProvider).getResumeItems();
+      if (!mounted || seq != _loadSeq) return;
+      setState(() => _resumeItems = items);
+    } catch (_) {}
+  }
+
   /// 按当前已返回的 [slots] 重建分类与媒体库栏（过滤空库、保持服务端排序），
   /// 首个分类到达即结束转圈。
   void _applyCategories(List<LibraryFolder> libs, List<_CategoryData?> slots) {
@@ -201,6 +212,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // 此刻 ref.read(embyServiceProvider) 拿到的仍是旧实例（切换竞态根因）
       _loadMedia(ref.read(embyServiceFactoryProvider)(next));
     });
+    // 续播相关操作（播放停止/标记已观看）后即时刷新「继续观看」栏
+    ref.listen<int>(resumeRevisionProvider, (_, __) => _refreshResume());
 
     if (!_initialized) {
       return const Scaffold(

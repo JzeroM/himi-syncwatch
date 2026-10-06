@@ -450,6 +450,79 @@ class EmbyService {
     }
   }
 
+  /// 播放会话上报公共实现（Emby `POST /Sessions/{Playing|Playing/Progress|Playing/Stopped}`）。
+  /// [positionMs] 毫秒 → `PositionTicks`（×10000）。成功返回 true。
+  Future<bool> _playbackReport(
+    String endpoint, {
+    required String itemId,
+    required String playSessionId,
+    String? mediaSourceId,
+    int positionMs = 0,
+    bool isPaused = false,
+  }) async {
+    try {
+      await _dio.post(
+        '/Sessions/$endpoint',
+        data: {
+          'ItemId': itemId,
+          if (mediaSourceId != null && mediaSourceId.isNotEmpty)
+            'MediaSourceId': mediaSourceId,
+          'PositionTicks': positionMs * 10000,
+          'PlaySessionId': playSessionId,
+          'CanSeek': true,
+          'IsPaused': isPaused,
+          'IsMuted': false,
+          'PlayMethod': 'DirectStream',
+        },
+      );
+      return true;
+    } on DioException {
+      return false;
+    }
+  }
+
+  /// 开始播放上报（`POST /Sessions/Playing`）。
+  Future<bool> reportPlaybackStart({
+    required String itemId,
+    required String playSessionId,
+    String? mediaSourceId,
+    int positionMs = 0,
+  }) =>
+      _playbackReport('Playing',
+          itemId: itemId,
+          playSessionId: playSessionId,
+          mediaSourceId: mediaSourceId,
+          positionMs: positionMs);
+
+  /// 进度上报（`POST /Sessions/Playing/Progress`）。
+  Future<bool> reportPlaybackProgress({
+    required String itemId,
+    required String playSessionId,
+    String? mediaSourceId,
+    int positionMs = 0,
+    bool isPaused = false,
+  }) =>
+      _playbackReport('Playing/Progress',
+          itemId: itemId,
+          playSessionId: playSessionId,
+          mediaSourceId: mediaSourceId,
+          positionMs: positionMs,
+          isPaused: isPaused);
+
+  /// 停止上报（`POST /Sessions/Playing/Stopped`，带最终位置）。
+  /// Emby 据此写入 `UserData.PlaybackPositionTicks`（≥~90% 时自动标记已观看）。
+  Future<bool> reportPlaybackStopped({
+    required String itemId,
+    required String playSessionId,
+    String? mediaSourceId,
+    int positionMs = 0,
+  }) =>
+      _playbackReport('Playing/Stopped',
+          itemId: itemId,
+          playSessionId: playSessionId,
+          mediaSourceId: mediaSourceId,
+          positionMs: positionMs);
+
   String getStreamUrl(String itemId,
       {String? mediaSourceId, int? subtitleStreamIndex}) {
     if (subtitleStreamIndex != null) {

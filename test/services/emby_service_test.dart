@@ -9,8 +9,9 @@ class _CapturedRequest {
   final String method;
   final String path;
   final Map<String, List<String>> query;
+  final Map<String, dynamic> body;
 
-  _CapturedRequest(this.method, this.path, this.query);
+  _CapturedRequest(this.method, this.path, this.query, this.body);
 
   String? param(String key) => query[key]?.first;
 }
@@ -30,11 +31,16 @@ void main() {
 
     unawaited(() async {
       await for (final request in server) {
+        final rawBody = await utf8.decoder.bind(request).join();
+        final body = rawBody.isEmpty
+            ? <String, dynamic>{}
+            : (jsonDecode(rawBody) as Map).cast<String, dynamic>();
         captured.add(
           _CapturedRequest(
             request.method,
             request.uri.path,
             request.uri.queryParametersAll,
+            body,
           ),
         );
         request.response
@@ -422,6 +428,50 @@ void main() {
       final items = await service.getResumeItems();
       expect(items, hasLength(1));
       expect(items.single.playbackPositionMs, 169000);
+    });
+  });
+
+  group('播放会话上报', () {
+    test('reportPlaybackStart → POST /Sessions/Playing（PositionTicks=ms×10000）',
+        () async {
+      await service.reportPlaybackStart(
+        itemId: 'i1',
+        playSessionId: 'ps1',
+        mediaSourceId: 'ms1',
+        positionMs: 1000,
+      );
+      final req = captured.single;
+      expect(req.method, 'POST');
+      expect(req.path, '/Sessions/Playing');
+      expect(req.body['ItemId'], 'i1');
+      expect(req.body['MediaSourceId'], 'ms1');
+      expect(req.body['PositionTicks'], 1000 * 10000);
+      expect(req.body['PlaySessionId'], 'ps1');
+    });
+
+    test('reportPlaybackProgress → /Sessions/Playing/Progress（含 IsPaused）',
+        () async {
+      await service.reportPlaybackProgress(
+        itemId: 'i1',
+        playSessionId: 'ps1',
+        positionMs: 2000,
+        isPaused: true,
+      );
+      final req = captured.single;
+      expect(req.path, '/Sessions/Playing/Progress');
+      expect(req.body['PositionTicks'], 2000 * 10000);
+      expect(req.body['IsPaused'], isTrue);
+    });
+
+    test('reportPlaybackStopped → /Sessions/Playing/Stopped', () async {
+      await service.reportPlaybackStopped(
+        itemId: 'i1',
+        playSessionId: 'ps1',
+        positionMs: 3000,
+      );
+      final req = captured.single;
+      expect(req.path, '/Sessions/Playing/Stopped');
+      expect(req.body['PositionTicks'], 3000 * 10000);
     });
   });
 }

@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
@@ -119,6 +120,24 @@ class _PendingCountsFakeService extends FakeEmbyService {
 
   @override
   Future<MediaCounts?> getItemCounts() => Completer<MediaCounts?>().future;
+}
+
+/// 可变续播列表 Fake：验证 revision 变化后首页重取「继续观看」。
+class _MutableResumeFakeService extends FakeEmbyService {
+  _MutableResumeFakeService({
+    required super.libraries,
+    required super.items,
+    required this.resume,
+  });
+
+  List<MediaItem> resume;
+  int resumeCalls = 0;
+
+  @override
+  Future<List<MediaItem>> getResumeItems({int limit = 12}) async {
+    resumeCalls++;
+    return resume;
+  }
 }
 
 LibraryFolder _lib(String id, String name) => LibraryFolder(
@@ -276,6 +295,39 @@ void main() {
     await _pumpScreen(tester, auth: auth, emby: emby);
 
     expect(find.text('继续观看'), findsNothing);
+  });
+
+  testWidgets('续播修订号变化后「继续观看」栏即时重取', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = _MutableResumeFakeService(
+      libraries: [_lib('lib1', '电影库')],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+      resume: [
+        MediaItem(
+          id: 'r1',
+          name: '续播电影',
+          type: 'Movie',
+          playbackPositionMs: 1000,
+          playedPercentage: 20,
+        ),
+      ],
+    );
+    final container = await _pumpScreen(tester, auth: auth, emby: emby);
+    expect(find.byKey(const ValueKey('continueCard_r1')), findsOneWidget);
+
+    // 模拟播放停止上报：服务器续播清空 + bump revision
+    emby.resume = [];
+    container.read(resumeRevisionProvider.notifier).state++;
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('continueCard_r1')), findsNothing);
+    expect(find.text('继续观看'), findsNothing);
+    expect(emby.resumeCalls, greaterThanOrEqualTo(2), reason: 'revision 变化应重取');
   });
 
   testWidgets('标题显示当前服务器名并可下拉切换', (tester) async {

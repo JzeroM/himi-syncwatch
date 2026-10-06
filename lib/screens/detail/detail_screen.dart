@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
+import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
@@ -142,11 +143,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       ? '&server=${Uri.encodeComponent(widget.serverId!)}'
       : '';
 
-  Future<void> _loadDetails() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  /// [silent]：静默刷新（从播放器返回时用）——不显示 loading、失败不报错，
+  /// 仅替换条目/集/季与收藏/已观看/续播状态。
+  Future<void> _loadDetails({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       final embyService = ref.read(embyServiceForProvider(widget.serverId));
@@ -207,6 +212,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      if (silent) return; // 静默刷新失败：保留原内容，不弹错误页
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -300,7 +306,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('标记已观看失败，请检查网络')),
       );
+      return;
     }
+    // 标记已观看会清除服务器续播位置 → 即时刷新首页「继续观看」栏
+    ref.read(resumeRevisionProvider.notifier).state++;
   }
 
   /// 标记 / 取消某一集已观看（剧集页横卡对勾）。乐观更新，失败回滚+提示。
@@ -328,7 +337,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('标记已观看失败，请检查网络')),
       );
+      return;
     }
+    // 标记该集已观看清除其续播位置 → 即时刷新首页「继续观看」栏
+    ref.read(resumeRevisionProvider.notifier).state++;
   }
 
   /// 服务端季列表为空时的兜底：按集的 `parentIndexNumber` 分组合成季
@@ -358,8 +370,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   /// 从指定集开播：整部序列化进 [pendingRoomEpisodesProvider] 后跳播放器。
-  /// [resume] 为真且该集有进度时携带 `startMs` 续播。
-  void _playEpisode(MediaItem ep, {bool resume = false}) {
+  /// [resume] 为真且该集有进度时携带 `startMs` 续播；否则从头播放并乐观清
+  /// 本地续播态。返回详情页后静默刷新，读取最新进度/已观看。
+  Future<void> _playEpisode(MediaItem ep, {bool resume = false}) async {
     // 该集的预选轨写入全局槽（播放器 _autoSelectDefaultTracks 消费一次）；
     // 无选择时显式置 null，防止残留上一次的电影/他集预选
     final selection = _episodeSelections[ep.id];
@@ -377,21 +390,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             })
         .toList();
     ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
-    if (mounted) {
-      final query = StringBuffer('isHost=true$_serverQuery');
-      final sourceId = _episodeSourceIds[ep.id];
-      if (sourceId != null) {
-        query.write('&mediaSourceId=$sourceId');
-      }
-      final logo = !widget.roomMode ? _item?.logoUrl : null;
-      if (logo != null) {
-        query.write('&logo=${Uri.encodeComponent(logo)}');
-      }
-      if (resume && ep.playbackPositionMs > 0) {
-        query.write('&startMs=${ep.playbackPositionMs}');
-      }
-      context.push('/player/${ep.id}?$query');
+    if (!mounted) return;
+    if (!resume) setState(() => _resumeMsOverride = 0);
+    final query = StringBuffer('isHost=true$_serverQuery');
+    final sourceId = _episodeSourceIds[ep.id];
+    if (sourceId != null) {
+      query.write('&mediaSourceId=$sourceId');
     }
+    final logo = !widget.roomMode ? _item?.logoUrl : null;
+    if (logo != null) {
+      query.write('&logo=${Uri.encodeComponent(logo)}');
+    }
+    if (resume && ep.playbackPositionMs > 0) {
+      query.write('&startMs=${ep.playbackPositionMs}');
+    }
+    await context.push('/player/${ep.id}?$query');
+    if (mounted) await _loadDetails(silent: true);
   }
 
   /// 当前选中季的集（按集号正序）。
@@ -678,7 +692,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             orElse: () => seasonEpisodes.first,
           )
         : seasonEpisodes.first;
-    _playEpisode(target, resume: resume);
+    await _playEpisode(target, resume: resume);
   }
 
   /// 开始播放（多版本先弹选择）。胶囊底栏与 TV 内联按钮共用一份逻辑。
@@ -709,9 +723,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (resume && item.playbackPositionMs > 0) {
       query.write('&startMs=${item.playbackPositionMs}');
     }
-    if (mounted) {
-      context.push('/player/${item.id}?${query.toString()}');
-    }
+    if (!mounted) return;
+    // 从头播放：乐观清本地续播态（主控件立刻恢复默认），返回后静默刷新纠正
+    if (!resume) setState(() => _resumeMsOverride = 0);
+    await context.push('/player/${item.id}?${query.toString()}');
+    if (mounted) await _loadDetails(silent: true);
   }
 
   Future<void> _createRoom() async {

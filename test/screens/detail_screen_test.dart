@@ -148,6 +148,22 @@ bool _focusWithin(Finder finder) {
   return found;
 }
 
+/// getItemDetails 依次返回 [sequence] 中条目的 Fake（验证返回播放器后
+/// 详情页静默刷新读取到最新进度）。
+class _SeqItemFakeService extends FakeEmbyService {
+  _SeqItemFakeService({required this.sequence});
+
+  final List<MediaItem?> sequence;
+  int calls = 0;
+
+  @override
+  Future<MediaItem?> getItemDetails(String id) async {
+    final r = calls < sequence.length ? sequence[calls] : sequence.last;
+    calls++;
+    return r;
+  }
+}
+
 void main() {
   testWidgets('非 TV：正文铺虚化氛围底图 + 压暗罩，顶部海报保持清晰', (tester) async {
     await _pumpDetail(tester);
@@ -2357,6 +2373,59 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.textContaining('startMs=169000'), findsOneWidget);
+    });
+
+    testWidgets('点「从头播放」：路由不带 startMs', (tester) async {
+      final item = resumeItem();
+      await _pumpDetailInRouter(tester, item: item);
+
+      final btn = find.byKey(const Key('playFromBeginningButton'));
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.textContaining('PLAYER:m1'), findsOneWidget);
+      expect(find.textContaining('startMs'), findsNothing);
+    });
+
+    testWidgets('返回播放器后 silent 刷新：新进度显示为「继续」', (tester) async {
+      final noResume = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+      );
+      final withResume = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+        playbackPositionMs: 169000,
+        playedPercentage: 20,
+      );
+      final fake = _SeqItemFakeService(sequence: [noResume, withResume]);
+      await _pumpDetailInRouter(tester, item: noResume, emby: fake);
+
+      expect(find.text('开始播放'), findsOneWidget);
+
+      // 播放 → 返回（pop 播放器路由）
+      final btn = find.text('开始播放');
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('PLAYER:m1'), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 600));
+
+      // 静默刷新读到新进度
+      expect(find.text('继续 02:49'), findsOneWidget);
     });
   });
 }

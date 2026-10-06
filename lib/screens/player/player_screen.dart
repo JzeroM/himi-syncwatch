@@ -16,10 +16,13 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
+import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:uuid/uuid.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/audio_filter_policy.dart';
@@ -457,7 +460,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Timer? _hideControlsTimer;
   Timer? _positionTimer;
   Timer? _diagnosticTimer;
+  Timer? _reportTimer;
   bool _isDraggingSlider = false;
+
+  // ---- Emby 播放会话上报（续播/自动已观看）----
+  /// 本次播放会话 id（切集重生成）。
+  String _playSessionId = const Uuid().v4();
+  EmbyService? _reportService;
+  String? _reportItemId;
+  String? _reportMediaSourceId;
+  bool _reportStarted = false;
 
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
@@ -1824,6 +1836,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _currentPlayUrl = streamUrl;
       _currentToken = token;
 
+      // 播放会话上报上下文（切集重生成 sessionId、重置 start 标记）
+      _reportService = embyService;
+      _reportItemId = targetItemId;
+      _reportMediaSourceId = effectiveMediaSourceId;
+      _playSessionId = const Uuid().v4();
+      _reportStarted = false;
+      _stopReportTimer();
+
       // 重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
@@ -1889,6 +1909,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       // 起播渐入恢复用户音量（未渐出/已在目标音量时内部直接跳过）
       await _fadeInForSwitch();
+      // Emby 播放会话开始上报（单人/房主）
+      unawaited(_reportStart());
       Future.delayed(const Duration(seconds: 2), () async {
         if (!mounted) return;
         await _detectDolbyVision();
@@ -3117,6 +3139,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     }
     _syncPlayState();
+    unawaited(_reportProgress());
   }
 
   /// 空格键播放/暂停（仅房主/本地可控制）
@@ -3160,6 +3183,78 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 此后无人续期 → 控件常显；此处保证"播放中 5 秒隐藏"始终成立。
       if (playing) _resetHideTimer();
     }
+  }
+
+  // ---- Emby 播放会话上报（续播/自动已观看，仅单人/房主）----
+
+  bool get _shouldReportPlayback => widget.roomCode == null || _isHost;
+
+  Future<void> _reportStart() async {
+    final svc = _reportService;
+    final id = _reportItemId;
+    if (!_shouldReportPlayback || svc == null || id == null) return;
+    _reportStarted = true;
+    await svc.reportPlaybackStart(
+      itemId: id,
+      playSessionId: _playSessionId,
+      mediaSourceId: _reportMediaSourceId,
+      positionMs: _player.position,
+    );
+    _startReportTimer();
+  }
+
+  Future<void> _reportProgress() async {
+    final svc = _reportService;
+    final id = _reportItemId;
+    if (!_shouldReportPlayback ||
+        !_reportStarted ||
+        svc == null ||
+        id == null) {
+      return;
+    }
+    await svc.reportPlaybackProgress(
+      itemId: id,
+      playSessionId: _playSessionId,
+      mediaSourceId: _reportMediaSourceId,
+      positionMs: _player.position,
+      isPaused: _player.state == mdk.PlaybackState.paused,
+    );
+  }
+
+  /// 停止上报并（成功时）bump 续播修订号 → 首页「继续观看」即时刷新。
+  Future<void> _reportStopped() async {
+    _stopReportTimer();
+    final svc = _reportService;
+    final id = _reportItemId;
+    if (!_shouldReportPlayback ||
+        !_reportStarted ||
+        svc == null ||
+        id == null) {
+      return;
+    }
+    _reportStarted = false;
+    final ok = await svc.reportPlaybackStopped(
+      itemId: id,
+      playSessionId: _playSessionId,
+      mediaSourceId: _reportMediaSourceId,
+      positionMs: _player.position,
+    );
+    if (ok && mounted) {
+      ref.read(resumeRevisionProvider.notifier).state++;
+    }
+  }
+
+  void _startReportTimer() {
+    _reportTimer?.cancel();
+    _reportTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _reportProgress(),
+    );
+  }
+
+  void _stopReportTimer() {
+    _reportTimer?.cancel();
+    _reportTimer = null;
   }
 
   void _startOrientationSensor() {
@@ -3259,6 +3354,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
     }
+    unawaited(_reportProgress());
   }
 
   void _toggleControls() {
@@ -3372,6 +3468,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
 
     final requestId = ++_playRequestId;
+
+    // 切集前把上一集按「停止」上报（写入续播位置/自动已观看）
+    await _reportStopped();
 
     // 先加载新集，获取 playUrl
     await _loadEpisodeStream(index);
@@ -3677,6 +3776,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 退后台/失去焦点：抢在可能被系统回收前上报一次进度
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      unawaited(_reportProgress());
+    }
+  }
+
+  @override
   void dispose() {
     // 先停止播放器，确保音频立即停止
     try {
@@ -3687,6 +3795,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
     _hideControlsTimer?.cancel();
+    // 兜底上报：异常 pop/系统 kill 未走 onConfirm 时，尽力补一次「停止」
+    final reportSvc = _reportService;
+    final reportId = _reportItemId;
+    if (_shouldReportPlayback &&
+        _reportStarted &&
+        reportSvc != null &&
+        reportId != null) {
+      reportSvc
+          .reportPlaybackStopped(
+            itemId: reportId,
+            playSessionId: _playSessionId,
+            mediaSourceId: _reportMediaSourceId,
+            positionMs: _player.position,
+          )
+          .catchError((_) => false);
+    }
+    _stopReportTimer();
     _speedMeter?.stop();
     _lockController.removeListener(_onLockStateChanged);
     _lockController.dispose();
@@ -3830,6 +3955,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return false;
       },
       onConfirm: () async {
+        // 退出前按「停止」上报（带最终位置）→ 服务器写入续播/自动已观看
+        await _reportStopped();
         final shouldPop = await _confirmLeaveRoom();
         if (shouldPop && mounted) Navigator.pop(context);
       },
