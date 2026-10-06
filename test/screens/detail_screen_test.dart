@@ -14,7 +14,6 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -33,7 +32,6 @@ final _item = MediaItem(
 
 Future<ProviderContainer> _pumpDetail(
   WidgetTester tester, {
-  List<Color>? trio,
   FakeEmbyService? emby,
   bool tv = false,
   bool roomMode = false,
@@ -46,7 +44,6 @@ Future<ProviderContainer> _pumpDetail(
           tv ? const AppSettings(tvMode: true) : const AppSettings())),
       embyServiceProvider
           .overrideWith((ref) => emby ?? FakeEmbyService(item: targetItem)),
-      posterTrioProvider(_posterUrl).overrideWith((ref) async => trio),
     ],
   );
   addTearDown(container.dispose);
@@ -151,50 +148,30 @@ bool _focusWithin(Finder finder) {
   return found;
 }
 
-LinearGradient _pageGradient(WidgetTester tester) {
-  final container = tester
-      .widget<AnimatedContainer>(find.byKey(const Key('detailBackground')));
-  final decoration = container.decoration! as BoxDecoration;
-  return decoration.gradient! as LinearGradient;
-}
-
 void main() {
-  testWidgets('取色成功时背景为三色三段异色渐变', (tester) async {
-    const top1 = Color(0xFFCC4422);
-    const top2 = Color(0xFF44BB55);
-    const top3 = Color(0xFF3366CC);
-    await _pumpDetail(tester, trio: const [top1, top2, top3]);
+  testWidgets('非 TV：正文铺虚化氛围底图 + 压暗罩，顶部海报保持清晰', (tester) async {
+    await _pumpDetail(tester);
 
-    final gradient = _pageGradient(tester);
-    final base = ThemeData.dark().scaffoldBackgroundColor;
-    expect(gradient.colors.first, PosterPalette.brightenForPage(top1));
-    expect(gradient.stops, PosterPalette.detailStops);
-    expect(gradient.colors[1], PosterPalette.toneForPage(top2));
+    // 正文氛围层（低分模糊图 + 压暗罩）存在
+    expect(find.byKey(const Key('detailAmbientImage')), findsOneWidget);
+    expect(find.byKey(const Key('detailAmbientScrim')), findsOneWidget);
+
+    // 页面背景不再使用纯色渐变（改为底色打底）
+    final container = tester
+        .widget<AnimatedContainer>(find.byKey(const Key('detailBackground')));
+    final decoration = container.decoration! as BoxDecoration;
+    expect(decoration.gradient, isNull, reason: '方案 A：正文改用虚化底图，不再叠加纯色渐变');
+
+    // 顶部海报仍是清晰原图（SliverAppBar 内），未被 TV 整页方案替换
+    expect(find.byKey(const Key('detailBackdrop')), findsNothing);
+    expect(find.byKey(const Key('detailBackdropScrim')), findsNothing);
     expect(
-        gradient.colors.last,
-        Color.lerp(PosterPalette.deepenForPage(top3), base,
-            PosterPalette.detailBaseMix));
-    expect(gradient.colors.toSet(), hasLength(3), reason: '三段应为互不相同的颜色');
-    expect(find.text('测试影片'), findsWidgets);
-  });
-
-  testWidgets('单色组时用首色补齐派生明度三段', (tester) async {
-    const top1 = Color(0xFF3366AA);
-    await _pumpDetail(tester, trio: const [top1]);
-
-    final gradient = _pageGradient(tester);
-    expect(gradient.colors.first, PosterPalette.brightenForPage(top1));
-    expect(gradient.stops, PosterPalette.detailStops);
-    expect(gradient.colors[1], PosterPalette.toneForPage(top1));
-    expect(find.text('测试影片'), findsWidgets);
-  });
-
-  testWidgets('取色失败时背景保持页面底色', (tester) async {
-    await _pumpDetail(tester, trio: null);
-
-    final gradient = _pageGradient(tester);
-    final base = ThemeData.dark().scaffoldBackgroundColor;
-    expect(gradient.colors.toSet(), {base});
+      find.descendant(
+        of: find.byType(FlexibleSpaceBar),
+        matching: find.byType(EmbyImage),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('测试影片'), findsWidgets);
   });
 
@@ -223,12 +200,11 @@ void main() {
       );
     });
 
-    testWidgets('非 TV 回归：渐变仍在且海报仍在 AppBar 内', (tester) async {
-      const top1 = Color(0xFF3366AA);
-      await _pumpDetail(tester, trio: const [top1]);
+    testWidgets('非 TV 回归：氛围底图在、海报仍在 AppBar 内', (tester) async {
+      await _pumpDetail(tester);
 
-      final gradient = _pageGradient(tester);
-      expect(gradient.colors.first, PosterPalette.brightenForPage(top1));
+      expect(find.byKey(const Key('detailAmbientImage')), findsOneWidget);
+      expect(find.byKey(const Key('detailAmbientScrim')), findsOneWidget);
       expect(find.byKey(const Key('detailBackdrop')), findsNothing);
       expect(find.byKey(const Key('detailBackdropScrim')), findsNothing);
       expect(
@@ -428,8 +404,7 @@ void main() {
 
       // TvFocusable 包裹（焦点环/OK 键激活）
       expect(
-        find.ancestor(
-            of: find.text('播放'), matching: find.byType(TvFocusable)),
+        find.ancestor(of: find.text('播放'), matching: find.byType(TvFocusable)),
         findsOneWidget,
       );
       // TV 取消房间模式：不渲染建房入口

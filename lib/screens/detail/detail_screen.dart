@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,14 +7,12 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
-import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/screens/detail/episode_number_picker.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -960,12 +960,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final accentUrl = _item?.backdropUrl ?? _item?.posterUrl ?? '';
-    final trio = ref.watch(posterTrioProvider(accentUrl)).valueOrNull;
-    // 渐变顶段亮色（与 detailGradient 顶段同源），供 SliverAppBar 衔接用
-    final bright = (trio == null || trio.isEmpty)
-        ? null
-        : PosterPalette.brightenForPage(trio[0]);
     final base = Theme.of(context).scaffoldBackgroundColor;
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
@@ -990,7 +984,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ],
                 ),
               )
-            : _buildContent(bright, base);
+            : _buildContent();
 
     return Scaffold(
       extendBody: true,
@@ -998,16 +992,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         key: const Key('detailBackground'),
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
-        // 非 TV：海报三色三段渐变（顶亮/中深保色相/底近黑收深）；
+        // 非 TV：底色打底，正文叠虚化氛围底图（方案 A）；
         // TV：透明底，海报由下方 Stack 做整页固定背景。
-        decoration: tvMode
-            ? const BoxDecoration()
-            : BoxDecoration(
-                gradient: PosterPalette.detailGradient(trio, base),
-              ),
-        child: !tvMode
-            ? content
-            : Stack(
+        decoration: BoxDecoration(color: tvMode ? null : base),
+        child: tvMode
+            ? Stack(
                 fit: StackFit.expand,
                 children: [
                   // 图片加载失败兜底底色
@@ -1046,6 +1035,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ],
                   content,
                 ],
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  // 虚化氛围底图：颜色取自同一张海报，天然与顶部清晰海报
+                  // 无缝衔接（不再另算纯色渐变，消除色相跳变与硬接缝）。
+                  if (_item != null) _buildAmbientBackdrop(base),
+                  content,
+                ],
               ),
       ),
       // 播放/建房按钮已统一进内容流（_buildActionRow），仅一起看房间
@@ -1053,6 +1051,54 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       bottomNavigationBar: !tvMode && _item != null && widget.roomMode
           ? _buildBottomBar()
           : null,
+    );
+  }
+
+  /// 非 TV 正文氛围背景（方案 A）：同一张 backdrop 低分辨率解码 → 高斯模糊
+  /// 铺满正文 → 竖向压暗罩。因为颜色直接来自海报本身，正文与顶部清晰海报
+  /// 天然同色同调、无色相跳变；模糊尺度大也避免了硬接缝。顶部海报仍用清晰
+  /// 原图（在 SliverAppBar 内），只有正文区虚化。
+  Widget _buildAmbientBackdrop(Color base) {
+    final url = _item?.backdropUrl ?? _item?.posterUrl;
+    if (url == null || url.isEmpty) return const SizedBox.shrink();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 低分解码 + 放大裁切 + 高斯模糊：开销极低且无边缘透底
+        // （放大 1.35 使模糊采样区完全落在图内，屏幕边缘不会出现透底暗边）
+        ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+          child: Transform.scale(
+            scale: 1.35,
+            child: EmbyImage(
+              key: const Key('detailAmbientImage'),
+              url: url,
+              fit: BoxFit.cover,
+              cacheWidth: 200,
+              placeholder: const SizedBox.shrink(),
+              errorWidget: const SizedBox.shrink(),
+            ),
+          ),
+        ),
+        // 压暗罩：顶部略暗衔接 AppBar 底部蒙层；底部渐入应用底色，保证
+        // 版本/剧集列表等正文可读。
+        DecoratedBox(
+          key: const Key('detailAmbientScrim'),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.30),
+                Colors.black.withValues(alpha: 0.42),
+                base.withValues(alpha: 0.90),
+                base,
+              ],
+              stops: const [0.0, 0.5, 0.85, 1.0],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1253,9 +1299,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  /// [accent] 为详情页亮色主色（[PosterPalette.detailGradient] 同源，
-  /// 取色失败回退 null → 底色/深色衔接）。
-  Widget _buildContent(Color? accent, Color base) {
+  /// 正文内容流：SliverAppBar（清晰海报）+ 各 Sliver 区块。
+  Widget _buildContent() {
     if (_item == null) return const SizedBox();
     final item = _item!;
     // TV 适配：横幅降高、标题降档、间距收紧（540 逻辑高屏）
@@ -1266,6 +1311,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         SliverAppBar(
           expandedHeight: tv ? 220 : 320,
           pinned: true,
+          // 透明 AppBar：非 TV 时清晰海报底部渐隐后，露出正文虚化氛围层，
+          // 两层同源图片在接缝处柔化过渡，无硬边。
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+          forceMaterialTransparency: true,
           leading: Padding(
             padding: const EdgeInsets.all(4),
             child: GlassContainer(
@@ -1284,10 +1335,27 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 // TV：海报已做整页背景，此处不再重复铺图/渐变，
                 // 标题区直接坐在整页背景上。
                 if (!tv) ...[
-                  EmbyImage(
-                    url: item.backdropUrl ?? item.posterUrl,
-                    fit: BoxFit.cover,
+                  // 清晰海报：底部渐隐到透明，无缝融入正文虚化氛围层
+                  // （两层底图同源，接缝处自然溶解，无硬边也无色相跳变）
+                  ShaderMask(
+                    shaderCallback: (rect) => const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white,
+                        Colors.white,
+                        Colors.transparent,
+                      ],
+                      stops: [0.0, 0.55, 1.0],
+                    ).createShader(rect),
+                    blendMode: BlendMode.dstIn,
+                    child: EmbyImage(
+                      url: item.backdropUrl ?? item.posterUrl,
+                      fit: BoxFit.cover,
+                    ),
                   ),
+                  // 可读性压暗：底部收到 0.30，与正文氛围罩顶部同值，
+                  // 跨接缝连成一条连续压暗。
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -1295,11 +1363,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withValues(alpha: 0.4),
-                          if (accent != null)
-                            Color.lerp(accent, base, 0.5)!
-                          else
-                            Colors.black.withValues(alpha: 0.9),
+                          Colors.black.withValues(alpha: 0.10),
+                          Colors.black.withValues(alpha: 0.30),
                         ],
                         stops: const [0.0, 0.5, 1.0],
                       ),
