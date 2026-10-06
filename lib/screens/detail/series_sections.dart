@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 剧集详情页分季区块集合：选季下拉 + 该季剧集横卡 + 播出季季卡横排。
@@ -160,23 +161,30 @@ class _SeasonSelector extends StatelessWidget {
         .map((e) => SeriesSections.seasonNumber(e.value, e.key))
         .toList();
     final current =
-        numbers.contains(selectedSeason) ? selectedSeason : numbers.first;
+        numbers.contains(selectedSeason) ? selectedSeason! : numbers.first;
+    final currentIndex = numbers.indexOf(current);
+    final currentTitle = SeriesSections.seasonTitle(
+        seasons[currentIndex], entries[currentIndex].key);
 
-    final dropdown = DropdownButton<int>(
+    // 触发按钮：玻璃胶囊（当前季名 + 下拉箭头）。点开玻璃面板选季。
+    final trigger = GlassContainer(
       key: const Key('seriesSeasonSelector'),
-      value: current,
-      underline: const SizedBox.shrink(),
-      isExpanded: false,
-      items: [
-        for (final e in entries)
-          DropdownMenuItem<int>(
-            value: SeriesSections.seasonNumber(e.value, e.key),
-            child: Text(SeriesSections.seasonTitle(e.value, e.key)),
+      borderRadius: BorderRadius.circular(14),
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            currentTitle,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
           ),
-      ],
-      onChanged: (v) {
-        if (v != null) onSeasonSelected(v);
-      },
+          const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 22),
+        ],
+      ),
     );
 
     Widget iconBtn({
@@ -203,12 +211,16 @@ class _SeasonSelector extends StatelessWidget {
       children: [
         if (tvMode)
           TvFocusable(
-            radius: 8,
+            radius: 14,
             onTap: () => _showMenu(context),
-            child: ExcludeFocus(child: dropdown),
+            child: ExcludeFocus(child: trigger),
           )
         else
-          dropdown,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _showMenu(context),
+            child: trigger,
+          ),
         const Spacer(),
         iconBtn(
           key: const Key('episodeSortToggle'),
@@ -226,27 +238,91 @@ class _SeasonSelector extends StatelessWidget {
     );
   }
 
-  /// TV 下 dropdown 自身的展开菜单焦点链不可靠，改为弹出 PopupMenu。
+  /// 打开玻璃选季面板（透明 Material + GlassContainer 承底），
+  /// 触摸与 TV 遥控统一走此菜单。
   Future<void> _showMenu(BuildContext context) async {
     final entries = seasons.asMap().entries.toList();
+    final numbers = entries
+        .map((e) => SeriesSections.seasonNumber(e.value, e.key))
+        .toList();
+    final current =
+        numbers.contains(selectedSeason) ? selectedSeason : numbers.first;
+
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final box = context.findRenderObject() as RenderBox?;
+    final position = (overlay != null && box != null)
+        ? RelativeRect.fromLTRB(
+            box.localToGlobal(Offset.zero, ancestor: overlay).dx,
+            box
+                    .localToGlobal(box.size.bottomLeft(Offset.zero),
+                        ancestor: overlay)
+                    .dy +
+                4,
+            overlay.size.width -
+                box
+                    .localToGlobal(box.size.bottomLeft(Offset.zero),
+                        ancestor: overlay)
+                    .dx,
+            0,
+          )
+        : const RelativeRect.fromLTRB(16, 120, 16, 0);
+
     final picked = await showMenu<int>(
       context: context,
-      position: RelativeRect.fromDirectional(
-        textDirection: Directionality.of(context),
-        top: 120,
-        start: 16,
-        end: 16,
-        bottom: 0,
-      ),
+      color: Colors.transparent,
+      elevation: 0,
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 360),
+      position: position,
       items: [
-        for (final e in entries)
-          PopupMenuItem<int>(
-            value: SeriesSections.seasonNumber(e.value, e.key),
-            child: Text(SeriesSections.seasonTitle(e.value, e.key)),
+        PopupMenuItem<int>(
+          enabled: false,
+          padding: EdgeInsets.zero,
+          child: Builder(
+            builder: (menuCtx) => GlassContainer(
+              borderRadius: BorderRadius.circular(16),
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final e in entries)
+                    _seasonRow(
+                      menuCtx,
+                      SeriesSections.seasonTitle(e.value, e.key),
+                      SeriesSections.seasonNumber(e.value, e.key) == current,
+                      SeriesSections.seasonNumber(e.value, e.key),
+                    ),
+                ],
+              ),
+            ),
           ),
+        ),
       ],
     );
     if (picked != null) onSeasonSelected(picked);
+  }
+
+  /// 玻璃面板中的单个季选项（当前季主色高亮）。
+  Widget _seasonRow(
+      BuildContext menuCtx, String title, bool selected, int value) {
+    return InkWell(
+      onTap: () => Navigator.pop(menuCtx, value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: selected
+            ? Theme.of(menuCtx).colorScheme.primary.withValues(alpha: 0.35)
+            : Colors.transparent,
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 15,
+            color: selected ? Colors.white : Colors.white70,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
   }
 }
 
