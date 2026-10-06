@@ -2431,6 +2431,23 @@ void main() {
       expect(find.text('继续 02:49'), findsOneWidget);
       expect(container.read(resumeRevisionProvider), greaterThan(revBefore));
     });
+
+    testWidgets('点「从头播放」：目标立即进入乐观隐藏集合 + bump 修订号', (tester) async {
+      final item = resumeItem();
+      final container = await _pumpDetailInRouter(tester, item: item);
+      final revBefore = container.read(resumeRevisionProvider);
+
+      final btn = find.byKey(const Key('playFromBeginningButton'));
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(container.read(resumeOptimisticHiddenProvider), contains('m1'),
+          reason: '点重播应乐观隐藏该条（首页立即移除）');
+      expect(container.read(resumeRevisionProvider), greaterThan(revBefore));
+      expect(find.textContaining('PLAYER:m1'), findsOneWidget);
+    });
   });
 
   group('底部媒体信息（非 TV）', () {
@@ -2476,6 +2493,45 @@ void main() {
       expect(find.text('外部链接'), findsNothing);
       expect(find.text('工作室'), findsNothing);
       expect(find.text('媒体信息'), findsNothing);
+    });
+
+    testWidgets('剧集页：媒体信息/视频音频取「当前选中集」', (tester) async {
+      final seriesItem = MediaItem(id: 'sv1', name: '测试剧集', type: 'Series');
+      final ep1 = MediaItem(
+        id: 'e1',
+        name: '第1集',
+        type: 'Episode',
+        parentIndexNumber: 1,
+        indexNumber: 1,
+        path: '/media/e1.mkv',
+        mediaStreams: [
+          MediaStream(type: 'Video', codec: 'hevc', width: 1920, height: 1080),
+          MediaStream(type: 'Audio', codec: 'eac3', channels: 2),
+        ],
+      );
+      await _pumpDetail(
+        tester,
+        item: seriesItem,
+        emby: FakeEmbyService(
+          item: seriesItem,
+          itemsByParent: {
+            'sv1': [ep1],
+          },
+          seasons: [
+            MediaItem(
+                id: 'sea1',
+                name: '第1季',
+                type: 'Season',
+                indexNumber: 1,
+                childCount: 1),
+          ],
+        ),
+      );
+
+      // 剧集本身无流，面板来自当前选中集
+      expect(find.text('媒体信息'), findsOneWidget);
+      expect(find.text('视频'), findsWidgets);
+      expect(find.text('音频'), findsWidgets);
     });
   });
 }

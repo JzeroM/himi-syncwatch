@@ -171,7 +171,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // AlternateMediaSources：Emby 4.9.x 起批量端点对非管理员
               // 每条只回 1 个 MediaSource，需显式请求该字段才返回全部版本
               fields:
-                  'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,PremiereDate,UserData',
+                  'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,PremiereDate,UserData,Path',
             )
                 .then((episodes) {
               _episodes = episodes;
@@ -397,7 +397,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         .toList();
     ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
     if (!mounted) return;
-    if (!resume) setState(() => _resumeMsOverride = 0);
+    if (!resume) {
+      setState(() => _resumeMsOverride = 0);
+      _hideResumeOptimistically(ep.id);
+    }
     final query = StringBuffer('isHost=true$_serverQuery');
     final sourceId = _episodeSourceIds[ep.id];
     if (sourceId != null) {
@@ -411,7 +414,29 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       query.write('&startMs=${ep.playbackPositionMs}');
     }
     await context.push('/player/${ep.id}?$query');
-    if (mounted) await _loadDetails(silent: true);
+    if (mounted) {
+      _clearResumeHidden(ep.id);
+      await _loadDetails(silent: true);
+    }
+  }
+
+  /// 点「重播」：立即把该条加入首页「继续观看」乐观隐藏集合 + bump 修订号
+  /// → 首页即时移除该条（不等服务器上报）。
+  void _hideResumeOptimistically(String id) {
+    final notifier = ref.read(resumeOptimisticHiddenProvider.notifier);
+    if (!notifier.state.contains(id)) {
+      notifier.state = {...notifier.state, id};
+    }
+    ref.read(resumeRevisionProvider.notifier).state++;
+  }
+
+  /// 从播放器返回/上报成功：解除乐观隐藏，交回服务器真相驱动显示。
+  void _clearResumeHidden(String id) {
+    final notifier = ref.read(resumeOptimisticHiddenProvider.notifier);
+    if (notifier.state.contains(id)) {
+      notifier.state = {...notifier.state}..remove(id);
+    }
+    ref.read(resumeRevisionProvider.notifier).state++;
   }
 
   /// 当前选中季的集（按集号正序）。
@@ -730,10 +755,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       query.write('&startMs=${item.playbackPositionMs}');
     }
     if (!mounted) return;
-    // 从头播放：乐观清本地续播态（主控件立刻恢复默认），返回后静默刷新纠正
-    if (!resume) setState(() => _resumeMsOverride = 0);
+    // 从头播放：乐观清本地续播态（主控件立刻恢复默认）+ 首页立即移除该条
+    if (!resume) {
+      setState(() => _resumeMsOverride = 0);
+      _hideResumeOptimistically(item.id);
+    }
     await context.push('/player/${item.id}?${query.toString()}');
-    if (mounted) await _loadDetails(silent: true);
+    if (mounted) {
+      _clearResumeHidden(item.id);
+      await _loadDetails(silent: true);
+    }
   }
 
   Future<void> _createRoom() async {
@@ -1939,12 +1970,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                 ],
                 // 底部媒体信息（相似推荐/外部链接/工作室/媒体信息/视频/音频；TV 不渲染）
+                // 剧集：媒体信息与视频/音频取「当前选中集」；外部链接/工作室取剧集本身
                 if (!tv &&
                     MediaDetailsSection.hasContent(item,
-                        similarItems: _similarItems)) ...[
+                        similarItems: _similarItems,
+                        streamsItem:
+                            item.isSeries ? _targetEpisode() : null)) ...[
                   const SizedBox(height: 20),
                   MediaDetailsSection(
                     item: item,
+                    streamsItem: item.isSeries ? _targetEpisode() : null,
                     similarItems: _similarItems,
                     onOpenSimilar: (sim) {
                       final q = widget.serverId != null

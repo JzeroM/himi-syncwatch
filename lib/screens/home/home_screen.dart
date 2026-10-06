@@ -226,6 +226,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // TV 模式：标题/房间/搜索全部上移到壳层顶部导航，首页自身不渲染顶栏
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
+    // 「重播」乐观隐藏：点重播即从继续观看栏移除，服务器真相回来后交回
+    final hiddenResume = ref.watch(resumeOptimisticHiddenProvider);
+    final resumeVisible =
+        _resumeItems.where((e) => !hiddenResume.contains(e.id)).toList();
+
     // 主题色三段渐变背景（null 时保持应用底色）
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
@@ -306,7 +311,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                             itemCount: _categories.length +
                                 (_libraries.isNotEmpty ? 1 : 0) +
-                                (_resumeItems.isNotEmpty ? 1 : 0) +
+                                (resumeVisible.isNotEmpty ? 1 : 0) +
                                 (_counts != null ? 1 : 0),
                             itemBuilder: (context, index) {
                               var i = index;
@@ -321,10 +326,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 }
                                 i--;
                               }
-                              if (_resumeItems.isNotEmpty) {
+                              if (resumeVisible.isNotEmpty) {
                                 if (i == 0) {
                                   return _ContinueWatchingBar(
-                                    items: _resumeItems,
+                                    items: resumeVisible,
                                     onOpen: (item) =>
                                         context.push('/detail/${item.id}'),
                                   );

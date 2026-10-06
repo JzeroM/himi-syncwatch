@@ -330,6 +330,37 @@ void main() {
     expect(emby.resumeCalls, greaterThanOrEqualTo(2), reason: 'revision 变化应重取');
   });
 
+  testWidgets('乐观隐藏集合中的续播条目立即从栏中移除', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = _MutableResumeFakeService(
+      libraries: [_lib('lib1', '电影库')],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+      resume: [
+        MediaItem(
+          id: 'r1',
+          name: '续播电影',
+          type: 'Movie',
+          playbackPositionMs: 1000,
+          playedPercentage: 20,
+        ),
+      ],
+    );
+    final container = await _pumpScreen(tester, auth: auth, emby: emby);
+    expect(find.byKey(const ValueKey('continueCard_r1')), findsOneWidget);
+
+    // 点「重播」→ 乐观隐藏该条 → 首页立即移除（无需等上报/刷新）
+    container.read(resumeOptimisticHiddenProvider.notifier).state = {'r1'};
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('continueCard_r1')), findsNothing);
+    expect(find.text('继续观看'), findsNothing);
+  });
+
   testWidgets('标题显示当前服务器名并可下拉切换', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1', 's2'],

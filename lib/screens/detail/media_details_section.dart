@@ -10,11 +10,17 @@ class MediaDetailsSection extends StatelessWidget {
   const MediaDetailsSection({
     super.key,
     required this.item,
+    this.streamsItem,
     this.similarItems = const [],
     this.onOpenSimilar,
   });
 
   final MediaItem item;
+
+  /// 媒体信息（路径/大小/时间）与视频/音频流的取数条目：
+  /// 电影 = 主条目；剧集 = 当前选中集（null 时回退 [item]）。
+  /// 外部链接/工作室仍取 [item]（剧集本身）。
+  final MediaItem? streamsItem;
 
   /// 相似推荐条目（渲染在「外部链接」之上；空则不显示）。
   final List<MediaItem> similarItems;
@@ -22,15 +28,19 @@ class MediaDetailsSection extends StatelessWidget {
   /// 点击相似推荐卡片。
   final void Function(MediaItem item)? onOpenSimilar;
 
+  MediaItem get _mediaItem => streamsItem ?? item;
+
   /// 有可展示内容才渲染。
   static bool hasContent(MediaItem item,
-          {List<MediaItem> similarItems = const []}) =>
-      similarItems.isNotEmpty ||
-      item.externalUrls.isNotEmpty ||
-      item.providerIds.isNotEmpty ||
-      item.studios.isNotEmpty ||
-      item.path != null ||
-      item.mediaStreams.isNotEmpty;
+      {List<MediaItem> similarItems = const [], MediaItem? streamsItem}) {
+    final m = streamsItem ?? item;
+    return similarItems.isNotEmpty ||
+        item.externalUrls.isNotEmpty ||
+        item.providerIds.isNotEmpty ||
+        item.studios.isNotEmpty ||
+        m.path != null ||
+        m.mediaStreams.isNotEmpty;
+  }
 
   /// 外链组装（优先 Emby `ExternalUrls`，缺失用 `ProviderIds` 拼常见站点）。
   static List<ExternalUrl> externalLinksFor(MediaItem item) {
@@ -95,8 +105,9 @@ class MediaDetailsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final links = externalLinksFor(item);
-    final video = item.mediaStreams.where((s) => s.type == 'Video').toList();
-    final audios = item.mediaStreams.where((s) => s.type == 'Audio').toList();
+    final media = _mediaItem;
+    final video = media.mediaStreams.where((s) => s.type == 'Video').toList();
+    final audios = media.mediaStreams.where((s) => s.type == 'Audio').toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,16 +159,16 @@ class MediaDetailsSection extends StatelessWidget {
           ),
           const SizedBox(height: 20),
         ],
-        if (item.path != null ||
-            item.mediaSources.isNotEmpty ||
-            item.dateCreated != null) ...[
+        if (media.path != null ||
+            media.mediaSources.isNotEmpty ||
+            media.dateCreated != null) ...[
           const _SectionTitle('媒体信息'),
-          if (item.path != null) ...[
+          if (media.path != null) ...[
             const Text('路径:',
                 style: TextStyle(fontSize: 13, color: Colors.white70)),
             const SizedBox(height: 4),
             SelectableText(
-              item.path!,
+              media.path!,
               style: const TextStyle(fontSize: 12, color: Colors.white),
             ),
             const SizedBox(height: 8),
@@ -166,12 +177,12 @@ class MediaDetailsSection extends StatelessWidget {
             spacing: 12,
             runSpacing: 4,
             children: [
-              if (item.mediaSources.isNotEmpty)
+              if (media.mediaSources.isNotEmpty)
                 Text(
-                  formatSize(item.mediaSources.first.size),
+                  formatSize(media.mediaSources.first.size),
                   style: const TextStyle(fontSize: 13, color: Colors.white70),
                 ),
-              if (item.dateCreated != null)
+              if (media.dateCreated != null)
                 Text(
                   '加入时间: ${formatDate(item.dateCreated)}',
                   style: const TextStyle(fontSize: 13, color: Colors.white70),
@@ -195,24 +206,47 @@ class _VideoAudioCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cards = <Widget>[
-      for (final v in video)
-        _StreamCard(title: '视频', icon: Icons.movie, rows: _videoRows(v)),
+    final specs = <_StreamSpec>[
+      for (final v in video) _StreamSpec('视频', Icons.movie, _videoRows(v)),
       for (final a in audios)
-        _StreamCard(title: '音频', icon: Icons.music_note, rows: _audioRows(a)),
+        _StreamSpec('音频', Icons.music_note, _audioRows(a)),
     ];
+    if (specs.isEmpty) return const SizedBox.shrink();
+
+    // 高度按最长卡内容自适应：表头 + 内边距 + 最大行数 × 行高。
+    // 行高（13 号字 + 上下 padding 3）取 ~26，留适量余量防裁切；
+    // 所有卡被同一高度约束 → 与最长卡等高对齐。
+    final maxRows =
+        specs.map((s) => s.rows.length).fold<int>(0, (a, b) => a > b ? a : b);
+    final height = 60.0 + maxRows * 26.0;
+
     // 横向排列、可左右滑动
     return SizedBox(
-      height: 360,
+      height: height,
       child: ListView.separated(
         clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
-        itemCount: cards.length,
+        itemCount: specs.length,
         separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, i) => SizedBox(width: 300, child: cards[i]),
+        itemBuilder: (context, i) => SizedBox(
+          width: 300,
+          child: _StreamCard(
+            title: specs[i].title,
+            icon: specs[i].icon,
+            rows: specs[i].rows,
+          ),
+        ),
       ),
     );
   }
+}
+
+/// 单张流信息卡的内容规格（标题 + 图标 + 行）。
+class _StreamSpec {
+  const _StreamSpec(this.title, this.icon, this.rows);
+  final String title;
+  final IconData icon;
+  final List<(String, String)> rows;
 }
 
 List<(String, String)> _videoRows(MediaStream s) {

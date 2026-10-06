@@ -3231,7 +3231,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       isPaused: _player.state == mdk.PlaybackState.paused,
     );
     // 进度变化即刷新续播栏（节流 ≤1 次/2s）
-    if (ok && mounted) _bumpResumeThrottled();
+    if (ok && mounted) {
+      // 首个成功上报后解除「重播乐观隐藏」，交回服务器真相（自动回填新进度）
+      _clearResumeHidden(id);
+      _bumpResumeThrottled();
+    }
+  }
+
+  /// 从「重播乐观隐藏」集合移除当前条目（服务器真相已回来）。
+  void _clearResumeHidden(String id) {
+    final notifier = ref.read(resumeOptimisticHiddenProvider.notifier);
+    if (notifier.state.contains(id)) {
+      notifier.state = {...notifier.state}..remove(id);
+      ref.read(resumeRevisionProvider.notifier).state++;
+    }
   }
 
   /// 节流 bump 续播修订号（≤1 次/2s，避免 3s 上报导致首页每 3s 重取）。
@@ -3265,6 +3278,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     if (ok && mounted) {
       _lastProgressBump = null;
+      _clearResumeHidden(id);
       ref.read(resumeRevisionProvider.notifier).state++;
     }
   }

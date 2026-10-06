@@ -167,4 +167,54 @@ void main() {
     expect(find.byType(GlassContainer), findsWidgets);
     expect(find.byType(Chip), findsNothing, reason: '工作室已改玻璃胶囊');
   });
+
+  testWidgets('面板高度自适应：最长卡不裁切且各卡等高', (tester) async {
+    final item = MediaItem(
+      id: 'm1',
+      name: '电影',
+      type: 'Movie',
+      mediaStreams: [
+        MediaStream(
+          type: 'Video',
+          codec: 'hevc',
+          width: 1920,
+          height: 1080,
+          profile: 'Main 10',
+          level: 150,
+          bitDepth: 10,
+          pixelFormat: 'yuv420p10le',
+          refFrames: 1,
+          frameRate: 23.976,
+          isInterlaced: false,
+          videoRange: 'HDR',
+        ),
+        MediaStream(
+          type: 'Audio',
+          codec: 'eac3',
+          channels: 2,
+          channelLayout: 'stereo',
+          sampleRate: 48000,
+          bitRate: 128000,
+          profile: 'LC',
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(MediaDetailsSection(item: item)));
+    await tester.pump();
+
+    // 视频最长卡的最后一行（参考帧）与音频卡最后一行（默认）均未被裁
+    // （固定高度不足会触发布局 overflow 异常使测试失败）
+    expect(find.text('参考帧'), findsOneWidget);
+    expect(find.text('默认'), findsOneWidget);
+
+    // 两张卡等高（同一高度约束）
+    final cards =
+        find.byWidgetPredicate((w) => w is SizedBox && w.width == 300);
+    expect(cards, findsNWidgets(2));
+    expect(
+      tester.getSize(cards.at(0)).height,
+      tester.getSize(cards.at(1)).height,
+      reason: '所有卡与最长卡等高对齐',
+    );
+  });
 }
