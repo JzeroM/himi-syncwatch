@@ -122,8 +122,10 @@ class AppSettings {
   final double danmakuOpacity;
 
   /// 弹幕行数范围（滑杆/存档钳制共用）。
+  /// 滚动行数为「最大行数上限」：实际按画面高度自动铺满，
+  /// 不超过该上限；默认给到上限即默认铺满，下压可减少密度。
   static const int danmakuRowsMin = 1;
-  static const int danmakuRowsMax = 10;
+  static const int danmakuRowsMax = 30;
 
   /// 速度 / 字号 / 透明度范围。
   static const double danmakuSpeedMin = 0.5;
@@ -178,7 +180,7 @@ class AppSettings {
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
-    this.danmakuScrollRows = 4,
+    this.danmakuScrollRows = 30,
     this.danmakuTopRows = 4,
     this.danmakuBottomRows = 4,
     this.danmakuBlockTop = false,
@@ -187,8 +189,8 @@ class AppSettings {
     this.danmakuLimitCount = false,
     this.danmakuMaxCount = 500,
     this.danmakuSpeed = 1.0,
-    this.danmakuFontSize = 1.0,
-    this.danmakuOpacity = 1.0,
+    this.danmakuFontSize = 0.5,
+    this.danmakuOpacity = 0.6,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -388,7 +390,7 @@ class AppSettings {
       danmakuDefaultOn: json['danmakuDefaultOn'] as bool? ?? true,
       danmakuApiUrl: json['danmakuApiUrl'] as String? ?? '',
       danmakuScrollRows: _clampInt(
-          json['danmakuScrollRows'], 4, danmakuRowsMin, danmakuRowsMax),
+          json['danmakuScrollRows'], 30, danmakuRowsMin, danmakuRowsMax),
       danmakuTopRows:
           _clampInt(json['danmakuTopRows'], 4, danmakuRowsMin, danmakuRowsMax),
       danmakuBottomRows: _clampInt(
@@ -411,13 +413,13 @@ class AppSettings {
       ),
       danmakuFontSize: _clampDouble(
         json['danmakuFontSize'],
-        1.0,
+        0.5,
         danmakuFontSizeMin,
         danmakuFontSizeMax,
       ),
       danmakuOpacity: _clampDouble(
         json['danmakuOpacity'],
-        1.0,
+        0.6,
         danmakuOpacityMin,
         danmakuOpacityMax,
       ),

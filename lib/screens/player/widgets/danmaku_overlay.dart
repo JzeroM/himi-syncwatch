@@ -118,9 +118,8 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
   /// 当前插值播放位置 = 最近跳变值 + 对齐后的 ticker 增量。
   Duration get _nowPosition => _lastPosition + (_elapsed - _alignElapsed);
 
-  DanmakuTimeline _timelineFor(double width) {
+  DanmakuTimeline _timelineFor(double width, DanmakuTimelineConfig config) {
     final comments = widget.comments;
-    final config = widget.config;
     final speed = widget.speed;
     if (_timeline != null &&
         identical(_tlComments, comments) &&
@@ -169,11 +168,19 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
           if (!width.isFinite || !height.isFinite || width <= 0) {
             return const SizedBox.expand();
           }
-          final active = _timelineFor(width).activeAt(_nowPosition);
-          if (active.isEmpty) return const SizedBox.expand();
-
           final px = DanmakuOverlay.baseFontSize * widget.fontSizeScale;
           final lineHeight = px + DanmakuOverlay.rowGap;
+          // 方案 C：滚动弹幕按画面高度自动铺满，用户「滚动行数」为上限。
+          final autoRows =
+              ((height - DanmakuOverlay.edgePadding * 2) / lineHeight).floor();
+          final effectiveScrollRows =
+              autoRows.clamp(1, widget.config.scrollRows);
+          final effectiveConfig =
+              widget.config.copyWith(scrollRows: effectiveScrollRows);
+          final active =
+              _timelineFor(width, effectiveConfig).activeAt(_nowPosition);
+          if (active.isEmpty) return const SizedBox.expand();
+
           final children = <Widget>[];
           for (final item in active) {
             final child = _buildItem(item, width, height, px, lineHeight);

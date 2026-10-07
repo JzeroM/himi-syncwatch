@@ -100,7 +100,7 @@ void main() {
       );
     });
 
-    testWidgets('滚动行数滑杆拖动改值（钳在 1~10）', (tester) async {
+    testWidgets('滚动行数滑杆拖动改值（钳在 1~30）', (tester) async {
       final container = await _pumpConfig(tester,
           initial: const AppSettings(danmakuScrollRows: 4));
       expect(
@@ -116,7 +116,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       final v = container.read(settingsProvider).danmakuScrollRows;
-      expect(v, 10, reason: '拖到底 → 最大 10');
+      expect(v, 30, reason: '拖到底 → 最大 30');
     });
 
     testWidgets('屏蔽关键词输入写入 danmakuBlockWords', (tester) async {
@@ -174,7 +174,7 @@ void main() {
       final s = container.read(settingsProvider);
       expect(s.danmakuDefaultOn, isTrue);
       expect(s.danmakuApiUrl, '');
-      expect(s.danmakuScrollRows, 4);
+      expect(s.danmakuScrollRows, 30);
       expect(s.danmakuBlockTop, isFalse);
       expect(s.danmakuBlockWords, '');
       expect(s.danmakuLimitCount, isFalse);

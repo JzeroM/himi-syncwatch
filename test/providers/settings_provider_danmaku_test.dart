@@ -78,7 +78,7 @@ void main() {
       await notifier.update(
         danmakuDefaultOn: true,
         danmakuApiUrl: '',
-        danmakuScrollRows: 4,
+        danmakuScrollRows: 30,
         danmakuTopRows: 4,
         danmakuBottomRows: 4,
         danmakuBlockTop: false,
@@ -87,13 +87,13 @@ void main() {
         danmakuLimitCount: false,
         danmakuMaxCount: 500,
         danmakuSpeed: 1.0,
-        danmakuFontSize: 1.0,
-        danmakuOpacity: 1.0,
+        danmakuFontSize: 0.5,
+        danmakuOpacity: 0.6,
       );
       final s = notifier.state;
       expect(s.danmakuDefaultOn, isTrue);
       expect(s.danmakuApiUrl, '');
-      expect(s.danmakuScrollRows, 4);
+      expect(s.danmakuScrollRows, 30);
       expect(s.danmakuTopRows, 4);
       expect(s.danmakuBottomRows, 4);
       expect(s.danmakuBlockTop, isFalse);
@@ -102,8 +102,8 @@ void main() {
       expect(s.danmakuLimitCount, isFalse);
       expect(s.danmakuMaxCount, 500);
       expect(s.danmakuSpeed, 1.0);
-      expect(s.danmakuFontSize, 1.0);
-      expect(s.danmakuOpacity, 1.0);
+      expect(s.danmakuFontSize, 0.5);
+      expect(s.danmakuOpacity, 0.6);
       expect(notifier.persistCount, 1);
     });
   });

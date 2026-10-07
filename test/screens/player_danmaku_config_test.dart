@@ -6,9 +6,9 @@ import 'package:himi_syncwatch/services/danmaku/danmaku_timeline.dart';
 
 void main() {
   group('PlayerScreen.danmakuTimelineConfig（设置 → 时间轴映射）', () {
-    test('默认设置映射：行数 4 / 无屏蔽 / 不限数量', () {
+    test('默认设置映射：滚动上限 30 / 无屏蔽 / 不限数量', () {
       final c = PlayerScreen.danmakuTimelineConfig(const AppSettings());
-      expect(c.scrollRows, 4);
+      expect(c.scrollRows, 30);
       expect(c.topRows, 4);
       expect(c.bottomRows, 4);
       expect(c.blockTop, isFalse);

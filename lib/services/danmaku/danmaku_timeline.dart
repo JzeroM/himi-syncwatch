@@ -31,6 +31,26 @@ class DanmakuTimelineConfig {
     this.maxCount,
   });
 
+  /// 复制并覆盖部分字段（弹幕层按画面高度自适应滚动行数用）。
+  DanmakuTimelineConfig copyWith({
+    int? scrollRows,
+    int? topRows,
+    int? bottomRows,
+    bool? blockTop,
+    bool? blockBottom,
+    List<String>? blockWords,
+    int? maxCount,
+  }) =>
+      DanmakuTimelineConfig(
+        scrollRows: scrollRows ?? this.scrollRows,
+        topRows: topRows ?? this.topRows,
+        bottomRows: bottomRows ?? this.bottomRows,
+        blockTop: blockTop ?? this.blockTop,
+        blockBottom: blockBottom ?? this.blockBottom,
+        blockWords: blockWords ?? this.blockWords,
+        maxCount: maxCount ?? this.maxCount,
+      );
+
   @override
   bool operator ==(Object other) =>
       other is DanmakuTimelineConfig &&

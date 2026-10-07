@@ -71,7 +71,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
     _update(
       danmakuDefaultOn: true,
       danmakuApiUrl: '',
-      danmakuScrollRows: 4,
+      danmakuScrollRows: 30,
       danmakuTopRows: 4,
       danmakuBottomRows: 4,
       danmakuBlockTop: false,
@@ -80,8 +80,8 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
       danmakuLimitCount: false,
       danmakuMaxCount: 500,
       danmakuSpeed: 1.0,
-      danmakuFontSize: 1.0,
-      danmakuOpacity: 1.0,
+      danmakuFontSize: 0.5,
+      danmakuOpacity: 0.6,
     );
     _apiUrl.clear();
     _blockWords.clear();
@@ -127,9 +127,9 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
             ),
           ),
           const Divider(height: 1),
-          _sectionHeader('行数（每行同屏一条）'),
+          _sectionHeader('行数（滚动按屏高自动铺满，此值为上限）'),
           _rowsSlider(
-            label: '滚动行数',
+            label: '滚动上限',
             valueKey: 'danmakuScrollRows',
             value: s.danmakuScrollRows,
             onChanged: (v) => _update(danmakuScrollRows: v),

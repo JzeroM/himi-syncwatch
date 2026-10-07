@@ -174,6 +174,31 @@ void main() {
     position.dispose();
   });
 
+  testWidgets('滚动弹幕按屏高自动铺满，行数为上限（配置变更即时重建）',
+      (tester) async {
+    final position = ValueNotifier<Duration>(Duration.zero);
+    final comments = List.generate(10, (i) => _c(0, text: 'row$i'));
+    await _mount(
+      tester,
+      comments: comments,
+      position: position,
+      config: const DanmakuTimelineConfig(scrollRows: 2),
+    );
+    await tester.pump();
+    expect(find.byType(Text), findsNWidgets(2), reason: '上限 2 → 只保留 2 行');
+
+    // 上限调大 → 同一批弹幕铺满更多行（弹幕层随配置重建）
+    await _mount(
+      tester,
+      comments: comments,
+      position: position,
+      config: const DanmakuTimelineConfig(scrollRows: 10),
+    );
+    await tester.pump();
+    expect(find.byType(Text), findsNWidgets(10), reason: '上限 10 → 10 行');
+    position.dispose();
+  });
+
   testWidgets('弹幕层不拦截手势（IgnorePointer 包裹）', (tester) async {
     final position = ValueNotifier<Duration>(Duration.zero);
     await _mount(

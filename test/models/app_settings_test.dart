@@ -705,11 +705,12 @@ void main() {
       );
     });
 
-    test('弹幕字段默认值（默认开 / 行数 4 / 上限 500 / 倍率 1.0）', () {
+    test('弹幕字段默认值（默认开 / 滚动上限 30 / 上限 500 / 大小 0.5 / 透明度 0.6）',
+        () {
       const s = AppSettings();
       expect(s.danmakuDefaultOn, isTrue);
       expect(s.danmakuApiUrl, '');
-      expect(s.danmakuScrollRows, 4);
+      expect(s.danmakuScrollRows, 30);
       expect(s.danmakuTopRows, 4);
       expect(s.danmakuBottomRows, 4);
       expect(s.danmakuBlockTop, isFalse);
@@ -718,16 +719,16 @@ void main() {
       expect(s.danmakuLimitCount, isFalse);
       expect(s.danmakuMaxCount, 500);
       expect(s.danmakuSpeed, 1.0);
-      expect(s.danmakuFontSize, 1.0);
-      expect(s.danmakuOpacity, 1.0);
+      expect(s.danmakuFontSize, 0.5);
+      expect(s.danmakuOpacity, 0.6);
     });
 
     test('旧数据缺弹幕字段回退默认', () {
       final s = AppSettings.fromJson(const {});
       expect(s.danmakuDefaultOn, isTrue);
       expect(s.danmakuApiUrl, '');
-      expect(s.danmakuScrollRows, 4);
-      expect(s.danmakuOpacity, 1.0);
+      expect(s.danmakuScrollRows, 30);
+      expect(s.danmakuOpacity, 0.6);
     });
 
     test('弹幕字段 toJson/fromJson 往返', () {

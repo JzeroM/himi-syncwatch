@@ -538,6 +538,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 已加载弹幕（关弹幕后保留，重开免请求；换集清空重载）。
   List<DanmakuComment> _danmakuComments = const [];
 
+  /// 当前已加载弹幕对应的集索引（-1 = 无）；避免起播/恢复时重复加载。
+  int _danmakuLoadedIndex = -1;
+
   /// 底栏「弹幕」开关焦点（TV 跨组导航锚点：右组头）。
   final FocusNode _danmakuButtonFocusNode = FocusNode();
 
@@ -1174,12 +1177,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final settings = ref.read(settingsProvider);
     _speed = settings.playbackSpeed;
     // 弹幕：默认开关跟随设置；未配置 API 地址时强制关（静默，
-    // 不在起播时打扰；用户点击弹幕钮才提示去配置）
+    // 不在起播时打扰；用户点击弹幕钮才提示去配置）。
+    // 实际拉取推迟到当前集就绪后（见 _loadEpisodeStream 完成 / 起播），
+    // 避免集索引未就绪时误报「无法获取当前影片名称」。
     _danmakuOn = settings.danmakuDefaultOn &&
         DandanplayClient.normalizeBaseUrl(settings.danmakuApiUrl) != null;
-    if (_danmakuOn) {
-      _loadDanmaku();
-    }
     _applyAudioFilterPolicy();
     // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度。
     // AAudio/OpenSL/AudioTrack 为 Android 专属（其余平台自动归一为 auto），
@@ -1303,6 +1305,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         try {
           await _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0,
               startMs: widget.startMs);
+          if (mounted && _danmakuOn) _loadDanmaku();
         } catch (_) {
           LogService()
               .log('Player', '_loadEpisodeStream 异常，强制设置 _isPlayerReady');
@@ -2153,6 +2156,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (epIndex != null) _currentEpisodeIndex = epIndex;
         _isPlayerReady = true;
       });
+      // 集就绪后拉取弹幕（覆盖房间/同步起播路径）
+      if (_danmakuOn && _currentEpisodeIndex >= 0) _loadDanmaku();
 
       // 仅在视频输出就绪时启动播放，避免有声无画
       if (_videoOutputReady()) {
@@ -3674,6 +3679,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted && _danmakuOn) {
       setState(() {
         _danmakuComments = const [];
+        _danmakuLoadedIndex = -1;
         _danmakuLoading = false;
       });
       _loadDanmaku();
@@ -4406,10 +4412,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // 弹幕层（视频之上、控件之下；IgnorePointer 不抢手势）
           if (_danmakuOn && _danmakuComments.isNotEmpty)
             Positioned.fill(
-              child: Builder(
-                // 局部重建点：三滑杆调节只刷新弹幕层
-                builder: (context) {
-                  final s = ref.watch(settingsProvider);
+              child: Consumer(
+                // 局部重建点：行数/屏蔽/上限/三滑杆任一变化只刷新弹幕层
+                builder: (context, watchRef, _) {
+                  final s = watchRef.watch(settingsProvider);
                   return DanmakuOverlay(
                     comments: _danmakuComments,
                     config: PlayerScreen.danmakuTimelineConfig(s),
@@ -4727,8 +4733,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onDanmakuOpacityChanged: (v) => notifier.update(danmakuOpacity: v),
       onDanmakuReset: () => notifier.update(
         danmakuSpeed: 1.0,
-        danmakuFontSize: 1.0,
-        danmakuOpacity: 1.0,
+        danmakuFontSize: 0.5,
+        danmakuOpacity: 0.6,
       ),
       focusNode: _selectorFirstFocusNode,
     );
@@ -4744,7 +4750,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSubtitleStyleMenu = false;
       _danmakuOn = !_danmakuOn;
     });
-    if (_danmakuOn && _danmakuComments.isEmpty && !_danmakuLoading) {
+    if (_danmakuOn) {
       _loadDanmaku();
     }
   }
@@ -4807,7 +4813,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 换集不串缓存）。
   Future<void> _loadDanmaku() async {
     if (_danmakuLoading) return;
-    final seq = ++_danmakuLoadSeq;
+    // 当前集弹幕已就绪：起播/恢复/重复触发不再重载（避免闪烁）
+    if (_danmakuComments.isNotEmpty &&
+        _danmakuLoadedIndex == _currentEpisodeIndex) {
+      return;
+    }
     final client = _danmakuClientFor(
       ref.read(settingsProvider).danmakuApiUrl,
     );
@@ -4818,18 +4828,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       return;
     }
+    // 影片信息 / 集索引尚未就绪（初始化过早等）：静默跳过，
+    // 待集就绪后的触发点再拉取，不弹提示、不关开关。
+    final fileName = _danmakuMatchFileName();
+    if (fileName == null) {
+      LogService().log('Danmaku', 'skip: episode not ready');
+      return;
+    }
+    final seq = ++_danmakuLoadSeq;
     setState(() {
       _danmakuLoading = true;
       _danmakuComments = const [];
     });
     try {
-      final fileName = _danmakuMatchFileName();
-      if (fileName == null) {
-        throw const DanmakuApiException(
-          DanmakuApiError.business,
-          '无法获取当前影片名称',
-        );
-      }
       // 单集 id 作缓存 key：换集后同 itemId 也可能指向不同节目
       final cacheKey =
           _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
@@ -4870,6 +4881,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted || seq != _danmakuLoadSeq) return;
       setState(() {
         _danmakuComments = loaded;
+        _danmakuLoadedIndex = _currentEpisodeIndex;
         _danmakuLoading = false;
       });
       LogService().log('Danmaku', 'loaded ${loaded.length} ($fileName)');
@@ -4877,7 +4889,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } on DanmakuApiException catch (e) {
       if (!mounted || seq != _danmakuLoadSeq) return;
       setState(() {
-        _danmakuOn = false;
         _danmakuLoading = false;
         _danmakuComments = const [];
       });
@@ -4886,7 +4897,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } catch (e) {
       if (!mounted || seq != _danmakuLoadSeq) return;
       setState(() {
-        _danmakuOn = false;
         _danmakuLoading = false;
         _danmakuComments = const [];
       });

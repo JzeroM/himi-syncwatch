@@ -36,8 +36,8 @@ class DanmakuStylePanel extends StatelessWidget {
 
   // ---- 默认值 ----
   static const double defaultSpeed = 1.0;
-  static const double defaultFontSize = 1.0;
-  static const double defaultOpacity = 1.0;
+  static const double defaultFontSize = 0.5;
+  static const double defaultOpacity = 0.6;
 
   /// 弹幕速度倍率（穿屏时长 = 8s ÷ speed）。
   final double speed;
