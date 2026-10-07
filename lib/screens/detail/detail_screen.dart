@@ -1499,38 +1499,46 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       );
     }
 
-    // 「继续观看」按钮：玻璃底 + 进度填充（按已观看百分比）+ 图标文字。
-    Widget resumeButton({required Future<void> Function() onPressed}) {
-      final label = tvMode ? '继续' : '继续 ${_formatPosition(_resumeMs)}';
+    // 统一玻璃操作按钮：同一 GlassContainer 圆角/同一最小尺寸/同一水平
+    // 内边距，图标+文字水平垂直居中；[progress] 非空时叠加续播进度填充
+    // （同一结构，保证 播放/继续/建房/加入资源 大小形状完全一致）。
+    Widget glassButton({
+      required IconData icon,
+      required String label,
+      required Future<void> Function() onPressed,
+      double? progress,
+    }) {
+      final button = FilledButton(
+        onPressed: onPressed,
+        style: glassStyle(compact: tvMode),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: scheme.primary, size: tvMode ? 20 : 24),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      );
+      if (progress == null) return button;
       return Stack(
         children: [
           Positioned.fill(
             child: FractionallySizedBox(
               alignment: Alignment.centerLeft,
-              widthFactor: (_resumePct / 100).clamp(0.0, 1.0),
+              widthFactor: progress.clamp(0.0, 1.0),
               child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
             ),
           ),
-          FilledButton(
-            onPressed: onPressed,
-            style: glassStyle(compact: tvMode),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.play_arrow,
-                    color: scheme.primary, size: tvMode ? 20 : 24),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          button,
         ],
       );
     }
@@ -1542,11 +1550,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         children.add(action(
           run: _addResourceToRoom,
           radius: 14,
-          button: FilledButton.icon(
+          button: glassButton(
+            icon: Icons.add,
+            label: '加入资源',
             onPressed: _addResourceToRoom,
-            icon: Icon(Icons.add, color: scheme.primary),
-            label: const Text('加入资源'),
-            style: glassStyle(),
           ),
         ));
       }
@@ -1560,15 +1567,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         children.add(action(
           run: play,
           radius: 14,
-          button: offerResume
-              ? resumeButton(onPressed: play)
-              : FilledButton.icon(
-                  onPressed: play,
-                  icon: Icon(Icons.play_arrow,
-                      color: scheme.primary, size: tvMode ? 20 : 24),
-                  label: Text(tvMode ? '播放' : '开始播放'),
-                  style: glassStyle(compact: tvMode),
-                ),
+          button: glassButton(
+            icon: Icons.play_arrow,
+            label: offerResume
+                ? (tvMode ? '继续' : '继续 ${_formatPosition(_resumeMs)}')
+                : (tvMode ? '播放' : '开始播放'),
+            onPressed: play,
+            progress: offerResume ? (_resumePct / 100) : null,
+          ),
         ));
       }
       // TV 模式取消房间模式：不提供建房入口
@@ -1576,11 +1582,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         children.add(action(
           run: _createRoom,
           radius: 14,
-          button: FilledButton.icon(
+          button: glassButton(
+            icon: Icons.group_add,
+            label: '建房',
             onPressed: _createRoom,
-            icon: Icon(Icons.group_add, color: scheme.primary),
-            label: const Text('建房'),
-            style: glassStyle(),
           ),
         ));
       }
@@ -1894,7 +1899,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       behavior: HitTestBehavior.opaque,
                       child: Container(
                         color: Colors.black.withValues(alpha: 0.72),
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        // 顶部下移到返回按钮下方，避免「简介/收起」被返回控件遮挡
+                        padding: EdgeInsets.fromLTRB(
+                            16, MediaQuery.of(context).padding.top + 56, 16, 16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1994,10 +2001,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 ],
                 // 简介已移至海报内浮层（v1.1.83：海报上「简介」控件展开，
                 // 正文区不再重复渲染）
-                if (item.mediaStreams.isNotEmpty) ...[
-                  _buildMediaInfo(item),
-                  SizedBox(height: tv ? 14 : 20),
-                ],
+                // 顶部「版本/音频/字幕」媒体信息块已移除：底部媒体信息区块
+                // （MediaDetailsSection）已覆盖，避免重复。
                 if (item.hasMultipleVersions) ...[
                   _buildMediaSources(item),
                   SizedBox(height: tv ? 14 : 20),
@@ -2122,36 +2127,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  Widget _buildMediaInfo(MediaItem item) {
-    final videoStreams =
-        item.mediaStreams.where((s) => s.type == 'Video').toList();
-    final audioStreams =
-        item.mediaStreams.where((s) => s.type == 'Audio').toList();
-    final subtitleStreams =
-        item.mediaStreams.where((s) => s.type == 'Subtitle').toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (videoStreams.isNotEmpty)
-          _MediaInfoRow(
-            label: '版本：',
-            value: videoStreams.first.displayInfo,
-          ),
-        if (audioStreams.isNotEmpty)
-          _MediaInfoRow(
-            label: '音频：',
-            value: audioStreams.map((s) => s.displayInfo).join('，'),
-          ),
-        if (subtitleStreams.isNotEmpty)
-          _MediaInfoRow(
-            label: '字幕：',
-            value: subtitleStreams.map((s) => s.displayInfo).join('，'),
-          ),
-      ],
-    );
-  }
-
   /// 是否含 4K 资源（`MediaSource.displayLabel` 对 width>=3840 输出 '4K'，
   /// 或直接看视频流宽度）。
   bool _has4k(MediaItem item) {
@@ -2181,34 +2156,6 @@ class _MetaBadge extends StatelessWidget {
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
-      ),
-    );
-  }
-}
-
-class _MediaInfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _MediaInfoRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 56,
-            child: Text(
-              label,
-              style: TextStyle(color: Colors.grey[400], fontSize: 14),
-            ),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 14)),
-          ),
-        ],
       ),
     );
   }

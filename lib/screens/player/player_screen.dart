@@ -3463,6 +3463,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     double filteredX = 0;
     const alpha = 0.2;
     int flipCount = 0;
+    // 灵敏度：阈值 9.2（约需接近水平横持）+ 连续 5 次采样 + 1.2s 冷却，
+    // 避免 iOS 稍抖动就 180° 翻转。
+    const double flipThreshold = 9.2;
+    const int requiredSamples = 5;
+    const Duration flipCooldown = Duration(milliseconds: 1200);
+    DateTime? lastFlipAt;
 
     _accelSub = accelerometerEventStream(
       samplingPeriod: SensorInterval.normalInterval,
@@ -3470,21 +3476,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       filteredX = alpha * event.x + (1 - alpha) * filteredX;
 
       // 仅在横屏模式下检测180度翻转
+      final cooldownOver = lastFlipAt == null ||
+          DateTime.now().difference(lastFlipAt!) >= flipCooldown;
       if (_orientationMode == _OrientationMode.landscapeLeft) {
-        if (filteredX < -8.0) {
+        if (filteredX < -flipThreshold) {
           flipCount++;
-          if (flipCount >= 3) {
-            _switchToLandscape(_OrientationMode.landscapeRight);
+          if (flipCount >= requiredSamples) {
+            if (cooldownOver) {
+              _switchToLandscape(_OrientationMode.landscapeRight);
+              lastFlipAt = DateTime.now();
+            }
             flipCount = 0;
           }
         } else {
           flipCount = 0;
         }
       } else if (_orientationMode == _OrientationMode.landscapeRight) {
-        if (filteredX > 8.0) {
+        if (filteredX > flipThreshold) {
           flipCount++;
-          if (flipCount >= 3) {
-            _switchToLandscape(_OrientationMode.landscapeLeft);
+          if (flipCount >= requiredSamples) {
+            if (cooldownOver) {
+              _switchToLandscape(_OrientationMode.landscapeLeft);
+              lastFlipAt = DateTime.now();
+            }
             flipCount = 0;
           }
         } else {

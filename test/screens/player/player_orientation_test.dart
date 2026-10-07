@@ -54,4 +54,28 @@ void main() {
       expect(a, hasLength(1), reason: '双方向列表会被引擎解码为 USER_LANDSCAPE，系统关转屏失效');
     }
   });
+
+  group('PlayerOrientation.effectiveSide（iOS left/right 互换）', () {
+    test('非 iOS：原样返回', () {
+      expect(
+        PlayerOrientation.effectiveSide(PlayerLandscapeSide.left, isIOS: false),
+        PlayerLandscapeSide.left,
+      );
+      expect(
+        PlayerOrientation.effectiveSide(PlayerLandscapeSide.right, isIOS: false),
+        PlayerLandscapeSide.right,
+      );
+    });
+
+    test('iOS：left/right 互换', () {
+      expect(
+        PlayerOrientation.effectiveSide(PlayerLandscapeSide.left, isIOS: true),
+        PlayerLandscapeSide.right,
+      );
+      expect(
+        PlayerOrientation.effectiveSide(PlayerLandscapeSide.right, isIOS: true),
+        PlayerLandscapeSide.left,
+      );
+    });
+  });
 }
