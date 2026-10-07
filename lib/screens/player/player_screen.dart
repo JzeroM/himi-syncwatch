@@ -62,6 +62,7 @@ import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dar
 import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
+import 'package:himi_syncwatch/screens/player/widgets/player_bottom_row.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/controls_auto_hide.dart';
@@ -147,6 +148,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   /// 控制条自动隐藏时长（5 秒无操作后隐藏全部控件，含选择器面板）。
   static const Duration controlsAutoHideAfter = Duration(seconds: 5);
+
   /// 右侧选择器面板宽度：随屏宽自适应（0.42×屏宽，钳在 260~320），
   /// 保证滑杆有足够横向行程（字幕样式/弹幕调节等共用）。
   @visibleForTesting
@@ -293,6 +295,35 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   @visibleForTesting
   static bool showBottomDisplayAdjustButton({required bool tvMode}) => tvMode;
+
+  /// 手机版判定：移动端平台且非 TV（控制条布局分支）。
+  @visibleForTesting
+  static bool isMobilePhoneControls({
+    required bool tvMode,
+    required bool mobilePlatform,
+  }) =>
+      mobilePlatform && !tvMode;
+
+  /// 顶栏倍速键是否显示：仅手机本地单人（房间模式由房主节奏接管，
+  /// 转屏键见 [showRotateButton] 复用同一手机判定）。
+  @visibleForTesting
+  static bool showTopSpeedButton({
+    required bool tvMode,
+    required bool mobilePlatform,
+    required bool isRoom,
+  }) =>
+      !isRoom &&
+      isMobilePhoneControls(tvMode: tvMode, mobilePlatform: mobilePlatform);
+
+  /// 底栏倍速键是否显示：TV / 桌面本地单人（手机已移至顶栏）。
+  @visibleForTesting
+  static bool showBottomSpeedButton({
+    required bool tvMode,
+    required bool mobilePlatform,
+    required bool isRoom,
+  }) =>
+      !isRoom &&
+      !isMobilePhoneControls(tvMode: tvMode, mobilePlatform: mobilePlatform);
 
   /// 长按视频区临时倍速倍率（手机版）。
   static const double speedBoostMultiplier = 2.0;
@@ -4450,9 +4481,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ? _onVerticalDragEnd
                 : null,
             // 手机版：长按视频区临时 2× 倍速，松手恢复（不落盘）
-            onLongPressStart: _speedBoostGestureEnabled
-                ? (_) => _onSpeedBoostStart()
-                : null,
+            onLongPressStart:
+                _speedBoostGestureEnabled ? (_) => _onSpeedBoostStart() : null,
             onLongPressEnd:
                 _speedBoostGestureEnabled ? (_) => _onSpeedBoostEnd() : null,
             onLongPressCancel:
@@ -4723,6 +4753,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildTopBar() {
     final settings = ref.watch(settingsProvider);
+    final mobilePlatform = Platform.isAndroid || Platform.isIOS;
+    final phoneControls = PlayerScreen.isMobilePhoneControls(
+      tvMode: settings.tvMode,
+      mobilePlatform: mobilePlatform,
+    );
     return PlayerTopBar(
       title: _currentEpisodeTitle,
       networkSpeedText: settings.showNetworkSpeed && _networkSpeedBps != null
@@ -4741,6 +4776,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       videoFitIcon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
       videoFitLabel: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
       onCycleVideoFit: _cycleVideoFit,
+      // 倍速（网速右侧）/ 转屏（画面比例右侧）：手机版移入顶栏
+      showSpeedButton: PlayerScreen.showTopSpeedButton(
+        tvMode: settings.tvMode,
+        mobilePlatform: mobilePlatform,
+        isRoom: widget.roomCode != null,
+      ),
+      speedLabel: SpeedMenuPanel.formatSpeedLabel(_speed),
+      speedMenuOpen: _showSpeedMenu,
+      speedButtonFocusNode: _speedButtonFocusNode,
+      onToggleSpeed: _toggleSpeedMenu,
+      showRotateButton: phoneControls,
+      rotateButtonIcon: PlayerScreen.rotateButtonIcon,
+      onRotate: _toggleOrientation,
       showShare: widget.roomCode != null,
       onBack: () async {
         final shouldPop = await _confirmLeaveRoom();
@@ -4767,6 +4815,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     if (_showSubtitleStyleMenu) {
       _openSelectorPanel(_subtitleStyleButtonFocusNode);
+    }
+  }
+
+  /// 倍速按钮（顶栏手机 / 底栏 TV・桌面共用）：开关倍速面板
+  /// （与字幕/音轨/字幕样式互斥）。
+  void _toggleSpeedMenu() {
+    setState(() {
+      _showSpeedMenu = !_showSpeedMenu;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showSubtitleStyleMenu = false;
+    });
+    if (_showSpeedMenu) {
+      _openSelectorPanel(_speedButtonFocusNode);
     }
   }
 
@@ -4961,8 +5023,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             try {
               matched = await client.match(fileName: fileName);
             } on DanmakuApiException catch (e) {
-              LogService().log(
-                  'Danmaku', 'match failed: ${e.kind.name} ${e.message}');
+              LogService()
+                  .log('Danmaku', 'match failed: ${e.kind.name} ${e.message}');
             }
           }(),
           () async {
@@ -4998,8 +5060,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _danmakuLoadedIndex = _currentEpisodeIndex;
         _danmakuLoading = false;
       });
-      LogService().log(
-          'Danmaku', 'loaded ${found.comments.length} (ep=${found.id}, $fileName)');
+      LogService().log('Danmaku',
+          'loaded ${found.comments.length} (ep=${found.id}, $fileName)');
     } on DanmakuApiException catch (e) {
       if (!mounted || seq != _danmakuLoadSeq) return;
       LogService().log('Danmaku',
@@ -5343,7 +5405,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildGestureHint() {
-    if (_gestureOverlayIcon != null) {      return Center(
+    if (_gestureOverlayIcon != null) {
+      return Center(
         child: Icon(_gestureOverlayIcon!, color: Colors.white70, size: 48),
       );
     }
@@ -5500,6 +5563,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildControls() {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final mobilePlatform = Platform.isAndroid || Platform.isIOS;
+    final phoneControls = PlayerScreen.isMobilePhoneControls(
+      tvMode: tvMode,
+      mobilePlatform: mobilePlatform,
+    );
     // 控制条根焦点：仅作"焦点是否停留在控制条内"的判定锚点
     // （自动隐藏顺延），skipTraversal 不参与方向遍历
     return Focus(
@@ -5596,11 +5664,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
               const SizedBox(height: 8),
               // 字幕/音轨/倍速选择器已移至右侧玻璃浮层（SelectorSidePanel）
-              Row(
-                children: [
-                  // 传输控制组：上一集 / 播放暂停 / 下一集，固定在进度条左数显
-                  // 下方。无剧集导航（电影/单集）时仍保留上一集/下一集占位宽度，
-                  // 保证播放/暂停按钮位置与剧集播放时完全一致（不漂移）。
+              // 手机版：传输组居中、右组贴右；TV/桌面：传输组置左、右组贴右。
+              PlayerBottomRow(
+                centered: phoneControls,
+                transport: [
+                  // 传输控制组：上一集 / 播放暂停 / 下一集。无剧集导航（电影/
+                  // 单集）时仍保留上一集/下一集占位宽度，保证播放/暂停按钮
+                  // 位置与剧集播放时完全一致（不漂移）。
                   if (_canControlPlayback) ...[
                     if (_hasEpisodeList && _totalEpisodeCount > 1)
                       TvFocusable(
@@ -5655,17 +5725,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       const SizedBox(width: 28),
                     const SizedBox(width: 8),
                   ],
+                ],
 
-                  // 音量/亮度滑杆（仅 Windows，替代已取消的垂直手势）
+                // 音量/亮度滑杆（仅 Windows，替代已取消的垂直手势）
+                leading: [
                   if (PlayerPlatform.volumeBrightnessSliders) ...[
                     const SizedBox(width: 16),
                     _buildVolumeSlider(),
                     const SizedBox(width: 16),
                     _buildBrightnessSlider(),
                   ],
+                ],
 
-                  const Spacer(),
-
+                trailing: [
                   // 弹幕开关（右组头；房间联播也显示——弹幕本地渲染）
                   _buildControlButton(
                     icon: _danmakuOn ? Icons.comment : Icons.comments_disabled,
@@ -5675,7 +5747,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   const SizedBox(width: 20),
 
                   // 显示调节（TV：从顶栏移入底栏，位于弹幕与字幕之间）
-                  if (PlayerScreen.showBottomDisplayAdjustButton(tvMode: tvMode)) ...[
+                  if (PlayerScreen.showBottomDisplayAdjustButton(
+                      tvMode: tvMode)) ...[
                     _buildControlButton(
                       icon: Icons.tune,
                       focusNode: _subtitleStyleButtonFocusNode,
@@ -5725,22 +5798,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         : null,
                   ),
 
-                  // 倍速（仅本地单人模式；房间联播由房主节奏接管）
-                  if (widget.roomCode == null) ...[
+                  // 倍速（TV/桌面本地单人；手机版已移至顶栏网速右侧）
+                  if (PlayerScreen.showBottomSpeedButton(
+                    tvMode: tvMode,
+                    mobilePlatform: mobilePlatform,
+                    isRoom: widget.roomCode != null,
+                  )) ...[
                     const SizedBox(width: 20),
                     TvFocusable(
                       focusNode: _speedButtonFocusNode,
-                      onTap: () {
-                        setState(() {
-                          _showSpeedMenu = !_showSpeedMenu;
-                          _showSubtitleMenu = false;
-                          _showAudioMenu = false;
-                          _showSubtitleStyleMenu = false;
-                        });
-                        if (_showSpeedMenu) {
-                          _openSelectorPanel(_speedButtonFocusNode);
-                        }
-                      },
+                      onTap: _toggleSpeedMenu,
                       child: Padding(
                         padding: const EdgeInsets.all(4),
                         child: Row(
@@ -5771,19 +5838,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     ),
                   ],
 
-                  // 横竖屏（移动端；TV 全程横屏无需旋转控制）
-                  if (PlayerScreen.showRotateButton(
-                    tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
-                    mobilePlatform: Platform.isAndroid || Platform.isIOS,
-                  )) ...[
-                    const SizedBox(width: 20),
-                    _buildControlButton(
-                      icon: PlayerScreen.rotateButtonIcon,
-                      onTap: _toggleOrientation,
-                    ),
-                  ],
-
-                  // 画面比例已移至顶栏（解码控件右侧，TV 不显示）
+                  // 横竖屏已移至顶栏（画面比例右侧，仅手机）
 
                   // 窗口全屏（桌面三端）
                   if (PlayerPlatform.windowFullscreenButton) ...[

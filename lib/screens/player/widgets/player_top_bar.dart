@@ -27,6 +27,14 @@ class PlayerTopBar extends StatelessWidget {
     this.subtitleStyleMenuOpen = false,
     this.subtitleStyleFocusNode,
     this.onToggleSubtitleStyle,
+    this.showSpeedButton = false,
+    this.speedLabel = '1.0x',
+    this.speedMenuOpen = false,
+    this.speedButtonFocusNode,
+    this.onToggleSpeed,
+    this.showRotateButton = false,
+    this.rotateButtonIcon = Icons.screen_rotation_alt,
+    this.onRotate,
   });
 
   /// 左上角影视信息（电影名 / `剧名 – S01E02`）；空串不渲染。
@@ -65,6 +73,24 @@ class PlayerTopBar extends StatelessWidget {
   final FocusNode? subtitleStyleFocusNode;
 
   final VoidCallback? onToggleSubtitleStyle;
+
+  /// 倍速按钮（仅手机本地单人；紧接网速右侧）。显示当前倍速标签，
+  /// 点击开关右侧选择器面板；显隐与文字由外部状态决定。
+  final bool showSpeedButton;
+  final String speedLabel;
+
+  /// 倍速面板展开态（描边高亮）。
+  final bool speedMenuOpen;
+
+  /// 倍速按钮焦点（面板打开来源，关闭时归还）。
+  final FocusNode? speedButtonFocusNode;
+
+  final VoidCallback? onToggleSpeed;
+
+  /// 手动转屏按钮（仅手机；紧接画面比例右侧）。TV 全程横屏不显示。
+  final bool showRotateButton;
+  final IconData rotateButtonIcon;
+  final VoidCallback? onRotate;
 
   /// 解码方块装饰：
   /// - 玻璃开：白 22%→10% 渐变 + 白 24% 细描边；展开态换 accent 1.5px
@@ -157,9 +183,45 @@ class PlayerTopBar extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
+          // 倍速按钮（网速右侧，仅手机本地单人）：开关右侧选择器面板
+          if (showSpeedButton) ...[
+            TvFocusable(
+              key: const ValueKey('playerTopSpeedButton'),
+              focusNode: speedButtonFocusNode,
+              radius: 10,
+              onTap: onToggleSpeed,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.speed,
+                      color: speedMenuOpen
+                          ? const Color(0xFF6366F1)
+                          : Colors.white,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      speedLabel,
+                      style: TextStyle(
+                        color: speedMenuOpen
+                            ? const Color(0xFF6366F1)
+                            : Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           // 字幕样式按钮（网速与解码之间）：右侧选择器面板调大小/位置/延迟
           if (showSubtitleStyleButton) ...[
-            if (networkSpeedText == null) const SizedBox(width: 8),
+            if (networkSpeedText == null && !showSpeedButton)
+              const SizedBox(width: 8),
             TvFocusable(
               key: const ValueKey('playerSubtitleStyleButton'),
               focusNode: subtitleStyleFocusNode,
@@ -204,6 +266,22 @@ class PlayerTopBar extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(6),
                   child: Icon(videoFitIcon, color: Colors.white, size: 22),
+                ),
+              ),
+            ),
+          ],
+          // 手动转屏按钮（画面比例右侧；仅手机，TV 全程横屏不显示）
+          if (showRotateButton) ...[
+            const SizedBox(width: 8),
+            TvFocusable(
+              key: const ValueKey('playerTopRotateButton'),
+              radius: 12,
+              onTap: onRotate,
+              child: Tooltip(
+                message: '旋转屏幕',
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(rotateButtonIcon, color: Colors.white, size: 22),
                 ),
               ),
             ),

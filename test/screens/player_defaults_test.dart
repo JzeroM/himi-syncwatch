@@ -221,6 +221,53 @@ void main() {
       );
     });
 
+    test('倍速键位置：手机本地单人顶栏；TV/桌面本地单人底栏；房间都不显示', () {
+      // 手机本地单人：顶栏显示、底栏隐藏
+      expect(
+        PlayerScreen.showTopSpeedButton(
+            tvMode: false, mobilePlatform: true, isRoom: false),
+        isTrue,
+      );
+      expect(
+        PlayerScreen.showBottomSpeedButton(
+            tvMode: false, mobilePlatform: true, isRoom: false),
+        isFalse,
+      );
+      // TV 本地单人：底栏显示、顶栏隐藏
+      expect(
+        PlayerScreen.showTopSpeedButton(
+            tvMode: true, mobilePlatform: true, isRoom: false),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.showBottomSpeedButton(
+            tvMode: true, mobilePlatform: true, isRoom: false),
+        isTrue,
+      );
+      // 桌面本地单人：底栏显示、顶栏隐藏
+      expect(
+        PlayerScreen.showTopSpeedButton(
+            tvMode: false, mobilePlatform: false, isRoom: false),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.showBottomSpeedButton(
+            tvMode: false, mobilePlatform: false, isRoom: false),
+        isTrue,
+      );
+      // 房间联播：房主节奏接管，顶/底栏都不显示
+      expect(
+        PlayerScreen.showTopSpeedButton(
+            tvMode: false, mobilePlatform: true, isRoom: true),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.showBottomSpeedButton(
+            tvMode: false, mobilePlatform: true, isRoom: true),
+        isFalse,
+      );
+    });
+
     test('解码按钮：非 TV 显示，TV 隐藏（解码模式仅走设置页）', () {
       expect(PlayerScreen.showDecodeButton(tvMode: false), isTrue);
       expect(PlayerScreen.showDecodeButton(tvMode: true), isFalse);

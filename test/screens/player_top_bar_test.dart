@@ -19,6 +19,13 @@ PlayerTopBar _bar({
   bool showSubtitleStyleButton = true,
   bool subtitleStyleMenuOpen = false,
   VoidCallback? onToggleSubtitleStyle,
+  bool showSpeedButton = false,
+  String speedLabel = '1.0x',
+  bool speedMenuOpen = false,
+  FocusNode? speedButtonFocusNode,
+  VoidCallback? onToggleSpeed,
+  bool showRotateButton = false,
+  VoidCallback? onRotate,
 }) =>
     PlayerTopBar(
       title: title,
@@ -37,6 +44,13 @@ PlayerTopBar _bar({
       showSubtitleStyleButton: showSubtitleStyleButton,
       subtitleStyleMenuOpen: subtitleStyleMenuOpen,
       onToggleSubtitleStyle: onToggleSubtitleStyle,
+      showSpeedButton: showSpeedButton,
+      speedLabel: speedLabel,
+      speedMenuOpen: speedMenuOpen,
+      speedButtonFocusNode: speedButtonFocusNode,
+      onToggleSpeed: onToggleSpeed,
+      showRotateButton: showRotateButton,
+      onRotate: onRotate,
     );
 
 Widget _host(Widget child, {AppSettings settings = const AppSettings()}) {
@@ -239,6 +253,101 @@ void main() {
       final open = decorationOf(tester);
       expect(open.border!.top.color, const Color(0xFF6366F1));
       expect(open.boxShadow, isNotNull, reason: '展开态 accent 外发光');
+    });
+  });
+
+  group('倍速按钮（网速右侧）', () {
+    testWidgets('渲染于网速右侧、字幕样式左侧，显示当前倍速标签', (tester) async {
+      await tester.pumpWidget(_host(_bar(
+        networkSpeedText: '4.89 MB/s',
+        showSpeedButton: true,
+        speedLabel: '1.5x',
+        showDecodeButton: true,
+      )));
+
+      final speed = find.byKey(const ValueKey('playerTopSpeedButton'));
+      expect(speed, findsOneWidget);
+      expect(find.text('1.5x'), findsOneWidget);
+
+      final netX = tester
+          .getTopLeft(find.byKey(const ValueKey('playerNetworkSpeed')))
+          .dx;
+      final speedX = tester.getTopLeft(speed).dx;
+      final styleX = tester
+          .getTopLeft(find.byKey(const ValueKey('playerSubtitleStyleButton')))
+          .dx;
+      expect(netX, lessThan(speedX), reason: '倍速在网速右侧');
+      expect(speedX, lessThan(styleX), reason: '倍速在字幕样式左侧');
+    });
+
+    testWidgets('按 showSpeedButton 显隐；点击触发回调', (tester) async {
+      var toggled = false;
+      await tester.pumpWidget(_host(_bar(showSpeedButton: false)));
+      expect(
+        find.byKey(const ValueKey('playerTopSpeedButton')),
+        findsNothing,
+      );
+
+      await tester.pumpWidget(_host(_bar(
+        showSpeedButton: true,
+        onToggleSpeed: () => toggled = true,
+      )));
+      await tester.tap(find.byKey(const ValueKey('playerTopSpeedButton')));
+      await tester.pumpAndSettle();
+      expect(toggled, isTrue);
+    });
+
+    testWidgets('展开态图标与文字高亮为 accent', (tester) async {
+      await tester.pumpWidget(_host(_bar(
+        showSpeedButton: true,
+        speedLabel: '2.0x',
+        speedMenuOpen: false,
+      )));
+      final closedIcon = tester.widget<Icon>(find.byIcon(Icons.speed));
+      expect(closedIcon.color, Colors.white);
+
+      await tester.pumpWidget(_host(_bar(
+        showSpeedButton: true,
+        speedLabel: '2.0x',
+        speedMenuOpen: true,
+      )));
+      final openIcon = tester.widget<Icon>(find.byIcon(Icons.speed));
+      expect(openIcon.color, const Color(0xFF6366F1));
+    });
+  });
+
+  group('转屏按钮（画面比例右侧）', () {
+    testWidgets('渲染于画面比例右侧，图标与 tooltip 正确', (tester) async {
+      await tester.pumpWidget(_host(_bar(
+        showVideoFitButton: true,
+        showRotateButton: true,
+      )));
+
+      final rotate = find.byKey(const ValueKey('playerTopRotateButton'));
+      expect(rotate, findsOneWidget);
+      expect(find.byIcon(Icons.screen_rotation_alt), findsOneWidget);
+      expect(find.byTooltip('旋转屏幕'), findsOneWidget);
+
+      final fitX = tester.getTopLeft(find.byIcon(Icons.fit_screen)).dx;
+      final rotateX = tester.getTopLeft(rotate).dx;
+      expect(fitX, lessThan(rotateX), reason: '转屏在画面比例右侧');
+    });
+
+    testWidgets('按 showRotateButton 显隐；点击触发回调', (tester) async {
+      var rotated = false;
+      await tester.pumpWidget(_host(_bar(showRotateButton: false)));
+      expect(
+        find.byKey(const ValueKey('playerTopRotateButton')),
+        findsNothing,
+      );
+
+      await tester.pumpWidget(_host(_bar(
+        showRotateButton: true,
+        onRotate: () => rotated = true,
+      )));
+      await tester.tap(find.byKey(const ValueKey('playerTopRotateButton')));
+      await tester.pumpAndSettle();
+      expect(rotated, isTrue);
     });
   });
 
