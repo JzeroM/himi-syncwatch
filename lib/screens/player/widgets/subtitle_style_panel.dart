@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/style_slider_row.dart';
 
 /// 字幕样式调节面板：大小 / 位置 / 延迟三行滑杆 + 「恢复默认」。
 ///
@@ -21,6 +22,7 @@ class SubtitleStylePanel extends StatelessWidget {
     this.delayEnabled = true,
     this.glassEnabled = true,
     this.focusNode,
+    this.scrollable = true,
   });
 
   // ---- 范围与步进 ----
@@ -62,6 +64,10 @@ class SubtitleStylePanel extends StatelessWidget {
   /// TV 打开面板后精确落焦的控件：第一行（大小）滑杆。
   final FocusNode? focusNode;
 
+  /// true = 自带滚动容器（独立使用）；false = 返回 Column 段落
+  /// （组合进 `DisplayAdjustPanel` 的统一 ListView，避免嵌套滚动）。
+  final bool scrollable;
+
   static String formatScale(double v) => '${v.toStringAsFixed(2)}×';
 
   static String formatMarginY(int v) => '${v}px';
@@ -77,34 +83,13 @@ class SubtitleStylePanel extends StatelessWidget {
     required String valueText,
     required String valueKey,
     required Widget slider,
-  }) {
-    return Padding(
-      key: valueKey.isEmpty ? null : ValueKey('${valueKey}Row'),
-      // 行间上下各 10px → 相邻行净距 +20px，方便拖动操作
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 44,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 13, color: Colors.white70),
-            ),
-          ),
-          Expanded(child: slider),
-          SizedBox(
-            width: 48,
-            child: Text(
-              valueText,
-              key: ValueKey(valueKey),
-              textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  }) =>
+      styleSliderRow(
+        label: label,
+        valueText: valueText,
+        valueKey: valueKey,
+        slider: slider,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -113,76 +98,85 @@ class SubtitleStylePanel extends StatelessWidget {
       overlayRadius: 16,
       glassEnabled: glassEnabled,
     );
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: [
-        _row(
-          label: '大小',
-          valueText: formatScale(scale),
-          valueKey: 'subtitleStyleScaleValue',
-          slider: SliderTheme(
-            data: theme,
-            child: Slider(
-              key: const ValueKey('subtitleStyleScaleSlider'),
-              min: minScale,
-              max: maxScale,
-              divisions: ((maxScale - minScale) / scaleStep).round(),
-              value: scale.clamp(minScale, maxScale),
-              focusNode: focusNode,
-              onChanged: (v) =>
-                  onScaleChanged(double.parse(v.toStringAsFixed(2))),
-            ),
+    final children = <Widget>[
+      _row(
+        label: '大小',
+        valueText: formatScale(scale),
+        valueKey: 'subtitleStyleScaleValue',
+        slider: SliderTheme(
+          data: theme,
+          child: Slider(
+            key: const ValueKey('subtitleStyleScaleSlider'),
+            min: minScale,
+            max: maxScale,
+            divisions: ((maxScale - minScale) / scaleStep).round(),
+            value: scale.clamp(minScale, maxScale),
+            focusNode: focusNode,
+            onChanged: (v) =>
+                onScaleChanged(double.parse(v.toStringAsFixed(2))),
           ),
         ),
-        _row(
-          label: '位置',
-          valueText: formatMarginY(marginY),
-          valueKey: 'subtitleStyleMarginValue',
-          slider: SliderTheme(
-            data: theme,
-            child: Slider(
-              key: const ValueKey('subtitleStyleMarginSlider'),
-              min: minMarginY.toDouble(),
-              max: maxMarginY.toDouble(),
-              divisions: (maxMarginY - minMarginY) ~/ marginStep,
-              value: marginY.clamp(minMarginY, maxMarginY).toDouble(),
-              onChanged: (v) => onMarginYChanged(v.round()),
-            ),
+      ),
+      _row(
+        label: '位置',
+        valueText: formatMarginY(marginY),
+        valueKey: 'subtitleStyleMarginValue',
+        slider: SliderTheme(
+          data: theme,
+          child: Slider(
+            key: const ValueKey('subtitleStyleMarginSlider'),
+            min: minMarginY.toDouble(),
+            max: maxMarginY.toDouble(),
+            divisions: (maxMarginY - minMarginY) ~/ marginStep,
+            value: marginY.clamp(minMarginY, maxMarginY).toDouble(),
+            onChanged: (v) => onMarginYChanged(v.round()),
           ),
         ),
-        _row(
-          label: '延迟',
-          valueText: formatDelay(delayMs),
-          valueKey: 'subtitleStyleDelayValue',
-          slider: SliderTheme(
-            data: theme,
-            child: Slider(
-              key: const ValueKey('subtitleStyleDelaySlider'),
-              min: minDelayMs.toDouble(),
-              max: maxDelayMs.toDouble(),
-              divisions: (maxDelayMs - minDelayMs) ~/ delayStepMs,
-              value: delayMs.clamp(minDelayMs, maxDelayMs).toDouble(),
-              onChanged: delayEnabled ? (v) => onDelayChanged(v.round()) : null,
-            ),
+      ),
+      _row(
+        label: '延迟',
+        valueText: formatDelay(delayMs),
+        valueKey: 'subtitleStyleDelayValue',
+        slider: SliderTheme(
+          data: theme,
+          child: Slider(
+            key: const ValueKey('subtitleStyleDelaySlider'),
+            min: minDelayMs.toDouble(),
+            max: maxDelayMs.toDouble(),
+            divisions: (maxDelayMs - minDelayMs) ~/ delayStepMs,
+            value: delayMs.clamp(minDelayMs, maxDelayMs).toDouble(),
+            onChanged: delayEnabled ? (v) => onDelayChanged(v.round()) : null,
           ),
         ),
-        if (!delayEnabled)
-          const Padding(
-            padding: EdgeInsets.only(left: 60, top: 4),
-            child: Text(
-              '当前无激活字幕轨，延迟不可调',
-              style: TextStyle(fontSize: 11, color: Colors.white38),
-            ),
+      ),
+      if (!delayEnabled)
+        const Padding(
+          padding: EdgeInsets.only(left: 60, top: 4),
+          child: Text(
+            '当前无激活字幕轨，延迟不可调',
+            style: TextStyle(fontSize: 11, color: Colors.white38),
           ),
-        const Divider(color: Colors.white24, height: 1),
-        SideOptionRow(
-          label: '恢复默认',
-          selected: scale == defaultScale &&
-              marginY == defaultMarginY &&
-              delayMs == defaultDelayMs,
-          onTap: onReset,
         ),
-      ],
+      const Divider(color: Colors.white24, height: 1),
+      SideOptionRow(
+        label: '恢复默认',
+        selected: scale == defaultScale &&
+            marginY == defaultMarginY &&
+            delayMs == defaultDelayMs,
+        onTap: onReset,
+      ),
+    ];
+    if (scrollable) {
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: children,
+      );
+    }
+    // 组合面板：不带滚动与内边距（外层统一容器负责）
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
     );
   }
 }

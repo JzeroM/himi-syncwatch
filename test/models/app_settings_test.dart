@@ -704,5 +704,91 @@ void main() {
         reason: '外部写成 double 也应归一',
       );
     });
+
+    test('弹幕字段默认值（默认开 / 行数 4 / 上限 500 / 倍率 1.0）', () {
+      const s = AppSettings();
+      expect(s.danmakuDefaultOn, isTrue);
+      expect(s.danmakuApiUrl, '');
+      expect(s.danmakuScrollRows, 4);
+      expect(s.danmakuTopRows, 4);
+      expect(s.danmakuBottomRows, 4);
+      expect(s.danmakuBlockTop, isFalse);
+      expect(s.danmakuBlockBottom, isFalse);
+      expect(s.danmakuBlockWords, '');
+      expect(s.danmakuLimitCount, isFalse);
+      expect(s.danmakuMaxCount, 500);
+      expect(s.danmakuSpeed, 1.0);
+      expect(s.danmakuFontSize, 1.0);
+      expect(s.danmakuOpacity, 1.0);
+    });
+
+    test('旧数据缺弹幕字段回退默认', () {
+      final s = AppSettings.fromJson(const {});
+      expect(s.danmakuDefaultOn, isTrue);
+      expect(s.danmakuApiUrl, '');
+      expect(s.danmakuScrollRows, 4);
+      expect(s.danmakuOpacity, 1.0);
+    });
+
+    test('弹幕字段 toJson/fromJson 往返', () {
+      const custom = AppSettings(
+        danmakuDefaultOn: false,
+        danmakuApiUrl: 'http://10.0.0.2:9321/TOKEN',
+        danmakuScrollRows: 6,
+        danmakuTopRows: 2,
+        danmakuBottomRows: 3,
+        danmakuBlockTop: true,
+        danmakuBlockBottom: true,
+        danmakuBlockWords: '广告,刷屏',
+        danmakuLimitCount: true,
+        danmakuMaxCount: 800,
+        danmakuSpeed: 1.5,
+        danmakuFontSize: 0.8,
+        danmakuOpacity: 0.6,
+      );
+      final back = AppSettings.fromJson(custom.toJson());
+      expect(back.danmakuDefaultOn, isFalse);
+      expect(back.danmakuApiUrl, 'http://10.0.0.2:9321/TOKEN');
+      expect(back.danmakuScrollRows, 6);
+      expect(back.danmakuTopRows, 2);
+      expect(back.danmakuBottomRows, 3);
+      expect(back.danmakuBlockTop, isTrue);
+      expect(back.danmakuBlockBottom, isTrue);
+      expect(back.danmakuBlockWords, '广告,刷屏');
+      expect(back.danmakuLimitCount, isTrue);
+      expect(back.danmakuMaxCount, 800);
+      expect(back.danmakuSpeed, 1.5);
+      expect(back.danmakuFontSize, 0.8);
+      expect(back.danmakuOpacity, 0.6);
+    });
+
+    test('copyWith 透传弹幕字段；未指定保留原值', () {
+      const base = AppSettings(danmakuApiUrl: 'http://a.b', danmakuSpeed: 1.2);
+      final changed = base.copyWith(danmakuScrollRows: 8);
+      expect(changed.danmakuScrollRows, 8);
+      expect(changed.danmakuApiUrl, 'http://a.b');
+      expect(changed.danmakuSpeed, 1.2);
+      // update() 传空串可清空地址（'' 非 null 不回退）
+      expect(base.copyWith(danmakuApiUrl: '').danmakuApiUrl, '');
+    });
+
+    test('fromJson 数值按范围钳制（行数/速度/透明度/上限）', () {
+      final s = AppSettings.fromJson(const {
+        'danmakuScrollRows': 99,
+        'danmakuTopRows': 0,
+        'danmakuBottomRows': 3.0,
+        'danmakuSpeed': 99.0,
+        'danmakuFontSize': 0.1,
+        'danmakuOpacity': 5,
+        'danmakuMaxCount': 10,
+      });
+      expect(s.danmakuScrollRows, AppSettings.danmakuRowsMax);
+      expect(s.danmakuTopRows, AppSettings.danmakuRowsMin);
+      expect(s.danmakuBottomRows, 3, reason: 'double 归一为 int');
+      expect(s.danmakuSpeed, AppSettings.danmakuSpeedMax);
+      expect(s.danmakuFontSize, AppSettings.danmakuFontSizeMin);
+      expect(s.danmakuOpacity, AppSettings.danmakuOpacityMax);
+      expect(s.danmakuMaxCount, AppSettings.danmakuMaxCountMin);
+    });
   });
 }

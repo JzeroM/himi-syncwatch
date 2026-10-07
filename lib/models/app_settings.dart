@@ -1,6 +1,18 @@
 import 'package:flutter/foundation.dart';
 
 class AppSettings {
+  /// 存档数值归一：缺失/非法回退 [fallback]，越界钳到 [min]/[max]。
+  static int _clampInt(Object? raw, int fallback, int min, int max) {
+    final value = raw is num ? raw.toInt() : fallback;
+    return value < min ? min : (value > max ? max : value);
+  }
+
+  static double _clampDouble(
+      Object? raw, double fallback, double min, double max) {
+    final value = raw is num ? raw.toDouble() : fallback;
+    return value < min ? min : (value > max ? max : value);
+  }
+
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
 
@@ -75,6 +87,56 @@ class AppSettings {
   /// native crash（卡 00:00 后闪退回桌面）」。
   final bool eglFaultSeen;
 
+  // ── 弹幕（v1.1.134，自定义 danmu_api 源）──
+
+  /// 播放器弹幕默认打开（每次起播的初始开关状态）。
+  final bool danmakuDefaultOn;
+
+  /// 弹幕 API 根地址（LogVar danmu_api，可含 token 路径，如
+  /// `http://192.168.1.7:9321/TOKEN`；空 = 未配置）。
+  final String danmakuApiUrl;
+
+  /// 滚动 / 顶部 / 底部弹幕行数（[danmakuRowsMin]~[danmakuRowsMax]）。
+  final int danmakuScrollRows;
+  final int danmakuTopRows;
+  final int danmakuBottomRows;
+
+  /// 屏蔽顶部 / 底部固定弹幕。
+  final bool danmakuBlockTop;
+  final bool danmakuBlockBottom;
+
+  /// 屏蔽词（英文逗号分隔，子串匹配）。
+  final String danmakuBlockWords;
+
+  /// 限制弹幕数量开关 + 上限（等间隔采样保留）。
+  final bool danmakuLimitCount;
+  final int danmakuMaxCount;
+
+  /// 弹幕速度倍率（穿屏时长 = 8s ÷ speed）。
+  final double danmakuSpeed;
+
+  /// 弹幕字号倍率（基准 25px）。
+  final double danmakuFontSize;
+
+  /// 弹幕整体透明度。
+  final double danmakuOpacity;
+
+  /// 弹幕行数范围（滑杆/存档钳制共用）。
+  static const int danmakuRowsMin = 1;
+  static const int danmakuRowsMax = 10;
+
+  /// 速度 / 字号 / 透明度范围。
+  static const double danmakuSpeedMin = 0.5;
+  static const double danmakuSpeedMax = 2.0;
+  static const double danmakuFontSizeMin = 0.5;
+  static const double danmakuFontSizeMax = 2.0;
+  static const double danmakuOpacityMin = 0.1;
+  static const double danmakuOpacityMax = 1.0;
+
+  /// 数量上限范围。
+  static const int danmakuMaxCountMin = 100;
+  static const int danmakuMaxCountMax = 2000;
+
   /// 生效的音频后端：AAudio/OpenSL/AudioTrack 均为 Android 专属后端
   /// （fvp 文档明确 "on android"），iOS/macOS/Linux/Windows 上设置会
   /// 导致 mdk 找不到音频渲染器（iOS 无声根因），故仅 Android 放行
@@ -114,6 +176,19 @@ class AppSettings {
     this.videoOutputUserSet = false,
     this.renderCompatMode = false,
     this.eglFaultSeen = false,
+    this.danmakuDefaultOn = true,
+    this.danmakuApiUrl = '',
+    this.danmakuScrollRows = 4,
+    this.danmakuTopRows = 4,
+    this.danmakuBottomRows = 4,
+    this.danmakuBlockTop = false,
+    this.danmakuBlockBottom = false,
+    this.danmakuBlockWords = '',
+    this.danmakuLimitCount = false,
+    this.danmakuMaxCount = 500,
+    this.danmakuSpeed = 1.0,
+    this.danmakuFontSize = 1.0,
+    this.danmakuOpacity = 1.0,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -134,6 +209,19 @@ class AppSettings {
     bool? videoOutputUserSet,
     bool? renderCompatMode,
     bool? eglFaultSeen,
+    bool? danmakuDefaultOn,
+    String? danmakuApiUrl,
+    int? danmakuScrollRows,
+    int? danmakuTopRows,
+    int? danmakuBottomRows,
+    bool? danmakuBlockTop,
+    bool? danmakuBlockBottom,
+    String? danmakuBlockWords,
+    bool? danmakuLimitCount,
+    int? danmakuMaxCount,
+    double? danmakuSpeed,
+    double? danmakuFontSize,
+    double? danmakuOpacity,
     Object? themeColor = unsetValue,
     Object? categoryColumns = unsetValue,
     Object? glassBlur = unsetValue,
@@ -160,6 +248,19 @@ class AppSettings {
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
+      danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
+      danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
+      danmakuScrollRows: danmakuScrollRows ?? this.danmakuScrollRows,
+      danmakuTopRows: danmakuTopRows ?? this.danmakuTopRows,
+      danmakuBottomRows: danmakuBottomRows ?? this.danmakuBottomRows,
+      danmakuBlockTop: danmakuBlockTop ?? this.danmakuBlockTop,
+      danmakuBlockBottom: danmakuBlockBottom ?? this.danmakuBlockBottom,
+      danmakuBlockWords: danmakuBlockWords ?? this.danmakuBlockWords,
+      danmakuLimitCount: danmakuLimitCount ?? this.danmakuLimitCount,
+      danmakuMaxCount: danmakuMaxCount ?? this.danmakuMaxCount,
+      danmakuSpeed: danmakuSpeed ?? this.danmakuSpeed,
+      danmakuFontSize: danmakuFontSize ?? this.danmakuFontSize,
+      danmakuOpacity: danmakuOpacity ?? this.danmakuOpacity,
       themeColor: identical(themeColor, unsetValue)
           ? this.themeColor
           : themeColor as int?,
@@ -206,6 +307,19 @@ class AppSettings {
         'videoOutputUserSet': videoOutputUserSet,
         'renderCompatMode': renderCompatMode,
         'eglFaultSeen': eglFaultSeen,
+        'danmakuDefaultOn': danmakuDefaultOn,
+        'danmakuApiUrl': danmakuApiUrl,
+        'danmakuScrollRows': danmakuScrollRows,
+        'danmakuTopRows': danmakuTopRows,
+        'danmakuBottomRows': danmakuBottomRows,
+        'danmakuBlockTop': danmakuBlockTop,
+        'danmakuBlockBottom': danmakuBlockBottom,
+        'danmakuBlockWords': danmakuBlockWords,
+        'danmakuLimitCount': danmakuLimitCount,
+        'danmakuMaxCount': danmakuMaxCount,
+        'danmakuSpeed': danmakuSpeed,
+        'danmakuFontSize': danmakuFontSize,
+        'danmakuOpacity': danmakuOpacity,
         if (themeColor != null) 'themeColor': themeColor,
         if (categoryColumns != null) 'categoryColumns': categoryColumns,
         if (glassBlur != null) 'glassBlur': glassBlur,
@@ -270,6 +384,43 @@ class AppSettings {
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
+      // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──
+      danmakuDefaultOn: json['danmakuDefaultOn'] as bool? ?? true,
+      danmakuApiUrl: json['danmakuApiUrl'] as String? ?? '',
+      danmakuScrollRows: _clampInt(
+          json['danmakuScrollRows'], 4, danmakuRowsMin, danmakuRowsMax),
+      danmakuTopRows:
+          _clampInt(json['danmakuTopRows'], 4, danmakuRowsMin, danmakuRowsMax),
+      danmakuBottomRows: _clampInt(
+          json['danmakuBottomRows'], 4, danmakuRowsMin, danmakuRowsMax),
+      danmakuBlockTop: json['danmakuBlockTop'] as bool? ?? false,
+      danmakuBlockBottom: json['danmakuBlockBottom'] as bool? ?? false,
+      danmakuBlockWords: json['danmakuBlockWords'] as String? ?? '',
+      danmakuLimitCount: json['danmakuLimitCount'] as bool? ?? false,
+      danmakuMaxCount: _clampInt(
+        json['danmakuMaxCount'],
+        500,
+        danmakuMaxCountMin,
+        danmakuMaxCountMax,
+      ),
+      danmakuSpeed: _clampDouble(
+        json['danmakuSpeed'],
+        1.0,
+        danmakuSpeedMin,
+        danmakuSpeedMax,
+      ),
+      danmakuFontSize: _clampDouble(
+        json['danmakuFontSize'],
+        1.0,
+        danmakuFontSizeMin,
+        danmakuFontSizeMax,
+      ),
+      danmakuOpacity: _clampDouble(
+        json['danmakuOpacity'],
+        1.0,
+        danmakuOpacityMin,
+        danmakuOpacityMax,
+      ),
       // 玻璃可调参数：缺失/null = 走包默认；存盘可能为 int → num 归一
       glassBlur: (json['glassBlur'] as num?)?.toDouble(),
       glassThickness: (json['glassThickness'] as num?)?.toDouble(),

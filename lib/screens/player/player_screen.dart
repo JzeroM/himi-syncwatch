@@ -36,6 +36,11 @@ import 'package:himi_syncwatch/services/codec_mime_map.dart';
 import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/services/network_speed_meter.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_cache.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_comment.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_matcher.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_timeline.dart';
+import 'package:himi_syncwatch/services/danmaku/dandanplay_client.dart';
 import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -47,6 +52,8 @@ import 'package:himi_syncwatch/screens/player/player_orientation.dart';
 import 'package:himi_syncwatch/screens/player/player_platform.dart';
 import 'package:himi_syncwatch/screens/player/track_initial_selection.dart';
 import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/display_adjust_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/danmaku_overlay.dart';
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
@@ -131,6 +138,23 @@ class PlayerScreen extends ConsumerStatefulWidget {
   @visibleForTesting
   static double selectorPanelWidth(double screenWidth) =>
       (screenWidth * 0.42).clamp(260.0, 320.0);
+
+  /// 设置 → 弹幕时间轴配置（纯映射，供测试）。
+  @visibleForTesting
+  static DanmakuTimelineConfig danmakuTimelineConfig(AppSettings s) =>
+      DanmakuTimelineConfig(
+        scrollRows: s.danmakuScrollRows,
+        topRows: s.danmakuTopRows,
+        bottomRows: s.danmakuBottomRows,
+        blockTop: s.danmakuBlockTop,
+        blockBottom: s.danmakuBlockBottom,
+        blockWords: s.danmakuBlockWords
+            .split(',')
+            .map((w) => w.trim())
+            .where((w) => w.isNotEmpty)
+            .toList(),
+        maxCount: s.danmakuLimitCount ? s.danmakuMaxCount : null,
+      );
 
   /// Emby 播放进度上报间隔（3 秒）。
   static const Duration playbackReportInterval = Duration(seconds: 3);
@@ -498,6 +522,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showDecodeModeMenu = false;
   bool _showSpeedMenu = false;
   bool _showSubtitleStyleMenu = false;
+
+  // ── 弹幕（v1.1.134，自定义 danmu_api 源）──
+
+  /// 弹幕开关：initState 取设置默认；API 地址未配置时强制关
+  ///（配置后下次起播自动生效，点击时给出配置提示）。
+  bool _danmakuOn = false;
+
+  /// match/comment 进行中（防重入；进行中再点开关只翻转显示态）。
+  bool _danmakuLoading = false;
+
+  /// 加载代次：换集时自增，丢弃仍在飞行的上一集结果。
+  int _danmakuLoadSeq = 0;
+
+  /// 已加载弹幕（关弹幕后保留，重开免请求；换集清空重载）。
+  List<DanmakuComment> _danmakuComments = const [];
+
+  /// 底栏「弹幕」开关焦点（TV 跨组导航锚点：右组头）。
+  final FocusNode _danmakuButtonFocusNode = FocusNode();
+
+  /// itemId → episodeId 进程内缓存（跨播放会话复用）。
+  static final DanmakuCache<int> _danmakuEpisodeCache = DanmakuCache();
+
+  /// episodeId → 弹幕列表进程内缓存。
+  static final DanmakuCache<List<DanmakuComment>> _danmakuCommentsCache =
+      DanmakuCache();
+
+  /// 当前弹幕客户端（API 地址变化时重建）。
+  DandanplayClient? _danmakuClient;
+  String? _danmakuClientKey;
 
   /// 字幕样式（大小/位置/延迟）：本播放会话内存态；按内容 id 落盘
   ///（[SubtitleStyleStore]），退出后重进同内容恢复。
@@ -1120,6 +1173,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 初始化时音轨编码未知，先按开关落一次；选轨/诊断再按编码刷新
     final settings = ref.read(settingsProvider);
     _speed = settings.playbackSpeed;
+    // 弹幕：默认开关跟随设置；未配置 API 地址时强制关（静默，
+    // 不在起播时打扰；用户点击弹幕钮才提示去配置）
+    _danmakuOn = settings.danmakuDefaultOn &&
+        DandanplayClient.normalizeBaseUrl(settings.danmakuApiUrl) != null;
+    if (_danmakuOn) {
+      _loadDanmaku();
+    }
     _applyAudioFilterPolicy();
     // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度。
     // AAudio/OpenSL/AudioTrack 为 Android 专属（其余平台自动归一为 auto），
@@ -3608,6 +3668,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     _rebuildGroups();
+
+    // 换集：清空上一集弹幕；开关保持则按新集重新匹配
+    //（旧集在飞的请求由 _danmakuLoadSeq 作废）
+    if (mounted && _danmakuOn) {
+      setState(() {
+        _danmakuComments = const [];
+        _danmakuLoading = false;
+      });
+      _loadDanmaku();
+    }
   }
 
   // 删除剧集（sendRtm=true 时为房主操作，false 时为观众端本地删除）
@@ -3937,6 +4007,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _controlsRootFocusNode.dispose();
     _topBarRootFocusNode.dispose();
     _nextEpisodeFocusNode.dispose();
+    _danmakuButtonFocusNode.dispose();
     _subtitleButtonFocusNode.dispose();
     _audioButtonFocusNode.dispose();
     _speedButtonFocusNode.dispose();
@@ -4099,10 +4170,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           from: (_hasEpisodeList && _totalEpisodeCount > 1)
               ? _nextEpisodeFocusNode
               : _playPauseFocusNode,
-          to: _subtitleButtonFocusNode,
+          to: _danmakuButtonFocusNode,
         ),
         hopLeft: (
-          from: _subtitleButtonFocusNode,
+          from: _danmakuButtonFocusNode,
           to: (_hasEpisodeList && _totalEpisodeCount > 1)
               ? _nextEpisodeFocusNode
               : _playPauseFocusNode,
@@ -4332,6 +4403,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             child: videoContent,
           ),
 
+          // 弹幕层（视频之上、控件之下；IgnorePointer 不抢手势）
+          if (_danmakuOn && _danmakuComments.isNotEmpty)
+            Positioned.fill(
+              child: Builder(
+                // 局部重建点：三滑杆调节只刷新弹幕层
+                builder: (context) {
+                  final s = ref.watch(settingsProvider);
+                  return DanmakuOverlay(
+                    comments: _danmakuComments,
+                    config: PlayerScreen.danmakuTimelineConfig(s),
+                    position: _positionNotifier,
+                    speed: s.danmakuSpeed,
+                    fontSizeScale: s.danmakuFontSize,
+                    opacity: s.danmakuOpacity,
+                  );
+                },
+              ),
+            ),
+
           // TopBar（渐变浮层；锁定中隐藏，仅保留左缘锁钮）
           if (_showControls && !_lockController.locked)
             Positioned(
@@ -4405,18 +4495,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               ? '显示调节'
                               : '倍速',
                   child: _showSubtitleStyleMenu
-                      ? SubtitleStylePanel(
-                          scale: _subtitleScale,
-                          marginY: _subtitleMarginY,
-                          delayMs: _subtitleDelayMs,
-                          delayEnabled: _activeSubtitleIndex != null,
-                          glassEnabled: _glassUiOn,
-                          onScaleChanged: _onSubtitleScaleChanged,
-                          onMarginYChanged: _onSubtitleMarginYChanged,
-                          onDelayChanged: _onSubtitleDelayChanged,
-                          onReset: _onSubtitleStyleReset,
-                          focusNode: _selectorFirstFocusNode,
-                        )
+                      ? _buildDisplayAdjustPanel()
                       : _showSubtitleMenu
                           ? SubtitleMenuPanel(
                               player: _player,
@@ -4622,6 +4701,179 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_showSubtitleStyleMenu) {
       _openSelectorPanel(_subtitleStyleButtonFocusNode);
     }
+  }
+
+  // ── 弹幕：开关 / 加载 / 配置 ──
+
+  /// 「显示调节」组合面板：字幕段 + 弹幕段（弹幕三值读写设置）。
+  Widget _buildDisplayAdjustPanel() {
+    final s = ref.watch(settingsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
+    return DisplayAdjustPanel(
+      subtitleScale: _subtitleScale,
+      subtitleMarginY: _subtitleMarginY,
+      subtitleDelayMs: _subtitleDelayMs,
+      subtitleDelayEnabled: _activeSubtitleIndex != null,
+      glassEnabled: _glassUiOn,
+      onSubtitleScaleChanged: _onSubtitleScaleChanged,
+      onSubtitleMarginChanged: _onSubtitleMarginYChanged,
+      onSubtitleDelayChanged: _onSubtitleDelayChanged,
+      onSubtitleReset: _onSubtitleStyleReset,
+      danmakuSpeed: s.danmakuSpeed,
+      danmakuFontSize: s.danmakuFontSize,
+      danmakuOpacity: s.danmakuOpacity,
+      onDanmakuSpeedChanged: (v) => notifier.update(danmakuSpeed: v),
+      onDanmakuFontSizeChanged: (v) => notifier.update(danmakuFontSize: v),
+      onDanmakuOpacityChanged: (v) => notifier.update(danmakuOpacity: v),
+      onDanmakuReset: () => notifier.update(
+        danmakuSpeed: 1.0,
+        danmakuFontSize: 1.0,
+        danmakuOpacity: 1.0,
+      ),
+      focusNode: _selectorFirstFocusNode,
+    );
+  }
+
+  /// 底栏弹幕钮：翻转开关（不占选择器面板；关掉其他已开面板）。
+  void _toggleDanmaku() {
+    _resetHideTimer();
+    setState(() {
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
+      _danmakuOn = !_danmakuOn;
+    });
+    if (_danmakuOn && _danmakuComments.isEmpty && !_danmakuLoading) {
+      _loadDanmaku();
+    }
+  }
+
+  /// 取（或按地址重建）弹幕客户端。
+  DandanplayClient _danmakuClientFor(String baseUrl) {
+    final key = DandanplayClient.normalizeBaseUrl(baseUrl) ?? '';
+    final existing = _danmakuClient;
+    if (existing != null && _danmakuClientKey == key) return existing;
+    final client = DandanplayClient(baseUrl: key);
+    _danmakuClient = client;
+    _danmakuClientKey = key;
+    return client;
+  }
+
+  /// 匹配用文件名：剧集 `剧名.SxxExx` / 电影单集名。
+  String? _danmakuMatchFileName() {
+    if (_currentEpisodeIndex < 0 || _currentEpisodeIndex >= _episodes.length) {
+      return null;
+    }
+    final ep = _episodes[_currentEpisodeIndex];
+    return DanmakuMatcher.resolve(
+      name: ep.name,
+      seriesName: ep.seriesName,
+      season: ep.season,
+      number: ep.number,
+    );
+  }
+
+  /// 匹配 → 拉弹幕 → 渲染（失败回弹开关并轻提示）。
+  /// episodeId 与弹幕列表均有进程内缓存（6h TTL，key 为单集 id，
+  /// 换集不串缓存）。
+  Future<void> _loadDanmaku() async {
+    if (_danmakuLoading) return;
+    final seq = ++_danmakuLoadSeq;
+    final client = _danmakuClientFor(
+      ref.read(settingsProvider).danmakuApiUrl,
+    );
+    if (!client.isConfigured) {
+      if (mounted) {
+        setState(() => _danmakuOn = false);
+        _danmakuSnack('请先在 设置 → 弹幕配置 填写弹幕 API 地址');
+      }
+      return;
+    }
+    setState(() {
+      _danmakuLoading = true;
+      _danmakuComments = const [];
+    });
+    try {
+      final fileName = _danmakuMatchFileName();
+      if (fileName == null) {
+        throw const DanmakuApiException(
+          DanmakuApiError.business,
+          '无法获取当前影片名称',
+        );
+      }
+      // 单集 id 作缓存 key：换集后同 itemId 也可能指向不同节目
+      final cacheKey =
+          _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
+              ? _episodes[_currentEpisodeIndex].id
+              : widget.itemId;
+      var episodeId = _danmakuEpisodeCache.get(cacheKey);
+      if (episodeId == null) {
+        final candidates = await client.match(fileName: fileName);
+        if (!mounted || seq != _danmakuLoadSeq) return;
+        if (candidates.isEmpty) {
+          throw const DanmakuApiException(
+            DanmakuApiError.business,
+            '未匹配到对应节目',
+          );
+        }
+        episodeId = candidates.first.episodeId;
+        _danmakuEpisodeCache.put(cacheKey, episodeId);
+      }
+      final episodeKey = episodeId.toString();
+      var cachedComments = _danmakuCommentsCache.get(episodeKey);
+      final List<DanmakuComment> loaded;
+      if (cachedComments == null) {
+        loaded = await client.fetchComments(episodeId);
+        if (!mounted || seq != _danmakuLoadSeq) return;
+        _danmakuCommentsCache.put(episodeKey, loaded);
+      } else {
+        loaded = cachedComments;
+      }
+      if (!mounted || seq != _danmakuLoadSeq) return;
+      setState(() {
+        _danmakuComments = loaded;
+        _danmakuLoading = false;
+      });
+      LogService().log('Danmaku', 'loaded ${loaded.length} ($fileName)');
+      if (loaded.isEmpty) _danmakuSnack('未匹配到弹幕');
+    } on DanmakuApiException catch (e) {
+      if (!mounted || seq != _danmakuLoadSeq) return;
+      setState(() {
+        _danmakuOn = false;
+        _danmakuLoading = false;
+        _danmakuComments = const [];
+      });
+      _danmakuSnack(_danmakuErrorText(e));
+      LogService().log('Danmaku', 'load failed: ${e.kind.name} ${e.message}');
+    } catch (e) {
+      if (!mounted || seq != _danmakuLoadSeq) return;
+      setState(() {
+        _danmakuOn = false;
+        _danmakuLoading = false;
+        _danmakuComments = const [];
+      });
+      _danmakuSnack('弹幕加载失败');
+      LogService().log('Danmaku', 'load failed: $e');
+    }
+  }
+
+  String _danmakuErrorText(DanmakuApiException e) => switch (e.kind) {
+        DanmakuApiError.notConfigured => '请先在 设置 → 弹幕配置 填写弹幕 API 地址',
+        DanmakuApiError.network => '弹幕服务连接失败',
+        _ => '弹幕加载失败：${e.message}',
+      };
+
+  void _danmakuSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 3),
+        ),
+      );
   }
 
   void _onLockStateChanged() {
@@ -5177,6 +5429,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ],
 
                   const Spacer(),
+
+                  // 弹幕开关（右组头；房间联播也显示——弹幕本地渲染）
+                  _buildControlButton(
+                    icon: _danmakuOn ? Icons.comment : Icons.comments_disabled,
+                    focusNode: _danmakuButtonFocusNode,
+                    onTap: _toggleDanmaku,
+                  ),
+                  const SizedBox(width: 20),
 
                   // 字幕
                   _buildControlButton(

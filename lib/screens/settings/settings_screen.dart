@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
@@ -293,6 +294,33 @@ class SettingsScreen extends ConsumerWidget {
           ),
           // 玻璃参数滑杆紧跟开关（关闭玻璃时滑杆仍在，便于重开前调好）
           const _GlassTuningSection(),
+          const Divider(height: 1),
+          // 弹幕：速度/大小/透明度在播放页显示调节面板，此处管
+          // 源地址 / 行数 / 屏蔽 / 上限
+          _tvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const DanmakuConfigScreen(),
+              ),
+            ),
+            child: ListTile(
+              key: const ValueKey('danmakuConfigEntry'),
+              leading: const Icon(Icons.comment),
+              title: const Text('弹幕配置'),
+              subtitle: const Text('弹幕 API 地址、行数、屏蔽与同屏上限'),
+              trailing: const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: Colors.white54,
+              ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const DanmakuConfigScreen(),
+                ),
+              ),
+            ),
+          ),
           const Divider(height: 1),
           _tvWrapRow(
             tvMode: settings.tvMode,
