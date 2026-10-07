@@ -207,11 +207,8 @@ void main() {
 
     testWidgets('入口行存在，点击 push 弹幕配置页', (tester) async {
       await pumpSettings(tester);
-      await tester.scrollUntilVisible(
-        find.text('弹幕配置'),
-        250,
-        scrollable: find.byType(Scrollable).first,
-      );
+      // 入口位于「播放器」子页
+      await tester.tap(find.text('播放器'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('danmakuConfigEntry')), findsOneWidget);

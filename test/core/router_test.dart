@@ -281,16 +281,22 @@ void main() {
     expect(_navOpacity(tester), 1.0);
   });
 
-  testWidgets('非首页标签滚动不隐藏导航（仅首页生效）', (tester) async {
-    await _pumpApp(tester);
+  testWidgets('非首页标签滚动到底同样隐藏导航栏', (tester) async {
+    // 用「Emby服务器」标签（列表内容足够长可滚动）验证非首页也生效
+    final serverList =
+        List.generate(20, (i) => _serverConfig('s$i', name: '服务器$i'));
+    await _pumpApp(tester, serverList: serverList);
 
-    await tester.tap(find.text('设置'));
+    await tester.tap(find.descendant(
+      of: find.byType(ShellNavBar),
+      matching: find.text('Emby服务器'),
+    ));
     await tester.pumpAndSettle();
-    expect(_shellIndex(tester), 4);
+    expect(_shellIndex(tester), 2);
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -2000));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -3000));
     await tester.pumpAndSettle();
-    expect(_navOpacity(tester), 1.0);
+    expect(_navOpacity(tester), 0.0);
   });
 
   testWidgets('长按导航拖动，松手落点切换标签', (tester) async {

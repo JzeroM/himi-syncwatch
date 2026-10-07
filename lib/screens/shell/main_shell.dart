@@ -42,8 +42,13 @@ class _MainShellState extends ConsumerState<MainShell> {
   DateTime? _backAt;
 
   bool _handleScroll(ScrollNotification notification) {
-    // 仅首页标签响应滚动显隐
-    if (widget.shell.currentIndex != 0) return false;
+    // 仅竖向滚动响应显隐（横向海报栏滚到末端不应误隐藏导航）
+    if (notification.metrics.axis != Axis.vertical) return false;
+    // 仅窄窗口底部胶囊方案使用显隐（TV/桌面无底部导航）
+    if (ref.read(settingsProvider).tvMode) return false;
+    if (MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint) {
+      return false;
+    }
     final metrics = notification.metrics;
     if (metrics.maxScrollExtent <= 0) return false;
 

@@ -5,15 +5,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
 import '../helpers/test_fakes.dart';
 
+/// 挂载设置主页；[category] 非空时自动点进对应分类子页（外观/播放器/通用/实验性）。
 Future<ProviderContainer> _pumpScreen(
   WidgetTester tester, {
   AppSettings initial = const AppSettings(),
   bool remote = false,
+  String? category,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -26,14 +29,22 @@ Future<ProviderContainer> _pumpScreen(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      // TV 壳与生产（MaterialApp.builder）同款：遥控器按键层 +
-      // directional 导航模式（Slider 上下键放行）
       child: remote ? TvRemoteShell(child: page) : page,
     ),
   );
   await tester.pumpAndSettle();
+  if (category != null) {
+    await tester.tap(find.text(category));
+    await tester.pumpAndSettle();
+  }
   return container;
 }
+
+/// 分类子页的滚动容器（设置主页 ListView 仍在树上，需精确定位子页列表）。
+Finder _subScrollable() => find.descendant(
+      of: find.byKey(const ValueKey('settingsSubPageList')),
+      matching: find.byType(Scrollable),
+    );
 
 Finder _glassSwitch(WidgetTester tester) {
   return find.descendant(
@@ -52,17 +63,40 @@ void main() {
     await tester.scrollUntilVisible(
       find.text(text),
       200,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, 120));
+    await tester.drag(_subScrollable(), const Offset(0, 120));
     await tester.pumpAndSettle();
   }
 
   Future<void> _scrollToGlass(WidgetTester tester) =>
       _scrollToText(tester, '液态玻璃');
 
-  testWidgets('设置页展示液态玻璃开关（默认开）', (tester) async {
-    final container = await _pumpScreen(tester);
+  testWidgets('设置主页展示四个分类入口', (tester) async {
+    await _pumpScreen(tester);
+    for (final label in const ['外观', '播放器', '通用', '实验性']) {
+      expect(find.text(label), findsOneWidget, reason: '$label 分类入口缺失');
+    }
+    expect(find.byKey(const ValueKey('settingsCategoryAppearance')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('settingsCategoryPlayer')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('settingsCategoryGeneral')), findsOneWidget);
+    expect(find.byKey(const ValueKey('settingsCategoryExperimental')),
+        findsOneWidget);
+  });
+
+  testWidgets('点分类入口进入对应子页', (tester) async {
+    await _pumpScreen(tester);
+    await tester.tap(find.text('外观'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppearanceSettingsScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('appearanceSettingsPage')),
+        findsOneWidget);
+  });
+
+  testWidgets('外观子页展示液态玻璃开关（默认开）', (tester) async {
+    final container = await _pumpScreen(tester, category: '外观');
     await _scrollToGlass(tester);
 
     expect(find.text('液态玻璃'), findsOneWidget);
@@ -75,7 +109,7 @@ void main() {
   });
 
   testWidgets('切换开关后 glassUi 变为 false', (tester) async {
-    final container = await _pumpScreen(tester);
+    final container = await _pumpScreen(tester, category: '外观');
     await _scrollToGlass(tester);
 
     await tester.tap(_glassSwitch(tester));
@@ -85,8 +119,8 @@ void main() {
   });
 
   testWidgets('再次切换恢复开启', (tester) async {
-    final container =
-        await _pumpScreen(tester, initial: const AppSettings(glassUi: false));
+    final container = await _pumpScreen(tester,
+        initial: const AppSettings(glassUi: false), category: '外观');
     await _scrollToGlass(tester);
 
     expect(tester.widget<Switch>(_glassSwitch(tester)).value, isFalse);
@@ -97,12 +131,12 @@ void main() {
     expect(container.read(settingsProvider).glassUi, isTrue);
   });
 
-  testWidgets('TV 模式开关默认关，切换后 tvMode 为 true', (tester) async {
-    final container = await _pumpScreen(tester);
+  testWidgets('通用子页：TV 模式开关默认关，切换后 tvMode 为 true', (tester) async {
+    final container = await _pumpScreen(tester, category: '通用');
     await tester.scrollUntilVisible(
       find.text('TV 模式'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
@@ -123,12 +157,12 @@ void main() {
     expect(container.read(settingsProvider).tvMode, isTrue);
   });
 
-  testWidgets('显示网速开关默认开，切换写入 settings', (tester) async {
-    final container = await _pumpScreen(tester);
+  testWidgets('播放器子页：显示网速开关默认开，切换写入 settings', (tester) async {
+    final container = await _pumpScreen(tester, category: '播放器');
     await tester.scrollUntilVisible(
       find.text('显示网速'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
@@ -153,7 +187,7 @@ void main() {
     expect(container.read(settingsProvider).showNetworkSpeed, isTrue);
   });
 
-  testWidgets('TV 遥控器 OK 两段式：作用域落焦首个交互项并激活', (tester) async {
+  testWidgets('TV 遥控器 OK 两段式：作用域落焦首个分类入口并激活进入', (tester) async {
     final container = await _pumpScreen(
       tester,
       initial: const AppSettings(themeColor: 0xFF86E3D6),
@@ -161,20 +195,22 @@ void main() {
     );
     expect(container.read(settingsProvider).themeColor, isNotNull);
 
-    // 第一段：焦点停在页面作用域，OK 落焦到首个交互项（主题色默认块）
+    // 第一段：焦点停在页面作用域，OK 落焦到首个分类入口（外观）
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
     expect(FocusManager.instance.primaryFocus, isNot(isA<FocusScopeNode>()));
-    expect(container.read(settingsProvider).themeColor, isNotNull);
 
-    // 第二段：焦点在默认色块上，OK 激活（清空主题色）
+    // 第二段：OK 激活进入外观子页
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(container.read(settingsProvider).themeColor, isNull);
+    expect(find.byKey(const ValueKey('appearanceSettingsPage')),
+        findsOneWidget);
+    expect(container.read(settingsProvider).themeColor, isNotNull,
+        reason: '进入子页不改主题色');
   });
 
-  testWidgets('展示主题色分节（标题+默认块+12色块+预览+三滑块）', (tester) async {
-    final container = await _pumpScreen(tester);
+  testWidgets('外观子页展示主题色分节（标题+默认块+12色块+预览+三滑块）', (tester) async {
+    final container = await _pumpScreen(tester, category: '外观');
 
     expect(find.text('主题色'), findsOneWidget);
     expect(find.byKey(const ValueKey('themeColorDefault')), findsOneWidget);
@@ -186,7 +222,6 @@ void main() {
     expect(find.byKey(const ValueKey('themeSatSlider')), findsOneWidget);
     expect(find.byKey(const ValueKey('themeValSlider')), findsOneWidget);
 
-    // 缺省：默认底色，选中默认块
     expect(container.read(settingsProvider).themeColor, isNull);
     final preview = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('themeColorPreview')),
@@ -194,19 +229,17 @@ void main() {
     final box = preview.decoration as BoxDecoration;
     final gradient = box.gradient! as LinearGradient;
     expect(gradient.colors, hasLength(3));
-    // 默认（accent null）时三段同色 = 应用底色
     expect(gradient.colors.toSet(), hasLength(1));
   });
 
   testWidgets('点击预设色块写入 themeColor', (tester) async {
-    final container = await _pumpScreen(tester);
+    final container = await _pumpScreen(tester, category: '外观');
 
     await tester.tap(find.byKey(const ValueKey('themeColorBlock_0')));
     await tester.pumpAndSettle();
 
     expect(container.read(settingsProvider).themeColor, equals(0xFF6366F1));
 
-    // 预览变为主题色三段渐变（首段为压暗后的主题色）
     final preview = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('themeColorPreview')),
     );
@@ -220,6 +253,7 @@ void main() {
     final container = await _pumpScreen(
       tester,
       initial: const AppSettings(themeColor: 0xFF22D3EE),
+      category: '外观',
     );
 
     expect(container.read(settingsProvider).themeColor, equals(0xFF22D3EE));
@@ -231,9 +265,8 @@ void main() {
   });
 
   testWidgets('拖动色相滑块写入主题色', (tester) async {
-    final container = await _pumpScreen(tester);
+    final container = await _pumpScreen(tester, category: '外观');
 
-    // 滑块初始已在视口内，直接拖动（ensureVisible 会把它顶到 AppBar 下被遮挡）
     final slider = find.byKey(const ValueKey('themeHueSlider'));
     expect(tester.getCenter(slider).dy, greaterThan(56));
     await tester.drag(slider, const Offset(80, 0));
@@ -244,58 +277,40 @@ void main() {
     expect(color, isNot(equals(0xFF6366F1)));
   });
 
-  testWidgets('音频后端默认为自动', (tester) async {
-    final container = await _pumpScreen(tester);
-    // 分类页列数分节插入前部后，音频后端行已超出初始视口（视口外不 mount）
+  testWidgets('播放器子页：音频后端默认为自动', (tester) async {
+    final container = await _pumpScreen(tester, category: '播放器');
     await tester.scrollUntilVisible(
       find.text('音频后端'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('音频后端'), findsOneWidget);
-    expect(
-      find.text('使用系统默认音频后端（默认）'),
-      findsOneWidget,
-    );
+    expect(find.text('使用系统默认音频后端（默认）'), findsOneWidget);
     expect(container.read(settingsProvider).audioRenderer, 'auto');
   });
 
-  testWidgets('Windows 平台隐藏音频后端设置项', (tester) async {
+  testWidgets('Windows 平台播放器子页隐藏音频后端设置项', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
-      await _pumpScreen(tester);
+      await _pumpScreen(tester, category: '播放器');
 
       expect(find.text('音频后端'), findsNothing);
       // 相邻设置项仍正常展示（分隔线未错乱）
       expect(find.text('立体声降混'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('播放调试面板'),
-        250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('播放调试面板'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
   });
 
-  testWidgets('iOS 平台隐藏音频后端设置项（Android 专属后端）', (tester) async {
+  testWidgets('iOS 平台播放器子页隐藏音频后端设置项（Android 专属后端）', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     try {
-      await _pumpScreen(tester);
+      await _pumpScreen(tester, category: '播放器');
 
       expect(find.text('音频后端'), findsNothing);
       expect(find.text('立体声降混'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('播放调试面板'),
-        250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('播放调试面板'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
@@ -339,12 +354,12 @@ void main() {
       tester,
       remote: true,
       initial: const AppSettings(tvMode: true),
+      category: '外观',
     );
     await moveToHueSlider(tester);
     expect(container.read(settingsProvider).themeColor, isNull,
         reason: '焦点移动不应触发调值');
 
-    // directional 模式：Slider 只消费左右键，↑↓放行给焦点导航
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     expect(focusWithin(find.byKey(const ValueKey('themeHueSlider'))), isFalse,
@@ -352,7 +367,6 @@ void main() {
     expect(container.read(settingsProvider).themeColor, isNull,
         reason: '上/下键不改变滑块值');
 
-    // 焦点还能继续下移（不卡死在滑块上）
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     expect(FocusManager.instance.primaryFocus, isNot(isA<FocusScopeNode>()));
@@ -363,6 +377,7 @@ void main() {
       tester,
       remote: true,
       initial: const AppSettings(tvMode: true),
+      category: '外观',
     );
     await moveToHueSlider(tester);
 
@@ -384,9 +399,7 @@ void main() {
   // ---- TV 模式 × 解码方式/音频后端（DropdownButton 遥控不可选 → 弹窗） ----
 
   testWidgets('非 TV：解码方式仍为 DropdownButton 下拉', (tester) async {
-    await _pumpScreen(tester);
-    // ListView 按可见区 mount，不数全页下拉总数，只断言解码方式行内
-    // 是下拉（触摸交互），而非 TV 弹窗
+    await _pumpScreen(tester, category: '播放器');
     expect(find.text('解码方式'), findsOneWidget);
     final decodeDropdown = find.descendant(
       of: find.ancestor(
@@ -401,11 +414,11 @@ void main() {
   // ---- 视频输出通道（Android 黑屏多档取证） ----
 
   testWidgets('Android 展示视频输出设置，默认纹理', (tester) async {
-    final container = await _pumpScreen(tester);
+    final container = await _pumpScreen(tester, category: '播放器');
     await tester.scrollUntilVisible(
       find.text('视频输出'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
@@ -419,18 +432,16 @@ void main() {
   });
 
   testWidgets('非 TV：视频输出下拉切换写入 surfaceView', (tester) async {
-    final container = await _pumpScreen(tester);
+    final container = await _pumpScreen(tester, category: '播放器');
     await tester.scrollUntilVisible(
       find.text('视频输出'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
-    // scrollUntilVisible 末尾自动 ensureVisible 会把行顶到视口顶部，
-    // 藏进 AppBar（透明但拦截 hit test）；手动下移让出行再点下拉
     final dd = find.byType(DropdownButton<String>).last;
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, 120));
+    await tester.drag(_subScrollable(), const Offset(0, 120));
     await tester.pumpAndSettle();
     await tester.tap(dd);
     await tester.pumpAndSettle();
@@ -447,19 +458,18 @@ void main() {
   });
 
   testWidgets('TV：视频输出行点开底部弹窗，选择纹理+直通写入', (tester) async {
-    final container =
-        await _pumpScreen(tester, initial: const AppSettings(tvMode: true));
+    final container = await _pumpScreen(tester,
+        initial: const AppSettings(tvMode: true), category: '播放器');
     expect(find.byType(DropdownButton<String>), findsNothing,
         reason: 'TV 模式全部走底部弹窗');
 
     await tester.scrollUntilVisible(
       find.text('视频输出'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
-    // 同非 TV 用例：行被 ensureVisible 顶到 AppBar 下，下移让出后再点
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, 120));
+    await tester.drag(_subScrollable(), const Offset(0, 120));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('视频输出'));
@@ -477,33 +487,26 @@ void main() {
         reason: '选中后弹窗应关闭');
   });
 
-  testWidgets('Windows 平台隐藏视频输出设置项（Android 专属）', (tester) async {
+  testWidgets('Windows 平台播放器子页隐藏视频输出设置项（Android 专属）', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
-      await _pumpScreen(tester);
+      await _pumpScreen(tester, category: '播放器');
 
       expect(find.text('视频输出'), findsNothing);
-      expect(find.text('渲染兼容模式（实验）'), findsNothing);
-      // 近处相邻设置项初始视口内展示
+      expect(find.text('渲染兼容模式（实验）'), findsNothing,
+          reason: '实验项不在播放器子页');
       expect(find.text('解码方式'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('播放调试面板'),
-        250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('播放调试面板'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
   });
 
-  testWidgets('Android 展示渲染兼容模式开关，默认关闭', (tester) async {
-    final container = await _pumpScreen(tester);
+  testWidgets('实验性子页：Android 展示渲染兼容模式开关，默认关闭', (tester) async {
+    final container = await _pumpScreen(tester, category: '实验性');
     await tester.scrollUntilVisible(
       find.text('渲染兼容模式（实验）'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
@@ -513,7 +516,7 @@ void main() {
   });
 
   testWidgets('渲染兼容模式开关切换写入设置', (tester) async {
-    final container = await _pumpScreen(tester);
+    final container = await _pumpScreen(tester, category: '实验性');
     final row = find.ancestor(
       of: find.text('渲染兼容模式（实验）'),
       matching: find.byType(SwitchListTile),
@@ -521,12 +524,10 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('渲染兼容模式（实验）'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
-    // 列表尾部内容变化会使 scrollUntilVisible 停点漂移到 AppBar 下，
-    // 物理 tap 可能被遮挡——直接调 onChanged 验证写入链路
     final sw = tester.widget<Switch>(
         find.descendant(of: row, matching: find.byType(Switch)));
     sw.onChanged!(true);
@@ -536,17 +537,13 @@ void main() {
   });
 
   testWidgets('TV：解码方式行点开底部弹窗，选择软解写入', (tester) async {
-    final container = await _pumpScreen(
-      tester,
-      initial: const AppSettings(tvMode: true),
-    );
-    // 非 TV 的 DropdownButton 不再出现
+    final container = await _pumpScreen(tester,
+        initial: const AppSettings(tvMode: true), category: '播放器');
     expect(find.byType(DropdownButton<String>), findsNothing);
 
     await tester.tap(find.text('解码方式'));
     await tester.pumpAndSettle();
 
-    // 底部弹窗：RadioListTile 三选项（遥控器经 TvRemoteShortcuts 可选）
     expect(find.byKey(const Key('settingOption_auto')), findsOneWidget);
     expect(find.byKey(const Key('settingOption_hw')), findsOneWidget);
     expect(find.byKey(const Key('settingOption_sw')), findsOneWidget);
@@ -562,16 +559,12 @@ void main() {
   });
 
   testWidgets('TV：音频后端行点开底部弹窗，选择 AAudio 写入', (tester) async {
-    // 分类页列数分节插入前部后，音频后端行超出 600 默认视口——
-    // 加高视口使初始即可见（与焦点描边用例同策略）
     tester.view.physicalSize = const Size(800, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final container = await _pumpScreen(
-      tester,
-      initial: const AppSettings(tvMode: true),
-    );
+    final container = await _pumpScreen(tester,
+        initial: const AppSettings(tvMode: true), category: '播放器');
     expect(find.text('音频后端'), findsOneWidget);
 
     await tester.tap(find.text('音频后端'));
@@ -588,9 +581,6 @@ void main() {
   // ---- TV 焦点样式统一（"同屏两个焦点框"回归） ----
 
   testWidgets('TV：设置行移动焦点后同屏仅一个描边，落点为 TvFocusable 包装', (tester) async {
-    // 结构性依赖"初始视口内 解码/立体声降混/音频后端 三行可见"（不能滚动，
-    // scrollUntilVisible 会把解码行顶出视口破坏落焦）：分类页列数分节插入
-    // 前部后三行整体下移，加高视口让三行回到初始视口内
     tester.view.physicalSize = const Size(800, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -599,12 +589,9 @@ void main() {
       tester,
       remote: true,
       initial: const AppSettings(tvMode: true),
+      category: '播放器',
     );
-    // 不滚动：初始视口内 解码方式/立体声降混/音频后端 三行均可见，
-    // scrollUntilVisible 会把解码行顶出视口（元素卸载）破坏落焦
 
-    // 所有开关行必须 ExcludeFocus：行内 Switch/InkWell 焦点节点若可聚焦，
-    // 内层蓝色 focusColor 会与外层描边同屏双显
     final switchTiles = find.byType(SwitchListTile);
     expect(switchTiles, findsWidgets);
     for (final tile in tester.widgetList<SwitchListTile>(switchTiles)) {
@@ -627,8 +614,6 @@ void main() {
         .where((c) => c.foregroundDecoration != null)
         .length;
 
-    // 直接落焦解码方式行（跳过主题色区裸 InkWell/滑块）：
-    // 包装 Focus 是文本的祖先（Focus > ... > ListTile > Text）
     final decodeWrapper = find.ancestor(
       of: find.text('解码方式'),
       matching: tvWrappers(),
@@ -638,7 +623,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(outlineCount(), 1, reason: '落焦后仅该行有描边');
 
-    // ↓ 移到立体声降混（原裸 SwitchListTile）：落点应为外层包装而非行内蓝底
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
     final stereoNode = FocusManager.instance.primaryFocus;
@@ -646,9 +630,7 @@ void main() {
         reason: '焦点应落在 TvFocusable 包装上（而非 SwitchListTile 内层）');
     expect(stereoNode, isNot(decodeNode), reason: '焦点确实移动了');
     expect(outlineCount(), 1, reason: '同屏仅一个焦点描边目标（失焦行零时长瞬时移除）');
-    // 动画时长语义：失焦行 duration 必须为 0，聚焦行 120ms。
-    // 加高视口后可见行数不定（不再硬编码 3 行），按语义断言：
-    // 恰好一个聚焦行、其余全部失焦瞬时移除
+
     final durations = tester
         .widgetList<AnimatedContainer>(find.descendant(
           of: tvWrappers(),
@@ -659,7 +641,7 @@ void main() {
     expect(
       durations.where((d) => d == const Duration(milliseconds: 120)).length,
       1,
-      reason: '解码/立体声/音频后端…全部可见行中仅立体声行聚焦淡入（120ms）',
+      reason: '仅立体声行聚焦淡入（120ms）',
     );
     expect(
       durations.where((d) => d != Duration.zero).length,
@@ -667,14 +649,12 @@ void main() {
       reason: '其余行全部失焦 0ms 瞬时移除（防双焦点框）',
     );
 
-    // OK 键经外层 onTap 切换开关
     final initial = container.read(settingsProvider).stereoDownmix;
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).stereoDownmix, isNot(initial),
         reason: 'TV OK 键应切换开关');
 
-    // 继续 ↓ 到下一行（音频后端，Android 专属），同样保持唯一描边
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
     final nextNode = FocusManager.instance.primaryFocus;
@@ -683,16 +663,14 @@ void main() {
     expect(outlineCount(), 1);
   });
 
-  testWidgets('分类页每行海报数滑块：默认自动，改值落盘，0 回自动', (tester) async {
-    final container = await _pumpScreen(tester);
+  testWidgets('外观子页：分类页每行海报数滑块默认自动，改值落盘，0 回自动', (tester) async {
+    final container = await _pumpScreen(tester, category: '外观');
 
-    // 分节在列表尾部：SliverList extent 滚动中动态增长，scrollUntilVisible
-    // 可能停在元素将被回收的位置——用 dragUntilVisible 兜底滚到可见
     final sliderFinder = find.byKey(const ValueKey('categoryColumnsSlider'));
     if (sliderFinder.evaluate().isEmpty) {
       await tester.dragUntilVisible(
         sliderFinder,
-        find.byType(Scrollable).first,
+        _subScrollable(),
         const Offset(0, -250),
       );
     }
@@ -710,7 +688,6 @@ void main() {
     expect(container.read(settingsProvider).categoryColumns, isNull,
         reason: '默认自动');
 
-    // key 直接挂在 Text 上：byKey 即文本 finder（descendant 不含自身）
     final valueText = find.byKey(const ValueKey('categoryColumnsValue'));
     expect(tester.widget<Text>(valueText).data, '自动');
 
@@ -721,13 +698,11 @@ void main() {
     expect(slider.max, 14);
     expect(slider.divisions, 14);
 
-    // 拖到 8 → 落盘指定值，文案更新
     slider.onChanged!(8);
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).categoryColumns, 8);
     expect(tester.widget<Text>(valueText).data, '每行 8 个');
 
-    // 回 0 → 清回自动（null），不落键
     slider.onChanged!(0);
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).categoryColumns, isNull);
@@ -737,11 +712,12 @@ void main() {
       isFalse,
     );
   });
-  group('玻璃参数滑杆分组（v1.1.84）', () {
+
+  group('玻璃参数滑杆分组（外观子页）', () {
     testWidgets('Android：展示标题、6 个滑杆与恢复默认（默认态禁用）', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       try {
-        final container = await _pumpScreen(tester);
+        final container = await _pumpScreen(tester, category: '外观');
         await _scrollToText(tester, '玻璃参数');
 
         expect(find.text('玻璃参数'), findsOneWidget);
@@ -758,7 +734,6 @@ void main() {
               reason: '$key 滑杆缺失');
         }
         expect(find.text('折射范围'), findsOneWidget, reason: '折射范围滑杆标签');
-        // 默认态（全包默认）：恢复默认按钮禁用
         final reset = tester.widget<TextButton>(
             find.byKey(const ValueKey('glassResetDefaults')));
         expect(reset.onPressed, isNull);
@@ -769,7 +744,7 @@ void main() {
     });
 
     testWidgets('拖动磨砂滑杆写入 glassBlur 并落盘', (tester) async {
-      final container = await _pumpScreen(tester);
+      final container = await _pumpScreen(tester, category: '外观');
       await _scrollToText(tester, '玻璃参数');
 
       final persistBefore =
@@ -786,7 +761,6 @@ void main() {
           container.read(settingsProvider.notifier) as FakeSettingsNotifier;
       expect(notifier.persistCount, greaterThan(persistBefore),
           reason: 'update 触发落盘');
-      // 回显文本更新 + 恢复默认按钮可用
       expect(
         tester
             .widget<Text>(find.byKey(const ValueKey('glassValue_glassBlur')))
@@ -812,6 +786,7 @@ void main() {
           glassChromatic: 0.3,
           glassLightIntensity: 1.6,
         ),
+        category: '外观',
       );
       await _scrollToText(tester, '玻璃参数');
 
@@ -831,7 +806,7 @@ void main() {
     testWidgets('Android：拖动折射范围滑杆写入 glassEdgeZone（20~24 整数档）', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       try {
-        final container = await _pumpScreen(tester);
+        final container = await _pumpScreen(tester, category: '外观');
         await _scrollToText(tester, '玻璃参数');
 
         final slider = find.byKey(const ValueKey('glassEdgeZoneSlider'));
@@ -851,7 +826,7 @@ void main() {
     testWidgets('iOS 显示折射范围滑杆、隐藏折射强度，其余 5 个保留', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       try {
-        await _pumpScreen(tester);
+        await _pumpScreen(tester, category: '外观');
         await _scrollToText(tester, '玻璃参数');
 
         expect(find.text('玻璃参数'), findsOneWidget);
@@ -882,6 +857,7 @@ void main() {
         await _pumpScreen(
           tester,
           initial: const AppSettings(tvMode: true),
+          category: '外观',
         );
         await _scrollToText(tester, '玻璃参数');
 
@@ -907,6 +883,7 @@ void main() {
           glassChromatic: 0.06,
           glassLightIntensity: 0.9,
         ),
+        category: '外观',
       );
       await _scrollToText(tester, '玻璃参数');
 
