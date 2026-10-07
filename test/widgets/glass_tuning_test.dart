@@ -162,9 +162,15 @@ void main() {
     });
   });
 
-  group('glassEdgeZoneVisible（折射范围滑杆可见性：仅 Android 非 TV）', () {
+  group('glassEdgeZoneVisible（折射范围滑杆可见性：Android/iOS 非 TV）', () {
     test('Android 非 TV 显示', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(glassEdgeZoneVisible(tvMode: false), isTrue);
+    });
+
+    test('iOS 非 TV 也显示（standard 路径读 uEdgeZone）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(glassEdgeZoneVisible(tvMode: false), isTrue);
     });
@@ -175,10 +181,9 @@ void main() {
       expect(glassEdgeZoneVisible(tvMode: true), isFalse);
     });
 
-    test('非 Android 平台一律隐藏', () {
+    test('桌面/Web 平台隐藏', () {
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       for (final p in const [
-        TargetPlatform.iOS,
         TargetPlatform.macOS,
         TargetPlatform.windows,
         TargetPlatform.linux,
@@ -191,23 +196,12 @@ void main() {
     });
   });
 
-  group('glassRefractiveIndexVisible（折射强度滑杆可见性：仅 iOS 非 TV）', () {
-    test('iOS 非 TV 显示', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(glassRefractiveIndexVisible(tvMode: false), isTrue);
-    });
-
-    test('TV 模式隐藏', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(glassRefractiveIndexVisible(tvMode: true), isFalse);
-    });
-
-    test('非 iOS 平台一律隐藏', () {
+  group('glassRefractiveIndexVisible（折射强度滑杆：全平台隐藏）', () {
+    test('所有平台均隐藏（standard 路径该参数影响很小）', () {
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       for (final p in const [
         TargetPlatform.android,
+        TargetPlatform.iOS,
         TargetPlatform.macOS,
         TargetPlatform.windows,
         TargetPlatform.linux,
@@ -215,23 +209,38 @@ void main() {
         debugDefaultTargetPlatformOverride = p;
         expect(glassRefractiveIndexVisible(tvMode: false), isFalse,
             reason: '$p 不显示折射强度滑杆');
+        expect(glassRefractiveIndexVisible(tvMode: true), isFalse);
       }
     });
   });
 
-  group('iOS premium 默认值（逼真取向）', () {
-    test('iOS 上玻璃默认值提升（厚/色散/折射率高于安卓 spec 默认）', () {
+  group('iOS 与安卓同源默认值（无 premium 专用取向）', () {
+    test('iOS 的 glassDefault 与 spec 一致', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(glassDefault('glassThickness'), GlassIosPremium.thickness);
-      expect(glassDefault('glassChromatic'), GlassIosPremium.chromatic);
-      expect(glassDefault('glassRefractiveIndex'),
-          GlassIosPremium.refractiveIndex);
-      expect(
-          glassDefault('glassThickness'),
-          greaterThan(glassParamSpecs
-              .firstWhere((s) => s.key == 'glassThickness')
-              .defaultValue));
+      for (final key in const [
+        'glassBlur',
+        'glassThickness',
+        'glassEdgeZone',
+        'glassSaturation',
+        'glassChromatic',
+        'glassLightIntensity',
+        'glassRefractiveIndex',
+      ]) {
+        expect(
+          glassDefault(key),
+          glassParamSpecs.firstWhere((s) => s.key == key).defaultValue,
+          reason: '$key 在 iOS 与 spec 同源',
+        );
+      }
+    });
+
+    test('iOS toThemeData 不强制 premium 画质（交给包按引擎决定）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final data = const GlassTuning().toThemeData();
+      expect(data.light.quality, isNull,
+          reason: '不再对 iOS 强制 GlassQuality.premium');
     });
 
     test('安卓沿用 spec 默认', () {

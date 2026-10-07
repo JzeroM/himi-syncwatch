@@ -297,8 +297,7 @@ void main() {
     expect(lens.settings.edgeAbsorption, 0.10, reason: '边缘暗带淡化，非硬边框');
     expect(lens.edgeZone, 20, reason: '折射范围默认 20（设置滑杆 20~24，round-7）');
     expect(LiquidBlobLens.quality, lg.GlassQuality.standard,
-        reason:
-            '测试环境 isShaderFilterSupported=false → standard（真机 Impeller → premium）');
+        reason: '全平台固定 standard（iOS 与安卓同源，不再按引擎分流 premium）');
 
     // 静止镜片不挂载（折射/物理色散只在移动出现）
     expect(find.byType(GlassEffect), findsNothing);

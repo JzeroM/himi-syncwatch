@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/router.dart';
@@ -32,16 +30,9 @@ class HimiSyncApp extends ConsumerWidget {
           // + directional 导航模式（Slider 只消费左右键，上下放行给焦点导航）
           builder: (context, child) {
             final subtree = child ?? const SizedBox.shrink();
-            // iOS premium（Impeller）的 grouped 玻璃（GlassContainer /
-            // GlassBackdrop 默认 useOwnLayer=false）依赖祖先 LiquidGlassLayer
-            // 提供背景采样；缺失时降级为不透明纯色灰（顶栏/卡片/导航全部变灰）。
-            // AdaptiveLiquidGlassLayer 同时建立 LiquidGlassLayer + 背景
-            // BackdropGroup 并向下继承 quality，是包内推荐的 premium 根层。
-            // 置于 MaterialApp.builder 内以拿到应用 Theme（亮度解析）。
-            final content = tvMode ? TvRemoteShell(child: subtree) : subtree;
-            return defaultTargetPlatform == TargetPlatform.iOS
-                ? AdaptiveLiquidGlassLayer(child: content)
-                : content;
+            // 全平台统一 standard 玻璃路径（自带 RepaintBoundary 捕获）；
+            // iOS 不再挂 premium 专用根层 AdaptiveLiquidGlassLayer。
+            return tvMode ? TvRemoteShell(child: subtree) : subtree;
           },
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(

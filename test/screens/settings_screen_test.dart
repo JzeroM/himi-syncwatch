@@ -848,16 +848,19 @@ void main() {
       }
     });
 
-    testWidgets('iOS 隐藏折射范围滑杆（premium 路径无效），其余 5 个保留', (tester) async {
+    testWidgets('iOS 显示折射范围滑杆、隐藏折射强度，其余 5 个保留', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       try {
         await _pumpScreen(tester);
         await _scrollToText(tester, '玻璃参数');
 
         expect(find.text('玻璃参数'), findsOneWidget);
-        expect(find.byKey(const ValueKey('glassEdgeZoneSlider')), findsNothing,
-            reason: 'iOS premium 路径不读 uEdgeZone，滑杆无效须隐藏');
-        expect(find.text('折射范围'), findsNothing);
+        expect(find.byKey(const ValueKey('glassEdgeZoneSlider')), findsOneWidget,
+            reason: 'iOS 走 standard 路径，读 uEdgeZone，滑杆生效');
+        expect(find.text('折射范围'), findsOneWidget);
+        expect(find.byKey(const ValueKey('glassRefractiveIndexSlider')),
+            findsNothing,
+            reason: 'standard 路径折射强度影响很小，iOS 隐藏');
         for (final key in const [
           'glassBlur',
           'glassThickness',

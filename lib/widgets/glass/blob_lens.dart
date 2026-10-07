@@ -1,6 +1,3 @@
-import 'dart:ui' as ui;
-
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 import 'package:liquid_glass_widgets/utils/draggable_indicator_physics.dart';
@@ -25,8 +22,8 @@ import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 ///   一圈干净彩边）把捕获内容的
 ///   RGB 通道分开 —— 只在背后有对比处（图标边、胶囊边线）出彩边，
 ///   随果冻形变流动；无任何自发光色环；
-/// - quality 按引擎分流：Impeller（iOS）→ premium（原生折射层），
-///   Skia（安卓）→ standard（interactive_indicator.frag 捕获折射）。
+/// - quality 全平台固定 standard（interactive_indicator.frag 捕获折射）：
+///   iOS(Impeller) 与安卓同源，避免 premium 多通道管线的放大外溢/发灰。
 ///
 /// 作为导航 Stack 的直接子级渲染：胶囊与图标是它的兄弟层而非祖先，
 /// 适配层与包内 `LightweightLiquidGlass` 对各自子级的无条件裁剪
@@ -92,17 +89,13 @@ class LiquidBlobLens extends StatelessWidget {
   /// 水珠圆角（25 = 50 高半圆直边）。
   final double borderRadius;
 
-  /// 画质分流：按引擎能力。
+  /// 画质：全平台固定 `standard`（单通道 `interactive_indicator.frag` +
+  /// RepaintBoundary 截帧采样，含 [PATCH himi] 调校）。
   ///
-  /// iOS 恒为 Impeller（`ImageFilter.isShaderFilterSupported =>
-  /// _impellerEnabled` 为 true）→ `premium`（Impeller 原生 3D 折射）；
-  /// 安卓关闭 Impeller → Skia → 该 getter 为 false → `standard`
-  /// （`interactive_indicator.frag`，含 [PATCH himi] 调校）。
-  /// iOS 的 premium 取向参数与着色器补丁见 settings / premium shader。
-  static lg.GlassQuality get quality =>
-      !kIsWeb && ui.ImageFilter.isShaderFilterSupported
-          ? lg.GlassQuality.premium
-          : lg.GlassQuality.standard;
+  /// 不按引擎分流：iOS 虽为 Impeller，但 premium 的 `liquid_glass_render.frag`
+  /// 多通道几何管线会忽略结构参数、且 capture/UV 映射导致水珠放大外溢与玻璃面
+  /// 发灰；standard 与渲染引擎无关（Impeller 亦可运行），观感与安卓对齐。
+  static lg.GlassQuality get quality => lg.GlassQuality.standard;
 
   @override
   Widget build(BuildContext context) {

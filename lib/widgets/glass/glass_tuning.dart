@@ -124,57 +124,27 @@ const List<GlassParamSpec> glassParamSpecs = [
   ),
 ];
 
-/// iOS premium（Impeller）逼真取向默认值。
-///
-/// 安卓 standard（Skia）路径的滑杆默认是给 `interactive_indicator.frag`
-/// 归一化补偿用的；iOS 走 premium（`liquid_glass_render.frag` + Impeller
-/// 原生折射），同一数值观感偏弱。这里给 iOS 一组更接近实体玻璃的默认值
-/// （强折射 + 可见色散），并让滑杆回显/渲染兜底同源，尽量贴近安卓观感。
-class GlassIosPremium {
-  const GlassIosPremium._();
-
-  static const double thickness = 36;
-  static const double saturation = 1.85;
-  static const double chromatic = 0.30;
-  static const double refractiveIndex = 1.40;
-  static const double lightIntensity = 1.3;
-}
-
-/// 取 [key] 对应参数的平台默认值（iOS premium 用 [GlassIosPremium]，
-/// 其余平台用 [glassParamSpecs] 的应用默认）——滑杆回显、渲染兜底与调用方
-/// （如导航水珠镜片的显式 settings）同源，避免字面量重复。
+/// 取 [key] 对应参数的默认值：全平台统一用 [glassParamSpecs] 的应用默认
+/// （iOS 与安卓走同一 standard 着色器路径，参数语义一致），滑杆回显、
+/// 渲染兜底与调用方（如导航水珠镜片的显式 settings）同源。
 double glassDefault(String key) {
-  if (defaultTargetPlatform == TargetPlatform.iOS) {
-    switch (key) {
-      case 'glassThickness':
-        return GlassIosPremium.thickness;
-      case 'glassSaturation':
-        return GlassIosPremium.saturation;
-      case 'glassChromatic':
-        return GlassIosPremium.chromatic;
-      case 'glassRefractiveIndex':
-        return GlassIosPremium.refractiveIndex;
-      case 'glassLightIntensity':
-        return GlassIosPremium.lightIntensity;
-    }
-  }
   return glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
 }
 
-/// 折射范围（glassEdgeZone）滑杆可见性：仅 Android 非 TV 模式显示。
+/// 折射范围（glassEdgeZone）滑杆可见性：Android / iOS 非 TV 模式显示。
 ///
-/// - Android 是唯一目标消费端：standard（Skia）路径读
-///   `interactive_indicator.frag` 的 `uEdgeZone` uniform；
-///   iOS premium（Impeller 3D bevel）不读该 uniform，拖动无效；
-/// - 其他平台（iOS / 桌面 / Web）一律隐藏；
+/// 两端都走 standard（`interactive_indicator.frag`）路径，读 `uEdgeZone`
+/// uniform，拖动真实生效；
+/// - 其他平台（桌面 / Web）隐藏；
 /// - TV 模式：遥控器方向键导航会被滑杆吞键 → 隐藏。
 bool glassEdgeZoneVisible({required bool tvMode}) =>
-    defaultTargetPlatform == TargetPlatform.android && !tvMode;
+    (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS) &&
+    !tvMode;
 
-/// 折射强度（glassRefractiveIndex）滑杆可见性：仅 iOS 非 TV 显示
-/// （premium/Impeller 路径读 refractiveIndex；安卓 standard 不读）。
-bool glassRefractiveIndexVisible({required bool tvMode}) =>
-    defaultTargetPlatform == TargetPlatform.iOS && !tvMode;
+/// 折射强度（glassRefractiveIndex）滑杆可见性：standard 路径下该参数
+/// 仅弱作用于 `uData3.z`，观感影响很小，全平台隐藏（保留字段兼容持久化）。
+bool glassRefractiveIndexVisible({required bool tvMode}) => false;
 
 /// 玻璃参数快照：settings 的可调字段 → 包主题的映射边界。
 class GlassTuning {
@@ -197,7 +167,7 @@ class GlassTuning {
   final double? chromatic;
   final double? lightIntensity;
 
-  /// 折射率（premium/iOS 路径；null = 平台默认）。
+  /// 折射率（standard 路径弱影响；null = 应用默认）。
   final double? refractiveIndex;
 
   factory GlassTuning.fromSettings(AppSettings s) => GlassTuning(
@@ -220,10 +190,9 @@ class GlassTuning {
       lightIntensity == null &&
       refractiveIndex == null;
 
-  /// 映射为包主题：null 字段（恢复默认态）兜底到 [glassDefault]（iOS premium
-  /// 取向），保证默认观感 = 目标效果而非包 variant 的保守默认。
+  /// 映射为包主题：null 字段（恢复默认态）兜底到 [glassDefault]（应用
+  /// 默认），保证默认观感 = 目标效果而非包 variant 的保守默认。
   GlassThemeData toThemeData() {
-    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
     return GlassThemeData.simple(
       blur: blur ?? glassDefault('glassBlur'),
       thickness: thickness ?? glassDefault('glassThickness'),
@@ -231,10 +200,7 @@ class GlassTuning {
       chromaticAberration: chromatic ?? glassDefault('glassChromatic'),
       lightIntensity: lightIntensity ?? glassDefault('glassLightIntensity'),
       refractiveIndex: refractiveIndex ?? glassDefault('glassRefractiveIndex'),
-      // iOS premium 明确指定画质，保证全玻璃面走 Impeller 折射路径
-      quality: isIOS ? GlassQuality.premium : null,
-      // iOS premium 内壁环境光提亮，减少灰边
-      ambientStrength: isIOS ? 0.5 : null,
+      // 不指定画质：交给包按引擎能力决定（iOS/安卓均落到 standard 路径）
     );
   }
 }

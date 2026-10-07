@@ -49,7 +49,7 @@ class AppSettings {
   /// 高光强度（0~1，包默认 0.5）。
   final double? glassLightIntensity;
 
-  /// 折射率（premium/iOS Impeller 路径的镜片折射强度，包默认 1.2；1.0 = 无折射）。
+  /// 折射率（standard 路径弱作用于 uData3.z，观感影响很小；保留字段兼容持久化）。
   final double? glassRefractiveIndex;
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
 

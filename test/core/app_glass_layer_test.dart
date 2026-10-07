@@ -9,10 +9,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 import '../helpers/test_fakes.dart';
 
-/// iOS premium（Impeller）grouped 玻璃需要祖先 LiquidGlassLayer 提供背景采样，
-/// 否则全部退化为不透明纯灰。验证 [HimiSyncApp] 在 iOS 挂载
-/// [lg.AdaptiveLiquidGlassLayer]（LiquidGlassLayer + 背景 BackdropGroup 根层），
-/// 其余平台保持既有路径不挂载（Android 标准路径不需要）。
+/// 全平台统一 standard 玻璃路径（自带 RepaintBoundary 捕获），不再挂载
+/// iOS premium 专用根层 [lg.AdaptiveLiquidGlassLayer]。
 void main() {
   Future<void> pumpApp(WidgetTester tester) async {
     await tester.pumpWidget(
@@ -30,19 +28,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('iOS：挂载 AdaptiveLiquidGlassLayer（premium 根渲染层）',
+  testWidgets('iOS：不挂载 premium 根层 AdaptiveLiquidGlassLayer',
       (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     try {
       await pumpApp(tester);
-      expect(find.byType(lg.AdaptiveLiquidGlassLayer), findsOneWidget);
+      expect(find.byType(lg.AdaptiveLiquidGlassLayer), findsNothing);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
   });
 
-  testWidgets('Android：不挂载（标准路径无需共享层，避免改动既有观感）',
-      (tester) async {
+  testWidgets('Android：不挂载（标准路径无需共享层）', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
       await pumpApp(tester);
