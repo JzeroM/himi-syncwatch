@@ -45,6 +45,7 @@ import 'package:himi_syncwatch/services/danmaku/dandanplay_client.dart';
 import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/screens/player/room_resource_search.dart';
@@ -292,6 +293,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   @visibleForTesting
   static bool showBottomDisplayAdjustButton({required bool tvMode}) => tvMode;
+
+  /// 长按视频区临时倍速倍率（手机版）。
+  static const double speedBoostMultiplier = 2.0;
 
   /// 左缘锁按钮是否显示：TV 模式无锁（遥控器语义下不提供锁定）。
   @visibleForTesting
@@ -606,6 +610,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 当前播放倍速（单人模式；初始取设置持久值，换集/重载后恢复）。
   double _speed = 1.0;
+
+  /// 手机版长按临时 2× 倍速：按住生效、松手恢复 [_speed]（不落盘）。
+  bool _speedBoostActive = false;
 
   // 手势控制
   bool _showGestureOverlay = false;
@@ -4134,6 +4141,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return _isHost;
   }
 
+  /// 手机版长按临时倍速是否可用：仅手机、非 TV、未锁定、可控、无面板打开。
+  bool get _speedBoostGestureEnabled {
+    if (!PlayerPlatform.mediaLongPressSpeedBoost) return false;
+    if (_lockController.locked || !_canControlPlayback) return false;
+    if (ref.read(settingsProvider).tvMode) return false;
+    if (_showSubtitleMenu ||
+        _showAudioMenu ||
+        _showSpeedMenu ||
+        _showSubtitleStyleMenu ||
+        _showDecodeModeMenu ||
+        _showBrightnessBarNotifier.value ||
+        _showVolumeBarNotifier.value) {
+      return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     // 视频输出档位（设置页/TV 底部弹窗）变化时即时应用：
@@ -4411,6 +4435,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     !_lockController.locked
                 ? _onVerticalDragEnd
                 : null,
+            // 手机版：长按视频区临时 2× 倍速，松手恢复（不落盘）
+            onLongPressStart: _speedBoostGestureEnabled
+                ? (_) => _onSpeedBoostStart()
+                : null,
+            onLongPressEnd:
+                _speedBoostGestureEnabled ? (_) => _onSpeedBoostEnd() : null,
+            onLongPressCancel:
+                _speedBoostGestureEnabled ? _onSpeedBoostEnd : null,
             child: videoContent,
           ),
 
@@ -4559,6 +4591,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               left: 0,
               right: 0,
               child: _buildGestureHint(),
+            ),
+
+          // 长按临时倍速指示（手机版，画面中央玻璃小胶囊）
+          if (_speedBoostActive)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(child: _buildSpeedBoostChip()),
+              ),
             ),
 
           // 亮度柱式进度条（右侧）
@@ -5033,6 +5073,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     ref.read(settingsProvider.notifier).update(playbackSpeed: speed);
   }
 
+  /// 手机版长按视频区：临时切 [speedBoostMultiplier]（不改设置）。
+  void _onSpeedBoostStart() {
+    if (_speedBoostActive || !_canControlPlayback) return;
+    _speedBoostActive = true;
+    _player.playbackRate = PlayerScreen.speedBoostMultiplier;
+    setState(() {});
+  }
+
+  /// 松手/取消：恢复长按前的倍速 [_speed]。
+  void _onSpeedBoostEnd() {
+    if (!_speedBoostActive) return;
+    _speedBoostActive = false;
+    _player.playbackRate = _speed;
+    setState(() {});
+  }
+
   /// 启动真实下载速度计：平台不支持（counter 为 null）或连续读取失败时
   /// 保持 `_networkSpeedBps = null`，顶栏不渲染网速。
   /// 首个有效值/首次不可用各记一条日志，便于诊断设备兼容问题。
@@ -5249,9 +5305,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
   }
 
+  /// 长按临时倍速指示（画面中央玻璃小胶囊）。
+  Widget _buildSpeedBoostChip() {
+    return GlassContainer(
+      borderRadius: BorderRadius.circular(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.fast_forward, color: Colors.white, size: 18),
+          const SizedBox(width: 6),
+          Text(
+            '${PlayerScreen.speedBoostMultiplier.toStringAsFixed(1)}× 播放中',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGestureHint() {
-    if (_gestureOverlayIcon != null) {
-      return Center(
+    if (_gestureOverlayIcon != null) {      return Center(
         child: Icon(_gestureOverlayIcon!, color: Colors.white70, size: 48),
       );
     }

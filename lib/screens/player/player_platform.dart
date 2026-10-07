@@ -39,4 +39,9 @@ class PlayerPlatform {
     }
     return fallback;
   }
+
+  /// 长按视频区临时 2× 倍速（仅手机 Android/iOS；TV/桌面不做）。
+  static bool get mediaLongPressSpeedBoost =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 }

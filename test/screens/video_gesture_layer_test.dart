@@ -10,6 +10,8 @@ import '../helpers/test_fakes.dart';
 
 int _verticalDrags = 0;
 int _taps = 0;
+int _longPressStart = 0;
+int _longPressEnd = 0;
 
 /// 模拟 `_buildVideoArea` 修复后结构：VideoGestureLayer 作 Stack 底层
 /// （只包视频），倍速浮层面板 Positioned 在上层。
@@ -52,6 +54,8 @@ void main() {
   setUp(() {
     _verticalDrags = 0;
     _taps = 0;
+    _longPressStart = 0;
+    _longPressEnd = 0;
   });
 
   group('VideoGestureLayer + 浮层面板（根因回归）', () {
@@ -96,6 +100,30 @@ void main() {
       await tester.tap(find.text('0.75x'));
       await tester.pump();
       expect(_taps, 1, reason: '点面板不应触发视频区点屏手势');
+    });
+  });
+
+  group('VideoGestureLayer 长按（临时倍速）', () {
+    testWidgets('长按触发 onLongPressStart/End，且不触发 onTap', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoGestureLayer(
+              onTap: () => _taps++,
+              onLongPressStart: (_) => _longPressStart++,
+              onLongPressEnd: (_) => _longPressEnd++,
+              child: const Center(child: Text('video')),
+            ),
+          ),
+        ),
+      );
+
+      await tester.longPressAt(const Offset(100, 300));
+      await tester.pump();
+
+      expect(_longPressStart, 1, reason: '长按开始应回调');
+      expect(_longPressEnd, 1, reason: '松手应回调');
+      expect(_taps, 0, reason: '长按不应触发点按');
     });
   });
 }

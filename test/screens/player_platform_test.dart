@@ -47,8 +47,27 @@ void main() {
     });
   });
 
-  group('initialBrightness', () {
-    test('跟随系统时采用当前值', () {
+  group('mediaLongPressSpeedBoost（长按临时倍速，仅手机）', () {
+    test('Android / iOS 开', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(PlayerPlatform.mediaLongPressSpeedBoost, isTrue);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(PlayerPlatform.mediaLongPressSpeedBoost, isTrue);
+    });
+
+    test('桌面 / Web 关', () {
+      for (final p in const [
+        TargetPlatform.windows,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        expect(PlayerPlatform.mediaLongPressSpeedBoost, isFalse);
+      }
+    });
+  });
+
+  group('initialBrightness', () {    test('跟随系统时采用当前值', () {
       expect(
         PlayerPlatform.initialBrightness(current: 0.55, followSystem: true),
         closeTo(0.55, 1e-9),

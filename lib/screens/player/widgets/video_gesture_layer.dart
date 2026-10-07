@@ -20,6 +20,9 @@ class VideoGestureLayer extends StatelessWidget {
     this.onVerticalDragStart,
     this.onVerticalDragUpdate,
     this.onVerticalDragEnd,
+    this.onLongPressStart,
+    this.onLongPressEnd,
+    this.onLongPressCancel,
   });
 
   final Widget child;
@@ -39,6 +42,11 @@ class VideoGestureLayer extends StatelessWidget {
   final GestureDragUpdateCallback? onVerticalDragUpdate;
   final GestureDragEndCallback? onVerticalDragEnd;
 
+  /// 长按（手机版临时倍速）：开始/结束/取消；null = 不启用。
+  final GestureLongPressStartCallback? onLongPressStart;
+  final GestureLongPressEndCallback? onLongPressEnd;
+  final VoidCallback? onLongPressCancel;
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -49,6 +57,9 @@ class VideoGestureLayer extends StatelessWidget {
       onVerticalDragStart: onVerticalDragStart,
       onVerticalDragUpdate: onVerticalDragUpdate,
       onVerticalDragEnd: onVerticalDragEnd,
+      onLongPressStart: onLongPressStart,
+      onLongPressEnd: onLongPressEnd,
+      onLongPressCancel: onLongPressCancel,
       behavior: HitTestBehavior.opaque,
       child: child,
     );
