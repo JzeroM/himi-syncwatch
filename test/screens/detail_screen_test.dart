@@ -2673,15 +2673,6 @@ void main() {
       expect(DetailScreen.defaultEpisodeTarget(const []), isNull);
     });
 
-    test('validYearQuery 仅接受合理年份', () {
-      expect(DetailScreen.validYearQuery('2020'), '2020');
-      expect(DetailScreen.validYearQuery('0'), isNull);
-      expect(DetailScreen.validYearQuery(''), isNull);
-      expect(DetailScreen.validYearQuery(null), isNull);
-      expect(DetailScreen.validYearQuery('99'), isNull);
-      expect(DetailScreen.validYearQuery('3000'), isNull);
-    });
-
     testWidgets('进剧集页锁定到有进度的最大集：主控件显示继续 + 横卡滚到该卡',
         (tester) async {
       tester.view.physicalSize = const Size(800, 1600);
