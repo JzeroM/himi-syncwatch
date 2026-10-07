@@ -37,6 +37,7 @@ import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/services/network_speed_meter.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_cache.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_candidate.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_comment.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_matcher.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_timeline.dart';
@@ -109,6 +110,12 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 起播位置（毫秒；详情页「继续观看」传入，首次加载 seek 到此）。
   final int startMs;
 
+  /// 弹幕错源排除线索：作品年份（Emby ProductionYear）；null = 未知，不按年份排除。
+  final int? year;
+
+  /// 弹幕错源排除线索：内容类型（'movie' / 'series'）；null = 未知，不按类型排除。
+  final String? kind;
+
   const PlayerScreen({
     super.key,
     required this.itemId,
@@ -119,6 +126,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.serverId,
     this.logoUrl,
     this.startMs = 0,
+    this.year,
+    this.kind,
   });
 
   @override
@@ -4780,40 +4789,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return cleaned.isEmpty ? null : cleaned;
   }
 
-  /// 当前集号（无 = 0），供候选择优。
+  /// 当前集号（无 = 0），供候选排序。
   int get _currentEpisodeNumber =>
       _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
           ? _episodes[_currentEpisodeIndex].number
           : 0;
 
-  /// 从候选集内按当前集号择优；无集号或都不含该集号时取首条。
-  /// （回退 1.1.138 的选片做法：不做年份/类型错源排除。）
-  int _pickDanmakuEpisode(List<MatchCandidate> candidates) {
-    final number = _currentEpisodeNumber;
-    if (number > 0) {
-      for (final c in candidates) {
-        if (DanmakuMatcher.parseEpisodeNumber(c.episodeTitle) == number) {
-          return c.episodeId;
-        }
-      }
-    }
-    return candidates.first.episodeId;
-  }
-
-  /// 候选 episodeId 有序列表：`_pickDanmakuEpisode` 首选在前，其余候选
-  /// 依次兜底（去重），保留「逐个候选试到成功」。
-  List<int> _orderedDanmakuCandidates(List<MatchCandidate> candidates) {
-    if (candidates.isEmpty) return const [];
-    final out = <int>[];
-    final seen = <int>{};
-    final preferred = _pickDanmakuEpisode(candidates);
-    out.add(preferred);
-    seen.add(preferred);
-    for (final c in candidates) {
-      if (seen.add(c.episodeId)) out.add(c.episodeId);
-    }
-    return out;
-  }
+  /// 有序候选 episodeId（错源排除 + 集号优先，详见 [DanmakuCandidateSelector]）。
+  List<int> _orderedDanmakuCandidates(
+    List<MatchCandidate> matched,
+    List<MatchCandidate> searched,
+  ) =>
+      DanmakuCandidateSelector.ordered(
+        matched,
+        searched,
+        episodeNumber: _currentEpisodeNumber,
+        year: widget.year,
+        kind: widget.kind,
+      );
 
   /// 依次尝试候选 episodeId，返回首个「非空弹幕」结果；全部失败/为空 → null。
   /// 单个候选 500/网络/空结果静默跳过（记日志），成功结果入缓存。
@@ -4890,8 +4883,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted || seq != _danmakuLoadSeq) return;
       }
 
-      // 2) match 候选（1.1.138 选片：集号优先，不做错源排除），逐个试到非空；
-      //    match 瞬时失败不致命，继续走 3) 搜索候选
+      // 2) match 候选（含错源排除），逐个试到非空；match 瞬时失败不致命，
+      //    继续走 3) 搜索候选
       if (found == null) {
         List<MatchCandidate> matched = const [];
         try {
@@ -4903,13 +4896,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted || seq != _danmakuLoadSeq) return;
         found = await _tryDanmakuCandidates(
           client,
-          _orderedDanmakuCandidates(matched),
+          _orderedDanmakuCandidates(matched, const []),
           seq,
         );
         if (!mounted || seq != _danmakuLoadSeq) return;
       }
 
-      // 3) match 未命中/候选全失败 → 关键词搜索候选
+      // 3) match 未命中/候选全失败 → 关键词搜索候选（同样错源排除）
       if (found == null) {
         final keyword = _danmakuSearchKeyword();
         if (keyword != null) {
@@ -4924,7 +4917,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (!mounted || seq != _danmakuLoadSeq) return;
           found = await _tryDanmakuCandidates(
             client,
-            _orderedDanmakuCandidates(searched),
+            _orderedDanmakuCandidates(const [], searched),
             seq,
           );
           if (!mounted || seq != _danmakuLoadSeq) return;

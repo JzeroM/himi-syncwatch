@@ -440,6 +440,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (resume && ep.playbackPositionMs > 0) {
       query.write('&startMs=${ep.playbackPositionMs}');
     }
+    // 弹幕错源排除线索：类型 + 剧集年份（同名不同版本/年份区分用）
+    query.write('&kind=series');
+    final seriesYear = _item?.year;
+    if (seriesYear != null && seriesYear.isNotEmpty) {
+      query.write('&year=$seriesYear');
+    }
     await context.push('/player/${ep.id}?$query');
     if (mounted) {
       _clearResumeHidden(ep.id);
@@ -826,6 +832,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
     if (resume && item.playbackPositionMs > 0) {
       query.write('&startMs=${item.playbackPositionMs}');
+    }
+    // 弹幕错源排除线索：类型 + 年份（同名不同版本/年份区分用）
+    query.write('&kind=movie');
+    final movieYear = item.year;
+    if (movieYear != null && movieYear.isNotEmpty) {
+      query.write('&year=$movieYear');
     }
     if (!mounted) return;
     // 从头播放：乐观清本地续播态（主控件立刻恢复默认）+ 首页立即移除该条
