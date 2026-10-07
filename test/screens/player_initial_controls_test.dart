@@ -241,4 +241,18 @@ void main() {
     expect(seek.hasPrimaryFocus, isFalse, reason: '上限后不再重试');
     expect(timerStarted, 1);
   });
+
+  // ---- 「显示调节」入口位置：TV 底栏 / 非 TV 顶栏 ----
+
+  test('TV：显示调节入口在底部控制条（顶栏隐藏）', () {
+    expect(PlayerScreen.showTopSubtitleStyleButton(tvMode: true), isFalse);
+    expect(
+        PlayerScreen.showBottomDisplayAdjustButton(tvMode: true), isTrue);
+  });
+
+  test('非 TV：显示调节入口在顶栏（底栏不显示）', () {
+    expect(PlayerScreen.showTopSubtitleStyleButton(tvMode: false), isTrue);
+    expect(
+        PlayerScreen.showBottomDisplayAdjustButton(tvMode: false), isFalse);
+  });
 }

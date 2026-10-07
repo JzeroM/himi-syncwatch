@@ -146,7 +146,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   /// 控制条自动隐藏时长（5 秒无操作后隐藏全部控件，含选择器面板）。
   static const Duration controlsAutoHideAfter = Duration(seconds: 5);
-
   /// 右侧选择器面板宽度：随屏宽自适应（0.42×屏宽，钳在 260~320），
   /// 保证滑杆有足够横向行程（字幕样式/弹幕调节等共用）。
   @visibleForTesting
@@ -286,6 +285,13 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 顶栏解码模式按钮是否显示：TV 模式隐藏（解码模式仅走设置页）。
   @visibleForTesting
   static bool showDecodeButton({required bool tvMode}) => !tvMode;
+
+  /// 「显示调节」入口位置：TV 在底部控制条（弹幕与字幕之间），非 TV 在顶栏。
+  @visibleForTesting
+  static bool showTopSubtitleStyleButton({required bool tvMode}) => !tvMode;
+
+  @visibleForTesting
+  static bool showBottomDisplayAdjustButton({required bool tvMode}) => tvMode;
 
   /// 左缘锁按钮是否显示：TV 模式无锁（遥控器语义下不提供锁定）。
   @visibleForTesting
@@ -4670,7 +4676,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           : null,
       showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode),
       decodeMenuOpen: _showDecodeModeMenu,
-      showSubtitleStyleButton: true,
+      // TV 模式「显示调节」入口移到底部控制条（弹幕与字幕之间），顶栏隐藏
+      showSubtitleStyleButton:
+          PlayerScreen.showTopSubtitleStyleButton(tvMode: settings.tvMode),
       subtitleStyleMenuOpen: _showSubtitleStyleMenu,
       subtitleStyleFocusNode: _subtitleStyleButtonFocusNode,
       onToggleSubtitleStyle: _toggleSubtitleStyleMenu,
@@ -5399,6 +5407,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildControls() {
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     // 控制条根焦点：仅作"焦点是否停留在控制条内"的判定锚点
     // （自动隐藏顺延），skipTraversal 不参与方向遍历
     return Focus(
@@ -5572,6 +5581,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     onTap: _toggleDanmaku,
                   ),
                   const SizedBox(width: 20),
+
+                  // 显示调节（TV：从顶栏移入底栏，位于弹幕与字幕之间）
+                  if (PlayerScreen.showBottomDisplayAdjustButton(tvMode: tvMode)) ...[
+                    _buildControlButton(
+                      icon: Icons.tune,
+                      focusNode: _subtitleStyleButtonFocusNode,
+                      onTap: _toggleSubtitleStyleMenu,
+                    ),
+                    const SizedBox(width: 20),
+                  ],
 
                   // 字幕
                   _buildControlButton(
