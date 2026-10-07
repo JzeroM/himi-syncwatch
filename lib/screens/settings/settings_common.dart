@@ -1,10 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 设置页公共件：说明文案、选项下拉行、TV 描边包装、分类子页脚手架。
 /// 各分类子页（外观/播放器/通用/实验性）共用，避免重复实现。
+
+/// 设置子页统一背景：与壳层同源的主题色三段渐变（不透明）。
+/// 过渡期间背景恒定，避免「两页堆叠 / 先默认色再主题色」。
+class SettingsPageBackground extends ConsumerWidget {
+  const SettingsPageBackground({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeColorValue =
+        ref.watch(settingsProvider.select((s) => s.themeColor));
+    final accent = themeColorValue == null
+        ? null
+        : PosterPalette.darkenForPage(Color(themeColorValue));
+    final base = Theme.of(context).scaffoldBackgroundColor;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: PosterPalette.pageGradient(accent, base),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// 设置子页统一推入过渡：淡入淡出（两端一致，替代 iOS 滑动/Android 缩放）。
+Route<T> settingsFadeRoute<T>(WidgetBuilder builder) => PageRouteBuilder<T>(
+      transitionDuration: const Duration(milliseconds: 200),
+      reverseTransitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (context, _, __) => builder(context),
+      transitionsBuilder: (context, animation, _, child) =>
+          FadeTransition(opacity: animation, child: child),
+    );
 
 String decodeModeDescription(String mode) {
   switch (mode) {
@@ -162,23 +198,25 @@ class SettingsSubPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      key: pageKey,
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(title),
+    return SettingsPageBackground(
+      child: Scaffold(
+        key: pageKey,
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        flexibleSpace: const GlassBackdrop(),
-      ),
-      body: ListView(
-        key: const ValueKey('settingsSubPageList'),
-        padding: EdgeInsets.only(
-          top: GlassConfig.topInsetOf(context),
-          bottom: GlassConfig.bottomReserveOf(context),
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: Text(title),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          flexibleSpace: const GlassBackdrop(),
         ),
-        children: children,
+        body: ListView(
+          key: const ValueKey('settingsSubPageList'),
+          padding: EdgeInsets.only(
+            top: GlassConfig.topInsetOf(context),
+            bottom: GlassConfig.bottomReserveOf(context),
+          ),
+          children: children,
+        ),
       ),
     );
   }

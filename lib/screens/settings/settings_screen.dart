@@ -92,7 +92,7 @@ class SettingsScreen extends ConsumerWidget {
     required WidgetBuilder builder,
   }) {
     void open() => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: builder),
+          settingsFadeRoute<void>(builder),
         );
     return settingsTvWrapRow(
       tvMode: tvMode,

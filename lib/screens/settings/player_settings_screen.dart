@@ -31,8 +31,7 @@ class PlayerSettingsScreen extends ConsumerWidget {
         const Divider(height: 1),
         settingsTvWrapRow(
           tvMode: settings.tvMode,
-          onTap: () =>
-              notifier.update(stereoDownmix: !settings.stereoDownmix),
+          onTap: () => notifier.update(stereoDownmix: !settings.stereoDownmix),
           child: SwitchListTile(
             title: const Text('立体声降混'),
             subtitle: const Text('将多声道音频降混为立体声（解决部分声道无声问题）'),
@@ -81,9 +80,7 @@ class PlayerSettingsScreen extends ConsumerWidget {
         settingsTvWrapRow(
           tvMode: settings.tvMode,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const DanmakuConfigScreen(),
-            ),
+            settingsFadeRoute<void>((_) => const DanmakuConfigScreen()),
           ),
           child: ListTile(
             key: const ValueKey('danmakuConfigEntry'),
@@ -96,9 +93,7 @@ class PlayerSettingsScreen extends ConsumerWidget {
               color: Colors.white54,
             ),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const DanmakuConfigScreen(),
-              ),
+              settingsFadeRoute<void>((_) => const DanmakuConfigScreen()),
             ),
           ),
         ),
