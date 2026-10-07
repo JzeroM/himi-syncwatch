@@ -16,6 +16,9 @@ PlayerTopBar _bar({
   bool glassEnabled = true,
   bool showVideoFitButton = false,
   bool showShare = false,
+  bool showSubtitleStyleButton = true,
+  bool subtitleStyleMenuOpen = false,
+  VoidCallback? onToggleSubtitleStyle,
 }) =>
     PlayerTopBar(
       title: title,
@@ -31,6 +34,9 @@ PlayerTopBar _bar({
       onBack: () {},
       onToggleDecode: () {},
       onShare: () {},
+      showSubtitleStyleButton: showSubtitleStyleButton,
+      subtitleStyleMenuOpen: subtitleStyleMenuOpen,
+      onToggleSubtitleStyle: onToggleSubtitleStyle,
     );
 
 Widget _host(Widget child, {AppSettings settings = const AppSettings()}) {
@@ -151,6 +157,88 @@ void main() {
       await tester.pumpWidget(_host(_bar(showVideoFitButton: true)));
       expect(find.byIcon(Icons.fit_screen), findsOneWidget);
       expect(find.byTooltip('自适应'), findsOneWidget);
+    });
+  });
+
+  group('字幕样式按钮（网速与解码之间）', () {
+    testWidgets('按钮渲染且位于网速右侧、解码左侧', (tester) async {
+      await tester.pumpWidget(_host(_bar(
+        networkSpeedText: '4.89 MB/s',
+        showDecodeButton: true,
+      )));
+
+      final style = find.byKey(const ValueKey('playerSubtitleStyleButton'));
+      expect(style, findsOneWidget);
+      expect(find.byIcon(Icons.format_size), findsOneWidget);
+
+      final speedX = tester
+          .getTopLeft(find.byKey(const ValueKey('playerNetworkSpeed')))
+          .dx;
+      final styleX = tester.getTopLeft(style).dx;
+      final decodeX = tester
+          .getTopLeft(find.byKey(const ValueKey('playerDecodeButton')))
+          .dx;
+      expect(speedX, lessThan(styleX), reason: '网速在样式按钮左侧');
+      expect(styleX, lessThan(decodeX), reason: '样式按钮在解码左侧');
+    });
+
+    testWidgets('网速关闭（null）时按钮仍渲染', (tester) async {
+      await tester.pumpWidget(_host(_bar(
+        networkSpeedText: null,
+        showDecodeButton: true,
+      )));
+      expect(
+        find.byKey(const ValueKey('playerSubtitleStyleButton')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('按 showSubtitleStyleButton 显隐；点击触发回调', (tester) async {
+      var toggled = false;
+      await tester.pumpWidget(_host(_bar(
+          showSubtitleStyleButton: false,
+          onToggleSubtitleStyle: () => toggled = true)));
+      expect(
+        find.byKey(const ValueKey('playerSubtitleStyleButton')),
+        findsNothing,
+      );
+
+      await tester.pumpWidget(_host(_bar(
+          showSubtitleStyleButton: true,
+          onToggleSubtitleStyle: () => toggled = true)));
+      await tester.tap(
+        find.byKey(const ValueKey('playerSubtitleStyleButton')),
+      );
+      await tester.pumpAndSettle();
+      expect(toggled, isTrue);
+    });
+
+    testWidgets('展开态描边高亮（同解码胶囊）', (tester) async {
+      BoxDecoration decorationOf(WidgetTester t) {
+        final container = t.widget<Container>(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('playerSubtitleStyleButton')),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+        return container.decoration! as BoxDecoration;
+      }
+
+      await tester.pumpWidget(
+          _host(_bar(subtitleStyleMenuOpen: false, glassEnabled: true)));
+      await tester.pumpAndSettle();
+      final closed = decorationOf(tester);
+      expect(closed.border!.top.color, isNot(const Color(0xFF6366F1)));
+      expect(closed.boxShadow, isNull);
+
+      await tester.pumpWidget(
+          _host(_bar(subtitleStyleMenuOpen: true, glassEnabled: true)));
+      await tester.pumpAndSettle();
+      final open = decorationOf(tester);
+      expect(open.border!.top.color, const Color(0xFF6366F1));
+      expect(open.boxShadow, isNotNull, reason: '展开态 accent 外发光');
     });
   });
 

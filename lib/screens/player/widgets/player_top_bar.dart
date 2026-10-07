@@ -23,6 +23,10 @@ class PlayerTopBar extends StatelessWidget {
     required this.onBack,
     required this.onToggleDecode,
     required this.onShare,
+    this.showSubtitleStyleButton = true,
+    this.subtitleStyleMenuOpen = false,
+    this.subtitleStyleFocusNode,
+    this.onToggleSubtitleStyle,
   });
 
   /// 左上角影视信息（电影名 / `剧名 – S01E02`）；空串不渲染。
@@ -50,6 +54,17 @@ class PlayerTopBar extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onToggleDecode;
   final VoidCallback onShare;
+
+  /// 字幕样式按钮（网速显示与解码控件之间）：开关右侧选择器面板。
+  final bool showSubtitleStyleButton;
+
+  /// 样式面板展开态（描边高亮同解码胶囊）。
+  final bool subtitleStyleMenuOpen;
+
+  /// 按钮焦点（面板打开来源，关闭时归还；TV 遥控 OK 重开）。
+  final FocusNode? subtitleStyleFocusNode;
+
+  final VoidCallback? onToggleSubtitleStyle;
 
   /// 解码方块装饰：
   /// - 玻璃开：白 22%→10% 渐变 + 白 24% 细描边；展开态换 accent 1.5px
@@ -141,6 +156,26 @@ class PlayerTopBar extends StatelessWidget {
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
             const SizedBox(width: 8),
+          ],
+          // 字幕样式按钮（网速与解码之间）：右侧选择器面板调大小/位置/延迟
+          if (showSubtitleStyleButton) ...[
+            if (networkSpeedText == null) const SizedBox(width: 8),
+            TvFocusable(
+              key: const ValueKey('playerSubtitleStyleButton'),
+              focusNode: subtitleStyleFocusNode,
+              radius: 10,
+              onTap: onToggleSubtitleStyle,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: _decodeChipDecoration(
+                  open: subtitleStyleMenuOpen,
+                  glass: glassEnabled,
+                ),
+                child: const Icon(Icons.format_size,
+                    color: Colors.white, size: 18),
+              ),
+            ),
+            if (showDecodeButton) const SizedBox(width: 8),
           ],
           // 解码模式按钮（TV 隐藏：解码模式仅走设置页切换）
           // 图标化玻璃方块：文字信息移入 DecodeModePanel 标题行

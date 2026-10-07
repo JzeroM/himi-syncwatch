@@ -57,8 +57,11 @@ import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/seek_time_labels.dart';
+import 'package:himi_syncwatch/screens/player/widgets/subtitle_style_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/video_gesture_layer.dart';
 import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
+import 'package:himi_syncwatch/services/subtitle_delay_file.dart';
+import 'package:himi_syncwatch/services/subtitle_style_store.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -481,6 +484,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showAudioMenu = false;
   bool _showDecodeModeMenu = false;
   bool _showSpeedMenu = false;
+  bool _showSubtitleStyleMenu = false;
+
+  /// 字幕样式（大小/位置/延迟）：本播放会话内存态；按内容 id 落盘
+  ///（[SubtitleStyleStore]），退出后重进同内容恢复。
+  double _subtitleScale = SubtitleStylePanel.defaultScale;
+  int _subtitleMarginY = SubtitleStylePanel.defaultMarginY;
+  int _subtitleDelayMs = SubtitleStylePanel.defaultDelayMs;
+
+  /// 当前激活的本地字幕文件路径（`_activeSubtitleIndex == -1` 时有效，
+  /// 延迟偏移重载的原素材）。
+  String? _activeLocalSubtitlePath;
+
+  /// 延迟变更 → 重载偏移字幕的去抖（拖动连续触发只重载最后一次）。
+  Timer? _subtitleDelayReloadTimer;
+
+  /// 样式变更 → 落盘的去抖。
+  Timer? _subtitleStyleSaveTimer;
+
+  final SubtitleStyleStore _subtitleStyleStore = SubtitleStyleStore();
+
+  /// 顶栏「字幕样式」按钮焦点（面板打开来源，关闭时归还）。
+  final FocusNode _subtitleStyleButtonFocusNode =
+      FocusNode(debugLabel: 'subtitleStyleButton');
 
   /// 当前播放倍速（单人模式；初始取设置持久值，换集/重载后恢复）。
   double _speed = 1.0;
@@ -1059,12 +1085,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 锁状态机变化 → 重建顶栏锁图标 / 解锁浮钮
     _lockController.addListener(_onLockStateChanged);
     _player = mdk.Player();
-    // 字幕属性配置
+    // 字幕属性配置（大小/位置随会话状态，initState 后异步恢复落盘值）
     _player.setProperty('subtitle', '1');
     _player.setProperty('subtitle.font.size', '40');
     _player.setProperty('subtitle.border', '2');
     _player.setProperty('subtitle.shadow', '1');
-    _player.setProperty('subtitle.margin.y', '22');
+    _applySubtitleStyle();
     // 音频滤镜（立体声降混 / iOS TrueHD 无声规避）统一走策略，
     // 初始化时音轨编码未知，先按开关落一次；选轨/诊断再按编码刷新
     final settings = ref.read(settingsProvider);
@@ -1827,6 +1853,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         (targetItemId == widget.itemId ? widget.mediaSourceId : null);
 
     final effectiveServerId = serverId ?? widget.serverId;
+    // 换内容：按内容 id 恢复字幕样式（无记录沿用当前内存值）
+    unawaited(_restoreSubtitleStyleForContent());
     try {
       if (!mounted) return false;
       final embyService = ref.read(embyServiceForProvider(effectiveServerId));
@@ -2435,13 +2463,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (pos == null) {
             // 预选「关闭字幕」
             _player.activeSubtitleTracks = [];
+            _activeSubtitleIndex = null;
+            _activeLocalSubtitlePath = null;
+            _subtitleDelayReloadTimer?.cancel();
           } else {
             // 复用面板选择逻辑（含外挂轨 setMedia 分支）
             _selectEmbySubtitle(pos);
           }
         } else {
           // 字幕预选未匹配到轨 → 回退现状默认
-          _player.activeSubtitleTracks = [0];
+          _selectDefaultEmbeddedSubtitle();
         }
 
         if (resolved.applyAudio && resolved.audioPosition != null) {
@@ -2456,13 +2487,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _applyAudioFilterPolicy();
           }
         }
+        // 字幕轨已定型：延迟 ≠0 时立即套用（偏移重载）
+        _maybeApplySubtitleDelay(immediate: true);
         return;
       }
       // resolved == null：预选全部未匹配，落回下方默认逻辑
     }
 
     // fvp: 自动选择第一个字幕轨道
-    _player.activeSubtitleTracks = [0];
+    _selectDefaultEmbeddedSubtitle();
 
     if (_embyDefaultAudioIndex != null) {
       final embyIdx = _embyAudioStreams.indexWhere(
@@ -2474,6 +2507,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     // 音轨编码此时才随 mediaInfo 可得，按策略刷新滤镜
     _applyAudioFilterPolicy();
+    _maybeApplySubtitleDelay(immediate: true);
+  }
+
+  /// 默认激活第一条字幕轨（mdk 位置 0）并同步面板选中态：
+  /// `_activeSubtitleIndex` 记 Emby 流 index（面板高亮与延迟重载取源用）。
+  void _selectDefaultEmbeddedSubtitle() {
+    _player.activeSubtitleTracks = [0];
+    _activeSubtitleIndex =
+        _embySubtitleStreams.isNotEmpty ? _embySubtitleStreams[0].index : null;
+    _activeLocalSubtitlePath = null;
   }
 
   void _refreshTracks() {
@@ -3442,6 +3485,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _showAudioMenu = false;
           _showDecodeModeMenu = false;
           _showSpeedMenu = false;
+          _showSubtitleStyleMenu = false;
         });
       });
     }
@@ -3467,6 +3511,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSubtitleMenu = false;
       _showAudioMenu = false;
       _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
     });
     _restoreSelectorOpenerFocus(opener, force: true);
   }
@@ -3494,6 +3539,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
     });
     // 焦点正在面板行上（如 Back 关闭）：原路返回来源按钮，防悬空
     _restoreSelectorOpenerFocus(opener);
@@ -3864,6 +3910,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _speedButtonFocusNode.dispose();
     _selectorFirstFocusNode.dispose();
     _selectorPanelRootFocusNode.dispose();
+    _subtitleStyleButtonFocusNode.dispose();
+    _subtitleDelayReloadTimer?.cancel();
+    _subtitleStyleSaveTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
     _gestureHintTimer?.cancel();
@@ -3986,7 +4035,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       enabled: ref.watch(settingsProvider.select((s) => s.tvMode)),
       // 选择器面板打开时：返回键收起面板并把焦点还给来源控件，不退出播放器
       onBack: () {
-        if (_showSubtitleMenu || _showAudioMenu || _showSpeedMenu) {
+        if (_showSubtitleMenu ||
+            _showAudioMenu ||
+            _showSpeedMenu ||
+            _showSubtitleStyleMenu) {
           _closeSelectorPanel();
           _resetHideTimer();
           return true;
@@ -4275,7 +4327,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 字幕/音轨/倍速选择器：右侧玻璃浮层（可滚动；随控制条显隐）
         if (_showControls &&
             !_lockController.locked &&
-            (_showSubtitleMenu || _showAudioMenu || _showSpeedMenu))
+            (_showSubtitleMenu ||
+                _showAudioMenu ||
+                _showSpeedMenu ||
+                _showSubtitleStyleMenu))
           Positioned(
             top: MediaQuery.of(context).padding.top + 48,
             bottom: 132,
@@ -4290,46 +4345,63 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     ? '字幕'
                     : _showAudioMenu
                         ? '音轨'
-                        : '倍速',
-                child: _showSubtitleMenu
-                    ? SubtitleMenuPanel(
-                        player: _player,
-                        subtitleStreams: _embySubtitleStreams,
-                        activeSubtitleIndex: _activeSubtitleIndex,
-                        useServerBurnIn: _useServerSubtitleBurnIn,
-                        itemId: _episodes.isNotEmpty &&
-                                _currentEpisodeIndex >= 0 &&
-                                _currentEpisodeIndex < _episodes.length
-                            ? _episodes[_currentEpisodeIndex].id
-                            : widget.itemId,
-                        mediaSourceId: widget.mediaSourceId,
-                        token: _currentToken,
+                        : _showSubtitleStyleMenu
+                            ? '字幕样式'
+                            : '倍速',
+                child: _showSubtitleStyleMenu
+                    ? SubtitleStylePanel(
+                        scale: _subtitleScale,
+                        marginY: _subtitleMarginY,
+                        delayMs: _subtitleDelayMs,
+                        delayEnabled: _activeSubtitleIndex != null,
+                        glassEnabled: _glassUiOn,
+                        onScaleChanged: _onSubtitleScaleChanged,
+                        onMarginYChanged: _onSubtitleMarginYChanged,
+                        onDelayChanged: _onSubtitleDelayChanged,
+                        onReset: _onSubtitleStyleReset,
                         focusNode: _selectorFirstFocusNode,
-                        onSubtitleSelected: (index) {
-                          if (index == null) {
-                            _player.activeSubtitleTracks = [];
-                            _useServerSubtitleBurnIn = false;
-                            _activeSubtitleIndex = null;
-                          } else {
-                            _selectEmbySubtitle(index);
-                          }
-                        },
-                        onLoadLocal: _loadLocalSubtitle,
-                        onClose: _closeSelectorPanel,
                       )
-                    : _showAudioMenu
-                        ? AudioTrackMenuPanel(
+                    : _showSubtitleMenu
+                        ? SubtitleMenuPanel(
                             player: _player,
-                            audioStreams: _embyAudioStreams,
+                            subtitleStreams: _embySubtitleStreams,
+                            activeSubtitleIndex: _activeSubtitleIndex,
+                            useServerBurnIn: _useServerSubtitleBurnIn,
+                            itemId: _episodes.isNotEmpty &&
+                                    _currentEpisodeIndex >= 0 &&
+                                    _currentEpisodeIndex < _episodes.length
+                                ? _episodes[_currentEpisodeIndex].id
+                                : widget.itemId,
+                            mediaSourceId: widget.mediaSourceId,
+                            token: _currentToken,
                             focusNode: _selectorFirstFocusNode,
-                            onAudioSelected: _selectEmbyAudio,
+                            onSubtitleSelected: (index) {
+                              if (index == null) {
+                                _player.activeSubtitleTracks = [];
+                                _useServerSubtitleBurnIn = false;
+                                _activeSubtitleIndex = null;
+                                _activeLocalSubtitlePath = null;
+                                _subtitleDelayReloadTimer?.cancel();
+                              } else {
+                                _selectEmbySubtitle(index);
+                              }
+                            },
+                            onLoadLocal: _loadLocalSubtitle,
                             onClose: _closeSelectorPanel,
                           )
-                        : SpeedMenuPanel(
-                            current: _speed,
-                            focusNode: _selectorFirstFocusNode,
-                            onSelected: _applySpeed,
-                          ),
+                        : _showAudioMenu
+                            ? AudioTrackMenuPanel(
+                                player: _player,
+                                audioStreams: _embyAudioStreams,
+                                focusNode: _selectorFirstFocusNode,
+                                onAudioSelected: _selectEmbyAudio,
+                                onClose: _closeSelectorPanel,
+                              )
+                            : SpeedMenuPanel(
+                                current: _speed,
+                                focusNode: _selectorFirstFocusNode,
+                                onSelected: _applySpeed,
+                              ),
               ),
             ),
           ),
@@ -4457,6 +4529,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           : null,
       showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode),
       decodeMenuOpen: _showDecodeModeMenu,
+      showSubtitleStyleButton: true,
+      subtitleStyleMenuOpen: _showSubtitleStyleMenu,
+      subtitleStyleFocusNode: _subtitleStyleButtonFocusNode,
+      onToggleSubtitleStyle: _toggleSubtitleStyleMenu,
       glassEnabled: settings.glassUi,
       showVideoFitButton: widget.roomCode == null && !settings.tvMode,
       videoFitIcon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
@@ -4476,6 +4552,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 顶栏左上角影视信息；无片单（直链播放）返回空串不渲染。
   String get _currentEpisodeTitle =>
       PlayerScreen.mediaTitleAt(_episodes, _currentEpisodeIndex);
+
+  /// 顶栏「字幕样式」按钮：开关样式面板（与字幕/音轨/倍速/解码互斥）。
+  void _toggleSubtitleStyleMenu() {
+    setState(() {
+      _showSubtitleStyleMenu = !_showSubtitleStyleMenu;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showSpeedMenu = false;
+      _showDecodeModeMenu = false;
+    });
+    if (_showSubtitleStyleMenu) {
+      _openSelectorPanel(_subtitleStyleButtonFocusNode);
+    }
+  }
 
   void _onLockStateChanged() {
     if (mounted) setState(() {});
@@ -4530,6 +4620,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
     });
   }
 
@@ -4560,6 +4651,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showAudioMenu ||
         _showDecodeModeMenu ||
         _showSpeedMenu ||
+        _showSubtitleStyleMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       _closeAllMenus();
@@ -5035,6 +5127,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _showSubtitleMenu = !_showSubtitleMenu;
                         _showAudioMenu = false;
                         _showSpeedMenu = false;
+                        _showSubtitleStyleMenu = false;
                       });
                       if (_showSubtitleMenu) {
                         _openSelectorPanel(_subtitleButtonFocusNode);
@@ -5055,6 +5148,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _showAudioMenu = !_showAudioMenu;
                         _showSubtitleMenu = false;
                         _showSpeedMenu = false;
+                        _showSubtitleStyleMenu = false;
                       });
                       if (_showAudioMenu) {
                         _openSelectorPanel(_audioButtonFocusNode);
@@ -5075,6 +5169,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           _showSpeedMenu = !_showSpeedMenu;
                           _showSubtitleMenu = false;
                           _showAudioMenu = false;
+                          _showSubtitleStyleMenu = false;
                         });
                         if (_showSpeedMenu) {
                           _openSelectorPanel(_speedButtonFocusNode);
@@ -5679,6 +5774,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 当前播放内容的 (itemId, serverId)：剧集用选中集，否则用入参
+  ///（serverId 为 null 时调用方回退 widget.serverId）。
+  (String, String?) get _currentSubtitleContent {
+    final hasEp = _episodes.isNotEmpty &&
+        _currentEpisodeIndex >= 0 &&
+        _currentEpisodeIndex < _episodes.length;
+    return hasEp
+        ? (
+            _episodes[_currentEpisodeIndex].id,
+            _episodes[_currentEpisodeIndex].serverId
+          )
+        : (widget.itemId, null);
+  }
+
+  /// 字幕样式落盘键：当前播放内容 id（剧集 = 选中集）；多服务器时带
+  /// serverId 前缀防碰撞。
+  String get _subtitleStyleKey {
+    final (id, serverId) = _currentSubtitleContent;
+    final sid = serverId ?? widget.serverId;
+    return sid != null ? '$sid:$id' : id;
+  }
+
   void _selectEmbySubtitle(int embyIndex) {
     final stream = _embySubtitleStreams[embyIndex];
     final isExternal =
@@ -5686,17 +5803,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (isExternal) {
       // 外挂字幕：用 fvp setMedia 加载外部文件，不重载流
-      final hasCurrentEp = _episodes.isNotEmpty &&
-          _currentEpisodeIndex >= 0 &&
-          _currentEpisodeIndex < _episodes.length;
-      final itemId =
-          hasCurrentEp ? _episodes[_currentEpisodeIndex].id : widget.itemId;
-      final subtitleServerId =
-          hasCurrentEp ? _episodes[_currentEpisodeIndex].serverId : null;
+      final (itemId, serverId) = _currentSubtitleContent;
       final embyService =
-          ref.read(embyServiceForProvider(subtitleServerId ?? widget.serverId));
+          ref.read(embyServiceForProvider(serverId ?? widget.serverId));
       final config =
-          ref.read(embyConfigForProvider(subtitleServerId ?? widget.serverId));
+          ref.read(embyConfigForProvider(serverId ?? widget.serverId));
       final subtitleUrl = embyService.getSubtitleUrl(
         itemId,
         subtitleIndex: stream.index,
@@ -5715,6 +5826,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     _useServerSubtitleBurnIn = false;
     _activeSubtitleIndex = stream.index;
+    _activeLocalSubtitlePath = null;
+    // 延迟 ≠0：立即用偏移后的 SRT 替换刚激活的轨
+    _maybeApplySubtitleDelay();
   }
 
   void _selectEmbyAudio(int embyIndex) {
@@ -5726,6 +5840,163 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ? _embyAudioStreams[embyIndex].codec
           : null,
     );
+  }
+
+  // ========== 字幕样式（大小/位置/延迟） ==========
+
+  /// 应用字幕大小/位置（mdk 属性，暂停也立即生效）。
+  void _applySubtitleStyle() {
+    _player.setProperty('subtitle.scale', _subtitleScale.toStringAsFixed(2));
+    _player.setProperty('subtitle.margin.y', '$_subtitleMarginY');
+  }
+
+  /// 按内容 id 恢复落盘样式（无记录沿用当前内存值）并套用到当前轨。
+  Future<void> _restoreSubtitleStyleForContent() async {
+    final prefs = await _subtitleStyleStore.get(_subtitleStyleKey);
+    if (!mounted) return;
+    if (prefs != null) {
+      setState(() {
+        _subtitleScale = prefs.scale;
+        _subtitleMarginY = prefs.marginY;
+        _subtitleDelayMs = prefs.delayMs;
+      });
+    }
+    _applySubtitleStyle();
+    _maybeApplySubtitleDelay(immediate: true);
+  }
+
+  void _onSubtitleScaleChanged(double v) {
+    setState(() => _subtitleScale = v);
+    _applySubtitleStyle();
+    _resetHideTimer();
+    _scheduleSubtitleStyleSave();
+  }
+
+  void _onSubtitleMarginYChanged(int v) {
+    setState(() => _subtitleMarginY = v);
+    _applySubtitleStyle();
+    _resetHideTimer();
+    _scheduleSubtitleStyleSave();
+  }
+
+  void _onSubtitleDelayChanged(int v) {
+    setState(() => _subtitleDelayMs = v);
+    _resetHideTimer();
+    _scheduleSubtitleStyleSave();
+    _subtitleDelayReloadTimer?.cancel();
+    if (v == 0) {
+      // 归零：立即恢复原素材轨
+      _restoreActiveSubtitleSource();
+    } else {
+      _maybeApplySubtitleDelay();
+    }
+  }
+
+  void _onSubtitleStyleReset() {
+    final hadDelay = _subtitleDelayMs != SubtitleStylePanel.defaultDelayMs;
+    setState(() {
+      _subtitleScale = SubtitleStylePanel.defaultScale;
+      _subtitleMarginY = SubtitleStylePanel.defaultMarginY;
+      _subtitleDelayMs = SubtitleStylePanel.defaultDelayMs;
+    });
+    _applySubtitleStyle();
+    _resetHideTimer();
+    _scheduleSubtitleStyleSave();
+    _subtitleDelayReloadTimer?.cancel();
+    if (hadDelay) _restoreActiveSubtitleSource();
+  }
+
+  /// 样式落盘去抖（500ms）：滑杆连续拖动只写最后一次。
+  void _scheduleSubtitleStyleSave() {
+    _subtitleStyleSaveTimer?.cancel();
+    _subtitleStyleSaveTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      unawaited(_subtitleStyleStore.put(
+        _subtitleStyleKey,
+        SubtitleStylePrefs(
+          scale: _subtitleScale,
+          marginY: _subtitleMarginY,
+          delayMs: _subtitleDelayMs,
+        ),
+      ));
+    });
+  }
+
+  /// 延迟 ≠0 且有激活字幕轨时重载偏移字幕
+  ///（轨刚定型时立即，滑杆拖动时 300ms 去抖）。
+  void _maybeApplySubtitleDelay({bool immediate = false}) {
+    _subtitleDelayReloadTimer?.cancel();
+    if (_activeSubtitleIndex == null || _subtitleDelayMs == 0) return;
+    if (immediate) {
+      unawaited(_reloadSubtitleForDelay());
+    } else {
+      _subtitleDelayReloadTimer = Timer(
+        const Duration(milliseconds: 300),
+        () => unawaited(_reloadSubtitleForDelay()),
+      );
+    }
+  }
+
+  /// 恢复当前字幕轨原素材（延迟归零/重置时）。
+  void _restoreActiveSubtitleSource() {
+    final idx = _activeSubtitleIndex;
+    if (idx == null) return;
+    if (idx == -1) {
+      final path = _activeLocalSubtitlePath;
+      if (path == null) return;
+      _loadSubtitleFileIntoPlayer(path);
+    } else {
+      final pos = _embySubtitleStreams.indexWhere((s) => s.index == idx);
+      if (pos >= 0) _selectEmbySubtitle(pos);
+    }
+  }
+
+  /// 按 [_subtitleDelayMs] 偏移后重载当前字幕轨：
+  /// Emby 轨下载 SRT（服务端转出）/ 本地文件直读 → 偏移 → 临时文件 →
+  /// setMedia 外挂并激活。
+  Future<void> _reloadSubtitleForDelay() async {
+    if (!mounted) return;
+    final idx = _activeSubtitleIndex;
+    if (idx == null || _subtitleDelayMs == 0) return;
+    try {
+      String? text;
+      if (idx == -1) {
+        final path = _activeLocalSubtitlePath;
+        if (path == null) return;
+        text = await File(path).readAsString();
+      } else {
+        final (itemId, serverId) = _currentSubtitleContent;
+        final service =
+            ref.read(embyServiceForProvider(serverId ?? widget.serverId));
+        text = await service.fetchSubtitleText(
+          itemId,
+          subtitleIndex: idx,
+          mediaSourceId: widget.mediaSourceId,
+        );
+      }
+      if (text.isEmpty || !mounted) return;
+      final dir = await getTemporaryDirectory();
+      final path = await SubtitleDelayFile.write(
+        text: text,
+        delayMs: _subtitleDelayMs,
+        dir: dir,
+      );
+      if (!mounted) return;
+      _loadSubtitleFileIntoPlayer(path);
+    } catch (e) {
+      LogService().log('Player', '字幕延迟重载失败: $e');
+    }
+  }
+
+  /// setMedia 外挂字幕文件并激活末轨（新轨追加在末尾）；返回激活位置。
+  int _loadSubtitleFileIntoPlayer(String path) {
+    _player.setMedia(path, mdk.MediaType.subtitle);
+    final count = _player.mediaInfo.subtitle?.length ?? 0;
+    if (count > 0) {
+      _player.activeSubtitleTracks = [count - 1];
+      return count - 1;
+    }
+    return -1;
   }
 
   Future<void> _loadLocalSubtitle() async {
@@ -5741,18 +6012,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (filePath == null) return;
 
       // 加载本地字幕文件
-      _player.setMedia(filePath, mdk.MediaType.subtitle);
-
-      // 获取当前字幕轨道数量，新加载的字幕在末尾
-      final subtitleCount = _player.mediaInfo.subtitle?.length ?? 0;
-      if (subtitleCount > 0) {
-        _player.activeSubtitleTracks = [subtitleCount - 1];
-      }
+      _loadSubtitleFileIntoPlayer(filePath);
 
       setState(() {
         _activeSubtitleIndex = -1;
+        _activeLocalSubtitlePath = filePath;
         _useServerSubtitleBurnIn = false;
       });
+      // 延迟 ≠0：用偏移后的副本替换本地原文件
+      _maybeApplySubtitleDelay();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

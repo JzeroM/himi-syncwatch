@@ -584,6 +584,27 @@ class EmbyService {
     return url;
   }
 
+  /// 下载字幕文本（字幕延迟：解析偏移后写临时文件外挂）。
+  /// 服务端统一转出 SRT；ResponseType.plain 防非 JSON 内容解析失败。
+  Future<String> fetchSubtitleText(
+    String itemId, {
+    required int subtitleIndex,
+    String? mediaSourceId,
+    String format = 'srt',
+  }) async {
+    final url = getSubtitleUrl(
+      itemId,
+      subtitleIndex: subtitleIndex,
+      mediaSourceId: mediaSourceId,
+      format: format,
+    );
+    final resp = await _dio.get<String>(
+      url,
+      options: Options(responseType: ResponseType.plain),
+    );
+    return resp.data ?? '';
+  }
+
   String getImageUrl(String itemId, {String type = 'Primary'}) {
     return '$_serverUrl/Items/$itemId/Images/$type';
   }
