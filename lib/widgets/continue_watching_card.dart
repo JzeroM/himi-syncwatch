@@ -11,11 +11,15 @@ class ContinueWatchingCard extends StatelessWidget {
     required this.item,
     required this.width,
     this.onTap,
+    this.onLongPress,
   });
 
   final MediaItem item;
   final double width;
   final VoidCallback? onTap;
+
+  /// 长按（触屏长按 / TV 长按 OK）：回调携带卡片全局矩形作菜单锚点。
+  final void Function(Rect anchor)? onLongPress;
 
   static const double textReservedHeight = 46;
 
@@ -45,6 +49,14 @@ class ContinueWatchingCard extends StatelessWidget {
     return TvFocusable(
       radius: 12,
       onTap: onTap,
+      onLongPress: onLongPress == null
+          ? null
+          : () {
+              final box = context.findRenderObject();
+              if (box is RenderBox && box.attached) {
+                onLongPress!(box.localToGlobal(Offset.zero) & box.size);
+              }
+            },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

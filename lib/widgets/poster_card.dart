@@ -11,6 +11,7 @@ class PosterCard extends StatelessWidget {
     required this.item,
     required this.width,
     this.onTap,
+    this.onLongPress,
     this.serverBadge,
   });
 
@@ -21,6 +22,9 @@ class PosterCard extends StatelessWidget {
   final double width;
 
   final VoidCallback? onTap;
+
+  /// 长按（触屏长按 / TV 长按 OK）：回调携带卡片全局矩形作菜单锚点。
+  final void Function(Rect anchor)? onLongPress;
 
   /// 左上服务器名角标（聚合搜索「全部」视图区分来源）；设置后
   /// 集数角标让位（同为左上角，来源归属优先）。
@@ -37,6 +41,14 @@ class PosterCard extends StatelessWidget {
     return TvFocusable(
       radius: 12,
       onTap: onTap,
+      onLongPress: onLongPress == null
+          ? null
+          : () {
+              final box = context.findRenderObject();
+              if (box is RenderBox && box.attached) {
+                onLongPress!(box.localToGlobal(Offset.zero) & box.size);
+              }
+            },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

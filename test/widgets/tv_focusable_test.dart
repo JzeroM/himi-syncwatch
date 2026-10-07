@@ -260,4 +260,79 @@ void main() {
         of: tvFocusable, matching: find.byType(AnimatedContainer)));
     expect(outline.foregroundDecoration, isA<BoxDecoration>());
   });
+
+  // ---- 长按（触屏长按 / TV 长按 OK） ----
+  group('长按', () {
+    int taps = 0;
+    int longs = 0;
+
+    Widget lpHost({required bool tvMode}) {
+      final container = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(
+              (ref) => FakeSettingsNotifier(AppSettings(tvMode: tvMode))),
+        ],
+      );
+      addTearDown(container.dispose);
+      return UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: TvFocusable(
+                autofocus: true,
+                onTap: () => taps++,
+                onLongPress: () => longs++,
+                child:
+                    const SizedBox(width: 80, height: 40, child: Text('card')),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    setUp(() {
+      taps = 0;
+      longs = 0;
+    });
+
+    testWidgets('非 TV：触屏长按触发 onLongPress（不触发 onTap）', (tester) async {
+      await tester.pumpWidget(lpHost(tvMode: false));
+      await tester.longPress(find.text('card'));
+      await tester.pump();
+      expect(longs, 1);
+      expect(taps, 0);
+
+      await tester.tap(find.text('card'));
+      await tester.pump();
+      expect(taps, 1);
+    });
+
+    testWidgets('TV：长按 OK（≥阈值）触发 onLongPress，不触发 onTap', (tester) async {
+      await tester.pumpWidget(lpHost(tvMode: true));
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 650));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(longs, 1, reason: '长按 OK 应触发 onLongPress');
+      expect(taps, 0, reason: '长按不应再触发 onTap');
+    });
+
+    testWidgets('TV：短按 OK 仍触发 onTap', (tester) async {
+      await tester.pumpWidget(lpHost(tvMode: true));
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(taps, 1, reason: '短按 OK 触发 onTap');
+      expect(longs, 0);
+    });
+  });
 }

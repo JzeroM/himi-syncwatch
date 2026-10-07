@@ -429,6 +429,15 @@ void main() {
       expect(items, hasLength(1));
       expect(items.single.playbackPositionMs, 169000);
     });
+
+    test('removeFromResume 走 POST /Items/{id}/UserData 且清空进度', () async {
+      final ok = await service.removeFromResume('item-9');
+      expect(ok, isTrue);
+      final req = captured.single;
+      expect(req.method, 'POST');
+      expect(req.path, '/Users/user-1/Items/item-9/UserData');
+      expect(req.body['PlaybackPositionTicks'], 0);
+    });
   });
 
   group('播放会话上报', () {

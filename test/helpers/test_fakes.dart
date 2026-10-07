@@ -168,6 +168,18 @@ class FakeEmbyService extends EmbyService {
     return watchedSetResult;
   }
 
+  /// removeFromResume 收到的 itemId 记录。
+  final List<String> removedResumeCalls = [];
+
+  /// removeFromResume 返回值（false 模拟失败 → 乐观隐藏应回滚）。
+  bool removeResumeResult = true;
+
+  @override
+  Future<bool> removeFromResume(String itemId) async {
+    removedResumeCalls.add(itemId);
+    return removeResumeResult;
+  }
+
   @override
   Future<MediaCounts?> getItemCounts() async => itemCounts;
 

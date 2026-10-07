@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 
@@ -359,6 +360,9 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
                         width: cellWidth,
                         onTap: () =>
                             context.push('/detail/${_items[index].id}'),
+                        onLongPress: (rect) => showPosterCardMenu(
+                            context, ref, _items[index], rect,
+                            favoritedMode: false),
                       ),
                       childCount: _items.length,
                     ),

@@ -397,6 +397,20 @@ class EmbyService {
     }
   }
 
+  /// 移出「继续观看」：清空播放进度（`PlaybackPositionTicks: 0`），不改已观看。
+  /// Emby `POST /Users/{userId}/Items/{itemId}/UserData`。成功返回 true。
+  Future<bool> removeFromResume(String itemId) async {
+    try {
+      await _dio.post(
+        '/Users/$_userId/Items/$itemId/UserData',
+        data: <String, dynamic>{'PlaybackPositionTicks': 0},
+      );
+      return true;
+    } on DioException {
+      return false;
+    }
+  }
+
   /// 当前服务器全部收藏条目（电影/剧集/单集），供收藏页分组展示。
   /// `Filters=IsFavorite` 服务端过滤；字段含 `UserData` 以便回显收藏态。
   /// 失败返回空列表。

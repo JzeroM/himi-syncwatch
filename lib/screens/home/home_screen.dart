@@ -17,6 +17,7 @@ import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/continue_watching_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_search_button.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/room_menu_button.dart';
@@ -332,6 +333,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     items: resumeVisible,
                                     onOpen: (item) =>
                                         context.push('/detail/${item.id}'),
+                                    onItemLongPress: (item, rect) =>
+                                        showResumeCardMenu(
+                                            context, ref, item, rect),
                                   );
                                 }
                                 i--;
@@ -345,6 +349,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   ),
                                   onItemTap: (item) =>
                                       context.push('/detail/${item.id}'),
+                                  onItemLongPress: (item, rect) =>
+                                      showPosterCardMenu(context, ref, item, rect,
+                                          favoritedMode: false),
                                 );
                               }
                               // 列表收尾：媒体统计面板（计数加载成功才渲染）
@@ -391,10 +398,15 @@ class _EmptyState extends StatelessWidget {
 /// 点击进入对应分类海报墙。
 /// 首页「继续观看」横向栏：有播放进度的电影/集，横版卡带进度条。
 class _ContinueWatchingBar extends StatelessWidget {
-  const _ContinueWatchingBar({required this.items, required this.onOpen});
+  const _ContinueWatchingBar({
+    required this.items,
+    required this.onOpen,
+    this.onItemLongPress,
+  });
 
   final List<MediaItem> items;
   final void Function(MediaItem item) onOpen;
+  final void Function(MediaItem item, Rect anchor)? onItemLongPress;
 
   static const double _cardWidth = 200;
 
@@ -429,6 +441,9 @@ class _ContinueWatchingBar extends StatelessWidget {
                     item: item,
                     width: _cardWidth,
                     onTap: () => onOpen(item),
+                    onLongPress: onItemLongPress == null
+                        ? null
+                        : (rect) => onItemLongPress!(item, rect),
                   ),
                 ),
               );
@@ -520,11 +535,13 @@ class _CategorySection extends StatelessWidget {
   final _CategoryData category;
   final VoidCallback onViewAll;
   final void Function(MediaItem item) onItemTap;
+  final void Function(MediaItem item, Rect anchor)? onItemLongPress;
 
   const _CategorySection({
     required this.category,
     required this.onViewAll,
     required this.onItemTap,
+    this.onItemLongPress,
   });
 
   @override
@@ -572,6 +589,9 @@ class _CategorySection extends StatelessWidget {
                     item: item,
                     width: 102,
                     onTap: () => onItemTap(item),
+                    onLongPress: onItemLongPress == null
+                        ? null
+                        : (rect) => onItemLongPress!(item, rect),
                   ),
                 ),
               );

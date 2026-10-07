@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/providers/favorites_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/favorite_episode_card.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 
@@ -94,6 +95,9 @@ class FavoritesAllScreen extends ConsumerWidget {
                                     width: cardWidth,
                                     onTap: () =>
                                         context.push('/detail/${item.id}'),
+                                    onLongPress: (rect) => showPosterCardMenu(
+                                        context, ref, item, rect,
+                                        favoritedMode: true),
                                   ),
                           ),
                       ],

@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/favorite_episode_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 
 /// 收藏页（壳层分支，导航栏 index 1）：电影 / 电视剧 / 集 三分区，
@@ -54,7 +55,7 @@ class FavoritesScreen extends ConsumerWidget {
             error: (e, _) => _centered('收藏加载失败：$e'),
             data: (groups) => groups.isEmpty
                 ? _centered('还没有收藏，去详情页点爱心收藏吧')
-                : _buildSections(context, groups, tvMode),
+                : _buildSections(context, ref, groups, tvMode),
           ),
         ),
       ),
@@ -86,7 +87,7 @@ class FavoritesScreen extends ConsumerWidget {
   }
 
   Widget _buildSections(
-      BuildContext context, FavoriteGroups groups, bool tvMode) {
+      BuildContext context, WidgetRef ref, FavoriteGroups groups, bool tvMode) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(
@@ -101,6 +102,9 @@ class FavoritesScreen extends ConsumerWidget {
             items: groups.movies,
             cardWidth: _posterWidth,
             episodeStyle: false,
+            onItemLongPress: (item, rect) => showPosterCardMenu(
+                context, ref, item, rect,
+                favoritedMode: true),
           ),
         if (groups.series.isNotEmpty)
           _FavoriteSection(
@@ -109,6 +113,9 @@ class FavoritesScreen extends ConsumerWidget {
             items: groups.series,
             cardWidth: _posterWidth,
             episodeStyle: false,
+            onItemLongPress: (item, rect) => showPosterCardMenu(
+                context, ref, item, rect,
+                favoritedMode: true),
           ),
         if (groups.episodes.isNotEmpty)
           _FavoriteSection(
@@ -131,6 +138,7 @@ class _FavoriteSection extends StatelessWidget {
     required this.items,
     required this.cardWidth,
     required this.episodeStyle,
+    this.onItemLongPress,
   });
 
   final String title;
@@ -138,6 +146,9 @@ class _FavoriteSection extends StatelessWidget {
   final List<MediaItem> items;
   final double cardWidth;
   final bool episodeStyle;
+
+  /// 仅电影/剧集卡片支持长按（单集不加）。
+  final void Function(MediaItem item, Rect anchor)? onItemLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +194,9 @@ class _FavoriteSection extends StatelessWidget {
                           item: item,
                           width: cardWidth,
                           onTap: () => context.push('/detail/${item.id}'),
+                          onLongPress: onItemLongPress == null
+                              ? null
+                              : (rect) => onItemLongPress!(item, rect),
                         ),
                 ),
             ],

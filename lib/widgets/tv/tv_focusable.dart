@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +11,8 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 /// - TV 模式关闭：透传为普通 GestureDetector，行为与原样一致（零影响）
 /// - TV 模式开启：获得 D-pad 焦点（方向键由框架全局遍历）、聚焦高亮
 ///   （主题色描边 + 微放大）、遥控器 OK 键（Enter/Select）触发 onTap
+/// - 可选 [onLongPress]：触屏长按；TV 端为「长按 OK」（按住 ≥ 阈值）。仅
+///   在提供 [onLongPress] 时才启用延迟判定，未提供者保持 OK 立即 onTap。
 class TvFocusable extends ConsumerWidget {
   const TvFocusable({
     super.key,
@@ -19,6 +23,7 @@ class TvFocusable extends ConsumerWidget {
     this.radius = 8,
     this.enabled = true,
     this.scale = 1.06,
+    this.onLongPress,
   });
 
   final VoidCallback? onTap;
@@ -32,12 +37,16 @@ class TvFocusable extends ConsumerWidget {
   /// 避免超宽内容按中心放大后两端文字被推出屏幕裁切。
   final double scale;
 
+  /// 长按回调（触屏长按 / TV 长按 OK）。
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tvMode = ref.watch(settingsProvider).tvMode;
     if (!tvMode || !enabled) {
       return GestureDetector(
         onTap: onTap,
+        onLongPress: onLongPress,
         behavior: HitTestBehavior.opaque,
         child: child,
       );
@@ -47,6 +56,7 @@ class TvFocusable extends ConsumerWidget {
 
     return _TvFocusableActive(
       onTap: onTap,
+      onLongPress: onLongPress,
       autofocus: autofocus,
       focusNode: focusNode,
       radius: radius,
@@ -60,6 +70,7 @@ class TvFocusable extends ConsumerWidget {
 class _TvFocusableActive extends StatefulWidget {
   const _TvFocusableActive({
     required this.onTap,
+    this.onLongPress,
     required this.autofocus,
     this.focusNode,
     required this.radius,
@@ -69,6 +80,7 @@ class _TvFocusableActive extends StatefulWidget {
   });
 
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool autofocus;
   final FocusNode? focusNode;
   final double radius;
@@ -81,29 +93,63 @@ class _TvFocusableActive extends StatefulWidget {
 }
 
 class _TvFocusableActiveState extends State<_TvFocusableActive> {
+  /// TV 长按 OK 判定阈值。
+  static const Duration _longPressThreshold = Duration(milliseconds: 500);
+
   late final FocusNode _node =
       widget.focusNode ?? FocusNode(debugLabel: 'TvFocusable');
 
+  Timer? _longPressTimer;
+  bool _longPressFired = false;
+
   @override
   void dispose() {
+    _longPressTimer?.cancel();
     // 仅释放内部创建的节点，外部传入的由持有者管理
     if (widget.focusNode == null) _node.dispose();
     super.dispose();
   }
 
+  bool _isConfirm(LogicalKeyboardKey key) =>
+      key == LogicalKeyboardKey.enter ||
+      key == LogicalKeyboardKey.numpadEnter ||
+      key == LogicalKeyboardKey.select;
+
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.numpadEnter ||
-        key == LogicalKeyboardKey.select) {
+    if (!_isConfirm(key)) return KeyEventResult.ignored;
+
+    // 无长按：保持原行为（KeyDown 立即 onTap）
+    if (widget.onLongPress == null) {
+      if (event is! KeyDownEvent) return KeyEventResult.ignored;
       if (widget.onTap != null) {
         widget.onTap!();
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
     }
-    // 方向键放行：交给框架全局 Shortcuts 做焦点遍历
+
+    if (event is KeyDownEvent) {
+      _longPressFired = false;
+      _longPressTimer?.cancel();
+      _longPressTimer = Timer(_longPressThreshold, () {
+        if (!mounted) return;
+        _longPressFired = true;
+        widget.onLongPress?.call();
+      });
+      return KeyEventResult.handled;
+    }
+    if (event is KeyUpEvent) {
+      _longPressTimer?.cancel();
+      _longPressTimer = null;
+      if (_longPressFired) {
+        _longPressFired = false;
+        return KeyEventResult.handled; // 长按已处理，不再触发 onTap
+      }
+      widget.onTap?.call();
+      return KeyEventResult.handled;
+    }
+    // KeyRepeatEvent 等：忽略（定时器已在跑）
     return KeyEventResult.ignored;
   }
 
@@ -123,6 +169,7 @@ class _TvFocusableActiveState extends State<_TvFocusableActive> {
               focused ? const Duration(milliseconds: 120) : Duration.zero;
           return GestureDetector(
             onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
             behavior: HitTestBehavior.opaque,
             // AnimatedScale 在最外层：描边与内容一起缩放，环始终完整
             // 包住放大后的内容（环在缩放内层时内容会溢出环外 3%/侧）。
