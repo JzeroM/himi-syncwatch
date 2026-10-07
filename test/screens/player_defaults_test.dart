@@ -51,6 +51,14 @@ void main() {
     expect(PlayerScreen.controlsAutoHideAfter, const Duration(seconds: 5));
   });
 
+  test('selectorPanelWidth：0.42×屏宽，钳制 260~320（滑杆行程更长）', () {
+    expect(PlayerScreen.selectorPanelWidth(1200), 320.0, reason: '超宽封顶');
+    expect(PlayerScreen.selectorPanelWidth(800), 320.0, reason: '336→封顶 320');
+    expect(PlayerScreen.selectorPanelWidth(700), 294.0, reason: '中间值 0.42×');
+    expect(PlayerScreen.selectorPanelWidth(500), 260.0, reason: '210→托底 260');
+    expect(PlayerScreen.selectorPanelWidth(360), 260.0, reason: '竖屏托底');
+  });
+
   test('rotateButtonIcon：语义直白的旋转图标，非 screen_lock 系', () {
     expect(PlayerScreen.rotateButtonIcon, Icons.screen_rotation_alt);
     expect(PlayerScreen.rotateButtonIcon, isNot(Icons.screen_lock_landscape));

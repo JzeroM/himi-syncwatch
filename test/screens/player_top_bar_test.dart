@@ -169,7 +169,7 @@ void main() {
 
       final style = find.byKey(const ValueKey('playerSubtitleStyleButton'));
       expect(style, findsOneWidget);
-      expect(find.byIcon(Icons.format_size), findsOneWidget);
+      expect(find.byIcon(Icons.tune), findsOneWidget);
 
       final speedX = tester
           .getTopLeft(find.byKey(const ValueKey('playerNetworkSpeed')))

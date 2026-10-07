@@ -55,6 +55,7 @@ import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
+import 'package:himi_syncwatch/screens/player/controls_auto_hide.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/seek_time_labels.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_style_panel.dart';
@@ -124,6 +125,12 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   /// 控制条自动隐藏时长（5 秒无操作后隐藏全部控件，含选择器面板）。
   static const Duration controlsAutoHideAfter = Duration(seconds: 5);
+
+  /// 右侧选择器面板宽度：随屏宽自适应（0.42×屏宽，钳在 260~320），
+  /// 保证滑杆有足够横向行程（字幕样式/弹幕调节等共用）。
+  @visibleForTesting
+  static double selectorPanelWidth(double screenWidth) =>
+      (screenWidth * 0.42).clamp(260.0, 320.0);
 
   /// Emby 播放进度上报间隔（3 秒）。
   static const Duration playbackReportInterval = Duration(seconds: 3);
@@ -417,10 +424,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 打开选择器面板的按钮节点：面板关闭后焦点原路返回该按钮
   FocusNode? _selectorOpenerNode;
 
-  /// 控制条根焦点（skipTraversal 不参与遍历）：自动隐藏前判定焦点
-  /// 是否停留在控制条内（滑杆/按钮/菜单面板）
+  /// 控制条根焦点（skipTraversal 不参与遍历）：自动隐藏判定"焦点是否
+  /// 停留在控制条内"的依据
   final FocusNode _controlsRootFocusNode =
       FocusNode(debugLabel: 'PlayerControlsRoot');
+
+  /// 顶栏根焦点（skipTraversal）：自动隐藏焦点判定根之一
+  final FocusNode _topBarRootFocusNode =
+      FocusNode(debugLabel: 'PlayerTopBarRoot');
   Duration _position = Duration.zero;
   final ValueNotifier<Duration> _positionNotifier =
       ValueNotifier(Duration.zero);
@@ -463,7 +474,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showPanel = true;
   String _currentPlayUrl = '';
   String _currentToken = '';
-  Timer? _hideControlsTimer;
+
+  /// 控件自动隐藏：长时间无真实输入（焦点变更/按键/指针）后收起全部控件
+  late final ControlsAutoHideController _autoHide;
   Timer? _positionTimer;
   Timer? _diagnosticTimer;
   Timer? _reportTimer;
@@ -1084,6 +1097,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     WidgetsBinding.instance.addObserver(this);
     // 锁状态机变化 → 重建顶栏锁图标 / 解锁浮钮
     _lockController.addListener(_onLockStateChanged);
+    // 自动隐藏：焦点变更（落在控件根内）顺延 5 秒；焦点静置不顺延
+    _autoHide = ControlsAutoHideController(
+      after: PlayerScreen.controlsAutoHideAfter,
+      onHide: _onControlsIdleHide,
+      focusRoots: () => [
+        _controlsRootFocusNode,
+        _selectorPanelRootFocusNode,
+        _topBarRootFocusNode
+      ],
+      enabled: () => _showControls && mounted,
+    );
+    FocusManager.instance.addListener(_onPrimaryFocusChanged);
     _player = mdk.Player();
     // 字幕属性配置（大小/位置随会话状态，initState 后异步恢复落盘值）
     _player.setProperty('subtitle', '1');
@@ -3200,6 +3225,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _handleHotkeyTogglePlayPause() {
     if (_lockController.locked) return;
     if (!_canControlPlayback) return;
+    _resetHideTimer();
     _togglePlayPause();
   }
 
@@ -3220,6 +3246,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 音量键：±5% 应用内音量，并显示左侧音量柱 1 秒
   void _handleHotkeyVolumeDelta(double deltaPercent) {
     if (_lockController.locked) return;
+    _resetHideTimer();
     final newVol = (_volume + deltaPercent).clamp(0.0, 100.0);
     _volume = newVol;
     _player.volume = newVol / 100.0;
@@ -3470,25 +3497,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  void _resetHideTimer() {
-    _hideControlsTimer?.cancel();
-    if (_showControls) {
-      _hideControlsTimer = Timer(PlayerScreen.controlsAutoHideAfter, () {
-        if (!mounted || _player.state != mdk.PlaybackState.playing) return;
-        // 5 秒无操作：无论焦点是否停留在控制条/选择器面板上，一律隐藏全部
-        // 控件（TV 要求；选择器面板一并收起，返回键收起见 TvBackConfirm.onBack）。
-        _releaseFocusFromControls();
-        _selectorOpenerNode = null;
-        setState(() {
-          _showControls = false;
-          _showSubtitleMenu = false;
-          _showAudioMenu = false;
-          _showDecodeModeMenu = false;
-          _showSpeedMenu = false;
-          _showSubtitleStyleMenu = false;
-        });
-      });
-    }
+  /// 顺延自动隐藏计时（任何真实操作调用；控件隐藏时为空操作）。
+  void _resetHideTimer() => _autoHide.reset();
+
+  /// 焦点变更监听：焦点**移动到**控件内算操作；焦点停留原地不触发，
+  /// 因此"焦点静置在控件上长时间不操作"仍会到点隐藏。
+  void _onPrimaryFocusChanged() {
+    _autoHide.onFocusChanged(FocusManager.instance.primaryFocus);
+  }
+
+  /// 长时间无操作：隐藏全部控件（含选择器面板）并回落焦点。
+  void _onControlsIdleHide() {
+    if (!mounted || _player.state != mdk.PlaybackState.playing) return;
+    _releaseFocusFromControls();
+    _selectorOpenerNode = null;
+    setState(() {
+      _showControls = false;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showDecodeModeMenu = false;
+      _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
+    });
   }
 
   /// 打开字幕/音轨/倍速选择器面板：记录来源按钮，postFrame 把焦点精确
@@ -3879,7 +3909,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
-    _hideControlsTimer?.cancel();
+    FocusManager.instance.removeListener(_onPrimaryFocusChanged);
+    _autoHide.dispose();
     // 兜底上报：异常 pop/系统 kill 未走 onConfirm 时，尽力补一次「停止」
     final reportSvc = _reportService;
     final reportId = _reportItemId;
@@ -3904,6 +3935,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _controlsFocusNode.dispose();
     _playPauseFocusNode.dispose();
     _controlsRootFocusNode.dispose();
+    _topBarRootFocusNode.dispose();
     _nextEpisodeFocusNode.dispose();
     _subtitleButtonFocusNode.dispose();
     _audioButtonFocusNode.dispose();
@@ -4265,258 +4297,283 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ),
           );
 
-    return Stack(
-      children: [
-        // 视频手势层（VideoGestureLayer：只包视频层，见其类注释）
-        VideoGestureLayer(
-          onTap: _onVideoAreaTap,
-          // 锁定中：双击/横滑(进度)/纵滑(亮度音量)全部解除绑定
-          onDoubleTap: _lockController.locked ? null : _onDoubleTap,
-          onHorizontalDragUpdate:
-              _lockController.locked ? null : _onHorizontalDragUpdate,
-          onHorizontalDragEnd:
-              _lockController.locked ? null : _onHorizontalDragEnd,
-          // Windows 取消音量/亮度垂直手势（改用控制条滑杆），移动平台保留
-          onVerticalDragStart: PlayerPlatform.verticalVolumeBrightnessGesture &&
-                  !_lockController.locked
-              ? _onVerticalDragStart
-              : null,
-          onVerticalDragUpdate:
-              PlayerPlatform.verticalVolumeBrightnessGesture &&
-                      !_lockController.locked
-                  ? _onVerticalDragUpdate
-                  : null,
-          onVerticalDragEnd: PlayerPlatform.verticalVolumeBrightnessGesture &&
-                  !_lockController.locked
-              ? _onVerticalDragEnd
-              : null,
-          child: videoContent,
-        ),
+    // 指针操作顺延自动隐藏：按下暂停计时（按住不动不隐藏），
+    // 松手/取消重新起算 5 秒
+    return Listener(
+      onPointerDown: (_) => _autoHide.notePointerDown(),
+      onPointerUp: (_) => _autoHide.notePointerUp(),
+      onPointerCancel: (_) => _autoHide.notePointerUp(),
+      child: Stack(
+        children: [
+          // 视频手势层（VideoGestureLayer：只包视频层，见其类注释）
+          VideoGestureLayer(
+            onTap: _onVideoAreaTap,
+            // 锁定中：双击/横滑(进度)/纵滑(亮度音量)全部解除绑定
+            onDoubleTap: _lockController.locked ? null : _onDoubleTap,
+            onHorizontalDragUpdate:
+                _lockController.locked ? null : _onHorizontalDragUpdate,
+            onHorizontalDragEnd:
+                _lockController.locked ? null : _onHorizontalDragEnd,
+            // Windows 取消音量/亮度垂直手势（改用控制条滑杆），移动平台保留
+            onVerticalDragStart:
+                PlayerPlatform.verticalVolumeBrightnessGesture &&
+                        !_lockController.locked
+                    ? _onVerticalDragStart
+                    : null,
+            onVerticalDragUpdate:
+                PlayerPlatform.verticalVolumeBrightnessGesture &&
+                        !_lockController.locked
+                    ? _onVerticalDragUpdate
+                    : null,
+            onVerticalDragEnd: PlayerPlatform.verticalVolumeBrightnessGesture &&
+                    !_lockController.locked
+                ? _onVerticalDragEnd
+                : null,
+            child: videoContent,
+          ),
 
-        // TopBar（渐变浮层；锁定中隐藏，仅保留左缘锁钮）
-        if (_showControls && !_lockController.locked)
-          Positioned(top: 0, left: 0, right: 0, child: _buildTopBar()),
-
-        // 左缘锁/解锁钮（同位置两形态，跟随控制栏显隐；TV 无锁）
-        if (_showControls &&
-            PlayerScreen.showLockButton(
-              tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
-            ))
-          Positioned(
-            left: 16,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: PlayerLockButton(
-                locked: _lockController.locked,
-                onToggle: _toggleScreenLock,
+          // TopBar（渐变浮层；锁定中隐藏，仅保留左缘锁钮）
+          if (_showControls && !_lockController.locked)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Focus(
+                // 顶栏根锚点：自动隐藏焦点判定根（OK 按键事件在此顺延计时）
+                focusNode: _topBarRootFocusNode,
+                skipTraversal: true,
+                onKeyEvent: _autoHide.onKeyEvent,
+                child: _buildTopBar(),
               ),
             ),
-          ),
 
-        // 解码模式选择面板
-        if (_showDecodeModeMenu)
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 48,
-            right: 12,
-            child: DecodeModePanel(
-              onSwitchMode: _switchDecodeMode,
-            ),
-          ),
-
-        // 字幕/音轨/倍速选择器：右侧玻璃浮层（可滚动；随控制条显隐）
-        if (_showControls &&
-            !_lockController.locked &&
-            (_showSubtitleMenu ||
-                _showAudioMenu ||
-                _showSpeedMenu ||
-                _showSubtitleStyleMenu))
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 48,
-            bottom: 132,
-            right: 12,
-            width: 260,
-            child: Focus(
-              // 面板根锚点：自动隐藏判定"焦点在面板内"的依据
-              focusNode: _selectorPanelRootFocusNode,
-              skipTraversal: true,
-              child: SelectorSidePanel(
-                title: _showSubtitleMenu
-                    ? '字幕'
-                    : _showAudioMenu
-                        ? '音轨'
-                        : _showSubtitleStyleMenu
-                            ? '字幕样式'
-                            : '倍速',
-                child: _showSubtitleStyleMenu
-                    ? SubtitleStylePanel(
-                        scale: _subtitleScale,
-                        marginY: _subtitleMarginY,
-                        delayMs: _subtitleDelayMs,
-                        delayEnabled: _activeSubtitleIndex != null,
-                        glassEnabled: _glassUiOn,
-                        onScaleChanged: _onSubtitleScaleChanged,
-                        onMarginYChanged: _onSubtitleMarginYChanged,
-                        onDelayChanged: _onSubtitleDelayChanged,
-                        onReset: _onSubtitleStyleReset,
-                        focusNode: _selectorFirstFocusNode,
-                      )
-                    : _showSubtitleMenu
-                        ? SubtitleMenuPanel(
-                            player: _player,
-                            subtitleStreams: _embySubtitleStreams,
-                            activeSubtitleIndex: _activeSubtitleIndex,
-                            useServerBurnIn: _useServerSubtitleBurnIn,
-                            itemId: _episodes.isNotEmpty &&
-                                    _currentEpisodeIndex >= 0 &&
-                                    _currentEpisodeIndex < _episodes.length
-                                ? _episodes[_currentEpisodeIndex].id
-                                : widget.itemId,
-                            mediaSourceId: widget.mediaSourceId,
-                            token: _currentToken,
-                            focusNode: _selectorFirstFocusNode,
-                            onSubtitleSelected: (index) {
-                              if (index == null) {
-                                _player.activeSubtitleTracks = [];
-                                _useServerSubtitleBurnIn = false;
-                                _activeSubtitleIndex = null;
-                                _activeLocalSubtitlePath = null;
-                                _subtitleDelayReloadTimer?.cancel();
-                              } else {
-                                _selectEmbySubtitle(index);
-                              }
-                            },
-                            onLoadLocal: _loadLocalSubtitle,
-                            onClose: _closeSelectorPanel,
-                          )
-                        : _showAudioMenu
-                            ? AudioTrackMenuPanel(
-                                player: _player,
-                                audioStreams: _embyAudioStreams,
-                                focusNode: _selectorFirstFocusNode,
-                                onAudioSelected: _selectEmbyAudio,
-                                onClose: _closeSelectorPanel,
-                              )
-                            : SpeedMenuPanel(
-                                current: _speed,
-                                focusNode: _selectorFirstFocusNode,
-                                onSelected: _applySpeed,
-                              ),
+          // 左缘锁/解锁钮（同位置两形态，跟随控制栏显隐；TV 无锁）
+          if (_showControls &&
+              PlayerScreen.showLockButton(
+                tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
+              ))
+            Positioned(
+              left: 16,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: PlayerLockButton(
+                  locked: _lockController.locked,
+                  onToggle: _toggleScreenLock,
+                ),
               ),
             ),
-          ),
 
-        // 手势提示浮层（快进快退/双击播放暂停）
-        if (_showGestureOverlay)
-          Positioned(
-            bottom: 100,
-            left: 0,
-            right: 0,
-            child: _buildGestureHint(),
-          ),
-
-        // 亮度柱式进度条（右侧）
-        ValueListenableBuilder<bool>(
-          valueListenable: _showBrightnessBarNotifier,
-          builder: (context, show, _) =>
-              show ? _buildBrightnessBar() : const SizedBox.shrink(),
-        ),
-
-        // 音量柱式进度条（左侧）
-        ValueListenableBuilder<bool>(
-          valueListenable: _showVolumeBarNotifier,
-          builder: (context, show, _) =>
-              show ? _buildVolumeBar() : const SizedBox.shrink(),
-        ),
-
-        // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏）
-        if (_showControls &&
-            !_lockController.locked &&
-            (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
-          Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
-
-        // 加载指示器
-        if (_duration.inMilliseconds == 0 && _isPlayerReady)
-          const Center(
-            child: CircularProgressIndicator(color: Color(0xFF6366F1)),
-          ),
-
-        // 切集遮罩：掩盖旧帧残留，新帧就绪后自动消失
-        if (_isSwitchingMedia)
-          Container(
-            color: Colors.black,
-            child: const Center(
-              child: CircularProgressIndicator(color: Colors.white54),
+          // 解码模式选择面板
+          if (_showDecodeModeMenu)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 48,
+              right: 12,
+              child: DecodeModePanel(
+                onSwitchMode: _switchDecodeMode,
+              ),
             ),
+
+          // 字幕/音轨/倍速选择器：右侧玻璃浮层（可滚动；随控制条显隐）
+          if (_showControls &&
+              !_lockController.locked &&
+              (_showSubtitleMenu ||
+                  _showAudioMenu ||
+                  _showSpeedMenu ||
+                  _showSubtitleStyleMenu))
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 48,
+              // 116 = 桌面/TV 控制条高度（110）+ 6px 余量；叠加安全区
+              //（手机手势条会抬高控制条，控制条高 110+inset）
+              bottom: 116 + MediaQuery.of(context).padding.bottom,
+              right: 12,
+              width: PlayerScreen.selectorPanelWidth(
+                MediaQuery.sizeOf(context).width,
+              ),
+              child: Focus(
+                // 面板根锚点：自动隐藏判定"焦点在面板内"的依据；
+                // 面板内按键（含 TV OK）顺延自动隐藏计时
+                focusNode: _selectorPanelRootFocusNode,
+                skipTraversal: true,
+                onKeyEvent: _autoHide.onKeyEvent,
+                child: SelectorSidePanel(
+                  title: _showSubtitleMenu
+                      ? '字幕'
+                      : _showAudioMenu
+                          ? '音轨'
+                          : _showSubtitleStyleMenu
+                              ? '显示调节'
+                              : '倍速',
+                  child: _showSubtitleStyleMenu
+                      ? SubtitleStylePanel(
+                          scale: _subtitleScale,
+                          marginY: _subtitleMarginY,
+                          delayMs: _subtitleDelayMs,
+                          delayEnabled: _activeSubtitleIndex != null,
+                          glassEnabled: _glassUiOn,
+                          onScaleChanged: _onSubtitleScaleChanged,
+                          onMarginYChanged: _onSubtitleMarginYChanged,
+                          onDelayChanged: _onSubtitleDelayChanged,
+                          onReset: _onSubtitleStyleReset,
+                          focusNode: _selectorFirstFocusNode,
+                        )
+                      : _showSubtitleMenu
+                          ? SubtitleMenuPanel(
+                              player: _player,
+                              subtitleStreams: _embySubtitleStreams,
+                              activeSubtitleIndex: _activeSubtitleIndex,
+                              useServerBurnIn: _useServerSubtitleBurnIn,
+                              itemId: _episodes.isNotEmpty &&
+                                      _currentEpisodeIndex >= 0 &&
+                                      _currentEpisodeIndex < _episodes.length
+                                  ? _episodes[_currentEpisodeIndex].id
+                                  : widget.itemId,
+                              mediaSourceId: widget.mediaSourceId,
+                              token: _currentToken,
+                              focusNode: _selectorFirstFocusNode,
+                              onSubtitleSelected: (index) {
+                                if (index == null) {
+                                  _player.activeSubtitleTracks = [];
+                                  _useServerSubtitleBurnIn = false;
+                                  _activeSubtitleIndex = null;
+                                  _activeLocalSubtitlePath = null;
+                                  _subtitleDelayReloadTimer?.cancel();
+                                } else {
+                                  _selectEmbySubtitle(index);
+                                }
+                              },
+                              onLoadLocal: _loadLocalSubtitle,
+                              onClose: _closeSelectorPanel,
+                            )
+                          : _showAudioMenu
+                              ? AudioTrackMenuPanel(
+                                  player: _player,
+                                  audioStreams: _embyAudioStreams,
+                                  focusNode: _selectorFirstFocusNode,
+                                  onAudioSelected: _selectEmbyAudio,
+                                  onClose: _closeSelectorPanel,
+                                )
+                              : SpeedMenuPanel(
+                                  current: _speed,
+                                  focusNode: _selectorFirstFocusNode,
+                                  onSelected: _applySpeed,
+                                ),
+                ),
+              ),
+            ),
+
+          // 手势提示浮层（快进快退/双击播放暂停）
+          if (_showGestureOverlay)
+            Positioned(
+              bottom: 100,
+              left: 0,
+              right: 0,
+              child: _buildGestureHint(),
+            ),
+
+          // 亮度柱式进度条（右侧）
+          ValueListenableBuilder<bool>(
+            valueListenable: _showBrightnessBarNotifier,
+            builder: (context, show, _) =>
+                show ? _buildBrightnessBar() : const SizedBox.shrink(),
           ),
 
-        // 同步调试面板（单人模式 + 房间模式均可显示）
-        if (ref.watch(settingsProvider).showSyncDebug)
-          Positioned(
-            left: _debugPanelX,
-            top: _debugPanelY,
-            child: SyncDebugPanel(
-              isHost: _isHost,
-              rtmChannel: _syncRtmChannel,
-              rtmStatus: _syncRtmStatus,
-              metadataTestResult: _syncMetadataTestResult,
-              voStatus: _voStatus,
-              hdrType: _hdrType,
-              isSinglePlayer: widget.roomCode == null,
-              // 播放状态
-              playbackState: _playbackState,
-              mediaStatusStr: _mediaStatusStr,
-              positionMs: _positionMs,
-              durationMs: _durationMs,
-              bufferedMs: _bufferedMs,
-              mediaBitrate: _mediaBitrate,
-              mediaFormat: _mediaFormat,
-              // 视频信息
-              videoCodecName: _videoCodecName,
-              videoResolution: _videoResolution,
-              videoFps: _videoFps,
-              videoBitrate: _videoBitrate,
-              pixelFormat: _pixelFormat,
-              doviProfile: _doviProfile,
-              // 音频信息
-              audioCodecName: _audioCodecName,
-              audioSampleRate: _audioSampleRate,
-              audioChannels: _audioChannels,
-              audioBitrate: _audioBitrate,
-              stereoDownmix: _stereoDownmix,
-              audioFilter: _audioFilterText,
-              textureId: _player.textureId.value,
-              textureSize: _textureSizeText,
-              videoOutput: _effectiveVideoOutput(),
-              videoFilter: _videoFilterText,
-              snapshotInfo: _snapshotInfo,
-              // Android：mdk snapshot 在 GL 异常设备上触发 native crash
-              // （无法 try/catch），隐藏截帧入口；其他平台保留取证能力
-              onSnapshot: Platform.isAndroid ? null : _probeSnapshot,
-              // 解码器
-              decodeMode: ref.read(settingsProvider).decodeMode,
-              actualVideoDecoders: _actualVideoDecoders,
-              mdkRawDecoder: _mdkRawDecoder,
-              decoderReport: _decoderReport,
-              audioBackend: _audioBackend,
-              dvCapability: _embyVideoStream?.isDolbyVision == true
-                  ? _dvProbe.summary
-                  : '',
-              buildSummary: _buildSummary,
-              // 卡顿诊断
-              stallSummary: _diagSummary,
-              bufProgress: _bufProgress,
-              deepLogActive: _deepLogActive,
-              onExportStutter: _exportFullDiagnostics,
-              onDrag: (delta) {
-                setState(() {
-                  _debugPanelX += delta.dx;
-                  _debugPanelY += delta.dy;
-                });
-              },
-            ),
+          // 音量柱式进度条（左侧）
+          ValueListenableBuilder<bool>(
+            valueListenable: _showVolumeBarNotifier,
+            builder: (context, show, _) =>
+                show ? _buildVolumeBar() : const SizedBox.shrink(),
           ),
-      ],
+
+          // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏）
+          if (_showControls &&
+              !_lockController.locked &&
+              (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
+            Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
+
+          // 加载指示器
+          if (_duration.inMilliseconds == 0 && _isPlayerReady)
+            const Center(
+              child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+            ),
+
+          // 切集遮罩：掩盖旧帧残留，新帧就绪后自动消失
+          if (_isSwitchingMedia)
+            Container(
+              color: Colors.black,
+              child: const Center(
+                child: CircularProgressIndicator(color: Colors.white54),
+              ),
+            ),
+
+          // 同步调试面板（单人模式 + 房间模式均可显示）
+          if (ref.watch(settingsProvider).showSyncDebug)
+            Positioned(
+              left: _debugPanelX,
+              top: _debugPanelY,
+              child: SyncDebugPanel(
+                isHost: _isHost,
+                rtmChannel: _syncRtmChannel,
+                rtmStatus: _syncRtmStatus,
+                metadataTestResult: _syncMetadataTestResult,
+                voStatus: _voStatus,
+                hdrType: _hdrType,
+                isSinglePlayer: widget.roomCode == null,
+                // 播放状态
+                playbackState: _playbackState,
+                mediaStatusStr: _mediaStatusStr,
+                positionMs: _positionMs,
+                durationMs: _durationMs,
+                bufferedMs: _bufferedMs,
+                mediaBitrate: _mediaBitrate,
+                mediaFormat: _mediaFormat,
+                // 视频信息
+                videoCodecName: _videoCodecName,
+                videoResolution: _videoResolution,
+                videoFps: _videoFps,
+                videoBitrate: _videoBitrate,
+                pixelFormat: _pixelFormat,
+                doviProfile: _doviProfile,
+                // 音频信息
+                audioCodecName: _audioCodecName,
+                audioSampleRate: _audioSampleRate,
+                audioChannels: _audioChannels,
+                audioBitrate: _audioBitrate,
+                stereoDownmix: _stereoDownmix,
+                audioFilter: _audioFilterText,
+                textureId: _player.textureId.value,
+                textureSize: _textureSizeText,
+                videoOutput: _effectiveVideoOutput(),
+                videoFilter: _videoFilterText,
+                snapshotInfo: _snapshotInfo,
+                // Android：mdk snapshot 在 GL 异常设备上触发 native crash
+                // （无法 try/catch），隐藏截帧入口；其他平台保留取证能力
+                onSnapshot: Platform.isAndroid ? null : _probeSnapshot,
+                // 解码器
+                decodeMode: ref.read(settingsProvider).decodeMode,
+                actualVideoDecoders: _actualVideoDecoders,
+                mdkRawDecoder: _mdkRawDecoder,
+                decoderReport: _decoderReport,
+                audioBackend: _audioBackend,
+                dvCapability: _embyVideoStream?.isDolbyVision == true
+                    ? _dvProbe.summary
+                    : '',
+                buildSummary: _buildSummary,
+                // 卡顿诊断
+                stallSummary: _diagSummary,
+                bufProgress: _bufProgress,
+                deepLogActive: _deepLogActive,
+                onExportStutter: _exportFullDiagnostics,
+                onDrag: (delta) {
+                  setState(() {
+                    _debugPanelX += delta.dx;
+                    _debugPanelY += delta.dy;
+                  });
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -4612,7 +4669,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 左缘锁按钮：上锁（收起控制栏/菜单，屏蔽手势与热键）。
   void _lockScreen() {
     _lockController.lock();
-    _hideControlsTimer?.cancel();
+    _autoHide.cancel();
     _releaseFocusFromControls();
     setState(() {
       _showControls = false;
@@ -4750,6 +4807,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _seekRelative(int deltaMs) {
     if (_lockController.locked) return;
+    _resetHideTimer();
     // 限制最大跳转 ±60 秒
     final clampedDelta = deltaMs.clamp(-60000, 60000);
     final currentMs = _position.inMilliseconds;
@@ -4959,6 +5017,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return Focus(
       focusNode: _controlsRootFocusNode,
       skipTraversal: true,
+      onKeyEvent: _autoHide.onKeyEvent,
       child: GestureDetector(
         onTap: () {},
         child: Container(
@@ -5034,6 +5093,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             onChangeStart:
                                 _canControlPlayback ? _onSeekStart : null,
                             onChanged: (v) {
+                              _resetHideTimer();
                               _positionNotifier.value =
                                   Duration(milliseconds: v.toInt());
                             },
@@ -5280,6 +5340,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     value: volume.clamp(0.0, 100.0),
                     max: 100,
                     onChanged: (v) {
+                      _resetHideTimer();
                       _volume = v;
                       _player.volume = v / 100.0;
                       _volumeNotifier.value = v;
@@ -5325,6 +5386,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   child: Slider(
                     value: brightness.clamp(0.0, 1.0),
                     onChanged: (v) {
+                      _resetHideTimer();
                       _brightness = v;
                       _brightnessNotifier.value = v;
                       _setBrightness(v);

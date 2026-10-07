@@ -80,7 +80,8 @@ class SubtitleStylePanel extends StatelessWidget {
   }) {
     return Padding(
       key: valueKey.isEmpty ? null : ValueKey('${valueKey}Row'),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      // 行间上下各 10px → 相邻行净距 +20px，方便拖动操作
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
           SizedBox(
@@ -108,8 +109,8 @@ class SubtitleStylePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = glassSliderTheme(
-      thumbRadius: 7,
-      overlayRadius: 12,
+      thumbRadius: 9,
+      overlayRadius: 16,
       glassEnabled: glassEnabled,
     );
     return ListView(

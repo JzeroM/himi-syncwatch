@@ -138,6 +138,65 @@ void main() {
     });
   });
 
+  group('布局（行距/滚动）', () {
+    testWidgets('三行净距 ≥40px（行间上下各 10px padding，方便拖动）', (tester) async {
+      await tester.pumpWidget(_host(
+        SubtitleStylePanel(
+          scale: 1.0,
+          marginY: 22,
+          delayMs: 0,
+          onScaleChanged: (_) {},
+          onMarginYChanged: (_) {},
+          onDelayChanged: (_) {},
+          onReset: () {},
+        ),
+      ));
+      await tester.pump();
+
+      final yScale = tester
+          .getTopLeft(find.byKey(const ValueKey('subtitleStyleScaleValue')))
+          .dy;
+      final yMargin = tester
+          .getTopLeft(find.byKey(const ValueKey('subtitleStyleMarginValue')))
+          .dy;
+      final yDelay = tester
+          .getTopLeft(find.byKey(const ValueKey('subtitleStyleDelayValue')))
+          .dy;
+
+      expect(yMargin - yScale, greaterThanOrEqualTo(40.0),
+          reason: '大小→位置净距（+20px 行距后应 ≥40）');
+      expect(yDelay - yMargin, greaterThanOrEqualTo(40.0), reason: '位置→延迟净距');
+    });
+
+    testWidgets('内容超框时面板可上下滑动（ListView 滚动容器）', (tester) async {
+      await tester.pumpWidget(_host(
+        SizedBox(
+          height: 140,
+          child: SubtitleStylePanel(
+            scale: 1.0,
+            marginY: 22,
+            delayMs: 0,
+            onScaleChanged: (_) {},
+            onMarginYChanged: (_) {},
+            onDelayChanged: (_) {},
+            onReset: () {},
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ListView), findsOneWidget, reason: '滚动容器');
+      final scrollable =
+          tester.state<ScrollableState>(find.byType(Scrollable).first);
+      expect(scrollable.position.maxScrollExtent, greaterThan(0),
+          reason: '内容（三行+恢复默认）超出 140px 视口');
+
+      await tester.drag(find.byType(ListView), const Offset(0, -60));
+      await tester.pumpAndSettle();
+      expect(scrollable.position.pixels, greaterThan(0), reason: '可向上滑动');
+    });
+  });
+
   group('TV 交互', () {
     testWidgets('打开面板落焦第一行滑杆，左右键调值', (tester) async {
       double? got;
