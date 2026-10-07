@@ -76,7 +76,7 @@ class DanmakuParser {
     if (time == null || time < 0) return null;
     final modeRaw = int.tryParse(fields[1].trim());
     if (modeRaw == null) return null;
-    final colorRaw = int.tryParse(fields[3].trim());
+    final colorRaw = _parseColor(fields);
     if (colorRaw == null) return null;
 
     return DanmakuComment(
@@ -87,6 +87,20 @@ class DanmakuParser {
       color: 0xFF000000 | (colorRaw & 0xFFFFFF),
       text: m,
     );
+  }
+
+  /// 解析颜色字段，兼容两种 `p` 布局：
+  /// - 弹弹play 标准：`时间,模式,字号,颜色` → 颜色取第 4 段；
+  /// - danmu_api JSON：`时间,模式,颜色,[来源]` → 第 4 段为 `[来源]`
+  ///   标签（非数字），此时颜色取第 3 段。
+  static int? _parseColor(List<String> fields) {
+    final direct = int.tryParse(fields[3].trim());
+    if (direct != null) return direct;
+    final tag = fields[3].trim();
+    if (tag.startsWith('[') && tag.endsWith(']')) {
+      return int.tryParse(fields[2].trim());
+    }
+    return null;
   }
 
   /// 模式整数 → [DanmakuMode]（未知值按滚动处理）。

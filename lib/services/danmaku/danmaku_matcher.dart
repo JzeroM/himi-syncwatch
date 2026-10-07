@@ -62,4 +62,49 @@ class DanmakuMatcher {
     );
     return constructed.isEmpty ? null : constructed;
   }
+
+  /// 清洗剧名用于搜索兜底：去扩展名、`SxxExx`、`(年份)`、常见发布
+  /// 标签，`.`/`_` 归一为空格并压缩空白。仅用于「关键词搜索」，不改
+  /// 变本地展示名。
+  static String cleanTitle(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return s;
+    s = s.replaceAll(
+      RegExp(r'\.(mkv|mp4|avi|mov|ts|m2ts|webm|flv)$', caseSensitive: false),
+      '',
+    );
+    s = s.replaceAll(
+      RegExp(r'\bS\d{1,2}E\d{1,3}\b', caseSensitive: false),
+      ' ',
+    );
+    s = s.replaceAll(RegExp(r'[\[\(]\s*(19|20)\d{2}\s*[\]\)]'), ' ');
+    // 发布命名中的 `.2023.` 年份（点分隔），不动片名里空格分隔的数字
+    s = s.replaceAll(RegExp(r'(?<=[._])(19|20)\d{2}(?=[._])'), ' ');
+    s = s.replaceAll(
+      RegExp(
+        r'\b(2160p|1080p|720p|480p|4k|uhd|bluray|blu-ray|web-?dl|webrip|'
+        r'hdtv|remux|hevc|h\.?265|h\.?264|avc|x265|x264|aac|dts|truehd|'
+        r'atmos|ddp?[0-9](\.[0-9])?)\b',
+        caseSensitive: false,
+      ),
+      ' ',
+    );
+    s = s.replaceAll(RegExp(r'[._]+'), ' ');
+    s = s.replaceAll(RegExp(r'\s+'), ' ');
+    return s.trim();
+  }
+
+  /// 从集标题提取集号：支持「第N话/話/集/回/期」「EP/E + 数字」及
+  /// 以数字开头的标题（`01 – 标题`）；提取不到返回 null。
+  static int? parseEpisodeNumber(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return null;
+    final cn = RegExp(r'第\s*(\d+)\s*[话話集回期]').firstMatch(t);
+    if (cn != null) return int.tryParse(cn.group(1)!);
+    final ep = RegExp(r'(?:EP|E)\s*(\d+)', caseSensitive: false).firstMatch(t);
+    if (ep != null) return int.tryParse(ep.group(1)!);
+    final bare = RegExp(r'^(\d+)\b').firstMatch(t);
+    if (bare != null) return int.tryParse(bare.group(1)!);
+    return null;
+  }
 }

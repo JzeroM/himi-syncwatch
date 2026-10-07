@@ -167,6 +167,62 @@ class DandanplayClient {
     return out;
   }
 
+  /// 关键字搜索所有匹配剧集（`match` 未命中时的兜底，提升冷门/异名
+  /// 片匹配率）。
+  ///
+  /// `GET {base}/api/v2/search/episodes?anime={keyword}`，响应
+  /// `animes[].episodes[]`；扁平化为 [MatchCandidate]（`animeTitle`
+  /// 取剧名、`episodeTitle` 取集标题），保持原顺序。
+  Future<List<MatchCandidate>> searchEpisodes(String keyword) async {
+    _requireConfigured();
+    final query = keyword.trim();
+    if (query.isEmpty) return const [];
+    const path = '/api/v2/search/episodes';
+    final uri = _buildUri(path, query: {'anime': query});
+    lastRequestUri = uri;
+    final data = await _get(uri, path);
+    if (data == null) {
+      throw const DanmakuApiException(
+        DanmakuApiError.invalidResponse,
+        '搜索响应异常',
+      );
+    }
+    if (data['success'] == false) {
+      final message = data['errorMessage'];
+      throw DanmakuApiException(
+        DanmakuApiError.business,
+        message is String && message.isNotEmpty ? message : '搜索失败',
+      );
+    }
+    final animes = data['animes'];
+    if (animes is! List) {
+      throw const DanmakuApiException(
+        DanmakuApiError.invalidResponse,
+        '搜索结果字段缺失',
+      );
+    }
+    final out = <MatchCandidate>[];
+    for (final anime in animes) {
+      if (anime is! Map) continue;
+      final animeTitle =
+          anime['animeTitle'] is String ? anime['animeTitle'] as String : '';
+      final episodes = anime['episodes'];
+      if (episodes is! List) continue;
+      for (final ep in episodes) {
+        if (ep is! Map) continue;
+        final id = ep['episodeId'];
+        if (id is! num) continue;
+        out.add(MatchCandidate(
+          episodeId: id.toInt(),
+          animeTitle: animeTitle,
+          episodeTitle:
+              ep['episodeTitle'] is String ? ep['episodeTitle'] as String : '',
+        ));
+      }
+    }
+    return out;
+  }
+
   /// 获取弹幕（`withRelated` 聚合第三方来源；`format=json` 兼容
   /// danmu_api 显式格式参数，官方服务忽略未知参数）。
   Future<List<DanmakuComment>> fetchComments(int episodeId) async {

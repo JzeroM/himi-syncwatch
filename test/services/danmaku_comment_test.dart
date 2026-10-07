@@ -60,6 +60,27 @@ void main() {
       expect(DanmakuParser.parseComment({'p': 1, 'm': 'y'}), isNull);
     });
 
+    test('danmu_api 变体：颜色在第 3 段、第 4 段为 [来源] 标签', () {
+      final c = DanmakuParser.parseComment({
+        'p': '0.04,1,15138834,[bilibili1]',
+        'm': '二刷来了！',
+      });
+      expect(c, isNotNull);
+      expect(c!.time, 0.04);
+      expect(c.mode, DanmakuMode.scroll);
+      expect(c.color, 0xFF000000 | 15138834);
+      expect(c.text, '二刷来了！');
+    });
+
+    test('danmu_api 变体：5=顶部 也按第 3 段取色', () {
+      final c = DanmakuParser.parseComment({
+        'p': '3.1,5,16777215,[tencent]',
+        'm': '顶部',
+      });
+      expect(c!.mode, DanmakuMode.top);
+      expect(c.color, 0xFFFFFFFF);
+    });
+
     test('负时间按非法条目跳过', () {
       expect(DanmakuParser.parseComment({'p': '-1,1,25,1', 'm': 'x'}), isNull);
     });

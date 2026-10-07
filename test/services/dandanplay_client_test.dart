@@ -204,8 +204,97 @@ void main() {
     });
   });
 
-  group('DandanplayClient.fetchComments', () {
-    test('GET 带 withRelated+format 参数，返回解析后弹幕', () async {
+  group('DandanplayClient.searchEpisodes', () {
+    test('GET search/episodes 带 anime 参数，扁平化 animes[].episodes[]', () async {
+      late RequestOptions seen;
+      final client = _client((options) async {
+        seen = options;
+        return _json({
+          'success': true,
+          'animes': [
+            {
+              'animeTitle': '某剧',
+              'episodes': [
+                {'episodeId': 11, 'episodeTitle': '第1话 序'},
+                {'episodeId': 12, 'episodeTitle': '第2话 承'},
+              ],
+            },
+            {
+              'animeTitle': '另一剧',
+              'episodes': [
+                {'episodeId': 21, 'episodeTitle': '【x】 第1集'},
+              ],
+            },
+          ],
+        });
+      }, baseUrl: 'https://danmu.example.com/TOKEN');
+
+      final list = await client.searchEpisodes('某剧');
+
+      expect(
+        seen.uri.toString(),
+        'https://danmu.example.com/TOKEN/api/v2/search/episodes'
+        '?anime=%E6%9F%90%E5%89%A7',
+        reason: 'token 路径保留 + anime 查询参数编码',
+      );
+      expect(seen.method, 'GET');
+      expect(list.map((c) => c.episodeId), [11, 12, 21]);
+      expect(list.first.animeTitle, '某剧');
+      expect(list.first.episodeTitle, '第1话 序');
+    });
+
+    test('空关键词不发请求返回空', () async {
+      var called = false;
+      final client = _client((_) async {
+        called = true;
+        return _json({});
+      });
+      expect(await client.searchEpisodes('   '), isEmpty);
+      expect(called, isFalse);
+    });
+
+    test('success:false → business', () async {
+      final client = _client(
+        (_) async => _json({'success': false, 'errorMessage': '源不可用'}),
+      );
+      await expectLater(
+        client.searchEpisodes('x'),
+        throwsA(isA<DanmakuApiException>()
+            .having((e) => e.kind, 'kind', DanmakuApiError.business)
+            .having((e) => e.message, 'message', '源不可用')),
+      );
+    });
+
+    test('缺 animes 字段 → invalidResponse', () async {
+      final client = _client((_) async => _json({'success': true}));
+      await expectLater(
+        client.searchEpisodes('x'),
+        throwsA(isA<DanmakuApiException>().having(
+          (e) => e.kind,
+          'kind',
+          DanmakuApiError.invalidResponse,
+        )),
+      );
+    });
+
+    test('坏剧集项（缺 episodeId）跳过', () async {
+      final client = _client((_) async => _json({
+            'animes': [
+              {
+                'animeTitle': 'a',
+                'episodes': [
+                  {'episodeTitle': '无 id'},
+                  {'episodeId': 9, 'episodeTitle': '第1话'},
+                ],
+              },
+            ],
+          }));
+      final list = await client.searchEpisodes('a');
+      expect(list.single.episodeId, 9);
+    });
+  });
+
+  group('DandanplayClient.fetchComments', () {    test('GET 带 withRelated+format 参数，返回解析后弹幕', () async {
       late RequestOptions seen;
       final client = _client((options) async {
         seen = options;

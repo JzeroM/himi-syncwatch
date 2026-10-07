@@ -4774,6 +4774,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 搜索兜底关键词：剧集优先用剧名，电影用片名；清洗发布标签后
+  /// 供 `search/episodes` 使用。无可用名返回 null。
+  String? _danmakuSearchKeyword() {
+    if (_currentEpisodeIndex < 0 || _currentEpisodeIndex >= _episodes.length) {
+      return null;
+    }
+    final ep = _episodes[_currentEpisodeIndex];
+    final raw = ep.seriesName.trim().isNotEmpty ? ep.seriesName : ep.name;
+    final cleaned = DanmakuMatcher.cleanTitle(raw);
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
+  /// 从候选集内按当前集号择优；无集号或都不含该集号时取首条。
+  int _pickDanmakuEpisode(List<MatchCandidate> candidates) {
+    final number = _currentEpisodeIndex >= 0 &&
+            _currentEpisodeIndex < _episodes.length
+        ? _episodes[_currentEpisodeIndex].number
+        : 0;
+    if (number > 0) {
+      for (final c in candidates) {
+        if (DanmakuMatcher.parseEpisodeNumber(c.episodeTitle) == number) {
+          return c.episodeId;
+        }
+      }
+    }
+    return candidates.first.episodeId;
+  }
+
   /// 匹配 → 拉弹幕 → 渲染（失败回弹开关并轻提示）。
   /// episodeId 与弹幕列表均有进程内缓存（6h TTL，key 为单集 id，
   /// 换集不串缓存）。
@@ -4809,15 +4837,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               : widget.itemId;
       var episodeId = _danmakuEpisodeCache.get(cacheKey);
       if (episodeId == null) {
-        final candidates = await client.match(fileName: fileName);
+        var candidates = await client.match(fileName: fileName);
         if (!mounted || seq != _danmakuLoadSeq) return;
+        if (candidates.isEmpty) {
+          // match 未命中 → 关键词搜索兜底（冷门/异名片）
+          final keyword = _danmakuSearchKeyword();
+          if (keyword != null) {
+            LogService().log('Danmaku', 'match miss, search: $keyword');
+            candidates = await client.searchEpisodes(keyword);
+            if (!mounted || seq != _danmakuLoadSeq) return;
+          }
+        }
         if (candidates.isEmpty) {
           throw const DanmakuApiException(
             DanmakuApiError.business,
             '未匹配到对应节目',
           );
         }
-        episodeId = candidates.first.episodeId;
+        episodeId = _pickDanmakuEpisode(candidates);
         _danmakuEpisodeCache.put(cacheKey, episodeId);
       }
       final episodeKey = episodeId.toString();

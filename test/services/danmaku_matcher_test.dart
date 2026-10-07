@@ -97,4 +97,48 @@ void main() {
       expect(DanmakuMatcher.fromPath(null), isNull);
     });
   });
+
+  group('DanmakuMatcher.cleanTitle', () {
+    test('剥离扩展名/SxxExx/年份/发布标签并归一空格', () {
+      expect(
+        DanmakuMatcher.cleanTitle(
+          'Oppenheimer.2023.2160p.WEB-DL.H265.mkv',
+        ),
+        'Oppenheimer',
+      );
+      expect(
+        DanmakuMatcher.cleanTitle('葬送的芙莉莲.S01E01.1080p.WEB-DL'),
+        '葬送的芙莉莲',
+      );
+      expect(
+        DanmakuMatcher.cleanTitle('流浪地球2 (2023)'),
+        '流浪地球2',
+      );
+    });
+
+    test('保留纯标题；不误删片名中的数字', () {
+      expect(DanmakuMatcher.cleanTitle('流浪地球2'), '流浪地球2');
+      expect(DanmakuMatcher.cleanTitle('1917'), '1917');
+      expect(DanmakuMatcher.cleanTitle('  '), '');
+    });
+  });
+
+  group('DanmakuMatcher.parseEpisodeNumber', () {
+    test('中文「第N话/集/回/期」', () {
+      expect(DanmakuMatcher.parseEpisodeNumber('第9话 序歌'), 9);
+      expect(DanmakuMatcher.parseEpisodeNumber('【bilibili1】 第12集'), 12);
+      expect(DanmakuMatcher.parseEpisodeNumber('第 3 回'), 3);
+    });
+
+    test('EP/E 前缀与纯数字开头', () {
+      expect(DanmakuMatcher.parseEpisodeNumber('EP05 - 结尾'), 5);
+      expect(DanmakuMatcher.parseEpisodeNumber('E7'), 7);
+      expect(DanmakuMatcher.parseEpisodeNumber('03 标题'), 3);
+    });
+
+    test('无法提取返回 null', () {
+      expect(DanmakuMatcher.parseEpisodeNumber('序章'), isNull);
+      expect(DanmakuMatcher.parseEpisodeNumber(''), isNull);
+    });
+  });
 }
