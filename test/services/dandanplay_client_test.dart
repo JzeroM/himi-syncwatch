@@ -40,6 +40,15 @@ DandanplayClient _client(_Handler handler,
 }
 
 void main() {
+  setUp(() {
+    // 重试退避即时返回，避免测试真实等待
+    DandanplayClient.retryDelay = (_) async {};
+  });
+  tearDown(() {
+    DandanplayClient.retryDelay =
+        (d) => Future<void>.delayed(d);
+  });
+
   group('DandanplayClient.normalizeBaseUrl', () {
     test('去尾部斜杠 / 无 scheme 补 http:// / trim', () {
       expect(
@@ -190,6 +199,66 @@ void main() {
           DanmakuApiError.network,
         )),
       );
+    });
+
+    test('HTTP 530 首两次失败、第三次成功 → 重试命中', () async {
+      var calls = 0;
+      final client = _client((_) async {
+        calls++;
+        if (calls < 3) return _json({'error': 'cf'}, status: 530);
+        return _json({
+          'matches': [
+            {'episodeId': 5, 'animeTitle': 'x'},
+          ],
+        });
+      });
+      final list = await client.match(fileName: 'x');
+      expect(list.single.episodeId, 5);
+      expect(calls, 3, reason: '首次 530 后重试 2 次');
+    });
+
+    test('持续 530 → 重试耗尽抛 http(530)', () async {
+      var calls = 0;
+      final client = _client((_) async {
+        calls++;
+        return _json({'error': 'cf'}, status: 530);
+      });
+      await expectLater(
+        client.match(fileName: 'x'),
+        throwsA(isA<DanmakuApiException>()
+            .having((e) => e.kind, 'kind', DanmakuApiError.http)
+            .having((e) => e.statusCode, 'statusCode', 530)),
+      );
+      expect(calls, DandanplayClient.maxRetries + 1);
+    });
+
+    test('HTTP 4xx 非瞬时 → 不重试', () async {
+      var calls = 0;
+      final client = _client((_) async {
+        calls++;
+        return _json({'error': 'bad'}, status: 404);
+      });
+      await expectLater(
+        client.match(fileName: 'x'),
+        throwsA(isA<DanmakuApiException>()),
+      );
+      expect(calls, 1, reason: '4xx 不重试');
+    });
+
+    test('网络异常首失败、再成功 → 重试命中', () async {
+      var calls = 0;
+      final client = _client((_) async {
+        calls++;
+        if (calls < 2) throw Exception('conn refused');
+        return _json({
+          'matches': [
+            {'episodeId': 8},
+          ],
+        });
+      });
+      final list = await client.match(fileName: 'x');
+      expect(list.single.episodeId, 8);
+      expect(calls, 2);
     });
 
     test('坏 matches 项（缺 episodeId）跳过', () async {

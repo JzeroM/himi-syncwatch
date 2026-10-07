@@ -25,10 +25,15 @@ class DanmakuApiException implements Exception {
   final DanmakuApiError kind;
   final String message;
 
-  const DanmakuApiException(this.kind, this.message);
+  /// HTTP 状态码（[DanmakuApiError.http] 时非空；重试判定用）。
+  final int? statusCode;
+
+  const DanmakuApiException(this.kind, this.message, {this.statusCode});
 
   @override
-  String toString() => 'DanmakuApiException(${kind.name}: $message)';
+  String toString() =>
+      'DanmakuApiException(${kind.name}: $message'
+      '${statusCode == null ? '' : ', $statusCode'})';
 }
 
 /// 文件识别候选条目。
@@ -62,13 +67,26 @@ class DandanplayClient {
   /// 诊断用：最近一次实际请求 URL（测试断言拼接结果）。
   Uri? lastRequestUri;
 
+  /// 瞬时失败重试次数（network / HTTP 5xx 含 Cloudflare 530）。
+  static const int maxRetries = 2;
+
+  /// 重试退避序列（毫秒）：第 1 次失败后 400ms，第 2 次后 900ms。
+  static const List<int> retryBackoffsMs = [400, 900];
+
+  /// 重试等待注入点（测试可覆写为即时返回，避免真实计时）。
+  static Future<void> Function(Duration) retryDelay =
+      (d) => Future<void>.delayed(d);
+
   DandanplayClient({required String baseUrl, Dio? dio})
       : rawBaseUrl = baseUrl,
         _dio = dio ??
             Dio(
               BaseOptions(
-                connectTimeout: const Duration(seconds: 8),
-                receiveTimeout: const Duration(seconds: 15),
+                // 自建 danmu_api 常经 Cloudflare 回源，偶发慢/抖动；
+                // 放宽超时 + 请求级重试兜住（见 _withRetry）。
+                connectTimeout: const Duration(seconds: 10),
+                receiveTimeout: const Duration(seconds: 30),
+                sendTimeout: const Duration(seconds: 10),
               ),
             );
 
@@ -137,7 +155,7 @@ class DandanplayClient {
       'matchMode': 'fileNameOnly',
       if (fileSize != null) 'fileSize': fileSize,
     };
-    final data = await _post(uri, path, body);
+    final data = await _withRetry(() => _post(uri, path, body));
     if (data == null) {
       throw const DanmakuApiException(
         DanmakuApiError.invalidResponse,
@@ -180,7 +198,7 @@ class DandanplayClient {
     const path = '/api/v2/search/episodes';
     final uri = _buildUri(path, query: {'anime': query});
     lastRequestUri = uri;
-    final data = await _get(uri, path);
+    final data = await _withRetry(() => _get(uri, path));
     if (data == null) {
       throw const DanmakuApiException(
         DanmakuApiError.invalidResponse,
@@ -233,7 +251,7 @@ class DandanplayClient {
       query: const {'withRelated': 'true', 'format': 'json'},
     );
     lastRequestUri = uri;
-    final data = await _get(uri, path);
+    final data = await _withRetry(() => _get(uri, path));
     if (data == null) {
       throw const DanmakuApiException(
         DanmakuApiError.invalidResponse,
@@ -291,6 +309,7 @@ class DandanplayClient {
       return DanmakuApiException(
         DanmakuApiError.http,
         'HTTP $status',
+        statusCode: status,
       );
     }
     // 无 response：连接失败/超时/响应解析异常
@@ -298,5 +317,33 @@ class DandanplayClient {
       DanmakuApiError.network,
       e.message ?? e.error?.toString() ?? '网络错误',
     );
+  }
+
+  /// 瞬时失败重试：network（连接失败/超时）与 HTTP 5xx（含 Cloudflare 530）。
+  /// 其它（4xx/business/invalidResponse）不重试。
+  Future<Map<String, dynamic>?> _withRetry(
+    Future<Map<String, dynamic>?> Function() op,
+  ) async {
+    var attempt = 0;
+    while (true) {
+      try {
+        return await op();
+      } on DanmakuApiException catch (e) {
+        if (attempt >= maxRetries || !_isTransient(e)) rethrow;
+        await retryDelay(
+          Duration(milliseconds: retryBackoffsMs[attempt]),
+        );
+        attempt++;
+      }
+    }
+  }
+
+  static bool _isTransient(DanmakuApiException e) {
+    if (e.kind == DanmakuApiError.network) return true;
+    if (e.kind == DanmakuApiError.http) {
+      final status = e.statusCode;
+      return status != null && status >= 500;
+    }
+    return false;
   }
 }

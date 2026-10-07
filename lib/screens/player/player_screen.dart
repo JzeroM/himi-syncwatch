@@ -551,6 +551,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 当前已加载弹幕对应的集索引（-1 = 无）；避免起播/恢复时重复加载。
   int _danmakuLoadedIndex = -1;
 
+  /// 静默重试计时器与已重试次数（瞬时失败时保留上次弹幕、后台再试）。
+  Timer? _danmakuRetryTimer;
+  int _danmakuRetryAttempt = 0;
+
+  /// 静默重试退避序列（秒）：依次 3s / 8s / 15s，共 3 次。
+  static const List<int> _danmakuRetryDelaysSec = [3, 8, 15];
+
   /// 底栏「弹幕」开关焦点（TV 跨组导航锚点：右组头）。
   final FocusNode _danmakuButtonFocusNode = FocusNode();
 
@@ -3671,6 +3678,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 换集：清空上一集弹幕；开关保持则按新集重新匹配
     //（旧集在飞的请求由 _danmakuLoadSeq 作废）
     if (mounted && _danmakuOn) {
+      _cancelDanmakuRetry();
       setState(() {
         _danmakuComments = const [];
         _danmakuLoadedIndex = -1;
@@ -3971,6 +3979,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
+    _danmakuRetryTimer?.cancel();
     FocusManager.instance.removeListener(_onPrimaryFocusChanged);
     _autoHide.dispose();
     // 兜底上报：异常 pop/系统 kill 未走 onConfirm 时，尽力补一次「停止」
@@ -4738,6 +4747,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     if (_danmakuOn) {
       _loadDanmaku();
+    } else {
+      _cancelDanmakuRetry();
     }
   }
 
@@ -4825,10 +4836,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 匹配 → 拉弹幕 → 渲染（失败回弹开关并轻提示）。
   /// episodeId 与弹幕列表均有进程内缓存（6h TTL，key 为单集 id，
   /// 换集不串缓存）。
-  Future<void> _loadDanmaku() async {
+  Future<void> _loadDanmaku({bool force = false}) async {
     if (_danmakuLoading) return;
-    // 当前集弹幕已就绪：起播/恢复/重复触发不再重载（避免闪烁）
-    if (_danmakuComments.isNotEmpty &&
+    // 当前集弹幕已就绪：起播/恢复/重复触发不再重载（避免闪烁）。
+    // force=true 用于静默重试，跳过该守卫。
+    if (!force &&
+        _danmakuComments.isNotEmpty &&
         _danmakuLoadedIndex == _currentEpisodeIndex) {
       return;
     }
@@ -4852,7 +4865,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final seq = ++_danmakuLoadSeq;
     setState(() {
       _danmakuLoading = true;
-      _danmakuComments = const [];
+      // 重试时保留上一次弹幕（失败保留，观感不闪断）；换集正常加载才清空
+      if (!force) _danmakuComments = const [];
     });
     try {
       // 单集 id 作缓存 key：换集后同 itemId 也可能指向不同节目
@@ -4869,9 +4883,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted || seq != _danmakuLoadSeq) return;
       }
 
-      // 2) match 候选（含错源排除），逐个试到非空
+      // 2) match 候选（含错源排除），逐个试到非空；match 瞬时失败不致命，
+      //    继续走 3) 搜索候选
       if (found == null) {
-        final matched = await client.match(fileName: fileName);
+        List<MatchCandidate> matched = const [];
+        try {
+          matched = await client.match(fileName: fileName);
+        } on DanmakuApiException catch (e) {
+          LogService().log(
+              'Danmaku', 'match failed: ${e.kind.name} ${e.message}');
+        }
         if (!mounted || seq != _danmakuLoadSeq) return;
         found = await _tryDanmakuCandidates(
           client,
@@ -4911,6 +4932,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       _danmakuEpisodeCache.put(cacheKey, found.id);
+      _cancelDanmakuRetry();
       setState(() {
         _danmakuComments = found!.comments;
         _danmakuLoadedIndex = _currentEpisodeIndex;
@@ -4920,29 +4942,71 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           'Danmaku', 'loaded ${found.comments.length} (ep=${found.id}, $fileName)');
     } on DanmakuApiException catch (e) {
       if (!mounted || seq != _danmakuLoadSeq) return;
-      setState(() {
-        _danmakuLoading = false;
-        _danmakuComments = const [];
-      });
-      _danmakuSnack(_danmakuErrorText(e));
-      LogService().log('Danmaku', 'load failed: ${e.kind.name} ${e.message}');
+      LogService().log('Danmaku',
+          'load failed: ${e.kind.name} ${e.message}${e.statusCode == null ? '' : ' (${e.statusCode})'}');
+      _handleDanmakuFailure(_danmakuErrorText(e));
     } catch (e) {
       if (!mounted || seq != _danmakuLoadSeq) return;
-      setState(() {
-        _danmakuLoading = false;
-        _danmakuComments = const [];
-      });
-      _danmakuSnack('弹幕加载失败');
       LogService().log('Danmaku', 'load failed: $e');
+      _handleDanmakuFailure('弹幕加载失败');
     }
   }
 
-  String _danmakuErrorText(DanmakuApiException e) => switch (e.kind) {
-        DanmakuApiError.notConfigured => '请先在 设置 → 弹幕配置 填写弹幕 API 地址',
-        DanmakuApiError.network => '弹幕服务连接失败',
-        DanmakuApiError.business => e.message,
-        _ => '弹幕加载失败：${e.message}',
-      };
+  /// 失败统一处理：保留当前集已有弹幕（不闪断），按退避序列静默重试；
+  /// 仅当当前集无任何弹幕且重试耗尽时才提示一次。
+  void _handleDanmakuFailure(String message) {
+    final hadComments = _danmakuComments.isNotEmpty &&
+        _danmakuLoadedIndex == _currentEpisodeIndex;
+    setState(() {
+      _danmakuLoading = false;
+      // 有旧弹幕则保留展示；无则保持空
+      if (!hadComments) _danmakuComments = const [];
+    });
+    final canRetry = _danmakuRetryAttempt < _danmakuRetryDelaysSec.length;
+    if (canRetry) {
+      _scheduleDanmakuRetry();
+    } else if (!hadComments) {
+      _danmakuSnack(message);
+    }
+  }
+
+  /// 按 [_danmakuRetryDelaysSec] 序列调度一次静默重试（force 重载）。
+  void _scheduleDanmakuRetry() {
+    if (_danmakuRetryAttempt >= _danmakuRetryDelaysSec.length) return;
+    final delay = _danmakuRetryDelaysSec[_danmakuRetryAttempt];
+    _danmakuRetryAttempt++;
+    _danmakuRetryTimer?.cancel();
+    _danmakuRetryTimer = Timer(Duration(seconds: delay), () {
+      if (!mounted || !_danmakuOn) return;
+      _loadDanmaku(force: true);
+    });
+  }
+
+  /// 取消静默重试并复位计数（成功 / 换集 / 关弹幕 / 销毁）。
+  void _cancelDanmakuRetry() {
+    _danmakuRetryTimer?.cancel();
+    _danmakuRetryTimer = null;
+    _danmakuRetryAttempt = 0;
+  }
+
+  String _danmakuErrorText(DanmakuApiException e) {
+    switch (e.kind) {
+      case DanmakuApiError.notConfigured:
+        return '请先在 设置 → 弹幕配置 填写弹幕 API 地址';
+      case DanmakuApiError.network:
+        return '弹幕服务连接失败';
+      case DanmakuApiError.business:
+        return e.message;
+      case DanmakuApiError.http:
+        final status = e.statusCode;
+        if (status != null && status >= 500) {
+          return '弹幕服务暂时不可用，请稍后重试';
+        }
+        return '弹幕加载失败：${e.message}';
+      case DanmakuApiError.invalidResponse:
+        return '弹幕加载失败：${e.message}';
+    }
+  }
 
   void _danmakuSnack(String message) {
     if (!mounted) return;
