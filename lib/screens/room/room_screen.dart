@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomCode;
@@ -84,15 +85,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已保存到相册')),
-        );
+        showAppToast(context, '已保存到相册');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e')),
-        );
+        showAppToast(context, '保存失败: $e');
       }
     }
   }
@@ -115,9 +112,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败: $e')),
-        );
+        showAppToast(context, '分享失败: $e');
       }
     }
   }
@@ -215,9 +210,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                         child: OutlinedButton.icon(
                           onPressed: () {
                             Clipboard.setData(ClipboardData(text: widget.roomCode));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('已复制房间码')),
-                            );
+                            showAppToast(context, '已复制房间码');
                           },
                           icon: const Icon(Icons.copy, size: 18),
                           label: const Text('复制'),

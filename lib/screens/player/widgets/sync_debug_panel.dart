@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/decoder_report.dart';
 import 'package:himi_syncwatch/services/diagnostic_export.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 class SyncDebugPanel extends ConsumerStatefulWidget {
   final bool isHost;
@@ -226,8 +227,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     await Clipboard.setData(
                         ClipboardData(text: _exportDiagnostics()));
                     if (mounted)
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('诊断信息已复制')));
+                      showAppToast(context, '诊断信息已复制');
                   },
                   child:
                       const Icon(Icons.copy, color: Colors.white54, size: 16),
@@ -384,11 +384,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                           final text = widget.onExportStutter();
                           await Clipboard.setData(ClipboardData(text: text));
                           if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('卡顿诊断已复制到剪贴板'),
-                                duration: Duration(seconds: 2)),
-                          );
+                          showAppToast(context, '卡顿诊断已复制到剪贴板', duration: Duration(seconds: 2));
                         },
                       ),
                     ),

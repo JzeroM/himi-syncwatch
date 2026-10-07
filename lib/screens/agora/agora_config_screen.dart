@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// 声网（Agora RTM）配置页（原侧边栏底部入口，现为独立标签页）。
 class AgoraConfigScreen extends ConsumerStatefulWidget {
@@ -40,9 +41,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
   Future<void> _save() async {
     final appId = _appIdController.text.trim();
     if (appId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('App ID 不能为空')),
-      );
+      showAppToast(context, 'App ID 不能为空');
       return;
     }
 
@@ -54,9 +53,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
         );
     if (!mounted) return;
     setState(() => _editing = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('声网配置已保存')),
-    );
+    showAppToast(context, '声网配置已保存');
   }
 
   Future<void> _clear() async {
@@ -65,9 +62,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
     _certController.clear();
     if (!mounted) return;
     setState(() => _editing = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('声网配置已清空')),
-    );
+    showAppToast(context, '声网配置已清空');
   }
 
   @override

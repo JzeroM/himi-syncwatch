@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// Emby 服务器管理页（原侧边栏服务器区域，现为独立标签页）。
 class ServerManagerScreen extends ConsumerStatefulWidget {
@@ -76,9 +77,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                   onSuccess: () {
                     if (!mounted) return;
                     setState(() => _showAddServerForm = false);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('服务器已添加')),
-                    );
+                    showAppToast(context, '服务器已添加');
                   },
                 ),
               ),
@@ -116,9 +115,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     ref.read(embyConfigProvider.notifier).setConfig(server);
     await ref.read(embyAuthServiceProvider).saveSelectedServerId(server.id);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已切换到「${server.label}」')),
-    );
+    showAppToast(context, '已切换到「${server.label}」');
   }
 
   Future<void> _deleteServer(EmbyServerConfig server, bool isActive) async {
@@ -159,9 +156,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已删除「${server.label}」')),
-    );
+    showAppToast(context, '已删除「${server.label}」');
   }
 
   void _showEditServerDialog(EmbyServerConfig server) {
@@ -310,9 +305,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       }
     } catch (e) {
       if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text('编辑失败: $e')),
-        );
+        showAppToast(ctx, '编辑失败: $e');
       }
       return;
     }

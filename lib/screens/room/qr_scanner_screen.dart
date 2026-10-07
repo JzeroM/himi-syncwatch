@@ -4,6 +4,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
@@ -64,9 +65,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     final roomData = RoomCode.decode(code);
     if (roomData == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无效的房间码')),
-        );
+        showAppToast(context, '无效的房间码');
       }
       return;
     }
@@ -94,15 +93,11 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         }
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('图片中未找到有效房间码')),
-        );
+        showAppToast(context, '图片中未找到有效房间码');
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('图片解析失败')),
-        );
+        showAppToast(context, '图片解析失败');
       }
     } finally {
       controller.dispose();

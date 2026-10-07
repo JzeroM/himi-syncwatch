@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// 四标签壳：首页 / Emby服务器 / 声网配置 / 设置。
 ///
@@ -80,12 +81,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       SystemNavigator.pop();
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('再按一次返回退出应用'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    showAppToast(context, '再按一次返回退出应用', duration: Duration(seconds: 2));
   }
 
   @override

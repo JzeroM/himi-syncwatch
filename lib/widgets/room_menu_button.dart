@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// 顶部「房间」入口按钮 + 房间卡片全套交互
 /// （创建房间 / 加入房间 / 扫码 / 房间码）。
@@ -191,24 +192,19 @@ class RoomMenuButton extends ConsumerWidget {
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: () async {
-                  final messenger = ScaffoldMessenger.of(context);
                   final result =
                       await (qrScan?.call() ?? context.push<String>('/scan'));
                   if (result == null || !context.mounted) return;
                   final roomData = RoomCode.decode(result);
                   if (roomData == null) {
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('扫码结果无效')),
-                    );
+                    showAppToast(context, '扫码结果无效');
                     return;
                   }
                   final name = nameController.text.trim();
                   if (name.isEmpty) {
                     // 弹窗保持打开，把码写回输入框，等昵称填好后点「加入」
                     codeController.text = result;
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('已扫描到房间码，请填写昵称后加入')),
-                    );
+                    showAppToast(context, '已扫描到房间码，请填写昵称后加入');
                     return;
                   }
                   Navigator.pop(dialogContext);
@@ -235,9 +231,7 @@ class RoomMenuButton extends ConsumerWidget {
                 Navigator.pop(dialogContext);
                 final roomData = RoomCode.decode(code);
                 if (roomData == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('房间码无效')),
-                  );
+                  showAppToast(context, '房间码无效');
                   return;
                 }
                 context.push(
@@ -256,10 +250,7 @@ class RoomMenuButton extends ConsumerWidget {
     final agoraConfig = ref.read(agoraConfigProvider);
     if (agoraConfig == null || !agoraConfig.isConfigured) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('请先在「声网配置」页填写 App ID 和 App Certificate')),
-        );
+        showAppToast(context, '请先在「声网配置」页填写 App ID 和 App Certificate');
       }
       return;
     }

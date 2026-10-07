@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// TV 模式返回键双击确认层。
 ///
@@ -72,12 +73,7 @@ class _TvBackConfirmState extends State<TvBackConfirm> {
           return;
         }
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.confirmText),
-            duration: widget.window,
-          ),
-        );
+        showAppToast(context, widget.confirmText, duration: widget.window);
       },
       child: widget.child,
     );

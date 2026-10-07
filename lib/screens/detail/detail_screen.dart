@@ -22,6 +22,7 @@ import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -240,9 +241,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (!mounted) return;
     if (!ok) {
       setState(() => _isFavorite = !next);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('收藏操作失败，请检查网络')),
-      );
+      showAppToast(context, '收藏操作失败，请检查网络');
       return;
     }
     ref.read(favoritesRevisionProvider.notifier).state++;
@@ -270,9 +269,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           _favoriteEpisodeIds.add(episodeId);
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('收藏操作失败，请检查网络')),
-      );
+      showAppToast(context, '收藏操作失败，请检查网络');
       return;
     }
     ref.read(favoritesRevisionProvider.notifier).state++;
@@ -310,9 +307,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ..clear()
           ..addAll(prevEpisodes);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('标记已观看失败，请检查网络')),
-      );
+      showAppToast(context, '标记已观看失败，请检查网络');
       return;
     }
     // 标记已观看会清除服务器续播位置 → 即时刷新首页「继续观看」栏
@@ -341,9 +336,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           _watchedEpisodeIds.add(episodeId);
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('标记已观看失败，请检查网络')),
-      );
+      showAppToast(context, '标记已观看失败，请检查网络');
       return;
     }
     // 标记该集已观看清除其续播位置 → 即时刷新首页「继续观看」栏
@@ -415,6 +408,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
     if (resume && ep.playbackPositionMs > 0) {
       query.write('&startMs=${ep.playbackPositionMs}');
+    }
+    // 弹幕错源排除线索：类型 + 剧集年份（同名不同版本/年份区分用）
+    query.write('&kind=series');
+    final seriesYear = _item?.year;
+    if (seriesYear != null && seriesYear.isNotEmpty) {
+      query.write('&year=$seriesYear');
     }
     await context.push('/player/${ep.id}?$query');
     if (mounted) {
@@ -784,6 +783,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (resume && item.playbackPositionMs > 0) {
       query.write('&startMs=${item.playbackPositionMs}');
     }
+    // 弹幕错源排除线索：类型 + 年份（同名不同版本/年份区分用）
+    query.write('&kind=movie');
+    final movieYear = item.year;
+    if (movieYear != null && movieYear.isNotEmpty) {
+      query.write('&year=$movieYear');
+    }
     if (!mounted) return;
     // 从头播放：乐观清本地续播态（主控件立刻恢复默认）+ 首页立即移除该条
     if (!resume) {
@@ -805,10 +810,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final agoraConfig = ref.read(agoraConfigProvider);
     if (agoraConfig == null || !agoraConfig.isConfigured) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('请先在「声网配置」页填写 App ID 和 App Certificate')),
-        );
+        showAppToast(context, '请先在「声网配置」页填写 App ID 和 App Certificate');
       }
       return;
     }

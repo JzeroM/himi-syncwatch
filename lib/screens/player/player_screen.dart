@@ -37,6 +37,7 @@ import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/services/network_speed_meter.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_cache.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_candidate.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_comment.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_matcher.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_timeline.dart';
@@ -85,6 +86,7 @@ import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
 import 'package:himi_syncwatch/services/switch_volume_guard.dart';
 import 'package:himi_syncwatch/services/video_avfilter_policy.dart';
 import 'package:himi_syncwatch/services/window_fullscreen_service.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// 播放器默认音量（0-1）：进入播放器即为 80%。
 const kPlayerDefaultVolume = 0.8;
@@ -108,6 +110,12 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 起播位置（毫秒；详情页「继续观看」传入，首次加载 seek 到此）。
   final int startMs;
 
+  /// 弹幕错源排除线索：作品年份（Emby ProductionYear）；null = 未知，不按年份排除。
+  final int? year;
+
+  /// 弹幕错源排除线索：内容类型（'movie' / 'series'）；null = 未知，不按类型排除。
+  final String? kind;
+
   const PlayerScreen({
     super.key,
     required this.itemId,
@@ -118,6 +126,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.serverId,
     this.logoUrl,
     this.startMs = 0,
+    this.year,
+    this.kind,
   });
 
   @override
@@ -2063,9 +2073,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _volume = restore * 100;
           _volumeNotifier.value = _volume;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('播放失败: $e')),
-        );
+        showAppToast(context, '播放失败: $e');
       }
       return false;
     }
@@ -2631,9 +2639,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) return;
       setState(() => _syncRtmStatus = '不支持此平台');
       _logSyncEvent('当前平台不支持房间同步信令');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前平台暂不支持房间同步')),
-      );
+      showAppToast(context, '当前平台暂不支持房间同步');
       return;
     }
 
@@ -2643,9 +2649,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (agoraConfig == null || !agoraConfig.isConfigured) {
         _roomSyncInitializing = false;
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('声网未配置')),
-          );
+          showAppToast(context, '声网未配置');
         }
         return;
       }
@@ -2655,9 +2659,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_roomData == null) {
       _roomSyncInitializing = false;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('房间码无效')),
-        );
+        showAppToast(context, '房间码无效');
       }
       return;
     }
@@ -2668,9 +2670,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_rtmChannel == null || _rtmAppId == null) {
       _roomSyncInitializing = false;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('房间数据不完整')),
-        );
+        showAppToast(context, '房间数据不完整');
       }
       return;
     }
@@ -2697,9 +2697,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (tokenData == null) {
         _roomSyncInitializing = false;
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('无可用水_token')),
-          );
+          showAppToast(context, '无可用水_token');
         }
         return;
       }
@@ -2719,9 +2717,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       setState(() => _syncRtmStatus = '登录失败');
       _logSyncEvent('RTM 登录失败');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('RTM 登录失败，请检查声网配置')),
-        );
+        showAppToast(context, 'RTM 登录失败，请检查声网配置');
       }
       return;
     }
@@ -2732,9 +2728,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       setState(() => _syncRtmStatus = '订阅失败');
       _logSyncEvent('RTM 订阅失败');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('RTM 频道订阅失败，请检查网络')),
-        );
+        showAppToast(context, 'RTM 频道订阅失败，请检查网络');
       }
       return;
     }
@@ -3792,9 +3786,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _copyRoomCode() {
     if (widget.roomCode == null) return;
     Clipboard.setData(ClipboardData(text: widget.roomCode!));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已复制房间码')),
-    );
+    showAppToast(context, '已复制房间码');
   }
 
   Future<Uint8List?> _captureQrImage() async {
@@ -3824,15 +3816,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         await file.copy('${dcimDir.path}/himi_qr.png');
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已保存到相册')),
-        );
+        showAppToast(context, '已保存到相册');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e')),
-        );
+        showAppToast(context, '保存失败: $e');
       }
     }
   }
@@ -3853,9 +3841,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败: $e')),
-        );
+        showAppToast(context, '分享失败: $e');
       }
     }
   }
@@ -4792,20 +4778,48 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return cleaned.isEmpty ? null : cleaned;
   }
 
-  /// 从候选集内按当前集号择优；无集号或都不含该集号时取首条。
-  int _pickDanmakuEpisode(List<MatchCandidate> candidates) {
-    final number = _currentEpisodeIndex >= 0 &&
-            _currentEpisodeIndex < _episodes.length
-        ? _episodes[_currentEpisodeIndex].number
-        : 0;
-    if (number > 0) {
-      for (final c in candidates) {
-        if (DanmakuMatcher.parseEpisodeNumber(c.episodeTitle) == number) {
-          return c.episodeId;
+  /// 当前集号（无 = 0），供候选排序。
+  int get _currentEpisodeNumber =>
+      _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
+          ? _episodes[_currentEpisodeIndex].number
+          : 0;
+
+  /// 有序候选 episodeId（错源排除 + 集号优先，详见 [DanmakuCandidateSelector]）。
+  List<int> _orderedDanmakuCandidates(
+    List<MatchCandidate> matched,
+    List<MatchCandidate> searched,
+  ) =>
+      DanmakuCandidateSelector.ordered(
+        matched,
+        searched,
+        episodeNumber: _currentEpisodeNumber,
+        year: widget.year,
+        kind: widget.kind,
+      );
+
+  /// 依次尝试候选 episodeId，返回首个「非空弹幕」结果；全部失败/为空 → null。
+  /// 单个候选 500/网络/空结果静默跳过（记日志），成功结果入缓存。
+  Future<({int id, List<DanmakuComment> comments})?> _tryDanmakuCandidates(
+    DandanplayClient client,
+    List<int> ids,
+    int seq,
+  ) async {
+    for (final id in ids) {
+      try {
+        final key = id.toString();
+        final cached = _danmakuCommentsCache.get(key);
+        final comments = cached ?? await client.fetchComments(id);
+        if (!mounted || seq != _danmakuLoadSeq) return null;
+        if (comments.isNotEmpty) {
+          if (cached == null) _danmakuCommentsCache.put(key, comments);
+          return (id: id, comments: comments);
         }
+      } catch (e) {
+        LogService().log('Danmaku', 'candidate $id failed: $e');
       }
+      if (!mounted || seq != _danmakuLoadSeq) return null;
     }
-    return candidates.first.episodeId;
+    return null;
   }
 
   /// 匹配 → 拉弹幕 → 渲染（失败回弹开关并轻提示）。
@@ -4846,46 +4860,64 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
               ? _episodes[_currentEpisodeIndex].id
               : widget.itemId;
-      var episodeId = _danmakuEpisodeCache.get(cacheKey);
-      if (episodeId == null) {
-        var candidates = await client.match(fileName: fileName);
+      ({int id, List<DanmakuComment> comments})? found;
+
+      // 1) 复用上次成功的 episodeId（坏源已不复用：失败会继续找其它候选）
+      final cachedId = _danmakuEpisodeCache.get(cacheKey);
+      if (cachedId != null) {
+        found = await _tryDanmakuCandidates(client, [cachedId], seq);
         if (!mounted || seq != _danmakuLoadSeq) return;
-        if (candidates.isEmpty) {
-          // match 未命中 → 关键词搜索兜底（冷门/异名片）
-          final keyword = _danmakuSearchKeyword();
-          if (keyword != null) {
-            LogService().log('Danmaku', 'match miss, search: $keyword');
-            candidates = await client.searchEpisodes(keyword);
-            if (!mounted || seq != _danmakuLoadSeq) return;
+      }
+
+      // 2) match 候选（含错源排除），逐个试到非空
+      if (found == null) {
+        final matched = await client.match(fileName: fileName);
+        if (!mounted || seq != _danmakuLoadSeq) return;
+        found = await _tryDanmakuCandidates(
+          client,
+          _orderedDanmakuCandidates(matched, const []),
+          seq,
+        );
+        if (!mounted || seq != _danmakuLoadSeq) return;
+      }
+
+      // 3) match 未命中/候选全失败 → 关键词搜索候选（同样错源排除）
+      if (found == null) {
+        final keyword = _danmakuSearchKeyword();
+        if (keyword != null) {
+          LogService().log('Danmaku', 'match miss/failed, search: $keyword');
+          List<MatchCandidate> searched;
+          try {
+            searched = await client.searchEpisodes(keyword);
+          } catch (e) {
+            LogService().log('Danmaku', 'search failed: $e');
+            searched = const [];
           }
-        }
-        if (candidates.isEmpty) {
-          throw const DanmakuApiException(
-            DanmakuApiError.business,
-            '未匹配到对应节目',
+          if (!mounted || seq != _danmakuLoadSeq) return;
+          found = await _tryDanmakuCandidates(
+            client,
+            _orderedDanmakuCandidates(const [], searched),
+            seq,
           );
+          if (!mounted || seq != _danmakuLoadSeq) return;
         }
-        episodeId = _pickDanmakuEpisode(candidates);
-        _danmakuEpisodeCache.put(cacheKey, episodeId);
       }
-      final episodeKey = episodeId.toString();
-      var cachedComments = _danmakuCommentsCache.get(episodeKey);
-      final List<DanmakuComment> loaded;
-      if (cachedComments == null) {
-        loaded = await client.fetchComments(episodeId);
-        if (!mounted || seq != _danmakuLoadSeq) return;
-        _danmakuCommentsCache.put(episodeKey, loaded);
-      } else {
-        loaded = cachedComments;
+
+      if (found == null) {
+        throw const DanmakuApiException(
+          DanmakuApiError.business,
+          '未匹配到弹幕',
+        );
       }
-      if (!mounted || seq != _danmakuLoadSeq) return;
+
+      _danmakuEpisodeCache.put(cacheKey, found.id);
       setState(() {
-        _danmakuComments = loaded;
+        _danmakuComments = found!.comments;
         _danmakuLoadedIndex = _currentEpisodeIndex;
         _danmakuLoading = false;
       });
-      LogService().log('Danmaku', 'loaded ${loaded.length} ($fileName)');
-      if (loaded.isEmpty) _danmakuSnack('未匹配到弹幕');
+      LogService().log(
+          'Danmaku', 'loaded ${found.comments.length} (ep=${found.id}, $fileName)');
     } on DanmakuApiException catch (e) {
       if (!mounted || seq != _danmakuLoadSeq) return;
       setState(() {
@@ -4908,19 +4940,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _danmakuErrorText(DanmakuApiException e) => switch (e.kind) {
         DanmakuApiError.notConfigured => '请先在 设置 → 弹幕配置 填写弹幕 API 地址',
         DanmakuApiError.network => '弹幕服务连接失败',
+        DanmakuApiError.business => e.message,
         _ => '弹幕加载失败：${e.message}',
       };
 
   void _danmakuSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+    showAppToast(context, message, duration: const Duration(seconds: 3));
   }
 
   void _onLockStateChanged() {
@@ -6392,16 +6418,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _maybeApplySubtitleDelay();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已加载字幕: ${file.name}')),
-        );
+        showAppToast(context, '已加载字幕: ${file.name}');
       }
     } catch (e) {
       LogService().log('Player', '加载本地字幕失败: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载字幕失败: $e')),
-        );
+        showAppToast(context, '加载字幕失败: $e');
       }
     }
   }
