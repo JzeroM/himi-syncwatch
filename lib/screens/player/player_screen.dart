@@ -559,8 +559,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Timer? _danmakuRetryTimer;
   int _danmakuRetryAttempt = 0;
 
-  /// 静默重试退避序列（秒）：依次 3s / 8s / 15s，共 3 次。
-  static const List<int> _danmakuRetryDelaysSec = [3, 8, 15];
+  /// 静默重试退避序列（秒）：首延迟缩短到 2s，其后 5s/10s（共 3 次）。
+  static const List<int> _danmakuRetryDelaysSec = [2, 5, 10];
 
   /// 底栏「弹幕」开关焦点（TV 跨组导航锚点：右组头）。
   final FocusNode _danmakuButtonFocusNode = FocusNode();
@@ -1326,7 +1326,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         try {
           await _loadEpisodeStream(targetIndex >= 0 ? targetIndex : 0,
               startMs: widget.startMs);
-          if (mounted && _danmakuOn) _loadDanmaku();
         } catch (_) {
           LogService()
               .log('Player', '_loadEpisodeStream 异常，强制设置 _isPlayerReady');
@@ -1435,6 +1434,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     setState(() {
       _currentEpisodeIndex = episodeIndex;
     });
+    // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
+    if (mounted && _danmakuOn) unawaited(_loadDanmaku());
 
     try {
       // 来源服务器（集可能来自其他服务器）
@@ -3657,6 +3658,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 切集前把上一集按「停止」上报（写入续播位置/自动已观看）
     await _reportStopped();
 
+    // 换集：先清空上一集弹幕（新集由 _loadEpisodeStream 就绪后并行触发加载，
+    // 旧集在飞的请求由 _danmakuLoadSeq 作废）
+    if (mounted && _danmakuOn) {
+      _cancelDanmakuRetry();
+      setState(() {
+        _danmakuComments = const [];
+        _danmakuLoadedIndex = -1;
+        _danmakuLoading = false;
+      });
+    }
+
     // 先加载新集，获取 playUrl
     await _loadEpisodeStream(index);
     if (requestId != _playRequestId || !mounted) return;
@@ -3678,18 +3690,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     _rebuildGroups();
-
-    // 换集：清空上一集弹幕；开关保持则按新集重新匹配
-    //（旧集在飞的请求由 _danmakuLoadSeq 作废）
-    if (mounted && _danmakuOn) {
-      _cancelDanmakuRetry();
-      setState(() {
-        _danmakuComments = const [];
-        _danmakuLoadedIndex = -1;
-        _danmakuLoading = false;
-      });
-      _loadDanmaku();
-    }
   }
 
   // 删除剧集（sendRtm=true 时为房主操作，false 时为观众端本地删除）
@@ -4888,36 +4888,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted || seq != _danmakuLoadSeq) return;
       }
 
-      // 2) match 候选（错源排除 + 集号优先）；match 瞬时失败不致命。
-      //    「match 无集号命中」时先取搜索候选校正（修复 match 挑错集）。
+      // 2) 并行 match + 搜索，合并后按「全局集号命中优先 + 错源排除」逐候选试。
+      //    并行可省一次串行往返；match 瞬时失败不致命。
       if (found == null) {
         List<MatchCandidate> matched = const [];
-        try {
-          matched = await client.match(fileName: fileName);
-        } on DanmakuApiException catch (e) {
-          LogService().log(
-              'Danmaku', 'match failed: ${e.kind.name} ${e.message}');
-        }
-        if (!mounted || seq != _danmakuLoadSeq) return;
-
-        final target = _currentEpisodeNumber;
-        final matchHit = target > 0 &&
-            matched.any((c) =>
-                DanmakuMatcher.parseEpisodeNumber(c.episodeTitle) == target);
-
         List<MatchCandidate> searched = const [];
-        if (!matchHit) {
-          final keyword = _danmakuSearchKeyword();
-          if (keyword != null) {
-            LogService().log('Danmaku', 'match no-hit, search: $keyword');
+        final keyword = _danmakuSearchKeyword();
+        await Future.wait<void>([
+          () async {
+            try {
+              matched = await client.match(fileName: fileName);
+            } on DanmakuApiException catch (e) {
+              LogService().log(
+                  'Danmaku', 'match failed: ${e.kind.name} ${e.message}');
+            }
+          }(),
+          () async {
+            if (keyword == null) return;
             try {
               searched = await client.searchEpisodes(keyword);
             } catch (e) {
               LogService().log('Danmaku', 'search failed: $e');
             }
-            if (!mounted || seq != _danmakuLoadSeq) return;
-          }
-        }
+          }(),
+        ]);
+        if (!mounted || seq != _danmakuLoadSeq) return;
 
         found = await _tryDanmakuCandidates(
           client,
@@ -4925,30 +4920,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           seq,
         );
         if (!mounted || seq != _danmakuLoadSeq) return;
-
-        // 3) 仍失败 → 搜索候选兜底（match 命中但坏源，或上面的搜索也失败）
-        if (found == null) {
-          if (searched.isEmpty) {
-            final keyword = _danmakuSearchKeyword();
-            if (keyword != null) {
-              LogService().log('Danmaku', 'match failed, search: $keyword');
-              try {
-                searched = await client.searchEpisodes(keyword);
-              } catch (e) {
-                LogService().log('Danmaku', 'search failed: $e');
-              }
-              if (!mounted || seq != _danmakuLoadSeq) return;
-            }
-          }
-          if (searched.isNotEmpty) {
-            found = await _tryDanmakuCandidates(
-              client,
-              _orderedDanmakuCandidates(const [], searched),
-              seq,
-            );
-            if (!mounted || seq != _danmakuLoadSeq) return;
-          }
-        }
       }
 
       if (found == null) {
