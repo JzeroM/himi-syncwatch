@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -137,7 +139,7 @@ class GlassIosStandard {
   static const double thickness = 22; // 默认 28（降镜片厚/白感）
   static const double saturation = 1.85; // 默认 1.7（更通透显色）
   static const double lightIntensity = 1.0; // 默认 1.2（降白色高光）
-  static const double ambientStrength = 0.15; // 主题兜底（降环境白光）
+  static const double ambientStrength = 0.0; // 环境光归零（安卓 dark 默认也是 0）
 }
 
 /// 取 [key] 对应参数的默认值：iOS(standard/Impeller) 用 [GlassIosStandard]
@@ -222,7 +224,7 @@ class GlassTuning {
   /// 默认），保证默认观感 = 目标效果而非包 variant 的保守默认。
   GlassThemeData toThemeData() {
     final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
-    return GlassThemeData.simple(
+    final data = GlassThemeData.simple(
       blur: blur ?? glassDefault('glassBlur'),
       thickness: thickness ?? glassDefault('glassThickness'),
       saturation: saturation ?? glassDefault('glassSaturation'),
@@ -230,8 +232,23 @@ class GlassTuning {
       lightIntensity: lightIntensity ?? glassDefault('glassLightIntensity'),
       refractiveIndex: refractiveIndex ?? glassDefault('glassRefractiveIndex'),
       // 不指定画质：交给包按引擎能力决定（iOS/安卓均落到 standard 路径）
-      // iOS(Impeller)：降环境白光，减少发白
-      ambientStrength: isIOS ? GlassIosStandard.ambientStrength : null,
+    );
+    if (!isIOS) return data;
+    // iOS(Impeller)：同参数偏白发糊 → 直接压低玻璃白纱/环境光/磨砂奶白，
+    // 让静态玻璃（顶栏/卡片/胶囊）更透亮，贴近安卓 Skia 观感。
+    GlassThemeVariant tune(GlassThemeVariant v) => v.copyWith(
+          settings: (v.settings ?? const GlassThemeSettings()).copyWith(
+            glassColor: const Color.fromRGBO(255, 255, 255, 0.03),
+            ambientStrength: GlassIosStandard.ambientStrength,
+            frostOpacity: 0.0,
+            rimLight: 0.0,
+          ),
+        );
+    return GlassThemeData(
+      light: tune(data.light),
+      dark: tune(data.dark),
+      interaction: data.interaction,
+      brightness: data.brightness,
     );
   }
 }

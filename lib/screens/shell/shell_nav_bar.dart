@@ -285,7 +285,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     // 下同参数偏白发糊，故对镜片白纱/微边/光晕做一组更透亮的微调。
     final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
     final settings = lg.AnimatedGlassIndicator.baseIndicatorSettings.copyWith(
-      glassColor: Colors.white.withValues(alpha: isIOS ? 0.10 : 0.14),
+      glassColor: Colors.white.withValues(alpha: isIOS ? 0.05 : 0.14),
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
       // 色散：standard 路径沿用固定加强值（[PATCH himi] ×4.0 见 shader）
@@ -296,10 +296,10 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
           tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
       // Skia 捕获钥匙：GlassEffect 捕获门槛要求 blur > 0（0.01 无感）
       blur: 0.01,
-      // 结构参数：standard 归一化补偿（iOS 收低白边/光晕）
-      ambientRim: isIOS ? 0.12 : 0.18,
-      glowIntensity: isIOS ? 0.9 : 1.2,
-      ambientStrength: isIOS ? 0.25 : 0.4,
+      // 结构参数：standard 归一化补偿（iOS 收低白边/光晕/环境光）
+      ambientRim: isIOS ? 0.08 : 0.18,
+      glowIntensity: isIOS ? 0.6 : 1.2,
+      ambientStrength: isIOS ? 0.0 : 0.4,
       edgeAbsorption: 0.10,
       // 光源相位随水珠位置扫动：key/kick 亮瓣绕环流动
       lightAngle: math.pi / 2 + (_blobT - 0.5) * math.pi,
