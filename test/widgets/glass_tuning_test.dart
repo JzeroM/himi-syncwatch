@@ -214,36 +214,47 @@ void main() {
     });
   });
 
-  group('iOS 与安卓同源默认值（无 premium 专用取向）', () {
-    test('iOS 的 glassDefault 与 spec 一致', () {
+  group('iOS 专属调参（standard 路径，更透亮）', () {
+    test('iOS 的 glassDefault 用 GlassIosStandard 微调组', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      for (final key in const [
-        'glassBlur',
-        'glassThickness',
-        'glassEdgeZone',
-        'glassSaturation',
-        'glassChromatic',
-        'glassLightIntensity',
-        'glassRefractiveIndex',
-      ]) {
-        expect(
-          glassDefault(key),
-          glassParamSpecs.firstWhere((s) => s.key == key).defaultValue,
-          reason: '$key 在 iOS 与 spec 同源',
-        );
-      }
+      expect(glassDefault('glassBlur'), GlassIosStandard.blur);
+      expect(glassDefault('glassThickness'), GlassIosStandard.thickness);
+      expect(glassDefault('glassSaturation'), GlassIosStandard.saturation);
+      expect(
+          glassDefault('glassLightIntensity'), GlassIosStandard.lightIntensity);
+      // 非微调项仍与 spec 同源
+      expect(
+        glassDefault('glassChromatic'),
+        glassParamSpecs
+            .firstWhere((s) => s.key == 'glassChromatic')
+            .defaultValue,
+      );
+      // 微调方向：比 spec 默认更透亮（降模糊/厚度/高光、升饱和）
+      final blurSpec =
+          glassParamSpecs.firstWhere((s) => s.key == 'glassBlur');
+      expect(GlassIosStandard.blur, lessThan(blurSpec.defaultValue));
+      expect(GlassIosStandard.thickness,
+          lessThan(glassParamSpecs
+              .firstWhere((s) => s.key == 'glassThickness')
+              .defaultValue));
+      expect(GlassIosStandard.lightIntensity,
+          lessThan(glassParamSpecs
+              .firstWhere((s) => s.key == 'glassLightIntensity')
+              .defaultValue));
     });
 
-    test('iOS toThemeData 不强制 premium 画质（交给包按引擎决定）', () {
+    test('iOS toThemeData 不强制 premium 画质且降环境白光', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final data = const GlassTuning().toThemeData();
       expect(data.light.quality, isNull,
           reason: '不再对 iOS 强制 GlassQuality.premium');
+      expect(data.light.settings?.ambientStrength,
+          GlassIosStandard.ambientStrength);
     });
 
-    test('安卓沿用 spec 默认', () {
+    test('安卓沿用 spec 默认（不受 iOS 微调影响）', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(
@@ -251,6 +262,10 @@ void main() {
         glassParamSpecs
             .firstWhere((s) => s.key == 'glassThickness')
             .defaultValue,
+      );
+      expect(
+        glassDefault('glassBlur'),
+        glassParamSpecs.firstWhere((s) => s.key == 'glassBlur').defaultValue,
       );
     });
   });

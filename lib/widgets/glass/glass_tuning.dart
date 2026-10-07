@@ -124,10 +124,38 @@ const List<GlassParamSpec> glassParamSpecs = [
   ),
 ];
 
-/// 取 [key] 对应参数的默认值：全平台统一用 [glassParamSpecs] 的应用默认
-/// （iOS 与安卓走同一 standard 着色器路径，参数语义一致），滑杆回显、
-/// 渲染兜底与调用方（如导航水珠镜片的显式 settings）同源。
+/// iOS(Impeller) standard 路径专属调参。
+///
+/// 两端跑同一 standard 着色器，但 iOS 为 Impeller、安卓为 Skia；同一参数在
+/// Impeller 下模糊/高光更重、观感发白偏糊。这里给 iOS 一组更「透亮」的
+/// 默认值（降雾化模糊/厚度/高光/环境光、略升饱和）以贴近安卓观感；
+/// 滑杆回显、渲染兜底与调用方显式取值同源。安卓/其余平台仍用 spec 默认。
+class GlassIosStandard {
+  const GlassIosStandard._();
+
+  static const double blur = 2; // 默认 4（降雾化模糊）
+  static const double thickness = 22; // 默认 28（降镜片厚/白感）
+  static const double saturation = 1.85; // 默认 1.7（更通透显色）
+  static const double lightIntensity = 1.0; // 默认 1.2（降白色高光）
+  static const double ambientStrength = 0.15; // 主题兜底（降环境白光）
+}
+
+/// 取 [key] 对应参数的默认值：iOS(standard/Impeller) 用 [GlassIosStandard]
+/// 微调组，其余平台用 [glassParamSpecs] 应用默认。滑杆回显、渲染兜底与调用
+/// 方（如导航水珠镜片的显式 settings）同源。
 double glassDefault(String key) {
+  if (defaultTargetPlatform == TargetPlatform.iOS) {
+    switch (key) {
+      case 'glassBlur':
+        return GlassIosStandard.blur;
+      case 'glassThickness':
+        return GlassIosStandard.thickness;
+      case 'glassSaturation':
+        return GlassIosStandard.saturation;
+      case 'glassLightIntensity':
+        return GlassIosStandard.lightIntensity;
+    }
+  }
   return glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
 }
 
@@ -193,6 +221,7 @@ class GlassTuning {
   /// 映射为包主题：null 字段（恢复默认态）兜底到 [glassDefault]（应用
   /// 默认），保证默认观感 = 目标效果而非包 variant 的保守默认。
   GlassThemeData toThemeData() {
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
     return GlassThemeData.simple(
       blur: blur ?? glassDefault('glassBlur'),
       thickness: thickness ?? glassDefault('glassThickness'),
@@ -201,6 +230,8 @@ class GlassTuning {
       lightIntensity: lightIntensity ?? glassDefault('glassLightIntensity'),
       refractiveIndex: refractiveIndex ?? glassDefault('glassRefractiveIndex'),
       // 不指定画质：交给包按引擎能力决定（iOS/安卓均落到 standard 路径）
+      // iOS(Impeller)：降环境白光，减少发白
+      ambientStrength: isIOS ? GlassIosStandard.ambientStrength : null,
     );
   }
 }
