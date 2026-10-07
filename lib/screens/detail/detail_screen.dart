@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -400,6 +401,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (!resume) {
       setState(() => _resumeMsOverride = 0);
       _hideResumeOptimistically(ep.id);
+      // 已观看的集重播 → 乐观复位未观看 + 服务器取消，重回续播列表
+      _unwatchTargetOptimistically(ep.id, isSeries: true);
     }
     final query = StringBuffer('isHost=true$_serverQuery');
     final sourceId = _episodeSourceIds[ep.id];
@@ -428,6 +431,24 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       notifier.state = {...notifier.state, id};
     }
     ref.read(resumeRevisionProvider.notifier).state++;
+  }
+
+  /// 从头播放「已观看」目标：乐观复位为未观看并调用服务器取消 `Played`，
+  /// 使该条重新进入 Emby 续播列表（随后进度上报成功即回填首页栏）。
+  /// 电影=主条目 [isSeries]=false；电视剧=该集 [isSeries]=true。
+  void _unwatchTargetOptimistically(String targetId, {required bool isSeries}) {
+    if (isSeries) {
+      if (!_watchedEpisodeIds.contains(targetId)) return;
+      setState(() => _watchedEpisodeIds.remove(targetId));
+    } else {
+      if (!_isWatched) return;
+      setState(() => _isWatched = false);
+    }
+    unawaited(
+      ref
+          .read(embyServiceForProvider(widget.serverId))
+          .setWatched(targetId, false),
+    );
   }
 
   /// 从播放器返回/上报成功：解除乐观隐藏，交回服务器真相驱动显示。
@@ -500,8 +521,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   double get _resumePct =>
       (_resumeItem?.playedPercentage ?? 0).clamp(0.0, 100.0);
 
-  /// 是否展示「继续」形态（有进度且未标记已观看）。
-  bool get _offerResume => _resumeMs > 0 && !_isWatched;
+  /// 播放目标是否已观看：电影=主条目；电视剧=当前选中集（播放按钮播的就是它）。
+  bool get _targetWatched {
+    final item = _item;
+    if (item == null) return false;
+    if (!item.isSeries) return _isWatched;
+    final target = _targetEpisode();
+    return target != null && _watchedEpisodeIds.contains(target.id);
+  }
+
+  /// 是否展示「继续」形态（目标有进度且目标未标记已观看）。
+  bool get _offerResume => _resumeMs > 0 && !_targetWatched;
 
   /// `mm:ss` / `h:mm:ss`。
   String _formatPosition(int ms) {
@@ -759,6 +789,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (!resume) {
       setState(() => _resumeMsOverride = 0);
       _hideResumeOptimistically(item.id);
+      // 已观看的电影重播 → 乐观复位未观看 + 服务器取消，重回续播列表
+      _unwatchTargetOptimistically(item.id, isSeries: false);
     }
     await context.push('/player/${item.id}?${query.toString()}');
     if (mounted) {

@@ -2448,6 +2448,95 @@ void main() {
       expect(container.read(resumeRevisionProvider), greaterThan(revBefore));
       expect(find.textContaining('PLAYER:m1'), findsOneWidget);
     });
+
+    testWidgets('已观看电影点「开始播放」：调用服务器取消已观看', (tester) async {
+      final watched = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+        isWatched: true,
+      );
+      final fake = FakeEmbyService(item: watched);
+      await _pumpDetailInRouter(tester, item: watched, emby: fake);
+
+      final btn = find.text('开始播放');
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        fake.watchedCalls.any((c) => c.id == 'm1' && c.watched == false),
+        isTrue,
+        reason: '重播已观看电影应调用服务器取消已观看（重回续播列表）',
+      );
+    });
+
+    testWidgets('已观看电影点播放后返回：有进度则显示「继续 + 从头播放」', (tester) async {
+      final watched = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+        isWatched: true,
+      );
+      final withResume = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+        playbackPositionMs: 169000,
+        playedPercentage: 20,
+      );
+      final fake = _SeqItemFakeService(sequence: [watched, withResume]);
+      await _pumpDetailInRouter(tester, item: watched, emby: fake);
+
+      expect(find.text('开始播放'), findsOneWidget);
+
+      final btn = find.text('开始播放');
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('PLAYER:m1'), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 600));
+
+      expect(find.text('继续 02:49'), findsOneWidget);
+      expect(find.byKey(const Key('playFromBeginningButton')), findsOneWidget);
+    });
+
+    testWidgets('整部已观看的剧集：目标集有进度仍显示「继续」（按集判断，不被整部卡住）',
+        (tester) async {
+      final series = MediaItem(
+        id: 'sv1',
+        name: '测试剧集',
+        type: 'Series',
+        isWatched: true,
+      );
+      final ep1 = MediaItem(
+        id: 'e1',
+        name: '第1集',
+        type: 'Episode',
+        parentIndexNumber: 1,
+        indexNumber: 1,
+        playbackPositionMs: 169000,
+        playedPercentage: 20,
+      );
+      final fake = FakeEmbyService(item: series, items: [ep1]);
+      await _pumpDetail(tester, item: series, emby: fake);
+
+      expect(find.text('继续 02:49'), findsOneWidget,
+          reason: '续播门槛应按目标集判断，而非整部剧的已观看');
+      expect(find.byKey(const Key('playFromBeginningButton')), findsOneWidget);
+    });
   });
 
   group('底部媒体信息（非 TV）', () {
