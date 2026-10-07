@@ -76,6 +76,15 @@ class DetailScreen extends ConsumerStatefulWidget {
   /// 集排序键：季号在高位、集号在低位，便于取「最大集」。
   static int _episodeOrder(MediaItem e) =>
       ((e.parentIndexNumber ?? 0) << 16) | (e.indexNumber ?? 0);
+
+  /// 弹幕年份线索：仅接受合理年份（1900–2100）字符串，其余（0/空/异常）
+  /// 返回 null（播放器端按「无年份信息」处理，不做年份降权）。
+  @visibleForTesting
+  static String? validYearQuery(String? year) {
+    final v = int.tryParse(year ?? '');
+    if (v == null || v < 1900 || v > 2100) return null;
+    return '$v';
+  }
 }
 
 class _DetailScreenState extends ConsumerState<DetailScreen> {
@@ -442,8 +451,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
     // 弹幕错源排除线索：类型 + 剧集年份（同名不同版本/年份区分用）
     query.write('&kind=series');
-    final seriesYear = _item?.year;
-    if (seriesYear != null && seriesYear.isNotEmpty) {
+    final seriesYear = DetailScreen.validYearQuery(_item?.year);
+    if (seriesYear != null) {
       query.write('&year=$seriesYear');
     }
     await context.push('/player/${ep.id}?$query');
@@ -835,8 +844,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
     // 弹幕错源排除线索：类型 + 年份（同名不同版本/年份区分用）
     query.write('&kind=movie');
-    final movieYear = item.year;
-    if (movieYear != null && movieYear.isNotEmpty) {
+    final movieYear = DetailScreen.validYearQuery(item.year);
+    if (movieYear != null) {
       query.write('&year=$movieYear');
     }
     if (!mounted) return;
