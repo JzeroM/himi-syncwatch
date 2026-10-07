@@ -2623,4 +2623,135 @@ void main() {
       expect(find.text('音频'), findsWidgets);
     });
   });
+
+  group('剧集页默认锁定集（defaultEpisodeTarget）', () {
+    MediaItem ep(
+      String id,
+      int season,
+      int num, {
+      int ms = 0,
+      bool watched = false,
+    }) =>
+        MediaItem(
+          id: id,
+          name: '第$num集',
+          type: 'Episode',
+          parentIndexNumber: season,
+          indexNumber: num,
+          playbackPositionMs: ms,
+          isWatched: watched,
+        );
+
+    test('有进度优先，取 (季,集) 最大的有进度集', () {
+      final list = [
+        ep('a', 1, 1, ms: 1000),
+        ep('b', 1, 5, ms: 2000),
+        ep('c', 1, 3, watched: true),
+      ];
+      expect(DetailScreen.defaultEpisodeTarget(list)!.id, 'b');
+    });
+
+    test('无进度取已观看的最大集', () {
+      final list = [
+        ep('a', 1, 1, watched: true),
+        ep('b', 1, 4, watched: true),
+        ep('c', 1, 2),
+      ];
+      expect(DetailScreen.defaultEpisodeTarget(list)!.id, 'b');
+    });
+
+    test('跨季取季号更大的有进度集', () {
+      final list = [
+        ep('s1e10', 1, 10, ms: 1),
+        ep('s2e1', 2, 1, ms: 1),
+      ];
+      expect(DetailScreen.defaultEpisodeTarget(list)!.id, 's2e1');
+    });
+
+    test('都没有 → null（维持首季首集）', () {
+      expect(DetailScreen.defaultEpisodeTarget([ep('a', 1, 1)]), isNull);
+      expect(DetailScreen.defaultEpisodeTarget(const []), isNull);
+    });
+
+    testWidgets('进剧集页锁定到有进度的最大集：主控件显示继续 + 横卡滚到该卡',
+        (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final series = MediaItem(id: 'sv1', name: '测试剧集', type: 'Series');
+      final eps = [
+        for (var i = 1; i <= 12; i++)
+          MediaItem(
+            id: 'e$i',
+            name: '第$i集',
+            type: 'Episode',
+            parentIndexNumber: 1,
+            indexNumber: i,
+            playbackPositionMs: i == 10 ? 5000 : 0,
+          ),
+      ];
+      await _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(item: series, items: eps),
+      );
+
+      // 目标集=第10集（有进度）→ 主控件显示续播
+      expect(find.text('继续 00:05'), findsOneWidget);
+
+      // 横卡行已水平滚动到第10集（offset > 0）
+      final horizontal = find.byWidgetPredicate(
+        (w) => w is ListView && w.scrollDirection == Axis.horizontal,
+      );
+      expect(horizontal, findsWidgets);
+      final scrollable = find.descendant(
+        of: horizontal.first,
+        matching: find.byType(Scrollable),
+      );
+      final controller = tester.widget<Scrollable>(scrollable).controller!;
+      expect(controller.offset, greaterThan(0),
+          reason: '应水平滚动锁定到目标集卡');
+    });
+
+    testWidgets('跨季：目标集在第二季时自动切到该季并锁定', (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final series = MediaItem(id: 'sv1', name: '测试剧集', type: 'Series');
+      final eps = [
+        MediaItem(
+            id: 's1e1',
+            name: '第1集',
+            type: 'Episode',
+            parentIndexNumber: 1,
+            indexNumber: 1),
+        MediaItem(
+            id: 's2e1',
+            name: '第1集',
+            type: 'Episode',
+            parentIndexNumber: 2,
+            indexNumber: 1),
+        MediaItem(
+            id: 's2e2',
+            name: '第2集',
+            type: 'Episode',
+            parentIndexNumber: 2,
+            indexNumber: 2,
+            playbackPositionMs: 3000),
+      ];
+      await _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(item: series, items: eps),
+      );
+
+      // 目标集 s2e2 有进度 → 主控件续播（00:03），且选中季切到第2季
+      expect(find.text('继续 00:03'), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_s2e2')), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_s1e1')), findsNothing,
+          reason: '已切到第2季，第一季卡不在行内');
+    });
+  });
 }

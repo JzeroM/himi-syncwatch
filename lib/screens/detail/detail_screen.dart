@@ -55,6 +55,27 @@ class DetailScreen extends ConsumerStatefulWidget {
     if (!out.contains('quality=')) out += '&quality=85';
     return out;
   }
+
+  /// 集横卡默认锁定目标：优先「有续播进度」的集，其次「已观看」的集，
+  /// 各自取 `(季, 集)` 最大者（跨季）；都没有返回 null（调用方维持首季首集）。
+  @visibleForTesting
+  static MediaItem? defaultEpisodeTarget(List<MediaItem> episodes) {
+    MediaItem? pickMax(Iterable<MediaItem> candidates) {
+      MediaItem? best;
+      for (final e in candidates) {
+        if (best == null || _episodeOrder(e) > _episodeOrder(best)) best = e;
+      }
+      return best;
+    }
+
+    final resume = pickMax(episodes.where((e) => e.playbackPositionMs > 0));
+    if (resume != null) return resume;
+    return pickMax(episodes.where((e) => e.isWatched));
+  }
+
+  /// 集排序键：季号在高位、集号在低位，便于取「最大集」。
+  static int _episodeOrder(MediaItem e) =>
+      ((e.parentIndexNumber ?? 0) << 16) | (e.indexNumber ?? 0);
 }
 
 class _DetailScreenState extends ConsumerState<DetailScreen> {
@@ -193,12 +214,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         await Future.wait(futures);
       }
 
+      MediaItem? autoLockTarget;
       if (item != null && item.isSeries) {
         // 服务端季列表为空时按集分组兜底，保证分季 UI 永远可用
         if (_seasons.isEmpty) _seasons = _synthSeasons(_episodes);
-        _selectedSeason = _seasons.isEmpty
-            ? null
-            : SeriesSections.seasonNumber(_seasons.first, 0);
+        // 每次进入/刷新剧集页：默认锁定到「有进度优先、其次已观看」的最大集
+        autoLockTarget = DetailScreen.defaultEpisodeTarget(_episodes);
+        if (autoLockTarget != null) {
+          _selectedSeason = autoLockTarget.parentIndexNumber ?? 0;
+          _selectedEpisodeId = autoLockTarget.id;
+        } else {
+          _selectedSeason = _seasons.isEmpty
+              ? null
+              : SeriesSections.seasonNumber(_seasons.first, 0);
+        }
       }
 
       final wasOfferResume = _offerResume;
@@ -215,6 +244,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _resumeMsOverride = null;
         _isLoading = false;
       });
+      // 横卡默认水平滚动锁定到目标集（等本帧布局完成后再滚）
+      if (autoLockTarget != null) _scheduleEpisodeRowLock(autoLockTarget);
       // 继续播放按钮状态（默认 ↔ 继续）发生变化 → 立即刷新首页「继续观看」栏
       if (_offerResume != wasOfferResume) {
         ref.read(resumeRevisionProvider.notifier).state++;
@@ -704,16 +735,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 选集后定位：水平 jumpTo 该集图片卡；垂直以操作行（开始播放/建房）
   /// 为锚滚动，保证按钮完整可见且页面不过分靠下（无操作行时锚横卡行）。
   void _scrollToEpisode(MediaItem ep) {
-    final list = _seasonEpisodesOf(_selectedSeason);
-    final ordered = _sortDescending ? list.reversed.toList() : list;
-    final index = ordered.indexWhere((e) => e.id == ep.id);
-    if (index >= 0 && _episodeRowController.hasClients) {
-      final max = _episodeRowController.position.maxScrollExtent;
-      final target = (index * SeriesSections.episodeCardStride).clamp(0.0, max);
-      if (_episodeRowController.offset != target) {
-        _episodeRowController.jumpTo(target);
-      }
-    }
+    _jumpEpisodeRowTo(ep);
 
     final actionCtx = _actionRowKey.currentContext;
     final anchorCtx = actionCtx ?? _episodeRowKey.currentContext;
@@ -739,6 +761,34 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         curve: Curves.easeOut,
       );
     }
+  }
+
+  /// 进详情页默认锁定：等本帧布局完成后再水平滚动到目标集卡；若此刻
+  /// 控制器尚未就绪（首帧），短延时兜底重试一次。
+  void _scheduleEpisodeRowLock(MediaItem ep) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_jumpEpisodeRowTo(ep)) return;
+      Future<void>.delayed(const Duration(milliseconds: 120), () {
+        if (mounted) _jumpEpisodeRowTo(ep);
+      });
+    });
+  }
+
+  /// 仅水平滚动集卡行到 [ep] 所在位置（不做页面垂直滚动）。
+  /// 返回 true = 已处理（控制器就绪或该集不在当前季）；false = 控制器未就绪。
+  bool _jumpEpisodeRowTo(MediaItem ep) {
+    if (!_episodeRowController.hasClients) return false;
+    final list = _seasonEpisodesOf(_selectedSeason);
+    final ordered = _sortDescending ? list.reversed.toList() : list;
+    final index = ordered.indexWhere((e) => e.id == ep.id);
+    if (index < 0) return true; // 不在当前季：无需滚动
+    final max = _episodeRowController.position.maxScrollExtent;
+    final target = (index * SeriesSections.episodeCardStride).clamp(0.0, max);
+    if (_episodeRowController.offset != target) {
+      _episodeRowController.jumpTo(target);
+    }
+    return true;
   }
 
   /// 剧集页「开始播放」：播选集器选中的集（未选则该季第一集）。
