@@ -76,6 +76,12 @@ class DetailScreen extends ConsumerStatefulWidget {
   /// 集排序键：季号在高位、集号在低位，便于取「最大集」。
   static int _episodeOrder(MediaItem e) =>
       ((e.parentIndexNumber ?? 0) << 16) | (e.indexNumber ?? 0);
+
+  /// 是否动画：Emby 类型（Genres）含「动画」或「Animation」（忽略大小写）。
+  @visibleForTesting
+  static bool isAnimationGenres(List<String> genres) => genres.any(
+        (g) => g == '动画' || g.toLowerCase() == 'animation',
+      );
 }
 
 class _DetailScreenState extends ConsumerState<DetailScreen> {
@@ -446,6 +452,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (seriesYear != null && seriesYear.isNotEmpty) {
       query.write('&year=$seriesYear');
     }
+    query.write(
+        '&anim=${DetailScreen.isAnimationGenres(_item?.genres ?? const []) ? 1 : 0}');
     await context.push('/player/${ep.id}?$query');
     if (mounted) {
       _clearResumeHidden(ep.id);
@@ -839,6 +847,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (movieYear != null && movieYear.isNotEmpty) {
       query.write('&year=$movieYear');
     }
+    query.write(
+        '&anim=${DetailScreen.isAnimationGenres(item.genres) ? 1 : 0}');
     if (!mounted) return;
     // 从头播放：乐观清本地续播态（主控件立刻恢复默认）+ 首页立即移除该条
     if (!resume) {

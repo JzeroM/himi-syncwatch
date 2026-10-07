@@ -2673,6 +2673,35 @@ void main() {
       expect(DetailScreen.defaultEpisodeTarget(const []), isNull);
     });
 
+    test('isAnimationGenres：含「动画」/「Animation」判为动画', () {
+      expect(DetailScreen.isAnimationGenres(const ['动画', '奇幻']), isTrue);
+      expect(DetailScreen.isAnimationGenres(const ['Animation']), isTrue);
+      expect(DetailScreen.isAnimationGenres(const ['animation']), isTrue);
+      expect(DetailScreen.isAnimationGenres(const ['剧情', '动作']), isFalse);
+      expect(DetailScreen.isAnimationGenres(const []), isFalse);
+    });
+
+    testWidgets('动画资源播放路由携带 anim=1', (tester) async {
+      final anime = MediaItem(
+        id: 'm1',
+        name: '测试动画',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '简介。',
+        genres: const ['动画', '奇幻'],
+      );
+      await _pumpDetailInRouter(tester, item: anime);
+
+      final btn = find.text('开始播放');
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.textContaining('PLAYER:m1'), findsOneWidget);
+      expect(find.textContaining('anim=1'), findsOneWidget);
+    });
+
     testWidgets('进剧集页锁定到有进度的最大集：主控件显示继续 + 横卡滚到该卡',
         (tester) async {
       tester.view.physicalSize = const Size(800, 1600);

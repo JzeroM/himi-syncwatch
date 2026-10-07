@@ -110,11 +110,14 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 起播位置（毫秒；详情页「继续观看」传入，首次加载 seek 到此）。
   final int startMs;
 
-  /// 弹幕错源排除线索：作品年份（Emby ProductionYear）；null = 未知，不按年份排除。
+  /// 弹幕错源排除线索：作品年份（Emby ProductionYear）；null = 未知，年份降权。
   final int? year;
 
   /// 弹幕错源排除线索：内容类型（'movie' / 'series'）；null = 未知，不按类型排除。
   final String? kind;
+
+  /// 弹幕错源排除线索：是否为动画（Emby 类型含「动画」）；用于排除真人剧类候选。
+  final bool isAnimation;
 
   const PlayerScreen({
     super.key,
@@ -128,6 +131,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.startMs = 0,
     this.year,
     this.kind,
+    this.isAnimation = false,
   });
 
   @override
@@ -4806,6 +4810,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         episodeNumber: _currentEpisodeNumber,
         year: widget.year,
         kind: widget.kind,
+        isAnimation: widget.isAnimation,
       );
 
   /// 依次尝试候选 episodeId，返回首个「非空弹幕」结果；全部失败/为空 → null。
@@ -4883,8 +4888,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted || seq != _danmakuLoadSeq) return;
       }
 
-      // 2) match 候选（含错源排除），逐个试到非空；match 瞬时失败不致命，
-      //    继续走 3) 搜索候选
+      // 2) match 候选（错源排除 + 集号优先）；match 瞬时失败不致命。
+      //    「match 无集号命中」时先取搜索候选校正（修复 match 挑错集）。
       if (found == null) {
         List<MatchCandidate> matched = const [];
         try {
@@ -4894,33 +4899,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               'Danmaku', 'match failed: ${e.kind.name} ${e.message}');
         }
         if (!mounted || seq != _danmakuLoadSeq) return;
+
+        final target = _currentEpisodeNumber;
+        final matchHit = target > 0 &&
+            matched.any((c) =>
+                DanmakuMatcher.parseEpisodeNumber(c.episodeTitle) == target);
+
+        List<MatchCandidate> searched = const [];
+        if (!matchHit) {
+          final keyword = _danmakuSearchKeyword();
+          if (keyword != null) {
+            LogService().log('Danmaku', 'match no-hit, search: $keyword');
+            try {
+              searched = await client.searchEpisodes(keyword);
+            } catch (e) {
+              LogService().log('Danmaku', 'search failed: $e');
+            }
+            if (!mounted || seq != _danmakuLoadSeq) return;
+          }
+        }
+
         found = await _tryDanmakuCandidates(
           client,
-          _orderedDanmakuCandidates(matched, const []),
+          _orderedDanmakuCandidates(matched, searched),
           seq,
         );
         if (!mounted || seq != _danmakuLoadSeq) return;
-      }
 
-      // 3) match 未命中/候选全失败 → 关键词搜索候选（同样错源排除）
-      if (found == null) {
-        final keyword = _danmakuSearchKeyword();
-        if (keyword != null) {
-          LogService().log('Danmaku', 'match miss/failed, search: $keyword');
-          List<MatchCandidate> searched;
-          try {
-            searched = await client.searchEpisodes(keyword);
-          } catch (e) {
-            LogService().log('Danmaku', 'search failed: $e');
-            searched = const [];
+        // 3) 仍失败 → 搜索候选兜底（match 命中但坏源，或上面的搜索也失败）
+        if (found == null) {
+          if (searched.isEmpty) {
+            final keyword = _danmakuSearchKeyword();
+            if (keyword != null) {
+              LogService().log('Danmaku', 'match failed, search: $keyword');
+              try {
+                searched = await client.searchEpisodes(keyword);
+              } catch (e) {
+                LogService().log('Danmaku', 'search failed: $e');
+              }
+              if (!mounted || seq != _danmakuLoadSeq) return;
+            }
           }
-          if (!mounted || seq != _danmakuLoadSeq) return;
-          found = await _tryDanmakuCandidates(
-            client,
-            _orderedDanmakuCandidates(const [], searched),
-            seq,
-          );
-          if (!mounted || seq != _danmakuLoadSeq) return;
+          if (searched.isNotEmpty) {
+            found = await _tryDanmakuCandidates(
+              client,
+              _orderedDanmakuCandidates(const [], searched),
+              seq,
+            );
+            if (!mounted || seq != _danmakuLoadSeq) return;
+          }
         }
       }
 

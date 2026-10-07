@@ -97,6 +97,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 int.tryParse(state.uri.queryParameters['startMs'] ?? '') ?? 0,
             year: int.tryParse(state.uri.queryParameters['year'] ?? ''),
             kind: state.uri.queryParameters['kind'],
+            isAnimation: state.uri.queryParameters['anim'] == '1',
           );
         },
       ),
