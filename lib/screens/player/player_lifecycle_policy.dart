@@ -1,5 +1,15 @@
 import 'package:flutter/widgets.dart';
 
+/// 进入后台/熄屏时应执行的视频输出动作。
+enum PlayerBackgroundAction {
+  /// 无需处理（SurfaceView 档由 platform view 自愈）。
+  none,
+
+  /// 纹理/直通档：**趁 surface 尚在主动解绑** mdk 渲染 surface，
+  /// 避免引擎停止消费后渲染线程在写满的缓冲队列上 wedge。
+  releaseSurface,
+}
+
 /// 回前台/亮屏后应执行的视频输出恢复动作。
 enum PlayerResumeAction {
   /// 无需处理。
@@ -36,4 +46,14 @@ class PlayerLifecyclePolicy {
       output == 'surfaceView'
           ? PlayerResumeAction.pulseSurface
           : PlayerResumeAction.recreateTexture;
+
+  /// 进入后台/熄屏时应执行的视频输出动作。
+  ///
+  /// 纹理/直通档必须**提前**解绑（见 [PlayerBackgroundAction.releaseSurface]）；
+  /// SurfaceView 档由 platform view 的 surfaceDestroyed/surfaceCreated 自愈，
+  /// 主动解绑反而破坏其重绑时序，故 [PlayerBackgroundAction.none]。
+  static PlayerBackgroundAction backgroundAction(String output) =>
+      output == 'surfaceView'
+          ? PlayerBackgroundAction.none
+          : PlayerBackgroundAction.releaseSurface;
 }

@@ -4051,11 +4051,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _isPlayerReady && _player.state == mdk.PlaybackState.playing;
         LogService().log('Player',
             '进入后台/熄屏: output=${_effectiveVideoOutput()} wasPlaying=$_wasPlayingBeforeBackground');
+        _releaseVideoSurfaceForBackground();
       }
     } else if (state == AppLifecycleState.resumed && _appBackgrounded) {
       _appBackgrounded = false;
       unawaited(_recoverVideoAfterResume());
     }
+  }
+
+  /// 进入后台/熄屏：趁 surface 尚在**主动解绑**纹理/直通档的渲染 surface，
+  /// 避免引擎停止消费 external texture 后 mdk 渲染线程在写满的缓冲队列上
+  /// wedge（wedge 后回前台重建纹理也解不开，只能整条管线重启）。
+  /// SurfaceView 档不动（platform view 自行 surfaceDestroyed 重绑）。
+  /// 保留音频：仅解绑视频输出，不改变播放状态。
+  void _releaseVideoSurfaceForBackground() {
+    if (!_isPlayerReady) return;
+    final action =
+        PlayerLifecyclePolicy.backgroundAction(_effectiveVideoOutput());
+    if (action != PlayerBackgroundAction.releaseSurface) return;
+    LogService().log('Player', '进后台主动解绑视频 surface（防 wedge，保留音频）');
+    _textureOutputApplied = null;
+    unawaited(
+      _player
+          .updateTexture(width: -1)
+          .timeout(const Duration(seconds: 3))
+          .then<void>((_) {}, onError: (Object e) {
+        LogService().log('Player', '进后台解绑视频 surface 失败: $e');
+      }),
+    );
   }
 
   /// 回前台/亮屏后恢复视频输出：
@@ -4075,7 +4098,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       LogService()
           .log('Player', '回前台恢复视频输出: action=$action wasPlaying=$wasPlaying');
       if (action == PlayerResumeAction.recreateTexture) {
-        // 释放旧纹理 → 以当前档位重建（updateTexture 内部 release+CreateRT）
+        // 释放旧纹理 → 以当前档位重建（updateTexture 内部 release+CreateRT）。
+        // 进后台已主动解绑过时 textureId 为 null，此处的释放是兜底。
         _textureOutputApplied = null;
         try {
           await _player
@@ -4085,6 +4109,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted) return;
         await _ensureTexture();
         if (!mounted) return;
+      }
+      // 暂停态：重建后的纹理为空，精确 seek 到当前帧强制解码出画（根治黑屏）；
+      // 播放态随即由 mdk 续帧，无需 seek。
+      if (!wasPlaying) {
+        try {
+          await _player.seek(
+            position: _player.position,
+            flags: mdk.SeekFlag(mdk.SeekFlag.frame),
+          );
+        } catch (_) {}
       }
       // 补一帧：暂停态纹理为空会黑屏；播放态随即由 mdk 续帧。
       try {

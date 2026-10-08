@@ -34,4 +34,18 @@ void main() {
           PlayerResumeAction.pulseSurface);
     });
   });
+
+  group('PlayerLifecyclePolicy.backgroundAction', () {
+    test('纹理/直通档 → 进后台主动解绑（防 wedge）', () {
+      expect(PlayerLifecyclePolicy.backgroundAction('texture'),
+          PlayerBackgroundAction.releaseSurface);
+      expect(PlayerLifecyclePolicy.backgroundAction('tunnel'),
+          PlayerBackgroundAction.releaseSurface);
+    });
+
+    test('SurfaceView 档 → 不动（platform view 自愈）', () {
+      expect(PlayerLifecyclePolicy.backgroundAction('surfaceView'),
+          PlayerBackgroundAction.none);
+    });
+  });
 }
