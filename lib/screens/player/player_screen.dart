@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
+import 'package:himi_syncwatch/models/episode_info.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
@@ -56,6 +57,7 @@ import 'package:himi_syncwatch/screens/player/track_initial_selection.dart';
 import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/display_adjust_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/danmaku_overlay.dart';
+import 'package:himi_syncwatch/screens/player/widgets/episode_select_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
@@ -90,6 +92,9 @@ import 'package:himi_syncwatch/services/switch_volume_guard.dart';
 import 'package:himi_syncwatch/services/video_avfilter_policy.dart';
 import 'package:himi_syncwatch/services/window_fullscreen_service.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+
+/// 兼容 re-export：既有测试/调用方从 player_screen 导入 [EpisodeInfo]。
+export 'package:himi_syncwatch/models/episode_info.dart' show EpisodeInfo;
 
 /// 播放器默认音量（0-1）：进入播放器即为 80%。
 const kPlayerDefaultVolume = 0.8;
@@ -380,32 +385,6 @@ class _ResourceItem {
   bool get isMovie => season == 0 && number == 0 && seriesName.isEmpty;
 }
 
-class EpisodeInfo {
-  final String id;
-  final String name;
-  final int season;
-  final int number;
-  final String poster;
-  final String seriesName;
-  final String? mediaSourceId;
-
-  /// 来源服务器本地配置 id；null = 当前激活服务器。
-  final String? serverId;
-
-  const EpisodeInfo({
-    required this.id,
-    required this.name,
-    this.season = 0,
-    this.number = 0,
-    this.poster = '',
-    this.seriesName = '',
-    this.mediaSourceId,
-    this.serverId,
-  });
-
-  bool get isMovie => season == 0 && number == 0 && seriesName.isEmpty;
-}
-
 class _SeasonGroup {
   final int seasonNumber;
   final List<_ResourceItem> episodes;
@@ -490,6 +469,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       FocusNode(debugLabel: 'PlayerAudioButton');
   final FocusNode _speedButtonFocusNode =
       FocusNode(debugLabel: 'PlayerSpeedButton');
+
+  /// 选集按钮焦点（TV 打开选集面板后原路返回的落点）
+  final FocusNode _episodeButtonFocusNode =
+      FocusNode(debugLabel: 'PlayerEpisodeButton');
 
   /// 选择器面板落焦节点：打开面板后显式 requestFocus 精确落到选中行
   /// （autofocus 在同级按钮已持焦时不抢占——这是"焦点进不了面板"的根因）
@@ -578,6 +561,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showDecodeModeMenu = false;
   bool _showSpeedMenu = false;
   bool _showSubtitleStyleMenu = false;
+
+  /// 选集面板（右侧剧集卡片浮层；仅单人模式多集时可开）。
+  bool _showEpisodeMenu = false;
 
   // ── 弹幕（v1.1.134，自定义 danmu_api 源）──
 
@@ -3684,6 +3670,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
     });
   }
 
@@ -3708,6 +3695,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
     });
     _restoreSelectorOpenerFocus(opener, force: true);
   }
@@ -3736,6 +3724,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
     });
     // 焦点正在面板行上（如 Back 关闭）：原路返回来源按钮，防悬空
     _restoreSelectorOpenerFocus(opener);
@@ -4179,6 +4168,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subtitleButtonFocusNode.dispose();
     _audioButtonFocusNode.dispose();
     _speedButtonFocusNode.dispose();
+    _episodeButtonFocusNode.dispose();
     _selectorFirstFocusNode.dispose();
     _selectorPanelRootFocusNode.dispose();
     _subtitleStyleButtonFocusNode.dispose();
@@ -4300,6 +4290,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showAudioMenu ||
         _showSpeedMenu ||
         _showSubtitleStyleMenu ||
+        _showEpisodeMenu ||
         _showDecodeModeMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
@@ -4326,7 +4317,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (_showSubtitleMenu ||
             _showAudioMenu ||
             _showSpeedMenu ||
-            _showSubtitleStyleMenu) {
+            _showSubtitleStyleMenu ||
+            _showEpisodeMenu) {
           _closeSelectorPanel();
           _resetHideTimer();
           return true;
@@ -4662,13 +4654,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          // 字幕/音轨/倍速选择器：右侧玻璃浮层（可滚动；随控制条显隐）
+          // 字幕/音轨/倍速/选集选择器：右侧玻璃浮层（可滚动；随控制条显隐）
           if (_showControls &&
               !_lockController.locked &&
               (_showSubtitleMenu ||
                   _showAudioMenu ||
                   _showSpeedMenu ||
-                  _showSubtitleStyleMenu))
+                  _showSubtitleStyleMenu ||
+                  _showEpisodeMenu))
             Positioned(
               top: MediaQuery.of(context).padding.top + 48,
               // 116 = 桌面/TV 控制条高度（110）+ 6px 余量；叠加安全区
@@ -4689,9 +4682,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       ? '字幕'
                       : _showAudioMenu
                           ? '音轨'
-                          : _showSubtitleStyleMenu
-                              ? '显示调节'
-                              : '倍速',
+                          : _showEpisodeMenu
+                              ? '选集'
+                              : _showSubtitleStyleMenu
+                                  ? '显示调节'
+                                  : '倍速',
                   child: _showSubtitleStyleMenu
                       ? _buildDisplayAdjustPanel()
                       : _showSubtitleMenu
@@ -4730,11 +4725,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                   onAudioSelected: _selectEmbyAudio,
                                   onClose: _closeSelectorPanel,
                                 )
-                              : SpeedMenuPanel(
-                                  current: _speed,
-                                  focusNode: _selectorFirstFocusNode,
-                                  onSelected: _applySpeed,
-                                ),
+                              : _showEpisodeMenu
+                                  ? EpisodeSelectPanel(
+                                      episodes: _episodes,
+                                      currentIndex: _currentEpisodeIndex,
+                                      focusNode: _selectorFirstFocusNode,
+                                      onEpisodeSelected: (index) {
+                                        _switchToEpisode(index);
+                                        _closeSelectorPanel();
+                                      },
+                                    )
+                                  : SpeedMenuPanel(
+                                      current: _speed,
+                                      focusNode: _selectorFirstFocusNode,
+                                      onSelected: _applySpeed,
+                                    ),
                 ),
               ),
             ),
@@ -4916,7 +4921,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String get _currentEpisodeTitle =>
       PlayerScreen.mediaTitleAt(_episodes, _currentEpisodeIndex);
 
-  /// 顶栏「字幕样式」按钮：开关样式面板（与字幕/音轨/倍速/解码互斥）。
+  /// 顶栏「字幕样式」按钮：开关样式面板（与字幕/音轨/倍速/解码/选集互斥）。
   void _toggleSubtitleStyleMenu() {
     setState(() {
       _showSubtitleStyleMenu = !_showSubtitleStyleMenu;
@@ -4924,6 +4929,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showDecodeModeMenu = false;
+      _showEpisodeMenu = false;
     });
     if (_showSubtitleStyleMenu) {
       _openSelectorPanel(_subtitleStyleButtonFocusNode);
@@ -4931,16 +4937,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 倍速按钮（顶栏手机 / 底栏 TV・桌面共用）：开关倍速面板
-  /// （与字幕/音轨/字幕样式互斥）。
+  /// （与字幕/音轨/字幕样式/选集互斥）。
   void _toggleSpeedMenu() {
     setState(() {
       _showSpeedMenu = !_showSpeedMenu;
       _showSubtitleMenu = false;
       _showAudioMenu = false;
       _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
     });
     if (_showSpeedMenu) {
       _openSelectorPanel(_speedButtonFocusNode);
+    }
+  }
+
+  /// 选集按钮（底栏音轨右侧；仅单人模式多集时显示）：开关选集面板
+  /// （与字幕/音轨/倍速/显示调节互斥）。
+  void _toggleEpisodeMenu() {
+    setState(() {
+      _showEpisodeMenu = !_showEpisodeMenu;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
+    });
+    if (_showEpisodeMenu) {
+      _openSelectorPanel(_episodeButtonFocusNode);
     }
   }
 
@@ -4983,6 +5005,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
       _danmakuOn = !_danmakuOn;
     });
     if (_danmakuOn) {
@@ -5317,6 +5340,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
     });
   }
 
@@ -5348,6 +5372,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showDecodeModeMenu ||
         _showSpeedMenu ||
         _showSubtitleStyleMenu ||
+        _showEpisodeMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       _closeAllMenus();
@@ -5939,6 +5964,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _showAudioMenu = false;
                         _showSpeedMenu = false;
                         _showSubtitleStyleMenu = false;
+                        _showEpisodeMenu = false;
                       });
                       if (_showSubtitleMenu) {
                         _openSelectorPanel(_subtitleButtonFocusNode);
@@ -5960,6 +5986,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _showSubtitleMenu = false;
                         _showSpeedMenu = false;
                         _showSubtitleStyleMenu = false;
+                        _showEpisodeMenu = false;
                       });
                       if (_showAudioMenu) {
                         _openSelectorPanel(_audioButtonFocusNode);
@@ -5969,6 +5996,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         ? '${_embyAudioStreams.length}'
                         : null,
                   ),
+
+                  // 选集（音轨右侧；仅单人模式多集时显示，房间模式不加）
+                  if (widget.roomCode == null &&
+                      _hasEpisodeList &&
+                      _totalEpisodeCount > 1) ...[
+                    const SizedBox(width: 20),
+                    _buildControlButton(
+                      icon: Icons.playlist_play,
+                      focusNode: _episodeButtonFocusNode,
+                      onTap: _toggleEpisodeMenu,
+                      badge: '$_totalEpisodeCount',
+                    ),
+                  ],
 
                   // 倍速（TV/桌面本地单人；手机版已移至顶栏网速右侧）
                   if (PlayerScreen.showBottomSpeedButton(
