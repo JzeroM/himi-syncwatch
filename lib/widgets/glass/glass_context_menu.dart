@@ -117,23 +117,20 @@ class _GlassMenuRow extends StatelessWidget {
         action.onTap();
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(action.icon, size: 20, color: color),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  action.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: color, fontSize: 14),
-                ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(action.icon, size: 20, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                action.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: color, fontSize: 14),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

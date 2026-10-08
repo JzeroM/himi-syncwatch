@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
@@ -190,7 +191,7 @@ void main() {
       expect(tester.getSize(find.byType(GlassContainer)).width, 140);
     });
 
-    testWidgets('内容（图标+文字）水平居中', (tester) async {
+    testWidgets('内容左对齐（原方案）', (tester) async {
       await tester.pumpWidget(_host(
         FakeEmbyService(),
         item: _item(),
@@ -201,9 +202,55 @@ void main() {
 
       final menu = tester.getRect(find.byType(GlassContainer));
       final icon = tester.getRect(find.byIcon(Icons.favorite_border));
-      final text = tester.getRect(find.text('收藏'));
-      final groupCenter = (icon.left + text.right) / 2;
-      expect(groupCenter, closeTo(menu.center.dx, 1.0));
+      expect(icon.left, closeTo(menu.left + 16, 0.5));
+    });
+  });
+
+  group('再次长按回显最新状态（乐观覆盖）', () {
+    testWidgets('点收藏 → 再开菜单显示取消收藏', (tester) async {
+      final fake = FakeEmbyService();
+      await tester.pumpWidget(_host(fake, item: _item(), resume: false));
+
+      await _open(tester);
+      expect(find.text('收藏'), findsOneWidget);
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      expect(fake.favoriteCalls.single.favorite, isTrue);
+
+      // 再次长按打开：条目快照仍是未收藏，但覆盖让它显示「取消收藏」
+      await _open(tester);
+      expect(find.text('取消收藏'), findsOneWidget);
+      expect(find.text('收藏'), findsNothing);
+    });
+
+    testWidgets('点标记已观看 → 再开菜单显示取消已观看', (tester) async {
+      final fake = FakeEmbyService();
+      await tester.pumpWidget(_host(fake, item: _item(), resume: false));
+
+      await _open(tester);
+      await tester.tap(find.text('标记已观看'));
+      await tester.pumpAndSettle();
+
+      await _open(tester);
+      expect(find.text('取消已观看'), findsOneWidget);
+      expect(find.text('标记已观看'), findsNothing);
+    });
+  });
+
+  group('MediaStateOverrideNotifier', () {
+    test('收藏/已观看分别写入并保留彼此', () {
+      final n = MediaStateOverrideNotifier();
+      n.setFavorite('a', true);
+      expect(n.state['a']?.favorite, isTrue);
+      expect(n.state['a']?.watched, isNull);
+
+      n.setWatched('a', true);
+      expect(n.state['a']?.favorite, isTrue);
+      expect(n.state['a']?.watched, isTrue);
+
+      n.setFavorite('a', false);
+      expect(n.state['a']?.favorite, isFalse);
+      expect(n.state['a']?.watched, isTrue, reason: '改收藏不动已观看');
     });
   });
 }

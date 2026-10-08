@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
+import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_context_menu.dart';
@@ -61,7 +62,7 @@ GlassMenuAction _favoriteAction(
   WidgetRef ref,
   MediaItem item,
 ) {
-  if (item.isFavorite) {
+  if (_effectiveFavorite(ref, item)) {
     return GlassMenuAction(
       icon: Icons.favorite,
       label: '取消收藏',
@@ -82,7 +83,7 @@ GlassMenuAction _watchedAction(
   WidgetRef ref,
   MediaItem item,
 ) {
-  if (item.isWatched) {
+  if (_effectiveWatched(ref, item)) {
     return GlassMenuAction(
       icon: Icons.visibility_off_outlined,
       label: '取消已观看',
@@ -96,6 +97,14 @@ GlassMenuAction _watchedAction(
   );
 }
 
+/// 有效收藏态：菜单乐观覆盖值优先于列表快照。
+bool _effectiveFavorite(WidgetRef ref, MediaItem item) =>
+    ref.read(mediaStateOverrideProvider)[item.id]?.favorite ?? item.isFavorite;
+
+/// 有效已观看态：菜单乐观覆盖值优先于列表快照。
+bool _effectiveWatched(WidgetRef ref, MediaItem item) =>
+    ref.read(mediaStateOverrideProvider)[item.id]?.watched ?? item.isWatched;
+
 Future<void> _setWatched(
   BuildContext context,
   WidgetRef ref,
@@ -104,6 +113,7 @@ Future<void> _setWatched(
 ) async {
   final ok = await ref.read(embyServiceProvider).setWatched(item.id, watched);
   if (ok) {
+    ref.read(mediaStateOverrideProvider.notifier).setWatched(item.id, watched);
     ref.read(resumeRevisionProvider.notifier).state++;
     return;
   }
@@ -118,6 +128,9 @@ Future<void> _setFavorite(
 ) async {
   final ok = await ref.read(embyServiceProvider).setFavorite(item.id, favorite);
   if (ok) {
+    ref
+        .read(mediaStateOverrideProvider.notifier)
+        .setFavorite(item.id, favorite);
     ref.read(favoritesRevisionProvider.notifier).state++;
     return;
   }

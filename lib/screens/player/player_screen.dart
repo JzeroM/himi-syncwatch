@@ -3529,12 +3529,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     double filteredX = 0;
     const alpha = 0.2;
     int flipCount = 0;
-    // 灵敏度：阈值 8.3（约需明显横持翻转）+ 连续 3 次采样 + 0.9s 冷却。
+    // 灵敏度：阈值 8.0（约需明显横持翻转）+ 连续 3 次采样 + 0.8s 冷却。
     // 居中原「8.0/3/无冷却」（太灵，稍抖动即翻）与「9.2/5/1.2s」（太难触发）
-    // 之间（iOS 实测反馈）。
-    const double flipThreshold = 8.3;
+    // 之间（iOS 实测反馈），再向灵敏侧微调（8.3→8.0、900→800ms）。
+    const double flipThreshold = 8.0;
     const int requiredSamples = 3;
-    const Duration flipCooldown = Duration(milliseconds: 900);
+    const Duration flipCooldown = Duration(milliseconds: 800);
     DateTime? lastFlipAt;
 
     _accelSub = accelerometerEventStream(
