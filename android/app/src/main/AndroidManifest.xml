@@ -73,12 +73,12 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".icon_aurora"
+            android:name=".icon_artistic"
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher_aurora"
-            android:roundIcon="@mipmap/ic_launcher_aurora"
+            android:icon="@mipmap/ic_launcher_artistic"
+            android:roundIcon="@mipmap/ic_launcher_artistic"
             android:targetActivity=".MainActivity">
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
@@ -91,12 +91,12 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".icon_metal"
+            android:name=".icon_glass"
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher_metal"
-            android:roundIcon="@mipmap/ic_launcher_metal"
+            android:icon="@mipmap/ic_launcher_glass"
+            android:roundIcon="@mipmap/ic_launcher_glass"
             android:targetActivity=".MainActivity">
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
@@ -113,7 +113,7 @@
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher_neon"
+            android:icon="@mipmap/ic_launcher"
             android:roundIcon="@mipmap/ic_launcher_neon"
             android:targetActivity=".MainActivity">
             <meta-data

@@ -9,7 +9,7 @@ void main() {
       expect(AppIconService.options.first.id, isNull);
       expect(
         AppIconService.options.map((o) => o.id).toList(),
-        [null, 'aurora', 'metal', 'neon'],
+        [null, 'artistic', 'glass', 'neon'],
       );
       for (final o in AppIconService.options) {
         expect(o.asset, startsWith('assets/icons/'));
@@ -42,8 +42,8 @@ void main() {
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(
           AppIconService.platformIconName(null), 'com.himi.syncwatch.DEFAULT');
-      expect(AppIconService.platformIconName('aurora'),
-          'com.himi.syncwatch.icon_aurora');
+      expect(AppIconService.platformIconName('artistic'),
+          'com.himi.syncwatch.icon_artistic');
       expect(AppIconService.platformIconName('neon'),
           'com.himi.syncwatch.icon_neon');
     });
@@ -52,7 +52,7 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(AppIconService.platformIconName(null), isNull);
-      expect(AppIconService.platformIconName('metal'), 'metal');
+      expect(AppIconService.platformIconName('glass'), 'glass');
     });
   });
 
@@ -61,8 +61,8 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(
-          AppIconService.idFromPlatformName('com.himi.syncwatch.icon_aurora'),
-          'aurora');
+          AppIconService.idFromPlatformName('com.himi.syncwatch.icon_artistic'),
+          'artistic');
       expect(AppIconService.idFromPlatformName('com.himi.syncwatch.icon_neon'),
           'neon');
       expect(AppIconService.idFromPlatformName('com.himi.syncwatch.DEFAULT'),
@@ -74,7 +74,7 @@ void main() {
     test('iOS：键 → id，null/未知 → null', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppIconService.idFromPlatformName('metal'), 'metal');
+      expect(AppIconService.idFromPlatformName('glass'), 'glass');
       expect(AppIconService.idFromPlatformName(null), isNull);
       expect(AppIconService.idFromPlatformName(''), isNull);
       expect(AppIconService.idFromPlatformName('zzz'), isNull);

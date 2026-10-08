@@ -19,11 +19,9 @@ class AppearanceSettingsScreen extends ConsumerWidget {
       pageKey: const ValueKey('appearanceSettingsPage'),
       title: '外观',
       children: [
-        const _ThemeColorSection(),
-        const Divider(height: 1),
         const _AppIconSection(),
         const Divider(height: 1),
-        const _CategoryColumnsSection(),
+        const _ThemeColorSection(),
         const Divider(height: 1),
         settingsTvWrapRow(
           tvMode: settings.tvMode,
@@ -39,6 +37,8 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
         ),
         const _GlassTuningSection(),
+        const Divider(height: 1),
+        const _CategoryColumnsSection(),
         const Divider(height: 1),
       ],
     );

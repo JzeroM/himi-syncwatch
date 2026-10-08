@@ -53,7 +53,7 @@ class AppSettings {
   final double? glassRefractiveIndex;
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
 
-  /// 应用图标 id：null = 默认（glass）；'aurora'/'metal'/'neon' = 备用图标。
+  /// 应用图标 id：null = 默认（default）；'artistic'/'glass'/'neon' = 备用图标。
   /// 仅 Android/iOS 生效；写入后由 AppIconService 应用到系统。
   final String? appIcon;
 

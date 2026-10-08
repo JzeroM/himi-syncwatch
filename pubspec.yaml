@@ -87,11 +87,11 @@ flutter:
     - assets/icons/
 
 flutter_launcher_icons:
-  image_path: "assets/icon/glass.png"
+  image_path: "assets/icon/default.png"
   android: true
   ios: true
   remove_alpha_ios: true
   windows:
     generate: true
-    image_path: "assets/icon/glass.png"
+    image_path: "assets/icon/default.png"
     icon_size: 256

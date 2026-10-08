@@ -12,10 +12,10 @@ import 'dart:io';
 import 'package:image/image.dart' as img;
 
 /// 默认图标（由 flutter_launcher_icons 处理，这里只出预览）。
-const String defaultIcon = 'glass';
+const String defaultIcon = 'default';
 
 /// 全部可选图标（含默认）。
-const List<String> allIcons = ['glass', 'aurora', 'metal', 'neon'];
+const List<String> allIcons = ['default', 'artistic', 'glass', 'neon'];
 
 /// 备用图标（Android/iOS 需要声明；默认除外）。
 List<String> get alternateIcons =>

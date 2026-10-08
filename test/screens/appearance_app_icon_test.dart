@@ -16,6 +16,10 @@ Future<ProviderContainer> _pump(
   bool tvMode = false,
 }) async {
   debugDefaultTargetPlatformOverride = platform;
+  // 高视口：让外观页所有分节都被布局（ListView 懒构建，矮视口下方分节不 attach）。
+  tester.view.physicalSize = const Size(1000, 4000);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
   final container = ProviderContainer(
     overrides: [
       settingsProvider.overrideWith(
@@ -40,8 +44,8 @@ void main() {
     expect(find.text('应用图标'), findsOneWidget);
     for (final k in const [
       'appIcon_default',
-      'appIcon_aurora',
-      'appIcon_metal',
+      'appIcon_artistic',
+      'appIcon_glass',
       'appIcon_neon',
     ]) {
       expect(find.byKey(ValueKey(k)), findsOneWidget, reason: k);
@@ -61,7 +65,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('点 Aurora：Android 传别名全限定名 + 黑名单并写回设置', (tester) async {
+  testWidgets('点 Artistic：Android 传别名全限定名 + 黑名单并写回设置', (tester) async {
     const channel = MethodChannel('flutter_dynamic_icon_plus');
     final calls = <MethodCall>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
@@ -81,7 +85,7 @@ void main() {
     addTearDown(() => AppIconService.deviceBlacklistLoader = original);
 
     final container = await _pump(tester, platform: TargetPlatform.android);
-    final tile = find.byKey(const ValueKey('appIcon_aurora'));
+    final tile = find.byKey(const ValueKey('appIcon_artistic'));
     await tester.ensureVisible(tile);
     await tester.tap(tile);
     await tester.pump();
@@ -89,11 +93,27 @@ void main() {
 
     expect(calls, isNotEmpty, reason: '应调用插件 setAlternateIconName');
     expect(calls.last.method, 'setAlternateIconName');
-    expect(calls.last.arguments['iconName'], 'com.himi.syncwatch.icon_aurora');
+    expect(
+        calls.last.arguments['iconName'], 'com.himi.syncwatch.icon_artistic');
     // Android 需带黑名单（设备自身命中）走立即分支。
     expect(calls.last.arguments['manufactures'], contains('Xiaomi'));
     expect(calls.last.arguments['models'], contains('23127PN0CC'));
-    expect(container.read(settingsProvider).appIcon, 'aurora');
+    expect(container.read(settingsProvider).appIcon, 'artistic');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('外观页顺序：应用图标→主题色，分类页每行海报数在玻璃参数之后', (tester) async {
+    await _pump(tester, platform: TargetPlatform.android);
+
+    double y(String t) {
+      final f = find.text(t);
+      return tester.getTopLeft(f.first).dy;
+    }
+
+    // 应用图标 在 主题色 之上
+    expect(y('应用图标'), lessThan(y('主题色')));
+    // 分类页每行海报数 在 玻璃参数 之下
+    expect(y('分类页每行海报数'), greaterThan(y('玻璃参数')));
     debugDefaultTargetPlatformOverride = null;
   });
 }

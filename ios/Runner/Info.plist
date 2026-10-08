@@ -67,20 +67,20 @@
 	<dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
-			<key>aurora</key>
+			<key>artistic</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
 				<array>
-					<string>aurora</string>
+					<string>artistic</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
-			<key>metal</key>
+			<key>glass</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
 				<array>
-					<string>metal</string>
+					<string>glass</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -100,22 +100,22 @@
 	<dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
-			<key>aurora</key>
+			<key>artistic</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
 				<array>
-					<string>aurora-76</string>
-					<string>aurora-83.5</string>
+					<string>artistic-76</string>
+					<string>artistic-83.5</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
-			<key>metal</key>
+			<key>glass</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
 				<array>
-					<string>metal-76</string>
-					<string>metal-83.5</string>
+					<string>glass-76</string>
+					<string>glass-83.5</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
