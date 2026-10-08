@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 import 'package:liquid_glass_widgets/utils/draggable_indicator_physics.dart';
@@ -103,10 +101,6 @@ class LiquidBlobLens extends StatelessWidget {
   Widget build(BuildContext context) {
     final q = quality;
     final isStd = q == lg.GlassQuality.standard || q == lg.GlassQuality.minimal;
-    // [PATCH himi] B1: 捕获态 alpha 与乘数成比例（shader 0.70×mult/0.2、
-    // 0.88×mult/0.28）。Android 传包默认 0.2/0.4 → scale=1，观感维持旧
-    // 硬编码 0.70/0.88 不变；iOS 传 0.08/0.15 → 0.28/0.47，捕获态显著更透。
-    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
     // pill 活动量前 15% 淡出，交棒给镜片
     final bgOpacity = (1.0 - activity / 0.15).clamp(0.0, 1.0);
     final rect = RelativeRect.lerp(
@@ -187,12 +181,8 @@ class LiquidBlobLens extends StatelessWidget {
                               ambientRim: settings.ambientRim > 0
                                   ? settings.ambientRim
                                   : (isStd ? 0.08 : 0.1),
-                              baseAlphaMultiplier: isStd
-                                  ? (isIOS ? 0.08 : 0.2)
-                                  : 0.2,
-                              edgeAlphaMultiplier: isStd
-                                  ? (isIOS ? 0.15 : 0.4)
-                                  : 0.4,
+                              baseAlphaMultiplier: isStd ? 0.08 : 0.2,
+                              edgeAlphaMultiplier: isStd ? 0.15 : 0.4,
                               child: const lg.GlassGlow(
                                 glowColor: Color(0x00000000),
                                 child: SizedBox.expand(),

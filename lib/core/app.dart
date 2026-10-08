@@ -30,17 +30,9 @@ class HimiSyncApp extends ConsumerWidget {
           // + directional 导航模式（Slider 只消费左右键，上下放行给焦点导航）
           builder: (context, child) {
             final subtree = child ?? const SizedBox.shrink();
-            // [PATCH himi] B5: 包内默认把 MediaQuery.highContrastOf（iOS
-            // 「增强对比度」）误当「减弱透明度」信号 → AdaptiveGlass 退化成
-            // 40% 实心白板（iOS blur=0 连模糊都没有）。显式 scope 优先级
-            // 最高：关掉 reduceTransparency 误判，reduceMotion 仍随系统。
-            final glassTree = GlassAccessibilityScope(
-              reduceTransparency: false,
-              child: subtree,
-            );
             // 全平台统一 standard 玻璃路径（自带 RepaintBoundary 捕获）；
             // iOS 不再挂 premium 专用根层 AdaptiveLiquidGlassLayer。
-            return tvMode ? TvRemoteShell(child: glassTree) : glassTree;
+            return tvMode ? TvRemoteShell(child: subtree) : subtree;
           },
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(

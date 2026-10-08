@@ -266,20 +266,14 @@ void main() {
       expect(resolved.bodyMode, GlassBodyMode.clear);
     });
 
-    test('iOS clear 模式体色全透明（glassColor alpha=0）+ 微量模糊/降饱和/降高光', () {
+    test('iOS clear 模式体色全透明（glassColor alpha=0）+ 降饱和/去模糊/降高光', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final s = const GlassTuning().toThemeData().dark.settings!;
       expect(s.glassColor!.a, GlassIosStandard.glassColorAlpha);
       expect(s.glassColor!.a, 0.0, reason: '体色全透明 → 背景最大透出');
       expect(s.blur, GlassIosStandard.blur);
-      expect(
-        s.blur,
-        0.5,
-        reason: '[PATCH himi] 0 → 0.5：微量模糊恢复 BackdropFilter 饱和管线',
-      );
-      expect(s.blur, greaterThan(0),
-          reason: 'blur=0 会整条跳过模糊+饱和增强，玻璃像贴纸');
+      expect(s.blur, 0);
       expect(s.saturation, GlassIosStandard.saturation);
       expect(s.lightIntensity, GlassIosStandard.lightIntensity);
     });

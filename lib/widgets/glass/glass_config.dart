@@ -1,16 +1,21 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
-/// 液态玻璃视觉参数与布局预留量（着色/描边/投影/布局预留）。
+/// 液态玻璃视觉参数与布局预留量。
 ///
-/// 真折射、模糊与饱和由 liquid_glass_widgets 折射管线承担；
-/// 本层只做半透明着色渐变、高光描边与悬浮投影。
+/// 保真度 A 近似方案：背景模糊 + 饱和增强 + 半透明着色 + 高光描边，
+/// 不做真实折射着色器，保证中低端设备可用。
 class GlassConfig {
   const GlassConfig._();
 
-  // [PATCH himi] 死代码清理：blurSigma/saturation/filter()/saturationMatrix()
-  // 属于已被包折射管线取代的旧「BackdropFilter 模糊+饱和」方案，无调用方。
+  /// 背景模糊半径（逻辑像素）。
+  static const double blurSigma = 20;
+
+  /// 模糊后叠加的饱和度增强系数。
+  static const double saturation = 1.6;
 
   /// 面板着色（底部导航胶囊 / 顶栏胶囊 / 浮动底栏），约 12% 以求透亮。
   static const Color panelTint = Color(0x1F1A1D23);
@@ -43,17 +48,12 @@ class GlassConfig {
   /// 高光描边基色（约 30% 白）。
   static const Color rimColor = Color(0x4DFFFFFF);
 
-  /// [PATCH himi] iOS 顶栏底边高光降白（30% → 16%）：清晰背景上的白硬线
-  /// 是 iOS「不够透/有边框感」的观感来源之一。
-  static const Color rimColorIos = Color(0x29FFFFFF);
-
-  /// 高光描边基色（按平台）：iOS 用更淡的 [rimColorIos]。
-  static Color rimColorOf() =>
-      defaultTargetPlatform == TargetPlatform.iOS ? rimColorIos : rimColor;
-
   /// 内侧高光渐变（顶部更亮，底部渐隐）。
   static const Color highlightTop = Color(0xB3FFFFFF);
   static const Color highlightBottom = Color(0x00FFFFFF);
+
+  /// 玻璃厚度暗线（外亮线内侧的 0.5px 折射暗边）。
+  static const Color innerRimColor = Color(0x33000000);
 
   /// 悬浮投影（让玻璃面板与背景产生距离感，轻量不压画面）。
   static const List<BoxShadow> panelShadow = [
@@ -64,24 +64,45 @@ class GlassConfig {
     ),
   ];
 
-  /// [PATCH himi] iOS 悬浮投影降黑（29% → 16%，blur 16→12，offset 6→4）：
-  /// iOS 走 clear 体透明，29% 黑影直接压在清晰背景上显脏、显「不透」。
-  static const List<BoxShadow> panelShadowIos = [
-    BoxShadow(
-      color: Color(0x29000000),
-      blurRadius: 12,
-      offset: Offset(0, 4),
-    ),
-  ];
-
-  /// 悬浮投影（按平台）：iOS 用更轻的 [panelShadowIos]。
-  static List<BoxShadow> panelShadowOf() =>
-      defaultTargetPlatform == TargetPlatform.iOS
-          ? panelShadowIos
-          : panelShadow;
-
   /// 底部导航在每个标签页内容区预留的高度（不含安全区）。
   static const double shellBottomReserve = 96;
+
+  /// 模糊 + 饱和增强合成滤镜。
+  static ImageFilter filter({
+    double sigma = blurSigma,
+    double sat = saturation,
+  }) {
+    return ImageFilter.compose(
+      outer: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      inner: ColorFilter.matrix(saturationMatrix(sat)),
+    );
+  }
+
+  /// 标准饱和度矩阵（4x5，行主序）。
+  static List<double> saturationMatrix(double s) {
+    return <double>[
+      0.213 + 0.787 * s,
+      0.715 - 0.715 * s,
+      0.072 - 0.072 * s,
+      0,
+      0,
+      0.213 - 0.213 * s,
+      0.715 + 0.285 * s,
+      0.072 - 0.072 * s,
+      0,
+      0,
+      0.213 - 0.213 * s,
+      0.715 - 0.715 * s,
+      0.072 + 0.928 * s,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ];
+  }
 
   /// 顶栏玻璃下方内容的起始纵向位置（需配合 extendBodyBehindAppBar）。
   static double topInsetOf(BuildContext context) {

@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/core/app.dart';
@@ -48,56 +47,5 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
-  });
-
-  testWidgets('[PATCH himi] B5：builder 注入 GlassAccessibilityScope 关闭 reduceTransparency', (
-    tester,
-  ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    try {
-      await pumpApp(tester);
-      final scope = tester.widget<lg.GlassAccessibilityScope>(
-        find.byType(lg.GlassAccessibilityScope),
-      );
-      expect(
-        scope.reduceTransparency,
-        isFalse,
-        reason: '包默认把 highContrast（iOS 增强对比度）误当「减弱透明度」'
-            '→ AdaptiveGlass 退化 40% 实心白板（iOS blur=0 连模糊都没有）',
-      );
-      expect(
-        scope.reduceMotion,
-        isNull,
-        reason: 'reduceMotion 不显式覆盖，仍随系统（减弱动效要保留）',
-      );
-    } finally {
-      debugDefaultTargetPlatformOverride = null;
-    }
-  });
-
-  testWidgets('显式 scope 优先级最高：highContrast=true 也不触发 reduceTransparency', (
-    tester,
-  ) async {
-    late lg.GlassAccessibilityData data;
-    await tester.pumpWidget(
-      MediaQuery(
-        data: const MediaQueryData(
-          highContrast: true,
-          disableAnimations: false,
-        ),
-        child: lg.GlassAccessibilityScope(
-          reduceTransparency: false,
-          child: Builder(
-            builder: (context) {
-              data = lg.GlassAccessibilityData.of(context);
-              return const SizedBox();
-            },
-          ),
-        ),
-      ),
-    );
-    expect(data.reduceTransparency, isFalse,
-        reason: '显式 scope（优先级 1）压过 MediaQuery.highContrast（优先级 2）');
-    expect(data.reduceMotion, isFalse, reason: 'reduceMotion 仍来自系统信号');
   });
 }

@@ -81,7 +81,7 @@ class GlassContainer extends ConsumerWidget {
       content = DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: borderRadius,
-          boxShadow: GlassConfig.panelShadowOf(),
+          boxShadow: GlassConfig.panelShadow,
         ),
         child: content,
       );
@@ -119,8 +119,8 @@ class GlassBackdrop extends ConsumerWidget {
               end: Alignment.bottomCenter,
               colors: [GlassConfig.barTintOf(), GlassConfig.barTintSoftOf()],
             ),
-            border: Border(
-              bottom: BorderSide(color: GlassConfig.rimColorOf(), width: 1),
+            border: const Border(
+              bottom: BorderSide(color: GlassConfig.rimColor, width: 1),
             ),
           ),
           child: const SizedBox.expand(),
@@ -128,4 +128,39 @@ class GlassBackdrop extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 面板高光描边：外圈亮线（顶部更亮、向下渐隐）+ 内圈暗线，模拟玻璃厚度折射。
+class GlassRimPainter extends CustomPainter {
+  const GlassRimPainter(this.borderRadius);
+
+  final BorderRadius borderRadius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final rect = Offset.zero & size;
+
+    // 外圈亮边
+    final highlight = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [GlassConfig.highlightTop, GlassConfig.highlightBottom],
+      ).createShader(rect);
+    canvas.drawRRect(borderRadius.toRRect(rect).deflate(0.5), highlight);
+
+    // 内圈玻璃厚度暗线
+    final inner = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = GlassConfig.innerRimColor;
+    canvas.drawRRect(borderRadius.toRRect(rect).deflate(1.5), inner);
+  }
+
+  @override
+  bool shouldRepaint(covariant GlassRimPainter oldDelegate) =>
+      oldDelegate.borderRadius != borderRadius;
 }

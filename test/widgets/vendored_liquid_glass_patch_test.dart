@@ -79,11 +79,8 @@ void main() {
         reason: 'rim 只合成 hairline 核心（1.5 → 1.2，无 haloBand 扩散）');
     expect(frag.contains('(keyHighlight + kickHighlight) * 0.4'), isTrue,
         reason: '白色镜面瓣 ×0.4 → 边缘是柔和微光不是白框');
-    expect(
-      frag.contains('capturedEdgeAlpha = 0.88 * clamp(uEdgeAlphaMultiplier'),
-      isTrue,
-      reason: '边缘 alpha 0.95 → 0.88，且按乘数比例缩放（不再硬编码无视乘数）',
-    );
+    expect(frag.contains('0.88 : standardEdgeAlpha'), isTrue,
+        reason: '边缘 alpha 0.95 → 0.88，不再近乎实心');
     expect(
       frag.contains('borderMask * 0.5 * clamp(uAmbientRim * 3.0'),
       isTrue,
@@ -92,54 +89,6 @@ void main() {
 
     final markers = RegExp(r'\[PATCH himi\]').allMatches(frag).length;
     expect(markers, greaterThanOrEqualTo(10), reason: '全部 [PATCH himi] 补丁标记齐全');
-  });
-
-  test('[PATCH himi] B1: 捕获态 alpha 与乘数成比例（不再硬编码 0.70/0.88）', () {
-    final frag = File(fragPath).readAsStringSync();
-
-    expect(
-      frag.contains('capturedBaseAlpha = 0.70 * clamp(uBaseAlphaMultiplier / 0.2'),
-      isTrue,
-      reason: '捕获态体 alpha 必须按 uBaseAlphaMultiplier/0.2 比例缩放',
-    );
-    expect(
-      frag.contains('(uHasBackground > 0.5) ? 0.70'),
-      isFalse,
-      reason: '硬编码 0.70 无视乘数 → iOS 捕获态白雾（不够透主因之一）',
-    );
-    expect(
-      frag.contains('(uHasBackground > 0.5) ? 0.88'),
-      isFalse,
-      reason: '硬编码 0.88 无视乘数 → iOS 捕获态边缘不透',
-    );
-    expect(
-      frag.contains('? capturedBaseAlpha : standardBaseAlpha'),
-      isTrue,
-      reason: '非捕获态仍走 standardBaseAlpha 乘数路径',
-    );
-    expect(
-      frag.contains('? capturedEdgeAlpha : standardEdgeAlpha'),
-      isTrue,
-      reason: '非捕获态仍走 standardEdgeAlpha 乘数路径',
-    );
-  });
-
-  test('[PATCH himi] B2: shader 未就绪兜底不再强制 15% 白膜', () {
-    final src = File(
-            'third_party/liquid_glass_widgets/lib/widgets/shared/'
-            'lightweight_liquid_glass.dart')
-        .readAsStringSync();
-
-    expect(
-      src.contains('effectiveGlassColor.a.clamp'),
-      isTrue,
-      reason: '兜底白膜必须取配置 glassColor 的 alpha（iOS clear=0 → 不画）',
-    );
-    expect(
-      src.contains('withValues(alpha: 0.15)'),
-      isFalse,
-      reason: '强制 15% 白膜会盖住 iOS 透明效果',
-    );
   });
 
   test('uniform 槽数与 glass_effect.dart setFloat 次数一致（35）', () {

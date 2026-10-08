@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -84,7 +84,7 @@ void main() {
         ),
       );
 
-      // 只认 GlassConfig.panelShadowOf() 精确样式（包玻璃内部装饰不计）
+      // 只认 GlassConfig.panelShadow 精确样式（包玻璃内部装饰不计）
       expect(_hasOwnPanelShadow(tester), isFalse);
       expect(find.text('面板内容'), findsOneWidget);
     });
@@ -112,7 +112,7 @@ void main() {
       );
     });
 
-    testWidgets('玻璃开启时不再叠本层白描边（v1.1.85 弱化）', (tester) async {
+    testWidgets('玻璃开启时不再叠本层白描边与 GlassRimPainter（v1.1.85 弱化）', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -127,6 +127,13 @@ void main() {
           .toList();
       expect(boxes.any((b) => b.border != null), isFalse,
           reason: '包折射自带菲涅尔边缘，本层白描边压灰观感');
+      expect(
+        tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .any((p) => p.foregroundPainter is GlassRimPainter),
+        isFalse,
+        reason: '玻璃开启不再叠 GlassRimPainter 双描边',
+      );
     });
 
     testWidgets('纯色降级态保留 rim 边线定界', (tester) async {
@@ -225,26 +232,42 @@ void main() {
     });
   });
 
-  group('GlassRimPainter / GlassConfig 旧滤镜死代码已移除', () {
-    test('GlassRimPainter、filter()、saturationMatrix() 无残留（观感清理）', () {
-      final container = File('lib/widgets/glass/glass_container.dart')
-          .readAsStringSync();
-      expect(container.contains('GlassRimPainter'), isFalse,
-          reason: 'GlassRimPainter 仅测试引用，已为死代码');
-      final config =
-          File('lib/widgets/glass/glass_config.dart').readAsStringSync();
-      expect(config.contains('static List<double> saturationMatrix'), isFalse,
-          reason: '旧 BackdropFilter 饱和矩阵已被包折射管线取代');
-      expect(config.contains('static ImageFilter filter('), isFalse,
-          reason: '旧模糊+饱和合成滤镜已无调用方');
-      expect(config.contains('static const double blurSigma'), isFalse,
-          reason: '旧滤镜的模糊半径常量一并移除');
-      expect(config.contains('innerRimColor'), isFalse,
-          reason: '内圈暗线随 GlassRimPainter 一并移除');
+  group('GlassRimPainter', () {
+    test('尺寸为空时不抛异常', () {
+      const painter = GlassRimPainter(BorderRadius.all(Radius.circular(12)));
+      final recorder = PictureRecorder();
+      final canvas = Canvas(recorder);
+      painter.paint(canvas, Size.zero);
+      expect(
+          painter.shouldRepaint(
+              const GlassRimPainter(BorderRadius.all(Radius.circular(12)))),
+          isFalse);
+      expect(
+        painter.shouldRepaint(
+            const GlassRimPainter(BorderRadius.all(Radius.circular(20)))),
+        isTrue,
+      );
     });
   });
 
   group('GlassConfig', () {
+    test('饱和度矩阵为 4x5 结构且中性色不偏移', () {
+      final m = GlassConfig.saturationMatrix(1.0);
+      expect(m.length, 20);
+      // s=1 时为单位阵
+      expect(m[0], closeTo(1.0, 1e-9));
+      expect(m[6], closeTo(1.0, 1e-9));
+      expect(m[12], closeTo(1.0, 1e-9));
+      expect(m[18], 1);
+      expect(m[19], 0);
+    });
+
+    test('blur 与饱和增强可合成滤镜', () {
+      expect(GlassConfig.filter(), isA<ImageFilter>());
+      expect(GlassConfig.blurSigma, 20);
+      expect(GlassConfig.saturation, 1.6);
+    });
+
     test('底部预留高度为常量', () {
       expect(GlassConfig.shellBottomReserve, 96);
     });
@@ -256,32 +279,13 @@ void main() {
       expect(GlassConfig.panelTint.a, lessThan(0.3));
       expect(GlassConfig.barTint.a, lessThan(0.3));
     });
-
-    test('[PATCH himi] iOS 投影更轻、顶栏描边更淡（降「脏/边框感」）', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(GlassConfig.panelShadowOf(), GlassConfig.panelShadowIos);
-      expect(GlassConfig.panelShadowIos.first.color.a,
-          lessThan(GlassConfig.panelShadow.first.color.a),
-          reason: 'iOS 29% → 16% 黑投影');
-      expect(GlassConfig.rimColorOf(), GlassConfig.rimColorIos);
-      expect(GlassConfig.rimColorIos.a, lessThan(GlassConfig.rimColor.a),
-          reason: 'iOS 顶栏底边白线 30% → 16%');
-    });
-
-    test('Android 沿用原投影与描边（观感不变）', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(GlassConfig.panelShadowOf(), GlassConfig.panelShadow);
-      expect(GlassConfig.rimColorOf(), GlassConfig.rimColor);
-    });
   });
 }
 
-/// 本层悬浮投影（GlassConfig.panelShadowOf()）是否存在——按样式精确匹配，
+/// 本层悬浮投影（GlassConfig.panelShadow）是否存在——按样式精确匹配，
 /// 避免把包玻璃内部装饰误判为投影。
 bool _hasOwnPanelShadow(WidgetTester tester) {
-  final panels = GlassConfig.panelShadowOf();
+  final panels = GlassConfig.panelShadow;
   return tester.widgetList<DecoratedBox>(find.byType(DecoratedBox)).any((d) {
     final box = d.decoration;
     if (box is! BoxDecoration) return false;
