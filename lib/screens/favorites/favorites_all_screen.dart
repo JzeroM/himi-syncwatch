@@ -96,8 +96,7 @@ class FavoritesAllScreen extends ConsumerWidget {
                                     onTap: () =>
                                         context.push('/detail/${item.id}'),
                                     onLongPress: (rect) => showPosterCardMenu(
-                                        context, ref, item, rect,
-                                        favoritedMode: true),
+                                        context, ref, item, rect),
                                   ),
                           ),
                       ],

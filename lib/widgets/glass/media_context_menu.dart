@@ -10,12 +10,13 @@ import 'package:himi_syncwatch/widgets/glass/glass_context_menu.dart';
 
 /// 首页/分类/收藏页共享的长按玻璃菜单动作（Emby 联动）。
 ///
-/// 所有动作乐观/直接调用激活服务器 Emby，并 bump 对应修订号触发相应列表刷新：
-/// - 已观看/未观看 → `PlayedItems`（整部剧或单集）；bump `resumeRevision`。
+/// 动作按条目状态**只显示一条**，并乐观/直接调用激活服务器 Emby，成功 bump
+/// 对应修订号触发相应列表刷新：
 /// - 收藏/取消收藏 → `FavoriteItems`；bump `favoritesRevision`。
+/// - 标记/取消已观看 → `PlayedItems`（整部剧或单集）；bump `resumeRevision`。
 /// - 移除历史 → `UserData{PlaybackPositionTicks:0}` + 续播栏乐观隐藏。
 
-/// 「继续观看」横卡菜单：未观看 / 已观看 / 移除历史。
+/// 「继续观看」横卡菜单：收藏/取消收藏 + 移除历史。
 Future<void> showResumeCardMenu(
   BuildContext context,
   WidgetRef ref,
@@ -26,16 +27,7 @@ Future<void> showResumeCardMenu(
     context,
     anchor: anchor,
     actions: [
-      GlassMenuAction(
-        icon: Icons.visibility_off_outlined,
-        label: '未观看',
-        onTap: () => _setWatched(context, ref, item, false),
-      ),
-      GlassMenuAction(
-        icon: Icons.visibility_outlined,
-        label: '已观看',
-        onTap: () => _setWatched(context, ref, item, true),
-      ),
+      _favoriteAction(context, ref, item),
       GlassMenuAction(
         icon: Icons.delete_outline,
         label: '移除历史',
@@ -46,42 +38,61 @@ Future<void> showResumeCardMenu(
   );
 }
 
-/// 海报卡菜单：收藏 / 未观看 / 已观看（[favoritedMode] 时首项为「取消收藏」）。
+/// 海报卡菜单：收藏/取消收藏 + 标记/取消已观看（每次按状态只显示一条）。
 Future<void> showPosterCardMenu(
   BuildContext context,
   WidgetRef ref,
   MediaItem item,
-  Rect anchor, {
-  required bool favoritedMode,
-}) {
+  Rect anchor,
+) {
   return showGlassContextMenu(
     context,
     anchor: anchor,
     actions: [
-      if (favoritedMode)
-        GlassMenuAction(
-          icon: Icons.favorite_border,
-          label: '取消收藏',
-          destructive: true,
-          onTap: () => _setFavorite(context, ref, item, false),
-        )
-      else
-        GlassMenuAction(
-          icon: Icons.favorite_border,
-          label: '收藏',
-          onTap: () => _setFavorite(context, ref, item, true),
-        ),
-      GlassMenuAction(
-        icon: Icons.visibility_off_outlined,
-        label: '未观看',
-        onTap: () => _setWatched(context, ref, item, false),
-      ),
-      GlassMenuAction(
-        icon: Icons.visibility_outlined,
-        label: '已观看',
-        onTap: () => _setWatched(context, ref, item, true),
-      ),
+      _favoriteAction(context, ref, item),
+      _watchedAction(context, ref, item),
     ],
+  );
+}
+
+/// 收藏项：已收藏 → 「取消收藏」（红字），否则 → 「收藏」。
+GlassMenuAction _favoriteAction(
+  BuildContext context,
+  WidgetRef ref,
+  MediaItem item,
+) {
+  if (item.isFavorite) {
+    return GlassMenuAction(
+      icon: Icons.favorite,
+      label: '取消收藏',
+      destructive: true,
+      onTap: () => _setFavorite(context, ref, item, false),
+    );
+  }
+  return GlassMenuAction(
+    icon: Icons.favorite_border,
+    label: '收藏',
+    onTap: () => _setFavorite(context, ref, item, true),
+  );
+}
+
+/// 已观看项：已观看 → 「取消已观看」，否则 → 「标记已观看」。
+GlassMenuAction _watchedAction(
+  BuildContext context,
+  WidgetRef ref,
+  MediaItem item,
+) {
+  if (item.isWatched) {
+    return GlassMenuAction(
+      icon: Icons.visibility_off_outlined,
+      label: '取消已观看',
+      onTap: () => _setWatched(context, ref, item, false),
+    );
+  }
+  return GlassMenuAction(
+    icon: Icons.visibility_outlined,
+    label: '标记已观看',
+    onTap: () => _setWatched(context, ref, item, true),
   );
 }
 

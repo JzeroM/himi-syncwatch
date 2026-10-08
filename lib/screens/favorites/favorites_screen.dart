@@ -102,9 +102,8 @@ class FavoritesScreen extends ConsumerWidget {
             items: groups.movies,
             cardWidth: _posterWidth,
             episodeStyle: false,
-            onItemLongPress: (item, rect) => showPosterCardMenu(
-                context, ref, item, rect,
-                favoritedMode: true),
+            onItemLongPress: (item, rect) =>
+                showPosterCardMenu(context, ref, item, rect),
           ),
         if (groups.series.isNotEmpty)
           _FavoriteSection(
@@ -113,9 +112,8 @@ class FavoritesScreen extends ConsumerWidget {
             items: groups.series,
             cardWidth: _posterWidth,
             episodeStyle: false,
-            onItemLongPress: (item, rect) => showPosterCardMenu(
-                context, ref, item, rect,
-                favoritedMode: true),
+            onItemLongPress: (item, rect) =>
+                showPosterCardMenu(context, ref, item, rect),
           ),
         if (groups.episodes.isNotEmpty)
           _FavoriteSection(

@@ -150,7 +150,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         startIndex: 0,
         includeItemTypes: _filterOption.embyValue,
         fields:
-            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber',
+            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber,UserData',
         sortBy: _sortOption.sortBy,
         sortOrder: _sortOption.sortOrder,
       );
@@ -181,7 +181,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         startIndex: _startIndex,
         includeItemTypes: _filterOption.embyValue,
         fields:
-            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber',
+            'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber,UserData',
         sortBy: _sortOption.sortBy,
         sortOrder: _sortOption.sortOrder,
       );
@@ -361,8 +361,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
                         onTap: () =>
                             context.push('/detail/${_items[index].id}'),
                         onLongPress: (rect) => showPosterCardMenu(
-                            context, ref, _items[index], rect,
-                            favoritedMode: false),
+                            context, ref, _items[index], rect),
                       ),
                       childCount: _items.length,
                     ),

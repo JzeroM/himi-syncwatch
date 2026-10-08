@@ -40,7 +40,11 @@ Future<void> showGlassContextMenu(
     transitionDuration: const Duration(milliseconds: 150),
     pageBuilder: (dialogContext, _, __) {
       final screen = MediaQuery.sizeOf(dialogContext);
-      const width = 208.0;
+      // 宽度对齐卡片：等于卡片宽，设可读下限 140，并夹取屏内上限。
+      const minWidth = 140.0;
+      var width = anchor.width < minWidth ? minWidth : anchor.width;
+      final maxWidth = screen.width - 24;
+      if (width > maxWidth) width = maxWidth;
       var left = anchor.left;
       if (left + width > screen.width - 12) left = screen.width - 12 - width;
       if (left < 12) left = 12;
@@ -113,18 +117,23 @@ class _GlassMenuRow extends StatelessWidget {
         action.onTap();
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(action.icon, size: 20, color: color),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                action.label,
-                style: TextStyle(color: color, fontSize: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(action.icon, size: 20, color: color),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  action.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: color, fontSize: 14),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
