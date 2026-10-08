@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
@@ -33,8 +34,6 @@ class MainShell extends ConsumerStatefulWidget {
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
-  bool _navVisible = true;
-
   /// TV 模式双击返回退出的判定窗口。
   static const _exitBackWindow = Duration(seconds: 2);
 
@@ -52,12 +51,13 @@ class _MainShellState extends ConsumerState<MainShell> {
     final metrics = notification.metrics;
     if (metrics.maxScrollExtent <= 0) return false;
 
+    final nav = ref.read(shellNavVisibilityProvider.notifier);
     if (metrics.pixels >= metrics.maxScrollExtent - 8) {
-      if (_navVisible) setState(() => _navVisible = false);
+      nav.hide();
     } else if ((notification is ScrollUpdateNotification &&
             (notification.scrollDelta ?? 0) < 0) ||
         metrics.pixels < metrics.maxScrollExtent - 32) {
-      if (!_navVisible) setState(() => _navVisible = true);
+      nav.show();
     }
     return false;
   }
@@ -68,7 +68,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       initialLocation: index == widget.shell.currentIndex,
     );
     _backAt = null;
-    if (!_navVisible) setState(() => _navVisible = true);
+    ref.read(shellNavVisibilityProvider.notifier).show();
   }
 
   /// TV 模式返回键策略：非首页标签 → 回首页；首页 → 2 秒内连按两次
@@ -105,6 +105,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   }
 
   Widget _buildShellBody(BuildContext context) {
+    final navVisible = ref.watch(shellNavVisibilityProvider);
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     // 胶囊底距上移（v1.1.84，见 MainShell.navBottomGap）：
     // 三键贴其上沿 +12；手势条/无安全区统一 20（原 6/4，太贴屏底）
@@ -207,12 +208,12 @@ class _MainShellState extends ConsumerState<MainShell> {
       bottomNavigationBar: AnimatedSlide(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInCubic,
-        offset: _navVisible ? Offset.zero : const Offset(0, 1.5),
+        offset: navVisible ? Offset.zero : const Offset(0, 1.5),
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 300),
-          opacity: _navVisible ? 1 : 0,
+          opacity: navVisible ? 1 : 0,
           child: IgnorePointer(
-            ignoring: !_navVisible,
+            ignoring: !navVisible,
             child: Padding(
               key: const ValueKey('shellNavBarPadding'),
               padding: EdgeInsets.fromLTRB(12, 0, 12, bottomGap),

@@ -10,6 +10,8 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
@@ -71,6 +73,15 @@ double contentWidth(WidgetTester tester) {
     find.byKey(const ValueKey('shellContentArea')),
   );
   return box.size.width;
+}
+
+/// 底部胶囊导航当前不透明度（1=显示，0=滑到底隐藏）。
+double navOpacity(WidgetTester tester) {
+  final opacity = tester.widget<AnimatedOpacity>(find.ancestor(
+    of: find.byKey(const ValueKey('shellNavBarPadding')),
+    matching: find.byType(AnimatedOpacity),
+  ));
+  return opacity.opacity;
 }
 
 void main() {
@@ -153,6 +164,41 @@ void main() {
     final padding = tester
         .widget<Padding>(find.byKey(const ValueKey('shellNavBarPadding')));
     expect((padding.padding as EdgeInsets).bottom, 20, reason: '胶囊继续上移，不贴屏底');
+  });
+
+  testWidgets('手机：子页返回设置首页恢复底部导航（滑到底隐藏后）', (tester) async {
+    await pumpApp(tester, const Size(390, 844));
+
+    // 进入设置分支
+    await tester.tap(find.descendant(
+      of: find.byType(ShellNavBar),
+      matching: find.text('设置'),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
+    expect(navOpacity(tester), 1);
+
+    // 进入「外观」子页
+    await tester.tap(find.byKey(const ValueKey('settingsCategoryAppearance')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('settingsSubPageList')), findsOneWidget);
+
+    // 模拟「子页滑到底 → 导航隐藏」
+    final container =
+        ProviderScope.containerOf(tester.element(find.byType(MainShell)));
+    container.read(shellNavVisibilityProvider.notifier).hide();
+    await tester.pump();
+    expect(navOpacity(tester), 0, reason: '滑到底后导航隐藏');
+
+    // 返回设置首页（分支根路由）→ 导航应恢复
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
+    expect(navOpacity(tester), 1, reason: '返回分支根路由应恢复底部导航');
   });
 
   group('navBottomGap（胶囊底距上移 v1.1.84）', () {

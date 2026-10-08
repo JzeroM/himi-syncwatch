@@ -13,10 +13,16 @@ import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 
 final routerKey = GlobalKey<NavigatorState>();
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  // 分支导航器 pop 回根路由时恢复底部导航（子页滑到底隐藏后返回首页的修复）
+  void onReturnToRoot() => ref.read(shellNavVisibilityProvider.notifier).show();
+  List<NavigatorObserver> branchObservers() =>
+      [ShellNavRouteObserver(onReturnToRoot)];
+
   return GoRouter(
     navigatorKey: routerKey,
     initialLocation: '/',
@@ -26,31 +32,31 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state, navigationShell) =>
             MainShell(shell: navigationShell),
         branches: [
-          StatefulShellBranch(routes: [
+          StatefulShellBranch(observers: branchObservers(), routes: [
             GoRoute(
               path: '/',
               builder: (context, state) => const HomeScreen(),
             ),
           ]),
-          StatefulShellBranch(routes: [
+          StatefulShellBranch(observers: branchObservers(), routes: [
             GoRoute(
               path: '/favorites',
               builder: (context, state) => const FavoritesScreen(),
             ),
           ]),
-          StatefulShellBranch(routes: [
+          StatefulShellBranch(observers: branchObservers(), routes: [
             GoRoute(
               path: '/servers',
               builder: (context, state) => const ServerManagerScreen(),
             ),
           ]),
-          StatefulShellBranch(routes: [
+          StatefulShellBranch(observers: branchObservers(), routes: [
             GoRoute(
               path: '/agora',
               builder: (context, state) => const AgoraConfigScreen(),
             ),
           ]),
-          StatefulShellBranch(routes: [
+          StatefulShellBranch(observers: branchObservers(), routes: [
             GoRoute(
               path: '/settings',
               builder: (context, state) => const SettingsScreen(),
