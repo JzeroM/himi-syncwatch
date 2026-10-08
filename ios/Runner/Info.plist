@@ -60,5 +60,77 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- 备用应用图标（flutter_dynamic_icon_plus）：PNG 由 tool/gen_icons.dart
+	     生成到 ios/Runner/（不在 Assets.xcassets 内），文件名与 CFBundleIconFiles
+	     对应；默认图标仍由 Assets.xcassets/AppIcon 提供。 -->
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>aurora</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>aurora</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>metal</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>metal</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>neon</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>neon</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+		</dict>
+	</dict>
+	<key>CFBundleIcons~ipad</key>
+	<dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>aurora</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>aurora-76</string>
+					<string>aurora-83.5</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>metal</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>metal-76</string>
+					<string>metal-83.5</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>neon</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>neon-76</string>
+					<string>neon-83.5</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

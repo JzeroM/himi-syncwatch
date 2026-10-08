@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
+import 'package:himi_syncwatch/services/app_icon_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 
 /// 外观设置子页：主题色 / 分类页每行海报数 / 液态玻璃（开关 + 参数）。
@@ -18,6 +20,8 @@ class AppearanceSettingsScreen extends ConsumerWidget {
       title: '外观',
       children: [
         const _ThemeColorSection(),
+        const Divider(height: 1),
+        const _AppIconSection(),
         const Divider(height: 1),
         const _CategoryColumnsSection(),
         const Divider(height: 1),
@@ -451,6 +455,149 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 应用图标切换分组：默认 + 备用图标（仅 Android 手机 / iOS 显示）。
+class _AppIconSection extends ConsumerWidget {
+  const _AppIconSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    // 仅手机端（Android/iOS）非 TV 显示；Windows/桌面/TV 无此功能。
+    if (tvMode || !AppIconService.isSupported) {
+      return const SizedBox.shrink();
+    }
+    final current = ref.watch(settingsProvider.select((s) => s.appIcon));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 2),
+          child: Text(
+            '应用图标',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            '选择桌面图标外观（Android 需划掉应用后桌面才刷新；iOS 会弹系统提示）',
+            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.4),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(
+            spacing: 18,
+            runSpacing: 12,
+            children: [
+              for (final option in AppIconService.options)
+                _AppIconTile(
+                  option: option,
+                  selected: current == option.id,
+                  onTap: () => _apply(context, ref, option.id),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Future<void> _apply(
+    BuildContext context,
+    WidgetRef ref,
+    String? id,
+  ) async {
+    if (ref.read(settingsProvider).appIcon == id) return;
+    try {
+      await AppIconService.apply(id);
+      await ref.read(settingsProvider.notifier).update(appIcon: id);
+    } catch (_) {
+      if (context.mounted) showAppToast(context, '切换图标失败');
+    }
+  }
+}
+
+class _AppIconTile extends StatelessWidget {
+  const _AppIconTile({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AppIconOption option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  static const double _size = 64;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return GestureDetector(
+      key: ValueKey('appIcon_${option.id ?? 'default'}'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              children: [
+                Container(
+                  width: _size,
+                  height: _size,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: selected ? accent : Colors.white24,
+                      width: selected ? 2 : 1,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: Image.asset(
+                      option.asset,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.medium,
+                    ),
+                  ),
+                ),
+                if (selected)
+                  Positioned(
+                    right: 2,
+                    bottom: 2,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: accent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.check,
+                          size: 12, color: Colors.white),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              option.label,
+              style: TextStyle(
+                fontSize: 12,
+                color: selected ? accent : Colors.white70,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

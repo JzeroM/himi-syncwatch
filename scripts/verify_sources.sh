@@ -126,6 +126,29 @@ if [ -d android ]; then
         err "缺少权限 $p"
       fi
     done
+
+    # ---------- 4. 应用图标切换（activity-alias + 插件 Service） ----------
+    sec "Android · 应用图标切换"
+    for alias in 'DEFAULT' 'icon_aurora' 'icon_metal' 'icon_neon'; do
+      if grep -q "android:name=\"\.$alias\"" "$MANIFEST"; then
+        ok "activity-alias .$alias"
+      else
+        err "缺少 activity-alias .$alias（图标切换依赖）"
+      fi
+    done
+    if grep -q 'FlutterDynamicIconPlusService' "$MANIFEST"; then
+      ok "FlutterDynamicIconPlusService 已声明"
+    else
+      err "缺少 flutter_dynamic_icon_plus Service（图标变更不会落地）"
+    fi
+    for alt in aurora metal neon; do
+      f="$MAIN/res/mipmap-xhdpi/ic_launcher_$alt.png"
+      if [ -s "$f" ]; then
+        ok "备用图标 $alt mipmap 存在"
+      else
+        err "缺少备用图标 $f（tool/gen_icons.dart 未生成或为空）"
+      fi
+    done
   fi
 else
   skip "Android" "android/"
@@ -153,6 +176,20 @@ if [ -d ios ]; then
         ok "$k"
       else
         err "Info.plist 缺少 $k"
+      fi
+    done
+
+    sec "iOS · 备用图标声明"
+    if grep -q 'CFBundleAlternateIcons' "$PLIST"; then
+      ok "CFBundleAlternateIcons"
+    else
+      err "Info.plist 缺少 CFBundleAlternateIcons（iOS 图标切换依赖）"
+    fi
+    for alt in aurora metal neon; do
+      if grep -q "<key>$alt</key>" "$PLIST"; then
+        ok "备用图标键 $alt"
+      else
+        err "Info.plist 缺少备用图标键 $alt"
       fi
     done
   else
@@ -199,6 +236,17 @@ PYEOF
 else
   skip "iOS" "ios/"
 fi
+
+# ======================== 图标源图 ========================
+sec "图标源图（assets/icon）"
+for name in glass aurora metal neon; do
+  src="assets/icon/$name.png"
+  if [ -s "$src" ]; then
+    ok "$src"
+  else
+    err "缺少图标源图 $src（flutter_launcher_icons / tool/gen_icons.dart 依赖）"
+  fi
+done
 
 # ======================== 结果 ========================
 echo ""

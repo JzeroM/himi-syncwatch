@@ -46,13 +46,91 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+        </activity>
+
+        <!-- 应用图标切换（flutter_dynamic_icon_plus）：LAUNCHER（+ TV 的
+             LEANBACK_LAUNCHER）由 activity-alias 承载，默认图标走 .DEFAULT
+             （enabled=true，独占 LEANBACK，TV 只用默认），备用图标别名默认
+             禁用，插件在运行时按组件启停切换。别名 name 必须以点开头。 -->
+        <activity-alias
+            android:name=".DEFAULT"
+            android:enabled="true"
+            android:exported="true"
+            android:label="HIMI"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher"
+            android:banner="@mipmap/ic_launcher"
+            android:targetActivity=".MainActivity">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
-                <!-- Android TV 桌面入口 -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon_aurora"
+            android:enabled="false"
+            android:exported="true"
+            android:label="HIMI"
+            android:icon="@mipmap/ic_launcher_aurora"
+            android:roundIcon="@mipmap/ic_launcher_aurora"
+            android:targetActivity=".MainActivity">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon_metal"
+            android:enabled="false"
+            android:exported="true"
+            android:label="HIMI"
+            android:icon="@mipmap/ic_launcher_metal"
+            android:roundIcon="@mipmap/ic_launcher_metal"
+            android:targetActivity=".MainActivity">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon_neon"
+            android:enabled="false"
+            android:exported="true"
+            android:label="HIMI"
+            android:icon="@mipmap/ic_launcher_neon"
+            android:roundIcon="@mipmap/ic_launcher_neon"
+            android:targetActivity=".MainActivity">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 图标切换插件：任务移除/服务销毁时应用图标变更（launcher 刷新） -->
+        <service
+            android:name="com.solusibejo.flutter_dynamic_icon_plus.FlutterDynamicIconPlusService"
+            android:stopWithTask="false"/>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -75,7 +153,7 @@
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
 
-         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+         In particular, this is used by the Flutter engine's ProcessTextPlugin. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

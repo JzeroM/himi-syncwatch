@@ -53,6 +53,10 @@ class AppSettings {
   final double? glassRefractiveIndex;
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
 
+  /// 应用图标 id：null = 默认（glass）；'aurora'/'metal'/'neon' = 备用图标。
+  /// 仅 Android/iOS 生效；写入后由 AppIconService 应用到系统。
+  final String? appIcon;
+
   /// 分类页网格每行海报数（全平台）：null = 自动跟随屏幕，
   /// 数字 = 指定列数（屏幕放不下时按最小列宽自动压回）。
   final int? categoryColumns;
@@ -171,6 +175,7 @@ class AppSettings {
     this.glassLightIntensity,
     this.glassRefractiveIndex,
     this.themeColor,
+    this.appIcon,
     this.categoryColumns,
     this.tvMode = false,
     this.tvModeUserSet = false,
@@ -225,6 +230,7 @@ class AppSettings {
     double? danmakuFontSize,
     double? danmakuOpacity,
     Object? themeColor = unsetValue,
+    Object? appIcon = unsetValue,
     Object? categoryColumns = unsetValue,
     Object? glassBlur = unsetValue,
     Object? glassThickness = unsetValue,
@@ -266,6 +272,8 @@ class AppSettings {
       themeColor: identical(themeColor, unsetValue)
           ? this.themeColor
           : themeColor as int?,
+      appIcon:
+          identical(appIcon, unsetValue) ? this.appIcon : appIcon as String?,
       categoryColumns: identical(categoryColumns, unsetValue)
           ? this.categoryColumns
           : categoryColumns as int?,
@@ -323,6 +331,7 @@ class AppSettings {
         'danmakuFontSize': danmakuFontSize,
         'danmakuOpacity': danmakuOpacity,
         if (themeColor != null) 'themeColor': themeColor,
+        if (appIcon != null) 'appIcon': appIcon,
         if (categoryColumns != null) 'categoryColumns': categoryColumns,
         if (glassBlur != null) 'glassBlur': glassBlur,
         if (glassThickness != null) 'glassThickness': glassThickness,
@@ -373,6 +382,7 @@ class AppSettings {
       // 避免自动识别把用户手动关掉的 TV 模式重新打开。
       tvModeUserSet: json['tvModeUserSet'] as bool? ?? (json['tvMode'] == true),
       themeColor: json['themeColor'] as int?,
+      appIcon: json['appIcon'] as String?,
       // 旧数据无此字段 / 非法值 → null（自动）；存盘 int 也可能被
       // 外部写成 double，统一转 int
       categoryColumns: (json['categoryColumns'] as num?)?.toInt(),

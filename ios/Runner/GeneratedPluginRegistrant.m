@@ -24,6 +24,12 @@
 @import file_picker;
 #endif
 
+#if __has_include(<flutter_dynamic_icon_plus/FlutterDynamicIconPlusPlugin.h>)
+#import <flutter_dynamic_icon_plus/FlutterDynamicIconPlusPlugin.h>
+#else
+@import flutter_dynamic_icon_plus;
+#endif
+
 #if __has_include(<flutter_secure_storage/FlutterSecureStoragePlugin.h>)
 #import <flutter_secure_storage/FlutterSecureStoragePlugin.h>
 #else
@@ -120,6 +126,7 @@
   [AgoraRtmPlugin registerWithRegistrar:[registry registrarForPlugin:@"AgoraRtmPlugin"]];
   [FPPDeviceInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPDeviceInfoPlusPlugin"]];
   [FilePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FilePickerPlugin"]];
+  [FlutterDynamicIconPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterDynamicIconPlusPlugin"]];
   [FlutterSecureStoragePlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterSecureStoragePlugin"]];
   [FvpPlugin registerWithRegistrar:[registry registrarForPlugin:@"FvpPlugin"]];
   [FLTImagePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTImagePickerPlugin"]];

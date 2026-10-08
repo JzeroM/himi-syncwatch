@@ -199,6 +199,16 @@ jobs:
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' ios/Runner.xcodeproj/project.pbxproj
 
       - run: flutter pub get
+
+      # 备用应用图标（运行时切换）：flutter create 重建 iOS 工程会删掉
+      # ios/Runner/ 下的松散 PNG；这里从仓库 assets/icon 重新生成，并注册进
+      # Runner 目标资源，否则 CFBundleAlternateIcons 找不到图标、切换无效。
+      - name: 生成并注册 iOS 备用应用图标
+        run: |
+          dart run tool/gen_icons.dart
+          gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document
+          ruby scripts/register_ios_alt_icons.rb
+
       - name: Run flutter build ios --release --no-codesign
         run: |
           # Agora 等 pod 走 download.agora.io，runner 偶发 DNS 解析失败（curl 6），重试 3 次
