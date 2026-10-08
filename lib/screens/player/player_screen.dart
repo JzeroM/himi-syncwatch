@@ -63,6 +63,7 @@ import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_bottom_row.dart';
+import 'package:himi_syncwatch/screens/player/player_lifecycle_policy.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/controls_auto_hide.dart';
@@ -731,6 +732,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _surfaceViewCreated = false;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
+
+  /// 应用已进入后台/熄屏（收到 paused/inactive/hidden）：回前台（resumed）
+  /// 时据此触发一次视频输出恢复（纹理重建 / SurfaceView 补帧）。
+  bool _appBackgrounded = false;
+
+  /// 熄屏/切后台前是否处于播放态；恢复后据此还原播放状态。
+  bool _wasPlayingBeforeBackground = false;
+
+  /// 视频输出恢复进行中（防 resumed 重入叠加）。
+  bool _recoveringVideo = false;
+
   final ValueNotifier<bool> _isPlayingNotifier = ValueNotifier(false);
 
   // 分组缓存（由 _rebuildGroups 从扁平数组计算）
@@ -4028,6 +4040,66 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       unawaited(_reportProgress());
+    }
+    // 熄屏/切后台（同一条事件链）：记录状态，回前台时统一恢复视频输出。
+    // 引擎重建 EGL/Surface 上下文后，纹理档旧 external texture 失效会
+    // 定格/黑屏（SurfaceView 档由 platform view 自愈）。
+    if (PlayerLifecyclePolicy.enterBackground(state)) {
+      if (!_appBackgrounded) {
+        _appBackgrounded = true;
+        _wasPlayingBeforeBackground =
+            _isPlayerReady && _player.state == mdk.PlaybackState.playing;
+        LogService().log('Player',
+            '进入后台/熄屏: output=${_effectiveVideoOutput()} wasPlaying=$_wasPlayingBeforeBackground');
+      }
+    } else if (state == AppLifecycleState.resumed && _appBackgrounded) {
+      _appBackgrounded = false;
+      unawaited(_recoverVideoAfterResume());
+    }
+  }
+
+  /// 回前台/亮屏后恢复视频输出：
+  /// - 纹理/直通档：释放并重建 external texture（重新 nativeSetSurface
+  ///   绑定到引擎新建的上下文），根治「画面定格 / 暂停黑屏」；
+  /// - SurfaceView 档：platform view 已自行重绑，仅补一帧；
+  /// - 暂停态重建后的纹理为空时补画当前帧；
+  /// - 还原熄屏/切后台前的播放状态。
+  Future<void> _recoverVideoAfterResume() async {
+    if (!mounted || _recoveringVideo) return;
+    if (!_isPlayerReady) return;
+    _recoveringVideo = true;
+    final wasPlaying = _wasPlayingBeforeBackground;
+    try {
+      final action =
+          PlayerLifecyclePolicy.resumeAction(_effectiveVideoOutput());
+      LogService()
+          .log('Player', '回前台恢复视频输出: action=$action wasPlaying=$wasPlaying');
+      if (action == PlayerResumeAction.recreateTexture) {
+        // 释放旧纹理 → 以当前档位重建（updateTexture 内部 release+CreateRT）
+        _textureOutputApplied = null;
+        try {
+          await _player
+              .updateTexture(width: -1)
+              .timeout(const Duration(seconds: 3));
+        } catch (_) {}
+        if (!mounted) return;
+        await _ensureTexture();
+        if (!mounted) return;
+      }
+      // 补一帧：暂停态纹理为空会黑屏；播放态随即由 mdk 续帧。
+      try {
+        _player.renderVideo();
+      } catch (_) {}
+      // 仅在「原本在播且 mdk 已被后台暂停」时恢复播放，避免覆盖已结束
+      // 或已切集的状态。
+      if (wasPlaying && _player.state == mdk.PlaybackState.paused) {
+        _player.state = mdk.PlaybackState.playing;
+      }
+      _syncPlayState();
+    } catch (e) {
+      LogService().log('Player', '回前台恢复视频输出失败: $e');
+    } finally {
+      _recoveringVideo = false;
     }
   }
 
