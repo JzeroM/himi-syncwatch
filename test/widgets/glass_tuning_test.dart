@@ -231,14 +231,15 @@ void main() {
             .defaultValue,
       );
       // 微调方向：比 spec 默认更透亮（降模糊/厚度/高光、升饱和）
-      final blurSpec =
-          glassParamSpecs.firstWhere((s) => s.key == 'glassBlur');
+      final blurSpec = glassParamSpecs.firstWhere((s) => s.key == 'glassBlur');
       expect(GlassIosStandard.blur, lessThan(blurSpec.defaultValue));
-      expect(GlassIosStandard.thickness,
+      expect(
+          GlassIosStandard.thickness,
           lessThan(glassParamSpecs
               .firstWhere((s) => s.key == 'glassThickness')
               .defaultValue));
-      expect(GlassIosStandard.lightIntensity,
+      expect(
+          GlassIosStandard.lightIntensity,
           lessThan(glassParamSpecs
               .firstWhere((s) => s.key == 'glassLightIntensity')
               .defaultValue));
@@ -252,6 +253,26 @@ void main() {
           reason: '不再对 iOS 强制 GlassQuality.premium');
       expect(data.light.settings?.ambientStrength,
           GlassIosStandard.ambientStrength);
+    });
+
+    test('iOS 走 GlassBodyMode.clear（去 standard PATH B 的硬编码霜底/灰化）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final data = const GlassTuning().toThemeData();
+      expect(data.dark.settings?.bodyMode, GlassBodyMode.clear);
+      expect(data.light.settings?.bodyMode, GlassBodyMode.clear);
+      // 传到真正渲染用的 LiquidGlassSettings
+      final resolved = data.dark.settings!.applyTo(const LiquidGlassSettings());
+      expect(resolved.bodyMode, GlassBodyMode.clear);
+    });
+
+    test('安卓/其余平台 bodyMode 保持默认 adaptive（不传）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final data = const GlassTuning().toThemeData();
+      expect(data.dark.settings?.bodyMode, isNull, reason: '未覆盖 → 交给包默认');
+      final resolved = data.dark.settings!.applyTo(const LiquidGlassSettings());
+      expect(resolved.bodyMode, GlassBodyMode.adaptive);
     });
 
     test('安卓沿用 spec 默认（不受 iOS 微调影响）', () {

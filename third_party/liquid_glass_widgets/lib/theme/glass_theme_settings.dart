@@ -67,6 +67,7 @@ class GlassThemeSettings {
     this.rimShadeEnds,
     this.rimLight,
     this.lensModel,
+    this.bodyMode,
   });
 
   /// See [LiquidGlassSettings.visibility].
@@ -135,6 +136,16 @@ class GlassThemeSettings {
   /// See [LiquidGlassSettings.lensModel].
   final GlassLensModel? lensModel;
 
+  /// See [LiquidGlassSettings.bodyMode].
+  ///
+  /// [PATCH himi] Exposes the body blend mode through the theme so apps can
+  /// opt into [GlassBodyMode.clear] (matches Apple's `Glass.clear`: direct
+  /// alpha-composited tint with no luminance normalization). In the standard
+  /// (lightweight shader) path this zeroes the hardcoded 8% frost floor and
+  /// the 3% ambient darkening — i.e. removes the residual "frosted" look —
+  /// which no other theme knob can reach.
+  final GlassBodyMode? bodyMode;
+
   /// Returns a new [LiquidGlassSettings] by applying this override onto [base].
   ///
   /// Only non-null fields in this override replace the corresponding
@@ -168,6 +179,7 @@ class GlassThemeSettings {
       rimShadeEnds: rimShadeEnds ?? base.rimShadeEnds,
       rimLight: rimLight ?? base.rimLight,
       lensModel: lensModel ?? base.lensModel,
+      bodyMode: bodyMode ?? base.bodyMode,
       frostWeight: frostWeight ?? base.frostWeight,
       blurWeight: blurWeight ?? base.blurWeight,
       backerColor: base.backerColor,
@@ -227,6 +239,7 @@ class GlassThemeSettings {
       rimShadeEnds: _lerpDoubleField(a.rimShadeEnds, b.rimShadeEnds, t),
       rimLight: _lerpDoubleField(a.rimLight, b.rimLight, t),
       lensModel: t < 0.5 ? a.lensModel : b.lensModel,
+      bodyMode: t < 0.5 ? a.bodyMode : b.bodyMode,
     );
   }
 
@@ -264,6 +277,7 @@ class GlassThemeSettings {
     double? rimShadeEnds,
     double? rimLight,
     GlassLensModel? lensModel,
+    GlassBodyMode? bodyMode,
   }) {
     return GlassThemeSettings(
       visibility: visibility ?? this.visibility,
@@ -288,6 +302,7 @@ class GlassThemeSettings {
       rimShadeEnds: rimShadeEnds ?? this.rimShadeEnds,
       rimLight: rimLight ?? this.rimLight,
       lensModel: lensModel ?? this.lensModel,
+      bodyMode: bodyMode ?? this.bodyMode,
     );
   }
 
@@ -317,7 +332,8 @@ class GlassThemeSettings {
           rimShade == other.rimShade &&
           rimShadeEnds == other.rimShadeEnds &&
           rimLight == other.rimLight &&
-          lensModel == other.lensModel;
+          lensModel == other.lensModel &&
+          bodyMode == other.bodyMode;
 
   @override
   int get hashCode => Object.hashAll([
@@ -343,6 +359,7 @@ class GlassThemeSettings {
         rimShadeEnds,
         rimLight,
         lensModel,
+        bodyMode,
       ]);
 
   @override

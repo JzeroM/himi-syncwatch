@@ -126,4 +126,16 @@ void main() {
         reason: '包名不变 → package:liquid_glass_widgets 导入全部照旧');
     expect(pkg.contains('version: 1.8.1'), isTrue, reason: '基线版本 1.8.1');
   });
+
+  test('vendored theme 保留 bodyMode 透传补丁（iOS 通透修复依赖）', () {
+    final src = File(
+            'third_party/liquid_glass_widgets/lib/theme/glass_theme_settings.dart')
+        .readAsStringSync();
+    expect(src.contains('[PATCH himi]'), isTrue,
+        reason: 'bodyMode 透传补丁标记丢失 → 上游再分发会覆盖');
+    expect(src.contains('final GlassBodyMode? bodyMode;'), isTrue,
+        reason: 'GlassThemeSettings 必须暴露 bodyMode 字段');
+    expect(src.contains('bodyMode: bodyMode ?? base.bodyMode'), isTrue,
+        reason: 'applyTo 必须把 bodyMode 透传到 LiquidGlassSettings');
+  });
 }
