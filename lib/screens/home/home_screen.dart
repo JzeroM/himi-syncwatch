@@ -17,6 +17,7 @@ import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/continue_watching_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_search_button.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
@@ -424,11 +425,8 @@ class _ContinueWatchingBar extends StatelessWidget {
         ),
         SizedBox(
           height: ContinueWatchingCard.heightFor(_cardWidth),
-          child: ListView.builder(
-            // TV 焦点框放大溢出内容盒，默认 clip 会裁边
-            clipBehavior: Clip.none,
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: HoverScrollRow(
+            height: ContinueWatchingCard.heightFor(_cardWidth),
             itemCount: items.length,
             itemBuilder: (context, index) {
               final item = items[index];
@@ -475,11 +473,8 @@ class _LibraryBar extends StatelessWidget {
         ),
         SizedBox(
           height: 126,
-          child: ListView.builder(
-            // TV 焦点框随 1.06 放大溢出内容盒，默认 clip 裁掉上下边
-            clipBehavior: Clip.none,
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: HoverScrollRow(
+            height: 126,
             itemCount: libraries.length,
             itemBuilder: (context, index) {
               final lib = libraries[index];
@@ -572,11 +567,8 @@ class _CategorySection extends StatelessWidget {
         ),
         SizedBox(
           height: PosterCard.heightFor(102),
-          child: ListView.builder(
-            // TV 焦点框随 1.06 放大溢出内容盒，默认 clip 裁掉上下边
-            clipBehavior: Clip.none,
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: HoverScrollRow(
+            height: PosterCard.heightFor(102),
             itemCount: category.items.length,
             itemBuilder: (context, index) {
               final item = category.items[index];
