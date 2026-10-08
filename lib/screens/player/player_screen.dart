@@ -743,6 +743,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 视频输出恢复进行中（防 resumed 重入叠加）。
   bool _recoveringVideo = false;
 
+  /// 回前台重载后恢复到暂停态：管线刚重建，直接 `state=playing` 可能不接回；
+  /// 置位后下一次「暂停→播放」先对当前进度 seek 一次再起播（见 [_togglePlayPause]）。
+  bool _pendingResumeSeek = false;
+
   final ValueNotifier<bool> _isPlayingNotifier = ValueNotifier(false);
 
   // 分组缓存（由 _rebuildGroups 从扁平数组计算）
@@ -3340,12 +3344,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     } else {
       _player.state = mdk.PlaybackState.playing;
+      // 回前台重载后恢复到暂停态的管线：恢复播放前对当前进度 seek 一次，
+      // 强制重新驱动解码（否则可能「有图标无画面/无响应」）。
+      if (_pendingResumeSeek) {
+        _pendingResumeSeek = false;
+        final pos = _player.position;
+        if (pos > 0) unawaited(_reengageAfterResume(pos));
+      }
       if (widget.roomCode != null) {
         _sendCommand(AppConstants.actionPlay);
       }
     }
     _syncPlayState();
     unawaited(_reportProgress());
+  }
+
+  /// 回前台重载后恢复播放的兜底：对 [pos] 做一次 keyFrame seek，
+  /// 让 mdk 重新从当前位置驱动解码出帧。
+  Future<void> _reengageAfterResume(int pos) async {
+    if (!mounted) return;
+    try {
+      await _player.seek(
+        position: pos,
+        flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame),
+      );
+    } catch (_) {}
   }
 
   /// 空格键播放/暂停（仅房主/本地可控制）
@@ -4092,21 +4115,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         await _loadStream(startMs: posMs);
       }
       if (!mounted) return;
-      // 暂停态：重载默认会起播，需还原暂停并精确出帧
+      // 暂停态：重载默认会起播，需还原暂停。载入时的 keyFrame seek 已把
+      // 画面定位到原进度，直接暂停即可——不再做 AnyFrame 精确 seek /
+      // renderVideo（那会让 mdk 停在「暂停但仍在 seek/decode」的半死状态，
+      // 导致之后点播放无响应）。
       if (!wasPlaying) {
         _player.state = mdk.PlaybackState.paused;
-        try {
-          await _player.seek(
-            position: posMs,
-            flags: mdk.SeekFlag(mdk.SeekFlag.frame),
-          );
-        } catch (_) {}
-        try {
-          _player.renderVideo();
-        } catch (_) {}
         _position = Duration(milliseconds: posMs);
         _positionNotifier.value = _position;
         _syncPlayState();
+        // 管线刚重建，标记「恢复播放前先 seek 兜底」
+        _pendingResumeSeek = true;
       }
     } catch (e) {
       LogService().log('Player', '回前台重载恢复失败: $e');
