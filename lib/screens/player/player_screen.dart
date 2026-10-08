@@ -3527,18 +3527,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return;
     }
     double filteredX = 0;
-    const alpha = 0.2;
+    const alpha = 0.45;
     int flipCount = 0;
-    // 灵敏度：阈值 8.0（约需明显横持翻转）+ 连续 3 次采样 + 0.8s 冷却。
-    // 居中原「8.0/3/无冷却」（太灵，稍抖动即翻）与「9.2/5/1.2s」（太难触发）
-    // 之间（iOS 实测反馈），再向灵敏侧微调（8.3→8.0、900→800ms）。
-    const double flipThreshold = 8.0;
-    const int requiredSamples = 3;
-    const Duration flipCooldown = Duration(milliseconds: 800);
+    // 灵敏度（iOS 实测「不够灵敏」逐档调高）：
+    // - 采样 uiInterval(~67ms) 替代 normalInterval(200ms)，样本更密；
+    // - 低通 alpha 0.2 → 0.45，滤波不再把翻转拖慢数秒；
+    // - 阈值 8.0 → 6.5（手持倾角不必接近竖直）+ 连续 2 次 + 0.7s 冷却。
+    const double flipThreshold = 6.5;
+    const int requiredSamples = 2;
+    const Duration flipCooldown = Duration(milliseconds: 700);
     DateTime? lastFlipAt;
 
     _accelSub = accelerometerEventStream(
-      samplingPeriod: SensorInterval.normalInterval,
+      samplingPeriod: SensorInterval.uiInterval,
     ).listen((event) {
       filteredX = alpha * event.x + (1 - alpha) * filteredX;
 
