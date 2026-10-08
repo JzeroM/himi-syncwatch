@@ -1506,6 +1506,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       required String label,
       required Future<void> Function() onPressed,
       double? progress,
+      double radius = 14,
     }) {
       final button = FilledButton(
         onPressed: onPressed,
@@ -1528,18 +1529,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ),
       );
       if (progress == null) return button;
-      // StackFit.passthrough：把外层（非 TV 的 Expanded）紧宽度透传给按钮，
-      // 使按钮铺满整块玻璃、内容居中、整块可点；TV 紧凑约束下仍保持固有宽。
-      // （此前默认 loose 让非定位的 FilledButton 缩成内容宽并贴左上，只有
-      //  左侧一小块可点、图标文字左偏。）
+      // 进度填充自带与胶囊一致的**左圆角**：iOS(Impeller) 上液态玻璃会插入
+      // 自有合成层，外层 GlassContainer 的 ClipRRect 对内部方角 ColoredBox
+      // 裁剪不可靠 → 直角戳出胶囊圆角（表现为「进度条溢出按钮」）。这里直接
+      // 给填充裁左圆角（左贴胶囊圆角、右端保持直边），不再依赖外层裁剪。
       return Stack(
         fit: StackFit.passthrough,
         children: [
           Positioned.fill(
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: progress.clamp(0.0, 1.0),
-              child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
+            child: ClipRRect(
+              borderRadius:
+                  BorderRadius.horizontal(left: Radius.circular(radius)),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: progress.clamp(0.0, 1.0),
+                child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
+              ),
             ),
           ),
           button,

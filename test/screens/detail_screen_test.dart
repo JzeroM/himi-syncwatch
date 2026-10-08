@@ -2391,6 +2391,18 @@ void main() {
       expect(rect.width, greaterThan(340),
           reason: '续播按钮应铺满半行（此前 Stack loose 只占内容固有宽、贴左上）');
 
+      // 进度填充自带与胶囊一致的左圆角（iOS 溢出修复）：存在 topLeft 圆角、
+      // topRight 直角的 ClipRRect。
+      final progressClip = tester
+          .widgetList<ClipRRect>(find.byType(ClipRRect))
+          .any((c) {
+        final br = c.borderRadius;
+        return br is BorderRadius &&
+            br.topLeft != Radius.zero &&
+            br.topRight == Radius.zero;
+      });
+      expect(progressClip, isTrue, reason: '进度填充需左侧圆角裁剪，避免直角戳出胶囊（iOS）');
+
       // 点按钮右缘附近：修复前该区域不可点（只有左侧内容块命中）
       await tester.tapAt(Offset(rect.right - 12, rect.center.dy));
       await tester.pump();
