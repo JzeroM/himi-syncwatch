@@ -3529,11 +3529,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     double filteredX = 0;
     const alpha = 0.2;
     int flipCount = 0;
-    // 灵敏度：阈值 9.2（约需接近水平横持）+ 连续 5 次采样 + 1.2s 冷却，
-    // 避免 iOS 稍抖动就 180° 翻转。
-    const double flipThreshold = 9.2;
-    const int requiredSamples = 5;
-    const Duration flipCooldown = Duration(milliseconds: 1200);
+    // 灵敏度：阈值 8.3（约需明显横持翻转）+ 连续 3 次采样 + 0.9s 冷却。
+    // 居中原「8.0/3/无冷却」（太灵，稍抖动即翻）与「9.2/5/1.2s」（太难触发）
+    // 之间（iOS 实测反馈）。
+    const double flipThreshold = 8.3;
+    const int requiredSamples = 3;
+    const Duration flipCooldown = Duration(milliseconds: 900);
     DateTime? lastFlipAt;
 
     _accelSub = accelerometerEventStream(
@@ -4455,6 +4456,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildVideoArea() {
+    final videoAreaTvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final videoAreaPhoneControls = PlayerScreen.isMobilePhoneControls(
+      tvMode: videoAreaTvMode,
+      mobilePlatform: Platform.isAndroid || Platform.isIOS,
+    );
     // 视频 / 占位文字
     final videoContent = _isPlayerReady ||
             (!_hasEpisodeList && widget.roomCode == null)
@@ -4604,6 +4610,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     comments: _danmakuComments,
                     config: PlayerScreen.danmakuTimelineConfig(s),
                     position: _positionNotifier,
+                    playing: _isPlayingNotifier,
                     speed: s.danmakuSpeed,
                     fontSizeScale: s.danmakuFontSize,
                     opacity: s.danmakuOpacity,
@@ -4612,7 +4619,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          // TopBar（渐变浮层；锁定中隐藏，仅保留左缘锁钮）
+          // TopBar（渐变浮层；锁定中隐藏，手机版锁钮在下栏）
           if (_showControls && !_lockController.locked)
             Positioned(
               top: 0,
@@ -4627,11 +4634,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          // 左缘锁/解锁钮（同位置两形态，跟随控制栏显隐；TV 无锁）
-          if (_showControls &&
-              PlayerScreen.showLockButton(
-                tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
-              ))
+          // 左缘锁/解锁钮（手机版已移入底栏左数显列；此处置留给桌面；
+          // TV 无锁）
+          if (!videoAreaPhoneControls &&
+              _showControls &&
+              PlayerScreen.showLockButton(tvMode: videoAreaTvMode))
             Positioned(
               left: 16,
               top: 0,
@@ -4762,9 +4769,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 show ? _buildVolumeBar() : const SizedBox.shrink(),
           ),
 
-          // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏）
+          // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏——手机版
+          // 例外：底栏在锁定时只保留锁钮以便解锁，见 _buildControls）
           if (_showControls &&
-              !_lockController.locked &&
+              (!_lockController.locked || videoAreaPhoneControls) &&
               (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
             Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
 
@@ -5664,6 +5672,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 手机锁定态底栏：只留锁钮（与进度条左数显同列），供解锁。
+  Widget _buildLockOnlyControls() {
+    return Focus(
+      focusNode: _controlsRootFocusNode,
+      skipTraversal: true,
+      onKeyEvent: _autoHide.onKeyEvent,
+      child: GestureDetector(
+        onTap: () {},
+        child: Container(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            10,
+            16,
+            12 + MediaQuery.of(context).padding.bottom,
+          ),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.black.withValues(alpha: 0.85),
+              ],
+            ),
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: SeekTimeLabels.cellWidth(_durationNotifier.value),
+              child: Align(
+                alignment: Alignment.center,
+                child: PlayerLockButton(
+                  locked: _lockController.locked,
+                  onToggle: _toggleScreenLock,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildControls() {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     final mobilePlatform = Platform.isAndroid || Platform.isIOS;
@@ -5671,6 +5722,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       tvMode: tvMode,
       mobilePlatform: mobilePlatform,
     );
+    final showPhoneLock =
+        phoneControls && PlayerScreen.showLockButton(tvMode: tvMode);
+    // 手机锁定态：底栏只保留锁钮（与进度条左数显同列），供解锁。
+    if (showPhoneLock && _lockController.locked) {
+      return _buildLockOnlyControls();
+    }
     // 控制条根焦点：仅作"焦点是否停留在控制条内"的判定锚点
     // （自动隐藏顺延），skipTraversal 不参与方向遍历
     return Focus(
@@ -5830,8 +5887,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ],
                 ],
 
-                // 音量/亮度滑杆（仅 Windows，替代已取消的垂直手势）
+                // 左槽：手机版锁钮（与进度条左数显同列）；Windows 音量/亮度滑杆
                 leading: [
+                  if (showPhoneLock)
+                    SizedBox(
+                      width: SeekTimeLabels.cellWidth(_durationNotifier.value),
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: PlayerLockButton(
+                          locked: _lockController.locked,
+                          onToggle: _toggleScreenLock,
+                        ),
+                      ),
+                    ),
                   if (PlayerPlatform.volumeBrightnessSliders) ...[
                     const SizedBox(width: 16),
                     _buildVolumeSlider(),

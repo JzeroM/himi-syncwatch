@@ -847,8 +847,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (movieYear != null && movieYear.isNotEmpty) {
       query.write('&year=$movieYear');
     }
-    query.write(
-        '&anim=${DetailScreen.isAnimationGenres(item.genres) ? 1 : 0}');
+    query.write('&anim=${DetailScreen.isAnimationGenres(item.genres) ? 1 : 0}');
     if (!mounted) return;
     // 从头播放：乐观清本地续播态（主控件立刻恢复默认）+ 首页立即移除该条
     if (!resume) {
@@ -1529,7 +1528,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ),
       );
       if (progress == null) return button;
+      // StackFit.passthrough：把外层（非 TV 的 Expanded）紧宽度透传给按钮，
+      // 使按钮铺满整块玻璃、内容居中、整块可点；TV 紧凑约束下仍保持固有宽。
+      // （此前默认 loose 让非定位的 FilledButton 缩成内容宽并贴左上，只有
+      //  左侧一小块可点、图标文字左偏。）
       return Stack(
+        fit: StackFit.passthrough,
         children: [
           Positioned.fill(
             child: FractionallySizedBox(
@@ -1900,8 +1904,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       child: Container(
                         color: Colors.black.withValues(alpha: 0.72),
                         // 顶部下移到返回按钮下方，避免「简介/收起」被返回控件遮挡
-                        padding: EdgeInsets.fromLTRB(
-                            16, MediaQuery.of(context).padding.top + 56, 16, 16),
+                        padding: EdgeInsets.fromLTRB(16,
+                            MediaQuery.of(context).padding.top + 56, 16, 16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [

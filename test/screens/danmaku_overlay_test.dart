@@ -16,6 +16,7 @@ Future<void> _mount(
   WidgetTester tester, {
   required List<DanmakuComment> comments,
   required ValueNotifier<Duration> position,
+  ValueNotifier<bool>? playing,
   DanmakuTimelineConfig config = const DanmakuTimelineConfig(),
   double speed = 1.0,
   double fontSizeScale = 1.0,
@@ -31,6 +32,7 @@ Future<void> _mount(
             comments: comments,
             config: config,
             position: position,
+            playing: playing ?? ValueNotifier<bool>(true),
             speed: speed,
             fontSizeScale: fontSizeScale,
             opacity: opacity,
@@ -64,6 +66,39 @@ void main() {
     await tester.pump(const Duration(seconds: 8));
     expect(find.byType(Text), findsNothing);
     position.dispose();
+  });
+
+  testWidgets('暂停冻结弹幕、恢复续滚（不跳）', (tester) async {
+    final position = ValueNotifier<Duration>(Duration.zero);
+    final playing = ValueNotifier<bool>(true);
+    await _mount(
+      tester,
+      comments: [_c(0.5, text: 'hello')],
+      position: position,
+      playing: playing,
+    );
+    // 模拟进度轮询：位置到 1s（弹幕出现窗口内）
+    position.value = const Duration(seconds: 1);
+    await tester.pump();
+    expect(find.text('hello'), findsOneWidget);
+    final xBefore = tester.getTopLeft(find.text('hello')).dx;
+
+    // 暂停：Ticker 停走 → 弹幕冻结不动
+    playing.value = false;
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    expect(tester.getTopLeft(find.text('hello')).dx, xBefore,
+        reason: '暂停期间弹幕必须冻结');
+
+    // 恢复：重锚到位置后继续向左滚动
+    playing.value = true;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.getTopLeft(find.text('hello')).dx, lessThan(xBefore),
+        reason: '恢复后弹幕继续滚动');
+
+    position.dispose();
+    playing.dispose();
   });
 
   testWidgets('seek：位置跳变后只显示目标时刻的弹幕', (tester) async {
@@ -174,8 +209,7 @@ void main() {
     position.dispose();
   });
 
-  testWidgets('滚动弹幕按屏高自动铺满，行数为上限（配置变更即时重建）',
-      (tester) async {
+  testWidgets('滚动弹幕按屏高自动铺满，行数为上限（配置变更即时重建）', (tester) async {
     final position = ValueNotifier<Duration>(Duration.zero);
     final comments = List.generate(10, (i) => _c(0, text: 'row$i'));
     await _mount(

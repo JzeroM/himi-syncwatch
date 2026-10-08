@@ -12,6 +12,7 @@ import '../../../services/danmaku/danmaku_timeline.dart';
 ///   整层不参与命中测试，不抢视频手势；
 /// - 位置源 [position]（进度轮询约 0.5s 一跳）由 Ticker 在两次跳变
 ///   间插值，seek（值突变）通过重建基准自动重对齐；
+/// - 播放/暂停源 [playing]：暂停停走 Ticker（冻结），恢复重锚续滚；
 /// - 时间轴在 comments/config/speed/宽度变化时才重建。
 class DanmakuOverlay extends StatefulWidget {
   const DanmakuOverlay({
@@ -19,6 +20,7 @@ class DanmakuOverlay extends StatefulWidget {
     required this.comments,
     required this.config,
     required this.position,
+    required this.playing,
     this.speed = 1.0,
     this.fontSizeScale = 1.0,
     this.opacity = 1.0,
@@ -32,6 +34,9 @@ class DanmakuOverlay extends StatefulWidget {
 
   /// 播放位置源（seek 时值突变，overlay 自动重对齐）。
   final ValueListenable<Duration> position;
+
+  /// 播放/暂停源：暂停时停走 Ticker（弹幕冻结），恢复时重锚续滚。
+  final ValueListenable<bool> playing;
 
   /// 速度倍率（穿屏时长 = 8s ÷ speed）。
   final double speed;
@@ -85,9 +90,10 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     _ticker = createTicker((elapsed) {
       _elapsed = elapsed;
       setState(() {});
-    })
-      ..start();
+    });
+    if (widget.playing.value) _ticker.start();
     widget.position.addListener(_onPositionChanged);
+    widget.playing.addListener(_onPlayingChanged);
   }
 
   @override
@@ -98,6 +104,11 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
       widget.position.addListener(_onPositionChanged);
       _onPositionChanged();
     }
+    if (!identical(old.playing, widget.playing)) {
+      old.playing.removeListener(_onPlayingChanged);
+      widget.playing.addListener(_onPlayingChanged);
+      _onPlayingChanged();
+    }
     if (old.fontSizeScale != widget.fontSizeScale) {
       _measureCache.clear();
     }
@@ -106,6 +117,7 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
   @override
   void dispose() {
     widget.position.removeListener(_onPositionChanged);
+    widget.playing.removeListener(_onPlayingChanged);
     _ticker.dispose();
     super.dispose();
   }
@@ -113,6 +125,21 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
   void _onPositionChanged() {
     _lastPosition = widget.position.value;
     _alignElapsed = _elapsed;
+  }
+
+  /// 播放/暂停切换：暂停停走 Ticker（冻结画面，位置不再推进）；恢复时
+  /// 重锚到最新位置再启动——`Ticker.stop()` 会清 `_startTime`，重启后
+  /// `elapsed` 从 0 计，故须同时归零 `_elapsed/_alignElapsed` 防跳。
+  void _onPlayingChanged() {
+    if (widget.playing.value) {
+      _lastPosition = widget.position.value;
+      _elapsed = Duration.zero;
+      _alignElapsed = Duration.zero;
+      if (!_ticker.isActive) _ticker.start();
+      if (mounted) setState(() {});
+    } else {
+      if (_ticker.isActive) _ticker.stop();
+    }
   }
 
   /// 当前插值播放位置 = 最近跳变值 + 对齐后的 ticker 增量。

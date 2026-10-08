@@ -2376,6 +2376,30 @@ void main() {
       expect(find.textContaining('startMs=169000'), findsOneWidget);
     });
 
+    testWidgets('继续按钮铺满半行、整块可点（点右侧也触发，图标文字居中）', (tester) async {
+      final item = resumeItem();
+      await _pumpDetailInRouter(tester, item: item);
+
+      final btn = find.ancestor(
+        of: find.text('继续 02:49'),
+        matching: find.byType(FilledButton),
+      );
+      expect(btn, findsOneWidget);
+      await tester.ensureVisible(btn);
+
+      final rect = tester.getRect(btn);
+      expect(rect.width, greaterThan(340),
+          reason: '续播按钮应铺满半行（此前 Stack loose 只占内容固有宽、贴左上）');
+
+      // 点按钮右缘附近：修复前该区域不可点（只有左侧内容块命中）
+      await tester.tapAt(Offset(rect.right - 12, rect.center.dy));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.textContaining('startMs=169000'), findsOneWidget,
+          reason: '整块按钮都应可点');
+    });
+
     testWidgets('点「从头播放」：路由不带 startMs', (tester) async {
       final item = resumeItem();
       await _pumpDetailInRouter(tester, item: item);
@@ -2513,8 +2537,7 @@ void main() {
       expect(find.byKey(const Key('playFromBeginningButton')), findsOneWidget);
     });
 
-    testWidgets('整部已观看的剧集：目标集有进度仍显示「继续」（按集判断，不被整部卡住）',
-        (tester) async {
+    testWidgets('整部已观看的剧集：目标集有进度仍显示「继续」（按集判断，不被整部卡住）', (tester) async {
       final series = MediaItem(
         id: 'sv1',
         name: '测试剧集',
@@ -2702,8 +2725,7 @@ void main() {
       expect(find.textContaining('anim=1'), findsOneWidget);
     });
 
-    testWidgets('进剧集页锁定到有进度的最大集：主控件显示继续 + 横卡滚到该卡',
-        (tester) async {
+    testWidgets('进剧集页锁定到有进度的最大集：主控件显示继续 + 横卡滚到该卡', (tester) async {
       tester.view.physicalSize = const Size(800, 1600);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -2739,8 +2761,7 @@ void main() {
         matching: find.byType(Scrollable),
       );
       final controller = tester.widget<Scrollable>(scrollable).controller!;
-      expect(controller.offset, greaterThan(0),
-          reason: '应水平滚动锁定到目标集卡');
+      expect(controller.offset, greaterThan(0), reason: '应水平滚动锁定到目标集卡');
     });
 
     testWidgets('跨季：目标集在第二季时自动切到该季并锁定', (tester) async {

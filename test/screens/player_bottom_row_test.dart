@@ -52,6 +52,23 @@ void main() {
     expect(rRight, rowLeft + 600, reason: 'trailing 贴右');
   });
 
+  testWidgets('centered=true：leading 贴左、传输组仍精确居中、trailing 贴右', (tester) async {
+    await tester.pumpWidget(_host(PlayerBottomRow(
+      centered: true,
+      transport: _transport(),
+      leading: const [SizedBox(key: _leadingKey, width: 56, height: 40)],
+      trailing: _trailing(),
+    )));
+
+    final rowLeft = tester.getTopLeft(find.byType(PlayerBottomRow)).dx;
+    final lLeft = tester.getTopLeft(find.byKey(_leadingKey)).dx;
+    final tCenter = tester.getCenter(find.byKey(_transportKey)).dx;
+    final rRight = tester.getTopRight(find.byKey(_trailingKey)).dx;
+    expect(lLeft, rowLeft, reason: 'leading 贴左（锁钮列）');
+    expect(tCenter, rowLeft + 300, reason: '两侧 Expanded 各 flex 1 → 传输组仍居中');
+    expect(rRight, rowLeft + 600, reason: 'trailing 贴右');
+  });
+
   testWidgets('centered=true：极窄容器下 trailing 缩放防溢出', (tester) async {
     await tester.pumpWidget(_host(
       PlayerBottomRow(
