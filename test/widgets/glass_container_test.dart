@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -182,6 +183,52 @@ void main() {
       );
       expect(find.byType(lg.GlassContainer), findsNothing);
       expect(find.byType(BackdropFilter), findsNothing);
+    });
+  });
+
+  group('玻璃着色按平台（iOS 更淡，尽量透）', () {
+    Color midTint(WidgetTester tester) {
+      final boxes = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>();
+      final g = boxes
+          .map((b) => b.gradient)
+          .whereType<LinearGradient>()
+          .firstWhere((g) => g.colors.length == 3);
+      return g.colors[1];
+    }
+
+    testWidgets('iOS 用更淡默认 tint（约 5%，低于 12%）', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      await tester.pumpWidget(_wrap(
+        const GlassContainer(child: Text('面板内容')),
+        const AppSettings(glassUi: true),
+      ));
+      expect(midTint(tester), GlassConfig.panelTintIos);
+      expect(GlassConfig.panelTintIos.a, lessThan(GlassConfig.panelTint.a));
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('Android 沿用原 tint（约 12%）', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      await tester.pumpWidget(_wrap(
+        const GlassContainer(child: Text('面板内容')),
+        const AppSettings(glassUi: true),
+      ));
+      expect(midTint(tester), GlassConfig.panelTint);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('调用方自定义 tint 不被平台默认覆盖', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      const custom = Color(0x55ABCDEF);
+      await tester.pumpWidget(_wrap(
+        const GlassContainer(tint: custom, child: Text('面板内容')),
+        const AppSettings(glassUi: true),
+      ));
+      expect(midTint(tester), custom);
+      debugDefaultTargetPlatformOverride = null;
     });
   });
 

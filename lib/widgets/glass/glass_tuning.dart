@@ -139,11 +139,15 @@ const List<GlassParamSpec> glassParamSpecs = [
 class GlassIosStandard {
   const GlassIosStandard._();
 
-  static const double blur = 1; // 默认 4（降雾化模糊）
+  static const double blur = 0; // 默认 4（去雾化模糊）
   static const double thickness = 22; // 默认 28（降镜片厚/白感）
-  static const double saturation = 1.5; // 默认 1.7（降饱和，去奶感）
-  static const double lightIntensity = 1.0; // 默认 1.2（降白色高光）
+  static const double saturation = 1.1; // 默认 1.7（去奶感，尽量透）
+  static const double lightIntensity = 0.5; // 默认 1.2（降白色高光）
   static const double ambientStrength = 0.0; // 环境光归零（安卓 dark 默认也是 0）
+
+  /// 玻璃体着色 alpha：clear 模式下体色透明度 = 该值，0 = 体完全透明
+  /// （仅留菲涅尔/折射边缘），背景最大透出。
+  static const double glassColorAlpha = 0.0;
 }
 
 /// 取 [key] 对应参数的默认值：iOS(standard/Impeller) 用 [GlassIosStandard]
@@ -244,7 +248,8 @@ class GlassTuning {
     // 与 3% 灰化增暗（旋钮无法触及），真正「去磨砂、变透」。
     GlassThemeVariant tune(GlassThemeVariant v) => v.copyWith(
           settings: (v.settings ?? const GlassThemeSettings()).copyWith(
-            glassColor: const Color.fromRGBO(255, 255, 255, 0.05),
+            glassColor:
+                Color.fromRGBO(255, 255, 255, GlassIosStandard.glassColorAlpha),
             ambientStrength: GlassIosStandard.ambientStrength,
             frostOpacity: 0.0,
             rimLight: 0.0,

@@ -33,6 +33,9 @@ class GlassContainer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
+    // iOS 用更淡的默认着色（自定义 tint 不覆盖）→ 背景更透。
+    final effectiveTint =
+        tint == GlassConfig.panelTint ? GlassConfig.panelTintOf() : tint;
 
     Widget content = DecoratedBox(
       decoration: BoxDecoration(
@@ -42,9 +45,9 @@ class GlassContainer extends ConsumerWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color.lerp(tint, Colors.white, 0.06)!,
-                  tint,
-                  tint.withValues(alpha: tint.a * 0.72),
+                  Color.lerp(effectiveTint, Colors.white, 0.06)!,
+                  effectiveTint,
+                  effectiveTint.withValues(alpha: effectiveTint.a * 0.72),
                 ],
               )
             : null,
@@ -110,17 +113,17 @@ class GlassBackdrop extends ConsumerWidget {
       child: lg.GlassContainer(
         shape: const lg.LiquidRoundedSuperellipse(borderRadius: 0),
         child: DecoratedBox(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [GlassConfig.barTint, GlassConfig.barTintSoft],
+              colors: [GlassConfig.barTintOf(), GlassConfig.barTintSoftOf()],
             ),
-            border: Border(
+            border: const Border(
               bottom: BorderSide(color: GlassConfig.rimColor, width: 1),
             ),
           ),
-          child: SizedBox.expand(),
+          child: const SizedBox.expand(),
         ),
       ),
     );
