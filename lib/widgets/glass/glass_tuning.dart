@@ -139,7 +139,9 @@ const List<GlassParamSpec> glassParamSpecs = [
 class GlassIosStandard {
   const GlassIosStandard._();
 
-  static const double blur = 0; // 默认 4（去雾化模糊）
+  /// [PATCH himi] 0 → 0.5：blur=0 时包内整条 BackdropFilter（模糊+饱和增强）
+  /// 被跳过，玻璃像贴纸；微量 0.5 恢复饱和增强管线（观感仍接近无模糊）。
+  static const double blur = 0.5; // 应用默认 4（去雾化模糊，仅留微量）
   static const double thickness = 22; // 默认 28（降镜片厚/白感）
   static const double saturation = 1.1; // 默认 1.7（去奶感，尽量透）
   static const double lightIntensity = 0.5; // 默认 1.2（降白色高光）
@@ -251,8 +253,9 @@ class GlassTuning {
             glassColor:
                 Color.fromRGBO(255, 255, 255, GlassIosStandard.glassColorAlpha),
             ambientStrength: GlassIosStandard.ambientStrength,
-            frostOpacity: 0.0,
-            rimLight: 0.0,
+            // [PATCH himi] 死参数清理：frostOpacity/rimLight 仅 premium 渲染
+            // 管线（liquid_glass_render.frag）读取，全平台固定 standard 路径
+            // 下写入无效，移除。
             bodyMode: GlassBodyMode.clear,
           ),
         );

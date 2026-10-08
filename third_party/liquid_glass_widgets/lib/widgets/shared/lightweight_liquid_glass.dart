@@ -770,9 +770,21 @@ class _RenderLightweightGlass extends RenderProxyBox
     if (child == null) return;
 
     if (_shader == null) {
-      final paint = Paint()
-        ..color = _settings.effectiveGlassColor.withValues(alpha: 0.15);
-      context.canvas.drawRect(offset & size, paint);
+      // [PATCH himi] B2: shader 未就绪时的兜底不再强制铺 15% 白膜 ——
+      // 尊重配置的 glassColor alpha（iOS clear 体 alpha=0 → 不画膜，否则
+      // 永久 15% 白雾盖住 iOS 透明效果；Android dark 0.08 → 8% 占位膜）。
+      // 上限 0.15 保持与旧占位感一致，防止高 alpha 主题闪白。
+      final double fallbackAlpha = _settings.effectiveGlassColor.a.clamp(
+        0.0,
+        0.15,
+      );
+      if (fallbackAlpha > 0) {
+        final paint = Paint()
+          ..color = _settings.effectiveGlassColor.withValues(
+            alpha: fallbackAlpha,
+          );
+        context.canvas.drawRect(offset & size, paint);
+      }
       super.paint(context, offset);
       return;
     }

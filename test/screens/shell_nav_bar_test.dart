@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -94,6 +95,20 @@ Finder _expandedRect(WidgetTester tester) {
       (w) => w is Positioned && w.top != null && w.top! <= -6.0,
     ),
   );
+}
+
+/// 拖动到镜片挂载（活动量拉满），返回挂载的 [GlassEffect]。
+Future<GlassEffect> _dragToLens(WidgetTester tester) async {
+  final nav = tester.getRect(find.byType(ShellNavBar));
+  final gesture = await tester.startGesture(
+    Offset(nav.left + 80, nav.center.dy),
+  );
+  await tester.pump(const Duration(milliseconds: 600));
+  await tester.pump(const Duration(milliseconds: 450));
+  final effect = tester.widget<GlassEffect>(find.byType(GlassEffect));
+  await gesture.up();
+  await tester.pumpAndSettle();
+  return effect;
 }
 
 void main() {
@@ -362,6 +377,36 @@ void main() {
     expect(effect.edgeZone, 23, reason: '透传到 GlassEffect → shader uEdgeZone');
     await gesture.up();
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('[PATCH himi] B1 iOS 乘数 0.08/0.15（捕获态更透）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    try {
+      await _pumpNav(tester, onSelect: (_) {});
+      final effect = await _dragToLens(tester);
+      expect(effect.baseAlphaMultiplier, 0.08,
+          reason: 'iOS 捕获态体 alpha = 0.70×(0.08/0.2) = 0.28');
+      expect(effect.edgeAlphaMultiplier, 0.15,
+          reason: 'iOS 捕获态边缘 alpha = 0.88×(0.15/0.28) ≈ 0.47');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('[PATCH himi] B1 Android 乘数 0.2/0.4（观感与旧硬编码一致）', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await _pumpNav(tester, onSelect: (_) {});
+      final effect = await _dragToLens(tester);
+      expect(effect.baseAlphaMultiplier, 0.2,
+          reason: 'Android scale=0.2/0.2=1 → 捕获态仍 0.70');
+      expect(effect.edgeAlphaMultiplier, 0.4,
+          reason: 'Android scale=clamp(0.4/0.28,1)=1 → 捕获态仍 0.88');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('静止实心无边框，拖动中镜片挂载并外扩超出胶囊 6px，松手回落恢复', (

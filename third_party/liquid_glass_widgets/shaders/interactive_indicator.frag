@@ -444,15 +444,20 @@ void main() {
   // Standard mode: Provide a solid glassy body even at rest (Intensity 0), 
   // boosting it slightly when pressed.
   float standardBaseAlpha = uBaseAlphaMultiplier * mix(0.6, 1.0, uInteractionIntensity);
-  // Restore original 0.70 when background is enabled — clear glass is translucent, not frosted.
-  float baseAlpha = (uHasBackground > 0.5) ? 0.70 : standardBaseAlpha;
+  // [PATCH himi] B1: 捕获态不再硬编码 0.70/0.88 而无视乘数 —— 改为按
+  // 「当前乘数 / 包默认乘数」的比例缩放（base 默认 0.2，edge 默认 0.4×0.7
+  // 标准归一化 = 0.28）。默认乘数下 scale=1 → 观感与旧硬编码完全一致；
+  // iOS 传 0.08/0.15 → 0.28/0.47 显著更透（捕获态白雾是「不够透」主因）。
+  float capturedBaseAlpha = 0.70 * clamp(uBaseAlphaMultiplier / 0.2, 0.0, 1.0);
+  float capturedEdgeAlpha = 0.88 * clamp(uEdgeAlphaMultiplier / 0.28, 0.0, 1.0);
+  float baseAlpha = (uHasBackground > 0.5) ? capturedBaseAlpha : standardBaseAlpha;
   
   // TWEAK: edgeAlpha - edge opacity (higher = more solid edges)
   // Standard mode: Keep a strong structural rim at rest to match 3D bevel.
   float standardEdgeAlpha = uEdgeAlphaMultiplier * mix(0.6, 1.0, uInteractionIntensity);
   // [PATCH himi] 0.95 → 0.88: 边缘不再近乎实心 —— 边框感弱化，
   // 内容透过镜片边缘依旧可见（参考图气泡无硬边框）。
-  float edgeAlpha = (uHasBackground > 0.5) ? 0.88 : standardEdgeAlpha;
+  float edgeAlpha = (uHasBackground > 0.5) ? capturedEdgeAlpha : standardEdgeAlpha;
   
   // Blend from center to edge
   float glassAlpha = mix(baseAlpha, edgeAlpha, edgeInfluence);
