@@ -12,6 +12,7 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/egl_fault_detector.dart';
+import 'package:himi_syncwatch/services/app_icon_service.dart';
 import 'package:himi_syncwatch/services/fvp_options.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/tv_detection_service.dart';
@@ -198,6 +199,12 @@ Future<void> _bootstrap() async {
       child: const HimiSyncApp(),
     ),
   );
+
+  // 应用图标启动自愈：已存设置与系统当前图标不一致时重应用
+  // （首帧后执行，确保插件 Activity 已附着）。
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(AppIconService.syncOnStart(settingsNotifier.snapshot.appIcon));
+  });
 }
 
 void main() async {

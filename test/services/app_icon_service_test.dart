@@ -80,4 +80,30 @@ void main() {
       expect(AppIconService.idFromPlatformName('zzz'), isNull);
     });
   });
+
+  group('blacklistArgs（Android 立即分支：设备自身命中）', () {
+    test('有设备标识 → 用自身值（品牌/厂商/型号）', () {
+      final a = AppIconService.blacklistArgs(
+        brand: 'Redmi',
+        manufacturer: 'Xiaomi',
+        model: '23127PN0CC',
+      );
+      expect(a.brands, ['Redmi']);
+      expect(a.manufactures, ['Xiaomi']);
+      expect(a.models, ['23127PN0CC']);
+    });
+
+    test('空标识被忽略；全空兜底小米/红米', () {
+      final partial =
+          AppIconService.blacklistArgs(manufacturer: 'Xiaomi', brand: ' ');
+      expect(partial.manufactures, ['Xiaomi']);
+      expect(partial.brands, isEmpty);
+      expect(partial.models, isEmpty);
+
+      final empty = AppIconService.blacklistArgs();
+      expect(empty.manufactures, ['Xiaomi']);
+      expect(empty.brands, ['Redmi']);
+      expect(empty.models, isEmpty);
+    });
+  });
 }

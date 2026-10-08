@@ -1,3 +1,4 @@
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dynamic_icon_plus/flutter_dynamic_icon_plus.dart';
 
@@ -97,11 +98,86 @@ class AppIconService {
     }
   }
 
+  /// 本机标识读取（测试可注入替身，避免依赖 device_info 平台通道）。
+  @visibleForTesting
+  static Future<
+          ({
+            List<String> brands,
+            List<String> manufactures,
+            List<String> models
+          })>
+      Function() deviceBlacklistLoader = loadDeviceBlacklist;
+
   /// 应用图标（id=null 还原默认）。失败抛出，由调用方提示。
+  ///
+  /// Android：把本机厂商/品牌/型号作为「黑名单」传入 —— 与自身恒匹配，
+  /// 插件 `containsOnBlacklist` 命中 → 走**立即** `changeAppIcon`（组件启停
+  /// 当场生效），否则插件只起 Service、要等应用被划掉才生效（小米/MIUI
+  /// 尤甚，插件文档点名）。
   static Future<void> apply(String? id) async {
     if (!isSupported) return;
+    if (_isAndroid) {
+      final blacklist = await deviceBlacklistLoader();
+      await FlutterDynamicIconPlus.setAlternateIconName(
+        iconName: platformIconName(id),
+        blacklistBrands: blacklist.brands,
+        blacklistManufactures: blacklist.manufactures,
+        blacklistModels: blacklist.models,
+      );
+      return;
+    }
     await FlutterDynamicIconPlus.setAlternateIconName(
       iconName: platformIconName(id),
+    );
+  }
+
+  /// 启动自愈：已存设置与系统当前图标不一致时重新应用（Android/iOS）。
+  static Future<void> syncOnStart(String? desiredId) async {
+    if (!isSupported) return;
+    try {
+      final current = await currentId();
+      if (current != desiredId) await apply(desiredId);
+    } catch (_) {}
+  }
+
+  /// 读取本机标识构造黑名单（与设备自身恒匹配 → 强制立即分支）。
+  static Future<
+      ({
+        List<String> brands,
+        List<String> manufactures,
+        List<String> models
+      })> loadDeviceBlacklist() async {
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      return blacklistArgs(
+        brand: info.brand,
+        manufacturer: info.manufacturer,
+        model: info.model,
+      );
+    } catch (_) {
+      return blacklistArgs();
+    }
+  }
+
+  /// 黑名单参数构造（纯函数，便于单测）：任一标识非空即用自身命中；
+  /// 全空时兜底小米/红米（最常见的问题厂商）。
+  @visibleForTesting
+  static ({List<String> brands, List<String> manufactures, List<String> models})
+      blacklistArgs({String? brand, String? manufacturer, String? model}) {
+    final b = (brand ?? '').trim();
+    final m = (manufacturer ?? '').trim();
+    final mo = (model ?? '').trim();
+    if (b.isEmpty && m.isEmpty && mo.isEmpty) {
+      return (
+        brands: const ['Redmi'],
+        manufactures: const ['Xiaomi'],
+        models: const <String>[],
+      );
+    }
+    return (
+      brands: [if (b.isNotEmpty) b],
+      manufactures: [if (m.isNotEmpty) m],
+      models: [if (mo.isNotEmpty) mo],
     );
   }
 }
