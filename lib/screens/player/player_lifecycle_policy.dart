@@ -1,59 +1,36 @@
 import 'package:flutter/widgets.dart';
 
-/// 进入后台/熄屏时应执行的视频输出动作。
-enum PlayerBackgroundAction {
+/// 回前台/亮屏后应执行的视频输出恢复动作。
+enum PlayerResumeAction {
   /// 无需处理（SurfaceView 档由 platform view 自愈）。
   none,
 
-  /// 纹理/直通档：**趁 surface 尚在主动解绑** mdk 渲染 surface，
-  /// 避免引擎停止消费后渲染线程在写满的缓冲队列上 wedge。
-  releaseSurface,
-}
-
-/// 回前台/亮屏后应执行的视频输出恢复动作。
-enum PlayerResumeAction {
-  /// 无需处理。
-  none,
-
-  /// 纹理/直通档：引擎 EGL 上下文重建后旧 external texture 失效，
-  /// 释放并按当前档位重建纹理（重新 nativeSetSurface 绑定）。
-  recreateTexture,
-
-  /// SurfaceView 档：platform view 自行 surfaceCreated 重绑，仅补一帧。
-  pulseSurface,
+  /// 纹理/直通档：熄屏/切后台后 mdk 的解码/渲染管线已停死，仅重建
+  /// external texture 无法重启它（实测：纹理换新但仍无 缓冲/解码器 事件）。
+  /// 需按当前进度**重载当前流**重建整条管线。
+  reprime,
 }
 
 /// 播放器应用生命周期策略（纯 Dart，便于单测）。
 ///
-/// 熄屏与切后台走同一条 `inactive → paused → resumed` 事件链：引擎销毁
-/// 并重建 EGL/Surface 上下文。纹理档（Android Skia 的 SurfaceTexture、
-/// iOS 纹理）没有 fvp 的 surface 生命周期回调，旧 SurfaceTexture 失效后
-/// mdk 仍渲染到已 detach 的 Surface → 画面定格；暂停态最后一帧丢失且无
-/// 新帧 → 黑屏。故回前台时按输出档位决定恢复动作。
+/// 熄屏与切后台走同一条 `inactive → paused → resumed` 事件链。纹理/直通档
+/// （Android Skia 的 SurfaceTexture、iOS 纹理）在后台时 mdk 原生管线停死，
+/// 回前台必须重载当前流才能恢复；SurfaceView 档由 platform view 的
+/// surfaceDestroyed/surfaceCreated 自愈。
 class PlayerLifecyclePolicy {
   const PlayerLifecyclePolicy._();
 
   /// 进入后台/熄屏（需在回前台时恢复输出）。
   ///
   /// 仅取 `paused`/`hidden`：`inactive` 会因系统弹窗、通知栏下拉、
-  /// 分屏失焦等**瞬时**原因触发（此时 EGL/Surface 未销毁），若也在此时
-  /// 重建纹理会造成不必要的闪烁；而熄屏与切后台必定到达 `paused`。
+  /// 分屏失焦等**瞬时**原因触发（此时管线未停死），若也在此时重载会
+  /// 造成不必要的闪烁；而熄屏与切后台必定到达 `paused`。
   static bool enterBackground(AppLifecycleState state) =>
       state == AppLifecycleState.paused || state == AppLifecycleState.hidden;
 
   /// 回前台（resumed）后应执行的视频输出恢复动作。
   static PlayerResumeAction resumeAction(String output) =>
       output == 'surfaceView'
-          ? PlayerResumeAction.pulseSurface
-          : PlayerResumeAction.recreateTexture;
-
-  /// 进入后台/熄屏时应执行的视频输出动作。
-  ///
-  /// 纹理/直通档必须**提前**解绑（见 [PlayerBackgroundAction.releaseSurface]）；
-  /// SurfaceView 档由 platform view 的 surfaceDestroyed/surfaceCreated 自愈，
-  /// 主动解绑反而破坏其重绑时序，故 [PlayerBackgroundAction.none]。
-  static PlayerBackgroundAction backgroundAction(String output) =>
-      output == 'surfaceView'
-          ? PlayerBackgroundAction.none
-          : PlayerBackgroundAction.releaseSurface;
+          ? PlayerResumeAction.none
+          : PlayerResumeAction.reprime;
 }

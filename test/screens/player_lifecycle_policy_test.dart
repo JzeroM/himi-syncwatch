@@ -11,7 +11,7 @@ void main() {
           isTrue);
     });
 
-    test('inactive/resumed/detached 不算进入后台（瞬时失焦不重建）', () {
+    test('inactive/resumed/detached 不算进入后台（瞬时失焦不重载）', () {
       expect(PlayerLifecyclePolicy.enterBackground(AppLifecycleState.inactive),
           isFalse);
       expect(PlayerLifecyclePolicy.enterBackground(AppLifecycleState.resumed),
@@ -22,30 +22,16 @@ void main() {
   });
 
   group('PlayerLifecyclePolicy.resumeAction', () {
-    test('纹理/直通档 → 重建纹理', () {
+    test('纹理/直通档 → 重载当前流重建管线', () {
       expect(PlayerLifecyclePolicy.resumeAction('texture'),
-          PlayerResumeAction.recreateTexture);
+          PlayerResumeAction.reprime);
       expect(PlayerLifecyclePolicy.resumeAction('tunnel'),
-          PlayerResumeAction.recreateTexture);
+          PlayerResumeAction.reprime);
     });
 
-    test('SurfaceView 档 → 仅补帧（platform view 自行重绑）', () {
+    test('SurfaceView 档 → 不处理（platform view 自愈）', () {
       expect(PlayerLifecyclePolicy.resumeAction('surfaceView'),
-          PlayerResumeAction.pulseSurface);
-    });
-  });
-
-  group('PlayerLifecyclePolicy.backgroundAction', () {
-    test('纹理/直通档 → 进后台主动解绑（防 wedge）', () {
-      expect(PlayerLifecyclePolicy.backgroundAction('texture'),
-          PlayerBackgroundAction.releaseSurface);
-      expect(PlayerLifecyclePolicy.backgroundAction('tunnel'),
-          PlayerBackgroundAction.releaseSurface);
-    });
-
-    test('SurfaceView 档 → 不动（platform view 自愈）', () {
-      expect(PlayerLifecyclePolicy.backgroundAction('surfaceView'),
-          PlayerBackgroundAction.none);
+          PlayerResumeAction.none);
     });
   });
 }

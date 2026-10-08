@@ -4042,8 +4042,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       unawaited(_reportProgress());
     }
     // 熄屏/切后台（同一条事件链）：记录状态，回前台时统一恢复视频输出。
-    // 引擎重建 EGL/Surface 上下文后，纹理档旧 external texture 失效会
-    // 定格/黑屏（SurfaceView 档由 platform view 自愈）。
+    // 实测（himi_logs）：纹理档在后台后 mdk 原生管线停死，仅换纹理无法
+    // 重启，回前台须按当前进度重载当前流（SurfaceView 档由 platform view 自愈）。
     if (PlayerLifecyclePolicy.enterBackground(state)) {
       if (!_appBackgrounded) {
         _appBackgrounded = true;
@@ -4051,7 +4051,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _isPlayerReady && _player.state == mdk.PlaybackState.playing;
         LogService().log('Player',
             '进入后台/熄屏: output=${_effectiveVideoOutput()} wasPlaying=$_wasPlayingBeforeBackground');
-        _releaseVideoSurfaceForBackground();
       }
     } else if (state == AppLifecycleState.resumed && _appBackgrounded) {
       _appBackgrounded = false;
@@ -4059,79 +4058,58 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  /// 进入后台/熄屏：趁 surface 尚在**主动解绑**纹理/直通档的渲染 surface，
-  /// 避免引擎停止消费 external texture 后 mdk 渲染线程在写满的缓冲队列上
-  /// wedge（wedge 后回前台重建纹理也解不开，只能整条管线重启）。
-  /// SurfaceView 档不动（platform view 自行 surfaceDestroyed 重绑）。
-  /// 保留音频：仅解绑视频输出，不改变播放状态。
-  void _releaseVideoSurfaceForBackground() {
-    if (!_isPlayerReady) return;
-    final action =
-        PlayerLifecyclePolicy.backgroundAction(_effectiveVideoOutput());
-    if (action != PlayerBackgroundAction.releaseSurface) return;
-    LogService().log('Player', '进后台主动解绑视频 surface（防 wedge，保留音频）');
-    _textureOutputApplied = null;
-    unawaited(
-      _player
-          .updateTexture(width: -1)
-          .timeout(const Duration(seconds: 3))
-          .then<void>((_) {}, onError: (Object e) {
-        LogService().log('Player', '进后台解绑视频 surface 失败: $e');
-      }),
-    );
-  }
-
   /// 回前台/亮屏后恢复视频输出：
-  /// - 纹理/直通档：释放并重建 external texture（重新 nativeSetSurface
-  ///   绑定到引擎新建的上下文），根治「画面定格 / 暂停黑屏」；
-  /// - SurfaceView 档：platform view 已自行重绑，仅补一帧；
-  /// - 暂停态重建后的纹理为空时补画当前帧；
-  /// - 还原熄屏/切后台前的播放状态。
+  /// - 纹理/直通档：mdk 的解码/渲染管线在后台停死，按当前进度**重载当前
+  ///   流**重建整条管线（复用已验证可用的加载路径）；
+  /// - SurfaceView 档：platform view 自行重绑，不处理；
+  /// - 按熄屏前状态还原：在播则播、暂停则回到暂停帧。
   Future<void> _recoverVideoAfterResume() async {
     if (!mounted || _recoveringVideo) return;
     if (!_isPlayerReady) return;
+    final action = PlayerLifecyclePolicy.resumeAction(_effectiveVideoOutput());
+    if (action != PlayerResumeAction.reprime) return;
+    if (_currentPlayUrl.isEmpty) return;
     _recoveringVideo = true;
+    final posMs = _position.inMilliseconds;
     final wasPlaying = _wasPlayingBeforeBackground;
     try {
-      final action =
-          PlayerLifecyclePolicy.resumeAction(_effectiveVideoOutput());
       LogService()
-          .log('Player', '回前台恢复视频输出: action=$action wasPlaying=$wasPlaying');
-      if (action == PlayerResumeAction.recreateTexture) {
-        // 释放旧纹理 → 以当前档位重建（updateTexture 内部 release+CreateRT）。
-        // 进后台已主动解绑过时 textureId 为 null，此处的释放是兜底。
-        _textureOutputApplied = null;
-        try {
-          await _player
-              .updateTexture(width: -1)
-              .timeout(const Duration(seconds: 3));
-        } catch (_) {}
-        if (!mounted) return;
-        await _ensureTexture();
-        if (!mounted) return;
+          .log('Player', '回前台重载当前流恢复管线: pos=$posMs wasPlaying=$wasPlaying');
+      // 房间观众：走同步播放重载（内部自行起播/seek）
+      if (widget.roomCode != null && !_isHost) {
+        _playFromUrl(
+          playUrl: _currentPlayUrl,
+          token: _currentToken,
+          position: posMs / 1000.0,
+          epIndex: _currentEpisodeIndex >= 0 ? _currentEpisodeIndex : null,
+        );
+        return;
       }
-      // 暂停态：重建后的纹理为空，精确 seek 到当前帧强制解码出画（根治黑屏）；
-      // 播放态随即由 mdk 续帧，无需 seek。
+      // 单人 / 房主：走已验证的加载路径（重载会重新起播）
+      if (_hasEpisodeList && _currentEpisodeIndex >= 0) {
+        await _loadEpisodeStream(_currentEpisodeIndex, startMs: posMs);
+      } else {
+        await _loadStream(startMs: posMs);
+      }
+      if (!mounted) return;
+      // 暂停态：重载默认会起播，需还原暂停并精确出帧
       if (!wasPlaying) {
+        _player.state = mdk.PlaybackState.paused;
         try {
           await _player.seek(
-            position: _player.position,
+            position: posMs,
             flags: mdk.SeekFlag(mdk.SeekFlag.frame),
           );
         } catch (_) {}
+        try {
+          _player.renderVideo();
+        } catch (_) {}
+        _position = Duration(milliseconds: posMs);
+        _positionNotifier.value = _position;
+        _syncPlayState();
       }
-      // 补一帧：暂停态纹理为空会黑屏；播放态随即由 mdk 续帧。
-      try {
-        _player.renderVideo();
-      } catch (_) {}
-      // 仅在「原本在播且 mdk 已被后台暂停」时恢复播放，避免覆盖已结束
-      // 或已切集的状态。
-      if (wasPlaying && _player.state == mdk.PlaybackState.paused) {
-        _player.state = mdk.PlaybackState.playing;
-      }
-      _syncPlayState();
     } catch (e) {
-      LogService().log('Player', '回前台恢复视频输出失败: $e');
+      LogService().log('Player', '回前台重载恢复失败: $e');
     } finally {
       _recoveringVideo = false;
     }
