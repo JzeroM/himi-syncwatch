@@ -75,6 +75,9 @@ String videoOutputDescription(String output) {
   switch (output) {
     case 'tunnel':
       return '解码器直写纹理，绕过 mdk GL 渲染（画面异常时尝试）';
+    case 'surfaceViewDirect':
+      return '独立显示层 + 解码器直写，最省性能（4K HDR 卡顿时首选）；'
+          'HDR 颜色交系统处理，不支持 mdk 截图';
     case 'surfaceView':
       return '独立显示层，绕过 Flutter 合成，TV 全分辨率输出（TV 默认）';
     case 'texture':

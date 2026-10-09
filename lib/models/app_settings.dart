@@ -69,6 +69,8 @@ class AppSettings {
   /// 'texture'      — Flutter 纹理（默认，mdk GL 渲染 → SurfaceTexture → Flutter 合成）
   /// 'tunnel'       — 纹理+直通（解码器直写 SurfaceTexture，绕过 mdk GL 渲染器）
   /// 'surfaceView'  — SurfaceView platform view（绕过 Flutter 合成，TV 全分辨率扫描输出）
+  /// 'surfaceViewDirect' — SurfaceView 直写（解码器直写 ANativeWindow，绕开
+  ///                  mdk GL 与 Flutter 纹理，4K HDR 高负载下最省）
   final String videoOutput;
 
   /// 用户是否手动设置过视频输出（设置过则 EGL 故障归一不再覆盖
@@ -387,7 +389,7 @@ class AppSettings {
       // 外部写成 double，统一转 int
       categoryColumns: (json['categoryColumns'] as num?)?.toInt(),
       // 旧数据无此字段 / 非法值 → 默认纹理通道
-      videoOutput: const ['texture', 'tunnel', 'surfaceView']
+      videoOutput: const ['texture', 'tunnel', 'surfaceView', 'surfaceViewDirect']
               .contains(json['videoOutput'])
           ? json['videoOutput'] as String
           : 'texture',
@@ -461,7 +463,12 @@ class AppSettings {
     'texture': '纹理',
     'tunnel': '纹理+直通',
     'surfaceView': 'SurfaceView',
+    'surfaceViewDirect': 'SurfaceView 直写',
   };
+
+  /// SurfaceView 系列档位（载体=SurfaceView）：普通档与直写档。
+  static bool isSurfaceViewMode(String output) =>
+      output == 'surfaceView' || output == 'surfaceViewDirect';
 
   /// 生效的视频输出通道：tunnel（AMediaCodec sideband）与 SurfaceView
   /// 均为 Android 专属能力，其余平台固定纹理通道；设置项也只在
@@ -502,8 +509,12 @@ class AppSettings {
   }
 
   /// 是否走 fvp/video-view platform view（SurfaceView）通道。
-  bool get usesSurfaceView =>
-      effectiveVideoOutput(videoOutput) == 'surfaceView';
+  bool get usesSurfaceView => isSurfaceViewMode(effectiveVideoOutput(videoOutput));
+
+  /// 是否强制解码器直写 SurfaceView（真·零 Flutter 纹理/零 GL）。仅在
+  /// Android 生效（其余平台 effectiveVideoOutput 归一为 texture）。
+  bool get surfaceViewDirect =>
+      effectiveVideoOutput(videoOutput) == 'surfaceViewDirect';
 
   /// 纹理通道是否启用解码器直通（tunnel）。
   bool get textureTunnel => effectiveVideoOutput(videoOutput) == 'tunnel';

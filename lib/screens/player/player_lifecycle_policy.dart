@@ -30,7 +30,7 @@ class PlayerLifecyclePolicy {
 
   /// 回前台（resumed）后应执行的视频输出恢复动作。
   static PlayerResumeAction resumeAction(String output) =>
-      output == 'surfaceView'
+      (output == 'surfaceView' || output == 'surfaceViewDirect')
           ? PlayerResumeAction.none
           : PlayerResumeAction.reprime;
 }

@@ -245,10 +245,51 @@ class PlayerScreen extends ConsumerStatefulWidget {
     required Size? oldSize,
     required Size? newSize,
   }) =>
-      output == 'surfaceView' &&
+      AppSettings.isSurfaceViewMode(output) &&
       oldSize != null &&
       newSize != null &&
       oldSize != newSize;
+
+  /// 自动渲染目标尺寸（Track 1，纯逻辑便于单测）。
+  ///
+  /// 手机/TV 统一：把 mdk 的渲染目标从「视频原始分辨率」夹到「屏幕实际
+  /// 显示尺寸 × 设备像素比」，按视频宽高比换算，且**不超过视频原始**
+  /// （源比屏幕小则不放大）。夹紧只降低 mdk 渲染 + Flutter 纹理采样负载，
+  /// 颜色/比例不变。
+  ///
+  /// 返回 [videoSize] 表示无需夹紧（屏幕已达/超过源分辨率）；返回 null
+  /// 表示视频尺寸未知（调用方回退原始分辨率）。
+  @visibleForTesting
+  static Size? computeRenderTarget({
+    required Size displayLogical,
+    required double devicePixelRatio,
+    required Size videoSize,
+    double minSide = 360,
+  }) {
+    if (videoSize.width <= 0 || videoSize.height <= 0) return null;
+    if (displayLogical.width <= 0 || displayLogical.height <= 0) return null;
+    if (devicePixelRatio <= 0) return null;
+    final aspect = videoSize.width / videoSize.height;
+    // contain：视频在屏幕内的逻辑显示尺寸
+    var dw = displayLogical.width;
+    var dh = dw / aspect;
+    if (dh > displayLogical.height) {
+      dh = displayLogical.height;
+      dw = dh * aspect;
+    }
+    // 逻辑显示尺寸 → 物理像素
+    var pw = dw * devicePixelRatio;
+    var ph = dh * devicePixelRatio;
+    // 不放大超过原始分辨率
+    if (pw >= videoSize.width || ph >= videoSize.height) return videoSize;
+    // 下限：避免夹得过小（仍不超过原始）
+    if (pw < minSide) {
+      pw = minSide;
+      ph = pw / aspect;
+      if (pw >= videoSize.width) return videoSize;
+    }
+    return Size(pw.roundToDouble(), ph.roundToDouble());
+  }
 
   /// 进入播放器的初始控制条设置：
   /// - 全模式启动自动隐藏计时（此前初进无人调 `_resetHideTimer`，控件
@@ -544,6 +585,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 纹理通道实际创建时的档位（'texture'/'tunnel'）；
   /// 设置切换后据此决定是否重建纹理。
   String? _textureOutputApplied;
+
+  /// [_ensureTexture] 串行化：进行中标记 + 尾随重跑标记（并发变化只收口最新）。
+  bool _ensureTextureBusy = false;
+  bool _ensureTextureQueued = false;
 
   /// 截帧取证结果（面板展示，null = 未截过）。
   String? _snapshotInfo;
@@ -1633,6 +1678,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _videoNativeSize = size;
     });
     _applyVideoAvfilter(size);
+    // Track 1：尺寸就绪后按自动渲染目标重建纹理（首次可能以原始尺寸建过）
+    if (!_usesSurfaceView) unawaited(_ensureTexture());
   }
 
   /// 尺寸未就绪时 1 秒后重试（最多 10 次）：覆盖 decoder.video /
@@ -1651,7 +1698,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// setDecoders(surface) 在此重开解码器）后再起播。
   /// 非 SurfaceView 档立即返回 true。
   Future<bool> _waitSurfaceCreated() async {
-    if (_effectiveVideoOutput() != 'surfaceView') return true;
+    if (!_usesSurfaceView) return true;
     return PlayerScreen.waitUntil(() => _surfaceViewCreated || !mounted);
   }
 
@@ -1666,7 +1713,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 同分辨率切集**不走这里**——view 全程复用（v1.1.82 根修：迟到
   /// surface + EGL 上下文重建会让 mdk renderer 永久丢帧、画面定格）。
   Future<bool> _remountSurfaceView({Size? applySize}) async {
-    if (!mounted || _effectiveVideoOutput() != 'surfaceView') return true;
+    if (!mounted || !_usesSurfaceView) return true;
     LogService()
         .log('Diag', 'surface 两阶段重建: detach (epoch=$_videoSurfaceEpoch)');
     setState(() {
@@ -1751,10 +1798,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 当前档位是否走 SurfaceView 平台视图通道（普通档或直写档）。
+  bool get _usesSurfaceView =>
+      AppSettings.isSurfaceViewMode(_effectiveVideoOutput());
+
+  /// SurfaceView 直写档：解码器直写 SurfaceView 的 ANativeWindow，绕开
+  /// mdk GL 渲染器与 Flutter 纹理合成（4K HDR 高负载下最省的路径）。
+  bool get _surfaceViewDirect =>
+      _effectiveVideoOutput() == 'surfaceViewDirect';
+
   /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
   /// 媒体信息拿到视频尺寸即就绪。
   bool _videoOutputReady() {
-    if (_effectiveVideoOutput() == 'surfaceView') {
+    if (_usesSurfaceView) {
       // textureSize 可能仍在超时等待中：mediaInfo 已有有效尺寸即视为
       // 可起播（观众路径据此决定 state=playing，不能卡到尺寸 future）
       return _videoNativeSize != null || _readMediaInfoVideoSize() != null;
@@ -1807,7 +1863,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // tunnel 参数变化（tunnel: eglFaultDetector.fault 进 surfaceKey）
     // 会让 view key 失配：两阶段重建让 destroy 先落定再挂直写参数，
     // 防同帧拆建竞态（EGL 翻转是播放中唯一会改 key 的路径）。
-    if (_effectiveVideoOutput() == 'surfaceView' &&
+    if (_usesSurfaceView &&
         _videoNativeSize != null &&
         !_surfaceDetached) {
       unawaited(_remountSurfaceView());
@@ -1846,7 +1902,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     LogService().log('Player', '视频输出档位切换 → $mode');
     // 档位切换销毁/重建 platform view：绑定标志复位，下次起播重新等待
     _surfaceViewCreated = false;
-    if (mode == 'surfaceView') {
+    if (_usesSurfaceView) {
       if (_player.textureId.value != null) {
         try {
           await _player
@@ -1865,24 +1921,70 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) setState(() {});
   }
 
+  /// 当前视频输出档位下，纹理/SurfaceView 是否应夹紧到 [PlayerScreen.computeRenderTarget]。
+  ///
+  /// tunnel（解码器直写纹理）与 SurfaceView 直写档忽略尺寸（fvp 语义），
+  /// 保持原始分辨率。
+  bool get _renderTargetApplies {
+    final mode = _effectiveVideoOutput();
+    return mode != 'tunnel' && mode != 'surfaceViewDirect';
+  }
+
+  /// 计算当前应使用的夹紧渲染尺寸；无需夹紧/尺寸未知时返回 null。
+  Size? _renderTargetSize() {
+    if (!_renderTargetApplies) return null;
+    final videoSize = _videoNativeSize;
+    if (videoSize == null) return null;
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return null;
+    final target = PlayerScreen.computeRenderTarget(
+      displayLogical: mq.size,
+      devicePixelRatio: mq.devicePixelRatio,
+      videoSize: videoSize,
+    );
+    if (target == null) return null;
+    if (target.width >= videoSize.width || target.height >= videoSize.height) {
+      return null;
+    }
+    return target;
+  }
+
   /// 确保纹理存在：首次播放时创建，后续复用现有纹理避免黑屏
   ///
   /// 按设置档位区分：
   /// - 'texture' / 'tunnel'：创建（或在 tunnel 档位变化时重建）纹理，
   ///   tunnel 档位走 updateTexture(tunnel: true)——解码器直写
-  ///   SurfaceTexture，绕过 mdk GL 渲染器；
-  /// - 'surfaceView'：不创建纹理，反向释放已存在的纹理（platform
-  ///   view 通道由 _buildVideoArea 构建 fvp/video-view）。
+  ///   SurfaceTexture，绕过 mdk GL 渲染器；Track 1 自动夹紧渲染尺寸；
+  /// - 'surfaceView' / 'surfaceViewDirect'：不创建纹理，反向释放已存在
+  ///   的纹理（platform view 通道由 _buildVideoArea 构建 fvp/video-view）。
   ///
   /// 落盘 updateTexture 返回值/textureId/textureSize/视频流数：
   /// iOS 曾出现「无画面」，纹理链路是否走通全靠这行取证——
   /// 返回 -1 表示 fvp 内部 _videoSize 未就绪（媒体未 loaded 或
   /// 视频流为空），此时纹理恒为 null，UI 永远转圈。
+  ///
+  /// 串行化：并发的档位/尺寸变化只保留最新一次收口，避免同刻两次重建。
   Future<void> _ensureTexture() async {
+    if (_ensureTextureBusy) {
+      _ensureTextureQueued = true;
+      return;
+    }
+    _ensureTextureBusy = true;
+    try {
+      do {
+        _ensureTextureQueued = false;
+        await _ensureTextureOnce();
+      } while (_ensureTextureQueued && mounted);
+    } finally {
+      _ensureTextureBusy = false;
+    }
+  }
+
+  Future<void> _ensureTextureOnce() async {
     if (!mounted) return;
     final mode = _effectiveVideoOutput();
 
-    if (mode == 'surfaceView') {
+    if (_usesSurfaceView) {
       if (_player.textureId.value != null) {
         try {
           await _player
@@ -1896,10 +1998,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     final tunnel = mode == 'tunnel';
+    // Track 1：自动夹紧渲染目标（tunnel 不适用 → null 保持原始）
+    final target = _renderTargetSize();
+    final applyKey = '$mode@${target?.width.toInt() ?? 0}x${target?.height.toInt() ?? 0}';
     if (_player.textureId.value != null) {
-      if (_textureOutputApplied == mode) return;
-      // 档位（tunnel 开关）变化：释放旧纹理后按新参数重建
-      LogService().log('Player', '纹理档位 $_textureOutputApplied → $mode，重建纹理');
+      if (_textureOutputApplied == applyKey) return;
+      // 档位（tunnel 开关）/渲染尺寸变化：释放旧纹理后按新参数重建
+      LogService()
+          .log('Player', '纹理档位 $_textureOutputApplied → $applyKey，重建纹理');
       try {
         await _player
             .updateTexture(width: -1)
@@ -1908,28 +2014,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _textureOutputApplied = null;
     }
     if (!mounted) return;
+    Future<int> createTexture() => _player
+        .updateTexture(
+          width: target?.width.toInt(),
+          height: target?.height.toInt(),
+          tunnel: tunnel,
+        )
+        .timeout(const Duration(seconds: 5));
     try {
-      final texId = await _player
-          .updateTexture(tunnel: tunnel)
-          .timeout(const Duration(seconds: 5));
+      final texId = await createTexture();
       // 返回 -1 说明 _videoSize 未 resolve：短暂等待 loaded 事件后重试一次
       if (texId < 0 && mounted) {
         LogService().log('Player', 'updateTexture 返回 $texId，200ms 后重试');
         await Future.delayed(const Duration(milliseconds: 200));
         if (!mounted) return;
         if (_player.textureId.value == null) {
-          await _player
-              .updateTexture(tunnel: tunnel)
-              .timeout(const Duration(seconds: 5));
+          await createTexture();
         }
       }
-      if (_player.textureId.value != null) _textureOutputApplied = mode;
+      if (_player.textureId.value != null) _textureOutputApplied = applyKey;
       String videoStreams = '?';
       try {
         videoStreams = '${_player.mediaInfo.video?.length ?? 0} 路';
       } catch (_) {}
       LogService().log('Player',
-          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams, tunnel $tunnel');
+          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams, tunnel $tunnel, 渲染尺寸 ${target ?? "原始"}');
     } catch (e) {
       LogService().log('Player', 'updateTexture 失败: $e');
     }
@@ -1987,8 +2096,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _lastSnapshotAt = now;
     setState(() => _snapshotInfo = '取帧中…');
     try {
-      if (_effectiveVideoOutput() == 'tunnel') {
-        setState(() => _snapshotInfo = 'tunnel 档无渲染器，不支持回读');
+      if (_effectiveVideoOutput() == 'tunnel' || _surfaceViewDirect) {
+        setState(() => _snapshotInfo = '直写档无渲染器，不支持回读');
         return;
       }
       // wiki：首调往往无帧；3s 超时防黑屏设备 readback 挂死（实测
@@ -4067,6 +4176,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // Track 1：屏幕尺寸/方向变化 → 自动渲染目标可能变化，重算并
+    // 按需重建纹理（_ensureTexture 内部按 applyKey 去抖，无变化则 no-op）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_ensureTexture());
+    });
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 退后台/失去焦点：抢在可能被系统回收前上报一次进度
     if (state == AppLifecycleState.paused ||
@@ -4441,17 +4560,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         child: CircularProgressIndicator(color: Colors.white54),
       );
     }
+    // Track 1：非直写时把 surface buffer 夹到屏幕尺寸（直写档按原始扫描输出）
+    final buffer = _renderTargetSize() ?? size;
     return Center(
       child: AspectRatio(
         aspectRatio: size.width / size.height,
         child: FvpSurfaceView(
           nativeHandle: _player.nativeHandle,
-          videoWidth: size.width.toInt(),
-          videoHeight: size.height.toInt(),
-          // EGL 故障（mdk eglChooseConfig 3004）→ GL presenter 无效 →
-          // SurfaceView 档也须直写，绕开 mdk EGL；正常时走 GL 支持
-          // snapshot 回读等能力
-          tunnel: eglFaultDetector.fault,
+          videoWidth: buffer.width.toInt(),
+          videoHeight: buffer.height.toInt(),
+          // 直写档恒 true；普通 SurfaceView 档仅 EGL 故障（mdk
+          // eglChooseConfig 3004 → GL presenter 无效）时直写，绕开 mdk EGL；
+          // 正常时走 GL 以保留 snapshot 回读等能力
+          tunnel: _surfaceViewDirect || eglFaultDetector.fault,
           epoch: _videoSurfaceEpoch,
           onCreated: () {
             if (!mounted) return;
@@ -4482,7 +4603,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final videoContent = _isPlayerReady ||
             (!_hasEpisodeList && widget.roomCode == null)
         ? Center(
-            child: _effectiveVideoOutput() == 'surfaceView'
+            child: _usesSurfaceView
                 ? _buildSurfaceViewVideo()
                 : ValueListenableBuilder<int?>(
                     valueListenable: _player.textureId,

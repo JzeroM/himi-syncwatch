@@ -322,4 +322,78 @@ void main() {
           PlayerScreen.showLogoInControls(logoUrl: '', isRoom: false), isFalse);
     });
   });
+
+  group('computeRenderTarget（Track 1 自动夹紧渲染尺寸）', () {
+    test('4K 源 → 夹到屏幕物理尺寸（按比例、含 contain）', () {
+      final t = PlayerScreen.computeRenderTarget(
+        displayLogical: const Size(360, 800),
+        devicePixelRatio: 3,
+        videoSize: const Size(3840, 1600), // 2.4:1
+      );
+      expect(t, isNotNull);
+      expect(t!.width, 1080); // 屏幕物理宽
+      expect(t.height, closeTo(450, 0.01)); // 1080 / 2.4
+      expect(t.width / t.height, closeTo(3840 / 1600, 1e-6));
+      expect(t.width <= 3840 && t.height <= 1600, isTrue);
+    });
+
+    test('源小于屏幕 → 返回原始（不放大）', () {
+      final t = PlayerScreen.computeRenderTarget(
+        displayLogical: const Size(360, 800),
+        devicePixelRatio: 3,
+        videoSize: const Size(640, 360),
+      );
+      expect(t, const Size(640, 360));
+    });
+
+    test('竖屏屏幕 + 横屏视频 → 以宽为准', () {
+      final t = PlayerScreen.computeRenderTarget(
+        displayLogical: const Size(360, 800),
+        devicePixelRatio: 2,
+        videoSize: const Size(3840, 2160), // 16:9
+      );
+      expect(t, isNotNull);
+      expect(t!.width, 720); // 360 * 2
+      expect(t.height, closeTo(405, 0.01)); // 720 / (16/9)
+    });
+
+    test('下限 minSide 生效（极小屏不夹过小）', () {
+      final t = PlayerScreen.computeRenderTarget(
+        displayLogical: const Size(100, 100),
+        devicePixelRatio: 1,
+        videoSize: const Size(3840, 2160),
+        minSide: 360,
+      );
+      expect(t, isNotNull);
+      expect(t!.width, 360);
+      expect(t.height, closeTo(203, 0.01)); // 360 / (16/9) ≈ 202.5 → 取整 203
+    });
+
+    test('非法/未知输入 → null', () {
+      expect(
+        PlayerScreen.computeRenderTarget(
+          displayLogical: const Size(360, 800),
+          devicePixelRatio: 3,
+          videoSize: Size.zero,
+        ),
+        isNull,
+      );
+      expect(
+        PlayerScreen.computeRenderTarget(
+          displayLogical: Size.zero,
+          devicePixelRatio: 3,
+          videoSize: const Size(3840, 1600),
+        ),
+        isNull,
+      );
+      expect(
+        PlayerScreen.computeRenderTarget(
+          displayLogical: const Size(360, 800),
+          devicePixelRatio: 0,
+          videoSize: const Size(3840, 1600),
+        ),
+        isNull,
+      );
+    });
+  });
 }

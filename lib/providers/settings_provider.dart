@@ -126,7 +126,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     if (!next.audioRendererUserSet && next.audioRenderer != 'AudioTrack') {
       next = next.copyWith(audioRenderer: 'AudioTrack');
     }
-    if (!next.videoOutputUserSet && next.videoOutput != 'surfaceView') {
+    if (!next.videoOutputUserSet &&
+        !AppSettings.isSurfaceViewMode(next.videoOutput)) {
       next = next.copyWith(videoOutput: 'surfaceView');
     }
     return next;

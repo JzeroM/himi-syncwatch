@@ -423,6 +423,43 @@ void main() {
       );
     });
 
+    test('surfaceViewDirect 档：白名单放行 + 往返 + getter', () {
+      expect(
+        AppSettings.fromJson({'videoOutput': 'surfaceViewDirect'}).videoOutput,
+        'surfaceViewDirect',
+      );
+      const original = AppSettings(videoOutput: 'surfaceViewDirect');
+      expect(
+        AppSettings.fromJson(original.toJson()).videoOutput,
+        'surfaceViewDirect',
+      );
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(original.usesSurfaceView, isTrue);
+      expect(original.surfaceViewDirect, isTrue);
+      // surfaceView 也算 SurfaceView 系列，但非直写
+      const sv = AppSettings(videoOutput: 'surfaceView');
+      expect(sv.usesSurfaceView, isTrue);
+      expect(sv.surfaceViewDirect, isFalse);
+      // 非 SurfaceView 系列
+      expect(const AppSettings(videoOutput: 'texture').usesSurfaceView, isFalse);
+      expect(const AppSettings(videoOutput: 'tunnel').usesSurfaceView, isFalse);
+
+      expect(AppSettings.isSurfaceViewMode('surfaceView'), isTrue);
+      expect(AppSettings.isSurfaceViewMode('surfaceViewDirect'), isTrue);
+      expect(AppSettings.isSurfaceViewMode('tunnel'), isFalse);
+      expect(AppSettings.isSurfaceViewMode('texture'), isFalse);
+    });
+
+    test('surfaceViewDirect 非 Android 归一 texture（不可用）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      const s = AppSettings(videoOutput: 'surfaceViewDirect');
+      expect(s.usesSurfaceView, isFalse);
+      expect(s.surfaceViewDirect, isFalse);
+    });
+
     test('Android 放行用户档位，其余平台固定 texture', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);

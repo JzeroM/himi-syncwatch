@@ -32,6 +32,8 @@ void main() {
     test('SurfaceView 档 → 不处理（platform view 自愈）', () {
       expect(PlayerLifecyclePolicy.resumeAction('surfaceView'),
           PlayerResumeAction.none);
+      expect(PlayerLifecyclePolicy.resumeAction('surfaceViewDirect'),
+          PlayerResumeAction.none);
     });
   });
 }
