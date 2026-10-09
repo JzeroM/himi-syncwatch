@@ -59,6 +59,28 @@ void main() {
     expect(PlayerScreen.selectorPanelWidth(360), 260.0, reason: '竖屏托底');
   });
 
+  test('selectorPanelBox：常规面板避开顶栏与控制条', () {
+    final box = PlayerScreen.selectorPanelBox(
+      fullBleed: false,
+      safeTop: 24,
+      safeBottom: 34,
+    );
+    expect(box.top, 72.0, reason: 'safeTop + 48');
+    expect(box.bottom, 150.0, reason: '116 + safeBottom');
+    expect(box.right, 12.0);
+  });
+
+  test('selectorPanelBox：选集面板上下右三边贴边（v1.1.175）', () {
+    final box = PlayerScreen.selectorPanelBox(
+      fullBleed: true,
+      safeTop: 24,
+      safeBottom: 34,
+    );
+    expect(box.top, 0.0);
+    expect(box.bottom, 0.0);
+    expect(box.right, 0.0);
+  });
+
   test('rotateButtonIcon：语义直白的旋转图标，非 screen_lock 系', () {
     expect(PlayerScreen.rotateButtonIcon, Icons.screen_rotation_alt);
     expect(PlayerScreen.rotateButtonIcon, isNot(Icons.screen_lock_landscape));

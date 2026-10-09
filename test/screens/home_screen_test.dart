@@ -153,7 +153,7 @@ void main() {
 
     expect(find.text('暂无服务器'), findsOneWidget);
     expect(
-      find.text('请到「Emby服务器」标签添加 Emby 服务器'),
+      find.text('请到「Emby」标签添加 Emby 服务器'),
       findsOneWidget,
     );
   });

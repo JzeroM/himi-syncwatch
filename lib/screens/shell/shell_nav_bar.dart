@@ -45,7 +45,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   static const double _navHeight = 60;
   static const double _blobHeight = 50;
 
-  static const List<String> _labels = ['首页', '收藏', 'Emby服务器', '声网配置', '设置'];
+  static const List<String> _labels = ['首页', '收藏', 'Emby', '声网', '设置'];
   static const List<IconData> _icons = [
     Icons.home_outlined,
     Icons.favorite_border,

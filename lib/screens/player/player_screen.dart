@@ -161,6 +161,24 @@ class PlayerScreen extends ConsumerStatefulWidget {
   static double selectorPanelWidth(double screenWidth) =>
       (screenWidth * 0.42).clamp(260.0, 320.0);
 
+  /// 选择器面板几何（top/bottom/right）：常规面板避开顶栏与底部控制条；
+  /// 选集面板（[fullBleed]）上下右三边贴边铺满（v1.1.175）。
+  @visibleForTesting
+  static ({double top, double bottom, double right}) selectorPanelBox({
+    required bool fullBleed,
+    required double safeTop,
+    required double safeBottom,
+  }) =>
+      fullBleed
+          ? (top: 0.0, bottom: 0.0, right: 0.0)
+          : (
+              top: safeTop + 48,
+              // 116 = 桌面/TV 控制条高度（110）+ 6px 余量；叠加安全区
+              //（手机手势条会抬高控制条，控制条高 110+inset）
+              bottom: 116 + safeBottom,
+              right: 12,
+            );
+
   /// 设置 → 弹幕时间轴配置（纯映射，供测试）。
   @visibleForTesting
   static DanmakuTimelineConfig danmakuTimelineConfig(AppSettings s) =>
@@ -4454,6 +4472,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       tvMode: videoAreaTvMode,
       mobilePlatform: Platform.isAndroid || Platform.isIOS,
     );
+    // 选择器面板几何：选集面板上下右贴边铺满，其余面板避开顶栏/控制条
+    final panelBox = PlayerScreen.selectorPanelBox(
+      fullBleed: _showEpisodeMenu,
+      safeTop: MediaQuery.of(context).padding.top,
+      safeBottom: MediaQuery.of(context).padding.bottom,
+    );
     // 视频 / 占位文字
     final videoContent = _isPlayerReady ||
             (!_hasEpisodeList && widget.roomCode == null)
@@ -4654,7 +4678,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          // 字幕/音轨/倍速/选集选择器：右侧玻璃浮层（可滚动；随控制条显隐）
+          // 手势提示浮层（快进快退/双击播放暂停）
+          if (_showGestureOverlay)
+            Positioned(
+              bottom: 100,
+              left: 0,
+              right: 0,
+              child: _buildGestureHint(),
+            ),
+
+          // 长按临时倍速指示（手机版，画面中央玻璃小胶囊）
+          if (_speedBoostActive)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(child: _buildSpeedBoostChip()),
+              ),
+            ),
+
+          // 亮度柱式进度条（右侧）
+          ValueListenableBuilder<bool>(
+            valueListenable: _showBrightnessBarNotifier,
+            builder: (context, show, _) =>
+                show ? _buildBrightnessBar() : const SizedBox.shrink(),
+          ),
+
+          // 音量柱式进度条（左侧）
+          ValueListenableBuilder<bool>(
+            valueListenable: _showVolumeBarNotifier,
+            builder: (context, show, _) =>
+                show ? _buildVolumeBar() : const SizedBox.shrink(),
+          ),
+
+          // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏——手机版
+          // 例外：底栏在锁定时只保留锁钮以便解锁，见 _buildControls）
+          if (_showControls &&
+              (!_lockController.locked || videoAreaPhoneControls) &&
+              (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
+            Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
+
+          // 字幕/音轨/倍速/选集选择器：右侧玻璃浮层（可滚动；随控制条显隐）。
+          // 位于控制条之后：选集面板全高（top/bottom/right 贴边）时绘制在
+          // 底部控制条之上（进度条右端被面板盖住，对齐参考观感）。
           if (_showControls &&
               !_lockController.locked &&
               (_showSubtitleMenu ||
@@ -4663,11 +4727,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   _showSubtitleStyleMenu ||
                   _showEpisodeMenu))
             Positioned(
-              top: MediaQuery.of(context).padding.top + 48,
-              // 116 = 桌面/TV 控制条高度（110）+ 6px 余量；叠加安全区
-              //（手机手势条会抬高控制条，控制条高 110+inset）
-              bottom: 116 + MediaQuery.of(context).padding.bottom,
-              right: 12,
+              top: panelBox.top,
+              bottom: panelBox.bottom,
+              right: panelBox.right,
               width: PlayerScreen.selectorPanelWidth(
                 MediaQuery.sizeOf(context).width,
               ),
@@ -4678,6 +4740,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 skipTraversal: true,
                 onKeyEvent: _autoHide.onKeyEvent,
                 child: SelectorSidePanel(
+                  // 全高贴边：右侧圆角放平，避免玻璃圆角悬在屏幕边缘
+                  borderRadius: _showEpisodeMenu
+                      ? const BorderRadius.horizontal(
+                          left: Radius.circular(16))
+                      : const BorderRadius.all(Radius.circular(16)),
                   title: _showSubtitleMenu
                       ? '字幕'
                       : _showAudioMenu
@@ -4743,44 +4810,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
               ),
             ),
-
-          // 手势提示浮层（快进快退/双击播放暂停）
-          if (_showGestureOverlay)
-            Positioned(
-              bottom: 100,
-              left: 0,
-              right: 0,
-              child: _buildGestureHint(),
-            ),
-
-          // 长按临时倍速指示（手机版，画面中央玻璃小胶囊）
-          if (_speedBoostActive)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Center(child: _buildSpeedBoostChip()),
-              ),
-            ),
-
-          // 亮度柱式进度条（右侧）
-          ValueListenableBuilder<bool>(
-            valueListenable: _showBrightnessBarNotifier,
-            builder: (context, show, _) =>
-                show ? _buildBrightnessBar() : const SizedBox.shrink(),
-          ),
-
-          // 音量柱式进度条（左侧）
-          ValueListenableBuilder<bool>(
-            valueListenable: _showVolumeBarNotifier,
-            builder: (context, show, _) =>
-                show ? _buildVolumeBar() : const SizedBox.shrink(),
-          ),
-
-          // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏——手机版
-          // 例外：底栏在锁定时只保留锁钮以便解锁，见 _buildControls）
-          if (_showControls &&
-              (!_lockController.locked || videoAreaPhoneControls) &&
-              (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
-            Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
 
           // 加载指示器
           if (_duration.inMilliseconds == 0 && _isPlayerReady)

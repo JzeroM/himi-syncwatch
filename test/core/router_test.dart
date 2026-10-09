@@ -152,8 +152,8 @@ void main() {
 
     expect(find.text('首页'), findsOneWidget);
     expect(find.text('收藏'), findsOneWidget);
-    expect(find.text('Emby服务器'), findsOneWidget);
-    expect(find.text('声网配置'), findsOneWidget);
+    expect(find.text('Emby'), findsOneWidget);
+    expect(find.text('声网'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
     expect(_shellIndex(tester), 0);
   });
@@ -161,7 +161,7 @@ void main() {
   testWidgets('点击标签切换到 Emby 服务器页', (tester) async {
     await _pumpApp(tester);
 
-    await tester.tap(find.text('Emby服务器'));
+    await tester.tap(find.text('Emby'));
     await tester.pumpAndSettle();
 
     expect(_shellIndex(tester), 2);
@@ -172,7 +172,7 @@ void main() {
   testWidgets('点击标签切换到声网配置页', (tester) async {
     await _pumpApp(tester);
 
-    await tester.tap(find.text('声网配置'));
+    await tester.tap(find.text('声网'));
     await tester.pumpAndSettle();
 
     expect(_shellIndex(tester), 3);
@@ -282,14 +282,14 @@ void main() {
   });
 
   testWidgets('非首页标签滚动到底同样隐藏导航栏', (tester) async {
-    // 用「Emby服务器」标签（列表内容足够长可滚动）验证非首页也生效
+    // 用「Emby」标签（列表内容足够长可滚动）验证非首页也生效
     final serverList =
         List.generate(20, (i) => _serverConfig('s$i', name: '服务器$i'));
     await _pumpApp(tester, serverList: serverList);
 
     await tester.tap(find.descendant(
       of: find.byType(ShellNavBar),
-      matching: find.text('Emby服务器'),
+      matching: find.text('Emby'),
     ));
     await tester.pumpAndSettle();
     expect(_shellIndex(tester), 2);

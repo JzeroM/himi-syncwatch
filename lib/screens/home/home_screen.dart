@@ -386,7 +386,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '请到「Emby服务器」标签添加 Emby 服务器',
+            '请到「Emby」标签添加 Emby 服务器',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],

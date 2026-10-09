@@ -125,8 +125,8 @@ void main() {
     final labelCenters = [
       centerY(find.text('首页')),
       centerY(find.text('收藏')),
-      centerY(find.text('Emby服务器')),
-      centerY(find.text('声网配置')),
+      centerY(find.text('Emby')),
+      centerY(find.text('声网')),
       centerY(find.text('设置')),
     ];
     expect(labelCenters.toSet().length, 1);

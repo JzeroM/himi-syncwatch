@@ -6,7 +6,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 const double kShellDesktopBreakpoint = 1000.0;
 
 /// 桌面宽度下左侧导航项（与底部胶囊一致的五标签）。
-const List<String> kShellNavLabels = ['首页', '收藏', 'Emby服务器', '声网配置', '设置'];
+const List<String> kShellNavLabels = ['首页', '收藏', 'Emby', '声网', '设置'];
 const List<IconData> kShellNavIcons = [
   Icons.home_outlined,
   Icons.favorite_border,

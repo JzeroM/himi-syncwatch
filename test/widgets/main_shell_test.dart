@@ -91,7 +91,7 @@ void main() {
     // 桌面：无底部胶囊导航，有左缘窄把手；抽屉收起时内容占满
     expect(find.byKey(const ValueKey('shellNavBarPadding')), findsNothing);
     expect(find.byKey(const ValueKey('drawerToggle')), findsOneWidget);
-    expect(find.text('Emby服务器'), findsNothing);
+    expect(find.text('Emby'), findsNothing);
     expect(contentWidth(tester), 1280);
 
     // 把手：左缘垂直居中，只露 18×64
@@ -114,8 +114,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('首页'), findsWidgets);
-    expect(find.text('Emby服务器'), findsOneWidget);
-    expect(find.text('声网配置'), findsOneWidget);
+    expect(find.text('Emby'), findsOneWidget);
+    expect(find.text('声网'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
     expect(contentWidth(tester), 1040);
 
@@ -126,7 +126,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('drawerToggle')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Emby服务器'), findsNothing);
+    expect(find.text('Emby'), findsNothing);
     expect(contentWidth(tester), 1280);
   });
 
@@ -143,14 +143,14 @@ void main() {
 
     // 已切到设置分支，抽屉仍展开（手动收回）
     expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
-    expect(find.text('Emby服务器'), findsOneWidget);
+    expect(find.text('Emby'), findsOneWidget);
     expect(contentWidth(tester), 1040);
 
     // 手动点汉堡收回
     await tester.tap(find.byKey(const ValueKey('drawerToggle')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Emby服务器'), findsNothing);
+    expect(find.text('Emby'), findsNothing);
     expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
   });
 
@@ -216,7 +216,7 @@ void main() {
   testWidgets('TV 模式隐藏声网分支：停在声网页时自动回首页', (tester) async {
     // 非 TV 进入声网分支（currentIndex==2），再打开 TV 模式
     await pumpApp(tester, const Size(390, 844));
-    await tester.tap(find.text('声网配置'));
+    await tester.tap(find.text('声网'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(AgoraConfigScreen), findsOneWidget);

@@ -24,6 +24,7 @@ class SelectorSidePanel extends StatelessWidget {
     super.key,
     required this.title,
     required this.child,
+    this.borderRadius = const BorderRadius.all(Radius.circular(16)),
   });
 
   /// 面板标题（「字幕」/「音轨」/「倍速」）。
@@ -32,12 +33,15 @@ class SelectorSidePanel extends StatelessWidget {
   /// 选项列表（通常为 ListView，超长自动滚动）。
   final Widget child;
 
+  /// 玻璃卡片圆角；全高贴边的选集面板把右侧圆角放平。
+  final BorderRadius borderRadius;
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {},
       child: GlassContainer(
-        borderRadius: const BorderRadius.all(Radius.circular(16)),
+        borderRadius: borderRadius,
         padding: const EdgeInsets.only(top: 10, bottom: 4),
         child: Column(
           children: [
