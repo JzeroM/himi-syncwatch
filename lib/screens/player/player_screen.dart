@@ -250,47 +250,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
       newSize != null &&
       oldSize != newSize;
 
-  /// 自动渲染目标尺寸（Track 1，纯逻辑便于单测）。
-  ///
-  /// 手机/TV 统一：把 mdk 的渲染目标从「视频原始分辨率」夹到「屏幕实际
-  /// 显示尺寸 × 设备像素比」，按视频宽高比换算，且**不超过视频原始**
-  /// （源比屏幕小则不放大）。夹紧只降低 mdk 渲染 + Flutter 纹理采样负载，
-  /// 颜色/比例不变。
-  ///
-  /// 返回 [videoSize] 表示无需夹紧（屏幕已达/超过源分辨率）；返回 null
-  /// 表示视频尺寸未知（调用方回退原始分辨率）。
-  @visibleForTesting
-  static Size? computeRenderTarget({
-    required Size displayLogical,
-    required double devicePixelRatio,
-    required Size videoSize,
-    double minSide = 360,
-  }) {
-    if (videoSize.width <= 0 || videoSize.height <= 0) return null;
-    if (displayLogical.width <= 0 || displayLogical.height <= 0) return null;
-    if (devicePixelRatio <= 0) return null;
-    final aspect = videoSize.width / videoSize.height;
-    // contain：视频在屏幕内的逻辑显示尺寸
-    var dw = displayLogical.width;
-    var dh = dw / aspect;
-    if (dh > displayLogical.height) {
-      dh = displayLogical.height;
-      dw = dh * aspect;
-    }
-    // 逻辑显示尺寸 → 物理像素
-    var pw = dw * devicePixelRatio;
-    var ph = dh * devicePixelRatio;
-    // 不放大超过原始分辨率
-    if (pw >= videoSize.width || ph >= videoSize.height) return videoSize;
-    // 下限：避免夹得过小（仍不超过原始）
-    if (pw < minSide) {
-      pw = minSide;
-      ph = pw / aspect;
-      if (pw >= videoSize.width) return videoSize;
-    }
-    return Size(pw.roundToDouble(), ph.roundToDouble());
-  }
-
   /// 进入播放器的初始控制条设置：
   /// - 全模式启动自动隐藏计时（此前初进无人调 `_resetHideTimer`，控件
   ///   永不自动隐藏——非 TV 模式同样需要"播放中 5 秒隐藏"）；
@@ -585,10 +544,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 纹理通道实际创建时的档位（'texture'/'tunnel'）；
   /// 设置切换后据此决定是否重建纹理。
   String? _textureOutputApplied;
-
-  /// [_ensureTexture] 串行化：进行中标记 + 尾随重跑标记（并发变化只收口最新）。
-  bool _ensureTextureBusy = false;
-  bool _ensureTextureQueued = false;
 
   /// 截帧取证结果（面板展示，null = 未截过）。
   String? _snapshotInfo;
@@ -1678,8 +1633,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _videoNativeSize = size;
     });
     _applyVideoAvfilter(size);
-    // Track 1：尺寸就绪后按自动渲染目标重建纹理（首次可能以原始尺寸建过）
-    if (!_usesSurfaceView) unawaited(_ensureTexture());
   }
 
   /// 尺寸未就绪时 1 秒后重试（最多 10 次）：覆盖 decoder.video /
@@ -1921,40 +1874,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) setState(() {});
   }
 
-  /// 当前视频输出档位下，纹理/SurfaceView 是否应夹紧到 [PlayerScreen.computeRenderTarget]。
-  ///
-  /// tunnel（解码器直写纹理）与 SurfaceView 直写档忽略尺寸（fvp 语义），
-  /// 保持原始分辨率。
-  bool get _renderTargetApplies {
-    final mode = _effectiveVideoOutput();
-    return mode != 'tunnel' && mode != 'surfaceViewDirect';
-  }
-
-  /// 计算当前应使用的夹紧渲染尺寸；无需夹紧/尺寸未知时返回 null。
-  Size? _renderTargetSize() {
-    if (!_renderTargetApplies) return null;
-    final videoSize = _videoNativeSize;
-    if (videoSize == null) return null;
-    final mq = MediaQuery.maybeOf(context);
-    if (mq == null) return null;
-    final target = PlayerScreen.computeRenderTarget(
-      displayLogical: mq.size,
-      devicePixelRatio: mq.devicePixelRatio,
-      videoSize: videoSize,
-    );
-    if (target == null) return null;
-    if (target.width >= videoSize.width || target.height >= videoSize.height) {
-      return null;
-    }
-    return target;
-  }
-
   /// 确保纹理存在：首次播放时创建，后续复用现有纹理避免黑屏
   ///
   /// 按设置档位区分：
   /// - 'texture' / 'tunnel'：创建（或在 tunnel 档位变化时重建）纹理，
   ///   tunnel 档位走 updateTexture(tunnel: true)——解码器直写
-  ///   SurfaceTexture，绕过 mdk GL 渲染器；Track 1 自动夹紧渲染尺寸；
+  ///   SurfaceTexture，绕过 mdk GL 渲染器；
   /// - 'surfaceView' / 'surfaceViewDirect'：不创建纹理，反向释放已存在
   ///   的纹理（platform view 通道由 _buildVideoArea 构建 fvp/video-view）。
   ///
@@ -1962,25 +1887,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// iOS 曾出现「无画面」，纹理链路是否走通全靠这行取证——
   /// 返回 -1 表示 fvp 内部 _videoSize 未就绪（媒体未 loaded 或
   /// 视频流为空），此时纹理恒为 null，UI 永远转圈。
-  ///
-  /// 串行化：并发的档位/尺寸变化只保留最新一次收口，避免同刻两次重建。
   Future<void> _ensureTexture() async {
-    if (_ensureTextureBusy) {
-      _ensureTextureQueued = true;
-      return;
-    }
-    _ensureTextureBusy = true;
-    try {
-      do {
-        _ensureTextureQueued = false;
-        await _ensureTextureOnce();
-      } while (_ensureTextureQueued && mounted);
-    } finally {
-      _ensureTextureBusy = false;
-    }
-  }
-
-  Future<void> _ensureTextureOnce() async {
     if (!mounted) return;
     final mode = _effectiveVideoOutput();
 
@@ -1998,14 +1905,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     final tunnel = mode == 'tunnel';
-    // Track 1：自动夹紧渲染目标（tunnel 不适用 → null 保持原始）
-    final target = _renderTargetSize();
-    final applyKey = '$mode@${target?.width.toInt() ?? 0}x${target?.height.toInt() ?? 0}';
     if (_player.textureId.value != null) {
-      if (_textureOutputApplied == applyKey) return;
-      // 档位（tunnel 开关）/渲染尺寸变化：释放旧纹理后按新参数重建
-      LogService()
-          .log('Player', '纹理档位 $_textureOutputApplied → $applyKey，重建纹理');
+      if (_textureOutputApplied == mode) return;
+      // 档位（tunnel 开关）变化：释放旧纹理后按新参数重建
+      LogService().log('Player', '纹理档位 $_textureOutputApplied → $mode，重建纹理');
       try {
         await _player
             .updateTexture(width: -1)
@@ -2014,31 +1917,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _textureOutputApplied = null;
     }
     if (!mounted) return;
-    Future<int> createTexture() => _player
-        .updateTexture(
-          width: target?.width.toInt(),
-          height: target?.height.toInt(),
-          tunnel: tunnel,
-        )
-        .timeout(const Duration(seconds: 5));
     try {
-      final texId = await createTexture();
+      final texId = await _player
+          .updateTexture(tunnel: tunnel)
+          .timeout(const Duration(seconds: 5));
       // 返回 -1 说明 _videoSize 未 resolve：短暂等待 loaded 事件后重试一次
       if (texId < 0 && mounted) {
         LogService().log('Player', 'updateTexture 返回 $texId，200ms 后重试');
         await Future.delayed(const Duration(milliseconds: 200));
         if (!mounted) return;
         if (_player.textureId.value == null) {
-          await createTexture();
+          await _player
+              .updateTexture(tunnel: tunnel)
+              .timeout(const Duration(seconds: 5));
         }
       }
-      if (_player.textureId.value != null) _textureOutputApplied = applyKey;
+      if (_player.textureId.value != null) _textureOutputApplied = mode;
       String videoStreams = '?';
       try {
         videoStreams = '${_player.mediaInfo.video?.length ?? 0} 路';
       } catch (_) {}
       LogService().log('Player',
-          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams, tunnel $tunnel, 渲染尺寸 ${target ?? "原始"}');
+          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams, tunnel $tunnel');
     } catch (e) {
       LogService().log('Player', 'updateTexture 失败: $e');
     }
@@ -4176,16 +4076,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   @override
-  void didChangeMetrics() {
-    super.didChangeMetrics();
-    // Track 1：屏幕尺寸/方向变化 → 自动渲染目标可能变化，重算并
-    // 按需重建纹理（_ensureTexture 内部按 applyKey 去抖，无变化则 no-op）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_ensureTexture());
-    });
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 退后台/失去焦点：抢在可能被系统回收前上报一次进度
     if (state == AppLifecycleState.paused ||
@@ -4560,15 +4450,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         child: CircularProgressIndicator(color: Colors.white54),
       );
     }
-    // Track 1：非直写时把 surface buffer 夹到屏幕尺寸（直写档按原始扫描输出）
-    final buffer = _renderTargetSize() ?? size;
     return Center(
       child: AspectRatio(
         aspectRatio: size.width / size.height,
         child: FvpSurfaceView(
           nativeHandle: _player.nativeHandle,
-          videoWidth: buffer.width.toInt(),
-          videoHeight: buffer.height.toInt(),
+          videoWidth: size.width.toInt(),
+          videoHeight: size.height.toInt(),
           // 直写档恒 true；普通 SurfaceView 档仅 EGL 故障（mdk
           // eglChooseConfig 3004 → GL presenter 无效）时直写，绕开 mdk EGL；
           // 正常时走 GL 以保留 snapshot 回读等能力
