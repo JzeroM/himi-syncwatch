@@ -3,10 +3,6 @@ package com.himi.syncwatch
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.graphics.Point
-import android.hardware.display.DisplayManager
-import android.os.Build
-import android.view.Display
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -35,40 +31,7 @@ class PlatformInfoPlugin(private val context: Context?) :
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "isTelevision" -> result.success(isTelevision())
-            "displaySize" -> result.success(displaySize())
             else -> result.notImplemented()
-        }
-    }
-
-    /**
-     * 显示器的「真实输出/面板分辨率」（物理像素）。
-     *
-     * 用于 TV 模式的渲染尺寸夹紧：Android TV 的 Flutter 视图常只有
-     * 1080p（UI 层），但面板/输出可能是 4K；用 Display 的真实尺寸才能
-     * 保住 4K 全分辨率扫描输出，而不是误降到 1080p。
-     *
-     * 优先 `getRealSize`（含系统装饰的物理分辨率）；失败回退当前 mode。
-     * 异常/无 Context → null（上层按其自身显示尺寸兜底）。
-     */
-    private fun displaySize(): Map<String, Int>? {
-        val ctx = context ?: return null
-        return try {
-            val dm = ctx.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
-                ?: return null
-            val display: Display = dm.getDisplay(Display.DEFAULT_DISPLAY) ?: return null
-            val point = Point()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-                display.getRealSize(point)
-            } else {
-                @Suppress("DEPRECATION")
-                display.getSize(point)
-            }
-            val w = point.x
-            val h = point.y
-            if (w <= 0 || h <= 0) return null
-            mapOf("width" to w, "height" to h)
-        } catch (_: Throwable) {
-            null
         }
     }
 

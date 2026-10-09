@@ -516,11 +516,6 @@ class AppSettings {
   bool get surfaceViewDirect =>
       effectiveVideoOutput(videoOutput) == 'surfaceViewDirect';
 
-  /// 平台规范化：TV 模式仅 Android（其他平台遥控器/SurfaceView 不可用）。
-  /// 非 Android 复位残留的 `tvMode=true`，避免开关已隐藏却卡在 TV 模式。
-  AppSettings normalizedForPlatform({required bool isAndroid}) =>
-      (!isAndroid && tvMode) ? copyWith(tvMode: false) : this;
-
   /// 按内容自动路由视频输出（mdk#361）：AMediaCodec 直写 surface
   /// （surfaceViewDirect / tunnel 的直写语义）在 HDR10/DV 内容上会
   /// wedge/卡顿，需降级到「同载体」的 GL 渲染路径。

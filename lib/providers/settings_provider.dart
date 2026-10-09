@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -27,15 +25,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       try {
         state = AppSettings.fromJson(jsonDecode(raw));
       } catch (_) {}
-    }
-    // TV 模式仅 Android：非 Android 复位残留的 tvMode=true（否则开关已
-    // 隐藏会「卡在 TV 模式无法关闭」）。
-    final normalized = state.normalizedForPlatform(
-      isAndroid: defaultTargetPlatform == TargetPlatform.android,
-    );
-    if (normalized.tvMode != state.tvMode) {
-      state = normalized;
-      await persist();
     }
   }
 
