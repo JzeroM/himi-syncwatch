@@ -12,6 +12,13 @@
 /// - `surfacetexture.glcontext`：SurfaceTexture 无有效 GL 上下文时
 ///   创建 context（纹理通道黑屏 workaround，视频全黑机型实验开关）。
 ///
+/// 注意：fvp registerWith 的 `maxWidth`/`maxHeight`（纹理尺寸上限）
+/// 对本应用**无效**——himi 绕过 video_player 插件层（mdk.Player FFI
+/// 直用 + 自封装 FvpSurfaceView），那两个选项只在
+/// `MdkVideoPlayerPlatform.create()` 里消费。渲染尺寸夹紧在
+/// player_screen 内自实现（RenderTargetClamp + updateTexture 传参 /
+/// FvpSurfaceView creationParams）。
+///
 /// 纯函数，便于单测。
 Map<String, Object> buildFvpOptions({
   required bool xa2Persistent,

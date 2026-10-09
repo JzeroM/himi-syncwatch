@@ -56,6 +56,10 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   /// 产物身份项：同一台设备哪一档出画面直接记进导出报告。
   final String videoOutput;
 
+  /// 渲染目标尺寸取证（渲染夹紧）：`原生` =未夹紧；`原生 → 夹紧后`
+  /// =生效夹紧；`-`=尺寸未就绪。
+  final String renderTarget;
+
   /// 当前生效的 `video.avfilter` 取证（非标尺寸规范化滤镜）：
   /// `(未写入)`=没触发过；`(无)`=尺寸已对齐或已清；串=实际写入值。
   final String videoFilter;
@@ -128,6 +132,7 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.textureId,
     required this.textureSize,
     this.videoOutput = 'texture',
+    this.renderTarget = '-',
     this.videoFilter = '(未写入)',
     this.snapshotInfo,
     this.onSnapshot,
@@ -299,6 +304,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     _debugRow('纹理',
                         '${widget.textureId ?? 'null'} | ${widget.textureSize}'),
                     _debugRow('输出', widget.videoOutput),
+                    _debugRow('渲染尺寸', widget.renderTarget),
                     _debugRow('视频滤镜', widget.videoFilter),
                     if (widget.onSnapshot != null) _snapshotRow(),
                   ],
