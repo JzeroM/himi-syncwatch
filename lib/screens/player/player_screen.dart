@@ -83,6 +83,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:himi_syncwatch/services/count_retry.dart';
+import 'package:himi_syncwatch/services/display_info_service.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
@@ -249,6 +250,40 @@ class PlayerScreen extends ConsumerStatefulWidget {
       oldSize != null &&
       newSize != null &&
       oldSize != newSize;
+
+  /// 渲染尺寸夹紧（纯逻辑便于单测）。
+  ///
+  /// 把 mdk 渲染目标从视频原始分辨率夹到显示器物理尺寸（按视频宽高比
+  /// contain、**不放大**、下限 [minSide]）。仅用于「高负载/TV」分支：
+  /// 未夹紧的 4K 会把合成器推入 GPU 路径（fvp#379 实测 4K 未夹紧仅 5.5fps）。
+  ///
+  /// [displayPhysical] 为显示器物理像素（手机=屏幕物理尺寸；TV=Display 真实
+  /// 输出/面板分辨率）。返回 [videoSize] 表示无需夹紧；尺寸非法返回 null。
+  @visibleForTesting
+  static Size? computeRenderTarget({
+    required Size displayPhysical,
+    required Size videoSize,
+    double minSide = 480,
+  }) {
+    if (videoSize.width <= 0 || videoSize.height <= 0) return null;
+    if (displayPhysical.width <= 0 || displayPhysical.height <= 0) return null;
+    final aspect = videoSize.width / videoSize.height;
+    var w = displayPhysical.width;
+    var h = w / aspect;
+    if (h > displayPhysical.height) {
+      h = displayPhysical.height;
+      w = h * aspect;
+    }
+    // 不放大超过原始分辨率
+    if (w >= videoSize.width || h >= videoSize.height) return videoSize;
+    // 下限（仍不超过原始）
+    if (w < minSide) {
+      w = minSide;
+      h = w / aspect;
+      if (w >= videoSize.width) return videoSize;
+    }
+    return Size(w.roundToDouble(), h.roundToDouble());
+  }
 
   /// 进入播放器的初始控制条设置：
   /// - 全模式启动自动隐藏计时（此前初进无人调 `_resetHideTimer`，控件
@@ -833,6 +868,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// （mdk#361：直写 surface 在 HDR 上会 wedge/卡顿 → 降级为同载体 GL）。
   /// 由 Emby 元数据 + 运行期 mediaInfo 色彩信息共同判定。
   bool _hdrContent = false;
+  /// TV 显示器的真实输出/面板分辨率（物理像素，Android，懒加载）。
+  /// 夹紧目标用它而非 Flutter 视图尺寸（后者常只有 1080p）。
+  Size? _tvDisplayPhysical;
+  /// 最近一次生效的路由输出：内容判定（HDR/高负载）翻转时据此重应用。
+  String? _lastRoutedOutput;
+  /// 夹紧兜底：夹紧创建后布防时刻；持续丢帧则禁用夹紧回退原生一次。
+  DateTime? _clampArmedAt;
+  bool _clampDisabled = false;
   DvProbeResult _dvProbe = DvProbeResult.unknown; // 设备 DV 解码能力（仅展示）
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
@@ -1032,6 +1075,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _audioBackend = ab;
         _diagSummary = _diag.summary();
       });
+      // 帧率就绪/变化 → 复核高负载路由（内容判定翻转时切换载体）
+      _maybeRerouteForContent();
     } catch (e) {
       LogService().log('Diag', '诊断采集失败: $e');
     }
@@ -1257,6 +1302,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
     _player = mdk.Player();
+    // TV 模式（Android）：预取显示器真实输出/面板分辨率，用于渲染尺寸夹紧
+    // （Flutter 视图常只报 1080p，须用原生 Display 真实尺寸才能保住 4K）。
+    if (Platform.isAndroid && ref.read(settingsProvider).tvMode) {
+      unawaited(const DisplayInfoService().realDisplaySize().then((s) {
+        if (mounted && s != null) setState(() => _tvDisplayPhysical = s);
+      }));
+    }
     // 字幕属性配置（大小/位置随会话状态，initState 后异步恢复落盘值）
     _player.setProperty('subtitle', '1');
     _player.setProperty('subtitle.font.size', '40');
@@ -1625,8 +1677,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return;
     }
     _videoSizeRetry = 0;
+    final fps = _readMediaInfoVideoFps();
     final old = _videoNativeSize;
     if (old == size) {
+      // 尺寸无变化，但帧率可能刚就绪 → 补写并复核高负载路由
+      if (fps != null && fps != _videoFps && mounted) {
+        setState(() => _videoFps = fps);
+      }
+      _refreshHdrContent();
+      _maybeRerouteForContent();
       LogService()
           .log('Diag', '尺寸同步: $source $size 无变化 (${sw.elapsedMilliseconds}ms)');
       return;
@@ -1646,10 +1705,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     setState(() {
       _videoNativeSize = size;
+      if (fps != null) _videoFps = fps;
     });
     _applyVideoAvfilter(size);
     // 尺寸/媒体信息就绪 → 运行期复核 HDR（自动路由依据）
     _refreshHdrContent();
+  }
+
+  /// mediaInfo 直读视频帧率（供高负载判定）；无效 → null。
+  double? _readMediaInfoVideoFps() {
+    try {
+      final videos = _player.mediaInfo.video;
+      if (videos == null || videos.isEmpty) return null;
+      final fps = videos.first.codec.frameRate;
+      return fps > 0 ? fps : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 尺寸未就绪时 1 秒后重试（最多 10 次）：覆盖 decoder.video /
@@ -1760,16 +1832,80 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// texture GL，避免每次进片重复触发 3004 + 自愈 race 闪退）；
   /// 用户手动改过输出则尊重手动选择（texture 档对照实验逃生口）。
   ///
-  /// 再经 [AppSettings.routeVideoOutput] 按内容自动路由：HDR/10-bit 内容
-  /// 直写会 wedge/卡顿（mdk#361），故降级为同载体 GL 路径。
+  /// 内容自动路由（fvp#379 / mdk#361）：
+  /// - TV 模式（仅 Android）：固定 SurfaceView（+ 夹紧）；
+  /// - 移动端高负载（帧率≥50）：Android→SurfaceView、iOS→texture（+ 夹紧）；
+  /// - 其余：HDR/10-bit 直写降级为同载体 GL（[AppSettings.routeVideoOutput]）。
   String _effectiveVideoOutput() {
     final settings = ref.read(settingsProvider);
+    if (settings.tvMode && Platform.isAndroid) return 'surfaceView';
+    final mobile = Platform.isAndroid || Platform.isIOS;
+    if (mobile && _isHighLoad) {
+      return Platform.isAndroid ? 'surfaceView' : 'texture';
+    }
     final base = AppSettings.eglAwareVideoOutput(
       settings.videoOutput,
       eglFault: eglFaultDetector.fault,
       userSet: settings.videoOutputUserSet,
     );
     return AppSettings.routeVideoOutput(base, isHdr: _hdrContent);
+  }
+
+  /// 高负载内容判定：帧率 ≥50fps（阈值经定夺，仅帧率维度）。
+  bool get _isHighLoad => _videoFps >= 50;
+
+  /// 当前是否启用渲染尺寸夹紧：TV 模式 或 移动端高负载。
+  bool get _needsClamp {
+    final settings = ref.read(settingsProvider);
+    if (settings.tvMode && Platform.isAndroid) return true;
+    final mobile = Platform.isAndroid || Platform.isIOS;
+    return mobile && _isHighLoad;
+  }
+
+  /// 夹紧目标显示器物理尺寸：TV 用原生真实分辨率；手机用屏幕物理尺寸。
+  Size? _clampDisplayPhysical() {
+    final settings = ref.read(settingsProvider);
+    if (settings.tvMode && Platform.isAndroid) {
+      final real = _tvDisplayPhysical;
+      if (real != null) return real;
+    }
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return null;
+    return Size(
+      mq.size.width * mq.devicePixelRatio,
+      mq.size.height * mq.devicePixelRatio,
+    );
+  }
+
+  /// 当前应使用的夹紧渲染尺寸；不需夹紧/尺寸未知/无需夹紧时返回 null。
+  Size? _renderTargetSize() {
+    if (_clampDisabled) return null;
+    if (!_needsClamp) return null;
+    final videoSize = _videoNativeSize;
+    if (videoSize == null) return null;
+    final display = _clampDisplayPhysical();
+    if (display == null) return null;
+    final target = PlayerScreen.computeRenderTarget(
+      displayPhysical: display,
+      videoSize: videoSize,
+    );
+    if (target == null) return null;
+    if (target.width >= videoSize.width || target.height >= videoSize.height) {
+      return null;
+    }
+    return target;
+  }
+
+  /// 内容判定（HDR/高负载）翻转时重应用输出（可能切换载体/重建纹理）。
+  void _maybeRerouteForContent() {
+    if (!mounted) return;
+    final routed = _effectiveVideoOutput();
+    if (_lastRoutedOutput == routed) return;
+    final first = _lastRoutedOutput == null;
+    _lastRoutedOutput = routed;
+    if (first) return; // 首帧初始化由加载流程负责，不额外重应用
+    LogService().log('Player', '内容路由切换 → $routed');
+    unawaited(_applyVideoOutputMode());
   }
 
   /// 判定并闩锁 [HDR 内容][_hdrContent]（Emby 元数据 + 运行期 mediaInfo）。
@@ -1797,8 +1933,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     LogService().log('Player',
         'HDR 内容判定: true（元数据=${_embyVideoStream?.hdrLabel ?? "-"}）→ 自动路由直写档为同载体 GL');
     setState(() => _hdrContent = true);
-    // 路由可能改变实际输出档位（如 surfaceViewDirect→surfaceView）→ 重应用
-    unawaited(_applyVideoOutputMode());
+    _maybeRerouteForContent();
   }
 
   /// 当前档位是否走 SurfaceView 平台视图通道（普通档或直写档）。
@@ -1883,6 +2018,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (line == null) return;
     _diag.note(line);
     LogService().log('Diag', line);
+    // 夹紧兜底：夹紧创建后短窗口内仍持续丢帧 → 禁用夹紧回退原生一次
+    final armed = _clampArmedAt;
+    if (armed != null &&
+        !_clampDisabled &&
+        DateTime.now().difference(armed) < const Duration(seconds: 4)) {
+      Future.microtask(_fallbackToNativeSize);
+    }
   }
 
   /// 喂 EGL 检测器；命中则在事件循环里执行自愈（log handler 可能来自
@@ -1955,9 +2097,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     final tunnel = mode == 'tunnel';
+    // 渲染尺寸夹紧：仅「高负载/TV」分支产生非空目标（tunnel 忽略尺寸）
+    final target = tunnel ? null : _renderTargetSize();
     if (_player.textureId.value != null) {
+      // 一次性创建原则：纹理已存在且档位未变 → 复用，绝不 resize
+      // （resize＝释放+按新尺寸重建，是 v1.1.177 进片黑屏的根因）。
       if (_textureOutputApplied == mode) return;
-      // 档位（tunnel 开关）变化：释放旧纹理后按新参数重建
+      // 档位（tunnel 开关）/载体切换：释放旧纹理后按新参数重建
       LogService().log('Player', '纹理档位 $_textureOutputApplied → $mode，重建纹理');
       try {
         await _player
@@ -1967,9 +2113,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _textureOutputApplied = null;
     }
     if (!mounted) return;
+    final int? w = target?.width.toInt();
+    final int? h = target?.height.toInt();
     try {
       final texId = await _player
-          .updateTexture(tunnel: tunnel)
+          .updateTexture(width: w, height: h, tunnel: tunnel)
           .timeout(const Duration(seconds: 5));
       // 返回 -1 说明 _videoSize 未 resolve：短暂等待 loaded 事件后重试一次
       if (texId < 0 && mounted) {
@@ -1978,20 +2126,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted) return;
         if (_player.textureId.value == null) {
           await _player
-              .updateTexture(tunnel: tunnel)
+              .updateTexture(width: w, height: h, tunnel: tunnel)
               .timeout(const Duration(seconds: 5));
         }
       }
       if (_player.textureId.value != null) _textureOutputApplied = mode;
+      // 夹紧创建后布防兜底：若短时间内仍持续丢帧 → 回退原生尺寸重建一次
+      if (target != null && !_clampDisabled) {
+        _clampArmedAt = DateTime.now();
+      }
       String videoStreams = '?';
       try {
         videoStreams = '${_player.mediaInfo.video?.length ?? 0} 路';
       } catch (_) {}
       LogService().log('Player',
-          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams, tunnel $tunnel');
+          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams, tunnel $tunnel, 渲染尺寸 ${target ?? "原始"}');
     } catch (e) {
       LogService().log('Player', 'updateTexture 失败: $e');
     }
+  }
+
+  /// 兜底：夹紧创建后仍持续丢帧 → 禁用夹紧并按原生尺寸重建纹理一次
+  /// （防止个别机型「按夹紧尺寸创建」也异常导致画面定格）。
+  Future<void> _fallbackToNativeSize() async {
+    if (_clampDisabled || !mounted) return;
+    _clampDisabled = true;
+    _clampArmedAt = null;
+    LogService().log('Player', '夹紧异常兜底：禁用夹紧并按原生尺寸重建纹理');
+    setState(() {});
+    try {
+      await _player
+          .updateTexture(width: -1)
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {}
+    _textureOutputApplied = null;
+    await _ensureTexture();
   }
 
   /// 换源渐出：仅在有声音播放时渐出到 0，避免首播/暂停态做无意义延迟。
@@ -2147,12 +2316,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // prepare 期间可能已 dispose：后续 texture/状态操作一律中止
       if (!mounted) return false;
 
-      // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
-      await _ensureTexture();
+      // 先同步视频原生尺寸/帧率（从 mediaInfo 读取），再按夹紧目标一次性建纹理
+      // （先知道尺寸与是否高负载，避免「先原生再 resize」的进片黑屏）
+      await _syncVideoNativeSize();
       if (!mounted) return false;
 
-      // 同步设置视频原生尺寸（从 mediaInfo 读取）
-      await _syncVideoNativeSize();
+      // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
+      await _ensureTexture();
       if (!mounted) return false;
 
       // SurfaceView：等 surfaceCreated 完成 nativeSetSurface 绑定后再
@@ -2276,11 +2446,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.playbackRate = _speed;
       if (!mounted) return;
 
+      // 先同步视频原生尺寸/帧率（从 mediaInfo 读取），再按夹紧目标一次性建纹理
+      await _syncVideoNativeSize();
+      if (!mounted) return;
       // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
       await _ensureTexture();
-      if (!mounted) return;
-      // 同步设置视频原生尺寸（从 mediaInfo 读取）
-      await _syncVideoNativeSize();
       if (!mounted) return;
 
       // SurfaceView：等 surfaceCreated 绑定完成后再起播（超时兜底）
@@ -4388,6 +4558,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _applyVideoOutputMode();
       }
     });
+    // TV 模式切换（仅 Android）影响生效输出（tvMode→固定 SurfaceView）→ 重应用
+    ref.listen(settingsProvider.select((s) => s.tvMode), (prev, next) {
+      if (prev != next) {
+        _applyVideoOutputMode();
+      }
+    });
     return TvBackConfirm(
       // TV：首按提示、2 秒窗口内第二按才确认退出；非 TV 直接确认（现状）
       enabled: ref.watch(settingsProvider.select((s) => s.tvMode)),
@@ -4502,17 +4678,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         child: CircularProgressIndicator(color: Colors.white54),
       );
     }
+    // 夹紧目标（TV/移动端高负载）用于 surface buffer；否则按视频原始尺寸
+    // （SurfaceView 全分辨率扫描输出）。直写档忽略尺寸。
+    final direct = _surfaceViewDirect || eglFaultDetector.fault;
+    final buffer = direct ? size : (_renderTargetSize() ?? size);
     return Center(
       child: AspectRatio(
         aspectRatio: size.width / size.height,
         child: FvpSurfaceView(
           nativeHandle: _player.nativeHandle,
-          videoWidth: size.width.toInt(),
-          videoHeight: size.height.toInt(),
+          videoWidth: buffer.width.toInt(),
+          videoHeight: buffer.height.toInt(),
           // 直写档恒 true；普通 SurfaceView 档仅 EGL 故障（mdk
           // eglChooseConfig 3004 → GL presenter 无效）时直写，绕开 mdk EGL；
           // 正常时走 GL 以保留 snapshot 回读等能力
-          tunnel: _surfaceViewDirect || eglFaultDetector.fault,
+          tunnel: direct,
           epoch: _videoSurfaceEpoch,
           onCreated: () {
             if (!mounted) return;

@@ -322,4 +322,61 @@ void main() {
           PlayerScreen.showLogoInControls(logoUrl: '', isRoom: false), isFalse);
     });
   });
+
+  group('computeRenderTarget（渲染尺寸夹紧）', () {
+    test('4K 源 → 夹到屏幕物理尺寸（按比例、不放大）', () {
+      final t = PlayerScreen.computeRenderTarget(
+        displayPhysical: const Size(1080, 2400),
+        videoSize: const Size(3840, 1600), // 2.4:1
+      );
+      expect(t, isNotNull);
+      expect(t!.width, 1080);
+      expect(t.height, closeTo(450, 0.01));
+      expect(t.width <= 3840 && t.height <= 1600, isTrue);
+    });
+
+    test('物理显示≈面板 4K 时 → 与 4K 源同尺寸（不放大）', () {
+      final t = PlayerScreen.computeRenderTarget(
+        displayPhysical: const Size(3840, 2160),
+        videoSize: const Size(3840, 2160),
+      );
+      expect(t, const Size(3840, 2160));
+    });
+
+    test('源小于显示 → 返回原始（不放大）', () {
+      final t = PlayerScreen.computeRenderTarget(
+        displayPhysical: const Size(1080, 2400),
+        videoSize: const Size(640, 360),
+      );
+      expect(t, const Size(640, 360));
+    });
+
+    test('下限 minSide=480 生效', () {
+      final t = PlayerScreen.computeRenderTarget(
+        displayPhysical: const Size(200, 200),
+        videoSize: const Size(3840, 2160),
+        minSide: 480,
+      );
+      expect(t, isNotNull);
+      expect(t!.width, 480);
+      expect(t.height, closeTo(270, 0.01));
+    });
+
+    test('非法/未知输入 → null', () {
+      expect(
+        PlayerScreen.computeRenderTarget(
+          displayPhysical: const Size(1080, 2400),
+          videoSize: Size.zero,
+        ),
+        isNull,
+      );
+      expect(
+        PlayerScreen.computeRenderTarget(
+          displayPhysical: Size.zero,
+          videoSize: const Size(3840, 2160),
+        ),
+        isNull,
+      );
+    });
+  });
 }

@@ -855,4 +855,21 @@ void main() {
       expect(s.danmakuMaxCount, AppSettings.danmakuMaxCountMin);
     });
   });
+
+  group('normalizedForPlatform（TV 模式仅 Android）', () {
+    test('非 Android 复位 tvMode=true', () {
+      const s = AppSettings(tvMode: true);
+      expect(s.normalizedForPlatform(isAndroid: false).tvMode, isFalse);
+    });
+
+    test('Android 保持 tvMode', () {
+      const s = AppSettings(tvMode: true);
+      expect(s.normalizedForPlatform(isAndroid: true).tvMode, isTrue);
+    });
+
+    test('非 Android 且 tvMode 已 false → 原样', () {
+      const s = AppSettings(tvMode: false);
+      expect(s.normalizedForPlatform(isAndroid: false).tvMode, isFalse);
+    });
+  });
 }
