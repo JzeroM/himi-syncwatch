@@ -36,23 +36,6 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
         ],
-        // 解码调优：Android 硬解器 AImageReader+YUV 采样；iOS VT 输出缩放。
-        // 针对高码率/高帧率 4K 解码吞吐，全平台可开关（全局项需重启生效）。
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
-          onTap: () =>
-              notifier.update(decodeTuning: !settings.decodeTuning),
-          child: SwitchListTile(
-            title: const Text('解码调优（实验）'),
-            subtitle: const Text(
-              'Android：AImageReader 直出 + YUV 采样；iOS：VT 输出缩放。'
-              '改善高码率/4K 解码吞吐；画面异常可关闭（全局项需重启生效）',
-            ),
-            value: settings.decodeTuning,
-            onChanged: (v) => notifier.update(decodeTuning: v),
-          ),
-        ),
-        const Divider(height: 1),
         settingsTvWrapRow(
           tvMode: settings.tvMode,
           onTap: () => notifier.update(showSyncDebug: !settings.showSyncDebug),

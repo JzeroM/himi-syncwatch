@@ -40,7 +40,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? tvMode,
     String? videoOutput,
     bool? renderCompatMode,
-    bool? decodeTuning,
     bool? eglFaultSeen,
     Object? themeColor = AppSettings.unsetValue,
     Object? appIcon = AppSettings.unsetValue,
@@ -85,7 +84,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       // 手动改动视频输出即标记「用户已设置」，EGL 故障归一不再覆盖
       videoOutputUserSet: videoOutput != null ? true : null,
       renderCompatMode: renderCompatMode,
-      decodeTuning: decodeTuning,
       eglFaultSeen: eglFaultSeen,
       themeColor: themeColor,
       appIcon: appIcon,

@@ -42,27 +42,5 @@ void main() {
       expect(global['surfacetexture.glcontext'], 1);
       expect(global.length, 3);
     });
-
-    test('yuvSampler（解码调优）→ 仅注入 gl.yuv_sampler=1', () {
-      final global = buildFvpOptions(
-        xa2Persistent: false,
-        renderCompatMode: false,
-        yuvSampler: true,
-      )['global'] as Map;
-      expect(global['gl.yuv_sampler'], 1);
-      expect(global.containsKey('surfacetexture.glcontext'), isFalse);
-      expect(global.length, 1);
-    });
-
-    test('yuvSampler 与 renderCompatMode 同开 → 齐全不重复', () {
-      final global = buildFvpOptions(
-        xa2Persistent: false,
-        renderCompatMode: true,
-        yuvSampler: true,
-      )['global'] as Map;
-      expect(global['gl.yuv_sampler'], 1);
-      expect(global['surfacetexture.glcontext'], 1);
-      expect(global.length, 2);
-    });
   });
 }
