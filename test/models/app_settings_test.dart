@@ -460,6 +460,32 @@ void main() {
       expect(s.surfaceViewDirect, isFalse);
     });
 
+    test('routeVideoOutput：HDR 时直写档降级为同载体 GL（mdk#361）', () {
+      // HDR + 直写 → 同载体 GL
+      expect(AppSettings.routeVideoOutput('surfaceViewDirect', isHdr: true),
+          'surfaceView');
+      expect(AppSettings.routeVideoOutput('tunnel', isHdr: true), 'texture');
+      // HDR + 本就 GL → 不变
+      expect(AppSettings.routeVideoOutput('surfaceView', isHdr: true),
+          'surfaceView');
+      expect(
+          AppSettings.routeVideoOutput('texture', isHdr: true), 'texture');
+      // SDR → 原样（直写保留）
+      expect(AppSettings.routeVideoOutput('surfaceViewDirect', isHdr: false),
+          'surfaceViewDirect');
+      expect(AppSettings.routeVideoOutput('tunnel', isHdr: false), 'tunnel');
+    });
+
+    test('isHdrPixelFormat：识别 10/16-bit 像素格式', () {
+      expect(AppSettings.isHdrPixelFormat('p010le'), isTrue);
+      expect(AppSettings.isHdrPixelFormat('p210le'), isTrue);
+      expect(AppSettings.isHdrPixelFormat('yuv420p10le'), isTrue);
+      expect(AppSettings.isHdrPixelFormat('P010LE'), isTrue);
+      expect(AppSettings.isHdrPixelFormat('nv12'), isFalse);
+      expect(AppSettings.isHdrPixelFormat(null), isFalse);
+      expect(AppSettings.isHdrPixelFormat('yuv420p'), isFalse);
+    });
+
     test('Android 放行用户档位，其余平台固定 texture', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);

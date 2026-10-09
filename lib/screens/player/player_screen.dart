@@ -829,6 +829,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _voStatus = '-'; // 视频输出驱动
   String _videoResolution = '-'; // 视频分辨率
   String _hdrType = 'SDR'; // HDR 类型标签
+  /// 内容是否为 HDR/10-bit（闩锁，一旦判定不回退）：用于自动路由
+  /// （mdk#361：直写 surface 在 HDR 上会 wedge/卡顿 → 降级为同载体 GL）。
+  /// 由 Emby 元数据 + 运行期 mediaInfo 色彩信息共同判定。
+  bool _hdrContent = false;
   DvProbeResult _dvProbe = DvProbeResult.unknown; // 设备 DV 解码能力（仅展示）
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
@@ -1229,6 +1233,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       setState(() {
         _hdrType = hdrType;
       });
+      // Emby 元数据就绪 → 复核 HDR（自动路由依据）
+      _refreshHdrContent();
     } catch (_) {}
   }
 
@@ -1420,8 +1426,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _player.setProperty('avformat.fflags', '+fastseek'); // 允许快速 seek
     _player.setProperty('avformat.fpsprobesize', '0');
 
-    // FFmpeg 解码线程数：匹配设备核心数提升并行解码能力
-    _player.setProperty('avcodec.threads', '4');
+    // mdk 缓冲/包缓存（网络流抗抖动）：
+    // - buffer：仅把欠载续播阈值提到 2s（min；max 保持 mdk 默认 4s 不动，
+    //   避免高码率 4K 大缓冲的内存压力）；
+    // - demux.buffer.ranges：为 http(s) 开启 8 段包缓存（默认关闭），
+    //   后退 seek 命中已缓存区间时无需重下。
+    // 依据 fvp #98（demux.buffer.ranges=8）。
+    _player.setBufferRange(min: 2000);
+    _player.setProperty('demux.buffer.ranges', '8');
+
+    // FFmpeg 解码线程数：0 = 逻辑核心数 + 1（仅软解回退时生效，硬解忽略）
+    _player.setProperty('avcodec.threads', '0');
 
     // 锁屏保持
     try {
@@ -1633,6 +1648,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _videoNativeSize = size;
     });
     _applyVideoAvfilter(size);
+    // 尺寸/媒体信息就绪 → 运行期复核 HDR（自动路由依据）
+    _refreshHdrContent();
   }
 
   /// 尺寸未就绪时 1 秒后重试（最多 10 次）：覆盖 decoder.video /
@@ -1742,13 +1759,46 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// EGL 故障进程级持久：故障后默认进片直写 SurfaceView（不再先建
   /// texture GL，避免每次进片重复触发 3004 + 自愈 race 闪退）；
   /// 用户手动改过输出则尊重手动选择（texture 档对照实验逃生口）。
+  ///
+  /// 再经 [AppSettings.routeVideoOutput] 按内容自动路由：HDR/10-bit 内容
+  /// 直写会 wedge/卡顿（mdk#361），故降级为同载体 GL 路径。
   String _effectiveVideoOutput() {
     final settings = ref.read(settingsProvider);
-    return AppSettings.eglAwareVideoOutput(
+    final base = AppSettings.eglAwareVideoOutput(
       settings.videoOutput,
       eglFault: eglFaultDetector.fault,
       userSet: settings.videoOutputUserSet,
     );
+    return AppSettings.routeVideoOutput(base, isHdr: _hdrContent);
+  }
+
+  /// 判定并闩锁 [HDR 内容][_hdrContent]（Emby 元数据 + 运行期 mediaInfo）。
+  ///
+  /// 运行期优先于元数据（Emby 常把 HDR 片标成 SDR）。一旦判定为 HDR 保持
+  /// 不回退；判定翻转时刷新视频输出（可能切换载体：直写→同载体 GL）。
+  void _refreshHdrContent() {
+    if (_hdrContent) return;
+    var hdr = _embyVideoStream?.isHDR == true ||
+        _embyVideoStream?.isDolbyVision == true;
+    if (!hdr) {
+      try {
+        final videos = _player.mediaInfo.video;
+        if (videos != null && videos.isNotEmpty) {
+          final c = videos.first.codec;
+          final cs = c.colorSpace;
+          hdr = cs == mdk.ColorSpace.bt2100PQ ||
+              cs == mdk.ColorSpace.bt2100hlg ||
+              c.doviProfile > 0 ||
+              AppSettings.isHdrPixelFormat(c.formatName);
+        }
+      } catch (_) {}
+    }
+    if (!hdr || !mounted) return;
+    LogService().log('Player',
+        'HDR 内容判定: true（元数据=${_embyVideoStream?.hdrLabel ?? "-"}）→ 自动路由直写档为同载体 GL');
+    setState(() => _hdrContent = true);
+    // 路由可能改变实际输出档位（如 surfaceViewDirect→surfaceView）→ 重应用
+    unawaited(_applyVideoOutputMode());
   }
 
   /// 当前档位是否走 SurfaceView 平台视图通道（普通档或直写档）。
@@ -3233,6 +3283,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final videoStreamRaw = message['videoStream'];
       if (videoStreamRaw is Map<String, dynamic>) {
         _embyVideoStream = MediaStream.fromJson(videoStreamRaw);
+        // 房间观众：元数据到达 → 复核 HDR（自动路由依据）
+        _refreshHdrContent();
       }
       _embyDefaultAudioIndex = message['defaultAudioStreamIndex'] as int?;
       LogService().log('Room',

@@ -516,6 +516,31 @@ class AppSettings {
   bool get surfaceViewDirect =>
       effectiveVideoOutput(videoOutput) == 'surfaceViewDirect';
 
+  /// 按内容自动路由视频输出（mdk#361）：AMediaCodec 直写 surface
+  /// （surfaceViewDirect / tunnel 的直写语义）在 HDR10/DV 内容上会
+  /// wedge/卡顿，需降级到「同载体」的 GL 渲染路径。
+  ///
+  /// - HDR 且档位为直写 → 降级：surfaceViewDirect→surfaceView、tunnel→texture；
+  /// - SDR 或本就走 GL → 原样返回。
+  static String routeVideoOutput(String output, {required bool isHdr}) {
+    if (!isHdr) return output;
+    if (output == 'surfaceViewDirect') return 'surfaceView';
+    if (output == 'tunnel') return 'texture';
+    return output;
+  }
+
+  /// 像素格式名是否属 HDR/10-bit 家族（p010/p210/p410/16-bit 等）。
+  static bool isHdrPixelFormat(String? formatName) {
+    final n = (formatName ?? '').toLowerCase();
+    return n.contains('p010') ||
+        n.contains('p210') ||
+        n.contains('p410') ||
+        n.contains('10le') ||
+        n.contains('10be') ||
+        n.contains('16le') ||
+        n.contains('16be');
+  }
+
   /// 纹理通道是否启用解码器直通（tunnel）。
   bool get textureTunnel => effectiveVideoOutput(videoOutput) == 'tunnel';
 
