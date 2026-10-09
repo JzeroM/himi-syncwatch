@@ -1443,11 +1443,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final settings = ref.read(settingsProvider);
 
     // 配置解码器
+    // 音频硬解接线（1.1.186）：Android 不接线时 mdk 音频默认直接
+    // FFmpeg 软解（真机日志确证），EAC3 软解音频钟抖动会让视频按
+    // avsync 成簇判迟到丢帧；auto/hw 档优先 AMediaCodec，FFmpeg 兜底。
     final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
     _player.videoDecoders = decoders;
+    final audioDecoders =
+        DecodeModeService.resolveAudioDecoders(settings.decodeMode);
+    _player.audioDecoders = audioDecoders;
     // 落盘配置值取证：Windows「硬解没生效」类问题先核对配置与
     // decoder.video 事件（实际生效框架）是否一致
-    LogService().log('Player', '解码配置: ${settings.decodeMode} → $decoders');
+    LogService().log('Player',
+        '解码配置: ${settings.decodeMode} → video=$decoders audio=$audioDecoders');
 
     // avformat 缓冲配置：平衡起播速度与播放稳定性
     _player.setProperty('avformat.probesize', '1048576'); // 1MB
@@ -5581,7 +5588,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Step2: 切换解码器
       final decoders = DecodeModeService.resolveDecoders(mode);
       _player.videoDecoders = decoders;
-      LogService().log('Player', '切换解码配置: $mode → $decoders');
+      final audioDecoders = DecodeModeService.resolveAudioDecoders(mode);
+      _player.audioDecoders = audioDecoders;
+      LogService().log('Player',
+          '切换解码配置: $mode → video=$decoders audio=$audioDecoders');
 
       // Step3: seek 触发帧刷新（强制新解码器解码当前帧）
       if (currentPos > 0) {

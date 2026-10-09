@@ -10,7 +10,12 @@
 /// - `gl.yuv_sampler`：mdk 注明 "for android and rockchip arm driver
 ///   hardware decoder rendering"，YUV 采样渲染变体；
 /// - `surfacetexture.glcontext`：SurfaceTexture 无有效 GL 上下文时
-///   创建 context（纹理通道黑屏 workaround，视频全黑机型实验开关）。
+///   创建 context（纹理通道黑屏 workaround，视频全黑机型实验开关）；
+/// - `avsync.audio.adaptive`（全平台常开，1.1.186）：视频落后于音频
+///   时放慢音频速度保同步（mdk 0.37+），配合音频硬解减少成簇丢帧；
+/// - `avsync.video.decoder_drop`（全平台常开，1.1.186）：音画严重
+///   不同步时解码端平滑丢帧（fvp#336 wang-bin 方案），替代渲染端
+///   簇状丢帧。
 ///
 /// 注意：fvp registerWith 的 `maxWidth`/`maxHeight`（纹理尺寸上限）
 /// 对本应用**无效**——himi 绕过 video_player 插件层（mdk.Player FFI
@@ -30,6 +35,10 @@ Map<String, Object> buildFvpOptions({
       'gl.yuv_sampler': 1,
       'surfacetexture.glcontext': 1,
     },
+    // avsync 两参数全平台常开（见 doc 头），音频钟抖动/解码突发
+    // 导致的簇状丢帧缓解（1.1.186：4K60 手机丢帧诊断）。
+    'avsync.audio.adaptive': 1,
+    'avsync.video.decoder_drop': 1,
   };
   return {'global': global};
 }

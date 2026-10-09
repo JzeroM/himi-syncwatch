@@ -46,6 +46,49 @@ void main() {
     });
   });
 
+  group('resolveAudioDecoders（音频硬解接线，1.1.186）', () {
+    test('SW 模式 → 仅 FFmpeg 软解', () {
+      final result = DecodeModeService.resolveAudioDecoders('sw');
+      expect(result, equals(['FFmpeg']));
+    });
+
+    test('HW 模式 → Android/Windows 纯硬解；无硬解平台回退 FFmpeg', () {
+      final result = DecodeModeService.resolveAudioDecoders('hw');
+      if (Platform.isAndroid) {
+        expect(result, equals(['AMediaCodec']));
+      } else if (Platform.isWindows) {
+        expect(result, equals(['MFT']));
+      } else {
+        // Apple/Linux 无 mdk 音频硬解器 → 回退 FFmpeg（唯一可用）
+        expect(result, equals(['FFmpeg']));
+      }
+    });
+
+    test('Auto 模式 → Android 硬解优先 + FFmpeg 兜底', () {
+      final result = DecodeModeService.resolveAudioDecoders('auto');
+      if (Platform.isAndroid) {
+        expect(result, equals(['AMediaCodec', 'FFmpeg']));
+      } else if (Platform.isWindows) {
+        expect(result, equals(['MFT', 'FFmpeg']));
+      } else {
+        // iOS/macOS/Linux：mdk 无音频硬解（VT 仅视频），恒为 FFmpeg
+        expect(result, equals(['FFmpeg']));
+      }
+    });
+
+    test('未知模式 → 默认 auto 音频解码器', () {
+      final result = DecodeModeService.resolveAudioDecoders('unknown');
+      expect(result, equals(
+          DecodeModeService.resolveAudioDecoders('auto')));
+    });
+
+    test('Android auto：FFmpeg 兜底保证兼容（硬解失败不黑屏）', () {
+      if (!Platform.isAndroid) return;
+      final result = DecodeModeService.resolveAudioDecoders('auto');
+      expect(result.last, equals('FFmpeg'));
+    });
+  });
+
   group('AppSettings.fromJson - 解码模式兼容', () {
     test('新版 decodeMode 字符串值 hw', () {
       final settings = AppSettings.fromJson({'decodeMode': 'hw'});
