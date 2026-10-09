@@ -11,6 +11,7 @@ class MediaDetailsSection extends StatelessWidget {
     super.key,
     required this.item,
     this.streamsItem,
+    this.selectedSource,
     this.similarItems = const [],
     this.onOpenSimilar,
   });
@@ -22,6 +23,12 @@ class MediaDetailsSection extends StatelessWidget {
   /// 外部链接/工作室仍取 [item]（剧集本身）。
   final MediaItem? streamsItem;
 
+  /// 当前选中版本（电影 = `_selectedMediaSourceId` 对应源；剧集 = 该集
+  /// `_episodeSourceIds` 对应源）。非空时视频/音频流、路径、大小优先取
+  /// 该版本——`item.mediaStreams` 是 Emby 默认源的顶层流，切版本后
+  /// 不变（v1.1.177：修「切换版本后底部媒体信息不更新」）。
+  final MediaSource? selectedSource;
+
   /// 相似推荐条目（渲染在「外部链接」之上；空则不显示）。
   final List<MediaItem> similarItems;
 
@@ -30,15 +37,41 @@ class MediaDetailsSection extends StatelessWidget {
 
   MediaItem get _mediaItem => streamsItem ?? item;
 
+  /// 生效流列表：选中版本有解析到流时优先用它，否则回退条目顶层流
+  /// （个别源未带 MediaStreams 时避免整卡消失）。
+  List<MediaStream> get _effectiveStreams {
+    final src = selectedSource;
+    if (src != null && src.mediaStreams.isNotEmpty) return src.mediaStreams;
+    return _mediaItem.mediaStreams;
+  }
+
+  /// 生效路径：选中版本优先，回退条目顶层路径，再回退默认源（首个）路径。
+  String? get _effectivePath => selectedSource?.path ??
+      _mediaItem.path ??
+      (_mediaItem.mediaSources.isNotEmpty
+          ? _mediaItem.mediaSources.first.path
+          : null);
+
+  /// 生效大小：选中版本优先，回退默认源（首个）大小。
+  int? get _effectiveSize =>
+      selectedSource?.size ??
+      (_mediaItem.mediaSources.isNotEmpty
+          ? _mediaItem.mediaSources.first.size
+          : null);
+
   /// 有可展示内容才渲染。
   static bool hasContent(MediaItem item,
-      {List<MediaItem> similarItems = const [], MediaItem? streamsItem}) {
+      {List<MediaItem> similarItems = const [],
+      MediaItem? streamsItem,
+      MediaSource? selectedSource}) {
     final m = streamsItem ?? item;
     return similarItems.isNotEmpty ||
         item.externalUrls.isNotEmpty ||
         item.providerIds.isNotEmpty ||
         item.studios.isNotEmpty ||
+        selectedSource?.path != null ||
         m.path != null ||
+        (selectedSource != null && selectedSource.mediaStreams.isNotEmpty) ||
         m.mediaStreams.isNotEmpty;
   }
 
@@ -106,8 +139,11 @@ class MediaDetailsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final links = externalLinksFor(item);
     final media = _mediaItem;
-    final video = media.mediaStreams.where((s) => s.type == 'Video').toList();
-    final audios = media.mediaStreams.where((s) => s.type == 'Audio').toList();
+    final streams = _effectiveStreams;
+    final video = streams.where((s) => s.type == 'Video').toList();
+    final audios = streams.where((s) => s.type == 'Audio').toList();
+    final path = _effectivePath;
+    final size = _effectiveSize;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,16 +195,14 @@ class MediaDetailsSection extends StatelessWidget {
           ),
           const SizedBox(height: 20),
         ],
-        if (media.path != null ||
-            media.mediaSources.isNotEmpty ||
-            media.dateCreated != null) ...[
+        if (path != null || size != null || media.dateCreated != null) ...[
           const _SectionTitle('媒体信息'),
-          if (media.path != null) ...[
+          if (path != null) ...[
             const Text('路径:',
                 style: TextStyle(fontSize: 13, color: Colors.white70)),
             const SizedBox(height: 4),
             SelectableText(
-              media.path!,
+              path,
               style: const TextStyle(fontSize: 12, color: Colors.white),
             ),
             const SizedBox(height: 8),
@@ -177,9 +211,9 @@ class MediaDetailsSection extends StatelessWidget {
             spacing: 12,
             runSpacing: 4,
             children: [
-              if (media.mediaSources.isNotEmpty)
+              if (size != null)
                 Text(
-                  formatSize(media.mediaSources.first.size),
+                  formatSize(size),
                   style: const TextStyle(fontSize: 13, color: Colors.white70),
                 ),
               if (media.dateCreated != null)

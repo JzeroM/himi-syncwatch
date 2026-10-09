@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 
 /// Emby 服务器管理页（原侧边栏服务器区域，现为独立标签页）。
 class ServerManagerScreen extends ConsumerStatefulWidget {
@@ -56,19 +57,21 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                 ),
               ),
             ),
-          IconButton(
-            icon: Icon(_showAddServerForm ? Icons.close : Icons.add),
-            tooltip: _showAddServerForm ? '取消添加' : '添加服务器',
-            onPressed: () =>
-                setState(() => _showAddServerForm = !_showAddServerForm),
-          ),
+          // TV 不提供手动添加表单（遥控器无输入法）：走上方扫码入口
+          if (!tvMode)
+            IconButton(
+              icon: Icon(_showAddServerForm ? Icons.close : Icons.add),
+              tooltip: _showAddServerForm ? '取消添加' : '添加服务器',
+              onPressed: () =>
+                  setState(() => _showAddServerForm = !_showAddServerForm),
+            ),
         ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(height: GlassConfig.topInsetOf(context)),
-          if (_showAddServerForm)
+          if (_showAddServerForm && !tvMode)
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.only(
@@ -164,49 +167,54 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     final urlController = TextEditingController(text: server.serverUrl);
     final usernameController = TextEditingController(text: server.username);
     final passwordController = TextEditingController();
+    final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('编辑服务器'),
         content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: '服务器名称',
-                  border: OutlineInputBorder(),
+          // TV 下输入框整体屏蔽焦点（遥控器无输入法；添加走扫码入口）
+          child: tvExcludeEditable(
+            tvMode: tvMode,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: '服务器名称',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: urlController,
-                decoration: const InputDecoration(
-                  labelText: '服务器地址',
-                  hintText: 'https://emby.example.com:8920',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlController,
+                  decoration: const InputDecoration(
+                    labelText: '服务器地址',
+                    hintText: 'https://emby.example.com:8920',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: usernameController,
-                decoration: const InputDecoration(
-                  labelText: '用户名',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: usernameController,
+                  decoration: const InputDecoration(
+                    labelText: '用户名',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '新密码（留空保持不变）',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '新密码（留空保持不变）',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         actions: [

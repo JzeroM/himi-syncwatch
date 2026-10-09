@@ -120,6 +120,14 @@ void main() {
     expect(find.byTooltip('添加服务器'), findsOneWidget);
   });
 
+  testWidgets('TV 模式隐藏「+」添加入口（输入走扫码，v1.1.177）', (tester) async {
+    await _pumpScreen(tester, settings: const AppSettings(tvMode: true));
+
+    expect(find.byTooltip('添加服务器'), findsNothing);
+    expect(find.byTooltip('手机扫码配置'), findsOneWidget,
+        reason: 'TV 添加服务器统一走扫码');
+  });
+
   testWidgets('点击 + 展开添加服务器表单', (tester) async {
     await _pumpScreen(tester);
 

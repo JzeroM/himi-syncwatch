@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 弹幕配置页：默认开关 / API 地址 / 行数 / 屏蔽 / 同屏上限。
@@ -139,25 +140,9 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
             ),
             const Divider(height: 1),
             _sectionHeader('弹幕源'),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: TextField(
-                key: const ValueKey('danmakuApiUrlField'),
-                controller: _apiUrl,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: '弹幕 API 地址',
-                  hintText: 'http://192.168.1.10:9321/<token>',
-                  helperText: 'danmaku_api 自建服务地址（可含 token 路径），'
-                      '留空关闭弹幕',
-                  helperMaxLines: 2,
-                ),
-                onChanged: (v) => _update(danmakuApiUrl: v),
-              ),
-            ),
             // 扫码配置：TV 无输入法，手机扫码打开网页填地址提交即落库
-            // （复用 Emby 扫码管道，mode=danmaku 高亮对应区块）。
+            // （复用 Emby 扫码管道，mode=danmaku 高亮对应区块）。放在
+            // 输入框上方：TV 焦点主路径（v1.1.177）。
             settingsTvWrapRow(
               tvMode: s.tvMode,
               onTap: _openQrConfig,
@@ -172,6 +157,28 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                   color: Colors.white54,
                 ),
                 onTap: _openQrConfig,
+              ),
+            ),
+            // TV 下输入框屏蔽焦点（directional 导航方向键被文本编辑快捷键
+            // 吞掉，焦点卡死；TV 无输入法，配置走扫码）。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: tvExcludeEditable(
+                tvMode: s.tvMode,
+                child: TextField(
+                  key: const ValueKey('danmakuApiUrlField'),
+                  controller: _apiUrl,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: '弹幕 API 地址',
+                    hintText: 'http://192.168.1.10:9321/<token>',
+                    helperText: 'danmaku_api 自建服务地址（可含 token 路径），'
+                        '留空关闭弹幕',
+                    helperMaxLines: 2,
+                  ),
+                  onChanged: (v) => _update(danmakuApiUrl: v),
+                ),
               ),
             ),
             const Divider(height: 1),
@@ -219,16 +226,19 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: TextField(
-                key: const ValueKey('danmakuBlockWordsField'),
-                controller: _blockWords,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: '屏蔽关键词',
-                  hintText: '剧透, 广告',
-                  helperText: '英文逗号分隔，命中的弹幕整条不显示',
+              child: tvExcludeEditable(
+                tvMode: s.tvMode,
+                child: TextField(
+                  key: const ValueKey('danmakuBlockWordsField'),
+                  controller: _blockWords,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: '屏蔽关键词',
+                    hintText: '剧透, 广告',
+                    helperText: '英文逗号分隔，命中的弹幕整条不显示',
+                  ),
+                  onChanged: (v) => _update(danmakuBlockWords: v),
                 ),
-                onChanged: (v) => _update(danmakuBlockWords: v),
               ),
             ),
             const Divider(height: 1),

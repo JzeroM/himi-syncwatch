@@ -651,6 +651,42 @@ void main() {
       expect(find.byKey(const Key('episodeCard_e1')), findsNothing);
     });
 
+    testWidgets('TV 选季走居中弹层（showMenu disabled 容器焦点判死回归，v1.1.177）',
+        (tester) async {
+      await _pumpDetail(
+        tester,
+        tv: true,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: episodesByParent,
+          seasons: seasons,
+        ),
+      );
+
+      final selector = find.byKey(const Key('seriesSeasonSelector'));
+      await tester.ensureVisible(selector);
+      await tester.pump();
+      await tester.tap(selector);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // 居中 AlertDialog 弹层（非 showMenu 的 PopupMenuItem 菜单）
+      expect(find.text('选择季'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byKey(const Key('seasonOption_1')), findsOneWidget);
+      expect(find.byKey(const Key('seasonOption_2')), findsOneWidget);
+      expect(find.byType(PopupMenuItem<int>), findsNothing);
+
+      await tester.tap(find.byKey(const Key('seasonOption_2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.byKey(const Key('episodeCard_e3')), findsOneWidget);
+      expect(find.byKey(const Key('episodeCard_e1')), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
     testWidgets('电影页不渲染分季区块', (tester) async {
       await _pumpDetail(tester);
 
@@ -825,17 +861,21 @@ void main() {
       );
     });
 
-    testWidgets('「可用版本」信息行不参与焦点（ExcludeFocus，v1.1.176 回归）',
+    testWidgets('「可用版本」区块：TV 不渲染（v1.1.177 减玻璃），非 TV 渲染且 ExcludeFocus',
         (tester) async {
+      // TV：整块隐藏（纯信息玻璃层抬高焦点动画每帧开销，版本切换走
+      // 操作行按钮 + 弹层）
       await pumpMulti(tester, tv: true);
+      expect(find.text('可用版本'), findsNothing);
+      expect(find.text('1080p版'), findsNothing);
+      expect(find.text('4K版'), findsNothing);
 
-      // 可用版本区块存在（标题 + 每源一行）
+      // 非 TV：区块存在（标题 + 每源一行），展示行被 ExcludeFocus 包裹
+      await pumpMulti(tester);
       expect(find.text('可用版本'), findsOneWidget);
       expect(find.text('1080p版'), findsWidgets);
       expect(find.text('4K版'), findsWidgets);
 
-      // 每个源行的 ListTile 被 ExcludeFocus 包裹（TV 焦点跳过，
-      // 无 onTap 的 ListTile 在 directional 下可聚焦但高光透明、OK 无响应）
       final tiles = find.descendant(
         of: find.byType(GlassContainer),
         matching: find.byType(ListTile),
@@ -925,6 +965,58 @@ void main() {
       final after = container.read(pendingTrackSelectionProvider);
       expect(after?.subtitleIndex, 5, reason: 'jpn 字幕迁移到 src2 的 index');
       expect(after?.audioIndex, isNull, reason: 'src2 无 chi 音轨 → 清空');
+    });
+
+    testWidgets('切版本后底部媒体信息跟随新版本（流/路径/大小，v1.1.177）',
+        (tester) async {
+      final a = MediaSource(
+        id: 'va',
+        name: '1080p版',
+        path: '/media/a/video.mkv',
+        size: 1073741824, // 1.00 G
+        mediaStreams: [
+          MediaStream(type: 'Video', codec: 'h264', width: 1920, height: 1080),
+          MediaStream(type: 'Audio', codec: 'aac', language: 'chi', index: 1),
+        ],
+      );
+      final b = MediaSource(
+        id: 'vb',
+        name: '4K版',
+        path: '/media/b/video.mkv',
+        size: 2147483648, // 2.00 G
+        mediaStreams: [
+          MediaStream(type: 'Video', codec: 'hevc', width: 3840, height: 2160),
+          MediaStream(type: 'Audio', codec: 'eac3', language: 'eng', index: 1),
+        ],
+      );
+      final item = MediaItem(
+        id: 'mv_info',
+        name: '媒体信息联动',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        // 顶层流 = 默认源（va）的流集
+        mediaStreams: [...a.mediaStreams],
+        mediaSources: [a, b],
+      );
+      await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+
+      // 默认：底部媒体信息显示 va 的流/路径/大小
+      expect(find.text('h264'), findsOneWidget, reason: '默认源视频编解码');
+      expect(find.textContaining('/media/a/video.mkv'), findsOneWidget,
+          reason: '默认源路径');
+      expect(find.text('1.00 G'), findsOneWidget, reason: '默认源大小');
+
+      // 切到 vb：流/路径/大小全部跟随
+      await openSheet(tester, const Key('versionSelectorButton'));
+      await tester.tap(find.byKey(const Key('versionOption_vb')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('hevc'), findsOneWidget, reason: '新版本视频编解码');
+      expect(find.text('h264'), findsNothing);
+      expect(find.textContaining('/media/b/video.mkv'), findsOneWidget,
+          reason: '新版本路径');
+      expect(find.text('2.00 G'), findsOneWidget, reason: '新版本大小');
     });
 
     testWidgets('TV 模式版本图标被 TvFocusable 包裹', (tester) async {

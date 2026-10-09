@@ -3,6 +3,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
 
 /// 剧集详情页分季区块集合：选季下拉 + 该季剧集横卡 + 播出季季卡横排。
 ///
@@ -106,17 +107,21 @@ class SeriesSections extends StatelessWidget {
           tvMode: tvMode,
         ),
         const SizedBox(height: 12),
-        _SeasonEpisodeRow(
-          rowKey: episodeRowKey,
-          episodes: _seasonEpisodes,
-          onEpisodeSelect: onEpisodeSelect,
-          tvMode: tvMode,
-          highlightEpisodeId: highlightEpisodeId,
-          controller: episodeRowController,
-          favoriteIds: favoriteIds,
-          onToggleFavorite: onToggleFavorite,
-          watchedIds: watchedIds,
-          onToggleWatched: onToggleWatched,
+        // RepaintBoundary：隔离横卡焦点动画/缩放的重绘，避免沿页面
+        // 滚动链放大整页绘制成本（TV 多玻璃页面卡顿缓解）。
+        RepaintBoundary(
+          child: _SeasonEpisodeRow(
+            rowKey: episodeRowKey,
+            episodes: _seasonEpisodes,
+            onEpisodeSelect: onEpisodeSelect,
+            tvMode: tvMode,
+            highlightEpisodeId: highlightEpisodeId,
+            controller: episodeRowController,
+            favoriteIds: favoriteIds,
+            onToggleFavorite: onToggleFavorite,
+            watchedIds: watchedIds,
+            onToggleWatched: onToggleWatched,
+          ),
         ),
         const SizedBox(height: 20),
         const Text(
@@ -238,15 +243,36 @@ class _SeasonSelector extends StatelessWidget {
     );
   }
 
-  /// 打开玻璃选季面板（透明 Material + GlassContainer 承底），
-  /// 触摸与 TV 遥控统一走此菜单。
+  /// 打开选季面板：触屏走玻璃 showMenu；TV 走居中弹层（showTvOptionDialog）
+  ///——showMenu 用单个 disabled 容器 PopupMenuItem 包住全部季行，directional
+  /// 模式下该容器矩形包住所有子行，方向带算法要求候选严格在外，焦点切不动
+  /// （v1.1.177）。
   Future<void> _showMenu(BuildContext context) async {
     final entries = seasons.asMap().entries.toList();
     final numbers = entries
         .map((e) => SeriesSections.seasonNumber(e.value, e.key))
         .toList();
     final current =
-        numbers.contains(selectedSeason) ? selectedSeason : numbers.first;
+        numbers.contains(selectedSeason) ? selectedSeason! : numbers.first;
+
+    if (tvMode) {
+      await showTvOptionDialog<int>(
+        context: context,
+        title: '选择季',
+        currentValue: current,
+        options: [
+          for (var i = 0; i < entries.length; i++)
+            TvOptionEntry<int>(
+              value: numbers[i],
+              label:
+                  SeriesSections.seasonTitle(entries[i].value, entries[i].key),
+              key: Key('seasonOption_${numbers[i]}'),
+            ),
+        ],
+        onSelected: onSeasonSelected,
+      );
+      return;
+    }
 
     final overlay =
         Overlay.of(context).context.findRenderObject() as RenderBox?;

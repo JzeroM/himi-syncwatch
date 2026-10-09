@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
@@ -69,6 +71,9 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
   Widget build(BuildContext context) {
     final agoraConfig = ref.watch(agoraConfigProvider);
     final configured = agoraConfig?.isConfigured == true;
+    // 防御性：声网页在 TV 顶栏被隐藏（当前不可达），但表单字段仍
+    // 统一屏蔽焦点（遥控器无输入法）
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -108,13 +113,16 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              TextField(
-                controller: _appIdController,
-                decoration: const InputDecoration(
-                  hintText: '声网 App ID',
-                  prefixIcon: Icon(Icons.vpn_key),
-                  border: OutlineInputBorder(),
-                  isDense: true,
+              tvExcludeEditable(
+                tvMode: tvMode,
+                child: TextField(
+                  controller: _appIdController,
+                  decoration: const InputDecoration(
+                    hintText: '声网 App ID',
+                    prefixIcon: Icon(Icons.vpn_key),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -123,13 +131,16 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              TextField(
-                controller: _certController,
-                decoration: const InputDecoration(
-                  hintText: '声网 App Certificate',
-                  prefixIcon: Icon(Icons.lock),
-                  border: OutlineInputBorder(),
-                  isDense: true,
+              tvExcludeEditable(
+                tvMode: tvMode,
+                child: TextField(
+                  controller: _certController,
+                  decoration: const InputDecoration(
+                    hintText: '声网 App Certificate',
+                    prefixIcon: Icon(Icons.lock),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),

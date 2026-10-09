@@ -95,6 +95,28 @@ void main() {
     expect(find.byType(ListTile), findsNothing, reason: '旧平铺列表已移除');
   });
 
+  testWidgets('TV 模式输入框不抢焦且被 ExcludeFocus（打开即卡死回归，v1.1.177）',
+      (tester) async {
+    await _pump(tester, settings: const AppSettings(tvMode: true));
+
+    final field = find.byKey(const ValueKey('globalSearchField'));
+    expect(field, findsOneWidget);
+    expect(
+      find.ancestor(of: field, matching: find.byType(ExcludeFocus)),
+      findsOneWidget,
+      reason: 'TV 下输入框必须屏蔽焦点（方向键被文本编辑快捷键吞掉）',
+    );
+
+    // autofocus 已条件化：TV 下不写 true
+    final tf = tester.widget<TextField>(field);
+    expect(tf.autofocus, isFalse);
+
+    // 焦点不在输入框上
+    final editable = find.descendant(of: field, matching: find.byType(EditableText));
+    final focusNode = tester.widget<EditableText>(editable.first).focusNode;
+    expect(focusNode.hasFocus, isFalse);
+  });
+
   testWidgets('左栏筛选：点服务器只看该服务器结果，点全部恢复', (tester) async {
     await _pump(
       tester,

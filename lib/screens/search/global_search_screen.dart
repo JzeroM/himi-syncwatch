@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 全局聚合搜索页：左栏服务器筛选 + 右栏资源卡片。
@@ -157,6 +158,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
     // 主题色三段渐变底（与首页/分类页一致）
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     final accent = themeColorValue == null
         ? null
         : PosterPalette.darkenForPage(Color(themeColorValue));
@@ -182,35 +184,41 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                     ),
                     const SizedBox(width: 4),
                     Expanded(
-                      child: TextField(
-                        key: const ValueKey('globalSearchField'),
-                        controller: _controller,
-                        autofocus: true,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: '输入关键词搜索全部服务器',
-                          hintStyle: const TextStyle(color: Colors.white54),
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.10),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
+                      // TV 下输入框屏蔽焦点 + 不抢占（directional 下方向键
+                      // 被文本编辑快捷键吞掉，打开即卡死；TV 搜索走扫码/
+                      // 资源面板）。
+                      child: tvExcludeEditable(
+                        tvMode: tvMode,
+                        child: TextField(
+                          key: const ValueKey('globalSearchField'),
+                          controller: _controller,
+                          autofocus: !tvMode,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: '输入关键词搜索全部服务器',
+                            hintStyle: const TextStyle(color: Colors.white54),
+                            filled: true,
+                            fillColor: Colors.white.withValues(alpha: 0.10),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            suffixIcon: ValueListenableBuilder<String>(
+                              valueListenable: _liveQuery,
+                              builder: (context, v, _) => v.isEmpty
+                                  ? const SizedBox.shrink()
+                                  : IconButton(
+                                      key: const ValueKey('globalSearchClear'),
+                                      icon: const Icon(Icons.clear,
+                                          color: Colors.white70),
+                                      onPressed: _clear,
+                                    ),
+                            ),
                           ),
-                          suffixIcon: ValueListenableBuilder<String>(
-                            valueListenable: _liveQuery,
-                            builder: (context, v, _) => v.isEmpty
-                                ? const SizedBox.shrink()
-                                : IconButton(
-                                    key: const ValueKey('globalSearchClear'),
-                                    icon: const Icon(Icons.clear,
-                                        color: Colors.white70),
-                                    onPressed: _clear,
-                                  ),
-                          ),
+                          onChanged: _onChanged,
                         ),
-                        onChanged: _onChanged,
                       ),
                     ),
                   ],

@@ -61,6 +61,20 @@ void main() {
     expect(find.byIcon(Icons.qr_code_scanner), findsNothing);
   });
 
+  testWidgets('TV 模式输入框被 ExcludeFocus（防御性，v1.1.177）', (tester) async {
+    await _pumpScreen(tester, settings: const AppSettings(tvMode: true));
+
+    expect(find.byType(TextField), findsNWidgets(2));
+    for (final field in find.byType(TextField).evaluate()) {
+      expect(
+        find.ancestor(
+            of: find.byWidget(field.widget), matching: find.byType(ExcludeFocus)),
+        findsOneWidget,
+        reason: 'TV 下声网表单输入框必须屏蔽焦点',
+      );
+    }
+  });
+
   testWidgets('App ID 为空时保存被拒绝', (tester) async {
     final container = await _pumpScreen(tester);
 

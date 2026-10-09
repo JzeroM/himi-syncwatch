@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -515,6 +516,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return null;
   }
 
+  /// 底部媒体信息区块的选中版本：电影 = 主条目选中源；剧集 = 目标集选中源。
+  MediaSource? _detailsSelectedSource(MediaItem item) {
+    if (!item.isSeries) return _selectedSource(item);
+    final ep = _targetEpisode();
+    return ep == null ? null : _episodeSelectedSource(ep);
+  }
+
   /// 当前生效的字幕流：选中版本 → 该版本的轨；否则回退顶层流（默认行为）。
   List<MediaStream> _currentSubtitleStreams() {
     final item = _item;
@@ -581,6 +589,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final mm = m.toString().padLeft(2, '0');
     final ss = s.toString().padLeft(2, '0');
     return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+  }
+
+  /// 目标集选中版本的 MediaSource；未选或已失效回退 null。
+  MediaSource? _episodeSelectedSource(MediaItem ep) {
+    final sourceId = _episodeSourceIds[ep.id];
+    if (sourceId != null) {
+      for (final s in ep.mediaSources) {
+        if (s.id == sourceId) return s;
+      }
+    }
+    return null;
   }
 
   /// 目标集选中版本的字幕流；未选版本回退该集顶层流。
@@ -1234,26 +1253,32 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   Future<int?> _showTokenCountDialog() async {
     final controller = TextEditingController(text: '2');
+    // 防御性：建房入口当前 TV 不渲染（if (!tvMode)），但弹窗字段仍
+    // 统一屏蔽焦点（遥控器无输入法）
+    final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
     return showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('建房设置'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('房间最大人数', style: TextStyle(fontSize: 14)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                isDense: true,
+        content: tvExcludeEditable(
+          tvMode: tvMode,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('房间最大人数', style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                autofocus: !tvMode,
               ),
-              autofocus: true,
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1992,9 +2017,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 // 正文区不再重复渲染）
                 // 顶部「版本/音频/字幕」媒体信息块已移除：底部媒体信息区块
                 // （MediaDetailsSection）已覆盖，避免重复。
-                if (item.hasMultipleVersions) ...[
+                // 可用版本列表仅非 TV 渲染（v1.1.177 决策）：TV 下该区块是
+                // 纯信息玻璃块（N 个液态玻璃层抬高焦点动画每帧开销，且
+                // 版本切换入口在操作行「版本」按钮 + 弹层，列表冗余）。
+                if (!tv && item.hasMultipleVersions) ...[
                   _buildMediaSources(item),
-                  SizedBox(height: tv ? 14 : 20),
+                  const SizedBox(height: 20),
                 ],
                 if (item.isSeries && _seasons.isNotEmpty) ...[
                   SeriesSections(
@@ -2027,47 +2055,56 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    height: PosterCard.heightFor(88),
-                    child: ListView.builder(
-                      // TV 焦点框放大溢出内容盒，默认 clip 会裁边
-                      clipBehavior: Clip.none,
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _similarItems.length,
-                      itemBuilder: (context, index) {
-                        final sim = _similarItems[index];
-                        return SizedBox(
-                          width: 96,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: PosterCard(
-                              key: ValueKey('posterCard_${sim.id}'),
-                              item: sim,
-                              width: 88,
-                              onTap: () {
-                                final q = widget.serverId != null
-                                    ? '?server=${Uri.encodeComponent(widget.serverId!)}'
-                                    : '';
-                                context.push('/detail/${sim.id}$q');
-                              },
+                  // RepaintBoundary：隔离焦点动画/卡片缩放触发的重绘，
+                  // 避免沿滚动链向上传播放大整页绘制成本（TV 卡顿）。
+                  RepaintBoundary(
+                    child: SizedBox(
+                      height: PosterCard.heightFor(88),
+                      child: ListView.builder(
+                        // TV 焦点框放大溢出内容盒，默认 clip 会裁边
+                        clipBehavior: Clip.none,
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _similarItems.length,
+                        itemBuilder: (context, index) {
+                          final sim = _similarItems[index];
+                          return SizedBox(
+                            width: 96,
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: PosterCard(
+                                key: ValueKey('posterCard_${sim.id}'),
+                                item: sim,
+                                width: 88,
+                                onTap: () {
+                                  final q = widget.serverId != null
+                                      ? '?server=${Uri.encodeComponent(widget.serverId!)}'
+                                      : '';
+                                  context.push('/detail/${sim.id}$q');
+                                },
+                              ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ],
                 // 底部媒体信息（相似推荐/外部链接/工作室/媒体信息/视频/音频；TV 不渲染）
-                // 剧集：媒体信息与视频/音频取「当前选中集」；外部链接/工作室取剧集本身
+                // 剧集：媒体信息与视频/音频取「当前选中集」；外部链接/工作室取剧集本身。
+                // 选中版本的流/路径/大小经 selectedSource 传入，切版本后随之更新。
                 if (!tv &&
-                    MediaDetailsSection.hasContent(item,
-                        similarItems: _similarItems,
-                        streamsItem:
-                            item.isSeries ? _targetEpisode() : null)) ...[
+                    MediaDetailsSection.hasContent(
+                      item,
+                      similarItems: _similarItems,
+                      streamsItem: item.isSeries ? _targetEpisode() : null,
+                      selectedSource: _detailsSelectedSource(item),
+                    )) ...[
                   const SizedBox(height: 20),
                   MediaDetailsSection(
                     item: item,
                     streamsItem: item.isSeries ? _targetEpisode() : null,
+                    selectedSource: _detailsSelectedSource(item),
                     similarItems: _similarItems,
                     onOpenSimilar: (sim) {
                       final q = widget.serverId != null

@@ -100,12 +100,55 @@ void main() {
       );
     });
 
-    testWidgets('扫码配置入口存在（API 地址下方，v1.1.176）', (tester) async {
+    testWidgets('扫码配置入口在 API 地址输入框上方（v1.1.177）', (tester) async {
       await _pumpConfig(tester);
 
-      expect(find.byKey(const ValueKey('danmakuQrConfigEntry')), findsOneWidget);
+      final entry = find.byKey(const ValueKey('danmakuQrConfigEntry'));
+      expect(entry, findsOneWidget);
       expect(find.text('扫码配置'), findsOneWidget);
       expect(find.textContaining('手机扫码打开网页'), findsOneWidget);
+
+      // 坐标序：扫码入口在 API 输入框之上（TV 焦点主路径先经过扫码）
+      final entryTop = tester.getTopLeft(entry).dy;
+      final fieldTop =
+          tester.getTopLeft(find.byKey(const ValueKey('danmakuApiUrlField'))).dy;
+      expect(entryTop, lessThan(fieldTop),
+          reason: '扫码入口应渲染在 API 地址输入框上方');
+    });
+
+    testWidgets('TV 模式两个输入框屏蔽焦点（ExcludeFocus，v1.1.177）',
+        (tester) async {
+      await _pumpConfig(tester, initial: const AppSettings(tvMode: true));
+
+      // API 地址与屏蔽关键词输入框均被 ExcludeFocus 包裹（TV 下
+      // directional 导航方向键被文本编辑快捷键吞掉 → 焦点卡死）
+      expect(
+        find.ancestor(
+            of: find.byKey(const ValueKey('danmakuApiUrlField')),
+            matching: find.byType(ExcludeFocus)),
+        findsOneWidget,
+        reason: 'API 地址输入框在 TV 下必须被 ExcludeFocus 包裹',
+      );
+
+      await _scrollTo(tester, '屏蔽关键词');
+      expect(
+        find.ancestor(
+            of: find.byKey(const ValueKey('danmakuBlockWordsField')),
+            matching: find.byType(ExcludeFocus)),
+        findsOneWidget,
+        reason: '屏蔽关键词输入框在 TV 下必须被 ExcludeFocus 包裹',
+      );
+    });
+
+    testWidgets('非 TV 输入框不包 ExcludeFocus（可正常输入）', (tester) async {
+      await _pumpConfig(tester);
+
+      expect(
+        find.ancestor(
+            of: find.byKey(const ValueKey('danmakuApiUrlField')),
+            matching: find.byType(ExcludeFocus)),
+        findsNothing,
+      );
     });
 
     testWidgets('滚动行数滑杆拖动改值（钳在 1~30）', (tester) async {
