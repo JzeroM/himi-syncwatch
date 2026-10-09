@@ -100,6 +100,14 @@ void main() {
       );
     });
 
+    testWidgets('扫码配置入口存在（API 地址下方，v1.1.176）', (tester) async {
+      await _pumpConfig(tester);
+
+      expect(find.byKey(const ValueKey('danmakuQrConfigEntry')), findsOneWidget);
+      expect(find.text('扫码配置'), findsOneWidget);
+      expect(find.textContaining('手机扫码打开网页'), findsOneWidget);
+    });
+
     testWidgets('滚动行数滑杆拖动改值（钳在 1~30）', (tester) async {
       final container = await _pumpConfig(tester,
           initial: const AppSettings(danmakuScrollRows: 4));

@@ -65,6 +65,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     double? danmakuFontSize,
     double? danmakuOpacity,
   }) async {
+    final wasTvMode = state.tvMode;
     state = state.copyWith(
       decodeMode: decodeMode,
       showSyncDebug: showSyncDebug,
@@ -108,16 +109,37 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       danmakuFontSize: danmakuFontSize,
       danmakuOpacity: danmakuOpacity,
     );
+    // 手动开启 TV 模式：立即应用 TV 专属默认（AudioTrack/SurfaceView，
+    // 未手动设置过才改写）；关闭 TV 不回写（单向默认）。
+    if (!wasTvMode && state.tvMode) {
+      state = _applyTvDefaults(state);
+    }
     await persist();
   }
 
-  /// TV 自动识别（策略 A）+ TV 默认输出（v1.1.75，`tvMode` 键控）：
+  /// TV 模式专属默认（v1.1.176）：TV 模式开启时，用户从未手动设置过的
+  /// 音频后端/视频输出落盘为 TV 实测更稳的组合（AudioTrack + SurfaceView）。
+  /// 单向默认：关闭 TV 模式不回写（回改需手动设置）；手动设置一律优先。
+  static AppSettings _applyTvDefaults(AppSettings s) {
+    if (!s.tvMode) return s;
+    var next = s;
+    if (!next.audioRendererUserSet && next.audioRenderer != 'AudioTrack') {
+      next = next.copyWith(audioRenderer: 'AudioTrack');
+    }
+    if (!next.videoOutputUserSet && next.videoOutput != 'surfaceView') {
+      next = next.copyWith(videoOutput: 'surfaceView');
+    }
+    return next;
+  }
+
+  /// TV 自动识别（策略 A）+ TV 专属默认（v1.1.75 起 videoOutput、
+  /// v1.1.176 增 audioRenderer，`tvMode` 键控）：
   /// - 检测为 TV 设备且用户从未手动设置过、当前未开启 → 静默开启 TV 模式；
-  /// - TV 模式开启且用户从未手动选过视频输出 → 默认 SurfaceView 直写
-  ///   （RK3528 等盒子 texture 档 3004 全黑，首播即出画，免黑屏自愈
-  ///   一轮）。走 copyWith+persist 而非 update()，避免误标
-  ///   [AppSettings.videoOutputUserSet]；关闭 TV 模式不回写输出
-  ///   （单向默认，回改需手动设置）。
+  /// - TV 模式开启且用户从未手动选过音频后端/视频输出 → 落盘
+  ///   AudioTrack + SurfaceView（RK3528 等盒子 texture 档 3004 全黑，
+  ///   首播即出画，免黑屏自愈一轮）。走 copyWith+persist 而非 update()，
+  ///   避免误标 [AppSettings.audioRendererUserSet]/[AppSettings.videoOutputUserSet]；
+  ///   关闭 TV 模式不回写（单向默认，回改需手动设置）。
   ///
   /// 其余情况无任何副作用（手动设置一律优先）。
   Future<void> applyTvAutoDetection({required bool isTelevision}) async {
@@ -127,10 +149,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       next = next.copyWith(tvMode: true);
       changed = true;
     }
-    if (next.tvMode &&
-        !next.videoOutputUserSet &&
-        next.videoOutput != 'surfaceView') {
-      next = next.copyWith(videoOutput: 'surfaceView');
+    final withDefaults = _applyTvDefaults(next);
+    if (!identical(withDefaults, next)) {
+      next = withDefaults;
       changed = true;
     }
     if (!changed) return;

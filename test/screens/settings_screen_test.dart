@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
 import '../helpers/test_fakes.dart';
@@ -287,7 +288,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('音频后端'), findsOneWidget);
-    expect(find.text('使用系统默认音频后端（默认）'), findsOneWidget);
+    expect(find.text('使用系统默认音频后端'), findsOneWidget);
     expect(container.read(settingsProvider).audioRenderer, 'auto');
   });
 
@@ -424,7 +425,7 @@ void main() {
 
     expect(find.text('视频输出'), findsOneWidget);
     expect(
-      find.text('Flutter 纹理通道（默认）'),
+      find.text('Flutter 纹理通道'),
       findsOneWidget,
       reason: '默认档描述',
     );
@@ -451,17 +452,17 @@ void main() {
 
     expect(container.read(settingsProvider).videoOutput, 'surfaceView');
     expect(
-      find.text('独立显示层，绕过 Flutter 合成，TV 全分辨率输出（黑屏时尝试）'),
+      find.text('独立显示层，绕过 Flutter 合成，TV 全分辨率输出（TV 默认）'),
       findsOneWidget,
       reason: '行尾描述随档位更新',
     );
   });
 
-  testWidgets('TV：视频输出行点开底部弹窗，选择纹理+直通写入', (tester) async {
+  testWidgets('TV：视频输出行点开居中弹层，选择纹理+直通写入', (tester) async {
     final container = await _pumpScreen(tester,
         initial: const AppSettings(tvMode: true), category: '播放器');
     expect(find.byType(DropdownButton<String>), findsNothing,
-        reason: 'TV 模式全部走底部弹窗');
+        reason: 'TV 模式全部走居中弹层');
 
     await tester.scrollUntilVisible(
       find.text('视频输出'),
@@ -484,7 +485,7 @@ void main() {
 
     expect(container.read(settingsProvider).videoOutput, 'tunnel');
     expect(find.byKey(const Key('settingOption_tunnel')), findsNothing,
-        reason: '选中后弹窗应关闭');
+        reason: '选中后弹层应关闭');
   });
 
   testWidgets('Windows 平台播放器子页隐藏视频输出设置项（Android 专属）', (tester) async {
@@ -536,7 +537,7 @@ void main() {
     expect(container.read(settingsProvider).renderCompatMode, isTrue);
   });
 
-  testWidgets('TV：解码方式行点开底部弹窗，选择软解写入', (tester) async {
+  testWidgets('TV：解码方式行点开居中弹层，选择软解写入', (tester) async {
     final container = await _pumpScreen(tester,
         initial: const AppSettings(tvMode: true), category: '播放器');
     expect(find.byType(DropdownButton<String>), findsNothing);
@@ -558,7 +559,7 @@ void main() {
     expect(find.text('软解'), findsWidgets, reason: '行尾显示当前值');
   });
 
-  testWidgets('TV：音频后端行点开底部弹窗，选择 AAudio 写入', (tester) async {
+  testWidgets('TV：音频后端行点开居中弹层，选择 AAudio 写入', (tester) async {
     tester.view.physicalSize = const Size(800, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -576,6 +577,44 @@ void main() {
 
     expect(container.read(settingsProvider).audioRenderer, 'AAudio');
     expect(find.byKey(const Key('settingOption_AAudio')), findsNothing);
+  });
+
+  testWidgets('TV：弹层方向键上下切换焦点，弹层不关闭，Enter 才写入（v1.1.176 回归）',
+      (tester) async {
+    final container = await _pumpScreen(tester,
+        initial: const AppSettings(tvMode: true),
+        remote: true,
+        category: '播放器');
+
+    await tester.tap(find.text('解码方式'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget, reason: '居中弹层');
+    expect(find.byType(BottomSheet), findsNothing, reason: '不再用底部弹窗');
+    expect(container.read(settingsProvider).decodeMode, 'auto');
+
+    // 打开后当前值行 autofocused
+    final autoRow = tester.widget<TvFocusable>(
+        find.byKey(const Key('settingOption_auto')));
+    expect(autoRow.autofocus, isTrue);
+
+    // 方向键下移焦点：弹层不关闭、设置不变（RadioGroup 劫持回归验证）
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(find.byType(AlertDialog), findsOneWidget,
+        reason: '方向键不应关闭弹层');
+    expect(container.read(settingsProvider).decodeMode, 'auto',
+        reason: '方向键不应触发选择');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(find.byType(AlertDialog), findsOneWidget);
+
+    // Enter 选中当前焦点行（第 3 项 = sw）
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).decodeMode, 'sw');
+    expect(find.byKey(const Key('settingOption_sw')), findsNothing,
+        reason: '选中后弹层关闭');
   });
 
   // ---- TV 焦点样式统一（"同屏两个焦点框"回归） ----

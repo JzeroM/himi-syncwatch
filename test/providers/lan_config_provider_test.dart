@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/lan_config_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 
 import '../helpers/test_fakes.dart';
@@ -65,6 +66,7 @@ void main() {
         lanConfigBasePortProvider.overrideWithValue(0),
         embySetupServiceProvider.overrideWithValue(setup),
         agoraConfigProvider.overrideWith((ref) => FakeAgoraConfigNotifier()),
+        settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
       ],
     );
   });
@@ -150,5 +152,32 @@ void main() {
 
     expect(container.read(agoraConfigProvider), isNull, reason: '不落库');
     expect(container.read(lanConfigProvider).lastOk, isNull, reason: '不触碰提交状态');
+  });
+
+  test('手机提交弹幕 API 地址成功 → 落 settings.danmakuApiUrl 且状态记录成功',
+      () async {
+    await container.read(lanConfigProvider.notifier).start();
+
+    final res = await post('/api/danmaku', {
+      'url': 'http://192.168.1.10:9321/tok123',
+    });
+    expect(res.statusCode, HttpStatus.ok);
+    expect(await jsonOf(res), containsPair('ok', true));
+
+    expect(
+      container.read(settingsProvider).danmakuApiUrl,
+      'http://192.168.1.10:9321/tok123',
+    );
+    final state = container.read(lanConfigProvider);
+    expect(state.lastOk, isTrue);
+    expect(state.lastMessage, contains('弹幕'));
+  });
+
+  test('弹幕提交空地址 → 落库为空串并记录成功（清空场景）', () async {
+    await container.read(lanConfigProvider.notifier).start();
+
+    final res = await post('/api/danmaku', {'url': ''});
+    expect(res.statusCode, HttpStatus.ok);
+    expect(container.read(settingsProvider).danmakuApiUrl, '');
   });
 }

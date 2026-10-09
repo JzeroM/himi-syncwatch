@@ -4,6 +4,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
 
 /// 详情页操作图标行：版本 / 字幕 / 音轨选择器入口（电影与剧集页共用）。
 ///
@@ -274,8 +275,9 @@ Future<void> showAudioSelector(
   );
 }
 
-/// 轨道选择底部弹窗（字幕/音轨共用，与 `_showVersionPicker` 同交互模式，
-/// TV 遥控经由 MaterialApp.builder 层的 TvRemoteShortcuts 可正常操作）。
+/// 轨道选择弹层（字幕/音轨共用）：居中弹层 [showTvOptionDialog]，TV 遥控
+/// D-pad 上下切换 + OK 选择（不用 RadioGroup——其内层方向键 Shortcut 会
+/// 劫持 TV 导航导致弹层首次方向键即关闭跳选）。
 Future<void> showTrackSelector(
   BuildContext context,
   WidgetRef ref, {
@@ -284,49 +286,23 @@ Future<void> showTrackSelector(
   required int? currentValue,
   required void Function(int? value) onSelected,
 }) {
-  return showModalBottomSheet<void>(
+  return showTvOptionDialog<int?>(
     context: context,
-    showDragHandle: true,
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          RadioGroup<int?>(
-            groupValue: currentValue,
-            onChanged: (v) {
-              onSelected(v);
-              Navigator.of(ctx).pop();
-            },
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final option in options)
-                  RadioListTile<int?>(
-                    key: Key('trackOption_${option.value ?? 'auto'}'),
-                    title: Text(option.label),
-                    value: option.value,
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    ),
+    title: title,
+    currentValue: currentValue,
+    onSelected: onSelected,
+    options: [
+      for (final option in options)
+        TvOptionEntry(
+          value: option.value,
+          label: option.label,
+          key: Key('trackOption_${option.value ?? 'auto'}'),
+        ),
+    ],
   );
 }
 
-/// 版本选择底部弹窗（电影主条目与每集共用，交互与旧版
-/// `_openVersionSelector` 一致：当前版本高亮 check_circle）。
+/// 版本选择弹层（电影主条目与每集共用，居中弹层；当前版本对勾高亮）。
 Future<void> showVersionSelector(
   BuildContext context, {
   required List<MediaSource> sources,
@@ -334,43 +310,27 @@ Future<void> showVersionSelector(
   required ValueChanged<MediaSource> onSelected,
   String title = '选择版本',
 }) {
-  return showModalBottomSheet<void>(
+  return showTvOptionDialog<String>(
     context: context,
-    showDragHandle: true,
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          for (final source in sources)
-            ListTile(
-              key: Key('versionOption_${source.id}'),
-              leading: Icon(
-                currentId == source.id
-                    ? Icons.check_circle
-                    : Icons.movie_outlined,
-                color: currentId == source.id
-                    ? Theme.of(ctx).colorScheme.primary
-                    : null,
-              ),
-              title: Text(source.name),
-              subtitle: Text(source.displayLabel),
-              onTap: () {
-                Navigator.pop(ctx);
-                onSelected(source);
-              },
-            ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    ),
+    title: title,
+    currentValue: currentId ?? '',
+    onSelected: (id) {
+      for (final source in sources) {
+        if (source.id == id) {
+          onSelected(source);
+          return;
+        }
+      }
+    },
+    options: [
+      for (final source in sources)
+        TvOptionEntry(
+          value: source.id,
+          label: source.name,
+          subtitle: source.displayLabel,
+          key: Key('versionOption_${source.id}'),
+        ),
+    ],
   );
 }
 

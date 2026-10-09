@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -90,6 +91,21 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
     _blockWords.clear();
   }
 
+  /// 扫码配置：打开二维码页（mode=danmaku），手机提交后落库；返回时同步
+  /// 本地输入框（手机端改了地址）。
+  Future<void> _openQrConfig() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const QrConfigScreen(mode: 'danmaku'),
+      ),
+    );
+    if (!mounted) return;
+    final url = ref.read(settingsProvider).danmakuApiUrl;
+    if (_apiUrl.text != url) {
+      _apiUrl.text = url;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(settingsProvider);
@@ -138,6 +154,24 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                   helperMaxLines: 2,
                 ),
                 onChanged: (v) => _update(danmakuApiUrl: v),
+              ),
+            ),
+            // 扫码配置：TV 无输入法，手机扫码打开网页填地址提交即落库
+            // （复用 Emby 扫码管道，mode=danmaku 高亮对应区块）。
+            settingsTvWrapRow(
+              tvMode: s.tvMode,
+              onTap: _openQrConfig,
+              child: ListTile(
+                key: const ValueKey('danmakuQrConfigEntry'),
+                leading: const Icon(Icons.qr_code),
+                title: const Text('扫码配置'),
+                subtitle: const Text('手机扫码打开网页，填弹幕 API 地址提交到电视'),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Colors.white54,
+                ),
+                onTap: _openQrConfig,
               ),
             ),
             const Divider(height: 1),

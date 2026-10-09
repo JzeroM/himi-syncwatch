@@ -458,7 +458,7 @@ class AppSettings {
   };
 
   static const videoOutputLabels = {
-    'texture': '纹理（默认）',
+    'texture': '纹理',
     'tunnel': '纹理+直通',
     'surfaceView': 'SurfaceView',
   };

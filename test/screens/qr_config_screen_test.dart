@@ -85,6 +85,16 @@ void main() {
     expect(find.textContaining('mode=emby'), findsOneWidget);
   });
 
+  testWidgets('mode=danmaku：标题与提示切换为弹幕配置，二维码带 mode 参数',
+      (tester) async {
+    await pumpScreen(tester, mode: 'danmaku');
+
+    expect(find.text('扫码配置弹幕 API'), findsOneWidget);
+    expect(find.textContaining('填写弹幕 API 地址'), findsOneWidget);
+    expect(find.textContaining('mode=danmaku'), findsOneWidget);
+    expect(find.byType(QrImageView), findsOneWidget);
+  });
+
   testWidgets('手机提交失败后页面展示错误结果卡片', (tester) async {
     final container = await pumpScreen(tester);
     final state = container.read(lanConfigProvider);

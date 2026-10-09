@@ -145,6 +145,73 @@ void main() {
     expect(capturedEmby, isEmpty);
   });
 
+  test('POST /api/danmaku 未接入回调 → 404', () async {
+    final res = await request(
+      'POST',
+      '/api/danmaku?t=${server.token}',
+      body: {'url': 'http://danmaku.lan'},
+    );
+    expect(res.statusCode, HttpStatus.notFound);
+    await bodyOf(res);
+  });
+
+  group('onDanmaku 已接入', () {
+    late LanConfigServer danmakuServer;
+    late Map<String, dynamic> capturedDanmaku;
+    String? danmakuError;
+
+    setUp(() async {
+      capturedDanmaku = {};
+      danmakuError = null;
+      danmakuServer = LanConfigServer(
+        basePort: 0,
+        onEmby: (body) async => null,
+        onDanmaku: (body) async {
+          capturedDanmaku = body;
+          return danmakuError;
+        },
+      );
+      await danmakuServer.start();
+    });
+
+    tearDown(() async {
+      await danmakuServer.stop();
+    });
+
+    Future<HttpClientResponse> postDanmaku(Object body) async {
+      final client = HttpClient()..findProxy = ((_) => 'DIRECT');
+      addTearDown(client.close);
+      final req = await client.openUrl(
+        'POST',
+        Uri.parse(
+            'http://127.0.0.1:${danmakuServer.port}/api/danmaku?t=${danmakuServer.token}'),
+      );
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode(body));
+      return req.close();
+    }
+
+    test('携带 token → 触发回调并返回成功', () async {
+      final res = await postDanmaku({'url': 'http://192.168.1.10:9321/tok'});
+      expect(res.statusCode, HttpStatus.ok);
+      final json = jsonDecode(await utf8.decoder.bind(res).join())
+          as Map<String, dynamic>;
+      expect(json['ok'], isTrue);
+      expect(json['message'], contains('弹幕'));
+      expect(capturedDanmaku['url'], 'http://192.168.1.10:9321/tok');
+    });
+
+    test('回调返回业务错误 → 400 且携带 error 文案', () async {
+      danmakuError = '地址格式非法';
+      final res = await postDanmaku({'url': 'x'});
+      expect(res.statusCode, HttpStatus.badRequest);
+      final json = jsonDecode(await utf8.decoder.bind(res).join())
+          as Map<String, dynamic>;
+      expect(json['ok'], isFalse);
+      expect(json['error'], '地址格式非法');
+    });
+  });
+
   test('非法 JSON body → 400', () async {
     final client = HttpClient()..findProxy = ((_) => 'DIRECT');
     addTearDown(client.close);

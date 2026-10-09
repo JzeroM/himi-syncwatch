@@ -42,7 +42,9 @@ class TvFocusable extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tvMode = ref.watch(settingsProvider).tvMode;
+    // 只订阅 tvMode：整对象 watch 会让设置页任何写入导致屏上全部
+    // TvFocusable 同帧重建（详情页多卡片时焦点移动掉帧体感来源之一）。
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     if (!tvMode || !enabled) {
       return GestureDetector(
         onTap: onTap,

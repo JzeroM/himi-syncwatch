@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
 
 /// 设置页公共件：说明文案、选项下拉行、TV 描边包装、分类子页脚手架。
 /// 各分类子页（外观/播放器/通用/实验性）共用，避免重复实现。
@@ -58,13 +59,13 @@ String decodeModeDescription(String mode) {
 String audioRendererDescription(String renderer) {
   switch (renderer) {
     case 'auto':
-      return '使用系统默认音频后端（默认）';
+      return '使用系统默认音频后端';
     case 'AAudio':
       return 'AAudio：现代低延迟后端';
     case 'OpenSL':
       return 'OpenSL：时钟精度更高，改善 TrueHD 等音频流畅性';
     case 'AudioTrack':
-      return 'AudioTrack：兼容性最好的传统后端';
+      return 'AudioTrack：兼容性最好的传统后端（TV 默认）';
     default:
       return '建议默认使用自动';
   }
@@ -75,9 +76,9 @@ String videoOutputDescription(String output) {
     case 'tunnel':
       return '解码器直写纹理，绕过 mdk GL 渲染（画面异常时尝试）';
     case 'surfaceView':
-      return '独立显示层，绕过 Flutter 合成，TV 全分辨率输出（黑屏时尝试）';
+      return '独立显示层，绕过 Flutter 合成，TV 全分辨率输出（TV 默认）';
     case 'texture':
-      return 'Flutter 纹理通道（默认）';
+      return 'Flutter 纹理通道';
     default:
       return '建议默认使用纹理通道';
   }
@@ -87,7 +88,7 @@ String videoOutputDescription(String output) {
 ///
 /// - 非 TV 模式：[DropdownButton]（触摸交互）
 /// - TV 模式：整行 [TvFocusable]（D-pad 聚焦 + OK 打开），选择层为
-///   底部弹窗 RadioListTile。
+///   居中弹层 [showTvOptionDialog]（TV 方向键上下切换 + OK 选择）。
 Widget settingOptionTile({
   required BuildContext context,
   required bool tvMode,
@@ -114,43 +115,19 @@ Widget settingOptionTile({
   }
   return TvFocusable(
     scale: 1.0,
-    onTap: () => showModalBottomSheet<void>(
+    onTap: () => showTvOptionDialog<String>(
       context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(title,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            RadioGroup<String>(
-              groupValue: value,
-              onChanged: (v) {
-                if (v != null) onSelected(v);
-                Navigator.of(ctx).pop();
-              },
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final e in labels.entries)
-                    RadioListTile<String>(
-                      key: Key('settingOption_${e.key}'),
-                      title: Text(e.value),
-                      value: e.key,
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+      title: title,
+      currentValue: value,
+      onSelected: onSelected,
+      options: [
+        for (final e in labels.entries)
+          TvOptionEntry(
+            value: e.key,
+            label: e.value,
+            key: Key('settingOption_${e.key}'),
+          ),
+      ],
     ),
     child: ExcludeFocus(
       child: ListTile(

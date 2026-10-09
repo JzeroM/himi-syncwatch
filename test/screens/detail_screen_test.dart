@@ -118,18 +118,17 @@ Future<ProviderContainer> _pumpDetailInRouter(
   return container;
 }
 
-/// 焦点是否位于 [finder] 所指子树内。
-/// 读取某选项所属 RadioGroup 的 groupValue（v3.47 Radio 重构后
-/// groupValue 从 RadioListTile 移到了 RadioGroup 祖先）。
-T? _groupValueOf<T>(WidgetTester tester, Key optionKey) {
-  return tester
-      .widget<RadioGroup<T>>(
-        find.ancestor(
-          of: find.byKey(optionKey),
-          matching: find.byType(RadioGroup<T>),
-        ),
+/// 弹层行是否为选中态（共享居中弹层：选中行内含对勾图标；替代旧
+/// RadioGroup.groupValue 读取——RadioGroup 的方向键 Shortcut 会劫持
+/// TV 导航，v1.1.176 起弹层统一为 showTvOptionDialog）。
+bool _optionSelectedInDialog(WidgetTester tester, Key optionKey) {
+  return find
+      .descendant(
+        of: find.byKey(optionKey),
+        matching: find.byType(Icon),
       )
-      .groupValue;
+      .evaluate()
+      .isNotEmpty;
 }
 
 bool _focusWithin(Finder finder) {
@@ -826,6 +825,35 @@ void main() {
       );
     });
 
+    testWidgets('「可用版本」信息行不参与焦点（ExcludeFocus，v1.1.176 回归）',
+        (tester) async {
+      await pumpMulti(tester, tv: true);
+
+      // 可用版本区块存在（标题 + 每源一行）
+      expect(find.text('可用版本'), findsOneWidget);
+      expect(find.text('1080p版'), findsWidgets);
+      expect(find.text('4K版'), findsWidgets);
+
+      // 每个源行的 ListTile 被 ExcludeFocus 包裹（TV 焦点跳过，
+      // 无 onTap 的 ListTile 在 directional 下可聚焦但高光透明、OK 无响应）
+      final tiles = find.descendant(
+        of: find.byType(GlassContainer),
+        matching: find.byType(ListTile),
+      );
+      var checked = 0;
+      for (final tile in tiles.evaluate()) {
+        final widget = tile.widget;
+        if (widget is! ListTile || widget.onTap != null) continue;
+        expect(
+          find.ancestor(of: find.byWidget(widget), matching: find.byType(ExcludeFocus)),
+          findsOneWidget,
+          reason: '无 onTap 的展示行必须被 ExcludeFocus 包裹',
+        );
+        checked++;
+      }
+      expect(checked, greaterThanOrEqualTo(2), reason: '两个版本行都应检查到');
+    });
+
     testWidgets('点图标弹版本 sheet，选中后图标高亮', (tester) async {
       await pumpMulti(tester);
 
@@ -1493,7 +1521,8 @@ void main() {
       // 切到 e2 → 选 jpn 轨（index 7），与 e1 互不覆盖
       await tapCard(tester, 'p2');
       await openAudioSheet(tester);
-      expect(_groupValueOf<int?>(tester, const Key('trackOption_7')), isNull,
+      expect(_optionSelectedInDialog(tester, const Key('trackOption_7')),
+          isFalse,
           reason: 'e2 尚未预选');
       await tester.tap(find.byKey(const Key('trackOption_7')));
       await tester.pump();
@@ -1504,8 +1533,8 @@ void main() {
       await tapCard(tester, 'p1');
       await openAudioSheet(tester);
       expect(
-        _groupValueOf<int?>(tester, const Key('trackOption_1')),
-        1,
+        _optionSelectedInDialog(tester, const Key('trackOption_1')),
+        isTrue,
         reason: 'e1 预选未被 e2 覆盖',
       );
       await dismissSheet(tester);
@@ -1517,8 +1546,8 @@ void main() {
       await tapCard(tester, 'p2');
       await openAudioSheet(tester);
       expect(
-        _groupValueOf<int?>(tester, const Key('trackOption_7')),
-        7,
+        _optionSelectedInDialog(tester, const Key('trackOption_7')),
+        isTrue,
         reason: 'e2 预选未被 e1 覆盖',
       );
       await dismissSheet(tester);
@@ -1920,9 +1949,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       expect(
-        _groupValueOf<String?>(tester, const Key('epVersionDefault_eA')),
-        'b2',
-        reason: '重开弹窗时 groupValue 回填当前单选',
+        _optionSelectedInDialog(tester, const Key('epVersion_eA_b2')),
+        isTrue,
+        reason: '重开弹窗时回填当前单选',
       );
       await tester.ensureVisible(find.byKey(const Key('epVersionDefault_eA')));
       await tester.pump();

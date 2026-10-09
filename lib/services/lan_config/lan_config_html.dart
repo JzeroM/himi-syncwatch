@@ -1,9 +1,9 @@
 /// 局域网扫码配置的手机端单页（内嵌 HTML，无外部依赖）。
 ///
-/// 只提供 Emby 服务器配置（声网仅手动配置，扫码管道已整体移除）。
-/// [mode] 为 `emby` 时高亮并滚动到区块；其余（含旧链接的 `agora`）
-/// 不高亮，页面恒为同一份 Emby 配置页。
-/// 页脚提供全部备选 IP 链接（带 token，供多网卡场景切换）。
+/// 提供 Emby 服务器配置与弹幕 API 地址配置两个区块。[mode] 为 `emby` /
+/// `danmaku` 时高亮并滚动到对应区块；其余（含旧链接的 `agora`）不高亮，
+/// 页面恒为同一份配置页。页脚提供全部备选 IP 链接（带 token，供多网卡
+/// 场景切换）。
 String buildLanConfigHtml({
   required List<String> ips,
   required int port,
@@ -15,7 +15,11 @@ String buildLanConfigHtml({
     return '<a href="$href">$ip</a>';
   }).join(' · ');
 
-  final highlightJs = mode == 'emby' ? _highlightJs('emby') : '';
+  final highlightJs = switch (mode) {
+    'emby' => _highlightJs('emby'),
+    'danmaku' => _highlightJs('danmaku'),
+    _ => '',
+  };
 
   return '''
 <!doctype html>
@@ -66,6 +70,14 @@ String buildLanConfigHtml({
   <div class="msg" id="emby_msg"></div>
 </section>
 
+<section id="danmaku">
+  <h2>配置弹幕 API 地址</h2>
+  <label>弹幕 API 地址</label>
+  <input id="danmaku_url" type="url" placeholder="http://192.168.1.10:9321/<token>" autocomplete="url">
+  <button id="danmaku_btn" onclick="submitDanmaku()">保存到电视</button>
+  <div class="msg" id="danmaku_msg"></div>
+</section>
+
 <footer>备选地址：$alternates</footer>
 
 <script>
@@ -100,6 +112,11 @@ function submitEmby() {
     username: document.getElementById('emby_user').value.trim(),
     password: document.getElementById('emby_pass').value
   }, 'emby_btn', 'emby_msg');
+}
+function submitDanmaku() {
+  post('/api/danmaku', {
+    url: document.getElementById('danmaku_url').value.trim()
+  }, 'danmaku_btn', 'danmaku_msg');
 }
 function highlight(id) {
   const el = document.getElementById(id);

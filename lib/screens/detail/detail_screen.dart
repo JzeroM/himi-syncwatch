@@ -23,6 +23,7 @@ import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -1039,57 +1040,36 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return '默认';
   }
 
-  /// 选集面板的每集版本单选弹窗：Radio 组，每集只能勾一个版本。
+  /// 选集面板的每集版本单选弹层：居中弹层，每集只能勾一个版本。
+  /// TV 遥控 D-pad 上下切换 + OK 选择（不用 RadioGroup——其内层方向键
+  /// Shortcut 会劫持 TV 导航导致弹层首次方向键即关闭跳选）。
   void _openPickerVersionSelector(
     MediaItem ep,
     Map<String, String?> versionByEp,
     void Function(void Function()) setSheetState,
   ) {
-    showModalBottomSheet<void>(
+    showTvOptionDialog<String?>(
       context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(
-                '选择版本 - S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0}',
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-            RadioGroup<String?>(
-              groupValue: versionByEp[ep.id],
-              onChanged: (v) {
-                versionByEp[ep.id] = v;
-                setSheetState(() {});
-                Navigator.pop(ctx);
-              },
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  RadioListTile<String?>(
-                    key: Key('epVersionDefault_${ep.id}'),
-                    title: const Text('默认（服务器选择）'),
-                    value: null,
-                  ),
-                  for (final source in ep.mediaSources)
-                    RadioListTile<String?>(
-                      key: Key('epVersion_${ep.id}_${source.id}'),
-                      title: Text(source.name),
-                      subtitle: Text(source.displayLabel),
-                      value: source.id,
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
+      title: '选择版本 - S${ep.parentIndexNumber ?? 0}E${ep.indexNumber ?? 0}',
+      currentValue: versionByEp[ep.id],
+      onSelected: (v) {
+        versionByEp[ep.id] = v;
+        setSheetState(() {});
+      },
+      options: [
+        TvOptionEntry<String?>(
+          value: null,
+          label: '默认（服务器选择）',
+          key: Key('epVersionDefault_${ep.id}'),
         ),
-      ),
+        for (final source in ep.mediaSources)
+          TvOptionEntry<String?>(
+            value: source.id,
+            label: source.name,
+            subtitle: source.displayLabel,
+            key: Key('epVersion_${ep.id}_${source.id}'),
+          ),
+      ],
     );
   }
 
@@ -2119,16 +2099,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ),
         ),
         const SizedBox(height: 8),
+        // 纯信息展示块：ExcludeFocus 使 TV 焦点直接跳过——无 onTap 的
+        // ListTile 在 directional 导航下仍可聚焦，但焦点高光透明、OK 无
+        // 响应（v1.1.176：修多版本详情页「焦点卡死」体感）。版本切换
+        // 入口在操作行「版本」按钮。
         ...item.mediaSources.map((source) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: GlassContainer(
                 borderRadius: const BorderRadius.all(Radius.circular(14)),
                 padding: EdgeInsets.zero,
-                child: ListTile(
-                  leading: const Icon(Icons.movie_creation_outlined),
-                  title: Text(source.name),
-                  subtitle: Text(source.displayLabel),
-                  dense: true,
+                child: ExcludeFocus(
+                  child: ListTile(
+                    leading: const Icon(Icons.movie_creation_outlined),
+                    title: Text(source.name),
+                    subtitle: Text(source.displayLabel),
+                    dense: true,
+                  ),
                 ),
               ),
             )),

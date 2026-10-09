@@ -612,7 +612,7 @@ void main() {
     test('三档标签齐全', () {
       expect(AppSettings.videoOutputLabels.keys,
           containsAll(['texture', 'tunnel', 'surfaceView']));
-      expect(AppSettings.videoOutputLabels['texture'], '纹理（默认）');
+      expect(AppSettings.videoOutputLabels['texture'], '纹理');
       expect(AppSettings.videoOutputLabels['surfaceView'], 'SurfaceView');
     });
   });

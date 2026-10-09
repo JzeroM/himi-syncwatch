@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/services/lan_config/lan_config_server.dart';
 
@@ -43,16 +44,22 @@ class LanConfigState {
 
 /// 扫码配置服务生命周期 + 手机提交结果。
 ///
-/// 构造注入 [embyHandler]（由 provider 层接真实落库逻辑），
+/// 构造注入 [embyHandler]/[danmakuHandler]（由 provider 层接真实落库逻辑），
 /// 内部包装一层记录成功/失败到状态，供二维码页展示。
 class LanConfigNotifier extends StateNotifier<LanConfigState> {
   LanConfigNotifier({
     required Future<String?> Function(Map<String, dynamic> body) embyHandler,
+    Future<String?> Function(Map<String, dynamic> body)? danmakuHandler,
     int basePort = 17890,
   }) : super(const LanConfigState()) {
     _server = LanConfigServer(
       basePort: basePort,
-      onEmby: (body) => _guard(embyHandler, body),
+      onEmby: (body) =>
+          _guard(embyHandler, body, successMessage: '配置成功，已应用到电视'),
+      onDanmaku: danmakuHandler == null
+          ? null
+          : (body) => _guard(danmakuHandler, body,
+              successMessage: '弹幕 API 地址已配置'),
     );
   }
 
@@ -62,11 +69,12 @@ class LanConfigNotifier extends StateNotifier<LanConfigState> {
 
   Future<String?> _guard(
     Future<String?> Function(Map<String, dynamic> body) handler,
-    Map<String, dynamic> body,
-  ) async {
+    Map<String, dynamic> body, {
+    required String successMessage,
+  }) async {
     try {
       final error = await handler(body);
-      _record(error == null, error ?? '配置成功，已应用到电视');
+      _record(error == null, error ?? successMessage);
       return error;
     } catch (e) {
       _record(false, e.toString());
@@ -117,6 +125,12 @@ final lanConfigProvider =
             password: asString(body['password']),
             serverName: asString(body['name']),
           );
+      return null;
+    },
+    danmakuHandler: (body) async {
+      ref
+          .read(settingsProvider.notifier)
+          .update(danmakuApiUrl: asString(body['url']));
       return null;
     },
   );

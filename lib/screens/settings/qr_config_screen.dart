@@ -6,8 +6,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 /// 局域网扫码配置页：展示二维码与地址，手机浏览器打开后提交即落到本机。
 ///
-/// 仅提供 Emby 配置（[mode] 为 `emby` 时二维码高亮对应区块；声网扫码
-/// 已移除，仅保留手动配置）。进入自动启动服务，离开（返回）自动停止。
+/// [mode] 为 `emby` 时二维码打开 Emby 配置区块；`danmaku` 时打开弹幕
+/// API 地址区块；其余默认 Emby。进入自动启动服务，离开（返回）自动停止。
 class QrConfigScreen extends ConsumerStatefulWidget {
   const QrConfigScreen({super.key, this.mode = ''});
 
@@ -18,6 +18,15 @@ class QrConfigScreen extends ConsumerStatefulWidget {
 }
 
 class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
+  bool get _isDanmaku => widget.mode == 'danmaku';
+
+  String get _title => _isDanmaku ? '扫码配置弹幕 API' : '扫码配置 Emby';
+
+  String get _tip => _isDanmaku
+      ? '用手机扫描二维码\n或在手机浏览器打开下方地址\n'
+          '在手机上填写弹幕 API 地址并提交'
+      : '用手机扫描二维码\n或在手机浏览器打开下方地址';
+
   @override
   void initState() {
     super.initState();
@@ -37,7 +46,7 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('扫码配置 Emby'),
+          title: Text(_title),
         ),
         body: SafeArea(
           child: Center(
@@ -77,10 +86,10 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
-          '用手机扫描二维码\n或在手机浏览器打开下方地址',
+        Text(
+          _tip,
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 15, height: 1.5),
+          style: const TextStyle(fontSize: 15, height: 1.5),
         ),
         const SizedBox(height: 20),
         Container(
