@@ -84,6 +84,12 @@ class AppSettings {
   /// 全局选项仅启动时读取注入，**修改后需重启应用生效**。
   final bool renderCompatMode;
 
+  /// 解码调优（实验，默认开）：Android 硬解器带 AImageReader+YUV 采样
+  /// （`AMediaCodec:image=1:reuse=1` + 全局 `gl.yuv_sampler=1`）；iOS/macOS
+  /// 硬解器带 `VT:width/height` 输出缩放。针对高码率/高帧率 4K 解码吞吐。
+  /// 关闭则完全走默认解码路径。全局项需重启生效。
+  final bool decodeTuning;
+
   /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
   ///
   /// 首次检测到 `EGL ERROR (3004)`/`No EGL config found` 时落盘 true；
@@ -184,6 +190,7 @@ class AppSettings {
     this.videoOutput = 'texture',
     this.videoOutputUserSet = false,
     this.renderCompatMode = false,
+    this.decodeTuning = true,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -217,6 +224,7 @@ class AppSettings {
     String? videoOutput,
     bool? videoOutputUserSet,
     bool? renderCompatMode,
+    bool? decodeTuning,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
@@ -257,6 +265,7 @@ class AppSettings {
       videoOutput: videoOutput ?? this.videoOutput,
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
+      decodeTuning: decodeTuning ?? this.decodeTuning,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -318,6 +327,7 @@ class AppSettings {
         'videoOutput': videoOutput,
         'videoOutputUserSet': videoOutputUserSet,
         'renderCompatMode': renderCompatMode,
+        'decodeTuning': decodeTuning,
         'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
@@ -396,6 +406,10 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
+      // 旧数据/非法值 → 默认开（解码调优）
+      decodeTuning: json['decodeTuning'] is bool
+          ? json['decodeTuning'] as bool
+          : true,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──

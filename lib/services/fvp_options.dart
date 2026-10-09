@@ -16,11 +16,13 @@
 Map<String, Object> buildFvpOptions({
   required bool xa2Persistent,
   required bool renderCompatMode,
+  bool yuvSampler = false,
 }) {
   final global = <String, Object>{
     if (xa2Persistent) 'audio.xa2.persistent': 1,
+    // Android 解码调优：YUV 采样直采，省一次 YUV→RGB 转换（高码率/4K 受益）
+    if (renderCompatMode || yuvSampler) 'gl.yuv_sampler': 1,
     if (renderCompatMode) ...{
-      'gl.yuv_sampler': 1,
       'surfacetexture.glcontext': 1,
     },
   };

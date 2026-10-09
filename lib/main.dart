@@ -169,6 +169,9 @@ Future<void> _bootstrap() async {
     xa2Persistent: Platform.isWindows,
     renderCompatMode: AppSettings.effectiveRenderCompatMode(
         settingsNotifier.snapshot.renderCompatMode),
+    // 解码调优（Android 专属 YUV 采样项；默认开，关闭即不注入）
+    yuvSampler:
+        Platform.isAndroid && settingsNotifier.snapshot.decodeTuning,
   );
   fvp.registerWith(options: fvpOptions);
   // 注入取证行：真机上无法从其他途径证明 global 选项已生效

@@ -855,4 +855,20 @@ void main() {
       expect(s.danmakuMaxCount, AppSettings.danmakuMaxCountMin);
     });
   });
+
+  group('decodeTuning（解码调优开关）', () {
+    test('默认 true', () {
+      expect(const AppSettings().decodeTuning, isTrue);
+      expect(AppSettings.fromJson(const {}).decodeTuning, isTrue);
+    });
+
+    test('toJson/fromJson 往返', () {
+      const off = AppSettings(decodeTuning: false);
+      expect(AppSettings.fromJson(off.toJson()).decodeTuning, isFalse);
+    });
+
+    test('非法值回退 true', () {
+      expect(AppSettings.fromJson({'decodeTuning': 42}).decodeTuning, isTrue);
+    });
+  });
 }

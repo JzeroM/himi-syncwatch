@@ -1413,8 +1413,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted) return;
     final settings = ref.read(settingsProvider);
 
-    // 配置解码器
-    final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
+    // 配置解码器（decodeTuning：Android AImageReader；iOS VT 输出缩放）
+    final mq = MediaQuery.maybeOf(context);
+    final vtSize = mq == null
+        ? null
+        : Size(mq.size.width * mq.devicePixelRatio,
+            mq.size.height * mq.devicePixelRatio);
+    final decoders = DecodeModeService.resolveDecoders(
+      settings.decodeMode,
+      decodeTuning: settings.decodeTuning,
+      vtOutputSize: vtSize,
+    );
     _player.videoDecoders = decoders;
     // 落盘配置值取证：Windows「硬解没生效」类问题先核对配置与
     // decoder.video 事件（实际生效框架）是否一致
@@ -5488,7 +5497,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       // Step2: 切换解码器
-      final decoders = DecodeModeService.resolveDecoders(mode);
+      final settings = ref.read(settingsProvider);
+      final mq = MediaQuery.maybeOf(context);
+      final vtSize = mq == null
+          ? null
+          : Size(mq.size.width * mq.devicePixelRatio,
+              mq.size.height * mq.devicePixelRatio);
+      final decoders = DecodeModeService.resolveDecoders(
+        mode,
+        decodeTuning: settings.decodeTuning,
+        vtOutputSize: vtSize,
+      );
       _player.videoDecoders = decoders;
       LogService().log('Player', '切换解码配置: $mode → $decoders');
 

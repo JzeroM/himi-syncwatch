@@ -1,9 +1,39 @@
 import 'dart:io';
+import 'dart:ui' show Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 
 void main() {
+  group('解码调优 helper（纯函数，不受宿主平台影响）', () {
+    test('androidHwDecoder：开带调优属性，关不带', () {
+      expect(DecodeModeService.androidHwDecoder(tuning: true),
+          'AMediaCodec:image=1:reuse=1');
+      expect(DecodeModeService.androidHwDecoder(tuning: false), 'AMediaCodec');
+    });
+
+    test('appleHwDecoder：开+有效尺寸带 VT 缩放；关/无尺寸退化 VT', () {
+      expect(
+        DecodeModeService.appleHwDecoder(
+            tuning: true, outputSize: const Size(1080, 2400)),
+        'VT:width=1080:height=2400',
+      );
+      expect(
+        DecodeModeService.appleHwDecoder(
+            tuning: false, outputSize: const Size(1080, 2400)),
+        'VT',
+      );
+      expect(
+        DecodeModeService.appleHwDecoder(tuning: true, outputSize: null),
+        'VT',
+      );
+      expect(
+        DecodeModeService.appleHwDecoder(tuning: true, outputSize: Size.zero),
+        'VT',
+      );
+    });
+  });
+
   group('resolveDecoders', () {
     test('SW 模式 → 仅软解', () {
       final result = DecodeModeService.resolveDecoders('sw');
