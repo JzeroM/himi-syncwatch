@@ -47,8 +47,9 @@ class PlatformInfoPlugin(private val context: Context?) :
      * 但输出模式可能是 4K；用 Display 的真实尺寸做夹紧目标，才能保住
      * 4K 全分辨率扫描输出，而不是误降到 1080p。
      *
-     * 优先 `getRealSize`（含系统装饰的物理分辨率）；失败回退当前 mode。
-     * 异常/无 Context → null（上层按自身显示尺寸兜底）。
+     * 优先 `getMode().getPhysicalWidth/Height`（API 23+，返回面板物理
+     * 分辨率，不受 UI 缩放影响）；回退 `getRealSize`（已废弃，兼容旧
+     * 设备）。异常/无 Context → null（上层按自身显示尺寸兜底）。
      */
     private fun displaySize(): Map<String, Int>? {
         val ctx = context ?: return null
@@ -56,17 +57,29 @@ class PlatformInfoPlugin(private val context: Context?) :
             val dm = ctx.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
                 ?: return null
             val display: Display = dm.getDisplay(Display.DEFAULT_DISPLAY) ?: return null
-            val point = Point()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-                display.getRealSize(point)
-            } else {
-                @Suppress("DEPRECATION")
-                display.getSize(point)
+
+            // 优先 getMode().getPhysicalWidth/Height（API 23+）
+            // 返回面板物理分辨率，不受 UI 缩放影响
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val mode = display.mode
+                val w = mode.physicalWidth
+                val h = mode.physicalHeight
+                if (w > 0 && h > 0) {
+                    return mapOf(
+                        "width" to w,
+                        "height" to h,
+                        "refreshRate" to mode.refreshRate.toInt(),
+                    )
+                }
             }
-            val w = point.x
-            val h = point.y
-            if (w <= 0 || h <= 0) return null
-            mapOf("width" to w, "height" to h)
+
+            // 回退：getRealSize（已废弃，兼容旧设备）
+            val point = Point()
+            @Suppress("DEPRECATION")
+            display.getRealSize(point)
+            if (point.x > 0 && point.y > 0) {
+                mapOf("width" to point.x, "height" to point.y)
+            } else null
         } catch (_: Throwable) {
             null
         }

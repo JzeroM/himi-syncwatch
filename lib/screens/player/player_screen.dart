@@ -26,6 +26,8 @@ import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:uuid/uuid.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
+import 'package:himi_syncwatch/services/display_info_service.dart';
+import 'package:himi_syncwatch/services/render_target_clamp.dart';
 
 
 import 'package:himi_syncwatch/services/audio_filter_policy.dart';
@@ -331,11 +333,13 @@ class PlayerScreen extends ConsumerStatefulWidget {
   static List<String> mergeDecoderLowLatency(List<String> decoders) =>
       DecodeModeService.withDecoderLowLatency(decoders);
 
-  /// 输出色彩空间（1.1.191，1.1.194 限 Android）：恒 BT709（SDR）。
+  /// 输出色彩空间（1.1.191，1.1.194 限 Android，1.1.196 加开关）：
+  /// 恒 BT709（SDR）。
   ///
-  /// Android：Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10
-  /// 内容建 bt2020_pq 表面，导致 SDR 面板发白 + HDR10 管线簇状丢帧
-  /// （mdk-sdk#361，fvp#379 workaround：HDR 内容回退 GL + tone map 到 SDR）。
+  /// Android + forceSdrOutput 开关开启时调用：Flutter 纹理恒 SDR
+  /// （fvp 文档），mdk 默认 auto 会为 HDR10 内容建 bt2020_pq 表面，
+  /// 导致 SDR 面板发白（mdk-sdk#361，fvp#379 workaround）。
+  /// 1.1.196 起默认关闭，可隔离 HDR 渲染夹紧实验。
   ///
   /// iOS：不调用 setColorSpace。Metal 上与 videoout.hdr=0 冲突导致
   /// HDR10 黑屏（1.1.194 修复），iOS 依赖 videoout.hdr=0 全局选项。
@@ -578,11 +582,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 设置切换后据此决定是否重建纹理。
   String? _textureOutputApplied;
 
-  /// 实际生效的渲染目标尺寸取证（调试面板展示原生尺寸）。
+  /// 显示器真实输出分辨率（物理像素，Android 原生探测，播中不变）。
+  /// 渲染尺寸夹紧目标：TV/盒子 UI 层常只报 1080p，须用 Display 真实
+  /// 尺寸才能保住 4K 输出模式下的全分辨率扫描输出。
+  /// null = 未取得/非 Android（回退 MediaQuery×dpr）。
+  Size? _displayPhysical;
+
+  /// 实际生效的渲染目标尺寸取证（调试面板：原生尺寸 → 夹紧后尺寸；
+  /// 未夹紧时两段相同）。
   String get _renderTargetDesc {
     final native = _videoNativeSize;
     if (native == null) return '-';
-    return '${native.width.toInt()}x${native.height.toInt()}';
+    final clamped = _clampedRenderSize(native);
+    final n = '${native.width.toInt()}x${native.height.toInt()}';
+    if (clamped == null) return n;
+    return '$n → ${clamped.width.toInt()}x${clamped.height.toInt()}';
   }
 
   /// 截帧取证结果（面板展示，null = 未截过）。
@@ -1282,6 +1296,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Android：预取显示器真实输出分辨率（渲染尺寸夹紧目标）。TV/盒子
+    // 的 UI 层常只报 1080p，须用 Display 真实尺寸才能保住 4K 输出模式
+    // 下的全分辨率扫描输出；失败/null 由 _clampDisplayPhysical 回退
+    // MediaQuery×dpr。异步不阻塞起播，通常在首帧前就绪。
+    if (Platform.isAndroid) {
+      unawaited(const DisplayInfoService().realDisplaySize().then((s) {
+        if (mounted && s != null) setState(() => _displayPhysical = s);
+      }));
+    }
     // 锁状态机变化 → 重建顶栏锁图标 / 解锁浮钮
     _lockController.addListener(_onLockStateChanged);
     // 自动隐藏：焦点变更（落在控件根内）顺延 5 秒；焦点静置不顺延
@@ -1297,13 +1320,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
     _player = mdk.Player();
-    // 强制输出 SDR（BT709）：仅 Android。Flutter 纹理恒 SDR（fvp 文档），
-    // mdk 默认 auto 会为 HDR10 内容建 bt2020_pq 表面，导致
-    // Android SDR 面板发白 + HDR10 管线簇状丢帧（mdk-sdk#361，
-    // fvp#379 workaround：HDR 内容回退 GL + tone map 到 SDR）。
-    // iOS Metal 上 setColorSpace(bt709) 与 videoout.hdr=0 冲突导致
-    // HDR10 黑屏（1.1.194 修复），iOS 依赖 videoout.hdr=0 全局选项。
-    if (Platform.isAndroid) {
+    // 强制输出 SDR（BT709）：仅 Android + forceSdrOutput 开关开启。
+    // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
+    // bt2020_pq 表面，导致 Android SDR 面板发白（mdk-sdk#361，
+    // fvp#379 workaround）。iOS Metal 上 setColorSpace(bt709) 与
+    // videoout.hdr=0 冲突导致 HDR10 黑屏（1.1.194 修复）。
+    // 1.1.196 起做成开关（默认关闭），可隔离 HDR 渲染夹紧实验。
+    if (Platform.isAndroid && ref.read(settingsProvider).forceSdrOutput) {
       _player.setColorSpace(PlayerScreen.outputColorSpace());
       LogService().log('Player', '输出色彩空间: bt709（SDR tone map）');
     }
@@ -1829,6 +1852,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return AppSettings.routeVideoOutput(base, isHdr: _hdrContent);
   }
 
+  /// 显示器物理尺寸（渲染夹紧目标）：Android 优先原生探测（TV UI 层
+  /// 常只报 1080p，须取真实输出模式）；未取得/iOS 回退 MediaQuery×dpr。
+  Size? _clampDisplayPhysical() {
+    final physical = _displayPhysical;
+    if (physical != null && physical.width > 0 && physical.height > 0) {
+      return physical;
+    }
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return null;
+    final s = mq.size * mq.devicePixelRatio;
+    return s.width > 0 && s.height > 0 ? s : null;
+  }
+
+  /// 渲染尺寸夹紧：把 [videoSize] contain-fit 到显示器物理尺寸。
+  ///
+  /// 仅 HDR 内容 + 开关开启时生效（1.1.196 renderClampHdrOnly 实验）。
+  /// 高分辨率内容（4K60 等）在弱 GPU 设备上以原生尺寸过 GL/Flutter
+  /// 纹理会丢帧；夹到显示器物理尺寸后像素量最多降 4 倍，画质无感
+  /// （显示器物理像素就那么多）。视频未超过显示尺寸返回 null（保持
+  /// 原生）。直写/tunnel 档不经 GL，调用方不夹。
+  Size? _clampedRenderSize(Size videoSize) {
+    if (!_hdrContent) return null;
+    if (!ref.read(settingsProvider).renderClampHdrOnly) return null;
+    final display = _clampDisplayPhysical();
+    if (display == null) return null;
+    return RenderTargetClamp.compute(
+      displayPhysical: display,
+      videoSize: videoSize,
+    );
+  }
+
   /// 判定并闩锁 [HDR 内容][_hdrContent]（Emby 元数据 + 运行期 mediaInfo）。
   ///
   /// 运行期优先于元数据（Emby 常把 HDR 片标成 SDR）。一旦判定为 HDR 保持
@@ -2058,10 +2112,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     final tunnel = mode == 'tunnel';
+    // 渲染尺寸夹紧（1.1.196 实验）：HDR 内容 + 开关开启时把渲染目标
+    // contain-fit 到显示器物理尺寸。tunnel 档解码器直写 SurfaceTexture
+    // 不经 GL，夹紧无意义——保持原生尺寸。
+    final Size? clampTarget;
+    if (tunnel) {
+      clampTarget = null;
+    } else {
+      final native = _readMediaInfoVideoSize() ?? _videoNativeSize;
+      clampTarget = native == null ? null : _clampedRenderSize(native);
+    }
+    // 去重键包含夹紧尺寸：档位相同但夹紧尺寸变化时也需重建纹理。
+    final dedupKey = '$mode@${clampTarget?.width.toInt() ?? 0}'
+        'x${clampTarget?.height.toInt() ?? 0}';
     if (_player.textureId.value != null) {
-      if (_textureOutputApplied == mode) return;
-      // 档位（tunnel 开关）变化：释放旧纹理后按新参数重建
-      LogService().log('Player', '纹理档位 $_textureOutputApplied → $mode，重建纹理');
+      if (_textureOutputApplied == dedupKey) return;
+      // 档位或夹紧尺寸变化：释放旧纹理后按新参数重建
+      LogService().log('Player',
+          '纹理档位 $_textureOutputApplied → $dedupKey，重建纹理');
       try {
         await _player
             .updateTexture(width: -1)
@@ -2070,16 +2138,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _textureOutputApplied = null;
     }
     if (!mounted) return;
-    // 播中尺寸变化不重建纹理（_textureOutputApplied 按档位去重），
+    // 播中尺寸变化不重建纹理（_textureOutputApplied 按 档位@尺寸 去重），
     // 规避「释放+重建」黑屏族问题（958fcb7/6f2fb5b 教训）。
-    // 渲染尺寸夹紧已移除（1.1.190）：对 10-bit P010 无效（解码器
-    // scale 不生效），且 mdk 内部写 video.decoder=scale=WxH 会覆写
-    // image=0 注入。恒传 null 让 mdk 使用原生尺寸。
     try {
       final texId = await _player
           .updateTexture(
-            width: null,
-            height: null,
+            width: clampTarget?.width.toInt(),
+            height: clampTarget?.height.toInt(),
             tunnel: tunnel,
           )
           .timeout(const Duration(seconds: 5));
@@ -2091,20 +2156,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (_player.textureId.value == null) {
           await _player
               .updateTexture(
-                width: null,
-                height: null,
+                width: clampTarget?.width.toInt(),
+                height: clampTarget?.height.toInt(),
                 tunnel: tunnel,
               )
               .timeout(const Duration(seconds: 5));
         }
       }
-      if (_player.textureId.value != null) _textureOutputApplied = mode;
+      if (_player.textureId.value != null) _textureOutputApplied = dedupKey;
       String videoStreams = '?';
       try {
         videoStreams = '${_player.mediaInfo.video?.length ?? 0} 路';
       } catch (_) {}
       LogService().log('Player',
-          '纹理: 返回 $texId, textureId ${_player.textureId.value}, 视频流 $videoStreams, tunnel $tunnel');
+          '纹理: 返回 $texId, textureId ${_player.textureId.value}, '
+          '视频流 $videoStreams, tunnel $tunnel, '
+          '夹紧 ${clampTarget == null ? "无" : "${clampTarget.width.toInt()}x${clampTarget.height.toInt()}"}');
     } catch (e) {
       LogService().log('Player', 'updateTexture 失败: $e');
     }
@@ -2289,8 +2356,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // （Windows XAudio2 已复现），渐出→换源→起播渐入消除爆音。
       await _fadeOutForSwitch();
 
-      // 强制 SDR 输出：防 player 状态重置丢失 initState 的设置（仅 Android）
-      if (Platform.isAndroid) {
+      // 强制 SDR 输出：防 player 状态重置丢失 initState 的设置
+      // （仅 Android + forceSdrOutput 开关开启，1.1.196）
+      if (Platform.isAndroid && ref.read(settingsProvider).forceSdrOutput) {
         _player.setColorSpace(PlayerScreen.outputColorSpace());
       }
       _isSwitchingMedia = true;
@@ -2425,7 +2493,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       _isSwitchingMedia = true;
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid && ref.read(settingsProvider).forceSdrOutput) {
         _player.setColorSpace(PlayerScreen.outputColorSpace());
       }
       _player.media = playUrl;

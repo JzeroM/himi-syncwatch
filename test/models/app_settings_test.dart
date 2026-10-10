@@ -184,6 +184,42 @@ void main() {
       expect(copied.copyWith().renderDepth8, isTrue);
     });
 
+    // ── 1.1.196 实验开关：forceSdrOutput / renderClampHdrOnly ──
+
+    test('forceSdrOutput / renderClampHdrOnly 默认 false', () {
+      expect(const AppSettings().forceSdrOutput, isFalse);
+      expect(const AppSettings().renderClampHdrOnly, isFalse);
+      expect(AppSettings.fromJson(const {}).forceSdrOutput, isFalse);
+      expect(AppSettings.fromJson(const {}).renderClampHdrOnly, isFalse);
+    });
+
+    test('forceSdrOutput toJson/fromJson 往返', () {
+      final json =
+          const AppSettings().copyWith(forceSdrOutput: true).toJson();
+      expect(json['forceSdrOutput'], isTrue);
+      expect(AppSettings.fromJson(json).forceSdrOutput, isTrue);
+      expect(const AppSettings().toJson()['forceSdrOutput'], isFalse);
+    });
+
+    test('renderClampHdrOnly toJson/fromJson 往返', () {
+      final json =
+          const AppSettings().copyWith(renderClampHdrOnly: true).toJson();
+      expect(json['renderClampHdrOnly'], isTrue);
+      expect(AppSettings.fromJson(json).renderClampHdrOnly, isTrue);
+      expect(const AppSettings().toJson()['renderClampHdrOnly'], isFalse);
+    });
+
+    test('copyWith 透传 forceSdrOutput / renderClampHdrOnly', () {
+      final copied = const AppSettings()
+          .copyWith(forceSdrOutput: true, renderClampHdrOnly: true);
+      expect(copied.forceSdrOutput, isTrue);
+      expect(copied.renderClampHdrOnly, isTrue);
+      // 未指定时保留
+      final again = copied.copyWith();
+      expect(again.forceSdrOutput, isTrue);
+      expect(again.renderClampHdrOnly, isTrue);
+    });
+
     test('copyWith 保留未指定字段', () {
       const original = AppSettings(decodeMode: 'hw', stereoDownmix: true);
       final copied = original.copyWith(showSyncDebug: true);

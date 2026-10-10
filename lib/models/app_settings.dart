@@ -112,6 +112,18 @@ class AppSettings {
   /// Android EGL 生效，iOS Metal 不适用。修改后需重启应用生效。
   final bool renderDepth8;
 
+  /// 强制 SDR 输出（实验，1.1.196）：Android 上调用
+  /// `setColorSpace(bt709)` 强制 tone map 到 SDR。修复 HDR10 在
+  /// SDR 面板上的发白问题（v1.1.191），但与 HDR 渲染夹紧实验
+  /// 相互独立，可单独 A/B。默认关闭（不干预 mdk 色彩管线）。
+  /// 下次起播/切集生效。
+  final bool forceSdrOutput;
+
+  /// HDR 渲染夹紧（实验，1.1.196）：HDR 内容渲染尺寸 contain-fit
+  /// 到设备物理分辨率，降低 GL/Flutter 纹理负载。仅 Android +
+  /// HDR 内容生效，SDR 内容不受影响。默认关闭。下次起播生效。
+  final bool renderClampHdrOnly;
+
   /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
   ///
   /// 首次检测到 `EGL ERROR (3004)`/`No EGL config found` 时落盘 true；
@@ -216,6 +228,8 @@ class AppSettings {
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
     this.renderDepth8 = false,
+    this.forceSdrOutput = false,
+    this.renderClampHdrOnly = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -253,6 +267,8 @@ class AppSettings {
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
     bool? renderDepth8,
+    bool? forceSdrOutput,
+    bool? renderClampHdrOnly,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
@@ -298,6 +314,8 @@ class AppSettings {
       videoDecoderLowLatency:
           videoDecoderLowLatency ?? this.videoDecoderLowLatency,
       renderDepth8: renderDepth8 ?? this.renderDepth8,
+      forceSdrOutput: forceSdrOutput ?? this.forceSdrOutput,
+      renderClampHdrOnly: renderClampHdrOnly ?? this.renderClampHdrOnly,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -363,6 +381,8 @@ class AppSettings {
         'videoDecoderNoImage': videoDecoderNoImage,
         'videoDecoderLowLatency': videoDecoderLowLatency,
         'renderDepth8': renderDepth8,
+        'forceSdrOutput': forceSdrOutput,
+        'renderClampHdrOnly': renderClampHdrOnly,
         'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
@@ -450,6 +470,10 @@ class AppSettings {
           json['videoDecoderLowLatency'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 EGL_SDR_DEPTH=10）
       renderDepth8: json['renderDepth8'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（不干预 mdk 色彩管线）
+      forceSdrOutput: json['forceSdrOutput'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（不夹紧渲染尺寸）
+      renderClampHdrOnly: json['renderClampHdrOnly'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──

@@ -141,8 +141,44 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
             onChanged: (v) => notifier.update(deepDiagnostics: v),
           ),
         ),
-        const Divider(height: 1),
-      ],
+          const Divider(height: 1),
+          // 强制 SDR 输出实验（1.1.196）：setColorSpace(bt709) 强制
+          // tone map 到 SDR。修复 HDR10 在 SDR 面板上的发白问题
+          // （v1.1.191），但与 HDR 渲染夹紧实验相互独立，可单独 A/B。
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () =>
+                notifier.update(forceSdrOutput: !settings.forceSdrOutput),
+            child: SwitchListTile(
+              title: const Text('强制 SDR 输出（实验）'),
+              subtitle: const Text(
+                'setColorSpace(bt709)：强制 tone map 到 SDR，修复 HDR10 '
+                '发白。关闭可隔离 HDR 夹紧实验。修改后下次起播生效',
+              ),
+              value: settings.forceSdrOutput,
+              onChanged: (v) => notifier.update(forceSdrOutput: v),
+            ),
+          ),
+          const Divider(height: 1),
+          // HDR 渲染夹紧实验（1.1.196）：HDR 内容渲染尺寸 contain-fit
+          // 到设备物理分辨率，降低 GL/Flutter 纹理负载。仅 HDR 内容
+          // 生效，SDR 不受影响。
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => notifier.update(
+                renderClampHdrOnly: !settings.renderClampHdrOnly),
+            child: SwitchListTile(
+              title: const Text('HDR 渲染夹紧（实验）'),
+              subtitle: const Text(
+                'HDR 内容渲染尺寸夹紧到设备物理分辨率，降低纹理负载。'
+                '仅 HDR 生效。修改后下次起播生效',
+              ),
+              value: settings.renderClampHdrOnly,
+              onChanged: (v) => notifier.update(renderClampHdrOnly: v),
+            ),
+          ),
+          const Divider(height: 1),
+        ],
     );
   }
 }

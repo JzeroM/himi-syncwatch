@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
 
 /// 显示器「真实输出分辨率」探测（Android）。
 ///
@@ -30,6 +31,10 @@ class DisplayInfoService {
       final h = (map?['height'] as num?)?.toDouble();
       if (w != null && h != null && w > 0 && h > 0) {
         _cached = Size(w, h);
+        final rate = map?['refreshRate'];
+        LogService().log('Diag',
+            '显示物理分辨率: ${w.toInt()}x${h.toInt()}'
+            '${rate != null ? ' @${rate}Hz' : ''}');
         return _cached;
       }
     } on PlatformException {
