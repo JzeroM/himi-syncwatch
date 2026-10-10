@@ -13,9 +13,10 @@
 ///   创建 context（纹理通道黑屏 workaround，视频全黑机型实验开关）；
 /// - `avsync.audio.adaptive`（全平台常开，1.1.186）：视频落后于音频
 ///   时放慢音频速度保同步（mdk 0.37+），配合音频硬解减少成簇丢帧；
-/// - `avsync.video.decoder_drop`（全平台常开，1.1.186）：音画严重
-///   不同步时解码端平滑丢帧（fvp#336 wang-bin 方案），替代渲染端
-///   簇状丢帧；
+/// - `avsync.video.decoder_drop`（**已移除**，1.1.195）：changelog 0.37.0
+///   提到 "Support decoder frame drop if out of sync" 但选项名未在
+///   Global Options 文档中列出（名称来自 fvp#336 对话）。怀疑与渲染端
+///   丢帧逻辑冲突导致 HDR10 实验失效，移除后 A/B 验证；
 /// - `videoout.hdr`（实验开关，1.1.187）：0=恒 tone map 到 sRGB
 ///   （mdk 默认）；1=按屏幕能力启用 HDR 输出（metal/d3d11；Android
 ///   EGL 可能忽略）。恒显式注入使 Diag 取证行能区分 A/B 档位。
@@ -39,10 +40,9 @@ Map<String, Object> buildFvpOptions({
       'gl.yuv_sampler': 1,
       'surfacetexture.glcontext': 1,
     },
-    // avsync 两参数全平台常开（见 doc 头），音频钟抖动/解码突发
-    // 导致的簇状丢帧缓解（1.1.186：4K60 手机丢帧诊断）。
+    // avsync.audio.adaptive 全平台常开（见 doc 头），音频钟抖动/
+    // 解码突发导致的簇状丢帧缓解（1.1.186：4K60 手机丢帧诊断）。
     'avsync.audio.adaptive': 1,
-    'avsync.video.decoder_drop': 1,
     // videoout.hdr 恒注入（见 doc 头）：HDR10 4K60 丢帧 A/B 实验，
     // Diag 行 `fvp options` 显式可见当前档位。
     // 注意：player_screen 已通过 setColorSpace(bt709) 强制 SDR 输出

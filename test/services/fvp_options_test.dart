@@ -3,7 +3,7 @@ import 'package:himi_syncwatch/services/fvp_options.dart';
 
 void main() {
   group('buildFvpOptions（fvp 启动期全局选项）', () {
-    test('默认：avsync 两参数常开 + videoout.hdr=0，无 xa2/兼容模式', () {
+    test('默认：avsync.audio.adaptive 常开 + videoout.hdr=0，无 xa2/兼容模式', () {
       final options = buildFvpOptions(
         xa2Persistent: false,
         renderCompatMode: false,
@@ -12,9 +12,9 @@ void main() {
       expect(options.keys, ['global']);
       final global = options['global'] as Map;
       expect(global['avsync.audio.adaptive'], 1);
-      expect(global['avsync.video.decoder_drop'], 1);
+      expect(global.containsKey('avsync.video.decoder_drop'), isFalse);
       expect(global['videoout.hdr'], 0);
-      expect(global.length, 3);
+      expect(global.length, 2);
     });
 
     test('Windows：注入 audio.xa2.persistent=1', () {
@@ -28,7 +28,7 @@ void main() {
       expect(global.containsKey('surfacetexture.glcontext'), isFalse);
       // avsync 常开不受平台开关影响
       expect(global['avsync.audio.adaptive'], 1);
-      expect(global['avsync.video.decoder_drop'], 1);
+      expect(global.containsKey('avsync.video.decoder_drop'), isFalse);
     });
 
     test('渲染兼容模式：注入 rockchip yuv 采样 + SurfaceTexture 上下文', () {
@@ -51,7 +51,7 @@ void main() {
       expect(global['videoout.hdr'], 1);
     });
 
-    test('三项同时开启：选项齐全互不覆盖（含 avsync 常开共 6 项）', () {
+    test('三项同时开启：选项齐全互不覆盖（含 avsync 常开共 5 项）', () {
       final global = buildFvpOptions(
         xa2Persistent: true,
         renderCompatMode: true,
@@ -61,9 +61,9 @@ void main() {
       expect(global['gl.yuv_sampler'], 1);
       expect(global['surfacetexture.glcontext'], 1);
       expect(global['avsync.audio.adaptive'], 1);
-      expect(global['avsync.video.decoder_drop'], 1);
+      expect(global.containsKey('avsync.video.decoder_drop'), isFalse);
       expect(global['videoout.hdr'], 1);
-      expect(global.length, 6);
+      expect(global.length, 5);
     });
   });
 }
