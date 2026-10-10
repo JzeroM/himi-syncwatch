@@ -99,7 +99,10 @@ class MediaStream {
       videoRangeType: json['VideoRangeType'],
       colorPrimaries: json['ColorPrimaries'],
       colorSpace: json['ColorSpace'],
-      transferCharacteristics: json['TransferCharacteristics'],
+      // Emby 实测色彩传输字段名为 ColorTransfer（smpte2084），非
+      // TransferCharacteristics；两者兼容读取（1.1.188）
+      transferCharacteristics:
+          json['TransferCharacteristics'] ?? json['ColorTransfer'],
       profile: json['Profile'],
       level: json['Level'] as int?,
       bitDepth: json['BitDepth'] as int?,
@@ -146,10 +149,22 @@ class MediaStream {
   bool get isTextSubtitle => type == 'Subtitle';
   bool get isInternalStream => subtitleLocationType == 'InternalStream';
 
-  /// 杜比视界检测（ExtendedVideoType 或 VideoRangeType=DOVI）
+  /// 归一化视频范围/类型值：大写并去空格。
+  ///
+  /// Emby 实测（1.1.188）：`VideoRange` 返回 `"HDR 10"`（带空格+10）、
+  /// `ExtendedVideoType` 返回 `"Hdr10"`，原精确匹配 `HDR`/`PQ` 全部落空
+  /// → HDR10 误标 SDR。统一归一化后比较。
+  String get _videoRangeNorm =>
+      videoRange?.toUpperCase().replaceAll(' ', '') ?? '';
+  String get _videoRangeTypeNorm =>
+      videoRangeType?.toUpperCase().replaceAll(' ', '') ?? '';
+  String get _extendedVideoTypeNorm =>
+      extendedVideoType?.toUpperCase().replaceAll(' ', '') ?? '';
+
+  /// 杜比视界检测（ExtendedVideoType 或 VideoRangeType=DOVI，归一化）。
   bool get isDolbyVision =>
-      extendedVideoType == 'DolbyVision' ||
-      (videoRangeType?.toUpperCase() == 'DOVI');
+      _extendedVideoTypeNorm == 'DOLBYVISION' ||
+      _videoRangeTypeNorm == 'DOVI';
 
   /// 传输特性是否 PQ（HDR10 信号）：smpte2084/st2084。
   bool get _transferIsPQ {
@@ -163,16 +178,15 @@ class MediaStream {
 
   /// HDR 类型检测（HDR10/Dolby Vision）。
   ///
-  /// 分层判定（1.1.187）：DV → VideoRangeType → VideoRange → 传输特性。
-  /// strm/部分重封装项 `VideoRange` 常错标 SDR，`VideoRangeType` 与
-  /// `TransferCharacteristics`（smpte2084=HDR10）更可靠。
+  /// 分层判定（1.1.187/1.1.188）：DV → VideoRangeType → VideoRange →
+  /// ExtendedVideoType → 传输特性；全部归一化匹配（Emby 实测
+  /// `VideoRange: "HDR 10"`、`ExtendedVideoType: "Hdr10"`）。
   /// HLG 不计入（历史语义，路由决策只针对 HDR10/DV 直写 wedge）。
   bool get isHDR =>
       isDolbyVision ||
-      const {'HDR10', 'HDR10PLUS', 'PQ'}
-          .contains(videoRangeType?.toUpperCase()) ||
-      videoRange == 'HDR' ||
-      videoRange == 'PQ' ||
+      const {'HDR10', 'HDR10PLUS', 'PQ'}.contains(_videoRangeTypeNorm) ||
+      const {'HDR', 'HDR10', 'PQ'}.contains(_videoRangeNorm) ||
+      _extendedVideoTypeNorm == 'HDR10' ||
       _transferIsPQ;
 
   /// HDR 类型标签（含 HLG 展示）。
@@ -184,12 +198,18 @@ class MediaStream {
       if (extendedVideoSubType == 'DoviProfile84') return 'Dolby Vision P8.4';
       return 'Dolby Vision';
     }
-    final vrt = videoRangeType?.toUpperCase();
-    if (vrt == 'HDR10PLUS') return 'HDR10+';
-    if (vrt == 'HDR10' || vrt == 'PQ') return 'HDR10';
-    if (videoRange == 'HDR' || videoRange == 'PQ') return 'HDR10';
+    if (_videoRangeTypeNorm == 'HDR10PLUS') return 'HDR10+';
+    if (_videoRangeTypeNorm == 'HDR10' || _videoRangeTypeNorm == 'PQ') {
+      return 'HDR10';
+    }
+    if (const {'HDR', 'HDR10', 'PQ'}.contains(_videoRangeNorm)) return 'HDR10';
+    if (_extendedVideoTypeNorm == 'HDR10') return 'HDR10';
     if (_transferIsPQ) return 'HDR10';
-    if (vrt == 'HLG' || videoRange == 'HLG' || _transferIsHLG) return 'HLG';
+    if (_videoRangeTypeNorm == 'HLG' ||
+        _videoRangeNorm == 'HLG' ||
+        _transferIsHLG) {
+      return 'HLG';
+    }
     return 'SDR';
   }
 

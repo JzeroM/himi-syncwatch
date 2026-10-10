@@ -456,4 +456,92 @@ void main() {
       expect(round.isHDR, isTrue);
     });
   });
+
+  group('Emby 真实服务器返回值（1.1.188：VideoRange="HDR 10"/ColorTransfer）', () {
+    // 真机 Emby API 抓取（兰香如故 S01E01，2026-10-10）：
+    // VideoRange="HDR 10"（带空格+10）、无 VideoRangeType、
+    // ColorTransfer="smpte2084"（非 TransferCharacteristics）、
+    // ExtendedVideoType="Hdr10"。原精确匹配 HDR/PQ 全部落空 → 误标 SDR。
+    test('VideoRange="HDR 10"（带空格）→ isHDR/HDR10', () {
+      final s = MediaStream.fromJson(const {
+        'Type': 'Video',
+        'Codec': 'hevc',
+        'VideoRange': 'HDR 10',
+        'ColorPrimaries': 'bt2020',
+        'ColorSpace': 'bt2020nc',
+        'ColorTransfer': 'smpte2084',
+        'BitDepth': 10,
+        'PixelFormat': 'yuv420p10le',
+        'ExtendedVideoType': 'Hdr10',
+        'ExtendedVideoSubType': 'Hdr10',
+        'DisplayTitle': '4K HDR 10 HEVC',
+      });
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, equals('HDR10'));
+    });
+
+    test('ColorTransfer 字段映射到 transferCharacteristics', () {
+      final s = MediaStream.fromJson(const {
+        'Type': 'Video',
+        'Codec': 'hevc',
+        'ColorTransfer': 'smpte2084',
+      });
+      expect(s.transferCharacteristics, equals('smpte2084'));
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, equals('HDR10'));
+    });
+
+    test('ExtendedVideoType="Hdr10" 归一化 → HDR10', () {
+      final s = MediaStream.fromJson(const {
+        'Type': 'Video',
+        'Codec': 'hevc',
+        'ExtendedVideoType': 'Hdr10',
+      });
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, equals('HDR10'));
+    });
+
+    test('完整真实 JSON（无 VideoRangeType 仅有 HDR 10）→ HDR10', () {
+      final s = MediaStream.fromJson(const {
+        'Codec': 'hevc',
+        'Language': 'chi',
+        'ColorTransfer': 'smpte2084',
+        'ColorPrimaries': 'bt2020',
+        'ColorSpace': 'bt2020nc',
+        'VideoRange': 'HDR 10',
+        'DisplayTitle': '4K HDR 10 HEVC',
+        'BitDepth': 10,
+        'Height': 2160,
+        'Width': 3840,
+        'AverageFrameRate': 60,
+        'RealFrameRate': 60,
+        'Profile': 'Main 10',
+        'Type': 'Video',
+        'PixelFormat': 'yuv420p10le',
+        'Level': 153,
+        'ExtendedVideoType': 'Hdr10',
+        'ExtendedVideoSubType': 'Hdr10',
+        'ExtendedVideoSubTypeDescription': 'HDR 10',
+      });
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, equals('HDR10'));
+      // 详情页展示字段
+      expect(s.colorPrimaries, equals('bt2020'));
+      expect(s.colorSpace, equals('bt2020nc'));
+      expect(s.transferCharacteristics, equals('smpte2084'));
+      expect(s.bitDepth, equals(10));
+    });
+
+    test('DV ExtendedVideoType="DolbyVision" 归一化仍识别', () {
+      final s = MediaStream.fromJson(const {
+        'Type': 'Video',
+        'Codec': 'hevc',
+        'ExtendedVideoType': 'DolbyVision',
+        'VideoRange': 'PQ',
+      });
+      expect(s.isDolbyVision, isTrue);
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, equals('Dolby Vision'));
+    });
+  });
 }
