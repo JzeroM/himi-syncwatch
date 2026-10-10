@@ -78,6 +78,24 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
+          // low_latency=1 实验（1.1.192）：AMediaCodec 解码器属性，
+          // 改变硬解器内部 buffer 管理路径。10-bit P010 4K60 簇状
+          // 丢帧 A/B 对比用（硬解丢帧、软解不丢）。
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => notifier.update(
+                videoDecoderLowLatency: !settings.videoDecoderLowLatency),
+            child: SwitchListTile(
+              title: const Text('硬解 low_latency=1（实验）'),
+              subtitle: const Text(
+                'AMediaCodec low_latency=1：改变硬解器 buffer 管理路径。'
+                '10-bit 4K60 丢帧 A/B 对比用，修改后下次起播生效',
+              ),
+              value: settings.videoDecoderLowLatency,
+              onChanged: (v) => notifier.update(videoDecoderLowLatency: v),
+            ),
+          ),
+          const Divider(height: 1),
         ],
         settingsTvWrapRow(
           tvMode: settings.tvMode,

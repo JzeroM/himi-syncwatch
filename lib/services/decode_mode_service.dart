@@ -100,4 +100,24 @@ class DecodeModeService {
       return base.join(':');
     }).toList();
   }
+
+  /// 向解码器列表内嵌 low_latency=1 属性（Android AMediaCodec 专用，1.1.192）。
+  ///
+  /// mdk 0.34+ 新增 AMediaCodec 解码器 low_latency 选项（默认 0，需 API 30+）。
+  /// 改变硬解器内部 buffer 管理路径。用于 A/B 验证 10-bit P010 4K60
+  /// 在 Adreno 740 上的簇状丢帧是否为 Qualcomm 硬解 buffer 管理 bug
+  /// （硬解丢帧、软解不丢）。
+  ///
+  /// 仅处理 AMediaCodec 条目；非 Android 平台或列表无 AMediaCodec
+  /// 时原样返回。已有 low_latency= 键则不重复追加。
+  static List<String> withDecoderLowLatency(List<String> decoders) {
+    return decoders.map((d) {
+      if (!d.startsWith('AMediaCodec')) return d;
+      if (d.contains('low_latency=')) return d;
+      final parts =
+          d.split(':').where((p) => p.isNotEmpty).toList();
+      parts.add('low_latency=1');
+      return parts.join(':');
+    }).toList();
+  }
 }

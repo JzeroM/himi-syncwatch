@@ -388,4 +388,17 @@ void main() {
       expect(PlayerScreen.outputColorSpace(), mdk.ColorSpace.bt709);
     });
   });
+
+  group('PlayerScreen.mergeDecoderLowLatency（1.1.192 实验）', () {
+    test('委托 DecodeModeService.withDecoderLowLatency', () {
+      expect(
+        PlayerScreen.mergeDecoderLowLatency(['AMediaCodec']),
+        ['AMediaCodec:low_latency=1'],
+      );
+      expect(
+        PlayerScreen.mergeDecoderLowLatency(['AMediaCodec', 'FFmpeg']),
+        ['AMediaCodec:low_latency=1', 'FFmpeg'],
+      );
+    });
+  });
 }

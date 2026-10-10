@@ -192,4 +192,65 @@ void main() {
       );
     });
   });
+
+  group('DecodeModeService.withDecoderLowLatency（1.1.192 实验）', () {
+    test('AMediaCodec 无属性 → 追加 low_latency=1', () {
+      expect(
+        DecodeModeService.withDecoderLowLatency(['AMediaCodec']),
+        ['AMediaCodec:low_latency=1'],
+      );
+    });
+
+    test('AMediaCodec + FFmpeg → 仅 AMediaCodec 追加', () {
+      expect(
+        DecodeModeService.withDecoderLowLatency(['AMediaCodec', 'FFmpeg']),
+        ['AMediaCodec:low_latency=1', 'FFmpeg'],
+      );
+    });
+
+    test('已有 low_latency=1 → 不重复追加', () {
+      expect(
+        DecodeModeService.withDecoderLowLatency(['AMediaCodec:low_latency=1']),
+        ['AMediaCodec:low_latency=1'],
+      );
+    });
+
+    test('已有 low_latency=0 → 不追加（contains 检查任意 low_latency= 值）', () {
+      // 实现用 d.contains('low_latency=') 检查，low_latency=0 也视为已有
+      expect(
+        DecodeModeService.withDecoderLowLatency(['AMediaCodec:low_latency=0']),
+        ['AMediaCodec:low_latency=0'],
+      );
+    });
+
+    test('已有 image=0 → 保留 image 属性', () {
+      expect(
+        DecodeModeService.withDecoderLowLatency(['AMediaCodec:image=0']),
+        ['AMediaCodec:image=0:low_latency=1'],
+      );
+    });
+
+    test('image=0 + low_latency=1 组合 → 两属性共存', () {
+      expect(
+        DecodeModeService.withDecoderLowLatency(
+            ['AMediaCodec:image=0:low_latency=1']),
+        ['AMediaCodec:image=0:low_latency=1'],
+      );
+    });
+
+    test('非 AMediaCodec 条目原样保留', () {
+      expect(
+        DecodeModeService.withDecoderLowLatency(['FFmpeg']),
+        ['FFmpeg'],
+      );
+    });
+
+    test('混合列表：仅 AMediaCodec 被修改', () {
+      expect(
+        DecodeModeService.withDecoderLowLatency(
+            ['AMediaCodec', 'FFmpeg', 'VT']),
+        ['AMediaCodec:low_latency=1', 'FFmpeg', 'VT'],
+      );
+    });
+  });
 }

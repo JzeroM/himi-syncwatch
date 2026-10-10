@@ -323,6 +323,14 @@ class PlayerScreen extends ConsumerStatefulWidget {
   ) =>
       DecodeModeService.withDecoderImage(decoders, imageVal);
 
+  /// 合并解码器列表中的 low_latency=1 属性（1.1.192 实验）。
+  ///
+  /// AMediaCodec low_latency 改变硬解器内部 buffer 管理路径，
+  /// A/B 验证 10-bit P010 4K60 簇状丢帧是否为 Qualcomm 硬解 bug。
+  @visibleForTesting
+  static List<String> mergeDecoderLowLatency(List<String> decoders) =>
+      DecodeModeService.withDecoderLowLatency(decoders);
+
   /// 输出色彩空间（1.1.191）：恒 BT709（SDR）。
   ///
   /// Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
@@ -1865,14 +1873,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // HDR image=0 实验（1.1.190 官方 setDecoders 方式）：运行期判定
     // HDR（Emby 误标 SDR 的 strm/重封装项）兜底注入。属性内嵌在解码
     // 器名中，不受 mdk 内部 video.decoder=scale=WxH 覆写影响。
-    if (Platform.isAndroid &&
-        ref.read(settingsProvider).videoDecoderNoImage) {
-      final decoders = DecodeModeService.resolveDecoders(
-          ref.read(settingsProvider).decodeMode);
-      final merged = PlayerScreen.mergeDecoderListImage(decoders, '0');
-      _player.videoDecoders = merged;
-      LogService().log('Player',
-          'HDR image=0 实验: 运行期判定 HDR → videoDecoders $merged（下次起播生效）');
+    // low_latency=1 实验（1.1.192）：同样兜底注入。
+    if (Platform.isAndroid) {
+      final s = ref.read(settingsProvider);
+      final expNoImage = s.videoDecoderNoImage;
+      final expLowLatency = s.videoDecoderLowLatency;
+      if (expNoImage || expLowLatency) {
+        var decoders = DecodeModeService.resolveDecoders(s.decodeMode);
+        if (expNoImage) {
+          decoders = PlayerScreen.mergeDecoderListImage(decoders, '0');
+          LogService().log('Player',
+              'HDR image=0 实验: 运行期判定 HDR → videoDecoders $decoders（下次起播生效）');
+        }
+        if (expLowLatency) {
+          decoders = PlayerScreen.mergeDecoderLowLatency(decoders);
+          LogService().log('Player',
+              'low_latency=1 实验: 运行期判定 HDR → videoDecoders $decoders（下次起播生效）');
+        }
+        _player.videoDecoders = decoders;
+      }
     }
     // 路由可能改变实际输出档位（如 surfaceViewDirect→surfaceView）→ 重应用
     unawaited(_applyVideoOutputMode());
@@ -2232,21 +2251,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 恢复 image=1 防残留。运行期判定由 _refreshHdrContent 兜底注入。
       // 属性内嵌在解码器名中（AMediaCodec:image=0），不受 mdk 内部
       // video.decoder=scale=WxH 覆写影响。
+      //
+      // low_latency=1 实验（1.1.192）：AMediaCodec 解码器属性，改变
+      // 硬解器内部 buffer 管理路径，A/B 验证 10-bit P010 簇状丢帧。
       if (Platform.isAndroid) {
-        final expNoImage =
-            ref.read(settingsProvider).videoDecoderNoImage;
-        final embyHdr = _embyVideoStream?.isHDR == true ||
-            _embyVideoStream?.isDolbyVision == true;
-        if (expNoImage) {
-          final target = embyHdr ? '0' : '1';
-          final decoders = DecodeModeService.resolveDecoders(
-              ref.read(settingsProvider).decodeMode);
-          final merged =
-              PlayerScreen.mergeDecoderListImage(decoders, target);
-          _player.videoDecoders = merged;
-          LogService().log('Player',
-              'HDR image=0 实验: ${embyHdr ? "HDR/DV" : "SDR"} → '
-              'videoDecoders $merged');
+        final s = ref.read(settingsProvider);
+        final expNoImage = s.videoDecoderNoImage;
+        final expLowLatency = s.videoDecoderLowLatency;
+        if (expNoImage || expLowLatency) {
+          final embyHdr = _embyVideoStream?.isHDR == true ||
+              _embyVideoStream?.isDolbyVision == true;
+          var decoders = DecodeModeService.resolveDecoders(s.decodeMode);
+          if (expNoImage) {
+            final target = embyHdr ? '0' : '1';
+            decoders = PlayerScreen.mergeDecoderListImage(decoders, target);
+            LogService().log('Player',
+                'HDR image=0 实验: ${embyHdr ? "HDR/DV" : "SDR"} → '
+                'videoDecoders $decoders');
+          }
+          if (expLowLatency) {
+            decoders = PlayerScreen.mergeDecoderLowLatency(decoders);
+            LogService().log('Player',
+                'low_latency=1 实验: videoDecoders $decoders');
+          }
+          _player.videoDecoders = decoders;
         }
       }
 

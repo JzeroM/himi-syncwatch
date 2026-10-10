@@ -139,6 +139,31 @@ void main() {
       expect(copied.copyWith().videoDecoderNoImage, isTrue);
     });
 
+    test('videoDecoderLowLatency 旧数据缺字段 → 默认 false（保持 low_latency=0）',
+        () {
+      expect(
+          AppSettings.fromJson(const {}).videoDecoderLowLatency, isFalse);
+    });
+
+    test('videoDecoderLowLatency toJson/fromJson 往返（1.1.192 实验开关）', () {
+      final json = const AppSettings()
+          .copyWith(videoDecoderLowLatency: true)
+          .toJson();
+      expect(json['videoDecoderLowLatency'], isTrue);
+      expect(AppSettings.fromJson(json).videoDecoderLowLatency, isTrue);
+      // 默认 false 也落盘
+      expect(
+          const AppSettings().toJson()['videoDecoderLowLatency'], isFalse);
+    });
+
+    test('copyWith 透传 videoDecoderLowLatency', () {
+      const original = AppSettings();
+      final copied = original.copyWith(videoDecoderLowLatency: true);
+      expect(copied.videoDecoderLowLatency, isTrue);
+      // 未指定时保留
+      expect(copied.copyWith().videoDecoderLowLatency, isTrue);
+    });
+
     test('copyWith 保留未指定字段', () {
       const original = AppSettings(decodeMode: 'hw', stereoDownmix: true);
       final copied = original.copyWith(showSyncDebug: true);

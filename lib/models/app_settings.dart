@@ -99,6 +99,12 @@ class AppSettings {
   /// A/B 实验用：不丢帧则实锤 AImageReader P010 瓶颈。
   final bool videoDecoderNoImage;
 
+  /// 硬解 low_latency=1（实验，1.1.192）：AMediaCodec 解码器属性
+  /// （mdk 0.34+，默认 0，需 API 30+），改变硬解器内部 buffer 管理
+  /// 路径。用于 A/B 验证 10-bit P010 4K60 在 Adreno 740 上簇状丢帧
+  /// 是否为 Qualcomm 硬解 buffer 管理 bug（硬解丢帧、软解不丢）。
+  final bool videoDecoderLowLatency;
+
   /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
   ///
   /// 首次检测到 `EGL ERROR (3004)`/`No EGL config found` 时落盘 true；
@@ -201,6 +207,7 @@ class AppSettings {
     this.renderCompatMode = false,
     this.videoOutHdrAuto = false,
     this.videoDecoderNoImage = false,
+    this.videoDecoderLowLatency = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -236,6 +243,7 @@ class AppSettings {
     bool? renderCompatMode,
     bool? videoOutHdrAuto,
     bool? videoDecoderNoImage,
+    bool? videoDecoderLowLatency,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
@@ -278,6 +286,8 @@ class AppSettings {
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
       videoOutHdrAuto: videoOutHdrAuto ?? this.videoOutHdrAuto,
       videoDecoderNoImage: videoDecoderNoImage ?? this.videoDecoderNoImage,
+      videoDecoderLowLatency:
+          videoDecoderLowLatency ?? this.videoDecoderLowLatency,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -341,6 +351,7 @@ class AppSettings {
         'renderCompatMode': renderCompatMode,
         'videoOutHdrAuto': videoOutHdrAuto,
         'videoDecoderNoImage': videoDecoderNoImage,
+        'videoDecoderLowLatency': videoDecoderLowLatency,
         'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
@@ -423,6 +434,9 @@ class AppSettings {
       videoOutHdrAuto: json['videoOutHdrAuto'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 image=1）
       videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（保持 mdk 默认 low_latency=0）
+      videoDecoderLowLatency:
+          json['videoDecoderLowLatency'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──
