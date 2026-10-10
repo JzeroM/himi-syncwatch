@@ -36,6 +36,27 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
         ],
+        // HDR 输出自适应：mdk 全局 videoout.hdr（HDR10 4K60 丢帧 A/B
+        // 实验），仅启动时读取注入 → 重启生效；Android EGL 可能忽略
+        if (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS) ...[
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () =>
+                notifier.update(videoOutHdrAuto: !settings.videoOutHdrAuto),
+            child: SwitchListTile(
+              title: const Text('HDR 输出自适应（实验）'),
+              subtitle: const Text(
+                'mdk videoout.hdr：关闭恒 tone map 到 sRGB（默认），'
+                '开启按屏幕能力启用 HDR 输出。HDR 片卡顿 A/B 对比用，'
+                '修改后需重启应用生效',
+              ),
+              value: settings.videoOutHdrAuto,
+              onChanged: (v) => notifier.update(videoOutHdrAuto: v),
+            ),
+          ),
+          const Divider(height: 1),
+        ],
         settingsTvWrapRow(
           tvMode: settings.tvMode,
           onTap: () => notifier.update(showSyncDebug: !settings.showSyncDebug),

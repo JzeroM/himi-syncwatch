@@ -84,6 +84,13 @@ class AppSettings {
   /// 全局选项仅启动时读取注入，**修改后需重启应用生效**。
   final bool renderCompatMode;
 
+  /// HDR 输出自适应（实验，mdk 全局 `videoout.hdr`，1.1.187）：
+  /// false=0 恒 tone map 到 sRGB（mdk 默认）；true=1 按屏幕能力启用
+  /// HDR 输出（metal/d3d11；Android EGL 可能忽略，仅作 A/B 实验）。
+  /// 针对 HDR10 4K60 手机丢帧诊断。全局选项仅启动时读取注入，
+  /// **修改后需重启应用生效**。
+  final bool videoOutHdrAuto;
+
   /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
   ///
   /// 首次检测到 `EGL ERROR (3004)`/`No EGL config found` 时落盘 true；
@@ -184,6 +191,7 @@ class AppSettings {
     this.videoOutput = 'texture',
     this.videoOutputUserSet = false,
     this.renderCompatMode = false,
+    this.videoOutHdrAuto = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -217,6 +225,7 @@ class AppSettings {
     String? videoOutput,
     bool? videoOutputUserSet,
     bool? renderCompatMode,
+    bool? videoOutHdrAuto,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
@@ -257,6 +266,7 @@ class AppSettings {
       videoOutput: videoOutput ?? this.videoOutput,
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
+      videoOutHdrAuto: videoOutHdrAuto ?? this.videoOutHdrAuto,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -318,6 +328,7 @@ class AppSettings {
         'videoOutput': videoOutput,
         'videoOutputUserSet': videoOutputUserSet,
         'renderCompatMode': renderCompatMode,
+        'videoOutHdrAuto': videoOutHdrAuto,
         'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
@@ -396,6 +407,8 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（mdk 默认 tone map to sRGB）
+      videoOutHdrAuto: json['videoOutHdrAuto'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──

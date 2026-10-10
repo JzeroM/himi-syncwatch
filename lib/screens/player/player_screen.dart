@@ -1840,10 +1840,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 运行期优先于元数据（Emby 常把 HDR 片标成 SDR）。一旦判定为 HDR 保持
   /// 不回退；判定翻转时刷新视频输出（可能切换载体：直写→同载体 GL）。
+  /// 判定为 HDR 时回写面板 `_hdrType`（1.1.187）：Emby 误标 SDR 的
+  /// strm/重封装项以运行期 colorSpace 为准，保证面板取证与路由一致。
   void _refreshHdrContent() {
     if (_hdrContent) return;
     var hdr = _embyVideoStream?.isHDR == true ||
         _embyVideoStream?.isDolbyVision == true;
+    var runtimeLabel = '';
     if (!hdr) {
       try {
         final videos = _player.mediaInfo.video;
@@ -1854,13 +1857,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               cs == mdk.ColorSpace.bt2100hlg ||
               c.doviProfile > 0 ||
               AppSettings.isHdrPixelFormat(c.formatName);
+          if (hdr) {
+            if (c.doviProfile > 0) {
+              runtimeLabel = 'Dolby Vision';
+            } else if (cs == mdk.ColorSpace.bt2100PQ) {
+              runtimeLabel = 'HDR10';
+            } else if (cs == mdk.ColorSpace.bt2100hlg) {
+              runtimeLabel = 'HLG';
+            } else {
+              runtimeLabel = 'HDR10';
+            }
+          }
         }
       } catch (_) {}
     }
     if (!hdr || !mounted) return;
+    // Emby 标签非 SDR 时保留（含 DV Profile 等更精确信息）；
+    // Emby 误标 SDR 时以运行期判定回写面板。
+    final embyLabel = _embyVideoStream?.hdrLabel ?? 'SDR';
+    final panelLabel = embyLabel != 'SDR'
+        ? embyLabel
+        : (runtimeLabel.isNotEmpty ? runtimeLabel : embyLabel);
     LogService().log('Player',
-        'HDR 内容判定: true（元数据=${_embyVideoStream?.hdrLabel ?? "-"}）→ 自动路由直写档为同载体 GL');
-    setState(() => _hdrContent = true);
+        'HDR 内容判定: true（元数据=$embyLabel 运行期=${runtimeLabel.isEmpty ? "-" : runtimeLabel}）→ 自动路由直写档为同载体 GL');
+    setState(() {
+      _hdrContent = true;
+      _hdrType = panelLabel;
+    });
     // 路由可能改变实际输出档位（如 surfaceViewDirect→surfaceView）→ 重应用
     unawaited(_applyVideoOutputMode());
   }

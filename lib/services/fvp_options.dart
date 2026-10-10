@@ -15,7 +15,10 @@
 ///   时放慢音频速度保同步（mdk 0.37+），配合音频硬解减少成簇丢帧；
 /// - `avsync.video.decoder_drop`（全平台常开，1.1.186）：音画严重
 ///   不同步时解码端平滑丢帧（fvp#336 wang-bin 方案），替代渲染端
-///   簇状丢帧。
+///   簇状丢帧；
+/// - `videoout.hdr`（实验开关，1.1.187）：0=恒 tone map 到 sRGB
+///   （mdk 默认）；1=按屏幕能力启用 HDR 输出（metal/d3d11；Android
+///   EGL 可能忽略）。恒显式注入使 Diag 取证行能区分 A/B 档位。
 ///
 /// 注意：fvp registerWith 的 `maxWidth`/`maxHeight`（纹理尺寸上限）
 /// 对本应用**无效**——himi 绕过 video_player 插件层（mdk.Player FFI
@@ -28,6 +31,7 @@
 Map<String, Object> buildFvpOptions({
   required bool xa2Persistent,
   required bool renderCompatMode,
+  required bool videoOutHdrAuto,
 }) {
   final global = <String, Object>{
     if (xa2Persistent) 'audio.xa2.persistent': 1,
@@ -39,6 +43,9 @@ Map<String, Object> buildFvpOptions({
     // 导致的簇状丢帧缓解（1.1.186：4K60 手机丢帧诊断）。
     'avsync.audio.adaptive': 1,
     'avsync.video.decoder_drop': 1,
+    // videoout.hdr 恒注入（见 doc 头）：HDR10 4K60 丢帧 A/B 实验，
+    // Diag 行 `fvp options` 显式可见当前档位。
+    'videoout.hdr': videoOutHdrAuto ? 1 : 0,
   };
   return {'global': global};
 }

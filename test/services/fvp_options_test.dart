@@ -3,22 +3,25 @@ import 'package:himi_syncwatch/services/fvp_options.dart';
 
 void main() {
   group('buildFvpOptions（fvp 启动期全局选项）', () {
-    test('默认：avsync 两参数常开，无 xa2/兼容模式', () {
+    test('默认：avsync 两参数常开 + videoout.hdr=0，无 xa2/兼容模式', () {
       final options = buildFvpOptions(
         xa2Persistent: false,
         renderCompatMode: false,
+        videoOutHdrAuto: false,
       );
       expect(options.keys, ['global']);
       final global = options['global'] as Map;
       expect(global['avsync.audio.adaptive'], 1);
       expect(global['avsync.video.decoder_drop'], 1);
-      expect(global.length, 2);
+      expect(global['videoout.hdr'], 0);
+      expect(global.length, 3);
     });
 
     test('Windows：注入 audio.xa2.persistent=1', () {
       final global = buildFvpOptions(
         xa2Persistent: true,
         renderCompatMode: false,
+        videoOutHdrAuto: false,
       )['global'] as Map;
       expect(global['audio.xa2.persistent'], 1);
       expect(global.containsKey('gl.yuv_sampler'), isFalse);
@@ -32,23 +35,35 @@ void main() {
       final global = buildFvpOptions(
         xa2Persistent: false,
         renderCompatMode: true,
+        videoOutHdrAuto: false,
       )['global'] as Map;
       expect(global['gl.yuv_sampler'], 1);
       expect(global['surfacetexture.glcontext'], 1);
       expect(global.containsKey('audio.xa2.persistent'), isFalse);
     });
 
-    test('两项同时开启：选项齐全互不覆盖（含 avsync 常开共 5 项）', () {
+    test('HDR 输出自适应：videoout.hdr=1（1.1.187 实验开关）', () {
+      final global = buildFvpOptions(
+        xa2Persistent: false,
+        renderCompatMode: false,
+        videoOutHdrAuto: true,
+      )['global'] as Map;
+      expect(global['videoout.hdr'], 1);
+    });
+
+    test('三项同时开启：选项齐全互不覆盖（含 avsync 常开共 6 项）', () {
       final global = buildFvpOptions(
         xa2Persistent: true,
         renderCompatMode: true,
+        videoOutHdrAuto: true,
       )['global'] as Map;
       expect(global['audio.xa2.persistent'], 1);
       expect(global['gl.yuv_sampler'], 1);
       expect(global['surfacetexture.glcontext'], 1);
       expect(global['avsync.audio.adaptive'], 1);
       expect(global['avsync.video.decoder_drop'], 1);
-      expect(global.length, 5);
+      expect(global['videoout.hdr'], 1);
+      expect(global.length, 6);
     });
   });
 }

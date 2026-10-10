@@ -52,12 +52,12 @@ void main() {
       expect(result, equals(['FFmpeg']));
     });
 
-    test('HW 模式 → Android/Windows 纯硬解；无硬解平台回退 FFmpeg', () {
+    test('HW 模式 → 硬解优先 + FFmpeg 兜底（音频无硬解防没声，1.1.187）', () {
       final result = DecodeModeService.resolveAudioDecoders('hw');
       if (Platform.isAndroid) {
-        expect(result, equals(['AMediaCodec']));
+        expect(result, equals(['AMediaCodec', 'FFmpeg']));
       } else if (Platform.isWindows) {
-        expect(result, equals(['MFT']));
+        expect(result, equals(['MFT', 'FFmpeg']));
       } else {
         // Apple/Linux 无 mdk 音频硬解器 → 回退 FFmpeg（唯一可用）
         expect(result, equals(['FFmpeg']));

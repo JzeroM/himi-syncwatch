@@ -301,6 +301,9 @@ List<(String, String)> _videoRows(MediaStream s) {
   add('比特率',
       s.bitRate != null ? MediaDetailsSection.formatBitrate(s.bitRate) : null);
   add('视频范围', s.hdrLabel);
+  add('基色', s.colorPrimaries);
+  add('色彩空间', s.colorSpace);
+  add('色彩转换', s.transferCharacteristics);
   add('位深度', s.bitDepth != null ? '${s.bitDepth} bit' : null);
   add('像素格式', s.pixelFormat);
   add('参考帧', s.refFrames?.toString());

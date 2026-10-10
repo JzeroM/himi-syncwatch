@@ -164,11 +164,14 @@ Future<void> _bootstrap() async {
   // fvp/mdk 全局选项：registerWith 全局生效一次且须在首个播放器创建
   // 前调用 → 移到设置加载后，按已存盘设置注入（audio.xa2.persistent：
   // Windows XAudio2 引擎不销毁，切集换源无瞬态；renderCompatMode：
-  // rockchip GL 渲染变体，视频全黑机型实验开关）。详见 fvp_options.dart。
+  // rockchip GL 渲染变体，视频全黑机型实验开关；videoOutHdrAuto：
+  // videoout.hdr HDR 输出自适应，HDR10 4K60 丢帧 A/B 实验）。
+  // 详见 fvp_options.dart。
   final fvpOptions = buildFvpOptions(
     xa2Persistent: Platform.isWindows,
     renderCompatMode: AppSettings.effectiveRenderCompatMode(
         settingsNotifier.snapshot.renderCompatMode),
+    videoOutHdrAuto: settingsNotifier.snapshot.videoOutHdrAuto,
   );
   fvp.registerWith(options: fvpOptions);
   // 注入取证行：真机上无法从其他途径证明 global 选项已生效

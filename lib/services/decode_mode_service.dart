@@ -58,10 +58,15 @@ class DecodeModeService {
     }
   }
 
-  /// 平台音频硬解器（不含 FFmpeg 回退，纯硬解）
+  /// 平台音频硬解器 + FFmpeg 兜底。
+  ///
+  /// 音频硬解可用性因设备/编码而异（EAC3 等需 SoC 支持），纯硬解
+  /// 无兜底会让无硬解设备直接没声；音频「没声」比软解更不可接受，
+  /// 故 hw 档音频保留 FFmpeg 兜底——与视频 hw（纯硬解不回退）语义
+  /// 有意不同（1.1.187）。
   static List<String> _platformHwOnlyAudioDecoders() {
-    if (Platform.isAndroid) return ['AMediaCodec'];
-    if (Platform.isWindows) return ['MFT'];
+    if (Platform.isAndroid) return ['AMediaCodec', 'FFmpeg'];
+    if (Platform.isWindows) return ['MFT', 'FFmpeg'];
     return ['FFmpeg'];
   }
 

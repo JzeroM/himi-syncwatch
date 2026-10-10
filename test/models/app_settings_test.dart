@@ -104,6 +104,20 @@ void main() {
       expect(settings.copyWith(showSyncDebug: true).eglFaultSeen, isFalse);
     });
 
+    test('videoOutHdrAuto 旧数据缺字段 → 默认 false（tone map to sRGB）',
+        () {
+      expect(AppSettings.fromJson(const {}).videoOutHdrAuto, isFalse);
+    });
+
+    test('videoOutHdrAuto toJson/fromJson 往返（1.1.187 实验开关）', () {
+      final json =
+          const AppSettings().copyWith(videoOutHdrAuto: true).toJson();
+      expect(json['videoOutHdrAuto'], isTrue);
+      expect(AppSettings.fromJson(json).videoOutHdrAuto, isTrue);
+      // 默认 false 也落盘
+      expect(const AppSettings().toJson()['videoOutHdrAuto'], isFalse);
+    });
+
     test('copyWith 保留未指定字段', () {
       const original = AppSettings(decodeMode: 'hw', stereoDownmix: true);
       final copied = original.copyWith(showSyncDebug: true);

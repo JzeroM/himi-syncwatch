@@ -512,8 +512,44 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('渲染兼容模式（实验）'), findsOneWidget);
-    expect(find.textContaining('需重启应用生效'), findsOneWidget);
+    // 渲染兼容模式 + HDR 输出自适应（1.1.187）两条实验开关均含提示
+    expect(find.textContaining('需重启应用生效'), findsWidgets);
     expect(container.read(settingsProvider).renderCompatMode, isFalse);
+  });
+
+  testWidgets('实验性子页：Android 展示 HDR 输出自适应开关，默认关闭（1.1.187）',
+      (tester) async {
+    final container = await _pumpScreen(tester, category: '实验性');
+    await tester.scrollUntilVisible(
+      find.text('HDR 输出自适应（实验）'),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('HDR 输出自适应（实验）'), findsOneWidget);
+    expect(container.read(settingsProvider).videoOutHdrAuto, isFalse);
+  });
+
+  testWidgets('HDR 输出自适应开关切换写入设置（1.1.187）', (tester) async {
+    final container = await _pumpScreen(tester, category: '实验性');
+    final row = find.ancestor(
+      of: find.text('HDR 输出自适应（实验）'),
+      matching: find.byType(SwitchListTile),
+    );
+    await tester.scrollUntilVisible(
+      find.text('HDR 输出自适应（实验）'),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    final sw = tester.widget<Switch>(
+        find.descendant(of: row, matching: find.byType(Switch)));
+    sw.onChanged!(true);
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).videoOutHdrAuto, isTrue);
   });
 
   testWidgets('渲染兼容模式开关切换写入设置', (tester) async {

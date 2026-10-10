@@ -358,4 +358,102 @@ void main() {
       expect(nonDV.isDolbyVisionProfile5, isFalse);
     });
   });
+
+  group('MediaStream HDR 分层判定（1.1.187：VideoRangeType/色彩字段）', () {
+    test('VideoRange 错标 SDR + VideoRangeType=HDR10 → isHDR/HDR10', () {
+      // strm/重封装项典型形态：VideoRange 不可靠，VideoRangeType 准确
+      final s = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'SDR',
+        videoRangeType: 'HDR10',
+      );
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, equals('HDR10'));
+    });
+
+    test('仅 TransferCharacteristics=smpte2084 → HDR10 兜底推断', () {
+      final s = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        transferCharacteristics: 'smpte2084',
+      );
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, equals('HDR10'));
+    });
+
+    test('VideoRangeType=DOVI（无 ExtendedVideoType）→ DV', () {
+      final s = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRangeType: 'DOVI',
+      );
+      expect(s.isDolbyVision, isTrue);
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, equals('Dolby Vision'));
+    });
+
+    test('VideoRangeType=HLG → 标签 HLG，isHDR 保持 false（历史语义）', () {
+      final s = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'SDR',
+        videoRangeType: 'HLG',
+      );
+      expect(s.isHDR, isFalse);
+      expect(s.hdrLabel, equals('HLG'));
+    });
+
+    test('传输特性 arib-std-b67 → HLG 标签', () {
+      final s = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        transferCharacteristics: 'arib-std-b67',
+      );
+      expect(s.isHDR, isFalse);
+      expect(s.hdrLabel, equals('HLG'));
+    });
+
+    test('VideoRange=PQ → 标签 HDR10（原误落 SDR 的修复）', () {
+      final s = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        videoRange: 'PQ',
+      );
+      expect(s.hdrLabel, equals('HDR10'));
+    });
+
+    test('SDR 全空 → 非 HDR，标签 SDR', () {
+      final s = MediaStream(type: 'Video', codec: 'h264');
+      expect(s.isHDR, isFalse);
+      expect(s.hdrLabel, equals('SDR'));
+    });
+
+    test('fromJson 解析新字段 + toJson 往返', () {
+      final s = MediaStream.fromJson(const {
+        'Type': 'Video',
+        'Codec': 'hevc',
+        'VideoRange': 'SDR',
+        'VideoRangeType': 'HDR10',
+        'ColorPrimaries': 'bt2020',
+        'ColorSpace': 'bt2020nc',
+        'TransferCharacteristics': 'smpte2084',
+      });
+      expect(s.videoRangeType, 'HDR10');
+      expect(s.colorPrimaries, 'bt2020');
+      expect(s.colorSpace, 'bt2020nc');
+      expect(s.transferCharacteristics, 'smpte2084');
+      expect(s.isHDR, isTrue);
+      expect(s.hdrLabel, 'HDR10');
+
+      final json = s.toJson();
+      expect(json['VideoRangeType'], 'HDR10');
+      expect(json['ColorPrimaries'], 'bt2020');
+      expect(json['ColorSpace'], 'bt2020nc');
+      expect(json['TransferCharacteristics'], 'smpte2084');
+      final round = MediaStream.fromJson(json);
+      expect(round.videoRangeType, 'HDR10');
+      expect(round.isHDR, isTrue);
+    });
+  });
 }
