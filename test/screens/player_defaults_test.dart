@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
 
 void main() {
@@ -379,6 +380,12 @@ void main() {
             ['AMediaCodec', 'FFmpeg', 'VT'], '0'),
         ['AMediaCodec:image=0', 'FFmpeg', 'VT'],
       );
+    });
+  });
+
+  group('PlayerScreen.outputColorSpace（1.1.191 SDR tone map）', () {
+    test('恒返回 bt709（Flutter 纹理 SDR，修复 HDR10 丢帧+发白）', () {
+      expect(PlayerScreen.outputColorSpace(), mdk.ColorSpace.bt709);
     });
   });
 }

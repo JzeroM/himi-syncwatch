@@ -45,6 +45,9 @@ Map<String, Object> buildFvpOptions({
     'avsync.video.decoder_drop': 1,
     // videoout.hdr 恒注入（见 doc 头）：HDR10 4K60 丢帧 A/B 实验，
     // Diag 行 `fvp options` 显式可见当前档位。
+    // 注意：player_screen 已通过 setColorSpace(bt709) 强制 SDR 输出
+    // （1.1.191，修复 mdk-sdk#361 HDR10 丢帧+发白），此全局选项
+    // 仅影响未显式调 setColorSpace 的场景。
     'videoout.hdr': videoOutHdrAuto ? 1 : 0,
   };
   return {'global': global};
