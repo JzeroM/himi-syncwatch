@@ -331,11 +331,14 @@ class PlayerScreen extends ConsumerStatefulWidget {
   static List<String> mergeDecoderLowLatency(List<String> decoders) =>
       DecodeModeService.withDecoderLowLatency(decoders);
 
-  /// 输出色彩空间（1.1.191）：恒 BT709（SDR）。
+  /// 输出色彩空间（1.1.191，1.1.194 限 Android）：恒 BT709（SDR）。
   ///
-  /// Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
-  /// bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
+  /// Android：Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10
+  /// 内容建 bt2020_pq 表面，导致 SDR 面板发白 + HDR10 管线簇状丢帧
   /// （mdk-sdk#361，fvp#379 workaround：HDR 内容回退 GL + tone map 到 SDR）。
+  ///
+  /// iOS：不调用 setColorSpace。Metal 上与 videoout.hdr=0 冲突导致
+  /// HDR10 黑屏（1.1.194 修复），iOS 依赖 videoout.hdr=0 全局选项。
   @visibleForTesting
   static mdk.ColorSpace outputColorSpace() => mdk.ColorSpace.bt709;
 
@@ -1294,12 +1297,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
     _player = mdk.Player();
-    // 强制输出 SDR（BT709）：Flutter 纹理恒 SDR（fvp 文档），
+    // 强制输出 SDR（BT709）：仅 Android。Flutter 纹理恒 SDR（fvp 文档），
     // mdk 默认 auto 会为 HDR10 内容建 bt2020_pq 表面，导致
     // Android SDR 面板发白 + HDR10 管线簇状丢帧（mdk-sdk#361，
     // fvp#379 workaround：HDR 内容回退 GL + tone map 到 SDR）。
-    _player.setColorSpace(PlayerScreen.outputColorSpace());
-    LogService().log('Player', '输出色彩空间: bt709（SDR tone map）');
+    // iOS Metal 上 setColorSpace(bt709) 与 videoout.hdr=0 冲突导致
+    // HDR10 黑屏（1.1.194 修复），iOS 依赖 videoout.hdr=0 全局选项。
+    if (Platform.isAndroid) {
+      _player.setColorSpace(PlayerScreen.outputColorSpace());
+      LogService().log('Player', '输出色彩空间: bt709（SDR tone map）');
+    }
     // 字幕属性配置（大小/位置随会话状态，initState 后异步恢复落盘值）
     _player.setProperty('subtitle', '1');
     _player.setProperty('subtitle.font.size', '40');
@@ -2282,8 +2289,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // （Windows XAudio2 已复现），渐出→换源→起播渐入消除爆音。
       await _fadeOutForSwitch();
 
-      // 强制 SDR 输出：防 player 状态重置丢失 initState 的设置
-      _player.setColorSpace(PlayerScreen.outputColorSpace());
+      // 强制 SDR 输出：防 player 状态重置丢失 initState 的设置（仅 Android）
+      if (Platform.isAndroid) {
+        _player.setColorSpace(PlayerScreen.outputColorSpace());
+      }
       _isSwitchingMedia = true;
       _player.media = streamUrl;
       await _player.prepare();
@@ -2416,7 +2425,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       _isSwitchingMedia = true;
-      _player.setColorSpace(PlayerScreen.outputColorSpace());
+      if (Platform.isAndroid) {
+        _player.setColorSpace(PlayerScreen.outputColorSpace());
+      }
       _player.media = playUrl;
       await _player.prepare();
       _player.playbackRate = _speed;

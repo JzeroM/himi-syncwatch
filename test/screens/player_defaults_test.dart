@@ -383,8 +383,8 @@ void main() {
     });
   });
 
-  group('PlayerScreen.outputColorSpace（1.1.191 SDR tone map）', () {
-    test('恒返回 bt709（Flutter 纹理 SDR，修复 HDR10 丢帧+发白）', () {
+  group('PlayerScreen.outputColorSpace（1.1.191 SDR tone map，1.1.194 限 Android）', () {
+    test('恒返回 bt709（Android 用，iOS 不调用防黑屏）', () {
       expect(PlayerScreen.outputColorSpace(), mdk.ColorSpace.bt709);
     });
   });
