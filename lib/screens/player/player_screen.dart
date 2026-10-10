@@ -336,10 +336,10 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 输出色彩空间（1.1.191，1.1.194 限 Android，1.1.196 加开关）：
   /// 恒 BT709（SDR）。
   ///
-  /// Android + forceSdrOutput 开关开启时调用：Flutter 纹理恒 SDR
-  /// （fvp 文档），mdk 默认 auto 会为 HDR10 内容建 bt2020_pq 表面，
-  /// 导致 SDR 面板发白（mdk-sdk#361，fvp#379 workaround）。
-  /// 1.1.196 起默认关闭，可隔离 HDR 渲染夹紧实验。
+  /// Android + forceSdrOutput 开关（默认开启）时调用：Flutter 纹理恒
+  /// SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建 bt2020_pq 表面，
+  /// 导致 SDR 面板发白 + HDR10 管线簇状丢帧 + 纹理黑屏（mdk-sdk#361，
+  /// fvp#379 workaround）。关闭仅用于 A/B 实验。
   ///
   /// iOS：不调用 setColorSpace。Metal 上与 videoout.hdr=0 冲突导致
   /// HDR10 黑屏（1.1.194 修复），iOS 依赖 videoout.hdr=0 全局选项。
@@ -1320,12 +1320,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
     _player = mdk.Player();
-    // 强制输出 SDR（BT709）：仅 Android + forceSdrOutput 开关开启。
+    // 强制输出 SDR（BT709）：仅 Android + forceSdrOutput 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
-    // bt2020_pq 表面，导致 Android SDR 面板发白（mdk-sdk#361，
-    // fvp#379 workaround）。iOS Metal 上 setColorSpace(bt709) 与
+    // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
+    // + 纹理黑屏（mdk-sdk#361，fvp#379 workaround：HDR 内容回退 GL +
+    // tone map 到 SDR）。iOS Metal 上 setColorSpace(bt709) 与
     // videoout.hdr=0 冲突导致 HDR10 黑屏（1.1.194 修复）。
-    // 1.1.196 起做成开关（默认关闭），可隔离 HDR 渲染夹紧实验。
+    // 1.1.196 起做成开关（默认开启），关闭仅用于 A/B 实验。
     if (Platform.isAndroid && ref.read(settingsProvider).forceSdrOutput) {
       _player.setColorSpace(PlayerScreen.outputColorSpace());
       LogService().log('Player', '输出色彩空间: bt709（SDR tone map）');

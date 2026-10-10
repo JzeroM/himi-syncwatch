@@ -112,10 +112,11 @@ class AppSettings {
   /// Android EGL 生效，iOS Metal 不适用。修改后需重启应用生效。
   final bool renderDepth8;
 
-  /// 强制 SDR 输出（实验，1.1.196）：Android 上调用
+  /// 强制 SDR 输出（1.1.191 引入，1.1.196 可开关）：Android 上调用
   /// `setColorSpace(bt709)` 强制 tone map 到 SDR。修复 HDR10 在
-  /// SDR 面板上的发白问题（v1.1.191），但与 HDR 渲染夹紧实验
-  /// 相互独立，可单独 A/B。默认关闭（不干预 mdk 色彩管线）。
+  /// SDR 面板上的发白问题，且避免 mdk auto 建 bt2020_pq 表面导致
+  /// Flutter SDR 纹理黑屏（与 iOS v1.1.194 同机制）。默认开启
+  /// （恢复 v1.1.191-195 行为），关闭仅用于 A/B 实验。
   /// 下次起播/切集生效。
   final bool forceSdrOutput;
 
@@ -228,7 +229,7 @@ class AppSettings {
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
     this.renderDepth8 = false,
-    this.forceSdrOutput = false,
+    this.forceSdrOutput = true,
     this.renderClampHdrOnly = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
@@ -471,7 +472,7 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 EGL_SDR_DEPTH=10）
       renderDepth8: json['renderDepth8'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（不干预 mdk 色彩管线）
-      forceSdrOutput: json['forceSdrOutput'] as bool? ?? false,
+      forceSdrOutput: json['forceSdrOutput'] as bool? ?? true,
       // 旧数据无此字段 → 默认 false（不夹紧渲染尺寸）
       renderClampHdrOnly: json['renderClampHdrOnly'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）

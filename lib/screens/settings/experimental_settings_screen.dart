@@ -150,10 +150,11 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
             onTap: () =>
                 notifier.update(forceSdrOutput: !settings.forceSdrOutput),
             child: SwitchListTile(
-              title: const Text('强制 SDR 输出（实验）'),
+              title: const Text('强制 SDR 输出'),
               subtitle: const Text(
                 'setColorSpace(bt709)：强制 tone map 到 SDR，修复 HDR10 '
-                '发白。关闭可隔离 HDR 夹紧实验。修改后下次起播生效',
+                '发白 + 防止 bt2020_pq 表面黑屏。默认开启，关闭仅用于 '
+                'A/B 实验。修改后下次起播生效',
               ),
               value: settings.forceSdrOutput,
               onChanged: (v) => notifier.update(forceSdrOutput: v),

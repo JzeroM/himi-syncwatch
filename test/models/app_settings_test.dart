@@ -186,19 +186,20 @@ void main() {
 
     // ── 1.1.196 实验开关：forceSdrOutput / renderClampHdrOnly ──
 
-    test('forceSdrOutput / renderClampHdrOnly 默认 false', () {
-      expect(const AppSettings().forceSdrOutput, isFalse);
+    test('forceSdrOutput 默认 true（防 bt2020_pq 表面黑屏），'
+        'renderClampHdrOnly 默认 false', () {
+      expect(const AppSettings().forceSdrOutput, isTrue);
       expect(const AppSettings().renderClampHdrOnly, isFalse);
-      expect(AppSettings.fromJson(const {}).forceSdrOutput, isFalse);
+      expect(AppSettings.fromJson(const {}).forceSdrOutput, isTrue);
       expect(AppSettings.fromJson(const {}).renderClampHdrOnly, isFalse);
     });
 
     test('forceSdrOutput toJson/fromJson 往返', () {
       final json =
-          const AppSettings().copyWith(forceSdrOutput: true).toJson();
-      expect(json['forceSdrOutput'], isTrue);
-      expect(AppSettings.fromJson(json).forceSdrOutput, isTrue);
-      expect(const AppSettings().toJson()['forceSdrOutput'], isFalse);
+          const AppSettings().copyWith(forceSdrOutput: false).toJson();
+      expect(json['forceSdrOutput'], isFalse);
+      expect(AppSettings.fromJson(json).forceSdrOutput, isFalse);
+      expect(const AppSettings().toJson()['forceSdrOutput'], isTrue);
     });
 
     test('renderClampHdrOnly toJson/fromJson 往返', () {
@@ -211,12 +212,12 @@ void main() {
 
     test('copyWith 透传 forceSdrOutput / renderClampHdrOnly', () {
       final copied = const AppSettings()
-          .copyWith(forceSdrOutput: true, renderClampHdrOnly: true);
-      expect(copied.forceSdrOutput, isTrue);
+          .copyWith(forceSdrOutput: false, renderClampHdrOnly: true);
+      expect(copied.forceSdrOutput, isFalse);
       expect(copied.renderClampHdrOnly, isTrue);
       // 未指定时保留
       final again = copied.copyWith();
-      expect(again.forceSdrOutput, isTrue);
+      expect(again.forceSdrOutput, isFalse);
       expect(again.renderClampHdrOnly, isTrue);
     });
 
