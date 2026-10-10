@@ -322,4 +322,52 @@ void main() {
           PlayerScreen.showLogoInControls(logoUrl: '', isRoom: false), isFalse);
     });
   });
+
+  group('PlayerScreen.mergeDecoderImage（1.1.189 HDR image=0 实验）', () {
+    test('空值 → 追加 image=0', () {
+      expect(PlayerScreen.mergeDecoderImage('', '0'), 'image=0');
+    });
+
+    test('已有 scale 键 → 追加 image=0，保留 scale', () {
+      expect(
+        PlayerScreen.mergeDecoderImage('scale=1079x607', '0'),
+        'scale=1079x607:image=0',
+      );
+    });
+
+    test('已有 image=1 → 替换为 image=0，保留 scale', () {
+      expect(
+        PlayerScreen.mergeDecoderImage('scale=1920x1080:image=1', '0'),
+        'scale=1920x1080:image=0',
+      );
+    });
+
+    test('已有 image=0 → 不重复追加', () {
+      expect(
+        PlayerScreen.mergeDecoderImage('scale=1079x607:image=0', '0'),
+        'scale=1079x607:image=0',
+      );
+    });
+
+    test('恢复 SDR：image=0 → image=1', () {
+      expect(
+        PlayerScreen.mergeDecoderImage('scale=1079x607:image=0', '1'),
+        'scale=1079x607:image=1',
+      );
+    });
+
+    test('多键合并：保留其他键', () {
+      expect(
+        PlayerScreen.mergeDecoderImage('scale=100x50:low_latency=1', '0'),
+        'scale=100x50:low_latency=1:image=0',
+      );
+    });
+
+    test('image 键在中间 → 原位替换', () {
+      expect(
+        PlayerScreen.mergeDecoderImage('scale=1x1:image=1:foo=2', '0'),
+        'scale=1x1:image=0:foo=2',
+      );
+    });
+  });
 }

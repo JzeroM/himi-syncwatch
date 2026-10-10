@@ -91,6 +91,14 @@ class AppSettings {
   /// **修改后需重启应用生效**。
   final bool videoOutHdrAuto;
 
+  /// HDR 禁用 AImageReader（实验，`video.decoder image=0`，1.1.189）：
+  /// Android AMediaCodec 默认 image=1（AImageReader/AHardwareBuffer 路径，
+  /// 低延迟）。HDR10 P010 4K60 在 Adreno 740 上疑似该路径慢，导致
+  /// 渲染端簇状丢帧（SurfaceView/纹理均复现，其他播放器不丢）。
+  /// 开启后 HDR 内容注入 image=0 回退旧 Surface/BufferQueue 输出。
+  /// A/B 实验用：不丢帧则实锤 AImageReader P010 瓶颈。
+  final bool videoDecoderNoImage;
+
   /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
   ///
   /// 首次检测到 `EGL ERROR (3004)`/`No EGL config found` 时落盘 true；
@@ -192,6 +200,7 @@ class AppSettings {
     this.videoOutputUserSet = false,
     this.renderCompatMode = false,
     this.videoOutHdrAuto = false,
+    this.videoDecoderNoImage = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -226,6 +235,7 @@ class AppSettings {
     bool? videoOutputUserSet,
     bool? renderCompatMode,
     bool? videoOutHdrAuto,
+    bool? videoDecoderNoImage,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
@@ -267,6 +277,7 @@ class AppSettings {
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
       videoOutHdrAuto: videoOutHdrAuto ?? this.videoOutHdrAuto,
+      videoDecoderNoImage: videoDecoderNoImage ?? this.videoDecoderNoImage,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -329,6 +340,7 @@ class AppSettings {
         'videoOutputUserSet': videoOutputUserSet,
         'renderCompatMode': renderCompatMode,
         'videoOutHdrAuto': videoOutHdrAuto,
+        'videoDecoderNoImage': videoDecoderNoImage,
         'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
@@ -409,6 +421,8 @@ class AppSettings {
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（mdk 默认 tone map to sRGB）
       videoOutHdrAuto: json['videoOutHdrAuto'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（保持 mdk 默认 image=1）
+      videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──

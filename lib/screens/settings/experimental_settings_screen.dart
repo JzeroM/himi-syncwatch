@@ -57,6 +57,28 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
         ],
+        // HDR image=0 实验：AMediaCodec 解码器 image=1（AImageReader）在
+        // HDR10 P010 上疑似慢路径，注入 image=0 回退旧 Surface 输出。
+        // 仅 Android（AMediaCodec）；立即生效（setProperty 作用于当前
+        // 解码器实例，下次起播/切集按新值重开）。
+        if (defaultTargetPlatform == TargetPlatform.android) ...[
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => notifier.update(
+                videoDecoderNoImage: !settings.videoDecoderNoImage),
+            child: SwitchListTile(
+              title: const Text('HDR image=0（实验）'),
+              subtitle: const Text(
+                '解码器 image=0：禁用 AImageReader/AHardwareBuffer 路径，'
+                '回退旧 Surface/BufferQueue 输出。HDR10 4K60 丢帧 A/B '
+                '对比用，修改后下次起播生效',
+              ),
+              value: settings.videoDecoderNoImage,
+              onChanged: (v) => notifier.update(videoDecoderNoImage: v),
+            ),
+          ),
+          const Divider(height: 1),
+        ],
         settingsTvWrapRow(
           tvMode: settings.tvMode,
           onTap: () => notifier.update(showSyncDebug: !settings.showSyncDebug),

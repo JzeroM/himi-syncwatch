@@ -311,6 +311,28 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       !isRoom && logoUrl != null && logoUrl.isNotEmpty;
 
+  /// 合并 `video.decoder` 属性中的 `image=N`（1.1.189 HDR image=0 实验）。
+  ///
+  /// mdk 内部会写 `video.decoder=scale=WxH`（解码器缩放输出），直接
+  /// setProperty('video.decoder', 'image=0') 会覆盖 scale 导致全 4K
+  /// 过管线。此方法读取当前值，替换/追加 image= 键，保留其余键。
+  @visibleForTesting
+  static String mergeDecoderImage(String current, String imageVal) {
+    final parts = current.isEmpty
+        ? <String>[]
+        : current.split(':').where((p) => p.isNotEmpty).toList();
+    var found = false;
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].startsWith('image=')) {
+        parts[i] = 'image=$imageVal';
+        found = true;
+        break;
+      }
+    }
+    if (!found) parts.add('image=$imageVal');
+    return parts.join(':');
+  }
+
   /// 顶栏解码模式按钮是否显示：TV 模式隐藏（解码模式仅走设置页）。
   @visibleForTesting
   static bool showDecodeButton({required bool tvMode}) => !tvMode;
@@ -1884,6 +1906,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _hdrContent = true;
       _hdrType = panelLabel;
     });
+    // HDR image=0 实验（1.1.189）：运行期判定 HDR（Emby 误标 SDR 的
+    // strm/重封装项）兜底注入。当前解码器实例已开启，setProperty 对
+    // 下次 decoder open（切集/seek 重开）生效；Emby 元数据正确标注的
+    // 主路径在 _loadStream 起播前注入，本次播放即生效。
+    if (Platform.isAndroid &&
+        ref.read(settingsProvider).videoDecoderNoImage) {
+      final cur = _player.getProperty('video.decoder') ?? '';
+      final merged = PlayerScreen.mergeDecoderImage(cur, '0');
+      _player.setProperty('video.decoder', merged);
+      LogService().log('Player',
+          'HDR image=0 实验: 运行期判定 HDR → video.decoder $merged（下次起播生效）');
+    }
     // 路由可能改变实际输出档位（如 surfaceViewDirect→surfaceView）→ 重应用
     unawaited(_applyVideoOutputMode());
   }
@@ -2241,6 +2275,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) return false;
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+      }
+
+      // HDR image=0 实验（1.1.189）：Emby 元数据判定 HDR/DV 时，起播前
+      // 注入 video.decoder image=0，禁用 AImageReader/AHardwareBuffer
+      // 路径，回退旧 Surface/BufferQueue 输出。A/B 验证「AImageReader
+      // P010 慢路径」假设。SDR 内容显式恢复 image=1 防残留。
+      // 运行期判定（Emby 误标 SDR）由 _refreshHdrContent 兜底注入。
+      // 注意：mdk 内部会写 video.decoder=scale=WxH（解码器缩放），需
+      // 读取当前值合并 image=，避免覆盖 scale 导致全 4K 过管线。
+      if (Platform.isAndroid) {
+        final expNoImage =
+            ref.read(settingsProvider).videoDecoderNoImage;
+        final embyHdr = _embyVideoStream?.isHDR == true ||
+            _embyVideoStream?.isDolbyVision == true;
+        if (expNoImage) {
+          final target = embyHdr ? '0' : '1';
+          final cur = _player.getProperty('video.decoder') ?? '';
+          final merged = PlayerScreen.mergeDecoderImage(cur, target);
+          _player.setProperty('video.decoder', merged);
+          LogService().log('Player',
+              'HDR image=0 实验: ${embyHdr ? "HDR/DV" : "SDR"} → '
+              'video.decoder $merged');
+        }
       }
 
       // 换源前渐出：同 player 硬切 media 时新旧音频波形不连续会爆音

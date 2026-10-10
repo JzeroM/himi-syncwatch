@@ -118,6 +118,27 @@ void main() {
       expect(const AppSettings().toJson()['videoOutHdrAuto'], isFalse);
     });
 
+    test('videoDecoderNoImage 旧数据缺字段 → 默认 false（保持 image=1）', () {
+      expect(AppSettings.fromJson(const {}).videoDecoderNoImage, isFalse);
+    });
+
+    test('videoDecoderNoImage toJson/fromJson 往返（1.1.189 实验开关）', () {
+      final json =
+          const AppSettings().copyWith(videoDecoderNoImage: true).toJson();
+      expect(json['videoDecoderNoImage'], isTrue);
+      expect(AppSettings.fromJson(json).videoDecoderNoImage, isTrue);
+      // 默认 false 也落盘
+      expect(const AppSettings().toJson()['videoDecoderNoImage'], isFalse);
+    });
+
+    test('copyWith 透传 videoDecoderNoImage', () {
+      const original = AppSettings();
+      final copied = original.copyWith(videoDecoderNoImage: true);
+      expect(copied.videoDecoderNoImage, isTrue);
+      // 未指定时保留
+      expect(copied.copyWith().videoDecoderNoImage, isTrue);
+    });
+
     test('copyWith 保留未指定字段', () {
       const original = AppSettings(decodeMode: 'hw', stereoDownmix: true);
       final copied = original.copyWith(showSyncDebug: true);
