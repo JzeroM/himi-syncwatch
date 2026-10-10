@@ -125,4 +125,71 @@ void main() {
       expect(settings.decodeMode, equals('auto'));
     });
   });
+
+  group('DecodeModeService.withDecoderImage（1.1.190 官方 setDecoders 方式）', () {
+    test('AMediaCodec 无属性 → 追加 image=0', () {
+      expect(
+        DecodeModeService.withDecoderImage(['AMediaCodec'], '0'),
+        ['AMediaCodec:image=0'],
+      );
+    });
+
+    test('AMediaCodec + FFmpeg → 仅 AMediaCodec 追加 image=0', () {
+      expect(
+        DecodeModeService.withDecoderImage(['AMediaCodec', 'FFmpeg'], '0'),
+        ['AMediaCodec:image=0', 'FFmpeg'],
+      );
+    });
+
+    test('已有 image=1 → 替换为 image=0', () {
+      expect(
+        DecodeModeService.withDecoderImage(['AMediaCodec:image=1'], '0'),
+        ['AMediaCodec:image=0'],
+      );
+    });
+
+    test('已有 image=0 → 不重复追加', () {
+      expect(
+        DecodeModeService.withDecoderImage(['AMediaCodec:image=0'], '0'),
+        ['AMediaCodec:image=0'],
+      );
+    });
+
+    test('恢复 SDR：image=0 → image=1', () {
+      expect(
+        DecodeModeService.withDecoderImage(['AMediaCodec:image=0'], '1'),
+        ['AMediaCodec:image=1'],
+      );
+    });
+
+    test('多属性合并：保留其他键', () {
+      expect(
+        DecodeModeService.withDecoderImage(['AMediaCodec:low_latency=1'], '0'),
+        ['AMediaCodec:low_latency=1:image=0'],
+      );
+    });
+
+    test('非 AMediaCodec 条目原样保留', () {
+      expect(
+        DecodeModeService.withDecoderImage(['FFmpeg'], '0'),
+        ['FFmpeg'],
+      );
+    });
+
+    test('混合列表：仅 AMediaCodec 被修改', () {
+      expect(
+        DecodeModeService.withDecoderImage(
+            ['AMediaCodec', 'FFmpeg', 'VT'], '0'),
+        ['AMediaCodec:image=0', 'FFmpeg', 'VT'],
+      );
+    });
+
+    test('image 键在中间 → 原位替换', () {
+      expect(
+        DecodeModeService.withDecoderImage(
+            ['AMediaCodec:image=1:foo=2'], '0'),
+        ['AMediaCodec:foo=2:image=0'],
+      );
+    });
+  });
 }

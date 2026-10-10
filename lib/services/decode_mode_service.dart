@@ -76,4 +76,28 @@ class DecodeModeService {
     if (Platform.isWindows) return ['MFT', 'FFmpeg'];
     return ['FFmpeg'];
   }
+
+  /// 向解码器列表内嵌 image=N 属性（Android AMediaCodec 专用，1.1.190）。
+  ///
+  /// mdk 官方方式：`setDecoders(["AMediaCodec:image=0"])` 属性内嵌在
+  /// 解码器名中，创建时读取，不受 mdk 内部 `video.decoder=scale=WxH`
+  /// 覆写影响（1.1.189 setProperty 方式被覆写导致实验无效）。
+  ///
+  /// 仅处理 AMediaCodec 条目；非 Android 平台或列表无 AMediaCodec
+  /// 时原样返回。
+  static List<String> withDecoderImage(
+    List<String> decoders,
+    String imageVal,
+  ) {
+    return decoders.map((d) {
+      if (!d.startsWith('AMediaCodec')) return d;
+      // 去除已有 image= 键，再追加新值
+      final base = d
+          .split(':')
+          .where((p) => p.isNotEmpty && !p.startsWith('image='))
+          .toList();
+      base.add('image=$imageVal');
+      return base.join(':');
+    }).toList();
+  }
 }

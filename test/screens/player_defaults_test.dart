@@ -323,50 +323,61 @@ void main() {
     });
   });
 
-  group('PlayerScreen.mergeDecoderImage（1.1.189 HDR image=0 实验）', () {
-    test('空值 → 追加 image=0', () {
-      expect(PlayerScreen.mergeDecoderImage('', '0'), 'image=0');
-    });
-
-    test('已有 scale 键 → 追加 image=0，保留 scale', () {
+  group('PlayerScreen.mergeDecoderListImage（1.1.190 官方 setDecoders 方式）', () {
+    test('AMediaCodec 无属性 → 追加 image=0', () {
       expect(
-        PlayerScreen.mergeDecoderImage('scale=1079x607', '0'),
-        'scale=1079x607:image=0',
+        PlayerScreen.mergeDecoderListImage(['AMediaCodec'], '0'),
+        ['AMediaCodec:image=0'],
       );
     });
 
-    test('已有 image=1 → 替换为 image=0，保留 scale', () {
+    test('AMediaCodec + FFmpeg → 仅 AMediaCodec 追加 image=0', () {
       expect(
-        PlayerScreen.mergeDecoderImage('scale=1920x1080:image=1', '0'),
-        'scale=1920x1080:image=0',
+        PlayerScreen.mergeDecoderListImage(['AMediaCodec', 'FFmpeg'], '0'),
+        ['AMediaCodec:image=0', 'FFmpeg'],
+      );
+    });
+
+    test('已有 image=1 → 替换为 image=0', () {
+      expect(
+        PlayerScreen.mergeDecoderListImage(['AMediaCodec:image=1'], '0'),
+        ['AMediaCodec:image=0'],
       );
     });
 
     test('已有 image=0 → 不重复追加', () {
       expect(
-        PlayerScreen.mergeDecoderImage('scale=1079x607:image=0', '0'),
-        'scale=1079x607:image=0',
+        PlayerScreen.mergeDecoderListImage(['AMediaCodec:image=0'], '0'),
+        ['AMediaCodec:image=0'],
       );
     });
 
     test('恢复 SDR：image=0 → image=1', () {
       expect(
-        PlayerScreen.mergeDecoderImage('scale=1079x607:image=0', '1'),
-        'scale=1079x607:image=1',
+        PlayerScreen.mergeDecoderListImage(['AMediaCodec:image=0'], '1'),
+        ['AMediaCodec:image=1'],
       );
     });
 
-    test('多键合并：保留其他键', () {
+    test('多属性合并：保留其他键', () {
       expect(
-        PlayerScreen.mergeDecoderImage('scale=100x50:low_latency=1', '0'),
-        'scale=100x50:low_latency=1:image=0',
+        PlayerScreen.mergeDecoderListImage(['AMediaCodec:low_latency=1'], '0'),
+        ['AMediaCodec:low_latency=1:image=0'],
       );
     });
 
-    test('image 键在中间 → 原位替换', () {
+    test('非 AMediaCodec 条目原样保留', () {
       expect(
-        PlayerScreen.mergeDecoderImage('scale=1x1:image=1:foo=2', '0'),
-        'scale=1x1:image=0:foo=2',
+        PlayerScreen.mergeDecoderListImage(['FFmpeg'], '0'),
+        ['FFmpeg'],
+      );
+    });
+
+    test('混合列表：仅 AMediaCodec 被修改', () {
+      expect(
+        PlayerScreen.mergeDecoderListImage(
+            ['AMediaCodec', 'FFmpeg', 'VT'], '0'),
+        ['AMediaCodec:image=0', 'FFmpeg', 'VT'],
       );
     });
   });
