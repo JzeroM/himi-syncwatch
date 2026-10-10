@@ -164,6 +164,26 @@ void main() {
       expect(copied.copyWith().videoDecoderLowLatency, isTrue);
     });
 
+    test('renderDepth8 旧数据缺字段 → 默认 false（保持 EGL_SDR_DEPTH=10）', () {
+      expect(AppSettings.fromJson(const {}).renderDepth8, isFalse);
+    });
+
+    test('renderDepth8 toJson/fromJson 往返（1.1.193 实验开关）', () {
+      final json = const AppSettings().copyWith(renderDepth8: true).toJson();
+      expect(json['renderDepth8'], isTrue);
+      expect(AppSettings.fromJson(json).renderDepth8, isTrue);
+      // 默认 false 也落盘
+      expect(const AppSettings().toJson()['renderDepth8'], isFalse);
+    });
+
+    test('copyWith 透传 renderDepth8', () {
+      const original = AppSettings();
+      final copied = original.copyWith(renderDepth8: true);
+      expect(copied.renderDepth8, isTrue);
+      // 未指定时保留
+      expect(copied.copyWith().renderDepth8, isTrue);
+    });
+
     test('copyWith 保留未指定字段', () {
       const original = AppSettings(decodeMode: 'hw', stereoDownmix: true);
       final copied = original.copyWith(showSyncDebug: true);

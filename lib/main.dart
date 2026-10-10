@@ -14,6 +14,7 @@ import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/egl_fault_detector.dart';
 import 'package:himi_syncwatch/services/app_icon_service.dart';
 import 'package:himi_syncwatch/services/fvp_options.dart';
+import 'package:himi_syncwatch/services/env_service.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/tv_detection_service.dart';
 import 'package:himi_windows_rtm/himi_windows_rtm.dart';
@@ -167,6 +168,14 @@ Future<void> _bootstrap() async {
   // rockchip GL 渲染变体，视频全黑机型实验开关；videoOutHdrAuto：
   // videoout.hdr HDR 输出自适应，HDR10 4K60 丢帧 A/B 实验）。
   // 详见 fvp_options.dart。
+  //
+  // EGL_SDR_DEPTH=8（1.1.193 实验）：环境变量须在 mdk 读取前设置，
+  // 故在 registerWith 之前通过 FFI setenv() 注入。强制 8-bit SDR
+  // 渲染表面，修复 Adreno 740 10-bit 表面跨上下文采样损坏丢帧。
+  if (Platform.isAndroid && settingsNotifier.snapshot.renderDepth8) {
+    final ok = EnvService.instance.applyRenderDepth8();
+    LogService().log('Diag', 'EGL_SDR_DEPTH=8: ${ok ? "已设置" : "设置失败"}');
+  }
   final fvpOptions = buildFvpOptions(
     xa2Persistent: Platform.isWindows,
     renderCompatMode: AppSettings.effectiveRenderCompatMode(

@@ -105,6 +105,13 @@ class AppSettings {
   /// 是否为 Qualcomm 硬解 buffer 管理 bug（硬解丢帧、软解不丢）。
   final bool videoDecoderLowLatency;
 
+  /// 8-bit 渲染表面（实验，1.1.193）：设置环境变量 EGL_SDR_DEPTH=8，
+  /// 强制 mdk 为 SDR 输出创建 8-bit EGL 表面（默认 10-bit RGB10A2）。
+  /// Adreno 740 的 10-bit 表面跨上下文采样疑似损坏（类似 fvp#374
+  /// PowerVR/Realtek），导致 HDR10 tone map 后仍丢帧。此开关仅
+  /// Android EGL 生效，iOS Metal 不适用。修改后需重启应用生效。
+  final bool renderDepth8;
+
   /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
   ///
   /// 首次检测到 `EGL ERROR (3004)`/`No EGL config found` 时落盘 true；
@@ -208,6 +215,7 @@ class AppSettings {
     this.videoOutHdrAuto = false,
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
+    this.renderDepth8 = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -244,6 +252,7 @@ class AppSettings {
     bool? videoOutHdrAuto,
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
+    bool? renderDepth8,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
@@ -288,6 +297,7 @@ class AppSettings {
       videoDecoderNoImage: videoDecoderNoImage ?? this.videoDecoderNoImage,
       videoDecoderLowLatency:
           videoDecoderLowLatency ?? this.videoDecoderLowLatency,
+      renderDepth8: renderDepth8 ?? this.renderDepth8,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -352,6 +362,7 @@ class AppSettings {
         'videoOutHdrAuto': videoOutHdrAuto,
         'videoDecoderNoImage': videoDecoderNoImage,
         'videoDecoderLowLatency': videoDecoderLowLatency,
+        'renderDepth8': renderDepth8,
         'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
@@ -437,6 +448,8 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 low_latency=0）
       videoDecoderLowLatency:
           json['videoDecoderLowLatency'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（保持 mdk 默认 EGL_SDR_DEPTH=10）
+      renderDepth8: json['renderDepth8'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──

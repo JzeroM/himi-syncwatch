@@ -96,6 +96,26 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
+          // 8-bit 渲染表面实验（1.1.193）：EGL_SDR_DEPTH=8 强制 8-bit
+          // EGL 表面（默认 10-bit RGB10A2）。Adreno 740 的 10-bit 表面
+          // 跨上下文采样疑似损坏（类似 fvp#374 PowerVR/Realtek），
+          // 导致 HDR10 tone map 后仍丢帧。仅 Android EGL 生效。
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () =>
+                notifier.update(renderDepth8: !settings.renderDepth8),
+            child: SwitchListTile(
+              title: const Text('8-bit 渲染表面（实验）'),
+              subtitle: const Text(
+                'EGL_SDR_DEPTH=8：强制 8-bit SDR 渲染表面。'
+                '修复 HDR10 丢帧（10-bit 表面损坏），10-bit SDR 可能'
+                '轻微 banding。修改后需重启应用生效',
+              ),
+              value: settings.renderDepth8,
+              onChanged: (v) => notifier.update(renderDepth8: v),
+            ),
+          ),
+          const Divider(height: 1),
         ],
         settingsTvWrapRow(
           tvMode: settings.tvMode,
