@@ -246,6 +246,7 @@ class PlayerTopBar extends StatelessWidget {
                     const Icon(Icons.swap_horiz, color: Colors.white, size: 18),
               ),
             ),
+            const SizedBox(width: 8),
           ],
           // 字幕样式按钮（网速与解码之间）：右侧选择器面板调大小/位置/延迟
           if (showSubtitleStyleButton) ...[

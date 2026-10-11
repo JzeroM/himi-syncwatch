@@ -2338,6 +2338,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _player.playbackRate = savedSpeed;
         _player.volume = savedVolume / 100;
 
+        // 更新时长（media_kit 无 loaded 事件时的兜底）
+        final dur = Duration(milliseconds: _player.mediaInfo.duration);
+        if (dur.inMilliseconds > 0) {
+          _duration = dur;
+          _durationNotifier.value = dur;
+        }
+
         // 恢复纹理
         await _ensureTexture();
         if (!mounted) return;

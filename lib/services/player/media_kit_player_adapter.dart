@@ -174,15 +174,33 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
     }
   }
 
-  // ── 事件（media_kit 事件模型不同，统一为轮询/空流）─────────
+  // ── 事件（media_kit 事件模型不同，统一为流桥接）─────────
 
   @override
   Stream<({AdapterPlaybackState oldValue, AdapterPlaybackState newValue})>
-      get onStateChanged => const Stream.empty();
+      get onStateChanged {
+    return _player.stream.playing.map((playing) {
+      final newValue = playing
+          ? AdapterPlaybackState.playing
+          : AdapterPlaybackState.paused;
+      return (oldValue: newValue, newValue: newValue);
+    });
+  }
 
   @override
   Stream<({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>
-      get onMediaStatus => const Stream.empty();
+      get onMediaStatus {
+    // 监听 duration 变化：从 0（loading）→ >0（loaded）
+    AdapterMediaStatus last = AdapterMediaStatus.loading;
+    return _player.stream.duration.map((d) {
+      final newValue = d.inMilliseconds > 0
+          ? AdapterMediaStatus.loaded
+          : AdapterMediaStatus.loading;
+      final oldValue = last;
+      last = newValue;
+      return (oldValue: oldValue, newValue: newValue);
+    }).where((e) => e.oldValue != e.newValue);
+  }
 
   @override
   Stream<AdapterMediaEvent> get onEvent => const Stream.empty();
