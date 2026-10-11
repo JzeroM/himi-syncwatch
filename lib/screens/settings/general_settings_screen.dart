@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -17,17 +19,20 @@ class GeneralSettingsScreen extends ConsumerWidget {
       pageKey: const ValueKey('generalSettingsPage'),
       title: '通用',
       children: [
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
-          onTap: () => notifier.update(tvMode: !settings.tvMode),
-          child: SwitchListTile(
-            title: const Text('TV 模式'),
-            subtitle: const Text('适配遥控器：方向键导航，OK 键选择，中键暂停/播放'),
-            value: settings.tvMode,
-            onChanged: (v) => notifier.update(tvMode: v),
+        // TV 模式：Windows 桌面隐藏（无遥控；加载时已强制关闭）
+        if (!Platform.isWindows) ...[
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => notifier.update(tvMode: !settings.tvMode),
+            child: SwitchListTile(
+              title: const Text('TV 模式'),
+              subtitle: const Text('适配遥控器：方向键导航，OK 键选择，中键暂停/播放'),
+              value: settings.tvMode,
+              onChanged: (v) => notifier.update(tvMode: v),
+            ),
           ),
-        ),
-        const Divider(height: 1),
+          const Divider(height: 1),
+        ],
         settingsTvWrapRow(
           tvMode: settings.tvMode,
           onTap: () => LogService().shareLogs(),

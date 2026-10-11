@@ -979,4 +979,36 @@ void main() {
       expect(s.danmakuMaxCount, AppSettings.danmakuMaxCountMin);
     });
   });
+
+  group('playerEngine 归一（平台感知）', () {
+    test('erika 在非 web 平台合法', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(AppSettings.fromJson({'playerEngine': 'erika'}).playerEngine,
+          'erika');
+    });
+
+    test('Windows 允许 media_kit', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(AppSettings.fromJson({'playerEngine': 'media_kit'}).playerEngine,
+          'media_kit');
+    });
+
+    test('非 Windows 的 media_kit 静默回退 mdk', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(AppSettings.fromJson({'playerEngine': 'media_kit'}).playerEngine,
+          'mdk');
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(AppSettings.fromJson({'playerEngine': 'media_kit'}).playerEngine,
+          'mdk');
+    });
+
+    test('非法值回退 mdk', () {
+      expect(AppSettings.fromJson({'playerEngine': 'vlc'}).playerEngine, 'mdk');
+      expect(AppSettings.fromJson({}).playerEngine, 'mdk');
+    });
+  });
 }

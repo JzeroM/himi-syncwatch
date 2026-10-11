@@ -2,9 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'dart:ui' show Size;
 
 /// 播放器引擎标识。
+///
+/// 平台分布（见 player_engine.dart）：
+/// - mdk：全平台默认
+/// - media_kit：仅 Windows（libmpv；其他平台 PGS/格式不支持，已收敛）
+/// - erika：非 TV 平台（自研 Rust 内核；手机真 HDR10 + 原生位图字幕/PGS）
 enum PlayerEngine {
   mdk('mdk', 'MDK'),
-  mediaKit('media_kit', 'media_kit');
+  mediaKit('media_kit', 'media_kit'),
+  erika('erika', 'Erika');
 
   const PlayerEngine(this.id, this.label);
 
@@ -205,6 +211,12 @@ abstract class PlayerAdapter {
 
   void setProperty(String name, String value);
   String? getProperty(String name);
+
+  /// 设置 HTTP 鉴权头（播放源请求）。
+  ///
+  /// mdk：写 `avio.headers` 属性；media_kit：`Media(httpHeaders:)`；
+  /// Erika：`open(httpHeaders:)`。
+  void setHttpHeaders(Map<String, String> headers);
 
   List<String> get videoDecoders;
   set videoDecoders(List<String> decoders);

@@ -69,6 +69,7 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
 
   /// 设置 HTTP 鉴权头（media_kit 通过 Media(httpHeaders:) 传递，
   /// mdk 的 avio.headers 属性对 mpv 无效）。
+  @override
   void setHttpHeaders(Map<String, String> headers) {
     _httpHeaders = Map.of(headers);
   }

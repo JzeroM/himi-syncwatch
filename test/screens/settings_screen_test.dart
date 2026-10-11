@@ -8,7 +8,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
-import 'package:himi_syncwatch/screens/settings/mdk_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
@@ -34,8 +34,8 @@ GoRouter _testRouter() => GoRouter(
               builder: (context, state) => const PlayerSettingsScreen(),
               routes: [
                 GoRoute(
-                  path: 'mdk',
-                  builder: (context, state) => const MdkSettingsScreen(),
+                  path: 'engine-config',
+                  builder: (context, state) => const EngineConfigScreen(),
                 ),
               ],
             ),
@@ -95,16 +95,20 @@ Future<ProviderContainer> _pumpMdkSettings(
     remote: remote,
     category: '播放器',
   );
-  await tester.tap(find.text('MDK 引擎设置'));
+  await tester.tap(find.text('播放器配置'));
   await tester.pumpAndSettle();
   return container;
 }
 
 /// 分类子页的滚动容器（设置主页 ListView 仍在树上，需精确定位子页列表）。
-Finder _subScrollable() => find.descendant(
-      of: find.byKey(const ValueKey('settingsSubPageList')),
-      matching: find.byType(Scrollable),
-    );
+/// 引擎配置页为 tabbed 布局（MDK 为默认 tab），其余子页用 settingsSubPageList。
+Finder _subScrollable() {
+  final engineTab = find.byKey(const ValueKey('engineTab_mdk'));
+  final scope = engineTab.evaluate().isNotEmpty
+      ? engineTab
+      : find.byKey(const ValueKey('settingsSubPageList'));
+  return find.descendant(of: scope, matching: find.byType(Scrollable));
+}
 
 Finder _glassSwitch(WidgetTester tester) {
   return find.descendant(

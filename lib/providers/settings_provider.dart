@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -34,6 +36,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
+    String? erikaOutputMode,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -81,6 +84,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       mkHwdec: mkHwdec,
       mkToneMapping: mkToneMapping,
       mkCacheSize: mkCacheSize,
+      erikaOutputMode: erikaOutputMode,
       showSyncDebug: showSyncDebug,
       showNetworkSpeed: showNetworkSpeed,
       playbackSpeed: playbackSpeed,
@@ -164,6 +168,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> applyTvAutoDetection({required bool isTelevision}) async {
     var next = state;
     var changed = false;
+    // Windows：隐藏并强制关闭 TV 模式（桌面无遥控；清理遗留状态）
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.windows &&
+        next.tvMode) {
+      next = next.copyWith(tvMode: false, tvModeUserSet: true);
+      changed = true;
+    }
     if (isTelevision && !next.tvModeUserSet && !next.tvMode) {
       next = next.copyWith(tvMode: true);
       changed = true;

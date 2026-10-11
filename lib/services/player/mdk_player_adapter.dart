@@ -168,6 +168,15 @@ class MdkPlayerAdapter implements PlayerAdapter {
   String? getProperty(String name) => _player.getProperty(name);
 
   @override
+  void setHttpHeaders(Map<String, String> headers) {
+    if (headers.isEmpty) return;
+    _player.setProperty(
+      'avio.headers',
+      headers.entries.map((e) => '${e.key}: ${e.value}').join(','),
+    );
+  }
+
+  @override
   List<String> get videoDecoders => _player.videoDecoders;
 
   @override

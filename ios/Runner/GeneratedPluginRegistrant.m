@@ -18,6 +18,12 @@
 @import device_info_plus;
 #endif
 
+#if __has_include(<erika_flutter/ErikaFlutterPlugin.h>)
+#import <erika_flutter/ErikaFlutterPlugin.h>
+#else
+@import erika_flutter;
+#endif
+
 #if __has_include(<file_picker/FilePickerPlugin.h>)
 #import <file_picker/FilePickerPlugin.h>
 #else
@@ -137,6 +143,7 @@
 + (void)registerWithRegistry:(NSObject<FlutterPluginRegistry>*)registry {
   [AgoraRtmPlugin registerWithRegistrar:[registry registrarForPlugin:@"AgoraRtmPlugin"]];
   [FPPDeviceInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPDeviceInfoPlusPlugin"]];
+  [ErikaFlutterPlugin registerWithRegistrar:[registry registrarForPlugin:@"ErikaFlutterPlugin"]];
   [FilePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FilePickerPlugin"]];
   [FlutterDynamicIconPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterDynamicIconPlusPlugin"]];
   [FlutterSecureStoragePlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterSecureStoragePlugin"]];

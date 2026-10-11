@@ -12,6 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
+import 'package:erika_flutter/erika_flutter.dart' show ErikaVideoView;
+import 'package:himi_syncwatch/services/player/erika_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/media_kit_player_adapter.dart';
 import 'package:media_kit_video/media_kit_video.dart' show Video;
 import 'package:agora_token_generator/agora_token_generator.dart';
@@ -1338,7 +1340,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final s = ref.read(settingsProvider);
     _currentEngine =
         s.tvMode ? PlayerEngine.mdk : PlayerEngine.fromId(s.playerEngine);
-    _player = PlayerEngineFactory.create(_currentEngine);
+    _player = PlayerEngineFactory.create(_currentEngine, s);
     // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
     // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
@@ -1521,6 +1523,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         toneMapping: settings.mkToneMapping,
         cacheSizeMb: settings.mkCacheSize,
       );
+      return;
+    }
+
+    // Erika 引擎：无 mdk 属性可写，直接返回（Erika 设置经其 adapter/构造生效）
+    if (_player is ErikaPlayerAdapter) {
       return;
     }
 
@@ -1876,8 +1883,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 直写会 wedge/卡顿（mdk#361），故降级为同载体 GL 路径。
   /// 1.1.198 起受 hdrGlWorkaround 开关控制（关 = 不降级，A/B 基线）。
   String _effectiveVideoOutput() {
-    // media_kit 档：固定 texture（libmpv 自管理渲染，无 tunnel/surfaceView）
-    if (_currentEngine == PlayerEngine.mediaKit) return 'texture';
+    // media_kit / Erika 档：固定 texture（引擎自管理渲染，无 tunnel/surfaceView）
+    if (_currentEngine == PlayerEngine.mediaKit ||
+        _currentEngine == PlayerEngine.erika) {
+      return 'texture';
+    }
     final settings = ref.read(settingsProvider);
     final base = AppSettings.eglAwareVideoOutput(
       settings.videoOutput,
@@ -2006,7 +2016,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
   /// 媒体信息拿到视频尺寸即就绪。media_kit 档：VideoController 注册后即就绪。
   bool _videoOutputReady() {
-    if (_currentEngine == PlayerEngine.mediaKit) {
+    if (_currentEngine == PlayerEngine.mediaKit ||
+        _currentEngine == PlayerEngine.erika) {
       return _player.textureId.value != null;
     }
     if (_usesSurfaceView) {
@@ -2319,7 +2330,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 3. 创建新引擎
     _currentEngine = newEngine;
     // ignore: invalid_use_of_protected_member
-    _player = PlayerEngineFactory.create(newEngine);
+    _player = PlayerEngineFactory.create(newEngine, settings);
 
     // 持久化设置
     await ref.read(settingsProvider.notifier).update(
@@ -2337,14 +2348,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 6. 恢复媒体播放
     if (savedUrl.isNotEmpty) {
       try {
-        // 鉴权：mdk 用 avio.headers 属性；media_kit 用 Media(httpHeaders:)
+        // 鉴权头：各引擎 adapter 自行映射（mdk avio.headers / media_kit Media / Erika open）
         if (savedToken.isNotEmpty) {
-          if (_player is MediaKitPlayerAdapter) {
-            (_player as MediaKitPlayerAdapter)
-                .setHttpHeaders({'X-Emby-Token': savedToken});
-          } else {
-            _player.setProperty('avio.headers', 'X-Emby-Token: $savedToken');
-          }
+          _player.setHttpHeaders({'X-Emby-Token': savedToken});
         }
         _player.media = savedUrl;
         await _player.prepare();
@@ -2447,12 +2453,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 设置媒体并准备播放（native 调用前必须 mounted）
       if (!mounted) return false;
       if (token.isNotEmpty) {
-        if (_player is MediaKitPlayerAdapter) {
-          (_player as MediaKitPlayerAdapter)
-              .setHttpHeaders({'X-Emby-Token': token});
-        } else {
-          _player.setProperty('avio.headers', 'X-Emby-Token: $token');
-        }
+        _player.setHttpHeaders({'X-Emby-Token': token});
       }
 
       // HDR image=0 实验（1.1.190 官方 setDecoders 方式）：Emby 元数据
@@ -2605,12 +2606,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
-        if (_player is MediaKitPlayerAdapter) {
-          (_player as MediaKitPlayerAdapter)
-              .setHttpHeaders({'X-Emby-Token': token});
-        } else {
-          _player.setProperty('avio.headers', 'X-Emby-Token: $token');
-        }
+        _player.setHttpHeaders({'X-Emby-Token': token});
       }
 
       // prepare 前探测 DV 解码能力
@@ -2870,8 +2866,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 安全阀：单秒内保留行数超限则自动关闭，避免日志风暴影响播放。
   void _syncDeepDiagnostics() {
-    // media_kit 档：mdk 深度诊断不可用（依赖 mdk.setGlobalOption/logHandler）
-    if (_currentEngine == PlayerEngine.mediaKit) {
+    // media_kit / Erika 档：mdk 深度诊断不可用（依赖 mdk.setGlobalOption/logHandler）
+    if (_currentEngine == PlayerEngine.mediaKit ||
+        _currentEngine == PlayerEngine.erika) {
       if (_deepLogActive) {
         _deepLogActive = false;
         _deepLogLines.clear();
@@ -4924,7 +4921,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final videoContent = _isPlayerReady ||
             (!_hasEpisodeList && widget.roomCode == null)
         ? Center(
-            child: _currentEngine == PlayerEngine.mediaKit
+            child: _currentEngine == PlayerEngine.erika
+                // Erika：原生 surface/TextureView（自绘；含位图字幕 PGS 合成）
+                ? ErikaVideoView(
+                    player: (_player as ErikaPlayerAdapter).erikaPlayer,
+                  )
+                : _currentEngine == PlayerEngine.mediaKit
                 // media_kit：挂载 Video widget（VideoController 注册 Flutter Texture）
                 ? Video(
                     controller:
@@ -5259,6 +5261,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                   : _showEngineMenu
                                       ? EngineMenuPanel(
                                           current: _currentEngine,
+                                          engines:
+                                              PlayerEngineFactory.supportedEngines(
+                                                  tvMode: videoAreaTvMode),
                                           focusNode:
                                               _selectorFirstFocusNode,
                                           onSelected: (engine) {
@@ -7170,12 +7175,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
       final token = config?.accessToken ?? '';
       if (token.isNotEmpty) {
-        if (_player is MediaKitPlayerAdapter) {
-          (_player as MediaKitPlayerAdapter)
-              .setHttpHeaders({'X-Emby-Token': token});
-        } else {
-          _player.setProperty('avio.headers', 'X-Emby-Token: $token');
-        }
+        _player.setHttpHeaders({'X-Emby-Token': token});
       }
       try {
         await _player

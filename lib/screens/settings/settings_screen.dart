@@ -50,7 +50,7 @@ class SettingsScreen extends ConsumerWidget {
             key: const ValueKey('settingsCategoryPlayer'),
             icon: Icons.play_circle_outline,
             title: '播放器',
-            subtitle: '解码方式、音频、视频输出、网速、弹幕配置',
+            subtitle: '引擎设置、网速、弹幕配置',
             route: '/settings/player',
           ),
           const Divider(height: 1),

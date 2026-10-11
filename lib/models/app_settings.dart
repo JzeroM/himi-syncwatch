@@ -1,6 +1,19 @@
 import 'package:flutter/foundation.dart';
 
 class AppSettings {
+  /// 引擎 id 归一：允许 mdk/media_kit/erika。
+  /// - media_kit 仅 Windows 可用；其他平台（含 web）静默回退 mdk
+  /// - web 一律回退 mdk；erika 非 TV 平台可用
+  static String _normalizePlayerEngine(Object? raw) {
+    final id = raw is String ? raw : 'mdk';
+    if (kIsWeb) return 'mdk';
+    if (id == 'erika') return 'erika';
+    if (id == 'media_kit' &&
+        defaultTargetPlatform == TargetPlatform.windows) {
+      return 'media_kit';
+    }
+    return 'mdk';
+  }
   /// 存档数值归一：缺失/非法回退 [fallback]，越界钳到 [min]/[max]。
   static int _clampInt(Object? raw, int fallback, int min, int max) {
     final value = raw is num ? raw.toInt() : fallback;
@@ -29,6 +42,9 @@ class AppSettings {
 
   /// cache-size：MB，0 = 关闭缓存。
   final double mkCacheSize;
+
+  /// Erika 引擎输出模式：'auto'（默认）/ 'sdr' / 'extendedLinear'（HDR 直通）。
+  final String erikaOutputMode;
 
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
@@ -222,6 +238,7 @@ class AppSettings {
     this.mkHwdec = 'auto-safe',
     this.mkToneMapping = 'auto',
     this.mkCacheSize = 150,
+    this.erikaOutputMode = 'auto',
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
     this.playbackSpeed = 1.0,
@@ -274,6 +291,7 @@ class AppSettings {
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
+    String? erikaOutputMode,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -323,6 +341,7 @@ class AppSettings {
       mkHwdec: mkHwdec ?? this.mkHwdec,
       mkToneMapping: mkToneMapping ?? this.mkToneMapping,
       mkCacheSize: mkCacheSize ?? this.mkCacheSize,
+      erikaOutputMode: erikaOutputMode ?? this.erikaOutputMode,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
@@ -394,6 +413,7 @@ class AppSettings {
         'mkHwdec': mkHwdec,
         'mkToneMapping': mkToneMapping,
         'mkCacheSize': mkCacheSize,
+        'erikaOutputMode': erikaOutputMode,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
         'playbackSpeed': playbackSpeed,
@@ -465,9 +485,7 @@ class AppSettings {
     }
     return AppSettings(
       decodeMode: mode,
-      playerEngine: const ['mdk', 'media_kit'].contains(json['playerEngine'])
-          ? json['playerEngine'] as String
-          : 'mdk',
+      playerEngine: _normalizePlayerEngine(json['playerEngine']),
       mkHwdec: const ['auto-safe', 'auto', 'no'].contains(json['mkHwdec'])
           ? json['mkHwdec'] as String
           : 'auto-safe',
@@ -476,6 +494,10 @@ class AppSettings {
               ? json['mkToneMapping'] as String
               : 'auto',
       mkCacheSize: _clampDouble(json['mkCacheSize'], 150, 0, 500),
+      erikaOutputMode:
+          const ['auto', 'sdr', 'extendedLinear'].contains(json['erikaOutputMode'])
+              ? json['erikaOutputMode'] as String
+              : 'auto',
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,

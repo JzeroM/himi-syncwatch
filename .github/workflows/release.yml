@@ -256,6 +256,36 @@ jobs:
       - run: flutter pub get
       - run: flutter build windows --release
 
+      # 替换 media_kit 捆绑的 libmpv-2.dll 为完整版（shinchiro/mpv-winbuild-cmake）：
+      # 上游 media-kit 默认 libmpv 解码器不完整（PGS 位图字幕 / 10bit / HDR 等），
+      # 换完整 build 以补齐格式与字幕能力（对齐 NipaPlay 做法）。
+      - name: 替换为完整 libmpv（shinchiro，补齐 PGS/格式）
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install 7zip -y --no-progress | Out-Null
+          $sevenZip = Join-Path ${env:ProgramFiles} '7-Zip\7z.exe'
+          if (!(Test-Path $sevenZip)) { $sevenZip = Join-Path ${env:ProgramFiles(x86)} '7-Zip\7z.exe' }
+          if (!(Test-Path $sevenZip)) { throw '7z.exe 未找到' }
+          $headers = @{ 'User-Agent' = 'himi-build'; 'Accept' = 'application/vnd.github+json' }
+          if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)" }
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' -Headers $headers -UseBasicParsing
+          $asset = $release.assets | Where-Object { $_.name -match 'mpv-dev-x86_64-v3.*\.7z' } | Select-Object -First 1
+          if (-not $asset) { $asset = $release.assets | Where-Object { $_.name -match 'mpv-dev-x86_64.*\.7z' } | Select-Object -First 1 }
+          if (-not $asset) { throw '未找到 shinchiro libmpv 包' }
+          Write-Host "libmpv 资源：$($asset.name)"
+          $archive = 'libmpv-full.7z'; $extract = 'libmpv-full'
+          Remove-Item $archive,$extract -Recurse -Force -ErrorAction SilentlyContinue
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive -UseBasicParsing
+          & $sevenZip x $archive "-o$extract" -y | Out-Null
+          $dll = Get-ChildItem -Path $extract -Recurse -Filter 'libmpv-2.dll' | Select-Object -First 1
+          if (-not $dll) { throw '包内未找到 libmpv-2.dll' }
+          $target = Join-Path 'build/windows/x64/runner/Release' 'libmpv-2.dll'
+          Copy-Item -Path $dll.FullName -Destination $target -Force
+          Write-Host "已替换 $target ($((Get-Item $target).Length) bytes)"
+
       - name: 验证插件与 Agora DLL 已打进产物
         shell: pwsh
         run: |

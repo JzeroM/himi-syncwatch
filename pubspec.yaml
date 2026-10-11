@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.1.209+379
+version: 1.1.210+380
 
 environment:
   sdk: ^3.6.0
@@ -20,6 +20,9 @@ dependencies:
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
+  # 播放器第三引擎（Erika，自研 Rust 内核；原生位图字幕/PGS + HDR/EDR）
+  # 仅非 TV 平台注册；Android TV 不加。
+  erika_flutter: ^0.2.1
   # FFI（Windows/macOS/iOS 网卡计数读取）
   ffi: ^2.1.0
   # 声网 RTM（中国区）
