@@ -142,8 +142,6 @@ class _EpisodeSelectPanelState extends State<EpisodeSelectPanel> {
                 Text(
                   EpisodeSelectPanel.cardTitle(ep),
                   key: Key('playerEpisodeTitle_$index'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: selected ? Colors.white : Colors.white70,
                     fontSize: 13,

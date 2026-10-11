@@ -86,6 +86,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           roomMode: state.uri.queryParameters['roomMode'] == 'true',
           roomCode: state.uri.queryParameters['roomCode'],
           serverId: state.uri.queryParameters['server'],
+          focusEpisodeId: state.uri.queryParameters['episode'],
         ),
       ),
       GoRoute(

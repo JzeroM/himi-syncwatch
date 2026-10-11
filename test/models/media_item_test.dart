@@ -26,6 +26,26 @@ void main() {
       expect(item.premiereDate, isNull);
     });
 
+    test('seriesId 解析（Episode 类型，Emby SeriesId 字段）', () {
+      final item = MediaItem.fromJson({
+        'Id': 'e1',
+        'Name': '第1集',
+        'Type': 'Episode',
+        'SeriesId': 's1',
+      });
+      expect(item.seriesId, 's1');
+      expect(item.isEpisode, isTrue);
+    });
+
+    test('seriesId 缺失 → null', () {
+      final item = MediaItem.fromJson({
+        'Id': 'e1',
+        'Name': '第1集',
+        'Type': 'Episode',
+      });
+      expect(item.seriesId, isNull);
+    });
+
     test('非法日期字符串 → null 不抛错', () {
       final item = MediaItem.fromJson({
         'Id': 'e1',

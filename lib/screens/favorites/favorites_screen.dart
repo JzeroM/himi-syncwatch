@@ -186,7 +186,15 @@ class _FavoriteSection extends StatelessWidget {
                       ? FavoriteEpisodeCard(
                           item: item,
                           width: cardWidth,
-                          onTap: () => context.push('/detail/${item.id}'),
+                          onTap: () {
+                            // 集条目 → 剧详情页 + 定位到该集
+                            if (item.isEpisode && item.seriesId != null) {
+                              context.push(
+                                  '/detail/${item.seriesId}?episode=${item.id}');
+                            } else {
+                              context.push('/detail/${item.id}');
+                            }
+                          },
                         )
                       : PosterCard(
                           item: item,

@@ -356,6 +356,10 @@ class MediaItem {
   final double? communityRating;
   final String type;
   final String? seriesName;
+
+  /// 所属剧集 id（Emby `SeriesId`，仅 Episode 类型有值）。
+  /// 继续观看/收藏的集条目点击时，用此 id 跳转到剧详情页。
+  final String? seriesId;
   final int? indexNumber;
   final int? parentIndexNumber;
   final List<String> genres;
@@ -407,6 +411,7 @@ class MediaItem {
     this.communityRating,
     required this.type,
     this.seriesName,
+    this.seriesId,
     this.indexNumber,
     this.parentIndexNumber,
     this.genres = const [],
@@ -460,6 +465,7 @@ class MediaItem {
       communityRating: (json['CommunityRating'] as num?)?.toDouble(),
       type: json['Type'] ?? 'Movie',
       seriesName: json['SeriesName'],
+      seriesId: json['SeriesId'],
       indexNumber: json['IndexNumber'],
       parentIndexNumber: json['ParentIndexNumber'],
       genres: (json['Genres'] as List<dynamic>?)?.cast<String>() ?? [],

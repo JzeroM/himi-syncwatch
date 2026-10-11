@@ -332,8 +332,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 if (i == 0) {
                                   return _ContinueWatchingBar(
                                     items: resumeVisible,
-                                    onOpen: (item) =>
-                                        context.push('/detail/${item.id}'),
+                                    onOpen: (item) {
+                                      // 集条目 → 剧详情页 + 定位到该集
+                                      if (item.isEpisode &&
+                                          item.seriesId != null) {
+                                        context.push(
+                                            '/detail/${item.seriesId}?episode=${item.id}');
+                                      } else {
+                                        context.push('/detail/${item.id}');
+                                      }
+                                    },
                                     onItemLongPress: (item, rect) =>
                                         showResumeCardMenu(
                                             context, ref, item, rect),

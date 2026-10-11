@@ -34,12 +34,17 @@ class DetailScreen extends ConsumerStatefulWidget {
   /// 来源服务器本地配置 id（跨服务器详情）；null = 当前激活服务器。
   final String? serverId;
 
+  /// 外部指定的定位集 id（继续观看/收藏的集条目跳转时传入）。
+  /// 非空时优先于 defaultEpisodeTarget 的自动锁定。
+  final String? focusEpisodeId;
+
   const DetailScreen({
     super.key,
     required this.itemId,
     this.roomMode = false,
     this.roomCode,
     this.serverId,
+    this.focusEpisodeId,
   });
 
   @override
@@ -226,8 +231,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       if (item != null && item.isSeries) {
         // 服务端季列表为空时按集分组兜底，保证分季 UI 永远可用
         if (_seasons.isEmpty) _seasons = _synthSeasons(_episodes);
-        // 每次进入/刷新剧集页：默认锁定到「有进度优先、其次已观看」的最大集
-        autoLockTarget = DetailScreen.defaultEpisodeTarget(_episodes);
+        // 外部指定的定位集优先（继续观看/收藏的集条目跳转）；
+        // 否则默认锁定到「有进度优先、其次已观看」的最大集
+        final focusId = widget.focusEpisodeId;
+        if (focusId != null) {
+          autoLockTarget = _episodes.where((e) => e.id == focusId).firstOrNull;
+        }
+        autoLockTarget ??= DetailScreen.defaultEpisodeTarget(_episodes);
         if (autoLockTarget != null) {
           _selectedSeason = autoLockTarget.parentIndexNumber ?? 0;
           _selectedEpisodeId = autoLockTarget.id;

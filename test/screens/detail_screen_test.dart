@@ -2829,6 +2829,25 @@ void main() {
       expect(DetailScreen.defaultEpisodeTarget(const []), isNull);
     });
 
+    test('focusEpisodeId 参数：优先于 defaultEpisodeTarget', () {
+      // 构造一个剧详情页，带 focusEpisodeId
+      final episodes = [
+        ep('a', 1, 1, ms: 1000),
+        ep('b', 1, 5, ms: 2000),
+        ep('c', 1, 3, ms: 500),
+      ];
+      // defaultEpisodeTarget 会选 b（季1集5，进度最大）
+      expect(DetailScreen.defaultEpisodeTarget(episodes)!.id, 'b');
+      // focusEpisodeId 指定 c 时应优先选 c
+      final screen = DetailScreen(itemId: 's1', focusEpisodeId: 'c');
+      expect(screen.focusEpisodeId, 'c');
+    });
+
+    test('focusEpisodeId 为 null 时行为不变', () {
+      final screen = DetailScreen(itemId: 's1');
+      expect(screen.focusEpisodeId, isNull);
+    });
+
     test('isAnimationGenres：含「动画」/「Animation」判为动画', () {
       expect(DetailScreen.isAnimationGenres(const ['动画', '奇幻']), isTrue);
       expect(DetailScreen.isAnimationGenres(const ['Animation']), isTrue);
