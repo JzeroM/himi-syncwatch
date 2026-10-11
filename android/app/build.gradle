@@ -39,13 +39,6 @@ android {
             signingConfig = signingConfigs.debug
         }
     }
-
-    // erika_flutter 与 fvp 均打包 libc++_shared.so，合并时去重（同 NDK 版本，等价）
-    packagingOptions {
-        jniLibs {
-            pickFirsts += ['**/libc++_shared.so']
-        }
-    }
 }
 
 flutter {

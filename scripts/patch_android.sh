@@ -75,9 +75,9 @@ def patch_app(path):
     # 仓库实现（含 com.himi/dolby_vision 通道注册）永远不生效，
     # 真机上 DV 探测报 MissingPluginException。
     rep(r'namespace\s*=\s*"[^"]*"', 'namespace = "com.himi.syncwatch"')
-    # compileSdk / minSdk
+    # compileSdk / minSdk（minSdk 26：erika_flutter 要求 Android 8.0）
     rep(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36')
-    rep(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24')
+    rep(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 26')
     # 兜底：无论当前值，强制 release 关闭 minify/shrink
     if is_kts:
         rep(r'isMinifyEnabled\s*=\s*true', 'isMinifyEnabled = false')
