@@ -210,6 +210,18 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
     }
   }
 
+  /// 应用 media_kit 引擎设置（mpv 属性，通过 NativePlayer.setProperty 直写）。
+  /// 由 player_screen 在引擎初始化/切换时调用。
+  void applySettings({
+    required String hwdec,
+    required String toneMapping,
+    required double cacheSizeMb,
+  }) {
+    setProperty('hwdec', hwdec);
+    setProperty('tone-mapping', toneMapping);
+    setProperty('cache-size', '${(cacheSizeMb * 1024 * 1024).toInt()}');
+  }
+
   @override
   List<String> get videoDecoders => const [];
 

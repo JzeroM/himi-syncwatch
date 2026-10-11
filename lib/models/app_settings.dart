@@ -20,6 +20,16 @@ class AppSettings {
   /// TV 模式仅 mdk（media_kit 无 TV 验证）。
   final String playerEngine; // 'mdk', 'media_kit'
 
+  // ── media_kit 引擎专属设置（mpv 属性，通过 NativePlayer.setProperty 生效）──
+  /// hwdec：'auto-safe'（默认）/ 'no'（软解）/ 'auto'（含不安全硬件路径）。
+  final String mkHwdec;
+
+  /// tone-mapping：'auto'（默认）/ 'no' / 'bt.2446a' / 'spline' 等。
+  final String mkToneMapping;
+
+  /// cache-size：MB，0 = 关闭缓存。
+  final double mkCacheSize;
+
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
 
@@ -209,6 +219,9 @@ class AppSettings {
   const AppSettings({
     this.decodeMode = 'auto',
     this.playerEngine = 'mdk',
+    this.mkHwdec = 'auto-safe',
+    this.mkToneMapping = 'auto',
+    this.mkCacheSize = 150,
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
     this.playbackSpeed = 1.0,
@@ -258,6 +271,9 @@ class AppSettings {
   AppSettings copyWith({
     String? decodeMode,
     String? playerEngine,
+    String? mkHwdec,
+    String? mkToneMapping,
+    double? mkCacheSize,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -304,6 +320,9 @@ class AppSettings {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       playerEngine: playerEngine ?? this.playerEngine,
+      mkHwdec: mkHwdec ?? this.mkHwdec,
+      mkToneMapping: mkToneMapping ?? this.mkToneMapping,
+      mkCacheSize: mkCacheSize ?? this.mkCacheSize,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
@@ -372,6 +391,9 @@ class AppSettings {
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
         'playerEngine': playerEngine,
+        'mkHwdec': mkHwdec,
+        'mkToneMapping': mkToneMapping,
+        'mkCacheSize': mkCacheSize,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
         'playbackSpeed': playbackSpeed,
@@ -446,6 +468,14 @@ class AppSettings {
       playerEngine: const ['mdk', 'media_kit'].contains(json['playerEngine'])
           ? json['playerEngine'] as String
           : 'mdk',
+      mkHwdec: const ['auto-safe', 'auto', 'no'].contains(json['mkHwdec'])
+          ? json['mkHwdec'] as String
+          : 'auto-safe',
+      mkToneMapping:
+          const ['auto', 'no', 'bt.2446a', 'spline'].contains(json['mkToneMapping'])
+              ? json['mkToneMapping'] as String
+              : 'auto',
+      mkCacheSize: _clampDouble(json['mkCacheSize'], 150, 0, 500),
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,

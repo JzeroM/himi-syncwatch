@@ -31,6 +31,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> update({
     String? decodeMode,
     String? playerEngine,
+    String? mkHwdec,
+    String? mkToneMapping,
+    double? mkCacheSize,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -75,6 +78,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(
       decodeMode: decodeMode,
       playerEngine: playerEngine,
+      mkHwdec: mkHwdec,
+      mkToneMapping: mkToneMapping,
+      mkCacheSize: mkCacheSize,
       showSyncDebug: showSyncDebug,
       showNetworkSpeed: showNetworkSpeed,
       playbackSpeed: playbackSpeed,

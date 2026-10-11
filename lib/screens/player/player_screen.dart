@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
+import 'package:himi_syncwatch/services/player/media_kit_player_adapter.dart';
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/episode_info.dart';
@@ -62,6 +63,7 @@ import 'package:himi_syncwatch/screens/player/player_platform.dart';
 import 'package:himi_syncwatch/screens/player/track_initial_selection.dart';
 import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/display_adjust_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/engine_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/danmaku_overlay.dart';
 import 'package:himi_syncwatch/screens/player/widgets/episode_select_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
@@ -531,6 +533,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       FocusNode(debugLabel: 'PlayerAudioButton');
   final FocusNode _speedButtonFocusNode =
       FocusNode(debugLabel: 'PlayerSpeedButton');
+  final FocusNode _engineButtonFocusNode =
+      FocusNode(debugLabel: 'PlayerEngineButton');
 
   /// 选集按钮焦点（TV 打开选集面板后原路返回的落点）
   final FocusNode _episodeButtonFocusNode =
@@ -642,6 +646,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showDecodeModeMenu = false;
   bool _showSpeedMenu = false;
   bool _showSubtitleStyleMenu = false;
+  bool _showEngineMenu = false;
 
   /// 选集面板（右侧剧集卡片浮层；仅单人模式多集时可开）。
   bool _showEpisodeMenu = false;
@@ -1536,6 +1541,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       await WakelockPlus.enable();
     } catch (_) {}
+
+    // media_kit 引擎：应用 hwdec/tone-mapping/cache-size 设置
+    if (_player is MediaKitPlayerAdapter) {
+      (_player as MediaKitPlayerAdapter).applySettings(
+        hwdec: settings.mkHwdec,
+        toneMapping: settings.mkToneMapping,
+        cacheSizeMb: settings.mkCacheSize,
+      );
+    }
   }
 
   /// 当前活跃音轨的编码名（小写），取不到返回 ''。
@@ -1858,6 +1872,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 直写会 wedge/卡顿（mdk#361），故降级为同载体 GL 路径。
   /// 1.1.198 起受 hdrGlWorkaround 开关控制（关 = 不降级，A/B 基线）。
   String _effectiveVideoOutput() {
+    // media_kit 档：固定 texture（libmpv 自管理渲染，无 tunnel/surfaceView）
+    if (_currentEngine == PlayerEngine.mediaKit) return 'texture';
     final settings = ref.read(settingsProvider);
     final base = AppSettings.eglAwareVideoOutput(
       settings.videoOutput,
@@ -2824,6 +2840,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 安全阀：单秒内保留行数超限则自动关闭，避免日志风暴影响播放。
   void _syncDeepDiagnostics() {
+    // media_kit 档：mdk 深度诊断不可用（依赖 mdk.setGlobalOption/logHandler）
+    if (_currentEngine == PlayerEngine.mediaKit) {
+      if (_deepLogActive) {
+        _deepLogActive = false;
+        _deepLogLines.clear();
+        _deepNoteLines.clear();
+        _stopDeepDiagnostics();
+      }
+      return;
+    }
     final enabled = ref.read(settingsProvider).deepDiagnostics;
     if (enabled == _deepLogActive) return;
     if (enabled) {
@@ -4058,6 +4084,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showEngineMenu = false;
     });
   }
 
@@ -4083,6 +4110,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showEngineMenu = false;
     });
     _restoreSelectorOpenerFocus(opener, force: true);
   }
@@ -4555,6 +4583,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subtitleButtonFocusNode.dispose();
     _audioButtonFocusNode.dispose();
     _speedButtonFocusNode.dispose();
+    _engineButtonFocusNode.dispose();
     _episodeButtonFocusNode.dispose();
     _selectorFirstFocusNode.dispose();
     _selectorPanelRootFocusNode.dispose();
@@ -4679,6 +4708,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showSubtitleStyleMenu ||
         _showEpisodeMenu ||
         _showDecodeModeMenu ||
+        _showEngineMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       return false;
@@ -4705,7 +4735,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _showAudioMenu ||
             _showSpeedMenu ||
             _showSubtitleStyleMenu ||
-            _showEpisodeMenu) {
+            _showEpisodeMenu ||
+            _showEngineMenu) {
           _closeSelectorPanel();
           _resetHideTimer();
           return true;
@@ -5056,8 +5087,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               right: 12,
               child: DecodeModePanel(
                 onSwitchMode: _switchDecodeMode,
-                currentEngine: _currentEngine,
-                onSwitchEngine: _switchEngine,
               ),
             ),
 
@@ -5099,7 +5128,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
             Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
 
-          // 字幕/音轨/倍速/选集选择器：右侧玻璃浮层（可滚动；随控制条显隐）。
+          // 字幕/音轨/倍速/选集/引擎选择器：右侧玻璃浮层（可滚动；随控制条显隐）。
           // 位于控制条之后：选集面板全高（top/bottom/right 贴边）时绘制在
           // 底部控制条之上（进度条右端被面板盖住，对齐参考观感）。
           if (_showControls &&
@@ -5108,7 +5137,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   _showAudioMenu ||
                   _showSpeedMenu ||
                   _showSubtitleStyleMenu ||
-                  _showEpisodeMenu))
+                  _showEpisodeMenu ||
+                  _showEngineMenu))
             Positioned(
               top: panelBox.top,
               bottom: panelBox.bottom,
@@ -5136,7 +5166,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               ? '选集'
                               : _showSubtitleStyleMenu
                                   ? '显示调节'
-                                  : '倍速',
+                                  : _showEngineMenu
+                                      ? '播放引擎'
+                                      : '倍速',
                   child: _showSubtitleStyleMenu
                       ? _buildDisplayAdjustPanel()
                       : _showSubtitleMenu
@@ -5185,11 +5217,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                         _closeSelectorPanel();
                                       },
                                     )
-                                  : SpeedMenuPanel(
-                                      current: _speed,
-                                      focusNode: _selectorFirstFocusNode,
-                                      onSelected: _applySpeed,
-                                    ),
+                                  : _showEngineMenu
+                                      ? EngineMenuPanel(
+                                          current: _currentEngine,
+                                          focusNode:
+                                              _selectorFirstFocusNode,
+                                          onSelected: (engine) {
+                                            _closeSelectorPanel();
+                                            _switchEngine(engine);
+                                          },
+                                        )
+                                      : SpeedMenuPanel(
+                                          current: _speed,
+                                          focusNode: _selectorFirstFocusNode,
+                                          onSelected: _applySpeed,
+                                        ),
                 ),
               ),
             ),
@@ -5295,6 +5337,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           : null,
       showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode),
       decodeMenuOpen: _showDecodeModeMenu,
+      // 播放引擎按钮（非 TV；显示调节左侧）
+      showEngineButton: !settings.tvMode,
+      engineMenuOpen: _showEngineMenu,
+      engineButtonFocusNode: _engineButtonFocusNode,
+      onToggleEngine: _toggleEngineMenu,
       // TV 模式「显示调节」入口移到底部控制条（弹幕与字幕之间），顶栏隐藏
       showSubtitleStyleButton:
           PlayerScreen.showTopSubtitleStyleButton(tvMode: settings.tvMode),
@@ -5358,9 +5405,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showEngineMenu = false;
     });
     if (_showSpeedMenu) {
       _openSelectorPanel(_speedButtonFocusNode);
+    }
+  }
+
+  /// 引擎切换按钮（底栏倍速右侧）：开关引擎选择面板
+  /// （与字幕/音轨/倍速/显示调节/选集互斥）。
+  void _toggleEngineMenu() {
+    setState(() {
+      _showEngineMenu = !_showEngineMenu;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
+    });
+    if (_showEngineMenu) {
+      _openSelectorPanel(_engineButtonFocusNode);
     }
   }
 
@@ -5373,6 +5437,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
+      _showEngineMenu = false;
     });
     if (_showEpisodeMenu) {
       _openSelectorPanel(_episodeButtonFocusNode);
@@ -5786,6 +5851,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showSpeedMenu ||
         _showSubtitleStyleMenu ||
         _showEpisodeMenu ||
+        _showEngineMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       _closeAllMenus();

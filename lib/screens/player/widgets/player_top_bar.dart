@@ -35,6 +35,10 @@ class PlayerTopBar extends StatelessWidget {
     this.showRotateButton = false,
     this.rotateButtonIcon = Icons.screen_rotation_alt,
     this.onRotate,
+    this.showEngineButton = false,
+    this.engineMenuOpen = false,
+    this.engineButtonFocusNode,
+    this.onToggleEngine,
   });
 
   /// 左上角影视信息（电影名 / `剧名 – S01E02`）；空串不渲染。
@@ -91,6 +95,12 @@ class PlayerTopBar extends StatelessWidget {
   final bool showRotateButton;
   final IconData rotateButtonIcon;
   final VoidCallback? onRotate;
+
+  /// 播放引擎按钮（非 TV；显示调节左侧）。开关右侧引擎选择面板。
+  final bool showEngineButton;
+  final bool engineMenuOpen;
+  final FocusNode? engineButtonFocusNode;
+  final VoidCallback? onToggleEngine;
 
   /// 解码方块装饰：
   /// - 玻璃开：白 22%→10% 渐变 + 白 24% 细描边；展开态换 accent 1.5px
@@ -217,6 +227,25 @@ class PlayerTopBar extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+          ],
+          // 播放引擎按钮（非 TV；显示调节左侧）：开关右侧引擎选择面板
+          if (showEngineButton) ...[
+            const SizedBox(width: 8),
+            TvFocusable(
+              key: const ValueKey('playerEngineButton'),
+              focusNode: engineButtonFocusNode,
+              radius: 10,
+              onTap: onToggleEngine,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: _decodeChipDecoration(
+                  open: engineMenuOpen,
+                  glass: glassEnabled,
+                ),
+                child:
+                    const Icon(Icons.swap_horiz, color: Colors.white, size: 18),
+              ),
+            ),
           ],
           // 字幕样式按钮（网速与解码之间）：右侧选择器面板调大小/位置/延迟
           if (showSubtitleStyleButton) ...[
