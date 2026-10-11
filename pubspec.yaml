@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.1.210+380
+version: 1.1.211+381
 
 environment:
   sdk: ^3.6.0
@@ -74,6 +74,11 @@ dependencies:
 dependency_overrides:
   # path_provider_foundation 2.6.0 拉入 objective_c，其 build hook 在非 Apple 平台报 arm64e 错误
   path_provider_foundation: 2.5.1
+  # erika_flutter 上游 linux 插件要求 ERIKA_LIBRARY_DIR（需源码构建 FFmpeg8+补丁 libass），
+  # 首版 Linux 不启用 Erika：vendored 副本已移除 linux 平台（见 third_party/erika_flutter）。
+  # 升级需按此重新同步并去掉 linux/。
+  erika_flutter:
+    path: third_party/erika_flutter
 
 dev_dependencies:
   flutter_test:

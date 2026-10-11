@@ -13,12 +13,11 @@ void main() {
           [PlayerEngine.mdk]);
     });
 
-    test('非 TV 非 Windows：MDK + Erika，不含 media_kit', () {
+    test('非 TV：Android/iOS/macOS 含 Erika；Linux 不含（首版无预编译）', () {
       for (final p in const [
         TargetPlatform.android,
         TargetPlatform.iOS,
         TargetPlatform.macOS,
-        TargetPlatform.linux,
       ]) {
         debugDefaultTargetPlatformOverride = p;
         final e = PlayerEngineFactory.supportedEngines(tvMode: false);
@@ -26,6 +25,11 @@ void main() {
         expect(e, contains(PlayerEngine.erika), reason: '$p');
         expect(e, isNot(contains(PlayerEngine.mediaKit)), reason: '$p');
       }
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final linux = PlayerEngineFactory.supportedEngines(tvMode: false);
+      expect(linux, contains(PlayerEngine.mdk));
+      expect(linux, isNot(contains(PlayerEngine.erika)));
+      expect(linux, isNot(contains(PlayerEngine.mediaKit)));
     });
 
     test('Windows 非 TV：MDK + Erika + media_kit', () {

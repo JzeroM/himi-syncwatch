@@ -54,7 +54,10 @@ class PlayerEngineFactory {
     if (tvMode) return const [PlayerEngine.mdk];
     final engines = <PlayerEngine>[PlayerEngine.mdk];
     if (!kIsWeb) {
-      engines.add(PlayerEngine.erika);
+      // Erika：Android/iOS/macOS/Windows（首版 Linux 无预编译，不支持）
+      if (defaultTargetPlatform != TargetPlatform.linux) {
+        engines.add(PlayerEngine.erika);
+      }
       if (defaultTargetPlatform == TargetPlatform.windows) {
         engines.add(PlayerEngine.mediaKit);
       }
