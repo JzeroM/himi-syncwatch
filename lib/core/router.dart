@@ -12,6 +12,8 @@ import 'package:himi_syncwatch/screens/favorites/favorites_all_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/mdk_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/mediakit_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
@@ -88,6 +90,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   pageBuilder: (context, state) =>
                       _settingsFadePage(const PlayerSettingsScreen()),
                   routes: [
+                    GoRoute(
+                      path: 'mdk',
+                      pageBuilder: (context, state) =>
+                          _settingsFadePage(const MdkSettingsScreen()),
+                    ),
+                    GoRoute(
+                      path: 'mediakit',
+                      pageBuilder: (context, state) =>
+                          _settingsFadePage(const MediaKitSettingsScreen()),
+                    ),
                     GoRoute(
                       path: 'danmaku',
                       pageBuilder: (context, state) =>

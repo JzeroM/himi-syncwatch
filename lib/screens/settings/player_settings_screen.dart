@@ -1,12 +1,13 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 
-/// 播放器设置子页：解码方式 / 立体声降混 / 音频后端 / 视频输出 / 网速 / 弹幕配置。
+/// 播放器设置枢纽页：引擎选择 / 网速 / 弹幕配置入口。
+///
+/// Phase 3 起引擎专属设置（解码/音视频输出等）移入 mdk|mediakit 子页；
+/// 此页仅保留跨引擎通用项与子页入口。
 class PlayerSettingsScreen extends ConsumerWidget {
   const PlayerSettingsScreen({super.key});
 
@@ -14,55 +15,78 @@ class PlayerSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
+    // TV 模式仅 mdk（media_kit 无 TV 验证）
+    final showEnginePicker = !settings.tvMode;
 
     return SettingsSubPage(
       pageKey: const ValueKey('playerSettingsPage'),
       title: '播放器',
       children: [
-        settingOptionTile(
-          context: context,
-          tvMode: settings.tvMode,
-          title: '解码方式',
-          subtitle: decodeModeDescription(settings.decodeMode),
-          labels: AppSettings.decodeModeLabels,
-          value: settings.decodeMode,
-          onSelected: (v) => notifier.update(decodeMode: v),
-        ),
-        const Divider(height: 1),
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
-          onTap: () => notifier.update(stereoDownmix: !settings.stereoDownmix),
-          child: SwitchListTile(
-            title: const Text('立体声降混'),
-            subtitle: const Text('将多声道音频降混为立体声（解决部分声道无声问题）'),
-            value: settings.stereoDownmix,
-            onChanged: (v) => notifier.update(stereoDownmix: v),
-          ),
-        ),
-        // AAudio/OpenSL/AudioTrack 为 Android 专属后端，其余平台固定自动
-        if (defaultTargetPlatform == TargetPlatform.android) ...[
-          const Divider(height: 1),
+        // ── 引擎选择（非 TV）─────────────────────────────────
+        if (showEnginePicker) ...[
           settingOptionTile(
             context: context,
             tvMode: settings.tvMode,
-            title: '音频后端',
-            subtitle: audioRendererDescription(settings.audioRenderer),
-            labels: AppSettings.audioRendererLabels,
-            value: settings.audioRenderer,
-            onSelected: (v) => notifier.update(audioRenderer: v),
+            title: '播放引擎',
+            subtitle: settings.playerEngine == 'media_kit'
+                ? 'media_kit（libmpv，实验性，DV P5 不支持）'
+                : 'MDK（默认，原生 DV 支持）',
+            labels: const {'mdk': 'MDK', 'media_kit': 'media_kit'},
+            value: settings.playerEngine,
+            onSelected: (v) => notifier.update(playerEngine: v),
           ),
           const Divider(height: 1),
-          settingOptionTile(
-            context: context,
+          // 引擎专属设置入口
+          settingsTvWrapRow(
             tvMode: settings.tvMode,
-            title: '视频输出',
-            subtitle: videoOutputDescription(settings.videoOutput),
-            labels: AppSettings.videoOutputLabels,
-            value: settings.videoOutput,
-            onSelected: (v) => notifier.update(videoOutput: v),
+            onTap: () => context.push(
+              settings.playerEngine == 'media_kit'
+                  ? '/settings/player/mediakit'
+                  : '/settings/player/mdk',
+            ),
+            child: ListTile(
+              key: const ValueKey('engineSettingsEntry'),
+              leading: const Icon(Icons.tune),
+              title: Text(
+                settings.playerEngine == 'media_kit'
+                    ? 'media_kit 引擎设置'
+                    : 'MDK 引擎设置',
+              ),
+              subtitle: const Text('解码方式、音视频输出等引擎专属选项'),
+              trailing: const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: Colors.white54,
+              ),
+              onTap: () => context.push(
+                settings.playerEngine == 'media_kit'
+                    ? '/settings/player/mediakit'
+                    : '/settings/player/mdk',
+              ),
+            ),
           ),
+          const Divider(height: 1),
+        ] else ...[
+          // TV 模式：直接展示 mdk 引擎设置入口（无引擎选择）
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => context.push('/settings/player/mdk'),
+            child: ListTile(
+              key: const ValueKey('mdkSettingsEntry'),
+              leading: const Icon(Icons.tune),
+              title: const Text('MDK 引擎设置'),
+              subtitle: const Text('解码方式、音视频输出等引擎专属选项'),
+              trailing: const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: Colors.white54,
+              ),
+              onTap: () => context.push('/settings/player/mdk'),
+            ),
+          ),
+          const Divider(height: 1),
         ],
-        const Divider(height: 1),
+        // ── 跨引擎通用项 ─────────────────────────────────────
         settingsTvWrapRow(
           tvMode: settings.tvMode,
           onTap: () =>

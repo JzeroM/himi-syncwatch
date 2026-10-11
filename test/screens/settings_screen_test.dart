@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/mdk_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
@@ -31,6 +32,12 @@ GoRouter _testRouter() => GoRouter(
             GoRoute(
               path: 'player',
               builder: (context, state) => const PlayerSettingsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'mdk',
+                  builder: (context, state) => const MdkSettingsScreen(),
+                ),
+              ],
             ),
             GoRoute(
               path: 'general',
@@ -73,6 +80,23 @@ Future<ProviderContainer> _pumpScreen(
     await tester.tap(find.text(category));
     await tester.pumpAndSettle();
   }
+  return container;
+}
+
+/// 挂载设置主页并导航到 MDK 引擎设置子页（解码/音视频输出等已移入）。
+Future<ProviderContainer> _pumpMdkSettings(
+  WidgetTester tester, {
+  AppSettings initial = const AppSettings(),
+  bool remote = false,
+}) async {
+  final container = await _pumpScreen(
+    tester,
+    initial: initial,
+    remote: remote,
+    category: '播放器',
+  );
+  await tester.tap(find.text('MDK 引擎设置'));
+  await tester.pumpAndSettle();
   return container;
 }
 
@@ -313,8 +337,8 @@ void main() {
     expect(color, isNot(equals(0xFF6366F1)));
   });
 
-  testWidgets('播放器子页：音频后端默认为自动', (tester) async {
-    final container = await _pumpScreen(tester, category: '播放器');
+  testWidgets('MDK 引擎子页：音频后端默认为自动', (tester) async {
+    final container = await _pumpMdkSettings(tester);
     await tester.scrollUntilVisible(
       find.text('音频后端'),
       250,
@@ -327,10 +351,10 @@ void main() {
     expect(container.read(settingsProvider).audioRenderer, 'auto');
   });
 
-  testWidgets('Windows 平台播放器子页隐藏音频后端设置项', (tester) async {
+  testWidgets('Windows 平台 MDK 引擎子页隐藏音频后端设置项', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
-      await _pumpScreen(tester, category: '播放器');
+      await _pumpMdkSettings(tester);
 
       expect(find.text('音频后端'), findsNothing);
       // 相邻设置项仍正常展示（分隔线未错乱）
@@ -340,10 +364,10 @@ void main() {
     }
   });
 
-  testWidgets('iOS 平台播放器子页隐藏音频后端设置项（Android 专属后端）', (tester) async {
+  testWidgets('iOS 平台 MDK 引擎子页隐藏音频后端设置项（Android 专属后端）', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     try {
-      await _pumpScreen(tester, category: '播放器');
+      await _pumpMdkSettings(tester);
 
       expect(find.text('音频后端'), findsNothing);
       expect(find.text('立体声降混'), findsOneWidget);
@@ -435,7 +459,7 @@ void main() {
   // ---- TV 模式 × 解码方式/音频后端（DropdownButton 遥控不可选 → 弹窗） ----
 
   testWidgets('非 TV：解码方式仍为 DropdownButton 下拉', (tester) async {
-    await _pumpScreen(tester, category: '播放器');
+    await _pumpMdkSettings(tester);
     expect(find.text('解码方式'), findsOneWidget);
     final decodeDropdown = find.descendant(
       of: find.ancestor(
@@ -450,7 +474,7 @@ void main() {
   // ---- 视频输出通道（Android 黑屏多档取证） ----
 
   testWidgets('Android 展示视频输出设置，默认纹理', (tester) async {
-    final container = await _pumpScreen(tester, category: '播放器');
+    final container = await _pumpMdkSettings(tester);
     await tester.scrollUntilVisible(
       find.text('视频输出'),
       250,
@@ -468,7 +492,7 @@ void main() {
   });
 
   testWidgets('非 TV：视频输出下拉切换写入 surfaceView', (tester) async {
-    final container = await _pumpScreen(tester, category: '播放器');
+    final container = await _pumpMdkSettings(tester);
     await tester.scrollUntilVisible(
       find.text('视频输出'),
       250,
@@ -494,8 +518,8 @@ void main() {
   });
 
   testWidgets('TV：视频输出行点开居中弹层，选择纹理+直通写入', (tester) async {
-    final container = await _pumpScreen(tester,
-        initial: const AppSettings(tvMode: true), category: '播放器');
+    final container = await _pumpMdkSettings(tester,
+        initial: const AppSettings(tvMode: true));
     expect(find.byType(DropdownButton<String>), findsNothing,
         reason: 'TV 模式全部走居中弹层');
 
@@ -523,10 +547,10 @@ void main() {
         reason: '选中后弹层应关闭');
   });
 
-  testWidgets('Windows 平台播放器子页隐藏视频输出设置项（Android 专属）', (tester) async {
+  testWidgets('Windows 平台 MDK 引擎子页隐藏视频输出设置项（Android 专属）', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
-      await _pumpScreen(tester, category: '播放器');
+      await _pumpMdkSettings(tester);
 
       expect(find.text('视频输出'), findsNothing);
       expect(find.text('渲染兼容模式（实验）'), findsNothing,
@@ -609,8 +633,8 @@ void main() {
   });
 
   testWidgets('TV：解码方式行点开居中弹层，选择软解写入', (tester) async {
-    final container = await _pumpScreen(tester,
-        initial: const AppSettings(tvMode: true), category: '播放器');
+    final container = await _pumpMdkSettings(tester,
+        initial: const AppSettings(tvMode: true));
     expect(find.byType(DropdownButton<String>), findsNothing);
 
     await tester.tap(find.text('解码方式'));
@@ -635,8 +659,8 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final container = await _pumpScreen(tester,
-        initial: const AppSettings(tvMode: true), category: '播放器');
+    final container = await _pumpMdkSettings(tester,
+        initial: const AppSettings(tvMode: true));
     expect(find.text('音频后端'), findsOneWidget);
 
     await tester.tap(find.text('音频后端'));
@@ -652,10 +676,8 @@ void main() {
 
   testWidgets('TV：弹层方向键上下切换焦点，弹层不关闭，Enter 才写入（v1.1.176 回归）',
       (tester) async {
-    final container = await _pumpScreen(tester,
-        initial: const AppSettings(tvMode: true),
-        remote: true,
-        category: '播放器');
+    final container = await _pumpMdkSettings(tester,
+        initial: const AppSettings(tvMode: true), remote: true);
 
     await tester.tap(find.text('解码方式'));
     await tester.pumpAndSettle();
@@ -695,11 +717,10 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final container = await _pumpScreen(
+    final container = await _pumpMdkSettings(
       tester,
       remote: true,
       initial: const AppSettings(tvMode: true),
-      category: '播放器',
     );
 
     final switchTiles = find.byType(SwitchListTile);

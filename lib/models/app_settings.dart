@@ -16,6 +16,10 @@ class AppSettings {
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
 
+  /// 播放器引擎：'mdk'（默认，fvp/libmdk）或 'media_kit'（libmpv）。
+  /// TV 模式仅 mdk（media_kit 无 TV 验证）。
+  final String playerEngine; // 'mdk', 'media_kit'
+
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
 
@@ -204,6 +208,7 @@ class AppSettings {
 
   const AppSettings({
     this.decodeMode = 'auto',
+    this.playerEngine = 'mdk',
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
     this.playbackSpeed = 1.0,
@@ -252,6 +257,7 @@ class AppSettings {
 
   AppSettings copyWith({
     String? decodeMode,
+    String? playerEngine,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -297,6 +303,7 @@ class AppSettings {
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
+      playerEngine: playerEngine ?? this.playerEngine,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
@@ -364,6 +371,7 @@ class AppSettings {
 
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
+        'playerEngine': playerEngine,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
         'playbackSpeed': playbackSpeed,
@@ -435,6 +443,9 @@ class AppSettings {
     }
     return AppSettings(
       decodeMode: mode,
+      playerEngine: const ['mdk', 'media_kit'].contains(json['playerEngine'])
+          ? json['playerEngine'] as String
+          : 'mdk',
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,

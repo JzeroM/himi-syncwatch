@@ -30,6 +30,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> update({
     String? decodeMode,
+    String? playerEngine,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -73,6 +74,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final wasTvMode = state.tvMode;
     state = state.copyWith(
       decodeMode: decodeMode,
+      playerEngine: playerEngine,
       showSyncDebug: showSyncDebug,
       showNetworkSpeed: showNetworkSpeed,
       playbackSpeed: playbackSpeed,

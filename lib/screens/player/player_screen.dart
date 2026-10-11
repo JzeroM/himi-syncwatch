@@ -1323,7 +1323,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       enabled: () => _showControls && mounted,
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
-    _player = PlayerEngineFactory.create();
+    // 播放引擎：从设置读取；TV 模式强制 mdk（media_kit 无 TV 验证）
+    final s = ref.read(settingsProvider);
+    final engine = s.tvMode
+        ? PlayerEngine.mdk
+        : PlayerEngine.fromId(s.playerEngine);
+    _player = PlayerEngineFactory.create(engine);
     // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
     // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
