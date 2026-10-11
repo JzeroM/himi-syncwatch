@@ -484,7 +484,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ];
   static const _videoFitLabels = ['自适应', '裁剪', '铺满', '原始'];
 
-  late final PlayerAdapter _player;
+  /// 播放器适配器（Phase 4 引擎热切换后重新赋值，非 final）。
+  late PlayerAdapter _player;
+
+  /// 当前播放引擎（热切换后更新；初始由设置决定）。
+  PlayerEngine _currentEngine = PlayerEngine.mdk;
+
   Timer? _heartbeatTimer;
   Timer? _rateRestoreTimer;
   StreamSubscription? _rtmSubscription;
@@ -1325,10 +1330,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
     // 播放引擎：从设置读取；TV 模式强制 mdk（media_kit 无 TV 验证）
     final s = ref.read(settingsProvider);
-    final engine = s.tvMode
-        ? PlayerEngine.mdk
-        : PlayerEngine.fromId(s.playerEngine);
-    _player = PlayerEngineFactory.create(engine);
+    _currentEngine =
+        s.tvMode ? PlayerEngine.mdk : PlayerEngine.fromId(s.playerEngine);
+    _player = PlayerEngineFactory.create(_currentEngine);
     // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
     // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
@@ -2249,6 +2253,99 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (mounted) setState(() => _snapshotInfo = '失败: $e');
     }
     if (mounted) LogService().log('Diag', '截帧: $_snapshotInfo');
+  }
+
+  /// 热切换播放引擎（Phase 4）：保存进度 → 销毁旧引擎 → 新引擎重建 → 恢复播放。
+  ///
+  /// 仅非 TV 模式可用（media_kit 无 TV 验证）。切换过程中显示加载态。
+  Future<void> _switchEngine(PlayerEngine newEngine) async {
+    if (newEngine == _currentEngine) return;
+    if (!mounted) return;
+
+    // TV 模式禁止切到 media_kit
+    final settings = ref.read(settingsProvider);
+    if (settings.tvMode && newEngine != PlayerEngine.mdk) return;
+
+    // 保存当前状态
+    final savedPosition = _player.position;
+    final wasPlaying = _player.state == AdapterPlaybackState.playing;
+    final savedVolume = _volume;
+    final savedSpeed = _speed;
+    final savedUrl = _currentPlayUrl;
+    final savedToken = _currentToken;
+
+    LogService().log('Player',
+        '热切换引擎: ${_currentEngine.label} → ${newEngine.label} '
+        '@${savedPosition}ms playing=$wasPlaying');
+
+    // 1. 停止旧引擎 + 取消订阅
+    try {
+      _player.state = AdapterPlaybackState.stopped;
+    } catch (_) {}
+    _stateSub?.cancel();
+    _statusSub?.cancel();
+    _tracksSubscription?.cancel();
+    _positionTimer?.cancel();
+    _diagnosticTimer?.cancel();
+
+    // 2. 销毁旧引擎
+    try {
+      _player.dispose();
+    } catch (_) {}
+
+    // 3. 创建新引擎
+    _currentEngine = newEngine;
+    // ignore: invalid_use_of_protected_member
+    _player = PlayerEngineFactory.create(newEngine);
+
+    // 持久化设置
+    await ref.read(settingsProvider.notifier).update(
+          playerEngine: newEngine.id,
+        );
+    if (!mounted) return;
+
+    // 4. 新引擎初始化（字幕属性 / 色彩空间等）
+    await _initPlayerProperties();
+    if (!mounted) return;
+
+    // 5. 重新订阅事件
+    _setupPlayerListeners();
+
+    // 6. 恢复媒体播放
+    if (savedUrl.isNotEmpty) {
+      try {
+        if (savedToken.isNotEmpty) {
+          _player.setProperty('avio.headers', 'X-Emby-Token: $savedToken');
+        }
+        _player.media = savedUrl;
+        await _player.prepare();
+        _player.playbackRate = savedSpeed;
+        _player.volume = savedVolume / 100;
+
+        // 恢复纹理
+        await _ensureTexture();
+        if (!mounted) return;
+
+        // Seek 到保存的位置
+        if (savedPosition > 0) {
+          await _player.seek(positionMs: savedPosition);
+          _position = Duration(milliseconds: savedPosition);
+          _positionNotifier.value = _position;
+        }
+
+        // 恢复播放状态
+        if (wasPlaying) {
+          _player.state = AdapterPlaybackState.playing;
+        }
+
+        LogService().log('Player', '引擎切换完成: ${newEngine.label}');
+        _addBroadcastMessage('已切换到 ${newEngine.label} 引擎');
+      } catch (e) {
+        LogService().log('Player', '引擎切换失败: $e');
+      }
+    }
+
+    if (mounted) setState(() {});
   }
 
   /// 加载流并返回 texture 是否就绪
@@ -4959,6 +5056,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               right: 12,
               child: DecodeModePanel(
                 onSwitchMode: _switchDecodeMode,
+                currentEngine: _currentEngine,
+                onSwitchEngine: _switchEngine,
               ),
             ),
 
