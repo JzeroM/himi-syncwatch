@@ -332,7 +332,7 @@ void main() {
     expect(_exited(calls), isTrue, reason: '窗口内第二按退出到桌面');
   });
 
-  testWidgets('非 TV：返回不拦截（平台默认退出，无提示）', (tester) async {
+  testWidgets('非 TV：首页根页返回 → 直接退桌面（无提示）', (tester) async {
     final calls = _mockPlatform(tester);
     await pumpApp(tester, const Size(390, 844));
     await tester.pump();
@@ -340,7 +340,89 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pump();
 
-    expect(_exited(calls), isTrue, reason: '保持平台默认行为');
+    expect(_exited(calls), isTrue, reason: '首页根页直接退出');
     expect(find.text('再按一次返回退出应用'), findsNothing);
+  });
+
+  testWidgets('非 TV：收藏 tab 根页返回 → 回首页，不退桌面', (tester) async {
+    final calls = _mockPlatform(tester);
+    await pumpApp(tester, const Size(390, 844));
+    await tester.pump();
+
+    // 切到收藏 tab
+    await tester.tap(find.byKey(const ValueKey('shellNavBarPadding')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    // 底部胶囊 5 个图标，收藏是第 2 个
+    final navIcons = find.descendant(
+      of: find.byKey(const ValueKey('shellNavBarPadding')),
+      matching: find.byIcon(kShellNavIcons[1]),
+    );
+    await tester.tap(navIcons);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 系统返回 → 回首页，不退桌面
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(HomeScreen), findsOneWidget, reason: '回首页');
+    expect(_exited(calls), isFalse, reason: '不退桌面');
+  });
+
+  testWidgets('非 TV：设置 tab 根页返回 → 回首页，不退桌面', (tester) async {
+    final calls = _mockPlatform(tester);
+    await pumpApp(tester, const Size(390, 844));
+    await tester.pump();
+
+    // 切到设置 tab
+    final navIcons = find.descendant(
+      of: find.byKey(const ValueKey('shellNavBarPadding')),
+      matching: find.byIcon(kShellNavIcons[4]),
+    );
+    await tester.tap(navIcons);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
+
+    // 系统返回 → 回首页，不退桌面
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(HomeScreen), findsOneWidget, reason: '回首页');
+    expect(_exited(calls), isFalse, reason: '不退桌面');
+  });
+
+  testWidgets('非 TV：设置子页返回 → 弹子页回设置 tab，不退桌面', (tester) async {
+    final calls = _mockPlatform(tester);
+    await pumpApp(tester, const Size(390, 844));
+    await tester.pump();
+
+    // 切到设置 tab
+    final navIcons = find.descendant(
+      of: find.byKey(const ValueKey('shellNavBarPadding')),
+      matching: find.byIcon(kShellNavIcons[4]),
+    );
+    await tester.tap(navIcons);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 进入外观子页
+    await tester.tap(find.text('外观'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
+
+    // 系统返回 → 弹子页，回到设置 tab 根页
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget,
+        reason: '回设置 tab 根页');
+    expect(find.byKey(const ValueKey('appearanceSettingsPage')), findsNothing,
+        reason: '子页已弹出');
+    expect(_exited(calls), isFalse, reason: '不退桌面');
   });
 }

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
+import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 
 import '../helpers/test_fakes.dart';
@@ -246,10 +248,33 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
+      final router = GoRouter(
+        initialLocation: '/settings',
+        routes: [
+          GoRoute(
+            path: '/settings',
+            builder: (context, state) => const SettingsScreen(),
+            routes: [
+              GoRoute(
+                path: 'player',
+                builder: (context, state) => const PlayerSettingsScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'danmaku',
+                    builder: (context, state) =>
+                        const DanmakuConfigScreen(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: const MaterialApp(home: SettingsScreen()),
+          child: MaterialApp.router(routerConfig: router),
         ),
       );
       await tester.pumpAndSettle();

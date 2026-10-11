@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
-import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
-import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
-import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -44,7 +41,7 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.palette_outlined,
             title: '外观',
             subtitle: '主题色、分类页每行海报数、液态玻璃',
-            builder: (_) => const AppearanceSettingsScreen(),
+            route: '/settings/appearance',
           ),
           const Divider(height: 1),
           _category(
@@ -54,7 +51,7 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.play_circle_outline,
             title: '播放器',
             subtitle: '解码方式、音频、视频输出、网速、弹幕配置',
-            builder: (_) => const PlayerSettingsScreen(),
+            route: '/settings/player',
           ),
           const Divider(height: 1),
           _category(
@@ -64,7 +61,7 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.tune,
             title: '通用',
             subtitle: 'TV 模式、导出运行日志',
-            builder: (_) => const GeneralSettingsScreen(),
+            route: '/settings/general',
           ),
           const Divider(height: 1),
           _category(
@@ -74,7 +71,7 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.science_outlined,
             title: '实验性',
             subtitle: '渲染兼容模式、播放调试面板、深度诊断',
-            builder: (_) => const ExperimentalSettingsScreen(),
+            route: '/settings/experimental',
           ),
           const Divider(height: 1),
         ],
@@ -89,11 +86,9 @@ class SettingsScreen extends ConsumerWidget {
     required IconData icon,
     required String title,
     required String subtitle,
-    required WidgetBuilder builder,
+    required String route,
   }) {
-    void open() => Navigator.of(context).push(
-          settingsFadeRoute<void>(builder),
-        );
+    void open() => context.push(route);
     return settingsTvWrapRow(
       tvMode: tvMode,
       onTap: open,

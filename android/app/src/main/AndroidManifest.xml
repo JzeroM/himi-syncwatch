@@ -113,7 +113,7 @@
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@mipmap/ic_launcher_neon"
             android:roundIcon="@mipmap/ic_launcher_neon"
             android:targetActivity=".MainActivity">
             <meta-data

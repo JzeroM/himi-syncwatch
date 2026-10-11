@@ -3,14 +3,47 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
 import '../helpers/test_fakes.dart';
+
+/// 最小 GoRouter：仅含设置主页 + 四个分类子页（测试环境不需要完整路由表）。
+GoRouter _testRouter() => GoRouter(
+      initialLocation: '/settings',
+      routes: [
+        GoRoute(
+          path: '/settings',
+          builder: (context, state) => const SettingsScreen(),
+          routes: [
+            GoRoute(
+              path: 'appearance',
+              builder: (context, state) => const AppearanceSettingsScreen(),
+            ),
+            GoRoute(
+              path: 'player',
+              builder: (context, state) => const PlayerSettingsScreen(),
+            ),
+            GoRoute(
+              path: 'general',
+              builder: (context, state) => const GeneralSettingsScreen(),
+            ),
+            GoRoute(
+              path: 'experimental',
+              builder: (context, state) => const ExperimentalSettingsScreen(),
+            ),
+          ],
+        ),
+      ],
+    );
 
 /// 挂载设置主页；[category] 非空时自动点进对应分类子页（外观/播放器/通用/实验性）。
 Future<ProviderContainer> _pumpScreen(
@@ -26,7 +59,9 @@ Future<ProviderContainer> _pumpScreen(
   );
   addTearDown(container.dispose);
 
-  const Widget page = MaterialApp(home: SettingsScreen());
+  final router = _testRouter();
+  addTearDown(router.dispose);
+  final Widget page = MaterialApp.router(routerConfig: router);
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,

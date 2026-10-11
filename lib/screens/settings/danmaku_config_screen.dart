@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -95,11 +95,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
   /// 扫码配置：打开二维码页（mode=danmaku），手机提交后落库；返回时同步
   /// 本地输入框（手机端改了地址）。
   Future<void> _openQrConfig() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const QrConfigScreen(mode: 'danmaku'),
-      ),
-    );
+    await context.push<void>('/settings/player/danmaku/qr');
     if (!mounted) return;
     final url = ref.read(settingsProvider).danmakuApiUrl;
     if (_apiUrl.text != url) {

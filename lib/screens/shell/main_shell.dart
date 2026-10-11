@@ -72,7 +72,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   }
 
   /// TV 模式返回键策略：非首页标签 → 回首页；首页 → 2 秒内连按两次
-  /// 退出到桌面（首按仅提示）。非 TV 模式不拦截（保持平台默认）。
+  /// 退出到桌面（首按仅提示）。
   void _handleTvBack() {
     if (widget.shell.currentIndex != 0) {
       _goBranch(0);
@@ -89,16 +89,40 @@ class _MainShellState extends ConsumerState<MainShell> {
     showAppToast(context, '再按一次返回退出应用', duration: Duration(seconds: 2));
   }
 
+  /// 统一系统返回策略（TV / 非 TV 共用）：
+  /// 1. 当前分支 Navigator 还能弹（在子页）→ 弹子页，回父页
+  /// 2. 在 tab 根页：非首页 → 回首页
+  /// 3. 首页根页：TV 双击退出；非 TV 直接退桌面
+  void _handleBack({required bool tvMode}) {
+    // 1. 分支子页（设置子页、Emby 扫码、首页搜索等）→ 弹回父页
+    final branch = widget.shell.route.branches[widget.shell.currentIndex];
+    final navigator = branch.navigatorKey.currentState;
+    if (navigator != null && navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+    // 2. tab 根页：非首页 → 回首页
+    if (widget.shell.currentIndex != 0) {
+      _goBranch(0);
+      return;
+    }
+    // 3. 首页根页：TV 双击确认；非 TV 直接退出
+    if (tvMode) {
+      _handleTvBack();
+      return;
+    }
+    SystemNavigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final shellBody = _buildShellBody(context);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
-    if (!tvMode) return shellBody;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop || !mounted) return;
-        _handleTvBack();
+        _handleBack(tvMode: tvMode);
       },
       child: shellBody,
     );

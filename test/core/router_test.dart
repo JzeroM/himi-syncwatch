@@ -191,6 +191,55 @@ void main() {
     expect(find.byType(HomeScreen), findsNothing);
   });
 
+  testWidgets('设置子路由：/settings/appearance 进外观子页', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/settings/appearance');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
+  });
+
+  testWidgets('设置子路由：/settings/player 进播放器子页', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/settings/player');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('playerSettingsPage')), findsOneWidget);
+  });
+
+  testWidgets('设置子路由：/settings/general 进通用子页', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/settings/general');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('generalSettingsPage')), findsOneWidget);
+  });
+
+  testWidgets('设置子路由：/settings/experimental 进实验性子页', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/settings/experimental');
+    await tester.pumpAndSettle();
+
+    expect(
+        find.byKey(const ValueKey('experimentalSettingsPage')), findsOneWidget);
+  });
+
+  testWidgets('设置子路由：设置主页点分类 → 进对应子页', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/settings');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('外观'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
+  });
+
   testWidgets('详情页为顶层路由，覆盖底部导航', (tester) async {
     final router = await _pumpApp(tester);
 

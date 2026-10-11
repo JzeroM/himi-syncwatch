@@ -185,6 +185,11 @@ if [ -d ios ]; then
     else
       err "Info.plist 缺少 CFBundleAlternateIcons（iOS 图标切换依赖）"
     fi
+    if grep -q 'CFBundlePrimaryIcon' "$PLIST"; then
+      ok "CFBundlePrimaryIcon"
+    else
+      err "Info.plist 缺少 CFBundlePrimaryIcon（setAlternateIconName(nil) 依赖）"
+    fi
     for alt in artistic glass neon; do
       if grep -q "<key>$alt</key>" "$PLIST"; then
         ok "备用图标键 $alt"
@@ -233,6 +238,20 @@ PYEOF
   else
     err "缺少 $ASSETS（应用图标会被模板默认图标覆盖）"
   fi
+
+  # 备用图标 PNG：由 tool/gen_icons.dart 生成到 ios/Runner/，CI 注册进
+  # Copy Bundle Resources。文件缺失 → setAlternateIconName 报
+  # "The file doesn't exist." → 设置页 toast「切换图标失败」。
+  sec "iOS · 备用图标 PNG"
+  for alt in artistic glass neon; do
+    for f in "$alt@2x.png" "$alt@3x.png"; do
+      if [ -s "ios/Runner/$f" ]; then
+        ok "ios/Runner/$f"
+      else
+        err "缺少 ios/Runner/$f（tool/gen_icons.dart 未生成或为空）"
+      fi
+    done
+  done
 else
   skip "iOS" "ios/"
 fi

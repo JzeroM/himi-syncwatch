@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 
 /// 播放器设置子页：解码方式 / 立体声降混 / 音频后端 / 视频输出 / 网速 / 弹幕配置。
@@ -79,9 +79,7 @@ class PlayerSettingsScreen extends ConsumerWidget {
         // 源地址 / 行数 / 屏蔽 / 上限
         settingsTvWrapRow(
           tvMode: settings.tvMode,
-          onTap: () => Navigator.of(context).push(
-            settingsFadeRoute<void>((_) => const DanmakuConfigScreen()),
-          ),
+          onTap: () => context.push('/settings/player/danmaku'),
           child: ListTile(
             key: const ValueKey('danmakuConfigEntry'),
             leading: const Icon(Icons.comment),
@@ -92,9 +90,7 @@ class PlayerSettingsScreen extends ConsumerWidget {
               size: 18,
               color: Colors.white54,
             ),
-            onTap: () => Navigator.of(context).push(
-              settingsFadeRoute<void>((_) => const DanmakuConfigScreen()),
-            ),
+            onTap: () => context.push('/settings/player/danmaku'),
           ),
         ),
         const Divider(height: 1),

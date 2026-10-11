@@ -10,12 +10,29 @@ import 'package:himi_syncwatch/screens/category/category_screen.dart';
 import 'package:himi_syncwatch/screens/favorites/favorites_screen.dart';
 import 'package:himi_syncwatch/screens/favorites/favorites_all_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 
 final routerKey = GlobalKey<NavigatorState>();
+
+/// 设置子页统一淡入过渡（与原 settingsFadeRoute 一致：200ms 淡入 / 180ms 淡出）。
+CustomTransitionPage<void> _settingsFadePage(Widget child) {
+  return CustomTransitionPage<void>(
+    child: child,
+    transitionDuration: const Duration(milliseconds: 200),
+    reverseTransitionDuration: const Duration(milliseconds: 180),
+    transitionsBuilder: (context, animation, _, child) =>
+        FadeTransition(opacity: animation, child: child),
+  );
+}
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   // 分支导航器 pop 回根路由时恢复底部导航（子页滑到底隐藏后返回首页的修复）
@@ -60,6 +77,42 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             GoRoute(
               path: '/settings',
               builder: (context, state) => const SettingsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'appearance',
+                  pageBuilder: (context, state) =>
+                      _settingsFadePage(const AppearanceSettingsScreen()),
+                ),
+                GoRoute(
+                  path: 'player',
+                  pageBuilder: (context, state) =>
+                      _settingsFadePage(const PlayerSettingsScreen()),
+                  routes: [
+                    GoRoute(
+                      path: 'danmaku',
+                      pageBuilder: (context, state) =>
+                          _settingsFadePage(const DanmakuConfigScreen()),
+                      routes: [
+                        GoRoute(
+                          path: 'qr',
+                          pageBuilder: (context, state) => _settingsFadePage(
+                              const QrConfigScreen(mode: 'danmaku')),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                GoRoute(
+                  path: 'general',
+                  pageBuilder: (context, state) =>
+                      _settingsFadePage(const GeneralSettingsScreen()),
+                ),
+                GoRoute(
+                  path: 'experimental',
+                  pageBuilder: (context, state) =>
+                      _settingsFadePage(const ExperimentalSettingsScreen()),
+                ),
+              ],
             ),
           ]),
         ],

@@ -65,6 +65,11 @@
 	     对应；默认图标仍由 Assets.xcassets/AppIcon 提供。 -->
 	<key>CFBundleIcons</key>
 	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconName</key>
+			<string>AppIcon</string>
+		</dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
 			<key>artistic</key>
@@ -98,6 +103,11 @@
 	</dict>
 	<key>CFBundleIcons~ipad</key>
 	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconName</key>
+			<string>AppIcon</string>
+		</dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
 			<key>artistic</key>

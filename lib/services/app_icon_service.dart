@@ -114,21 +114,28 @@ class AppIconService {
   /// 插件 `containsOnBlacklist` 命中 → 走**立即** `changeAppIcon`（组件启停
   /// 当场生效），否则插件只起 Service、要等应用被划掉才生效（小米/MIUI
   /// 尤甚，插件文档点名）。
+  /// iOS：`isSilent: true` 跳过系统「已更改图标」确认弹窗，避免干扰。
   static Future<void> apply(String? id) async {
     if (!isSupported) return;
-    if (_isAndroid) {
-      final blacklist = await deviceBlacklistLoader();
+    try {
+      if (_isAndroid) {
+        final blacklist = await deviceBlacklistLoader();
+        await FlutterDynamicIconPlus.setAlternateIconName(
+          iconName: platformIconName(id),
+          blacklistBrands: blacklist.brands,
+          blacklistManufactures: blacklist.manufactures,
+          blacklistModels: blacklist.models,
+        );
+        return;
+      }
       await FlutterDynamicIconPlus.setAlternateIconName(
         iconName: platformIconName(id),
-        blacklistBrands: blacklist.brands,
-        blacklistManufactures: blacklist.manufactures,
-        blacklistModels: blacklist.models,
+        isSilent: true,
       );
-      return;
+    } catch (e) {
+      debugPrint('AppIconService.apply($id) failed: $e');
+      rethrow;
     }
-    await FlutterDynamicIconPlus.setAlternateIconName(
-      iconName: platformIconName(id),
-    );
   }
 
   /// 启动自愈：已存设置与系统当前图标不一致时重新应用（Android/iOS）。
@@ -137,7 +144,9 @@ class AppIconService {
     try {
       final current = await currentId();
       if (current != desiredId) await apply(desiredId);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('AppIconService.syncOnStart($desiredId) failed: $e');
+    }
   }
 
   /// 读取本机标识构造黑名单（与设备自身恒匹配 → 强制立即分支）。
