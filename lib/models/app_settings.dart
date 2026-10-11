@@ -112,14 +112,15 @@ class AppSettings {
   /// Android EGL 生效，iOS Metal 不适用。修改后需重启应用生效。
   final bool renderDepth8;
 
-  /// HDR GL 渲染方案（fvp#379 workaround，1.1.198）：单一开关控制
-  /// 完整的 HDR 直写降级 + SurfaceView buffer 夹紧 + setColorSpace。
+  /// HDR GL 渲染方案（fvp#379 workaround，1.1.198 引入，1.1.199 默认关）：
+  /// 单一开关控制完整的 HDR 直写降级 + SurfaceView buffer 夹紧 +
+  /// setColorSpace。
   ///
-  /// - 开（默认）：HDR 内容自动从直写档降级到同载体 GL 路径
+  /// - 开：HDR 内容自动从直写档降级到同载体 GL 路径
   ///   （surfaceViewDirect→surfaceView、tunnel→texture）；SurfaceView
   ///   buffer contain-fit 到显示器物理尺寸（降低 GPU 合成负载）；
   ///   Android 上调用 setColorSpace(bt709) 强制 tone map 到 SDR。
-  /// - 关：不干预 mdk（HDR 直写可能 wedge/黑屏，仅 A/B 验证用）。
+  /// - 关（默认）：不干预 mdk。
   ///
   /// 参考：wang-bin/fvp#379（platform view GL vs direct surface）、
   /// wang-bin/mdk-sdk#361（HDR 直写 wedge）。
@@ -230,7 +231,7 @@ class AppSettings {
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
     this.renderDepth8 = false,
-    this.hdrGlWorkaround = true,
+    this.hdrGlWorkaround = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -468,8 +469,8 @@ class AppSettings {
            json['videoDecoderLowLatency'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 EGL_SDR_DEPTH=10）
       renderDepth8: json['renderDepth8'] as bool? ?? false,
-      // 旧数据无此字段 → 默认 true（fvp#379 HDR GL 渲染方案开启）
-      hdrGlWorkaround: json['hdrGlWorkaround'] as bool? ?? true,
+      // 旧数据无此字段 → 默认 false（1.1.199 起默认关闭，A/B 验证中）
+      hdrGlWorkaround: json['hdrGlWorkaround'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──

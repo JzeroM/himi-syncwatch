@@ -186,33 +186,33 @@ void main() {
 
     // ── 1.1.198 单开关：hdrGlWorkaround（fvp#379 HDR GL 渲染方案）──
 
-    test('hdrGlWorkaround 默认 true（fvp#379 完整方案开启）', () {
-      expect(const AppSettings().hdrGlWorkaround, isTrue);
-      expect(AppSettings.fromJson(const {}).hdrGlWorkaround, isTrue);
+    test('hdrGlWorkaround 默认 false（1.1.199 起 A/B 验证中）', () {
+      expect(const AppSettings().hdrGlWorkaround, isFalse);
+      expect(AppSettings.fromJson(const {}).hdrGlWorkaround, isFalse);
     });
 
     test('hdrGlWorkaround toJson/fromJson 往返', () {
       final json =
-          const AppSettings().copyWith(hdrGlWorkaround: false).toJson();
-      expect(json['hdrGlWorkaround'], isFalse);
-      expect(AppSettings.fromJson(json).hdrGlWorkaround, isFalse);
-      expect(const AppSettings().toJson()['hdrGlWorkaround'], isTrue);
+          const AppSettings().copyWith(hdrGlWorkaround: true).toJson();
+      expect(json['hdrGlWorkaround'], isTrue);
+      expect(AppSettings.fromJson(json).hdrGlWorkaround, isTrue);
+      expect(const AppSettings().toJson()['hdrGlWorkaround'], isFalse);
     });
 
     test('copyWith 透传 hdrGlWorkaround', () {
-      final copied = const AppSettings().copyWith(hdrGlWorkaround: false);
-      expect(copied.hdrGlWorkaround, isFalse);
+      final copied = const AppSettings().copyWith(hdrGlWorkaround: true);
+      expect(copied.hdrGlWorkaround, isTrue);
       // 未指定时保留
-      expect(copied.copyWith().hdrGlWorkaround, isFalse);
+      expect(copied.copyWith().hdrGlWorkaround, isTrue);
     });
 
     test('旧 JSON 含 forceSdrOutput/renderClampHdrOnly 键 → 忽略，'
-        'hdrGlWorkaround 取默认 true', () {
+        'hdrGlWorkaround 取默认 false', () {
       final old = AppSettings.fromJson(const {
         'forceSdrOutput': false,
         'renderClampHdrOnly': true,
       });
-      expect(old.hdrGlWorkaround, isTrue);
+      expect(old.hdrGlWorkaround, isFalse);
     });
 
     test('copyWith 保留未指定字段', () {
