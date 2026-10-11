@@ -333,10 +333,10 @@ class PlayerScreen extends ConsumerStatefulWidget {
   static List<String> mergeDecoderLowLatency(List<String> decoders) =>
       DecodeModeService.withDecoderLowLatency(decoders);
 
-  /// 输出色彩空间（1.1.191，1.1.194 限 Android，1.1.196 加开关）：
+  /// 输出色彩空间（1.1.191，1.1.194 限 Android，1.1.198 归入 hdrGlWorkaround）：
   /// 恒 BT709（SDR）。
   ///
-  /// Android + forceSdrOutput 开关（默认开启）时调用：Flutter 纹理恒
+  /// Android + hdrGlWorkaround 开关（默认开启）时调用：Flutter 纹理恒
   /// SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建 bt2020_pq 表面，
   /// 导致 SDR 面板发白 + HDR10 管线簇状丢帧 + 纹理黑屏（mdk-sdk#361，
   /// fvp#379 workaround）。关闭仅用于 A/B 实验。
@@ -589,12 +589,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Size? _displayPhysical;
 
   /// 实际生效的渲染目标尺寸取证（调试面板：原生尺寸 → 夹紧后尺寸；
-  /// 未夹紧时两段相同）。
+  /// 未夹紧时两段相同）。夹紧仅在 SurfaceView 档 + HDR + 开关开时生效。
   String get _renderTargetDesc {
     final native = _videoNativeSize;
     if (native == null) return '-';
-    final clamped = _clampedRenderSize(native);
     final n = '${native.width.toInt()}x${native.height.toInt()}';
+    // 夹紧仅 SurfaceView 档生效（纹理档恒原生）
+    if (!_usesSurfaceView) return n;
+    final clamped = _clampedRenderSize(native);
     if (clamped == null) return n;
     return '$n → ${clamped.width.toInt()}x${clamped.height.toInt()}';
   }
@@ -1320,14 +1322,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
     _player = mdk.Player();
-    // 强制输出 SDR（BT709）：仅 Android + forceSdrOutput 开关（默认开启）。
+    // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
     // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
     // + 纹理黑屏（mdk-sdk#361，fvp#379 workaround：HDR 内容回退 GL +
     // tone map 到 SDR）。iOS Metal 上 setColorSpace(bt709) 与
     // videoout.hdr=0 冲突导致 HDR10 黑屏（1.1.194 修复）。
-    // 1.1.196 起做成开关（默认开启），关闭仅用于 A/B 实验。
-    if (Platform.isAndroid && ref.read(settingsProvider).forceSdrOutput) {
+    // 1.1.198 归入 hdrGlWorkaround 单开关，关闭仅用于 A/B 实验。
+    if (Platform.isAndroid && ref.read(settingsProvider).hdrGlWorkaround) {
       _player.setColorSpace(PlayerScreen.outputColorSpace());
       LogService().log('Player', '输出色彩空间: bt709（SDR tone map）');
     }
@@ -1843,6 +1845,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 再经 [AppSettings.routeVideoOutput] 按内容自动路由：HDR/10-bit 内容
   /// 直写会 wedge/卡顿（mdk#361），故降级为同载体 GL 路径。
+  /// 1.1.198 起受 hdrGlWorkaround 开关控制（关 = 不降级，A/B 基线）。
   String _effectiveVideoOutput() {
     final settings = ref.read(settingsProvider);
     final base = AppSettings.eglAwareVideoOutput(
@@ -1850,7 +1853,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       eglFault: eglFaultDetector.fault,
       userSet: settings.videoOutputUserSet,
     );
-    return AppSettings.routeVideoOutput(base, isHdr: _hdrContent);
+    return AppSettings.routeVideoOutput(base,
+        isHdr: _hdrContent, enabled: settings.hdrGlWorkaround);
   }
 
   /// 显示器物理尺寸（渲染夹紧目标）：Android 优先原生探测（TV UI 层
@@ -1868,14 +1872,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 渲染尺寸夹紧：把 [videoSize] contain-fit 到显示器物理尺寸。
   ///
-  /// 仅 HDR 内容 + 开关开启时生效（1.1.196 renderClampHdrOnly 实验）。
-  /// 高分辨率内容（4K60 等）在弱 GPU 设备上以原生尺寸过 GL/Flutter
-  /// 纹理会丢帧；夹到显示器物理尺寸后像素量最多降 4 倍，画质无感
-  /// （显示器物理像素就那么多）。视频未超过显示尺寸返回 null（保持
-  /// 原生）。直写/tunnel 档不经 GL，调用方不夹。
+  /// 仅 HDR 内容 + hdrGlWorkaround 开关开启时生效（fvp#379 size clamp）。
+  /// 高分辨率内容（4K60 等）在弱 GPU 设备上以原生尺寸过 GL 会丢帧；
+  /// 夹到显示器物理尺寸后像素量最多降 4 倍，画质无感（显示器物理
+  /// 像素就那么多）。视频未超过显示尺寸返回 null（保持原生）。
+  /// 仅 SurfaceView 档使用（纹理档恒原生尺寸）。
   Size? _clampedRenderSize(Size videoSize) {
     if (!_hdrContent) return null;
-    if (!ref.read(settingsProvider).renderClampHdrOnly) return null;
+    if (!ref.read(settingsProvider).hdrGlWorkaround) return null;
     final display = _clampDisplayPhysical();
     if (display == null) return null;
     return RenderTargetClamp.compute(
@@ -2113,24 +2117,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     final tunnel = mode == 'tunnel';
-    // 渲染尺寸夹紧（1.1.196 实验）：HDR 内容 + 开关开启时把渲染目标
-    // contain-fit 到显示器物理尺寸。tunnel 档解码器直写 SurfaceTexture
-    // 不经 GL，夹紧无意义——保持原生尺寸。
-    final Size? clampTarget;
-    if (tunnel) {
-      clampTarget = null;
-    } else {
-      final native = _readMediaInfoVideoSize() ?? _videoNativeSize;
-      clampTarget = native == null ? null : _clampedRenderSize(native);
-    }
-    // 去重键包含夹紧尺寸：档位相同但夹紧尺寸变化时也需重建纹理。
-    final dedupKey = '$mode@${clampTarget?.width.toInt() ?? 0}'
-        'x${clampTarget?.height.toInt() ?? 0}';
     if (_player.textureId.value != null) {
-      if (_textureOutputApplied == dedupKey) return;
-      // 档位或夹紧尺寸变化：释放旧纹理后按新参数重建
-      LogService().log('Player',
-          '纹理档位 $_textureOutputApplied → $dedupKey，重建纹理');
+      if (_textureOutputApplied == mode) return;
+      // 档位（tunnel 开关）变化：释放旧纹理后按新参数重建
+      LogService().log('Player', '纹理档位 $_textureOutputApplied → $mode，重建纹理');
       try {
         await _player
             .updateTexture(width: -1)
@@ -2139,13 +2129,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _textureOutputApplied = null;
     }
     if (!mounted) return;
-    // 播中尺寸变化不重建纹理（_textureOutputApplied 按 档位@尺寸 去重），
+    // 播中尺寸变化不重建纹理（_textureOutputApplied 按档位去重），
     // 规避「释放+重建」黑屏族问题（958fcb7/6f2fb5b 教训）。
+    // 渲染尺寸夹紧仅在 SurfaceView 档生效（fvp#379 size clamp），
+    // 纹理档恒传 null 让 mdk 使用原生尺寸。
     try {
       final texId = await _player
           .updateTexture(
-            width: clampTarget?.width.toInt(),
-            height: clampTarget?.height.toInt(),
+            width: null,
+            height: null,
             tunnel: tunnel,
           )
           .timeout(const Duration(seconds: 5));
@@ -2157,22 +2149,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (_player.textureId.value == null) {
           await _player
               .updateTexture(
-                width: clampTarget?.width.toInt(),
-                height: clampTarget?.height.toInt(),
+                width: null,
+                height: null,
                 tunnel: tunnel,
               )
               .timeout(const Duration(seconds: 5));
         }
       }
-      if (_player.textureId.value != null) _textureOutputApplied = dedupKey;
+      if (_player.textureId.value != null) _textureOutputApplied = mode;
       String videoStreams = '?';
       try {
         videoStreams = '${_player.mediaInfo.video?.length ?? 0} 路';
       } catch (_) {}
       LogService().log('Player',
           '纹理: 返回 $texId, textureId ${_player.textureId.value}, '
-          '视频流 $videoStreams, tunnel $tunnel, '
-          '夹紧 ${clampTarget == null ? "无" : "${clampTarget.width.toInt()}x${clampTarget.height.toInt()}"}');
+          '视频流 $videoStreams, tunnel $tunnel');
     } catch (e) {
       LogService().log('Player', 'updateTexture 失败: $e');
     }
@@ -2358,8 +2349,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _fadeOutForSwitch();
 
       // 强制 SDR 输出：防 player 状态重置丢失 initState 的设置
-      // （仅 Android + forceSdrOutput 开关开启，1.1.196）
-      if (Platform.isAndroid && ref.read(settingsProvider).forceSdrOutput) {
+      // （仅 Android + hdrGlWorkaround 开关开启，1.1.198）
+      if (Platform.isAndroid && ref.read(settingsProvider).hdrGlWorkaround) {
         _player.setColorSpace(PlayerScreen.outputColorSpace());
       }
       _isSwitchingMedia = true;
@@ -2494,7 +2485,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       _isSwitchingMedia = true;
-      if (Platform.isAndroid && ref.read(settingsProvider).forceSdrOutput) {
+      if (Platform.isAndroid && ref.read(settingsProvider).hdrGlWorkaround) {
         _player.setColorSpace(PlayerScreen.outputColorSpace());
       }
       _player.media = playUrl;
@@ -4728,16 +4719,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         child: CircularProgressIndicator(color: Colors.white54),
       );
     }
-    // 渲染尺寸夹紧已移除（1.1.190）：对 10-bit P010 无效，且 mdk
-    // 内部写 video.decoder=scale=WxH 会覆写 image=0 注入。
+    // 渲染尺寸夹紧（1.1.198 hdrGlWorkaround）：HDR 内容 + 开关开启时
+    // SurfaceView buffer contain-fit 到显示器物理尺寸（fvp#379 size
+    // clamp），降低弱 GPU 上 SurfaceFlinger 合成负载。SDR/开关关时
+    // 恒原生尺寸。
+    final clampTarget = (ref.read(settingsProvider).hdrGlWorkaround &&
+            _hdrContent)
+        ? _clampedRenderSize(size)
+        : null;
     final direct = _surfaceViewDirect || eglFaultDetector.fault;
     return Center(
       child: AspectRatio(
         aspectRatio: size.width / size.height,
         child: FvpSurfaceView(
           nativeHandle: _player.nativeHandle,
-          videoWidth: size.width.toInt(),
-          videoHeight: size.height.toInt(),
+          videoWidth: (clampTarget?.width ?? size.width).toInt(),
+          videoHeight: (clampTarget?.height ?? size.height).toInt(),
           // 直写档恒 true；普通 SurfaceView 档仅 EGL 故障（mdk
           // eglChooseConfig 3004 → GL presenter 无效）时直写，绕开 mdk EGL；
           // 正常时走 GL 以保留 snapshot 回读等能力
@@ -4746,10 +4743,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           onCreated: () {
             if (!mounted) return;
             _surfaceViewCreated = true;
+            final vw = (clampTarget?.width ?? size.width).toInt();
+            final vh = (clampTarget?.height ?? size.height).toInt();
             LogService().log(
                 'Diag',
                 'surfaceCreated 绑定完成 (epoch=$_videoSurfaceEpoch '
-                    'size=${size.width.toInt()}x${size.height.toInt()})');
+                    'size=${size.width.toInt()}x${size.height.toInt()}'
+                    '${clampTarget != null ? ' → buffer ${vw}x$vh' : ''})');
           },
         ),
       ),

@@ -142,40 +142,22 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
           ),
         ),
           const Divider(height: 1),
-          // 强制 SDR 输出实验（1.1.196）：setColorSpace(bt709) 强制
-          // tone map 到 SDR。修复 HDR10 在 SDR 面板上的发白问题
-          // （v1.1.191），但与 HDR 渲染夹紧实验相互独立，可单独 A/B。
+          // HDR GL 渲染方案（fvp#379 workaround，1.1.198）：单一开关
+          // 控制完整方案——HDR 直写降级到同载体 GL 路径 + SurfaceView
+          // buffer 夹紧 + setColorSpace(bt709) tone map。
           settingsTvWrapRow(
             tvMode: settings.tvMode,
             onTap: () =>
-                notifier.update(forceSdrOutput: !settings.forceSdrOutput),
+                notifier.update(hdrGlWorkaround: !settings.hdrGlWorkaround),
             child: SwitchListTile(
-              title: const Text('强制 SDR 输出'),
+              title: const Text('HDR GL 渲染方案'),
               subtitle: const Text(
-                'setColorSpace(bt709)：强制 tone map 到 SDR，修复 HDR10 '
-                '发白 + 防止 bt2020_pq 表面黑屏。默认开启，关闭仅用于 '
-                'A/B 实验。修改后下次起播生效',
+                'fvp#379：HDR 内容自动降级到 GL 渲染路径 + buffer 夹紧 + '
+                'tone map。关闭则不干预（HDR 直写可能 wedge，仅 A/B）。'
+                '修改后下次起播生效',
               ),
-              value: settings.forceSdrOutput,
-              onChanged: (v) => notifier.update(forceSdrOutput: v),
-            ),
-          ),
-          const Divider(height: 1),
-          // HDR 渲染夹紧实验（1.1.196）：HDR 内容渲染尺寸 contain-fit
-          // 到设备物理分辨率，降低 GL/Flutter 纹理负载。仅 HDR 内容
-          // 生效，SDR 不受影响。
-          settingsTvWrapRow(
-            tvMode: settings.tvMode,
-            onTap: () => notifier.update(
-                renderClampHdrOnly: !settings.renderClampHdrOnly),
-            child: SwitchListTile(
-              title: const Text('HDR 渲染夹紧（实验）'),
-              subtitle: const Text(
-                'HDR 内容渲染尺寸夹紧到设备物理分辨率，降低纹理负载。'
-                '仅 HDR 生效。修改后下次起播生效',
-              ),
-              value: settings.renderClampHdrOnly,
-              onChanged: (v) => notifier.update(renderClampHdrOnly: v),
+              value: settings.hdrGlWorkaround,
+              onChanged: (v) => notifier.update(hdrGlWorkaround: v),
             ),
           ),
           const Divider(height: 1),

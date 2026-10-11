@@ -184,41 +184,35 @@ void main() {
       expect(copied.copyWith().renderDepth8, isTrue);
     });
 
-    // ── 1.1.196 实验开关：forceSdrOutput / renderClampHdrOnly ──
+    // ── 1.1.198 单开关：hdrGlWorkaround（fvp#379 HDR GL 渲染方案）──
 
-    test('forceSdrOutput 默认 true（防 bt2020_pq 表面黑屏），'
-        'renderClampHdrOnly 默认 false', () {
-      expect(const AppSettings().forceSdrOutput, isTrue);
-      expect(const AppSettings().renderClampHdrOnly, isFalse);
-      expect(AppSettings.fromJson(const {}).forceSdrOutput, isTrue);
-      expect(AppSettings.fromJson(const {}).renderClampHdrOnly, isFalse);
+    test('hdrGlWorkaround 默认 true（fvp#379 完整方案开启）', () {
+      expect(const AppSettings().hdrGlWorkaround, isTrue);
+      expect(AppSettings.fromJson(const {}).hdrGlWorkaround, isTrue);
     });
 
-    test('forceSdrOutput toJson/fromJson 往返', () {
+    test('hdrGlWorkaround toJson/fromJson 往返', () {
       final json =
-          const AppSettings().copyWith(forceSdrOutput: false).toJson();
-      expect(json['forceSdrOutput'], isFalse);
-      expect(AppSettings.fromJson(json).forceSdrOutput, isFalse);
-      expect(const AppSettings().toJson()['forceSdrOutput'], isTrue);
+          const AppSettings().copyWith(hdrGlWorkaround: false).toJson();
+      expect(json['hdrGlWorkaround'], isFalse);
+      expect(AppSettings.fromJson(json).hdrGlWorkaround, isFalse);
+      expect(const AppSettings().toJson()['hdrGlWorkaround'], isTrue);
     });
 
-    test('renderClampHdrOnly toJson/fromJson 往返', () {
-      final json =
-          const AppSettings().copyWith(renderClampHdrOnly: true).toJson();
-      expect(json['renderClampHdrOnly'], isTrue);
-      expect(AppSettings.fromJson(json).renderClampHdrOnly, isTrue);
-      expect(const AppSettings().toJson()['renderClampHdrOnly'], isFalse);
-    });
-
-    test('copyWith 透传 forceSdrOutput / renderClampHdrOnly', () {
-      final copied = const AppSettings()
-          .copyWith(forceSdrOutput: false, renderClampHdrOnly: true);
-      expect(copied.forceSdrOutput, isFalse);
-      expect(copied.renderClampHdrOnly, isTrue);
+    test('copyWith 透传 hdrGlWorkaround', () {
+      final copied = const AppSettings().copyWith(hdrGlWorkaround: false);
+      expect(copied.hdrGlWorkaround, isFalse);
       // 未指定时保留
-      final again = copied.copyWith();
-      expect(again.forceSdrOutput, isFalse);
-      expect(again.renderClampHdrOnly, isTrue);
+      expect(copied.copyWith().hdrGlWorkaround, isFalse);
+    });
+
+    test('旧 JSON 含 forceSdrOutput/renderClampHdrOnly 键 → 忽略，'
+        'hdrGlWorkaround 取默认 true', () {
+      final old = AppSettings.fromJson(const {
+        'forceSdrOutput': false,
+        'renderClampHdrOnly': true,
+      });
+      expect(old.hdrGlWorkaround, isTrue);
     });
 
     test('copyWith 保留未指定字段', () {
@@ -591,6 +585,19 @@ void main() {
       expect(AppSettings.routeVideoOutput('surfaceViewDirect', isHdr: false),
           'surfaceViewDirect');
       expect(AppSettings.routeVideoOutput('tunnel', isHdr: false), 'tunnel');
+    });
+
+    test('routeVideoOutput：enabled=false 时不降级（1.1.198 A/B 基线）', () {
+      expect(
+          AppSettings.routeVideoOutput('surfaceViewDirect',
+              isHdr: true, enabled: false),
+          'surfaceViewDirect');
+      expect(
+          AppSettings.routeVideoOutput('tunnel', isHdr: true, enabled: false),
+          'tunnel');
+      // enabled 默认 true（旧行为不变）
+      expect(AppSettings.routeVideoOutput('surfaceViewDirect', isHdr: true),
+          'surfaceView');
     });
 
     test('isHdrPixelFormat：识别 10/16-bit 像素格式', () {

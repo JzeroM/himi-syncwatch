@@ -112,18 +112,19 @@ class AppSettings {
   /// Android EGL 生效，iOS Metal 不适用。修改后需重启应用生效。
   final bool renderDepth8;
 
-  /// 强制 SDR 输出（1.1.191 引入，1.1.196 可开关）：Android 上调用
-  /// `setColorSpace(bt709)` 强制 tone map 到 SDR。修复 HDR10 在
-  /// SDR 面板上的发白问题，且避免 mdk auto 建 bt2020_pq 表面导致
-  /// Flutter SDR 纹理黑屏（与 iOS v1.1.194 同机制）。默认开启
-  /// （恢复 v1.1.191-195 行为），关闭仅用于 A/B 实验。
+  /// HDR GL 渲染方案（fvp#379 workaround，1.1.198）：单一开关控制
+  /// 完整的 HDR 直写降级 + SurfaceView buffer 夹紧 + setColorSpace。
+  ///
+  /// - 开（默认）：HDR 内容自动从直写档降级到同载体 GL 路径
+  ///   （surfaceViewDirect→surfaceView、tunnel→texture）；SurfaceView
+  ///   buffer contain-fit 到显示器物理尺寸（降低 GPU 合成负载）；
+  ///   Android 上调用 setColorSpace(bt709) 强制 tone map 到 SDR。
+  /// - 关：不干预 mdk（HDR 直写可能 wedge/黑屏，仅 A/B 验证用）。
+  ///
+  /// 参考：wang-bin/fvp#379（platform view GL vs direct surface）、
+  /// wang-bin/mdk-sdk#361（HDR 直写 wedge）。
   /// 下次起播/切集生效。
-  final bool forceSdrOutput;
-
-  /// HDR 渲染夹紧（实验，1.1.196）：HDR 内容渲染尺寸 contain-fit
-  /// 到设备物理分辨率，降低 GL/Flutter 纹理负载。仅 Android +
-  /// HDR 内容生效，SDR 内容不受影响。默认关闭。下次起播生效。
-  final bool renderClampHdrOnly;
+  final bool hdrGlWorkaround;
 
   /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
   ///
@@ -229,8 +230,7 @@ class AppSettings {
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
     this.renderDepth8 = false,
-    this.forceSdrOutput = true,
-    this.renderClampHdrOnly = false,
+    this.hdrGlWorkaround = true,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -268,8 +268,7 @@ class AppSettings {
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
     bool? renderDepth8,
-    bool? forceSdrOutput,
-    bool? renderClampHdrOnly,
+    bool? hdrGlWorkaround,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
@@ -315,8 +314,7 @@ class AppSettings {
       videoDecoderLowLatency:
           videoDecoderLowLatency ?? this.videoDecoderLowLatency,
       renderDepth8: renderDepth8 ?? this.renderDepth8,
-      forceSdrOutput: forceSdrOutput ?? this.forceSdrOutput,
-      renderClampHdrOnly: renderClampHdrOnly ?? this.renderClampHdrOnly,
+      hdrGlWorkaround: hdrGlWorkaround ?? this.hdrGlWorkaround,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -379,12 +377,11 @@ class AppSettings {
         'videoOutputUserSet': videoOutputUserSet,
         'renderCompatMode': renderCompatMode,
         'videoOutHdrAuto': videoOutHdrAuto,
-        'videoDecoderNoImage': videoDecoderNoImage,
-        'videoDecoderLowLatency': videoDecoderLowLatency,
-        'renderDepth8': renderDepth8,
-        'forceSdrOutput': forceSdrOutput,
-        'renderClampHdrOnly': renderClampHdrOnly,
-        'eglFaultSeen': eglFaultSeen,
+         'videoDecoderNoImage': videoDecoderNoImage,
+         'videoDecoderLowLatency': videoDecoderLowLatency,
+         'renderDepth8': renderDepth8,
+         'hdrGlWorkaround': hdrGlWorkaround,
+         'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
         'danmakuScrollRows': danmakuScrollRows,
@@ -468,13 +465,11 @@ class AppSettings {
       videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 low_latency=0）
       videoDecoderLowLatency:
-          json['videoDecoderLowLatency'] as bool? ?? false,
+           json['videoDecoderLowLatency'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 EGL_SDR_DEPTH=10）
       renderDepth8: json['renderDepth8'] as bool? ?? false,
-      // 旧数据无此字段 → 默认 false（不干预 mdk 色彩管线）
-      forceSdrOutput: json['forceSdrOutput'] as bool? ?? true,
-      // 旧数据无此字段 → 默认 false（不夹紧渲染尺寸）
-      renderClampHdrOnly: json['renderClampHdrOnly'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 true（fvp#379 HDR GL 渲染方案开启）
+      hdrGlWorkaround: json['hdrGlWorkaround'] as bool? ?? true,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──
@@ -595,14 +590,16 @@ class AppSettings {
   bool get surfaceViewDirect =>
       effectiveVideoOutput(videoOutput) == 'surfaceViewDirect';
 
-  /// 按内容自动路由视频输出（mdk#361）：AMediaCodec 直写 surface
-  /// （surfaceViewDirect / tunnel 的直写语义）在 HDR10/DV 内容上会
-  /// wedge/卡顿，需降级到「同载体」的 GL 渲染路径。
+  /// 按内容自动路由视频输出（fvp#379 / mdk#361，1.1.198 加开关）：
+  /// AMediaCodec 直写 surface（surfaceViewDirect / tunnel 的直写语义）
+  /// 在 HDR10/DV 内容上会 wedge/卡顿，需降级到「同载体」的 GL 渲染路径。
   ///
+  /// - [enabled]（`hdrGlWorkaround` 开关）关 → 不降级（A/B 基线）；
   /// - HDR 且档位为直写 → 降级：surfaceViewDirect→surfaceView、tunnel→texture；
   /// - SDR 或本就走 GL → 原样返回。
-  static String routeVideoOutput(String output, {required bool isHdr}) {
-    if (!isHdr) return output;
+  static String routeVideoOutput(String output,
+      {required bool isHdr, bool enabled = true}) {
+    if (!enabled || !isHdr) return output;
     if (output == 'surfaceViewDirect') return 'surfaceView';
     if (output == 'tunnel') return 'texture';
     return output;
