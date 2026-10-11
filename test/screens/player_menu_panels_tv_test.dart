@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -11,12 +10,13 @@ import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 import '../helpers/test_fakes.dart';
 
 /// 仅实现菜单面板用到的成员，其余经 noSuchMethod 转发
-///（fvp `Player` 需加载 libmdk.so，测试环境无法真实构造）。
-class _FakePlayer implements mdk.Player {
+///（测试环境无法真实构造底层播放器）。
+class _FakePlayer implements PlayerAdapter {
   final List<int> audioTracks;
 
   _FakePlayer({this.audioTracks = const []});

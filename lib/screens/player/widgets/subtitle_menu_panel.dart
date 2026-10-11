@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 
 /// 字幕选择面板（放进 [SelectorSidePanel] 右侧浮层，滚动由外层提供）。
 class SubtitleMenuPanel extends StatelessWidget {
-  final mdk.Player player;
+  final PlayerAdapter player;
   final List<MediaStream> subtitleStreams;
   final int? activeSubtitleIndex;
   final bool useServerBurnIn;

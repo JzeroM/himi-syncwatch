@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 void main() {
   test('播放器默认音量与亮度均为 80', () {
@@ -385,7 +385,7 @@ void main() {
 
   group('PlayerScreen.outputColorSpace（1.1.191 SDR tone map，1.1.194 限 Android）', () {
     test('恒返回 bt709（Android 用，iOS 不调用防黑屏）', () {
-      expect(PlayerScreen.outputColorSpace(), mdk.ColorSpace.bt709);
+      expect(PlayerScreen.outputColorSpace(), AdapterColorSpace.bt709);
     });
   });
 

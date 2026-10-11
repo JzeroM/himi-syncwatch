@@ -10,6 +10,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
+import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/episode_info.dart';
@@ -344,7 +346,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// iOS：不调用 setColorSpace。Metal 上与 videoout.hdr=0 冲突导致
   /// HDR10 黑屏（1.1.194 修复），iOS 依赖 videoout.hdr=0 全局选项。
   @visibleForTesting
-  static mdk.ColorSpace outputColorSpace() => mdk.ColorSpace.bt709;
+  static AdapterColorSpace outputColorSpace() => AdapterColorSpace.bt709;
 
   /// 顶栏解码模式按钮是否显示：TV 模式隐藏（解码模式仅走设置页）。
   @visibleForTesting
@@ -482,7 +484,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ];
   static const _videoFitLabels = ['自适应', '裁剪', '铺满', '原始'];
 
-  late final mdk.Player _player;
+  late final PlayerAdapter _player;
   Timer? _heartbeatTimer;
   Timer? _rateRestoreTimer;
   StreamSubscription? _rtmSubscription;
@@ -1006,9 +1008,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final ms = _player.mediaStatus;
 
       // 播放状态
-      String playState = st == mdk.PlaybackState.playing
+      String playState = st == AdapterPlaybackState.playing
           ? 'playing'
-          : st == mdk.PlaybackState.paused
+          : st == AdapterPlaybackState.paused
               ? 'paused'
               : 'stopped';
       String mediaSt = _describeMediaStatus(ms);
@@ -1021,12 +1023,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       int dovi = 0;
       int vWidth = 0;
       int vHeight = 0;
-      if (mi.video != null && mi.video!.isNotEmpty) {
-        final vc = mi.video![0].codec;
+      if (mi.video.isNotEmpty) {
+        final vc = mi.video[0];
         vCodec = vc.codec;
         vBitrate = vc.bitRate;
-        fps = vc.frameRate;
-        pixFmt = vc.formatName ?? '-';
+        fps = 0;
+        pixFmt = vc.formatName;
         dovi = vc.doviProfile;
         vWidth = vc.width;
         vHeight = vc.height;
@@ -1037,8 +1039,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       int sampleRate = 0;
       int channels = 0;
       String aCodec = '-';
-      if (mi.audio != null && mi.audio!.isNotEmpty) {
-        final ac = mi.audio![0].codec;
+      if (mi.audio.isNotEmpty) {
+        final ac = mi.audio[0];
         aCodec = ac.codec;
         aBitrate = ac.bitRate;
         sampleRate = ac.sampleRate;
@@ -1157,7 +1159,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 回退过程在面板上直接可见。error 字段一并保留，成功为 0。
   /// 成功事件同样落盘：Windows 硬解是否生效、iOS 视频走没走硬解，
   /// 全靠这行取证（此前仅 error 落盘，正常路径无日志可查）。
-  void _noteDecoderEvent(mdk.MediaEvent event) {
+  void _noteDecoderEvent(AdapterMediaEvent event) {
     final isVideo = event.category == 'decoder.video';
     LogService()
         .log('Diag', '${event.category}: ${event.detail} code ${event.error}');
@@ -1190,17 +1192,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 把 mdk MediaStatus 位标志映射为可读文本。
   /// buffered / stalled / buffering 均反映卡顿，必须显式呈现而非落到 '-'。
-  static String _describeMediaStatus(mdk.MediaStatus ms) {
-    if (ms.test(mdk.MediaStatus.invalid)) return 'invalid';
-    if (ms.test(mdk.MediaStatus.end)) return 'end';
-    if (ms.test(mdk.MediaStatus.buffering)) return 'buffering';
-    if (ms.test(mdk.MediaStatus.stalled)) return 'stalled';
-    if (ms.test(mdk.MediaStatus.seeking)) return 'seeking';
-    if (ms.test(mdk.MediaStatus.buffered)) return 'buffered';
-    if (ms.test(mdk.MediaStatus.loaded)) return 'loaded';
-    if (ms.test(mdk.MediaStatus.loading)) return 'loading';
-    if (ms.test(mdk.MediaStatus.unloaded)) return 'unloaded';
-    if (ms.test(mdk.MediaStatus.prepared)) return 'prepared';
+  static String _describeMediaStatus(AdapterMediaStatus ms) {
+    if (ms.test(AdapterMediaStatus.invalid)) return 'invalid';
+    if (ms.test(AdapterMediaStatus.end)) return 'end';
+    if (ms.test(AdapterMediaStatus.buffering)) return 'buffering';
+    if (ms.test(AdapterMediaStatus.stalled)) return 'stalled';
+    if (ms.test(AdapterMediaStatus.seeking)) return 'seeking';
+    if (ms.test(AdapterMediaStatus.buffered)) return 'buffered';
+    if (ms.test(AdapterMediaStatus.loaded)) return 'loaded';
+    if (ms.test(AdapterMediaStatus.loading)) return 'loading';
+    if (ms.test(AdapterMediaStatus.unloaded)) return 'unloaded';
+    if (ms.test(AdapterMediaStatus.prepared)) return 'prepared';
     return '-';
   }
 
@@ -1216,14 +1218,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _diag.addSample(
         pos: _player.position,
         buffered: _player.buffered(),
-        state: st == mdk.PlaybackState.playing
+        state: st == AdapterPlaybackState.playing
             ? 'playing'
-            : st == mdk.PlaybackState.paused
+            : st == AdapterPlaybackState.paused
                 ? 'paused'
                 : 'stopped',
         status: _describeMediaStatus(ms),
-        reloading: ms.test(mdk.MediaStatus.unloaded) ||
-            ms.test(mdk.MediaStatus.loading),
+        reloading: ms.test(AdapterMediaStatus.unloaded) ||
+            ms.test(AdapterMediaStatus.loading),
         cacheSeconds: _latestCacheSeconds,
         bufProgress: _bufProgress,
       );
@@ -1321,7 +1323,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       enabled: () => _showControls && mounted,
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
-    _player = mdk.Player();
+    _player = PlayerEngineFactory.create();
     // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
     // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
@@ -1533,13 +1535,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _currentAudioCodec() {
     try {
       final audio = _player.mediaInfo.audio;
-      if (audio != null && audio.isNotEmpty) {
+      if (audio.isNotEmpty) {
         final act = _player.activeAudioTracks;
         final idx =
             (act.isNotEmpty && act.first >= 0 && act.first < audio.length)
                 ? act.first
                 : 0;
-        final c = audio[idx].codec.codec;
+        final c = audio[idx].codec;
         if (c.isNotEmpty) return c;
       }
     } catch (_) {}
@@ -1793,15 +1795,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Size? _readMediaInfoVideoSize() {
     try {
       final videos = _player.mediaInfo.video;
-      if (videos == null || videos.isEmpty) return null;
+      if (videos.isEmpty) return null;
       var v = videos.first;
       for (final i in videos) {
-        if (i.codec.width > v.codec.width) v = i;
+        if (i.width > v.width) v = i;
       }
       return PlayerScreen.resolveVideoSize(
-        width: v.codec.width,
-        height: v.codec.height,
-        par: v.codec.par,
+        width: v.width,
+        height: v.height,
+        par: v.par,
         rotation: v.rotation,
       );
     } catch (_) {
@@ -1902,19 +1904,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!hdr) {
       try {
         final videos = _player.mediaInfo.video;
-        if (videos != null && videos.isNotEmpty) {
-          final c = videos.first.codec;
+        if (videos.isNotEmpty) {
+          final c = videos.first;
           final cs = c.colorSpace;
-          hdr = cs == mdk.ColorSpace.bt2100PQ ||
-              cs == mdk.ColorSpace.bt2100hlg ||
+          hdr = cs == AdapterColorSpace.bt2100PQ ||
+              cs == AdapterColorSpace.bt2100hlg ||
               c.doviProfile > 0 ||
               AppSettings.isHdrPixelFormat(c.formatName);
           if (hdr) {
             if (c.doviProfile > 0) {
               runtimeLabel = 'Dolby Vision';
-            } else if (cs == mdk.ColorSpace.bt2100PQ) {
+            } else if (cs == AdapterColorSpace.bt2100PQ) {
               runtimeLabel = 'HDR10';
-            } else if (cs == mdk.ColorSpace.bt2100hlg) {
+            } else if (cs == AdapterColorSpace.bt2100hlg) {
               runtimeLabel = 'HLG';
             } else {
               runtimeLabel = 'HDR10';
@@ -2159,7 +2161,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (_player.textureId.value != null) _textureOutputApplied = mode;
       String videoStreams = '?';
       try {
-        videoStreams = '${_player.mediaInfo.video?.length ?? 0} 路';
+        videoStreams = '${_player.mediaInfo.video.length} 路';
       } catch (_) {}
       LogService().log('Player',
           '纹理: 返回 $texId, textureId ${_player.textureId.value}, '
@@ -2172,7 +2174,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 换源渐出：仅在有声音播放时渐出到 0，避免首播/暂停态做无意义延迟。
   /// 返回是否真的执行了渐出（调用方据此决定是否渐入）。
   Future<bool> _fadeOutForSwitch() async {
-    if (_player.state != mdk.PlaybackState.playing) return false;
+    if (_player.state != AdapterPlaybackState.playing) return false;
     final from = _player.volume;
     if (from <= 0) return false;
     // 渐出前记录用户目标音量：窗口内 _volume 若被污染，渐入仍收敛到此值
@@ -2378,10 +2380,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 继续观看：首次加载 seek 到上次进度（切集不传 startMs，从 0 播）
       if (startMs > 0 && mounted) {
         try {
-          await _player.seek(
-            position: startMs,
-            flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame),
-          );
+          await _player.seek(positionMs: startMs);
           _position = Duration(milliseconds: startMs);
           _positionNotifier.value = _position;
         } catch (_) {}
@@ -2389,7 +2388,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 启动播放（无条件，首播和切集都需要）
       if (mounted) {
-        _player.state = mdk.PlaybackState.playing;
+        _player.state = AdapterPlaybackState.playing;
         _syncPlayState();
         setState(() {});
       }
@@ -2522,12 +2521,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 仅在视频输出就绪时启动播放，避免有声无画
       if (_videoOutputReady()) {
         if (position > 0) {
-          await _player.seek(
-              position: (position * 1000).toInt(),
-              flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+          await _player.seek(positionMs: (position * 1000).toInt());
         }
 
-        _player.state = mdk.PlaybackState.playing;
+        _player.state = AdapterPlaybackState.playing;
         _syncPlayState();
         // 起播渐入恢复用户音量（无渐出时内部直接跳过）
         await _fadeInForSwitch();
@@ -2596,7 +2593,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) return;
 
       // 检查是否加载完成
-      if (event.newValue.test(mdk.MediaStatus.loaded)) {
+      if (event.newValue.test(AdapterMediaStatus.loaded)) {
         _duration = Duration(milliseconds: _player.mediaInfo.duration);
         _durationNotifier.value = _duration;
         _refreshTracks();
@@ -2606,7 +2603,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       // 检查是否播放结束
-      if (event.newValue.test(mdk.MediaStatus.end)) {
+      if (event.newValue.test(AdapterMediaStatus.end)) {
         if (_isSwitchingMedia) return;
         if (!_hasEpisodeList || !_canControlPlayback) return;
         final nextIndex = _currentEpisodeIndex + 1;
@@ -2618,25 +2615,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
 
       // 播放错误处理
-      if (event.newValue.test(mdk.MediaStatus.invalid)) {
+      if (event.newValue.test(AdapterMediaStatus.invalid)) {
         LogService().log('Player', '播放错误: ${event.newValue}');
         _addBroadcastMessage('播放出错');
       }
 
       // 卡顿边沿检测：buffering 进入 / buffered 或 stalled 退出
-      final wasBuffering = event.oldValue.test(mdk.MediaStatus.buffering);
-      final isBuffering = event.newValue.test(mdk.MediaStatus.buffering);
+      final wasBuffering = event.oldValue.test(AdapterMediaStatus.buffering);
+      final isBuffering = event.newValue.test(AdapterMediaStatus.buffering);
       if (!wasBuffering && isBuffering) {
         _diag.onStallStart('buffering');
         LogService().log('Diag', '开始缓冲');
       }
-      final isRecovered = !event.newValue.test(mdk.MediaStatus.buffering) &&
-          !event.newValue.test(mdk.MediaStatus.stalled);
+      final isRecovered = !event.newValue.test(AdapterMediaStatus.buffering) &&
+          !event.newValue.test(AdapterMediaStatus.stalled);
       if (wasBuffering && isRecovered) {
         _diag.onStallEnd();
         LogService().log('Diag', '缓冲结束');
       }
-      if (event.newValue.test(mdk.MediaStatus.stalled)) {
+      if (event.newValue.test(AdapterMediaStatus.stalled)) {
         _diag.onStallStart('underflow');
         _diag.note('underflow(数据供给中断)');
       }
@@ -3301,8 +3298,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_syncPaused) return;
     if (_isSyncing) return;
     // fvp: 检查是否在缓冲中
-    if (_player.mediaStatus.test(mdk.MediaStatus.buffering)) return;
-    if (_player.mediaStatus.test(mdk.MediaStatus.seeking)) return;
+    if (_player.mediaStatus.test(AdapterMediaStatus.buffering)) return;
+    if (_player.mediaStatus.test(AdapterMediaStatus.seeking)) return;
 
     final position = (message['position'] as num?)?.toDouble() ?? 0.0;
     final playing = message['playing'] as bool? ?? false;
@@ -3332,18 +3329,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       _lastSeekTime = DateTime.now();
       try {
-        _player.seek(
-            position: (expectedPos * 1000).toInt(),
-            flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+        _player.seek(positionMs: (expectedPos * 1000).toInt());
       } catch (_) {}
     }
 
     // 主持人控制播放/暂停状态
-    if (playing && _player.state != mdk.PlaybackState.playing) {
-      _player.state = mdk.PlaybackState.playing;
+    if (playing && _player.state != AdapterPlaybackState.playing) {
+      _player.state = AdapterPlaybackState.playing;
       _syncPlayState();
-    } else if (!playing && _player.state == mdk.PlaybackState.playing) {
-      _player.state = mdk.PlaybackState.paused;
+    } else if (!playing && _player.state == AdapterPlaybackState.playing) {
+      _player.state = AdapterPlaybackState.paused;
       _syncPlayState();
     }
   }
@@ -3359,19 +3354,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     switch (action) {
       case AppConstants.actionPlay:
-        _player.state = mdk.PlaybackState.playing;
+        _player.state = AdapterPlaybackState.playing;
         _syncPlayState();
         break;
       case AppConstants.actionPause:
-        _player.state = mdk.PlaybackState.paused;
+        _player.state = AdapterPlaybackState.paused;
         _syncPlayState();
         break;
       case AppConstants.actionSeek:
         final pos = (message['position'] as num?)?.toDouble() ?? 0.0;
         try {
-          _player.seek(
-              position: (pos * 1000).toInt(),
-              flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+          _player.seek(positionMs: (pos * 1000).toInt());
         } catch (_) {}
         break;
       case AppConstants.actionRate:
@@ -3518,7 +3511,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _showRoomDestroyedDialog() {
     _heartbeatTimer?.cancel();
-    _player.state = mdk.PlaybackState.stopped;
+    _player.state = AdapterPlaybackState.stopped;
     _syncPlayState();
     if (_rtmChannel != null) {
       try {
@@ -3598,11 +3591,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _heartbeatTimer = Timer.periodic(
       const Duration(milliseconds: AppConstants.rtmHeartbeatIntervalMs),
       (_) {
-        if (!mounted || _player.state != mdk.PlaybackState.playing) return;
+        if (!mounted || _player.state != AdapterPlaybackState.playing) return;
         final rtmService = ref.read(rtmServiceProvider);
         rtmService.sendHeartbeat(
           position: _player.position / 1000.0,
-          playing: _player.state == mdk.PlaybackState.playing,
+          playing: _player.state == AdapterPlaybackState.playing,
           rate: _player.playbackRate,
         );
       },
@@ -3619,13 +3612,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _togglePlayPause() {
-    if (_player.state == mdk.PlaybackState.playing) {
-      _player.state = mdk.PlaybackState.paused;
+    if (_player.state == AdapterPlaybackState.playing) {
+      _player.state = AdapterPlaybackState.paused;
       if (widget.roomCode != null) {
         _sendCommand(AppConstants.actionPause);
       }
     } else {
-      _player.state = mdk.PlaybackState.playing;
+      _player.state = AdapterPlaybackState.playing;
       // 回前台重载后恢复到暂停态的管线：恢复播放前对当前进度 seek 一次，
       // 强制重新驱动解码（否则可能「有图标无画面/无响应」）。
       if (_pendingResumeSeek) {
@@ -3646,10 +3639,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _reengageAfterResume(int pos) async {
     if (!mounted) return;
     try {
-      await _player.seek(
-        position: pos,
-        flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame),
-      );
+      await _player.seek(positionMs: pos);
     } catch (_) {}
   }
 
@@ -3689,7 +3679,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _syncPlayState() {
-    final playing = _player.state == mdk.PlaybackState.playing;
+    final playing = _player.state == AdapterPlaybackState.playing;
     if (_isPlayingNotifier.value != playing) {
       _isPlayingNotifier.value = playing;
       // 开播边沿重启自动隐藏计时：初进计时若在加载期（非 playing）烧掉，
@@ -3730,7 +3720,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       playSessionId: _playSessionId,
       mediaSourceId: _reportMediaSourceId,
       positionMs: _player.position,
-      isPaused: _player.state == mdk.PlaybackState.paused,
+      isPaused: _player.state == AdapterPlaybackState.paused,
     );
     // 进度变化即刷新续播栏（节流 ≤1 次/2s）
     if (ok && mounted) {
@@ -3905,8 +3895,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _position = Duration(milliseconds: value.toInt());
     _positionNotifier.value = _position;
     try {
-      _player.seek(
-          position: value.toInt(), flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+      _player.seek(positionMs: value.toInt());
     } catch (_) {}
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
@@ -3956,7 +3945,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 长时间无操作：隐藏全部控件（含选择器面板）并回落焦点。
   void _onControlsIdleHide() {
-    if (!mounted || _player.state != mdk.PlaybackState.playing) return;
+    if (!mounted || _player.state != AdapterPlaybackState.playing) return;
     _releaseFocusFromControls();
     _selectorOpenerNode = null;
     setState(() {
@@ -4083,7 +4072,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
       _isPlayerReady = false;
-      _player.state = mdk.PlaybackState.stopped;
+      _player.state = AdapterPlaybackState.stopped;
       _syncPlayState();
     } else if (_currentEpisodeIndex > index) {
       _currentEpisodeIndex--;
@@ -4358,7 +4347,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!_appBackgrounded) {
         _appBackgrounded = true;
         _wasPlayingBeforeBackground =
-            _isPlayerReady && _player.state == mdk.PlaybackState.playing;
+            _isPlayerReady && _player.state == AdapterPlaybackState.playing;
         LogService().log('Player',
             '进入后台/熄屏: output=${_effectiveVideoOutput()} wasPlaying=$_wasPlayingBeforeBackground');
       }
@@ -4407,7 +4396,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // renderVideo（那会让 mdk 停在「暂停但仍在 seek/decode」的半死状态，
       // 导致之后点播放无响应）。
       if (!wasPlaying) {
-        _player.state = mdk.PlaybackState.paused;
+        _player.state = AdapterPlaybackState.paused;
         _position = Duration(milliseconds: posMs);
         _positionNotifier.value = _position;
         _syncPlayState();
@@ -4425,7 +4414,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void dispose() {
     // 先停止播放器，确保音频立即停止
     try {
-      _player.state = mdk.PlaybackState.stopped;
+      _player.state = AdapterPlaybackState.stopped;
     } catch (_) {}
 
     _positionTimer?.cancel();
@@ -5706,14 +5695,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _isSwitchingDecode = true;
 
     try {
-      final wasPlaying = _player.state == mdk.PlaybackState.playing;
+      final wasPlaying = _player.state == AdapterPlaybackState.playing;
 
       // 获取当前位置
       final currentPos = _player.position;
 
       // Step1: 暂停（防止切换期间解码器输出帧导致撕裂）
       if (wasPlaying) {
-        _player.state = mdk.PlaybackState.paused;
+        _player.state = AdapterPlaybackState.paused;
         _syncPlayState();
       }
 
@@ -5728,13 +5717,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Step3: seek 触发帧刷新（强制新解码器解码当前帧）
       if (currentPos > 0) {
         try {
-          await _player.seek(position: currentPos);
+          await _player.seek(positionMs: currentPos);
         } catch (_) {}
       }
 
       // Step4: 恢复播放
       if (wasPlaying) {
-        _player.state = mdk.PlaybackState.playing;
+        _player.state = AdapterPlaybackState.playing;
         _syncPlayState();
       }
 
@@ -5754,7 +5743,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _togglePlayPause();
     // 指示器显示切换后的「当前可执行动作」，与底部控制栏按钮语义一致
     _showGestureIcon(
-        playPauseHintIcon(_player.state == mdk.PlaybackState.playing));
+        playPauseHintIcon(_player.state == AdapterPlaybackState.playing));
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
@@ -5806,8 +5795,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _positionNotifier.value = _position;
 
     try {
-      _player.seek(
-          position: targetMs, flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+      _player.seek(positionMs: targetMs);
     } catch (_) {}
 
     final seconds = (clampedDelta / 1000).round();
@@ -6570,7 +6558,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
                 if (_roomData != null &&
                     _isHost &&
-                    _player.state != mdk.PlaybackState.playing) ...[
+                    _player.state != AdapterPlaybackState.playing) ...[
                   TvFocusable(
                     onTap: () async {
                       // 房间模式聚合搜索（竖屏窗口见 pushRoomResourceSearch）：
@@ -6975,7 +6963,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (token.isNotEmpty) {
         _player.setProperty('avio.headers', 'X-Emby-Token: $token');
       }
-      _player.setMedia(subtitleUrl, mdk.MediaType.subtitle);
+      _player.setMedia(subtitleUrl, type: AdapterMediaType.subtitle);
       _player.activeSubtitleTracks = [embyIndex];
     } else {
       // 内嵌字幕：用 fvp 原生轨道切换，瞬间完成
@@ -7148,8 +7136,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// setMedia 外挂字幕文件并激活末轨（新轨追加在末尾）；返回激活位置。
   int _loadSubtitleFileIntoPlayer(String path) {
-    _player.setMedia(path, mdk.MediaType.subtitle);
-    final count = _player.mediaInfo.subtitle?.length ?? 0;
+    _player.setMedia(path, type: AdapterMediaType.subtitle);
+    final count = _player.mediaInfo.subtitleCount;
     if (count > 0) {
       _player.activeSubtitleTracks = [count - 1];
       return count - 1;
