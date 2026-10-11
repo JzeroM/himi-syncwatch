@@ -355,16 +355,16 @@ tasks.register("buildErikaAndroidRuntime") {
                     def destination = generatedJniLibs.get().dir(abi).asFile
                     project.copy {
                         from(project.zipTree(prebuiltArchive)) {
+                            // [HIMI PATCH] 不打包 libc++_shared.so：fvp(mdk) 已提供唯一副本，
+                            // 避免 mergeReleaseNativeLibs 重复冲突（同 NDK，等价）。
                             include "lib/liberika_capi.so"
-                            include "lib/libc++_shared.so"
                             include "${prebuiltName}/lib/liberika_capi.so"
-                            include "${prebuiltName}/lib/libc++_shared.so"
                             eachFile { details -> details.path = details.name }
                             includeEmptyDirs = false
                         }
                         into destination
                     }
-                    ["liberika_capi.so", "libc++_shared.so"].each { library ->
+                    ["liberika_capi.so"].each { library ->
                         def staged = new File(destination, library)
                         if (!staged.isFile() || staged.length() == 0L) {
                             throw new GradleException(
