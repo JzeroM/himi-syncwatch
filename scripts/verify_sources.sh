@@ -23,7 +23,9 @@ sec() { echo ""; echo "== $* =="; }
 skip() { sec "$1"; echo "  ⏭  跳过（无 $2 目录）"; }
 
 # ======================== Android ========================
-if [ -d android ]; then
+# 哨兵用 build.gradle 而非目录：gen_icons.dart 会往 android/app/src/main/res/
+# 写备用图标 PNG，导致 iOS job（已删 android/）出现残缺 android/ 目录。
+if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
   checked=1
   MAIN=android/app/src/main
   KOTLIN="$MAIN/kotlin/com/himi/syncwatch"
@@ -133,7 +135,7 @@ if [ -d android ]; then
       if grep -q "android:name=\"\.$alias\"" "$MANIFEST"; then
         ok "activity-alias .$alias"
       else
-        err "缺少 activity-alias .${alias}（图标切换依赖）"
+        err "缺少 activity-alias .$alias（图标切换依赖）"
       fi
     done
     if grep -q 'FlutterDynamicIconPlusService' "$MANIFEST"; then
@@ -146,7 +148,7 @@ if [ -d android ]; then
       if [ -s "$f" ]; then
         ok "备用图标 $alt mipmap 存在"
       else
-        err "缺少备用图标 ${f}（tool/gen_icons.dart 未生成或为空）"
+        err "缺少备用图标 $f（tool/gen_icons.dart 未生成或为空）"
       fi
     done
   fi
@@ -236,7 +238,7 @@ PYEOF
       err "图标资源不可用: $missing"
     fi
   else
-    err "缺少 ${ASSETS}（应用图标会被模板默认图标覆盖）"
+    err "缺少 $ASSETS（应用图标会被模板默认图标覆盖）"
   fi
 
   # 备用图标 PNG：由 tool/gen_icons.dart 生成到 ios/Runner/，CI 注册进
@@ -245,10 +247,10 @@ PYEOF
   sec "iOS · 备用图标 PNG"
   for alt in artistic glass neon; do
     for f in "$alt@2x.png" "$alt@3x.png"; do
-      if [ -s "ios/Runner/${f}" ]; then
-        ok "ios/Runner/${f}"
+      if [ -s "ios/Runner/$f" ]; then
+        ok "ios/Runner/$f"
       else
-        err "缺少 ios/Runner/${f}（tool/gen_icons.dart 未生成或为空）"
+        err "缺少 ios/Runner/$f（tool/gen_icons.dart 未生成或为空）"
       fi
     done
   done
@@ -263,7 +265,7 @@ for name in default artistic glass neon; do
   if [ -s "$src" ]; then
     ok "$src"
   else
-    err "缺少图标源图 ${src}（flutter_launcher_icons / tool/gen_icons.dart 依赖）"
+    err "缺少图标源图 $src（flutter_launcher_icons / tool/gen_icons.dart 依赖）"
   fi
 done
 
