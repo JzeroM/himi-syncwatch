@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:fvp/mdk.dart' as mdk;
+import 'package:media_kit/media_kit.dart';
 import 'package:himi_syncwatch/core/app.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -183,6 +184,9 @@ Future<void> _bootstrap() async {
     videoOutHdrAuto: settingsNotifier.snapshot.videoOutHdrAuto,
   );
   fvp.registerWith(options: fvpOptions);
+  // media_kit 全局初始化（第二引擎；TV 模式不注册，但 ensureInitialized
+  // 无副作用且需在首个 MediaKitPlayerAdapter 创建前调用）。
+  MediaKit.ensureInitialized();
   // 注入取证行：真机上无法从其他途径证明 global 选项已生效
   LogService().log('Diag', 'fvp options: $fvpOptions');
 

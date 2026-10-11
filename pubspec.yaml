@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.1.202+372
+version: 1.1.203+373
 
 environment:
   sdk: ^3.6.0
@@ -16,6 +16,10 @@ dependencies:
   riverpod_annotation: ^2.6.1
   # 播放器
   fvp: ^0.39.0
+  # 播放器第二引擎（media_kit/libmpv，仅手机/桌面，TV 模式不注册）
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
   # FFI（Windows/macOS/iOS 网卡计数读取）
   ffi: ^2.1.0
   # 声网 RTM（中国区）
