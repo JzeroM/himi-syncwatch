@@ -188,7 +188,17 @@ jobs:
           plist_set UIBackgroundModes -json '["audio"]'
           echo "CFBundleDisplayName = $(plutil -extract CFBundleDisplayName raw ios/Runner/Info.plist)"
 
+      # 备用应用图标（运行时切换）：flutter create 重建 iOS 工程会删掉
+      # ios/Runner/ 下的松散 PNG；这里从仓库 assets/icon 重新生成，并注册进
+      # Runner 目标资源，否则 CFBundleAlternateIcons 找不到图标、切换无效。
+      - name: 生成并注册 iOS 备用应用图标
+        run: |
+          dart run tool/gen_icons.dart
+          gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document
+          ruby scripts/register_ios_alt_icons.rb
+
       # 打包前拦截源码缺失：这类问题构建阶段零报错，只在产物上表现为图标/显示名不对
+      # （放在 gen_icons 之后：备用图标 PNG 由 gen_icons 生成）
       - name: 校验平台源码完整性
         run: bash scripts/verify_sources.sh
 
@@ -199,15 +209,6 @@ jobs:
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' ios/Runner.xcodeproj/project.pbxproj
 
       - run: flutter pub get
-
-      # 备用应用图标（运行时切换）：flutter create 重建 iOS 工程会删掉
-      # ios/Runner/ 下的松散 PNG；这里从仓库 assets/icon 重新生成，并注册进
-      # Runner 目标资源，否则 CFBundleAlternateIcons 找不到图标、切换无效。
-      - name: 生成并注册 iOS 备用应用图标
-        run: |
-          dart run tool/gen_icons.dart
-          gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document
-          ruby scripts/register_ios_alt_icons.rb
 
       - name: Run flutter build ios --release --no-codesign
         run: |
