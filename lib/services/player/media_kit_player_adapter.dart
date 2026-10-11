@@ -18,7 +18,16 @@ import 'player_adapter.dart';
 ///
 /// 刻度转换：volume 0.0-1.0 ↔ media_kit 0-100；position/duration ms ↔ Duration。
 class MediaKitPlayerAdapter implements PlayerAdapter {
-  MediaKitPlayerAdapter() : _player = Player() {
+  MediaKitPlayerAdapter()
+      : _player = Player(
+          configuration: const PlayerConfiguration(
+            // 开启 libass → sub-visibility=yes，mpv 将字幕（含 PGS/VobSub
+            // 图片字幕）渲染到视频纹理，与 mdk 行为一致。
+            // PGS 是图片字幕，mpv 内置解码器直接渲染，不依赖 libass 字体。
+            // Android 上文本字幕如遇缺字形，后续可捆绑 Noto 字体解决。
+            libass: true,
+          ),
+        ) {
     _controller = VideoController(_player);
     // 桥接两级 ValueListenable：controller.notifier → platformController.id
     _controller.notifier.addListener(_onControllerNotifier);
@@ -117,11 +126,30 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
   @override
   AdapterMediaInfo get mediaInfo {
     final s = _player.state;
+    // 填充真实音轨/视轨（过滤 auto/no 哨兵），恢复诊断与 codec 回退正确性
+    final audioStreams = _realAudioTracks
+        .map((t) => AdapterAudioStream(
+              codec: (t.codec ?? '').toLowerCase(),
+              bitRate: t.bitrate ?? 0,
+              channels: t.channelscount ?? 0,
+              sampleRate: t.samplerate ?? 0,
+            ))
+        .toList();
+    final videoStreams = _realVideoTracks
+        .map((t) => AdapterVideoStream(
+              codec: (t.codec ?? '').toLowerCase(),
+              width: t.w ?? 0,
+              height: t.h ?? 0,
+              par: t.par ?? 1.0,
+              rotation: t.rotate ?? 0,
+              bitRate: t.bitrate ?? 0,
+            ))
+        .toList();
     return AdapterMediaInfo(
       duration: s.duration.inMilliseconds,
-      audio: const [],
-      video: const [],
-      subtitleCount: s.tracks.subtitle.length,
+      audio: audioStreams,
+      video: videoStreams,
+      subtitleCount: _realSubtitleTracks.length,
     );
   }
 
@@ -171,46 +199,73 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
   void renderVideo() {}
 
   // ── 轨道 ──────────────────────────────────────────────────
+  //
+  // media_kit 的 state.tracks.{audio,subtitle} 列表头部预置 auto/no 两个
+  // 哨兵（id='auto'/'no'），真实轨在后。PlayerAdapter 接口语义是「Emby
+  // 位置 = 真实轨位置」（与 mdk 一致），故此处过滤哨兵后再按位置索引。
+
+  /// 纯函数：过滤掉 auto/no 哨兵，返回真实轨列表（便于单测）。
+  /// 通过 `id` getter 判等；AudioTrack/VideoTrack/SubtitleTrack 均有 `id`。
+  static List<T> filterRealTracks<T>(List<T> tracks,
+          String Function(T) idOf) =>
+      tracks
+          .where((t) {
+            final id = idOf(t);
+            return id != 'auto' && id != 'no';
+          })
+          .toList();
+
+  /// 过滤掉 auto/no 哨兵，返回真实音轨列表。
+  List<AudioTrack> get _realAudioTracks =>
+      filterRealTracks(_player.state.tracks.audio, (t) => t.id);
+
+  /// 过滤掉 auto/no 哨兵，返回真实视轨列表。
+  List<VideoTrack> get _realVideoTracks =>
+      filterRealTracks(_player.state.tracks.video, (t) => t.id);
+
+  /// 过滤掉 auto/no 哨兵，返回真实字幕轨列表。
+  List<SubtitleTrack> get _realSubtitleTracks =>
+      filterRealTracks(_player.state.tracks.subtitle, (t) => t.id);
 
   @override
   List<int> get activeAudioTracks {
-    final tracks = _player.state.tracks.audio;
+    final real = _realAudioTracks;
     final current = _player.state.track.audio;
-    final idx = tracks.indexOf(current);
+    final idx = real.indexOf(current);
     return idx >= 0 ? [idx] : const [];
   }
 
   @override
   set activeAudioTracks(List<int> tracks) {
-    final list = _player.state.tracks.audio;
     if (tracks.isEmpty) {
       _player.setAudioTrack(AudioTrack.no());
       return;
     }
+    final real = _realAudioTracks;
     final idx = tracks.first;
-    if (idx >= 0 && idx < list.length) {
-      _player.setAudioTrack(list[idx]);
+    if (idx >= 0 && idx < real.length) {
+      _player.setAudioTrack(real[idx]);
     }
   }
 
   @override
   List<int> get activeSubtitleTracks {
-    final tracks = _player.state.tracks.subtitle;
+    final real = _realSubtitleTracks;
     final current = _player.state.track.subtitle;
-    final idx = tracks.indexOf(current);
+    final idx = real.indexOf(current);
     return idx >= 0 ? [idx] : const [];
   }
 
   @override
   set activeSubtitleTracks(List<int> tracks) {
-    final list = _player.state.tracks.subtitle;
     if (tracks.isEmpty) {
       _player.setSubtitleTrack(SubtitleTrack.no());
       return;
     }
+    final real = _realSubtitleTracks;
     final idx = tracks.first;
-    if (idx >= 0 && idx < list.length) {
-      _player.setSubtitleTrack(list[idx]);
+    if (idx >= 0 && idx < real.length) {
+      _player.setSubtitleTrack(real[idx]);
     }
   }
 
@@ -302,7 +357,21 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> setMedia(String uri, {required AdapterMediaType type}) async {
-    throw UnimplementedError('media_kit 不支持外挂字幕 setMedia');
+    switch (type) {
+      case AdapterMediaType.subtitle:
+        // media_kit 通过 SubtitleTrack.uri → mpv sub-add 加载外挂字幕。
+        // 网络 URL 需鉴权头时，mpv 的 sub-add 不走 Media(httpHeaders:)，
+        // 需提前设置 http-header-fields 属性。
+        if (_httpHeaders.isNotEmpty) {
+          final entries = _httpHeaders.entries
+              .map((e) => '${e.key}: ${e.value}')
+              .join(',');
+          setProperty('http-header-fields', entries);
+        }
+        await _player.setSubtitleTrack(SubtitleTrack.uri(uri));
+      case AdapterMediaType.audio:
+        await _player.setAudioTrack(AudioTrack.uri(uri));
+    }
   }
 
   @override

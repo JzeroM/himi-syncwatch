@@ -4930,7 +4930,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     controller:
                         (_player as MediaKitPlayerAdapter).videoController,
                     controls: null,
-                    fit: BoxFit.contain,
+                    fit: _videoFit,
                     wakelock: false,
                   )
                 : _usesSurfaceView
@@ -7151,7 +7151,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return sid != null ? '$sid:$id' : id;
   }
 
-  void _selectEmbySubtitle(int embyIndex) {
+  Future<void> _selectEmbySubtitle(int embyIndex) async {
     final stream = _embySubtitleStreams[embyIndex];
     final isExternal =
         stream.isExternal || stream.subtitleLocationType == 'ExternalStream';
@@ -7177,7 +7177,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _player.setProperty('avio.headers', 'X-Emby-Token: $token');
         }
       }
-      _player.setMedia(subtitleUrl, type: AdapterMediaType.subtitle);
+      try {
+        await _player
+            .setMedia(subtitleUrl, type: AdapterMediaType.subtitle);
+      } catch (e) {
+        LogService().log('Player', '加载外挂字幕失败: $e');
+      }
       _player.activeSubtitleTracks = [embyIndex];
     } else {
       // 内嵌字幕：用 fvp 原生轨道切换，瞬间完成
@@ -7304,7 +7309,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (idx == -1) {
       final path = _activeLocalSubtitlePath;
       if (path == null) return;
-      _loadSubtitleFileIntoPlayer(path);
+      unawaited(_loadSubtitleFileIntoPlayer(path));
     } else {
       final pos = _embySubtitleStreams.indexWhere((s) => s.index == idx);
       if (pos >= 0) _selectEmbySubtitle(pos);
@@ -7342,15 +7347,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         dir: dir,
       );
       if (!mounted) return;
-      _loadSubtitleFileIntoPlayer(path);
+      await _loadSubtitleFileIntoPlayer(path);
     } catch (e) {
       LogService().log('Player', '字幕延迟重载失败: $e');
     }
   }
 
   /// setMedia 外挂字幕文件并激活末轨（新轨追加在末尾）；返回激活位置。
-  int _loadSubtitleFileIntoPlayer(String path) {
-    _player.setMedia(path, type: AdapterMediaType.subtitle);
+  ///
+  /// media_kit 的 `sub-add ... select` 会自动选中新轨，无需手动 count-1；
+  /// mdk 的 setMedia 是同步追加，count-1 语义成立。
+  Future<int> _loadSubtitleFileIntoPlayer(String path) async {
+    await _player.setMedia(path, type: AdapterMediaType.subtitle);
+    if (_player is MediaKitPlayerAdapter) {
+      // sub-add select 已自动激活新轨
+      return _player.activeSubtitleTracks.isNotEmpty
+          ? _player.activeSubtitleTracks.first
+          : -1;
+    }
     final count = _player.mediaInfo.subtitleCount;
     if (count > 0) {
       _player.activeSubtitleTracks = [count - 1];
@@ -7372,7 +7386,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (filePath == null) return;
 
       // 加载本地字幕文件
-      _loadSubtitleFileIntoPlayer(filePath);
+      await _loadSubtitleFileIntoPlayer(filePath);
 
       setState(() {
         _activeSubtitleIndex = -1;
