@@ -24,7 +24,9 @@ android {
         applicationId = "com.himi.syncwatch"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // erika_flutter 要求 minSdk 26（Android 8.0）；低于该版本的设备仅 MDK 可用路径已不存在，
+        // 故整体提升到 26。
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
