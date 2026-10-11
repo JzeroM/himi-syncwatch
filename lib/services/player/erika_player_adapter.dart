@@ -4,6 +4,8 @@ import 'package:erika_flutter/erika_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:ui' show Size;
 
+import 'package:himi_syncwatch/services/log_service.dart';
+
 import 'player_adapter.dart';
 
 /// Erika（自研 Rust 内核）播放器适配器：包装 [ErikaPlayer]，实现 [PlayerAdapter]。
@@ -46,16 +48,23 @@ class ErikaPlayerAdapter implements PlayerAdapter {
 
   AdapterPlaybackState _state = AdapterPlaybackState.stopped;
   AdapterMediaStatus _status = AdapterMediaStatus.unloaded;
-  int _positionMs = 0;
+
+  /// position 锚点：**仅 positionChanged 事件更新**（其他事件 positionMicros=0），
+  /// 播放中由 [position] getter 按速率外推。duration 同理仅在 >0 时更新。
+  int _lastPositionMs = 0;
+  DateTime _lastPositionUpdate = DateTime.now();
   int _durationMs = 0;
   double _volume = 1.0;
   double _rate = 1.0;
+  bool _buffering = false;
+
+  /// seek 栅栏：忽略 seek 途中迟到的旧 position 事件（与目标距离 >1.5s）。
+  int? _pendingSeekTargetMs;
+  DateTime? _seekFenceUntil;
 
   List<ErikaTrackInfo> _audioTracks = const [];
   List<ErikaTrackInfo> _subtitleTracks = const [];
   List<ErikaTrackInfo> _videoTracks = const [];
-  int? _selectedAudioId;
-  int? _selectedSubtitleId;
 
   String? _mediaUri;
   Map<String, String> _httpHeaders = const {};
@@ -74,10 +83,11 @@ class ErikaPlayerAdapter implements PlayerAdapter {
 
   void _onEvent(ErikaPlayerEvent e) {
     if (_disposed) return;
-    _positionMs = e.position.inMilliseconds;
-    _durationMs = e.duration.inMilliseconds;
-    _selectedAudioId = e.trackSelection.audio;
-    _selectedSubtitleId = e.trackSelection.subtitle;
+
+    _buffering = e.buffering;
+
+    // 轨表：仅 tracksChanged/trackSelectionChanged（及其后续事件快照）携带，
+    // 其余事件 trackList 为空 → 仅在非空时重建，避免清空。
     if (e.trackList.isNotEmpty) {
       _videoTracks =
           e.trackList.where((t) => t.kind == ErikaTrackKind.video).toList();
@@ -87,11 +97,28 @@ class ErikaPlayerAdapter implements PlayerAdapter {
           e.trackList.where((t) => t.kind == ErikaTrackKind.subtitle).toList();
     }
 
+    // duration：仅 >0 时更新（其余事件 durationMicros=0）。
+    if (e.duration > Duration.zero) {
+      _durationMs = e.duration.inMilliseconds;
+    }
+
+    // position：仅 positionChanged 事件有效（其余事件 positionMicros=0）。
+    if (e.kind == ErikaEventKind.positionChanged &&
+        e.position >= Duration.zero) {
+      _applyPositionSample(e.position.inMilliseconds);
+    }
+
     final ns = _mapState(e.state);
     if (ns != _state) {
       final old = _state;
       _state = ns;
       _stateCtrl.add((oldValue: old, newValue: ns));
+      // 起播后轨表可能才解析完：补刷一次。
+      if (ns == AdapterPlaybackState.playing &&
+          _audioTracks.isEmpty &&
+          _subtitleTracks.isEmpty) {
+        unawaited(_refreshTracks());
+      }
     }
 
     final st = _mapStatus(e);
@@ -108,6 +135,23 @@ class ErikaPlayerAdapter implements PlayerAdapter {
         e.error ?? e.message ?? 'Erika 播放错误',
       ));
     }
+  }
+
+  /// 处理 positionChanged 采样：seek 栅栏期内忽略与目标差距过大的旧位置。
+  void _applyPositionSample(int ms) {
+    final target = _pendingSeekTargetMs;
+    final fence = _seekFenceUntil;
+    final now = DateTime.now();
+    if (target != null && fence != null && now.isBefore(fence)) {
+      if ((ms - target).abs() > 1500) return;
+      _pendingSeekTargetMs = null;
+      _seekFenceUntil = null;
+    } else if (fence != null && !now.isBefore(fence)) {
+      _pendingSeekTargetMs = null;
+      _seekFenceUntil = null;
+    }
+    _lastPositionMs = ms;
+    _lastPositionUpdate = now;
   }
 
   AdapterPlaybackState _mapState(ErikaPlaybackState s) {
@@ -138,7 +182,7 @@ class ErikaPlayerAdapter implements PlayerAdapter {
         break;
     }
     if (e.buffering) return AdapterMediaStatus.buffering;
-    if (e.duration.inMilliseconds > 0) return AdapterMediaStatus.loaded;
+    if (_durationMs > 0) return AdapterMediaStatus.loaded;
     return AdapterMediaStatus.loading;
   }
 
@@ -162,7 +206,13 @@ class ErikaPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> seek({required int positionMs}) async {
-    await _erikaPlayer.seek(Duration(milliseconds: positionMs));
+    final clamped = positionMs < 0 ? 0 : positionMs;
+    // 乐观置位 + seek 栅栏：避免 seek 完成前进度条回弹到旧位置。
+    _lastPositionMs = clamped;
+    _lastPositionUpdate = DateTime.now();
+    _pendingSeekTargetMs = clamped;
+    _seekFenceUntil = DateTime.now().add(const Duration(milliseconds: 1500));
+    await _erikaPlayer.seek(Duration(milliseconds: clamped));
   }
 
   // ── 媒体加载 ──────────────────────────────────────────────
@@ -190,13 +240,27 @@ class ErikaPlayerAdapter implements PlayerAdapter {
           list.where((t) => t.kind == ErikaTrackKind.audio).toList();
       _subtitleTracks =
           list.where((t) => t.kind == ErikaTrackKind.subtitle).toList();
-    } catch (_) {}
+      LogService().log('Erika',
+          '轨表刷新: V=${_videoTracks.length} A=${_audioTracks.length} S=${_subtitleTracks.length}');
+    } catch (e) {
+      LogService().log('Erika', '轨表刷新失败: $e');
+    }
   }
 
   // ── 属性 ──────────────────────────────────────────────────
 
   @override
-  int get position => _positionMs;
+  int get position {
+    if (_state != AdapterPlaybackState.playing || _buffering) {
+      return _lastPositionMs;
+    }
+    final elapsed =
+        DateTime.now().difference(_lastPositionUpdate).inMilliseconds;
+    var pos = _lastPositionMs + (elapsed * _rate).round();
+    if (pos < 0) pos = 0;
+    if (_durationMs > 0 && pos > _durationMs) pos = _durationMs;
+    return pos;
+  }
 
   @override
   int get duration => _durationMs;
@@ -272,7 +336,8 @@ class ErikaPlayerAdapter implements PlayerAdapter {
 
   @override
   List<int> get activeAudioTracks {
-    final idx = _audioTracks.indexWhere((t) => t.id == _selectedAudioId);
+    // 选中态取自 trackList[i].selected（trackSelection 事件字段多数为空）。
+    final idx = _audioTracks.indexWhere((t) => t.selected);
     return idx >= 0 ? [idx] : const [];
   }
 
@@ -282,15 +347,26 @@ class ErikaPlayerAdapter implements PlayerAdapter {
       unawaited(_erikaPlayer.selectAudioTrack(null));
       return;
     }
-    final idx = tracks.first;
-    if (idx >= 0 && idx < _audioTracks.length) {
-      unawaited(_erikaPlayer.selectAudioTrack(_audioTracks[idx].id));
+    unawaited(_selectAudioIndex(tracks.first));
+  }
+
+  Future<void> _selectAudioIndex(int idx) async {
+    if (idx < 0) return;
+    if (idx >= _audioTracks.length) await _refreshTracks();
+    if (idx < _audioTracks.length) {
+      final id = _audioTracks[idx].id;
+      LogService().log(
+          'Erika', '选音轨 idx=$idx id=$id (共${_audioTracks.length})');
+      await _erikaPlayer.selectAudioTrack(id);
+    } else {
+      LogService()
+          .log('Erika', '选音轨越界 idx=$idx (共${_audioTracks.length})');
     }
   }
 
   @override
   List<int> get activeSubtitleTracks {
-    final idx = _subtitleTracks.indexWhere((t) => t.id == _selectedSubtitleId);
+    final idx = _subtitleTracks.indexWhere((t) => t.selected);
     return idx >= 0 ? [idx] : const [];
   }
 
@@ -300,9 +376,20 @@ class ErikaPlayerAdapter implements PlayerAdapter {
       unawaited(_erikaPlayer.selectSubtitleTrack(null));
       return;
     }
-    final idx = tracks.first;
-    if (idx >= 0 && idx < _subtitleTracks.length) {
-      unawaited(_erikaPlayer.selectSubtitleTrack(_subtitleTracks[idx].id));
+    unawaited(_selectSubtitleIndex(tracks.first));
+  }
+
+  Future<void> _selectSubtitleIndex(int idx) async {
+    if (idx < 0) return;
+    if (idx >= _subtitleTracks.length) await _refreshTracks();
+    if (idx < _subtitleTracks.length) {
+      final id = _subtitleTracks[idx].id;
+      LogService().log(
+          'Erika', '选字幕 idx=$idx id=$id (共${_subtitleTracks.length})');
+      await _erikaPlayer.selectSubtitleTrack(id);
+    } else {
+      LogService()
+          .log('Erika', '选字幕越界 idx=$idx (共${_subtitleTracks.length})');
     }
   }
 

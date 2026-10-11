@@ -29,9 +29,9 @@ class AppSettings {
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
 
-  /// 播放器引擎：'mdk'（默认，fvp/libmdk）或 'media_kit'（libmpv）。
-  /// TV 模式仅 mdk（media_kit 无 TV 验证）。
-  final String playerEngine; // 'mdk', 'media_kit'
+  /// 默认播放引擎（起播用）：'mdk'（默认）/ 'erika' / 'media_kit'（仅 Windows）。
+  /// 播放器内切换仅本会话，下次起播回到此默认。
+  final String defaultEngine;
 
   // ── media_kit 引擎专属设置（mpv 属性，通过 NativePlayer.setProperty 生效）──
   /// hwdec：'auto-safe'（默认）/ 'no'（软解）/ 'auto'（含不安全硬件路径）。
@@ -234,7 +234,7 @@ class AppSettings {
 
   const AppSettings({
     this.decodeMode = 'auto',
-    this.playerEngine = 'mdk',
+    this.defaultEngine = 'mdk',
     this.mkHwdec = 'auto-safe',
     this.mkToneMapping = 'auto',
     this.mkCacheSize = 150,
@@ -287,7 +287,7 @@ class AppSettings {
 
   AppSettings copyWith({
     String? decodeMode,
-    String? playerEngine,
+    String? defaultEngine,
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
@@ -337,7 +337,7 @@ class AppSettings {
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
-      playerEngine: playerEngine ?? this.playerEngine,
+      defaultEngine: defaultEngine ?? this.defaultEngine,
       mkHwdec: mkHwdec ?? this.mkHwdec,
       mkToneMapping: mkToneMapping ?? this.mkToneMapping,
       mkCacheSize: mkCacheSize ?? this.mkCacheSize,
@@ -409,7 +409,7 @@ class AppSettings {
 
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
-        'playerEngine': playerEngine,
+        'defaultEngine': defaultEngine,
         'mkHwdec': mkHwdec,
         'mkToneMapping': mkToneMapping,
         'mkCacheSize': mkCacheSize,
@@ -485,7 +485,9 @@ class AppSettings {
     }
     return AppSettings(
       decodeMode: mode,
-      playerEngine: _normalizePlayerEngine(json['playerEngine']),
+      // 迁移：旧键 playerEngine → defaultEngine
+      defaultEngine:
+          _normalizePlayerEngine(json['defaultEngine'] ?? json['playerEngine']),
       mkHwdec: const ['auto-safe', 'auto', 'no'].contains(json['mkHwdec'])
           ? json['mkHwdec'] as String
           : 'auto-safe',

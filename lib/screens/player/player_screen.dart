@@ -1339,7 +1339,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 播放引擎：从设置读取；TV 模式强制 mdk（media_kit 无 TV 验证）
     final s = ref.read(settingsProvider);
     _currentEngine =
-        s.tvMode ? PlayerEngine.mdk : PlayerEngine.fromId(s.playerEngine);
+        s.tvMode ? PlayerEngine.mdk : PlayerEngine.fromId(s.defaultEngine);
     _player = PlayerEngineFactory.create(_currentEngine, s);
     // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
@@ -2327,15 +2327,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.dispose();
     } catch (_) {}
 
-    // 3. 创建新引擎
+    // 3. 创建新引擎（切换仅本会话，不回写 defaultEngine）
     _currentEngine = newEngine;
     // ignore: invalid_use_of_protected_member
     _player = PlayerEngineFactory.create(newEngine, settings);
 
-    // 持久化设置
-    await ref.read(settingsProvider.notifier).update(
-          playerEngine: newEngine.id,
-        );
     if (!mounted) return;
 
     // 4. 新引擎初始化（字幕属性 / 色彩空间等）

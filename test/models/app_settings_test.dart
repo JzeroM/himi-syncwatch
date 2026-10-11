@@ -980,35 +980,43 @@ void main() {
     });
   });
 
-  group('playerEngine 归一（平台感知）', () {
+  group('defaultEngine 归一（平台感知）', () {
     test('erika 在非 web 平台合法', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppSettings.fromJson({'playerEngine': 'erika'}).playerEngine,
+      expect(AppSettings.fromJson({'defaultEngine': 'erika'}).defaultEngine,
           'erika');
     });
 
     test('Windows 允许 media_kit', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppSettings.fromJson({'playerEngine': 'media_kit'}).playerEngine,
+      expect(AppSettings.fromJson({'defaultEngine': 'media_kit'}).defaultEngine,
           'media_kit');
     });
 
     test('非 Windows 的 media_kit 静默回退 mdk', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppSettings.fromJson({'playerEngine': 'media_kit'}).playerEngine,
+      expect(AppSettings.fromJson({'defaultEngine': 'media_kit'}).defaultEngine,
           'mdk');
 
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      expect(AppSettings.fromJson({'playerEngine': 'media_kit'}).playerEngine,
+      expect(AppSettings.fromJson({'defaultEngine': 'media_kit'}).defaultEngine,
           'mdk');
     });
 
+    test('迁移：旧键 playerEngine → defaultEngine', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(AppSettings.fromJson({'playerEngine': 'media_kit'}).defaultEngine,
+          'media_kit');
+    });
+
     test('非法值回退 mdk', () {
-      expect(AppSettings.fromJson({'playerEngine': 'vlc'}).playerEngine, 'mdk');
-      expect(AppSettings.fromJson({}).playerEngine, 'mdk');
+      expect(AppSettings.fromJson({'defaultEngine': 'vlc'}).defaultEngine,
+          'mdk');
+      expect(AppSettings.fromJson({}).defaultEngine, 'mdk');
     });
   });
 }

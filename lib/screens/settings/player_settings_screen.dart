@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
+import 'package:himi_syncwatch/services/player/player_engine.dart';
 
 /// 播放器设置枢纽页：播放器配置入口 / 网速 / 弹幕配置。
 ///
@@ -15,11 +16,26 @@ class PlayerSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
+    final engines =
+        PlayerEngineFactory.supportedEngines(tvMode: settings.tvMode);
 
     return SettingsSubPage(
       pageKey: const ValueKey('playerSettingsPage'),
       title: '播放器',
       children: [
+        // ── 默认引擎（起播用；播放器内切换仅本会话）────────────
+        if (engines.length > 1) ...[
+          settingOptionTile(
+            context: context,
+            tvMode: settings.tvMode,
+            title: '默认引擎',
+            subtitle: _engineDesc(settings.defaultEngine),
+            labels: {for (final e in engines) e.id: e.label},
+            value: settings.defaultEngine,
+            onSelected: (v) => notifier.update(defaultEngine: v),
+          ),
+          const Divider(height: 1),
+        ],
         // ── 播放器配置（tabbed：MDK / media_kit / Erika）────────
         settingsTvWrapRow(
           tvMode: settings.tvMode,
@@ -72,5 +88,16 @@ class PlayerSettingsScreen extends ConsumerWidget {
         const Divider(height: 1),
       ],
     );
+  }
+
+  static String _engineDesc(String id) {
+    switch (id) {
+      case 'media_kit':
+        return 'media_kit（libmpv，仅 Windows）';
+      case 'erika':
+        return 'Erika（原生位图字幕 PGS + HDR）';
+      default:
+        return 'MDK（默认，原生 Dolby Vision）';
+    }
   }
 }
