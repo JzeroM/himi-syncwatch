@@ -13,6 +13,7 @@ import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/media_kit_player_adapter.dart';
+import 'package:media_kit_video/media_kit_video.dart' show Video;
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/episode_info.dart';
@@ -1506,6 +1507,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final settings = ref.read(settingsProvider);
 
     // 配置解码器
+    // 锁屏保持
+    try {
+      await WakelockPlus.enable();
+    } catch (_) {}
+
+    // media_kit 引擎：应用 hwdec/tone-mapping/cache-size 设置
+    // mdk 专属属性（avformat.* / demux.* / avcodec.* / videoDecoders 等）
+    // 对 mpv 无效，media_kit 档跳过
+    if (_player is MediaKitPlayerAdapter) {
+      (_player as MediaKitPlayerAdapter).applySettings(
+        hwdec: settings.mkHwdec,
+        toneMapping: settings.mkToneMapping,
+        cacheSizeMb: settings.mkCacheSize,
+      );
+      return;
+    }
+
     // 音频硬解接线（1.1.186）：Android 不接线时 mdk 音频默认直接
     // FFmpeg 软解（真机日志确证），EAC3 软解音频钟抖动会让视频按
     // avsync 成簇判迟到丢帧；auto/hw 档优先 AMediaCodec，FFmpeg 兜底。
@@ -1536,20 +1554,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // FFmpeg 解码线程数：0 = 逻辑核心数 + 1（仅软解回退时生效，硬解忽略）
     _player.setProperty('avcodec.threads', '0');
-
-    // 锁屏保持
-    try {
-      await WakelockPlus.enable();
-    } catch (_) {}
-
-    // media_kit 引擎：应用 hwdec/tone-mapping/cache-size 设置
-    if (_player is MediaKitPlayerAdapter) {
-      (_player as MediaKitPlayerAdapter).applySettings(
-        hwdec: settings.mkHwdec,
-        toneMapping: settings.mkToneMapping,
-        cacheSizeMb: settings.mkCacheSize,
-      );
-    }
   }
 
   /// 当前活跃音轨的编码名（小写），取不到返回 ''。
@@ -2000,8 +2004,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _effectiveVideoOutput() == 'surfaceViewDirect';
 
   /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
-  /// 媒体信息拿到视频尺寸即就绪。
+  /// 媒体信息拿到视频尺寸即就绪。media_kit 档：VideoController 注册后即就绪。
   bool _videoOutputReady() {
+    if (_currentEngine == PlayerEngine.mediaKit) {
+      return _player.textureId.value != null;
+    }
     if (_usesSurfaceView) {
       // textureSize 可能仍在超时等待中：mediaInfo 已有有效尺寸即视为
       // 可起播（观众路径据此决定 state=playing，不能卡到尺寸 future）
@@ -2330,8 +2337,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 6. 恢复媒体播放
     if (savedUrl.isNotEmpty) {
       try {
+        // 鉴权：mdk 用 avio.headers 属性；media_kit 用 Media(httpHeaders:)
         if (savedToken.isNotEmpty) {
-          _player.setProperty('avio.headers', 'X-Emby-Token: $savedToken');
+          if (_player is MediaKitPlayerAdapter) {
+            (_player as MediaKitPlayerAdapter)
+                .setHttpHeaders({'X-Emby-Token': savedToken});
+          } else {
+            _player.setProperty('avio.headers', 'X-Emby-Token: $savedToken');
+          }
         }
         _player.media = savedUrl;
         await _player.prepare();
@@ -2434,7 +2447,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 设置媒体并准备播放（native 调用前必须 mounted）
       if (!mounted) return false;
       if (token.isNotEmpty) {
-        _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+        if (_player is MediaKitPlayerAdapter) {
+          (_player as MediaKitPlayerAdapter)
+              .setHttpHeaders({'X-Emby-Token': token});
+        } else {
+          _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+        }
       }
 
       // HDR image=0 实验（1.1.190 官方 setDecoders 方式）：Emby 元数据
@@ -2587,7 +2605,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
-        _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+        if (_player is MediaKitPlayerAdapter) {
+          (_player as MediaKitPlayerAdapter)
+              .setHttpHeaders({'X-Emby-Token': token});
+        } else {
+          _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+        }
       }
 
       // prepare 前探测 DV 解码能力
@@ -4901,7 +4924,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final videoContent = _isPlayerReady ||
             (!_hasEpisodeList && widget.roomCode == null)
         ? Center(
-            child: _usesSurfaceView
+            child: _currentEngine == PlayerEngine.mediaKit
+                // media_kit：挂载 Video widget（VideoController 注册 Flutter Texture）
+                ? Video(
+                    controller:
+                        (_player as MediaKitPlayerAdapter).videoController,
+                    controls: null,
+                    fit: BoxFit.contain,
+                    wakelock: false,
+                  )
+                : _usesSurfaceView
                 ? _buildSurfaceViewVideo()
                 : ValueListenableBuilder<int?>(
                     valueListenable: _player.textureId,
@@ -7138,7 +7170,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
       final token = config?.accessToken ?? '';
       if (token.isNotEmpty) {
-        _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+        if (_player is MediaKitPlayerAdapter) {
+          (_player as MediaKitPlayerAdapter)
+              .setHttpHeaders({'X-Emby-Token': token});
+        } else {
+          _player.setProperty('avio.headers', 'X-Emby-Token: $token');
+        }
       }
       _player.setMedia(subtitleUrl, type: AdapterMediaType.subtitle);
       _player.activeSubtitleTracks = [embyIndex];

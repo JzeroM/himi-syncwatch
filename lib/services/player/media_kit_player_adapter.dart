@@ -2,14 +2,15 @@ import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import 'player_adapter.dart';
 
-/// media_kit（libmpv）播放器适配器：包装 media_kit Player，实现 [PlayerAdapter] 接口。
+/// media_kit（libmpv）播放器适配器：包装 media_kit Player + VideoController。
 ///
 /// Phase 2 引擎。限制（仅手机/桌面，TV 模式不注册）：
-/// - 渲染通道：无 textureId/nativeHandle（Video widget 挂载），updateTexture/
-///   textureSize/renderVideo 为 no-op
+/// - 渲染：通过 VideoController 注册 Flutter Texture，textureId 桥接到
+///   PlatformVideoController.id；UI 层挂载 Video(controller: ...) 渲染
 /// - setProperty/getProperty：走 NativePlayer，非 NativePlayer 时 no-op
 /// - setMedia（外挂字幕）：media_kit 无等价 API，抛 UnimplementedError
 /// - setBufferRange/videoDecoders/audioDecoders/audioBackends/setColorSpace：
@@ -17,12 +18,51 @@ import 'player_adapter.dart';
 ///
 /// 刻度转换：volume 0.0-1.0 ↔ media_kit 0-100；position/duration ms ↔ Duration。
 class MediaKitPlayerAdapter implements PlayerAdapter {
-  MediaKitPlayerAdapter() : _player = Player();
+  MediaKitPlayerAdapter() : _player = Player() {
+    _controller = VideoController(_player);
+    // 桥接两级 ValueListenable：controller.notifier → platformController.id
+    _controller.notifier.addListener(_onControllerNotifier);
+  }
 
   final Player _player;
+  late final VideoController _controller;
+
+  /// UI 层挂载 Video widget 用。
+  VideoController get videoController => _controller;
 
   /// 诊断面板直接访问底层 media_kit Player（仅 media_kit 档）。
   Player get raw => _player;
+
+  // ── textureId 桥接 ────────────────────────────────────────
+
+  final ValueNotifier<int?> _textureId = ValueNotifier<int?>(null);
+  PlatformVideoController? _platformController;
+
+  void _onControllerNotifier() {
+    final pc = _controller.notifier.value;
+    if (_platformController != null && _platformController != pc) {
+      _platformController!.id.removeListener(_onPlatformId);
+    }
+    _platformController = pc;
+    if (pc != null) {
+      pc.id.addListener(_onPlatformId);
+      _textureId.value = pc.id.value;
+    }
+  }
+
+  void _onPlatformId() {
+    _textureId.value = _platformController?.id.value;
+  }
+
+  // ── HTTP 鉴权头 ───────────────────────────────────────────
+
+  Map<String, String> _httpHeaders = {};
+
+  /// 设置 HTTP 鉴权头（media_kit 通过 Media(httpHeaders:) 传递，
+  /// mdk 的 avio.headers 属性对 mpv 无效）。
+  void setHttpHeaders(Map<String, String> headers) {
+    _httpHeaders = Map.of(headers);
+  }
 
   // ── 播放控制 ──────────────────────────────────────────────
 
@@ -63,7 +103,7 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
   Future<void> prepare() async {
     final uri = _currentUri;
     if (uri == null) return;
-    await _player.open(Media(uri));
+    await _player.open(Media(uri, httpHeaders: _httpHeaders));
   }
 
   // ── 属性 ──────────────────────────────────────────────────
@@ -110,12 +150,12 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
   int buffered() => 0;
 
   @override
-  ValueListenable<int?> get textureId => _kNoTexture;
+  ValueListenable<int?> get textureId => _textureId;
 
   @override
   int get nativeHandle => 0;
 
-  // ── 渲染（no-op）───────────────────────────────────────────
+  // ── 渲染（no-op，由 Video widget 接管）────────────────────
 
   @override
   Future<int> updateTexture({int? width, int? height, bool? tunnel}) async =>
@@ -272,7 +312,10 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
   // ── 生命周期 ──────────────────────────────────────────────
 
   @override
-  void dispose() => _player.dispose();
-
-  static final _kNoTexture = ValueNotifier<int?>(null);
+  void dispose() {
+    _controller.notifier.removeListener(_onControllerNotifier);
+    _platformController?.id.removeListener(_onPlatformId);
+    _textureId.dispose();
+    _player.dispose();
+  }
 }
