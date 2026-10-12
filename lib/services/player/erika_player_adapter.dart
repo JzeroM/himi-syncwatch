@@ -57,6 +57,7 @@ class ErikaPlayerAdapter implements PlayerAdapter {
   double _volume = 1.0;
   double _rate = 1.0;
   bool _buffering = false;
+  bool _errored = false;
 
   /// seek 栅栏：忽略 seek 途中迟到的旧 position 事件（与目标距离 >1.5s）。
   int? _pendingSeekTargetMs;
@@ -84,7 +85,10 @@ class ErikaPlayerAdapter implements PlayerAdapter {
   void _onEvent(ErikaPlayerEvent e) {
     if (_disposed) return;
 
-    _buffering = e.buffering;
+    // buffering：仅该事件有效（其余事件默认 false）。
+    if (e.kind == ErikaEventKind.bufferingChanged) {
+      _buffering = e.buffering;
+    }
 
     // 轨表：仅 tracksChanged/trackSelectionChanged（及其后续事件快照）携带，
     // 其余事件 trackList 为空 → 仅在非空时重建，避免清空。
@@ -108,20 +112,26 @@ class ErikaPlayerAdapter implements PlayerAdapter {
       _applyPositionSample(e.position.inMilliseconds);
     }
 
-    final ns = _mapState(e.state);
-    if (ns != _state) {
-      final old = _state;
-      _state = ns;
-      _stateCtrl.add((oldValue: old, newValue: ns));
-      // 起播后轨表可能才解析完：补刷一次。
-      if (ns == AdapterPlaybackState.playing &&
-          _audioTracks.isEmpty &&
-          _subtitleTracks.isEmpty) {
-        unawaited(_refreshTracks());
+    // 状态：**仅** stateChanged/error 事件有效。其余事件 state 缺省为 idle
+    // （索引 0）→ 若逐事件套用会被打回 stopped，导致播放/暂停控件与弹幕
+    // 播放态反复抖动。
+    if (appliesStateKind(e.kind)) {
+      _errored = e.kind == ErikaEventKind.error;
+      final ns = _mapState(e.state);
+      if (ns != _state) {
+        final old = _state;
+        _state = ns;
+        _stateCtrl.add((oldValue: old, newValue: ns));
+        // 起播后轨表可能才解析完：补刷一次。
+        if (ns == AdapterPlaybackState.playing &&
+            _audioTracks.isEmpty &&
+            _subtitleTracks.isEmpty) {
+          unawaited(_refreshTracks());
+        }
       }
     }
 
-    final st = _mapStatus(e);
+    final st = _mapStatus();
     if (st.rawValue != _status.rawValue) {
       final old = _status;
       _status = st;
@@ -170,18 +180,12 @@ class ErikaPlayerAdapter implements PlayerAdapter {
     }
   }
 
-  AdapterMediaStatus _mapStatus(ErikaPlayerEvent e) {
-    switch (e.state) {
-      case ErikaPlaybackState.idle:
-      case ErikaPlaybackState.stopped:
-      case ErikaPlaybackState.closed:
-        return AdapterMediaStatus.unloaded;
-      case ErikaPlaybackState.error:
-        return AdapterMediaStatus.invalid;
-      default:
-        break;
+  AdapterMediaStatus _mapStatus() {
+    if (_errored) return AdapterMediaStatus.invalid;
+    if (_state == AdapterPlaybackState.stopped) {
+      return AdapterMediaStatus.unloaded;
     }
-    if (e.buffering) return AdapterMediaStatus.buffering;
+    if (_buffering) return AdapterMediaStatus.buffering;
     if (_durationMs > 0) return AdapterMediaStatus.loaded;
     return AdapterMediaStatus.loading;
   }
@@ -256,11 +260,32 @@ class ErikaPlayerAdapter implements PlayerAdapter {
     }
     final elapsed =
         DateTime.now().difference(_lastPositionUpdate).inMilliseconds;
-    var pos = _lastPositionMs + (elapsed * _rate).round();
+    return extrapolatePosition(
+      anchorMs: _lastPositionMs,
+      elapsedMs: elapsed,
+      rate: _rate,
+      durationMs: _durationMs,
+    );
+  }
+
+  /// 按速率外推播放位置（纯函数，便于单测）。
+  @visibleForTesting
+  static int extrapolatePosition({
+    required int anchorMs,
+    required int elapsedMs,
+    required double rate,
+    required int durationMs,
+  }) {
+    var pos = anchorMs + (elapsedMs * rate).round();
     if (pos < 0) pos = 0;
-    if (_durationMs > 0 && pos > _durationMs) pos = _durationMs;
+    if (durationMs > 0 && pos > durationMs) pos = durationMs;
     return pos;
   }
+
+  /// 播放状态仅由这些事件更新（其余事件 state 缺省为 idle，逐事件套用会抖动）。
+  @visibleForTesting
+  static bool appliesStateKind(ErikaEventKind kind) =>
+      kind == ErikaEventKind.stateChanged || kind == ErikaEventKind.error;
 
   @override
   int get duration => _durationMs;
@@ -409,7 +434,31 @@ class ErikaPlayerAdapter implements PlayerAdapter {
   // ── 属性通道 ──────────────────────────────────────────────
 
   @override
-  void setProperty(String name, String value) {}
+  void setProperty(String name, String value) {
+    // 将 player_screen 使用的少量 mdk 字幕属性映射到 Erika 等价 API。
+    switch (name) {
+      case 'subtitle.scale':
+        final v = double.tryParse(value);
+        if (v != null) unawaited(_erikaPlayer.setSubtitleScale(v));
+      case 'subtitle.margin.y':
+        final v = int.tryParse(value);
+        if (v != null) {
+          unawaited(_erikaPlayer.setSubtitleStyle(marginVertical: v));
+        }
+      case 'subtitle.font.size':
+        final v = double.tryParse(value);
+        if (v != null) {
+          unawaited(_erikaPlayer.setSubtitleStyle(fontSize: v));
+        }
+      case 'subtitle.border':
+        final v = double.tryParse(value);
+        if (v != null) {
+          unawaited(_erikaPlayer.setSubtitleStyle(outlineWidth: v));
+        }
+      default:
+        break;
+    }
+  }
 
   @override
   String? getProperty(String name) => null;

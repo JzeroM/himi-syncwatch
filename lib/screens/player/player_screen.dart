@@ -5375,7 +5375,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       networkSpeedText: settings.showNetworkSpeed && _networkSpeedBps != null
           ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
           : null,
-      showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode),
+      // Erika 无解码档位（自动硬解/软解回退）→ 隐藏解码控件
+      showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode) &&
+          _currentEngine != PlayerEngine.erika,
       decodeMenuOpen: _showDecodeModeMenu,
       // 播放引擎按钮（非 TV；显示调节左侧）
       showEngineButton: !settings.tvMode,
@@ -5389,7 +5391,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       subtitleStyleFocusNode: _subtitleStyleButtonFocusNode,
       onToggleSubtitleStyle: _toggleSubtitleStyleMenu,
       glassEnabled: settings.glassUi,
-      showVideoFitButton: widget.roomCode == null && !settings.tvMode,
+      // Erika 画面缩放控件暂不可用 → 隐藏
+      showVideoFitButton: widget.roomCode == null &&
+          !settings.tvMode &&
+          _currentEngine != PlayerEngine.erika,
       videoFitIcon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
       videoFitLabel: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
       onCycleVideoFit: _cycleVideoFit,
