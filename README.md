@@ -17,7 +17,7 @@
 
 ## 项目简介
 
-HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](https://emby.media)** 客户端，覆盖 Android / iOS / Windows / macOS / Linux / Android TV。核心能力是完整的 Emby 媒体库体验：登录、浏览、搜索、收藏、选集、多线路播放，以及本地化高品质解码（多播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播）。多人异地同步观影房间、弹幕、液态玻璃 UI 等仅是附加增强功能，不影响其作为 Emby 客户端的独立使用。
+HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](https://emby.media)** 客户端，覆盖 Android / iOS / Windows / macOS / Linux / Android TV。核心能力是完整的 Emby 媒体库体验：登录、浏览、搜索、收藏、选集、多线路播放，以及本地化高品质解码（多播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播）。多人异地同步观影房间、弹幕、液态玻璃 UI 等仅是附加增强功能。
 
 ## 核心功能
 
