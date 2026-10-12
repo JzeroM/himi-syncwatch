@@ -1019,4 +1019,16 @@ void main() {
       expect(AppSettings.fromJson({}).defaultEngine, 'mdk');
     });
   });
+
+  group('hdrAutoRoute 归一', () {
+    test('默认开', () {
+      expect(AppSettings.fromJson({}).hdrAutoRoute, isTrue);
+      expect(const AppSettings().hdrAutoRoute, isTrue);
+    });
+
+    test('显式 false 保留', () {
+      expect(
+          AppSettings.fromJson({'hdrAutoRoute': false}).hdrAutoRoute, isFalse);
+    });
+  });
 }

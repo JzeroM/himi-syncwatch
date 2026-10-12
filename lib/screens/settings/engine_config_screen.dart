@@ -223,30 +223,17 @@ class _EngineTabBody extends ConsumerWidget {
     AppSettings settings,
     SettingsNotifier notifier,
   ) {
-    const outputLabels = {
-      'auto': '自动',
-      'sdr': 'SDR',
-      'extendedLinear': 'Extended Linear（HDR 直通）',
-    };
     return [
-      settingOptionTile(
-        context: context,
-        tvMode: settings.tvMode,
-        title: '输出模式',
-        subtitle: '视频输出色彩空间；HDR 片源选 Extended Linear',
-        labels: outputLabels,
-        value: settings.erikaOutputMode,
-        onSelected: (v) => notifier.update(erikaOutputMode: v),
-      ),
-      const Divider(height: 1),
       const Padding(
         padding: EdgeInsets.all(16),
         child: Text(
-          'Erika（自研内核）：原生位图字幕（PGS/VobSub）、真 HDR10/EDR 输出。'
-          '切换引擎后生效。',
+          'Erika（自研内核）：原生位图字幕（PGS/VobSub）、原生 GPU 弹幕、'
+          '真 HDR10/EDR 输出。\n'
+          '输出模式按内容自动路由（HDR 片源协商 EDR/HDR10，其余 SDR），无需手动设置。',
           style: TextStyle(fontSize: 12, color: Colors.white54),
         ),
       ),
+      const Divider(height: 1),
     ];
   }
 }

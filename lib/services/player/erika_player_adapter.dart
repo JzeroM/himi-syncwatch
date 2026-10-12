@@ -21,10 +21,13 @@ import 'player_adapter.dart';
 /// - 外挂音频无对应 API → 抛 [UnimplementedError]
 /// - setProperty/解码器/色彩空间/截图等无等价 API → no-op / null
 class ErikaPlayerAdapter implements PlayerAdapter {
-  ErikaPlayerAdapter({ErikaOutputMode outputMode = ErikaOutputMode.auto}) {
+  ErikaPlayerAdapter({this.outputMode = ErikaOutputMode.auto}) {
     _erikaPlayer = ErikaPlayer(outputMode: outputMode);
     _subscribe();
   }
+
+  /// 构造期输出模式（内容路由决定；用于重建判断）。
+  final ErikaOutputMode outputMode;
 
   late final ErikaPlayer _erikaPlayer;
 
@@ -563,6 +566,71 @@ class ErikaPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<Uint8List?> snapshot({int? width, int? height}) async => null;
+
+  // ── 原生弹幕（Erika 引擎内 GPU 合成，替代 Flutter overlay）────────
+  //
+  // player_screen 在 Erika 档把已解析弹幕编码为 JSON 喂给引擎；引擎按媒体
+  // 主时钟在渲染 tick 内合成（天然顺滑）。
+
+  /// 以 JSON 列表替换默认弹幕轨：`[{"time":秒,"content":文本,"type":"scroll|top|bottom","color":"#rrggbb"}]`。
+  Future<void> loadDanmakuJson(String json) async {
+    if (_disposed) return;
+    try {
+      await _erikaPlayer.loadDanmakuJson(json);
+    } catch (e) {
+      LogService().log('Erika', '加载原生弹幕失败: $e');
+    }
+  }
+
+  Future<void> clearDanmaku() async {
+    if (_disposed) return;
+    try {
+      await _erikaPlayer.clearDanmaku();
+    } catch (e) {
+      LogService().log('Erika', '清空原生弹幕失败: $e');
+    }
+  }
+
+  Future<void> setDanmakuEnabled(bool enabled) async {
+    if (_disposed) return;
+    try {
+      await _erikaPlayer.setDanmakuEnabled(enabled);
+    } catch (e) {
+      LogService().log('Erika', '原生弹幕开关失败: $e');
+    }
+  }
+
+  /// 映射 AppSettings/显示调节到 Erika 原生弹幕配置（引擎内部 50ms 合并）。
+  Future<void> setDanmakuConfig({
+    double? fontSize,
+    double? opacity,
+    double? scrollDurationSeconds,
+    double? displayArea,
+    int? maxLinesPerMode,
+    int? maxQuantity,
+    bool? blockTop,
+    bool? blockBottom,
+    bool? blockScroll,
+    List<String>? blockWords,
+  }) async {
+    if (_disposed) return;
+    try {
+      await _erikaPlayer.setDanmakuConfig(
+        fontSize: fontSize,
+        opacity: opacity,
+        scrollDurationSeconds: scrollDurationSeconds,
+        displayArea: displayArea,
+        maxLinesPerMode: maxLinesPerMode,
+        maxQuantity: maxQuantity,
+        blockTop: blockTop,
+        blockBottom: blockBottom,
+        blockScroll: blockScroll,
+        blockWords: blockWords,
+      );
+    } catch (e) {
+      LogService().log('Erika', '原生弹幕配置失败: $e');
+    }
+  }
 
   // ── 生命周期 ──────────────────────────────────────────────
 

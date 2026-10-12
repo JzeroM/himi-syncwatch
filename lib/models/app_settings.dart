@@ -43,8 +43,8 @@ class AppSettings {
   /// cache-size：MB，0 = 关闭缓存。
   final double mkCacheSize;
 
-  /// Erika 引擎输出模式：'auto'（默认）/ 'sdr' / 'extendedLinear'（HDR 直通）。
-  final String erikaOutputMode;
+  /// HDR 自动路由（仅手机）：HDR 内容自动切到 Erika 引擎。默认开。
+  final bool hdrAutoRoute;
 
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
@@ -238,7 +238,7 @@ class AppSettings {
     this.mkHwdec = 'auto-safe',
     this.mkToneMapping = 'auto',
     this.mkCacheSize = 150,
-    this.erikaOutputMode = 'auto',
+    this.hdrAutoRoute = true,
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
     this.playbackSpeed = 1.0,
@@ -291,7 +291,7 @@ class AppSettings {
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
-    String? erikaOutputMode,
+    bool? hdrAutoRoute,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -341,7 +341,7 @@ class AppSettings {
       mkHwdec: mkHwdec ?? this.mkHwdec,
       mkToneMapping: mkToneMapping ?? this.mkToneMapping,
       mkCacheSize: mkCacheSize ?? this.mkCacheSize,
-      erikaOutputMode: erikaOutputMode ?? this.erikaOutputMode,
+      hdrAutoRoute: hdrAutoRoute ?? this.hdrAutoRoute,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
@@ -413,7 +413,7 @@ class AppSettings {
         'mkHwdec': mkHwdec,
         'mkToneMapping': mkToneMapping,
         'mkCacheSize': mkCacheSize,
-        'erikaOutputMode': erikaOutputMode,
+        'hdrAutoRoute': hdrAutoRoute,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
         'playbackSpeed': playbackSpeed,
@@ -496,10 +496,7 @@ class AppSettings {
               ? json['mkToneMapping'] as String
               : 'auto',
       mkCacheSize: _clampDouble(json['mkCacheSize'], 150, 0, 500),
-      erikaOutputMode:
-          const ['auto', 'sdr', 'extendedLinear'].contains(json['erikaOutputMode'])
-              ? json['erikaOutputMode'] as String
-              : 'auto',
+      hdrAutoRoute: json['hdrAutoRoute'] != false,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,

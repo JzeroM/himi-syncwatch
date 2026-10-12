@@ -1,3 +1,4 @@
+import 'package:erika_flutter/erika_flutter.dart' show ErikaOutputMode;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
@@ -5,6 +6,40 @@ import 'package:himi_syncwatch/services/player/player_engine.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+  group('PlayerEngineFactory.resolveErikaOutputMode（按内容路由）', () {
+    test('非 HDR → SDR（全平台）', () {
+      for (final p in TargetPlatform.values) {
+        expect(
+          PlayerEngineFactory.resolveErikaOutputMode(hdr: false, platform: p),
+          ErikaOutputMode.sdr,
+          reason: '$p',
+        );
+      }
+    });
+
+    test('HDR：Android → extendedLinear', () {
+      expect(
+        PlayerEngineFactory.resolveErikaOutputMode(
+            hdr: true, platform: TargetPlatform.android),
+        ErikaOutputMode.extendedLinear,
+      );
+    });
+
+    test('HDR：iOS/macOS/其他 → auto（协商 EDR/HDR10）', () {
+      for (final p in const [
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+      ]) {
+        expect(
+          PlayerEngineFactory.resolveErikaOutputMode(hdr: true, platform: p),
+          ErikaOutputMode.auto,
+          reason: '$p',
+        );
+      }
+    });
+  });
 
   group('PlayerEngineFactory.supportedEngines（平台感知）', () {
     test('TV 模式仅 MDK', () {

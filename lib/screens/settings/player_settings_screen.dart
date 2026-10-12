@@ -36,6 +36,21 @@ class PlayerSettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
         ],
+        // ── HDR 自动路由（HDR 内容自动切 Erika；仅手机）────────
+        if (engines.any((e) => e.id == 'erika')) ...[
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () =>
+                notifier.update(hdrAutoRoute: !settings.hdrAutoRoute),
+            child: SwitchListTile(
+              title: const Text('HDR 自动路由'),
+              subtitle: const Text('HDR 内容自动切换到 Erika 引擎（仅手机）'),
+              value: settings.hdrAutoRoute,
+              onChanged: (v) => notifier.update(hdrAutoRoute: v),
+            ),
+          ),
+          const Divider(height: 1),
+        ],
         // ── 播放器配置（tabbed：MDK / media_kit / Erika）────────
         settingsTvWrapRow(
           tvMode: settings.tvMode,

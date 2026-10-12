@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -12,7 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
-import 'package:erika_flutter/erika_flutter.dart' show ErikaVideoView;
+import 'package:erika_flutter/erika_flutter.dart'
+    show ErikaVideoView, ErikaOutputMode;
 import 'package:himi_syncwatch/services/player/erika_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/media_kit_player_adapter.dart';
 import 'package:media_kit_video/media_kit_video.dart' show Video;
@@ -371,6 +373,24 @@ class PlayerScreen extends ConsumerStatefulWidget {
         c.contains('dvb_sub');
   }
 
+  /// 弹幕列表 → Erika 原生弹幕 JSON：`[{time, content, type, color}]`。
+  @visibleForTesting
+  static String danmakuJsonFor(List<DanmakuComment> comments) {
+    return jsonEncode(<Map<String, Object>>[
+      for (final c in comments)
+        {
+          'time': c.time,
+          'content': c.text,
+          'type': switch (c.mode) {
+            DanmakuMode.scroll => 'scroll',
+            DanmakuMode.top => 'top',
+            DanmakuMode.bottom => 'bottom',
+          },
+          'color': '#${(c.color & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}',
+        }
+    ]);
+  }
+
   /// 「显示调节」入口位置：TV 在底部控制条（弹幕与字幕之间），非 TV 在顶栏。
   @visibleForTesting
   static bool showTopSubtitleStyleButton({required bool tvMode}) => !tvMode;
@@ -508,6 +528,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 当前播放引擎（热切换后更新；初始由设置决定）。
   PlayerEngine _currentEngine = PlayerEngine.mdk;
+
+  /// 用户本会话是否手动切换过引擎：置真后内容自动路由（HDR→Erika）不再覆盖。
+  bool _engineUserOverrode = false;
 
   Timer? _heartbeatTimer;
   Timer? _rateRestoreTimer;
@@ -1354,7 +1377,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final s = ref.read(settingsProvider);
     _currentEngine =
         s.tvMode ? PlayerEngine.mdk : PlayerEngine.fromId(s.defaultEngine);
-    _player = PlayerEngineFactory.create(_currentEngine, s);
+    _player = PlayerEngineFactory.create(_currentEngine,
+        erikaOutputMode: PlayerEngineFactory.resolveErikaOutputMode(
+            hdr: _hdrContent, platform: defaultTargetPlatform));
     // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
     // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
@@ -1681,6 +1706,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _applyAudioFilterPolicy(codec: source.defaultAudioStream?.codec);
         }
       } catch (_) {}
+
+      // 内容路由：按 HDR 解析目标引擎/输出模式，必要时开播前重建适配器
+      // （HDR→Erika 仅手机+开关+未手动切换；输出模式：HDR 协商 EDR/HDR10，其余 SDR）。
+      final contentHdr = _embyVideoStream?.isHDR == true ||
+          _embyVideoStream?.isDolbyVision == true;
+      final targetEngine = _resolveTargetEngineForContent(contentHdr);
+      final targetMode = PlayerEngineFactory.resolveErikaOutputMode(
+          hdr: contentHdr, platform: defaultTargetPlatform);
+      final modeMismatch = targetEngine == PlayerEngine.erika &&
+          _player is ErikaPlayerAdapter &&
+          (_player as ErikaPlayerAdapter).outputMode != targetMode;
+      if (targetEngine != _currentEngine || modeMismatch) {
+        await _recreateEngineForLoad(targetEngine, targetMode);
+        if (!mounted) return;
+      }
 
       // 第二步：探测 DV 解码能力（不覆盖解码器配置）
       await _probeDvCapability();
@@ -2314,6 +2354,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final settings = ref.read(settingsProvider);
     if (settings.tvMode && newEngine != PlayerEngine.mdk) return;
 
+    // 用户本会话手动切换 → 内容自动路由不再覆盖；Erika 输出模式按当前内容路由
+    _engineUserOverrode = true;
+    final erikaMode = PlayerEngineFactory.resolveErikaOutputMode(
+        hdr: _hdrContent, platform: defaultTargetPlatform);
+
     // 保存当前状态
     final savedPosition = _player.position;
     final wasPlaying = _player.state == AdapterPlaybackState.playing;
@@ -2344,7 +2389,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 3. 创建新引擎（切换仅本会话，不回写 defaultEngine）
     _currentEngine = newEngine;
     // ignore: invalid_use_of_protected_member
-    _player = PlayerEngineFactory.create(newEngine, settings);
+    _player = PlayerEngineFactory.create(newEngine, erikaOutputMode: erikaMode);
 
     if (!mounted) return;
 
@@ -2397,7 +2442,52 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     }
 
+    // 切到 Erika：喂原生弹幕（GPU 合成）
+    if (newEngine == PlayerEngine.erika) _applyErikaDanmaku();
+
     if (mounted) setState(() {});
+  }
+
+  /// 内容路由：解析目标引擎。
+  /// HDR 内容 + 手机 + 「HDR 自动路由」开 + Erika 可用 + 未手动切换过 → Erika；
+  /// 否则用用户「默认引擎」。
+  PlayerEngine _resolveTargetEngineForContent(bool hdr) {
+    final s = ref.read(settingsProvider);
+    if (s.tvMode) return PlayerEngine.mdk;
+    if (_engineUserOverrode) return _currentEngine; // 手动优先
+    final mobile = defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    if (hdr &&
+        s.hdrAutoRoute &&
+        mobile &&
+        PlayerEngineFactory.isSupported(PlayerEngine.erika, tvMode: false)) {
+      return PlayerEngine.erika;
+    }
+    return PlayerEngine.fromId(s.defaultEngine);
+  }
+
+  /// 开播前按内容重建引擎/适配器（此时尚未 open，无"播放中拆台"）。
+  Future<void> _recreateEngineForLoad(
+      PlayerEngine engine, ErikaOutputMode outputMode) async {
+    LogService().log('Player',
+        '内容路由重建引擎: ${_currentEngine.label} → ${engine.label} (erikaMode=$outputMode)');
+    _currentEngine = engine;
+    try {
+      _player.state = AdapterPlaybackState.stopped;
+    } catch (_) {}
+    _stateSub?.cancel();
+    _statusSub?.cancel();
+    _tracksSubscription?.cancel();
+    _positionTimer?.cancel();
+    _diagnosticTimer?.cancel();
+    try {
+      _player.dispose();
+    } catch (_) {}
+    _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
+    await _initPlayerProperties();
+    if (!mounted) return;
+    _setupPlayerListeners();
+    if (engine == PlayerEngine.erika) _applyErikaDanmaku();
   }
 
   /// 加载流并返回 texture 是否就绪
@@ -5080,7 +5170,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ),
 
           // 弹幕层（视频之上、控件之下；IgnorePointer 不抢手势）
-          if (_danmakuOn && _danmakuComments.isNotEmpty)
+          // Erika 档改由引擎原生 GPU 合成 → 不挂 Flutter 层
+          if (_danmakuOn &&
+              _danmakuComments.isNotEmpty &&
+              _currentEngine != PlayerEngine.erika)
             Positioned.fill(
               child: Consumer(
                 // 局部重建点：行数/屏蔽/上限/三滑杆任一变化只刷新弹幕层
@@ -5523,14 +5616,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       danmakuSpeed: s.danmakuSpeed,
       danmakuFontSize: s.danmakuFontSize,
       danmakuOpacity: s.danmakuOpacity,
-      onDanmakuSpeedChanged: (v) => notifier.update(danmakuSpeed: v),
-      onDanmakuFontSizeChanged: (v) => notifier.update(danmakuFontSize: v),
-      onDanmakuOpacityChanged: (v) => notifier.update(danmakuOpacity: v),
-      onDanmakuReset: () => notifier.update(
-        danmakuSpeed: 1.0,
-        danmakuFontSize: 0.5,
-        danmakuOpacity: 0.6,
-      ),
+      onDanmakuSpeedChanged: _onDanmakuSpeedChanged,
+      onDanmakuFontSizeChanged: _onDanmakuFontSizeChanged,
+      onDanmakuOpacityChanged: _onDanmakuOpacityChanged,
+      onDanmakuReset: () {
+        notifier.update(
+          danmakuSpeed: 1.0,
+          danmakuFontSize: 0.5,
+          danmakuOpacity: 0.6,
+        );
+        unawaited(_applyErikaDanmakuConfig());
+      },
       focusNode: _selectorFirstFocusNode,
     );
   }
@@ -5544,6 +5640,59 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final pos = _embySubtitleStreams.indexWhere((s) => s.index == idx);
     if (pos < 0) return false;
     return PlayerScreen.isBitmapSubtitleCodec(_embySubtitleStreams[pos].codec);
+  }
+
+  // ── Erika 原生弹幕（引擎内 GPU 合成）──────────────────────
+
+  /// 把当前已解析弹幕 + 开关 + 配置喂给 Erika 原生弹幕（仅 Erika 档生效）。
+  void _applyErikaDanmaku() {
+    if (_currentEngine != PlayerEngine.erika) return;
+    final p = _player;
+    if (p is! ErikaPlayerAdapter) return;
+    unawaited(p.setDanmakuEnabled(_danmakuOn));
+    unawaited(p.loadDanmakuJson(_danmakuJson()));
+    unawaited(_applyErikaDanmakuConfig());
+  }
+
+  /// 弹幕列表 → Erika JSON：`[{time, content, type, color}]`。
+  String _danmakuJson() => PlayerScreen.danmakuJsonFor(_danmakuComments);
+
+  /// 显示调节/弹幕配置 → Erika `setDanmakuConfig`（引擎内部 50ms 合并）。
+  Future<void> _applyErikaDanmakuConfig() async {
+    if (_currentEngine != PlayerEngine.erika) return;
+    final p = _player;
+    if (p is! ErikaPlayerAdapter) return;
+    final s = ref.read(settingsProvider);
+    await p.setDanmakuConfig(
+      fontSize: DanmakuOverlay.baseFontSize * s.danmakuFontSize,
+      opacity: s.danmakuOpacity,
+      scrollDurationSeconds: s.danmakuSpeed > 0 ? 8.0 / s.danmakuSpeed : 8.0,
+      displayArea: 1.0,
+      maxLinesPerMode: s.danmakuScrollRows,
+      maxQuantity: s.danmakuLimitCount ? s.danmakuMaxCount : null,
+      blockTop: s.danmakuBlockTop,
+      blockBottom: s.danmakuBlockBottom,
+      blockWords: s.danmakuBlockWords
+          .split(',')
+          .map((w) => w.trim())
+          .where((w) => w.isNotEmpty)
+          .toList(),
+    );
+  }
+
+  void _onDanmakuSpeedChanged(double v) {
+    ref.read(settingsProvider.notifier).update(danmakuSpeed: v);
+    unawaited(_applyErikaDanmakuConfig());
+  }
+
+  void _onDanmakuFontSizeChanged(double v) {
+    ref.read(settingsProvider.notifier).update(danmakuFontSize: v);
+    unawaited(_applyErikaDanmakuConfig());
+  }
+
+  void _onDanmakuOpacityChanged(double v) {
+    ref.read(settingsProvider.notifier).update(danmakuOpacity: v);
+    unawaited(_applyErikaDanmakuConfig());
   }
 
   /// 底栏弹幕钮：翻转开关（不占选择器面板；关掉其他已开面板）。
@@ -5561,6 +5710,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _loadDanmaku();
     } else {
       _cancelDanmakuRetry();
+    }
+    // Erika 档：开关直接下发引擎原生弹幕
+    if (_currentEngine == PlayerEngine.erika) {
+      final p = _player;
+      if (p is ErikaPlayerAdapter) unawaited(p.setDanmakuEnabled(_danmakuOn));
     }
   }
 
@@ -5744,6 +5898,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _danmakuLoadedIndex = _currentEpisodeIndex;
         _danmakuLoading = false;
       });
+      // Erika 档：改由引擎原生 GPU 弹幕合成，喂已解析列表。
+      _applyErikaDanmaku();
       LogService().log('Danmaku',
           'loaded ${found.comments.length} (ep=${found.id}, $fileName)');
     } on DanmakuApiException catch (e) {
