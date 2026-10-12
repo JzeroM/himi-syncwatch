@@ -980,73 +980,17 @@ void main() {
     });
   });
 
-  group('defaultEngine 归一（平台感知）', () {
-    test('erika 在 android/iOS/macOS 合法', () {
-      for (final p in const [
-        TargetPlatform.android,
-        TargetPlatform.iOS,
-        TargetPlatform.macOS,
-      ]) {
-        debugDefaultTargetPlatformOverride = p;
-        expect(AppSettings.fromJson({'defaultEngine': 'erika'}).defaultEngine,
-            'erika',
-            reason: '$p');
-      }
-      debugDefaultTargetPlatformOverride = null;
-    });
-
-    test('Windows/Linux 的 erika 静默回退 mdk', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppSettings.fromJson({'defaultEngine': 'erika'}).defaultEngine,
-          'mdk');
-
-      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-      expect(AppSettings.fromJson({'defaultEngine': 'erika'}).defaultEngine,
-          'mdk');
-    });
-
-    test('Windows 允许 media_kit', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppSettings.fromJson({'defaultEngine': 'media_kit'}).defaultEngine,
-          'media_kit');
-    });
-
-    test('非 Windows 的 media_kit 静默回退 mdk', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppSettings.fromJson({'defaultEngine': 'media_kit'}).defaultEngine,
-          'mdk');
-
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      expect(AppSettings.fromJson({'defaultEngine': 'media_kit'}).defaultEngine,
-          'mdk');
-    });
-
-    test('迁移：旧键 playerEngine → defaultEngine', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppSettings.fromJson({'playerEngine': 'media_kit'}).defaultEngine,
-          'media_kit');
-    });
-
-    test('非法值回退 mdk', () {
-      expect(AppSettings.fromJson({'defaultEngine': 'vlc'}).defaultEngine,
-          'mdk');
-      expect(AppSettings.fromJson({}).defaultEngine, 'mdk');
-    });
-  });
-
-  group('hdrAutoRoute 归一', () {
-    test('默认开', () {
-      expect(AppSettings.fromJson({}).hdrAutoRoute, isTrue);
-      expect(const AppSettings().hdrAutoRoute, isTrue);
-    });
-
-    test('显式 false 保留', () {
-      expect(
-          AppSettings.fromJson({'hdrAutoRoute': false}).hdrAutoRoute, isFalse);
+  group('旧引擎键忽略（v1.1.222 移除 defaultEngine/hdrAutoRoute）', () {
+    test('defaultEngine/playerEngine/hdrAutoRoute 旧键被忽略不抛错', () {
+      final s = AppSettings.fromJson({
+        'defaultEngine': 'erika',
+        'playerEngine': 'media_kit',
+        'hdrAutoRoute': false,
+      });
+      // 字段已移除：仅验证 fromJson 不抛错且其余字段正常
+      expect(s.decodeMode, 'auto');
+      expect(s.toJson().containsKey('defaultEngine'), isFalse);
+      expect(s.toJson().containsKey('hdrAutoRoute'), isFalse);
     });
   });
 

@@ -22,11 +22,13 @@
 ///   EGL 可能忽略）。恒显式注入使 Diag 取证行能区分 A/B 档位。
 ///
 /// 注意：fvp registerWith 的 `maxWidth`/`maxHeight`（纹理尺寸上限）
-/// 对本应用**无效**——himi 绕过 video_player 插件层（mdk.Player FFI
-/// 直用 + 自封装 FvpSurfaceView），那两个选项只在
-/// `MdkVideoPlayerPlatform.create()` 里消费。渲染尺寸夹紧在
+/// 与 `lowLatency`（起播加速）对本应用**无效**——himi 绕过 video_player
+/// 插件层（mdk.Player FFI 直用 + 自封装 FvpSurfaceView），那两个选项
+/// 只在 `MdkVideoPlayerPlatform.create()` 里消费。纹理尺寸夹紧在
 /// player_screen 内自实现（RenderTargetClamp + updateTexture 传参 /
-/// FvpSurfaceView creationParams）。
+/// FvpSurfaceView creationParams）；lowLatency=1 等效属性在
+/// `_initPlayerProperties` 内直接写入（见 MdkPlayerAdapter
+/// .lowLatencyProperties）。
 ///
 /// 纯函数，便于单测。
 Map<String, Object> buildFvpOptions({

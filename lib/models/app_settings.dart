@@ -1,29 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 class AppSettings {
-  /// 引擎 id 归一：允许 mdk/media_kit/erika。
-  /// - media_kit 仅 Windows 可用；其他平台（含 web）静默回退 mdk
-  /// - erika 仅 android/iOS/macOS；Windows/Linux/web 静默回退 mdk
-  /// - web 一律回退 mdk
-  static String _normalizePlayerEngine(Object? raw) {
-    final id = raw is String ? raw : 'mdk';
-    if (kIsWeb) return 'mdk';
-    if (id == 'erika') {
-      switch (defaultTargetPlatform) {
-        case TargetPlatform.android:
-        case TargetPlatform.iOS:
-        case TargetPlatform.macOS:
-          return 'erika';
-        default:
-          return 'mdk';
-      }
-    }
-    if (id == 'media_kit' &&
-        defaultTargetPlatform == TargetPlatform.windows) {
-      return 'media_kit';
-    }
-    return 'mdk';
-  }
   /// 存档数值归一：缺失/非法回退 [fallback]，越界钳到 [min]/[max]。
   static int _clampInt(Object? raw, int fallback, int min, int max) {
     final value = raw is num ? raw.toInt() : fallback;
@@ -39,10 +16,6 @@ class AppSettings {
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
 
-  /// 默认播放引擎（起播用）：'mdk'（默认）/ 'erika' / 'media_kit'（仅 Windows）。
-  /// 播放器内切换仅本会话，下次起播回到此默认。
-  final String defaultEngine;
-
   // ── media_kit 引擎专属设置（mpv 属性，通过 NativePlayer.setProperty 生效）──
   /// hwdec：'auto-safe'（默认）/ 'no'（软解）/ 'auto'（含不安全硬件路径）。
   final String mkHwdec;
@@ -52,9 +25,6 @@ class AppSettings {
 
   /// cache-size：MB，0 = 关闭缓存。
   final double mkCacheSize;
-
-  /// HDR 自动路由（仅手机）：HDR 内容自动切到 Erika 引擎。默认开。
-  final bool hdrAutoRoute;
 
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
@@ -244,11 +214,9 @@ class AppSettings {
 
   const AppSettings({
     this.decodeMode = 'auto',
-    this.defaultEngine = 'mdk',
     this.mkHwdec = 'auto-safe',
     this.mkToneMapping = 'auto',
     this.mkCacheSize = 150,
-    this.hdrAutoRoute = true,
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
     this.playbackSpeed = 1.0,
@@ -297,11 +265,9 @@ class AppSettings {
 
   AppSettings copyWith({
     String? decodeMode,
-    String? defaultEngine,
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
-    bool? hdrAutoRoute,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -347,11 +313,9 @@ class AppSettings {
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
-      defaultEngine: defaultEngine ?? this.defaultEngine,
       mkHwdec: mkHwdec ?? this.mkHwdec,
       mkToneMapping: mkToneMapping ?? this.mkToneMapping,
       mkCacheSize: mkCacheSize ?? this.mkCacheSize,
-      hdrAutoRoute: hdrAutoRoute ?? this.hdrAutoRoute,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
@@ -419,11 +383,9 @@ class AppSettings {
 
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
-        'defaultEngine': defaultEngine,
         'mkHwdec': mkHwdec,
         'mkToneMapping': mkToneMapping,
         'mkCacheSize': mkCacheSize,
-        'hdrAutoRoute': hdrAutoRoute,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
         'playbackSpeed': playbackSpeed,
@@ -495,9 +457,6 @@ class AppSettings {
     }
     return AppSettings(
       decodeMode: mode,
-      // 迁移：旧键 playerEngine → defaultEngine
-      defaultEngine:
-          _normalizePlayerEngine(json['defaultEngine'] ?? json['playerEngine']),
       mkHwdec: const ['auto-safe', 'auto', 'no'].contains(json['mkHwdec'])
           ? json['mkHwdec'] as String
           : 'auto-safe',
@@ -506,7 +465,6 @@ class AppSettings {
               ? json['mkToneMapping'] as String
               : 'auto',
       mkCacheSize: _clampDouble(json['mkCacheSize'], 150, 0, 500),
-      hdrAutoRoute: json['hdrAutoRoute'] != false,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,

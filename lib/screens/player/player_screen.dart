@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
+import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:erika_flutter/erika_flutter.dart'
     show ErikaVideoView, ErikaOutputMode;
 import 'package:himi_syncwatch/services/player/erika_player_adapter.dart';
@@ -68,7 +69,6 @@ import 'package:himi_syncwatch/screens/player/player_platform.dart';
 import 'package:himi_syncwatch/screens/player/track_initial_selection.dart';
 import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/display_adjust_panel.dart';
-import 'package:himi_syncwatch/screens/player/widgets/engine_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/danmaku_overlay.dart';
 import 'package:himi_syncwatch/screens/player/widgets/episode_select_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
@@ -526,11 +526,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 播放器适配器（Phase 4 引擎热切换后重新赋值，非 final）。
   late PlayerAdapter _player;
 
-  /// 当前播放引擎（热切换后更新；初始由设置决定）。
+  /// 当前播放引擎（内容路由重建后更新；起播恒 mdk）。
   PlayerEngine _currentEngine = PlayerEngine.mdk;
-
-  /// 用户本会话是否手动切换过引擎：置真后内容自动路由（HDR→Erika）不再覆盖。
-  bool _engineUserOverrode = false;
 
   Timer? _heartbeatTimer;
   Timer? _rateRestoreTimer;
@@ -573,8 +570,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       FocusNode(debugLabel: 'PlayerAudioButton');
   final FocusNode _speedButtonFocusNode =
       FocusNode(debugLabel: 'PlayerSpeedButton');
-  final FocusNode _engineButtonFocusNode =
-      FocusNode(debugLabel: 'PlayerEngineButton');
 
   /// 选集按钮焦点（TV 打开选集面板后原路返回的落点）
   final FocusNode _episodeButtonFocusNode =
@@ -670,6 +665,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Timer? _reportTimer;
   bool _isDraggingSlider = false;
 
+  /// seek 进行中守卫（v1.1.222）：MDK 关键帧 seek 窗口内原生 position
+  /// 可能报 0/负值，_positionTimer 若此时写入会把进度条拉回开头，
+  /// 后续遥控器 ±N 秒又以被污染的 _position 为基准 → 真实 seek(0)。
+  /// seek 前置真，await adapter seek Future 完成（2s 超时兜底）后清零
+  /// 并回读 position 同步一次 UI。
+  bool _isSeekingPlayback = false;
+
   // ---- Emby 播放会话上报（续播/自动已观看）----
   /// 本次播放会话 id（切集重生成）。
   String _playSessionId = const Uuid().v4();
@@ -686,7 +688,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showDecodeModeMenu = false;
   bool _showSpeedMenu = false;
   bool _showSubtitleStyleMenu = false;
-  bool _showEngineMenu = false;
 
   /// 选集面板（右侧剧集卡片浮层；仅单人模式多集时可开）。
   bool _showEpisodeMenu = false;
@@ -1377,10 +1378,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       enabled: () => _showControls && mounted,
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
-    // 播放引擎：从设置读取；TV 模式强制 mdk（media_kit 无 TV 验证）
-    final s = ref.read(settingsProvider);
-    _currentEngine =
-        s.tvMode ? PlayerEngine.mdk : PlayerEngine.fromId(s.defaultEngine);
+    // 播放引擎：起播恒 mdk（v1.1.222 全自动路由）；HDR 内容在
+    // _loadEpisodeStream/_playFromUrl 开播前按 resolveEngineForContent 重建。
+    _currentEngine = PlayerEngine.mdk;
     _player = PlayerEngineFactory.create(_currentEngine,
         erikaOutputMode: PlayerEngineFactory.resolveErikaOutputMode(
             hdr: _hdrContent, platform: defaultTargetPlatform));
@@ -1587,19 +1587,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     LogService().log('Player',
         '解码配置: ${settings.decodeMode} → video=$decoders audio=$audioDecoders');
 
-    // avformat 缓冲配置：平衡起播速度与播放稳定性
+    // avformat 起播配置（v1.1.222 lowLatency=1 等效）：+nobuffer 低延迟
+    // demux + analyzeduration 100ms（原 500ms）→ 起播更快。probesize
+    // 保持 1MB（fvp lowLatency 不动 probesize）。
     _player.setProperty('avformat.probesize', '1048576'); // 1MB
-    _player.setProperty('avformat.analyzeduration', '500000'); // 500ms
-    _player.setProperty('avformat.fflags', '+fastseek'); // 允许快速 seek
-    _player.setProperty('avformat.fpsprobesize', '0');
+    MdkPlayerAdapter.lowLatencyProperties
+        .forEach(_player.setProperty);
 
     // mdk 缓冲/包缓存（网络流抗抖动）：
-    // - buffer：仅把欠载续播阈值提到 2s（min；max 保持 mdk 默认 4s 不动，
-    //   避免高码率 4K 大缓冲的内存压力）；
+    // - buffer：起播最小缓冲 0（lowLatency 等效，最小数据即起播；max
+    //   保持 mdk 默认 4s 不动，避免高码率 4K 大缓冲的内存压力）；
     // - demux.buffer.ranges：为 http(s) 开启 8 段包缓存（默认关闭），
     //   后退 seek 命中已缓存区间时无需重下。
     // 依据 fvp #98（demux.buffer.ranges=8）。
-    _player.setBufferRange(min: 2000);
+    _player.setBufferRange(min: MdkPlayerAdapter.lowLatencyBufferMinMs);
     _player.setProperty('demux.buffer.ranges', '8');
 
     // FFmpeg 解码线程数：0 = 逻辑核心数 + 1（仅软解回退时生效，硬解忽略）
@@ -2347,153 +2348,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) LogService().log('Diag', '截帧: $_snapshotInfo');
   }
 
-  /// 热切换播放引擎（Phase 4）：保存进度 → 销毁旧引擎 → 新引擎重建 → 恢复播放。
-  ///
-  /// 仅非 TV 模式可用（media_kit 无 TV 验证）。切换过程中显示加载态。
-  Future<void> _switchEngine(PlayerEngine newEngine) async {
-    if (newEngine == _currentEngine) return;
-    if (!mounted) return;
-
-    // TV 模式禁止切到 media_kit
-    final settings = ref.read(settingsProvider);
-    if (settings.tvMode && newEngine != PlayerEngine.mdk) return;
-
-    // 用户本会话手动切换 → 内容自动路由不再覆盖；Erika 输出模式按当前内容路由
-    _engineUserOverrode = true;
-    final erikaMode = PlayerEngineFactory.resolveErikaOutputMode(
-        hdr: _hdrContent, platform: defaultTargetPlatform);
-
-    // 保存当前状态
-    final savedPosition = _player.position;
-    final wasPlaying = _player.state == AdapterPlaybackState.playing;
-    final savedVolume = _volume;
-    final savedSpeed = _speed;
-    final savedUrl = _currentPlayUrl;
-    final savedToken = _currentToken;
-
-    LogService().log('Player',
-        '热切换引擎: ${_currentEngine.label} → ${newEngine.label} '
-        '@${savedPosition}ms playing=$wasPlaying');
-
-    // 1. 停止旧引擎 + 取消订阅（先停再卸视图：原生视图还在渲染时
-    //    从树上摘掉会访问已分离的 surface → 卡顿/原生崩溃）
-    try {
-      _player.state = AdapterPlaybackState.stopped;
-    } catch (_) {}
-    _stateSub?.cancel();
-    _statusSub?.cancel();
-    _tracksSubscription?.cancel();
-    _positionTimer?.cancel();
-    _diagnosticTimer?.cancel();
-
-    // 2. 卸载旧视频视图（避免旧 widget 在旧引擎释放后仍访问其原生对象）
-    setState(() => _switchingEngine = true);
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-
-    // 3. 等待旧引擎释放（避免新引擎起在释放窗口内 → 音频争用/状态回调劣化）
-    await _disposeOldEngine();
-    // 4. 创建新引擎（切换仅本会话，不回写 defaultEngine）
-    //    原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），
-    //    避免帧内出现「新引擎 + 旧适配器」错配导致类型转换崩溃。
-    _currentEngine = newEngine;
-    // ignore: invalid_use_of_protected_member
-    _player = PlayerEngineFactory.create(newEngine, erikaOutputMode: erikaMode);
-    _switchingEngine = false;
-
-    if (!mounted) return;
-
-    // 5. 新引擎初始化（字幕属性 / 色彩空间等）
-    await _initPlayerProperties();
-    if (!mounted) return;
-
-    // 6. 重新订阅事件
-    _setupPlayerListeners();
-
-    // 7. 恢复媒体播放
-    if (savedUrl.isNotEmpty) {
-      try {
-        // 鉴权头：各引擎 adapter 自行映射（mdk avio.headers / media_kit Media / Erika open）
-        if (savedToken.isNotEmpty) {
-          _player.setHttpHeaders({'X-Emby-Token': savedToken});
-        }
-        _player.media = savedUrl;
-        // 初始定位走 prepare(startMs)：mdk 用原生 position 参数（加载完成后
-        // 定位，不依赖 open 后立刻可 seek）；media_kit/Erika open 后 seek。
-        await _player.prepare(startMs: savedPosition);
-        _player.playbackRate = savedSpeed;
-        _player.volume = savedVolume / 100;
-
-        // 更新时长（media_kit 无 loaded 事件时的兜底）
-        final dur = Duration(milliseconds: _player.mediaInfo.duration);
-        if (dur.inMilliseconds > 0) {
-          _duration = dur;
-          _durationNotifier.value = dur;
-        }
-
-        // 恢复纹理
-        await _ensureTexture();
-        if (!mounted) return;
-
-        // 位置通知（实际定位由 prepare(startMs) 完成）
-        if (savedPosition > 0) {
-          _position = Duration(milliseconds: savedPosition);
-          _positionNotifier.value = _position;
-        }
-
-        // 恢复播放状态
-        if (wasPlaying) {
-          _player.state = AdapterPlaybackState.playing;
-        }
-
-        LogService().log('Player',
-            '引擎切换完成: ${newEngine.label} @${savedPosition}ms');
-        _addBroadcastMessage('已切换到 ${newEngine.label} 引擎');
-      } catch (e) {
-        LogService().log('Player', '引擎切换失败: $e');
-      }
-    }
-
-    // TrueHD 等：MDK 音频后端诊断（后端在 _initPlayerProperties 已设置，
-    // 运行中重断言会触发音频渲染器重建 → 卡顿/崩溃，勿再加回）。
-    if (newEngine == PlayerEngine.mdk) {
-      LogService().log('Player',
-          '切换后音频: 后端=${AppSettings.effectiveAudioRenderer(ref.read(settingsProvider).audioRenderer)} '
-          'codec=${_currentAudioCodec()} 滤镜=${_audioFilterText}');
-    }
-
-    // 切到 Erika：喂原生弹幕（GPU 合成）
-    if (newEngine == PlayerEngine.erika) _applyErikaDanmaku();
-
-    // 图标兜底：连续切换（MDK→Erika→MDK）后原生状态回调可能迟到/未达，
-    // 显式同步一次，并延迟再同步（捕捉迟到的 playing 事件）。
-    if (mounted) _syncPlayState();
-    LogService().log('Player',
-        '切换后状态: ${_player.state.name} playing=${_isPlayingNotifier.value}');
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) _syncPlayState();
-    });
-
-    if (mounted) setState(() {});
-  }
-
-  /// 内容路由：解析目标引擎。
-  /// HDR 内容 + 手机 + 「HDR 自动路由」开 + Erika 可用 + 未手动切换过 → Erika；
-  /// 否则用用户「默认引擎」。
-  PlayerEngine _resolveTargetEngineForContent(bool hdr) {
-    final s = ref.read(settingsProvider);
-    if (s.tvMode) return PlayerEngine.mdk;
-    if (_engineUserOverrode) return _currentEngine; // 手动优先
-    final mobile = defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
-    if (hdr &&
-        s.hdrAutoRoute &&
-        mobile &&
-        PlayerEngineFactory.isSupported(PlayerEngine.erika, tvMode: false)) {
-      return PlayerEngine.erika;
-    }
-    return PlayerEngine.fromId(s.defaultEngine);
-  }
+  /// 内容路由：解析目标引擎（全自动，v1.1.222）。
+  /// TV 恒 mdk；非 HDR 恒 mdk；HDR→手机 erika / Windows media_kit；其余 mdk。
+  PlayerEngine _resolveTargetEngineForContent(bool hdr) =>
+      PlayerEngineFactory.resolveEngineForContent(
+        hdr: hdr,
+        tvMode: ref.read(settingsProvider).tvMode,
+      );
 
   /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），
   /// fvp(mdk) 为 `void async` → settle 等待其原生 teardown 落定。
@@ -2534,6 +2395,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _tracksSubscription?.cancel();
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
+    _sampleTimer?.cancel();
     // 停后再卸载旧视频视图（避免旧 widget 访问已释放播放器）
     setState(() => _switchingEngine = true);
     await WidgetsBinding.instance.endOfFrame;
@@ -2546,6 +2408,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _switchingEngine = false;
     await _initPlayerProperties();
     if (!mounted) return;
+    // _initPlayerProperties 不覆盖的三项（initState 单独写、重建后会丢）：
+    // 字幕属性 / 音频后端 / 音频滤镜策略（_disposeOldEngine 已复位去重态，
+    // 此处重写保证新引擎与起播一致）。
+    _player.setProperty('subtitle', '1');
+    _player.setProperty('subtitle.font.size', '40');
+    _player.setProperty('subtitle.border', '2');
+    _player.setProperty('subtitle.shadow', '1');
+    _applySubtitleStyle();
+    final renderer =
+        AppSettings.effectiveAudioRenderer(ref.read(settingsProvider).audioRenderer);
+    if (renderer != 'auto') {
+      _player.audioBackends = [renderer];
+    }
+    _applyAudioFilterPolicy(codec: _currentAudioCodec());
     _setupPlayerListeners();
     if (engine == PlayerEngine.erika) _applyErikaDanmaku();
   }
@@ -2764,6 +2640,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _codecProbeKey = '';
       _bufProgress = -1;
 
+      // 内容路由（v1.1.222，观众路径）：HDR 元数据来自房主 roomInfo
+      // （_handleRoomInfo 已写 _embyVideoStream 并 _refreshHdrContent，
+      // 早于本方法）；必要时开播前重建引擎。必须在 setHttpHeaders
+      // 之前——重建后的新 adapter 无鉴权头。
+      final contentHdr = _embyVideoStream?.isHDR == true ||
+          _embyVideoStream?.isDolbyVision == true;
+      final targetEngine = _resolveTargetEngineForContent(contentHdr);
+      final targetMode = PlayerEngineFactory.resolveErikaOutputMode(
+          hdr: contentHdr, platform: defaultTargetPlatform);
+      final modeMismatch = targetEngine == PlayerEngine.erika &&
+          _player is ErikaPlayerAdapter &&
+          (_player as ErikaPlayerAdapter).outputMode != targetMode;
+      if (targetEngine != _currentEngine || modeMismatch) {
+        await _recreateEngineForLoad(targetEngine, targetMode);
+        if (requestId != _playRequestId || !mounted) return;
+      }
+
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
         _player.setHttpHeaders({'X-Emby-Token': token});
@@ -2792,6 +2685,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _player.setColorSpace(PlayerScreen.outputColorSpace());
       }
       _player.media = playUrl;
+      // 回写当前播放 URL/Token（v1.1.222）：观众回前台恢复
+      // （_recoverVideoAfterResume）依赖这两个字段，此前观众路径从不
+      // 写入 → 恢复恒早退（死路径）。
+      _currentPlayUrl = playUrl;
+      _currentToken = token;
       await _player.prepare();
       _player.playbackRate = _speed;
       if (!mounted) return;
@@ -2987,8 +2885,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _player.renderVideo();
         } catch (_) {}
       }
-      if (_isDraggingSlider) return; // 拖动中不更新，避免进度条回弹
+      if (_isDraggingSlider || _isSeekingPlayback) {
+        return; // 拖动/seek 中不更新，避免进度条回弹/跳回开头
+      }
       final pos = _player.position;
+      // 原生负值防御：seek 窗口/异常时 mdk position 可能返回 -1 等，
+      // 不写入（跳过本 tick，等 seek 完成后回读同步）。
+      if (pos < 0) return;
       if (pos != _positionNotifier.value.inMilliseconds) {
         _position = Duration(milliseconds: pos);
         _positionNotifier.value = _position;
@@ -4209,13 +4112,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 立即更新 UI 到目标位置，不等 Timer.periodic
     _position = Duration(milliseconds: value.toInt());
     _positionNotifier.value = _position;
-    try {
-      _player.seek(positionMs: value.toInt());
-    } catch (_) {}
+    unawaited(_seekGuarded(value.toInt()));
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
     }
     unawaited(_reportProgress());
+  }
+
+  /// 带守卫的 seek：置 `_isSeekingPlayback` → await adapter seek（2s
+  /// 超时兜底）→ 清零并回读 position 同步 UI（防止原生 seek 窗口内
+  /// position 报 0/负值被 _positionTimer 写入 → 进度条跳回开头）。
+  Future<void> _seekGuarded(int targetMs) async {
+    _isSeekingPlayback = true;
+    try {
+      await _player
+          .seek(positionMs: targetMs)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    _isSeekingPlayback = false;
+    if (!mounted) return;
+    final pos = _player.position;
+    if (pos >= 0) {
+      _position = Duration(milliseconds: pos);
+      _positionNotifier.value = _position;
+    }
   }
 
   void _toggleControls() {
@@ -4271,7 +4191,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
-      _showEngineMenu = false;
     });
   }
 
@@ -4297,7 +4216,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
-      _showEngineMenu = false;
     });
     _restoreSelectorOpenerFocus(opener, force: true);
   }
@@ -4770,7 +4688,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subtitleButtonFocusNode.dispose();
     _audioButtonFocusNode.dispose();
     _speedButtonFocusNode.dispose();
-    _engineButtonFocusNode.dispose();
     _episodeButtonFocusNode.dispose();
     _selectorFirstFocusNode.dispose();
     _selectorPanelRootFocusNode.dispose();
@@ -4895,7 +4812,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showSubtitleStyleMenu ||
         _showEpisodeMenu ||
         _showDecodeModeMenu ||
-        _showEngineMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       return false;
@@ -4922,8 +4838,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _showAudioMenu ||
             _showSpeedMenu ||
             _showSubtitleStyleMenu ||
-            _showEpisodeMenu ||
-            _showEngineMenu) {
+            _showEpisodeMenu) {
           _closeSelectorPanel();
           _resetHideTimer();
           return true;
@@ -5344,7 +5259,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   _showSpeedMenu ||
                   _showSubtitleStyleMenu ||
                   _showEpisodeMenu ||
-                  _showEngineMenu))
+                  _showEpisodeMenu))
             Positioned(
               top: panelBox.top,
               bottom: panelBox.bottom,
@@ -5372,9 +5287,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               ? '选集'
                               : _showSubtitleStyleMenu
                                   ? '显示调节'
-                                  : _showEngineMenu
-                                      ? '播放引擎'
-                                      : '倍速',
+                                  : '倍速',
                   child: _showSubtitleStyleMenu
                       ? _buildDisplayAdjustPanel()
                       : _showSubtitleMenu
@@ -5423,20 +5336,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                         _closeSelectorPanel();
                                       },
                                     )
-                                  : _showEngineMenu
-                                      ? EngineMenuPanel(
-                                          current: _currentEngine,
-                                          engines:
-                                              PlayerEngineFactory.supportedEngines(
-                                                  tvMode: videoAreaTvMode),
-                                          focusNode:
-                                              _selectorFirstFocusNode,
-                                          onSelected: (engine) {
-                                            _closeSelectorPanel();
-                                            _switchEngine(engine);
-                                          },
-                                        )
-                                      : SpeedMenuPanel(
+                                  : SpeedMenuPanel(
                                           current: _speed,
                                           focusNode: _selectorFirstFocusNode,
                                           onSelected: _applySpeed,
@@ -5548,11 +5448,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode) &&
           _currentEngine != PlayerEngine.erika,
       decodeMenuOpen: _showDecodeModeMenu,
-      // 播放引擎按钮（非 TV；显示调节左侧）
-      showEngineButton: !settings.tvMode,
-      engineMenuOpen: _showEngineMenu,
-      engineButtonFocusNode: _engineButtonFocusNode,
-      onToggleEngine: _toggleEngineMenu,
       // TV 模式「显示调节」入口移到底部控制条（弹幕与字幕之间），顶栏隐藏
       showSubtitleStyleButton:
           PlayerScreen.showTopSubtitleStyleButton(tvMode: settings.tvMode),
@@ -5619,26 +5514,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
-      _showEngineMenu = false;
     });
     if (_showSpeedMenu) {
       _openSelectorPanel(_speedButtonFocusNode);
-    }
-  }
-
-  /// 引擎切换按钮（底栏倍速右侧）：开关引擎选择面板
-  /// （与字幕/音轨/倍速/显示调节/选集互斥）。
-  void _toggleEngineMenu() {
-    setState(() {
-      _showEngineMenu = !_showEngineMenu;
-      _showSubtitleMenu = false;
-      _showAudioMenu = false;
-      _showSpeedMenu = false;
-      _showSubtitleStyleMenu = false;
-      _showEpisodeMenu = false;
-    });
-    if (_showEngineMenu) {
-      _openSelectorPanel(_engineButtonFocusNode);
     }
   }
 
@@ -5651,7 +5529,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
-      _showEngineMenu = false;
     });
     if (_showEpisodeMenu) {
       _openSelectorPanel(_episodeButtonFocusNode);
@@ -6140,7 +6017,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showSpeedMenu ||
         _showSubtitleStyleMenu ||
         _showEpisodeMenu ||
-        _showEngineMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       _closeAllMenus();
@@ -6253,9 +6129,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _position = Duration(milliseconds: targetMs);
     _positionNotifier.value = _position;
 
-    try {
-      _player.seek(positionMs: targetMs);
-    } catch (_) {}
+    unawaited(_seekGuarded(targetMs));
 
     final seconds = (clampedDelta / 1000).round();
     _showGestureHint(seconds > 0 ? '+${seconds}s' : '${seconds}s');

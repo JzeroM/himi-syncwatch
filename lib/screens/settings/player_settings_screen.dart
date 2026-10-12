@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
-import 'package:himi_syncwatch/services/player/player_engine.dart';
 
-/// 播放器设置枢纽页：播放器配置入口 / 网速 / 弹幕配置。
+/// 播放器设置枢纽页：引擎路由说明 / 播放器配置入口 / 网速 / 弹幕配置。
 ///
-/// 引擎专属设置（解码/音频/视频输出）在「播放器配置」tabbed 子页；
-/// **引擎切换仅在播放器内**（engine_menu_panel），本页不提供切换。
+/// 引擎专属设置（解码/音频/视频输出）在「播放器配置」tabbed 子页。
+/// 引擎选择全自动路由（v1.1.222）：SDR→MDK；HDR→手机 Erika /
+/// Windows media_kit；TV 恒 MDK。本页不提供手动切换。
 class PlayerSettingsScreen extends ConsumerWidget {
   const PlayerSettingsScreen({super.key});
 
@@ -16,41 +16,20 @@ class PlayerSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
-    final engines =
-        PlayerEngineFactory.supportedEngines(tvMode: settings.tvMode);
 
     return SettingsSubPage(
       pageKey: const ValueKey('playerSettingsPage'),
       title: '播放器',
       children: [
-        // ── 默认引擎（起播用；播放器内切换仅本会话）────────────
-        if (engines.length > 1) ...[
-          settingOptionTile(
-            context: context,
-            tvMode: settings.tvMode,
-            title: '默认引擎',
-            subtitle: _engineDesc(settings.defaultEngine),
-            labels: {for (final e in engines) e.id: e.label},
-            value: settings.defaultEngine,
-            onSelected: (v) => notifier.update(defaultEngine: v),
-          ),
-          const Divider(height: 1),
-        ],
-        // ── HDR 自动路由（HDR 内容自动切 Erika；仅手机）────────
-        if (engines.any((e) => e.id == 'erika')) ...[
-          settingsTvWrapRow(
-            tvMode: settings.tvMode,
-            onTap: () =>
-                notifier.update(hdrAutoRoute: !settings.hdrAutoRoute),
-            child: SwitchListTile(
-              title: const Text('HDR 自动路由'),
-              subtitle: const Text('HDR 内容自动切换到 Erika 引擎（仅手机）'),
-              value: settings.hdrAutoRoute,
-              onChanged: (v) => notifier.update(hdrAutoRoute: v),
-            ),
-          ),
-          const Divider(height: 1),
-        ],
+        // ── 引擎自动路由说明（静态，不可切换）────────────────
+        ListTile(
+          key: const ValueKey('engineAutoRouteInfo'),
+          leading: const Icon(Icons.account_tree),
+          title: const Text('播放引擎'),
+          subtitle: const Text(
+              '自动路由：SDR→MDK；HDR→手机 Erika / Windows media_kit；TV 仅 MDK'),
+        ),
+        const Divider(height: 1),
         // ── 播放器配置（tabbed：MDK / media_kit / Erika）────────
         settingsTvWrapRow(
           tvMode: settings.tvMode,
@@ -59,7 +38,7 @@ class PlayerSettingsScreen extends ConsumerWidget {
             key: const ValueKey('engineConfigEntry'),
             leading: const Icon(Icons.tune),
             title: const Text('播放器配置'),
-            subtitle: const Text('各引擎解码/音频/视频设置（引擎切换在播放器内）'),
+            subtitle: const Text('各引擎解码/音频/视频设置'),
             trailing: const Icon(
               Icons.chevron_right,
               size: 18,
@@ -103,16 +82,5 @@ class PlayerSettingsScreen extends ConsumerWidget {
         const Divider(height: 1),
       ],
     );
-  }
-
-  static String _engineDesc(String id) {
-    switch (id) {
-      case 'media_kit':
-        return 'media_kit（libmpv，仅 Windows）';
-      case 'erika':
-        return 'Erika（原生位图字幕 PGS + HDR）';
-      default:
-        return 'MDK（默认，原生 Dolby Vision）';
-    }
   }
 }

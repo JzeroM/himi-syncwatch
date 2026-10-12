@@ -1,6 +1,8 @@
 import 'package:erika_flutter/erika_flutter.dart' show ErikaOutputMode;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fvp/mdk.dart' as mdk;
+import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 
@@ -113,6 +115,95 @@ void main() {
         PlayerEngineFactory.isSupported(PlayerEngine.erika, tvMode: true),
         isFalse,
       );
+    });
+  });
+
+  group('PlayerEngineFactory.resolveEngineForContent（全自动路由，v1.1.222）', () {
+    test('TV 模式：HDR/非 HDR 均恒 mdk', () {
+      for (final p in TargetPlatform.values) {
+        expect(
+          PlayerEngineFactory.resolveEngineForContent(
+              hdr: true, tvMode: true, platformOverride: p),
+          PlayerEngine.mdk,
+          reason: 'TV HDR $p',
+        );
+        expect(
+          PlayerEngineFactory.resolveEngineForContent(
+              hdr: false, tvMode: true, platformOverride: p),
+          PlayerEngine.mdk,
+          reason: 'TV SDR $p',
+        );
+      }
+    });
+
+    test('非 HDR：全平台恒 mdk', () {
+      for (final p in TargetPlatform.values) {
+        expect(
+          PlayerEngineFactory.resolveEngineForContent(
+              hdr: false, tvMode: false, platformOverride: p),
+          PlayerEngine.mdk,
+          reason: '$p',
+        );
+      }
+    });
+
+    test('HDR + Android/iOS → erika', () {
+      for (final p in const [
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      ]) {
+        expect(
+          PlayerEngineFactory.resolveEngineForContent(
+              hdr: true, tvMode: false, platformOverride: p),
+          PlayerEngine.erika,
+          reason: '$p',
+        );
+      }
+    });
+
+    test('HDR + Windows → media_kit', () {
+      expect(
+        PlayerEngineFactory.resolveEngineForContent(
+            hdr: true, tvMode: false, platformOverride: TargetPlatform.windows),
+        PlayerEngine.mediaKit,
+      );
+    });
+
+    test('HDR + macOS/Linux → mdk 兜底', () {
+      for (final p in const [
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      ]) {
+        expect(
+          PlayerEngineFactory.resolveEngineForContent(
+              hdr: true, tvMode: false, platformOverride: p),
+          PlayerEngine.mdk,
+          reason: '$p',
+        );
+      }
+    });
+  });
+
+  group('MdkPlayerAdapter.seekFlags（TV seek 跳开头修复，v1.1.222）', () {
+    test('keyFrame | inCache（对齐 fvp 默认缓存行为）', () {
+      final flags = MdkPlayerAdapter.seekFlags;
+      expect(flags.test(mdk.SeekFlag.keyFrame), isTrue);
+      expect(flags.test(mdk.SeekFlag.inCache), isTrue);
+      expect(flags.rawValue,
+          mdk.SeekFlag.keyFrame | mdk.SeekFlag.inCache);
+    });
+  });
+
+  group('MdkPlayerAdapter.lowLatencyProperties（起播加速，v1.1.222）', () {
+    test('fflags=+fastseek+nobuffer / analyzeduration=100ms / fpsprobesize=0', () {
+      final props = MdkPlayerAdapter.lowLatencyProperties;
+      expect(props['avformat.fflags'], '+fastseek+nobuffer');
+      expect(props['avformat.analyzeduration'], '100000');
+      expect(props['avformat.fpsprobesize'], '0');
+    });
+
+    test('起播最小缓冲 0（lowLatency 等效）', () {
+      expect(MdkPlayerAdapter.lowLatencyBufferMinMs, 0);
     });
   });
 }

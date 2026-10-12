@@ -32,11 +32,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> update({
     String? decodeMode,
-    String? defaultEngine,
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
-    bool? hdrAutoRoute,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -80,11 +78,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final wasTvMode = state.tvMode;
     state = state.copyWith(
       decodeMode: decodeMode,
-      defaultEngine: defaultEngine,
       mkHwdec: mkHwdec,
       mkToneMapping: mkToneMapping,
       mkCacheSize: mkCacheSize,
-      hdrAutoRoute: hdrAutoRoute,
       showSyncDebug: showSyncDebug,
       showNetworkSpeed: showNetworkSpeed,
       playbackSpeed: playbackSpeed,

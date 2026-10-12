@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
@@ -10,10 +11,41 @@ import 'player_adapter.dart';
 /// 纯委托层，不引入任何业务逻辑。所有 mdk 特有类型（PlaybackState /
 /// MediaStatus / ColorSpace / SeekFlag / MediaType / MediaEvent）在
 /// 此层完成与 Adapter 抽象类型的双向映射。
-class MdkPlayerAdapter implements PlayerAdapter {
+class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   MdkPlayerAdapter() : _player = mdk.Player();
 
   final mdk.Player _player;
+  bool _disposed = false;
+
+  /// seek flags（v1.1.222）：keyFrame（快速关键帧定位）+ inCache（命中
+  /// demux 缓存区间免重下，对齐 fvp 默认缓存行为）。仅 keyFrame 时
+  /// TV 盒子 surfaceView 关键帧 seek 窗口长，期间原生 position 可能
+  /// 报 0/负值 → 上层进度条跳回开头（配合 player_screen 的
+  /// `_isSeekingPlayback` 守卫双保险）。
+  static final mdk.SeekFlag seekFlags =
+      mdk.SeekFlag(mdk.SeekFlag.keyFrame | mdk.SeekFlag.inCache);
+
+  /// lowLatency=1 等效 avformat 属性（v1.1.222 起播加速，纯常量可单测）。
+  ///
+  /// 对齐 fvp `registerWith('lowLatency': 1)` 在
+  /// `MdkVideoPlayerPlatform.create()` 内的应用：
+  /// - `avformat.fflags +nobuffer`：低延迟 demux（fvp 注释：1st
+  ///   key-frame packet is dropped）；himi 保留 `+fastseek`（seek 加速）
+  /// - `avformat.analyzeduration 100000`（100ms，原 500ms）
+  /// - `avformat.fpsprobesize 0`（跳过 fps 探测）
+  ///
+  /// 注意：himi 绕过 video_player 插件层直用 mdk.Player FFI，故
+  /// registerWith 的 lowLatency 选项无效，须在此层显式写入。
+  /// 配套 `lowLatencyBufferMinMs`：起播最小缓冲 0（原 2000ms），
+  /// 最小数据即起播；`demux.buffer.ranges=8` 段缓存保留（后退 seek）。
+  static const lowLatencyProperties = <String, String>{
+    'avformat.fflags': '+fastseek+nobuffer',
+    'avformat.analyzeduration': '100000',
+    'avformat.fpsprobesize': '0',
+  };
+
+  /// lowLatency 配套：setBufferRange 最小缓冲（ms）。
+  static const lowLatencyBufferMinMs = 0;
 
   /// 诊断面板 / SurfaceView 直接访问底层 mdk.Player（仅 mdk 档）。
   mdk.Player get raw => _player;
@@ -30,8 +62,7 @@ class MdkPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> seek({required int positionMs}) async {
-    await _player.seek(
-        position: positionMs, flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame));
+    await _player.seek(position: positionMs, flags: seekFlags);
   }
 
   // ── 媒体加载 ──────────────────────────────────────────────
@@ -209,7 +240,32 @@ class MdkPlayerAdapter implements PlayerAdapter {
   // ── 生命周期 ──────────────────────────────────────────────
 
   @override
-  void dispose() => _player.dispose();
+  void dispose() => unawaited(disposeAsync());
+
+  /// 确定性释放（v1.1.222）：fvp 的 `dispose()` 是 `void async`
+  /// （fire-and-forget：releaseTexture → unregister → mdkPlayerAPI_delete），
+  /// 外部无法 await 其原生 teardown 落定。引擎重建（MDK→Erika/media_kit）
+  /// 时若旧 MDK 的原生释放（D3D/GL/AudioTrack）与新引擎初始化重叠 →
+  /// 原生竞争闪退。
+  ///
+  /// 顺序：先确定性 await 释放 Flutter 纹理（幂等，fvp dispose 内部同
+  /// 一步骤提前做掉）→ 触发原生 delete → settle 等待其完成。
+  @override
+  Future<void> disposeAsync() async {
+    if (_disposed) return;
+    _disposed = true;
+    try {
+      await _player
+          .updateTexture(width: -1)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    try {
+      _player.dispose();
+    } catch (_) {}
+    // mdkPlayerAPI_delete 无 Future 可等：settle 等待原生资源
+    // （纹理/AudioTrack/渲染线程）落定后再允许新引擎创建。
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+  }
 
   // ── 映射 ──────────────────────────────────────────────────
 

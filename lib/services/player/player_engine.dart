@@ -53,6 +53,37 @@ class PlayerEngineFactory {
     }
   }
 
+  /// 按内容 HDR + 平台解析目标引擎（全自动路由，纯函数，便于单测）。
+  ///
+  /// 规则（v1.1.222）：
+  /// - TV 模式：恒 mdk（不路由）
+  /// - 非 HDR：恒 mdk
+  /// - HDR + Android/iOS（含 iPad）：erika（outputMode 由
+  ///   [resolveErikaOutputMode] 继续按内容路由）
+  /// - HDR + Windows：media_kit
+  /// - 其余（macOS/Linux/web HDR）：mdk 兜底
+  ///
+  /// [platformOverride] 仅供单测注入平台；缺省取当前平台。
+  /// web 恒回 mdk（无 erika/media_kit）。
+  static PlayerEngine resolveEngineForContent({
+    required bool hdr,
+    required bool tvMode,
+    TargetPlatform? platformOverride,
+  }) {
+    if (tvMode || kIsWeb) return PlayerEngine.mdk;
+    if (!hdr) return PlayerEngine.mdk;
+    final platform = platformOverride ?? defaultTargetPlatform;
+    switch (platform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+        return PlayerEngine.erika;
+      case TargetPlatform.windows:
+        return PlayerEngine.mediaKit;
+      default:
+        return PlayerEngine.mdk;
+    }
+  }
+
   /// 当前平台支持的引擎列表。
   ///
   /// - TV 模式：仅 MDK

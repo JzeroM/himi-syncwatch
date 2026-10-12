@@ -12,7 +12,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 /// 「播放器配置」：顶部 TabBar 按引擎分页（MDK / media_kit / Erika），
 /// 每个 tab 是**该引擎专属设置**。
 ///
-/// 本页**不提供引擎切换**——切换只在播放器内（engine_menu_panel）。
+/// 引擎选择全自动路由（v1.1.222），本页不提供切换。
 /// tab 列表 = 当前平台可用引擎（TV 仅 MDK；media_kit 仅 Windows）。
 class EngineConfigScreen extends ConsumerStatefulWidget {
   const EngineConfigScreen({super.key});
