@@ -41,11 +41,6 @@ ios/Flutter/ephemeral/
 ios/Flutter/app.framework
 ios/Flutter/flutter_export_environment.sh
 
-# macOS
-macos/Pods/
-macos/Flutter/ephemeral/
-macos/Flutter/GeneratedPluginCocoaPods
-
 # Server
 server/.dart_tool/
 server/build/

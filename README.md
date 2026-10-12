@@ -17,7 +17,7 @@
 
 ## 项目简介
 
-HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](https://emby.media)** 客户端，覆盖 Android / iOS / Windows / macOS / Linux / Android TV。核心能力是完整的 Emby 媒体库体验：登录、浏览、搜索、收藏、选集、多线路播放，以及本地化高品质解码（多播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播）。多人异地同步观影房间、弹幕、液态玻璃 UI 等仅是附加增强功能。
+HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](https://emby.media)** 客户端，覆盖 Android / iOS / Windows / Android TV（HarmonyOS 规划中）。核心能力是完整的 Emby 媒体库体验：登录、浏览、搜索、收藏、选集、多线路播放，以及本地化高品质解码（多播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播）。多人异地同步观影房间、弹幕、液态玻璃 UI 等仅是附加增强功能。
 
 ## 核心功能
 
@@ -40,11 +40,11 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 | Android | 8.0（API 26） | MDK / Erika |
 | Android TV | 8.0+ | MDK（TV 模式锁定） |
 | iOS / iPadOS | 12.0+ | MDK / Erika |
-| macOS | 10.15+ | MDK / Erika |
 | Windows | 10+（64 位） | MDK / media_kit |
-| Linux | 现代发行版 | MDK |
+| HarmonyOS | 规划中 | — |
 
 > Windows 7 不支持（Flutter 桌面运行时基线限制）。
+> macOS / Linux 暂停支持（多人观影 RTM 无对应原生实现，已从发版产物中移除）。
 
 ## 播放引擎自动路由
 
@@ -54,7 +54,6 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 - **非 HDR 内容** → 恒 MDK（省电稳定）
 - **HDR + Android/iOS** → Erika（extended-linear scRGB / EDR 协商）
 - **HDR + Windows** → media_kit（libmpv）
-- **HDR + macOS/Linux/Web** → MDK 兜底
 
 ## 下载安装
 
@@ -62,8 +61,6 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 
 - `app-*-release.apk` — Android / Android TV
 - `himi-sync-windows.zip` — Windows x64
-- `himi-sync-macos.zip` — macOS（未签名，需 `xattr -cr` 或右键打开）
-- `himi-sync-linux.zip` — Linux x64
 - `himi-sync-ios-unsigned.ipa` — iOS（需自签工具安装）
 
 ## 快速开始
@@ -79,7 +76,7 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 |------|------|------|
 | 框架 | Flutter 3.47（Dart SDK ^3.6） | https://flutter.dev |
 | 状态管理 | Riverpod 2 | https://github.com/rrousselGit/riverpod |
-| 播放引擎（Android/iOS/macOS） | MDK（fvp 插件封装 [Bilibili MDK](https://github.com/bilibili/MDK)） | https://github.com/wang-bin/fvp |
+| 播放引擎（Android/iOS） | MDK（fvp 插件封装 [Bilibili MDK](https://github.com/bilibili/MDK)） | https://github.com/wang-bin/fvp |
 | 播放引擎（Windows HDR） | media_kit（libmpv） | https://github.com/media-kit/media-kit |
 | 播放引擎（手机 HDR/字幕） | Erika（Rust 播放内核） | https://github.com/AimesSoft/Erika |
 | 实时通信 | Agora RTM 2 | https://github.com/AgoraIO-Extensions/Agora-Flutter-RTM-SDK |
