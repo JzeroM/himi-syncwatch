@@ -12,7 +12,8 @@ import 'erika_player_adapter.dart';
 /// 平台分布：
 /// - mdk：全平台默认
 /// - media_kit：仅 Windows（libmpv；其他平台收敛移除）
-/// - erika：非 TV 且非 Linux 平台（手机真 HDR10 + 原生位图字幕/弹幕）
+/// - erika：android/iOS/macOS（手机真 HDR10 + 原生位图字幕/弹幕）；
+///   Windows/Linux 无（Linux 无预编译；Windows 收敛为 mdk+media_kit）
 /// TV 模式仅 mdk。
 class PlayerEngineFactory {
   PlayerEngineFactory._();
@@ -55,16 +56,22 @@ class PlayerEngineFactory {
   /// 当前平台支持的引擎列表。
   ///
   /// - TV 模式：仅 MDK
-  /// - 非 TV：MDK + Erika（Erika 非 web、非 Linux）；Windows 额外含 media_kit
+  /// - 非 TV：MDK + Erika（Erika 仅 android/iOS/macOS）；Windows 额外含 media_kit
   static List<PlayerEngine> supportedEngines({required bool tvMode}) {
     if (tvMode) return const [PlayerEngine.mdk];
     final engines = <PlayerEngine>[PlayerEngine.mdk];
     if (!kIsWeb) {
-      if (defaultTargetPlatform != TargetPlatform.linux) {
-        engines.add(PlayerEngine.erika);
-      }
-      if (defaultTargetPlatform == TargetPlatform.windows) {
-        engines.add(PlayerEngine.mediaKit);
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+        case TargetPlatform.iOS:
+        case TargetPlatform.macOS:
+          engines.add(PlayerEngine.erika);
+          break;
+        case TargetPlatform.windows:
+          engines.add(PlayerEngine.mediaKit);
+          break;
+        default:
+          break;
       }
     }
     return engines;

@@ -2375,12 +2375,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         '热切换引擎: ${_currentEngine.label} → ${newEngine.label} '
         '@${savedPosition}ms playing=$wasPlaying');
 
-    // 0. 先卸载旧视频视图（避免旧 widget 在旧引擎释放后仍访问其原生对象）
-    setState(() => _switchingEngine = true);
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-
-    // 1. 停止旧引擎 + 取消订阅
+    // 1. 停止旧引擎 + 取消订阅（先停再卸视图：原生视图还在渲染时
+    //    从树上摘掉会访问已分离的 surface → 卡顿/原生崩溃）
     try {
       _player.state = AdapterPlaybackState.stopped;
     } catch (_) {}
@@ -2390,9 +2386,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
 
-    // 2. 等待旧引擎释放（避免新引擎起在释放窗口内 → 音频争用/状态回调劣化）
+    // 2. 卸载旧视频视图（避免旧 widget 在旧引擎释放后仍访问其原生对象）
+    setState(() => _switchingEngine = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    // 3. 等待旧引擎释放（避免新引擎起在释放窗口内 → 音频争用/状态回调劣化）
     await _disposeOldEngine();
-    // 3. 创建新引擎（切换仅本会话，不回写 defaultEngine）
+    // 4. 创建新引擎（切换仅本会话，不回写 defaultEngine）
     //    原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），
     //    避免帧内出现「新引擎 + 旧适配器」错配导致类型转换崩溃。
     _currentEngine = newEngine;
@@ -2402,14 +2403,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (!mounted) return;
 
-    // 4. 新引擎初始化（字幕属性 / 色彩空间等）
+    // 5. 新引擎初始化（字幕属性 / 色彩空间等）
     await _initPlayerProperties();
     if (!mounted) return;
 
-    // 5. 重新订阅事件
+    // 6. 重新订阅事件
     _setupPlayerListeners();
 
-    // 6. 恢复媒体播放
+    // 7. 恢复媒体播放
     if (savedUrl.isNotEmpty) {
       try {
         // 鉴权头：各引擎 adapter 自行映射（mdk avio.headers / media_kit Media / Erika open）
@@ -2417,7 +2418,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _player.setHttpHeaders({'X-Emby-Token': savedToken});
         }
         _player.media = savedUrl;
-        await _player.prepare();
+        // 初始定位走 prepare(startMs)：mdk 用原生 position 参数（加载完成后
+        // 定位，不依赖 open 后立刻可 seek）；media_kit/Erika open 后 seek。
+        await _player.prepare(startMs: savedPosition);
         _player.playbackRate = savedSpeed;
         _player.volume = savedVolume / 100;
 
@@ -2432,9 +2435,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         await _ensureTexture();
         if (!mounted) return;
 
-        // Seek 到保存的位置
+        // 位置通知（实际定位由 prepare(startMs) 完成）
         if (savedPosition > 0) {
-          await _player.seek(positionMs: savedPosition);
           _position = Duration(milliseconds: savedPosition);
           _positionNotifier.value = _position;
         }
@@ -2444,25 +2446,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _player.state = AdapterPlaybackState.playing;
         }
 
-        LogService().log('Player', '引擎切换完成: ${newEngine.label}');
+        LogService().log('Player',
+            '引擎切换完成: ${newEngine.label} @${savedPosition}ms');
         _addBroadcastMessage('已切换到 ${newEngine.label} 引擎');
       } catch (e) {
         LogService().log('Player', '引擎切换失败: $e');
       }
     }
 
-    // TrueHD 等：MDK 仅 AudioTrack 后端正常。切换后重断言音频后端并记录诊断，
-    // 避免新引擎音频输出被旧引擎残留影响（候选修复，待真机验证）。
+    // TrueHD 等：MDK 音频后端诊断（后端在 _initPlayerProperties 已设置，
+    // 运行中重断言会触发音频渲染器重建 → 卡顿/崩溃，勿再加回）。
     if (newEngine == PlayerEngine.mdk) {
-      final renderer = AppSettings.effectiveAudioRenderer(
-          ref.read(settingsProvider).audioRenderer);
       LogService().log('Player',
-          '切换后音频: 后端=$renderer codec=${_currentAudioCodec()} 滤镜=${_audioFilterText}');
-      if (renderer != 'auto') {
-        try {
-          _player.audioBackends = [renderer];
-        } catch (_) {}
-      }
+          '切换后音频: 后端=${AppSettings.effectiveAudioRenderer(ref.read(settingsProvider).audioRenderer)} '
+          'codec=${_currentAudioCodec()} 滤镜=${_audioFilterText}');
     }
 
     // 切到 Erika：喂原生弹幕（GPU 合成）
@@ -2528,10 +2525,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted) return;
     LogService().log('Player',
         '内容路由重建引擎: ${_currentEngine.label} → ${engine.label} (erikaMode=$outputMode)');
-    // 先卸载旧视频视图（避免旧 widget 访问已释放播放器）
-    setState(() => _switchingEngine = true);
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
+    // 先停旧引擎（原生视图还在渲染时摘掉会访问已分离 surface → 卡顿/崩溃）
     try {
       _player.state = AdapterPlaybackState.stopped;
     } catch (_) {}
@@ -2540,6 +2534,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _tracksSubscription?.cancel();
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
+    // 停后再卸载旧视频视图（避免旧 widget 访问已释放播放器）
+    setState(() => _switchingEngine = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     await _disposeOldEngine();
     if (!mounted) return;
     // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。

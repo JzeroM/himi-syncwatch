@@ -981,11 +981,29 @@ void main() {
   });
 
   group('defaultEngine 归一（平台感知）', () {
-    test('erika 在非 web 平台合法', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    test('erika 在 android/iOS/macOS 合法', () {
+      for (final p in const [
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        expect(AppSettings.fromJson({'defaultEngine': 'erika'}).defaultEngine,
+            'erika',
+            reason: '$p');
+      }
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    test('Windows/Linux 的 erika 静默回退 mdk', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(AppSettings.fromJson({'defaultEngine': 'erika'}).defaultEngine,
-          'erika');
+          'mdk');
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      expect(AppSettings.fromJson({'defaultEngine': 'erika'}).defaultEngine,
+          'mdk');
     });
 
     test('Windows 允许 media_kit', () {

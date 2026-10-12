@@ -260,10 +260,16 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   }
 
   @override
-  Future<void> prepare() async {
+  Future<void> prepare({int startMs = 0}) async {
     final uri = _mediaUri;
     if (uri == null) return;
     await _erikaPlayer.open(uri, httpHeaders: _httpHeaders);
+    // Erika 无原生初始定位：open 后 seek
+    if (startMs > 0) {
+      await _erikaPlayer.seek(Duration(milliseconds: startMs));
+      _lastPositionMs = startMs;
+      _lastPositionUpdate = DateTime.now();
+    }
     await _refreshTracks();
   }
 

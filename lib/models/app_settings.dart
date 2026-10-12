@@ -3,11 +3,21 @@ import 'package:flutter/foundation.dart';
 class AppSettings {
   /// 引擎 id 归一：允许 mdk/media_kit/erika。
   /// - media_kit 仅 Windows 可用；其他平台（含 web）静默回退 mdk
-  /// - web 一律回退 mdk；erika 非 TV 平台可用
+  /// - erika 仅 android/iOS/macOS；Windows/Linux/web 静默回退 mdk
+  /// - web 一律回退 mdk
   static String _normalizePlayerEngine(Object? raw) {
     final id = raw is String ? raw : 'mdk';
     if (kIsWeb) return 'mdk';
-    if (id == 'erika') return 'erika';
+    if (id == 'erika') {
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+        case TargetPlatform.iOS:
+        case TargetPlatform.macOS:
+          return 'erika';
+        default:
+          return 'mdk';
+      }
+    }
     if (id == 'media_kit' &&
         defaultTargetPlatform == TargetPlatform.windows) {
       return 'media_kit';

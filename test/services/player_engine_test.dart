@@ -67,17 +67,11 @@ void main() {
       expect(linux, isNot(contains(PlayerEngine.mediaKit)));
     });
 
-    test('Windows 非 TV：MDK + Erika + media_kit', () {
+    test('Windows 非 TV：MDK + media_kit（无 Erika）', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       final e = PlayerEngineFactory.supportedEngines(tvMode: false);
-      expect(
-        e,
-        containsAll([
-          PlayerEngine.mdk,
-          PlayerEngine.erika,
-          PlayerEngine.mediaKit,
-        ]),
-      );
+      expect(e, [PlayerEngine.mdk, PlayerEngine.mediaKit]);
+      expect(e, isNot(contains(PlayerEngine.erika)));
     });
   });
 
@@ -91,6 +85,24 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       expect(
         PlayerEngineFactory.isSupported(PlayerEngine.mediaKit, tvMode: false),
+        isTrue,
+      );
+    });
+
+    test('Windows/Linux 不支持 Erika；Android 支持', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(
+        PlayerEngineFactory.isSupported(PlayerEngine.erika, tvMode: false),
+        isFalse,
+      );
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      expect(
+        PlayerEngineFactory.isSupported(PlayerEngine.erika, tvMode: false),
+        isFalse,
+      );
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(
+        PlayerEngineFactory.isSupported(PlayerEngine.erika, tvMode: false),
         isTrue,
       );
     });

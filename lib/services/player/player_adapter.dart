@@ -158,7 +158,13 @@ abstract class PlayerAdapter {
   // ── 媒体加载 ──────────────────────────────────────────────
 
   set media(String uri);
-  Future<void> prepare();
+
+  /// 加载并准备媒体。
+  ///
+  /// [startMs] 初始播放位置（ms）；引擎支持原生定位的（mdk prepare
+  /// position）直接用，其余 open 后 seek。切引擎恢复进度走此参数——
+  /// 事后 seek 在流刚 open 时易因可 seek 性未就绪被丢弃（进度归 0）。
+  Future<void> prepare({int startMs = 0});
 
   // ── 属性（高频）────────────────────────────────────────────
 

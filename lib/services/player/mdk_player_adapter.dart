@@ -42,7 +42,7 @@ class MdkPlayerAdapter implements PlayerAdapter {
   }
 
   @override
-  Future<void> prepare() => _player.prepare();
+  Future<void> prepare({int startMs = 0}) => _player.prepare(position: startMs);
 
   // ── 属性 ──────────────────────────────────────────────────
 

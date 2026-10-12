@@ -112,10 +112,14 @@ class MediaKitPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   }
 
   @override
-  Future<void> prepare() async {
+  Future<void> prepare({int startMs = 0}) async {
     final uri = _currentUri;
     if (uri == null) return;
     await _player.open(Media(uri, httpHeaders: _httpHeaders));
+    // media_kit 无原生初始定位：open 后 seek（open await 返回时已可 seek）
+    if (startMs > 0) {
+      await _player.seek(Duration(milliseconds: startMs));
+    }
   }
 
   // ── 属性 ──────────────────────────────────────────────────
@@ -312,7 +316,35 @@ class MediaKitPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   @override
   void setProperty(String name, String value) {
-    _native?.setProperty(name, value);
+    final mapped = mapMdkPropertyToMpv(name, value);
+    _native?.setProperty(mapped.name, mapped.value);
+  }
+
+  /// mdk 字幕属性名/值 → mpv 属性名/值映射（player_screen 统一走 mdk 命名）。
+  /// 非字幕属性原样返回（mpv 直写通道）。
+  static ({String name, String value}) mapMdkPropertyToMpv(
+      String name, String value) {
+    switch (name) {
+      case 'subtitle':
+        // mdk: 1/0 → mpv sub-visibility: yes/no
+        return (
+          name: 'sub-visibility',
+          value: value == '1' || value == 'true' ? 'yes' : 'no',
+        );
+      case 'subtitle.scale':
+        return (name: 'sub-scale', value: value);
+      case 'subtitle.margin.y':
+        return (name: 'sub-margin-y', value: value);
+      case 'subtitle.font.size':
+        return (name: 'sub-font-size', value: value);
+      case 'subtitle.border':
+        return (name: 'sub-outline-size', value: value);
+      case 'subtitle.shadow':
+        // mdk 1/0（开关）→ mpv sub-shadow-offset（0 = 关）
+        return (name: 'sub-shadow-offset', value: value == '1' ? '1' : '0');
+      default:
+        return (name: name, value: value);
+    }
   }
 
   @override
