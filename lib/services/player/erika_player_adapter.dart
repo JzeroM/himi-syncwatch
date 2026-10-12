@@ -87,6 +87,14 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   Map<String, String> _httpHeaders = const {};
   bool _disposed = false;
 
+  /// 触发即弃的原生命令：吞掉错误（旧引擎释放后命令仍可能迟到送达）。
+  void _fire(Future<void> Function() op) {
+    if (_disposed) return;
+    unawaited(op().catchError((Object e) {
+      LogService().log('Erika', '命令失败(已忽略): $e');
+    }));
+  }
+
   void _subscribe() {
     _sub = _erikaPlayer.events.listen(
       _onEvent,
@@ -224,11 +232,11 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   set state(AdapterPlaybackState value) {
     switch (value) {
       case AdapterPlaybackState.playing:
-        unawaited(_erikaPlayer.play());
+        _fire(() => _erikaPlayer.play());
       case AdapterPlaybackState.paused:
-        unawaited(_erikaPlayer.pause());
+        _fire(() => _erikaPlayer.pause());
       case AdapterPlaybackState.stopped:
-        unawaited(_erikaPlayer.stop());
+        _fire(() => _erikaPlayer.stop());
     }
     _state = value;
   }
@@ -343,7 +351,7 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   set volume(double value) {
     _volume = value;
-    unawaited(_erikaPlayer.setVolume(value));
+    _fire(() => _erikaPlayer.setVolume(value));
   }
 
   @override
@@ -352,7 +360,7 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   set playbackRate(double value) {
     _rate = value;
-    unawaited(_erikaPlayer.setPlaybackRate(value));
+    _fire(() => _erikaPlayer.setPlaybackRate(value));
   }
 
   @override
@@ -394,10 +402,10 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   set activeAudioTracks(List<int> tracks) {
     if (tracks.isEmpty) {
-      unawaited(_erikaPlayer.selectAudioTrack(null));
+      _fire(() => _erikaPlayer.selectAudioTrack(null));
       return;
     }
-    unawaited(_selectAudioIndex(tracks.first));
+    _fire(() => _selectAudioIndex(tracks.first));
   }
 
   Future<void> _selectAudioIndex(int idx) async {
@@ -423,10 +431,10 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   set activeSubtitleTracks(List<int> tracks) {
     if (tracks.isEmpty) {
-      unawaited(_erikaPlayer.selectSubtitleTrack(null));
+      _fire(() => _erikaPlayer.selectSubtitleTrack(null));
       return;
     }
-    unawaited(_selectSubtitleIndex(tracks.first));
+    _fire(() => _selectSubtitleIndex(tracks.first));
   }
 
   Future<void> _selectSubtitleIndex(int idx) async {

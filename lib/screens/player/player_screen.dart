@@ -845,6 +845,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
 
+  /// 引擎热切换/内容路由重建进行中：暂时卸载旧视频视图（渲染黑底），
+  /// 避免旧 widget 在旧引擎释放后仍访问其原生对象（崩溃/错误）。
+  bool _switchingEngine = false;
+
   /// 应用已进入后台/熄屏（收到 paused/inactive/hidden）：回前台（resumed）
   /// 时据此触发一次视频输出恢复（纹理重建 / SurfaceView 补帧）。
   bool _appBackgrounded = false;
@@ -2371,6 +2375,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         '热切换引擎: ${_currentEngine.label} → ${newEngine.label} '
         '@${savedPosition}ms playing=$wasPlaying');
 
+    // 0. 先卸载旧视频视图（避免旧 widget 在旧引擎释放后仍访问其原生对象）
+    setState(() => _switchingEngine = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
     // 1. 停止旧引擎 + 取消订阅
     try {
       _player.state = AdapterPlaybackState.stopped;
@@ -2384,9 +2393,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 2. 等待旧引擎释放（避免新引擎起在释放窗口内 → 音频争用/状态回调劣化）
     await _disposeOldEngine();
     // 3. 创建新引擎（切换仅本会话，不回写 defaultEngine）
+    //    原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），
+    //    避免帧内出现「新引擎 + 旧适配器」错配导致类型转换崩溃。
     _currentEngine = newEngine;
     // ignore: invalid_use_of_protected_member
     _player = PlayerEngineFactory.create(newEngine, erikaOutputMode: erikaMode);
+    _switchingEngine = false;
 
     if (!mounted) return;
 
@@ -2436,6 +2448,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _addBroadcastMessage('已切换到 ${newEngine.label} 引擎');
       } catch (e) {
         LogService().log('Player', '引擎切换失败: $e');
+      }
+    }
+
+    // TrueHD 等：MDK 仅 AudioTrack 后端正常。切换后重断言音频后端并记录诊断，
+    // 避免新引擎音频输出被旧引擎残留影响（候选修复，待真机验证）。
+    if (newEngine == PlayerEngine.mdk) {
+      final renderer = AppSettings.effectiveAudioRenderer(
+          ref.read(settingsProvider).audioRenderer);
+      LogService().log('Player',
+          '切换后音频: 后端=$renderer codec=${_currentAudioCodec()} 滤镜=${_audioFilterText}');
+      if (renderer != 'auto') {
+        try {
+          _player.audioBackends = [renderer];
+        } catch (_) {}
       }
     }
 
@@ -2499,9 +2525,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 开播前按内容重建引擎/适配器（此时尚未 open，无"播放中拆台"）。
   Future<void> _recreateEngineForLoad(
       PlayerEngine engine, ErikaOutputMode outputMode) async {
+    if (!mounted) return;
     LogService().log('Player',
         '内容路由重建引擎: ${_currentEngine.label} → ${engine.label} (erikaMode=$outputMode)');
-    _currentEngine = engine;
+    // 先卸载旧视频视图（避免旧 widget 访问已释放播放器）
+    setState(() => _switchingEngine = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     try {
       _player.state = AdapterPlaybackState.stopped;
     } catch (_) {}
@@ -2511,7 +2541,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
     await _disposeOldEngine();
+    if (!mounted) return;
+    // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。
+    _currentEngine = engine;
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
+    _switchingEngine = false;
     await _initPlayerProperties();
     if (!mounted) return;
     _setupPlayerListeners();
@@ -5049,7 +5083,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final videoContent = _isPlayerReady ||
             (!_hasEpisodeList && widget.roomCode == null)
         ? Center(
-            child: _currentEngine == PlayerEngine.erika
+            child: _switchingEngine
+                ? const SizedBox.shrink()
+                : _currentEngine == PlayerEngine.erika
                 // Erika：原生 surface/TextureView（自绘；含位图字幕 PGS 合成）
                 ? ErikaVideoView(
                     player: (_player as ErikaPlayerAdapter).erikaPlayer,
