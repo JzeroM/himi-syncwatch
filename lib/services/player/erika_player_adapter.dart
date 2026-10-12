@@ -20,7 +20,7 @@ import 'player_adapter.dart';
 /// - Erika 无 position/duration getter → 由 [ErikaPlayer.events] 缓存
 /// - 外挂音频无对应 API → 抛 [UnimplementedError]
 /// - setProperty/解码器/色彩空间/截图等无等价 API → no-op / null
-class ErikaPlayerAdapter implements PlayerAdapter {
+class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   ErikaPlayerAdapter({this.outputMode = ErikaOutputMode.auto}) {
     _erikaPlayer = ErikaPlayer(outputMode: outputMode);
     _subscribe();
@@ -634,15 +634,28 @@ class ErikaPlayerAdapter implements PlayerAdapter {
 
   // ── 生命周期 ──────────────────────────────────────────────
 
+  Future<void>? _disposeFuture;
+
   @override
-  void dispose() {
+  Future<void> disposeAsync() {
+    final existing = _disposeFuture;
+    if (existing != null) return existing;
+    return _disposeFuture = _doDispose();
+  }
+
+  Future<void> _doDispose() async {
     _disposed = true;
     _subStyleTimer?.cancel();
     _sub?.cancel();
-    unawaited(_erikaPlayer.dispose());
     _textureId.dispose();
     _stateCtrl.close();
     _statusCtrl.close();
     _eventCtrl.close();
+    await _erikaPlayer.dispose();
+  }
+
+  @override
+  void dispose() {
+    unawaited(disposeAsync());
   }
 }

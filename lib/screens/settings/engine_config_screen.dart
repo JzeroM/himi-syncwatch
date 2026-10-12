@@ -227,7 +227,7 @@ class _EngineTabBody extends ConsumerWidget {
       const Padding(
         padding: EdgeInsets.all(16),
         child: Text(
-          'Erika（自研内核）：原生位图字幕（PGS/VobSub）、原生 GPU 弹幕、'
+          'Erika：原生位图字幕（PGS/VobSub）、原生 GPU 弹幕、'
           '真 HDR10/EDR 输出。\n'
           '输出模式按内容自动路由（HDR 片源协商 EDR/HDR10，其余 SDR），无需手动设置。',
           style: TextStyle(fontSize: 12, color: Colors.white54),

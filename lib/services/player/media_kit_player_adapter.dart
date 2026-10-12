@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
@@ -17,7 +18,7 @@ import 'player_adapter.dart';
 ///   media_kit 无等价 API，no-op
 ///
 /// 刻度转换：volume 0.0-1.0 ↔ media_kit 0-100；position/duration ms ↔ Duration。
-class MediaKitPlayerAdapter implements PlayerAdapter {
+class MediaKitPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   MediaKitPlayerAdapter()
       : _player = Player(
           configuration: const PlayerConfiguration(
@@ -46,6 +47,7 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
 
   final ValueNotifier<int?> _textureId = ValueNotifier<int?>(null);
   PlatformVideoController? _platformController;
+  bool _disposed = false;
 
   void _onControllerNotifier() {
     final pc = _controller.notifier.value;
@@ -382,10 +384,17 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
   // ── 生命周期 ──────────────────────────────────────────────
 
   @override
-  void dispose() {
+  Future<void> disposeAsync() async {
+    if (_disposed) return;
+    _disposed = true;
     _controller.notifier.removeListener(_onControllerNotifier);
     _platformController?.id.removeListener(_onPlatformId);
     _textureId.dispose();
-    _player.dispose();
+    await _player.dispose();
+  }
+
+  @override
+  void dispose() {
+    unawaited(disposeAsync());
   }
 }

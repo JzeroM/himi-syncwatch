@@ -129,6 +129,14 @@ class AdapterMediaInfo {
   static const empty = AdapterMediaInfo();
 }
 
+/// 原生 teardown 可等待的引擎能力（用于引擎热切换时**先等旧引擎释放**，
+/// 避免新引擎在旧引擎释放窗口内创建 → 音频输出争用/状态回调劣化）。
+///
+/// fvp(mdk) 的 `dispose()` 是 `void async`（无 Future），不实现本接口。
+abstract interface class AsyncDisposablePlayer {
+  Future<void> disposeAsync();
+}
+
 /// 播放器抽象接口：统一 mdk / media_kit 的播放控制、属性、轨道、渲染、事件面。
 ///
 /// 设计原则：

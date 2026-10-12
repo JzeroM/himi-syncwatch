@@ -907,7 +907,7 @@ void main() {
       expect(s.danmakuMaxCount, 500);
       expect(s.danmakuSpeed, 1.0);
       expect(s.danmakuFontSize, 0.5);
-      expect(s.danmakuOpacity, 0.6);
+      expect(s.danmakuOpacity, 0.8);
     });
 
     test('旧数据缺弹幕字段回退默认', () {
@@ -915,7 +915,7 @@ void main() {
       expect(s.danmakuDefaultOn, isTrue);
       expect(s.danmakuApiUrl, '');
       expect(s.danmakuScrollRows, 30);
-      expect(s.danmakuOpacity, 0.6);
+      expect(s.danmakuOpacity, 0.8);
     });
 
     test('弹幕字段 toJson/fromJson 往返', () {
@@ -932,7 +932,7 @@ void main() {
         danmakuMaxCount: 800,
         danmakuSpeed: 1.5,
         danmakuFontSize: 0.8,
-        danmakuOpacity: 0.6,
+        danmakuOpacity: 0.7,
       );
       final back = AppSettings.fromJson(custom.toJson());
       expect(back.danmakuDefaultOn, isFalse);
@@ -947,7 +947,7 @@ void main() {
       expect(back.danmakuMaxCount, 800);
       expect(back.danmakuSpeed, 1.5);
       expect(back.danmakuFontSize, 0.8);
-      expect(back.danmakuOpacity, 0.6);
+      expect(back.danmakuOpacity, 0.7);
     });
 
     test('copyWith 透传弹幕字段；未指定保留原值', () {
@@ -1029,6 +1029,23 @@ void main() {
     test('显式 false 保留', () {
       expect(
           AppSettings.fromJson({'hdrAutoRoute': false}).hdrAutoRoute, isFalse);
+    });
+  });
+
+  group('danmakuOpacity 默认与迁移', () {
+    test('默认 0.8', () {
+      expect(const AppSettings().danmakuOpacity, 0.8);
+      expect(AppSettings.fromJson({}).danmakuOpacity, 0.8);
+    });
+
+    test('旧默认 0.6 迁移到 0.8', () {
+      expect(AppSettings.fromJson({'danmakuOpacity': 0.6}).danmakuOpacity, 0.8);
+    });
+
+    test('其余值保留并钳制', () {
+      expect(AppSettings.fromJson({'danmakuOpacity': 0.5}).danmakuOpacity, 0.5);
+      expect(AppSettings.fromJson({'danmakuOpacity': 2.0}).danmakuOpacity,
+          AppSettings.danmakuOpacityMax);
     });
   });
 }

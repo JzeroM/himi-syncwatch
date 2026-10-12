@@ -280,7 +280,7 @@ class AppSettings {
     this.danmakuMaxCount = 500,
     this.danmakuSpeed = 1.0,
     this.danmakuFontSize = 0.5,
-    this.danmakuOpacity = 0.6,
+    this.danmakuOpacity = 0.8,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -566,12 +566,16 @@ class AppSettings {
         danmakuFontSizeMin,
         danmakuFontSizeMax,
       ),
-      danmakuOpacity: _clampDouble(
-        json['danmakuOpacity'],
-        0.6,
-        danmakuOpacityMin,
-        danmakuOpacityMax,
-      ),
+      // 迁移：旧默认 0.6 → 0.8（无「是否手动设过」记录，一并迁移）
+      danmakuOpacity: (json['danmakuOpacity'] is num &&
+              ((json['danmakuOpacity'] as num).toDouble() - 0.6).abs() < 1e-6)
+          ? 0.8
+          : _clampDouble(
+              json['danmakuOpacity'],
+              0.8,
+              danmakuOpacityMin,
+              danmakuOpacityMax,
+            ),
       // 玻璃可调参数：缺失/null = 走包默认；存盘可能为 int → num 归一
       glassBlur: (json['glassBlur'] as num?)?.toDouble(),
       glassThickness: (json['glassThickness'] as num?)?.toDouble(),

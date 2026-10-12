@@ -2381,11 +2381,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
 
-    // 2. 销毁旧引擎
-    try {
-      _player.dispose();
-    } catch (_) {}
-
+    // 2. 等待旧引擎释放（避免新引擎起在释放窗口内 → 音频争用/状态回调劣化）
+    await _disposeOldEngine();
     // 3. 创建新引擎（切换仅本会话，不回写 defaultEngine）
     _currentEngine = newEngine;
     // ignore: invalid_use_of_protected_member
@@ -2445,6 +2442,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 切到 Erika：喂原生弹幕（GPU 合成）
     if (newEngine == PlayerEngine.erika) _applyErikaDanmaku();
 
+    // 图标兜底：连续切换（MDK→Erika→MDK）后原生状态回调可能迟到/未达，
+    // 显式同步一次，并延迟再同步（捕捉迟到的 playing 事件）。
+    if (mounted) _syncPlayState();
+    LogService().log('Player',
+        '切换后状态: ${_player.state.name} playing=${_isPlayingNotifier.value}');
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _syncPlayState();
+    });
+
     if (mounted) setState(() {});
   }
 
@@ -2466,6 +2472,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return PlayerEngine.fromId(s.defaultEngine);
   }
 
+  /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），
+  /// fvp(mdk) 为 `void async` → settle 等待其原生 teardown 落定。
+  ///
+  /// 目的：避免新引擎在旧引擎**异步释放窗口**内创建 —— 否则音频输出争用
+  /// （TrueHD 卡顿）、原生状态回调劣化（播放/暂停图标不动）。
+  Future<void> _disposeOldEngine() async {
+    final old = _player;
+    if (old is AsyncDisposablePlayer) {
+      final disposable = old as AsyncDisposablePlayer;
+      try {
+        await disposable.disposeAsync().timeout(const Duration(seconds: 2));
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    } else {
+      try {
+        old.dispose();
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+    }
+    // 复位 per-player 去重态：确保新引擎一定重写 audio.avfilter/后端
+    _lastAudioFilter = null;
+    _lastAudioFilterCodec = '';
+  }
+
   /// 开播前按内容重建引擎/适配器（此时尚未 open，无"播放中拆台"）。
   Future<void> _recreateEngineForLoad(
       PlayerEngine engine, ErikaOutputMode outputMode) async {
@@ -2480,9 +2510,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _tracksSubscription?.cancel();
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
-    try {
-      _player.dispose();
-    } catch (_) {}
+    await _disposeOldEngine();
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
     await _initPlayerProperties();
     if (!mounted) return;
@@ -5623,7 +5651,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         notifier.update(
           danmakuSpeed: 1.0,
           danmakuFontSize: 0.5,
-          danmakuOpacity: 0.6,
+          danmakuOpacity: 0.8,
         );
         unawaited(_applyErikaDanmakuConfig());
       },
