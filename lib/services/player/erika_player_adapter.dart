@@ -59,6 +59,19 @@ class ErikaPlayerAdapter implements PlayerAdapter {
   bool _buffering = false;
   bool _errored = false;
 
+  /// 字幕样式覆盖位：Erika 需置 `overrideMask` 才会把字段推到带自身样式的字幕上
+  /// （ASS）；纯文本(SRT)本即以回退样式生效。位图(PGS)不适用。
+  static const int _subtitleOverrideMask = kErikaSubtitleOverrideMargins |
+      kErikaSubtitleOverrideFontSizeFields |
+      kErikaSubtitleOverrideBorder;
+
+  /// 字幕样式下发合并：拖拽滑杆时避免每 tick 一次 channel 调用。
+  double? _pendingSubScale;
+  int? _pendingSubMarginY;
+  double? _pendingSubFontSize;
+  double? _pendingSubOutline;
+  Timer? _subStyleTimer;
+
   /// seek 栅栏：忽略 seek 途中迟到的旧 position 事件（与目标距离 >1.5s）。
   int? _pendingSeekTargetMs;
   DateTime? _seekFenceUntil;
@@ -87,12 +100,21 @@ class ErikaPlayerAdapter implements PlayerAdapter {
 
     // buffering：仅该事件有效（其余事件默认 false）。
     if (e.kind == ErikaEventKind.bufferingChanged) {
+      if (e.buffering != _buffering) {
+        LogService().log('Erika', 'buffering=${e.buffering}');
+      }
       _buffering = e.buffering;
     }
 
-    // 轨表：仅 tracksChanged/trackSelectionChanged（及其后续事件快照）携带，
-    // 其余事件 trackList 为空 → 仅在非空时重建，避免清空。
-    if (e.trackList.isNotEmpty) {
+    // 轨表：仅 tracksChanged/trackSelectionChanged（或首帧轨表仍空）时重建。
+    // Android 快照会在每个事件携带 trackList，逐事件重建会造成无谓分配/GC 抖动。
+    final needTracks = e.trackList.isNotEmpty &&
+        (e.kind == ErikaEventKind.tracksChanged ||
+            e.kind == ErikaEventKind.trackSelectionChanged ||
+            (_videoTracks.isEmpty &&
+                _audioTracks.isEmpty &&
+                _subtitleTracks.isEmpty));
+    if (needTracks) {
       _videoTracks =
           e.trackList.where((t) => t.kind == ErikaTrackKind.video).toList();
       _audioTracks =
@@ -435,28 +457,68 @@ class ErikaPlayerAdapter implements PlayerAdapter {
 
   @override
   void setProperty(String name, String value) {
-    // 将 player_screen 使用的少量 mdk 字幕属性映射到 Erika 等价 API。
+    // 将 player_screen 使用的少量 mdk 字幕属性映射到 Erika 等价 API；
+    // 经 100ms 合并下发，避免拖拽滑杆时每次 tick 都发 channel 调用。
     switch (name) {
       case 'subtitle.scale':
         final v = double.tryParse(value);
-        if (v != null) unawaited(_erikaPlayer.setSubtitleScale(v));
+        if (v != null) {
+          _pendingSubScale = v;
+          _scheduleSubtitleStyle();
+        }
       case 'subtitle.margin.y':
         final v = int.tryParse(value);
         if (v != null) {
-          unawaited(_erikaPlayer.setSubtitleStyle(marginVertical: v));
+          _pendingSubMarginY = v;
+          _scheduleSubtitleStyle();
         }
       case 'subtitle.font.size':
         final v = double.tryParse(value);
         if (v != null) {
-          unawaited(_erikaPlayer.setSubtitleStyle(fontSize: v));
+          _pendingSubFontSize = v;
+          _scheduleSubtitleStyle();
         }
       case 'subtitle.border':
         final v = double.tryParse(value);
         if (v != null) {
-          unawaited(_erikaPlayer.setSubtitleStyle(outlineWidth: v));
+          _pendingSubOutline = v;
+          _scheduleSubtitleStyle();
         }
       default:
         break;
+    }
+  }
+
+  void _scheduleSubtitleStyle() {
+    _subStyleTimer?.cancel();
+    _subStyleTimer = Timer(
+      const Duration(milliseconds: 100),
+      () => unawaited(_applyPendingSubtitleStyle()),
+    );
+  }
+
+  Future<void> _applyPendingSubtitleStyle() async {
+    if (_disposed) return;
+    final scale = _pendingSubScale;
+    final margin = _pendingSubMarginY;
+    final fontSize = _pendingSubFontSize;
+    final outline = _pendingSubOutline;
+    _pendingSubScale = null;
+    _pendingSubMarginY = null;
+    _pendingSubFontSize = null;
+    _pendingSubOutline = null;
+    try {
+      if (scale != null) await _erikaPlayer.setSubtitleScale(scale);
+      if (fontSize != null || margin != null || outline != null) {
+        await _erikaPlayer.setSubtitleStyle(
+          fontSize: fontSize,
+          outlineWidth: outline,
+          marginVertical: margin,
+          overrideMask: _subtitleOverrideMask,
+        );
+      }
+    } catch (e) {
+      LogService().log('Erika', '应用字幕样式失败: $e');
     }
   }
 
@@ -507,6 +569,7 @@ class ErikaPlayerAdapter implements PlayerAdapter {
   @override
   void dispose() {
     _disposed = true;
+    _subStyleTimer?.cancel();
     _sub?.cancel();
     unawaited(_erikaPlayer.dispose());
     _textureId.dispose();

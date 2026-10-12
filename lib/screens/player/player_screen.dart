@@ -357,6 +357,20 @@ class PlayerScreen extends ConsumerStatefulWidget {
   @visibleForTesting
   static bool showDecodeButton({required bool tvMode}) => !tvMode;
 
+  /// 位图字幕编码判定（Emby codec 名，大小写不敏感）：PGS/VobSub/DVB。
+  /// 位图字幕无法像文本字幕那样被重设样式/缩放/位置。
+  @visibleForTesting
+  static bool isBitmapSubtitleCodec(String codec) {
+    final c = codec.toLowerCase();
+    return c.contains('pgs') ||
+        c.contains('hdmv') ||
+        c.contains('dvdsub') ||
+        c.contains('dvbsub') ||
+        c.contains('vobsub') ||
+        c.contains('dvd_sub') ||
+        c.contains('dvb_sub');
+  }
+
   /// 「显示调节」入口位置：TV 在底部控制条（弹幕与字幕之间），非 TV 在顶栏。
   @visibleForTesting
   static bool showTopSubtitleStyleButton({required bool tvMode}) => !tvMode;
@@ -5500,6 +5514,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       subtitleMarginY: _subtitleMarginY,
       subtitleDelayMs: _subtitleDelayMs,
       subtitleDelayEnabled: _activeSubtitleIndex != null,
+      subtitleStyleDisabled: _erikaActiveSubtitleIsBitmap(),
       glassEnabled: _glassUiOn,
       onSubtitleScaleChanged: _onSubtitleScaleChanged,
       onSubtitleMarginChanged: _onSubtitleMarginYChanged,
@@ -5518,6 +5533,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       ),
       focusNode: _selectorFirstFocusNode,
     );
+  }
+
+  /// 当前引擎 Erika 且激活字幕为位图（PGS/VobSub/DVB）→ 样式/位置/延迟不可调。
+  /// 位图字幕由 Erika 以原生尺寸/位置合成，libass 样式/缩放对其无效。
+  bool _erikaActiveSubtitleIsBitmap() {
+    if (_currentEngine != PlayerEngine.erika) return false;
+    final idx = _activeSubtitleIndex;
+    if (idx == null || idx < 0) return false;
+    final pos = _embySubtitleStreams.indexWhere((s) => s.index == idx);
+    if (pos < 0) return false;
+    return PlayerScreen.isBitmapSubtitleCodec(_embySubtitleStreams[pos].codec);
   }
 
   /// 底栏弹幕钮：翻转开关（不占选择器面板；关掉其他已开面板）。
@@ -7161,6 +7187,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final stream = _embySubtitleStreams[embyIndex];
     final isExternal =
         stream.isExternal || stream.subtitleLocationType == 'ExternalStream';
+    LogService().log('Player',
+        '切字幕: engine=${_currentEngine.id} idx=$embyIndex codec=${stream.codec} '
+        'external=$isExternal bitmap=${PlayerScreen.isBitmapSubtitleCodec(stream.codec)}');
 
     if (isExternal) {
       // 外挂字幕：用 fvp setMedia 加载外部文件，不重载流

@@ -21,6 +21,9 @@ class DisplayAdjustPanel extends StatelessWidget {
     required this.onSubtitleDelayChanged,
     required this.onSubtitleReset,
     this.subtitleDelayEnabled = true,
+    // 位图字幕（PGS/VobSub/DVB）无法重设样式：置真时字幕段替换为提示。
+    this.subtitleStyleDisabled = false,
+    this.subtitleStyleDisabledHint = '位图字幕（PGS 等）不支持样式调节',
     // 弹幕段
     required this.danmakuSpeed,
     required this.danmakuFontSize,
@@ -38,6 +41,8 @@ class DisplayAdjustPanel extends StatelessWidget {
   final int subtitleMarginY;
   final int subtitleDelayMs;
   final bool subtitleDelayEnabled;
+  final bool subtitleStyleDisabled;
+  final String subtitleStyleDisabledHint;
   final ValueChanged<double> onSubtitleScaleChanged;
   final ValueChanged<int> onSubtitleMarginChanged;
   final ValueChanged<int> onSubtitleDelayChanged;
@@ -63,19 +68,28 @@ class DisplayAdjustPanel extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
         panelSectionHeader('字幕'),
-        SubtitleStylePanel(
-          scale: subtitleScale,
-          marginY: subtitleMarginY,
-          delayMs: subtitleDelayMs,
-          delayEnabled: subtitleDelayEnabled,
-          glassEnabled: glassEnabled,
-          focusNode: focusNode,
-          scrollable: false,
-          onScaleChanged: onSubtitleScaleChanged,
-          onMarginYChanged: onSubtitleMarginChanged,
-          onDelayChanged: onSubtitleDelayChanged,
-          onReset: onSubtitleReset,
-        ),
+        if (subtitleStyleDisabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Text(
+              subtitleStyleDisabledHint,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          )
+        else
+          SubtitleStylePanel(
+            scale: subtitleScale,
+            marginY: subtitleMarginY,
+            delayMs: subtitleDelayMs,
+            delayEnabled: subtitleDelayEnabled,
+            glassEnabled: glassEnabled,
+            focusNode: focusNode,
+            scrollable: false,
+            onScaleChanged: onSubtitleScaleChanged,
+            onMarginYChanged: onSubtitleMarginChanged,
+            onDelayChanged: onSubtitleDelayChanged,
+            onReset: onSubtitleReset,
+          ),
         const Divider(color: Colors.white24, height: 1),
         panelSectionHeader('弹幕'),
         DanmakuStylePanel(
