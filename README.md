@@ -9,7 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/JzeroM/himi-syncwatch?style=flat-square&color=orange)](https://github.com/JzeroM/himi-syncwatch/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/JzeroM/himi-syncwatch/release.yml?branch=main&style=flat-square)](https://github.com/JzeroM/himi-syncwatch/actions)
 [![Flutter](https://img.shields.io/badge/Flutter-3.47-blue?style=flat-square&logo=flutter)](https://flutter.dev)
-[![License](https://img.shields.io/badge/license-Private-red?style=flat-square)](https://github.com/JzeroM/himi-syncwatch)
+[![License](https://img.shields.io/badge/license-open%20source-green?style=flat-square)](https://github.com/JzeroM/himi-syncwatch)
 
 </div>
 
@@ -137,4 +137,4 @@ flutter run -d windows   # 或 android / ios / macos / linux
 
 ## 许可
 
-本项目为私有项目，仅供授权用户使用。未公开开源许可。
+本项目为公开项目，欢迎 Star 与 Issue 反馈。
