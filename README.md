@@ -34,7 +34,6 @@ HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的私密多人异地同
 | **TV 模式** | Android TV 遥控器焦点导航、顶部横排导航、仅 MDK 引擎 |
 | **液态玻璃 UI** | 真折射 shader，参数可调（强度/折射率/色散），基于 [liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets) |
 | **多图标集** | 默认 / 艺术 / 玻璃 / 霓虹，运行时切换 |
-| **局域网助手** | Emby 局域网内网穿透配置辅助 |
 
 ## 平台支持
 
@@ -71,7 +70,7 @@ HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的私密多人异地同
 
 ## 快速开始
 
-1. 启动 Emby 服务器，确认局域网或公网可访问。
+1. 启动 Emby 服务器，确认可访问。
 2. 打开 HIMI，进入 **服务器** 页添加 Emby 地址与账号。
 3. 点击任意影片 → 详情页 → **创建房间**（或加入好友房间）。
 4. 邀请好友输入房间码或扫描二维码加入。
@@ -104,36 +103,10 @@ lib/
 ├── services/      # 业务服务
 │   ├── player/    #   多引擎抽象 + 自动路由
 │   ├── danmaku/   #   弹弹 Play 弹幕
-│   ├── rtm/       #   声网 RTM 房间
-│   └── lan_config/#   局域网配置
+│   └── rtm/       #   声网 RTM 房间
 ├── utils/         # 工具
 └── widgets/       # 通用组件
 ```
-
-## 开发与测试
-
-```bash
-# 依赖
-flutter pub get
-
-# 静态分析
-flutter analyze
-
-# 测试（1475+ 用例）
-flutter test
-
-# 运行
-flutter run -d windows   # 或 android / ios / macos / linux
-```
-
-## 版本历史（精选）
-
-- **v1.1.222** — 引擎全自动路由、房间模式路由、TV seek 修复、MDK 低延迟起播、确定性释放
-- **v1.1.221** — Windows 移除 Erika、media_kit 字幕可调、切引擎进度恢复
-- **v1.1.220** — 修复引擎热切换闪退与 TrueHD 音频输出
-- **v1.1.202–219** — 引擎抽象、Erika 弹幕/字幕/outputMode、CI 全平台打包
-
-完整变更见 [Releases](https://github.com/JzeroM/himi-syncwatch/releases)。
 
 ## 许可
 
