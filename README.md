@@ -2,9 +2,9 @@
 
 # HIMI Sync Watch
 
-**HIMI — 私密多人异地同步观影客户端**
+**HIMI — 跨平台 Emby 客户端**
 
-跨平台 Emby 同步观影 · 弹幕 · 房间 · 多播放引擎 · TV 模式
+全平台 Emby 媒体库客户端 · 多播放引擎 · 弹幕 · 多人同步观影 · TV 模式
 
 [![Release](https://img.shields.io/github/v/release/JzeroM/himi-syncwatch?style=flat-square&color=orange)](https://github.com/JzeroM/himi-syncwatch/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/JzeroM/himi-syncwatch/release.yml?branch=main&style=flat-square)](https://github.com/JzeroM/himi-syncwatch/actions)
@@ -17,17 +17,15 @@
 
 ## 项目简介
 
-HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的私密多人异地同步观影客户端，对接 **[Emby](https://emby.media)** 媒体服务器，支持多端（Android / iOS / Windows / macOS / Linux / Android TV）加入同一房间**帧级同步观影**，并内置**弹幕**、**HDR 原生渲染**与**液态玻璃 UI**。
-
-> 私密：仅受邀好友通过房间码/扫码进入，无公开房间。
-> 同步：基于声网 RTM 房间信令，播放/暂停/跳转/进度全端对齐。
+HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](https://emby.media)** 客户端，覆盖 Android / iOS / Windows / macOS / Linux / Android TV。作为 Emby 客户端，它提供完整的媒体库浏览、搜索、收藏、选集与本地化高品质播放（多引擎 + HDR + 原生位图字幕）；在此基础上，还内置**多人异地同步观影房间**、**弹幕**与**液态玻璃 UI** 等增强功能。
 
 ## 核心功能
 
 | 功能 | 说明 |
 |------|------|
 | **Emby 媒体库** | 登录、浏览、搜索、收藏、详情页、选集、播放线路 |
-| **多人同步房间** | 房间码 / 二维码扫码加入，播放控制全员同步 |
+| **高品质播放** | 三播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播 |
+| **多人同步房间** | 房间码 / 二维码扫码加入，播放控制全员同步（可选功能） |
 | **弹幕** | [弹弹 Play](https://www.dandanplay.com) 协议兼容（免签名），时间轴匹配 + 本地缓存 |
 | **多播放引擎** | [MDK（fvp）](https://github.com/wang-bin/fvp) / [media_kit](https://github.com/media-kit/media-kit)（libmpv）/ [Erika](https://github.com/AimesSoft/Erika)（Rust 内核，HDR10 + 原生位图字幕/PGS） |
 | **HDR 路由** | 按内容 HDR 与平台自动路由最优引擎（v1.1.222 起全自动） |
@@ -72,9 +70,8 @@ HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的私密多人异地同
 
 1. 启动 Emby 服务器，确认可访问。
 2. 打开 HIMI，进入 **服务器** 页添加 Emby 地址与账号。
-3. 点击任意影片 → 详情页 → **创建房间**（或加入好友房间）。
-4. 邀请好友输入房间码或扫描二维码加入。
-5. 房主播放，全员自动同步。
+3. 浏览媒体库，点击影片进入详情页即可播放。
+4. （可选）多人同步观影：详情页 **创建房间**，邀请好友输入房间码或扫描二维码加入，房主播放后全员自动同步。
 
 ## 技术栈
 
