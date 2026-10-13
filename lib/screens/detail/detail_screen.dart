@@ -1965,20 +1965,24 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (item.genres.isNotEmpty) ...[
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: item.genres
-                        .map((g) => GlassContainer(
-                              borderRadius:
-                                  const BorderRadius.all(Radius.circular(20)),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 7),
-                              child: Text(g,
-                                  style: const TextStyle(
-                                      fontSize: 13, color: Colors.white)),
-                            ))
-                        .toList(),
+                  // 类型标签行居中（非 TV 与 TV 一致）
+                  Center(
+                    key: const ValueKey('genreRow'),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: item.genres
+                          .map((g) => GlassContainer(
+                                borderRadius:
+                                    const BorderRadius.all(Radius.circular(20)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 7),
+                                child: Text(g,
+                                    style: const TextStyle(
+                                        fontSize: 13, color: Colors.white)),
+                              ))
+                          .toList(),
+                    ),
                   ),
                   SizedBox(height: tv ? 12 : 16),
                 ],

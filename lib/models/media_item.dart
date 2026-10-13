@@ -526,7 +526,7 @@ class MediaItem {
   String? get runtimeText {
     if (runTimeTicks == null || runTimeTicks! <= 0) return null;
     final h = runTimeTicks! ~/ 36000000000;
-    final m = (runTimeTicks! % 36000000000) ~/ 60000000;
+    final m = (runTimeTicks! % 36000000000) ~/ 600000000;
     if (h > 0) return '$h h ${m}m';
     return '$m min';
   }

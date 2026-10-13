@@ -249,4 +249,26 @@ void main() {
       expect(s.isInterlaced, isFalse);
     });
   });
+
+  group('MediaItem.runtimeText 时长格式', () {
+    MediaItem withTicks(int? ticks) =>
+        MediaItem(id: 'm1', name: 'x', type: 'Movie', runTimeTicks: ticks);
+
+    test('1h39m → 1 h 39m（分钟除数修正，原 6s 误算成 390m）', () {
+      expect(withTicks(59400000000).runtimeText, '1 h 39m');
+    });
+
+    test('53min 无小时 → 53 min', () {
+      expect(withTicks(31800000000).runtimeText, '53 min');
+    });
+
+    test('整点 1h0m', () {
+      expect(withTicks(36000000000).runtimeText, '1 h 0m');
+    });
+
+    test('空/非法 → null', () {
+      expect(withTicks(null).runtimeText, isNull);
+      expect(withTicks(0).runtimeText, isNull);
+    });
+  });
 }

@@ -1158,6 +1158,28 @@ void main() {
     expect(find.text('2.00 G'), findsWidgets, reason: '选中集视频大小');
   });
 
+  testWidgets('类型标签行居中（Center 包裹 Wrap）', (tester) async {
+    final item = MediaItem(
+      id: 'm1',
+      name: '测试影片',
+      type: 'Movie',
+      posterUrl: _posterUrl,
+      genres: const ['动画', '冒险', '剧情'],
+    );
+    await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+
+    final center = find.byKey(const ValueKey('genreRow'));
+    expect(center, findsOneWidget);
+    expect(tester.widget(center), isA<Center>());
+    expect(
+      find.descendant(of: center, matching: find.byType(Wrap)),
+      findsOneWidget,
+      reason: '居中包裹的就是类型标签 Wrap',
+    );
+    expect(find.text('动画'), findsOneWidget);
+    expect(find.text('剧情'), findsOneWidget);
+  });
+
   // ---- 玻璃按钮行 ----
 
   group('玻璃按钮行', () {
