@@ -37,7 +37,7 @@ Future<void> _pumpScreen(
 }
 
 void main() {
-  testWidgets('最近添加排序：SortBy=DateLastSaved 下传服务端', (tester) async {
+  testWidgets('最近添加排序：SortBy=DateLastContentAdded 下传服务端', (tester) async {
     final emby = FakeEmbyService(items: [
       MediaItem(id: 'm1', name: '剧', type: 'Series', posterUrl: ''),
     ]);
@@ -47,11 +47,11 @@ void main() {
     expect(SortOption.dateDesc.sortOrder, 'Descending');
     expect(
       SortOption.dateDesc.sortBy,
-      'DateLastSaved',
-      reason: '电影加新版本（多版本）会触发同一 Movie 条目重存 → 前移；'
-          'DateCreated/DateLastContentAdded 对 Movie 均不变',
+      'DateLastContentAdded',
+      reason: 'DateCreated 是系列首次入库时间、有新集也不变——更新过的'
+          '剧集排不到前面；DateLastContentAdded 随子项入库更新',
     );
-    expect(emby.lastGetItemsSortBy, 'DateLastSaved',
+    expect(emby.lastGetItemsSortBy, 'DateLastContentAdded',
         reason: '默认排序应实际下传服务端');
     expect(emby.lastGetItemsSortOrder, 'Descending');
   });

@@ -13,11 +13,9 @@ import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 
 enum SortOption {
-  // DateLastSaved：条目最后一次落库时间。电影加新版本（多版本 MediaSource）
-  // 会触发同一 Movie 条目重存 → 前移；剧集加新集同样重存 → 仍正确。
-  // （DateLastContentAdded 只对 Series 子项聚合，Movie 是叶子不参与，故
-  //  加版本时排位不动；DateCreated 是首次入库时间，两种情况都不变。）
-  dateDesc('最近添加', 'DateLastSaved', 'Descending'),
+  // DateLastContentAdded：Series 有新集入库时该字段更新，更新过的剧集
+  // 排前（DateCreated 是系列首次入库时间，新集不变故排位不动）
+  dateDesc('最近添加', 'DateLastContentAdded', 'Descending'),
   nameAsc('名称 A-Z', 'SortName', 'Ascending'),
   nameDesc('名称 Z-A', 'SortName', 'Descending'),
   yearDesc('年份 ↓', 'ProductionYear', 'Descending'),
