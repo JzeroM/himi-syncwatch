@@ -266,6 +266,9 @@ class MediaSource {
   final int? defaultAudioStreamIndex;
   final int? defaultSubtitleStreamIndex;
 
+  /// 总码率（Emby `MediaSourceInfo.Bitrate`，bit/s）；版本偏好排序用。
+  final int? bitrate;
+
   MediaSource({
     required this.id,
     required this.name,
@@ -277,6 +280,7 @@ class MediaSource {
     this.mediaStreams = const [],
     this.defaultAudioStreamIndex,
     this.defaultSubtitleStreamIndex,
+    this.bitrate,
   });
 
   factory MediaSource.fromJson(Map<String, dynamic> json) {
@@ -294,6 +298,7 @@ class MediaSource {
           [],
       defaultAudioStreamIndex: json['DefaultAudioStreamIndex'] as int?,
       defaultSubtitleStreamIndex: json['DefaultSubtitleStreamIndex'] as int?,
+      bitrate: json['Bitrate'] as int?,
     );
   }
 
@@ -305,6 +310,15 @@ class MediaSource {
 
   MediaStream? get videoStream =>
       mediaStreams.where((s) => s.type == 'Video').firstOrNull;
+
+  /// 是否 HDR（含杜比视界）：版本偏好排序用。
+  bool get isHdr => videoStream?.isHDR ?? false;
+
+  /// 是否杜比视界：版本偏好排序用。
+  bool get isDolbyVision => videoStream?.isDolbyVision ?? false;
+
+  /// 版本偏好排序用的码率：优先 `MediaSource.Bitrate`，回退视频流码率，缺失 0。
+  int get effectiveBitrate => bitrate ?? videoStream?.bitRate ?? 0;
 
   MediaStream? get defaultAudioStream {
     if (defaultAudioStreamIndex == null) return audioStreams.firstOrNull;

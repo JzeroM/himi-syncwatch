@@ -6,24 +6,19 @@ import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
 
-/// 详情页操作图标行：版本 / 字幕 / 音轨选择器入口（电影与剧集页共用）。
+/// 详情页操作图标行：字幕 / 音轨选择器入口（电影与剧集页共用）。
 ///
-/// - 版本图标：`onOpenVersion` 非空（多版本资源）时显示在最前；
-///   选中版本后字幕/音轨的流列表切换为该版本的轨（联动）
 /// - 字幕图标：`subtitleStreams` 非空时显示
 /// - 音轨图标：音轨多于一条时显示
 /// - 点击弹出选择器 bottom sheet。电影模式不传 [selection]/
 ///   [onSelectionChanged]，读写全局 [pendingTrackSelectionProvider]；
 ///   剧集模式传入 per-episode 的选择与回调（避免多集互相覆盖）
 /// - TV 模式用 [TvFocusable] 包裹（焦点环 + Enter 走 onTap），触摸走内层按钮
+///
+/// 版本选择入口已移除（v1.1.232）：多版本由「开始播放」两步流程选择，
+/// 「可用版本」列表可点选切换。
 class TrackActionRow extends ConsumerWidget {
   final MediaItem item;
-
-  /// 当前选中版本 id（null = 默认；非 null 时版本图标高亮）。
-  final String? selectedMediaSourceId;
-
-  /// 打开版本选择器；null = 不显示版本图标（单版本资源）。
-  final VoidCallback? onOpenVersion;
 
   /// 当前版本的字幕/音轨流（由详情页按选中版本计算后传入）。
   final List<MediaStream> subtitleStreams;
@@ -53,8 +48,6 @@ class TrackActionRow extends ConsumerWidget {
   const TrackActionRow({
     super.key,
     required this.item,
-    this.selectedMediaSourceId,
-    this.onOpenVersion,
     this.subtitleStreams = const [],
     this.audioStreams = const [],
     this.selection,
@@ -68,14 +61,12 @@ class TrackActionRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final showVersion = onOpenVersion != null;
     final showSubtitle = subtitleStreams.isNotEmpty;
     final showAudio = audioStreams.length > 1;
     final showFavorite = onToggleFavorite != null;
     final showWatched = onToggleWatched != null;
     final showFromBeginning = onPlayFromBeginning != null;
-    if (!showVersion &&
-        !showSubtitle &&
+    if (!showSubtitle &&
         !showAudio &&
         !showFavorite &&
         !showWatched &&
@@ -118,13 +109,6 @@ class TrackActionRow extends ConsumerWidget {
           icon: Icons.replay,
           active: false,
           onTap: onPlayFromBeginning!,
-        ),
-      if (showVersion)
-        button(
-          key: const Key('versionSelectorButton'),
-          icon: Icons.layers,
-          active: selectedMediaSourceId != null,
-          onTap: onOpenVersion!,
         ),
       if (showSubtitle)
         button(

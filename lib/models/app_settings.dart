@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:himi_syncwatch/models/version_preference.dart';
+
 class AppSettings {
   /// 存档数值归一：缺失/非法回退 [fallback]，越界钳到 [min]/[max]。
   static int _clampInt(Object? raw, int fallback, int min, int max) {
@@ -70,6 +72,10 @@ class AppSettings {
   /// 分类页网格每行海报数（全平台）：null = 自动跟随屏幕，
   /// 数字 = 指定列数（屏幕放不下时按最小列宽自动压回）。
   final int? categoryColumns;
+
+  /// 视频版本偏好（多版本排序/默认选用的优先级），逗号分隔的
+  /// [VersionPreference.name]；空 = 用默认顺序（[VersionPreference.decode] 补齐）。
+  final String versionPreference;
   final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
 
   /// 用户是否手动设置过 TV 开关（策略 A：设置过则自动识别不再覆盖）。
@@ -235,6 +241,7 @@ class AppSettings {
     this.themeColor,
     this.appIcon,
     this.categoryColumns,
+    this.versionPreference = '',
     this.tvMode = false,
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
@@ -263,6 +270,10 @@ class AppSettings {
 
   bool get hardwareDecoding => decodeMode != 'sw';
 
+  /// 视频版本偏好顺序（已补齐默认维度）。
+  List<VersionPreference> get versionPreferenceOrder =>
+      VersionPreference.decode(versionPreference);
+
   AppSettings copyWith({
     String? decodeMode,
     String? mkHwdec,
@@ -276,6 +287,7 @@ class AppSettings {
     bool? audioRendererUserSet,
     bool? deepDiagnostics,
     bool? glassUi,
+    String? versionPreference,
     bool? tvMode,
     bool? tvModeUserSet,
     String? videoOutput,
@@ -324,6 +336,7 @@ class AppSettings {
       audioRendererUserSet: audioRendererUserSet ?? this.audioRendererUserSet,
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
       glassUi: glassUi ?? this.glassUi,
+      versionPreference: versionPreference ?? this.versionPreference,
       tvMode: tvMode ?? this.tvMode,
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
@@ -394,6 +407,7 @@ class AppSettings {
         'audioRendererUserSet': audioRendererUserSet,
         'deepDiagnostics': deepDiagnostics,
         'glassUi': glassUi,
+        'versionPreference': versionPreference,
         'tvMode': tvMode,
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
@@ -473,6 +487,7 @@ class AppSettings {
       audioRendererUserSet: rendererUserSet,
       deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
       glassUi: json['glassUi'] as bool? ?? true,
+      versionPreference: json['versionPreference'] as String? ?? '',
       tvMode: json['tvMode'] as bool? ?? false,
       // 旧数据无此字段：tvMode=true 说明用户当时手动开过 → 视为已设置，
       // 避免自动识别把用户手动关掉的 TV 模式重新打开。

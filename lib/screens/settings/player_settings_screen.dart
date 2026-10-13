@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
+import 'package:himi_syncwatch/screens/settings/version_preference_sheet.dart';
 
 /// 播放器设置枢纽页：引擎路由说明 / 播放器配置入口 / 网速 / 弹幕配置。
 ///
@@ -58,6 +59,24 @@ class PlayerSettingsScreen extends ConsumerWidget {
             subtitle: const Text('播放页顶栏右侧显示真实下载速度（播放时≈视频流速度）'),
             value: settings.showNetworkSpeed,
             onChanged: (v) => notifier.update(showNetworkSpeed: v),
+          ),
+        ),
+        const Divider(height: 1),
+        // 视频版本偏好：多版本资源的排序与默认选用优先级（底部弹层重排）
+        settingsTvWrapRow(
+          tvMode: settings.tvMode,
+          onTap: () => showVersionPreferenceSheet(context, ref),
+          child: ListTile(
+            key: const ValueKey('versionPreferenceEntry'),
+            leading: const Icon(Icons.sort),
+            title: const Text('视频版本偏好'),
+            subtitle: const Text('多版本资源的排序与默认选用优先级'),
+            trailing: const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Colors.white54,
+            ),
+            onTap: () => showVersionPreferenceSheet(context, ref),
           ),
         ),
         const Divider(height: 1),

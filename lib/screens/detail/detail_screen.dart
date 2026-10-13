@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/models/version_preference.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
@@ -634,12 +635,28 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return ep.mediaStreams.where((s) => s.type == 'Audio').toList();
   }
 
-  /// 打开目标集的版本选择器；预选轨按语言迁移到新版本。
-  void _openEpisodeVersionSelector(MediaItem ep) {
-    showVersionSelector(
+  /// 版本偏好顺序（设置页可调）。
+  List<VersionPreference> get _versionPreferenceOrder =>
+      ref.read(settingsProvider).versionPreferenceOrder;
+
+  /// 多版本按偏好排序（高优先级在前）。
+  List<MediaSource> _sortedSources(List<MediaSource> sources) =>
+      sortSourcesByPreference(sources, _versionPreferenceOrder);
+
+  /// 目标集当前生效版本 id：显式选中 → 否则偏好最高。
+  String? _episodeEffectiveSourceId(MediaItem ep) =>
+      _episodeSourceIds[ep.id] ??
+      preferredSource(ep.mediaSources, _versionPreferenceOrder)?.id;
+
+  /// 打开目标集的版本选择器（开始播放两步流程：仅选择+刷新详情，不播放）；
+  /// 预选轨按语言迁移到新版本。
+  Future<void> _promptEpisodeVersionSelection(MediaItem ep) async {
+    if (!mounted) return;
+    final ordered = _sortedSources(ep.mediaSources);
+    await showVersionSelector(
       context,
-      sources: ep.mediaSources,
-      currentId: _episodeSourceIds[ep.id],
+      sources: ordered,
+      currentId: _episodeEffectiveSourceId(ep),
       onSelected: (source) {
         // setState 前取切换前的流，供语言迁移比对
         final oldSelection = _episodeSelections[ep.id];
@@ -666,6 +683,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
+  /// 打开电影版本选择器（开始播放两步流程：仅选择+刷新详情，不播放）。
+  Future<void> _promptVersionSelection(MediaItem item) async {
+    if (!mounted) return;
+    final ordered = _sortedSources(item.mediaSources);
+    final current = _selectedMediaSourceId ??
+        preferredSource(item.mediaSources, _versionPreferenceOrder)?.id;
+    await showVersionSelector(
+      context,
+      sources: ordered,
+      currentId: current,
+      onSelected: _onVersionSelected,
+    );
+  }
+
   /// 写目标集的预选轨（[TrackActionRow] 的 onSelectionChanged）。
   void _setEpisodeSelection(String episodeId, TrackSelection next) {
     setState(() {
@@ -675,18 +706,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _episodeSelections[episodeId] = next;
       }
     });
-  }
-
-  /// 打开版本选择器（与字幕/音轨同一图标行，选择后联动轨列表与播放入口）。
-  void _openVersionSelector() {
-    final item = _item;
-    if (item == null) return;
-    showVersionSelector(
-      context,
-      sources: item.mediaSources,
-      currentId: _selectedMediaSourceId,
-      onSelected: _onVersionSelected,
-    );
   }
 
   /// 切换版本（联动核心）：
@@ -830,6 +849,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   /// 剧集页「开始播放」：播选集器选中的集（未选则该季第一集）。
+  /// 多版本集两步：先弹选择器仅刷新详情，再点才进播放器。
   Future<void> _startPlaySeries({bool resume = false}) async {
     final seasonEpisodes = _seasonEpisodesOf(_selectedSeason);
     if (seasonEpisodes.isEmpty) return;
@@ -840,18 +860,26 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             orElse: () => seasonEpisodes.first,
           )
         : seasonEpisodes.first;
+    if (target.hasMultipleVersions && _episodeSourceIds[target.id] == null) {
+      await _promptEpisodeVersionSelection(target);
+      return;
+    }
     await _playEpisode(target, resume: resume);
   }
 
-  /// 开始播放（多版本先弹选择）。胶囊底栏与 TV 内联按钮共用一份逻辑。
+  /// 开始播放（多版本两步：先弹选择器仅刷新详情，再点才进播放器）。
   /// [resume] 为真且当前条目有进度时携带 `startMs` 续播。
   Future<void> _startPlay({bool resume = false}) async {
     final item = _item;
     if (item == null) return;
 
-    // 版本已选（图标行联动）直接用；未选且多版本才弹选择器
-    MediaSource? source = await _resolveSourceForPlayback(item);
-    if (item.hasMultipleVersions && source == null) return;
+    // 多版本且未显式选版本 → 先弹选择器（仅选择 + 刷新详情，不播放）；
+    // 再次点击「开始播放」才进播放器（v1.1.232 两步流程）。
+    if (item.hasMultipleVersions && _selectedSource(item) == null) {
+      await _promptVersionSelection(item);
+      return;
+    }
+    final MediaSource? source = _selectedSource(item);
 
     ref.read(pendingRoomMovieProvider.notifier).state = {
       'id': item.id,
@@ -1661,8 +1689,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (target == null) {
       return TrackActionRow(
         item: item,
-        selectedMediaSourceId: _selectedMediaSourceId,
-        onOpenVersion: item.hasMultipleVersions ? _openVersionSelector : null,
         subtitleStreams: _currentSubtitleStreams(),
         audioStreams: _currentAudioStreams(),
         // 主爱心：电影收藏电影、电视剧收藏整部剧（与选中集无关）
@@ -1675,10 +1701,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
     return TrackActionRow(
       item: target,
-      selectedMediaSourceId: _episodeSourceIds[target.id],
-      onOpenVersion: target.hasMultipleVersions
-          ? () => _openEpisodeVersionSelector(target)
-          : null,
       subtitleStreams: _episodeSubtitleStreams(target),
       audioStreams: _episodeAudioStreams(target),
       // 非 null（可能是空选择）以区别于电影模式的「读全局 provider」
@@ -2106,7 +2128,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Widget _buildMediaSources(MediaItem item) {
-    final tv = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final settings = ref.watch(settingsProvider);
+    final tv = settings.tvMode;
+    final primary = Theme.of(context).colorScheme.primary;
+    final order = settings.versionPreferenceOrder;
+    // 按「版本偏好」排序（高优先级在上）。
+    final ordered = sortSourcesByPreference(item.mediaSources, order);
+    // 高亮：显式选中 → 否则偏好最高（未选之前的默认高亮）。
+    final selectedId =
+        _selectedMediaSourceId ?? preferredSource(item.mediaSources, order)?.id;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2118,25 +2148,42 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        // 纯信息展示块：ExcludeFocus 使 TV 焦点直接跳过——无 onTap 的
-        // ListTile 在 directional 导航下仍可聚焦，但焦点高光透明、OK 无
-        // 响应（v1.1.176：修多版本详情页「焦点卡死」体感）。版本切换
-        // 入口在操作行「版本」按钮。
-        ...item.mediaSources.map((source) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: GlassContainer(
-                borderRadius: const BorderRadius.all(Radius.circular(14)),
-                padding: EdgeInsets.zero,
-                child: ExcludeFocus(
-                  child: ListTile(
-                    leading: const Icon(Icons.movie_creation_outlined),
-                    title: Text(source.name),
-                    subtitle: Text(source.displayLabel),
-                    dense: true,
+        // 点某行即选该版本并刷新详情（与「开始播放」两步流程共用
+        // [_onVersionSelected]）；当前版本主色对勾高亮。
+        ...ordered.map((source) {
+          final selected = source.id == selectedId;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: GlassContainer(
+              borderRadius: const BorderRadius.all(Radius.circular(14)),
+              padding: EdgeInsets.zero,
+              // 透明 Material：ListTile 有 onTap 时其背景/水波纹需最近的
+              // Material 承载，否则会被玻璃层背景遮挡并触发断言。
+              child: Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  key: ValueKey('mediaSource_${source.id}'),
+                  leading: Icon(
+                    selected
+                        ? Icons.check_circle
+                        : Icons.movie_creation_outlined,
+                    color: selected ? primary : null,
                   ),
+                  title: Text(
+                    source.name,
+                    style: selected
+                        ? TextStyle(
+                            color: primary, fontWeight: FontWeight.w600)
+                        : null,
+                  ),
+                  subtitle: Text(source.displayLabel),
+                  dense: true,
+                  onTap: () => _onVersionSelected(source),
                 ),
               ),
-            )),
+            ),
+          );
+        }),
       ],
     );
   }

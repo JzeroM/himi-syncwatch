@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/version_preference.dart';
 
 void main() {
   group('effectiveAudioRenderer（音频后端生效值）', () {
@@ -1008,6 +1009,35 @@ void main() {
       expect(AppSettings.fromJson({'danmakuOpacity': 0.5}).danmakuOpacity, 0.5);
       expect(AppSettings.fromJson({'danmakuOpacity': 2.0}).danmakuOpacity,
           AppSettings.danmakuOpacityMax);
+    });
+  });
+
+  group('versionPreference（视频版本偏好）', () {
+    test('默认顺序', () {
+      expect(
+        const AppSettings().versionPreferenceOrder,
+        VersionPreference.defaults,
+      );
+      expect(AppSettings.fromJson(const {}).versionPreferenceOrder,
+          VersionPreference.defaults);
+    });
+
+    test('toJson/fromJson 往返保留顺序', () {
+      final settings = const AppSettings(
+        versionPreference: 'dolbyVision,hdr,highBitrate',
+      );
+      final back = AppSettings.fromJson(settings.toJson());
+      expect(back.versionPreferenceOrder.take(3).toList(), [
+        VersionPreference.dolbyVision,
+        VersionPreference.hdr,
+        VersionPreference.highBitrate,
+      ]);
+    });
+
+    test('copyWith 更新', () {
+      final updated =
+          const AppSettings().copyWith(versionPreference: 'sdr,lowBitrate');
+      expect(updated.versionPreferenceOrder.first, VersionPreference.sdr);
     });
   });
 }
