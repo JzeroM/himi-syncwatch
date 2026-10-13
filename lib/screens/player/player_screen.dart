@@ -212,6 +212,17 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// Emby 播放进度上报间隔（3 秒）。
   static const Duration playbackReportInterval = Duration(seconds: 3);
 
+  /// 字幕样式属性写入门控（纯逻辑，可单测）：
+  /// - 未挂载（页面已销毁）
+  /// - 引擎热切换/内容路由重建中（`_player` 可能仍指向已释放的旧引擎）
+  /// 以上任一成立即禁止写入原生播放器（Windows 拖字幕滑杆闪退根因）。
+  @visibleForTesting
+  static bool canWriteSubtitleStyle({
+    required bool mounted,
+    required bool switchingEngine,
+  }) =>
+      mounted && !switchingEngine;
+
   /// 轮询等待 [ready] 为 true（超时返回 false）。
   @visibleForTesting
   static Future<bool> waitUntil(
@@ -746,6 +757,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 样式变更 → 落盘的去抖。
   Timer? _subtitleStyleSaveTimer;
+
+  /// 样式属性写入原生播放器的去抖（~100ms）：滑杆连续拖动只写最后一次，
+  /// 降低高频同步 FFI 与引擎重建窗口叠加导致的原生崩溃风险。
+  Timer? _subtitleStyleApplyTimer;
 
   final SubtitleStyleStore _subtitleStyleStore = SubtitleStyleStore();
 
@@ -4694,6 +4709,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subtitleStyleButtonFocusNode.dispose();
     _subtitleDelayReloadTimer?.cancel();
     _subtitleStyleSaveTimer?.cancel();
+    _subtitleStyleApplyTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
     _gestureHintTimer?.cancel();
@@ -5254,6 +5270,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // 底部控制条之上（进度条右端被面板盖住，对齐参考观感）。
           if (_showControls &&
               !_lockController.locked &&
+              !_switchingEngine &&
               (_showSubtitleMenu ||
                   _showAudioMenu ||
                   _showSpeedMenu ||
@@ -5492,6 +5509,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 顶栏「字幕样式」按钮：开关样式面板（与字幕/音轨/倍速/解码/选集互斥）。
   void _toggleSubtitleStyleMenu() {
+    // 引擎重建中 [_player] 可能仍指向旧引擎；禁止打开面板，避免滑杆写入。
+    if (_switchingEngine) return;
     setState(() {
       _showSubtitleStyleMenu = !_showSubtitleStyleMenu;
       _showSubtitleMenu = false;
@@ -7332,9 +7351,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // ========== 字幕样式（大小/位置/延迟） ==========
 
   /// 应用字幕大小/位置（mdk 属性，暂停也立即生效）。
+  ///
+  /// 引擎热切换/内容路由重建期间（[_switchingEngine]）跳过：此刻 [_player]
+  /// 可能仍指向已释放的旧引擎，写入会命中悬垂原生对象（Windows 闪退根因）。
+  /// 重建完成后 [._recreateEngineForLoad] 会再次调用本方法补写。
   void _applySubtitleStyle() {
+    if (!PlayerScreen.canWriteSubtitleStyle(
+      mounted: mounted,
+      switchingEngine: _switchingEngine,
+    )) {
+      return;
+    }
     _player.setProperty('subtitle.scale', _subtitleScale.toStringAsFixed(2));
     _player.setProperty('subtitle.margin.y', '$_subtitleMarginY');
+  }
+
+  /// 滑杆拖动期间的去抖写入（100ms）；最终值由 [_applySubtitleStyle] 落定。
+  void _scheduleSubtitleStyleApply() {
+    _subtitleStyleApplyTimer?.cancel();
+    _subtitleStyleApplyTimer = Timer(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      _applySubtitleStyle();
+    });
   }
 
   /// 按内容 id 恢复落盘样式（无记录沿用当前内存值）并套用到当前轨。
@@ -7354,14 +7392,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _onSubtitleScaleChanged(double v) {
     setState(() => _subtitleScale = v);
-    _applySubtitleStyle();
+    _scheduleSubtitleStyleApply();
     _resetHideTimer();
     _scheduleSubtitleStyleSave();
   }
 
   void _onSubtitleMarginYChanged(int v) {
     setState(() => _subtitleMarginY = v);
-    _applySubtitleStyle();
+    _scheduleSubtitleStyleApply();
     _resetHideTimer();
     _scheduleSubtitleStyleSave();
   }

@@ -149,11 +149,16 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   Future<Size?> get textureSize => _player.textureSize;
 
   @override
-  void setColorSpace(AdapterColorSpace cs) =>
-      _player.setColorSpace(_unmapColorSpace(cs));
+  void setColorSpace(AdapterColorSpace cs) {
+    if (_disposed) return;
+    _player.setColorSpace(_unmapColorSpace(cs));
+  }
 
   @override
-  void renderVideo() => _player.renderVideo();
+  void renderVideo() {
+    if (_disposed) return;
+    _player.renderVideo();
+  }
 
   // ── 轨道 ──────────────────────────────────────────────────
 
@@ -192,15 +197,23 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   // ── 属性通道 ──────────────────────────────────────────────
 
   @override
-  void setProperty(String name, String value) =>
-      _player.setProperty(name, value);
+  void setProperty(String name, String value) {
+    // fvp 的 setProperty 是裸 FFI，无 _pp/disposed 检查；dispose 后
+    // _player 字段仍指向已 mdkPlayerAPI_delete 的原生对象 → use-after-free。
+    // Windows 引擎重建窗口（字幕滑杆回调）曾因此闪退，这里加守卫。
+    if (_disposed) return;
+    _player.setProperty(name, value);
+  }
 
   @override
-  String? getProperty(String name) => _player.getProperty(name);
+  String? getProperty(String name) {
+    if (_disposed) return null;
+    return _player.getProperty(name);
+  }
 
   @override
   void setHttpHeaders(Map<String, String> headers) {
-    if (headers.isEmpty) return;
+    if (_disposed || headers.isEmpty) return;
     _player.setProperty(
       'avio.headers',
       headers.entries.map((e) => '${e.key}: ${e.value}').join(','),
@@ -223,19 +236,24 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   set audioBackends(List<String> backends) => _player.audioBackends = backends;
 
   @override
-  void setBufferRange({int min = -1, int max = -1, bool drop = false}) =>
-      _player.setBufferRange(min: min, max: max, drop: drop);
+  void setBufferRange({int min = -1, int max = -1, bool drop = false}) {
+    if (_disposed) return;
+    _player.setBufferRange(min: min, max: max, drop: drop);
+  }
 
   // ── 字幕 / 截图 ───────────────────────────────────────────
 
   @override
   Future<void> setMedia(String uri, {required AdapterMediaType type}) async {
+    if (_disposed) return;
     _player.setMedia(uri, _unmapMediaType(type));
   }
 
   @override
-  Future<Uint8List?> snapshot({int? width, int? height}) =>
-      _player.snapshot(width: width, height: height);
+  Future<Uint8List?> snapshot({int? width, int? height}) {
+    if (_disposed) return Future.value();
+    return _player.snapshot(width: width, height: height);
+  }
 
   // ── 生命周期 ──────────────────────────────────────────────
 

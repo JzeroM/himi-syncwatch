@@ -167,9 +167,20 @@ void main() {
               ],
             };
           case '/Years':
-            return [2024, 2022, '2021'];
+            return {
+              'Items': [
+                {'Name': '2024', 'Id': 'y2024'},
+                {'Name': '2022', 'Id': 'y2022'},
+                {'Name': '2021', 'Id': 'y2021'},
+              ],
+            };
           case '/OfficialRatings':
-            return ['R', 'G'];
+            return {
+              'Items': [
+                {'Name': 'R'},
+                {'Name': 'G', 'Id': 'g'},
+              ],
+            };
           default:
             return {'Items': <dynamic>[]};
         }
@@ -210,7 +221,11 @@ void main() {
               ],
             };
           case '/Years':
-            return [2024];
+            return {
+              'Items': [
+                {'Name': '2024', 'Id': 'y'},
+              ],
+            };
           default:
             return {'Items': <dynamic>[]};
         }
@@ -221,6 +236,51 @@ void main() {
       expect(options.genres, ['动作']);
       expect(options.years, [2024]);
       expect(options.ratings, isEmpty);
+    });
+
+    test('年份项 Id 非数字时按 Name 解析不丢（Emby 真实结构）', () async {
+      statusFor = (path) =>
+          path == '/Items/Filters' ? HttpStatus.notFound : HttpStatus.ok;
+      respondWith = (path) {
+        switch (path) {
+          case '/Years':
+            return {
+              'Items': [
+                {'Name': '2024', 'Id': '0f8c-non-numeric'},
+              ],
+            };
+          default:
+            return {'Items': <dynamic>[]};
+        }
+      };
+
+      final options = await service.getFilterOptions();
+
+      expect(options.years, [2024], reason: 'Name 优先于非数字 Id');
+    });
+
+    test('专用端点全 404 → /Items 扫描兜底聚合年份/分级', () async {
+      statusFor = (path) => path == '/Items' ? HttpStatus.ok : HttpStatus.notFound;
+      respondWith = (path) {
+        if (path == '/Items') {
+          return {
+            'Items': [
+              {'ProductionYear': 2024, 'OfficialRating': 'PG-13'},
+              {'ProductionYear': 2020, 'OfficialRating': 'R'},
+              {'ProductionYear': 2024, 'OfficialRating': 'R'},
+            ],
+          };
+        }
+        return {'Items': <dynamic>[]};
+      };
+
+      final options = await service.getFilterOptions(
+        parentId: 'lib-1',
+        includeItemTypes: 'Movie',
+      );
+
+      expect(options.years, [2024, 2020], reason: '去重降序');
+      expect(options.ratings, ['PG-13', 'R']);
     });
 
     test('全部端点失败 → 空对象不抛错（面板降级）', () async {

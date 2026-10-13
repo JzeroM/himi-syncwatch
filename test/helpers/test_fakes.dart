@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 /// 不触碰平台通道的设置通知器（覆写落盘）。
 class FakeSettingsNotifier extends SettingsNotifier {
@@ -310,4 +311,34 @@ class FakeEmbyService extends EmbyService {
           'ServerId': 'srv_ping_1',
         };
   }
+}
+
+/// 播放器适配器测试替身（仅实现被断言用到的成员，其余 noSuchMethod 转发）。
+///
+/// 复刻真实适配器应满足的契约：**释放后 `setProperty` 不得再写入原生播放器**
+/// （mdk/fvp 的 setProperty 是裸 FFI，dispose 后会 use-after-free）。
+class FakePlayerAdapter implements PlayerAdapter {
+  FakePlayerAdapter({this.disposed = false});
+
+  /// 释放标志；置 true 后所有属性写入应被守卫吞掉。
+  bool disposed;
+
+  /// 记录成功写入的属性（name → value）；被守卫拦截的写入不记录。
+  final Map<String, String> written = <String, String>{};
+
+  /// 记录所有写入尝试（含被守卫拦截的），用于区分"未写"与"未调用"。
+  final List<String> attempts = <String>[];
+
+  @override
+  void setProperty(String name, String value) {
+    attempts.add(name);
+    if (disposed) return;
+    written[name] = value;
+  }
+
+  @override
+  String? getProperty(String name) => disposed ? null : written[name];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

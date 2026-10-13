@@ -316,8 +316,12 @@ class MediaKitPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   @override
   void setProperty(String name, String value) {
+    // media_kit 的 setProperty 走 mpv FFI：disposed 时会抛 AssertionError，
+    // 且拖拽滑杆时大量 Future 在途，销毁与写入可能竞争。这里跳过已释放 +
+    // 静默吞掉在途错误，避免原生侧异常上浮。
+    if (_disposed) return;
     final mapped = mapMdkPropertyToMpv(name, value);
-    _native?.setProperty(mapped.name, mapped.value);
+    _native?.setProperty(mapped.name, mapped.value).ignore();
   }
 
   /// mdk 字幕属性名/值 → mpv 属性名/值映射（player_screen 统一走 mdk 命名）。

@@ -507,10 +507,81 @@ class EmbyService {
       ..._namesFromItems(results[3]),
     };
 
+    var years = yearSet.toList()..sort((a, b) => b.compareTo(a));
+    var ratings = ratingSet.toList()..sort();
+
+    // 兜底：Emby 4.9.x 既无 `/Items/Filters`（Jellyfin 端点，404），
+    // `/OfficialRatings` 也常不可用；年份/分级任一为空时，直接扫描条目
+    // 聚合 `ProductionYear` / `OfficialRating`，保证面板可选维度可用。
+    if (years.isEmpty || ratings.isEmpty) {
+      final scan = await _scanFacets(
+        parentId: parentId,
+        includeItemTypes: includeItemTypes,
+      );
+      if (years.isEmpty && scan.years.isNotEmpty) {
+        yearSet.addAll(scan.years);
+        years = yearSet.toList()..sort((a, b) => b.compareTo(a));
+      }
+      if (ratings.isEmpty && scan.ratings.isNotEmpty) {
+        ratingSet.addAll(scan.ratings);
+        ratings = ratingSet.toList()..sort();
+      }
+    }
+
     final genres = genreSet.toList()..sort();
-    final years = yearSet.toList()..sort((a, b) => b.compareTo(a));
-    final ratings = ratingSet.toList()..sort();
     return MediaFilterOptions(genres: genres, years: years, ratings: ratings);
+  }
+
+  /// 有界扫描条目聚合年份/官方分级（专用端点缺失时的兜底）。
+  /// 逐页 `GET /Items`（`Fields=ProductionYear,OfficialRating`），
+  /// 最多 [_scanMaxPages] 页或提前在短页停止；失败返回空，不抛错。
+  static const int _scanPageSize = 500;
+  static const int _scanMaxPages = 6;
+
+  Future<({List<int> years, List<String> ratings})> _scanFacets({
+    String? parentId,
+    String? includeItemTypes,
+  }) async {
+    final years = <int>{};
+    final ratings = <String>{};
+    try {
+      for (var page = 0; page < _scanMaxPages; page++) {
+        final response = await _dio.get(
+          '/Items',
+          queryParameters: {
+            if (_userId != null) 'UserId': _userId,
+            if (parentId != null) 'ParentId': parentId,
+            if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
+            'Recursive': true,
+            'Fields': 'ProductionYear,OfficialRating',
+            'EnableTotalRecordCount': false,
+            'Limit': _scanPageSize,
+            'StartIndex': page * _scanPageSize,
+          },
+        );
+        final data = response.data;
+        final items = (data is Map ? data['Items'] : null) as List<dynamic>? ??
+            const [];
+        for (final raw in items) {
+          if (raw is! Map) continue;
+          final year = raw['ProductionYear'];
+          if (year is int) {
+            years.add(year);
+          } else if (year is num) {
+            years.add(year.toInt());
+          } else if (year is String) {
+            final parsed = int.tryParse(year);
+            if (parsed != null) years.add(parsed);
+          }
+          final rating = raw['OfficialRating'];
+          if (rating is String && rating.isNotEmpty) ratings.add(rating);
+        }
+        if (items.length < _scanPageSize) break;
+      }
+    } catch (e) {
+      debugPrint('EmbyService.getFilterOptions(_scanFacets) failed: $e');
+    }
+    return (years: years.toList(), ratings: ratings.toList());
   }
 
   /// 单路筛选请求：失败（404/网络/解析）打日志并返回 null，不中断其余路。
@@ -521,6 +592,12 @@ class EmbyService {
     try {
       final response = await _dio.get(path, queryParameters: query);
       return response.data;
+    } on DioException catch (e) {
+      debugPrint(
+        'EmbyService.getFilterOptions($path) failed: '
+        'status=${e.response?.statusCode} ${e.message}',
+      );
+      return null;
     } catch (e) {
       debugPrint('EmbyService.getFilterOptions($path) failed: $e');
       return null;
@@ -567,7 +644,16 @@ class EmbyService {
           if (e is num) return e.toInt();
           if (e is String) return int.tryParse(e);
           if (e is Map) {
-            final id = e['Id'] ?? e['Name'];
+            // Emby/Jellyfin 年份项形如 {Name:"2024", Id:非数字}：Name 才是年份，
+            // Id 往往是 GUID/非数字，优先解析 Name，失败再回退 Id。
+            final name = e['Name'];
+            if (name is int) return name;
+            if (name is num) return name.toInt();
+            if (name is String) {
+              final parsed = int.tryParse(name);
+              if (parsed != null) return parsed;
+            }
+            final id = e['Id'];
             if (id is int) return id;
             if (id is num) return id.toInt();
             if (id is String) return int.tryParse(id);
