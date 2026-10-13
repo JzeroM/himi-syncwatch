@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
+import 'package:himi_syncwatch/screens/settings/version_preference_sheet.dart';
 import 'package:himi_syncwatch/services/app_icon_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 
-/// 外观设置子页：主题色 / 分类页每行海报数 / 液态玻璃（开关 + 参数）。
+/// 外观设置子页：主题色 / 分类页每行海报数 / 液态玻璃（开关 + 参数）/
+/// 视频版本偏好（v1.1.233 自「播放器」迁入）。
 class AppearanceSettingsScreen extends ConsumerWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -39,6 +41,24 @@ class AppearanceSettingsScreen extends ConsumerWidget {
         const _GlassTuningSection(),
         const Divider(height: 1),
         const _CategoryColumnsSection(),
+        const Divider(height: 1),
+        // 视频版本偏好：多版本资源的排序与默认选用优先级（底部弹层重排）
+        settingsTvWrapRow(
+          tvMode: settings.tvMode,
+          onTap: () => showVersionPreferenceSheet(context, ref),
+          child: ListTile(
+            key: const ValueKey('versionPreferenceEntry'),
+            leading: const Icon(Icons.sort),
+            title: const Text('视频版本偏好'),
+            subtitle: const Text('多版本资源的排序与默认选用优先级'),
+            trailing: const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Colors.white54,
+            ),
+            onTap: () => showVersionPreferenceSheet(context, ref),
+          ),
+        ),
         const Divider(height: 1),
       ],
     );

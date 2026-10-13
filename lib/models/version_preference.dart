@@ -9,7 +9,6 @@ enum VersionPreference {
   hdr('HDR优先'),
   dolbyVision('杜比优先'),
   lowBitrate('低码率优先'),
-  serverDefault('由服务决定'),
   sdr('SDR优先');
 
   final String label;
@@ -21,7 +20,6 @@ enum VersionPreference {
     hdr,
     dolbyVision,
     lowBitrate,
-    serverDefault,
     sdr,
   ];
 
@@ -49,9 +47,8 @@ enum VersionPreference {
 
 /// 按 [order] 对多版本 [sources] 排序（高优先级在前）。
 ///
-/// 逐条比较：命中首个能区分两者的维度即定序；`serverDefault` 恒为平局
-/// （不干预）；最终以 **原始（服务端）顺序** 兜底（稳定）。返回副本，不改
-/// 原列表。
+/// 逐条比较：命中首个能区分两者的维度即定序；最终以 **原始（服务端）顺序**
+/// 兜底（稳定）。返回副本，不改原列表。
 List<MediaSource> sortSourcesByPreference(
   List<MediaSource> sources,
   List<VersionPreference> order,
@@ -97,8 +94,6 @@ int _compare(
       case VersionPreference.dolbyVision:
         final c = _boolFirst(a.isDolbyVision, b.isDolbyVision);
         if (c != 0) return c;
-      case VersionPreference.serverDefault:
-        break; // 不干预
     }
   }
   return 0;

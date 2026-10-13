@@ -93,10 +93,11 @@ void main() {
       expect(sorted.first.id, 'dv');
     });
 
-    test('由服务决定：保持原始（服务端）顺序', () {
+    test('所有维度平局时保持原始（服务端）顺序（稳定兜底）', () {
+      // 三源码率/HDR/杜比全同 → 各维度都分不出 → 服务端顺序
       final sources = [_src('b'), _src('a'), _src('c')];
-      final sorted = sortSourcesByPreference(
-          sources, [VersionPreference.serverDefault]);
+      final sorted =
+          sortSourcesByPreference(sources, VersionPreference.defaults);
       expect(sorted.map((s) => s.id), ['b', 'a', 'c']);
     });
 

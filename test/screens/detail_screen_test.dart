@@ -858,6 +858,22 @@ void main() {
       await t.pump(const Duration(milliseconds: 350));
     }
 
+    /// 两步流程选版本：点「开始播放」弹选择器 → 选 [sourceId]（不进播放器）。
+    Future<void> pickVersion(WidgetTester t, String sourceId) async {
+      final btn = find.text('开始播放');
+      await t.ensureVisible(btn);
+      await t.pump();
+      await t.tap(btn);
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 350));
+      final option = find.byKey(Key('versionOption_$sourceId'));
+      await t.ensureVisible(option);
+      await t.pump();
+      await t.tap(option);
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 350));
+    }
+
     testWidgets('单版本资源隐藏版本图标', (tester) async {
       await _pumpDetail(tester);
       expect(find.byKey(const Key('versionSelectorButton')), findsNothing);
@@ -882,14 +898,15 @@ void main() {
       );
     });
 
-    testWidgets('「可用版本」区块：TV 不渲染，非 TV 渲染且可点选', (tester) async {
+    testWidgets('「可用版本」区块：TV 不渲染，非 TV 渲染且只读（选版本走开始播放）',
+        (tester) async {
       // TV：整块隐藏（纯信息玻璃层抬高焦点动画每帧开销）
       await pumpMulti(tester, tv: true);
       expect(find.text('可用版本'), findsNothing);
       expect(find.text('1080p版'), findsNothing);
       expect(find.text('4K版'), findsNothing);
 
-      // 非 TV：区块存在（标题 + 每源一行），每行可点选切换
+      // 非 TV：区块存在（标题 + 每源一行），只读不可点选
       await pumpMulti(tester);
       expect(find.text('可用版本'), findsOneWidget);
       expect(find.text('1080p版'), findsWidgets);
@@ -899,14 +916,14 @@ void main() {
         tester
             .widget<ListTile>(find.byKey(const Key('mediaSource_src1')))
             .onTap,
-        isNotNull,
-        reason: '可用版本行可点选切换',
+        isNull,
+        reason: 'v1.1.233 起可用版本只读，选版本统一走「开始播放」两步流程',
       );
       expect(
         tester
             .widget<ListTile>(find.byKey(const Key('mediaSource_src2')))
             .onTap,
-        isNotNull,
+        isNull,
       );
     });
 
@@ -944,36 +961,67 @@ void main() {
       );
     });
 
-    testWidgets('切版本后字幕/音轨流列表跟随新版本', (tester) async {
+    testWidgets('未选版本时字幕/音轨列表跟随偏好最高版本；两步切换后跟随所选',
+        (tester) async {
       await pumpMulti(tester);
 
-      // 未选版本：回退顶层流（= src1 流集）
-      await openSheet(tester, const Key('subtitleSelectorButton'));
-      expect(find.byKey(const Key('trackOption_3')), findsOneWidget);
-      expect(find.byKey(const Key('trackOption_4')), findsOneWidget);
-      expect(find.byKey(const Key('trackOption_5')), findsNothing);
-      await closeSheet(tester);
-
-      // 切到 src2（点可用版本行）：字幕仅 jpn(5)，音轨仅 eng(1)
-      await tester.ensureVisible(find.byKey(const Key('mediaSource_src2')));
-      await tester.tap(find.byKey(const Key('mediaSource_src2')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-
+      // 默认 = 偏好最高 src2（高码率 8M）：字幕仅 jpn(5)；音轨仅 1 条 → 图标隐藏
       await openSheet(tester, const Key('subtitleSelectorButton'));
       expect(find.byKey(const Key('trackOption_5')), findsOneWidget);
       expect(find.byKey(const Key('trackOption_3')), findsNothing);
       expect(find.byKey(const Key('trackOption_4')), findsNothing);
       await closeSheet(tester);
+      expect(find.byKey(const Key('audioSelectorButton')), findsNothing,
+          reason: 'src2 仅一条音轨 → 音轨图标按规则隐藏');
 
-      // src2 仅一条音轨 → 音轨图标按规则隐藏
-      expect(find.byKey(const Key('audioSelectorButton')), findsNothing);
+      // 两步流程切 src1：字幕 3/4（无 5），音轨图标回归（2 条）
+      await pickVersion(tester, 'src1');
+
+      await openSheet(tester, const Key('subtitleSelectorButton'));
+      expect(find.byKey(const Key('trackOption_3')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_4')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_5')), findsNothing);
+      await closeSheet(tester);
+      expect(find.byKey(const Key('audioSelectorButton')), findsOneWidget);
     });
 
-    testWidgets('切版本预选按语言迁移，无同语言轨则清空', (tester) async {
-      final container = await pumpMulti(tester);
+    // 自建多版本条目：版本偏好下 [hi]（高码率）是默认/生效版本，[lo] 需两步流程切换。
+    MediaItem multiItem(String id, MediaSource hi, MediaSource lo) => MediaItem(
+          id: id,
+          name: '偏好联动',
+          type: 'Movie',
+          posterUrl: _posterUrl,
+          mediaStreams: [...hi.mediaStreams],
+          mediaSources: [lo, hi], // 服务端顺序与偏好顺序相反，验证按偏好取
+        );
 
-      // src1 预选：字幕 jpn(4)、音轨 chi(1)
+    testWidgets('切版本预选按语言迁移：字幕 + 音轨都迁到新版本的同语言轨', (tester) async {
+      // 默认 = mv1_hi（8M）：字幕 jpn(4)/chi(3)，音轨 chi(0)/eng(1)
+      final hi = MediaSource(
+        id: 'mv1_hi',
+        name: '高码率',
+        bitrate: 8000000,
+        mediaStreams: [
+          MediaStream(type: 'Audio', codec: 'aac', language: 'chi', index: 0),
+          MediaStream(type: 'Audio', codec: 'eac3', language: 'eng', index: 1),
+          MediaStream(type: 'Subtitle', codec: 'srt', language: 'jpn', index: 4),
+        ],
+      );
+      // 两步切换目标 mv1_lo（2M）：字幕 jpn(5)，音轨 eng(2)
+      final lo = MediaSource(
+        id: 'mv1_lo',
+        name: '低码率',
+        bitrate: 2000000,
+        mediaStreams: [
+          MediaStream(type: 'Audio', codec: 'ac3', language: 'eng', index: 2),
+          MediaStream(type: 'Subtitle', codec: 'ass', language: 'jpn', index: 5),
+        ],
+      );
+      final item = multiItem('mv_migrate', hi, lo);
+      final container =
+          await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+
+      // 默认在 hi 上预选：字幕 jpn(4)、音轨 eng(1)
       await openSheet(tester, const Key('subtitleSelectorButton'));
       await tester.tap(find.byKey(const Key('trackOption_4')));
       await tester.pump();
@@ -987,22 +1035,57 @@ void main() {
       expect(before?.subtitleIndex, 4);
       expect(before?.audioIndex, 1);
 
-      // 切 src2（点可用版本行）：jpn 字幕存在 → 迁移到 5；chi 音轨不存在 → 清空
-      await tester.ensureVisible(find.byKey(const Key('mediaSource_src2')));
-      await tester.tap(find.byKey(const Key('mediaSource_src2')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
+      // 两步流程切 lo：jpn 字幕 4→5；eng 音轨 1→2
+      await pickVersion(tester, 'mv1_lo');
 
       final after = container.read(pendingTrackSelectionProvider);
-      expect(after?.subtitleIndex, 5, reason: 'jpn 字幕迁移到 src2 的 index');
-      expect(after?.audioIndex, isNull, reason: 'src2 无 chi 音轨 → 清空');
+      expect(after?.subtitleIndex, 5, reason: 'jpn 字幕迁移到新版本的 index');
+      expect(after?.audioIndex, 2, reason: 'eng 音轨迁移到新版本的 index');
     });
 
-    testWidgets('切版本后底部媒体信息跟随新版本（流/路径/大小，v1.1.177）',
+    testWidgets('切版本后无同语言轨则清空该轨预选', (tester) async {
+      // 默认 = mv2_hi（8M）：音轨 chi(0)/eng(1)；目标无 chi
+      final hi = MediaSource(
+        id: 'mv2_hi',
+        name: '高码率',
+        bitrate: 8000000,
+        mediaStreams: [
+          MediaStream(type: 'Audio', codec: 'aac', language: 'chi', index: 0),
+          MediaStream(type: 'Audio', codec: 'eac3', language: 'eng', index: 1),
+        ],
+      );
+      final lo = MediaSource(
+        id: 'mv2_lo',
+        name: '低码率',
+        bitrate: 2000000,
+        mediaStreams: [
+          MediaStream(type: 'Audio', codec: 'ac3', language: 'eng', index: 2),
+          MediaStream(type: 'Audio', codec: 'ac3', language: 'fra', index: 3),
+        ],
+      );
+      final item = multiItem('mv_clear', hi, lo);
+      final container =
+          await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+
+      // 默认 = hi：预选音轨 chi(0)
+      await openSheet(tester, const Key('audioSelectorButton'));
+      await tester.tap(find.byKey(const Key('trackOption_0')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(container.read(pendingTrackSelectionProvider)?.audioIndex, 0);
+
+      // 两步流程切 lo：无 chi 音轨 → 该轨预选清空
+      await pickVersion(tester, 'mv2_lo');
+      expect(container.read(pendingTrackSelectionProvider)?.audioIndex, isNull,
+          reason: '新版本无 chi 音轨 → 清空');
+    });
+
+    testWidgets('未选版本时底部媒体信息跟随偏好最高版本；两步切换后跟随所选（v1.1.177/v1.1.233）',
         (tester) async {
       final a = MediaSource(
         id: 'va',
         name: '1080p版',
+        bitrate: 2000000,
         path: '/media/a/video.mkv',
         size: 1073741824, // 1.00 G
         mediaStreams: [
@@ -1013,6 +1096,7 @@ void main() {
       final b = MediaSource(
         id: 'vb',
         name: '4K版',
+        bitrate: 8000000,
         path: '/media/b/video.mkv',
         size: 2147483648, // 2.00 G
         mediaStreams: [
@@ -1025,29 +1109,26 @@ void main() {
         name: '媒体信息联动',
         type: 'Movie',
         posterUrl: _posterUrl,
-        // 顶层流 = 默认源（va）的流集
+        // 顶层流 = va 的流集（与偏好最高的 vb 不同，用于验证跟随）
         mediaStreams: [...a.mediaStreams],
         mediaSources: [a, b],
       );
       await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
 
-      // 默认：底部媒体信息显示 va 的流/路径/大小
-      expect(find.text('h264'), findsOneWidget, reason: '默认源视频编解码');
-      expect(find.textContaining('/media/a/video.mkv'), findsOneWidget,
-          reason: '默认源路径');
-      expect(find.text('1.00 G'), findsWidgets, reason: '默认源大小（头部 + 媒体信息卡）');
-
-      // 点可用版本 vb：流/路径/大小全部跟随
-      await tester.ensureVisible(find.byKey(const Key('mediaSource_vb')));
-      await tester.tap(find.byKey(const Key('mediaSource_vb')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-
-      expect(find.text('hevc'), findsOneWidget, reason: '新版本视频编解码');
-      expect(find.text('h264'), findsNothing);
+      // 未选版本：默认 = 偏好最高 vb（高码率 8M）→ 流/路径/大小都是 b
+      expect(find.text('hevc'), findsOneWidget, reason: '默认视频编解码 = 偏好最高版本');
       expect(find.textContaining('/media/b/video.mkv'), findsOneWidget,
+          reason: '默认路径 = 偏好最高版本');
+      expect(find.text('2.00 G'), findsWidgets, reason: '默认大小 = 偏好最高版本');
+
+      // 两步流程切到 va：流/路径/大小全部跟随
+      await pickVersion(tester, 'va');
+
+      expect(find.text('h264'), findsOneWidget, reason: '新版本视频编解码');
+      expect(find.text('hevc'), findsNothing);
+      expect(find.textContaining('/media/a/video.mkv'), findsOneWidget,
           reason: '新版本路径');
-      expect(find.text('2.00 G'), findsWidgets, reason: '新版本大小（头部 + 媒体信息卡）');
+      expect(find.text('1.00 G'), findsWidgets, reason: '新版本大小（头部 + 媒体信息卡）');
     });
 
     testWidgets('TV：播放按钮可聚焦；两步流程生效（首次选择不播放，选后再点进播放器）',
@@ -1880,19 +1961,21 @@ void main() {
       parentIndexNumber: 1,
       indexNumber: 1,
       posterUrl: _posterUrl,
-      // 顶层流（未选版本时的回退）
+      // 顶层流 = 版本A 的轨集（与偏好最高的版本B 不同，用于验证跟随）
       mediaStreams: [audio(0, 'chi'), audio(1, 'eng'), sub(3, 'chi')],
       mediaSources: [
         MediaSource(
           id: 'sv_a',
           name: '版本A',
           width: 1920,
+          bitrate: 2000000,
           mediaStreams: [audio(0, 'chi'), audio(1, 'eng'), sub(3, 'chi')],
         ),
         MediaSource(
           id: 'sv_b',
           name: '版本B',
           width: 3840,
+          bitrate: 8000000,
           mediaStreams: [audio(7, 'eng'), audio(8, 'chi'), sub(9, 'eng')],
         ),
       ],
@@ -1926,7 +2009,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
-    testWidgets('多版本集：两步选版本 B 后音轨列表切换，播放带 mediaSourceId 与该集预选', (tester) async {
+    testWidgets('多版本集：默认跟随偏好最高版本；两步选版本 A 后播放带该集选中版本',
+        (tester) async {
       final container = await _pumpDetailInRouter(
         tester,
         item: seriesMv,
@@ -1942,43 +2026,62 @@ void main() {
       // 无版本图标（v1.1.232 起）
       expect(find.byKey(const Key('versionSelectorButton')), findsNothing);
 
+      // 未选版本：音轨列表默认 = 偏好最高版本B（7/8，无 0/1）
+      Future<void> showAudioList() async {
+        final btn = find.byKey(const Key('audioSelectorButton'));
+        await tester.ensureVisible(btn);
+        await tester.pump();
+        await tester.tap(btn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+      }
+
+      Future<void> closeAudioList() async {
+        tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+      }
+
+      await showAudioList();
+      expect(find.byKey(const Key('trackOption_7')), findsOneWidget,
+          reason: '默认音轨列表 = 偏好最高版本B');
+      expect(find.byKey(const Key('trackOption_8')), findsOneWidget);
+      expect(find.byKey(const Key('trackOption_0')), findsNothing);
+      await closeAudioList();
+
       // 首次点开始播放 → 弹该集版本选择器（不播放）
       await tapStartPlay(tester);
       expect(find.byKey(const Key('versionOption_sv_a')), findsOneWidget);
       expect(find.byKey(const Key('versionOption_sv_b')), findsOneWidget);
       expect(find.textContaining('PLAYER:'), findsNothing);
 
-      // 选版本 B → 刷新详情，音轨列表切到版本 B 的轨（7/8，无 0/1）
-      await tester.tap(find.byKey(const Key('versionOption_sv_b')));
+      // 选版本 A → 刷新详情，音轨列表切到版本 A 的轨（0/1，无 7/8）
+      await tester.tap(find.byKey(const Key('versionOption_sv_a')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
-      final audioBtn = find.byKey(const Key('audioSelectorButton'));
-      await tester.ensureVisible(audioBtn);
-      await tester.pump();
-      await tester.tap(audioBtn);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      expect(find.byKey(const Key('trackOption_7')), findsOneWidget,
-          reason: '音轨列表已切换为版本 B 的轨');
-      expect(find.byKey(const Key('trackOption_0')), findsNothing);
-      await tester.tap(find.byKey(const Key('trackOption_7')));
+      await showAudioList();
+      expect(find.byKey(const Key('trackOption_0')), findsOneWidget,
+          reason: '音轨列表已切换为版本 A 的轨');
+      expect(find.byKey(const Key('trackOption_7')), findsNothing);
+      await tester.tap(find.byKey(const Key('trackOption_0')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
+      // 选项点击会自行关闭弹层，无需再 pop
 
       // 再次点开始播放 → 进播放器（带该集选中版本）
       await tapStartPlay(tester);
 
       expect(find.textContaining('PLAYER:mv1'), findsOneWidget);
       expect(
-        find.textContaining('mediaSourceId=sv_b'),
+        find.textContaining('mediaSourceId=sv_a'),
         findsOneWidget,
         reason: '播放跳转带该集选中版本',
       );
       // 该集预选在播放时写入全局槽供播放器消费
       final selection = container.read(pendingTrackSelectionProvider);
       expect(selection, isNotNull);
-      expect(selection?.audioIndex, 7);
+      expect(selection?.audioIndex, 0);
     });
 
     testWidgets('无预选的集播放：清掉残留预选、路由不带 mediaSourceId', (tester) async {
@@ -2033,9 +2136,17 @@ void main() {
       mediaStreams: [audio(0)],
       mediaSources: [
         MediaSource(
-            id: 'a2', name: '版本A', width: 1920, mediaStreams: [audio(0)]),
+            id: 'a2',
+            name: '版本A',
+            width: 1920,
+            bitrate: 2000000,
+            mediaStreams: [audio(0)]),
         MediaSource(
-            id: 'b2', name: '版本B', width: 3840, mediaStreams: [audio(1)]),
+            id: 'b2',
+            name: '版本B',
+            width: 3840,
+            bitrate: 8000000,
+            mediaStreams: [audio(1)]),
       ],
     );
 
@@ -2091,6 +2202,37 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
     }
+
+    testWidgets('未手动选版本的多版本集：面板默认填偏好最高版本并随 episodesJson 下发',
+        (tester) async {
+      final container = await pumpRoomDetail(tester);
+      await openEpisodePicker(tester);
+
+      // 偏好最高 = 版本B（高码率）→ 行尾标签默认显示它，而非「默认」
+      expect(find.text('版本: 版本B'), findsOneWidget);
+
+      // 不改版本，直接确认建房 → 该集下发偏好最高版本
+      await tester.ensureVisible(find.text('确认'));
+      await tester.pump();
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('建房设置'), findsOneWidget);
+      await tester.tap(find.text('确定'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('PLAYER:sv20'), findsOneWidget);
+
+      final pending = container.read(pendingRoomEpisodesProvider);
+      expect(pending, isNotNull);
+      expect(pending!, hasLength(2));
+      expect(pending.first['id'], 'eA');
+      expect(pending.first['mediaSourceId'], 'b2',
+          reason: '建房默认源 = 版本偏好最高（与详情页一致）');
+      expect(pending.last['id'], 'eB');
+      expect(pending.last.containsKey('mediaSourceId'), isFalse,
+          reason: '单版本集不下发 mediaSourceId');
+    });
 
     testWidgets('多版本集行尾版本单选，选 B 后确认建房 episodesJson 带该集 mediaSourceId',
         (tester) async {

@@ -518,6 +518,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     ..sort((a, b) => (a.indexNumber ?? 0).compareTo(b.indexNumber ?? 0));
 
   /// 当前选中版本的 MediaSource（未选或已失效返回 null）。
+  ///
+  /// 语义是「**显式**选中」——多版本两步流程与建房的 gating 依赖它：为
+  /// null 即视为"还没选"，需要再弹一次版本选择器。展示用请走
+  /// [_effectiveSource]。
   MediaSource? _selectedSource(MediaItem item) {
     final id = _selectedMediaSourceId;
     if (id == null) return null;
@@ -527,18 +531,27 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return null;
   }
 
-  /// 底部媒体信息区块的选中版本：电影 = 主条目选中源；剧集 = 目标集选中源。
+  /// 展示用生效版本：显式选中 → 否则版本偏好最高。
+  ///
+  /// 底部媒体信息、视频/音频流列表、顶部附加信息徽章、字幕/音轨选择器
+  /// 都取它——否则会出现「可用版本高亮 4K 版、信息区却是 1080p 版」的
+  /// 错位（v1.1.233：未选版本时详情页信息也跟随偏好最高版本）。
+  MediaSource? _effectiveSource(MediaItem item) =>
+      _selectedSource(item) ??
+      preferredSource(item.mediaSources, _versionPreferenceOrder);
+
+  /// 底部媒体信息区块的选中版本：电影 = 主条目生效源；剧集 = 目标集生效源。
   MediaSource? _detailsSelectedSource(MediaItem item) {
-    if (!item.isSeries) return _selectedSource(item);
+    if (!item.isSeries) return _effectiveSource(item);
     final ep = _targetEpisode();
-    return ep == null ? null : _episodeSelectedSource(ep);
+    return ep == null ? null : _episodeEffectiveSource(ep);
   }
 
-  /// 当前生效的字幕流：选中版本 → 该版本的轨；否则回退顶层流（默认行为）。
+  /// 当前生效的字幕流：生效版本 → 该版本的轨；否则回退顶层流（默认行为）。
   List<MediaStream> _currentSubtitleStreams() {
     final item = _item;
     if (item == null) return const [];
-    final source = _selectedSource(item);
+    final source = _effectiveSource(item);
     if (source != null) return source.subtitleStreams;
     return item.mediaStreams.where((s) => s.type == 'Subtitle').toList();
   }
@@ -547,7 +560,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   List<MediaStream> _currentAudioStreams() {
     final item = _item;
     if (item == null) return const [];
-    final source = _selectedSource(item);
+    final source = _effectiveSource(item);
     if (source != null) return source.audioStreams;
     return item.mediaStreams.where((s) => s.type == 'Audio').toList();
   }
@@ -613,25 +626,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return null;
   }
 
+  /// 目标集展示用生效版本：显式选中 → 否则版本偏好最高（见 [_effectiveSource]）。
+  MediaSource? _episodeEffectiveSource(MediaItem ep) =>
+      _episodeSelectedSource(ep) ??
+      preferredSource(ep.mediaSources, _versionPreferenceOrder);
+
   /// 目标集选中版本的字幕流；未选版本回退该集顶层流。
   List<MediaStream> _episodeSubtitleStreams(MediaItem ep) {
-    final sourceId = _episodeSourceIds[ep.id];
-    if (sourceId != null) {
-      for (final s in ep.mediaSources) {
-        if (s.id == sourceId) return s.subtitleStreams;
-      }
-    }
+    final source = _episodeEffectiveSource(ep);
+    if (source != null) return source.subtitleStreams;
     return ep.mediaStreams.where((s) => s.type == 'Subtitle').toList();
   }
 
   /// 目标集选中版本的音轨流（同上）。
   List<MediaStream> _episodeAudioStreams(MediaItem ep) {
-    final sourceId = _episodeSourceIds[ep.id];
-    if (sourceId != null) {
-      for (final s in ep.mediaSources) {
-        if (s.id == sourceId) return s.audioStreams;
-      }
-    }
+    final source = _episodeEffectiveSource(ep);
+    if (source != null) return source.audioStreams;
     return ep.mediaStreams.where((s) => s.type == 'Audio').toList();
   }
 
@@ -645,8 +655,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   /// 目标集当前生效版本 id：显式选中 → 否则偏好最高。
   String? _episodeEffectiveSourceId(MediaItem ep) =>
-      _episodeSourceIds[ep.id] ??
-      preferredSource(ep.mediaSources, _versionPreferenceOrder)?.id;
+      _episodeEffectiveSource(ep)?.id;
 
   /// 打开目标集的版本选择器（开始播放两步流程：仅选择+刷新详情，不播放）；
   /// 预选轨按语言迁移到新版本。
@@ -687,8 +696,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Future<void> _promptVersionSelection(MediaItem item) async {
     if (!mounted) return;
     final ordered = _sortedSources(item.mediaSources);
-    final current = _selectedMediaSourceId ??
-        preferredSource(item.mediaSources, _versionPreferenceOrder)?.id;
+    final current = _effectiveSource(item)?.id;
     await showVersionSelector(
       context,
       sources: ordered,
@@ -1060,8 +1068,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
   }
 
+  /// 建房（电影）版本弹层：按版本偏好排序，未选时高亮偏好最高。
+  ///
+  /// gating 仍由 [_resolveSourceForPlayback] 负责（显式选过就不弹）。
   Future<MediaSource?> _showVersionPicker() async {
     if (_item == null || !_item!.hasMultipleVersions) return null;
+    final sources = _sortedSources(_item!.mediaSources);
+    final highlightedId = _effectiveSource(_item!)?.id;
+    final primary = Theme.of(context).colorScheme.primary;
     return showModalBottomSheet<MediaSource>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -1075,12 +1089,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
-            ..._item!.mediaSources.map((source) => ListTile(
-                  leading: const Icon(Icons.movie),
-                  title: Text(source.name),
-                  subtitle: Text(source.displayLabel),
-                  onTap: () => Navigator.pop(ctx, source),
-                )),
+            ...sources.map((source) {
+              final selected = source.id == highlightedId;
+              return ListTile(
+                leading: Icon(
+                  selected ? Icons.check_circle : Icons.movie,
+                  color: selected ? primary : null,
+                ),
+                title: Text(
+                  source.name,
+                  style: selected
+                      ? TextStyle(color: primary, fontWeight: FontWeight.w600)
+                      : null,
+                ),
+                subtitle: Text(source.displayLabel),
+                onTap: () => Navigator.pop(ctx, source),
+              );
+            }),
             const SizedBox(height: 8),
           ],
         ),
@@ -1119,7 +1144,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           label: '默认（服务器选择）',
           key: Key('epVersionDefault_${ep.id}'),
         ),
-        for (final source in ep.mediaSources)
+        // 按版本偏好排序（高优先级在前），与详情页「可用版本」一致。
+        for (final source in _sortedSources(ep.mediaSources))
           TvOptionEntry<String?>(
             value: source.id,
             label: source.name,
@@ -1134,9 +1160,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 每集只能单选一个版本（面板内 Radio 单选组）。
   Future<_EpisodePickResult?> _showEpisodePicker() async {
     final selected = Set<String>.from(_episodes.map((e) => e.id));
-    // 面板内每集版本选择（初始继承方案 A 的 per-episode 版本，确认后回写）
+    // 面板内每集版本选择（初始继承方案 A 的 per-episode 版本，确认后回写）：
+    // 显式选过的沿用；未选的多版本集默认填「版本偏好最高」——建房默认源
+    // 与详情页一致（v1.1.233），仍可在弹层改选「默认（服务器选择）」。
     final versionByEp = <String, String?>{
-      for (final e in _episodes) e.id: _episodeSourceIds[e.id],
+      for (final e in _episodes)
+        e.id: _episodeSourceIds[e.id] ?? _episodeEffectiveSource(e)?.id,
     };
 
     return showModalBottomSheet<_EpisodePickResult>(
@@ -2127,16 +2156,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
+  /// 「可用版本」区块：按版本偏好排序、当前生效版本高亮。**只读展示**
+  /// （v1.1.233）——切换版本统一走「开始播放」两步流程的版本选择弹层，
+  /// 避免同一条信息存在两个入口。
   Widget _buildMediaSources(MediaItem item) {
     final settings = ref.watch(settingsProvider);
     final tv = settings.tvMode;
     final primary = Theme.of(context).colorScheme.primary;
-    final order = settings.versionPreferenceOrder;
-    // 按「版本偏好」排序（高优先级在上）。
-    final ordered = sortSourcesByPreference(item.mediaSources, order);
-    // 高亮：显式选中 → 否则偏好最高（未选之前的默认高亮）。
-    final selectedId =
-        _selectedMediaSourceId ?? preferredSource(item.mediaSources, order)?.id;
+    // 按「版本偏好」排序（高优先级在前）。
+    final ordered = _sortedSources(item.mediaSources);
+    // 高亮：显式选中 → 否则偏好最高（与详情页信息区同一来源）。
+    final selectedId = _effectiveSource(item)?.id;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2148,8 +2178,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        // 点某行即选该版本并刷新详情（与「开始播放」两步流程共用
-        // [_onVersionSelected]）；当前版本主色对勾高亮。
         ...ordered.map((source) {
           final selected = source.id == selectedId;
           return Padding(
@@ -2157,10 +2185,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             child: GlassContainer(
               borderRadius: const BorderRadius.all(Radius.circular(14)),
               padding: EdgeInsets.zero,
-              // 透明 Material：ListTile 有 onTap 时其背景/水波纹需最近的
-              // Material 承载，否则会被玻璃层背景遮挡并触发断言。
-              child: Material(
-                color: Colors.transparent,
+              // 只读：不参与焦点/点击（ExcludeFocus 防止抢占播放行焦点）。
+              child: ExcludeFocus(
                 child: ListTile(
                   key: ValueKey('mediaSource_${source.id}'),
                   leading: Icon(
@@ -2178,7 +2204,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                   subtitle: Text(source.displayLabel),
                   dense: true,
-                  onTap: () => _onVersionSelected(source),
                 ),
               ),
             ),
@@ -2251,25 +2276,25 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (item.isSeries) {
       final ep = _targetEpisode();
       if (ep == null) return const [];
-      final src = _episodeSelectedSource(ep);
+      final src = _episodeEffectiveSource(ep);
       if (src != null && src.mediaStreams.isNotEmpty) return src.mediaStreams;
       return ep.mediaStreams;
     }
-    final src = _selectedSource(item);
+    final src = _effectiveSource(item);
     if (src != null && src.mediaStreams.isNotEmpty) return src.mediaStreams;
     return item.mediaStreams;
   }
 
-  /// 附加信息行的大小：电影=主条目（选中源优先）；剧集=当前选中集。
+  /// 附加信息行的大小：电影=主条目（生效源优先）；剧集=当前选中集。
   int? _metaSize(MediaItem item) {
     if (item.isSeries) {
       final ep = _targetEpisode();
       if (ep == null) return null;
-      final src = _episodeSelectedSource(ep);
+      final src = _episodeEffectiveSource(ep);
       return src?.size ??
           (ep.mediaSources.isNotEmpty ? ep.mediaSources.first.size : null);
     }
-    final src = _selectedSource(item);
+    final src = _effectiveSource(item);
     return src?.size ??
         (item.mediaSources.isNotEmpty ? item.mediaSources.first.size : null);
   }
