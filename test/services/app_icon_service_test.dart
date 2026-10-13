@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/app_icon_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('AppIconService.options', () {
     test('默认在首位 + 3 个备用，id 唯一', () {
       expect(AppIconService.options, hasLength(4));
@@ -104,6 +109,111 @@ void main() {
       expect(empty.manufactures, ['Xiaomi']);
       expect(empty.brands, ['Redmi']);
       expect(empty.models, isEmpty);
+    });
+  });
+
+  group('apply iOS：静默不回传 → 读系统验证 → 不一致回退公开 API', () {
+    late List<MethodCall> calls;
+    late MethodChannel channel;
+
+    setUp(() {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      AppIconService.iosSilentSettle = const Duration(milliseconds: 5);
+      AppIconService.iosVerifyTimeout = const Duration(milliseconds: 50);
+      calls = <MethodCall>[];
+      channel = const MethodChannel('flutter_dynamic_icon_plus');
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        AppIconService.iosSilentSettle = const Duration(milliseconds: 500);
+        AppIconService.iosVerifyTimeout = const Duration(seconds: 3);
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+    });
+
+    /// silent: true 的 set 永不完成；silent: false / 读回按 [onPublicSet] /
+    /// [currentIcon] 应答。
+    void mockPlugin({
+      required String? currentIcon,
+    }) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        if (call.method == 'setAlternateIconName') {
+          final silent = (call.arguments as Map)['isSilent'] as bool?;
+          if (silent == true) {
+            // 复现插件 bug：静默分支不回传 result → Future 永不完成。
+            return Completer<Object?>().future;
+          }
+          return null; // 公开 API：正常回传成功
+        }
+        if (call.method == 'getAlternateIconName') {
+          return currentIcon;
+        }
+        return null;
+      });
+    }
+
+    test('系统读回与期望一致 → 成功，不触发公开 API 回退', () async {
+      mockPlugin(currentIcon: 'artistic');
+
+      await AppIconService.apply('artistic');
+
+      final sets = calls
+          .where((c) => c.method == 'setAlternateIconName')
+          .toList(growable: false);
+      expect(sets, hasLength(1), reason: '读回一致时不应再调公开 API');
+      expect(sets.single.arguments['isSilent'], isTrue);
+      expect(sets.single.arguments['iconName'], 'artistic');
+    });
+
+    test('系统读回不一致（假成功/静默失败）→ 回退公开 API isSilent:false',
+        () async {
+      mockPlugin(currentIcon: null); // 系统仍是默认图标
+
+      await AppIconService.apply('neon');
+
+      final sets = calls
+          .where((c) => c.method == 'setAlternateIconName')
+          .toList(growable: false);
+      expect(sets, hasLength(2), reason: '静默 + 回退两次');
+      expect(sets.first.arguments['isSilent'], isTrue);
+      expect(sets.last.arguments['isSilent'], isFalse);
+      expect(sets.last.arguments['iconName'], 'neon');
+    });
+
+    test('公开 API 回退失败 → 抛出（UI 据此 toast）', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        if (call.method == 'setAlternateIconName') {
+          final silent = (call.arguments as Map)['isSilent'] as bool?;
+          if (silent == true) {
+            return Completer<Object?>().future;
+          }
+          throw PlatformException(code: 'Unavailable', message: 'no icon');
+        }
+        if (call.method == 'getAlternateIconName') return null;
+        return null;
+      });
+
+      await expectLater(
+        AppIconService.apply('glass'),
+        throwsA(isA<PlatformException>()),
+      );
+    });
+
+    test('还原默认（name=null）：读回 null 即一致，不回退', () async {
+      mockPlugin(currentIcon: null);
+
+      await AppIconService.apply(null);
+
+      final sets = calls
+          .where((c) => c.method == 'setAlternateIconName')
+          .toList(growable: false);
+      expect(sets, hasLength(1));
+      expect(sets.single.arguments['iconName'], isNull);
+      expect(sets.single.arguments['isSilent'], isTrue);
     });
   });
 }

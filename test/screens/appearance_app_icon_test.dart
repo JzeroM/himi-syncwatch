@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -98,6 +100,52 @@ void main() {
     // Android 需带黑名单（设备自身命中）走立即分支。
     expect(calls.last.arguments['manufactures'], contains('Xiaomi'));
     expect(calls.last.arguments['models'], contains('23127PN0CC'));
+    expect(container.read(settingsProvider).appIcon, 'artistic');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('点 Artistic（iOS）：静默不回传但系统已切换 → 仍写回设置', (tester) async {
+    const channel = MethodChannel('flutter_dynamic_icon_plus');
+    final calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
+        (call) async {
+      calls.add(call);
+      if (call.method == 'setAlternateIconName') {
+        final silent = (call.arguments as Map)['isSilent'] as bool?;
+        if (silent == true) {
+          // 复现插件静默分支不回传 result。
+          return Completer<Object?>().future;
+        }
+        return null;
+      }
+      if (call.method == 'getAlternateIconName') {
+        // 系统读回：静默私有 API 实际已生效。
+        return 'artistic';
+      }
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    final originalSettle = AppIconService.iosSilentSettle;
+    AppIconService.iosSilentSettle = const Duration(milliseconds: 5);
+    addTearDown(() => AppIconService.iosSilentSettle = originalSettle);
+
+    final container =
+        await _pump(tester, platform: TargetPlatform.iOS, tvMode: false);
+    final tile = find.byKey(const ValueKey('appIcon_artistic'));
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final sets = calls
+        .where((c) => c.method == 'setAlternateIconName')
+        .toList(growable: false);
+    expect(sets, isNotEmpty, reason: '应调用插件 setAlternateIconName');
+    expect(sets.first.arguments['isSilent'], isTrue);
+    expect(sets.first.arguments['iconName'], 'artistic');
+    // 读回一致 → 不回退公开 API，且设置已写入（修复前 await 永久挂起，到不了这里）。
+    expect(sets.where((c) => c.arguments['isSilent'] == false), isEmpty);
     expect(container.read(settingsProvider).appIcon, 'artistic');
     debugDefaultTargetPlatformOverride = null;
   });

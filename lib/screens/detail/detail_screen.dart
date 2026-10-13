@@ -1742,6 +1742,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             child: GlassContainer(
               borderRadius: const BorderRadius.all(Radius.circular(24)),
               padding: EdgeInsets.zero,
+              // 贴边小按钮不用面板级悬浮投影，避免返回键外一圈黑影。
+              showShadow: false,
               child: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
                 onPressed: () => Navigator.of(context).pop(),

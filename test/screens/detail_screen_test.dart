@@ -191,6 +191,19 @@ void main() {
     expect(find.text('测试影片'), findsWidgets);
   });
 
+  testWidgets('详情页返回键玻璃壳无悬浮投影（showShadow: false）', (tester) async {
+    await _pumpDetail(tester);
+
+    final backCapsule = find.ancestor(
+      of: find.byIcon(Icons.arrow_back),
+      matching: find.byType(GlassContainer),
+    );
+    expect(backCapsule, findsOneWidget,
+        reason: 'SliverAppBar leading 应为玻璃壳返回键');
+    expect(tester.widget<GlassContainer>(backCapsule).showShadow, isFalse,
+        reason: '贴边小按钮不用面板级投影，避免返回键外一圈黑影');
+  });
+
   // ---- TV 详情页：海报整页背景 + 操作行合排 ----
 
   group('TV 海报背景与操作行合排', () {
