@@ -544,4 +544,48 @@ void main() {
       expect(s.hdrLabel, equals('Dolby Vision'));
     });
   });
+
+  group('顶部附加信息标签（hdrShortLabel / resolutionShortLabelFor）', () {
+    test('hdrShortLabel：杜比缩写为 DV，其余不变', () {
+      final dv5 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile50',
+      );
+      expect(dv5.hdrLabel, 'Dolby Vision P5');
+      expect(dv5.hdrShortLabel, 'DV P5');
+
+      final dv8 = MediaStream(
+        type: 'Video',
+        codec: 'hevc',
+        extendedVideoType: 'DolbyVision',
+        extendedVideoSubType: 'DoviProfile81',
+      );
+      expect(dv8.hdrShortLabel, 'DV P8');
+
+      final hdr10 =
+          MediaStream(type: 'Video', codec: 'hevc', videoRangeType: 'HDR10');
+      expect(hdr10.hdrShortLabel, 'HDR10');
+
+      final sdr = MediaStream(type: 'Video', codec: 'h264');
+      expect(sdr.hdrShortLabel, 'SDR');
+    });
+
+    test('resolutionShortLabelFor：8K/4K/QHD/FHD/HD/SD', () {
+      expect(resolutionShortLabelFor(7680, 4320), '8K');
+      expect(resolutionShortLabelFor(3840, 2160), '4K');
+      expect(resolutionShortLabelFor(2560, 1440), 'QHD');
+      expect(resolutionShortLabelFor(1920, 1080), 'FHD');
+      expect(resolutionShortLabelFor(1280, 720), 'HD');
+      expect(resolutionShortLabelFor(720, 480), 'SD');
+      expect(resolutionShortLabelFor(null, 2160), '4K', reason: '宽缺失用高兜底');
+      expect(resolutionShortLabelFor(null, null), isNull);
+    });
+
+    test('MediaStream.resolutionShortLabel 委托 helper', () {
+      final s = MediaStream(type: 'Video', codec: 'hevc', width: 3840, height: 2160);
+      expect(s.resolutionShortLabel, '4K');
+    });
+  });
 }

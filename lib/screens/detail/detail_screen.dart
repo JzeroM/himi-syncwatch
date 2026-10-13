@@ -1798,7 +1798,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   right: 16,
                   bottom: 16,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    // 标题 Logo 与附加信息行水平居中；简介按钮仍是左对齐的
+                    // Row（其内部 mainAxisAlignment.start）。
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       // 标题艺术字（Logo 图）：有则替换文字片名（房间模式
@@ -1833,43 +1835,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           ),
                         ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          if (item.communityRating != null) ...[
-                            const Icon(Icons.star,
-                                size: 16, color: Colors.amber),
-                            const SizedBox(width: 4),
-                            Text(
-                              item.communityRating!.toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                          ],
-                          if (item.officialRating != null) ...[
-                            _MetaBadge(text: item.officialRating!),
-                            const SizedBox(width: 16),
-                          ],
-                          if (item.year != null)
-                            Text(
-                              item.year!,
-                              style: const TextStyle(color: Colors.white70),
-                            ),
-                          if (item.runtimeText != null) ...[
-                            const SizedBox(width: 16),
-                            Text(
-                              item.runtimeText!,
-                              style: const TextStyle(color: Colors.white70),
-                            ),
-                          ],
-                          if (_has4k(item)) ...[
-                            const SizedBox(width: 16),
-                            const _MetaBadge(text: '4K'),
-                          ],
-                        ],
-                      ),
+                      _buildMetaRow(item),
                       if (item.overview != null &&
                           item.overview!.isNotEmpty) ...[
                         const SizedBox(height: 8),
@@ -2171,16 +2137,94 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  /// 是否含 4K 资源（`MediaSource.displayLabel` 对 width>=3840 输出 '4K'，
-  /// 或直接看视频流宽度）。
-  bool _has4k(MediaItem item) {
-    if (item.mediaSources.any((s) => s.displayLabel == '4K')) return true;
-    return item.mediaStreams
-        .any((s) => s.type == 'Video' && (s.width ?? 0) >= 3840);
+  /// 顶部附加信息行（居中）：评分 — 年份 — 时长 — 分辨率简称 —
+  /// 视频范围 — 视频大小（不可用项自动省略）。
+  ///
+  /// 电影取主条目（选中版本优先）；剧集的分辨率/范围/大小取当前选中集
+  /// （选中版本优先）的视频流与大小，评分/年份仍取剧集本身。
+  Widget _buildMetaRow(MediaItem item) {
+    final chips = <Widget>[];
+    void gap() {
+      if (chips.isNotEmpty) chips.add(const SizedBox(width: 16));
+    }
+
+    if (item.communityRating != null) {
+      gap();
+      chips.add(const Icon(Icons.star, size: 16, color: Colors.amber));
+      chips.add(const SizedBox(width: 4));
+      chips.add(Text(
+        item.communityRating!.toStringAsFixed(1),
+        style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.bold),
+      ));
+    }
+    if (item.year != null && item.year!.isNotEmpty) {
+      gap();
+      chips.add(Text(item.year!,
+          style: const TextStyle(color: Colors.white70)));
+    }
+    if (item.runtimeText != null) {
+      gap();
+      chips.add(Text(item.runtimeText!,
+          style: const TextStyle(color: Colors.white70)));
+    }
+
+    final video = _metaStreams(item)
+        .where((s) => s.type == 'Video')
+        .firstOrNull;
+    final resolution = video?.resolutionShortLabel;
+    if (resolution != null) {
+      gap();
+      chips.add(_MetaBadge(text: resolution));
+    }
+    final range = video?.hdrShortLabel;
+    if (range != null && range.isNotEmpty) {
+      gap();
+      chips.add(_MetaBadge(text: range));
+    }
+    final size = _metaSize(item);
+    if (size != null && size > 0) {
+      gap();
+      chips.add(Text(MediaDetailsSection.formatSize(size),
+          style: const TextStyle(color: Colors.white70)));
+    }
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Center(
+      child: Row(mainAxisSize: MainAxisSize.min, children: chips),
+    );
+  }
+
+  /// 附加信息行取数的流：电影=主条目（选中源优先）；剧集=当前选中集。
+  List<MediaStream> _metaStreams(MediaItem item) {
+    if (item.isSeries) {
+      final ep = _targetEpisode();
+      if (ep == null) return const [];
+      final src = _episodeSelectedSource(ep);
+      if (src != null && src.mediaStreams.isNotEmpty) return src.mediaStreams;
+      return ep.mediaStreams;
+    }
+    final src = _selectedSource(item);
+    if (src != null && src.mediaStreams.isNotEmpty) return src.mediaStreams;
+    return item.mediaStreams;
+  }
+
+  /// 附加信息行的大小：电影=主条目（选中源优先）；剧集=当前选中集。
+  int? _metaSize(MediaItem item) {
+    if (item.isSeries) {
+      final ep = _targetEpisode();
+      if (ep == null) return null;
+      final src = _episodeSelectedSource(ep);
+      return src?.size ??
+          (ep.mediaSources.isNotEmpty ? ep.mediaSources.first.size : null);
+    }
+    final src = _selectedSource(item);
+    return src?.size ??
+        (item.mediaSources.isNotEmpty ? item.mediaSources.first.size : null);
   }
 }
 
-/// 顶部徽章（TV-MA / 4K）：半透明白描边小胶囊。
+/// 顶部附加信息徽章（分辨率简称 / 视频范围）：半透明白描边小胶囊。
 class _MetaBadge extends StatelessWidget {
   final String text;
   const _MetaBadge({required this.text});

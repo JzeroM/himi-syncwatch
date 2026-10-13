@@ -1017,7 +1017,7 @@ void main() {
       expect(find.text('h264'), findsOneWidget, reason: '默认源视频编解码');
       expect(find.textContaining('/media/a/video.mkv'), findsOneWidget,
           reason: '默认源路径');
-      expect(find.text('1.00 G'), findsOneWidget, reason: '默认源大小');
+      expect(find.text('1.00 G'), findsWidgets, reason: '默认源大小（头部 + 媒体信息卡）');
 
       // 切到 vb：流/路径/大小全部跟随
       await openSheet(tester, const Key('versionSelectorButton'));
@@ -1029,7 +1029,7 @@ void main() {
       expect(find.text('h264'), findsNothing);
       expect(find.textContaining('/media/b/video.mkv'), findsOneWidget,
           reason: '新版本路径');
-      expect(find.text('2.00 G'), findsOneWidget, reason: '新版本大小');
+      expect(find.text('2.00 G'), findsWidgets, reason: '新版本大小（头部 + 媒体信息卡）');
     });
 
     testWidgets('TV 模式版本图标被 TvFocusable 包裹', (tester) async {
@@ -1044,23 +1044,118 @@ void main() {
     });
   });
 
-  // ---- 顶部徽章 TV-MA / 4K ----
+  // ---- 顶部附加信息行（评分/年份/时长/分辨率/视频范围/大小） ----
 
-  testWidgets('顶部 meta 显示 TV-MA 与 4K 徽章', (tester) async {
+  testWidgets('顶部附加信息行：评分/年份/时长/分辨率/视频范围/大小（已移除官方分级）',
+      (tester) async {
     final item = MediaItem(
       id: 'm1',
       name: '测试影片',
       type: 'Movie',
       posterUrl: _posterUrl,
       officialRating: 'TV-MA',
+      communityRating: 6.2,
+      year: '2026',
+      runTimeTicks: 36000000000, // 1 h 0m
       mediaStreams: [
-        MediaStream(type: 'Video', codec: 'hevc', width: 3840, height: 2160),
+        MediaStream(
+            type: 'Video',
+            codec: 'hevc',
+            width: 3840,
+            height: 2160,
+            videoRangeType: 'HDR10'),
+      ],
+      mediaSources: [
+        MediaSource(
+          id: 's1',
+          name: '4K版',
+          size: 1073741824, // 1.00 G
+        ),
       ],
     );
     await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
 
-    expect(find.text('TV-MA'), findsOneWidget);
-    expect(find.text('4K'), findsOneWidget);
+    expect(find.text('6.2'), findsOneWidget, reason: '评分');
+    expect(find.text('2026'), findsOneWidget, reason: '年份');
+    expect(find.text('1 h 0m'), findsOneWidget, reason: '时长');
+    expect(find.text('4K'), findsOneWidget, reason: '分辨率简称');
+    expect(find.text('HDR10'), findsWidgets, reason: '视频范围（头部徽章 + 媒体信息卡）');
+    expect(find.text('1.00 G'), findsWidgets, reason: '视频大小（头部 + 媒体信息卡）');
+    expect(find.text('TV-MA'), findsNothing, reason: '官方分级已从附加信息行移除');
+  });
+
+  testWidgets('顶部附加信息：杜比视界缩写为 DV P5，防过长', (tester) async {
+    final item = MediaItem(
+      id: 'dv1',
+      name: 'DV影片',
+      type: 'Movie',
+      posterUrl: _posterUrl,
+      mediaStreams: [
+        MediaStream(
+          type: 'Video',
+          codec: 'hevc',
+          width: 3840,
+          height: 2160,
+          extendedVideoType: 'DolbyVision',
+          extendedVideoSubType: 'DoviProfile50',
+        ),
+      ],
+    );
+    await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+
+    expect(find.text('DV P5'), findsOneWidget);
+  });
+
+  testWidgets('剧集顶部附加信息：分辨率/范围/大小取当前选中集', (tester) async {
+    final seriesItem = MediaItem(
+      id: 'sv1',
+      name: '测试剧集',
+      type: 'Series',
+      communityRating: 8.0,
+      year: '2020',
+    );
+    final ep1 = MediaItem(
+      id: 'e1',
+      name: '第1集',
+      type: 'Episode',
+      parentIndexNumber: 1,
+      indexNumber: 1,
+      mediaStreams: [
+        MediaStream(
+            type: 'Video',
+            codec: 'hevc',
+            width: 3840,
+            height: 2160,
+            videoRangeType: 'HDR10'),
+      ],
+      mediaSources: [
+        MediaSource(id: 'es1', name: '4K', size: 2147483648), // 2.00 G
+      ],
+    );
+    await _pumpDetail(
+      tester,
+      item: seriesItem,
+      emby: FakeEmbyService(
+        item: seriesItem,
+        itemsByParent: {
+          'sv1': [ep1],
+        },
+        seasons: [
+          MediaItem(
+              id: 'sea1',
+              name: '第1季',
+              type: 'Season',
+              indexNumber: 1,
+              childCount: 1),
+        ],
+      ),
+    );
+
+    expect(find.text('8.0'), findsWidgets, reason: '剧集评分');
+    expect(find.text('2020'), findsOneWidget, reason: '剧集年份');
+    expect(find.text('4K'), findsWidgets, reason: '选中集分辨率简称');
+    expect(find.text('HDR10'), findsWidgets, reason: '选中集视频范围');
+    expect(find.text('2.00 G'), findsWidgets, reason: '选中集视频大小');
   });
 
   // ---- 玻璃按钮行 ----

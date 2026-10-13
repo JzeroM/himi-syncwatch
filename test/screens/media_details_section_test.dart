@@ -116,6 +116,30 @@ void main() {
     expect(find.text('Netflix'), findsOneWidget);
   });
 
+  testWidgets('strm 资源：媒体信息路径显示 MediaSource 目标而非 .strm 文件',
+      (tester) async {
+    final item = MediaItem(
+      id: 'm1',
+      name: '电影',
+      type: 'Movie',
+      path: '/media/movie.strm', // 顶层 Path = .strm 文件本身
+      mediaSources: [
+        MediaSource(
+          id: 's1',
+          name: '默认',
+          path: 'https://cdn.example/movie.mkv', // strm 内容指向的真实目标
+        ),
+      ],
+    );
+    expect(MediaDetailsSection.hasContent(item), isTrue);
+    await tester.pumpWidget(_host(MediaDetailsSection(item: item)));
+    await tester.pump();
+
+    expect(
+        find.textContaining('https://cdn.example/movie.mkv'), findsOneWidget);
+    expect(find.textContaining('/media/movie.strm'), findsNothing);
+  });
+
   test('hasContent：无任何信息 → false', () {
     expect(
       MediaDetailsSection.hasContent(

@@ -217,6 +217,14 @@ class MediaStream {
   bool get isDolbyVisionProfile5 =>
       isDolbyVision && extendedVideoSubType?.contains('Profile50') == true;
 
+  /// 视频范围缩写（详情页顶部附加信息用，防杜比标签过长）：
+  /// `Dolby Vision P5` → `DV P5`，`Dolby Vision` → `DV`；
+  /// `SDR/HDR10/HDR10+/HLG` 保持不变。
+  String get hdrShortLabel => hdrLabel.replaceFirst('Dolby Vision', 'DV');
+
+  /// 分辨率规格简称（HD/FHD/QHD/4K…）。
+  String? get resolutionShortLabel => resolutionShortLabelFor(width, height);
+
   String get displayInfo {
     if (displayTitle != null && displayTitle!.isNotEmpty) {
       return displayTitle!;
@@ -522,4 +530,25 @@ class MediaItem {
     if (h > 0) return '$h h ${m}m';
     return '$m min';
   }
+}
+
+/// 分辨率规格简称（详情页顶部附加信息用）：
+/// 宽度 ≥7680→`8K`、≥3840→`4K`、≥2560→`QHD`、≥1920→`FHD`、
+/// ≥1280→`HD`，其余 `SD`；宽度缺失时用高度兜底；两者都缺失返回 null。
+String? resolutionShortLabelFor(int? width, int? height) {
+  final w = width ?? 0;
+  if (w >= 7680) return '8K';
+  if (w >= 3840) return '4K';
+  if (w >= 2560) return 'QHD';
+  if (w >= 1920) return 'FHD';
+  if (w >= 1280) return 'HD';
+  if (w > 0) return 'SD';
+  final h = height ?? 0;
+  if (h >= 4320) return '8K';
+  if (h >= 2160) return '4K';
+  if (h >= 1440) return 'QHD';
+  if (h >= 1080) return 'FHD';
+  if (h >= 720) return 'HD';
+  if (h > 0) return 'SD';
+  return null;
 }

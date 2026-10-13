@@ -45,12 +45,34 @@ class MediaDetailsSection extends StatelessWidget {
     return _mediaItem.mediaStreams;
   }
 
-  /// 生效路径：选中版本优先，回退条目顶层路径，再回退默认源（首个）路径。
-  String? get _effectivePath => selectedSource?.path ??
-      _mediaItem.path ??
-      (_mediaItem.mediaSources.isNotEmpty
-          ? _mediaItem.mediaSources.first.path
-          : null);
+  /// 跳过 `.strm` 文件本身路径：Emby 中顶层 `Path` = `.strm` 文件，
+  /// `MediaSources[].Path` = strm 内容指向的真实目标；探测未完成时
+  /// 源 Path 可能仍为 `.strm`，需守卫回退。
+  static String? _nonStrm(String? p) {
+    if (p == null || p.isEmpty) return null;
+    return p.toLowerCase().endsWith('.strm') ? null : p;
+  }
+
+  /// 生效路径：优先 MediaSource 的目标路径（选中源 → 默认源），
+  /// 再回退条目顶层 Path（非 strm 时）。strm 资源因此显示真实目标。
+  String? get _effectivePath {
+    final candidates = <String?>[
+      selectedSource?.path,
+      if (_mediaItem.mediaSources.isNotEmpty)
+        _mediaItem.mediaSources.first.path,
+      _mediaItem.path,
+    ];
+    for (final c in candidates) {
+      final ok = _nonStrm(c);
+      if (ok != null) return ok;
+    }
+    // 候选全是 strm/空：至少展示原值，避免整块消失
+    return selectedSource?.path ??
+        (_mediaItem.mediaSources.isNotEmpty
+            ? _mediaItem.mediaSources.first.path
+            : null) ??
+        _mediaItem.path;
+  }
 
   /// 生效大小：选中版本优先，回退默认源（首个）大小。
   int? get _effectiveSize =>
@@ -71,6 +93,7 @@ class MediaDetailsSection extends StatelessWidget {
         item.studios.isNotEmpty ||
         selectedSource?.path != null ||
         m.path != null ||
+        m.mediaSources.any((s) => s.path != null) ||
         (selectedSource != null && selectedSource.mediaStreams.isNotEmpty) ||
         m.mediaStreams.isNotEmpty;
   }
@@ -248,11 +271,11 @@ class _VideoAudioCards extends StatelessWidget {
     if (specs.isEmpty) return const SizedBox.shrink();
 
     // 高度按最长卡内容自适应：表头 + 内边距 + 最大行数 × 行高。
-    // 行高（13 号字 + 上下 padding 3）取 ~26，留适量余量防裁切；
-    // 所有卡被同一高度约束 → 与最长卡等高对齐。
+    // 行高取 ~30（13 号字 + 上下 padding 3，并预留个别长值折行余量，
+    // 如 "Dolby Vision P8.4"）防裁切；所有卡被同一高度约束 → 与最长卡等高对齐。
     final maxRows =
         specs.map((s) => s.rows.length).fold<int>(0, (a, b) => a > b ? a : b);
-    final height = 60.0 + maxRows * 26.0;
+    final height = 60.0 + maxRows * 30.0;
 
     // 横向排列、可左右滑动
     return SizedBox(
