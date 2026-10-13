@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -194,4 +195,123 @@ void main() {
           reason: '渐变应有主色→底色过渡');
     });
   });
+
+  group('筛选面板', () {
+    /// 打开面板并选择「未播放」+ 类型「动作」后确认。
+    Future<void> _applyFilter(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('categoryFilterButton')));
+      await tester.pumpAndSettle();
+
+      // 播放状态 → 未播放
+      await tester.tap(find.byType(DropdownButton<WatchStatusFilter>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('未播放').last);
+      await tester.pumpAndSettle();
+
+      // 类型 → + → 勾选「动作」→ 确认
+      await tester.tap(find.byKey(const Key('filterAdd_类型_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('filterPick_类型_动作')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('filterPick_类型_confirm')));
+      await tester.pumpAndSettle();
+
+      // 应用筛选
+      await tester.tap(find.byKey(const Key('filterConfirmButton')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('筛选确认后 filters/genres 下传服务端并重载分页', (tester) async {
+      final emby = FakeEmbyService(
+        items: [MediaItem(id: 'm1', name: '片', type: 'Movie', posterUrl: '')],
+        filterOptions: const MediaFilterOptions(
+          genres: ['动作', '科幻'],
+          years: [2024, 2023],
+          ratings: ['R'],
+        ),
+      );
+      await _pumpScreen(tester, emby: emby);
+      expect(emby.lastGetItemsFilters, isNull);
+
+      await _applyFilter(tester);
+
+      expect(emby.lastGetItemsFilters, 'IsUnplayed');
+      expect(emby.lastGetItemsGenres, '动作');
+      expect(emby.lastFilterOptionsParentId, 'lib1',
+          reason: '可选项限定当前分类库');
+      expect(emby.lastFilterOptionsIncludeItemTypes, 'Movie',
+          reason: '电影库可选项按 Movie 限定');
+      expect(
+        tester.widget<IconButton>(
+          find.byKey(const Key('categoryFilterButton')),
+      ).icon,
+        isA<Icon>().having((i) => i.color, 'color', isNotNull),
+        reason: '筛选激活时按钮着色',
+      );
+    });
+
+    testWidgets('可选项按库懒加载：再次打开不重复请求', (tester) async {
+      var fetchCount = 0;
+      final emby = FakeEmbyService(
+        items: const [],
+        filterOptions: const MediaFilterOptions(years: [2024]),
+      );
+      // 计数包装：getFilterOptions 每次调用 +1
+      final counting = _CountingEmbyService(emby, () => fetchCount++);
+      await _pumpScreen(tester, emby: counting);
+
+      await tester.tap(find.byKey(const Key('categoryFilterButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('filterCancelButton')));
+      await tester.pumpAndSettle();
+      expect(fetchCount, 1);
+
+      await tester.tap(find.byKey(const Key('categoryFilterButton')));
+      await tester.pumpAndSettle();
+      expect(fetchCount, 1, reason: '同一类型范围内只请求一次可选项');
+      await tester.tap(find.byKey(const Key('filterCancelButton')));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('筛选后无结果显示「筛选无匹配项」', (tester) async {
+      final emby = FakeEmbyService(
+        items: const [],
+        filterOptions: const MediaFilterOptions(years: [2024]),
+      );
+      await _pumpScreen(tester, emby: emby);
+      expect(find.text('暂无内容'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('categoryFilterButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButton<WatchStatusFilter>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('已播放').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('filterConfirmButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('筛选无匹配项'), findsOneWidget);
+      expect(find.text('暂无内容'), findsNothing);
+    });
+  });
+}
+
+/// 计数包装：统计 getFilterOptions 调用次数，其余转发给内嵌 fake。
+class _CountingEmbyService extends FakeEmbyService {
+  _CountingEmbyService(this.inner, this.onCall);
+
+  final FakeEmbyService inner;
+  final void Function() onCall;
+
+  @override
+  Future<MediaFilterOptions?> getFilterOptions({
+    String? parentId,
+    String? includeItemTypes,
+  }) async {
+    onCall();
+    return inner.getFilterOptions(
+      parentId: parentId,
+      includeItemTypes: includeItemTypes,
+    );
+  }
 }

@@ -105,6 +105,82 @@ void main() {
     });
   });
 
+  group('getItems 筛选参数透传', () {
+    test('四参数按 Emby 约定分隔符进入查询串', () async {
+      await service.getItems(
+        parentId: 'lib-1',
+        filters: 'IsUnplayed',
+        genres: '动作|科幻',
+        years: '2023,2024',
+        officialRatings: 'PG-13|R',
+      );
+
+      final req = captured.single;
+      expect(req.param('Filters'), 'IsUnplayed');
+      expect(req.param('Genres'), '动作|科幻',
+          reason: 'Genres 多选为管道符分隔');
+      expect(req.param('Years'), '2023,2024', reason: 'Years 多选为逗号分隔');
+      expect(req.param('OfficialRatings'), 'PG-13|R');
+    });
+
+    test('未传/空筛选参数时不注入对应查询键', () async {
+      await service.getItems(parentId: 'lib-1');
+      var req = captured.single;
+      expect(req.param('Filters'), isNull);
+      expect(req.param('Genres'), isNull);
+      expect(req.param('Years'), isNull);
+      expect(req.param('OfficialRatings'), isNull);
+
+      captured.clear();
+      await service.getItems(parentId: 'lib-1', filters: '', genres: '');
+      req = captured.single;
+      expect(req.param('Filters'), isNull);
+      expect(req.param('Genres'), isNull);
+    });
+  });
+
+  group('getFilterOptions 可选项解析', () {
+    test('Genres/NameIdPair、Years、OfficialRatings 混容解析', () async {
+      respondWith = (_) => {
+            'Genres': [
+              {'Name': '动作', 'Id': 'g1'},
+              '科幻',
+            ],
+            'Years': [2024, 2023, '2022'],
+            'OfficialRatings': [
+              'PG-13',
+              {'Name': 'R'},
+            ],
+          };
+
+      final options = await service.getFilterOptions(
+        parentId: 'lib-1',
+        includeItemTypes: 'Movie',
+      );
+
+      expect(options, isNotNull);
+      expect(options!.genres, ['动作', '科幻']);
+      expect(options.years, [2024, 2023, 2022]);
+      expect(options.ratings, ['PG-13', 'R']);
+
+      final req = captured.single;
+      expect(req.path, '/Items/Filters');
+      expect(req.param('ParentId'), 'lib-1');
+      expect(req.param('IncludeItemTypes'), 'Movie');
+      expect(req.param('UserId'), 'user-1');
+    });
+
+    test('缺失字段 → 空列表且 isEmpty', () async {
+      respondWith = (_) => <String, dynamic>{};
+      final options = await service.getFilterOptions();
+      expect(options, isNotNull);
+      expect(options!.isEmpty, isTrue);
+      expect(options.genres, isEmpty);
+      expect(options.years, isEmpty);
+      expect(options.ratings, isEmpty);
+    });
+  });
+
   group('getItems 其他行为保持不变', () {
     test('Recursive 固定为 true，ImageTypeLimit 固定为 1', () async {
       await service.getItems(parentId: 'lib-1');
@@ -364,6 +440,29 @@ void main() {
       expect(req.param('Filters'), 'IsFavorite');
       expect(req.param('IncludeItemTypes'), 'Movie,Series,Episode');
       expect(req.param('Recursive'), 'true');
+      expect(req.param('SortBy'), 'SortName');
+      expect(req.param('SortOrder'), 'Ascending');
+    });
+
+    test('getFavoriteItems 筛选/排序参数下传且 IsFavorite 前置合并', () async {
+      await service.getFavoriteItems(
+        includeItemTypes: 'Movie',
+        sortBy: 'ProductionYear',
+        sortOrder: 'Descending',
+        filters: 'IsUnplayed',
+        genres: '动作|科幻',
+        years: '2024,2023',
+        officialRatings: 'R',
+      );
+      final req = captured.single;
+      expect(req.param('Filters'), 'IsFavorite,IsUnplayed',
+          reason: '收藏恒为 IsFavorite，播放状态追加其后');
+      expect(req.param('IncludeItemTypes'), 'Movie');
+      expect(req.param('SortBy'), 'ProductionYear');
+      expect(req.param('SortOrder'), 'Descending');
+      expect(req.param('Genres'), '动作|科幻');
+      expect(req.param('Years'), '2024,2023');
+      expect(req.param('OfficialRatings'), 'R');
     });
 
     test('getFavoriteItems 解析 UserData.IsFavorite', () async {

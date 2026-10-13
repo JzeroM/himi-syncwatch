@@ -1,5 +1,6 @@
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
@@ -102,6 +103,7 @@ class FakeEmbyService extends EmbyService {
     this.seasons = const [],
     this.favoriteItems = const [],
     this.resumeItems = const [],
+    this.filterOptions,
   });
 
   final MediaItem? item;
@@ -147,11 +149,60 @@ class FakeEmbyService extends EmbyService {
   String? lastGetItemsSortBy;
   String? lastGetItemsSortOrder;
 
+  /// 最近一次 getItems 收到的筛选参数（分类页筛选下传断言用）。
+  String? lastGetItemsFilters;
+  String? lastGetItemsGenres;
+  String? lastGetItemsYears;
+  String? lastGetItemsOfficialRatings;
+
+  /// 最近一次 getFavoriteItems 收到的参数（收藏页筛选/排序下传断言用）。
+  String? lastFavoriteIncludeItemTypes;
+  String? lastFavoriteSortBy;
+  String? lastFavoriteSortOrder;
+  String? lastFavoriteFilters;
+  String? lastFavoriteGenres;
+  String? lastFavoriteYears;
+  String? lastFavoriteOfficialRatings;
+
+  /// getFilterOptions 返回结果（null = 面板降级，仅剩播放状态）。
+  MediaFilterOptions? filterOptions;
+
+  /// 最近一次 getFilterOptions 收到的范围参数。
+  String? lastFilterOptionsParentId;
+  String? lastFilterOptionsIncludeItemTypes;
+
   @override
   Future<List<MediaItem>> getSeasons(String seriesId) async => seasons;
 
   @override
-  Future<List<MediaItem>> getFavoriteItems() async => favoriteItems;
+  Future<List<MediaItem>> getFavoriteItems({
+    String? includeItemTypes,
+    String? sortBy,
+    String? sortOrder,
+    String? filters,
+    String? genres,
+    String? years,
+    String? officialRatings,
+  }) async {
+    lastFavoriteIncludeItemTypes = includeItemTypes;
+    lastFavoriteSortBy = sortBy;
+    lastFavoriteSortOrder = sortOrder;
+    lastFavoriteFilters = filters;
+    lastFavoriteGenres = genres;
+    lastFavoriteYears = years;
+    lastFavoriteOfficialRatings = officialRatings;
+    return favoriteItems;
+  }
+
+  @override
+  Future<MediaFilterOptions?> getFilterOptions({
+    String? parentId,
+    String? includeItemTypes,
+  }) async {
+    lastFilterOptionsParentId = parentId;
+    lastFilterOptionsIncludeItemTypes = includeItemTypes;
+    return filterOptions;
+  }
 
   @override
   Future<List<MediaItem>> getResumeItems({int limit = 12}) async => resumeItems;
@@ -201,10 +252,18 @@ class FakeEmbyService extends EmbyService {
     String? fields,
     String? sortBy,
     String? sortOrder,
+    String? filters,
+    String? genres,
+    String? years,
+    String? officialRatings,
   }) async {
     lastGetItemsFields = fields;
     lastGetItemsSortBy = sortBy;
     lastGetItemsSortOrder = sortOrder;
+    lastGetItemsFilters = filters;
+    lastGetItemsGenres = genres;
+    lastGetItemsYears = years;
+    lastGetItemsOfficialRatings = officialRatings;
     return (parentId != null && itemsByParent.containsKey(parentId))
         ? itemsByParent[parentId]!
         : items;

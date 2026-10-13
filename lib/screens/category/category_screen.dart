@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
+import 'package:himi_syncwatch/widgets/media_filter_panel.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 
@@ -108,6 +110,12 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
   SortOption _sortOption = SortOption.dateDesc;
   late FilterOption _filterOption;
 
+  /// 服务端筛选条件（播放状态/类型/年份/分级），与排序并存。
+  CategoryFilter _mediaFilter = CategoryFilter.empty;
+
+  /// 筛选面板可选项缓存（打开面板时懒加载一次；类型 chips 变更后失效）。
+  MediaFilterOptions? _filterOptions;
+
   bool get _showFilterChips =>
       widget.collectionType != 'movies' && widget.collectionType != 'tvshows';
 
@@ -153,6 +161,10 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
             'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber,UserData',
         sortBy: _sortOption.sortBy,
         sortOrder: _sortOption.sortOrder,
+        filters: _mediaFilter.watchStatusParam,
+        genres: _mediaFilter.genresParam,
+        years: _mediaFilter.yearsParam,
+        officialRatings: _mediaFilter.ratingsParam,
       );
 
       setState(() {
@@ -184,6 +196,10 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
             'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber,UserData',
         sortBy: _sortOption.sortBy,
         sortOrder: _sortOption.sortOrder,
+        filters: _mediaFilter.watchStatusParam,
+        genres: _mediaFilter.genresParam,
+        years: _mediaFilter.yearsParam,
+        officialRatings: _mediaFilter.ratingsParam,
       );
 
       if (moreItems.isNotEmpty) {
@@ -208,7 +224,38 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
 
   void _onFilterChanged(FilterOption value) {
     if (value == _filterOption) return;
-    setState(() => _filterOption = value);
+    setState(() {
+      _filterOption = value;
+      // 库内类型范围变化 → 面板可选项需按新范围重取
+      _filterOptions = null;
+    });
+    _loadFirstPage();
+  }
+
+  /// 打开筛选面板；确认后应用新筛选并重置分页重载。
+  Future<void> _openFilterPanel() async {
+    MediaFilterOptions? options = _filterOptions;
+    if (options == null) {
+      try {
+        options = await ref.read(embyServiceProvider).getFilterOptions(
+              parentId: widget.libraryId,
+              includeItemTypes: _filterOption.embyValue,
+            );
+      } catch (_) {
+        options = null;
+      }
+      if (!mounted) return;
+      _filterOptions = options;
+    }
+
+    final result = await showMediaFilterPanel(
+      context,
+      current: _mediaFilter,
+      options: options,
+      tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
+    );
+    if (result == null || !mounted || result == _mediaFilter) return;
+    setState(() => _mediaFilter = result);
     _loadFirstPage();
   }
 
@@ -234,6 +281,17 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         ),
         title: Text(widget.libraryName ?? '分类'),
         actions: [
+          IconButton(
+            key: const Key('categoryFilterButton'),
+            icon: Icon(
+              Icons.filter_list,
+              color: _mediaFilter.isNotEmpty
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            tooltip: '筛选',
+            onPressed: _openFilterPanel,
+          ),
           PopupMenuButton<SortOption>(
             icon: const Icon(Icons.sort),
             tooltip: '排序',
@@ -320,7 +378,12 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
     }
 
     if (_items.isEmpty) {
-      return const Center(child: Text('暂无内容'));
+      return Center(
+        child: Text(
+          _mediaFilter.isNotEmpty ? '筛选无匹配项' : '暂无内容',
+          key: const Key('categoryEmptyText'),
+        ),
+      );
     }
 
     return TvRefreshHotkey(

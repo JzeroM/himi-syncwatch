@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 
@@ -103,6 +104,9 @@ class EmbyService {
     }
   }
 
+  /// 条目列表查询。筛选四参数全部可选：null/空不注入查询串（向后兼容）。
+  /// [genres]/[officialRatings] 为管道符 `|` 分隔、[years] 为逗号分隔
+  /// （Emby 约定，多选为「或」语义）。
   Future<List<MediaItem>> getItems({
     String? parentId,
     String? includeItemTypes,
@@ -111,6 +115,10 @@ class EmbyService {
     String? fields,
     String? sortBy,
     String? sortOrder,
+    String? filters,
+    String? genres,
+    String? years,
+    String? officialRatings,
   }) async {
     try {
       final response = await _dio.get(
@@ -123,6 +131,11 @@ class EmbyService {
           if (startIndex != null) 'StartIndex': startIndex,
           if (sortBy != null) 'SortBy': sortBy,
           if (sortOrder != null) 'SortOrder': sortOrder,
+          if (filters != null && filters.isNotEmpty) 'Filters': filters,
+          if (genres != null && genres.isNotEmpty) 'Genres': genres,
+          if (years != null && years.isNotEmpty) 'Years': years,
+          if (officialRatings != null && officialRatings.isNotEmpty)
+            'OfficialRatings': officialRatings,
           'Recursive': true,
           'Fields': fields ??
               // AlternateMediaSources：Emby 4.9.x 批量端点对非管理员每条
@@ -413,21 +426,37 @@ class EmbyService {
 
   /// 当前服务器全部收藏条目（电影/剧集/单集），供收藏页分组展示。
   /// `Filters=IsFavorite` 服务端过滤；字段含 `UserData` 以便回显收藏态。
+  /// 筛选参数与 [getItems] 同约定；[filters] 会与 `IsFavorite` 合并。
   /// 失败返回空列表。
-  Future<List<MediaItem>> getFavoriteItems() async {
+  Future<List<MediaItem>> getFavoriteItems({
+    String? includeItemTypes,
+    String? sortBy,
+    String? sortOrder,
+    String? filters,
+    String? genres,
+    String? years,
+    String? officialRatings,
+  }) async {
     try {
+      final filterValue = (filters == null || filters.isEmpty)
+          ? 'IsFavorite'
+          : 'IsFavorite,$filters';
       final response = await _dio.get(
         '/Items',
         queryParameters: {
           if (_userId != null) 'UserId': _userId,
           'Recursive': true,
-          'IncludeItemTypes': 'Movie,Series,Episode',
-          'Filters': 'IsFavorite',
+          'IncludeItemTypes': includeItemTypes ?? 'Movie,Series,Episode',
+          'Filters': filterValue,
+          if (genres != null && genres.isNotEmpty) 'Genres': genres,
+          if (years != null && years.isNotEmpty) 'Years': years,
+          if (officialRatings != null && officialRatings.isNotEmpty)
+            'OfficialRatings': officialRatings,
           'Fields':
               'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate',
           'ImageTypeLimit': 1,
-          'SortBy': 'SortName',
-          'SortOrder': 'Ascending',
+          'SortBy': sortBy ?? 'SortName',
+          'SortOrder': sortOrder ?? 'Ascending',
         },
       );
       final items = response.data['Items'] as List<dynamic>? ?? [];
@@ -438,6 +467,63 @@ class EmbyService {
       if (e.response?.statusCode == 401) rethrow;
       return [];
     }
+  }
+
+  /// 筛选面板可选项（`GET /Items/Filters`）：一次取回指定范围内的
+  /// Genres / Years / OfficialRatings。[parentId] 为 null 时为全服务器
+  /// （收藏页）；[includeItemTypes] 限定电影或剧集。
+  /// 失败返回 null（面板降级隐藏对应分组）。
+  Future<MediaFilterOptions?> getFilterOptions({
+    String? parentId,
+    String? includeItemTypes,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/Items/Filters',
+        queryParameters: {
+          if (_userId != null) 'UserId': _userId,
+          if (parentId != null) 'ParentId': parentId,
+          if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
+        },
+      );
+      final data = response.data;
+      if (data is! Map) return null;
+      return MediaFilterOptions(
+        genres: _parseNameList(data['Genres']),
+        years: _parseIntList(data['Years']),
+        ratings: _parseNameList(data['OfficialRatings']),
+      );
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
+      return null;
+    }
+  }
+
+  /// `NameIdPair` 列表（或纯字符串列表）→ 名称列表；无法解析的项忽略。
+  List<String> _parseNameList(dynamic raw) {
+    if (raw is! List) return [];
+    return raw
+        .map((e) {
+          if (e is String) return e;
+          if (e is Map && e['Name'] is String) return e['Name'] as String;
+          return null;
+        })
+        .whereType<String>()
+        .toList();
+  }
+
+  /// 年份列表（int/num/字符串混容）→ int 列表；无法解析的项忽略。
+  List<int> _parseIntList(dynamic raw) {
+    if (raw is! List) return [];
+    return raw
+        .map((e) {
+          if (e is int) return e;
+          if (e is num) return e.toInt();
+          if (e is String) return int.tryParse(e);
+          return null;
+        })
+        .whereType<int>()
+        .toList();
   }
 
   /// 当前服务器「继续观看」条目（有播放进度的电影/剧集/单集）。
