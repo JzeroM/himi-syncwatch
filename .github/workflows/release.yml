@@ -189,13 +189,14 @@ jobs:
           echo "CFBundleDisplayName = $(plutil -extract CFBundleDisplayName raw ios/Runner/Info.plist)"
 
       # 备用应用图标（运行时切换）：flutter create 重建 iOS 工程会删掉
-      # ios/Runner/ 下的松散 PNG；这里从仓库 assets/icon 重新生成，并注册进
-      # Runner 目标资源，否则 CFBundleAlternateIcons 找不到图标、切换无效。
-      - name: 生成并注册 iOS 备用应用图标
+      # ios/Runner/Assets.xcassets 之外的图标资源；这里从仓库 assets/icon
+      # 重新生成 Asset Catalog appiconset，并打开 Include All App Icon Assets
+      # （否则备用 appiconset 不编进 Assets.car → setAlternateIconName -54）。
+      - name: 生成 iOS 备用应用图标 + 配置构建设置
         run: |
           dart run tool/gen_icons.dart
           gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document
-          ruby scripts/register_ios_alt_icons.rb
+          ruby scripts/configure_ios_icons.rb
 
       # 打包前拦截源码缺失：这类问题构建阶段零报错，只在产物上表现为图标/显示名不对
       # （放在 gen_icons 之后：备用图标 PNG 由 gen_icons 生成）

@@ -199,21 +199,33 @@ if [ -d ios ]; then
         err "Info.plist 缺少备用图标键 $alt"
       fi
     done
+    # 备用图标须走 Asset Catalog：用 CFBundleIconName 声明；散装 CFBundleIconFiles
+    # 在新系统不被 setAlternateIconName 识别（OSStatus -54）。
+    if grep -q 'CFBundleIconName' "$PLIST"; then
+      ok "备用图标用 CFBundleIconName（Asset Catalog）"
+    else
+      err "Info.plist 缺少 CFBundleIconName（备用图标须走 Asset Catalog）"
+    fi
+    if grep -q 'CFBundleIconFiles' "$PLIST"; then
+      err "Info.plist 仍含散装 CFBundleIconFiles（应改为 CFBundleIconName）"
+    else
+      ok "无散装 CFBundleIconFiles"
+    fi
   else
     err "缺少 $PLIST"
   fi
 
   # 图标：Contents.json 的 filename 必须都能对上实际文件，且文件非空。
-  # 曾出现文件被改名成 .png.img 而引用仍是 .png，引用整体失效、构建却照常
-  # 通过；又曾出现文件名正确但内容 0 字节，恢复进 CI 后 Xcode 报
-  # "AppIcon did not have any applicable content" 直接失败。两种都要拦。
+  # AppIcon/LaunchImage + 三个备用 appiconset 全部校验。
   sec "iOS · 图标资源"
   if [ -d "$ASSETS" ]; then
     missing=$(python3 - "$ASSETS" <<'PYEOF'
 import json, os, sys
 root = sys.argv[1]
+sets = ('AppIcon.appiconset', 'LaunchImage.imageset',
+        'artistic.appiconset', 'glass.appiconset', 'neon.appiconset')
 missing = []
-for name in ('AppIcon.appiconset', 'LaunchImage.imageset'):
+for name in sets:
     d = os.path.join(root, name)
     if not os.path.isdir(d):
         missing.append(f'{name}/ 目录缺失')
@@ -233,27 +245,13 @@ print('; '.join(missing))
 PYEOF
   ) || missing="(解析失败)"
     if [ -z "$missing" ]; then
-      ok "Assets.xcassets 引用完整且文件有效（AppIcon + LaunchImage）"
+      ok "Assets.xcassets 引用完整且文件有效（AppIcon + LaunchImage + 备用 appiconset）"
     else
       err "图标资源不可用: $missing"
     fi
   else
     err "缺少 $ASSETS（应用图标会被模板默认图标覆盖）"
   fi
-
-  # 备用图标 PNG：由 tool/gen_icons.dart 生成到 ios/Runner/，CI 注册进
-  # Copy Bundle Resources。文件缺失 → setAlternateIconName 报
-  # "The file doesn't exist." → 设置页 toast「切换图标失败」。
-  sec "iOS · 备用图标 PNG"
-  for alt in artistic glass neon; do
-    for f in "$alt@2x.png" "$alt@3x.png"; do
-      if [ -s "ios/Runner/$f" ]; then
-        ok "ios/Runner/$f"
-      else
-        err "缺少 ios/Runner/$f（tool/gen_icons.dart 未生成或为空）"
-      fi
-    done
-  done
 else
   skip "iOS" "ios/"
 fi

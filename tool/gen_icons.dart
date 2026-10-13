@@ -1,12 +1,20 @@
 // 从 assets/icon/<name>.png 生成运行时切换所需的备用图标资源：
 // - Android 备用图标 mipmap-*/ic_launcher_<name>.png（48/72/96/144/192）
-// - iOS 备用图标 ios/Runner/<name>@2x.png(120)/@3x.png(180) + iPad 76/152/167
+// - iOS 备用图标 Asset Catalog appiconset：
+//   ios/Runner/Assets.xcassets/<name>.appiconset/（多尺寸 PNG + Contents.json）
 // - 设置页预览 assets/icons/<name>.png (256)
 //
-// 默认图标（glass，全平台：Android/iOS/Windows）由 flutter_launcher_icons
+// 默认图标（default，全平台：Android/iOS/Windows）由 flutter_launcher_icons
 // 生成；本脚本只补「备用图标 + 预览」。
 //
+// iOS 采用 appiconset 而非散装 PNG + CFBundleIconFiles：新系统下散装备用
+// 图标常不被 setAlternateIconName 识别（OSStatus -54），且 Info.plist 的
+// CFBundleAlternateIcons 需配套改为 CFBundleIconName；另需 Xcode 构建设置
+// ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES（否则非主
+// appiconset 不会编进 Assets.car），见 scripts/configure_ios_icons.rb。
+//
 // 运行：dart run tool/gen_icons.dart
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:image/image.dart' as img;
@@ -29,7 +37,48 @@ const Map<String, int> androidDensities = {
   'xxxhdpi': 192,
 };
 
-/// 无 alpha 的 RGB PNG（iOS 要求不透明、且不得含 alpha 通道）。
+/// appiconset 的 Contents.json 模板（%s 为图标名）。尺寸与旧散装文件一致。
+const String _appIconSetContents = '''{
+  "images" : [
+    {
+      "size" : "60x60",
+      "idiom" : "iphone",
+      "filename" : "%s@2x.png",
+      "scale" : "2x"
+    },
+    {
+      "size" : "60x60",
+      "idiom" : "iphone",
+      "filename" : "%s@3x.png",
+      "scale" : "3x"
+    },
+    {
+      "size" : "76x76",
+      "idiom" : "ipad",
+      "filename" : "%s-76.png",
+      "scale" : "1x"
+    },
+    {
+      "size" : "76x76",
+      "idiom" : "ipad",
+      "filename" : "%s-76@2x.png",
+      "scale" : "2x"
+    },
+    {
+      "size" : "83.5x83.5",
+      "idiom" : "ipad",
+      "filename" : "%s-83.5@2x.png",
+      "scale" : "2x"
+    }
+  ],
+  "info" : {
+    "version" : 1,
+    "author" : "xcode"
+  }
+}
+''';
+
+/// 无 alpha 的 RGB PNG（iOS appiconset 要求不透明、且不得含 alpha 通道）。
 List<int> _encodeRgb(img.Image src) {
   final rgb = img.Image(width: src.width, height: src.height, numChannels: 3);
   for (var y = 0; y < src.height; y++) {
@@ -72,14 +121,17 @@ void main() {
     });
   }
 
-  // iOS 备用图标（iPhone + iPad），无 alpha
+  // iOS 备用图标：Asset Catalog appiconset（iPhone + iPad），无 alpha
   for (final name in alternateIcons) {
     final src = sources[name]!;
-    _write('ios/Runner/$name@2x.png', _encodeRgb(_resize(src, 120)));
-    _write('ios/Runner/$name@3x.png', _encodeRgb(_resize(src, 180)));
-    _write('ios/Runner/$name-76.png', _encodeRgb(_resize(src, 76)));
-    _write('ios/Runner/$name-76@2x.png', _encodeRgb(_resize(src, 152)));
-    _write('ios/Runner/$name-83.5@2x.png', _encodeRgb(_resize(src, 167)));
+    final dir = 'ios/Runner/Assets.xcassets/$name.appiconset';
+    _write('$dir/$name@2x.png', _encodeRgb(_resize(src, 120)));
+    _write('$dir/$name@3x.png', _encodeRgb(_resize(src, 180)));
+    _write('$dir/$name-76.png', _encodeRgb(_resize(src, 76)));
+    _write('$dir/$name-76@2x.png', _encodeRgb(_resize(src, 152)));
+    _write('$dir/$name-83.5@2x.png', _encodeRgb(_resize(src, 167)));
+    _write(
+        '$dir/Contents.json', utf8.encode(_appIconSetContents.replaceAll('%s', name)));
   }
 
   // 设置页预览（含默认）
@@ -89,6 +141,6 @@ void main() {
   }
 
   stdout.writeln('已生成：Android 备用图标 ${alternateIcons.length} 套、'
-      'iOS 备用图标 ${alternateIcons.length} 套（含 iPad）、'
+      'iOS 备用 appiconset ${alternateIcons.length} 套（含 iPad）、'
       '预览 ${allIcons.length} 张。默认图标=$defaultIcon');
 }

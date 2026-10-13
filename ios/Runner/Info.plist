@@ -60,9 +60,12 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<!-- 备用应用图标（flutter_dynamic_icon_plus）：PNG 由 tool/gen_icons.dart
-	     生成到 ios/Runner/（不在 Assets.xcassets 内），文件名与 CFBundleIconFiles
-	     对应；默认图标仍由 Assets.xcassets/AppIcon 提供。 -->
+	<!-- 备用应用图标（flutter_dynamic_icon_plus）：走 Asset Catalog appiconset
+	     （Assets.xcassets/<id>.appiconset，由 tool/gen_icons.dart 生成），
+	     Info.plist 仅用 CFBundleIconName 声明；配套 Xcode 构建设置
+	     ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES（见
+	     scripts/configure_ios_icons.rb），否则备用 appiconset 不编进
+	     Assets.car、setAlternateIconName 报 OSStatus -54。 -->
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundlePrimaryIcon</key>
@@ -74,30 +77,18 @@
 		<dict>
 			<key>artistic</key>
 			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>artistic</string>
-				</array>
-				<key>UIPrerenderedIcon</key>
-				<false/>
+				<key>CFBundleIconName</key>
+				<string>artistic</string>
 			</dict>
 			<key>glass</key>
 			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>glass</string>
-				</array>
-				<key>UIPrerenderedIcon</key>
-				<false/>
+				<key>CFBundleIconName</key>
+				<string>glass</string>
 			</dict>
 			<key>neon</key>
 			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>neon</string>
-				</array>
-				<key>UIPrerenderedIcon</key>
-				<false/>
+				<key>CFBundleIconName</key>
+				<string>neon</string>
 			</dict>
 		</dict>
 	</dict>
@@ -112,33 +103,18 @@
 		<dict>
 			<key>artistic</key>
 			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>artistic-76</string>
-					<string>artistic-83.5</string>
-				</array>
-				<key>UIPrerenderedIcon</key>
-				<false/>
+				<key>CFBundleIconName</key>
+				<string>artistic</string>
 			</dict>
 			<key>glass</key>
 			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>glass-76</string>
-					<string>glass-83.5</string>
-				</array>
-				<key>UIPrerenderedIcon</key>
-				<false/>
+				<key>CFBundleIconName</key>
+				<string>glass</string>
 			</dict>
 			<key>neon</key>
 			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>neon-76</string>
-					<string>neon-83.5</string>
-				</array>
-				<key>UIPrerenderedIcon</key>
-				<false/>
+				<key>CFBundleIconName</key>
+				<string>neon</string>
 			</dict>
 		</dict>
 	</dict>
