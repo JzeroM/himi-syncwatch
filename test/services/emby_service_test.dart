@@ -21,12 +21,16 @@ void main() {
   late List<_CapturedRequest> captured;
   late EmbyService service;
 
-  /// 可按测试用例替换的响应体生成器（默认空 Items）。
-  late Map<String, dynamic> Function(String path) respondWith;
+  /// 可按测试用例替换的响应体生成器（默认空 Items）；按请求路径区分。
+  late Object Function(String path) respondWith;
+
+  /// 可按测试用例替换的状态码生成器（默认 200；404 模拟端点不存在）。
+  late int Function(String path) statusFor;
 
   setUp(() async {
     captured = <_CapturedRequest>[];
     respondWith = (_) => {'Items': <dynamic>[]};
+    statusFor = (_) => HttpStatus.ok;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
 
     unawaited(() async {
@@ -43,10 +47,13 @@ void main() {
             body,
           ),
         );
-        request.response
-          ..statusCode = HttpStatus.ok
-          ..headers.contentType = ContentType.json
-          ..write(jsonEncode(respondWith(request.uri.path)));
+        final status = statusFor(request.uri.path);
+        request.response.statusCode = status;
+        if (status == HttpStatus.ok) {
+          request.response
+            ..headers.contentType = ContentType.json
+            ..write(jsonEncode(respondWith(request.uri.path)));
+        }
         await request.response.close();
       }
     }());
@@ -139,42 +146,98 @@ void main() {
     });
   });
 
-  group('getFilterOptions 可选项解析', () {
-    test('Genres/NameIdPair、Years、OfficialRatings 混容解析', () async {
-      respondWith = (_) => {
-            'Genres': [
-              {'Name': '动作', 'Id': 'g1'},
-              '科幻',
-            ],
-            'Years': [2024, 2023, '2022'],
-            'OfficialRatings': [
-              'PG-13',
-              {'Name': 'R'},
-            ],
-          };
+  group('getFilterOptions 可选项解析与兜底合并', () {
+    test('四路并行请求，聚合端点 + 专用端点合并去重排序', () async {
+      respondWith = (path) {
+        switch (path) {
+          case '/Items/Filters':
+            return {
+              'Genres': [
+                {'Name': '动作', 'Id': 'g1'},
+                '科幻',
+              ],
+              'Years': [2023, 2024],
+              'OfficialRatings': ['PG-13', {'Name': 'R'}],
+            };
+          case '/Genres':
+            return {
+              'Items': [
+                {'Name': '动作', 'Id': 'g1'},
+                {'Name': '喜剧'},
+              ],
+            };
+          case '/Years':
+            return [2024, 2022, '2021'];
+          case '/OfficialRatings':
+            return ['R', 'G'];
+          default:
+            return {'Items': <dynamic>[]};
+        }
+      };
 
       final options = await service.getFilterOptions(
         parentId: 'lib-1',
         includeItemTypes: 'Movie',
       );
 
-      expect(options, isNotNull);
-      expect(options!.genres, ['动作', '科幻']);
-      expect(options.years, [2024, 2023, 2022]);
-      expect(options.ratings, ['PG-13', 'R']);
+      expect(options.genres, ['动作', '喜剧', '科幻'],
+          reason: '合并去重后字母序');
+      expect(options.years, [2024, 2023, 2022, 2021],
+          reason: '合并去重后降序');
+      expect(options.ratings, ['G', 'PG-13', 'R']);
 
-      final req = captured.single;
-      expect(req.path, '/Items/Filters');
-      expect(req.param('ParentId'), 'lib-1');
-      expect(req.param('IncludeItemTypes'), 'Movie');
-      expect(req.param('UserId'), 'user-1');
+      expect(captured, hasLength(4), reason: '聚合 + 三个专用端点');
+      expect(
+        captured.map((r) => r.path).toSet(),
+        {'/Items/Filters', '/Genres', '/Years', '/OfficialRatings'},
+      );
+      for (final req in captured) {
+        expect(req.param('ParentId'), 'lib-1');
+        expect(req.param('IncludeItemTypes'), 'Movie');
+        expect(req.param('UserId'), 'user-1');
+      }
+    });
+
+    test('聚合端点 404 → 三个专用端点兜底仍有可选项', () async {
+      statusFor = (path) =>
+          path == '/Items/Filters' ? HttpStatus.notFound : HttpStatus.ok;
+      respondWith = (path) {
+        switch (path) {
+          case '/Genres':
+            return {
+              'Items': [
+                {'Name': '动作'},
+              ],
+            };
+          case '/Years':
+            return [2024];
+          default:
+            return {'Items': <dynamic>[]};
+        }
+      };
+
+      final options = await service.getFilterOptions(parentId: 'lib-1');
+
+      expect(options.genres, ['动作']);
+      expect(options.years, [2024]);
+      expect(options.ratings, isEmpty);
+    });
+
+    test('全部端点失败 → 空对象不抛错（面板降级）', () async {
+      statusFor = (_) => HttpStatus.notFound;
+
+      final options = await service.getFilterOptions();
+
+      expect(options.isEmpty, isTrue);
+      expect(options.genres, isEmpty);
+      expect(options.years, isEmpty);
+      expect(options.ratings, isEmpty);
     });
 
     test('缺失字段 → 空列表且 isEmpty', () async {
       respondWith = (_) => <String, dynamic>{};
       final options = await service.getFilterOptions();
-      expect(options, isNotNull);
-      expect(options!.isEmpty, isTrue);
+      expect(options.isEmpty, isTrue);
       expect(options.genres, isEmpty);
       expect(options.years, isEmpty);
       expect(options.ratings, isEmpty);

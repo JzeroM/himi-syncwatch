@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dynamic_icon_plus/flutter_dynamic_icon_plus.dart';
@@ -110,27 +108,17 @@ class AppIconService {
           })>
       Function() deviceBlacklistLoader = loadDeviceBlacklist;
 
-  /// iOS 静默切换后的等待时长：插件静默分支不回传 result，靠延迟后读回
-  /// 系统真实图标名验证（测试可缩短）。
-  @visibleForTesting
-  static Duration iosSilentSettle = const Duration(milliseconds: 500);
-
-  /// iOS 读回系统图标名的超时（公开 API 应即时返回，仅防御性限时）。
-  @visibleForTesting
-  static Duration iosVerifyTimeout = const Duration(seconds: 3);
-
   /// 应用图标（id=null 还原默认）。失败抛出，由调用方提示。
   ///
   /// Android：把本机厂商/品牌/型号作为「黑名单」传入 —— 与自身恒匹配，
   /// 插件 `containsOnBlacklist` 命中 → 走**立即** `changeAppIcon`（组件启停
   /// 当场生效），否则插件只起 Service、要等应用被划掉才生效（小米/MIUI
   /// 尤甚，插件文档点名）。
-  /// iOS：`isSilent: true` 跳过系统「已更改图标」确认弹窗。插件 1.4.1 的
-  /// 静默分支执行私有 API 后**从不回传 result**（completion 丢弃 error 且
-  /// 不调 result），直接 await 会永久挂起 → 设置不落库、无 toast、下次启动
-  /// syncOnStart 还会把图标滚回旧值。因此静默调用后不 await：短暂停留后
-  /// 读系统真实图标名验证，不一致再回退公开 API（isSilent:false，会正确
-  /// 回调错误，系统可能弹「已更改图标」提示）。
+  /// iOS：只走公开 API（`isSilent: false`）。插件 1.4.1 的静默分支执行
+  /// 私有 API 后**从不回传 result**（completion 丢弃且不调 result），
+  /// await 会永久挂起；且与后续调用存在竞态（iOS 拒绝并发
+  /// setAlternateIconName）。公开 API 完整回传成功/错误，系统会弹
+  /// 「已更改图标」提示（设置页文案已注明）。
   static Future<void> apply(String? id) async {
     if (!isSupported) return;
     try {
@@ -151,29 +139,12 @@ class AppIconService {
     }
   }
 
-  /// iOS 切换：静默尝试 → 读系统验证 → 不一致回退公开 API。
+  /// iOS 切换：公开 API 单次调用（见 [apply] 注释：为何不用静默分支）。
   static Future<void> _applyIos(String? id) async {
-    final name = platformIconName(id);
-    unawaited(FlutterDynamicIconPlus.setAlternateIconName(
-      iconName: name,
-      isSilent: true,
-    ).catchError((Object e) {
-      debugPrint('AppIconService.apply($id) iOS silent attempt: $e');
-    }));
-    await Future<void>.delayed(iosSilentSettle);
-    String? actual;
-    try {
-      actual = await FlutterDynamicIconPlus.alternateIconName
-          .timeout(iosVerifyTimeout);
-    } catch (e) {
-      debugPrint('AppIconService.apply($id) iOS verify read failed: $e');
-    }
-    if ((actual ?? '') != (name ?? '')) {
-      await FlutterDynamicIconPlus.setAlternateIconName(
-        iconName: name,
-        isSilent: false,
-      );
-    }
+    await FlutterDynamicIconPlus.setAlternateIconName(
+      iconName: platformIconName(id),
+      isSilent: false,
+    );
   }
 
   /// 启动自愈：已存设置与系统当前图标不一致时重新应用（Android/iOS）。

@@ -234,16 +234,12 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
 
   /// 打开筛选面板；确认后应用新筛选并重置分页重载。
   Future<void> _openFilterPanel() async {
-    MediaFilterOptions? options = _filterOptions;
+    var options = _filterOptions;
     if (options == null) {
-      try {
-        options = await ref.read(embyServiceProvider).getFilterOptions(
-              parentId: widget.libraryId,
-              includeItemTypes: _filterOption.embyValue,
-            );
-      } catch (_) {
-        options = null;
-      }
+      options = await ref.read(embyServiceProvider).getFilterOptions(
+            parentId: widget.libraryId,
+            includeItemTypes: _filterOption.embyValue,
+          );
       if (!mounted) return;
       _filterOptions = options;
     }

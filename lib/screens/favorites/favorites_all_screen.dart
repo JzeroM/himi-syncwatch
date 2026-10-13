@@ -105,15 +105,11 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
 
   /// 打开筛选面板；确认后应用新筛选并重载。
   Future<void> _openFilterPanel() async {
-    MediaFilterOptions? options = _filterOptions;
+    var options = _filterOptions;
     if (options == null) {
-      try {
-        options = await ref.read(embyServiceProvider).getFilterOptions(
-              includeItemTypes: _embyType,
-            );
-      } catch (_) {
-        options = null;
-      }
+      options = await ref.read(embyServiceProvider).getFilterOptions(
+            includeItemTypes: _embyType,
+          );
       if (!mounted) return;
       _filterOptions = options;
     }

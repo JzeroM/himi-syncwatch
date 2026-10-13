@@ -103,7 +103,7 @@ class FakeEmbyService extends EmbyService {
     this.seasons = const [],
     this.favoriteItems = const [],
     this.resumeItems = const [],
-    this.filterOptions,
+    this.filterOptions = const MediaFilterOptions(),
   });
 
   final MediaItem? item;
@@ -164,8 +164,8 @@ class FakeEmbyService extends EmbyService {
   String? lastFavoriteYears;
   String? lastFavoriteOfficialRatings;
 
-  /// getFilterOptions 返回结果（null = 面板降级，仅剩播放状态）。
-  MediaFilterOptions? filterOptions;
+  /// getFilterOptions 返回结果（默认空 → 面板仅剩播放状态）。
+  MediaFilterOptions filterOptions = const MediaFilterOptions();
 
   /// 最近一次 getFilterOptions 收到的范围参数。
   String? lastFilterOptionsParentId;
@@ -195,7 +195,7 @@ class FakeEmbyService extends EmbyService {
   }
 
   @override
-  Future<MediaFilterOptions?> getFilterOptions({
+  Future<MediaFilterOptions> getFilterOptions({
     String? parentId,
     String? includeItemTypes,
   }) async {

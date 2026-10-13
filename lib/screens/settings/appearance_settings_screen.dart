@@ -519,8 +519,9 @@ class _AppIconSection extends ConsumerWidget {
     try {
       await AppIconService.apply(id);
       await ref.read(settingsProvider.notifier).update(appIcon: id);
-    } catch (_) {
-      if (context.mounted) showAppToast(context, '切换图标失败');
+    } catch (e) {
+      // 带底层错误详情：iOS 公开 API 会回传系统 error，便于远程定位
+      if (context.mounted) showAppToast(context, '切换图标失败：$e');
     }
   }
 }

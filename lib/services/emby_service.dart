@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:flutter/foundation.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -469,34 +470,79 @@ class EmbyService {
     }
   }
 
-  /// 筛选面板可选项（`GET /Items/Filters`）：一次取回指定范围内的
-  /// Genres / Years / OfficialRatings。[parentId] 为 null 时为全服务器
-  /// （收藏页）；[includeItemTypes] 限定电影或剧集。
-  /// 失败返回 null（面板降级隐藏对应分组）。
-  Future<MediaFilterOptions?> getFilterOptions({
+  /// 筛选面板可选项。并行请求聚合端点 `GET /Items/Filters` 与三个
+  /// 专用端点 `/Genres`、`/Years`、`/OfficialRatings`（Emby 各版本
+  /// 兼容性最好），任一路成功即贡献数据，合并去重（年份降序、名称
+  /// 字母序）；全部失败返回空对象（面板降级隐藏对应分组），不抛错。
+  /// [parentId] 为 null 时为全服务器（收藏页）；[includeItemTypes]
+  /// 限定电影或剧集。
+  Future<MediaFilterOptions> getFilterOptions({
     String? parentId,
     String? includeItemTypes,
   }) async {
+    final query = <String, dynamic>{
+      if (_userId != null) 'UserId': _userId,
+      if (parentId != null) 'ParentId': parentId,
+      if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
+    };
+
+    final results = await Future.wait<dynamic>([
+      _safeFilterJson('/Items/Filters', query),
+      _safeFilterJson('/Genres', query),
+      _safeFilterJson('/Years', query),
+      _safeFilterJson('/OfficialRatings', query),
+    ]);
+
+    final filters = results[0];
+    final genreSet = <String>{
+      if (filters is Map) ..._parseNameList(filters['Genres']),
+      ..._namesFromItems(results[1]),
+    };
+    final yearSet = <int>{
+      if (filters is Map) ..._parseIntList(filters['Years']),
+      ..._yearsFromItems(results[2]),
+    };
+    final ratingSet = <String>{
+      if (filters is Map) ..._parseNameList(filters['OfficialRatings']),
+      ..._namesFromItems(results[3]),
+    };
+
+    final genres = genreSet.toList()..sort();
+    final years = yearSet.toList()..sort((a, b) => b.compareTo(a));
+    final ratings = ratingSet.toList()..sort();
+    return MediaFilterOptions(genres: genres, years: years, ratings: ratings);
+  }
+
+  /// 单路筛选请求：失败（404/网络/解析）打日志并返回 null，不中断其余路。
+  Future<dynamic> _safeFilterJson(
+    String path,
+    Map<String, dynamic> query,
+  ) async {
     try {
-      final response = await _dio.get(
-        '/Items/Filters',
-        queryParameters: {
-          if (_userId != null) 'UserId': _userId,
-          if (parentId != null) 'ParentId': parentId,
-          if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
-        },
-      );
-      final data = response.data;
-      if (data is! Map) return null;
-      return MediaFilterOptions(
-        genres: _parseNameList(data['Genres']),
-        years: _parseIntList(data['Years']),
-        ratings: _parseNameList(data['OfficialRatings']),
-      );
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 401) rethrow;
+      final response = await _dio.get(path, queryParameters: query);
+      return response.data;
+    } catch (e) {
+      debugPrint('EmbyService.getFilterOptions($path) failed: $e');
       return null;
     }
+  }
+
+  /// 专用端点响应 → 名称列表：裸数组或 `{Items:[...]}`（ItemsResult）。
+  List<String> _namesFromItems(dynamic data) {
+    if (data is List) return _parseNameList(data);
+    if (data is Map && data['Items'] is List) {
+      return _parseNameList(data['Items']);
+    }
+    return const [];
+  }
+
+  /// 专用端点响应 → 年份列表：裸数组或 `{Items:[...]}`。
+  List<int> _yearsFromItems(dynamic data) {
+    if (data is List) return _parseIntList(data);
+    if (data is Map && data['Items'] is List) {
+      return _parseIntList(data['Items']);
+    }
+    return const [];
   }
 
   /// `NameIdPair` 列表（或纯字符串列表）→ 名称列表；无法解析的项忽略。
@@ -512,7 +558,7 @@ class EmbyService {
         .toList();
   }
 
-  /// 年份列表（int/num/字符串混容）→ int 列表；无法解析的项忽略。
+  /// 年份列表（int/num/字符串/NameIdPair 混容）→ int 列表；无法解析的忽略。
   List<int> _parseIntList(dynamic raw) {
     if (raw is! List) return [];
     return raw
@@ -520,6 +566,12 @@ class EmbyService {
           if (e is int) return e;
           if (e is num) return e.toInt();
           if (e is String) return int.tryParse(e);
+          if (e is Map) {
+            final id = e['Id'] ?? e['Name'];
+            if (id is int) return id;
+            if (id is num) return id.toInt();
+            if (id is String) return int.tryParse(id);
+          }
           return null;
         })
         .whereType<int>()

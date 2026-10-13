@@ -304,7 +304,7 @@ class _CountingEmbyService extends FakeEmbyService {
   final void Function() onCall;
 
   @override
-  Future<MediaFilterOptions?> getFilterOptions({
+  Future<MediaFilterOptions> getFilterOptions({
     String? parentId,
     String? includeItemTypes,
   }) async {
