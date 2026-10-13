@@ -151,10 +151,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             includeItemTypes: 'Movie,Series',
             fields:
                 'ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber,UserData',
-            // DateLastContentAdded：剧集有新集数入库时 Series 的该字段会
-            // 更新，更新过的剧集能浮到最前；DateCreated 是系列首次入库
-            // 时间，新集不会变——表现为"更新了还排在后面"
-            sortBy: 'DateLastContentAdded',
+            // DateLastSaved：条目最后一次落库时间。电影加新版本（多版本
+            // MediaSource）会触发同一 Movie 条目重存 → 浮到最前；剧集加新集
+            // 同样重存 → 仍正确。（DateLastContentAdded 只对 Series 子项聚合，
+            // Movie 是叶子不参与；DateCreated 是首次入库时间，两种情况都不变。）
+            sortBy: 'DateLastSaved',
             sortOrder: 'Descending',
           )
               .then((items) {

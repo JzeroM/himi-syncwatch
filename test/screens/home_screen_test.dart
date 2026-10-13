@@ -813,7 +813,7 @@ void main() {
     );
   });
 
-  testWidgets('首页分类行：最近添加按 DateLastContentAdded（有新集的剧排前）', (tester) async {
+  testWidgets('首页分类行：最近添加按 DateLastSaved（加新版本/新集的前移）', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1'],
       sessions: {
@@ -842,9 +842,9 @@ void main() {
 
     expect(
       emby.lastGetItemsSortBy,
-      'DateLastContentAdded',
-      reason: 'DateCreated 是系列首次入库时间、有新集也不变——更新过的'
-          '剧集排不到最前；DateLastContentAdded 随子集入库更新',
+      'DateLastSaved',
+      reason: '电影加新版本（多版本）会触发同一 Movie 条目重存 → 前移；'
+          'DateCreated/DateLastContentAdded 对 Movie 均不变',
     );
     expect(emby.lastGetItemsSortOrder, 'Descending');
     expect(find.byKey(const ValueKey('posterCard_sv1')), findsOneWidget);
