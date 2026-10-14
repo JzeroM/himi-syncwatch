@@ -113,8 +113,11 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
   /// 服务端筛选条件（播放状态/类型/年份/分级），与排序并存。
   CategoryFilter _mediaFilter = CategoryFilter.empty;
 
-  /// 筛选面板可选项缓存（打开面板时懒加载一次；类型 chips 变更后失效）。
+  /// 筛选面板可选项缓存（进页预取 + 打开面板时懒加载；类型范围变更后失效）。
   MediaFilterOptions? _filterOptions;
+
+  /// 在途的可选项请求（预取与打开面板共享，去重避免重复网络往返）。
+  Future<MediaFilterOptions>? _filterOptionsFuture;
 
   /// 筛选面板打开中（防重入：连点只会弹出一个面板）。
   bool _filterOpening = false;
@@ -127,6 +130,9 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
     super.initState();
     _filterOption = _defaultFilter(widget.collectionType);
     _scrollController.addListener(_onScroll);
+    // 进页即后台预取可选项（v1.1.235）：让首次打开筛选面板连选项都瞬时，
+    // 不必等网络往返。失败/未完成不影响主列表加载。
+    _prefetchFilterOptions();
     _loadFirstPage();
   }
 
@@ -225,38 +231,56 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
     _loadFirstPage();
   }
 
+  /// 后台预取筛选面板可选项（进页调用一次；类型范围变更后失效重取）。
+  ///
+  /// 复用在途 future 去重：预取与打开面板共享同一请求，避免重复网络往返。
+  /// 失败/未完成不影响主列表，面板侧仍可走 optionsFuture 先弹后填。
+  void _prefetchFilterOptions() {
+    if (_filterOptions != null || _filterOptionsFuture != null) return;
+    final future = ref.read(embyServiceProvider).getFilterOptions(
+          parentId: widget.libraryId,
+          includeItemTypes: _filterOption.embyValue,
+        );
+    _filterOptionsFuture = future;
+    future.then((options) {
+      if (!mounted) return;
+      setState(() => _filterOptions = options);
+    }).whenComplete(() {
+      if (mounted) _filterOptionsFuture = null;
+    });
+  }
+
   void _onFilterChanged(FilterOption value) {
     if (value == _filterOption) return;
     setState(() {
       _filterOption = value;
       // 库内类型范围变化 → 面板可选项需按新范围重取
       _filterOptions = null;
+      _filterOptionsFuture = null;
     });
+    // 按新范围重新预取，让下次打开面板仍瞬时
+    _prefetchFilterOptions();
     _loadFirstPage();
   }
 
   /// 打开筛选面板；确认后应用新筛选并重置分页重载。
   ///
-  /// 防重入（v1.1.234）：可选项请求 + 面板 await 期间再次点击会被忽略，
-  /// 否则会弹出两个叠加的筛选面板。
+  /// 防重入（v1.1.234）：面板 await 期间再次点击会被忽略，否则会弹出两个
+  /// 叠加的筛选面板。
+  ///
+  /// 先弹后填（v1.1.235）：不再 await 可选项请求——命中缓存直接传 options，
+  /// 未命中则把预取的 future 传给面板（面板立即弹出，选项就绪后补上）。
   Future<void> _openFilterPanel() async {
     if (_filterOpening) return;
     setState(() => _filterOpening = true);
     try {
-      var options = _filterOptions;
-      if (options == null) {
-        options = await ref.read(embyServiceProvider).getFilterOptions(
-              parentId: widget.libraryId,
-              includeItemTypes: _filterOption.embyValue,
-            );
-        if (!mounted) return;
-        _filterOptions = options;
-      }
-
+      final cached = _filterOptions;
       final result = await showMediaFilterPanel(
         context,
         current: _mediaFilter,
-        options: options,
+        options: cached,
+        optionsFuture:
+            cached == null ? (_filterOptionsFuture ??= _fetchFilterOptions()) : null,
         tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
       );
       if (result == null || !mounted || result == _mediaFilter) return;
@@ -265,6 +289,16 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
     } finally {
       if (mounted) setState(() => _filterOpening = false);
     }
+  }
+
+  /// 拉取可选项并写回缓存（供 _openFilterPanel 在无缓存且无预取时兜底）。
+  Future<MediaFilterOptions> _fetchFilterOptions() async {
+    final options = await ref.read(embyServiceProvider).getFilterOptions(
+          parentId: widget.libraryId,
+          includeItemTypes: _filterOption.embyValue,
+        );
+    if (mounted) setState(() => _filterOptions = options);
+    return options;
   }
 
   @override

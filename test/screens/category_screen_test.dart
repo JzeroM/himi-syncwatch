@@ -18,6 +18,7 @@ Future<void> _pumpScreen(
   WidgetTester tester, {
   FakeEmbyService? emby,
   AppSettings settings = const AppSettings(),
+  String collectionType = 'movies',
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -30,8 +31,11 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(
-        home: CategoryScreen(libraryId: 'lib1', collectionType: 'movies'),
+      child: MaterialApp(
+        home: CategoryScreen(
+          libraryId: 'lib1',
+          collectionType: collectionType,
+        ),
       ),
     ),
   );
@@ -252,7 +256,7 @@ void main() {
       );
     });
 
-    testWidgets('可选项按库懒加载：再次打开不重复请求', (tester) async {
+    testWidgets('进页即预取可选项；打开面板不重复请求（v1.1.235）', (tester) async {
       var fetchCount = 0;
       final emby = FakeEmbyService(
         items: const [],
@@ -262,12 +266,17 @@ void main() {
       final counting = _CountingEmbyService(emby, () => fetchCount++);
       await _pumpScreen(tester, emby: counting);
 
+      // 进页 initState 已后台预取一次
+      expect(fetchCount, 1, reason: '进入分类页即预取可选项');
+
+      // 打开面板走缓存，不再重复请求
       await tester.tap(find.byKey(const Key('categoryFilterButton')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('filterCancelButton')));
       await tester.pumpAndSettle();
-      expect(fetchCount, 1);
+      expect(fetchCount, 1, reason: '打开面板复用预取缓存，不重复请求');
 
+      // 再次打开仍不重复
       await tester.tap(find.byKey(const Key('categoryFilterButton')));
       await tester.pumpAndSettle();
       expect(fetchCount, 1, reason: '同一类型范围内只请求一次可选项');
@@ -275,9 +284,27 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('快速连点筛选按钮只弹出一个面板（防重入，v1.1.234）', (tester) async {
-      // 用受控 Future 卡住 getFilterOptions，精确还原竞态：
-      // 可选项请求仍在 await 时用户又点了一次按钮。
+    testWidgets('类型范围变更后失效并重新预取（v1.1.235）', (tester) async {
+      var fetchCount = 0;
+      final emby = FakeEmbyService(
+        items: const [],
+        filterOptions: const MediaFilterOptions(years: [2024]),
+      );
+      final counting = _CountingEmbyService(emby, () => fetchCount++);
+      // 'all' 库显示筛选 chips，默认 FilterOption.all（全部），预取一次
+      await _pumpScreen(tester, emby: counting, collectionType: 'all');
+      expect(fetchCount, 1, reason: '进库预取一次');
+
+      // 点「剧集」chip → 类型范围 null→Series → 缓存失效并按新范围重取
+      await tester.tap(find.text('剧集'));
+      await tester.pumpAndSettle();
+      expect(fetchCount, 2, reason: '类型范围变化后重新预取');
+      expect(emby.lastFilterOptionsIncludeItemTypes, 'Series',
+          reason: '新预取按剧集范围请求');
+    });
+
+    testWidgets('先弹后填：面板立即弹出，可选项就绪后补上（防重入，v1.1.235）', (tester) async {
+      // 用受控 Future 卡住 getFilterOptions，还原「可选项仍在加载」的场景。
       final gate = Completer<MediaFilterOptions>();
       final emby = _GatedEmbyService(
         FakeEmbyService(items: const []),
@@ -288,20 +315,24 @@ void main() {
       final btn = find.byKey(const Key('categoryFilterButton'));
       await tester.tap(btn);
       await tester.pump();
-      expect(tester.widget<IconButton>(btn).onPressed, isNull,
-          reason: '请求未返回期间按钮置灰');
 
-      // 竞态点击：此时面板尚未弹出，按钮已 disabled → 第二次点击为无操作
-      await tester.tap(btn);
-      await tester.pump();
+      // 先弹后填：不等可选项请求，面板立即弹出且播放状态可用
+      expect(find.byKey(const Key('filterPanelBody')), findsOneWidget,
+          reason: '面板不等可选项请求，立即弹出');
+      expect(find.byKey(const Key('filterConfirmButton')), findsOneWidget);
+      expect(find.byKey(const Key('filterOptionsLoading')), findsOneWidget,
+          reason: '可选项未就绪时显示加载提示');
 
+      // 防重入：面板打开期间按钮置灰，杜绝二次 _openFilterPanel
+      expect(tester.widget<IconButton>(btn).onPressed, isNull);
+
+      // 可选项就绪 → 补上年份分组，加载提示消失
       gate.complete(const MediaFilterOptions(years: [2024]));
       await tester.pumpAndSettle();
+      expect(find.byKey(const Key('filterOptionsLoading')), findsNothing);
+      expect(find.text('年份'), findsOneWidget);
 
-      expect(find.byKey(const Key('filterPanelBody')), findsOneWidget,
-          reason: '连点只弹出一个面板');
-      expect(find.byKey(const Key('filterConfirmButton')), findsOneWidget);
-
+      // 关闭后按钮恢复可点
       await tester.tap(find.byKey(const Key('filterCancelButton')));
       await tester.pumpAndSettle();
       expect(tester.widget<IconButton>(btn).onPressed, isNotNull,

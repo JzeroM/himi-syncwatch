@@ -8,10 +8,15 @@ import 'package:himi_syncwatch/models/category_filter.dart';
 /// 面板高度固定为 0.5 屏高且**不可拖拽**（v1.1.234）——原先用
 /// DraggableScrollableSheet 占 0.7 屏，选中标签换行堆高后整体过高；
 /// 现标签改单行横滑，高度由 0.5 屏高固定承载，内部 ListView 自行滚动。
+///
+/// **先弹后填**（v1.1.235）：调用方若无缓存，可传 [optionsFuture] 在后台
+/// 加载可选项——面板立即弹出且「播放状态」立即可用，类型/年份/分级在
+/// future 就绪后自动补上，用户不必干等网络往返才看到面板。
 Future<CategoryFilter?> showMediaFilterPanel(
   BuildContext context, {
   required CategoryFilter current,
   MediaFilterOptions? options,
+  Future<MediaFilterOptions>? optionsFuture,
   bool tvMode = false,
 }) {
   if (tvMode) {
@@ -26,7 +31,11 @@ Future<CategoryFilter?> showMediaFilterPanel(
           ),
           child: SizedBox(
             width: 420,
-            child: _FilterPanelBody(current: current, options: options),
+            child: _FilterPanelBody(
+              current: current,
+              options: options,
+              optionsFuture: optionsFuture,
+            ),
           ),
         ),
       ),
@@ -35,27 +44,38 @@ Future<CategoryFilter?> showMediaFilterPanel(
   return showModalBottomSheet<CategoryFilter>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Colors.transparent,
+    // 背景走主题 bottomSheetTheme（不透明 Color(0xF21A1D23) + 顶部圆角 24）。
+    // v1.1.234 误设 Colors.transparent 导致面板成"玻璃"透视后面海报，已移除。
     // 关闭下滑手势（面板本身已不可拖拽，避免半拖状态）
     enableDrag: false,
     builder: (ctx) => SafeArea(
       child: SizedBox(
         height: MediaQuery.sizeOf(ctx).height * 0.5,
-        child: _FilterPanelBody(current: current, options: options),
+        child: _FilterPanelBody(
+          current: current,
+          options: options,
+          optionsFuture: optionsFuture,
+        ),
       ),
     ),
   );
 }
 
 /// 面板主体：草稿筛选 + 恢复默认 + 取消/确认。确认时 pop 出草稿结果。
+///
+/// [options] 为已缓存的可选项（同步路径，面板瞬时完整）；[optionsFuture]
+/// 用于无缓存时先弹后填——加载期间「播放状态」立即可用，类型/年份/分级
+/// 在 future 就绪后自动补上，避免用户干等网络往返（v1.1.235）。
 class _FilterPanelBody extends StatefulWidget {
   const _FilterPanelBody({
     required this.current,
     required this.options,
+    this.optionsFuture,
   });
 
   final CategoryFilter current;
   final MediaFilterOptions? options;
+  final Future<MediaFilterOptions>? optionsFuture;
 
   @override
   State<_FilterPanelBody> createState() => _FilterPanelBodyState();
@@ -70,7 +90,28 @@ class _FilterPanelBodyState extends State<_FilterPanelBody> {
 
   @override
   Widget build(BuildContext context) {
-    final options = widget.options;
+    final cached = widget.options;
+    if (cached != null) return _buildPanel(context, options: cached);
+    final future = widget.optionsFuture;
+    if (future == null) return _buildPanel(context, options: null);
+
+    // 先弹后填：FutureBuilder 就绪前先出播放状态，就绪后补选项分组。
+    return FutureBuilder<MediaFilterOptions>(
+      future: future,
+      builder: (context, snap) => _buildPanel(
+        context,
+        options: snap.data,
+        loading: snap.connectionState != ConnectionState.done,
+      ),
+    );
+  }
+
+  /// 面板骨架：标题/恢复默认 + 播放状态（始终可用）+ 选项分组 + 底部按钮。
+  Widget _buildPanel(
+    BuildContext context, {
+    required MediaFilterOptions? options,
+    bool loading = false,
+  }) {
     final textTheme = Theme.of(context).textTheme;
 
     final body = ListView(
@@ -97,6 +138,22 @@ class _FilterPanelBodyState extends State<_FilterPanelBody> {
           value: _draft.watchStatus,
           onChanged: (v) => setState(() => _draft = _draft.copyWith(watchStatus: v)),
         ),
+        // 弱网兜底：可选项仍在加载时给一行细进度提示（预取通常已就绪，罕见）。
+        if (loading) ...[
+          const SizedBox(height: 12),
+          Row(
+            key: const Key('filterOptionsLoading'),
+            children: [
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 8),
+              Text('加载筛选项…', style: textTheme.bodySmall),
+            ],
+          ),
+        ],
         if (options != null && options.hasGenres) ...[
           const SizedBox(height: 8),
           _MultiPickRow<String>(

@@ -40,6 +40,9 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
   CategoryFilter _mediaFilter = CategoryFilter.empty;
   MediaFilterOptions? _filterOptions;
 
+  /// 在途的可选项请求（预取与打开面板共享，去重避免重复网络往返）。
+  Future<MediaFilterOptions>? _filterOptionsFuture;
+
   /// 筛选面板打开中（防重入：连点只会弹出一个面板）。
   bool _filterOpening = false;
 
@@ -60,7 +63,37 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
   @override
   void initState() {
     super.initState();
+    // 进页即后台预取筛选可选项（v1.1.235）：让首次打开筛选面板连选项都瞬时。
+    // 未知 type（_embyType == null）不加载，跳过预取。
+    if (_embyType != null) _prefetchFilterOptions();
     _load();
+  }
+
+  /// 后台预取筛选面板可选项（进页调用一次）。
+  ///
+  /// 复用在途 future 去重：预取与打开面板共享同一请求，避免重复网络往返。
+  /// 失败/未完成不影响主列表，面板侧仍可走 optionsFuture 先弹后填。
+  void _prefetchFilterOptions() {
+    if (_filterOptions != null || _filterOptionsFuture != null) return;
+    final future = ref.read(embyServiceProvider).getFilterOptions(
+          includeItemTypes: _embyType,
+        );
+    _filterOptionsFuture = future;
+    future.then((options) {
+      if (!mounted) return;
+      setState(() => _filterOptions = options);
+    }).whenComplete(() {
+      if (mounted) _filterOptionsFuture = null;
+    });
+  }
+
+  /// 拉取可选项并写回缓存（供 _openFilterPanel 在无缓存且无预取时兜底）。
+  Future<MediaFilterOptions> _fetchFilterOptions() async {
+    final options = await ref.read(embyServiceProvider).getFilterOptions(
+          includeItemTypes: _embyType,
+        );
+    if (mounted) setState(() => _filterOptions = options);
+    return options;
   }
 
   Future<void> _load() async {
@@ -108,25 +141,22 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
 
   /// 打开筛选面板；确认后应用新筛选并重载。
   ///
-  /// 防重入（v1.1.234）：可选项请求 + 面板 await 期间再次点击会被忽略，
-  /// 否则会弹出两个叠加的筛选面板。
+  /// 防重入（v1.1.234）：面板 await 期间再次点击会被忽略，否则会弹出两个
+  /// 叠加的筛选面板。
+  ///
+  /// 先弹后填（v1.1.235）：不再 await 可选项请求——命中缓存直接传 options，
+  /// 未命中则把预取的 future 传给面板（面板立即弹出，选项就绪后补上）。
   Future<void> _openFilterPanel() async {
     if (_filterOpening) return;
     setState(() => _filterOpening = true);
     try {
-      var options = _filterOptions;
-      if (options == null) {
-        options = await ref.read(embyServiceProvider).getFilterOptions(
-              includeItemTypes: _embyType,
-            );
-        if (!mounted) return;
-        _filterOptions = options;
-      }
-
+      final cached = _filterOptions;
       final result = await showMediaFilterPanel(
         context,
         current: _mediaFilter,
-        options: options,
+        options: cached,
+        optionsFuture:
+            cached == null ? (_filterOptionsFuture ??= _fetchFilterOptions()) : null,
         tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
       );
       if (result == null || !mounted || result == _mediaFilter) return;

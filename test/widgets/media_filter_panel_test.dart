@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
@@ -17,10 +19,12 @@ void main() {
     ratings: ['R', 'PG-13', 'G', 'PG'],
   );
 
+  /// 打开筛选面板。传 [optionsFuture] 时走"先弹后填"路径（options 传 null）。
   Future<void> pumpHost(
     WidgetTester tester, {
     bool tvMode = false,
     CategoryFilter current = CategoryFilter.empty,
+    Future<MediaFilterOptions>? optionsFuture,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -32,7 +36,8 @@ void main() {
                 onPressed: () => showMediaFilterPanel(
                   context,
                   current: current,
-                  options: options,
+                  options: optionsFuture == null ? options : null,
+                  optionsFuture: optionsFuture,
                   tvMode: tvMode,
                 ),
                 child: const Text('打开筛选'),
@@ -43,7 +48,13 @@ void main() {
       ),
     );
     await tester.tap(find.byKey(const Key('openFilter')));
-    await tester.pumpAndSettle();
+    if (optionsFuture != null) {
+      // 加载态含无限转圈动画，pumpAndSettle 会超时；定时 pump 让入场动画播完即可
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    } else {
+      await tester.pumpAndSettle();
+    }
   }
 
   /// 在二级复选弹窗里勾选 [labels] 后确认，回到面板。
@@ -185,6 +196,43 @@ void main() {
         findsNothing,
         reason: '恢复默认后草稿清空',
       );
+    });
+  });
+
+  group('背景不透明（v1.1.235 修玻璃）', () {
+    testWidgets('底部面板背景非 transparent（走主题不透明色）', (tester) async {
+      await pumpHost(tester);
+
+      final sheet = tester.widget<BottomSheet>(
+        find.byType(BottomSheet),
+      );
+      // v1.1.234 误设 Colors.transparent 导致面板透视后面海报；已移除，
+      // 背景回退到主题 bottomSheetTheme（不透明 Color(0xF21A1D23)）。
+      expect(sheet.backgroundColor, isNot(Colors.transparent),
+          reason: '面板背景必须不透明，不能是玻璃');
+    });
+  });
+
+  group('先弹后填（v1.1.235）', () {
+    testWidgets('可选项未就绪时先出播放状态 + 加载提示，就绪后补选项组', (tester) async {
+      final gate = Completer<MediaFilterOptions>();
+      await pumpHost(tester, optionsFuture: gate.future);
+
+      // 面板立即弹出，播放状态可用，选项组未就绪 → 显示加载提示
+      expect(find.byKey(const Key('filterPanelBody')), findsOneWidget);
+      expect(find.byKey(const Key('filterConfirmButton')), findsOneWidget);
+      expect(find.byKey(const Key('filterOptionsLoading')), findsOneWidget,
+          reason: '选项未就绪时显示加载提示');
+      expect(find.text('播放状态'), findsOneWidget, reason: '播放状态立即可用');
+      expect(find.text('类型'), findsNothing, reason: '选项组尚未出现');
+
+      // 可选项就绪 → 补上类型/年份/分级分组，加载提示消失
+      gate.complete(options);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('filterOptionsLoading')), findsNothing);
+      expect(find.text('类型'), findsOneWidget);
+      expect(find.text('年份'), findsOneWidget);
+      expect(find.text('官方分级'), findsOneWidget);
     });
   });
 }
