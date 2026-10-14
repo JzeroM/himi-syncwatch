@@ -52,14 +52,13 @@ void main() {
     expect(card.height, lessThan(80));
   });
 
-  testWidgets('数字与标签为深色样式（白玻璃），无点缀条', (tester) async {
+  testWidgets('数字与标签为纯白样式，无点缀条', (tester) async {
     await tester.pumpWidget(panel());
 
-    // 白玻璃卡片内数字用 darkContentTheme onSurface（0xE6000000 近黑）
-    const darkOnSurface = Color(0xE6000000);
+    // 数字纯白
     for (final text in ['2565', '2415', '73462']) {
       final t = tester.widget<Text>(find.text(text));
-      expect(t.style?.color, darkOnSurface);
+      expect(t.style?.color, Colors.white);
     }
 
     // 三色点缀条已移除

@@ -12,7 +12,6 @@ import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
@@ -686,7 +685,7 @@ void main() {
 
     await tester.tap(find.text('解码方式'));
     await tester.pumpAndSettle();
-    expect(find.byType(FrostedSurface), findsOneWidget, reason: '居中弹层');
+    expect(find.byType(AlertDialog), findsOneWidget, reason: '居中弹层');
     expect(find.byType(BottomSheet), findsNothing, reason: '不再用底部弹窗');
     expect(container.read(settingsProvider).decodeMode, 'auto');
 
@@ -698,14 +697,14 @@ void main() {
     // 方向键下移焦点：弹层不关闭、设置不变（RadioGroup 劫持回归验证）
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-    expect(find.byType(FrostedSurface), findsOneWidget,
+    expect(find.byType(AlertDialog), findsOneWidget,
         reason: '方向键不应关闭弹层');
     expect(container.read(settingsProvider).decodeMode, 'auto',
         reason: '方向键不应触发选择');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-    expect(find.byType(FrostedSurface), findsOneWidget);
+    expect(find.byType(AlertDialog), findsOneWidget);
 
     // Enter 选中当前焦点行（第 3 项 = sw）
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);

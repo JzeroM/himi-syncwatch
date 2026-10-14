@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/style_slider_row.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 弹幕样式调节面板：速度 / 大小 / 透明度三行滑杆 + 「恢复默认」。
 ///
@@ -125,10 +124,7 @@ class DanmakuStylePanel extends StatelessWidget {
           ),
         ),
       ),
-      Divider(
-        color: FrostedSurface.darkInkWith(0.12),
-        height: 1,
-      ),
+      const Divider(color: Colors.white24, height: 1),
       SideOptionRow(
         label: '恢复默认',
         selected: speed == defaultSpeed &&

@@ -59,7 +59,6 @@ import 'package:himi_syncwatch/services/danmaku/dandanplay_client.dart';
 import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -416,12 +415,11 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   /// 播完自动下一集的位置兜底判定（纯函数，供测试）。
   ///
-  /// 仅服务「引擎不上报 end 位」的档位（media_kit/Erika）：mdk 有可靠
-  /// `MediaStatus.end`，走兜底反而会把「拖进度条到结尾窗口」误判为播完
+  /// 仅服务「引擎不上报 end 位」的档位（media_kit/Erika）：mdk 有
+  /// `MediaStatus.end`，走兜底会把「拖进度条到结尾窗口」误判为播完
   /// 直接切集（v1.1.238 回归）。
   /// - [engineEmitsEnd]：引擎自身会上报 end（mdk）→ 兜底恒不触发；
-  /// - [seekCooldownActive]：seek 完成后冷却期内不触发（防 seek 后
-  ///   position 短暂停在结尾窗口被误判）；
+  /// - [seekCooldownActive]：seek 完成后冷却期内不触发；
   /// - 正在播放且位置进入结尾窗口（距时长 ≤500ms）才触发。
   @visibleForTesting
   static bool shouldAutoNextEpisode({
@@ -433,6 +431,23 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) {
     if (engineEmitsEnd || seekCooldownActive) return false;
     return playing && durationMs > 0 && positionMs >= durationMs - 500;
+  }
+
+  /// 引擎 end 事件是否可信（纯函数，供测试）：mdk keyframe seek 窗口
+  /// 会误报 `MediaStatus.end` 位（v1.1.239 修复不彻底，拖进度条仍切
+  /// 集）——真实播完时 position≈duration，误报时位置仍远离结尾。
+  /// - [seekInProgress]：seek/拖动进行中 position 未回读，忽略；
+  /// - 时长未就绪无法校验 → 视作误报；
+  /// - 距结尾 >1s 的 end → 引擎误报。
+  @visibleForTesting
+  static bool shouldHandleEngineEnd({
+    required bool seekInProgress,
+    required int positionMs,
+    required int durationMs,
+  }) {
+    if (seekInProgress) return false;
+    if (durationMs <= 0) return false;
+    return positionMs >= durationMs - 1000;
   }
 
   /// 加载转圈遮罩可见性（纯函数，供测试）：切集遮罩恒可见；
@@ -2876,7 +2891,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 检查是否播放结束
       if (event.newValue.test(AdapterMediaStatus.end)) {
-        _handleEpisodeFinished();
+        // mdk keyframe seek 窗口会误报 end 位（拖进度条误切集）：
+        // seek/拖动中或位置远离结尾的 end 一律忽略。
+        final seekAt = _lastSeekCompletedAt;
+        final seekInProgress = _isSeekingPlayback ||
+            _isDraggingSlider ||
+            (seekAt != null &&
+                DateTime.now().difference(seekAt) <
+                    PlayerScreen.autoNextSeekCooldown);
+        if (PlayerScreen.shouldHandleEngineEnd(
+          seekInProgress: seekInProgress,
+          positionMs: _player.position,
+          durationMs: _duration.inMilliseconds,
+        )) {
+          _handleEpisodeFinished();
+        }
       }
 
       // 播放错误处理
@@ -2960,8 +2989,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _positionNotifier.value = _position;
       }
       // 播完自动下一集兜底：仅服务不上报 end 位的引擎（media_kit/Erika）；
-      // mdk 有可靠 MediaStatus.end，走兜底会把拖进度条到结尾误判为播完
-      // 直接切集（v1.1.238 回归）。seek 冷却期内同样忽略。
+      // mdk 有 MediaStatus.end，走兜底会把拖进度条到结尾误判为播完切集。
+      // seek 冷却期内同样忽略。
       final seekAt = _lastSeekCompletedAt;
       if (PlayerScreen.shouldAutoNextEpisode(
         positionMs: pos,
@@ -3815,22 +3844,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         rtmService.unsubscribe(_rtmChannel!);
       } catch (_) {}
     }
-    showGlassDialog(
+    showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text(
-              '房间已解散',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          Text('房主已离开，房间已解散'),
-        ],
+      builder: (ctx) => AlertDialog(
+        title: const Text('房间已解散'),
+        content: const Text('房主已离开，房间已解散'),
       ),
     );
     Future.delayed(const Duration(milliseconds: 1500), () {
@@ -3840,35 +3859,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Future<bool> _confirmLeaveRoom() async {
     if (!_isHost || widget.roomCode == null) return true;
-    final result = await showGlassDialog<bool>(
+    final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text(
-              '解散房间',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+      builder: (ctx) => AlertDialog(
+        title: const Text('解散房间'),
+        content: const Text('离开将解散当前房间，所有观众将被退出。确定离开吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
           ),
-          const Text('离开将解散当前房间，所有观众将被退出。确定离开吗？'),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成确认
-                autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
-                child: const Text('确定离开'),
-              ),
-            ],
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成确认
+            autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
+            child: const Text('确定离开'),
           ),
         ],
       ),
@@ -4582,22 +4587,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _showShareRoomSheet() {
     if (widget.roomCode == null) return;
-    showGlassBottomSheet(
+    showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(
-            24, 16, 24, 24 + MediaQuery.of(ctx).padding.bottom),
+            24, 24, 24, 24 + MediaQuery.of(ctx).padding.bottom),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              const Text(
                 '分享加入房间',
                 style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: FrostedSurface.darkInk),
+                    color: Colors.white),
               ),
               const SizedBox(height: 16),
               RepaintBoundary(
@@ -4621,15 +4630,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.06),
+                  color: Colors.black.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   widget.roomCode!,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
                     fontFamily: 'monospace',
-                    color: FrostedSurface.darkInkWith(0.70),
+                    color: Colors.white70,
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 2,
@@ -6287,22 +6296,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return GlassContainer(
       borderRadius: BorderRadius.circular(16),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.fast_forward,
-                color: FrostedSurface.darkInk, size: 18),
-            const SizedBox(width: 6),
-            Text(
-              '${PlayerScreen.speedBoostMultiplier.toStringAsFixed(1)}× 播放中',
-              style: TextStyle(
-                color: FrostedSurface.darkInk,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.fast_forward, color: Colors.white, size: 18),
+          const SizedBox(width: 6),
+          Text(
+            '${PlayerScreen.speedBoostMultiplier.toStringAsFixed(1)}× 播放中',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -6987,29 +6995,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ========== 资源面板 ==========
   Widget _buildResourcePanel() {
-    // 房间资源面板：中等磨砂毛玻璃底（背后页面背景静止，开销可控）
-    return FrostedSurface(
-      borderRadius: BorderRadius.zero,
-      showBorder: false,
-      showShadow: false,
-      padding: EdgeInsets.zero,
+    return Container(
+      color: const Color(0xFF1A1A2E),
       child: Column(
         children: [
           // 面板头部
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              border: Border(
-                  bottom: BorderSide(
-                      color: FrostedSurface.darkInkWith(0.12))),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.white12)),
             ),
             child: Row(
               children: [
-                Expanded(
+                const Expanded(
                   child: Text(
                     '资源',
                     style: TextStyle(
-                      color: FrostedSurface.darkInk,
+                      color: Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
@@ -7034,9 +7036,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _sendAddResourceRTM(resourceData);
                       }
                     },
-                    child: Icon(Icons.search,
-                        color: FrostedSurface.darkInkWith(0.70),
-                        size: 20),
+                    child: const Icon(Icons.search,
+                        color: Colors.white70, size: 20),
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -7045,21 +7046,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color:
-                          FrostedSurface.darkInkWith(0.08),
+                      color: Colors.white12,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.people,
-                            color: FrostedSurface.darkInkWith(0.70),
-                            size: 12),
+                        const Icon(Icons.people,
+                            color: Colors.white70, size: 12),
                         const SizedBox(width: 3),
                         Text('$_onlineUserCount',
-                            style: TextStyle(
-                                color: FrostedSurface.darkInkWith(0.70),
-                                fontSize: 11)),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 11)),
                       ],
                     ),
                   ),
@@ -7085,11 +7083,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // 资源分组列表
           Expanded(
             child: _resourceGroups.isEmpty
-                ? Center(
+                ? const Center(
                     child: Text('暂无资源',
-                        style: TextStyle(
-                            color: FrostedSurface.darkInkWith(0.24),
-                            fontSize: 13)),
+                        style: TextStyle(color: Colors.white24, fontSize: 13)),
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 4),
@@ -7107,7 +7103,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildGroupWidget(_ResourceGroup group) {
-    final onSurface = FrostedSurface.darkInk;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -7116,21 +7111,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           onTap: () => setState(() => group.collapsed = !group.collapsed),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            // 半透明轻底叠在毛玻璃面板根上，保持层次感
-            color: onSurface.withValues(alpha: 0.08),
+            color: const Color(0xFF16213E),
             child: Row(
               children: [
                 Icon(
                   group.collapsed ? Icons.chevron_right : Icons.expand_more,
-                  color: onSurface.withValues(alpha: 0.70),
+                  color: Colors.white70,
                   size: 20,
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     group.name,
-                    style: TextStyle(
-                      color: onSurface,
+                    style: const TextStyle(
+                      color: Colors.white,
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                     ),
@@ -7141,8 +7135,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   group.isMovie
                       ? '(${group.totalCount})'
                       : '(${group.totalCount}集)',
-                  style: TextStyle(
-                      color: onSurface.withValues(alpha: 0.54), fontSize: 12),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
               ],
             ),
@@ -7168,7 +7161,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildSeasonWidget(_ResourceGroup group, _SeasonGroup season) {
-    final onSurface = FrostedSurface.darkInk;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -7178,21 +7170,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: Container(
             padding:
                 const EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6),
-            // 半透明轻底叠在毛玻璃面板根上
-            color: onSurface.withValues(alpha: 0.05),
+            color: const Color(0xFF1A1A2E),
             child: Row(
               children: [
                 Icon(
                   season.collapsed ? Icons.chevron_right : Icons.expand_more,
-                  color: onSurface.withValues(alpha: 0.54),
+                  color: Colors.white54,
                   size: 16,
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     '第${season.seasonNumber}季',
-                    style: TextStyle(
-                      color: onSurface.withValues(alpha: 0.70),
+                    style: const TextStyle(
+                      color: Colors.white70,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -7200,8 +7191,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
                 Text(
                   '(${season.episodes.length}集)',
-                  style: TextStyle(
-                      color: onSurface.withValues(alpha: 0.38), fontSize: 11),
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
                 ),
               ],
             ),
@@ -7225,7 +7215,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Widget _buildEpisodeListItem(int flatIndex, _ResourceItem item) {
     final isPlaying = flatIndex == _currentEpisodeIndex;
     final isMovie = item.isMovie;
-    final onSurface = FrostedSurface.darkInk;
 
     return InkWell(
       onTap: () {
@@ -7267,9 +7256,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       isPlaying && isPlayingNow
                           ? Icons.pause_circle
                           : Icons.play_circle,
-                      color: isPlaying
-                          ? const Color(0xFF6366F1)
-                          : onSurface.withValues(alpha: 0.54),
+                      color:
+                          isPlaying ? const Color(0xFF6366F1) : Colors.white54,
                       size: 22,
                     );
                   },
@@ -7300,9 +7288,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ? Text(
                       item.name,
                       style: TextStyle(
-                        color: isPlaying
-                            ? onSurface
-                            : onSurface.withValues(alpha: 0.54),
+                        color: isPlaying ? Colors.white : Colors.white54,
                         fontSize: 12,
                       ),
                       maxLines: 1,
@@ -7316,7 +7302,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           style: TextStyle(
                             color: isPlaying
                                 ? const Color(0xFF6366F1)
-                                : onSurface.withValues(alpha: 0.70),
+                                : Colors.white70,
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                           ),
@@ -7325,9 +7311,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         Text(
                           item.name,
                           style: TextStyle(
-                            color: isPlaying
-                                ? onSurface
-                                : onSurface.withValues(alpha: 0.54),
+                            color: isPlaying ? Colors.white : Colors.white54,
                             fontSize: 12,
                           ),
                           maxLines: 1,
@@ -7341,8 +7325,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             if (_isHost)
               TvFocusable(
                 onTap: () => _removeEpisode(flatIndex),
-                child: Icon(Icons.close,
-                    color: onSurface.withValues(alpha: 0.24), size: 18),
+                child: const Icon(Icons.close, color: Colors.white24, size: 18),
               ),
           ],
         ),
@@ -7351,12 +7334,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildBroadcastBoardInPanel() {
-    final onSurface = FrostedSurface.darkInk;
     return Container(
       height: 120,
-      decoration: BoxDecoration(
-        border: Border(
-            top: BorderSide(color: onSurface.withValues(alpha: 0.12))),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Colors.white12)),
       ),
       child: ValueListenableBuilder<int>(
         valueListenable: _broadcastVersion,
@@ -7368,23 +7349,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 child: Row(
                   children: [
-                    Icon(Icons.campaign,
-                        color: onSurface.withValues(alpha: 0.70), size: 12),
+                    const Icon(Icons.campaign, color: Colors.white70, size: 12),
                     const SizedBox(width: 4),
                     Text('播报 (${_broadcastMessages.length})',
-                        style: TextStyle(
-                            color: onSurface.withValues(alpha: 0.70),
-                            fontSize: 11)),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 11)),
                   ],
                 ),
               ),
               Expanded(
                 child: _broadcastMessages.isEmpty
-                    ? Center(
+                    ? const Center(
                         child: Text('暂无消息',
-                            style: TextStyle(
-                                color: onSurface.withValues(alpha: 0.24),
-                                fontSize: 11)),
+                            style:
+                                TextStyle(color: Colors.white24, fontSize: 11)),
                       )
                     : ListView.builder(
                         controller: _broadcastScrollController,
@@ -7392,9 +7370,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         itemCount: _broadcastMessages.length,
                         itemBuilder: (ctx, i) => Text(
                           _broadcastMessages[i],
-                          style: TextStyle(
-                              color: onSurface.withValues(alpha: 0.54),
-                              fontSize: 11),
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 11),
                         ),
                       ),
               ),

@@ -39,7 +39,7 @@ void main() {
       expect(find.byType(ClipRRect), findsOneWidget);
     });
 
-    testWidgets('关闭玻璃时降级为毛玻璃，不渲染液态折射层', (tester) async {
+    testWidgets('关闭玻璃时降级为纯色，不渲染任何玻璃层', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -47,18 +47,19 @@ void main() {
         ),
       );
 
-      // 降级为毛玻璃：有 BackdropFilter，无液态折射层
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(find.byType(BackdropFilter), findsNothing);
       expect(find.byType(lg.GlassContainer), findsNothing);
       expect(find.text('面板内容'), findsOneWidget);
 
-      final colorBox = tester.widget<ColoredBox>(
+      final decoration = tester.widget<DecoratedBox>(
         find.descendant(
           of: find.byType(ClipRRect),
-          matching: find.byType(ColoredBox),
+          matching: find.byType(DecoratedBox),
         ),
       );
-      expect(colorBox.color, GlassConfig.frostedTint);
+      final box = decoration.decoration as BoxDecoration;
+      expect(box.color, GlassConfig.fallbackColor);
+      expect(box.gradient, isNull);
     });
 
     testWidgets('开启玻璃时面板带本层悬浮投影', (tester) async {
@@ -135,7 +136,7 @@ void main() {
       );
     });
 
-    testWidgets('毛玻璃降级态保留白描边定界', (tester) async {
+    testWidgets('纯色降级态保留 rim 边线定界', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -149,9 +150,9 @@ void main() {
           .whereType<BoxDecoration>()
           .toList();
       expect(
-        boxes.any((b) => b.border?.top.color == GlassConfig.frostedBorder),
+        boxes.any((b) => b.border?.top.color == GlassConfig.rimColor),
         isTrue,
-        reason: '毛玻璃降级需要描边与背景区分',
+        reason: '关闭玻璃后不透明纯色需要边线与背景区分',
       );
     });
   });
@@ -173,7 +174,7 @@ void main() {
       );
     });
 
-    testWidgets('关闭玻璃时降级为毛玻璃条', (tester) async {
+    testWidgets('关闭玻璃时降级为纯色条', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassBackdrop(),
@@ -181,8 +182,7 @@ void main() {
         ),
       );
       expect(find.byType(lg.GlassContainer), findsNothing);
-      // 降级为条带毛玻璃：有 BackdropFilter
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(find.byType(BackdropFilter), findsNothing);
     });
   });
 
@@ -272,17 +272,12 @@ void main() {
       expect(GlassConfig.shellBottomReserve, 96);
     });
 
-    test('白玻璃着色：60% 白膜（v1.1.239）', () {
-      // panelTint/barTint = 0x99FFFFFF（60% 白）；barTintSoft = 0x66FFFFFF
-      expect(GlassConfig.panelTint.a, closeTo(0x99 / 255, 0.001));
-      expect(GlassConfig.barTint.a, closeTo(0x99 / 255, 0.001));
-      expect(GlassConfig.barTintSoft.a, closeTo(0x66 / 255, 0.001));
-      // 白膜：RGB 为白（背景模糊后整体提亮为白色玻璃）
-      expect(GlassConfig.panelTint.r, closeTo(1.0, 0.001));
-      expect(GlassConfig.panelTint.g, closeTo(1.0, 0.001));
-      expect(GlassConfig.panelTint.b, closeTo(1.0, 0.001));
-      // frostedTint 同步为白玻璃
-      expect(GlassConfig.frostedTint.a, closeTo(0x99 / 255, 0.001));
+    test('玻璃着色透明度约 12%，背景尽量透出', () {
+      expect(GlassConfig.panelTint.a, closeTo(0x1F / 255, 0.001));
+      expect(GlassConfig.barTint.a, closeTo(0x1F / 255, 0.001));
+      expect(GlassConfig.barTintSoft.a, closeTo(0x12 / 255, 0.001));
+      expect(GlassConfig.panelTint.a, lessThan(0.3));
+      expect(GlassConfig.barTint.a, lessThan(0.3));
     });
   });
 }

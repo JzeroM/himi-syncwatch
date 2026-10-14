@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
-/// 首页底部统计面板：横排三张玻璃卡片，深色数字与标签（白玻璃）。
+/// 首页底部统计面板：横排三张玻璃卡片，白色数字与标签。
 class StatsPanel extends StatelessWidget {
   const StatsPanel({super.key, required this.counts});
 
@@ -34,7 +33,6 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final onSurface = FrostedSurface.darkInk;
     return Expanded(
       child: GlassContainer(
         borderRadius: const BorderRadius.all(Radius.circular(14)),
@@ -45,10 +43,10 @@ class _StatCard extends StatelessWidget {
             Text(
               '$value',
               key: ValueKey('stat_$label'),
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
-                color: onSurface,
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 2),
@@ -56,7 +54,7 @@ class _StatCard extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 13,
-                color: onSurface.withValues(alpha: 0.75),
+                color: Colors.white.withValues(alpha: 0.75),
               ),
             ),
           ],

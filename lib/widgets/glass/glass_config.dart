@@ -17,18 +17,18 @@ class GlassConfig {
   /// 模糊后叠加的饱和度增强系数。
   static const double saturation = 1.6;
 
-  /// 面板着色（底部导航胶囊 / 顶栏胶囊 / 浮动底栏）：白 60%
-  /// （v1.1.239 白玻璃——模糊背景透出彩色，白膜 + 深色字）。
-  static const Color panelTint = Color(0x99FFFFFF);
+  /// 面板着色（底部导航胶囊 / 顶栏胶囊 / 浮动底栏），约 12% 以求透亮。
+  static const Color panelTint = Color(0x1F1A1D23);
 
-  /// 页面顶栏着色（白 60%，与面板同膜）。
-  static const Color barTint = Color(0x99FFFFFF);
-  static const Color barTintSoft = Color(0x66FFFFFF);
+  /// 页面顶栏着色（渐变上深下浅）。
+  static const Color barTint = Color(0x1F1A1D23);
+  static const Color barTintSoft = Color(0x121A1D23);
 
-  /// iOS(Impeller) 专用更淡白膜（约 40%）：背景更透。
-  static const Color panelTintIos = Color(0x66FFFFFF);
-  static const Color barTintIos = Color(0x66FFFFFF);
-  static const Color barTintSoftIos = Color(0x4DFFFFFF);
+  /// iOS(Impeller) 专用更淡着色：包内已走 GlassBodyMode.clear，本层 tint 再
+  /// 压到约 5% → 背景更透（12% 深色膜是 iOS 看着「不透」的主因）。
+  static const Color panelTintIos = Color(0x0D1A1D23);
+  static const Color barTintIos = Color(0x0D1A1D23);
+  static const Color barTintSoftIos = Color(0x081A1D23);
 
   /// 面板着色（按平台）：iOS 用更淡的 [panelTintIos]。
   static Color panelTintOf() =>
@@ -42,17 +42,8 @@ class GlassConfig {
       ? barTintSoftIos
       : barTintSoft;
 
-  /// 关闭玻璃后的降级底色（白 94% 不透明，深字可读）。
-  static const Color fallbackColor = Color(0xF0FFFFFF);
-
-  /// 中等磨砂毛玻璃（FrostedSurface）模糊半径。
-  static const double frostedSigma = 20;
-
-  /// 中等磨砂底色：白 60%（模糊背景透出彩色色块，白膜承载深色字）。
-  static const Color frostedTint = Color(0x99FFFFFF);
-
-  /// 毛玻璃描边（白底上用深色细边定界，约 18% 黑）。
-  static const Color frostedBorder = Color(0x2E000000);
+  /// 关闭玻璃后的降级纯色。
+  static const Color fallbackColor = Color(0xF01A1D24);
 
   /// 高光描边基色（约 30% 白）。
   static const Color rimColor = Color(0x4DFFFFFF);

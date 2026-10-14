@@ -22,7 +22,6 @@ import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
@@ -1324,56 +1323,43 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     // 防御性：建房入口当前 TV 不渲染（if (!tvMode)），但弹窗字段仍
     // 统一屏蔽焦点（遥控器无输入法）
     final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
-    return showGlassDialog<int>(
+    return showDialog<int>(
       context: context,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: Text(
-              '建房设置',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          tvExcludeEditable(
-            tvMode: tvMode,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('房间最大人数', style: TextStyle(fontSize: 14)),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  autofocus: !tvMode,
-                ),
-              ],
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+      builder: (ctx) => AlertDialog(
+        title: const Text('建房设置'),
+        content: tvExcludeEditable(
+          tvMode: tvMode,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final n = int.tryParse(controller.text.trim());
-                  if (n != null && n > 0 && n <= 100) {
-                    Navigator.pop(ctx, n);
-                  }
-                },
-                child: const Text('确定'),
+              const Text('房间最大人数', style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                autofocus: !tvMode,
               ),
             ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final n = int.tryParse(controller.text.trim());
+              if (n != null && n > 0 && n <= 100) {
+                Navigator.pop(ctx, n);
+              }
+            },
+            child: const Text('确定'),
           ),
         ],
       ),
@@ -1605,8 +1591,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             const SizedBox(width: 8),
             Text(
               label,
-              style: TextStyle(
-                color: FrostedSurface.darkInk,
+              style: const TextStyle(
+                color: Colors.white,
                 fontWeight: FontWeight.w600,
                 fontSize: 15,
               ),
@@ -1629,7 +1615,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               child: FractionallySizedBox(
                 alignment: Alignment.centerLeft,
                 widthFactor: progress.clamp(0.0, 1.0),
-                child: ColoredBox(color: Colors.black.withValues(alpha: 0.12)),
+                child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
               ),
             ),
           ),
@@ -1810,8 +1796,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // 贴边小按钮不用面板级悬浮投影，避免返回键外一圈黑影。
               showShadow: false,
               child: IconButton(
-                icon: Icon(Icons.arrow_back,
-                    color: FrostedSurface.darkInk),
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -1918,15 +1903,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.subject,
-                                        size: 14,
-                                        color: FrostedSurface.darkInkWith(0.70)),
+                                    const Icon(Icons.subject,
+                                        size: 14, color: Colors.white70),
                                     const SizedBox(width: 5),
                                     Text(
                                       _overviewVisible ? '收起' : '简介',
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         fontSize: 12,
-                                        color: FrostedSurface.darkInk,
+                                        color: Colors.white,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -1935,7 +1919,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                           ? Icons.expand_less
                                           : Icons.expand_more,
                                       size: 14,
-                                      color: FrostedSurface.darkInkWith(0.70),
+                                      color: Colors.white70,
                                     ),
                                   ],
                                 ),
@@ -1986,15 +1970,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.expand_less,
-                                            size: 14,
-                                            color: FrostedSurface.darkInkWith(0.70)),
+                                        const Icon(Icons.expand_less,
+                                            size: 14, color: Colors.white70),
                                         const SizedBox(width: 5),
-                                        Text(
+                                        const Text(
                                           '收起',
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color: FrostedSurface.darkInk,
+                                            color: Colors.white,
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
@@ -2046,9 +2029,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 14, vertical: 7),
                                 child: Text(g,
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        color: FrostedSurface.darkInk)),
+                                    style: const TextStyle(
+                                        fontSize: 13, color: Colors.white)),
                               ))
                           .toList(),
                     ),

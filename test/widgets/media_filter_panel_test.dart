@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/widgets/media_filter_panel.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 void main() {
   const options = MediaFilterOptions(
@@ -200,16 +199,17 @@ void main() {
     });
   });
 
-  group('面板磨砂（v1.1.238 毛玻璃）', () {
-    testWidgets('底部面板外层透明、内层 FrostedSurface 承载磨砂', (tester) async {
+  group('背景不透明（v1.1.235 修玻璃）', () {
+    testWidgets('底部面板背景非 transparent（走主题不透明色）', (tester) async {
       await pumpHost(tester);
 
       final sheet = tester.widget<BottomSheet>(
         find.byType(BottomSheet),
       );
-      // v1.1.238 起外层透明，磨砂由 FrostedSurface 承担
-      expect(sheet.backgroundColor, Colors.transparent);
-      expect(find.byType(FrostedSurface), findsOneWidget);
+      // v1.1.234 误设 Colors.transparent 导致面板透视后面海报；已移除，
+      // 背景回退到主题 bottomSheetTheme（不透明 Color(0xF21A1D23)）。
+      expect(sheet.backgroundColor, isNot(Colors.transparent),
+          reason: '面板背景必须不透明，不能是玻璃');
     });
   });
 

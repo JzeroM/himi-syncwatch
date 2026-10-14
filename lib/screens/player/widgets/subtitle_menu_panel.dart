@@ -3,7 +3,6 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 字幕选择面板（放进 [SelectorSidePanel] 右侧浮层，滚动由外层提供）。
 class SubtitleMenuPanel extends StatelessWidget {
@@ -70,20 +69,14 @@ class SubtitleMenuPanel extends StatelessWidget {
             },
           ),
         if (subtitleStreams.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               '当前视频无内嵌字幕轨道',
-              style: TextStyle(
-                color: FrostedSurface.darkInkWith(0.54),
-                fontSize: 13,
-              ),
+              style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
           ),
-        Divider(
-          color: FrostedSurface.darkInkWith(0.12),
-          height: 1,
-        ),
+        Divider(color: Colors.white24, height: 1),
         SideOptionRow(
           label: '加载本地字幕文件...',
           selected: false,

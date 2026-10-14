@@ -97,8 +97,7 @@ void main() {
     expect(picked, 2);
   });
 
-  testWidgets('当前集标题深色加粗、非当前集 onSurface70（白玻璃）',
-      (tester) async {
+  testWidgets('当前集标题白色加粗、非当前集 white70', (tester) async {
     await tester.pumpWidget(_host(
       EpisodeSelectPanel(
         episodes: _episodes(),
@@ -108,15 +107,13 @@ void main() {
     ));
     await tester.pump();
 
-    // 白玻璃面板内文字为 darkInk（0xE6000000，与 darkContentTheme onSurface 同源）
-    const darkOnSurface = Color(0xE6000000);
     final selected = tester.widget<Text>(
         find.byKey(const Key('playerEpisodeTitle_1')));
     final normal = tester.widget<Text>(
         find.byKey(const Key('playerEpisodeTitle_0')));
-    expect(selected.style?.color, darkOnSurface);
+    expect(selected.style?.color, Colors.white);
     expect(selected.style?.fontWeight, FontWeight.w600);
-    expect(normal.style?.color, darkOnSurface.withValues(alpha: 0.70));
+    expect(normal.style?.color, Colors.white70);
     expect(normal.style?.fontWeight, FontWeight.normal);
   });
 

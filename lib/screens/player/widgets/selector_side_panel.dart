@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 面板滚动行为：默认拖动设备只含 touch/stylus/trackpad（**不含 mouse**，
 /// 桌面端鼠标按下拖动列表不滚动），内容超视口时表现为「滚不动、显示
@@ -52,8 +51,8 @@ class SelectorSidePanel extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   title,
-                  style: TextStyle(
-                    color: FrostedSurface.darkInk,
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                   ),
@@ -111,9 +110,7 @@ class SideOptionRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected
-                      ? const Color(0xFF6366F1)
-                      : FrostedSurface.darkInk,
+                  color: selected ? const Color(0xFF6366F1) : Colors.white,
                   fontSize: 14,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                 ),

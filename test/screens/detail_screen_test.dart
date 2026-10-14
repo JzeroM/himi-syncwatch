@@ -16,7 +16,6 @@ import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -686,9 +685,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
-      // 居中 FrostedSurface 弹层（非 showMenu 的 PopupMenuItem 菜单）
+      // 居中 AlertDialog 弹层（非 showMenu 的 PopupMenuItem 菜单）
       expect(find.text('选择季'), findsOneWidget);
-      expect(find.byType(FrostedSurface), findsOneWidget);
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.byKey(const Key('seasonOption_1')), findsOneWidget);
       expect(find.byKey(const Key('seasonOption_2')), findsOneWidget);
       expect(find.byType(PopupMenuItem<int>), findsNothing);
@@ -699,7 +698,7 @@ void main() {
 
       expect(find.byKey(const Key('episodeCard_e3')), findsOneWidget);
       expect(find.byKey(const Key('episodeCard_e1')), findsNothing);
-      expect(find.byType(FrostedSurface), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
     });
 
     testWidgets('电影页不渲染分季区块', (tester) async {

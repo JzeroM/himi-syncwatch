@@ -11,7 +11,6 @@ import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:flutter/services.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 选中态图标/文字主色（柔和薄荷青，仅跟随水珠所在格的图标，水珠本体为透明玻璃）。
 const Color kNavBlobColor = Color(0xFF86E3D6);
@@ -365,9 +364,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
                         child: Row(
                           children: List.generate(_tabCount, (i) {
                             final selected = i == _activeIndex;
-                            final color = selected
-                                ? kNavBlobColor
-                                : FrostedSurface.darkInkWith(0.70);
+                            final color =
+                                selected ? kNavBlobColor : Colors.white70;
                             return Expanded(
                               child: TvFocusable(
                                 onTap: () => _select(i),

@@ -233,12 +233,11 @@ void main() {
     expect(_keyedWidget(tester), isNot(isA<DecoratedBox>()),
         reason: '白色装饰不再叠在镜片上（否则压制折射观感）');
 
-    // 青色只出现在选中图标/文字，不给水珠；
-    // 未选中图标为白玻璃深字（darkContentTheme onSurface 0xE6000000 @ 70%）
+    // 青色只出现在选中图标/文字，不给水珠
     expect(tester.widget<Icon>(find.byIcon(Icons.home)).color, kNavBlobColor);
     expect(
       tester.widget<Icon>(find.byIcon(Icons.dns_outlined)).color,
-      const Color(0xE6000000).withValues(alpha: 0.70),
+      Colors.white70,
     );
   });
 

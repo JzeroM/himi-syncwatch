@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 打开「视频版本偏好」设置面板（底部弹层，长按拖动 + 上移调整优先级）。
 Future<void> showVersionPreferenceSheet(BuildContext context, WidgetRef ref) {
@@ -11,13 +10,7 @@ Future<void> showVersionPreferenceSheet(BuildContext context, WidgetRef ref) {
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    elevation: 0,
-    builder: (_) => FrostedSurface(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      showShadow: false,
-      padding: const EdgeInsets.only(top: 4),
-      child: _VersionPreferenceSheet(initial: current),
-    ),
+    builder: (_) => _VersionPreferenceSheet(initial: current),
   );
 }
 
@@ -59,10 +52,15 @@ class _VersionPreferenceSheetState
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+        ),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -72,12 +70,12 @@ class _VersionPreferenceSheetState
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: FrostedSurface.darkInkWith(0.12),
+                color: Colors.white24,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 14, 20, 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -91,9 +89,7 @@ class _VersionPreferenceSheetState
                   ),
                   SizedBox(height: 6),
                   Text('长按拖动调整优先级',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: FrostedSurface.darkInkWith(0.54))),
+                      style: TextStyle(fontSize: 13, color: Colors.white54)),
                 ],
               ),
             ),

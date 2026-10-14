@@ -6,7 +6,6 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -71,14 +70,14 @@ class RoomMenuButton extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 12, bottom: 4),
+                const Padding(
+                  padding: EdgeInsets.only(left: 12, bottom: 4),
                   child: Text(
                     '房间',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
-                      color: FrostedSurface.darkInk,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -128,11 +127,7 @@ class RoomMenuButton extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Row(
             children: [
-              Icon(
-                icon,
-                size: 24,
-                color: FrostedSurface.darkInkWith(0.70),
-              ),
+              Icon(icon, size: 24, color: Colors.white70),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -140,24 +135,24 @@ class RoomMenuButton extends ConsumerWidget {
                   children: [
                     Text(
                       title,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: FrostedSurface.darkInk,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
-                        color: FrostedSurface.darkInkWith(0.60),
+                        color: Colors.white60,
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, size: 20, color: FrostedSurface.darkInkWith(0.38)),
+              const Icon(Icons.chevron_right, size: 20, color: Colors.white38),
             ],
           ),
         ),
@@ -171,100 +166,87 @@ class RoomMenuButton extends ConsumerWidget {
     // TV 防御性屏蔽（当前首页 TV 无房间入口；组件已预留 TV 分支，
     // 一旦接入顶栏不会出现输入框焦点卡死）
     final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
-    showGlassDialog(
+    showDialog(
       context: context,
-      builder: (dialogContext) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: Text(
-              '加入房间',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          tvExcludeEditable(
-            tvMode: tvMode,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: codeController,
-                  decoration: const InputDecoration(
-                    hintText: '粘贴房间码',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                  minLines: 1,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    hintText: '你的昵称',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      final result =
-                          await (qrScan?.call() ?? context.push<String>('/scan'));
-                      if (result == null || !context.mounted) return;
-                      final roomData = RoomCode.decode(result);
-                      if (roomData == null) {
-                        showAppToast(context, '扫码结果无效');
-                        return;
-                      }
-                      final name = nameController.text.trim();
-                      if (name.isEmpty) {
-                        // 弹窗保持打开，把码写回输入框，等昵称填好后点「加入」
-                        codeController.text = result;
-                        showAppToast(context, '已扫描到房间码，请填写昵称后加入');
-                        return;
-                      }
-                      Navigator.pop(dialogContext);
-                      context.push(
-                        '/player/_?roomCode=${Uri.encodeComponent(result)}&isHost=false&name=${Uri.encodeComponent(name)}',
-                      );
-                    },
-                    icon: const Icon(Icons.qr_code_scanner, size: 18),
-                    label: const Text('扫码加入'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('加入房间'),
+        content: tvExcludeEditable(
+          tvMode: tvMode,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('取消'),
+              TextField(
+                controller: codeController,
+                decoration: const InputDecoration(
+                  hintText: '粘贴房间码',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                minLines: 1,
               ),
-              FilledButton(
-                onPressed: () {
-                  final code = codeController.text.trim();
-                  final name = nameController.text.trim();
-                  if (code.isNotEmpty && name.isNotEmpty) {
-                    Navigator.pop(dialogContext);
-                    final roomData = RoomCode.decode(code);
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  hintText: '你的昵称',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final result =
+                        await (qrScan?.call() ?? context.push<String>('/scan'));
+                    if (result == null || !context.mounted) return;
+                    final roomData = RoomCode.decode(result);
                     if (roomData == null) {
-                      showAppToast(context, '房间码无效');
+                      showAppToast(context, '扫码结果无效');
                       return;
                     }
+                    final name = nameController.text.trim();
+                    if (name.isEmpty) {
+                      // 弹窗保持打开，把码写回输入框，等昵称填好后点「加入」
+                      codeController.text = result;
+                      showAppToast(context, '已扫描到房间码，请填写昵称后加入');
+                      return;
+                    }
+                    Navigator.pop(dialogContext);
                     context.push(
-                      '/player/_?roomCode=${Uri.encodeComponent(code)}&isHost=false&name=${Uri.encodeComponent(name)}',
+                      '/player/_?roomCode=${Uri.encodeComponent(result)}&isHost=false&name=${Uri.encodeComponent(name)}',
                     );
-                  }
-                },
-                child: const Text('加入'),
+                  },
+                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  label: const Text('扫码加入'),
+                ),
               ),
             ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final code = codeController.text.trim();
+              final name = nameController.text.trim();
+              if (code.isNotEmpty && name.isNotEmpty) {
+                Navigator.pop(dialogContext);
+                final roomData = RoomCode.decode(code);
+                if (roomData == null) {
+                  showAppToast(context, '房间码无效');
+                  return;
+                }
+                context.push(
+                  '/player/_?roomCode=${Uri.encodeComponent(code)}&isHost=false&name=${Uri.encodeComponent(name)}',
+                );
+              }
+            },
+            child: const Text('加入'),
           ),
         ],
       ),
@@ -301,56 +283,43 @@ class RoomMenuButton extends ConsumerWidget {
   Future<int?> _showTokenCountDialog(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController(text: '2');
     final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
-    return showGlassDialog<int>(
+    return showDialog<int>(
       context: context,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: Text(
-              '开房间',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          tvExcludeEditable(
-            tvMode: tvMode,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('房间最大人数', style: TextStyle(fontSize: 14)),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  autofocus: !tvMode,
-                ),
-              ],
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+      builder: (ctx) => AlertDialog(
+        title: const Text('开房间'),
+        content: tvExcludeEditable(
+          tvMode: tvMode,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final n = int.tryParse(controller.text.trim());
-                  if (n != null && n > 0 && n <= 100) {
-                    Navigator.pop(ctx, n);
-                  }
-                },
-                child: const Text('确定'),
+              const Text('房间最大人数', style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                autofocus: !tvMode,
               ),
             ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final n = int.tryParse(controller.text.trim());
+              if (n != null && n > 0 && n <= 100) {
+                Navigator.pop(ctx, n);
+              }
+            },
+            child: const Text('确定'),
           ),
         ],
       ),

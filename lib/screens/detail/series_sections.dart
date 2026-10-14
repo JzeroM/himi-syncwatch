@@ -4,7 +4,6 @@ import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 剧集详情页分季区块集合：选季下拉 + 该季剧集横卡 + 播出季季卡横排。
 ///
@@ -182,15 +181,13 @@ class _SeasonSelector extends StatelessWidget {
         children: [
           Text(
             currentTitle,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: FrostedSurface.darkInk,
+              color: Colors.white,
             ),
           ),
-          Icon(Icons.arrow_drop_down,
-              color: FrostedSurface.darkInkWith(0.70),
-              size: 22),
+          const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 22),
         ],
       ),
     );
@@ -346,9 +343,7 @@ class _SeasonSelector extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: 15,
-            color: selected
-                ? Colors.white
-                : FrostedSurface.darkInk,
+            color: selected ? Colors.white : Colors.white70,
             fontWeight: selected ? FontWeight.bold : FontWeight.normal,
           ),
         ),

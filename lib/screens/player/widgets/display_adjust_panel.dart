@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/screens/player/widgets/danmaku_style_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/style_slider_row.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_style_panel.dart';
-import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 「显示调节」组合面板：字幕段（大小/位置/延迟）+ 弹幕段
 /// （速度/大小/透明度），共用一个滚动容器（两段均为非滚动段落，
@@ -74,10 +73,7 @@ class DisplayAdjustPanel extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: Text(
               subtitleStyleDisabledHint,
-              style: TextStyle(
-                color: FrostedSurface.darkInkWith(0.54),
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           )
         else
@@ -94,10 +90,7 @@ class DisplayAdjustPanel extends StatelessWidget {
             onDelayChanged: onSubtitleDelayChanged,
             onReset: onSubtitleReset,
           ),
-        Divider(
-          color: FrostedSurface.darkInkWith(0.12),
-          height: 1,
-        ),
+        const Divider(color: Colors.white24, height: 1),
         panelSectionHeader('弹幕'),
         DanmakuStylePanel(
           speed: danmakuSpeed,

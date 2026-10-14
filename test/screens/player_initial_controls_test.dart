@@ -372,4 +372,56 @@ void main() {
       );
     });
   });
+
+  // ---- mdk end 事件可信度门（v1.1.240 拖进度条误切集修复） ----
+
+  group('shouldHandleEngineEnd（引擎 end 事件可信度判定）', () {
+    test('真实播完（位置≈时长）→ 可信', () {
+      expect(
+        PlayerScreen.shouldHandleEngineEnd(
+            seekInProgress: false, positionMs: 60000, durationMs: 60000),
+        isTrue,
+      );
+      expect(
+        PlayerScreen.shouldHandleEngineEnd(
+            seekInProgress: false, positionMs: 59500, durationMs: 60000),
+        isTrue,
+        reason: '距结尾 ≤1s 仍视为真实播完（引擎时钟抖动容差）',
+      );
+    });
+
+    test('seek/拖动进行中 → 忽略（mdk keyframe seek 误报 end）', () {
+      expect(
+        PlayerScreen.shouldHandleEngineEnd(
+            seekInProgress: true, positionMs: 60000, durationMs: 60000),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.shouldHandleEngineEnd(
+            seekInProgress: true, positionMs: 30000, durationMs: 60000),
+        isFalse,
+      );
+    });
+
+    test('位置远离结尾（拖到中段的误报 end）→ 忽略', () {
+      expect(
+        PlayerScreen.shouldHandleEngineEnd(
+            seekInProgress: false, positionMs: 30000, durationMs: 60000),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.shouldHandleEngineEnd(
+            seekInProgress: false, positionMs: 0, durationMs: 60000),
+        isFalse,
+      );
+    });
+
+    test('时长未就绪（0）无法校验 → 视作误报忽略', () {
+      expect(
+        PlayerScreen.shouldHandleEngineEnd(
+            seekInProgress: false, positionMs: 0, durationMs: 0),
+        isFalse,
+      );
+    });
+  });
 }
