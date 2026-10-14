@@ -18,6 +18,7 @@ class GlassContainer extends ConsumerWidget {
     this.margin,
     this.borderRadius = const BorderRadius.all(Radius.circular(20)),
     this.tint = GlassConfig.panelTint,
+    this.fallbackColor = GlassConfig.fallbackColor,
     this.showShadow = true,
   });
 
@@ -26,6 +27,10 @@ class GlassContainer extends ConsumerWidget {
   final EdgeInsetsGeometry? margin;
   final BorderRadius borderRadius;
   final Color tint;
+
+  /// 关闭玻璃后的降级底色（弹层传 [GlassConfig.popupFallback]
+  /// 保持 94% 不透明压住背景）。
+  final Color fallbackColor;
 
   /// 是否绘制悬浮投影（顶栏等贴边胶囊传 false，避免黑影）。
   final bool showShadow;
@@ -39,7 +44,7 @@ class GlassContainer extends ConsumerWidget {
 
     Widget content = DecoratedBox(
       decoration: BoxDecoration(
-        color: glassEnabled ? null : GlassConfig.fallbackColor,
+        color: glassEnabled ? null : fallbackColor,
         gradient: glassEnabled
             ? LinearGradient(
                 begin: Alignment.topCenter,

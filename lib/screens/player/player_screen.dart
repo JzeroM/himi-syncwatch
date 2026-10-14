@@ -32,6 +32,7 @@ import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/server_route_service.dart';
 import 'package:uuid/uuid.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
@@ -745,6 +746,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 进度上报触发续播栏刷新的节流时刻（≤1 次/2s）。
   DateTime? _lastProgressBump;
+
+  // ---- 播放中线路故障转移（v1.1.242）----
+  /// 当前播放会话连续上报失败计数（成功清零）。
+  int _reportFailCount = 0;
+
+  /// 本次播放是否已自动切过线路（单次播放只切 1 次，换集重置）。
+  bool _failoverAttempted = false;
+
+  /// failover 进行中守卫（防并发重入）。
+  bool _failoverInFlight = false;
 
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
@@ -1760,6 +1771,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _currentEpisodeIndex = episodeIndex;
       // 新集开播：解除上一集的播完门，允许本集再触发自动下一集
       _endHandled = false;
+      // 新集允许一次新的自动故障转移
+      _failoverAttempted = false;
+      _reportFailCount = 0;
     });
     // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
     if (mounted && _danmakuOn) unawaited(_loadDanmaku());
@@ -2686,6 +2700,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _volume = restore * 100;
           _volumeNotifier.value = _volume;
         }
+        // 播放中线路故障转移（v1.1.242）：取流失败先尝试切可达线路复播
+        unawaited(_maybeFailover('取流'));
         showAppToast(context, '播放失败: $e');
       }
       return false;
@@ -2912,6 +2928,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (event.newValue.test(AdapterMediaStatus.invalid)) {
         LogService().log('Player', '播放错误: ${event.newValue}');
         _addBroadcastMessage('播放出错');
+        // 播放中线路故障转移（v1.1.242）
+        unawaited(_maybeFailover('播放'));
       }
 
       // 卡顿边沿检测：buffering 进入 / buffered 或 stalled 退出
@@ -4049,9 +4067,48 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     // 进度变化即刷新续播栏（节流 ≤1 次/2s）
     if (ok && mounted) {
+      _reportFailCount = 0;
       // 首个成功上报后解除「重播乐观隐藏」，交回服务器真相（自动回填新进度）
       _clearResumeHidden(id);
       _bumpResumeThrottled();
+    } else if (!ok) {
+      _reportFailCount++;
+      if (_reportFailCount >= 2) {
+        unawaited(_maybeFailover('进度上报'));
+      }
+    }
+  }
+
+  /// 播放中故障转移（v1.1.242）：API 报错/取流失败/流无效时
+  /// 若当前线路不可达则切到延迟最低可达线路并复播。
+  /// 单次播放只自动切 1 次（`_failoverAttempted`，换集重置）。
+  Future<void> _maybeFailover(String reason) async {
+    if (!mounted || _failoverAttempted || _failoverInFlight) return;
+    // 仅房主/单人模式处理；观众跟随房主
+    if (!_isHost && widget.roomCode != null) return;
+    final config = ref.read(embyConfigForProvider(widget.serverId));
+    if (config == null || !config.autoFailover || config.routes.isEmpty) {
+      return;
+    }
+    _failoverInFlight = true;
+    try {
+      final switched = await ref
+          .read(serverRouteServiceProvider)
+          .failoverIfNeeded(config);
+      if (!mounted || switched == null) return;
+      _failoverAttempted = true;
+      _reportFailCount = 0;
+      LogService().log(
+          'Player', '$reason失败，已自动切换到线路: ${switched.effectiveUrl}');
+      showAppToast(context, '当前线路不可达，已自动切换');
+      // 用切换后的 service 复播（显式重跑，不走 _switchToEpisode）
+      final startMs = _player.position;
+      await _loadStream(
+        serverId: widget.serverId,
+        startMs: startMs,
+      );
+    } finally {
+      _failoverInFlight = false;
     }
   }
 

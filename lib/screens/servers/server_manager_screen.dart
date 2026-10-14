@@ -9,6 +9,8 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/server_stats_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
+import 'package:himi_syncwatch/screens/servers/route_manager_sheet.dart';
+import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
@@ -189,6 +191,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               stats: statsMap[server.id],
               onTap: () => _openServer(server),
               onEdit: () => _showEditServerDialog(server),
+              onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onDelete: () => _deleteServer(server, isActive),
               // TV 模式：隐藏拖拽把手（布局模式用方向键移动）
               dragHandle: tvMode
@@ -241,6 +244,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               stats: statsMap[server.id],
               onTap: () => _openServer(server),
               onEdit: () => _showEditServerDialog(server),
+              onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onDelete: () => _deleteServer(server, isActive),
             ),
           ),
@@ -691,37 +695,58 @@ class _AddServerForm extends ConsumerStatefulWidget {
 }
 
 class _AddServerFormState extends ConsumerState<_AddServerForm> {
-  final _urlController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _hostController = TextEditingController();
+  final _pathController = TextEditingController();
+  final _portController = TextEditingController(text: '8096');
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
+  final _remarkController = TextEditingController();
+  bool _useHttps = false;
   bool _isLoading = false;
   String? _error;
   String? _serverName;
 
   @override
   void dispose() {
-    _urlController.dispose();
+    _nameController.dispose();
+    _hostController.dispose();
+    _pathController.dispose();
+    _portController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
-    _nameController.dispose();
+    _remarkController.dispose();
     super.dispose();
   }
 
   Future<void> _pingAndLogin() async {
+    final url = buildServerUrl(
+      host: _hostController.text,
+      port: _portController.text,
+      path: _pathController.text,
+      useHttps: _useHttps,
+    );
+    if (url == null) {
+      setState(() => _error = '请输入有效的服务器地址（ip 或域名）');
+      return;
+    }
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
+      // 备注名优先，其次备注信息（备注字段）
+      final name = _nameController.text.trim().isNotEmpty
+          ? _nameController.text.trim()
+          : _remarkController.text.trim();
       await ref.read(embySetupServiceProvider).addAndActivate(
-            serverUrl: _urlController.text,
+            serverUrl: url,
             username: _usernameController.text,
             password: _passwordController.text,
-            serverName: _nameController.text,
-            onServerInfo: (name) {
-              if (mounted) setState(() => _serverName = name);
+            serverName: name.isEmpty ? null : name,
+            onServerInfo: (srvName) {
+              if (mounted) setState(() => _serverName = srvName);
             },
           );
 
@@ -739,82 +764,149 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_serverName != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                '已连接: $_serverName',
-                style: const TextStyle(
-                  color: Colors.green,
-                  fontWeight: FontWeight.bold,
+      child: GlassContainer(
+        borderRadius: BorderRadius.circular(20),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_serverName != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '已连接: $_serverName',
+                  style: const TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
+            _formField(
+              label: '资源名称',
+              controller: _nameController,
+              hintText: '请输入资源名称（可选）',
             ),
-          TextField(
-            controller: _urlController,
-            decoration: const InputDecoration(
-              labelText: '服务器地址',
-              hintText: 'https://emby.example.com:8096',
-              prefixIcon: Icon(Icons.dns),
-              border: OutlineInputBorder(),
-              isDense: true,
+            _formField(
+              label: '服务器地址',
+              controller: _hostController,
+              hintText: '例如：192.168.1.100',
             ),
-            keyboardType: TextInputType.url,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: '备注名称（可选）',
-              hintText: '如：家里NAS',
-              prefixIcon: Icon(Icons.label),
-              border: OutlineInputBorder(),
-              isDense: true,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _formField(
+                    label: '路径（可选）',
+                    controller: _pathController,
+                    hintText: 'Path（可选）',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _formField(
+                    label: '端口',
+                    controller: _portController,
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _usernameController,
-            decoration: const InputDecoration(
-              labelText: '用户名',
-              prefixIcon: Icon(Icons.person),
-              border: OutlineInputBorder(),
-              isDense: true,
+            _switchRow(
+              label: '使用 HTTPS',
+              value: _useHttps,
+              onChanged: (v) => setState(() => _useHttps = v),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _passwordController,
-            decoration: const InputDecoration(
-              labelText: '密码',
-              prefixIcon: Icon(Icons.lock),
-              border: OutlineInputBorder(),
-              isDense: true,
+            _formField(
+              label: '用户名',
+              controller: _usernameController,
+              hintText: '输入用户名',
             ),
-            obscureText: true,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(_error!,
-                style: const TextStyle(color: Colors.red, fontSize: 12)),
+            _formField(
+              label: '密码（可选）',
+              controller: _passwordController,
+              hintText: '输入密码（可选）',
+              obscure: true,
+            ),
+            _formField(
+              label: '备注',
+              controller: _remarkController,
+              hintText: '输入备注信息（可选）',
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!,
+                  style: const TextStyle(color: Colors.red, fontSize: 12)),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 44,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _pingAndLogin,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('连接并登录'),
+              ),
+            ),
           ],
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 44,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _pingAndLogin,
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('连接并登录'),
+        ),
+      ),
+    );
+  }
+
+  Widget _formField({
+    required String label,
+    required TextEditingController controller,
+    String? hintText,
+    bool obscure = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: const TextStyle(fontSize: 13, color: Colors.white54)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: controller,
+            obscureText: obscure,
+            style: const TextStyle(fontSize: 15),
+            decoration: InputDecoration(
+              hintText: hintText,
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.06),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _switchRow({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w500)),
+          ),
+          Switch(value: value, onChanged: onChanged),
         ],
       ),
     );

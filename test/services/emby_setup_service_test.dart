@@ -19,6 +19,9 @@ class _RecordingAuthService extends FakeEmbyAuthService {
     required String username,
     required String id,
     required String accessToken,
+    List<Map<String, dynamic>> routes = const [],
+    String? activeRouteUrl,
+    bool autoFailover = true,
   }) async {
     savedSessions.add({
       'serverId': serverId,

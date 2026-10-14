@@ -67,7 +67,8 @@ final embyServiceFactoryProvider =
     final service = EmbyService();
     if (server.isAuthenticated) {
       service.configure(
-        serverUrl: server.serverUrl,
+        serverUrl: server.effectiveUrl,
+        mediaUrl: server.mediaUrl,
         accessToken: server.accessToken!,
         userId: server.userId!,
         serverId: server.serverId,

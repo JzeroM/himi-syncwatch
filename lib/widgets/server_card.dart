@@ -131,11 +131,15 @@ class ServerMoreButton extends ConsumerStatefulWidget {
     required this.menuKey,
     required this.onDelete,
     this.onEdit,
+    this.onSwitchLine,
   });
 
   final String menuKey;
   final VoidCallback? onEdit;
   final VoidCallback onDelete;
+
+  /// 切换线路：打开线路管理弹层。
+  final VoidCallback? onSwitchLine;
 
   @override
   ConsumerState<ServerMoreButton> createState() => _ServerMoreButtonState();
@@ -168,6 +172,7 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
         anchorOffset: offset,
         anchorSize: size,
         onEdit: widget.onEdit,
+        onSwitchLine: widget.onSwitchLine,
         onDelete: () {
           onClose();
           widget.onDelete();
@@ -227,7 +232,7 @@ class _PanelAction {
   final bool danger;
 }
 
-/// 按钮下方展开的不透明操作面板（实色底 + 淡入下滑动画）。
+/// 按钮下方展开的玻璃操作面板（94% 不透明着色膜 + 淡入下滑动画）。
 class _ServerActionPanel extends StatefulWidget {
   const _ServerActionPanel({
     required this.anchorOffset,
@@ -235,11 +240,13 @@ class _ServerActionPanel extends StatefulWidget {
     required this.onDelete,
     required this.onClose,
     this.onEdit,
+    this.onSwitchLine,
   });
 
   final Offset anchorOffset;
   final Size anchorSize;
   final VoidCallback? onEdit;
+  final VoidCallback? onSwitchLine;
   final VoidCallback onDelete;
   final VoidCallback onClose;
 
@@ -275,6 +282,12 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
     switch (action.value) {
       case 'edit':
         widget.onEdit?.call();
+      case 'switchLine':
+        if (widget.onSwitchLine != null) {
+          widget.onSwitchLine!();
+        } else {
+          showAppToast(context, '功能开发中');
+        }
       case 'delete':
         widget.onDelete();
       default:
@@ -346,41 +359,34 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
                 begin: const Offset(0, -0.06),
                 end: Offset.zero,
               ).animate(curved),
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  width: _panelWidth,
-                  decoration: BoxDecoration(
-                    // 实色不透明底（区别于玻璃面板）
-                    color: const Color(0xFF252830),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0x22FFFFFF)),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x99000000),
-                        blurRadius: 18,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var i = 0; i < actions.length; i++) ...[
-                        if (i == actions.length - 1)
-                          const Divider(
-                            height: 1,
-                            indent: 16,
-                            endIndent: 16,
-                            color: Color(0x1AFFFFFF),
+              child: SizedBox(
+                width: _panelWidth,
+                child: GlassContainer(
+                  borderRadius: BorderRadius.circular(16),
+                  tint: GlassConfig.popupTint,
+                  fallbackColor: GlassConfig.popupFallback,
+                  showShadow: false,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < actions.length; i++) ...[
+                          if (i == actions.length - 1)
+                            const Divider(
+                              height: 1,
+                              indent: 16,
+                              endIndent: 16,
+                              color: Color(0x1AFFFFFF),
+                            ),
+                          _PanelItem(
+                            action: actions[i],
+                            onTap: () => _onSelected(actions[i]),
                           ),
-                        _PanelItem(
-                          action: actions[i],
-                          onTap: () => _onSelected(actions[i]),
-                        ),
+                        ],
                       ],
-                      const SizedBox(height: 4),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -437,6 +443,7 @@ class ServerListCard extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     this.onEdit,
+    this.onSwitchLine,
     this.dragHandle,
   });
 
@@ -446,6 +453,7 @@ class ServerListCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onEdit;
   final VoidCallback onDelete;
+  final VoidCallback? onSwitchLine;
 
   /// 拖拽把手（由外层 ReorderableDragStartListener 包装后传入；TV 传 null）。
   final Widget? dragHandle;
@@ -524,6 +532,7 @@ class ServerListCard extends StatelessWidget {
                       ServerMoreButton(
                         menuKey: 'serverMore_${server.id}',
                         onEdit: onEdit,
+                        onSwitchLine: onSwitchLine,
                         onDelete: onDelete,
                       ),
                       if (dragHandle != null) dragHandle!,
@@ -550,6 +559,7 @@ class ServerGridCard extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     this.onEdit,
+    this.onSwitchLine,
   });
 
   final EmbyServerConfig server;
@@ -558,6 +568,7 @@ class ServerGridCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onEdit;
   final VoidCallback onDelete;
+  final VoidCallback? onSwitchLine;
 
   @override
   Widget build(BuildContext context) {
@@ -615,6 +626,7 @@ class ServerGridCard extends StatelessWidget {
                         ServerMoreButton(
                           menuKey: 'serverMore_${server.id}',
                           onEdit: onEdit,
+                          onSwitchLine: onSwitchLine,
                           onDelete: onDelete,
                         ),
                       ],

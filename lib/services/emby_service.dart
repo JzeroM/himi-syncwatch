@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 class EmbyService {
   late Dio _dio;
   String? _serverUrl;
+  String? _mediaUrl;
   String? _accessToken;
   String? _userId;
   String? _serverId;
@@ -25,17 +26,23 @@ class EmbyService {
   }
 
   String? get serverUrl => _serverUrl;
+  String? get mediaUrl => _mediaUrl ?? _serverUrl;
   String? get accessToken => _accessToken;
   String? get serverId => _serverId;
 
+  /// [serverUrl] API 基地址（激活线路；反代线路时为反代 URL）。
+  /// [mediaUrl] 媒体基地址（取流/字幕/图片）：反代线路激活时传主线路
+  /// URL（媒体直连省反代带宽），缺省与 [serverUrl] 相同。
   void configure({
     required String serverUrl,
     required String accessToken,
     required String userId,
     required String serverId,
+    String? mediaUrl,
     String deviceId = 'himi-001',
   }) {
     _serverUrl = serverUrl;
+    _mediaUrl = mediaUrl;
     _accessToken = accessToken;
     _userId = userId;
     _serverId = serverId;
@@ -789,8 +796,9 @@ class EmbyService {
 
   String getStreamUrl(String itemId,
       {String? mediaSourceId, int? subtitleStreamIndex}) {
+    final base = '${mediaUrl ?? _serverUrl}';
     if (subtitleStreamIndex != null) {
-      final base = '$_serverUrl/Videos/$itemId/stream';
+      final streamBase = '$base/Videos/$itemId/stream';
       final params = <String>[
         'SubtitleStreamIndex=$subtitleStreamIndex',
         'SubtitleMethod=HlsEmbed',
@@ -798,13 +806,13 @@ class EmbyService {
       if (mediaSourceId != null) {
         params.add('MediaSourceId=$mediaSourceId');
       }
-      return '$base?${params.join('&')}';
+      return '$streamBase?${params.join('&')}';
     }
-    final base = '$_serverUrl/Videos/$itemId/stream?static=true';
+    final streamBase = '$base/Videos/$itemId/stream?static=true';
     if (mediaSourceId != null) {
-      return '$base&MediaSourceId=$mediaSourceId';
+      return '$streamBase&MediaSourceId=$mediaSourceId';
     }
-    return base;
+    return streamBase;
   }
 
   /// 获取单个字幕轨道的直接下载 URL（用于 fvp 原生字幕加载）
@@ -815,7 +823,7 @@ class EmbyService {
     String format = 'srt',
   }) {
     var url =
-        '$_serverUrl/Videos/$itemId/Subtitles/$subtitleIndex/Stream.$format';
+        '${mediaUrl ?? _serverUrl}/Videos/$itemId/Subtitles/$subtitleIndex/Stream.$format';
     if (mediaSourceId != null) {
       url += '?MediaSourceId=$mediaSourceId';
     }
@@ -844,7 +852,7 @@ class EmbyService {
   }
 
   String getImageUrl(String itemId, {String type = 'Primary'}) {
-    return '$_serverUrl/Items/$itemId/Images/$type';
+    return '${mediaUrl ?? _serverUrl}/Items/$itemId/Images/$type';
   }
 }
 

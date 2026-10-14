@@ -61,6 +61,9 @@ class EmbyAuthService {
     required String username,
     required String id,          // 新增：本地 UUID，用于服务器去重
     required String accessToken,
+    List<Map<String, dynamic>> routes = const [],
+    String? activeRouteUrl,
+    bool autoFailover = true,
   }) async {
     final data = {
       'id': id,                // 新增：保存 id 字段，防止重启后全勾选
@@ -70,8 +73,30 @@ class EmbyAuthService {
       'userId': userId,
       'username': username,
       'accessToken': accessToken,
+      if (routes.isNotEmpty) 'routes': routes,
+      if (activeRouteUrl != null) 'activeRouteUrl': activeRouteUrl,
+      'autoFailover': autoFailover,
     };
     await _secureStorage.write(key: 'session_$serverId', value: jsonEncode(data));
+  }
+
+  /// 线路字段更新落盘（读-改-写，保留其余会话字段）。
+  Future<void> updateSessionRoutes({
+    required String serverId,
+    required List<Map<String, dynamic>> routes,
+    String? activeRouteUrl,
+    required bool autoFailover,
+  }) async {
+    final session = await loadSession(serverId);
+    if (session == null) return;
+    session['routes'] = routes;
+    if (activeRouteUrl != null) {
+      session['activeRouteUrl'] = activeRouteUrl;
+    } else {
+      session.remove('activeRouteUrl');
+    }
+    session['autoFailover'] = autoFailover;
+    await _secureStorage.write(key: 'session_$serverId', value: jsonEncode(session));
   }
 
   Future<void> deleteSession(String serverId) async {

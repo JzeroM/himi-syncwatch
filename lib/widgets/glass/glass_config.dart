@@ -46,6 +46,13 @@ class GlassConfig {
   /// 无模糊/折射；配合 rimColor 白描边定界）。
   static const Color fallbackColor = Color(0x1A1A1D23);
 
+  /// 弹层（操作面板/底部 sheet）着色：94% 不透明深色膜——弹层需压住
+  /// 背景内容保证可读，不随全局降级改淡。
+  static const Color popupTint = Color(0xF01A1D23);
+
+  /// 弹层关闭玻璃后的降级底（与 [popupTint] 同值，保持 94% 不透明）。
+  static const Color popupFallback = Color(0xF01A1D23);
+
   /// 高光描边基色（约 30% 白）。
   static const Color rimColor = Color(0x4DFFFFFF);
 

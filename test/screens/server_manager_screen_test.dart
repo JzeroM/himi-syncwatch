@@ -338,7 +338,7 @@ void main() {
         reason: '非激活服务器面板也应有编辑项');
   });
 
-  testWidgets('点击占位项「切换线路」显示「功能开发中」（v1.1.237）', (tester) async {
+  testWidgets('点击「切换线路」打开线路管理弹层（v1.1.242）', (tester) async {
     await _pumpScreen(
       tester,
       servers: [
@@ -352,8 +352,10 @@ void main() {
     await tester.tap(find.text('切换线路'));
     await tester.pumpAndSettle();
 
-    expect(find.text('功能开发中'), findsOneWidget);
-    await _settleSnackbars(tester);
+    // 弹层内容：主线路 tile + 添加线路按钮
+    expect(find.byKey(const Key('routeTile_main')), findsOneWidget);
+    expect(find.byKey(const Key('addRouteButton')), findsOneWidget);
+    expect(find.text('功能开发中'), findsNothing);
   });
 
   testWidgets('点击面板外空白关闭面板（v1.1.237）', (tester) async {

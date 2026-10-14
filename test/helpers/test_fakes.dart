@@ -100,10 +100,32 @@ class FakeEmbyAuthService extends EmbyAuthService {
     required String username,
     required String id,
     required String accessToken,
+    List<Map<String, dynamic>> routes = const [],
+    String? activeRouteUrl,
+    bool autoFailover = true,
   }) async {}
 
   @override
   Future<void> deleteSession(String serverId) async {}
+
+  /// 最近一次 updateSessionRoutes 参数（多线路落盘断言）。
+  List<Map<String, dynamic>>? lastSessionRoutes;
+  String? lastActiveRouteUrl;
+  bool? lastAutoFailover;
+  int updateSessionRoutesCalls = 0;
+
+  @override
+  Future<void> updateSessionRoutes({
+    required String serverId,
+    required List<Map<String, dynamic>> routes,
+    String? activeRouteUrl,
+    required bool autoFailover,
+  }) async {
+    updateSessionRoutesCalls++;
+    lastSessionRoutes = routes;
+    lastActiveRouteUrl = activeRouteUrl;
+    lastAutoFailover = autoFailover;
+  }
 }
 
 /// 不发起真实网络请求的 Emby 服务。
