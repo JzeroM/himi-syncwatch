@@ -42,8 +42,9 @@ class GlassConfig {
       ? barTintSoftIos
       : barTintSoft;
 
-  /// 关闭玻璃后的降级纯色。
-  static const Color fallbackColor = Color(0xF01A1D24);
+  /// 关闭玻璃后的半透明着色底（约 90% 透明，仅 10% 深色膜，
+  /// 无模糊/折射；配合 rimColor 白描边定界）。
+  static const Color fallbackColor = Color(0x1A1A1D23);
 
   /// 高光描边基色（约 30% 白）。
   static const Color rimColor = Color(0x4DFFFFFF);

@@ -8,8 +8,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 ///
 /// 开启时：以 liquid_glass_widgets 的真折射玻璃为底（磨砂/厚度/色散等
 /// 参数由设置页滑杆经 GlassTheme 全局调节），叠加本层的半透明着色渐变、
-/// 高光描边与悬浮投影；设置中关闭 `glassUi` 后降级为不透明纯色，
-/// 不渲染任何玻璃折射。调用方 API 与旧版保持一致。
+/// 高光描边与悬浮投影；设置中关闭 `glassUi` 后降级为约 90% 透明的
+/// 着色底（无模糊/折射），调用方 API 与旧版保持一致。
 class GlassContainer extends ConsumerWidget {
   const GlassContainer({
     super.key,

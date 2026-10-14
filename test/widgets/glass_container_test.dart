@@ -39,7 +39,7 @@ void main() {
       expect(find.byType(ClipRRect), findsOneWidget);
     });
 
-    testWidgets('关闭玻璃时降级为纯色，不渲染任何玻璃层', (tester) async {
+    testWidgets('关闭玻璃时降级为约 90% 透明着色底，不渲染任何玻璃层', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -59,6 +59,8 @@ void main() {
       );
       final box = decoration.decoration as BoxDecoration;
       expect(box.color, GlassConfig.fallbackColor);
+      expect(box.color!.a, moreOrLessEquals(0.10, epsilon: 0.01),
+          reason: '关闭玻璃后底色约 90% 透明（仅 10% 深色膜），不要黑底');
       expect(box.gradient, isNull);
     });
 
@@ -174,7 +176,7 @@ void main() {
       );
     });
 
-    testWidgets('关闭玻璃时降级为纯色条', (tester) async {
+    testWidgets('关闭玻璃时降级为约 90% 透明着色条', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassBackdrop(),
@@ -183,6 +185,17 @@ void main() {
       );
       expect(find.byType(lg.GlassContainer), findsNothing);
       expect(find.byType(BackdropFilter), findsNothing);
+
+      final decoration = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: find.byType(GlassBackdrop),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      final box = decoration.decoration as BoxDecoration;
+      expect(box.color, GlassConfig.fallbackColor);
+      expect(box.color!.a, moreOrLessEquals(0.10, epsilon: 0.01),
+          reason: '顶栏关闭玻璃后同样约 90% 透明，不要黑底');
     });
   });
 
