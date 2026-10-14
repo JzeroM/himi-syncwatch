@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -80,6 +81,14 @@ Future<ProviderContainer> _pumpScreen(
 
 Future<void> _settleSnackbars(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 5));
+  await tester.pumpAndSettle();
+}
+
+/// 模拟 TV 遥控器长按 OK 键（按下 → 等 600ms → 松开）。
+Future<void> _pressLongOk(WidgetTester tester) async {
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+  await tester.pump(const Duration(milliseconds: 600));
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
   await tester.pumpAndSettle();
 }
 
@@ -222,7 +231,7 @@ void main() {
     expect(find.textContaining('ms'), findsNWidgets(2));
   });
 
-  testWidgets('「上移」菜单重排并持久化顺序（v1.1.236）', (tester) async {
+  testWidgets('列表拖拽把手重排并持久化顺序（v1.1.237）', (tester) async {
     final auth = FakeEmbyAuthService();
     final container = await _pumpScreen(
       tester,
@@ -233,18 +242,32 @@ void main() {
       ],
     );
 
-    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('上移'));
+    // 单条连续手势：按下第二张卡的拖拽把手 → 拖到第一张卡把手上
+    final handle = find.descendant(
+      of: find.byKey(const ValueKey('serverTile_srv_b')),
+      matching: find.byIcon(Icons.drag_handle),
+    );
+    final firstHandle = find.descendant(
+      of: find.byKey(const ValueKey('serverTile_srv_a')),
+      matching: find.byIcon(Icons.drag_handle),
+    );
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.moveBy(const Offset(0, -20));
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.moveTo(tester.getCenter(firstHandle));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
     await tester.pumpAndSettle();
 
     final ids =
         container.read(embyServerListProvider).map((s) => s.id).toList();
-    expect(ids, ['srv_b', 'srv_a']);
+    expect(ids, ['srv_b', 'srv_a'],
+        reason: '拖拽把手应可重排列表顺序');
     expect(auth.lastSavedServerOrder, ['srv_b', 'srv_a']);
   });
 
-  testWidgets('网格视图「上移」菜单同样重排（v1.1.236）', (tester) async {
+  testWidgets('网格长按拖拽重排并持久化顺序（v1.1.237）', (tester) async {
     final auth = FakeEmbyAuthService();
     final container = await _pumpScreen(
       tester,
@@ -256,15 +279,134 @@ void main() {
       ],
     );
 
-    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('上移'));
+    // 单条连续手势：长按第二张网格卡 → 拖到第一张卡上
+    final fromCard = find.byKey(const ValueKey('serverGridTile_srv_b'));
+    final toCard = find.byKey(const ValueKey('serverGridTile_srv_a'));
+    final gesture = await tester.startGesture(tester.getCenter(fromCard));
+    await tester.pump(const Duration(milliseconds: 600)); // 超过长按阈值
+    await gesture.moveTo(tester.getCenter(toCard));
+    await tester.pump();
+    await gesture.up();
     await tester.pumpAndSettle();
 
     final ids =
         container.read(embyServerListProvider).map((s) => s.id).toList();
-    expect(ids, ['srv_b', 'srv_a']);
+    expect(ids, ['srv_b', 'srv_a'],
+        reason: '网格长按拖拽应可重排顺序');
     expect(auth.lastSavedServerOrder, ['srv_b', 'srv_a']);
+  });
+
+  testWidgets('面板展开含占位项且无上移（v1.1.237）', (tester) async {
+    await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.text('切换线路'), findsOneWidget);
+    expect(find.text('更换图标'), findsOneWidget);
+    expect(find.text('资源统计'), findsOneWidget);
+    expect(find.text('资源设置'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    expect(find.text('上移'), findsNothing, reason: '上移项已移除');
+  });
+
+  testWidgets('非激活服务器面板也有编辑项（v1.1.237）', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+    container.read(embyConfigProvider.notifier).setConfig(
+          container.read(embyServerListProvider).first,
+        );
+    await tester.pump();
+
+    // srv_b 非激活，其面板仍应有编辑
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('编辑'), findsOneWidget,
+        reason: '非激活服务器面板也应有编辑项');
+  });
+
+  testWidgets('点击占位项「切换线路」显示「功能开发中」（v1.1.237）', (tester) async {
+    await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('切换线路'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('功能开发中'), findsOneWidget);
+    await _settleSnackbars(tester);
+  });
+
+  testWidgets('点击面板外空白关闭面板（v1.1.237）', (tester) async {
+    await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+    await tester.pumpAndSettle();
+    expect(find.text('删除'), findsOneWidget);
+
+    // 点击屏幕左上角空白处（barrier 区域）
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    expect(find.text('删除'), findsNothing, reason: '点击外部应关闭面板');
+  });
+
+  testWidgets('网格卡用户名与头像同行、名称在下一行（v1.1.237）', (tester) async {
+    await _pumpScreen(
+      tester,
+      settings: const AppSettings(serverViewMode: 'grid'),
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    final avatarFinder = find.descendant(
+      of: find.byKey(const ValueKey('serverGridTile_srv_a')),
+      matching: find.byType(ServerAvatar),
+    );
+    final usernameFinder = find.descendant(
+      of: find.byKey(const ValueKey('serverGridTile_srv_a')),
+      matching: find.text('user'),
+    );
+    final labelFinder = find.descendant(
+      of: find.byKey(const ValueKey('serverGridTile_srv_a')),
+      matching: find.text('家庭NAS'),
+    );
+
+    final avatarCenter = tester.getCenter(avatarFinder);
+    final usernameCenter = tester.getCenter(usernameFinder);
+    final labelCenter = tester.getCenter(labelFinder);
+
+    expect((avatarCenter.dy - usernameCenter.dy).abs(), lessThan(8),
+        reason: '用户名应与头像在同一行（y 坐标接近）');
+    expect(labelCenter.dy, greaterThan(usernameCenter.dy),
+        reason: '服务器名称应在用户名下方');
   });
 
   testWidgets('刷新按钮重测延迟与计数（v1.1.236）', (tester) async {
@@ -294,22 +436,6 @@ void main() {
 
     expect(factoryCalls, greaterThan(callsAfterLoad),
         reason: '刷新应重新走服务工厂测延迟/拉计数');
-  });
-
-  testWidgets('首张卡不显示「上移」（v1.1.236）', (tester) async {
-    await _pumpScreen(
-      tester,
-      servers: [
-        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
-        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
-      ],
-    );
-
-    await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('删除'), findsOneWidget);
-    expect(find.text('上移'), findsNothing);
   });
 
   testWidgets('扫码图标进入手机配置页（仅 TV 模式显示）', (tester) async {
@@ -350,5 +476,75 @@ void main() {
 
     expect(find.text('连接并登录'), findsOneWidget);
     expect(find.text('服务器地址'), findsOneWidget);
+  });
+
+  testWidgets('TV 长按 OK 进入布局模式，方向键移动，OK 保存退出（v1.1.237）',
+      (tester) async {
+    final auth = FakeEmbyAuthService();
+    final container = await _pumpScreen(
+      tester,
+      auth: auth,
+      settings: const AppSettings(tvMode: true),
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    // 第一张卡 autofocus 已聚焦，长按 OK 进入布局模式
+    await _pressLongOk(tester);
+    expect(find.text('移动中'), findsOneWidget, reason: '应进入布局模式');
+
+    // 方向键下移（列表 ±1）
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    final ids =
+        container.read(embyServerListProvider).map((s) => s.id).toList();
+    expect(ids, ['srv_b', 'srv_a'], reason: '方向键下移应交换顺序');
+
+    // 短按 OK 保存退出
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('移动中'), findsNothing, reason: 'OK 键应退出布局模式');
+    expect(auth.lastSavedServerOrder, ['srv_b', 'srv_a']);
+    await _settleSnackbars(tester);
+  });
+
+  testWidgets('TV 布局模式返回键取消并还原顺序（v1.1.237）', (tester) async {
+    final auth = FakeEmbyAuthService();
+    final container = await _pumpScreen(
+      tester,
+      auth: auth,
+      settings: const AppSettings(tvMode: true),
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    await _pressLongOk(tester);
+    expect(find.text('移动中'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(embyServerListProvider).map((s) => s.id).toList(),
+      ['srv_b', 'srv_a'],
+      reason: '方向键下移已生效',
+    );
+
+    // 返回键取消
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await _settleSnackbars(tester);
+
+    expect(find.text('移动中'), findsNothing, reason: '返回键应退出布局模式');
+    expect(
+      container.read(embyServerListProvider).map((s) => s.id).toList(),
+      ['srv_a', 'srv_b'],
+      reason: '取消应还原进入前的顺序',
+    );
+    expect(auth.lastSavedServerOrder, ['srv_a', 'srv_b'],
+        reason: '取消应把原始顺序写回存储');
   });
 }

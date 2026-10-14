@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/providers/server_stats_provider.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 服务器头像渐变调色板（按 serverId hash 取色，同服务器恒定色）。
 const List<List<Color>> _avatarGradients = [
@@ -76,7 +79,8 @@ class LatencyBadge extends StatelessWidget {
         const SizedBox(width: 2),
         Text(
           '${ms}ms',
-          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+          style:
+              TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -109,46 +113,316 @@ class MovieSeriesCounts extends StatelessWidget {
   }
 }
 
-/// 卡片右上角更多菜单：编辑（仅激活）/ 上移 / 删除。
-class ServerMoreMenu extends StatelessWidget {
-  const ServerMoreMenu({
+/// 当前展开的操作面板（全局单例：同一时刻只开一个）。
+///
+/// 卡片重建/删除时通过 [ServerMoreButton.dispose] 关闭，避免悬挂。
+OverlayEntry? _activePanelEntry;
+VoidCallback? _activePanelClose;
+
+/// 关闭当前展开的服务器操作面板（页面级重排/删除前调用防悬挂）。
+void closeServerActionPanel() {
+  _activePanelClose?.call();
+}
+
+/// 卡片右上角「···」：点击在按钮下方展开不透明操作面板。
+class ServerMoreButton extends ConsumerStatefulWidget {
+  const ServerMoreButton({
     super.key,
     required this.menuKey,
     required this.onDelete,
     this.onEdit,
-    this.onMoveUp,
   });
 
   final String menuKey;
   final VoidCallback? onEdit;
-  final VoidCallback? onMoveUp;
   final VoidCallback onDelete;
 
   @override
+  ConsumerState<ServerMoreButton> createState() => _ServerMoreButtonState();
+}
+
+class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
+  OverlayEntry? _entry;
+
+  void _toggle() {
+    if (_entry != null) {
+      _close();
+      return;
+    }
+    closeServerActionPanel();
+    _open();
+  }
+
+  void _open() {
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return;
+    final offset = box.localToGlobal(Offset.zero);
+    final size = box.size;
+    final onClose = _close;
+
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _ServerActionPanel(
+        anchorOffset: offset,
+        anchorSize: size,
+        onEdit: widget.onEdit,
+        onDelete: () {
+          onClose();
+          widget.onDelete();
+        },
+        onClose: onClose,
+      ),
+    );
+    _entry = entry;
+    _activePanelEntry = entry;
+    _activePanelClose = onClose;
+    overlay.insert(entry);
+  }
+
+  void _close() {
+    _entry?.remove();
+    if (identical(_activePanelEntry, _entry)) {
+      _activePanelEntry = null;
+      _activePanelClose = null;
+    }
+    _entry = null;
+  }
+
+  @override
+  void dispose() {
+    _close();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      key: ValueKey(menuKey),
-      icon: const Icon(Icons.more_vert, size: 20),
-      padding: EdgeInsets.zero,
-      itemBuilder: (context) => [
-        if (onEdit != null)
-          const PopupMenuItem(value: 'edit', child: Text('编辑')),
-        if (onMoveUp != null)
-          const PopupMenuItem(value: 'moveUp', child: Text('上移')),
-        const PopupMenuItem(
-          value: 'delete',
-          child: Text('删除', style: TextStyle(color: Colors.red)),
+    // TV 模式：D-pad 可聚焦，OK 键展开/收起面板
+    return TvFocusable(
+      onTap: _toggle,
+      scale: 1.0,
+      radius: 8,
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: Icon(Icons.more_vert, size: 20, key: ValueKey(widget.menuKey)),
+      ),
+    );
+  }
+}
+
+/// 面板动作：label + 危险标记 + 点击回调。
+class _PanelAction {
+  const _PanelAction({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool danger;
+}
+
+/// 按钮下方展开的不透明操作面板（实色底 + 淡入下滑动画）。
+class _ServerActionPanel extends StatefulWidget {
+  const _ServerActionPanel({
+    required this.anchorOffset,
+    required this.anchorSize,
+    required this.onDelete,
+    required this.onClose,
+    this.onEdit,
+  });
+
+  final Offset anchorOffset;
+  final Size anchorSize;
+  final VoidCallback? onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onClose;
+
+  @override
+  State<_ServerActionPanel> createState() => _ServerActionPanelState();
+}
+
+class _ServerActionPanelState extends State<_ServerActionPanel>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 150),
+    reverseDuration: const Duration(milliseconds: 120),
+  );
+
+  static const double _panelWidth = 212;
+  static const double _itemHeight = 48;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onSelected(_PanelAction action) {
+    widget.onClose();
+    switch (action.value) {
+      case 'edit':
+        widget.onEdit?.call();
+      case 'delete':
+        widget.onDelete();
+      default:
+        // 占位功能：具体交互后续设计
+        showAppToast(context, '功能开发中');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final actions = [
+      if (widget.onEdit != null)
+        const _PanelAction(
+            icon: Icons.edit_outlined, label: '编辑', value: 'edit'),
+      const _PanelAction(
+          icon: Icons.alt_route, label: '切换线路', value: 'switchLine'),
+      const _PanelAction(
+          icon: Icons.image_outlined, label: '更换图标', value: 'changeIcon'),
+      const _PanelAction(
+          icon: Icons.bar_chart_outlined, label: '资源统计', value: 'stats'),
+      const _PanelAction(
+          icon: Icons.tune, label: '资源设置', value: 'resourceSettings'),
+      const _PanelAction(
+        icon: Icons.delete_outline,
+        label: '删除',
+        value: 'delete',
+        danger: true,
+      ),
+    ];
+
+    final panelHeight = actions.length * _itemHeight + 12;
+    final screen = MediaQuery.sizeOf(context);
+
+    // 右对齐锚点（按钮在卡片右侧），屏幕边缘钳制
+    var left = widget.anchorOffset.dx + widget.anchorSize.width - _panelWidth;
+    if (left < 8) left = 8;
+    if (left + _panelWidth > screen.width - 8) {
+      left = screen.width - _panelWidth - 8;
+    }
+    var top = widget.anchorOffset.dy + widget.anchorSize.height + 4;
+    if (top + panelHeight > screen.height - 8) {
+      top = widget.anchorOffset.dy - panelHeight - 4;
+      if (top < 8) top = 8;
+    }
+
+    final curved = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+      reverseCurve: Curves.easeIn,
+    );
+
+    return Stack(
+      children: [
+        // 透明 barrier：点击面板外关闭
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: widget.onClose,
+            child: const SizedBox.expand(),
+          ),
+        ),
+        Positioned(
+          left: left,
+          top: top,
+          child: FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, -0.06),
+                end: Offset.zero,
+              ).animate(curved),
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: _panelWidth,
+                  decoration: BoxDecoration(
+                    // 实色不透明底（区别于玻璃面板）
+                    color: const Color(0xFF252830),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0x22FFFFFF)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x99000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < actions.length; i++) ...[
+                        if (i == actions.length - 1)
+                          const Divider(
+                            height: 1,
+                            indent: 16,
+                            endIndent: 16,
+                            color: Color(0x1AFFFFFF),
+                          ),
+                        _PanelItem(
+                          action: actions[i],
+                          onTap: () => _onSelected(actions[i]),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ],
-      onSelected: (value) {
-        if (value == 'edit') {
-          onEdit?.call();
-        } else if (value == 'moveUp') {
-          onMoveUp?.call();
-        } else if (value == 'delete') {
-          onDelete();
-        }
-      },
+    );
+  }
+}
+
+class _PanelItem extends StatelessWidget {
+  const _PanelItem({required this.action, required this.onTap});
+
+  final _PanelAction action;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = action.danger ? Colors.redAccent : Colors.white;
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 48,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Icon(action.icon, size: 20, color: color),
+              const SizedBox(width: 12),
+              Text(
+                action.label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -163,7 +437,6 @@ class ServerListCard extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     this.onEdit,
-    this.onMoveUp,
     this.dragHandle,
   });
 
@@ -172,10 +445,9 @@ class ServerListCard extends StatelessWidget {
   final ServerStats? stats;
   final VoidCallback onTap;
   final VoidCallback? onEdit;
-  final VoidCallback? onMoveUp;
   final VoidCallback onDelete;
 
-  /// 拖拽把手（由外层 ReorderableDragStartListener 包装后传入）。
+  /// 拖拽把手（由外层 ReorderableDragStartListener 包装后传入；TV 传 null）。
   final Widget? dragHandle;
 
   @override
@@ -185,7 +457,8 @@ class ServerListCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: GlassContainer(
         borderRadius: BorderRadius.circular(18),
-        tint: isActive ? start.withValues(alpha: 0.28) : GlassConfig.panelTintOf(),
+        tint:
+            isActive ? start.withValues(alpha: 0.28) : GlassConfig.panelTintOf(),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -209,8 +482,9 @@ class ServerListCard extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontWeight:
-                                      isActive ? FontWeight.bold : FontWeight.w600,
+                                  fontWeight: isActive
+                                      ? FontWeight.bold
+                                      : FontWeight.w600,
                                   fontSize: 15,
                                 ),
                               ),
@@ -227,8 +501,8 @@ class ServerListCard extends StatelessWidget {
                           '${server.username} · ${server.serverUrl}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              const TextStyle(fontSize: 12, color: Colors.white54),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white54),
                         ),
                         const SizedBox(height: 6),
                         Wrap(
@@ -247,10 +521,9 @@ class ServerListCard extends StatelessWidget {
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ServerMoreMenu(
+                      ServerMoreButton(
                         menuKey: 'serverMore_${server.id}',
                         onEdit: onEdit,
-                        onMoveUp: onMoveUp,
                         onDelete: onDelete,
                       ),
                       if (dragHandle != null) dragHandle!,
@@ -266,7 +539,8 @@ class ServerListCard extends StatelessWidget {
   }
 }
 
-/// 网格视图服务器卡（近方形玻璃卡）：头像 + 更多菜单 / 名称 / 延迟 / 计数。
+/// 网格视图服务器卡（近方形玻璃卡）：
+/// 第 1 行 = 头像 + 用户名 + ···；第 2 行 = 服务器名称；底部 = 延迟/计数。
 class ServerGridCard extends StatelessWidget {
   const ServerGridCard({
     super.key,
@@ -276,7 +550,6 @@ class ServerGridCard extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     this.onEdit,
-    this.onMoveUp,
   });
 
   final EmbyServerConfig server;
@@ -284,7 +557,6 @@ class ServerGridCard extends StatelessWidget {
   final ServerStats? stats;
   final VoidCallback onTap;
   final VoidCallback? onEdit;
-  final VoidCallback? onMoveUp;
   final VoidCallback onDelete;
 
   @override
@@ -293,7 +565,8 @@ class ServerGridCard extends StatelessWidget {
     final end = serverAvatarEndColor(server.serverId);
     return GlassContainer(
       borderRadius: BorderRadius.circular(18),
-      tint: isActive ? start.withValues(alpha: 0.28) : GlassConfig.panelTintOf(),
+      tint:
+          isActive ? start.withValues(alpha: 0.28) : GlassConfig.panelTintOf(),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -322,54 +595,51 @@ class ServerGridCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 第 1 行：头像 + 用户名 + ···
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         ServerAvatar(label: server.label, size: 40),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      server.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontWeight: isActive
-                                            ? FontWeight.bold
-                                            : FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                  if (isActive) ...[
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.check_circle,
-                                        color: Colors.greenAccent, size: 14),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                server.username,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.white54),
-                              ),
-                            ],
+                          child: Text(
+                            server.username,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                        ServerMoreMenu(
+                        ServerMoreButton(
                           menuKey: 'serverMore_${server.id}',
                           onEdit: onEdit,
-                          onMoveUp: onMoveUp,
                           onDelete: onDelete,
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // 第 2 行：服务器名称/备注名（激活加粗 + 勾）
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            server.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight:
+                                  isActive ? FontWeight.bold : FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        if (isActive) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.check_circle,
+                              color: Colors.greenAccent, size: 14),
+                        ],
                       ],
                     ),
                     const Spacer(),

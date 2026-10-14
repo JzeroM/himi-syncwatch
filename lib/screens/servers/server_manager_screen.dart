@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
@@ -13,6 +16,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 按 serverId 去重（同服务器多 session 只展示第一个）。
 List<EmbyServerConfig> _dedupServers(List<EmbyServerConfig> servers) {
@@ -35,6 +39,12 @@ class ServerManagerScreen extends ConsumerStatefulWidget {
 
 class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   bool _showAddServerForm = false;
+
+  /// TV 布局模式：正在移动的服务器 id（null = 非布局模式）。
+  String? _layoutServerId;
+
+  /// 布局模式进入时的顺序快照（返回键取消时还原）。
+  List<EmbyServerConfig>? _layoutBackup;
 
   @override
   void initState() {
@@ -59,8 +69,17 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     final dedupedServers = _dedupServers(servers);
+    final layoutId = _layoutServerId;
 
-    return Scaffold(
+    // 布局模式：拦截返回键取消还原（正常态放行路由返回）
+    return PopScope(
+      canPop: layoutId == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _layoutServerId != null) {
+          _exitLayoutMode(save: false);
+        }
+      },
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -135,6 +154,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             ),
         ],
       ),
+      ),
     );
   }
 
@@ -143,6 +163,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     EmbyServerConfig? currentConfig,
     Map<String, ServerStats> statsMap,
   ) {
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
       padding: EdgeInsets.only(
@@ -155,20 +176,28 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       itemBuilder: (context, index) {
         final server = dedupedServers[index];
         final isActive = currentConfig?.id == server.id;
-        return ServerListCard(
+        // itemBuilder 返回值的 key 必须在最外层（重排后 Focus/元素才不丢）
+        return KeyedSubtree(
           key: ValueKey('serverTile_${server.id}'),
-          server: server,
-          isActive: isActive,
-          stats: statsMap[server.id],
-          onTap: () => _openServer(server),
-          onEdit: isActive ? () => _showEditServerDialog(server) : null,
-          onMoveUp: index == 0
-              ? null
-              : () => _reorderVisible(index, index - 1),
-          onDelete: () => _deleteServer(server, isActive),
-          dragHandle: ReorderableDragStartListener(
-            index: index,
-            child: const Icon(Icons.drag_handle, size: 20),
+          child: _wrapCard(
+            server: server,
+            isGrid: false,
+            crossAxisCount: 1,
+            card: ServerListCard(
+              server: server,
+              isActive: isActive,
+              stats: statsMap[server.id],
+              onTap: () => _openServer(server),
+              onEdit: () => _showEditServerDialog(server),
+              onDelete: () => _deleteServer(server, isActive),
+              // TV 模式：隐藏拖拽把手（布局模式用方向键移动）
+              dragHandle: tvMode
+                  ? null
+                  : ReorderableDragStartListener(
+                      index: index,
+                      child: const Icon(Icons.drag_handle, size: 20),
+                    ),
+            ),
           ),
         );
       },
@@ -182,6 +211,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   ) {
     final width = MediaQuery.sizeOf(context).width;
     final crossAxisCount = (width / 220).floor().clamp(2, 4);
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(
         12,
@@ -199,18 +229,24 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       itemBuilder: (context, index) {
         final server = dedupedServers[index];
         final isActive = currentConfig?.id == server.id;
-        final card = ServerGridCard(
+        final card = KeyedSubtree(
           key: ValueKey('serverGridTile_${server.id}'),
-          server: server,
-          isActive: isActive,
-          stats: statsMap[server.id],
-          onTap: () => _openServer(server),
-          onEdit: isActive ? () => _showEditServerDialog(server) : null,
-          onMoveUp: index == 0
-              ? null
-              : () => _reorderVisible(index, index - 1),
-          onDelete: () => _deleteServer(server, isActive),
+          child: _wrapCard(
+            server: server,
+            isGrid: true,
+            crossAxisCount: crossAxisCount,
+            card: ServerGridCard(
+              server: server,
+              isActive: isActive,
+              stats: statsMap[server.id],
+              onTap: () => _openServer(server),
+              onEdit: () => _showEditServerDialog(server),
+              onDelete: () => _deleteServer(server, isActive),
+            ),
+          ),
         );
+        // TV 模式：禁用长按拖拽（用布局模式方向键移动）
+        if (tvMode) return card;
         return LongPressDraggable<int>(
           data: index,
           maxSimultaneousDrags: 1,
@@ -232,8 +268,163 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     );
   }
 
+  /// TV 模式卡片包装：
+  /// - 常规态：TvFocusable（短按 OK 打开 / 长按 OK 进布局模式）
+  /// - 布局模式选中卡：Focus 拦截方向键移动 + OK 保存退出，外加高亮描边
+  /// - 布局模式其他卡：忽略指针 + 降透明 + 排除焦点
+  /// 非 TV 模式原样返回。
+  Widget _wrapCard({
+    required EmbyServerConfig server,
+    required bool isGrid,
+    required int crossAxisCount,
+    required Widget card,
+  }) {
+    if (!ref.watch(settingsProvider.select((s) => s.tvMode))) return card;
+
+    final layoutId = _layoutServerId;
+    if (layoutId == server.id) {
+      return Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) =>
+            _handleLayoutKey(event, isGrid: isGrid, crossAxisCount: crossAxisCount),
+        child: _layoutDecorate(card),
+      );
+    }
+    if (layoutId != null) {
+      return ExcludeFocus(
+        child: IgnorePointer(
+          child: Opacity(opacity: 0.4, child: card),
+        ),
+      );
+    }
+    return TvFocusable(
+      autofocus: true,
+      scale: 1.03,
+      radius: 18,
+      onTap: () => _openServer(server),
+      onLongPress: () => _enterLayoutMode(server),
+      child: card,
+    );
+  }
+
+  /// 布局模式选中卡：琥珀色描边 + 「移动中」角标。
+  Widget _layoutDecorate(Widget child) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.amber, width: 3),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 6,
+          left: 6,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.amber,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                '移动中',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 布局模式按键：上下左右移动 + 短按 OK 保存退出。
+  KeyEventResult _handleLayoutKey(
+    KeyEvent event, {
+    required bool isGrid,
+    required int crossAxisCount,
+  }) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.select) {
+      _exitLayoutMode(save: true);
+      return KeyEventResult.handled;
+    }
+    int? delta;
+    if (key == LogicalKeyboardKey.arrowUp) {
+      delta = isGrid ? -crossAxisCount : -1;
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      delta = isGrid ? crossAxisCount : 1;
+    } else if (key == LogicalKeyboardKey.arrowLeft) {
+      delta = isGrid ? -1 : null; // 列表无左右移动
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      delta = isGrid ? 1 : null;
+    }
+    if (delta != null) {
+      _layoutMoveBy(delta);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _enterLayoutMode(EmbyServerConfig server) {
+    closeServerActionPanel();
+    setState(() {
+      _layoutServerId = server.id;
+      _layoutBackup = List.of(ref.read(embyServerListProvider));
+    });
+  }
+
+  void _layoutMoveBy(int delta) {
+    final id = _layoutServerId;
+    if (id == null) return;
+    final deduped = _dedupServers(ref.read(embyServerListProvider));
+    final from = deduped.indexWhere((s) => s.id == id);
+    if (from < 0) return;
+    final to = from + delta;
+    if (to < 0 || to >= deduped.length) return;
+    _reorderVisible(from, to);
+  }
+
+  /// 退出布局模式：save=true 仅清状态（顺序已随移动持久化）；
+  /// save=false（返回键取消）还原进入前的内存与存储顺序。
+  void _exitLayoutMode({required bool save}) {
+    final backup = _layoutBackup;
+    setState(() {
+      _layoutServerId = null;
+      _layoutBackup = null;
+    });
+    if (save) {
+      if (mounted) showAppToast(context, '位置已保存');
+      return;
+    }
+    if (backup == null) return;
+    ref.read(embyServerListProvider.notifier).setList(backup);
+    unawaited(
+      ref
+          .read(embyAuthServiceProvider)
+          .saveServerOrder(backup.map((s) => s.id).toList()),
+    );
+    if (mounted) showAppToast(context, '已取消移动');
+  }
+
   /// 重排可见列表（from → to，to 为目标下标）：更新内存 + 持久化顺序。
   Future<void> _reorderVisible(int from, int to) async {
+    closeServerActionPanel();
     final current = ref.read(embyServerListProvider);
     final deduped = _dedupServers(current);
     if (from == to ||
@@ -268,6 +459,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   }
 
   Future<void> _deleteServer(EmbyServerConfig server, bool isActive) async {
+    closeServerActionPanel();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -395,6 +587,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     if (url.isEmpty || username.isEmpty) return;
 
     final authService = ref.read(embyAuthServiceProvider);
+    final wasActive = ref.read(embyConfigProvider)?.id == server.id;
 
     try {
       if (password.isNotEmpty) {
@@ -423,8 +616,11 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         }
 
         ref.read(embyServerListProvider.notifier).updateServer(newConfig);
-        ref.read(embyConfigProvider.notifier).setConfig(newConfig);
-        await authService.saveSelectedServerId(newConfig.id);
+        // 非激活服务器编辑后不误切激活
+        if (wasActive) {
+          ref.read(embyConfigProvider.notifier).setConfig(newConfig);
+          await authService.saveSelectedServerId(newConfig.id);
+        }
         await authService.deleteSession(server.serverId);
         await authService.saveSession(
           serverId: newConfig.serverId,
