@@ -116,6 +116,9 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
   /// 筛选面板可选项缓存（打开面板时懒加载一次；类型 chips 变更后失效）。
   MediaFilterOptions? _filterOptions;
 
+  /// 筛选面板打开中（防重入：连点只会弹出一个面板）。
+  bool _filterOpening = false;
+
   bool get _showFilterChips =>
       widget.collectionType != 'movies' && widget.collectionType != 'tvshows';
 
@@ -233,26 +236,35 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
   }
 
   /// 打开筛选面板；确认后应用新筛选并重置分页重载。
+  ///
+  /// 防重入（v1.1.234）：可选项请求 + 面板 await 期间再次点击会被忽略，
+  /// 否则会弹出两个叠加的筛选面板。
   Future<void> _openFilterPanel() async {
-    var options = _filterOptions;
-    if (options == null) {
-      options = await ref.read(embyServiceProvider).getFilterOptions(
-            parentId: widget.libraryId,
-            includeItemTypes: _filterOption.embyValue,
-          );
-      if (!mounted) return;
-      _filterOptions = options;
-    }
+    if (_filterOpening) return;
+    setState(() => _filterOpening = true);
+    try {
+      var options = _filterOptions;
+      if (options == null) {
+        options = await ref.read(embyServiceProvider).getFilterOptions(
+              parentId: widget.libraryId,
+              includeItemTypes: _filterOption.embyValue,
+            );
+        if (!mounted) return;
+        _filterOptions = options;
+      }
 
-    final result = await showMediaFilterPanel(
-      context,
-      current: _mediaFilter,
-      options: options,
-      tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
-    );
-    if (result == null || !mounted || result == _mediaFilter) return;
-    setState(() => _mediaFilter = result);
-    _loadFirstPage();
+      final result = await showMediaFilterPanel(
+        context,
+        current: _mediaFilter,
+        options: options,
+        tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
+      );
+      if (result == null || !mounted || result == _mediaFilter) return;
+      setState(() => _mediaFilter = result);
+      _loadFirstPage();
+    } finally {
+      if (mounted) setState(() => _filterOpening = false);
+    }
   }
 
   @override
@@ -286,7 +298,8 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
                   : null,
             ),
             tooltip: '筛选',
-            onPressed: _openFilterPanel,
+            // 打开期间置灰：配合防重入守卫，杜绝连点弹出两个面板
+            onPressed: _filterOpening ? null : _openFilterPanel,
           ),
           PopupMenuButton<SortOption>(
             icon: const Icon(Icons.sort),

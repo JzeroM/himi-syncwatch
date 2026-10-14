@@ -4,6 +4,10 @@ import 'package:himi_syncwatch/models/category_filter.dart';
 /// 打开筛选面板（触屏底部面板 / TV 居中对话框）。
 /// 返回确认后的新筛选；取消返回 null。
 /// [options] 为 null 或全空时隐藏类型/年份/分级分组（仅剩播放状态）。
+///
+/// 面板高度固定为 0.5 屏高且**不可拖拽**（v1.1.234）——原先用
+/// DraggableScrollableSheet 占 0.7 屏，选中标签换行堆高后整体过高；
+/// 现标签改单行横滑，高度由 0.5 屏高固定承载，内部 ListView 自行滚动。
 Future<CategoryFilter?> showMediaFilterPanel(
   BuildContext context, {
   required CategoryFilter current,
@@ -15,8 +19,15 @@ Future<CategoryFilter?> showMediaFilterPanel(
       context: context,
       builder: (ctx) => Dialog(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
-          child: _FilterPanelBody(current: current, options: options),
+          constraints: BoxConstraints(
+            maxWidth: 420,
+            // 与触屏同源：0.5 屏高，但给 1080p/4K 大屏留上限，避免占半屏过高
+            maxHeight: (MediaQuery.sizeOf(ctx).height * 0.5).clamp(360.0, 560.0),
+          ),
+          child: SizedBox(
+            width: 420,
+            child: _FilterPanelBody(current: current, options: options),
+          ),
         ),
       ),
     );
@@ -24,17 +35,13 @@ Future<CategoryFilter?> showMediaFilterPanel(
   return showModalBottomSheet<CategoryFilter>(
     context: context,
     isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    // 关闭下滑手势（面板本身已不可拖拽，避免半拖状态）
+    enableDrag: false,
     builder: (ctx) => SafeArea(
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.35,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (ctx, scrollController) => _FilterPanelBody(
-          current: current,
-          options: options,
-          scrollController: scrollController,
-        ),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(ctx).height * 0.5,
+        child: _FilterPanelBody(current: current, options: options),
       ),
     ),
   );
@@ -45,12 +52,10 @@ class _FilterPanelBody extends StatefulWidget {
   const _FilterPanelBody({
     required this.current,
     required this.options,
-    this.scrollController,
   });
 
   final CategoryFilter current;
   final MediaFilterOptions? options;
-  final ScrollController? scrollController;
 
   @override
   State<_FilterPanelBody> createState() => _FilterPanelBodyState();
@@ -69,7 +74,6 @@ class _FilterPanelBodyState extends State<_FilterPanelBody> {
     final textTheme = Theme.of(context).textTheme;
 
     final body = ListView(
-      controller: widget.scrollController,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       children: [
         Row(
@@ -160,6 +164,7 @@ class _FilterPanelBodyState extends State<_FilterPanelBody> {
     );
 
     return Column(
+      key: const Key('filterPanelBody'),
       children: [
         Expanded(child: body),
         Padding(
@@ -233,6 +238,9 @@ class _WatchStatusRow extends StatelessWidget {
 }
 
 /// 多选行：标签 + 已选 chips（可逐个删除）+ 「+」添加按钮。
+///
+/// 已选 chips **不换行**（v1.1.234）：单行横向滚动，避免选中多项时把
+/// 面板撑高（原先 Wrap 逐行堆高，面板显得过高）。
 class _MultiPickRow<T> extends StatelessWidget {
   const _MultiPickRow({
     required this.label,
@@ -249,6 +257,9 @@ class _MultiPickRow<T> extends StatelessWidget {
   final String Function(T) labelOf;
   final ValueChanged<T> onDeleted;
   final VoidCallback onAdd;
+
+  /// 单行 chips 高度（InputChip + 上下留白）。
+  static const double rowHeight = 40;
 
   @override
   Widget build(BuildContext context) {
@@ -269,17 +280,25 @@ class _MultiPickRow<T> extends StatelessWidget {
           ],
         ),
         if (selected.isNotEmpty)
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final v in selected)
-                InputChip(
+          SizedBox(
+            height: rowHeight,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              // 嵌在竖向 ListView 内，关闭 primary 并用 clamping，TV 横滑稳定
+              primary: false,
+              physics: const ClampingScrollPhysics(),
+              padding: const EdgeInsets.only(right: 4),
+              itemCount: selected.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final v = selected.elementAt(i);
+                return InputChip(
                   key: Key('filterChip_${label}_${labelOf(v)}'),
                   label: Text(labelOf(v)),
                   onDeleted: () => onDeleted(v),
-                ),
-            ],
+                );
+              },
+            ),
           ),
       ],
     );

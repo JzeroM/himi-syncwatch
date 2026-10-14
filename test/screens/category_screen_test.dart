@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -273,6 +275,39 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('快速连点筛选按钮只弹出一个面板（防重入，v1.1.234）', (tester) async {
+      // 用受控 Future 卡住 getFilterOptions，精确还原竞态：
+      // 可选项请求仍在 await 时用户又点了一次按钮。
+      final gate = Completer<MediaFilterOptions>();
+      final emby = _GatedEmbyService(
+        FakeEmbyService(items: const []),
+        gate,
+      );
+      await _pumpScreen(tester, emby: emby);
+
+      final btn = find.byKey(const Key('categoryFilterButton'));
+      await tester.tap(btn);
+      await tester.pump();
+      expect(tester.widget<IconButton>(btn).onPressed, isNull,
+          reason: '请求未返回期间按钮置灰');
+
+      // 竞态点击：此时面板尚未弹出，按钮已 disabled → 第二次点击为无操作
+      await tester.tap(btn);
+      await tester.pump();
+
+      gate.complete(const MediaFilterOptions(years: [2024]));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('filterPanelBody')), findsOneWidget,
+          reason: '连点只弹出一个面板');
+      expect(find.byKey(const Key('filterConfirmButton')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('filterCancelButton')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<IconButton>(btn).onPressed, isNotNull,
+          reason: '面板关闭后按钮恢复可点');
+    });
+
     testWidgets('筛选后无结果显示「筛选无匹配项」', (tester) async {
       final emby = FakeEmbyService(
         items: const [],
@@ -314,4 +349,19 @@ class _CountingEmbyService extends FakeEmbyService {
       includeItemTypes: includeItemTypes,
     );
   }
+}
+
+/// 受控包装：getFilterOptions 挂起在 [gate] 上，便于构造「请求未返回时连点」竞态。
+class _GatedEmbyService extends FakeEmbyService {
+  _GatedEmbyService(this.inner, this.gate);
+
+  final FakeEmbyService inner;
+  final Completer<MediaFilterOptions> gate;
+
+  @override
+  Future<MediaFilterOptions> getFilterOptions({
+    String? parentId,
+    String? includeItemTypes,
+  }) =>
+      gate.future;
 }
