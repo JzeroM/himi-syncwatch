@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 当前 Emby 服务器标题玻璃胶囊，点击下拉切换服务器。
 ///
@@ -201,14 +202,18 @@ class ServerTitleDropdown extends ConsumerWidget {
             if (active)
               const Icon(Icons.check_circle, size: 18, color: Colors.green)
             else
-              const Icon(Icons.dns_outlined, size: 18, color: Colors.white70),
+              Icon(
+                Icons.dns_outlined,
+                size: 18,
+                color: FrostedSurface.darkInkWith(0.70),
+              ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 server.label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: FrostedSurface.darkInk,
                   fontWeight: active ? FontWeight.bold : FontWeight.normal,
                 ),
               ),

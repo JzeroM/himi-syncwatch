@@ -297,10 +297,10 @@ void main() {
     });
   });
 
-  // ---- 播完自动下一集（v1.1.238 位置兜底） ----
+  // ---- 播完自动下一集（v1.1.239 位置兜底门控） ----
 
   group('shouldAutoNextEpisode（播完位置兜底判定）', () {
-    test('播放中且进入结尾窗口（距时长 ≤500ms）→ 触发', () {
+    test('播放中且进入结尾窗口（距时长 ≤500ms）→ 触发（无 end 引擎）', () {
       expect(
         PlayerScreen.shouldAutoNextEpisode(
             positionMs: 59500, durationMs: 60000, playing: true),
@@ -334,6 +334,41 @@ void main() {
         PlayerScreen.shouldAutoNextEpisode(
             positionMs: 0, durationMs: 0, playing: true),
         isFalse,
+      );
+    });
+
+    test('引擎自报 end（mdk）→ 兜底恒不触发（v1.1.239 拖进度条误切集回归）',
+        () {
+      expect(
+        PlayerScreen.shouldAutoNextEpisode(
+          positionMs: 60000,
+          durationMs: 60000,
+          playing: true,
+          engineEmitsEnd: true,
+        ),
+        isFalse,
+        reason: 'mdk 拖到结尾窗口不判播完，等真实 MediaStatus.end',
+      );
+    });
+
+    test('seek 冷却期内 → 不触发；冷却外恢复触发', () {
+      expect(
+        PlayerScreen.shouldAutoNextEpisode(
+          positionMs: 60000,
+          durationMs: 60000,
+          playing: true,
+          seekCooldownActive: true,
+        ),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.shouldAutoNextEpisode(
+          positionMs: 60000,
+          durationMs: 60000,
+          playing: true,
+          seekCooldownActive: false,
+        ),
+        isTrue,
       );
     });
   });

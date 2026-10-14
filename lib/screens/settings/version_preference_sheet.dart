@@ -72,12 +72,12 @@ class _VersionPreferenceSheetState
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: FrostedSurface.darkInkWith(0.12),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 14, 20, 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -91,7 +91,9 @@ class _VersionPreferenceSheetState
                   ),
                   SizedBox(height: 6),
                   Text('长按拖动调整优先级',
-                      style: TextStyle(fontSize: 13, color: Colors.white54)),
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: FrostedSurface.darkInkWith(0.54))),
                 ],
               ),
             ),

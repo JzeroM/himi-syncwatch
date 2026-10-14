@@ -3,10 +3,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 
-/// 中等磨砂毛玻璃面（无色调深色磨砂）。
+/// 白色毛玻璃面（模糊背景 + 白 60% 膜 + 深色字，v1.1.239）。
 ///
-/// `ClipRect → BackdropFilter(blur) → 深色半透明底 → 白描边 → 投影 → child`。
-/// 模糊背景只见色块、文字绝对可读；用于弹出面板与 glassUi 关闭后的降级面。
+/// `ClipRect → BackdropFilter(blur) → 白色半透膜 → 深色细边 → 投影 → child`。
+/// 背景模糊透出彩色色块；child 自动包深色文字 Theme——默认样式的
+/// Text/Icon/Dropdown 等自动深色可读，调用方无需逐处改色。
 /// BackdropFilter 必须被 ClipRect 限定，否则模糊整屏、开销失控。
 class FrostedSurface extends StatelessWidget {
   const FrostedSurface({
@@ -28,10 +29,33 @@ class FrostedSurface extends StatelessWidget {
   final bool showBorder;
   final bool showShadow;
 
+  /// 白玻璃面内的深色文字/图标 Theme（纯派生，供测试）。
+  /// 白 60% 膜上深色字才可读；调用方显式写死的浅色需自行改为主题色。
+  static ThemeData darkContentTheme(ThemeData base) => base.copyWith(
+        textTheme: base.textTheme.apply(
+          bodyColor: darkInk,
+          displayColor: darkInk,
+        ),
+        iconTheme: base.iconTheme.copyWith(color: darkInk),
+        colorScheme: base.colorScheme.copyWith(
+          onSurface: darkInk,
+        ),
+      );
+
+  /// 白玻璃内容深墨色（与 [darkContentTheme] 的 onSurface 同源）。
+  /// GlassContainer/FrostedSurface 的**构建方** context 位于包装 Theme
+  /// 之上（真实 App 暗色主题下 onSurface 仍是白）——这些调用点必须用
+  /// 本常量，不能用 `Theme.of(context)`。
+  static const Color darkInk = Color(0xE6000000);
+
+  /// [darkInk] 指定不透明度（如 0.54 ≈ secondary、0.70 ≈ 中强）。
+  static Color darkInkWith(double opacity) => darkInk.withValues(alpha: opacity);
+
   @override
   Widget build(BuildContext context) {
     // 背景色用 ColoredBox 而非带色 DecoratedBox：面板内常见 ListTile，
-    // Flutter 断言「带 bg 的 DecoratedBox 包 ListTile 会遮住背景/墨水」。
+    // Flutter 断言「带 bg 的 ColoredBox/DecoratedBox 包 ListTile 会遮住
+    // 背景/墨水」——透明 Material 在着色层内兜底解决。
     Widget content = BackdropFilter(
       filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
       child: ColoredBox(
@@ -45,11 +69,14 @@ class FrostedSurface extends StatelessWidget {
           ),
           child: Padding(
             padding: padding ?? EdgeInsets.zero,
-            // 透明 Material 兜底：面板内常见 ListTile，其断言要求最近
-            // Material 祖先在着色层内，否则 ink/背景被上层色块遮住报错。
-            child: Material(
-              type: MaterialType.transparency,
-              child: child,
+            // 深字 Theme + 透明 Material 兜底：前者让默认样式文字/图标
+            // 在白膜上可读；后者满足 ListTile 对最近 Material 祖先的断言。
+            child: Theme(
+              data: darkContentTheme(Theme.of(context)),
+              child: Material(
+                type: MaterialType.transparency,
+                child: child,
+              ),
             ),
           ),
         ),

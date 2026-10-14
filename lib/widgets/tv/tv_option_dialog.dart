@@ -148,7 +148,7 @@ class _TvOptionRow<T> extends StatelessWidget {
                     style: TextStyle(
                       color: selected
                           ? Theme.of(context).colorScheme.primary
-                          : Colors.white,
+                          : Theme.of(context).colorScheme.onSurface,
                       fontSize: 15,
                       fontWeight:
                           selected ? FontWeight.w600 : FontWeight.normal,
@@ -160,9 +160,12 @@ class _TvOptionRow<T> extends StatelessWidget {
                       entry.subtitle!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Colors.white54,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.54),
                       ),
                     ),
                   ],

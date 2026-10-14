@@ -3,6 +3,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 音轨选择面板（放进 [SelectorSidePanel] 右侧浮层，滚动由外层提供）。
 class AudioTrackMenuPanel extends StatelessWidget {
@@ -50,11 +51,14 @@ class AudioTrackMenuPanel extends StatelessWidget {
             },
           ),
         if (audioStreams.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               '当前视频无音轨选项',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
+              style: TextStyle(
+                color: FrostedSurface.darkInkWith(0.54),
+                fontSize: 13,
+              ),
             ),
           ),
       ],

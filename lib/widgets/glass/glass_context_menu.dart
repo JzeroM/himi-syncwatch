@@ -107,7 +107,9 @@ class _GlassMenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = action.destructive ? const Color(0xFFFF7A7A) : Colors.white;
+    final color = action.destructive
+        ? const Color(0xFFD32F2F)
+        : Theme.of(context).colorScheme.onSurface;
     return TvFocusable(
       autofocus: autofocus,
       radius: 12,

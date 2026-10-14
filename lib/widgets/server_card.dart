@@ -98,15 +98,20 @@ class MovieSeriesCounts extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = counts;
     if (c == null) return const SizedBox.shrink();
-    const style = TextStyle(fontSize: 12, color: Colors.white70);
+    final style = TextStyle(
+      fontSize: 12,
+      color: FrostedSurface.darkInkWith(0.70),
+    );
+    final iconColor =
+        FrostedSurface.darkInkWith(0.70);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.movie_outlined, size: 14, color: Colors.white70),
+        Icon(Icons.movie_outlined, size: 14, color: iconColor),
         const SizedBox(width: 2),
         Text('${c.movies}', style: style),
         const SizedBox(width: 8),
-        const Icon(Icons.tv, size: 14, color: Colors.white70),
+        Icon(Icons.tv, size: 14, color: iconColor),
         const SizedBox(width: 2),
         Text('${c.series}', style: style),
       ],
@@ -363,7 +368,7 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
                               height: 1,
                               indent: 16,
                               endIndent: 16,
-                              color: Color(0x1AFFFFFF),
+                               color: Color(0x1F000000),
                             ),
                           _PanelItem(
                             action: actions[i],
@@ -391,7 +396,9 @@ class _PanelItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = action.danger ? Colors.redAccent : Colors.white;
+    final color = action.danger
+        ? const Color(0xFFD32F2F)
+        : FrostedSurface.darkInk;
     return InkWell(
       onTap: onTap,
       child: SizedBox(
@@ -492,8 +499,10 @@ class ServerListCard extends StatelessWidget {
                           '${server.username} · ${server.serverUrl}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.white54),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: FrostedSurface.darkInkWith(0.54),
+                          ),
                         ),
                         const SizedBox(height: 6),
                         Wrap(
@@ -596,9 +605,9 @@ class ServerGridCard extends StatelessWidget {
                             server.username,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
-                              color: Colors.white70,
+                              color: FrostedSurface.darkInkWith(0.70),
                               fontWeight: FontWeight.w500,
                             ),
                           ),

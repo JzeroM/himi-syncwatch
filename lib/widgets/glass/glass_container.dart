@@ -72,7 +72,12 @@ class GlassContainer extends ConsumerWidget {
       ),
       child: Padding(
         padding: padding ?? EdgeInsets.zero,
-        child: child,
+        // 白玻璃（v1.1.239）：开态同样包深色文字 Theme——与关态降级
+        // 一致，同一批子组件在两种模式下都用深色字，无需按模式分叉。
+        child: Theme(
+          data: FrostedSurface.darkContentTheme(Theme.of(context)),
+          child: child,
+        ),
       ),
     );
 
@@ -126,7 +131,8 @@ class GlassBackdrop extends ConsumerWidget {
             decoration: const BoxDecoration(
               color: GlassConfig.frostedTint,
               border: Border(
-                bottom: BorderSide(color: GlassConfig.rimColor, width: 1),
+                // 白膜上深色细边定界（原 30% 白 rim 在白底不可见）
+                bottom: BorderSide(color: GlassConfig.frostedBorder),
               ),
             ),
             child: SizedBox.expand(),
@@ -146,7 +152,7 @@ class GlassBackdrop extends ConsumerWidget {
               colors: [GlassConfig.barTintOf(), GlassConfig.barTintSoftOf()],
             ),
             border: const Border(
-              bottom: BorderSide(color: GlassConfig.rimColor, width: 1),
+              bottom: BorderSide(color: GlassConfig.frostedBorder),
             ),
           ),
           child: const SizedBox.expand(),

@@ -1605,8 +1605,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             const SizedBox(width: 8),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: FrostedSurface.darkInk,
                 fontWeight: FontWeight.w600,
                 fontSize: 15,
               ),
@@ -1629,7 +1629,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               child: FractionallySizedBox(
                 alignment: Alignment.centerLeft,
                 widthFactor: progress.clamp(0.0, 1.0),
-                child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
+                child: ColoredBox(color: Colors.black.withValues(alpha: 0.12)),
               ),
             ),
           ),
@@ -1810,7 +1810,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // 贴边小按钮不用面板级悬浮投影，避免返回键外一圈黑影。
               showShadow: false,
               child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                icon: Icon(Icons.arrow_back,
+                    color: FrostedSurface.darkInk),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -1917,14 +1918,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.subject,
-                                        size: 14, color: Colors.white70),
+                                    Icon(Icons.subject,
+                                        size: 14,
+                                        color: FrostedSurface.darkInkWith(0.70)),
                                     const SizedBox(width: 5),
                                     Text(
                                       _overviewVisible ? '收起' : '简介',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.white,
+                                        color: FrostedSurface.darkInk,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -1933,7 +1935,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                           ? Icons.expand_less
                                           : Icons.expand_more,
                                       size: 14,
-                                      color: Colors.white70,
+                                      color: FrostedSurface.darkInkWith(0.70),
                                     ),
                                   ],
                                 ),
@@ -1984,14 +1986,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.expand_less,
-                                            size: 14, color: Colors.white70),
+                                        Icon(Icons.expand_less,
+                                            size: 14,
+                                            color: FrostedSurface.darkInkWith(0.70)),
                                         const SizedBox(width: 5),
-                                        const Text(
+                                        Text(
                                           '收起',
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color: Colors.white,
+                                            color: FrostedSurface.darkInk,
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
@@ -2043,8 +2046,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 14, vertical: 7),
                                 child: Text(g,
-                                    style: const TextStyle(
-                                        fontSize: 13, color: Colors.white)),
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color: FrostedSurface.darkInk)),
                               ))
                           .toList(),
                     ),

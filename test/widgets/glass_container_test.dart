@@ -272,12 +272,17 @@ void main() {
       expect(GlassConfig.shellBottomReserve, 96);
     });
 
-    test('玻璃着色透明度约 12%，背景尽量透出', () {
-      expect(GlassConfig.panelTint.a, closeTo(0x1F / 255, 0.001));
-      expect(GlassConfig.barTint.a, closeTo(0x1F / 255, 0.001));
-      expect(GlassConfig.barTintSoft.a, closeTo(0x12 / 255, 0.001));
-      expect(GlassConfig.panelTint.a, lessThan(0.3));
-      expect(GlassConfig.barTint.a, lessThan(0.3));
+    test('白玻璃着色：60% 白膜（v1.1.239）', () {
+      // panelTint/barTint = 0x99FFFFFF（60% 白）；barTintSoft = 0x66FFFFFF
+      expect(GlassConfig.panelTint.a, closeTo(0x99 / 255, 0.001));
+      expect(GlassConfig.barTint.a, closeTo(0x99 / 255, 0.001));
+      expect(GlassConfig.barTintSoft.a, closeTo(0x66 / 255, 0.001));
+      // 白膜：RGB 为白（背景模糊后整体提亮为白色玻璃）
+      expect(GlassConfig.panelTint.r, closeTo(1.0, 0.001));
+      expect(GlassConfig.panelTint.g, closeTo(1.0, 0.001));
+      expect(GlassConfig.panelTint.b, closeTo(1.0, 0.001));
+      // frostedTint 同步为白玻璃
+      expect(GlassConfig.frostedTint.a, closeTo(0x99 / 255, 0.001));
     });
   });
 }

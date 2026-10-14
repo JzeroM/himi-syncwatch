@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 打开数字网格选集器（底部玻璃 sheet）。
 ///
@@ -64,7 +65,7 @@ Future<void> showEpisodeNumberPicker(
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.white38,
+                        color: FrostedSurface.darkInkWith(0.24),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -83,8 +84,9 @@ Future<void> showEpisodeNumberPicker(
                       const Spacer(),
                       Text(
                         descending ? '倒序' : '正序',
-                        style: const TextStyle(
-                            fontSize: 13, color: Colors.white70),
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: FrostedSurface.darkInkWith(0.70)),
                       ),
                       const SizedBox(width: 4),
                       IconButton(
@@ -123,7 +125,7 @@ Future<void> showEpisodeNumberPicker(
                         final tile = Container(
                           key: Key('episodeNumber_${ep.id}'),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.35),
+                            color: Colors.black.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
                               color: highlighted ? primary : Colors.transparent,
@@ -135,7 +137,9 @@ Future<void> showEpisodeNumberPicker(
                             ep.indexNumber?.toString() ?? '${i + 1}',
                             style: TextStyle(
                               fontSize: 16,
-                              color: highlighted ? primary : Colors.white,
+                              color: highlighted
+                                  ? primary
+                                  : FrostedSurface.darkInk,
                               fontWeight: highlighted
                                   ? FontWeight.bold
                                   : FontWeight.normal,

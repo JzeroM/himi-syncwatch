@@ -200,8 +200,12 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
                             Text(
                               opt.label,
                               style: TextStyle(
-                                color:
-                                    opt == _sortOption ? Colors.white : Colors.white70,
+                                color: opt == _sortOption
+                                    ? Theme.of(menuCtx).colorScheme.primary
+                                    : Theme.of(menuCtx)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.70),
                               ),
                             ),
                           ],

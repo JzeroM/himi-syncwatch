@@ -3,6 +3,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 详情页底部「相似推荐 / 外部链接 / 工作室 / 媒体信息 / 视频 / 音频」区块
 /// （仅非 TV 渲染）。数据来自 Emby 详情字段与 `MediaStreams`。
@@ -374,7 +375,8 @@ class _StreamCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: Colors.white),
+              Icon(icon,
+                  size: 18, color: FrostedSurface.darkInk),
               const SizedBox(width: 8),
               Text(title,
                   style: const TextStyle(
@@ -391,13 +393,16 @@ class _StreamCard extends StatelessWidget {
                   SizedBox(
                     width: 88,
                     child: Text(r.$1,
-                        style: const TextStyle(
-                            fontSize: 13, color: Colors.white60)),
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: FrostedSurface.darkInkWith(0.60))),
                   ),
                   Expanded(
                     child: Text(
                       r.$2,
-                      style: const TextStyle(fontSize: 13, color: Colors.white),
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: FrostedSurface.darkInk),
                     ),
                   ),
                 ],
@@ -439,10 +444,13 @@ class _LinkChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.open_in_new, size: 14, color: Colors.white),
+            Icon(Icons.open_in_new,
+                size: 14, color: FrostedSurface.darkInk),
             const SizedBox(width: 6),
             Text(link.name,
-                style: const TextStyle(fontSize: 13, color: Colors.white)),
+                style: TextStyle(
+                    fontSize: 13,
+                    color: FrostedSurface.darkInk)),
           ],
         ),
       ),
@@ -461,7 +469,8 @@ class _GlassChip extends StatelessWidget {
       borderRadius: const BorderRadius.all(Radius.circular(20)),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       child: Text(label,
-          style: const TextStyle(fontSize: 13, color: Colors.white)),
+          style: TextStyle(
+              fontSize: 13, color: FrostedSurface.darkInk)),
     );
   }
 }

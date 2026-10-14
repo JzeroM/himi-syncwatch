@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomCode;
@@ -180,9 +181,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   '长按保存图片 · 在 HIMI 中扫码加入',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(
+                    color: FrostedSurface.darkInkWith(0.54),
+                    fontSize: 12,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -239,15 +243,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.3),
+                    color: Colors.black.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SelectableText(
                     widget.roomCode,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontFamily: 'monospace',
-                      color: Colors.white70,
+                      color: FrostedSurface.darkInkWith(0.70),
                     ),
                   ),
                 ),
