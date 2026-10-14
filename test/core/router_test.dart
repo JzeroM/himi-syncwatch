@@ -343,7 +343,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(_shellIndex(tester), 2);
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -3000));
+    // 服务器页列表视图为 ReorderableListView（非 ListView 子类），
+    // 用 Scrollable 通用定位可滚动区域
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -3000));
     await tester.pumpAndSettle();
     expect(_navOpacity(tester), 0.0);
   });

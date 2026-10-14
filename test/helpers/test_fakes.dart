@@ -61,8 +61,23 @@ class FakeEmbyAuthService extends EmbyAuthService {
 
   String? selectedServerId;
 
+  /// 服务器顺序（config.id 有序列表），内存版持久化。
+  List<String> serverOrder = const [];
+
+  /// saveServerOrder 收到的调用记录（断言拖拽后确实落盘）。
+  List<String>? lastSavedServerOrder;
+
   @override
   Future<List<String>> listServerIds() async => _serverIds;
+
+  @override
+  Future<void> saveServerOrder(List<String> configIds) async {
+    serverOrder = configIds;
+    lastSavedServerOrder = configIds;
+  }
+
+  @override
+  Future<List<String>> loadServerOrder() async => serverOrder;
 
   @override
   Future<String?> loadSelectedServerId() async => selectedServerId;
@@ -105,6 +120,7 @@ class FakeEmbyService extends EmbyService {
     this.favoriteItems = const [],
     this.resumeItems = const [],
     this.filterOptions = const MediaFilterOptions(),
+    this.pingLatencyMs,
   });
 
   final MediaItem? item;
@@ -281,6 +297,10 @@ class FakeEmbyService extends EmbyService {
     'Id': 'srv_ping_1',
   };
   Object? pingError;
+
+  /// 模拟 ping 耗时（毫秒）：非 null 时 pingServer 先 await 该延迟再返回，
+  /// 供服务器页延迟统计 provider 测试断言 latencyMs 透传。
+  int? pingLatencyMs;
   Map<String, dynamic>? authResult;
   Object? authError;
   String? lastAuthUsername;
@@ -288,6 +308,10 @@ class FakeEmbyService extends EmbyService {
 
   @override
   Future<Map<String, dynamic>> pingServer(String serverUrl) async {
+    final latency = pingLatencyMs;
+    if (latency != null) {
+      await Future.delayed(Duration(milliseconds: latency));
+    }
     final err = pingError;
     if (err != null) throw err;
     return pingResult;

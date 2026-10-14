@@ -102,4 +102,27 @@ void main() {
       expect(built, isEmpty);
     });
   });
+
+  group('EmbyServerListNotifier.reorder', () {
+    test('把首项移到末尾', () {
+      final notifier = EmbyServerListNotifier()
+        ..setList([_config('a'), _config('b'), _config('c')]);
+      notifier.reorder(0, 2);
+      expect(notifier.state.map((s) => s.id).toList(), ['b', 'c', 'a']);
+    });
+
+    test('把末项移到首位', () {
+      final notifier = EmbyServerListNotifier()
+        ..setList([_config('a'), _config('b'), _config('c')]);
+      notifier.reorder(2, 0);
+      expect(notifier.state.map((s) => s.id).toList(), ['c', 'a', 'b']);
+    });
+
+    test('oldIndex == newIndex 不变', () {
+      final notifier = EmbyServerListNotifier()
+        ..setList([_config('a'), _config('b')]);
+      notifier.reorder(1, 1);
+      expect(notifier.state.map((s) => s.id).toList(), ['a', 'b']);
+    });
+  });
 }

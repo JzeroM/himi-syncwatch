@@ -43,6 +43,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? deepDiagnostics,
     bool? glassUi,
     String? versionPreference,
+    String? serverViewMode,
     bool? tvMode,
     String? videoOutput,
     bool? renderCompatMode,
@@ -92,6 +93,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       deepDiagnostics: deepDiagnostics,
       glassUi: glassUi,
       versionPreference: versionPreference,
+      serverViewMode: serverViewMode,
       tvMode: tvMode,
       // 手动改动 TV 开关即标记「用户已设置」，此后自动识别不再覆盖
       tvModeUserSet: tvMode != null ? true : null,

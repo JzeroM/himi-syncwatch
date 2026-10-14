@@ -76,6 +76,9 @@ class AppSettings {
   /// 视频版本偏好（多版本排序/默认选用的优先级），逗号分隔的
   /// [VersionPreference.name]；空 = 用默认顺序（[VersionPreference.decode] 补齐）。
   final String versionPreference;
+
+  /// 服务器页视图模式：'list'（列表，默认）/ 'grid'（网格）。
+  final String serverViewMode;
   final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
 
   /// 用户是否手动设置过 TV 开关（策略 A：设置过则自动识别不再覆盖）。
@@ -242,6 +245,7 @@ class AppSettings {
     this.appIcon,
     this.categoryColumns,
     this.versionPreference = '',
+    this.serverViewMode = 'list',
     this.tvMode = false,
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
@@ -288,6 +292,7 @@ class AppSettings {
     bool? deepDiagnostics,
     bool? glassUi,
     String? versionPreference,
+    String? serverViewMode,
     bool? tvMode,
     bool? tvModeUserSet,
     String? videoOutput,
@@ -337,6 +342,7 @@ class AppSettings {
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
       glassUi: glassUi ?? this.glassUi,
       versionPreference: versionPreference ?? this.versionPreference,
+      serverViewMode: serverViewMode ?? this.serverViewMode,
       tvMode: tvMode ?? this.tvMode,
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
@@ -408,6 +414,7 @@ class AppSettings {
         'deepDiagnostics': deepDiagnostics,
         'glassUi': glassUi,
         'versionPreference': versionPreference,
+        'serverViewMode': serverViewMode,
         'tvMode': tvMode,
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
@@ -488,6 +495,11 @@ class AppSettings {
       deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
       glassUi: json['glassUi'] as bool? ?? true,
       versionPreference: json['versionPreference'] as String? ?? '',
+      // 旧数据无此字段 / 非法值 → 列表视图
+      serverViewMode:
+          const ['list', 'grid'].contains(json['serverViewMode'])
+              ? json['serverViewMode'] as String
+              : 'list',
       tvMode: json['tvMode'] as bool? ?? false,
       // 旧数据无此字段：tvMode=true 说明用户当时手动开过 → 视为已设置，
       // 避免自动识别把用户手动关掉的 TV 模式重新打开。

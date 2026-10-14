@@ -81,6 +81,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       serverIds.map((sid) => authService.loadSession(sid)),
     );
     final savedId = await authService.loadSelectedServerId();
+    // 用户自定义顺序；不在序里的（如新加的）排尾部
+    final order = await authService.loadServerOrder();
 
     final configs = <EmbyServerConfig>[];
     final seenServerIds = <String>{};
@@ -99,6 +101,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (activeConfig == null || config.id == savedId) {
         activeConfig = config;
       }
+    }
+
+    if (order.isNotEmpty) {
+      final rank = <String, int>{for (var i = 0; i < order.length; i++) order[i]: i};
+      final sorted = [...configs]..sort((a, b) {
+          final ra = rank[a.id] ?? order.length;
+          final rb = rank[b.id] ?? order.length;
+          if (ra != rb) return ra.compareTo(rb);
+          return configs.indexOf(a).compareTo(configs.indexOf(b));
+        });
+      configs
+        ..clear()
+        ..addAll(sorted);
     }
 
     ref.read(embyServerListProvider.notifier).setList(configs);

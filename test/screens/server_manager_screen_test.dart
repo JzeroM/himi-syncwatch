@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
+import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
+import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/widgets/server_card.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -14,6 +18,7 @@ EmbyServerConfig _server({
   required String id,
   required String name,
   required String serverId,
+  bool authenticated = true,
 }) {
   return EmbyServerConfig(
     id: id,
@@ -21,16 +26,19 @@ EmbyServerConfig _server({
     serverName: name,
     serverId: serverId,
     username: 'user',
-    accessToken: 'token',
-    userId: 'uid',
+    accessToken: authenticated ? 'token' : null,
+    userId: authenticated ? 'uid' : null,
   );
 }
 
+/// 挂最小 GoRouter：`/servers` → 服务器页，`/` → 首页替身
+/// （点击卡片 context.go('/') 跳首页断言用）。
 Future<ProviderContainer> _pumpScreen(
   WidgetTester tester, {
   List<EmbyServerConfig> servers = const [],
   FakeEmbyAuthService? auth,
   AppSettings settings = const AppSettings(),
+  EmbyService Function(EmbyServerConfig)? serviceFactory,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -39,14 +47,31 @@ Future<ProviderContainer> _pumpScreen(
           .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServerListProvider
           .overrideWith((ref) => EmbyServerListNotifier()..setList(servers)),
+      if (serviceFactory != null)
+        embyServiceFactoryProvider.overrideWithValue(serviceFactory),
     ],
   );
   addTearDown(container.dispose);
 
+  final router = GoRouter(
+    initialLocation: '/servers',
+    routes: [
+      GoRoute(
+        path: '/servers',
+        builder: (_, __) => const ServerManagerScreen(),
+      ),
+      GoRoute(
+        path: '/',
+        builder: (_, __) => const Scaffold(body: Center(child: Text('首页替身'))),
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: ServerManagerScreen()),
+      child: MaterialApp.router(routerConfig: router),
     ),
   );
   await tester.pumpAndSettle();
@@ -77,9 +102,10 @@ void main() {
 
     expect(find.text('家庭NAS'), findsOneWidget);
     expect(find.text('备用服务器'), findsOneWidget);
+    expect(find.byType(ServerListCard), findsNWidgets(2));
   });
 
-  testWidgets('点击未激活服务器完成切换', (tester) async {
+  testWidgets('点击未激活卡片切换服务器并跳首页（v1.1.236）', (tester) async {
     final auth = FakeEmbyAuthService();
     final container = await _pumpScreen(
       tester,
@@ -95,7 +121,195 @@ void main() {
 
     expect(container.read(embyConfigProvider)?.id, 'srv_b');
     expect(auth.selectedServerId, 'srv_b');
+    expect(find.text('首页替身'), findsOneWidget,
+        reason: '点击卡片应跳回首页 tab');
     await _settleSnackbars(tester);
+  });
+
+  testWidgets('点击激活卡片直接跳首页且不切换（v1.1.236）', (tester) async {
+    final auth = FakeEmbyAuthService();
+    final container = await _pumpScreen(
+      tester,
+      auth: auth,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+    container.read(embyConfigProvider.notifier).setConfig(
+          container.read(embyServerListProvider).first,
+        );
+    await tester.pump();
+
+    await tester.tap(find.text('家庭NAS'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(embyConfigProvider)?.id, 'srv_a',
+        reason: '激活卡点击不切换服务器');
+    expect(auth.selectedServerId, isNull, reason: '未发生切换，不写选中 id');
+    expect(find.text('首页替身'), findsOneWidget);
+    await _settleSnackbars(tester);
+  });
+
+  testWidgets('进页自动拉取延迟与计数并渲染（v1.1.236）', (tester) async {
+    final fake = FakeEmbyService(
+      itemCounts: const MediaCounts(movies: 123, series: 45, episodes: 678),
+      pingLatencyMs: 30,
+    );
+    await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+      serviceFactory: (_) => fake,
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(find.text('123'), findsNWidgets(2));
+    expect(find.text('45'), findsNWidgets(2));
+    expect(find.textContaining('ms'), findsNWidgets(2));
+  });
+
+  testWidgets('视图切换：列表 ⇄ 网格并落盘偏好（v1.1.236）', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    expect(find.byType(ServerListCard), findsNWidgets(2));
+
+    await tester.tap(find.byKey(const ValueKey('serverViewToggle')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ServerGridCard), findsNWidgets(2));
+    expect(find.byType(ServerListCard), findsNothing);
+    expect(container.read(settingsProvider).serverViewMode, 'grid');
+
+    await tester.tap(find.byKey(const ValueKey('serverViewToggle')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ServerListCard), findsNWidgets(2));
+    expect(container.read(settingsProvider).serverViewMode, 'list');
+  });
+
+  testWidgets('网格视图渲染延迟与计数（v1.1.236）', (tester) async {
+    final fake = FakeEmbyService(
+      itemCounts: const MediaCounts(movies: 10, series: 5, episodes: 30),
+      pingLatencyMs: 20,
+    );
+    await _pumpScreen(
+      tester,
+      settings: const AppSettings(serverViewMode: 'grid'),
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+      serviceFactory: (_) => fake,
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ServerGridCard), findsNWidgets(2));
+    expect(find.text('10'), findsNWidgets(2));
+    expect(find.text('5'), findsNWidgets(2));
+    expect(find.textContaining('ms'), findsNWidgets(2));
+  });
+
+  testWidgets('「上移」菜单重排并持久化顺序（v1.1.236）', (tester) async {
+    final auth = FakeEmbyAuthService();
+    final container = await _pumpScreen(
+      tester,
+      auth: auth,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上移'));
+    await tester.pumpAndSettle();
+
+    final ids =
+        container.read(embyServerListProvider).map((s) => s.id).toList();
+    expect(ids, ['srv_b', 'srv_a']);
+    expect(auth.lastSavedServerOrder, ['srv_b', 'srv_a']);
+  });
+
+  testWidgets('网格视图「上移」菜单同样重排（v1.1.236）', (tester) async {
+    final auth = FakeEmbyAuthService();
+    final container = await _pumpScreen(
+      tester,
+      auth: auth,
+      settings: const AppSettings(serverViewMode: 'grid'),
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上移'));
+    await tester.pumpAndSettle();
+
+    final ids =
+        container.read(embyServerListProvider).map((s) => s.id).toList();
+    expect(ids, ['srv_b', 'srv_a']);
+    expect(auth.lastSavedServerOrder, ['srv_b', 'srv_a']);
+  });
+
+  testWidgets('刷新按钮重测延迟与计数（v1.1.236）', (tester) async {
+    var factoryCalls = 0;
+    final fake = FakeEmbyService(
+      itemCounts: const MediaCounts(movies: 1, series: 2, episodes: 3),
+      pingLatencyMs: 10,
+    );
+    await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+      ],
+      serviceFactory: (_) {
+        factoryCalls++;
+        return fake;
+      },
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+    final callsAfterLoad = factoryCalls;
+    expect(callsAfterLoad, greaterThan(0));
+
+    await tester.tap(find.byKey(const ValueKey('serverStatsRefresh')));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    expect(factoryCalls, greaterThan(callsAfterLoad),
+        reason: '刷新应重新走服务工厂测延迟/拉计数');
+  });
+
+  testWidgets('首张卡不显示「上移」（v1.1.236）', (tester) async {
+    await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('删除'), findsOneWidget);
+    expect(find.text('上移'), findsNothing);
   });
 
   testWidgets('扫码图标进入手机配置页（仅 TV 模式显示）', (tester) async {

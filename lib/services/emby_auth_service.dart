@@ -103,6 +103,24 @@ class EmbyAuthService {
     return await _secureStorage.read(key: 'selected_config_id');
   }
 
+  /// 服务器列表的用户自定义顺序（config.id 有序列表）。
+  ///
+  /// `listServerIds()` 的顺序来自 readAll，各平台无保证；拖拽排序后把顺序
+  /// 落盘到这里，首页加载时据此稳定排序（不在序里的排尾部 = 新加的靠后）。
+  Future<void> saveServerOrder(List<String> configIds) async {
+    await _secureStorage.write(key: 'server_order', value: jsonEncode(configIds));
+  }
+
+  Future<List<String>> loadServerOrder() async {
+    final raw = await _secureStorage.read(key: 'server_order');
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      return (jsonDecode(raw) as List).cast<String>();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<Dio> createDio({
     required String serverUrl,
     required String accessToken,

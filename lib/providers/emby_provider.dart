@@ -48,6 +48,15 @@ class EmbyServerListNotifier extends StateNotifier<List<EmbyServerConfig>> {
   void updateServer(EmbyServerConfig config) {
     state = state.map((s) => s.id == config.id ? config : s).toList();
   }
+
+  /// 拖拽/上移重排：把 [oldIndex] 的服务器移到 [newIndex]。
+  void reorder(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    final list = [...state];
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+    state = list;
+  }
 }
 
 /// Emby 服务实例工厂：按服务器配置构建独立服务（跨服务器搜索/详情/播放用）。

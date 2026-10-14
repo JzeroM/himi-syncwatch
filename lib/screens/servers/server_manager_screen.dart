@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/server_stats_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
@@ -9,9 +11,20 @@ import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 
-/// Emby 服务器管理页（原侧边栏服务器区域，现为独立标签页）。
+/// 按 serverId 去重（同服务器多 session 只展示第一个）。
+List<EmbyServerConfig> _dedupServers(List<EmbyServerConfig> servers) {
+  final seen = <String>{};
+  final result = <EmbyServerConfig>[];
+  for (final s in servers) {
+    if (seen.add(s.serverId)) result.add(s);
+  }
+  return result;
+}
+
+/// Emby 服务器管理页（网格/列表双视图 + 拖拽排序 + 真延迟/计数）。
 class ServerManagerScreen extends ConsumerStatefulWidget {
   const ServerManagerScreen({super.key});
 
@@ -24,19 +37,28 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   bool _showAddServerForm = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadStats());
+  }
+
+  Future<void> _loadStats() async {
+    final servers = _dedupServers(ref.read(embyServerListProvider));
+    if (servers.isEmpty) return;
+    await ref.read(serverStatsProvider.notifier).loadAll(servers);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final servers = ref.watch(embyServerListProvider);
     final currentConfig = ref.watch(embyConfigProvider);
+    final statsMap = ref.watch(serverStatsProvider);
+    final viewMode =
+        ref.watch(settingsProvider.select((s) => s.serverViewMode));
     // 扫码配置入口仅 TV 模式（遥控器无输入法）：手机/桌面走手动输入
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
-    final seenServerIds = <String>{};
-    final dedupedServers = <EmbyServerConfig>[];
-    for (final s in servers) {
-      if (seenServerIds.add(s.serverId)) {
-        dedupedServers.add(s);
-      }
-    }
+    final dedupedServers = _dedupServers(servers);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -47,6 +69,21 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         elevation: 0,
         flexibleSpace: const GlassBackdrop(),
         actions: [
+          IconButton(
+            key: const ValueKey('serverViewToggle'),
+            icon: Icon(
+                viewMode == 'list' ? Icons.view_module : Icons.view_list),
+            tooltip: viewMode == 'list' ? '网格视图' : '列表视图',
+            onPressed: () => ref.read(settingsProvider.notifier).update(
+                  serverViewMode: viewMode == 'list' ? 'grid' : 'list',
+                ),
+          ),
+          IconButton(
+            key: const ValueKey('serverStatsRefresh'),
+            icon: const Icon(Icons.refresh),
+            tooltip: '刷新延迟与计数',
+            onPressed: _loadStats,
+          ),
           if (tvMode)
             IconButton(
               icon: const Icon(Icons.qr_code_scanner),
@@ -81,6 +118,9 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                     if (!mounted) return;
                     setState(() => _showAddServerForm = false);
                     showAppToast(context, '服务器已添加');
+                    // 新服务器自动排末尾（home _init 把不在序里的排尾部），
+                    // 进页统计补上它
+                    _loadStats();
                   },
                 ),
               ),
@@ -89,36 +129,142 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             Expanded(
               child: dedupedServers.isEmpty
                   ? const _EmptyServerHint()
-                  : ListView.builder(
-                      padding: EdgeInsets.only(
-                        bottom: GlassConfig.bottomReserveOf(context),
-                      ),
-                      itemCount: dedupedServers.length,
-                      itemBuilder: (context, index) {
-                        final server = dedupedServers[index];
-                        final isActive = currentConfig?.id == server.id;
-                        return _ServerTile(
-                          server: server,
-                          isActive: isActive,
-                          onTap: isActive ? null : () => _switchServer(server),
-                          onEdit: isActive
-                              ? () => _showEditServerDialog(server)
-                              : null,
-                          onDelete: () => _deleteServer(server, isActive),
-                        );
-                      },
-                    ),
+                  : viewMode == 'grid'
+                      ? _buildGrid(dedupedServers, currentConfig, statsMap)
+                      : _buildList(dedupedServers, currentConfig, statsMap),
             ),
         ],
       ),
     );
   }
 
-  Future<void> _switchServer(EmbyServerConfig server) async {
-    ref.read(embyConfigProvider.notifier).setConfig(server);
-    await ref.read(embyAuthServiceProvider).saveSelectedServerId(server.id);
+  Widget _buildList(
+    List<EmbyServerConfig> dedupedServers,
+    EmbyServerConfig? currentConfig,
+    Map<String, ServerStats> statsMap,
+  ) {
+    return ReorderableListView.builder(
+      buildDefaultDragHandles: false,
+      padding: EdgeInsets.only(
+        top: 8,
+        bottom: GlassConfig.bottomReserveOf(context),
+      ),
+      itemCount: dedupedServers.length,
+      onReorderItem: (oldIndex, newIndex) =>
+          _reorderVisible(oldIndex, newIndex),
+      itemBuilder: (context, index) {
+        final server = dedupedServers[index];
+        final isActive = currentConfig?.id == server.id;
+        return ServerListCard(
+          key: ValueKey('serverTile_${server.id}'),
+          server: server,
+          isActive: isActive,
+          stats: statsMap[server.id],
+          onTap: () => _openServer(server),
+          onEdit: isActive ? () => _showEditServerDialog(server) : null,
+          onMoveUp: index == 0
+              ? null
+              : () => _reorderVisible(index, index - 1),
+          onDelete: () => _deleteServer(server, isActive),
+          dragHandle: ReorderableDragStartListener(
+            index: index,
+            child: const Icon(Icons.drag_handle, size: 20),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildGrid(
+    List<EmbyServerConfig> dedupedServers,
+    EmbyServerConfig? currentConfig,
+    Map<String, ServerStats> statsMap,
+  ) {
+    final width = MediaQuery.sizeOf(context).width;
+    final crossAxisCount = (width / 220).floor().clamp(2, 4);
+    return GridView.builder(
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        GlassConfig.bottomReserveOf(context),
+      ),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 0.92,
+      ),
+      itemCount: dedupedServers.length,
+      itemBuilder: (context, index) {
+        final server = dedupedServers[index];
+        final isActive = currentConfig?.id == server.id;
+        final card = ServerGridCard(
+          key: ValueKey('serverGridTile_${server.id}'),
+          server: server,
+          isActive: isActive,
+          stats: statsMap[server.id],
+          onTap: () => _openServer(server),
+          onEdit: isActive ? () => _showEditServerDialog(server) : null,
+          onMoveUp: index == 0
+              ? null
+              : () => _reorderVisible(index, index - 1),
+          onDelete: () => _deleteServer(server, isActive),
+        );
+        return LongPressDraggable<int>(
+          data: index,
+          maxSimultaneousDrags: 1,
+          feedback: Material(
+            color: Colors.transparent,
+            child: Opacity(
+              opacity: 0.85,
+              child: SizedBox(width: 180, height: 200, child: card),
+            ),
+          ),
+          childWhenDragging: Opacity(opacity: 0.35, child: card),
+          child: DragTarget<int>(
+            onAcceptWithDetails: (details) =>
+                _reorderVisible(details.data, index),
+            builder: (context, candidateData, rejectedData) => card,
+          ),
+        );
+      },
+    );
+  }
+
+  /// 重排可见列表（from → to，to 为目标下标）：更新内存 + 持久化顺序。
+  Future<void> _reorderVisible(int from, int to) async {
+    final current = ref.read(embyServerListProvider);
+    final deduped = _dedupServers(current);
+    if (from == to ||
+        from < 0 ||
+        from >= deduped.length ||
+        to < 0 ||
+        to >= deduped.length) {
+      return;
+    }
+    final reordered = [...deduped];
+    final item = reordered.removeAt(from);
+    reordered.insert(to, item);
+    // 去重副本（不可见）挪到尾部，不丢内存数据
+    final movedIds = reordered.map((s) => s.id).toSet();
+    final rest = current.where((s) => !movedIds.contains(s.id)).toList();
+    ref.read(embyServerListProvider.notifier).setList([...reordered, ...rest]);
+    await ref
+        .read(embyAuthServiceProvider)
+        .saveServerOrder(reordered.map((s) => s.id).toList());
+  }
+
+  /// 点击任意卡片（含激活）：未激活先切换服务器，再跳回首页 tab。
+  Future<void> _openServer(EmbyServerConfig server) async {
+    final current = ref.read(embyConfigProvider);
+    if (current?.id != server.id) {
+      ref.read(embyConfigProvider.notifier).setConfig(server);
+      await ref.read(embyAuthServiceProvider).saveSelectedServerId(server.id);
+      if (mounted) showAppToast(context, '已切换到「${server.label}」');
+    }
     if (!mounted) return;
-    showAppToast(context, '已切换到「${server.label}」');
+    context.go('/');
   }
 
   Future<void> _deleteServer(EmbyServerConfig server, bool isActive) async {
@@ -319,69 +465,6 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     }
 
     if (ctx.mounted) Navigator.pop(ctx);
-  }
-}
-
-class _ServerTile extends StatelessWidget {
-  const _ServerTile({
-    required this.server,
-    required this.isActive,
-    required this.onTap,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final EmbyServerConfig server;
-  final bool isActive;
-  final VoidCallback? onTap;
-  final VoidCallback? onEdit;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        Icons.dns,
-        color: isActive ? Theme.of(context).colorScheme.primary : null,
-      ),
-      title: Text(
-        server.label,
-        style: TextStyle(
-          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-        ),
-      ),
-      subtitle: Text(
-        '${server.username} · ${server.serverUrl}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12),
-      ),
-      onTap: onTap,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isActive)
-            const Icon(Icons.check_circle, color: Colors.green, size: 20),
-          PopupMenuButton<String>(
-            itemBuilder: (context) => [
-              if (onEdit != null)
-                const PopupMenuItem(value: 'edit', child: Text('编辑')),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Text('删除', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-            onSelected: (value) {
-              if (value == 'edit') {
-                onEdit?.call();
-              } else if (value == 'delete') {
-                onDelete();
-              }
-            },
-          ),
-        ],
-      ),
-    );
   }
 }
 

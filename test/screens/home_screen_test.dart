@@ -395,6 +395,66 @@ void main() {
     expect(find.text('备用服务器'), findsOneWidget);
   });
 
+  testWidgets('按 server_order 加载服务器顺序，不在序的排尾部（v1.1.236）', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1', 's2'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        's2': _sessionJson(
+          id: 'srv_b',
+          serverId: 's2',
+          serverUrl: 'https://b',
+          name: '备用服务器',
+        ),
+      },
+    )..serverOrder = ['srv_b', 'srv_a'];
+    final container = await _pumpScreen(tester, auth: auth);
+
+    final ids =
+        container.read(embyServerListProvider).map((s) => s.id).toList();
+    expect(ids, ['srv_b', 'srv_a']);
+  });
+
+  testWidgets('server_order 里不存在的新服务器排尾部（v1.1.236）', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1', 's2'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        's2': _sessionJson(
+          id: 'srv_b',
+          serverId: 's2',
+          serverUrl: 'https://b',
+          name: '备用服务器',
+        ),
+      },
+    )..serverOrder = ['srv_b']; // srv_a 不在序里 → 排尾部
+    final container = await _pumpScreen(tester, auth: auth);
+
+    final ids =
+        container.read(embyServerListProvider).map((s) => s.id).toList();
+    expect(ids, ['srv_b', 'srv_a']);
+  });
+
+  testWidgets('无 server_order 时保持存储顺序（v1.1.236）', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1', 's2'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        's2': _sessionJson(
+          id: 'srv_b',
+          serverId: 's2',
+          serverUrl: 'https://b',
+          name: '备用服务器',
+        ),
+      },
+    );
+    final container = await _pumpScreen(tester, auth: auth);
+
+    final ids =
+        container.read(embyServerListProvider).map((s) => s.id).toList();
+    expect(ids, ['srv_a', 'srv_b']);
+  });
+
   testWidgets('切换服务器后首页内容跟随切换到新服务器数据', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1', 's2'],
