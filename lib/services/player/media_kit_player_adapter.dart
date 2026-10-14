@@ -292,16 +292,37 @@ class MediaKitPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   Stream<({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>
       get onMediaStatus {
-    // 监听 duration 变化：从 0（loading）→ >0（loaded）
+    // duration（loading→loaded）与 completed（→end）合并广播：
+    // 旧实现只听 duration，播完不发 end，自动下一集丢失触发源。
+    final ctrl = StreamController<
+        ({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>.broadcast();
     AdapterMediaStatus last = AdapterMediaStatus.loading;
-    return _player.stream.duration.map((d) {
-      final newValue = d.inMilliseconds > 0
-          ? AdapterMediaStatus.loaded
-          : AdapterMediaStatus.loading;
-      final oldValue = last;
-      last = newValue;
-      return (oldValue: oldValue, newValue: newValue);
-    }).where((e) => e.oldValue != e.newValue);
+    void emit(AdapterMediaStatus next) {
+      if (next.rawValue == last.rawValue) return;
+      final old = last;
+      last = next;
+      ctrl.add((oldValue: old, newValue: next));
+    }
+
+    AdapterMediaStatus fromState() {
+      final s = _player.state;
+      if (s.completed) return AdapterMediaStatus.end;
+      if (s.buffering) return AdapterMediaStatus.buffering;
+      if (s.duration.inMilliseconds > 0) return AdapterMediaStatus.loaded;
+      return AdapterMediaStatus.loading;
+    }
+
+    final subs = <StreamSubscription<dynamic>>[
+      _player.stream.duration.listen((_) => emit(fromState())),
+      _player.stream.completed.listen((_) => emit(fromState())),
+      _player.stream.buffering.listen((_) => emit(fromState())),
+    ];
+    ctrl.onCancel = () {
+      for (final s in subs) {
+        s.cancel();
+      }
+    };
+    return ctrl.stream;
   }
 
   @override

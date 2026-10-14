@@ -1,6 +1,9 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
@@ -8,8 +11,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 ///
 /// 开启时：以 liquid_glass_widgets 的真折射玻璃为底（磨砂/厚度/色散等
 /// 参数由设置页滑杆经 GlassTheme 全局调节），叠加本层的半透明着色渐变、
-/// 高光描边与悬浮投影；设置中关闭 `glassUi` 后降级为不透明纯色，
-/// 不渲染任何玻璃折射。调用方 API 与旧版保持一致。
+/// 高光描边与悬浮投影；设置中关闭 `glassUi` 后降级为中等磨砂毛玻璃
+/// （[FrostedSurface]），不渲染任何玻璃折射。调用方 API 与旧版保持一致。
 class GlassContainer extends ConsumerWidget {
   const GlassContainer({
     super.key,
@@ -33,28 +36,39 @@ class GlassContainer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
+
+    // 关闭液态玻璃 → 中等磨砂毛玻璃降级（不再用不透明纯色）。
+    if (!glassEnabled) {
+      Widget frosted = FrostedSurface(
+        borderRadius: borderRadius,
+        padding: padding,
+        showShadow: showShadow,
+        child: child,
+      );
+      if (margin != null) {
+        frosted = Padding(padding: margin!, child: frosted);
+      }
+      return frosted;
+    }
+
     // iOS 用更淡的默认着色（自定义 tint 不覆盖）→ 背景更透。
     final effectiveTint =
         tint == GlassConfig.panelTint ? GlassConfig.panelTintOf() : tint;
 
     Widget content = DecoratedBox(
       decoration: BoxDecoration(
-        color: glassEnabled ? null : GlassConfig.fallbackColor,
-        gradient: glassEnabled
-            ? LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color.lerp(effectiveTint, Colors.white, 0.06)!,
-                  effectiveTint,
-                  effectiveTint.withValues(alpha: effectiveTint.a * 0.72),
-                ],
-              )
-            : null,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color.lerp(effectiveTint, Colors.white, 0.06)!,
+            effectiveTint,
+            effectiveTint.withValues(alpha: effectiveTint.a * 0.72),
+          ],
+        ),
         borderRadius: borderRadius,
         // 玻璃开启时不加本层白描边：包折射管线自带菲涅尔高光边缘，
-        // 双描边会压灰、破坏 Kyant 镜片观感；纯色降级态才需要边线定界。
-        border: glassEnabled ? null : Border.all(color: GlassConfig.rimColor),
+        // 双描边会压灰、破坏 Kyant 镜片观感。
       ),
       child: Padding(
         padding: padding ?? EdgeInsets.zero,
@@ -62,22 +76,20 @@ class GlassContainer extends ConsumerWidget {
       ),
     );
 
-    if (glassEnabled) {
-      // 真折射液态玻璃底（liquid_glass_widgets）：磨砂/厚度/色散等
-      // 由设置页滑杆经 GlassTheme 全局调节（见 glass_tuning.dart）；
-      // 原「模糊+饱和 BackdropFilter」由包内折射管线取代。
-      content = lg.GlassContainer(
-        shape: lg.LiquidRoundedSuperellipse(
-          borderRadius: borderRadius.topLeft.x,
-        ),
-        child: content,
-      );
-    }
+    // 真折射液态玻璃底（liquid_glass_widgets）：磨砂/厚度/色散等
+    // 由设置页滑杆经 GlassTheme 全局调节（见 glass_tuning.dart）；
+    // 原「模糊+饱和 BackdropFilter」由包内折射管线取代。
+    content = lg.GlassContainer(
+      shape: lg.LiquidRoundedSuperellipse(
+        borderRadius: borderRadius.topLeft.x,
+      ),
+      child: content,
+    );
 
     content = ClipRRect(borderRadius: borderRadius, child: content);
 
     // 悬浮投影画在裁剪层之外，避免被 ClipRRect 吃掉
-    if (glassEnabled && showShadow) {
+    if (showShadow) {
       content = DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: borderRadius,
@@ -103,9 +115,23 @@ class GlassBackdrop extends ConsumerWidget {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
 
     if (!glassEnabled) {
-      return DecoratedBox(
-        decoration: const BoxDecoration(color: GlassConfig.fallbackColor),
-        child: SizedBox.expand(),
+      // 关闭液态玻璃 → 顶栏条带毛玻璃（ClipRect 限定，控开销）。
+      return ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: GlassConfig.frostedSigma,
+            sigmaY: GlassConfig.frostedSigma,
+          ),
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              color: GlassConfig.frostedTint,
+              border: Border(
+                bottom: BorderSide(color: GlassConfig.rimColor, width: 1),
+              ),
+            ),
+            child: SizedBox.expand(),
+          ),
+        ),
       );
     }
 

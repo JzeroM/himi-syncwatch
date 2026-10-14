@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,14 +58,14 @@ void main() {
   Future<void> openDialog(WidgetTester tester, {String current = 'a'}) async {
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(FrostedSurface), findsOneWidget);
     expect(find.byKey(const Key('opt_a')), findsOneWidget);
     expect(find.byKey(const Key('opt_b')), findsOneWidget);
     expect(find.byKey(const Key('opt_c')), findsOneWidget);
     expect(current, isNotEmpty);
   }
 
-  testWidgets('居中 AlertDialog，不用 BottomSheet', (tester) async {
+  testWidgets('居中毛玻璃弹层，不用 BottomSheet', (tester) async {
     String? selected;
     await pumpHost(
       tester,
@@ -78,8 +79,8 @@ void main() {
     );
     await openDialog(tester);
 
-    // AlertDialog 在屏幕中心附近
-    final rect = tester.getRect(find.byType(AlertDialog));
+    // 弹层在屏幕中心附近
+    final rect = tester.getRect(find.byType(FrostedSurface));
     final screen = tester.getSize(find.byType(MaterialApp));
     expect(rect.center.dy, closeTo(screen.height / 2, 40));
     expect(find.byType(BottomSheet), findsNothing);
@@ -119,18 +120,18 @@ void main() {
     // 方向键下移：弹层不关闭、无选择回调（RadioGroup 劫持回归）
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-    expect(find.byType(AlertDialog), findsOneWidget, reason: '方向键不应关闭弹层');
+    expect(find.byType(FrostedSurface), findsOneWidget, reason: '方向键不应关闭弹层');
     expect(selected, isNull, reason: '方向键不应触发选择');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(FrostedSurface), findsOneWidget);
 
     // Enter 选中第 3 项
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(selected, 'c');
-    expect(find.byType(AlertDialog), findsNothing, reason: '选中后关闭');
+    expect(find.byType(FrostedSurface), findsNothing, reason: '选中后关闭');
   });
 
   testWidgets('TV：点选行 → 回调并关闭', (tester) async {
@@ -150,7 +151,7 @@ void main() {
     await tester.tap(find.byKey(const Key('opt_b')));
     await tester.pumpAndSettle();
     expect(selected, 'b');
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(FrostedSurface), findsNothing);
   });
 
   testWidgets('非 TV：无 RemoteShell，点选行回调并关闭', (tester) async {
@@ -202,7 +203,7 @@ void main() {
 
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(FrostedSurface), findsNothing);
     expect(selected, isNull);
   });
 

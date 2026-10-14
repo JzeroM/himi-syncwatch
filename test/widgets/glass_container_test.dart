@@ -39,7 +39,7 @@ void main() {
       expect(find.byType(ClipRRect), findsOneWidget);
     });
 
-    testWidgets('关闭玻璃时降级为纯色，不渲染任何玻璃层', (tester) async {
+    testWidgets('关闭玻璃时降级为毛玻璃，不渲染液态折射层', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -47,19 +47,18 @@ void main() {
         ),
       );
 
-      expect(find.byType(BackdropFilter), findsNothing);
+      // 降级为毛玻璃：有 BackdropFilter，无液态折射层
+      expect(find.byType(BackdropFilter), findsOneWidget);
       expect(find.byType(lg.GlassContainer), findsNothing);
       expect(find.text('面板内容'), findsOneWidget);
 
-      final decoration = tester.widget<DecoratedBox>(
+      final colorBox = tester.widget<ColoredBox>(
         find.descendant(
           of: find.byType(ClipRRect),
-          matching: find.byType(DecoratedBox),
+          matching: find.byType(ColoredBox),
         ),
       );
-      final box = decoration.decoration as BoxDecoration;
-      expect(box.color, GlassConfig.fallbackColor);
-      expect(box.gradient, isNull);
+      expect(colorBox.color, GlassConfig.frostedTint);
     });
 
     testWidgets('开启玻璃时面板带本层悬浮投影', (tester) async {
@@ -136,7 +135,7 @@ void main() {
       );
     });
 
-    testWidgets('纯色降级态保留 rim 边线定界', (tester) async {
+    testWidgets('毛玻璃降级态保留白描边定界', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassContainer(child: Text('面板内容')),
@@ -150,9 +149,9 @@ void main() {
           .whereType<BoxDecoration>()
           .toList();
       expect(
-        boxes.any((b) => b.border?.top.color == GlassConfig.rimColor),
+        boxes.any((b) => b.border?.top.color == GlassConfig.frostedBorder),
         isTrue,
-        reason: '关闭玻璃后不透明纯色需要边线与背景区分',
+        reason: '毛玻璃降级需要描边与背景区分',
       );
     });
   });
@@ -174,7 +173,7 @@ void main() {
       );
     });
 
-    testWidgets('关闭玻璃时降级为纯色条', (tester) async {
+    testWidgets('关闭玻璃时降级为毛玻璃条', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassBackdrop(),
@@ -182,7 +181,8 @@ void main() {
         ),
       );
       expect(find.byType(lg.GlassContainer), findsNothing);
-      expect(find.byType(BackdropFilter), findsNothing);
+      // 降级为条带毛玻璃：有 BackdropFilter
+      expect(find.byType(BackdropFilter), findsOneWidget);
     });
   });
 

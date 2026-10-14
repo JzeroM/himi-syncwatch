@@ -45,6 +45,15 @@ class GlassConfig {
   /// 关闭玻璃后的降级纯色。
   static const Color fallbackColor = Color(0xF01A1D24);
 
+  /// 中等磨砂毛玻璃（FrostedSurface）模糊半径。
+  static const double frostedSigma = 20;
+
+  /// 中等磨砂底色：深色半透明（约 42% 黑），保证白字可读、背景只见模糊色块。
+  static const Color frostedTint = Color(0x6B000000);
+
+  /// 毛玻璃描边（约 13% 白）。
+  static const Color frostedBorder = Color(0x22FFFFFF);
+
   /// 高光描边基色（约 30% 白）。
   static const Color rimColor = Color(0x4DFFFFFF);
 

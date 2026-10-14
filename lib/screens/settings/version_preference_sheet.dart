@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 打开「视频版本偏好」设置面板（底部弹层，长按拖动 + 上移调整优先级）。
 Future<void> showVersionPreferenceSheet(BuildContext context, WidgetRef ref) {
@@ -10,7 +11,13 @@ Future<void> showVersionPreferenceSheet(BuildContext context, WidgetRef ref) {
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _VersionPreferenceSheet(initial: current),
+    elevation: 0,
+    builder: (_) => FrostedSurface(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      showShadow: false,
+      padding: const EdgeInsets.only(top: 4),
+      child: _VersionPreferenceSheet(initial: current),
+    ),
   );
 }
 
@@ -52,15 +59,10 @@ class _VersionPreferenceSheetState
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.82,
-        ),
-        decoration: BoxDecoration(
-          color: scheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

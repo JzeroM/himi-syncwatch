@@ -255,4 +255,86 @@ void main() {
     expect(
         PlayerScreen.showBottomDisplayAdjustButton(tvMode: false), isFalse);
   });
+
+  // ---- 加载转圈期间强制显示控件（黑屏仍可返回） ----
+
+  group('isLoadingMaskVisible（v1.1.238 黑屏加载仍显控件）', () {
+    test('切集遮罩恒可见（无论进度/就绪）', () {
+      expect(
+        PlayerScreen.isLoadingMaskVisible(
+            switchingMedia: true, durationMs: 5000, playerReady: true),
+        isTrue,
+      );
+      expect(
+        PlayerScreen.isLoadingMaskVisible(
+            switchingMedia: true, durationMs: 0, playerReady: false),
+        isTrue,
+      );
+    });
+
+    test('首帧未出（就绪且时长 0）可见', () {
+      expect(
+        PlayerScreen.isLoadingMaskVisible(
+            switchingMedia: false, durationMs: 0, playerReady: true),
+        isTrue,
+      );
+    });
+
+    test('正常播放（时长 > 0）不可见', () {
+      expect(
+        PlayerScreen.isLoadingMaskVisible(
+            switchingMedia: false, durationMs: 1000, playerReady: true),
+        isFalse,
+      );
+    });
+
+    test('未就绪（选集页占位）不可见——占位无转圈遮罩', () {
+      expect(
+        PlayerScreen.isLoadingMaskVisible(
+            switchingMedia: false, durationMs: 0, playerReady: false),
+        isFalse,
+      );
+    });
+  });
+
+  // ---- 播完自动下一集（v1.1.238 位置兜底） ----
+
+  group('shouldAutoNextEpisode（播完位置兜底判定）', () {
+    test('播放中且进入结尾窗口（距时长 ≤500ms）→ 触发', () {
+      expect(
+        PlayerScreen.shouldAutoNextEpisode(
+            positionMs: 59500, durationMs: 60000, playing: true),
+        isTrue,
+      );
+      expect(
+        PlayerScreen.shouldAutoNextEpisode(
+            positionMs: 60000, durationMs: 60000, playing: true),
+        isTrue,
+      );
+    });
+
+    test('距结尾 >500ms → 不触发', () {
+      expect(
+        PlayerScreen.shouldAutoNextEpisode(
+            positionMs: 59000, durationMs: 60000, playing: true),
+        isFalse,
+      );
+    });
+
+    test('暂停中（非 playing）→ 不触发（用户主动暂停不切集）', () {
+      expect(
+        PlayerScreen.shouldAutoNextEpisode(
+            positionMs: 60000, durationMs: 60000, playing: false),
+        isFalse,
+      );
+    });
+
+    test('时长未知（0）→ 不触发', () {
+      expect(
+        PlayerScreen.shouldAutoNextEpisode(
+            positionMs: 0, durationMs: 0, playing: true),
+        isFalse,
+      );
+    });
+  });
 }

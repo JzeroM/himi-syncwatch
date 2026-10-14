@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_filter_panel.dart';
@@ -231,6 +232,84 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
     _loadFirstPage();
   }
 
+  /// 毛玻璃排序菜单（锚定排序按钮下方）。
+  Future<void> _showSortMenu(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    final position = (box != null && overlayBox != null)
+        ? RelativeRect.fromRect(
+            Rect.fromCenter(
+              center: box.localToGlobal(
+                Offset(box.size.width / 2, kToolbarHeight),
+                ancestor: overlayBox,
+              ),
+              width: 0,
+              height: 0,
+            ),
+            Offset.zero & overlayBox.size,
+          )
+        : const RelativeRect.fromLTRB(16, 120, 16, 0);
+
+    final picked = await showMenu<SortOption>(
+      context: context,
+      color: Colors.transparent,
+      elevation: 0,
+      constraints: const BoxConstraints(minWidth: 200, maxWidth: 280),
+      position: position,
+      items: [
+        PopupMenuItem<SortOption>(
+          enabled: false,
+          padding: EdgeInsets.zero,
+          child: Builder(
+            builder: (menuCtx) => FrostedSurface(
+              borderRadius: BorderRadius.circular(16),
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final opt in SortOption.values)
+                    InkWell(
+                      onTap: () => Navigator.pop(menuCtx, opt),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        color: opt == _sortOption
+                            ? Theme.of(menuCtx)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.35)
+                            : Colors.transparent,
+                        child: Row(
+                          children: [
+                            if (opt == _sortOption)
+                              const Icon(Icons.check,
+                                  size: 18, color: Colors.green)
+                            else
+                              const SizedBox(width: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              opt.label,
+                              style: TextStyle(
+                                color:
+                                    opt == _sortOption ? Colors.white : Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+    if (picked != null) _onSortChanged(picked);
+  }
+
   /// 后台预取筛选面板可选项（进页调用一次；类型范围变更后失效重取）。
   ///
   /// 复用在途 future 去重：预取与打开面板共享同一请求，避免重复网络往返。
@@ -335,25 +414,10 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
             // 打开期间置灰：配合防重入守卫，杜绝连点弹出两个面板
             onPressed: _filterOpening ? null : _openFilterPanel,
           ),
-          PopupMenuButton<SortOption>(
+          IconButton(
             icon: const Icon(Icons.sort),
             tooltip: '排序',
-            onSelected: _onSortChanged,
-            itemBuilder: (context) => SortOption.values.map((opt) {
-              return PopupMenuItem(
-                value: opt,
-                child: Row(
-                  children: [
-                    if (opt == _sortOption)
-                      const Icon(Icons.check, size: 18, color: Colors.green)
-                    else
-                      const SizedBox(width: 18),
-                    const SizedBox(width: 8),
-                    Text(opt.label),
-                  ],
-                ),
-              );
-            }).toList(),
+            onPressed: () => _showSortMenu(context),
           ),
         ],
       ),

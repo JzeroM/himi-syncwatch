@@ -4,6 +4,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/providers/server_stats_provider.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -348,39 +349,29 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
               ).animate(curved),
               child: Material(
                 color: Colors.transparent,
-                child: Container(
-                  width: _panelWidth,
-                  decoration: BoxDecoration(
-                    // 实色不透明底（区别于玻璃面板）
-                    color: const Color(0xFF252830),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0x22FFFFFF)),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x99000000),
-                        blurRadius: 18,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var i = 0; i < actions.length; i++) ...[
-                        if (i == actions.length - 1)
-                          const Divider(
-                            height: 1,
-                            indent: 16,
-                            endIndent: 16,
-                            color: Color(0x1AFFFFFF),
+                child: FrostedSurface(
+                  borderRadius: const BorderRadius.all(Radius.circular(16)),
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: SizedBox(
+                    width: _panelWidth,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < actions.length; i++) ...[
+                          if (i == actions.length - 1)
+                            const Divider(
+                              height: 1,
+                              indent: 16,
+                              endIndent: 16,
+                              color: Color(0x1AFFFFFF),
+                            ),
+                          _PanelItem(
+                            action: actions[i],
+                            onTap: () => _onSelected(actions[i]),
                           ),
-                        _PanelItem(
-                          action: actions[i],
-                          onTap: () => _onSelected(actions[i]),
-                        ),
+                        ],
                       ],
-                      const SizedBox(height: 4),
-                    ],
+                    ),
                   ),
                 ),
               ),

@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
@@ -460,21 +461,35 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
 
   Future<void> _deleteServer(EmbyServerConfig server, bool isActive) async {
     closeServerActionPanel();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showGlassDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除服务器'),
-        content: Text('确定删除 "${server.label}" 吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              '删除服务器',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成删除
-            autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          Text('确定删除 "${server.label}" 吗？'),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成删除
+                autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
+                child: const Text('删除', style: TextStyle(color: Colors.red)),
+              ),
+            ],
           ),
         ],
       ),
@@ -507,71 +522,87 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     final passwordController = TextEditingController();
     final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
 
-    showDialog(
+    showGlassDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('编辑服务器'),
-        content: SingleChildScrollView(
-          // TV 下输入框整体屏蔽焦点（遥控器无输入法；添加走扫码入口）
-          child: tvExcludeEditable(
-            tvMode: tvMode,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      builder: (ctx) => ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                '编辑服务器',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            SingleChildScrollView(
+              // TV 下输入框整体屏蔽焦点（遥控器无输入法；添加走扫码入口）
+              child: tvExcludeEditable(
+                tvMode: tvMode,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: '服务器名称',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: urlController,
+                      decoration: const InputDecoration(
+                        labelText: '服务器地址',
+                        hintText: 'https://emby.example.com:8920',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: usernameController,
+                      decoration: const InputDecoration(
+                        labelText: '用户名',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: '新密码（留空保持不变）',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: '服务器名称',
-                    border: OutlineInputBorder(),
-                  ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消'),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: urlController,
-                  decoration: const InputDecoration(
-                    labelText: '服务器地址',
-                    hintText: 'https://emby.example.com:8920',
-                    border: OutlineInputBorder(),
+                TextButton(
+                  onPressed: () => _saveEdit(
+                    ctx,
+                    server,
+                    name: nameController.text.trim(),
+                    url: urlController.text.trim(),
+                    username: usernameController.text.trim(),
+                    password: passwordController.text,
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: usernameController,
-                  decoration: const InputDecoration(
-                    labelText: '用户名',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: '新密码（留空保持不变）',
-                    border: OutlineInputBorder(),
-                  ),
+                  child: const Text('保存'),
                 ),
               ],
             ),
-          ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => _saveEdit(
-              ctx,
-              server,
-              name: nameController.text.trim(),
-              url: urlController.text.trim(),
-              username: usernameController.text.trim(),
-              password: passwordController.text,
-            ),
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
   }

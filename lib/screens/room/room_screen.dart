@@ -10,6 +10,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomCode;
@@ -152,145 +153,140 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // QR Code 卡片
-          Card(
-            color: const Color(0xFF1E1E2E),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Text(
-                    '扫码加入',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  RepaintBoundary(
-                    key: _qrKey,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: QrImageView(
-                        data: widget.roomCode,
-                        version: QrVersions.auto,
-                        size: 180,
-                        backgroundColor: Colors.white,
-                      ),
+          GlassContainer(
+            borderRadius: const BorderRadius.all(Radius.circular(16)),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                const Text(
+                  '扫码加入',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RepaintBoundary(
+                  key: _qrKey,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: QrImageView(
+                      data: widget.roomCode,
+                      version: QrVersions.auto,
+                      size: 180,
+                      backgroundColor: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '长按保存图片 · 在 HIMI 中扫码加入',
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _saveQrToGallery,
-                          icon: const Icon(Icons.save_alt, size: 18),
-                          label: const Text('保存图片'),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '长按保存图片 · 在 HIMI 中扫码加入',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _saveQrToGallery,
+                        icon: const Icon(Icons.save_alt, size: 18),
+                        label: const Text('保存图片'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _shareQrImage,
+                        icon: const Icon(Icons.share, size: 18),
+                        label: const Text('分享图片'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF6366F1),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _shareQrImage,
-                          icon: const Icon(Icons.share, size: 18),
-                          label: const Text('分享图片'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF6366F1),
-                          ),
-                        ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: widget.roomCode));
+                          showAppToast(context, '已复制房间码');
+                        },
+                        icon: const Icon(Icons.copy, size: 18),
+                        label: const Text('复制'),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: widget.roomCode));
-                            showAppToast(context, '已复制房间码');
-                          },
-                          icon: const Icon(Icons.copy, size: 18),
-                          label: const Text('复制'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
 
           // 房间码卡片
-          Card(
-            color: const Color(0xFF1E1E2E),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '房间码',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          GlassContainer(
+            borderRadius: const BorderRadius.all(Radius.circular(16)),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '房间码',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: SelectableText(
-                      widget.roomCode,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: Colors.white70,
-                      ),
+                  child: SelectableText(
+                    widget.roomCode,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: Colors.white70,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _shareRoomCode,
-                      icon: const Icon(Icons.share, size: 18),
-                      label: const Text('分享房间码'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF6366F1),
-                      ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _shareRoomCode,
+                    icon: const Icon(Icons.share, size: 18),
+                    label: const Text('分享房间码'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
 
           // 房间信息
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '房间信息',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+          GlassContainer(
+            borderRadius: const BorderRadius.all(Radius.circular(16)),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '房间信息',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow('频道', channel),
-                  _buildInfoRow('App ID', '${appId.substring(0, 8)}...'),
-                  _buildInfoRow('可用 Token 数', '${tokens.length}'),
-                ],
-              ),
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow('频道', channel),
+                _buildInfoRow('App ID', '${appId.substring(0, 8)}...'),
+                _buildInfoRow('可用 Token 数', '${tokens.length}'),
+              ],
             ),
           ),
           const Spacer(),

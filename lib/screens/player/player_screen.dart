@@ -59,6 +59,7 @@ import 'package:himi_syncwatch/services/danmaku/dandanplay_client.dart';
 import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -408,6 +409,28 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   @visibleForTesting
   static bool showBottomDisplayAdjustButton({required bool tvMode}) => tvMode;
+
+  /// 播完自动下一集的位置兜底判定（纯函数，供测试）：正在播放且
+  /// 位置进入结尾窗口（距时长 ≤500ms）。引擎 end 事件丢失
+  /// （media_kit/Erika 不上报 end 位）时靠位置轮询补触发。
+  @visibleForTesting
+  static bool shouldAutoNextEpisode({
+    required int positionMs,
+    required int durationMs,
+    required bool playing,
+  }) =>
+      playing && durationMs > 0 && positionMs >= durationMs - 500;
+
+  /// 加载转圈遮罩可见性（纯函数，供测试）：切集遮罩恒可见；
+  /// 或播放器已就绪但时长仍为 0（首帧未出）。加载期间强制显示
+  /// 顶栏与底栏控件——黑屏转圈时用户仍可点返回退出。
+  @visibleForTesting
+  static bool isLoadingMaskVisible({
+    required bool switchingMedia,
+    required int durationMs,
+    required bool playerReady,
+  }) =>
+      switchingMedia || (durationMs == 0 && playerReady);
 
   /// 手机版判定：移动端平台且非 TV（控制条布局分支）。
   @visibleForTesting
@@ -834,6 +857,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _seriesName = '';
   int _currentEpisodeIndex = -1;
   bool _isSwitchingMedia = false;
+
+  /// 本集「播完」是否已处理（自动下一集/完播提示只触发一次）。
+  /// mdk end 事件与位置兜底可能同时命中，靠此门去重；换集重置。
+  bool _endHandled = false;
+
+  /// 黑屏加载转圈遮罩是否在显示（切集遮罩 / 首帧进度为 0 的转圈）。
+  /// 加载期间强制显示顶栏与底栏控件（否则黑屏无返回入口）。
+  bool get _isLoadingMaskVisible => PlayerScreen.isLoadingMaskVisible(
+        switchingMedia: _isSwitchingMedia,
+        durationMs: _duration.inMilliseconds,
+        playerReady: _isPlayerReady,
+      );
 
   /// 视频尺寸同步重试（见 _syncVideoNativeSize）：计数防风暴、
   /// pending 防多入口并发调度重复链
@@ -1690,6 +1725,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted) return;
     setState(() {
       _currentEpisodeIndex = episodeIndex;
+      // 新集开播：解除上一集的播完门，允许本集再触发自动下一集
+      _endHandled = false;
     });
     // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
     if (mounted && _danmakuOn) unawaited(_loadDanmaku());
@@ -2821,14 +2858,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 检查是否播放结束
       if (event.newValue.test(AdapterMediaStatus.end)) {
-        if (_isSwitchingMedia) return;
-        if (!_hasEpisodeList || !_canControlPlayback) return;
-        final nextIndex = _currentEpisodeIndex + 1;
-        if (nextIndex < _episodes.length) {
-          _switchToEpisode(nextIndex);
-        } else {
-          _addBroadcastMessage('所有剧集播放完毕');
-        }
+        _handleEpisodeFinished();
       }
 
       // 播放错误处理
@@ -2910,6 +2940,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (pos != _positionNotifier.value.inMilliseconds) {
         _position = Duration(milliseconds: pos);
         _positionNotifier.value = _position;
+      }
+      // 播完自动下一集兜底：引擎 end 事件丢失（media_kit/Erika 不上报
+      // end 位）时按位置轮询补触发；内部 _endHandled 去重，与 mdk
+      // end 事件路径并存不双切。
+      if (PlayerScreen.shouldAutoNextEpisode(
+        positionMs: pos,
+        durationMs: _duration.inMilliseconds,
+        playing: _player.state == AdapterPlaybackState.playing,
+      )) {
+        _handleEpisodeFinished();
       }
     });
 
@@ -3752,12 +3792,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         rtmService.unsubscribe(_rtmChannel!);
       } catch (_) {}
     }
-    showDialog(
+    showGlassDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('房间已解散'),
-        content: const Text('房主已离开，房间已解散'),
+      builder: (ctx) => const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              '房间已解散',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Text('房主已离开，房间已解散'),
+        ],
       ),
     );
     Future.delayed(const Duration(milliseconds: 1500), () {
@@ -3767,21 +3817,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Future<bool> _confirmLeaveRoom() async {
     if (!_isHost || widget.roomCode == null) return true;
-    final result = await showDialog<bool>(
+    final result = await showGlassDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('解散房间'),
-        content: const Text('离开将解散当前房间，所有观众将被退出。确定离开吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              '解散房间',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成确认
-            autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
-            child: const Text('确定离开'),
+          const Text('离开将解散当前房间，所有观众将被退出。确定离开吗？'),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成确认
+                autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
+                child: const Text('确定离开'),
+              ),
+            ],
           ),
         ],
       ),
@@ -4268,6 +4332,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // 切集（房主操作 + 发送RTM命令）
+  /// 当前集播放完毕：自动切下一集；已是最后一集则提示完播。
+  /// `_endHandled` 保证单集只触发一次（mdk end 事件与位置兜底并存）。
+  void _handleEpisodeFinished() {
+    if (!mounted || _endHandled) return;
+    if (_isSwitchingMedia) return;
+    if (!_hasEpisodeList || !_canControlPlayback) return;
+    _endHandled = true;
+    final nextIndex = _currentEpisodeIndex + 1;
+    if (nextIndex < _episodes.length) {
+      _switchToEpisode(nextIndex);
+    } else {
+      _addBroadcastMessage('所有剧集播放完毕');
+    }
+  }
+
   void _switchToEpisode(int index) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
@@ -4479,16 +4558,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _showShareRoomSheet() {
     if (widget.roomCode == null) return;
-    showModalBottomSheet(
+    showGlassBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1E1E2E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(
-            24, 24, 24, 24 + MediaQuery.of(ctx).padding.bottom),
+            24, 16, 24, 24 + MediaQuery.of(ctx).padding.bottom),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -5162,6 +5237,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             child: videoContent,
           ),
 
+          // 加载指示器（渲染在控件层之下：转圈期间顶栏/底栏仍可点返回）
+          if (_duration.inMilliseconds == 0 && _isPlayerReady)
+            const Center(
+              child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+            ),
+
+          // 切集遮罩：掩盖旧帧残留，新帧就绪后自动消失（同样在控件之下）
+          if (_isSwitchingMedia)
+            Container(
+              color: Colors.black,
+              child: const Center(
+                child: CircularProgressIndicator(color: Colors.white54),
+              ),
+            ),
+
           // 弹幕层（视频之上、控件之下；IgnorePointer 不抢手势）
           // Erika 档改由引擎原生 GPU 合成 → 不挂 Flutter 层
           if (_danmakuOn &&
@@ -5185,8 +5275,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          // TopBar（渐变浮层；锁定中隐藏，手机版锁钮在下栏）
-          if (_showControls && !_lockController.locked)
+          // TopBar（渐变浮层；锁定中隐藏，手机版锁钮在下栏）。
+          // 加载/切集转圈期间强制显示：黑屏时用户仍可点返回退出
+          if ((_showControls || _isLoadingMaskVisible) && !_lockController.locked)
             Positioned(
               top: 0,
               left: 0,
@@ -5259,8 +5350,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ),
 
           // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏——手机版
-          // 例外：底栏在锁定时只保留锁钮以便解锁，见 _buildControls）
-          if (_showControls &&
+          // 例外：底栏在锁定时只保留锁钮以便解锁，见 _buildControls）。
+          // 加载/切集转圈期间强制显示（同 TopBar）
+          if ((_showControls || _isLoadingMaskVisible) &&
               (!_lockController.locked || videoAreaPhoneControls) &&
               (_isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)))
             Positioned(bottom: 0, left: 0, right: 0, child: _buildControls()),
@@ -5359,21 +5451,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                           onSelected: _applySpeed,
                                         ),
                 ),
-              ),
-            ),
-
-          // 加载指示器
-          if (_duration.inMilliseconds == 0 && _isPlayerReady)
-            const Center(
-              child: CircularProgressIndicator(color: Color(0xFF6366F1)),
-            ),
-
-          // 切集遮罩：掩盖旧帧残留，新帧就绪后自动消失
-          if (_isSwitchingMedia)
-            Container(
-              color: Colors.black,
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.white54),
               ),
             ),
 
@@ -6885,8 +6962,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ========== 资源面板 ==========
   Widget _buildResourcePanel() {
-    return Container(
-      color: const Color(0xFF1A1A2E),
+    // 房间资源面板：中等磨砂毛玻璃底（背后页面背景静止，开销可控）
+    return FrostedSurface(
+      borderRadius: BorderRadius.zero,
+      showBorder: false,
+      showShadow: false,
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           // 面板头部
@@ -7001,7 +7082,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           onTap: () => setState(() => group.collapsed = !group.collapsed),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            color: const Color(0xFF16213E),
+            // 半透明轻底叠在毛玻璃面板根上，保持层次感
+            color: Colors.white.withValues(alpha: 0.08),
             child: Row(
               children: [
                 Icon(
@@ -7060,7 +7142,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: Container(
             padding:
                 const EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6),
-            color: const Color(0xFF1A1A2E),
+            // 半透明轻底叠在毛玻璃面板根上
+            color: Colors.white.withValues(alpha: 0.05),
             child: Row(
               children: [
                 Icon(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 
 /// 打开筛选面板（触屏底部面板 / TV 居中对话框）。
 /// 返回确认后的新筛选；取消返回 null。
@@ -22,19 +23,27 @@ Future<CategoryFilter?> showMediaFilterPanel(
   if (tvMode) {
     return showDialog<CategoryFilter>(
       context: context,
+      // 外层透明，内容套中等磨砂（FrostedSurface）
       builder: (ctx) => Dialog(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 420,
-            // 与触屏同源：0.5 屏高，但给 1080p/4K 大屏留上限，避免占半屏过高
-            maxHeight: (MediaQuery.sizeOf(ctx).height * 0.5).clamp(360.0, 560.0),
-          ),
-          child: SizedBox(
-            width: 420,
-            child: _FilterPanelBody(
-              current: current,
-              options: options,
-              optionsFuture: optionsFuture,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: FrostedSurface(
+          borderRadius: const BorderRadius.all(Radius.circular(24)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 420,
+              // 与触屏同源：0.5 屏高，但给 1080p/4K 大屏留上限，避免占半屏过高
+              maxHeight: (MediaQuery.sizeOf(ctx).height * 0.5).clamp(360.0, 560.0),
+            ),
+            child: SizedBox(
+              width: 420,
+              child: _FilterPanelBody(
+                current: current,
+                options: options,
+                optionsFuture: optionsFuture,
+              ),
             ),
           ),
         ),
@@ -44,17 +53,23 @@ Future<CategoryFilter?> showMediaFilterPanel(
   return showModalBottomSheet<CategoryFilter>(
     context: context,
     isScrollControlled: true,
-    // 背景走主题 bottomSheetTheme（不透明 Color(0xF21A1D23) + 顶部圆角 24）。
-    // v1.1.234 误设 Colors.transparent 导致面板成"玻璃"透视后面海报，已移除。
+    // 外层透明，内容套中等磨砂（FrostedSurface，顶部圆角 24）。
     // 关闭下滑手势（面板本身已不可拖拽，避免半拖状态）
+    backgroundColor: Colors.transparent,
+    elevation: 0,
     enableDrag: false,
-    builder: (ctx) => SafeArea(
-      child: SizedBox(
-        height: MediaQuery.sizeOf(ctx).height * 0.5,
-        child: _FilterPanelBody(
-          current: current,
-          options: options,
-          optionsFuture: optionsFuture,
+    builder: (ctx) => FrostedSurface(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      showShadow: false,
+      padding: const EdgeInsets.only(top: 8),
+      child: SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(ctx).height * 0.5,
+          child: _FilterPanelBody(
+            current: current,
+            options: options,
+            optionsFuture: optionsFuture,
+          ),
         ),
       ),
     ),
@@ -254,7 +269,7 @@ class _FilterPanelBodyState extends State<_FilterPanelBody> {
     required Set<T> selected,
     required String Function(T) labelOf,
   }) {
-    return showDialog<Set<T>>(
+    return showGlassDialog<Set<T>>(
       context: context,
       builder: (ctx) => _MultiPickDialog<T>(
         title: title,
@@ -385,43 +400,62 @@ class _MultiPickDialogState<T> extends State<_MultiPickDialog<T>> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            for (final option in widget.options)
-              CheckboxListTile(
-                key: Key('filterPick_${widget.title}_${widget.labelOf(option)}'),
-                value: _checked.contains(option),
-                contentPadding: EdgeInsets.zero,
-                title: Text(widget.labelOf(option)),
-                onChanged: (v) {
-                  setState(() {
-                    if (v == true) {
-                      _checked.add(option);
-                    } else {
-                      _checked.remove(option);
-                    }
-                  });
-                },
+    // 毛玻璃弹层内不带 AlertDialog 深色底，直接铺内容。
+    return SizedBox(
+      width: 360,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              widget.title,
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final option in widget.options)
+                  CheckboxListTile(
+                    key: Key(
+                        'filterPick_${widget.title}_${widget.labelOf(option)}'),
+                    value: _checked.contains(option),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(widget.labelOf(option)),
+                    onChanged: (v) {
+                      setState(() {
+                        if (v == true) {
+                          _checked.add(option);
+                        } else {
+                          _checked.remove(option);
+                        }
+                      });
+                    },
+                  ),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('取消'),
               ),
-          ],
-        ),
+              TextButton(
+                key: Key('filterPick_${widget.title}_confirm'),
+                onPressed: () => Navigator.of(context).pop(_checked),
+                child: const Text('确认'),
+              ),
+            ],
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        TextButton(
-          key: Key('filterPick_${widget.title}_confirm'),
-          onPressed: () => Navigator.of(context).pop(_checked),
-          child: const Text('确认'),
-        ),
-      ],
     );
   }
 }

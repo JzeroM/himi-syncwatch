@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 居中单选弹层的一个选项。
@@ -29,7 +30,7 @@ class TvOptionEntry<T> {
 ///   关闭弹层/跳选，即「选择面板焦点不能上下切换」的根因。
 /// - 行控件 `TvFocusable`（非 TV 降级 GestureDetector，与播放器
 ///   `SideOptionRow` 同交互）；当前值行 `autofocus` 打开即落焦。
-/// - `showDialog` 天然居中，复用主题 `dialogTheme`。
+/// - 弹层底走毛玻璃 [showGlassDialog]（中等磨砂，白字可读）。
 Future<T?> showTvOptionDialog<T>({
   required BuildContext context,
   required String title,
@@ -38,7 +39,7 @@ Future<T?> showTvOptionDialog<T>({
   required ValueChanged<T> onSelected,
   bool barrierDismissible = true,
 }) {
-  return showDialog<T>(
+  return showGlassDialog<T>(
     context: context,
     barrierDismissible: barrierDismissible,
     builder: (ctx) => _TvOptionDialog<T>(
@@ -67,36 +68,44 @@ class _TvOptionDialog<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     // 当前值行落焦；值不在列表中（异常数据）时回退第一行。
     final autofocusIndex = options.indexWhere((e) => e.value == currentValue);
-    return AlertDialog(
-      title: Text(
-        title,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-      ),
-      content: SizedBox(
-        width: 360,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.5,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < options.length; i++)
-                  _TvOptionRow<T>(
-                    entry: options[i],
-                    selected: options[i].value == currentValue,
-                    autofocus: i == (autofocusIndex < 0 ? 0 : autofocusIndex),
-                    onTap: () {
-                      Navigator.of(context).pop(options[i].value);
-                      onSelected(options[i].value);
-                    },
-                  ),
-              ],
+    return SizedBox(
+      width: 400,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+            child: Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
-        ),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < options.length; i++)
+                    _TvOptionRow<T>(
+                      entry: options[i],
+                      selected: options[i].value == currentValue,
+                      autofocus:
+                          i == (autofocusIndex < 0 ? 0 : autofocusIndex),
+                      onTap: () {
+                        Navigator.of(context).pop(options[i].value);
+                        onSelected(options[i].value);
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

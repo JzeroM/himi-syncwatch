@@ -22,6 +22,7 @@ import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/glass/frosted_surface.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
@@ -1323,43 +1324,56 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     // 防御性：建房入口当前 TV 不渲染（if (!tvMode)），但弹窗字段仍
     // 统一屏蔽焦点（遥控器无输入法）
     final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
-    return showDialog<int>(
+    return showGlassDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('建房设置'),
-        content: tvExcludeEditable(
-          tvMode: tvMode,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('房间最大人数', style: TextStyle(fontSize: 14)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  isDense: true,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              '建房设置',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          tvExcludeEditable(
+            tvMode: tvMode,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('房间最大人数', style: TextStyle(fontSize: 14)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  autofocus: !tvMode,
                 ),
-                autofocus: !tvMode,
+              ],
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final n = int.tryParse(controller.text.trim());
+                  if (n != null && n > 0 && n <= 100) {
+                    Navigator.pop(ctx, n);
+                  }
+                },
+                child: const Text('确定'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final n = int.tryParse(controller.text.trim());
-              if (n != null && n > 0 && n <= 100) {
-                Navigator.pop(ctx, n);
-              }
-            },
-            child: const Text('确定'),
           ),
         ],
       ),
