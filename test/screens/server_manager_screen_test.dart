@@ -13,7 +13,10 @@ import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -738,6 +741,259 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('连接并登录'), findsNothing);
       expect(container.read(shellNavVisibilityProvider), true);
+    });
+  });
+
+  group('v1.1.246 网格卡瘦身与激活卡去色', () {
+    testWidgets('网格卡 childAspectRatio 1.25（v1.1.246 卡片缩矮）', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+
+      final grid = tester.widget<GridView>(find.byType(GridView));
+      final delegate =
+          grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+      expect(delegate.childAspectRatio, 1.25,
+        reason: '网格卡宽高比应为 1.25（原 0.92 卡太高、中间空白多）');
+    });
+
+    testWidgets('激活列表卡 tint 为中性 panelTintOf（v1.1.246 不带颜色）',
+        (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+      container.read(embyConfigProvider.notifier).setConfig(
+            container.read(embyServerListProvider).first,
+          );
+      await tester.pump();
+
+      final glass = tester.widget<GlassContainer>(
+        find.descendant(
+          of: find.byType(ServerListCard).first,
+          matching: find.byType(GlassContainer),
+        ),
+      );
+      expect(glass.tint, GlassConfig.panelTintOf(),
+        reason: '激活卡玻璃应完全中性，不再用彩色 tint');
+    });
+
+    testWidgets('激活网格卡 tint 为中性 panelTintOf（v1.1.246 不带颜色）',
+        (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        settings: const AppSettings(serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+      container.read(embyConfigProvider.notifier).setConfig(
+            container.read(embyServerListProvider).first,
+          );
+      await tester.pump();
+
+      final glass = tester.widget<GlassContainer>(
+        find.descendant(
+          of: find.byType(ServerGridCard),
+          matching: find.byType(GlassContainer),
+        ),
+      );
+      expect(glass.tint, GlassConfig.panelTintOf(),
+        reason: '激活网格卡玻璃应完全中性');
+    });
+  });
+
+  group('v1.1.246 TV 点击不跳首页', () {
+    testWidgets('TV 点击未激活卡切换服务器但留在 /servers', (tester) async {
+      final auth = FakeEmbyAuthService();
+      final container = await _pumpScreen(
+        tester,
+        auth: auth,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      // 第一张卡 autofocus 已聚焦，短按 OK = 点击
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      // srv_a 是当前激活卡（列表首项默认无激活，点击首卡切换到 srv_a）
+      // 实际上初始 embyConfigProvider 为空，点第一张卡应切换到 srv_a
+      expect(container.read(embyConfigProvider)?.id, 'srv_a');
+      expect(auth.selectedServerId, 'srv_a');
+      expect(find.text('Emby 服务器'), findsOneWidget,
+        reason: 'TV 模式点击卡片不应跳首页，留在服务器管理页');
+      expect(find.text('首页替身'), findsNothing);
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('TV 点击第二张卡（方向键移动后 OK）也不跳首页', (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      // 焦点移到第二张卡
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+
+      // 短按 OK 点击第二张卡
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(container.read(embyConfigProvider)?.id, 'srv_b');
+      expect(find.text('Emby 服务器'), findsOneWidget,
+        reason: 'TV 点击第二张卡也不应跳首页');
+      await _settleSnackbars(tester);
+    });
+  });
+
+  group('v1.1.246 TV 焦点修复', () {
+    testWidgets('TV 仅第一张卡 autofocus（多卡抢焦修复）', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+          _server(id: 'srv_c', name: '第三服务器', serverId: 's3'),
+        ],
+      );
+
+      // 短按 OK 应触发第一张卡的 _openServer（焦点在首卡）
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ServerManagerScreen)),
+        listen: false,
+      );
+      expect(container.read(embyConfigProvider)?.id, 'srv_a',
+        reason: '焦点应在第一张卡，短按 OK 打开首卡');
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('TV ⋮ 菜单打开后首项获得焦点（FocusScope + autofocus）',
+        (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+
+      // 第一张卡已聚焦，tap ⋮ 按钮打开面板
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
+      await tester.pumpAndSettle();
+
+      // 面板打开：首项「编辑」存在
+      expect(find.text('编辑'), findsOneWidget, reason: '面板应已打开');
+
+      // 面板内首项 TvFocusable 有 autofocus（把焦点拉进面板）
+      final panelItemTv = tester
+          .widgetList<TvFocusable>(find.byType(TvFocusable))
+          .where((w) => w.autofocus)
+          .toList();
+      expect(panelItemTv, isNotEmpty,
+        reason: '面板内首项应设 autofocus 把焦点拉进面板');
+    });
+
+    testWidgets('TV ⋮ 菜单关闭后焦点回 ⋮ 按钮', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
+      await tester.pumpAndSettle();
+      expect(find.text('删除'), findsOneWidget, reason: '面板应已打开');
+
+      // 点击面板外 barrier 关闭
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+      expect(find.text('删除'), findsNothing, reason: '面板应已关闭');
+
+      // 焦点回焦 ⋮ 按钮：再次 tap ⋮ 应能重新打开面板（焦点未悬空）
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
+      await tester.pumpAndSettle();
+      expect(find.text('删除'), findsOneWidget,
+        reason: '面板关闭后 ⋮ 按钮仍可交互（焦点回焦不悬空）');
+    });
+  });
+
+  group('v1.1.246 线路管理弹层 TV 焦点', () {
+    testWidgets('TV 线路 tile 包裹 TvFocusable（焦点环 + OK 切换）', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('切换线路'));
+      await tester.pumpAndSettle();
+
+      // 主线路 tile 内应有 TvFocusable（焦点环 + OK 切换）
+      final routeTile = find.byKey(const Key('routeTile_main'));
+      expect(routeTile, findsOneWidget);
+      final tvWrapped = find.descendant(
+        of: routeTile,
+        matching: find.byType(TvFocusable),
+      );
+      expect(tvWrapped, findsWidgets,
+        reason: 'TV 模式线路 tile 内应有 TvFocusable 焦点环');
+    });
+
+    testWidgets('TV 线路弹层测速按钮 autofocus（首项落焦）', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('切换线路'));
+      await tester.pumpAndSettle();
+
+      // 测速按钮内应有 TvFocusable 且 autofocus=true
+      final measureFinder = find.byKey(const Key('measureAllButton'));
+      expect(measureFinder, findsOneWidget);
+      final measureTvList = tester
+          .widgetList<TvFocusable>(
+            find.descendant(of: measureFinder, matching: find.byType(TvFocusable)),
+          )
+          .toList();
+      expect(measureTvList, isNotEmpty,
+        reason: '测速按钮应有 TvFocusable');
+      expect(measureTvList.first.autofocus, isTrue,
+        reason: 'TV 线路弹层打开时测速按钮应 autofocus 落焦');
     });
   });
 }

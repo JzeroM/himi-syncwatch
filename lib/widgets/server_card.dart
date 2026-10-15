@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/providers/server_stats_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -152,6 +153,9 @@ class ServerMoreButton extends ConsumerStatefulWidget {
 class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
   OverlayEntry? _entry;
 
+  /// 持有按钮焦点节点：面板关闭后回焦，TV 遥控器不丢焦点位置。
+  final FocusNode _buttonNode = FocusNode(debugLabel: 'serverMoreBtn');
+
   void _toggle() {
     if (_entry != null) {
       _close();
@@ -175,6 +179,7 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
       builder: (_) => _ServerActionPanel(
         anchorOffset: offset,
         anchorSize: size,
+        tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
         onEdit: widget.onEdit,
         onSwitchLine: widget.onSwitchLine,
         onStats: widget.onStats,
@@ -198,26 +203,43 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
       _activePanelClose = null;
     }
     _entry = null;
+    // TV：面板关闭后回焦 ⋮ 按钮，避免焦点悬空
+    if (mounted) _buttonNode.requestFocus();
   }
 
   @override
   void dispose() {
     _close();
+    _buttonNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // TV 模式：D-pad 可聚焦，OK 键展开/收起面板
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final icon = SizedBox(
+      width: 40,
+      height: 40,
+      child: Icon(Icons.more_vert, size: 20, key: ValueKey(widget.menuKey)),
+    );
+    if (!tvMode) {
+      // 非 TV：原 GestureDetector 行为
+      return TvFocusable(
+        onTap: _toggle,
+        scale: 1.0,
+        radius: 8,
+        child: icon,
+      );
+    }
+    // TV：TvFocusable 提供 OK 键 + 焦点环。
+    // 卡片外层已改用 _TvCardFocus（无 GestureDetector），⋮ 的
+    // GestureDetector 在手势竞技场中应胜过卡内 InkWell（v1.1.246）。
     return TvFocusable(
+      focusNode: _buttonNode,
       onTap: _toggle,
       scale: 1.0,
       radius: 8,
-      child: SizedBox(
-        width: 40,
-        height: 40,
-        child: Icon(Icons.more_vert, size: 20, key: ValueKey(widget.menuKey)),
-      ),
+      child: ExcludeFocus(child: icon),
     );
   }
 }
@@ -244,6 +266,7 @@ class _ServerActionPanel extends StatefulWidget {
     required this.anchorSize,
     required this.onDelete,
     required this.onClose,
+    this.tvMode = false,
     this.onEdit,
     this.onSwitchLine,
     this.onStats,
@@ -251,6 +274,7 @@ class _ServerActionPanel extends StatefulWidget {
 
   final Offset anchorOffset;
   final Size anchorSize;
+  final bool tvMode;
   final VoidCallback? onEdit;
   final VoidCallback? onSwitchLine;
   final VoidCallback? onStats;
@@ -352,6 +376,43 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
       reverseCurve: Curves.easeIn,
     );
 
+    final panel = SizedBox(
+      width: _panelWidth,
+      child: GlassContainer(
+        borderRadius: BorderRadius.circular(16),
+        tint: GlassConfig.popupTint,
+        fallbackColor: GlassConfig.popupFallback,
+        showShadow: false,
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Material(
+          type: MaterialType.transparency,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < actions.length; i++) ...[
+                if (i == actions.length - 1)
+                  const Divider(
+                    height: 1,
+                    indent: 16,
+                    endIndent: 16,
+                    color: Color(0x1AFFFFFF),
+                  ),
+                _PanelItem(
+                  action: actions[i],
+                  onTap: () => _onSelected(actions[i]),
+                  tvMode: widget.tvMode,
+                  autofocus: widget.tvMode && i == 0,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // TV：首项 TvFocusable 自带 autofocus 把焦点拉进面板。
+    // 不包 FocusScope——它会在打开时抢走卡片焦点导致卡片重挂载，
+    // ⋮ 按钮状态丢失面板被关（v1.1.246 调试确认）。
     return Stack(
       children: [
         // 透明 barrier：点击面板外关闭
@@ -372,37 +433,7 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
                 begin: const Offset(0, -0.06),
                 end: Offset.zero,
               ).animate(curved),
-              child: SizedBox(
-                width: _panelWidth,
-                child: GlassContainer(
-                  borderRadius: BorderRadius.circular(16),
-                  tint: GlassConfig.popupTint,
-                  fallbackColor: GlassConfig.popupFallback,
-                  showShadow: false,
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (var i = 0; i < actions.length; i++) ...[
-                          if (i == actions.length - 1)
-                            const Divider(
-                              height: 1,
-                              indent: 16,
-                              endIndent: 16,
-                              color: Color(0x1AFFFFFF),
-                            ),
-                          _PanelItem(
-                            action: actions[i],
-                            onTap: () => _onSelected(actions[i]),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              child: panel,
             ),
           ),
         ),
@@ -412,35 +443,52 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
 }
 
 class _PanelItem extends StatelessWidget {
-  const _PanelItem({required this.action, required this.onTap});
+  const _PanelItem({
+    required this.action,
+    required this.onTap,
+    this.tvMode = false,
+    this.autofocus = false,
+  });
 
   final _PanelAction action;
   final VoidCallback onTap;
+  final bool tvMode;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
     final color = action.danger ? Colors.redAccent : Colors.white;
-    return InkWell(
-      onTap: onTap,
-      child: SizedBox(
-        height: 48,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Icon(action.icon, size: 20, color: color),
-              const SizedBox(width: 12),
-              Text(
-                action.label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
+    final row = SizedBox(
+      height: 48,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            Icon(action.icon, size: 20, color: color),
+            const SizedBox(width: 12),
+            Text(
+              action.label,
+              style: TextStyle(
+                color: color,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
+    );
+    if (!tvMode) {
+      return InkWell(onTap: onTap, child: row);
+    }
+    // TV：TvFocusable 提供焦点环 + OK 键；ExcludeFocus 屏蔽内层 InkWell 焦点节点
+    return TvFocusable(
+      autofocus: autofocus,
+      scale: 1.0,
+      radius: 8,
+      onTap: onTap,
+      child: ExcludeFocus(
+        child: InkWell(onTap: onTap, child: row),
       ),
     );
   }
@@ -475,13 +523,12 @@ class ServerListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final start = serverAvatarStartColor(server.serverId);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: GlassContainer(
         borderRadius: BorderRadius.circular(18),
-        tint:
-            isActive ? start.withValues(alpha: 0.28) : GlassConfig.panelTintOf(),
+        // 激活态不着色（v1.1.246）：仅靠绿勾 + 加粗标识，玻璃保持中性
+        tint: GlassConfig.panelTintOf(),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -594,8 +641,8 @@ class ServerGridCard extends StatelessWidget {
     final end = serverAvatarEndColor(server.serverId);
     return GlassContainer(
       borderRadius: BorderRadius.circular(18),
-      tint:
-          isActive ? start.withValues(alpha: 0.28) : GlassConfig.panelTintOf(),
+      // 激活态不着色（v1.1.246）：仅靠绿勾 + 加粗标识，玻璃保持中性
+      tint: GlassConfig.panelTintOf(),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -603,7 +650,7 @@ class ServerGridCard extends StatelessWidget {
           onTap: onTap,
           child: Stack(
             children: [
-              // 背景斜向渐变氛围（激活态更明显）
+              // 背景斜向渐变氛围（激活/未激活同强度，不再放大激活态）
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -612,8 +659,8 @@ class ServerGridCard extends StatelessWidget {
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        start.withValues(alpha: isActive ? 0.22 : 0.10),
-                        end.withValues(alpha: isActive ? 0.10 : 0.03),
+                        start.withValues(alpha: 0.10),
+                        end.withValues(alpha: 0.03),
                       ],
                     ),
                   ),

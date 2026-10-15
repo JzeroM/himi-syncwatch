@@ -20,7 +20,6 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/resource_stats_sheet.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 按 serverId 去重（同服务器多 session 只展示第一个）。
 List<EmbyServerConfig> _dedupServers(List<EmbyServerConfig> servers) {
@@ -300,6 +299,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             server: server,
             isGrid: false,
             crossAxisCount: 1,
+            isFirst: index == 0,
             card: ServerListCard(
               server: server,
               isActive: isActive,
@@ -342,7 +342,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         crossAxisCount: crossAxisCount,
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
-        childAspectRatio: 0.92,
+        childAspectRatio: 1.25,
       ),
       itemCount: dedupedServers.length,
       itemBuilder: (context, index) {
@@ -354,6 +354,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             server: server,
             isGrid: true,
             crossAxisCount: crossAxisCount,
+            isFirst: index == 0,
             card: ServerGridCard(
               server: server,
               isActive: isActive,
@@ -390,7 +391,9 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   }
 
   /// TV 模式卡片包装：
-  /// - 常规态：TvFocusable（短按 OK 打开 / 长按 OK 进布局模式）
+  /// - 常规态：_TvCardFocus（纯 Focus：OK 键打开/长按进布局 + 焦点环）
+  ///   触摸交给卡内 InkWell，避免与 ⋮ 按钮的 GestureDetector 在手势竞技场
+  ///   竞争（v1.1.246：嵌套 GestureDetector 聚焦态下外层吞手势导致 ⋮ 失效）
   /// - 布局模式选中卡：Focus 拦截方向键移动 + OK 保存退出，外加高亮描边
   /// - 布局模式其他卡：忽略指针 + 降透明 + 排除焦点
   /// 非 TV 模式原样返回。
@@ -399,16 +402,18 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     required bool isGrid,
     required int crossAxisCount,
     required Widget card,
+    bool isFirst = false,
   }) {
     if (!ref.watch(settingsProvider.select((s) => s.tvMode))) return card;
 
     final layoutId = _layoutServerId;
     if (layoutId == server.id) {
+      // ExcludeFocus：屏蔽卡内 InkWell/⋮ 的内层焦点节点，防止方向键被同卡多节点空转
       return Focus(
         autofocus: true,
         onKeyEvent: (node, event) =>
             _handleLayoutKey(event, isGrid: isGrid, crossAxisCount: crossAxisCount),
-        child: _layoutDecorate(card),
+        child: _layoutDecorate(ExcludeFocus(child: card)),
       );
     }
     if (layoutId != null) {
@@ -418,13 +423,12 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         ),
       );
     }
-    return TvFocusable(
-      autofocus: true,
-      scale: 1.03,
-      radius: 18,
+    return _TvCardFocus(
+      autofocus: isFirst,
       onTap: () => _openServer(server),
       onLongPress: () => _enterLayoutMode(server),
-      child: card,
+      // ExcludeFocus：消除内外双焦点节点（对齐 detail_screen 既有模式）
+      child: ExcludeFocus(child: card),
     );
   }
 
@@ -569,7 +573,9 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         .saveServerOrder(reordered.map((s) => s.id).toList());
   }
 
-  /// 点击任意卡片（含激活）：未激活先切换服务器，再跳回首页 tab。
+  /// 点击任意卡片（含激活）：未激活先切换服务器。
+  /// TV 模式切换后留在本页（遥控器管理服务器，跳首页用返回键）；
+  /// 手机/桌面切换后跳回首页 tab。
   Future<void> _openServer(EmbyServerConfig server) async {
     final current = ref.read(embyConfigProvider);
     if (current?.id != server.id) {
@@ -578,6 +584,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       if (mounted) showAppToast(context, '已切换到「${server.label}」');
     }
     if (!mounted) return;
+    final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
+    if (tvMode) return;
     context.go('/');
   }
 
@@ -637,6 +645,123 @@ class _EmptyServerHint extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.grey),
         ),
+      ),
+    );
+  }
+}
+
+/// TV 卡片焦点包装：纯 Focus（OK 键 + 焦点环），无 GestureDetector。
+///
+/// 触摸交给卡内 InkWell 处理；OK 键（Enter/Select）短按 = onTap、
+/// 长按 ≥500ms = onLongPress。不用 TvFocusable 是因为它自带
+/// GestureDetector，与卡内 ⋮ 按钮的 GestureDetector 在手势竞技场
+/// 竞争时，聚焦态下外层会吞掉手势导致 ⋮ 失效（v1.1.246）。
+class _TvCardFocus extends StatefulWidget {
+  const _TvCardFocus({
+    required this.child,
+    required this.onTap,
+    this.onLongPress,
+    this.autofocus = false,
+  });
+
+  final Widget child;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final bool autofocus;
+
+  @override
+  State<_TvCardFocus> createState() => _TvCardFocusState();
+}
+
+class _TvCardFocusState extends State<_TvCardFocus> {
+  static const Duration _longPressThreshold = Duration(milliseconds: 500);
+
+  final FocusNode _node = FocusNode(debugLabel: 'TvCardFocus');
+  Timer? _longPressTimer;
+  bool _longPressFired = false;
+
+  @override
+  void dispose() {
+    _longPressTimer?.cancel();
+    _node.dispose();
+    super.dispose();
+  }
+
+  bool _isConfirm(LogicalKeyboardKey key) =>
+      key == LogicalKeyboardKey.enter ||
+      key == LogicalKeyboardKey.numpadEnter ||
+      key == LogicalKeyboardKey.select;
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final key = event.logicalKey;
+    if (!_isConfirm(key)) return KeyEventResult.ignored;
+
+    if (widget.onLongPress == null) {
+      if (event is! KeyDownEvent) return KeyEventResult.ignored;
+      widget.onTap();
+      return KeyEventResult.handled;
+    }
+
+    if (event is KeyDownEvent) {
+      _longPressFired = false;
+      _longPressTimer?.cancel();
+      _longPressTimer = Timer(_longPressThreshold, () {
+        if (!mounted) return;
+        _longPressFired = true;
+        widget.onLongPress?.call();
+      });
+      return KeyEventResult.handled;
+    }
+    if (event is KeyUpEvent) {
+      _longPressTimer?.cancel();
+      _longPressTimer = null;
+      if (_longPressFired) {
+        _longPressFired = false;
+        return KeyEventResult.handled;
+      }
+      widget.onTap();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final highlightColor = Theme.of(context).colorScheme.primary;
+    return Focus(
+      focusNode: _node,
+      autofocus: widget.autofocus,
+      onKeyEvent: _onKey,
+      child: AnimatedBuilder(
+        animation: _node,
+        builder: (context, _) {
+          final focused = _node.hasFocus;
+          final duration =
+              focused ? const Duration(milliseconds: 120) : Duration.zero;
+          return AnimatedScale(
+            scale: focused ? 1.03 : 1.0,
+            duration: duration,
+            curve: Curves.easeOut,
+            child: AnimatedContainer(
+              duration: duration,
+              curve: Curves.easeOut,
+              foregroundDecoration: focused
+                  ? BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: highlightColor, width: 3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: highlightColor.withValues(alpha: 0.55),
+                          blurRadius: 14,
+                          spreadRadius: 1.5,
+                        ),
+                      ],
+                    )
+                  : null,
+              child: widget.child,
+            ),
+          );
+        },
       ),
     );
   }

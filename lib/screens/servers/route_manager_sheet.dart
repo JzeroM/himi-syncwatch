@@ -216,6 +216,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                     key: const Key('measureAllButton'),
                     icon: Icons.speed,
                     label: '测速',
+                    autofocus: widget.tvMode,
                     onTap: _measuring ? null : () => _measureAll(server),
                   ),
                   const SizedBox(width: 8),
@@ -252,6 +253,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                       key: const Key('routeTile_main'),
                       index: 0,
                       draggable: false,
+                      tvMode: widget.tvMode,
                       selected: activeUrl == server.serverUrl,
                       title: '主线路',
                       subtitle: '${server.serverUrl}',
@@ -284,6 +286,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
       key: ValueKey('routeTile_${route.id}'),
       index: index + 1,
       draggable: !widget.tvMode,
+      tvMode: widget.tvMode,
       selected: activeUrl == route.url,
       title: route.name,
       subtitle: '${route.isReverseProxy ? '反代' : '直连'} · ${route.url}',
@@ -325,6 +328,7 @@ class _RouteTile extends StatelessWidget {
     required this.measuring,
     required this.onTap,
     required this.onMeasure,
+    this.tvMode = false,
     this.onRemove,
   });
 
@@ -340,6 +344,7 @@ class _RouteTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onMeasure;
   final VoidCallback? onRemove;
+  final bool tvMode;
 
   Color? get _latencyColor {
     final ms = latencyMs;
@@ -423,7 +428,7 @@ class _RouteTile extends StatelessWidget {
       ),
     );
 
-    final content = Material(
+    Widget content = Material(
       type: MaterialType.transparency,
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -431,6 +436,16 @@ class _RouteTile extends StatelessWidget {
         child: tile,
       ),
     );
+
+    // TV：TvFocusable 提供焦点环 + OK 键切换线路；ExcludeFocus 屏蔽内层 InkWell 焦点节点
+    if (tvMode) {
+      content = TvFocusable(
+        scale: 1.0,
+        radius: 14,
+        onTap: onTap,
+        child: ExcludeFocus(child: content),
+      );
+    }
 
     if (!draggable) return content;
     return ReorderableDelayedDragStartListener(
@@ -474,38 +489,43 @@ class _ActionButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.autofocus = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
     return TvFocusable(
+      autofocus: autofocus,
       onTap: onTap ?? () {},
       scale: 1.0,
       radius: 10,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon,
-                  size: 16,
-                  color: onTap == null ? Colors.white24 : Colors.white70),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: onTap == null ? Colors.white24 : Colors.white70,
+      child: ExcludeFocus(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon,
+                    size: 16,
+                    color: onTap == null ? Colors.white24 : Colors.white70),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: onTap == null ? Colors.white24 : Colors.white70,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
