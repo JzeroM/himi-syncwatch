@@ -277,6 +277,21 @@ void main() {
     expect(container.read(settingsProvider).tvSyncEnabled, isTrue);
   });
 
+  testWidgets('通用子页：TV 模式开启时不显示同步到 TV 开关', (tester) async {
+    await _pumpScreen(tester,
+        initial: const AppSettings(tvMode: true), category: '通用');
+    await tester.scrollUntilVisible(
+      find.text('TV 模式'),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('TV 模式'), findsOneWidget);
+    expect(find.text('同步到 TV'), findsNothing,
+        reason: 'TV 是被推送方，无需此开关');
+  });
+
   testWidgets('播放器子页：显示网速开关默认开，切换写入 settings', (tester) async {
     final container = await _pumpScreen(tester, category: '播放器');
     await tester.scrollUntilVisible(

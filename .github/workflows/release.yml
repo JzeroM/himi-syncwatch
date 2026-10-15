@@ -136,10 +136,27 @@ jobs:
           done
           echo "✅ 全部 release APK 签名与 keystore 指纹一致"
 
+      - name: 重命名 APK（带上版本号）
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' pubspec.yaml | sed -n 's/^version: \([0-9.]*\).*/\1/p')
+          echo "版本号: $VERSION"
+          shopt -s nullglob
+          for f in build/app/outputs/flutter-apk/*-release.apk; do
+            base=$(basename "$f")
+            if [[ "$base" =~ ^app-([^-]+)-release\.apk$ ]]; then
+              abi="${BASH_REMATCH[1]}"
+              mv "$f" "build/app/outputs/flutter-apk/himi-sync-${VERSION}-${abi}.apk"
+            elif [[ "$base" == "app-release.apk" ]]; then
+              mv "$f" "build/app/outputs/flutter-apk/himi-sync-${VERSION}-universal.apk"
+            fi
+          done
+          ls -la build/app/outputs/flutter-apk/*.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: build/app/outputs/flutter-apk/*.apk
+          path: build/app/outputs/flutter-apk/himi-sync-*.apk
 
   build-ios:
     needs: [flutter-analyze]
@@ -221,17 +238,19 @@ jobs:
           done
           exit 1
 
-      - name: 打包未签名 IPA
+      - name: 打包未签名 IPA（带版本号）
         run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed -n 's/^version: \([0-9.]*\).*/\1/p')
+          echo "版本号: $VERSION"
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r himi-sync-ios-unsigned.ipa Payload
+          zip -r "himi-sync-ios-unsigned-${VERSION}.ipa" Payload
           rm -rf Payload
 
       - uses: actions/upload-artifact@v4
         with:
           name: ios-build
-          path: himi-sync-ios-unsigned.ipa
+          path: himi-sync-ios-unsigned-*.ipa
 
   build-windows:
     needs: [flutter-analyze]
@@ -298,10 +317,71 @@ jobs:
             Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
           }
 
+      # 捆绑 MSVC143 CRT：Flutter Windows release 动态链接 VCRUNTIME140/MSVCP140，
+      # 纯净 Win 系统或缺运行库时应用直接闪退。从 runner 的 VS2022 CRT 目录复制
+      # 3 个 DLL 随产物分发（zip 与 setup.exe 同时受益），MS 允许再分发。
+      - name: 捆绑 MSVC143 CRT DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = 'build/windows/x64/runner/Release'
+          $crt = Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\2022' -Recurse `
+                   -Filter 'vcruntime140.dll' -ErrorAction SilentlyContinue |
+                 Where-Object { $_.DirectoryName -match '\\x64\\Microsoft\.VC143\.CRT$' } |
+                 Select-Object -First 1
+          if (-not $crt) { throw '未找到 Microsoft.VC143.CRT（VS2022 x64）' }
+          $crtDir = $crt.DirectoryName
+          Write-Host "CRT 目录: $crtDir"
+          foreach ($dll in @('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')) {
+            $src = Join-Path $crtDir $dll
+            if (!(Test-Path $src)) { throw "CRT 目录缺少 $dll" }
+            Copy-Item -Path $src -Destination (Join-Path $rel $dll) -Force
+            Write-Host "已捆绑 $dll"
+          }
+
+      - name: 编译 Inno Setup 安装包
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install innosetup -y --no-progress | Out-Null
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (!(Test-Path $iscc)) { $iscc = Join-Path ${env:ProgramFiles} 'Inno Setup 6\ISCC.exe' }
+          if (!(Test-Path $iscc)) { throw '未找到 ISCC.exe' }
+
+          $ver = (Select-String -Path 'pubspec.yaml' -Pattern '^version:\s*([0-9.]+)' |
+                  ForEach-Object { $_.Matches[0].Groups[1].Value })
+          if (-not $ver) { throw '无法从 pubspec.yaml 读取版本号' }
+          Write-Host "版本号: $ver"
+
+          # 中文语言文件非 Inno 自带：下载官方非官方翻译；失败则退回英文界面。
+          $langDir = Join-Path (Split-Path $iscc) 'Languages'
+          $zhIsl = Join-Path $langDir 'ChineseSimplified.isl'
+          $extra = @()
+          try {
+            if (!(Test-Path $zhIsl)) {
+              Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent' = 'himi-build' } `
+                -Uri 'https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl' `
+                -OutFile $zhIsl
+            }
+            if (Test-Path $zhIsl) { $extra += '/DIncludeChinese=1'; Write-Host '启用中文安装界面' }
+          } catch {
+            Write-Warning "中文语言文件获取失败，退回英文界面: $_"
+          }
+
+          New-Item -ItemType Directory -Force -Path 'build/windows/setup' | Out-Null
+          & $iscc "/DMyAppVersion=$ver" @extra 'scripts\windows\himi_sync.iss'
+          if ($LASTEXITCODE -ne 0) { throw "ISCC 编译失败，退出码 $LASTEXITCODE" }
+          Get-ChildItem 'build/windows/setup' | ForEach-Object { Write-Host "产物: $($_.Name) ($($_.Length) bytes)" }
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-exe
           path: build/windows/x64/runner/Release/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          path: build/windows/setup/*.exe
 
   release:
     needs: [build-android, build-ios, build-windows]
@@ -315,12 +395,21 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: Package release assets
+      - name: Package release assets（带版本号）
         run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' pubspec.yaml | sed -n 's/^version: \([0-9.]*\).*/\1/p')
+          echo "版本号: $VERSION"
           mkdir -p release
-          cp android-apk/*.apk release/ || true
-          cd windows-exe && 7z a ../release/himi-sync-windows.zip . && cd .. || true
-          cp ios-build/himi-sync-ios-unsigned.ipa release/ || true
+          cp android-apk/*.apk release/ 2>/dev/null || true
+          cp windows-setup/*.exe release/ 2>/dev/null || true
+          if [ -d windows-exe ]; then
+            cd windows-exe
+            7z a "../release/himi-sync-windows-${VERSION}.zip" .
+            cd ..
+          fi
+          cp ios-build/*.ipa release/ 2>/dev/null || true
+          ls -la release/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -330,5 +419,6 @@ jobs:
             release/*.apk
             release/*.zip
             release/*.ipa
+            release/*.exe
           draft: false
           prerelease: false
