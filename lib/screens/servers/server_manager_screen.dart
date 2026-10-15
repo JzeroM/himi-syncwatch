@@ -369,6 +369,11 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         );
         // TV 模式：禁用长按拖拽（用布局模式方向键移动）
         if (tvMode) return card;
+        // 拖拽反馈尺寸必须与网格单元一致（aspect 1.25），否则拖拽中
+        // 卡片会变回旧版高瘦形状（v1.1.247 修复反馈硬编码 180×200）
+        final cellWidth =
+            (width - 12 - 12 - (crossAxisCount - 1) * 10) / crossAxisCount;
+        final cellHeight = cellWidth / 1.25;
         return LongPressDraggable<int>(
           data: index,
           maxSimultaneousDrags: 1,
@@ -376,7 +381,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             color: Colors.transparent,
             child: Opacity(
               opacity: 0.85,
-              child: SizedBox(width: 180, height: 200, child: card),
+              child: SizedBox(width: cellWidth, height: cellHeight, child: card),
             ),
           ),
           childWhenDragging: Opacity(opacity: 0.35, child: card),
@@ -486,7 +491,12 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter ||
         key == LogicalKeyboardKey.select) {
-      _exitLayoutMode(save: true);
+      // 仅 KeyDown 短按退出；长按进布局模式时用户仍按住 OK，后续
+      // KeyRepeat 若也退出会立刻又退出，且焦点回落期间顶栏视图切换
+      // 按钮被反复激活导致网格/列表闪切（v1.1.247 修复）。
+      if (event is KeyDownEvent) {
+        _exitLayoutMode(save: true);
+      }
       return KeyEventResult.handled;
     }
     int? delta;
@@ -712,14 +722,24 @@ class _TvCardFocusState extends State<_TvCardFocus> {
       });
       return KeyEventResult.handled;
     }
+    // 长按中（或松开前）的 KeyRepeat 必须吞掉：冒泡会触发全局
+    // TvScopeEnterIntent 把焦点抢到壳层顶栏，顶栏视图切换按钮被
+    // 反复激活导致网格/列表视图不停闪切（v1.1.247 修复）。
+    if (event is KeyRepeatEvent) {
+      return KeyEventResult.handled;
+    }
     if (event is KeyUpEvent) {
       _longPressTimer?.cancel();
+      // 仅在本节点见过对应 KeyDown 时才算完整一次点击；焦点中途
+      // 转移后落进来的孤立 KeyUp 直接吞掉，避免误触发 onTap 打开
+      // 服务器（v1.1.247）。
+      final hadDown = _longPressTimer != null;
       _longPressTimer = null;
       if (_longPressFired) {
         _longPressFired = false;
         return KeyEventResult.handled;
       }
-      widget.onTap();
+      if (hadDown) widget.onTap();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;

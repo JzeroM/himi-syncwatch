@@ -996,4 +996,87 @@ void main() {
         reason: 'TV 线路弹层打开时测速按钮应 autofocus 落焦');
     });
   });
+
+  group('v1.1.247 拖拽反馈尺寸与 TV 长按焦点修复', () {
+    testWidgets('网格拖拽反馈尺寸跟随 aspect 1.25（不再是旧 180×200）',
+        (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+
+      // 测试窗口默认 800×600：crossAxisCount = (800/220).floor() = 3
+      // cellWidth = (800 - 24 - 20) / 3 = 252；cellHeight = 252 / 1.25 = 201.6
+      final draggable = tester.widget<LongPressDraggable<int>>(
+        find.byType(LongPressDraggable<int>),
+      );
+      final material = draggable.feedback! as Material;
+      final opacity = material.child as Opacity;
+      final box = opacity.child as SizedBox;
+      expect(box.width, moreOrLessEquals(252),
+        reason: '拖拽反馈宽度应为网格单元实际宽度');
+      expect(box.height, moreOrLessEquals(201.6),
+        reason: '拖拽反馈高度应按 aspect 1.25 计算（修复旧 180×200）');
+    });
+
+    testWidgets('TV 长按 OK 进入布局模式后 KeyRepeat 不退出（视图不闪切）',
+        (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      // 长按 OK：KeyDown 后等 600ms 触发长按 → 进入布局模式
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text('移动中'), findsOneWidget, reason: '长按应进入布局模式');
+
+      // 用户仍按住 OK：OS 持续发送 KeyRepeat。修复前 _handleLayoutKey
+      // 把 enter 的 KeyRepeat 当作短按退出 → 布局模式立刻退出 → 焦点
+      // 回落 scope → 全局 TvScopeEnterIntent 把焦点抢到顶栏 → 视图
+      // 切换按钮被反复激活（网格/列表闪切）。
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(find.text('移动中'), findsOneWidget,
+        reason: 'KeyRepeat 不应退出布局模式（v1.1.247）');
+
+      // 松开 OK：KeyUp 也不应退出
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('移动中'), findsOneWidget,
+        reason: 'KeyUp 不应退出布局模式');
+
+      // 视图模式保持列表（未被顶栏切换按钮改写）
+      expect(container.read(settingsProvider).serverViewMode, 'list',
+        reason: '长按 OK 期间视图模式不应被切换');
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('TV 孤立 KeyUp（无对应 KeyDown）不触发打开服务器', (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+
+      // 只发 KeyUp（模拟焦点中途转移后 OS 补发的孤立抬起）。
+      // 修复前 _TvCardFocus 对任意 KeyUp 直接 widget.onTap() →
+      // 误切换服务器；修复后仅在见过对应 KeyDown 时才 onTap。
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(container.read(embyConfigProvider), isNull,
+        reason: '孤立 KeyUp 不应触发 onTap 打开服务器');
+    });
+  });
 }
