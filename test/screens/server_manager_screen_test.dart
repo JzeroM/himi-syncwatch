@@ -1188,5 +1188,36 @@ void main() {
       );
       expect(find.byKey(const ValueKey('syncToTvButton')), findsNothing);
     });
+
+    testWidgets('设置关闭「同步到 TV」→ 顶栏电视机按钮隐藏', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvSyncEnabled: false),
+        servers: [_server(id: 'srv_a', name: '家庭NAS', serverId: 's1')],
+      );
+      expect(find.byKey(const ValueKey('tvDeviceButton')), findsNothing);
+      expect(find.byIcon(Icons.add), findsWidgets,
+        reason: '其他顶栏按钮不受影响');
+    });
+
+    testWidgets('设置关闭「同步到 TV」→ 已配对时卡片同步图标也隐藏', (tester) async {
+      const tv = PairedTv(
+        deviceId: 'tv_1',
+        name: '客厅电视',
+        ip: '192.168.1.10',
+        port: 17894,
+        token: 'tok',
+      );
+      await _pumpScreen(
+        tester,
+        pairedTv: tv,
+        settings: const AppSettings(tvSyncEnabled: false),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+      expect(find.byKey(const ValueKey('tvDeviceButton')), findsNothing);
+      expect(find.byKey(const ValueKey('syncToTvButton')), findsNothing);
+    });
   });
 }

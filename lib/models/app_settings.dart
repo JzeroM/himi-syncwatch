@@ -81,6 +81,9 @@ class AppSettings {
   final String serverViewMode;
   final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
 
+  /// 手机同步到 TV 功能开关（服务器页电视机控件显示；关闭仅藏 UI）。
+  final bool tvSyncEnabled;
+
   /// 用户是否手动设置过 TV 开关（策略 A：设置过则自动识别不再覆盖）。
   final bool tvModeUserSet;
 
@@ -247,6 +250,7 @@ class AppSettings {
     this.versionPreference = '',
     this.serverViewMode = 'list',
     this.tvMode = false,
+    this.tvSyncEnabled = true,
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
     this.videoOutputUserSet = false,
@@ -294,6 +298,7 @@ class AppSettings {
     String? versionPreference,
     String? serverViewMode,
     bool? tvMode,
+    bool? tvSyncEnabled,
     bool? tvModeUserSet,
     String? videoOutput,
     bool? videoOutputUserSet,
@@ -344,6 +349,7 @@ class AppSettings {
       versionPreference: versionPreference ?? this.versionPreference,
       serverViewMode: serverViewMode ?? this.serverViewMode,
       tvMode: tvMode ?? this.tvMode,
+      tvSyncEnabled: tvSyncEnabled ?? this.tvSyncEnabled,
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
@@ -416,6 +422,7 @@ class AppSettings {
         'versionPreference': versionPreference,
         'serverViewMode': serverViewMode,
         'tvMode': tvMode,
+        'tvSyncEnabled': tvSyncEnabled,
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
         'videoOutputUserSet': videoOutputUserSet,
@@ -501,6 +508,8 @@ class AppSettings {
               ? json['serverViewMode'] as String
               : 'list',
       tvMode: json['tvMode'] as bool? ?? false,
+      // 旧数据无此字段 → 默认开（v1.1.249 上线时行为不变）
+      tvSyncEnabled: json['tvSyncEnabled'] as bool? ?? true,
       // 旧数据无此字段：tvMode=true 说明用户当时手动开过 → 视为已设置，
       // 避免自动识别把用户手动关掉的 TV 模式重新打开。
       tvModeUserSet: json['tvModeUserSet'] as bool? ?? (json['tvMode'] == true),

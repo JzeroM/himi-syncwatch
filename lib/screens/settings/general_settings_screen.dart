@@ -35,6 +35,17 @@ class GeneralSettingsScreen extends ConsumerWidget {
         ],
         settingsTvWrapRow(
           tvMode: settings.tvMode,
+          onTap: () => notifier.update(tvSyncEnabled: !settings.tvSyncEnabled),
+          child: SwitchListTile(
+            title: const Text('同步到 TV'),
+            subtitle: const Text('服务器页显示电视机控件，可发现局域网 TV 并推送配置'),
+            value: settings.tvSyncEnabled,
+            onChanged: (v) => notifier.update(tvSyncEnabled: v),
+          ),
+        ),
+        const Divider(height: 1),
+        settingsTvWrapRow(
+          tvMode: settings.tvMode,
           onTap: () => LogService().shareLogs(),
           child: ListTile(
             leading: const Icon(Icons.bug_report),

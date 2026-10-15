@@ -160,6 +160,9 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         ref.watch(settingsProvider.select((s) => s.serverViewMode));
     // 扫码配置入口仅 TV 模式（遥控器无输入法）：手机/桌面走手动输入
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    // 同步到 TV 开关（设置-通用）：关闭时隐藏电视机控件
+    final tvSyncEnabled =
+        ref.watch(settingsProvider.select((s) => s.tvSyncEnabled));
 
     // 切 tab 离开本页 → 丢弃未保存的添加/编辑表单（v1.1.243）
     ref.listen(
@@ -205,8 +208,9 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             tooltip: '刷新延迟与计数',
             onPressed: _loadStats,
           ),
-          // TV 设备（局域网发现/配对/推送服务器配置；仅手机/桌面端）
-          if (!tvMode)
+          // TV 设备（局域网发现/配对/推送服务器配置；仅手机/桌面端，
+          // 且设置-通用「同步到 TV」开启时显示）
+          if (!tvMode && tvSyncEnabled)
             IconButton(
               key: const ValueKey('tvDeviceButton'),
               icon: const Icon(Icons.tv),
@@ -290,6 +294,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     Map<String, ServerStats> statsMap,
   ) {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final tvSyncEnabled =
+        ref.watch(settingsProvider.select((s) => s.tvSyncEnabled));
     final pairedTv = ref.watch(pairedTvProvider);
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
@@ -320,8 +326,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onStats: () => showResourceStatsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
-              // 已配对 TV：显示「同步到 TV」图标（点击推本服务器配置）
-              onSyncToTv: !tvMode && pairedTv != null
+              // 已配对 TV 且开关开启：显示「同步到 TV」图标（点击推本服务器配置）
+              onSyncToTv: !tvMode && tvSyncEnabled && pairedTv != null
                   ? () => pushServerToTv(context, ref, server)
                   : null,
               // TV 模式：隐藏拖拽把手（布局模式用方向键移动）
@@ -346,6 +352,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final crossAxisCount = (width / 220).floor().clamp(2, 4);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final tvSyncEnabled =
+        ref.watch(settingsProvider.select((s) => s.tvSyncEnabled));
     final pairedTv = ref.watch(pairedTvProvider);
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(
@@ -380,8 +388,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onStats: () => showResourceStatsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
-              // 已配对 TV：显示「同步到 TV」图标（点击推本服务器配置）
-              onSyncToTv: !tvMode && pairedTv != null
+              // 已配对 TV 且开关开启：显示「同步到 TV」图标（点击推本服务器配置）
+              onSyncToTv: !tvMode && tvSyncEnabled && pairedTv != null
                   ? () => pushServerToTv(context, ref, server)
                   : null,
             ),

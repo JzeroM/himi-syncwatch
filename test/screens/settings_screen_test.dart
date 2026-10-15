@@ -221,6 +221,62 @@ void main() {
     expect(container.read(settingsProvider).tvMode, isTrue);
   });
 
+  testWidgets('通用子页：同步到 TV 开关默认开，切换后 tvSyncEnabled 为 false',
+      (tester) async {
+    final container = await _pumpScreen(tester, category: '通用');
+    await tester.scrollUntilVisible(
+      find.text('同步到 TV'),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('同步到 TV'), findsOneWidget);
+    expect(container.read(settingsProvider).tvSyncEnabled, isTrue,
+        reason: '默认开启（升级后行为不变）');
+
+    final syncSwitch = find.descendant(
+      of: find.ancestor(
+        of: find.text('同步到 TV'),
+        matching: find.byType(SwitchListTile),
+      ),
+      matching: find.byType(Switch),
+    );
+    expect(tester.widget<Switch>(syncSwitch).value, isTrue);
+
+    await tester.tap(syncSwitch);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).tvSyncEnabled, isFalse);
+    final notifier =
+        container.read(settingsProvider.notifier) as FakeSettingsNotifier;
+    expect(notifier.persistCount, greaterThan(0),
+        reason: '切换应触发落盘');
+  });
+
+  testWidgets('通用子页：同步到 TV 开关初始为关时可重新打开', (tester) async {
+    final container = await _pumpScreen(tester,
+        initial: const AppSettings(tvSyncEnabled: false), category: '通用');
+    await tester.scrollUntilVisible(
+      find.text('同步到 TV'),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    final syncSwitch = find.descendant(
+      of: find.ancestor(
+        of: find.text('同步到 TV'),
+        matching: find.byType(SwitchListTile),
+      ),
+      matching: find.byType(Switch),
+    );
+    expect(tester.widget<Switch>(syncSwitch).value, isFalse);
+
+    await tester.tap(syncSwitch);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).tvSyncEnabled, isTrue);
+  });
+
   testWidgets('播放器子页：显示网速开关默认开，切换写入 settings', (tester) async {
     final container = await _pumpScreen(tester, category: '播放器');
     await tester.scrollUntilVisible(
