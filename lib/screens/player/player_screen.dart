@@ -14,6 +14,7 @@ import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
+import 'package:himi_syncwatch/services/player/stream_reload_scheduler.dart';
 import 'package:erika_flutter/erika_flutter.dart'
     show ErikaVideoView, ErikaOutputMode;
 import 'package:himi_syncwatch/services/player/erika_player_adapter.dart';
@@ -758,6 +759,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// failover 进行中守卫（防并发重入）。
   bool _failoverInFlight = false;
 
+  // ---- 视频流同线路自动重载（v1.1.245）----
+  /// 流中断（invalid/取流失败/缓冲超时）时的退避重载调度。
+  final StreamReloadScheduler _streamReload = StreamReloadScheduler();
+
+  /// 缓冲 watchdog：持续 buffering/stalled 超过 10s 触发同线路重载。
+  Timer? _stallWatchdogTimer;
+
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
   bool _showDecodeModeMenu = false;
@@ -1365,6 +1373,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final st = _player.state;
       // 兜底：状态位未翻转导致卡顿计时悬挂时强制结算
       _diag.reapStaleStall();
+      // 播放稳定兜底复位（v1.1.245）：无 pending/inFlight 且状态健康时
+      // 复位重试预算（网络自愈 / 瞬断恢复场景，避免旧预算误耗尽）。
+      if (!_streamReload.hasPending &&
+          !_streamReload.inFlight &&
+          st == AdapterPlaybackState.playing &&
+          !ms.test(AdapterMediaStatus.invalid) &&
+          !ms.test(AdapterMediaStatus.buffering) &&
+          !ms.test(AdapterMediaStatus.stalled)) {
+        _streamReload.reset();
+      }
       _diag.addSample(
         pos: _player.position,
         buffered: _player.buffered(),
@@ -1775,6 +1793,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 新集允许一次新的自动故障转移
       _failoverAttempted = false;
       _reportFailCount = 0;
+      // 新集复位同线路重载预算（v1.1.245）
+      _streamReload.reset();
+      _cancelStallWatchdog();
     });
     // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
     if (mounted && _danmakuOn) unawaited(_loadDanmaku());
@@ -2687,6 +2708,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _isSwitchingMedia = false;
       });
 
+      // 加载成功：复位同线路重载预算（v1.1.245）
+      _streamReload.reset();
+
       return _videoOutputReady();
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
@@ -2701,9 +2725,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _volume = restore * 100;
           _volumeNotifier.value = _volume;
         }
-        // 播放中线路故障转移（v1.1.242）：取流失败先尝试切可达线路复播
-        unawaited(_maybeFailover('取流'));
-        showAppToast(context, '播放失败: $e');
+        // 视频流同线路自动重载（v1.1.245）：取流失败按退避重载当前流
+        final willSchedule = _streamReload.canSchedule;
+        _maybeStreamReload('取流失败');
+        if (!willSchedule && _streamReload.exhausted) {
+          // 已耗尽且本次未能调度：明确提示中断
+          showAppToast(context, '网络异常，播放已中断');
+        } else if (willSchedule) {
+          // 首次进入重载流程：提示一次（后续退避重试静默）
+          showAppToast(context, '播放失败，正在重试...');
+        }
       }
       return false;
     }
@@ -2929,8 +2960,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (event.newValue.test(AdapterMediaStatus.invalid)) {
         LogService().log('Player', '播放错误: ${event.newValue}');
         _addBroadcastMessage('播放出错');
-        // 播放中线路故障转移（v1.1.242）
-        unawaited(_maybeFailover('播放'));
+        // 视频流同线路自动重载（v1.1.245）：invalid 按退避重载当前流
+        final willSchedule = _streamReload.canSchedule;
+        _maybeStreamReload('播放错误');
+        if (!willSchedule && _streamReload.exhausted) {
+          // 已耗尽且本次未能调度：明确提示中断
+          showAppToast(context, '网络异常，播放已中断');
+        } else if (willSchedule) {
+          // 首次进入重载流程：提示一次（后续退避重试静默）
+          showAppToast(context, '播放出错，正在重试...');
+        }
       }
 
       // 卡顿边沿检测：buffering 进入 / buffered 或 stalled 退出
@@ -2939,16 +2978,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!wasBuffering && isBuffering) {
         _diag.onStallStart('buffering');
         LogService().log('Diag', '开始缓冲');
+        _startStallWatchdog();
       }
       final isRecovered = !event.newValue.test(AdapterMediaStatus.buffering) &&
           !event.newValue.test(AdapterMediaStatus.stalled);
       if (wasBuffering && isRecovered) {
         _diag.onStallEnd();
         LogService().log('Diag', '缓冲结束');
+        _cancelStallWatchdog();
       }
       if (event.newValue.test(AdapterMediaStatus.stalled)) {
         _diag.onStallStart('underflow');
         _diag.note('underflow(数据供给中断)');
+        _startStallWatchdog();
       }
     });
 
@@ -4113,6 +4155,100 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  // ---- 视频流同线路自动重载（v1.1.245）----
+
+  /// 视频流中断（invalid / 取流失败 / 缓冲超时）时按退避序列调度同线路重载。
+  ///
+  /// 与 [_maybeFailover]（线路切换，API 层）互补：本方法不切线路，
+  /// 仅用当前位置 seek 复播当前流；观众同样处理（重载后由心跳纠偏）。
+  void _maybeStreamReload(String reason) {
+    if (!mounted || !_streamReload.canSchedule) return;
+    _streamReload.schedule(() {
+      LogService().log('Player', '$reason → 调度同线路重载');
+      unawaited(_reloadSameLine());
+    });
+  }
+
+  /// 同线路重载：捕获当前位置，复用已验证的加载路径 seek 复播。
+  ///
+  /// 分发对齐 [_recoverVideoAfterResume]：
+  /// - 观众：[_playFromUrl]（重载后心跳纠偏回房主进度）
+  /// - 有剧集：[_loadEpisodeStream]（带 startMs）
+  /// - 单集：[_loadStream]（带 startMs，返回 true 时复位重试预算）
+  Future<void> _reloadSameLine() async {
+    if (!mounted || !_streamReload.beginFlight()) return;
+    _cancelStallWatchdog();
+    final posMs = _player.position;
+    final wasPlaying = _player.state == AdapterPlaybackState.playing;
+    LogService().log('Player', '同线路自动重载 pos=${posMs}ms playing=$wasPlaying');
+    try {
+      if (!_isPlayerReady) return;
+      // 房间观众：走同步播放重载（内部自行起播/seek）
+      if (widget.roomCode != null && !_isHost) {
+        if (_currentPlayUrl.isEmpty) return;
+        _playFromUrl(
+          playUrl: _currentPlayUrl,
+          token: _currentToken,
+          position: posMs / 1000.0,
+          epIndex: _currentEpisodeIndex >= 0 ? _currentEpisodeIndex : null,
+        );
+        return;
+      }
+      // 单人 / 房主：走已验证的加载路径（重载会重新起播）
+      if (_hasEpisodeList && _currentEpisodeIndex >= 0) {
+        await _loadEpisodeStream(_currentEpisodeIndex, startMs: posMs);
+      } else {
+        final ok = await _loadStream(startMs: posMs);
+        if (ok && mounted) _streamReload.reset();
+      }
+      if (!mounted) return;
+      // 暂停态还原：重载默认起播，需恢复暂停（同 resume 路径）
+      if (!wasPlaying) {
+        _player.state = AdapterPlaybackState.paused;
+        _position = Duration(milliseconds: posMs);
+        _positionNotifier.value = _position;
+        _syncPlayState();
+      }
+    } finally {
+      _streamReload.endFlight();
+    }
+    // 重载结束（endFlight 后）：状态仍不健康则调度下一次退避重试。
+    // inFlight 期间 _loadStream 内部 catch 的 _maybeStreamReload 会被
+    // canSchedule 吞掉，需在此补调度，否则重试链断裂。
+    if (!mounted) return;
+    final ms = _player.mediaStatus;
+    final st = _player.state;
+    final healthy = st == AdapterPlaybackState.playing &&
+        !ms.test(AdapterMediaStatus.invalid) &&
+        !ms.test(AdapterMediaStatus.buffering) &&
+        !ms.test(AdapterMediaStatus.stalled);
+    if (!healthy) {
+      _maybeStreamReload('重载后仍异常');
+    }
+  }
+
+  /// 缓冲 watchdog：持续 buffering/stalled 超过 10s 触发同线路重载。
+  ///
+  /// 网络波动断连常表现为流挂起不报 invalid，仅停在 buffering/stalled；
+  /// 状态位可能永不翻转（diag.reapStaleStall 兜底同理），需独立计时兜底。
+  void _startStallWatchdog() {
+    // 已有重载调度/进行中：不重复武装
+    if (_streamReload.hasPending || _streamReload.inFlight) return;
+    _stallWatchdogTimer?.cancel();
+    _stallWatchdogTimer =
+        Timer(StreamReloadScheduler.stallTimeout, () {
+      if (!mounted) return;
+      LogService().log('Player', '缓冲超时 → 调度同线路重载');
+      _maybeStreamReload('缓冲超时');
+    });
+  }
+
+  /// 取消缓冲 watchdog（缓冲恢复 / 重载开始 / dispose）。
+  void _cancelStallWatchdog() {
+    _stallWatchdogTimer?.cancel();
+    _stallWatchdogTimer = null;
+  }
+
   /// 从「重播乐观隐藏」集合移除当前条目（服务器真相已回来）。
   void _clearResumeHidden(String id) {
     final notifier = ref.read(resumeOptimisticHiddenProvider.notifier);
@@ -4838,6 +4974,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
     _danmakuRetryTimer?.cancel();
+    // 同线路重载清理（v1.1.245）：取消 pending 定时器防泄漏
+    _streamReload.cancelPending();
+    _cancelStallWatchdog();
     FocusManager.instance.removeListener(_onPrimaryFocusChanged);
     _autoHide.dispose();
     // 兜底上报：异常 pop/系统 kill 未走 onConfirm 时，尽力补一次「停止」
