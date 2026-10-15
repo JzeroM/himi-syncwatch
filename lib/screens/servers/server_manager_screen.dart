@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/server_stats_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/route_manager_sheet.dart';
 import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart';
@@ -20,6 +21,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/resource_stats_sheet.dart';
+import 'package:himi_syncwatch/widgets/tv_device_sheet.dart';
 
 /// 按 serverId 去重（同服务器多 session 只展示第一个）。
 List<EmbyServerConfig> _dedupServers(List<EmbyServerConfig> servers) {
@@ -203,6 +205,14 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             tooltip: '刷新延迟与计数',
             onPressed: _loadStats,
           ),
+          // TV 设备（局域网发现/配对/推送服务器配置；仅手机/桌面端）
+          if (!tvMode)
+            IconButton(
+              key: const ValueKey('tvDeviceButton'),
+              icon: const Icon(Icons.tv),
+              tooltip: 'TV 设备',
+              onPressed: () => showTvDeviceSheet(context),
+            ),
           if (tvMode)
             IconButton(
               icon: const Icon(Icons.qr_code_scanner),
@@ -280,6 +290,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     Map<String, ServerStats> statsMap,
   ) {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final pairedTv = ref.watch(pairedTvProvider);
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
       padding: EdgeInsets.only(
@@ -309,6 +320,10 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onStats: () => showResourceStatsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
+              // 已配对 TV：显示「同步到 TV」图标（点击推本服务器配置）
+              onSyncToTv: !tvMode && pairedTv != null
+                  ? () => pushServerToTv(context, ref, server)
+                  : null,
               // TV 模式：隐藏拖拽把手（布局模式用方向键移动）
               dragHandle: tvMode
                   ? null
@@ -331,6 +346,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final crossAxisCount = (width / 220).floor().clamp(2, 4);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final pairedTv = ref.watch(pairedTvProvider);
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(
         12,
@@ -364,6 +380,10 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onStats: () => showResourceStatsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
+              // 已配对 TV：显示「同步到 TV」图标（点击推本服务器配置）
+              onSyncToTv: !tvMode && pairedTv != null
+                  ? () => pushServerToTv(context, ref, server)
+                  : null,
             ),
           ),
         );

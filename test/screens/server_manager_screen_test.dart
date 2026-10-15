@@ -7,18 +7,37 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
+import 'package:himi_syncwatch/models/tv_device.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/tv_sync/paired_tv_store.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
+
+/// 固定返回预置配对 TV 的 store（不触碰 secure storage）。
+class _StaticPairedTvStore extends PairedTvStore {
+  _StaticPairedTvStore(this._tv);
+
+  final PairedTv? _tv;
+
+  @override
+  Future<PairedTv?> load() async => _tv;
+
+  @override
+  Future<void> save(PairedTv tv) async {}
+
+  @override
+  Future<void> clear() async {}
+}
 
 EmbyServerConfig _server({
   required String id,
@@ -45,6 +64,7 @@ Future<ProviderContainer> _pumpScreen(
   FakeEmbyAuthService? auth,
   AppSettings settings = const AppSettings(),
   EmbyService Function(EmbyServerConfig)? serviceFactory,
+  PairedTv? pairedTv,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -53,6 +73,11 @@ Future<ProviderContainer> _pumpScreen(
           .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServerListProvider
           .overrideWith((ref) => EmbyServerListNotifier()..setList(servers)),
+      pairedTvProvider.overrideWith(
+        (ref) => PairedTvNotifier(
+          store: _StaticPairedTvStore(pairedTv),
+        ),
+      ),
       if (serviceFactory != null)
         embyServiceFactoryProvider.overrideWithValue(serviceFactory),
     ],
@@ -1013,7 +1038,7 @@ void main() {
       final draggable = tester.widget<LongPressDraggable<int>>(
         find.byType(LongPressDraggable<int>),
       );
-      final material = draggable.feedback! as Material;
+      final material = draggable.feedback as Material;
       final opacity = material.child as Opacity;
       final box = opacity.child as SizedBox;
       expect(box.width, moreOrLessEquals(252),
@@ -1077,6 +1102,91 @@ void main() {
 
       expect(container.read(embyConfigProvider), isNull,
         reason: '孤立 KeyUp 不应触发 onTap 打开服务器');
+    });
+  });
+
+  group('TV 设备同步入口（v1.1.248）', () {
+    testWidgets('非 TV 模式顶栏显示 TV 设备按钮，点击打开发现面板', (tester) async {
+      await _pumpScreen(
+        tester,
+        servers: [_server(id: 'srv_a', name: '家庭NAS', serverId: 's1')],
+      );
+
+      final btn = find.byKey(const ValueKey('tvDeviceButton'));
+      expect(btn, findsOneWidget, reason: '顶栏应有电视机图标入口');
+
+      await tester.tap(btn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('TV 设备'), findsOneWidget, reason: '应打开设备面板');
+      expect(find.text('未发现 TV 设备，搜索中…'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tvDeviceSheetClose')), findsOneWidget);
+
+      // 关面板 → autoDispose 发现监听（停周期 Timer），避免帧末 timer 挂起
+      await tester.tap(find.byKey(const ValueKey('tvDeviceSheetClose')));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('TV 模式不显示 TV 设备按钮（TV 是被推送方）', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [_server(id: 'srv_a', name: '家庭NAS', serverId: 's1')],
+      );
+
+      expect(find.byKey(const ValueKey('tvDeviceButton')), findsNothing);
+    });
+
+    testWidgets('未配对 TV 时卡片不显示同步图标', (tester) async {
+      await _pumpScreen(
+        tester,
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+
+      expect(find.byKey(const ValueKey('syncToTvButton')), findsNothing);
+    });
+
+    testWidgets('已配对 TV 时列表/网格卡片显示同步图标', (tester) async {
+      const tv = PairedTv(
+        deviceId: 'tv_1',
+        name: '客厅电视',
+        ip: '192.168.1.10',
+        port: 17894,
+        token: 'tok',
+      );
+      await _pumpScreen(
+        tester,
+        pairedTv: tv,
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+      expect(find.byKey(const ValueKey('syncToTvButton')), findsNWidgets(2));
+
+      // 切到网格视图同样显示
+      await tester.tap(find.byIcon(Icons.view_module));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('syncToTvButton')), findsNWidgets(2));
+    });
+
+    testWidgets('已配对但 TV 模式下不显示同步图标', (tester) async {
+      const tv = PairedTv(
+        deviceId: 'tv_1',
+        name: '客厅电视',
+        ip: '192.168.1.10',
+        port: 17894,
+        token: 'tok',
+      );
+      await _pumpScreen(
+        tester,
+        pairedTv: tv,
+        settings: const AppSettings(tvMode: true),
+        servers: [_server(id: 'srv_a', name: '家庭NAS', serverId: 's1')],
+      );
+      expect(find.byKey(const ValueKey('syncToTvButton')), findsNothing);
     });
   });
 }

@@ -506,6 +506,7 @@ class ServerListCard extends StatelessWidget {
     this.onEdit,
     this.onSwitchLine,
     this.onStats,
+    this.onSyncToTv,
     this.dragHandle,
   });
 
@@ -517,6 +518,9 @@ class ServerListCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onSwitchLine;
   final VoidCallback? onStats;
+
+  /// 同步本服务器到已配对 TV（null=未配对，不显示电视图标）。
+  final VoidCallback? onSyncToTv;
 
   /// 拖拽把手（由外层 ReorderableDragStartListener 包装后传入；TV 传 null）。
   final Widget? dragHandle;
@@ -591,6 +595,19 @@ class ServerListCard extends StatelessWidget {
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // 同步到已配对 TV（配对后显示，点击推本服务器配置）
+                      if (onSyncToTv != null)
+                        InkWell(
+                          key: const ValueKey('syncToTvButton'),
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: onSyncToTv,
+                          child: const SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: Icon(Icons.cast_connected,
+                                size: 20, color: Colors.white54),
+                          ),
+                        ),
                       ServerMoreButton(
                         menuKey: 'serverMore_${server.id}',
                         onEdit: onEdit,
@@ -624,6 +641,7 @@ class ServerGridCard extends StatelessWidget {
     this.onEdit,
     this.onSwitchLine,
     this.onStats,
+    this.onSyncToTv,
   });
 
   final EmbyServerConfig server;
@@ -634,6 +652,9 @@ class ServerGridCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onSwitchLine;
   final VoidCallback? onStats;
+
+  /// 同步本服务器到已配对 TV（null=未配对，不显示电视图标）。
+  final VoidCallback? onSyncToTv;
 
   @override
   Widget build(BuildContext context) {
@@ -688,6 +709,18 @@ class ServerGridCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (onSyncToTv != null)
+                          InkWell(
+                            key: const ValueKey('syncToTvButton'),
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: onSyncToTv,
+                            child: const SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: Icon(Icons.cast_connected,
+                                  size: 18, color: Colors.white54),
+                            ),
+                          ),
                         ServerMoreButton(
                           menuKey: 'serverMore_${server.id}',
                           onEdit: onEdit,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -15,6 +16,8 @@ class HimiSyncApp extends ConsumerWidget {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     // 玻璃参数实时调节：设置页滑杆改值 → theme 重建 → 全部玻璃面更新
     final glassTuning = ref.watch(glassTuningProvider);
+    // TV 端局域网同步常驻服务（tvMode 时启动 HTTP 配对/同步 + UDP 广播）
+    ref.watch(tvSyncProvider);
 
     return LiquidGlassWidgets.wrap(
       // MaterialApp 必须桥接 ThemeMode 亮度，否则 OS 深浅色与
