@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
+import 'package:himi_syncwatch/models/library_counts.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 
@@ -227,13 +228,34 @@ class EmbyService {
     }
   }
 
-  /// 回退：并发三次 `/Items`（Limit=1）读 TotalRecordCount（兼容 TotalRecords）。
-  Future<MediaCounts?> _countsFromItemsQuery() async {
+  /// 资源统计：不含多版本 / 包含多版本 × 电影/剧集/集 六个计数。
+  ///
+  /// - 不含多版本：`/Items/Counts?UserId=`（与首页卡片同口径）
+  /// - 包含多版本：`/Items?IncludeItemTypes=X&Recursive=true&Limit=1`
+  ///   （无 UserId，读 TotalRecordCount）
+  /// 任何失败返回 null，不抛错。
+  Future<LibraryCounts?> getLibraryCounts() async {
+    try {
+      final withoutVersions = await _countsFromEndpoint();
+      final withVersions = await _countsFromItemsQuery(includeVersions: true);
+      if (withoutVersions == null && withVersions == null) return null;
+      return LibraryCounts(
+        withoutVersions: withoutVersions,
+        withVersions: withVersions,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 回退/含多版本：并发三次 `/Items`（Limit=1）读 TotalRecordCount。
+  /// [includeVersions]=true 时不传 UserId（服务器全库口径，含多版本）。
+  Future<MediaCounts?> _countsFromItemsQuery({bool includeVersions = false}) async {
     const types = ['Movie', 'Series', 'Episode'];
     final responses = await Future.wait([
       for (final type in types)
         _dio.get('/Items', queryParameters: {
-          if (_userId != null) 'UserId': _userId,
+          if (!includeVersions && _userId != null) 'UserId': _userId,
           'Recursive': true,
           'IncludeItemTypes': type,
           'Limit': 1,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 打开数字网格选集器（底部玻璃 sheet）。
@@ -45,11 +46,12 @@ Future<void> showEpisodeNumberPicker(
           ]..sort((a, b) => (a.indexNumber ?? 0).compareTo(b.indexNumber ?? 0));
           final display = descending ? sorted.reversed.toList() : sorted;
 
-          return Container(
-            height: size.height * 0.78,
-            decoration: const BoxDecoration(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
+          return SheetBottomSafeArea(
+            child: Container(
+              height: size.height * 0.78,
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
             child: GlassContainer(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(24),
@@ -165,9 +167,9 @@ Future<void> showEpisodeNumberPicker(
                 ],
               ),
             ),
-          );
-        },
-      );
-    },
-  );
+          ),
+        );
+      },
+    );
+  });
 }

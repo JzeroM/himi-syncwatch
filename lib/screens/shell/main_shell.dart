@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
@@ -97,10 +98,14 @@ class _MainShellState extends ConsumerState<MainShell> {
   }
 
   /// 统一系统返回策略（TV / 非 TV 共用）：
+  /// 0. 页面级拦截（如 Emby 页内联表单 / TV 布局模式）→ 优先消费
   /// 1. 当前分支 Navigator 还能弹（在子页）→ 弹子页，回父页
   /// 2. 在 tab 根页：非首页 → 回首页
   /// 3. 首页根页：TV 双击退出；非 TV 直接退桌面
   void _handleBack({required bool tvMode}) {
+    // 0. 页面级拦截（Emby 内联表单、TV 布局模式等）→ 页面自行处理
+    final intercept = ref.read(shellBackInterceptProvider);
+    if (intercept != null && intercept()) return;
     // 1. 分支子页（设置子页、Emby 扫码、首页搜索等）→ 弹回父页
     final branch = widget.shell.route.branches[widget.shell.currentIndex];
     final navigator = branch.navigatorKey.currentState;

@@ -732,6 +732,70 @@ void main() {
       expect(req.param('UserId'), 'user-1');
     });
   });
+
+  group('getLibraryCounts', () {
+    test('成功：Counts 端点 + /Items（无 UserId）各返回计数', () async {
+      respondWith = (path) {
+        if (path == '/Items/Counts') {
+          return {
+            'MovieCount': 100,
+            'SeriesCount': 200,
+            'EpisodeCount': 300,
+          };
+        }
+        // /Items 按 IncludeItemTypes 区分
+        return {'TotalRecordCount': 999};
+      };
+
+      final counts = await service.getLibraryCounts();
+
+      expect(counts, isNotNull);
+      expect(counts!.withoutVersions, isNotNull);
+      expect(counts.withoutVersions!.movies, 100);
+      expect(counts.withoutVersions!.series, 200);
+      expect(counts.withoutVersions!.episodes, 300);
+      expect(counts.withVersions, isNotNull);
+      expect(counts.withVersions!.movies, 999);
+      expect(counts.withVersions!.series, 999);
+      expect(counts.withVersions!.episodes, 999);
+
+      // 1 次 Counts + 3 次 /Items（无 UserId）
+      expect(captured, hasLength(4));
+      final countsReq = captured.first;
+      expect(countsReq.path, '/Items/Counts');
+      expect(countsReq.param('UserId'), 'user-1');
+      final itemsReqs = captured.skip(1).toList();
+      for (final r in itemsReqs) {
+        expect(r.path, '/Items');
+        expect(r.param('UserId'), isNull);
+        expect(r.param('Limit'), '1');
+        expect(r.param('Recursive'), 'true');
+      }
+      expect(
+        itemsReqs.map((r) => r.param('IncludeItemTypes')).toSet(),
+        {'Movie', 'Series', 'Episode'},
+      );
+    });
+
+    test('Counts 失败但 /Items 成功：withoutVersions null，withVersions 有值', () async {
+      statusFor = (path) => path == '/Items/Counts' ? 404 : HttpStatus.ok;
+      respondWith = (_) => {'TotalRecordCount': 55};
+
+      final counts = await service.getLibraryCounts();
+
+      expect(counts, isNotNull);
+      expect(counts!.withoutVersions, isNull);
+      expect(counts.withVersions, isNotNull);
+      expect(counts.withVersions!.movies, 55);
+    });
+
+    test('全部失败：返回 null', () async {
+      statusFor = (_) => 500;
+
+      final counts = await service.getLibraryCounts();
+      expect(counts, isNull);
+    });
+  });
 }
 
 /// 忽略未使用的 future，避免 lint 告警。

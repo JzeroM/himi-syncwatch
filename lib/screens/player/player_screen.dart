@@ -61,6 +61,7 @@ import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/screens/player/room_resource_search.dart';
@@ -4651,10 +4652,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-            24, 24, 24, 24 + MediaQuery.of(ctx).padding.bottom),
-        child: SingleChildScrollView(
+      builder: (ctx) => SheetBottomSafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -4745,7 +4746,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   @override

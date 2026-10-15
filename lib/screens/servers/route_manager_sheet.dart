@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/services/server_route_service.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 打开线路管理底部弹层（玻璃，跟随液态玻璃 UI 开关）。
@@ -119,8 +120,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
     if (server == null) return const SizedBox.shrink();
     final activeUrl = server.effectiveUrl;
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewPaddingOf(context).bottom),
+    return SheetBottomSafeArea(
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.85,
@@ -578,10 +578,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.viewPaddingOf(context).bottom,
-      ),
+    return SheetBottomSafeArea(
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.9,

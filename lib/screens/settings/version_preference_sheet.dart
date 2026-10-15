@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
 
 /// 打开「视频版本偏好」设置面板（底部弹层，长按拖动 + 上移调整优先级）。
 Future<void> showVersionPreferenceSheet(BuildContext context, WidgetRef ref) {
@@ -53,7 +54,8 @@ class _VersionPreferenceSheetState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SafeArea(
+    return SheetBottomSafeArea(
+      avoidSides: true,
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.82,

@@ -132,6 +132,7 @@ class ServerMoreButton extends ConsumerStatefulWidget {
     required this.onDelete,
     this.onEdit,
     this.onSwitchLine,
+    this.onStats,
   });
 
   final String menuKey;
@@ -140,6 +141,9 @@ class ServerMoreButton extends ConsumerStatefulWidget {
 
   /// 切换线路：打开线路管理弹层。
   final VoidCallback? onSwitchLine;
+
+  /// 资源统计：打开资源统计底部面板。
+  final VoidCallback? onStats;
 
   @override
   ConsumerState<ServerMoreButton> createState() => _ServerMoreButtonState();
@@ -173,6 +177,7 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
         anchorSize: size,
         onEdit: widget.onEdit,
         onSwitchLine: widget.onSwitchLine,
+        onStats: widget.onStats,
         onDelete: () {
           onClose();
           widget.onDelete();
@@ -241,12 +246,14 @@ class _ServerActionPanel extends StatefulWidget {
     required this.onClose,
     this.onEdit,
     this.onSwitchLine,
+    this.onStats,
   });
 
   final Offset anchorOffset;
   final Size anchorSize;
   final VoidCallback? onEdit;
   final VoidCallback? onSwitchLine;
+  final VoidCallback? onStats;
   final VoidCallback onDelete;
   final VoidCallback onClose;
 
@@ -285,6 +292,12 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
       case 'switchLine':
         if (widget.onSwitchLine != null) {
           widget.onSwitchLine!();
+        } else {
+          showAppToast(context, '功能开发中');
+        }
+      case 'stats':
+        if (widget.onStats != null) {
+          widget.onStats!();
         } else {
           showAppToast(context, '功能开发中');
         }
@@ -444,6 +457,7 @@ class ServerListCard extends StatelessWidget {
     required this.onDelete,
     this.onEdit,
     this.onSwitchLine,
+    this.onStats,
     this.dragHandle,
   });
 
@@ -454,6 +468,7 @@ class ServerListCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback onDelete;
   final VoidCallback? onSwitchLine;
+  final VoidCallback? onStats;
 
   /// 拖拽把手（由外层 ReorderableDragStartListener 包装后传入；TV 传 null）。
   final Widget? dragHandle;
@@ -533,6 +548,7 @@ class ServerListCard extends StatelessWidget {
                         menuKey: 'serverMore_${server.id}',
                         onEdit: onEdit,
                         onSwitchLine: onSwitchLine,
+                        onStats: onStats,
                         onDelete: onDelete,
                       ),
                       if (dragHandle != null) dragHandle!,
@@ -560,6 +576,7 @@ class ServerGridCard extends StatelessWidget {
     required this.onDelete,
     this.onEdit,
     this.onSwitchLine,
+    this.onStats,
   });
 
   final EmbyServerConfig server;
@@ -569,6 +586,7 @@ class ServerGridCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback onDelete;
   final VoidCallback? onSwitchLine;
+  final VoidCallback? onStats;
 
   @override
   Widget build(BuildContext context) {
@@ -627,6 +645,7 @@ class ServerGridCard extends StatelessWidget {
                           menuKey: 'serverMore_${server.id}',
                           onEdit: onEdit,
                           onSwitchLine: onSwitchLine,
+                          onStats: onStats,
                           onDelete: onDelete,
                         ),
                       ],

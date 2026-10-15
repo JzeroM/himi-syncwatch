@@ -1,6 +1,7 @@
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
+import 'package:himi_syncwatch/models/library_counts.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
@@ -184,6 +185,9 @@ class FakeEmbyService extends EmbyService {
   /// getItemCounts 返回结果；null = 统计失败（首页不渲染底部面板）。
   final MediaCounts? itemCounts;
 
+  /// getLibraryCounts 返回结果；null = 失败（资源统计面板显示空态）。
+  LibraryCounts? libraryCounts;
+
   /// getSeasons 返回结果（剧集详情页分季兜底测试用）。
   final List<MediaItem> seasons;
 
@@ -279,6 +283,9 @@ class FakeEmbyService extends EmbyService {
 
   @override
   Future<MediaCounts?> getItemCounts() async => itemCounts;
+
+  @override
+  Future<LibraryCounts?> getLibraryCounts() async => libraryCounts;
 
   @override
   Future<List<MediaItem>> searchItems(String query) async => searchResults;

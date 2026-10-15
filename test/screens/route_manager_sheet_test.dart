@@ -155,4 +155,59 @@ void main() {
     // 未做任何添加：列表不变
     expect(container.read(embyServerListProvider).single.routes, isEmpty);
   });
+
+  testWidgets('保存按钮底边避开虚拟导航键区（viewPadding.bottom=48）', (tester) async {
+    const navInset = 48.0;
+    final container = ProviderContainer(
+      overrides: [
+        embyAuthServiceProvider.overrideWithValue(FakeEmbyAuthService()),
+        settingsProvider.overrideWith((ref) => FakeSettingsNotifier(const AppSettings())),
+      ],
+    );
+    addTearDown(container.dispose);
+    final server = _server();
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MediaQuery(
+          data: const MediaQueryData(
+            viewPadding: EdgeInsets.only(bottom: navInset),
+          ).copyWith(size: const Size(800, 600)),
+          child: MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  key: const Key('openSheet'),
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: tester.element(find.byKey(const Key('openSheet'))),
+                    backgroundColor: Colors.transparent,
+                    isScrollControlled: true,
+                    builder: (_) => AddRouteSheet(server: server),
+                  ),
+                  child: const Text('打开'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('openSheet')));
+    await tester.pumpAndSettle();
+
+    // 表单内容高于视口：滚到底让保存按钮落到滚动视口底部，
+    // 再断言其底边不侵入虚拟导航键区。
+    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+
+    final screen = tester.getSize(find.byType(MaterialApp));
+    final buttonRect = tester.getRect(find.byKey(const Key('saveRouteButton')));
+    expect(
+      buttonRect.bottom,
+      lessThanOrEqualTo(screen.height - navInset + 0.5),
+      reason: '保存按钮底边必须在虚拟导航键区（底部48px）之上',
+    );
+  });
 }

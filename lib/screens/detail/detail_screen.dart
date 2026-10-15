@@ -19,6 +19,7 @@ import 'package:himi_syncwatch/screens/detail/episode_number_picker.dart';
 import 'package:himi_syncwatch/screens/detail/media_details_section.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
+import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -1078,7 +1079,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final primary = Theme.of(context).colorScheme.primary;
     return showModalBottomSheet<MediaSource>(
       context: context,
-      builder: (ctx) => SafeArea(
+      builder: (ctx) => SheetBottomSafeArea(
+        avoidSides: true,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1173,7 +1175,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          return SafeArea(
+          return SheetBottomSafeArea(
+            avoidSides: true,
             child: DraggableScrollableSheet(
               initialChildSize: 0.7,
               minChildSize: 0.4,

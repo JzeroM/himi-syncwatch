@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/providers/server_stats_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/route_manager_sheet.dart';
+import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
@@ -18,6 +19,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
+import 'package:himi_syncwatch/widgets/resource_stats_sheet.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 按 serverId 去重（同服务器多 session 只展示第一个）。
@@ -51,10 +53,50 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   /// 布局模式进入时的顺序快照（返回键取消时还原）。
   List<EmbyServerConfig>? _layoutBackup;
 
+  /// 挂载时捕获的容器（dispose 中 ref.read 非法，用它清壳层拦截器）。
+  late final ProviderContainer _container;
+
   @override
   void initState() {
     super.initState();
+    _container = ProviderScope.containerOf(context, listen: false);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadStats());
+  }
+
+  @override
+  void dispose() {
+    _container.read(shellBackInterceptProvider.notifier).clear();
+    super.dispose();
+  }
+
+  /// 表单/布局模式变化后同步壳层返回拦截：任一激活则注册，否则清空。
+  void _syncBackIntercept() {
+    final notifier = ref.read(shellBackInterceptProvider.notifier);
+    final active = _layoutServerId != null ||
+        _showAddServerForm ||
+        _editingServer != null;
+    if (active) {
+      notifier.register(_onBackIntercept);
+    } else {
+      notifier.clear();
+    }
+  }
+
+  /// 壳层返回拦截：优先关布局模式，其次关表单；均不活跃时放行。
+  bool _onBackIntercept() {
+    if (_layoutServerId != null) {
+      _exitLayoutMode(save: false);
+      return true;
+    }
+    if (_showAddServerForm || _editingServer != null) {
+      setState(() {
+        _showAddServerForm = false;
+        _editingServer = null;
+      });
+      _setFormVisible(false);
+      return true;
+    }
+    return false;
   }
 
   /// 展开/收起表单时同步底部导航显隐（表单展开算"非首页"状态）。
@@ -83,17 +125,23 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       _showAddServerForm = false;
     });
     _setFormVisible(true);
+    _syncBackIntercept();
   }
 
-  /// 切 tab 离开本页（epoch bump）：丢弃未保存的添加/编辑表单。
+  /// 切 tab 离开本页（epoch bump）：丢弃未保存的添加/编辑表单与布局模式。
   void _resetUnsavedOperations() {
-    if (_showAddServerForm || _editingServer != null) {
+    final hadForm = _showAddServerForm || _editingServer != null;
+    final hadLayout = _layoutServerId != null;
+    if (hadForm || hadLayout) {
       setState(() {
         _showAddServerForm = false;
         _editingServer = null;
+        _layoutServerId = null;
+        _layoutBackup = null;
       });
-      _setFormVisible(false);
+      if (hadForm) _setFormVisible(false);
     }
+    _syncBackIntercept();
   }
 
   Future<void> _loadStats() async {
@@ -178,6 +226,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                   if (next) _editingServer = null;
                 });
                 _setFormVisible(next);
+                _syncBackIntercept();
               },
             ),
         ],
@@ -202,6 +251,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                       _editingServer = null;
                     });
                     _setFormVisible(false);
+                    _syncBackIntercept();
                     showAppToast(
                         context, isEdit ? '服务器已更新' : '服务器已添加');
                     // 新服务器自动排末尾（home _init 把不在序里的排尾部），
@@ -257,6 +307,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onTap: () => _openServer(server),
               onEdit: () => _onEditServer(server),
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
+              onStats: () => showResourceStatsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
               // TV 模式：隐藏拖拽把手（布局模式用方向键移动）
               dragHandle: tvMode
@@ -310,6 +361,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onTap: () => _openServer(server),
               onEdit: () => _onEditServer(server),
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
+              onStats: () => showResourceStatsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
             ),
           ),
@@ -456,6 +508,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       _layoutServerId = server.id;
       _layoutBackup = List.of(ref.read(embyServerListProvider));
     });
+    _syncBackIntercept();
   }
 
   void _layoutMoveBy(int delta) {
@@ -477,6 +530,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       _layoutServerId = null;
       _layoutBackup = null;
     });
+    _syncBackIntercept();
     if (save) {
       if (mounted) showAppToast(context, '位置已保存');
       return;

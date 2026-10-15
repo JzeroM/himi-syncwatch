@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
+import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
 
 /// 打开筛选面板（触屏底部面板 / TV 居中对话框）。
 /// 返回确认后的新筛选；取消返回 null。
@@ -48,7 +49,8 @@ Future<CategoryFilter?> showMediaFilterPanel(
     // v1.1.234 误设 Colors.transparent 导致面板成"玻璃"透视后面海报，已移除。
     // 关闭下滑手势（面板本身已不可拖拽，避免半拖状态）
     enableDrag: false,
-    builder: (ctx) => SafeArea(
+    builder: (ctx) => SheetBottomSafeArea(
+      avoidSides: true,
       child: SizedBox(
         height: MediaQuery.sizeOf(ctx).height * 0.5,
         child: _FilterPanelBody(
