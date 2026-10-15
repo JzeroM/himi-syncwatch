@@ -7,30 +7,56 @@ import 'package:qr_flutter/qr_flutter.dart';
 /// 局域网扫码配置页：展示二维码与地址，手机浏览器打开后提交即落到本机。
 ///
 /// [mode] 为 `emby` 时二维码打开 Emby 配置区块；`danmaku` 时打开弹幕
-/// API 地址区块；其余默认 Emby。进入自动启动服务，离开（返回）自动停止。
+/// API 地址区块；`route` 时打开备用线路区块（需配 [serverId] 指定目标
+/// 服务器）；其余默认 Emby。进入自动启动服务，离开（返回）自动停止。
 class QrConfigScreen extends ConsumerStatefulWidget {
-  const QrConfigScreen({super.key, this.mode = ''});
+  const QrConfigScreen({super.key, this.mode = '', this.serverId});
 
   final String mode;
+
+  /// mode=route 时的目标服务器本地配置 id。
+  final String? serverId;
 
   @override
   ConsumerState<QrConfigScreen> createState() => _QrConfigScreenState();
 }
 
 class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
-  bool get _isDanmaku => widget.mode == 'danmaku';
+  late final LanConfigNotifier _lanNotifier;
 
-  String get _title => _isDanmaku ? '扫码配置弹幕 API' : '扫码配置 Emby';
+  bool get _isRoute => widget.mode == 'route';
 
-  String get _tip => _isDanmaku
-      ? '用手机扫描二维码\n或在手机浏览器打开下方地址\n'
-          '在手机上填写弹幕 API 地址并提交'
-      : '用手机扫描二维码\n或在手机浏览器打开下方地址';
+  String get _title => switch (widget.mode) {
+        'danmaku' => '扫码配置弹幕 API',
+        'route' => '扫码添加备用线路',
+        _ => '扫码配置 Emby',
+      };
+
+  String get _tip => switch (widget.mode) {
+        'danmaku' =>
+          '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写弹幕 API 地址并提交',
+        'route' =>
+          '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写线路信息并提交',
+        _ => '用手机扫描二维码\n或在手机浏览器打开下方地址',
+      };
 
   @override
   void initState() {
     super.initState();
+    _lanNotifier = ref.read(lanConfigProvider.notifier);
+    // 添加线路模式：注入目标服务器，供 routeHandler 落库
+    if (_isRoute) {
+      _lanNotifier.routeTargetServerId = widget.serverId;
+    }
     Future.microtask(() => ref.read(lanConfigProvider.notifier).start());
+  }
+
+  @override
+  void dispose() {
+    if (_lanNotifier.routeTargetServerId == widget.serverId) {
+      _lanNotifier.routeTargetServerId = null;
+    }
+    super.dispose();
   }
 
   String _urlWithMode(String url) =>

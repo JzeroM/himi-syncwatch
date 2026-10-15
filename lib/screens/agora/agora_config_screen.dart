@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
@@ -74,6 +75,19 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
     // 防御性：声网页在 TV 顶栏被隐藏（当前不可达），但表单字段仍
     // 统一屏蔽焦点（遥控器无输入法）
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+
+    // 切 tab 离开本页（v1.1.243）：未点保存的输入一律丢弃，
+    // 输入框还原为已保存值；已配置时收起表单。
+    ref.listen(
+      shellBranchEpochProvider.select((m) => m[3] ?? 0),
+      (previous, next) {
+        if (previous == next || !mounted) return;
+        final saved = ref.read(agoraConfigProvider);
+        _appIdController.text = saved?.appId ?? '';
+        _certController.text = saved?.appCertificate ?? '';
+        setState(() => _editing = saved?.isConfigured != true);
+      },
+    );
 
     return Scaffold(
       backgroundColor: Colors.transparent,

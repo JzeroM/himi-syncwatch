@@ -103,7 +103,14 @@ class FakeEmbyAuthService extends EmbyAuthService {
     List<Map<String, dynamic>> routes = const [],
     String? activeRouteUrl,
     bool autoFailover = true,
-  }) async {}
+  }) async {
+    lastSavedSessionRoutes = routes;
+    lastSavedActiveRouteUrl = activeRouteUrl;
+  }
+
+  /// 最近一次 saveSession 的 routes（编辑保存不丢备用线路回归断言）。
+  List<Map<String, dynamic>>? lastSavedSessionRoutes;
+  String? lastSavedActiveRouteUrl;
 
   @override
   Future<void> deleteSession(String serverId) async {}

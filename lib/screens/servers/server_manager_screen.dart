@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/providers/server_stats_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/route_manager_sheet.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
@@ -17,7 +18,6 @@ import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 按 serverId 去重（同服务器多 session 只展示第一个）。
@@ -42,6 +42,9 @@ class ServerManagerScreen extends ConsumerStatefulWidget {
 class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   bool _showAddServerForm = false;
 
+  /// 编辑目标（非空 = 内联展开编辑表单，复用添加表单）。
+  EmbyServerConfig? _editingServer;
+
   /// TV 布局模式：正在移动的服务器 id（null = 非布局模式）。
   String? _layoutServerId;
 
@@ -52,6 +55,45 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadStats());
+  }
+
+  /// 展开/收起表单时同步底部导航显隐（表单展开算"非首页"状态）。
+  void _setFormVisible(bool visible) {
+    final nav = ref.read(shellNavVisibilityProvider.notifier);
+    if (visible) {
+      nav.hideFor(kShellNavHideForm);
+    } else {
+      nav.showFor(kShellNavHideForm);
+    }
+  }
+
+  /// 编辑入口（v1.1.243）：非 TV 内联编辑表单；TV 走手机扫码配置。
+  void _onEditServer(EmbyServerConfig server) {
+    final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
+    if (tvMode) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const QrConfigScreen(mode: 'emby'),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _editingServer = server;
+      _showAddServerForm = false;
+    });
+    _setFormVisible(true);
+  }
+
+  /// 切 tab 离开本页（epoch bump）：丢弃未保存的添加/编辑表单。
+  void _resetUnsavedOperations() {
+    if (_showAddServerForm || _editingServer != null) {
+      setState(() {
+        _showAddServerForm = false;
+        _editingServer = null;
+      });
+      _setFormVisible(false);
+    }
   }
 
   Future<void> _loadStats() async {
@@ -70,8 +112,17 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     // 扫码配置入口仅 TV 模式（遥控器无输入法）：手机/桌面走手动输入
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
+    // 切 tab 离开本页 → 丢弃未保存的添加/编辑表单（v1.1.243）
+    ref.listen(
+      shellBranchEpochProvider.select((m) => m[2] ?? 0),
+      (previous, next) {
+        if (previous != next) _resetUnsavedOperations();
+      },
+    );
+
     final dedupedServers = _dedupServers(servers);
     final layoutId = _layoutServerId;
+    final editing = _editingServer;
 
     // 布局模式：拦截返回键取消还原（正常态放行路由返回）
     return PopScope(
@@ -120,8 +171,14 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             IconButton(
               icon: Icon(_showAddServerForm ? Icons.close : Icons.add),
               tooltip: _showAddServerForm ? '取消添加' : '添加服务器',
-              onPressed: () =>
-                  setState(() => _showAddServerForm = !_showAddServerForm),
+              onPressed: () {
+                final next = !_showAddServerForm;
+                setState(() {
+                  _showAddServerForm = next;
+                  if (next) _editingServer = null;
+                });
+                _setFormVisible(next);
+              },
             ),
         ],
       ),
@@ -129,16 +186,24 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(height: GlassConfig.topInsetOf(context)),
-          if (_showAddServerForm && !tvMode)
+          if ((editing != null || _showAddServerForm) && !tvMode)
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.only(
                     bottom: GlassConfig.bottomReserveOf(context)),
                 child: _AddServerForm(
+                  key: ValueKey('serverForm_${editing?.id ?? 'add'}'),
+                  editServer: editing,
                   onSuccess: () {
                     if (!mounted) return;
-                    setState(() => _showAddServerForm = false);
-                    showAppToast(context, '服务器已添加');
+                    final isEdit = editing != null;
+                    setState(() {
+                      _showAddServerForm = false;
+                      _editingServer = null;
+                    });
+                    _setFormVisible(false);
+                    showAppToast(
+                        context, isEdit ? '服务器已更新' : '服务器已添加');
                     // 新服务器自动排末尾（home _init 把不在序里的排尾部），
                     // 进页统计补上它
                     _loadStats();
@@ -190,7 +255,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               isActive: isActive,
               stats: statsMap[server.id],
               onTap: () => _openServer(server),
-              onEdit: () => _showEditServerDialog(server),
+              onEdit: () => _onEditServer(server),
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onDelete: () => _deleteServer(server, isActive),
               // TV 模式：隐藏拖拽把手（布局模式用方向键移动）
@@ -243,7 +308,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               isActive: isActive,
               stats: statsMap[server.id],
               onTap: () => _openServer(server),
-              onEdit: () => _showEditServerDialog(server),
+              onEdit: () => _onEditServer(server),
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onDelete: () => _deleteServer(server, isActive),
             ),
@@ -503,169 +568,6 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     if (!mounted) return;
     showAppToast(context, '已删除「${server.label}」');
   }
-
-  void _showEditServerDialog(EmbyServerConfig server) {
-    final nameController = TextEditingController(text: server.serverName);
-    final urlController = TextEditingController(text: server.serverUrl);
-    final usernameController = TextEditingController(text: server.username);
-    final passwordController = TextEditingController();
-    final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('编辑服务器'),
-        content: SingleChildScrollView(
-          // TV 下输入框整体屏蔽焦点（遥控器无输入法；添加走扫码入口）
-          child: tvExcludeEditable(
-            tvMode: tvMode,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: '服务器名称',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: urlController,
-                  decoration: const InputDecoration(
-                    labelText: '服务器地址',
-                    hintText: 'https://emby.example.com:8920',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: usernameController,
-                  decoration: const InputDecoration(
-                    labelText: '用户名',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: '新密码（留空保持不变）',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => _saveEdit(
-              ctx,
-              server,
-              name: nameController.text.trim(),
-              url: urlController.text.trim(),
-              username: usernameController.text.trim(),
-              password: passwordController.text,
-            ),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _saveEdit(
-    BuildContext ctx,
-    EmbyServerConfig server, {
-    required String name,
-    required String url,
-    required String username,
-    required String password,
-  }) async {
-    if (url.isEmpty || username.isEmpty) return;
-
-    final authService = ref.read(embyAuthServiceProvider);
-    final wasActive = ref.read(embyConfigProvider)?.id == server.id;
-
-    try {
-      if (password.isNotEmpty) {
-        final authResult = await EmbyService().authenticate(
-          serverUrl: url,
-          username: username,
-          password: password,
-          deviceId: server.id,
-        );
-        final newServerId = authResult['ServerId'] ?? server.serverId;
-        final newConfig = server.copyWith(
-          serverUrl: url,
-          serverName: name,
-          username: username,
-          accessToken: authResult['AccessToken'],
-          userId: authResult['User']['Id'],
-          serverId: newServerId,
-        );
-
-        final existingServers = ref.read(embyServerListProvider);
-        for (final other in existingServers) {
-          if (other.id != server.id && other.serverId == newServerId) {
-            await authService.deleteSession(other.serverId);
-            ref.read(embyServerListProvider.notifier).removeServer(other.id);
-          }
-        }
-
-        ref.read(embyServerListProvider.notifier).updateServer(newConfig);
-        // 非激活服务器编辑后不误切激活
-        if (wasActive) {
-          ref.read(embyConfigProvider.notifier).setConfig(newConfig);
-          await authService.saveSelectedServerId(newConfig.id);
-        }
-        await authService.deleteSession(server.serverId);
-        await authService.saveSession(
-          serverId: newConfig.serverId,
-          serverUrl: url,
-          serverName: name,
-          userId: newConfig.userId!,
-          username: username,
-          accessToken: newConfig.accessToken!,
-          id: newConfig.id,
-        );
-      } else {
-        final newConfig = server.copyWith(
-          serverUrl: url,
-          serverName: name,
-          username: username,
-        );
-        ref.read(embyServerListProvider.notifier).updateServer(newConfig);
-        if (ref.read(embyConfigProvider)?.id == server.id) {
-          ref.read(embyConfigProvider.notifier).setConfig(newConfig);
-          await authService.saveSelectedServerId(newConfig.id);
-        }
-        await authService.deleteSession(server.serverId);
-        await authService.saveSession(
-          serverId: newConfig.serverId,
-          serverUrl: url,
-          serverName: name,
-          userId: newConfig.userId ?? '',
-          username: username,
-          accessToken: newConfig.accessToken ?? '',
-          id: newConfig.id,
-        );
-      }
-    } catch (e) {
-      if (ctx.mounted) {
-        showAppToast(ctx, '编辑失败: $e');
-      }
-      return;
-    }
-
-    if (ctx.mounted) Navigator.pop(ctx);
-  }
 }
 
 class _EmptyServerHint extends StatelessWidget {
@@ -688,24 +590,53 @@ class _EmptyServerHint extends StatelessWidget {
 
 class _AddServerForm extends ConsumerStatefulWidget {
   final VoidCallback onSuccess;
-  const _AddServerForm({required this.onSuccess});
+
+  /// 非空 = 编辑模式：预填该服务器字段，保存走编辑逻辑（保留线路）。
+  final EmbyServerConfig? editServer;
+
+  const _AddServerForm({super.key, required this.onSuccess, this.editServer});
 
   @override
   ConsumerState<_AddServerForm> createState() => _AddServerFormState();
 }
 
 class _AddServerFormState extends ConsumerState<_AddServerForm> {
-  final _nameController = TextEditingController();
-  final _hostController = TextEditingController();
-  final _pathController = TextEditingController();
-  final _portController = TextEditingController(text: '8096');
-  final _usernameController = TextEditingController();
+  late final TextEditingController _nameController;
+  late final TextEditingController _hostController;
+  late final TextEditingController _pathController;
+  late final TextEditingController _portController;
+  late final TextEditingController _usernameController;
   final _passwordController = TextEditingController();
   final _remarkController = TextEditingController();
-  bool _useHttps = false;
+  late bool _useHttps;
   bool _isLoading = false;
   String? _error;
   String? _serverName;
+
+  bool get _isEdit => widget.editServer != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final server = widget.editServer;
+    _nameController = TextEditingController(text: server?.serverName ?? '');
+    _usernameController = TextEditingController(text: server?.username ?? '');
+    if (server != null) {
+      final parsed = parseServerUrl(server.serverUrl);
+      _hostController =
+          TextEditingController(text: parsed?.host ?? server.serverUrl);
+      _pathController = TextEditingController(text: parsed?.path ?? '');
+      _portController = TextEditingController(
+          text: (parsed?.port.isNotEmpty ?? false) ? parsed!.port : '8096');
+      _useHttps = parsed?.useHttps ??
+          server.serverUrl.trim().startsWith('https://');
+    } else {
+      _hostController = TextEditingController();
+      _pathController = TextEditingController();
+      _portController = TextEditingController(text: '8096');
+      _useHttps = false;
+    }
+  }
 
   @override
   void dispose() {
@@ -719,7 +650,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     super.dispose();
   }
 
-  Future<void> _pingAndLogin() async {
+  Future<void> _submit() async {
     final url = buildServerUrl(
       host: _hostController.text,
       port: _portController.text,
@@ -736,19 +667,23 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     });
 
     try {
-      // 备注名优先，其次备注信息（备注字段）
-      final name = _nameController.text.trim().isNotEmpty
-          ? _nameController.text.trim()
-          : _remarkController.text.trim();
-      await ref.read(embySetupServiceProvider).addAndActivate(
-            serverUrl: url,
-            username: _usernameController.text,
-            password: _passwordController.text,
-            serverName: name.isEmpty ? null : name,
-            onServerInfo: (srvName) {
-              if (mounted) setState(() => _serverName = srvName);
-            },
-          );
+      if (_isEdit) {
+        await _saveEdit(url);
+      } else {
+        // 备注名优先，其次备注信息（备注字段）
+        final name = _nameController.text.trim().isNotEmpty
+            ? _nameController.text.trim()
+            : _remarkController.text.trim();
+        await ref.read(embySetupServiceProvider).addAndActivate(
+              serverUrl: url,
+              username: _usernameController.text,
+              password: _passwordController.text,
+              serverName: name.isEmpty ? null : name,
+              onServerInfo: (srvName) {
+                if (mounted) setState(() => _serverName = srvName);
+              },
+            );
+      }
 
       widget.onSuccess();
     } catch (e) {
@@ -758,6 +693,73 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
         _isLoading = false;
       });
     }
+  }
+
+  /// 编辑保存（复用原 _saveEdit 流程）：仅填新密码时重新 authenticate；
+  /// 修复原实现 saveSession 不传 routes 导致备用线路被清空的问题。
+  Future<void> _saveEdit(String url) async {
+    final server = widget.editServer!;
+    final name = _nameController.text.trim();
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+    if (username.isEmpty) throw Exception('用户名不能为空');
+
+    final authService = ref.read(embyAuthServiceProvider);
+    final wasActive = ref.read(embyConfigProvider)?.id == server.id;
+
+    EmbyServerConfig newConfig;
+    if (password.isNotEmpty) {
+      final authResult = await EmbyService().authenticate(
+        serverUrl: url,
+        username: username,
+        password: password,
+        deviceId: server.id,
+      );
+      final newServerId = authResult['ServerId'] ?? server.serverId;
+      newConfig = server.copyWith(
+        serverUrl: url,
+        serverName: name,
+        username: username,
+        accessToken: authResult['AccessToken'],
+        userId: authResult['User']['Id'],
+        serverId: newServerId,
+      );
+
+      final existingServers = ref.read(embyServerListProvider);
+      for (final other in existingServers) {
+        if (other.id != server.id && other.serverId == newServerId) {
+          await authService.deleteSession(other.serverId);
+          ref.read(embyServerListProvider.notifier).removeServer(other.id);
+        }
+      }
+    } else {
+      newConfig = server.copyWith(
+        serverUrl: url,
+        serverName: name,
+        username: username,
+      );
+    }
+
+    ref.read(embyServerListProvider.notifier).updateServer(newConfig);
+    // 非激活服务器编辑后不误切激活
+    if (wasActive) {
+      ref.read(embyConfigProvider.notifier).setConfig(newConfig);
+      await authService.saveSelectedServerId(newConfig.id);
+    }
+    await authService.deleteSession(server.serverId);
+    await authService.saveSession(
+      serverId: newConfig.serverId,
+      serverUrl: url,
+      serverName: name,
+      userId: newConfig.userId ?? '',
+      username: username,
+      accessToken: newConfig.accessToken ?? '',
+      id: newConfig.id,
+      // 保留备用线路（v1.1.243：原实现丢线路的 bug 回归）
+      routes: newConfig.routes.map((r) => r.toJson()).toList(),
+      activeRouteUrl: newConfig.activeRouteUrl,
+      autoFailover: newConfig.autoFailover,
+    );
   }
 
   @override
@@ -770,6 +772,18 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_isEdit)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '编辑服务器',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
             if (_serverName != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -784,7 +798,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
             _formField(
               label: '资源名称',
               controller: _nameController,
-              hintText: '请输入资源名称（可选）',
+              hintText: _isEdit ? '资源名称' : '请输入资源名称（可选）',
             ),
             _formField(
               label: '服务器地址',
@@ -822,16 +836,17 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
               hintText: '输入用户名',
             ),
             _formField(
-              label: '密码（可选）',
+              label: _isEdit ? '新密码（留空保持不变）' : '密码（可选）',
               controller: _passwordController,
-              hintText: '输入密码（可选）',
+              hintText: _isEdit ? '输入新密码（可选）' : '输入密码（可选）',
               obscure: true,
             ),
-            _formField(
-              label: '备注',
-              controller: _remarkController,
-              hintText: '输入备注信息（可选）',
-            ),
+            if (!_isEdit)
+              _formField(
+                label: '备注',
+                controller: _remarkController,
+                hintText: '输入备注信息（可选）',
+              ),
             if (_error != null) ...[
               const SizedBox(height: 8),
               Text(_error!,
@@ -841,14 +856,14 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
             SizedBox(
               height: 44,
               child: ElevatedButton(
-                onPressed: _isLoading ? null : _pingAndLogin,
+                onPressed: _isLoading ? null : _submit,
                 child: _isLoading
                     ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('连接并登录'),
+                    : Text(_isEdit ? '保存' : '连接并登录'),
               ),
             ),
           ],

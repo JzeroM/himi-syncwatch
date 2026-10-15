@@ -41,6 +41,7 @@ void main() {
   Future<ProviderContainer> pumpScreen(
     WidgetTester tester, {
     String mode = '',
+    String? serverId,
   }) async {
     late ProviderContainer container;
     await tester.runAsync(() async {
@@ -50,7 +51,7 @@ void main() {
             lanConfigBasePortProvider.overrideWithValue(0),
             embySetupServiceProvider.overrideWith((_) => _ThrowingEmbySetup()),
           ],
-          child: MaterialApp(home: _Entry(mode: mode)),
+          child: MaterialApp(home: _Entry(mode: mode, serverId: serverId)),
         ),
       );
       await tester.pump(); // Entry postFrame → push
@@ -93,6 +94,19 @@ void main() {
     expect(find.textContaining('填写弹幕 API 地址'), findsOneWidget);
     expect(find.textContaining('mode=danmaku'), findsOneWidget);
     expect(find.byType(QrImageView), findsOneWidget);
+  });
+
+  testWidgets('mode=route：标题切换、二维码带 mode=route、注入目标服务器（v1.1.243）',
+      (tester) async {
+    final container = await pumpScreen(tester, mode: 'route', serverId: 'cfg1');
+
+    expect(find.text('扫码添加备用线路'), findsOneWidget);
+    expect(find.textContaining('填写线路信息并提交'), findsOneWidget);
+    expect(find.textContaining('mode=route'), findsOneWidget);
+    expect(
+      container.read(lanConfigProvider.notifier).routeTargetServerId, 'cfg1',
+      reason: 'routeTargetServerId 应注入目标服务器本地 id',
+    );
   });
 
   testWidgets('手机提交失败后页面展示错误结果卡片', (tester) async {
@@ -139,9 +153,10 @@ void main() {
 }
 
 class _Entry extends StatefulWidget {
-  const _Entry({required this.mode});
+  const _Entry({required this.mode, this.serverId});
 
   final String mode;
+  final String? serverId;
 
   @override
   State<_Entry> createState() => _EntryState();
@@ -155,7 +170,7 @@ class _EntryState extends State<_Entry> {
       if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => QrConfigScreen(mode: widget.mode),
+          builder: (_) => QrConfigScreen(mode: widget.mode, serverId: widget.serverId),
         ),
       );
     });

@@ -17,6 +17,7 @@ class LanConfigServer {
   LanConfigServer({
     required this.onEmby,
     this.onDanmaku,
+    this.onRoute,
     this.basePort = 17890,
     this.portProbeCount = 10,
   });
@@ -25,6 +26,9 @@ class LanConfigServer {
 
   /// 弹幕 API 地址提交回调（null = 未接入弹幕配置，对应路由 404）。
   final LanConfigHandler? onDanmaku;
+
+  /// 备用线路提交回调（null = 未接入，对应路由 404）。
+  final LanConfigHandler? onRoute;
 
   /// 首选端口；被占用时依次探测 `basePort + 1 ... + [portProbeCount] - 1`。
   final int basePort;
@@ -143,6 +147,11 @@ class LanConfigServer {
       final danmaku = onDanmaku;
       if (req.method == 'POST' && path == '/api/danmaku' && danmaku != null) {
         await _handleAction(req, danmaku, success: '弹幕 API 地址已配置');
+        return;
+      }
+      final route = onRoute;
+      if (req.method == 'POST' && path == '/api/route' && route != null) {
+        await _handleAction(req, route, success: '备用线路已添加');
         return;
       }
       await _sendJson(req, 404, {'ok': false, 'error': 'Not Found'});

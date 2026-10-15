@@ -58,15 +58,31 @@ class _StubEmbySetup extends EmbySetupService {
 void main() {
   late ProviderContainer container;
   late _StubEmbySetup setup;
+  late FakeEmbyAuthService auth;
+
+  EmbyServerConfig _routeTarget() => EmbyServerConfig(
+        id: 'cfg1',
+        serverUrl: 'http://main:8096',
+        serverName: 'NAS',
+        serverId: 'srv1',
+        username: 'u',
+        accessToken: 'tok',
+        userId: 'uid',
+      );
 
   setUp(() {
     setup = _StubEmbySetup();
+    auth = FakeEmbyAuthService();
     container = ProviderContainer(
       overrides: [
         lanConfigBasePortProvider.overrideWithValue(0),
         embySetupServiceProvider.overrideWithValue(setup),
         agoraConfigProvider.overrideWith((ref) => FakeAgoraConfigNotifier()),
         settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+        embyAuthServiceProvider.overrideWithValue(auth),
+        embyServerListProvider.overrideWith(
+          (ref) => EmbyServerListNotifier()..setList([_routeTarget()]),
+        ),
       ],
     );
   });
@@ -179,5 +195,67 @@ void main() {
     final res = await post('/api/danmaku', {'url': ''});
     expect(res.statusCode, HttpStatus.ok);
     expect(container.read(settingsProvider).danmakuApiUrl, '');
+  });
+
+  group('POST /api/route 扫码添加备用线路（v1.1.243）', () {
+    Future<Map<String, dynamic>> postRoute(Map<String, dynamic> body) async {
+      final res = await post('/api/route', body);
+      return {'status': res.statusCode, 'json': await jsonOf(res)};
+    }
+
+    test('未注入目标服务器 → 400 提示重新扫码', () async {
+      await container.read(lanConfigProvider.notifier).start();
+
+      final r = await postRoute({'host': '1.2.3.4', 'port': '8096'});
+      expect(r['status'], HttpStatus.badRequest);
+      expect((r['json'] as Map)['error'], contains('目标服务器不存在'));
+      expect(container.read(lanConfigProvider).lastOk, isFalse);
+    });
+
+    test('目标服务器 + 分项字段 → 拼 URL 落库到该服务器', () async {
+      final notifier = container.read(lanConfigProvider.notifier);
+      notifier.routeTargetServerId = 'cfg1';
+      await notifier.start();
+
+      final r = await postRoute({
+        'host': '192.168.1.20',
+        'port': '8097',
+        'path': '/emby',
+        'https': false,
+        'name': '客厅盒子',
+        'reverseProxy': true,
+      });
+      expect(r['status'], HttpStatus.ok, reason: '${r['json']}');
+
+      final updated = container.read(embyServerListProvider).single;
+      expect(updated.routes, hasLength(1));
+      expect(updated.routes.single.name, '客厅盒子');
+      expect(updated.routes.single.url, 'http://192.168.1.20:8097/emby');
+      expect(updated.routes.single.isReverseProxy, isTrue);
+
+      // 落盘走 updateSessionRoutes（FakeAuth 记录）
+      expect(auth.updateSessionRoutesCalls, 1);
+      expect(auth.lastSessionRoutes!.single['url'],
+          'http://192.168.1.20:8097/emby');
+
+      expect(container.read(lanConfigProvider).lastOk, isTrue);
+      expect(container.read(lanConfigProvider).lastMessage, contains('备用线路'));
+    });
+
+    test('空名称 → 默认 Route N；非法 host → 400', () async {
+      final notifier = container.read(lanConfigProvider.notifier);
+      notifier.routeTargetServerId = 'cfg1';
+      await notifier.start();
+
+      final ok = await postRoute({'host': '10.0.0.5', 'port': '8096'});
+      expect(ok['status'], HttpStatus.ok, reason: '${ok['json']}');
+      expect(container.read(embyServerListProvider).single.routes.single.name,
+          'Route 1');
+
+      final bad = await postRoute({'host': '', 'port': '8096'});
+      expect(bad['status'], HttpStatus.badRequest);
+      expect((bad['json'] as Map)['error'], contains('地址无效'));
+      expect(container.read(lanConfigProvider).lastOk, isFalse);
+    });
   });
 }

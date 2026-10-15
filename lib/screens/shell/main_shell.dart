@@ -53,22 +53,29 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     final nav = ref.read(shellNavVisibilityProvider.notifier);
     if (metrics.pixels >= metrics.maxScrollExtent - 8) {
-      nav.hide();
+      nav.hideFor(kShellNavHideScroll);
     } else if ((notification is ScrollUpdateNotification &&
             (notification.scrollDelta ?? 0) < 0) ||
         metrics.pixels < metrics.maxScrollExtent - 32) {
-      nav.show();
+      nav.showFor(kShellNavHideScroll);
     }
     return false;
   }
 
   void _goBranch(int index) {
+    // 切到其他 tab 时：源分支退回其首页（分支根路由），
+    // 丢弃子页/弹层/未保存表单，保证下次切回落在该 tab 首页。
+    if (index != widget.shell.currentIndex) {
+      final source = widget.shell.route.branches[widget.shell.currentIndex];
+      source.navigatorKey.currentState?.popUntil((r) => r.isFirst);
+      ref.read(shellBranchEpochProvider.notifier).bump(widget.shell.currentIndex);
+    }
     widget.shell.goBranch(
       index,
       initialLocation: index == widget.shell.currentIndex,
     );
     _backAt = null;
-    ref.read(shellNavVisibilityProvider.notifier).show();
+    ref.read(shellNavVisibilityProvider.notifier).reset();
   }
 
   /// TV 模式返回键策略：非首页标签 → 回首页；首页 → 2 秒内连按两次

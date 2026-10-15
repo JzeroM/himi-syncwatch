@@ -36,10 +36,13 @@ CustomTransitionPage<void> _settingsFadePage(Widget child) {
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  // 分支导航器 pop 回根路由时恢复底部导航（子页滑到底隐藏后返回首页的修复）
-  void onReturnToRoot() => ref.read(shellNavVisibilityProvider.notifier).show();
+  // 分支导航器：push 子路由隐藏底部导航；pop 回根路由恢复（v1.1.243）
+  void onReturnToRoot() =>
+      ref.read(shellNavVisibilityProvider.notifier).reset();
+  void onPushSubPage() =>
+      ref.read(shellNavVisibilityProvider.notifier).hideFor(kShellNavHideRoute);
   List<NavigatorObserver> branchObservers() =>
-      [ShellNavRouteObserver(onReturnToRoot)];
+      [ShellNavRouteObserver(onReturnToRoot, onPushSubPage: onPushSubPage)];
 
   return GoRouter(
     navigatorKey: routerKey,

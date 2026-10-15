@@ -93,4 +93,61 @@ void main() {
       );
     });
   });
+
+  group('parseServerUrl（buildServerUrl 逆运算）', () {
+    test('http 带端口', () {
+      final r = parseServerUrl('http://192.168.1.100:8096');
+      expect(r, isNotNull);
+      expect(r!.host, '192.168.1.100');
+      expect(r.port, '8096');
+      expect(r.path, '');
+      expect(r.useHttps, false);
+    });
+
+    test('https + path', () {
+      final r = parseServerUrl('https://emby.example.com:8920/emby');
+      expect(r!.host, 'emby.example.com');
+      expect(r.port, '8920');
+      expect(r.path, 'emby');
+      expect(r.useHttps, true);
+    });
+
+    test('无 scheme 按 http；无端口 port 为空', () {
+      final r = parseServerUrl('emby.example.com');
+      expect(r!.host, 'emby.example.com');
+      expect(r.port, '');
+      expect(r.useHttps, false);
+    });
+
+    test('尾斜杠去除', () {
+      expect(parseServerUrl('http://1.2.3.4:8096/emby/')!.path, 'emby');
+    });
+
+    test('非法输入返回 null', () {
+      expect(parseServerUrl(''), isNull);
+      expect(parseServerUrl('a b'), isNull);
+      expect(parseServerUrl('ftp://x'), isNull);
+      expect(parseServerUrl('http://:8096'), isNull);
+      expect(parseServerUrl('http://x:abc'), isNull);
+    });
+
+    test('往返一致：build → parse → build', () {
+      final url = buildServerUrl(
+        host: '1.2.3.4',
+        port: '8096',
+        path: 'emby',
+        useHttps: true,
+      )!;
+      final r = parseServerUrl(url)!;
+      expect(
+        buildServerUrl(
+          host: r.host,
+          port: r.port,
+          path: r.path,
+          useHttps: r.useHttps,
+        ),
+        url,
+      );
+    });
+  });
 }

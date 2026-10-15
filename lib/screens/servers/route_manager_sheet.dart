@@ -4,6 +4,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/services/server_route_service.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
@@ -89,6 +90,15 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
   }
 
   Future<void> _openAddRoute(EmbyServerConfig server) async {
+    // TV：遥控器无输入法 → 手机扫码添加（v1.1.243）
+    if (widget.tvMode) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => QrConfigScreen(mode: 'route', serverId: server.id),
+        ),
+      );
+      return;
+    }
     final result = await showModalBottomSheet<ServerRoute>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -220,7 +230,8 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                     key: const Key('addRouteButton'),
                     icon: Icons.add,
                     label: '添加线路',
-                    onTap: widget.tvMode ? null : () => _openAddRoute(server),
+                    // TV 走扫码添加（v1.1.243），非 TV 展开表单
+                    onTap: () => _openAddRoute(server),
                   ),
                 ],
               ),

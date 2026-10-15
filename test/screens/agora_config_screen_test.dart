@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -198,5 +199,35 @@ void main() {
     expect(agora.state?.appCertificate, 'new_cert');
     expect(find.byType(TextField), findsNothing);
     await _settleSnackbars(tester);
+  });
+
+  testWidgets('切走分支（epoch bump）→ 未保存输入还原、表单收起（v1.1.243）',
+      (tester) async {
+    final agora = FakeAgoraConfigNotifier(
+      AgoraConfigModel(appId: 'a' * 32, appCertificate: 'old_cert'),
+    );
+    final container = await _pumpScreen(tester, agora: agora);
+
+    // 展开编辑，篡改输入但不保存
+    await tester.tap(find.byKey(const ValueKey('agoraEditButton')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), 'UNSAVED' * 4);
+    await tester.enterText(find.byType(TextField).at(1), 'UNSAVED_CERT');
+    await tester.pumpAndSettle();
+
+    // 模拟 MainShell 切 tab：bump 声网分支代数
+    container.read(shellBranchEpochProvider.notifier).bump(3);
+    await tester.pumpAndSettle();
+
+    // 未保存输入被还原为已存配置，表单收起
+    expect(find.byType(TextField), findsNothing, reason: '表单应收起');
+    expect(agora.state?.appId, 'a' * 32, reason: '未保存修改应丢弃');
+
+    // 再次点编辑 → 输入是已存值（不是 UNSAVED）
+    await tester.tap(find.byKey(const ValueKey('agoraEditButton')));
+    await tester.pumpAndSettle();
+    final fields = tester.widgetList<TextField>(find.byType(TextField)).toList();
+    expect(fields[0].controller!.text, 'a' * 32);
+    expect(fields[1].controller!.text, 'old_cert');
   });
 }

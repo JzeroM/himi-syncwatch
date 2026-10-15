@@ -43,6 +43,25 @@ void main() {
     expect(text, contains('/api/danmaku'));
   });
 
+  test('备用线路区块 + submitRoute 提交 /api/route（v1.1.243）', () {
+    for (final mode in ['', 'emby', 'danmaku', 'route']) {
+      final text = html(mode: mode);
+      expect(text, contains('<section id="route">'));
+      expect(text, contains('route_host'));
+      expect(text, contains('submitRoute()'));
+      expect(text, contains("/api/route"));
+      expect(text, contains('route_https'));
+      expect(text, contains('route_proxy'));
+    }
+  });
+
+  test('mode=route：高亮滚动指向 route 区块', () {
+    final text = html(mode: 'route');
+    expect(text, contains("highlight('route')"));
+    expect(text, isNot(contains("highlight('emby')")));
+    expect(text, isNot(contains("highlight('danmaku')")));
+  });
+
   test('页脚备选链接带 token（各 mode 均保留）', () {
     for (final mode in ['', 'emby', 'agora']) {
       expect(html(mode: mode), contains('http://192.168.1.5:8096/?t=tok'));

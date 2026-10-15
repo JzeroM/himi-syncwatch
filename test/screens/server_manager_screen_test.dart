@@ -6,9 +6,11 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
+import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
@@ -548,5 +550,194 @@ void main() {
     );
     expect(auth.lastSavedServerOrder, ['srv_a', 'srv_b'],
         reason: '取消应把原始顺序写回存储');
+  });
+
+  group('编辑服务器复用添加表单（v1.1.243）', () {
+    testWidgets('点编辑 → 内联表单标题「编辑服务器」且字段预填', (tester) async {
+      await _pumpScreen(
+        tester,
+        servers: [
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('serverForm_srv_b')), findsOneWidget);
+      expect(find.text('编辑服务器'), findsOneWidget);
+      expect(find.text('连接并登录'), findsNothing);
+      expect(find.text('保存'), findsOneWidget);
+
+      // 字段预填：名称 / 地址 / 用户名
+      final texts =
+          tester.widgetList<TextField>(find.byType(TextField)).toList();
+      final prefilled = texts.map((t) => t.controller?.text).toList();
+      expect(prefilled, contains('备用服务器'));
+      expect(prefilled, contains('srv_b.example.com'));
+      expect(prefilled, contains('user'));
+    });
+
+    testWidgets('编辑保存保留备用线路（原 saveSession 丢线路 bug 回归）',
+        (tester) async {
+      final auth = FakeEmbyAuthService();
+      final container = await _pumpScreen(
+        tester,
+        auth: auth,
+        servers: [
+          _server(
+            id: 'srv_b',
+            name: '备用服务器',
+            serverId: 's2',
+          ).copyWith(
+            routes: const [
+              ServerRoute(id: 'r1', name: 'Route 1', url: 'http://r1:8096'),
+            ],
+            activeRouteUrl: 'http://r1:8096',
+          ),
+        ],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('保存'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      // 表单收起 + 成功提示（toast 2s 后自动消失，先断言再 settle）
+      expect(find.byKey(const ValueKey('serverForm_srv_b')), findsNothing);
+      expect(find.byKey(const ValueKey('appToast')), findsOneWidget);
+      expect(find.text('服务器已更新'), findsOneWidget);
+      await _settleSnackbars(tester);
+
+      final updated = container.read(embyServerListProvider).single;
+      expect(updated.routes.map((r) => r.id).toList(), ['r1'],
+        reason: '编辑后列表内的备用线路应保留');
+      expect(updated.activeRouteUrl, 'http://r1:8096');
+      expect(updated.serverName, '备用服务器');
+
+      expect(auth.lastSavedSessionRoutes, isNotNull);
+      expect(auth.lastSavedSessionRoutes!.map((r) => r['id']).toList(), ['r1'],
+        reason: 'saveSession 必须带上 routes（原实现清空线路的 bug）');
+      expect(auth.lastSavedActiveRouteUrl, 'http://r1:8096');
+    });
+
+    testWidgets('编辑不改地址时 serverUrl 保持（host:port 重建一致）',
+        (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        servers: [
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('保存'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+
+      final updated = container.read(embyServerListProvider).single;
+      expect(updated.serverUrl, 'https://srv_b.example.com:8096',
+        reason: 'parseServerUrl 往返后端口默认 8096');
+    });
+
+    testWidgets('编辑表单展开时底部导航隐藏，收起恢复（v1.1.243）',
+        (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        servers: [
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      expect(container.read(shellNavVisibilityProvider), true);
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pumpAndSettle();
+      expect(container.read(shellNavVisibilityProvider), false,
+        reason: '编辑表单展开 → 导航隐藏');
+
+      // 保存收起 → 导航恢复
+      await tester.ensureVisible(find.text('保存'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+      expect(container.read(shellNavVisibilityProvider), true,
+        reason: '表单收起 → 导航恢复');
+    });
+
+    testWidgets('TV 模式点编辑 → 打开扫码配置页（v1.1.243）', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.byType(QrConfigScreen), findsOneWidget,
+        reason: 'TV 无输入法：编辑走扫码配置');
+
+      Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(QrConfigScreen), findsNothing);
+    });
+
+    testWidgets('切走分支（epoch bump）→ 编辑/添加表单收起、导航恢复（v1.1.243）',
+        (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        servers: [
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      // 展开编辑表单
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('serverForm_srv_b')), findsOneWidget);
+      expect(container.read(shellNavVisibilityProvider), false);
+
+      // 模拟 MainShell 切 tab：bump Emby 分支代数
+      container.read(shellBranchEpochProvider.notifier).bump(2);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('serverForm_srv_b')), findsNothing,
+        reason: '切走应丢弃未保存的编辑表单');
+      expect(container.read(shellNavVisibilityProvider), true,
+        reason: '表单收起后导航恢复');
+
+      // 添加表单同样收起
+      await tester.tap(find.byTooltip('添加服务器'));
+      await tester.pumpAndSettle();
+      expect(find.text('连接并登录'), findsOneWidget);
+      container.read(shellBranchEpochProvider.notifier).bump(2);
+      await tester.pumpAndSettle();
+      expect(find.text('连接并登录'), findsNothing);
+      expect(container.read(shellNavVisibilityProvider), true);
+    });
   });
 }

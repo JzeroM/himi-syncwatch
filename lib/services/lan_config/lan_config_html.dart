@@ -1,9 +1,9 @@
 /// 局域网扫码配置的手机端单页（内嵌 HTML，无外部依赖）。
 ///
-/// 提供 Emby 服务器配置与弹幕 API 地址配置两个区块。[mode] 为 `emby` /
-/// `danmaku` 时高亮并滚动到对应区块；其余（含旧链接的 `agora`）不高亮，
-/// 页面恒为同一份配置页。页脚提供全部备选 IP 链接（带 token，供多网卡
-/// 场景切换）。
+/// 提供 Emby 服务器配置、弹幕 API 地址配置与备用线路添加三个区块。
+/// [mode] 为 `emby` / `danmaku` / `route` 时高亮并滚动到对应区块；
+/// 其余（含旧链接的 `agora`）不高亮，页面恒为同一份配置页。
+/// 页脚提供全部备选 IP 链接（带 token，供多网卡场景切换）。
 String buildLanConfigHtml({
   required List<String> ips,
   required int port,
@@ -18,6 +18,7 @@ String buildLanConfigHtml({
   final highlightJs = switch (mode) {
     'emby' => _highlightJs('emby'),
     'danmaku' => _highlightJs('danmaku'),
+    'route' => _highlightJs('route'),
     _ => '',
   };
 
@@ -42,6 +43,13 @@ String buildLanConfigHtml({
   input { width: 100%; padding: 10px 12px; border-radius: 8px; font-size: 16px;
           border: 1px solid #343a5c; background: #0d1020; color: #fff; }
   input:focus { outline: none; border-color: #6366f1; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .row > div.wide { flex: 2; }
+  .sw { display: flex; align-items: center; justify-content: space-between;
+        margin-top: 12px; }
+  .sw span { font-size: 13px; color: #b9bed4; }
+  .sw input { width: 44px; }
   button { width: 100%; margin-top: 14px; padding: 12px; border: none; border-radius: 8px;
            background: #6366f1; color: #fff; font-size: 15px; font-weight: 600; }
   button:disabled { opacity: .5; }
@@ -76,6 +84,28 @@ String buildLanConfigHtml({
   <input id="danmaku_url" type="url" placeholder="http://192.168.1.10:9321/<token>" autocomplete="url">
   <button id="danmaku_btn" onclick="submitDanmaku()">保存到电视</button>
   <div class="msg" id="danmaku_msg"></div>
+</section>
+
+<section id="route">
+  <h2>添加备用线路</h2>
+  <label>线路名称（可选）</label>
+  <input id="route_name" type="text" placeholder="如：备用入口">
+  <label>服务器地址（ip 或域名）</label>
+  <input id="route_host" type="text" placeholder="例如：192.168.1.100">
+  <div class="row">
+    <div class="wide">
+      <label>路径（可选）</label>
+      <input id="route_path" type="text" placeholder="Path">
+    </div>
+    <div>
+      <label>端口</label>
+      <input id="route_port" type="text" inputmode="numeric" value="8096">
+    </div>
+  </div>
+  <div class="sw"><span>使用 HTTPS</span><input id="route_https" type="checkbox"></div>
+  <div class="sw"><span>作为反代使用（API 走此线路，媒体直连主线路）</span><input id="route_proxy" type="checkbox"></div>
+  <button id="route_btn" onclick="submitRoute()">保存到电视</button>
+  <div class="msg" id="route_msg"></div>
 </section>
 
 <footer>备选地址：$alternates</footer>
@@ -117,6 +147,16 @@ function submitDanmaku() {
   post('/api/danmaku', {
     url: document.getElementById('danmaku_url').value.trim()
   }, 'danmaku_btn', 'danmaku_msg');
+}
+function submitRoute() {
+  post('/api/route', {
+    name: document.getElementById('route_name').value.trim(),
+    host: document.getElementById('route_host').value.trim(),
+    path: document.getElementById('route_path').value.trim(),
+    port: document.getElementById('route_port').value.trim(),
+    https: document.getElementById('route_https').checked,
+    reverseProxy: document.getElementById('route_proxy').checked
+  }, 'route_btn', 'route_msg');
 }
 function highlight(id) {
   const el = document.getElementById(id);

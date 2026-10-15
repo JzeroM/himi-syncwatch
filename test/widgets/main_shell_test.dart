@@ -10,8 +10,8 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
+import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
-import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
@@ -166,7 +166,8 @@ void main() {
     expect((padding.padding as EdgeInsets).bottom, 20, reason: '胶囊继续上移，不贴屏底');
   });
 
-  testWidgets('手机：子页返回设置首页恢复底部导航（滑到底隐藏后）', (tester) async {
+  testWidgets('手机：进入子页导航自动隐藏，返回设置首页恢复（v1.1.243）',
+      (tester) async {
     await pumpApp(tester, const Size(390, 844));
 
     // 进入设置分支
@@ -179,26 +180,55 @@ void main() {
     expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
     expect(navOpacity(tester), 1);
 
-    // 进入「外观」子页
+    // 进入「外观」子页 → 导航应自动隐藏（push 非根路由）
     await tester.tap(find.byKey(const ValueKey('settingsCategoryAppearance')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const ValueKey('settingsSubPageList')), findsOneWidget);
+    expect(navOpacity(tester), 0, reason: 'push 子页自动隐藏底部导航');
 
-    // 模拟「子页滑到底 → 导航隐藏」
-    final container =
-        ProviderScope.containerOf(tester.element(find.byType(MainShell)));
-    container.read(shellNavVisibilityProvider.notifier).hide();
-    await tester.pump();
-    expect(navOpacity(tester), 0, reason: '滑到底后导航隐藏');
-
-    // 返回设置首页（分支根路由）→ 导航应恢复
+    // 返回设置首页（分支根路由）→ 导航恢复
     await tester.pageBack();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
     expect(navOpacity(tester), 1, reason: '返回分支根路由应恢复底部导航');
+  });
+
+  testWidgets('桌面：切 tab 时源分支退回其首页，回来时在首页（v1.1.243）',
+      (tester) async {
+    // 桌面宽度：抽屉导航在子页/表单态仍可点（手机底部导航此时已隐藏）
+    await pumpApp(tester, const Size(1280, 720));
+
+    // 展开抽屉（桌面导航入口）
+    await tester.tap(find.byKey(const ValueKey('drawerToggle')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 设置 → 外观子页
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('settingsCategoryAppearance')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('settingsSubPageList')), findsOneWidget);
+
+    // 抽屉里切到 Emby（源分支设置的子页应被弹回首页）
+    await tester.tap(find.text('Emby'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(ServerManagerScreen), findsOneWidget);
+
+    // 切回设置 → 应落在设置首页（子页已丢弃）
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('settingsPage')), findsOneWidget,
+        reason: '下次切到设置应在其首页');
+    expect(find.byKey(const ValueKey('settingsSubPageList')), findsNothing);
   });
 
   group('navBottomGap（胶囊底距上移 v1.1.84）', () {

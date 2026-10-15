@@ -96,3 +96,50 @@ String? buildServerUrl({
 
   return '$scheme://$h$portPart$pathPart';
 }
+
+/// [buildServerUrl] 的逆运算：解析服务器基地址为分项字段。
+///
+/// - 支持带/不带 scheme（缺省按 http）；
+/// - 非法输入（空/含空格/非法端口）返回 null；
+/// - path 返回不带前导 `/` 的形式（与添加表单输入框习惯一致），
+///   例：`http://1.2.3.4:8096/emby` → path `'emby'`。
+({String host, String port, String path, bool useHttps})? parseServerUrl(
+  String url,
+) {
+  var u = url.trim();
+  if (u.isEmpty || u.contains(' ')) return null;
+
+  var useHttps = false;
+  if (u.startsWith('https://')) {
+    useHttps = true;
+    u = u.substring('https://'.length);
+  } else if (u.startsWith('http://')) {
+    u = u.substring('http://'.length);
+  } else if (u.contains('://')) {
+    return null; // 其他 scheme 不支持
+  }
+
+  // 拆 path（第一个 `/` 起）
+  var path = '';
+  final slash = u.indexOf('/');
+  if (slash >= 0) {
+    path = u.substring(slash + 1);
+    u = u.substring(0, slash);
+  }
+  while (path.endsWith('/')) {
+    path = path.substring(0, path.length - 1);
+  }
+
+  // 拆 host:port（IPv6 字面量不支持，Emby 内网场景罕见）
+  var host = u;
+  var port = '';
+  final colon = u.indexOf(':');
+  if (colon >= 0) {
+    host = u.substring(0, colon);
+    port = u.substring(colon + 1);
+    if (port.isNotEmpty && int.tryParse(port) == null) return null;
+  }
+  if (host.isEmpty) return null;
+
+  return (host: host, port: port, path: path, useHttps: useHttps);
+}

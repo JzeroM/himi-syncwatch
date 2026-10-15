@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/route_manager_sheet.dart';
 
 import '../helpers/test_fakes.dart';
@@ -34,11 +36,12 @@ EmbyServerConfig _server({
 Future<ProviderContainer> _pumpSheet(
   WidgetTester tester, {
   required EmbyServerConfig server,
+  AppSettings settings = const AppSettings(),
 }) async {
   final container = ProviderContainer(
     overrides: [
       embyAuthServiceProvider.overrideWithValue(FakeEmbyAuthService()),
-      settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+      settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
       embyServerListProvider.overrideWith(
         (ref) => EmbyServerListNotifier()..setList([server]),
       ),
@@ -123,5 +126,33 @@ void main() {
 
     final updated = container.read(embyServerListProvider).single;
     expect(updated.activeRouteUrl, isNull);
+  });
+
+  testWidgets('TV 点添加线路 → 打开扫码配置页（mode=route，v1.1.243）',
+      (tester) async {
+    final container = await _pumpSheet(
+      tester,
+      server: _server(),
+      settings: const AppSettings(tvMode: true),
+    );
+
+    // TV 弹层不可拖拽关闭但添加按钮可点（遥控器 OK）
+    await tester.tap(find.byKey(const Key('addRouteButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byType(QrConfigScreen), findsOneWidget,
+      reason: 'TV 无输入法：添加线路走手机扫码');
+    final qr = tester.widget<QrConfigScreen>(find.byType(QrConfigScreen));
+    expect(qr.mode, 'route');
+    expect(qr.serverId, 'cfg1',
+      reason: 'serverId 透传给 routeHandler 落库目标');
+
+    Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('routeTile_main')), findsOneWidget,
+      reason: '返回线路弹层');
+    // 未做任何添加：列表不变
+    expect(container.read(embyServerListProvider).single.routes, isEmpty);
   });
 }
