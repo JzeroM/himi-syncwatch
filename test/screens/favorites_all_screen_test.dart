@@ -187,7 +187,7 @@ void main() {
         reason: '可选项未就绪时显示加载提示');
 
     // 防重入：面板打开期间按钮置灰，杜绝二次 _openFilterPanel
-    expect(tester.widget<IconButton>(btn).onPressed, isNull);
+    expect(tester.widget<IconButton>(find.descendant(of: btn, matching: find.byType(IconButton))).onPressed, isNull);
 
     // 可选项就绪 → 补上年份分组，加载提示消失
     gate.complete(const MediaFilterOptions(years: [2024]));
@@ -198,7 +198,7 @@ void main() {
     // 关闭后按钮恢复可点
     await tester.tap(find.byKey(const Key('filterCancelButton')));
     await tester.pumpAndSettle();
-    expect(tester.widget<IconButton>(btn).onPressed, isNotNull);
+    expect(tester.widget<IconButton>(find.descendant(of: btn, matching: find.byType(IconButton))).onPressed, isNotNull);
   });
 }
 

@@ -21,6 +21,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/resource_stats_sheet.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv_device_sheet.dart';
 
 /// 按 serverId 去重（同服务器多 session 只展示第一个）。
@@ -192,34 +193,34 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         flexibleSpace: const GlassBackdrop(),
-        actions: [
-          IconButton(
+        // 布局模式下第二行按钮不参与焦点：避免方向键移动卡片时焦点逃逸到顶栏
+        actions: <Widget>[
+          TvAppBarIconButton(
             key: const ValueKey('serverViewToggle'),
-            icon: Icon(
-                viewMode == 'list' ? Icons.view_module : Icons.view_list),
+            icon: viewMode == 'list' ? Icons.view_module : Icons.view_list,
             tooltip: viewMode == 'list' ? '网格视图' : '列表视图',
             onPressed: () => ref.read(settingsProvider.notifier).update(
                   serverViewMode: viewMode == 'list' ? 'grid' : 'list',
                 ),
           ),
-          IconButton(
+          TvAppBarIconButton(
             key: const ValueKey('serverStatsRefresh'),
-            icon: const Icon(Icons.refresh),
+            icon: Icons.refresh,
             tooltip: '刷新延迟与计数',
             onPressed: _loadStats,
           ),
           // TV 设备（局域网发现/配对/推送服务器配置；仅手机/桌面端，
           // 且设置-通用「同步到 TV」开启时显示）
           if (!tvMode && tvSyncEnabled)
-            IconButton(
+            TvAppBarIconButton(
               key: const ValueKey('tvDeviceButton'),
-              icon: const Icon(Icons.tv),
+              icon: Icons.tv,
               tooltip: 'TV 设备',
               onPressed: () => showTvDeviceSheet(context),
             ),
           if (tvMode)
-            IconButton(
-              icon: const Icon(Icons.qr_code_scanner),
+            TvAppBarIconButton(
+              icon: Icons.qr_code_scanner,
               tooltip: '手机扫码配置',
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -229,8 +230,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             ),
           // TV 不提供手动添加表单（遥控器无输入法）：走上方扫码入口
           if (!tvMode)
-            IconButton(
-              icon: Icon(_showAddServerForm ? Icons.close : Icons.add),
+            TvAppBarIconButton(
+              icon: _showAddServerForm ? Icons.close : Icons.add,
               tooltip: _showAddServerForm ? '取消添加' : '添加服务器',
               onPressed: () {
                 final next = !_showAddServerForm;
@@ -242,7 +243,9 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                 _syncBackIntercept();
               },
             ),
-        ],
+        ]
+            .map((w) => _layoutServerId != null ? ExcludeFocus(child: w) : w)
+            .toList(),
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -369,6 +372,16 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         childAspectRatio: 1.25,
       ),
       itemCount: dedupedServers.length,
+      // TV 布局移动重排时按 key 搬运元素（而非按新下标重建），保留卡片
+      // 的 State/FocusNode，焦点不回落外层 scope 被抢到顶栏。
+      findChildIndexCallback: (key) {
+        if (key is! ValueKey<String>) return null;
+        const prefix = 'serverGridTile_';
+        if (!key.value.startsWith(prefix)) return null;
+        final id = key.value.substring(prefix.length);
+        final idx = dedupedServers.indexWhere((s) => s.id == id);
+        return idx < 0 ? null : idx;
+      },
       itemBuilder: (context, index) {
         final server = dedupedServers[index];
         final isActive = currentConfig?.id == server.id;

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:himi_syncwatch/providers/remote_search_provider.dart';
 import 'package:himi_syncwatch/screens/search/global_search_screen.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -61,7 +62,10 @@ class _RemoteSearchScreenState extends ConsumerState<RemoteSearchScreen> {
         if (didPop) ref.read(remoteSearchProvider.notifier).stop();
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('手机扫码搜索')),
+        appBar: AppBar(
+          title: const Text('手机扫码搜索'),
+          leading: const TvBackButton(),
+        ),
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(

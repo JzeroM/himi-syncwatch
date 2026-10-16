@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -116,6 +117,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           flexibleSpace: const GlassBackdrop(),
+          leading: const TvBackButton(),
         ),
         body: ListView(
           padding: EdgeInsets.only(

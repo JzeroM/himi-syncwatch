@@ -1280,4 +1280,85 @@ void main() {
       expect(find.byKey(const ValueKey('syncToTvButton')), findsNothing);
     });
   });
+
+  group('网格布局移动焦点保持（焦点不跳顶栏）', () {
+    testWidgets('TV 网格布局模式方向键移动后焦点仍在移动卡', (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+          _server(id: 'srv_c', name: 'C', serverId: 's3'),
+          _server(id: 'srv_d', name: 'D', serverId: 's4'),
+        ],
+      );
+
+      // 首卡 autofocus 已聚焦，长按 OK 进入布局模式
+      await _pressLongOk(tester);
+      expect(find.text('移动中'), findsOneWidget, reason: '应进入布局模式');
+
+      // 网格：右移 ±1，srv_a 从 0 → 1
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(embyServerListProvider).map((s) => s.id).toList(),
+        ['srv_b', 'srv_a', 'srv_c', 'srv_d'],
+        reason: '方向键右移应交换顺序',
+      );
+
+      // 重排后焦点必须仍落在移动中的卡片（而非回落到外层 scope）
+      final primary = FocusManager.instance.primaryFocus;
+      expect(primary?.context, isNotNull);
+      expect(
+        primary!.context!.findAncestorWidgetOfExactType<KeyedSubtree>()?.key,
+        const ValueKey('serverGridTile_srv_a'),
+        reason: '重排后焦点应保持在移动中的卡片上',
+      );
+
+      // 焦点未丢 → 再次右移仍能继续重排 srv_a 1 → 2
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(embyServerListProvider).map((s) => s.id).toList(),
+        ['srv_b', 'srv_c', 'srv_a', 'srv_d'],
+        reason: '连续移动应持续生效（焦点未逃逸）',
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('TV 布局模式顶栏 actions 被 ExcludeFocus 屏蔽', (tester) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      final toggle = find.byKey(const ValueKey('serverViewToggle'));
+      expect(
+        find.ancestor(of: toggle, matching: find.byType(ExcludeFocus)),
+        findsNothing,
+        reason: '常规态顶栏按钮可聚焦',
+      );
+
+      await _pressLongOk(tester);
+      expect(find.text('移动中'), findsOneWidget);
+
+      expect(
+        find.ancestor(of: toggle, matching: find.byType(ExcludeFocus)),
+        findsWidgets,
+        reason: '布局模式顶栏按钮应被 ExcludeFocus 屏蔽焦点',
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+    });
+  });
 }

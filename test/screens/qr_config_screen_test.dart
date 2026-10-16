@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/lan_config_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -48,6 +50,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            settingsProvider.overrideWith(
+              (ref) => FakeSettingsNotifier(const AppSettings()),
+            ),
             lanConfigBasePortProvider.overrideWithValue(0),
             embySetupServiceProvider.overrideWith((_) => _ThrowingEmbySetup()),
           ],

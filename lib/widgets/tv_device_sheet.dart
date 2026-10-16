@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
+import 'package:himi_syncwatch/widgets/swipe_reveal_action.dart';
 
 /// 打开「TV 设备」发现/配对底部面板。
 Future<void> showTvDeviceSheet(BuildContext context) {
@@ -68,6 +69,12 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
     } finally {
       if (mounted) setState(() => _pairingId = null);
     }
+  }
+
+  /// 取消配对：清除本地配对记录（TV 端不记录配对方，无需服务端调用）。
+  Future<void> _unpair(TvDeviceInfo device) async {
+    await ref.read(pairedTvProvider.notifier).clear();
+    if (mounted) showAppToast(context, '已取消配对「${device.name}」');
   }
 
   Future<void> _pushAll(TvDeviceInfo device) async {
@@ -171,7 +178,7 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
                   itemBuilder: (context, index) {
                     final device = devices[index];
                     final isPaired = paired?.deviceId == device.deviceId;
-                    return GlassContainer(
+                    final row = GlassContainer(
                       borderRadius: BorderRadius.circular(14),
                       tint: GlassConfig.panelTintOf(),
                       child: Padding(
@@ -245,6 +252,14 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
                           ],
                         ),
                       ),
+                    );
+                    if (!isPaired) return row;
+                    return SwipeRevealAction(
+                      key: ValueKey('unpair_${device.deviceId}'),
+                      actionLabel: '取消配对',
+                      actionIcon: Icons.link_off,
+                      onAction: () => _unpair(device),
+                      child: row,
                     );
                   },
                 ),

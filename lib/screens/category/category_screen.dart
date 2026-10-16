@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_filter_panel.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 
 enum SortOption {
@@ -317,29 +318,24 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        leading: const TvBackButton(),
         title: Text(widget.libraryName ?? '分类'),
         actions: [
-          IconButton(
+          TvAppBarIconButton(
             key: const Key('categoryFilterButton'),
-            icon: Icon(
-              Icons.filter_list,
-              color: _mediaFilter.isNotEmpty
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
-            ),
+            icon: Icons.filter_list,
+            color: _mediaFilter.isNotEmpty
+                ? Theme.of(context).colorScheme.primary
+                : null,
             tooltip: '筛选',
             // 打开期间置灰：配合防重入守卫，杜绝连点弹出两个面板
             onPressed: _filterOpening ? null : _openFilterPanel,
           ),
-          PopupMenuButton<SortOption>(
-            icon: const Icon(Icons.sort),
+          TvMenuIconButton<SortOption>(
+            icon: Icons.sort,
             tooltip: '排序',
             onSelected: _onSortChanged,
-            itemBuilder: (context) => SortOption.values.map((opt) {
+            itemsBuilder: (context) => SortOption.values.map((opt) {
               return PopupMenuItem(
                 value: opt,
                 child: Row(

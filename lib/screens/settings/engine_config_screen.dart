@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 
 /// 「播放器配置」：顶部 TabBar 按引擎分页（MDK / media_kit / Erika），
 /// 每个 tab 是**该引擎专属设置**。
@@ -52,6 +53,7 @@ class _EngineConfigScreenState extends ConsumerState<EngineConfigScreen>
           backgroundColor: Colors.transparent,
           elevation: 0,
           flexibleSpace: const GlassBackdrop(),
+          leading: const TvBackButton(),
           bottom: TabBar(
             controller: _tab,
             isScrollable: _engines.length > 2,

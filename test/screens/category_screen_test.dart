@@ -248,9 +248,12 @@ void main() {
       expect(emby.lastFilterOptionsIncludeItemTypes, 'Movie',
           reason: '电影库可选项按 Movie 限定');
       expect(
-        tester.widget<IconButton>(
-          find.byKey(const Key('categoryFilterButton')),
-      ).icon,
+        tester
+            .widget<IconButton>(find.descendant(
+              of: find.byKey(const Key('categoryFilterButton')),
+              matching: find.byType(IconButton),
+            ))
+            .icon,
         isA<Icon>().having((i) => i.color, 'color', isNotNull),
         reason: '筛选激活时按钮着色',
       );
@@ -324,7 +327,7 @@ void main() {
           reason: '可选项未就绪时显示加载提示');
 
       // 防重入：面板打开期间按钮置灰，杜绝二次 _openFilterPanel
-      expect(tester.widget<IconButton>(btn).onPressed, isNull);
+      expect(tester.widget<IconButton>(find.descendant(of: btn, matching: find.byType(IconButton))).onPressed, isNull);
 
       // 可选项就绪 → 补上年份分组，加载提示消失
       gate.complete(const MediaFilterOptions(years: [2024]));
@@ -335,7 +338,7 @@ void main() {
       // 关闭后按钮恢复可点
       await tester.tap(find.byKey(const Key('filterCancelButton')));
       await tester.pumpAndSettle();
-      expect(tester.widget<IconButton>(btn).onPressed, isNotNull,
+      expect(tester.widget<IconButton>(find.descendant(of: btn, matching: find.byType(IconButton))).onPressed, isNotNull,
           reason: '面板关闭后按钮恢复可点');
     });
 

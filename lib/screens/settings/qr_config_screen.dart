@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/lan_config_provider.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -73,6 +74,7 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(_title),
+          leading: const TvBackButton(),
         ),
         body: SafeArea(
           child: Center(

@@ -10,6 +10,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomCode;
@@ -122,6 +123,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('房间详情'),
+        leading: const TvBackButton(),
       ),
       body: _error != null
           ? Center(

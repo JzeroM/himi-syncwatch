@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// 声网（Agora RTM）配置页（原侧边栏底部入口，现为独立标签页）。
@@ -98,8 +99,8 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
         elevation: 0,
         flexibleSpace: const GlassBackdrop(),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.help_outline),
+          TvAppBarIconButton(
+            icon: Icons.help_outline,
             tooltip: '配置说明',
             onPressed: () => _showAgoraGuide(context),
           ),

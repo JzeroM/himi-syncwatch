@@ -4,6 +4,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
 
@@ -188,6 +189,7 @@ class SettingsSubPage extends StatelessWidget {
           backgroundColor: Colors.transparent,
           elevation: 0,
           flexibleSpace: const GlassBackdrop(),
+          leading: const TvBackButton(),
         ),
         body: ListView(
           key: const ValueKey('settingsSubPageList'),
