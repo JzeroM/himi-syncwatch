@@ -25,27 +25,31 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   static final mdk.SeekFlag seekFlags =
       mdk.SeekFlag(mdk.SeekFlag.keyFrame | mdk.SeekFlag.inCache);
 
-  /// lowLatency=1 等效 avformat 属性（v1.1.222 起播加速，纯常量可单测）。
+  /// lowLatency=1 等效 avformat 属性（起播加速，纯常量可单测）。
   ///
   /// 对齐 fvp `registerWith('lowLatency': 1)` 在
   /// `MdkVideoPlayerPlatform.create()` 内的应用：
-  /// - `avformat.fflags +nobuffer`：低延迟 demux（fvp 注释：1st
-  ///   key-frame packet is dropped）；himi 保留 `+fastseek`（seek 加速）
+  /// - `avformat.fflags +fastseek`：加速 seek；**不再叠加 `+nobuffer`**
+  ///   （v1.2.4）：`+nobuffer` 会丢弃首个关键帧包，导致起播瞬间画面/声音
+  ///   短暂卡顿（全平台 MDK 复现），去掉后起播即顺，代价是起播延迟极小回升
   /// - `avformat.analyzeduration 100000`（100ms，原 500ms）
   /// - `avformat.fpsprobesize 0`（跳过 fps 探测）
   ///
   /// 注意：himi 绕过 video_player 插件层直用 mdk.Player FFI，故
   /// registerWith 的 lowLatency 选项无效，须在此层显式写入。
-  /// 配套 `lowLatencyBufferMinMs`：起播最小缓冲 0（原 2000ms），
-  /// 最小数据即起播；`demux.buffer.ranges=8` 段缓存保留（后退 seek）。
+  /// 配套 `lowLatencyBufferMinMs`：起播最小缓冲 300ms（原 0），给出起播
+  /// 缓冲垫消除首帧欠载；`demux.buffer.ranges=8` 段缓存保留（后退 seek）。
   static const lowLatencyProperties = <String, String>{
-    'avformat.fflags': '+fastseek+nobuffer',
+    'avformat.fflags': '+fastseek',
     'avformat.analyzeduration': '100000',
     'avformat.fpsprobesize': '0',
   };
 
   /// lowLatency 配套：setBufferRange 最小缓冲（ms）。
-  static const lowLatencyBufferMinMs = 0;
+  ///
+  /// 300ms：起播前先积累少量数据再起播，消除「最小数据即起播」导致的
+  /// 开局欠载卡顿（v1.2.4，方案 A）。
+  static const lowLatencyBufferMinMs = 300;
 
   /// 诊断面板 / SurfaceView 直接访问底层 mdk.Player（仅 mdk 档）。
   mdk.Player get raw => _player;

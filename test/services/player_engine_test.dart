@@ -194,16 +194,18 @@ void main() {
     });
   });
 
-  group('MdkPlayerAdapter.lowLatencyProperties（起播加速，v1.1.222）', () {
-    test('fflags=+fastseek+nobuffer / analyzeduration=100ms / fpsprobesize=0', () {
+  group('MdkPlayerAdapter.lowLatencyProperties（起播加速，v1.1.222/v1.2.4）', () {
+    test('fflags=+fastseek（去 nobuffer）/ analyzeduration=100ms / fpsprobesize=0',
+        () {
       final props = MdkPlayerAdapter.lowLatencyProperties;
-      expect(props['avformat.fflags'], '+fastseek+nobuffer');
+      expect(props['avformat.fflags'], '+fastseek',
+          reason: '+nobuffer 会丢首个关键帧包导致起播卡顿，v1.2.4 移除');
       expect(props['avformat.analyzeduration'], '100000');
       expect(props['avformat.fpsprobesize'], '0');
     });
 
-    test('起播最小缓冲 0（lowLatency 等效）', () {
-      expect(MdkPlayerAdapter.lowLatencyBufferMinMs, 0);
+    test('起播最小缓冲 300ms（消除开局欠载卡顿）', () {
+      expect(MdkPlayerAdapter.lowLatencyBufferMinMs, 300);
     });
   });
 }

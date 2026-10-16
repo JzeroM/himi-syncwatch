@@ -1730,16 +1730,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     LogService().log('Player',
         '解码配置: ${settings.decodeMode} → video=$decoders audio=$audioDecoders');
 
-    // avformat 起播配置（v1.1.222 lowLatency=1 等效）：+nobuffer 低延迟
-    // demux + analyzeduration 100ms（原 500ms）→ 起播更快。probesize
-    // 保持 1MB（fvp lowLatency 不动 probesize）。
+    // avformat 起播配置（v1.1.222 lowLatency 等效；v1.2.4 去 nobuffer）：
+    // +fastseek 加速 seek，不再叠加 +nobuffer（其丢首个关键帧包会让起播
+    // 瞬间卡顿，全平台 MDK 复现）；analyzeduration 100ms（原 500ms）保留
+    // 起播加速。probesize 保持 1MB（fvp lowLatency 不动 probesize）。
     _player.setProperty('avformat.probesize', '1048576'); // 1MB
     MdkPlayerAdapter.lowLatencyProperties
         .forEach(_player.setProperty);
 
     // mdk 缓冲/包缓存（网络流抗抖动）：
-    // - buffer：起播最小缓冲 0（lowLatency 等效，最小数据即起播；max
-    //   保持 mdk 默认 4s 不动，避免高码率 4K 大缓冲的内存压力）；
+    // - buffer：起播最小缓冲 300ms（v1.2.4，原 0）——先积累少量数据再起播，
+    //   消除开局欠载卡顿；max 保持 mdk 默认 4s 不动（避免高码率 4K 大缓冲
+    //   的内存压力）；
     // - demux.buffer.ranges：为 http(s) 开启 8 段包缓存（默认关闭），
     //   后退 seek 命中已缓存区间时无需重下。
     // 依据 fvp #98（demux.buffer.ranges=8）。

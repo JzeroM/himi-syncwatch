@@ -63,20 +63,31 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   void initState() {
     super.initState();
     _container = ProviderScope.containerOf(context, listen: false);
+    // ⋮ 操作面板开合 → 同步壳层返回拦截（面板优先于表单/布局消费返回）
+    serverActionPanelOpen.addListener(_syncBackIntercept);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadStats());
   }
 
   @override
   void dispose() {
+    serverActionPanelOpen.removeListener(_syncBackIntercept);
     _container.read(shellBackInterceptProvider.notifier).clear();
     super.dispose();
   }
 
-  /// 表单/布局模式变化后同步壳层返回拦截：任一激活则注册，否则清空。
+  /// 表单/布局/⋮ 面板变化后同步壳层返回拦截：任一激活则注册，否则清空。
+  ///
+  /// 用 initState 捕获的 [_container]（而非 `ref`）读写 provider：本方法可能
+  /// 被全局 [serverActionPanelOpen] 通知在卡片 dispose 期间同步回调，此时
+  /// 本 State 的 Element 已 deactivate，`ref.read` 会抛「deactivated widget's
+  /// ancestor」。
   void _syncBackIntercept() {
-    final notifier = ref.read(shellBackInterceptProvider.notifier);
-    final active =
-        _layoutServerId != null || _showAddServerForm || _editingServer != null;
+    if (!mounted) return;
+    final notifier = _container.read(shellBackInterceptProvider.notifier);
+    final active = _layoutServerId != null ||
+        _showAddServerForm ||
+        _editingServer != null ||
+        serverActionPanelOpen.value;
     if (active) {
       notifier.register(_onBackIntercept);
     } else {
@@ -84,8 +95,12 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     }
   }
 
-  /// 壳层返回拦截：优先关布局模式，其次关表单；均不活跃时放行。
+  /// 壳层返回拦截：优先关 ⋮ 操作面板，其次关布局模式，再次关表单；均不活跃时放行。
   bool _onBackIntercept() {
+    if (serverActionPanelOpen.value) {
+      closeServerActionPanel();
+      return true;
+    }
     if (_layoutServerId != null) {
       _exitLayoutMode(save: false);
       return true;

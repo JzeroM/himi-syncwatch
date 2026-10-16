@@ -122,6 +122,10 @@ class MovieSeriesCounts extends StatelessWidget {
 OverlayEntry? _activePanelEntry;
 VoidCallback? _activePanelClose;
 
+/// 操作面板展开状态（全局单例）。服务器页监听它注册壳层返回拦截，
+/// 使返回键优先关闭面板而非弹回首页。
+final ValueNotifier<bool> serverActionPanelOpen = ValueNotifier<bool>(false);
+
 /// 关闭当前展开的服务器操作面板（页面级重排/删除前调用防悬挂）。
 void closeServerActionPanel() {
   _activePanelClose?.call();
@@ -271,6 +275,7 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
     _entry = entry;
     _activePanelEntry = entry;
     _activePanelClose = onClose;
+    serverActionPanelOpen.value = true;
     overlay.insert(entry);
   }
 
@@ -282,6 +287,7 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
     if (identical(_activePanelEntry, _entry)) {
       _activePanelEntry = null;
       _activePanelClose = null;
+      serverActionPanelOpen.value = false;
     }
     _entry = null;
     // TV：面板关闭后回焦 ⋮ 按钮，避免焦点悬空

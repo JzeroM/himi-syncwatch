@@ -206,6 +206,38 @@ void main() {
     await _settleSnackbars(tester);
   });
 
+  testWidgets('壳层：⋮ 面板展开按返回 → 关面板留 Emby 页且焦点回 ⋮（v1.2.4）',
+      (tester) async {
+    await _pumpShellOnServers(
+      tester,
+      settings: const AppSettings(tvMode: true),
+      sessions: [
+        _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      ],
+      useTvTopNav: true,
+    );
+
+    // 打开 ⋮ 操作面板
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
+    await tester.pumpAndSettle();
+    expect(find.text('切换线路'), findsOneWidget, reason: '操作面板已展开');
+    expect(find.text('删除'), findsOneWidget, reason: '操作面板含删除项');
+
+    // 系统返回 → 关面板，留在 Emby 页，焦点回 ⋮
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('切换线路'), findsNothing, reason: '返回应关闭操作面板');
+    expect(find.text('删除'), findsNothing, reason: '返回应关闭操作面板');
+    expect(find.byType(ServerManagerScreen), findsOneWidget,
+        reason: '关面板后仍留在 Emby 页');
+    expect(find.byType(HomeScreen), findsNothing, reason: '不应跳回首页');
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverMoreBtn',
+        reason: '面板关闭后焦点应回到三个点');
+    await _settleSnackbars(tester);
+  });
+
   testWidgets('壳层：TV 布局模式按返回 → 取消布局留在 Emby 页（v1.1.244）',
       (tester) async {
     final container = await _pumpShellOnServers(
