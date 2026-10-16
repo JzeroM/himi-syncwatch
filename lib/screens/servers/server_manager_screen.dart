@@ -441,11 +441,19 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
 
     final layoutId = _layoutServerId;
     if (layoutId == server.id) {
-      // ExcludeFocus：屏蔽卡内 InkWell/⋮ 的内层焦点节点，防止方向键被同卡多节点空转
-      return Focus(
-        autofocus: true,
-        onKeyEvent: (node, event) =>
-            _handleLayoutKey(event, isGrid: isGrid, crossAxisCount: crossAxisCount),
+      // 复用 _TvCardFocus（同类型 widget → 焦点节点跨模式切换保留），
+      // 避免裸 Focus 替换时旧节点被销毁、焦点瞬时回落到外层 scope，
+      // 进而被全局 TvScopeEnterIntent 抢到顶栏（v1.1.251 修复）。
+      // 布局键处理走 onLayoutKey；描边由 _layoutDecorate 画，关焦点环。
+      return _TvCardFocus(
+        showFocusRing: false,
+        onTap: () {},
+        onLayoutKey: (event) => _handleLayoutKey(
+          event,
+          isGrid: isGrid,
+          crossAxisCount: crossAxisCount,
+        ),
+        // ExcludeFocus：屏蔽卡内 InkWell/⋮ 的内层焦点节点
         child: _layoutDecorate(ExcludeFocus(child: card)),
       );
     }
@@ -700,12 +708,21 @@ class _TvCardFocus extends StatefulWidget {
     required this.onTap,
     this.onLongPress,
     this.autofocus = false,
+    this.onLayoutKey,
+    this.showFocusRing = true,
   });
 
   final Widget child;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final bool autofocus;
+
+  /// 布局模式键处理器（非空 = 该卡处于布局模式，按键全权委托它，
+  /// 不再触发 tap/长按）。复用同一 State 以保留焦点节点。
+  final KeyEventResult Function(KeyEvent event)? onLayoutKey;
+
+  /// 是否绘制焦点环（布局模式由琥珀描边代替，置 false 避免叠加）。
+  final bool showFocusRing;
 
   @override
   State<_TvCardFocus> createState() => _TvCardFocusState();
@@ -731,6 +748,12 @@ class _TvCardFocusState extends State<_TvCardFocus> {
       key == LogicalKeyboardKey.select;
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    // 布局模式：按键全权交给布局处理器，绝不触发 tap/长按。焦点节点
+    // 跨进入/退出布局模式保留，故长按 OK 的 KeyRepeat 始终落在此节点，
+    // 不会冒泡到全局 TvScopeEnterIntent 被抢到顶栏。
+    final layoutHandler = widget.onLayoutKey;
+    if (layoutHandler != null) return layoutHandler(event);
+
     final key = event.logicalKey;
     if (!_isConfirm(key)) return KeyEventResult.ignored;
 
@@ -793,7 +816,7 @@ class _TvCardFocusState extends State<_TvCardFocus> {
             child: AnimatedContainer(
               duration: duration,
               curve: Curves.easeOut,
-              foregroundDecoration: focused
+              foregroundDecoration: (focused && widget.showFocusRing)
                   ? BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: highlightColor, width: 3),

@@ -19,6 +19,7 @@ class MainActivity : FlutterActivity() {
     private var dvChannel: MethodChannel? = null
     private var piChannel: MethodChannel? = null
     private var ntChannel: MethodChannel? = null
+    private var ndChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -43,6 +44,13 @@ class MainActivity : FlutterActivity() {
             // 真实网速：TrafficStats 整机累计收字节（/proc 受 SELinux 限制）
             setMethodCallHandler(NetworkTrafficPlugin())
         }
+        ndChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            NetworkDiscoveryPlugin.CHANNEL
+        ).apply {
+            // 局域网发现组播锁（WiFi 省电时保持接收广播/组播）
+            setMethodCallHandler(NetworkDiscoveryPlugin(applicationContext))
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -52,6 +60,8 @@ class MainActivity : FlutterActivity() {
         piChannel = null
         ntChannel?.setMethodCallHandler(null)
         ntChannel = null
+        ndChannel?.setMethodCallHandler(null)
+        ndChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

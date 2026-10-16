@@ -46,11 +46,25 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
     err "缺少 $KOTLIN/DolbyVisionPlugin.kt"
   fi
 
+  if [ -f "$KOTLIN/NetworkDiscoveryPlugin.kt" ]; then
+    ok "NetworkDiscoveryPlugin.kt 存在"
+  else
+    err "缺少 $KOTLIN/NetworkDiscoveryPlugin.kt（局域网发现组播锁依赖）"
+  fi
+
   if [ -f "$KOTLIN/MainActivity.kt" ]; then
     if grep -q 'DolbyVisionPlugin.CHANNEL' "$KOTLIN/MainActivity.kt"; then
       ok "MainActivity 注册了 com.himi/dolby_vision 通道"
     else
       err "MainActivity 未调用 setMethodCallHandler，DV 探测会 MissingPluginException"
+    fi
+  fi
+
+  if [ -f "$KOTLIN/MainActivity.kt" ]; then
+    if grep -q 'NetworkDiscoveryPlugin.CHANNEL' "$KOTLIN/MainActivity.kt"; then
+      ok "MainActivity 注册了 himi/network_discovery 通道"
+    else
+      err "MainActivity 未注册 NetworkDiscoveryPlugin，组播锁将 MissingPluginException"
     fi
   fi
 
@@ -113,6 +127,7 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
     perms=(
       android.permission.INTERNET
       android.permission.ACCESS_NETWORK_STATE
+      android.permission.CHANGE_WIFI_MULTICAST_STATE
       android.permission.RECORD_AUDIO
       android.permission.CAMERA
       android.permission.READ_MEDIA_IMAGES

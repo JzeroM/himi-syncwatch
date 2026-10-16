@@ -19,6 +19,7 @@ import 'package:himi_syncwatch/services/tv_sync/paired_tv_store.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_directional_scroll.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
@@ -65,6 +66,7 @@ Future<ProviderContainer> _pumpScreen(
   AppSettings settings = const AppSettings(),
   EmbyService Function(EmbyServerConfig)? serviceFactory,
   PairedTv? pairedTv,
+  bool remote = false,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -102,7 +104,9 @@ Future<ProviderContainer> _pumpScreen(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp.router(routerConfig: router),
+      child: remote
+          ? TvRemoteShortcuts(child: MaterialApp.router(routerConfig: router))
+          : MaterialApp.router(routerConfig: router),
     ),
   );
   await tester.pumpAndSettle();
@@ -1102,6 +1106,62 @@ void main() {
 
       expect(container.read(embyConfigProvider), isNull,
         reason: '孤立 KeyUp 不应触发 onTap 打开服务器');
+    });
+
+    testWidgets('v1.1.251 布局模式：持续 KeyRepeat 焦点不跳到顶栏（仍在卡片）',
+        (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        remote: true, // 挂 TvRemoteShortcuts，复现全局 TvScopeEnterIntent 抢焦点
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      // 长按 OK 进入布局模式（首卡 autofocus 已获焦）
+      final focusBefore = FocusManager.instance.primaryFocus;
+      expect(focusBefore, isNotNull);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text('移动中'), findsOneWidget, reason: '长按应进入布局模式');
+
+      // 核心不变量：进入布局模式必须复用同一焦点节点，否则旧节点销毁、
+      // 焦点瞬时回落到外层 scope → 全局 TvScopeEnterIntent 抢到壳层顶栏。
+      expect(identical(FocusManager.instance.primaryFocus, focusBefore), isTrue,
+          reason: '进入布局模式不应重建焦点节点（回归 v1.1.251）');
+
+      // 用户仍按住 OK：持续 KeyRepeat，焦点不应被抢到顶栏
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      final focusCtx = FocusManager.instance.primaryFocus?.context;
+      expect(focusCtx, isNotNull);
+      expect(focusCtx!.findAncestorWidgetOfExactType<AppBar>(), isNull,
+          reason: '焦点应留在卡片子树，不应跳到顶栏');
+      expect(identical(FocusManager.instance.primaryFocus, focusBefore), isTrue,
+          reason: 'KeyRepeat 期间焦点仍在原卡片节点');
+
+      // 方向键应移动卡片（srv_a ↔ srv_b），证明按键落到布局处理器
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      final order = container
+          .read(embyServerListProvider)
+          .map((s) => s.id)
+          .take(2)
+          .toList();
+      expect(order, ['srv_b', 'srv_a'],
+          reason: '方向键应移动卡片而非被顶栏吞掉');
+      expect(find.text('移动中'), findsOneWidget,
+          reason: '移动后仍处于布局模式');
+      expect(container.read(settingsProvider).serverViewMode, 'list',
+          reason: '视图模式不应被顶栏按钮改写');
+
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
     });
   });
 

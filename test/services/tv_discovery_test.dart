@@ -95,6 +95,50 @@ void main() {
     expect(listener.devices, isEmpty);
   });
 
+  test('broadcastTargets 含受限广播 + 各本机 /24 定向广播', () {
+    final t = TvDiscoveryProtocol.broadcastTargets(
+      ['192.168.1.23', '10.0.0.5'],
+    );
+    expect(t, contains('255.255.255.255'));
+    expect(t, contains('192.168.1.255'));
+    expect(t, contains('10.0.0.255'));
+  });
+
+  test('Listener 开启广播发送且 sendQuery 可直达对端（回归：查询静默失效）',
+      () async {
+    // 对端接收 socket（模拟 TV 发现端口）
+    final receiver =
+        await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(receiver.close);
+
+    final listener = TvDiscoveryListener(
+      port: 0,
+      queryInterval: Duration.zero, // 关周期查询，手动触发
+      queryTargets: {InternetAddress.loopbackIPv4.address},
+      queryPort: receiver.port,
+    );
+    addTearDown(() async {
+      await listener.stop();
+      listener.dispose();
+    });
+    await listener.start();
+
+    // 核心回归：start 后必须已开启 broadcastEnabled，否则 sendQuery 抛异常
+    expect(listener.broadcastEnabled, isTrue,
+        reason: '未开启广播能力时向广播地址发送会抛异常 → 查询静默失效');
+
+    listener.sendQuery();
+
+    Datagram? got;
+    for (var i = 0; i < 50 && got == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      got = receiver.receive();
+    }
+    expect(got, isNotNull, reason: 'sendQuery 应发出 discover 包');
+    final decoded = jsonDecode(utf8.decode(got!.data));
+    expect(decoded['t'], 'discover');
+  });
+
   test('expireStale 剔除超时设备并推送新表', () async {
     final listener = TvDiscoveryListener(port: 0);
     final emissions = <Map<String, dynamic>>[];

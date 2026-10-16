@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:himi_syncwatch/models/tv_device.dart';
+import 'package:himi_syncwatch/services/tv_sync/multicast_lock.dart';
 
 /// 发现协议包：`{"v":1,"t":"tv"|"discover",...}`。
 /// - TV 周期广播 `t=tv`（含 deviceId/name/httpPort）
@@ -10,6 +11,39 @@ import 'package:himi_syncwatch/models/tv_device.dart';
 class TvDiscoveryProtocol {
   static const port = 17893;
   static const broadcastAddress = '255.255.255.255';
+
+  /// 广播目标集合：受限广播 + 各本机 IPv4 的 /24 网段定向广播。
+  ///
+  /// 部分 AP/ROM 会丢弃 `255.255.255.255` 受限广播，但转发指向本网段的
+  /// 定向广播（如 `192.168.1.255`）。dart:io 不暴露子网掩码，故按家庭
+  /// 局域网最常见的 /24 推导定向地址（`a.b.c.0/24` → `a.b.c.255`）。
+  static Set<String> broadcastTargets(Iterable<String> localIps) {
+    final targets = <String>{broadcastAddress};
+    for (final ip in localIps) {
+      final parts = ip.split('.');
+      if (parts.length == 4) {
+        targets.add('${parts[0]}.${parts[1]}.${parts[2]}.255');
+      }
+    }
+    return targets;
+  }
+
+  /// 枚举本机非回环 IPv4 地址（定向广播地址推导用）。
+  static Future<List<String>> localIPv4s() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      return [
+        for (final ni in interfaces)
+          for (final a in ni.addresses)
+            if (!a.isLoopback) a.address,
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
 
   static Map<String, dynamic> tvAnnounce({
     required String deviceId,
@@ -46,6 +80,7 @@ class TvDiscoveryBroadcaster {
     this.interval = const Duration(seconds: 3),
     this.port = TvDiscoveryProtocol.port,
     this.broadcastAddress = TvDiscoveryProtocol.broadcastAddress,
+    this.multicastLock = const MulticastLockService(),
   });
 
   final String deviceId;
@@ -57,8 +92,12 @@ class TvDiscoveryBroadcaster {
   final int port;
   final String broadcastAddress;
 
+  /// 组播锁（Android 保活 WiFi 接收；其余平台 no-op）。
+  final MulticastLockService multicastLock;
+
   RawDatagramSocket? _socket;
   Timer? _timer;
+  List<InternetAddress> _targets = const [];
 
   bool get isRunning => _socket != null;
 
@@ -74,6 +113,8 @@ class TvDiscoveryBroadcaster {
     );
     socket.broadcastEnabled = true;
     _socket = socket;
+    await multicastLock.acquire();
+    _targets = _resolveTargets(await TvDiscoveryProtocol.localIPv4s());
     socket.listen(_onEvent, onError: (_) {}, cancelOnError: false);
     _timer = Timer.periodic(interval, (_) => _broadcast());
     _broadcast();
@@ -85,6 +126,13 @@ class TvDiscoveryBroadcaster {
     final socket = _socket;
     _socket = null;
     socket?.close();
+    await multicastLock.release();
+  }
+
+  List<InternetAddress> _resolveTargets(List<String> localIps) {
+    final set = TvDiscoveryProtocol.broadcastTargets(localIps)
+      ..add(broadcastAddress);
+    return [for (final a in set) InternetAddress(a)];
   }
 
   void _onEvent(RawSocketEvent event) {
@@ -114,13 +162,15 @@ class TvDiscoveryBroadcaster {
   void _broadcast() {
     final socket = _socket;
     if (socket == null) return;
-    try {
-      socket.send(
-        utf8.encode(jsonEncode(_announcePacket())),
-        InternetAddress(broadcastAddress),
-        socket.port,
-      );
-    } catch (_) {}
+    final data = utf8.encode(jsonEncode(_announcePacket()));
+    final targets = _targets.isEmpty
+        ? [InternetAddress(broadcastAddress)]
+        : _targets;
+    for (final target in targets) {
+      try {
+        socket.send(data, target, socket.port);
+      } catch (_) {}
+    }
   }
 }
 
@@ -132,6 +182,10 @@ class TvDiscoveryListener {
   TvDiscoveryListener({
     this.staleAfter = const Duration(seconds: 10),
     this.port = TvDiscoveryProtocol.port,
+    this.queryInterval = const Duration(seconds: 2),
+    this.multicastLock = const MulticastLockService(),
+    this.queryTargets,
+    this.queryPort,
   });
 
   final Duration staleAfter;
@@ -139,16 +193,33 @@ class TvDiscoveryListener {
   /// 发现监听端口（测试可注入随机端口）。
   final int port;
 
+  /// 主动查询重发周期（覆盖 TV 慢启动；0 表示不周期重发，测试可关）。
+  final Duration queryInterval;
+
+  /// 组播锁（Android 保活 WiFi 接收；其余平台 no-op）。
+  final MulticastLockService multicastLock;
+
+  /// 查询目标地址覆盖（测试注入环回地址）。
+  final Set<String>? queryTargets;
+
+  /// 查询目标端口覆盖（默认用 [port]，测试注入）。
+  final int? queryPort;
+
   final _controller = StreamController<Map<String, TvDeviceInfo>>.broadcast();
   final Map<String, TvDeviceInfo> _devices = {};
 
   RawDatagramSocket? _socket;
   Timer? _expireTimer;
+  Timer? _queryTimer;
+  List<InternetAddress> _targets = const [];
 
   bool get isRunning => _socket != null;
 
   /// 实际绑定端口（[port] 传 0 时为系统分配，测试用）。
   int? get boundPort => _socket?.port;
+
+  /// socket 是否已具备广播发送能力（回归断言用）。
+  bool get broadcastEnabled => _socket?.broadcastEnabled ?? false;
 
   /// 设备表快照流（每次变化/过期剔除时推送）。
   Stream<Map<String, TvDeviceInfo>> get devicesStream => _controller.stream;
@@ -162,31 +233,50 @@ class TvDiscoveryListener {
       port,
       reuseAddress: true,
     );
+    // 关键：不开启则 sendQuery() 向广播地址发送会抛异常、查询静默失效。
+    socket.broadcastEnabled = true;
     _socket = socket;
+    await multicastLock.acquire();
+    _targets = _resolveTargets(await TvDiscoveryProtocol.localIPv4s());
     socket.listen(_onEvent, onError: (_) {}, cancelOnError: false);
-    _expireTimer = Timer.periodic(const Duration(seconds: 2), (_) => expireStale());
+    _expireTimer =
+        Timer.periodic(const Duration(seconds: 2), (_) => expireStale());
+    if (queryInterval > Duration.zero) {
+      _queryTimer = Timer.periodic(queryInterval, (_) => sendQuery());
+    }
   }
 
   Future<void> stop() async {
     _expireTimer?.cancel();
     _expireTimer = null;
+    _queryTimer?.cancel();
+    _queryTimer = null;
     final socket = _socket;
     _socket = null;
     socket?.close();
     _devices.clear();
+    await multicastLock.release();
+  }
+
+  List<InternetAddress> _resolveTargets(List<String> localIps) {
+    final set = queryTargets ?? TvDiscoveryProtocol.broadcastTargets(localIps);
+    return [for (final a in set) InternetAddress(a)];
   }
 
   /// 广播查询包（TV 单播回包即时入表，不用等周期广播）。
   void sendQuery() {
     final socket = _socket;
     if (socket == null) return;
-    try {
-      socket.send(
-        utf8.encode(jsonEncode(TvDiscoveryProtocol.discoverQuery)),
-        InternetAddress(TvDiscoveryProtocol.broadcastAddress),
-        port,
-      );
-    } catch (_) {}
+    final data = utf8.encode(jsonEncode(TvDiscoveryProtocol.discoverQuery));
+    final targets = _targets.isEmpty
+        ? [InternetAddress(TvDiscoveryProtocol.broadcastAddress)]
+        : _targets;
+    final targetPort = queryPort ?? port;
+    for (final target in targets) {
+      try {
+        socket.send(data, target, targetPort);
+      } catch (_) {}
+    }
   }
 
   void _onEvent(RawSocketEvent event) {
