@@ -64,6 +64,7 @@ class EmbyAuthService {
     List<Map<String, dynamic>> routes = const [],
     String? activeRouteUrl,
     bool autoFailover = true,
+    bool strmDirectPlay = false,
   }) async {
     final data = {
       'id': id,                // 新增：保存 id 字段，防止重启后全勾选
@@ -76,6 +77,7 @@ class EmbyAuthService {
       if (routes.isNotEmpty) 'routes': routes,
       if (activeRouteUrl != null) 'activeRouteUrl': activeRouteUrl,
       'autoFailover': autoFailover,
+      'strmDirectPlay': strmDirectPlay,
     };
     await _secureStorage.write(key: 'session_$serverId', value: jsonEncode(data));
   }
@@ -86,6 +88,7 @@ class EmbyAuthService {
     required List<Map<String, dynamic>> routes,
     String? activeRouteUrl,
     required bool autoFailover,
+    bool? strmDirectPlay,
   }) async {
     final session = await loadSession(serverId);
     if (session == null) return;
@@ -96,6 +99,7 @@ class EmbyAuthService {
       session.remove('activeRouteUrl');
     }
     session['autoFailover'] = autoFailover;
+    if (strmDirectPlay != null) session['strmDirectPlay'] = strmDirectPlay;
     await _secureStorage.write(key: 'session_$serverId', value: jsonEncode(session));
   }
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 
 /// 启动一个本地 HTTP 服务，捕获 EmbyService 发出的请求路径与查询参数。
@@ -794,6 +795,118 @@ void main() {
 
       final counts = await service.getLibraryCounts();
       expect(counts, isNull);
+    });
+  });
+
+  group('getPlaybackInfo / STRM 直链解析', () {
+    test('解析 PlaySessionId 与 MediaSources 直链字段', () async {
+      respondWith = (_) => {
+            'PlaySessionId': 'ps-1',
+            'MediaSources': [
+              {
+                'Id': 'ms1',
+                'Name': 'strm',
+                'Path': 'http://cdn.example.com/movie.mkv',
+                'DirectStreamUrl':
+                    'http://cdn.example.com/direct/movie.mkv?token=abc',
+                'Protocol': 'Http',
+                'IsRemote': true,
+              },
+            ],
+          };
+      final info = await service.getPlaybackInfo(
+        itemId: 'i1',
+        mediaSourceId: 'ms1',
+      );
+      expect(info.playSessionId, 'ps-1');
+      expect(info.sources, hasLength(1));
+      final src = info.sources.single;
+      expect(src.path, 'http://cdn.example.com/movie.mkv');
+      expect(src.directStreamUrl,
+          'http://cdn.example.com/direct/movie.mkv?token=abc');
+      expect(src.protocol, 'Http');
+      expect(src.isRemote, true);
+      expect(info.sourceById('ms1')!.id, 'ms1');
+    });
+
+    test('sourceById 未命中/为空 → 回退首个源', () async {
+      respondWith = (_) => {
+            'MediaSources': [
+              {'Id': 'a', 'Name': 'A'},
+              {'Id': 'b', 'Name': 'B'},
+            ],
+          };
+      final info = await service.getPlaybackInfo(itemId: 'i1');
+      expect(info.sourceById('zzz')!.id, 'a');
+      expect(info.sourceById(null)!.id, 'a');
+    });
+
+    test('resolveStrmDirectUrl 优先绝对 DirectStreamUrl', () {
+      final src = MediaSource(
+        id: 'ms1',
+        name: 's',
+        path: 'http://path.example.com/x.mkv',
+        directStreamUrl: 'https://direct.example.com/y.mkv',
+      );
+      expect(
+        resolveStrmDirectUrl(source: src, proxyUrl: 'http://proxy/stream'),
+        'https://direct.example.com/y.mkv',
+      );
+    });
+
+    test('resolveStrmDirectUrl DirectStreamUrl 相对 → 回退绝对 Path', () {
+      final src = MediaSource(
+        id: 'ms1',
+        name: 's',
+        path: 'http://path.example.com/x.mkv',
+        directStreamUrl: '/Videos/1/stream?static=true',
+      );
+      expect(
+        resolveStrmDirectUrl(source: src, proxyUrl: 'http://proxy/stream'),
+        'http://path.example.com/x.mkv',
+      );
+    });
+
+    test('resolveStrmDirectUrl 均不可用 → 回退代理 URL', () {
+      final src = MediaSource(id: 'ms1', name: 's', path: '/local/file.mkv');
+      expect(
+        resolveStrmDirectUrl(source: src, proxyUrl: 'http://proxy/stream'),
+        'http://proxy/stream',
+      );
+      expect(
+        resolveStrmDirectUrl(source: null, proxyUrl: 'http://proxy/stream'),
+        'http://proxy/stream',
+      );
+    });
+
+    test('isAbsoluteHttpUrl 判定', () {
+      expect(isAbsoluteHttpUrl('http://x'), isTrue);
+      expect(isAbsoluteHttpUrl('HTTPS://X/Y'), isTrue);
+      expect(isAbsoluteHttpUrl('/Videos/1'), isFalse);
+      expect(isAbsoluteHttpUrl('file:///x'), isFalse);
+      expect(isAbsoluteHttpUrl(null), isFalse);
+      expect(isAbsoluteHttpUrl(''), isFalse);
+    });
+  });
+
+  group('账号服务（改密 / 头像 URL）', () {
+    test('changePassword → POST /Users/{userId}/Password + CurrentPw/NewPw', () async {
+      await service.changePassword(
+        currentPassword: 'old',
+        newPassword: 'new123',
+      );
+      final req = captured.single;
+      expect(req.method, 'POST');
+      expect(req.path, '/Users/user-1/Password');
+      expect(req.body['CurrentPw'], 'old');
+      expect(req.body['NewPw'], 'new123');
+    });
+
+    test('getUserImageUrl 无 tag / 带 tag', () {
+      expect(service.getUserImageUrl(),
+          'http://127.0.0.1:${server.port}/Users/user-1/Images/Primary');
+      expect(service.getUserImageUrl(tag: '123'),
+          'http://127.0.0.1:${server.port}/Users/user-1/Images/Primary?tag=123');
     });
   });
 }

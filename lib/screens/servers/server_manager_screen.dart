@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +23,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/resource_stats_sheet.dart';
+import 'package:himi_syncwatch/widgets/server_service_settings_sheet.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv_device_sheet.dart';
 
@@ -38,6 +40,21 @@ List<EmbyServerConfig> _dedupServers(List<EmbyServerConfig> servers) {
 /// Emby 服务器管理页（网格/列表双视图 + 拖拽排序 + 真延迟/计数）。
 class ServerManagerScreen extends ConsumerStatefulWidget {
   const ServerManagerScreen({super.key});
+
+  /// 卡片「同步到 TV」图标可见性：仅手机/桌面端、开关开启、已配对、且该
+  /// TV 当前在局域网被发现（在线）时显示；已配对但离线时隐藏。
+  @visibleForTesting
+  static bool shouldShowSyncToTvIcon({
+    required bool tvMode,
+    required bool tvSyncEnabled,
+    required String? pairedDeviceId,
+    required Set<String> onlineDeviceIds,
+  }) {
+    if (tvMode || !tvSyncEnabled) return false;
+    final id = pairedDeviceId;
+    if (id == null || id.isEmpty) return false;
+    return onlineDeviceIds.contains(id);
+  }
 
   @override
   ConsumerState<ServerManagerScreen> createState() =>
@@ -65,7 +82,25 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     _container = ProviderScope.containerOf(context, listen: false);
     // ⋮ 操作面板开合 → 同步壳层返回拦截（面板优先于表单/布局消费返回）
     serverActionPanelOpen.addListener(_syncBackIntercept);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadStats());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadStats();
+      _syncTvDiscovery();
+    });
+  }
+
+  /// 按当前设置启停局域网 TV 发现：仅手机/桌面端且「同步到 TV」开启时运行，
+  /// 用于判定已配对 TV 是否在线（在线才显示卡片电视图标）。
+  void _syncTvDiscovery() {
+    if (!mounted) return;
+    final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
+    final enabled = ref.read(settingsProvider.select((s) => s.tvSyncEnabled));
+    final notifier = ref.read(tvDiscoveryProvider.notifier);
+    final shouldRun = !tvMode && enabled;
+    if (shouldRun) {
+      if (!notifier.isRunning) unawaited(notifier.start());
+    } else {
+      if (notifier.isRunning) unawaited(notifier.stop());
+    }
   }
 
   @override
@@ -190,6 +225,14 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     // 同步到 TV 开关（设置-通用）：关闭时隐藏电视机控件
     final tvSyncEnabled =
         ref.watch(settingsProvider.select((s) => s.tvSyncEnabled));
+    // 在线 TV 判定：发现服务实时维护（仅手机/桌面且开关开启时运行）
+    final onlineTvIds = ref.watch(tvDiscoveryProvider).keys.toSet();
+
+    // 设置变化 → 启停发现服务（在线判定依赖它）
+    ref.listen(
+      settingsProvider.select((s) => !s.tvMode && s.tvSyncEnabled),
+      (previous, next) => _syncTvDiscovery(),
+    );
 
     // 切 tab 离开本页 → 丢弃未保存的添加/编辑表单（v1.1.243）
     ref.listen(
@@ -308,8 +351,10 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                 child: dedupedServers.isEmpty
                     ? const _EmptyServerHint()
                     : viewMode == 'grid'
-                        ? _buildGrid(dedupedServers, currentConfig, statsMap)
-                        : _buildList(dedupedServers, currentConfig, statsMap),
+                        ? _buildGrid(
+                            dedupedServers, currentConfig, statsMap, onlineTvIds)
+                        : _buildList(
+                            dedupedServers, currentConfig, statsMap, onlineTvIds),
               ),
           ],
         ),
@@ -321,6 +366,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     List<EmbyServerConfig> dedupedServers,
     EmbyServerConfig? currentConfig,
     Map<String, ServerStats> statsMap,
+    Set<String> onlineTvIds,
   ) {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     final tvSyncEnabled =
@@ -356,9 +402,15 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onEdit: () => _onEditServer(server),
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onStats: () => showResourceStatsSheet(context, server),
+              onServiceSettings: () => showServiceSettingsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
-              // 已配对 TV 且开关开启：显示「同步到 TV」图标（点击推本服务器配置）
-              onSyncToTv: !tvMode && tvSyncEnabled && pairedTv != null
+              // 已配对且该 TV 在线时显示「同步到 TV」图标（离线则隐藏）
+              onSyncToTv: ServerManagerScreen.shouldShowSyncToTvIcon(
+                tvMode: tvMode,
+                tvSyncEnabled: tvSyncEnabled,
+                pairedDeviceId: pairedTv?.deviceId,
+                onlineDeviceIds: onlineTvIds,
+              )
                   ? () => pushServerToTv(context, ref, server)
                   : null,
               // TV 模式：隐藏拖拽把手（布局模式用方向键移动）
@@ -383,6 +435,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     List<EmbyServerConfig> dedupedServers,
     EmbyServerConfig? currentConfig,
     Map<String, ServerStats> statsMap,
+    Set<String> onlineTvIds,
   ) {
     final width = MediaQuery.sizeOf(context).width;
     final crossAxisCount = (width / 220).floor().clamp(2, 4);
@@ -434,9 +487,15 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onEdit: () => _onEditServer(server),
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onStats: () => showResourceStatsSheet(context, server),
+              onServiceSettings: () => showServiceSettingsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
-              // 已配对 TV 且开关开启：显示「同步到 TV」图标（点击推本服务器配置）
-              onSyncToTv: !tvMode && tvSyncEnabled && pairedTv != null
+              // 已配对且该 TV 在线时显示「同步到 TV」图标（离线则隐藏）
+              onSyncToTv: ServerManagerScreen.shouldShowSyncToTvIcon(
+                tvMode: tvMode,
+                tvSyncEnabled: tvSyncEnabled,
+                pairedDeviceId: pairedTv?.deviceId,
+                onlineDeviceIds: onlineTvIds,
+              )
                   ? () => pushServerToTv(context, ref, server)
                   : null,
               tvMode: tvMode,
@@ -1099,6 +1158,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
       routes: newConfig.routes.map((r) => r.toJson()).toList(),
       activeRouteUrl: newConfig.activeRouteUrl,
       autoFailover: newConfig.autoFailover,
+      strmDirectPlay: newConfig.strmDirectPlay,
     );
   }
 

@@ -100,4 +100,32 @@ void main() {
       expect(back.routes.single.id, 'r1');
     });
   });
+
+  group('strmDirectPlay 字段', () {
+    test('默认 false，toJson/fromJson 往返保留', () {
+      final cfg = _cfg();
+      expect(cfg.strmDirectPlay, false);
+      expect(EmbyServerConfig.fromJson(cfg.toJson()).strmDirectPlay, false);
+
+      final on = cfg.copyWith(strmDirectPlay: true);
+      expect(on.strmDirectPlay, true);
+      expect(EmbyServerConfig.fromJson(on.toJson()).strmDirectPlay, true);
+    });
+
+    test('fromJson 缺字段 → 默认 false', () {
+      final back = EmbyServerConfig.fromJson(const {
+        'id': 'a',
+        'serverUrl': 'http://x',
+      });
+      expect(back.strmDirectPlay, false);
+    });
+
+    test('copyWith 只改 strmDirectPlay 保留其余线路字段', () {
+      final cfg = _cfg(routes: const [_direct], activeRouteUrl: _direct.url);
+      final back = cfg.copyWith(strmDirectPlay: true);
+      expect(back.strmDirectPlay, true);
+      expect(back.activeRouteUrl, _direct.url);
+      expect(back.routes.single.id, 'r1');
+    });
+  });
 }

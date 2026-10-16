@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
@@ -51,6 +52,7 @@ Future<void> pumpApp(
         settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
         embyAuthServiceProvider.overrideWith((ref) => FakeEmbyAuthService()),
         embyServiceProvider.overrideWith((ref) => FakeEmbyService()),
+        tvDiscoveryProvider.overrideWith((ref) => FakeTvDiscoveryNotifier()),
       ],
       child: Consumer(
         builder: (context, ref, _) {

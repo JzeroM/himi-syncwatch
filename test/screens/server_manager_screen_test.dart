@@ -68,6 +68,7 @@ Future<ProviderContainer> _pumpScreen(
   AppSettings settings = const AppSettings(),
   EmbyService Function(EmbyServerConfig)? serviceFactory,
   PairedTv? pairedTv,
+  List<TvDeviceInfo> onlineDevices = const [],
   bool remote = false,
 }) async {
   final container = ProviderContainer(
@@ -77,6 +78,11 @@ Future<ProviderContainer> _pumpScreen(
           .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServerListProvider
           .overrideWith((ref) => EmbyServerListNotifier()..setList(servers)),
+      tvDiscoveryProvider.overrideWith(
+        (ref) => FakeTvDiscoveryNotifier({
+          for (final d in onlineDevices) d.deviceId: d,
+        }),
+      ),
       pairedTvProvider.overrideWith(
         (ref) => PairedTvNotifier(
           store: _StaticPairedTvStore(pairedTv),
@@ -129,6 +135,74 @@ Future<void> _pressLongOk(WidgetTester tester) async {
 }
 
 void main() {
+  group('shouldShowSyncToTvIcon 可见性规则', () {
+    test('仅当手机/桌面 + 开关开启 + 已配对 + 在线时显示', () {
+      expect(
+        ServerManagerScreen.shouldShowSyncToTvIcon(
+          tvMode: false,
+          tvSyncEnabled: true,
+          pairedDeviceId: 'tv_1',
+          onlineDeviceIds: const {'tv_1'},
+        ),
+        isTrue,
+      );
+    });
+
+    test('未配对 → 隐藏', () {
+      expect(
+        ServerManagerScreen.shouldShowSyncToTvIcon(
+          tvMode: false,
+          tvSyncEnabled: true,
+          pairedDeviceId: null,
+          onlineDeviceIds: const {'tv_1'},
+        ),
+        isFalse,
+      );
+    });
+
+    test('已配对但不在发现表中（离线）→ 隐藏', () {
+      expect(
+        ServerManagerScreen.shouldShowSyncToTvIcon(
+          tvMode: false,
+          tvSyncEnabled: true,
+          pairedDeviceId: 'tv_1',
+          onlineDeviceIds: const {},
+        ),
+        isFalse,
+      );
+      expect(
+        ServerManagerScreen.shouldShowSyncToTvIcon(
+          tvMode: false,
+          tvSyncEnabled: true,
+          pairedDeviceId: 'tv_1',
+          onlineDeviceIds: const {'tv_other'},
+        ),
+        isFalse,
+      );
+    });
+
+    test('TV 模式或开关关闭 → 隐藏（即使在线）', () {
+      expect(
+        ServerManagerScreen.shouldShowSyncToTvIcon(
+          tvMode: true,
+          tvSyncEnabled: true,
+          pairedDeviceId: 'tv_1',
+          onlineDeviceIds: const {'tv_1'},
+        ),
+        isFalse,
+      );
+      expect(
+        ServerManagerScreen.shouldShowSyncToTvIcon(
+          tvMode: false,
+          tvSyncEnabled: false,
+          pairedDeviceId: 'tv_1',
+          onlineDeviceIds: const {'tv_1'},
+        ),
+        isFalse,
+      );
+    });
+  });
+
   testWidgets('空列表显示引导提示', (tester) async {
     await _pumpScreen(tester);
 
@@ -348,7 +422,7 @@ void main() {
     expect(find.text('切换线路'), findsOneWidget);
     expect(find.text('更换图标'), findsOneWidget);
     expect(find.text('资源统计'), findsOneWidget);
-    expect(find.text('资源设置'), findsOneWidget);
+    expect(find.text('服务设置'), findsOneWidget);
     expect(find.text('删除'), findsOneWidget);
     expect(find.text('上移'), findsNothing, reason: '上移项已移除');
   });
@@ -391,6 +465,27 @@ void main() {
     // 弹层内容：主线路 tile + 添加线路按钮
     expect(find.byKey(const Key('routeTile_main')), findsOneWidget);
     expect(find.byKey(const Key('addRouteButton')), findsOneWidget);
+    expect(find.text('功能开发中'), findsNothing);
+  });
+
+  testWidgets('点击「服务设置」打开服务设置面板（v1.2.8）', (tester) async {
+    await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('服务设置'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('serviceStrmDirectPlay')), findsOneWidget);
+    expect(find.byKey(const ValueKey('serviceRelogin')), findsOneWidget);
+    expect(find.byKey(const ValueKey('serviceChangePassword')), findsOneWidget);
+    expect(find.byKey(const ValueKey('serviceUploadAvatar')), findsOneWidget);
     expect(find.text('功能开发中'), findsNothing);
   });
 
@@ -1210,7 +1305,7 @@ void main() {
       expect(find.byKey(const ValueKey('syncToTvButton')), findsNothing);
     });
 
-    testWidgets('已配对 TV 时列表/网格卡片显示同步图标', (tester) async {
+    testWidgets('已配对且 TV 在线时列表/网格卡片显示同步图标', (tester) async {
       const tv = PairedTv(
         deviceId: 'tv_1',
         name: '客厅电视',
@@ -1221,6 +1316,13 @@ void main() {
       await _pumpScreen(
         tester,
         pairedTv: tv,
+        onlineDevices: [
+          TvDeviceInfo(
+              deviceId: 'tv_1',
+              name: '客厅电视',
+              ip: '192.168.1.10',
+              httpPort: 17894),
+        ],
         servers: [
           _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
           _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
@@ -1232,6 +1334,50 @@ void main() {
       await tester.tap(find.byIcon(Icons.view_module));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('syncToTvButton')), findsNWidgets(2));
+    });
+
+    testWidgets('已配对但 TV 离线（未被发现）时卡片隐藏同步图标', (tester) async {
+      const tv = PairedTv(
+        deviceId: 'tv_1',
+        name: '客厅电视',
+        ip: '192.168.1.10',
+        port: 17894,
+        token: 'tok',
+      );
+      await _pumpScreen(
+        tester,
+        pairedTv: tv,
+        // 发现表为空：TV 离线
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+      expect(find.byKey(const ValueKey('syncToTvButton')), findsNothing);
+    });
+
+    testWidgets('已配对且发现的是另一台 TV 时隐藏同步图标', (tester) async {
+      const tv = PairedTv(
+        deviceId: 'tv_1',
+        name: '客厅电视',
+        ip: '192.168.1.10',
+        port: 17894,
+        token: 'tok',
+      );
+      await _pumpScreen(
+        tester,
+        pairedTv: tv,
+        onlineDevices: [
+          TvDeviceInfo(
+              deviceId: 'tv_other',
+              name: '卧室电视',
+              ip: '192.168.1.11',
+              httpPort: 17894),
+        ],
+        servers: [
+          _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        ],
+      );
+      expect(find.byKey(const ValueKey('syncToTvButton')), findsNothing);
     });
 
     testWidgets('已配对但 TV 模式下不显示同步图标', (tester) async {

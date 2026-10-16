@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
 import 'package:himi_syncwatch/screens/category/category_screen.dart';
 import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
@@ -54,6 +55,7 @@ Future<GoRouter> _pumpApp(
         embyAuthServiceProvider
             .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
         embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
+        tvDiscoveryProvider.overrideWith((ref) => FakeTvDiscoveryNotifier()),
         if (serverList.isNotEmpty)
           embyServerListProvider.overrideWith(
             (ref) => EmbyServerListNotifier()..setList(serverList),

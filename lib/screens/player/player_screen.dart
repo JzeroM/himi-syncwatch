@@ -2647,14 +2647,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final config = ref.read(embyConfigForProvider(effectiveServerId));
       final token = config?.accessToken ?? '';
 
-      final streamUrl = embyService.getStreamUrl(
+      final proxyUrl = embyService.getStreamUrl(
         targetItemId,
         mediaSourceId: effectiveMediaSourceId,
         subtitleStreamIndex: subtitleStreamIndex,
       );
-
-      _currentPlayUrl = streamUrl;
-      _currentToken = token;
 
       // 播放会话上报上下文（切集重生成 sessionId、重置 start 标记）
       _reportService = embyService;
@@ -2662,12 +2659,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _reportMediaSourceId = effectiveMediaSourceId;
       _reportStarted = false;
       _stopReportTimer();
-      // 官方 PlaySessionId（Emby 据此把进度写入 UserData）；失败回退本地生成
-      _playSessionId = await embyService.getPlaySessionId(
-            itemId: targetItemId,
-            mediaSourceId: effectiveMediaSourceId,
-          ) ??
-          const Uuid().v4();
+      // 官方 PlaySessionId（Emby 据此把进度写入 UserData）+ 媒体源
+      // （STRM 直链播放解析 DirectStreamUrl 用）；失败回退本地生成
+      final playbackInfo = await embyService.getPlaybackInfo(
+        itemId: targetItemId,
+        mediaSourceId: effectiveMediaSourceId,
+      );
+      _playSessionId = playbackInfo.playSessionId ?? const Uuid().v4();
+
+      // STRM 直链播放：开启且未请求内嵌字幕时，优先服务器返回的绝对直链
+      // （DirectStreamUrl / .strm 内容 URL），服务器不兼容则回退代理。
+      final strmEnabled =
+          subtitleStreamIndex == null && (config?.strmDirectPlay ?? false);
+      final source = playbackInfo.sourceById(effectiveMediaSourceId);
+      final streamUrl = strmEnabled
+          ? resolveStrmDirectUrl(source: source, proxyUrl: proxyUrl)
+          : proxyUrl;
+      if (strmEnabled && streamUrl != proxyUrl) {
+        LogService().log('Player', 'STRM 直链播放: $streamUrl');
+      }
+
+      _currentPlayUrl = streamUrl;
+      _currentToken = token;
 
       // 重置进度（与首次播放状态一致）
       _position = Duration.zero;

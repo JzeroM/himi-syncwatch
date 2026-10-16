@@ -18,6 +18,10 @@ class EmbyServerConfig {
   /// 自动故障转移：当前线路 API 连续失败时自动切到延迟最低的可达线路。
   final bool autoFailover;
 
+  /// STRM 直链播放：开启后优先使用服务器返回的直链地址（DirectStreamUrl /
+  /// .strm 内容 URL）作为播放地址，服务器不兼容时回退代理取流。
+  final bool strmDirectPlay;
+
   EmbyServerConfig({
     required this.id,
     required this.serverUrl,
@@ -29,6 +33,7 @@ class EmbyServerConfig {
     this.routes = const [],
     this.activeRouteUrl,
     this.autoFailover = true,
+    this.strmDirectPlay = false,
   });
 
   EmbyServerConfig copyWith({
@@ -42,6 +47,7 @@ class EmbyServerConfig {
     String? activeRouteUrl,
     bool clearActiveRoute = false,
     bool? autoFailover,
+    bool? strmDirectPlay,
   }) {
     return EmbyServerConfig(
       id: id,
@@ -55,6 +61,7 @@ class EmbyServerConfig {
       activeRouteUrl:
           clearActiveRoute ? null : (activeRouteUrl ?? this.activeRouteUrl),
       autoFailover: autoFailover ?? this.autoFailover,
+      strmDirectPlay: strmDirectPlay ?? this.strmDirectPlay,
     );
   }
 
@@ -69,6 +76,7 @@ class EmbyServerConfig {
         'routes': routes.map((r) => r.toJson()).toList(),
         'activeRouteUrl': activeRouteUrl,
         'autoFailover': autoFailover,
+        'strmDirectPlay': strmDirectPlay,
       };
 
   factory EmbyServerConfig.fromJson(Map<String, dynamic> json) {
@@ -87,6 +95,7 @@ class EmbyServerConfig {
           const [],
       activeRouteUrl: json['activeRouteUrl'] as String?,
       autoFailover: json['autoFailover'] as bool? ?? true,
+      strmDirectPlay: json['strmDirectPlay'] as bool? ?? false,
     );
   }
 

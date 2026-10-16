@@ -68,6 +68,7 @@ class TvConfigSyncer {
           routes: cfg.routes,
           activeRouteUrl: cfg.activeRouteUrl,
           autoFailover: cfg.autoFailover,
+          strmDirectPlay: cfg.strmDirectPlay,
         );
         merged[idx] = synced;
       } else {
@@ -86,6 +87,7 @@ class TvConfigSyncer {
           routes: cfg.routes,
           activeRouteUrl: cfg.activeRouteUrl,
           autoFailover: cfg.autoFailover,
+          strmDirectPlay: cfg.strmDirectPlay,
         );
         merged.add(synced);
         activateTarget ??= synced;
@@ -101,6 +103,7 @@ class TvConfigSyncer {
         routes: synced.routes.map((r) => r.toJson()).toList(),
         activeRouteUrl: synced.activeRouteUrl,
         autoFailover: synced.autoFailover,
+        strmDirectPlay: synced.strmDirectPlay,
       );
     }
 

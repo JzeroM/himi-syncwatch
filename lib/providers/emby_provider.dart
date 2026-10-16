@@ -127,3 +127,7 @@ final embyServiceProvider = Provider<EmbyService>((ref) {
   }
   return ref.watch(embyServiceFactoryProvider)(config);
 });
+
+/// 未认证 EmbyService 实例（`authenticate` 用：重新登录等场景）。
+/// 抽成 provider 便于测试注入 fake。
+final embyAuthClientProvider = Provider<EmbyService>((ref) => EmbyService());

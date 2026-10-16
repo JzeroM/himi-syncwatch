@@ -1,11 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/library_counts.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/models/tv_device.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
@@ -104,14 +108,17 @@ class FakeEmbyAuthService extends EmbyAuthService {
     List<Map<String, dynamic>> routes = const [],
     String? activeRouteUrl,
     bool autoFailover = true,
+    bool strmDirectPlay = false,
   }) async {
     lastSavedSessionRoutes = routes;
     lastSavedActiveRouteUrl = activeRouteUrl;
+    lastSavedStrmDirectPlay = strmDirectPlay;
   }
 
   /// 最近一次 saveSession 的 routes（编辑保存不丢备用线路回归断言）。
   List<Map<String, dynamic>>? lastSavedSessionRoutes;
   String? lastSavedActiveRouteUrl;
+  bool? lastSavedStrmDirectPlay;
 
   @override
   Future<void> deleteSession(String serverId) async {}
@@ -128,12 +135,17 @@ class FakeEmbyAuthService extends EmbyAuthService {
     required List<Map<String, dynamic>> routes,
     String? activeRouteUrl,
     required bool autoFailover,
+    bool? strmDirectPlay,
   }) async {
     updateSessionRoutesCalls++;
     lastSessionRoutes = routes;
     lastActiveRouteUrl = activeRouteUrl;
     lastAutoFailover = autoFailover;
+    lastStrmDirectPlay = strmDirectPlay;
   }
+
+  /// 最近一次 updateSessionRoutes 的 strmDirectPlay 参数。
+  bool? lastStrmDirectPlay;
 }
 
 /// 不发起真实网络请求的 Emby 服务。
@@ -327,6 +339,30 @@ class FakeEmbyService extends EmbyService {
           {int limit = 10}) async =>
       similar;
 
+  // ---- 服务设置（修改密码 / 上传头像）----
+  final List<({String current, String next})> passwordCalls = [];
+  final List<Uint8List> uploadedImages = [];
+  Object? changePasswordError;
+  Object? uploadImageError;
+
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    passwordCalls.add((current: currentPassword, next: newPassword));
+    if (changePasswordError != null) throw changePasswordError!;
+  }
+
+  @override
+  Future<void> uploadUserImage(
+    Uint8List bytes, {
+    String contentType = 'image/jpeg',
+  }) async {
+    uploadedImages.add(bytes);
+    if (uploadImageError != null) throw uploadImageError!;
+  }
+
   // ---- 添加服务器流程（pingServer / authenticate）----
   Map<String, dynamic> pingResult = const {
     'ServerName': '测试服务器',
@@ -401,4 +437,17 @@ class FakePlayerAdapter implements PlayerAdapter {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// 不启动真实 UDP 监听的 TV 发现通知器替身（预置在线设备表）。
+class FakeTvDiscoveryNotifier extends TvDiscoveryNotifier {
+  FakeTvDiscoveryNotifier([Map<String, TvDeviceInfo> devices = const {}]) {
+    state = devices;
+  }
+
+  @override
+  Future<void> start() async {}
+
+  @override
+  Future<void> stop() async {}
 }

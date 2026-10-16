@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
@@ -51,6 +52,7 @@ Future<ProviderContainer> _pumpShellOnServers(
         ),
       ),
       embyServiceProvider.overrideWith((ref) => FakeEmbyService()),
+      tvDiscoveryProvider.overrideWith((ref) => FakeTvDiscoveryNotifier()),
     ],
   );
   addTearDown(container.dispose);

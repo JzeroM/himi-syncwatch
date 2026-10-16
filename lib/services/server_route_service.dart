@@ -63,6 +63,7 @@ class ServerRouteService {
       routes: config.routes.map((r) => r.toJson()).toList(),
       activeRouteUrl: config.activeRouteUrl,
       autoFailover: config.autoFailover,
+      strmDirectPlay: config.strmDirectPlay,
     );
   }
 
@@ -139,6 +140,12 @@ class ServerRouteService {
   Future<void> setAutoFailover(EmbyServerConfig config, bool enabled) async {
     if (config.autoFailover == enabled) return;
     await persist(config.copyWith(autoFailover: enabled));
+  }
+
+  /// 切换 STRM 直链播放开关。
+  Future<void> setStrmDirectPlay(EmbyServerConfig config, bool enabled) async {
+    if (config.strmDirectPlay == enabled) return;
+    await persist(config.copyWith(strmDirectPlay: enabled));
   }
 
   /// 自动故障转移：测速全部线路，当前线路（激活 URL）不可达时切到

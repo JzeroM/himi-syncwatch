@@ -726,6 +726,16 @@ class EmbyService {
     required String itemId,
     String? mediaSourceId,
   }) async {
+    return (await getPlaybackInfo(itemId: itemId, mediaSourceId: mediaSourceId))
+        .playSessionId;
+  }
+
+  /// `POST /Items/{id}/PlaybackInfo` 完整解析：`PlaySessionId` + `MediaSources`
+  /// （供 STRM 直链播放解析服务器返回的直链地址）。失败返回空结果。
+  Future<EmbyPlaybackInfo> getPlaybackInfo({
+    required String itemId,
+    String? mediaSourceId,
+  }) async {
     try {
       final response = await _dio.post(
         '/Items/$itemId/PlaybackInfo',
@@ -736,10 +746,19 @@ class EmbyService {
         },
         data: <String, dynamic>{},
       );
-      final id = (response.data as Map?)?['PlaySessionId'];
-      return id is String && id.isNotEmpty ? id : null;
+      final data = response.data as Map?;
+      final id = data?['PlaySessionId'];
+      final sources = (data?['MediaSources'] as List?)
+              ?.whereType<Map>()
+              .map((m) => MediaSource.fromJson(Map<String, dynamic>.from(m)))
+              .toList() ??
+          const <MediaSource>[];
+      return EmbyPlaybackInfo(
+        playSessionId: id is String && id.isNotEmpty ? id : null,
+        sources: sources,
+      );
     } on DioException {
-      return null;
+      return const EmbyPlaybackInfo();
     }
   }
 
@@ -876,6 +895,80 @@ class EmbyService {
   String getImageUrl(String itemId, {String type = 'Primary'}) {
     return '${mediaUrl ?? _serverUrl}/Items/$itemId/Images/$type';
   }
+
+  /// 当前用户头像 URL（`GET /Users/{userId}/Images/Primary`）。
+  /// [tag] 非空时附加为查询参数用于刷新缓存（上传头像后破缓存）。
+  String getUserImageUrl({String? tag}) {
+    final base = '${mediaUrl ?? _serverUrl}/Users/$_userId/Images/Primary';
+    return (tag != null && tag.isNotEmpty) ? '$base?tag=$tag' : base;
+  }
+
+  /// 修改当前用户密码（`POST /Users/{userId}/Password`）。
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _dio.post(
+      '/Users/$_userId/Password',
+      data: {'CurrentPw': currentPassword, 'NewPw': newPassword},
+    );
+  }
+
+  /// 上传当前用户头像（`POST /Users/{userId}/Images/Primary`，二进制原图）。
+  Future<void> uploadUserImage(
+    Uint8List bytes, {
+    String contentType = 'image/jpeg',
+  }) async {
+    await _dio.post(
+      '/Users/$_userId/Images/Primary',
+      data: bytes,
+      options: Options(
+        headers: {
+          Headers.contentTypeHeader: contentType,
+          Headers.contentLengthHeader: bytes.length,
+        },
+      ),
+    );
+  }
+}
+
+/// `POST /Items/{id}/PlaybackInfo` 解析结果。
+class EmbyPlaybackInfo {
+  const EmbyPlaybackInfo({this.playSessionId, this.sources = const []});
+
+  final String? playSessionId;
+  final List<MediaSource> sources;
+
+  /// 按媒体源 id 取源；[id] 为空或未命中时回退首个源。
+  MediaSource? sourceById(String? id) {
+    if (id != null && id.isNotEmpty) {
+      for (final s in sources) {
+        if (s.id == id) return s;
+      }
+    }
+    return sources.isNotEmpty ? sources.first : null;
+  }
+}
+
+/// 是否绝对 http(s) URL（STRM 直链判定）。
+bool isAbsoluteHttpUrl(String? url) {
+  if (url == null || url.isEmpty) return false;
+  final lower = url.toLowerCase();
+  return lower.startsWith('http://') || lower.startsWith('https://');
+}
+
+/// STRM 直链播放地址解析：优先服务器返回的绝对直链
+/// （`DirectStreamUrl`），其次 `.strm` 内容 URL（`Path`），均不可用时回退
+/// 代理取流地址 [proxyUrl]（服务器不兼容或返回相对地址时）。
+String resolveStrmDirectUrl({
+  required MediaSource? source,
+  required String proxyUrl,
+}) {
+  final direct = source?.directStreamUrl;
+  if (isAbsoluteHttpUrl(direct)) return direct!;
+  final path = source?.path;
+  if (isAbsoluteHttpUrl(path)) return path!;
+  return proxyUrl;
 }
 
 class LibraryFolder {

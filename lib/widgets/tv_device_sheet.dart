@@ -272,9 +272,6 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
   }
 }
 
-/// 供服务器卡片/列表判断是否展示「同步到 TV」图标按钮。
-bool showServerSyncToTv(PairedTv? paired) => paired != null;
-
 /// 推送单个服务器到已配对 TV。
 Future<void> pushServerToTv(
   BuildContext context,

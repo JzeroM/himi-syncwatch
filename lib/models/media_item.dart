@@ -269,6 +269,18 @@ class MediaSource {
   /// 总码率（Emby `MediaSourceInfo.Bitrate`，bit/s）；版本偏好排序用。
   final int? bitrate;
 
+  /// 服务器返回的直链播放地址（Emby `MediaSourceInfo.DirectStreamUrl`）。
+  final String? directStreamUrl;
+
+  /// 转码播放地址（Emby `MediaSourceInfo.TranscodingUrl`）。
+  final String? transcodingUrl;
+
+  /// 播放协议（Emby `MediaSourceInfo.Protocol`，如 `Http`/`File`）。
+  final String? protocol;
+
+  /// 是否远程源（Emby `MediaSourceInfo.IsRemote`）。
+  final bool isRemote;
+
   MediaSource({
     required this.id,
     required this.name,
@@ -281,6 +293,10 @@ class MediaSource {
     this.defaultAudioStreamIndex,
     this.defaultSubtitleStreamIndex,
     this.bitrate,
+    this.directStreamUrl,
+    this.transcodingUrl,
+    this.protocol,
+    this.isRemote = false,
   });
 
   factory MediaSource.fromJson(Map<String, dynamic> json) {
@@ -299,6 +315,10 @@ class MediaSource {
       defaultAudioStreamIndex: json['DefaultAudioStreamIndex'] as int?,
       defaultSubtitleStreamIndex: json['DefaultSubtitleStreamIndex'] as int?,
       bitrate: json['Bitrate'] as int?,
+      directStreamUrl: json['DirectStreamUrl'] as String?,
+      transcodingUrl: json['TranscodingUrl'] as String?,
+      protocol: json['Protocol'] as String?,
+      isRemote: json['IsRemote'] as bool? ?? false,
     );
   }
 

@@ -140,6 +140,7 @@ class ServerMoreButton extends ConsumerStatefulWidget {
     this.onEdit,
     this.onSwitchLine,
     this.onStats,
+    this.onServiceSettings,
     this.focusNode,
     this.onBack,
     this.onForward,
@@ -154,6 +155,9 @@ class ServerMoreButton extends ConsumerStatefulWidget {
 
   /// 资源统计：打开资源统计底部面板。
   final VoidCallback? onStats;
+
+  /// 服务设置：打开服务设置面板（重新登录/修改密码/上传头像/STRM）。
+  final VoidCallback? onServiceSettings;
 
   /// TV 模式下由页面注入的焦点节点（用于「主体 → ⋮」方向键连线与
   /// 面板关闭回焦）；为空时按钮自建节点。
@@ -198,7 +202,7 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
         const _PanelAction(
             icon: Icons.bar_chart_outlined, label: '资源统计', value: 'stats'),
         const _PanelAction(
-            icon: Icons.tune, label: '资源设置', value: 'resourceSettings'),
+            icon: Icons.tune, label: '服务设置', value: 'serviceSettings'),
         const _PanelAction(
           icon: Icons.delete_outline,
           label: '删除',
@@ -230,6 +234,12 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
       case 'stats':
         if (widget.onStats != null) {
           widget.onStats!();
+        } else {
+          showAppToast(context, '功能开发中');
+        }
+      case 'serviceSettings':
+        if (widget.onServiceSettings != null) {
+          widget.onServiceSettings!();
         } else {
           showAppToast(context, '功能开发中');
         }
@@ -610,6 +620,7 @@ class ServerListCard extends StatelessWidget {
     this.onEdit,
     this.onSwitchLine,
     this.onStats,
+    this.onServiceSettings,
     this.onSyncToTv,
     this.dragHandle,
     this.tvMode = false,
@@ -626,6 +637,9 @@ class ServerListCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onSwitchLine;
   final VoidCallback? onStats;
+
+  /// 服务设置：打开服务设置面板。
+  final VoidCallback? onServiceSettings;
 
   /// 同步本服务器到已配对 TV（null=未配对，不显示电视图标）。
   final VoidCallback? onSyncToTv;
@@ -741,6 +755,7 @@ class ServerListCard extends StatelessWidget {
                         onEdit: onEdit,
                         onSwitchLine: onSwitchLine,
                         onStats: onStats,
+                        onServiceSettings: onServiceSettings,
                         onDelete: onDelete,
                         focusNode: moreButtonNode,
                         onBack: onMoreButtonBack,
@@ -775,6 +790,7 @@ class ServerGridCard extends StatelessWidget {
     this.onEdit,
     this.onSwitchLine,
     this.onStats,
+    this.onServiceSettings,
     this.onSyncToTv,
     this.tvMode = false,
     this.moreButtonNode,
@@ -790,6 +806,9 @@ class ServerGridCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onSwitchLine;
   final VoidCallback? onStats;
+
+  /// 服务设置：打开服务设置面板。
+  final VoidCallback? onServiceSettings;
 
   /// 同步本服务器到已配对 TV（null=未配对，不显示电视图标）。
   final VoidCallback? onSyncToTv;
@@ -844,6 +863,7 @@ class ServerGridCard extends StatelessWidget {
       onEdit: onEdit,
       onSwitchLine: onSwitchLine,
       onStats: onStats,
+      onServiceSettings: onServiceSettings,
       onDelete: onDelete,
       focusNode: moreButtonNode,
       onBack: onMoreButtonBack,
