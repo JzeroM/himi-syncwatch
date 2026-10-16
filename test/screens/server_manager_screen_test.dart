@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1577,6 +1579,71 @@ void main() {
       expect(find.byKey(const Key('routeTile_main')), findsOneWidget,
           reason: '不依赖全局 TvRemoteShortcuts，面板导航由 ⋮ 自身完成');
       await _settleSnackbars(tester);
+    });
+  });
+
+  group('v1.2.2 Windows 编辑服务表单关闭按钮', () {
+    testWidgets('Windows：编辑表单显示关闭按钮，点击回列表', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      await _pumpScreen(
+        tester,
+        servers: [
+          _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+        ],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('serverForm_srv_b')), findsOneWidget);
+
+      expect(find.byKey(const Key('serverFormClose')), findsOneWidget,
+          reason: 'Windows 编辑表单应有关闭按钮');
+
+      await tester.tap(find.byKey(const Key('serverFormClose')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('serverForm_srv_b')), findsNothing,
+          reason: '点关闭收起表单回列表');
+      await _settleSnackbars(tester);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('Windows：新增表单显示关闭按钮，点击收起', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      await _pumpScreen(
+        tester,
+        servers: [_server(id: 'srv_b', name: '备用服务器', serverId: 's2')],
+      );
+
+      await tester.tap(find.byTooltip('添加服务器'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('serverForm_add')), findsOneWidget);
+
+      expect(find.byKey(const Key('serverFormClose')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('serverFormClose')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('serverForm_add')), findsNothing);
+      await _settleSnackbars(tester);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('非 Windows（移动端）：编辑表单无关闭按钮', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      await _pumpScreen(
+        tester,
+        servers: [_server(id: 'srv_b', name: '备用服务器', serverId: 's2')],
+      );
+
+      await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('serverForm_srv_b')), findsOneWidget);
+      expect(find.byKey(const Key('serverFormClose')), findsNothing,
+          reason: '关闭按钮仅 Windows 显示');
+      await _settleSnackbars(tester);
+      debugDefaultTargetPlatformOverride = null;
     });
   });
 }

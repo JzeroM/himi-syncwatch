@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -74,9 +75,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   /// 表单/布局模式变化后同步壳层返回拦截：任一激活则注册，否则清空。
   void _syncBackIntercept() {
     final notifier = ref.read(shellBackInterceptProvider.notifier);
-    final active = _layoutServerId != null ||
-        _showAddServerForm ||
-        _editingServer != null;
+    final active =
+        _layoutServerId != null || _showAddServerForm || _editingServer != null;
     if (active) {
       notifier.register(_onBackIntercept);
     } else {
@@ -127,6 +127,17 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       _showAddServerForm = false;
     });
     _setFormVisible(true);
+    _syncBackIntercept();
+  }
+
+  /// 关闭添加/编辑表单（Windows 表头关闭按钮）：丢弃未保存内容回列表。
+  void _closeServerForm() {
+    if (_editingServer == null && !_showAddServerForm) return;
+    setState(() {
+      _showAddServerForm = false;
+      _editingServer = null;
+    });
+    _setFormVisible(false);
     _syncBackIntercept();
   }
 
@@ -186,107 +197,107 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         }
       },
       child: Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('Emby 服务器'),
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        flexibleSpace: const GlassBackdrop(),
-        // 布局模式下第二行按钮不参与焦点：避免方向键移动卡片时焦点逃逸到顶栏
-        actions: <Widget>[
-          TvAppBarIconButton(
-            key: const ValueKey('serverViewToggle'),
-            icon: viewMode == 'list' ? Icons.view_module : Icons.view_list,
-            tooltip: viewMode == 'list' ? '网格视图' : '列表视图',
-            onPressed: () => ref.read(settingsProvider.notifier).update(
-                  serverViewMode: viewMode == 'list' ? 'grid' : 'list',
-                ),
-          ),
-          TvAppBarIconButton(
-            key: const ValueKey('serverStatsRefresh'),
-            icon: Icons.refresh,
-            tooltip: '刷新延迟与计数',
-            onPressed: _loadStats,
-          ),
-          // TV 设备（局域网发现/配对/推送服务器配置；仅手机/桌面端，
-          // 且设置-通用「同步到 TV」开启时显示）
-          if (!tvMode && tvSyncEnabled)
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: const Text('Emby 服务器'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          flexibleSpace: const GlassBackdrop(),
+          // 布局模式下第二行按钮不参与焦点：避免方向键移动卡片时焦点逃逸到顶栏
+          actions: <Widget>[
             TvAppBarIconButton(
-              key: const ValueKey('tvDeviceButton'),
-              icon: Icons.tv,
-              tooltip: 'TV 设备',
-              onPressed: () => showTvDeviceSheet(context),
+              key: const ValueKey('serverViewToggle'),
+              icon: viewMode == 'list' ? Icons.view_module : Icons.view_list,
+              tooltip: viewMode == 'list' ? '网格视图' : '列表视图',
+              onPressed: () => ref.read(settingsProvider.notifier).update(
+                    serverViewMode: viewMode == 'list' ? 'grid' : 'list',
+                  ),
             ),
-          if (tvMode)
             TvAppBarIconButton(
-              icon: Icons.qr_code_scanner,
-              tooltip: '手机扫码配置',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const QrConfigScreen(mode: 'emby'),
+              key: const ValueKey('serverStatsRefresh'),
+              icon: Icons.refresh,
+              tooltip: '刷新延迟与计数',
+              onPressed: _loadStats,
+            ),
+            // TV 设备（局域网发现/配对/推送服务器配置；仅手机/桌面端，
+            // 且设置-通用「同步到 TV」开启时显示）
+            if (!tvMode && tvSyncEnabled)
+              TvAppBarIconButton(
+                key: const ValueKey('tvDeviceButton'),
+                icon: Icons.tv,
+                tooltip: 'TV 设备',
+                onPressed: () => showTvDeviceSheet(context),
+              ),
+            if (tvMode)
+              TvAppBarIconButton(
+                icon: Icons.qr_code_scanner,
+                tooltip: '手机扫码配置',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const QrConfigScreen(mode: 'emby'),
+                  ),
                 ),
               ),
-            ),
-          // TV 不提供手动添加表单（遥控器无输入法）：走上方扫码入口
-          if (!tvMode)
-            TvAppBarIconButton(
-              icon: _showAddServerForm ? Icons.close : Icons.add,
-              tooltip: _showAddServerForm ? '取消添加' : '添加服务器',
-              onPressed: () {
-                final next = !_showAddServerForm;
-                setState(() {
-                  _showAddServerForm = next;
-                  if (next) _editingServer = null;
-                });
-                _setFormVisible(next);
-                _syncBackIntercept();
-              },
-            ),
-        ]
-            .map((w) => _layoutServerId != null ? ExcludeFocus(child: w) : w)
-            .toList(),
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(height: GlassConfig.topInsetOf(context)),
-          if ((editing != null || _showAddServerForm) && !tvMode)
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.only(
-                    bottom: GlassConfig.bottomReserveOf(context)),
-                child: _AddServerForm(
-                  key: ValueKey('serverForm_${editing?.id ?? 'add'}'),
-                  editServer: editing,
-                  onSuccess: () {
-                    if (!mounted) return;
-                    final isEdit = editing != null;
-                    setState(() {
-                      _showAddServerForm = false;
-                      _editingServer = null;
-                    });
-                    _setFormVisible(false);
-                    _syncBackIntercept();
-                    showAppToast(
-                        context, isEdit ? '服务器已更新' : '服务器已添加');
-                    // 新服务器自动排末尾（home _init 把不在序里的排尾部），
-                    // 进页统计补上它
-                    _loadStats();
-                  },
-                ),
+            // TV 不提供手动添加表单（遥控器无输入法）：走上方扫码入口
+            if (!tvMode)
+              TvAppBarIconButton(
+                icon: _showAddServerForm ? Icons.close : Icons.add,
+                tooltip: _showAddServerForm ? '取消添加' : '添加服务器',
+                onPressed: () {
+                  final next = !_showAddServerForm;
+                  setState(() {
+                    _showAddServerForm = next;
+                    if (next) _editingServer = null;
+                  });
+                  _setFormVisible(next);
+                  _syncBackIntercept();
+                },
               ),
-            )
-          else
-            Expanded(
-              child: dedupedServers.isEmpty
-                  ? const _EmptyServerHint()
-                  : viewMode == 'grid'
-                      ? _buildGrid(dedupedServers, currentConfig, statsMap)
-                      : _buildList(dedupedServers, currentConfig, statsMap),
-            ),
-        ],
-      ),
+          ]
+              .map((w) => _layoutServerId != null ? ExcludeFocus(child: w) : w)
+              .toList(),
+        ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: GlassConfig.topInsetOf(context)),
+            if ((editing != null || _showAddServerForm) && !tvMode)
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.only(
+                      bottom: GlassConfig.bottomReserveOf(context)),
+                  child: _AddServerForm(
+                    key: ValueKey('serverForm_${editing?.id ?? 'add'}'),
+                    editServer: editing,
+                    onCancel: _closeServerForm,
+                    onSuccess: () {
+                      if (!mounted) return;
+                      final isEdit = editing != null;
+                      setState(() {
+                        _showAddServerForm = false;
+                        _editingServer = null;
+                      });
+                      _setFormVisible(false);
+                      _syncBackIntercept();
+                      showAppToast(context, isEdit ? '服务器已更新' : '服务器已添加');
+                      // 新服务器自动排末尾（home _init 把不在序里的排尾部），
+                      // 进页统计补上它
+                      _loadStats();
+                    },
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: dedupedServers.isEmpty
+                    ? const _EmptyServerHint()
+                    : viewMode == 'grid'
+                        ? _buildGrid(dedupedServers, currentConfig, statsMap)
+                        : _buildList(dedupedServers, currentConfig, statsMap),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -320,8 +331,9 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             isGrid: false,
             crossAxisCount: 1,
             isFirst: index == 0,
-            cardBuilder: (moreButtonNode, onMoreButtonBack, onMoreButtonForward) =>
-                ServerListCard(
+            cardBuilder:
+                (moreButtonNode, onMoreButtonBack, onMoreButtonForward) =>
+                    ServerListCard(
               server: server,
               isActive: isActive,
               stats: statsMap[server.id],
@@ -397,8 +409,9 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             isGrid: true,
             crossAxisCount: crossAxisCount,
             isFirst: index == 0,
-            cardBuilder: (moreButtonNode, onMoreButtonBack, onMoreButtonForward) =>
-                ServerGridCard(
+            cardBuilder:
+                (moreButtonNode, onMoreButtonBack, onMoreButtonForward) =>
+                    ServerGridCard(
               server: server,
               isActive: isActive,
               stats: statsMap[server.id],
@@ -432,7 +445,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             color: Colors.transparent,
             child: Opacity(
               opacity: 0.85,
-              child: SizedBox(width: cellWidth, height: cellHeight, child: card),
+              child:
+                  SizedBox(width: cellWidth, height: cellHeight, child: card),
             ),
           ),
           childWhenDragging: Opacity(opacity: 0.35, child: card),
@@ -894,10 +908,18 @@ class _TvCardFocusState extends State<_TvCardFocus> {
 class _AddServerForm extends ConsumerStatefulWidget {
   final VoidCallback onSuccess;
 
+  /// 关闭/取消表单（Windows 端表头关闭按钮）。为空则不显示关闭按钮。
+  final VoidCallback? onCancel;
+
   /// 非空 = 编辑模式：预填该服务器字段，保存走编辑逻辑（保留线路）。
   final EmbyServerConfig? editServer;
 
-  const _AddServerForm({super.key, required this.onSuccess, this.editServer});
+  const _AddServerForm({
+    super.key,
+    required this.onSuccess,
+    this.onCancel,
+    this.editServer,
+  });
 
   @override
   ConsumerState<_AddServerForm> createState() => _AddServerFormState();
@@ -931,8 +953,8 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
       _pathController = TextEditingController(text: parsed?.path ?? '');
       _portController = TextEditingController(
           text: (parsed?.port.isNotEmpty ?? false) ? parsed!.port : '8096');
-      _useHttps = parsed?.useHttps ??
-          server.serverUrl.trim().startsWith('https://');
+      _useHttps =
+          parsed?.useHttps ?? server.serverUrl.trim().startsWith('https://');
     } else {
       _hostController = TextEditingController();
       _pathController = TextEditingController();
@@ -1067,6 +1089,10 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
 
   @override
   Widget build(BuildContext context) {
+    // Windows 端：编辑/新增表单是整页内联替换（非路由），无返回按钮，
+    // 故在表头补一个关闭按钮；其他平台保持原样（手机走系统返回）。
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final showHeader = _isEdit || (isWindows && widget.onCancel != null);
     return Padding(
       padding: const EdgeInsets.all(16),
       child: GlassContainer(
@@ -1075,16 +1101,28 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_isEdit)
+            if (showHeader)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  '编辑服务器',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                child: Row(
+                  children: [
+                    Text(
+                      _isEdit ? '编辑服务器' : '添加服务器',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (isWindows && widget.onCancel != null)
+                      IconButton(
+                        key: const Key('serverFormClose'),
+                        icon: const Icon(Icons.close),
+                        tooltip: '关闭',
+                        onPressed: widget.onCancel,
+                      ),
+                  ],
                 ),
               ),
             if (_serverName != null)
@@ -1221,8 +1259,8 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
         children: [
           Expanded(
             child: Text(label,
-                style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w500)),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
           ),
           Switch(value: value, onChanged: onChanged),
         ],

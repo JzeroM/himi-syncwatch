@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
 
@@ -396,151 +397,150 @@ class _SeasonEpisodeRow extends StatelessWidget {
 
     final primary = Theme.of(context).colorScheme.primary;
 
-    return SizedBox(
+    return HoverScrollRow(
       key: rowKey,
       height: 240,
-      child: ListView.builder(
-        // TV 焦点框放大溢出内容盒，默认 clip 会裁边
-        clipBehavior: Clip.none,
-        controller: controller,
-        scrollDirection: Axis.horizontal,
-        itemCount: episodes.length,
-        itemBuilder: (context, index) {
-          final ep = episodes[index];
-          final selected = ep.id == highlightEpisodeId;
-          final favorited = favoriteIds.contains(ep.id);
-          final watched = watchedIds.contains(ep.id);
-          final card = Container(
-            key: Key('episodeCard_${ep.id}'),
-            width: _cardWidth,
-            padding: const EdgeInsets.all(3),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 选中描边仅包图片，不包文字/简介区
-                Container(
-                  key: Key('episodeCardImage_${ep.id}'),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: selected ? primary : Colors.transparent,
-                      width: 2,
-                    ),
+      controller: controller,
+      // TV 焦点框放大溢出内容盒，默认 clip 会裁边
+      clipBehavior: Clip.none,
+      // 横卡自带 3px 内边距：行不再额外加水平 padding，保持原布局
+      padding: EdgeInsets.zero,
+      itemCount: episodes.length,
+      itemBuilder: (context, index) {
+        final ep = episodes[index];
+        final selected = ep.id == highlightEpisodeId;
+        final favorited = favoriteIds.contains(ep.id);
+        final watched = watchedIds.contains(ep.id);
+        final card = Container(
+          key: Key('episodeCard_${ep.id}'),
+          width: _cardWidth,
+          padding: const EdgeInsets.all(3),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 选中描边仅包图片，不包文字/简介区
+              Container(
+                key: Key('episodeCardImage_${ep.id}'),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: selected ? primary : Colors.transparent,
+                    width: 2,
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          EmbyImage(
-                            url: ep.posterUrl,
-                            fit: BoxFit.cover,
-                            cacheWidth: (_cardWidth *
-                                    MediaQuery.devicePixelRatioOf(context))
-                                .round(),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        EmbyImage(
+                          url: ep.posterUrl,
+                          fit: BoxFit.cover,
+                          cacheWidth: (_cardWidth *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .round(),
+                        ),
+                        // 每集收藏爱心（图片右上角；触摸操作）
+                        if (onToggleFavorite != null)
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: GestureDetector(
+                              key: Key('episodeFavorite_${ep.id}'),
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => onToggleFavorite!(ep.id),
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.45),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  favorited
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  size: 16,
+                                  color: favorited ? primary : Colors.white,
+                                ),
+                              ),
+                            ),
                           ),
-                          // 每集收藏爱心（图片右上角；触摸操作）
-                          if (onToggleFavorite != null)
-                            Positioned(
-                              top: 4,
-                              right: 4,
-                              child: GestureDetector(
-                                key: Key('episodeFavorite_${ep.id}'),
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () => onToggleFavorite!(ep.id),
-                                child: Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.45),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    favorited
-                                        ? Icons.favorite
-                                        : Icons.favorite_border,
-                                    size: 16,
-                                    color: favorited ? primary : Colors.white,
-                                  ),
+                        // 每集已观看对勾（图片右下角；触摸操作）
+                        if (onToggleWatched != null)
+                          Positioned(
+                            bottom: 4,
+                            right: 4,
+                            child: GestureDetector(
+                              key: Key('episodeWatched_${ep.id}'),
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => onToggleWatched!(ep.id),
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.45),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  watched
+                                      ? Icons.check_circle
+                                      : Icons.check_circle_outline,
+                                  size: 16,
+                                  color: watched ? primary : Colors.white,
                                 ),
                               ),
                             ),
-                          // 每集已观看对勾（图片右下角；触摸操作）
-                          if (onToggleWatched != null)
-                            Positioned(
-                              bottom: 4,
-                              right: 4,
-                              child: GestureDetector(
-                                key: Key('episodeWatched_${ep.id}'),
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () => onToggleWatched!(ep.id),
-                                child: Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.45),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    watched
-                                        ? Icons.check_circle
-                                        : Icons.check_circle_outline,
-                                    size: 16,
-                                    color: watched ? primary : Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '第${ep.indexNumber ?? 0}集 ${ep.name}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '第${ep.indexNumber ?? 0}集 ${ep.name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  _metaLine(ep),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  ep.overview ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, height: 1.4),
-                ),
-              ],
-            ),
-          );
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _metaLine(ep),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                ep.overview ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, height: 1.4),
+              ),
+            ],
+          ),
+        );
 
-          return Padding(
-            padding: const EdgeInsets.only(right: _cardGap),
-            child: tvMode
-                ? TvFocusable(
-                    radius: 12,
-                    onTap: () => onEpisodeSelect(ep),
-                    child: card,
-                  )
-                : GestureDetector(
-                    // opaque：占位图窄/未加载时卡片中心也命中
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onEpisodeSelect(ep),
-                    child: card,
-                  ),
-          );
-        },
-      ),
+        return Padding(
+          padding: const EdgeInsets.only(right: _cardGap),
+          child: tvMode
+              ? TvFocusable(
+                  radius: 12,
+                  onTap: () => onEpisodeSelect(ep),
+                  child: card,
+                )
+              : GestureDetector(
+                  // opaque：占位图窄/未加载时卡片中心也命中
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onEpisodeSelect(ep),
+                  child: card,
+                ),
+        );
+      },
     );
   }
 

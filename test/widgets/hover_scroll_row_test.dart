@@ -97,4 +97,43 @@ void main() {
     expect(find.byKey(_left), findsNothing);
     expect(find.byKey(_right), findsNothing);
   });
+
+  testWidgets('外部 controller：复用且由持有者管理（箭头驱动其滚动）', (tester) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 300,
+            height: 120,
+            child: HoverScrollRow(
+              height: 120,
+              controller: controller,
+              itemCount: 20,
+              itemBuilder: (context, index) => SizedBox(
+                width: 100,
+                height: 110,
+                child: ColoredBox(
+                  color: Colors.blue,
+                  child: Text('item$index'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    expect(controller.hasClients, isTrue, reason: '外部 controller 应被接入');
+    await _hover(tester);
+    expect(find.byKey(_right), findsOneWidget);
+
+    final before = controller.offset;
+    await tester.tap(find.byKey(_right));
+    await tester.pumpAndSettle();
+    expect(controller.offset, greaterThan(before),
+        reason: '点箭头应通过外部 controller 滚动');
+  });
 }

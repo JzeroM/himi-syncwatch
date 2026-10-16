@@ -1,3 +1,7 @@
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride, TargetPlatform;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -333,6 +337,81 @@ void main() {
 
       expect(taps, 1, reason: '短按 OK 触发 onTap');
       expect(longs, 0);
+    });
+  });
+
+  group('桌面鼠标右键上下文菜单（v1.2.2）', () {
+    int taps = 0;
+    int longs = 0;
+
+    Widget lpHost({required bool tvMode}) {
+      final container = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith(
+              (ref) => FakeSettingsNotifier(AppSettings(tvMode: tvMode))),
+        ],
+      );
+      addTearDown(container.dispose);
+      return UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: TvFocusable(
+                autofocus: true,
+                onTap: () => taps++,
+                onLongPress: () => longs++,
+                child:
+                    const SizedBox(width: 80, height: 40, child: Text('card')),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    setUp(() {
+      taps = 0;
+      longs = 0;
+    });
+
+    testWidgets('桌面：右键触发 onLongPress（菜单），不触发 onTap', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      await tester.pumpWidget(lpHost(tvMode: false));
+      await tester.pump();
+
+      // 模拟鼠标右键（secondary tap）
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('card')),
+              buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
+      await gesture.up();
+      await tester.pump();
+
+      expect(longs, 1, reason: '右键应打开上下文菜单');
+      expect(taps, 0, reason: '右键不触发 onTap');
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('桌面：左键长按不再触发菜单（仅右键）', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      await tester.pumpWidget(lpHost(tvMode: false));
+      await tester.pump();
+
+      await tester.longPress(find.text('card'));
+      await tester.pump();
+      expect(longs, 0, reason: '桌面端左键长按应被禁用');
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('移动端：仍为左键长按触发菜单（无右键）', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      await tester.pumpWidget(lpHost(tvMode: false));
+      await tester.pump();
+
+      await tester.longPress(find.text('card'));
+      await tester.pump();
+      expect(longs, 1, reason: '触屏端保留长按触发');
+      debugDefaultTargetPlatformOverride = null;
     });
   });
 }

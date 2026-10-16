@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -51,10 +52,18 @@ class TvFocusable extends ConsumerWidget {
     // 只订阅 tvMode：整对象 watch 会让设置页任何写入导致屏上全部
     // TvFocusable 同帧重建（详情页多卡片时焦点移动掉帧体感来源之一）。
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    // 桌面鼠标端：上下文菜单改用右键（左键长按禁用，避免与拖动冲突）。
+    final desktopMouse = defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+    final effectiveLongPress = desktopMouse ? null : onLongPress;
+    final secondaryTap =
+        desktopMouse && onLongPress != null ? onLongPress : null;
     if (!tvMode || !enabled) {
       return GestureDetector(
         onTap: onTap,
-        onLongPress: onLongPress,
+        onLongPress: effectiveLongPress,
+        onSecondaryTap: secondaryTap,
         behavior: HitTestBehavior.opaque,
         child: child,
       );
@@ -64,7 +73,8 @@ class TvFocusable extends ConsumerWidget {
 
     return _TvFocusableActive(
       onTap: onTap,
-      onLongPress: onLongPress,
+      onLongPress: effectiveLongPress,
+      onSecondaryTap: secondaryTap,
       autofocus: autofocus,
       focusNode: focusNode,
       radius: radius,
@@ -80,6 +90,7 @@ class _TvFocusableActive extends StatefulWidget {
   const _TvFocusableActive({
     required this.onTap,
     this.onLongPress,
+    this.onSecondaryTap,
     required this.autofocus,
     this.focusNode,
     required this.radius,
@@ -91,6 +102,9 @@ class _TvFocusableActive extends StatefulWidget {
 
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+
+  /// 桌面鼠标右键触发（取代左键长按，用于上下文菜单）。
+  final VoidCallback? onSecondaryTap;
   final bool autofocus;
   final FocusNode? focusNode;
   final double radius;
@@ -183,6 +197,7 @@ class _TvFocusableActiveState extends State<_TvFocusableActive> {
           return GestureDetector(
             onTap: widget.onTap,
             onLongPress: widget.onLongPress,
+            onSecondaryTap: widget.onSecondaryTap,
             behavior: HitTestBehavior.opaque,
             // AnimatedScale 在最外层：描边与内容一起缩放，环始终完整
             // 包住放大后的内容（环在缩放内层时内容会溢出环外 3%/侧）。

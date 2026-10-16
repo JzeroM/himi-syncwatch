@@ -15,6 +15,7 @@ class HoverScrollRow extends StatefulWidget {
     required this.itemBuilder,
     this.padding = const EdgeInsets.symmetric(horizontal: 12),
     this.clipBehavior = Clip.none,
+    this.controller,
   });
 
   final double height;
@@ -25,12 +26,18 @@ class HoverScrollRow extends StatefulWidget {
   /// TV 焦点框 1.06 放大溢出内容盒，默认 `Clip.none` 不裁上下边。
   final Clip clipBehavior;
 
+  /// 外部滚动控制器（如详情页选中集自动定位）。为空则内部自建并负责释放；
+  /// 非空时复用且不释放（由持有者管理）。
+  final ScrollController? controller;
+
   @override
   State<HoverScrollRow> createState() => _HoverScrollRowState();
 }
 
 class _HoverScrollRowState extends State<HoverScrollRow> {
-  final ScrollController _controller = ScrollController();
+  late final ScrollController _controller =
+      widget.controller ?? ScrollController();
+  late final bool _ownsController = widget.controller == null;
   bool _hovered = false;
   bool _showLeft = false;
   bool _showRight = false;
@@ -53,7 +60,7 @@ class _HoverScrollRowState extends State<HoverScrollRow> {
   @override
   void dispose() {
     _controller.removeListener(_recompute);
-    _controller.dispose();
+    if (_ownsController) _controller.dispose();
     super.dispose();
   }
 

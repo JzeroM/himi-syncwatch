@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -594,6 +595,42 @@ void main() {
       for (final lv in horizontals) {
         expect(lv.clipBehavior, Clip.none);
       }
+    });
+
+    testWidgets('剧集横卡：鼠标悬停显示右翻页箭头（桌面可滚动）', (tester) async {
+      tester.view.physicalSize = const Size(500, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final many = [
+        for (var i = 1; i <= 10; i++) ep('m$i', season: 1, number: i),
+      ];
+      await _pumpDetail(
+        tester,
+        item: series,
+        emby: FakeEmbyService(
+          item: series,
+          itemsByParent: {'sv1': many},
+          seasons: seasons,
+        ),
+      );
+
+      final card = find.byKey(const Key('episodeCard_m1'));
+      await tester.ensureVisible(card);
+      await tester.pump();
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+      await gesture.moveTo(tester.getCenter(card));
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('scrollArrowRight')), findsOneWidget,
+          reason: '剧集横卡溢出且悬停应显示右翻页箭头');
+      expect(find.byKey(const ValueKey('scrollArrowLeft')), findsNothing,
+          reason: '在最左只显示右箭头');
     });
 
     testWidgets('点第2季卡 → 上方剧集列表切换为第2季', (tester) async {

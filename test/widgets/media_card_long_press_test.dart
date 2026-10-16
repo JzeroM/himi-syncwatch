@@ -1,3 +1,7 @@
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride, TargetPlatform;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,5 +77,34 @@ void main() {
     await tester.longPress(find.byType(PosterCard));
     await tester.pump();
     expect(find.byType(PosterCard), findsOneWidget);
+  });
+
+  testWidgets('桌面端：右键 PosterCard 触发菜单回调并携带矩形（v1.2.2）',
+      (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+
+    Rect? got;
+    final item = MediaItem(id: 'm3', name: '右键影片', type: 'Movie');
+    await tester.pumpWidget(_host(
+      PosterCard(
+        item: item,
+        width: 120,
+        onTap: () {},
+        onLongPress: (r) => got = r,
+      ),
+    ));
+    await tester.pump();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(PosterCard)),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.up();
+    await tester.pump();
+
+    expect(got, isNotNull, reason: '桌面右键应打开菜单回调');
+    expect(got!.width, greaterThan(0));
+    debugDefaultTargetPlatformOverride = null;
   });
 }
