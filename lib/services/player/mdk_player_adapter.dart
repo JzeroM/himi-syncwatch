@@ -131,8 +131,7 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   set playbackRate(double value) => _player.playbackRate = value;
 
   @override
-  AdapterMediaStatus get mediaStatus =>
-      AdapterMediaStatus(_player.mediaStatus.rawValue);
+  AdapterMediaStatus get mediaStatus => mapMediaStatus(_player.mediaStatus);
 
   @override
   int buffered() => _player.buffered();
@@ -189,9 +188,9 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   @override
   Stream<({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>
-      get onMediaStatus => _player.onMediaStatus.map((e) => (
-            oldValue: AdapterMediaStatus(e.oldValue.rawValue),
-            newValue: AdapterMediaStatus(e.newValue.rawValue),
+  get onMediaStatus => _player.onMediaStatus.map((e) => (
+            oldValue: mapMediaStatus(e.oldValue),
+            newValue: mapMediaStatus(e.newValue),
           ));
 
   @override
@@ -302,6 +301,50 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       default:
         return AdapterColorSpace.unknown;
     }
+  }
+
+  /// mdk.MediaStatus → AdapterMediaStatus 位翻译。
+  ///
+  /// **不可透传 rawValue**：mdk 原生位布局与 AdapterMediaStatus 的顺序位
+  /// 不同——mdk `prepared=0x100`、`end=0x40`、`seeking=0x80`，而
+  /// AdapterMediaStatus 为 `prepared=0x08`、`buffered=0x40`、`end=0x80`、
+  /// `seeking=0x100`。直接透传会让 mdk 的 `end(0x40)` 被读成 `buffered`、
+  /// `seeking(0x80)` 被读成 `end`，导致 mdk 永不上报播完（不自动下一集），
+  /// 且 buffering/stalled/buffered 卡顿位全部错位。故逐位翻译。
+  @visibleForTesting
+  static AdapterMediaStatus mapMediaStatus(mdk.MediaStatus s) {
+    var v = 0;
+    if (s.test(mdk.MediaStatus.unloaded)) {
+      v |= AdapterMediaStatus.unloaded.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.loading)) {
+      v |= AdapterMediaStatus.loading.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.loaded)) {
+      v |= AdapterMediaStatus.loaded.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.prepared)) {
+      v |= AdapterMediaStatus.prepared.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.stalled)) {
+      v |= AdapterMediaStatus.stalled.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.buffering)) {
+      v |= AdapterMediaStatus.buffering.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.buffered)) {
+      v |= AdapterMediaStatus.buffered.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.end)) {
+      v |= AdapterMediaStatus.end.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.seeking)) {
+      v |= AdapterMediaStatus.seeking.rawValue;
+    }
+    if (s.test(mdk.MediaStatus.invalid)) {
+      v |= AdapterMediaStatus.invalid.rawValue;
+    }
+    return AdapterMediaStatus(v);
   }
 
   static AdapterPlaybackState _mapState(mdk.PlaybackState s) {

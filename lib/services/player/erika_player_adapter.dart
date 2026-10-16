@@ -62,6 +62,12 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   bool _buffering = false;
   bool _errored = false;
 
+  /// 播完标记（EOS）：Erika 在 EOF 会以 `stateChanged→stopped` 或
+  /// `error` 事件收尾，且从不产生 `end` 位。位置≈时长时置位，使
+  /// [_mapStatus] 上报 [AdapterMediaStatus.end]（上层据此自动下一集），
+  /// 而非落回 unloaded/invalid（后者会误弹「播放出错，正在重试」）。
+  bool _ended = false;
+
   /// 字幕样式覆盖位：Erika 需置 `overrideMask` 才会把字段推到带自身样式的字幕上
   /// （ASS）；纯文本(SRT)本即以回退样式生效。位图(PGS)不适用。
   static const int _subtitleOverrideMask = kErikaSubtitleOverrideMargins |
@@ -149,8 +155,24 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // （索引 0）→ 若逐事件套用会被打回 stopped，导致播放/暂停控件与弹幕
     // 播放态反复抖动。
     if (appliesStateKind(e.kind)) {
-      _errored = e.kind == ErikaEventKind.error;
       final ns = _mapState(e.state);
+      final atEnd = _isAtEndOfMedia();
+      if (e.kind == ErikaEventKind.error) {
+        // Erika 在 EOF 以 error 事件收尾：位置已到结尾 → 判为播完，
+        // 不置错误位（否则 invalid → 上层弹「播放出错，正在重试」且不切集）。
+        if (atEnd) {
+          _ended = true;
+          _errored = false;
+        } else {
+          _errored = true;
+        }
+      } else {
+        _errored = false;
+        // stateChanged→stopped 且位置≈时长：同样判为播完（有些平台不报 error）。
+        if (atEnd && ns == AdapterPlaybackState.stopped) {
+          _ended = true;
+        }
+      }
       if (ns != _state) {
         final old = _state;
         _state = ns;
@@ -195,6 +217,10 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
     _lastPositionMs = ms;
     _lastPositionUpdate = now;
+    // 正常推进（远离结尾）→ 清除播完标记（重播/seek 回退后恢复）。
+    if (_ended && (_durationMs <= 0 || ms < _durationMs - 1000)) {
+      _ended = false;
+    }
   }
 
   AdapterPlaybackState _mapState(ErikaPlaybackState s) {
@@ -213,13 +239,54 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
   }
 
-  AdapterMediaStatus _mapStatus() {
-    if (_errored) return AdapterMediaStatus.invalid;
-    if (_state == AdapterPlaybackState.stopped) {
+  /// 位置是否到达结尾窗口（EOS 判定用）。
+  bool _isAtEndOfMedia() {
+    final fence = _seekFenceUntil;
+    return classifyEndOfMedia(
+      positionMs: position,
+      durationMs: _durationMs,
+      seekFenceActive: fence != null && DateTime.now().isBefore(fence),
+    );
+  }
+
+  /// EOS 判定（纯函数，供测试）：位置进入结尾窗口即视为播完。
+  ///
+  /// duration 未就绪或处于 seek 栅栏期时返回 false（视为普通事件/错误）。
+  /// 阈值 1000ms：Erika 最后一个 position 采样通常略早于时长。
+  @visibleForTesting
+  static bool classifyEndOfMedia({
+    required int positionMs,
+    required int durationMs,
+    required bool seekFenceActive,
+  }) {
+    if (durationMs <= 0 || seekFenceActive) return false;
+    return positionMs >= durationMs - 1000;
+  }
+
+  AdapterMediaStatus _mapStatus() => resolveStatus(
+        errored: _errored,
+        ended: _ended,
+        state: _state,
+        buffering: _buffering,
+        durationMs: _durationMs,
+      );
+
+  /// 状态位解析（纯函数，供测试）：`errored` 优先于 `ended`。
+  @visibleForTesting
+  static AdapterMediaStatus resolveStatus({
+    required bool errored,
+    required bool ended,
+    required AdapterPlaybackState state,
+    required bool buffering,
+    required int durationMs,
+  }) {
+    if (errored) return AdapterMediaStatus.invalid;
+    if (ended) return AdapterMediaStatus.end;
+    if (state == AdapterPlaybackState.stopped) {
       return AdapterMediaStatus.unloaded;
     }
-    if (_buffering) return AdapterMediaStatus.buffering;
-    if (_durationMs > 0) return AdapterMediaStatus.loaded;
+    if (buffering) return AdapterMediaStatus.buffering;
+    if (durationMs > 0) return AdapterMediaStatus.loaded;
     return AdapterMediaStatus.loading;
   }
 
@@ -232,6 +299,7 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   set state(AdapterPlaybackState value) {
     switch (value) {
       case AdapterPlaybackState.playing:
+        _ended = false;
         _fire(() => _erikaPlayer.play());
       case AdapterPlaybackState.paused:
         _fire(() => _erikaPlayer.pause());
@@ -257,6 +325,8 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   set media(String uri) {
     _mediaUri = uri;
+    _ended = false;
+    _errored = false;
   }
 
   @override

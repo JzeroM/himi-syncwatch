@@ -455,6 +455,29 @@ class PlayerScreen extends ConsumerStatefulWidget {
     return positionMs >= durationMs - 1000;
   }
 
+  /// 观众收到携带 playUrl 的同步消息时是否应触发起播（纯函数，供测试）。
+  ///
+  /// 房主 `join` 处理会先发带 playUrl 的 roomInfo、再发同 URL 的 syncPlay，
+  /// 流为空时 `requestRoomInfo` 响应还会再带一次；这些消息都会命中观众侧
+  /// 起播入口。同一 URL 若被并发/连续触发，会各自执行
+  /// `media=`/`prepare()`/`_ensureTexture()`（HDR 时还双重重建引擎）→ 竞态
+  /// 黑屏。因此：
+  /// - 空 URL → 否；
+  /// - 与当前播放 URL 相同 → 否（去重）；
+  /// - 与在飞 URL 相同 → 否（并发单飞）；
+  /// - 否则 → 是。
+  @visibleForTesting
+  static bool shouldStartAudiencePlay({
+    required String playUrl,
+    required String currentPlayUrl,
+    required String? inFlightPlayUrl,
+  }) {
+    if (playUrl.isEmpty) return false;
+    if (playUrl == currentPlayUrl) return false;
+    if (inFlightPlayUrl != null && playUrl == inFlightPlayUrl) return false;
+    return true;
+  }
+
   /// 加载转圈遮罩可见性（纯函数，供测试）：切集遮罩恒可见；
   /// 或播放器已就绪但时长仍为 0（首帧未出）。加载期间强制显示
   /// 顶栏与底栏控件——黑屏转圈时用户仍可点返回退出。
@@ -684,6 +707,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _syncPaused = false;
   bool _isSyncing = false;
   int _playRequestId = 0;
+
+  /// 观众播放单飞标记：当前正在执行的 [_playFromUrl] 的 URL。
+  ///
+  /// 观众可能对**同一 URL**并发收到多条触发消息（房主 join 路径先 roomInfo
+  /// 后 syncPlay、流为空时 requestRoomInfo 响应等）。两条 `_playFromUrl`
+  /// 并发会各自执行 `media=`/`prepare()`/`_ensureTexture()`，并在 HDR 场景
+  /// 双重重建引擎 → EGL/纹理竞态黑屏。同 URL 在飞时丢弃后续调用。
+  String? _inFlightPlayUrl;
 
   /// 跨设备时钟偏移估计（观众用）：消除房主/观众系统时钟差导致的
   /// 恒定进度偏差。房主不用（其 ts 即本机时钟）。
@@ -2793,7 +2824,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }) async {
     if (!mounted) return;
 
+    // 同 URL 单飞：丢弃并发重复调用（roomInfo+syncPlay+requestRoomInfo 响应
+    // 可能对同一 URL 先后/并发触发），避免并发 media=/prepare/纹理/引擎重建。
+    if (playUrl == _inFlightPlayUrl) {
+      LogService().log('Sync', '忽略重复 _playFromUrl（同 URL 在飞）');
+      return;
+    }
+
     final requestId = ++_playRequestId;
+    _inFlightPlayUrl = playUrl;
+    // 同步写入当前播放地址（原先在 media= 之后写，多个 await 前守卫失效）：
+    // 使 roomInfo 的 `playUrl != _currentPlayUrl` 去重立即生效。
+    _currentPlayUrl = playUrl;
+    _currentToken = token;
     _isSyncing = true;
     try {
       _addBroadcastMessage('同步主持人播放');
@@ -2857,19 +2900,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return;
       }
 
+      // 抢占复查（关闭 2850→2891 之间的守卫空洞）：被更新请求抢占则不再触碰
+      // media/prepare/纹理，避免落败调用在赢家流程上叠加渲染操作。
+      if (requestId != _playRequestId || !mounted) return;
+
       _isSwitchingMedia = true;
       if (Platform.isAndroid && ref.read(settingsProvider).hdrGlWorkaround) {
         _player.setColorSpace(PlayerScreen.outputColorSpace());
       }
+      // _currentPlayUrl/_currentToken 已在入口同步写入。
       _player.media = playUrl;
-      // 回写当前播放 URL/Token（v1.1.222）：观众回前台恢复
-      // （_recoverVideoAfterResume）依赖这两个字段，此前观众路径从不
-      // 写入 → 恢复恒早退（死路径）。
-      _currentPlayUrl = playUrl;
-      _currentToken = token;
       await _player.prepare();
       _player.playbackRate = _speed;
-      if (!mounted) return;
+      if (requestId != _playRequestId || !mounted) return;
 
       // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
       await _ensureTexture();
@@ -2948,7 +2991,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       LogService().log('Sync', '播放器打开失败: $e');
       _addBroadcastMessage('同步播放失败: $e');
     } finally {
-      if (requestId == _playRequestId) _isSyncing = false;
+      if (requestId == _playRequestId) {
+        _isSyncing = false;
+        _inFlightPlayUrl = null;
+      }
     }
   }
 
@@ -3813,12 +3859,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             '收到 syncPlay, pos=${position.toStringAsFixed(1)}s, urlLen=${playUrl?.length ?? 0}');
         // 流随 syncPlay 下发（C3）：roomInfo 丢失/晚到时仍能拿到字幕音轨
         _applyStreamsFromRoomInfo(message);
-        if (playUrl != null && playUrl.isNotEmpty) {
+        // 与 roomInfo 路径同款去重（v1.2.7 修 HDR 观众黑屏）：房主 join 时
+        // 先 roomInfo(带 URL) 后 syncPlay(同 URL)，两条都会触发起播 → 并发
+        // media=/prepare/引擎重建 → 竞态黑屏。_playFromUrl 入口已同步写入
+        // _currentPlayUrl，故同 URL 的后续消息在此被拦截。
+        if (playUrl != null &&
+            PlayerScreen.shouldStartAudiencePlay(
+              playUrl: playUrl,
+              currentPlayUrl: _currentPlayUrl,
+              inFlightPlayUrl: _inFlightPlayUrl,
+            )) {
           _playFromUrl(
               playUrl: playUrl,
               token: token ?? '',
               position: position,
               epIndex: epIndex);
+        } else if (playUrl != null && playUrl.isNotEmpty) {
+          _logSyncEvent('syncPlay 同 URL 已就绪，跳过重复起播');
         }
         break;
       case AppConstants.actionRemoveEpisode:
@@ -3901,7 +3958,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 3. playUrl：仅当与当前播放地址不同才起播（避免重复 roomInfo 重启）
     final playUrl = message['playUrl'] as String?;
     final token = message['token'] as String?;
-    if (playUrl != null && playUrl.isNotEmpty && playUrl != _currentPlayUrl) {
+    if (playUrl != null &&
+        PlayerScreen.shouldStartAudiencePlay(
+          playUrl: playUrl,
+          currentPlayUrl: _currentPlayUrl,
+          inFlightPlayUrl: _inFlightPlayUrl,
+        )) {
       _playFromUrl(playUrl: playUrl, token: token ?? '');
     }
   }
