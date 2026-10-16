@@ -317,25 +317,55 @@ jobs:
             Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
           }
 
-      # 捆绑 MSVC143 CRT：Flutter Windows release 动态链接 VCRUNTIME140/MSVCP140，
-      # 纯净 Win 系统或缺运行库时应用直接闪退。从 runner 的 VS2022 CRT 目录复制
-      # 3 个 DLL 随产物分发（zip 与 setup.exe 同时受益），MS 允许再分发。
-      - name: 捆绑 MSVC143 CRT DLL
+      # 捆绑 MSVC CRT：Flutter Windows release 动态链接 VCRUNTIME140/MSVCP140，
+      # 纯净 Win 系统或缺运行库时应用直接闪退。从 runner 的 VS CRT 再发行目录
+      # 复制 3 个 DLL 随产物分发（zip 与 setup.exe 同时受益），MS 允许再分发。
+      # 版本无关：不同 runner 镜像的 VS 版本/工具集不同（VC143/VC144/…），
+      # 故用 vswhere 定位 VS 安装路径 + 通配 Microsoft.VC*.CRT，勿写死版本。
+      - name: 捆绑 MSVC CRT DLL
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $rel = 'build/windows/x64/runner/Release'
-          $crt = Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\2022' -Recurse `
-                   -Filter 'vcruntime140.dll' -ErrorAction SilentlyContinue |
-                 Where-Object { $_.DirectoryName -match '\\x64\\Microsoft\.VC143\.CRT$' } |
-                 Select-Object -First 1
-          if (-not $crt) { throw '未找到 Microsoft.VC143.CRT（VS2022 x64）' }
-          $crtDir = $crt.DirectoryName
+
+          $need = @('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')
+
+          # 候选目录1：VS 再发行目录 VC\Redist\MSVC\<ver>\x64\Microsoft.VC<ver>.CRT
+          $candidates = [System.Collections.Generic.List[string]]::new()
+          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (Test-Path $vsWhere) {
+            $vsPath = & $vsWhere -latest -products * `
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+              -property installationPath
+            if (-not $vsPath) { $vsPath = & $vsWhere -latest -products * -property installationPath }
+            if ($vsPath) {
+              Write-Host "VS 安装路径: $vsPath"
+              $redistRoot = Join-Path $vsPath 'VC\Redist\MSVC'
+              if (Test-Path $redistRoot) {
+                Get-ChildItem -Path $redistRoot -Recurse -Filter 'vcruntime140.dll' `
+                  -ErrorAction SilentlyContinue |
+                  Where-Object { $_.DirectoryName -match '\\x64\\Microsoft\.VC[0-9]+\.CRT$' } |
+                  ForEach-Object { $candidates.Add($_.DirectoryName) }
+              }
+            }
+          }
+          # 候选目录2：系统已安装的 VC 运行库（兜底，Windows runner 恒有）
+          $candidates.Add("$env:SystemRoot\System32")
+
+          $crtDir = $null
+          foreach ($d in ($candidates | Select-Object -Unique)) {
+            if (($need | Where-Object { -not (Test-Path (Join-Path $d $_)) }).Count -eq 0) {
+              $crtDir = $d; break
+            }
+          }
+          if (-not $crtDir) {
+            Write-Host '候选目录列举：'
+            $candidates | Select-Object -Unique | ForEach-Object { Write-Host "  $_" }
+            throw '未找到包含全套 CRT DLL 的目录'
+          }
           Write-Host "CRT 目录: $crtDir"
-          foreach ($dll in @('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')) {
-            $src = Join-Path $crtDir $dll
-            if (!(Test-Path $src)) { throw "CRT 目录缺少 $dll" }
-            Copy-Item -Path $src -Destination (Join-Path $rel $dll) -Force
+          foreach ($dll in $need) {
+            Copy-Item -Path (Join-Path $crtDir $dll) -Destination (Join-Path $rel $dll) -Force
             Write-Host "已捆绑 $dll"
           }
 
@@ -353,19 +383,29 @@ jobs:
           if (-not $ver) { throw '无法从 pubspec.yaml 读取版本号' }
           Write-Host "版本号: $ver"
 
-          # 中文语言文件非 Inno 自带：下载官方非官方翻译；失败则退回英文界面。
+          # 中文语言文件非 Inno 自带：下载官方维护的中文翻译；失败则退回英文界面。
           $langDir = Join-Path (Split-Path $iscc) 'Languages'
           $zhIsl = Join-Path $langDir 'ChineseSimplified.isl'
           $extra = @()
-          try {
-            if (!(Test-Path $zhIsl)) {
-              Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent' = 'himi-build' } `
-                -Uri 'https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl' `
-                -OutFile $zhIsl
+          $zhUrls = @(
+            'https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/ChineseSimplified.isl',
+            'https://raw.githubusercontent.com/kira-96/Inno-Setup-Chinese-Simplified-Translation/master/ChineseSimplified.isl'
+          )
+          if (!(Test-Path $zhIsl)) {
+            foreach ($u in $zhUrls) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent' = 'himi-build' } -Uri $u -OutFile $zhIsl
+                if (Test-Path $zhIsl) { break }
+              } catch {
+                Write-Warning "中文语言文件下载失败（$u）: $_"
+              }
             }
-            if (Test-Path $zhIsl) { $extra += '/DIncludeChinese=1'; Write-Host '启用中文安装界面' }
-          } catch {
-            Write-Warning "中文语言文件获取失败，退回英文界面: $_"
+          }
+          if (Test-Path $zhIsl) {
+            $extra += '/DIncludeChinese=1'
+            Write-Host '启用中文安装界面'
+          } else {
+            Write-Warning '未获取到中文语言文件，退回英文安装界面'
           }
 
           New-Item -ItemType Directory -Force -Path 'build/windows/setup' | Out-Null
