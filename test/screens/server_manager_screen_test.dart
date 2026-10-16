@@ -1361,4 +1361,93 @@ void main() {
       await _settleSnackbars(tester);
     });
   });
+
+  group('v1.1.256 TV 卡片 ⋮ 方向键可达（C1）', () {
+    Key? focusedTileKey() => FocusManager.instance.primaryFocus?.context
+        ?.findAncestorWidgetOfExactType<KeyedSubtree>()
+        ?.key;
+
+    testWidgets('TV 列表：右键进入 ⋮、左键回主体、OK 打开面板', (tester) async {
+      await _pumpScreen(
+        tester,
+        remote: true,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      // 首卡主体 autofocus
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus');
+      expect(focusedTileKey(), const ValueKey('serverTile_srv_a'));
+
+      // 右键 → 焦点落到本卡 ⋮（页面显式连线：主体 → ⋮）
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverMoreBtn',
+          reason: '右键应进入本卡 ⋮');
+      expect(focusedTileKey(), const ValueKey('serverTile_srv_a'),
+          reason: '⋮ 仍属于同一卡片');
+
+      // OK → 打开操作面板
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('删除'), findsOneWidget, reason: '⋮ 上按 OK 应打开面板');
+
+      // 关闭面板（点面板外 barrier）→ 焦点回 ⋮
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverMoreBtn',
+          reason: '面板关闭后焦点回 ⋮');
+
+      // 左键 → 回主体
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus',
+          reason: '左键应从 ⋮ 回到本卡主体');
+      expect(focusedTileKey(), const ValueKey('serverTile_srv_a'));
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('TV 网格：右键进入 ⋮', (tester) async {
+      await _pumpScreen(
+        tester,
+        remote: true,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverMoreBtn',
+          reason: '网格卡片右键应进入本卡 ⋮');
+      expect(focusedTileKey(), const ValueKey('serverGridTile_srv_a'));
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('TV 列表：上下键仍正常导航卡片（不被 ⋮ 干扰）', (tester) async {
+      await _pumpScreen(
+        tester,
+        remote: true,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      expect(focusedTileKey(), const ValueKey('serverTile_srv_a'));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(focusedTileKey(), const ValueKey('serverTile_srv_b'),
+          reason: '下键应落到下一张卡主体（而非 ⋮）');
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus');
+      await _settleSnackbars(tester);
+    });
+  });
 }

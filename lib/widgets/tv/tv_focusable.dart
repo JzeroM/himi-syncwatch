@@ -24,6 +24,7 @@ class TvFocusable extends ConsumerWidget {
     this.enabled = true,
     this.scale = 1.06,
     this.onLongPress,
+    this.onKeyEvent,
   });
 
   final VoidCallback? onTap;
@@ -32,6 +33,11 @@ class TvFocusable extends ConsumerWidget {
   final FocusNode? focusNode;
   final double radius;
   final bool enabled;
+
+  /// 自定义按键处理（在默认 OK/长按处理之前调用）。返回 handled 可拦截
+  /// 该事件（如让 ⋮ 按左键把焦点交回卡片主体），返回 ignored 则继续默认
+  /// 逻辑与框架方向键遍历。
+  final KeyEventResult Function(FocusNode node, KeyEvent event)? onKeyEvent;
 
   /// 聚焦微放大倍率。满宽行（如设置页整行）传 1.0 关闭缩放，
   /// 避免超宽内容按中心放大后两端文字被推出屏幕裁切。
@@ -64,6 +70,7 @@ class TvFocusable extends ConsumerWidget {
       radius: radius,
       scale: scale,
       highlightColor: highlightColor,
+      onKeyEvent: onKeyEvent,
       child: child,
     );
   }
@@ -79,6 +86,7 @@ class _TvFocusableActive extends StatefulWidget {
     required this.scale,
     required this.highlightColor,
     required this.child,
+    this.onKeyEvent,
   });
 
   final VoidCallback? onTap;
@@ -89,6 +97,7 @@ class _TvFocusableActive extends StatefulWidget {
   final double scale;
   final Color highlightColor;
   final Widget child;
+  final KeyEventResult Function(FocusNode node, KeyEvent event)? onKeyEvent;
 
   @override
   State<_TvFocusableActive> createState() => _TvFocusableActiveState();
@@ -118,6 +127,8 @@ class _TvFocusableActiveState extends State<_TvFocusableActive> {
       key == LogicalKeyboardKey.select;
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final custom = widget.onKeyEvent?.call(node, event);
+    if (custom == KeyEventResult.handled) return KeyEventResult.handled;
     final key = event.logicalKey;
     if (!_isConfirm(key)) return KeyEventResult.ignored;
 

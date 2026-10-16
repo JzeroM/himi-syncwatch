@@ -71,7 +71,8 @@ class TvDirectionalAction extends ContextAction<TvDirectionalIntent> {
     // 背后页面），滚动也仅限弹窗自身的滚动容器。
     final inTopModal = _insideTopModal(node);
 
-    if (node.focusInDirection(intent.direction)) {
+    final moved = node.focusInDirection(intent.direction);
+    if (moved) {
       _rejectEmptyScopeLanding(node);
       return null;
     }

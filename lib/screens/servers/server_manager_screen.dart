@@ -320,7 +320,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             isGrid: false,
             crossAxisCount: 1,
             isFirst: index == 0,
-            card: ServerListCard(
+            cardBuilder: (moreButtonNode, onMoreButtonBack, onMoreButtonForward) =>
+                ServerListCard(
               server: server,
               isActive: isActive,
               stats: statsMap[server.id],
@@ -340,6 +341,10 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                       index: index,
                       child: const Icon(Icons.drag_handle, size: 20),
                     ),
+              tvMode: tvMode,
+              moreButtonNode: moreButtonNode,
+              onMoreButtonBack: onMoreButtonBack,
+              onMoreButtonForward: onMoreButtonForward,
             ),
           ),
         );
@@ -392,7 +397,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
             isGrid: true,
             crossAxisCount: crossAxisCount,
             isFirst: index == 0,
-            card: ServerGridCard(
+            cardBuilder: (moreButtonNode, onMoreButtonBack, onMoreButtonForward) =>
+                ServerGridCard(
               server: server,
               isActive: isActive,
               stats: statsMap[server.id],
@@ -405,6 +411,10 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onSyncToTv: !tvMode && tvSyncEnabled && pairedTv != null
                   ? () => pushServerToTv(context, ref, server)
                   : null,
+              tvMode: tvMode,
+              moreButtonNode: moreButtonNode,
+              onMoreButtonBack: onMoreButtonBack,
+              onMoreButtonForward: onMoreButtonForward,
             ),
           ),
         );
@@ -437,20 +447,24 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   }
 
   /// TV 模式卡片包装：
-  /// - 常规态：_TvCardFocus（纯 Focus：OK 键打开/长按进布局 + 焦点环）
-  ///   触摸交给卡内 InkWell，避免与 ⋮ 按钮的 GestureDetector 在手势竞技场
-  ///   竞争（v1.1.246：嵌套 GestureDetector 聚焦态下外层吞手势导致 ⋮ 失效）
+  /// - 常规态：_TvCardFocus 焦点节点覆盖整卡（OK 打开、长按进布局、整卡
+  ///   焦点环）；右侧 ⋮ 为卡内独立焦点节点，页面显式连线「主体 → ⋮」
+  ///   （→ 方向键）/「⋮ → 主体」（← 方向键），其余方向键走框架遍历。
   /// - 布局模式选中卡：Focus 拦截方向键移动 + OK 保存退出，外加高亮描边
   /// - 布局模式其他卡：忽略指针 + 降透明 + 排除焦点
-  /// 非 TV 模式原样返回。
+  /// 非 TV 模式原样返回（[cardBuilder] 收到两个 null）。
   Widget _wrapCard({
     required EmbyServerConfig server,
     required bool isGrid,
     required int crossAxisCount,
-    required Widget card,
+    required Widget Function(FocusNode? moreButtonNode,
+            VoidCallback? onMoreButtonBack, VoidCallback? onMoreButtonForward)
+        cardBuilder,
     bool isFirst = false,
   }) {
-    if (!ref.watch(settingsProvider.select((s) => s.tvMode))) return card;
+    if (!ref.watch(settingsProvider.select((s) => s.tvMode))) {
+      return cardBuilder(null, null, null);
+    }
 
     final layoutId = _layoutServerId;
     if (layoutId == server.id) {
@@ -466,14 +480,15 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
           isGrid: isGrid,
           crossAxisCount: crossAxisCount,
         ),
-        // ExcludeFocus：屏蔽卡内 InkWell/⋮ 的内层焦点节点
-        child: _layoutDecorate(ExcludeFocus(child: card)),
+        childBuilder: (_, __, ___) => _layoutDecorate(
+          ExcludeFocus(child: cardBuilder(null, null, null)),
+        ),
       );
     }
     if (layoutId != null) {
       return ExcludeFocus(
         child: IgnorePointer(
-          child: Opacity(opacity: 0.4, child: card),
+          child: Opacity(opacity: 0.4, child: cardBuilder(null, null, null)),
         ),
       );
     }
@@ -481,8 +496,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       autofocus: isFirst,
       onTap: () => _openServer(server),
       onLongPress: () => _enterLayoutMode(server),
-      // ExcludeFocus：消除内外双焦点节点（对齐 detail_screen 既有模式）
-      child: ExcludeFocus(child: card),
+      childBuilder: (moreButtonNode, onMoreButtonBack, onMoreButtonForward) =>
+          cardBuilder(moreButtonNode, onMoreButtonBack, onMoreButtonForward),
     );
   }
 
@@ -717,7 +732,7 @@ class _EmptyServerHint extends StatelessWidget {
 /// 竞争时，聚焦态下外层会吞掉手势导致 ⋮ 失效（v1.1.246）。
 class _TvCardFocus extends StatefulWidget {
   const _TvCardFocus({
-    required this.child,
+    required this.childBuilder,
     required this.onTap,
     this.onLongPress,
     this.autofocus = false,
@@ -725,7 +740,10 @@ class _TvCardFocus extends StatefulWidget {
     this.showFocusRing = true,
   });
 
-  final Widget child;
+  /// 构建卡片，并把「⋮ 焦点节点」与「⋮ 回焦主体 / 前进相邻卡回调」交给
+  /// 卡片，用于显式连线「主体 → ⋮」。焦点节点覆盖整卡，环画在整卡外围。
+  final Widget Function(FocusNode moreButtonNode, VoidCallback onMoreButtonBack,
+      VoidCallback onMoreButtonForward) childBuilder;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final bool autofocus;
@@ -745,6 +763,9 @@ class _TvCardFocusState extends State<_TvCardFocus> {
   static const Duration _longPressThreshold = Duration(milliseconds: 500);
 
   final FocusNode _node = FocusNode(debugLabel: 'TvCardFocus');
+
+  /// ⋮ 的焦点节点：由本 State 持有并注入卡内，实现「主体 → ⋮」方向键连线。
+  final FocusNode _moreNode = FocusNode(debugLabel: 'serverMoreBtn');
   Timer? _longPressTimer;
   bool _longPressFired = false;
 
@@ -752,6 +773,7 @@ class _TvCardFocusState extends State<_TvCardFocus> {
   void dispose() {
     _longPressTimer?.cancel();
     _node.dispose();
+    _moreNode.dispose();
     super.dispose();
   }
 
@@ -766,6 +788,16 @@ class _TvCardFocusState extends State<_TvCardFocus> {
     // 不会冒泡到全局 TvScopeEnterIntent 被抢到顶栏。
     final layoutHandler = widget.onLayoutKey;
     if (layoutHandler != null) return layoutHandler(event);
+
+    // 主体 → ⋮：⋮ 与主体为独立焦点节点（无几何包含关系），框架遍历不会
+    // 从主体进入 ⋮，故显式连线。仅拦截右方向键 KeyDown，其余方向键仍走
+    // 框架遍历（如网格中左右切换卡片、上下移动）。
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.arrowRight &&
+        _moreNode.canRequestFocus) {
+      _moreNode.requestFocus();
+      return KeyEventResult.handled;
+    }
 
     final key = event.logicalKey;
     if (!_isConfirm(key)) return KeyEventResult.ignored;
@@ -809,6 +841,12 @@ class _TvCardFocusState extends State<_TvCardFocus> {
     return KeyEventResult.ignored;
   }
 
+  /// ⋮ 回焦主体：⋮ 与主体为独立节点，框架遍历无法从 ⋮ 回到主体，故显式。
+  void _focusBody() => _node.requestFocus();
+
+  /// ⋮ 前进相邻卡：以整卡几何为基准做方向遍历，落到右侧相邻卡主体。
+  void _focusNext() => _node.focusInDirection(TraversalDirection.right);
+
   @override
   Widget build(BuildContext context) {
     final highlightColor = Theme.of(context).colorScheme.primary;
@@ -819,7 +857,9 @@ class _TvCardFocusState extends State<_TvCardFocus> {
       child: AnimatedBuilder(
         animation: _node,
         builder: (context, _) {
-          final focused = _node.hasFocus;
+          // hasPrimaryFocus：焦点落入卡内 ⋮ 时卡环必须熄灭，否则与 ⋮ 的
+          // 焦点环同屏出现两个环。
+          final focused = _node.hasPrimaryFocus;
           final duration =
               focused ? const Duration(milliseconds: 120) : Duration.zero;
           return AnimatedScale(
@@ -842,7 +882,7 @@ class _TvCardFocusState extends State<_TvCardFocus> {
                       ],
                     )
                   : null,
-              child: widget.child,
+              child: widget.childBuilder(_moreNode, _focusBody, _focusNext),
             ),
           );
         },

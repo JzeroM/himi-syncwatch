@@ -73,65 +73,83 @@ class _SwipeRevealActionState extends State<SwipeRevealAction>
     final radius = BorderRadius.circular(widget.borderRadius);
     final actionColor = widget.actionColor ?? Colors.red.shade600;
 
+    // 操作区内容（整宽），随露出宽度被裁剪显示。用 OverflowBox 让内容保持
+    // 最终「右对齐、整宽」的位置，仅左侧被 ClipRect 裁掉，避免拉开过程中
+    // 图标/文字位移。
+    final action = Semantics(
+      button: true,
+      label: widget.actionLabel,
+      child: Tooltip(
+        message: widget.actionLabel,
+        child: GestureDetector(
+          onTap: widget.onAction,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            color: actionColor,
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(widget.actionIcon, color: Colors.white, size: 20),
+                const SizedBox(height: 2),
+                Text(
+                  widget.actionLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     return ClipRRect(
       borderRadius: radius,
-      child: Stack(
-        children: [
-          Positioned(
-            top: 0,
-            bottom: 0,
-            right: 0,
-            width: widget.actionWidth,
-            child: Semantics(
-              button: true,
-              label: widget.actionLabel,
-              child: Tooltip(
-                message: widget.actionLabel,
-                child: GestureDetector(
-                  onTap: widget.onAction,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    color: actionColor,
-                    alignment: Alignment.center,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(widget.actionIcon,
-                            color: Colors.white, size: 20),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.actionLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+      child: AnimatedBuilder(
+        animation: _controller,
+        // builder 内联 GestureDetector：随动画值重建，保证「开启态点前景
+        // 关闭、关闭态放行内层按钮」的 onTap 判定始终最新（不能用 build
+        // 期一次性捕获的 open 快照，否则拖动后 onTap 仍是关闭态的空值）。
+        builder: (context, child) {
+          final open = _controller.value;
+          return Stack(
+            children: [
+              // 操作区宽度随拖动从 0 增长：静止时不渲染、不命中、也不会透过
+              // 半透明玻璃前景「透红」；滑动时与前景左移同步露出，始终不与
+              // 前景重叠。
+              if (open > 0)
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  right: 0,
+                  width: open * widget.actionWidth,
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.centerRight,
+                      minWidth: widget.actionWidth,
+                      maxWidth: widget.actionWidth,
+                      child: action,
                     ),
                   ),
                 ),
+              Transform.translate(
+                offset: Offset(-open * widget.actionWidth, 0),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: open > 0 ? _close : null,
+                  onHorizontalDragUpdate: _onDragUpdate,
+                  onHorizontalDragEnd: _onDragEnd,
+                  child: child,
+                ),
               ),
-            ),
-          ),
-          AnimatedBuilder(
-            animation: _controller,
-            // builder 内联 GestureDetector：随动画值重建，保证「开启态点前景
-            // 关闭、关闭态放行内层按钮」的 onTap 判定始终最新（不能用 build
-            // 期一次性捕获的 open 快照，否则拖动后 onTap 仍是关闭态的空值）。
-            builder: (context, child) => Transform.translate(
-              offset: Offset(-_controller.value * widget.actionWidth, 0),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _controller.value > 0 ? _close : null,
-                onHorizontalDragUpdate: _onDragUpdate,
-                onHorizontalDragEnd: _onDragEnd,
-                child: child,
-              ),
-            ),
-            child: widget.child,
-          ),
-        ],
+            ],
+          );
+        },
+        child: widget.child,
       ),
     );
   }

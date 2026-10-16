@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
@@ -134,6 +135,9 @@ class ServerMoreButton extends ConsumerStatefulWidget {
     this.onEdit,
     this.onSwitchLine,
     this.onStats,
+    this.focusNode,
+    this.onBack,
+    this.onForward,
   });
 
   final String menuKey;
@@ -146,6 +150,17 @@ class ServerMoreButton extends ConsumerStatefulWidget {
   /// 资源统计：打开资源统计底部面板。
   final VoidCallback? onStats;
 
+  /// TV 模式下由页面注入的焦点节点（用于「主体 → ⋮」方向键连线与
+  /// 面板关闭回焦）；为空时按钮自建节点。
+  final FocusNode? focusNode;
+
+  /// ⋮ 聚焦时按左方向键：把焦点交回卡片主体。
+  final VoidCallback? onBack;
+
+  /// ⋮ 聚焦时按右方向键：把焦点交到相邻卡片主体（⋮ 是卡内最深节点，
+  /// 框架遍历无法从 ⋮ 跨出到相邻卡，故显式连线）。
+  final VoidCallback? onForward;
+
   @override
   ConsumerState<ServerMoreButton> createState() => _ServerMoreButtonState();
 }
@@ -154,7 +169,9 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
   OverlayEntry? _entry;
 
   /// 持有按钮焦点节点：面板关闭后回焦，TV 遥控器不丢焦点位置。
-  final FocusNode _buttonNode = FocusNode(debugLabel: 'serverMoreBtn');
+  /// 页面注入时用注入节点（用于「主体 → ⋮」连线），不重复创建。
+  late final FocusNode _buttonNode =
+      widget.focusNode ?? FocusNode(debugLabel: 'serverMoreBtn');
 
   void _toggle() {
     if (_entry != null) {
@@ -196,7 +213,10 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
     overlay.insert(entry);
   }
 
-  void _close() {
+  /// 关闭面板。[refocus] 为 true 时把焦点交回 ⋮ 按钮（避免焦点悬空）；
+  /// dispose 路径必须传 false——此时节点可能已被上层重新挂载，若仍请求
+  /// 聚焦会把焦点错误地拉到 ⋮（表现为进入页面即聚焦 ⋮）。
+  void _close({bool refocus = true}) {
     _entry?.remove();
     if (identical(_activePanelEntry, _entry)) {
       _activePanelEntry = null;
@@ -204,13 +224,14 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
     }
     _entry = null;
     // TV：面板关闭后回焦 ⋮ 按钮，避免焦点悬空
-    if (mounted) _buttonNode.requestFocus();
+    if (refocus && mounted) _buttonNode.requestFocus();
   }
 
   @override
   void dispose() {
-    _close();
-    _buttonNode.dispose();
+    _close(refocus: false);
+    // 仅释放自建节点，注入的由页面持有
+    if (widget.focusNode == null) _buttonNode.dispose();
     super.dispose();
   }
 
@@ -239,6 +260,22 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
       onTap: _toggle,
       scale: 1.0,
       radius: 8,
+      onKeyEvent: (node, event) {
+        // 左方向键：交回卡片主体焦点（⋮ 与主体为独立节点，无几何包含关系，
+        // 框架遍历无法从 ⋮ 回到主体，故显式连线）。
+        if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+          if (widget.onBack == null) return KeyEventResult.ignored;
+          widget.onBack!();
+          return KeyEventResult.handled;
+        }
+        // 右方向键：交到相邻卡片主体（同上，显式连线）。
+        if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.arrowRight) {
+          if (widget.onForward == null) return KeyEventResult.ignored;
+          widget.onForward!();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
       child: ExcludeFocus(child: icon),
     );
   }
@@ -508,6 +545,10 @@ class ServerListCard extends StatelessWidget {
     this.onStats,
     this.onSyncToTv,
     this.dragHandle,
+    this.tvMode = false,
+    this.moreButtonNode,
+    this.onMoreButtonBack,
+    this.onMoreButtonForward,
   });
 
   final EmbyServerConfig server;
@@ -525,8 +566,73 @@ class ServerListCard extends StatelessWidget {
   /// 拖拽把手（由外层 ReorderableDragStartListener 包装后传入；TV 传 null）。
   final Widget? dragHandle;
 
+  /// TV 模式：外层 InkWell 不再请求焦点，⋮ 为唯一内层可聚焦节点，
+  /// 由页面显式连线「主体 → ⋮」。
+  final bool tvMode;
+
+  /// TV 模式注入给 ⋮ 的焦点节点（用于「主体 → ⋮」连线与面板回焦）。
+  final FocusNode? moreButtonNode;
+
+  /// ⋮ 按左键时回调（交回卡片主体焦点）。
+  final VoidCallback? onMoreButtonBack;
+
+  /// ⋮ 按右键时回调（交到相邻卡片主体）。
+  final VoidCallback? onMoreButtonForward;
+
   @override
   Widget build(BuildContext context) {
+    final content = Row(
+      children: [
+        ServerAvatar(label: server.label),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      server.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight:
+                            isActive ? FontWeight.bold : FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  if (isActive) ...[
+                    const SizedBox(width: 6),
+                    const Icon(Icons.check_circle,
+                        color: Colors.greenAccent, size: 16),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${server.username} · ${server.serverUrl}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Colors.white54),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 10,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  MovieSeriesCounts(counts: stats?.counts),
+                  LatencyBadge(latencyMs: stats?.latencyMs),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: GlassContainer(
@@ -537,60 +643,15 @@ class ServerListCard extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
+            canRequestFocus: !tvMode,
             onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
-                  ServerAvatar(label: server.label),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                server.label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: isActive
-                                      ? FontWeight.bold
-                                      : FontWeight.w600,
-                                  fontSize: 15,
-                                ),
-                              ),
-                            ),
-                            if (isActive) ...[
-                              const SizedBox(width: 6),
-                              const Icon(Icons.check_circle,
-                                  color: Colors.greenAccent, size: 16),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${server.username} · ${server.serverUrl}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.white54),
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            MovieSeriesCounts(counts: stats?.counts),
-                            LatencyBadge(latencyMs: stats?.latencyMs),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                  // 主体区域（TV 下外层 _TvCardFocus 持有焦点节点；⋮ 为
+                  // 独立焦点节点，方向键右可移入、左可移回）。
+                  Expanded(child: content),
                   const SizedBox(width: 6),
                   Column(
                     mainAxisSize: MainAxisSize.min,
@@ -614,6 +675,9 @@ class ServerListCard extends StatelessWidget {
                         onSwitchLine: onSwitchLine,
                         onStats: onStats,
                         onDelete: onDelete,
+                        focusNode: moreButtonNode,
+                        onBack: onMoreButtonBack,
+                        onForward: onMoreButtonForward,
                       ),
                       if (dragHandle != null) dragHandle!,
                     ],
@@ -630,6 +694,9 @@ class ServerListCard extends StatelessWidget {
 
 /// 网格视图服务器卡（近方形玻璃卡）：
 /// 第 1 行 = 头像 + 用户名 + ···；第 2 行 = 服务器名称；底部 = 延迟/计数。
+///
+/// TV 模式下 ··· 从第 1 行移到卡片右侧垂直居中，成为与主体同级、矩形互不
+/// 包含的独立焦点项，方向键可自然在「主体 ↔ ···」间移动（手机端布局不变）。
 class ServerGridCard extends StatelessWidget {
   const ServerGridCard({
     super.key,
@@ -642,6 +709,10 @@ class ServerGridCard extends StatelessWidget {
     this.onSwitchLine,
     this.onStats,
     this.onSyncToTv,
+    this.tvMode = false,
+    this.moreButtonNode,
+    this.onMoreButtonBack,
+    this.onMoreButtonForward,
   });
 
   final EmbyServerConfig server;
@@ -656,10 +727,154 @@ class ServerGridCard extends StatelessWidget {
   /// 同步本服务器到已配对 TV（null=未配对，不显示电视图标）。
   final VoidCallback? onSyncToTv;
 
+  /// TV 模式：··· 移到右侧居中，成为独立焦点项，由页面显式连线。
+  final bool tvMode;
+
+  /// TV 模式注入给 ⋮ 的焦点节点。
+  final FocusNode? moreButtonNode;
+
+  /// ⋮ 按左键时回调（交回卡片主体焦点）。
+  final VoidCallback? onMoreButtonBack;
+
+  /// ⋮ 按右键时回调（交到相邻卡片主体）。
+  final VoidCallback? onMoreButtonForward;
+
+  Widget _gradient(Color start, Color end) => Positioned.fill(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                start.withValues(alpha: 0.10),
+                end.withValues(alpha: 0.03),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Widget _syncIcon() => InkWell(
+        key: const ValueKey('syncToTvButton'),
+        borderRadius: BorderRadius.circular(8),
+        onTap: onSyncToTv,
+        child: const SizedBox(
+          width: 40,
+          height: 40,
+          child:
+              Icon(Icons.cast_connected, size: 18, color: Colors.white54),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final start = serverAvatarStartColor(server.serverId);
     final end = serverAvatarEndColor(server.serverId);
+
+    final moreButton = ServerMoreButton(
+      menuKey: 'serverMore_${server.id}',
+      onEdit: onEdit,
+      onSwitchLine: onSwitchLine,
+      onStats: onStats,
+      onDelete: onDelete,
+      focusNode: moreButtonNode,
+      onBack: onMoreButtonBack,
+      onForward: onMoreButtonForward,
+    );
+
+    Widget bodyColumn({required bool moreInTopRow}) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 第 1 行：头像 + 用户名 (+ 同步图标 / ···，手机端)
+            Row(
+              children: [
+                ServerAvatar(label: server.label, size: 40),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    server.username,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                if (moreInTopRow && onSyncToTv != null) _syncIcon(),
+                if (moreInTopRow) moreButton,
+              ],
+            ),
+            const SizedBox(height: 8),
+            // 第 2 行：服务器名称/备注名（激活加粗 + 勾）
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    server.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight:
+                          isActive ? FontWeight.bold : FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                if (isActive) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.check_circle,
+                      color: Colors.greenAccent, size: 14),
+                ],
+              ],
+            ),
+            const Spacer(),
+            LatencyBadge(latencyMs: stats?.latencyMs),
+            const SizedBox(height: 6),
+            MovieSeriesCounts(counts: stats?.counts),
+          ],
+        );
+
+    if (tvMode) {
+      // TV：主体（左，注入焦点）+ 右侧垂直居中的 ···（独立焦点）
+      final body = bodyColumn(moreInTopRow: false);
+      return GlassContainer(
+        borderRadius: BorderRadius.circular(18),
+        tint: GlassConfig.panelTintOf(),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            canRequestFocus: false,
+            onTap: onTap,
+            child: Stack(
+              children: [
+                _gradient(start, end),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: body),
+                      const SizedBox(width: 4),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [moreButton],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 手机端：原布局（··· 在第 1 行右上角）
     return GlassContainer(
       borderRadius: BorderRadius.circular(18),
       // 激活态不着色（v1.1.246）：仅靠绿勾 + 加粗标识，玻璃保持中性
@@ -672,93 +887,10 @@ class ServerGridCard extends StatelessWidget {
           child: Stack(
             children: [
               // 背景斜向渐变氛围（激活/未激活同强度，不再放大激活态）
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        start.withValues(alpha: 0.10),
-                        end.withValues(alpha: 0.03),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              _gradient(start, end),
               Padding(
                 padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 第 1 行：头像 + 用户名 + ···
-                    Row(
-                      children: [
-                        ServerAvatar(label: server.label, size: 40),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            server.username,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        if (onSyncToTv != null)
-                          InkWell(
-                            key: const ValueKey('syncToTvButton'),
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: onSyncToTv,
-                            child: const SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: Icon(Icons.cast_connected,
-                                  size: 18, color: Colors.white54),
-                            ),
-                          ),
-                        ServerMoreButton(
-                          menuKey: 'serverMore_${server.id}',
-                          onEdit: onEdit,
-                          onSwitchLine: onSwitchLine,
-                          onStats: onStats,
-                          onDelete: onDelete,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    // 第 2 行：服务器名称/备注名（激活加粗 + 勾）
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            server.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight:
-                                  isActive ? FontWeight.bold : FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                        if (isActive) ...[
-                          const SizedBox(width: 4),
-                          const Icon(Icons.check_circle,
-                              color: Colors.greenAccent, size: 14),
-                        ],
-                      ],
-                    ),
-                    const Spacer(),
-                    LatencyBadge(latencyMs: stats?.latencyMs),
-                    const SizedBox(height: 6),
-                    MovieSeriesCounts(counts: stats?.counts),
-                  ],
-                ),
+                child: bodyColumn(moreInTopRow: true),
               ),
             ],
           ),
