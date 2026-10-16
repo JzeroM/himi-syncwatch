@@ -58,3 +58,6 @@ server/.env
 
 # Web build artifacts
 web/
+
+# Agent instructions (local only, not published)
+AGENTS.md
