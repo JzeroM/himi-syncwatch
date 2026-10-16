@@ -23,6 +23,8 @@ void main() {
       expect(AppConstants.actionRemoveEpisode, equals('removeEpisode'));
       expect(AppConstants.actionRequestRoomInfo, equals('requestRoomInfo'));
       expect(AppConstants.actionSyncPlay, equals('syncPlay'));
+      expect(AppConstants.actionTimePing, equals('timePing'));
+      expect(AppConstants.actionTimePong, equals('timePong'));
     });
 
     test('syncPlay 命令消息格式正确', () {

@@ -36,6 +36,9 @@ class PosterCard extends StatelessWidget {
   /// 给定卡片宽时的完整卡片高（海报 2:3 + 文字区）。
   static double heightFor(double width) => width * 1.5 + textReservedHeight;
 
+  /// 海报图区（2:3）高度：供横栏箭头垂直居中对齐使用。
+  static double mediaHeightFor(double width) => width * 1.5;
+
   @override
   Widget build(BuildContext context) {
     return TvFocusable(

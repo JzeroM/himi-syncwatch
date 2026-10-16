@@ -158,7 +158,7 @@ class RtmService {
       'position': position,
       'playing': playing,
       'rate': rate,
-      'ts': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      'ts': DateTime.now().millisecondsSinceEpoch,
     };
 
     await _publishMessage(message);
@@ -172,6 +172,10 @@ class RtmService {
     String? itemId,
     String? playUrl,
     String? token,
+    List<Map<String, dynamic>>? subtitleStreams,
+    List<Map<String, dynamic>>? audioStreams,
+    Map<String, dynamic>? videoStream,
+    int? defaultAudioStreamIndex,
   }) async {
     if (!_backend.isReady || _currentChannelId == null) return;
 
@@ -185,6 +189,12 @@ class RtmService {
       if (itemId != null) 'itemId': itemId,
       if (playUrl != null) 'playUrl': playUrl,
       if (token != null) 'token': token,
+      // 流随 syncPlay 下发：观众在 roomInfo 丢失/晚到时仍能拿到字幕音轨
+      if (subtitleStreams != null) 'subtitleStreams': subtitleStreams,
+      if (audioStreams != null) 'audioStreams': audioStreams,
+      if (videoStream != null) 'videoStream': videoStream,
+      if (defaultAudioStreamIndex != null)
+        'defaultAudioStreamIndex': defaultAudioStreamIndex,
     };
 
     await _publishMessage(message);
@@ -216,6 +226,29 @@ class RtmService {
     };
 
     await _publishMessage(message);
+  }
+
+  /// 时钟校准：观众发 ping，携带本机毫秒 `t1`。
+  Future<void> sendTimePing(int t1) async {
+    if (!_backend.isReady || _currentChannelId == null) return;
+    await _publishMessage({
+      'type': AppConstants.msgTypeCommand,
+      'userId': _currentUserId,
+      'action': AppConstants.actionTimePing,
+      't1': t1,
+    });
+  }
+
+  /// 时钟校准：房主回 pong，回显 `t1` 并附上房主发送本机毫秒 `t2`。
+  Future<void> sendTimePong(int t1, int t2) async {
+    if (!_backend.isReady || _currentChannelId == null) return;
+    await _publishMessage({
+      'type': AppConstants.msgTypeCommand,
+      'userId': _currentUserId,
+      'action': AppConstants.actionTimePong,
+      't1': t1,
+      't2': t2,
+    });
   }
 
   Future<void> sendAddResource({

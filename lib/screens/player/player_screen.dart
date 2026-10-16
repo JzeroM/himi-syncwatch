@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/stream_reload_scheduler.dart';
+import 'package:himi_syncwatch/services/player/clock_offset_estimator.dart';
 import 'package:himi_syncwatch/services/player/stream_stall_guard.dart';
 import 'package:erika_flutter/erika_flutter.dart'
     show ErikaVideoView, ErikaOutputMode;
@@ -684,6 +685,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _isSyncing = false;
   int _playRequestId = 0;
 
+  /// 跨设备时钟偏移估计（观众用）：消除房主/观众系统时钟差导致的
+  /// 恒定进度偏差。房主不用（其 ts 即本机时钟）。
+  final ClockOffsetEstimator _clockOffset = ClockOffsetEstimator();
+  Timer? _clockPingTimer;
+
   /// 换源音量渐变（切集爆音修复）。
   final AudioFader _fader = AudioFader();
 
@@ -899,6 +905,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _hasReceivedRoomInfo = false;
   Timer? _roomInfoTimeout;
 
+  // 观众侧流为空时的退避重试（修「菜单全空」）：流晚到时主动再要 roomInfo
+  Timer? _streamRequestTimer;
+  int _streamRequestAttempts = 0;
+
   // 播报板 + 在线用户
   final List<String> _broadcastMessages = [];
   final ValueNotifier<int> _broadcastVersion = ValueNotifier(0);
@@ -954,6 +964,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _surfaceViewCreated = false;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
+
+  /// 观众侧最近一次应用的远端流签名（字幕/音轨条数+默认音轨）。
+  /// 用于流晚到时触发重新选轨（修「观众菜单全空」）。
+  String _remoteStreamSignature = '';
 
   /// 引擎热切换/内容路由重建进行中：暂时卸载旧视频视图（渲染黑底），
   /// 避免旧 widget 在旧引擎释放后仍访问其原生对象（崩溃/错误）。
@@ -1851,6 +1865,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // iOS TrueHD 无声规避：Emby 元数据已知默认音轨编码，load 前
           // 预写滤镜，不必等 mediaInfo 就绪后的诊断回调（首个缓冲段无声）
           _applyAudioFilterPolicy(codec: source.defaultAudioStream?.codec);
+          // 房主换集/加载后流信息更新 → 重广播，观众据此刷新字幕/音轨菜单
+          unawaited(_broadcastRoomInfo());
         }
       } catch (_) {}
 
@@ -3364,9 +3380,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _maybeApplySubtitleDelay(immediate: true);
   }
 
-  /// 默认激活第一条字幕轨（mdk 位置 0）并同步面板选中态：
+  /// 默认激活第一条字幕轨并同步面板选中态：
   /// `_activeSubtitleIndex` 记 Emby 流 index（面板高亮与延迟重载取源用）。
+  /// 若首条为外挂字幕，走 `_selectEmbySubtitle`（需 setMedia 加载外部文件），
+  /// 否则用内嵌轨 0。
   void _selectDefaultEmbeddedSubtitle() {
+    if (_embySubtitleStreams.isNotEmpty) {
+      final first = _embySubtitleStreams.first;
+      if (first.isExternal ||
+          first.subtitleLocationType == 'ExternalStream') {
+        _selectEmbySubtitle(0);
+        return;
+      }
+    }
     _player.activeSubtitleTracks = [0];
     _activeSubtitleIndex =
         _embySubtitleStreams.isNotEmpty ? _embySubtitleStreams[0].index : null;
@@ -3557,30 +3583,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (_isHost) {
             LogService().log(
                 'Room', '主持人发送 roomInfo, episodeCount=${_episodes.length}');
-            await rtmService.sendRoomInfo(
-              channelName: _rtmChannel!,
-              serverId: widget.serverId,
-              mediaItemId: RoomInfoCodec.normalizeMediaItemId(widget.itemId),
-              mediaSourceId: widget.mediaSourceId,
-              mediaItemName: _episodes.isNotEmpty ? _episodes.first.name : null,
-              seriesName: _seriesName,
-              episodeIds: _episodes.map((e) => e.id).toList(),
-              episodeNames: _episodes.map((e) => e.name).toList(),
-              episodeSeasons: _episodes.map((e) => e.season).toList(),
-              episodeNumbers: _episodes.map((e) => e.number).toList(),
-              episodePosters: _episodes.map((e) => e.poster).toList(),
-              episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
-              // 逐集版本：观众按索引对齐应用
-              episodeMediaSourceIds:
-                  _episodes.map((e) => e.mediaSourceId).toList(),
-              playUrl: _currentPlayUrl,
-              token: _currentToken,
-              subtitleStreams:
-                  _embySubtitleStreams.map((s) => s.toJson()).toList(),
-              audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
-              videoStream: _embyVideoStream?.toJson(),
-              defaultAudioStreamIndex: _embyDefaultAudioIndex,
-            );
+            await _broadcastRoomInfo();
             // 主持人发送当前播放状态（同步播放进度）
             if (_isPlayerReady &&
                 _currentEpisodeIndex >= 0 &&
@@ -3595,6 +3598,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 position: position,
                 playUrl: _currentPlayUrl,
                 token: _currentToken,
+                subtitleStreams:
+                    _embySubtitleStreams.map((s) => s.toJson()).toList(),
+                audioStreams:
+                    _embyAudioStreams.map((s) => s.toJson()).toList(),
+                videoStream: _embyVideoStream?.toJson(),
+                defaultAudioStreamIndex: _embyDefaultAudioIndex,
               );
             }
           }
@@ -3603,32 +3612,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _addBroadcastMessage('$name 离开了房间');
           _countRetryScheduler.restart();
         } else if (action == AppConstants.actionRequestRoomInfo) {
-          // 观众请求房间信息，主持人重新发送
           if (_isHost) {
-            rtmService.sendRoomInfo(
-              channelName: _rtmChannel!,
-              serverId: widget.serverId,
-              mediaItemId: RoomInfoCodec.normalizeMediaItemId(widget.itemId),
-              mediaSourceId: widget.mediaSourceId,
-              mediaItemName: _episodes.isNotEmpty ? _episodes.first.name : null,
-              seriesName: _seriesName,
-              episodeIds: _episodes.map((e) => e.id).toList(),
-              episodeNames: _episodes.map((e) => e.name).toList(),
-              episodeSeasons: _episodes.map((e) => e.season).toList(),
-              episodeNumbers: _episodes.map((e) => e.number).toList(),
-              episodePosters: _episodes.map((e) => e.poster).toList(),
-              episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
-              // 逐集版本：观众按索引对齐应用
-              episodeMediaSourceIds:
-                  _episodes.map((e) => e.mediaSourceId).toList(),
-              playUrl: _currentPlayUrl,
-              token: _currentToken,
-              subtitleStreams:
-                  _embySubtitleStreams.map((s) => s.toJson()).toList(),
-              audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
-              videoStream: _embyVideoStream?.toJson(),
-              defaultAudioStreamIndex: _embyDefaultAudioIndex,
-            );
+            _broadcastRoomInfo();
+          }
+        } else if (action == AppConstants.actionTimePing) {
+          // 观众时钟校准探测：房主回显 t1 并附本机发送时刻 t2
+          if (_isHost) {
+            final t1 = message['t1'];
+            if (t1 is int) {
+              rtmService.sendTimePong(t1, DateTime.now().millisecondsSinceEpoch);
+            }
+          }
+        } else if (action == AppConstants.actionTimePong) {
+          // 观众收到 pong：t1(本机发出)/t2(房主发出)/t4(本机收到)
+          if (!_isHost) {
+            final t1 = message['t1'];
+            final t2 = message['t2'];
+            if (t1 is int && t2 is int) {
+              final wasCalibrated = _clockOffset.isCalibrated;
+              _clockOffset.addSample(
+                t1: t1,
+                t2: t2,
+                t4: DateTime.now().millisecondsSinceEpoch,
+              );
+              if (mounted) setState(() {});
+              if (!wasCalibrated && _clockOffset.isCalibrated) {
+                _logSyncEvent('时钟校准完成: 偏移='
+                    '${_clockOffset.offsetMs!.toStringAsFixed(0)}ms, '
+                    'RTT=${_clockOffset.bestRttMs}ms');
+              }
+            }
           }
         } else {
           _handleCommand(message);
@@ -3674,6 +3687,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 主持人开始心跳
     if (_isHost) {
       _startHeartbeat();
+    } else {
+      // 观众启动时钟校准（消除跨设备系统时钟差导致的进度恒定偏差）
+      _startClockSync();
     }
   }
 
@@ -3713,8 +3729,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final rate = (message['rate'] as num?)?.toDouble() ?? 1.0;
     final timestamp = message['ts'] as int? ?? 0;
 
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final elapsed = now - timestamp;
+    // 用时钟校准把房主时间戳换算到本机时钟，再算流逝时间；未校准时
+    // 回退旧行为（两机假设同钟，等效 offset=0）。
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final elapsedMs = nowMs + (_clockOffset.offsetMs ?? 0) - timestamp;
+    final elapsed = elapsedMs / 1000.0;
     final expectedPos = position + (elapsed * rate);
 
     final currentPos = _player.position / 1000.0;
@@ -3785,6 +3804,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final epIndex = message['episodeIndex'] as int?;
         _logSyncEvent(
             '收到 syncPlay, pos=${position.toStringAsFixed(1)}s, urlLen=${playUrl?.length ?? 0}');
+        // 流随 syncPlay 下发（C3）：roomInfo 丢失/晚到时仍能拿到字幕音轨
+        _applyStreamsFromRoomInfo(message);
         if (playUrl != null && playUrl.isNotEmpty) {
           _playFromUrl(
               playUrl: playUrl,
@@ -3808,9 +3829,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 房主向房间广播完整 roomInfo（媒体数据 + 剧集列表 + playUrl + 流）。
+  /// 起播/切集/收到请求时调用；流晚于列表就绪时靠它补齐观众侧字幕音轨。
+  Future<void> _broadcastRoomInfo() async {
+    if (!_isHost || _rtmChannel == null) return;
+    try {
+      await ref.read(rtmServiceProvider).sendRoomInfo(
+            channelName: _rtmChannel!,
+            serverId: widget.serverId,
+            mediaItemId: RoomInfoCodec.normalizeMediaItemId(widget.itemId),
+            mediaSourceId: widget.mediaSourceId,
+            mediaItemName: _episodes.isNotEmpty ? _episodes.first.name : null,
+            seriesName: _seriesName,
+            episodeIds: _episodes.map((e) => e.id).toList(),
+            episodeNames: _episodes.map((e) => e.name).toList(),
+            episodeSeasons: _episodes.map((e) => e.season).toList(),
+            episodeNumbers: _episodes.map((e) => e.number).toList(),
+            episodePosters: _episodes.map((e) => e.poster).toList(),
+            episodeSeriesNames: _episodes.map((e) => e.seriesName).toList(),
+            // 逐集版本：观众按索引对齐应用
+            episodeMediaSourceIds:
+                _episodes.map((e) => e.mediaSourceId).toList(),
+            playUrl: _currentPlayUrl,
+            token: _currentToken,
+            subtitleStreams:
+                _embySubtitleStreams.map((s) => s.toJson()).toList(),
+            audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
+            videoStream: _embyVideoStream?.toJson(),
+            defaultAudioStreamIndex: _embyDefaultAudioIndex,
+          );
+    } catch (e) {
+      LogService().log('Room', '_broadcastRoomInfo 失败: $e');
+    }
+    LogService().log('Room',
+        '_broadcastRoomInfo 已发: 集=${_episodes.length}, 字幕=${_embySubtitleStreams.length}, 音轨=${_embyAudioStreams.length}, urlLen=${_currentPlayUrl.length}');
+  }
+
   void _handleRoomInfo(Map<String, dynamic> message) {
     if (_isHost) return;
-    if (_hasEpisodeList) return;
 
     // 收到 roomInfo，取消超时
     _hasReceivedRoomInfo = true;
@@ -3823,6 +3879,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     LogService().log('Room', '_handleRoomInfo: keys=${message.keys.toList()}');
+
+    // 1. 剧集/单集列表：仅首次构建。房主起播后可能再次广播 roomInfo，
+    //    此时列表已存在，不应重建（否则会打断正在播放的选集状态）。
+    if (!_hasEpisodeList) {
+      _buildEpisodeListFromRoomInfo(message);
+    }
+
+    // 2. 字幕/音轨/视频流：每次都刷新。修核心 bug——观众早于房主起播
+    //    进入时，首条 roomInfo 流字段为空；房主随后重广播才带流，必须
+    //    在列表已建的情况下仍应用流。
+    _applyStreamsFromRoomInfo(message);
+
+    // 3. playUrl：仅当与当前播放地址不同才起播（避免重复 roomInfo 重启）
+    final playUrl = message['playUrl'] as String?;
+    final token = message['token'] as String?;
+    if (playUrl != null && playUrl.isNotEmpty && playUrl != _currentPlayUrl) {
+      _playFromUrl(playUrl: playUrl, token: token ?? '');
+    }
+  }
+
+  /// 用 roomInfo 构建剧集/单集列表（仅首次调用生效）。
+  void _buildEpisodeListFromRoomInfo(Map<String, dynamic> message) {
     final epIds = message['episodeIds'];
     final roomServerId = message['serverId'] as String?;
     LogService().log('Room',
@@ -3876,48 +3954,80 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         });
       }
     }
-    _rebuildGroups();
-
     if (_hasEpisodeList) {
+      _rebuildGroups();
       _addBroadcastMessage('已同步房间资源列表');
-
-      // 解析字幕/音轨数据
-      final subtitleStreamsRaw = message['subtitleStreams'];
-      final audioStreamsRaw = message['audioStreams'];
-      if (subtitleStreamsRaw is List) {
-        _embySubtitleStreams = subtitleStreamsRaw
-            .whereType<Map<String, dynamic>>()
-            .map((s) => MediaStream.fromJson(s))
-            .toList();
-      }
-      if (audioStreamsRaw is List) {
-        _embyAudioStreams = audioStreamsRaw
-            .whereType<Map<String, dynamic>>()
-            .map((s) => MediaStream.fromJson(s))
-            .toList();
-      }
-      // 接收视频流信息（用于 DV 检测）
-      final videoStreamRaw = message['videoStream'];
-      if (videoStreamRaw is Map<String, dynamic>) {
-        _embyVideoStream = MediaStream.fromJson(videoStreamRaw);
-        // 房间观众：元数据到达 → 复核 HDR（自动路由依据）
-        _refreshHdrContent();
-      }
-      _embyDefaultAudioIndex = message['defaultAudioStreamIndex'] as int?;
-      LogService().log('Room',
-          '字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条, 视频=${_embyVideoStream?.codec ?? "无"}');
-
-      // 从 roomInfo 消息中获取 playUrl 并播放
-      final playUrl = message['playUrl'] as String?;
-      final token = message['token'] as String?;
-      if (playUrl != null && playUrl.isNotEmpty) {
-        _playFromUrl(playUrl: playUrl, token: token ?? '');
-      }
     }
+  }
+
+  /// 应用 roomInfo 中的流信息（每次调用都生效，流变化时重新选轨）。
+  void _applyStreamsFromRoomInfo(Map<String, dynamic> message) {
+    final subtitleStreamsRaw = message['subtitleStreams'];
+    final audioStreamsRaw = message['audioStreams'];
+    if (subtitleStreamsRaw is List) {
+      _embySubtitleStreams = subtitleStreamsRaw
+          .whereType<Map<String, dynamic>>()
+          .map((s) => MediaStream.fromJson(s))
+          .toList();
+    }
+    if (audioStreamsRaw is List) {
+      _embyAudioStreams = audioStreamsRaw
+          .whereType<Map<String, dynamic>>()
+          .map((s) => MediaStream.fromJson(s))
+          .toList();
+    }
+    // 接收视频流信息（用于 DV 检测）
+    final videoStreamRaw = message['videoStream'];
+    if (videoStreamRaw is Map<String, dynamic>) {
+      _embyVideoStream = MediaStream.fromJson(videoStreamRaw);
+      // 房间观众：元数据到达 → 复核 HDR（自动路由依据）
+      _refreshHdrContent();
+    }
+    _embyDefaultAudioIndex = message['defaultAudioStreamIndex'] as int?;
+    LogService().log('Room',
+        '字幕=${_embySubtitleStreams.length}条, 音轨=${_embyAudioStreams.length}条, 视频=${_embyVideoStream?.codec ?? "无"}');
+
+    // 流晚到/变更：允许重新自动选轨（修「观众菜单全空」）
+    final signature = '${_embySubtitleStreams.length}/'
+        '${_embyAudioStreams.length}/${_embyDefaultAudioIndex ?? "x"}';
+    if (signature != _remoteStreamSignature) {
+      _remoteStreamSignature = signature;
+      _subtitleAutoSelected = false;
+      _refreshTracks();
+    }
+
+    // 观众：流仍为空则退避重试请求 roomInfo（房主可能还没起播）
+    _scheduleStreamRetry();
+  }
+
+  /// 观众侧字幕/音轨都为空时，按退避（2/4/8/16s，最多 6 次）重请求 roomInfo。
+  void _scheduleStreamRetry() {
+    if (_isHost) return;
+    if (_embySubtitleStreams.isNotEmpty || _embyAudioStreams.isNotEmpty) {
+      _stopStreamRetry();
+      return;
+    }
+    if (_streamRequestAttempts >= 6) return;
+    final delaySec = 2 << _streamRequestAttempts.clamp(0, 4);
+    _streamRequestAttempts++;
+    _streamRequestTimer?.cancel();
+    _streamRequestTimer = Timer(Duration(seconds: delaySec), () {
+      if (!mounted) return;
+      _logSyncEvent('观众流为空，重请求 roomInfo (#$_streamRequestAttempts)');
+      ref.read(rtmServiceProvider).sendRequestRoomInfo();
+      _scheduleStreamRetry();
+    });
+  }
+
+  void _stopStreamRetry() {
+    _streamRequestTimer?.cancel();
+    _streamRequestTimer = null;
+    _streamRequestAttempts = 0;
   }
 
   void _showRoomDestroyedDialog() {
     _heartbeatTimer?.cancel();
+    _stopClockSync();
     _player.state = AdapterPlaybackState.stopped;
     _syncPlayState();
     if (_rtmChannel != null) {
@@ -4007,6 +4117,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         );
       },
     );
+  }
+
+  /// 观众启动时钟校准：连上即探一次，未校准前每 3s 重试，校准后每 30s 复核。
+  void _startClockSync() {
+    _stopClockSync();
+    _sendClockPing();
+    _scheduleClockSync();
+  }
+
+  void _sendClockPing() {
+    if (!mounted) return;
+    ref
+        .read(rtmServiceProvider)
+        .sendTimePing(DateTime.now().millisecondsSinceEpoch);
+  }
+
+  void _scheduleClockSync() {
+    final period = _clockOffset.isCalibrated
+        ? AppConstants.clockSyncIntervalMs
+        : AppConstants.clockSyncRetryMs;
+    _clockPingTimer = Timer(Duration(milliseconds: period), () {
+      if (!mounted) return;
+      _sendClockPing();
+      _scheduleClockSync();
+    });
+  }
+
+  void _stopClockSync() {
+    _clockPingTimer?.cancel();
+    _clockPingTimer = null;
+    _clockOffset.reset();
   }
 
   void _sendCommand(String action, {double? position, double? rate}) {
@@ -4655,7 +4796,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         position: position,
         playUrl: _currentPlayUrl,
         token: _currentToken,
+        subtitleStreams:
+            _embySubtitleStreams.map((s) => s.toJson()).toList(),
+        audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
+        videoStream: _embyVideoStream?.toJson(),
+        defaultAudioStreamIndex: _embyDefaultAudioIndex,
       );
+      // 切集后重广播 roomInfo，确保观众字幕/音轨菜单随新集刷新
+      unawaited(_broadcastRoomInfo());
     }
 
     _rebuildGroups();
@@ -5066,9 +5214,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subtitleStyleApplyTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
+    _stopClockSync();
     _gestureHintTimer?.cancel();
     _gestureBarTimer?.cancel();
     _roomInfoTimeout?.cancel();
+    _stopStreamRetry();
     _countRetryScheduler.cancel();
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
@@ -5743,6 +5893,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 rtmChannel: _syncRtmChannel,
                 rtmStatus: _syncRtmStatus,
                 metadataTestResult: _syncMetadataTestResult,
+                clockOffsetMs: _clockOffset.offsetMs,
+                clockRttMs: _clockOffset.bestRttMs,
+                clockCalibrated: _clockOffset.isCalibrated,
                 voStatus: _voStatus,
                 hdrType: _hdrType,
                 isSinglePlayer: widget.roomCode == null,

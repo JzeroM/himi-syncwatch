@@ -16,6 +16,7 @@ class HoverScrollRow extends StatefulWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 12),
     this.clipBehavior = Clip.none,
     this.controller,
+    this.arrowAnchorHeight,
   });
 
   final double height;
@@ -29,6 +30,11 @@ class HoverScrollRow extends StatefulWidget {
   /// 外部滚动控制器（如详情页选中集自动定位）。为空则内部自建并负责释放；
   /// 非空时复用且不释放（由持有者管理）。
   final ScrollController? controller;
+
+  /// 箭头垂直居中的锚定高度（一般传海报/缩略图区域高度）。箭头中心落在
+  /// `arrowAnchorHeight / 2`；为空则锚定整行高度（与旧行为一致，居中在行中心）。
+  /// 行高常含下方文字区，直接居中会偏低，故按图区高度对齐更贴近卡片视觉中心。
+  final double? arrowAnchorHeight;
 
   @override
   State<HoverScrollRow> createState() => _HoverScrollRowState();
@@ -102,31 +108,35 @@ class _HoverScrollRowState extends State<HoverScrollRow> {
   }
 
   Widget _arrow({required bool left}) {
+    // 箭头中心对齐锚定高度的一半；默认锚定整行（=行中心，与旧行为一致）。
+    // 用绝对 top 而非 Align：Align 的 Alignment 按"剩余空间"折算，会连带
+    // 箭头自高产生偏差。
+    const arrowSize = 34.0;
+    final anchor = widget.arrowAnchorHeight ?? widget.height;
+    final top = (anchor / 2 - arrowSize / 2)
+        .clamp(0.0, (widget.height - arrowSize).clamp(0.0, double.infinity));
     return Positioned(
       left: left ? 4 : null,
       right: left ? null : 4,
-      top: 0,
-      bottom: 0,
-      child: Center(
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            key: ValueKey(left ? 'scrollArrowLeft' : 'scrollArrowRight'),
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _scrollBy(left ? -1 : 1),
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-              ),
-              child: Icon(
-                left ? Icons.arrow_back_ios_new : Icons.arrow_forward_ios,
-                size: 15,
-                color: Colors.white,
-              ),
+      top: top,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: ValueKey(left ? 'scrollArrowLeft' : 'scrollArrowRight'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _scrollBy(left ? -1 : 1),
+          child: Container(
+            width: arrowSize,
+            height: arrowSize,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+            ),
+            child: Icon(
+              left ? Icons.arrow_back_ios_new : Icons.arrow_forward_ios,
+              size: 15,
+              color: Colors.white,
             ),
           ),
         ),

@@ -25,6 +25,9 @@ class ContinueWatchingCard extends StatelessWidget {
 
   static double heightFor(double width) => width * 9 / 16 + textReservedHeight;
 
+  /// 图区（16:9 剧照）高度：供横栏箭头垂直居中对齐使用。
+  static double mediaHeightFor(double width) => width * 9 / 16;
+
   String get _title {
     if (item.isEpisode && (item.seriesName?.isNotEmpty ?? false)) {
       return item.seriesName!;

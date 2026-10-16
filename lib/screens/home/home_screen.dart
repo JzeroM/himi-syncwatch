@@ -450,6 +450,7 @@ class _ContinueWatchingBar extends StatelessWidget {
           height: ContinueWatchingCard.heightFor(_cardWidth),
           child: HoverScrollRow(
             height: ContinueWatchingCard.heightFor(_cardWidth),
+            arrowAnchorHeight: ContinueWatchingCard.mediaHeightFor(_cardWidth),
             itemCount: items.length,
             itemBuilder: (context, index) {
               final item = items[index];
@@ -482,6 +483,9 @@ class _LibraryBar extends StatelessWidget {
   final List<LibraryFolder> libraries;
   final void Function(LibraryFolder library) onOpen;
 
+  /// 媒体库卡图区（海报）高度：行高 126 = 图区 96 + 间距 6 + 标题。
+  static const double _posterHeight = 96;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -498,6 +502,7 @@ class _LibraryBar extends StatelessWidget {
           height: 126,
           child: HoverScrollRow(
             height: 126,
+            arrowAnchorHeight: _posterHeight,
             itemCount: libraries.length,
             itemBuilder: (context, index) {
               final lib = libraries[index];
@@ -515,7 +520,7 @@ class _LibraryBar extends StatelessWidget {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(14),
                           child: SizedBox(
-                            height: 96,
+                            height: _posterHeight,
                             child: EmbyImage(
                                 url: lib.posterUrl,
                                 fit: BoxFit.cover,
@@ -592,6 +597,7 @@ class _CategorySection extends StatelessWidget {
           height: PosterCard.heightFor(102),
           child: HoverScrollRow(
             height: PosterCard.heightFor(102),
+            arrowAnchorHeight: PosterCard.mediaHeightFor(102),
             itemCount: category.items.length,
             itemBuilder: (context, index) {
               final item = category.items[index];

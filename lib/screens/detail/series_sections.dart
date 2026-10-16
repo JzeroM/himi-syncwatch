@@ -386,6 +386,13 @@ class _SeasonEpisodeRow extends StatelessWidget {
   static const double _cardWidth = 240;
   static const double _cardGap = 12;
 
+  /// 剧集卡内边距（图片区四周）。
+  static const double _cardPadding = 3;
+
+  /// 缩略图（16:9）高度：内宽 = 卡宽 - 左右内边距。
+  static const double _imageHeight =
+      (_cardWidth - _cardPadding * 2) * 9 / 16;
+
   @override
   Widget build(BuildContext context) {
     if (episodes.isEmpty) {
@@ -401,6 +408,8 @@ class _SeasonEpisodeRow extends StatelessWidget {
       key: rowKey,
       height: 240,
       controller: controller,
+      // 箭头垂直居中于缩略图区域（行高含标题/日期/简介，直接居中会偏低）
+      arrowAnchorHeight: _cardPadding * 2 + _imageHeight,
       // TV 焦点框放大溢出内容盒，默认 clip 会裁边
       clipBehavior: Clip.none,
       // 横卡自带 3px 内边距：行不再额外加水平 padding，保持原布局
@@ -414,7 +423,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
         final card = Container(
           key: Key('episodeCard_${ep.id}'),
           width: _cardWidth,
-          padding: const EdgeInsets.all(3),
+          padding: const EdgeInsets.all(_cardPadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

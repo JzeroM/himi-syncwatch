@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
 
-Widget _host({int count = 20, double rowWidth = 300}) => MaterialApp(
+Widget _host({int count = 20, double rowWidth = 300, double? anchor}) =>
+    MaterialApp(
       home: Scaffold(
         body: Center(
           child: SizedBox(
@@ -11,6 +12,7 @@ Widget _host({int count = 20, double rowWidth = 300}) => MaterialApp(
             height: 120,
             child: HoverScrollRow(
               height: 120,
+              arrowAnchorHeight: anchor,
               itemCount: count,
               itemBuilder: (context, index) => SizedBox(
                 width: 100,
@@ -135,5 +137,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.offset, greaterThan(before),
         reason: '点箭头应通过外部 controller 滚动');
+  });
+
+  testWidgets('不传 arrowAnchorHeight → 箭头垂直居中于整行', (tester) async {
+    await tester.pumpWidget(_host());
+    await _hover(tester);
+
+    final rowTop = tester.getTopLeft(find.byType(HoverScrollRow)).dy;
+    final arrowCenter = tester.getCenter(find.byKey(_right)).dy;
+    expect(arrowCenter - rowTop, closeTo(60, 0.5),
+        reason: '默认锚定行高 120 → 中心 60');
+  });
+
+  testWidgets('传 arrowAnchorHeight → 箭头垂直居中于图区', (tester) async {
+    await tester.pumpWidget(_host(anchor: 80));
+    await _hover(tester);
+
+    final rowTop = tester.getTopLeft(find.byType(HoverScrollRow)).dy;
+    final arrowCenter = tester.getCenter(find.byKey(_right)).dy;
+    expect(arrowCenter - rowTop, closeTo(40, 0.5),
+        reason: '图区高 80 → 箭头中心 40（不再偏低到行中心 60）');
   });
 }

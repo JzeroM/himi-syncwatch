@@ -187,6 +187,8 @@ void main() {
       await service.sendCommand(action: 'play');
       await service.sendJoinLeave(action: 'join', userName: 'n');
       await service.sendRequestRoomInfo();
+      await service.sendTimePing(123);
+      await service.sendTimePong(123, 456);
       expect(backend.published, isEmpty);
     });
 
@@ -210,6 +212,36 @@ void main() {
       expect(msg['playing'], isTrue);
       expect(msg['rate'], 1.25);
       expect(msg['ts'], isA<int>());
+      expect(msg['ts'], greaterThan(1000000000000),
+          reason: '心跳时间戳升级为毫秒，供观众时钟校准对齐');
+    });
+
+    test('sendCommand 携带流字段（随 syncPlay 下发字幕音轨）', () async {
+      await service.subscribe('ch1');
+      await service.sendCommand(
+        action: 'syncPlay',
+        episodeIndex: 1,
+        playUrl: 'http://x/p',
+        subtitleStreams: [
+          {'index': 3, 'codec': 'srt'}
+        ],
+        audioStreams: [
+          {'index': 1, 'codec': 'aac'}
+        ],
+        videoStream: {'codec': 'hevc'},
+        defaultAudioStreamIndex: 1,
+      );
+
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
+      expect(msg['subtitleStreams'], [
+        {'index': 3, 'codec': 'srt'}
+      ]);
+      expect(msg['audioStreams'], [
+        {'index': 1, 'codec': 'aac'}
+      ]);
+      expect(msg['videoStream'], {'codec': 'hevc'});
+      expect(msg['defaultAudioStreamIndex'], 1);
     });
 
     test('sendCommand 组装 action 与可选字段', () async {
@@ -229,6 +261,30 @@ void main() {
       expect(msg['episodeIndex'], 2);
       expect(msg['itemId'], 'item1');
       expect(msg.containsKey('rate'), isFalse);
+    });
+
+    test('sendTimePing 发布 command/timePing 并携带 t1', () async {
+      await service.subscribe('ch1');
+      await service.sendTimePing(1694000000123);
+
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
+      expect(msg['type'], 'command');
+      expect(msg['action'], 'timePing');
+      expect(msg['t1'], 1694000000123);
+      expect(msg.containsKey('t2'), isFalse);
+    });
+
+    test('sendTimePong 回显 t1 并携带房主 t2', () async {
+      await service.subscribe('ch1');
+      await service.sendTimePong(1694000000123, 1694000000456);
+
+      final msg =
+          jsonDecode(backend.published.single.message) as Map<String, dynamic>;
+      expect(msg['type'], 'command');
+      expect(msg['action'], 'timePong');
+      expect(msg['t1'], 1694000000123);
+      expect(msg['t2'], 1694000000456);
     });
 
     test('sendRoomInfo 发布 roomInfo 类型', () async {

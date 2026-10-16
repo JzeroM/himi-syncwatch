@@ -29,4 +29,14 @@ class AppConstants {
   static const String actionSyncPlay = 'syncPlay';
   static const String actionRoomDestroyed = 'roomDestroyed';
   static const String actionAddResource = 'addResource';
+
+  // 时钟校准（NTP-lite 往返握手）
+  static const String actionTimePing = 'timePing';
+  static const String actionTimePong = 'timePong';
+
+  /// 观众时钟校准探测周期。
+  static const int clockSyncIntervalMs = 30000;
+
+  /// 校准失败（短暂无响应）重试间隔。
+  static const int clockSyncRetryMs = 3000;
 }

@@ -13,6 +13,11 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   final String rtmChannel;
   final String rtmStatus;
   final String metadataTestResult;
+
+  /// 观众时钟校准结果（房主不校准，保持 null/false）。
+  final double? clockOffsetMs;
+  final int? clockRttMs;
+  final bool clockCalibrated;
   final String voStatus;
   final String hdrType;
   final bool isSinglePlayer;
@@ -107,6 +112,9 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.rtmChannel,
     required this.rtmStatus,
     required this.metadataTestResult,
+    this.clockOffsetMs,
+    this.clockRttMs,
+    this.clockCalibrated = false,
     required this.voStatus,
     required this.hdrType,
     required this.isSinglePlayer,
@@ -407,6 +415,13 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                       _debugRow('RTM 频道', widget.rtmChannel),
                       _debugRow('RTM 状态', widget.rtmStatus),
                       _debugRow('Metadata', widget.metadataTestResult),
+                      if (!widget.isHost)
+                        _debugRow(
+                            '时钟校准',
+                            widget.clockCalibrated
+                                ? '偏移 ${widget.clockOffsetMs!.toStringAsFixed(0)}ms'
+                                    ' / RTT ${widget.clockRttMs ?? '-'}ms'
+                                : '未校准'),
                     ],
                   ],
 
