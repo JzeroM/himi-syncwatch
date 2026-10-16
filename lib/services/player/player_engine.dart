@@ -1,6 +1,6 @@
 import 'package:erika_flutter/erika_flutter.dart' show ErikaOutputMode;
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 
 import 'player_adapter.dart';
 import 'mdk_player_adapter.dart';
@@ -18,6 +18,14 @@ import 'erika_player_adapter.dart';
 class PlayerEngineFactory {
   PlayerEngineFactory._();
 
+  /// 仅测试用工厂覆盖：非 null 时 [create] 直接返回其产物，避免 widget 级
+  /// 生命周期测试实例化真实原生引擎（mdk/media_kit/erika）。生产恒为 null。
+  @visibleForTesting
+  static PlayerAdapter Function(
+    PlayerEngine engine, {
+    ErikaOutputMode erikaOutputMode,
+  })? debugCreateOverride;
+
   /// 创建指定引擎的播放器适配器。
   ///
   /// [erikaOutputMode] 仅 Erika 使用（由内容路由结果传入）。
@@ -25,6 +33,10 @@ class PlayerEngineFactory {
     PlayerEngine engine, {
     ErikaOutputMode erikaOutputMode = ErikaOutputMode.sdr,
   }) {
+    final override = debugCreateOverride;
+    if (override != null) {
+      return override(engine, erikaOutputMode: erikaOutputMode);
+    }
     switch (engine) {
       case PlayerEngine.mdk:
         return MdkPlayerAdapter();

@@ -294,10 +294,16 @@ class MediaKitPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       get onMediaStatus {
     // duration（loading→loaded）与 completed（→end）合并广播：
     // 旧实现只听 duration，播完不发 end，自动下一集丢失触发源。
+    //
+    // v1.2.6：此前该 controller 从不 close，每次 getter 访问都新建一个且
+    // 取消监听后仍存活（subs 早已 cancel）→ 泄漏。改为 onCancel 里 close，
+    // 并给 emit 加 isClosed 守卫（对齐 fvp 0.39.1 的 add-after-close 修复），
+    // 避免「取消监听 → close」与在途 stream 事件竞态下 add 到已关闭控制器。
     final ctrl = StreamController<
         ({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>.broadcast();
     AdapterMediaStatus last = AdapterMediaStatus.loading;
     void emit(AdapterMediaStatus next) {
+      if (ctrl.isClosed) return;
       if (next.rawValue == last.rawValue) return;
       final old = last;
       last = next;
@@ -321,6 +327,7 @@ class MediaKitPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       for (final s in subs) {
         s.cancel();
       }
+      if (!ctrl.isClosed) ctrl.close();
     };
     return ctrl.stream;
   }

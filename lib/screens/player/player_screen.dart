@@ -871,9 +871,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // fvp: 轨道信息通过 Emby API 获取，不需要 media_kit 的 SubtitleTrack/AudioTrack
   StreamSubscription? _tracksSubscription;
 
-  /// mdk 播放状态/媒体状态监听（dispose 时取消）。
+  /// mdk 播放状态/媒体状态/运行时事件监听（dispose 与引擎重建时取消）。
   StreamSubscription? _stateSub;
   StreamSubscription? _statusSub;
+  // onEvent 曾为匿名订阅（从不取消）：每次引擎重建都会在旧播放器的
+  // _eventCb 上多挂一个永久监听 → 订阅/闭包泄漏，且使上游 hasListener
+  // 恒真。改为存字段并随重建/dispose 取消（v1.2.6）。
+  StreamSubscription? _eventSub;
   bool _subtitleAutoSelected = false;
 
   List<MediaStream> _embySubtitleStreams = [];
@@ -2552,6 +2556,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } catch (_) {}
     _stateSub?.cancel();
     _statusSub?.cancel();
+    _eventSub?.cancel();
     _tracksSubscription?.cancel();
     _positionTimer?.cancel();
     _diagnosticTimer?.cancel();
@@ -3036,7 +3041,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 采集 mdk 运行时事件：缓冲进度、解码线程启停、解码错误、首帧
     // 事件 category/detail 的具体取值官方未完整文档化，因此原样记录 detail，
     // 便于拿到真机数据后确认语义。
-    _player.onEvent.listen((event) {
+    _eventSub = _player.onEvent.listen((event) {
       if (!mounted) return;
       switch (event.category) {
         case 'reader.buffering':
@@ -5228,6 +5233,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _accelSub?.cancel();
     _stateSub?.cancel();
     _statusSub?.cancel();
+    _eventSub?.cancel();
     try {
       _broadcastScrollController.dispose();
     } catch (_) {}
