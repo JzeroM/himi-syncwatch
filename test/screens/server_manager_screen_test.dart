@@ -919,7 +919,7 @@ void main() {
       await _settleSnackbars(tester);
     });
 
-    testWidgets('TV ⋮ 菜单打开后首项获得焦点（FocusScope + autofocus）',
+    testWidgets('TV ⋮ 菜单打开后焦点留在 ⋮（面板高亮由按钮驱动）',
         (tester) async {
       await _pumpScreen(
         tester,
@@ -936,13 +936,13 @@ void main() {
       // 面板打开：首项「编辑」存在
       expect(find.text('编辑'), findsOneWidget, reason: '面板应已打开');
 
-      // 面板内首项 TvFocusable 有 autofocus（把焦点拉进面板）
-      final panelItemTv = tester
-          .widgetList<TvFocusable>(find.byType(TvFocusable))
-          .where((w) => w.autofocus)
-          .toList();
-      expect(panelItemTv, isNotEmpty,
-        reason: '面板内首项应设 autofocus 把焦点拉进面板');
+      // v1.2.1：焦点不进入面板（移出卡片会重建卡片→面板被关），
+      // 而是留在卡片/⋮；面板项不再承载焦点节点（ExcludeFocus）。
+      final focus = FocusManager.instance.primaryFocus;
+      expect(focus, isNotNull, reason: '焦点不应悬空');
+      expect(focus?.debugLabel, isNot(startsWith('serverPanelItem')),
+          reason: '焦点不应下移进面板项');
+      expect(find.text('删除'), findsOneWidget, reason: '面板应保持打开');
     });
 
     testWidgets('TV ⋮ 菜单关闭后焦点回 ⋮ 按钮', (tester) async {
@@ -1447,6 +1447,135 @@ void main() {
       expect(focusedTileKey(), const ValueKey('serverTile_srv_b'),
           reason: '下键应落到下一张卡主体（而非 ⋮）');
       expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus');
+      await _settleSnackbars(tester);
+    });
+  });
+
+  group('v1.2.1 TV 操作面板方向键导航闭环', () {
+    String? focusLabel() => FocusManager.instance.primaryFocus?.debugLabel;
+
+    Future<void> openPanel(WidgetTester tester, {bool remote = true}) async {
+      await _pumpScreen(
+        tester,
+        remote: remote,
+        settings: const AppSettings(tvMode: true),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+      // 首卡聚焦 → 右键进 ⋮ → OK 打开面板
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('删除'), findsOneWidget, reason: '面板应已打开');
+    }
+
+    testWidgets('打开面板后焦点仍在 ⋮（不移入面板，卡片不重建）', (tester) async {
+      await openPanel(tester);
+      expect(focusLabel(), 'serverMoreBtn',
+          reason: '焦点应留在 ⋮ 按钮，避免卡片重建导致面板被关');
+      // 面板仍在（若焦点移出卡片会被重建关闭）
+      expect(find.text('删除'), findsOneWidget);
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('方向键移动高亮不逃逸：面板打开期间焦点始终在 ⋮', (tester) async {
+      await openPanel(tester);
+      for (var i = 0; i < 8; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'serverMoreBtn',
+            reason: '↓ 期间焦点不应离开 ⋮（不逃逸）');
+        expect(find.text('删除'), findsOneWidget, reason: '面板应保持打开');
+      }
+      // 越界后仍停在面板内，面板不关
+      expect(find.text('删除'), findsOneWidget);
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('默认选中首项：打开后直接 OK 触发「编辑」（TV→扫码页）',
+        (tester) async {
+      await openPanel(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.byType(QrConfigScreen), findsOneWidget,
+          reason: '默认选中首项=编辑，OK 应触发编辑动作（TV 走扫码）');
+      Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('↓ 到第二项 OK 触发「切换线路」', (tester) async {
+      await openPanel(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('routeTile_main')), findsOneWidget,
+          reason: '下移一次 → 第二项=切换线路 → OK 打开线路弹层');
+      expect(find.text('删除'), findsNothing, reason: '触发动作后面板应关闭');
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('↓↑ 往返后 OK 命中对应项（↓ ↓ ↑ → 第二项「切换线路」）',
+        (tester) async {
+      await openPanel(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('routeTile_main')), findsOneWidget,
+          reason: '两次↓一次↑应回到第二项=切换线路');
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('越界：连续 ↓ 后 OK 命中末项「删除」（弹确认框）', (tester) async {
+      await openPanel(tester);
+      for (var i = 0; i < 10; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.text('删除服务器'), findsOneWidget,
+          reason: '↓ 越界应停在末项=删除，OK 弹删除确认框');
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('首项 ↑ 不越界：仍停在首项，OK 触发「编辑」', (tester) async {
+      await openPanel(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.byType(QrConfigScreen), findsOneWidget,
+          reason: '首项↑不越界，仍选中编辑');
+      Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('无全局方向键钩子（remote:false）时面板导航仍可用', (tester) async {
+      await openPanel(tester, remote: false);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('routeTile_main')), findsOneWidget,
+          reason: '不依赖全局 TvRemoteShortcuts，面板导航由 ⋮ 自身完成');
       await _settleSnackbars(tester);
     });
   });

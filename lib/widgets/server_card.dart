@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -168,10 +169,73 @@ class ServerMoreButton extends ConsumerStatefulWidget {
 class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
   OverlayEntry? _entry;
 
+  /// TV 面板当前选中项索引。箭头键只改这个值让面板高亮移动，
+  /// **不移动焦点**——焦点一旦离开卡片子树，卡片会被框架重建，
+  /// ⋮ 的 State 被销毁 → 面板随即被关（v1.1.246 实测陷阱）。
+  final ValueNotifier<int> _panelIndex = ValueNotifier<int>(0);
+
   /// 持有按钮焦点节点：面板关闭后回焦，TV 遥控器不丢焦点位置。
   /// 页面注入时用注入节点（用于「主体 → ⋮」连线），不重复创建。
   late final FocusNode _buttonNode =
       widget.focusNode ?? FocusNode(debugLabel: 'serverMoreBtn');
+
+  /// 面板动作项数（编辑项视是否可编辑而定）。
+  int get _actionCount => widget.onEdit != null ? 6 : 5;
+
+  /// 面板动作表（与 [_ServerActionPanel] 渲染顺序一致）。
+  List<_PanelAction> _buildActions() => [
+        if (widget.onEdit != null)
+          const _PanelAction(
+              icon: Icons.edit_outlined, label: '编辑', value: 'edit'),
+        const _PanelAction(
+            icon: Icons.alt_route, label: '切换线路', value: 'switchLine'),
+        const _PanelAction(
+            icon: Icons.image_outlined, label: '更换图标', value: 'changeIcon'),
+        const _PanelAction(
+            icon: Icons.bar_chart_outlined, label: '资源统计', value: 'stats'),
+        const _PanelAction(
+            icon: Icons.tune, label: '资源设置', value: 'resourceSettings'),
+        const _PanelAction(
+          icon: Icons.delete_outline,
+          label: '删除',
+          value: 'delete',
+          danger: true,
+        ),
+      ];
+
+  bool _isConfirm(LogicalKeyboardKey key) =>
+      key == LogicalKeyboardKey.enter ||
+      key == LogicalKeyboardKey.numpadEnter ||
+      key == LogicalKeyboardKey.select;
+
+  /// 激活面板第 [index] 项（OK 键 / 指针点击共用）。
+  void _activate(int index) {
+    final actions = _buildActions();
+    if (index < 0 || index >= actions.length) return;
+    final action = actions[index];
+    _close();
+    switch (action.value) {
+      case 'edit':
+        widget.onEdit?.call();
+      case 'switchLine':
+        if (widget.onSwitchLine != null) {
+          widget.onSwitchLine!();
+        } else {
+          showAppToast(context, '功能开发中');
+        }
+      case 'stats':
+        if (widget.onStats != null) {
+          widget.onStats!();
+        } else {
+          showAppToast(context, '功能开发中');
+        }
+      case 'delete':
+        widget.onDelete();
+      default:
+        // 占位功能：具体交互后续设计
+        showAppToast(context, '功能开发中');
+    }
+  }
 
   void _toggle() {
     if (_entry != null) {
@@ -191,20 +255,17 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
     final size = box.size;
     final onClose = _close;
 
+    _panelIndex.value = 0;
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _ServerActionPanel(
         anchorOffset: offset,
         anchorSize: size,
-        tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
-        onEdit: widget.onEdit,
-        onSwitchLine: widget.onSwitchLine,
-        onStats: widget.onStats,
-        onDelete: () {
-          onClose();
-          widget.onDelete();
-        },
+        actions: _buildActions(),
+        selection: _panelIndex,
+        onActivate: _activate,
         onClose: onClose,
+        tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
       ),
     );
     _entry = entry;
@@ -230,6 +291,7 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
   @override
   void dispose() {
     _close(refocus: false);
+    _panelIndex.dispose();
     // 仅释放自建节点，注入的由页面持有
     if (widget.focusNode == null) _buttonNode.dispose();
     super.dispose();
@@ -261,15 +323,43 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
       scale: 1.0,
       radius: 8,
       onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        final key = event.logicalKey;
+        // 面板已展开：方向键闭环移动面板高亮（焦点留在 ⋮，不逃逸、不重建卡片）。
+        if (_entry != null) {
+          if (key == LogicalKeyboardKey.arrowDown) {
+            if (_panelIndex.value < _actionCount - 1) _panelIndex.value++;
+            return KeyEventResult.handled;
+          }
+          if (key == LogicalKeyboardKey.arrowUp) {
+            if (_panelIndex.value > 0) _panelIndex.value--;
+            return KeyEventResult.handled;
+          }
+          if (key == LogicalKeyboardKey.arrowLeft) {
+            _close();
+            return KeyEventResult.handled;
+          }
+          if (key == LogicalKeyboardKey.arrowRight) {
+            _close();
+            widget.onForward?.call();
+            return KeyEventResult.handled;
+          }
+          if (_isConfirm(key)) {
+            _activate(_panelIndex.value);
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        }
+        // 面板未展开：
         // 左方向键：交回卡片主体焦点（⋮ 与主体为独立节点，无几何包含关系，
         // 框架遍历无法从 ⋮ 回到主体，故显式连线）。
-        if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+        if (key == LogicalKeyboardKey.arrowLeft) {
           if (widget.onBack == null) return KeyEventResult.ignored;
           widget.onBack!();
           return KeyEventResult.handled;
         }
         // 右方向键：交到相邻卡片主体（同上，显式连线）。
-        if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.arrowRight) {
+        if (key == LogicalKeyboardKey.arrowRight) {
           if (widget.onForward == null) return KeyEventResult.ignored;
           widget.onForward!();
           return KeyEventResult.handled;
@@ -297,26 +387,34 @@ class _PanelAction {
 }
 
 /// 按钮下方展开的玻璃操作面板（94% 不透明着色膜 + 淡入下滑动画）。
+///
+/// TV 焦点策略：面板项**不自持焦点**。焦点始终留在触发它的 ⋮ 按钮上，
+/// 由按钮用 [selection] 驱动面板项高亮，OK 键经 [onActivate] 激活当前项。
+/// 原因：把焦点移出卡片子树会导致卡片被框架重建、⋮ State 销毁、面板被关
+/// （v1.1.246 实测陷阱）。故此方案方向键闭环且不触碰焦点。
 class _ServerActionPanel extends StatefulWidget {
   const _ServerActionPanel({
     required this.anchorOffset,
     required this.anchorSize,
-    required this.onDelete,
+    required this.actions,
+    required this.selection,
+    required this.onActivate,
     required this.onClose,
     this.tvMode = false,
-    this.onEdit,
-    this.onSwitchLine,
-    this.onStats,
   });
 
   final Offset anchorOffset;
   final Size anchorSize;
-  final bool tvMode;
-  final VoidCallback? onEdit;
-  final VoidCallback? onSwitchLine;
-  final VoidCallback? onStats;
-  final VoidCallback onDelete;
+  final List<_PanelAction> actions;
+
+  /// 当前选中项索引（TV 高亮来源；由 ⋮ 按钮持有）。
+  final ValueListenable<int> selection;
+
+  /// 指针点击某项时激活该索引。
+  final ValueChanged<int> onActivate;
+
   final VoidCallback onClose;
+  final bool tvMode;
 
   @override
   State<_ServerActionPanel> createState() => _ServerActionPanelState();
@@ -345,53 +443,9 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
     super.dispose();
   }
 
-  void _onSelected(_PanelAction action) {
-    widget.onClose();
-    switch (action.value) {
-      case 'edit':
-        widget.onEdit?.call();
-      case 'switchLine':
-        if (widget.onSwitchLine != null) {
-          widget.onSwitchLine!();
-        } else {
-          showAppToast(context, '功能开发中');
-        }
-      case 'stats':
-        if (widget.onStats != null) {
-          widget.onStats!();
-        } else {
-          showAppToast(context, '功能开发中');
-        }
-      case 'delete':
-        widget.onDelete();
-      default:
-        // 占位功能：具体交互后续设计
-        showAppToast(context, '功能开发中');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final actions = [
-      if (widget.onEdit != null)
-        const _PanelAction(
-            icon: Icons.edit_outlined, label: '编辑', value: 'edit'),
-      const _PanelAction(
-          icon: Icons.alt_route, label: '切换线路', value: 'switchLine'),
-      const _PanelAction(
-          icon: Icons.image_outlined, label: '更换图标', value: 'changeIcon'),
-      const _PanelAction(
-          icon: Icons.bar_chart_outlined, label: '资源统计', value: 'stats'),
-      const _PanelAction(
-          icon: Icons.tune, label: '资源设置', value: 'resourceSettings'),
-      const _PanelAction(
-        icon: Icons.delete_outline,
-        label: '删除',
-        value: 'delete',
-        danger: true,
-      ),
-    ];
-
+    final actions = widget.actions;
     final panelHeight = actions.length * _itemHeight + 12;
     final screen = MediaQuery.sizeOf(context);
 
@@ -434,11 +488,13 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
                     endIndent: 16,
                     color: Color(0x1AFFFFFF),
                   ),
-                _PanelItem(
-                  action: actions[i],
-                  onTap: () => _onSelected(actions[i]),
-                  tvMode: widget.tvMode,
-                  autofocus: widget.tvMode && i == 0,
+                ValueListenableBuilder<int>(
+                  valueListenable: widget.selection,
+                  builder: (_, selectedIndex, __) => _PanelItem(
+                    action: actions[i],
+                    selected: widget.tvMode && selectedIndex == i,
+                    onTap: () => widget.onActivate(i),
+                  ),
                 ),
               ],
             ],
@@ -447,9 +503,6 @@ class _ServerActionPanelState extends State<_ServerActionPanel>
       ),
     );
 
-    // TV：首项 TvFocusable 自带 autofocus 把焦点拉进面板。
-    // 不包 FocusScope——它会在打开时抢走卡片焦点导致卡片重挂载，
-    // ⋮ 按钮状态丢失面板被关（v1.1.246 调试确认）。
     return Stack(
       children: [
         // 透明 barrier：点击面板外关闭
@@ -483,18 +536,19 @@ class _PanelItem extends StatelessWidget {
   const _PanelItem({
     required this.action,
     required this.onTap,
-    this.tvMode = false,
-    this.autofocus = false,
+    this.selected = false,
   });
 
   final _PanelAction action;
   final VoidCallback onTap;
-  final bool tvMode;
-  final bool autofocus;
+
+  /// TV 选中态：左侧主题色竖条 + 淡背景高亮。
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final color = action.danger ? Colors.redAccent : Colors.white;
+    final primary = Theme.of(context).colorScheme.primary;
     final row = SizedBox(
       height: 48,
       child: Padding(
@@ -515,17 +569,24 @@ class _PanelItem extends StatelessWidget {
         ),
       ),
     );
-    if (!tvMode) {
-      return InkWell(onTap: onTap, child: row);
-    }
-    // TV：TvFocusable 提供焦点环 + OK 键；ExcludeFocus 屏蔽内层 InkWell 焦点节点
-    return TvFocusable(
-      autofocus: autofocus,
-      scale: 1.0,
-      radius: 8,
-      onTap: onTap,
-      child: ExcludeFocus(
-        child: InkWell(onTap: onTap, child: row),
+    // 面板项不参与焦点遍历（焦点留在 ⋮ 按钮，由按钮驱动高亮/激活）。
+    return ExcludeFocus(
+      child: InkWell(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: selected
+              ? BoxDecoration(
+                  color: primary.withValues(alpha: 0.16),
+                  border: Border(
+                    left: BorderSide(color: primary, width: 3),
+                  ),
+                )
+              : const BoxDecoration(
+                  border: Border(left: BorderSide(color: Colors.transparent, width: 3)),
+                ),
+          child: row,
+        ),
       ),
     );
   }

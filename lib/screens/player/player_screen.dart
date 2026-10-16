@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/stream_reload_scheduler.dart';
+import 'package:himi_syncwatch/services/player/stream_stall_guard.dart';
 import 'package:erika_flutter/erika_flutter.dart'
     show ErikaVideoView, ErikaOutputMode;
 import 'package:himi_syncwatch/services/player/erika_player_adapter.dart';
@@ -763,8 +764,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 流中断（invalid/取流失败/缓冲超时）时的退避重载调度。
   final StreamReloadScheduler _streamReload = StreamReloadScheduler();
 
-  /// 缓冲 watchdog：持续 buffering/stalled 超过 10s 触发同线路重载。
+  /// 缓冲 watchdog：持续 buffering/stalled 超过阈值触发同线路重载。
+  /// 仅当期间播放位置停滞（无推进）才判为真卡死；position 持续推进说明
+  /// 只是高码率/弱网下的降速播放，不得重载（否则反复清缓冲加剧卡顿）。
   Timer? _stallWatchdogTimer;
+
+  /// watchdog 武装时的播放位置（ms）；用于采样时判断是否仍有推进。
+  int? _stallWatchdogStartPosMs;
 
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
@@ -1383,6 +1389,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           !ms.test(AdapterMediaStatus.stalled)) {
         _streamReload.reset();
       }
+      // 缓冲 watchdog 进度感知：武装期间 position 持续推进说明是「慢但在播」
+      // （高码率 4K + 弱网下降速播放），并非真卡死 → 取消 watchdog 不重载。
+      final stallStartPos = _stallWatchdogStartPosMs;
+      if (_stallWatchdogTimer != null && stallStartPos != null) {
+        if (StreamStallGuard.progressed(stallStartPos, _player.position)) {
+          LogService().log('Diag', '缓冲期间进度仍推进 → 取消缓冲超时watchdog');
+          _diag.onStallEnd();
+          _cancelStallWatchdog();
+        }
+      }
       _diag.addSample(
         pos: _player.position,
         buffered: _player.buffered(),
@@ -1770,7 +1786,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  Future<void> _loadEpisodeStream(int episodeIndex, {int startMs = 0}) async {
+  Future<void> _loadEpisodeStream(
+    int episodeIndex, {
+    int startMs = 0,
+    bool resetBudget = true,
+  }) async {
     if (episodeIndex < 0 || episodeIndex >= _episodes.length) return;
 
     final ep = _episodes[episodeIndex];
@@ -1793,8 +1813,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 新集允许一次新的自动故障转移
       _failoverAttempted = false;
       _reportFailCount = 0;
-      // 新集复位同线路重载预算（v1.1.245）
-      _streamReload.reset();
+      // 新集复位同线路重载预算（v1.1.245）；同线路重载复用本路径时
+      // 不得复位（否则每轮重载清零退避预算 → 无限循环）。
+      if (resetBudget) _streamReload.reset();
       _cancelStallWatchdog();
     });
     // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
@@ -4173,8 +4194,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 分发对齐 [_recoverVideoAfterResume]：
   /// - 观众：[_playFromUrl]（重载后心跳纠偏回房主进度）
-  /// - 有剧集：[_loadEpisodeStream]（带 startMs）
-  /// - 单集：[_loadStream]（带 startMs，返回 true 时复位重试预算）
+  /// - 有剧集：[_loadEpisodeStream]（带 startMs，不复位退避预算）
+  /// - 单集：[_loadStream]（带 startMs，不复位退避预算）
   Future<void> _reloadSameLine() async {
     if (!mounted || !_streamReload.beginFlight()) return;
     _cancelStallWatchdog();
@@ -4196,10 +4217,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       // 单人 / 房主：走已验证的加载路径（重载会重新起播）
       if (_hasEpisodeList && _currentEpisodeIndex >= 0) {
-        await _loadEpisodeStream(_currentEpisodeIndex, startMs: posMs);
+        await _loadEpisodeStream(_currentEpisodeIndex,
+            startMs: posMs, resetBudget: false);
       } else {
-        final ok = await _loadStream(startMs: posMs);
-        if (ok && mounted) _streamReload.reset();
+        // 不复位退避预算：重载成功 ≠ 播放恢复健康。健康复位交给
+        // _samplePlayback 的稳定兜底（playing 且非卡顿），否则重置预算
+        // 会让退避上限失效形成无界重载环。
+        await _loadStream(startMs: posMs);
       }
       if (!mounted) return;
       // 暂停态还原：重载默认起播，需恢复暂停（同 resume 路径）
@@ -4212,32 +4236,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } finally {
       _streamReload.endFlight();
     }
-    // 重载结束（endFlight 后）：状态仍不健康则调度下一次退避重试。
+    // 重载结束（endFlight 后）：按健康度决定下一步。
     // inFlight 期间 _loadStream 内部 catch 的 _maybeStreamReload 会被
-    // canSchedule 吞掉，需在此补调度，否则重试链断裂。
+    // canSchedule 吞掉，需在此补处理，否则重试链断裂。
     if (!mounted) return;
     final ms = _player.mediaStatus;
     final st = _player.state;
+    final broken = ms.test(AdapterMediaStatus.invalid) ||
+        ms.test(AdapterMediaStatus.stalled);
     final healthy = st == AdapterPlaybackState.playing &&
-        !ms.test(AdapterMediaStatus.invalid) &&
-        !ms.test(AdapterMediaStatus.buffering) &&
-        !ms.test(AdapterMediaStatus.stalled);
+        !broken &&
+        !ms.test(AdapterMediaStatus.buffering);
     if (!healthy) {
-      _maybeStreamReload('重载后仍异常');
+      if (broken) {
+        // 明确损坏：立即按退避调度下一次重载。
+        _maybeStreamReload('重载后仍异常');
+      } else {
+        // 仅 buffering 位未落（高码率/弱网常见）：不立即重载（会清缓冲
+        // 加剧卡顿成环），改交「进度感知 watchdog」判定——位置持续推进
+        // 即视为慢但在播，不重载；真停滞才在 10s 后重载。
+        _startStallWatchdog();
+      }
     }
   }
 
-  /// 缓冲 watchdog：持续 buffering/stalled 超过 10s 触发同线路重载。
+  /// 缓冲 watchdog：持续 buffering/stalled 且**播放位置停滞**超过 10s
+  /// 才触发同线路重载。
   ///
   /// 网络波动断连常表现为流挂起不报 invalid，仅停在 buffering/stalled；
   /// 状态位可能永不翻转（diag.reapStaleStall 兜底同理），需独立计时兜底。
+  /// 但高码率 4K + 弱网下降速播放也会长期置位 buffering 而位置持续推进，
+  /// 此时不得重载（清缓冲只会加剧卡顿），故以「位置推进」区分真卡死。
   void _startStallWatchdog() {
     // 已有重载调度/进行中：不重复武装
     if (_streamReload.hasPending || _streamReload.inFlight) return;
     _stallWatchdogTimer?.cancel();
+    // 记录武装时位置：采样时据此判断是否仍有推进（真卡死才重载）。
+    _stallWatchdogStartPosMs = _player.position;
     _stallWatchdogTimer =
         Timer(StreamReloadScheduler.stallTimeout, () {
       if (!mounted) return;
+      // 触发前再确认一次：位置有推进则说明慢但在播，不重载。
+      final startPos = _stallWatchdogStartPosMs;
+      if (startPos != null &&
+          StreamStallGuard.progressed(startPos, _player.position)) {
+        LogService().log('Diag', '缓冲超时但进度已推进 → 不重载');
+        _diag.onStallEnd();
+        _cancelStallWatchdog();
+        return;
+      }
       LogService().log('Player', '缓冲超时 → 调度同线路重载');
       _maybeStreamReload('缓冲超时');
     });
@@ -4247,6 +4294,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _cancelStallWatchdog() {
     _stallWatchdogTimer?.cancel();
     _stallWatchdogTimer = null;
+    _stallWatchdogStartPosMs = null;
   }
 
   /// 从「重播乐观隐藏」集合移除当前条目（服务器真相已回来）。
