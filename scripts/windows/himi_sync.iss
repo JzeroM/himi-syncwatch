@@ -26,6 +26,7 @@ AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 ; 默认装到当前用户目录（无需管理员，可改）
+PrivilegesRequired=lowest
 DefaultDirName={autopf}\HIMI
 ; 保留目录选择页：允许自定义安装位置
 DisableDirPage=no
@@ -39,7 +40,6 @@ OutputBaseFilename=himi-sync-windows-{#MyAppVersion}-setup
 SetupIconFile={#MyAppIcon}
 ; 覆盖安装：应用运行中时提示关闭，避免 DLL 被占用
 CloseApplications=yes
-AllowCloseApplications=yes
 AppMutex=himi_syncwatch
 MinVersion=6.1
 

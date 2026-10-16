@@ -351,10 +351,13 @@ jobs:
               Write-Host "VS 安装路径: $vsPath"
               $redistRoot = Join-Path $vsPath 'VC\Redist\MSVC'
               if (Test-Path $redistRoot) {
+                # 按路径降序：优先高版本工具集，且同一版本下桌面 x64 优先于 onecore
                 Get-ChildItem -Path $redistRoot -Recurse -Filter 'vcruntime140.dll' `
                   -ErrorAction SilentlyContinue |
                   Where-Object { $_.DirectoryName -match '\\x64\\Microsoft\.VC[0-9]+\.CRT$' } |
-                  ForEach-Object { $candidates.Add($_.DirectoryName) }
+                  Select-Object -ExpandProperty DirectoryName |
+                  Sort-Object -Descending -Unique |
+                  ForEach-Object { $candidates.Add($_) }
               }
             }
           }
