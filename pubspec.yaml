@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.2.4+430
+version: 1.2.5+431
 
 environment:
   sdk: ^3.6.0
@@ -15,7 +15,9 @@ dependencies:
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
   # 播放器
-  fvp: ^0.39.0
+  # 0.39.1: 修复 StreamController add-after-close 异常（onEvent/onStateChanged/
+  # onMediaStatus 在 player 销毁后回调）；iOS scene disconnect 释放纹理播放器防崩溃
+  fvp: ^0.39.1
   # 播放器第二引擎（media_kit/libmpv，仅手机/桌面，TV 模式不注册）
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
