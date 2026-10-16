@@ -144,7 +144,7 @@ jobs:
           shopt -s nullglob
           for f in build/app/outputs/flutter-apk/*-release.apk; do
             base=$(basename "$f")
-            if [[ "$base" =~ ^app-([^-]+)-release\.apk$ ]]; then
+            if [[ "$base" =~ ^app-(.+)-release\.apk$ ]]; then
               abi="${BASH_REMATCH[1]}"
               mv "$f" "build/app/outputs/flutter-apk/himi-sync-${VERSION}-${abi}.apk"
             elif [[ "$base" == "app-release.apk" ]]; then
@@ -152,6 +152,15 @@ jobs:
             fi
           done
           ls -la build/app/outputs/flutter-apk/*.apk
+          # 防回归：--split-per-abi 应产出 armeabi-v7a/arm64-v8a/x86_64 三份；
+          # 若重命名正则漏掉含短横线的 ABI，会静默丢包（曾致只发布 x86_64）。
+          count=$(ls build/app/outputs/flutter-apk/himi-sync-*.apk 2>/dev/null | wc -l)
+          if [ "$count" -lt 3 ]; then
+            echo "❌ 期望至少 3 个 ABI 的 APK，实际 $count 个；检查重命名正则是否遗漏 ABI"
+            ls -la build/app/outputs/flutter-apk/
+            exit 1
+          fi
+          echo "✅ APK 数量校验通过：$count"
 
       - uses: actions/upload-artifact@v4
         with:
