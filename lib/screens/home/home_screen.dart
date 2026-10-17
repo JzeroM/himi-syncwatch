@@ -464,7 +464,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 首页轮播虚化背景：当前海报低分解码 + 高斯模糊 + 渐入底色蒙罩，
   /// 与详情页 `_buildAmbientBackdrop` 一致；切页时淡入淡出。
   Widget _buildHeroBackground(MediaItem item, Color base) {
-    final url = item.backdropUrl ?? item.posterUrl;
+    // 与轮播清晰图同一取图优先级（v1.2.15）：同一张底图才能让清晰图
+    // 底部渐隐后与虚化层无缝溶解。
+    final url =
+        item.backdropWideUrl ?? item.backdropUrl ?? item.posterUrl;
     if (url == null || url.isEmpty) return const SizedBox.shrink();
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 500),

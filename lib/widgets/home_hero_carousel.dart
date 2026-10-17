@@ -32,6 +32,34 @@ class HomeHeroCarousel extends StatefulWidget {
   /// 用户开始拖动时回调（用于暂停外层动画等）。
   final VoidCallback? onUserInteract;
 
+  /// 清晰图底部渐隐（v1.2.15）：底部渐隐到透明，露出下层同源虚化海报，
+  /// 消除「清晰图 → 虚化图」的内容硬切（详情页 SliverAppBar 同款处理）。
+  @visibleForTesting
+  static const LinearGradient imageFadeGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Colors.white, Colors.white, Colors.transparent],
+    stops: [0.0, 0.62, 1.0],
+  );
+
+  /// 可读性压暗罩（v1.2.15）：文字区维持 0x99（60%）可读性，末格收敛到
+  /// 0x66（40%）——与首页虚化背景蒙罩在接缝处（屏高 42% ≈ 0.30→0.42
+  /// 插值 0.40）精确同值，跨接缝暗度连续；旧值末格 0xE6（90%）正是
+  /// 轮播与背景之间「分隔线」的来源。
+  @visibleForTesting
+  static const LinearGradient scrimGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Colors.transparent,
+      Color(0x33000000),
+      Color(0x99000000),
+      Color(0x99000000),
+      Color(0x66000000),
+    ],
+    stops: [0.0, 0.45, 0.78, 0.94, 1.0],
+  );
+
   @override
   State<HomeHeroCarousel> createState() => _HomeHeroCarouselState();
 }
@@ -131,7 +159,7 @@ class _HeroSlide extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = item.backdropWideUrl ?? item.posterUrl;
+    final bg = item.backdropWideUrl ?? item.backdropUrl ?? item.posterUrl;
     final logo = item.logoUrl;
     final rating = item.communityRating;
     final year = item.year;
@@ -143,26 +171,24 @@ class _HeroSlide extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          EmbyImage(
-            url: bg,
-            fit: BoxFit.cover,
-            placeholder: const SizedBox.shrink(),
-            errorWidget: const SizedBox.shrink(),
+          // 底部渐隐到透明：露出下层同源虚化海报，接缝处自然溶解无硬边
+          // （v1.2.15；与 home_screen 的虚化背景共用同一取图优先级）。
+          ShaderMask(
+            shaderCallback: (rect) =>
+                HomeHeroCarousel.imageFadeGradient.createShader(rect),
+            blendMode: BlendMode.dstIn,
+            child: EmbyImage(
+              url: bg,
+              fit: BoxFit.cover,
+              placeholder: const SizedBox.shrink(),
+              errorWidget: const SizedBox.shrink(),
+            ),
           ),
-          // 底部压暗：保证标题/信息可读，并与下方内容底色衔接
+          // 底部压暗：保证标题/信息可读；末格与下方虚化蒙罩同值，
+          // 跨接缝无暗度跳变（旧末格 0xE6 形成可见分隔线）。
           const DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: [0.0, 0.55, 0.80, 1.0],
-                colors: [
-                  Colors.transparent,
-                  Color(0x33000000),
-                  Color(0x99000000),
-                  Color(0xE6000000),
-                ],
-              ),
+              gradient: HomeHeroCarousel.scrimGradient,
             ),
           ),
           Positioned(
