@@ -170,7 +170,7 @@ Future<void> _bootstrap() async {
     eglFaultDetector.markFault();
     await settingsNotifier.update(eglFaultSeen: true);
     LogService().log('Diag',
-        '启动能力评估: EGL 不可用（${deviceProfile.gl.error ?? "?"}）→ 已持久化直写标记');
+        '启动能力评估: EGL 不可用（${deviceProfile.gl.error ?? deviceProfile.gl.windowError ?? "?"}）→ 已持久化直写标记');
   }
   // TV 自动识别（策略 A）：用户手动设置过则内部直接跳过，不覆盖
   final isTv = await const TvDetectionService().isTelevision();

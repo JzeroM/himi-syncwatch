@@ -54,6 +54,7 @@ void main() {
         'eglOk': true,
         'chooseConfigOk': true,
         'gles3Ok': true,
+        'windowSurfaceOk': true,
         'renderer': 'Mali-G610',
         'glVersion': 'OpenGL ES 3.2',
         'textureR16Ok': true,
@@ -63,7 +64,9 @@ void main() {
       expect(g.tested, isTrue);
       expect(g.eglOk, isTrue);
       expect(g.gles3Ok, isTrue);
+      expect(g.windowSurfaceOk, isTrue);
       expect(g.tenBitTextureOk, isTrue);
+      expect(g.display, contains('EGL 正常'));
       expect(g.display, contains('Mali-G610'));
       expect(g.display, contains('GL ES3 可用'));
       expect(g.display, contains('10-bit 纹理可用'));
@@ -74,6 +77,7 @@ void main() {
         'eglOk': true,
         'chooseConfigOk': true,
         'gles3Ok': false,
+        'windowSurfaceOk': true,
         'renderer': 'Mali-450 MP',
         'glVersion': 'OpenGL ES 2.0',
         'textureR16Ok': false,
@@ -83,6 +87,25 @@ void main() {
       expect(g.gles3Ok, isFalse);
       expect(g.tenBitTextureOk, isFalse);
       expect(g.display, contains('仅 GL ES2（Erika 不可用）'));
+    });
+
+    test('窗口输出不可用（pbuffer 能建但窗口链路失败）→ 展示窗口错误', () {
+      final g = GlCapabilities.fromMap(const {
+        'eglOk': true,
+        'chooseConfigOk': true,
+        'gles3Ok': false,
+        'windowSurfaceOk': false,
+        'windowError': 'eglChooseConfig 0x3004',
+        'renderer': 'Mali-450 MP',
+      });
+      expect(g.windowSurfaceOk, isFalse);
+      expect(g.windowError, 'eglChooseConfig 0x3004');
+      expect(g.display, contains('EGL 窗口输出不可用'));
+      expect(g.display, contains('0x3004'));
+      expect(g.display, isNot(contains('EGL 正常')));
+      // 缺失字段（旧探针/纯 pbuffer 结果）按不可用处理
+      final legacy = GlCapabilities.fromMap(const {'eglOk': true});
+      expect(legacy.windowSurfaceOk, isFalse);
     });
 
     test('EGL 失败 → 展示错误；未探测 → 未探测', () {
@@ -221,10 +244,25 @@ void main() {
       );
       expect(broken.eglBroken(eglFaultSeen: false), isTrue);
 
+      // 盒子实况：pbuffer 能建（eglOk=true）但窗口 surface 链路失败
+      // （3004 只在 EGL_WINDOW_BIT 属性集上出现）→ mdk GL presenter 必黑
+      const windowBroken = DeviceProfile(
+        android: true,
+        probed: true,
+        gl: GlCapabilities(
+          tested: true,
+          eglOk: true,
+          chooseConfigOk: true,
+          windowSurfaceOk: false,
+          windowError: 'eglChooseConfig 0x3004',
+        ),
+      );
+      expect(windowBroken.eglBroken(eglFaultSeen: false), isTrue);
+
       const ok = DeviceProfile(
         android: true,
         probed: true,
-        gl: GlCapabilities(tested: true, eglOk: true),
+        gl: GlCapabilities(tested: true, eglOk: true, windowSurfaceOk: true),
       );
       expect(ok.eglBroken(eglFaultSeen: false), isFalse);
 

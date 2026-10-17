@@ -54,6 +54,13 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
 
   if [ -f "$KOTLIN/DeviceCapabilityPlugin.kt" ]; then
     ok "DeviceCapabilityPlugin.kt 存在"
+    if grep -q 'windowSurfaceProbe' "$KOTLIN/DeviceCapabilityPlugin.kt" \
+      && grep -q 'EGL_WINDOW_BIT' "$KOTLIN/DeviceCapabilityPlugin.kt" \
+      && grep -q 'windowSurfaceOk' "$KOTLIN/DeviceCapabilityPlugin.kt"; then
+      ok "探针含窗口 surface 实测（windowSurfaceProbe / EGL_WINDOW_BIT / windowSurfaceOk）"
+    else
+      err "DeviceCapabilityPlugin 缺窗口 surface 实测——pbuffer 型假阳性（RK3528 3004）会漏判"
+    fi
   else
     err "缺少 $KOTLIN/DeviceCapabilityPlugin.kt（设备能力评估探针依赖）"
   fi

@@ -91,6 +91,7 @@ void main() {
             'eglOk': true,
             'chooseConfigOk': true,
             'gles3Ok': true,
+            'windowSurfaceOk': true,
             'renderer': 'Adreno 750',
           },
         },
@@ -117,7 +118,12 @@ void main() {
         profile: const DeviceProfile(
           android: true,
           probed: true,
-          gl: GlCapabilities(tested: true, eglOk: true, textureR16Ok: true),
+          gl: GlCapabilities(
+            tested: true,
+            eglOk: true,
+            windowSurfaceOk: true,
+            textureR16Ok: true,
+          ),
         ),
         settings: const AppSettings(eglFaultSeen: true),
       ));

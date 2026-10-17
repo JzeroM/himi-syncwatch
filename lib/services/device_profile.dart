@@ -64,12 +64,14 @@ class GlCapabilities {
     this.eglOk = false,
     this.chooseConfigOk = false,
     this.gles3Ok = false,
+    this.windowSurfaceOk = false,
     this.renderer,
     this.glVersion,
     this.textureR16Ok = false,
     this.textureRgba16fOk = false,
     this.textureRgb10a2Ok = false,
     this.error,
+    this.windowError,
   });
 
   /// 是否真实取得原生 GL 探针结果（false = 超时/通道不可用，
@@ -84,6 +86,13 @@ class GlCapabilities {
   /// false = 仅 ES2，出生即不支持 Erika（纹理测试也随之为 false）。
   final bool gles3Ok;
 
+  /// 窗口输出链路可用（EGL_WINDOW_BIT config → window surface →
+  /// eglCreateWindowSurface → eglMakeCurrent 全通过）。mdk GL presenter
+  /// 把解码纹理贴到窗口 surface；pbuffer 全过但窗口链路失败（如
+  /// RK3528 Mali-450：eglChooseConfig 3004）的设备，GL 渲染必黑，
+  /// 输出层须直写（[DeviceProfile.eglBroken]）。
+  final bool windowSurfaceOk;
+
   /// GL_RENDERER 串（如 Mali-450 MP）。
   final String? renderer;
   final String? glVersion;
@@ -94,6 +103,9 @@ class GlCapabilities {
   final bool textureRgb10a2Ok;
 
   final String? error;
+
+  /// 窗口输出实测失败原因（如 eglChooseConfig 0x3004）。
+  final String? windowError;
 
   /// 任一 10-bit/FP16 纹理格式可上传即视为 10-bit GL 纹理可用。
   bool get tenBitTextureOk =>
@@ -106,22 +118,28 @@ class GlCapabilities {
         eglOk: m['eglOk'] as bool? ?? false,
         chooseConfigOk: m['chooseConfigOk'] as bool? ?? false,
         gles3Ok: m['gles3Ok'] as bool? ?? false,
+        windowSurfaceOk: m['windowSurfaceOk'] as bool? ?? false,
         renderer: m['renderer'] as String?,
         glVersion: m['glVersion'] as String?,
         textureR16Ok: m['textureR16Ok'] as bool? ?? false,
         textureRgba16fOk: m['textureRgba16fOk'] as bool? ?? false,
         textureRgb10a2Ok: m['textureRgb10a2Ok'] as bool? ?? false,
         error: m['error'] as String?,
+        windowError: m['windowError'] as String?,
       );
 
   String get display {
     if (!tested) return '未探测';
     if (!eglOk) return 'EGL 不可用${error != null ? '（$error）' : ''}';
+    final head = windowSurfaceOk
+        ? 'EGL 正常'
+        : 'EGL 窗口输出不可用'
+            '${windowError != null ? '（$windowError）' : ''}';
     final gl = gles3Ok ? 'GL ES3 可用' : '仅 GL ES2（Erika 不可用）';
     final tenBit = tenBitTextureOk
         ? '10-bit 纹理可用'
         : '10-bit 纹理不可用（R16F/16F/RGB10A2）';
-    return 'EGL 正常 · $gl · $tenBit'
+    return '$head · $gl · $tenBit'
         '${renderer != null ? ' · $renderer' : ''}';
   }
 }
@@ -233,10 +251,18 @@ class DeviceProfile {
 
   /// EGL 链路不健康（探针**明确**失败，或被持久标记认定故障）。
   ///
+  /// 两类明确失败：
+  /// - [GlCapabilities.eglOk] false——pbuffer 链路都不通；
+  /// - [GlCapabilities.windowSurfaceOk] false——pbuffer 能建但窗口
+  ///   surface 链路不可用（RK3528 Mali-450 实测：eglChooseConfig
+  ///   3004 只在带 EGL_WINDOW_BIT 的属性集上出现），mdk GL
+  ///   presenter 必黑，同样须归为 EGL 故障走直写。
+  ///
   /// 探针未取得结果（[GlCapabilities.tested] false，如超时）不判定
   /// 故障——避免误置位直写标记。
   bool eglBroken({required bool eglFaultSeen}) =>
-      eglFaultSeen || (probed && gl.tested && !gl.eglOk);
+      eglFaultSeen ||
+      (probed && gl.tested && (!gl.eglOk || !gl.windowSurfaceOk));
 
   /// 组装探针原始 map（DeviceCapabilityPlugin）。
   factory DeviceProfile.fromProbe({

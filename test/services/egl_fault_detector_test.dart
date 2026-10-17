@@ -30,6 +30,23 @@ void main() {
       expect(d.fault, isTrue);
     });
 
+    test('真机样本 GL ERROR (501) test_red_depth 命中（纹理链路同族）', () {
+      expect(
+        d.feed('gl.TexImage2D(0x0DE1, 0, gp.internal_format, 64, 64, 0, '
+            'gp.format, gp.type, nullptr)  GL ERROR (501) @275 test_red_depth'),
+        isTrue,
+      );
+      expect(d.fault, isTrue);
+    });
+
+    test('GL ERROR 但非 test_red_depth 不误报', () {
+      expect(
+        d.feed('gl.SomeOtherCall(...)  GL ERROR (1282) @100 other_test'),
+        isFalse,
+      );
+      expect(d.fault, isFalse);
+    });
+
     test('幂等：命中后再次 feed 返回 false 且状态不变', () {
       expect(d.feed('No EGL config found'), isTrue);
       expect(d.feed('EGL ERROR (3004)'), isFalse);

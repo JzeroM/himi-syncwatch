@@ -13,6 +13,13 @@
 /// 重试全败，EGL_BAD_MATCH=3004）→ GL presenter 无效 → 解码 buffer
 /// 从不上屏 → 画面全黑（UI/音频正常，三档纹理路径全中）。
 ///
+/// 同族第二签名（v1.2.13）：config/context 侥幸建过、但 mdk 的纹理
+/// 格式实测（`test_red_depth`）全败 → GL presenter 无有效输出，同样
+/// 停在 GL 路径黑屏。真机样本：
+/// ```
+/// [mdk] gl.TexImage2D(...) GL ERROR (501) @275 test_red_depth
+/// ```
+///
 /// 检测到该故障时，唯一不依赖 GL/EGL 的输出通道是 tunnel 直通
 /// （fvp 文档：no GL renderer, no EGLConfig），由播放器自动切换自愈。
 ///
@@ -21,10 +28,12 @@
 class EglFaultDetector {
   /// 判据刻意收窄到该故障签名，避免其他 EGL 场景误触发自动切档：
   /// - `No EGL config found`——mdk 的最终失败结论；
-  /// - `EGL ERROR (3004)`——eglChooseConfig 返回 EGL_BAD_MATCH 的原始错误。
+  /// - `EGL ERROR (3004)`——eglChooseConfig 返回 EGL_BAD_MATCH 的原始错误；
+  /// - `GL ERROR (n) ... test_red_depth`——GL 纹理链路损坏同族。
   static final _patterns = <RegExp>[
     RegExp(r'No EGL config found'),
     RegExp(r'EGL ERROR \(3004\)'),
+    RegExp(r'GL ERROR \(\d+\).*test_red_depth'),
   ];
 
   bool _fault = false;

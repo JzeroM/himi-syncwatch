@@ -1174,6 +1174,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Timer? _sampleTimer;
   bool _deepLogActive = false;
+
+  /// 普通态（深度诊断关）的「EGL 检测」handler 是否已挂。播放器的
+  /// mdk 日志入口必须常驻：只靠 main 全局 handler 时 3004 会被它
+  /// 消费（`feed` 一次性语义），本页面的自愈与落盘永不触发。
+  bool _resumeLogHandlerInstalled = false;
   DateTime _deepWindowStart = DateTime.now();
   int _deepPerSecond = 0;
 
@@ -2392,10 +2397,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     LogService().log('Diag', line);
   }
 
-  /// 喂 EGL 检测器；命中则在事件循环里执行自愈（log handler 可能来自
-  /// mdk 内部线程回调，widget 操作须回到 Dart 事件循环）。
+  /// 喂 EGL 检测器；检测器已置位而本页面尚未自愈时补一次自愈
+  /// （log handler 可能来自 mdk 内部线程回调，widget 操作须回到
+  /// Dart 事件循环）。
+  ///
+  /// 不能只看 [EglFaultDetector.feed] 的返回值：一次性命中语义下，
+  /// 首个故障签名可能已被 main 全局 handler 或本页面此前实例消费
+  /// （feed 返回 false），而 view 仍按 tunnel=false（GL）建过——不
+  /// 自愈会停在 GL 路径黑屏（「有时一直黑」根因之一）。触发时
+  /// `_onEglFault` 自带 `_eglFaultHandled` 防重入 / `mounted` 守卫。
   void _feedEglDetector(String message) {
-    if (eglFaultDetector.feed(message)) {
+    eglFaultDetector.feed(message);
+    if (eglFaultDetector.fault && !_eglFaultHandled) {
       Future.microtask(_onEglFault);
     }
   }
@@ -3263,7 +3276,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return;
     }
     final enabled = ref.read(settingsProvider).deepDiagnostics;
-    if (enabled == _deepLogActive) return;
+    if (enabled == _deepLogActive) {
+      // 普通态常驻「EGL 检测」handler（幂等）：否则 3004 只会被
+      // main 全局 handler 消费，本页面永不自愈（见 _resumeLogHandlerInstalled）。
+      if (!enabled && !_resumeLogHandlerInstalled) {
+        _installResumeLogHandler();
+      }
+      return;
+    }
     if (enabled) {
       _startDeepDiagnostics();
     } else {
@@ -3339,6 +3359,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       });
       _deepLogActive = true;
+      // 深诊 handler 已接管，普通态标记作废（关深诊时会重挂）
+      _resumeLogHandlerInstalled = false;
       _deepWindowStart = DateTime.now();
       _deepPerSecond = 0;
       LogService().log('Diag', '深度诊断已开启(log.status=2)');
@@ -3347,12 +3369,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  /// 关闭 log.status 并恢复一个转发到 LogService 的 handler。
+  /// 关闭 log.status 并恢复普通态的「EGL 检测」handler。
   /// 不用 setLogHandler(null)：fvp 启动时已注册自己的 handler，
   /// 置空会永久关闭 mdk 内部日志。
   void _stopDeepDiagnostics() {
     try {
       mdk.setGlobalOption('log.status', 0);
+      _installResumeLogHandler();
+    } catch (e) {
+      LogService().log('Diag', '关闭深度诊断失败: $e');
+    }
+  }
+
+  /// 挂普通态 handler（EGL 检测 + 渲染风暴计数 + error 转发）。
+  /// 幂等；由 [_stopDeepDiagnostics] 与普通态 [_syncDeepDiagnostics] 共用。
+  void _installResumeLogHandler() {
+    try {
       mdk.setLogHandler((level, message) {
         _feedEglDetector(message);
         _feedRenderStorm(message);
@@ -3360,8 +3392,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           LogService().log('mdk', message.trim());
         }
       });
+      _resumeLogHandlerInstalled = true;
     } catch (e) {
-      LogService().log('Diag', '关闭深度诊断失败: $e');
+      LogService().log('Diag', 'EGL 检测 handler 安装失败: $e');
     }
   }
 
