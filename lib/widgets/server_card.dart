@@ -835,7 +835,7 @@ class ServerListCard extends StatelessWidget {
 ///
 /// v1.2.16：··· 恒在卡片右边缘垂直居中（手机端与 TV 模式一致，成为与主体
 /// 同级、矩形互不包含的独立焦点项）；「同步到 TV」图标在手机端移到卡片
-/// 右下角（此前在第 1 行，右下角留白）。
+/// 右下角、与 ··· 同一列（v1.2.18）。
 class ServerGridCard extends StatelessWidget {
   const ServerGridCard({
     super.key,
@@ -932,7 +932,7 @@ class ServerGridCard extends StatelessWidget {
       onForward: onMoreButtonForward,
     );
 
-    Widget bodyColumn({required bool syncAtBottomRight}) => Column(
+    Widget bodyColumn() => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 第 1 行：头像 + 用户名
@@ -985,30 +985,15 @@ class ServerGridCard extends StatelessWidget {
               ],
             ),
             const Spacer(),
-            // 底部：延迟/计数（左）+ 同步到 TV（右下角，手机端）
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      LatencyBadge(latencyMs: stats?.latencyMs),
-                      const SizedBox(height: 6),
-                      MovieSeriesCounts(counts: stats?.counts),
-                    ],
-                  ),
-                ),
-                if (syncAtBottomRight && onSyncToTv != null) _syncIcon(),
-              ],
-            ),
+            LatencyBadge(latencyMs: stats?.latencyMs),
+            const SizedBox(height: 6),
+            MovieSeriesCounts(counts: stats?.counts),
           ],
         );
 
     // 主体（左）+ 右边缘垂直居中的 ···：手机端与 TV 共用同一结构
     // （v1.2.16：手机端 ··· 由第 1 行移到此位；TV 下 ··· 为独立焦点项）。
-    final body = bodyColumn(syncAtBottomRight: !tvMode);
+    // 手机端「同步到 TV」图标固定在右下角、与 ··· 同一列（v1.2.18）。
     return GlassContainer(
       borderRadius: BorderRadius.circular(18),
       // 激活态不着色（v1.1.246）：仅靠绿勾 + 加粗标识，玻璃保持中性
@@ -1028,7 +1013,7 @@ class ServerGridCard extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(child: body),
+                    Expanded(child: bodyColumn()),
                     const SizedBox(width: 4),
                     Column(
                       mainAxisSize: MainAxisSize.min,
@@ -1038,6 +1023,13 @@ class ServerGridCard extends StatelessWidget {
                   ],
                 ),
               ),
+              // 同步到 TV：卡片右下角，与上方 ··· 同一列（右内边距对齐）
+              if (!tvMode && onSyncToTv != null)
+                Positioned(
+                  right: 14,
+                  bottom: 14,
+                  child: _syncIcon(),
+                ),
             ],
           ),
         ),

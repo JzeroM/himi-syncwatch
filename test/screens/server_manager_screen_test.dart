@@ -590,6 +590,8 @@ void main() {
         reason: '同步到 TV 图标应在卡片右侧');
     expect(syncCenter.dy, greaterThan(rect.center.dy + 20),
         reason: '同步到 TV 图标应在卡片右下角（填补留白）');
+    expect((syncCenter.dx - moreCenter.dx).abs(), lessThan(2),
+        reason: '同步图标应与 ⋯ 同一列（右内边距对齐）');
   });
 
   testWidgets('卡片头像加载 Emby 用户头像，上传后随版本号刷新（v1.2.9）', (tester) async {
