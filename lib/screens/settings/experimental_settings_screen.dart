@@ -36,27 +36,6 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
         ],
-        // HDR 输出自适应：mdk 全局 videoout.hdr（HDR10 4K60 丢帧 A/B
-        // 实验），仅启动时读取注入 → 重启生效；Android EGL 可能忽略
-        if (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS) ...[
-          settingsTvWrapRow(
-            tvMode: settings.tvMode,
-            onTap: () =>
-                notifier.update(videoOutHdrAuto: !settings.videoOutHdrAuto),
-            child: SwitchListTile(
-              title: const Text('HDR 输出自适应（实验）'),
-              subtitle: const Text(
-                'mdk videoout.hdr：关闭恒 tone map 到 sRGB（默认），'
-                '开启按屏幕能力启用 HDR 输出。HDR 片卡顿 A/B 对比用，'
-                '修改后需重启应用生效',
-              ),
-              value: settings.videoOutHdrAuto,
-              onChanged: (v) => notifier.update(videoOutHdrAuto: v),
-            ),
-          ),
-          const Divider(height: 1),
-        ],
         // HDR image=0 实验：AMediaCodec 解码器 image=1（AImageReader）在
         // HDR10 P010 上疑似慢路径，注入 image=0 回退旧 Surface 输出。
         // 仅 Android（AMediaCodec）；立即生效（setProperty 作用于当前
@@ -158,26 +137,6 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
               ),
               value: settings.hdrGlWorkaround,
               onChanged: (v) => notifier.update(hdrGlWorkaround: v),
-            ),
-          ),
-          const Divider(height: 1),
-          // HDR 直通实验（本次修正）：videoout.hdr=1 且不强制
-          // setColorSpace(bt709)，交还 mdk auto 协商 HDR 输出。
-          // 仅在启动能力评估确认显示具备 HDR 能力时跳过强制；
-          // SDR 输出设备（盒子类）无效果（仍走 bt709 tone map）。默认关。
-          settingsTvWrapRow(
-            tvMode: settings.tvMode,
-            onTap: () =>
-                notifier.update(hdrPassthrough: !settings.hdrPassthrough),
-            child: SwitchListTile(
-              title: const Text('HDR 直通（实验）'),
-              subtitle: const Text(
-                'HDR 输出直通：videoout.hdr=1 且不强制 bt709 tone map，'
-                '交还 mdk 自动协商（需显示设备支持 HDR）。默认关闭；'
-                '修改后需重启应用生效',
-              ),
-              value: settings.hdrPassthrough,
-              onChanged: (v) => notifier.update(hdrPassthrough: v),
             ),
           ),
           const Divider(height: 1),

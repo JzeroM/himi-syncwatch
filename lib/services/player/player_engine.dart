@@ -16,7 +16,7 @@ import 'erika_player_adapter.dart';
 ///   Windows/Linux 无（Linux 无预编译；Windows 收敛为 mdk+media_kit）
 ///
 /// TV 与手机同一套平台规则（TV 不再恒 mdk）：HDR 路由由设备能力
-/// 评估结果决定（见 [resolveEngineForContent]）。
+/// 评估结果决定（见 [resolveEngineForContent]）。Dolby Vision 恒 mdk。
 class PlayerEngineFactory {
   PlayerEngineFactory._();
 
@@ -67,27 +67,33 @@ class PlayerEngineFactory {
     }
   }
 
-  /// 按内容 HDR + 设备能力解析目标引擎（全自动路由，纯函数，便于单测）。
+  /// 按内容 HDR/DV + 设备能力解析目标引擎（全自动路由，纯函数，便于单测）。
   ///
   /// 规则（TV 与手机统一，同一套）：
   /// - web：恒 mdk
   /// - 非 HDR：恒 mdk
-  /// - HDR + Android/iOS（含 iPad）且 [erikaRenderable]（Erika 可渲染：
-  ///   Vulkan 或 GLES3 任一，探针未命中时保持历史默认 true）：erika——
-  ///   真 HDR10 由 Erika 内部按显示能力 extended-linear / SDR 自动回退
+  /// - Dolby Vision：恒 mdk（全平台）——mdk 以 LLDV 处理 DV 元数据，
+  ///   输出 SDR（SDR 屏）或 HDR10（HDR 屏），色彩由 mdk 内部保证；
+  ///   Erika/media_kit 不参与 DV。输出色彩由 `Player.set(ColorSpace)`
+  ///   按平台策略决定（见 PlayerScreen.dvOutputColorSpace）。
+  /// - HDR（非 DV）+ Android/iOS（含 iPad）且 [erikaRenderable]（Erika 可
+  ///   渲染：Vulkan 或 GLES3 任一，探针未命中时保持历史默认 true）：erika
+  ///   ——真 HDR10 由 Erika 内部按显示能力 extended-linear / SDR 自动回退
   ///   （outputMode 由 [resolveErikaOutputMode] 继续按内容路由）
-  /// - HDR + Windows：media_kit
+  /// - HDR（非 DV）+ Windows：media_kit
   /// - 其余（HDR + 不可渲染，如无 Vulkan/GLES3 的盒子）：mdk 兜底——
   ///   直写/tunnel 档可透传 HDR10，由输出层路由继续判定 tone map。
   ///
   /// [platformOverride] 仅供单测注入平台；缺省取当前平台。
   static PlayerEngine resolveEngineForContent({
     required bool hdr,
+    required bool dolbyVision,
     required bool erikaRenderable,
     TargetPlatform? platformOverride,
   }) {
     if (kIsWeb) return PlayerEngine.mdk;
     if (!hdr) return PlayerEngine.mdk;
+    if (dolbyVision) return PlayerEngine.mdk;
     final platform = platformOverride ?? defaultTargetPlatform;
     switch (platform) {
       case TargetPlatform.android:

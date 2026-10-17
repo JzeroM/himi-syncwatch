@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
+import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 void main() {
@@ -504,6 +505,52 @@ void main() {
   group('PlayerScreen.outputColorSpace（1.1.191 SDR tone map，1.1.194 限 Android）', () {
     test('恒返回 bt709（Android 用，iOS 不调用防黑屏）', () {
       expect(PlayerScreen.outputColorSpace(), AdapterColorSpace.bt709);
+    });
+  });
+
+  group('PlayerScreen.dvOutputColorSpace（DV→mdk 输出色彩策略）', () {
+    const hdr10 = DisplayCapabilities(hdrTypes: ['hdr10']);
+    const sdr = DisplayCapabilities();
+
+    test('Android：支持 HDR10 → HDR10 直通（bt2100PQ）；否则 SDR（bt709）', () {
+      expect(
+        PlayerScreen.dvOutputColorSpace(
+            platform: TargetPlatform.android, display: hdr10),
+        AdapterColorSpace.bt2100PQ,
+      );
+      expect(
+        PlayerScreen.dvOutputColorSpace(
+            platform: TargetPlatform.android, display: sdr),
+        AdapterColorSpace.bt709,
+      );
+    });
+
+    test('Windows：写死 d3d11 HDR10（bt2100PQ），与显示能力无关', () {
+      for (final d in const [hdr10, sdr]) {
+        expect(
+          PlayerScreen.dvOutputColorSpace(
+              platform: TargetPlatform.windows, display: d),
+          AdapterColorSpace.bt2100PQ,
+        );
+      }
+    });
+
+    test('iOS：返回 null（不调用 setColorSpace，防 Metal 黑屏）', () {
+      for (final d in const [hdr10, sdr]) {
+        expect(
+          PlayerScreen.dvOutputColorSpace(
+              platform: TargetPlatform.iOS, display: d),
+          isNull,
+        );
+      }
+    });
+
+    test('web/其余（linux）：SDR（bt709）', () {
+      expect(
+        PlayerScreen.dvOutputColorSpace(
+            platform: TargetPlatform.linux, display: hdr10),
+        AdapterColorSpace.bt709,
+      );
     });
   });
 

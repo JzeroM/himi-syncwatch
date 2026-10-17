@@ -109,13 +109,6 @@ class AppSettings {
   /// 全局选项仅启动时读取注入，**修改后需重启应用生效**。
   final bool renderCompatMode;
 
-  /// HDR 输出自适应（实验，mdk 全局 `videoout.hdr`，1.1.187）：
-  /// false=0 恒 tone map 到 sRGB（mdk 默认）；true=1 按屏幕能力启用
-  /// HDR 输出（metal/d3d11；Android EGL 可能忽略，仅作 A/B 实验）。
-  /// 针对 HDR10 4K60 手机丢帧诊断。全局选项仅启动时读取注入，
-  /// **修改后需重启应用生效**。
-  final bool videoOutHdrAuto;
-
   /// HDR 禁用 AImageReader（实验，`video.decoder image=0`，1.1.189）：
   /// Android AMediaCodec 默认 image=1（AImageReader/AHardwareBuffer 路径，
   /// 低延迟）。HDR10 P010 4K60 在 Adreno 740 上疑似该路径慢，导致
@@ -151,17 +144,6 @@ class AppSettings {
   /// wang-bin/mdk-sdk#361（HDR 直写 wedge）。
   /// 下次起播/切集生效。
   final bool hdrGlWorkaround;
-
-  /// HDR 直通输出（实验，默认关）：HDR 内容 + 显示支持 HDR 时，
-  /// 不再强制 setColorSpace(bt709) tone map 到 SDR，并令 mdk 全局
-  /// `videoout.hdr=1` 按屏幕能力输出 HDR（直写/tunnel 档解码器直写
-  /// surface，HDR10 元数据随 surface 透传）。
-  ///
-  /// 与 [videoOutHdrAuto] 的区别：后者只注入全局 videoout.hdr（纹理
-  /// 通道 A/B 用），本开关额外放行「不强制 bt709」——两者任一开启
-  /// 即注入 videoout.hdr=1。受 mdk-sdk#361 前科约束默认关，验证
-  /// 稳定后再考虑默认开。修改后需重启应用生效（全局选项）。
-  final bool hdrPassthrough;
 
   /// 音频自适应同步（实验，默认关）：mdk 全局 `avsync.audio.adaptive`。
   /// 视频落后于音频时放慢音频速度保同步（mdk 0.37+ 生效），1.1.186
@@ -277,12 +259,10 @@ class AppSettings {
     this.videoOutput = 'texture',
     this.videoOutputUserSet = false,
     this.renderCompatMode = false,
-    this.videoOutHdrAuto = false,
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
     this.renderDepth8 = false,
     this.hdrGlWorkaround = false,
-    this.hdrPassthrough = false,
     this.avsyncAudioAdaptive = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
@@ -328,12 +308,10 @@ class AppSettings {
     String? videoOutput,
     bool? videoOutputUserSet,
     bool? renderCompatMode,
-    bool? videoOutHdrAuto,
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
     bool? renderDepth8,
     bool? hdrGlWorkaround,
-    bool? hdrPassthrough,
     bool? avsyncAudioAdaptive,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
@@ -382,13 +360,11 @@ class AppSettings {
       videoOutput: videoOutput ?? this.videoOutput,
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
-      videoOutHdrAuto: videoOutHdrAuto ?? this.videoOutHdrAuto,
       videoDecoderNoImage: videoDecoderNoImage ?? this.videoDecoderNoImage,
       videoDecoderLowLatency:
           videoDecoderLowLatency ?? this.videoDecoderLowLatency,
       renderDepth8: renderDepth8 ?? this.renderDepth8,
       hdrGlWorkaround: hdrGlWorkaround ?? this.hdrGlWorkaround,
-      hdrPassthrough: hdrPassthrough ?? this.hdrPassthrough,
       avsyncAudioAdaptive:
           avsyncAudioAdaptive ?? this.avsyncAudioAdaptive,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
@@ -459,12 +435,10 @@ class AppSettings {
         'videoOutput': videoOutput,
         'videoOutputUserSet': videoOutputUserSet,
         'renderCompatMode': renderCompatMode,
-        'videoOutHdrAuto': videoOutHdrAuto,
         'videoDecoderNoImage': videoDecoderNoImage,
         'videoDecoderLowLatency': videoDecoderLowLatency,
         'renderDepth8': renderDepth8,
         'hdrGlWorkaround': hdrGlWorkaround,
-        'hdrPassthrough': hdrPassthrough,
         'avsyncAudioAdaptive': avsyncAudioAdaptive,
         'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
@@ -561,8 +535,6 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
-      // 旧数据无此字段 → 默认 false（mdk 默认 tone map to sRGB）
-      videoOutHdrAuto: json['videoOutHdrAuto'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 image=1）
       videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 low_latency=0）
@@ -572,8 +544,6 @@ class AppSettings {
       renderDepth8: json['renderDepth8'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（1.1.199 起默认关闭，A/B 验证中）
       hdrGlWorkaround: json['hdrGlWorkaround'] as bool? ?? false,
-      // 旧数据无此字段 → 默认 false（HDR 直通实验，默认 tone map）
-      hdrPassthrough: json['hdrPassthrough'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（默认关，规避升级后 SDR 卡顿疑似回归）
       avsyncAudioAdaptive: json['avsyncAudioAdaptive'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）

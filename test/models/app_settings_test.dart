@@ -117,31 +117,6 @@ void main() {
       expect(settings.copyWith(showSyncDebug: true).eglFaultSeen, isFalse);
     });
 
-    test('videoOutHdrAuto 旧数据缺字段 → 默认 false（tone map to sRGB）',
-        () {
-      expect(AppSettings.fromJson(const {}).videoOutHdrAuto, isFalse);
-    });
-
-    test('videoOutHdrAuto toJson/fromJson 往返（1.1.187 实验开关）', () {
-      final json =
-          const AppSettings().copyWith(videoOutHdrAuto: true).toJson();
-      expect(json['videoOutHdrAuto'], isTrue);
-      expect(AppSettings.fromJson(json).videoOutHdrAuto, isTrue);
-      // 默认 false 也落盘
-      expect(const AppSettings().toJson()['videoOutHdrAuto'], isFalse);
-    });
-
-    test('hdrPassthrough 旧数据缺字段 → 默认 false（实验开关默认关）', () {
-      expect(AppSettings.fromJson(const {}).hdrPassthrough, isFalse);
-    });
-
-    test('hdrPassthrough toJson/fromJson 往返', () {
-      final json = const AppSettings().copyWith(hdrPassthrough: true).toJson();
-      expect(json['hdrPassthrough'], isTrue);
-      expect(AppSettings.fromJson(json).hdrPassthrough, isTrue);
-      expect(const AppSettings().toJson()['hdrPassthrough'], isFalse);
-    });
-
     test('avsyncAudioAdaptive 旧数据缺字段 → 默认 false（默认关）', () {
       expect(AppSettings.fromJson(const {}).avsyncAudioAdaptive, isFalse);
     });

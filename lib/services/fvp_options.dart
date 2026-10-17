@@ -19,10 +19,11 @@
 ///   提到 "Support decoder frame drop if out of sync" 但选项名未在
 ///   Global Options 文档中列出（名称来自 fvp#336 对话）。怀疑与渲染端
 ///   丢帧逻辑冲突导致 HDR10 实验失效，移除后 A/B 验证；
-/// - `videoout.hdr`（实验开关，1.1.187）：0=恒 tone map 到 sRGB
-///   （mdk 默认）；1=按屏幕能力启用 HDR 输出（metal/d3d11；Android
-///   EGL 可能忽略）。`videoOutHdrAuto` 或 `hdrPassthrough` 任一开启
-///   即注入 1。恒显式注入使 Diag 取证行能区分 A/B 档位。
+/// - `videoout.hdr`（**恒 0**）：0=恒 tone map 到 sRGB；1=按屏幕能力启用
+///   HDR 输出（metal/d3d11；Android EGL 可能忽略），且**会覆盖
+///   `Player.set(ColorSpace)`**。himi 的 HDR/DV 输出改由
+///   `Player.set(ColorSpace)` 逐内容控制（见 PlayerScreen.dvOutputColorSpace
+///   / _applyOutputColorSpace），故此处必须恒为 0，避免启动期全局覆盖。
 ///
 /// 注意：fvp registerWith 的 `maxWidth`/`maxHeight`（纹理尺寸上限）
 /// 与 `lowLatency`（起播加速）对本应用**无效**——himi 绕过 video_player
@@ -37,8 +38,6 @@
 Map<String, Object> buildFvpOptions({
   required bool xa2Persistent,
   required bool renderCompatMode,
-  required bool videoOutHdrAuto,
-  required bool hdrPassthrough,
   required bool avsyncAudioAdaptive,
 }) {
   final global = <String, Object>{
@@ -50,12 +49,9 @@ Map<String, Object> buildFvpOptions({
     // avsync.audio.adaptive（见 doc 头）：现改开关、默认关，
     // mdk 0.39.0 首次真正生效后盒子 SDR 卡顿疑似回归。
     'avsync.audio.adaptive': avsyncAudioAdaptive ? 1 : 0,
-    // videoout.hdr 恒注入（见 doc 头）：HDR10 4K60 丢帧 A/B 实验，
-    // Diag 行 `fvp options` 显式可见当前档位。
-    // 注意：player_screen 默认通过 setColorSpace(bt709) 强制 SDR 输出
-    // （1.1.191，修复 mdk-sdk#361 HDR10 丢帧+发白）；hdrPassthrough
-    // 开启时不再强制，改由本选项按屏幕能力协商 HDR 输出。
-    'videoout.hdr': (videoOutHdrAuto || hdrPassthrough) ? 1 : 0,
+    // videoout.hdr 恒 0（见 doc 头）：逐内容 HDR 输出改由
+    // Player.set(ColorSpace) 控制，此全局项须为 0 以免覆盖之。
+    'videoout.hdr': 0,
   };
   return {'global': global};
 }

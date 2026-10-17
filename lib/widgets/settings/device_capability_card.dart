@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/device_profile_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/egl_fault_detector.dart';
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 /// 「播放器配置」页顶部设备能力卡片：展示启动评估结果（显示 HDR /
@@ -80,7 +82,7 @@ class DeviceCapabilityCard extends ConsumerWidget {
               ),
               _CapRow(
                 label: '输出策略',
-                value: _policyPreview(ref, settings.hdrPassthrough, eglMarked),
+                value: _policyPreview(ref, eglMarked),
               ),
               if (profile.error != null)
                 _CapRow(label: '探针错误', value: profile.error!),
@@ -108,23 +110,25 @@ class DeviceCapabilityCard extends ConsumerWidget {
   }
 
   /// 策略预览：当前自动路由/输出决策将如何落地（只读展示）。
-  String _policyPreview(WidgetRef ref, bool hdrPassthrough, bool eglMarked) {
+  String _policyPreview(WidgetRef ref, bool eglMarked) {
     final profile = ref.read(deviceProfileProvider);
     final renderable = profile.erikaRenderable(defaultTargetPlatform);
     final hdrOk = profile.erikaHdrCapable(defaultTargetPlatform);
+    final dvColor = PlayerScreen.dvOutputColorSpace(
+      platform: defaultTargetPlatform,
+      display: profile.display,
+    );
+    final dvDesc = dvColor == AdapterColorSpace.bt2100PQ
+        ? 'HDR10'
+        : 'SDR tone map';
     final parts = <String>[
+      'DV→MDK（LLDV：$dvDesc）',
       if (!renderable)
         'HDR→MDK（直写/HDR 透传）'
       else if (hdrOk)
         'HDR→Erika（真 HDR10）'
       else
         'HDR→Erika（SDR 回退）',
-      if (hdrPassthrough)
-        profile.mdkHdrPassthroughCapable
-            ? 'HDR 直通已开'
-            : 'HDR 直通已开（显示无 HDR，等同 tone map）'
-      else
-        'bt709 tone map',
       profile.tenBitGlBroken ? '10-bit SDR→直写（GL 纹理不可用）' : '10-bit SDR→GL',
       if (eglMarked || profile.eglBroken(eglFaultSeen: false)) 'EGL 兼容标记已置位',
     ];

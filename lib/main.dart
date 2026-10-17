@@ -179,8 +179,8 @@ Future<void> _bootstrap() async {
   // fvp/mdk 全局选项：registerWith 全局生效一次且须在首个播放器创建
   // 前调用 → 移到设置加载后，按已存盘设置注入（audio.xa2.persistent：
   // Windows XAudio2 引擎不销毁，切集换源无瞬态；renderCompatMode：
-  // rockchip GL 渲染变体，视频全黑机型实验开关；videoOutHdrAuto：
-  // videoout.hdr HDR 输出自适应，HDR10 4K60 丢帧 A/B 实验）。
+  // rockchip GL 渲染变体，视频全黑机型实验开关）。videoout.hdr 恒 0
+  // （HDR/DV 输出改由 Player.set(ColorSpace) 逐内容控制）。
   // 详见 fvp_options.dart。
   //
   // EGL_SDR_DEPTH=8（1.1.193 实验）：环境变量须在 mdk 读取前设置，
@@ -194,8 +194,6 @@ Future<void> _bootstrap() async {
     xa2Persistent: Platform.isWindows,
     renderCompatMode: AppSettings.effectiveRenderCompatMode(
         settingsNotifier.snapshot.renderCompatMode),
-    videoOutHdrAuto: settingsNotifier.snapshot.videoOutHdrAuto,
-    hdrPassthrough: settingsNotifier.snapshot.hdrPassthrough,
     avsyncAudioAdaptive: settingsNotifier.snapshot.avsyncAudioAdaptive,
   );
   fvp.registerWith(options: fvpOptions);

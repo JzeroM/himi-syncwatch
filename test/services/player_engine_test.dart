@@ -105,75 +105,69 @@ void main() {
   });
 
   group('PlayerEngineFactory.resolveEngineForContent（全自动路由）', () {
+    PlayerEngine route(
+      bool hdr,
+      bool dv,
+      bool renderable,
+      TargetPlatform p,
+    ) =>
+        PlayerEngineFactory.resolveEngineForContent(
+          hdr: hdr,
+          dolbyVision: dv,
+          erikaRenderable: renderable,
+          platformOverride: p,
+        );
+
     test('非 HDR：全平台恒 mdk（能力满足与否无关）', () {
       for (final p in TargetPlatform.values) {
-        expect(
-          PlayerEngineFactory.resolveEngineForContent(
-              hdr: false, erikaRenderable: true, platformOverride: p),
-          PlayerEngine.mdk,
-          reason: '$p',
-        );
-        expect(
-          PlayerEngineFactory.resolveEngineForContent(
-              hdr: false, erikaRenderable: false, platformOverride: p),
-          PlayerEngine.mdk,
-          reason: '$p',
-        );
+        expect(route(false, false, true, p), PlayerEngine.mdk, reason: '$p');
+        expect(route(false, false, false, p), PlayerEngine.mdk, reason: '$p');
       }
     });
 
-    test('HDR + Android/iOS 且 Erika 可渲染（Vulkan/GLES3 任一）→ erika', () {
+    test('Dolby Vision：全平台恒 mdk（hdr 无关、能力无关、含 Windows）', () {
+      for (final p in TargetPlatform.values) {
+        for (final hdr in const [true, false]) {
+          for (final renderable in const [true, false]) {
+            expect(
+              route(hdr, true, renderable, p),
+              PlayerEngine.mdk,
+              reason: '$p hdr=$hdr renderable=$renderable',
+            );
+          }
+        }
+      }
+    });
+
+    test('HDR（非 DV）+ Android/iOS 且 Erika 可渲染（Vulkan/GLES3 任一）→ erika',
+        () {
       for (final p in const [
         TargetPlatform.android,
         TargetPlatform.iOS,
       ]) {
-        expect(
-          PlayerEngineFactory.resolveEngineForContent(
-              hdr: true, erikaRenderable: true, platformOverride: p),
-          PlayerEngine.erika,
-          reason: '$p',
-        );
+        expect(route(true, false, true, p), PlayerEngine.erika, reason: '$p');
       }
     });
 
-    test('HDR + Android/iOS 不可渲染（如 ES2-only 盒子）→ mdk 直写兜底', () {
-      expect(
-        PlayerEngineFactory.resolveEngineForContent(
-            hdr: true,
-            erikaRenderable: false,
-            platformOverride: TargetPlatform.android),
-        PlayerEngine.mdk,
-      );
-      expect(
-        PlayerEngineFactory.resolveEngineForContent(
-            hdr: true,
-            erikaRenderable: false,
-            platformOverride: TargetPlatform.iOS),
-        PlayerEngine.mdk,
-      );
+    test('HDR（非 DV）+ Android/iOS 不可渲染（如 ES2-only 盒子）→ mdk 直写兜底',
+        () {
+      expect(route(true, false, false, TargetPlatform.android), PlayerEngine.mdk);
+      expect(route(true, false, false, TargetPlatform.iOS), PlayerEngine.mdk);
     });
 
-    test('HDR + Windows → media_kit（能力参数不参与）', () {
+    test('HDR（非 DV）+ Windows → media_kit（能力参数不参与）', () {
       expect(
-        PlayerEngineFactory.resolveEngineForContent(
-            hdr: true,
-            erikaRenderable: false,
-            platformOverride: TargetPlatform.windows),
+        route(true, false, false, TargetPlatform.windows),
         PlayerEngine.mediaKit,
       );
     });
 
-    test('HDR + macOS/Linux → mdk 兜底', () {
+    test('HDR（非 DV）+ macOS/Linux → mdk 兜底', () {
       for (final p in const [
         TargetPlatform.macOS,
         TargetPlatform.linux,
       ]) {
-        expect(
-          PlayerEngineFactory.resolveEngineForContent(
-              hdr: true, erikaRenderable: true, platformOverride: p),
-          PlayerEngine.mdk,
-          reason: '$p',
-        );
+        expect(route(true, false, true, p), PlayerEngine.mdk, reason: '$p');
       }
     });
   });

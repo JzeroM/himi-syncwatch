@@ -40,6 +40,7 @@ import 'package:himi_syncwatch/services/server_route_service.dart';
 import 'package:uuid/uuid.dart';
 import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
+import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/display_info_service.dart';
 import 'package:himi_syncwatch/services/render_target_clamp.dart';
 
@@ -406,6 +407,36 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// HDR10 黑屏（1.1.194 修复），iOS 依赖 videoout.hdr=0 全局选项。
   @visibleForTesting
   static AdapterColorSpace outputColorSpace() => AdapterColorSpace.bt709;
+
+  /// Dolby Vision 内容输出色彩空间策略（纯函数，便于单测）。
+  ///
+  /// DV 内容恒走 mdk（LLDV：mdk 解析并处理 DV 元数据，输出 SDR/HDR10）。
+  /// 输出目标由 `Player.set(ColorSpace)` 决定；全局 `videoout.hdr` 恒 0
+  /// （=0 时不覆盖 set），故本策略生效。
+  ///
+  /// - Android：显示支持 HDR10 → HDR10 直通（BT2100_PQ）；否则 SDR
+  ///   tone map（BT709，避免 SDR 面板发白）。
+  /// - Windows：写死 d3d11 HDR10（BT2100_PQ）。
+  /// - iOS：返回 null（不调用 setColorSpace）——Metal 上与 videoout.hdr=0
+  ///   冲突会 HDR10 黑屏（1.1.194），依赖全局选项恒 SDR tone map。
+  /// - web / 其余：SDR（BT709）。
+  static AdapterColorSpace? dvOutputColorSpace({
+    required TargetPlatform platform,
+    required DisplayCapabilities display,
+  }) {
+    switch (platform) {
+      case TargetPlatform.android:
+        return display.supportsHdr10
+            ? AdapterColorSpace.bt2100PQ
+            : AdapterColorSpace.bt709;
+      case TargetPlatform.windows:
+        return AdapterColorSpace.bt2100PQ;
+      case TargetPlatform.iOS:
+        return null;
+      default:
+        return AdapterColorSpace.bt709;
+    }
+  }
 
   /// 顶栏解码模式按钮是否显示：TV 模式隐藏（解码模式仅走设置页）。
   @visibleForTesting
@@ -1144,6 +1175,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// PQ/HLG 或 doviProfile>0）；像素格式不再参与（10-bit SDR ≠ HDR）。
   bool _hdrContent = false;
 
+  /// 内容是否为 Dolby Vision（**仅** Emby 标）：用于引擎路由（恒 mdk）
+  /// 与输出色彩策略（见 [dvOutputColorSpace]）。
+  bool get _isDvContent => _embyVideoStream?.isDolbyVision == true;
+
   /// 内容是否 10-bit 以上（闩锁）：**不是 HDR 判定**——bt709 的
   /// p010/yuv420p10le 同样命中。用于输出决策：设备 GL 10-bit 纹理
   /// 实测不可用时强制直写（绕开 GL 渲染 10-bit 帧）。
@@ -1618,12 +1653,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // tone map 到 SDR）。iOS Metal 上 setColorSpace(bt709) 与
     // videoout.hdr=0 冲突导致 HDR10 黑屏（1.1.194 修复）。
     // 1.1.198 归入 hdrGlWorkaround 单开关，关闭仅用于 A/B 实验。
-    // 本次修正：HDR 直通实验（hdrPassthrough）+ 显示具备 HDR 能力时
-    // 跳过强制（_shouldForceSdrToneMap），交还 mdk auto 协商。
-    if (_shouldForceSdrToneMap()) {
-      _player.setColorSpace(PlayerScreen.outputColorSpace());
-      LogService().log('Player', '输出色彩空间: bt709（SDR tone map）');
-    }
+    // 本次修正：Dolby Vision 内容按平台策略输出（Android HDR10/SDR、
+    // Windows 恒 HDR、iOS 不设置）；其余维持 hdrGlWorkaround 的 SDR 强制。
+    _applyOutputColorSpace();
     // 字幕属性配置（大小/位置随会话状态，initState 后异步恢复落盘值）
     _player.setProperty('subtitle', '1');
     _player.setProperty('subtitle.font.size', '40');
@@ -2213,18 +2245,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// DV 内容的目标输出色彩空间（非 DV 返回 null，交由
+  /// [_shouldForceSdrToneMap] 常规路径处理）。
+  ///
+  /// Android 按显示 HDR10 能力、Windows 恒 d3d11 HDR、iOS 不设置
+  /// （见 [dvOutputColorSpace]）。
+  AdapterColorSpace? _dvOutputColorSpace() {
+    if (!_isDvContent) return null;
+    return PlayerScreen.dvOutputColorSpace(
+      platform: defaultTargetPlatform,
+      display: ref.read(deviceProfileProvider).display,
+    );
+  }
+
   /// 是否强制 SDR tone map（`setColorSpace(bt709)`）。
   ///
-  /// 原行为（1.1.198）：仅 Android + hdrGlWorkaround 开启时强制
-  /// （mdk-sdk#361 / fvp#379 workaround）。HDR 直通实验
-  /// （hdrPassthrough）开启且启动评估确认显示具备 HDR 能力时不再
-  /// 强制，交还 mdk auto 协商 HDR 输出（videoout.hdr 已在启动注入 1）。
+  /// 仅 Android + hdrGlWorkaround 开关开启时强制（mdk-sdk#361 /
+  /// fvp#379 workaround）：Flutter 纹理恒 SDR，mdk 默认 auto 会为 HDR10
+  /// 内容建 bt2020_pq 表面，导致 SDR 面板发白 + 丢帧 + 纹理黑屏。此法
+  /// 仅在显示不具备 HDR 能力时强制，避免误伤 HDR 屏（videoout.hdr 恒 0）。
   bool _shouldForceSdrToneMap() {
     if (!Platform.isAndroid) return false;
     final settings = ref.read(settingsProvider);
     if (!settings.hdrGlWorkaround) return false;
-    if (!settings.hdrPassthrough) return true;
     return !ref.read(deviceProfileProvider).mdkHdrPassthroughCapable;
+  }
+
+  /// 按内容应用输出色彩空间（`Player.set(ColorSpace)`）。
+  ///
+  /// - DV 内容：走 [dvOutputColorSpace]（Android 按显示 HDR10 能力 /
+  ///   Windows 恒 HDR / iOS 返回 null 不设置）。
+  /// - 其余：维持 [._shouldForceSdrToneMap] 的 SDR 强制（Android +
+  ///   hdrGlWorkaround 且显示无 HDR 能力）。
+  void _applyOutputColorSpace() {
+    final dv = _dvOutputColorSpace();
+    if (dv != null) {
+      _player.setColorSpace(dv);
+      LogService().log('Player', 'DV 输出色彩空间: ${dv.name}');
+      return;
+    }
+    if (_shouldForceSdrToneMap()) {
+      _player.setColorSpace(PlayerScreen.outputColorSpace());
+      LogService().log('Player', '输出色彩空间: bt709（SDR tone map）');
+    }
   }
 
   /// 显示器物理尺寸（渲染夹紧目标）：Android 优先原生探测（TV UI 层
@@ -2656,12 +2719,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 内容路由：解析目标引擎（全自动；TV 与手机同一套规则）。
-  /// 非 HDR 恒 mdk；HDR 且 Erika 可渲染（Vulkan 或 GLES3）→ erika——
+  /// 非 HDR 恒 mdk；Dolby Vision 恒 mdk（mdk 以 LLDV 处理，输出 SDR/
+  /// HDR10）；HDR（非 DV）且 Erika 可渲染（Vulkan 或 GLES3）→ erika——
   /// 无 HDR 显示设备由 Erika 内部回退 SDR；不可渲染（如无 Vulkan/
   /// GLES3 的盒子）→ mdk 直写/HDR 透传；Windows HDR → media_kit。
   PlayerEngine _resolveTargetEngineForContent(bool hdr) =>
       PlayerEngineFactory.resolveEngineForContent(
         hdr: hdr,
+        dolbyVision: _embyVideoStream?.isDolbyVision == true,
         erikaRenderable: ref
             .read(deviceProfileProvider)
             .erikaRenderable(defaultTargetPlatform),
@@ -2857,12 +2922,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // （Windows XAudio2 已复现），渐出→换源→起播渐入消除爆音。
       await _fadeOutForSwitch();
 
-      // 强制 SDR 输出：防 player 状态重置丢失 initState 的设置
-      // （仅 Android + hdrGlWorkaround 开关开启，1.1.198；
-      //   HDR 直通实验开启且显示具备 HDR 能力时跳过）
-      if (_shouldForceSdrToneMap()) {
-        _player.setColorSpace(PlayerScreen.outputColorSpace());
-      }
+      // 输出色彩空间：防 player 状态重置丢失 initState 的设置。
+      // DV 内容按平台策略（Android HDR10/SDR、Windows 恒 HDR、iOS 不设置）；
+      // 其余仅 Android + hdrGlWorkaround 且显示无 HDR 能力时强制 bt709。
+      _applyOutputColorSpace();
       _isSwitchingMedia = true;
       _player.media = streamUrl;
       await _player.prepare();
@@ -3039,9 +3102,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (requestId != _playRequestId || !mounted) return;
 
       _isSwitchingMedia = true;
-      if (_shouldForceSdrToneMap()) {
-        _player.setColorSpace(PlayerScreen.outputColorSpace());
-      }
+      _applyOutputColorSpace();
       // _currentPlayUrl/_currentToken 已在入口同步写入。
       _player.media = playUrl;
       await _player.prepare();
