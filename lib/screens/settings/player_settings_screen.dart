@@ -7,9 +7,10 @@ import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 /// 播放器设置枢纽页：引擎路由说明 / 播放器配置入口 / 网速 / 弹幕配置。
 ///
 /// 引擎专属设置（解码/音频/视频输出）在「播放器配置」tabbed 子页。
-/// 引擎选择全自动路由（TV 与手机同一套规则）：SDR→MDK；HDR→设备
-/// 能力评估满足 Erika 条件（Vulkan + HDR 显示）时用 Erika，否则
-/// MDK 直写/HDR 透传；Windows media_kit。本页不提供手动切换。
+/// 引擎选择全自动路由（TV 与手机同一套规则）：SDR→MDK；HDR→Erika
+/// 可渲染（Vulkan 或 GLES3）即用 Erika（无 HDR 显示自动回退 SDR），
+/// 不可渲染（如 ES2-only 盒子）→ MDK 直写/HDR 透传；Windows
+/// media_kit。本页不提供手动切换。
 class PlayerSettingsScreen extends ConsumerWidget {
   const PlayerSettingsScreen({super.key});
 
@@ -28,8 +29,9 @@ class PlayerSettingsScreen extends ConsumerWidget {
           leading: const Icon(Icons.account_tree),
           title: const Text('播放引擎'),
           subtitle: const Text(
-              '自动路由：SDR→MDK；HDR→设备能力评估满足 Erika 条件时用 Erika，'
-              '否则 MDK 直写/HDR 透传；Windows media_kit'),
+              '自动路由：SDR→MDK；HDR→Erika 可渲染（Vulkan/GLES3）时用 Erika'
+              '（无 HDR 显示自动回退 SDR），否则 MDK 直写/HDR 透传；'
+              'Windows media_kit'),
         ),
         const Divider(height: 1),
         // ── 播放器配置（tabbed：MDK / media_kit / Erika）────────

@@ -2590,15 +2590,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 内容路由：解析目标引擎（全自动；TV 与手机同一套规则）。
-  /// 非 HDR 恒 mdk；HDR 且设备能力满足 Erika（Vulkan + HDR 显示）→
-  /// erika，能力不足（如无 Vulkan 盒子）→ mdk 直写/HDR 透传；
-  /// Windows HDR → media_kit。
+  /// 非 HDR 恒 mdk；HDR 且 Erika 可渲染（Vulkan 或 GLES3）→ erika——
+  /// 无 HDR 显示设备由 Erika 内部回退 SDR；不可渲染（如无 Vulkan/
+  /// GLES3 的盒子）→ mdk 直写/HDR 透传；Windows HDR → media_kit。
   PlayerEngine _resolveTargetEngineForContent(bool hdr) =>
       PlayerEngineFactory.resolveEngineForContent(
         hdr: hdr,
-        erikaHdrCapable: ref
+        erikaRenderable: ref
             .read(deviceProfileProvider)
-            .erikaHdrCapable(defaultTargetPlatform),
+            .erikaRenderable(defaultTargetPlatform),
       );
 
   /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），

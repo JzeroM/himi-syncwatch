@@ -63,6 +63,7 @@ class GlCapabilities {
     this.tested = false,
     this.eglOk = false,
     this.chooseConfigOk = false,
+    this.gles3Ok = false,
     this.renderer,
     this.glVersion,
     this.textureR16Ok = false,
@@ -78,6 +79,10 @@ class GlCapabilities {
   /// EGL 初始化 + config + context + pbuffer 全链路可用。
   final bool eglOk;
   final bool chooseConfigOk;
+
+  /// GLES 3.0 上下文建成（wgpu/Erika 渲染的最低要求）。
+  /// false = 仅 ES2，出生即不支持 Erika（纹理测试也随之为 false）。
+  final bool gles3Ok;
 
   /// GL_RENDERER 串（如 Mali-450 MP）。
   final String? renderer;
@@ -100,6 +105,7 @@ class GlCapabilities {
         tested: true,
         eglOk: m['eglOk'] as bool? ?? false,
         chooseConfigOk: m['chooseConfigOk'] as bool? ?? false,
+        gles3Ok: m['gles3Ok'] as bool? ?? false,
         renderer: m['renderer'] as String?,
         glVersion: m['glVersion'] as String?,
         textureR16Ok: m['textureR16Ok'] as bool? ?? false,
@@ -111,10 +117,11 @@ class GlCapabilities {
   String get display {
     if (!tested) return '未探测';
     if (!eglOk) return 'EGL 不可用${error != null ? '（$error）' : ''}';
+    final gl = gles3Ok ? 'GL ES3 可用' : '仅 GL ES2（Erika 不可用）';
     final tenBit = tenBitTextureOk
         ? '10-bit 纹理可用'
-        : '10-bit 纹理不可用（R16/16F/RGB10A2 均失败）';
-    return 'EGL 正常 · $tenBit'
+        : '10-bit 纹理不可用（R16F/16F/RGB10A2）';
+    return 'EGL 正常 · $gl · $tenBit'
         '${renderer != null ? ' · $renderer' : ''}';
   }
 }
@@ -175,13 +182,32 @@ class DeviceProfile {
   /// Erika Android HDR（extended-linear scRGB）前置：Vulkan + HDR 显示。
   ///
   /// 未探测或探测失败（[probed] false / [error] 非空）时对 Android
-  /// 返回 true——保持历史行为（手机 HDR 走 Erika），避免探针失败把
-  /// 手机路由误降级为 mdk；盒子等已探测成功且无 Vulkan/HDR 显示的
-  /// 设备返回 false → mdk 直写。
+  /// 返回 true——保持历史默认，避免探针失败产生误判。此判定现在用于
+  /// 「真 HDR10 是否可用」的展示/预览；引擎路由以 [erikaRenderable]
+  /// 为准（不可渲染才回退 mdk）。
   bool erikaHdrCapable(TargetPlatform platform) {
     switch (platform) {
       case TargetPlatform.android:
         return _hasReliableProbe ? (vulkanOk && display.hdrCapable) : true;
+      case TargetPlatform.iOS:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /// Erika（wgpu 渲染）可运行前置：Vulkan 或 GLES 3.0 任一即可——SDR
+  /// 渲染足够，真 HDR10 由 Erika 内部按显示能力 extended-linear / SDR
+  /// 自动回退（见 [erikaHdrCapable] 判定真 HDR10 资格）。
+  ///
+  /// 未探测/探测失败（[probed] false / [error] 非空）时对 Android 返回
+  /// true——保持历史行为（手机 HDR 走 Erika），避免探针失败把手机路由
+  /// 误降级为 mdk；探针明确成功且 Vulkan/GLES3 双无（如 RK3528
+  /// Mali-450 ES2-only 盒子）→ false → mdk 直写。
+  bool erikaRenderable(TargetPlatform platform) {
+    switch (platform) {
+      case TargetPlatform.android:
+        return _hasReliableProbe ? (vulkanOk || gl.gles3Ok) : true;
       case TargetPlatform.iOS:
         return true;
       default:

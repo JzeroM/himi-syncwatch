@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/device_profile.dart';
@@ -54,6 +53,7 @@ void main() {
       final g = GlCapabilities.fromMap(const {
         'eglOk': true,
         'chooseConfigOk': true,
+        'gles3Ok': true,
         'renderer': 'Mali-G610',
         'glVersion': 'OpenGL ES 3.2',
         'textureR16Ok': true,
@@ -62,9 +62,27 @@ void main() {
       });
       expect(g.tested, isTrue);
       expect(g.eglOk, isTrue);
+      expect(g.gles3Ok, isTrue);
       expect(g.tenBitTextureOk, isTrue);
       expect(g.display, contains('Mali-G610'));
+      expect(g.display, contains('GL ES3 可用'));
       expect(g.display, contains('10-bit 纹理可用'));
+    });
+
+    test('仅 ES2（gles3Ok=false）→ 展示不可用且纹理默认 false', () {
+      final g = GlCapabilities.fromMap(const {
+        'eglOk': true,
+        'chooseConfigOk': true,
+        'gles3Ok': false,
+        'renderer': 'Mali-450 MP',
+        'glVersion': 'OpenGL ES 2.0',
+        'textureR16Ok': false,
+        'textureRgba16fOk': false,
+        'textureRgb10a2Ok': false,
+      });
+      expect(g.gles3Ok, isFalse);
+      expect(g.tenBitTextureOk, isFalse);
+      expect(g.display, contains('仅 GL ES2（Erika 不可用）'));
     });
 
     test('EGL 失败 → 展示错误；未探测 → 未探测', () {
@@ -125,6 +143,52 @@ void main() {
         display: DisplayCapabilities.unknown,
       );
       expect(noHdr.erikaHdrCapable(TargetPlatform.android), isFalse);
+    });
+
+    test('erikaRenderable：Vulkan 或 GLES3 任一即可渲染', () {
+      const gles3 = GlCapabilities(tested: true, eglOk: true, gles3Ok: true);
+
+      // Vulkan 有（无论渲染上下文如何）→ 可渲染
+      final vulkanOnly = DeviceProfile(
+        android: true,
+        probed: true,
+        vulkanVersion: 1 << 22,
+        gl: const GlCapabilities(tested: true, eglOk: true),
+      );
+      expect(vulkanOnly.erikaRenderable(TargetPlatform.android), isTrue);
+
+      // 无 Vulkan 但 GLES3 → 可渲染（SDR 回退场景）
+      final gles3Only = DeviceProfile(
+        android: true,
+        probed: true,
+        gl: gles3,
+      );
+      expect(gles3Only.erikaRenderable(TargetPlatform.android), isTrue);
+
+      // 双无（ES2-only 盒子）→ 不可渲染
+      final box = DeviceProfile(
+        android: true,
+        probed: true,
+        gl: const GlCapabilities(tested: true, eglOk: true),
+      );
+      expect(box.erikaRenderable(TargetPlatform.android), isFalse);
+
+      // 未探测 / 探测整体失败 → 保历史 true（不误降级手机）
+      expect(
+        const DeviceProfile(android: true)
+            .erikaRenderable(TargetPlatform.android),
+        isTrue,
+      );
+      expect(
+        const DeviceProfile(android: true, probed: true, error: 'timeout')
+            .erikaRenderable(TargetPlatform.android),
+        isTrue,
+      );
+      expect(DeviceProfile.unknown.erikaRenderable(TargetPlatform.iOS), isTrue);
+      expect(
+        DeviceProfile.unknown.erikaRenderable(TargetPlatform.windows),
+        isFalse,
+      );
     });
 
     test('mdkHdrPassthroughCapable：声明 HDR10/HLG/DV 任一即可', () {
@@ -245,9 +309,10 @@ void main() {
       expect(p.gl.tested, isTrue);
       expect(p.eglBroken(eglFaultSeen: false), isTrue);
       expect(p.tenBitGlBroken, isFalse);
-      // 有 HDR 显示声明 → mdk 直写可透传；无 Vulkan → Erika 不可用
+      // 有 HDR 显示声明 → mdk 直写可透传；无 Vulkan 且无 GLES3 → Erika 不可用
       expect(p.mdkHdrPassthroughCapable, isTrue);
       expect(p.erikaHdrCapable(TargetPlatform.android), isFalse);
+      expect(p.erikaRenderable(TargetPlatform.android), isFalse);
       expect(p.summary, contains('SoC=rk3528'));
     });
 
@@ -269,6 +334,7 @@ void main() {
       expect(p.tenBitGlBroken, isFalse);
       // 探针失败不阻塞历史行为：Android 未实测 → Erika 默认可用
       expect(p.erikaHdrCapable(TargetPlatform.android), isTrue);
+      expect(p.erikaRenderable(TargetPlatform.android), isTrue);
     });
   });
 }

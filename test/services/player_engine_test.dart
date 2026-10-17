@@ -109,45 +109,45 @@ void main() {
       for (final p in TargetPlatform.values) {
         expect(
           PlayerEngineFactory.resolveEngineForContent(
-              hdr: false, erikaHdrCapable: true, platformOverride: p),
+              hdr: false, erikaRenderable: true, platformOverride: p),
           PlayerEngine.mdk,
           reason: '$p',
         );
         expect(
           PlayerEngineFactory.resolveEngineForContent(
-              hdr: false, erikaHdrCapable: false, platformOverride: p),
+              hdr: false, erikaRenderable: false, platformOverride: p),
           PlayerEngine.mdk,
           reason: '$p',
         );
       }
     });
 
-    test('HDR + Android/iOS 且能力满足（Vulkan+HDR 显示）→ erika', () {
+    test('HDR + Android/iOS 且 Erika 可渲染（Vulkan/GLES3 任一）→ erika', () {
       for (final p in const [
         TargetPlatform.android,
         TargetPlatform.iOS,
       ]) {
         expect(
           PlayerEngineFactory.resolveEngineForContent(
-              hdr: true, erikaHdrCapable: true, platformOverride: p),
+              hdr: true, erikaRenderable: true, platformOverride: p),
           PlayerEngine.erika,
           reason: '$p',
         );
       }
     });
 
-    test('HDR + Android 能力不足（如无 Vulkan 盒子）→ mdk 直写兜底', () {
+    test('HDR + Android/iOS 不可渲染（如 ES2-only 盒子）→ mdk 直写兜底', () {
       expect(
         PlayerEngineFactory.resolveEngineForContent(
             hdr: true,
-            erikaHdrCapable: false,
+            erikaRenderable: false,
             platformOverride: TargetPlatform.android),
         PlayerEngine.mdk,
       );
       expect(
         PlayerEngineFactory.resolveEngineForContent(
             hdr: true,
-            erikaHdrCapable: false,
+            erikaRenderable: false,
             platformOverride: TargetPlatform.iOS),
         PlayerEngine.mdk,
       );
@@ -157,7 +157,7 @@ void main() {
       expect(
         PlayerEngineFactory.resolveEngineForContent(
             hdr: true,
-            erikaHdrCapable: false,
+            erikaRenderable: false,
             platformOverride: TargetPlatform.windows),
         PlayerEngine.mediaKit,
       );
@@ -170,7 +170,7 @@ void main() {
       ]) {
         expect(
           PlayerEngineFactory.resolveEngineForContent(
-              hdr: true, erikaHdrCapable: true, platformOverride: p),
+              hdr: true, erikaRenderable: true, platformOverride: p),
           PlayerEngine.mdk,
           reason: '$p',
         );

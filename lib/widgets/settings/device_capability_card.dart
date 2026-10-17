@@ -71,7 +71,7 @@ class DeviceCapabilityCard extends ConsumerWidget {
                 label: 'Vulkan',
                 value: profile.vulkanOk
                     ? '${profile.vulkanDisplay}'
-                    : '无（Erika HDR 不可用，HDR 走 MDK）',
+                    : '无（真 HDR10 不可用）',
               ),
               _CapRow(
                 label: '硬解',
@@ -110,9 +110,15 @@ class DeviceCapabilityCard extends ConsumerWidget {
   /// 策略预览：当前自动路由/输出决策将如何落地（只读展示）。
   String _policyPreview(WidgetRef ref, bool hdrPassthrough, bool eglMarked) {
     final profile = ref.read(deviceProfileProvider);
-    final erika = profile.erikaHdrCapable(defaultTargetPlatform);
+    final renderable = profile.erikaRenderable(defaultTargetPlatform);
+    final hdrOk = profile.erikaHdrCapable(defaultTargetPlatform);
     final parts = <String>[
-      erika ? 'HDR→Erika' : 'HDR→MDK（直写/HDR 透传）',
+      if (!renderable)
+        'HDR→MDK（直写/HDR 透传）'
+      else if (hdrOk)
+        'HDR→Erika（真 HDR10）'
+      else
+        'HDR→Erika（SDR 回退）',
       if (hdrPassthrough)
         profile.mdkHdrPassthroughCapable
             ? 'HDR 直通已开'

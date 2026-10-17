@@ -438,7 +438,9 @@ jobs:
   release:
     needs: [build-android, build-ios, build-windows]
     runs-on: ubuntu-latest
-    if: always() && startsWith(github.ref, 'refs/tags/')
+    # 默认仅在三平台构建全部成功时发布：此前 always() 会在平台失败时
+    # 发布不完整 release（v1.2.11 实测缺 Android APK 仍发布，事故）。
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:

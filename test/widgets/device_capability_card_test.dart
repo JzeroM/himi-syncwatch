@@ -72,12 +72,36 @@ void main() {
       expect(find.textContaining('hdr10/hlg'), findsOneWidget);
       expect(find.textContaining('EGL 不可用'), findsOneWidget);
       expect(
-        find.text('无（Erika HDR 不可用，HDR 走 MDK）'),
+        find.text('无（真 HDR10 不可用）'),
         findsOneWidget,
       );
-      // 策略预览：无 Vulkan → HDR 走 MDK 直写；EGL 坏但未持久标记
+      // 策略预览：Vulkan/GLES3 双无 → HDR 走 MDK 直写；EGL 坏但未持久标记
       expect(find.textContaining('HDR→MDK'), findsOneWidget);
       expect(find.textContaining('10-bit SDR→GL'), findsOneWidget);
+    });
+
+    testWidgets('Vulkan 无 HDR 显示：预览 HDR→Erika（SDR 回退）', (tester) async {
+      final phone = DeviceProfile.fromProbe(
+        raw: const <Object?, Object?>{
+          'sdkInt': 34,
+          'soc': 'sm8650',
+          'hevcHdr10': true,
+          'vulkanVersion': (1 << 22) | (1 << 12),
+          'gl': {
+            'eglOk': true,
+            'chooseConfigOk': true,
+            'gles3Ok': true,
+            'renderer': 'Adreno 750',
+          },
+        },
+        abi: 'androidArm64',
+      );
+      await tester.pumpWidget(_wrap(profile: phone));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('1.1.0'), findsOneWidget);
+      expect(find.textContaining('不支持（SDR 显示）'), findsOneWidget);
+      expect(find.textContaining('HDR→Erika（SDR 回退）'), findsOneWidget);
     });
 
     testWidgets('未评估设备：展示未评估兜底说明', (tester) async {

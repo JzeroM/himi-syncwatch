@@ -72,17 +72,18 @@ class PlayerEngineFactory {
   /// 规则（TV 与手机统一，同一套）：
   /// - web：恒 mdk
   /// - 非 HDR：恒 mdk
-  /// - HDR + Android/iOS（含 iPad）且 [erikaHdrCapable]（Android 需
-  ///   Vulkan + HDR 显示，能力探针未命中时保持历史默认 true）：
-  ///   erika（outputMode 由 [resolveErikaOutputMode] 继续按内容路由）
+  /// - HDR + Android/iOS（含 iPad）且 [erikaRenderable]（Erika 可渲染：
+  ///   Vulkan 或 GLES3 任一，探针未命中时保持历史默认 true）：erika——
+  ///   真 HDR10 由 Erika 内部按显示能力 extended-linear / SDR 自动回退
+  ///   （outputMode 由 [resolveErikaOutputMode] 继续按内容路由）
   /// - HDR + Windows：media_kit
-  /// - 其余（HDR + 能力不足，如无 Vulkan 的盒子）：mdk 兜底——
+  /// - 其余（HDR + 不可渲染，如无 Vulkan/GLES3 的盒子）：mdk 兜底——
   ///   直写/tunnel 档可透传 HDR10，由输出层路由继续判定 tone map。
   ///
   /// [platformOverride] 仅供单测注入平台；缺省取当前平台。
   static PlayerEngine resolveEngineForContent({
     required bool hdr,
-    required bool erikaHdrCapable,
+    required bool erikaRenderable,
     TargetPlatform? platformOverride,
   }) {
     if (kIsWeb) return PlayerEngine.mdk;
@@ -91,7 +92,7 @@ class PlayerEngineFactory {
     switch (platform) {
       case TargetPlatform.android:
       case TargetPlatform.iOS:
-        return erikaHdrCapable ? PlayerEngine.erika : PlayerEngine.mdk;
+        return erikaRenderable ? PlayerEngine.erika : PlayerEngine.mdk;
       case TargetPlatform.windows:
         return PlayerEngine.mediaKit;
       default:

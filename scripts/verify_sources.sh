@@ -52,6 +52,12 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
     err "缺少 $KOTLIN/NetworkDiscoveryPlugin.kt（局域网发现组播锁依赖）"
   fi
 
+  if [ -f "$KOTLIN/DeviceCapabilityPlugin.kt" ]; then
+    ok "DeviceCapabilityPlugin.kt 存在"
+  else
+    err "缺少 $KOTLIN/DeviceCapabilityPlugin.kt（设备能力评估探针依赖）"
+  fi
+
   if [ -f "$KOTLIN/MainActivity.kt" ]; then
     if grep -q 'DolbyVisionPlugin.CHANNEL' "$KOTLIN/MainActivity.kt"; then
       ok "MainActivity 注册了 com.himi/dolby_vision 通道"
@@ -65,6 +71,14 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
       ok "MainActivity 注册了 himi/network_discovery 通道"
     else
       err "MainActivity 未注册 NetworkDiscoveryPlugin，组播锁将 MissingPluginException"
+    fi
+  fi
+
+  if [ -f "$KOTLIN/MainActivity.kt" ]; then
+    if grep -q 'DeviceCapabilityPlugin.CHANNEL' "$KOTLIN/MainActivity.kt"; then
+      ok "MainActivity 注册了 himi/device_capability 通道"
+    else
+      err "MainActivity 未注册 DeviceCapabilityPlugin，能力评估将 MissingPluginException"
     fi
   fi
 
