@@ -249,7 +249,7 @@ class DeviceCapabilityPlugin(private val context: Context?) :
             // 纹理测试仅在 ES3 上下文执行；ES2 设备天然不支持 ES3 纹理
             // 格式（恒 false 属预期结论：GL 10-bit 渲染不可用）。
             out["textureR16Ok"] = gles3Ok && tryTexture(
-                GLES30.GL_R16F, GLES20.GL_RED, GLES30.GL_HALF_FLOAT
+                GLES30.GL_R16F, GLES30.GL_RED, GLES30.GL_HALF_FLOAT
             )
             out["textureRgba16fOk"] = gles3Ok && tryTexture(
                 GLES30.GL_RGBA16F, GLES20.GL_RGBA, GLES30.GL_HALF_FLOAT
