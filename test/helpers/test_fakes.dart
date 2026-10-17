@@ -363,6 +363,12 @@ class FakeEmbyService extends EmbyService {
     if (uploadImageError != null) throw uploadImageError!;
   }
 
+  /// getUserImageTag 返回（null = 无头像）。
+  String? userImageTag;
+
+  @override
+  Future<String?> getUserImageTag() async => userImageTag;
+
   // ---- 添加服务器流程（pingServer / authenticate）----
   Map<String, dynamic> pingResult = const {
     'ServerName': '测试服务器',

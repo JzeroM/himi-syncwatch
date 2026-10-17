@@ -40,6 +40,21 @@ class AppearanceSettingsScreen extends ConsumerWidget {
         ),
         const _GlassTuningSection(),
         const Divider(height: 1),
+        settingsTvWrapRow(
+          tvMode: settings.tvMode,
+          onTap: () => ref
+              .read(settingsProvider.notifier)
+              .update(homeCarousel: !settings.homeCarousel),
+          child: SwitchListTile(
+            key: const ValueKey('homeCarouselToggle'),
+            title: const Text('首页轮播'),
+            subtitle: const Text('首页顶部随机海报轮播，每 5 秒切换（非 TV 模式）'),
+            value: settings.homeCarousel,
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).update(homeCarousel: v),
+          ),
+        ),
+        const Divider(height: 1),
         const _CategoryColumnsSection(),
         const Divider(height: 1),
         // 视频版本偏好：多版本资源的排序与默认选用优先级（底部弹层重排）

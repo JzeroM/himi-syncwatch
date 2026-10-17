@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -914,21 +915,30 @@ class EmbyService {
     );
   }
 
-  /// 上传当前用户头像（`POST /Users/{userId}/Images/Primary`，二进制原图）。
+  /// 上传当前用户头像（`POST /Users/{userId}/Images/Primary`）。
+  ///
+  /// Emby 该接口要求 body 为 **base64 编码**的图片字符串（官方文档
+  /// "must be base64 encoded"）；直接发原始字节会被当作 base64 解码成
+  /// 无效图片，表现为「上传成功但头像不变」。
   Future<void> uploadUserImage(
     Uint8List bytes, {
     String contentType = 'image/jpeg',
   }) async {
     await _dio.post(
       '/Users/$_userId/Images/Primary',
-      data: bytes,
+      data: base64Encode(bytes),
       options: Options(
-        headers: {
-          Headers.contentTypeHeader: contentType,
-          Headers.contentLengthHeader: bytes.length,
-        },
+        headers: {Headers.contentTypeHeader: contentType},
       ),
     );
+  }
+
+  /// 读取当前用户头像的 Emby 图片 tag（`PrimaryImageTag`）；无头像返回 null。
+  Future<String?> getUserImageTag() async {
+    final response = await _dio.get('/Users/$_userId');
+    final data = response.data as Map<String, dynamic>?;
+    final tag = data?['PrimaryImageTag'] as String?;
+    return (tag != null && tag.isNotEmpty) ? tag : null;
   }
 }
 

@@ -84,6 +84,9 @@ class AppSettings {
   /// 手机同步到 TV 功能开关（服务器页电视机控件显示；关闭仅藏 UI）。
   final bool tvSyncEnabled;
 
+  /// 首页顶部轮播开关（随机海报，每 5 秒切换；非 TV 模式生效）。
+  final bool homeCarousel;
+
   /// 用户是否手动设置过 TV 开关（策略 A：设置过则自动识别不再覆盖）。
   final bool tvModeUserSet;
 
@@ -251,6 +254,7 @@ class AppSettings {
     this.serverViewMode = 'list',
     this.tvMode = false,
     this.tvSyncEnabled = true,
+    this.homeCarousel = true,
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
     this.videoOutputUserSet = false,
@@ -299,6 +303,7 @@ class AppSettings {
     String? serverViewMode,
     bool? tvMode,
     bool? tvSyncEnabled,
+    bool? homeCarousel,
     bool? tvModeUserSet,
     String? videoOutput,
     bool? videoOutputUserSet,
@@ -350,6 +355,7 @@ class AppSettings {
       serverViewMode: serverViewMode ?? this.serverViewMode,
       tvMode: tvMode ?? this.tvMode,
       tvSyncEnabled: tvSyncEnabled ?? this.tvSyncEnabled,
+      homeCarousel: homeCarousel ?? this.homeCarousel,
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
@@ -423,6 +429,7 @@ class AppSettings {
         'serverViewMode': serverViewMode,
         'tvMode': tvMode,
         'tvSyncEnabled': tvSyncEnabled,
+        'homeCarousel': homeCarousel,
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
         'videoOutputUserSet': videoOutputUserSet,
@@ -510,6 +517,7 @@ class AppSettings {
       tvMode: json['tvMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认开（v1.1.249 上线时行为不变）
       tvSyncEnabled: json['tvSyncEnabled'] as bool? ?? true,
+      homeCarousel: json['homeCarousel'] as bool? ?? true,
       // 旧数据无此字段：tvMode=true 说明用户当时手动开过 → 视为已设置，
       // 避免自动识别把用户手动关掉的 TV 模式重新打开。
       tvModeUserSet: json['tvModeUserSet'] as bool? ?? (json['tvMode'] == true),

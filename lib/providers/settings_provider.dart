@@ -46,6 +46,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     String? serverViewMode,
     bool? tvMode,
     bool? tvSyncEnabled,
+    bool? homeCarousel,
     String? videoOutput,
     bool? renderCompatMode,
     bool? videoOutHdrAuto,
@@ -97,6 +98,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       serverViewMode: serverViewMode,
       tvMode: tvMode,
       tvSyncEnabled: tvSyncEnabled,
+      homeCarousel: homeCarousel,
       // 手动改动 TV 开关即标记「用户已设置」，此后自动识别不再覆盖
       tvModeUserSet: tvMode != null ? true : null,
       videoOutput: videoOutput,

@@ -16,6 +16,7 @@ import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
@@ -42,7 +43,7 @@ Future<ProviderContainer> _pumpScreen(
   FakeEmbyAuthService? auth,
   FakeEmbyService? emby,
   EmbyService Function(EmbyServerConfig server)? serviceFactory,
-  AppSettings settings = const AppSettings(),
+  AppSettings settings = const AppSettings(homeCarousel: false),
   Future<String?> Function()? qrScan,
 }) async {
   final container = ProviderContainer(
@@ -1000,6 +1001,106 @@ void main() {
       PosterPalette.darkenForPage(const Color(0xFF6366F1)),
     );
     expect(gradient.colors.toSet().length, 3);
+  });
+
+  testWidgets('首页轮播开启：渲染英雄轮播 + 虚化海报背景，fields 请求 BackdropImageTags',
+      (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: [_lib('lib1', '电影库')],
+      items: [
+        MediaItem(
+          id: 'm1',
+          name: '影片1',
+          type: 'Movie',
+          backdropWideUrl: 'https://a/1.jpg',
+          backdropUrl: 'https://a/1s.jpg',
+        ),
+        MediaItem(
+          id: 'm2',
+          name: '影片2',
+          type: 'Movie',
+          backdropWideUrl: 'https://a/2.jpg',
+          backdropUrl: 'https://a/2s.jpg',
+        ),
+      ],
+    );
+    await _pumpScreen(
+      tester,
+      auth: auth,
+      emby: emby,
+      settings: const AppSettings(homeCarousel: true),
+    );
+
+    expect(find.byType(HomeHeroCarousel), findsOneWidget);
+    expect(find.byKey(const Key('homeAmbientImage')), findsOneWidget,
+        reason: '轮播开启时首页背景改为虚化海报');
+    expect(emby.lastGetItemsFields, contains('BackdropImageTags'));
+  });
+
+  testWidgets('首页轮播关闭：无英雄轮播，仅主题渐变背景', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: [_lib('lib1', '电影库')],
+      items: [
+        MediaItem(
+          id: 'm1',
+          name: '影片1',
+          type: 'Movie',
+          backdropWideUrl: 'https://a/1.jpg',
+        ),
+      ],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    expect(find.byType(HomeHeroCarousel), findsNothing);
+    expect(find.byKey(const Key('homeAmbientImage')), findsNothing);
+    expect(find.byKey(const Key('homeBackground')), findsOneWidget);
+  });
+
+  testWidgets('首页轮播满 5 秒自动切到下一页', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: [_lib('lib1', '电影库')],
+      items: [
+        MediaItem(id: 'm1', name: '影片1', type: 'Movie'),
+        MediaItem(id: 'm2', name: '影片2', type: 'Movie'),
+        MediaItem(id: 'm3', name: '影片3', type: 'Movie'),
+      ],
+    );
+    await _pumpScreen(
+      tester,
+      auth: auth,
+      emby: emby,
+      settings: const AppSettings(homeCarousel: true),
+    );
+
+    PageController controller() =>
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+    expect(controller().page, 0);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(controller().page, 1, reason: '5 秒后应自动切到第 2 页');
+
+    // 收尾：等下一轮定时器走完并停掉（widget 销毁时 cancel）
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 500));
   });
 
   testWidgets('底部统计面板：计数成功时渲染在分类行之后', (tester) async {

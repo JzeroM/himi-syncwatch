@@ -391,6 +391,10 @@ class MediaItem {
   final String? posterUrl;
   final String? backdropUrl;
 
+  /// 首页轮播用宽幅背景（`Backdrop` 高分辨率，`maxWidth=1600&quality=90`）；
+  /// 无 Backdrop 资源为 null（回退 [posterUrl]）。
+  final String? backdropWideUrl;
+
   /// 标题艺术字图（`ImageTags.Logo`，透明宽幅 PNG）；无 Logo 资源为 null。
   final String? logoUrl;
   final String? year;
@@ -447,6 +451,7 @@ class MediaItem {
     this.overview,
     this.posterUrl,
     this.backdropUrl,
+    this.backdropWideUrl,
     this.logoUrl,
     this.year,
     this.officialRating,
@@ -497,6 +502,10 @@ class MediaItem {
       backdropUrl: backdropTags != null && backdropTags.isNotEmpty
           ? buildUrl(
               '/Items/${json["Id"]}/Images/Backdrop?maxHeight=400&tag=${backdropTags[0]}')
+          : null,
+      backdropWideUrl: backdropTags != null && backdropTags.isNotEmpty
+          ? buildUrl(
+              '/Items/${json["Id"]}/Images/Backdrop?maxWidth=1600&quality=90&tag=${backdropTags[0]}')
           : null,
       logoUrl: imageTags?['Logo'] != null
           ? buildUrl(

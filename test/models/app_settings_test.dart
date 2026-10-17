@@ -53,6 +53,18 @@ void main() {
       expect(settings.audioRenderer, equals('auto'));
       expect(settings.audioRendererUserSet, isFalse);
       expect(settings.eglFaultSeen, isFalse);
+      expect(settings.homeCarousel, isTrue, reason: '首页轮播默认开');
+    });
+
+    test('homeCarousel：旧数据缺字段回退默认 true，可关闭并往返', () {
+      expect(AppSettings.fromJson(const {}).homeCarousel, isTrue);
+      expect(
+        const AppSettings().copyWith(homeCarousel: false).homeCarousel,
+        isFalse,
+      );
+      final json = const AppSettings(homeCarousel: false).toJson();
+      expect(json['homeCarousel'], isFalse);
+      expect(AppSettings.fromJson(json).homeCarousel, isFalse);
     });
 
     test('showNetworkSpeed：旧数据缺字段回退默认 true，可关闭并往返', () {

@@ -149,4 +149,18 @@ void main() {
     expect(y('分类页每行海报数'), greaterThan(y('玻璃参数')));
     debugDefaultTargetPlatformOverride = null;
   });
+
+  testWidgets('外观页含「首页轮播」开关，切换写回设置', (tester) async {
+    final container = await _pump(tester, platform: TargetPlatform.android);
+
+    expect(find.text('首页轮播'), findsOneWidget);
+    final toggle = find.byKey(const ValueKey('homeCarouselToggle'));
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue,
+        reason: '首页轮播默认开');
+
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(container.read(settingsProvider).homeCarousel, isFalse);
+    debugDefaultTargetPlatformOverride = null;
+  });
 }
