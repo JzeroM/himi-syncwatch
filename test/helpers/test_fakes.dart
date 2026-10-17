@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
+import 'package:himi_syncwatch/models/emby_playback_settings.dart';
 import 'package:himi_syncwatch/models/library_counts.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -300,6 +301,27 @@ class FakeEmbyService extends EmbyService {
     removedResumeCalls.add(itemId);
     return removeResumeResult;
   }
+
+  /// getLibraryPlaybackSettings 返回结果（按库阈值）；默认空 → 回退全局。
+  Map<String, EmbyPlaybackSettings> libraryPlaybackSettings = const {};
+
+  /// getGlobalPlaybackSettings 返回结果；默认 Emby 默认值。
+  EmbyPlaybackSettings globalPlaybackSettings = EmbyPlaybackSettings.fallback;
+
+  /// getAncestorIds 返回结果（按 itemId）。
+  Map<String, List<String>> ancestorIds = const {};
+
+  @override
+  Future<Map<String, EmbyPlaybackSettings>> getLibraryPlaybackSettings() async =>
+      libraryPlaybackSettings;
+
+  @override
+  Future<EmbyPlaybackSettings> getGlobalPlaybackSettings() async =>
+      globalPlaybackSettings;
+
+  @override
+  Future<List<String>> getAncestorIds(String itemId) async =>
+      ancestorIds[itemId] ?? const [];
 
   @override
   Future<MediaCounts?> getItemCounts() async => itemCounts;

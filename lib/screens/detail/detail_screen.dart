@@ -4,14 +4,17 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/models/emby_playback_settings.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
+import 'package:himi_syncwatch/services/playback_rules.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
+import 'package:himi_syncwatch/providers/playback_settings_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
@@ -65,10 +68,16 @@ class DetailScreen extends ConsumerStatefulWidget {
     return out;
   }
 
-  /// 集横卡默认锁定目标：优先「有续播进度」的集，其次「已观看」的集，
-  /// 各自取 `(季, 集)` 最大者（跨季）；都没有返回 null（调用方维持首季首集）。
+  /// 集横卡默认锁定目标（按服务器阈值）：
+  /// 1. 有「可续播」的集（未看完且有进度）→ 取 `(季, 集)` 最大者（当前集）；
+  /// 2. 否则取「最后已看完的集」，锁定其后第一个未看完的集（下一未观看集）；
+  /// 3. 都没有返回 null（调用方维持首季首集）。
   @visibleForTesting
-  static MediaItem? defaultEpisodeTarget(List<MediaItem> episodes) {
+  static MediaItem? defaultEpisodeTarget(
+    List<MediaItem> episodes, [
+    EmbyPlaybackSettings settings = EmbyPlaybackSettings.fallback,
+  ]) {
+    if (episodes.isEmpty) return null;
     MediaItem? pickMax(Iterable<MediaItem> candidates) {
       MediaItem? best;
       for (final e in candidates) {
@@ -77,14 +86,54 @@ class DetailScreen extends ConsumerStatefulWidget {
       return best;
     }
 
-    final resume = pickMax(episodes.where((e) => e.playbackPositionMs > 0));
+    final resume = pickMax(
+      episodes.where((e) => PlaybackRules.isResumable(e, settings)),
+    );
     if (resume != null) return resume;
-    return pickMax(episodes.where((e) => e.isWatched));
+
+    final lastWatched = pickMax(
+      episodes.where((e) => PlaybackRules.isFinished(e, settings)),
+    );
+    if (lastWatched == null) return null;
+
+    final lastOrder = _episodeOrder(lastWatched);
+    MediaItem? next;
+    for (final e in episodes) {
+      if (_episodeOrder(e) <= lastOrder) continue;
+      if (PlaybackRules.isFinished(e, settings)) continue;
+      if (next == null || _episodeOrder(e) < _episodeOrder(next)) next = e;
+    }
+    return next ?? lastWatched;
   }
 
   /// 集排序键：季号在高位、集号在低位，便于取「最大集」。
   static int _episodeOrder(MediaItem e) =>
       ((e.parentIndexNumber ?? 0) << 16) | (e.indexNumber ?? 0);
+
+  /// 顶部海报底部可读性压暗罩（v1.2.21）：文字区维持 0x4D（30%），但
+  /// **底边归零**——本罩与正文虚化氛围罩在接缝处叠加会形成暗带/分割线
+  /// （同 v1.2.17 首页轮播的处理）；底边归零后接缝暗度仅由正文氛围罩
+  /// 连续提供。底边变亮后由 [heroTextShadows] 兜底对比度。
+  @visibleForTesting
+  static const LinearGradient heroScrimGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Colors.transparent,
+      Color(0x1A000000),
+      Color(0x4D000000),
+      Color(0x4D000000),
+      Colors.transparent,
+    ],
+    stops: [0.0, 0.5, 0.72, 0.84, 1.0],
+  );
+
+  /// 轻微文字投影（v1.2.21）：压暗罩底边归零后，浅色海报上的白色片名/
+  /// 信息行需兜底对比度。
+  @visibleForTesting
+  static const List<Shadow> heroTextShadows = [
+    Shadow(color: Color(0xAA000000), blurRadius: 4),
+  ];
 
   /// 是否动画：Emby 类型（Genres）含「动画」或「Animation」（忽略大小写）。
   @visibleForTesting
@@ -97,6 +146,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   MediaItem? _item;
   List<MediaItem> _episodes = [];
   List<MediaItem> _similarItems = [];
+
+  /// 本条目所属媒体库的播放阈值（服务器同步；缺省 Emby 默认）。
+  EmbyPlaybackSettings _playbackSettings = EmbyPlaybackSettings.fallback;
 
   /// 剧集的季列表（服务端 Seasons 优先，为空则从集分组合成，见 [_synthSeasons]）。
   List<MediaItem> _seasons = [];
@@ -182,6 +234,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       ? '&server=${Uri.encodeComponent(widget.serverId!)}'
       : '';
 
+  /// 解析条目所属媒体库的播放阈值（会话内缓存；失败回退全局/默认）。
+  Future<EmbyPlaybackSettings> _resolvePlaybackSettings(MediaItem item) async {
+    try {
+      return await ref.read(itemPlaybackSettingsProvider((
+        serverId: widget.serverId,
+        id: item.id,
+        parentId: item.parentId,
+      )).future);
+    } catch (_) {
+      return EmbyPlaybackSettings.fallback;
+    }
+  }
+
   /// [silent]：静默刷新（从播放器返回时用）——不显示 loading、失败不报错，
   /// 仅替换条目/集/季与收藏/已观看/续播状态。
   Future<void> _loadDetails({bool silent = false}) async {
@@ -197,6 +262,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       final item = await embyService.getItemDetails(widget.itemId);
 
       if (item != null) {
+        _playbackSettings = await _resolvePlaybackSettings(item);
         final futures = <Future>[];
 
         if (item.isSeries) {
@@ -239,7 +305,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         if (focusId != null) {
           autoLockTarget = _episodes.where((e) => e.id == focusId).firstOrNull;
         }
-        autoLockTarget ??= DetailScreen.defaultEpisodeTarget(_episodes);
+        autoLockTarget ??=
+            DetailScreen.defaultEpisodeTarget(_episodes, _playbackSettings);
         if (autoLockTarget != null) {
           _selectedSeason = autoLockTarget.parentIndexNumber ?? 0;
           _selectedEpisodeId = autoLockTarget.id;
@@ -602,8 +669,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return target != null && _watchedEpisodeIds.contains(target.id);
   }
 
-  /// 是否展示「继续」形态（目标有进度且目标未标记已观看）。
-  bool get _offerResume => _resumeMs > 0 && !_targetWatched;
+  /// 是否展示「继续」形态：目标有进度、未标记已观看，且按服务器阈值可续播。
+  bool get _offerResume {
+    if (_resumeMs <= 0 || _targetWatched) return false;
+    final target = _resumeItem;
+    if (target == null) return false;
+    return PlaybackRules.isResumable(target, _playbackSettings);
+  }
 
   /// `mm:ss` / `h:mm:ss`。
   String _formatPosition(int ms) {
@@ -1830,20 +1902,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       fit: BoxFit.cover,
                     ),
                   ),
-                  // 可读性压暗：底部收到 0.30，与正文氛围罩顶部同值，
-                  // 跨接缝连成一条连续压暗。
-                  Container(
+                  // 可读性压暗（v1.2.21）：底边归零，避免与正文氛围罩
+                  // 在接缝处叠加出暗带/分割线；文字区由投影兜底对比度。
+                  const DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.10),
-                          Colors.black.withValues(alpha: 0.30),
-                        ],
-                        stops: const [0.0, 0.5, 1.0],
-                      ),
+                      gradient: DetailScreen.heroScrimGradient,
                     ),
                   ),
                 ],
@@ -1876,6 +1939,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                               color: Colors.white,
                               fontSize: tv ? 20 : 24,
                               fontWeight: FontWeight.bold,
+                              shadows: DetailScreen.heroTextShadows,
                             ),
                           ),
                         )
@@ -1886,6 +1950,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             color: Colors.white,
                             fontSize: tv ? 20 : 24,
                             fontWeight: FontWeight.bold,
+                            shadows: DetailScreen.heroTextShadows,
                           ),
                         ),
                       const SizedBox(height: 8),
@@ -2234,18 +2299,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       chips.add(Text(
         item.communityRating!.toStringAsFixed(1),
         style: const TextStyle(
-            color: Colors.white, fontWeight: FontWeight.bold),
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            shadows: DetailScreen.heroTextShadows),
       ));
     }
     if (item.year != null && item.year!.isNotEmpty) {
       gap();
       chips.add(Text(item.year!,
-          style: const TextStyle(color: Colors.white70)));
+          style: const TextStyle(
+              color: Colors.white70, shadows: DetailScreen.heroTextShadows)));
     }
     if (item.runtimeText != null) {
       gap();
       chips.add(Text(item.runtimeText!,
-          style: const TextStyle(color: Colors.white70)));
+          style: const TextStyle(
+              color: Colors.white70, shadows: DetailScreen.heroTextShadows)));
     }
 
     final video = _metaStreams(item)
@@ -2265,7 +2334,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (size != null && size > 0) {
       gap();
       chips.add(Text(MediaDetailsSection.formatSize(size),
-          style: const TextStyle(color: Colors.white70)));
+          style: const TextStyle(
+              color: Colors.white70, shadows: DetailScreen.heroTextShadows)));
     }
 
     if (chips.isEmpty) return const SizedBox.shrink();

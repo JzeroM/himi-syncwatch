@@ -406,6 +406,10 @@ class MediaItem {
   /// 所属剧集 id（Emby `SeriesId`，仅 Episode 类型有值）。
   /// 继续观看/收藏的集条目点击时，用此 id 跳转到剧详情页。
   final String? seriesId;
+
+  /// 所属父条目 id（Emby `ParentId`）：用于把条目映射到其所属媒体库，
+  /// 从而套用该库的播放阈值（`Min/MaxResumePct` 等）。
+  final String? parentId;
   final int? indexNumber;
   final int? parentIndexNumber;
   final List<String> genres;
@@ -459,6 +463,7 @@ class MediaItem {
     required this.type,
     this.seriesName,
     this.seriesId,
+    this.parentId,
     this.indexNumber,
     this.parentIndexNumber,
     this.genres = const [],
@@ -517,6 +522,7 @@ class MediaItem {
       type: json['Type'] ?? 'Movie',
       seriesName: json['SeriesName'],
       seriesId: json['SeriesId'],
+      parentId: json['ParentId'],
       indexNumber: json['IndexNumber'],
       parentIndexNumber: json['ParentIndexNumber'],
       genres: (json['Genres'] as List<dynamic>?)?.cast<String>() ?? [],

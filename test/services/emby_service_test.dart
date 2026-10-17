@@ -657,13 +657,71 @@ void main() {
       expect(items.single.playbackPositionMs, 169000);
     });
 
-    test('removeFromResume 走 POST /Items/{id}/UserData 且清空进度', () async {
+    test('removeFromResume 走 HideFromResume 且附带清空进度', () async {
       final ok = await service.removeFromResume('item-9');
       expect(ok, isTrue);
-      final req = captured.single;
-      expect(req.method, 'POST');
-      expect(req.path, '/Users/user-1/Items/item-9/UserData');
-      expect(req.body['PlaybackPositionTicks'], 0);
+      expect(captured, hasLength(2));
+      final hide = captured[0];
+      expect(hide.method, 'POST');
+      expect(hide.path, '/Users/user-1/Items/item-9/HideFromResume');
+      expect(hide.param('Hide'), 'true');
+      final clear = captured[1];
+      expect(clear.method, 'POST');
+      expect(clear.path, '/Users/user-1/Items/item-9/UserData');
+      expect(clear.body['PlaybackPositionTicks'], 0);
+    });
+
+    test('getLibraryPlaybackSettings 解析按库阈值（ItemId + LibraryOptions）',
+        () async {
+      respondWith = (path) => path == '/Library/VirtualFolders/Query'
+          ? [
+              {
+                'ItemId': 'lib-1',
+                'LibraryOptions': {
+                  'MinResumePct': 5,
+                  'MaxResumePct': 95,
+                  'MinResumeDurationSeconds': 10,
+                },
+              },
+              {
+                'ItemId': 'lib-2',
+                'LibraryOptions': {'MaxResumePct': 80},
+              },
+            ]
+          : <dynamic>[];
+      final map = await service.getLibraryPlaybackSettings();
+      expect(map.keys, containsAll(['lib-1', 'lib-2']));
+      expect(map['lib-1']!.minResumePct, 5);
+      expect(map['lib-1']!.maxResumePct, 95);
+      expect(map['lib-1']!.minResumeDurationSeconds, 10);
+      expect(map['lib-2']!.maxResumePct, 80);
+      expect(map['lib-2']!.minResumePct, 1);
+    });
+
+    test('getGlobalPlaybackSettings 解析 /System/Configuration', () async {
+      respondWith = (path) => path == '/System/Configuration'
+          ? {
+              'MinResumePct': 2,
+              'MaxResumePct': 88,
+              'MinResumeDurationSeconds': 6,
+            }
+          : <String, dynamic>{};
+      final s = await service.getGlobalPlaybackSettings();
+      expect(s.minResumePct, 2);
+      expect(s.maxResumePct, 88);
+      expect(s.minResumeDurationSeconds, 6);
+    });
+
+    test('getAncestorIds 解析 /Items/{id}/Ancestors 的 Id 列表', () async {
+      respondWith = (path) => path == '/Items/i1/Ancestors'
+          ? [
+              {'Id': 'season-1'},
+              {'Id': 'series-1'},
+              {'Id': 'lib-1'},
+            ]
+          : <dynamic>[];
+      final ids = await service.getAncestorIds('i1');
+      expect(ids, ['season-1', 'series-1', 'lib-1']);
     });
   });
 

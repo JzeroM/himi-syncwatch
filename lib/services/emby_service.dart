@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
+import 'package:himi_syncwatch/models/emby_playback_settings.dart';
 import 'package:himi_syncwatch/models/library_counts.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -482,17 +483,91 @@ class EmbyService {
     }
   }
 
-  /// 移出「继续观看」：清空播放进度（`PlaybackPositionTicks: 0`），不改已观看。
-  /// Emby `POST /Users/{userId}/Items/{itemId}/UserData`。成功返回 true。
+  /// 移出「继续观看」。
+  ///
+  /// Emby 官方端点 `POST /Users/{UserId}/Items/{Id}/HideFromResume?Hide=true`
+  /// —— 剧集在 `/Items/Resume` 中返回的是「当前未看完集」或「下一未观看集」
+  /// （NextUp 条目，可能本身没有进度），单纯清进度对后者是空操作，故此前剧集
+  /// 移除后重启会复现。该端点对两种条目都生效，且再次播放时服务器会自动
+  /// 重新武装（re-arm）。同时尽力清空已有进度以保持电影等旧行为。
+  /// 以 `HideFromResume` 是否成功作为返回值。
   Future<bool> removeFromResume(String itemId) async {
+    var ok = false;
+    try {
+      await _dio.post(
+        '/Users/$_userId/Items/$itemId/HideFromResume',
+        queryParameters: {'Hide': true},
+      );
+      ok = true;
+    } on DioException {
+      ok = false;
+    }
     try {
       await _dio.post(
         '/Users/$_userId/Items/$itemId/UserData',
         data: <String, dynamic>{'PlaybackPositionTicks': 0},
       );
-      return true;
     } on DioException {
-      return false;
+      // 忽略：HideFromResume 已达成移出目的。
+    }
+    return ok;
+  }
+
+  /// 各媒体库的播放阈值（按库）：`GET /Library/VirtualFolders/Query`
+  /// → 每项 `ItemId`（库根条目 id）+ `LibraryOptions`（含阈值字段）。
+  /// 任何失败返回空 Map（调用方回退全局设置）。
+  Future<Map<String, EmbyPlaybackSettings>> getLibraryPlaybackSettings() async {
+    try {
+      final resp = await _dio.get(
+        '/Library/VirtualFolders/Query',
+        queryParameters: {if (_userId != null) 'UserId': _userId},
+      );
+      final data = resp.data;
+      if (data is! List) return const {};
+      final map = <String, EmbyPlaybackSettings>{};
+      for (final f in data) {
+        if (f is! Map) continue;
+        final id = f['ItemId'];
+        final options = f['LibraryOptions'];
+        if (id is! String || id.isEmpty || options is! Map) continue;
+        map[id] = EmbyPlaybackSettings.fromJson(options.cast<String, dynamic>());
+      }
+      return map;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// 服务器全局播放阈值：`GET /System/Configuration` → ServerConfiguration。
+  /// 失败返回 [EmbyPlaybackSettings.fallback]。
+  Future<EmbyPlaybackSettings> getGlobalPlaybackSettings() async {
+    try {
+      final resp = await _dio.get('/System/Configuration');
+      final data = resp.data;
+      if (data is! Map) return EmbyPlaybackSettings.fallback;
+      return EmbyPlaybackSettings.fromJson(data.cast<String, dynamic>());
+    } catch (_) {
+      return EmbyPlaybackSettings.fallback;
+    }
+  }
+
+  /// 条目祖先链 id（由近及远，不含条目自身）：`GET /Items/{Id}/Ancestors`。
+  /// 用于把条目映射到所属媒体库（祖先中命中库根 `ItemId` 者）。失败返回空。
+  Future<List<String>> getAncestorIds(String itemId) async {
+    try {
+      final resp = await _dio.get(
+        '/Items/$itemId/Ancestors',
+        queryParameters: {if (_userId != null) 'UserId': _userId},
+      );
+      final data = resp.data;
+      if (data is! List) return const [];
+      return data
+          .whereType<Map>()
+          .map((e) => e['Id'])
+          .whereType<String>()
+          .toList();
+    } catch (_) {
+      return const [];
     }
   }
 

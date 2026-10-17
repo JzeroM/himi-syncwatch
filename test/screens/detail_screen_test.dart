@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
+import 'package:himi_syncwatch/models/emby_playback_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -3129,6 +3130,8 @@ void main() {
       int season,
       int num, {
       int ms = 0,
+      double pct = 0,
+      int? runtimeTicks = 3000000000,
       bool watched = false,
     }) =>
         MediaItem(
@@ -3138,13 +3141,15 @@ void main() {
           parentIndexNumber: season,
           indexNumber: num,
           playbackPositionMs: ms,
+          playedPercentage: pct,
+          runTimeTicks: runtimeTicks,
           isWatched: watched,
         );
 
     test('有进度优先，取 (季,集) 最大的有进度集', () {
       final list = [
-        ep('a', 1, 1, ms: 1000),
-        ep('b', 1, 5, ms: 2000),
+        ep('a', 1, 1, ms: 1000, pct: 10),
+        ep('b', 1, 5, ms: 2000, pct: 20),
         ep('c', 1, 3, watched: true),
       ];
       expect(DetailScreen.defaultEpisodeTarget(list)!.id, 'b');
@@ -3161,8 +3166,8 @@ void main() {
 
     test('跨季取季号更大的有进度集', () {
       final list = [
-        ep('s1e10', 1, 10, ms: 1),
-        ep('s2e1', 2, 1, ms: 1),
+        ep('s1e10', 1, 10, ms: 1, pct: 1),
+        ep('s2e1', 2, 1, ms: 1, pct: 1),
       ];
       expect(DetailScreen.defaultEpisodeTarget(list)!.id, 's2e1');
     });
@@ -3172,12 +3177,59 @@ void main() {
       expect(DetailScreen.defaultEpisodeTarget(const []), isNull);
     });
 
+    test('当前集已看完 → 锁定其后第一个未观看集', () {
+      final list = [
+        ep('a', 1, 1, ms: 100, pct: 30, watched: true),
+        ep('b', 1, 2),
+        ep('c', 1, 3),
+      ];
+      expect(DetailScreen.defaultEpisodeTarget(list)!.id, 'b');
+    });
+
+    test('进度达上限视为看完 → 锁定下一未观看集', () {
+      final list = [
+        ep('a', 1, 1, ms: 900000, pct: 95),
+        ep('b', 1, 2),
+      ];
+      expect(DetailScreen.defaultEpisodeTarget(list)!.id, 'b');
+    });
+
+    test('全部看完 → 返回最后已看完集（无下一集）', () {
+      final list = [
+        ep('a', 1, 1, watched: true),
+        ep('b', 1, 2, watched: true),
+      ];
+      expect(DetailScreen.defaultEpisodeTarget(list)!.id, 'b');
+    });
+
+    test('进度低于下限（MinResumePct）不可续播 → 回退 null', () {
+      final list = [ep('a', 1, 1, ms: 100, pct: 0.5)];
+      expect(DetailScreen.defaultEpisodeTarget(list), isNull);
+    });
+
+    test('时长低于下限（MinResumeDurationSeconds）不可续播', () {
+      final list = [ep('a', 1, 1, ms: 100, pct: 30, runtimeTicks: 10000000)];
+      expect(DetailScreen.defaultEpisodeTarget(list), isNull);
+    });
+
+    test('按库阈值生效：上限更低时已看完判定提前', () {
+      const strict = EmbyPlaybackSettings(maxResumePct: 80);
+      final list = [
+        ep('a', 1, 1, ms: 900000, pct: 85),
+        ep('b', 1, 2),
+      ];
+      // 默认上限 90：85% 仍算可续播 → 锁 a
+      expect(DetailScreen.defaultEpisodeTarget(list)!.id, 'a');
+      // 库上限 80：85% 视为看完 → 锁下一集 b
+      expect(DetailScreen.defaultEpisodeTarget(list, strict)!.id, 'b');
+    });
+
     test('focusEpisodeId 参数：优先于 defaultEpisodeTarget', () {
       // 构造一个剧详情页，带 focusEpisodeId
       final episodes = [
-        ep('a', 1, 1, ms: 1000),
-        ep('b', 1, 5, ms: 2000),
-        ep('c', 1, 3, ms: 500),
+        ep('a', 1, 1, ms: 1000, pct: 10),
+        ep('b', 1, 5, ms: 2000, pct: 20),
+        ep('c', 1, 3, ms: 500, pct: 5),
       ];
       // defaultEpisodeTarget 会选 b（季1集5，进度最大）
       expect(DetailScreen.defaultEpisodeTarget(episodes)!.id, 'b');
@@ -3235,6 +3287,7 @@ void main() {
             parentIndexNumber: 1,
             indexNumber: i,
             playbackPositionMs: i == 10 ? 5000 : 0,
+            playedPercentage: i == 10 ? 10 : 0,
           ),
       ];
       await _pumpDetail(
@@ -3284,7 +3337,8 @@ void main() {
             type: 'Episode',
             parentIndexNumber: 2,
             indexNumber: 2,
-            playbackPositionMs: 3000),
+            playbackPositionMs: 3000,
+            playedPercentage: 10),
       ];
       await _pumpDetail(
         tester,
@@ -3297,6 +3351,23 @@ void main() {
       expect(find.byKey(const Key('episodeCard_s2e2')), findsOneWidget);
       expect(find.byKey(const Key('episodeCard_s1e1')), findsNothing,
           reason: '已切到第2季，第一季卡不在行内');
+    });
+  });
+
+  group('详情页顶部压暗罩（v1.2.21 底边归零）', () {
+    test('heroScrimGradient 文字区 0x4D、底边透明', () {
+      final g = DetailScreen.heroScrimGradient;
+      expect(g.colors[2], const Color(0x4D000000));
+      expect(g.colors[3], const Color(0x4D000000));
+      expect(g.colors.last, Colors.transparent);
+      expect(g.stops!.last, 1.0);
+    });
+
+    test('heroTextShadows 为轻微投影（blur ≤ 6）', () {
+      expect(DetailScreen.heroTextShadows, isNotEmpty);
+      for (final s in DetailScreen.heroTextShadows) {
+        expect(s.blurRadius, lessThanOrEqualTo(6));
+      }
     });
   });
 }
