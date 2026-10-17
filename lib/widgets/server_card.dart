@@ -831,10 +831,11 @@ class ServerListCard extends StatelessWidget {
 }
 
 /// 网格视图服务器卡（近方形玻璃卡）：
-/// 第 1 行 = 头像 + 用户名 + ···；第 2 行 = 服务器名称；底部 = 延迟/计数。
+/// 第 1 行 = 头像 + 用户名；第 2 行 = 服务器名称；底部 = 延迟/计数。
 ///
-/// TV 模式下 ··· 从第 1 行移到卡片右侧垂直居中，成为与主体同级、矩形互不
-/// 包含的独立焦点项，方向键可自然在「主体 ↔ ···」间移动（手机端布局不变）。
+/// v1.2.16：··· 恒在卡片右边缘垂直居中（手机端与 TV 模式一致，成为与主体
+/// 同级、矩形互不包含的独立焦点项）；「同步到 TV」图标在手机端移到卡片
+/// 右下角（此前在第 1 行，右下角留白）。
 class ServerGridCard extends StatelessWidget {
   const ServerGridCard({
     super.key,
@@ -931,10 +932,10 @@ class ServerGridCard extends StatelessWidget {
       onForward: onMoreButtonForward,
     );
 
-    Widget bodyColumn({required bool moreInTopRow}) => Column(
+    Widget bodyColumn({required bool syncAtBottomRight}) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 第 1 行：头像 + 用户名 (+ 同步图标 / ···，手机端)
+            // 第 1 行：头像 + 用户名
             Row(
               children: [
                 ServerAvatar(
@@ -958,8 +959,6 @@ class ServerGridCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (moreInTopRow && onSyncToTv != null) _syncIcon(),
-                if (moreInTopRow) moreButton,
               ],
             ),
             const SizedBox(height: 8),
@@ -986,50 +985,30 @@ class ServerGridCard extends StatelessWidget {
               ],
             ),
             const Spacer(),
-            LatencyBadge(latencyMs: stats?.latencyMs),
-            const SizedBox(height: 6),
-            MovieSeriesCounts(counts: stats?.counts),
-          ],
-        );
-
-    if (tvMode) {
-      // TV：主体（左，注入焦点）+ 右侧垂直居中的 ···（独立焦点）
-      final body = bodyColumn(moreInTopRow: false);
-      return GlassContainer(
-        borderRadius: BorderRadius.circular(18),
-        tint: GlassConfig.panelTintOf(),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            canRequestFocus: false,
-            onTap: onTap,
-            child: Stack(
+            // 底部：延迟/计数（左）+ 同步到 TV（右下角，手机端）
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                _gradient(start, end),
-                Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(child: body),
-                      const SizedBox(width: 4),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [moreButton],
-                      ),
+                      LatencyBadge(latencyMs: stats?.latencyMs),
+                      const SizedBox(height: 6),
+                      MovieSeriesCounts(counts: stats?.counts),
                     ],
                   ),
                 ),
+                if (syncAtBottomRight && onSyncToTv != null) _syncIcon(),
               ],
             ),
-          ),
-        ),
-      );
-    }
+          ],
+        );
 
-    // 手机端：原布局（··· 在第 1 行右上角）
+    // 主体（左）+ 右边缘垂直居中的 ···：手机端与 TV 共用同一结构
+    // （v1.2.16：手机端 ··· 由第 1 行移到此位；TV 下 ··· 为独立焦点项）。
+    final body = bodyColumn(syncAtBottomRight: !tvMode);
     return GlassContainer(
       borderRadius: BorderRadius.circular(18),
       // 激活态不着色（v1.1.246）：仅靠绿勾 + 加粗标识，玻璃保持中性
@@ -1038,6 +1017,7 @@ class ServerGridCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
+          canRequestFocus: !tvMode,
           onTap: onTap,
           child: Stack(
             children: [
@@ -1045,7 +1025,18 @@ class ServerGridCard extends StatelessWidget {
               _gradient(start, end),
               Padding(
                 padding: const EdgeInsets.all(14),
-                child: bodyColumn(moreInTopRow: true),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: body),
+                    const SizedBox(width: 4),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [moreButton],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

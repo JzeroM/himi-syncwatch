@@ -1040,6 +1040,9 @@ void main() {
     expect(find.byType(HomeHeroCarousel), findsOneWidget);
     expect(find.byKey(const Key('homeAmbientImage')), findsOneWidget,
         reason: '轮播开启时首页背景改为虚化海报');
+    expect(find.byKey(const Key('homeAmbientSeamLayer')), findsOneWidget,
+        reason: 'v1.2.16 接缝对齐层：与清晰轮播图同裁切 + 镜像延伸，消除分割感');
+    expect(find.byKey(const Key('homeAmbientSeamImage')), findsOneWidget);
     expect(emby.lastGetItemsFields, contains('BackdropImageTags'));
   });
 
@@ -1065,7 +1068,17 @@ void main() {
 
     expect(find.byType(HomeHeroCarousel), findsNothing);
     expect(find.byKey(const Key('homeAmbientImage')), findsNothing);
+    expect(find.byKey(const Key('homeAmbientSeamLayer')), findsNothing);
     expect(find.byKey(const Key('homeBackground')), findsOneWidget);
+  });
+
+  test('轮播接缝对齐层渐隐：接缝(0.5)前全不透明，镜像段渐隐到透明', () {
+    const g = HomeScreen.ambientSeamFadeGradient;
+    expect(g.stops, orderedEquals(<double>[0.0, 0.5, 0.73, 1.0]));
+    expect(g.colors[0], Colors.white);
+    expect(g.colors[1], Colors.white, reason: '接缝处保持不透明（同源内容）');
+    expect(g.colors[2], Colors.transparent);
+    expect(g.colors[3], Colors.transparent);
   });
 
   testWidgets('首页轮播满 5 秒自动切到下一页', (tester) async {

@@ -34,6 +34,22 @@ class HomeScreen extends ConsumerStatefulWidget {
   @visibleForTesting
   final Future<String?> Function()? qrScan;
 
+  /// 轮播接缝对齐层底部渐隐（v1.2.16）：层高 = 2×hero（0~0.5 为与清晰
+  /// 轮播图同裁切的虚化副本，0.5 为接缝；0.5~0.73 为镜像延伸段渐隐区，
+  /// 之后交叉溶解回全屏虚化氛围层）。
+  @visibleForTesting
+  static const LinearGradient ambientSeamFadeGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Colors.white,
+      Colors.white,
+      Colors.transparent,
+      Colors.transparent,
+    ],
+    stops: [0.0, 0.5, 0.73, 1.0],
+  );
+
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
@@ -454,7 +470,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           // 轮播开启时：当前海报虚化铺满（详情页同款）
           if (showHero)
-            _buildHeroBackground(_heroItems[heroIndex], base),
+            _buildHeroBackground(_heroItems[heroIndex], base, heroHeight),
           content,
         ],
       ),
@@ -463,7 +479,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 首页轮播虚化背景：当前海报低分解码 + 高斯模糊 + 渐入底色蒙罩，
   /// 与详情页 `_buildAmbientBackdrop` 一致；切页时淡入淡出。
-  Widget _buildHeroBackground(MediaItem item, Color base) {
+  ///
+  /// v1.2.16 接缝对齐层：整屏虚化层与清晰轮播图裁切不同（前者整屏 cover、
+  /// 后者 hero 高 cover），接缝处画面内容/色相对不上 → 即使暗度连续仍有
+  /// 「分割感」。故在其上叠加一层与清晰图完全同裁切的虚化副本，并向接缝
+  /// 下方延伸同内容垂直镜像（接缝第一行像素与原图底边一致，镜像边界在
+  /// 模糊滤镜内部不产生透明边），镜像段渐隐交叉溶解回整屏虚化层。
+  Widget _buildHeroBackground(MediaItem item, Color base, double heroHeight) {
     // 与轮播清晰图同一取图优先级（v1.2.15）：同一张底图才能让清晰图
     // 底部渐隐后与虚化层无缝溶解。
     final url =
@@ -475,6 +497,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         key: ValueKey(url),
         fit: StackFit.expand,
         children: [
+          // 1) 整屏虚化：页面整体色彩延续
           ImageFiltered(
             imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
             child: Transform.scale(
@@ -489,6 +512,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ),
+          // 2) 接缝对齐层：上半段与清晰轮播图完全同裁切（无额外缩放），
+          //    下半段为同一内容的垂直镜像 → 接缝两侧像素同源，无色相/结构
+          //    硬切；镜像段渐隐后回到整屏虚化层。
+          Positioned(
+            key: const Key('homeAmbientSeamLayer'),
+            top: 0,
+            left: 0,
+            right: 0,
+            height: heroHeight * 2,
+            child: ShaderMask(
+              shaderCallback: (rect) =>
+                  HomeScreen.ambientSeamFadeGradient.createShader(rect),
+              blendMode: BlendMode.dstIn,
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: heroHeight,
+                      child: EmbyImage(
+                        key: const Key('homeAmbientSeamImage'),
+                        url: url,
+                        fit: BoxFit.cover,
+                        cacheWidth: 200,
+                        placeholder: const SizedBox.shrink(),
+                        errorWidget: const SizedBox.shrink(),
+                      ),
+                    ),
+                    Positioned(
+                      top: heroHeight,
+                      left: 0,
+                      right: 0,
+                      height: heroHeight,
+                      child: Transform.flip(
+                        flipY: true,
+                        child: EmbyImage(
+                          url: url,
+                          fit: BoxFit.cover,
+                          cacheWidth: 200,
+                          placeholder: const SizedBox.shrink(),
+                          errorWidget: const SizedBox.shrink(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // 3) 压暗罩
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(

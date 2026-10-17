@@ -543,6 +543,55 @@ void main() {
         reason: '服务器名称应在用户名下方');
   });
 
+  testWidgets('网格卡：⋯ 在右边缘垂直居中、同步图标在右下角（v1.2.16）',
+      (tester) async {
+    const tv = PairedTv(
+      deviceId: 'tv_1',
+      name: '客厅电视',
+      ip: '192.168.1.10',
+      port: 17894,
+      token: 'tok',
+    );
+    await _pumpScreen(
+      tester,
+      settings: const AppSettings(serverViewMode: 'grid'),
+      pairedTv: tv,
+      onlineDevices: [
+        TvDeviceInfo(
+            deviceId: 'tv_1',
+            name: '客厅电视',
+            ip: '192.168.1.10',
+            httpPort: 17894),
+      ],
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+        _server(id: 'srv_b', name: '备用服务器', serverId: 's2'),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    final tile = find.byKey(const ValueKey('serverGridTile_srv_a'));
+    final rect = tester.getRect(tile);
+
+    final moreCenter = tester.getCenter(find.descendant(
+      of: tile,
+      matching: find.byKey(const ValueKey('serverMore_srv_a')),
+    ));
+    expect(moreCenter.dx, greaterThan(rect.center.dx + 20),
+        reason: '⋯ 应在卡片右侧（不再在用户名行）');
+    expect((moreCenter.dy - rect.center.dy).abs(), lessThan(16),
+        reason: '⋯ 应在卡片右边缘垂直居中（与 TV 模式一致）');
+
+    final syncCenter = tester.getCenter(find.descendant(
+      of: tile,
+      matching: find.byKey(const ValueKey('syncToTvButton')),
+    ));
+    expect(syncCenter.dx, greaterThan(rect.center.dx + 20),
+        reason: '同步到 TV 图标应在卡片右侧');
+    expect(syncCenter.dy, greaterThan(rect.center.dy + 20),
+        reason: '同步到 TV 图标应在卡片右下角（填补留白）');
+  });
+
   testWidgets('卡片头像加载 Emby 用户头像，上传后随版本号刷新（v1.2.9）', (tester) async {
     final container = await _pumpScreen(
       tester,
