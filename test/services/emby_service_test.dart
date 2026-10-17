@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
@@ -447,7 +448,7 @@ void main() {
       expect(seasons, isEmpty);
     });
 
-    test('请求失败（401 除外）返回空列表不抛错', () async {
+    test('请求失败（401 除外）抛 EmbyException（v1.2.19）', () async {
       final unreachable = EmbyService();
       unreachable.configure(
         serverUrl: 'http://127.0.0.1:1',
@@ -456,7 +457,10 @@ void main() {
         serverId: 's',
       );
 
-      expect(await unreachable.getSeasons('sv1'), isEmpty);
+      await expectLater(
+        unreachable.getSeasons('sv1'),
+        throwsA(isA<EmbyException>()),
+      );
     });
   });
 
@@ -907,6 +911,43 @@ void main() {
           'http://127.0.0.1:${server.port}/Users/user-1/Images/Primary');
       expect(service.getUserImageUrl(tag: '123'),
           'http://127.0.0.1:${server.port}/Users/user-1/Images/Primary?tag=123');
+    });
+  });
+
+  group('只读失败抛 EmbyException（v1.2.19 不再静默返回空）', () {
+    test('非 401 的 5xx → EmbyException', () async {
+      statusFor = (_) => HttpStatus.internalServerError;
+      await expectLater(
+        service.getLibraries(),
+        throwsA(isA<EmbyException>()),
+      );
+    });
+
+    test('连接失败 → EmbyException', () async {
+      final dead = EmbyService();
+      dead.configure(
+        serverUrl: 'http://127.0.0.1:1',
+        accessToken: 't',
+        userId: 'u',
+        serverId: 's',
+      );
+      await expectLater(
+        dead.getItems(parentId: 'x'),
+        throwsA(isA<EmbyException>()),
+      );
+    });
+
+    test('401 仍 rethrow（鉴权失败不降级为 EmbyException）', () async {
+      statusFor = (_) => HttpStatus.unauthorized;
+      await expectLater(
+        service.getLibraries(),
+        throwsA(isA<DioException>()),
+      );
+    });
+
+    test('计数类沿用 null=失败语义（getItemCounts 不抛错）', () async {
+      statusFor = (_) => HttpStatus.internalServerError;
+      expect(await service.getItemCounts(), isNull);
     });
   });
 }

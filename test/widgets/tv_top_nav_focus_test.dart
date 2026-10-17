@@ -330,7 +330,8 @@ void main() {
     await _press(tester, LogicalKeyboardKey.arrowDown);
     expect(_focusInTopBar(), isTrue, reason: '空数据时方向键应先落壳层顶栏，焦点环立即出现');
 
-    // 空内容继续按键：焦点保持在顶栏，不丢失、不吞键卡死
+    // v1.2.19：TV 端空态不放可聚焦按钮（居中按钮上键会丢焦点），
+    // 空内容继续按键焦点保持顶栏，不丢失、不吞键卡死
     await _press(tester, LogicalKeyboardKey.arrowDown);
     expect(_focusInTopBar(), isTrue, reason: '空内容下键焦点保持顶栏');
 

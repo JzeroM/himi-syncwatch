@@ -72,8 +72,16 @@ class FakeEmbyAuthService extends EmbyAuthService {
   /// saveServerOrder 收到的调用记录（断言拖拽后确实落盘）。
   List<String>? lastSavedServerOrder;
 
+  /// listServerIds 是否抛异常（测首页 _init 失败不永久转圈）。
+  bool failListServerIds = false;
+
   @override
-  Future<List<String>> listServerIds() async => _serverIds;
+  Future<List<String>> listServerIds() async {
+    if (failListServerIds) {
+      throw StateError('secure storage unavailable');
+    }
+    return _serverIds;
+  }
 
   @override
   Future<void> saveServerOrder(List<String> configIds) async {
@@ -306,7 +314,22 @@ class FakeEmbyService extends EmbyService {
   Future<MediaItem?> getItemDetails(String id) async => item;
 
   @override
-  Future<List<LibraryFolder>> getLibraries() async => libraries;
+  Future<List<LibraryFolder>> getLibraries() async {
+    librariesCalls++;
+    // getLibraries 失败注入（v1.2.19 首页失败/重试测试）。
+    if (failLibraries || librariesCalls <= librariesFailTimes) {
+      throw const EmbyException('无法连接服务器');
+    }
+    return libraries;
+  }
+
+  int librariesCalls = 0;
+
+  /// getLibraries 是否总是抛异常。
+  bool failLibraries = false;
+
+  /// getLibraries 前 N 次调用抛异常（测自动重试一次）。
+  int librariesFailTimes = 0;
 
   @override
   Future<List<MediaItem>> getItems({

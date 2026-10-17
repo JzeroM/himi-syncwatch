@@ -166,6 +166,68 @@ void main() {
     expect(find.byIcon(Icons.menu), findsNothing);
   });
 
+  FakeEmbyAuthService _oneServerAuth() => FakeEmbyAuthService(
+        serverIds: ['s1'],
+        sessions: {
+          's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        },
+      );
+
+  testWidgets('首页加载失败：显示「加载失败」+ 重试（v1.2.19 不再是空白）', (tester) async {
+    final emby = FakeEmbyService()..failLibraries = true;
+    await _pumpScreen(tester, auth: _oneServerAuth(), emby: emby);
+
+    expect(find.text('加载失败'), findsOneWidget);
+    expect(find.byKey(const Key('homeRetryButton')), findsOneWidget);
+    expect(find.text('暂无内容'), findsNothing);
+    // 首次 + 自动重试一次
+    expect(emby.librariesCalls, 2);
+  });
+
+  testWidgets('首页首次失败自动重试一次，成功即正常显示（v1.2.19）', (tester) async {
+    final emby = FakeEmbyService(
+      libraries: [_lib('lib1', '电影')],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+    )..librariesFailTimes = 1;
+    await _pumpScreen(tester, auth: _oneServerAuth(), emby: emby);
+
+    expect(find.text('加载失败'), findsNothing);
+    expect(find.text('影片1'), findsWidgets);
+    expect(emby.librariesCalls, 2);
+  });
+
+  testWidgets('首页服务器正常但无媒体库：显示「暂无内容」空态（v1.2.19）', (tester) async {
+    await _pumpScreen(tester, auth: _oneServerAuth(), emby: FakeEmbyService());
+
+    expect(find.text('暂无内容'), findsOneWidget);
+    expect(find.text('加载失败'), findsNothing);
+    expect(find.byKey(const Key('homeEmptyRefreshButton')), findsOneWidget);
+  });
+
+  testWidgets('首页 _init 异常（安全存储）：错误态而非永久转圈（v1.2.19）', (tester) async {
+    final auth = FakeEmbyAuthService()..failListServerIds = true;
+    await _pumpScreen(tester, auth: auth);
+
+    expect(find.text('加载失败'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('首页错误态点「重试」恢复内容（v1.2.19）', (tester) async {
+    final emby = FakeEmbyService(
+      libraries: [_lib('lib1', '电影')],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+    )..failLibraries = true;
+    await _pumpScreen(tester, auth: _oneServerAuth(), emby: emby);
+    expect(find.text('加载失败'), findsOneWidget);
+
+    emby.failLibraries = false;
+    await tester.tap(find.byKey(const Key('homeRetryButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('加载失败'), findsNothing);
+    expect(find.text('影片1'), findsWidgets);
+  });
+
   testWidgets('TV 模式首页不渲染顶栏（标题/搜索/房间上移壳层顶栏）', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1'],
@@ -177,6 +239,10 @@ void main() {
       tester,
       auth: auth,
       settings: const AppSettings(tvMode: true),
+      emby: FakeEmbyService(
+        libraries: [_lib('lib1', '电影')],
+        items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+      ),
     );
 
     // 顶栏职责全部由壳层 TvTopNavBar 承担，首页自身无 AppBar 与入口按钮
@@ -228,7 +294,14 @@ void main() {
         's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
       },
     );
-    final container = await _pumpScreen(tester, auth: auth);
+    final container = await _pumpScreen(
+      tester,
+      auth: auth,
+      emby: FakeEmbyService(
+        libraries: [_lib('lib1', '电影')],
+        items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+      ),
+    );
 
     expect(container.read(embyConfigProvider)?.serverName, '家庭NAS');
     expect(find.byType(RefreshIndicator), findsOneWidget);

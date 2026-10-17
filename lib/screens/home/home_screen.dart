@@ -94,71 +94,87 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _init() async {
-    final authService = ref.read(embyAuthServiceProvider);
-    final serverIds = await authService.listServerIds();
+    try {
+      final authService = ref.read(embyAuthServiceProvider);
+      final serverIds = await authService.listServerIds();
 
-    if (serverIds.isEmpty) {
-      setState(() {
-        _isLoading = false;
-        _initialized = true;
-      });
-      return;
-    }
-
-    // 并行读取各服务器 session：顺序读在服务器多时明显拖慢首屏
-    final sessions = await Future.wait(
-      serverIds.map((sid) => authService.loadSession(sid)),
-    );
-    final savedId = await authService.loadSelectedServerId();
-    // 用户自定义顺序；不在序里的（如新加的）排尾部
-    final order = await authService.loadServerOrder();
-
-    final configs = <EmbyServerConfig>[];
-    final seenServerIds = <String>{};
-    EmbyServerConfig? activeConfig;
-
-    for (var i = 0; i < serverIds.length; i++) {
-      final session = sessions[i];
-      if (session == null) continue;
-      final config = EmbyServerConfig.fromJson(session);
-      if (seenServerIds.contains(config.serverId)) {
-        await authService.deleteSession(serverIds[i]);
-        continue;
-      }
-      seenServerIds.add(config.serverId);
-      configs.add(config);
-      if (activeConfig == null || config.id == savedId) {
-        activeConfig = config;
-      }
-    }
-
-    if (order.isNotEmpty) {
-      final rank = <String, int>{for (var i = 0; i < order.length; i++) order[i]: i};
-      final sorted = [...configs]..sort((a, b) {
-          final ra = rank[a.id] ?? order.length;
-          final rb = rank[b.id] ?? order.length;
-          if (ra != rb) return ra.compareTo(rb);
-          return configs.indexOf(a).compareTo(configs.indexOf(b));
+      if (serverIds.isEmpty) {
+        setState(() {
+          _isLoading = false;
+          _initialized = true;
         });
-      configs
-        ..clear()
-        ..addAll(sorted);
-    }
+        return;
+      }
 
-    ref.read(embyServerListProvider.notifier).setList(configs);
+      // 并行读取各服务器 session：顺序读在服务器多时明显拖慢首屏
+      final sessions = await Future.wait(
+        serverIds.map((sid) => authService.loadSession(sid)),
+      );
+      final savedId = await authService.loadSelectedServerId();
+      // 用户自定义顺序；不在序里的（如新加的）排尾部
+      final order = await authService.loadServerOrder();
 
-    if (activeConfig != null) {
-      ref.read(embyConfigProvider.notifier).setConfig(activeConfig);
-      // 立即结束首屏全屏转圈，媒体内容由 _loadMedia 渐进填充
-      setState(() => _initialized = true);
-      unawaited(_loadMedia());
-    } else {
+      final configs = <EmbyServerConfig>[];
+      final seenServerIds = <String>{};
+      EmbyServerConfig? activeConfig;
+
+      for (var i = 0; i < serverIds.length; i++) {
+        final session = sessions[i];
+        if (session == null) continue;
+        final config = EmbyServerConfig.fromJson(session);
+        if (seenServerIds.contains(config.serverId)) {
+          await authService.deleteSession(serverIds[i]);
+          continue;
+        }
+        seenServerIds.add(config.serverId);
+        configs.add(config);
+        if (activeConfig == null || config.id == savedId) {
+          activeConfig = config;
+        }
+      }
+
+      if (order.isNotEmpty) {
+        final rank = <String, int>{
+          for (var i = 0; i < order.length; i++) order[i]: i
+        };
+        final sorted = [...configs]..sort((a, b) {
+            final ra = rank[a.id] ?? order.length;
+            final rb = rank[b.id] ?? order.length;
+            if (ra != rb) return ra.compareTo(rb);
+            return configs.indexOf(a).compareTo(configs.indexOf(b));
+          });
+        configs
+          ..clear()
+          ..addAll(sorted);
+      }
+
+      ref.read(embyServerListProvider.notifier).setList(configs);
+
+      if (activeConfig != null) {
+        ref.read(embyConfigProvider.notifier).setConfig(activeConfig);
+        // 立即结束首屏全屏转圈，媒体内容由 _loadMedia 渐进填充
+        setState(() => _initialized = true);
+        unawaited(_loadMedia());
+      } else {
+        setState(() {
+          _isLoading = false;
+          _initialized = true;
+        });
+      }
+    } catch (e) {
+      // 安全存储读取/会话解析异常：不能停在永久转圈，改为错误态可重试
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _initialized = true;
+        _error = _errorText(e);
       });
     }
   }
+
+  /// 面向用户的错误文案：Emby 只读失败给出具体原因，其余给通用兜底。
+  static String _errorText(Object e) =>
+      e is EmbyException ? e.message : '加载失败，请检查网络或服务器';
 
   Future<void> _loadMedia([EmbyService? serviceOverride]) async {
     final seq = ++_loadSeq;
@@ -166,21 +182,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _isLoading = true;
       _error = null;
     });
-
     try {
-      final EmbyService embyService =
-          serviceOverride ?? ref.read(embyServiceProvider);
+      await _loadOnce(serviceOverride, seq);
+    } catch (e) {
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _error = _errorText(e);
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// 单次加载；首次失败自动短退避重试一次，二次仍失败则抛出交给
+  /// [_loadMedia] 展示错误态（v1.2.19：失败不再静默成空白）。
+  Future<void> _loadOnce(
+    EmbyService? serviceOverride,
+    int seq, {
+    int attempt = 0,
+  }) async {
+    final EmbyService embyService =
+        serviceOverride ?? ref.read(embyServiceProvider);
+    try {
       // 库列表与计数并发发起；计数到齐后单独填充统计面板，不阻塞首屏
       final libsFuture = embyService.getLibraries();
       unawaited(embyService.getItemCounts().then((counts) {
         if (!mounted || seq != _loadSeq) return;
         setState(() => _counts = counts);
-      }));
+      }).catchError((_) {}));
       // 继续观看（不阻塞首屏）
       unawaited(embyService.getResumeItems().then((items) {
         if (!mounted || seq != _loadSeq) return;
         setState(() => _resumeItems = items);
-      }));
+      }).catchError((_) {}));
       final libs = await libsFuture;
 
       // 每库并发取内容；哪个先回就先追加哪个分类，首屏尽快出内容。
@@ -214,10 +247,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (_isLoading) setState(() => _isLoading = false);
     } catch (e) {
       if (!mounted || seq != _loadSeq) return;
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      if (attempt == 0) {
+        // 自动重试一次：短退避后重跑（首次失败常为瞬时网络抖动）
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        if (!mounted || seq != _loadSeq) return;
+        await _loadOnce(serviceOverride, seq, attempt: 1);
+        return;
+      }
+      rethrow;
     }
   }
 
@@ -322,109 +359,170 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         : _heroIndex.clamp(0, _heroItems.length - 1);
     final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
 
-    final content = !hasServer
-        ? const _EmptyState()
-        : _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _loadMedia,
-                          child: const Text('重试'),
-                        ),
-                      ],
-                    ),
-                  )
-                : TvRefreshHotkey(
-                    onRefresh: _loadMedia,
-                    child: RefreshIndicator(
-                      onRefresh: _loadMedia,
-                      child: ListView.builder(
-                        padding: EdgeInsets.only(
-                          // 轮播英雄区自带顶部出血；否则预留 AppBar/壳层顶栏
-                          top: showHero
-                              ? 0
-                              : (tvMode ? 12 : GlassConfig.topInsetOf(context)),
-                          bottom: GlassConfig.bottomReserveOf(context),
-                        ),
-                        itemCount: _categories.length +
-                            (_libraries.isNotEmpty ? 1 : 0) +
-                            (resumeVisible.isNotEmpty ? 1 : 0) +
-                            (_counts != null ? 1 : 0) +
-                            (showHero ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (showHero && index == 0) {
-                            return HomeHeroCarousel(
-                              items: _heroItems,
-                              controller: _heroController,
-                              height: heroHeight,
-                              onPageChanged: (i) =>
-                                  setState(() => _heroIndex = i),
-                              onTap: (item) =>
-                                  context.push('/detail/${item.id}'),
-                            );
-                          }
-                          var i = index - (showHero ? 1 : 0);
-                          if (_libraries.isNotEmpty) {
-                            if (i == 0) {
-                              return _LibraryBar(
-                                libraries: _libraries,
-                                onOpen: (lib) => context.push(
-                                  '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
-                                ),
+    // 是否有可展示媒体内容：库/分类/续播/轮播任一非空。仅计数到位不算内容。
+    final hasContent = _categories.isNotEmpty ||
+        _libraries.isNotEmpty ||
+        resumeVisible.isNotEmpty ||
+        showHero;
+
+    final errorView = Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.cloud_off, size: 56, color: Colors.grey),
+          const SizedBox(height: 16),
+          const Text(
+            '加载失败',
+            style: TextStyle(fontSize: 18, color: Colors.white70),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              _error ?? '',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // TV 模式不放置可聚焦按钮：居中按钮在方向键遍历中其正上方无
+          // 焦点候选，按上键会让焦点丢失（焦点环消失）。TV 端改用顶栏
+          // 服务器下拉切换/重载恢复。
+          if (!tvMode)
+            ElevatedButton(
+              key: const Key('homeRetryButton'),
+              onPressed: _loadMedia,
+              child: const Text('重试'),
+            ),
+        ],
+      ),
+    );
+
+    // 真空态（服务器正常但无媒体库/内容）：与「加载失败」区分文案，
+    // 提供可点/可聚焦的「刷新」按钮恢复。不用 ListView 包裹，避免在 TV 上
+    // 竖向滚动容器吞掉方向键、卡住焦点环。
+    final emptyView = Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.inbox_outlined, size: 56, color: Colors.grey[600]),
+          const SizedBox(height: 16),
+          Text(
+            '暂无内容',
+            style: TextStyle(fontSize: 18, color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '媒体库为空，或内容尚未同步',
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+          ),
+          const SizedBox(height: 16),
+          if (!tvMode)
+            ElevatedButton(
+              key: const Key('homeEmptyRefreshButton'),
+              onPressed: _loadMedia,
+              child: const Text('刷新'),
+            ),
+        ],
+      ),
+    );
+
+    final content = _error != null
+        ? errorView
+        : !hasServer
+            ? const _EmptyState()
+            : _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : !hasContent
+                    ? emptyView
+                    : TvRefreshHotkey(
+                        onRefresh: _loadMedia,
+                        child: RefreshIndicator(
+                          onRefresh: _loadMedia,
+                          child: ListView.builder(
+                            // 空白/内容不足一屏时也可下拉刷新（v1.2.19）
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: EdgeInsets.only(
+                              // 轮播英雄区自带顶部出血；否则预留 AppBar/壳层顶栏
+                              top: showHero
+                                  ? 0
+                                  : (tvMode
+                                      ? 12
+                                      : GlassConfig.topInsetOf(context)),
+                              bottom: GlassConfig.bottomReserveOf(context),
+                            ),
+                            itemCount: _categories.length +
+                                (_libraries.isNotEmpty ? 1 : 0) +
+                                (resumeVisible.isNotEmpty ? 1 : 0) +
+                                (_counts != null ? 1 : 0) +
+                                (showHero ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (showHero && index == 0) {
+                                return HomeHeroCarousel(
+                                  items: _heroItems,
+                                  controller: _heroController,
+                                  height: heroHeight,
+                                  onPageChanged: (i) =>
+                                      setState(() => _heroIndex = i),
+                                  onTap: (item) =>
+                                      context.push('/detail/${item.id}'),
+                                );
+                              }
+                              var i = index - (showHero ? 1 : 0);
+                              if (_libraries.isNotEmpty) {
+                                if (i == 0) {
+                                  return _LibraryBar(
+                                    libraries: _libraries,
+                                    onOpen: (lib) => context.push(
+                                      '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
+                                    ),
+                                  );
+                                }
+                                i--;
+                              }
+                              if (resumeVisible.isNotEmpty) {
+                                if (i == 0) {
+                                  return _ContinueWatchingBar(
+                                    items: resumeVisible,
+                                    onOpen: (item) {
+                                      // 集条目 → 剧详情页 + 定位到该集
+                                      if (item.isEpisode &&
+                                          item.seriesId != null) {
+                                        context.push(
+                                            '/detail/${item.seriesId}?episode=${item.id}');
+                                      } else {
+                                        context.push('/detail/${item.id}');
+                                      }
+                                    },
+                                    onItemLongPress: (item, rect) =>
+                                        showResumeCardMenu(
+                                            context, ref, item, rect),
+                                  );
+                                }
+                                i--;
+                              }
+                              if (i < _categories.length) {
+                                final cat = _categories[i];
+                                return _CategorySection(
+                                  category: cat,
+                                  onViewAll: () => context.push(
+                                    '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
+                                  ),
+                                  onItemTap: (item) =>
+                                      context.push('/detail/${item.id}'),
+                                  onItemLongPress: (item, rect) =>
+                                      showPosterCardMenu(context, ref, item, rect),
+                                );
+                              }
+                              // 列表收尾：媒体统计面板（计数加载成功才渲染）
+                              return StatsPanel(
+                                key: const ValueKey('statsPanel'),
+                                counts: _counts!,
                               );
-                            }
-                            i--;
-                          }
-                          if (resumeVisible.isNotEmpty) {
-                            if (i == 0) {
-                              return _ContinueWatchingBar(
-                                items: resumeVisible,
-                                onOpen: (item) {
-                                  // 集条目 → 剧详情页 + 定位到该集
-                                  if (item.isEpisode && item.seriesId != null) {
-                                    context.push(
-                                        '/detail/${item.seriesId}?episode=${item.id}');
-                                  } else {
-                                    context.push('/detail/${item.id}');
-                                  }
-                                },
-                                onItemLongPress: (item, rect) =>
-                                    showResumeCardMenu(context, ref, item, rect),
-                              );
-                            }
-                            i--;
-                          }
-                          if (i < _categories.length) {
-                            final cat = _categories[i];
-                            return _CategorySection(
-                              category: cat,
-                              onViewAll: () => context.push(
-                                '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
-                              ),
-                              onItemTap: (item) =>
-                                  context.push('/detail/${item.id}'),
-                              onItemLongPress: (item, rect) =>
-                                  showPosterCardMenu(context, ref, item, rect),
-                            );
-                          }
-                          // 列表收尾：媒体统计面板（计数加载成功才渲染）
-                          return StatsPanel(
-                            key: const ValueKey('statsPanel'),
-                            counts: _counts!,
-                          );
-                        },
-                      ),
-                    ),
-                  );
+                            },
+                          ),
+                        ),
+                      );
 
     return Scaffold(
       backgroundColor: Colors.transparent,

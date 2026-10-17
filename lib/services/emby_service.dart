@@ -8,6 +8,23 @@ import 'package:himi_syncwatch/models/library_counts.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 
+/// Emby 只读请求的可辨识失败（非 401 的网络/超时/服务端错误）。
+///
+/// v1.2.19：列表类只读方法（[EmbyService.getItems]/[EmbyService.getLibraries]
+/// /[EmbyService.getSeasons]/[EmbyService.getSimilarItems]/[EmbyService.getResumeItems]
+/// /[EmbyService.getFavoriteItems]/[EmbyService.searchItems]）此前把失败静默
+/// 返回空列表，调用方无法区分「加载失败」与「确实为空」→ 首页/剧集页会呈现
+/// 无内容、无提示、无重试的空白。现在失败统一抛本异常，调用方据此展示错误态。
+class EmbyException implements Exception {
+  const EmbyException(this.message);
+
+  /// 面向用户的中文简短提示。
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class EmbyService {
   late Dio _dio;
   String? _serverUrl;
@@ -51,8 +68,31 @@ class EmbyService {
     _deviceId = deviceId;
 
     _dio.options.baseUrl = serverUrl;
+    // v1.2.19：给共享 _dio 加超时——此前无超时，弱网/服务器卡顿时请求可长
+    // 时间挂起（表现为首页/详情页一直转圈），且集列表等重请求更易耗尽等待。
+    _dio.options.connectTimeout = const Duration(seconds: 10);
+    _dio.options.receiveTimeout = const Duration(seconds: 20);
     _dio.options.headers['X-Emby-Token'] = accessToken;
     _dio.options.headers['X-Emby-Authorization'] = _buildAuthHeader();
+  }
+
+  /// DioException → 面向用户的 [EmbyException]（401 由调用方单独处理）。
+  EmbyException _embyError(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return const EmbyException('请求超时，请检查网络');
+      case DioExceptionType.connectionError:
+        return const EmbyException('无法连接服务器');
+      case DioExceptionType.badResponse:
+        final code = e.response?.statusCode;
+        return EmbyException(code != null ? '服务器错误 ($code)' : '服务器错误');
+      case DioExceptionType.cancel:
+        return const EmbyException('请求已取消');
+      default:
+        return const EmbyException('网络请求失败');
+    }
   }
 
   String _buildAuthHeader() {
@@ -161,15 +201,16 @@ class EmbyService {
           .toList();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
-      return [];
+      throw _embyError(e);
     }
   }
 
   /// 获取剧集的季列表（`GET /Shows/{seriesId}/Seasons`）。
   ///
   /// 返回的季为 `Type:Season` 的 MediaItem：`childCount` = 该季集数，
-  /// `posterUrl` 来自 `ImageTags.Primary`（季海报）。失败返回空列表，
-  /// 调用方应从已有集按 `parentIndexNumber` 分组兜底。
+  /// `posterUrl` 来自 `ImageTags.Primary`（季海报）。非 401 失败抛
+  /// [EmbyException]（v1.2.19）；401 照旧 rethrow。调用方可从已有集按
+  /// `parentIndexNumber` 分组兜底。
   Future<List<MediaItem>> getSeasons(String seriesId) async {
     try {
       final response = await _dio.get(
@@ -186,7 +227,7 @@ class EmbyService {
           .toList();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
-      return [];
+      throw _embyError(e);
     }
   }
 
@@ -321,7 +362,7 @@ class EmbyService {
           .toList();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
-      return [];
+      throw _embyError(e);
     }
   }
 
@@ -346,7 +387,7 @@ class EmbyService {
           .toList();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
-      return [];
+      throw _embyError(e);
     }
   }
 
@@ -385,7 +426,7 @@ class EmbyService {
       return folders;
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
-      return [];
+      throw _embyError(e);
     }
   }
 
@@ -458,7 +499,7 @@ class EmbyService {
   /// 当前服务器全部收藏条目（电影/剧集/单集），供收藏页分组展示。
   /// `Filters=IsFavorite` 服务端过滤；字段含 `UserData` 以便回显收藏态。
   /// 筛选参数与 [getItems] 同约定；[filters] 会与 `IsFavorite` 合并。
-  /// 失败返回空列表。
+  /// 非 401 失败抛 [EmbyException]（v1.2.19）。
   Future<List<MediaItem>> getFavoriteItems({
     String? includeItemTypes,
     String? sortBy,
@@ -496,7 +537,7 @@ class EmbyService {
           .toList();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
-      return [];
+      throw _embyError(e);
     }
   }
 
@@ -696,7 +737,7 @@ class EmbyService {
 
   /// 当前服务器「继续观看」条目（有播放进度的电影/剧集/单集）。
   /// `GET /Users/{userId}/Items/Resume`；字段含 `UserData`（进度/百分比）。
-  /// 失败返回空列表。
+  /// 非 401 失败抛 [EmbyException]（v1.2.19）。
   Future<List<MediaItem>> getResumeItems({int limit = 12}) async {
     try {
       final response = await _dio.get(
@@ -716,7 +757,7 @@ class EmbyService {
           .toList();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
-      return [];
+      throw _embyError(e);
     }
   }
 
