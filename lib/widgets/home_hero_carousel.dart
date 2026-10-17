@@ -42,10 +42,11 @@ class HomeHeroCarousel extends StatefulWidget {
     stops: [0.0, 0.62, 1.0],
   );
 
-  /// 可读性压暗罩（v1.2.15）：文字区维持 0x99（60%）可读性，末格收敛到
-  /// 0x66（40%）——与首页虚化背景蒙罩在接缝处（屏高 42% ≈ 0.30→0.42
-  /// 插值 0.40）精确同值，跨接缝暗度连续；旧值末格 0xE6（90%）正是
-  /// 轮播与背景之间「分隔线」的来源。
+  /// 可读性压暗罩（v1.2.17）：文字区维持 0x99（60%）可读性，但**底边必须
+  /// 归零**——本罩画在虚化背景（含背景蒙罩）之上，暗度是叠加关系：底边若
+  /// 保留 0x66（40%），接缝上方总暗度 ≈ 64% 而下方仅 40% → 约 24% 的台阶
+  /// 就是「分割线」的真正来源。底边归零后接缝两侧暗度均为背景蒙罩的
+  /// ~40%，颜色连续。
   @visibleForTesting
   static const LinearGradient scrimGradient = LinearGradient(
     begin: Alignment.topCenter,
@@ -55,10 +56,17 @@ class HomeHeroCarousel extends StatefulWidget {
       Color(0x33000000),
       Color(0x99000000),
       Color(0x99000000),
-      Color(0x66000000),
+      Colors.transparent,
     ],
-    stops: [0.0, 0.45, 0.78, 0.94, 1.0],
+    stops: [0.0, 0.40, 0.68, 0.84, 1.0],
   );
+
+  /// 轻微文字投影（v1.2.17）：压暗罩底边归零后，浅色海报上的白色文字/
+  /// 圆点需要兜底对比度。
+  @visibleForTesting
+  static const List<Shadow> lightTextShadows = [
+    Shadow(color: Color(0xAA000000), blurRadius: 4),
+  ];
 
   @override
   State<HomeHeroCarousel> createState() => _HomeHeroCarouselState();
@@ -184,8 +192,8 @@ class _HeroSlide extends StatelessWidget {
               errorWidget: const SizedBox.shrink(),
             ),
           ),
-          // 底部压暗：保证标题/信息可读；末格与下方虚化蒙罩同值，
-          // 跨接缝无暗度跳变（旧末格 0xE6 形成可见分隔线）。
+          // 底部压暗：保证标题/信息可读；底边归零（v1.2.17），接缝暗度
+          // 完全由背景蒙罩连续提供，避免叠加出暗带。
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: HomeHeroCarousel.scrimGradient,
@@ -213,6 +221,7 @@ class _HeroSlide extends StatelessWidget {
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
+                        shadows: HomeHeroCarousel.lightTextShadows,
                       ),
                     ),
                   )
@@ -226,6 +235,7 @@ class _HeroSlide extends StatelessWidget {
                       color: Colors.white,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
+                      shadows: HomeHeroCarousel.lightTextShadows,
                     ),
                   ),
                 if (rating != null || year != null || genres.isNotEmpty) ...[
@@ -250,7 +260,11 @@ class _MetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const style = TextStyle(color: Colors.white70, fontSize: 13);
+    const style = TextStyle(
+      color: Colors.white70,
+      fontSize: 13,
+      shadows: HomeHeroCarousel.lightTextShadows,
+    );
     final parts = <Widget>[];
     void sep() {
       if (parts.isNotEmpty) {
@@ -299,6 +313,10 @@ class _Dots extends StatelessWidget {
             decoration: BoxDecoration(
               color: i == index ? Colors.white : Colors.white38,
               borderRadius: BorderRadius.circular(3),
+              // 压暗罩底边归零后圆点落在较亮背景上，轻微投影兜底对比度。
+              boxShadow: const [
+                BoxShadow(color: Color(0x59000000), blurRadius: 3),
+              ],
             ),
           ),
       ],

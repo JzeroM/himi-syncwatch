@@ -99,14 +99,22 @@ void main() {
       expect(g.stops, orderedEquals(<double>[0.0, 0.62, 1.0]));
     });
 
-    test('压暗罩末格 0x66：与虚化背景接缝 alpha（0.40）相等', () {
+    test('压暗罩底边归零：接缝暗度完全由背景蒙罩提供，无叠加台阶', () {
       const g = HomeHeroCarousel.scrimGradient;
-      expect(g.colors.last, const Color(0x66000000));
-      // 0x66/255 ≈ 0.40 = 虚化蒙罩在 hero 底边（屏高 42%，
-      // 0.30→0.42@50% 的线性插值）处的暗度
-      expect(g.colors.last.a, closeTo(0.40, 0.01));
+      expect(g.colors.last, Colors.transparent,
+          reason: '底边若保留暗度会与背景蒙罩叠成台阶（分割线根因）');
+      expect(g.colors.last.a, 0.0);
+      expect(g.stops!.last, 1.0);
       expect(g.colors[2], const Color(0x99000000),
           reason: '文字区维持 60% 可读性压暗');
+      expect(g.colors[3], const Color(0x99000000));
+      expect(g.stops![3], 0.84, reason: '0.84 前保持台面，仅末段渐隐');
+    });
+
+    test('轻微投影补偿：文字与圆点可从压暗罩常量取用', () {
+      expect(HomeHeroCarousel.lightTextShadows, isNotEmpty);
+      expect(HomeHeroCarousel.lightTextShadows.first.blurRadius,
+          lessThanOrEqualTo(6));
     });
 
     test('先增后收敛：峰值后无反向回升（不产生暗带）', () {
