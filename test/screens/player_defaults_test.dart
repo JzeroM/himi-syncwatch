@@ -221,6 +221,124 @@ void main() {
     });
   });
 
+  group('surfaceViewDirectWrite（直写判定单一来源，v1.2.14 修兜底失配）', () {
+    test('SDR/普通档 + EGL 故障 → 直写（绕开坏 GL）', () {
+      expect(
+        PlayerScreen.surfaceViewDirectWrite(
+          usesSurfaceView: true,
+          surfaceViewDirect: false,
+          eglFault: true,
+        ),
+        isTrue,
+        reason: '故障设备必须走直写，且渲染兜底须同步生效（renderVideo 补充推进）',
+      );
+    });
+
+    test('直写档（surfaceViewDirect 内容路由）无故障 → 直写', () {
+      expect(
+        PlayerScreen.surfaceViewDirectWrite(
+          usesSurfaceView: true,
+          surfaceViewDirect: true,
+          eglFault: false,
+        ),
+        isTrue,
+        reason: 'v1.2.11 新增档位：旧兜底条件写死 output==surfaceView 曾漏该档，'
+            '10-bit 内容起播竞态下 renderer 永久丢帧定格',
+      );
+    });
+
+    test('直写档 + 故障 → 直写（两条件叠加）', () {
+      expect(
+        PlayerScreen.surfaceViewDirectWrite(
+          usesSurfaceView: true,
+          surfaceViewDirect: true,
+          eglFault: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('普通 SurfaceView 档无故障 → 非直写（走 GL，保留快照回读）', () {
+      expect(
+        PlayerScreen.surfaceViewDirectWrite(
+          usesSurfaceView: true,
+          surfaceViewDirect: false,
+          eglFault: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('非 SurfaceView 通道（texture/tunnel/erika）→ 恒非直写', () {
+      expect(
+        PlayerScreen.surfaceViewDirectWrite(
+          usesSurfaceView: false,
+          surfaceViewDirect: false,
+          eglFault: true,
+        ),
+        isFalse,
+        reason: '纹理通道无 ANativeWindow 直写语义',
+      );
+      expect(
+        PlayerScreen.surfaceViewDirectWrite(
+          usesSurfaceView: false,
+          surfaceViewDirect: true,
+          eglFault: true,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('shouldTriggerEglHeal（会话级自愈守卫，v1.2.14）', () {
+    test('会话内新故障 → 触发自愈', () {
+      expect(
+        PlayerScreen.shouldTriggerEglHeal(
+          fault: true,
+          handled: false,
+          faultAtSessionStart: false,
+        ),
+        isTrue,
+        reason: '健康设备会话中首次 3004 须照常自愈（老行为不变）',
+      );
+    });
+
+    test('已自愈过 → 不重复触发（防重入）', () {
+      expect(
+        PlayerScreen.shouldTriggerEglHeal(
+          fault: true,
+          handled: true,
+          faultAtSessionStart: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('会话开始前已置位（持久标记设备）→ 不触发', () {
+      expect(
+        PlayerScreen.shouldTriggerEglHeal(
+          fault: true,
+          handled: false,
+          faultAtSessionStart: true,
+        ),
+        isFalse,
+        reason: '视图已按直写构建，首条 mdk 日志误触发一次两阶段重建会制造'
+            '「迟到 surface + 上下文重建 → renderer 永久丢帧」竞态',
+      );
+    });
+
+    test('无故障 → 不触发', () {
+      expect(
+        PlayerScreen.shouldTriggerEglHeal(
+          fault: false,
+          handled: false,
+          faultAtSessionStart: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('TV 控件可见性', () {
     test('横竖屏按钮：移动端显示，TV 隐藏，桌面端隐藏', () {
       expect(

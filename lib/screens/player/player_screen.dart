@@ -284,6 +284,37 @@ class PlayerScreen extends ConsumerStatefulWidget {
       newSize != null &&
       oldSize != newSize;
 
+  /// SurfaceView 视图是否以直写（解码器直写 ANativeWindow）参数构建：
+  /// - 手动选择直写档（surfaceViewDirect）恒 true；
+  /// - EGL 故障设备（[eglFault]，eglChooseConfig 3004）恒直写绕开坏 GL。
+  ///
+  /// v1.2.14：视图构建（`tunnel` 参数）与渲染兜底（定时 renderVideo()
+  /// 补充推进）共用本判定，单一来源防漂移——v1.2.11 新增 surfaceViewDirect
+  /// 档时曾漏改兜底条件（写死 `output == 'surfaceView'`），10-bit 内容
+  /// 走该档后失去兜底，起播竞态下 mdk renderer 永久丢帧、画面定格。
+  @visibleForTesting
+  static bool surfaceViewDirectWrite({
+    required bool usesSurfaceView,
+    required bool surfaceViewDirect,
+    required bool eglFault,
+  }) =>
+      usesSurfaceView && (surfaceViewDirect || eglFault);
+
+  /// 会话级 EGL 自愈触发判定（v1.2.14）：仅「进入本次播放会话后新出现」
+  /// 的故障才触发自愈。
+  ///
+  /// 会话开始前已置位（[faultAtSessionStart]，持久标记设备）说明视图已按
+  /// 直写参数构建，无需自愈；旧行为会在首条 mdk 日志（任意级别）到达时
+  /// 误触发一次两阶段重建，制造「迟到 surface + 上下文重建 → mdk renderer
+  /// 永久丢帧」竞态（偶发起播画面定格根因）。
+  @visibleForTesting
+  static bool shouldTriggerEglHeal({
+    required bool fault,
+    required bool handled,
+    required bool faultAtSessionStart,
+  }) =>
+      fault && !handled && !faultAtSessionStart;
+
   /// 进入播放器的初始控制条设置：
   /// - 全模式启动自动隐藏计时（此前初进无人调 `_resetHideTimer`，控件
   ///   永不自动隐藏——非 TV 模式同样需要"播放中 5 秒隐藏"）；
@@ -758,6 +789,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// EGL 故障已处理（自动切 tunnel 自愈只做一次，防重入/防环）。
   bool _eglFaultHandled = false;
+
+  /// 进入本次播放会话前 EGL 故障检测器是否已置位（v1.2.14 会话级守卫）：
+  /// 持久标记设备上首条 mdk 日志（任意级别）即命中已置位检测器，旧逻辑
+  /// 误触发一次自愈重建（迟到 surface + 上下文重建竞态 → renderer 永久
+  /// 丢帧、起播偶发定格）。[_loadStream]/[_playFromUrl] 开播时快照。
+  bool _eglFaultAtSessionStart = false;
   DateTime? _lastSeekTime;
   bool _showPanel = true;
   String _currentPlayUrl = '';
@@ -2318,6 +2355,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool get _surfaceViewDirect =>
       _effectiveVideoOutput() == 'surfaceViewDirect';
 
+  /// 当前 SurfaceView 视图是否以直写参数构建（与视图 `tunnel` 参数、
+  /// 渲染兜底共用 [PlayerScreen.surfaceViewDirectWrite] 单一来源防漂移）。
+  bool get _surfaceViewDirectWrite => PlayerScreen.surfaceViewDirectWrite(
+        usesSurfaceView: _usesSurfaceView,
+        surfaceViewDirect: _surfaceViewDirect,
+        eglFault: eglFaultDetector.fault,
+      );
+
   /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
   /// 媒体信息拿到视频尺寸即就绪。media_kit 档：VideoController 注册后即就绪。
   bool _videoOutputReady() {
@@ -2406,9 +2451,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// （feed 返回 false），而 view 仍按 tunnel=false（GL）建过——不
   /// 自愈会停在 GL 路径黑屏（「有时一直黑」根因之一）。触发时
   /// `_onEglFault` 自带 `_eglFaultHandled` 防重入 / `mounted` 守卫。
+  ///
+  /// v1.2.14 会话级守卫（[PlayerScreen.shouldTriggerEglHeal]）：会话开始
+  /// 前已置位的故障不触发——持久标记设备 view 已按直写参数构建，误自愈
+  /// 只会做无谓重建并制造起播 renderer 丢帧竞态；仅会话内新故障触发。
   void _feedEglDetector(String message) {
     eglFaultDetector.feed(message);
-    if (eglFaultDetector.fault && !_eglFaultHandled) {
+    if (PlayerScreen.shouldTriggerEglHeal(
+      fault: eglFaultDetector.fault,
+      handled: _eglFaultHandled,
+      faultAtSessionStart: _eglFaultAtSessionStart,
+    )) {
       Future.microtask(_onEglFault);
     }
   }
@@ -2697,6 +2750,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     int startMs = 0,
   }) async {
     if (!mounted) return false;
+    // 会话级 EGL 守卫基准（v1.2.14）：本次流加载前的检测器状态快照。
+    _eglFaultAtSessionStart = eglFaultDetector.fault;
     final targetItemId = itemId ?? widget.itemId;
     final effectiveMediaSourceId = mediaSourceId ??
         (targetItemId == widget.itemId ? widget.mediaSourceId : null);
@@ -2910,6 +2965,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     final requestId = ++_playRequestId;
     _inFlightPlayUrl = playUrl;
+    // 会话级 EGL 守卫基准（v1.2.14）：本次流加载前的检测器状态快照。
+    _eglFaultAtSessionStart = eglFaultDetector.fault;
     // 同步写入当前播放地址（原先在 media= 之后写，多个 await 前守卫失效）：
     // 使 roomInfo 的 `playUrl != _currentPlayUrl` 去重立即生效。
     _currentPlayUrl = playUrl;
@@ -3196,11 +3253,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         timer.cancel();
         return;
       }
-      // 冻结实验（v1.1.69）：故障直写档下 fvp 未装 render callback，
-      // mdk renderer 可能在等外部驱动（himi_logs_4：帧被内部 renderer
-      // 持续 not rendered 丢弃、进度由音频时钟推进但画面冻结）。
-      // 手动 renderVideo() 补充推进；无效时无副作用（空渲染一次）。
-      if (eglFaultDetector.fault && _effectiveVideoOutput() == 'surfaceView') {
+      // 冻结兜底（v1.1.69 F-h；v1.2.14 修条件漏洞）：直写档（故障直写 /
+      // 手动 surfaceViewDirect）下 fvp 未装 render callback，mdk renderer
+      // 可能在等外部驱动（himi_logs_4：帧被内部 renderer 持续 not rendered
+      // 丢弃、进度由音频时钟推进但画面冻结）。手动 renderVideo() 补充推进；
+      // 无效时无副作用（空渲染一次）。旧条件写死 `output == 'surfaceView'`，
+      // v1.2.11 新增 surfaceViewDirect 档后 10-bit 内容失去兜底 → 起播
+      // 竞态下永久定格；现与视图 tunnel 参数共用 [surfaceViewDirectWrite]。
+      if (_surfaceViewDirectWrite &&
+          _player.state == AdapterPlaybackState.playing) {
         try {
           _player.renderVideo();
         } catch (_) {}
@@ -5638,7 +5699,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _hdrContent)
         ? _clampedRenderSize(size)
         : null;
-    final direct = _surfaceViewDirect || eglFaultDetector.fault;
+    final direct = _surfaceViewDirectWrite;
     return Center(
       child: AspectRatio(
         aspectRatio: size.width / size.height,
