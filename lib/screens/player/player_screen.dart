@@ -28,6 +28,7 @@ import 'package:himi_syncwatch/models/episode_info.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
+import 'package:himi_syncwatch/providers/device_profile_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
@@ -1100,10 +1101,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _voStatus = '-'; // 视频输出驱动
   String _videoResolution = '-'; // 视频分辨率
   String _hdrType = 'SDR'; // HDR 类型标签
-  /// 内容是否为 HDR/10-bit（闩锁，一旦判定不回退）：用于自动路由
+  /// 内容是否为 HDR（闩锁，一旦判定不回退）：用于自动路由
   /// （mdk#361：直写 surface 在 HDR 上会 wedge/卡顿 → 降级为同载体 GL）。
-  /// 由 Emby 元数据 + 运行期 mediaInfo 色彩信息共同判定。
+  /// 由 Emby 元数据 + 运行期 mediaInfo **色彩信息**共同判定（bt2100
+  /// PQ/HLG 或 doviProfile>0）；像素格式不再参与（10-bit SDR ≠ HDR）。
   bool _hdrContent = false;
+
+  /// 内容是否 10-bit 以上（闩锁）：**不是 HDR 判定**——bt709 的
+  /// p010/yuv420p10le 同样命中。用于输出决策：设备 GL 10-bit 纹理
+  /// 实测不可用时强制直写（绕开 GL 渲染 10-bit 帧）。
+  bool _is10BitContent = false;
   DvProbeResult _dvProbe = DvProbeResult.unknown; // 设备 DV 解码能力（仅展示）
   bool _isSwitchingDecode = false; // 并发保护：防止快速切换模式导致状态错乱
   List<String> _syncEvents = [];
@@ -1569,7 +1576,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // tone map 到 SDR）。iOS Metal 上 setColorSpace(bt709) 与
     // videoout.hdr=0 冲突导致 HDR10 黑屏（1.1.194 修复）。
     // 1.1.198 归入 hdrGlWorkaround 单开关，关闭仅用于 A/B 实验。
-    if (Platform.isAndroid && ref.read(settingsProvider).hdrGlWorkaround) {
+    // 本次修正：HDR 直通实验（hdrPassthrough）+ 显示具备 HDR 能力时
+    // 跳过强制（_shouldForceSdrToneMap），交还 mdk auto 协商。
+    if (_shouldForceSdrToneMap()) {
       _player.setColorSpace(PlayerScreen.outputColorSpace());
       LogService().log('Player', '输出色彩空间: bt709（SDR tone map）');
     }
@@ -2148,8 +2157,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       eglFault: eglFaultDetector.fault,
       userSet: settings.videoOutputUserSet,
     );
-    return AppSettings.routeVideoOutput(base,
+    final routed = AppSettings.routeVideoOutput(base,
         isHdr: _hdrContent, enabled: settings.hdrGlWorkaround);
+    // 10-bit 内容兜底（启动能力评估）：设备实测 GL 10-bit 纹理不可用
+    // （EGL 正常但 R16/16F/RGB10A2 上传全失败）时强制直写，绕开 GL
+    // 渲染器；未探测/未实测不介入（respect 历史行为与用户手动档）。
+    final profile = ref.read(deviceProfileProvider);
+    return AppSettings.tenBitAwareVideoOutput(
+      routed,
+      tenBit: _is10BitContent,
+      gl10BitOk: !profile.tenBitGlBroken,
+      userSet: settings.videoOutputUserSet,
+    );
+  }
+
+  /// 是否强制 SDR tone map（`setColorSpace(bt709)`）。
+  ///
+  /// 原行为（1.1.198）：仅 Android + hdrGlWorkaround 开启时强制
+  /// （mdk-sdk#361 / fvp#379 workaround）。HDR 直通实验
+  /// （hdrPassthrough）开启且启动评估确认显示具备 HDR 能力时不再
+  /// 强制，交还 mdk auto 协商 HDR 输出（videoout.hdr 已在启动注入 1）。
+  bool _shouldForceSdrToneMap() {
+    if (!Platform.isAndroid) return false;
+    final settings = ref.read(settingsProvider);
+    if (!settings.hdrGlWorkaround) return false;
+    if (!settings.hdrPassthrough) return true;
+    return !ref.read(deviceProfileProvider).mdkHdrPassthroughCapable;
   }
 
   /// 显示器物理尺寸（渲染夹紧目标）：Android 优先原生探测（TV UI 层
@@ -2200,10 +2233,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (videos.isNotEmpty) {
           final c = videos.first;
           final cs = c.colorSpace;
+          // HDR 只认色彩信息（误判修复）：10-bit 像素格式（p010/
+          // yuv420p10le）在 bt709 下是 10-bit SDR，不是 HDR——旧实现
+          // 把它当 HDR 导致盒子 64 位 APK 误路由/误降级黑屏。
           hdr = cs == AdapterColorSpace.bt2100PQ ||
               cs == AdapterColorSpace.bt2100hlg ||
-              c.doviProfile > 0 ||
-              AppSettings.isHdrPixelFormat(c.formatName);
+              c.doviProfile > 0;
           if (hdr) {
             if (c.doviProfile > 0) {
               runtimeLabel = 'Dolby Vision';
@@ -2213,6 +2248,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               runtimeLabel = 'HLG';
             } else {
               runtimeLabel = 'HDR10';
+            }
+          } else if (!_is10BitContent &&
+              AppSettings.is10BitPixelFormat(c.formatName)) {
+            // 10-bit SDR（bt709+p010 等）闩锁：非 HDR，但输出决策需
+            // 参考设备 GL 10-bit 纹理能力（`_effectiveVideoOutput`）。
+            _is10BitContent = true;
+            LogService().log('Player',
+                '10-bit SDR 内容判定: ${c.formatName}（非 HDR，按 GL 10-bit 纹理能力兜底输出）');
+            if (mounted) {
+              setState(() {});
+              unawaited(_applyVideoOutputMode());
             }
           }
         }
@@ -2543,12 +2589,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) LogService().log('Diag', '截帧: $_snapshotInfo');
   }
 
-  /// 内容路由：解析目标引擎（全自动，v1.1.222）。
-  /// TV 恒 mdk；非 HDR 恒 mdk；HDR→手机 erika / Windows media_kit；其余 mdk。
+  /// 内容路由：解析目标引擎（全自动；TV 与手机同一套规则）。
+  /// 非 HDR 恒 mdk；HDR 且设备能力满足 Erika（Vulkan + HDR 显示）→
+  /// erika，能力不足（如无 Vulkan 盒子）→ mdk 直写/HDR 透传；
+  /// Windows HDR → media_kit。
   PlayerEngine _resolveTargetEngineForContent(bool hdr) =>
       PlayerEngineFactory.resolveEngineForContent(
         hdr: hdr,
-        tvMode: ref.read(settingsProvider).tvMode,
+        erikaHdrCapable: ref
+            .read(deviceProfileProvider)
+            .erikaHdrCapable(defaultTargetPlatform),
       );
 
   /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），
@@ -2740,8 +2790,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _fadeOutForSwitch();
 
       // 强制 SDR 输出：防 player 状态重置丢失 initState 的设置
-      // （仅 Android + hdrGlWorkaround 开关开启，1.1.198）
-      if (Platform.isAndroid && ref.read(settingsProvider).hdrGlWorkaround) {
+      // （仅 Android + hdrGlWorkaround 开关开启，1.1.198；
+      //   HDR 直通实验开启且显示具备 HDR 能力时跳过）
+      if (_shouldForceSdrToneMap()) {
         _player.setColorSpace(PlayerScreen.outputColorSpace());
       }
       _isSwitchingMedia = true;
@@ -2918,7 +2969,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (requestId != _playRequestId || !mounted) return;
 
       _isSwitchingMedia = true;
-      if (Platform.isAndroid && ref.read(settingsProvider).hdrGlWorkaround) {
+      if (_shouldForceSdrToneMap()) {
         _player.setColorSpace(PlayerScreen.outputColorSpace());
       }
       // _currentPlayUrl/_currentToken 已在入口同步写入。

@@ -8,9 +8,11 @@ import 'package:fvp/mdk.dart' as mdk;
 import 'package:media_kit/media_kit.dart';
 import 'package:himi_syncwatch/core/app.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/providers/device_profile_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/egl_fault_detector.dart';
 import 'package:himi_syncwatch/services/app_icon_service.dart';
@@ -152,12 +154,23 @@ Future<void> _bootstrap() async {
 
   final settingsNotifier = SettingsNotifier();
   await settingsNotifier.load();
+  // 启动设备能力评估（只读原生探针，超时兜底不阻塞启动）：
+  // 结果供 HDR 自动路由 / 输出决策 /「播放器配置」页能力卡片共用。
+  final deviceProfile = await DeviceProfileService.instance.probe();
+  LogService().log('Diag', '设备能力评估: ${deviceProfile.summary}');
   // EGL 故障跨重启持久化（H96_Max_RK3528）：已确认故障的设备启动即
   // 置位检测器 → 首次进片走 SurfaceView 直写，跳过 texture GL 创建，
   // 根除「3004 → 自愈 stop 与 EGL 创建并发 → native crash」链路。
   if (settingsNotifier.snapshot.eglFaultSeen) {
     eglFaultDetector.markFault();
     LogService().log('Diag', 'EGL 故障持久化标记命中 → 直写模式启动');
+  } else if (deviceProfile.eglBroken(eglFaultSeen: false)) {
+    // 启动评估发现 EGL 明确不可用：提前落盘持久标记，首次进片即
+    // 直写（无需先失败一轮）；卡片「清除兼容标记」可复位重测。
+    eglFaultDetector.markFault();
+    await settingsNotifier.update(eglFaultSeen: true);
+    LogService().log('Diag',
+        '启动能力评估: EGL 不可用（${deviceProfile.gl.error ?? "?"}）→ 已持久化直写标记');
   }
   // TV 自动识别（策略 A）：用户手动设置过则内部直接跳过，不覆盖
   final isTv = await const TvDetectionService().isTelevision();
@@ -182,6 +195,8 @@ Future<void> _bootstrap() async {
     renderCompatMode: AppSettings.effectiveRenderCompatMode(
         settingsNotifier.snapshot.renderCompatMode),
     videoOutHdrAuto: settingsNotifier.snapshot.videoOutHdrAuto,
+    hdrPassthrough: settingsNotifier.snapshot.hdrPassthrough,
+    avsyncAudioAdaptive: settingsNotifier.snapshot.avsyncAudioAdaptive,
   );
   fvp.registerWith(options: fvpOptions);
   // media_kit 全局初始化（第二引擎；TV 模式不注册，但 ensureInitialized
@@ -211,6 +226,7 @@ Future<void> _bootstrap() async {
         embyAuthServiceProvider.overrideWithValue(authService),
         agoraConfigProvider.overrideWith((ref) => agoraNotifier),
         settingsProvider.overrideWith((ref) => settingsNotifier),
+        deviceProfileProvider.overrideWith((ref) => deviceProfile),
       ],
       child: const HimiSyncApp(),
     ),

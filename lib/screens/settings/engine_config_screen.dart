@@ -8,13 +8,15 @@ import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/settings/device_capability_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 
 /// 「播放器配置」：顶部 TabBar 按引擎分页（MDK / media_kit / Erika），
 /// 每个 tab 是**该引擎专属设置**。
 ///
-/// 引擎选择全自动路由（v1.1.222），本页不提供切换。
-/// tab 列表 = 当前平台可用引擎（TV 仅 MDK；media_kit 仅 Windows）。
+/// 引擎选择全自动路由（TV 与手机同一套规则），本页不提供切换。
+/// tab 列表 = 当前平台可用引擎（MDK/Erika 全平台；media_kit 仅 Windows）；
+/// MDK / Erika tab 顶部展示设备能力评估卡片。
 class EngineConfigScreen extends ConsumerStatefulWidget {
   const EngineConfigScreen({super.key});
 
@@ -30,8 +32,7 @@ class _EngineConfigScreenState extends ConsumerState<EngineConfigScreen>
   @override
   void initState() {
     super.initState();
-    final tvMode = ref.read(settingsProvider).tvMode;
-    _engines = PlayerEngineFactory.supportedEngines(tvMode: tvMode);
+    _engines = PlayerEngineFactory.supportedEngines();
     _tab = TabController(length: _engines.length, vsync: this);
   }
 
@@ -104,6 +105,9 @@ class _EngineTabBody extends ConsumerWidget {
     SettingsNotifier notifier,
   ) {
     return [
+      // 启动设备能力评估结果（HDR/GL/Vulkan/硬解/DV）+ 路由策略预览
+      const DeviceCapabilityCard(),
+      const SizedBox(height: 4),
       settingOptionTile(
         context: context,
         tvMode: settings.tvMode,
@@ -226,12 +230,16 @@ class _EngineTabBody extends ConsumerWidget {
     SettingsNotifier notifier,
   ) {
     return [
+      // 启动设备能力评估结果（HDR/GL/Vulkan/硬解/DV）+ 路由策略预览
+      const DeviceCapabilityCard(),
+      const SizedBox(height: 4),
       const Padding(
         padding: EdgeInsets.all(16),
         child: Text(
           'Erika：原生位图字幕（PGS/VobSub）、原生 GPU 弹幕、'
           '真 HDR10/EDR 输出。\n'
-          '输出模式按内容自动路由（HDR 片源协商 EDR/HDR10，其余 SDR），无需手动设置。',
+          '输出模式按内容自动路由（HDR 片源协商 EDR/HDR10，其余 SDR），无需手动设置。'
+          'Android HDR 需 Vulkan + HDR 显示（能力卡片可查）。',
           style: TextStyle(fontSize: 12, color: Colors.white54),
         ),
       ),

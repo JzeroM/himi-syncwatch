@@ -20,6 +20,7 @@ class MainActivity : FlutterActivity() {
     private var piChannel: MethodChannel? = null
     private var ntChannel: MethodChannel? = null
     private var ndChannel: MethodChannel? = null
+    private var dcChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -51,6 +52,13 @@ class MainActivity : FlutterActivity() {
             // 局域网发现组播锁（WiFi 省电时保持接收广播/组播）
             setMethodCallHandler(NetworkDiscoveryPlugin(applicationContext))
         }
+        dcChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DeviceCapabilityPlugin.CHANNEL
+        ).apply {
+            // 启动设备能力评估（显示 HDR / GL-EGL / Vulkan / HEVC HDR10）
+            setMethodCallHandler(DeviceCapabilityPlugin(applicationContext))
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -62,6 +70,8 @@ class MainActivity : FlutterActivity() {
         ntChannel = null
         ndChannel?.setMethodCallHandler(null)
         ndChannel = null
+        dcChannel?.setMethodCallHandler(null)
+        dcChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

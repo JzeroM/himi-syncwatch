@@ -161,6 +161,44 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
+          // HDR 直通实验（本次修正）：videoout.hdr=1 且不强制
+          // setColorSpace(bt709)，交还 mdk auto 协商 HDR 输出。
+          // 仅在启动能力评估确认显示具备 HDR 能力时跳过强制；
+          // SDR 输出设备（盒子类）无效果（仍走 bt709 tone map）。默认关。
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () =>
+                notifier.update(hdrPassthrough: !settings.hdrPassthrough),
+            child: SwitchListTile(
+              title: const Text('HDR 直通（实验）'),
+              subtitle: const Text(
+                'HDR 输出直通：videoout.hdr=1 且不强制 bt709 tone map，'
+                '交还 mdk 自动协商（需显示设备支持 HDR）。默认关闭；'
+                '修改后需重启应用生效',
+              ),
+              value: settings.hdrPassthrough,
+              onChanged: (v) => notifier.update(hdrPassthrough: v),
+            ),
+          ),
+          const Divider(height: 1),
+          // 音频自适应同步（avsync.audio.adaptive）：视频落后时放慢
+          // 音频追赶，mdk 0.37.0 引入（此前注入但 mdk 无此选项为空
+          // 操作，升级后首次真正生效）。SDR 卡顿 A/B 第一手段。默认关。
+          settingsTvWrapRow(
+            tvMode: settings.tvMode,
+            onTap: () => notifier.update(
+                avsyncAudioAdaptive: !settings.avsyncAudioAdaptive),
+            child: SwitchListTile(
+              title: const Text('音频自适应同步（实验）'),
+              subtitle: const Text(
+                'avsync.audio.adaptive=1：视频落后时放慢音频追赶。'
+                '改善卡顿（音调轻微变化）。默认关闭；修改后需重启应用生效',
+              ),
+              value: settings.avsyncAudioAdaptive,
+              onChanged: (v) => notifier.update(avsyncAudioAdaptive: v),
+            ),
+          ),
+          const Divider(height: 1),
         ],
     );
   }

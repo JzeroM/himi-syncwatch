@@ -131,6 +131,29 @@ void main() {
       expect(const AppSettings().toJson()['videoOutHdrAuto'], isFalse);
     });
 
+    test('hdrPassthrough 旧数据缺字段 → 默认 false（实验开关默认关）', () {
+      expect(AppSettings.fromJson(const {}).hdrPassthrough, isFalse);
+    });
+
+    test('hdrPassthrough toJson/fromJson 往返', () {
+      final json = const AppSettings().copyWith(hdrPassthrough: true).toJson();
+      expect(json['hdrPassthrough'], isTrue);
+      expect(AppSettings.fromJson(json).hdrPassthrough, isTrue);
+      expect(const AppSettings().toJson()['hdrPassthrough'], isFalse);
+    });
+
+    test('avsyncAudioAdaptive 旧数据缺字段 → 默认 false（默认关）', () {
+      expect(AppSettings.fromJson(const {}).avsyncAudioAdaptive, isFalse);
+    });
+
+    test('avsyncAudioAdaptive toJson/fromJson 往返', () {
+      final json =
+          const AppSettings().copyWith(avsyncAudioAdaptive: true).toJson();
+      expect(json['avsyncAudioAdaptive'], isTrue);
+      expect(AppSettings.fromJson(json).avsyncAudioAdaptive, isTrue);
+      expect(const AppSettings().toJson()['avsyncAudioAdaptive'], isFalse);
+    });
+
     test('videoDecoderNoImage 旧数据缺字段 → 默认 false（保持 image=1）', () {
       expect(AppSettings.fromJson(const {}).videoDecoderNoImage, isFalse);
     });
@@ -613,14 +636,57 @@ void main() {
           'surfaceView');
     });
 
-    test('isHdrPixelFormat：识别 10/16-bit 像素格式', () {
-      expect(AppSettings.isHdrPixelFormat('p010le'), isTrue);
-      expect(AppSettings.isHdrPixelFormat('p210le'), isTrue);
-      expect(AppSettings.isHdrPixelFormat('yuv420p10le'), isTrue);
-      expect(AppSettings.isHdrPixelFormat('P010LE'), isTrue);
-      expect(AppSettings.isHdrPixelFormat('nv12'), isFalse);
-      expect(AppSettings.isHdrPixelFormat(null), isFalse);
-      expect(AppSettings.isHdrPixelFormat('yuv420p'), isFalse);
+    test('is10BitPixelFormat：识别 10/16-bit 像素格式（非 HDR 判定）', () {
+      expect(AppSettings.is10BitPixelFormat('p010le'), isTrue);
+      expect(AppSettings.is10BitPixelFormat('p210le'), isTrue);
+      expect(AppSettings.is10BitPixelFormat('p410le'), isTrue);
+      expect(AppSettings.is10BitPixelFormat('yuv420p10le'), isTrue);
+      expect(AppSettings.is10BitPixelFormat('yuv420p10be'), isTrue);
+      expect(AppSettings.is10BitPixelFormat('yuv420p16le'), isTrue);
+      expect(AppSettings.is10BitPixelFormat('P010LE'), isTrue);
+      expect(AppSettings.is10BitPixelFormat('nv12'), isFalse);
+      expect(AppSettings.is10BitPixelFormat(null), isFalse);
+      expect(AppSettings.is10BitPixelFormat('yuv420p'), isFalse);
+    });
+
+    test('tenBitAwareVideoOutput：GL 10-bit 纹理不可用 → 强制直写', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      // 10-bit 内容 + GL 纹理不可用 → 直写
+      expect(
+        AppSettings.tenBitAwareVideoOutput('surfaceView',
+            tenBit: true, gl10BitOk: false),
+        'surfaceViewDirect',
+      );
+      expect(
+        AppSettings.tenBitAwareVideoOutput('tunnel',
+            tenBit: true, gl10BitOk: false),
+        'surfaceViewDirect',
+      );
+      // GL 可用 / 非 10-bit / 用户手动档 → 原样
+      expect(
+        AppSettings.tenBitAwareVideoOutput('surfaceView',
+            tenBit: true, gl10BitOk: true),
+        'surfaceView',
+      );
+      expect(
+        AppSettings.tenBitAwareVideoOutput('surfaceView',
+            tenBit: false, gl10BitOk: false),
+        'surfaceView',
+      );
+      expect(
+        AppSettings.tenBitAwareVideoOutput('tunnel',
+            tenBit: true, gl10BitOk: false, userSet: true),
+        'tunnel',
+      );
+      // 非 Android 不介入
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(
+        AppSettings.tenBitAwareVideoOutput('surfaceView',
+            tenBit: true, gl10BitOk: false),
+        'surfaceView',
+      );
     });
 
     test('Android 放行用户档位，其余平台固定 texture', () {

@@ -14,7 +14,9 @@ import 'erika_player_adapter.dart';
 /// - media_kit：仅 Windows（libmpv；其他平台收敛移除）
 /// - erika：android/iOS/macOS（手机真 HDR10 + 原生位图字幕/弹幕）；
 ///   Windows/Linux 无（Linux 无预编译；Windows 收敛为 mdk+media_kit）
-/// TV 模式仅 mdk。
+///
+/// TV 与手机同一套平台规则（TV 不再恒 mdk）：HDR 路由由设备能力
+/// 评估结果决定（见 [resolveEngineForContent]）。
 class PlayerEngineFactory {
   PlayerEngineFactory._();
 
@@ -65,30 +67,31 @@ class PlayerEngineFactory {
     }
   }
 
-  /// 按内容 HDR + 平台解析目标引擎（全自动路由，纯函数，便于单测）。
+  /// 按内容 HDR + 设备能力解析目标引擎（全自动路由，纯函数，便于单测）。
   ///
-  /// 规则（v1.1.222）：
-  /// - TV 模式：恒 mdk（不路由）
+  /// 规则（TV 与手机统一，同一套）：
+  /// - web：恒 mdk
   /// - 非 HDR：恒 mdk
-  /// - HDR + Android/iOS（含 iPad）：erika（outputMode 由
-  ///   [resolveErikaOutputMode] 继续按内容路由）
+  /// - HDR + Android/iOS（含 iPad）且 [erikaHdrCapable]（Android 需
+  ///   Vulkan + HDR 显示，能力探针未命中时保持历史默认 true）：
+  ///   erika（outputMode 由 [resolveErikaOutputMode] 继续按内容路由）
   /// - HDR + Windows：media_kit
-  /// - 其余（macOS/Linux/web HDR）：mdk 兜底
+  /// - 其余（HDR + 能力不足，如无 Vulkan 的盒子）：mdk 兜底——
+  ///   直写/tunnel 档可透传 HDR10，由输出层路由继续判定 tone map。
   ///
   /// [platformOverride] 仅供单测注入平台；缺省取当前平台。
-  /// web 恒回 mdk（无 erika/media_kit）。
   static PlayerEngine resolveEngineForContent({
     required bool hdr,
-    required bool tvMode,
+    required bool erikaHdrCapable,
     TargetPlatform? platformOverride,
   }) {
-    if (tvMode || kIsWeb) return PlayerEngine.mdk;
+    if (kIsWeb) return PlayerEngine.mdk;
     if (!hdr) return PlayerEngine.mdk;
     final platform = platformOverride ?? defaultTargetPlatform;
     switch (platform) {
       case TargetPlatform.android:
       case TargetPlatform.iOS:
-        return PlayerEngine.erika;
+        return erikaHdrCapable ? PlayerEngine.erika : PlayerEngine.mdk;
       case TargetPlatform.windows:
         return PlayerEngine.mediaKit;
       default:
@@ -96,12 +99,10 @@ class PlayerEngineFactory {
     }
   }
 
-  /// 当前平台支持的引擎列表。
+  /// 当前平台支持的引擎列表（TV 与手机一致）。
   ///
-  /// - TV 模式：仅 MDK
-  /// - 非 TV：MDK + Erika（Erika 仅 android/iOS/macOS）；Windows 额外含 media_kit
-  static List<PlayerEngine> supportedEngines({required bool tvMode}) {
-    if (tvMode) return const [PlayerEngine.mdk];
+  /// MDK + Erika（Erika 仅 android/iOS/macOS）；Windows 额外含 media_kit。
+  static List<PlayerEngine> supportedEngines() {
     final engines = <PlayerEngine>[PlayerEngine.mdk];
     if (!kIsWeb) {
       switch (defaultTargetPlatform) {
@@ -121,6 +122,6 @@ class PlayerEngineFactory {
   }
 
   /// 引擎在指定平台是否可用（用于设置页 tab / 校验）。
-  static bool isSupported(PlayerEngine engine, {required bool tvMode}) =>
-      supportedEngines(tvMode: tvMode).contains(engine);
+  static bool isSupported(PlayerEngine engine) =>
+      supportedEngines().contains(engine);
 }

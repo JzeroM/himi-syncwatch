@@ -152,6 +152,24 @@ class AppSettings {
   /// 下次起播/切集生效。
   final bool hdrGlWorkaround;
 
+  /// HDR 直通输出（实验，默认关）：HDR 内容 + 显示支持 HDR 时，
+  /// 不再强制 setColorSpace(bt709) tone map 到 SDR，并令 mdk 全局
+  /// `videoout.hdr=1` 按屏幕能力输出 HDR（直写/tunnel 档解码器直写
+  /// surface，HDR10 元数据随 surface 透传）。
+  ///
+  /// 与 [videoOutHdrAuto] 的区别：后者只注入全局 videoout.hdr（纹理
+  /// 通道 A/B 用），本开关额外放行「不强制 bt709」——两者任一开启
+  /// 即注入 videoout.hdr=1。受 mdk-sdk#361 前科约束默认关，验证
+  /// 稳定后再考虑默认开。修改后需重启应用生效（全局选项）。
+  final bool hdrPassthrough;
+
+  /// 音频自适应同步（实验，默认关）：mdk 全局 `avsync.audio.adaptive`。
+  /// 视频落后于音频时放慢音频速度保同步（mdk 0.37+ 生效），1.1.186
+  /// 曾为 4K60 手机簇状丢帧缓解而恒开；升级 mdk 0.39.0 后该选项
+  /// 首次真正生效，盒子 SDR 卡顿疑似与它相关 → 改开关 + 默认关，
+  /// 手机 4K60 场景可手动开启。修改后需重启应用生效（全局选项）。
+  final bool avsyncAudioAdaptive;
+
   /// EGL 故障已确认（跨重启持久化，H96_Max_RK3528 黑屏自愈）。
   ///
   /// 首次检测到 `EGL ERROR (3004)`/`No EGL config found` 时落盘 true；
@@ -264,6 +282,8 @@ class AppSettings {
     this.videoDecoderLowLatency = false,
     this.renderDepth8 = false,
     this.hdrGlWorkaround = false,
+    this.hdrPassthrough = false,
+    this.avsyncAudioAdaptive = false,
     this.eglFaultSeen = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
@@ -313,6 +333,8 @@ class AppSettings {
     bool? videoDecoderLowLatency,
     bool? renderDepth8,
     bool? hdrGlWorkaround,
+    bool? hdrPassthrough,
+    bool? avsyncAudioAdaptive,
     bool? eglFaultSeen,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
@@ -366,6 +388,9 @@ class AppSettings {
           videoDecoderLowLatency ?? this.videoDecoderLowLatency,
       renderDepth8: renderDepth8 ?? this.renderDepth8,
       hdrGlWorkaround: hdrGlWorkaround ?? this.hdrGlWorkaround,
+      hdrPassthrough: hdrPassthrough ?? this.hdrPassthrough,
+      avsyncAudioAdaptive:
+          avsyncAudioAdaptive ?? this.avsyncAudioAdaptive,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -435,11 +460,13 @@ class AppSettings {
         'videoOutputUserSet': videoOutputUserSet,
         'renderCompatMode': renderCompatMode,
         'videoOutHdrAuto': videoOutHdrAuto,
-         'videoDecoderNoImage': videoDecoderNoImage,
-         'videoDecoderLowLatency': videoDecoderLowLatency,
-         'renderDepth8': renderDepth8,
-         'hdrGlWorkaround': hdrGlWorkaround,
-         'eglFaultSeen': eglFaultSeen,
+        'videoDecoderNoImage': videoDecoderNoImage,
+        'videoDecoderLowLatency': videoDecoderLowLatency,
+        'renderDepth8': renderDepth8,
+        'hdrGlWorkaround': hdrGlWorkaround,
+        'hdrPassthrough': hdrPassthrough,
+        'avsyncAudioAdaptive': avsyncAudioAdaptive,
+        'eglFaultSeen': eglFaultSeen,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
         'danmakuScrollRows': danmakuScrollRows,
@@ -545,6 +572,10 @@ class AppSettings {
       renderDepth8: json['renderDepth8'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（1.1.199 起默认关闭，A/B 验证中）
       hdrGlWorkaround: json['hdrGlWorkaround'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（HDR 直通实验，默认 tone map）
+      hdrPassthrough: json['hdrPassthrough'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 false（默认关，规避升级后 SDR 卡顿疑似回归）
+      avsyncAudioAdaptive: json['avsyncAudioAdaptive'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（未确认故障）
       eglFaultSeen: json['eglFaultSeen'] as bool? ?? false,
       // ── 弹幕：旧数据缺字段全部回退默认；数值按范围钳制防脏数据 ──
@@ -684,8 +715,13 @@ class AppSettings {
     return output;
   }
 
-  /// 像素格式名是否属 HDR/10-bit 家族（p010/p210/p410/16-bit 等）。
-  static bool isHdrPixelFormat(String? formatName) {
+  /// 纹理深度是否 10-bit 以上（p010/p210/p410/10le/16le 等）。
+  ///
+  /// **不是 HDR 判定**（本次修正）：10-bit SDR（bt709 的 p010/
+  /// yuv420p10le）同样命中本函数，早期把它当 HDR 导致误路由/误降级。
+  /// HDR 判定只看 colorSpace（bt2100PQ/HLG）、doviProfile 与 Emby
+  /// 元数据；本函数只用于「10-bit 纹理渲染能力」相关的输出决策。
+  static bool is10BitPixelFormat(String? formatName) {
     final n = (formatName ?? '').toLowerCase();
     return n.contains('p010') ||
         n.contains('p210') ||
@@ -694,6 +730,21 @@ class AppSettings {
         n.contains('10be') ||
         n.contains('16le') ||
         n.contains('16be');
+  }
+
+  /// 10-bit 内容输出兜底（启动能力评估）：10-bit 内容 + 设备 GL 无法
+  /// 上传 10-bit 纹理（EGL 损坏 / 探针失败）时，强制 SurfaceView 直写
+  /// （解码器直写 surface，绕开 GL 渲染器）；其余情况原样返回。
+  /// 用户手动设置过输出（[userSet]）时尊重手动选择（逃生口）。
+  static String tenBitAwareVideoOutput(
+    String output, {
+    required bool tenBit,
+    required bool gl10BitOk,
+    bool userSet = false,
+  }) {
+    if (!tenBit || gl10BitOk || userSet) return output;
+    if (defaultTargetPlatform != TargetPlatform.android) return output;
+    return 'surfaceViewDirect';
   }
 
   /// 纹理通道是否启用解码器直通（tunnel）。
