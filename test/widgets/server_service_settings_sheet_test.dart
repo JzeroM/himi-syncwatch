@@ -1,8 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/server_avatar_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/server_service_settings_sheet.dart';
 
@@ -169,5 +171,45 @@ void main() {
     expect(updated.userId, 'uid2');
     expect(updated.strmDirectPlay, true, reason: '重新登录不应丢失 STRM 开关');
     expect(result.auth.lastSavedStrmDirectPlay, true);
+  });
+
+  testWidgets('面板头像加载 Emby 用户头像，版本号变化后刷新 URL（v1.2.9）',
+      (tester) async {
+    final result = await _pumpSheet(tester, server: _server());
+
+    NetworkImage avatar() =>
+        tester.widget<Image>(find.byType(Image)).image as NetworkImage;
+    expect(avatar().url, contains('/Users/uid/Images/Primary'));
+    expect(avatar().headers?['X-Emby-Token'], 'token');
+
+    result.container.read(serverAvatarVersionProvider.notifier).bump('srv_a');
+    await tester.pumpAndSettle();
+
+    expect(avatar().url, contains('/Users/uid/Images/Primary?_v=1'));
+  });
+
+  testWidgets('重新登录失败展示简短中文提示（不透出英文异常）（v1.2.9）',
+      (tester) async {
+    final service = FakeEmbyService()
+      ..authError = DioException(
+        requestOptions: RequestOptions(path: '/Users/AuthenticateByName'),
+        type: DioExceptionType.badResponse,
+        response: Response(
+          requestOptions: RequestOptions(path: '/Users/AuthenticateByName'),
+          statusCode: 401,
+        ),
+      );
+    await _pumpSheet(tester, server: _server(), service: service);
+
+    await tester.tap(find.byKey(const ValueKey('serviceRelogin')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '用户名'), 'user');
+    await tester.enterText(find.widgetWithText(TextField, '密码'), 'bad');
+    await tester.tap(find.text('登录'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('重新登录失败：用户名或密码错误'), findsOneWidget);
+    expect(find.textContaining('DioException'), findsNothing);
   });
 }

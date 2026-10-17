@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/models/tv_device.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/server_avatar_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
@@ -420,7 +421,7 @@ void main() {
 
     expect(find.text('编辑'), findsOneWidget);
     expect(find.text('切换线路'), findsOneWidget);
-    expect(find.text('更换图标'), findsOneWidget);
+    expect(find.text('更换图标'), findsNothing, reason: '「更换图标」已移除');
     expect(find.text('资源统计'), findsOneWidget);
     expect(find.text('服务设置'), findsOneWidget);
     expect(find.text('删除'), findsOneWidget);
@@ -540,6 +541,34 @@ void main() {
         reason: '用户名应与头像在同一行（y 坐标接近）');
     expect(labelCenter.dy, greaterThan(usernameCenter.dy),
         reason: '服务器名称应在用户名下方');
+  });
+
+  testWidgets('卡片头像加载 Emby 用户头像，上传后随版本号刷新（v1.2.9）', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_a', name: '家庭NAS', serverId: 's1'),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    NetworkImage avatarOf(String tileKey) {
+      final image = tester.widget<Image>(find.descendant(
+        of: find.byKey(ValueKey('serverTile_$tileKey')),
+        matching: find.byType(Image),
+      ));
+      return image.image as NetworkImage;
+    }
+
+    expect(avatarOf('srv_a').url, contains('/Users/uid/Images/Primary'));
+    expect(avatarOf('srv_a').url, isNot(contains('?_v=')));
+    expect(avatarOf('srv_a').headers?['X-Emby-Token'], 'token');
+
+    container.read(serverAvatarVersionProvider.notifier).bump('srv_a');
+    await tester.pumpAndSettle();
+
+    expect(avatarOf('srv_a').url, contains('/Users/uid/Images/Primary?_v=1'),
+        reason: '上传头像后版本号自增，URL 追加 _v 绕过缓存');
   });
 
   testWidgets('刷新按钮重测延迟与计数（v1.1.236）', (tester) async {

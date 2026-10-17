@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/server_avatar_provider.dart';
+import 'package:himi_syncwatch/services/emby_error.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/server_route_service.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
@@ -39,10 +41,14 @@ class _ServiceSettingsSheet extends ConsumerStatefulWidget {
 class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
   late bool _strmDirectPlay = widget.server.strmDirectPlay;
 
-  /// 头像缓存破值：上传成功后追加为查询参数强制刷新。
-  String? _avatarTag;
-
-  EmbyServerConfig get _server => widget.server;
+  /// 始终取列表中的最新配置（重新登录/修改密码后会更新），保证头像与用户名刷新。
+  EmbyServerConfig get _server {
+    final list = ref.read(embyServerListProvider);
+    for (final s in list) {
+      if (s.id == widget.server.id) return s;
+    }
+    return widget.server;
+  }
 
   EmbyService get _service => ref.read(embyServiceForProvider(_server.id));
 
@@ -88,10 +94,10 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
             strmDirectPlay: updated.strmDirectPlay,
           );
       if (!mounted) return;
-      setState(() => _avatarTag = null);
+      ref.read(serverAvatarVersionProvider.notifier).bump(_server.id);
       showAppToast(context, '重新登录成功');
     } catch (e) {
-      if (mounted) showAppToast(context, '重新登录失败：$e');
+      if (mounted) showAppToast(context, '重新登录失败：${friendlyEmbyError(e)}');
     }
   }
 
@@ -105,7 +111,7 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
       );
       if (mounted) showAppToast(context, '密码修改成功');
     } catch (e) {
-      if (mounted) showAppToast(context, '修改密码失败：$e');
+      if (mounted) showAppToast(context, '修改密码失败：${friendlyEmbyError(e)}');
     }
   }
 
@@ -124,11 +130,10 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
         contentType: isPng ? 'image/png' : 'image/jpeg',
       );
       if (!mounted) return;
-      setState(() =>
-          _avatarTag = DateTime.now().millisecondsSinceEpoch.toString());
+      ref.read(serverAvatarVersionProvider.notifier).bump(_server.id);
       showAppToast(context, '头像已更新');
     } catch (e) {
-      if (mounted) showAppToast(context, '上传头像失败：$e');
+      if (mounted) showAppToast(context, '上传头像失败：${friendlyEmbyError(e)}');
     }
   }
 
@@ -248,6 +253,11 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final server = _server;
+    final avatarUrl = serverAvatarUrl(
+      server,
+      version: ref.watch(serverAvatarVersionProvider)[server.id],
+    );
     return SheetBottomSafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -257,7 +267,14 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
           children: [
             Row(
               children: [
-                _Avatar(server: _server, tag: _avatarTag),
+                ServerAvatar(
+                  label: server.label,
+                  size: 48,
+                  imageUrl: avatarUrl,
+                  imageHeaders: avatarUrl == null
+                      ? null
+                      : {'X-Emby-Token': server.accessToken!},
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -352,35 +369,6 @@ class _PasswordInput {
   const _PasswordInput(this.current, this.newPassword);
   final String current;
   final String newPassword;
-}
-
-/// 用户头像：优先加载服务器头像，失败/未登录回退渐变字标。
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.server, this.tag});
-
-  final EmbyServerConfig server;
-  final String? tag;
-
-  @override
-  Widget build(BuildContext context) {
-    final token = server.accessToken;
-    final url = tag == null || tag!.isEmpty
-        ? '${server.mediaUrl}/Users/${server.userId}/Images/Primary'
-        : '${server.mediaUrl}/Users/${server.userId}/Images/Primary?tag=$tag';
-    if (token == null || token.isEmpty || server.userId == null) {
-      return ServerAvatar(label: server.label);
-    }
-    return ClipOval(
-      child: Image.network(
-        url,
-        width: 48,
-        height: 48,
-        fit: BoxFit.cover,
-        headers: {'X-Emby-Token': token},
-        errorBuilder: (_, __, ___) => ServerAvatar(label: server.label),
-      ),
-    );
-  }
 }
 
 class _ActionTile extends StatelessWidget {

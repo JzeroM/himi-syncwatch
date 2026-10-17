@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/server_avatar_provider.dart';
 import 'package:himi_syncwatch/providers/server_stats_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
@@ -17,6 +18,7 @@ import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart'
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/emby_error.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -372,6 +374,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     final tvSyncEnabled =
         ref.watch(settingsProvider.select((s) => s.tvSyncEnabled));
     final pairedTv = ref.watch(pairedTvProvider);
+    final avatarVersions = ref.watch(serverAvatarVersionProvider);
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
       padding: EdgeInsets.only(
@@ -424,6 +427,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               moreButtonNode: moreButtonNode,
               onMoreButtonBack: onMoreButtonBack,
               onMoreButtonForward: onMoreButtonForward,
+              avatarVersion: avatarVersions[server.id],
             ),
           ),
         );
@@ -443,6 +447,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     final tvSyncEnabled =
         ref.watch(settingsProvider.select((s) => s.tvSyncEnabled));
     final pairedTv = ref.watch(pairedTvProvider);
+    final avatarVersions = ref.watch(serverAvatarVersionProvider);
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(
         12,
@@ -502,6 +507,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               moreButtonNode: moreButtonNode,
               onMoreButtonBack: onMoreButtonBack,
               onMoreButtonForward: onMoreButtonForward,
+              avatarVersion: avatarVersions[server.id],
             ),
           ),
         );
@@ -1088,7 +1094,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyEmbyError(e);
         _isLoading = false;
       });
     }
@@ -1101,7 +1107,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     final name = _nameController.text.trim();
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
-    if (username.isEmpty) throw Exception('用户名不能为空');
+    if (username.isEmpty) throw EmbySetupException('用户名不能为空');
 
     final authService = ref.read(embyAuthServiceProvider);
     final wasActive = ref.read(embyConfigProvider)?.id == server.id;

@@ -27,15 +27,63 @@ Color serverAvatarStartColor(String seed) =>
 Color serverAvatarEndColor(String seed) =>
     _avatarGradients[(seed.hashCode & 0x7fffffff) % _avatarGradients.length][1];
 
-/// 渐变圆形头像（取服务器名首字符）。
+/// Emby 用户头像地址；无 userId 或 accessToken 时返回 null（回退渐变字标）。
+///
+/// [version] 非空时追加 `?_v=<version>`，用于上传/重新登录后绕过图片缓存。
+String? serverAvatarUrl(EmbyServerConfig server, {int? version}) {
+  final userId = server.userId;
+  final token = server.accessToken;
+  if (userId == null ||
+      userId.isEmpty ||
+      token == null ||
+      token.isEmpty) {
+    return null;
+  }
+  final base = '${server.mediaUrl}/Users/$userId/Images/Primary';
+  return version == null ? base : '$base?_v=$version';
+}
+
+/// 圆形服务器头像：有 [imageUrl] 时显示 Emby 用户头像，否则回退渐变字标。
 class ServerAvatar extends StatelessWidget {
-  const ServerAvatar({super.key, required this.label, this.size = 44});
+  const ServerAvatar({
+    super.key,
+    required this.label,
+    this.size = 44,
+    this.imageUrl,
+    this.imageHeaders,
+  });
 
   final String label;
   final double size;
 
+  /// Emby 用户头像地址（null/空 → 渐变字标）。
+  final String? imageUrl;
+
+  /// 头像请求头（通常带 `X-Emby-Token`）。
+  final Map<String, String>? imageHeaders;
+
   @override
   Widget build(BuildContext context) {
+    final url = imageUrl;
+    if (url != null && url.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          url,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          headers: imageHeaders,
+          // 加载中显示渐变字标，避免闪白与进度圈
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : _gradient(),
+          errorBuilder: (context, error, stack) => _gradient(),
+        ),
+      );
+    }
+    return _gradient();
+  }
+
+  Widget _gradient() {
     final seed = label.isEmpty ? 'himi' : label;
     final letter = label.isEmpty ? 'H' : label.characters.first.toUpperCase();
     return Container(
@@ -188,7 +236,7 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
       widget.focusNode ?? FocusNode(debugLabel: 'serverMoreBtn');
 
   /// 面板动作项数（编辑项视是否可编辑而定）。
-  int get _actionCount => widget.onEdit != null ? 6 : 5;
+  int get _actionCount => widget.onEdit != null ? 5 : 4;
 
   /// 面板动作表（与 [_ServerActionPanel] 渲染顺序一致）。
   List<_PanelAction> _buildActions() => [
@@ -197,8 +245,6 @@ class _ServerMoreButtonState extends ConsumerState<ServerMoreButton> {
               icon: Icons.edit_outlined, label: '编辑', value: 'edit'),
         const _PanelAction(
             icon: Icons.alt_route, label: '切换线路', value: 'switchLine'),
-        const _PanelAction(
-            icon: Icons.image_outlined, label: '更换图标', value: 'changeIcon'),
         const _PanelAction(
             icon: Icons.bar_chart_outlined, label: '资源统计', value: 'stats'),
         const _PanelAction(
@@ -627,6 +673,7 @@ class ServerListCard extends StatelessWidget {
     this.moreButtonNode,
     this.onMoreButtonBack,
     this.onMoreButtonForward,
+    this.avatarVersion,
   });
 
   final EmbyServerConfig server;
@@ -660,11 +707,20 @@ class ServerListCard extends StatelessWidget {
   /// ⋮ 按右键时回调（交到相邻卡片主体）。
   final VoidCallback? onMoreButtonForward;
 
+  /// 头像版本号（上传/重新登录后自增，用于绕过图片缓存刷新头像）。
+  final int? avatarVersion;
+
   @override
   Widget build(BuildContext context) {
+    final avatarUrl = serverAvatarUrl(server, version: avatarVersion);
     final content = Row(
       children: [
-        ServerAvatar(label: server.label),
+        ServerAvatar(
+          label: server.label,
+          imageUrl: avatarUrl,
+          imageHeaders:
+              avatarUrl == null ? null : {'X-Emby-Token': server.accessToken!},
+        ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -796,6 +852,7 @@ class ServerGridCard extends StatelessWidget {
     this.moreButtonNode,
     this.onMoreButtonBack,
     this.onMoreButtonForward,
+    this.avatarVersion,
   });
 
   final EmbyServerConfig server;
@@ -824,6 +881,9 @@ class ServerGridCard extends StatelessWidget {
 
   /// ⋮ 按右键时回调（交到相邻卡片主体）。
   final VoidCallback? onMoreButtonForward;
+
+  /// 头像版本号（上传/重新登录后自增，用于绕过图片缓存刷新头像）。
+  final int? avatarVersion;
 
   Widget _gradient(Color start, Color end) => Positioned.fill(
         child: DecoratedBox(
@@ -857,6 +917,7 @@ class ServerGridCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final start = serverAvatarStartColor(server.serverId);
     final end = serverAvatarEndColor(server.serverId);
+    final avatarUrl = serverAvatarUrl(server, version: avatarVersion);
 
     final moreButton = ServerMoreButton(
       menuKey: 'serverMore_${server.id}',
@@ -876,7 +937,14 @@ class ServerGridCard extends StatelessWidget {
             // 第 1 行：头像 + 用户名 (+ 同步图标 / ···，手机端)
             Row(
               children: [
-                ServerAvatar(label: server.label, size: 40),
+                ServerAvatar(
+                  label: server.label,
+                  size: 40,
+                  imageUrl: avatarUrl,
+                  imageHeaders: avatarUrl == null
+                      ? null
+                      : {'X-Emby-Token': server.accessToken!},
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(

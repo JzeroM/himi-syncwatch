@@ -3,6 +3,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/services/emby_error.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/services/lan_config/lan_config_server.dart';
 import 'package:himi_syncwatch/services/server_route_service.dart';
@@ -89,7 +90,7 @@ class LanConfigNotifier extends StateNotifier<LanConfigState> {
       _record(error == null, error ?? successMessage);
       return error;
     } catch (e) {
-      _record(false, e.toString());
+      _record(false, friendlyEmbyError(e));
       rethrow;
     }
   }
