@@ -560,7 +560,6 @@ void main() {
     const sdr = DisplayCapabilities();
 
     AdapterColorSpace? r({
-      bool enabled = true,
       bool dv = false,
       bool hdr = true,
       bool hlg = false,
@@ -570,7 +569,6 @@ void main() {
     }) =>
         PlayerScreen.resolveHdrOutputColorSpace(
           platform: platform,
-          enabled: enabled,
           dv: dv,
           hdr: hdr,
           hlg: hlg,
@@ -603,10 +601,6 @@ void main() {
 
     test('非 HDR 内容 → null（不设置）', () {
       expect(r(hdr: false, hlg: false), isNull);
-    });
-
-    test('hdrGlWorkaround 关闭 → null（A/B 基线）', () {
-      expect(r(enabled: false), isNull);
     });
 
     test('非 Android → null', () {

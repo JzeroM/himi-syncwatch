@@ -13,7 +13,6 @@ void main() {
 
   AdapterColorSpace? resolve({
     TargetPlatform platform = TargetPlatform.android,
-    bool enabled = true,
     bool isHdr10 = true,
     bool isHlg = false,
     DisplayCapabilities display = hdr10,
@@ -21,7 +20,6 @@ void main() {
   }) =>
       HdrOutputPolicy.resolve(
         platform: platform,
-        enabled: enabled,
         isHdr10: isHdr10,
         isHlg: isHlg,
         display: display,
@@ -65,10 +63,6 @@ void main() {
 
     test('非 HDR 内容 → null（不设置）', () {
       expect(resolve(isHdr10: false, isHlg: false), isNull);
-    });
-
-    test('开关关闭（hdrGlWorkaround=false）→ null，保持 A/B 基线', () {
-      expect(resolve(enabled: false), isNull);
     });
 
     test('非 Android → null（iOS Erika / Windows media_kit 不经此策略）', () {

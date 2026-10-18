@@ -125,7 +125,6 @@ class DeviceCapabilityCard extends ConsumerWidget {
     // 非 DV HDR 走 MDK 时的输出色彩策略（按最佳载体 SurfaceView 预览）
     final mdkHdr = HdrOutputPolicy.resolve(
       platform: defaultTargetPlatform,
-      enabled: ref.read(settingsProvider).hdrGlWorkaround,
       isHdr10: true,
       isHlg: false,
       display: profile.display,

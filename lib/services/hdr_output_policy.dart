@@ -16,7 +16,11 @@ import 'player/player_adapter.dart';
 /// Vulkan/GLES3 双无时才把 HDR 交给 MDK，故此处只处理 Android，其余
 /// 平台返回 null（不设置，保持既有行为）。
 ///
-/// 规则（[enabled] = Android `hdrGlWorkaround` 开关，关=不干预 A/B 基线）：
+/// 该策略**默认生效**（不受实验开关 `hdrGlWorkaround` 门控）：后者只管
+/// HDR 直写降级 GL、buffer 夹紧与"非 HDR 内容的 SDR 强制"，HDR 输出色彩
+/// 独立按本策略决定。
+///
+/// 规则：
 /// - 内容 HDR10 且显示支持 HDR10 且载体能载 HDR → `bt2100PQ`（真 HDR10）
 /// - 内容 HLG 且显示支持 HLG 且载体能载 HDR → `bt2100hlg`（真 HLG）
 /// - 其余 HDR（SDR 屏 / 载体为 Flutter 纹理）→ `bt709`（显式 SDR tone map，
@@ -31,14 +35,12 @@ class HdrOutputPolicy {
   /// tunnel → true；Flutter 纹理恒 SDR → false）。
   static AdapterColorSpace? resolve({
     required TargetPlatform platform,
-    required bool enabled,
     required bool isHdr10,
     required bool isHlg,
     required DisplayCapabilities display,
     required bool channelCanCarryHdr,
   }) {
     if (platform != TargetPlatform.android) return null;
-    if (!enabled) return null;
     if (!isHdr10 && !isHlg) return null;
     if (isHdr10 && display.supportsHdr10 && channelCanCarryHdr) {
       return AdapterColorSpace.bt2100PQ;

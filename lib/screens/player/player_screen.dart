@@ -414,13 +414,12 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   /// 非 DV HDR 的内容/设备状态 → 输出色彩空间（纯函数，便于单测映射）。
   ///
-  /// 把播放器运行期状态（HDR/HLG/DV 判定、载体、开关）映射到
-  /// [HdrOutputPolicy]；[dv] 为真时返回 null（DV 由
-  /// [dvOutputColorSpace] 单独处理）。
+  /// 把播放器运行期状态（HDR/HLG/DV 判定、载体）映射到 [HdrOutputPolicy]；
+  /// [dv] 为真时返回 null（DV 由 [dvOutputColorSpace] 单独处理）。
+  /// 该策略默认生效，不受 `hdrGlWorkaround` 实验开关门控。
   @visibleForTesting
   static AdapterColorSpace? resolveHdrOutputColorSpace({
     required TargetPlatform platform,
-    required bool enabled,
     required bool dv,
     required bool hdr,
     required bool hlg,
@@ -430,7 +429,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
     if (dv) return null;
     return HdrOutputPolicy.resolve(
       platform: platform,
-      enabled: enabled,
       isHdr10: hdr && !hlg,
       isHlg: hlg,
       display: display,
@@ -2376,6 +2374,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///   Windows 恒 HDR / iOS 返回 null 不设置）。
   /// - 非 DV HDR（HDR10/HLG）：走 [HdrOutputPolicy]——显示 + 载体均支持
   ///   时真 HDR 输出（`bt2100PQ`/`bt2100hlg`），否则 `bt709` tone map。
+  ///   该分支**默认生效**，不受 `hdrGlWorkaround` 实验开关门控。
   /// - 非 HDR：仅 [._shouldForceSdrToneMap] 时强制 SDR（保持既有行为）。
   void _applyOutputColorSpace() {
     final dv = _dvOutputColorSpace();
@@ -2387,7 +2386,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final profile = ref.read(deviceProfileProvider);
     final hdr = PlayerScreen.resolveHdrOutputColorSpace(
       platform: defaultTargetPlatform,
-      enabled: ref.read(settingsProvider).hdrGlWorkaround,
       dv: _isDvContent,
       hdr: _hdrContent,
       hlg: _isHlgContent,
