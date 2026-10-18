@@ -3024,6 +3024,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (mounted) {
         _player.state = AdapterPlaybackState.playing;
         _syncPlayState();
+        // 起播成功重新起算自动隐藏：慢流首开可能远超 5s，进入页时的
+        // 计时器已到点（当时 state!=playing 被跳过），不重开则控件常驻。
+        _resetHideTimer();
         setState(() {});
       }
       // 起播渐入恢复用户音量（未渐出/已在目标音量时内部直接跳过）
@@ -3206,6 +3209,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         _player.state = AdapterPlaybackState.playing;
         _syncPlayState();
+        // 起播成功重新起算自动隐藏（慢流首开超 5s 时首计时已空转跳过）
+        _resetHideTimer();
         // 起播渐入恢复用户音量（无渐出时内部直接跳过）
         await _fadeInForSwitch();
       } else if (mounted) {
@@ -4988,6 +4993,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _toggleControls() {
     setState(() => _showControls = !_showControls);
+    _logControlsVisibility('点屏');
     _resetHideTimer();
   }
 
@@ -4998,6 +5004,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _showControlsForTv() {
     if (!_showControls) {
       setState(() => _showControls = true);
+      _logControlsVisibility('遥控唤出');
       _resetHideTimer();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _showControls) _controlsFocusNode.requestFocus();
@@ -5020,6 +5027,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 顺延自动隐藏计时（任何真实操作调用；控件隐藏时为空操作）。
   void _resetHideTimer() => _autoHide.reset();
 
+  /// 控件显隐留证（真机排查「控件自己冒出来」）：调用点均在状态已变更
+  /// 之后，日志记录本次变化与触发来源，便于对照时间线确认是否真实输入。
+  void _logControlsVisibility(String trigger) {
+    LogService()
+        .log('Diag', '控件${_showControls ? '显示' : '隐藏'}（$trigger）');
+  }
+
   /// 焦点变更监听：焦点**移动到**控件内算操作；焦点停留原地不触发，
   /// 因此"焦点静置在控件上长时间不操作"仍会到点隐藏。
   void _onPrimaryFocusChanged() {
@@ -5028,7 +5042,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 长时间无操作：隐藏全部控件（含选择器面板）并回落焦点。
   void _onControlsIdleHide() {
-    if (!mounted || _player.state != AdapterPlaybackState.playing) return;
+    if (!mounted) return;
+    if (_player.state != AdapterPlaybackState.playing) {
+      // 起播未完成（慢流首开常见）：本次计时空转，日志留证；
+      // 起播成功处会重新起算（见 _loadStream/_playFromUrl）。
+      LogService().log('Diag', '自动隐藏跳过（state=${_player.state}）');
+      return;
+    }
     _releaseFocusFromControls();
     _selectorOpenerNode = null;
     setState(() {
@@ -5041,6 +5061,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showEpisodeMenu = false;
       _showVersionMenu = false;
     });
+    _logControlsVisibility('自动隐藏');
   }
 
   /// 打开字幕/音轨/倍速选择器面板：记录来源按钮，postFrame 把焦点精确
@@ -5926,6 +5947,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 'surfaceCreated 绑定完成 (epoch=$_videoSurfaceEpoch '
                     'size=${size.width.toInt()}x${size.height.toInt()}'
                     '${clampTarget != null ? ' → buffer ${vw}x$vh' : ''})');
+            // 平台视图首次插入会把视频层放到浮层之上（hybrid composition
+            // 重新合成）：补帧让控制条/顶栏回到视频之上，并再补一帧覆盖
+            // nativeSetSurface 异步落定 + 解码器重开的窗口。
+            _nudgeOverlayRepaint('首次 surfaceCreated (epoch=$_videoSurfaceEpoch)');
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (mounted) _nudgeOverlayRepaint('surface 后 300ms');
+            });
           },
         ),
       ),
@@ -7000,6 +7028,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _onVideoAreaTap() {
     if (_lockController.locked) {
       setState(() => _showControls = true);
+      _logControlsVisibility('锁定态点屏');
       _resetHideTimer();
       return;
     }

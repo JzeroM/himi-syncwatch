@@ -20,12 +20,18 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../../helpers/test_fakes.dart';
 
-/// 播放器版本面板的返回键回归（v1.2.24）。
-///
-/// 真机症状：多版本播放器打开「版本」面板后按返回键，面板不关闭且
-/// 焦点不归还版本按钮——`TvBackConfirm.onBack` 的面板互斥列表漏了
-/// `_showVersionMenu`（与 v1.1.2xx 其他选择器面板同款收口，647ac50）。
+/// 播放器 TV 回归（v1.2.24/v1.2.25）：
+/// - 版本面板返回键：多版本播放器打开「版本」面板后按返回键，面板须
+///   关闭且焦点归还版本按钮（`TvBackConfirm.onBack` 互斥列表漏了
+///   `_showVersionMenu`，与 v1.1.2xx 其他选择器面板同款收口，647ac50）；
+/// - 慢流起播隐藏控件：慢流首开超过 5s 时，进入页时的自动隐藏计时器
+///   已空转跳过（state != playing），起播成功须重新起算，否则控件常驻。
 class _FakeStreamingPlayerAdapter implements PlayerAdapter {
+  _FakeStreamingPlayerAdapter({this.prepareDelay = Duration.zero});
+
+  /// 模拟慢流：prepare（真实设备上等价于 avformat_open_input 拉流）耗时。
+  final Duration prepareDelay;
+
   @override
   AdapterPlaybackState state = AdapterPlaybackState.stopped;
   @override
@@ -33,13 +39,31 @@ class _FakeStreamingPlayerAdapter implements PlayerAdapter {
   @override
   set media(String uri) {}
   @override
-  Future<void> prepare({int startMs = 0}) async {}
+  Future<void> prepare({int startMs = 0}) async {
+    if (prepareDelay > Duration.zero) {
+      await Future<void>.delayed(prepareDelay);
+    }
+  }
+
   @override
   int get position => 0;
   @override
-  int get duration => 0;
+  int get duration => _durationMs;
+  int _durationMs = 0;
   @override
-  AdapterMediaInfo get mediaInfo => AdapterMediaInfo.empty;
+  AdapterMediaInfo get mediaInfo => AdapterMediaInfo(duration: _durationMs);
+
+  /// 模拟 `loaded` 事件：时长就绪（真实链路由 mdk MediaStatus 驱动）。
+  void emitLoaded(int durationMs) {
+    _durationMs = durationMs;
+    _statusCtrl.add((
+      oldValue: AdapterMediaStatus.loading,
+      newValue: AdapterMediaStatus.loaded,
+    ));
+  }
+
+  final _statusCtrl = StreamController<
+      ({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>.broadcast();
   @override
   double volume = 0.8;
   @override
@@ -87,11 +111,13 @@ class _FakeStreamingPlayerAdapter implements PlayerAdapter {
       get onStateChanged => const Stream.empty();
   @override
   Stream<({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>
-      get onMediaStatus => const Stream.empty();
+      get onMediaStatus => _statusCtrl.stream;
   @override
   Stream<AdapterMediaEvent> get onEvent => const Stream.empty();
   @override
-  void dispose() {}
+  void dispose() {
+    _statusCtrl.close();
+  }
 }
 
 MediaItem _multiSourceMovie() => MediaItem(
@@ -136,9 +162,14 @@ void _mockPluginChannels(WidgetTester tester) {
   addTearDown(() => messenger.setMockMessageHandler(wakelockChannel, null));
 }
 
-Future<ProviderContainer> _pumpPlayer(WidgetTester tester) async {
+/// 起播（含 mock 插件通道 / provider 覆盖 / Navigator.push 帧序）。
+/// 返回 (container, fake player)，慢流用例可注入 prepare 延迟并补发事件。
+Future<(ProviderContainer, _FakeStreamingPlayerAdapter)> _pumpPlayer(
+  WidgetTester tester, {
+  Duration prepareDelay = Duration.zero,
+}) async {
   _mockPluginChannels(tester);
-  final player = _FakeStreamingPlayerAdapter();
+  final player = _FakeStreamingPlayerAdapter(prepareDelay: prepareDelay);
   PlayerEngineFactory.debugCreateOverride =
       (engine, {erikaOutputMode = ErikaOutputMode.sdr}) => player;
   addTearDown(() => PlayerEngineFactory.debugCreateOverride = null);
@@ -178,7 +209,7 @@ Future<ProviderContainer> _pumpPlayer(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 100));
   await tester.pump(const Duration(milliseconds: 600));
-  return container;
+  return (container, player);
 }
 
 void main() {
@@ -207,6 +238,38 @@ void main() {
 
     // 卸载页面并推进假时钟，避免 "Timer still pending" 报错
     // （起播后遗留 2s DV 探测 / 500ms 换源锁等一次性延迟）
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('TV：慢流首开超过 5s，起播后控件仍按时自动隐藏（v1.2.25）',
+      (tester) async {
+    // 真机日志：4K/弱网 avformat_open_input 约 10s，进入页时的自动隐藏
+    // 计时器（5s）先到点且被 state != playing 跳过；旧实现不重开计时，
+    // 控件常驻（用户感知「控件自己冒出来」）。修复：起播成功重新起算。
+    final (_, player) =
+        await _pumpPlayer(tester, prepareDelay: const Duration(seconds: 6));
+
+    final controls = find.byIcon(Icons.subtitles);
+    expect(controls, findsOneWidget, reason: '进入页控件可见');
+
+    // 跨过首次 5s 自动隐藏（此时仍在拉流，state != playing → 跳过）
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 2));
+    expect(controls, findsOneWidget, reason: '起播前控件保持可见（可点返回）');
+
+    // 起播完成（load 链 setState ready + state=playing）后时长就绪
+    player.emitLoaded(7200000);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(controls, findsOneWidget, reason: '起播瞬间仍可见');
+
+    // 起播后重新计 5s：应自动隐藏
+    await tester.pump(const Duration(seconds: 6));
+    expect(controls, findsNothing,
+        reason: '慢流起播后重新起算，5s 无操作自动隐藏（修复前常驻）');
+
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
     await tester.pump(const Duration(seconds: 3));
