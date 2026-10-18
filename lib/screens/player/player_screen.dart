@@ -43,6 +43,7 @@ import 'package:agora_rtm/agora_rtm.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/display_info_service.dart';
+import 'package:himi_syncwatch/services/hdr_output_policy.dart';
 import 'package:himi_syncwatch/services/render_target_clamp.dart';
 
 
@@ -410,6 +411,32 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// HDR10 黑屏（1.1.194 修复），iOS 依赖 videoout.hdr=0 全局选项。
   @visibleForTesting
   static AdapterColorSpace outputColorSpace() => AdapterColorSpace.bt709;
+
+  /// 非 DV HDR 的内容/设备状态 → 输出色彩空间（纯函数，便于单测映射）。
+  ///
+  /// 把播放器运行期状态（HDR/HLG/DV 判定、载体、开关）映射到
+  /// [HdrOutputPolicy]；[dv] 为真时返回 null（DV 由
+  /// [dvOutputColorSpace] 单独处理）。
+  @visibleForTesting
+  static AdapterColorSpace? resolveHdrOutputColorSpace({
+    required TargetPlatform platform,
+    required bool enabled,
+    required bool dv,
+    required bool hdr,
+    required bool hlg,
+    required bool surfaceView,
+    required DisplayCapabilities display,
+  }) {
+    if (dv) return null;
+    return HdrOutputPolicy.resolve(
+      platform: platform,
+      enabled: enabled,
+      isHdr10: hdr && !hlg,
+      isHlg: hlg,
+      display: display,
+      channelCanCarryHdr: surfaceView,
+    );
+  }
 
   /// Dolby Vision 内容输出色彩空间策略（纯函数，便于单测）。
   ///
@@ -1201,9 +1228,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// PQ/HLG 或 doviProfile>0）；像素格式不再参与（10-bit SDR ≠ HDR）。
   bool _hdrContent = false;
 
+  /// 内容是否为 HLG（闩锁）：Emby 元数据或运行期 mediaInfo `bt2100HLG`。
+  /// 用于非 DV HDR 输出策略（见 [HdrOutputPolicy]）：HLG 屏上输出
+  /// `bt2100hlg` 而不是被 tone map 成 SDR。
+  bool _hlgContent = false;
+
   /// 内容是否为 Dolby Vision（**仅** Emby 标）：用于引擎路由（恒 mdk）
   /// 与输出色彩策略（见 [dvOutputColorSpace]）。
   bool get _isDvContent => _embyVideoStream?.isDolbyVision == true;
+
+  /// 内容是否 HLG（Emby 元数据 或 运行期闩锁）。
+  bool get _isHlgContent => _hlgContent || _embyVideoStream?.isHLG == true;
 
   /// 内容是否 10-bit 以上（闩锁）：**不是 HDR 判定**——bt709 的
   /// p010/yuv420p10le 同样命中。用于输出决策：设备 GL 10-bit 纹理
@@ -2339,13 +2374,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// - DV 内容：走 [dvOutputColorSpace]（Android 按显示 HDR10 能力 /
   ///   Windows 恒 HDR / iOS 返回 null 不设置）。
-  /// - 其余：维持 [._shouldForceSdrToneMap] 的 SDR 强制（Android +
-  ///   hdrGlWorkaround 且显示无 HDR 能力）。
+  /// - 非 DV HDR（HDR10/HLG）：走 [HdrOutputPolicy]——显示 + 载体均支持
+  ///   时真 HDR 输出（`bt2100PQ`/`bt2100hlg`），否则 `bt709` tone map。
+  /// - 非 HDR：仅 [._shouldForceSdrToneMap] 时强制 SDR（保持既有行为）。
   void _applyOutputColorSpace() {
     final dv = _dvOutputColorSpace();
     if (dv != null) {
       _player.setColorSpace(dv);
       LogService().log('Player', 'DV 输出色彩空间: ${dv.name}');
+      return;
+    }
+    final profile = ref.read(deviceProfileProvider);
+    final hdr = PlayerScreen.resolveHdrOutputColorSpace(
+      platform: defaultTargetPlatform,
+      enabled: ref.read(settingsProvider).hdrGlWorkaround,
+      dv: _isDvContent,
+      hdr: _hdrContent,
+      hlg: _isHlgContent,
+      surfaceView: _usesSurfaceView,
+      display: profile.display,
+    );
+    if (hdr != null) {
+      _player.setColorSpace(hdr);
+      LogService().log(
+        'Player',
+        'HDR 输出色彩空间: ${hdr.name}'
+        '（内容=${_isHlgContent ? "HLG" : "HDR10"}'
+        ' 显示=${profile.display.display} 载体=${_usesSurfaceView ? "SurfaceView" : "纹理"}）',
+      );
       return;
     }
     if (_shouldForceSdrToneMap()) {
@@ -2415,6 +2471,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               runtimeLabel = 'HDR10';
             } else if (cs == AdapterColorSpace.bt2100hlg) {
               runtimeLabel = 'HLG';
+              // HLG 闩锁（HLG 不计入 isHDR，但需驱动非 DV HDR 输出策略）
+              _hlgContent = true;
             } else {
               runtimeLabel = 'HDR10';
             }
@@ -2471,6 +2529,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     // 路由可能改变实际输出档位（如 surfaceViewDirect→surfaceView）→ 重应用
     unawaited(_applyVideoOutputMode());
+    // 运行期才判定 HDR/HLG（Emby 误标 SDR）→ 补设输出色彩空间
+    // （非 DV HDR：HDR10→PQ / HLG→HLG / 否则 tone map）。
+    _applyOutputColorSpace();
   }
 
   /// 当前档位是否走 SurfaceView 平台视图通道（普通档或直写档）。

@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/egl_fault_detector.dart';
+import 'package:himi_syncwatch/services/hdr_output_policy.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
@@ -121,10 +122,25 @@ class DeviceCapabilityCard extends ConsumerWidget {
     final dvDesc = dvColor == AdapterColorSpace.bt2100PQ
         ? 'HDR10'
         : 'SDR tone map';
+    // 非 DV HDR 走 MDK 时的输出色彩策略（按最佳载体 SurfaceView 预览）
+    final mdkHdr = HdrOutputPolicy.resolve(
+      platform: defaultTargetPlatform,
+      enabled: ref.read(settingsProvider).hdrGlWorkaround,
+      isHdr10: true,
+      isHlg: false,
+      display: profile.display,
+      channelCanCarryHdr: true,
+    );
+    final mdkHdrDesc = switch (mdkHdr) {
+      AdapterColorSpace.bt2100PQ => 'HDR10 透传',
+      AdapterColorSpace.bt2100hlg => 'HLG 透传',
+      AdapterColorSpace.bt709 => 'SDR tone map',
+      _ => '默认',
+    };
     final parts = <String>[
       'DV→MDK（LLDV：$dvDesc）',
       if (!renderable)
-        'HDR→MDK（直写/HDR 透传）'
+        'HDR→MDK（$mdkHdrDesc）'
       else if (hdrOk)
         'HDR→Erika（真 HDR10）'
       else

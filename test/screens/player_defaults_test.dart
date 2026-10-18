@@ -554,6 +554,67 @@ void main() {
     });
   });
 
+  group('PlayerScreen.resolveHdrOutputColorSpace（非 DV HDR → MDK 输出映射）', () {
+    const hdr10 = DisplayCapabilities(hdrTypes: ['hdr10']);
+    const hlg = DisplayCapabilities(hdrTypes: ['hlg']);
+    const sdr = DisplayCapabilities();
+
+    AdapterColorSpace? r({
+      bool enabled = true,
+      bool dv = false,
+      bool hdr = true,
+      bool hlg = false,
+      bool surfaceView = true,
+      DisplayCapabilities display = hdr10,
+      TargetPlatform platform = TargetPlatform.android,
+    }) =>
+        PlayerScreen.resolveHdrOutputColorSpace(
+          platform: platform,
+          enabled: enabled,
+          dv: dv,
+          hdr: hdr,
+          hlg: hlg,
+          surfaceView: surfaceView,
+          display: display,
+        );
+
+    test('DV 内容 → null（由 dvOutputColorSpace 单独处理，优先级最高）', () {
+      expect(r(dv: true), isNull);
+    });
+
+    test('HDR10 + HDR10 屏 + SurfaceView → bt2100PQ', () {
+      expect(r(), AdapterColorSpace.bt2100PQ);
+    });
+
+    test('HLG + HLG 屏 + SurfaceView → bt2100hlg', () {
+      expect(
+        r(hdr: false, hlg: true, display: hlg),
+        AdapterColorSpace.bt2100hlg,
+      );
+    });
+
+    test('纹理载体 → bt709（Flutter 纹理恒 SDR）', () {
+      expect(r(surfaceView: false), AdapterColorSpace.bt709);
+    });
+
+    test('SDR 屏 → bt709 tone map', () {
+      expect(r(display: sdr), AdapterColorSpace.bt709);
+    });
+
+    test('非 HDR 内容 → null（不设置）', () {
+      expect(r(hdr: false, hlg: false), isNull);
+    });
+
+    test('hdrGlWorkaround 关闭 → null（A/B 基线）', () {
+      expect(r(enabled: false), isNull);
+    });
+
+    test('非 Android → null', () {
+      expect(r(platform: TargetPlatform.iOS), isNull);
+      expect(r(platform: TargetPlatform.windows), isNull);
+    });
+  });
+
   group('PlayerScreen.mergeDecoderLowLatency（1.1.192 实验）', () {
     test('委托 DecodeModeService.withDecoderLowLatency', () {
       expect(

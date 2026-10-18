@@ -176,6 +176,15 @@ class MediaStream {
   bool get _transferIsHLG =>
       (transferCharacteristics ?? '').toLowerCase().contains('arib-std-b67');
 
+  /// 是否 HLG 内容（VideoRangeType / VideoRange / 传输特性归一化匹配）。
+  ///
+  /// 注意：HLG 不计入 [isHDR]（历史语义：路由只针对 HDR10/DV），但仍属
+  /// HDR 输出范畴——非 DV HDR 输出策略按此判定 HLG → `bt2100hlg`。
+  bool get isHLG =>
+      _videoRangeTypeNorm == 'HLG' ||
+      _videoRangeNorm == 'HLG' ||
+      _transferIsHLG;
+
   /// HDR 类型检测（HDR10/Dolby Vision）。
   ///
   /// 分层判定（1.1.187/1.1.188）：DV → VideoRangeType → VideoRange →
