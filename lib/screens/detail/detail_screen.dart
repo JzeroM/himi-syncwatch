@@ -23,6 +23,7 @@ import 'package:himi_syncwatch/screens/detail/episode_number_picker.dart';
 import 'package:himi_syncwatch/screens/detail/media_details_section.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
+import 'package:himi_syncwatch/screens/detail/version_row_nav.dart';
 import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
@@ -207,6 +208,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 关闭随节点销毁由焦点系统回落。
   final _overviewCloseNode = FocusNode(debugLabel: 'overviewClose');
 
+  /// 「可用版本」行 TV ↑/↓ 确定性导航（见 [VersionRowNav]）。
+  final _versionRowNav = VersionRowNav();
+
   @override
   void initState() {
     super.initState();
@@ -217,6 +221,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   void dispose() {
     _episodeRowController.dispose();
     _overviewCloseNode.dispose();
+    _versionRowNav.dispose();
     super.dispose();
   }
 
@@ -2217,6 +2222,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final primary = Theme.of(context).colorScheme.primary;
     // 按「版本偏好」排序（高优先级在前）。
     final ordered = _sortedSources(episode?.mediaSources ?? item.mediaSources);
+    // TV 行序导航 id（版本 id 可能为空，拼索引保证唯一）。
+    final navIds = <String>[
+      for (var i = 0; i < ordered.length; i++) '${ordered[i].id}#$i',
+    ];
+    if (tv) _versionRowNav.sync(navIds);
     // 高亮：显式选中 → 否则偏好最高（与详情页信息区同一来源）。
     final selectedId = episode != null
         ? _episodeEffectiveSource(episode)?.id
@@ -2250,7 +2260,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        ...ordered.map((source) {
+        ...ordered.asMap().entries.map((entry) {
+          final index = entry.key;
+          final source = entry.value;
           final selected = source.id == selectedId;
           final tile = GlassContainer(
             borderRadius: const BorderRadius.all(Radius.circular(14)),
@@ -2285,6 +2297,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             child: tv
                 ? TvFocusable(
                     radius: 14,
+                    // 稳定节点 + 行序 ↑/↓ 确定性导航（防框架遍历乱跳）。
+                    focusNode: _versionRowNav.nodeFor(navIds[index]),
+                    onKeyEvent: _versionRowNav.handleKeyEvent,
                     // 焦点移到该版本即选中（信息/流随之更新）
                     onFocusChange: (focused) {
                       if (focused) select(source);

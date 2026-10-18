@@ -1170,6 +1170,34 @@ void main() {
       );
       expect(focusable.onFocusChange, isNotNull, reason: '焦点移入即选中该版本');
       expect(focusable.onTap, isNotNull, reason: 'OK 用该版本直接播放');
+      // v1.2.24：行序 ↑/↓ 确定性导航接线（修复「下移后按 ↓ 焦点上移」）
+      expect(focusable.focusNode, isNotNull, reason: '版本行接稳定焦点节点');
+      expect(focusable.onKeyEvent, isNotNull, reason: '版本行接行序按键处理');
+
+      final row2Focusable = tester.widget<TvFocusable>(
+        find.ancestor(
+          of: find.byKey(const Key('mediaSource_src2')),
+          matching: find.byType(TvFocusable),
+        ),
+      );
+      expect(
+        identical(focusable.focusNode, row2Focusable.focusNode),
+        isFalse,
+        reason: '不同版本行使用不同节点',
+      );
+
+      // 重建（焦点移入触发选中 setState）后节点实例保持稳定，焦点不丢
+      row2Focusable.focusNode!.requestFocus();
+      await tester.pump();
+      expect(row2Focusable.focusNode!.hasFocus, isTrue);
+      final afterRebuild = tester.widget<TvFocusable>(
+        find.ancestor(
+          of: find.byKey(const Key('mediaSource_src2')),
+          matching: find.byType(TvFocusable),
+        ),
+      );
+      expect(identical(afterRebuild.focusNode, row2Focusable.focusNode), isTrue,
+          reason: '重建复用同一节点，焦点不丢');
 
       // OK（点击）→ 用该版本直接进入播放器
       await tester.tap(row);

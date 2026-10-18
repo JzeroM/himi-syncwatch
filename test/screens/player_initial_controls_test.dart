@@ -262,12 +262,18 @@ void main() {
     test('切集遮罩恒可见（无论进度/就绪）', () {
       expect(
         PlayerScreen.isLoadingMaskVisible(
-            switchingMedia: true, durationMs: 5000, playerReady: true),
+            switchingMedia: true,
+            durationMs: 5000,
+            playerReady: true,
+            startedOnce: true),
         isTrue,
       );
       expect(
         PlayerScreen.isLoadingMaskVisible(
-            switchingMedia: true, durationMs: 0, playerReady: false),
+            switchingMedia: true,
+            durationMs: 0,
+            playerReady: false,
+            startedOnce: false),
         isTrue,
       );
     });
@@ -275,7 +281,10 @@ void main() {
     test('首帧未出（就绪且时长 0）可见', () {
       expect(
         PlayerScreen.isLoadingMaskVisible(
-            switchingMedia: false, durationMs: 0, playerReady: true),
+            switchingMedia: false,
+            durationMs: 0,
+            playerReady: true,
+            startedOnce: false),
         isTrue,
       );
     });
@@ -283,7 +292,10 @@ void main() {
     test('正常播放（时长 > 0）不可见', () {
       expect(
         PlayerScreen.isLoadingMaskVisible(
-            switchingMedia: false, durationMs: 1000, playerReady: true),
+            switchingMedia: false,
+            durationMs: 1000,
+            playerReady: true,
+            startedOnce: true),
         isFalse,
       );
     });
@@ -291,7 +303,23 @@ void main() {
     test('未就绪（选集页占位）不可见——占位无转圈遮罩', () {
       expect(
         PlayerScreen.isLoadingMaskVisible(
-            switchingMedia: false, durationMs: 0, playerReady: false),
+            switchingMedia: false,
+            durationMs: 0,
+            playerReady: false,
+            startedOnce: false),
+        isFalse,
+      );
+    });
+
+    // v1.2.24：首播后重载（loaded 但 duration 暂报 0）不再把控件强留屏上
+    //（避免叠着刚重建的视频层显示残缺，用户感知「控件自己冒出来」）。
+    test('已起播后 duration 归零 → 不可见（重载窗口不再强显控件）', () {
+      expect(
+        PlayerScreen.isLoadingMaskVisible(
+            switchingMedia: false,
+            durationMs: 0,
+            playerReady: true,
+            startedOnce: true),
         isFalse,
       );
     });

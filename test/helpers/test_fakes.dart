@@ -335,6 +335,14 @@ class FakeEmbyService extends EmbyService {
   @override
   Future<MediaItem?> getItemDetails(String id) async => item;
 
+  /// 播放会话信息：测试环境不触网（真实实现会 POST 到服务器）。
+  @override
+  Future<EmbyPlaybackInfo> getPlaybackInfo({
+    required String itemId,
+    String? mediaSourceId,
+  }) async =>
+      const EmbyPlaybackInfo();
+
   @override
   Future<List<LibraryFolder>> getLibraries() async {
     librariesCalls++;

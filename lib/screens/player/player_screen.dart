@@ -543,16 +543,20 @@ class PlayerScreen extends ConsumerStatefulWidget {
     return true;
   }
 
-  /// 加载转圈遮罩可见性（纯函数，供测试）：切集遮罩恒可见；
-  /// 或播放器已就绪但时长仍为 0（首帧未出）。加载期间强制显示
-  /// 顶栏与底栏控件——黑屏转圈时用户仍可点返回退出。
+  /// 加载转圈遮罩可见性（纯函数，供测试）：切源中恒显；播放器已就绪
+  /// 但 `duration==0` 仅在**首次起播前**强制显（首帧未出）。加载期间强制
+  /// 显示顶栏与底栏控件——黑屏转圈时用户仍可点返回退出。
+  /// v1.2.24：首播后重载偶发「loaded 但 duration 暂报 0」，旧条件会把
+  /// 控件再强留屏上且叠着刚重建的视频层，用户感知为「控件自己冒出来且
+  /// 显示不完整」；重载期间本来就有 switchingMedia 兜底。
   @visibleForTesting
   static bool isLoadingMaskVisible({
     required bool switchingMedia,
     required int durationMs,
     required bool playerReady,
+    required bool startedOnce,
   }) =>
-      switchingMedia || (durationMs == 0 && playerReady);
+      switchingMedia || (durationMs == 0 && playerReady && !startedOnce);
 
   /// 手机版判定：移动端平台且非 TV（控制条布局分支）。
   @visibleForTesting
@@ -1056,6 +1060,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         switchingMedia: _isSwitchingMedia,
         durationMs: _duration.inMilliseconds,
         playerReady: _isPlayerReady,
+        startedOnce: _hasStartedPlayback,
       );
 
   /// 视频尺寸同步重试（见 _syncVideoNativeSize）：计数防风暴、
@@ -1083,6 +1088,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _surfaceViewCreated = false;
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
+
+  /// 是否已成功起播过（首次获知非零时长置位）：`duration==0` 强制显
+  /// 控件的加载兜底只在首次起播前生效，避免播放中重载的 duration 抖动
+  /// 把控件反复强留屏上（见 [isLoadingMaskVisible]）。
+  bool _hasStartedPlayback = false;
 
   /// 观众侧最近一次应用的远端流签名（字幕/音轨条数+默认音轨）。
   /// 用于流晚到时触发重新选轨（修「观众菜单全空」）。
@@ -1728,7 +1738,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             .toList();
         _seriesName = pendingEpisodes.first['seriesName'] as String? ?? '';
         _hasEpisodeList = true;
-        ref.read(pendingRoomEpisodesProvider.notifier).state = null;
+        _clearPendingAfterFrame(() {
+          ref.read(pendingRoomEpisodesProvider.notifier).state = null;
+        });
       } else if (pendingMovie != null) {
         _episodes = [
           EpisodeInfo(
@@ -1741,7 +1753,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ];
         _seriesName = '';
         _hasEpisodeList = true;
-        ref.read(pendingRoomMovieProvider.notifier).state = null;
+        _clearPendingAfterFrame(() {
+          ref.read(pendingRoomMovieProvider.notifier).state = null;
+        });
       }
       _rebuildGroups();
     }
@@ -1820,6 +1834,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
         }
       }
+    });
+  }
+
+  /// 帧末清理 pending provider（房主进入播放器时消费的暂存数据）。
+  ///
+  /// initState 处于构建期，debug 下 Riverpod 会断言「构建期不得修改
+  /// provider」并中断 initState（播放器空白）；release 无守卫，但统一
+  /// 延到帧末时序一致、风险更低。页面已卸载则跳过。
+  void _clearPendingAfterFrame(void Function() clear) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      clear();
     });
   }
 
@@ -2124,6 +2150,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _applyVideoAvfilter(size);
     // 尺寸/媒体信息就绪 → 运行期复核 HDR（自动路由依据）
     _refreshHdrContent();
+    _nudgeOverlayRepaint('尺寸变更 ${size.width.toInt()}x${size.height.toInt()}');
+  }
+
+  /// SurfaceView 附着/尺寸变更后补一帧空 setState（postFrame）。
+  ///
+  /// hybrid composition 下平台视图重挂或改尺寸时，Flutter 浮层可能停在
+  /// 上一次合成（控制条被视频层盖住半截的"旧帧残留"，Android TV 盒子
+  /// 起播卡顿恢复窗口实测）；补一帧让引擎重新合成浮层。日志留证便于
+  /// 真机核对时间线。
+  void _nudgeOverlayRepaint(String reason) {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      LogService().log('Diag', '补帧刷新浮层: $reason');
+      setState(() {});
+    });
   }
 
   /// 尺寸未就绪时 1 秒后重试（最多 10 次）：覆盖 decoder.video /
@@ -2176,7 +2218,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     LogService().log('Diag',
         'surface 两阶段重建: attach (epoch=$_videoSurfaceEpoch, size=$applySize)');
-    return _waitSurfaceCreated();
+    _nudgeOverlayRepaint('surface attach (epoch=$_videoSurfaceEpoch)');
+    final ok = await _waitSurfaceCreated();
+    if (ok) _nudgeOverlayRepaint('surfaceCreated 后 (epoch=$_videoSurfaceEpoch)');
+    return ok;
   }
 
   /// mediaInfo 直读视频尺寸（textureSize 超时后的回退源）。
@@ -3232,7 +3277,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 检查是否加载完成
       if (event.newValue.test(AdapterMediaStatus.loaded)) {
-        _duration = Duration(milliseconds: _player.mediaInfo.duration);
+        final next = Duration(milliseconds: _player.mediaInfo.duration);
+        if (next.inMilliseconds == 0 && _duration.inMilliseconds > 0) {
+          // 重载后 mediaInfo 暂报 0 的场景（起播卡顿恢复窗口）留证。
+          LogService().log('Diag', '时长归零（重载后 mediaInfo 未就绪）');
+        }
+        if (next.inMilliseconds > 0) _hasStartedPlayback = true;
+        _duration = next;
         _durationNotifier.value = _duration;
         _refreshTracks();
         // 注意：不再在此处设置 _player.state = playing
@@ -5710,6 +5761,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showSpeedMenu ||
         _showSubtitleStyleMenu ||
         _showEpisodeMenu ||
+        _showVersionMenu ||
         _showDecodeModeMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
@@ -5737,7 +5789,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _showAudioMenu ||
             _showSpeedMenu ||
             _showSubtitleStyleMenu ||
-            _showEpisodeMenu) {
+            _showEpisodeMenu ||
+            _showVersionMenu) {
           _closeSelectorPanel();
           _resetHideTimer();
           return true;
@@ -6956,6 +7009,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showSpeedMenu ||
         _showSubtitleStyleMenu ||
         _showEpisodeMenu ||
+        _showVersionMenu ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       _closeAllMenus();
