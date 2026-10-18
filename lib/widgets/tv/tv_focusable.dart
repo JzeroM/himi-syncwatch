@@ -26,6 +26,7 @@ class TvFocusable extends ConsumerWidget {
     this.scale = 1.06,
     this.onLongPress,
     this.onKeyEvent,
+    this.onFocusChange,
   });
 
   final VoidCallback? onTap;
@@ -34,6 +35,10 @@ class TvFocusable extends ConsumerWidget {
   final FocusNode? focusNode;
   final double radius;
   final bool enabled;
+
+  /// 焦点获得/失去回调（仅 TV 模式生效；非 TV 透传分支不触发）。
+  /// 用于「焦点移到卡片=选中」这类跟随焦点的交互。
+  final ValueChanged<bool>? onFocusChange;
 
   /// 自定义按键处理（在默认 OK/长按处理之前调用）。返回 handled 可拦截
   /// 该事件（如让 ⋮ 按左键把焦点交回卡片主体），返回 ignored 则继续默认
@@ -81,6 +86,7 @@ class TvFocusable extends ConsumerWidget {
       scale: scale,
       highlightColor: highlightColor,
       onKeyEvent: onKeyEvent,
+      onFocusChange: onFocusChange,
       child: child,
     );
   }
@@ -98,6 +104,7 @@ class _TvFocusableActive extends StatefulWidget {
     required this.highlightColor,
     required this.child,
     this.onKeyEvent,
+    this.onFocusChange,
   });
 
   final VoidCallback? onTap;
@@ -112,6 +119,7 @@ class _TvFocusableActive extends StatefulWidget {
   final Color highlightColor;
   final Widget child;
   final KeyEventResult Function(FocusNode node, KeyEvent event)? onKeyEvent;
+  final ValueChanged<bool>? onFocusChange;
 
   @override
   State<_TvFocusableActive> createState() => _TvFocusableActiveState();
@@ -128,7 +136,28 @@ class _TvFocusableActiveState extends State<_TvFocusableActive> {
   bool _longPressFired = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.onFocusChange != null) _node.addListener(_onFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(_TvFocusableActive oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final was = oldWidget.onFocusChange != null;
+    final now = widget.onFocusChange != null;
+    if (!was && now) {
+      _node.addListener(_onFocusChanged);
+    } else if (was && !now) {
+      _node.removeListener(_onFocusChanged);
+    }
+  }
+
+  void _onFocusChanged() => widget.onFocusChange?.call(_node.hasFocus);
+
+  @override
   void dispose() {
+    if (widget.onFocusChange != null) _node.removeListener(_onFocusChanged);
     _longPressTimer?.cancel();
     // 仅释放内部创建的节点，外部传入的由持有者管理
     if (widget.focusNode == null) _node.dispose();

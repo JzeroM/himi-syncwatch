@@ -896,20 +896,13 @@ void main() {
       await t.pump(const Duration(milliseconds: 350));
     }
 
-    /// 两步流程选版本：点「开始播放」弹选择器 → 选 [sourceId]（不进播放器）。
+    /// 点「可用版本」栏某版本行（非 TV）：即选中并刷新详情（不进播放器）。
     Future<void> pickVersion(WidgetTester t, String sourceId) async {
-      final btn = find.text('开始播放');
-      await t.ensureVisible(btn);
+      final row = find.byKey(Key('mediaSource_$sourceId'));
+      await t.ensureVisible(row);
       await t.pump();
-      await t.tap(btn);
+      await t.tap(row);
       await t.pump();
-      await t.pump(const Duration(milliseconds: 350));
-      final option = find.byKey(Key('versionOption_$sourceId'));
-      await t.ensureVisible(option);
-      await t.pump();
-      await t.tap(option);
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 350));
     }
 
     testWidgets('单版本资源隐藏版本图标', (tester) async {
@@ -936,53 +929,44 @@ void main() {
       );
     });
 
-    testWidgets('「可用版本」区块：TV 不渲染，非 TV 渲染且只读（选版本走开始播放）',
+    testWidgets('「可用版本」区块：TV 与非 TV 均渲染，行可点击切换（不再弹选择器）',
         (tester) async {
-      // TV：整块隐藏（纯信息玻璃层抬高焦点动画每帧开销）
+      // TV：也渲染（版本入口从播放控件移入此栏）
       await pumpMulti(tester, tv: true);
-      expect(find.text('可用版本'), findsNothing);
-      expect(find.text('1080p版'), findsNothing);
-      expect(find.text('4K版'), findsNothing);
-
-      // 非 TV：区块存在（标题 + 每源一行），只读不可点选
-      await pumpMulti(tester);
       expect(find.text('可用版本'), findsOneWidget);
       expect(find.text('1080p版'), findsWidgets);
       expect(find.text('4K版'), findsWidgets);
 
+      // 非 TV：区块存在（标题 + 每源一行），行可点选
+      await pumpMulti(tester);
+      expect(find.text('可用版本'), findsOneWidget);
       expect(
         tester
             .widget<ListTile>(find.byKey(const Key('mediaSource_src1')))
             .onTap,
-        isNull,
-        reason: 'v1.1.233 起可用版本只读，选版本统一走「开始播放」两步流程',
+        isNotNull,
+        reason: '可用版本栏行可点击切换（v1.2.22 起去两步弹层）',
       );
       expect(
         tester
             .widget<ListTile>(find.byKey(const Key('mediaSource_src2')))
             .onTap,
-        isNull,
+        isNotNull,
       );
     });
 
-    testWidgets('两步流程：点开始播放弹选择器，选中后可用版本高亮该版本', (tester) async {
+    testWidgets('点可用版本行选中该版本并高亮（不再弹版本选择器）', (tester) async {
       await pumpMulti(tester);
 
-      // 首次点开始播放 → 弹选择器（不播放）
-      await tester.ensureVisible(find.text('开始播放'));
-      await tester.pump();
-      await tester.tap(find.text('开始播放'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      expect(find.text('选择版本'), findsOneWidget);
-      expect(find.byKey(const Key('versionOption_src1')), findsOneWidget);
-      expect(find.byKey(const Key('versionOption_src2')), findsOneWidget);
+      // 点开始播放不再弹选择器，直接进播放器
+      expect(find.text('选择版本'), findsNothing);
 
-      // 选 src1 → 可用版本列表高亮 src1（默认高亮的是 src2，被覆盖）
-      await tester.tap(find.byKey(const Key('versionOption_src1')));
+      // 默认高亮偏好最高 src2；点 src1 行 → 高亮切到 src1
+      await tester.ensureVisible(find.byKey(const Key('mediaSource_src1')));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      expect(find.byKey(const Key('versionOption_src1')), findsNothing);
+      await tester.tap(find.byKey(const Key('mediaSource_src1')));
+      await tester.pump();
+
       expect(
         find.descendant(
           of: find.byKey(const Key('mediaSource_src1')),
@@ -999,7 +983,7 @@ void main() {
       );
     });
 
-    testWidgets('未选版本时字幕/音轨列表跟随偏好最高版本；两步切换后跟随所选',
+    testWidgets('未选版本时字幕/音轨列表跟随偏好最高版本；点选后跟随所选',
         (tester) async {
       await pumpMulti(tester);
 
@@ -1118,7 +1102,7 @@ void main() {
           reason: '新版本无 chi 音轨 → 清空');
     });
 
-    testWidgets('未选版本时底部媒体信息跟随偏好最高版本；两步切换后跟随所选（v1.1.177/v1.1.233）',
+    testWidgets('未选版本时底部媒体信息跟随偏好最高版本；点选后跟随所选（v1.1.177/v1.1.233）',
         (tester) async {
       final a = MediaSource(
         id: 'va',
@@ -1169,7 +1153,7 @@ void main() {
       expect(find.text('1.00 G'), findsWidgets, reason: '新版本大小（头部 + 媒体信息卡）');
     });
 
-    testWidgets('TV：播放按钮可聚焦；两步流程生效（首次选择不播放，选后再点进播放器）',
+    testWidgets('TV：可用版本栏行由 TvFocusable 包裹（焦点移入即选中），OK=用该版本直接播放',
         (tester) async {
       await _pumpDetailInRouter(
         tester,
@@ -1178,29 +1162,21 @@ void main() {
         emby: FakeEmbyService(item: multi),
       );
 
-      // 播放按钮被 TvFocusable 包裹（选择器关闭后焦点可回到它）
-      expect(
-        find.ancestor(
-          of: find.text('播放'),
-          matching: find.byType(TvFocusable),
-        ),
-        findsWidgets,
+      final row = find.byKey(const Key('mediaSource_src1'));
+      await tester.ensureVisible(row);
+      await tester.pump();
+      final focusable = tester.widget<TvFocusable>(
+        find.ancestor(of: row, matching: find.byType(TvFocusable)),
       );
+      expect(focusable.onFocusChange, isNotNull, reason: '焦点移入即选中该版本');
+      expect(focusable.onTap, isNotNull, reason: 'OK 用该版本直接播放');
 
-      await tester.tap(find.text('播放'));
+      // OK（点击）→ 用该版本直接进入播放器
+      await tester.tap(row);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      expect(find.text('选择版本'), findsOneWidget);
-      expect(find.textContaining('PLAYER:'), findsNothing, reason: '首次点击不进播放器');
-
-      await tester.tap(find.byKey(const Key('versionOption_src1')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-
-      await tester.tap(find.text('播放'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump(const Duration(milliseconds: 400));
       expect(find.textContaining('PLAYER:mv1'), findsOneWidget);
+      expect(find.textContaining('mediaSourceId=src1'), findsOneWidget);
     });
   });
 
@@ -2047,7 +2023,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
-    testWidgets('多版本集：默认跟随偏好最高版本；两步选版本 A 后播放带该集选中版本',
+    testWidgets('多版本集：默认跟随偏好最高版本；点可用版本栏切版本 A 后播放带该集选中版本',
         (tester) async {
       final container = await _pumpDetailInRouter(
         tester,
@@ -2087,16 +2063,14 @@ void main() {
       expect(find.byKey(const Key('trackOption_0')), findsNothing);
       await closeAudioList();
 
-      // 首次点开始播放 → 弹该集版本选择器（不播放）
-      await tapStartPlay(tester);
-      expect(find.byKey(const Key('versionOption_sv_a')), findsOneWidget);
-      expect(find.byKey(const Key('versionOption_sv_b')), findsOneWidget);
-      expect(find.textContaining('PLAYER:'), findsNothing);
-
-      // 选版本 A → 刷新详情，音轨列表切到版本 A 的轨（0/1，无 7/8）
-      await tester.tap(find.byKey(const Key('versionOption_sv_a')));
+      // 剧集「可用版本」栏在剧集横卡下方：点版本 A 行 → 刷新详情
+      expect(find.byKey(const Key('versionOption_sv_a')), findsNothing,
+          reason: '不再弹版本选择器');
+      final rowA = find.byKey(const Key('mediaSource_sv_a'));
+      await tester.ensureVisible(rowA);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(rowA);
+      await tester.pump();
 
       await showAudioList();
       expect(find.byKey(const Key('trackOption_0')), findsOneWidget,
@@ -2120,6 +2094,35 @@ void main() {
       final selection = container.read(pendingTrackSelectionProvider);
       expect(selection, isNotNull);
       expect(selection?.audioIndex, 0);
+    });
+
+    testWidgets('TV：剧集横卡 OK 直接播放该集（焦点移入=选中）', (tester) async {
+      await _pumpDetailInRouter(
+        tester,
+        item: seriesMv,
+        tv: true,
+        emby: FakeEmbyService(
+          item: seriesMv,
+          itemsByParent: {
+            'sv10': [epPlain],
+          },
+          seasons: seasonsMv,
+        ),
+      );
+
+      final card = find.byKey(const Key('episodeCard_pl1'));
+      await tester.ensureVisible(card);
+      await tester.pump();
+      final focusable = tester.widget<TvFocusable>(
+        find.ancestor(of: card, matching: find.byType(TvFocusable)).first,
+      );
+      expect(focusable.onFocusChange, isNotNull, reason: '焦点移入即选中该集');
+      expect(focusable.onTap, isNotNull, reason: 'OK 直接播放该集');
+
+      await tester.tap(card);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('PLAYER:pl1'), findsOneWidget);
     });
 
     testWidgets('无预选的集播放：清掉残留预选、路由不带 mediaSourceId', (tester) async {

@@ -16,6 +16,9 @@ class SeriesSections extends StatelessWidget {
   final int? selectedSeason;
   final ValueChanged<int> onSeasonSelected;
   final ValueChanged<MediaItem> onEpisodeSelect;
+
+  /// TV 模式按 OK 直接播放该集（非 TV 不触发，点击仍走 [onEpisodeSelect]）。
+  final ValueChanged<MediaItem>? onEpisodePlay;
   final bool tvMode;
 
   /// 倒序排列（横卡行与选集网格共用，见详情页排序切换）。
@@ -55,6 +58,7 @@ class SeriesSections extends StatelessWidget {
     required this.selectedSeason,
     required this.onSeasonSelected,
     required this.onEpisodeSelect,
+    this.onEpisodePlay,
     required this.onToggleSort,
     required this.onOpenEpisodePicker,
     this.sortDescending = false,
@@ -115,6 +119,7 @@ class SeriesSections extends StatelessWidget {
             rowKey: episodeRowKey,
             episodes: _seasonEpisodes,
             onEpisodeSelect: onEpisodeSelect,
+            onEpisodePlay: onEpisodePlay,
             tvMode: tvMode,
             highlightEpisodeId: highlightEpisodeId,
             controller: episodeRowController,
@@ -358,6 +363,7 @@ class _SeasonSelector extends StatelessWidget {
 class _SeasonEpisodeRow extends StatelessWidget {
   final List<MediaItem> episodes;
   final ValueChanged<MediaItem> onEpisodeSelect;
+  final ValueChanged<MediaItem>? onEpisodePlay;
   final bool tvMode;
   final String? highlightEpisodeId;
   final ScrollController? controller;
@@ -368,6 +374,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
   const _SeasonEpisodeRow({
     required this.episodes,
     required this.onEpisodeSelect,
+    this.onEpisodePlay,
     required this.tvMode,
     this.highlightEpisodeId,
     this.controller,
@@ -539,7 +546,14 @@ class _SeasonEpisodeRow extends StatelessWidget {
           child: tvMode
               ? TvFocusable(
                   radius: 12,
-                  onTap: () => onEpisodeSelect(ep),
+                  // 焦点移到该集即选中（版本栏/信息区随选中集更新）
+                  onFocusChange: (focused) {
+                    if (focused) onEpisodeSelect(ep);
+                  },
+                  // TV 按 OK 直接播放该集（未提供回调时退回仅选中）
+                  onTap: onEpisodePlay != null
+                      ? () => onEpisodePlay!(ep)
+                      : () => onEpisodeSelect(ep),
                   child: card,
                 )
               : GestureDetector(

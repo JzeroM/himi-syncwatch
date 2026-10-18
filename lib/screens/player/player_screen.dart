@@ -36,6 +36,7 @@ import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/track_migration.dart';
 import 'package:himi_syncwatch/services/server_route_service.dart';
 import 'package:uuid/uuid.dart';
 import 'package:agora_rtm/agora_rtm.dart';
@@ -81,6 +82,7 @@ import 'package:himi_syncwatch/screens/player/widgets/episode_select_panel.dart'
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/version_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
@@ -729,6 +731,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   final FocusNode _episodeButtonFocusNode =
       FocusNode(debugLabel: 'PlayerEpisodeButton');
 
+  /// 多版本切换按钮焦点（TV 打开版本面板后原路返回的落点）
+  final FocusNode _versionButtonFocusNode =
+      FocusNode(debugLabel: 'PlayerVersionButton');
+
   /// 选择器面板落焦节点：打开面板后显式 requestFocus 精确落到选中行
   /// （autofocus 在同级按钮已持焦时不抢占——这是"焦点进不了面板"的根因）
   final FocusNode _selectorFirstFocusNode =
@@ -886,6 +892,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 选集面板（右侧剧集卡片浮层；仅单人模式多集时可开）。
   bool _showEpisodeMenu = false;
+
+  /// 多版本切换面板（右侧浮层；仅非房间模式多版本时可开）。
+  bool _showVersionMenu = false;
+
+  /// 当前条目的全部可用版本（Emby MediaSources；加载流时刷新）。
+  List<MediaSource> _currentMediaSources = const [];
+
+  /// 当前生效版本 id（加载流时刷新；切换版本后更新）。
+  String? _activeMediaSourceId;
 
   // ── 弹幕（v1.1.134，自定义 danmu_api 源）──
 
@@ -1981,6 +1996,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _embySubtitleStreams = source.subtitleStreams;
             _embyVideoStream = source.videoStream;
             _embyDefaultAudioIndex = source.defaultAudioStreamIndex;
+            // 多版本切换数据源：全部版本 + 当前生效版本
+            _currentMediaSources = details.mediaSources;
+            _activeMediaSourceId = source.id.isEmpty ? null : source.id;
           });
           // iOS TrueHD 无声规避：Emby 元数据已知默认音轨编码，load 前
           // 预写滤镜，不必等 mediaInfo 就绪后的诊断回调（首个缓冲段无声）
@@ -4970,6 +4988,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showVersionMenu = false;
     });
   }
 
@@ -4995,6 +5014,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showVersionMenu = false;
     });
     _restoreSelectorOpenerFocus(opener, force: true);
   }
@@ -5024,6 +5044,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showVersionMenu = false;
     });
     // 焦点正在面板行上（如 Back 关闭）：原路返回来源按钮，防悬空
     _restoreSelectorOpenerFocus(opener);
@@ -5092,6 +5113,74 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
       // 切集后重广播 roomInfo，确保观众字幕/音轨菜单随新集刷新
       unawaited(_broadcastRoomInfo());
+    }
+
+    _rebuildGroups();
+  }
+
+  /// 播放中切换当前条目的媒体版本（仅非房间模式）：
+  /// 记录当前进度与字幕/音轨选择 → 更新当前集版本 → 重载流并从原进度续播
+  /// → 新版本轨按语言迁移后重新应用；暂停态切换后仍保持暂停。
+  Future<void> _switchMediaSource(MediaSource source) async {
+    if (widget.roomCode != null) return;
+    final index = _currentEpisodeIndex;
+    if (index < 0 || index >= _episodes.length) return;
+    if (source.id == _activeMediaSourceId) return;
+
+    // 切换前快照：进度 + 当前轨（供语言迁移）+ 播放态
+    final posMs = _positionMs;
+    final wasPlaying = _player.state == AdapterPlaybackState.playing;
+    final oldAudio = List<MediaStream>.of(_embyAudioStreams);
+    final oldSubtitle = List<MediaStream>.of(_embySubtitleStreams);
+    final activeAudioPos = _player.activeAudioTracks.isNotEmpty
+        ? _player.activeAudioTracks.first
+        : -1;
+    final oldAudioIndex =
+        (activeAudioPos >= 0 && activeAudioPos < oldAudio.length)
+            ? oldAudio[activeAudioPos].index
+            : null;
+    final oldSubtitleIndex = _activeSubtitleIndex;
+
+    // 更新当前集版本并记录生效版本
+    setState(() {
+      _episodes[index] = _episodes[index].copyWith(mediaSourceId: source.id);
+      _activeMediaSourceId = source.id;
+    });
+
+    final requestId = ++_playRequestId;
+    await _loadEpisodeStream(index, startMs: posMs);
+    if (requestId != _playRequestId || !mounted) return;
+
+    // 轨道语言迁移：新版本里找同语言轨，找到才应用
+    final migrated = migrateTrackSelection(
+      TrackSelection(
+        audioIndex: oldAudioIndex,
+        subtitleIndex: oldSubtitleIndex,
+      ),
+      oldAudio: oldAudio,
+      newAudio: _embyAudioStreams,
+      oldSubtitle: oldSubtitle,
+      newSubtitle: _embySubtitleStreams,
+    );
+    if (migrated != null) {
+      final audioPos =
+          _embyAudioStreams.indexWhere((s) => s.index == migrated.audioIndex);
+      if (migrated.audioIndex != null && audioPos >= 0) {
+        _selectEmbyAudio(audioPos);
+      }
+      final subIndex = migrated.subtitleIndex;
+      if (subIndex != null && subIndex >= 0) {
+        final subPos =
+            _embySubtitleStreams.indexWhere((s) => s.index == subIndex);
+        if (subPos >= 0) _selectEmbySubtitle(subPos);
+      }
+    }
+
+    // 暂停态切换后保持暂停（_loadStream 内部无条件起播）
+    if (!wasPlaying && mounted) {
+      _player.state = AdapterPlaybackState.paused;
+      _syncPlayState();
+      setState(() {});
     }
 
     _rebuildGroups();
@@ -5494,6 +5583,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _audioButtonFocusNode.dispose();
     _speedButtonFocusNode.dispose();
     _episodeButtonFocusNode.dispose();
+    _versionButtonFocusNode.dispose();
     _selectorFirstFocusNode.dispose();
     _selectorPanelRootFocusNode.dispose();
     _subtitleStyleButtonFocusNode.dispose();
@@ -6086,7 +6176,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   _showSpeedMenu ||
                   _showSubtitleStyleMenu ||
                   _showEpisodeMenu ||
-                  _showEpisodeMenu))
+                  _showVersionMenu))
             Positioned(
               top: panelBox.top,
               bottom: panelBox.bottom,
@@ -6114,7 +6204,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               ? '选集'
                               : _showSubtitleStyleMenu
                                   ? '显示调节'
-                                  : '倍速',
+                                  : _showVersionMenu
+                                      ? '版本'
+                                      : '倍速',
                   child: _showSubtitleStyleMenu
                       ? _buildDisplayAdjustPanel()
                       : _showSubtitleMenu
@@ -6163,7 +6255,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                         _closeSelectorPanel();
                                       },
                                     )
-                                  : SpeedMenuPanel(
+                                  : _showVersionMenu
+                                      ? VersionMenuPanel(
+                                          sources: _currentMediaSources,
+                                          activeSourceId: _activeMediaSourceId,
+                                          focusNode: _selectorFirstFocusNode,
+                                          onSourceSelected: _switchMediaSource,
+                                          onClose: _closeSelectorPanel,
+                                        )
+                                      : SpeedMenuPanel(
                                           current: _speed,
                                           focusNode: _selectorFirstFocusNode,
                                           onSelected: _applySpeed,
@@ -6316,6 +6416,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showDecodeModeMenu = false;
       _showEpisodeMenu = false;
+      _showVersionMenu = false;
     });
     if (_showSubtitleStyleMenu) {
       _openSelectorPanel(_subtitleStyleButtonFocusNode);
@@ -6331,6 +6432,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showVersionMenu = false;
     });
     if (_showSpeedMenu) {
       _openSelectorPanel(_speedButtonFocusNode);
@@ -6346,9 +6448,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
+      _showVersionMenu = false;
     });
     if (_showEpisodeMenu) {
       _openSelectorPanel(_episodeButtonFocusNode);
+    }
+  }
+
+  /// 版本按钮（底栏弹幕右侧；仅非房间模式多版本时显示）：开关版本面板
+  /// （与字幕/音轨/倍速/显示调节/选集互斥）。
+  void _toggleVersionMenu() {
+    if (_switchingEngine) return;
+    setState(() {
+      _showVersionMenu = !_showVersionMenu;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
+    });
+    if (_showVersionMenu) {
+      _openSelectorPanel(_versionButtonFocusNode);
     }
   }
 
@@ -6460,6 +6580,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showVersionMenu = false;
       _danmakuOn = !_danmakuOn;
     });
     if (_danmakuOn) {
@@ -6802,6 +6923,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
+      _showVersionMenu = false;
     });
   }
 
@@ -7404,6 +7526,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ),
                   const SizedBox(width: 20),
 
+                  // 多版本切换（弹幕之后；仅非房间模式且有多版本时显示）
+                  if (widget.roomCode == null &&
+                      _currentMediaSources.length > 1) ...[
+                    _buildControlButton(
+                      icon: Icons.high_quality,
+                      focusNode: _versionButtonFocusNode,
+                      onTap: _toggleVersionMenu,
+                      badge: '${_currentMediaSources.length}',
+                    ),
+                    const SizedBox(width: 20),
+                  ],
+
                   // 显示调节（TV：从顶栏移入底栏，位于弹幕与字幕之间）
                   if (PlayerScreen.showBottomDisplayAdjustButton(
                       tvMode: tvMode)) ...[
@@ -7426,6 +7560,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _showSpeedMenu = false;
                         _showSubtitleStyleMenu = false;
                         _showEpisodeMenu = false;
+                        _showVersionMenu = false;
                       });
                       if (_showSubtitleMenu) {
                         _openSelectorPanel(_subtitleButtonFocusNode);
@@ -7448,6 +7583,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _showSpeedMenu = false;
                         _showSubtitleStyleMenu = false;
                         _showEpisodeMenu = false;
+                        _showVersionMenu = false;
                       });
                       if (_showAudioMenu) {
                         _openSelectorPanel(_audioButtonFocusNode);

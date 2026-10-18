@@ -265,6 +265,64 @@ void main() {
     expect(outline.foregroundDecoration, isA<BoxDecoration>());
   });
 
+  // ---- 焦点变化回调（onFocusChange，v1.2.22） ----
+  group('焦点变化回调（onFocusChange）', () {
+    final events = <String>[];
+
+    Widget host(AppSettings initial) {
+      final container = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith((ref) => FakeSettingsNotifier(initial)),
+        ],
+      );
+      addTearDown(container.dispose);
+      return UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TvFocusable(
+                    onTap: () {},
+                    autofocus: true,
+                    onFocusChange: (f) => events.add('A:${f ? 'gain' : 'lost'}'),
+                    child: const SizedBox(width: 120, height: 60, child: Text('A')),
+                  ),
+                  TvFocusable(
+                    onTap: () {},
+                    onFocusChange: (f) => events.add('B:${f ? 'gain' : 'lost'}'),
+                    child: const SizedBox(width: 120, height: 60, child: Text('B')),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    setUp(events.clear);
+
+    testWidgets('TV：获得/失去焦点触发 onFocusChange', (tester) async {
+      await tester.pumpWidget(host(const AppSettings(tvMode: true)));
+      await tester.pump();
+      expect(events, contains('A:gain'));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(events, contains('A:lost'));
+      expect(events, contains('B:gain'));
+    });
+
+    testWidgets('非 TV：透传分支不触发 onFocusChange', (tester) async {
+      await tester.pumpWidget(host(const AppSettings(tvMode: false)));
+      await tester.pump();
+      expect(events, isEmpty);
+    });
+  });
+
   // ---- 长按（触屏长按 / TV 长按 OK） ----
   group('长按', () {
     int taps = 0;

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
-import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
+import 'package:himi_syncwatch/services/track_migration.dart';
 
 MediaStream audio(int idx, String lang) =>
     MediaStream(type: 'Audio', codec: 'aac', language: lang, index: idx);

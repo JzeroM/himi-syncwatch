@@ -23,4 +23,15 @@ class EpisodeInfo {
   });
 
   bool get isMovie => season == 0 && number == 0 && seriesName.isEmpty;
+
+  EpisodeInfo copyWith({String? mediaSourceId}) => EpisodeInfo(
+        id: id,
+        name: name,
+        season: season,
+        number: number,
+        poster: poster,
+        seriesName: seriesName,
+        mediaSourceId: mediaSourceId ?? this.mediaSourceId,
+        serverId: serverId,
+      );
 }
