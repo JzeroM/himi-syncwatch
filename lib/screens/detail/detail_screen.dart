@@ -2121,13 +2121,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     watchedIds: _watchedEpisodeIds,
                     onToggleWatched: _toggleEpisodeWatched,
                     tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
+                    // 剧集「可用版本」栏插在剧集横卡下方、播出季上方
+                    // （随选中集切换数据源）
+                    versionBar: (showSeriesVersions && targetEp != null)
+                        ? _buildMediaSources(item, episode: targetEp)
+                        : null,
                   ),
-                ],
-                // 剧集「可用版本」栏位于剧集横卡下方（随选中集切换数据源）
-                if (showSeriesVersions && targetEp != null) ...[
-                  const SizedBox(height: 16),
-                  _buildMediaSources(item, episode: targetEp),
-                  const SizedBox(height: 20),
                 ],
                 // 相似推荐：仅 TV 保留在正文（非 TV 移入底部媒体信息区块顶部）
                 if (tv && _similarItems.isNotEmpty) ...[

@@ -51,6 +51,10 @@ class SeriesSections extends StatelessWidget {
   /// 点击某集对勾（标记/取消已观看）；null = 不显示对勾。
   final ValueChanged<String>? onToggleWatched;
 
+  /// 「可用版本」栏：插在剧集横卡下方、播出季上方（详情页构建后注入，
+  /// 无多版本时传 null 不占位）。
+  final Widget? versionBar;
+
   const SeriesSections({
     super.key,
     required this.seasons,
@@ -70,6 +74,7 @@ class SeriesSections extends StatelessWidget {
     this.onToggleFavorite,
     this.watchedIds = const {},
     this.onToggleWatched,
+    this.versionBar,
   });
 
   /// 横卡水平步长：卡宽 240 + 右侧间距 12。
@@ -129,6 +134,10 @@ class SeriesSections extends StatelessWidget {
             onToggleWatched: onToggleWatched,
           ),
         ),
+        if (versionBar != null) ...[
+          const SizedBox(height: 16),
+          versionBar!,
+        ],
         const SizedBox(height: 20),
         const Text(
           '播出季',

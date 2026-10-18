@@ -2067,6 +2067,19 @@ void main() {
       expect(find.byKey(const Key('versionOption_sv_a')), findsNothing,
           reason: '不再弹版本选择器');
       final rowA = find.byKey(const Key('mediaSource_sv_a'));
+      // 位置：剧集横卡与「播出季」之间
+      final versionTop = tester.getTopLeft(rowA).dy;
+      expect(
+        versionTop,
+        greaterThan(
+            tester.getTopLeft(find.byKey(const Key('episodeCard_mv1'))).dy),
+        reason: '可用版本栏在剧集横卡下方',
+      );
+      expect(
+        versionTop,
+        lessThan(tester.getTopLeft(find.text('播出季')).dy),
+        reason: '可用版本栏在播出季上方',
+      );
       await tester.ensureVisible(rowA);
       await tester.pump();
       await tester.tap(rowA);
