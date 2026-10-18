@@ -15,6 +15,25 @@ class AppSettings {
     return value < min ? min : (value > max ? max : value);
   }
 
+  // ── MDK 网络流缓冲（setBufferRange / demux.buffer.ranges，下次起播生效）──
+  /// 最小缓冲（setBufferRange min，ms）：队列排空进入 Buffering 后需再
+  /// 攒够该时长才恢复 → 越大越不易"一顿一顿"、起播/恢复越慢。
+  static const mdkBufferMinMsLower = 100;
+  static const mdkBufferMinMsUpper = 8000;
+  static const mdkBufferMinMsDefault = 1000;
+  /// 最大缓冲（setBufferRange max，ms）：缓冲上限，`0` = 无限；越大越扛
+  /// 网络抖动（官方称不影响延迟），代价是内存占用。
+  static const mdkBufferMaxMsLower = 0;
+  static const mdkBufferMaxMsUpper = 60000;
+  static const mdkBufferMaxMsDefault = 4000;
+  /// 段缓存区间数（demux.buffer.ranges）可选档位，`0` = 关闭。
+  static const demuxCacheRangeOptions = <int>[0, 2, 4, 8, 16, 32];
+  static const demuxCacheRangesDefault = 8;
+
+  /// 归一缓冲上限：`max != 0` 且 `max < min` 时抬到 min（0 = 无限不处理）。
+  static int normalizeBufferMax({required int minMs, required int maxMs}) =>
+      (maxMs != 0 && maxMs < minMs) ? minMs : maxMs;
+
   final String decodeMode; // 'auto', 'hw', 'sw'
   final bool showSyncDebug;
 
@@ -27,6 +46,16 @@ class AppSettings {
 
   /// cache-size：MB，0 = 关闭缓存。
   final double mkCacheSize;
+
+  // ── MDK 引擎专属（网络流缓冲，下次起播生效）──
+  /// setBufferRange 的 min（ms，默认 1000）：网络流抗抖动垫。
+  final int mdkBufferMinMs;
+
+  /// setBufferRange 的 max（ms，默认 4000，0 = 无限）：缓冲上限。
+  final int mdkBufferMaxMs;
+
+  /// demux.buffer.ranges（默认 8，0 = 关闭）：demuxer 段缓存区间数。
+  final int mdkDemuxCacheRanges;
 
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
@@ -232,6 +261,9 @@ class AppSettings {
     this.mkHwdec = 'auto-safe',
     this.mkToneMapping = 'auto',
     this.mkCacheSize = 150,
+    this.mdkBufferMinMs = mdkBufferMinMsDefault,
+    this.mdkBufferMaxMs = mdkBufferMaxMsDefault,
+    this.mdkDemuxCacheRanges = demuxCacheRangesDefault,
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
     this.playbackSpeed = 1.0,
@@ -291,6 +323,9 @@ class AppSettings {
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
+    int? mdkBufferMinMs,
+    int? mdkBufferMaxMs,
+    int? mdkDemuxCacheRanges,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -343,6 +378,9 @@ class AppSettings {
       mkHwdec: mkHwdec ?? this.mkHwdec,
       mkToneMapping: mkToneMapping ?? this.mkToneMapping,
       mkCacheSize: mkCacheSize ?? this.mkCacheSize,
+      mdkBufferMinMs: mdkBufferMinMs ?? this.mdkBufferMinMs,
+      mdkBufferMaxMs: mdkBufferMaxMs ?? this.mdkBufferMaxMs,
+      mdkDemuxCacheRanges: mdkDemuxCacheRanges ?? this.mdkDemuxCacheRanges,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
@@ -418,6 +456,9 @@ class AppSettings {
         'mkHwdec': mkHwdec,
         'mkToneMapping': mkToneMapping,
         'mkCacheSize': mkCacheSize,
+        'mdkBufferMinMs': mdkBufferMinMs,
+        'mdkBufferMaxMs': mdkBufferMaxMs,
+        'mdkDemuxCacheRanges': mdkDemuxCacheRanges,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
         'playbackSpeed': playbackSpeed,
@@ -482,6 +523,21 @@ class AppSettings {
     } else {
       mode = 'auto';
     }
+    final bufferMin = _clampInt(
+      json['mdkBufferMinMs'],
+      mdkBufferMinMsDefault,
+      mdkBufferMinMsLower,
+      mdkBufferMinMsUpper,
+    );
+    final bufferMax = normalizeBufferMax(
+      minMs: bufferMin,
+      maxMs: _clampInt(
+        json['mdkBufferMaxMs'],
+        mdkBufferMaxMsDefault,
+        mdkBufferMaxMsLower,
+        mdkBufferMaxMsUpper,
+      ),
+    );
     final rawRenderer = json['audioRenderer'] as String?;
     final rendererUserSet = json['audioRendererUserSet'] as bool? ?? false;
     // 旧版默认值迁移：存盘值为 'AudioTrack' 且用户从未手动设置过
@@ -501,6 +557,14 @@ class AppSettings {
               ? json['mkToneMapping'] as String
               : 'auto',
       mkCacheSize: _clampDouble(json['mkCacheSize'], 150, 0, 500),
+      mdkBufferMinMs: bufferMin,
+      mdkBufferMaxMs: bufferMax,
+      mdkDemuxCacheRanges: _clampInt(
+        json['mdkDemuxCacheRanges'],
+        demuxCacheRangesDefault,
+        0,
+        32,
+      ),
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,

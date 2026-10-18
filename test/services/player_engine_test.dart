@@ -2,6 +2,7 @@ import 'package:erika_flutter/erika_flutter.dart' show ErikaOutputMode;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fvp/mdk.dart' as mdk;
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
@@ -192,8 +193,25 @@ void main() {
       expect(props['avformat.fpsprobesize'], '0');
     });
 
-    test('起播最小缓冲 300ms（消除开局欠载卡顿）', () {
-      expect(MdkPlayerAdapter.lowLatencyBufferMinMs, 300);
+    test('段缓存属性键/值（v1.2.29 起由设置控制）', () {
+      expect(MdkPlayerAdapter.demuxBufferRangesKey, 'demux.buffer.ranges');
+      expect(MdkPlayerAdapter.demuxBufferRangesValue(0), '0'); // 关闭
+      expect(MdkPlayerAdapter.demuxBufferRangesValue(8), '8');
+    });
+  });
+
+  group('AppSettings.normalizeBufferMax（缓冲上限归一）', () {
+    test('max>=min 原样返回', () {
+      expect(AppSettings.normalizeBufferMax(minMs: 1000, maxMs: 4000), 4000);
+      expect(AppSettings.normalizeBufferMax(minMs: 4000, maxMs: 4000), 4000);
+    });
+
+    test('max<min 抬到 min', () {
+      expect(AppSettings.normalizeBufferMax(minMs: 3000, maxMs: 1000), 3000);
+    });
+
+    test('max==0（无限）不处理', () {
+      expect(AppSettings.normalizeBufferMax(minMs: 3000, maxMs: 0), 0);
     });
   });
 }

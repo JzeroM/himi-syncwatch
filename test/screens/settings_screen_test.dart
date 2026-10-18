@@ -426,6 +426,52 @@ void main() {
     expect(container.read(settingsProvider).audioRenderer, 'auto');
   });
 
+  testWidgets('MDK：网络流缓冲默认 1000/4000ms，拖动最小缓冲写入设置',
+      (tester) async {
+    final container = await _pumpMdkSettings(tester);
+    await tester.scrollUntilVisible(
+      find.text('最小缓冲'),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).mdkBufferMinMs, 1000);
+    expect(container.read(settingsProvider).mdkBufferMaxMs, 4000);
+
+    final row = find.ancestor(
+      of: find.text('最小缓冲'),
+      matching: find.byType(ListTile),
+    );
+    final slider = find.descendant(of: row, matching: find.byType(Slider));
+    await tester.drag(slider, const Offset(200, 0));
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).mdkBufferMinMs, greaterThan(1000));
+  });
+
+  testWidgets('MDK：段缓存默认 8 段，可切到关闭', (tester) async {
+    final container = await _pumpMdkSettings(tester);
+    await tester.scrollUntilVisible(
+      find.text('段缓存'),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).mdkDemuxCacheRanges, 8);
+
+    final row = find.ancestor(
+      of: find.text('段缓存'),
+      matching: find.byType(ListTile),
+    );
+    await tester.tap(
+      find.descendant(of: row, matching: find.byType(DropdownButton<String>)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('关闭').last);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).mdkDemuxCacheRanges, 0);
+  });
+
   testWidgets('Windows 平台 MDK 引擎子页隐藏音频后端设置项', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {

@@ -128,8 +128,82 @@ class _EngineTabBody extends ConsumerWidget {
           onChanged: (v) => notifier.update(stereoDownmix: v),
         ),
       ),
+      const Divider(height: 1),
+      // ── 网络流缓冲（v1.2.29，setBufferRange / demux.buffer.ranges）──
+      // 弱网/高码率（如 4K remux）"一顿一顿"时调大；修改后下次起播生效。
+      settingsTvWrapRow(
+        tvMode: settings.tvMode,
+        onTap: () {},
+        child: ListTile(
+          title: const Text('最小缓冲'),
+          subtitle: Text(
+            '${settings.mdkBufferMinMs} ms：起播/欠载恢复前需攒够的缓冲。'
+            '越大越不易"一顿一顿"，起播越慢',
+          ),
+          trailing: SizedBox(
+            width: 200,
+            child: Slider(
+              value: settings.mdkBufferMinMs.toDouble(),
+              min: AppSettings.mdkBufferMinMsLower.toDouble(),
+              max: AppSettings.mdkBufferMinMsUpper.toDouble(),
+              divisions: (AppSettings.mdkBufferMinMsUpper -
+                      AppSettings.mdkBufferMinMsLower) ~/
+                  100,
+              label: '${settings.mdkBufferMinMs} ms',
+              onChanged: (v) => notifier.update(mdkBufferMinMs: v.round()),
+            ),
+          ),
+        ),
+      ),
+      const Divider(height: 1),
+      settingsTvWrapRow(
+        tvMode: settings.tvMode,
+        onTap: () {},
+        child: ListTile(
+          title: const Text('最大缓冲'),
+          subtitle: Text(
+            settings.mdkBufferMaxMs == 0
+                ? '无限：最大程度扛网络抖动（占内存最多）'
+                : '${settings.mdkBufferMaxMs} ms：缓冲上限，越大越扛网络抖动、'
+                    '不影响延迟（占内存）',
+          ),
+          trailing: SizedBox(
+            width: 200,
+            child: Slider(
+              value: settings.mdkBufferMaxMs.toDouble(),
+              min: AppSettings.mdkBufferMaxMsLower.toDouble(),
+              max: AppSettings.mdkBufferMaxMsUpper.toDouble(),
+              divisions: AppSettings.mdkBufferMaxMsUpper ~/ 1000,
+              label: settings.mdkBufferMaxMs == 0
+                  ? '无限'
+                  : '${settings.mdkBufferMaxMs} ms',
+              onChanged: (v) => notifier.update(mdkBufferMaxMs: v.round()),
+            ),
+          ),
+        ),
+      ),
+      const Divider(height: 1),
+      settingOptionTile(
+        context: context,
+        tvMode: settings.tvMode,
+        title: '段缓存',
+        subtitle: settings.mdkDemuxCacheRanges == 0
+            ? '关闭：不保留已下载数据（后退 seek 需重下）'
+            : '${settings.mdkDemuxCacheRanges} 段：网络流只下一次、加速后退 '
+                'seek（纯内存，占内存）',
+        labels: const {
+          '0': '关闭',
+          '2': '2 段',
+          '4': '4 段',
+          '8': '8 段',
+          '16': '16 段',
+          '32': '32 段',
+        },
+        value: '${settings.mdkDemuxCacheRanges}',
+        onSelected: (v) => notifier.update(mdkDemuxCacheRanges: int.parse(v)),
+      ),
+      const Divider(height: 1),
       if (defaultTargetPlatform == TargetPlatform.android) ...[
-        const Divider(height: 1),
         settingOptionTile(
           context: context,
           tvMode: settings.tvMode,
@@ -149,8 +223,8 @@ class _EngineTabBody extends ConsumerWidget {
           value: settings.videoOutput,
           onSelected: (v) => notifier.update(videoOutput: v),
         ),
+        const Divider(height: 1),
       ],
-      const Divider(height: 1),
     ];
   }
 

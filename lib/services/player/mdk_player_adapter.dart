@@ -37,19 +37,21 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   ///
   /// 注意：himi 绕过 video_player 插件层直用 mdk.Player FFI，故
   /// registerWith 的 lowLatency 选项无效，须在此层显式写入。
-  /// 配套 `lowLatencyBufferMinMs`：起播最小缓冲 300ms（原 0），给出起播
-  /// 缓冲垫消除首帧欠载；`demux.buffer.ranges=8` 段缓存保留（后退 seek）。
+  /// 缓冲垫（`setBufferRange`）与段缓存不在此处：自 v1.2.29 起改由用户
+  /// 设置 `mdkBufferMinMs` / `mdkBufferMaxMs` / `mdkDemuxCacheRanges`
+  /// 控制（见 player_screen._initPlayerProperties）。
   static const lowLatencyProperties = <String, String>{
     'avformat.fflags': '+fastseek',
     'avformat.analyzeduration': '100000',
     'avformat.fpsprobesize': '0',
   };
 
-  /// lowLatency 配套：setBufferRange 最小缓冲（ms）。
-  ///
-  /// 300ms：起播前先积累少量数据再起播，消除「最小数据即起播」导致的
-  /// 开局欠载卡顿（v1.2.4，方案 A）。
-  static const lowLatencyBufferMinMs = 300;
+  /// 段缓存属性键（`demux.buffer.ranges`，v1.2.29 起由设置 mdkDemuxCacheRanges
+  /// 控制，`0` = 关闭；`demux.buffer.protocols` 默认已含 http,https 无需设）。
+  static const demuxBufferRangesKey = 'demux.buffer.ranges';
+
+  /// 段缓存区间数的属性值（纯函数，便于单测；`0` = 关闭）。
+  static String demuxBufferRangesValue(int ranges) => ranges.toString();
 
   /// 诊断面板 / SurfaceView 直接访问底层 mdk.Player（仅 mdk 档）。
   mdk.Player get raw => _player;

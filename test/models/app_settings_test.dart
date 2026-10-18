@@ -269,6 +269,55 @@ void main() {
       expect(settings.deepDiagnostics, isTrue);
     });
 
+    test('MDK 缓冲/段缓存默认值（v1.2.29）', () {
+      const s = AppSettings();
+      expect(s.mdkBufferMinMs, 1000);
+      expect(s.mdkBufferMaxMs, 4000);
+      expect(s.mdkDemuxCacheRanges, 8);
+      final parsed = AppSettings.fromJson(const {});
+      expect(parsed.mdkBufferMinMs, 1000);
+      expect(parsed.mdkBufferMaxMs, 4000);
+      expect(parsed.mdkDemuxCacheRanges, 8);
+    });
+
+    test('MDK 缓冲/段缓存 toJson/fromJson 往返', () {
+      final json = const AppSettings()
+          .copyWith(
+            mdkBufferMinMs: 3000,
+            mdkBufferMaxMs: 16000,
+            mdkDemuxCacheRanges: 32,
+          )
+          .toJson();
+      final s = AppSettings.fromJson(json);
+      expect(s.mdkBufferMinMs, 3000);
+      expect(s.mdkBufferMaxMs, 16000);
+      expect(s.mdkDemuxCacheRanges, 32);
+    });
+
+    test('MDK 缓冲/段缓存越界夹紧', () {
+      final s = AppSettings.fromJson(const {
+        'mdkBufferMinMs': 999999,
+        'mdkBufferMaxMs': 999999,
+        'mdkDemuxCacheRanges': 9999,
+      });
+      expect(s.mdkBufferMinMs, AppSettings.mdkBufferMinMsUpper);
+      expect(s.mdkBufferMaxMs, AppSettings.mdkBufferMaxMsUpper);
+      expect(s.mdkDemuxCacheRanges, 32);
+    });
+
+    test('max<min 在 fromJson 归一为 min；max==0（无限）保留', () {
+      expect(
+        AppSettings.fromJson(const {'mdkBufferMinMs': 3000, 'mdkBufferMaxMs': 1000})
+            .mdkBufferMaxMs,
+        3000,
+      );
+      expect(
+        AppSettings.fromJson(const {'mdkBufferMinMs': 3000, 'mdkBufferMaxMs': 0})
+            .mdkBufferMaxMs,
+        0,
+      );
+    });
+
     test('deepDiagnostics 缺省为关闭', () {
       expect(const AppSettings().deepDiagnostics, isFalse);
       expect(AppSettings.fromJson(const {}).deepDiagnostics, isFalse);

@@ -1931,15 +1931,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     MdkPlayerAdapter.lowLatencyProperties
         .forEach(_player.setProperty);
 
-    // mdk 缓冲/包缓存（网络流抗抖动）：
-    // - buffer：起播最小缓冲 300ms（v1.2.4，原 0）——先积累少量数据再起播，
-    //   消除开局欠载卡顿；max 保持 mdk 默认 4s 不动（避免高码率 4K 大缓冲
-    //   的内存压力）；
-    // - demux.buffer.ranges：为 http(s) 开启 8 段包缓存（默认关闭），
-    //   后退 seek 命中已缓存区间时无需重下。
-    // 依据 fvp #98（demux.buffer.ranges=8）。
-    _player.setBufferRange(min: MdkPlayerAdapter.lowLatencyBufferMinMs);
-    _player.setProperty('demux.buffer.ranges', '8');
+    // mdk 缓冲/包缓存（网络流抗抖动，v1.2.29 起改由设置控制，下次起播生效）：
+    // - buffer（setBufferRange）：min = 队列排空后需再攒够的时长（越大越
+    //   不易"一顿一顿"、起播越慢）；max = 缓冲上限（越大越扛网络抖动，
+    //   官方称不影响延迟，代价是内存；0 = 无限）。默认 1000/4000（mdk 原生
+    //   默认；旧版曾硬编码 min=300）。归一 max>=min 见 AppSettings.
+    //   normalizeBufferMax。
+    // - demux.buffer.ranges：demuxer 段缓存区间数（默认 8，0 = 关闭），
+    //   网络流"只下一次"、加速后退 seek（纯内存 LRU）。依据 fvp #98 /
+    //   mdk wiki Player-APIs；`demux.buffer.protocols` 默认已含 http,https。
+    final mdkBuffer = AppSettings.normalizeBufferMax(
+      minMs: settings.mdkBufferMinMs,
+      maxMs: settings.mdkBufferMaxMs,
+    );
+    _player.setBufferRange(min: settings.mdkBufferMinMs, max: mdkBuffer);
+    _player.setProperty(
+      MdkPlayerAdapter.demuxBufferRangesKey,
+      MdkPlayerAdapter.demuxBufferRangesValue(settings.mdkDemuxCacheRanges),
+    );
 
     // FFmpeg 解码线程数：0 = 逻辑核心数 + 1（仅软解回退时生效，硬解忽略）
     _player.setProperty('avcodec.threads', '0');
