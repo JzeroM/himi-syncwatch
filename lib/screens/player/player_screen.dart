@@ -95,6 +95,7 @@ import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/seek_time_labels.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_style_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/video_gesture_layer.dart';
+import 'package:himi_syncwatch/screens/player/widgets/letterbox_bars_cover.dart';
 import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
 import 'package:himi_syncwatch/services/subtitle_delay_file.dart';
 import 'package:himi_syncwatch/services/subtitle_style_store.dart';
@@ -6125,6 +6126,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 _speedBoostGestureEnabled ? _onSpeedBoostEnd : null,
             child: videoContent,
           ),
+
+          // 黑边遮罩（视频层之上、控件之下）：SurfaceView 档接管视频层后，
+          // 视频矩形之外的区域引擎不再重绘，会裸露"进入播放器那一刻"含
+          // 控件的死帧（隐藏后残留）；整屏铺满 + 视频矩形透明把死帧盖死
+          // （见 LetterboxBarsCover）。仅 SurfaceView 档需要。
+          if (_usesSurfaceView &&
+              !_surfaceDetached &&
+              _videoNativeSize != null &&
+              _videoNativeSize!.width > 0 &&
+              _videoNativeSize!.height > 0)
+            Positioned.fill(
+              child: LetterboxBarsCover(
+                aspect: _videoNativeSize!.width / _videoNativeSize!.height,
+              ),
+            ),
 
           // 加载指示器（渲染在控件层之下：转圈期间顶栏/底栏仍可点返回）
           if (_duration.inMilliseconds == 0 && _isPlayerReady)
