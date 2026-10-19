@@ -19,8 +19,17 @@ class DanmakuCache<T> {
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
-  /// 当前有效条目数（过期项读取时顺带清除，测试可断言）。
-  int get length => _map.length;
+  /// 当前有效条目数（读取时顺带清除过期项，测试可断言）。
+  int get length {
+    _pruneExpired();
+    return _map.length;
+  }
+
+  /// 当前有效值（读取前顺带清理过期项）。
+  Iterable<T> get values {
+    _pruneExpired();
+    return _map.values.map((entry) => entry.value);
+  }
 
   /// 取缓存；不存在/已过期返回 null。
   T? get(String key) {
@@ -35,6 +44,7 @@ class DanmakuCache<T> {
 
   /// 写缓存；超容量淘汰最旧插入项。
   void put(String key, T value) {
+    _pruneExpired();
     _map.remove(key);
     while (_map.length >= maxEntries) {
       _map.remove(_map.keys.first);
@@ -43,6 +53,11 @@ class DanmakuCache<T> {
   }
 
   void clear() => _map.clear();
+
+  void _pruneExpired() {
+    final now = _now();
+    _map.removeWhere((_, entry) => now.difference(entry.at) > ttl);
+  }
 }
 
 class _Entry<T> {

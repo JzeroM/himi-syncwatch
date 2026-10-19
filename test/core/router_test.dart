@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/providers/cache_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
@@ -23,6 +24,7 @@ import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
+import '../helpers/cache_fakes.dart';
 import '../helpers/test_fakes.dart';
 
 EmbyServerConfig _serverConfig(String id, {String? name}) {
@@ -52,6 +54,9 @@ Future<GoRouter> _pumpApp(
     ProviderScope(
       overrides: [
         settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
+        appCacheServiceProvider.overrideWithValue(
+          FakeAppCacheService(cacheSnapshot()),
+        ),
         embyAuthServiceProvider
             .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
         embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
@@ -218,6 +223,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('generalSettingsPage')), findsOneWidget);
+  });
+
+  testWidgets('设置子路由：/settings/general/cache 进缓存管理页', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/settings/general/cache');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('cacheSettingsPage')), findsOneWidget);
   });
 
   testWidgets('设置子路由：/settings/experimental 进实验性子页', (tester) async {

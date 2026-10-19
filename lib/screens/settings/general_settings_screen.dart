@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
@@ -47,6 +48,23 @@ class GeneralSettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
         ],
+        settingsTvWrapRow(
+          tvMode: settings.tvMode,
+          onTap: () => context.push('/settings/general/cache'),
+          child: ListTile(
+            key: const ValueKey('cacheSettingsEntry'),
+            leading: const Icon(Icons.cleaning_services_outlined),
+            title: const Text('缓存管理'),
+            subtitle: const Text('清理图片、弹幕、临时文件与诊断日志'),
+            trailing: const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Colors.white54,
+            ),
+            onTap: () => context.push('/settings/general/cache'),
+          ),
+        ),
+        const Divider(height: 1),
         settingsTvWrapRow(
           tvMode: settings.tvMode,
           onTap: () => LogService().shareLogs(),

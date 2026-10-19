@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_cache.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_caches.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_comment.dart';
 
 void main() {
   group('DanmakuCache', () {
@@ -49,6 +51,43 @@ void main() {
       cache.clear();
       expect(cache.length, 0);
       expect(cache.get('a'), isNull);
+    });
+
+    test('length 会清理未读取的过期项', () {
+      var now = DateTime(2026, 1, 1, 12);
+      final cache = DanmakuCache<int>(
+        ttl: const Duration(hours: 6),
+        now: () => now,
+      );
+      cache.put('a', 1);
+      now = now.add(const Duration(hours: 7));
+      expect(cache.length, 0);
+    });
+  });
+
+  group('DanmakuCaches', () {
+    tearDown(DanmakuCaches.clear);
+
+    test('按实际弹幕条数统计并统一清空', () {
+      DanmakuCaches.episode.put('a', 1);
+      DanmakuCaches.comments.put('b', const [
+        DanmakuComment(
+          time: 1,
+          mode: DanmakuMode.scroll,
+          color: 0xFFFFFFFF,
+          text: 'a',
+        ),
+        DanmakuComment(
+          time: 2,
+          mode: DanmakuMode.top,
+          color: 0xFFFFFFFF,
+          text: 'b',
+        ),
+      ]);
+      expect(DanmakuCaches.totalCount, 2);
+
+      DanmakuCaches.clear();
+      expect(DanmakuCaches.totalCount, 0);
     });
   });
 }

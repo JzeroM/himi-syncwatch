@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:fvp/mdk.dart' as mdk;
 import 'package:media_kit/media_kit.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:himi_syncwatch/core/app.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/device_profile_provider.dart';
@@ -16,10 +17,12 @@ import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/egl_fault_detector.dart';
 import 'package:himi_syncwatch/services/app_icon_service.dart';
+import 'package:himi_syncwatch/services/cache/himi_image_cache_manager.dart';
 import 'package:himi_syncwatch/services/fvp_options.dart';
 import 'package:himi_syncwatch/services/env_service.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/tv_detection_service.dart';
+import 'package:himi_syncwatch/services/update/update_package_cleaner.dart';
 import 'package:himi_windows_rtm/himi_windows_rtm.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:window_manager/window_manager.dart';
@@ -132,12 +135,23 @@ void _installErrorHooks() {
   };
 }
 
+Future<void> _cleanupInstalledUpdatePackages() async {
+  try {
+    final info = await PackageInfo.fromPlatform();
+    await UpdatePackageCleaner().cleanup(currentVersion: info.version);
+  } catch (e) {
+    LogService().log('Update', '更新包启动清理失败: $e');
+  }
+}
+
 Future<void> _bootstrap() async {
   if (Platform.isWindows &&
       Platform.environment.containsKey('HIMI_RTM_SMOKE')) {
     final smokeCode = await _runRtmSmoke();
     exit(smokeCode);
   }
+  HimiImageCacheManager.install();
+  unawaited(_cleanupInstalledUpdatePackages());
   // 桌面三端：窗口管理（播放器窗口全屏）依赖
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
     try {

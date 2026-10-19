@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/providers/cache_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/cache_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
@@ -16,6 +18,7 @@ import 'package:himi_syncwatch/screens/settings/about_settings_screen.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
+import '../helpers/cache_fakes.dart';
 import '../helpers/test_fakes.dart';
 
 /// 最小 GoRouter：仅含设置主页 + 四个分类子页（测试环境不需要完整路由表）。
@@ -43,6 +46,12 @@ GoRouter _testRouter() => GoRouter(
             GoRoute(
               path: 'general',
               builder: (context, state) => const GeneralSettingsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'cache',
+                  builder: (context, state) => const CacheSettingsScreen(),
+                ),
+              ],
             ),
             GoRoute(
               path: 'experimental',
@@ -67,6 +76,9 @@ Future<ProviderContainer> _pumpScreen(
   final container = ProviderContainer(
     overrides: [
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier(initial)),
+      appCacheServiceProvider.overrideWithValue(
+        FakeAppCacheService(cacheSnapshot()),
+      ),
     ],
   );
   addTearDown(container.dispose);
@@ -313,6 +325,21 @@ void main() {
     expect(find.text('TV 模式'), findsOneWidget);
     expect(find.text('同步到 TV'), findsNothing,
         reason: 'TV 是被推送方，无需此开关');
+  });
+
+  testWidgets('通用子页：缓存管理入口进入缓存页', (tester) async {
+    await _pumpScreen(tester, category: '通用');
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('cacheSettingsEntry')),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('cacheSettingsEntry')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('cacheSettingsPage')), findsOneWidget);
   });
 
   testWidgets('播放器子页：显示网速开关默认开，切换写入 settings', (tester) async {

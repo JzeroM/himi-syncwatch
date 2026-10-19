@@ -58,7 +58,7 @@ import 'package:himi_syncwatch/services/codec_mime_map.dart';
 import 'package:himi_syncwatch/services/dolby_vision_service.dart';
 import 'package:himi_syncwatch/services/rtm_service.dart';
 import 'package:himi_syncwatch/services/network_speed_meter.dart';
-import 'package:himi_syncwatch/services/danmaku/danmaku_cache.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_caches.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_candidate.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_comment.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_matcher.dart';
@@ -959,13 +959,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 底栏「弹幕」开关焦点（TV 跨组导航锚点：右组头）。
   final FocusNode _danmakuButtonFocusNode = FocusNode();
-
-  /// itemId → episodeId 进程内缓存（跨播放会话复用）。
-  static final DanmakuCache<int> _danmakuEpisodeCache = DanmakuCache();
-
-  /// episodeId → 弹幕列表进程内缓存。
-  static final DanmakuCache<List<DanmakuComment>> _danmakuCommentsCache =
-      DanmakuCache();
 
   /// 当前弹幕客户端（API 地址变化时重建）。
   DandanplayClient? _danmakuClient;
@@ -6772,11 +6765,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     for (final id in ids) {
       try {
         final key = id.toString();
-        final cached = _danmakuCommentsCache.get(key);
+        final cached = DanmakuCaches.comments.get(key);
         final comments = cached ?? await client.fetchComments(id);
         if (!mounted || seq != _danmakuLoadSeq) return null;
         if (comments.isNotEmpty) {
-          if (cached == null) _danmakuCommentsCache.put(key, comments);
+          if (cached == null) DanmakuCaches.comments.put(key, comments);
           return (id: id, comments: comments);
         }
       } catch (e) {
@@ -6831,7 +6824,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       ({int id, List<DanmakuComment> comments})? found;
 
       // 1) 复用上次成功的 episodeId（坏源已不复用：失败会继续找其它候选）
-      final cachedId = _danmakuEpisodeCache.get(cacheKey);
+      final cachedId = DanmakuCaches.episode.get(cacheKey);
       if (cachedId != null) {
         found = await _tryDanmakuCandidates(client, [cachedId], seq);
         if (!mounted || seq != _danmakuLoadSeq) return;
@@ -6878,7 +6871,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         );
       }
 
-      _danmakuEpisodeCache.put(cacheKey, found.id);
+      DanmakuCaches.episode.put(cacheKey, found.id);
       _cancelDanmakuRetry();
       setState(() {
         _danmakuComments = found!.comments;
