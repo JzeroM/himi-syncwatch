@@ -12,6 +12,7 @@ import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/about_settings_screen.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
@@ -46,6 +47,10 @@ GoRouter _testRouter() => GoRouter(
             GoRoute(
               path: 'experimental',
               builder: (context, state) => const ExperimentalSettingsScreen(),
+            ),
+            GoRoute(
+              path: 'about',
+              builder: (context, state) => const AboutSettingsScreen(),
             ),
           ],
         ),
@@ -136,9 +141,9 @@ void main() {
   Future<void> _scrollToGlass(WidgetTester tester) =>
       _scrollToText(tester, '液态玻璃');
 
-  testWidgets('设置主页展示四个分类入口', (tester) async {
+  testWidgets('设置主页展示五个分类入口', (tester) async {
     await _pumpScreen(tester);
-    for (final label in const ['外观', '播放器', '通用', '实验性']) {
+    for (final label in const ['外观', '播放器', '通用', '实验性', '关于']) {
       expect(find.text(label), findsOneWidget, reason: '$label 分类入口缺失');
     }
     expect(find.byKey(const ValueKey('settingsCategoryAppearance')),
@@ -148,6 +153,24 @@ void main() {
         find.byKey(const ValueKey('settingsCategoryGeneral')), findsOneWidget);
     expect(find.byKey(const ValueKey('settingsCategoryExperimental')),
         findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('settingsCategoryAbout')), findsOneWidget);
+  });
+
+  testWidgets('点关于入口进入关于页并展示版本信息', (tester) async {
+    await _pumpScreen(tester);
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.text('关于'), 200,
+        scrollable: scrollable);
+    await tester.drag(scrollable, const Offset(0, 120));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('关于'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AboutSettingsScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('aboutSettingsPage')), findsOneWidget);
+    expect(find.text('HIMI 私密同步观影'), findsOneWidget);
+    expect(find.text('检查更新'), findsOneWidget);
   });
 
   testWidgets('点分类入口进入对应子页', (tester) async {

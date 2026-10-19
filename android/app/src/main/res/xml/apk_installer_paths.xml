@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用内更新安装：APK 落盘在 getTemporaryDirectory()（= context.getCacheDir()）
+     的 updates/ 子目录，FileProvider 只暴露该目录。 -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

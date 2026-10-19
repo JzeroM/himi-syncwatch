@@ -21,6 +21,7 @@ class MainActivity : FlutterActivity() {
     private var ntChannel: MethodChannel? = null
     private var ndChannel: MethodChannel? = null
     private var dcChannel: MethodChannel? = null
+    private var aiChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -59,6 +60,13 @@ class MainActivity : FlutterActivity() {
             // 启动设备能力评估（显示 HDR / GL-EGL / Vulkan / HEVC HDR10）
             setMethodCallHandler(DeviceCapabilityPlugin(applicationContext))
         }
+        aiChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            ApkInstallerPlugin.CHANNEL
+        ).apply {
+            // 应用内更新：安装未知来源授权 + 调起 APK 安装器
+            setMethodCallHandler(ApkInstallerPlugin(applicationContext))
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -72,6 +80,8 @@ class MainActivity : FlutterActivity() {
         ndChannel = null
         dcChannel?.setMethodCallHandler(null)
         dcChannel = null
+        aiChannel?.setMethodCallHandler(null)
+        aiChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

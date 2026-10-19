@@ -74,6 +74,16 @@ class SettingsScreen extends ConsumerWidget {
             route: '/settings/experimental',
           ),
           const Divider(height: 1),
+          _category(
+            context,
+            tvMode: tvMode,
+            key: const ValueKey('settingsCategoryAbout'),
+            icon: Icons.info_outline,
+            title: '关于',
+            subtitle: '版本信息、检查更新',
+            route: '/settings/about',
+          ),
+          const Divider(height: 1),
         ],
       ),
     );

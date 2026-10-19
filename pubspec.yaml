@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.2.29+455
+version: 1.2.30+456
 
 environment:
   sdk: ^3.6.0
@@ -62,6 +62,10 @@ dependencies:
   wakelock_plus: ^1.2.8
   # 本地文件选择
   file_picker: ^8.1.7
+  # 应用版本读取（检测更新：Android/iOS/Windows 均可用）
+  package_info_plus: ^9.0.1
+  # MD5 校验（更新包完整性）
+  crypto: ^3.0.6
   # 工具
   intl: ^0.19.0
   uuid: ^4.5.1

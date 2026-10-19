@@ -57,6 +57,17 @@ class AppSettings {
   /// demux.buffer.ranges（默认 8，0 = 关闭）：demuxer 段缓存区间数。
   final int mdkDemuxCacheRanges;
 
+  // ── 检测更新（v1.2.30）──
+  /// 上次自动/手动检查更新的时间（ms since epoch，0 = 从未）。
+  final int lastUpdateCheckAt;
+
+  /// 用户选择「忽略此版本」的版本号（空串 = 未忽略）；只拦该版本。
+  final String skipUpdateVersion;
+
+  /// 新版本自动提醒开关（false = 弹层里选过「永不提醒」，
+  /// 连检查都不再发起；可在关于页重新打开，保留手动检查）。
+  final bool updatePromptEnabled;
+
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
 
@@ -264,6 +275,9 @@ class AppSettings {
     this.mdkBufferMinMs = mdkBufferMinMsDefault,
     this.mdkBufferMaxMs = mdkBufferMaxMsDefault,
     this.mdkDemuxCacheRanges = demuxCacheRangesDefault,
+    this.lastUpdateCheckAt = 0,
+    this.skipUpdateVersion = '',
+    this.updatePromptEnabled = true,
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
     this.playbackSpeed = 1.0,
@@ -326,6 +340,9 @@ class AppSettings {
     int? mdkBufferMinMs,
     int? mdkBufferMaxMs,
     int? mdkDemuxCacheRanges,
+    int? lastUpdateCheckAt,
+    String? skipUpdateVersion,
+    bool? updatePromptEnabled,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     double? playbackSpeed,
@@ -381,6 +398,9 @@ class AppSettings {
       mdkBufferMinMs: mdkBufferMinMs ?? this.mdkBufferMinMs,
       mdkBufferMaxMs: mdkBufferMaxMs ?? this.mdkBufferMaxMs,
       mdkDemuxCacheRanges: mdkDemuxCacheRanges ?? this.mdkDemuxCacheRanges,
+      lastUpdateCheckAt: lastUpdateCheckAt ?? this.lastUpdateCheckAt,
+      skipUpdateVersion: skipUpdateVersion ?? this.skipUpdateVersion,
+      updatePromptEnabled: updatePromptEnabled ?? this.updatePromptEnabled,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
@@ -459,6 +479,9 @@ class AppSettings {
         'mdkBufferMinMs': mdkBufferMinMs,
         'mdkBufferMaxMs': mdkBufferMaxMs,
         'mdkDemuxCacheRanges': mdkDemuxCacheRanges,
+        'lastUpdateCheckAt': lastUpdateCheckAt,
+        'skipUpdateVersion': skipUpdateVersion,
+        'updatePromptEnabled': updatePromptEnabled,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
         'playbackSpeed': playbackSpeed,
@@ -565,6 +588,10 @@ class AppSettings {
         0,
         32,
       ),
+      lastUpdateCheckAt:
+          _clampInt(json['lastUpdateCheckAt'], 0, 0, 1 << 62),
+      skipUpdateVersion: json['skipUpdateVersion'] as String? ?? '',
+      updatePromptEnabled: json['updatePromptEnabled'] as bool? ?? true,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,

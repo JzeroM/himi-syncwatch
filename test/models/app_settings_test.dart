@@ -318,6 +318,43 @@ void main() {
       );
     });
 
+    test('更新检查默认值（v1.2.30）', () {
+      const s = AppSettings();
+      expect(s.lastUpdateCheckAt, 0);
+      expect(s.skipUpdateVersion, '');
+      expect(s.updatePromptEnabled, isTrue);
+      final parsed = AppSettings.fromJson(const {});
+      expect(parsed.lastUpdateCheckAt, 0);
+      expect(parsed.skipUpdateVersion, '');
+      expect(parsed.updatePromptEnabled, isTrue);
+    });
+
+    test('更新检查 toJson/fromJson 往返', () {
+      final json = const AppSettings()
+          .copyWith(
+            lastUpdateCheckAt: 1700000000000,
+            skipUpdateVersion: '1.2.31',
+            updatePromptEnabled: false,
+          )
+          .toJson();
+      final s = AppSettings.fromJson(json);
+      expect(s.lastUpdateCheckAt, 1700000000000);
+      expect(s.skipUpdateVersion, '1.2.31');
+      expect(s.updatePromptEnabled, isFalse);
+    });
+
+    test('lastUpdateCheckAt 负数/超界夹紧到合法范围', () {
+      expect(
+        AppSettings.fromJson(const {'lastUpdateCheckAt': -5}).lastUpdateCheckAt,
+        0,
+      );
+      expect(
+        AppSettings.fromJson(const {'lastUpdateCheckAt': 9223372036854775807})
+            .lastUpdateCheckAt,
+        1 << 62,
+      );
+    });
+
     test('deepDiagnostics 缺省为关闭', () {
       expect(const AppSettings().deepDiagnostics, isFalse);
       expect(AppSettings.fromJson(const {}).deepDiagnostics, isFalse);

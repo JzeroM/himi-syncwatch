@@ -26,6 +26,7 @@ import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/room_menu_button.dart';
 import 'package:himi_syncwatch/widgets/server_title_dropdown.dart';
 import 'package:himi_syncwatch/widgets/stats_panel.dart';
+import 'package:himi_syncwatch/widgets/update/update_prompt.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key, this.qrScan});
@@ -81,8 +82,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _heroIndex = 0;
   final PageController _heroController = PageController();
 
+  /// 启动静默检查更新定时器（首屏渲染后触发，dispose 时取消）。
+  Timer? _updateCheckTimer;
+
   @override
   void dispose() {
+    _updateCheckTimer?.cancel();
     _heroController.dispose();
     super.dispose();
   }
@@ -91,6 +96,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _init();
+    // 检测更新（v1.2.30）：延迟 3s 避开首屏加载高峰；门槛（永不提醒 /
+    // 24h 节流 / 忽略此版本）与失败静默都在 checkAndPromptUpdate 内处理。
+    _updateCheckTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      unawaited(checkAndPromptUpdate(context, ref, manual: false));
+    });
   }
 
   Future<void> _init() async {
