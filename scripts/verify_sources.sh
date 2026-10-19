@@ -268,7 +268,8 @@ for name in sets:
         continue
     with open(os.path.join(d, 'Contents.json'), encoding='utf-8') as f:
         data = json.load(f)
-    for item in data.get('images', []):
+    images = data.get('images', [])
+    for item in images:
         fn = item.get('filename')
         if not fn:
             continue
@@ -277,6 +278,12 @@ for name in sets:
             missing.append(f'{name}/{fn}(缺失)')
         elif os.path.getsize(p) == 0:
             missing.append(f'{name}/{fn}(0字节)')
+    # iOS 26 的 Liquid Glass 图标堆栈由 1024 营销图标生成；备用集缺失会
+    # 导致 setAlternateIconName 失败（OSStatus -54）。
+    if name.endswith('.appiconset') and name != 'AppIcon.appiconset' and not any(
+            i.get('idiom') == 'ios-marketing' and i.get('size') == '1024x1024'
+            and i.get('filename') for i in images):
+        missing.append(f'{name}/缺少 1024x1024 营销图标')
 print('; '.join(missing))
 PYEOF
   ) || missing="(解析失败)"

@@ -37,46 +37,31 @@ const Map<String, int> androidDensities = {
   'xxxhdpi': 192,
 };
 
-/// appiconset 的 Contents.json 模板（%s 为图标名）。尺寸与旧散装文件一致。
-const String _appIconSetContents = '''{
-  "images" : [
-    {
-      "size" : "60x60",
-      "idiom" : "iphone",
-      "filename" : "%s@2x.png",
-      "scale" : "2x"
-    },
-    {
-      "size" : "60x60",
-      "idiom" : "iphone",
-      "filename" : "%s@3x.png",
-      "scale" : "3x"
-    },
-    {
-      "size" : "76x76",
-      "idiom" : "ipad",
-      "filename" : "%s-76.png",
-      "scale" : "1x"
-    },
-    {
-      "size" : "76x76",
-      "idiom" : "ipad",
-      "filename" : "%s-76@2x.png",
-      "scale" : "2x"
-    },
-    {
-      "size" : "83.5x83.5",
-      "idiom" : "ipad",
-      "filename" : "%s-83.5@2x.png",
-      "scale" : "2x"
-    }
-  ],
-  "info" : {
-    "version" : 1,
-    "author" : "xcode"
-  }
-}
-''';
+/// 备用 appiconset 的尺寸槽：与主 AppIcon 对齐（iPhone + iPad），并包含
+/// iOS 26 图标堆栈所需的 1024×1024 营销图标。iOS 26 从 1024 生成
+/// Liquid Glass 图标；备用集缺 1024 时 setAlternateIconName 可能报
+/// OSStatus -54（真机切换失败）。
+const List<({int px, String label, String idiom, String scale, String size})>
+    _iosIconSlots = [
+  (px: 40, label: '20@2x', idiom: 'iphone', scale: '2x', size: '20x20'),
+  (px: 60, label: '20@3x', idiom: 'iphone', scale: '3x', size: '20x20'),
+  (px: 29, label: '29@1x', idiom: 'iphone', scale: '1x', size: '29x29'),
+  (px: 58, label: '29@2x', idiom: 'iphone', scale: '2x', size: '29x29'),
+  (px: 87, label: '29@3x', idiom: 'iphone', scale: '3x', size: '29x29'),
+  (px: 40, label: '40@1x', idiom: 'iphone', scale: '1x', size: '40x40'),
+  (px: 80, label: '40@2x', idiom: 'iphone', scale: '2x', size: '40x40'),
+  (px: 120, label: '40@3x', idiom: 'iphone', scale: '3x', size: '40x40'),
+  (px: 57, label: '57@1x', idiom: 'iphone', scale: '1x', size: '57x57'),
+  (px: 114, label: '57@2x', idiom: 'iphone', scale: '2x', size: '57x57'),
+  (px: 120, label: '60@2x', idiom: 'iphone', scale: '2x', size: '60x60'),
+  (px: 180, label: '60@3x', idiom: 'iphone', scale: '3x', size: '60x60'),
+  (px: 72, label: '72@1x', idiom: 'ipad', scale: '1x', size: '72x72'),
+  (px: 144, label: '72@2x', idiom: 'ipad', scale: '2x', size: '72x72'),
+  (px: 76, label: '76@1x', idiom: 'ipad', scale: '1x', size: '76x76'),
+  (px: 152, label: '76@2x', idiom: 'ipad', scale: '2x', size: '76x76'),
+  (px: 167, label: '83.5@2x', idiom: 'ipad', scale: '2x', size: '83.5x83.5'),
+  (px: 1024, label: '1024', idiom: 'ios-marketing', scale: '1x', size: '1024x1024'),
+];
 
 /// 无 alpha 的 RGB PNG（iOS appiconset 要求不透明、且不得含 alpha 通道）。
 List<int> _encodeRgb(img.Image src) {
@@ -121,17 +106,33 @@ void main() {
     });
   }
 
-  // iOS 备用图标：Asset Catalog appiconset（iPhone + iPad），无 alpha
+  // iOS 备用图标：Asset Catalog appiconset（iPhone + iPad + 1024 营销），无 alpha
   for (final name in alternateIcons) {
     final src = sources[name]!;
     final dir = 'ios/Runner/Assets.xcassets/$name.appiconset';
-    _write('$dir/$name@2x.png', _encodeRgb(_resize(src, 120)));
-    _write('$dir/$name@3x.png', _encodeRgb(_resize(src, 180)));
-    _write('$dir/$name-76.png', _encodeRgb(_resize(src, 76)));
-    _write('$dir/$name-76@2x.png', _encodeRgb(_resize(src, 152)));
-    _write('$dir/$name-83.5@2x.png', _encodeRgb(_resize(src, 167)));
+    Directory(dir).createSync(recursive: true);
+    // 清掉旧生成文件，避免尺寸集调整后残留
+    for (final f in Directory(dir).listSync()) {
+      if (f is File && f.path.endsWith('.png')) f.deleteSync();
+    }
+    final images = <Map<String, String>>[];
+    for (final slot in _iosIconSlots) {
+      final file = '$name-${slot.label}.png';
+      _write('$dir/$file', _encodeRgb(_resize(src, slot.px)));
+      images.add({
+        'filename': file,
+        'idiom': slot.idiom,
+        'scale': slot.scale,
+        'size': slot.size,
+      });
+    }
     _write(
-        '$dir/Contents.json', utf8.encode(_appIconSetContents.replaceAll('%s', name)));
+      '$dir/Contents.json',
+      utf8.encode(JsonEncoder.withIndent('  ').convert({
+        'images': images,
+        'info': {'version': 1, 'author': 'xcode'},
+      })),
+    );
   }
 
   // 设置页预览（含默认）
@@ -141,6 +142,6 @@ void main() {
   }
 
   stdout.writeln('已生成：Android 备用图标 ${alternateIcons.length} 套、'
-      'iOS 备用 appiconset ${alternateIcons.length} 套（含 iPad）、'
+      'iOS 备用 appiconset ${alternateIcons.length} 套（含 iPad + 1024）、'
       '预览 ${allIcons.length} 张。默认图标=$defaultIcon');
 }

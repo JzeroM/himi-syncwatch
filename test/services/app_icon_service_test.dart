@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/app_icon_service.dart';
+import 'package:image/image.dart' as img;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -176,6 +180,49 @@ void main() {
         AppIconService.apply('glass'),
         throwsA(isA<PlatformException>()),
       );
+    });
+  });
+
+  group('iOS 备用图标资源', () {
+    const alternateIds = ['artistic', 'glass', 'neon'];
+
+    test('每个 appiconset 含完整尺寸 + 1024 营销图标（iOS 26 图标堆栈）', () {
+      for (final id in alternateIds) {
+        final dir = Directory('ios/Runner/Assets.xcassets/$id.appiconset');
+        expect(dir.existsSync(), isTrue, reason: '${dir.path} 缺失');
+        final contents = jsonDecode(
+          File('${dir.path}/Contents.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
+        final images =
+            (contents['images'] as List).cast<Map<String, dynamic>>();
+        expect(images.length, greaterThanOrEqualTo(18), reason: id);
+
+        final slots = images
+            .map((i) => '${i['idiom']}/${i['size']}@${i['scale']}')
+            .toSet();
+        for (final slot in const [
+          'iphone/60x60@2x',
+          'iphone/60x60@3x',
+          'ipad/76x76@1x',
+          'ipad/76x76@2x',
+          'ipad/83.5x83.5@2x',
+          'ios-marketing/1024x1024@1x',
+        ]) {
+          expect(slots, contains(slot), reason: '$id 缺少 $slot');
+        }
+
+        for (final item in images) {
+          final file = File('${dir.path}/${item['filename']}');
+          expect(file.existsSync(), isTrue, reason: file.path);
+          final decoded = img.decodePng(file.readAsBytesSync());
+          expect(decoded, isNotNull, reason: file.path);
+          final side = (double.parse((item['size'] as String).split('x').first) *
+                  int.parse((item['scale'] as String)[0]))
+              .round();
+          expect(decoded!.width, side, reason: file.path);
+          expect(decoded.height, side, reason: file.path);
+        }
+      }
     });
   });
 }

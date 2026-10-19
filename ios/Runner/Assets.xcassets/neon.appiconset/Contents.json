@@ -1,38 +1,116 @@
 {
-  "images" : [
+  "images": [
     {
-      "size" : "60x60",
-      "idiom" : "iphone",
-      "filename" : "neon@2x.png",
-      "scale" : "2x"
+      "filename": "neon-20@2x.png",
+      "idiom": "iphone",
+      "scale": "2x",
+      "size": "20x20"
     },
     {
-      "size" : "60x60",
-      "idiom" : "iphone",
-      "filename" : "neon@3x.png",
-      "scale" : "3x"
+      "filename": "neon-20@3x.png",
+      "idiom": "iphone",
+      "scale": "3x",
+      "size": "20x20"
     },
     {
-      "size" : "76x76",
-      "idiom" : "ipad",
-      "filename" : "neon-76.png",
-      "scale" : "1x"
+      "filename": "neon-29@1x.png",
+      "idiom": "iphone",
+      "scale": "1x",
+      "size": "29x29"
     },
     {
-      "size" : "76x76",
-      "idiom" : "ipad",
-      "filename" : "neon-76@2x.png",
-      "scale" : "2x"
+      "filename": "neon-29@2x.png",
+      "idiom": "iphone",
+      "scale": "2x",
+      "size": "29x29"
     },
     {
-      "size" : "83.5x83.5",
-      "idiom" : "ipad",
-      "filename" : "neon-83.5@2x.png",
-      "scale" : "2x"
+      "filename": "neon-29@3x.png",
+      "idiom": "iphone",
+      "scale": "3x",
+      "size": "29x29"
+    },
+    {
+      "filename": "neon-40@1x.png",
+      "idiom": "iphone",
+      "scale": "1x",
+      "size": "40x40"
+    },
+    {
+      "filename": "neon-40@2x.png",
+      "idiom": "iphone",
+      "scale": "2x",
+      "size": "40x40"
+    },
+    {
+      "filename": "neon-40@3x.png",
+      "idiom": "iphone",
+      "scale": "3x",
+      "size": "40x40"
+    },
+    {
+      "filename": "neon-57@1x.png",
+      "idiom": "iphone",
+      "scale": "1x",
+      "size": "57x57"
+    },
+    {
+      "filename": "neon-57@2x.png",
+      "idiom": "iphone",
+      "scale": "2x",
+      "size": "57x57"
+    },
+    {
+      "filename": "neon-60@2x.png",
+      "idiom": "iphone",
+      "scale": "2x",
+      "size": "60x60"
+    },
+    {
+      "filename": "neon-60@3x.png",
+      "idiom": "iphone",
+      "scale": "3x",
+      "size": "60x60"
+    },
+    {
+      "filename": "neon-72@1x.png",
+      "idiom": "ipad",
+      "scale": "1x",
+      "size": "72x72"
+    },
+    {
+      "filename": "neon-72@2x.png",
+      "idiom": "ipad",
+      "scale": "2x",
+      "size": "72x72"
+    },
+    {
+      "filename": "neon-76@1x.png",
+      "idiom": "ipad",
+      "scale": "1x",
+      "size": "76x76"
+    },
+    {
+      "filename": "neon-76@2x.png",
+      "idiom": "ipad",
+      "scale": "2x",
+      "size": "76x76"
+    },
+    {
+      "filename": "neon-83.5@2x.png",
+      "idiom": "ipad",
+      "scale": "2x",
+      "size": "83.5x83.5"
+    },
+    {
+      "filename": "neon-1024.png",
+      "idiom": "ios-marketing",
+      "scale": "1x",
+      "size": "1024x1024"
     }
   ],
-  "info" : {
-    "version" : 1,
-    "author" : "xcode"
+  "info": {
+    "version": 1,
+    "author": "xcode"
   }
 }
