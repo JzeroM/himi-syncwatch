@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/search/remote_search_screen.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/server_title_dropdown.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -60,16 +61,17 @@ Widget _host({
 }
 
 void main() {
-  testWidgets('渲染服务器标题与纯图标导航项，声网配置隐藏（首页并入标题）', (tester) async {
+  testWidgets('渲染服务器标题与纯图标导航项，声网配置隐藏（首页不占顶栏）', (tester) async {
     final semantics = tester.ensureSemantics();
     try {
       await tester.pumpWidget(_host());
       await tester.pump();
 
-      // 无配置兜底标题；首页项并入标题，顶栏无「首页」字样
+      // 无配置兜底标题；首页入口不在顶栏（回首页走返回键）
       expect(find.text('HIMI'), findsOneWidget);
       expect(find.text('同步观影'), findsNothing);
       expect(find.text('首页'), findsNothing);
+      expect(find.bySemanticsLabel('首页'), findsNothing);
       // 导航项去文字：仅图标，文字经 Semantics 保留无障碍标签
       // （dns_outlined 与标题胶囊同图标，故用 findsWidgets）
       for (var i = 1; i < kShellNavLabels.length; i++) {
@@ -122,14 +124,15 @@ void main() {
     expect(_navIcon(kShellNavSelectedIcons[4]), findsOneWidget);
     expect(_navIcon(kShellNavIcons[1]), findsOneWidget);
     expect(_navIcon(kShellNavSelectedIcons[1]), findsNothing);
-    // 首页已并入标题，不渲染首页导航图标
+    // 首页不占图标位（回首页走返回键），不渲染首页导航图标
     expect(_navIcon(kShellNavSelectedIcons[0]), findsNothing);
     expect(_navIcon(kShellNavIcons[0]), findsNothing);
   });
 
-  testWidgets('标题名称点击回首页（onSelect(0)）', (tester) async {
+  testWidgets('标题胶囊为单个焦点：点名称或 ▾ 均打开服务器下拉（v1.2.31 单焦点）',
+      (tester) async {
     int? selected;
-    final servers = [_server('a', '家庭NAS')];
+    final servers = [_server('a', '家庭NAS'), _server('b', '备用服务器')];
     await tester.pumpWidget(
       _host(
         index: 4,
@@ -140,10 +143,43 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('家庭NAS'), findsOneWidget);
+    // 整颗胶囊只有一个可聚焦节点（回归：不再拆成「首页 / 下拉」两个）
+    expect(
+      find.descendant(
+        of: find.byType(ServerTitleDropdown),
+        matching: find.byType(Focus),
+      ),
+      findsOneWidget,
+    );
+
+    // 点名称即打开下拉，且不再触发回首页
     await tester.tap(find.text('家庭NAS'));
+    await tester.pumpAndSettle();
+    expect(find.text('备用服务器'), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(selected, isNull);
+
+    // 点外部关闭后点 ▾：同样打开下拉
+    await tester.tapAt(const Offset(20, 500));
+    await tester.pumpAndSettle();
+    expect(find.text('备用服务器'), findsNothing);
+    await tester.tap(find.byIcon(Icons.arrow_drop_down));
+    await tester.pumpAndSettle();
+    expect(find.text('备用服务器'), findsOneWidget);
+  });
+
+  testWidgets('无服务器时标题胶囊不参与焦点遍历（纯展示，无死焦点）', (tester) async {
+    await tester.pumpWidget(_host());
     await tester.pump();
-    expect(selected, 0);
+
+    expect(find.text('HIMI'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ServerTitleDropdown),
+        matching: find.byType(Focus),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('▾ 打开服务器下拉并可切换服务器', (tester) async {

@@ -8,19 +8,14 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
-/// 当前 Emby 服务器标题玻璃胶囊，点击下拉切换服务器。
+/// 当前 Emby 服务器标题玻璃胶囊，点击/OK 打开服务器下拉切换服务器。
 ///
-/// 双焦点语义（[onTitleTap] 非空时，TV 顶栏场景）：
-/// - 名称部分：OK → [onTitleTap]（回首页）
-/// - ▾ 部分：OK → 打开服务器下拉
-///
-/// [onTitleTap] 为空时（首页 AppBar 场景）：名称与 ▾ 点击均打开下拉，
-/// 与原首页标题行为一致。
+/// TV 模式整颗胶囊是**单个焦点**（v1.2.31）：名称与 ▾ 同属一个
+/// [TvFocusable]，OK = 打开服务器下拉；回首页不再由标题承担（遥控器
+/// 返回键在非首页标签即可回首页，见 `MainShell._handleBack`）。
+/// 无服务器时为纯展示胶囊，不参与焦点遍历（避免死焦点）。
 class ServerTitleDropdown extends ConsumerWidget {
-  const ServerTitleDropdown({super.key, this.onTitleTap});
-
-  /// 点击名称部分的回调；null 表示名称点击也打开服务器下拉。
-  final VoidCallback? onTitleTap;
+  const ServerTitleDropdown({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,57 +31,43 @@ class ServerTitleDropdown extends ConsumerWidget {
     final label = current?.label ?? 'HIMI';
 
     if (dedupedServers.isEmpty) {
-      // 无服务器：纯展示胶囊（有回首页回调时名称仍可聚焦触发）
+      // 无服务器：无下拉可开，纯展示
       return GlassContainer(
         borderRadius: const BorderRadius.all(Radius.circular(24)),
         padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
         showShadow: false,
-        child: onTitleTap == null
-            ? _labelRow(label)
-            : TvFocusable(
-                onTap: onTitleTap,
-                child: _labelRow(label),
-              ),
+        child: _labelRow(label),
       );
     }
 
     return Builder(
-      builder: (titleContext) => GlassContainer(
-        borderRadius: const BorderRadius.all(Radius.circular(24)),
-        padding: const EdgeInsets.only(left: 12, right: 2),
-        showShadow: false,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TvFocusable(
-              radius: 12,
-              onTap: onTitleTap ??
-                  () => _showServerMenu(
-                        titleContext,
-                        ref,
-                        current: current,
-                        servers: dedupedServers,
-                      ),
-              child: Padding(
+      builder: (titleContext) => TvFocusable(
+        // 整颗胶囊一个焦点环（圆角与胶囊一致），OK 即打开服务器下拉
+        radius: 24,
+        onTap: () => _showServerMenu(
+          titleContext,
+          ref,
+          current: current,
+          servers: dedupedServers,
+        ),
+        child: GlassContainer(
+          borderRadius: const BorderRadius.all(Radius.circular(24)),
+          padding: const EdgeInsets.only(left: 12, right: 2),
+          showShadow: false,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 child: _labelRow(label),
               ),
-            ),
-            // ▾：TV 顶栏（onTitleTap 非空）为独立焦点，首页为整块点击的一部分
-            TvFocusable(
-              radius: 12,
-              onTap: () => _showServerMenu(
-                titleContext,
-                ref,
-                current: current,
-                servers: dedupedServers,
-              ),
-              child: const Padding(
+              // ▾ 为纯装饰（不再单独聚焦），点击落点由外层胶囊统一接管
+              const Padding(
                 padding: EdgeInsets.all(10),
                 child: Icon(Icons.arrow_drop_down),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
