@@ -29,11 +29,14 @@ import 'package:himi_syncwatch/widgets/stats_panel.dart';
 import 'package:himi_syncwatch/widgets/update/update_prompt.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key, this.qrScan});
+  const HomeScreen({super.key, this.qrScan, this.imageScan});
 
   /// 测试注入点：返回房间码模拟扫码结果；为 null 时走真实 `/scan` 路由。
   @visibleForTesting
   final Future<String?> Function()? qrScan;
+
+  /// 测试注入点：Windows 图片扫码结果（见 [RoomMenuButton.imageScan]）。
+  final Future<String?> Function()? imageScan;
 
   /// 轮播接缝对齐层底部渐隐（v1.2.16）：层高 = 2×hero（0~0.5 为与清晰
   /// 轮播图同裁切的虚化副本，0.5 为接缝；0.5~0.73 为镜像延伸段渐隐区，
@@ -557,7 +560,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        RoomMenuButton(qrScan: widget.qrScan),
+                        RoomMenuButton(
+                          qrScan: widget.qrScan,
+                          imageScan: widget.imageScan,
+                        ),
                         const MediaSearchButton(),
                       ],
                     ),

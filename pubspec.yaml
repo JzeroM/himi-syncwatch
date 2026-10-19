@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.2.34+460
+version: 1.2.35+461
 
 environment:
   sdk: ^3.6.0
@@ -51,8 +51,12 @@ dependencies:
     path: third_party/liquid_glass_widgets
   # QR Code
   qr_flutter: ^4.1.0
+  # 纯 Dart QR 解码：Windows 无相机/无 mobile_scanner 实现，改用图片文件解码
+  zxing2: ^0.2.4
   mobile_scanner: ^6.0.11
   image_picker: ^1.1.2
+  # 运行时图片解码（Windows 扫码选图；tool/gen_icons.dart 也复用）
+  image: ^4.2.0
   permission_handler: ^11.3.1
   # 传感器
   sensors_plus: ^7.1.0
@@ -95,8 +99,6 @@ dev_dependencies:
   mockito: ^5.4.5
   # 生成各平台静态应用图标（default=neon）
   flutter_launcher_icons: ^0.14.1
-  # 图标尺寸生成脚本 tool/gen_icons.dart
-  image: ^4.2.0
 
 flutter:
   uses-material-design: true

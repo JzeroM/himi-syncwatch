@@ -1,10 +1,15 @@
+import 'dart:isolate';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/services/room/qr_image_decoder.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
@@ -17,11 +22,16 @@ import 'package:himi_syncwatch/widgets/app_toast.dart';
 /// 从首页 AppBar 迁出为共享组件：TV 顶栏与首页顶栏（非 TV）复用。
 /// TV 模式渲染为带焦点环的 [TvFocusable]，非 TV 保持原 IconButton 形态。
 class RoomMenuButton extends ConsumerWidget {
-  const RoomMenuButton({super.key, this.qrScan});
+  const RoomMenuButton({super.key, this.qrScan, this.imageScan});
 
   /// 测试注入点：返回房间码模拟扫码结果；为 null 时走真实 `/scan` 路由。
   @visibleForTesting
   final Future<String?> Function()? qrScan;
+
+  /// 测试注入点：Windows 无相机，返回图片解码出的房间码；
+  /// 为 null 时打开系统文件选择框。
+  @visibleForTesting
+  final Future<String?> Function()? imageScan;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -199,7 +209,11 @@ class RoomMenuButton extends ConsumerWidget {
                 child: OutlinedButton.icon(
                   onPressed: () async {
                     final result =
-                        await (qrScan?.call() ?? context.push<String>('/scan'));
+                        defaultTargetPlatform == TargetPlatform.windows
+                            ? await (imageScan?.call() ??
+                                _pickRoomCodeFromImage(context))
+                            : await (qrScan?.call() ??
+                                context.push<String>('/scan'));
                     if (result == null || !context.mounted) return;
                     final roomData = RoomCode.decode(result);
                     if (roomData == null) {
@@ -218,7 +232,12 @@ class RoomMenuButton extends ConsumerWidget {
                       '/player/_?roomCode=${Uri.encodeComponent(result)}&isHost=false&name=${Uri.encodeComponent(name)}',
                     );
                   },
-                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  icon: Icon(
+                    defaultTargetPlatform == TargetPlatform.windows
+                        ? Icons.image_outlined
+                        : Icons.qr_code_scanner,
+                    size: 18,
+                  ),
                   label: const Text('扫码加入'),
                 ),
               ),
@@ -251,6 +270,24 @@ class RoomMenuButton extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Windows 无相机：直接打开文件选择框，本地解码二维码。
+  Future<String?> _pickRoomCodeFromImage(BuildContext context) async {
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked == null) return null;
+      final code = await Isolate.run(
+        () => QrImageDecoder.decodeFile(picked.path),
+      );
+      if (code == null && context.mounted) {
+        showAppToast(context, '图片中未找到有效房间码');
+      }
+      return code;
+    } catch (_) {
+      if (context.mounted) showAppToast(context, '图片解析失败');
+      return null;
+    }
   }
 
   Future<void> _createEmptyRoom(BuildContext context, WidgetRef ref) async {

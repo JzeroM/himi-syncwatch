@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,6 +46,7 @@ Future<ProviderContainer> _pumpScreen(
   EmbyService Function(EmbyServerConfig server)? serviceFactory,
   AppSettings settings = const AppSettings(homeCarousel: false),
   Future<String?> Function()? qrScan,
+  Future<String?> Function()? imageScan,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -61,7 +63,9 @@ Future<ProviderContainer> _pumpScreen(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(home: HomeScreen(qrScan: qrScan)),
+      child: MaterialApp(
+        home: HomeScreen(qrScan: qrScan, imageScan: imageScan),
+      ),
     ),
   );
   await tester.pumpAndSettle();
@@ -737,6 +741,46 @@ void main() {
     expect(find.text('粘贴房间码'), findsOneWidget);
     expect(find.text('已扫描到房间码，请填写昵称后加入'), findsOneWidget);
     await _settleSnackbars(tester);
+  });
+
+  testWidgets('Windows 无相机：扫码加入直接使用图片解码结果（不进相机页）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      final auth = FakeEmbyAuthService(
+        serverIds: ['s1'],
+        sessions: {
+          's1':
+              _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        },
+      );
+      final code = _validRoomCode();
+      var cameraScans = 0;
+      await _pumpScreen(
+        tester,
+        auth: auth,
+        qrScan: () async {
+          cameraScans++;
+          return null;
+        },
+        imageScan: () async => code,
+      );
+
+      await tester.tap(find.byIcon(Icons.meeting_room_outlined));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('加入房间'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('扫码加入'));
+      await tester.pumpAndSettle();
+
+      final codeField = tester.widget<TextField>(find.byType(TextField).at(0));
+      expect(codeField.controller!.text, code);
+      expect(find.text('已扫描到房间码，请填写昵称后加入'), findsOneWidget);
+      expect(cameraScans, 0, reason: 'Windows 不应再走相机扫码');
+      expect(find.text('将二维码放入框内自动扫描'), findsNothing);
+      await _settleSnackbars(tester);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('码与昵称齐全时点加入关闭弹窗并发起进房路由', (tester) async {
