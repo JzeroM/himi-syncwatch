@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -11,6 +12,7 @@ import 'package:himi_syncwatch/screens/search/remote_search_screen.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/server_title_dropdown.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -201,6 +203,58 @@ void main() {
     expect(find.byIcon(Icons.arrow_drop_down), findsOneWidget);
     expect(find.text('备用服务器'), findsOneWidget);
     expect(find.text('家庭NAS'), findsNothing);
+  });
+
+  testWidgets('TV：下拉每行有焦点框，方向键移动 + OK 选中（v1.2.32 回归）',
+      (tester) async {
+    final servers = [_server('a', '家庭NAS'), _server('b', '备用服务器')];
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(
+            (ref) => FakeSettingsNotifier(const AppSettings(tvMode: true))),
+        remoteSearchBasePortProvider.overrideWithValue(0),
+        embyAuthServiceProvider.overrideWith((ref) => FakeEmbyAuthService()),
+        embyServerListProvider
+            .overrideWith((ref) => EmbyServerListNotifier()..setList(servers)),
+        embyConfigProvider
+            .overrideWith((ref) => EmbyConfigNotifier()..setConfig(servers.first)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        // TV 方向键遍历由 TvRemoteShell 提供（与真机一致）
+        child: TvRemoteShell(
+          child: MaterialApp(
+            home: Scaffold(
+              body: TvTopNavBar(currentIndex: 0, onSelect: (_) {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('家庭NAS'));
+    await tester.pumpAndSettle();
+
+    // 下拉打开后有且仅有一个焦点环（当前服务器行 autofocus）
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is AnimatedContainer && w.foregroundDecoration != null,
+      ),
+      findsOneWidget,
+    );
+
+    // 方向键下移聚焦到第二行，OK 选中并关闭下拉
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(find.text('备用服务器'), findsWidgets);
+    expect(container.read(embyConfigProvider)?.id, 'b');
   });
 
   testWidgets('已认证服务器时显示搜索入口，点击打开远程扫码搜索', (tester) async {

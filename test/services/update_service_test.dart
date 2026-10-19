@@ -281,13 +281,21 @@ void main() {
     final content = List<int>.generate(4096, (i) => i % 251);
     final contentMd5 = md5.convert(content).toString().toUpperCase();
     final asset = RemoteAsset(
-      name: 'himi-sync-1.2.30-arm64-v8a.apk',
-      version: '1.2.30',
+      name: 'himi-sync-1.2.31-arm64-v8a.apk',
+      version: '1.2.31',
       target: UpdateTarget.android,
       abi: 'arm64-v8a',
       size: content.length,
       md5: contentMd5,
     );
+
+    Map<String, dynamic> fsGetJson([String? rawUrl]) => {
+          'status': 200,
+          'data': {
+            'name': asset.name,
+            if (rawUrl != null) 'raw_url': rawUrl,
+          },
+        };
 
     setUp(() {
       dir = Directory.systemTemp.createTempSync('himi_update_test');
@@ -297,11 +305,42 @@ void main() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     });
 
-    test('下载并校验 MD5 成功', () async {
-      final service = _service((_) async => _bytesBody(content));
+    test('下载并校验 MD5 成功（走 /api/fs/get 签名直链）', () async {
+      final paths = <String>[];
+      final service = _service((options) async {
+        paths.add(options.uri.path);
+        if (options.uri.path == '/api/fs/get') {
+          expect((options.data as Map)['path'], '/PACKAGES/${asset.name}');
+          expect((options.data as Map)['password'], '');
+          return _jsonBody(fsGetJson('https://signed.example.com/obj?sig=1'));
+        }
+        expect(options.uri.host, 'signed.example.com');
+        return _bytesBody(content);
+      });
       final file = await service.download(asset, dir: dir);
       expect(file.readAsBytesSync(), content);
       expect(file.path, endsWith('/updates/${asset.name}'));
+      expect(paths, ['/api/fs/get', '/obj']);
+    });
+
+    test('raw_url 为空 → 回退静态 /d/ 直链', () async {
+      final service = _service((options) async {
+        if (options.uri.path == '/api/fs/get') return _jsonBody(fsGetJson());
+        expect(options.uri.path, '/d/PACKAGES/${asset.name}');
+        return _bytesBody(content);
+      });
+      final file = await service.download(asset, dir: dir);
+      expect(file.readAsBytesSync(), content);
+    });
+
+    test('/api/fs/get 失败（500）→ 抛带状态码的下载异常', () async {
+      final service = _service(
+          (_) async => _bytesBody(const [], status: 500));
+      await expectLater(
+        service.download(asset, dir: dir),
+        throwsA(isA<UpdateDownloadException>()
+            .having((e) => e.statusCode, 'statusCode', 500)),
+      );
     });
 
     test('已有部分文件时带 Range 续传（206）', () async {
@@ -310,6 +349,9 @@ void main() {
           .writeAsBytesSync(content.sublist(0, 1000));
 
       final service = _service((options) async {
+        if (options.uri.path == '/api/fs/get') {
+          return _jsonBody(fsGetJson('https://signed.example.com/obj?sig=1'));
+        }
         expect(options.headers['Range'], 'bytes=1000-');
         final rest = content.sublist(1000);
         return _bytesBody(
@@ -332,23 +374,69 @@ void main() {
       File('${updates.path}/${asset.name}')
           .writeAsBytesSync(content.sublist(0, 1000));
 
-      final service = _service((_) async => _bytesBody(content));
+      final service = _service((options) async {
+        if (options.uri.path == '/api/fs/get') {
+          return _jsonBody(fsGetJson('https://signed.example.com/obj'));
+        }
+        return _bytesBody(content);
+      });
       final file = await service.download(asset, dir: dir);
       expect(file.readAsBytesSync(), content);
     });
 
     test('403（签名链接过期）自动重取链接后续传成功', () async {
-      var call = 0;
-      final service = _service((_) async {
-        call++;
-        if (call == 1) {
-          return _bytesBody(const [], status: 403);
+      var fsGetCalls = 0;
+      var fileCalls = 0;
+      final service = _service((options) async {
+        if (options.uri.path == '/api/fs/get') {
+          fsGetCalls++;
+          return _jsonBody(
+              fsGetJson('https://signed.example.com/obj?sig=$fsGetCalls'));
         }
+        fileCalls++;
+        if (fileCalls == 1) return _bytesBody(const [], status: 403);
         return _bytesBody(content);
       });
       final file = await service.download(asset, dir: dir);
-      expect(call, 2);
+      expect(fsGetCalls, 2, reason: '每轮重新解析地址，不复用过期直链');
+      expect(fileCalls, 2);
       expect(file.readAsBytesSync(), content);
+    });
+
+    test('401（直链需签名/签名缺失）同样自动重取', () async {
+      var fsGetCalls = 0;
+      var fileCalls = 0;
+      final service = _service((options) async {
+        if (options.uri.path == '/api/fs/get') {
+          fsGetCalls++;
+          return _jsonBody(
+              fsGetJson('https://signed.example.com/obj?sig=$fsGetCalls'));
+        }
+        fileCalls++;
+        if (fileCalls == 1) return _bytesBody(const [], status: 401);
+        return _bytesBody(content);
+      });
+      final file = await service.download(asset, dir: dir);
+      expect(fsGetCalls, 2);
+      expect(file.readAsBytesSync(), content);
+    });
+
+    test('重试耗尽 → 最终异常保留最后一次状态码', () async {
+      var fsGetCalls = 0;
+      final service = _service((options) async {
+        if (options.uri.path == '/api/fs/get') {
+          fsGetCalls++;
+          return _jsonBody(fsGetJson('https://signed.example.com/obj'));
+        }
+        return _bytesBody(const [], status: 404);
+      });
+      await expectLater(
+        service.download(asset, dir: dir, maxAttempts: 2),
+        throwsA(isA<UpdateDownloadException>()
+            .having((e) => e.statusCode, 'statusCode', 404)),
+      );
+      expect(fsGetCalls, 2);
+      expect(File('${dir.path}/updates/${asset.name}').existsSync(), isFalse);
     });
 
     test('MD5 不匹配抛错并删除文件', () async {
@@ -359,7 +447,12 @@ void main() {
         size: content.length,
         md5: 'deadbeef',
       );
-      final service = _service((_) async => _bytesBody(content));
+      final service = _service((options) async {
+        if (options.uri.path == '/api/fs/get') {
+          return _jsonBody(fsGetJson('https://signed.example.com/obj'));
+        }
+        return _bytesBody(content);
+      });
       await expectLater(
         service.download(badAsset, dir: dir),
         throwsA(isA<UpdateDownloadException>()),
@@ -373,9 +466,69 @@ void main() {
         version: asset.version,
         target: asset.target,
       );
-      final service = _service((_) async => _bytesBody(content));
+      final service = _service((options) async {
+        if (options.uri.path == '/api/fs/get') {
+          return _jsonBody(fsGetJson('https://signed.example.com/obj'));
+        }
+        return _bytesBody(content);
+      });
       final file = await service.download(noHash, dir: dir);
       expect(file.readAsBytesSync(), content);
+    });
+  });
+
+  group('friendlyDownloadMessage（弹层文案）', () {
+    test('按 HTTP 状态码分类', () {
+      expect(
+        friendlyDownloadMessage(UpdateDownloadException('x', statusCode: 401)),
+        '下载链接已失效，请重试',
+      );
+      expect(
+        friendlyDownloadMessage(UpdateDownloadException('x', statusCode: 403)),
+        '下载链接已失效，请重试',
+      );
+      expect(
+        friendlyDownloadMessage(UpdateDownloadException('x', statusCode: 404)),
+        '安装包不存在或已被删除',
+      );
+      expect(
+        friendlyDownloadMessage(UpdateDownloadException('x', statusCode: 410)),
+        '安装包不存在或已被删除',
+      );
+      expect(
+        friendlyDownloadMessage(UpdateDownloadException('x', statusCode: 500)),
+        '下载失败（HTTP 500）',
+      );
+    });
+
+    test('校验失败 / 中断 / 超时 / 取消 / 未知', () {
+      expect(
+        friendlyDownloadMessage(UpdateDownloadException('MD5 校验失败: a != b')),
+        '安装包校验失败，请重试',
+      );
+      expect(
+        friendlyDownloadMessage(UpdateDownloadException('大小不符: 1/2')),
+        '安装包校验失败，请重试',
+      );
+      expect(
+        friendlyDownloadMessage(UpdateDownloadException('连接中断：1/2')),
+        '网络中断，请重试',
+      );
+      expect(
+        friendlyDownloadMessage(DioException(
+          requestOptions: RequestOptions(path: '/'),
+          type: DioExceptionType.receiveTimeout,
+        )),
+        '网络连接超时，请重试',
+      );
+      expect(
+        friendlyDownloadMessage(DioException(
+          requestOptions: RequestOptions(path: '/'),
+          type: DioExceptionType.cancel,
+        )),
+        '下载已取消',
+      );
+      expect(friendlyDownloadMessage(StateError('boom')), '下载失败，请重试');
     });
   });
 }

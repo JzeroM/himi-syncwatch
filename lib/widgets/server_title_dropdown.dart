@@ -134,6 +134,9 @@ class ServerTitleDropdown extends ConsumerWidget {
                               ref,
                               s,
                               active: current?.id == s.id,
+                              // 当前服务器行落焦；异常数据时兜底第一行
+                              autofocus: (current?.id ?? servers.first.id) ==
+                                  s.id,
                             ),
                         ],
                       ),
@@ -169,12 +172,21 @@ class ServerTitleDropdown extends ConsumerWidget {
     WidgetRef ref,
     EmbyServerConfig server, {
     required bool active,
+    required bool autofocus,
   }) {
-    return InkWell(
-      onTap: () {
-        Navigator.pop(dialogContext);
-        _selectServer(ref, server);
-      },
+    void select() {
+      Navigator.pop(dialogContext);
+      _selectServer(ref, server);
+    }
+
+    // TV：每行一个焦点（焦点环 + 方向键遍历，v1.2.32 回归；
+    // 此前是裸 InkWell，遥控器选服务器时无焦点框）
+    return TvFocusable(
+      key: ValueKey('serverRow_${server.id}'),
+      radius: 12,
+      scale: 1.0,
+      autofocus: autofocus,
+      onTap: select,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         child: Row(

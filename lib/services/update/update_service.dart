@@ -75,7 +75,7 @@ class UpdateCheckResult {
   final String? error;
 }
 
-/// DioException 消息里带上 HTTP 状态码，便于上层判断（如未知来源拦截）。
+/// 下载/解析下载地址失败的异常，携带 HTTP 状态码便于上层分类处理。
 class UpdateDownloadException implements Exception {
   UpdateDownloadException(this.message, {this.statusCode});
 
@@ -84,6 +84,37 @@ class UpdateDownloadException implements Exception {
 
   @override
   String toString() => 'UpdateDownloadException($message, $statusCode)';
+}
+
+/// 把下载异常翻译成用户可读的短文案（弹层展示用，纯函数便于单测）。
+String friendlyDownloadMessage(Object error) {
+  if (error is UpdateDownloadException) {
+    final code = error.statusCode;
+    if (code == 401 || code == 403) return '下载链接已失效，请重试';
+    if (code == 404 || code == 410) return '安装包不存在或已被删除';
+    if (code != null) return '下载失败（HTTP $code）';
+    final message = error.message;
+    if (message.contains('MD5') || message.contains('大小不符')) {
+      return '安装包校验失败，请重试';
+    }
+    if (message.contains('连接中断') || message.contains('下载失败')) {
+      return '网络中断，请重试';
+    }
+    return '下载失败，请重试';
+  }
+  if (error is DioException) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return '网络连接超时，请重试';
+      case DioExceptionType.cancel:
+        return '下载已取消';
+      default:
+        break;
+    }
+  }
+  return '下载失败，请重试';
 }
 
 /// 检测更新服务：列表 API 自动发现 + 断点续传下载 + MD5 校验。
@@ -135,8 +166,43 @@ class UpdateService {
   /// 浏览页兜底地址。
   String get browseUrl => '$baseUrl$remoteDir';
 
-  /// 资产下载地址（OpenList 稳定直链路径，302 到带签名的真实地址）。
+  /// 资产静态直链路径（未开「直链签名」的实例可直用；开了签名的会 401，
+  /// 需走 [resolveDownloadUrl]）。
   String downloadUrl(String name) => '$baseUrl/d$remoteDir/$name';
+
+  /// 解析资产的真实下载地址（`/api/fs/get` → `raw_url`）。
+  ///
+  /// OpenList 开启「直链需要签名」后，静态 `/d/` 路径匿名访问返回
+  /// 401「expire missing」，必须用本接口拿签名直链；`raw_url` 有效期仅
+  /// 5 分钟（189 OBS `X-Amz-Expires=300`），**绝不能缓存**，每次下载前
+  /// 现取。实例未开签名 / 不支持直链时回退 [downloadUrl]。
+  Future<String> resolveDownloadUrl(
+    String name, {
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '$baseUrl/api/fs/get',
+        data: {
+          'path': '$remoteDir/$name',
+          'password': '',
+        },
+        options: Options(contentType: Headers.jsonContentType),
+        cancelToken: cancelToken,
+      );
+      final data = response.data?['data'];
+      if (data is Map) {
+        final rawUrl = data['raw_url'];
+        if (rawUrl is String && rawUrl.isNotEmpty) return rawUrl;
+      }
+      return downloadUrl(name);
+    } on DioException catch (e) {
+      throw UpdateDownloadException(
+        e.message ?? e.toString(),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
 
   /// 拉取远端目录资产列表（失败抛异常，由调用方决定静默或提示）。
   Future<List<RemoteAsset>> fetchAssets({CancelToken? cancelToken}) async {
@@ -197,8 +263,10 @@ class UpdateService {
 
   /// 下载资产到 [dir]/updates/，成功返回文件。
   ///
+  /// - 每轮尝试先用 [resolveDownloadUrl] 现取签名直链（5 分钟有效期）；
   /// - 已有部分文件时带 `Range` 续传（服务端返回 200 则从头重写）；
-  /// - 链接过期（403/404/410）自动重取 `/d/` 直链后继续（最多 [maxAttempts] 次）；
+  /// - 需签名/链接过期/资源不存在（401/403/404/410）自动重新解析后继续
+  ///   （最多 [maxAttempts] 次）；
   /// - 完成后若已知 MD5 则校验，不匹配删除文件并抛错。
   Future<File> download(
     RemoteAsset asset, {
@@ -212,7 +280,6 @@ class UpdateService {
       updatesDir.createSync(recursive: true);
     }
     final file = File('${updatesDir.path}/${asset.name}');
-    final url = downloadUrl(asset.name);
 
     var received = file.existsSync() ? file.lengthSync() : 0;
     // 已知大小且已下满：直接校验返回（重复点击/重启续传场景）
@@ -224,6 +291,8 @@ class UpdateService {
     Object? lastError;
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        // 每轮现取签名直链（raw_url 5 分钟过期，缓存会导致中途 401）
+        final url = await resolveDownloadUrl(asset.name, cancelToken: cancelToken);
         received = await _downloadOnce(
           url: url,
           file: file,
@@ -242,8 +311,9 @@ class UpdateService {
         return file;
       } on UpdateDownloadException catch (e) {
         lastError = e;
-        // 链接过期/资源不存在：重新走 /d/ 拿新签名地址后续传
-        if (e.statusCode == 403 || e.statusCode == 404 || e.statusCode == 410) {
+        // 需签名 / 链接过期 / 资源不存在：重新解析地址后续传
+        final code = e.statusCode;
+        if (code == 401 || code == 403 || code == 404 || code == 410) {
           received = file.existsSync() ? file.lengthSync() : 0;
           continue;
         }
@@ -258,7 +328,12 @@ class UpdateService {
         file.deleteSync();
       } catch (_) {}
     }
-    throw UpdateDownloadException('下载失败: $lastError');
+    throw UpdateDownloadException(
+      '下载失败: $lastError',
+      statusCode: lastError is UpdateDownloadException
+          ? lastError.statusCode
+          : null,
+    );
   }
 
   /// 单次下载尝试（含 302 跟随），返回本次结束后的已收字节数。

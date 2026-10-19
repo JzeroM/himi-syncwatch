@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/update_provider.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/update/apk_installer.dart';
 import 'package:himi_syncwatch/services/update/update_platform.dart';
 import 'package:himi_syncwatch/services/update/update_service.dart';
@@ -152,10 +153,20 @@ Future<void> _promptUpdate(
       if (installable) {
         await _downloadAndInstall(context, ref, asset);
       } else {
-        // iOS：仅打开下载链接，用户自行安装
-        final ok = await UpdateInstaller.openExternal(
-          ref.read(updateServiceProvider).downloadUrl(asset.name),
-        );
+        // iOS：打开签名直链（Safari 落下 ipa），用户自行安装。
+        // 必须现取 raw_url：静态 /d/ 在开启「直链签名」的实例上会 401。
+        String url;
+        try {
+          url = await ref
+              .read(updateServiceProvider)
+              .resolveDownloadUrl(asset.name);
+        } catch (e) {
+          LogService().log('Update', '解析下载地址失败: $e');
+          if (context.mounted) _toast(context, '无法获取下载链接，请稍后重试');
+          return;
+        }
+        if (!context.mounted) return;
+        final ok = await UpdateInstaller.openExternal(url);
         if (!ok && context.mounted) _toast(context, '无法打开下载链接');
       }
     case 'skip':
@@ -299,7 +310,8 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
         Navigator.of(context).pop();
         return;
       }
-      setState(() => _error = '$e');
+      LogService().log('Update', '下载失败: $e');
+      setState(() => _error = friendlyDownloadMessage(e));
     }
   }
 
