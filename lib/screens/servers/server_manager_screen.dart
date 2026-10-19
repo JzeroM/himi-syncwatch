@@ -75,8 +75,20 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   /// 布局模式进入时的顺序快照（返回键取消时还原）。
   List<EmbyServerConfig>? _layoutBackup;
 
+  /// TV 整卡焦点节点：按 server.id 持有，跨列表重排/元素重建存活。
+  /// 布局编辑期间焦点锁定在选中卡的这个节点上。
+  final Map<String, FocusNode> _cardNodes = {};
+
+  /// 布局模式焦点拉回是否已排队（避免 FocusManager 通知风暴重复排队）。
+  bool _layoutRefocusScheduled = false;
+
   /// 挂载时捕获的容器（dispose 中 ref.read 非法，用它清壳层拦截器）。
   late final ProviderContainer _container;
+
+  FocusNode _cardNodeFor(String id) => _cardNodes.putIfAbsent(
+        id,
+        () => FocusNode(debugLabel: 'serverCard_$id'),
+      );
 
   @override
   void initState() {
@@ -107,9 +119,41 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
 
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_guardLayoutFocus);
+    for (final node in _cardNodes.values) {
+      node.dispose();
+    }
+    _cardNodes.clear();
     serverActionPanelOpen.removeListener(_syncBackIntercept);
     _container.read(shellBackInterceptProvider.notifier).clear();
     super.dispose();
+  }
+
+  /// 布局模式焦点守卫：primary 一旦不是选中卡节点（元素重建、外部失焦、
+  /// 全局 TvScopeEnter 抢焦），下一帧拉回。
+  void _guardLayoutFocus() {
+    if (!mounted || _layoutServerId == null || _layoutRefocusScheduled) {
+      return;
+    }
+    final target = _cardNodes[_layoutServerId];
+    if (target == null) return;
+    if (FocusManager.instance.primaryFocus == target) return;
+    _layoutRefocusScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _layoutRefocusScheduled = false;
+      _lockLayoutFocus();
+    });
+  }
+
+  /// 把焦点收口到当前布局模式的选中卡（已聚焦/未挂载时安全 no-op）。
+  void _lockLayoutFocus() {
+    if (!mounted) return;
+    final id = _layoutServerId;
+    if (id == null) return;
+    final target = _cardNodes[id];
+    if (target == null || !target.canRequestFocus) return;
+    if (FocusManager.instance.primaryFocus == target) return;
+    target.requestFocus();
   }
 
   /// 表单/布局/⋮ 面板变化后同步壳层返回拦截：任一激活则注册，否则清空。
@@ -560,6 +604,24 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       return cardBuilder(null, null, null);
     }
 
+    final cardNode = _cardNodeFor(server.id);
+    // 卡内容局部回退 traditional 导航模式：directional 模式下 InkWell 会
+    // 无视 canRequestFocus 强制可聚焦（被框架用于「方向键进入子树」），卡内
+    // 主体 InkWell 因此成为隐藏焦点节点；进入布局模式后它被 ExcludeFocus
+    // 排除，焦点回落 scope，仍按住的 OK KeyRepeat 被全局 TvScopeEnter
+    // 抢到顶栏。回退后卡内只剩整卡节点与 ⋮ 两个可聚焦节点。
+    Widget wrappedCard(
+      FocusNode? moreButtonNode,
+      VoidCallback? onBack,
+      VoidCallback? onForward,
+    ) =>
+        MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            navigationMode: NavigationMode.traditional,
+          ),
+          child: cardBuilder(moreButtonNode, onBack, onForward),
+        );
+
     final layoutId = _layoutServerId;
     if (layoutId == server.id) {
       // 复用 _TvCardFocus（同类型 widget → 焦点节点跨模式切换保留），
@@ -567,6 +629,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       // 进而被全局 TvScopeEnterIntent 抢到顶栏（v1.1.251 修复）。
       // 布局键处理走 onLayoutKey；描边由 _layoutDecorate 画，关焦点环。
       return _TvCardFocus(
+        focusNode: cardNode,
         showFocusRing: false,
         onTap: () {},
         onLayoutKey: (event) => _handleLayoutKey(
@@ -574,24 +637,24 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
           isGrid: isGrid,
           crossAxisCount: crossAxisCount,
         ),
-        childBuilder: (_, __, ___) => _layoutDecorate(
-          ExcludeFocus(child: cardBuilder(null, null, null)),
+        childBuilder: (moreButtonNode, onBack, onForward) => _layoutDecorate(
+          ExcludeFocus(child: wrappedCard(moreButtonNode, onBack, onForward)),
         ),
       );
     }
     if (layoutId != null) {
       return ExcludeFocus(
         child: IgnorePointer(
-          child: Opacity(opacity: 0.4, child: cardBuilder(null, null, null)),
+          child: Opacity(opacity: 0.4, child: wrappedCard(null, null, null)),
         ),
       );
     }
     return _TvCardFocus(
+      focusNode: cardNode,
       autofocus: isFirst,
       onTap: () => _openServer(server),
       onLongPress: () => _enterLayoutMode(server),
-      childBuilder: (moreButtonNode, onMoreButtonBack, onMoreButtonForward) =>
-          cardBuilder(moreButtonNode, onMoreButtonBack, onMoreButtonForward),
+      childBuilder: wrappedCard,
     );
   }
 
@@ -671,16 +734,29 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
       _layoutMoveBy(delta);
       return KeyEventResult.handled;
     }
+    // 列表左右键无移动语义：仍吞掉，避免冒泡给全局方向键遍历把焦点
+    // 带出选中卡片（真机上曾跳到顶栏服务器胶囊）。
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight) {
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
 
   void _enterLayoutMode(EmbyServerConfig server) {
     closeServerActionPanel();
+    // 先把焦点同步收口到整卡节点：真机 directional 导航模式下卡内 InkWell
+    // 可能持有焦点，进入布局模式后它被 ExcludeFocus 排除 → 焦点回落
+    // scope → 仍按住的 OK KeyRepeat 被全局 TvScopeEnter 抢到顶栏。
+    _cardNodeFor(server.id).requestFocus();
     setState(() {
       _layoutServerId = server.id;
       _layoutBackup = List.of(ref.read(embyServerListProvider));
     });
     _syncBackIntercept();
+    FocusManager.instance.removeListener(_guardLayoutFocus);
+    FocusManager.instance.addListener(_guardLayoutFocus);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _lockLayoutFocus());
   }
 
   void _layoutMoveBy(int delta) {
@@ -692,11 +768,18 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     final to = from + delta;
     if (to < 0 || to >= deduped.length) return;
     _reorderVisible(from, to);
+    // 列表/网格重排会重建卡片元素；外部节点在重建后重新挂载时可能先
+    // 经历一次焦点回落，重建完成后再拉回选中卡。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _layoutServerId != id) return;
+      _lockLayoutFocus();
+    });
   }
 
   /// 退出布局模式：save=true 仅清状态（顺序已随移动持久化）；
   /// save=false（返回键取消）还原进入前的内存与存储顺序。
   void _exitLayoutMode({required bool save}) {
+    FocusManager.instance.removeListener(_guardLayoutFocus);
     final backup = _layoutBackup;
     setState(() {
       _layoutServerId = null;
@@ -832,6 +915,7 @@ class _TvCardFocus extends StatefulWidget {
     this.autofocus = false,
     this.onLayoutKey,
     this.showFocusRing = true,
+    this.focusNode,
   });
 
   /// 构建卡片，并把「⋮ 焦点节点」与「⋮ 回焦主体 / 前进相邻卡回调」交给
@@ -849,6 +933,10 @@ class _TvCardFocus extends StatefulWidget {
   /// 是否绘制焦点环（布局模式由琥珀描边代替，置 false 避免叠加）。
   final bool showFocusRing;
 
+  /// 外部焦点节点（按 server.id 由页面持有，跨列表重排/元素重建存活）。
+  /// 为空时自建并自行释放。
+  final FocusNode? focusNode;
+
   @override
   State<_TvCardFocus> createState() => _TvCardFocusState();
 }
@@ -856,9 +944,14 @@ class _TvCardFocus extends StatefulWidget {
 class _TvCardFocusState extends State<_TvCardFocus> {
   static const Duration _longPressThreshold = Duration(milliseconds: 500);
 
-  final FocusNode _node = FocusNode(debugLabel: 'TvCardFocus');
+  late final FocusNode _node =
+      widget.focusNode ?? FocusNode(debugLabel: 'TvCardFocus');
+
+  /// 外部节点由页面统一释放；仅释放自建节点。
+  late final bool _ownsNode = widget.focusNode == null;
 
   /// ⋮ 的焦点节点：由本 State 持有并注入卡内，实现「主体 → ⋮」方向键连线。
+  /// 元素重建（列表重排）后新 State 会重新注入给卡内按钮。
   final FocusNode _moreNode = FocusNode(debugLabel: 'serverMoreBtn');
   Timer? _longPressTimer;
   bool _longPressFired = false;
@@ -866,7 +959,7 @@ class _TvCardFocusState extends State<_TvCardFocus> {
   @override
   void dispose() {
     _longPressTimer?.cancel();
-    _node.dispose();
+    if (_ownsNode) _node.dispose();
     _moreNode.dispose();
     super.dispose();
   }

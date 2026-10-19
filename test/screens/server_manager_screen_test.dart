@@ -23,6 +23,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_directional_scroll.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
@@ -71,6 +72,7 @@ Future<ProviderContainer> _pumpScreen(
   PairedTv? pairedTv,
   List<TvDeviceInfo> onlineDevices = const [],
   bool remote = false,
+  bool shell = false,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -113,9 +115,19 @@ Future<ProviderContainer> _pumpScreen(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: remote
-          ? TvRemoteShortcuts(child: MaterialApp.router(routerConfig: router))
-          : MaterialApp.router(routerConfig: router),
+      child: shell
+          // 与生产一致：TvRemoteShell 挂在 MaterialApp.builder（内部），
+          // 全局 navigationMode=directional。
+          ? MaterialApp.router(
+              routerConfig: router,
+              builder: (context, child) =>
+                  TvRemoteShell(child: child ?? const SizedBox.shrink()),
+            )
+          : remote
+              ? TvRemoteShortcuts(
+                  child: MaterialApp.router(routerConfig: router),
+                )
+              : MaterialApp.router(routerConfig: router),
     ),
   );
   await tester.pumpAndSettle();
@@ -1607,7 +1619,7 @@ void main() {
       );
 
       // 首卡主体 autofocus
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus');
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_a');
       expect(focusedTileKey(), const ValueKey('serverTile_srv_a'));
 
       // 右键 → 焦点落到本卡 ⋮（页面显式连线：主体 → ⋮）
@@ -1632,7 +1644,7 @@ void main() {
       // 左键 → 回主体
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus',
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_a',
           reason: '左键应从 ⋮ 回到本卡主体');
       expect(focusedTileKey(), const ValueKey('serverTile_srv_a'));
       await _settleSnackbars(tester);
@@ -1649,7 +1661,7 @@ void main() {
         ],
       );
 
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus');
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_a');
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
       expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverMoreBtn',
@@ -1674,7 +1686,217 @@ void main() {
       await tester.pumpAndSettle();
       expect(focusedTileKey(), const ValueKey('serverTile_srv_b'),
           reason: '下键应落到下一张卡主体（而非 ⋮）');
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TvCardFocus');
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_b');
+      await _settleSnackbars(tester);
+    });
+  });
+
+  group('v1.2.33 TV 布局编辑焦点锁定（生产式 TvRemoteShell 挂载）', () {
+    String? focusLabel() => FocusManager.instance.primaryFocus?.debugLabel;
+
+    testWidgets('directional 下卡内 InkWell 不再是隐藏焦点节点', (tester) async {
+      await _pumpScreen(
+        tester,
+        shell: true,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      final tile = find.byKey(const ValueKey('serverGridTile_srv_a'));
+      final tileElement = tester.element(tile);
+      final labels = FocusManager.instance.rootScope.traversalDescendants
+          .where((node) {
+            final ctx = node.context;
+            if (ctx is! Element) return false;
+            var inside = false;
+            ctx.visitAncestorElements((ancestor) {
+              if (ancestor == tileElement) {
+                inside = true;
+                return false;
+              }
+              return true;
+            });
+            return inside;
+          })
+          .map((node) => node.debugLabel)
+          .toSet();
+
+      // 修复前 directional 模式下 InkWell 无视 canRequestFocus 强制可聚焦，
+      // 卡内多出 debugLabel=null 的隐藏焦点节点；进入布局模式时该节点被
+      // ExcludeFocus 排除 → 焦点回落 scope → 全局 TvScopeEnter 抢到顶栏。
+      expect(labels, {'serverCard_srv_a', 'serverMoreBtn'},
+          reason: '卡内只应有整卡节点与 ⋮ 两个可聚焦节点');
+    });
+
+    testWidgets('网格：进入布局焦点留在选中卡，KeyRepeat 不跳顶栏，退出回卡',
+        (tester) async {
+      await _pumpScreen(
+        tester,
+        shell: true,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      expect(focusLabel(), 'serverCard_srv_a', reason: '首卡 autofocus');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text('移动中'), findsOneWidget);
+
+      // 进入瞬间焦点必须仍在选中卡（修复前回落 scope 被顶栏抢走）
+      expect(focusLabel(), 'serverCard_srv_a');
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(focusLabel(), 'serverCard_srv_a',
+          reason: '仍按住 OK 的 KeyRepeat 不应把焦点带出卡片');
+      expect(find.text('移动中'), findsOneWidget);
+
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('移动中'), findsOneWidget, reason: 'KeyUp 不退出');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('移动中'), findsNothing, reason: 'KeyDown 退出布局');
+      expect(focusLabel(), 'serverCard_srv_a',
+          reason: '退出后焦点环应回到已聚焦卡片');
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('列表：布局移动后焦点仍在移动卡，可连续移动', (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        shell: true,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'list'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+          _server(id: 'srv_c', name: 'C', serverId: 's3'),
+        ],
+      );
+
+      await _pressLongOk(tester);
+      expect(find.text('移动中'), findsOneWidget);
+      expect(focusLabel(), 'serverCard_srv_a');
+
+      // 列表重排会重建卡片元素（ReorderableListView 无
+      // findChildIndexCallback）→ 外部焦点节点必须跨重建存活。
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(embyServerListProvider).map((s) => s.id).toList(),
+        ['srv_b', 'srv_a', 'srv_c'],
+      );
+      expect(focusLabel(), 'serverCard_srv_a',
+          reason: '重排后焦点应仍在移动中的卡片');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(embyServerListProvider).map((s) => s.id).toList(),
+        ['srv_b', 'srv_c', 'srv_a'],
+        reason: '连续移动应持续生效',
+      );
+      expect(focusLabel(), 'serverCard_srv_a');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(focusLabel(), 'serverCard_srv_a',
+          reason: '退出布局后焦点仍在原卡');
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('布局模式焦点被外部清空后自动拉回选中卡', (tester) async {
+      await _pumpScreen(
+        tester,
+        shell: true,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'grid'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      await _pressLongOk(tester);
+      expect(focusLabel(), 'serverCard_srv_a');
+
+      // 模拟焦点被外部夺走（如全局 TvScopeEnter/元素重建瞬时回落）
+      FocusManager.instance.primaryFocus!.unfocus();
+      await tester.pump();
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(focusLabel(), 'serverCard_srv_a',
+          reason: '守卫应在下一帧把焦点拉回选中卡');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('列表布局左右键不移动卡片也不逃逸焦点', (tester) async {
+      final container = await _pumpScreen(
+        tester,
+        shell: true,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'list'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      await _pressLongOk(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(embyServerListProvider).map((s) => s.id).toList(),
+        ['srv_a', 'srv_b'],
+        reason: '列表无左右移动语义',
+      );
+      expect(focusLabel(), 'serverCard_srv_a',
+          reason: '左右键不应把焦点带出卡片（真机曾跳顶栏）');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+    });
+
+    testWidgets('列表布局移动退出后 ⋮ 仍可进入并回主体', (tester) async {
+      await _pumpScreen(
+        tester,
+        shell: true,
+        settings: const AppSettings(tvMode: true, serverViewMode: 'list'),
+        servers: [
+          _server(id: 'srv_a', name: 'A', serverId: 's1'),
+          _server(id: 'srv_b', name: 'B', serverId: 's2'),
+        ],
+      );
+
+      await _pressLongOk(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await _settleSnackbars(tester);
+      expect(focusLabel(), 'serverCard_srv_a');
+
+      // 重排重建后卡内 ⋮ 必须仍注入页面节点（布局模式也要传回节点），
+      // 否则退出后右键请求的是未挂载节点，焦点不动。
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(focusLabel(), 'serverMoreBtn', reason: '右键应进入本卡 ⋮');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(focusLabel(), 'serverCard_srv_a', reason: '左键应回主体');
       await _settleSnackbars(tester);
     });
   });
