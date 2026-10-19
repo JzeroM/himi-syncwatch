@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.2.35+461
+version: 1.2.36+462
 
 environment:
   sdk: ^3.6.0
@@ -27,6 +27,7 @@ dependencies:
   erika_flutter: ^0.2.1
   # FFI（Windows/macOS/iOS 网卡计数读取）
   ffi: ^2.1.0
+  win32: ^5.10.1
   # 声网 RTM（中国区）
   agora_rtm: ^2.2.5
   # Windows 端 RTM（agora_rtm 仅支持 android/ios）

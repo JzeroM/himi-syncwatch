@@ -163,4 +163,12 @@ void main() {
     expect(container.read(settingsProvider).homeCarousel, isFalse);
     debugDefaultTargetPlatformOverride = null;
   });
+
+  testWidgets('TV 模式隐藏「首页轮播」开关', (tester) async {
+    await _pump(tester, platform: TargetPlatform.android, tvMode: true);
+
+    expect(find.byKey(const ValueKey('homeCarouselToggle')), findsNothing);
+    expect(find.text('首页轮播'), findsNothing);
+    debugDefaultTargetPlatformOverride = null;
+  });
 }

@@ -68,7 +68,7 @@ import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
-import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
+import 'package:himi_syncwatch/widgets/room/room_share_dialog.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/screens/player/room_resource_search.dart';
@@ -100,8 +100,8 @@ import 'package:himi_syncwatch/screens/player/widgets/letterbox_bars_cover.dart'
 import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
 import 'package:himi_syncwatch/services/subtitle_delay_file.dart';
 import 'package:himi_syncwatch/services/subtitle_style_store.dart';
+import 'package:himi_syncwatch/services/platform/windows_clipboard_image.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -1325,6 +1325,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 解码器选择 / 丢帧 / 错误等关键行
   final List<String> _deepNoteLines = <String>[];
   final GlobalKey _qrKey = GlobalKey();
+  bool _shareDialogOpen = false;
 
   // 调试面板拖拽位置
   double _debugPanelX = 20;
@@ -5430,10 +5431,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // 复制房间码
-  void _copyRoomCode() {
-    if (widget.roomCode == null) return;
-    Clipboard.setData(ClipboardData(text: widget.roomCode!));
-    showAppToast(context, '已复制房间码');
+  Future<void> _copyRoomCode() async {
+    final roomCode = widget.roomCode;
+    if (roomCode == null) return;
+    await Clipboard.setData(ClipboardData(text: roomCode));
+    if (mounted) showAppToast(context, '已复制房间码');
   }
 
   Future<Uint8List?> _captureQrImage() async {
@@ -5451,8 +5453,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Future<void> _saveQrToGallery() async {
     final bytes = await _captureQrImage();
-    if (bytes == null || !mounted) return;
+    if (bytes == null) {
+      if (mounted) showAppToast(context, '二维码生成失败，请重试');
+      return;
+    }
+    if (!mounted) return;
     try {
+      if (Platform.isWindows) {
+        final path = await FilePicker.platform.saveFile(
+          dialogTitle: '保存二维码',
+          fileName: 'himi_qr.png',
+          type: FileType.custom,
+          allowedExtensions: const ['png'],
+        );
+        if (path == null) return;
+        final target = path.toLowerCase().endsWith('.png') ? path : '$path.png';
+        await File(target).writeAsBytes(bytes, flush: true);
+        if (mounted) showAppToast(context, '二维码已保存');
+        return;
+      }
       final tempDir = await getTemporaryDirectory();
       final file = File(
           '${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
@@ -5474,10 +5493,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Future<void> _shareQrImage() async {
     final bytes = await _captureQrImage();
-    if (bytes == null || !mounted) return;
+    if (bytes == null) {
+      if (mounted) showAppToast(context, '二维码生成失败，请重试');
+      return;
+    }
+    if (!mounted) return;
+    if (Platform.isWindows) {
+      final copied = await copyPngToClipboard(bytes);
+      if (mounted) {
+        showAppToast(
+          context,
+          copied ? '二维码图片已复制，可直接粘贴' : '复制二维码失败，请重试',
+        );
+      }
+      return;
+    }
     try {
       final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/himi_qr.png');
+      final file = File(
+          '${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
       await file.writeAsBytes(bytes);
       await SharePlus.instance.share(
         ShareParams(
@@ -5493,111 +5527,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  void _showShareRoomSheet() {
-    if (widget.roomCode == null) return;
-    showModalBottomSheet(
+  void _showShareRoomDialog() {
+    final roomCode = widget.roomCode;
+    if (_shareDialogOpen || roomCode == null) return;
+    _shareDialogOpen = true;
+    showDialog<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1E1E2E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      builder: (_) => RoomShareDialog(
+        roomCode: roomCode,
+        qrKey: _qrKey,
+        onShareQr: _shareQrImage,
+        onSaveQr: _saveQrToGallery,
+        onCopyCode: _copyRoomCode,
       ),
-      builder: (ctx) => SheetBottomSafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                '分享加入房间',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white),
-              ),
-              const SizedBox(height: 16),
-              RepaintBoundary(
-                key: _qrKey,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: QrImageView(
-                    data: widget.roomCode!,
-                    version: QrVersions.auto,
-                    size: 180,
-                    backgroundColor: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  widget.roomCode!,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    color: Colors.white70,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _saveQrToGallery();
-                      },
-                      icon: const Icon(Icons.save_alt, size: 18),
-                      label: const Text('保存图片'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _shareQrImage();
-                      },
-                      icon: const Icon(Icons.share, size: 18),
-                      label: const Text('分享图片'),
-                      style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF6366F1)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _copyRoomCode();
-                      },
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('复制'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
+    ).whenComplete(() {
+      _shareDialogOpen = false;
+    });
   }
 
   @override
@@ -6562,7 +6507,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       },
       onToggleDecode: () =>
           setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
-      onShare: _showShareRoomSheet,
+      onShare: _showShareRoomDialog,
     );
   }
 
