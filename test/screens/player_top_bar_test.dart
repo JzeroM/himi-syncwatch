@@ -26,6 +26,7 @@ PlayerTopBar _bar({
   VoidCallback? onToggleSpeed,
   bool showRotateButton = false,
   VoidCallback? onRotate,
+  bool reserveClockSpace = false,
 }) =>
     PlayerTopBar(
       title: title,
@@ -51,6 +52,7 @@ PlayerTopBar _bar({
       onToggleSpeed: onToggleSpeed,
       showRotateButton: showRotateButton,
       onRotate: onRotate,
+      reserveClockSpace: reserveClockSpace,
     );
 
 Widget _host(Widget child, {AppSettings settings = const AppSettings()}) {
@@ -150,6 +152,24 @@ void main() {
       expect(find.text('斯巴达克斯 – S00E01'), findsOneWidget);
       expect(find.byKey(const ValueKey('playerNetworkSpeed')), findsOneWidget);
       expect(find.text('4.89 MB/s'), findsOneWidget);
+    });
+
+    testWidgets('开启顶栏时间时标题缩到中心左侧，不压住时钟', (tester) async {
+      const title = '这是一个非常非常长的播放标题用于测试顶栏时钟避让';
+      await tester.pumpWidget(_host(_bar(title: title)));
+      final normalRight =
+          tester.getRect(find.byKey(const ValueKey('playerTitle'))).right;
+
+      await tester.pumpWidget(
+        _host(_bar(title: title, reserveClockSpace: true)),
+      );
+      final barRect =
+          tester.getRect(find.byKey(const ValueKey('playerTopBar')));
+      final titleRect =
+          tester.getRect(find.byKey(const ValueKey('playerTitle')));
+
+      expect(titleRect.right, lessThan(normalRight));
+      expect(titleRect.right, lessThanOrEqualTo(barRect.center.dx - 40));
     });
 
     testWidgets('标题为空不渲染文本；网速 null（设置关闭）不渲染', (tester) async {

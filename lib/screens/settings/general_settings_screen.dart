@@ -3,11 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/models/top_bar_clock_format.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 
-/// 通用设置子页：TV 模式 / 导出运行日志。
+/// 通用设置子页：TV 模式 / 顶栏时间 / 缓存管理 / 导出运行日志。
 class GeneralSettingsScreen extends ConsumerWidget {
   const GeneralSettingsScreen({super.key});
 
@@ -48,6 +49,25 @@ class GeneralSettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
         ],
+        KeyedSubtree(
+          key: const ValueKey('topBarClockSetting'),
+          child: settingOptionTile(
+            context: context,
+            tvMode: settings.tvMode,
+            title: '顶栏时间',
+            subtitle: '播放器顶栏正中显示系统时间，控制栏隐藏后仍显示',
+            labels: const {
+              'off': '关闭',
+              '12h': '12 小时制',
+              '24h': '24 小时制',
+            },
+            value: settings.topBarClockFormat.storageValue,
+            onSelected: (value) => notifier.update(
+              topBarClockFormat: TopBarClockFormat.fromStorage(value),
+            ),
+          ),
+        ),
+        const Divider(height: 1),
         settingsTvWrapRow(
           tvMode: settings.tvMode,
           onTap: () => context.push('/settings/general/cache'),

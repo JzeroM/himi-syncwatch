@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/top_bar_clock_format.dart';
 import 'package:himi_syncwatch/providers/cache_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
@@ -325,6 +326,63 @@ void main() {
     expect(find.text('TV 模式'), findsOneWidget);
     expect(find.text('同步到 TV'), findsNothing,
         reason: 'TV 是被推送方，无需此开关');
+  });
+
+  testWidgets('通用子页：顶栏时间默认关闭，可切到 24 小时制并落盘', (tester) async {
+    final container = await _pumpScreen(tester, category: '通用');
+    await _scrollToText(tester, '顶栏时间');
+
+    expect(find.text('顶栏时间'), findsOneWidget);
+    expect(
+      container.read(settingsProvider).topBarClockFormat,
+      TopBarClockFormat.off,
+    );
+
+    final row = find.ancestor(
+      of: find.text('顶栏时间'),
+      matching: find.byType(ListTile),
+    );
+    final dropdown = find.descendant(
+      of: row,
+      matching: find.byType(DropdownButton<String>),
+    );
+    expect(tester.widget<DropdownButton<String>>(dropdown).value, 'off');
+
+    await tester.tap(dropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('24 小时制').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(settingsProvider).topBarClockFormat,
+      TopBarClockFormat.twentyFourHour,
+    );
+    final notifier =
+        container.read(settingsProvider.notifier) as FakeSettingsNotifier;
+    expect(notifier.persistCount, greaterThan(0), reason: '切换应触发落盘');
+  });
+
+  testWidgets('通用子页 TV：顶栏时间走居中弹层并写入 12 小时制', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      initial: const AppSettings(tvMode: true),
+      category: '通用',
+    );
+    await _scrollToText(tester, '顶栏时间');
+
+    expect(find.byType(DropdownButton<String>), findsNothing,
+        reason: 'TV 模式走弹层');
+    await tester.tap(find.text('顶栏时间'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('settingOption_12h')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('settingOption_12h')));
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(settingsProvider).topBarClockFormat,
+      TopBarClockFormat.twelveHour,
+    );
   });
 
   testWidgets('通用子页：缓存管理入口进入缓存页', (tester) async {

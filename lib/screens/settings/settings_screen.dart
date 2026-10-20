@@ -9,7 +9,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 /// 设置主页（方案 C）：四个分类入口 → 各分类子页。
 /// - 外观：主题色 / 分类页海报数 / 液态玻璃
 /// - 播放器：解码 / 音频 / 视频输出 / 网速 / 弹幕配置
-/// - 通用：TV 模式 / 运行日志
+/// - 通用：TV 模式 / 顶栏时间 / 运行日志
 /// - 实验性：渲染兼容 / 播放调试 / 深度诊断
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -60,7 +60,7 @@ class SettingsScreen extends ConsumerWidget {
             key: const ValueKey('settingsCategoryGeneral'),
             icon: Icons.tune,
             title: '通用',
-            subtitle: 'TV 模式、导出运行日志',
+            subtitle: 'TV 模式、顶栏时间、导出运行日志',
             route: '/settings/general',
           ),
           const Divider(height: 1),

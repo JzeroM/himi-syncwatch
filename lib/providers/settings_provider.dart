@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/top_bar_clock_format.dart';
 
 const _storageKey = 'himi_app_settings';
 
@@ -43,6 +44,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? updatePromptEnabled,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
+    TopBarClockFormat? topBarClockFormat,
     double? playbackSpeed,
     bool? stereoDownmix,
     String? audioRenderer,
@@ -99,6 +101,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       updatePromptEnabled: updatePromptEnabled,
       showSyncDebug: showSyncDebug,
       showNetworkSpeed: showNetworkSpeed,
+      topBarClockFormat: topBarClockFormat,
       playbackSpeed: playbackSpeed,
       stereoDownmix: stereoDownmix,
       audioRenderer: audioRenderer,

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:himi_syncwatch/models/top_bar_clock_format.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
 
 class AppSettings {
@@ -70,6 +71,9 @@ class AppSettings {
 
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
+
+  /// 播放页顶栏正中的系统时间格式；默认关闭。
+  final TopBarClockFormat topBarClockFormat;
 
   /// 播放倍速（0.5~3.0，跨会话持久化；房间联播时由房主节奏接管）。
   final double playbackSpeed;
@@ -280,6 +284,7 @@ class AppSettings {
     this.updatePromptEnabled = true,
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
+    this.topBarClockFormat = TopBarClockFormat.off,
     this.playbackSpeed = 1.0,
     this.stereoDownmix = false,
     this.audioRenderer = 'auto',
@@ -345,6 +350,7 @@ class AppSettings {
     bool? updatePromptEnabled,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
+    TopBarClockFormat? topBarClockFormat,
     double? playbackSpeed,
     bool? stereoDownmix,
     String? audioRenderer,
@@ -403,6 +409,7 @@ class AppSettings {
       updatePromptEnabled: updatePromptEnabled ?? this.updatePromptEnabled,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
+      topBarClockFormat: topBarClockFormat ?? this.topBarClockFormat,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
       audioRenderer: audioRenderer ?? this.audioRenderer,
@@ -484,6 +491,7 @@ class AppSettings {
         'updatePromptEnabled': updatePromptEnabled,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
+        'topBarClockFormat': topBarClockFormat.storageValue,
         'playbackSpeed': playbackSpeed,
         'stereoDownmix': stereoDownmix,
         'audioRenderer': audioRenderer,
@@ -594,6 +602,8 @@ class AppSettings {
       updatePromptEnabled: json['updatePromptEnabled'] as bool? ?? true,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
+      topBarClockFormat:
+          TopBarClockFormat.fromStorage(json['topBarClockFormat']),
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,
       stereoDownmix: json['stereoDownmix'] as bool? ?? false,
       audioRenderer: renderer,

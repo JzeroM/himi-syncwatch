@@ -89,6 +89,7 @@ import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_bottom_row.dart';
 import 'package:himi_syncwatch/screens/player/player_lifecycle_policy.dart';
+import 'package:himi_syncwatch/screens/player/widgets/player_clock.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/controls_auto_hide.dart';
@@ -5969,6 +5970,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildVideoArea() {
     final videoAreaTvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final clockFormat = ref.watch(
+      settingsProvider.select((s) => s.topBarClockFormat),
+    );
     final videoAreaPhoneControls = PlayerScreen.isMobilePhoneControls(
       tvMode: videoAreaTvMode,
       mobilePlatform: Platform.isAndroid || Platform.isIOS,
@@ -6201,6 +6205,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 child: _buildTopBar(),
               ),
             ),
+
+          PlayerClockLayer(format: clockFormat),
 
           // 左缘锁/解锁钮（手机版已移入底栏左数显列；此处置留给桌面；
           // TV 无锁）
@@ -6501,6 +6507,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onToggleDecode: () =>
           setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
       onShare: _showShareRoomDialog,
+      reserveClockSpace: settings.topBarClockFormat.enabled,
     );
   }
 

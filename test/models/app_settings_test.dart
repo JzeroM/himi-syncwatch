@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/top_bar_clock_format.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
 
 void main() {
@@ -76,6 +77,35 @@ void main() {
       final json = const AppSettings(showNetworkSpeed: false).toJson();
       expect(json['showNetworkSpeed'], isFalse);
       expect(AppSettings.fromJson(json).showNetworkSpeed, isFalse);
+    });
+
+    test('topBarClockFormat：默认关闭，非法值回退，三档可选并往返', () {
+      expect(const AppSettings().topBarClockFormat, TopBarClockFormat.off);
+      expect(
+        AppSettings.fromJson(const {}).topBarClockFormat,
+        TopBarClockFormat.off,
+      );
+      expect(
+        AppSettings.fromJson(const {
+          'topBarClockFormat': 'bogus',
+        }).topBarClockFormat,
+        TopBarClockFormat.off,
+      );
+
+      for (final format in TopBarClockFormat.values) {
+        final json = AppSettings(topBarClockFormat: format).toJson();
+        expect(json['topBarClockFormat'], format.storageValue);
+        expect(AppSettings.fromJson(json).topBarClockFormat, format);
+      }
+
+      const base = AppSettings(topBarClockFormat: TopBarClockFormat.twelveHour);
+      expect(base.copyWith().topBarClockFormat, TopBarClockFormat.twelveHour);
+      expect(
+        base
+            .copyWith(topBarClockFormat: TopBarClockFormat.twentyFourHour)
+            .topBarClockFormat,
+        TopBarClockFormat.twentyFourHour,
+      );
     });
 
     test('playbackSpeed：旧数据缺字段回退 1.0，可改档并往返', () {

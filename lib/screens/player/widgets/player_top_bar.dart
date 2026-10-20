@@ -35,6 +35,7 @@ class PlayerTopBar extends StatelessWidget {
     this.showRotateButton = false,
     this.rotateButtonIcon = Icons.screen_rotation_alt,
     this.onRotate,
+    this.reserveClockSpace = false,
   });
 
   /// 左上角影视信息（电影名 / `剧名 – S01E02`）；空串不渲染。
@@ -92,6 +93,9 @@ class PlayerTopBar extends StatelessWidget {
   final IconData rotateButtonIcon;
   final VoidCallback? onRotate;
 
+  /// 顶栏时钟开启时，限制标题宽度，避免长标题压到居中的时间。
+  final bool reserveClockSpace;
+
   /// 解码方块装饰：
   /// - 玻璃开：白 22%→10% 渐变 + 白 24% 细描边；展开态换 accent 1.5px
   ///   描边 + accent 外发光（不用实心底，顶栏不突兀）
@@ -135,7 +139,11 @@ class PlayerTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final titleMaxWidth = ((MediaQuery.sizeOf(context).width - 24) / 2 - 100)
+        .clamp(0.0, double.infinity)
+        .toDouble();
     return Container(
+      key: const ValueKey('playerTopBar'),
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top,
         left: 12,
@@ -161,15 +169,24 @@ class PlayerTopBar extends StatelessWidget {
           if (title.isNotEmpty) ...[
             const SizedBox(width: 4),
             Expanded(
-              child: Text(
-                title,
-                key: const ValueKey('playerTitle'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth:
+                        reserveClockSpace ? titleMaxWidth : double.infinity,
+                  ),
+                  child: Text(
+                    title,
+                    key: const ValueKey('playerTitle'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
