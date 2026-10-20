@@ -107,6 +107,32 @@ void main() {
     expect(find.byType(TextField), findsNWidgets(2));
   });
 
+  testWidgets('封面点击鹅毛笔直接跳到第五页配置', (tester) async {
+    await _pumpScreen(tester);
+
+    final quill = find.byKey(const ValueKey('agoraQuillButton'));
+    expect(quill, findsOneWidget);
+    await _tapAndSettle(tester, quill);
+
+    expect(find.text('配置 / 5'), findsOneWidget);
+    expect(find.text('未配置'), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraAppIdField')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraCertField')), findsOneWidget);
+  });
+
+  testWidgets('窄屏下点鹅毛笔直达第五页且不溢出', (tester) async {
+    await _pumpScreen(tester, size: const Size(320, 640));
+
+    await _tapAndSettle(
+      tester,
+      find.byKey(const ValueKey('agoraQuillButton')),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('配置 / 5'), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraAppIdField')), findsOneWidget);
+  });
+
   testWidgets('未配置时第五页显示填写表单', (tester) async {
     await _pumpScreen(tester);
     await _openConfigPage(tester);
@@ -376,7 +402,7 @@ void main() {
     await _settleSnackbars(tester);
   });
 
-  testWidgets('切走分支（epoch bump）→ 未保存输入还原、表单收起（v1.1.243）', (tester) async {
+  testWidgets('切走分支（epoch bump）→ 书本合上、未保存输入还原', (tester) async {
     final agora = FakeAgoraConfigNotifier(
       AgoraConfigModel(appId: 'a' * 32, appCertificate: 'old_cert'),
     );
@@ -393,9 +419,12 @@ void main() {
     container.read(shellBranchEpochProvider.notifier).bump(3);
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
+    expect(find.text('配置 / 5'), findsNothing, reason: '书本应回到合上封面');
     expect(find.byType(TextField), findsNothing, reason: '表单应收起');
     expect(agora.state?.appId, 'a' * 32, reason: '未保存修改应丢弃');
 
+    await _openConfigPage(tester);
     await _tapAndSettle(
       tester,
       find.byKey(const ValueKey('agoraEditButton')),

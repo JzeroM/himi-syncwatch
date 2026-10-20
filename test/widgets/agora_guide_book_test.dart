@@ -70,6 +70,7 @@ void main() {
     expect(find.text('四步完成声网配置'), findsOneWidget);
     expect(find.text('步骤 1 / 4'), findsNothing);
     expect(find.text('共 4 步 · 左右滑动阅读'), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraQuillButton')), findsNothing);
   });
 
   testWidgets('点按封面可翻开，首页可返回封面', (tester) async {
@@ -158,6 +159,60 @@ void main() {
       find.byKey(const ValueKey('agoraBookNext')),
     );
     expect(next.onPressed, isNull);
+  });
+
+  testWidgets('封面点击鹅毛笔直接跳到第五页配置', (tester) async {
+    await _pumpBook(
+      tester,
+      extraPageBuilder: (context, palette, index, total) {
+        return AgoraBookPaperPage(
+          index: index,
+          total: total,
+          palette: palette,
+          kicker: '配置 / $total',
+          title: '填写并保存凭证',
+          child: const Text('配置内容'),
+        );
+      },
+    );
+
+    final quill = find.byKey(const ValueKey('agoraQuillButton'));
+    expect(quill, findsOneWidget);
+    expect(tester.widget<GestureDetector>(quill).onTap, isNotNull);
+
+    await tester.tap(quill);
+    await tester.pumpAndSettle();
+
+    expect(find.text('配置 / 5'), findsOneWidget);
+    expect(find.text('配置内容'), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsOneWidget);
+    expect(tester.widget<GestureDetector>(quill).onTap, isNull);
+  });
+
+  testWidgets('翻到中间页后点鹅毛笔仍直达第五页', (tester) async {
+    await _pumpBook(
+      tester,
+      extraPageBuilder: (context, palette, index, total) {
+        return AgoraBookPaperPage(
+          index: index,
+          total: total,
+          palette: palette,
+          kicker: '配置 / $total',
+          title: '填写并保存凭证',
+          child: const Text('配置内容'),
+        );
+      },
+    );
+    await _openBook(tester);
+    await tester.tap(find.byKey(const ValueKey('agoraBookNext')));
+    await tester.pumpAndSettle();
+    expect(find.text('步骤 2 / 5'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('agoraQuillButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('配置 / 5'), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsOneWidget);
   });
 
   testWidgets('点击指示点跳转到对应步骤', (tester) async {

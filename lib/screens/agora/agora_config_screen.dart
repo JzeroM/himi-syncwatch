@@ -25,6 +25,9 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
   /// 已配置时默认收起表单，通过状态卡「编辑」按钮展开。
   late bool _editing;
 
+  /// 切走分支时递增，重建书本使其回到合上封面（v1.2.41）。
+  int _bookEpoch = 0;
+
   @override
   void initState() {
     super.initState();
@@ -86,7 +89,10 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
         final saved = ref.read(agoraConfigProvider);
         _appIdController.text = saved?.appId ?? '';
         _certController.text = saved?.appCertificate ?? '';
-        setState(() => _editing = saved?.isConfigured != true);
+        setState(() {
+          _editing = saved?.isConfigured != true;
+          _bookEpoch++;
+        });
       },
     );
 
@@ -110,6 +116,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 540),
             child: AgoraGuideBook(
+              key: ValueKey('agoraGuideBook_$_bookEpoch'),
               themeColor: themeColor == null ? null : Color(themeColor),
               onImageTap: (image) => _showFullImage(context, image),
               extraPageBuilder: (context, palette, index, total) {

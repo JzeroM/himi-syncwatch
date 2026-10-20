@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_cover.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_page.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_palette.dart';
+import 'package:himi_syncwatch/widgets/agora/agora_book_quill.dart';
 
 export 'agora_book_page.dart' show AgoraGuideStep, agoraGuideSteps;
 
@@ -207,6 +208,20 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
               onNext: () => _goToStep(_index + 1),
               onSelect: _goToStep,
             ),
+            if (widget.extraPageBuilder != null) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: math.min(_bookWidth * 0.74, 300),
+                child: AspectRatio(
+                  aspectRatio: 246 / 72,
+                  child: AgoraBookQuill(
+                    palette: palette,
+                    enabled: !_busy && _index != _pageCount - 1,
+                    onTap: () => _goToStep(_pageCount - 1),
+                  ),
+                ),
+              ),
+            ],
           ],
         );
       },
