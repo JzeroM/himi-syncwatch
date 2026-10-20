@@ -85,7 +85,7 @@ void main() {
     });
   });
 
-  testWidgets('时钟层由设置控制，且不随控制栏显隐', (tester) async {
+  testWidgets('时钟层仅 TV 模式显示，且不随控制栏显隐', (tester) async {
     var showControls = false;
     late StateSetter setState;
     await tester.pumpWidget(
@@ -105,6 +105,7 @@ void main() {
                     ),
                   PlayerClockLayer(
                     format: TopBarClockFormat.twelveHour,
+                    tvMode: true,
                     now: () => DateTime(2026, 1, 1, 14, 5),
                     autoTick: false,
                   ),
@@ -124,13 +125,61 @@ void main() {
     expect(find.byKey(const ValueKey('playerClock')), findsOneWidget);
   });
 
+  testWidgets('非 TV 模式时钟层为空', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              PlayerClockLayer(
+                format: TopBarClockFormat.twelveHour,
+                tvMode: false,
+                autoTick: false,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('playerClock')), findsNothing);
+  });
+
+  testWidgets('时钟层位于顶栏最右侧', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 800,
+            height: 600,
+            child: Stack(
+              children: [
+                PlayerClockLayer(
+                  format: TopBarClockFormat.twelveHour,
+                  tvMode: true,
+                  now: () => DateTime(2026, 1, 1, 14, 5),
+                  autoTick: false,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final rect = tester.getRect(find.byKey(const ValueKey('playerClock')));
+    expect(rect.right, closeTo(788, 0.5));
+  });
+
   testWidgets('关闭时时钟层为空', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
           body: Stack(
             children: [
-              PlayerClockLayer(format: TopBarClockFormat.off, autoTick: false),
+              PlayerClockLayer(
+                format: TopBarClockFormat.off,
+                tvMode: true,
+                autoTick: false,
+              ),
             ],
           ),
         ),

@@ -161,13 +161,13 @@ void main() {
     }
     expect(find.byKey(const ValueKey('settingsCategoryAppearance')),
         findsOneWidget);
-    expect(find.byKey(const ValueKey('settingsCategoryPlayer')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('settingsCategoryPlayer')), findsOneWidget);
     expect(
         find.byKey(const ValueKey('settingsCategoryGeneral')), findsOneWidget);
     expect(find.byKey(const ValueKey('settingsCategoryExperimental')),
         findsOneWidget);
-    expect(
-        find.byKey(const ValueKey('settingsCategoryAbout')), findsOneWidget);
+    expect(find.byKey(const ValueKey('settingsCategoryAbout')), findsOneWidget);
   });
 
   testWidgets('点关于入口进入关于页并展示版本信息', (tester) async {
@@ -191,8 +191,8 @@ void main() {
     await tester.tap(find.text('外观'));
     await tester.pumpAndSettle();
     expect(find.byType(AppearanceSettingsScreen), findsOneWidget);
-    expect(find.byKey(const ValueKey('appearanceSettingsPage')),
-        findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
   });
 
   testWidgets('外观子页展示液态玻璃开关（默认开）', (tester) async {
@@ -257,8 +257,7 @@ void main() {
     expect(container.read(settingsProvider).tvMode, isTrue);
   });
 
-  testWidgets('通用子页：同步到 TV 开关默认开，切换后 tvSyncEnabled 为 false',
-      (tester) async {
+  testWidgets('通用子页：同步到 TV 开关默认开，切换后 tvSyncEnabled 为 false', (tester) async {
     final container = await _pumpScreen(tester, category: '通用');
     await tester.scrollUntilVisible(
       find.text('同步到 TV'),
@@ -285,8 +284,7 @@ void main() {
     expect(container.read(settingsProvider).tvSyncEnabled, isFalse);
     final notifier =
         container.read(settingsProvider.notifier) as FakeSettingsNotifier;
-    expect(notifier.persistCount, greaterThan(0),
-        reason: '切换应触发落盘');
+    expect(notifier.persistCount, greaterThan(0), reason: '切换应触发落盘');
   });
 
   testWidgets('通用子页：同步到 TV 开关初始为关时可重新打开', (tester) async {
@@ -324,12 +322,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('TV 模式'), findsOneWidget);
-    expect(find.text('同步到 TV'), findsNothing,
-        reason: 'TV 是被推送方，无需此开关');
+    expect(find.text('同步到 TV'), findsNothing, reason: 'TV 是被推送方，无需此开关');
   });
 
-  testWidgets('通用子页：顶栏时间默认关闭，可切到 24 小时制并落盘', (tester) async {
-    final container = await _pumpScreen(tester, category: '通用');
+  testWidgets('通用子页：非 TV 隐藏顶栏时间设置', (tester) async {
+    await _pumpScreen(tester, category: '通用');
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('cacheSettingsEntry')),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('topBarClockSetting')), findsNothing);
+    expect(find.text('顶栏时间'), findsNothing);
+  });
+
+  testWidgets('通用子页 TV：顶栏时间默认关闭，弹层切到 24 小时制并落盘', (tester) async {
+    final container = await _pumpScreen(
+      tester,
+      initial: const AppSettings(tvMode: true),
+      category: '通用',
+    );
     await _scrollToText(tester, '顶栏时间');
 
     expect(find.text('顶栏时间'), findsOneWidget);
@@ -337,20 +351,13 @@ void main() {
       container.read(settingsProvider).topBarClockFormat,
       TopBarClockFormat.off,
     );
+    expect(find.byType(DropdownButton<String>), findsNothing,
+        reason: 'TV 模式走弹层');
 
-    final row = find.ancestor(
-      of: find.text('顶栏时间'),
-      matching: find.byType(ListTile),
-    );
-    final dropdown = find.descendant(
-      of: row,
-      matching: find.byType(DropdownButton<String>),
-    );
-    expect(tester.widget<DropdownButton<String>>(dropdown).value, 'off');
-
-    await tester.tap(dropdown);
+    await tester.tap(find.text('顶栏时间'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('24 小时制').last);
+    expect(find.byKey(const Key('settingOption_24h')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('settingOption_24h')));
     await tester.pumpAndSettle();
 
     expect(
@@ -360,29 +367,6 @@ void main() {
     final notifier =
         container.read(settingsProvider.notifier) as FakeSettingsNotifier;
     expect(notifier.persistCount, greaterThan(0), reason: '切换应触发落盘');
-  });
-
-  testWidgets('通用子页 TV：顶栏时间走居中弹层并写入 12 小时制', (tester) async {
-    final container = await _pumpScreen(
-      tester,
-      initial: const AppSettings(tvMode: true),
-      category: '通用',
-    );
-    await _scrollToText(tester, '顶栏时间');
-
-    expect(find.byType(DropdownButton<String>), findsNothing,
-        reason: 'TV 模式走弹层');
-    await tester.tap(find.text('顶栏时间'));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('settingOption_12h')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('settingOption_12h')));
-    await tester.pumpAndSettle();
-
-    expect(
-      container.read(settingsProvider).topBarClockFormat,
-      TopBarClockFormat.twelveHour,
-    );
   });
 
   testWidgets('通用子页：缓存管理入口进入缓存页', (tester) async {
@@ -446,8 +430,8 @@ void main() {
     // 第二段：OK 激活进入外观子页
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('appearanceSettingsPage')),
-        findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
     expect(container.read(settingsProvider).themeColor, isNotNull,
         reason: '进入子页不改主题色');
   });
@@ -534,8 +518,7 @@ void main() {
     expect(container.read(settingsProvider).audioRenderer, 'auto');
   });
 
-  testWidgets('MDK：网络流缓冲默认 1000/4000ms，拖动最小缓冲写入设置',
-      (tester) async {
+  testWidgets('MDK：网络流缓冲默认 1000/4000ms，拖动最小缓冲写入设置', (tester) async {
     final container = await _pumpMdkSettings(tester);
     await tester.scrollUntilVisible(
       find.text('最小缓冲'),
@@ -680,6 +663,57 @@ void main() {
     expect(container.read(settingsProvider).themeColor, isNotNull);
   });
 
+  testWidgets('TV：MDK 最小/最大缓冲滑块按←→调值', (tester) async {
+    final container = await _pumpMdkSettings(
+      tester,
+      remote: true,
+      initial: const AppSettings(tvMode: true),
+    );
+    await tester.scrollUntilVisible(
+      find.text('最小缓冲'),
+      250,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    Finder wrapperOf(Finder child) => find.ancestor(
+          of: child,
+          matching: find.byWidgetPredicate(
+            (w) => w is Focus && w.focusNode?.debugLabel == 'TvFocusable',
+          ),
+        );
+
+    final minSlider = find.byKey(const ValueKey('mdkBufferMinSlider'));
+    tester.widget<Focus>(wrapperOf(minSlider)).focusNode!.requestFocus();
+    await tester.pumpAndSettle();
+
+    final beforeMin = container.read(settingsProvider).mdkBufferMinMs;
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(settingsProvider).mdkBufferMinMs,
+      greaterThan(beforeMin),
+      reason: '右键应调大最小缓冲',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).mdkBufferMinMs, beforeMin);
+
+    final maxSlider = find.byKey(const ValueKey('mdkBufferMaxSlider'));
+    tester.widget<Focus>(wrapperOf(maxSlider)).focusNode!.requestFocus();
+    await tester.pumpAndSettle();
+
+    final beforeMax = container.read(settingsProvider).mdkBufferMaxMs;
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(settingsProvider).mdkBufferMaxMs,
+      greaterThan(beforeMax),
+      reason: '右键应调大最大缓冲',
+    );
+  });
+
   testWidgets('非 TV：未挂载 TV 遥控壳（不注入 directional）', (tester) async {
     await _pumpScreen(tester);
     expect(find.byType(TvRemoteShell), findsNothing);
@@ -782,8 +816,7 @@ void main() {
       await _pumpMdkSettings(tester);
 
       expect(find.text('视频输出'), findsNothing);
-      expect(find.text('渲染兼容模式（实验）'), findsNothing,
-          reason: '实验项不在播放器子页');
+      expect(find.text('渲染兼容模式（实验）'), findsNothing, reason: '实验项不在播放器子页');
       expect(find.text('解码方式'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
@@ -868,8 +901,7 @@ void main() {
     expect(find.byKey(const Key('settingOption_AAudio')), findsNothing);
   });
 
-  testWidgets('TV：弹层方向键上下切换焦点，弹层不关闭，Enter 才写入（v1.1.176 回归）',
-      (tester) async {
+  testWidgets('TV：弹层方向键上下切换焦点，弹层不关闭，Enter 才写入（v1.1.176 回归）', (tester) async {
     final container = await _pumpMdkSettings(tester,
         initial: const AppSettings(tvMode: true), remote: true);
 
@@ -880,15 +912,14 @@ void main() {
     expect(container.read(settingsProvider).decodeMode, 'auto');
 
     // 打开后当前值行 autofocused
-    final autoRow = tester.widget<TvFocusable>(
-        find.byKey(const Key('settingOption_auto')));
+    final autoRow =
+        tester.widget<TvFocusable>(find.byKey(const Key('settingOption_auto')));
     expect(autoRow.autofocus, isTrue);
 
     // 方向键下移焦点：弹层不关闭、设置不变（RadioGroup 劫持回归验证）
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-    expect(find.byType(AlertDialog), findsOneWidget,
-        reason: '方向键不应关闭弹层');
+    expect(find.byType(AlertDialog), findsOneWidget, reason: '方向键不应关闭弹层');
     expect(container.read(settingsProvider).decodeMode, 'auto',
         reason: '方向键不应触发选择');
 
@@ -1155,7 +1186,8 @@ void main() {
         await _scrollToText(tester, '玻璃参数');
 
         expect(find.text('玻璃参数'), findsOneWidget);
-        expect(find.byKey(const ValueKey('glassEdgeZoneSlider')), findsOneWidget,
+        expect(
+            find.byKey(const ValueKey('glassEdgeZoneSlider')), findsOneWidget,
             reason: 'iOS 走 standard 路径，读 uEdgeZone，滑杆生效');
         expect(find.text('折射范围'), findsOneWidget);
         expect(find.byKey(const ValueKey('glassRefractiveIndexSlider')),

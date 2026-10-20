@@ -154,22 +154,14 @@ void main() {
       expect(find.text('4.89 MB/s'), findsOneWidget);
     });
 
-    testWidgets('开启顶栏时间时标题缩到中心左侧，不压住时钟', (tester) async {
-      const title = '这是一个非常非常长的播放标题用于测试顶栏时钟避让';
-      await tester.pumpWidget(_host(_bar(title: title)));
-      final normalRight =
-          tester.getRect(find.byKey(const ValueKey('playerTitle'))).right;
+    testWidgets('开启顶栏时钟时在右侧预留时钟位置', (tester) async {
+      await tester.pumpWidget(_host(_bar(reserveClockSpace: false)));
+      expect(find.byKey(const ValueKey('playerClockSpace')), findsNothing);
 
-      await tester.pumpWidget(
-        _host(_bar(title: title, reserveClockSpace: true)),
-      );
-      final barRect =
-          tester.getRect(find.byKey(const ValueKey('playerTopBar')));
-      final titleRect =
-          tester.getRect(find.byKey(const ValueKey('playerTitle')));
-
-      expect(titleRect.right, lessThan(normalRight));
-      expect(titleRect.right, lessThanOrEqualTo(barRect.center.dx - 40));
+      await tester.pumpWidget(_host(_bar(reserveClockSpace: true)));
+      final space = find.byKey(const ValueKey('playerClockSpace'));
+      expect(space, findsOneWidget);
+      expect(tester.getSize(space).width, 100);
     });
 
     testWidgets('标题为空不渲染文本；网速 null（设置关闭）不渲染', (tester) async {

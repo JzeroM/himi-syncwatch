@@ -131,56 +131,42 @@ class _EngineTabBody extends ConsumerWidget {
       const Divider(height: 1),
       // ── 网络流缓冲（v1.2.29，setBufferRange / demux.buffer.ranges）──
       // 弱网/高码率（如 4K remux）"一顿一顿"时调大；修改后下次起播生效。
-      settingsTvWrapRow(
+      settingsTvSliderRow(
+        context: context,
         tvMode: settings.tvMode,
-        onTap: () {},
-        child: ListTile(
-          title: const Text('最小缓冲'),
-          subtitle: Text(
-            '${settings.mdkBufferMinMs} ms：起播/欠载恢复前需攒够的缓冲。'
+        title: '最小缓冲',
+        subtitle: '${settings.mdkBufferMinMs} ms：起播/欠载恢复前需攒够的缓冲。'
             '越大越不易"一顿一顿"，起播越慢',
-          ),
-          trailing: SizedBox(
-            width: 200,
-            child: Slider(
-              value: settings.mdkBufferMinMs.toDouble(),
-              min: AppSettings.mdkBufferMinMsLower.toDouble(),
-              max: AppSettings.mdkBufferMinMsUpper.toDouble(),
-              divisions: (AppSettings.mdkBufferMinMsUpper -
-                      AppSettings.mdkBufferMinMsLower) ~/
-                  100,
-              label: '${settings.mdkBufferMinMs} ms',
-              onChanged: (v) => notifier.update(mdkBufferMinMs: v.round()),
-            ),
-          ),
-        ),
+        sliderKey: 'mdkBufferMinSlider',
+        value: settings.mdkBufferMinMs.toDouble(),
+        min: AppSettings.mdkBufferMinMsLower.toDouble(),
+        max: AppSettings.mdkBufferMinMsUpper.toDouble(),
+        divisions: (AppSettings.mdkBufferMinMsUpper -
+                AppSettings.mdkBufferMinMsLower) ~/
+            100,
+        label: '${settings.mdkBufferMinMs} ms',
+        step: 100,
+        onChanged: (v) => notifier.update(mdkBufferMinMs: v.round()),
       ),
       const Divider(height: 1),
-      settingsTvWrapRow(
+      settingsTvSliderRow(
+        context: context,
         tvMode: settings.tvMode,
-        onTap: () {},
-        child: ListTile(
-          title: const Text('最大缓冲'),
-          subtitle: Text(
-            settings.mdkBufferMaxMs == 0
-                ? '无限：最大程度扛网络抖动（占内存最多）'
-                : '${settings.mdkBufferMaxMs} ms：缓冲上限，越大越扛网络抖动、'
-                    '不影响延迟（占内存）',
-          ),
-          trailing: SizedBox(
-            width: 200,
-            child: Slider(
-              value: settings.mdkBufferMaxMs.toDouble(),
-              min: AppSettings.mdkBufferMaxMsLower.toDouble(),
-              max: AppSettings.mdkBufferMaxMsUpper.toDouble(),
-              divisions: AppSettings.mdkBufferMaxMsUpper ~/ 1000,
-              label: settings.mdkBufferMaxMs == 0
-                  ? '无限'
-                  : '${settings.mdkBufferMaxMs} ms',
-              onChanged: (v) => notifier.update(mdkBufferMaxMs: v.round()),
-            ),
-          ),
-        ),
+        title: '最大缓冲',
+        subtitle: settings.mdkBufferMaxMs == 0
+            ? '无限：最大程度扛网络抖动（占内存最多）'
+            : '${settings.mdkBufferMaxMs} ms：缓冲上限，越大越扛网络抖动、'
+                '不影响延迟（占内存）',
+        sliderKey: 'mdkBufferMaxSlider',
+        value: settings.mdkBufferMaxMs.toDouble(),
+        min: AppSettings.mdkBufferMaxMsLower.toDouble(),
+        max: AppSettings.mdkBufferMaxMsUpper.toDouble(),
+        divisions: AppSettings.mdkBufferMaxMsUpper ~/ 1000,
+        label: settings.mdkBufferMaxMs == 0
+            ? '无限'
+            : '${settings.mdkBufferMaxMs} ms',
+        step: 1000,
+        onChanged: (v) => notifier.update(mdkBufferMaxMs: v.round()),
       ),
       const Divider(height: 1),
       settingOptionTile(
@@ -266,24 +252,19 @@ class _EngineTabBody extends ConsumerWidget {
         onSelected: (v) => notifier.update(mkToneMapping: v),
       ),
       const Divider(height: 1),
-      settingsTvWrapRow(
+      settingsTvSliderRow(
+        context: context,
         tvMode: settings.tvMode,
-        onTap: () {},
-        child: ListTile(
-          title: const Text('缓存大小'),
-          subtitle: Text('${settings.mkCacheSize.toInt()} MB（0 = 关闭）'),
-          trailing: SizedBox(
-            width: 200,
-            child: Slider(
-              value: settings.mkCacheSize,
-              min: 0,
-              max: 500,
-              divisions: 10,
-              label: '${settings.mkCacheSize.toInt()} MB',
-              onChanged: (v) => notifier.update(mkCacheSize: v),
-            ),
-          ),
-        ),
+        title: '缓存大小',
+        subtitle: '${settings.mkCacheSize.toInt()} MB（0 = 关闭）',
+        sliderKey: 'mkCacheSizeSlider',
+        value: settings.mkCacheSize,
+        min: 0,
+        max: 500,
+        divisions: 10,
+        label: '${settings.mkCacheSize.toInt()} MB',
+        step: 50,
+        onChanged: (v) => notifier.update(mkCacheSize: v),
       ),
       const Divider(height: 1),
       const Padding(

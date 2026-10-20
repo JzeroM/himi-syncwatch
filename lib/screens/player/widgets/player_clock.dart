@@ -20,25 +20,28 @@ class PlayerClockLayer extends StatelessWidget {
   const PlayerClockLayer({
     super.key,
     required this.format,
+    required this.tvMode,
     this.now,
     this.autoTick = true,
   });
 
   final TopBarClockFormat format;
+  final bool tvMode;
   final DateTime Function()? now;
   final bool autoTick;
 
   @override
   Widget build(BuildContext context) {
-    if (!format.enabled) return const SizedBox.shrink();
+    if (!tvMode || !format.enabled) return const SizedBox.shrink();
     return Positioned(
       top: MediaQuery.paddingOf(context).top,
-      left: 0,
-      right: 0,
+      right: 12,
+      width: 100,
       height: 48,
       child: IgnorePointer(
         child: ExcludeFocus(
-          child: Center(
+          child: Align(
+            alignment: Alignment.centerRight,
             child: PlayerClock(
               format: format,
               now: now,

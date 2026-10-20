@@ -6206,7 +6206,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          PlayerClockLayer(format: clockFormat),
+          PlayerClockLayer(format: clockFormat, tvMode: videoAreaTvMode),
 
           // 左缘锁/解锁钮（手机版已移入底栏左数显列；此处置留给桌面；
           // TV 无锁）
@@ -6507,7 +6507,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onToggleDecode: () =>
           setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
       onShare: _showShareRoomDialog,
-      reserveClockSpace: settings.topBarClockFormat.enabled,
+      reserveClockSpace:
+          settings.tvMode && settings.topBarClockFormat.enabled,
     );
   }
 

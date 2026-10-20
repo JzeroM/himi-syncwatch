@@ -93,7 +93,7 @@ class PlayerTopBar extends StatelessWidget {
   final IconData rotateButtonIcon;
   final VoidCallback? onRotate;
 
-  /// 顶栏时钟开启时，限制标题宽度，避免长标题压到居中的时间。
+  /// 顶栏时钟开启时，在右侧预留时钟位置，避免控件压到时间。
   final bool reserveClockSpace;
 
   /// 解码方块装饰：
@@ -139,9 +139,6 @@ class PlayerTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleMaxWidth = ((MediaQuery.sizeOf(context).width - 24) / 2 - 100)
-        .clamp(0.0, double.infinity)
-        .toDouble();
     return Container(
       key: const ValueKey('playerTopBar'),
       padding: EdgeInsets.only(
@@ -169,24 +166,15 @@ class PlayerTopBar extends StatelessWidget {
           if (title.isNotEmpty) ...[
             const SizedBox(width: 4),
             Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth:
-                        reserveClockSpace ? titleMaxWidth : double.infinity,
-                  ),
-                  child: Text(
-                    title,
-                    key: const ValueKey('playerTitle'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+              child: Text(
+                title,
+                key: const ValueKey('playerTitle'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -312,6 +300,11 @@ class PlayerTopBar extends StatelessWidget {
               onPressed: onShare,
             ),
           ],
+          if (reserveClockSpace)
+            const SizedBox(
+              key: ValueKey('playerClockSpace'),
+              width: 100,
+            ),
         ],
       ),
     );

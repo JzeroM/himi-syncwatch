@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
@@ -146,6 +147,62 @@ Widget settingOptionTile({
         ),
       ),
     ),
+  );
+}
+
+/// 设置项滑杆行（缓冲/缓存等）。
+///
+/// TV 模式下整行可聚焦，左右键按 [step] 调值、上下键放行给焦点遍历；
+/// 非 TV 模式保持普通 [Slider] 触摸拖动。
+Widget settingsTvSliderRow({
+  required BuildContext context,
+  required bool tvMode,
+  required String title,
+  required String subtitle,
+  required String sliderKey,
+  required double value,
+  required double min,
+  required double max,
+  required int? divisions,
+  required String label,
+  required double step,
+  required ValueChanged<double> onChanged,
+}) {
+  final tile = ListTile(
+    title: Text(title),
+    subtitle: Text(subtitle),
+    trailing: SizedBox(
+      width: 200,
+      child: Slider(
+        key: ValueKey(sliderKey),
+        value: value,
+        min: min,
+        max: max,
+        divisions: divisions,
+        label: label,
+        onChanged: onChanged,
+      ),
+    ),
+  );
+  if (!tvMode) return tile;
+  return TvFocusable(
+    scale: 1.0,
+    onTap: () {},
+    onKeyEvent: (node, event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+        return KeyEventResult.ignored;
+      }
+      final key = event.logicalKey;
+      if (key != LogicalKeyboardKey.arrowLeft &&
+          key != LogicalKeyboardKey.arrowRight) {
+        return KeyEventResult.ignored;
+      }
+      final delta = key == LogicalKeyboardKey.arrowLeft ? -step : step;
+      final next = (value + delta).clamp(min, max).toDouble();
+      if (next != value) onChanged(next);
+      return KeyEventResult.handled;
+    },
+    child: ExcludeFocus(child: tile),
   );
 }
 
