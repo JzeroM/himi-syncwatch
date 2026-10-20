@@ -310,8 +310,8 @@ class _QuillPainter extends CustomPainter {
     final upper = <Offset>[];
     final lower = <Offset>[];
     for (var i = 0; i <= samples; i++) {
-      final t = i / samples;
-      final width = 1.05 * (1 - t) + 0.26;
+      final t = _vaneEnd * i / samples;
+      final width = 1.05 * (1 - t / _vaneEnd) + 0.26;
       final normal = _normal(t);
       upper.add(_shaft(t) + normal * width);
       lower.add(_shaft(t) - normal * width);
@@ -341,37 +341,6 @@ class _QuillPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.45
         ..color = palette.ink.withValues(alpha: 0.48),
-    );
-    canvas.drawLine(
-      _shaft(0.06) - const Offset(0, 0.45),
-      _shaft(0.97) - const Offset(0, 0.45),
-      Paint()
-        ..color = palette.paperLight.withValues(alpha: 0.62)
-        ..strokeWidth = 0.32,
-    );
-
-    final tip = _shaft(1);
-    final forward = _tangent(1);
-    final normal = _normal(1);
-    final point = tip + forward * 3.4;
-    final tipPath = Path()
-      ..moveTo(tip.dx + normal.dx * 0.5, tip.dy + normal.dy * 0.5)
-      ..quadraticBezierTo(
-        point.dx + normal.dx * 0.18,
-        point.dy + normal.dy * 0.18,
-        point.dx,
-        point.dy,
-      )
-      ..quadraticBezierTo(
-        point.dx - normal.dx * 0.18,
-        point.dy - normal.dy * 0.18,
-        tip.dx - normal.dx * 0.5,
-        tip.dy - normal.dy * 0.5,
-      )
-      ..close();
-    canvas.drawPath(
-      tipPath,
-      Paint()..color = palette.paperLight,
     );
   }
 
