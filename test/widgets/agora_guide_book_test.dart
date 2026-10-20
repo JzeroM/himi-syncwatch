@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/widgets/agora/agora_book_palette.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_guide_book.dart';
 
 Future<void> _pumpBook(
   WidgetTester tester, {
   ValueChanged<String>? onImageTap,
+  Color? themeColor,
   Size size = const Size(390, 844),
 }) async {
   tester.view.physicalSize = size;
@@ -19,7 +21,10 @@ Future<void> _pumpBook(
         body: Center(
           child: SizedBox(
             width: 390,
-            child: AgoraGuideBook(onImageTap: onImageTap),
+            child: AgoraGuideBook(
+              onImageTap: onImageTap,
+              themeColor: themeColor,
+            ),
           ),
         ),
       ),
@@ -28,27 +33,72 @@ Future<void> _pumpBook(
   await tester.pumpAndSettle();
 }
 
+Future<void> _openBook(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('agoraBookCover')));
+  await tester.pumpAndSettle();
+}
+
+LinearGradient _coverGradient(WidgetTester tester) {
+  final container = tester.widget<Container>(
+    find.byKey(const ValueKey('agoraBookCoverSurface')),
+  );
+  return (container.decoration! as BoxDecoration).gradient! as LinearGradient;
+}
+
 void main() {
-  testWidgets('首屏显示第 1 步、页码与四枚指示点', (tester) async {
+  testWidgets('首屏显示合上的做旧封面', (tester) async {
     await _pumpBook(tester);
+
+    expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('agoraBookCoverSurface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('agoraBookClosedPageBlock')),
+      findsOneWidget,
+    );
+    expect(find.text('声网接入指南'), findsOneWidget);
+    expect(find.text('四步完成声网配置'), findsOneWidget);
+    expect(find.text('步骤 1 / 4'), findsNothing);
+    expect(find.text('共 4 步 · 左右滑动阅读'), findsOneWidget);
+  });
+
+  testWidgets('点按封面或按钮均可翻开，首页可返回封面', (tester) async {
+    await _pumpBook(tester);
+
+    await _openBook(tester);
 
     expect(find.text('步骤 1 / 4'), findsOneWidget);
     expect(find.text('注册登录并创建通用项目'), findsOneWidget);
-    expect(find.text('左右滑动翻页'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookDot_0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookDot_3')), findsOneWidget);
-
+    expect(
+        find.byKey(const ValueKey('agoraBookOpenPageBlock')), findsOneWidget);
     final prev = tester.widget<IconButton>(
       find.byKey(const ValueKey('agoraBookPrev')),
     );
-    expect(prev.onPressed, isNull);
+    expect(prev.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('agoraBookPrev')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
+
+    await _openBook(tester);
+    expect(find.text('步骤 1 / 4'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('agoraBookViewport')),
+      const Offset(280, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
   });
 
   testWidgets('左右滑动翻页，页码同步更新', (tester) async {
     await _pumpBook(tester);
+    await _openBook(tester);
 
     await tester.drag(
-      find.byKey(const ValueKey('agoraBookPageView')),
+      find.byKey(const ValueKey('agoraBookViewport')),
       const Offset(-280, 0),
     );
     await tester.pumpAndSettle();
@@ -57,7 +107,7 @@ void main() {
     expect(find.text('开通体验版套餐包'), findsOneWidget);
 
     await tester.drag(
-      find.byKey(const ValueKey('agoraBookPageView')),
+      find.byKey(const ValueKey('agoraBookViewport')),
       const Offset(280, 0),
     );
     await tester.pumpAndSettle();
@@ -67,6 +117,7 @@ void main() {
 
   testWidgets('点击指示点跳转到对应步骤', (tester) async {
     await _pumpBook(tester);
+    await _openBook(tester);
 
     await tester.tap(find.byKey(const ValueKey('agoraBookDot_3')));
     await tester.pumpAndSettle();
@@ -75,9 +126,26 @@ void main() {
     expect(find.text('获取 APP ID 和证书'), findsOneWidget);
   });
 
+  testWidgets('末页下一页按钮禁用', (tester) async {
+    await _pumpBook(tester);
+    await _openBook(tester);
+
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byKey(const ValueKey('agoraBookNext')));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('步骤 4 / 4'), findsOneWidget);
+    final next = tester.widget<IconButton>(
+      find.byKey(const ValueKey('agoraBookNext')),
+    );
+    expect(next.onPressed, isNull);
+  });
+
   testWidgets('点击截图回调图片路径', (tester) async {
     String? tapped;
     await _pumpBook(tester, onImageTap: (image) => tapped = image);
+    await _openBook(tester);
 
     final ctx = tester.element(find.byType(MaterialApp));
     await tester.runAsync(() => precacheImage(
@@ -94,8 +162,44 @@ void main() {
     expect(tapped, 'assets/images/agora_step1.png');
   });
 
-  testWidgets('窄屏下不溢出', (tester) async {
+  testWidgets('封面颜色跟随自定义主题色', (tester) async {
+    const accent = Color(0xFFEC4899);
+    final expected = AgoraBookPalette.fromAccent(accent);
+
+    await _pumpBook(tester, themeColor: accent);
+
+    expect(_coverGradient(tester).colors, contains(expected.leather));
+
+    const otherAccent = Color(0xFF10B981);
+    final other = AgoraBookPalette.fromAccent(otherAccent);
+    await _pumpBook(tester, themeColor: otherAccent);
+
+    expect(_coverGradient(tester).colors, contains(other.leather));
+  });
+
+  testWidgets('做旧纸张与书页纹理可渲染', (tester) async {
+    await _pumpBook(tester);
+    await _openBook(tester);
+
+    expect(find.byKey(const ValueKey('agoraBookPage_0')), findsOneWidget);
+    expect(find.text('步骤 1 / 4'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('翻页矩阵方向锁定为外翻', (tester) async {
+    final transform = agoraPageTurnTransform(0.5);
+
+    expect(transform.entry(2, 0), lessThan(0));
+    expect(transform.entry(0, 0), lessThan(1));
+  });
+
+  testWidgets('窄屏下合上/翻开均不溢出', (tester) async {
     await _pumpBook(tester, size: const Size(320, 640));
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
+
+    await _openBook(tester);
 
     expect(tester.takeException(), isNull);
     expect(find.text('步骤 1 / 4'), findsOneWidget);

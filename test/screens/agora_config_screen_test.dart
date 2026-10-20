@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
+import 'package:himi_syncwatch/widgets/agora/agora_book_palette.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 
 import '../helpers/test_fakes.dart';
@@ -36,6 +37,14 @@ Future<ProviderContainer> _pumpScreen(
 
 Future<void> _settleSnackbars(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 5));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openGuideBook(WidgetTester tester) async {
+  final cover = find.byKey(const ValueKey('agoraBookCover'));
+  await tester.ensureVisible(cover);
+  await tester.pumpAndSettle();
+  await tester.tap(cover);
   await tester.pumpAndSettle();
 }
 
@@ -123,20 +132,38 @@ void main() {
     await _settleSnackbars(tester);
   });
 
-  testWidgets('页面内嵌声网指南书，不再使用配置说明弹窗', (tester) async {
+  testWidgets('页面内嵌声网指南书，首次显示做旧封面', (tester) async {
     await _pumpScreen(tester);
 
     expect(find.byKey(const ValueKey('agoraGuideBook')), findsOneWidget);
-    expect(find.text('声网接入指南'), findsOneWidget);
-    expect(find.text('步骤 1 / 4'), findsOneWidget);
-    expect(find.text('注册登录并创建通用项目'), findsOneWidget);
+    expect(find.text('声网接入指南'), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
+    expect(find.text('步骤 1 / 4'), findsNothing);
     expect(find.text('配置说明'), findsNothing);
     expect(find.byTooltip('配置说明'), findsNothing);
     expect(find.byType(AlertDialog), findsNothing);
   });
 
-  testWidgets('指南书可通过箭头翻页，首末页按钮禁用', (tester) async {
+  testWidgets('指南书封面跟随设置主题色', (tester) async {
+    const accent = Color(0xFFEC4899);
+    await _pumpScreen(
+      tester,
+      settings: const AppSettings(themeColor: 0xFFEC4899),
+    );
+
+    final container = tester.widget<Container>(
+      find.byKey(const ValueKey('agoraBookCoverSurface')),
+    );
+    final gradient =
+        (container.decoration! as BoxDecoration).gradient! as LinearGradient;
+
+    expect(
+        gradient.colors, contains(AgoraBookPalette.fromAccent(accent).leather));
+  });
+
+  testWidgets('指南书可通过箭头翻页，末页下一页禁用', (tester) async {
     await _pumpScreen(tester);
+    await _openGuideBook(tester);
 
     await tester.ensureVisible(find.byKey(const ValueKey('agoraBookNext')));
     await tester.pumpAndSettle();
@@ -144,7 +171,7 @@ void main() {
     var prev = tester.widget<IconButton>(
       find.byKey(const ValueKey('agoraBookPrev')),
     );
-    expect(prev.onPressed, isNull);
+    expect(prev.onPressed, isNotNull);
 
     await tester.tap(find.byKey(const ValueKey('agoraBookNext')));
     await tester.pumpAndSettle();
@@ -173,6 +200,7 @@ void main() {
 
   testWidgets('指南书内点击截图可放大，并可用「关闭」退出', (tester) async {
     await _pumpScreen(tester);
+    await _openGuideBook(tester);
 
     // 3.47 起测试环境 asset decode 为真实异步，pumpAndSettle 等不到 →
     // runAsync 预缓存步骤图，否则 Image 宽为 0，tap 必 miss。
@@ -192,7 +220,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('关闭'), findsNothing);
-    expect(find.byKey(const ValueKey('agoraBookPageView')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookPage_0')), findsOneWidget);
   });
 
   testWidgets('已配置时默认收起表单，点编辑按钮展开', (tester) async {
