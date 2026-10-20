@@ -59,11 +59,6 @@ class AgoraBookCover extends StatelessWidget {
                 child: _CoverContent(palette: palette),
               ),
             ),
-            Positioned(
-              top: -3,
-              right: 54,
-              child: IgnorePointer(child: _Ribbon(palette: palette)),
-            ),
           ],
         ),
       ),
@@ -543,8 +538,12 @@ class _ClosedPageBlock extends StatelessWidget {
           ),
         ],
       ),
-      child: CustomPaint(
-        painter: _PageBlockPainter(palette, closed: true),
+      child: ClipRRect(
+        key: const ValueKey('agoraBookClosedPageClip'),
+        borderRadius: BorderRadius.circular(16),
+        child: CustomPaint(
+          painter: _PageBlockPainter(palette, closed: true),
+        ),
       ),
     );
   }
@@ -567,64 +566,15 @@ class _OpenPageBlock extends StatelessWidget {
           colors: [palette.paperLight, palette.paperEdge],
         ),
       ),
-      child: CustomPaint(
-        painter: _PageBlockPainter(palette, closed: false),
+      child: ClipRRect(
+        key: const ValueKey('agoraBookOpenPageClip'),
+        borderRadius: BorderRadius.circular(5),
+        child: CustomPaint(
+          painter: _PageBlockPainter(palette, closed: false),
+        ),
       ),
     );
   }
-}
-
-class _Ribbon extends StatelessWidget {
-  const _Ribbon({required this.palette});
-
-  final AgoraBookPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: const Size(15, 54),
-      painter: _RibbonPainter(palette),
-    );
-  }
-}
-
-class _RibbonPainter extends CustomPainter {
-  const _RibbonPainter(this.palette);
-
-  final AgoraBookPalette palette;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(size.width / 2, size.height - 8)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(
-      path,
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            palette.ribbon.withValues(alpha: 0.72),
-            palette.ribbon,
-            palette.ribbon.withValues(alpha: 0.62),
-          ],
-        ).createShader(Offset.zero & size),
-    );
-    canvas.drawLine(
-      const Offset(1, 1),
-      Offset(size.width - 1, 1),
-      Paint()
-        ..color = palette.paperLight.withValues(alpha: 0.24)
-        ..strokeWidth = 0.8,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _RibbonPainter oldDelegate) =>
-      oldDelegate.palette != palette;
 }
 
 class _PageBlockPainter extends CustomPainter {

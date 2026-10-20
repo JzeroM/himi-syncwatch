@@ -18,15 +18,24 @@ Matrix4 agoraPageTurnTransform(double progress) {
     ..rotateZ(-0.012 * lift);
 }
 
+typedef AgoraBookExtraPageBuilder = Widget Function(
+  BuildContext context,
+  AgoraBookPalette palette,
+  int index,
+  int total,
+);
+
 class AgoraGuideBook extends StatefulWidget {
   const AgoraGuideBook({
     super.key,
     this.steps = agoraGuideSteps,
+    this.extraPageBuilder,
     this.onImageTap,
     this.themeColor,
   });
 
   final List<AgoraGuideStep> steps;
+  final AgoraBookExtraPageBuilder? extraPageBuilder;
   final ValueChanged<String>? onImageTap;
   final Color? themeColor;
 
@@ -46,6 +55,9 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
 
   bool get _busy => _target != null;
 
+  int get _pageCount =>
+      widget.steps.length + (widget.extraPageBuilder == null ? 0 : 1);
+
   @override
   void initState() {
     super.initState();
@@ -59,12 +71,12 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
   }
 
   void _openCover() {
-    if (_busy || widget.steps.isEmpty) return;
+    if (_busy || _pageCount == 0) return;
     _animateTo(0);
   }
 
   void _goToStep(int step) {
-    if (_busy || step < -1 || step >= widget.steps.length) return;
+    if (_busy || step < -1 || step >= _pageCount) return;
     _animateTo(step);
   }
 
@@ -110,7 +122,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
     _dragDx += details.delta.dx;
 
     if (_dragTarget == null) {
-      if (_dragDx < -10 && _index < widget.steps.length - 1) {
+      if (_dragDx < -10 && _index < _pageCount - 1) {
         _dragTarget = _index + 1;
         _forward = true;
       } else if (_dragDx > 10 && _index > -1) {
@@ -152,7 +164,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.steps.isEmpty) return const SizedBox.shrink();
+    if (_pageCount == 0) return const SizedBox.shrink();
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(
         end: widget.themeColor ?? AgoraBookPalette.defaultAccent,
@@ -189,7 +201,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
             _BookControls(
               cover: _index == -1,
               page: _index,
-              total: widget.steps.length,
+              total: _pageCount,
               busy: _busy,
               onPrevious: () => _goToStep(_index - 1),
               onNext: () => _goToStep(_index + 1),
@@ -212,7 +224,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
       }
       return AgoraBookShell(
         palette: palette,
-        child: _page(_index, palette),
+        child: _page(context, _index, palette),
       );
     }
 
@@ -226,7 +238,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
             Positioned.fill(
               child: AgoraBookShell(
                 palette: palette,
-                child: _page(stepIndex, palette),
+                child: _page(context, stepIndex, palette),
               ),
             ),
           Positioned.fill(
@@ -258,7 +270,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _page(to, palette),
+          _page(context, to, palette),
           AnimatedBuilder(
             animation: _flip,
             builder: (context, _) {
@@ -267,7 +279,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
                 palette: palette,
                 curved: true,
                 edgeColor: palette.paperLight,
-                front: _page(from, palette),
+                front: _page(context, from, palette),
                 back: _PaperBack(palette: palette),
               );
             },
@@ -277,10 +289,14 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
     );
   }
 
-  Widget _page(int index, AgoraBookPalette palette) {
+  Widget _page(BuildContext context, int index, AgoraBookPalette palette) {
+    final total = _pageCount;
+    if (index >= widget.steps.length) {
+      return widget.extraPageBuilder!(context, palette, index, total);
+    }
     return AgoraBookGuidePage(
       index: index,
-      total: widget.steps.length,
+      total: total,
       step: widget.steps[index],
       palette: palette,
       onImageTap: widget.onImageTap,

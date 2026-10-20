@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
+import 'package:himi_syncwatch/widgets/agora/agora_book_config_page.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_guide_book.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
@@ -106,103 +106,38 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
           16,
           GlassConfig.bottomReserveOf(context),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _StatusCard(
-              configured: configured,
-              appId: agoraConfig?.appId ?? '',
-              onEdit: configured ? () => setState(() => _editing = true) : null,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 540),
+            child: AgoraGuideBook(
+              themeColor: themeColor == null ? null : Color(themeColor),
+              onImageTap: (image) => _showFullImage(context, image),
+              extraPageBuilder: (context, palette, index, total) {
+                return AgoraBookConfigPage(
+                  index: index,
+                  total: total,
+                  palette: palette,
+                  configured: configured,
+                  editing: _editing || !configured,
+                  tvMode: tvMode,
+                  appId: agoraConfig?.appId ?? '',
+                  appIdController: _appIdController,
+                  certController: _certController,
+                  onEdit: () => setState(() => _editing = true),
+                  onCancel: configured
+                      ? () {
+                          final saved = ref.read(agoraConfigProvider);
+                          _appIdController.text = saved?.appId ?? '';
+                          _certController.text = saved?.appCertificate ?? '';
+                          setState(() => _editing = false);
+                        }
+                      : null,
+                  onSave: _save,
+                  onClear: _clear,
+                );
+              },
             ),
-            const SizedBox(height: 20),
-            if (_editing || !configured) ...[
-              const Text(
-                'App ID',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              tvExcludeEditable(
-                tvMode: tvMode,
-                child: TextField(
-                  controller: _appIdController,
-                  decoration: const InputDecoration(
-                    hintText: '声网 App ID',
-                    prefixIcon: Icon(Icons.vpn_key),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'App Certificate',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              tvExcludeEditable(
-                tvMode: tvMode,
-                child: TextField(
-                  controller: _certController,
-                  decoration: const InputDecoration(
-                    hintText: '声网 App Certificate',
-                    prefixIcon: Icon(Icons.lock),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '开房 / 加入房间需要声网 RTM 凭证，填写后点击保存。',
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                height: 44,
-                child: FilledButton.icon(
-                  onPressed: _save,
-                  icon: const Icon(Icons.save, size: 18),
-                  label: const Text('保存'),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(
-                  Icons.auto_stories_outlined,
-                  size: 18,
-                  color: Colors.white70,
-                ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    '声网接入指南',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                if (configured)
-                  TextButton(
-                    onPressed: _clear,
-                    child:
-                        const Text('清空', style: TextStyle(color: Colors.red)),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 540),
-                child: AgoraGuideBook(
-                  themeColor: themeColor == null ? null : Color(themeColor),
-                  onImageTap: (image) => _showFullImage(context, image),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -245,64 +180,6 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({
-    required this.configured,
-    required this.appId,
-    this.onEdit,
-  });
-
-  final bool configured;
-  final String appId;
-  final VoidCallback? onEdit;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = configured ? Colors.green : Colors.orange;
-    return GlassContainer(
-      borderRadius: BorderRadius.circular(16),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Icon(
-            configured ? Icons.check_circle : Icons.info_outline,
-            color: color,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  configured ? '已配置' : '未配置',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  configured
-                      ? 'App ID: ${appId.length > 8 ? '${appId.substring(0, 8)}...' : appId}'
-                      : '填写 App ID 后即可开房与加入房间',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          if (onEdit != null)
-            IconButton(
-              key: const ValueKey('agoraEditButton'),
-              icon: const Icon(Icons.edit_outlined, size: 20),
-              tooltip: '编辑',
-              onPressed: onEdit,
-            ),
-        ],
       ),
     );
   }

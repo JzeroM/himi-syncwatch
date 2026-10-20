@@ -42,25 +42,27 @@ const agoraGuideSteps = <AgoraGuideStep>[
     image: 'assets/images/agora_step4.png',
     description: '项目总览页 → 复制 APP ID\n'
         '展开查看主要证书 → 复制 APP Certificate\n'
-        '填入输入框 → 点击保存',
+        '翻到第 5 页 → 填入并保存',
   ),
 ];
 
-class AgoraBookGuidePage extends StatelessWidget {
-  const AgoraBookGuidePage({
+class AgoraBookPaperPage extends StatelessWidget {
+  const AgoraBookPaperPage({
     super.key,
     required this.index,
     required this.total,
-    required this.step,
     required this.palette,
-    required this.onImageTap,
+    required this.kicker,
+    required this.title,
+    required this.child,
   });
 
   final int index;
   final int total;
-  final AgoraGuideStep step;
   final AgoraBookPalette palette;
-  final ValueChanged<String>? onImageTap;
+  final String kicker;
+  final String title;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +75,16 @@ class AgoraBookGuidePage extends StatelessWidget {
             child: IgnorePointer(
               child: CustomPaint(
                 painter: _AgedPaperPainter(palette, seed: index),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 26,
+            child: IgnorePointer(
+              child: _PageBookmark(
+                key: ValueKey('agoraBookBookmark_$index'),
+                palette: palette,
               ),
             ),
           ),
@@ -115,7 +127,7 @@ class AgoraBookGuidePage extends StatelessWidget {
                     const SizedBox(width: 9),
                     Expanded(
                       child: Text(
-                        '步骤 ${index + 1} / $total',
+                        kicker,
                         style: TextStyle(
                           color: palette.mutedInk,
                           fontSize: 10.5,
@@ -124,16 +136,11 @@ class AgoraBookGuidePage extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Icon(
-                      Icons.menu_book_outlined,
-                      size: 15,
-                      color: palette.foilDim.withValues(alpha: 0.72),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  step.title,
+                  title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -151,89 +158,7 @@ class AgoraBookGuidePage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Expanded(
-                  child: GestureDetector(
-                    key: ValueKey('agoraBookImage_$index'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onImageTap == null
-                        ? null
-                        : () => onImageTap!(step.image),
-                    child: Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: Color.lerp(
-                          palette.paperLight,
-                          Colors.white,
-                          0.55,
-                        ),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: palette.paperEdge.withValues(alpha: 0.75),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: palette.ink.withValues(alpha: 0.14),
-                            blurRadius: 7,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(2),
-                        child: SizedBox.expand(
-                          child: Image.asset(
-                            step.image,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => Center(
-                              child: Text(
-                                '请将截图放到:\n${step.image}',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: palette.mutedInk,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  step.description,
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.ink,
-                    fontSize: 12.3,
-                    height: 1.48,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  children: [
-                    Text(
-                      '点击截图可放大',
-                      style: TextStyle(
-                        color: palette.mutedInk.withValues(alpha: 0.8),
-                        fontSize: 9.5,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${(index + 1).toString().padLeft(2, '0')} · '
-                      '${total.toString().padLeft(2, '0')}',
-                      style: TextStyle(
-                        color: palette.mutedInk,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                  ],
-                ),
+                Expanded(child: child),
               ],
             ),
           ),
@@ -260,6 +185,189 @@ class AgoraBookGuidePage extends StatelessWidget {
       ),
     );
   }
+}
+
+class AgoraBookGuidePage extends StatelessWidget {
+  const AgoraBookGuidePage({
+    super.key,
+    required this.index,
+    required this.total,
+    required this.step,
+    required this.palette,
+    required this.onImageTap,
+  });
+
+  final int index;
+  final int total;
+  final AgoraGuideStep step;
+  final AgoraBookPalette palette;
+  final ValueChanged<String>? onImageTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AgoraBookPaperPage(
+      index: index,
+      total: total,
+      palette: palette,
+      kicker: '步骤 ${index + 1} / $total',
+      title: step.title,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: GestureDetector(
+              key: ValueKey('agoraBookImage_$index'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onImageTap == null ? null : () => onImageTap!(step.image),
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Color.lerp(
+                    palette.paperLight,
+                    Colors.white,
+                    0.55,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: palette.paperEdge.withValues(alpha: 0.75),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: palette.ink.withValues(alpha: 0.14),
+                      blurRadius: 7,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: SizedBox.expand(
+                    child: Image.asset(
+                      step.image,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Center(
+                        child: Text(
+                          '请将截图放到:\n${step.image}',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: palette.mutedInk,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            step.description,
+            maxLines: 5,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: palette.ink,
+              fontSize: 12.3,
+              height: 1.48,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              Text(
+                '点击截图可放大',
+                style: TextStyle(
+                  color: palette.mutedInk.withValues(alpha: 0.8),
+                  fontSize: 9.5,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${(index + 1).toString().padLeft(2, '0')} · '
+                '${total.toString().padLeft(2, '0')}',
+                style: TextStyle(
+                  color: palette.mutedInk,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PageBookmark extends StatelessWidget {
+  const _PageBookmark({
+    super.key,
+    required this.palette,
+  });
+
+  final AgoraBookPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(15, 54),
+      painter: _PageBookmarkPainter(palette),
+    );
+  }
+}
+
+class _PageBookmarkPainter extends CustomPainter {
+  const _PageBookmarkPainter(this.palette);
+
+  final AgoraBookPalette palette;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(size.width / 2, size.height - 8)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(
+      path.shift(const Offset(1, 1.4)),
+      Paint()
+        ..color = palette.ink.withValues(alpha: 0.22)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.4),
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..shader = LinearGradient(
+          colors: [
+            palette.ribbon.withValues(alpha: 0.78),
+            palette.ribbon,
+            palette.ribbon.withValues(alpha: 0.66),
+          ],
+        ).createShader(Offset.zero & size),
+    );
+    canvas.drawLine(
+      const Offset(1, 1),
+      Offset(size.width - 1, 1),
+      Paint()
+        ..color = palette.paperLight.withValues(alpha: 0.25)
+        ..strokeWidth = 0.8,
+    );
+    canvas.drawLine(
+      Offset(size.width / 2, 4),
+      Offset(size.width / 2, size.height - 10),
+      Paint()
+        ..color = palette.ink.withValues(alpha: 0.14)
+        ..strokeWidth = 0.7,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PageBookmarkPainter oldDelegate) =>
+      oldDelegate.palette != palette;
 }
 
 class _AgedPaperPainter extends CustomPainter {
