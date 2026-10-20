@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
+import 'package:himi_syncwatch/widgets/agora/agora_guide_book.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// 声网（Agora RTM）配置页（原侧边栏底部入口，现为独立标签页）。
@@ -98,13 +97,6 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         flexibleSpace: const GlassBackdrop(),
-        actions: [
-          TvAppBarIconButton(
-            icon: Icons.help_outline,
-            tooltip: '配置说明',
-            onPressed: () => _showAgoraGuide(context),
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
@@ -176,183 +168,39 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showAgoraGuide(context),
-                    icon: const Icon(Icons.menu_book_outlined, size: 18),
-                    label: const Text('配置说明'),
+                const Icon(
+                  Icons.auto_stories_outlined,
+                  size: 18,
+                  color: Colors.white70,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '声网接入指南',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                if (configured) ...[
-                  const SizedBox(width: 12),
+                if (configured)
                   TextButton(
                     onPressed: _clear,
                     child:
                         const Text('清空', style: TextStyle(color: Colors.red)),
                   ),
-                ],
               ],
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 540),
+                child: AgoraGuideBook(
+                  onImageTap: (image) => _showFullImage(context, image),
+                ),
+              ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  void _showAgoraGuide(BuildContext context) {
-    final pageController = PageController();
-    var currentPage = 0;
-
-    final steps = [
-      _AgoraGuideStep(
-        title: '注册登录并创建通用项目',
-        image: 'assets/images/agora_step1.png',
-        description: '访问 shengwang.cn 注册并登录\n'
-            '创建项目时选择「通用项目」',
-      ),
-      _AgoraGuideStep(
-        title: '开通体验版套餐包',
-        image: 'assets/images/agora_step2.png',
-        description: '套餐包 → RTM\n'
-            '选择「体验版」（免费）',
-      ),
-      _AgoraGuideStep(
-        title: '开启 Presence 和 Storage',
-        image: 'assets/images/agora_step3.png',
-        description: '全部产品 → 实时消息 RTM → 基础配置\n'
-            '启用「出席通知 (Presence)」\n'
-            '启用「状态同步 (Storage)」\n'
-            '数据存储区域选「中国」',
-      ),
-      _AgoraGuideStep(
-        title: '获取 APP ID 和证书',
-        image: 'assets/images/agora_step4.png',
-        description: '项目总览页 → 复制 APP ID\n'
-            '展开查看主要证书 → 复制 APP Certificate\n'
-            '填入输入框 → 点击保存',
-      ),
-    ];
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-          content: SizedBox(
-            width: 360,
-            height: 420,
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(steps.length, (i) {
-                    return Container(
-                      width: 8,
-                      height: 8,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: i == currentPage
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.grey[600],
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: PageView.builder(
-                    controller: pageController,
-                    itemCount: steps.length,
-                    onPageChanged: (i) {
-                      currentPage = i;
-                      setDialogState(() {});
-                    },
-                    itemBuilder: (ctx, i) {
-                      final step = steps[i];
-                      return SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            Text(
-                              '步骤 ${i + 1}: ${step.title}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            TvFocusable(
-                              onTap: () => _showFullImage(context, step.image),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.asset(
-                                  step.image,
-                                  fit: BoxFit.contain,
-                                  height: 220,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    height: 220,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[800],
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        '请将截图放到:\n${step.image}',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: Colors.grey[400],
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '点击放大',
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey[400]),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              step.description,
-                              style: const TextStyle(fontSize: 13, height: 1.5),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('关闭'),
-                    ),
-                    FilledButton(
-                      onPressed: currentPage < steps.length - 1
-                          ? () {
-                              pageController.nextPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                            }
-                          : () => Navigator.pop(ctx),
-                      child:
-                          Text(currentPage < steps.length - 1 ? '下一步' : '完成'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
         ),
       ),
     );
@@ -456,15 +304,4 @@ class _StatusCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _AgoraGuideStep {
-  final String title;
-  final String image;
-  final String description;
-  const _AgoraGuideStep({
-    required this.title,
-    required this.image,
-    required this.description,
-  });
 }

@@ -69,7 +69,8 @@ void main() {
     for (final field in find.byType(TextField).evaluate()) {
       expect(
         find.ancestor(
-            of: find.byWidget(field.widget), matching: find.byType(ExcludeFocus)),
+            of: find.byWidget(field.widget),
+            matching: find.byType(ExcludeFocus)),
         findsOneWidget,
         reason: 'TV 下声网表单输入框必须屏蔽焦点',
       );
@@ -122,24 +123,56 @@ void main() {
     await _settleSnackbars(tester);
   });
 
-  testWidgets('配置说明按钮打开引导弹窗', (tester) async {
+  testWidgets('页面内嵌声网指南书，不再使用配置说明弹窗', (tester) async {
     await _pumpScreen(tester);
 
-    await tester.tap(find.text('配置说明'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('步骤 1: 注册登录并创建通用项目'), findsOneWidget);
-    expect(find.text('下一步'), findsOneWidget);
-
-    await tester.tap(find.text('关闭'));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('agoraGuideBook')), findsOneWidget);
+    expect(find.text('声网接入指南'), findsOneWidget);
+    expect(find.text('步骤 1 / 4'), findsOneWidget);
+    expect(find.text('注册登录并创建通用项目'), findsOneWidget);
+    expect(find.text('配置说明'), findsNothing);
+    expect(find.byTooltip('配置说明'), findsNothing);
+    expect(find.byType(AlertDialog), findsNothing);
   });
 
-  testWidgets('引导弹窗内图片放大可用「关闭」按钮退出', (tester) async {
+  testWidgets('指南书可通过箭头翻页，首末页按钮禁用', (tester) async {
     await _pumpScreen(tester);
 
-    await tester.tap(find.text('配置说明'));
+    await tester.ensureVisible(find.byKey(const ValueKey('agoraBookNext')));
     await tester.pumpAndSettle();
+
+    var prev = tester.widget<IconButton>(
+      find.byKey(const ValueKey('agoraBookPrev')),
+    );
+    expect(prev.onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('agoraBookNext')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('步骤 2 / 4'), findsOneWidget);
+    expect(find.text('开通体验版套餐包'), findsOneWidget);
+    prev = tester.widget<IconButton>(
+      find.byKey(const ValueKey('agoraBookPrev')),
+    );
+    expect(prev.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('agoraBookPrev')));
+    await tester.pumpAndSettle();
+    expect(find.text('步骤 1 / 4'), findsOneWidget);
+
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byKey(const ValueKey('agoraBookNext')));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('步骤 4 / 4'), findsOneWidget);
+    final next = tester.widget<IconButton>(
+      find.byKey(const ValueKey('agoraBookNext')),
+    );
+    expect(next.onPressed, isNull);
+  });
+
+  testWidgets('指南书内点击截图可放大，并可用「关闭」退出', (tester) async {
+    await _pumpScreen(tester);
 
     // 3.47 起测试环境 asset decode 为真实异步，pumpAndSettle 等不到 →
     // runAsync 预缓存步骤图，否则 Image 宽为 0，tap 必 miss。
@@ -148,16 +181,18 @@ void main() {
         precacheImage(const AssetImage('assets/images/agora_step1.png'), ctx));
     await tester.pumpAndSettle();
 
-    // 点步骤图 → 图片放大弹窗（此前只有点图手势，遥控器进不去）
-    await tester.tap(find.byType(Image).first);
+    final image = find.byKey(const ValueKey('agoraBookImage_0'));
+    await tester.ensureVisible(image);
     await tester.pumpAndSettle();
-    expect(find.text('关闭'), findsNWidgets(2), reason: '放大弹窗关闭 + 引导弹窗关闭');
-
-    await tester.tap(find.text('关闭').last);
+    await tester.tap(image);
     await tester.pumpAndSettle();
 
-    expect(find.text('关闭'), findsOneWidget, reason: '放大弹窗已关');
-    expect(find.text('步骤 1: 注册登录并创建通用项目'), findsOneWidget);
+    expect(find.text('关闭'), findsOneWidget);
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('关闭'), findsNothing);
+    expect(find.byKey(const ValueKey('agoraBookPageView')), findsOneWidget);
   });
 
   testWidgets('已配置时默认收起表单，点编辑按钮展开', (tester) async {
@@ -173,7 +208,8 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(find.text('保存'), findsNothing);
     expect(find.byKey(const ValueKey('agoraEditButton')), findsOneWidget);
-    // 配置说明 / 清空始终可见
+    // 指南书 / 清空始终可见
+    expect(find.byKey(const ValueKey('agoraGuideBook')), findsOneWidget);
     expect(find.widgetWithText(TextButton, '清空'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('agoraEditButton')));
@@ -201,8 +237,7 @@ void main() {
     await _settleSnackbars(tester);
   });
 
-  testWidgets('切走分支（epoch bump）→ 未保存输入还原、表单收起（v1.1.243）',
-      (tester) async {
+  testWidgets('切走分支（epoch bump）→ 未保存输入还原、表单收起（v1.1.243）', (tester) async {
     final agora = FakeAgoraConfigNotifier(
       AgoraConfigModel(appId: 'a' * 32, appCertificate: 'old_cert'),
     );
@@ -226,7 +261,8 @@ void main() {
     // 再次点编辑 → 输入是已存值（不是 UNSAVED）
     await tester.tap(find.byKey(const ValueKey('agoraEditButton')));
     await tester.pumpAndSettle();
-    final fields = tester.widgetList<TextField>(find.byType(TextField)).toList();
+    final fields =
+        tester.widgetList<TextField>(find.byType(TextField)).toList();
     expect(fields[0].controller!.text, 'a' * 32);
     expect(fields[1].controller!.text, 'old_cert');
   });
