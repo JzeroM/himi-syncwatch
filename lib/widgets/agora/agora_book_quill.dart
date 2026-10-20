@@ -72,7 +72,7 @@ class _QuillPainter extends CustomPainter {
   static const _shaftStart = Offset(50, 39);
   static const _shaftControl = Offset(124, 24);
   static const _shaftEnd = Offset(204, 29);
-  static const _vaneEnd = 0.93;
+  static const _vaneEnd = 0.975;
   static const _maxHalfWidth = 25.0;
   static const _steelLight = Color(0xFFD8DEE4);
   static const _steel = Color(0xFF9CA7B2);
@@ -122,14 +122,14 @@ class _QuillPainter extends CustomPainter {
     final base = math
         .pow(
           Curves.easeInOutCubic.transform(
-            (progress / 0.42).clamp(0.0, 1.0),
+            (progress / 0.40).clamp(0.0, 1.0),
           ),
-          1.12,
+          1.08,
         )
         .toDouble();
     final body =
-        math.pow(math.sin(math.pi * math.pow(progress, 0.95)), 0.7).toDouble();
-    final tip = 1 - math.pow(progress, 4.2).toDouble();
+        math.pow(math.sin(math.pi * math.pow(progress, 1.10)), 0.52).toDouble();
+    final tip = 1 - 0.62 * math.pow(progress, 3.6).toDouble();
     return base * body * tip;
   }
 
@@ -171,7 +171,7 @@ class _QuillPainter extends CustomPainter {
   }
 
   void _paintVane(Canvas canvas) {
-    final silhouette = _silhouette(lengthScale: 0.97, sweep: 1.0);
+    final silhouette = _silhouette(lengthScale: 0.97, sweep: 1.02);
     final bounds = Rect.fromLTWH(16, 4, 182, 56);
     canvas.drawPath(
       Path()
@@ -205,8 +205,8 @@ class _QuillPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     for (var side = -1; side <= 1; side += 2) {
-      for (var i = 0; i <= 164; i++) {
-        final t = 0.012 + (_vaneEnd - 0.022) * i / 164;
+      for (var i = 0; i <= 178; i++) {
+        final t = 0.012 + (_vaneEnd - 0.022) * i / 178;
         final span = _vaneSpan(t);
         if (span <= 0.008) continue;
         final center = _shaft(t);
@@ -242,8 +242,8 @@ class _QuillPainter extends CustomPainter {
     }
 
     for (var side = -1; side <= 1; side += 2) {
-      for (var i = 0; i <= 112; i++) {
-        final t = 0.025 + (_vaneEnd - 0.09) * i / 112;
+      for (var i = 0; i <= 122; i++) {
+        final t = 0.025 + (_vaneEnd - 0.09) * i / 122;
         final span = _vaneSpan(t);
         if (span <= 0.014) continue;
         final center = _shaft(t);
@@ -263,7 +263,6 @@ class _QuillPainter extends CustomPainter {
       }
     }
 
-    _paintDown(canvas);
     _paintSplits(canvas);
     canvas.restore();
   }
@@ -302,67 +301,6 @@ class _QuillPainter extends CustomPainter {
           ..moveTo(outer.dx, outer.dy)
           ..quadraticBezierTo(control.dx, control.dy, inner.dx, inner.dy),
         clear,
-      );
-    }
-  }
-
-  void _paintDown(Canvas canvas) {
-    final random = math.Random(0xB19F);
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 38; i++) {
-      final t = 0.06 + random.nextDouble() * 0.24;
-      final center = _shaft(t);
-      final normal = _normal(t) * (random.nextBool() ? 1 : -1);
-      final tangent = _tangent(t);
-      final start = center + normal * (2 + random.nextDouble() * 5);
-      final end = start +
-          normal * (5 + random.nextDouble() * 10) +
-          tangent * (4 + random.nextDouble() * 8);
-      paint
-        ..strokeWidth = 0.34 + random.nextDouble() * 0.28
-        ..color = (random.nextBool() ? _vaneLight : _vaneSheen).withValues(
-          alpha: 0.10 + random.nextDouble() * 0.16,
-        );
-      canvas.drawPath(
-        Path()
-          ..moveTo(start.dx, start.dy)
-          ..quadraticBezierTo(
-            start.dx + normal.dx * 4 + tangent.dx * 2,
-            start.dy + normal.dy * 4 + tangent.dy * 2,
-            end.dx,
-            end.dy,
-          ),
-        paint,
-      );
-    }
-    for (var i = 0; i < 14; i++) {
-      final t = 0.05 + random.nextDouble() * 0.10;
-      final center = _shaft(t);
-      final normal = _normal(t) * (random.nextBool() ? 1 : -1);
-      final tangent = _tangent(t);
-      final start = center + normal * (1 + random.nextDouble() * 3);
-      final end = start +
-          normal * (8 + random.nextDouble() * 12) +
-          tangent * (6 + random.nextDouble() * 12);
-      paint
-        ..strokeWidth = 0.30 + random.nextDouble() * 0.25
-        ..color = (random.nextBool() ? _vaneLight : _vaneSheen).withValues(
-          alpha: 0.10 + random.nextDouble() * 0.16,
-        );
-      canvas.drawPath(
-        Path()
-          ..moveTo(start.dx, start.dy)
-          ..cubicTo(
-            start.dx + normal.dx * 7 + tangent.dx * 4,
-            start.dy + normal.dy * 7 + tangent.dy * 4,
-            end.dx - normal.dx * 2 - tangent.dx * 3,
-            end.dy - normal.dy * 2 - tangent.dy * 3,
-            end.dx,
-            end.dy,
-          ),
-        paint,
       );
     }
   }
@@ -406,7 +344,7 @@ class _QuillPainter extends CustomPainter {
     );
     canvas.drawLine(
       _shaft(0.06) - const Offset(0, 0.45),
-      _shaft(0.90) - const Offset(0, 0.45),
+      _shaft(0.97) - const Offset(0, 0.45),
       Paint()
         ..color = palette.paperLight.withValues(alpha: 0.62)
         ..strokeWidth = 0.32,
@@ -415,7 +353,7 @@ class _QuillPainter extends CustomPainter {
     final tip = _shaft(1);
     final forward = _tangent(1);
     final normal = _normal(1);
-    final point = tip + forward * 4.0;
+    final point = tip + forward * 3.4;
     final tipPath = Path()
       ..moveTo(tip.dx + normal.dx * 0.5, tip.dy + normal.dy * 0.5)
       ..quadraticBezierTo(
