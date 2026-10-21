@@ -523,7 +523,7 @@ class _AppIconSection extends ConsumerWidget {
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
-            '选择桌面图标外观（Android 需划掉应用后桌面才刷新；iOS 会弹系统提示）',
+            '选择桌面图标外观（Android 切换后通常立即刷新；若未刷新可稍候或重启桌面；iOS 会弹系统提示）',
             style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.4),
           ),
         ),
@@ -552,11 +552,15 @@ class _AppIconSection extends ConsumerWidget {
     WidgetRef ref,
     String? id,
   ) async {
-    if (ref.read(settingsProvider).appIcon == id) return;
+    final previous = ref.read(settingsProvider).appIcon;
+    if (previous == id) return;
     try {
-      await AppIconService.apply(id);
+      // 先落盘再切原生：Android 切换可能触发进程重启，若等原生返回再保存，
+      // 重启后的启动自愈会按旧值把图标改回去。
       await ref.read(settingsProvider.notifier).update(appIcon: id);
+      await AppIconService.apply(id);
     } catch (e) {
+      await ref.read(settingsProvider.notifier).update(appIcon: previous);
       // 带底层错误详情：iOS 公开 API 会回传系统 error，便于远程定位
       if (context.mounted) showAppToast(context, '切换图标失败：$e');
     }

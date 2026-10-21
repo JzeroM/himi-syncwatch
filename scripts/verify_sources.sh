@@ -165,8 +165,18 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
       fi
     done
 
-    # ---------- 4. 应用图标切换（activity-alias + 插件 Service） ----------
+    # ---------- 4. 应用图标切换（自有图标通道 + activity-alias） ----------
     sec "Android · 应用图标切换"
+    if [ -f "$KOTLIN/AppIconPlugin.kt" ]; then
+      ok "AppIconPlugin.kt 存在"
+    else
+      err "缺少 $KOTLIN/AppIconPlugin.kt（Android 图标切换依赖）"
+    fi
+    if grep -q 'AppIconPlugin.CHANNEL' "$KOTLIN/MainActivity.kt"; then
+      ok "himi/app_icon 通道已注册"
+    else
+      err "MainActivity 未注册 AppIconPlugin.CHANNEL"
+    fi
     for alias in 'DEFAULT' 'icon_artistic' 'icon_mint' 'icon_glass'; do
       if grep -q "android:name=\"\.$alias\"" "$MANIFEST"; then
         ok "activity-alias .$alias"
@@ -175,9 +185,9 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
       fi
     done
     if grep -q 'FlutterDynamicIconPlusService' "$MANIFEST"; then
-      ok "FlutterDynamicIconPlusService 已声明"
+      err "AndroidManifest 仍声明旧 FlutterDynamicIconPlusService（会与自有通道抢图标）"
     else
-      err "缺少 flutter_dynamic_icon_plus Service（图标变更不会落地）"
+      ok "旧 FlutterDynamicIconPlusService 已移除"
     fi
     for alt in artistic mint glass; do
       f="$MAIN/res/mipmap-xhdpi/ic_launcher_$alt.png"

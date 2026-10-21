@@ -1,5 +1,5 @@
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dynamic_icon_plus/flutter_dynamic_icon_plus.dart';
 
 /// 一个可选的应用图标（默认 + 备用）。
@@ -25,16 +25,13 @@ class AppIconOption {
 /// 平台差异：
 /// - iOS：`setAlternateIconName(name)` 的 name 即 `CFBundleAlternateIcons` 的键；
 ///   null 还原默认。
-/// - Android：插件按 `activity-alias` 组件启停切换，name 必须是别名的
-///   **全限定类名**（`<applicationId>.icon_<id>` / `<applicationId>.DEFAULT`）。
-///
-/// 注意：Android 的图标变更由插件 Service 在「任务移除/服务销毁」时落地，
-/// 即用户划掉应用后（或系统回收）才在桌面刷新。
+/// - Android：走自有 `himi/app_icon` 通道，每次切换启用目标 activity-alias
+///   并禁用其余全部别名，避免历史脏状态下多个别名同时启用导致桌面不刷新。
 class AppIconService {
   AppIconService._();
 
-  /// Android applicationId（与 build.gradle / namespace 一致）。
-  static const String androidPackage = 'com.himi.syncwatch';
+  /// Android 原生图标切换通道（见 AppIconPlugin.kt）。
+  static const MethodChannel androidChannel = MethodChannel('himi/app_icon');
 
   /// 可选图标：默认 default + 备用 artistic/mint/glass（顺序即设置页顺序）。
   static const List<AppIconOption> options = [
@@ -53,17 +50,9 @@ class AppIconService {
 
   static bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
-  /// id → 平台参数（Android 全限定别名 / iOS 键 / 默认）。
-  static String? platformIconName(String? id) {
-    if (id == null) {
-      return _isAndroid ? '$androidPackage.DEFAULT' : null;
-    }
-    return _isAndroid ? '$androidPackage.icon_$id' : id;
-  }
-
   /// 平台返回值 → id（无法识别回退默认）。
   static String? idFromPlatformName(String? name) {
-    if (name == null || name.isEmpty) return null;
+    if (name == null || name.isEmpty || name == 'default') return null;
     var n = name;
     if (_isAndroid) {
       if (n.endsWith('.DEFAULT')) return null;
@@ -82,6 +71,9 @@ class AppIconService {
   static Future<bool> supports() async {
     if (!isSupported) return false;
     try {
+      if (_isAndroid) {
+        return await androidChannel.invokeMethod<bool>('supports') ?? false;
+      }
       return await FlutterDynamicIconPlus.supportsAlternateIcons;
     } catch (_) {
       return false;
@@ -92,28 +84,18 @@ class AppIconService {
   static Future<String?> currentId() async {
     if (!isSupported) return null;
     try {
-      return idFromPlatformName(await FlutterDynamicIconPlus.alternateIconName);
+      final name = _isAndroid
+          ? await androidChannel.invokeMethod<String>('getIcon')
+          : await FlutterDynamicIconPlus.alternateIconName;
+      return idFromPlatformName(name);
     } catch (_) {
       return null;
     }
   }
 
-  /// 本机标识读取（测试可注入替身，避免依赖 device_info 平台通道）。
-  @visibleForTesting
-  static Future<
-          ({
-            List<String> brands,
-            List<String> manufactures,
-            List<String> models
-          })>
-      Function() deviceBlacklistLoader = loadDeviceBlacklist;
-
-  /// 应用图标（id=null 还原默认）。失败抛出，由调用方提示。
+  /// 应用图标（id=null 还原默认）。失败抛出，由调用方回滚设置并提示。
   ///
-  /// Android：把本机厂商/品牌/型号作为「黑名单」传入 —— 与自身恒匹配，
-  /// 插件 `containsOnBlacklist` 命中 → 走**立即** `changeAppIcon`（组件启停
-  /// 当场生效），否则插件只起 Service、要等应用被划掉才生效（小米/MIUI
-  /// 尤甚，插件文档点名）。
+  /// Android：启用目标别名后禁用其余全部别名，并回查实际生效值。
   /// iOS：只走公开 API（`isSilent: false`）。插件 1.4.1 的静默分支执行
   /// 私有 API 后**从不回传 result**（completion 丢弃且不调 result），
   /// await 会永久挂起；且与后续调用存在竞态（iOS 拒绝并发
@@ -121,28 +103,40 @@ class AppIconService {
   /// 「已更改图标」提示（设置页文案已注明）。
   static Future<void> apply(String? id) async {
     if (!isSupported) return;
+    final target = _validateId(id);
     try {
       if (_isAndroid) {
-        final blacklist = await deviceBlacklistLoader();
-        await FlutterDynamicIconPlus.setAlternateIconName(
-          iconName: platformIconName(id),
-          blacklistBrands: blacklist.brands,
-          blacklistManufactures: blacklist.manufactures,
-          blacklistModels: blacklist.models,
-        );
+        await androidChannel.invokeMethod<bool>('setIcon', {
+          'id': target ?? 'default',
+        });
+        final actual = await currentId();
+        if (actual != target) {
+          throw StateError('图标未生效：期望 ${target ?? 'default'}，实际 $actual');
+        }
         return;
       }
-      await _applyIos(id);
+      await _applyIos(target);
+      final actual = await currentId();
+      if (actual != target) {
+        throw StateError('图标未生效：期望 ${target ?? 'default'}，实际 $actual');
+      }
     } catch (e) {
       debugPrint('AppIconService.apply($id) failed: $e');
       rethrow;
     }
   }
 
+  static String? _validateId(String? id) {
+    if (id != null && !options.any((o) => o.id == id)) {
+      throw ArgumentError.value(id, 'id', '未知应用图标');
+    }
+    return id;
+  }
+
   /// iOS 切换：公开 API 单次调用（见 [apply] 注释：为何不用静默分支）。
   static Future<void> _applyIos(String? id) async {
     await FlutterDynamicIconPlus.setAlternateIconName(
-      iconName: platformIconName(id),
+      iconName: id,
       isSilent: false,
     );
   }
@@ -156,46 +150,5 @@ class AppIconService {
     } catch (e) {
       debugPrint('AppIconService.syncOnStart($desiredId) failed: $e');
     }
-  }
-
-  /// 读取本机标识构造黑名单（与设备自身恒匹配 → 强制立即分支）。
-  static Future<
-      ({
-        List<String> brands,
-        List<String> manufactures,
-        List<String> models
-      })> loadDeviceBlacklist() async {
-    try {
-      final info = await DeviceInfoPlugin().androidInfo;
-      return blacklistArgs(
-        brand: info.brand,
-        manufacturer: info.manufacturer,
-        model: info.model,
-      );
-    } catch (_) {
-      return blacklistArgs();
-    }
-  }
-
-  /// 黑名单参数构造（纯函数，便于单测）：任一标识非空即用自身命中；
-  /// 全空时兜底小米/红米（最常见的问题厂商）。
-  @visibleForTesting
-  static ({List<String> brands, List<String> manufactures, List<String> models})
-      blacklistArgs({String? brand, String? manufacturer, String? model}) {
-    final b = (brand ?? '').trim();
-    final m = (manufacturer ?? '').trim();
-    final mo = (model ?? '').trim();
-    if (b.isEmpty && m.isEmpty && mo.isEmpty) {
-      return (
-        brands: const ['Redmi'],
-        manufactures: const ['Xiaomi'],
-        models: const <String>[],
-      );
-    }
-    return (
-      brands: [if (b.isNotEmpty) b],
-      manufactures: [if (m.isNotEmpty) m],
-      models: [if (mo.isNotEmpty) mo],
-    );
   }
 }

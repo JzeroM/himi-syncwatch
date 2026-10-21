@@ -52,10 +52,11 @@
               />
         </activity>
 
-        <!-- 应用图标切换（flutter_dynamic_icon_plus）：LAUNCHER（+ TV 的
+        <!-- 应用图标切换（himi/app_icon）：LAUNCHER（+ TV 的
              LEANBACK_LAUNCHER）由 activity-alias 承载，默认图标走 .DEFAULT
              （enabled=true，独占 LEANBACK，TV 只用默认），备用图标别名默认
-             禁用，插件在运行时按组件启停切换。别名 name 必须以点开头。 -->
+             禁用；AppIconPlugin 在运行时启用目标并禁用其余全部别名。
+             别名 name 必须以点开头。 -->
         <activity-alias
             android:name=".DEFAULT"
             android:enabled="true"
@@ -129,11 +130,6 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity-alias>
-
-        <!-- 图标切换插件：任务移除/服务销毁时应用图标变更（launcher 刷新） -->
-        <service
-            android:name="com.solusibejo.flutter_dynamic_icon_plus.FlutterDynamicIconPlusService"
-            android:stopWithTask="false"/>
 
         <!-- 应用内更新安装：缓存目录 updates/ 下的 APK 经 FileProvider
              以 content:// 交给系统安装器（Android 7.0+ 禁止 file:// 直传） -->

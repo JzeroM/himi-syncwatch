@@ -80,53 +80,73 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('点 Artistic：Android 传别名全限定名 + 黑名单并写回设置', (tester) async {
-    const channel = MethodChannel('flutter_dynamic_icon_plus');
+  testWidgets('点艺术字：先保存设置再走 himi/app_icon，并回查生效值', (tester) async {
     final calls = <MethodCall>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
-        (call) async {
+    String? settingAtNative;
+    late ProviderContainer container;
+    tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(AppIconService.androidChannel, (call) async {
       calls.add(call);
-      return true;
+      if (call.method == 'setIcon') {
+        settingAtNative = container.read(settingsProvider).appIcon;
+        return true;
+      }
+      if (call.method == 'getIcon') return settingAtNative;
+      return null;
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null));
-    // 注入设备标识替身，避免依赖 device_info 平台通道。
-    final original = AppIconService.deviceBlacklistLoader;
-    AppIconService.deviceBlacklistLoader = () async => (
-          brands: const ['Xiaomi'],
-          manufactures: const ['Xiaomi'],
-          models: const ['23127PN0CC'],
-        );
-    addTearDown(() => AppIconService.deviceBlacklistLoader = original);
+        .setMockMethodCallHandler(AppIconService.androidChannel, null));
 
-    final container = await _pump(tester, platform: TargetPlatform.android);
+    container = await _pump(tester, platform: TargetPlatform.android);
     final tile = find.byKey(const ValueKey('appIcon_artistic'));
     await tester.ensureVisible(tile);
     await tester.tap(tile);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(calls, isNotEmpty, reason: '应调用插件 setAlternateIconName');
-    expect(calls.last.method, 'setAlternateIconName');
-    expect(
-        calls.last.arguments['iconName'], 'com.himi.syncwatch.icon_artistic');
-    // Android 需带黑名单（设备自身命中）走立即分支。
-    expect(calls.last.arguments['manufactures'], contains('Xiaomi'));
-    expect(calls.last.arguments['models'], contains('23127PN0CC'));
+    expect(settingAtNative, 'artistic', reason: '原生切换前设置已落盘');
+    expect(calls.map((c) => c.method), ['setIcon', 'getIcon']);
+    expect(calls.first.arguments, {'id': 'artistic'});
     expect(container.read(settingsProvider).appIcon, 'artistic');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('Android 切换失败 → 回滚设置', (tester) async {
+    tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(AppIconService.androidChannel, (call) async {
+      if (call.method == 'setIcon') {
+        throw PlatformException(code: 'ICON_SWITCH_FAILED', message: '失败');
+      }
+      if (call.method == 'getIcon') return 'default';
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(AppIconService.androidChannel, null));
+
+    final container = await _pump(tester, platform: TargetPlatform.android);
+    final tile = find.byKey(const ValueKey('appIcon_mint'));
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(container.read(settingsProvider).appIcon, isNull, reason: '失败回滚默认');
     debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('点 Artistic（iOS）：公开 API 单次调用成功 → 写回设置', (tester) async {
     const channel = MethodChannel('flutter_dynamic_icon_plus');
     final calls = <MethodCall>[];
+    String? current;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
         (call) async {
       calls.add(call);
       if (call.method == 'setAlternateIconName') {
         // 只走公开 API：完整回传，无静默双打。
+        current = (call.arguments as Map)['iconName'] as String?;
         return null;
       }
+      if (call.method == 'getAlternateIconName') return current;
       return null;
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger

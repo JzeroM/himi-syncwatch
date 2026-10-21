@@ -22,6 +22,7 @@ class MainActivity : FlutterActivity() {
     private var ndChannel: MethodChannel? = null
     private var dcChannel: MethodChannel? = null
     private var aiChannel: MethodChannel? = null
+    private var appIconChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -67,6 +68,13 @@ class MainActivity : FlutterActivity() {
             // 应用内更新：安装未知来源授权 + 调起 APK 安装器
             setMethodCallHandler(ApkInstallerPlugin(applicationContext))
         }
+        appIconChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            AppIconPlugin.CHANNEL
+        ).apply {
+            // 应用图标切换：归一化 activity-alias，避免旧别名残留
+            setMethodCallHandler(AppIconPlugin(applicationContext))
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -82,6 +90,8 @@ class MainActivity : FlutterActivity() {
         dcChannel = null
         aiChannel?.setMethodCallHandler(null)
         aiChannel = null
+        appIconChannel?.setMethodCallHandler(null)
+        appIconChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

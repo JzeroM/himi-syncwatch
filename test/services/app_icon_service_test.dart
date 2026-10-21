@@ -43,28 +43,8 @@ void main() {
     });
   });
 
-  group('platformIconName（id → 平台参数）', () {
-    test('Android：默认=applicationId.DEFAULT，备用=applicationId.icon_<id>', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(
-          AppIconService.platformIconName(null), 'com.himi.syncwatch.DEFAULT');
-      expect(AppIconService.platformIconName('artistic'),
-          'com.himi.syncwatch.icon_artistic');
-      expect(AppIconService.platformIconName('mint'),
-          'com.himi.syncwatch.icon_mint');
-    });
-
-    test('iOS：默认=null，备用=CFBundleAlternateIcons 键', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(AppIconService.platformIconName(null), isNull);
-      expect(AppIconService.platformIconName('glass'), 'glass');
-    });
-  });
-
   group('idFromPlatformName（平台返回 → id）', () {
-    test('Android：别名全限定名 → id，DEFAULT/未知 → null', () {
+    test('Android：id / 全限定别名 → id，DEFAULT/未知 → null', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(
@@ -72,6 +52,8 @@ void main() {
           'artistic');
       expect(AppIconService.idFromPlatformName('com.himi.syncwatch.icon_mint'),
           'mint');
+      expect(AppIconService.idFromPlatformName('glass'), 'glass');
+      expect(AppIconService.idFromPlatformName('default'), isNull);
       expect(AppIconService.idFromPlatformName('com.himi.syncwatch.DEFAULT'),
           isNull);
       expect(AppIconService.idFromPlatformName('com.himi.syncwatch.icon_zzz'),
@@ -88,39 +70,84 @@ void main() {
     });
   });
 
-  group('blacklistArgs（Android 立即分支：设备自身命中）', () {
-    test('有设备标识 → 用自身值（品牌/厂商/型号）', () {
-      final a = AppIconService.blacklistArgs(
-        brand: 'Redmi',
-        manufacturer: 'Xiaomi',
-        model: '23127PN0CC',
-      );
-      expect(a.brands, ['Redmi']);
-      expect(a.manufactures, ['Xiaomi']);
-      expect(a.models, ['23127PN0CC']);
+  group('apply Android：自有通道归一化 + 回查', () {
+    late List<MethodCall> calls;
+    late String current;
+
+    setUp(() {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      calls = <MethodCall>[];
+      current = 'default';
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(AppIconService.androidChannel,
+              (call) async {
+        calls.add(call);
+        switch (call.method) {
+          case 'setIcon':
+            current = (call.arguments as Map)['id'] as String;
+            return true;
+          case 'getIcon':
+            return current;
+          case 'supports':
+            return true;
+        }
+        return null;
+      });
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(AppIconService.androidChannel, null);
+      });
     });
 
-    test('空标识被忽略；全空兜底小米/红米', () {
-      final partial =
-          AppIconService.blacklistArgs(manufacturer: 'Xiaomi', brand: ' ');
-      expect(partial.manufactures, ['Xiaomi']);
-      expect(partial.brands, isEmpty);
-      expect(partial.models, isEmpty);
+    test('切换备用图标：只传 id，并回查生效值', () async {
+      await AppIconService.apply('mint');
 
-      final empty = AppIconService.blacklistArgs();
-      expect(empty.manufactures, ['Xiaomi']);
-      expect(empty.brands, ['Redmi']);
-      expect(empty.models, isEmpty);
+      expect(calls.map((c) => c.method), ['setIcon', 'getIcon']);
+      expect(calls.first.arguments, {'id': 'mint'});
+    });
+
+    test('还原默认：传 default，回查也按默认处理', () async {
+      current = 'glass';
+      await AppIconService.apply(null);
+
+      expect(calls.first.method, 'setIcon');
+      expect(calls.first.arguments, {'id': 'default'});
+    });
+
+    test('原生回查与请求不一致 → 抛出', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(AppIconService.androidChannel,
+              (call) async {
+        if (call.method == 'setIcon') return true;
+        if (call.method == 'getIcon') return 'glass';
+        return null;
+      });
+
+      await expectLater(
+        AppIconService.apply('mint'),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('未知 id → 参数错误，不触碰原生', () async {
+      await expectLater(
+        AppIconService.apply('unknown'),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(calls, isEmpty);
     });
   });
 
   group('apply iOS：只走公开 API 单次调用（isSilent:false）', () {
     late List<MethodCall> calls;
     late MethodChannel channel;
+    String? current;
 
     setUp(() {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       calls = <MethodCall>[];
+      current = null;
       channel = const MethodChannel('flutter_dynamic_icon_plus');
       addTearDown(() {
         debugDefaultTargetPlatformOverride = null;
@@ -138,8 +165,10 @@ void main() {
           final silent = (call.arguments as Map)['isSilent'] as bool?;
           expect(silent, isFalse, reason: '禁止静默分支：插件 1.4.1 静默调用从不回传 result');
           if (error != null) throw error;
+          current = (call.arguments as Map)['iconName'] as String?;
           return null;
         }
+        if (call.method == 'getAlternateIconName') return current;
         return null;
       });
     }
