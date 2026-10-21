@@ -102,7 +102,7 @@
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@mipmap/ic_launcher_artistic"
             android:roundIcon="@mipmap/ic_launcher_artistic"
             android:targetActivity=".MainActivity">
             <meta-data
@@ -120,7 +120,7 @@
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@mipmap/ic_launcher_glass"
             android:roundIcon="@mipmap/ic_launcher_glass"
             android:targetActivity=".MainActivity">
             <meta-data
@@ -138,7 +138,7 @@
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@mipmap/ic_launcher_mint"
             android:roundIcon="@mipmap/ic_launcher_mint"
             android:targetActivity=".MainActivity">
             <meta-data

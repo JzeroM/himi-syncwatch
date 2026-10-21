@@ -225,6 +225,24 @@ void main() {
     });
   });
 
+  group('AndroidManifest 备用别名图标', () {
+    test('icon/roundIcon 指向各自 mipmap，未被默认图标覆盖', () {
+      final manifest =
+          File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      for (final id in const ['artistic', 'mint', 'glass']) {
+        final alias = RegExp(
+          '<activity-alias\\b[^>]*android:name="\\.icon_$id"[^>]*>',
+        ).firstMatch(manifest);
+        expect(alias, isNotNull, reason: '缺少 .icon_$id');
+        final block = alias!.group(0)!;
+        expect(block, contains('android:icon="@mipmap/ic_launcher_$id"'),
+            reason: id);
+        expect(block, contains('android:roundIcon="@mipmap/ic_launcher_$id"'),
+            reason: id);
+      }
+    });
+  });
+
   group('iOS 备用图标资源', () {
     const alternateIds = ['artistic', 'mint', 'glass'];
 

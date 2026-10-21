@@ -195,6 +195,18 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
         err "缺少 activity-alias .$alias（图标切换依赖）"
       fi
     done
+    for alt in artistic mint glass; do
+      actual_icon=$(awk -v name=".icon_$alt" '
+        index($0, "android:name=\"" name "\"") { in_alias=1 }
+        in_alias && /android:icon="/ {
+          line=$0; sub(/.*android:icon="/, "", line); sub(/".*/, "", line); print line; exit
+        }' "$MANIFEST")
+      if [ "$actual_icon" = "@mipmap/ic_launcher_$alt" ]; then
+        ok "备用图标 $alt 的 android:icon 指向专属资源"
+      else
+        err "备用图标 $alt 的 android:icon=$actual_icon（被 flutter_launcher_icons 改成默认图标？）"
+      fi
+    done
     if grep -q 'FlutterDynamicIconPlusService' "$MANIFEST"; then
       err "AndroidManifest 仍声明旧 FlutterDynamicIconPlusService（会与自有通道抢图标）"
     else

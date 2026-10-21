@@ -90,6 +90,44 @@ void _write(String path, List<int> bytes) {
   f.writeAsBytesSync(bytes);
 }
 
+/// 校正 AndroidManifest 中备用 activity-alias 的图标引用。
+///
+/// `flutter_launcher_icons` 会把所有 activity-alias 的 android:icon 改成
+/// 默认图标（v1.2.54 事故根因），导致备用别名启用后桌面仍显示默认图。
+/// 这里在生成备用资源后强制写回各自的 mipmap。
+void _fixAndroidAliasIcons() {
+  final f = File('android/app/src/main/AndroidManifest.xml');
+  if (!f.existsSync()) return;
+  var source = f.readAsStringSync();
+  var changed = 0;
+  for (final name in alternateIcons) {
+    final block = RegExp(
+      '<activity-alias\\b[^>]*android:name="\\.icon_${RegExp.escape(name)}"[^>]*>',
+    );
+    final match = block.firstMatch(source);
+    if (match == null) {
+      stderr.writeln('AndroidManifest 缺少 .icon_$name 别名，无法校正图标引用');
+      exitCode = 1;
+      continue;
+    }
+    final original = match.group(0)!;
+    var patched = original.replaceFirst(
+      RegExp(r'android:icon="[^"]*"'),
+      'android:icon="@mipmap/ic_launcher_$name"',
+    );
+    patched = patched.replaceFirst(
+      RegExp(r'android:roundIcon="[^"]*"'),
+      'android:roundIcon="@mipmap/ic_launcher_$name"',
+    );
+    if (patched != original) {
+      source = source.replaceRange(match.start, match.end, patched);
+      changed++;
+    }
+  }
+  f.writeAsStringSync(source);
+  stdout.writeln('已校正 Android 别名图标引用 $changed 处');
+}
+
 void main() {
   final sources = <String, img.Image>{};
   for (final name in allIcons) {
@@ -146,6 +184,8 @@ void main() {
     _write(
         'assets/icons/$name.png', img.encodePng(_resize(sources[name]!, 256)));
   }
+
+  _fixAndroidAliasIcons();
 
   stdout.writeln('已生成：Android 备用图标 ${alternateIcons.length} 套、'
       'iOS 备用 appiconset ${alternateIcons.length} 套（含 iPad + 1024）、'
