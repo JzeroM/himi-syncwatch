@@ -7,11 +7,15 @@ import 'package:himi_syncwatch/models/media_segment.dart';
 /// - 手动 seek 进入片段不触发；
 /// - 同一片段本次播放只提示一次；
 /// - 短于 1 秒的片段不处理；短于 3 秒不弹询问；
-/// - 手动片头 `[0, end]` 允许起播时已位于片段内立即提示。
+/// - 片头需播放位置达到 3 秒后才提示（从片头中段续播也不例外）；
+/// - 手动/章节片头 `[0, end]` 在跨过 3 秒门槛时补触发一次。
 class SegmentSkipController {
   static const int minSegmentMs = 1000;
   static const int minAskMs = 3000;
   static const int startToleranceMs = 1500;
+
+  /// 片头提示门槛，同时用于“前 3 秒不可设置片头”。
+  static const int introGateMs = 3000;
 
   int? _lastPositionMs;
   final Set<String> _handled = {};
@@ -50,20 +54,27 @@ class SegmentSkipController {
         continue;
       }
       final length = segment.endMs - segment.startMs;
-      final last = _lastPositionMs;
-      final crossedStart = last == null
-          ? positionMs <= segment.startMs + startToleranceMs
-          : last < segment.startMs && positionMs >= segment.startMs;
-      final manualIntroInProgress = last == null &&
-          segment.source == MediaSegmentSource.manual &&
-          segment.type == MediaSegmentType.intro &&
-          positionMs < segment.endMs;
-
       if (length < minSegmentMs || length < minAskMs) {
         _handled.add(segment.key);
         continue;
       }
-      if (crossedStart || manualIntroInProgress) {
+
+      final last = _lastPositionMs;
+      final introTooEarly =
+          segment.type == MediaSegmentType.intro && positionMs < introGateMs;
+      if (introTooEarly) continue;
+
+      final crossedStart = last == null
+          ? positionMs <= segment.startMs + startToleranceMs
+          : last < segment.startMs && positionMs >= segment.startMs;
+      // 片头起点多为 0：首次判定可能已越过起点，或在起播/续播时直接位于
+      // 片头内。只要尚未跨过 3 秒门槛，就在达到门槛时补触发一次。
+      final introInProgress = segment.type == MediaSegmentType.intro &&
+          positionMs >= introGateMs &&
+          positionMs < segment.endMs &&
+          (last == null || last < introGateMs);
+
+      if (crossedStart || introInProgress) {
         _handled.add(segment.key);
         _lastPositionMs = positionMs;
         return segment;

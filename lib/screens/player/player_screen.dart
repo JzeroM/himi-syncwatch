@@ -554,6 +554,19 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       isSeries && !hasNextEpisode;
 
+  /// 前 3 秒不可设置片头（按视频播放位置判定）。
+  @visibleForTesting
+  static bool canSetIntroAt(int positionMs) =>
+      positionMs >= SegmentSkipController.introGateMs;
+
+  /// 片头提示是否仍需等待本次起播满 3 秒。
+  @visibleForTesting
+  static bool shouldDelayIntroPrompt({
+    required int playbackElapsedMs,
+    required bool insideIntro,
+  }) =>
+      insideIntro && playbackElapsedMs < SegmentSkipController.introGateMs;
+
   /// 引擎 end 事件是否可信（纯函数，供测试）：mdk keyframe seek 窗口
   /// 会误报 `MediaStatus.end` 位（v1.1.239 修复不彻底，拖进度条仍切
   /// 集）——真实播完时 position≈duration，误报时位置仍远离结尾。
@@ -913,6 +926,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       FocusNode(debugLabel: 'SegmentSkipPrompt');
   final FocusNode _segmentMarkFirstFocusNode =
       FocusNode(debugLabel: 'SegmentMarkFirst');
+  final Stopwatch _skipPromptPlaybackWatch = Stopwatch();
 
   List<MediaSegment> _skipSegments = const [];
   MediaSegment? _skipPromptSegment;
@@ -1770,6 +1784,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _skipLoadSeq++;
           _skipPromptTimer?.cancel();
           _skipPromptTimer = null;
+          _skipPromptPlaybackWatch.reset();
           _skipController.reset();
           setState(() {
             _skipPromptSegment = null;
@@ -2101,6 +2116,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _segmentMediaItem = null;
       _manualSegmentRecord = null;
       _showSegmentMarkPanel = false;
+      _skipPromptPlaybackWatch.reset();
       _skipController.reset();
     });
     // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
@@ -5244,7 +5260,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _evaluateSkipPrompt(int positionMs) {
+    final playing = _player.state == AdapterPlaybackState.playing;
+    if (!playing) {
+      _skipPromptPlaybackWatch.stop();
+      return;
+    }
+    if (!_skipPromptPlaybackWatch.isRunning) {
+      _skipPromptPlaybackWatch.start();
+    }
     if (!_segmentFeatureEnabled || _skipSegments.isEmpty) return;
+    final insideIntro = _skipSegments.any(
+      (segment) =>
+          segment.type == MediaSegmentType.intro &&
+          segment.contains(positionMs),
+    );
+    if (PlayerScreen.shouldDelayIntroPrompt(
+      playbackElapsedMs: _skipPromptPlaybackWatch.elapsedMilliseconds,
+      insideIntro: insideIntro,
+    )) {
+      return;
+    }
     final durationMs = _duration.inMilliseconds > 0
         ? _duration.inMilliseconds
         : _segmentDurationMs;
@@ -5406,6 +5441,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         : _segmentDurationMs;
     if (positionMs <= 0) {
       showAppToast(context, '当前位置为 0，无法标记');
+      return;
+    }
+    if (type == MediaSegmentType.intro &&
+        !PlayerScreen.canSetIntroAt(positionMs)) {
+      showAppToast(context, '播放 3 秒后才能设置片头');
       return;
     }
     if (durationMs > 0 && positionMs >= durationMs) {

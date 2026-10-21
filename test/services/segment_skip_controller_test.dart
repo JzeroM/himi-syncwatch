@@ -16,10 +16,98 @@ void main() {
     source: MediaSegmentSource.embyChapter,
   );
 
-  test('手动片头 [0,end] 起播即可提示', () {
+  test('手动片头 [0,end] 前 3 秒不提示，达到 3 秒后提示', () {
+    final controller = SegmentSkipController();
+    expect(
+      controller.evaluate(
+        positionMs: 500,
+        durationMs: 3000000,
+        playing: true,
+        enabled: true,
+        segments: const [intro],
+      ),
+      isNull,
+    );
+    expect(
+      controller.evaluate(
+        positionMs: 2900,
+        durationMs: 3000000,
+        playing: true,
+        enabled: true,
+        segments: const [intro],
+      ),
+      isNull,
+    );
+    final trigger = controller.evaluate(
+      positionMs: 3000,
+      durationMs: 3000000,
+      playing: true,
+      enabled: true,
+      segments: const [intro],
+    );
+    expect(trigger, same(intro));
+  });
+
+  test('章节片头 [0,end] 同样延迟到 3 秒后提示', () {
+    const chapterIntro = MediaSegment(
+      type: MediaSegmentType.intro,
+      startMs: 0,
+      endMs: 90000,
+      source: MediaSegmentSource.embyChapter,
+    );
+    final controller = SegmentSkipController();
+    expect(
+      controller.evaluate(
+        positionMs: 500,
+        durationMs: 3000000,
+        playing: true,
+        enabled: true,
+        segments: const [chapterIntro],
+      ),
+      isNull,
+    );
+    final trigger = controller.evaluate(
+      positionMs: 3000,
+      durationMs: 3000000,
+      playing: true,
+      enabled: true,
+      segments: const [chapterIntro],
+    );
+    expect(trigger, same(chapterIntro));
+  });
+
+  test('片头起点在 3 秒后仍按自然越过起点触发', () {
+    const lateIntro = MediaSegment(
+      type: MediaSegmentType.intro,
+      startMs: 10000,
+      endMs: 90000,
+      source: MediaSegmentSource.embyChapter,
+    );
+    final controller = SegmentSkipController();
+    expect(
+      controller.evaluate(
+        positionMs: 9500,
+        durationMs: 3000000,
+        playing: true,
+        enabled: true,
+        segments: const [lateIntro],
+      ),
+      isNull,
+    );
+    final trigger = controller.evaluate(
+      positionMs: 10000,
+      durationMs: 3000000,
+      playing: true,
+      enabled: true,
+      segments: const [lateIntro],
+    );
+    expect(trigger, same(lateIntro));
+  });
+
+  test('首次判定位于片头内且进度已达 3 秒时触发', () {
     final controller = SegmentSkipController();
     final trigger = controller.evaluate(
-      positionMs: 500,
+      positionMs: 60000,
       durationMs: 3000000,
       playing: true,
       enabled: true,

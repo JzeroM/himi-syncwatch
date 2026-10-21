@@ -506,6 +506,38 @@ void main() {
     });
   });
 
+  group('片头 3 秒门槛', () {
+    test('前 3 秒不可设置片头', () {
+      expect(PlayerScreen.canSetIntroAt(0), isFalse);
+      expect(PlayerScreen.canSetIntroAt(2999), isFalse);
+      expect(PlayerScreen.canSetIntroAt(3000), isTrue);
+    });
+
+    test('片头提示需本次起播满 3 秒', () {
+      expect(
+        PlayerScreen.shouldDelayIntroPrompt(
+          playbackElapsedMs: 2999,
+          insideIntro: true,
+        ),
+        isTrue,
+      );
+      expect(
+        PlayerScreen.shouldDelayIntroPrompt(
+          playbackElapsedMs: 3000,
+          insideIntro: true,
+        ),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.shouldDelayIntroPrompt(
+          playbackElapsedMs: 0,
+          insideIntro: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('shouldShowSeriesFinishedAfterOutroSkip（片尾退出提示判定）', () {
     test('剧集最后一集 → 提示所有剧集播放完毕', () {
       expect(
