@@ -939,6 +939,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       FocusNode(debugLabel: 'SegmentSkipPrompt');
   final FocusNode _segmentMarkFirstFocusNode =
       FocusNode(debugLabel: 'SegmentMarkFirst');
+  final FocusScopeNode _segmentMarkScopeNode = FocusScopeNode(
+    debugLabel: 'SegmentMarkScope',
+    directionalTraversalEdgeBehavior: TraversalEdgeBehavior.stop,
+  );
   final Stopwatch _skipPromptPlaybackWatch = Stopwatch();
 
   List<MediaSegment> _skipSegments = const [];
@@ -1758,7 +1762,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       focusRoots: () => [
         _controlsRootFocusNode,
         _selectorPanelRootFocusNode,
-        _topBarRootFocusNode
+        _topBarRootFocusNode,
+        _segmentMarkScopeNode,
       ],
       enabled: () => _showControls && mounted,
     );
@@ -5739,6 +5744,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _autoHide.reset();
       return;
     }
+    // 片头片尾标记面板打开期间保持控件与焦点，避免计时到点回落热键层
+    if (_showSegmentMarkPanel) {
+      _autoHide.reset();
+      return;
+    }
     if (_player.state != AdapterPlaybackState.playing) {
       // 起播未完成（慢流首开常见）：本次计时空转，日志留证；
       // 起播成功处会重新起算（见 _loadStream/_playFromUrl）。
@@ -6310,6 +6320,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subtitleStyleButtonFocusNode.dispose();
     _skipPromptFocusNode.dispose();
     _segmentMarkFirstFocusNode.dispose();
+    _segmentMarkScopeNode.dispose();
     _subtitleDelayReloadTimer?.cancel();
     _subtitleStyleSaveTimer?.cancel();
     _subtitleStyleApplyTimer?.cancel();
@@ -6934,13 +6945,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 child: ColoredBox(
                   color: Colors.black.withValues(alpha: 0.45),
                   child: Center(
-                    child: FocusTraversalGroup(
-                      child: SegmentMarkPanel(
-                        positionMs: _position.inMilliseconds,
-                        introEndMs: _segmentIntroEndMs,
-                        creditsStartMs: _segmentCreditsStartMs,
-                        firstFocusNode: _segmentMarkFirstFocusNode,
-                        onSelect: _onSegmentMarkSelected,
+                    child: FocusScope(
+                      node: _segmentMarkScopeNode,
+                      skipTraversal: true,
+                      onKeyEvent: _autoHide.onKeyEvent,
+                      child: FocusTraversalGroup(
+                        child: SegmentMarkPanel(
+                          positionMs: _position.inMilliseconds,
+                          introEndMs: _segmentIntroEndMs,
+                          creditsStartMs: _segmentCreditsStartMs,
+                          firstFocusNode: _segmentMarkFirstFocusNode,
+                          onSelect: _onSegmentMarkSelected,
+                        ),
                       ),
                     ),
                   ),
@@ -8200,9 +8216,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     duration: dur,
                     child: TvFocusable(
                       focusNode: _controlsFocusNode,
-                      // 开启片头片尾标记时接管 OK：短按播放/暂停，
-                      // 长按 OK 打开标记面板；关闭时放行给 PlayerHotkey。
-                      onTap: segmentTvMark ? _togglePlayPause : null,
+                      // 进度条不承担播放/暂停：短按 OK 不触发任何动作，
+                      // 长按 OK 打开片头/片尾标记面板；播放/暂停只走
+                      // 底部播放按钮，避免长按标记时误切播放状态。
+                      onTap: null,
                       onLongPress: segmentTvMark ? _openSegmentMarkPanel : null,
                       scale: 1.0,
                       child: ExcludeFocus(

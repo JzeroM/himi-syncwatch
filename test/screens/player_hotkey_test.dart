@@ -174,7 +174,7 @@ void main() {
     }
   });
 
-  testWidgets('TV：中键 Enter 暂停/播放', (tester) async {
+  testWidgets('TV：中键 Enter 不直接暂停/播放（只由控件触发）', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
       await tester.pumpWidget(wrap(tvMode: true));
@@ -182,7 +182,7 @@ void main() {
 
       await simulateKeyDownEvent(LogicalKeyboardKey.enter);
       await simulateKeyUpEvent(LogicalKeyboardKey.enter);
-      expect(toggled, 1);
+      expect(toggled, 0, reason: '中键交给焦点控件，不再全局切换播放');
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
@@ -515,11 +515,11 @@ void main() {
       await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeUp);
       expect(volumeDelta, 15, reason: '松键停止');
 
-      // 对照：其他热键长按仍不重复（空格在 Android 不生效，用中键验证）
-      await simulateKeyDownEvent(LogicalKeyboardKey.enter);
-      await simulateKeyRepeatEvent(LogicalKeyboardKey.enter);
-      await simulateKeyUpEvent(LogicalKeyboardKey.enter);
-      expect(toggled, 1, reason: '中键长按只触发一次');
+      // 对照：其他热键长按仍不重复（空格在 Android 不生效，用媒体键验证）
+      await simulateKeyDownEvent(LogicalKeyboardKey.mediaPlayPause);
+      await simulateKeyRepeatEvent(LogicalKeyboardKey.mediaPlayPause);
+      await simulateKeyUpEvent(LogicalKeyboardKey.mediaPlayPause);
+      expect(toggled, 1, reason: '媒体键长按只触发一次');
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
@@ -557,7 +557,33 @@ void main() {
     }
   });
 
-  testWidgets('TV：中键与媒体键暂停播放同时唤出控制条', (tester) async {
+  testWidgets('TV：中键仅唤出控制条，媒体键才暂停/播放并唤出控制条', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(
+        wrap(
+          tvMode: true,
+          controlsVisible: false,
+          onShowControls: () => showControls++,
+        ),
+      );
+      await tester.pump();
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.enter);
+      await simulateKeyUpEvent(LogicalKeyboardKey.enter);
+      expect(toggled, 0, reason: '中键控制条隐藏时只唤出，不切换播放');
+      expect(showControls, 1);
+
+      await simulateKeyDownEvent(LogicalKeyboardKey.mediaPlayPause);
+      await simulateKeyUpEvent(LogicalKeyboardKey.mediaPlayPause);
+      expect(toggled, 1);
+      expect(showControls, 2);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('TV：控制条可见时中键不唤出也不切换播放', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
       await tester.pumpWidget(
@@ -567,13 +593,8 @@ void main() {
 
       await simulateKeyDownEvent(LogicalKeyboardKey.enter);
       await simulateKeyUpEvent(LogicalKeyboardKey.enter);
-      expect(toggled, 1);
-      expect(showControls, 1);
-
-      await simulateKeyDownEvent(LogicalKeyboardKey.mediaPlayPause);
-      await simulateKeyUpEvent(LogicalKeyboardKey.mediaPlayPause);
-      expect(toggled, 2);
-      expect(showControls, 2);
+      expect(toggled, 0);
+      expect(showControls, 0);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

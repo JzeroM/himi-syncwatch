@@ -167,6 +167,7 @@ void _mockPluginChannels(WidgetTester tester) {
 Future<(ProviderContainer, _FakeStreamingPlayerAdapter)> _pumpPlayer(
   WidgetTester tester, {
   Duration prepareDelay = Duration.zero,
+  AppSettings settings = const AppSettings(tvMode: true),
 }) async {
   _mockPluginChannels(tester);
   final player = _FakeStreamingPlayerAdapter(prepareDelay: prepareDelay);
@@ -177,8 +178,7 @@ Future<(ProviderContainer, _FakeStreamingPlayerAdapter)> _pumpPlayer(
   final item = _multiSourceMovie();
   final container = ProviderContainer(
     overrides: [
-      settingsProvider.overrideWith(
-          (ref) => FakeSettingsNotifier(const AppSettings(tvMode: true))),
+      settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
       embyServiceProvider.overrideWith((ref) => FakeEmbyService(item: item)),
       embyConfigProvider.overrideWith(
           (ref) => EmbyConfigNotifier()..setConfig(_authedServer())),
@@ -243,8 +243,54 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('TV：慢流首开超过 5s，起播后控件仍按时自动隐藏（v1.2.25）',
-      (tester) async {
+  testWidgets('TV：进度条长按 OK 只开标记面板，不切换播放状态', (tester) async {
+    final (_, player) = await _pumpPlayer(
+      tester,
+      settings: const AppSettings(
+        tvMode: true,
+        skipIntroOutroEnabled: true,
+      ),
+    );
+    player.state = AdapterPlaybackState.playing;
+
+    final seekFocus = find.byWidgetPredicate(
+      (w) => w is Focus && w.focusNode?.debugLabel == 'PlayerSeekSlider',
+    );
+    expect(seekFocus, findsOneWidget);
+    tester.widget<Focus>(seekFocus).focusNode!.requestFocus();
+    await tester.pump();
+
+    await simulateKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('设置片头'), findsOneWidget, reason: '长按 OK 打开标记面板');
+    await simulateKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    for (var i = 0; i < 4; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump(const Duration(milliseconds: 700));
+    }
+    expect(find.text('设置片头'), findsOneWidget, reason: '方向键操作后面板仍在');
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      anyOf('SegmentMarkFirst', 'TvFocusable'),
+      reason: '方向键操作后焦点仍留在面板内',
+    );
+
+    expect(
+      player.state,
+      AdapterPlaybackState.playing,
+      reason: '长按标记不应误触播放/暂停',
+    );
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('TV：慢流首开超过 5s，起播后控件仍按时自动隐藏（v1.2.25）', (tester) async {
     // 真机日志：4K/弱网 avformat_open_input 约 10s，进入页时的自动隐藏
     // 计时器（5s）先到点且被 state != playing 跳过；旧实现不重开计时，
     // 控件常驻（用户感知「控件自己冒出来」）。修复：起播成功重新起算。
@@ -267,8 +313,7 @@ void main() {
 
     // 起播后重新计 5s：应自动隐藏
     await tester.pump(const Duration(seconds: 6));
-    expect(controls, findsNothing,
-        reason: '慢流起播后重新起算，5s 无操作自动隐藏（修复前常驻）');
+    expect(controls, findsNothing, reason: '慢流起播后重新起算，5s 无操作自动隐藏（修复前常驻）');
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();

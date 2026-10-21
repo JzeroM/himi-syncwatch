@@ -28,7 +28,7 @@ class GeneralSettingsScreen extends ConsumerWidget {
             onTap: () => notifier.update(tvMode: !settings.tvMode),
             child: SwitchListTile(
               title: const Text('TV 模式'),
-              subtitle: const Text('适配遥控器：方向键导航，OK 键选择，中键暂停/播放'),
+              subtitle: const Text('适配遥控器：方向键导航，OK 键选择'),
               value: settings.tvMode,
               onChanged: (v) => notifier.update(tvMode: v),
             ),
@@ -39,7 +39,8 @@ class GeneralSettingsScreen extends ConsumerWidget {
         if (!settings.tvMode) ...[
           settingsTvWrapRow(
             tvMode: settings.tvMode,
-            onTap: () => notifier.update(tvSyncEnabled: !settings.tvSyncEnabled),
+            onTap: () =>
+                notifier.update(tvSyncEnabled: !settings.tvSyncEnabled),
             child: SwitchListTile(
               title: const Text('同步到 TV'),
               subtitle: const Text('服务器页显示电视机控件，可发现局域网 TV 并推送配置'),

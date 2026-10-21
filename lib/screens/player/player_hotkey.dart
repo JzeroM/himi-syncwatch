@@ -7,7 +7,9 @@ import 'player_platform.dart';
 /// - 空格 = 暂停/播放（仅 Windows；KeyRepeatEvent 非 KeyDownEvent，长按自动忽略）
 /// - ESC = 退出全屏（onEscape 提供时响应）
 /// - TV 模式（Android 遥控器）：
-///   * 中键 Enter/Select、媒体键 mediaPlayPause = 暂停/播放 + 唤出控制条
+///   * 中键 Enter/Select = 激活当前焦点控件；控制条隐藏时仅唤出控制条，
+///     不再全局切换播放/暂停（播放/暂停只由控制条上的按钮触发）
+///   * 媒体键 mediaPlayPause/mediaPlay/mediaPause = 暂停/播放 + 唤出控制条
 ///     （onShowControls 提供时；控制条 5 秒后自动隐藏，隐藏期间再次唤出）
 ///   * 左右 = ±10 秒快进退（控制条隐藏时；可见时让位给焦点导航）
 ///   * 上下 = 唤出控制条（控制条隐藏时；可见时让位给焦点导航并顺延自动隐藏）
@@ -146,11 +148,23 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
     }
 
     if (widget.tvMode) {
-      // 中键（OK 键）与媒体键 = 暂停/播放 + 唤出控制条
+      // 中键（OK 键）只负责激活焦点控件；控制条隐藏时仅唤出控制条。
+      // 播放/暂停不再走全局中键，避免与进度条长按标记冲突。
       if (key == LogicalKeyboardKey.enter ||
           key == LogicalKeyboardKey.numpadEnter ||
-          key == LogicalKeyboardKey.select ||
-          key == LogicalKeyboardKey.mediaPlayPause ||
+          key == LogicalKeyboardKey.select) {
+        if (!widget.controlsVisible) {
+          final onShow = widget.onShowControls;
+          if (onShow != null) {
+            onShow();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      }
+
+      // 媒体键（遥控器专用播放/暂停键）= 暂停/播放 + 唤出控制条
+      if (key == LogicalKeyboardKey.mediaPlayPause ||
           key == LogicalKeyboardKey.mediaPlay ||
           key == LogicalKeyboardKey.mediaPause) {
         widget.onTogglePlayPause();
