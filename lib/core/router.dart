@@ -12,6 +12,7 @@ import 'package:himi_syncwatch/screens/favorites/favorites_all_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/intro_outro_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/cache_settings_screen.dart';
@@ -98,6 +99,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                       path: 'engine-config',
                       pageBuilder: (context, state) =>
                           _settingsFadePage(const EngineConfigScreen()),
+                    ),
+                    GoRoute(
+                      path: 'intro-outro',
+                      pageBuilder: (context, state) =>
+                          _settingsFadePage(const IntroOutroSettingsScreen()),
                     ),
                     GoRoute(
                       path: 'danmaku',

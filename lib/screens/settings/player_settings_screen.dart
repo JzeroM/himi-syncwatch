@@ -52,18 +52,21 @@ class PlayerSettingsScreen extends ConsumerWidget {
           ),
         ),
         const Divider(height: 1),
-        // ── 跳过片头/片尾 ─────────────────────────────────────
+        // ── 片头片尾配置 ─────────────────────────────────────
         settingsTvWrapRow(
           tvMode: settings.tvMode,
-          onTap: () => notifier.update(
-            skipIntroOutroEnabled: !settings.skipIntroOutroEnabled,
-          ),
-          child: SwitchListTile(
-            key: const ValueKey('skipIntroOutroSwitch'),
-            title: const Text('跳过片头片尾'),
-            subtitle: const Text('显示片头/片尾跳过提示，支持长按手动标记'),
-            value: settings.skipIntroOutroEnabled,
-            onChanged: (v) => notifier.update(skipIntroOutroEnabled: v),
+          onTap: () => context.push('/settings/player/intro-outro'),
+          child: ListTile(
+            key: const ValueKey('introOutroConfigEntry'),
+            leading: const Icon(Icons.skip_next),
+            title: const Text('片头片尾配置'),
+            subtitle: const Text('跳过提示、手动标记与自动跳过'),
+            trailing: const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Colors.white54,
+            ),
+            onTap: () => context.push('/settings/player/intro-outro'),
           ),
         ),
         const Divider(height: 1),

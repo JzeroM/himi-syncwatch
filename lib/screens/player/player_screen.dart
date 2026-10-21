@@ -567,6 +567,19 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       insideIntro && playbackElapsedMs < SegmentSkipController.introGateMs;
 
+  /// 是否自动执行片头/片尾跳过（总开关与自动开关同时开启且可控制播放）。
+  @visibleForTesting
+  static bool shouldAutoSkipSegment({
+    required bool canControlPlayback,
+    required bool skipEnabled,
+    required bool autoSkipEnabled,
+  }) =>
+      canControlPlayback && skipEnabled && autoSkipEnabled;
+
+  /// 已有手动标记时，手机长按也需要进入更新/清除确认。
+  @visibleForTesting
+  static bool hasExistingSegmentMark(int? existingMs) => existingMs != null;
+
   /// 引擎 end 事件是否可信（纯函数，供测试）：mdk keyframe seek 窗口
   /// 会误报 `MediaStatus.end` 位（v1.1.239 修复不彻底，拖进度条仍切
   /// 集）——真实播完时 position≈duration，误报时位置仍远离结尾。
@@ -5163,6 +5176,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool get _segmentFeatureEnabled =>
       _canControlPlayback && ref.read(settingsProvider).skipIntroOutroEnabled;
 
+  bool get _autoSkipSegmentEnabled => PlayerScreen.shouldAutoSkipSegment(
+        canControlPlayback: _canControlPlayback,
+        skipEnabled: ref.read(settingsProvider).skipIntroOutroEnabled,
+        autoSkipEnabled: ref.read(settingsProvider).autoSkipIntroOutroEnabled,
+      );
+
   bool get _isSeriesPlayback {
     if (!_hasEpisodeList ||
         _currentEpisodeIndex < 0 ||
@@ -5291,6 +5310,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       segments: _skipSegments,
     );
     if (segment == null || !mounted) return;
+    if (_autoSkipSegmentEnabled) {
+      _autoSkipSegment(segment);
+      return;
+    }
     _skipPromptTimer?.cancel();
     setState(() {
       _skipPromptSegment = segment;
@@ -5319,15 +5342,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  void _autoSkipSegment(MediaSegment segment) {
+    _dismissSkipPrompt();
+    _skipSegment(segment);
+  }
+
   void _performSkipSegment() {
     final segment = _skipPromptSegment;
     if (segment == null || !_canControlPlayback) return;
+    _dismissSkipPrompt();
+    _skipSegment(segment);
+  }
+
+  void _skipSegment(MediaSegment segment) {
+    if (!_canControlPlayback) return;
     final durationMs = _duration.inMilliseconds > 0
         ? _duration.inMilliseconds
         : _segmentDurationMs;
     final targetMs =
         durationMs > 0 ? segment.endMs.clamp(0, durationMs) : segment.endMs;
-    _dismissSkipPrompt();
 
     if (segment.type == MediaSegmentType.outro) {
       final completedAtMs = durationMs > 0 ? durationMs : targetMs;
@@ -5516,10 +5549,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? _segmentIntroEndMs
         : _segmentCreditsStartMs;
     _closeSegmentMarkPanel();
-    if (existing == null) {
+    if (!PlayerScreen.hasExistingSegmentMark(existing)) {
       await _markSegmentAt(type);
       return;
     }
+    final existingMs = existing!;
     final isIntro = type == MediaSegmentType.intro;
     final action = await showDialog<bool>(
       context: context,
@@ -5527,7 +5561,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return AlertDialog(
           title: Text(isIntro ? '片头已设置' : '片尾已设置'),
           content: Text(
-            '当前标记：${SegmentMarkPanel.formatMs(existing)}\n'
+            '当前标记：${SegmentMarkPanel.formatMs(existingMs)}\n'
             '要用当前位置（${SegmentMarkPanel.formatMs(_position.inMilliseconds)}）更新，还是清除？',
           ),
           actions: [
@@ -5600,11 +5634,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final width = MediaQuery.sizeOf(context).width;
     if (_segmentMarkGestureEnabled) {
       if (x < width / 3) {
-        unawaited(_markSegmentAt(MediaSegmentType.intro));
+        unawaited(_onSegmentMarkSelected(MediaSegmentType.intro));
         return;
       }
       if (x > width * 2 / 3) {
-        unawaited(_markSegmentAt(MediaSegmentType.outro));
+        unawaited(_onSegmentMarkSelected(MediaSegmentType.outro));
         return;
       }
     }

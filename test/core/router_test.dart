@@ -204,7 +204,8 @@ void main() {
     router.go('/settings/appearance');
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
   });
 
   testWidgets('设置子路由：/settings/player 进播放器子页', (tester) async {
@@ -214,6 +215,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('playerSettingsPage')), findsOneWidget);
+  });
+
+  testWidgets('设置子路由：/settings/player/intro-outro 进片头片尾配置', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/settings/player/intro-outro');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('introOutroSettingsPage')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('设置子路由：/settings/general 进通用子页', (tester) async {
@@ -253,7 +266,8 @@ void main() {
     await tester.tap(find.text('外观'));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('appearanceSettingsPage')), findsOneWidget);
   });
 
   testWidgets('详情页为顶层路由，覆盖底部导航', (tester) async {

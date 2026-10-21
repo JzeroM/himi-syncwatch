@@ -506,6 +506,48 @@ void main() {
     });
   });
 
+  group('自动跳过与手机标记确认', () {
+    test('自动跳过需总开关、自动开关同时开启且可控制播放', () {
+      expect(
+        PlayerScreen.shouldAutoSkipSegment(
+          canControlPlayback: true,
+          skipEnabled: true,
+          autoSkipEnabled: true,
+        ),
+        isTrue,
+      );
+      expect(
+        PlayerScreen.shouldAutoSkipSegment(
+          canControlPlayback: false,
+          skipEnabled: true,
+          autoSkipEnabled: true,
+        ),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.shouldAutoSkipSegment(
+          canControlPlayback: true,
+          skipEnabled: false,
+          autoSkipEnabled: true,
+        ),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.shouldAutoSkipSegment(
+          canControlPlayback: true,
+          skipEnabled: true,
+          autoSkipEnabled: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('已有手动标记时手机长按进入更新/清除确认', () {
+      expect(PlayerScreen.hasExistingSegmentMark(null), isFalse);
+      expect(PlayerScreen.hasExistingSegmentMark(90000), isTrue);
+    });
+  });
+
   group('片头 3 秒门槛', () {
     test('前 3 秒不可设置片头', () {
       expect(PlayerScreen.canSetIntroAt(0), isFalse);

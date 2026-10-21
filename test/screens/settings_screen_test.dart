@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/cache_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/intro_outro_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
@@ -41,6 +42,10 @@ GoRouter _testRouter() => GoRouter(
                 GoRoute(
                   path: 'engine-config',
                   builder: (context, state) => const EngineConfigScreen(),
+                ),
+                GoRoute(
+                  path: 'intro-outro',
+                  builder: (context, state) => const IntroOutroSettingsScreen(),
                 ),
               ],
             ),
@@ -414,29 +419,131 @@ void main() {
     expect(container.read(settingsProvider).showNetworkSpeed, isTrue);
   });
 
-  testWidgets('播放器子页：跳过片头片尾默认关，切换写入 settings', (tester) async {
+  testWidgets('播放器子页：进入片头片尾配置并切换总开关/自动跳过', (tester) async {
     final container = await _pumpScreen(tester, category: '播放器');
     await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('skipIntroOutroSwitch')),
+      find.byKey(const ValueKey('introOutroConfigEntry')),
       200,
       scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
+    expect(
+      find.byKey(const ValueKey('skipIntroOutroSwitch')),
+      findsNothing,
+      reason: '总开关已移入子页',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('introOutroConfigEntry')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('introOutroSettingsPage')),
+      findsOneWidget,
+    );
+
     expect(container.read(settingsProvider).skipIntroOutroEnabled, isFalse);
+    expect(
+      container.read(settingsProvider).autoSkipIntroOutroEnabled,
+      isFalse,
+    );
+
     final skipSwitch = find.descendant(
       of: find.byKey(const ValueKey('skipIntroOutroSwitch')),
       matching: find.byType(Switch),
     );
     expect(tester.widget<Switch>(skipSwitch).value, isFalse);
-
     await tester.tap(skipSwitch);
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).skipIntroOutroEnabled, isTrue);
 
-    await tester.tap(skipSwitch);
+    final autoSwitch = find.descendant(
+      of: find.byKey(const ValueKey('autoSkipIntroOutroSwitch')),
+      matching: find.byType(Switch),
+    );
+    expect(tester.widget<Switch>(autoSwitch).value, isFalse);
+    await tester.tap(autoSwitch);
     await tester.pumpAndSettle();
-    expect(container.read(settingsProvider).skipIntroOutroEnabled, isFalse);
+    expect(
+      container.read(settingsProvider).autoSkipIntroOutroEnabled,
+      isTrue,
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('introOutroUsageSection')),
+      200,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('使用说明'), findsOneWidget);
+    expect(find.textContaining('手动设置片头片尾'), findsOneWidget);
+    expect(find.textContaining('自动跳过开启后'), findsOneWidget);
+  });
+
+  testWidgets('TV 遥控器：进入片头片尾配置并切换两个开关', (tester) async {
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final container = await _pumpScreen(
+      tester,
+      initial: const AppSettings(tvMode: true),
+      remote: true,
+      category: '播放器',
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('introOutroConfigEntry')),
+      200,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    Finder tvWrappers() => find.byWidgetPredicate(
+        (w) => w is Focus && w.focusNode?.debugLabel == 'TvFocusable');
+
+    final entryWrapper = find.ancestor(
+      of: find.byKey(const ValueKey('introOutroConfigEntry')),
+      matching: tvWrappers(),
+    );
+    expect(entryWrapper, findsOneWidget);
+    tester.widget<Focus>(entryWrapper).focusNode!.requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('introOutroSettingsPage')),
+      findsOneWidget,
+    );
+
+    final skipWrapper = find.ancestor(
+      of: find.byKey(const ValueKey('skipIntroOutroSwitch')),
+      matching: tvWrappers(),
+    );
+    expect(skipWrapper, findsOneWidget);
+    tester.widget<Focus>(skipWrapper).focusNode!.requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).skipIntroOutroEnabled, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    final autoWrapper = find.ancestor(
+      of: find.byKey(const ValueKey('autoSkipIntroOutroSwitch')),
+      matching: tvWrappers(),
+    );
+    expect(
+      FocusManager.instance.primaryFocus,
+      tester.widget<Focus>(autoWrapper).focusNode,
+      reason: '方向键应落到自动跳过开关',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(settingsProvider).autoSkipIntroOutroEnabled,
+      isTrue,
+    );
   });
 
   testWidgets('TV 遥控器 OK 两段式：作用域落焦首个分类入口并激活进入', (tester) async {

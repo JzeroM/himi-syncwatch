@@ -77,6 +77,9 @@ class AppSettings {
   /// 跳过片头/片尾总开关（默认关；关闭时不检测、不提示、不显示手动标记）。
   final bool skipIntroOutroEnabled;
 
+  /// 检测到片头/片尾后自动跳过（默认关；需总开关同时开启）。
+  final bool autoSkipIntroOutroEnabled;
+
   /// 播放页顶栏正中的系统时间格式；默认关闭。
   final TopBarClockFormat topBarClockFormat;
 
@@ -290,6 +293,7 @@ class AppSettings {
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
     this.skipIntroOutroEnabled = false,
+    this.autoSkipIntroOutroEnabled = false,
     this.topBarClockFormat = TopBarClockFormat.off,
     this.playbackSpeed = 1.0,
     this.stereoDownmix = false,
@@ -357,6 +361,7 @@ class AppSettings {
     bool? showSyncDebug,
     bool? showNetworkSpeed,
     bool? skipIntroOutroEnabled,
+    bool? autoSkipIntroOutroEnabled,
     TopBarClockFormat? topBarClockFormat,
     double? playbackSpeed,
     bool? stereoDownmix,
@@ -418,6 +423,8 @@ class AppSettings {
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
       skipIntroOutroEnabled:
           skipIntroOutroEnabled ?? this.skipIntroOutroEnabled,
+      autoSkipIntroOutroEnabled:
+          autoSkipIntroOutroEnabled ?? this.autoSkipIntroOutroEnabled,
       topBarClockFormat: topBarClockFormat ?? this.topBarClockFormat,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
@@ -500,6 +507,7 @@ class AppSettings {
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
         'skipIntroOutroEnabled': skipIntroOutroEnabled,
+        'autoSkipIntroOutroEnabled': autoSkipIntroOutroEnabled,
         'topBarClockFormat': topBarClockFormat.storageValue,
         'playbackSpeed': playbackSpeed,
         'stereoDownmix': stereoDownmix,
@@ -611,6 +619,8 @@ class AppSettings {
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
       skipIntroOutroEnabled: json['skipIntroOutroEnabled'] as bool? ?? false,
+      autoSkipIntroOutroEnabled:
+          json['autoSkipIntroOutroEnabled'] as bool? ?? false,
       topBarClockFormat:
           TopBarClockFormat.fromStorage(json['topBarClockFormat']),
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,

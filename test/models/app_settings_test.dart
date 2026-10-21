@@ -1206,6 +1206,33 @@ void main() {
     });
   });
 
+  group('autoSkipIntroOutroEnabled（自动跳过片头片尾开关）', () {
+    test('默认关闭', () {
+      expect(const AppSettings().autoSkipIntroOutroEnabled, isFalse);
+      expect(
+        AppSettings.fromJson(const {}).autoSkipIntroOutroEnabled,
+        isFalse,
+      );
+    });
+
+    test('toJson/fromJson 往返保留', () {
+      const enabled = AppSettings(autoSkipIntroOutroEnabled: true);
+      expect(
+        AppSettings.fromJson(enabled.toJson()).autoSkipIntroOutroEnabled,
+        isTrue,
+      );
+    });
+
+    test('copyWith 更新', () {
+      expect(
+        const AppSettings()
+            .copyWith(autoSkipIntroOutroEnabled: true)
+            .autoSkipIntroOutroEnabled,
+        isTrue,
+      );
+    });
+  });
+
   group('skipIntroOutroEnabled（跳过片头片尾开关）', () {
     test('默认关闭', () {
       expect(const AppSettings().skipIntroOutroEnabled, isFalse);
