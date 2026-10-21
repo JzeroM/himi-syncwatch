@@ -238,6 +238,9 @@ class _PlayerHotkeyState extends State<PlayerHotkey> {
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
+      // 全屏热键层只作焦点兜底（控制条隐藏时显式 requestFocus），
+      // 不参与方向键遍历：否则跳过提示等浮层按右键会落到这个不可见节点。
+      skipTraversal: true,
       onKeyEvent: _onKey,
       child: widget.child,
     );

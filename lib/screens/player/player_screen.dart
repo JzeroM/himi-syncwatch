@@ -157,6 +157,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 弹幕错源排除线索：是否为动画（Emby 类型含「动画」）；用于排除真人剧类候选。
   final bool isAnimation;
 
+  /// 手动片头/片尾仓库（测试注入）。null = 使用本地文件存储。
+  final ManualSegmentRepository? manualSegmentRepository;
+
   const PlayerScreen({
     super.key,
     required this.itemId,
@@ -170,6 +173,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.year,
     this.kind,
     this.isAnimation = false,
+    this.manualSegmentRepository,
   });
 
   @override
@@ -933,7 +937,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _isSeekingPlayback = false;
 
   // ---- 跳过片头/片尾（手动标记 + Emby 章节）----
-  final ManualSegmentRepository _manualSegments = LocalManualSegmentStore();
+  late final ManualSegmentRepository _manualSegments;
   final SegmentSkipController _skipController = SegmentSkipController();
   final FocusNode _skipPromptFocusNode =
       FocusNode(debugLabel: 'SegmentSkipPrompt');
@@ -1743,6 +1747,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   void initState() {
     super.initState();
+    _manualSegments =
+        widget.manualSegmentRepository ?? LocalManualSegmentStore();
     WidgetsBinding.instance.addObserver(this);
     // Android：预取显示器真实输出分辨率（渲染尺寸夹紧目标）。TV/盒子
     // 的 UI 层常只报 1080p，须用 Display 真实尺寸才能保住 4K 输出模式
@@ -5343,7 +5349,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted || _skipPromptSegment == null) return;
     setState(() => _skipPromptSegment = null);
     if (FocusManager.instance.primaryFocus == _skipPromptFocusNode) {
-      _hotkeyFocusNode.requestFocus();
+      // 提示期间控制条保持可见：焦点回落到可见控件，不能回到不可见的
+      // 热键层（否则方向键看似失效）。控制条隐藏/锁屏时才回热键层。
+      if (_showControls && !_lockController.locked) {
+        _controlsFocusNode.requestFocus();
+      } else {
+        _hotkeyFocusNode.requestFocus();
+      }
     }
   }
 

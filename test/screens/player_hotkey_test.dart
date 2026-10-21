@@ -79,6 +79,19 @@ void main() {
 
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
+  testWidgets('全屏热键层 skipTraversal：不参与方向键遍历', (tester) async {
+    await tester.pumpWidget(wrap(tvMode: true, controlsVisible: false));
+    await tester.pump();
+
+    final hotkeyFocus = tester.widget<Focus>(
+      find
+          .descendant(
+              of: find.byType(PlayerHotkey), matching: find.byType(Focus))
+          .first,
+    );
+    expect(hotkeyFocus.skipTraversal, isTrue, reason: '跳过提示等浮层按方向键不应落到不可见热键层');
+  });
+
   testWidgets('Windows 空格触发播放/暂停', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {

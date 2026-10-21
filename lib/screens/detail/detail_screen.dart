@@ -19,6 +19,7 @@ import 'package:himi_syncwatch/providers/playback_settings_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
+import 'package:himi_syncwatch/screens/detail/episode_action_dialog.dart';
 import 'package:himi_syncwatch/screens/detail/episode_number_picker.dart';
 import 'package:himi_syncwatch/screens/detail/media_details_section.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
@@ -371,8 +372,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     ref.read(favoritesRevisionProvider.notifier).state++;
   }
 
-  /// 收藏 / 取消收藏某一集（剧集页横卡爱心）。乐观更新，失败回滚+提示。
-  Future<void> _toggleEpisodeFavorite(String episodeId) async {
+  /// 收藏 / 取消收藏某一集（剧集页横卡爱心/操作面板）。乐观更新，
+  /// 失败回滚+提示；返回是否成功（操作面板据此回滚本地状态）。
+  Future<bool> _toggleEpisodeFavorite(String episodeId) async {
     final next = !_favoriteEpisodeIds.contains(episodeId);
     setState(() {
       if (next) {
@@ -384,7 +386,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final ok = await ref
         .read(embyServiceForProvider(widget.serverId))
         .setFavorite(episodeId, next);
-    if (!mounted) return;
+    if (!mounted) return false;
     if (!ok) {
       setState(() {
         if (next) {
@@ -394,9 +396,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         }
       });
       showAppToast(context, '收藏操作失败，请检查网络');
-      return;
+      return false;
     }
     ref.read(favoritesRevisionProvider.notifier).state++;
+    return true;
   }
 
   /// 标记 / 取消已观看主条目（电影=电影；电视剧=整部剧）。电视剧标记时
@@ -438,8 +441,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     ref.read(resumeRevisionProvider.notifier).state++;
   }
 
-  /// 标记 / 取消某一集已观看（剧集页横卡对勾）。乐观更新，失败回滚+提示。
-  Future<void> _toggleEpisodeWatched(String episodeId) async {
+  /// 标记 / 取消某一集已观看（剧集页横卡对勾/操作面板）。乐观更新，
+  /// 失败回滚+提示；返回是否成功（操作面板据此回滚本地状态）。
+  Future<bool> _toggleEpisodeWatched(String episodeId) async {
     final next = !_watchedEpisodeIds.contains(episodeId);
     setState(() {
       if (next) {
@@ -451,7 +455,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final ok = await ref
         .read(embyServiceForProvider(widget.serverId))
         .setWatched(episodeId, next);
-    if (!mounted) return;
+    if (!mounted) return false;
     if (!ok) {
       setState(() {
         if (next) {
@@ -461,10 +465,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         }
       });
       showAppToast(context, '标记已观看失败，请检查网络');
-      return;
+      return false;
     }
     // 标记该集已观看清除其续播位置 → 即时刷新首页「继续观看」栏
     ref.read(resumeRevisionProvider.notifier).state++;
+    return true;
   }
 
   /// 服务端季列表为空时的兜底：按集的 `parentIndexNumber` 分组合成季
@@ -491,6 +496,28 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (_selectedEpisodeId != ep.id) {
       setState(() => _selectedEpisodeId = ep.id);
     }
+  }
+
+  /// TV 剧集横卡 OK：打开三项操作面板（播放/收藏/已观看），
+  /// 不再直接进播放器。面板切换收藏/已观看后保持打开并更新文案。
+  Future<void> _openEpisodeActions(MediaItem ep) async {
+    if (!mounted) return;
+    if (_selectedEpisodeId != ep.id) {
+      setState(() => _selectedEpisodeId = ep.id);
+    }
+    final resume = !_watchedEpisodeIds.contains(ep.id) &&
+        PlaybackRules.isResumable(ep, _playbackSettings);
+    await showEpisodeActionDialog(
+      context: context,
+      episodeId: ep.id,
+      title: '第${ep.indexNumber ?? 0}集 ${ep.name}',
+      resume: resume,
+      favorited: _favoriteEpisodeIds.contains(ep.id),
+      watched: _watchedEpisodeIds.contains(ep.id),
+      onToggleFavorite: () => _toggleEpisodeFavorite(ep.id),
+      onToggleWatched: () => _toggleEpisodeWatched(ep.id),
+      onPlay: (resume) => unawaited(_playEpisode(ep, resume: resume)),
+    );
   }
 
   /// 从指定集开播：整部序列化进 [pendingRoomEpisodesProvider] 后跳播放器。
@@ -2113,7 +2140,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     selectedSeason: _selectedSeason,
                     onSeasonSelected: _onSeasonChanged,
                     onEpisodeSelect: _selectEpisode,
-                    onEpisodePlay: _playEpisode,
+                    onEpisodeActions: _openEpisodeActions,
                     onToggleSort: () =>
                         setState(() => _sortDescending = !_sortDescending),
                     onOpenEpisodePicker: _openEpisodePicker,
@@ -2274,9 +2301,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               child: ListTile(
                 key: ValueKey('mediaSource_${source.id}'),
                 leading: Icon(
-                  selected
-                      ? Icons.check_circle
-                      : Icons.movie_creation_outlined,
+                  selected ? Icons.check_circle : Icons.movie_creation_outlined,
                   color: selected ? primary : null,
                 ),
                 title: Text(
@@ -2351,9 +2376,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               color: Colors.white70, shadows: DetailScreen.heroTextShadows)));
     }
 
-    final video = _metaStreams(item)
-        .where((s) => s.type == 'Video')
-        .firstOrNull;
+    final video =
+        _metaStreams(item).where((s) => s.type == 'Video').firstOrNull;
     final resolution = video?.resolutionShortLabel;
     if (resolution != null) {
       gap();

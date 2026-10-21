@@ -929,8 +929,7 @@ void main() {
       );
     });
 
-    testWidgets('「可用版本」区块：TV 与非 TV 均渲染，行可点击切换（不再弹选择器）',
-        (tester) async {
+    testWidgets('「可用版本」区块：TV 与非 TV 均渲染，行可点击切换（不再弹选择器）', (tester) async {
       // TV：也渲染（版本入口从播放控件移入此栏）
       await pumpMulti(tester, tv: true);
       expect(find.text('可用版本'), findsOneWidget);
@@ -983,8 +982,7 @@ void main() {
       );
     });
 
-    testWidgets('未选版本时字幕/音轨列表跟随偏好最高版本；点选后跟随所选',
-        (tester) async {
+    testWidgets('未选版本时字幕/音轨列表跟随偏好最高版本；点选后跟随所选', (tester) async {
       await pumpMulti(tester);
 
       // 默认 = 偏好最高 src2（高码率 8M）：字幕仅 jpn(5)；音轨仅 1 条 → 图标隐藏
@@ -1026,7 +1024,8 @@ void main() {
         mediaStreams: [
           MediaStream(type: 'Audio', codec: 'aac', language: 'chi', index: 0),
           MediaStream(type: 'Audio', codec: 'eac3', language: 'eng', index: 1),
-          MediaStream(type: 'Subtitle', codec: 'srt', language: 'jpn', index: 4),
+          MediaStream(
+              type: 'Subtitle', codec: 'srt', language: 'jpn', index: 4),
         ],
       );
       // 两步切换目标 mv1_lo（2M）：字幕 jpn(5)，音轨 eng(2)
@@ -1036,12 +1035,13 @@ void main() {
         bitrate: 2000000,
         mediaStreams: [
           MediaStream(type: 'Audio', codec: 'ac3', language: 'eng', index: 2),
-          MediaStream(type: 'Subtitle', codec: 'ass', language: 'jpn', index: 5),
+          MediaStream(
+              type: 'Subtitle', codec: 'ass', language: 'jpn', index: 5),
         ],
       );
       final item = multiItem('mv_migrate', hi, lo);
-      final container =
-          await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+      final container = await _pumpDetail(tester,
+          item: item, emby: FakeEmbyService(item: item));
 
       // 默认在 hi 上预选：字幕 jpn(4)、音轨 eng(1)
       await openSheet(tester, const Key('subtitleSelectorButton'));
@@ -1086,8 +1086,8 @@ void main() {
         ],
       );
       final item = multiItem('mv_clear', hi, lo);
-      final container =
-          await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
+      final container = await _pumpDetail(tester,
+          item: item, emby: FakeEmbyService(item: item));
 
       // 默认 = hi：预选音轨 chi(0)
       await openSheet(tester, const Key('audioSelectorButton'));
@@ -1210,8 +1210,7 @@ void main() {
 
   // ---- 顶部附加信息行（评分/年份/时长/分辨率/视频范围/大小） ----
 
-  testWidgets('顶部附加信息行：评分/年份/时长/分辨率/视频范围/大小（已移除官方分级）',
-      (tester) async {
+  testWidgets('顶部附加信息行：评分/年份/时长/分辨率/视频范围/大小（已移除官方分级）', (tester) async {
     final item = MediaItem(
       id: 'm1',
       name: '测试影片',
@@ -1907,8 +1906,8 @@ void main() {
       // 切到 e2 → 选 jpn 轨（index 7），与 e1 互不覆盖
       await tapCard(tester, 'p2');
       await openAudioSheet(tester);
-      expect(_optionSelectedInDialog(tester, const Key('trackOption_7')),
-          isFalse,
+      expect(
+          _optionSelectedInDialog(tester, const Key('trackOption_7')), isFalse,
           reason: 'e2 尚未预选');
       await tester.tap(find.byKey(const Key('trackOption_7')));
       await tester.pump();
@@ -2051,8 +2050,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
-    testWidgets('多版本集：默认跟随偏好最高版本；点可用版本栏切版本 A 后播放带该集选中版本',
-        (tester) async {
+    testWidgets('多版本集：默认跟随偏好最高版本；点可用版本栏切版本 A 后播放带该集选中版本', (tester) async {
       final container = await _pumpDetailInRouter(
         tester,
         item: seriesMv,
@@ -2137,7 +2135,7 @@ void main() {
       expect(selection?.audioIndex, 0);
     });
 
-    testWidgets('TV：剧集横卡 OK 直接播放该集（焦点移入=选中）', (tester) async {
+    testWidgets('TV：剧集横卡 OK 打开三项操作面板，不直接播放', (tester) async {
       await _pumpDetailInRouter(
         tester,
         item: seriesMv,
@@ -2158,12 +2156,134 @@ void main() {
         find.ancestor(of: card, matching: find.byType(TvFocusable)).first,
       );
       expect(focusable.onFocusChange, isNotNull, reason: '焦点移入即选中该集');
-      expect(focusable.onTap, isNotNull, reason: 'OK 直接播放该集');
+      expect(focusable.onTap, isNotNull, reason: 'OK 打开操作面板');
 
       await tester.tap(card);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('PLAYER:pl1'), findsNothing,
+          reason: 'OK 不再直接进播放器');
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byKey(const Key('episodeActionPlay_pl1')), findsOneWidget);
+      expect(
+          find.byKey(const Key('episodeActionFavorite_pl1')), findsOneWidget);
+      expect(find.byKey(const Key('episodeActionWatched_pl1')), findsOneWidget);
+      expect(
+        find.descendant(
+            of: find.byType(AlertDialog), matching: find.text('播放')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+            of: find.byType(AlertDialog), matching: find.text('收藏')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+            of: find.byType(AlertDialog), matching: find.text('标记已观看')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('episodeActionPlay_pl1')));
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.textContaining('PLAYER:pl1'), findsOneWidget);
+    });
+
+    testWidgets('TV：操作面板收藏/已观看切换保持打开并联动卡片状态', (tester) async {
+      final fake = FakeEmbyService(
+        item: seriesMv,
+        itemsByParent: {
+          'sv10': [epPlain],
+        },
+        seasons: seasonsMv,
+      );
+      await _pumpDetailInRouter(
+        tester,
+        item: seriesMv,
+        tv: true,
+        emby: fake,
+      );
+
+      final card = find.byKey(const Key('episodeCard_pl1'));
+      await tester.ensureVisible(card);
+      await tester.pump();
+      await tester.tap(card);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final favRow = find.byKey(const Key('episodeActionFavorite_pl1'));
+      await tester.tap(favRow);
+      await tester.pump();
+      await tester.pump();
+      expect(fake.favoriteCalls.single, (id: 'pl1', favorite: true));
+      expect(find.byType(AlertDialog), findsOneWidget, reason: '收藏切换后面板保持打开');
+      expect(find.text('取消收藏'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('episodeFavorite_pl1')),
+          matching: find.byIcon(Icons.favorite),
+        ),
+        findsOneWidget,
+        reason: '卡片收藏角标同步实心',
+      );
+
+      final watchedRow = find.byKey(const Key('episodeActionWatched_pl1'));
+      await tester.tap(watchedRow);
+      await tester.pump();
+      await tester.pump();
+      expect(fake.watchedCalls.single, (id: 'pl1', watched: true));
+      expect(find.byType(AlertDialog), findsOneWidget, reason: '已观看切换后面板保持打开');
+      expect(find.text('取消已观看'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('episodeWatched_pl1')),
+          matching: find.byIcon(Icons.check_circle),
+        ),
+        findsOneWidget,
+        reason: '卡片已观看角标同步实心',
+      );
+    });
+
+    testWidgets('TV：有进度的集显示「继续播放」并携带 startMs', (tester) async {
+      final resumeEp = MediaItem(
+        id: 'plresume',
+        name: '可续播集',
+        type: 'Episode',
+        parentIndexNumber: 1,
+        indexNumber: 2,
+        posterUrl: _posterUrl,
+        playbackPositionMs: 60000,
+        playedPercentage: 20,
+        runTimeTicks: 3000000000,
+      );
+      await _pumpDetailInRouter(
+        tester,
+        item: seriesMv,
+        tv: true,
+        emby: FakeEmbyService(
+          item: seriesMv,
+          itemsByParent: {
+            'sv10': [resumeEp],
+          },
+          seasons: seasonsMv,
+        ),
+      );
+
+      final card = find.byKey(const Key('episodeCard_plresume'));
+      await tester.ensureVisible(card);
+      await tester.pump();
+      await tester.tap(card);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('继续播放'), findsOneWidget);
+      expect(find.text('从上次观看进度继续'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('episodeActionPlay_plresume')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('PLAYER:plresume'), findsOneWidget);
+      expect(find.textContaining('startMs=60000'), findsOneWidget);
     });
 
     testWidgets('无预选的集播放：清掉残留预选、路由不带 mediaSourceId', (tester) async {
@@ -2285,8 +2405,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
     }
 
-    testWidgets('未手动选版本的多版本集：面板默认填偏好最高版本并随 episodesJson 下发',
-        (tester) async {
+    testWidgets('未手动选版本的多版本集：面板默认填偏好最高版本并随 episodesJson 下发', (tester) async {
       final container = await pumpRoomDetail(tester);
       await openEpisodePicker(tester);
 
@@ -2902,9 +3021,8 @@ void main() {
 
       // 进度填充自带与胶囊一致的左圆角（iOS 溢出修复）：存在 topLeft 圆角、
       // topRight 直角的 ClipRRect。
-      final progressClip = tester
-          .widgetList<ClipRRect>(find.byType(ClipRRect))
-          .any((c) {
+      final progressClip =
+          tester.widgetList<ClipRRect>(find.byType(ClipRRect)).any((c) {
         final br = c.borderRadius;
         return br is BorderRadius &&
             br.topLeft != Radius.zero &&

@@ -17,7 +17,12 @@ class SeriesSections extends StatelessWidget {
   final ValueChanged<int> onSeasonSelected;
   final ValueChanged<MediaItem> onEpisodeSelect;
 
-  /// TV 模式按 OK 直接播放该集（非 TV 不触发，点击仍走 [onEpisodeSelect]）。
+  /// TV 模式按 OK 打开该集操作面板（非 TV 不触发，点击仍走
+  /// [onEpisodeSelect]）。
+  final ValueChanged<MediaItem>? onEpisodeActions;
+
+  /// 兼容旧调用方的直接播放入口：未提供 [onEpisodeActions] 时 TV OK
+  /// 仍按原逻辑播放/选中。
   final ValueChanged<MediaItem>? onEpisodePlay;
   final bool tvMode;
 
@@ -62,6 +67,7 @@ class SeriesSections extends StatelessWidget {
     required this.selectedSeason,
     required this.onSeasonSelected,
     required this.onEpisodeSelect,
+    this.onEpisodeActions,
     this.onEpisodePlay,
     required this.onToggleSort,
     required this.onOpenEpisodePicker,
@@ -124,6 +130,7 @@ class SeriesSections extends StatelessWidget {
             rowKey: episodeRowKey,
             episodes: _seasonEpisodes,
             onEpisodeSelect: onEpisodeSelect,
+            onEpisodeActions: onEpisodeActions,
             onEpisodePlay: onEpisodePlay,
             tvMode: tvMode,
             highlightEpisodeId: highlightEpisodeId,
@@ -372,6 +379,7 @@ class _SeasonSelector extends StatelessWidget {
 class _SeasonEpisodeRow extends StatelessWidget {
   final List<MediaItem> episodes;
   final ValueChanged<MediaItem> onEpisodeSelect;
+  final ValueChanged<MediaItem>? onEpisodeActions;
   final ValueChanged<MediaItem>? onEpisodePlay;
   final bool tvMode;
   final String? highlightEpisodeId;
@@ -383,6 +391,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
   const _SeasonEpisodeRow({
     required this.episodes,
     required this.onEpisodeSelect,
+    this.onEpisodeActions,
     this.onEpisodePlay,
     required this.tvMode,
     this.highlightEpisodeId,
@@ -406,8 +415,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
   static const double _cardPadding = 3;
 
   /// 缩略图（16:9）高度：内宽 = 卡宽 - 左右内边距。
-  static const double _imageHeight =
-      (_cardWidth - _cardPadding * 2) * 9 / 16;
+  static const double _imageHeight = (_cardWidth - _cardPadding * 2) * 9 / 16;
 
   @override
   Widget build(BuildContext context) {
@@ -559,10 +567,12 @@ class _SeasonEpisodeRow extends StatelessWidget {
                   onFocusChange: (focused) {
                     if (focused) onEpisodeSelect(ep);
                   },
-                  // TV 按 OK 直接播放该集（未提供回调时退回仅选中）
-                  onTap: onEpisodePlay != null
-                      ? () => onEpisodePlay!(ep)
-                      : () => onEpisodeSelect(ep),
+                  // TV 按 OK 打开操作面板（未提供回调时退回仅选中）
+                  onTap: onEpisodeActions != null
+                      ? () => onEpisodeActions!(ep)
+                      : onEpisodePlay != null
+                          ? () => onEpisodePlay!(ep)
+                          : () => onEpisodeSelect(ep),
                   child: card,
                 )
               : GestureDetector(
