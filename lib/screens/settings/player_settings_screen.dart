@@ -28,10 +28,10 @@ class PlayerSettingsScreen extends ConsumerWidget {
           key: const ValueKey('engineAutoRouteInfo'),
           leading: const Icon(Icons.account_tree),
           title: const Text('播放引擎'),
-          subtitle: const Text(
-              '自动路由：SDR→MDK；HDR→Erika 可渲染（Vulkan/GLES3）时用 Erika'
-              '（无 HDR 显示自动回退 SDR），否则 MDK 直写/HDR 透传；'
-              'Windows media_kit'),
+          subtitle:
+              const Text('自动路由：SDR→MDK；HDR→Erika 可渲染（Vulkan/GLES3）时用 Erika'
+                  '（无 HDR 显示自动回退 SDR），否则 MDK 直写/HDR 透传；'
+                  'Windows media_kit'),
         ),
         const Divider(height: 1),
         // ── 播放器配置（tabbed：MDK / media_kit / Erika）────────
@@ -49,6 +49,21 @@ class PlayerSettingsScreen extends ConsumerWidget {
               color: Colors.white54,
             ),
             onTap: () => context.push('/settings/player/engine-config'),
+          ),
+        ),
+        const Divider(height: 1),
+        // ── 跳过片头/片尾 ─────────────────────────────────────
+        settingsTvWrapRow(
+          tvMode: settings.tvMode,
+          onTap: () => notifier.update(
+            skipIntroOutroEnabled: !settings.skipIntroOutroEnabled,
+          ),
+          child: SwitchListTile(
+            key: const ValueKey('skipIntroOutroSwitch'),
+            title: const Text('跳过片头片尾'),
+            subtitle: const Text('显示片头/片尾跳过提示，支持长按手动标记'),
+            value: settings.skipIntroOutroEnabled,
+            onChanged: (v) => notifier.update(skipIntroOutroEnabled: v),
           ),
         ),
         const Divider(height: 1),

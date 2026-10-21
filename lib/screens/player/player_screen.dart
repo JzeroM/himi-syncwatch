@@ -26,10 +26,12 @@ import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/episode_info.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/models/media_segment.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/device_profile_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
@@ -45,7 +47,6 @@ import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/display_info_service.dart';
 import 'package:himi_syncwatch/services/hdr_output_policy.dart';
 import 'package:himi_syncwatch/services/render_target_clamp.dart';
-
 
 import 'package:himi_syncwatch/services/audio_filter_policy.dart';
 import 'package:himi_syncwatch/services/audio_fade.dart';
@@ -92,6 +93,7 @@ import 'package:himi_syncwatch/screens/player/player_lifecycle_policy.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_clock.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_lock_button.dart';
 import 'package:himi_syncwatch/screens/player/widgets/speed_menu_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/segment_mark_panel.dart';
 import 'package:himi_syncwatch/screens/player/controls_auto_hide.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/seek_time_labels.dart';
@@ -101,6 +103,9 @@ import 'package:himi_syncwatch/screens/player/widgets/letterbox_bars_cover.dart'
 import 'package:himi_syncwatch/screens/player/player_lock_controller.dart';
 import 'package:himi_syncwatch/services/subtitle_delay_file.dart';
 import 'package:himi_syncwatch/services/subtitle_style_store.dart';
+import 'package:himi_syncwatch/services/manual_segment_store.dart';
+import 'package:himi_syncwatch/services/media_segment_resolver.dart';
+import 'package:himi_syncwatch/services/segment_skip_controller.dart';
 import 'package:himi_syncwatch/services/platform/windows_clipboard_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -530,6 +535,25 @@ class PlayerScreen extends ConsumerStatefulWidget {
     return playing && durationMs > 0 && positionMs >= durationMs - 500;
   }
 
+  /// 跳过片尾后是否直接进入下一集（纯函数，供测试）。
+  @visibleForTesting
+  static bool shouldAdvanceAfterOutroSkip({
+    required bool hasEpisodeList,
+    required int currentEpisodeIndex,
+    required int episodeCount,
+  }) =>
+      hasEpisodeList &&
+      currentEpisodeIndex >= 0 &&
+      currentEpisodeIndex + 1 < episodeCount;
+
+  /// 跳过片尾并退出时是否提示“所有剧集播放完毕”（剧集最后一集才提示）。
+  @visibleForTesting
+  static bool shouldShowSeriesFinishedAfterOutroSkip({
+    required bool isSeries,
+    required bool hasNextEpisode,
+  }) =>
+      isSeries && !hasNextEpisode;
+
   /// 引擎 end 事件是否可信（纯函数，供测试）：mdk keyframe seek 窗口
   /// 会误报 `MediaStatus.end` 位（v1.1.239 修复不彻底，拖进度条仍切
   /// 集）——真实播完时 position≈duration，误报时位置仍远离结尾。
@@ -881,6 +905,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// seek 前置真，await adapter seek Future 完成（2s 超时兜底）后清零
   /// 并回读 position 同步一次 UI。
   bool _isSeekingPlayback = false;
+
+  // ---- 跳过片头/片尾（手动标记 + Emby 章节）----
+  final ManualSegmentRepository _manualSegments = LocalManualSegmentStore();
+  final SegmentSkipController _skipController = SegmentSkipController();
+  final FocusNode _skipPromptFocusNode =
+      FocusNode(debugLabel: 'SegmentSkipPrompt');
+  final FocusNode _segmentMarkFirstFocusNode =
+      FocusNode(debugLabel: 'SegmentMarkFirst');
+
+  List<MediaSegment> _skipSegments = const [];
+  MediaSegment? _skipPromptSegment;
+  Timer? _skipPromptTimer;
+  MediaItem? _segmentMediaItem;
+  ManualSegmentRecord? _manualSegmentRecord;
+  String _segmentServerId = '';
+  int _segmentDurationMs = 0;
+  int _skipLoadSeq = 0;
+  bool _showSegmentMarkPanel = false;
 
   // ---- Emby 播放会话上报（续播/自动已观看）----
   /// 本次播放会话 id（切集重生成）。
@@ -1720,6 +1762,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 初始化时音轨编码未知，先按开关落一次；选轨/诊断再按编码刷新
     final settings = ref.read(settingsProvider);
     _speed = settings.playbackSpeed;
+    ref.listenManual<bool>(
+      settingsProvider.select((s) => s.skipIntroOutroEnabled),
+      (previous, enabled) {
+        if (!mounted || previous == enabled) return;
+        if (!enabled) {
+          _skipLoadSeq++;
+          _skipPromptTimer?.cancel();
+          _skipPromptTimer = null;
+          _skipController.reset();
+          setState(() {
+            _skipPromptSegment = null;
+            _skipSegments = const [];
+            _manualSegmentRecord = null;
+            _showSegmentMarkPanel = false;
+          });
+        } else {
+          final item = _segmentMediaItem;
+          if (item != null) unawaited(_loadSkipSegments(item));
+        }
+      },
+    );
     // 弹幕：默认开关跟随设置；未配置 API 地址时强制关（静默，
     // 不在起播时打扰；用户点击弹幕钮才提示去配置）。
     // 实际拉取推迟到当前集就绪后（见 _loadEpisodeStream 完成 / 起播），
@@ -1923,8 +1986,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 瞬间卡顿，全平台 MDK 复现）；analyzeduration 100ms（原 500ms）保留
     // 起播加速。probesize 保持 1MB（fvp lowLatency 不动 probesize）。
     _player.setProperty('avformat.probesize', '1048576'); // 1MB
-    MdkPlayerAdapter.lowLatencyProperties
-        .forEach(_player.setProperty);
+    MdkPlayerAdapter.lowLatencyProperties.forEach(_player.setProperty);
 
     // mdk 缓冲/包缓存（网络流抗抖动，v1.2.29 起改由设置控制，下次起播生效）：
     // - buffer（setBufferRange）：min = 队列排空后需再攒够的时长（越大越
@@ -2030,6 +2092,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 不得复位（否则每轮重载清零退避预算 → 无限循环）。
       if (resetBudget) _streamReload.reset();
       _cancelStallWatchdog();
+      // 换集：清空上一集的片头片尾状态，详情到达后重新解析
+      _skipLoadSeq++;
+      _skipPromptTimer?.cancel();
+      _skipPromptTimer = null;
+      _skipPromptSegment = null;
+      _skipSegments = const [];
+      _segmentMediaItem = null;
+      _manualSegmentRecord = null;
+      _showSegmentMarkPanel = false;
+      _skipController.reset();
     });
     // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
     if (mounted && _danmakuOn) unawaited(_loadDanmaku());
@@ -2055,6 +2127,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 details.mediaSources.firstOrNull ??
                 MediaSource(id: '', name: ''),
           );
+          final configuredServerId = config?.serverId ?? '';
+          _segmentServerId = configuredServerId.isNotEmpty
+              ? configuredServerId
+              : (epServerId ?? '');
           setState(() {
             _embyAudioStreams = source.audioStreams;
             _embySubtitleStreams = source.subtitleStreams;
@@ -2064,6 +2140,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _currentMediaSources = details.mediaSources;
             _activeMediaSourceId = source.id.isEmpty ? null : source.id;
           });
+          await _loadSkipSegments(details);
+          if (!mounted) return;
           // iOS TrueHD 无声规避：Emby 元数据已知默认音轨编码，load 前
           // 预写滤镜，不必等 mediaInfo 就绪后的诊断回调（首个缓冲段无声）
           _applyAudioFilterPolicy(codec: source.defaultAudioStream?.codec);
@@ -2103,6 +2181,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           mediaSourceId: epMediaSourceId,
           serverId: epServerId,
           startMs: startMs);
+
+      // 详情缺 RunTimeTicks 时，等播放器时长就绪后再补解析片尾区间
+      if (mounted &&
+          _segmentMediaItem != null &&
+          _segmentDurationMs <= 0 &&
+          _duration.inMilliseconds > 0) {
+        await _loadSkipSegments(_segmentMediaItem!);
+      }
 
       // _loadStream 已在 updateTexture() 后设置播放状态，此处仅同步 UI
       if (mounted) {
@@ -2258,7 +2344,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         'surface 两阶段重建: attach (epoch=$_videoSurfaceEpoch, size=$applySize)');
     _nudgeOverlayRepaint('surface attach (epoch=$_videoSurfaceEpoch)');
     final ok = await _waitSurfaceCreated();
-    if (ok) _nudgeOverlayRepaint('surfaceCreated 后 (epoch=$_videoSurfaceEpoch)');
+    if (ok)
+      _nudgeOverlayRepaint('surfaceCreated 后 (epoch=$_videoSurfaceEpoch)');
     return ok;
   }
 
@@ -2401,8 +2488,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       LogService().log(
         'Player',
         'HDR 输出色彩空间: ${hdr.name}'
-        '（内容=${_isHlgContent ? "HLG" : "HDR10"}'
-        ' 显示=${profile.display.display} 载体=${_usesSurfaceView ? "SurfaceView" : "纹理"}）',
+            '（内容=${_isHlgContent ? "HLG" : "HDR10"}'
+            ' 显示=${profile.display.display} 载体=${_usesSurfaceView ? "SurfaceView" : "纹理"}）',
       );
       return;
     }
@@ -2542,8 +2629,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// SurfaceView 直写档：解码器直写 SurfaceView 的 ANativeWindow，绕开
   /// mdk GL 渲染器与 Flutter 纹理合成（4K HDR 高负载下最省的路径）。
-  bool get _surfaceViewDirect =>
-      _effectiveVideoOutput() == 'surfaceViewDirect';
+  bool get _surfaceViewDirect => _effectiveVideoOutput() == 'surfaceViewDirect';
 
   /// 当前 SurfaceView 视图是否以直写参数构建（与视图 `tunnel` 参数、
   /// 渲染兜底共用 [PlayerScreen.surfaceViewDirectWrite] 单一来源防漂移）。
@@ -2613,9 +2699,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // tunnel 参数变化（tunnel: eglFaultDetector.fault 进 surfaceKey）
     // 会让 view key 失配：两阶段重建让 destroy 先落定再挂直写参数，
     // 防同帧拆建竞态（EGL 翻转是播放中唯一会改 key 的路径）。
-    if (_usesSurfaceView &&
-        _videoNativeSize != null &&
-        !_surfaceDetached) {
+    if (_usesSurfaceView && _videoNativeSize != null && !_surfaceDetached) {
       unawaited(_remountSurfaceView());
     }
     if (mounted) setState(() {});
@@ -2762,9 +2846,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       try {
         videoStreams = '${_player.mediaInfo.video.length} 路';
       } catch (_) {}
-      LogService().log('Player',
+      LogService().log(
+          'Player',
           '纹理: 返回 $texId, textureId ${_player.textureId.value}, '
-          '视频流 $videoStreams, tunnel $tunnel');
+              '视频流 $videoStreams, tunnel $tunnel');
     } catch (e) {
       LogService().log('Player', 'updateTexture 失败: $e');
     }
@@ -2898,6 +2983,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _eventSub?.cancel();
     _tracksSubscription?.cancel();
     _positionTimer?.cancel();
+    _skipPromptTimer?.cancel();
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
     // 停后再卸载旧视频视图（避免旧 widget 访问已释放播放器）
@@ -2920,8 +3006,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _player.setProperty('subtitle.border', '2');
     _player.setProperty('subtitle.shadow', '1');
     _applySubtitleStyle();
-    final renderer =
-        AppSettings.effectiveAudioRenderer(ref.read(settingsProvider).audioRenderer);
+    final renderer = AppSettings.effectiveAudioRenderer(
+        ref.read(settingsProvider).audioRenderer);
     if (renderer != 'auto') {
       _player.audioBackends = [renderer];
     }
@@ -3032,14 +3118,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (expNoImage) {
             final target = embyHdr ? '0' : '1';
             decoders = PlayerScreen.mergeDecoderListImage(decoders, target);
-            LogService().log('Player',
+            LogService().log(
+                'Player',
                 'HDR image=0 实验: ${embyHdr ? "HDR/DV" : "SDR"} → '
-                'videoDecoders $decoders');
+                    'videoDecoders $decoders');
           }
           if (expLowLatency) {
             decoders = PlayerScreen.mergeDecoderLowLatency(decoders);
-            LogService().log('Player',
-                'low_latency=1 实验: videoDecoders $decoders');
+            LogService()
+                .log('Player', 'low_latency=1 实验: videoDecoders $decoders');
           }
           _player.videoDecoders = decoders;
         }
@@ -3476,6 +3563,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _position = Duration(milliseconds: pos);
         _positionNotifier.value = _position;
       }
+      _evaluateSkipPrompt(pos);
       // 播完自动下一集兜底：仅服务不上报 end 位的引擎（media_kit/Erika）；
       // mdk 有 MediaStatus.end，走兜底会把拖进度条到结尾误判为播完切集。
       // seek 冷却期内同样忽略。
@@ -3797,8 +3885,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _selectDefaultEmbeddedSubtitle() {
     if (_embySubtitleStreams.isNotEmpty) {
       final first = _embySubtitleStreams.first;
-      if (first.isExternal ||
-          first.subtitleLocationType == 'ExternalStream') {
+      if (first.isExternal || first.subtitleLocationType == 'ExternalStream') {
         _selectEmbySubtitle(0);
         return;
       }
@@ -4010,8 +4097,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 token: _currentToken,
                 subtitleStreams:
                     _embySubtitleStreams.map((s) => s.toJson()).toList(),
-                audioStreams:
-                    _embyAudioStreams.map((s) => s.toJson()).toList(),
+                audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
                 videoStream: _embyVideoStream?.toJson(),
                 defaultAudioStreamIndex: _embyDefaultAudioIndex,
               );
@@ -4030,7 +4116,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (_isHost) {
             final t1 = message['t1'];
             if (t1 is int) {
-              rtmService.sendTimePong(t1, DateTime.now().millisecondsSinceEpoch);
+              rtmService.sendTimePong(
+                  t1, DateTime.now().millisecondsSinceEpoch);
             }
           }
         } else if (action == AppConstants.actionTimePong) {
@@ -4723,14 +4810,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     _failoverInFlight = true;
     try {
-      final switched = await ref
-          .read(serverRouteServiceProvider)
-          .failoverIfNeeded(config);
+      final switched =
+          await ref.read(serverRouteServiceProvider).failoverIfNeeded(config);
       if (!mounted || switched == null) return;
       _failoverAttempted = true;
       _reportFailCount = 0;
-      LogService().log(
-          'Player', '$reason失败，已自动切换到线路: ${switched.effectiveUrl}');
+      LogService()
+          .log('Player', '$reason失败，已自动切换到线路: ${switched.effectiveUrl}');
       showAppToast(context, '当前线路不可达，已自动切换');
       // 用切换后的 service 复播（显式重跑，不走 _switchToEpisode）
       final startMs = _player.position;
@@ -4840,8 +4926,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _stallWatchdogTimer?.cancel();
     // 记录武装时位置：采样时据此判断是否仍有推进（真卡死才重载）。
     _stallWatchdogStartPosMs = _player.position;
-    _stallWatchdogTimer =
-        Timer(StreamReloadScheduler.stallTimeout, () {
+    _stallWatchdogTimer = Timer(StreamReloadScheduler.stallTimeout, () {
       if (!mounted) return;
       // 触发前再确认一次：位置有推进则说明慢但在播，不重载。
       final startPos = _stallWatchdogStartPosMs;
@@ -4885,7 +4970,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 停止上报并（成功时）bump 续播修订号 → 首页「继续观看」即时刷新。
-  Future<void> _reportStopped() async {
+  /// [positionMs] 可指定最终位置：跳过片尾时用总时长，避免把片尾起点
+  /// 写回续播。
+  Future<void> _reportStopped({int? positionMs}) async {
     _stopReportTimer();
     final svc = _reportService;
     final id = _reportItemId;
@@ -4900,7 +4987,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       itemId: id,
       playSessionId: _playSessionId,
       mediaSourceId: _reportMediaSourceId,
-      positionMs: _player.position,
+      positionMs: positionMs ?? _player.position,
     );
     if (ok && mounted) {
       _lastProgressBump = null;
@@ -5055,6 +5142,473 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  // ========== 跳过片头/片尾 ==========
+
+  bool get _segmentFeatureEnabled =>
+      _canControlPlayback && ref.read(settingsProvider).skipIntroOutroEnabled;
+
+  bool get _isSeriesPlayback {
+    if (!_hasEpisodeList ||
+        _currentEpisodeIndex < 0 ||
+        _currentEpisodeIndex >= _episodes.length) {
+      return false;
+    }
+    final episode = _episodes[_currentEpisodeIndex];
+    return _seriesName.isNotEmpty ||
+        episode.seriesName.isNotEmpty ||
+        episode.season > 0 ||
+        episode.number > 0;
+  }
+
+  bool get _segmentMarkGestureEnabled =>
+      PlayerPlatform.mediaLongPressSpeedBoost &&
+      !ref.read(settingsProvider).tvMode &&
+      _segmentFeatureEnabled &&
+      !_lockController.locked &&
+      !_showSubtitleMenu &&
+      !_showAudioMenu &&
+      !_showDecodeModeMenu &&
+      !_showSpeedMenu &&
+      !_showSubtitleStyleMenu &&
+      !_showEpisodeMenu &&
+      !_showVersionMenu &&
+      !_showSegmentMarkPanel &&
+      !_showBrightnessBarNotifier.value &&
+      !_showVolumeBarNotifier.value;
+
+  String get _segmentKey {
+    final item = _segmentMediaItem;
+    if (item == null) return '';
+    final scope = item.seriesId ?? item.id;
+    return '${_segmentServerId.isEmpty ? 'unknown' : _segmentServerId}|$scope';
+  }
+
+  int? get _segmentIntroEndMs => _manualSegmentRecord?.introEndMs;
+  int? get _segmentCreditsStartMs => _manualSegmentRecord?.creditsStartMs;
+
+  Future<void> _loadSkipSegments(
+    MediaItem item, {
+    bool suppressAtCurrent = false,
+  }) async {
+    final seq = ++_skipLoadSeq;
+    final enabled =
+        _canControlPlayback && ref.read(settingsProvider).skipIntroOutroEnabled;
+    if (!enabled) {
+      if (mounted && seq == _skipLoadSeq) {
+        setState(() {
+          _skipSegments = const [];
+          _manualSegmentRecord = null;
+          _skipPromptSegment = null;
+        });
+      }
+      return;
+    }
+
+    final durationMs = item.runTimeTicks != null && item.runTimeTicks! > 0
+        ? item.runTimeTicks! ~/ 10000
+        : (_duration.inMilliseconds > 0
+            ? _duration.inMilliseconds
+            : _segmentDurationMs);
+    ManualSegmentRecord? manual;
+    final scope = item.seriesId ?? item.id;
+    final key =
+        '${_segmentServerId.isEmpty ? 'unknown' : _segmentServerId}|$scope';
+    if (scope.isNotEmpty) {
+      try {
+        manual = await _manualSegments.get(key);
+      } catch (_) {}
+    }
+    if (!mounted || seq != _skipLoadSeq) return;
+
+    final segments = MediaSegmentResolver.resolve(
+      chapters: item.chapters,
+      manual: manual,
+      durationMs: durationMs,
+    );
+    _skipController.reset();
+    if (suppressAtCurrent) {
+      _skipController.onSeek(
+        positionMs: _position.inMilliseconds,
+        segments: segments,
+      );
+    }
+    setState(() {
+      _segmentMediaItem = item;
+      _manualSegmentRecord = manual;
+      _segmentDurationMs = durationMs;
+      _skipSegments = segments;
+      _skipPromptSegment = null;
+    });
+    _skipPromptTimer?.cancel();
+    _resetHideTimer();
+  }
+
+  void _evaluateSkipPrompt(int positionMs) {
+    if (!_segmentFeatureEnabled || _skipSegments.isEmpty) return;
+    final durationMs = _duration.inMilliseconds > 0
+        ? _duration.inMilliseconds
+        : _segmentDurationMs;
+    final segment = _skipController.evaluate(
+      positionMs: positionMs,
+      durationMs: durationMs,
+      playing: _player.state == AdapterPlaybackState.playing,
+      enabled: true,
+      segments: _skipSegments,
+    );
+    if (segment == null || !mounted) return;
+    _skipPromptTimer?.cancel();
+    setState(() {
+      _skipPromptSegment = segment;
+      _showControls = true;
+    });
+    _resetHideTimer();
+    _skipPromptTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted) _dismissSkipPrompt();
+    });
+    if (ref.read(settingsProvider).tvMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _skipPromptSegment != null) {
+          _skipPromptFocusNode.requestFocus();
+        }
+      });
+    }
+  }
+
+  void _dismissSkipPrompt() {
+    _skipPromptTimer?.cancel();
+    _skipPromptTimer = null;
+    if (!mounted || _skipPromptSegment == null) return;
+    setState(() => _skipPromptSegment = null);
+    if (FocusManager.instance.primaryFocus == _skipPromptFocusNode) {
+      _hotkeyFocusNode.requestFocus();
+    }
+  }
+
+  void _performSkipSegment() {
+    final segment = _skipPromptSegment;
+    if (segment == null || !_canControlPlayback) return;
+    final durationMs = _duration.inMilliseconds > 0
+        ? _duration.inMilliseconds
+        : _segmentDurationMs;
+    final targetMs =
+        durationMs > 0 ? segment.endMs.clamp(0, durationMs) : segment.endMs;
+    _dismissSkipPrompt();
+
+    if (segment.type == MediaSegmentType.outro) {
+      final completedAtMs = durationMs > 0 ? durationMs : targetMs;
+      final hasNextEpisode = PlayerScreen.shouldAdvanceAfterOutroSkip(
+        hasEpisodeList: _hasEpisodeList,
+        currentEpisodeIndex: _currentEpisodeIndex,
+        episodeCount: _episodes.length,
+      );
+      if (hasNextEpisode) {
+        _handleEpisodeFinished(completedAtMs: completedAtMs);
+        return;
+      }
+      unawaited(_finishOutroAndExit(
+        targetMs: targetMs,
+        completedAtMs: completedAtMs,
+        showSeriesFinished: PlayerScreen.shouldShowSeriesFinishedAfterOutroSkip(
+          isSeries: _isSeriesPlayback,
+          hasNextEpisode: hasNextEpisode,
+        ),
+      ));
+      return;
+    }
+
+    _position = Duration(milliseconds: targetMs);
+    _positionNotifier.value = _position;
+    _skipController.onSeek(
+      positionMs: targetMs,
+      segments: _skipSegments,
+    );
+    unawaited(_seekGuarded(targetMs));
+    if (widget.roomCode != null) {
+      _sendCommand(AppConstants.actionSeek, position: targetMs / 1000);
+    }
+    unawaited(_reportProgress());
+  }
+
+  /// 片尾无下一集：跳到片尾终点、标记已观看并退出播放器。
+  Future<void> _finishOutroAndExit({
+    required int targetMs,
+    required int completedAtMs,
+    required bool showSeriesFinished,
+  }) async {
+    if (!mounted) return;
+    _endHandled = true;
+    final reportService = _reportService;
+    final reportItemId = _reportItemId;
+
+    _position = Duration(milliseconds: targetMs);
+    _positionNotifier.value = _position;
+    _skipController.onSeek(
+      positionMs: targetMs,
+      segments: _skipSegments,
+    );
+    if (widget.roomCode != null) {
+      _sendCommand(AppConstants.actionSeek, position: targetMs / 1000);
+    }
+    await _seekGuarded(targetMs);
+    if (!mounted) return;
+
+    try {
+      _player.state = AdapterPlaybackState.paused;
+    } catch (_) {}
+    _syncPlayState();
+    if (widget.roomCode != null) {
+      _sendCommand(AppConstants.actionPause);
+    }
+
+    if (showSeriesFinished) {
+      _addBroadcastMessage('所有剧集播放完毕');
+      showAppToast(context, '所有剧集播放完毕');
+    }
+
+    await _reportStopped(positionMs: completedAtMs);
+    await _markWatched(service: reportService, itemId: reportItemId);
+    if (!mounted) return;
+
+    final shouldPop = await _confirmLeaveRoom();
+    if (shouldPop && mounted) Navigator.pop(context);
+  }
+
+  /// 显式标记当前条目已观看，并刷新本地续播/列表状态。
+  Future<void> _markWatched({
+    EmbyService? service,
+    String? itemId,
+  }) async {
+    if (!_shouldReportPlayback) return;
+    final svc = service ?? _reportService;
+    final id = itemId ?? _reportItemId;
+    if (svc == null || id == null) return;
+    final ok = await svc.setWatched(id, true);
+    if (!mounted) return;
+    if (!ok) {
+      LogService().log('Player', '跳过片尾标记已观看失败: $id');
+      return;
+    }
+    ref.read(mediaStateOverrideProvider.notifier).setWatched(id, true);
+    _clearResumeHidden(id);
+    ref.read(resumeRevisionProvider.notifier).state++;
+  }
+
+  Future<void> _markSegmentAt(MediaSegmentType type) async {
+    if (!_segmentFeatureEnabled) return;
+    final item = _segmentMediaItem;
+    if (item == null) {
+      showAppToast(context, '尚未获取到影片信息，请稍后再试');
+      return;
+    }
+    final positionMs = _position.inMilliseconds;
+    final durationMs = _duration.inMilliseconds > 0
+        ? _duration.inMilliseconds
+        : _segmentDurationMs;
+    if (positionMs <= 0) {
+      showAppToast(context, '当前位置为 0，无法标记');
+      return;
+    }
+    if (durationMs > 0 && positionMs >= durationMs) {
+      showAppToast(context, '当前位置已到结尾，无法标记');
+      return;
+    }
+
+    final key = _segmentKey;
+    final providerIds = item.providerIds;
+    try {
+      if (type == MediaSegmentType.intro) {
+        await _manualSegments.setIntroEnd(
+          key: key,
+          serverId: _segmentServerId,
+          seriesId: item.seriesId,
+          itemId: item.id,
+          providerIds: providerIds,
+          introEndMs: positionMs,
+        );
+      } else {
+        await _manualSegments.setCreditsStart(
+          key: key,
+          serverId: _segmentServerId,
+          seriesId: item.seriesId,
+          itemId: item.id,
+          providerIds: providerIds,
+          creditsStartMs: positionMs,
+        );
+      }
+      await _loadSkipSegments(item, suppressAtCurrent: true);
+      if (!mounted) return;
+      final label = type == MediaSegmentType.intro ? '片头结束点' : '片尾开始点';
+      showAppToast(
+        context,
+        '已设置$label：${SegmentMarkPanel.formatMs(positionMs)}'
+        '${item.seriesId != null ? '（本剧所有集共用）' : ''}',
+      );
+    } catch (e) {
+      LogService().log('Player', '保存片头片尾标记失败: $e');
+      if (mounted) showAppToast(context, '保存失败，请重试');
+    }
+  }
+
+  Future<void> _clearSegmentAt(MediaSegmentType type) async {
+    if (!_segmentFeatureEnabled) return;
+    final item = _segmentMediaItem;
+    if (item == null) return;
+    try {
+      if (type == MediaSegmentType.intro) {
+        await _manualSegments.clearIntro(_segmentKey);
+      } else {
+        await _manualSegments.clearCredits(_segmentKey);
+      }
+      await _loadSkipSegments(item, suppressAtCurrent: true);
+      if (!mounted) return;
+      showAppToast(
+        context,
+        type == MediaSegmentType.intro ? '已清除片头标记' : '已清除片尾标记',
+      );
+    } catch (e) {
+      LogService().log('Player', '清除片头片尾标记失败: $e');
+      if (mounted) showAppToast(context, '清除失败，请重试');
+    }
+  }
+
+  Future<void> _onSegmentMarkSelected(MediaSegmentType type) async {
+    final existing = type == MediaSegmentType.intro
+        ? _segmentIntroEndMs
+        : _segmentCreditsStartMs;
+    _closeSegmentMarkPanel();
+    if (existing == null) {
+      await _markSegmentAt(type);
+      return;
+    }
+    final isIntro = type == MediaSegmentType.intro;
+    final action = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(isIntro ? '片头已设置' : '片尾已设置'),
+          content: Text(
+            '当前标记：${SegmentMarkPanel.formatMs(existing)}\n'
+            '要用当前位置（${SegmentMarkPanel.formatMs(_position.inMilliseconds)}）更新，还是清除？',
+          ),
+          actions: [
+            TvFocusable(
+              onTap: () => Navigator.pop(dialogContext, null),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Text('取消'),
+              ),
+            ),
+            TvFocusable(
+              onTap: () => Navigator.pop(dialogContext, false),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Text('清除'),
+              ),
+            ),
+            TvFocusable(
+              autofocus: true,
+              onTap: () => Navigator.pop(dialogContext, true),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Text('更新'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || action == null) return;
+    if (action) {
+      await _markSegmentAt(type);
+    } else {
+      await _clearSegmentAt(type);
+    }
+  }
+
+  void _openSegmentMarkPanel() {
+    if (!_segmentFeatureEnabled) return;
+    setState(() {
+      _showSegmentMarkPanel = true;
+      _showControls = true;
+      _showSubtitleMenu = false;
+      _showAudioMenu = false;
+      _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
+      _showVersionMenu = false;
+      _showDecodeModeMenu = false;
+    });
+    _resetHideTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _showSegmentMarkPanel) {
+        _segmentMarkFirstFocusNode.requestFocus();
+      }
+    });
+  }
+
+  void _closeSegmentMarkPanel() {
+    if (!_showSegmentMarkPanel) return;
+    setState(() => _showSegmentMarkPanel = false);
+    if (ref.read(settingsProvider).tvMode) {
+      _controlsFocusNode.requestFocus();
+    }
+    _resetHideTimer();
+  }
+
+  void _onVideoLongPressStart(LongPressStartDetails details) {
+    final x = details.globalPosition.dx;
+    final width = MediaQuery.sizeOf(context).width;
+    if (_segmentMarkGestureEnabled) {
+      if (x < width / 3) {
+        unawaited(_markSegmentAt(MediaSegmentType.intro));
+        return;
+      }
+      if (x > width * 2 / 3) {
+        unawaited(_markSegmentAt(MediaSegmentType.outro));
+        return;
+      }
+    }
+    if (_speedBoostGestureEnabled) _onSpeedBoostStart();
+  }
+
+  void _onVideoLongPressEnd(LongPressEndDetails _) {
+    _onSpeedBoostEnd();
+  }
+
+  Widget _buildSkipPromptButton() {
+    final segment = _skipPromptSegment;
+    if (segment == null) return const SizedBox.shrink();
+    final isIntro = segment.type == MediaSegmentType.intro;
+    return TvFocusable(
+      focusNode: _skipPromptFocusNode,
+      onTap: _performSkipSegment,
+      radius: 14,
+      child: GlassContainer(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isIntro ? Icons.skip_next : Icons.skip_previous,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              isIntro ? '跳过片头' : '跳过片尾',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _toggleControls() {
     setState(() => _showControls = !_showControls);
     _logControlsVisibility('点屏');
@@ -5094,8 +5648,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 控件显隐留证（真机排查「控件自己冒出来」）：调用点均在状态已变更
   /// 之后，日志记录本次变化与触发来源，便于对照时间线确认是否真实输入。
   void _logControlsVisibility(String trigger) {
-    LogService()
-        .log('Diag', '控件${_showControls ? '显示' : '隐藏'}（$trigger）');
+    LogService().log('Diag', '控件${_showControls ? '显示' : '隐藏'}（$trigger）');
   }
 
   /// 焦点变更监听：焦点**移动到**控件内算操作；焦点停留原地不触发，
@@ -5107,6 +5660,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 长时间无操作：隐藏全部控件（含选择器面板）并回落焦点。
   void _onControlsIdleHide() {
     if (!mounted) return;
+    // 跳过提示有效期内保持控件可见，提示自身 8 秒后消失
+    if (_skipPromptSegment != null) {
+      _autoHide.reset();
+      return;
+    }
     if (_player.state != AdapterPlaybackState.playing) {
       // 起播未完成（慢流首开常见）：本次计时空转，日志留证；
       // 起播成功处会重新起算（见 _loadStream/_playFromUrl）。
@@ -5181,6 +5739,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
       _showVersionMenu = false;
+      _showSegmentMarkPanel = false;
     });
     // 焦点正在面板行上（如 Back 关闭）：原路返回来源按钮，防悬空
     _restoreSelectorOpenerFocus(opener);
@@ -5191,27 +5750,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // 切集（房主操作 + 发送RTM命令）
   /// 当前集播放完毕：自动切下一集；已是最后一集则提示完播。
   /// `_endHandled` 保证单集只触发一次（mdk end 事件与位置兜底并存）。
-  void _handleEpisodeFinished() {
+  /// [completedAtMs] 用于跳过片尾：按总时长上报并显式标记已观看。
+  void _handleEpisodeFinished({int? completedAtMs}) {
     if (!mounted || _endHandled) return;
     if (_isSwitchingMedia) return;
     if (!_hasEpisodeList || !_canControlPlayback) return;
     _endHandled = true;
     final nextIndex = _currentEpisodeIndex + 1;
     if (nextIndex < _episodes.length) {
-      _switchToEpisode(nextIndex);
+      _switchToEpisode(nextIndex, completedAtMs: completedAtMs);
     } else {
       _addBroadcastMessage('所有剧集播放完毕');
     }
   }
 
-  void _switchToEpisode(int index) async {
+  void _switchToEpisode(int index, {int? completedAtMs}) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
 
     final requestId = ++_playRequestId;
+    final previousReportService = _reportService;
+    final previousReportItemId = _reportItemId;
 
     // 切集前把上一集按「停止」上报（写入续播位置/自动已观看）
-    await _reportStopped();
+    await _reportStopped(positionMs: completedAtMs);
+    if (completedAtMs != null) {
+      unawaited(_markWatched(
+        service: previousReportService,
+        itemId: previousReportItemId,
+      ));
+    }
 
     // 换集：先清空上一集弹幕（新集由 _loadEpisodeStream 就绪后并行触发加载，
     // 旧集在飞的请求由 _danmakuLoadSeq 作废）
@@ -5241,8 +5809,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         position: position,
         playUrl: _currentPlayUrl,
         token: _currentToken,
-        subtitleStreams:
-            _embySubtitleStreams.map((s) => s.toJson()).toList(),
+        subtitleStreams: _embySubtitleStreams.map((s) => s.toJson()).toList(),
         audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
         videoStream: _embyVideoStream?.toJson(),
         defaultAudioStreamIndex: _embyDefaultAudioIndex,
@@ -5667,6 +6234,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _selectorFirstFocusNode.dispose();
     _selectorPanelRootFocusNode.dispose();
     _subtitleStyleButtonFocusNode.dispose();
+    _skipPromptFocusNode.dispose();
+    _segmentMarkFirstFocusNode.dispose();
     _subtitleDelayReloadTimer?.cancel();
     _subtitleStyleSaveTimer?.cancel();
     _subtitleStyleApplyTimer?.cancel();
@@ -5812,8 +6381,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return TvBackConfirm(
       // TV：首按提示、2 秒窗口内第二按才确认退出；非 TV 直接确认（现状）
       enabled: ref.watch(settingsProvider.select((s) => s.tvMode)),
-      // 选择器面板打开时：返回键收起面板并把焦点还给来源控件，不退出播放器
+      // 选择器/标记面板打开时：返回键收起面板并把焦点还给来源控件，不退出播放器
       onBack: () {
+        if (_showSegmentMarkPanel) {
+          _closeSegmentMarkPanel();
+          return true;
+        }
         if (_showSubtitleMenu ||
             _showAudioMenu ||
             _showSpeedMenu ||
@@ -5928,10 +6501,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // SurfaceView buffer contain-fit 到显示器物理尺寸（fvp#379 size
     // clamp），降低弱 GPU 上 SurfaceFlinger 合成负载。SDR/开关关时
     // 恒原生尺寸。
-    final clampTarget = (ref.read(settingsProvider).hdrGlWorkaround &&
-            _hdrContent)
-        ? _clampedRenderSize(size)
-        : null;
+    final clampTarget =
+        (ref.read(settingsProvider).hdrGlWorkaround && _hdrContent)
+            ? _clampedRenderSize(size)
+            : null;
     final direct = _surfaceViewDirectWrite;
     return Center(
       child: AspectRatio(
@@ -5958,7 +6531,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             // 平台视图首次插入会把视频层放到浮层之上（hybrid composition
             // 重新合成）：补帧让控制条/顶栏回到视频之上，并再补一帧覆盖
             // nativeSetSurface 异步落定 + 解码器重开的窗口。
-            _nudgeOverlayRepaint('首次 surfaceCreated (epoch=$_videoSurfaceEpoch)');
+            _nudgeOverlayRepaint(
+                '首次 surfaceCreated (epoch=$_videoSurfaceEpoch)');
             Future.delayed(const Duration(milliseconds: 300), () {
               if (mounted) _nudgeOverlayRepaint('surface 后 300ms');
             });
@@ -5990,95 +6564,100 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             child: _switchingEngine
                 ? const SizedBox.shrink()
                 : _currentEngine == PlayerEngine.erika
-                // Erika：原生 surface/TextureView（自绘；含位图字幕 PGS 合成）
-                ? ErikaVideoView(
-                    player: (_player as ErikaPlayerAdapter).erikaPlayer,
-                  )
-                : _currentEngine == PlayerEngine.mediaKit
-                // media_kit：挂载 Video widget（VideoController 注册 Flutter Texture）
-                ? Video(
-                    controller:
-                        (_player as MediaKitPlayerAdapter).videoController,
-                    controls: null,
-                    fit: _videoFit,
-                    wakelock: false,
-                  )
-                : _usesSurfaceView
-                ? _buildSurfaceViewVideo()
-                : ValueListenableBuilder<int?>(
-                    valueListenable: _player.textureId,
-                    builder: (context, textureId, child) {
-                      if (textureId == null) {
-                        return const Center(
-                          child:
-                              CircularProgressIndicator(color: Colors.white54),
-                        );
-                      }
-                      // 无视频尺寸时先按原尺寸渲染，拿到尺寸后 setState 重新渲染
-                      if (_videoNativeSize == null) {
-                        return Center(
-                          child: Texture(textureId: textureId),
-                        );
-                      }
-                      return LayoutBuilder(
-                        builder: (context, constraints) {
-                          final containerW = constraints.maxWidth;
-                          final containerH = constraints.maxHeight;
-                          final renderW = _videoNativeSize!.width;
-                          final renderH = _videoNativeSize!.height;
-
-                          switch (_videoFit) {
-                            case BoxFit.none:
-                              return Texture(textureId: textureId);
-                            case BoxFit.fill:
-                              return Center(
-                                child: Transform(
-                                  alignment: Alignment.center,
-                                  transform: Matrix4.diagonal3Values(
-                                    containerW / renderW,
-                                    containerH / renderH,
-                                    1.0,
-                                  ),
-                                  child: UnconstrainedBox(
-                                    child: SizedBox(
-                                      width: renderW,
-                                      height: renderH,
+                    // Erika：原生 surface/TextureView（自绘；含位图字幕 PGS 合成）
+                    ? ErikaVideoView(
+                        player: (_player as ErikaPlayerAdapter).erikaPlayer,
+                      )
+                    : _currentEngine == PlayerEngine.mediaKit
+                        // media_kit：挂载 Video widget（VideoController 注册 Flutter Texture）
+                        ? Video(
+                            controller: (_player as MediaKitPlayerAdapter)
+                                .videoController,
+                            controls: null,
+                            fit: _videoFit,
+                            wakelock: false,
+                          )
+                        : _usesSurfaceView
+                            ? _buildSurfaceViewVideo()
+                            : ValueListenableBuilder<int?>(
+                                valueListenable: _player.textureId,
+                                builder: (context, textureId, child) {
+                                  if (textureId == null) {
+                                    return const Center(
+                                      child: CircularProgressIndicator(
+                                          color: Colors.white54),
+                                    );
+                                  }
+                                  // 无视频尺寸时先按原尺寸渲染，拿到尺寸后 setState 重新渲染
+                                  if (_videoNativeSize == null) {
+                                    return Center(
                                       child: Texture(textureId: textureId),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            case BoxFit.cover:
-                              final scale = max(
-                                  containerW / renderW, containerH / renderH);
-                              return ClipRect(
-                                child: Center(
-                                  child: Transform.scale(
-                                    scale: scale,
-                                    child: UnconstrainedBox(
-                                      child: SizedBox(
-                                        width: renderW,
-                                        height: renderH,
-                                        child: Texture(textureId: textureId),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            default: // contain
-                              return FittedBox(
-                                fit: BoxFit.contain,
-                                child: SizedBox(
-                                  width: renderW,
-                                  height: renderH,
-                                  child: Texture(textureId: textureId),
-                                ),
-                              );
-                          }
-                        },
-                      );
-                    },
-                  ),
+                                    );
+                                  }
+                                  return LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final containerW = constraints.maxWidth;
+                                      final containerH = constraints.maxHeight;
+                                      final renderW = _videoNativeSize!.width;
+                                      final renderH = _videoNativeSize!.height;
+
+                                      switch (_videoFit) {
+                                        case BoxFit.none:
+                                          return Texture(textureId: textureId);
+                                        case BoxFit.fill:
+                                          return Center(
+                                            child: Transform(
+                                              alignment: Alignment.center,
+                                              transform:
+                                                  Matrix4.diagonal3Values(
+                                                containerW / renderW,
+                                                containerH / renderH,
+                                                1.0,
+                                              ),
+                                              child: UnconstrainedBox(
+                                                child: SizedBox(
+                                                  width: renderW,
+                                                  height: renderH,
+                                                  child: Texture(
+                                                      textureId: textureId),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        case BoxFit.cover:
+                                          final scale = max(
+                                              containerW / renderW,
+                                              containerH / renderH);
+                                          return ClipRect(
+                                            child: Center(
+                                              child: Transform.scale(
+                                                scale: scale,
+                                                child: UnconstrainedBox(
+                                                  child: SizedBox(
+                                                    width: renderW,
+                                                    height: renderH,
+                                                    child: Texture(
+                                                        textureId: textureId),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        default: // contain
+                                          return FittedBox(
+                                            fit: BoxFit.contain,
+                                            child: SizedBox(
+                                              width: renderW,
+                                              height: renderH,
+                                              child:
+                                                  Texture(textureId: textureId),
+                                            ),
+                                          );
+                                      }
+                                    },
+                                  );
+                                },
+                              ),
           )
         : Center(
             child: Column(
@@ -6127,13 +6706,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     !_lockController.locked
                 ? _onVerticalDragEnd
                 : null,
-            // 手机版：长按视频区临时 2× 倍速，松手恢复（不落盘）
+            // 手机版长按：左/右 1/3 标记片头/片尾，中间临时 2× 倍速
             onLongPressStart:
-                _speedBoostGestureEnabled ? (_) => _onSpeedBoostStart() : null,
+                (_speedBoostGestureEnabled || _segmentMarkGestureEnabled)
+                    ? _onVideoLongPressStart
+                    : null,
             onLongPressEnd:
-                _speedBoostGestureEnabled ? (_) => _onSpeedBoostEnd() : null,
+                (_speedBoostGestureEnabled || _segmentMarkGestureEnabled)
+                    ? _onVideoLongPressEnd
+                    : null,
             onLongPressCancel:
-                _speedBoostGestureEnabled ? _onSpeedBoostEnd : null,
+                (_speedBoostGestureEnabled || _segmentMarkGestureEnabled)
+                    ? _onSpeedBoostEnd
+                    : null,
             child: videoContent,
           ),
 
@@ -6192,7 +6777,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
           // TopBar（渐变浮层；锁定中隐藏，手机版锁钮在下栏）。
           // 加载/切集转圈期间强制显示：黑屏时用户仍可点返回退出
-          if ((_showControls || _isLoadingMaskVisible) && !_lockController.locked)
+          if ((_showControls || _isLoadingMaskVisible) &&
+              !_lockController.locked)
             Positioned(
               top: 0,
               left: 0,
@@ -6266,6 +6852,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 show ? _buildVolumeBar() : const SizedBox.shrink(),
           ),
 
+          // TV 长按进度条：居中的片头/片尾标记玻璃面板
+          if (_showSegmentMarkPanel)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _closeSegmentMarkPanel,
+                child: ColoredBox(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  child: Center(
+                    child: FocusTraversalGroup(
+                      child: SegmentMarkPanel(
+                        positionMs: _position.inMilliseconds,
+                        introEndMs: _segmentIntroEndMs,
+                        creditsStartMs: _segmentCreditsStartMs,
+                        firstFocusNode: _segmentMarkFirstFocusNode,
+                        onSelect: _onSegmentMarkSelected,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
           // Controls（底部渐变浮层，仅视频区域底部；锁定中隐藏——手机版
           // 例外：底栏在锁定时只保留锁钮以便解锁，见 _buildControls）。
           // 加载/切集转圈期间强制显示（同 TopBar）
@@ -6302,8 +6910,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 child: SelectorSidePanel(
                   // 全高贴边：右侧圆角放平，避免玻璃圆角悬在屏幕边缘
                   borderRadius: _showEpisodeMenu
-                      ? const BorderRadius.horizontal(
-                          left: Radius.circular(16))
+                      ? const BorderRadius.horizontal(left: Radius.circular(16))
                       : const BorderRadius.all(Radius.circular(16)),
                   title: _showSubtitleMenu
                       ? '字幕'
@@ -6469,8 +7076,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
           : null,
       // Erika 无解码档位（自动硬解/软解回退）→ 隐藏解码控件
-      showDecodeButton: PlayerScreen.showDecodeButton(tvMode: settings.tvMode) &&
-          _currentEngine != PlayerEngine.erika,
+      showDecodeButton:
+          PlayerScreen.showDecodeButton(tvMode: settings.tvMode) &&
+              _currentEngine != PlayerEngine.erika,
       decodeMenuOpen: _showDecodeModeMenu,
       // TV 模式「显示调节」入口移到底部控制条（弹幕与字幕之间），顶栏隐藏
       showSubtitleStyleButton:
@@ -6507,8 +7115,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onToggleDecode: () =>
           setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
       onShare: _showShareRoomDialog,
-      reserveClockSpace:
-          settings.tvMode && settings.topBarClockFormat.enabled,
+      reserveClockSpace: settings.tvMode && settings.topBarClockFormat.enabled,
     );
   }
 
@@ -7035,7 +7642,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
       _showVersionMenu = false;
+      _showSegmentMarkPanel = false;
+      _skipPromptSegment = null;
     });
+    _skipPromptTimer?.cancel();
   }
 
   /// 解锁并恢复控制栏。
@@ -7069,6 +7679,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _showSubtitleStyleMenu ||
         _showEpisodeMenu ||
         _showVersionMenu ||
+        _showSegmentMarkPanel ||
         _showBrightnessBarNotifier.value ||
         _showVolumeBarNotifier.value) {
       _closeAllMenus();
@@ -7098,8 +7709,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.videoDecoders = decoders;
       final audioDecoders = DecodeModeService.resolveAudioDecoders(mode);
       _player.audioDecoders = audioDecoders;
-      LogService().log('Player',
-          '切换解码配置: $mode → video=$decoders audio=$audioDecoders');
+      LogService().log(
+          'Player', '切换解码配置: $mode → video=$decoders audio=$audioDecoders');
 
       // Step3: seek 触发帧刷新（强制新解码器解码当前帧）
       if (currentPos > 0) {
@@ -7446,6 +8057,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     final showPhoneLock =
         phoneControls && PlayerScreen.showLockButton(tvMode: tvMode);
+    final segmentTvMark = _segmentFeatureEnabled && tvMode;
     // 手机锁定态：底栏只保留锁钮（与进度条左数显同列），供解锁。
     if (showPhoneLock && _lockController.locked) {
       return _buildLockOnlyControls();
@@ -7514,7 +8126,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     duration: dur,
                     child: TvFocusable(
                       focusNode: _controlsFocusNode,
-                      onTap: null, // OK 键放行冒泡到 PlayerHotkey 播放/暂停
+                      // 开启片头片尾标记时接管 OK：短按播放/暂停，
+                      // 长按 OK 打开标记面板；关闭时放行给 PlayerHotkey。
+                      onTap: segmentTvMark ? _togglePlayPause : null,
+                      onLongPress: segmentTvMark ? _openSegmentMarkPanel : null,
                       scale: 1.0,
                       child: ExcludeFocus(
                         child: SliderTheme(
@@ -7622,6 +8237,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         ),
                       ),
                     ),
+                  if (_skipPromptSegment != null && _segmentFeatureEnabled) ...[
+                    if (showPhoneLock) const SizedBox(width: 8),
+                    _buildSkipPromptButton(),
+                    const SizedBox(width: 12),
+                  ],
                   if (PlayerPlatform.volumeBrightnessSliders) ...[
                     const SizedBox(width: 16),
                     _buildVolumeSlider(),
@@ -8345,9 +8965,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final stream = _embySubtitleStreams[embyIndex];
     final isExternal =
         stream.isExternal || stream.subtitleLocationType == 'ExternalStream';
-    LogService().log('Player',
+    LogService().log(
+        'Player',
         '切字幕: engine=${_currentEngine.id} idx=$embyIndex codec=${stream.codec} '
-        'external=$isExternal bitmap=${PlayerScreen.isBitmapSubtitleCodec(stream.codec)}');
+            'external=$isExternal bitmap=${PlayerScreen.isBitmapSubtitleCodec(stream.codec)}');
 
     if (isExternal) {
       // 外挂字幕：用 fvp setMedia 加载外部文件，不重载流
@@ -8366,8 +8987,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _player.setHttpHeaders({'X-Emby-Token': token});
       }
       try {
-        await _player
-            .setMedia(subtitleUrl, type: AdapterMediaType.subtitle);
+        await _player.setMedia(subtitleUrl, type: AdapterMediaType.subtitle);
       } catch (e) {
         LogService().log('Player', '加载外挂字幕失败: $e');
       }

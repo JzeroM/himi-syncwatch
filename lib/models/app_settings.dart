@@ -22,11 +22,13 @@ class AppSettings {
   static const mdkBufferMinMsLower = 100;
   static const mdkBufferMinMsUpper = 8000;
   static const mdkBufferMinMsDefault = 1000;
+
   /// 最大缓冲（setBufferRange max，ms）：缓冲上限，`0` = 无限；越大越扛
   /// 网络抖动（官方称不影响延迟），代价是内存占用。
   static const mdkBufferMaxMsLower = 0;
   static const mdkBufferMaxMsUpper = 60000;
   static const mdkBufferMaxMsDefault = 4000;
+
   /// 段缓存区间数（demux.buffer.ranges）可选档位，`0` = 关闭。
   static const demuxCacheRangeOptions = <int>[0, 2, 4, 8, 16, 32];
   static const demuxCacheRangesDefault = 8;
@@ -71,6 +73,9 @@ class AppSettings {
 
   /// 播放页顶栏显示网速（真实下载速度，MB/s）。
   final bool showNetworkSpeed;
+
+  /// 跳过片头/片尾总开关（默认关；关闭时不检测、不提示、不显示手动标记）。
+  final bool skipIntroOutroEnabled;
 
   /// 播放页顶栏正中的系统时间格式；默认关闭。
   final TopBarClockFormat topBarClockFormat;
@@ -284,6 +289,7 @@ class AppSettings {
     this.updatePromptEnabled = true,
     this.showSyncDebug = false,
     this.showNetworkSpeed = true,
+    this.skipIntroOutroEnabled = false,
     this.topBarClockFormat = TopBarClockFormat.off,
     this.playbackSpeed = 1.0,
     this.stereoDownmix = false,
@@ -350,6 +356,7 @@ class AppSettings {
     bool? updatePromptEnabled,
     bool? showSyncDebug,
     bool? showNetworkSpeed,
+    bool? skipIntroOutroEnabled,
     TopBarClockFormat? topBarClockFormat,
     double? playbackSpeed,
     bool? stereoDownmix,
@@ -409,6 +416,8 @@ class AppSettings {
       updatePromptEnabled: updatePromptEnabled ?? this.updatePromptEnabled,
       showSyncDebug: showSyncDebug ?? this.showSyncDebug,
       showNetworkSpeed: showNetworkSpeed ?? this.showNetworkSpeed,
+      skipIntroOutroEnabled:
+          skipIntroOutroEnabled ?? this.skipIntroOutroEnabled,
       topBarClockFormat: topBarClockFormat ?? this.topBarClockFormat,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       stereoDownmix: stereoDownmix ?? this.stereoDownmix,
@@ -430,8 +439,7 @@ class AppSettings {
           videoDecoderLowLatency ?? this.videoDecoderLowLatency,
       renderDepth8: renderDepth8 ?? this.renderDepth8,
       hdrGlWorkaround: hdrGlWorkaround ?? this.hdrGlWorkaround,
-      avsyncAudioAdaptive:
-          avsyncAudioAdaptive ?? this.avsyncAudioAdaptive,
+      avsyncAudioAdaptive: avsyncAudioAdaptive ?? this.avsyncAudioAdaptive,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
@@ -491,6 +499,7 @@ class AppSettings {
         'updatePromptEnabled': updatePromptEnabled,
         'showSyncDebug': showSyncDebug,
         'showNetworkSpeed': showNetworkSpeed,
+        'skipIntroOutroEnabled': skipIntroOutroEnabled,
         'topBarClockFormat': topBarClockFormat.storageValue,
         'playbackSpeed': playbackSpeed,
         'stereoDownmix': stereoDownmix,
@@ -583,10 +592,10 @@ class AppSettings {
       mkHwdec: const ['auto-safe', 'auto', 'no'].contains(json['mkHwdec'])
           ? json['mkHwdec'] as String
           : 'auto-safe',
-      mkToneMapping:
-          const ['auto', 'no', 'bt.2446a', 'spline'].contains(json['mkToneMapping'])
-              ? json['mkToneMapping'] as String
-              : 'auto',
+      mkToneMapping: const ['auto', 'no', 'bt.2446a', 'spline']
+              .contains(json['mkToneMapping'])
+          ? json['mkToneMapping'] as String
+          : 'auto',
       mkCacheSize: _clampDouble(json['mkCacheSize'], 150, 0, 500),
       mdkBufferMinMs: bufferMin,
       mdkBufferMaxMs: bufferMax,
@@ -596,12 +605,12 @@ class AppSettings {
         0,
         32,
       ),
-      lastUpdateCheckAt:
-          _clampInt(json['lastUpdateCheckAt'], 0, 0, 1 << 62),
+      lastUpdateCheckAt: _clampInt(json['lastUpdateCheckAt'], 0, 0, 1 << 62),
       skipUpdateVersion: json['skipUpdateVersion'] as String? ?? '',
       updatePromptEnabled: json['updatePromptEnabled'] as bool? ?? true,
       showSyncDebug: json['showSyncDebug'] as bool? ?? false,
       showNetworkSpeed: json['showNetworkSpeed'] as bool? ?? true,
+      skipIntroOutroEnabled: json['skipIntroOutroEnabled'] as bool? ?? false,
       topBarClockFormat:
           TopBarClockFormat.fromStorage(json['topBarClockFormat']),
       playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,
@@ -612,10 +621,9 @@ class AppSettings {
       glassUi: json['glassUi'] as bool? ?? true,
       versionPreference: json['versionPreference'] as String? ?? '',
       // 旧数据无此字段 / 非法值 → 列表视图
-      serverViewMode:
-          const ['list', 'grid'].contains(json['serverViewMode'])
-              ? json['serverViewMode'] as String
-              : 'list',
+      serverViewMode: const ['list', 'grid'].contains(json['serverViewMode'])
+          ? json['serverViewMode'] as String
+          : 'list',
       tvMode: json['tvMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认开（v1.1.249 上线时行为不变）
       tvSyncEnabled: json['tvSyncEnabled'] as bool? ?? true,
@@ -629,8 +637,12 @@ class AppSettings {
       // 外部写成 double，统一转 int
       categoryColumns: (json['categoryColumns'] as num?)?.toInt(),
       // 旧数据无此字段 / 非法值 → 默认纹理通道
-      videoOutput: const ['texture', 'tunnel', 'surfaceView', 'surfaceViewDirect']
-              .contains(json['videoOutput'])
+      videoOutput: const [
+        'texture',
+        'tunnel',
+        'surfaceView',
+        'surfaceViewDirect'
+      ].contains(json['videoOutput'])
           ? json['videoOutput'] as String
           : 'texture',
       // 旧数据无此字段 → 默认 false（未手动设置）
@@ -639,8 +651,7 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 image=1）
       videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 low_latency=0）
-      videoDecoderLowLatency:
-           json['videoDecoderLowLatency'] as bool? ?? false,
+      videoDecoderLowLatency: json['videoDecoderLowLatency'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 EGL_SDR_DEPTH=10）
       renderDepth8: json['renderDepth8'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（1.1.199 起默认关闭，A/B 验证中）
@@ -764,7 +775,8 @@ class AppSettings {
   }
 
   /// 是否走 fvp/video-view platform view（SurfaceView）通道。
-  bool get usesSurfaceView => isSurfaceViewMode(effectiveVideoOutput(videoOutput));
+  bool get usesSurfaceView =>
+      isSurfaceViewMode(effectiveVideoOutput(videoOutput));
 
   /// 是否强制解码器直写 SurfaceView（真·零 Flutter 纹理/零 GL）。仅在
   /// Android 生效（其余平台 effectiveVideoOutput 归一为 texture）。

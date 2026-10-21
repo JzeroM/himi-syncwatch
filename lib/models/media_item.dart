@@ -1,3 +1,5 @@
+import 'media_segment.dart';
+
 class MediaStream {
   final String type;
   final String codec;
@@ -163,8 +165,7 @@ class MediaStream {
 
   /// 杜比视界检测（ExtendedVideoType 或 VideoRangeType=DOVI，归一化）。
   bool get isDolbyVision =>
-      _extendedVideoTypeNorm == 'DOLBYVISION' ||
-      _videoRangeTypeNorm == 'DOVI';
+      _extendedVideoTypeNorm == 'DOLBYVISION' || _videoRangeTypeNorm == 'DOVI';
 
   /// 传输特性是否 PQ（HDR10 信号）：smpte2084/st2084。
   bool get _transferIsPQ {
@@ -423,6 +424,7 @@ class MediaItem {
   final int? parentIndexNumber;
   final List<String> genres;
   final int? runTimeTicks;
+  final List<MediaChapter> chapters;
   final List<MediaStream> mediaStreams;
   final int? childCount;
   final double? primaryImageAspectRatio;
@@ -477,6 +479,7 @@ class MediaItem {
     this.parentIndexNumber,
     this.genres = const [],
     this.runTimeTicks,
+    this.chapters = const [],
     this.mediaStreams = const [],
     this.childCount,
     this.primaryImageAspectRatio,
@@ -536,6 +539,11 @@ class MediaItem {
       parentIndexNumber: json['ParentIndexNumber'],
       genres: (json['Genres'] as List<dynamic>?)?.cast<String>() ?? [],
       runTimeTicks: json['RunTimeTicks'] as int?,
+      chapters: (json['Chapters'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map((c) => MediaChapter.fromJson(Map<String, dynamic>.from(c)))
+              .toList() ??
+          const [],
       mediaStreams: (json['MediaStreams'] as List<dynamic>?)
               ?.map((s) => MediaStream.fromJson(s))
               .toList() ??

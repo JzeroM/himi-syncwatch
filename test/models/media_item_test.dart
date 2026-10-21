@@ -271,4 +271,36 @@ void main() {
       expect(withTicks(0).runtimeText, isNull);
     });
   });
+
+  group('Chapters（片头/片尾章节）', () {
+    test('解析 StartPositionTicks/Name/MarkerType', () {
+      final item = MediaItem.fromJson({
+        'Id': 'ep-1',
+        'Name': 'E1',
+        'Type': 'Episode',
+        'Chapters': [
+          {
+            'StartPositionTicks': 10000000,
+            'Name': 'Intro',
+            'MarkerType': 'IntroStart',
+          },
+          {
+            'StartPositionTicks': 900000000,
+            'Name': 'Credits',
+            'MarkerType': 'CreditsStart',
+          },
+        ],
+      });
+      expect(item.chapters, hasLength(2));
+      expect(item.chapters.first.startMs, 1000);
+      expect(item.chapters.first.markerType, 'IntroStart');
+      expect(item.chapters.last.startMs, 90000);
+    });
+
+    test('缺省 Chapters → 空列表', () {
+      final item =
+          MediaItem.fromJson({'Id': 'm1', 'Name': '电影', 'Type': 'Movie'});
+      expect(item.chapters, isEmpty);
+    });
+  });
 }

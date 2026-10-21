@@ -439,7 +439,7 @@ class EmbyService {
           // ImageTags：详情页标题艺术字（ImageTags.Logo）依赖此字段
           // UserData：收藏状态（UserData.IsFavorite）
           'Fields':
-              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ImageTags,UserData,ProviderIds,ExternalUrls,Studios,Path,DateCreated',
+              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,Chapters,ImageTags,UserData,ProviderIds,ExternalUrls,Studios,Path,DateCreated',
         },
       );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);

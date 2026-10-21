@@ -126,8 +126,7 @@ void main() {
 
       final req = captured.single;
       expect(req.param('Filters'), 'IsUnplayed');
-      expect(req.param('Genres'), '动作|科幻',
-          reason: 'Genres 多选为管道符分隔');
+      expect(req.param('Genres'), '动作|科幻', reason: 'Genres 多选为管道符分隔');
       expect(req.param('Years'), '2023,2024', reason: 'Years 多选为逗号分隔');
       expect(req.param('OfficialRatings'), 'PG-13|R');
     });
@@ -159,7 +158,10 @@ void main() {
                 '科幻',
               ],
               'Years': [2023, 2024],
-              'OfficialRatings': ['PG-13', {'Name': 'R'}],
+              'OfficialRatings': [
+                'PG-13',
+                {'Name': 'R'}
+              ],
             };
           case '/Genres':
             return {
@@ -193,10 +195,8 @@ void main() {
         includeItemTypes: 'Movie',
       );
 
-      expect(options.genres, ['动作', '喜剧', '科幻'],
-          reason: '合并去重后字母序');
-      expect(options.years, [2024, 2023, 2022, 2021],
-          reason: '合并去重后降序');
+      expect(options.genres, ['动作', '喜剧', '科幻'], reason: '合并去重后字母序');
+      expect(options.years, [2024, 2023, 2022, 2021], reason: '合并去重后降序');
       expect(options.ratings, ['G', 'PG-13', 'R']);
 
       expect(captured, hasLength(4), reason: '聚合 + 三个专用端点');
@@ -262,7 +262,8 @@ void main() {
     });
 
     test('专用端点全 404 → /Items 扫描兜底聚合年份/分级', () async {
-      statusFor = (path) => path == '/Items' ? HttpStatus.ok : HttpStatus.notFound;
+      statusFor =
+          (path) => path == '/Items' ? HttpStatus.ok : HttpStatus.notFound;
       respondWith = (path) {
         if (path == '/Items') {
           return {
@@ -343,6 +344,7 @@ void main() {
       final fields = req.param('Fields')!;
       expect(fields, contains('MediaSources'));
       expect(fields, contains('AlternateMediaSources'));
+      expect(fields, contains('Chapters'));
     });
   });
 
@@ -952,7 +954,8 @@ void main() {
   });
 
   group('账号服务（改密 / 头像 URL）', () {
-    test('changePassword → POST /Users/{userId}/Password + CurrentPw/NewPw', () async {
+    test('changePassword → POST /Users/{userId}/Password + CurrentPw/NewPw',
+        () async {
       await service.changePassword(
         currentPassword: 'old',
         newPassword: 'new123',

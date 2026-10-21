@@ -414,6 +414,31 @@ void main() {
     expect(container.read(settingsProvider).showNetworkSpeed, isTrue);
   });
 
+  testWidgets('播放器子页：跳过片头片尾默认关，切换写入 settings', (tester) async {
+    final container = await _pumpScreen(tester, category: '播放器');
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('skipIntroOutroSwitch')),
+      200,
+      scrollable: _subScrollable(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).skipIntroOutroEnabled, isFalse);
+    final skipSwitch = find.descendant(
+      of: find.byKey(const ValueKey('skipIntroOutroSwitch')),
+      matching: find.byType(Switch),
+    );
+    expect(tester.widget<Switch>(skipSwitch).value, isFalse);
+
+    await tester.tap(skipSwitch);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).skipIntroOutroEnabled, isTrue);
+
+    await tester.tap(skipSwitch);
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).skipIntroOutroEnabled, isFalse);
+  });
+
   testWidgets('TV 遥控器 OK 两段式：作用域落焦首个分类入口并激活进入', (tester) async {
     final container = await _pumpScreen(
       tester,

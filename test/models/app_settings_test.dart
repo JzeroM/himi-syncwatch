@@ -180,21 +180,17 @@ void main() {
       expect(copied.copyWith().videoDecoderNoImage, isTrue);
     });
 
-    test('videoDecoderLowLatency 旧数据缺字段 → 默认 false（保持 low_latency=0）',
-        () {
-      expect(
-          AppSettings.fromJson(const {}).videoDecoderLowLatency, isFalse);
+    test('videoDecoderLowLatency 旧数据缺字段 → 默认 false（保持 low_latency=0）', () {
+      expect(AppSettings.fromJson(const {}).videoDecoderLowLatency, isFalse);
     });
 
     test('videoDecoderLowLatency toJson/fromJson 往返（1.1.192 实验开关）', () {
-      final json = const AppSettings()
-          .copyWith(videoDecoderLowLatency: true)
-          .toJson();
+      final json =
+          const AppSettings().copyWith(videoDecoderLowLatency: true).toJson();
       expect(json['videoDecoderLowLatency'], isTrue);
       expect(AppSettings.fromJson(json).videoDecoderLowLatency, isTrue);
       // 默认 false 也落盘
-      expect(
-          const AppSettings().toJson()['videoDecoderLowLatency'], isFalse);
+      expect(const AppSettings().toJson()['videoDecoderLowLatency'], isFalse);
     });
 
     test('copyWith 透传 videoDecoderLowLatency', () {
@@ -233,8 +229,7 @@ void main() {
     });
 
     test('hdrGlWorkaround toJson/fromJson 往返', () {
-      final json =
-          const AppSettings().copyWith(hdrGlWorkaround: true).toJson();
+      final json = const AppSettings().copyWith(hdrGlWorkaround: true).toJson();
       expect(json['hdrGlWorkaround'], isTrue);
       expect(AppSettings.fromJson(json).hdrGlWorkaround, isTrue);
       expect(const AppSettings().toJson()['hdrGlWorkaround'], isFalse);
@@ -247,7 +242,8 @@ void main() {
       expect(copied.copyWith().hdrGlWorkaround, isTrue);
     });
 
-    test('旧 JSON 含 forceSdrOutput/renderClampHdrOnly 键 → 忽略，'
+    test(
+        '旧 JSON 含 forceSdrOutput/renderClampHdrOnly 键 → 忽略，'
         'hdrGlWorkaround 取默认 false', () {
       final old = AppSettings.fromJson(const {
         'forceSdrOutput': false,
@@ -337,13 +333,14 @@ void main() {
 
     test('max<min 在 fromJson 归一为 min；max==0（无限）保留', () {
       expect(
-        AppSettings.fromJson(const {'mdkBufferMinMs': 3000, 'mdkBufferMaxMs': 1000})
+        AppSettings.fromJson(
+                const {'mdkBufferMinMs': 3000, 'mdkBufferMaxMs': 1000})
             .mdkBufferMaxMs,
         3000,
       );
       expect(
-        AppSettings.fromJson(const {'mdkBufferMinMs': 3000, 'mdkBufferMaxMs': 0})
-            .mdkBufferMaxMs,
+        AppSettings.fromJson(
+            const {'mdkBufferMinMs': 3000, 'mdkBufferMaxMs': 0}).mdkBufferMaxMs,
         0,
       );
     });
@@ -681,7 +678,8 @@ void main() {
       expect(sv.usesSurfaceView, isTrue);
       expect(sv.surfaceViewDirect, isFalse);
       // 非 SurfaceView 系列
-      expect(const AppSettings(videoOutput: 'texture').usesSurfaceView, isFalse);
+      expect(
+          const AppSettings(videoOutput: 'texture').usesSurfaceView, isFalse);
       expect(const AppSettings(videoOutput: 'tunnel').usesSurfaceView, isFalse);
 
       expect(AppSettings.isSurfaceViewMode('surfaceView'), isTrue);
@@ -706,8 +704,7 @@ void main() {
       // HDR + 本就 GL → 不变
       expect(AppSettings.routeVideoOutput('surfaceView', isHdr: true),
           'surfaceView');
-      expect(
-          AppSettings.routeVideoOutput('texture', isHdr: true), 'texture');
+      expect(AppSettings.routeVideoOutput('texture', isHdr: true), 'texture');
       // SDR → 原样（直写保留）
       expect(AppSettings.routeVideoOutput('surfaceViewDirect', isHdr: false),
           'surfaceViewDirect');
@@ -1062,8 +1059,7 @@ void main() {
       );
     });
 
-    test('弹幕字段默认值（默认开 / 滚动上限 30 / 上限 500 / 大小 0.5 / 透明度 0.6）',
-        () {
+    test('弹幕字段默认值（默认开 / 滚动上限 30 / 上限 500 / 大小 0.5 / 透明度 0.6）', () {
       const s = AppSettings();
       expect(s.danmakuDefaultOn, isTrue);
       expect(s.danmakuApiUrl, '');
@@ -1207,6 +1203,30 @@ void main() {
       final updated =
           const AppSettings().copyWith(versionPreference: 'sdr,lowBitrate');
       expect(updated.versionPreferenceOrder.first, VersionPreference.sdr);
+    });
+  });
+
+  group('skipIntroOutroEnabled（跳过片头片尾开关）', () {
+    test('默认关闭', () {
+      expect(const AppSettings().skipIntroOutroEnabled, isFalse);
+      expect(AppSettings.fromJson(const {}).skipIntroOutroEnabled, isFalse);
+    });
+
+    test('toJson/fromJson 往返保留', () {
+      final enabled = const AppSettings(skipIntroOutroEnabled: true);
+      expect(
+        AppSettings.fromJson(enabled.toJson()).skipIntroOutroEnabled,
+        isTrue,
+      );
+    });
+
+    test('copyWith 更新', () {
+      expect(
+        const AppSettings()
+            .copyWith(skipIntroOutroEnabled: true)
+            .skipIntroOutroEnabled,
+        isTrue,
+      );
     });
   });
 }

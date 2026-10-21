@@ -246,14 +246,12 @@ void main() {
 
   test('TV：显示调节入口在底部控制条（顶栏隐藏）', () {
     expect(PlayerScreen.showTopSubtitleStyleButton(tvMode: true), isFalse);
-    expect(
-        PlayerScreen.showBottomDisplayAdjustButton(tvMode: true), isTrue);
+    expect(PlayerScreen.showBottomDisplayAdjustButton(tvMode: true), isTrue);
   });
 
   test('非 TV：显示调节入口在顶栏（底栏不显示）', () {
     expect(PlayerScreen.showTopSubtitleStyleButton(tvMode: false), isTrue);
-    expect(
-        PlayerScreen.showBottomDisplayAdjustButton(tvMode: false), isFalse);
+    expect(PlayerScreen.showBottomDisplayAdjustButton(tvMode: false), isFalse);
   });
 
   // ---- 加载转圈期间强制显示控件（黑屏仍可返回） ----
@@ -365,8 +363,7 @@ void main() {
       );
     });
 
-    test('引擎自报 end（mdk）→ 兜底恒不触发（v1.1.239 拖进度条误切集回归）',
-        () {
+    test('引擎自报 end（mdk）→ 兜底恒不触发（v1.1.239 拖进度条误切集回归）', () {
       expect(
         PlayerScreen.shouldAutoNextEpisode(
           positionMs: 60000,
@@ -448,6 +445,94 @@ void main() {
       expect(
         PlayerScreen.shouldHandleEngineEnd(
             seekInProgress: false, positionMs: 0, durationMs: 0),
+        isFalse,
+      );
+    });
+  });
+
+  // ---- 跳过片尾：有下一集切集，最后一集/电影到终点退出 ----
+
+  group('shouldAdvanceAfterOutroSkip（片尾跳过决策）', () {
+    test('剧集有下一集 → 直接切下一集', () {
+      expect(
+        PlayerScreen.shouldAdvanceAfterOutroSkip(
+          hasEpisodeList: true,
+          currentEpisodeIndex: 1,
+          episodeCount: 3,
+        ),
+        isTrue,
+      );
+    });
+
+    test('剧集最后一集 → 不切集，到片尾终点退出', () {
+      expect(
+        PlayerScreen.shouldAdvanceAfterOutroSkip(
+          hasEpisodeList: true,
+          currentEpisodeIndex: 2,
+          episodeCount: 3,
+        ),
+        isFalse,
+      );
+    });
+
+    test('电影/无剧集列表 → 不切集', () {
+      expect(
+        PlayerScreen.shouldAdvanceAfterOutroSkip(
+          hasEpisodeList: false,
+          currentEpisodeIndex: 0,
+          episodeCount: 1,
+        ),
+        isFalse,
+      );
+      expect(
+        PlayerScreen.shouldAdvanceAfterOutroSkip(
+          hasEpisodeList: true,
+          currentEpisodeIndex: 0,
+          episodeCount: 1,
+        ),
+        isFalse,
+      );
+    });
+
+    test('索引无效 → 不切集', () {
+      expect(
+        PlayerScreen.shouldAdvanceAfterOutroSkip(
+          hasEpisodeList: true,
+          currentEpisodeIndex: -1,
+          episodeCount: 3,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('shouldShowSeriesFinishedAfterOutroSkip（片尾退出提示判定）', () {
+    test('剧集最后一集 → 提示所有剧集播放完毕', () {
+      expect(
+        PlayerScreen.shouldShowSeriesFinishedAfterOutroSkip(
+          isSeries: true,
+          hasNextEpisode: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('电影 → 不提示所有剧集播放完毕', () {
+      expect(
+        PlayerScreen.shouldShowSeriesFinishedAfterOutroSkip(
+          isSeries: false,
+          hasNextEpisode: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('有下一集 → 不提示完播，直接切集', () {
+      expect(
+        PlayerScreen.shouldShowSeriesFinishedAfterOutroSkip(
+          isSeries: true,
+          hasNextEpisode: true,
+        ),
         isFalse,
       );
     });
