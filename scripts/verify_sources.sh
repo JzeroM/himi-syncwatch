@@ -177,7 +177,18 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
     else
       err "MainActivity 未注册 AppIconPlugin.CHANNEL"
     fi
-    for alias in 'DEFAULT' 'icon_artistic' 'icon_mint' 'icon_glass'; do
+    if grep -q 'AppIconPlugin(this@MainActivity)' "$KOTLIN/MainActivity.kt"; then
+      ok "AppIconPlugin 持有 Activity（recreate/重启依赖）"
+    else
+      err "AppIconPlugin 未传入 Activity（桌面刷新会失效）"
+    fi
+    if grep -q 'icon_default' "$KOTLIN/AppIconPlugin.kt" \
+      && grep -q 'recreate()' "$KOTLIN/AppIconPlugin.kt"; then
+      ok "默认克隆别名 + recreate 刷新逻辑存在"
+    else
+      err "AppIconPlugin 缺少默认克隆别名或 recreate 刷新"
+    fi
+    for alias in 'DEFAULT' 'icon_default' 'icon_artistic' 'icon_mint' 'icon_glass'; do
       if grep -q "android:name=\"\.$alias\"" "$MANIFEST"; then
         ok "activity-alias .$alias"
       else

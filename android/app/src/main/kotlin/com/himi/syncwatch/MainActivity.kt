@@ -72,8 +72,8 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             AppIconPlugin.CHANNEL
         ).apply {
-            // 应用图标切换：归一化 activity-alias，避免旧别名残留
-            setMethodCallHandler(AppIconPlugin(applicationContext))
+            // 应用图标切换：归一化 activity-alias，并 recreate/重启刷新桌面
+            setMethodCallHandler(AppIconPlugin(this@MainActivity))
         }
     }
 

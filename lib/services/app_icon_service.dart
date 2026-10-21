@@ -95,7 +95,7 @@ class AppIconService {
 
   /// 应用图标（id=null 还原默认）。失败抛出，由调用方回滚设置并提示。
   ///
-  /// Android：启用目标别名后禁用其余全部别名，并回查实际生效值。
+  /// Android：原生层启用目标别名、归一化其余别名并 recreate/重启刷新。
   /// iOS：只走公开 API（`isSilent: false`）。插件 1.4.1 的静默分支执行
   /// 私有 API 后**从不回传 result**（completion 丢弃且不调 result），
   /// await 会永久挂起；且与后续调用存在竞态（iOS 拒绝并发
@@ -106,12 +106,13 @@ class AppIconService {
     final target = _validateId(id);
     try {
       if (_isAndroid) {
-        await androidChannel.invokeMethod<bool>('setIcon', {
+        final applied = await androidChannel.invokeMethod<bool>('setIcon', {
           'id': target ?? 'default',
         });
-        final actual = await currentId();
-        if (actual != target) {
-          throw StateError('图标未生效：期望 ${target ?? 'default'}，实际 $actual');
+        // 原生层已回查组件状态；随后会 recreate/重启，不能再立即查询通道，
+        // 否则 Activity 重建会让查询中断并被误判为切换失败。
+        if (applied != true) {
+          throw StateError('图标切换未确认：${target ?? 'default'}');
         }
         return;
       }
@@ -145,6 +146,14 @@ class AppIconService {
   static Future<void> syncOnStart(String? desiredId) async {
     if (!isSupported) return;
     try {
+      if (_isAndroid) {
+        final raw = await androidChannel.invokeMethod<String>('getIcon');
+        // invalid = 0 个或多个别名同时启用，必须重新归一化。
+        if (raw == 'invalid' || idFromPlatformName(raw) != desiredId) {
+          await apply(desiredId);
+        }
+        return;
+      }
       final current = await currentId();
       if (current != desiredId) await apply(desiredId);
     } catch (e) {

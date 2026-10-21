@@ -523,7 +523,7 @@ class _AppIconSection extends ConsumerWidget {
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
-            '选择桌面图标外观（Android 切换后通常立即刷新；若未刷新可稍候或重启桌面；iOS 会弹系统提示）',
+            '选择桌面图标外观（Android 首次切换会重启应用，之后切换会刷新界面；若桌面仍未刷新，可重启手机或清除桌面启动器缓存。iOS 会弹系统提示）',
             style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.4),
           ),
         ),

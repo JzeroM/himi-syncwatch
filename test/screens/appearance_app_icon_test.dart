@@ -80,7 +80,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('点艺术字：先保存设置再走 himi/app_icon，并回查生效值', (tester) async {
+  testWidgets('点艺术字：先保存设置再走 himi/app_icon，不二次回查', (tester) async {
     final calls = <MethodCall>[];
     String? settingAtNative;
     late ProviderContainer container;
@@ -91,7 +91,6 @@ void main() {
         settingAtNative = container.read(settingsProvider).appIcon;
         return true;
       }
-      if (call.method == 'getIcon') return settingAtNative;
       return null;
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger
@@ -105,7 +104,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(settingAtNative, 'artistic', reason: '原生切换前设置已落盘');
-    expect(calls.map((c) => c.method), ['setIcon', 'getIcon']);
+    expect(calls.map((c) => c.method), ['setIcon']);
     expect(calls.first.arguments, {'id': 'artistic'});
     expect(container.read(settingsProvider).appIcon, 'artistic');
     debugDefaultTargetPlatformOverride = null;
@@ -117,7 +116,6 @@ void main() {
       if (call.method == 'setIcon') {
         throw PlatformException(code: 'ICON_SWITCH_FAILED', message: '失败');
       }
-      if (call.method == 'getIcon') return 'default';
       return null;
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger

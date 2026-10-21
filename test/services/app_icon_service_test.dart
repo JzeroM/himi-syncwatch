@@ -70,7 +70,7 @@ void main() {
     });
   });
 
-  group('apply Android：自有通道归一化 + 回查', () {
+  group('apply Android：自有通道归一化 + 启动自愈', () {
     late List<MethodCall> calls;
     late String current;
 
@@ -100,27 +100,26 @@ void main() {
       });
     });
 
-    test('切换备用图标：只传 id，并回查生效值', () async {
+    test('切换备用图标：只传 id，不在 recreate 后回查', () async {
       await AppIconService.apply('mint');
 
-      expect(calls.map((c) => c.method), ['setIcon', 'getIcon']);
+      expect(calls.map((c) => c.method), ['setIcon']);
       expect(calls.first.arguments, {'id': 'mint'});
     });
 
-    test('还原默认：传 default，回查也按默认处理', () async {
+    test('还原默认：传 default', () async {
       current = 'glass';
       await AppIconService.apply(null);
 
-      expect(calls.first.method, 'setIcon');
+      expect(calls.map((c) => c.method), ['setIcon']);
       expect(calls.first.arguments, {'id': 'default'});
     });
 
-    test('原生回查与请求不一致 → 抛出', () async {
+    test('原生未确认成功 → 抛出', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(AppIconService.androidChannel,
               (call) async {
-        if (call.method == 'setIcon') return true;
-        if (call.method == 'getIcon') return 'glass';
+        if (call.method == 'setIcon') return false;
         return null;
       });
 
@@ -128,6 +127,21 @@ void main() {
         AppIconService.apply('mint'),
         throwsA(isA<StateError>()),
       );
+    });
+
+    test('启动自愈：invalid 状态强制归一化', () async {
+      current = 'invalid';
+      await AppIconService.syncOnStart('glass');
+
+      expect(calls.map((c) => c.method), ['getIcon', 'setIcon']);
+      expect(calls.last.arguments, {'id': 'glass'});
+    });
+
+    test('启动自愈：默认态不触发切换', () async {
+      current = 'default';
+      await AppIconService.syncOnStart(null);
+
+      expect(calls.map((c) => c.method), ['getIcon']);
     });
 
     test('未知 id → 参数错误，不触碰原生', () async {
