@@ -85,10 +85,10 @@
 				<key>CFBundleIconName</key>
 				<string>glass</string>
 			</dict>
-			<key>neon</key>
+			<key>mint</key>
 			<dict>
 				<key>CFBundleIconName</key>
-				<string>neon</string>
+				<string>mint</string>
 			</dict>
 		</dict>
 	</dict>
@@ -111,10 +111,10 @@
 				<key>CFBundleIconName</key>
 				<string>glass</string>
 			</dict>
-			<key>neon</key>
+			<key>mint</key>
 			<dict>
 				<key>CFBundleIconName</key>
-				<string>neon</string>
+				<string>mint</string>
 			</dict>
 		</dict>
 	</dict>

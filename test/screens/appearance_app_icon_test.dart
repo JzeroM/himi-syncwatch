@@ -45,10 +45,25 @@ void main() {
     for (final k in const [
       'appIcon_default',
       'appIcon_artistic',
+      'appIcon_mint',
       'appIcon_glass',
-      'appIcon_neon',
     ]) {
       expect(find.byKey(ValueKey(k)), findsOneWidget, reason: k);
+    }
+    for (final entry in const {
+      'appIcon_default': '默认',
+      'appIcon_artistic': '艺术字',
+      'appIcon_mint': '薄荷绿',
+      'appIcon_glass': '玻璃紫',
+    }.entries) {
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey(entry.key)),
+          matching: find.text(entry.value),
+        ),
+        findsOneWidget,
+        reason: entry.value,
+      );
     }
     debugDefaultTargetPlatformOverride = null;
   });

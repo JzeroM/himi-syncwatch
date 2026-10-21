@@ -167,7 +167,7 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
 
     # ---------- 4. 应用图标切换（activity-alias + 插件 Service） ----------
     sec "Android · 应用图标切换"
-    for alias in 'DEFAULT' 'icon_artistic' 'icon_glass' 'icon_neon'; do
+    for alias in 'DEFAULT' 'icon_artistic' 'icon_mint' 'icon_glass'; do
       if grep -q "android:name=\"\.$alias\"" "$MANIFEST"; then
         ok "activity-alias .$alias"
       else
@@ -179,7 +179,7 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
     else
       err "缺少 flutter_dynamic_icon_plus Service（图标变更不会落地）"
     fi
-    for alt in artistic glass neon; do
+    for alt in artistic mint glass; do
       f="$MAIN/res/mipmap-xhdpi/ic_launcher_$alt.png"
       if [ -s "$f" ]; then
         ok "备用图标 $alt mipmap 存在"
@@ -228,7 +228,7 @@ if [ -d ios ]; then
     else
       err "Info.plist 缺少 CFBundlePrimaryIcon（setAlternateIconName(nil) 依赖）"
     fi
-    for alt in artistic glass neon; do
+    for alt in artistic mint glass; do
       if grep -q "<key>$alt</key>" "$PLIST"; then
         ok "备用图标键 $alt"
       else
@@ -259,7 +259,7 @@ if [ -d ios ]; then
 import json, os, sys
 root = sys.argv[1]
 sets = ('AppIcon.appiconset', 'LaunchImage.imageset',
-        'artistic.appiconset', 'glass.appiconset', 'neon.appiconset')
+        'artistic.appiconset', 'mint.appiconset', 'glass.appiconset')
 missing = []
 for name in sets:
     d = os.path.join(root, name)
@@ -301,7 +301,7 @@ fi
 
 # ======================== 图标源图 ========================
 sec "图标源图（assets/icon）"
-for name in default artistic glass neon; do
+for name in default artistic mint glass; do
   src="assets/icon/$name.png"
   if [ -s "$src" ]; then
     ok "$src"

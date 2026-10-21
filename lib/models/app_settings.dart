@@ -117,7 +117,7 @@ class AppSettings {
   final double? glassRefractiveIndex;
   final int? themeColor; // 主题色 ARGB（首页/壳层背景），null = 跟随默认底色
 
-  /// 应用图标 id：null = 默认（default）；'artistic'/'glass'/'neon' = 备用图标。
+  /// 应用图标 id：null = 默认（default）；'artistic'/'mint'/'glass' = 备用图标。
   /// 仅 Android/iOS 生效；写入后由 AppIconService 应用到系统。
   final String? appIcon;
 
@@ -642,7 +642,8 @@ class AppSettings {
       // 避免自动识别把用户手动关掉的 TV 模式重新打开。
       tvModeUserSet: json['tvModeUserSet'] as bool? ?? (json['tvMode'] == true),
       themeColor: json['themeColor'] as int?,
-      appIcon: json['appIcon'] as String?,
+      // 旧图标集 neon 已由薄荷绿 mint 取代，旧存档一次性迁移。
+      appIcon: json['appIcon'] == 'neon' ? 'mint' : json['appIcon'] as String?,
       // 旧数据无此字段 / 非法值 → null（自动）；存盘 int 也可能被
       // 外部写成 double，统一转 int
       categoryColumns: (json['categoryColumns'] as num?)?.toInt(),

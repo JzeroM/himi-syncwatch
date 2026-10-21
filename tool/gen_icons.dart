@@ -23,7 +23,7 @@ import 'package:image/image.dart' as img;
 const String defaultIcon = 'default';
 
 /// 全部可选图标（含默认）。
-const List<String> allIcons = ['default', 'artistic', 'glass', 'neon'];
+const List<String> allIcons = ['default', 'artistic', 'mint', 'glass'];
 
 /// 备用图标（Android/iOS 需要声明；默认除外）。
 List<String> get alternateIcons =>
@@ -60,7 +60,13 @@ const List<({int px, String label, String idiom, String scale, String size})>
   (px: 76, label: '76@1x', idiom: 'ipad', scale: '1x', size: '76x76'),
   (px: 152, label: '76@2x', idiom: 'ipad', scale: '2x', size: '76x76'),
   (px: 167, label: '83.5@2x', idiom: 'ipad', scale: '2x', size: '83.5x83.5'),
-  (px: 1024, label: '1024', idiom: 'ios-marketing', scale: '1x', size: '1024x1024'),
+  (
+    px: 1024,
+    label: '1024',
+    idiom: 'ios-marketing',
+    scale: '1x',
+    size: '1024x1024'
+  ),
 ];
 
 /// 无 alpha 的 RGB PNG（iOS appiconset 要求不透明、且不得含 alpha 通道）。

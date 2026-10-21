@@ -10,7 +10,7 @@ class AppIconOption {
     required this.asset,
   });
 
-  /// 图标 id：null = 默认（default）；其余为备用图标键（artistic/glass/neon）。
+  /// 图标 id：null = 默认（default）；其余为备用图标键（artistic/mint/glass）。
   final String? id;
 
   /// 设置页展示名。
@@ -36,13 +36,13 @@ class AppIconService {
   /// Android applicationId（与 build.gradle / namespace 一致）。
   static const String androidPackage = 'com.himi.syncwatch';
 
-  /// 可选图标：默认 default + 备用 artistic/glass/neon（顺序即设置页顺序）。
+  /// 可选图标：默认 default + 备用 artistic/mint/glass（顺序即设置页顺序）。
   static const List<AppIconOption> options = [
     AppIconOption(id: null, label: '默认', asset: 'assets/icons/default.png'),
     AppIconOption(
-        id: 'artistic', label: 'Artistic', asset: 'assets/icons/artistic.png'),
-    AppIconOption(id: 'glass', label: 'Glass', asset: 'assets/icons/glass.png'),
-    AppIconOption(id: 'neon', label: 'Neon', asset: 'assets/icons/neon.png'),
+        id: 'artistic', label: '艺术字', asset: 'assets/icons/artistic.png'),
+    AppIconOption(id: 'mint', label: '薄荷绿', asset: 'assets/icons/mint.png'),
+    AppIconOption(id: 'glass', label: '玻璃紫', asset: 'assets/icons/glass.png'),
   ];
 
   /// 当前平台是否支持切换（Android/iOS）。

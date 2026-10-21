@@ -1206,6 +1206,15 @@ void main() {
     });
   });
 
+  group('appIcon 图标集迁移', () {
+    test('旧 neon 存档迁移为 mint', () {
+      expect(AppSettings.fromJson(const {'appIcon': 'neon'}).appIcon, 'mint');
+      expect(AppSettings.fromJson(const {'appIcon': 'mint'}).appIcon, 'mint');
+      expect(AppSettings.fromJson(const {'appIcon': 'glass'}).appIcon, 'glass');
+      expect(AppSettings.fromJson(const {'appIcon': null}).appIcon, isNull);
+    });
+  });
+
   group('autoSkipIntroOutroEnabled（自动跳过片头片尾开关）', () {
     test('默认关闭', () {
       expect(const AppSettings().autoSkipIntroOutroEnabled, isFalse);

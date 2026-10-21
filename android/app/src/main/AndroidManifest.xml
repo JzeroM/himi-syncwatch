@@ -81,7 +81,7 @@
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher_artistic"
+            android:icon="@mipmap/ic_launcher"
             android:roundIcon="@mipmap/ic_launcher_artistic"
             android:targetActivity=".MainActivity">
             <meta-data
@@ -99,7 +99,7 @@
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher_glass"
+            android:icon="@mipmap/ic_launcher"
             android:roundIcon="@mipmap/ic_launcher_glass"
             android:targetActivity=".MainActivity">
             <meta-data
@@ -113,12 +113,12 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".icon_neon"
+            android:name=".icon_mint"
             android:enabled="false"
             android:exported="true"
             android:label="HIMI"
-            android:icon="@mipmap/ic_launcher_neon"
-            android:roundIcon="@mipmap/ic_launcher_neon"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_mint"
             android:targetActivity=".MainActivity">
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"

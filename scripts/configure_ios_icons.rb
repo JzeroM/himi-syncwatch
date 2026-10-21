@@ -21,7 +21,7 @@ project = Xcodeproj::Project.open(project_path)
 target = project.targets.find { |t| t.name == 'Runner' }
 raise '未找到 Runner target' if target.nil?
 
-ALTERNATES = 'artistic glass neon'.freeze
+ALTERNATES = 'artistic mint glass'.freeze
 
 changed = 0
 target.build_configurations.each do |config|

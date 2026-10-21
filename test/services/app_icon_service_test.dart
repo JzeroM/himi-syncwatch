@@ -16,7 +16,7 @@ void main() {
       expect(AppIconService.options.first.id, isNull);
       expect(
         AppIconService.options.map((o) => o.id).toList(),
-        [null, 'artistic', 'glass', 'neon'],
+        [null, 'artistic', 'mint', 'glass'],
       );
       for (final o in AppIconService.options) {
         expect(o.asset, startsWith('assets/icons/'));
@@ -51,8 +51,8 @@ void main() {
           AppIconService.platformIconName(null), 'com.himi.syncwatch.DEFAULT');
       expect(AppIconService.platformIconName('artistic'),
           'com.himi.syncwatch.icon_artistic');
-      expect(AppIconService.platformIconName('neon'),
-          'com.himi.syncwatch.icon_neon');
+      expect(AppIconService.platformIconName('mint'),
+          'com.himi.syncwatch.icon_mint');
     });
 
     test('iOS：默认=null，备用=CFBundleAlternateIcons 键', () {
@@ -70,8 +70,8 @@ void main() {
       expect(
           AppIconService.idFromPlatformName('com.himi.syncwatch.icon_artistic'),
           'artistic');
-      expect(AppIconService.idFromPlatformName('com.himi.syncwatch.icon_neon'),
-          'neon');
+      expect(AppIconService.idFromPlatformName('com.himi.syncwatch.icon_mint'),
+          'mint');
       expect(AppIconService.idFromPlatformName('com.himi.syncwatch.DEFAULT'),
           isNull);
       expect(AppIconService.idFromPlatformName('com.himi.syncwatch.icon_zzz'),
@@ -136,8 +136,7 @@ void main() {
         calls.add(call);
         if (call.method == 'setAlternateIconName') {
           final silent = (call.arguments as Map)['isSilent'] as bool?;
-          expect(silent, isFalse,
-              reason: '禁止静默分支：插件 1.4.1 静默调用从不回传 result');
+          expect(silent, isFalse, reason: '禁止静默分支：插件 1.4.1 静默调用从不回传 result');
           if (error != null) throw error;
           return null;
         }
@@ -184,7 +183,7 @@ void main() {
   });
 
   group('iOS 备用图标资源', () {
-    const alternateIds = ['artistic', 'glass', 'neon'];
+    const alternateIds = ['artistic', 'mint', 'glass'];
 
     test('每个 appiconset 含完整尺寸 + 1024 营销图标（iOS 26 图标堆栈）', () {
       for (final id in alternateIds) {
@@ -216,9 +215,10 @@ void main() {
           expect(file.existsSync(), isTrue, reason: file.path);
           final decoded = img.decodePng(file.readAsBytesSync());
           expect(decoded, isNotNull, reason: file.path);
-          final side = (double.parse((item['size'] as String).split('x').first) *
-                  int.parse((item['scale'] as String)[0]))
-              .round();
+          final side =
+              (double.parse((item['size'] as String).split('x').first) *
+                      int.parse((item['scale'] as String)[0]))
+                  .round();
           expect(decoded!.width, side, reason: file.path);
           expect(decoded.height, side, reason: file.path);
         }

@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.2.53+479
+version: 1.2.54+480
 
 environment:
   sdk: ^3.6.0
@@ -99,7 +99,7 @@ dev_dependencies:
   build_runner: ^2.4.14
   riverpod_generator: ^2.6.3
   mockito: ^5.4.5
-  # 生成各平台静态应用图标（default=neon）
+  # 生成各平台静态应用图标（默认图标 default）
   flutter_launcher_icons: ^0.14.1
 
 flutter:
