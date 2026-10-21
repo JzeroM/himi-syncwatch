@@ -1186,6 +1186,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _hasEpisodeList = false;
   bool _isPlayerReady = false;
 
+  /// 页面已进入销毁流程：异步加载续体据此停止一切原生调用。
+  bool _disposed = false;
+
+  /// 延迟释放只允许启动一次（防止引擎切换/异常路径重复释放）。
+  bool _playerDisposeStarted = false;
+
   /// 是否已成功起播过（首次获知非零时长置位）：`duration==0` 强制显
   /// 控件的加载兜底只在首次起播前生效，避免播放中重载的 duration 抖动
   /// 把控件反复强留屏上（见 [isLoadingMaskVisible]）。
@@ -2277,11 +2283,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } catch (_) {
         source = 'timeout';
       }
-      if (!mounted) return;
+      if (!mounted || _disposed) return;
       size ??= _readMediaInfoVideoSize();
       if (size != null) source = 'mediaInfo(兜底)';
     }
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
     if (size == null) {
       _scheduleVideoSizeRetry();
       LogService().log('Diag',
@@ -2825,7 +2831,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 返回 -1 表示 fvp 内部 _videoSize 未就绪（媒体未 loaded 或
   /// 视频流为空），此时纹理恒为 null，UI 永远转圈。
   Future<void> _ensureTexture() async {
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
     final mode = _effectiveVideoOutput();
 
     if (_usesSurfaceView) {
@@ -2836,6 +2842,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               .timeout(const Duration(seconds: 3));
         } catch (_) {}
         _textureOutputApplied = null;
+        if (!mounted || _disposed) return;
         LogService().log('Player', 'SurfaceView 通道：已释放纹理');
       }
       return;
@@ -2853,7 +2860,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } catch (_) {}
       _textureOutputApplied = null;
     }
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
     // 播中尺寸变化不重建纹理（_textureOutputApplied 按档位去重），
     // 规避「释放+重建」黑屏族问题（958fcb7/6f2fb5b 教训）。
     // 渲染尺寸夹紧仅在 SurfaceView 档生效（fvp#379 size clamp），
@@ -2866,11 +2873,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             tunnel: tunnel,
           )
           .timeout(const Duration(seconds: 5));
+      if (!mounted || _disposed) return;
       // 返回 -1 说明 _videoSize 未 resolve：短暂等待 loaded 事件后重试一次
-      if (texId < 0 && mounted) {
+      if (texId < 0) {
         LogService().log('Player', 'updateTexture 返回 $texId，200ms 后重试');
         await Future.delayed(const Duration(milliseconds: 200));
-        if (!mounted) return;
+        if (!mounted || _disposed) return;
         if (_player.textureId.value == null) {
           await _player
               .updateTexture(
@@ -2879,6 +2887,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 tunnel: tunnel,
               )
               .timeout(const Duration(seconds: 5));
+          if (!mounted || _disposed) return;
         }
       }
       if (_player.textureId.value != null) _textureOutputApplied = mode;
@@ -3029,15 +3038,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 停后再卸载旧视频视图（避免旧 widget 访问已释放播放器）
     setState(() => _switchingEngine = true);
     await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
     await _disposeOldEngine();
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
     // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。
     _currentEngine = engine;
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
     _switchingEngine = false;
     await _initPlayerProperties();
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
     // _initPlayerProperties 不覆盖的三项（initState 单独写、重建后会丢）：
     // 字幕属性 / 音频后端 / 音频滤镜策略（_disposeOldEngine 已复位去重态，
     // 此处重写保证新引擎与起播一致）。
@@ -3175,6 +3184,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 换源前渐出：同 player 硬切 media 时新旧音频波形不连续会爆音
       // （Windows XAudio2 已复现），渐出→换源→起播渐入消除爆音。
       await _fadeOutForSwitch();
+      if (!mounted || _disposed) return false;
 
       // 输出色彩空间：防 player 状态重置丢失 initState 的设置。
       // DV 内容按平台策略（Android HDR10/SDR、Windows 恒 HDR、iOS 不设置）；
@@ -3183,10 +3193,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _isSwitchingMedia = true;
       _player.media = streamUrl;
       await _player.prepare();
+      // prepare 期间可能已 dispose：必须先复查再触碰 player。
+      if (!mounted || _disposed) return false;
       // 媒体重载不携带倍速：恢复用户所选档（fvp 侧为 Dart 状态）
       _player.playbackRate = _speed;
-      // prepare 期间可能已 dispose：后续 texture/状态操作一律中止
-      if (!mounted) return false;
 
       // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
       await _ensureTexture();
@@ -3339,12 +3349,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // prepare 前探测 DV 解码能力
       await _probeDvCapability();
       await _loadBuildIdentity();
-      if (!mounted) return;
+      if (!mounted || _disposed) return;
 
       // 换源前渐出（同 player 硬切 media 的爆音修复），渐出后复查抢占：
       // 被新请求抢占时恢复音量并交给赢家流程接管。
       await _fadeOutForSwitch();
-      if (requestId != _playRequestId || !mounted) {
+      if (requestId != _playRequestId || !mounted || _disposed) {
         final restore = _volGuard.fadeInTarget(_volume / 100);
         _volGuard.endSwitch();
         if (mounted) {
@@ -3356,15 +3366,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 抢占复查（关闭 2850→2891 之间的守卫空洞）：被更新请求抢占则不再触碰
       // media/prepare/纹理，避免落败调用在赢家流程上叠加渲染操作。
-      if (requestId != _playRequestId || !mounted) return;
+      if (requestId != _playRequestId || !mounted || _disposed) return;
 
       _isSwitchingMedia = true;
       _applyOutputColorSpace();
       // _currentPlayUrl/_currentToken 已在入口同步写入。
       _player.media = playUrl;
       await _player.prepare();
+      if (requestId != _playRequestId || !mounted || _disposed) return;
       _player.playbackRate = _speed;
-      if (requestId != _playRequestId || !mounted) return;
 
       // 确保纹理存在（首次创建，后续复用，避免切集黑屏）
       await _ensureTexture();
@@ -6326,9 +6336,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
-    // 先停止播放器，确保音频立即停止
+    _disposed = true;
+    // 捕获当前适配器：延迟释放期间若引擎字段被替换，也不能释放错对象。
+    final player = _player;
+    // 先停止播放器，确保音频立即停止；适配器内部会忽略已销毁后的写入。
     try {
-      _player.state = AdapterPlaybackState.stopped;
+      player.state = AdapterPlaybackState.stopped;
     } catch (_) {}
 
     _positionTimer?.cancel();
@@ -6477,13 +6490,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 同步执行（音频立即停）；fvp dispose 内部 updateTexture(width:-1)
     // 会触发 ReleaseRT，与 platform view 销毁时序的 surfaceDestroyed
     // 并发是「返回播放页闪退回桌面」的主嫌。错开 150ms 让 surface 先
-    // 释放。此段各 timer/sub 已全部 cancel，延迟期内无 _player 访问者。
-    Future.delayed(const Duration(milliseconds: 150), () {
-      try {
-        _player.dispose();
-      } catch (_) {}
-    });
+    // 释放；随后由适配器等待进行中的 prepare/updateTexture 落定再 delete
+    // （加载中返回时 prepare 可能仍在原生线程运行）。
+    unawaited(_disposePlayerAfterDelay(player));
     super.dispose();
+  }
+
+  Future<void> _disposePlayerAfterDelay(PlayerAdapter player) async {
+    if (_playerDisposeStarted) return;
+    _playerDisposeStarted = true;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final disposable = player is AsyncDisposablePlayer
+          ? player as AsyncDisposablePlayer
+          : null;
+      if (disposable != null) {
+        await disposable.disposeAsync().timeout(const Duration(seconds: 5));
+      } else {
+        player.dispose();
+      }
+    } catch (_) {}
   }
 
   bool get _canControlPlayback {

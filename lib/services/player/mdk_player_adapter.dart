@@ -17,6 +17,22 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   final mdk.Player _player;
   bool _disposed = false;
 
+  /// 并发调用 [disposeAsync] 时共享同一个释放 Future，后到者等待前一个完成。
+  Future<void>? _disposeFuture;
+
+  /// 进行中的原生异步操作（prepare / updateTexture 等）。
+  ///
+  /// dispose 必须先等这些操作落定再 delete native player：加载中返回页面
+  /// 时 prepare 仍在原生线程运行，直接释放会造成 use-after-free 闪退。
+  final Set<Future<void>> _pendingNativeOps = <Future<void>>{};
+
+  Future<T> _trackNative<T>(Future<T> op) {
+    final done = op.then<void>((_) {}, onError: (_) {});
+    _pendingNativeOps.add(done);
+    unawaited(done.whenComplete(() => _pendingNativeOps.remove(done)));
+    return op;
+  }
+
   /// seek flags（v1.1.222）：keyFrame（快速关键帧定位）+ inCache（命中
   /// demux 缓存区间免重下，对齐 fvp 默认缓存行为）。仅 keyFrame 时
   /// TV 盒子 surfaceView 关键帧 seek 窗口长，期间原生 position 可能
@@ -59,38 +75,46 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   // ── 播放控制 ──────────────────────────────────────────────
 
   @override
-  AdapterPlaybackState get state => _mapState(_player.state);
+  AdapterPlaybackState get state =>
+      _disposed ? AdapterPlaybackState.stopped : _mapState(_player.state);
 
   @override
   set state(AdapterPlaybackState value) {
+    if (_disposed) return;
     _player.state = _unmapState(value);
   }
 
   @override
   Future<void> seek({required int positionMs}) async {
-    await _player.seek(position: positionMs, flags: seekFlags);
+    if (_disposed) return;
+    await _trackNative(_player.seek(position: positionMs, flags: seekFlags));
   }
 
   // ── 媒体加载 ──────────────────────────────────────────────
 
   @override
   set media(String uri) {
+    if (_disposed) return;
     _player.media = uri;
   }
 
   @override
-  Future<void> prepare({int startMs = 0}) => _player.prepare(position: startMs);
+  Future<void> prepare({int startMs = 0}) {
+    if (_disposed) return Future.value();
+    return _trackNative(_player.prepare(position: startMs));
+  }
 
   // ── 属性 ──────────────────────────────────────────────────
 
   @override
-  int get position => _player.position;
+  int get position => _disposed ? 0 : _player.position;
 
   @override
-  int get duration => _player.mediaInfo.duration;
+  int get duration => _disposed ? 0 : _player.mediaInfo.duration;
 
   @override
   AdapterMediaInfo get mediaInfo {
+    if (_disposed) return AdapterMediaInfo.empty;
     final mi = _player.mediaInfo;
     return AdapterMediaInfo(
       duration: mi.duration,
@@ -121,22 +145,30 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   }
 
   @override
-  double get volume => _player.volume;
+  double get volume => _disposed ? 0 : _player.volume;
 
   @override
-  set volume(double value) => _player.volume = value;
+  set volume(double value) {
+    if (_disposed) return;
+    _player.volume = value;
+  }
 
   @override
-  double get playbackRate => _player.playbackRate;
+  double get playbackRate => _disposed ? 1.0 : _player.playbackRate;
 
   @override
-  set playbackRate(double value) => _player.playbackRate = value;
+  set playbackRate(double value) {
+    if (_disposed) return;
+    _player.playbackRate = value;
+  }
 
   @override
-  AdapterMediaStatus get mediaStatus => mapMediaStatus(_player.mediaStatus);
+  AdapterMediaStatus get mediaStatus => _disposed
+      ? AdapterMediaStatus.invalid
+      : mapMediaStatus(_player.mediaStatus);
 
   @override
-  int buffered() => _player.buffered();
+  int buffered() => _disposed ? 0 : _player.buffered();
 
   @override
   ValueListenable<int?> get textureId => _player.textureId;
@@ -147,11 +179,15 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   // ── 渲染 ──────────────────────────────────────────────────
 
   @override
-  Future<int> updateTexture({int? width, int? height, bool? tunnel}) =>
-      _player.updateTexture(width: width, height: height, tunnel: tunnel);
+  Future<int> updateTexture({int? width, int? height, bool? tunnel}) {
+    if (_disposed) return Future.value(-1);
+    return _trackNative(
+        _player.updateTexture(width: width, height: height, tunnel: tunnel));
+  }
 
   @override
-  Future<Size?> get textureSize => _player.textureSize;
+  Future<Size?> get textureSize =>
+      _disposed ? Future.value() : _trackNative(_player.textureSize);
 
   @override
   void setColorSpace(AdapterColorSpace cs) {
@@ -168,18 +204,24 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   // ── 轨道 ──────────────────────────────────────────────────
 
   @override
-  List<int> get activeAudioTracks => _player.activeAudioTracks;
+  List<int> get activeAudioTracks =>
+      _disposed ? const [] : _player.activeAudioTracks;
 
   @override
-  set activeAudioTracks(List<int> tracks) =>
-      _player.activeAudioTracks = tracks;
+  set activeAudioTracks(List<int> tracks) {
+    if (_disposed) return;
+    _player.activeAudioTracks = tracks;
+  }
 
   @override
-  List<int> get activeSubtitleTracks => _player.activeSubtitleTracks;
+  List<int> get activeSubtitleTracks =>
+      _disposed ? const [] : _player.activeSubtitleTracks;
 
   @override
-  set activeSubtitleTracks(List<int> tracks) =>
-      _player.activeSubtitleTracks = tracks;
+  set activeSubtitleTracks(List<int> tracks) {
+    if (_disposed) return;
+    _player.activeSubtitleTracks = tracks;
+  }
 
   // ── 事件 ──────────────────────────────────────────────────
 
@@ -190,14 +232,14 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   @override
   Stream<({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>
-  get onMediaStatus => _player.onMediaStatus.map((e) => (
+      get onMediaStatus => _player.onMediaStatus.map((e) => (
             oldValue: mapMediaStatus(e.oldValue),
             newValue: mapMediaStatus(e.newValue),
           ));
 
   @override
-  Stream<AdapterMediaEvent> get onEvent => _player.onEvent.map(
-      (e) => AdapterMediaEvent(e.error, e.category, e.detail));
+  Stream<AdapterMediaEvent> get onEvent => _player.onEvent
+      .map((e) => AdapterMediaEvent(e.error, e.category, e.detail));
 
   // ── 属性通道 ──────────────────────────────────────────────
 
@@ -226,19 +268,30 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   }
 
   @override
-  List<String> get videoDecoders => _player.videoDecoders;
+  List<String> get videoDecoders =>
+      _disposed ? const [] : _player.videoDecoders;
 
   @override
-  set videoDecoders(List<String> decoders) => _player.videoDecoders = decoders;
+  set videoDecoders(List<String> decoders) {
+    if (_disposed) return;
+    _player.videoDecoders = decoders;
+  }
 
   @override
-  List<String> get audioDecoders => _player.audioDecoders;
+  List<String> get audioDecoders =>
+      _disposed ? const [] : _player.audioDecoders;
 
   @override
-  set audioDecoders(List<String> decoders) => _player.audioDecoders = decoders;
+  set audioDecoders(List<String> decoders) {
+    if (_disposed) return;
+    _player.audioDecoders = decoders;
+  }
 
   @override
-  set audioBackends(List<String> backends) => _player.audioBackends = backends;
+  set audioBackends(List<String> backends) {
+    if (_disposed) return;
+    _player.audioBackends = backends;
+  }
 
   @override
   void setBufferRange({int min = -1, int max = -1, bool drop = false}) {
@@ -257,7 +310,7 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   Future<Uint8List?> snapshot({int? width, int? height}) {
     if (_disposed) return Future.value();
-    return _player.snapshot(width: width, height: height);
+    return _trackNative(_player.snapshot(width: width, height: height));
   }
 
   // ── 生命周期 ──────────────────────────────────────────────
@@ -274,9 +327,29 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 顺序：先确定性 await 释放 Flutter 纹理（幂等，fvp dispose 内部同
   /// 一步骤提前做掉）→ 触发原生 delete → settle 等待其完成。
   @override
-  Future<void> disposeAsync() async {
-    if (_disposed) return;
+  Future<void> disposeAsync() {
+    final existing = _disposeFuture;
+    if (existing != null) return existing;
+    final future = _disposeImpl();
+    _disposeFuture = future;
+    return future;
+  }
+
+  Future<void> _disposeImpl() async {
+    // 先置销毁位：此后所有 setter 直接忽略，避免 prepare 晚到后继续写
+    // 已释放的原生对象（加载中返回播放页闪退根因之一）。
     _disposed = true;
+    // 主动 stop 让可能卡在网络/解码的 prepare 尽快收尾。
+    try {
+      _player.state = mdk.PlaybackState.stopped;
+    } catch (_) {}
+    // 等进行中的 prepare/updateTexture 落定（有界，防永久卡住返回）。
+    if (_pendingNativeOps.isNotEmpty) {
+      try {
+        await Future.wait(List<Future<void>>.of(_pendingNativeOps))
+            .timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
     try {
       await _player
           .updateTexture(width: -1)
