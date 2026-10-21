@@ -17,6 +17,7 @@ import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/manual_segment_store.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
 import '../../helpers/test_fakes.dart';
 
@@ -223,6 +224,10 @@ Future<(ProviderContainer, _FakePlayerAdapter)> _pumpPlayer(
     container: container,
     child: MaterialApp(
       navigatorKey: navigatorKey,
+      // 与 lib/core/app.dart 一致：生产 TV 方向键由 TvRemoteShell 接管。
+      // 此前测试直接挂 MaterialApp，漏掉自定义方向遍历路径。
+      builder: (context, child) =>
+          TvRemoteShell(child: child ?? const SizedBox.shrink()),
       home: const Scaffold(),
     ),
   ));
@@ -269,7 +274,7 @@ Future<void> _disposePlayer(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('TV：跳过提示上按方向键不会落到不可见热键层', (tester) async {
+  testWidgets('TV：跳过提示上按方向键显式回到可见进度条', (tester) async {
     final (_, player) = await _pumpPlayer(tester);
     await _showSkipPrompt(tester, player);
 
@@ -278,10 +283,58 @@ void main() {
 
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
-      isNot('PlayerHotkey'),
-      reason: '全屏热键层不参与遍历；焦点不能落到不可见节点',
+      'PlayerSeekSlider',
+      reason: '提示上方向键直接落到可见控制条，不能进不可见热键层',
     );
     expect(find.text('跳过片头'), findsOneWidget, reason: '按方向键不误关提示');
+
+    // 提示随后自动消失，焦点仍须留在可见进度条。
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pump();
+    expect(find.text('跳过片头'), findsNothing);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'PlayerSeekSlider',
+      reason: '提示消失不改变已可见的焦点',
+    );
+
+    await _disposePlayer(tester);
+  });
+
+  testWidgets('TV：焦点已到不可见根节点时，提示消失也会恢复焦点', (tester) async {
+    final (_, player) = await _pumpPlayer(tester);
+    await _showSkipPrompt(tester, player);
+
+    // 模拟方向键/焦点历史把焦点送到 skipTraversal 根锚点（不可见）。
+    final controlsRoot = find.byWidgetPredicate(
+        (w) => w is Focus && w.focusNode?.debugLabel == 'PlayerControlsRoot');
+    expect(controlsRoot, findsOneWidget);
+    tester.widget<Focus>(controlsRoot).focusNode!.requestFocus();
+    await tester.pump();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'PlayerControlsRoot',
+    );
+
+    // 不再按左键救回，直接等提示 8 秒自动消失。
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pump();
+
+    expect(find.text('跳过片头'), findsNothing);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'PlayerSeekSlider',
+      reason: '提示消失时须把不可见焦点恢复到可见控件',
+    );
+
+    // 恢复后重置自动隐藏计时，短时间内控制条仍可见。
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('跳过片头'), findsNothing);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'PlayerSeekSlider',
+      reason: '重置 5 秒隐藏计时，焦点不会立刻再次消失',
+    );
 
     await _disposePlayer(tester);
   });

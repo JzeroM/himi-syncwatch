@@ -5343,19 +5343,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 焦点是否落在玩家可见控件上。
+  ///
+  /// skipTraversal 根锚点（PlayerHotkey/控制条根/顶栏根等）虽然可能持有
+  /// 焦点，但屏幕没有对应焦点环；不能把它们当成有效落点。
+  bool _isVisiblePlayerFocus(FocusNode? node) {
+    if (node == null || node.skipTraversal) return false;
+    return PlayerScreen.focusWithin(_controlsRootFocusNode, node) ||
+        PlayerScreen.focusWithin(_topBarRootFocusNode, node) ||
+        PlayerScreen.focusWithin(_selectorPanelRootFocusNode, node) ||
+        PlayerScreen.focusWithin(_segmentMarkScopeNode, node);
+  }
+
+  /// 提示消失/跳过后的焦点兜底：控制条可见时回进度条，隐藏/锁屏时回热键层。
+  void _restoreFocusAfterSkipPrompt() {
+    if (!mounted) return;
+    if (_showControls && !_lockController.locked) {
+      _controlsFocusNode.requestFocus();
+    } else {
+      _hotkeyFocusNode.requestFocus();
+    }
+  }
+
   void _dismissSkipPrompt() {
     _skipPromptTimer?.cancel();
     _skipPromptTimer = null;
     if (!mounted || _skipPromptSegment == null) return;
+    final primary = FocusManager.instance.primaryFocus;
+    // 焦点可能已被方向键/焦点历史送到不可见热键层；此时也不能只判断
+    // primary 是否仍在提示按钮上，否则提示移除后焦点会永久悬空。
+    final needsRestore =
+        primary == _skipPromptFocusNode || !_isVisiblePlayerFocus(primary);
     setState(() => _skipPromptSegment = null);
-    if (FocusManager.instance.primaryFocus == _skipPromptFocusNode) {
-      // 提示期间控制条保持可见：焦点回落到可见控件，不能回到不可见的
-      // 热键层（否则方向键看似失效）。控制条隐藏/锁屏时才回热键层。
-      if (_showControls && !_lockController.locked) {
-        _controlsFocusNode.requestFocus();
-      } else {
-        _hotkeyFocusNode.requestFocus();
-      }
+    // 提示期间控制条保持可见，但计时器可能已临近到点；给用户完整操作窗口。
+    _resetHideTimer();
+    if (needsRestore) {
+      _restoreFocusAfterSkipPrompt();
+      // 重建可能再次改写焦点；下一帧确认仍不是可见控件再补一次。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!_isVisiblePlayerFocus(FocusManager.instance.primaryFocus)) {
+          _restoreFocusAfterSkipPrompt();
+        }
+      });
     }
   }
 
@@ -5673,6 +5703,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return TvFocusable(
       focusNode: _skipPromptFocusNode,
       onTap: _performSkipSegment,
+      // 提示可见时方向键显式转到进度条：默认方向遍历/焦点历史可能把焦点
+      // 送到不可见热键层，提示随后消失就会永久悬空。
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        final key = event.logicalKey;
+        if (key != LogicalKeyboardKey.arrowLeft &&
+            key != LogicalKeyboardKey.arrowRight &&
+            key != LogicalKeyboardKey.arrowUp &&
+            key != LogicalKeyboardKey.arrowDown) {
+          return KeyEventResult.ignored;
+        }
+        _resetHideTimer();
+        _restoreFocusAfterSkipPrompt();
+        return KeyEventResult.handled;
+      },
       radius: 14,
       child: GlassContainer(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
