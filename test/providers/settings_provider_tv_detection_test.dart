@@ -45,13 +45,14 @@ void main() {
     });
   });
 
-  group('TV 默认 SurfaceView + AudioTrack（tvMode 键控，v1.1.75 起 videoOutput、'
-      'v1.1.176 增 audioRenderer）', () {
-    test('TV 设备自动开 tvMode → 同时默认 surfaceView+AudioTrack 并落盘', () async {
+  group('TV 默认硬解 + SurfaceView + AudioTrack（tvMode 键控，v1.2.64 增解码方式）', () {
+    test('TV 设备自动开 tvMode → 同时默认 hw+surfaceView+AudioTrack 并落盘', () async {
       final notifier = FakeSettingsNotifier();
       await notifier.applyTvAutoDetection(isTelevision: true);
 
       expect(notifier.state.tvMode, isTrue);
+      expect(notifier.state.decodeMode, 'hw');
+      expect(notifier.state.decodeModeUserSet, isFalse, reason: '自动默认不标记手动');
       expect(notifier.state.videoOutput, 'surfaceView');
       expect(notifier.state.videoOutputUserSet, isFalse, reason: '自动默认不标记手动');
       expect(notifier.state.audioRenderer, 'AudioTrack');
@@ -66,6 +67,7 @@ void main() {
       await notifier.applyTvAutoDetection(isTelevision: true);
 
       expect(notifier.state.tvMode, isFalse);
+      expect(notifier.state.decodeMode, 'auto');
       expect(notifier.state.videoOutput, 'texture');
       expect(notifier.state.audioRenderer, 'auto');
     });
@@ -77,6 +79,7 @@ void main() {
       await notifier.applyTvAutoDetection(isTelevision: true);
 
       expect(notifier.state.tvMode, isTrue);
+      expect(notifier.state.decodeMode, 'hw');
       expect(notifier.state.videoOutput, 'texture', reason: 'E4 逃生口：手动档位一律优先');
     });
 
@@ -88,6 +91,7 @@ void main() {
 
       expect(notifier.state.tvMode, isTrue);
       expect(notifier.state.audioRenderer, 'auto', reason: '手动档位一律优先');
+      expect(notifier.state.decodeMode, 'hw');
       expect(notifier.state.videoOutput, 'surfaceView');
     });
 
@@ -95,6 +99,7 @@ void main() {
       final notifier = FakeSettingsNotifier(const AppSettings(tvMode: true));
       await notifier.applyTvAutoDetection(isTelevision: false);
 
+      expect(notifier.state.decodeMode, 'hw');
       expect(notifier.state.videoOutput, 'surfaceView');
       expect(notifier.state.audioRenderer, 'AudioTrack');
       expect(notifier.state.tvMode, isTrue);
@@ -105,6 +110,7 @@ void main() {
       await notifier.applyTvAutoDetection(isTelevision: false);
 
       expect(notifier.state.tvMode, isFalse);
+      expect(notifier.state.decodeMode, 'auto');
       expect(notifier.state.videoOutput, 'texture');
       expect(notifier.state.audioRenderer, 'auto');
       expect(notifier.persistCount, 0, reason: '无变更不落盘');
@@ -114,6 +120,7 @@ void main() {
       final notifier = FakeSettingsNotifier(
         const AppSettings(
           tvMode: true,
+          decodeMode: 'hw',
           videoOutput: 'surfaceView',
           audioRenderer: 'AudioTrack',
         ),
@@ -131,6 +138,7 @@ void main() {
       expect(notifier.state.videoOutput, 'texture');
 
       await notifier.applyTvAutoDetection(isTelevision: true);
+      expect(notifier.state.decodeMode, 'hw');
       expect(notifier.state.videoOutput, 'surfaceView');
       expect(notifier.state.audioRenderer, 'AudioTrack');
     });
@@ -139,6 +147,7 @@ void main() {
       final notifier = FakeSettingsNotifier(
         const AppSettings(
           tvMode: true,
+          decodeMode: 'hw',
           videoOutput: 'surfaceView',
           audioRenderer: 'AudioTrack',
         ),
@@ -146,6 +155,7 @@ void main() {
       await notifier.update(tvMode: false);
 
       expect(notifier.state.tvMode, isFalse);
+      expect(notifier.state.decodeMode, 'hw', reason: '关 tvMode 不自动回写 auto');
       expect(notifier.state.videoOutput, 'surfaceView',
           reason: '关 tvMode 不自动回写 texture');
       expect(notifier.state.audioRenderer, 'AudioTrack',
@@ -154,11 +164,13 @@ void main() {
   });
 
   group('手动开启 TV 模式立即应用 TV 默认（update 路径，v1.1.176）', () {
-    test('update(tvMode:true) → 同帧落盘 surfaceView+AudioTrack', () async {
+    test('update(tvMode:true) → 同帧落盘 hw+surfaceView+AudioTrack', () async {
       final notifier = FakeSettingsNotifier();
       await notifier.update(tvMode: true);
 
       expect(notifier.state.tvMode, isTrue);
+      expect(notifier.state.decodeMode, 'hw');
+      expect(notifier.state.decodeModeUserSet, isFalse);
       expect(notifier.state.videoOutput, 'surfaceView');
       expect(notifier.state.audioRenderer, 'AudioTrack');
       expect(notifier.state.videoOutputUserSet, isFalse);
@@ -172,14 +184,14 @@ void main() {
       expect(notifier.state.tvMode, isTrue);
       expect(notifier.state.audioRenderer, 'AAudio');
       expect(notifier.state.audioRendererUserSet, isTrue);
-      expect(notifier.state.videoOutput, 'surfaceView',
-          reason: '视频输出仍走 TV 默认');
+      expect(notifier.state.decodeMode, 'hw');
+      expect(notifier.state.videoOutput, 'surfaceView', reason: '视频输出仍走 TV 默认');
     });
 
     test('再次 update(tvMode:true)（已开启）→ 不重复应用', () async {
       final notifier = FakeSettingsNotifier(
-        const AppSettings(tvMode: true, audioRenderer: 'OpenSL',
-            audioRendererUserSet: true),
+        const AppSettings(
+            tvMode: true, audioRenderer: 'OpenSL', audioRendererUserSet: true),
       );
       final before = notifier.persistCount;
       await notifier.update(tvMode: true);
@@ -188,13 +200,57 @@ void main() {
       expect(notifier.persistCount, before + 1, reason: '仅常规落盘一次');
     });
 
-    test('非 TV 平台 update(tvMode:true) 同样应用（effective 层另有平台钳制）',
-        () async {
+    test('非 TV 平台 update(tvMode:true) 同样应用（effective 层另有平台钳制）', () async {
       final notifier = FakeSettingsNotifier();
       await notifier.update(tvMode: true);
 
       expect(notifier.state.audioRenderer, 'AudioTrack',
           reason: '落盘 TV 默认；非 Android 生效层固定 auto，互不影响');
+    });
+  });
+
+  group('TV 解码默认（v1.2.64）', () {
+    test('手动选过软解 → 自动识别 TV 不覆盖', () async {
+      final notifier = FakeSettingsNotifier(
+        const AppSettings(decodeMode: 'sw', decodeModeUserSet: true),
+      );
+      await notifier.applyTvAutoDetection(isTelevision: true);
+
+      expect(notifier.state.tvMode, isTrue);
+      expect(notifier.state.decodeMode, 'sw');
+      expect(notifier.state.decodeModeUserSet, isTrue);
+    });
+
+    test('同一次 update 手动指定软解 → 手动值优先且标记 userSet', () async {
+      final notifier = FakeSettingsNotifier();
+      await notifier.update(tvMode: true, decodeMode: 'sw');
+
+      expect(notifier.state.tvMode, isTrue);
+      expect(notifier.state.decodeMode, 'sw');
+      expect(notifier.state.decodeModeUserSet, isTrue);
+    });
+
+    test('旧数据 hw/sw 视为手动设置，旧 auto 迁移为硬解', () async {
+      final hw = FakeSettingsNotifier(
+        AppSettings.fromJson(const {'tvMode': true, 'decodeMode': 'hw'}),
+      );
+      await hw.applyTvAutoDetection(isTelevision: true);
+      expect(hw.state.decodeMode, 'hw');
+      expect(hw.state.decodeModeUserSet, isTrue);
+
+      final sw = FakeSettingsNotifier(
+        AppSettings.fromJson(const {'tvMode': true, 'decodeMode': 'sw'}),
+      );
+      await sw.applyTvAutoDetection(isTelevision: true);
+      expect(sw.state.decodeMode, 'sw');
+      expect(sw.state.decodeModeUserSet, isTrue);
+
+      final auto = FakeSettingsNotifier(
+        AppSettings.fromJson(const {'tvMode': true, 'decodeMode': 'auto'}),
+      );
+      await auto.applyTvAutoDetection(isTelevision: true);
+      expect(auto.state.decodeMode, 'hw');
+      expect(auto.state.decodeModeUserSet, isFalse);
     });
   });
 
@@ -213,6 +269,7 @@ void main() {
       final notifier = FakeSettingsNotifier();
       await notifier.update(decodeMode: 'sw');
 
+      expect(notifier.state.decodeModeUserSet, isTrue);
       expect(notifier.state.tvModeUserSet, isFalse);
       expect(notifier.state.tvMode, isFalse);
     });

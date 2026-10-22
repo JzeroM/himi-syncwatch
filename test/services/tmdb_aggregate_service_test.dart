@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
+import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
 
@@ -277,6 +278,82 @@ void main() {
 
     expect(page.items.map((e) => e.tmdb.key), [_movie1.key, _show.key]);
     expect(page.hasMore, isTrue);
+  });
+
+  test('fetchPlatformShowcases 双海报优先服务器实图', () async {
+    final posters = [
+      for (var i = 1; i <= 3; i++)
+        TmdbItem(
+          id: 300 + i,
+          type: TmdbMediaType.movie,
+          title: 'Poster $i',
+          posterPath: '/poster$i.jpg',
+        ),
+    ];
+    final tmdb = _FakeTmdbService()..lists[TmdbMediaType.movie] = posters;
+    final service = _ProviderEmbyService({
+      '301': [_movie('m301', '301')],
+      '302': [_movie('m302', '302')],
+    });
+    final aggregate = TmdbAggregateService(
+      tmdb: tmdb,
+      serviceFactory: (_) => service,
+    );
+
+    final result = await aggregate.fetchPlatformShowcases(
+      [_server('s1')],
+      region: 'US',
+      today: DateTime(2026, 10, 22),
+    );
+
+    expect(result, hasLength(tmdbPlatforms.length));
+    final showcase = result.firstWhere((e) => e.platform.providerId == 8);
+    expect(showcase.posters, hasLength(2));
+    expect(showcase.posters.every((e) => e.hasServerPoster), isTrue);
+    expect(
+      showcase.posters.map((e) => e.availability!.server.id).toSet(),
+      {'s1'},
+    );
+  });
+
+  test('fetchPlatformShowcases 同日固定、跨日轮换且最多两张', () async {
+    final posters = [
+      for (var i = 1; i <= 6; i++)
+        TmdbItem(
+          id: 400 + i,
+          type: TmdbMediaType.movie,
+          title: 'Poster $i',
+          posterPath: '/poster$i.jpg',
+        ),
+    ];
+    final tmdb = _FakeTmdbService()..lists[TmdbMediaType.movie] = posters;
+    final aggregate = TmdbAggregateService(
+      tmdb: tmdb,
+      serviceFactory: (_) => FakeEmbyService(),
+    );
+
+    Future<List<String>> ids(DateTime day) async {
+      final result = await aggregate.fetchPlatformShowcases(
+        const [],
+        region: 'US',
+        today: day,
+      );
+      final showcase = result.firstWhere((e) => e.platform.providerId == 8);
+      expect(showcase.posters.length, lessThanOrEqualTo(2));
+      return [for (final poster in showcase.posters) poster.tmdb.key];
+    }
+
+    final first = await ids(DateTime(2026, 10, 22));
+    final sameDay = await ids(DateTime(2026, 10, 22));
+    expect(first, hasLength(2));
+    expect(sameDay, first, reason: '同一天多次加载结果固定');
+
+    final variants = <String>{first.join(',')};
+    for (var offset = 1; offset <= 7; offset++) {
+      final next = await ids(DateTime(2026, 10, 22 + offset));
+      variants.add(next.join(','));
+    }
+    expect(variants.length, greaterThan(1), reason: '不同日期应轮换海报');
   });
 
   test('fetchSectionPage 单页返回且 hasMore 来自 TMDB', () async {

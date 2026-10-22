@@ -399,7 +399,7 @@ class _Hero extends StatelessWidget {
   }
 }
 
-class _PlatformBar extends StatelessWidget {
+class _PlatformBar extends ConsumerWidget {
   const _PlatformBar({required this.tvMode});
 
   final bool tvMode;
@@ -407,10 +407,12 @@ class _PlatformBar extends StatelessWidget {
   static const double _height = 84;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final cardWidth =
         ((screenWidth - 32) / (tvMode ? 3 : 2)).clamp(150.0, 280.0);
+    final showcases = ref.watch(tmdbPlatformShowcasesProvider).valueOrNull;
+    final imageBase = ref.watch(tmdbImageBaseProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -433,7 +435,8 @@ class _PlatformBar extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 8),
                 child: TmdbPlatformCard(
                   key: ValueKey('tmdbPlatform_${platform.providerId}'),
-                  platform: platform,
+                  showcase: _showcaseFor(platform, showcases),
+                  imageBase: imageBase,
                   width: cardWidth,
                   onTap: () => context.push(
                     '/tmdb/platform/${platform.providerId}',
@@ -445,6 +448,20 @@ class _PlatformBar extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  TmdbPlatformShowcase _showcaseFor(
+    TmdbPlatform platform,
+    List<TmdbPlatformShowcase>? showcases,
+  ) {
+    if (showcases != null) {
+      for (final showcase in showcases) {
+        if (showcase.platform.providerId == platform.providerId) {
+          return showcase;
+        }
+      }
+    }
+    return TmdbPlatformShowcase(platform: platform);
   }
 }
 

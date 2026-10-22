@@ -1,3 +1,5 @@
+import 'package:himi_syncwatch/models/tmdb_item.dart';
+
 /// 固定展示的流媒体平台（TMDB watch provider id）。
 class TmdbPlatform {
   const TmdbPlatform({
@@ -58,4 +60,28 @@ TmdbPlatform? tmdbPlatformById(int providerId) {
 
 String? tmdbPlatformName(int providerId) {
   return tmdbPlatformById(providerId)?.name;
+}
+
+/// 平台卡片展示的海报（服务器实图优先，TMDB 图兜底）。
+class TmdbPlatformPoster {
+  const TmdbPlatformPoster({
+    required this.tmdb,
+    this.availability,
+  });
+
+  final TmdbItem tmdb;
+  final TmdbAvailability? availability;
+
+  bool get hasServerPoster => availability != null;
+}
+
+/// 单个流媒体平台的每日展示数据。
+class TmdbPlatformShowcase {
+  const TmdbPlatformShowcase({
+    required this.platform,
+    this.posters = const [],
+  });
+
+  final TmdbPlatform platform;
+  final List<TmdbPlatformPoster> posters;
 }

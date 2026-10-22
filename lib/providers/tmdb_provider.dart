@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
+import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
@@ -57,6 +58,30 @@ final tmdbHomeProvider = FutureProvider<TmdbHomeData>((ref) async {
   );
 });
 
+/// 首页流媒体平台卡的每日随机海报。
+final tmdbPlatformShowcasesProvider =
+    FutureProvider<List<TmdbPlatformShowcase>>((ref) async {
+  List<TmdbPlatformShowcase> empty() => [
+        for (final platform in tmdbPlatforms)
+          TmdbPlatformShowcase(platform: platform),
+      ];
+  final settings = ref.watch(
+    settingsProvider.select(
+      (s) => (s.hasTmdbCredentials, s.tmdbWatchRegion),
+    ),
+  );
+  if (!settings.$1) return empty();
+  final service = ref.watch(tmdbAggregateServiceProvider);
+  if (service == null) return empty();
+  final servers = ref.watch(embyServerListProvider);
+  final activeId = ref.watch(embyConfigProvider)?.id;
+  return service.fetchPlatformShowcases(
+    servers,
+    region: settings.$2,
+    activeServerId: activeId,
+  );
+});
+
 /// 跨服务器继续观看。
 final tmdbResumeProvider = FutureProvider<TmdbResumeResult>((ref) async {
   final settings =
@@ -77,6 +102,7 @@ final tmdbResumeProvider = FutureProvider<TmdbResumeResult>((ref) async {
 Future<void> refreshTmdbHome(WidgetRef ref) async {
   ref.invalidate(tmdbHomeProvider);
   ref.invalidate(tmdbResumeProvider);
+  ref.invalidate(tmdbPlatformShowcasesProvider);
   for (final future in [
     ref.read(tmdbHomeProvider.future),
     ref.read(tmdbResumeProvider.future),

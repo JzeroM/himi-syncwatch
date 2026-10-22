@@ -48,6 +48,7 @@ void main() {
     test('默认值', () {
       const settings = AppSettings();
       expect(settings.decodeMode, equals('auto'));
+      expect(settings.decodeModeUserSet, isFalse);
       expect(settings.showSyncDebug, isFalse);
       expect(settings.showNetworkSpeed, isTrue, reason: '网速显示默认开');
       expect(settings.stereoDownmix, isFalse);
@@ -295,14 +296,14 @@ void main() {
       expect(settings.deepDiagnostics, isTrue);
     });
 
-    test('MDK 缓冲/段缓存默认值（v1.2.29）', () {
+    test('MDK 缓冲/段缓存默认值（v1.2.64）', () {
       const s = AppSettings();
-      expect(s.mdkBufferMinMs, 1000);
-      expect(s.mdkBufferMaxMs, 4000);
+      expect(s.mdkBufferMinMs, 3000);
+      expect(s.mdkBufferMaxMs, 10000);
       expect(s.mdkDemuxCacheRanges, 8);
       final parsed = AppSettings.fromJson(const {});
-      expect(parsed.mdkBufferMinMs, 1000);
-      expect(parsed.mdkBufferMaxMs, 4000);
+      expect(parsed.mdkBufferMinMs, 3000);
+      expect(parsed.mdkBufferMaxMs, 10000);
       expect(parsed.mdkDemuxCacheRanges, 8);
     });
 
@@ -405,9 +406,37 @@ void main() {
       final json = <String, dynamic>{};
       final settings = AppSettings.fromJson(json);
       expect(settings.decodeMode, equals('auto'));
+      expect(settings.decodeModeUserSet, isFalse);
       expect(settings.showSyncDebug, isFalse);
       expect(settings.stereoDownmix, isFalse);
       expect(settings.audioRenderer, equals('auto'));
+    });
+
+    test('decodeModeUserSet：旧值推断与显式值优先', () {
+      expect(AppSettings.fromJson(const {}).decodeModeUserSet, isFalse);
+      expect(
+        AppSettings.fromJson(const {'decodeMode': 'auto'}).decodeModeUserSet,
+        isFalse,
+      );
+      expect(
+        AppSettings.fromJson(const {'decodeMode': 'hw'}).decodeModeUserSet,
+        isTrue,
+        reason: '旧数据中的非默认解码方式视为用户已设置',
+      );
+      expect(
+        AppSettings.fromJson(const {
+          'decodeMode': 'sw',
+          'decodeModeUserSet': false,
+        }).decodeModeUserSet,
+        isFalse,
+        reason: '显式 false 优先',
+      );
+      const settings = AppSettings(decodeModeUserSet: true);
+      expect(settings.toJson()['decodeModeUserSet'], isTrue);
+      expect(
+        AppSettings.fromJson(settings.toJson()).decodeModeUserSet,
+        isTrue,
+      );
     });
 
     test('旧版落盘默认 AudioTrack 迁移为 auto（用户未手动设置过）', () {

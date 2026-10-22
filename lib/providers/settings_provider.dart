@@ -97,6 +97,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final wasTvMode = state.tvMode;
     state = state.copyWith(
       decodeMode: decodeMode,
+      // 手动改动解码方式即标记「用户已设置」，TV 模式默认硬解不再覆盖
+      decodeModeUserSet: decodeMode != null ? true : null,
       mkHwdec: mkHwdec,
       mkToneMapping: mkToneMapping,
       mkCacheSize: mkCacheSize,
@@ -164,7 +166,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       danmakuFontSize: danmakuFontSize,
       danmakuOpacity: danmakuOpacity,
     );
-    // 手动开启 TV 模式：立即应用 TV 专属默认（AudioTrack/SurfaceView，
+    // 手动开启 TV 模式：立即应用 TV 专属默认（硬解/AudioTrack/SurfaceView，
     // 未手动设置过才改写）；关闭 TV 不回写（单向默认）。
     if (!wasTvMode && state.tvMode) {
       state = _applyTvDefaults(state);
@@ -172,12 +174,16 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await persist();
   }
 
-  /// TV 模式专属默认（v1.1.176）：TV 模式开启时，用户从未手动设置过的
-  /// 音频后端/视频输出落盘为 TV 实测更稳的组合（AudioTrack + SurfaceView）。
-  /// 单向默认：关闭 TV 模式不回写（回改需手动设置）；手动设置一律优先。
+  /// TV 模式专属默认：TV 模式开启时，用户从未手动设置过的解码方式/
+  /// 音频后端/视频输出落盘为 TV 实测更稳的组合（硬解 + AudioTrack +
+  /// SurfaceView）。单向默认：关闭 TV 模式不回写（回改需手动设置）；
+  /// 手动设置一律优先。
   static AppSettings _applyTvDefaults(AppSettings s) {
     if (!s.tvMode) return s;
     var next = s;
+    if (!next.decodeModeUserSet && next.decodeMode != 'hw') {
+      next = next.copyWith(decodeMode: 'hw');
+    }
     if (!next.audioRendererUserSet && next.audioRenderer != 'AudioTrack') {
       next = next.copyWith(audioRenderer: 'AudioTrack');
     }
@@ -189,12 +195,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   /// TV 自动识别（策略 A）+ TV 专属默认（v1.1.75 起 videoOutput、
-  /// v1.1.176 增 audioRenderer，`tvMode` 键控）：
+  /// v1.1.176 增 audioRenderer，v1.2.64 增硬解默认，`tvMode` 键控）：
   /// - 检测为 TV 设备且用户从未手动设置过、当前未开启 → 静默开启 TV 模式；
   /// - TV 模式开启且用户从未手动选过音频后端/视频输出 → 落盘
-  ///   AudioTrack + SurfaceView（RK3528 等盒子 texture 档 3004 全黑，
+  ///   硬解 + AudioTrack + SurfaceView（RK3528 等盒子 texture 档 3004 全黑，
   ///   首播即出画，免黑屏自愈一轮）。走 copyWith+persist 而非 update()，
-  ///   避免误标 [AppSettings.audioRendererUserSet]/[AppSettings.videoOutputUserSet]；
+  ///   避免误标 [AppSettings.decodeModeUserSet]/[AppSettings.audioRendererUserSet]/
+  ///   [AppSettings.videoOutputUserSet]；
   ///   关闭 TV 模式不回写（单向默认，回改需手动设置）。
   ///
   /// 其余情况无任何副作用（手动设置一律优先）。

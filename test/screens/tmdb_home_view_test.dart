@@ -26,6 +26,12 @@ final _server = EmbyServerConfig(
   userId: 'u1',
 );
 
+const _netflix = TmdbPlatform(
+  providerId: 8,
+  name: 'Netflix',
+  logoAsset: 'assets/images/platforms/netflix.png',
+);
+
 TmdbAvailability _entry(int id) => TmdbAvailability(
       tmdb: TmdbItem(
         id: id,
@@ -51,6 +57,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required TmdbHomeData data,
   required AppSettings settings,
+  List<TmdbPlatformShowcase> showcases = const [],
 }) async {
   tester.view.physicalSize = const Size(800, 1200);
   tester.view.devicePixelRatio = 1;
@@ -62,6 +69,7 @@ Future<void> _pump(
           (ref) => FakeSettingsNotifier(settings),
         ),
         tmdbHomeProvider.overrideWith((ref) async => data),
+        tmdbPlatformShowcasesProvider.overrideWith((ref) async => showcases),
       ],
       child: const MaterialApp(
         home: Scaffold(body: TmdbHomeView()),
@@ -126,13 +134,51 @@ void main() {
     final card = tester.widget<TmdbPlatformCard>(
       find.byKey(const ValueKey('tmdbPlatform_8')),
     );
-    expect(card.platform.name, 'Netflix');
-    expect(card.platform.logoAsset, endsWith('netflix.png'));
+    expect(card.showcase.platform.name, 'Netflix');
+    expect(card.showcase.platform.logoAsset, endsWith('netflix.png'));
 
     final platformList = tester
         .widgetList<ListView>(find.byType(ListView))
         .firstWhere((list) => list.childrenDelegate.estimatedChildCount == 7);
     expect(platformList.scrollDirection, Axis.horizontal);
     expect(tmdbPlatforms[5].name, 'Prime Video');
+  });
+
+  testWidgets('平台栏展示两张海报与图片基地址', (tester) async {
+    await _pump(
+      tester,
+      data: _data(1),
+      settings: const AppSettings(homeCarousel: false),
+      showcases: const [
+        TmdbPlatformShowcase(
+          platform: _netflix,
+          posters: [
+            TmdbPlatformPoster(
+              tmdb: TmdbItem(
+                id: 11,
+                type: TmdbMediaType.movie,
+                title: 'Poster 11',
+                posterPath: '/p11.jpg',
+              ),
+            ),
+            TmdbPlatformPoster(
+              tmdb: TmdbItem(
+                id: 12,
+                type: TmdbMediaType.tv,
+                title: 'Poster 12',
+                posterPath: '/p12.jpg',
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    final card = tester.widget<TmdbPlatformCard>(
+      find.byKey(const ValueKey('tmdbPlatform_8')),
+    );
+    expect(card.showcase.posters, hasLength(2));
+    expect(card.imageBase, contains('image.tmdb.org'));
   });
 }

@@ -38,13 +38,13 @@ class AppSettings {
   /// 攒够该时长才恢复 → 越大越不易"一顿一顿"、起播/恢复越慢。
   static const mdkBufferMinMsLower = 100;
   static const mdkBufferMinMsUpper = 8000;
-  static const mdkBufferMinMsDefault = 1000;
+  static const mdkBufferMinMsDefault = 3000;
 
   /// 最大缓冲（setBufferRange max，ms）：缓冲上限，`0` = 无限；越大越扛
   /// 网络抖动（官方称不影响延迟），代价是内存占用。
   static const mdkBufferMaxMsLower = 0;
   static const mdkBufferMaxMsUpper = 60000;
-  static const mdkBufferMaxMsDefault = 4000;
+  static const mdkBufferMaxMsDefault = 10000;
 
   /// 段缓存区间数（demux.buffer.ranges）可选档位，`0` = 关闭。
   static const demuxCacheRangeOptions = <int>[0, 2, 4, 8, 16, 32];
@@ -55,6 +55,9 @@ class AppSettings {
       (maxMs != 0 && maxMs < minMs) ? minMs : maxMs;
 
   final String decodeMode; // 'auto', 'hw', 'sw'
+
+  /// 用户是否手动设置过解码方式（TV 模式默认硬解不覆盖手动选择）。
+  final bool decodeModeUserSet;
   final bool showSyncDebug;
 
   // ── media_kit 引擎专属设置（mpv 属性，通过 NativePlayer.setProperty 生效）──
@@ -68,10 +71,10 @@ class AppSettings {
   final double mkCacheSize;
 
   // ── MDK 引擎专属（网络流缓冲，下次起播生效）──
-  /// setBufferRange 的 min（ms，默认 1000）：网络流抗抖动垫。
+  /// setBufferRange 的 min（ms，默认 3000）：网络流抗抖动垫。
   final int mdkBufferMinMs;
 
-  /// setBufferRange 的 max（ms，默认 4000，0 = 无限）：缓冲上限。
+  /// setBufferRange 的 max（ms，默认 10000，0 = 无限）：缓冲上限。
   final int mdkBufferMaxMs;
 
   /// demux.buffer.ranges（默认 8，0 = 关闭）：demuxer 段缓存区间数。
@@ -314,6 +317,7 @@ class AppSettings {
 
   const AppSettings({
     this.decodeMode = 'auto',
+    this.decodeModeUserSet = false,
     this.mkHwdec = 'auto-safe',
     this.mkToneMapping = 'auto',
     this.mkCacheSize = 150,
@@ -415,6 +419,7 @@ class AppSettings {
 
   AppSettings copyWith({
     String? decodeMode,
+    bool? decodeModeUserSet,
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
@@ -481,6 +486,7 @@ class AppSettings {
   }) {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
+      decodeModeUserSet: decodeModeUserSet ?? this.decodeModeUserSet,
       mkHwdec: mkHwdec ?? this.mkHwdec,
       mkToneMapping: mkToneMapping ?? this.mkToneMapping,
       mkCacheSize: mkCacheSize ?? this.mkCacheSize,
@@ -571,6 +577,7 @@ class AppSettings {
 
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
+        'decodeModeUserSet': decodeModeUserSet,
         'mkHwdec': mkHwdec,
         'mkToneMapping': mkToneMapping,
         'mkCacheSize': mkCacheSize,
@@ -652,6 +659,8 @@ class AppSettings {
     } else {
       mode = 'auto';
     }
+    final decodeModeUserSet =
+        json['decodeModeUserSet'] as bool? ?? (mode != 'auto');
     final bufferMin = _clampInt(
       json['mdkBufferMinMs'],
       mdkBufferMinMsDefault,
@@ -678,6 +687,7 @@ class AppSettings {
     }
     return AppSettings(
       decodeMode: mode,
+      decodeModeUserSet: decodeModeUserSet,
       mkHwdec: const ['auto-safe', 'auto', 'no'].contains(json['mkHwdec'])
           ? json['mkHwdec'] as String
           : 'auto-safe',

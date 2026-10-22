@@ -2036,8 +2036,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // mdk 缓冲/包缓存（网络流抗抖动，v1.2.29 起改由设置控制，下次起播生效）：
     // - buffer（setBufferRange）：min = 队列排空后需再攒够的时长（越大越
     //   不易"一顿一顿"、起播越慢）；max = 缓冲上限（越大越扛网络抖动，
-    //   官方称不影响延迟，代价是内存；0 = 无限）。默认 1000/4000（mdk 原生
-    //   默认；旧版曾硬编码 min=300）。归一 max>=min 见 AppSettings.
+    //   官方称不影响延迟，代价是内存；0 = 无限）。默认 3000/10000（v1.2.64
+    //   起；旧版曾硬编码 min=300）。归一 max>=min 见 AppSettings.
     //   normalizeBufferMax。
     // - demux.buffer.ranges：demuxer 段缓存区间数（默认 8，0 = 关闭），
     //   网络流"只下一次"、加速后退 seek（纯内存 LRU）。依据 fvp #98 /

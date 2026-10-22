@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_platform_card.dart';
@@ -15,6 +15,24 @@ const _platform = TmdbPlatform(
   providerId: 8,
   name: 'Netflix',
   logoAsset: 'assets/images/platforms/netflix.png',
+);
+
+const _poster0 = TmdbPlatformPoster(
+  tmdb: TmdbItem(
+    id: 101,
+    type: TmdbMediaType.movie,
+    title: 'Poster 101',
+    posterPath: '/poster101.jpg',
+  ),
+);
+
+const _poster1 = TmdbPlatformPoster(
+  tmdb: TmdbItem(
+    id: 102,
+    type: TmdbMediaType.tv,
+    title: 'Poster 102',
+    posterPath: '/poster102.jpg',
+  ),
 );
 
 Widget _host(Widget child) {
@@ -29,12 +47,16 @@ Widget _host(Widget child) {
 }
 
 void main() {
-  testWidgets('平台卡只显示居中的本地 Logo', (tester) async {
+  testWidgets('平台卡展示两张错层海报和右侧小 Logo', (tester) async {
     var tapped = false;
     await tester.pumpWidget(
       _host(
         TmdbPlatformCard(
-          platform: _platform,
+          showcase: const TmdbPlatformShowcase(
+            platform: _platform,
+            posters: [_poster0, _poster1],
+          ),
+          imageBase: 'https://image.example',
           onTap: () => tapped = true,
           width: 170,
           height: 84,
@@ -44,30 +66,83 @@ void main() {
     await tester.pump();
 
     expect(find.byType(GlassContainer), findsOneWidget);
-    expect(find.byType(EmbyImage), findsNothing);
-    expect(find.byType(TmdbImage), findsNothing);
+    expect(find.byType(TmdbImage), findsNWidgets(2));
 
-    final card = find.byType(TmdbPlatformCard);
+    final front = find.byKey(const ValueKey('tmdbPlatformPoster_8_0'));
+    final back = find.byKey(const ValueKey('tmdbPlatformPoster_8_1'));
     final logo = find.byKey(const ValueKey('tmdbPlatformLogo_8'));
+    expect(front, findsOneWidget);
+    expect(back, findsOneWidget);
+    expect(logo, findsOneWidget);
+
+    final frontCenter = tester.getCenter(front);
+    final backCenter = tester.getCenter(back);
+    expect(backCenter.dx, greaterThan(frontCenter.dx), reason: '后景海报在右侧');
+    expect(frontCenter.dy, greaterThan(backCenter.dy), reason: '前景海报在下方');
+    expect(tester.getCenter(logo).dx, greaterThan(backCenter.dx));
+
     final image = tester.widget<Image>(logo);
     expect((image.image as AssetImage).assetName, _platform.logoAsset);
     expect(image.fit, BoxFit.contain);
-    expect(tester.getCenter(logo).dx, closeTo(tester.getCenter(card).dx, 0.5));
-    expect(tester.getCenter(logo).dy, closeTo(tester.getCenter(card).dy, 0.5));
+    expect(image.height, 20);
 
-    await tester.tap(card);
+    await tester.tap(find.byType(TmdbPlatformCard));
     expect(tapped, isTrue);
+  });
+
+  testWidgets('只有一张海报时只展示一张', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        TmdbPlatformCard(
+          showcase: const TmdbPlatformShowcase(
+            platform: _platform,
+            posters: [_poster0],
+          ),
+          imageBase: 'https://image.example',
+          onTap: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+        find.byKey(const ValueKey('tmdbPlatformPoster_8_0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tmdbPlatformPoster_8_1')), findsNothing);
+    expect(find.byType(TmdbImage), findsOneWidget);
+  });
+
+  testWidgets('没有海报时展示两张灰色占位', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        TmdbPlatformCard(
+          showcase: const TmdbPlatformShowcase(platform: _platform),
+          imageBase: 'https://image.example',
+          onTap: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+        find.byKey(const ValueKey('tmdbPlatformPoster_8_0')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('tmdbPlatformPoster_8_1')), findsOneWidget);
+    expect(find.byType(TmdbImage), findsNothing);
+    expect(find.byIcon(Icons.movie_outlined), findsNWidgets(2));
   });
 
   testWidgets('本地 Logo 加载失败时回退平台名称', (tester) async {
     await tester.pumpWidget(
       _host(
         TmdbPlatformCard(
-          platform: const TmdbPlatform(
-            providerId: 999,
-            name: '未知平台',
-            logoAsset: 'assets/images/platforms/missing.png',
+          showcase: const TmdbPlatformShowcase(
+            platform: TmdbPlatform(
+              providerId: 999,
+              name: '未知平台',
+              logoAsset: 'assets/images/platforms/missing.png',
+            ),
           ),
+          imageBase: 'https://image.example',
           onTap: () {},
         ),
       ),
