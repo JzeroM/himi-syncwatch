@@ -12,6 +12,10 @@ class TmdbAvailabilityImage extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.cacheWidth,
     this.transparent = false,
+    this.posterSize = 'w500',
+    this.serverMaxHeight,
+    this.showTmdbWhileLoading = false,
+    this.fadeInDuration = const Duration(milliseconds: 250),
   });
 
   final TmdbAvailability entry;
@@ -21,15 +25,27 @@ class TmdbAvailabilityImage extends StatelessWidget {
   final int? cacheWidth;
   final bool transparent;
 
+  /// TMDB 海报尺寸；小卡片传 `w154` 可显著减少下载与解码开销。
+  final String posterSize;
+
+  /// 服务器图片最大高度（写入 Emby URL）；为空时保留原始 URL。
+  final int? serverMaxHeight;
+
+  /// 服务器图加载期间先铺 TMDB 图，避免服务器较慢时整块空白。
+  final bool showTmdbWhileLoading;
+
+  final Duration fadeInDuration;
+
   @override
   Widget build(BuildContext context) {
     final tmdbUrl = backdrop
         ? (entry.tmdb.backdropUrl(imageBase) ?? entry.tmdb.posterUrl(imageBase))
-        : entry.tmdb.posterUrl(imageBase);
+        : entry.tmdb.posterUrl(imageBase, size: posterSize);
     final fallback = TmdbImage(
       url: tmdbUrl,
       fit: fit,
       cacheWidth: cacheWidth,
+      fadeInDuration: fadeInDuration,
       placeholder: transparent ? const SizedBox.shrink() : null,
       errorWidget: transparent ? const SizedBox.shrink() : null,
     );
@@ -39,13 +55,42 @@ class TmdbAvailabilityImage extends StatelessWidget {
             entry.item.posterUrl)
         : entry.item.posterUrl;
     if (serverUrl == null || serverUrl.isEmpty) return fallback;
+
+    final imageUrl = _withMaxHeight(serverUrl, serverMaxHeight);
+    if (showTmdbWhileLoading) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          fallback,
+          EmbyImage(
+            url: imageUrl,
+            fit: fit,
+            cacheWidth: cacheWidth,
+            accessToken: entry.server.accessToken,
+            fadeInDuration: fadeInDuration,
+            placeholder: const SizedBox.shrink(),
+            errorWidget: const SizedBox.shrink(),
+          ),
+        ],
+      );
+    }
     return EmbyImage(
-      url: serverUrl,
+      url: imageUrl,
       fit: fit,
       cacheWidth: cacheWidth,
       accessToken: entry.server.accessToken,
+      fadeInDuration: fadeInDuration,
       placeholder: transparent ? const SizedBox.shrink() : null,
       errorWidget: fallback,
     );
+  }
+
+  String _withMaxHeight(String url, int? maxHeight) {
+    if (maxHeight == null || maxHeight <= 0) return url;
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) return url;
+    final query = Map<String, String>.from(uri.queryParameters);
+    query['maxHeight'] = '$maxHeight';
+    return uri.replace(queryParameters: query).toString();
   }
 }

@@ -67,6 +67,31 @@ void main() {
     expect(image.errorWidget, isA<TmdbImage>());
   });
 
+  testWidgets('服务器海报加载时先展示轻量 TMDB 图', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        TmdbAvailabilityImage(
+          entry: _entry(
+            posterUrl: 'https://s1/Items/local/Images/Primary?maxHeight=400',
+          ),
+          imageBase: 'https://image.example/t/p',
+          posterSize: 'w154',
+          serverMaxHeight: 240,
+          showTmdbWhileLoading: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final fallback = tester.widget<TmdbImage>(find.byType(TmdbImage));
+    expect(fallback.url, 'https://image.example/t/p/w154/tmdb-poster.jpg');
+
+    final image = tester.widget<EmbyImage>(find.byType(EmbyImage));
+    expect(image.url, contains('maxHeight=240'));
+    expect(image.errorWidget, isA<SizedBox>());
+    expect(image.placeholder, isA<SizedBox>());
+  });
+
   testWidgets('服务器海报缺失时直接使用 TMDB 海报', (tester) async {
     await tester.pumpWidget(
       _host(

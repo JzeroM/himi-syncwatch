@@ -325,96 +325,75 @@ class TmdbAggregateService {
     );
   }
 
-  /// 首页平台卡：每天固定一组随机海报，服务器实图优先、TMDB 图兜底。
-  Future<List<TmdbPlatformShowcase>> fetchPlatformShowcases(
-    List<EmbyServerConfig> servers, {
+  /// 单个平台卡的每日海报。
+  ///
+  /// 只请求 TMDB 并立即返回，让卡片先用轻量 TMDB 图渲染；服务器实图
+  /// 由 [resolvePlatformShowcase] 异步补齐，避免 Emby 探测拖慢首屏。
+  Future<TmdbPlatformShowcase> fetchPlatformShowcase(
+    TmdbPlatform platform, {
     required String region,
-    String? activeServerId,
     DateTime? today,
   }) async {
     final day = today ?? DateTime.now();
     final dayKey = day.year * 10000 + day.month * 100 + day.day;
-    final ordered = _targets(servers, activeServerId);
-    final candidates = <int, List<TmdbItem>>{};
-
-    await Future.wait(tmdbPlatforms.map((platform) async {
-      try {
-        final results = await Future.wait(
-          TmdbMediaType.values.map(
-            (type) => tmdb.discoverPlatform(
-              providerId: platform.providerId,
-              type: type,
-              region: region,
-              page: 1,
-              allowCache: true,
-            ),
-          ),
-        );
-        final seen = <String>{};
-        final pool = <TmdbItem>[];
-        for (final result in results) {
-          for (final item in result.items) {
-            if (item.posterPath == null || item.posterPath!.isEmpty) continue;
-            if (seen.add(item.key)) pool.add(item);
-          }
-        }
-        // 先固定顺序再按日期洗牌，避免 TMDB 返回顺序变化导致同日结果漂移。
-        pool.sort((a, b) => a.key.compareTo(b.key));
-        pool.shuffle(Random(dayKey * 1000 + platform.providerId));
-        candidates[platform.providerId] = pool.take(6).toList(growable: false);
-      } catch (_) {
-        candidates[platform.providerId] = const [];
-      }
-    }));
-
-    final allCandidates = <TmdbItem>[];
-    final seen = <String>{};
-    for (final platform in tmdbPlatforms) {
-      for (final item
-          in candidates[platform.providerId] ?? const <TmdbItem>[]) {
-        if (seen.add(item.key)) allCandidates.add(item);
-      }
-    }
-    final resolved = await resolveAvailability(
-      allCandidates,
-      ordered,
-      activeServerId: activeServerId,
-    );
-    final byKey = {
-      for (final entry in resolved.items) entry.tmdb.key: entry,
-    };
-
-    return [
-      for (final platform in tmdbPlatforms)
-        _showcaseFor(
-          platform,
-          candidates[platform.providerId] ?? const [],
-          byKey,
-        ),
-    ];
-  }
-
-  TmdbPlatformShowcase _showcaseFor(
-    TmdbPlatform platform,
-    List<TmdbItem> candidates,
-    Map<String, TmdbAvailability> byKey,
-  ) {
-    final local = <TmdbItem>[];
-    final remote = <TmdbItem>[];
-    for (final item in candidates) {
-      (byKey.containsKey(item.key) ? local : remote).add(item);
-    }
-    final selected = [...local, ...remote].take(2).toList(growable: false);
+    final selected = await _platformPosters(platform, region, dayKey);
     return TmdbPlatformShowcase(
       platform: platform,
       posters: [
-        for (final item in selected)
-          TmdbPlatformPoster(
-            tmdb: item,
-            availability: byKey[item.key],
-          ),
+        for (final item in selected) TmdbPlatformPoster(tmdb: item),
       ],
     );
+  }
+
+  /// 为已选海报补服务器实图；未命中的条目保持 TMDB 图。
+  Future<Map<String, TmdbAvailability>> resolvePlatformShowcase(
+    TmdbPlatformShowcase showcase,
+    List<EmbyServerConfig> servers, {
+    String? activeServerId,
+  }) async {
+    if (showcase.posters.isEmpty) return const {};
+    final resolved = await resolveAvailability(
+      [for (final poster in showcase.posters) poster.tmdb],
+      servers,
+      activeServerId: activeServerId,
+    );
+    return {
+      for (final entry in resolved.items) entry.tmdb.key: entry,
+    };
+  }
+
+  Future<List<TmdbItem>> _platformPosters(
+    TmdbPlatform platform,
+    String region,
+    int dayKey,
+  ) async {
+    try {
+      final results = await Future.wait(
+        TmdbMediaType.values.map(
+          (type) => tmdb.discoverPlatform(
+            providerId: platform.providerId,
+            type: type,
+            region: region,
+            page: 1,
+            allowCache: true,
+          ),
+        ),
+      );
+      final seen = <String>{};
+      final pool = <TmdbItem>[];
+      for (final result in results) {
+        for (final item in result.items) {
+          if (item.posterPath == null || item.posterPath!.isEmpty) continue;
+          if (seen.add(item.key)) pool.add(item);
+        }
+      }
+      // 先固定顺序再按日期洗牌，避免 TMDB 返回顺序变化导致同日结果漂移。
+      pool.sort((a, b) => a.key.compareTo(b.key));
+      pool.shuffle(Random(dayKey * 1000 + platform.providerId));
+      return pool.take(2).toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<TmdbPlatformPage> fetchPlatformPage({

@@ -68,8 +68,18 @@ Future<void> _pump(
         settingsProvider.overrideWith(
           (ref) => FakeSettingsNotifier(settings),
         ),
-        tmdbHomeProvider.overrideWith((ref) async => data),
-        tmdbPlatformShowcasesProvider.overrideWith((ref) async => showcases),
+        tmdbHomeProvider.overrideWith((ref) => Stream.value(data)),
+        tmdbPlatformShowcaseProvider.overrideWith((ref, platform) async {
+          for (final showcase in showcases) {
+            if (showcase.platform.providerId == platform.providerId) {
+              return showcase;
+            }
+          }
+          return TmdbPlatformShowcase(platform: platform);
+        }),
+        tmdbPlatformAvailabilityProvider.overrideWith(
+          (ref, platform) async => const <String, TmdbAvailability>{},
+        ),
       ],
       child: const MaterialApp(
         home: Scaffold(body: TmdbHomeView()),
@@ -80,6 +90,18 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('栏目加载中先显示英雄骨架和平台栏，不显示空态', (tester) async {
+    await _pump(
+      tester,
+      data: const TmdbHomeData(configured: true, sectionsLoading: true),
+      settings: const AppSettings(homeCarousel: false),
+    );
+
+    expect(find.text('TMDB 暂无聚合内容\n请确认服务器媒体带 TMDB id，或换个观看区域'), findsNothing);
+    expect(find.text('流媒体平台'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
   testWidgets('栏目行不显示服务器角标', (tester) async {
     await _pump(
       tester,

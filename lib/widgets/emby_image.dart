@@ -18,6 +18,9 @@ class EmbyImage extends ConsumerWidget {
   /// 显式图片 Token：跨服务器聚合条目必须传来源服务器 Token。
   final String? accessToken;
 
+  /// 图片加载完成后的淡入时长；小尺寸海报可缩短以减少迟滞感。
+  final Duration fadeInDuration;
+
   const EmbyImage({
     super.key,
     required this.url,
@@ -28,6 +31,7 @@ class EmbyImage extends ConsumerWidget {
     this.placeholder,
     this.cacheWidth,
     this.accessToken,
+    this.fadeInDuration = const Duration(milliseconds: 250),
   });
 
   @override
@@ -50,6 +54,7 @@ class EmbyImage extends ConsumerWidget {
       height: height,
       fit: fit,
       memCacheWidth: cacheWidth,
+      fadeInDuration: fadeInDuration,
       placeholder: (_, __) =>
           placeholder ??
           Container(

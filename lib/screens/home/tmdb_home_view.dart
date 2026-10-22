@@ -162,7 +162,11 @@ class _HomeListState extends ConsumerState<_HomeList> {
         heroes.isEmpty ? null : heroes[_heroIndex.clamp(0, heroes.length - 1)];
     final sections =
         widget.data.sections.where((s) => s.items.isNotEmpty).toList();
-    if (sections.isEmpty && widget.resume.isEmpty && !widget.resumeLoading) {
+    final sectionsLoading = widget.data.sectionsLoading;
+    if (sections.isEmpty &&
+        widget.resume.isEmpty &&
+        !widget.resumeLoading &&
+        !sectionsLoading) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
@@ -184,7 +188,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
 
     final carouselEnabled = settings.homeCarousel && !widget.tvMode;
     final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
-    final headerCount = hero != null ? 1 : 0;
+    final headerCount = (hero != null || sectionsLoading) ? 1 : 0;
     final itemCount = headerCount +
         (widget.resume.isNotEmpty ? 1 : 0) +
         1 +
@@ -196,7 +200,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
-          top: hero != null
+          top: headerCount > 0
               ? 0
               : (widget.tvMode ? 12 : GlassConfig.topInsetOf(context)),
           bottom: GlassConfig.bottomReserveOf(context),
@@ -204,8 +208,9 @@ class _HomeListState extends ConsumerState<_HomeList> {
         itemCount: itemCount,
         itemBuilder: (context, index) {
           var i = index;
-          if (hero != null) {
+          if (headerCount > 0) {
             if (i == 0) {
+              if (hero == null) return _HeroSkeleton(height: heroHeight);
               if (carouselEnabled) {
                 return HomeHeroCarousel(
                   items: [
@@ -290,6 +295,38 @@ class _HomeListState extends ConsumerState<_HomeList> {
   void _openDetail(BuildContext context, TmdbAvailability entry) {
     context.push(
       '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',
+    );
+  }
+}
+
+class _HeroSkeleton extends StatelessWidget {
+  const _HeroSkeleton({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomLeft,
+            colors: [Color(0xFF202329), Color(0xFF111317)],
+          ),
+        ),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white24,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -411,8 +448,6 @@ class _PlatformBar extends ConsumerWidget {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final cardWidth =
         ((screenWidth - 32) / (tvMode ? 3 : 2)).clamp(150.0, 280.0);
-    final showcases = ref.watch(tmdbPlatformShowcasesProvider).valueOrNull;
-    final imageBase = ref.watch(tmdbImageBaseProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -430,17 +465,11 @@ class _PlatformBar extends ConsumerWidget {
             arrowAnchorHeight: _height,
             itemCount: tmdbPlatforms.length,
             itemBuilder: (context, index) {
-              final platform = tmdbPlatforms[index];
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: TmdbPlatformCard(
-                  key: ValueKey('tmdbPlatform_${platform.providerId}'),
-                  showcase: _showcaseFor(platform, showcases),
-                  imageBase: imageBase,
+                child: _PlatformCard(
+                  platform: tmdbPlatforms[index],
                   width: cardWidth,
-                  onTap: () => context.push(
-                    '/tmdb/platform/${platform.providerId}',
-                  ),
                 ),
               );
             },
@@ -449,19 +478,43 @@ class _PlatformBar extends ConsumerWidget {
       ],
     );
   }
+}
 
-  TmdbPlatformShowcase _showcaseFor(
-    TmdbPlatform platform,
-    List<TmdbPlatformShowcase>? showcases,
-  ) {
-    if (showcases != null) {
-      for (final showcase in showcases) {
-        if (showcase.platform.providerId == platform.providerId) {
-          return showcase;
-        }
-      }
-    }
-    return TmdbPlatformShowcase(platform: platform);
+class _PlatformCard extends ConsumerWidget {
+  const _PlatformCard({required this.platform, required this.width});
+
+  final TmdbPlatform platform;
+  final double width;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final base =
+        ref.watch(tmdbPlatformShowcaseProvider(platform)).valueOrNull ??
+            TmdbPlatformShowcase(platform: platform);
+    final availability =
+        ref.watch(tmdbPlatformAvailabilityProvider(platform)).valueOrNull;
+    final showcase = availability == null || availability.isEmpty
+        ? base
+        : TmdbPlatformShowcase(
+            platform: platform,
+            posters: [
+              for (final poster in base.posters)
+                TmdbPlatformPoster(
+                  tmdb: poster.tmdb,
+                  availability:
+                      availability[poster.tmdb.key] ?? poster.availability,
+                ),
+            ],
+          );
+    return TmdbPlatformCard(
+      key: ValueKey('tmdbPlatform_${platform.providerId}'),
+      showcase: showcase,
+      imageBase: ref.watch(tmdbImageBaseProvider),
+      width: width,
+      onTap: () => context.push(
+        '/tmdb/platform/${platform.providerId}',
+      ),
+    );
   }
 }
 

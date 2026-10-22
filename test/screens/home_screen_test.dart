@@ -13,6 +13,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
+import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -173,7 +174,8 @@ void main() {
   FakeEmbyAuthService _oneServerAuth() => FakeEmbyAuthService(
         serverIds: ['s1'],
         sessions: {
-          's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+          's1':
+              _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
         },
       );
 
@@ -311,6 +313,22 @@ void main() {
     expect(find.byType(RefreshIndicator), findsOneWidget);
     expect(find.text('重试'), findsNothing);
     expect(find.byIcon(Icons.search), findsOneWidget);
+  });
+
+  testWidgets('TMDB 首页启动时不预加载 Emby 媒体', (tester) async {
+    final emby = FakeEmbyService();
+    await _pumpScreen(
+      tester,
+      auth: _oneServerAuth(),
+      emby: emby,
+      settings: const AppSettings(
+        homeCarousel: false,
+        homeSourceMode: 'tmdb',
+      ),
+    );
+
+    expect(find.byType(TmdbHomeView), findsOneWidget);
+    expect(emby.librariesCalls, 0, reason: 'TMDB 模式不应同时请求 Emby 首页数据');
   });
 
   testWidgets('计数挂起时分类已渲染（首屏不被统计阻塞）', (tester) async {

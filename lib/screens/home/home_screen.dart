@@ -158,9 +158,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       if (activeConfig != null) {
         ref.read(embyConfigProvider.notifier).setConfig(activeConfig);
+        // TMDB 首页不预加载 Emby 媒体，避免启动时两套首页请求互相抢带宽。
+        final tmdbMode = ref.read(settingsProvider).isTmdbHome;
         // 立即结束首屏全屏转圈，媒体内容由 _loadMedia 渐进填充
-        setState(() => _initialized = true);
-        unawaited(_loadMedia());
+        setState(() {
+          _initialized = true;
+          if (tmdbMode) _isLoading = false;
+        });
+        if (!tmdbMode) unawaited(_loadMedia());
       } else {
         setState(() {
           _isLoading = false;
@@ -325,10 +330,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // 服务器在「Emby服务器」标签页切换 / 增删后，重新加载首页媒体
     ref.listen<EmbyServerConfig?>(embyConfigProvider, (prev, next) {
       if (!_initialized || next == null || identical(prev, next)) return;
+      if (ref.read(settingsProvider).isTmdbHome) return;
       // 显式用新配置构建服务：listen 回调先于 embyServiceProvider 失效执行，
       // 此刻 ref.read(embyServiceProvider) 拿到的仍是旧实例（切换竞态根因）
       _loadMedia(ref.read(embyServiceFactoryProvider)(next));
     });
+    // 从 TMDB 首页切回服务器首页时才加载 Emby 媒体（启动时已按模式跳过）。
+    ref.listen<bool>(
+      settingsProvider.select((s) => s.isTmdbHome),
+      (prev, next) {
+        if (prev == true && !next && _initialized) {
+          unawaited(_loadMedia());
+        }
+      },
+    );
     // 续播相关操作（播放停止/标记已观看）后即时刷新「继续观看」栏
     ref.listen<int>(resumeRevisionProvider, (_, __) => _refreshResume());
 

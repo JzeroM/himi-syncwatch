@@ -223,18 +223,26 @@ class TmdbHomeData {
     this.resume = const [],
     this.sections = const [],
     this.failedServerCount = 0,
+    this.sectionsLoading = false,
   });
 
   const TmdbHomeData.unconfigured()
       : configured = false,
         resume = const [],
         sections = const [],
-        failedServerCount = 0;
+        failedServerCount = 0,
+        sectionsLoading = false;
 
   final bool configured;
   final List<TmdbResumeEntry> resume;
   final List<TmdbSectionData> sections;
   final int failedServerCount;
 
-  bool get isEmpty => resume.isEmpty && sections.every((s) => s.items.isEmpty);
+  /// 栏目仍在渐进加载；此时不应把首页判定为「暂无内容」。
+  final bool sectionsLoading;
+
+  bool get isEmpty =>
+      !sectionsLoading &&
+      resume.isEmpty &&
+      sections.every((s) => s.items.isEmpty);
 }

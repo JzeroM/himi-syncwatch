@@ -280,7 +280,48 @@ void main() {
     expect(page.hasMore, isTrue);
   });
 
-  test('fetchPlatformShowcases 双海报优先服务器实图', () async {
+  test('fetchPlatformShowcase 只取两张，同日固定、跨日轮换', () async {
+    final posters = [
+      for (var i = 1; i <= 6; i++)
+        TmdbItem(
+          id: 400 + i,
+          type: TmdbMediaType.movie,
+          title: 'Poster $i',
+          posterPath: '/poster$i.jpg',
+        ),
+    ];
+    final tmdb = _FakeTmdbService()..lists[TmdbMediaType.movie] = posters;
+    final emby = _ProviderEmbyService({});
+    final aggregate = TmdbAggregateService(
+      tmdb: tmdb,
+      serviceFactory: (_) => emby,
+    );
+
+    Future<List<String>> ids(DateTime day) async {
+      final showcase = await aggregate.fetchPlatformShowcase(
+        tmdbPlatforms.first,
+        region: 'US',
+        today: day,
+      );
+      expect(showcase.posters, hasLength(2));
+      expect(showcase.posters.every((e) => !e.hasServerPoster), isTrue);
+      return [for (final poster in showcase.posters) poster.tmdb.key];
+    }
+
+    final first = await ids(DateTime(2026, 10, 22));
+    final sameDay = await ids(DateTime(2026, 10, 22));
+    expect(sameDay, first, reason: '同一天多次加载结果固定');
+    expect(emby.calls, 0, reason: '首屏只取 TMDB，不等待服务器探测');
+
+    final variants = <String>{first.join(',')};
+    for (var offset = 1; offset <= 7; offset++) {
+      final next = await ids(DateTime(2026, 10, 22 + offset));
+      variants.add(next.join(','));
+    }
+    expect(variants.length, greaterThan(1), reason: '不同日期应轮换海报');
+  });
+
+  test('resolvePlatformShowcase 补齐选中海报的服务器实图', () async {
     final posters = [
       for (var i = 1; i <= 3; i++)
         TmdbItem(
@@ -294,66 +335,32 @@ void main() {
     final service = _ProviderEmbyService({
       '301': [_movie('m301', '301')],
       '302': [_movie('m302', '302')],
+      '303': [_movie('m303', '303')],
     });
     final aggregate = TmdbAggregateService(
       tmdb: tmdb,
       serviceFactory: (_) => service,
     );
 
-    final result = await aggregate.fetchPlatformShowcases(
-      [_server('s1')],
+    final showcase = await aggregate.fetchPlatformShowcase(
+      tmdbPlatforms.first,
       region: 'US',
       today: DateTime(2026, 10, 22),
     );
+    final availability = await aggregate.resolvePlatformShowcase(
+      showcase,
+      [_server('s1')],
+    );
 
-    expect(result, hasLength(tmdbPlatforms.length));
-    final showcase = result.firstWhere((e) => e.platform.providerId == 8);
-    expect(showcase.posters, hasLength(2));
-    expect(showcase.posters.every((e) => e.hasServerPoster), isTrue);
+    expect(availability, hasLength(showcase.posters.length));
     expect(
-      showcase.posters.map((e) => e.availability!.server.id).toSet(),
+      availability.values.map((e) => e.server.id).toSet(),
       {'s1'},
     );
-  });
-
-  test('fetchPlatformShowcases 同日固定、跨日轮换且最多两张', () async {
-    final posters = [
-      for (var i = 1; i <= 6; i++)
-        TmdbItem(
-          id: 400 + i,
-          type: TmdbMediaType.movie,
-          title: 'Poster $i',
-          posterPath: '/poster$i.jpg',
-        ),
-    ];
-    final tmdb = _FakeTmdbService()..lists[TmdbMediaType.movie] = posters;
-    final aggregate = TmdbAggregateService(
-      tmdb: tmdb,
-      serviceFactory: (_) => FakeEmbyService(),
+    expect(
+      availability.keys.toSet(),
+      showcase.posters.map((e) => e.tmdb.key).toSet(),
     );
-
-    Future<List<String>> ids(DateTime day) async {
-      final result = await aggregate.fetchPlatformShowcases(
-        const [],
-        region: 'US',
-        today: day,
-      );
-      final showcase = result.firstWhere((e) => e.platform.providerId == 8);
-      expect(showcase.posters.length, lessThanOrEqualTo(2));
-      return [for (final poster in showcase.posters) poster.tmdb.key];
-    }
-
-    final first = await ids(DateTime(2026, 10, 22));
-    final sameDay = await ids(DateTime(2026, 10, 22));
-    expect(first, hasLength(2));
-    expect(sameDay, first, reason: '同一天多次加载结果固定');
-
-    final variants = <String>{first.join(',')};
-    for (var offset = 1; offset <= 7; offset++) {
-      final next = await ids(DateTime(2026, 10, 22 + offset));
-      variants.add(next.join(','));
-    }
-    expect(variants.length, greaterThan(1), reason: '不同日期应轮换海报');
   });
 
   test('fetchSectionPage 单页返回且 hasMore 来自 TMDB', () async {

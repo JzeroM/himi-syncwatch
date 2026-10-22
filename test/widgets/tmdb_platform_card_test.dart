@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/models/emby_server_config.dart';
+import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_platform_card.dart';
 
@@ -129,6 +132,59 @@ void main() {
         find.byKey(const ValueKey('tmdbPlatformPoster_8_1')), findsOneWidget);
     expect(find.byType(TmdbImage), findsNothing);
     expect(find.byIcon(Icons.movie_outlined), findsNWidgets(2));
+  });
+
+  testWidgets('有服务器实图时使用轻量图并在加载中先显示 TMDB', (tester) async {
+    final item = TmdbItem(
+      id: 201,
+      type: TmdbMediaType.movie,
+      title: 'Poster 201',
+      posterPath: '/poster201.jpg',
+    );
+    await tester.pumpWidget(
+      _host(
+        TmdbPlatformCard(
+          showcase: TmdbPlatformShowcase(
+            platform: _platform,
+            posters: [
+              TmdbPlatformPoster(
+                tmdb: item,
+                availability: TmdbAvailability(
+                  tmdb: item,
+                  item: MediaItem(
+                    id: 'local-201',
+                    name: 'Poster 201',
+                    type: 'Movie',
+                    posterUrl:
+                        'https://s1/Items/local-201/Images/Primary?maxHeight=400',
+                  ),
+                  server: EmbyServerConfig(
+                    id: 's1',
+                    serverUrl: 'https://s1',
+                    serverName: '服务器A',
+                    serverId: 'srv-s1',
+                    username: 'user',
+                    accessToken: 'token',
+                    userId: 'u1',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          imageBase: 'https://image.example',
+          onTap: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final image = tester.widget<TmdbAvailabilityImage>(
+      find.byType(TmdbAvailabilityImage),
+    );
+    expect(image.posterSize, 'w154');
+    expect(image.serverMaxHeight, 240);
+    expect(image.showTmdbWhileLoading, isTrue);
+    expect(find.byType(TmdbImage), findsOneWidget);
   });
 
   testWidgets('本地 Logo 加载失败时回退平台名称', (tester) async {

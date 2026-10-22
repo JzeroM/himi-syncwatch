@@ -209,12 +209,17 @@ class _PosterImage extends StatelessWidget {
         entry: availability,
         imageBase: imageBase,
         cacheWidth: 120,
+        posterSize: 'w154',
+        serverMaxHeight: 240,
+        showTmdbWhileLoading: true,
+        fadeInDuration: const Duration(milliseconds: 120),
       );
     }
-    final url = poster.tmdb.posterUrl(imageBase);
+    final url = poster.tmdb.posterUrl(imageBase, size: 'w154');
     return TmdbImage(
       url: url,
       cacheWidth: 120,
+      fadeInDuration: const Duration(milliseconds: 120),
       placeholder: const ColoredBox(color: Color(0xFF23252A)),
       errorWidget: const ColoredBox(color: Color(0xFF2A2D33)),
     );

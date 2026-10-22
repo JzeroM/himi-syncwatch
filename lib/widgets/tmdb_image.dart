@@ -10,6 +10,7 @@ class TmdbImage extends StatelessWidget {
     this.cacheWidth,
     this.placeholder,
     this.errorWidget,
+    this.fadeInDuration = const Duration(milliseconds: 250),
   });
 
   final String? url;
@@ -17,6 +18,7 @@ class TmdbImage extends StatelessWidget {
   final int? cacheWidth;
   final Widget? placeholder;
   final Widget? errorWidget;
+  final Duration fadeInDuration;
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +30,7 @@ class TmdbImage extends StatelessWidget {
       imageUrl: value,
       fit: fit,
       memCacheWidth: cacheWidth,
+      fadeInDuration: fadeInDuration,
       placeholder: (_, __) =>
           placeholder ?? const ColoredBox(color: Color(0xFF23252A)),
       errorWidget: (_, __, ___) => errorWidget ?? const _Fallback(),

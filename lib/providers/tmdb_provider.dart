@@ -42,45 +42,125 @@ final tmdbImageBaseProvider = Provider<String>((ref) {
 });
 
 /// 当前 TMDB 聚合首页栏目数据。
-final tmdbHomeProvider = FutureProvider<TmdbHomeData>((ref) async {
-  final settings =
-      ref.watch(settingsProvider.select((s) => s.hasTmdbCredentials));
-  if (!settings) {
-    return const TmdbHomeData.unconfigured();
+///
+/// 先立即产出首页壳（平台栏/续播区可先显示），再按各栏目实际完成顺序
+/// 逐步追加，避免四个栏目 + 服务器探测全部完成后才出现首屏。
+final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
+  const sectionKeys = [
+    'trending_day',
+    'trending_week',
+    'popular_movies',
+    'popular_tv',
+  ];
+  final configured = ref.watch(
+    settingsProvider.select((s) => s.hasTmdbCredentials),
+  );
+  if (!configured) {
+    yield const TmdbHomeData.unconfigured();
+    return;
   }
   final service = ref.watch(tmdbAggregateServiceProvider);
-  if (service == null) return const TmdbHomeData.unconfigured();
+  if (service == null) {
+    yield const TmdbHomeData.unconfigured();
+    return;
+  }
   final servers = ref.watch(embyServerListProvider);
   final activeId = ref.watch(embyConfigProvider)?.id;
-  return service.fetchSections(
-    servers,
-    activeServerId: activeId,
-  );
+
+  var disposed = false;
+  ref.onDispose(() => disposed = true);
+
+  final failed = <String>{};
+  final loaded = <String, TmdbSectionData>{};
+  TmdbHomeData snapshot({required bool loading}) => TmdbHomeData(
+        configured: true,
+        sections: [
+          for (final key in sectionKeys)
+            if (loaded[key] != null) loaded[key]!,
+        ],
+        failedServerCount: failed.length,
+        sectionsLoading: loading,
+      );
+
+  yield snapshot(loading: true);
+
+  Future<TmdbSectionData?> load(String key) async {
+    try {
+      final result = await service.fetchSection(
+        key,
+        servers,
+        activeServerId: activeId,
+        pages: 1,
+      );
+      failed.addAll(result.failedServerIds);
+      return TmdbSectionData(
+        key: key,
+        title: TmdbAggregateService.sectionTitle(key),
+        items: result.items,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  final pending = <(String, Future<TmdbSectionData?>)>[
+    for (final key in sectionKeys) (key, load(key)),
+  ];
+  while (pending.isNotEmpty) {
+    final done = await Future.any([
+      for (final entry in pending)
+        entry.$2.then((section) => (entry.$1, section)),
+    ]);
+    pending.removeWhere((entry) => entry.$1 == done.$1);
+    if (disposed) return;
+    final section = done.$2;
+    if (section != null) loaded[section.key] = section;
+    yield snapshot(loading: true);
+  }
+
+  if (disposed) return;
+  yield snapshot(loading: false);
 });
 
-/// 首页流媒体平台卡的每日随机海报。
-final tmdbPlatformShowcasesProvider =
-    FutureProvider<List<TmdbPlatformShowcase>>((ref) async {
-  List<TmdbPlatformShowcase> empty() => [
-        for (final platform in tmdbPlatforms)
-          TmdbPlatformShowcase(platform: platform),
-      ];
-  final settings = ref.watch(
-    settingsProvider.select(
-      (s) => (s.hasTmdbCredentials, s.tmdbWatchRegion),
-    ),
-  );
-  if (!settings.$1) return empty();
-  final service = ref.watch(tmdbAggregateServiceProvider);
-  if (service == null) return empty();
-  final servers = ref.watch(embyServerListProvider);
-  final activeId = ref.watch(embyConfigProvider)?.id;
-  return service.fetchPlatformShowcases(
-    servers,
-    region: settings.$2,
-    activeServerId: activeId,
-  );
-});
+/// 单个平台卡的每日海报（先只取 TMDB 图，尽快显示）。
+final tmdbPlatformShowcaseProvider =
+    FutureProvider.family<TmdbPlatformShowcase, TmdbPlatform>(
+  (ref, platform) async {
+    final settings = ref.watch(
+      settingsProvider.select(
+        (s) => (s.hasTmdbCredentials, s.tmdbWatchRegion),
+      ),
+    );
+    if (!settings.$1) return TmdbPlatformShowcase(platform: platform);
+    final service = ref.watch(tmdbAggregateServiceProvider);
+    if (service == null) return TmdbPlatformShowcase(platform: platform);
+    return service.fetchPlatformShowcase(
+      platform,
+      region: settings.$2,
+    );
+  },
+);
+
+/// 平台卡服务器实图补齐；不阻塞 TMDB 海报首帧。
+final tmdbPlatformAvailabilityProvider =
+    FutureProvider.family<Map<String, TmdbAvailability>, TmdbPlatform>(
+  (ref, platform) async {
+    final configured =
+        ref.watch(settingsProvider.select((s) => s.hasTmdbCredentials));
+    if (!configured) return const {};
+    final service = ref.watch(tmdbAggregateServiceProvider);
+    if (service == null) return const {};
+    final servers = ref.watch(embyServerListProvider);
+    final activeId = ref.watch(embyConfigProvider)?.id;
+    final showcase =
+        await ref.watch(tmdbPlatformShowcaseProvider(platform).future);
+    return service.resolvePlatformShowcase(
+      showcase,
+      servers,
+      activeServerId: activeId,
+    );
+  },
+);
 
 /// 跨服务器继续观看。
 final tmdbResumeProvider = FutureProvider<TmdbResumeResult>((ref) async {
@@ -102,7 +182,8 @@ final tmdbResumeProvider = FutureProvider<TmdbResumeResult>((ref) async {
 Future<void> refreshTmdbHome(WidgetRef ref) async {
   ref.invalidate(tmdbHomeProvider);
   ref.invalidate(tmdbResumeProvider);
-  ref.invalidate(tmdbPlatformShowcasesProvider);
+  ref.invalidate(tmdbPlatformShowcaseProvider);
+  ref.invalidate(tmdbPlatformAvailabilityProvider);
   for (final future in [
     ref.read(tmdbHomeProvider.future),
     ref.read(tmdbResumeProvider.future),
