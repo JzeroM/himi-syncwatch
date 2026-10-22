@@ -33,7 +33,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
               .update(glassUi: !settings.glassUi),
           child: SwitchListTile(
             title: const Text('液态玻璃'),
-            subtitle: const Text('毛玻璃模糊与高光效果，低端设备可关闭以提升流畅度'),
+            subtitle: const Text('液态折射与动态高光；关闭后顶栏保留轻量磨砂，其余面板降级为纯色以提升流畅度'),
             value: settings.glassUi,
             onChanged: (v) =>
                 ref.read(settingsProvider.notifier).update(glassUi: v),

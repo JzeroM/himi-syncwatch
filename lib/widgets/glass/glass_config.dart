@@ -42,8 +42,9 @@ class GlassConfig {
       ? barTintSoftIos
       : barTintSoft;
 
-  /// 关闭玻璃后的半透明着色底（约 90% 透明，仅 10% 深色膜，
-  /// 无模糊/折射；配合 rimColor 白描边定界）。
+  /// 面板（GlassContainer）关闭玻璃后的半透明着色底（约 90% 透明，
+  /// 仅 10% 深色膜，无模糊/折射；配合 rimColor 白描边定界）。
+  /// 顶栏 GlassBackdrop 例外：关闭后仍保留普通磨砂模糊。
   static const Color fallbackColor = Color(0x1A1A1D23);
 
   /// 弹层（操作面板/底部 sheet）着色：94% 不透明深色膜——弹层需压住

@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/screens/category/category_screen.dart'
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/favorite_episode_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_filter_panel.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
@@ -302,6 +303,7 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
         elevation: 0,
         leading: const TvBackButton(),
         title: Text(widget.title),
+        flexibleSpace: const GlassBackdrop(),
         actions: [
           TvAppBarIconButton(
             key: const Key('favoritesFilterButton'),

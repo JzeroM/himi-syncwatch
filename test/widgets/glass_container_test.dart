@@ -176,7 +176,7 @@ void main() {
       );
     });
 
-    testWidgets('关闭玻璃时降级为约 90% 透明着色条', (tester) async {
+    testWidgets('关闭玻璃时保留普通磨砂模糊与渐变高光边', (tester) async {
       await tester.pumpWidget(
         _wrap(
           const GlassBackdrop(),
@@ -184,7 +184,7 @@ void main() {
         ),
       );
       expect(find.byType(lg.GlassContainer), findsNothing);
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(find.byType(BackdropFilter), findsOneWidget);
 
       final decoration = tester.widget<DecoratedBox>(
         find.descendant(
@@ -193,9 +193,13 @@ void main() {
         ),
       );
       final box = decoration.decoration as BoxDecoration;
-      expect(box.color, GlassConfig.fallbackColor);
-      expect(box.color!.a, moreOrLessEquals(0.10, epsilon: 0.01),
-          reason: '顶栏关闭玻璃后同样约 90% 透明，不要黑底');
+      expect(box.gradient, isA<LinearGradient>());
+      expect(
+        (box.gradient! as LinearGradient).colors,
+        [GlassConfig.barTintOf(), GlassConfig.barTintSoftOf()],
+      );
+      expect(box.border?.bottom.color, GlassConfig.rimColor);
+      expect(box.border?.bottom.width, 1);
     });
   });
 

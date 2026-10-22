@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/favorite_episode_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 
@@ -44,6 +45,7 @@ class FavoritesScreen extends ConsumerWidget {
               elevation: 0,
               automaticallyImplyLeading: false,
               title: const Text('收藏'),
+              flexibleSpace: const GlassBackdrop(),
             ),
       body: AnimatedContainer(
         key: const Key('favoritesBackground'),

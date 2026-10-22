@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -10,6 +11,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/category/category_screen.dart'
     show SortOption;
 import 'package:himi_syncwatch/screens/favorites/favorites_all_screen.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -17,10 +19,11 @@ Future<void> _pumpScreen(
   WidgetTester tester, {
   required FakeEmbyService emby,
   String type = 'movie',
+  AppSettings settings = const AppSettings(),
 }) async {
   final container = ProviderContainer(
     overrides: [
-      settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
+      settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
       embyServiceProvider.overrideWith((ref) => emby),
     ],
   );
@@ -38,6 +41,23 @@ Future<void> _pumpScreen(
 }
 
 void main() {
+  testWidgets('顶栏使用玻璃遮挡板，关闭液态玻璃后仍保留磨砂模糊', (tester) async {
+    await _pumpScreen(
+      tester,
+      emby: FakeEmbyService(favoriteItems: const []),
+      settings: const AppSettings(glassUi: false),
+    );
+
+    expect(find.byType(GlassBackdrop), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
+    );
+  });
+
   final movieItems = [
     MediaItem(id: 'm1', name: '电影一', type: 'Movie', posterUrl: ''),
     MediaItem(id: 'm2', name: '电影二', type: 'Movie', posterUrl: ''),

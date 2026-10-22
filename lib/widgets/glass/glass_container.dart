@@ -100,6 +100,9 @@ class GlassContainer extends ConsumerWidget {
 }
 
 /// 页面顶栏背景玻璃条，配合 `extendBodyBehindAppBar` 与透明 AppBar 使用。
+///
+/// 开启液态玻璃时走包内真折射管线；关闭后仍保留普通磨砂模糊
+/// （[BackdropFilter] + 饱和度增强），与其他面板关闭后的纯色降级不同。
 class GlassBackdrop extends ConsumerWidget {
   const GlassBackdrop({super.key});
 
@@ -107,17 +110,7 @@ class GlassBackdrop extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
 
-    if (!glassEnabled) {
-      return DecoratedBox(
-        decoration: const BoxDecoration(color: GlassConfig.fallbackColor),
-        child: SizedBox.expand(),
-      );
-    }
-
-    return ClipRect(
-      child: lg.GlassContainer(
-        shape: const lg.LiquidRoundedSuperellipse(borderRadius: 0),
-        child: DecoratedBox(
+    Widget surface() => DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
@@ -129,7 +122,21 @@ class GlassBackdrop extends ConsumerWidget {
             ),
           ),
           child: const SizedBox.expand(),
+        );
+
+    if (!glassEnabled) {
+      return ClipRect(
+        child: BackdropFilter(
+          filter: GlassConfig.filter(),
+          child: surface(),
         ),
+      );
+    }
+
+    return ClipRect(
+      child: lg.GlassContainer(
+        shape: const lg.LiquidRoundedSuperellipse(borderRadius: 0),
+        child: surface(),
       ),
     );
   }

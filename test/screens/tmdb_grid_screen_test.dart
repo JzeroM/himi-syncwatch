@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/screens/tmdb/tmdb_grid_screen.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -114,6 +115,36 @@ List<TmdbAvailability> _entries(int count) => [
     ];
 
 void main() {
+  testWidgets('顶栏使用玻璃遮挡板，关闭液态玻璃后仍保留磨砂模糊', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(
+            (ref) => FakeSettingsNotifier(
+              const AppSettings(glassUi: false),
+            ),
+          ),
+          tmdbAggregateServiceProvider.overrideWithValue(
+            _FakeAggregate(const []),
+          ),
+        ],
+        child: const MaterialApp(
+          home: TmdbGridScreen(sectionKey: 'trending_day'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GlassBackdrop), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('TMDB 网格跟随分类页每行海报数，并保留服务器角标', (tester) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1;

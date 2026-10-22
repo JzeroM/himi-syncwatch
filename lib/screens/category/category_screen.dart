@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/utils/poster_grid.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_filter_panel.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
@@ -307,6 +308,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         elevation: 0,
         leading: const TvBackButton(),
         title: Text(widget.libraryName ?? '分类'),
+        flexibleSpace: const GlassBackdrop(),
         actions: [
           TvAppBarIconButton(
             key: const Key('categoryFilterButton'),

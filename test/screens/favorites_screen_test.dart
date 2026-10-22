@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/favorites_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/favorites/favorites_screen.dart';
 import 'package:himi_syncwatch/widgets/favorite_episode_card.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 
 import '../helpers/test_fakes.dart';
@@ -26,6 +27,23 @@ Future<void> _pump(WidgetTester tester, FavoriteGroups groups,
 }
 
 void main() {
+  testWidgets('顶栏使用玻璃遮挡板，关闭液态玻璃后仍保留磨砂模糊', (tester) async {
+    await _pump(
+      tester,
+      const FavoriteGroups(),
+      settings: const AppSettings(glassUi: false),
+    );
+
+    expect(find.byType(GlassBackdrop), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('三分区：电影 / 电视剧 / 集，各自「查看所有」入口', (tester) async {
     await _pump(
       tester,

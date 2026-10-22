@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/category/category_screen.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -43,6 +44,22 @@ Future<void> _pumpScreen(
 }
 
 void main() {
+  testWidgets('顶栏使用玻璃遮挡板，关闭液态玻璃后仍保留磨砂模糊', (tester) async {
+    await _pumpScreen(
+      tester,
+      settings: const AppSettings(glassUi: false),
+    );
+
+    expect(find.byType(GlassBackdrop), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('最近添加排序：SortBy=DateLastContentAdded 下传服务端', (tester) async {
     final emby = FakeEmbyService(items: [
       MediaItem(id: 'm1', name: '剧', type: 'Series', posterUrl: ''),

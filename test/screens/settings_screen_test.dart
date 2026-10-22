@@ -206,7 +206,7 @@ void main() {
 
     expect(find.text('液态玻璃'), findsOneWidget);
     expect(
-      find.text('毛玻璃模糊与高光效果，低端设备可关闭以提升流畅度'),
+      find.text('液态折射与动态高光；关闭后顶栏保留轻量磨砂，其余面板降级为纯色以提升流畅度'),
       findsOneWidget,
     );
     expect(container.read(settingsProvider).glassUi, isTrue);

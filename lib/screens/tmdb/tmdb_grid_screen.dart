@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/utils/poster_grid.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
@@ -240,6 +241,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
         elevation: 0,
         leading: const TvBackButton(),
         title: _buildTitle(),
+        flexibleSpace: const GlassBackdrop(),
       ),
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
