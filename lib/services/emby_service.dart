@@ -600,7 +600,7 @@ class EmbyService {
           if (officialRatings != null && officialRatings.isNotEmpty)
             'OfficialRatings': officialRatings,
           'Fields':
-              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate',
+              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded',
           'ImageTypeLimit': 1,
           'SortBy': sortBy ?? 'SortName',
           'SortOrder': sortOrder ?? 'Ascending',
@@ -822,7 +822,7 @@ class EmbyService {
           'MediaTypes': 'Video',
           'Limit': limit,
           'Fields':
-              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate',
+              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded',
           'ImageTypeLimit': 1,
         },
       );
@@ -834,6 +834,70 @@ class EmbyService {
       if (e.response?.statusCode == 401) rethrow;
       throw _embyError(e);
     }
+  }
+
+  /// 按 TMDB id 精确查询当前服务器拥有的条目。
+  ///
+  /// 使用 Emby 的 `AnyProviderIdEquals=tmdb.<id>` 服务端过滤；多个 id 以
+  /// 逗号分隔。仅返回 [includeItemTypes]（Movie 或 Series）类型，避免同 id
+  /// 的电影/剧集在 TMDB 与 Emby 之间串型。
+  ///
+  /// 若服务器的 `/Items` 不支持该参数（400/404），回退为扫描条目并读取
+  /// `ProviderIds` 精确匹配；其它网络错误抛 [EmbyException]，由聚合层按
+  /// 单服务器失败处理。
+  Future<List<MediaItem>> getItemsByProviderIds({
+    required List<String> tmdbIds,
+    required String includeItemTypes,
+  }) async {
+    final ids = tmdbIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return const [];
+    const fields =
+        'ProviderIds,UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateCreated,DateLastContentAdded';
+    try {
+      final response = await _dio.get(
+        '/Items',
+        queryParameters: {
+          if (_userId != null) 'UserId': _userId,
+          'Recursive': true,
+          'IncludeItemTypes': includeItemTypes,
+          'AnyProviderIdEquals': ids.map((e) => 'tmdb.$e').join(','),
+          'Fields': fields,
+          'ImageTypeLimit': 1,
+          'Limit': 500,
+        },
+      );
+      final items = response.data['Items'] as List<dynamic>? ?? [];
+      final wanted = ids.toSet();
+      return items
+          .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
+          .where((item) => wanted.contains(item.tmdbId))
+          .toList();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) rethrow;
+      final code = e.response?.statusCode;
+      if (code == 400 || code == 404) {
+        return _scanByProviderIds(ids, includeItemTypes, fields);
+      }
+      throw _embyError(e);
+    }
+  }
+
+  Future<List<MediaItem>> _scanByProviderIds(
+    List<String> ids,
+    String includeItemTypes,
+    String fields,
+  ) async {
+    final items = await getItems(
+      includeItemTypes: includeItemTypes,
+      fields: fields,
+      limit: 10000,
+    );
+    final wanted = ids.toSet();
+    return items.where((item) => wanted.contains(item.tmdbId)).toList();
   }
 
   /// 取官方 `PlaySessionId`（`POST /Items/{id}/PlaybackInfo`）。Emby 需要用它

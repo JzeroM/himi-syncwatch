@@ -17,8 +17,10 @@ import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/tmdb_settings_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/screens/tmdb/tmdb_grid_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
@@ -245,6 +247,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('cacheSettingsPage')), findsOneWidget);
+  });
+
+  testWidgets('设置子路由：/settings/general/tmdb 进 TMDB 设置页', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/settings/general/tmdb');
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TmdbSettingsScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('tmdbSettingsPage')), findsOneWidget);
+  });
+
+  testWidgets('TMDB 栏目/平台网格路由可解析并注入参数', (tester) async {
+    final router = await _pumpApp(tester);
+
+    router.go('/tmdb/section/trending_day');
+    await tester.pumpAndSettle();
+    var grid = tester.widget<TmdbGridScreen>(find.byType(TmdbGridScreen));
+    expect(grid.sectionKey, 'trending_day');
+
+    router.go('/tmdb/platform/8');
+    await tester.pumpAndSettle();
+    grid = tester.widget<TmdbGridScreen>(find.byType(TmdbGridScreen));
+    expect(grid.providerId, 8);
   });
 
   testWidgets('设置子路由：/settings/experimental 进实验性子页', (tester) async {
@@ -488,6 +514,15 @@ void main() {
     final detail = tester.widget<DetailScreen>(find.byType(DetailScreen));
     expect(detail.itemId, '42');
     expect(detail.serverId, 'srv-b');
+    expect(detail.aggregate, isFalse);
+    router.pop();
+    await tester.pumpAndSettle();
+
+    router.push('/detail/42?server=srv-b&aggregate=true');
+    await tester.pumpAndSettle();
+    final aggregateDetail =
+        tester.widget<DetailScreen>(find.byType(DetailScreen));
+    expect(aggregateDetail.aggregate, isTrue);
     router.pop();
     await tester.pumpAndSettle();
 

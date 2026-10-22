@@ -18,8 +18,9 @@ import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 
 /// 「查看所有」页：展示某分类（电影/电视剧/集）的全部收藏，网格铺开。
 /// 顶层路由 `/favorites/all?type=...&title=...`。
-/// 筛选与排序作用于全部收藏（跨库，跟随路由 [type] 限定电影/剧集/单集），
-/// 恒带 `IsFavorite` 服务端过滤；排序复用分类页 [SortOption]。
+///
+/// 服务器模式：走当前服务器 Emby 查询（服务端筛选/排序）。
+/// TMDB 聚合模式：读取全部服务器收藏，按 TMDB id 去重后在本地筛选/排序。
 class FavoritesAllScreen extends ConsumerStatefulWidget {
   const FavoritesAllScreen({
     super.key,
@@ -36,15 +37,11 @@ class FavoritesAllScreen extends ConsumerStatefulWidget {
 }
 
 class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
-  /// 默认排序与服务端原行为一致（SortName 升序）。
   SortOption _sortOption = SortOption.nameAsc;
   CategoryFilter _mediaFilter = CategoryFilter.empty;
   MediaFilterOptions? _filterOptions;
 
-  /// 在途的可选项请求（预取与打开面板共享，去重避免重复网络往返）。
   Future<MediaFilterOptions>? _filterOptionsFuture;
-
-  /// 筛选面板打开中（防重入：连点只会弹出一个面板）。
   bool _filterOpening = false;
 
   List<MediaItem> _items = [];
@@ -53,7 +50,8 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
 
   bool get isEpisode => widget.type == 'episode';
 
-  /// 路由 type → Emby IncludeItemTypes；未知 type 不加载（与旧版空列表一致）。
+  bool get _aggregateMode => ref.read(settingsProvider).isTmdbHome;
+
   String? get _embyType => switch (widget.type) {
         'movie' => 'Movie',
         'series' => 'Series',
@@ -64,16 +62,10 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
   @override
   void initState() {
     super.initState();
-    // 进页即后台预取筛选可选项（v1.1.235）：让首次打开筛选面板连选项都瞬时。
-    // 未知 type（_embyType == null）不加载，跳过预取。
-    if (_embyType != null) _prefetchFilterOptions();
+    if (!_aggregateMode && _embyType != null) _prefetchFilterOptions();
     _load();
   }
 
-  /// 后台预取筛选面板可选项（进页调用一次）。
-  ///
-  /// 复用在途 future 去重：预取与打开面板共享同一请求，避免重复网络往返。
-  /// 失败/未完成不影响主列表，面板侧仍可走 optionsFuture 先弹后填。
   void _prefetchFilterOptions() {
     if (_filterOptions != null || _filterOptionsFuture != null) return;
     final future = ref.read(embyServiceProvider).getFilterOptions(
@@ -88,7 +80,6 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
     });
   }
 
-  /// 拉取可选项并写回缓存（供 _openFilterPanel 在无缓存且无预取时兜底）。
   Future<MediaFilterOptions> _fetchFilterOptions() async {
     final options = await ref.read(embyServiceProvider).getFilterOptions(
           includeItemTypes: _embyType,
@@ -98,6 +89,10 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
   }
 
   Future<void> _load() async {
+    if (_aggregateMode) {
+      if (_isLoading && mounted) setState(() => _isLoading = false);
+      return;
+    }
     final embyType = _embyType;
     if (embyType == null) {
       setState(() {
@@ -137,34 +132,143 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
   void _onSortChanged(SortOption? value) {
     if (value == null || value == _sortOption) return;
     setState(() => _sortOption = value);
-    _load();
+    if (!_aggregateMode) _load();
   }
 
-  /// 打开筛选面板；确认后应用新筛选并重载。
-  ///
-  /// 防重入（v1.1.234）：面板 await 期间再次点击会被忽略，否则会弹出两个
-  /// 叠加的筛选面板。
-  ///
-  /// 先弹后填（v1.1.235）：不再 await 可选项请求——命中缓存直接传 options，
-  /// 未命中则把预取的 future 传给面板（面板立即弹出，选项就绪后补上）。
+  List<FavoriteEntry> _entriesOf(FavoriteGroups groups) {
+    return switch (widget.type) {
+      'movie' => groups.movies,
+      'series' => groups.series,
+      'episode' => groups.episodes,
+      _ => const <FavoriteEntry>[],
+    };
+  }
+
+  static int _yearOf(FavoriteEntry entry) =>
+      int.tryParse(entry.item.year ?? '') ?? 0;
+
+  bool _matchesFilter(FavoriteEntry entry) {
+    final item = entry.item;
+    switch (_mediaFilter.watchStatus) {
+      case WatchStatusFilter.watched:
+        if (!item.isWatched) return false;
+        break;
+      case WatchStatusFilter.unwatched:
+        if (item.isWatched) return false;
+        break;
+      case WatchStatusFilter.resumable:
+        if (item.isWatched || item.playbackPositionMs <= 0) return false;
+        break;
+      case WatchStatusFilter.any:
+        break;
+    }
+    if (_mediaFilter.genres.isNotEmpty &&
+        !item.genres.any(_mediaFilter.genres.contains)) {
+      return false;
+    }
+    if (_mediaFilter.years.isNotEmpty && !_mediaFilter.years.contains(_yearOf(entry))) {
+      return false;
+    }
+    if (_mediaFilter.ratings.isNotEmpty &&
+        !_mediaFilter.ratings.contains(item.officialRating)) {
+      return false;
+    }
+    return true;
+  }
+
+  int _compare(FavoriteEntry a, FavoriteEntry b) {
+    int byText(String? x, String? y) =>
+        (x ?? '').toLowerCase().compareTo((y ?? '').toLowerCase());
+    switch (_sortOption) {
+      case SortOption.nameAsc:
+        return byText(a.name, b.name);
+      case SortOption.nameDesc:
+        return byText(b.name, a.name);
+      case SortOption.yearAsc:
+        return _yearOf(a).compareTo(_yearOf(b));
+      case SortOption.yearDesc:
+        return _yearOf(b).compareTo(_yearOf(a));
+      case SortOption.ratingAsc:
+        return (a.item.communityRating ?? 0)
+            .compareTo(b.item.communityRating ?? 0);
+      case SortOption.ratingDesc:
+        return (b.item.communityRating ?? 0)
+            .compareTo(a.item.communityRating ?? 0);
+      case SortOption.dateDesc:
+        final at = a.item.dateLastContentAdded ?? a.item.dateCreated;
+        final bt = b.item.dateLastContentAdded ?? b.item.dateCreated;
+        return (bt ?? DateTime.fromMillisecondsSinceEpoch(0))
+            .compareTo(at ?? DateTime.fromMillisecondsSinceEpoch(0));
+    }
+  }
+
+  MediaFilterOptions _optionsFromEntries(List<FavoriteEntry> entries) {
+    final genres = <String>{};
+    final years = <int>{};
+    final ratings = <String>{};
+    for (final entry in entries) {
+      genres.addAll(entry.item.genres);
+      final year = _yearOf(entry);
+      if (year > 0) years.add(year);
+      final rating = entry.item.officialRating;
+      if (rating != null && rating.isNotEmpty) ratings.add(rating);
+    }
+    final sortedYears = years.toList()..sort((a, b) => b.compareTo(a));
+    final sortedGenres = genres.toList()..sort();
+    final sortedRatings = ratings.toList()..sort();
+    return MediaFilterOptions(
+      genres: sortedGenres,
+      years: sortedYears,
+      ratings: sortedRatings,
+    );
+  }
+
   Future<void> _openFilterPanel() async {
     if (_filterOpening) return;
+    final aggregate = _aggregateMode;
     setState(() => _filterOpening = true);
     try {
-      final cached = _filterOptions;
+      final cached = aggregate
+          ? _optionsFromEntries(
+              _entriesOf(
+                  ref.read(aggregateFavoriteItemsProvider).valueOrNull ??
+                      const FavoriteGroups()),
+            )
+          : _filterOptions;
       final result = await showMediaFilterPanel(
         context,
         current: _mediaFilter,
         options: cached,
-        optionsFuture:
-            cached == null ? (_filterOptionsFuture ??= _fetchFilterOptions()) : null,
+        optionsFuture: aggregate || cached != null
+            ? null
+            : (_filterOptionsFuture ??= _fetchFilterOptions()),
         tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
       );
       if (result == null || !mounted || result == _mediaFilter) return;
       setState(() => _mediaFilter = result);
-      _load();
+      if (!aggregate) _load();
     } finally {
       if (mounted) setState(() => _filterOpening = false);
+    }
+  }
+
+  void _openEntry(FavoriteEntry entry, bool aggregate) {
+    final item = entry.item;
+    final params = <String, String>{
+      if (entry.serverId != null) 'server': entry.serverId!,
+      if (aggregate) 'aggregate': 'true',
+    };
+    String query([MapEntry<String, String>? extra]) {
+      final all = [...params.entries, if (extra != null) extra];
+      if (all.isEmpty) return '';
+      return '?${all.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
+    }
+
+    if (item.isEpisode && item.seriesId != null) {
+      context
+          .push('/detail/${item.seriesId}${query(MapEntry('episode', item.id))}');
+    } else {
+      context.push('/detail/${item.id}${query()}');
     }
   }
 
@@ -172,14 +276,23 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
   Widget build(BuildContext context) {
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
+    final aggregateMode =
+        ref.watch(settingsProvider.select((s) => s.isTmdbHome));
     final accent = themeColorValue == null
         ? null
         : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
 
-    // 收藏状态变化 / 切换服务器后重取（与 favoriteItemsProvider 同源语义）
-    ref.listen(favoritesRevisionProvider, (_, __) => _load());
-    ref.listen(embyConfigProvider, (_, __) => _load());
+    ref.listen(favoritesRevisionProvider, (_, __) {
+      if (!ref.read(settingsProvider).isTmdbHome) _load();
+    });
+    ref.listen(embyConfigProvider, (_, __) {
+      if (!ref.read(settingsProvider).isTmdbHome) _load();
+    });
+
+    final aggregate = aggregateMode
+        ? ref.watch(aggregateFavoriteItemsProvider)
+        : null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -197,7 +310,6 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
                 ? Theme.of(context).colorScheme.primary
                 : null,
             tooltip: '筛选',
-            // 打开期间置灰：配合防重入守卫，杜绝连点弹出两个面板
             onPressed: _filterOpening ? null : _openFilterPanel,
           ),
           TvMenuIconButton<SortOption>(
@@ -230,45 +342,42 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
         decoration: BoxDecoration(
           gradient: PosterPalette.pageGradient(accent, base),
         ),
-        child: _buildBody(),
+        child: _buildBody(aggregateMode, aggregate),
       ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(
+    bool aggregateMode,
+    AsyncValue<FavoriteGroups>? aggregate,
+  ) {
+    if (aggregateMode) {
+      return aggregate!.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => _errorView(e.toString()),
+        data: (groups) {
+          final all = _entriesOf(groups);
+          if (all.isEmpty) return _emptyView(false);
+          final filtered = all.where(_matchesFilter).toList()..sort(_compare);
+          if (filtered.isEmpty) return _emptyView(true);
+          return _grid(filtered, aggregateMode: true);
+        },
+      );
+    }
+
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
+    if (_error != null) return _errorView(_error!);
+    if (_items.isEmpty) return _emptyView(_mediaFilter.isNotEmpty);
 
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              '加载失败：$_error',
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _load,
-              child: const Text('重试'),
-            ),
-          ],
-        ),
-      );
-    }
+    final entries = [
+      for (final item in _items) FavoriteEntry(item: item),
+    ];
+    return _grid(entries, aggregateMode: false);
+  }
 
-    if (_items.isEmpty) {
-      return Center(
-        child: Text(
-          _mediaFilter.isNotEmpty ? '筛选无匹配项' : '暂无收藏',
-          key: const Key('favoritesAllEmptyText'),
-          style: const TextStyle(color: Colors.white70),
-        ),
-      );
-    }
-
+  Widget _grid(List<FavoriteEntry> entries, {required bool aggregateMode}) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final cardWidth = isEpisode ? 210.0 : 120.0;
@@ -284,31 +393,26 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
               spacing: 12,
               runSpacing: 16,
               children: [
-                for (final item in _items)
+                for (final entry in entries)
                   SizedBox(
                     width: cardWidth,
                     child: isEpisode
                         ? FavoriteEpisodeCard(
-                            item: item,
+                            item: entry.item,
                             width: cardWidth,
-                            onTap: () {
-                              // 集条目 → 剧详情页 + 定位到该集
-                              if (item.isEpisode && item.seriesId != null) {
-                                context.push(
-                                    '/detail/${item.seriesId}?episode=${item.id}');
-                              } else {
-                                context.push('/detail/${item.id}');
-                              }
-                            },
+                            onTap: () => _openEntry(entry, aggregateMode),
                           )
                         : PosterCard(
-                            key: ValueKey('posterCard_${item.id}'),
-                            item: item,
+                            key: ValueKey('posterCard_${entry.id}'),
+                            item: entry.item,
                             width: cardWidth,
-                            onTap: () =>
-                                context.push('/detail/${item.id}'),
-                            onLongPress: (rect) =>
-                                showPosterCardMenu(context, ref, item, rect),
+                            serverBadge:
+                                aggregateMode ? entry.server?.label : null,
+                            onTap: () => _openEntry(entry, aggregateMode),
+                            onLongPress: aggregateMode
+                                ? null
+                                : (rect) => showPosterCardMenu(
+                                    context, ref, entry.item, rect),
                           ),
                   ),
               ],
@@ -316,6 +420,41 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _emptyView(bool filtered) {
+    return Center(
+      child: Text(
+        filtered ? '筛选无匹配项' : '暂无收藏',
+        key: const Key('favoritesAllEmptyText'),
+        style: const TextStyle(color: Colors.white70),
+      ),
+    );
+  }
+
+  Widget _errorView(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '加载失败：$error',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () {
+              if (ref.read(settingsProvider).isTmdbHome) {
+                ref.invalidate(aggregateFavoriteItemsProvider);
+              } else {
+                _load();
+              }
+            },
+            child: const Text('重试'),
+          ),
+        ],
+      ),
     );
   }
 }

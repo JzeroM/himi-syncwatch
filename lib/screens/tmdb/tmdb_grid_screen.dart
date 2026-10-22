@@ -1,0 +1,293 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/models/tmdb_item.dart';
+import 'package:himi_syncwatch/models/tmdb_platform.dart';
+import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tmdb_provider.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
+
+enum _PlatformFilter {
+  all('全部', null),
+  movie('电影', TmdbMediaType.movie),
+  tv('剧集', TmdbMediaType.tv);
+
+  const _PlatformFilter(this.label, this.type);
+
+  final String label;
+  final TmdbMediaType? type;
+}
+
+/// TMDB 栏目 / 平台网格页。
+/// - 栏目：`/tmdb/section/:section`
+/// - 平台：`/tmdb/platform/:providerId`
+class TmdbGridScreen extends ConsumerStatefulWidget {
+  const TmdbGridScreen({
+    super.key,
+    this.sectionKey,
+    this.providerId,
+  });
+
+  final String? sectionKey;
+  final int? providerId;
+
+  bool get isPlatform => providerId != null;
+
+  @override
+  ConsumerState<TmdbGridScreen> createState() => _TmdbGridScreenState();
+}
+
+class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
+  final List<TmdbAvailability> _entries = [];
+  _PlatformFilter _filter = _PlatformFilter.all;
+  int _page = 0;
+  bool _hasMore = true;
+  bool _loading = true;
+  bool _loadingMore = false;
+  String? _error;
+
+  TmdbAggregateService? get _service =>
+      ref.read(tmdbAggregateServiceProvider);
+
+  String get _title {
+    if (widget.isPlatform) {
+      return tmdbPlatformName(widget.providerId!) ??
+          '平台 ${widget.providerId}';
+    }
+    return TmdbAggregateService.sectionTitle(widget.sectionKey ?? '');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load(reset: true);
+  }
+
+  Future<void> _load({required bool reset}) async {
+    if (reset) {
+      setState(() {
+        _loading = true;
+        _loadingMore = false;
+        _error = null;
+        _entries.clear();
+        _page = 0;
+        _hasMore = true;
+      });
+    } else {
+      if (_loadingMore || !_hasMore) return;
+      setState(() => _loadingMore = true);
+    }
+
+    final service = _service;
+    if (service == null) {
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        _error = 'TMDB 未配置';
+      });
+      return;
+    }
+    final settings = ref.read(settingsProvider);
+    final servers = ref.read(embyServerListProvider);
+    final activeId = ref.read(embyConfigProvider)?.id;
+
+    try {
+      if (widget.isPlatform) {
+        final nextPage = reset ? 1 : _page + 1;
+        final result = await service.fetchPlatformPage(
+          providerId: widget.providerId!,
+          region: settings.tmdbWatchRegion,
+          page: nextPage,
+          servers: servers,
+          type: _filter.type,
+          activeServerId: activeId,
+        );
+        if (!mounted) return;
+        final existing = _entries
+            .map((e) => '${e.server.id}|${e.item.id}')
+            .toSet();
+        for (final entry in result.items) {
+          if (existing.add('${entry.server.id}|${entry.item.id}')) {
+            _entries.add(entry);
+          }
+        }
+        setState(() {
+          _page = nextPage;
+          _hasMore = result.hasMore;
+          _loading = false;
+          _loadingMore = false;
+        });
+      } else {
+        final result = await service.fetchSection(
+          widget.sectionKey ?? '',
+          servers,
+          activeServerId: activeId,
+          pages: 5,
+        );
+        if (!mounted) return;
+        setState(() {
+          _entries
+            ..clear()
+            ..addAll(result.items);
+          _page = 1;
+          _hasMore = false;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+        _loadingMore = false;
+      });
+    }
+  }
+
+  void _setFilter(_PlatformFilter value) {
+    if (value == _filter) return;
+    setState(() => _filter = value);
+    _load(reset: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final themeColorValue =
+        ref.watch(settingsProvider.select((s) => s.themeColor));
+    final accent = themeColorValue == null
+        ? null
+        : PosterPalette.darkenForPage(Color(themeColorValue));
+    final base = Theme.of(context).scaffoldBackgroundColor;
+    final imageBase = ref.watch(tmdbImageBaseProvider);
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: const TvBackButton(),
+        title: Text(_title),
+      ),
+      body: AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
+        decoration: BoxDecoration(
+          gradient: PosterPalette.pageGradient(accent, base),
+        ),
+        child: RefreshIndicator(
+          onRefresh: () => _load(reset: true),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.only(
+              top: GlassConfig.topInsetOf(context),
+              bottom: GlassConfig.bottomReserveOf(context),
+              left: 16,
+              right: 16,
+            ),
+            children: [
+              if (widget.isPlatform)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final filter in _PlatformFilter.values)
+                        ChoiceChip(
+                          key: ValueKey('tmdbFilter_${filter.name}'),
+                          label: Text(filter.label),
+                          selected: _filter == filter,
+                          onSelected: (_) => _setFilter(filter),
+                        ),
+                    ],
+                  ),
+                ),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 120),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                _ErrorView(
+                  error: _error!,
+                  onRetry: () => _load(reset: true),
+                )
+              else if (_entries.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 120),
+                  child: Center(
+                    child: Text('服务器中没有匹配的条目',
+                        style: TextStyle(color: Colors.white70)),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 16,
+                  children: [
+                    for (final entry in _entries)
+                      SizedBox(
+                        width: 120,
+                        child: TmdbPosterCard(
+                          key: ValueKey(
+                              'tmdbGrid_${entry.server.id}_${entry.item.id}'),
+                          item: entry.tmdb,
+                          imageBase: imageBase,
+                          width: 120,
+                          serverBadge: entry.server.label,
+                          onTap: () => context.push(
+                            '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              if (widget.isPlatform && !_loading && _error == null) ...[
+                const SizedBox(height: 20),
+                Center(
+                  child: _loadingMore
+                      ? const CircularProgressIndicator()
+                      : _hasMore
+                          ? ElevatedButton(
+                              key: const Key('tmdbLoadMore'),
+                              onPressed: () => _load(reset: false),
+                              child: const Text('加载更多'),
+                            )
+                          : const Text('没有更多了',
+                              style: TextStyle(color: Colors.white54)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorView extends StatelessWidget {
+  const _ErrorView({required this.error, required this.onRetry});
+
+  final String error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 100),
+      child: Column(
+        children: [
+          Text(error,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 12),
+          ElevatedButton(onPressed: onRetry, child: const Text('重试')),
+        ],
+      ),
+    );
+  }
+}

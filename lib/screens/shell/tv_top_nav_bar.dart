@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
+import 'package:himi_syncwatch/widgets/home_mode_button.dart';
 import 'package:himi_syncwatch/widgets/media_search_button.dart';
 import 'package:himi_syncwatch/widgets/server_title_dropdown.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -53,6 +54,8 @@ class TvTopNavBar extends StatelessWidget {
                 ),
               ),
             ),
+            const HomeModeButton(compact: true),
+            const SizedBox(width: 6),
             const MediaSearchButton(),
             for (var i = 1; i < kShellNavLabels.length; i++)
               if (i != hiddenAgoraIndex)

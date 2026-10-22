@@ -12,10 +12,13 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/tmdb_provider.dart';
+import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
+import 'package:himi_syncwatch/widgets/home_mode_button.dart';
 import 'package:himi_syncwatch/widgets/continue_watching_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -348,6 +351,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // TV 模式：标题/房间/搜索全部上移到壳层顶部导航，首页自身不渲染顶栏
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final tmdbMode = ref.watch(settingsProvider.select((s) => s.isTmdbHome));
 
     // 「重播」乐观隐藏：点重播即从继续观看栏移除，服务器真相回来后交回
     final hiddenResume = ref.watch(resumeOptimisticHiddenProvider);
@@ -366,7 +370,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final homeCarouselEnabled = ref.watch(
           settingsProvider.select((s) => s.homeCarousel),
         ) &&
-        !tvMode;
+        !tvMode &&
+        !tmdbMode;
     final showHero = homeCarouselEnabled && _heroItems.isNotEmpty;
     final heroIndex = _heroItems.isEmpty
         ? 0
@@ -441,7 +446,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
 
-    final content = _error != null
+    final content = tmdbMode
+        ? TvRefreshHotkey(
+            onRefresh: () async {
+              ref.invalidate(tmdbHomeProvider);
+            },
+            child: const TmdbHomeView(),
+          )
+        : _error != null
         ? errorView
         : !hasServer
             ? const _EmptyState()
@@ -551,6 +563,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               actions: [
+                const HomeModeButton(),
+                const SizedBox(width: 4),
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: GlassContainer(

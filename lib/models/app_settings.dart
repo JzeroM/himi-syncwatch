@@ -16,6 +16,23 @@ class AppSettings {
     return value < min ? min : (value > max ? max : value);
   }
 
+  // ── 首页来源 / TMDB 聚合模式 ──
+  /// 首页来源：'server'（默认，当前服务器）/ 'tmdb'（跨服务器 TMDB 聚合）。
+  static const List<String> homeSourceModes = ['server', 'tmdb'];
+
+  /// TMDB 观看区域（watch/providers 与 discover 的 watch_region）。
+  static const List<String> tmdbWatchRegions = [
+    'US',
+    'GB',
+    'CA',
+    'AU',
+    'JP',
+    'KR',
+    'HK',
+    'TW',
+    'SG',
+  ];
+
   // ── MDK 网络流缓冲（setBufferRange / demux.buffer.ranges，下次起播生效）──
   /// 最小缓冲（setBufferRange min，ms）：队列排空进入 Buffering 后需再
   /// 攒够该时长才恢复 → 越大越不易"一顿一顿"、起播/恢复越慢。
@@ -131,6 +148,22 @@ class AppSettings {
 
   /// 服务器页视图模式：'list'（列表，默认）/ 'grid'（网格）。
   final String serverViewMode;
+
+  /// 首页来源模式：'server'（当前服务器）/ 'tmdb'（TMDB 聚合模式）。
+  final String homeSourceMode;
+
+  /// TMDB v3 API Key 或 v4 Read Access Token（保存在安全存储；空 = 未配置）。
+  final String tmdbApiKey;
+
+  /// TMDB API 基地址（可填反代），空 = 官方 `https://api.themoviedb.org/3`。
+  final String tmdbApiBase;
+
+  /// TMDB 图片基地址（可填反代），空 = 官方 `https://image.tmdb.org/t/p`。
+  final String tmdbImageBase;
+
+  /// TMDB watch region（流媒体平台可用区域），默认 US。
+  final String tmdbWatchRegion;
+
   final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
 
   /// 手机同步到 TV 功能开关（服务器页电视机控件显示；关闭仅藏 UI）。
@@ -313,6 +346,11 @@ class AppSettings {
     this.categoryColumns,
     this.versionPreference = '',
     this.serverViewMode = 'list',
+    this.homeSourceMode = 'server',
+    this.tmdbApiKey = '',
+    this.tmdbApiBase = '',
+    this.tmdbImageBase = '',
+    this.tmdbWatchRegion = 'US',
     this.tvMode = false,
     this.tvSyncEnabled = true,
     this.homeCarousel = true,
@@ -343,6 +381,26 @@ class AppSettings {
 
   bool get hardwareDecoding => decodeMode != 'sw';
 
+  /// 是否处于 TMDB 聚合首页模式。
+  bool get isTmdbHome => homeSourceMode == 'tmdb';
+
+  /// TMDB 是否已配置凭据（不校验有效性）。
+  bool get hasTmdbCredentials => tmdbApiKey.trim().isNotEmpty;
+
+  /// TMDB API 基地址（去尾部斜杠）。
+  String get effectiveTmdbApiBase {
+    final v = tmdbApiBase.trim();
+    if (v.isEmpty) return 'https://api.themoviedb.org/3';
+    return v.endsWith('/') ? v.substring(0, v.length - 1) : v;
+  }
+
+  /// TMDB 图片基地址（去尾部斜杠）。
+  String get effectiveTmdbImageBase {
+    final v = tmdbImageBase.trim();
+    if (v.isEmpty) return 'https://image.tmdb.org/t/p';
+    return v.endsWith('/') ? v.substring(0, v.length - 1) : v;
+  }
+
   /// 视频版本偏好顺序（已补齐默认维度）。
   List<VersionPreference> get versionPreferenceOrder =>
       VersionPreference.decode(versionPreference);
@@ -371,6 +429,11 @@ class AppSettings {
     bool? glassUi,
     String? versionPreference,
     String? serverViewMode,
+    String? homeSourceMode,
+    String? tmdbApiKey,
+    String? tmdbApiBase,
+    String? tmdbImageBase,
+    String? tmdbWatchRegion,
     bool? tvMode,
     bool? tvSyncEnabled,
     bool? homeCarousel,
@@ -434,6 +497,11 @@ class AppSettings {
       glassUi: glassUi ?? this.glassUi,
       versionPreference: versionPreference ?? this.versionPreference,
       serverViewMode: serverViewMode ?? this.serverViewMode,
+      homeSourceMode: homeSourceMode ?? this.homeSourceMode,
+      tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
+      tmdbApiBase: tmdbApiBase ?? this.tmdbApiBase,
+      tmdbImageBase: tmdbImageBase ?? this.tmdbImageBase,
+      tmdbWatchRegion: tmdbWatchRegion ?? this.tmdbWatchRegion,
       tvMode: tvMode ?? this.tvMode,
       tvSyncEnabled: tvSyncEnabled ?? this.tvSyncEnabled,
       homeCarousel: homeCarousel ?? this.homeCarousel,
@@ -517,6 +585,11 @@ class AppSettings {
         'glassUi': glassUi,
         'versionPreference': versionPreference,
         'serverViewMode': serverViewMode,
+        'homeSourceMode': homeSourceMode,
+        'tmdbApiKey': tmdbApiKey,
+        'tmdbApiBase': tmdbApiBase,
+        'tmdbImageBase': tmdbImageBase,
+        'tmdbWatchRegion': tmdbWatchRegion,
         'tvMode': tvMode,
         'tvSyncEnabled': tvSyncEnabled,
         'homeCarousel': homeCarousel,
@@ -634,6 +707,17 @@ class AppSettings {
       serverViewMode: const ['list', 'grid'].contains(json['serverViewMode'])
           ? json['serverViewMode'] as String
           : 'list',
+      homeSourceMode:
+          homeSourceModes.contains(json['homeSourceMode'])
+              ? json['homeSourceMode'] as String
+              : 'server',
+      tmdbApiKey: json['tmdbApiKey'] as String? ?? '',
+      tmdbApiBase: json['tmdbApiBase'] as String? ?? '',
+      tmdbImageBase: json['tmdbImageBase'] as String? ?? '',
+      tmdbWatchRegion:
+          tmdbWatchRegions.contains(json['tmdbWatchRegion'])
+              ? json['tmdbWatchRegion'] as String
+              : 'US',
       tvMode: json['tvMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认开（v1.1.249 上线时行为不变）
       tvSyncEnabled: json['tvSyncEnabled'] as bool? ?? true,

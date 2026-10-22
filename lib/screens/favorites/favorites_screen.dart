@@ -22,13 +22,17 @@ class FavoritesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final aggregateMode =
+        ref.watch(settingsProvider.select((s) => s.isTmdbHome));
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
     final accent = themeColorValue == null
         ? null
         : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
-    final async = ref.watch(favoriteItemsProvider);
+    final async = aggregateMode
+        ? ref.watch(aggregateFavoriteItemsProvider)
+        : ref.watch(favoriteItemsProvider);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -49,13 +53,18 @@ class FavoritesScreen extends ConsumerWidget {
           gradient: PosterPalette.pageGradient(accent, base),
         ),
         child: RefreshIndicator(
-          onRefresh: () => ref.refresh(favoriteItemsProvider.future),
+          onRefresh: () => aggregateMode
+              ? ref.refresh(aggregateFavoriteItemsProvider.future)
+              : ref.refresh(favoriteItemsProvider.future),
           child: async.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => _centered('收藏加载失败：$e'),
             data: (groups) => groups.isEmpty
-                ? _centered('还没有收藏，去详情页点爱心收藏吧')
-                : _buildSections(context, ref, groups, tvMode),
+                ? _centered(aggregateMode
+                    ? '所有服务器都没有收藏'
+                    : '还没有收藏，去详情页点爱心收藏吧')
+                : _buildSections(
+                    context, ref, groups, tvMode, aggregateMode),
           ),
         ),
       ),
@@ -86,8 +95,8 @@ class FavoritesScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSections(
-      BuildContext context, WidgetRef ref, FavoriteGroups groups, bool tvMode) {
+  Widget _buildSections(BuildContext context, WidgetRef ref,
+      FavoriteGroups groups, bool tvMode, bool aggregateMode) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(
@@ -95,6 +104,14 @@ class FavoritesScreen extends ConsumerWidget {
         bottom: GlassConfig.bottomReserveOf(context),
       ),
       children: [
+        if (aggregateMode && groups.failedServerCount > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              '有 ${groups.failedServerCount} 台服务器收藏加载失败',
+              style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
+            ),
+          ),
         if (groups.movies.isNotEmpty)
           _FavoriteSection(
             title: '电影',
@@ -102,8 +119,11 @@ class FavoritesScreen extends ConsumerWidget {
             items: groups.movies,
             cardWidth: _posterWidth,
             episodeStyle: false,
-            onItemLongPress: (item, rect) =>
-                showPosterCardMenu(context, ref, item, rect),
+            aggregateMode: aggregateMode,
+            onOpen: (entry) => _openEntry(context, entry, aggregateMode),
+            onItemLongPress: aggregateMode
+                ? null
+                : (item, rect) => showPosterCardMenu(context, ref, item, rect),
           ),
         if (groups.series.isNotEmpty)
           _FavoriteSection(
@@ -112,8 +132,11 @@ class FavoritesScreen extends ConsumerWidget {
             items: groups.series,
             cardWidth: _posterWidth,
             episodeStyle: false,
-            onItemLongPress: (item, rect) =>
-                showPosterCardMenu(context, ref, item, rect),
+            aggregateMode: aggregateMode,
+            onOpen: (entry) => _openEntry(context, entry, aggregateMode),
+            onItemLongPress: aggregateMode
+                ? null
+                : (item, rect) => showPosterCardMenu(context, ref, item, rect),
           ),
         if (groups.episodes.isNotEmpty)
           _FavoriteSection(
@@ -122,9 +145,31 @@ class FavoritesScreen extends ConsumerWidget {
             items: groups.episodes,
             cardWidth: _episodeWidth,
             episodeStyle: true,
+            aggregateMode: aggregateMode,
+            onOpen: (entry) => _openEntry(context, entry, aggregateMode),
           ),
       ],
     );
+  }
+
+  void _openEntry(
+      BuildContext context, FavoriteEntry entry, bool aggregateMode) {
+    final item = entry.item;
+    final params = <String, String>{
+      if (entry.serverId != null) 'server': entry.serverId!,
+      if (aggregateMode) 'aggregate': 'true',
+    };
+    String query([MapEntry<String, String>? extra]) {
+      final all = [...params.entries, if (extra != null) extra];
+      if (all.isEmpty) return '';
+      return '?${all.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
+    }
+
+    if (item.isEpisode && item.seriesId != null) {
+      context.push('/detail/${item.seriesId}${query(MapEntry('episode', item.id))}');
+    } else {
+      context.push('/detail/${item.id}${query()}');
+    }
   }
 }
 
@@ -136,14 +181,18 @@ class _FavoriteSection extends StatelessWidget {
     required this.items,
     required this.cardWidth,
     required this.episodeStyle,
+    required this.aggregateMode,
+    required this.onOpen,
     this.onItemLongPress,
   });
 
   final String title;
   final String type;
-  final List<MediaItem> items;
+  final List<FavoriteEntry> items;
   final double cardWidth;
   final bool episodeStyle;
+  final bool aggregateMode;
+  final void Function(FavoriteEntry entry) onOpen;
 
   /// 仅电影/剧集卡片支持长按（单集不加）。
   final void Function(MediaItem item, Rect anchor)? onItemLongPress;
@@ -179,30 +228,24 @@ class _FavoriteSection extends StatelessWidget {
             spacing: 12,
             runSpacing: 16,
             children: [
-              for (final item in items)
+              for (final entry in items)
                 SizedBox(
                   width: cardWidth,
                   child: episodeStyle
                       ? FavoriteEpisodeCard(
-                          item: item,
+                          item: entry.item,
                           width: cardWidth,
-                          onTap: () {
-                            // 集条目 → 剧详情页 + 定位到该集
-                            if (item.isEpisode && item.seriesId != null) {
-                              context.push(
-                                  '/detail/${item.seriesId}?episode=${item.id}');
-                            } else {
-                              context.push('/detail/${item.id}');
-                            }
-                          },
+                          onTap: () => onOpen(entry),
                         )
                       : PosterCard(
-                          item: item,
+                          item: entry.item,
                           width: cardWidth,
-                          onTap: () => context.push('/detail/${item.id}'),
+                          serverBadge:
+                              aggregateMode ? entry.server?.label : null,
+                          onTap: () => onOpen(entry),
                           onLongPress: onItemLongPress == null
                               ? null
-                              : (rect) => onItemLongPress!(item, rect),
+                              : (rect) => onItemLongPress!(entry.item, rect),
                         ),
                 ),
             ],

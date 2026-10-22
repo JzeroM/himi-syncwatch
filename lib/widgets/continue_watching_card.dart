@@ -12,6 +12,7 @@ class ContinueWatchingCard extends StatelessWidget {
     required this.width,
     this.onTap,
     this.onLongPress,
+    this.serverBadge,
   });
 
   final MediaItem item;
@@ -20,6 +21,9 @@ class ContinueWatchingCard extends StatelessWidget {
 
   /// 长按（触屏长按 / TV 长按 OK）：回调携带卡片全局矩形作菜单锚点。
   final void Function(Rect anchor)? onLongPress;
+
+  /// 左上来源服务器角标（跨服务器聚合时显示）。
+  final String? serverBadge;
 
   static const double textReservedHeight = 46;
 
@@ -77,6 +81,32 @@ class ContinueWatchingCard extends StatelessWidget {
                     cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
                         .round(),
                   ),
+                  if (serverBadge != null)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Container(
+                        constraints: BoxConstraints(
+                          maxWidth: (width * 0.6).clamp(60, 180),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.62),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          serverBadge!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
                   // 底部观看进度条
                   if (pct > 0)
                     Positioned(

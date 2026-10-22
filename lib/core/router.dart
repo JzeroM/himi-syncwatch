@@ -19,6 +19,8 @@ import 'package:himi_syncwatch/screens/settings/cache_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/about_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
+import 'package:himi_syncwatch/screens/settings/tmdb_settings_screen.dart';
+import 'package:himi_syncwatch/screens/tmdb/tmdb_grid_screen.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/agora/agora_config_screen.dart';
@@ -129,6 +131,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                       pageBuilder: (context, state) =>
                           _settingsFadePage(const CacheSettingsScreen()),
                     ),
+                    GoRoute(
+                      path: 'tmdb',
+                      pageBuilder: (context, state) =>
+                          _settingsFadePage(const TmdbSettingsScreen()),
+                    ),
                   ],
                 ),
                 GoRoute(
@@ -169,6 +176,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           roomCode: state.uri.queryParameters['roomCode'],
           serverId: state.uri.queryParameters['server'],
           focusEpisodeId: state.uri.queryParameters['episode'],
+          aggregate: state.uri.queryParameters['aggregate'] == 'true',
+        ),
+      ),
+      GoRoute(
+        path: '/tmdb/section/:section',
+        builder: (context, state) => TmdbGridScreen(
+          sectionKey: state.pathParameters['section'],
+        ),
+      ),
+      GoRoute(
+        path: '/tmdb/platform/:providerId',
+        builder: (context, state) => TmdbGridScreen(
+          providerId: int.tryParse(state.pathParameters['providerId'] ?? ''),
         ),
       ),
       GoRoute(

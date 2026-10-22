@@ -1242,6 +1242,46 @@ void main() {
     });
   });
 
+  group('TMDB 聚合模式设置', () {
+    test('默认服务器模式、无凭据、US 区域', () {
+      const settings = AppSettings();
+      expect(settings.homeSourceMode, 'server');
+      expect(settings.isTmdbHome, isFalse);
+      expect(settings.hasTmdbCredentials, isFalse);
+      expect(settings.tmdbWatchRegion, 'US');
+      expect(settings.effectiveTmdbApiBase, 'https://api.themoviedb.org/3');
+      expect(settings.effectiveTmdbImageBase, 'https://image.tmdb.org/t/p');
+    });
+
+    test('copyWith 与 toJson/fromJson 往返保留', () {
+      final settings = const AppSettings().copyWith(
+        homeSourceMode: 'tmdb',
+        tmdbApiKey: '  eyJtoken  ',
+        tmdbApiBase: ' https://tmdb.example.com/3/ ',
+        tmdbImageBase: ' https://img.example.com/t/p/ ',
+        tmdbWatchRegion: 'JP',
+      );
+      expect(settings.isTmdbHome, isTrue);
+      expect(settings.hasTmdbCredentials, isTrue);
+      expect(settings.effectiveTmdbApiBase, 'https://tmdb.example.com/3');
+      expect(settings.effectiveTmdbImageBase, 'https://img.example.com/t/p');
+
+      final round = AppSettings.fromJson(settings.toJson());
+      expect(round.homeSourceMode, 'tmdb');
+      expect(round.tmdbApiKey, '  eyJtoken  ');
+      expect(round.tmdbWatchRegion, 'JP');
+    });
+
+    test('非法模式/区域回退默认值', () {
+      final settings = AppSettings.fromJson(const {
+        'homeSourceMode': 'bogus',
+        'tmdbWatchRegion': 'XX',
+      });
+      expect(settings.homeSourceMode, 'server');
+      expect(settings.tmdbWatchRegion, 'US');
+    });
+  });
+
   group('skipIntroOutroEnabled（跳过片头片尾开关）', () {
     test('默认关闭', () {
       expect(const AppSettings().skipIntroOutroEnabled, isFalse);

@@ -24,6 +24,7 @@ import 'package:himi_syncwatch/screens/detail/episode_number_picker.dart';
 import 'package:himi_syncwatch/screens/detail/media_details_section.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/screens/detail/track_selectors.dart';
+import 'package:himi_syncwatch/screens/detail/tmdb_server_sources_section.dart';
 import 'package:himi_syncwatch/screens/detail/version_row_nav.dart';
 import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
 import 'package:himi_syncwatch/services/ui/button_styles.dart';
@@ -46,6 +47,9 @@ class DetailScreen extends ConsumerStatefulWidget {
   /// 非空时优先于 defaultEpisodeTarget 的自动锁定。
   final String? focusEpisodeId;
 
+  /// TMDB 聚合模式：显示跨服务器资源栏。
+  final bool aggregate;
+
   const DetailScreen({
     super.key,
     required this.itemId,
@@ -53,6 +57,7 @@ class DetailScreen extends ConsumerStatefulWidget {
     this.roomCode,
     this.serverId,
     this.focusEpisodeId,
+    this.aggregate = false,
   });
 
   @override
@@ -2123,6 +2128,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     child: _buildActionRow(),
                   ),
                   SizedBox(height: tv ? 12 : 16),
+                ],
+                if (widget.aggregate && (item.isMovie || item.isSeries)) ...[
+                  TmdbServerSourcesSection(
+                    item: item,
+                    currentServerId:
+                        widget.serverId ?? ref.read(embyConfigProvider)?.id,
+                  ),
+                  const SizedBox(height: 18),
                 ],
                 // 简介已移至海报内浮层（v1.1.83：海报上「简介」控件展开，
                 // 正文区不再重复渲染）

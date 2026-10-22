@@ -460,6 +460,14 @@ class MediaItem {
   /// 入库时间（Emby `DateCreated`）。
   final DateTime? dateCreated;
 
+  /// 最近一次入库/更新内容的时间（Emby `DateLastContentAdded`）。
+  /// 仅 `getItems`/`getFavoriteItems` 显式请求时可用，用于「最近添加」排序。
+  final DateTime? dateLastContentAdded;
+
+  /// 最近一次播放时间（Emby `UserData.LastPlayedDate`）。
+  /// 跨服务器「继续观看」聚合按此降序排列。
+  final DateTime? lastPlayedDate;
+
   MediaItem({
     required this.id,
     required this.name,
@@ -494,6 +502,8 @@ class MediaItem {
     this.studios = const [],
     this.path,
     this.dateCreated,
+    this.dateLastContentAdded,
+    this.lastPlayedDate,
   });
 
   factory MediaItem.fromJson(Map<String, dynamic> json, {String? serverUrl}) {
@@ -581,6 +591,10 @@ class MediaItem {
           const [],
       path: json['Path'] as String?,
       dateCreated: DateTime.tryParse(json['DateCreated'] as String? ?? ''),
+      dateLastContentAdded:
+          DateTime.tryParse(json['DateLastContentAdded'] as String? ?? ''),
+      lastPlayedDate:
+          DateTime.tryParse(userData?['LastPlayedDate'] as String? ?? ''),
     );
   }
 
@@ -588,6 +602,20 @@ class MediaItem {
   bool get isSeries => type == 'Series';
   bool get isEpisode => type == 'Episode';
   bool get hasMultipleVersions => mediaSources.length > 1;
+
+  /// 读取 ProviderIds（键名忽略大小写，Emby 实际返回 `Tmdb`/`Imdb`）。
+  String? providerId(String name) {
+    final target = name.toLowerCase();
+    for (final entry in providerIds.entries) {
+      if (entry.key.toLowerCase() == target && entry.value.isNotEmpty) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  /// TMDB id（无则 null）。
+  String? get tmdbId => providerId('tmdb');
 
   String? get runtimeText {
     if (runTimeTicks == null || runTimeTicks! <= 0) return null;

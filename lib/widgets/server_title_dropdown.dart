@@ -57,9 +57,11 @@ class ServerTitleDropdown extends ConsumerWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: _labelRow(label),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: _labelRow(label),
+                ),
               ),
               // ▾ 为纯装饰（不再单独聚焦），点击落点由外层胶囊统一接管
               const Padding(
