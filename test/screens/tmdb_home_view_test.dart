@@ -51,7 +51,6 @@ Future<void> _pump(
   WidgetTester tester, {
   required TmdbHomeData data,
   required AppSettings settings,
-  List<TmdbPlatformShowcase> showcases = const [],
 }) async {
   tester.view.physicalSize = const Size(800, 1200);
   tester.view.devicePixelRatio = 1;
@@ -63,7 +62,6 @@ Future<void> _pump(
           (ref) => FakeSettingsNotifier(settings),
         ),
         tmdbHomeProvider.overrideWith((ref) async => data),
-        tmdbPlatformShowcasesProvider.overrideWith((ref) async => showcases),
       ],
       child: const MaterialApp(
         home: Scaffold(body: TmdbHomeView()),
@@ -118,26 +116,23 @@ void main() {
     expect(find.byType(HomeHeroCarousel), findsNothing);
   });
 
-  testWidgets('平台栏使用服务器海报卡片', (tester) async {
-    final entry = _entry(1);
+  testWidgets('平台栏按顺序展示本地 Logo 卡片', (tester) async {
     await _pump(
       tester,
       data: _data(1),
       settings: const AppSettings(homeCarousel: false),
-      showcases: [
-        TmdbPlatformShowcase(
-          platform: const TmdbPlatform(providerId: 8, name: 'Netflix'),
-          logoPath: '/netflix.png',
-          highlight: entry.tmdb,
-          local: entry,
-        ),
-      ],
     );
-    await tester.pump();
 
     final card = tester.widget<TmdbPlatformCard>(
       find.byKey(const ValueKey('tmdbPlatform_8')),
     );
-    expect(card.showcase.local?.item.id, '1');
+    expect(card.platform.name, 'Netflix');
+    expect(card.platform.logoAsset, endsWith('netflix.png'));
+
+    final platformList = tester
+        .widgetList<ListView>(find.byType(ListView))
+        .firstWhere((list) => list.childrenDelegate.estimatedChildCount == 7);
+    expect(platformList.scrollDirection, Axis.horizontal);
+    expect(tmdbPlatforms[5].name, 'Prime Video');
   });
 }

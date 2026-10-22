@@ -63,6 +63,26 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
     return TmdbAggregateService.sectionTitle(widget.sectionKey ?? '');
   }
 
+  Widget _buildTitle() {
+    if (widget.isPlatform) {
+      final platform = tmdbPlatformById(widget.providerId!);
+      if (platform != null) {
+        return Image.asset(
+          platform.logoAsset,
+          key: ValueKey('tmdbPlatformTitleLogo_${platform.providerId}'),
+          height: 26,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          semanticLabel: platform.name,
+          errorBuilder: (context, error, stackTrace) {
+            return Text(platform.name);
+          },
+        );
+      }
+    }
+    return Text(_title);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -219,7 +239,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: const TvBackButton(),
-        title: Text(_title),
+        title: _buildTitle(),
       ),
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 400),

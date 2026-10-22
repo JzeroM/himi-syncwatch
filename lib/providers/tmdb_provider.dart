@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
-import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
@@ -75,28 +74,9 @@ final tmdbResumeProvider = FutureProvider<TmdbResumeResult>((ref) async {
   );
 });
 
-/// 流媒体平台 Logo 与展示海报。
-final tmdbPlatformShowcasesProvider =
-    FutureProvider<List<TmdbPlatformShowcase>>((ref) async {
-  final settings = ref.watch(
-    settingsProvider.select((s) => (s.hasTmdbCredentials, s.tmdbWatchRegion)),
-  );
-  if (!settings.$1) return const [];
-  final service = ref.watch(tmdbAggregateServiceProvider);
-  if (service == null) return const [];
-  final servers = ref.watch(embyServerListProvider);
-  final activeId = ref.watch(embyConfigProvider)?.id;
-  return service.fetchPlatformShowcases(
-    servers,
-    region: settings.$2,
-    activeServerId: activeId,
-  );
-});
-
 Future<void> refreshTmdbHome(WidgetRef ref) async {
   ref.invalidate(tmdbHomeProvider);
   ref.invalidate(tmdbResumeProvider);
-  ref.invalidate(tmdbPlatformShowcasesProvider);
   for (final future in [
     ref.read(tmdbHomeProvider.future),
     ref.read(tmdbResumeProvider.future),

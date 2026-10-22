@@ -58,6 +58,18 @@ class _FakeAggregate extends TmdbAggregateService {
   }) async {
     return TmdbAvailabilityResult(items: entries);
   }
+
+  @override
+  Future<TmdbPlatformPage> fetchPlatformPage({
+    required int providerId,
+    required String region,
+    required int page,
+    required List<EmbyServerConfig> servers,
+    TmdbMediaType? type,
+    String? activeServerId,
+  }) async {
+    return const TmdbPlatformPage(items: [], hasMore: false);
+  }
 }
 
 class _PagedFakeAggregate extends TmdbAggregateService {
@@ -171,5 +183,35 @@ void main() {
     expect(aggregate.requestedPages, [1, 2]);
     expect(find.byKey(const ValueKey('tmdbGrid_s1_1')), findsOneWidget);
     expect(find.byKey(const ValueKey('tmdbGrid_s1_2')), findsOneWidget);
+  });
+
+  testWidgets('平台全部页标题使用本地 Logo', (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(
+            (ref) => FakeSettingsNotifier(const AppSettings()),
+          ),
+          tmdbAggregateServiceProvider.overrideWithValue(
+            _FakeAggregate(const []),
+          ),
+        ],
+        child: const MaterialApp(
+          home: TmdbGridScreen(providerId: 9),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final logo = tester.widget<Image>(
+      find.byKey(const ValueKey('tmdbPlatformTitleLogo_9')),
+    );
+    expect((logo.image as AssetImage).assetName, endsWith('prime_video.png'));
+    expect(logo.height, 26);
+    expect(find.text('Prime Video'), findsNothing);
   });
 }

@@ -1,7 +1,6 @@
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
-import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
 
@@ -358,71 +357,6 @@ class TmdbAggregateService {
       hasMore: results.any((r) => r.hasMore),
       failedServerIds: resolved.failedServerIds,
     );
-  }
-
-  Future<List<TmdbPlatformShowcase>> fetchPlatformShowcases(
-    List<EmbyServerConfig> servers, {
-    required String region,
-    String? activeServerId,
-  }) async {
-    final logosFuture = tmdb.platformLogos(region).catchError(
-          (_) => <int, String?>{},
-        );
-    final highlights = <int, TmdbItem>{};
-    await Future.wait(tmdbPlatforms.map((platform) async {
-      try {
-        var page = await tmdb.discoverPlatform(
-          providerId: platform.providerId,
-          type: TmdbMediaType.tv,
-          region: region,
-          page: 1,
-          allowCache: true,
-        );
-        TmdbItem? item;
-        for (final candidate in page.items) {
-          if (candidate.posterPath != null) {
-            item = candidate;
-            break;
-          }
-        }
-        if (item == null) {
-          page = await tmdb.discoverPlatform(
-            providerId: platform.providerId,
-            type: TmdbMediaType.movie,
-            region: region,
-            page: 1,
-            allowCache: true,
-          );
-          for (final candidate in page.items) {
-            if (candidate.posterPath != null) {
-              item = candidate;
-              break;
-            }
-          }
-        }
-        if (item != null) highlights[platform.providerId] = item;
-      } catch (_) {}
-    }));
-
-    final resolved = await resolveAvailability(
-      highlights.values.toList(growable: false),
-      servers,
-      activeServerId: activeServerId,
-    );
-    final byKey = <String, TmdbAvailability>{};
-    for (final entry in resolved.items) {
-      byKey.putIfAbsent(entry.tmdb.key, () => entry);
-    }
-    final logos = await logosFuture;
-    return [
-      for (final platform in tmdbPlatforms)
-        TmdbPlatformShowcase(
-          platform: platform,
-          logoPath: logos[platform.providerId],
-          highlight: highlights[platform.providerId],
-          local: byKey[highlights[platform.providerId]?.key],
-        ),
-    ];
   }
 
   Future<TmdbHomeData> fetchSections(

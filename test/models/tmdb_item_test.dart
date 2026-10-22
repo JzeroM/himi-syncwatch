@@ -25,7 +25,8 @@ void main() {
       expect(movie.year, '1999');
       expect(movie.posterUrl('https://img', size: 'w342'),
           'https://img/w342/poster.jpg');
-      expect(movie.backdropUrl('https://img'), 'https://img/w1280/backdrop.jpg');
+      expect(
+          movie.backdropUrl('https://img'), 'https://img/w1280/backdrop.jpg');
 
       final tv = TmdbItem.fromJson(
         const {
@@ -112,9 +113,14 @@ void main() {
   });
 
   group('TmdbPlatform', () {
-    test('固定六个平台且可按 id 查名称', () {
-      expect(tmdbPlatforms.map((e) => e.providerId), [8, 337, 350, 1899, 15, 531]);
+    test('固定七个平台、顺序与本地 Logo 路径', () {
+      expect(
+        tmdbPlatforms.map((e) => e.providerId),
+        [8, 337, 350, 1899, 15, 9, 531],
+      );
       expect(tmdbPlatformName(8), 'Netflix');
+      expect(tmdbPlatformName(9), 'Prime Video');
+      expect(tmdbPlatformById(531)?.logoAsset, endsWith('paramount_plus.png'));
       expect(tmdbPlatformName(999), isNull);
     });
   });

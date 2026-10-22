@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.2.62+488
+version: 1.2.63+489
 
 environment:
   sdk: ^3.6.0
@@ -106,6 +106,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/images/platforms/
     - assets/icons/
 
 flutter_launcher_icons:

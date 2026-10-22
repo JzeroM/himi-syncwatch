@@ -241,10 +241,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
             i--;
           }
           if (i == 0) {
-            return _PlatformBar(
-              imageBase: imageBase,
-              tvMode: widget.tvMode,
-            );
+            return _PlatformBar(tvMode: widget.tvMode);
           }
           i--;
           if (i < sections.length) {
@@ -402,24 +399,18 @@ class _Hero extends StatelessWidget {
   }
 }
 
-class _PlatformBar extends ConsumerWidget {
-  const _PlatformBar({
-    required this.imageBase,
-    required this.tvMode,
-  });
+class _PlatformBar extends StatelessWidget {
+  const _PlatformBar({required this.tvMode});
 
-  final String imageBase;
   final bool tvMode;
 
   static const double _height = 84;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(tmdbPlatformShowcasesProvider);
+  Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final cardWidth =
         ((screenWidth - 32) / (tvMode ? 3 : 2)).clamp(150.0, 280.0);
-    final showcases = async.valueOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -438,74 +429,21 @@ class _PlatformBar extends ConsumerWidget {
             itemCount: tmdbPlatforms.length,
             itemBuilder: (context, index) {
               final platform = tmdbPlatforms[index];
-              final data = showcases != null
-                  ? showcases.firstWhere(
-                      (e) => e.platform.providerId == platform.providerId,
-                      orElse: () => TmdbPlatformShowcase(platform: platform),
-                    )
-                  : async.hasError
-                      ? TmdbPlatformShowcase(platform: platform)
-                      : null;
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: data == null
-                    ? _PlatformSkeleton(width: cardWidth)
-                    : TmdbPlatformCard(
-                        key: ValueKey('tmdbPlatform_${platform.providerId}'),
-                        showcase: data,
-                        imageBase: imageBase,
-                        width: cardWidth,
-                        onTap: () => context.push(
-                          '/tmdb/platform/${platform.providerId}',
-                        ),
-                      ),
+                child: TmdbPlatformCard(
+                  key: ValueKey('tmdbPlatform_${platform.providerId}'),
+                  platform: platform,
+                  width: cardWidth,
+                  onTap: () => context.push(
+                    '/tmdb/platform/${platform.providerId}',
+                  ),
+                ),
               );
             },
           ),
         ),
       ],
-    );
-  }
-}
-
-class _PlatformSkeleton extends StatelessWidget {
-  const _PlatformSkeleton({required this.width});
-
-  final double width;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: 84,
-      child: GlassContainer(
-        borderRadius: BorderRadius.circular(18),
-        padding: const EdgeInsets.all(8),
-        showShadow: false,
-        child: Row(
-          children: [
-            Container(
-              width: 58,
-              height: 68,
-              decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Container(
-                height: 18,
-                margin: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white12,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

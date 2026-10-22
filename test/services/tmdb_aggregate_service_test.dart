@@ -118,13 +118,6 @@ const _show = TmdbItem(
   title: 'Show 201',
 );
 
-const _showWithPoster = TmdbItem(
-  id: 201,
-  type: TmdbMediaType.tv,
-  title: 'Show 201',
-  posterPath: '/show.jpg',
-);
-
 void main() {
   test('可用性匹配：仅保留服务器已有条目，当前服务器优先且不重复', () async {
     final s1 = _server('s1');
@@ -305,38 +298,5 @@ void main() {
 
     expect(page.items.map((e) => e.tmdb.key), [_movie1.key, _movie2.key]);
     expect(page.hasMore, isTrue);
-  });
-
-  test('fetchPlatformShowcases 返回 Logo、平台条目与服务器海报', () async {
-    final tmdb = _FakeTmdbService()
-      ..lists[TmdbMediaType.tv] = const [_showWithPoster]
-      ..logos[8] = '/netflix.png';
-    final service = _ProviderEmbyService({
-      '201': [
-        MediaItem(
-          id: 't1',
-          name: 'Show',
-          type: 'Series',
-          providerIds: const {'Tmdb': '201'},
-          posterUrl: 'https://s1/Items/t1/Images/Primary',
-        ),
-      ],
-    });
-    final aggregate = TmdbAggregateService(
-      tmdb: tmdb,
-      serviceFactory: (_) => service,
-    );
-
-    final showcases = await aggregate.fetchPlatformShowcases(
-      [_server('s1')],
-      region: 'US',
-    );
-
-    expect(showcases, hasLength(6));
-    final netflix = showcases.first;
-    expect(netflix.platform.providerId, 8);
-    expect(netflix.logoPath, '/netflix.png');
-    expect(netflix.highlight?.id, 201);
-    expect(netflix.local?.item.posterUrl, 'https://s1/Items/t1/Images/Primary');
   });
 }
