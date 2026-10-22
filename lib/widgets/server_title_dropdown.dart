@@ -29,7 +29,9 @@ class ServerTitleDropdown extends ConsumerWidget {
       }
     }
 
-    final label = current?.label ?? 'HIMI';
+    final tmdbActive = ref.watch(settingsProvider.select((s) => s.isTmdbHome));
+    final label = tmdbActive ? 'TMDB' : (current?.label ?? 'HIMI');
+    final icon = tmdbActive ? Icons.local_movies_outlined : Icons.dns_outlined;
 
     return Builder(
       builder: (titleContext) => TvFocusable(
@@ -51,7 +53,7 @@ class ServerTitleDropdown extends ConsumerWidget {
               Flexible(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: _labelRow(label),
+                  child: _labelRow(label, icon),
                 ),
               ),
               // ▾ 为纯装饰（不再单独聚焦），点击落点由外层胶囊统一接管
@@ -66,11 +68,11 @@ class ServerTitleDropdown extends ConsumerWidget {
     );
   }
 
-  Widget _labelRow(String label) {
+  Widget _labelRow(String label, IconData icon) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.dns_outlined, size: 18),
+        Icon(icon, size: 18),
         const SizedBox(width: 8),
         Flexible(
           child: Text(label, overflow: TextOverflow.ellipsis),
@@ -98,6 +100,7 @@ class ServerTitleDropdown extends ConsumerWidget {
       barrierColor: Colors.black.withValues(alpha: 0.30),
       transitionDuration: const Duration(milliseconds: 160),
       pageBuilder: (dialogContext, _, __) {
+        final tmdbActive = ref.read(settingsProvider).isTmdbHome;
         var left = rect.left < 12 ? 12.0 : rect.left;
         var width = math.min(math.max(rect.width, 220.0), screenW - left - 12);
         if (left + width > screenW - 12) {
@@ -121,20 +124,7 @@ class ServerTitleDropdown extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _buildModeRow(
-                            dialogContext,
-                            ref,
-                            label: '服务器首页',
-                            icon: Icons.dns_outlined,
-                            tmdb: false,
-                          ),
-                          _buildModeRow(
-                            dialogContext,
-                            ref,
-                            label: 'TMDB 聚合',
-                            icon: Icons.local_movies_outlined,
-                            tmdb: true,
-                          ),
+                          _buildTmdbRow(dialogContext, ref),
                           const Divider(height: 1),
                           if (servers.isEmpty)
                             const Padding(
@@ -154,7 +144,7 @@ class ServerTitleDropdown extends ConsumerWidget {
                                 ref,
                                 s,
                                 active: current?.id == s.id,
-                                autofocus: false,
+                                autofocus: !tmdbActive && current?.id == s.id,
                               ),
                         ],
                       ),
@@ -185,24 +175,16 @@ class ServerTitleDropdown extends ConsumerWidget {
     );
   }
 
-  Widget _buildModeRow(
-    BuildContext dialogContext,
-    WidgetRef ref, {
-    required String label,
-    required IconData icon,
-    required bool tmdb,
-  }) {
-    final active = ref.read(settingsProvider).isTmdbHome == tmdb;
+  Widget _buildTmdbRow(BuildContext dialogContext, WidgetRef ref) {
+    final active = ref.read(settingsProvider).isTmdbHome;
     void select() {
       Navigator.pop(dialogContext);
       if (active) return;
-      ref.read(settingsProvider.notifier).update(
-            homeSourceMode: tmdb ? 'tmdb' : 'server',
-          );
+      ref.read(settingsProvider.notifier).update(homeSourceMode: 'tmdb');
     }
 
     return TvFocusable(
-      key: ValueKey('homeSourceModeRow_${tmdb ? 'tmdb' : 'server'}'),
+      key: const ValueKey('tmdbSourceRow'),
       radius: 12,
       scale: 1.0,
       autofocus: active,
@@ -212,14 +194,14 @@ class ServerTitleDropdown extends ConsumerWidget {
         child: Row(
           children: [
             Icon(
-              active ? Icons.check_circle : icon,
+              active ? Icons.check_circle : Icons.local_movies_outlined,
               size: 18,
               color: active ? Colors.green : Colors.white70,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                label,
+                'TMDB 聚合',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: Colors.white,
@@ -280,8 +262,17 @@ class ServerTitleDropdown extends ConsumerWidget {
 
   Future<void> _selectServer(WidgetRef ref, EmbyServerConfig server) async {
     final current = ref.read(embyConfigProvider);
-    if (current?.id == server.id) return;
+    final wasTmdb = ref.read(settingsProvider).isTmdbHome;
+    if (current?.id == server.id) {
+      if (wasTmdb) {
+        ref.read(settingsProvider.notifier).update(homeSourceMode: 'server');
+      }
+      return;
+    }
     ref.read(embyConfigProvider.notifier).setConfig(server);
+    if (wasTmdb) {
+      ref.read(settingsProvider.notifier).update(homeSourceMode: 'server');
+    }
     await ref.read(embyAuthServiceProvider).saveSelectedServerId(server.id);
   }
 }

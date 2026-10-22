@@ -37,11 +37,11 @@ Widget _host({
   ValueChanged<int>? onSelect,
   List<EmbyServerConfig> servers = const [],
   EmbyServerConfig? current,
+  AppSettings settings = const AppSettings(tvMode: true),
 }) {
   return ProviderScope(
     overrides: [
-      settingsProvider.overrideWith(
-          (ref) => FakeSettingsNotifier(const AppSettings(tvMode: true))),
+      settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
       remoteSearchBasePortProvider.overrideWithValue(0),
       embyAuthServiceProvider.overrideWith((ref) => FakeEmbyAuthService()),
       if (servers.isNotEmpty)
@@ -190,18 +190,90 @@ void main() {
 
     await tester.tap(find.text('HIMI'));
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tmdbSourceRow')), findsOneWidget);
     expect(
-        find.byKey(const ValueKey('homeSourceModeRow_server')), findsOneWidget);
-    expect(
-        find.byKey(const ValueKey('homeSourceModeRow_tmdb')), findsOneWidget);
+        find.byKey(const ValueKey('homeSourceModeRow_server')), findsNothing);
+    expect(find.byKey(const ValueKey('homeSourceModeRow_tmdb')), findsNothing);
     expect(find.text('未添加服务器'), findsOneWidget);
 
     final container = ProviderScope.containerOf(
       tester.element(find.byType(ServerTitleDropdown)),
     );
-    await tester.tap(find.byKey(const ValueKey('homeSourceModeRow_tmdb')));
+    await tester.tap(find.byKey(const ValueKey('tmdbSourceRow')));
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).isTmdbHome, isTrue);
+    expect(
+      find.descendant(
+        of: find.byType(ServerTitleDropdown),
+        matching: find.text('TMDB'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ServerTitleDropdown),
+        matching: find.byIcon(Icons.local_movies_outlined),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('TMDB 模式胶囊显示胶片图标，选择服务器切回服务器首页', (tester) async {
+    final servers = [_server('a', '家庭NAS'), _server('b', '备用服务器')];
+    await tester.pumpWidget(
+      _host(
+        servers: servers,
+        current: servers.first,
+        settings: const AppSettings(tvMode: true, homeSourceMode: 'tmdb'),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.descendant(
+        of: find.byType(ServerTitleDropdown),
+        matching: find.text('TMDB'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ServerTitleDropdown),
+        matching: find.byIcon(Icons.local_movies_outlined),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('TMDB'));
+    await tester.pumpAndSettle();
+
+    // TMDB 行在第一位，下面按配置页顺序列出服务器；激活服务器仍打勾。
+    expect(find.byKey(const ValueKey('tmdbSourceRow')), findsOneWidget);
+    expect(find.byKey(const ValueKey('serverRow_a')), findsOneWidget);
+    expect(find.byKey(const ValueKey('serverRow_b')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('serverRow_a')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ServerTitleDropdown)),
+    );
+    await tester.tap(find.text('备用服务器'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).isTmdbHome, isFalse);
+    expect(container.read(embyConfigProvider)?.id, 'b');
+    expect(
+      find.descendant(
+        of: find.byType(ServerTitleDropdown),
+        matching: find.text('备用服务器'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('▾ 打开服务器下拉并可切换服务器', (tester) async {
@@ -272,11 +344,9 @@ void main() {
       findsOneWidget,
     );
 
-    // 方向键穿过两个模式行，聚焦到备用服务器，OK 选中并关闭下拉
-    for (var i = 0; i < 3; i++) {
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.pump();
-    }
+    // 当前服务器行已聚焦，方向键下移一格到备用服务器，OK 选中并关闭下拉
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 

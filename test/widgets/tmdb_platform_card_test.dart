@@ -24,7 +24,7 @@ Widget _host(Widget child) {
 }
 
 void main() {
-  testWidgets('平台卡只渲染透明 Logo，不铺背景图', (tester) async {
+  testWidgets('平台卡用模糊 Logo 铺满背景，前景 Logo 完整不变形', (tester) async {
     var tapped = false;
     await tester.pumpWidget(
       _host(
@@ -41,10 +41,20 @@ void main() {
     await tester.pump();
 
     expect(find.byType(GlassContainer), findsOneWidget);
-    expect(find.byType(TmdbImage), findsOneWidget);
-    final image = tester.widget<TmdbImage>(find.byType(TmdbImage));
-    expect(image.url, 'https://image.example/t/p/w300/netflix.png');
-    expect(image.fit, BoxFit.contain);
+    expect(find.byType(TmdbImage), findsNWidgets(2));
+    expect(find.byType(ImageFiltered), findsOneWidget);
+
+    final backdrop = tester.widget<TmdbImage>(
+      find.byKey(const ValueKey('tmdbPlatformBackdrop_8')),
+    );
+    expect(backdrop.url, 'https://image.example/t/p/w300/netflix.png');
+    expect(backdrop.fit, BoxFit.cover);
+
+    final logo = tester.widget<TmdbImage>(
+      find.byKey(const ValueKey('tmdbPlatformLogo_8')),
+    );
+    expect(logo.url, 'https://image.example/t/p/w300/netflix.png');
+    expect(logo.fit, BoxFit.contain);
 
     await tester.tap(find.byType(TmdbPlatformCard));
     expect(tapped, isTrue);
