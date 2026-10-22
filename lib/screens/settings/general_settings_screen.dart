@@ -73,23 +73,6 @@ class GeneralSettingsScreen extends ConsumerWidget {
         ],
         settingsTvWrapRow(
           tvMode: settings.tvMode,
-          onTap: () => context.push('/settings/general/tmdb'),
-          child: ListTile(
-            key: const ValueKey('tmdbSettingsEntry'),
-            leading: const Icon(Icons.local_movies_outlined),
-            title: const Text('TMDB 聚合'),
-            subtitle: const Text('跨服务器发现电影/剧集，配置 API Key 与观看区域'),
-            trailing: const Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: Colors.white54,
-            ),
-            onTap: () => context.push('/settings/general/tmdb'),
-          ),
-        ),
-        const Divider(height: 1),
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
           onTap: () => context.push('/settings/general/cache'),
           child: ListTile(
             key: const ValueKey('cacheSettingsEntry'),

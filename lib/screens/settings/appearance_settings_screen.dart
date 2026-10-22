@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
@@ -9,8 +10,8 @@ import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 
-/// 外观设置子页：主题色 / 分类页每行海报数 / 液态玻璃（开关 + 参数）/
-/// 视频版本偏好（v1.1.233 自「播放器」迁入）。
+/// 外观设置子页：主题色 / 首页轮播与 TMDB 入口 / 分类页每行海报数 /
+/// 液态玻璃（开关 + 参数）/ 视频版本偏好（v1.1.233 自「播放器」迁入）。
 class AppearanceSettingsScreen extends ConsumerWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -57,6 +58,23 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
         ],
+        settingsTvWrapRow(
+          tvMode: settings.tvMode,
+          onTap: () => context.push('/settings/general/tmdb'),
+          child: ListTile(
+            key: const ValueKey('tmdbSettingsEntry'),
+            leading: const Icon(Icons.local_movies_outlined),
+            title: const Text('TMDB 聚合'),
+            subtitle: const Text('跨服务器发现电影/剧集，配置 API Key 与观看区域'),
+            trailing: const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Colors.white54,
+            ),
+            onTap: () => context.push('/settings/general/tmdb'),
+          ),
+        ),
+        const Divider(height: 1),
         const _CategoryColumnsSection(),
         const Divider(height: 1),
         // 视频版本偏好：多版本资源的排序与默认选用优先级（底部弹层重排）

@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 
-MediaItem _item(String id) => MediaItem(id: id, name: '影片$id', type: 'Movie');
+HomeHeroItem _item(String id) => HomeHeroItem(title: '影片$id', payload: id);
 
 Future<void> _pump(
   WidgetTester tester,
   PageController controller, {
-  required List<MediaItem> items,
-  void Function(MediaItem)? onTap,
+  required List<HomeHeroItem> items,
+  void Function(HomeHeroItem)? onTap,
   ValueChanged<int>? onPageChanged,
 }) async {
   await tester.pumpWidget(
@@ -35,7 +34,8 @@ void main() {
   testWidgets('渲染多页 + 页码点，满 5 秒自动切页', (tester) async {
     final controller = PageController();
     addTearDown(controller.dispose);
-    await _pump(tester, controller, items: [_item('1'), _item('2'), _item('3')]);
+    await _pump(tester, controller,
+        items: [_item('1'), _item('2'), _item('3')]);
 
     expect(controller.page, 0);
     await tester.pump(const Duration(seconds: 5));
@@ -64,7 +64,7 @@ void main() {
   testWidgets('点击当前页回调对应条目', (tester) async {
     final controller = PageController();
     addTearDown(controller.dispose);
-    MediaItem? tapped;
+    HomeHeroItem? tapped;
     await _pump(
       tester,
       controller,
@@ -74,7 +74,7 @@ void main() {
 
     await tester.tap(find.byType(PageView));
     await tester.pump();
-    expect(tapped?.id, '1');
+    expect(tapped?.payload, '1');
 
     await tester.pumpWidget(const SizedBox());
   });
@@ -105,8 +105,7 @@ void main() {
           reason: '底边若保留暗度会与背景蒙罩叠成台阶（分割线根因）');
       expect(g.colors.last.a, 0.0);
       expect(g.stops!.last, 1.0);
-      expect(g.colors[2], const Color(0x99000000),
-          reason: '文字区维持 60% 可读性压暗');
+      expect(g.colors[2], const Color(0x99000000), reason: '文字区维持 60% 可读性压暗');
       expect(g.colors[3], const Color(0x99000000));
       expect(g.stops![3], 0.84, reason: '0.84 前保持台面，仅末段渐隐');
     });

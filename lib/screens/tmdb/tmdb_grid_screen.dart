@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
+import 'package:himi_syncwatch/utils/poster_grid.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
@@ -51,13 +52,11 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
   bool _loadingMore = false;
   String? _error;
 
-  TmdbAggregateService? get _service =>
-      ref.read(tmdbAggregateServiceProvider);
+  TmdbAggregateService? get _service => ref.read(tmdbAggregateServiceProvider);
 
   String get _title {
     if (widget.isPlatform) {
-      return tmdbPlatformName(widget.providerId!) ??
-          '平台 ${widget.providerId}';
+      return tmdbPlatformName(widget.providerId!) ?? '平台 ${widget.providerId}';
     }
     return TmdbAggregateService.sectionTitle(widget.sectionKey ?? '');
   }
@@ -108,9 +107,8 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
           activeServerId: activeId,
         );
         if (!mounted) return;
-        final existing = _entries
-            .map((e) => '${e.server.id}|${e.item.id}')
-            .toSet();
+        final existing =
+            _entries.map((e) => '${e.server.id}|${e.item.id}').toSet();
         for (final entry in result.items) {
           if (existing.add('${entry.server.id}|${entry.item.id}')) {
             _entries.add(entry);
@@ -164,6 +162,9 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
         : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
     final imageBase = ref.watch(tmdbImageBaseProvider);
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    final columnsSetting =
+        ref.watch(settingsProvider.select((s) => s.categoryColumns));
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -181,87 +182,135 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
         ),
         child: RefreshIndicator(
           onRefresh: () => _load(reset: true),
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.only(
-              top: GlassConfig.topInsetOf(context),
-              bottom: GlassConfig.bottomReserveOf(context),
-              left: 16,
-              right: 16,
-            ),
-            children: [
-              if (widget.isPlatform)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final filter in _PlatformFilter.values)
-                        ChoiceChip(
-                          key: ValueKey('tmdbFilter_${filter.name}'),
-                          label: Text(filter.label),
-                          selected: _filter == filter,
-                          onSelected: (_) => _setFilter(filter),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = posterGridColumns(
+                width: constraints.maxWidth,
+                tvMode: tvMode,
+                columns: columnsSetting,
+              );
+              final cellWidth =
+                  (constraints.maxWidth - 16 - 8 * (columns - 1)) / columns;
+              final cellHeight = TmdbPosterCard.heightFor(cellWidth);
+              final topInset = GlassConfig.topInsetOf(context);
+
+              return CustomScrollView(
+                key: const ValueKey('tmdbGridScroll'),
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  if (widget.isPlatform)
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(16, topInset, 16, 12),
+                      sliver: SliverToBoxAdapter(
+                        child: Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final filter in _PlatformFilter.values)
+                              ChoiceChip(
+                                key: ValueKey('tmdbFilter_${filter.name}'),
+                                label: Text(filter.label),
+                                selected: _filter == filter,
+                                onSelected: (_) => _setFilter(filter),
+                              ),
+                          ],
                         ),
-                    ],
-                  ),
-                ),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 120),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                _ErrorView(
-                  error: _error!,
-                  onRetry: () => _load(reset: true),
-                )
-              else if (_entries.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 120),
-                  child: Center(
-                    child: Text('服务器中没有匹配的条目',
-                        style: TextStyle(color: Colors.white70)),
-                  ),
-                )
-              else
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 16,
-                  children: [
-                    for (final entry in _entries)
-                      SizedBox(
-                        width: 120,
-                        child: TmdbPosterCard(
-                          key: ValueKey(
-                              'tmdbGrid_${entry.server.id}_${entry.item.id}'),
-                          item: entry.tmdb,
-                          imageBase: imageBase,
-                          width: 120,
-                          serverBadge: entry.server.label,
-                          onTap: () => context.push(
-                            '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',
+                      ),
+                    ),
+                  if (_loading)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          top: widget.isPlatform ? 120 : topInset + 120,
+                        ),
+                        child: const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                    )
+                  else if (_error != null)
+                    SliverToBoxAdapter(
+                      child: _ErrorView(
+                        error: _error!,
+                        onRetry: () => _load(reset: true),
+                      ),
+                    )
+                  else if (_entries.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          top: widget.isPlatform ? 120 : topInset + 120,
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '服务器中没有匹配的条目',
+                            style: TextStyle(color: Colors.white70),
                           ),
                         ),
                       ),
-                  ],
-                ),
-              if (widget.isPlatform && !_loading && _error == null) ...[
-                const SizedBox(height: 20),
-                Center(
-                  child: _loadingMore
-                      ? const CircularProgressIndicator()
-                      : _hasMore
-                          ? ElevatedButton(
-                              key: const Key('tmdbLoadMore'),
-                              onPressed: () => _load(reset: false),
-                              child: const Text('加载更多'),
-                            )
-                          : const Text('没有更多了',
-                              style: TextStyle(color: Colors.white54)),
-                ),
-              ],
-            ],
+                    )
+                  else
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        8,
+                        widget.isPlatform ? 8 : topInset + 8,
+                        8,
+                        8,
+                      ),
+                      sliver: SliverGrid(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: columns,
+                          mainAxisExtent: cellHeight,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final entry = _entries[index];
+                            return TmdbPosterCard(
+                              key: ValueKey(
+                                'tmdbGrid_${entry.server.id}_${entry.item.id}',
+                              ),
+                              item: entry.tmdb,
+                              imageBase: imageBase,
+                              width: cellWidth,
+                              serverBadge: entry.server.label,
+                              onTap: () => context.push(
+                                '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',
+                              ),
+                            );
+                          },
+                          childCount: _entries.length,
+                        ),
+                      ),
+                    ),
+                  if (widget.isPlatform && !_loading && _error == null)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 20),
+                        child: Center(
+                          child: _loadingMore
+                              ? const CircularProgressIndicator()
+                              : _hasMore
+                                  ? ElevatedButton(
+                                      key: const Key('tmdbLoadMore'),
+                                      onPressed: () => _load(reset: false),
+                                      child: const Text('加载更多'),
+                                    )
+                                  : const Text(
+                                      '没有更多了',
+                                      style: TextStyle(color: Colors.white54),
+                                    ),
+                        ),
+                      ),
+                    ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: GlassConfig.bottomReserveOf(context),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),

@@ -1249,8 +1249,11 @@ void main() {
       expect(settings.isTmdbHome, isFalse);
       expect(settings.hasTmdbCredentials, isFalse);
       expect(settings.tmdbWatchRegion, 'US');
-      expect(settings.effectiveTmdbApiBase, 'https://api.themoviedb.org/3');
-      expect(settings.effectiveTmdbImageBase, 'https://image.tmdb.org/t/p');
+      expect(settings.effectiveTmdbApiBase, 'https://api.tmdb.org/3');
+      expect(
+        settings.effectiveTmdbImageBase,
+        'https://wsrv.nl/?url=https://image.tmdb.org/t/p',
+      );
     });
 
     test('copyWith 与 toJson/fromJson 往返保留', () {
@@ -1279,6 +1282,29 @@ void main() {
       });
       expect(settings.homeSourceMode, 'server');
       expect(settings.tmdbWatchRegion, 'US');
+    });
+
+    test('代理根地址自动补齐 /3 与 /t/p，留空回退官方地址', () {
+      final roots = const AppSettings().copyWith(
+        tmdbApiBase: 'https://tmdb.example.com',
+        tmdbImageBase: 'https://img.example.com',
+      );
+      expect(roots.effectiveTmdbApiBase, 'https://tmdb.example.com/3');
+      expect(roots.effectiveTmdbImageBase, 'https://img.example.com/t/p');
+
+      final blank = const AppSettings().copyWith(
+        tmdbApiBase: '  ',
+        tmdbImageBase: '',
+      );
+      expect(blank.effectiveTmdbApiBase, 'https://api.themoviedb.org/3');
+      expect(blank.effectiveTmdbImageBase, 'https://image.tmdb.org/t/p');
+
+      final legacy = AppSettings.fromJson(const {
+        'tmdbApiBase': ' https://tmdb.example.com/3/ ',
+        'tmdbImageBase': ' https://img.example.com/t/p/ ',
+      });
+      expect(legacy.effectiveTmdbApiBase, 'https://tmdb.example.com/3');
+      expect(legacy.effectiveTmdbImageBase, 'https://img.example.com/t/p');
     });
   });
 

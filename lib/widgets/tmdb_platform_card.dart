@@ -35,7 +35,6 @@ class TmdbPlatformCard extends StatelessWidget {
         onTap: onTap,
         child: GlassContainer(
           borderRadius: BorderRadius.circular(14),
-          padding: const EdgeInsets.all(10),
           child: Center(
             child: logoUrl == null
                 ? Text(
@@ -47,19 +46,22 @@ class TmdbPlatformCard extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   )
-                : TmdbImage(
-                    url: logoUrl,
-                    fit: BoxFit.contain,
-                    cacheWidth:
-                        (width * MediaQuery.devicePixelRatioOf(context)).round(),
-                    placeholder: const SizedBox.shrink(),
-                    errorWidget: Text(
-                      platform.name,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
+                : SizedBox.expand(
+                    child: TmdbImage(
+                      url: logoUrl,
+                      fit: BoxFit.contain,
+                      cacheWidth:
+                          (width * MediaQuery.devicePixelRatioOf(context))
+                              .round(),
+                      placeholder: const SizedBox.shrink(),
+                      errorWidget: Text(
+                        platform.name,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),

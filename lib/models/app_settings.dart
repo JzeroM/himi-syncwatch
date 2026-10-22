@@ -348,8 +348,8 @@ class AppSettings {
     this.serverViewMode = 'list',
     this.homeSourceMode = 'server',
     this.tmdbApiKey = '',
-    this.tmdbApiBase = '',
-    this.tmdbImageBase = '',
+    this.tmdbApiBase = 'https://api.tmdb.org',
+    this.tmdbImageBase = 'https://wsrv.nl/?url=https://image.tmdb.org',
     this.tmdbWatchRegion = 'US',
     this.tvMode = false,
     this.tvSyncEnabled = true,
@@ -387,18 +387,26 @@ class AppSettings {
   /// TMDB 是否已配置凭据（不校验有效性）。
   bool get hasTmdbCredentials => tmdbApiKey.trim().isNotEmpty;
 
-  /// TMDB API 基地址（去尾部斜杠）。
+  /// TMDB API 基地址：用户填代理根地址即可，自动补齐 `/3`。
   String get effectiveTmdbApiBase {
-    final v = tmdbApiBase.trim();
+    final v = _trimTrailingSlashes(tmdbApiBase.trim());
     if (v.isEmpty) return 'https://api.themoviedb.org/3';
-    return v.endsWith('/') ? v.substring(0, v.length - 1) : v;
+    return v.endsWith('/3') ? v : '$v/3';
   }
 
-  /// TMDB 图片基地址（去尾部斜杠）。
+  /// TMDB 图片基地址：用户填代理根地址即可，自动补齐 `/t/p`。
   String get effectiveTmdbImageBase {
-    final v = tmdbImageBase.trim();
+    final v = _trimTrailingSlashes(tmdbImageBase.trim());
     if (v.isEmpty) return 'https://image.tmdb.org/t/p';
-    return v.endsWith('/') ? v.substring(0, v.length - 1) : v;
+    return v.endsWith('/t/p') ? v : '$v/t/p';
+  }
+
+  static String _trimTrailingSlashes(String value) {
+    var result = value;
+    while (result.endsWith('/')) {
+      result = result.substring(0, result.length - 1);
+    }
+    return result;
   }
 
   /// 视频版本偏好顺序（已补齐默认维度）。
@@ -707,17 +715,16 @@ class AppSettings {
       serverViewMode: const ['list', 'grid'].contains(json['serverViewMode'])
           ? json['serverViewMode'] as String
           : 'list',
-      homeSourceMode:
-          homeSourceModes.contains(json['homeSourceMode'])
-              ? json['homeSourceMode'] as String
-              : 'server',
+      homeSourceMode: homeSourceModes.contains(json['homeSourceMode'])
+          ? json['homeSourceMode'] as String
+          : 'server',
       tmdbApiKey: json['tmdbApiKey'] as String? ?? '',
-      tmdbApiBase: json['tmdbApiBase'] as String? ?? '',
-      tmdbImageBase: json['tmdbImageBase'] as String? ?? '',
-      tmdbWatchRegion:
-          tmdbWatchRegions.contains(json['tmdbWatchRegion'])
-              ? json['tmdbWatchRegion'] as String
-              : 'US',
+      tmdbApiBase: json['tmdbApiBase'] as String? ?? 'https://api.tmdb.org',
+      tmdbImageBase: json['tmdbImageBase'] as String? ??
+          'https://wsrv.nl/?url=https://image.tmdb.org',
+      tmdbWatchRegion: tmdbWatchRegions.contains(json['tmdbWatchRegion'])
+          ? json['tmdbWatchRegion'] as String
+          : 'US',
       tvMode: json['tvMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认开（v1.1.249 上线时行为不变）
       tvSyncEnabled: json['tvSyncEnabled'] as bool? ?? true,

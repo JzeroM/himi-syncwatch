@@ -1,8 +1,65 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+
+typedef HomeHeroImageBuilder = Widget Function(
+  String url, {
+  BoxFit fit,
+  int? cacheWidth,
+  bool transparent,
+  Widget? errorWidget,
+});
+
+class HomeHeroItem {
+  const HomeHeroItem({
+    required this.title,
+    this.imageUrl,
+    this.logoUrl,
+    this.year,
+    this.rating,
+    this.genres = const [],
+    this.payload,
+  });
+
+  final String title;
+  final String? imageUrl;
+  final String? logoUrl;
+  final String? year;
+  final double? rating;
+  final List<String> genres;
+  final Object? payload;
+
+  factory HomeHeroItem.fromMediaItem(MediaItem item) {
+    return HomeHeroItem(
+      title: item.name,
+      imageUrl: item.backdropWideUrl ?? item.backdropUrl ?? item.posterUrl,
+      logoUrl: item.logoUrl,
+      year: item.year,
+      rating: item.communityRating,
+      genres: item.genres.take(3).toList(),
+      payload: item,
+    );
+  }
+}
+
+Widget embyHeroImageBuilder(
+  String url, {
+  BoxFit fit = BoxFit.cover,
+  int? cacheWidth,
+  bool transparent = false,
+  Widget? errorWidget,
+}) {
+  return EmbyImage(
+    url: url,
+    fit: fit,
+    cacheWidth: cacheWidth,
+    placeholder: transparent ? const SizedBox.shrink() : null,
+    errorWidget: errorWidget ?? (transparent ? const SizedBox.shrink() : null),
+  );
+}
 
 /// 首页顶部随机海报轮播（非 TV）：每 [interval] 自动切页，末页回卷首页。
 ///
@@ -18,13 +75,15 @@ class HomeHeroCarousel extends StatefulWidget {
     this.onTap,
     this.interval = const Duration(seconds: 5),
     this.onUserInteract,
+    this.imageBuilder = embyHeroImageBuilder,
   });
 
-  final List<MediaItem> items;
+  final List<HomeHeroItem> items;
   final PageController controller;
   final double height;
   final ValueChanged<int> onPageChanged;
-  final void Function(MediaItem item)? onTap;
+  final void Function(HomeHeroItem item)? onTap;
+  final HomeHeroImageBuilder imageBuilder;
 
   /// 自动切换间隔（默认 5 秒）。
   final Duration interval;
@@ -86,7 +145,8 @@ class _HomeHeroCarouselState extends State<HomeHeroCarousel> {
   void didUpdateWidget(covariant HomeHeroCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.items.length != widget.items.length) {
-      _index = _index.clamp(0, widget.items.isEmpty ? 0 : widget.items.length - 1);
+      _index =
+          _index.clamp(0, widget.items.isEmpty ? 0 : widget.items.length - 1);
       _schedule();
     }
   }
@@ -127,8 +187,7 @@ class _HomeHeroCarouselState extends State<HomeHeroCarousel> {
           NotificationListener<ScrollNotification>(
             onNotification: (n) {
               // 手动拖动：重置计时，避免拖动中/刚结束后被自动切走
-              if (n is ScrollStartNotification ||
-                  n is UserScrollNotification) {
+              if (n is ScrollStartNotification || n is UserScrollNotification) {
                 widget.onUserInteract?.call();
                 _schedule();
               }
@@ -142,8 +201,11 @@ class _HomeHeroCarouselState extends State<HomeHeroCarousel> {
                 widget.onPageChanged(i);
                 _schedule();
               },
-              itemBuilder: (context, index) =>
-                  _HeroSlide(item: items[index], onTap: widget.onTap),
+              itemBuilder: (context, index) => _HeroSlide(
+                item: items[index],
+                imageBuilder: widget.imageBuilder,
+                onTap: widget.onTap,
+              ),
             ),
           ),
           if (items.length > 1)
@@ -160,18 +222,23 @@ class _HomeHeroCarouselState extends State<HomeHeroCarousel> {
 }
 
 class _HeroSlide extends StatelessWidget {
-  const _HeroSlide({required this.item, this.onTap});
+  const _HeroSlide({
+    required this.item,
+    required this.imageBuilder,
+    this.onTap,
+  });
 
-  final MediaItem item;
-  final void Function(MediaItem item)? onTap;
+  final HomeHeroItem item;
+  final HomeHeroImageBuilder imageBuilder;
+  final void Function(HomeHeroItem item)? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final bg = item.backdropWideUrl ?? item.backdropUrl ?? item.posterUrl;
+    final bg = item.imageUrl;
     final logo = item.logoUrl;
-    final rating = item.communityRating;
+    final rating = item.rating;
     final year = item.year;
-    final genres = item.genres.take(3).toList();
+    final genres = item.genres;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -185,12 +252,13 @@ class _HeroSlide extends StatelessWidget {
             shaderCallback: (rect) =>
                 HomeHeroCarousel.imageFadeGradient.createShader(rect),
             blendMode: BlendMode.dstIn,
-            child: EmbyImage(
-              url: bg,
-              fit: BoxFit.cover,
-              placeholder: const SizedBox.shrink(),
-              errorWidget: const SizedBox.shrink(),
-            ),
+            child: bg == null
+                ? const SizedBox.shrink()
+                : imageBuilder(
+                    bg,
+                    fit: BoxFit.cover,
+                    transparent: true,
+                  ),
           ),
           // 底部压暗：保证标题/信息可读；底边归零（v1.2.17），接缝暗度
           // 完全由背景蒙罩连续提供，避免叠加出暗带。
@@ -207,27 +275,28 @@ class _HeroSlide extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (logo != null && logo.isNotEmpty)
-                  EmbyImage(
-                    url: logo,
+                  SizedBox(
                     height: 54,
-                    fit: BoxFit.contain,
-                    placeholder: const SizedBox.shrink(),
-                    errorWidget: Text(
-                      item.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        shadows: HomeHeroCarousel.lightTextShadows,
+                    child: imageBuilder(
+                      logo,
+                      fit: BoxFit.contain,
+                      errorWidget: Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          shadows: HomeHeroCarousel.lightTextShadows,
+                        ),
                       ),
                     ),
                   )
                 else
                   Text(
-                    item.name,
+                    item.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
@@ -320,6 +389,127 @@ class _Dots extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class HomeHeroBackground extends StatelessWidget {
+  const HomeHeroBackground({
+    super.key,
+    required this.imageUrl,
+    required this.baseColor,
+    required this.heroHeight,
+    this.imageBuilder = embyHeroImageBuilder,
+  });
+
+  final String? imageUrl;
+  final Color baseColor;
+  final double heroHeight;
+  final HomeHeroImageBuilder imageBuilder;
+
+  static const LinearGradient seamFadeGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Colors.white,
+      Colors.white,
+      Colors.transparent,
+      Colors.transparent,
+    ],
+    stops: [0.0, 0.5, 0.73, 1.0],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final url = imageUrl;
+    if (url == null || url.isEmpty) return const SizedBox.shrink();
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 500),
+      child: Stack(
+        key: ValueKey(url),
+        fit: StackFit.expand,
+        children: [
+          ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+            child: Transform.scale(
+              scale: 1.35,
+              child: KeyedSubtree(
+                key: const Key('homeAmbientImage'),
+                child: imageBuilder(
+                  url,
+                  fit: BoxFit.cover,
+                  cacheWidth: 200,
+                  transparent: true,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            key: const Key('homeAmbientSeamLayer'),
+            top: 0,
+            left: 0,
+            right: 0,
+            height: heroHeight * 2,
+            child: ShaderMask(
+              shaderCallback: (rect) => seamFadeGradient.createShader(rect),
+              blendMode: BlendMode.dstIn,
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: heroHeight,
+                      child: imageBuilder(
+                        url,
+                        fit: BoxFit.cover,
+                        cacheWidth: 200,
+                        transparent: true,
+                      ),
+                    ),
+                    Positioned(
+                      top: heroHeight,
+                      left: 0,
+                      right: 0,
+                      height: heroHeight,
+                      child: Transform.flip(
+                        flipY: true,
+                        child: KeyedSubtree(
+                          key: const Key('homeAmbientSeamImage'),
+                          child: imageBuilder(
+                            url,
+                            fit: BoxFit.cover,
+                            cacheWidth: 200,
+                            transparent: true,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.30),
+                  Colors.black.withValues(alpha: 0.42),
+                  baseColor.withValues(alpha: 0.90),
+                  baseColor,
+                ],
+                stops: const [0.0, 0.5, 0.85, 1.0],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

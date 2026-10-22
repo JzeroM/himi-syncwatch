@@ -131,8 +131,7 @@ void main() {
     expect(_navIcon(kShellNavIcons[0]), findsNothing);
   });
 
-  testWidgets('标题胶囊为单个焦点：点名称或 ▾ 均打开服务器下拉（v1.2.31 单焦点）',
-      (tester) async {
+  testWidgets('标题胶囊为单个焦点：点名称或 ▾ 均打开服务器下拉（v1.2.31 单焦点）', (tester) async {
     int? selected;
     final servers = [_server('a', '家庭NAS'), _server('b', '备用服务器')];
     await tester.pumpWidget(
@@ -158,7 +157,13 @@ void main() {
     await tester.tap(find.text('家庭NAS'));
     await tester.pumpAndSettle();
     expect(find.text('备用服务器'), findsOneWidget);
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('serverRow_a')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
     expect(selected, isNull);
 
     // 点外部关闭后点 ▾：同样打开下拉
@@ -170,7 +175,7 @@ void main() {
     expect(find.text('备用服务器'), findsOneWidget);
   });
 
-  testWidgets('无服务器时标题胶囊不参与焦点遍历（纯展示，无死焦点）', (tester) async {
+  testWidgets('无服务器时标题胶囊仍可打开并切换首页模式', (tester) async {
     await tester.pumpWidget(_host());
     await tester.pump();
 
@@ -180,8 +185,23 @@ void main() {
         of: find.byType(ServerTitleDropdown),
         matching: find.byType(Focus),
       ),
-      findsNothing,
+      findsOneWidget,
     );
+
+    await tester.tap(find.text('HIMI'));
+    await tester.pumpAndSettle();
+    expect(
+        find.byKey(const ValueKey('homeSourceModeRow_server')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('homeSourceModeRow_tmdb')), findsOneWidget);
+    expect(find.text('未添加服务器'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ServerTitleDropdown)),
+    );
+    await tester.tap(find.byKey(const ValueKey('homeSourceModeRow_tmdb')));
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).isTmdbHome, isTrue);
   });
 
   testWidgets('▾ 打开服务器下拉并可切换服务器', (tester) async {
@@ -194,7 +214,13 @@ void main() {
     await tester.tap(find.byIcon(Icons.arrow_drop_down));
     await tester.pumpAndSettle();
     expect(find.text('备用服务器'), findsOneWidget);
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('serverRow_a')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('备用服务器'));
     await tester.pumpAndSettle();
@@ -205,8 +231,7 @@ void main() {
     expect(find.text('家庭NAS'), findsNothing);
   });
 
-  testWidgets('TV：下拉每行有焦点框，方向键移动 + OK 选中（v1.2.32 回归）',
-      (tester) async {
+  testWidgets('TV：下拉每行有焦点框，方向键移动 + OK 选中（v1.2.32 回归）', (tester) async {
     final servers = [_server('a', '家庭NAS'), _server('b', '备用服务器')];
     final container = ProviderContainer(
       overrides: [
@@ -216,8 +241,8 @@ void main() {
         embyAuthServiceProvider.overrideWith((ref) => FakeEmbyAuthService()),
         embyServerListProvider
             .overrideWith((ref) => EmbyServerListNotifier()..setList(servers)),
-        embyConfigProvider
-            .overrideWith((ref) => EmbyConfigNotifier()..setConfig(servers.first)),
+        embyConfigProvider.overrideWith(
+            (ref) => EmbyConfigNotifier()..setConfig(servers.first)),
       ],
     );
     addTearDown(container.dispose);
@@ -247,9 +272,11 @@ void main() {
       findsOneWidget,
     );
 
-    // 方向键下移聚焦到第二行，OK 选中并关闭下拉
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
+    // 方向键穿过两个模式行，聚焦到备用服务器，OK 选中并关闭下拉
+    for (var i = 0; i < 3; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 

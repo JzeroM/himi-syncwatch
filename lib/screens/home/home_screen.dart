@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,7 +17,6 @@ import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
-import 'package:himi_syncwatch/widgets/home_mode_button.dart';
 import 'package:himi_syncwatch/widgets/continue_watching_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -45,17 +43,8 @@ class HomeScreen extends ConsumerStatefulWidget {
   /// 轮播图同裁切的虚化副本，0.5 为接缝；0.5~0.73 为镜像延伸段渐隐区，
   /// 之后交叉溶解回全屏虚化氛围层）。
   @visibleForTesting
-  static const LinearGradient ambientSeamFadeGradient = LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: [
-      Colors.white,
-      Colors.white,
-      Colors.transparent,
-      Colors.transparent,
-    ],
-    stops: [0.0, 0.5, 0.73, 1.0],
-  );
+  static const LinearGradient ambientSeamFadeGradient =
+      HomeHeroBackground.seamFadeGradient;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -84,7 +73,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _loadSeq = 0;
 
   /// 首页轮播候选（每次加载随机抽取，最多 6 条）。
-  List<MediaItem> _heroItems = [];
+  List<HomeHeroItem> _heroItems = [];
   int _heroIndex = 0;
   final PageController _heroController = PageController();
 
@@ -306,7 +295,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
     // 重新加载后轮播回到首页（items 变化时 PageView 可能停留在旧下标）
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _heroController.hasClients &&
+      if (mounted &&
+          _heroController.hasClients &&
           (_heroController.page ?? 0) != 0) {
         _heroController.jumpToPage(0);
       }
@@ -314,7 +304,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 从所有库条目中随机抽取最多 6 条做轮播；优先有宽幅背景的条目。
-  static List<MediaItem> _pickHeroItems(List<_CategoryData> categories) {
+  static List<HomeHeroItem> _pickHeroItems(List<_CategoryData> categories) {
     final all = <MediaItem>[];
     final seen = <String>{};
     for (final c in categories) {
@@ -322,11 +312,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (seen.add(item.id)) all.add(item);
       }
     }
-    final withBackdrop =
-        all.where((i) => i.backdropWideUrl != null).toList()..shuffle();
-    final rest = all.where((i) => i.backdropWideUrl == null).toList()..shuffle();
+    final withBackdrop = all.where((i) => i.backdropWideUrl != null).toList()
+      ..shuffle();
+    final rest = all.where((i) => i.backdropWideUrl == null).toList()
+      ..shuffle();
     final pool = [...withBackdrop, ...rest];
-    return pool.take(6).toList();
+    return pool.take(6).map(HomeHeroItem.fromMediaItem).toList(growable: false);
   }
 
   @override
@@ -373,9 +364,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         !tvMode &&
         !tmdbMode;
     final showHero = homeCarouselEnabled && _heroItems.isNotEmpty;
-    final heroIndex = _heroItems.isEmpty
-        ? 0
-        : _heroIndex.clamp(0, _heroItems.length - 1);
+    final heroIndex =
+        _heroItems.isEmpty ? 0 : _heroIndex.clamp(0, _heroItems.length - 1);
     final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
 
     // 是否有可展示媒体内容：库/分类/续播/轮播任一非空。仅计数到位不算内容。
@@ -454,101 +444,106 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: const TmdbHomeView(),
           )
         : _error != null
-        ? errorView
-        : !hasServer
-            ? const _EmptyState()
-            : _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : !hasContent
-                    ? emptyView
-                    : TvRefreshHotkey(
-                        onRefresh: _loadMedia,
-                        child: RefreshIndicator(
-                          onRefresh: _loadMedia,
-                          child: ListView.builder(
-                            // 空白/内容不足一屏时也可下拉刷新（v1.2.19）
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: EdgeInsets.only(
-                              // 轮播英雄区自带顶部出血；否则预留 AppBar/壳层顶栏
-                              top: showHero
-                                  ? 0
-                                  : (tvMode
-                                      ? 12
-                                      : GlassConfig.topInsetOf(context)),
-                              bottom: GlassConfig.bottomReserveOf(context),
+            ? errorView
+            : !hasServer
+                ? const _EmptyState()
+                : _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : !hasContent
+                        ? emptyView
+                        : TvRefreshHotkey(
+                            onRefresh: _loadMedia,
+                            child: RefreshIndicator(
+                              onRefresh: _loadMedia,
+                              child: ListView.builder(
+                                // 空白/内容不足一屏时也可下拉刷新（v1.2.19）
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: EdgeInsets.only(
+                                  // 轮播英雄区自带顶部出血；否则预留 AppBar/壳层顶栏
+                                  top: showHero
+                                      ? 0
+                                      : (tvMode
+                                          ? 12
+                                          : GlassConfig.topInsetOf(context)),
+                                  bottom: GlassConfig.bottomReserveOf(context),
+                                ),
+                                itemCount: _categories.length +
+                                    (_libraries.isNotEmpty ? 1 : 0) +
+                                    (resumeVisible.isNotEmpty ? 1 : 0) +
+                                    (_counts != null ? 1 : 0) +
+                                    (showHero ? 1 : 0),
+                                itemBuilder: (context, index) {
+                                  if (showHero && index == 0) {
+                                    return HomeHeroCarousel(
+                                      items: _heroItems,
+                                      controller: _heroController,
+                                      height: heroHeight,
+                                      onPageChanged: (i) =>
+                                          setState(() => _heroIndex = i),
+                                      onTap: (item) {
+                                        final media = item.payload;
+                                        if (media is MediaItem) {
+                                          context.push('/detail/${media.id}');
+                                        }
+                                      },
+                                    );
+                                  }
+                                  var i = index - (showHero ? 1 : 0);
+                                  if (_libraries.isNotEmpty) {
+                                    if (i == 0) {
+                                      return _LibraryBar(
+                                        libraries: _libraries,
+                                        onOpen: (lib) => context.push(
+                                          '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
+                                        ),
+                                      );
+                                    }
+                                    i--;
+                                  }
+                                  if (resumeVisible.isNotEmpty) {
+                                    if (i == 0) {
+                                      return _ContinueWatchingBar(
+                                        items: resumeVisible,
+                                        onOpen: (item) {
+                                          // 集条目 → 剧详情页 + 定位到该集
+                                          if (item.isEpisode &&
+                                              item.seriesId != null) {
+                                            context.push(
+                                                '/detail/${item.seriesId}?episode=${item.id}');
+                                          } else {
+                                            context.push('/detail/${item.id}');
+                                          }
+                                        },
+                                        onItemLongPress: (item, rect) =>
+                                            showResumeCardMenu(
+                                                context, ref, item, rect),
+                                      );
+                                    }
+                                    i--;
+                                  }
+                                  if (i < _categories.length) {
+                                    final cat = _categories[i];
+                                    return _CategorySection(
+                                      category: cat,
+                                      onViewAll: () => context.push(
+                                        '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
+                                      ),
+                                      onItemTap: (item) =>
+                                          context.push('/detail/${item.id}'),
+                                      onItemLongPress: (item, rect) =>
+                                          showPosterCardMenu(
+                                              context, ref, item, rect),
+                                    );
+                                  }
+                                  // 列表收尾：媒体统计面板（计数加载成功才渲染）
+                                  return StatsPanel(
+                                    key: const ValueKey('statsPanel'),
+                                    counts: _counts!,
+                                  );
+                                },
+                              ),
                             ),
-                            itemCount: _categories.length +
-                                (_libraries.isNotEmpty ? 1 : 0) +
-                                (resumeVisible.isNotEmpty ? 1 : 0) +
-                                (_counts != null ? 1 : 0) +
-                                (showHero ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (showHero && index == 0) {
-                                return HomeHeroCarousel(
-                                  items: _heroItems,
-                                  controller: _heroController,
-                                  height: heroHeight,
-                                  onPageChanged: (i) =>
-                                      setState(() => _heroIndex = i),
-                                  onTap: (item) =>
-                                      context.push('/detail/${item.id}'),
-                                );
-                              }
-                              var i = index - (showHero ? 1 : 0);
-                              if (_libraries.isNotEmpty) {
-                                if (i == 0) {
-                                  return _LibraryBar(
-                                    libraries: _libraries,
-                                    onOpen: (lib) => context.push(
-                                      '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
-                                    ),
-                                  );
-                                }
-                                i--;
-                              }
-                              if (resumeVisible.isNotEmpty) {
-                                if (i == 0) {
-                                  return _ContinueWatchingBar(
-                                    items: resumeVisible,
-                                    onOpen: (item) {
-                                      // 集条目 → 剧详情页 + 定位到该集
-                                      if (item.isEpisode &&
-                                          item.seriesId != null) {
-                                        context.push(
-                                            '/detail/${item.seriesId}?episode=${item.id}');
-                                      } else {
-                                        context.push('/detail/${item.id}');
-                                      }
-                                    },
-                                    onItemLongPress: (item, rect) =>
-                                        showResumeCardMenu(
-                                            context, ref, item, rect),
-                                  );
-                                }
-                                i--;
-                              }
-                              if (i < _categories.length) {
-                                final cat = _categories[i];
-                                return _CategorySection(
-                                  category: cat,
-                                  onViewAll: () => context.push(
-                                    '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
-                                  ),
-                                  onItemTap: (item) =>
-                                      context.push('/detail/${item.id}'),
-                                  onItemLongPress: (item, rect) =>
-                                      showPosterCardMenu(context, ref, item, rect),
-                                );
-                              }
-                              // 列表收尾：媒体统计面板（计数加载成功才渲染）
-                              return StatsPanel(
-                                key: const ValueKey('statsPanel'),
-                                counts: _counts!,
-                              );
-                            },
-                          ),
-                        ),
-                      );
+                          );
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -563,8 +558,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               actions: [
-                const HomeModeButton(),
-                const SizedBox(width: 4),
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: GlassContainer(
@@ -599,117 +592,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           // 轮播开启时：当前海报虚化铺满（详情页同款）
           if (showHero)
-            _buildHeroBackground(_heroItems[heroIndex], base, heroHeight),
+            HomeHeroBackground(
+              imageUrl: _heroItems[heroIndex].imageUrl,
+              baseColor: base,
+              heroHeight: heroHeight,
+            ),
           content,
-        ],
-      ),
-    );
-  }
-
-  /// 首页轮播虚化背景：当前海报低分解码 + 高斯模糊 + 渐入底色蒙罩，
-  /// 与详情页 `_buildAmbientBackdrop` 一致；切页时淡入淡出。
-  ///
-  /// v1.2.16 接缝对齐层：整屏虚化层与清晰轮播图裁切不同（前者整屏 cover、
-  /// 后者 hero 高 cover），接缝处画面内容/色相对不上 → 即使暗度连续仍有
-  /// 「分割感」。故在其上叠加一层与清晰图完全同裁切的虚化副本，并向接缝
-  /// 下方延伸同内容垂直镜像（接缝第一行像素与原图底边一致，镜像边界在
-  /// 模糊滤镜内部不产生透明边），镜像段渐隐交叉溶解回整屏虚化层。
-  Widget _buildHeroBackground(MediaItem item, Color base, double heroHeight) {
-    // 与轮播清晰图同一取图优先级（v1.2.15）：同一张底图才能让清晰图
-    // 底部渐隐后与虚化层无缝溶解。
-    final url =
-        item.backdropWideUrl ?? item.backdropUrl ?? item.posterUrl;
-    if (url == null || url.isEmpty) return const SizedBox.shrink();
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 500),
-      child: Stack(
-        key: ValueKey(url),
-        fit: StackFit.expand,
-        children: [
-          // 1) 整屏虚化：页面整体色彩延续
-          ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-            child: Transform.scale(
-              scale: 1.35,
-              child: EmbyImage(
-                key: const Key('homeAmbientImage'),
-                url: url,
-                fit: BoxFit.cover,
-                cacheWidth: 200,
-                placeholder: const SizedBox.shrink(),
-                errorWidget: const SizedBox.shrink(),
-              ),
-            ),
-          ),
-          // 2) 接缝对齐层：上半段与清晰轮播图完全同裁切（无额外缩放），
-          //    下半段为同一内容的垂直镜像 → 接缝两侧像素同源，无色相/结构
-          //    硬切；镜像段渐隐后回到整屏虚化层。
-          Positioned(
-            key: const Key('homeAmbientSeamLayer'),
-            top: 0,
-            left: 0,
-            right: 0,
-            height: heroHeight * 2,
-            child: ShaderMask(
-              shaderCallback: (rect) =>
-                  HomeScreen.ambientSeamFadeGradient.createShader(rect),
-              blendMode: BlendMode.dstIn,
-              child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: heroHeight,
-                      child: EmbyImage(
-                        key: const Key('homeAmbientSeamImage'),
-                        url: url,
-                        fit: BoxFit.cover,
-                        cacheWidth: 200,
-                        placeholder: const SizedBox.shrink(),
-                        errorWidget: const SizedBox.shrink(),
-                      ),
-                    ),
-                    Positioned(
-                      top: heroHeight,
-                      left: 0,
-                      right: 0,
-                      height: heroHeight,
-                      child: Transform.flip(
-                        flipY: true,
-                        child: EmbyImage(
-                          url: url,
-                          fit: BoxFit.cover,
-                          cacheWidth: 200,
-                          placeholder: const SizedBox.shrink(),
-                          errorWidget: const SizedBox.shrink(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // 3) 压暗罩
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.30),
-                  Colors.black.withValues(alpha: 0.42),
-                  base.withValues(alpha: 0.90),
-                  base,
-                ],
-                stops: const [0.0, 0.5, 0.85, 1.0],
-              ),
-            ),
-          ),
         ],
       ),
     );

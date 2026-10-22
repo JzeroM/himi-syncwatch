@@ -9,7 +9,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
-/// 详情页「全部服务器资源」栏：仅聚合模式显示，按 TMDB id 精确匹配。
+/// 详情页「资源渠道」栏：仅聚合模式显示，按 TMDB id 精确匹配。
 class TmdbServerSourcesSection extends ConsumerStatefulWidget {
   const TmdbServerSourcesSection({
     super.key,
@@ -90,7 +90,7 @@ class _TmdbServerSourcesSectionState
         const Padding(
           padding: EdgeInsets.only(bottom: 8),
           child: Text(
-            '全部服务器资源',
+            '资源渠道',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
@@ -113,8 +113,8 @@ class _TmdbServerSourcesSectionState
                 },
                 child: GlassContainer(
                   borderRadius: BorderRadius.circular(12),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

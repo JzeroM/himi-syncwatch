@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/utils/poster_grid.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_filter_panel.dart';
@@ -75,23 +76,8 @@ class CategoryScreen extends ConsumerStatefulWidget {
     required double width,
     required bool tvMode,
     int? columns,
-  }) {
-    final int target;
-    if (columns != null) {
-      target = columns;
-    } else if (tvMode) {
-      target = (width / 120).floor();
-    } else if (width > 600) {
-      target = (width / 180).floor();
-    } else {
-      target = 4;
-    }
-
-    final maxFit = (width / 80).floor();
-    final upper = tvMode ? 14 : (width > 600 ? 12 : 6);
-    final cap = maxFit > upper ? upper : maxFit;
-    return target.clamp(1, cap < 1 ? 1 : cap);
-  }
+  }) =>
+      posterGridColumns(width: width, tvMode: tvMode, columns: columns);
 
   @override
   ConsumerState<CategoryScreen> createState() => _CategoryScreenState();
@@ -280,8 +266,9 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         context,
         current: _mediaFilter,
         options: cached,
-        optionsFuture:
-            cached == null ? (_filterOptionsFuture ??= _fetchFilterOptions()) : null,
+        optionsFuture: cached == null
+            ? (_filterOptionsFuture ??= _fetchFilterOptions())
+            : null,
         tvMode: ref.read(settingsProvider.select((s) => s.tvMode)),
       );
       if (result == null || !mounted || result == _mediaFilter) return;

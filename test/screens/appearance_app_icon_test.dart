@@ -204,4 +204,19 @@ void main() {
     expect(find.text('首页轮播'), findsNothing);
     debugDefaultTargetPlatformOverride = null;
   });
+
+  testWidgets('TMDB 入口位于首页轮播下方，TV 模式仍可进入', (tester) async {
+    await _pump(tester, platform: TargetPlatform.android);
+
+    final entry = find.byKey(const ValueKey('tmdbSettingsEntry'));
+    expect(entry, findsOneWidget);
+    final carouselY =
+        tester.getTopLeft(find.byKey(const ValueKey('homeCarouselToggle'))).dy;
+    expect(tester.getTopLeft(entry).dy, greaterThan(carouselY));
+    debugDefaultTargetPlatformOverride = null;
+
+    await _pump(tester, platform: TargetPlatform.android, tvMode: true);
+    expect(find.byKey(const ValueKey('tmdbSettingsEntry')), findsOneWidget);
+    debugDefaultTargetPlatformOverride = null;
+  });
 }

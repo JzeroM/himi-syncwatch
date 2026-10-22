@@ -5,15 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
-/// 当前 Emby 服务器标题玻璃胶囊，点击/OK 打开服务器下拉切换服务器。
+/// 当前 Emby 服务器标题玻璃胶囊，点击/OK 打开下拉切换首页来源或服务器。
 ///
 /// TV 模式整颗胶囊是**单个焦点**（v1.2.31）：名称与 ▾ 同属一个
-/// [TvFocusable]，OK = 打开服务器下拉；回首页不再由标题承担（遥控器
+/// [TvFocusable]，OK = 打开下拉；回首页不再由标题承担（遥控器
 /// 返回键在非首页标签即可回首页，见 `MainShell._handleBack`）。
-/// 无服务器时为纯展示胶囊，不参与焦点遍历（避免死焦点）。
+/// 无服务器时仍可打开下拉，用于选择 TMDB 聚合模式。
 class ServerTitleDropdown extends ConsumerWidget {
   const ServerTitleDropdown({super.key});
 
@@ -29,16 +30,6 @@ class ServerTitleDropdown extends ConsumerWidget {
     }
 
     final label = current?.label ?? 'HIMI';
-
-    if (dedupedServers.isEmpty) {
-      // 无服务器：无下拉可开，纯展示
-      return GlassContainer(
-        borderRadius: const BorderRadius.all(Radius.circular(24)),
-        padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
-        showShadow: false,
-        child: _labelRow(label),
-      );
-    }
 
     return Builder(
       builder: (titleContext) => TvFocusable(
@@ -130,16 +121,41 @@ class ServerTitleDropdown extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          for (final s in servers)
-                            _buildServerRow(
-                              dialogContext,
-                              ref,
-                              s,
-                              active: current?.id == s.id,
-                              // 当前服务器行落焦；异常数据时兜底第一行
-                              autofocus: (current?.id ?? servers.first.id) ==
-                                  s.id,
-                            ),
+                          _buildModeRow(
+                            dialogContext,
+                            ref,
+                            label: '服务器首页',
+                            icon: Icons.dns_outlined,
+                            tmdb: false,
+                          ),
+                          _buildModeRow(
+                            dialogContext,
+                            ref,
+                            label: 'TMDB 聚合',
+                            icon: Icons.local_movies_outlined,
+                            tmdb: true,
+                          ),
+                          const Divider(height: 1),
+                          if (servers.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              child: Text(
+                                '未添加服务器',
+                                style: TextStyle(color: Colors.white54),
+                              ),
+                            )
+                          else
+                            for (final s in servers)
+                              _buildServerRow(
+                                dialogContext,
+                                ref,
+                                s,
+                                active: current?.id == s.id,
+                                autofocus: false,
+                              ),
                         ],
                       ),
                     ),
@@ -166,6 +182,54 @@ class ServerTitleDropdown extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildModeRow(
+    BuildContext dialogContext,
+    WidgetRef ref, {
+    required String label,
+    required IconData icon,
+    required bool tmdb,
+  }) {
+    final active = ref.read(settingsProvider).isTmdbHome == tmdb;
+    void select() {
+      Navigator.pop(dialogContext);
+      if (active) return;
+      ref.read(settingsProvider.notifier).update(
+            homeSourceMode: tmdb ? 'tmdb' : 'server',
+          );
+    }
+
+    return TvFocusable(
+      key: ValueKey('homeSourceModeRow_${tmdb ? 'tmdb' : 'server'}'),
+      radius: 12,
+      scale: 1.0,
+      autofocus: active,
+      onTap: select,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: Row(
+          children: [
+            Icon(
+              active ? Icons.check_circle : icon,
+              size: 18,
+              color: active ? Colors.green : Colors.white70,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

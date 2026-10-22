@@ -12,8 +12,7 @@ class TmdbSettingsScreen extends ConsumerStatefulWidget {
   const TmdbSettingsScreen({super.key});
 
   @override
-  ConsumerState<TmdbSettingsScreen> createState() =>
-      _TmdbSettingsScreenState();
+  ConsumerState<TmdbSettingsScreen> createState() => _TmdbSettingsScreenState();
 }
 
 class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
@@ -131,8 +130,9 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'API 代理地址（可选）',
-                hintText: 'https://api.themoviedb.org/3',
-                helperText: '留空使用官方地址；可填自己的反代，末尾 / 会自动去掉',
+                hintText: 'https://api.tmdb.org',
+                helperText: '默认使用 https://api.tmdb.org；'
+                    '代理地址无需带 /3，留空使用 https://api.themoviedb.org',
               ),
               onChanged: (v) => _update(tmdbApiBase: v),
             ),
@@ -149,8 +149,9 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: '图片代理地址（可选）',
-                hintText: 'https://image.tmdb.org/t/p',
-                helperText: '留空使用官方图片地址',
+                hintText: 'https://wsrv.nl/?url=https://image.tmdb.org',
+                helperText: '默认使用 https://wsrv.nl/?url=https://image.tmdb.org；'
+                    '代理地址无需带 /t/p，留空使用 https://image.tmdb.org',
               ),
               onChanged: (v) => _update(tmdbImageBase: v),
             ),
