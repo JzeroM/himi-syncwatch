@@ -32,7 +32,8 @@ Future<void> showRouteManagerSheet(
 
 /// 线路管理 sheet：自动故障转移开关 + 测速/重试/添加 + 可拖拽线路列表。
 class RouteManagerSheet extends ConsumerStatefulWidget {
-  const RouteManagerSheet({super.key, required this.serverId, this.tvMode = false});
+  const RouteManagerSheet(
+      {super.key, required this.serverId, this.tvMode = false});
 
   final String serverId;
   final bool tvMode;
@@ -295,9 +296,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
       onTap: () =>
           ref.read(serverRouteServiceProvider).switchRoute(server, route.url),
       onMeasure: () => _measureOne(route.url),
-      onRemove: widget.tvMode
-          ? null
-          : () => _removeRoute(server, index),
+      onRemove: widget.tvMode ? null : () => _removeRoute(server, index),
     );
   }
 
@@ -371,7 +370,8 @@ class _RouteTile extends StatelessWidget {
           if (draggable)
             const Padding(
               padding: EdgeInsets.only(right: 8),
-              child: Icon(Icons.drag_indicator, size: 18, color: Colors.white38),
+              child:
+                  Icon(Icons.drag_indicator, size: 18, color: Colors.white38),
             ),
           Icon(
             selected ? Icons.check_circle : Icons.radio_button_unchecked,
@@ -551,6 +551,8 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
   final _pathController = TextEditingController();
   bool _useHttps = true;
   bool _isReverseProxy = false;
+  bool _isApplyingPastedUrl = false;
+  String _lastHostText = '';
   String? _error;
 
   @override
@@ -559,6 +561,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
     _nameController = TextEditingController(
       text: ServerRoute.defaultName(widget.server.routes),
     );
+    _lastHostText = _hostController.text;
   }
 
   @override
@@ -570,15 +573,50 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
     super.dispose();
   }
 
+  void _onHostChanged(String value) {
+    if (_isApplyingPastedUrl) return;
+    final previous = _lastHostText;
+    _lastHostText = value;
+
+    // 仅对粘贴（一次插入多个字符）自动拆分，避免干扰逐字输入。
+    if (value.length - previous.length <= 1) return;
+    if (!looksLikeFullServerUrl(value)) return;
+    final parsed = parseServerUrl(value);
+    if (parsed == null) return;
+    _applyParsedUrl(parsed);
+  }
+
+  void _applyParsedUrl(
+    ({String host, String port, String path, bool useHttps}) parsed,
+  ) {
+    _isApplyingPastedUrl = true;
+    _hostController.value = TextEditingValue(
+      text: parsed.host,
+      selection: TextSelection.collapsed(offset: parsed.host.length),
+    );
+    _portController.text = parsed.port;
+    _pathController.text = parsed.path;
+    _lastHostText = parsed.host;
+    setState(() {
+      _useHttps = parsed.useHttps;
+      _error = null;
+    });
+    _isApplyingPastedUrl = false;
+  }
+
   Future<void> _save() async {
+    // 保存兜底：粘贴未被识别或多字符检测失效时，仍按完整 URL 拆分。
+    final parsed = looksLikeFullServerUrl(_hostController.text)
+        ? parseServerUrl(_hostController.text)
+        : null;
     final url = buildServerUrl(
-      host: _hostController.text,
-      port: _portController.text,
-      path: _pathController.text,
-      useHttps: _useHttps,
+      host: parsed?.host ?? _hostController.text,
+      port: parsed?.port ?? _portController.text,
+      path: parsed?.path ?? _pathController.text,
+      useHttps: parsed?.useHttps ?? _useHttps,
     );
     if (url == null) {
-      setState(() => _error = '请输入有效的服务器地址（ip 或域名）');
+      setState(() => _error = '请输入有效的服务器地址（IP、域名或 [IPv6]）');
       return;
     }
     final name = _nameController.text.trim();
@@ -663,15 +701,19 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                 _sheetField(
                   label: '服务器地址',
                   controller: _hostController,
-                  hintText: 'ip 或域名，如 192.168.1.100',
+                  fieldKey: const Key('routeHostField'),
+                  hintText: '域名 / IPv4 / [IPv6]，支持粘贴完整 URL',
+                  onChanged: _onHostChanged,
                 ),
                 _sheetField(
                   label: '端口',
                   controller: _portController,
+                  fieldKey: const Key('routePortField'),
                 ),
                 _sheetField(
                   label: '路径（可选）',
                   controller: _pathController,
+                  fieldKey: const Key('routePathField'),
                 ),
                 const SizedBox(height: 8),
                 const Text('配置',
@@ -679,6 +721,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                 const SizedBox(height: 4),
                 _switchRow(
                   label: '使用 HTTPS',
+                  switchKey: const Key('routeHttpsSwitch'),
                   value: _useHttps,
                   onChanged: (v) => setState(() => _useHttps = v),
                 ),
@@ -714,6 +757,8 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
     required String label,
     required TextEditingController controller,
     String? hintText,
+    Key? fieldKey,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -724,7 +769,9 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
               style: const TextStyle(fontSize: 13, color: Colors.white54)),
           const SizedBox(height: 6),
           TextField(
+            key: fieldKey,
             controller: controller,
+            onChanged: onChanged,
             style: const TextStyle(fontSize: 15),
             decoration: InputDecoration(
               hintText: hintText,
@@ -748,6 +795,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
     required bool value,
     required ValueChanged<bool> onChanged,
     String? subtitle,
+    Key? switchKey,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -762,12 +810,12 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                         fontSize: 15, fontWeight: FontWeight.w500)),
                 if (subtitle != null)
                   Text(subtitle,
-                      style: const TextStyle(
-                          fontSize: 12, color: Colors.white38)),
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.white38)),
               ],
             ),
           ),
-          Switch(value: value, onChanged: onChanged),
+          Switch(key: switchKey, value: value, onChanged: onChanged),
         ],
       ),
     );

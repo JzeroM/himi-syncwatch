@@ -128,8 +128,7 @@ void main() {
     expect(updated.activeRouteUrl, isNull);
   });
 
-  testWidgets('TV 点添加线路 → 打开扫码配置页（mode=route，v1.1.243）',
-      (tester) async {
+  testWidgets('TV 点添加线路 → 打开扫码配置页（mode=route，v1.1.243）', (tester) async {
     final container = await _pumpSheet(
       tester,
       server: _server(),
@@ -142,18 +141,48 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
 
     expect(find.byType(QrConfigScreen), findsOneWidget,
-      reason: 'TV 无输入法：添加线路走手机扫码');
+        reason: 'TV 无输入法：添加线路走手机扫码');
     final qr = tester.widget<QrConfigScreen>(find.byType(QrConfigScreen));
     expect(qr.mode, 'route');
-    expect(qr.serverId, 'cfg1',
-      reason: 'serverId 透传给 routeHandler 落库目标');
+    expect(qr.serverId, 'cfg1', reason: 'serverId 透传给 routeHandler 落库目标');
 
     Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('routeTile_main')), findsOneWidget,
-      reason: '返回线路弹层');
+        reason: '返回线路弹层');
     // 未做任何添加：列表不变
     expect(container.read(embyServerListProvider).single.routes, isEmpty);
+  });
+
+  testWidgets('粘贴完整 IPv6 URL → 自动拆分并落库', (tester) async {
+    const ipv6Url = 'http://[2408:85a3::8a2e:370:7334]:8097/emby';
+    final container = await _pumpSheet(tester, server: _server());
+
+    await tester.tap(find.byKey(const Key('addRouteButton')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('routeHostField')),
+      ipv6Url,
+    );
+    await tester.pumpAndSettle();
+
+    String textOf(String key) =>
+        tester.widget<TextField>(find.byKey(Key(key))).controller!.text;
+    expect(textOf('routeHostField'), '2408:85a3::8a2e:370:7334');
+    expect(textOf('routePortField'), '8097');
+    expect(textOf('routePathField'), 'emby');
+    expect(
+      tester.widget<Switch>(find.byKey(const Key('routeHttpsSwitch'))).value,
+      isFalse,
+    );
+
+    await tester.ensureVisible(find.byKey(const Key('saveRouteButton')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('saveRouteButton')));
+    await tester.pumpAndSettle();
+
+    final updated = container.read(embyServerListProvider).single;
+    expect(updated.routes.single.url, ipv6Url);
   });
 
   testWidgets('保存按钮底边避开虚拟导航键区（viewPadding.bottom=48）', (tester) async {
@@ -161,7 +190,8 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         embyAuthServiceProvider.overrideWithValue(FakeEmbyAuthService()),
-        settingsProvider.overrideWith((ref) => FakeSettingsNotifier(const AppSettings())),
+        settingsProvider
+            .overrideWith((ref) => FakeSettingsNotifier(const AppSettings())),
       ],
     );
     addTearDown(container.dispose);
@@ -198,7 +228,8 @@ void main() {
 
     // 表单内容高于视口：滚到底让保存按钮落到滚动视口底部，
     // 再断言其底边不侵入虚拟导航键区。
-    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    final scrollable =
+        tester.state<ScrollableState>(find.byType(Scrollable).first);
     scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
     await tester.pumpAndSettle();
 

@@ -18,6 +18,7 @@ import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/services/tv_sync/paired_tv_store.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -61,6 +62,35 @@ EmbyServerConfig _server({
   );
 }
 
+/// 捕获添加服务器时传入的 URL，避免真实网络请求。
+class _CapturingEmbySetup implements EmbySetupService {
+  String? lastUrl;
+
+  @override
+  Future<EmbyServerConfig> addAndActivate({
+    required String serverUrl,
+    required String username,
+    required String password,
+    String? serverName,
+    void Function(String serverName)? onServerInfo,
+  }) async {
+    lastUrl = serverUrl;
+    onServerInfo?.call(serverName ?? '测试服务器');
+    return EmbyServerConfig(
+      id: 'srv_new',
+      serverUrl: serverUrl,
+      serverName: serverName ?? '测试服务器',
+      serverId: 'srv_new_id',
+      username: username,
+      accessToken: 'token',
+      userId: 'uid',
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 /// 挂最小 GoRouter：`/servers` → 服务器页，`/` → 首页替身
 /// （点击卡片 context.go('/') 跳首页断言用）。
 Future<ProviderContainer> _pumpScreen(
@@ -69,6 +99,7 @@ Future<ProviderContainer> _pumpScreen(
   FakeEmbyAuthService? auth,
   AppSettings settings = const AppSettings(),
   EmbyService Function(EmbyServerConfig)? serviceFactory,
+  EmbySetupService? setup,
   PairedTv? pairedTv,
   List<TvDeviceInfo> onlineDevices = const [],
   bool remote = false,
@@ -93,6 +124,7 @@ Future<ProviderContainer> _pumpScreen(
       ),
       if (serviceFactory != null)
         embyServiceFactoryProvider.overrideWithValue(serviceFactory),
+      if (setup != null) embySetupServiceProvider.overrideWithValue(setup),
     ],
   );
   addTearDown(container.dispose);
@@ -253,8 +285,7 @@ void main() {
 
     expect(container.read(embyConfigProvider)?.id, 'srv_b');
     expect(auth.selectedServerId, 'srv_b');
-    expect(find.text('首页替身'), findsOneWidget,
-        reason: '点击卡片应跳回首页 tab');
+    expect(find.text('首页替身'), findsOneWidget, reason: '点击卡片应跳回首页 tab');
     await _settleSnackbars(tester);
   });
 
@@ -385,8 +416,7 @@ void main() {
 
     final ids =
         container.read(embyServerListProvider).map((s) => s.id).toList();
-    expect(ids, ['srv_b', 'srv_a'],
-        reason: '拖拽把手应可重排列表顺序');
+    expect(ids, ['srv_b', 'srv_a'], reason: '拖拽把手应可重排列表顺序');
     expect(auth.lastSavedServerOrder, ['srv_b', 'srv_a']);
   });
 
@@ -414,8 +444,7 @@ void main() {
 
     final ids =
         container.read(embyServerListProvider).map((s) => s.id).toList();
-    expect(ids, ['srv_b', 'srv_a'],
-        reason: '网格长按拖拽应可重排顺序');
+    expect(ids, ['srv_b', 'srv_a'], reason: '网格长按拖拽应可重排顺序');
     expect(auth.lastSavedServerOrder, ['srv_b', 'srv_a']);
   });
 
@@ -457,8 +486,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('serverMore_srv_b')));
     await tester.pumpAndSettle();
 
-    expect(find.text('编辑'), findsOneWidget,
-        reason: '非激活服务器面板也应有编辑项');
+    expect(find.text('编辑'), findsOneWidget, reason: '非激活服务器面板也应有编辑项');
   });
 
   testWidgets('点击「切换线路」打开线路管理弹层（v1.1.242）', (tester) async {
@@ -555,8 +583,7 @@ void main() {
         reason: '服务器名称应在用户名下方');
   });
 
-  testWidgets('网格卡：⋯ 在右边缘垂直居中、同步图标在右下角（v1.2.16）',
-      (tester) async {
+  testWidgets('网格卡：⋯ 在右边缘垂直居中、同步图标在右下角（v1.2.16）', (tester) async {
     const tv = PairedTv(
       deviceId: 'tv_1',
       name: '客厅电视',
@@ -689,8 +716,7 @@ void main() {
     await _pumpScreen(tester, settings: const AppSettings(tvMode: true));
 
     expect(find.byTooltip('添加服务器'), findsNothing);
-    expect(find.byTooltip('手机扫码配置'), findsOneWidget,
-        reason: 'TV 添加服务器统一走扫码');
+    expect(find.byTooltip('手机扫码配置'), findsOneWidget, reason: 'TV 添加服务器统一走扫码');
   });
 
   testWidgets('点击 + 展开添加服务器表单', (tester) async {
@@ -703,8 +729,124 @@ void main() {
     expect(find.text('服务器地址'), findsOneWidget);
   });
 
-  testWidgets('TV 长按 OK 进入布局模式，方向键移动，OK 保存退出（v1.1.237）',
-      (tester) async {
+  testWidgets('粘贴完整 IPv6 URL → 自动拆分 host/port/path/HTTPS', (tester) async {
+    await _pumpScreen(tester);
+    await tester.tap(find.byTooltip('添加服务器'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('serverHostField')),
+      'https://[2408:85a3::8a2e:370:7334]:8920/emby',
+    );
+    await tester.pumpAndSettle();
+
+    String textOf(String key) =>
+        tester.widget<TextField>(find.byKey(Key(key))).controller!.text;
+    expect(textOf('serverHostField'), '2408:85a3::8a2e:370:7334');
+    expect(textOf('serverPortField'), '8920');
+    expect(textOf('serverPathField'), 'emby');
+    expect(
+      tester.widget<Switch>(find.byKey(const Key('serverHttpsSwitch'))).value,
+      isTrue,
+    );
+  });
+
+  testWidgets('粘贴无端口完整 URL → 清空默认端口', (tester) async {
+    await _pumpScreen(tester);
+    await tester.tap(find.byTooltip('添加服务器'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('serverHostField')),
+      'https://emby.example.com/emby',
+    );
+    await tester.pumpAndSettle();
+
+    String textOf(String key) =>
+        tester.widget<TextField>(find.byKey(Key(key))).controller!.text;
+    expect(textOf('serverHostField'), 'emby.example.com');
+    expect(textOf('serverPortField'), isEmpty,
+        reason: '完整 URL 未写端口时不应沿用默认 8096');
+    expect(textOf('serverPathField'), 'emby');
+  });
+
+  testWidgets('粘贴完整 IPv6 URL 后保存，使用拆分后的 URL', (tester) async {
+    final setup = _CapturingEmbySetup();
+    await _pumpScreen(tester, setup: setup);
+    await tester.tap(find.byTooltip('添加服务器'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('serverHostField')),
+      'https://[2408:85a3::8a2e:370:7334]:8920/emby',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('连接并登录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('连接并登录'));
+    await tester.pumpAndSettle();
+
+    expect(setup.lastUrl, 'https://[2408:85a3::8a2e:370:7334]:8920/emby');
+  });
+
+  testWidgets('保存兜底：host 字段保留完整 URL 时仍正确拆分', (tester) async {
+    final setup = _CapturingEmbySetup();
+    await _pumpScreen(tester, setup: setup);
+    await tester.tap(find.byTooltip('添加服务器'));
+    await tester.pumpAndSettle();
+
+    // 直接改 controller（模拟自动拆分未触发），验证保存时兜底解析。
+    tester
+        .widget<TextField>(find.byKey(const Key('serverHostField')))
+        .controller!
+        .text = 'https://[2408:85a3::8a2e:370:7334]:8920/emby';
+    await tester.pump();
+
+    await tester.ensureVisible(find.text('连接并登录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('连接并登录'));
+    await tester.pumpAndSettle();
+
+    expect(setup.lastUrl, 'https://[2408:85a3::8a2e:370:7334]:8920/emby');
+  });
+
+  testWidgets('编辑 IPv6 服务器：字段预填且保存 URL 不变', (tester) async {
+    const ipv6Url = 'https://[2408:85a3::8a2e:370:7334]:8920/emby';
+    final container = await _pumpScreen(
+      tester,
+      servers: [
+        _server(id: 'srv_v6', name: 'IPv6 服务器', serverId: 's6')
+            .copyWith(serverUrl: ipv6Url),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('serverMore_srv_v6')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+
+    String textOf(String key) =>
+        tester.widget<TextField>(find.byKey(Key(key))).controller!.text;
+    expect(textOf('serverHostField'), '2408:85a3::8a2e:370:7334');
+    expect(textOf('serverPortField'), '8920');
+    expect(textOf('serverPathField'), 'emby');
+    expect(
+      tester.widget<Switch>(find.byKey(const Key('serverHttpsSwitch'))).value,
+      isTrue,
+    );
+
+    await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    await _settleSnackbars(tester);
+
+    final updated = container.read(embyServerListProvider).single;
+    expect(updated.serverUrl, ipv6Url);
+  });
+
+  testWidgets('TV 长按 OK 进入布局模式，方向键移动，OK 保存退出（v1.1.237）', (tester) async {
     final auth = FakeEmbyAuthService();
     final container = await _pumpScreen(
       tester,
@@ -801,8 +943,7 @@ void main() {
       expect(prefilled, contains('user'));
     });
 
-    testWidgets('编辑保存保留备用线路（原 saveSession 丢线路 bug 回归）',
-        (tester) async {
+    testWidgets('编辑保存保留备用线路（原 saveSession 丢线路 bug 回归）', (tester) async {
       final auth = FakeEmbyAuthService();
       final container = await _pumpScreen(
         tester,
@@ -839,18 +980,17 @@ void main() {
 
       final updated = container.read(embyServerListProvider).single;
       expect(updated.routes.map((r) => r.id).toList(), ['r1'],
-        reason: '编辑后列表内的备用线路应保留');
+          reason: '编辑后列表内的备用线路应保留');
       expect(updated.activeRouteUrl, 'http://r1:8096');
       expect(updated.serverName, '备用服务器');
 
       expect(auth.lastSavedSessionRoutes, isNotNull);
       expect(auth.lastSavedSessionRoutes!.map((r) => r['id']).toList(), ['r1'],
-        reason: 'saveSession 必须带上 routes（原实现清空线路的 bug）');
+          reason: 'saveSession 必须带上 routes（原实现清空线路的 bug）');
       expect(auth.lastSavedActiveRouteUrl, 'http://r1:8096');
     });
 
-    testWidgets('编辑不改地址时 serverUrl 保持（host:port 重建一致）',
-        (tester) async {
+    testWidgets('编辑不改地址时 serverUrl 保持（host:port 重建一致）', (tester) async {
       final container = await _pumpScreen(
         tester,
         servers: [
@@ -871,11 +1011,10 @@ void main() {
 
       final updated = container.read(embyServerListProvider).single;
       expect(updated.serverUrl, 'https://srv_b.example.com:8096',
-        reason: 'parseServerUrl 往返后端口默认 8096');
+          reason: 'parseServerUrl 往返后端口默认 8096');
     });
 
-    testWidgets('编辑表单展开时底部导航隐藏，收起恢复（v1.1.243）',
-        (tester) async {
+    testWidgets('编辑表单展开时底部导航隐藏，收起恢复（v1.1.243）', (tester) async {
       final container = await _pumpScreen(
         tester,
         servers: [
@@ -890,7 +1029,7 @@ void main() {
       await tester.tap(find.text('编辑'));
       await tester.pumpAndSettle();
       expect(container.read(shellNavVisibilityProvider), false,
-        reason: '编辑表单展开 → 导航隐藏');
+          reason: '编辑表单展开 → 导航隐藏');
 
       // 保存收起 → 导航恢复
       await tester.ensureVisible(find.text('保存'));
@@ -899,7 +1038,7 @@ void main() {
       await tester.pumpAndSettle();
       await _settleSnackbars(tester);
       expect(container.read(shellNavVisibilityProvider), true,
-        reason: '表单收起 → 导航恢复');
+          reason: '表单收起 → 导航恢复');
     });
 
     testWidgets('TV 模式点编辑 → 打开扫码配置页（v1.1.243）', (tester) async {
@@ -918,15 +1057,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
 
       expect(find.byType(QrConfigScreen), findsOneWidget,
-        reason: 'TV 无输入法：编辑走扫码配置');
+          reason: 'TV 无输入法：编辑走扫码配置');
 
       Navigator.of(tester.element(find.byType(QrConfigScreen))).pop();
       await tester.pumpAndSettle();
       expect(find.byType(QrConfigScreen), findsNothing);
     });
 
-    testWidgets('切走分支（epoch bump）→ 编辑/添加表单收起、导航恢复（v1.1.243）',
-        (tester) async {
+    testWidgets('切走分支（epoch bump）→ 编辑/添加表单收起、导航恢复（v1.1.243）', (tester) async {
       final container = await _pumpScreen(
         tester,
         servers: [
@@ -947,9 +1085,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('serverForm_srv_b')), findsNothing,
-        reason: '切走应丢弃未保存的编辑表单');
+          reason: '切走应丢弃未保存的编辑表单');
       expect(container.read(shellNavVisibilityProvider), true,
-        reason: '表单收起后导航恢复');
+          reason: '表单收起后导航恢复');
 
       // 添加表单同样收起
       await tester.tap(find.byTooltip('添加服务器'));
@@ -976,11 +1114,10 @@ void main() {
       final delegate =
           grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
       expect(delegate.childAspectRatio, 1.25,
-        reason: '网格卡宽高比应为 1.25（原 0.92 卡太高、中间空白多）');
+          reason: '网格卡宽高比应为 1.25（原 0.92 卡太高、中间空白多）');
     });
 
-    testWidgets('激活列表卡 tint 为中性 panelTintOf（v1.1.246 不带颜色）',
-        (tester) async {
+    testWidgets('激活列表卡 tint 为中性 panelTintOf（v1.1.246 不带颜色）', (tester) async {
       final container = await _pumpScreen(
         tester,
         servers: [
@@ -1000,11 +1137,10 @@ void main() {
         ),
       );
       expect(glass.tint, GlassConfig.panelTintOf(),
-        reason: '激活卡玻璃应完全中性，不再用彩色 tint');
+          reason: '激活卡玻璃应完全中性，不再用彩色 tint');
     });
 
-    testWidgets('激活网格卡 tint 为中性 panelTintOf（v1.1.246 不带颜色）',
-        (tester) async {
+    testWidgets('激活网格卡 tint 为中性 panelTintOf（v1.1.246 不带颜色）', (tester) async {
       final container = await _pumpScreen(
         tester,
         settings: const AppSettings(serverViewMode: 'grid'),
@@ -1023,8 +1159,7 @@ void main() {
           matching: find.byType(GlassContainer),
         ),
       );
-      expect(glass.tint, GlassConfig.panelTintOf(),
-        reason: '激活网格卡玻璃应完全中性');
+      expect(glass.tint, GlassConfig.panelTintOf(), reason: '激活网格卡玻璃应完全中性');
     });
   });
 
@@ -1051,7 +1186,7 @@ void main() {
       expect(container.read(embyConfigProvider)?.id, 'srv_a');
       expect(auth.selectedServerId, 'srv_a');
       expect(find.text('Emby 服务器'), findsOneWidget,
-        reason: 'TV 模式点击卡片不应跳首页，留在服务器管理页');
+          reason: 'TV 模式点击卡片不应跳首页，留在服务器管理页');
       expect(find.text('首页替身'), findsNothing);
       await _settleSnackbars(tester);
     });
@@ -1076,8 +1211,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(container.read(embyConfigProvider)?.id, 'srv_b');
-      expect(find.text('Emby 服务器'), findsOneWidget,
-        reason: 'TV 点击第二张卡也不应跳首页');
+      expect(find.text('Emby 服务器'), findsOneWidget, reason: 'TV 点击第二张卡也不应跳首页');
       await _settleSnackbars(tester);
     });
   });
@@ -1104,12 +1238,11 @@ void main() {
         listen: false,
       );
       expect(container.read(embyConfigProvider)?.id, 'srv_a',
-        reason: '焦点应在第一张卡，短按 OK 打开首卡');
+          reason: '焦点应在第一张卡，短按 OK 打开首卡');
       await _settleSnackbars(tester);
     });
 
-    testWidgets('TV ⋮ 菜单打开后焦点留在 ⋮（面板高亮由按钮驱动）',
-        (tester) async {
+    testWidgets('TV ⋮ 菜单打开后焦点留在 ⋮（面板高亮由按钮驱动）', (tester) async {
       await _pumpScreen(
         tester,
         settings: const AppSettings(tvMode: true),
@@ -1156,7 +1289,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('serverMore_srv_a')));
       await tester.pumpAndSettle();
       expect(find.text('删除'), findsOneWidget,
-        reason: '面板关闭后 ⋮ 按钮仍可交互（焦点回焦不悬空）');
+          reason: '面板关闭后 ⋮ 按钮仍可交互（焦点回焦不悬空）');
     });
   });
 
@@ -1183,7 +1316,7 @@ void main() {
         matching: find.byType(TvFocusable),
       );
       expect(tvWrapped, findsWidgets,
-        reason: 'TV 模式线路 tile 内应有 TvFocusable 焦点环');
+          reason: 'TV 模式线路 tile 内应有 TvFocusable 焦点环');
     });
 
     testWidgets('TV 线路弹层测速按钮 autofocus（首项落焦）', (tester) async {
@@ -1205,19 +1338,18 @@ void main() {
       expect(measureFinder, findsOneWidget);
       final measureTvList = tester
           .widgetList<TvFocusable>(
-            find.descendant(of: measureFinder, matching: find.byType(TvFocusable)),
+            find.descendant(
+                of: measureFinder, matching: find.byType(TvFocusable)),
           )
           .toList();
-      expect(measureTvList, isNotEmpty,
-        reason: '测速按钮应有 TvFocusable');
+      expect(measureTvList, isNotEmpty, reason: '测速按钮应有 TvFocusable');
       expect(measureTvList.first.autofocus, isTrue,
-        reason: 'TV 线路弹层打开时测速按钮应 autofocus 落焦');
+          reason: 'TV 线路弹层打开时测速按钮应 autofocus 落焦');
     });
   });
 
   group('v1.1.247 拖拽反馈尺寸与 TV 长按焦点修复', () {
-    testWidgets('网格拖拽反馈尺寸跟随 aspect 1.25（不再是旧 180×200）',
-        (tester) async {
+    testWidgets('网格拖拽反馈尺寸跟随 aspect 1.25（不再是旧 180×200）', (tester) async {
       await _pumpScreen(
         tester,
         settings: const AppSettings(serverViewMode: 'grid'),
@@ -1234,14 +1366,12 @@ void main() {
       final material = draggable.feedback as Material;
       final opacity = material.child as Opacity;
       final box = opacity.child as SizedBox;
-      expect(box.width, moreOrLessEquals(252),
-        reason: '拖拽反馈宽度应为网格单元实际宽度');
+      expect(box.width, moreOrLessEquals(252), reason: '拖拽反馈宽度应为网格单元实际宽度');
       expect(box.height, moreOrLessEquals(201.6),
-        reason: '拖拽反馈高度应按 aspect 1.25 计算（修复旧 180×200）');
+          reason: '拖拽反馈高度应按 aspect 1.25 计算（修复旧 180×200）');
     });
 
-    testWidgets('TV 长按 OK 进入布局模式后 KeyRepeat 不退出（视图不闪切）',
-        (tester) async {
+    testWidgets('TV 长按 OK 进入布局模式后 KeyRepeat 不退出（视图不闪切）', (tester) async {
       final container = await _pumpScreen(
         tester,
         settings: const AppSettings(tvMode: true),
@@ -1264,17 +1394,16 @@ void main() {
       await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
       await tester.pump();
       expect(find.text('移动中'), findsOneWidget,
-        reason: 'KeyRepeat 不应退出布局模式（v1.1.247）');
+          reason: 'KeyRepeat 不应退出布局模式（v1.1.247）');
 
       // 松开 OK：KeyUp 也不应退出
       await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-      expect(find.text('移动中'), findsOneWidget,
-        reason: 'KeyUp 不应退出布局模式');
+      expect(find.text('移动中'), findsOneWidget, reason: 'KeyUp 不应退出布局模式');
 
       // 视图模式保持列表（未被顶栏切换按钮改写）
       expect(container.read(settingsProvider).serverViewMode, 'list',
-        reason: '长按 OK 期间视图模式不应被切换');
+          reason: '长按 OK 期间视图模式不应被切换');
       await _settleSnackbars(tester);
     });
 
@@ -1294,11 +1423,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(container.read(embyConfigProvider), isNull,
-        reason: '孤立 KeyUp 不应触发 onTap 打开服务器');
+          reason: '孤立 KeyUp 不应触发 onTap 打开服务器');
     });
 
-    testWidgets('v1.1.251 布局模式：持续 KeyRepeat 焦点不跳到顶栏（仍在卡片）',
-        (tester) async {
+    testWidgets('v1.1.251 布局模式：持续 KeyRepeat 焦点不跳到顶栏（仍在卡片）', (tester) async {
       final container = await _pumpScreen(
         tester,
         remote: true, // 挂 TvRemoteShortcuts，复现全局 TvScopeEnterIntent 抢焦点
@@ -1341,10 +1469,8 @@ void main() {
           .map((s) => s.id)
           .take(2)
           .toList();
-      expect(order, ['srv_b', 'srv_a'],
-          reason: '方向键应移动卡片而非被顶栏吞掉');
-      expect(find.text('移动中'), findsOneWidget,
-          reason: '移动后仍处于布局模式');
+      expect(order, ['srv_b', 'srv_a'], reason: '方向键应移动卡片而非被顶栏吞掉');
+      expect(find.text('移动中'), findsOneWidget, reason: '移动后仍处于布局模式');
       expect(container.read(settingsProvider).serverViewMode, 'list',
           reason: '视图模式不应被顶栏按钮改写');
 
@@ -1496,8 +1622,7 @@ void main() {
         servers: [_server(id: 'srv_a', name: '家庭NAS', serverId: 's1')],
       );
       expect(find.byKey(const ValueKey('tvDeviceButton')), findsNothing);
-      expect(find.byIcon(Icons.add), findsWidgets,
-        reason: '其他顶栏按钮不受影响');
+      expect(find.byIcon(Icons.add), findsWidgets, reason: '其他顶栏按钮不受影响');
     });
 
     testWidgets('设置关闭「同步到 TV」→ 已配对时卡片同步图标也隐藏', (tester) async {
@@ -1619,7 +1744,8 @@ void main() {
       );
 
       // 首卡主体 autofocus
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_a');
+      expect(
+          FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_a');
       expect(focusedTileKey(), const ValueKey('serverTile_srv_a'));
 
       // 右键 → 焦点落到本卡 ⋮（页面显式连线：主体 → ⋮）
@@ -1661,7 +1787,8 @@ void main() {
         ],
       );
 
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_a');
+      expect(
+          FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_a');
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
       expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverMoreBtn',
@@ -1686,7 +1813,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(focusedTileKey(), const ValueKey('serverTile_srv_b'),
           reason: '下键应落到下一张卡主体（而非 ⋮）');
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_b');
+      expect(
+          FocusManager.instance.primaryFocus?.debugLabel, 'serverCard_srv_b');
       await _settleSnackbars(tester);
     });
   });
@@ -1731,8 +1859,7 @@ void main() {
           reason: '卡内只应有整卡节点与 ⋮ 两个可聚焦节点');
     });
 
-    testWidgets('网格：进入布局焦点留在选中卡，KeyRepeat 不跳顶栏，退出回卡',
-        (tester) async {
+    testWidgets('网格：进入布局焦点留在选中卡，KeyRepeat 不跳顶栏，退出回卡', (tester) async {
       await _pumpScreen(
         tester,
         shell: true,
@@ -1764,8 +1891,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(find.text('移动中'), findsNothing, reason: 'KeyDown 退出布局');
-      expect(focusLabel(), 'serverCard_srv_a',
-          reason: '退出后焦点环应回到已聚焦卡片');
+      expect(focusLabel(), 'serverCard_srv_a', reason: '退出后焦点环应回到已聚焦卡片');
       await _settleSnackbars(tester);
     });
 
@@ -1793,8 +1919,7 @@ void main() {
         container.read(embyServerListProvider).map((s) => s.id).toList(),
         ['srv_b', 'srv_a', 'srv_c'],
       );
-      expect(focusLabel(), 'serverCard_srv_a',
-          reason: '重排后焦点应仍在移动中的卡片');
+      expect(focusLabel(), 'serverCard_srv_a', reason: '重排后焦点应仍在移动中的卡片');
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();
@@ -1807,8 +1932,7 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-      expect(focusLabel(), 'serverCard_srv_a',
-          reason: '退出布局后焦点仍在原卡');
+      expect(focusLabel(), 'serverCard_srv_a', reason: '退出布局后焦点仍在原卡');
       await _settleSnackbars(tester);
     });
 
@@ -1831,8 +1955,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       await tester.pumpAndSettle();
-      expect(focusLabel(), 'serverCard_srv_a',
-          reason: '守卫应在下一帧把焦点拉回选中卡');
+      expect(focusLabel(), 'serverCard_srv_a', reason: '守卫应在下一帧把焦点拉回选中卡');
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
@@ -1861,8 +1984,7 @@ void main() {
         ['srv_a', 'srv_b'],
         reason: '列表无左右移动语义',
       );
-      expect(focusLabel(), 'serverCard_srv_a',
-          reason: '左右键不应把焦点带出卡片（真机曾跳顶栏）');
+      expect(focusLabel(), 'serverCard_srv_a', reason: '左右键不应把焦点带出卡片（真机曾跳顶栏）');
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
@@ -1924,8 +2046,7 @@ void main() {
 
     testWidgets('打开面板后焦点仍在 ⋮（不移入面板，卡片不重建）', (tester) async {
       await openPanel(tester);
-      expect(focusLabel(), 'serverMoreBtn',
-          reason: '焦点应留在 ⋮ 按钮，避免卡片重建导致面板被关');
+      expect(focusLabel(), 'serverMoreBtn', reason: '焦点应留在 ⋮ 按钮，避免卡片重建导致面板被关');
       // 面板仍在（若焦点移出卡片会被重建关闭）
       expect(find.text('删除'), findsOneWidget);
       await _settleSnackbars(tester);
@@ -1936,8 +2057,7 @@ void main() {
       for (var i = 0; i < 8; i++) {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
-        expect(focusLabel(), 'serverMoreBtn',
-            reason: '↓ 期间焦点不应离开 ⋮（不逃逸）');
+        expect(focusLabel(), 'serverMoreBtn', reason: '↓ 期间焦点不应离开 ⋮（不逃逸）');
         expect(find.text('删除'), findsOneWidget, reason: '面板应保持打开');
       }
       // 越界后仍停在面板内，面板不关
@@ -1945,8 +2065,7 @@ void main() {
       await _settleSnackbars(tester);
     });
 
-    testWidgets('默认选中首项：打开后直接 OK 触发「编辑」（TV→扫码页）',
-        (tester) async {
+    testWidgets('默认选中首项：打开后直接 OK 触发「编辑」（TV→扫码页）', (tester) async {
       await openPanel(tester);
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump();
@@ -1972,8 +2091,7 @@ void main() {
       await _settleSnackbars(tester);
     });
 
-    testWidgets('↓↑ 往返后 OK 命中对应项（↓ ↓ ↑ → 第二项「切换线路」）',
-        (tester) async {
+    testWidgets('↓↑ 往返后 OK 命中对应项（↓ ↓ ↑ → 第二项「切换线路」）', (tester) async {
       await openPanel(tester);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();

@@ -67,7 +67,7 @@ String buildLanConfigHtml({
 <section id="emby">
   <h2>配置 Emby 服务器</h2>
   <label>服务器地址</label>
-  <input id="emby_url" type="url" placeholder="https://emby.example.com:8096" autocomplete="url">
+  <input id="emby_url" type="url" placeholder="https://emby.example.com:8096 或 https://[2408:...]:8096" autocomplete="url">
   <label>备注名称（可选）</label>
   <input id="emby_name" type="text" placeholder="如：家里NAS">
   <label>用户名</label>
@@ -90,8 +90,8 @@ String buildLanConfigHtml({
   <h2>添加备用线路</h2>
   <label>线路名称（可选）</label>
   <input id="route_name" type="text" placeholder="如：备用入口">
-  <label>服务器地址（ip 或域名）</label>
-  <input id="route_host" type="text" placeholder="例如：192.168.1.100">
+  <label>服务器地址（IP / 域名 / [IPv6]，可粘贴完整 URL）</label>
+  <input id="route_host" type="text" placeholder="例如：192.168.1.100、[2408:...] 或 https://emby.example.com:8096">
   <div class="row">
     <div class="wide">
       <label>路径（可选）</label>

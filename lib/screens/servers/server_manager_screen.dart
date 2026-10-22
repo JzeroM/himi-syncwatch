@@ -397,10 +397,10 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
                 child: dedupedServers.isEmpty
                     ? const _EmptyServerHint()
                     : viewMode == 'grid'
-                        ? _buildGrid(
-                            dedupedServers, currentConfig, statsMap, onlineTvIds)
-                        : _buildList(
-                            dedupedServers, currentConfig, statsMap, onlineTvIds),
+                        ? _buildGrid(dedupedServers, currentConfig, statsMap,
+                            onlineTvIds)
+                        : _buildList(dedupedServers, currentConfig, statsMap,
+                            onlineTvIds),
               ),
           ],
         ),
@@ -449,7 +449,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onEdit: () => _onEditServer(server),
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onStats: () => showResourceStatsSheet(context, server),
-              onServiceSettings: () => showServiceSettingsSheet(context, server),
+              onServiceSettings: () =>
+                  showServiceSettingsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
               // 已配对且该 TV 在线时显示「同步到 TV」图标（离线则隐藏）
               onSyncToTv: ServerManagerScreen.shouldShowSyncToTvIcon(
@@ -536,7 +537,8 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
               onEdit: () => _onEditServer(server),
               onSwitchLine: () => showRouteManagerSheet(context, ref, server),
               onStats: () => showResourceStatsSheet(context, server),
-              onServiceSettings: () => showServiceSettingsSheet(context, server),
+              onServiceSettings: () =>
+                  showServiceSettingsSheet(context, server),
               onDelete: () => _deleteServer(server, isActive),
               // 已配对且该 TV 在线时显示「同步到 TV」图标（离线则隐藏）
               onSyncToTv: ServerManagerScreen.shouldShowSyncToTvIcon(
@@ -1108,6 +1110,8 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
   final _remarkController = TextEditingController();
   late bool _useHttps;
   bool _isLoading = false;
+  bool _isApplyingPastedUrl = false;
+  String _lastHostText = '';
   String? _error;
   String? _serverName;
 
@@ -1134,6 +1138,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
       _portController = TextEditingController(text: '8096');
       _useHttps = false;
     }
+    _lastHostText = _hostController.text;
   }
 
   @override
@@ -1148,15 +1153,50 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     super.dispose();
   }
 
+  void _onHostChanged(String value) {
+    if (_isApplyingPastedUrl) return;
+    final previous = _lastHostText;
+    _lastHostText = value;
+
+    // 仅对粘贴（一次插入多个字符）自动拆分，避免干扰逐字输入。
+    if (value.length - previous.length <= 1) return;
+    if (!looksLikeFullServerUrl(value)) return;
+    final parsed = parseServerUrl(value);
+    if (parsed == null) return;
+    _applyParsedUrl(parsed);
+  }
+
+  void _applyParsedUrl(
+    ({String host, String port, String path, bool useHttps}) parsed,
+  ) {
+    _isApplyingPastedUrl = true;
+    _hostController.value = TextEditingValue(
+      text: parsed.host,
+      selection: TextSelection.collapsed(offset: parsed.host.length),
+    );
+    _portController.text = parsed.port;
+    _pathController.text = parsed.path;
+    _lastHostText = parsed.host;
+    setState(() {
+      _useHttps = parsed.useHttps;
+      _error = null;
+    });
+    _isApplyingPastedUrl = false;
+  }
+
   Future<void> _submit() async {
+    // 保存兜底：粘贴未被识别或多字符检测失效时，仍按完整 URL 拆分。
+    final parsed = looksLikeFullServerUrl(_hostController.text)
+        ? parseServerUrl(_hostController.text)
+        : null;
     final url = buildServerUrl(
-      host: _hostController.text,
-      port: _portController.text,
-      path: _pathController.text,
-      useHttps: _useHttps,
+      host: parsed?.host ?? _hostController.text,
+      port: parsed?.port ?? _portController.text,
+      path: parsed?.path ?? _pathController.text,
+      useHttps: parsed?.useHttps ?? _useHttps,
     );
     if (url == null) {
-      setState(() => _error = '请输入有效的服务器地址（ip 或域名）');
+      setState(() => _error = '请输入有效的服务器地址（IP、域名或 [IPv6]）');
       return;
     }
     setState(() {
@@ -1318,7 +1358,9 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
             _formField(
               label: '服务器地址',
               controller: _hostController,
-              hintText: '例如：192.168.1.100',
+              fieldKey: const Key('serverHostField'),
+              hintText: '域名 / IPv4 / [IPv6]，支持粘贴完整 URL',
+              onChanged: _onHostChanged,
             ),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1328,6 +1370,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
                   child: _formField(
                     label: '路径（可选）',
                     controller: _pathController,
+                    fieldKey: const Key('serverPathField'),
                     hintText: 'Path（可选）',
                   ),
                 ),
@@ -1336,12 +1379,14 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
                   child: _formField(
                     label: '端口',
                     controller: _portController,
+                    fieldKey: const Key('serverPortField'),
                   ),
                 ),
               ],
             ),
             _switchRow(
               label: '使用 HTTPS',
+              switchKey: const Key('serverHttpsSwitch'),
               value: _useHttps,
               onChanged: (v) => setState(() => _useHttps = v),
             ),
@@ -1392,6 +1437,8 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     required TextEditingController controller,
     String? hintText,
     bool obscure = false,
+    Key? fieldKey,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1402,8 +1449,10 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
               style: const TextStyle(fontSize: 13, color: Colors.white54)),
           const SizedBox(height: 6),
           TextField(
+            key: fieldKey,
             controller: controller,
             obscureText: obscure,
+            onChanged: onChanged,
             style: const TextStyle(fontSize: 15),
             decoration: InputDecoration(
               hintText: hintText,
@@ -1426,6 +1475,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     required String label,
     required bool value,
     required ValueChanged<bool> onChanged,
+    Key? switchKey,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1436,7 +1486,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
                 style:
                     const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
           ),
-          Switch(value: value, onChanged: onChanged),
+          Switch(key: switchKey, value: value, onChanged: onChanged),
         ],
       ),
     );

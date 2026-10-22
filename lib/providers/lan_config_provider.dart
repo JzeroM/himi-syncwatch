@@ -64,12 +64,11 @@ class LanConfigNotifier extends StateNotifier<LanConfigState> {
           _guard(embyHandler, body, successMessage: '配置成功，已应用到电视'),
       onDanmaku: danmakuHandler == null
           ? null
-          : (body) => _guard(danmakuHandler, body,
-              successMessage: '弹幕 API 地址已配置'),
+          : (body) =>
+              _guard(danmakuHandler, body, successMessage: '弹幕 API 地址已配置'),
       onRoute: routeHandler == null
           ? null
-          : (body) =>
-              _guard(routeHandler, body, successMessage: '备用线路已添加'),
+          : (body) => _guard(routeHandler, body, successMessage: '备用线路已添加'),
     );
   }
 
@@ -160,20 +159,21 @@ final lanConfigProvider =
       }
       if (target == null) return '目标服务器不存在，请重新扫码';
 
+      final rawHost = asString(body['host']).trim();
+      final parsed =
+          looksLikeFullServerUrl(rawHost) ? parseServerUrl(rawHost) : null;
       final url = buildServerUrl(
-        host: asString(body['host']),
-        port: asString(body['port']),
-        path: asString(body['path']),
-        useHttps: body['https'] == true,
+        host: parsed?.host ?? rawHost,
+        port: parsed?.port ?? asString(body['port']),
+        path: parsed?.path ?? asString(body['path']),
+        useHttps: parsed?.useHttps ?? body['https'] == true,
       );
-      if (url == null) return '服务器地址无效（ip 或域名）';
+      if (url == null) return '服务器地址无效（IP、域名或 [IPv6]）';
 
       final name = asString(body['name']);
       await ref.read(serverRouteServiceProvider).addRoute(
             target,
-            name: name.isEmpty
-                ? ServerRoute.defaultName(target.routes)
-                : name,
+            name: name.isEmpty ? ServerRoute.defaultName(target.routes) : name,
             url: url,
             isReverseProxy: body['reverseProxy'] == true,
           );

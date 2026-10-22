@@ -66,7 +66,8 @@ void main() {
     });
 
     test('端口为空不拼端口段', () {
-      expect(buildServerUrl(host: 'emby.example.com'), 'http://emby.example.com');
+      expect(
+          buildServerUrl(host: 'emby.example.com'), 'http://emby.example.com');
     });
 
     test('path 自动补前导斜杠、去尾斜杠', () {
@@ -91,6 +92,71 @@ void main() {
         buildServerUrl(host: '  1.2.3.4  ', port: '8096'),
         'http://1.2.3.4:8096',
       );
+    });
+
+    test('裸 IPv6 自动补方括号', () {
+      expect(
+        buildServerUrl(host: '2408:85a3::8a2e:370:7334', port: '8096'),
+        'http://[2408:85a3::8a2e:370:7334]:8096',
+      );
+    });
+
+    test('已带方括号的 IPv6 不重复添加', () {
+      expect(
+        buildServerUrl(host: '[2408:85a3::8a2e:370:7334]', port: '8096'),
+        'http://[2408:85a3::8a2e:370:7334]:8096',
+      );
+    });
+
+    test('IPv6 + HTTPS + path', () {
+      expect(
+        buildServerUrl(
+          host: '2408:85a3::8a2e:370:7334',
+          port: '8920',
+          path: 'emby',
+          useHttps: true,
+        ),
+        'https://[2408:85a3::8a2e:370:7334]:8920/emby',
+      );
+    });
+
+    test('IPv6 zone id 编码为 %25', () {
+      expect(
+        buildServerUrl(host: 'fe80::1%eth0', port: '8096'),
+        'http://[fe80::1%25eth0]:8096',
+      );
+      expect(
+        buildServerUrl(host: 'fe80::1%25eth0', port: '8096'),
+        'http://[fe80::1%25eth0]:8096',
+      );
+    });
+
+    test('非法 IPv6 / 方括号 / 端口返回 null', () {
+      expect(buildServerUrl(host: '[::1'), isNull);
+      expect(buildServerUrl(host: '::1]'), isNull);
+      expect(buildServerUrl(host: '[foo:bar]'), isNull);
+      expect(buildServerUrl(host: '1.2.3.4', port: '0'), isNull);
+      expect(buildServerUrl(host: '1.2.3.4', port: '65536'), isNull);
+      expect(buildServerUrl(host: '1.2.3.4', port: 'abc'), isNull);
+    });
+  });
+
+  group('looksLikeFullServerUrl', () {
+    test('带 scheme / path / 端口的完整地址', () {
+      expect(looksLikeFullServerUrl('https://[2408::1]:8920/emby'), isTrue);
+      expect(looksLikeFullServerUrl('http://emby.example.com'), isTrue);
+      expect(looksLikeFullServerUrl('emby.example.com:8096'), isTrue);
+      expect(looksLikeFullServerUrl('emby.example.com/emby'), isTrue);
+      expect(looksLikeFullServerUrl('[2408::1]:8096'), isTrue);
+    });
+
+    test('纯 host / 纯 IPv6 不触发拆分', () {
+      expect(looksLikeFullServerUrl('emby.example.com'), isFalse);
+      expect(looksLikeFullServerUrl('192.168.1.10'), isFalse);
+      expect(looksLikeFullServerUrl('[2408::1]'), isFalse);
+      expect(looksLikeFullServerUrl('2408::1'), isFalse);
+      expect(looksLikeFullServerUrl('emby.example.com:abc'), isFalse);
+      expect(looksLikeFullServerUrl(''), isFalse);
     });
   });
 
@@ -123,6 +189,46 @@ void main() {
       expect(parseServerUrl('http://1.2.3.4:8096/emby/')!.path, 'emby');
     });
 
+    test('IPv6 带端口', () {
+      final r = parseServerUrl('http://[2408:85a3::8a2e:370:7334]:8920');
+      expect(r, isNotNull);
+      expect(r!.host, '2408:85a3::8a2e:370:7334');
+      expect(r.port, '8920');
+      expect(r.path, '');
+      expect(r.useHttps, false);
+    });
+
+    test('IPv6 无端口', () {
+      final r = parseServerUrl('http://[2408::1]');
+      expect(r!.host, '2408::1');
+      expect(r.port, '');
+      expect(r.path, '');
+    });
+
+    test('IPv6 + https + path + 显式 443', () {
+      final r = parseServerUrl('https://[2408::1]:443/emby');
+      expect(r!.host, '2408::1');
+      expect(r.port, '443');
+      expect(r.path, 'emby');
+      expect(r.useHttps, true);
+    });
+
+    test('IPv6 zone id %25 解码为 %', () {
+      final r = parseServerUrl('http://[fe80::1%25eth0]:8096');
+      expect(r!.host, 'fe80::1%eth0');
+      expect(r.port, '8096');
+    });
+
+    test('非法 IPv6 / 方括号 / 端口返回 null', () {
+      expect(parseServerUrl('http://2408:85a3::1:8096'), isNull);
+      expect(parseServerUrl('http://[::1'), isNull);
+      expect(parseServerUrl('http://[]:8096'), isNull);
+      expect(parseServerUrl('http://[::1]x'), isNull);
+      expect(parseServerUrl('http://[::1]:0'), isNull);
+      expect(parseServerUrl('http://[::1]:65536'), isNull);
+      expect(parseServerUrl('http://[::1]:'), isNull);
+    });
+
     test('非法输入返回 null', () {
       expect(parseServerUrl(''), isNull);
       expect(parseServerUrl('a b'), isNull);
@@ -139,6 +245,29 @@ void main() {
         useHttps: true,
       )!;
       final r = parseServerUrl(url)!;
+      expect(
+        buildServerUrl(
+          host: r.host,
+          port: r.port,
+          path: r.path,
+          useHttps: r.useHttps,
+        ),
+        url,
+      );
+    });
+
+    test('IPv6 往返一致：build → parse → build', () {
+      final url = buildServerUrl(
+        host: '2408:85a3::8a2e:370:7334',
+        port: '8920',
+        path: 'emby',
+        useHttps: true,
+      )!;
+      final r = parseServerUrl(url)!;
+      expect(r.host, '2408:85a3::8a2e:370:7334');
+      expect(r.port, '8920');
+      expect(r.path, 'emby');
+      expect(r.useHttps, true);
       expect(
         buildServerUrl(
           host: r.host,

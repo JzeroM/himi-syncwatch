@@ -170,8 +170,7 @@ void main() {
     expect(container.read(lanConfigProvider).lastOk, isNull, reason: '不触碰提交状态');
   });
 
-  test('手机提交弹幕 API 地址成功 → 落 settings.danmakuApiUrl 且状态记录成功',
-      () async {
+  test('手机提交弹幕 API 地址成功 → 落 settings.danmakuApiUrl 且状态记录成功', () async {
     await container.read(lanConfigProvider.notifier).start();
 
     final res = await post('/api/danmaku', {
@@ -240,6 +239,28 @@ void main() {
 
       expect(container.read(lanConfigProvider).lastOk, isTrue);
       expect(container.read(lanConfigProvider).lastMessage, contains('备用线路'));
+    });
+
+    test('host 传完整 IPv6 URL → 自动拆分后落库', () async {
+      final notifier = container.read(lanConfigProvider.notifier);
+      notifier.routeTargetServerId = 'cfg1';
+      await notifier.start();
+
+      final r = await postRoute({
+        'host': 'https://[2408:85a3::8a2e:370:7334]:8920/emby',
+        'port': '8096',
+        'path': 'ignored',
+        'https': false,
+        'name': 'IPv6 线路',
+      });
+      expect(r['status'], HttpStatus.ok, reason: '${r['json']}');
+
+      final updated = container.read(embyServerListProvider).single;
+      expect(
+        updated.routes.single.url,
+        'https://[2408:85a3::8a2e:370:7334]:8920/emby',
+        reason: '完整 URL 的 scheme/端口/path 应覆盖分项字段',
+      );
     });
 
     test('空名称 → 默认 Route N；非法 host → 400', () async {

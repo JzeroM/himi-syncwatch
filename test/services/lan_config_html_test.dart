@@ -62,6 +62,13 @@ void main() {
     expect(text, isNot(contains("highlight('danmaku')")));
   });
 
+  test('服务器地址提示包含 IPv6 与完整 URL 粘贴', () {
+    final text = html();
+    expect(text, contains('[IPv6]'));
+    expect(text, contains('[2408:'));
+    expect(text, contains('可粘贴完整 URL'));
+  });
+
   test('页脚备选链接带 token（各 mode 均保留）', () {
     for (final mode in ['', 'emby', 'agora']) {
       expect(html(mode: mode), contains('http://192.168.1.5:8096/?t=tok'));
