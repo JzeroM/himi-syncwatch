@@ -80,7 +80,16 @@ jobs:
         run: chmod +x scripts/verify_sources.sh && bash scripts/verify_sources.sh
 
       - run: flutter pub get
-      - run: flutter build apk --release --split-per-abi
+      - name: Run flutter build apk --release --split-per-abi
+        run: |
+          # 发布构建偶发 runner 网络/缓存抖动（v1.2.57 首轮曾整步失败），
+          # 与 iOS 一致增加 3 次重试，避免单次抖动阻断整条发布链。
+          for i in 1 2 3; do
+            if flutter build apk --release --split-per-abi; then exit 0; fi
+            echo "❌ Android 构建失败，15 秒后重试（$i/3）"
+            sleep 15
+          done
+          exit 1
 
       - name: 验证 APK 签名
         run: |
@@ -283,7 +292,17 @@ jobs:
       # 仓库内 windows/ 为事实来源（HIMI 窗口标题、app_icon、插件注册由
       # flutter pub get 生成），不再用模板重建覆盖本地定制
       - run: flutter pub get
-      - run: flutter build windows --release
+      - name: Run flutter build windows --release
+        shell: pwsh
+        run: |
+          # Windows runner 偶发 Flutter 工具链/缓存抖动，失败后重试 3 次。
+          for ($i = 1; $i -le 3; $i++) {
+            flutter build windows --release
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "❌ Windows 构建失败，15 秒后重试（$i/3）"
+            Start-Sleep -Seconds 15
+          }
+          exit 1
 
       # 替换 media_kit 捆绑的 libmpv-2.dll 为完整版（shinchiro/mpv-winbuild-cmake）：
       # 上游 media-kit 默认 libmpv 解码器不完整（PGS 位图字幕 / 10bit / HDR 等），
