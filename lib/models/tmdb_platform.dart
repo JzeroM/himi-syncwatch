@@ -1,3 +1,5 @@
+import 'package:himi_syncwatch/models/tmdb_item.dart';
+
 /// 固定展示的流媒体平台（TMDB watch provider id）。
 class TmdbPlatform {
   const TmdbPlatform({required this.providerId, required this.name});
@@ -20,4 +22,18 @@ String? tmdbPlatformName(int providerId) {
     if (p.providerId == providerId) return p.name;
   }
   return null;
+}
+
+class TmdbPlatformShowcase {
+  const TmdbPlatformShowcase({
+    required this.platform,
+    this.logoPath,
+    this.highlight,
+    this.local,
+  });
+
+  final TmdbPlatform platform;
+  final String? logoPath;
+  final TmdbItem? highlight;
+  final TmdbAvailability? local;
 }

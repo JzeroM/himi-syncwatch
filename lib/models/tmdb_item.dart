@@ -88,8 +88,7 @@ class TmdbItem {
       overview: json['overview'] as String?,
       posterPath: json['poster_path'] as String?,
       backdropPath: json['backdrop_path'] as String?,
-      releaseDate:
-          (json['release_date'] ?? json['first_air_date'])?.toString(),
+      releaseDate: (json['release_date'] ?? json['first_air_date'])?.toString(),
       voteAverage: (json['vote_average'] as num?)?.toDouble(),
       voteCount: (json['vote_count'] as num?)?.toInt(),
       popularity: (json['popularity'] as num?)?.toDouble(),
@@ -192,6 +191,16 @@ class TmdbResumeEntry {
   DateTime? get playedAt => item.lastPlayedDate;
 }
 
+class TmdbResumeResult {
+  const TmdbResumeResult({
+    required this.entries,
+    this.failedServerIds = const {},
+  });
+
+  final List<TmdbResumeEntry> entries;
+  final Set<String> failedServerIds;
+}
+
 /// 首页 TMDB 栏目。
 class TmdbSectionData {
   const TmdbSectionData({
@@ -212,7 +221,6 @@ class TmdbHomeData {
   const TmdbHomeData({
     required this.configured,
     this.resume = const [],
-    this.platformLogos = const {},
     this.sections = const [],
     this.failedServerCount = 0,
   });
@@ -220,16 +228,13 @@ class TmdbHomeData {
   const TmdbHomeData.unconfigured()
       : configured = false,
         resume = const [],
-        platformLogos = const {},
         sections = const [],
         failedServerCount = 0;
 
   final bool configured;
   final List<TmdbResumeEntry> resume;
-  final Map<int, String?> platformLogos;
   final List<TmdbSectionData> sections;
   final int failedServerCount;
 
-  bool get isEmpty =>
-      resume.isEmpty && sections.every((s) => s.items.isEmpty);
+  bool get isEmpty => resume.isEmpty && sections.every((s) => s.items.isEmpty);
 }

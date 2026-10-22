@@ -15,6 +15,9 @@ class EmbyImage extends ConsumerWidget {
   /// 避免原图全尺寸解码的主线程开销（网格/列表海报按显示宽传入）。
   final int? cacheWidth;
 
+  /// 显式图片 Token：跨服务器聚合条目必须传来源服务器 Token。
+  final String? accessToken;
+
   const EmbyImage({
     super.key,
     required this.url,
@@ -24,6 +27,7 @@ class EmbyImage extends ConsumerWidget {
     this.errorWidget,
     this.placeholder,
     this.cacheWidth,
+    this.accessToken,
   });
 
   @override
@@ -33,7 +37,7 @@ class EmbyImage extends ConsumerWidget {
     }
 
     final config = ref.watch(embyConfigProvider);
-    final token = config?.accessToken;
+    final token = accessToken ?? config?.accessToken;
 
     final headers = <String, String>{
       if (token != null) 'X-Emby-Token': token,

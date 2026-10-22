@@ -48,6 +48,7 @@ class TmdbResumeBar extends StatelessWidget {
                     item: entry.item,
                     width: _cardWidth,
                     serverBadge: entry.server.label,
+                    accessToken: entry.server.accessToken,
                     onTap: () => onOpen(entry),
                   ),
                 ),

@@ -293,7 +293,8 @@ class EmbyService {
 
   /// 回退/含多版本：并发三次 `/Items`（Limit=1）读 TotalRecordCount。
   /// [includeVersions]=true 时不传 UserId（服务器全库口径，含多版本）。
-  Future<MediaCounts?> _countsFromItemsQuery({bool includeVersions = false}) async {
+  Future<MediaCounts?> _countsFromItemsQuery(
+      {bool includeVersions = false}) async {
     const types = ['Movie', 'Series', 'Episode'];
     final responses = await Future.wait([
       for (final type in types)
@@ -530,7 +531,8 @@ class EmbyService {
         final id = f['ItemId'];
         final options = f['LibraryOptions'];
         if (id is! String || id.isEmpty || options is! Map) continue;
-        map[id] = EmbyPlaybackSettings.fromJson(options.cast<String, dynamic>());
+        map[id] =
+            EmbyPlaybackSettings.fromJson(options.cast<String, dynamic>());
       }
       return map;
     } catch (_) {
@@ -706,8 +708,8 @@ class EmbyService {
           },
         );
         final data = response.data;
-        final items = (data is Map ? data['Items'] : null) as List<dynamic>? ??
-            const [];
+        final items =
+            (data is Map ? data['Items'] : null) as List<dynamic>? ?? const [];
         for (final raw in items) {
           if (raw is! Map) continue;
           final year = raw['ProductionYear'];
@@ -856,7 +858,7 @@ class EmbyService {
         .toList();
     if (ids.isEmpty) return const [];
     const fields =
-        'ProviderIds,UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateCreated,DateLastContentAdded';
+        'ProviderIds,UserData,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateCreated,DateLastContentAdded';
     try {
       final response = await _dio.get(
         '/Items',

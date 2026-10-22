@@ -14,11 +14,10 @@ class TmdbException implements Exception {
 }
 
 class _CacheEntry<T> {
-  _CacheEntry(this.value) : expiresAt = DateTime.now().add(_ttl);
-
-  static const _ttl = Duration(minutes: 10);
+  _CacheEntry(this.value, this.ttl) : expiresAt = DateTime.now().add(ttl);
 
   final T value;
+  final Duration ttl;
   final DateTime expiresAt;
 
   bool get expired => DateTime.now().isAfter(expiresAt);
@@ -46,6 +45,9 @@ class TmdbService {
             (X509Certificate cert, String host, int port) => true;
     };
   }
+
+  static const _catalogTtl = Duration(minutes: 30);
+  static const _providerTtl = Duration(hours: 1);
 
   final String _credential;
   final bool _bearer;
@@ -98,57 +100,75 @@ class TmdbService {
     return entry.value as T;
   }
 
-  void _store(String key, Object? value) {
-    _cache[key] = _CacheEntry<dynamic>(value);
+  void _store(String key, Object? value, {Duration ttl = _catalogTtl}) {
+    _cache[key] = _CacheEntry<dynamic>(value, ttl);
   }
 
-  Future<List<TmdbItem>> _list(
+  Future<TmdbPagedResult> _paged(
     String cacheKey,
     String path, {
     TmdbMediaType? fallbackType,
     Map<String, dynamic>? query,
     bool filterUnsupportedTypes = false,
   }) async {
-    final cached = _cached<List<TmdbItem>>(cacheKey);
+    final cached = _cached<TmdbPagedResult>(cacheKey);
     if (cached != null) return cached;
     final json = await _get(path, query: query);
-    final result = TmdbPagedResult.fromJson(json, fallbackType: fallbackType);
-    final items = filterUnsupportedTypes
-        ? result.items
-            .where((e) => e.type == TmdbMediaType.movie || e.type == TmdbMediaType.tv)
-            .toList()
-        : result.items;
-    _store(cacheKey, items);
-    return items;
+    final parsed = TmdbPagedResult.fromJson(json, fallbackType: fallbackType);
+    final result = filterUnsupportedTypes
+        ? TmdbPagedResult(
+            items: parsed.items
+                .where((e) =>
+                    e.type == TmdbMediaType.movie || e.type == TmdbMediaType.tv)
+                .toList(),
+            page: parsed.page,
+            totalPages: parsed.totalPages,
+            totalResults: parsed.totalResults,
+          )
+        : parsed;
+    _store(cacheKey, result);
+    return result;
   }
 
-  Future<List<TmdbItem>> trendingDay({int page = 1}) => _list(
+  Future<TmdbPagedResult> trendingDayPage({int page = 1}) => _paged(
         'trending_day_$page',
         '/trending/all/day',
         query: {'page': page},
         filterUnsupportedTypes: true,
       );
 
-  Future<List<TmdbItem>> trendingWeek({int page = 1}) => _list(
+  Future<List<TmdbItem>> trendingDay({int page = 1}) async =>
+      (await trendingDayPage(page: page)).items;
+
+  Future<TmdbPagedResult> trendingWeekPage({int page = 1}) => _paged(
         'trending_week_$page',
         '/trending/all/week',
         query: {'page': page},
         filterUnsupportedTypes: true,
       );
 
-  Future<List<TmdbItem>> popularMovies({int page = 1}) => _list(
+  Future<List<TmdbItem>> trendingWeek({int page = 1}) async =>
+      (await trendingWeekPage(page: page)).items;
+
+  Future<TmdbPagedResult> popularMoviesPage({int page = 1}) => _paged(
         'popular_movies_$page',
         '/movie/popular',
         query: {'page': page},
         fallbackType: TmdbMediaType.movie,
       );
 
-  Future<List<TmdbItem>> popularTv({int page = 1}) => _list(
+  Future<List<TmdbItem>> popularMovies({int page = 1}) async =>
+      (await popularMoviesPage(page: page)).items;
+
+  Future<TmdbPagedResult> popularTvPage({int page = 1}) => _paged(
         'popular_tv_$page',
         '/tv/popular',
         query: {'page': page},
         fallbackType: TmdbMediaType.tv,
       );
+
+  Future<List<TmdbItem>> popularTv({int page = 1}) async =>
+      (await popularTvPage(page: page)).items;
 
   Future<TmdbPagedResult> discoverPlatform({
     required int providerId,
@@ -171,8 +191,7 @@ class TmdbService {
         'include_adult': false,
       },
     );
-    final result =
-        TmdbPagedResult.fromJson(json, fallbackType: type);
+    final result = TmdbPagedResult.fromJson(json, fallbackType: type);
     _store(cacheKey, result);
     return result;
   }
@@ -198,7 +217,7 @@ class TmdbService {
         }
       }
     }
-    _store(cacheKey, logos);
+    _store(cacheKey, logos, ttl: _providerTtl);
     return logos;
   }
 

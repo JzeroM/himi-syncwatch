@@ -438,9 +438,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final content = tmdbMode
         ? TvRefreshHotkey(
-            onRefresh: () async {
-              ref.invalidate(tmdbHomeProvider);
-            },
+            onRefresh: () => refreshTmdbHome(ref),
             child: const TmdbHomeView(),
           )
         : _error != null

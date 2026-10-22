@@ -21,6 +21,15 @@ class _FakeTmdbService extends TmdbService {
       lists[TmdbMediaType.movie]!;
 
   @override
+  Future<TmdbPagedResult> trendingDayPage({int page = 1}) async =>
+      TmdbPagedResult(
+        items: lists[TmdbMediaType.movie]!,
+        page: page,
+        totalPages: page < 2 ? 2 : page,
+        totalResults: lists[TmdbMediaType.movie]!.length,
+      );
+
+  @override
   Future<List<TmdbItem>> trendingWeek({int page = 1}) async =>
       lists[TmdbMediaType.movie]!;
 
@@ -107,6 +116,13 @@ const _show = TmdbItem(
   id: 201,
   type: TmdbMediaType.tv,
   title: 'Show 201',
+);
+
+const _showWithPoster = TmdbItem(
+  id: 201,
+  type: TmdbMediaType.tv,
+  title: 'Show 201',
+  posterPath: '/show.jpg',
 );
 
 void main() {
@@ -268,5 +284,59 @@ void main() {
 
     expect(page.items.map((e) => e.tmdb.key), [_movie1.key, _show.key]);
     expect(page.hasMore, isTrue);
+  });
+
+  test('fetchSectionPage 单页返回且 hasMore 来自 TMDB', () async {
+    final tmdb = _FakeTmdbService()
+      ..lists[TmdbMediaType.movie] = const [_movie1, _movie2];
+    final service = _ProviderEmbyService({
+      '101': [_movie('m1', '101')],
+      '102': [_movie('m2', '102')],
+    });
+    final aggregate = TmdbAggregateService(
+      tmdb: tmdb,
+      serviceFactory: (_) => service,
+    );
+
+    final page = await aggregate.fetchSectionPage(
+      'trending_day',
+      [_server('s1')],
+    );
+
+    expect(page.items.map((e) => e.tmdb.key), [_movie1.key, _movie2.key]);
+    expect(page.hasMore, isTrue);
+  });
+
+  test('fetchPlatformShowcases 返回 Logo、平台条目与服务器海报', () async {
+    final tmdb = _FakeTmdbService()
+      ..lists[TmdbMediaType.tv] = const [_showWithPoster]
+      ..logos[8] = '/netflix.png';
+    final service = _ProviderEmbyService({
+      '201': [
+        MediaItem(
+          id: 't1',
+          name: 'Show',
+          type: 'Series',
+          providerIds: const {'Tmdb': '201'},
+          posterUrl: 'https://s1/Items/t1/Images/Primary',
+        ),
+      ],
+    });
+    final aggregate = TmdbAggregateService(
+      tmdb: tmdb,
+      serviceFactory: (_) => service,
+    );
+
+    final showcases = await aggregate.fetchPlatformShowcases(
+      [_server('s1')],
+      region: 'US',
+    );
+
+    expect(showcases, hasLength(6));
+    final netflix = showcases.first;
+    expect(netflix.platform.providerId, 8);
+    expect(netflix.logoPath, '/netflix.png');
+    expect(netflix.highlight?.id, 201);
+    expect(netflix.local?.item.posterUrl, 'https://s1/Items/t1/Images/Primary');
   });
 }

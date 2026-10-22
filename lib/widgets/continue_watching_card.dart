@@ -13,6 +13,7 @@ class ContinueWatchingCard extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.serverBadge,
+    this.accessToken,
   });
 
   final MediaItem item;
@@ -24,6 +25,9 @@ class ContinueWatchingCard extends StatelessWidget {
 
   /// 左上来源服务器角标（跨服务器聚合时显示）。
   final String? serverBadge;
+
+  /// 显式图片 Token：跨服务器聚合条目使用来源服务器 Token。
+  final String? accessToken;
 
   static const double textReservedHeight = 46;
 
@@ -78,6 +82,7 @@ class ContinueWatchingCard extends StatelessWidget {
                   EmbyImage(
                     url: item.posterUrl ?? item.backdropUrl,
                     fit: BoxFit.cover,
+                    accessToken: accessToken,
                     cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
                         .round(),
                   ),

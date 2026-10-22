@@ -1,12 +1,17 @@
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
+import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
 
 class _AvailCacheEntry {
   _AvailCacheEntry(this.item)
-      : expiresAt = DateTime.now().add(const Duration(minutes: 5));
+      : expiresAt = DateTime.now().add(
+          item == null
+              ? const Duration(minutes: 5)
+              : const Duration(minutes: 15),
+        );
 
   final MediaItem? item;
   final DateTime expiresAt;
@@ -21,6 +26,18 @@ class TmdbAvailabilityResult {
   });
 
   final List<TmdbAvailability> items;
+  final Set<String> failedServerIds;
+}
+
+class TmdbSectionPage {
+  const TmdbSectionPage({
+    required this.items,
+    required this.hasMore,
+    this.failedServerIds = const {},
+  });
+
+  final List<TmdbAvailability> items;
+  final bool hasMore;
   final Set<String> failedServerIds;
 }
 
@@ -104,9 +121,8 @@ class TmdbAggregateService {
         try {
           final service = serviceFactory(server);
           for (var start = 0; start < toQuery.length; start += 20) {
-            final end = start + 20 >= toQuery.length
-                ? toQuery.length
-                : start + 20;
+            final end =
+                start + 20 >= toQuery.length ? toQuery.length : start + 20;
             final List<String> chunk = toQuery.sublist(start, end);
             final items = await service.getItemsByProviderIds(
               tmdbIds: chunk,
@@ -222,6 +238,43 @@ class TmdbAggregateService {
     return TmdbAvailabilityResult(items: out, failedServerIds: failed);
   }
 
+  Future<TmdbSectionPage> fetchSectionPage(
+    String sectionKey,
+    List<EmbyServerConfig> servers, {
+    String? activeServerId,
+    int page = 1,
+  }) async {
+    final p = page < 1 ? 1 : page;
+    TmdbPagedResult? result;
+    switch (sectionKey) {
+      case 'trending_day':
+        result = await tmdb.trendingDayPage(page: p);
+        break;
+      case 'trending_week':
+        result = await tmdb.trendingWeekPage(page: p);
+        break;
+      case 'popular_movies':
+        result = await tmdb.popularMoviesPage(page: p);
+        break;
+      case 'popular_tv':
+        result = await tmdb.popularTvPage(page: p);
+        break;
+    }
+    if (result == null) {
+      return const TmdbSectionPage(items: [], hasMore: false);
+    }
+    final resolved = await resolveAvailability(
+      result.items,
+      servers,
+      activeServerId: activeServerId,
+    );
+    return TmdbSectionPage(
+      items: resolved.items,
+      hasMore: result.hasMore,
+      failedServerIds: resolved.failedServerIds,
+    );
+  }
+
   Future<TmdbAvailabilityResult> fetchSection(
     String sectionKey,
     List<EmbyServerConfig> servers, {
@@ -307,31 +360,87 @@ class TmdbAggregateService {
     );
   }
 
-  Future<TmdbHomeData> fetchHome(
+  Future<List<TmdbPlatformShowcase>> fetchPlatformShowcases(
+    List<EmbyServerConfig> servers, {
+    required String region,
+    String? activeServerId,
+  }) async {
+    final logosFuture = tmdb.platformLogos(region).catchError(
+          (_) => <int, String?>{},
+        );
+    final highlights = <int, TmdbItem>{};
+    await Future.wait(tmdbPlatforms.map((platform) async {
+      try {
+        var page = await tmdb.discoverPlatform(
+          providerId: platform.providerId,
+          type: TmdbMediaType.tv,
+          region: region,
+          page: 1,
+          allowCache: true,
+        );
+        TmdbItem? item;
+        for (final candidate in page.items) {
+          if (candidate.posterPath != null) {
+            item = candidate;
+            break;
+          }
+        }
+        if (item == null) {
+          page = await tmdb.discoverPlatform(
+            providerId: platform.providerId,
+            type: TmdbMediaType.movie,
+            region: region,
+            page: 1,
+            allowCache: true,
+          );
+          for (final candidate in page.items) {
+            if (candidate.posterPath != null) {
+              item = candidate;
+              break;
+            }
+          }
+        }
+        if (item != null) highlights[platform.providerId] = item;
+      } catch (_) {}
+    }));
+
+    final resolved = await resolveAvailability(
+      highlights.values.toList(growable: false),
+      servers,
+      activeServerId: activeServerId,
+    );
+    final byKey = <String, TmdbAvailability>{};
+    for (final entry in resolved.items) {
+      byKey.putIfAbsent(entry.tmdb.key, () => entry);
+    }
+    final logos = await logosFuture;
+    return [
+      for (final platform in tmdbPlatforms)
+        TmdbPlatformShowcase(
+          platform: platform,
+          logoPath: logos[platform.providerId],
+          highlight: highlights[platform.providerId],
+          local: byKey[highlights[platform.providerId]?.key],
+        ),
+    ];
+  }
+
+  Future<TmdbHomeData> fetchSections(
     List<EmbyServerConfig> servers, {
     String? activeServerId,
-    required String region,
   }) async {
     final ordered = _targets(servers, activeServerId);
     if (ordered.isEmpty) {
       return const TmdbHomeData(configured: true);
     }
 
-    final tmdbFutures = <Future<List<TmdbItem>>>[
+    final lists = await Future.wait([
       tmdb.trendingDay(),
       tmdb.trendingWeek(),
       tmdb.popularMovies(),
       tmdb.popularTv(),
-    ];
-    final logosFuture = tmdb.platformLogos(region).catchError(
-          (_) => <int, String?>{},
-        );
-    final resumeFuture = _fetchResume(ordered, activeServerId);
-    final lists = await Future.wait(tmdbFutures);
-    final logos = await logosFuture;
-    final resume = await resumeFuture;
-
-    final failed = <String>{...resume.failedServerIds};
+    ]);
+    final failed = <String>{};
     final sections = <TmdbSectionData>[];
     final sectionResults = await Future.wait([
       resolveAvailability(lists[0], ordered, activeServerId: activeServerId),
@@ -356,14 +465,35 @@ class TmdbAggregateService {
 
     return TmdbHomeData(
       configured: true,
-      resume: resume.entries,
-      platformLogos: logos,
       sections: sections,
       failedServerCount: failed.length,
     );
   }
 
-  Future<_ResumeResult> _fetchResume(
+  Future<TmdbHomeData> fetchHome(
+    List<EmbyServerConfig> servers, {
+    String? activeServerId,
+  }) async {
+    final sectionsFuture = fetchSections(
+      servers,
+      activeServerId: activeServerId,
+    );
+    final resumeFuture = fetchResume(
+      _targets(servers, activeServerId),
+      activeServerId,
+    );
+    final sections = await sectionsFuture;
+    final resume = await resumeFuture;
+    return TmdbHomeData(
+      configured: true,
+      resume: resume.entries,
+      sections: sections.sections,
+      failedServerCount:
+          sections.failedServerCount + resume.failedServerIds.length,
+    );
+  }
+
+  Future<TmdbResumeResult> fetchResume(
     List<EmbyServerConfig> servers,
     String? activeServerId,
   ) async {
@@ -388,10 +518,8 @@ class TmdbAggregateService {
         byKey[entry.dedupeKey] = entry;
         continue;
       }
-      final prevTime =
-          prev.playedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final nextTime =
-          entry.playedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final prevTime = prev.playedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final nextTime = entry.playedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final preferNext = nextTime.isAfter(prevTime) ||
           (nextTime.isAtSameMomentAs(prevTime) &&
               (activeId != null && entry.server.id == activeId));
@@ -403,13 +531,6 @@ class TmdbAggregateService {
         final bt = b.playedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
         return bt.compareTo(at);
       });
-    return _ResumeResult(entries: sorted, failedServerIds: failed);
+    return TmdbResumeResult(entries: sorted, failedServerIds: failed);
   }
-}
-
-class _ResumeResult {
-  const _ResumeResult({required this.entries, required this.failedServerIds});
-
-  final List<TmdbResumeEntry> entries;
-  final Set<String> failedServerIds;
 }

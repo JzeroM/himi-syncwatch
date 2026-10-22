@@ -12,6 +12,7 @@ class TmdbPosterCard extends StatelessWidget {
     required this.width,
     this.onTap,
     this.serverBadge,
+    this.poster,
   });
 
   final TmdbItem item;
@@ -19,6 +20,7 @@ class TmdbPosterCard extends StatelessWidget {
   final double width;
   final VoidCallback? onTap;
   final String? serverBadge;
+  final Widget? poster;
 
   static const double textReservedHeight = 46;
 
@@ -42,11 +44,13 @@ class TmdbPosterCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  TmdbImage(
-                    url: item.posterUrl(imageBase),
-                    cacheWidth:
-                        (width * MediaQuery.devicePixelRatioOf(context)).round(),
-                  ),
+                  poster ??
+                      TmdbImage(
+                        url: item.posterUrl(imageBase),
+                        cacheWidth:
+                            (width * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                      ),
                   if (serverBadge != null)
                     Positioned(
                       top: 6,

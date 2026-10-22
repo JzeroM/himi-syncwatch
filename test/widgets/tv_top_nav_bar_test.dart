@@ -247,16 +247,23 @@ void main() {
     await tester.tap(find.text('TMDB'));
     await tester.pumpAndSettle();
 
-    // TMDB 行在第一位，下面按配置页顺序列出服务器；激活服务器仍打勾。
+    // TMDB 模式只勾选 TMDB，服务器行不显示勾选。
     expect(find.byKey(const ValueKey('tmdbSourceRow')), findsOneWidget);
     expect(find.byKey(const ValueKey('serverRow_a')), findsOneWidget);
     expect(find.byKey(const ValueKey('serverRow_b')), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('serverRow_a')),
+        of: find.byKey(const ValueKey('tmdbSourceRow')),
         matching: find.byIcon(Icons.check_circle),
       ),
       findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('serverRow_a')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsNothing,
     );
 
     final container = ProviderScope.containerOf(
@@ -271,6 +278,16 @@ void main() {
       find.descendant(
         of: find.byType(ServerTitleDropdown),
         matching: find.text('备用服务器'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('备用服务器'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('serverRow_b')),
+        matching: find.byIcon(Icons.check_circle),
       ),
       findsOneWidget,
     );

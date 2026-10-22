@@ -143,7 +143,7 @@ class ServerTitleDropdown extends ConsumerWidget {
                                 dialogContext,
                                 ref,
                                 s,
-                                active: current?.id == s.id,
+                                active: !tmdbActive && current?.id == s.id,
                                 autofocus: !tmdbActive && current?.id == s.id,
                               ),
                         ],

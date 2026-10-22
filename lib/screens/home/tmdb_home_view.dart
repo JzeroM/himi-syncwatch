@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
+import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_platform_card.dart';
 import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
@@ -22,45 +23,42 @@ class TmdbHomeView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(tmdbHomeProvider);
+    final resume = ref.watch(tmdbResumeProvider);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
 
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => _ErrorView(
         error: e.toString(),
-        onRetry: () => ref.invalidate(tmdbHomeProvider),
+        onRetry: () => refreshTmdbHome(ref),
         tvMode: tvMode,
       ),
       data: (data) {
         if (!data.configured) {
           return const _ConfigPrompt();
         }
-        return _HomeList(data: data, tvMode: tvMode);
+        return _HomeList(
+          data: data,
+          resume: resume.valueOrNull?.entries ?? const [],
+          resumeLoading: resume.isLoading,
+          tvMode: tvMode,
+        );
       },
     );
   }
 }
 
-Widget _tmdbHeroImage(
-  String url, {
-  BoxFit fit = BoxFit.cover,
-  int? cacheWidth,
-  bool transparent = false,
-  Widget? errorWidget,
-}) {
-  return TmdbImage(
-    url: url,
-    fit: fit,
-    cacheWidth: cacheWidth,
-    placeholder: transparent ? const SizedBox.shrink() : null,
-    errorWidget: errorWidget ?? (transparent ? const SizedBox.shrink() : null),
-  );
-}
-
 class _HomeList extends ConsumerStatefulWidget {
-  const _HomeList({required this.data, required this.tvMode});
+  const _HomeList({
+    required this.data,
+    required this.resume,
+    required this.resumeLoading,
+    required this.tvMode,
+  });
 
   final TmdbHomeData data;
+  final List<TmdbResumeEntry> resume;
+  final bool resumeLoading;
   final bool tvMode;
 
   @override
@@ -69,6 +67,7 @@ class _HomeList extends ConsumerStatefulWidget {
 
 class _HomeListState extends ConsumerState<_HomeList> {
   final PageController _heroController = PageController();
+  final Map<String, TmdbAvailability> _heroSources = {};
   int _heroIndex = 0;
 
   @override
@@ -109,10 +108,15 @@ class _HomeListState extends ConsumerState<_HomeList> {
   }
 
   HomeHeroItem _toHero(TmdbAvailability entry, String imageBase) {
+    final serverUrl = entry.item.backdropWideUrl ??
+        entry.item.backdropUrl ??
+        entry.item.posterUrl;
+    final tmdbUrl =
+        entry.tmdb.backdropUrl(imageBase) ?? entry.tmdb.posterUrl(imageBase);
+    if (serverUrl != null) _heroSources[serverUrl] = entry;
     return HomeHeroItem(
       title: entry.tmdb.title,
-      imageUrl:
-          entry.tmdb.backdropUrl(imageBase) ?? entry.tmdb.posterUrl(imageBase),
+      imageUrl: serverUrl ?? tmdbUrl,
       year: entry.tmdb.year,
       rating: entry.tmdb.voteAverage,
       genres: [entry.tmdb.type.label],
@@ -120,16 +124,45 @@ class _HomeListState extends ConsumerState<_HomeList> {
     );
   }
 
+  Widget _heroImage(
+    String url, {
+    BoxFit fit = BoxFit.cover,
+    int? cacheWidth,
+    bool transparent = false,
+    Widget? errorWidget,
+  }) {
+    final entry = _heroSources[url];
+    if (entry == null) {
+      return TmdbImage(
+        url: url,
+        fit: fit,
+        cacheWidth: cacheWidth,
+        placeholder: transparent ? const SizedBox.shrink() : null,
+        errorWidget:
+            errorWidget ?? (transparent ? const SizedBox.shrink() : null),
+      );
+    }
+    return TmdbAvailabilityImage(
+      entry: entry,
+      imageBase: ref.read(tmdbImageBaseProvider),
+      backdrop: true,
+      fit: fit,
+      cacheWidth: cacheWidth,
+      transparent: transparent,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final imageBase = ref.watch(tmdbImageBaseProvider);
+    _heroSources.clear();
     final heroes = _heroCandidates(widget.data);
     final hero =
         heroes.isEmpty ? null : heroes[_heroIndex.clamp(0, heroes.length - 1)];
     final sections =
         widget.data.sections.where((s) => s.items.isNotEmpty).toList();
-    if (sections.isEmpty && widget.data.resume.isEmpty) {
+    if (sections.isEmpty && widget.resume.isEmpty && !widget.resumeLoading) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
@@ -153,13 +186,13 @@ class _HomeListState extends ConsumerState<_HomeList> {
     final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
     final headerCount = hero != null ? 1 : 0;
     final itemCount = headerCount +
-        (widget.data.resume.isNotEmpty ? 1 : 0) +
+        (widget.resume.isNotEmpty ? 1 : 0) +
         1 +
         sections.length +
         (widget.data.failedServerCount > 0 ? 1 : 0);
 
     final list = RefreshIndicator(
-      onRefresh: () => ref.refresh(tmdbHomeProvider.future),
+      onRefresh: () => refreshTmdbHome(ref),
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
@@ -180,7 +213,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
                   ],
                   controller: _heroController,
                   height: heroHeight,
-                  imageBuilder: _tmdbHeroImage,
+                  imageBuilder: _heroImage,
                   onPageChanged: (value) => setState(() => _heroIndex = value),
                   onTap: (item) {
                     final entry = item.payload;
@@ -198,10 +231,10 @@ class _HomeListState extends ConsumerState<_HomeList> {
             }
             i--;
           }
-          if (widget.data.resume.isNotEmpty) {
+          if (widget.resume.isNotEmpty) {
             if (i == 0) {
               return TmdbResumeBar(
-                entries: widget.data.resume,
+                entries: widget.resume,
                 onOpen: (entry) => _openResume(context, entry),
               );
             }
@@ -209,7 +242,6 @@ class _HomeListState extends ConsumerState<_HomeList> {
           }
           if (i == 0) {
             return _PlatformBar(
-              logos: widget.data.platformLogos,
               imageBase: imageBase,
               tvMode: widget.tvMode,
             );
@@ -241,7 +273,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
             imageUrl: _toHero(hero, imageBase).imageUrl,
             baseColor: Theme.of(context).scaffoldBackgroundColor,
             heroHeight: heroHeight,
-            imageBuilder: _tmdbHeroImage,
+            imageBuilder: _heroImage,
           ),
         list,
       ],
@@ -280,14 +312,16 @@ class _Hero extends StatelessWidget {
   Widget build(BuildContext context) {
     final height =
         (MediaQuery.sizeOf(context).height * 0.40).clamp(260.0, 440.0);
-    final image =
-        item.tmdb.backdropUrl(imageBase) ?? item.tmdb.posterUrl(imageBase);
     return SizedBox(
       height: height,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          TmdbImage(url: image),
+          TmdbAvailabilityImage(
+            entry: item,
+            imageBase: imageBase,
+            backdrop: true,
+          ),
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -368,21 +402,24 @@ class _Hero extends StatelessWidget {
   }
 }
 
-class _PlatformBar extends StatelessWidget {
+class _PlatformBar extends ConsumerWidget {
   const _PlatformBar({
-    required this.logos,
     required this.imageBase,
     required this.tvMode,
   });
 
-  final Map<int, String?> logos;
   final String imageBase;
   final bool tvMode;
 
   static const double _height = 84;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(tmdbPlatformShowcasesProvider);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final cardWidth =
+        ((screenWidth - 32) / (tvMode ? 3 : 2)).clamp(150.0, 280.0);
+    final showcases = async.valueOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -401,22 +438,74 @@ class _PlatformBar extends StatelessWidget {
             itemCount: tmdbPlatforms.length,
             itemBuilder: (context, index) {
               final platform = tmdbPlatforms[index];
+              final data = showcases != null
+                  ? showcases.firstWhere(
+                      (e) => e.platform.providerId == platform.providerId,
+                      orElse: () => TmdbPlatformShowcase(platform: platform),
+                    )
+                  : async.hasError
+                      ? TmdbPlatformShowcase(platform: platform)
+                      : null;
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: TmdbPlatformCard(
-                  key: ValueKey('tmdbPlatform_${platform.providerId}'),
-                  platform: platform,
-                  imageBase: imageBase,
-                  logoPath: logos[platform.providerId],
-                  onTap: () => context.push(
-                    '/tmdb/platform/${platform.providerId}',
-                  ),
-                ),
+                child: data == null
+                    ? _PlatformSkeleton(width: cardWidth)
+                    : TmdbPlatformCard(
+                        key: ValueKey('tmdbPlatform_${platform.providerId}'),
+                        showcase: data,
+                        imageBase: imageBase,
+                        width: cardWidth,
+                        onTap: () => context.push(
+                          '/tmdb/platform/${platform.providerId}',
+                        ),
+                      ),
               );
             },
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PlatformSkeleton extends StatelessWidget {
+  const _PlatformSkeleton({required this.width});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: 84,
+      child: GlassContainer(
+        borderRadius: BorderRadius.circular(18),
+        padding: const EdgeInsets.all(8),
+        showShadow: false,
+        child: Row(
+          children: [
+            Container(
+              width: 58,
+              height: 68,
+              decoration: BoxDecoration(
+                color: Colors.white12,
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                height: 18,
+                margin: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white12,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -485,6 +574,12 @@ class _SectionRow extends StatelessWidget {
                     item: entry.tmdb,
                     imageBase: imageBase,
                     width: 102,
+                    poster: TmdbAvailabilityImage(
+                      entry: entry,
+                      imageBase: imageBase,
+                      cacheWidth: (102 * MediaQuery.devicePixelRatioOf(context))
+                          .round(),
+                    ),
                     onTap: () => context.push(
                       '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',
                     ),

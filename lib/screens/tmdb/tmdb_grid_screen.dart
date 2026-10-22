@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/utils/poster_grid.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 
@@ -45,6 +46,7 @@ class TmdbGridScreen extends ConsumerStatefulWidget {
 
 class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
   final List<TmdbAvailability> _entries = [];
+  final ScrollController _scrollController = ScrollController();
   _PlatformFilter _filter = _PlatformFilter.all;
   int _page = 0;
   bool _hasMore = true;
@@ -64,7 +66,33 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load(reset: true);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter < 600) {
+      _load(reset: false);
+    }
+  }
+
+  void _scheduleFillCheck() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _loading || _loadingMore || !_hasMore) return;
+      if (!_scrollController.hasClients) return;
+      if (_scrollController.position.extentAfter < 600) {
+        _load(reset: false);
+      }
+    });
   }
 
   Future<void> _load({required bool reset}) async {
@@ -78,7 +106,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
         _hasMore = true;
       });
     } else {
-      if (_loadingMore || !_hasMore) return;
+      if (_loading || _loadingMore || !_hasMore) return;
       setState(() => _loadingMore = true);
     }
 
@@ -121,22 +149,40 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
           _loadingMore = false;
         });
       } else {
-        final result = await service.fetchSection(
-          widget.sectionKey ?? '',
-          servers,
-          activeServerId: activeId,
-          pages: 5,
-        );
-        if (!mounted) return;
-        setState(() {
-          _entries
-            ..clear()
-            ..addAll(result.items);
-          _page = 1;
-          _hasMore = false;
-          _loading = false;
-        });
+        var page = reset ? 1 : _page + 1;
+        var emptyStreak = 0;
+        while (true) {
+          final result = await service.fetchSectionPage(
+            widget.sectionKey ?? '',
+            servers,
+            activeServerId: activeId,
+            page: page,
+          );
+          if (!mounted) return;
+          final existing =
+              _entries.map((e) => '${e.server.id}|${e.item.id}').toSet();
+          var added = 0;
+          for (final entry in result.items) {
+            if (existing.add('${entry.server.id}|${entry.item.id}')) {
+              _entries.add(entry);
+              added++;
+            }
+          }
+          setState(() {
+            _page = page;
+            _hasMore = result.hasMore;
+            _loading = false;
+            _loadingMore = false;
+          });
+          if (added > 0 || !result.hasMore || emptyStreak >= 4) break;
+          emptyStreak++;
+          page++;
+          if (mounted) {
+            setState(() => _loadingMore = true);
+          }
+        }
       }
+      _scheduleFillCheck();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -196,6 +242,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
 
               return CustomScrollView(
                 key: const ValueKey('tmdbGridScroll'),
+                controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
                   if (widget.isPlatform)
@@ -240,10 +287,23 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
                         padding: EdgeInsets.only(
                           top: widget.isPlatform ? 120 : topInset + 120,
                         ),
-                        child: const Center(
-                          child: Text(
-                            '服务器中没有匹配的条目',
-                            style: TextStyle(color: Colors.white70),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _hasMore ? '本页暂无匹配条目' : '服务器中没有匹配的条目',
+                                style: const TextStyle(color: Colors.white70),
+                              ),
+                              if (_hasMore) ...[
+                                const SizedBox(height: 12),
+                                ElevatedButton(
+                                  key: const Key('tmdbEmptyLoadMore'),
+                                  onPressed: () => _load(reset: false),
+                                  child: const Text('继续加载'),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),
@@ -273,6 +333,13 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
                               item: entry.tmdb,
                               imageBase: imageBase,
                               width: cellWidth,
+                              poster: TmdbAvailabilityImage(
+                                entry: entry,
+                                imageBase: imageBase,
+                                cacheWidth: (cellWidth *
+                                        MediaQuery.devicePixelRatioOf(context))
+                                    .round(),
+                              ),
                               serverBadge: entry.server.label,
                               onTap: () => context.push(
                                 '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',
@@ -283,7 +350,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
                         ),
                       ),
                     ),
-                  if (widget.isPlatform && !_loading && _error == null)
+                  if (!_loading && _error == null && _entries.isNotEmpty)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.only(top: 20),

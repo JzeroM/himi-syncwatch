@@ -152,7 +152,8 @@ void main() {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => server.close(force: true));
     server.listen((request) async {
-      request.response.statusCode = request.uri.path.contains('429') ? 429 : 401;
+      request.response.statusCode =
+          request.uri.path.contains('429') ? 429 : 401;
       await request.response.close();
     });
     final base = 'http://127.0.0.1:${server.port}/3';
@@ -168,8 +169,27 @@ void main() {
   });
 
   test('imageUrl 空 path 返回 null', () {
-    expect(TmdbService.imageUrl('https://img', '/p.jpg'), 'https://img/w500/p.jpg');
+    expect(TmdbService.imageUrl('https://img', '/p.jpg'),
+        'https://img/w500/p.jpg');
     expect(TmdbService.imageUrl('https://img', null), isNull);
     expect(TmdbService.imageUrl('https://img', ''), isNull);
+  });
+
+  test('趋势分页保留 totalPages 且与列表共用缓存', () async {
+    final requests = <_RecordedRequest>[];
+    final server = await _serve(requests);
+    addTearDown(() => server.close(force: true));
+    final service = TmdbService(
+      apiBase: 'http://127.0.0.1:${server.port}/3',
+      credential: 'k',
+    );
+
+    final page = await service.trendingDayPage();
+    final items = await service.trendingDay();
+
+    expect(page.totalPages, 1);
+    expect(page.hasMore, isFalse);
+    expect(items.map((e) => e.id), [1]);
+    expect(requests, hasLength(1));
   });
 }
