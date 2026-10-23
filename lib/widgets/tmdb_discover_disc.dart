@@ -11,8 +11,8 @@ import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 
 /// TMDB 首页顶部的光盘栏目。
 ///
-/// 数据由 [tmdbDiscProvider] 懒加载；组件本身只负责把动态分区列表
-/// 投影成“左中右”三张可视卡，其他分区留在视野外暗区。
+/// 数据由 [tmdbDiscProvider] 懒加载；组件只使用虚拟下半盘的三段弧线，
+/// 画面上仅保留三张独立贴纸及其局部柔光，其余区域完全透明。
 class TmdbDiscoverDisc extends ConsumerWidget {
   const TmdbDiscoverDisc({super.key, required this.tvMode});
 
@@ -42,7 +42,7 @@ class TmdbDiscoverDisc extends ConsumerWidget {
   }
 }
 
-/// 三槽位弧形光盘轮播。
+/// 下半盘三槽位贴纸轮播。
 ///
 /// 分区数量动态；`_position` 是连续的分区位置，0 表示第 0 个分区居中。
 /// 始终只构建中间分区和左右相邻分区，避免未来分区增多后渲染量线性增长。
@@ -72,13 +72,6 @@ class TmdbDiscCarousel extends StatefulWidget {
 
 class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
     with SingleTickerProviderStateMixin {
-  static const _discTilt = 0.98;
-  static const _perspective = -0.0018;
-  static const _discHeightFactor = 0.78;
-  static const _slotFactor = 0.26;
-  static const _cardWidthFactor = 0.30;
-  static const _cardHeightFactor = 0.37;
-
   late final AnimationController _controller;
   final FocusNode _internalFocusNode =
       FocusNode(debugLabel: 'TmdbDiscCarousel');
@@ -87,7 +80,7 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
   double _animStart = 0;
   double _animTarget = 0;
   bool _focused = false;
-  double _slotDistance = 90;
+  double _slotDistance = 100;
 
   FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode;
 
@@ -97,7 +90,7 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
     _ownsFocusNode = widget.focusNode == null;
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 420),
     )..addListener(_tick);
   }
 
@@ -229,8 +222,8 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
         final discSize = math
             .min(width - 12, widget.tvMode ? 560.0 : 420.0)
             .clamp(250.0, 560.0);
-        final height = discSize * _discHeightFactor;
-        _slotDistance = discSize * _slotFactor;
+        final height = discSize * _DiscMetrics.heightFactor;
+        _slotDistance = discSize * _DiscMetrics.dragFactor;
 
         final center = _position.round();
         final indices = _panelIndices(center, widget.sections.length)
@@ -245,9 +238,6 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
               theme,
             ),
         ];
-        final plane = Matrix4.identity()
-          ..setEntry(3, 2, _perspective)
-          ..rotateX(_discTilt);
 
         return SizedBox(
           height: height,
@@ -267,72 +257,7 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: CustomPaint(
-                        painter: _DiscGroundPainter(discSize: discSize),
-                      ),
-                    ),
-                  ),
-                  Center(
-                    child: OverflowBox(
-                      alignment: Alignment.center,
-                      minWidth: discSize,
-                      maxWidth: discSize,
-                      minHeight: discSize,
-                      maxHeight: discSize,
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: plane,
-                        child: SizedBox.square(
-                          dimension: discSize,
-                          child: ShaderMask(
-                            key: const ValueKey('tmdbDiscEdgeFade'),
-                            blendMode: BlendMode.dstIn,
-                            shaderCallback: (bounds) => const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Color(0x08000000),
-                                Color(0x2A000000),
-                                Color(0x85000000),
-                                Color(0xF2000000),
-                                Color(0xFF000000),
-                              ],
-                              stops: [0, 0.12, 0.34, 0.58, 1],
-                            ).createShader(bounds),
-                            child: ClipOval(
-                              child: Stack(
-                                fit: StackFit.expand,
-                                clipBehavior: Clip.none,
-                                children: [
-                                  RepaintBoundary(
-                                    child: CustomPaint(
-                                      key: const ValueKey('tmdbDiscSurface'),
-                                      painter: _DiscSurfacePainter(
-                                        rotation: -_position * 0.09,
-                                        glassEnabled: widget.glassEnabled,
-                                        accent: accent,
-                                      ),
-                                    ),
-                                  ),
-                                  IgnorePointer(
-                                    child: CustomPaint(
-                                      painter: _DiscZonePainter(
-                                        discSize: discSize,
-                                        accent: accent,
-                                      ),
-                                    ),
-                                  ),
-                                  ...panels,
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  ...panels,
                   if (_focused)
                     Positioned.fill(
                       child: IgnorePointer(
@@ -361,30 +286,75 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
     ThemeData theme,
   ) {
     final absT = t.abs();
-    final opacity = (1 - absT * 0.34).clamp(0.55, 1.0);
-    final scale = (1 - 0.07 * math.min(absT, 1.5)).clamp(0.86, 1.0);
-    final cardWidth = discSize * _cardWidthFactor;
-    final cardHeight = discSize * _cardHeightFactor;
-    final centerX = discSize / 2 + t * discSize * _slotFactor;
-    final centerY = discSize * 0.75 - absT * discSize * 0.035;
+    final angle = t * _DiscMetrics.angleStep;
     final active = absT < 0.5;
+    final opacity = (1 - absT * 0.30).clamp(0.58, 1.0);
+    final scale = active
+        ? _DiscMetrics.activeScale
+        : (1 - 0.06 * math.min(absT, 1.5)).clamp(0.90, 0.97);
+    final lift = active ? discSize * _DiscMetrics.liftFactor : 0.0;
+    final cardWidth = discSize * _DiscMetrics.cardWidthFactor;
+    final cardHeight = discSize * _DiscMetrics.cardHeightFactor;
+    final orbitRadius = discSize * _DiscMetrics.orbitFactor;
+    final centerX = discSize / 2 + math.sin(angle) * orbitRadius;
+    final centerY =
+        discSize * _DiscMetrics.topInsetFactor + math.cos(angle) * orbitRadius;
 
     return Positioned(
       left: centerX - cardWidth / 2,
       top: centerY - cardHeight / 2,
       width: cardWidth,
       height: cardHeight,
-      child: Opacity(
-        opacity: opacity,
-        child: Transform.rotate(
-          angle: t * 0.06,
-          child: Transform.scale(
-            scale: scale,
-            child: RepaintBoundary(
-              child: _DiscSectionCard(
-                key: ValueKey('tmdbDiscPanel_${section.key}'),
-                section: section,
-                imageBase: widget.imageBase,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: Opacity(
+              opacity: opacity,
+              child: Transform.translate(
+                offset: Offset(0, -lift),
+                child: Transform.rotate(
+                  angle: angle,
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, _DiscMetrics.perspective)
+                      ..rotateX(_DiscMetrics.panelTilt),
+                    child: Transform.scale(
+                      scale: scale,
+                      child: RepaintBoundary(
+                        child: _DiscSectionCard(
+                          key: ValueKey('tmdbDiscPanel_${section.key}'),
+                          section: section,
+                          imageBase: widget.imageBase,
+                          active: active,
+                          accent: theme.colorScheme.primary,
+                          glassEnabled: widget.glassEnabled,
+                          onTap: () {
+                            if (active) {
+                              widget.onOpenSection(section);
+                            } else {
+                              _selectSection(section);
+                            }
+                          },
+                          onOpen: () => widget.onOpenSection(section),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: cardHeight * _DiscMetrics.titleCenterFactor - 14,
+            height: 28,
+            child: Opacity(
+              opacity: opacity,
+              child: _DiscSectionTitle(
+                title: section.title,
                 active: active,
                 accent: theme.colorScheme.primary,
                 onTap: () {
@@ -394,11 +364,10 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
                     _selectSection(section);
                   }
                 },
-                onOpen: () => widget.onOpenSection(section),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -411,6 +380,7 @@ class _DiscSectionCard extends StatelessWidget {
     required this.imageBase,
     required this.active,
     required this.accent,
+    required this.glassEnabled,
     required this.onTap,
     required this.onOpen,
   });
@@ -419,6 +389,7 @@ class _DiscSectionCard extends StatelessWidget {
   final String imageBase;
   final bool active;
   final Color accent;
+  final bool glassEnabled;
   final VoidCallback onTap;
   final VoidCallback onOpen;
 
@@ -434,23 +405,19 @@ class _DiscSectionCard extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            height: 30,
-            child: _DiscSectionTitle(
-              title: section.title,
-              active: active,
-              accent: accent,
-              onOpen: onOpen,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                key: ValueKey('tmdbDiscIsland_${section.key}'),
+                painter: _DiscIslandPainter(
+                  active: active,
+                  accent: accent,
+                  glassEnabled: glassEnabled,
+                ),
+              ),
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 23,
-            bottom: 0,
+          Positioned.fill(
             child: loading
                 ? _PosterFanSkeleton(active: active)
                 : empty
@@ -460,6 +427,7 @@ class _DiscSectionCard extends StatelessWidget {
                         items: items,
                         imageBase: imageBase,
                         active: active,
+                        accent: accent,
                         onOpen: onOpen,
                       ),
           ),
@@ -474,13 +442,13 @@ class _DiscSectionTitle extends StatelessWidget {
     required this.title,
     required this.active,
     required this.accent,
-    required this.onOpen,
+    required this.onTap,
   });
 
   final String title;
   final bool active;
   final Color accent;
-  final VoidCallback onOpen;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -514,7 +482,7 @@ class _DiscSectionTitle extends StatelessWidget {
             ],
           )
         : base.copyWith(
-            color: Colors.white.withValues(alpha: 0.68),
+            color: Colors.white.withValues(alpha: 0.76),
             shadows: [
               Shadow(
                 color: Colors.black.withValues(alpha: 0.70),
@@ -524,30 +492,24 @@ class _DiscSectionTitle extends StatelessWidget {
             ],
           );
 
-    return Transform(
-      alignment: Alignment.center,
-      transform: Matrix4.identity()
-        ..setEntry(3, 2, 0.0012)
-        ..rotateX(-0.72),
-      child: Semantics(
-        button: true,
-        label: '$title，进入栏目',
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onOpen,
-          child: Center(
-            child: SizedBox(
-              width: active ? null : 68,
-              height: 24,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.fade,
-                  style: style,
-                ),
+    return Semantics(
+      button: true,
+      label: active ? '$title，进入栏目' : '$title，切换到该栏目',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Center(
+          child: SizedBox(
+            width: active ? null : 72,
+            height: 24,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                title,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.fade,
+                style: style,
               ),
             ),
           ),
@@ -563,6 +525,7 @@ class _PosterFan extends StatelessWidget {
     required this.items,
     required this.imageBase,
     required this.active,
+    required this.accent,
     required this.onOpen,
   });
 
@@ -570,6 +533,7 @@ class _PosterFan extends StatelessWidget {
   final List<TmdbAvailability> items;
   final String imageBase;
   final bool active;
+  final Color accent;
   final VoidCallback onOpen;
 
   @override
@@ -579,9 +543,9 @@ class _PosterFan extends StatelessWidget {
       builder: (context, constraints) {
         final panelWidth = constraints.maxWidth;
         final panelHeight = constraints.maxHeight;
-        final posterWidth = panelWidth * 0.52;
+        final posterWidth = panelWidth * 0.62;
         final posterHeight = posterWidth * 1.5;
-        final spread = panelWidth * 0.24;
+        final spread = panelWidth * 0.16;
         final top = math.max(0.0, (panelHeight - posterHeight) / 2);
         final order =
             count == 3 ? const [0, 2, 1] : [for (var i = 0; i < count; i++) i];
@@ -605,6 +569,7 @@ class _PosterFan extends StatelessWidget {
                     width: posterWidth,
                     height: posterHeight,
                     active: active,
+                    accent: accent,
                     onTap: onOpen,
                   ),
                 ),
@@ -624,6 +589,7 @@ class _DiscPosterTile extends StatelessWidget {
     required this.width,
     required this.height,
     required this.active,
+    required this.accent,
     required this.onTap,
   });
 
@@ -632,6 +598,7 @@ class _DiscPosterTile extends StatelessWidget {
   final double width;
   final double height;
   final bool active;
+  final Color accent;
   final VoidCallback onTap;
 
   @override
@@ -643,61 +610,82 @@ class _DiscPosterTile extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: Container(
+        child: SizedBox(
           width: width,
           height: height,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: active ? 0.22 : 0.12),
-              width: 0.8,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: active ? 0.42 : 0.30),
-                blurRadius: 3,
-                offset: const Offset(0, 1.5),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(5),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                TmdbAvailabilityImage(
-                  entry: entry,
-                  imageBase: imageBase,
-                  posterSize: 'w154',
-                  cacheWidth: cacheWidth,
-                  serverMaxWidth: cacheWidth,
-                  fadeInDuration: const Duration(milliseconds: 120),
-                ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.white.withValues(alpha: 0.12),
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.24),
-                          ],
-                          stops: const [0, 0.36, 1],
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (bounds) => RadialGradient(
+              center: const Alignment(0, -0.02),
+              radius: 0.78,
+              colors: [
+                Colors.white,
+                Colors.white.withValues(alpha: 0.96),
+                Colors.transparent,
+              ],
+              stops: const [0, 0.80, 1],
+            ).createShader(bounds),
+            child: ClipPath(
+              clipper: const _DiscDecalClipper(),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  TmdbAvailabilityImage(
+                    entry: entry,
+                    imageBase: imageBase,
+                    posterSize: 'w154',
+                    cacheWidth: cacheWidth,
+                    serverMaxWidth: cacheWidth,
+                    fadeInDuration: const Duration(milliseconds: 120),
+                  ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.white.withValues(alpha: 0.13),
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.18),
+                            ],
+                            stops: const [0, 0.38, 1],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+class _DiscDecalClipper extends CustomClipper<Path> {
+  const _DiscDecalClipper();
+
+  @override
+  Path getClip(Size size) {
+    final w = size.width;
+    final h = size.height;
+    return Path()
+      ..moveTo(w * 0.18, 0)
+      ..quadraticBezierTo(w * 0.5, h * 0.16, w * 0.82, 0)
+      ..quadraticBezierTo(w * 1.00, h * 0.12, w * 0.99, h * 0.62)
+      ..quadraticBezierTo(w * 0.97, h * 0.88, w * 0.90, h * 0.94)
+      ..quadraticBezierTo(w * 0.5, h, w * 0.10, h * 0.94)
+      ..quadraticBezierTo(w * 0.03, h * 0.88, w * 0.01, h * 0.62)
+      ..quadraticBezierTo(0, h * 0.12, w * 0.18, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant _DiscDecalClipper oldClipper) => false;
 }
 
 class _PosterFanSkeleton extends StatelessWidget {
@@ -711,9 +699,9 @@ class _PosterFanSkeleton extends StatelessWidget {
       builder: (context, constraints) {
         final panelWidth = constraints.maxWidth;
         final panelHeight = constraints.maxHeight;
-        final posterWidth = panelWidth * 0.52;
+        final posterWidth = panelWidth * 0.62;
         final posterHeight = posterWidth * 1.5;
-        final spread = panelWidth * 0.24;
+        final spread = panelWidth * 0.16;
         final top = math.max(0.0, (panelHeight - posterHeight) / 2);
         return Stack(
           clipBehavior: Clip.none,
@@ -778,331 +766,67 @@ class _EmptyPanel extends StatelessWidget {
   }
 }
 
-class _DiscGroundPainter extends CustomPainter {
-  const _DiscGroundPainter({required this.discSize});
-
-  final double discSize;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final center = Offset(size.width / 2, size.height / 2);
-
-    final shadow = Rect.fromCenter(
-      center: center + Offset(0, discSize * 0.255),
-      width: discSize * 0.82,
-      height: discSize * 0.18,
-    );
-    canvas.drawOval(
-      shadow,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.55)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, discSize * 0.045),
-    );
-
-    final body = Rect.fromCenter(
-      center: center + Offset(0, discSize * 0.018),
-      width: discSize * 0.96,
-      height: discSize * 0.55,
-    );
-    canvas.drawOval(
-      body,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF1A2336), Color(0xFF070A10)],
-        ).createShader(body),
-    );
-    canvas.drawArc(
-      body.deflate(0.8),
-      math.pi * 0.16,
-      math.pi * 0.68,
-      false,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = Colors.white.withValues(alpha: 0.18),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _DiscGroundPainter oldDelegate) =>
-      oldDelegate.discSize != discSize;
-}
-
-class _DiscSurfacePainter extends CustomPainter {
-  const _DiscSurfacePainter({
-    required this.rotation,
-    required this.glassEnabled,
+class _DiscIslandPainter extends CustomPainter {
+  const _DiscIslandPainter({
+    required this.active,
     required this.accent,
+    required this.glassEnabled,
   });
 
-  final double rotation;
-  final bool glassEnabled;
+  final bool active;
   final Color accent;
+  final bool glassEnabled;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    final center = size.center(Offset.zero);
-    final radius = size.shortestSide / 2;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-    final surface = Path()..addOval(rect);
-
-    canvas.save();
-    canvas.clipPath(surface);
-
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..shader = const RadialGradient(
-          center: Alignment(0, 0.16),
-          radius: 0.94,
-          colors: [
-            Color(0xFF263149),
-            Color(0xFF101725),
-            Color(0xFF070A11),
-            Color(0xFF030408),
-          ],
-          stops: [0, 0.42, 0.78, 1],
-        ).createShader(rect),
+    final center = Offset(size.width / 2, size.height * 0.56);
+    final glowRect = Rect.fromCenter(
+      center: center,
+      width: size.width * 1.30,
+      height: size.height * 1.08,
     );
 
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(rotation - 0.35);
-    final sweepRect = Rect.fromCircle(center: Offset.zero, radius: radius);
-    canvas.drawCircle(
-      Offset.zero,
-      radius,
-      Paint()
-        ..blendMode = BlendMode.screen
-        ..shader = SweepGradient(
-          startAngle: -0.4,
-          endAngle: math.pi * 2 - 0.4,
-          colors: [
-            Colors.transparent,
-            const Color(0x2822DDF5),
-            const Color(0x143966FF),
-            const Color(0x2A7B5CFF),
-            const Color(0x1AF43F8E),
-            const Color(0x2415E0C4),
-            Colors.transparent,
-          ],
-          stops: const [0, 0.10, 0.27, 0.45, 0.62, 0.82, 1],
-        ).createShader(sweepRect),
-    );
-    canvas.restore();
-
-    final sheen = Rect.fromCenter(
-      center: center + Offset(-radius * 0.08, -radius * 0.04),
-      width: radius * 1.92,
-      height: radius * 0.34,
-    );
+    final glowColor = active ? accent : const Color(0xFF8FD8FF);
     canvas.drawOval(
-      sheen,
-      Paint()
-        ..blendMode = BlendMode.screen
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * 0.025)
-        ..shader = LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            Colors.transparent,
-            Colors.white.withValues(alpha: glassEnabled ? 0.13 : 0.09),
-            Colors.transparent,
-          ],
-        ).createShader(sheen),
-    );
-
-    final grooveCount = 42;
-    for (var i = 0; i < grooveCount; i++) {
-      final t = i / (grooveCount - 1);
-      final grooveRadius = radius * (0.275 + 0.705 * t);
-      canvas.drawCircle(
-        center,
-        grooveRadius,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.55 + t * 0.35
-          ..color = Colors.white.withValues(
-            alpha: 0.012 + t * 0.052,
-          ),
-      );
-    }
-
-    canvas.drawCircle(
-      center,
-      radius * 0.18,
-      Paint()..color = Colors.black.withValues(alpha: 0.50),
-    );
-    canvas.drawCircle(
-      center,
-      radius * 0.18,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = Colors.white.withValues(alpha: 0.14),
-    );
-    canvas.drawCircle(
-      center,
-      radius * 0.145,
-      Paint()..color = const Color(0xFF111827),
-    );
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius * 0.145),
-      math.pi * 0.10,
-      math.pi * 0.80,
-      false,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6
-        ..color = const Color(0xFF7DDBFF).withValues(alpha: 0.28),
-    );
-    canvas.drawCircle(
-      center,
-      radius * 0.072,
-      Paint()..color = const Color(0xFF03050A),
-    );
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius * 0.072),
-      math.pi * 0.12,
-      math.pi * 0.76,
-      false,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = Colors.white.withValues(alpha: 0.22),
-    );
-
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment(0, 0.45),
-          colors: [
-            Colors.black.withValues(alpha: 0.58),
-            Colors.black.withValues(alpha: 0.20),
-            Colors.transparent,
-          ],
-          stops: const [0, 0.36, 1],
-        ).createShader(rect),
-    );
-
-    canvas.drawCircle(
-      center,
-      radius,
+      glowRect,
       Paint()
         ..blendMode = BlendMode.screen
         ..shader = RadialGradient(
-          center: const Alignment(0, 0.82),
-          radius: 0.72,
           colors: [
-            accent.withValues(alpha: 0.13),
+            glowColor.withValues(
+              alpha: active ? 0.16 : (glassEnabled ? 0.06 : 0.045),
+            ),
+            glowColor.withValues(alpha: active ? 0.045 : 0.012),
             Colors.transparent,
           ],
-        ).createShader(rect),
+          stops: const [0, 0.58, 1],
+        ).createShader(glowRect),
     );
 
-    final rimRect = Rect.fromCircle(center: center, radius: radius - 1.2);
-    canvas.drawCircle(
-      center,
-      radius - 1.2,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.4
-        ..color = Colors.white.withValues(alpha: 0.14),
+    final contact = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height * 0.9),
+      width: size.width * 0.94,
+      height: size.height * 0.16,
     );
-    canvas.drawArc(
-      rimRect,
-      math.pi * 0.12,
-      math.pi * 0.76,
-      false,
+    canvas.drawOval(
+      contact,
       Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2)
-        ..color = Colors.white.withValues(alpha: 0.30),
+        ..blendMode = BlendMode.screen
+        ..shader = RadialGradient(
+          colors: [
+            glowColor.withValues(alpha: active ? 0.09 : 0.035),
+            Colors.transparent,
+          ],
+        ).createShader(contact),
     );
-    canvas.drawArc(
-      rimRect,
-      -math.pi * 0.86,
-      math.pi * 0.52,
-      false,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..color = Colors.white.withValues(alpha: 0.10),
-    );
-
-    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant _DiscSurfacePainter oldDelegate) =>
-      oldDelegate.rotation != rotation ||
-      oldDelegate.glassEnabled != glassEnabled ||
-      oldDelegate.accent != accent;
-}
-
-class _DiscZonePainter extends CustomPainter {
-  const _DiscZonePainter({required this.discSize, required this.accent});
-
-  final double discSize;
-  final Color accent;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final centerX = size.width / 2;
-    final centerY = discSize * 0.75;
-    final zoneWidth = discSize * 0.30;
-    final zoneHeight = discSize * 0.26;
-
-    for (final slot in const [-1, 0, 1]) {
-      final center = Offset(
-        centerX + slot * discSize * _TmdbDiscMetrics.slotFactor,
-        centerY - slot.abs() * discSize * 0.035,
-      );
-      final rect = Rect.fromCenter(
-        center: center,
-        width: zoneWidth,
-        height: zoneHeight,
-      );
-      canvas.drawOval(
-        rect.inflate(discSize * 0.008),
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.24)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, discSize * 0.012),
-      );
-      canvas.drawOval(
-        rect,
-        Paint()
-          ..shader = RadialGradient(
-            colors: slot == 0
-                ? [
-                    accent.withValues(alpha: 0.16),
-                    accent.withValues(alpha: 0.035),
-                    Colors.transparent,
-                  ]
-                : [
-                    Colors.white.withValues(alpha: 0.055),
-                    Colors.white.withValues(alpha: 0.012),
-                    Colors.transparent,
-                  ],
-            stops: const [0, 0.62, 1],
-          ).createShader(rect),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DiscZonePainter oldDelegate) =>
-      oldDelegate.discSize != discSize || oldDelegate.accent != accent;
+  bool shouldRepaint(covariant _DiscIslandPainter oldDelegate) =>
+      oldDelegate.active != active ||
+      oldDelegate.accent != accent ||
+      oldDelegate.glassEnabled != glassEnabled;
 }
 
 class _FocusRingPainter extends CustomPainter {
@@ -1113,34 +837,39 @@ class _FocusRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromCenter(
-      center: Offset(size.width / 2, size.height / 2),
-      width: math.min(size.width - 4, discSize * 0.98),
-      height: discSize * 0.62,
+    final center = Offset(
+      size.width / 2,
+      discSize * (_DiscMetrics.topInsetFactor + _DiscMetrics.orbitFactor),
     );
-    canvas.drawOval(
-      rect,
+    final rect = Rect.fromCenter(
+      center: center,
+      width: discSize * _DiscMetrics.cardWidthFactor + 14,
+      height: discSize * _DiscMetrics.cardHeightFactor * 0.78 + 12,
+    );
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(22));
+    canvas.drawRRect(
+      rrect.inflate(2),
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 8
-        ..color = color.withValues(alpha: 0.22)
+        ..color = color.withValues(alpha: 0.20)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
-    canvas.drawOval(
-      rect.deflate(1),
+    canvas.drawRRect(
+      rrect,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = color.withValues(alpha: 0.28),
+        ..strokeWidth = 1.3
+        ..color = color.withValues(alpha: 0.72),
     );
     canvas.drawArc(
-      rect.deflate(1),
-      math.pi * 0.10,
-      math.pi * 0.80,
+      rect,
+      math.pi * 0.14,
+      math.pi * 0.72,
       false,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.6
+        ..strokeWidth = 2.8
         ..color = color.withValues(alpha: 0.94),
     );
   }
@@ -1163,107 +892,99 @@ class _DiscSkeleton extends StatelessWidget {
             ? constraints.maxWidth
             : fallbackWidth;
         final discSize = math.min(width - 12, 420.0).clamp(250.0, 420.0);
-        final height = discSize * _TmdbDiscMetrics.heightFactor;
-        final plane = Matrix4.identity()
-          ..setEntry(3, 2, _TmdbDiscMetrics.perspective)
-          ..rotateX(_TmdbDiscMetrics.tilt);
+        final height = discSize * _DiscMetrics.heightFactor;
+        final cardWidth = discSize * _DiscMetrics.cardWidthFactor;
+        final cardHeight = discSize * _DiscMetrics.cardHeightFactor;
+        final orbitRadius = discSize * _DiscMetrics.orbitFactor;
 
         return SizedBox(
           height: height,
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _DiscGroundPainter(discSize: discSize),
+              for (final slot in const [-1, 0, 1])
+                _skeletonPanel(
+                  slot: slot,
+                  discSize: discSize,
+                  cardWidth: cardWidth,
+                  cardHeight: cardHeight,
+                  orbitRadius: orbitRadius,
+                  accent: accent,
                 ),
-              ),
-              Center(
-                child: OverflowBox(
-                  alignment: Alignment.center,
-                  minWidth: discSize,
-                  maxWidth: discSize,
-                  minHeight: discSize,
-                  maxHeight: discSize,
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: plane,
-                    child: SizedBox.square(
-                      dimension: discSize,
-                      child: ClipOval(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Opacity(
-                              opacity: 0.42,
-                              child: CustomPaint(
-                                painter: _DiscSurfacePainter(
-                                  rotation: 0,
-                                  glassEnabled: false,
-                                  accent: accent,
-                                ),
-                              ),
-                            ),
-                            for (final slot in const [-1, 0, 1])
-                              Positioned(
-                                left: discSize / 2 +
-                                    slot *
-                                        discSize *
-                                        _TmdbDiscMetrics.slotFactor -
-                                    discSize *
-                                        _TmdbDiscMetrics.cardWidthFactor /
-                                        2,
-                                top: discSize * 0.75 -
-                                    discSize *
-                                        _TmdbDiscMetrics.cardHeightFactor /
-                                        2 -
-                                    slot.abs() * discSize * 0.035,
-                                width:
-                                    discSize * _TmdbDiscMetrics.cardWidthFactor,
-                                height: discSize *
-                                    _TmdbDiscMetrics.cardHeightFactor,
-                                child: Opacity(
-                                  opacity: slot == 0 ? 1 : 0.55,
-                                  child: Column(
-                                    children: [
-                                      Container(
-                                        width: discSize * 0.16,
-                                        height: 9,
-                                        decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(5),
-                                          color: Colors.white.withValues(
-                                            alpha: 0.10,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      const Expanded(
-                                        child: _PosterFanSkeleton(active: true),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             ],
           ),
         );
       },
     );
   }
+
+  Widget _skeletonPanel({
+    required int slot,
+    required double discSize,
+    required double cardWidth,
+    required double cardHeight,
+    required double orbitRadius,
+    required Color accent,
+  }) {
+    final angle = slot * _DiscMetrics.angleStep;
+    final active = slot == 0;
+    final centerX = discSize / 2 + math.sin(angle) * orbitRadius;
+    final centerY =
+        discSize * _DiscMetrics.topInsetFactor + math.cos(angle) * orbitRadius;
+
+    return Positioned(
+      left: centerX - cardWidth / 2,
+      top: centerY - cardHeight / 2,
+      width: cardWidth,
+      height: cardHeight,
+      child: Opacity(
+        opacity: active ? 1 : 0.62,
+        child: Transform.rotate(
+          angle: angle,
+          child: Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, _DiscMetrics.perspective)
+              ..rotateX(_DiscMetrics.panelTilt),
+            child: Transform.scale(
+              scale: active ? _DiscMetrics.activeScale : _DiscMetrics.sideScale,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _DiscIslandPainter(
+                        active: active,
+                        accent: accent,
+                        glassEnabled: false,
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: _PosterFanSkeleton(active: active),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _TmdbDiscMetrics {
-  static const tilt = 0.98;
-  static const perspective = -0.0018;
-  static const heightFactor = 0.78;
-  static const slotFactor = 0.26;
-  static const cardWidthFactor = 0.30;
-  static const cardHeightFactor = 0.37;
+class _DiscMetrics {
+  static const panelTilt = 0.64;
+  static const perspective = 0.0012;
+  static const heightFactor = 0.57;
+  static const topInsetFactor = 0.03;
+  static const orbitFactor = 0.36;
+  static const angleStep = 1.12;
+  static const cardWidthFactor = 0.32;
+  static const cardHeightFactor = 0.38;
+  static const titleCenterFactor = 0.22;
+  static const dragFactor = 0.24;
+  static const liftFactor = 0.006;
+  static const activeScale = 1.02;
+  static const sideScale = 0.94;
 }

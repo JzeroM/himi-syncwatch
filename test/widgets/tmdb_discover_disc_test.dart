@@ -76,10 +76,43 @@ void main() {
     expect(find.text('分区1'), findsOneWidget);
     expect(find.text('分区2'), findsNothing);
     expect(find.text('分区3'), findsNothing);
-    expect(find.byKey(const ValueKey('tmdbDiscEdgeFade')), findsOneWidget);
-    expect(find.byKey(const ValueKey('tmdbDiscSurface')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tmdbDiscSurface')), findsNothing);
+    expect(find.byKey(const ValueKey('tmdbDiscEdgeFade')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('tmdbDiscIsland_section_4')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('tmdbDiscIsland_section_0')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('tmdbDiscIsland_section_1')),
+      findsOneWidget,
+    );
     expect(find.textContaining('查看全部'), findsNothing);
     expect(find.byIcon(Icons.chevron_right), findsNothing);
+  });
+
+  testWidgets('半盘高度紧凑且只保留三块贴纸', (tester) async {
+    final opened = <String>[];
+    await _pump(tester, sections: _sections(5), opened: opened);
+
+    final size = tester.getSize(find.byType(TmdbDiscCarousel));
+    expect(size.height, greaterThan(200));
+    expect(size.height, lessThan(260));
+    expect(
+      find.byKey(const ValueKey('tmdbDiscIsland_section_4')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('tmdbDiscIsland_section_0')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('tmdbDiscIsland_section_1')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('分区数量增加后仍然只构建三个分区', (tester) async {
