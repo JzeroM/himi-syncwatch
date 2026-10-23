@@ -89,8 +89,45 @@ void main() {
     expect(image.fit, BoxFit.contain);
     expect(image.height, 20);
 
+    final cardRect = tester.getRect(find.byType(TmdbPlatformCard));
+    expect(tester.getCenter(logo).dx - cardRect.center.dx, closeTo(33, 1));
+    final stack = find.byKey(const ValueKey('tmdbPlatformPosterStack_8'));
+    expect(tester.getSize(stack).width, 64);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('tmdbPlatformLogoGap'))).width,
+      2,
+    );
+    expect(
+      tester.getCenter(back).dx - tester.getRect(stack).left,
+      closeTo(41, 1),
+      reason: '海报堆叠应右移贴近 Logo',
+    );
+
     await tester.tap(find.byType(TmdbPlatformCard));
     expect(tapped, isTrue);
+  });
+
+  testWidgets('Disney+ Logo 更大且位置不变', (tester) async {
+    final disney = tmdbPlatformById(337)!;
+    await tester.pumpWidget(
+      _host(
+        TmdbPlatformCard(
+          showcase: TmdbPlatformShowcase(platform: disney),
+          imageBase: 'https://image.example',
+          onTap: () {},
+          width: 170,
+          height: 84,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final logo = find.byKey(const ValueKey('tmdbPlatformLogo_337'));
+    final image = tester.widget<Image>(logo);
+    expect(disney.logoHeight, 24);
+    expect(image.height, 24);
+    final cardRect = tester.getRect(find.byType(TmdbPlatformCard));
+    expect(tester.getCenter(logo).dx - cardRect.center.dx, closeTo(33, 1));
   });
 
   testWidgets('只有一张海报时只展示一张', (tester) async {

@@ -43,7 +43,8 @@ class TmdbPlatformCard extends StatelessWidget {
           child: Row(
             children: [
               SizedBox(
-                width: 58,
+                key: ValueKey('tmdbPlatformPosterStack_${platform.providerId}'),
+                width: 64,
                 height: height - 16,
                 child: _PosterStack(
                   platformId: platform.providerId,
@@ -52,13 +53,16 @@ class TmdbPlatformCard extends StatelessWidget {
                   serverLookupComplete: serverLookupComplete,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(
+                key: ValueKey('tmdbPlatformLogoGap'),
+                width: 2,
+              ),
               Expanded(
                 child: Center(
                   child: Image.asset(
                     platform.logoAsset,
                     key: ValueKey('tmdbPlatformLogo_${platform.providerId}'),
-                    height: 20,
+                    height: platform.logoHeight,
                     fit: BoxFit.contain,
                     filterQuality: FilterQuality.high,
                     errorBuilder: (context, error, stackTrace) {
@@ -97,14 +101,14 @@ class _PosterStack extends StatelessWidget {
     final hasBack = posters.length > 1;
     return Center(
       child: SizedBox(
-        width: 58,
+        width: 64,
         height: 60,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
             if (empty)
               Positioned(
-                left: 16,
+                left: 22,
                 top: 0,
                 child: Transform.rotate(
                   angle: 0.06,
@@ -120,7 +124,7 @@ class _PosterStack extends StatelessWidget {
               )
             else if (hasBack)
               Positioned(
-                left: 16,
+                left: 22,
                 top: 0,
                 child: Transform.rotate(
                   angle: 0.06,
@@ -135,7 +139,7 @@ class _PosterStack extends StatelessWidget {
                 ),
               ),
             Positioned(
-              left: empty ? 0 : (hasBack ? 0 : 8),
+              left: empty ? 6 : (hasBack ? 6 : 14),
               top: empty ? 6 : (hasBack ? 6 : 3),
               child: Transform.rotate(
                 angle: empty ? -0.05 : (hasBack ? -0.05 : 0),

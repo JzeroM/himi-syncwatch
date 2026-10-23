@@ -6,11 +6,13 @@ class TmdbPlatform {
     required this.providerId,
     required this.name,
     required this.logoAsset,
+    this.logoHeight = 20,
   });
 
   final int providerId;
   final String name;
   final String logoAsset;
+  final double logoHeight;
 }
 
 const List<TmdbPlatform> tmdbPlatforms = [
@@ -23,6 +25,7 @@ const List<TmdbPlatform> tmdbPlatforms = [
     providerId: 337,
     name: 'Disney+',
     logoAsset: 'assets/images/platforms/disney_plus.png',
+    logoHeight: 24,
   ),
   TmdbPlatform(
     providerId: 350,

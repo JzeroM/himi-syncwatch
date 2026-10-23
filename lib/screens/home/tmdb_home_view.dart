@@ -188,6 +188,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
     );
 
     final content = <Widget>[
+      if (widget.tvMode) discSection,
       if (headerCount > 0)
         hero == null
             ? _HeroSkeleton(height: heroHeight)
@@ -229,7 +230,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
         tvMode: widget.tvMode,
         allowServerPosters: !widget.data.sectionsLoading,
       ),
-      if (sections.isEmpty) discSection,
+      if (!widget.tvMode && sections.isEmpty) discSection,
       for (var i = 0; i < sections.length; i++) ...[
         _SectionRow(
           key: ValueKey('tmdbSection_${sections[i].key}'),
@@ -237,7 +238,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
           imageBase: imageBase,
           tvMode: widget.tvMode,
         ),
-        if (i == discInsertAfter) discSection,
+        if (!widget.tvMode && i == discInsertAfter) discSection,
       ],
       if (widget.data.failedServerCount > 0)
         Padding(
@@ -459,11 +460,17 @@ class _EmptyHome extends ConsumerWidget {
         bottom: GlassConfig.bottomReserveOf(context),
       ),
       children: [
+        if (tvMode)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: TmdbDiscoverDisc(tvMode: tvMode),
+          ),
         _PlatformBar(tvMode: tvMode, allowServerPosters: true),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: TmdbDiscoverDisc(tvMode: tvMode),
-        ),
+        if (!tvMode)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: TmdbDiscoverDisc(tvMode: tvMode),
+          ),
         if (!loading && !hasContent)
           const Padding(
             padding: EdgeInsets.fromLTRB(24, 40, 24, 24),

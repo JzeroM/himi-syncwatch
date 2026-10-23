@@ -284,7 +284,7 @@ void main() {
     final discFocus = find.byKey(const ValueKey('tmdbDiscFocus'));
     var guard = 0;
     while (!_focusWithin(discFocus) && guard < 30) {
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
       await tester.pump();
       guard++;
     }
@@ -354,6 +354,104 @@ void main() {
     expect(find.byType(HomeHeroBackground), findsNothing);
     expect(find.text('查看详情'), findsNothing);
     expect(find.text('流媒体平台'), findsOneWidget);
+  });
+
+  testWidgets('TV 光盘栏位于继续观看与平台栏上方', (tester) async {
+    final resume = TmdbResumeEntry(
+      item: MediaItem(id: 'r1', name: '续播影片', type: 'Movie'),
+      server: _server,
+    );
+    await _pump(
+      tester,
+      viewSize: const Size(800, 1600),
+      data: _data(1),
+      settings: const AppSettings(tvMode: true, homeCarousel: false),
+      discData: TmdbDiscData(
+        configured: true,
+        sections: [
+          TmdbDiscSectionData(
+            key: 'high_score_movies',
+            title: '高分热门电影',
+            items: [_entry(2)],
+          ),
+        ],
+      ),
+      extraOverrides: [
+        tmdbResumeProvider.overrideWith(
+          (ref) async => TmdbResumeResult(entries: [resume]),
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    final disc = tester.getRect(
+      find.byKey(const ValueKey('tmdbDiscoverDisc')),
+    );
+    final resumeBar = tester.getRect(find.text('继续观看'));
+    final platform = tester.getRect(
+      find.byKey(const ValueKey('tmdbPlatform_8')),
+    );
+
+    expect(disc.top, lessThan(resumeBar.top));
+    expect(resumeBar.top, lessThan(platform.top));
+  });
+
+  testWidgets('TV 空首页光盘栏仍在平台栏上方', (tester) async {
+    await _pump(
+      tester,
+      viewSize: const Size(800, 1600),
+      data: const TmdbHomeData(configured: true),
+      settings: const AppSettings(tvMode: true, homeCarousel: false),
+      discData: TmdbDiscData(
+        configured: true,
+        sections: [
+          TmdbDiscSectionData(
+            key: 'high_score_movies',
+            title: '高分热门电影',
+            items: [_entry(2)],
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final disc = tester.getRect(
+      find.byKey(const ValueKey('tmdbDiscoverDisc')),
+    );
+    final platform = tester.getRect(
+      find.byKey(const ValueKey('tmdbPlatform_8')),
+    );
+
+    expect(disc.top, lessThan(platform.top));
+  });
+
+  testWidgets('TV 无续播时光盘栏仍在平台栏上方', (tester) async {
+    await _pump(
+      tester,
+      viewSize: const Size(800, 1600),
+      data: _data(1),
+      settings: const AppSettings(tvMode: true, homeCarousel: false),
+      discData: TmdbDiscData(
+        configured: true,
+        sections: [
+          TmdbDiscSectionData(
+            key: 'high_score_movies',
+            title: '高分热门电影',
+            items: [_entry(2)],
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final disc = tester.getRect(
+      find.byKey(const ValueKey('tmdbDiscoverDisc')),
+    );
+    final platform = tester.getRect(
+      find.byKey(const ValueKey('tmdbPlatform_8')),
+    );
+
+    expect(disc.top, lessThan(platform.top));
   });
 
   testWidgets('TV 栏目加载中不显示英雄骨架', (tester) async {
