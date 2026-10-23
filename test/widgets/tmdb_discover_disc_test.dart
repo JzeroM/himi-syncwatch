@@ -77,6 +77,9 @@ void main() {
     expect(find.text('分区2'), findsNothing);
     expect(find.text('分区3'), findsNothing);
     expect(find.byKey(const ValueKey('tmdbDiscEdgeFade')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tmdbDiscSurface')), findsOneWidget);
+    expect(find.textContaining('查看全部'), findsNothing);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
   });
 
   testWidgets('分区数量增加后仍然只构建三个分区', (tester) async {
