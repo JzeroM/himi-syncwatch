@@ -22,18 +22,19 @@ Future<void> showResumeCardMenu(
   BuildContext context,
   WidgetRef ref,
   MediaItem item,
-  Rect anchor,
-) {
+  Rect anchor, {
+  String? serverId,
+}) {
   return showGlassContextMenu(
     context,
     anchor: anchor,
     actions: [
-      _favoriteAction(context, ref, item),
+      _favoriteAction(context, ref, item, serverId: serverId),
       GlassMenuAction(
         icon: Icons.delete_outline,
         label: '移除历史',
         destructive: true,
-        onTap: () => _removeFromResume(context, ref, item),
+        onTap: () => _removeFromResume(context, ref, item, serverId: serverId),
       ),
     ],
   );
@@ -60,20 +61,21 @@ Future<void> showPosterCardMenu(
 GlassMenuAction _favoriteAction(
   BuildContext context,
   WidgetRef ref,
-  MediaItem item,
-) {
+  MediaItem item, {
+  String? serverId,
+}) {
   if (_effectiveFavorite(ref, item)) {
     return GlassMenuAction(
       icon: Icons.favorite,
       label: '取消收藏',
       destructive: true,
-      onTap: () => _setFavorite(context, ref, item, false),
+      onTap: () => _setFavorite(context, ref, item, false, serverId: serverId),
     );
   }
   return GlassMenuAction(
     icon: Icons.favorite_border,
     label: '收藏',
-    onTap: () => _setFavorite(context, ref, item, true),
+    onTap: () => _setFavorite(context, ref, item, true, serverId: serverId),
   );
 }
 
@@ -124,9 +126,12 @@ Future<void> _setFavorite(
   BuildContext context,
   WidgetRef ref,
   MediaItem item,
-  bool favorite,
-) async {
-  final ok = await ref.read(embyServiceProvider).setFavorite(item.id, favorite);
+  bool favorite, {
+  String? serverId,
+}) async {
+  final ok = await ref
+      .read(embyServiceForProvider(serverId))
+      .setFavorite(item.id, favorite);
   if (ok) {
     ref
         .read(mediaStateOverrideProvider.notifier)
@@ -140,15 +145,18 @@ Future<void> _setFavorite(
 Future<void> _removeFromResume(
   BuildContext context,
   WidgetRef ref,
-  MediaItem item,
-) async {
+  MediaItem item, {
+  String? serverId,
+}) async {
   final notifier = ref.read(resumeOptimisticHiddenProvider.notifier);
   if (!notifier.state.contains(item.id)) {
     notifier.state = {...notifier.state, item.id};
   }
   ref.read(resumeRevisionProvider.notifier).state++;
 
-  final ok = await ref.read(embyServiceProvider).removeFromResume(item.id);
+  final ok = await ref
+      .read(embyServiceForProvider(serverId))
+      .removeFromResume(item.id);
   if (ok) return;
   // 失败回滚乐观隐藏
   notifier.state = {...notifier.state}..remove(item.id);

@@ -22,12 +22,17 @@ Widget _host(
   FakeEmbyService fake, {
   required MediaItem item,
   required bool resume,
+  FakeEmbyService? sourceFake,
+  String? serverId,
   Rect anchor = const Rect.fromLTWH(40, 300, 100, 150),
 }) {
   final container = ProviderContainer(
     overrides: [
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier()),
       embyServiceProvider.overrideWith((ref) => fake),
+      embyServiceForProvider.overrideWith(
+        (ref, id) => id == null ? fake : (sourceFake ?? fake),
+      ),
     ],
   );
   addTearDown(container.dispose);
@@ -39,7 +44,13 @@ Widget _host(
           builder: (context, ref, _) => Center(
             child: ElevatedButton(
               onPressed: () => resume
-                  ? showResumeCardMenu(context, ref, item, anchor)
+                  ? showResumeCardMenu(
+                      context,
+                      ref,
+                      item,
+                      anchor,
+                      serverId: serverId,
+                    )
                   : showPosterCardMenu(context, ref, item, anchor),
               child: const Text('open'),
             ),
@@ -115,6 +126,35 @@ void main() {
       expect(find.text('移除历史'), findsOneWidget);
       expect(find.text('标记已观看'), findsNothing);
       expect(find.text('取消已观看'), findsNothing);
+    });
+  });
+
+  group('跨服务器动作按来源服务器调用', () {
+    testWidgets('收藏与移除历史都打到来源服务器', (tester) async {
+      final current = FakeEmbyService();
+      final source = FakeEmbyService();
+      await tester.pumpWidget(_host(
+        current,
+        item: _item(),
+        resume: true,
+        sourceFake: source,
+        serverId: 's2',
+      ));
+
+      await _open(tester);
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+
+      expect(current.favoriteCalls, isEmpty);
+      expect(source.favoriteCalls.single.id, 'm1');
+      expect(source.favoriteCalls.single.favorite, isTrue);
+
+      await _open(tester);
+      await tester.tap(find.text('移除历史'));
+      await tester.pumpAndSettle();
+
+      expect(current.removedResumeCalls, isEmpty);
+      expect(source.removedResumeCalls, ['m1']);
     });
   });
 

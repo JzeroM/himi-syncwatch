@@ -3,6 +3,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
@@ -266,9 +267,19 @@ final tmdbResumeProvider = FutureProvider<TmdbResumeResult>((ref) async {
   if (service == null) return const TmdbResumeResult(entries: []);
   final servers = ref.watch(embyServerListProvider);
   final activeId = ref.watch(embyConfigProvider)?.id;
-  return service.fetchResume(
+  ref.watch(resumeRevisionProvider);
+  final hidden = ref.watch(resumeOptimisticHiddenProvider);
+  final result = await service.fetchResume(
     servers,
     activeId,
+  );
+  if (hidden.isEmpty) return result;
+  return TmdbResumeResult(
+    entries: [
+      for (final entry in result.entries)
+        if (!hidden.contains(entry.item.id)) entry,
+    ],
+    failedServerIds: result.failedServerIds,
   );
 });
 

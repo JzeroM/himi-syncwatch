@@ -9,10 +9,14 @@ class TmdbResumeBar extends StatelessWidget {
     super.key,
     required this.entries,
     required this.onOpen,
+    this.onLongPress,
   });
 
   final List<TmdbResumeEntry> entries;
   final void Function(TmdbResumeEntry entry) onOpen;
+
+  /// 长按（触屏长按 / TV 长按 OK）：回调携带来源服务器与菜单锚点。
+  final void Function(TmdbResumeEntry entry, Rect anchor)? onLongPress;
 
   static const double _cardWidth = 200;
 
@@ -50,6 +54,9 @@ class TmdbResumeBar extends StatelessWidget {
                     serverBadge: entry.server.label,
                     accessToken: entry.server.accessToken,
                     onTap: () => onOpen(entry),
+                    onLongPress: onLongPress == null
+                        ? null
+                        : (anchor) => onLongPress!(entry, anchor),
                   ),
                 ),
               );

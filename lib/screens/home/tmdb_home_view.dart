@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
@@ -243,6 +244,13 @@ class _HomeListState extends ConsumerState<_HomeList> {
               return TmdbResumeBar(
                 entries: widget.resume,
                 onOpen: (entry) => _openResume(context, entry),
+                onLongPress: (entry, anchor) => showResumeCardMenu(
+                  context,
+                  ref,
+                  entry.item,
+                  anchor,
+                  serverId: entry.server.id,
+                ),
               );
             }
             i--;

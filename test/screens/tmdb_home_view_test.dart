@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
+import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
@@ -61,6 +62,7 @@ Future<void> _pump(
   List<TmdbPlatformShowcase> showcases = const [],
   TmdbPlatformAvailabilityState availability =
       const TmdbPlatformAvailabilityState(complete: true),
+  List<Override> extraOverrides = const [],
 }) async {
   tester.view.physicalSize = const Size(800, 1200);
   tester.view.devicePixelRatio = 1;
@@ -83,6 +85,7 @@ Future<void> _pump(
         tmdbPlatformAvailabilityProvider.overrideWith(
           (ref, platform) => Stream.value(availability),
         ),
+        ...extraOverrides,
       ],
       child: const MaterialApp(
         home: Scaffold(body: TmdbHomeView()),
@@ -206,6 +209,55 @@ void main() {
       ),
       findsNothing,
     );
+  });
+
+  testWidgets('继续观看长按菜单按来源服务器移除历史', (tester) async {
+    final current = FakeEmbyService();
+    final source = FakeEmbyService();
+    final sourceServer = EmbyServerConfig(
+      id: 's2',
+      serverUrl: 'https://s2',
+      serverName: '服务器B',
+      serverId: 'srv-s2',
+      username: 'user',
+      accessToken: 'token2',
+      userId: 'u2',
+    );
+    final servers = EmbyServerListNotifier()..setList([_server, sourceServer]);
+    final config = EmbyConfigNotifier()..setConfig(_server);
+    await _pump(
+      tester,
+      data: _data(0),
+      settings: const AppSettings(homeCarousel: false),
+      extraOverrides: [
+        tmdbResumeProvider.overrideWith(
+          (ref) async => TmdbResumeResult(entries: [
+            TmdbResumeEntry(
+              item: MediaItem(id: 'r1', name: '续播影片', type: 'Movie'),
+              server: sourceServer,
+            ),
+          ]),
+        ),
+        embyServerListProvider.overrideWith((ref) => servers),
+        embyConfigProvider.overrideWith((ref) => config),
+        embyServiceFactoryProvider.overrideWithValue(
+          (server) => server.id == sourceServer.id ? source : current,
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(
+      find.byKey(const ValueKey('tmdbResume_s2_r1')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('移除历史'), findsOneWidget);
+
+    await tester.tap(find.text('移除历史'));
+    await tester.pumpAndSettle();
+
+    expect(current.removedResumeCalls, isEmpty);
+    expect(source.removedResumeCalls, ['r1']);
   });
 
   testWidgets('平台栏展示两张海报与图片基地址', (tester) async {
