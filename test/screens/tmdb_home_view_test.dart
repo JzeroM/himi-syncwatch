@@ -120,16 +120,28 @@ bool _focusWithin(Finder finder) {
 }
 
 void main() {
-  testWidgets('栏目加载中先显示英雄骨架和平台栏，不显示空态', (tester) async {
+  testWidgets('栏目加载中显示平台栏，不显示空态', (tester) async {
     await _pump(
       tester,
       data: const TmdbHomeData(configured: true, sectionsLoading: true),
       settings: const AppSettings(homeCarousel: false),
     );
 
-    expect(find.text('TMDB 暂无聚合内容\n请确认服务器媒体带 TMDB id，或换个观看区域'), findsNothing);
+    expect(
+      find.text('TMDB 暂无聚合内容\n请确认服务器媒体带 TMDB id，或换个观看区域'),
+      findsNothing,
+    );
     expect(find.text('流媒体平台'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('查看详情'), findsNothing);
+  });
+
+  testWidgets('TMDB 首页不显示顶部大封面与查看详情', (tester) async {
+    await _pump(tester, data: _data(8), settings: const AppSettings());
+
+    expect(find.byType(HomeHeroCarousel), findsNothing);
+    expect(find.byType(HomeHeroBackground), findsNothing);
+    expect(find.text('查看详情'), findsNothing);
+    expect(find.text('流媒体平台'), findsOneWidget);
   });
 
   testWidgets('首页聚合为空时保留平台栏并提示', (tester) async {
@@ -318,35 +330,6 @@ void main() {
     final poster = card.poster! as TmdbAvailabilityImage;
     expect(poster.posterSize, 'w154');
     expect(poster.showTmdbWhileLoading, isFalse);
-  });
-
-  testWidgets('首页轮播开启时最多取 6 个去重候选', (tester) async {
-    await _pump(tester, data: _data(8), settings: const AppSettings());
-
-    final carousel = tester.widget<HomeHeroCarousel>(
-      find.byType(HomeHeroCarousel),
-    );
-    expect(carousel.items.length, 6);
-    expect(carousel.imageBuilder, isNotNull);
-
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  testWidgets('关闭轮播或 TV 模式时退回单英雄区', (tester) async {
-    await _pump(
-      tester,
-      data: _data(2),
-      settings: const AppSettings(homeCarousel: false),
-    );
-    expect(find.byType(HomeHeroCarousel), findsNothing);
-    expect(find.byType(HomeHeroBackground), findsNothing);
-
-    await _pump(
-      tester,
-      data: _data(2),
-      settings: const AppSettings(tvMode: true),
-    );
-    expect(find.byType(HomeHeroCarousel), findsNothing);
   });
 
   testWidgets('平台栏按顺序展示本地 Logo 卡片', (tester) async {
