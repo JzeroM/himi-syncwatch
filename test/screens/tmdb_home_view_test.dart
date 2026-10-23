@@ -64,8 +64,9 @@ Future<void> _pump(
       const TmdbPlatformAvailabilityState(complete: true),
   TmdbDiscData discData = const TmdbDiscData.unconfigured(),
   List<Override> extraOverrides = const [],
+  Size viewSize = const Size(800, 1200),
 }) async {
-  tester.view.physicalSize = const Size(800, 1200);
+  tester.view.physicalSize = viewSize;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
@@ -149,6 +150,65 @@ void main() {
     );
     expect(find.text('高分热门电影'), findsOneWidget);
     expect(find.textContaining('TMDB 暂无聚合内容'), findsNothing);
+  });
+
+  testWidgets('光盘栏位于本周趋势与热门电影之间且间距紧凑', (tester) async {
+    await _pump(
+      tester,
+      viewSize: const Size(800, 2400),
+      data: TmdbHomeData(
+        configured: true,
+        sections: [
+          TmdbSectionData(
+            key: 'trending_day',
+            title: '今日趋势',
+            items: [_entry(1)],
+          ),
+          TmdbSectionData(
+            key: 'trending_week',
+            title: '本周趋势',
+            items: [_entry(2)],
+          ),
+          TmdbSectionData(
+            key: 'popular_movies',
+            title: '热门电影',
+            items: [_entry(3)],
+          ),
+        ],
+      ),
+      settings: const AppSettings(homeCarousel: false, glassUi: false),
+      discData: TmdbDiscData(
+        configured: true,
+        sections: [
+          TmdbDiscSectionData(
+            key: 'high_score_movies',
+            title: '高分热门电影',
+            items: [_entry(4)],
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final week = tester.getRect(
+      find.byKey(const ValueKey('tmdbSection_trending_week')),
+    );
+    final disc = tester.getRect(
+      find.byKey(const ValueKey('tmdbDiscoverDisc')),
+    );
+    final panel = tester.getRect(
+      find.byKey(const ValueKey('tmdbDiscPanel_high_score_movies')),
+    );
+    final popular = tester.getRect(
+      find.byKey(const ValueKey('tmdbSection_popular_movies')),
+    );
+
+    expect(week.bottom, lessThan(disc.top));
+    expect(disc.bottom, lessThan(popular.top));
+    expect(disc.top - week.bottom, inInclusiveRange(6, 14));
+    expect(popular.top - disc.bottom, inInclusiveRange(6, 14));
+    expect(panel.top - week.bottom, inInclusiveRange(8, 20));
+    expect(popular.top - panel.bottom, inInclusiveRange(8, 24));
   });
 
   testWidgets('栏目行不显示服务器角标', (tester) async {

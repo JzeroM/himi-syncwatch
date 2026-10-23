@@ -177,12 +177,75 @@ class _HomeListState extends ConsumerState<_HomeList> {
     final carouselEnabled = settings.homeCarousel && !widget.tvMode;
     final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
     final headerCount = (hero != null || sectionsLoading) ? 1 : 0;
-    final itemCount = headerCount +
-        (widget.resume.isNotEmpty ? 1 : 0) +
-        1 +
-        1 +
-        sections.length +
-        (widget.data.failedServerCount > 0 ? 1 : 0);
+    final weeklyIndex = sections.indexWhere((s) => s.key == 'trending_week');
+    final discInsertAfter =
+        weeklyIndex >= 0 ? weeklyIndex : sections.length - 1;
+    final discSection = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: TmdbDiscoverDisc(tvMode: widget.tvMode),
+    );
+
+    final content = <Widget>[
+      if (headerCount > 0)
+        hero == null
+            ? _HeroSkeleton(height: heroHeight)
+            : carouselEnabled
+                ? HomeHeroCarousel(
+                    items: [
+                      for (final entry in heroes) _toHero(entry, imageBase),
+                    ],
+                    controller: _heroController,
+                    height: heroHeight,
+                    imageBuilder: _heroImage,
+                    onPageChanged: (value) =>
+                        setState(() => _heroIndex = value),
+                    onTap: (item) {
+                      final entry = item.payload;
+                      if (entry is TmdbAvailability) {
+                        _openDetail(context, entry);
+                      }
+                    },
+                  )
+                : _Hero(
+                    item: hero,
+                    imageBase: imageBase,
+                    onTap: () => _openDetail(context, hero),
+                  ),
+      if (widget.resume.isNotEmpty)
+        TmdbResumeBar(
+          entries: widget.resume,
+          onOpen: (entry) => _openResume(context, entry),
+          onLongPress: (entry, anchor) => showResumeCardMenu(
+            context,
+            ref,
+            entry.item,
+            anchor,
+            serverId: entry.server.id,
+          ),
+        ),
+      _PlatformBar(
+        tvMode: widget.tvMode,
+        allowServerPosters: !widget.data.sectionsLoading,
+      ),
+      if (sections.isEmpty) discSection,
+      for (var i = 0; i < sections.length; i++) ...[
+        _SectionRow(
+          key: ValueKey('tmdbSection_${sections[i].key}'),
+          section: sections[i],
+          imageBase: imageBase,
+          tvMode: widget.tvMode,
+        ),
+        if (i == discInsertAfter) discSection,
+      ],
+      if (widget.data.failedServerCount > 0)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Text(
+            '有 ${widget.data.failedServerCount} 台服务器数据加载失败',
+            style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
+          ),
+        ),
+    ];
 
     final list = RefreshIndicator(
       onRefresh: () => refreshTmdbHome(ref),
@@ -194,79 +257,8 @@ class _HomeListState extends ConsumerState<_HomeList> {
               : (widget.tvMode ? 12 : GlassConfig.topInsetOf(context)),
           bottom: GlassConfig.bottomReserveOf(context),
         ),
-        itemCount: itemCount,
-        itemBuilder: (context, index) {
-          var i = index;
-          if (headerCount > 0) {
-            if (i == 0) {
-              if (hero == null) return _HeroSkeleton(height: heroHeight);
-              if (carouselEnabled) {
-                return HomeHeroCarousel(
-                  items: [
-                    for (final entry in heroes) _toHero(entry, imageBase),
-                  ],
-                  controller: _heroController,
-                  height: heroHeight,
-                  imageBuilder: _heroImage,
-                  onPageChanged: (value) => setState(() => _heroIndex = value),
-                  onTap: (item) {
-                    final entry = item.payload;
-                    if (entry is TmdbAvailability) {
-                      _openDetail(context, entry);
-                    }
-                  },
-                );
-              }
-              return _Hero(
-                item: hero,
-                imageBase: imageBase,
-                onTap: () => _openDetail(context, hero),
-              );
-            }
-            i--;
-          }
-          if (widget.resume.isNotEmpty) {
-            if (i == 0) {
-              return TmdbResumeBar(
-                entries: widget.resume,
-                onOpen: (entry) => _openResume(context, entry),
-                onLongPress: (entry, anchor) => showResumeCardMenu(
-                  context,
-                  ref,
-                  entry.item,
-                  anchor,
-                  serverId: entry.server.id,
-                ),
-              );
-            }
-            i--;
-          }
-          if (i == 0) {
-            return _PlatformBar(
-              tvMode: widget.tvMode,
-              allowServerPosters: !widget.data.sectionsLoading,
-            );
-          }
-          i--;
-          if (i == 0) {
-            return TmdbDiscoverDisc(tvMode: widget.tvMode);
-          }
-          i--;
-          if (i < sections.length) {
-            return _SectionRow(
-              section: sections[i],
-              imageBase: imageBase,
-              tvMode: widget.tvMode,
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: Text(
-              '有 ${widget.data.failedServerCount} 台服务器数据加载失败',
-              style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
-            ),
-          );
-        },
+        itemCount: content.length,
+        itemBuilder: (context, index) => content[index],
       ),
     );
 
@@ -466,7 +458,10 @@ class _EmptyHome extends ConsumerWidget {
       ),
       children: [
         _PlatformBar(tvMode: tvMode, allowServerPosters: true),
-        TmdbDiscoverDisc(tvMode: tvMode),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: TmdbDiscoverDisc(tvMode: tvMode),
+        ),
         if (!loading && !hasContent)
           const Padding(
             padding: EdgeInsets.fromLTRB(24, 40, 24, 24),
@@ -577,6 +572,7 @@ class _PlatformCard extends ConsumerWidget {
 
 class _SectionRow extends StatelessWidget {
   const _SectionRow({
+    super.key,
     required this.section,
     required this.imageBase,
     required this.tvMode,

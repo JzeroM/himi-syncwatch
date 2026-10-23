@@ -5,15 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
-import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
-import 'package:himi_syncwatch/widgets/tmdb_disc_shape.dart';
 
-/// TMDB 首页顶部的光盘栏目。
+/// TMDB 首页的三槽位海报栏目。
 ///
-/// 数据由 [tmdbDiscProvider] 懒加载；组件使用虚拟上拱半圆的三段弧线，
-/// 画面上仅保留三张会随位置形变的贴纸及其局部柔光，其余区域完全透明。
+/// 数据由 [tmdbDiscProvider] 懒加载；组件只投影“左中右”三张面板，
+/// 其他分区留在视野外，背景保持透明。
 class TmdbDiscoverDisc extends ConsumerWidget {
   const TmdbDiscoverDisc({super.key, required this.tvMode});
 
@@ -37,13 +35,12 @@ class TmdbDiscoverDisc extends ConsumerWidget {
       sections: sections,
       imageBase: ref.watch(tmdbImageBaseProvider),
       tvMode: tvMode,
-      glassEnabled: ref.watch(settingsProvider.select((s) => s.glassUi)),
       onOpenSection: (section) => context.push('/tmdb/section/${section.key}'),
     );
   }
 }
 
-/// 上拱半圆三槽位贴纸轮播。
+/// 三槽位海报轮播。
 ///
 /// 分区数量动态；`_position` 是连续的分区位置，0 表示第 0 个分区居中。
 /// 始终只构建中间分区和左右相邻分区，避免未来分区增多后渲染量线性增长。
@@ -54,7 +51,6 @@ class TmdbDiscCarousel extends StatefulWidget {
     required this.imageBase,
     required this.onOpenSection,
     this.tvMode = false,
-    this.glassEnabled = true,
     this.focusNode,
   });
 
@@ -62,7 +58,6 @@ class TmdbDiscCarousel extends StatefulWidget {
   final String imageBase;
   final ValueChanged<TmdbDiscSectionData> onOpenSection;
   final bool tvMode;
-  final bool glassEnabled;
 
   /// 测试或外部焦点管理使用；为空时组件自己创建。
   final FocusNode? focusNode;
@@ -91,7 +86,7 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
     _ownsFocusNode = widget.focusNode == null;
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
+      duration: const Duration(milliseconds: 360),
     )..addListener(_tick);
   }
 
@@ -212,7 +207,6 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
   Widget build(BuildContext context) {
     if (widget.sections.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final accent = theme.colorScheme.primary;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -221,10 +215,12 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
             ? constraints.maxWidth
             : fallbackWidth;
         final discSize = math
-            .min(width - 12, widget.tvMode ? 560.0 : 420.0)
-            .clamp(250.0, 560.0);
-        final height = discSize * _DiscMetrics.heightFactor;
-        _slotDistance = discSize * _DiscMetrics.dragFactor;
+            .min(width - 16, widget.tvMode ? 560.0 : 420.0)
+            .clamp(240.0, 560.0);
+        final panelWidth = discSize * 0.50;
+        final panelHeight = panelWidth * 0.95;
+        final height = panelHeight + 8;
+        _slotDistance = discSize * 0.31;
 
         final center = _position.round();
         final indices = _panelIndices(center, widget.sections.length)
@@ -236,24 +232,10 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
               widget.sections[_mod(index, widget.sections.length)],
               index - _position,
               discSize,
-              width / 2,
               theme,
             ),
         ];
-        final activeSlot = _position.round();
-        final activeT = activeSlot - _position;
-        final activeAngle = activeT * _DiscMetrics.angleStep;
-        final orbitRadius = discSize * _DiscMetrics.orbitFactor;
-        final cardWidth = discSize * _DiscMetrics.cardWidthFactor;
-        final cardHeight = discSize * _DiscMetrics.cardHeightFactor;
-        final activeCenterX = width / 2 + math.sin(activeAngle) * orbitRadius;
-        final activeCenterY = discSize * _DiscMetrics.topInsetFactor +
-            cardHeight / 2 +
-            (1 - math.cos(activeAngle)) * orbitRadius;
-        final titleOpacity = (1 - 2 * activeT.abs()).clamp(0.0, 1.0);
-        final activeSection =
-            widget.sections[_mod(activeSlot, widget.sections.length)];
-        final titleWidth = cardWidth + 24;
+        final activeT = center - _position;
 
         return SizedBox(
           height: height,
@@ -272,6 +254,7 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
               onHorizontalDragEnd: _onDragEnd,
               child: Stack(
                 clipBehavior: Clip.none,
+                alignment: Alignment.center,
                 children: [
                   ...panels,
                   if (_focused)
@@ -279,25 +262,14 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
                       child: IgnorePointer(
                         child: CustomPaint(
                           painter: _FocusRingPainter(
-                            color: accent,
-                            discSize: discSize,
+                            color: theme.colorScheme.primary,
+                            panelWidth: panelWidth,
+                            panelHeight: panelHeight,
+                            offset: Offset(
+                              activeT * _slotDistance,
+                              activeT.abs() * 5,
+                            ),
                           ),
-                        ),
-                      ),
-                    ),
-                  if (titleOpacity > 0.01)
-                    Positioned(
-                      left: activeCenterX - titleWidth / 2,
-                      top: activeCenterY - cardHeight / 2 + 6,
-                      width: titleWidth,
-                      height: 32,
-                      child: Opacity(
-                        opacity: titleOpacity,
-                        child: _DiscSectionTitle(
-                          key: const ValueKey('tmdbDiscActiveTitle'),
-                          title: activeSection.title,
-                          accent: accent,
-                          onTap: () => widget.onOpenSection(activeSection),
                         ),
                       ),
                     ),
@@ -315,61 +287,44 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
     TmdbDiscSectionData section,
     double t,
     double discSize,
-    double discCenterX,
     ThemeData theme,
   ) {
     final absT = t.abs();
-    final angle = t * _DiscMetrics.angleStep;
+    final opacity = absT <= 1
+        ? (1 - absT * 0.45).clamp(0.0, 1.0)
+        : (0.55 * (1 - (absT - 1) / 0.5)).clamp(0.0, 0.55);
+    final scale = (1 - 0.14 * math.min(absT, 1.4)).clamp(0.80, 1.0);
+    final panelWidth = discSize * 0.50;
     final active = absT < 0.5;
-    final opacity = (1 - absT * 0.30).clamp(0.58, 1.0);
-    final scale = active
-        ? _DiscMetrics.activeScale
-        : (1 - 0.06 * math.min(absT, 1.5)).clamp(0.90, 0.97);
-    final lift = active ? discSize * _DiscMetrics.liftFactor : 0.0;
-    final cardWidth = discSize * _DiscMetrics.cardWidthFactor;
-    final cardHeight = discSize * _DiscMetrics.cardHeightFactor;
-    final orbitRadius = discSize * _DiscMetrics.orbitFactor;
-    final centerX = discCenterX + math.sin(angle) * orbitRadius;
-    final centerY = discSize * _DiscMetrics.topInsetFactor +
-        cardHeight / 2 +
-        (1 - math.cos(angle)) * orbitRadius;
-    final shape = TmdbDiscStickerShape.fromOffset(t);
 
-    return Positioned(
-      left: centerX - cardWidth / 2,
-      top: centerY - cardHeight / 2,
-      width: cardWidth,
-      height: cardHeight,
-      child: Opacity(
-        opacity: opacity,
-        child: Transform.translate(
-          offset: Offset(0, -lift),
-          child: Transform(
-            alignment: Alignment.center,
-            transform: Matrix4.identity()
-              ..setEntry(3, 2, _DiscMetrics.perspective)
-              ..rotateX(_DiscMetrics.panelTilt),
-            child: Transform.scale(
-              scale: scale,
-              child: RepaintBoundary(
-                child: _DiscSectionCard(
-                  key: ValueKey('tmdbDiscPanel_${section.key}'),
-                  section: section,
-                  imageBase: widget.imageBase,
-                  active: active,
-                  accent: theme.colorScheme.primary,
-                  glassEnabled: widget.glassEnabled,
-                  shape: shape,
-                  onTap: () {
-                    if (active) {
-                      widget.onOpenSection(section);
-                    } else {
-                      _selectSection(section);
-                    }
-                  },
-                  onOpen: () => widget.onOpenSection(section),
-                ),
-              ),
+    return Transform.translate(
+      offset: Offset(t * _slotDistance, absT * 5),
+      child: Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..setEntry(3, 2, 0.0012)
+          ..rotateY(-t * 0.38)
+          ..rotateZ(t * 0.018)
+          ..scaleByDouble(scale, scale, 1, 1),
+        child: Opacity(
+          opacity: opacity,
+          child: RepaintBoundary(
+            child: _DiscSectionPanel(
+              key: ValueKey('tmdbDiscPanel_${section.key}'),
+              section: section,
+              imageBase: widget.imageBase,
+              width: panelWidth,
+              height: panelWidth * 0.95,
+              active: active,
+              accent: theme.colorScheme.primary,
+              onTap: () {
+                if (active) {
+                  widget.onOpenSection(section);
+                } else {
+                  _selectSection(section);
+                }
+              },
+              onOpen: () => widget.onOpenSection(section),
             ),
           ),
         ),
@@ -378,25 +333,25 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
   }
 }
 
-class _DiscSectionCard extends StatelessWidget {
-  const _DiscSectionCard({
+class _DiscSectionPanel extends StatelessWidget {
+  const _DiscSectionPanel({
     super.key,
     required this.section,
     required this.imageBase,
+    required this.width,
+    required this.height,
     required this.active,
     required this.accent,
-    required this.glassEnabled,
-    required this.shape,
     required this.onTap,
     required this.onOpen,
   });
 
   final TmdbDiscSectionData section;
   final String imageBase;
+  final double width;
+  final double height;
   final bool active;
   final Color accent;
-  final bool glassEnabled;
-  final TmdbDiscStickerShape shape;
   final VoidCallback onTap;
   final VoidCallback onOpen;
 
@@ -409,24 +364,76 @@ class _DiscSectionCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                key: ValueKey('tmdbDiscIsland_${section.key}'),
-                painter: _DiscIslandPainter(
-                  active: active,
-                  accent: accent,
-                  glassEnabled: glassEnabled,
-                ),
+      child: Container(
+        width: width,
+        height: height,
+        padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: active
+                ? [
+                    accent.withValues(alpha: 0.30),
+                    const Color(0x331A1D23),
+                    const Color(0xBB0E1116),
+                  ]
+                : [
+                    Colors.white.withValues(alpha: 0.12),
+                    const Color(0x221A1D23),
+                    const Color(0xCC0E1116),
+                  ],
+          ),
+          border: Border.all(
+            color: active
+                ? accent.withValues(alpha: 0.82)
+                : Colors.white.withValues(alpha: 0.13),
+            width: active ? 1.6 : 1,
+          ),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.28),
+                    blurRadius: 22,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            GestureDetector(
+              onTap: onOpen,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      section.title,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: active ? 15 : 13.5,
+                        fontWeight: FontWeight.w700,
+                        color:
+                            Colors.white.withValues(alpha: active ? 1 : 0.86),
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 17,
+                    color: Colors.white.withValues(alpha: active ? 0.9 : 0.5),
+                  ),
+                ],
               ),
             ),
-          ),
-          Positioned.fill(
-            child: _DiscStickerSurface(
-              shape: shape,
+            const SizedBox(height: 6),
+            Expanded(
               child: loading
                   ? _PosterFanSkeleton(active: active)
                   : empty
@@ -436,78 +443,21 @@ class _DiscSectionCard extends StatelessWidget {
                           items: items,
                           imageBase: imageBase,
                           active: active,
-                          accent: accent,
                           onOpen: onOpen,
                         ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DiscSectionTitle extends StatelessWidget {
-  const _DiscSectionTitle({
-    super.key,
-    required this.title,
-    required this.accent,
-    required this.onTap,
-  });
-
-  final String title;
-  final Color accent;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: 20,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 0.9,
-      height: 1.05,
-      foreground: Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            const Color(0xFFF9FCFF),
-            Color.lerp(Colors.white, accent, 0.62)!,
-          ],
-        ).createShader(const Rect.fromLTWH(0, 0, 600, 26)),
-      shadows: [
-        Shadow(
-          color: Colors.black.withValues(alpha: 0.80),
-          blurRadius: 9,
-          offset: const Offset(0, 2),
-        ),
-        Shadow(
-          color: accent.withValues(alpha: 0.55),
-          blurRadius: 16,
-        ),
-      ],
-    );
-
-    return Semantics(
-      button: true,
-      label: '$title，进入栏目',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Center(
-          child: SizedBox(
-            height: 24,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                title,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.fade,
-                style: style,
+            const SizedBox(height: 3),
+            Text(
+              loading ? '加载中' : (empty ? '暂无匹配' : '查看全部 ›'),
+              maxLines: 1,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.white.withValues(alpha: active ? 0.72 : 0.42),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -520,7 +470,6 @@ class _PosterFan extends StatelessWidget {
     required this.items,
     required this.imageBase,
     required this.active,
-    required this.accent,
     required this.onOpen,
   });
 
@@ -528,20 +477,17 @@ class _PosterFan extends StatelessWidget {
   final List<TmdbAvailability> items;
   final String imageBase;
   final bool active;
-  final Color accent;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    final count = math.min(items.length, 3);
+    final count = items.length.clamp(1, 3);
     return LayoutBuilder(
       builder: (context, constraints) {
         final panelWidth = constraints.maxWidth;
-        final panelHeight = constraints.maxHeight;
-        final posterWidth = panelWidth * 0.62;
+        final posterWidth = panelWidth * 0.46;
         final posterHeight = posterWidth * 1.5;
-        final spread = panelWidth * 0.16;
-        final top = math.max(0.0, (panelHeight - posterHeight) / 2);
+        final spread = panelWidth * 0.23;
         final order =
             count == 3 ? const [0, 2, 1] : [for (var i = 0; i < count; i++) i];
         return Stack(
@@ -552,7 +498,7 @@ class _PosterFan extends StatelessWidget {
               Positioned(
                 left: (panelWidth - posterWidth) / 2 +
                     (i - (count - 1) / 2) * spread,
-                top: top + (i == 1 ? 0 : 2),
+                top: i == 1 ? 0 : 4,
                 child: Transform.rotate(
                   angle: (i - (count - 1) / 2) * 0.07,
                   child: _DiscPosterTile(
@@ -564,7 +510,6 @@ class _PosterFan extends StatelessWidget {
                     width: posterWidth,
                     height: posterHeight,
                     active: active,
-                    accent: accent,
                     onTap: onOpen,
                   ),
                 ),
@@ -584,7 +529,6 @@ class _DiscPosterTile extends StatelessWidget {
     required this.width,
     required this.height,
     required this.active,
-    required this.accent,
     required this.onTap,
   });
 
@@ -593,7 +537,6 @@ class _DiscPosterTile extends StatelessWidget {
   final double width;
   final double height;
   final bool active;
-  final Color accent;
   final VoidCallback onTap;
 
   @override
@@ -605,95 +548,37 @@ class _DiscPosterTile extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: SizedBox(
+        child: Container(
           width: width,
           height: height,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              TmdbAvailabilityImage(
-                entry: entry,
-                imageBase: imageBase,
-                posterSize: 'w154',
-                cacheWidth: cacheWidth,
-                serverMaxWidth: cacheWidth,
-                fadeInDuration: const Duration(milliseconds: 120),
-              ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Colors.white.withValues(alpha: 0.13),
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.18),
-                        ],
-                        stops: const [0, 0.38, 1],
-                      ),
-                    ),
-                  ),
-                ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: active ? 0.32 : 0.16),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: active ? 0.42 : 0.25),
+                blurRadius: active ? 10 : 6,
+                offset: const Offset(0, 3),
               ),
             ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: TmdbAvailabilityImage(
+              entry: entry,
+              imageBase: imageBase,
+              posterSize: 'w154',
+              cacheWidth: cacheWidth,
+              serverMaxWidth: cacheWidth,
+              fadeInDuration: const Duration(milliseconds: 120),
+            ),
           ),
         ),
       ),
     );
   }
-}
-
-class _DiscStickerSurface extends StatelessWidget {
-  const _DiscStickerSurface({
-    required this.shape,
-    required this.child,
-  });
-
-  final TmdbDiscStickerShape shape;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipPath(
-      clipper: _DiscStickerClipper(shape),
-      child: ShaderMask(
-        blendMode: BlendMode.dstIn,
-        shaderCallback: (bounds) => RadialGradient(
-          center: const Alignment(0, -0.02),
-          radius: 0.80,
-          colors: [
-            Colors.white,
-            Colors.white.withValues(alpha: 0.96),
-            Colors.transparent,
-          ],
-          stops: const [0, 0.80, 1],
-        ).createShader(bounds),
-        child: Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..setEntry(0, 0, shape.contentScaleX)
-            ..setEntry(0, 1, math.tan(shape.contentSkewX)),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-class _DiscStickerClipper extends CustomClipper<Path> {
-  const _DiscStickerClipper(this.shape);
-
-  final TmdbDiscStickerShape shape;
-
-  @override
-  Path getClip(Size size) => shape.buildClipPath(size);
-
-  @override
-  bool shouldReclip(covariant _DiscStickerClipper oldClipper) =>
-      oldClipper.shape.progress != shape.progress ||
-      oldClipper.shape.direction != shape.direction;
 }
 
 class _PosterFanSkeleton extends StatelessWidget {
@@ -706,11 +591,9 @@ class _PosterFanSkeleton extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final panelWidth = constraints.maxWidth;
-        final panelHeight = constraints.maxHeight;
-        final posterWidth = panelWidth * 0.62;
+        final posterWidth = panelWidth * 0.46;
         final posterHeight = posterWidth * 1.5;
-        final spread = panelWidth * 0.16;
-        final top = math.max(0.0, (panelHeight - posterHeight) / 2);
+        final spread = panelWidth * 0.23;
         return Stack(
           clipBehavior: Clip.none,
           alignment: Alignment.center,
@@ -718,16 +601,18 @@ class _PosterFanSkeleton extends StatelessWidget {
             for (var i = 0; i < 3; i++)
               Positioned(
                 left: (panelWidth - posterWidth) / 2 + (i - 1) * spread,
-                top: top + (i == 1 ? 0 : 2),
+                top: i == 1 ? 0 : 4,
                 child: Transform.rotate(
                   angle: (i - 1) * 0.07,
                   child: Container(
                     width: posterWidth,
                     height: posterHeight,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(3),
-                      color: Colors.white.withValues(
-                        alpha: active ? 0.09 : 0.05,
+                      borderRadius: BorderRadius.circular(9),
+                      color:
+                          Colors.white.withValues(alpha: active ? 0.10 : 0.06),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.10),
                       ),
                     ),
                   ),
@@ -753,15 +638,15 @@ class _EmptyPanel extends StatelessWidget {
         children: [
           Icon(
             Icons.movie_filter_outlined,
-            size: 24,
-            color: accent.withValues(alpha: 0.62),
+            size: 26,
+            color: accent.withValues(alpha: 0.7),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           Text(
             '暂无匹配',
             style: TextStyle(
-              fontSize: 10.5,
-              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+              color: Colors.white.withValues(alpha: 0.56),
             ),
           ),
         ],
@@ -770,118 +655,50 @@ class _EmptyPanel extends StatelessWidget {
   }
 }
 
-class _DiscIslandPainter extends CustomPainter {
-  const _DiscIslandPainter({
-    required this.active,
-    required this.accent,
-    required this.glassEnabled,
+class _FocusRingPainter extends CustomPainter {
+  const _FocusRingPainter({
+    required this.color,
+    required this.panelWidth,
+    required this.panelHeight,
+    required this.offset,
   });
 
-  final bool active;
-  final Color accent;
-  final bool glassEnabled;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final center = Offset(size.width / 2, size.height * 0.56);
-    final glowRect = Rect.fromCenter(
-      center: center,
-      width: size.width * 1.30,
-      height: size.height * 1.08,
-    );
-
-    final glowColor = active ? accent : const Color(0xFF8FD8FF);
-    canvas.drawOval(
-      glowRect,
-      Paint()
-        ..blendMode = BlendMode.screen
-        ..shader = RadialGradient(
-          colors: [
-            glowColor.withValues(
-              alpha: active ? 0.16 : (glassEnabled ? 0.06 : 0.045),
-            ),
-            glowColor.withValues(alpha: active ? 0.045 : 0.012),
-            Colors.transparent,
-          ],
-          stops: const [0, 0.58, 1],
-        ).createShader(glowRect),
-    );
-
-    final contact = Rect.fromCenter(
-      center: Offset(size.width / 2, size.height * 0.9),
-      width: size.width * 0.94,
-      height: size.height * 0.16,
-    );
-    canvas.drawOval(
-      contact,
-      Paint()
-        ..blendMode = BlendMode.screen
-        ..shader = RadialGradient(
-          colors: [
-            glowColor.withValues(alpha: active ? 0.09 : 0.035),
-            Colors.transparent,
-          ],
-        ).createShader(contact),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _DiscIslandPainter oldDelegate) =>
-      oldDelegate.active != active ||
-      oldDelegate.accent != accent ||
-      oldDelegate.glassEnabled != glassEnabled;
-}
-
-class _FocusRingPainter extends CustomPainter {
-  const _FocusRingPainter({required this.color, required this.discSize});
-
   final Color color;
-  final double discSize;
+  final double panelWidth;
+  final double panelHeight;
+  final Offset offset;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(
-      size.width / 2,
-      discSize *
-          (_DiscMetrics.topInsetFactor + _DiscMetrics.cardHeightFactor / 2),
-    );
     final rect = Rect.fromCenter(
-      center: center,
-      width: discSize * _DiscMetrics.cardWidthFactor + 14,
-      height: discSize * _DiscMetrics.cardHeightFactor * 0.78 + 12,
+      center: size.center(Offset.zero) + offset,
+      width: panelWidth + 16,
+      height: panelHeight + 16,
     );
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(22));
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(24));
     canvas.drawRRect(
       rrect.inflate(2),
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 8
-        ..color = color.withValues(alpha: 0.20)
+        ..color = color.withValues(alpha: 0.24)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
     canvas.drawRRect(
       rrect,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.3
-        ..color = color.withValues(alpha: 0.72),
-    );
-    canvas.drawArc(
-      rect,
-      math.pi * 0.14,
-      math.pi * 0.72,
-      false,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.8
-        ..color = color.withValues(alpha: 0.94),
+        ..strokeWidth = 2.4
+        ..color = color.withValues(alpha: 0.92),
     );
   }
 
   @override
   bool shouldRepaint(covariant _FocusRingPainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.discSize != discSize;
+      oldDelegate.color != color ||
+      oldDelegate.panelWidth != panelWidth ||
+      oldDelegate.panelHeight != panelHeight ||
+      oldDelegate.offset != offset;
 }
 
 class _DiscSkeleton extends StatelessWidget {
@@ -889,110 +706,40 @@ class _DiscSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
     return LayoutBuilder(
       builder: (context, constraints) {
         final fallbackWidth = MediaQuery.sizeOf(context).width;
         final width = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : fallbackWidth;
-        final discSize = math.min(width - 12, 420.0).clamp(250.0, 420.0);
-        final height = discSize * _DiscMetrics.heightFactor;
-        final cardWidth = discSize * _DiscMetrics.cardWidthFactor;
-        final cardHeight = discSize * _DiscMetrics.cardHeightFactor;
-        final orbitRadius = discSize * _DiscMetrics.orbitFactor;
-
+        final discSize = math.min(width - 16, 420.0).clamp(240.0, 420.0);
+        final panelWidth = discSize * 0.50;
+        final panelHeight = panelWidth * 0.95;
         return SizedBox(
-          height: height,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              for (final slot in const [-1, 0, 1])
-                _skeletonPanel(
-                  slot: slot,
-                  discSize: discSize,
-                  discCenterX: width / 2,
-                  cardWidth: cardWidth,
-                  cardHeight: cardHeight,
-                  orbitRadius: orbitRadius,
-                  accent: accent,
+          height: panelHeight + 8,
+          child: Center(
+            child: Container(
+              width: panelWidth,
+              height: panelHeight,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                color: Colors.white.withValues(alpha: 0.04),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
                 ),
-            ],
+              ),
+              child: Text(
+                '正在加载精选…',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
           ),
         );
       },
     );
   }
-
-  Widget _skeletonPanel({
-    required int slot,
-    required double discSize,
-    required double discCenterX,
-    required double cardWidth,
-    required double cardHeight,
-    required double orbitRadius,
-    required Color accent,
-  }) {
-    final angle = slot * _DiscMetrics.angleStep;
-    final active = slot == 0;
-    final centerX = discCenterX + math.sin(angle) * orbitRadius;
-    final centerY = discSize * _DiscMetrics.topInsetFactor +
-        cardHeight / 2 +
-        (1 - math.cos(angle)) * orbitRadius;
-    final shape = TmdbDiscStickerShape.fromOffset(slot.toDouble());
-
-    return Positioned(
-      left: centerX - cardWidth / 2,
-      top: centerY - cardHeight / 2,
-      width: cardWidth,
-      height: cardHeight,
-      child: Opacity(
-        opacity: active ? 1 : 0.62,
-        child: Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..setEntry(3, 2, _DiscMetrics.perspective)
-            ..rotateX(_DiscMetrics.panelTilt),
-          child: Transform.scale(
-            scale: active ? _DiscMetrics.activeScale : _DiscMetrics.sideScale,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _DiscIslandPainter(
-                      active: active,
-                      accent: accent,
-                      glassEnabled: false,
-                    ),
-                  ),
-                ),
-                Positioned.fill(
-                  child: _DiscStickerSurface(
-                    shape: shape,
-                    child: _PosterFanSkeleton(active: active),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DiscMetrics {
-  static const panelTilt = 0.64;
-  static const perspective = 0.0012;
-  static const heightFactor = 0.57;
-  static const topInsetFactor = 0.04;
-  static const orbitFactor = 0.38;
-  static const angleStep = 0.82;
-  static const cardWidthFactor = 0.32;
-  static const cardHeightFactor = 0.38;
-  static const dragFactor = 0.24;
-  static const liftFactor = 0.012;
-  static const activeScale = 1.04;
-  static const sideScale = 0.95;
 }
