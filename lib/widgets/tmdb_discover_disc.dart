@@ -241,6 +241,7 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
           height: height,
           width: double.infinity,
           child: Focus(
+            key: const ValueKey('tmdbDiscFocus'),
             focusNode: _focusNode,
             canRequestFocus: widget.tvMode,
             onFocusChange: (value) {

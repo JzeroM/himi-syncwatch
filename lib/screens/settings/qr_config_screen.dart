@@ -9,7 +9,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 ///
 /// [mode] 为 `emby` 时二维码打开 Emby 配置区块；`danmaku` 时打开弹幕
 /// API 地址区块；`route` 时打开备用线路区块（需配 [serverId] 指定目标
-/// 服务器）；其余默认 Emby。进入自动启动服务，离开（返回）自动停止。
+/// 服务器）；`tmdb` 时打开 TMDB 配置区块；其余默认 Emby。进入自动启动服务，离开（返回）自动停止。
 class QrConfigScreen extends ConsumerStatefulWidget {
   const QrConfigScreen({super.key, this.mode = '', this.serverId});
 
@@ -30,14 +30,14 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
   String get _title => switch (widget.mode) {
         'danmaku' => '扫码配置弹幕 API',
         'route' => '扫码添加备用线路',
+        'tmdb' => '扫码配置 TMDB',
         _ => '扫码配置 Emby',
       };
 
   String get _tip => switch (widget.mode) {
-        'danmaku' =>
-          '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写弹幕 API 地址并提交',
-        'route' =>
-          '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写线路信息并提交',
+        'danmaku' => '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写弹幕 API 地址并提交',
+        'route' => '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写线路信息并提交',
+        'tmdb' => '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写 TMDB API Key、代理地址与区域并提交',
         _ => '用手机扫描二维码\n或在手机浏览器打开下方地址',
       };
 

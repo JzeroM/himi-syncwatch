@@ -11,13 +11,15 @@ typedef LanConfigHandler = Future<String?> Function(Map<String, dynamic> body);
 /// 局域网扫码配置服务（纯 Dart，不依赖 Flutter）。
 ///
 /// 手机扫码打开 `url`（含随机 token），GET 返回配置页并下发会话 Cookie，
-/// POST /api/emby、POST /api/danmaku 经回调交给上层（注入 [onEmby]/
-/// [onDanmaku]）落库。服务生命周期跟随二维码页：`stop()` 后端口立即释放。
+/// POST /api/emby、POST /api/danmaku、POST /api/tmdb 经回调交给上层
+/// （注入 [onEmby]/[onDanmaku]/[onTmdb]）落库。服务生命周期跟随二维码页：
+/// `stop()` 后端口立即释放。
 class LanConfigServer {
   LanConfigServer({
     required this.onEmby,
     this.onDanmaku,
     this.onRoute,
+    this.onTmdb,
     this.basePort = 17890,
     this.portProbeCount = 10,
   });
@@ -29,6 +31,9 @@ class LanConfigServer {
 
   /// 备用线路提交回调（null = 未接入，对应路由 404）。
   final LanConfigHandler? onRoute;
+
+  /// TMDB 配置提交回调（null = 未接入，对应路由 404）。
+  final LanConfigHandler? onTmdb;
 
   /// 首选端口；被占用时依次探测 `basePort + 1 ... + [portProbeCount] - 1`。
   final int basePort;
@@ -147,6 +152,11 @@ class LanConfigServer {
       final danmaku = onDanmaku;
       if (req.method == 'POST' && path == '/api/danmaku' && danmaku != null) {
         await _handleAction(req, danmaku, success: '弹幕 API 地址已配置');
+        return;
+      }
+      final tmdb = onTmdb;
+      if (req.method == 'POST' && path == '/api/tmdb' && tmdb != null) {
+        await _handleAction(req, tmdb, success: 'TMDB 配置已保存');
         return;
       }
       final route = onRoute;

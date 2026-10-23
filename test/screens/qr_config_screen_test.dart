@@ -91,13 +91,21 @@ void main() {
     expect(find.textContaining('mode=emby'), findsOneWidget);
   });
 
-  testWidgets('mode=danmaku：标题与提示切换为弹幕配置，二维码带 mode 参数',
-      (tester) async {
+  testWidgets('mode=danmaku：标题与提示切换为弹幕配置，二维码带 mode 参数', (tester) async {
     await pumpScreen(tester, mode: 'danmaku');
 
     expect(find.text('扫码配置弹幕 API'), findsOneWidget);
     expect(find.textContaining('填写弹幕 API 地址'), findsOneWidget);
     expect(find.textContaining('mode=danmaku'), findsOneWidget);
+    expect(find.byType(QrImageView), findsOneWidget);
+  });
+
+  testWidgets('mode=tmdb：标题与提示切换为 TMDB 配置，二维码带 mode 参数', (tester) async {
+    await pumpScreen(tester, mode: 'tmdb');
+
+    expect(find.text('扫码配置 TMDB'), findsOneWidget);
+    expect(find.textContaining('TMDB API Key'), findsOneWidget);
+    expect(find.textContaining('mode=tmdb'), findsOneWidget);
     expect(find.byType(QrImageView), findsOneWidget);
   });
 
@@ -109,7 +117,8 @@ void main() {
     expect(find.textContaining('填写线路信息并提交'), findsOneWidget);
     expect(find.textContaining('mode=route'), findsOneWidget);
     expect(
-      container.read(lanConfigProvider.notifier).routeTargetServerId, 'cfg1',
+      container.read(lanConfigProvider.notifier).routeTargetServerId,
+      'cfg1',
       reason: 'routeTargetServerId 应注入目标服务器本地 id',
     );
   });
@@ -175,7 +184,8 @@ class _EntryState extends State<_Entry> {
       if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => QrConfigScreen(mode: widget.mode, serverId: widget.serverId),
+          builder: (_) =>
+              QrConfigScreen(mode: widget.mode, serverId: widget.serverId),
         ),
       );
     });

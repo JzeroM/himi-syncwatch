@@ -9,11 +9,13 @@ void main() {
         mode: mode,
       );
 
-  test('任意 mode：恒为配置页（Emby+弹幕区块），不出现声网任何痕迹', () {
-    for (final mode in ['', 'emby', 'agora', 'danmaku']) {
+  test('任意 mode：恒为配置页（Emby+TMDB+弹幕区块），不出现声网任何痕迹', () {
+    for (final mode in ['', 'emby', 'agora', 'danmaku', 'tmdb']) {
       final text = html(mode: mode);
       expect(text, contains('<section id="emby">'));
       expect(text, contains('emby_url'));
+      expect(text, contains('<section id="tmdb">'));
+      expect(text, contains('tmdb_key'));
       expect(text, contains('<section id="danmaku">'));
       expect(text, contains('danmaku_url'));
       expect(text, isNot(contains('<section id="agora">')));
@@ -35,16 +37,28 @@ void main() {
     expect(text, isNot(contains("highlight('emby')")));
   });
 
+  test('mode=tmdb：高亮滚动指向 tmdb，并提交 /api/tmdb', () {
+    final text = html(mode: 'tmdb');
+    expect(text, contains("highlight('tmdb')"));
+    expect(text, isNot(contains("highlight('danmaku')")));
+    expect(text, contains('tmdb_api_base'));
+    expect(text, contains('tmdb_image_base'));
+    expect(text, contains('tmdb_region'));
+    expect(text, contains('submitTmdb()'));
+    expect(text, contains('/api/tmdb'));
+  });
+
   test('mode 为空（旧链接）：不高亮、提交函数齐全', () {
     final text = html();
     expect(text, isNot(contains("highlight('")));
     expect(text, contains('submitEmby()'));
+    expect(text, contains('submitTmdb()'));
     expect(text, contains('submitDanmaku()'));
     expect(text, contains('/api/danmaku'));
   });
 
   test('备用线路区块 + submitRoute 提交 /api/route（v1.1.243）', () {
-    for (final mode in ['', 'emby', 'danmaku', 'route']) {
+    for (final mode in ['', 'emby', 'danmaku', 'tmdb', 'route']) {
       final text = html(mode: mode);
       expect(text, contains('<section id="route">'));
       expect(text, contains('route_host'));

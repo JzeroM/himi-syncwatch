@@ -135,6 +135,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                       path: 'tmdb',
                       pageBuilder: (context, state) =>
                           _settingsFadePage(const TmdbSettingsScreen()),
+                      routes: [
+                        GoRoute(
+                          path: 'qr',
+                          pageBuilder: (context, state) => _settingsFadePage(
+                            const QrConfigScreen(mode: 'tmdb'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

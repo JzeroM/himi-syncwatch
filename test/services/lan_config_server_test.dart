@@ -155,6 +155,79 @@ void main() {
     await bodyOf(res);
   });
 
+  test('POST /api/tmdb 未接入回调 → 404', () async {
+    final res = await request(
+      'POST',
+      '/api/tmdb?t=${server.token}',
+      body: {'apiKey': 'key'},
+    );
+    expect(res.statusCode, HttpStatus.notFound);
+    await bodyOf(res);
+  });
+
+  group('onTmdb 已接入', () {
+    late LanConfigServer tmdbServer;
+    late Map<String, dynamic> capturedTmdb;
+    String? tmdbError;
+
+    setUp(() async {
+      capturedTmdb = {};
+      tmdbError = null;
+      tmdbServer = LanConfigServer(
+        basePort: 0,
+        onEmby: (body) async => null,
+        onTmdb: (body) async {
+          capturedTmdb = body;
+          return tmdbError;
+        },
+      );
+      await tmdbServer.start();
+    });
+
+    tearDown(() async {
+      await tmdbServer.stop();
+    });
+
+    Future<HttpClientResponse> postTmdb(Object body) async {
+      final client = HttpClient()..findProxy = ((_) => 'DIRECT');
+      addTearDown(client.close);
+      final req = await client.openUrl(
+        'POST',
+        Uri.parse(
+            'http://127.0.0.1:${tmdbServer.port}/api/tmdb?t=${tmdbServer.token}'),
+      );
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode(body));
+      return req.close();
+    }
+
+    test('携带 token → 触发回调并返回成功', () async {
+      final res = await postTmdb({
+        'apiKey': 'tmdb-key',
+        'apiBase': 'https://proxy.example.com',
+        'imageBase': 'https://img.example.com',
+        'region': 'JP',
+      });
+      expect(res.statusCode, HttpStatus.ok);
+      final json = jsonDecode(await utf8.decoder.bind(res).join())
+          as Map<String, dynamic>;
+      expect(json['ok'], isTrue);
+      expect(json['message'], contains('TMDB'));
+      expect(capturedTmdb['apiKey'], 'tmdb-key');
+      expect(capturedTmdb['region'], 'JP');
+    });
+
+    test('回调返回业务错误 → 400 且携带 error 文案', () async {
+      tmdbError = '请填写 TMDB API Key 或 Read Token';
+      final res = await postTmdb({'apiKey': ''});
+      expect(res.statusCode, HttpStatus.badRequest);
+      final json = jsonDecode(await utf8.decoder.bind(res).join())
+          as Map<String, dynamic>;
+      expect(json['ok'], isFalse);
+      expect(json['error'], contains('API Key'));
+    });
+  });
+
   group('onDanmaku 已接入', () {
     late LanConfigServer danmakuServer;
     late Map<String, dynamic> capturedDanmaku;

@@ -1,7 +1,7 @@
 /// 局域网扫码配置的手机端单页（内嵌 HTML，无外部依赖）。
 ///
-/// 提供 Emby 服务器配置、弹幕 API 地址配置与备用线路添加三个区块。
-/// [mode] 为 `emby` / `danmaku` / `route` 时高亮并滚动到对应区块；
+/// 提供 Emby 服务器配置、TMDB 配置、弹幕 API 地址配置与备用线路添加四个区块。
+/// [mode] 为 `emby` / `tmdb` / `danmaku` / `route` 时高亮并滚动到对应区块；
 /// 其余（含旧链接的 `agora`）不高亮，页面恒为同一份配置页。
 /// 页脚提供全部备选 IP 链接（带 token，供多网卡场景切换）。
 String buildLanConfigHtml({
@@ -17,6 +17,7 @@ String buildLanConfigHtml({
 
   final highlightJs = switch (mode) {
     'emby' => _highlightJs('emby'),
+    'tmdb' => _highlightJs('tmdb'),
     'danmaku' => _highlightJs('danmaku'),
     'route' => _highlightJs('route'),
     _ => '',
@@ -40,9 +41,9 @@ String buildLanConfigHtml({
   section.hl { border-color: #6366f1; box-shadow: 0 0 0 2px #6366f155; }
   h2 { font-size: 16px; margin: 0 0 12px; }
   label { display: block; font-size: 13px; color: #b9bed4; margin: 10px 0 4px; }
-  input { width: 100%; padding: 10px 12px; border-radius: 8px; font-size: 16px;
+  input, select { width: 100%; padding: 10px 12px; border-radius: 8px; font-size: 16px;
           border: 1px solid #343a5c; background: #0d1020; color: #fff; }
-  input:focus { outline: none; border-color: #6366f1; }
+  input:focus, select:focus { outline: none; border-color: #6366f1; }
   .row { display: flex; gap: 10px; }
   .row > div { flex: 1; }
   .row > div.wide { flex: 2; }
@@ -76,6 +77,31 @@ String buildLanConfigHtml({
   <input id="emby_pass" type="password" autocomplete="current-password">
   <button id="emby_btn" onclick="submitEmby()">连接并登录</button>
   <div class="msg" id="emby_msg"></div>
+</section>
+
+<section id="tmdb">
+  <h2>配置 TMDB</h2>
+  <label>API Key / Read Access Token（必填）</label>
+  <input id="tmdb_key" type="password" autocomplete="off" placeholder="v3 key 或以 eyJ 开头的 v4 token">
+  <label>API 代理地址（可选，留空保持当前）</label>
+  <input id="tmdb_api_base" type="url" placeholder="https://api.tmdb.org" autocomplete="url">
+  <label>图片代理地址（可选，留空保持当前）</label>
+  <input id="tmdb_image_base" type="url" placeholder="https://wsrv.nl/?url=https://image.tmdb.org" autocomplete="url">
+  <label>流媒体平台区域</label>
+  <select id="tmdb_region">
+    <option value="">保持当前</option>
+    <option value="US">美国 (US)</option>
+    <option value="GB">英国 (GB)</option>
+    <option value="CA">加拿大 (CA)</option>
+    <option value="AU">澳大利亚 (AU)</option>
+    <option value="JP">日本 (JP)</option>
+    <option value="KR">韩国 (KR)</option>
+    <option value="HK">香港 (HK)</option>
+    <option value="TW">台湾 (TW)</option>
+    <option value="SG">新加坡 (SG)</option>
+  </select>
+  <button id="tmdb_btn" onclick="submitTmdb()">保存到电视</button>
+  <div class="msg" id="tmdb_msg"></div>
 </section>
 
 <section id="danmaku">
@@ -142,6 +168,14 @@ function submitEmby() {
     username: document.getElementById('emby_user').value.trim(),
     password: document.getElementById('emby_pass').value
   }, 'emby_btn', 'emby_msg');
+}
+function submitTmdb() {
+  post('/api/tmdb', {
+    apiKey: document.getElementById('tmdb_key').value.trim(),
+    apiBase: document.getElementById('tmdb_api_base').value.trim(),
+    imageBase: document.getElementById('tmdb_image_base').value.trim(),
+    region: document.getElementById('tmdb_region').value
+  }, 'tmdb_btn', 'tmdb_msg');
 }
 function submitDanmaku() {
   post('/api/danmaku', {

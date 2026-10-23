@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -15,6 +16,7 @@ import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_platform_card.dart';
 import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -65,10 +67,14 @@ Future<void> _pump(
   TmdbDiscData discData = const TmdbDiscData.unconfigured(),
   List<Override> extraOverrides = const [],
   Size viewSize = const Size(800, 1200),
+  bool remote = false,
 }) async {
   tester.view.physicalSize = viewSize;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  final page = MaterialApp(
+    home: const Scaffold(body: TmdbHomeView()),
+  );
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -90,12 +96,27 @@ Future<void> _pump(
         ),
         ...extraOverrides,
       ],
-      child: const MaterialApp(
-        home: Scaffold(body: TmdbHomeView()),
-      ),
+      child: remote ? TvRemoteShell(child: page) : page,
     ),
   );
   await tester.pump();
+}
+
+bool _focusWithin(Finder finder) {
+  final elements = finder.evaluate();
+  if (elements.isEmpty) return false;
+  final top = elements.first;
+  final context = FocusManager.instance.primaryFocus?.context;
+  if (context is! Element) return false;
+  var found = false;
+  context.visitAncestorElements((element) {
+    if (element == top) {
+      found = true;
+      return false;
+    }
+    return true;
+  });
+  return found || context == top;
 }
 
 void main() {
@@ -209,6 +230,77 @@ void main() {
     expect(popular.top - disc.bottom, inInclusiveRange(6, 14));
     expect(panel.top - week.bottom, inInclusiveRange(8, 20));
     expect(popular.top - panel.bottom, inInclusiveRange(8, 24));
+  });
+
+  testWidgets('TV：遥控器可遍历到光盘栏并左右切换', (tester) async {
+    await _pump(
+      tester,
+      viewSize: const Size(800, 2200),
+      remote: true,
+      data: TmdbHomeData(
+        configured: true,
+        sections: [
+          TmdbSectionData(
+            key: 'trending_day',
+            title: '今日趋势',
+            items: [_entry(1)],
+          ),
+          TmdbSectionData(
+            key: 'trending_week',
+            title: '本周趋势',
+            items: [_entry(2)],
+          ),
+          TmdbSectionData(
+            key: 'popular_movies',
+            title: '热门电影',
+            items: [_entry(3)],
+          ),
+        ],
+      ),
+      settings: const AppSettings(
+        tvMode: true,
+        homeCarousel: false,
+      ),
+      discData: TmdbDiscData(
+        configured: true,
+        sections: [
+          TmdbDiscSectionData(
+            key: 'high_score_movies',
+            title: '高分热门电影',
+            items: [_entry(4)],
+          ),
+          TmdbDiscSectionData(
+            key: 'classic_movies',
+            title: '经典老片',
+            items: [_entry(5)],
+          ),
+        ],
+      ),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    final discFocus = find.byKey(const ValueKey('tmdbDiscFocus'));
+    var guard = 0;
+    while (!_focusWithin(discFocus) && guard < 30) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      guard++;
+    }
+    expect(
+      _focusWithin(discFocus),
+      isTrue,
+      reason: '方向键应能从首页其他区域走到光盘栏',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(
+      _focusWithin(discFocus),
+      isTrue,
+      reason: '光盘栏左右切换后焦点不应丢失',
+    );
   });
 
   testWidgets('栏目行不显示服务器角标', (tester) async {

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -49,13 +50,15 @@ class LanConfigState {
 
 /// 扫码配置服务生命周期 + 手机提交结果。
 ///
-/// 构造注入 [embyHandler]/[danmakuHandler]/[routeHandler]（由 provider 层
-/// 接真实落库逻辑），内部包装一层记录成功/失败到状态，供二维码页展示。
+/// 构造注入 [embyHandler]/[danmakuHandler]/[routeHandler]/[tmdbHandler]
+/// （由 provider 层接真实落库逻辑），内部包装一层记录成功/失败到状态，
+/// 供二维码页展示。
 class LanConfigNotifier extends StateNotifier<LanConfigState> {
   LanConfigNotifier({
     required Future<String?> Function(Map<String, dynamic> body) embyHandler,
     Future<String?> Function(Map<String, dynamic> body)? danmakuHandler,
     Future<String?> Function(Map<String, dynamic> body)? routeHandler,
+    Future<String?> Function(Map<String, dynamic> body)? tmdbHandler,
     int basePort = 17890,
   }) : super(const LanConfigState()) {
     _server = LanConfigServer(
@@ -69,6 +72,9 @@ class LanConfigNotifier extends StateNotifier<LanConfigState> {
       onRoute: routeHandler == null
           ? null
           : (body) => _guard(routeHandler, body, successMessage: '备用线路已添加'),
+      onTmdb: tmdbHandler == null
+          ? null
+          : (body) => _guard(tmdbHandler, body, successMessage: 'TMDB 配置已保存'),
     );
   }
 
@@ -144,6 +150,24 @@ final lanConfigProvider =
       ref
           .read(settingsProvider.notifier)
           .update(danmakuApiUrl: asString(body['url']));
+      return null;
+    },
+    tmdbHandler: (body) async {
+      final apiKey = asString(body['apiKey']).trim();
+      if (apiKey.isEmpty) return '请填写 TMDB API Key 或 Read Token';
+      final current = ref.read(settingsProvider);
+      final apiBase = asString(body['apiBase']).trim();
+      final imageBase = asString(body['imageBase']).trim();
+      final region = asString(body['region']).trim().toUpperCase();
+      await ref.read(settingsProvider.notifier).update(
+            tmdbApiKey: apiKey,
+            tmdbApiBase: apiBase.isEmpty ? current.tmdbApiBase : apiBase,
+            tmdbImageBase:
+                imageBase.isEmpty ? current.tmdbImageBase : imageBase,
+            tmdbWatchRegion: AppSettings.tmdbWatchRegions.contains(region)
+                ? region
+                : current.tmdbWatchRegion,
+          );
       return null;
     },
     // 手机提交备用线路：字段分项 → 拼 URL → ServerRouteService.addRoute

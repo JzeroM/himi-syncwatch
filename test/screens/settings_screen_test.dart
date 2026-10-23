@@ -14,6 +14,8 @@ import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/intro_outro_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/tmdb_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/about_settings_screen.dart';
@@ -56,6 +58,17 @@ GoRouter _testRouter() => GoRouter(
                 GoRoute(
                   path: 'cache',
                   builder: (context, state) => const CacheSettingsScreen(),
+                ),
+                GoRoute(
+                  path: 'tmdb',
+                  builder: (context, state) => const TmdbSettingsScreen(),
+                  routes: [
+                    GoRoute(
+                      path: 'qr',
+                      builder: (context, state) =>
+                          const QrConfigScreen(mode: 'tmdb'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1393,5 +1406,57 @@ void main() {
       expect(tester.widget<TextButton>(reset).onPressed, isNull,
           reason: '已回默认 → 禁用');
     });
+  });
+
+  testWidgets('非 TV：TMDB 设置保留手动输入框与扫码入口', (tester) async {
+    await _pumpScreen(tester, category: '外观');
+    await _scrollToText(tester, 'TMDB 聚合');
+    await tester.tap(find.byKey(const ValueKey('tmdbSettingsEntry')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tmdbQrConfigEntry')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tmdbApiKeyField')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tmdbApiBaseField')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tmdbImageBaseField')), findsOneWidget);
+  });
+
+  testWidgets('TV：TMDB 设置扫码入口可达并可向下遍历', (tester) async {
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _pumpScreen(
+      tester,
+      initial: const AppSettings(tvMode: true),
+      remote: true,
+      category: '外观',
+    );
+    await _scrollToText(tester, 'TMDB 聚合');
+    await tester.tap(find.byKey(const ValueKey('tmdbSettingsEntry')));
+    await tester.pumpAndSettle();
+
+    final qr = find.byKey(const ValueKey('tmdbQrConfigFocus'));
+    expect(qr, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('tmdbApiKeyField')),
+      findsNothing,
+      reason: 'TV 模式隐藏无输入法的文本框，改走扫码',
+    );
+    expect(focusWithin(qr), isTrue, reason: '扫码配置应成为 TMDB 设置的首个焦点');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(
+      focusWithin(find.byKey(const ValueKey('tmdbWatchRegionTile'))),
+      isTrue,
+      reason: '方向键应能从扫码配置下移到观看区域',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(
+      focusWithin(find.byKey(const ValueKey('tmdbTestConnectionTile'))),
+      isTrue,
+      reason: '方向键应能继续下移到测试连接',
+    );
   });
 }

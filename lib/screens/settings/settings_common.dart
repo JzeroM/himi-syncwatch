@@ -212,11 +212,15 @@ Widget settingsTvWrapRow({
   required VoidCallback onTap,
   required Widget child,
   double scale = 1.0,
+  bool autofocus = false,
+  FocusNode? focusNode,
 }) {
   if (!tvMode) return child;
   return TvFocusable(
     onTap: onTap,
     scale: scale,
+    autofocus: autofocus,
+    focusNode: focusNode,
     child: ExcludeFocus(child: child),
   );
 }

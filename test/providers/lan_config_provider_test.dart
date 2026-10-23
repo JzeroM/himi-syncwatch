@@ -196,6 +196,61 @@ void main() {
     expect(container.read(settingsProvider).danmakuApiUrl, '');
   });
 
+  test('手机提交 TMDB 配置 → 落库 API Key、代理与区域', () async {
+    await container.read(lanConfigProvider.notifier).start();
+
+    final res = await post('/api/tmdb', {
+      'apiKey': 'tmdb-key',
+      'apiBase': 'https://api.proxy.example.com',
+      'imageBase': 'https://img.proxy.example.com',
+      'region': 'JP',
+    });
+    expect(res.statusCode, HttpStatus.ok);
+    expect(await jsonOf(res), containsPair('ok', true));
+
+    final s = container.read(settingsProvider);
+    expect(s.tmdbApiKey, 'tmdb-key');
+    expect(s.tmdbApiBase, 'https://api.proxy.example.com');
+    expect(s.tmdbImageBase, 'https://img.proxy.example.com');
+    expect(s.tmdbWatchRegion, 'JP');
+    expect(container.read(lanConfigProvider).lastMessage, contains('TMDB'));
+  });
+
+  test('TMDB 空 Key → 400，代理与区域留空时保留当前值', () async {
+    await container.read(settingsProvider.notifier).update(
+          tmdbApiBase: 'https://api.proxy.example.com',
+          tmdbImageBase: 'https://img.proxy.example.com',
+          tmdbWatchRegion: 'JP',
+        );
+    await container.read(lanConfigProvider.notifier).start();
+
+    final empty = await post('/api/tmdb', {
+      'apiKey': '',
+      'apiBase': '',
+      'imageBase': '',
+      'region': '',
+    });
+    expect(empty.statusCode, HttpStatus.badRequest);
+    expect(
+      (await jsonOf(empty))['error'],
+      contains('TMDB API Key'),
+    );
+
+    final ok = await post('/api/tmdb', {
+      'apiKey': 'new-key',
+      'apiBase': '',
+      'imageBase': '',
+      'region': '',
+    });
+    expect(ok.statusCode, HttpStatus.ok);
+
+    final s = container.read(settingsProvider);
+    expect(s.tmdbApiKey, 'new-key');
+    expect(s.tmdbApiBase, 'https://api.proxy.example.com');
+    expect(s.tmdbImageBase, 'https://img.proxy.example.com');
+    expect(s.tmdbWatchRegion, 'JP');
+  });
+
   group('POST /api/route 扫码添加备用线路（v1.1.243）', () {
     Future<Map<String, dynamic>> postRoute(Map<String, dynamic> body) async {
       final res = await post('/api/route', body);
