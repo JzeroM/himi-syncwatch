@@ -8,6 +8,15 @@ import 'package:himi_syncwatch/services/tmdb_service.dart';
 
 import '../helpers/test_fakes.dart';
 
+class _DiscoverCall {
+  _DiscoverCall(this.type, this.cacheKey, this.page, this.query);
+
+  final TmdbMediaType type;
+  final String cacheKey;
+  final int page;
+  final Map<String, dynamic> query;
+}
+
 class _FakeTmdbService extends TmdbService {
   _FakeTmdbService() : super(apiBase: 'http://localhost', credential: 'test');
 
@@ -16,6 +25,7 @@ class _FakeTmdbService extends TmdbService {
     TmdbMediaType.tv: const [],
   };
   final Map<int, String?> logos = {};
+  final List<_DiscoverCall> discoverCalls = [];
 
   @override
   Future<List<TmdbItem>> trendingDay({int page = 1}) async =>
@@ -44,6 +54,23 @@ class _FakeTmdbService extends TmdbService {
 
   @override
   Future<Map<int, String?>> platformLogos(String region) async => logos;
+
+  @override
+  Future<TmdbPagedResult> discoverCatalogPage({
+    required TmdbMediaType type,
+    required String cacheKey,
+    int page = 1,
+    Map<String, dynamic> query = const {},
+  }) async {
+    discoverCalls.add(_DiscoverCall(type, cacheKey, page, Map.of(query)));
+    final all = lists[type]!;
+    return TmdbPagedResult(
+      items: all,
+      page: page,
+      totalPages: page < 2 ? 2 : page,
+      totalResults: all.length,
+    );
+  }
 
   @override
   Future<TmdbPagedResult> discoverPlatform({
@@ -420,6 +447,88 @@ void main() {
     expect(
       availability.keys.toSet(),
       showcase.posters.map((e) => e.tmdb.key).toSet(),
+    );
+  });
+
+  test('fetchSectionPage 华语精选合并电影/剧集并去重', () async {
+    final service = _ProviderEmbyService({
+      '101': [_movie('m1', '101')],
+      '201': [
+        MediaItem(
+          id: 't1',
+          name: 'Show',
+          type: 'Series',
+          providerIds: const {'Tmdb': '201'},
+        ),
+      ],
+    });
+    final tmdb = _FakeTmdbService()
+      ..lists[TmdbMediaType.movie] = const [_movie1]
+      ..lists[TmdbMediaType.tv] = const [_show];
+    final aggregate = TmdbAggregateService(
+      tmdb: tmdb,
+      serviceFactory: (_) => service,
+    );
+
+    final page = await aggregate.fetchSectionPage(
+      'chinese_picks',
+      [_server('s1')],
+    );
+
+    expect(
+      page.items.map((e) => e.tmdb.key).toSet(),
+      {_movie1.key, _show.key},
+    );
+    expect(page.hasMore, isTrue);
+    expect(tmdb.discoverCalls, hasLength(2));
+    expect(
+      tmdb.discoverCalls.map((e) => e.type).toSet(),
+      {TmdbMediaType.movie, TmdbMediaType.tv},
+    );
+    expect(
+      tmdb.discoverCalls.every((e) => e.cacheKey == 'chinese_picks'),
+      isTrue,
+    );
+    expect(
+      tmdb.discoverCalls.every(
+        (e) => e.query['with_original_language'] == 'zh',
+      ),
+      isTrue,
+    );
+  });
+
+  test('新栏目使用对应的 discover 过滤参数', () async {
+    final service = _ProviderEmbyService({
+      '101': [_movie('m1', '101')],
+    });
+    final tmdb = _FakeTmdbService()
+      ..lists[TmdbMediaType.movie] = const [_movie1];
+    final aggregate = TmdbAggregateService(
+      tmdb: tmdb,
+      serviceFactory: (_) => service,
+    );
+
+    await aggregate.fetchSectionPage('high_score_movies', [_server('s1')]);
+    await aggregate.fetchSectionPage('classic_movies', [_server('s1')]);
+    await aggregate.fetchSectionPage('jpkr_picks', [_server('s1')]);
+
+    expect(tmdb.discoverCalls, hasLength(4));
+    final highScore =
+        tmdb.discoverCalls.firstWhere((e) => e.cacheKey == 'high_score_movies');
+    expect(highScore.query['vote_average.gte'], 8);
+    expect(highScore.query['vote_count.gte'], 1000);
+
+    final classic =
+        tmdb.discoverCalls.firstWhere((e) => e.cacheKey == 'classic_movies');
+    expect(classic.query['primary_release_date.lte'], '1999-12-31');
+    expect(classic.query['vote_count.gte'], 500);
+
+    final jpkr =
+        tmdb.discoverCalls.where((e) => e.cacheKey == 'jpkr_picks').toList();
+    expect(jpkr, hasLength(2));
+    expect(
+      jpkr.every((e) => e.query['with_origin_country'] == 'JP|KR'),
+      isTrue,
     );
   });
 

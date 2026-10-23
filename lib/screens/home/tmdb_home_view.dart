@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
+import 'package:himi_syncwatch/widgets/tmdb_discover_disc.dart';
 import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_platform_card.dart';
 import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
@@ -170,23 +171,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
         widget.resume.isEmpty &&
         !widget.resumeLoading &&
         !sectionsLoading) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.only(
-          top: widget.tvMode ? 20 : GlassConfig.topInsetOf(context),
-          bottom: GlassConfig.bottomReserveOf(context),
-        ),
-        children: const [
-          SizedBox(height: 160),
-          Center(
-            child: Text(
-              'TMDB 暂无聚合内容\n请确认服务器媒体带 TMDB id，或换个观看区域',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70),
-            ),
-          ),
-        ],
-      );
+      return _EmptyHome(tvMode: widget.tvMode);
     }
 
     final carouselEnabled = settings.homeCarousel && !widget.tvMode;
@@ -194,6 +179,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
     final headerCount = (hero != null || sectionsLoading) ? 1 : 0;
     final itemCount = headerCount +
         (widget.resume.isNotEmpty ? 1 : 0) +
+        1 +
         1 +
         sections.length +
         (widget.data.failedServerCount > 0 ? 1 : 0);
@@ -260,6 +246,10 @@ class _HomeListState extends ConsumerState<_HomeList> {
               tvMode: widget.tvMode,
               allowServerPosters: !widget.data.sectionsLoading,
             );
+          }
+          i--;
+          if (i == 0) {
+            return TmdbDiscoverDisc(tvMode: widget.tvMode);
           }
           i--;
           if (i < sections.length) {
@@ -451,6 +441,42 @@ class _Hero extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _EmptyHome extends ConsumerWidget {
+  const _EmptyHome({required this.tvMode});
+
+  final bool tvMode;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(tmdbDiscProvider);
+    final disc = async.valueOrNull;
+    final loading = disc != null ? disc.loading : !async.hasError;
+    final hasContent =
+        disc?.sections.any((section) => section.items.isNotEmpty) ?? false;
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.only(
+        top: tvMode ? 20 : GlassConfig.topInsetOf(context),
+        bottom: GlassConfig.bottomReserveOf(context),
+      ),
+      children: [
+        _PlatformBar(tvMode: tvMode, allowServerPosters: true),
+        TmdbDiscoverDisc(tvMode: tvMode),
+        if (!loading && !hasContent)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 40, 24, 24),
+            child: Text(
+              'TMDB 暂无聚合内容\n请确认服务器媒体带 TMDB id，或换个观看区域',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+      ],
     );
   }
 }

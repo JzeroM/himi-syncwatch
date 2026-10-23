@@ -170,6 +170,28 @@ class TmdbService {
   Future<List<TmdbItem>> popularTv({int page = 1}) async =>
       (await popularTvPage(page: page)).items;
 
+  /// 通用 discover 分页查询。
+  ///
+  /// [cacheKey] 由调用方提供，用于区分不同栏目；同一栏目同一页共享
+  /// 30 分钟目录缓存。query 中的参数会覆盖默认排序/分页参数。
+  Future<TmdbPagedResult> discoverCatalogPage({
+    required TmdbMediaType type,
+    required String cacheKey,
+    int page = 1,
+    Map<String, dynamic> query = const {},
+  }) =>
+      _paged(
+        'discover_${type.apiValue}_${cacheKey}_$page',
+        '/discover/${type.apiValue}',
+        fallbackType: type,
+        query: {
+          'sort_by': 'popularity.desc',
+          'page': page,
+          'include_adult': false,
+          ...query,
+        },
+      );
+
   Future<TmdbPagedResult> discoverPlatform({
     required int providerId,
     required TmdbMediaType type,

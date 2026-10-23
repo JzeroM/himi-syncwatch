@@ -78,11 +78,32 @@ class TmdbAggregateService {
   final Map<String, _AvailCacheEntry> _cache = {};
   final Map<String, _PendingProviderLookup> _pendingLookups = {};
 
+  static const homeSectionKeys = <String>[
+    'trending_day',
+    'trending_week',
+    'popular_movies',
+    'popular_tv',
+  ];
+
+  /// 光盘栏目。数量可继续增加，UI 不依赖具体数量。
+  static const discSectionKeys = <String>[
+    'high_score_movies',
+    'high_score_tv',
+    'classic_movies',
+    'chinese_picks',
+    'jpkr_picks',
+  ];
+
   static const _sectionTitles = <String, String>{
     'trending_day': '今日趋势',
     'trending_week': '本周趋势',
     'popular_movies': '热门电影',
     'popular_tv': '热门剧集',
+    'high_score_movies': '高分热门电影',
+    'high_score_tv': '高分热门剧集',
+    'classic_movies': '经典老片',
+    'chinese_picks': '华语精选',
+    'jpkr_picks': '日韩精选',
   };
 
   static String sectionTitle(String key) => _sectionTitles[key] ?? 'TMDB';
@@ -332,6 +353,107 @@ class TmdbAggregateService {
     return TmdbAvailabilityResult(items: out, failedServerIds: failed);
   }
 
+  Future<TmdbPagedResult?> _sectionTmdbPage(
+    String sectionKey,
+    int page,
+  ) async {
+    switch (sectionKey) {
+      case 'trending_day':
+        return tmdb.trendingDayPage(page: page);
+      case 'trending_week':
+        return tmdb.trendingWeekPage(page: page);
+      case 'popular_movies':
+        return tmdb.popularMoviesPage(page: page);
+      case 'popular_tv':
+        return tmdb.popularTvPage(page: page);
+      case 'high_score_movies':
+        return tmdb.discoverCatalogPage(
+          type: TmdbMediaType.movie,
+          cacheKey: sectionKey,
+          page: page,
+          query: const {
+            'vote_average.gte': 8,
+            'vote_count.gte': 1000,
+          },
+        );
+      case 'high_score_tv':
+        return tmdb.discoverCatalogPage(
+          type: TmdbMediaType.tv,
+          cacheKey: sectionKey,
+          page: page,
+          query: const {
+            'vote_average.gte': 8,
+            'vote_count.gte': 1000,
+          },
+        );
+      case 'classic_movies':
+        return tmdb.discoverCatalogPage(
+          type: TmdbMediaType.movie,
+          cacheKey: sectionKey,
+          page: page,
+          query: const {
+            'primary_release_date.lte': '1999-12-31',
+            'vote_count.gte': 500,
+          },
+        );
+      case 'chinese_picks':
+        return _mergedDiscoverPage(
+          sectionKey,
+          page,
+          const [
+            (TmdbMediaType.movie, {'with_original_language': 'zh'}),
+            (TmdbMediaType.tv, {'with_original_language': 'zh'}),
+          ],
+        );
+      case 'jpkr_picks':
+        return _mergedDiscoverPage(
+          sectionKey,
+          page,
+          const [
+            (
+              TmdbMediaType.movie,
+              {'with_origin_country': 'JP|KR', 'vote_count.gte': 100}
+            ),
+            (
+              TmdbMediaType.tv,
+              {'with_origin_country': 'JP|KR', 'vote_count.gte': 50}
+            ),
+          ],
+        );
+    }
+    return null;
+  }
+
+  Future<TmdbPagedResult> _mergedDiscoverPage(
+    String sectionKey,
+    int page,
+    List<(TmdbMediaType, Map<String, dynamic>)> queries,
+  ) async {
+    final pages = await Future.wait([
+      for (final query in queries)
+        tmdb.discoverCatalogPage(
+          type: query.$1,
+          cacheKey: sectionKey,
+          page: page,
+          query: query.$2,
+        ),
+    ]);
+    final seen = <String>{};
+    final items = <TmdbItem>[];
+    for (final result in pages) {
+      for (final item in result.items) {
+        if (seen.add(item.key)) items.add(item);
+      }
+    }
+    items.sort((a, b) => (b.popularity ?? 0).compareTo(a.popularity ?? 0));
+    return TmdbPagedResult(
+      items: items,
+      page: page,
+      totalPages: pages.fold<int>(1, (value, e) => max(value, e.totalPages)),
+      totalResults: pages.fold<int>(0, (value, e) => value + e.totalResults),
+    );
+  }
+
   Future<TmdbSectionPage> fetchSectionPage(
     String sectionKey,
     List<EmbyServerConfig> servers, {
@@ -339,21 +461,7 @@ class TmdbAggregateService {
     int page = 1,
   }) async {
     final p = page < 1 ? 1 : page;
-    TmdbPagedResult? result;
-    switch (sectionKey) {
-      case 'trending_day':
-        result = await tmdb.trendingDayPage(page: p);
-        break;
-      case 'trending_week':
-        result = await tmdb.trendingWeekPage(page: p);
-        break;
-      case 'popular_movies':
-        result = await tmdb.popularMoviesPage(page: p);
-        break;
-      case 'popular_tv':
-        result = await tmdb.popularTvPage(page: p);
-        break;
-    }
+    final result = await _sectionTmdbPage(sectionKey, p);
     if (result == null) {
       return const TmdbSectionPage(items: [], hasMore: false);
     }
@@ -377,36 +485,17 @@ class TmdbAggregateService {
     bool allowCache = true,
   }) async {
     final pageCount = pages.clamp(1, 10);
-    final futures = <Future<List<TmdbItem>>>[];
-    switch (sectionKey) {
-      case 'trending_day':
-        for (var p = 1; p <= pageCount; p++) {
-          futures.add(tmdb.trendingDay(page: p));
-        }
-        break;
-      case 'trending_week':
-        for (var p = 1; p <= pageCount; p++) {
-          futures.add(tmdb.trendingWeek(page: p));
-        }
-        break;
-      case 'popular_movies':
-        for (var p = 1; p <= pageCount; p++) {
-          futures.add(tmdb.popularMovies(page: p));
-        }
-        break;
-      case 'popular_tv':
-        for (var p = 1; p <= pageCount; p++) {
-          futures.add(tmdb.popularTv(page: p));
-        }
-        break;
-      default:
-        return const TmdbAvailabilityResult(items: []);
+    final sectionPages = await Future.wait([
+      for (var p = 1; p <= pageCount; p++) _sectionTmdbPage(sectionKey, p),
+    ]);
+    if (sectionPages.every((page) => page == null)) {
+      return const TmdbAvailabilityResult(items: []);
     }
-    final batches = await Future.wait(futures);
     final items = <TmdbItem>[];
     final seen = <String>{};
-    for (final batch in batches) {
-      for (final item in batch) {
+    for (final page in sectionPages) {
+      if (page == null) continue;
+      for (final item in page.items) {
         if (seen.add(item.key)) items.add(item);
       }
     }

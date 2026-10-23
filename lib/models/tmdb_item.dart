@@ -216,6 +216,46 @@ class TmdbSectionData {
   bool get isEmpty => items.isEmpty;
 }
 
+/// 光盘栏目的单个分区。
+class TmdbDiscSectionData {
+  const TmdbDiscSectionData({
+    required this.key,
+    required this.title,
+    this.items = const [],
+    this.loading = false,
+  });
+
+  final String key;
+  final String title;
+  final List<TmdbAvailability> items;
+
+  /// 该分区是否仍在加载；加载中但无内容时应显示骨架而不是「暂无」。
+  final bool loading;
+
+  bool get isEmpty => items.isEmpty;
+}
+
+/// 光盘栏目数据。分区数量动态，UI 不依赖固定数量。
+class TmdbDiscData {
+  const TmdbDiscData({
+    required this.configured,
+    this.sections = const [],
+    this.loading = false,
+  });
+
+  const TmdbDiscData.unconfigured()
+      : configured = false,
+        sections = const [],
+        loading = false;
+
+  final bool configured;
+  final List<TmdbDiscSectionData> sections;
+  final bool loading;
+
+  bool get hasContent =>
+      sections.any((section) => section.loading || section.items.isNotEmpty);
+}
+
 /// TMDB 首页聚合数据。
 class TmdbHomeData {
   const TmdbHomeData({

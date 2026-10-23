@@ -62,6 +62,7 @@ Future<void> _pump(
   List<TmdbPlatformShowcase> showcases = const [],
   TmdbPlatformAvailabilityState availability =
       const TmdbPlatformAvailabilityState(complete: true),
+  TmdbDiscData discData = const TmdbDiscData.unconfigured(),
   List<Override> extraOverrides = const [],
 }) async {
   tester.view.physicalSize = const Size(800, 1200);
@@ -74,6 +75,7 @@ Future<void> _pump(
           (ref) => FakeSettingsNotifier(settings),
         ),
         tmdbHomeProvider.overrideWith((ref) => Stream.value(data)),
+        tmdbDiscProvider.overrideWith((ref) => Stream.value(discData)),
         tmdbPlatformShowcaseProvider.overrideWith((ref, platform) async {
           for (final showcase in showcases) {
             if (showcase.platform.providerId == platform.providerId) {
@@ -106,6 +108,47 @@ void main() {
     expect(find.text('TMDB 暂无聚合内容\n请确认服务器媒体带 TMDB id，或换个观看区域'), findsNothing);
     expect(find.text('流媒体平台'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('首页聚合为空时保留平台栏并提示', (tester) async {
+    await _pump(
+      tester,
+      data: const TmdbHomeData(configured: true),
+      settings: const AppSettings(homeCarousel: false),
+    );
+    await tester.pump();
+
+    expect(find.text('流媒体平台'), findsOneWidget);
+    expect(
+      find.textContaining('TMDB 暂无聚合内容'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('首页聚合为空但光盘有内容时不显示空态提示', (tester) async {
+    await _pump(
+      tester,
+      data: const TmdbHomeData(configured: true),
+      settings: const AppSettings(homeCarousel: false, glassUi: false),
+      discData: TmdbDiscData(
+        configured: true,
+        sections: [
+          TmdbDiscSectionData(
+            key: 'high_score_movies',
+            title: '高分热门电影',
+            items: [_entry(1)],
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('tmdbDiscoverDisc')),
+      findsOneWidget,
+    );
+    expect(find.text('高分热门电影'), findsOneWidget);
+    expect(find.textContaining('TMDB 暂无聚合内容'), findsNothing);
   });
 
   testWidgets('栏目行不显示服务器角标', (tester) async {

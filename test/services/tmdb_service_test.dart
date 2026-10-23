@@ -117,6 +117,51 @@ void main() {
     expect(second.items.single.id, first.items.single.id);
   });
 
+  test('discoverCatalogPage 参数正确且同一栏目同页缓存', () async {
+    final requests = <_RecordedRequest>[];
+    final server = await _serve(requests);
+    addTearDown(() => server.close(force: true));
+    final service = TmdbService(
+      apiBase: 'http://127.0.0.1:${server.port}/3',
+      credential: 'k',
+    );
+
+    final first = await service.discoverCatalogPage(
+      type: TmdbMediaType.movie,
+      cacheKey: 'classic_movies',
+      page: 1,
+      query: const {
+        'primary_release_date.lte': '1999-12-31',
+        'vote_count.gte': 500,
+      },
+    );
+    final second = await service.discoverCatalogPage(
+      type: TmdbMediaType.movie,
+      cacheKey: 'classic_movies',
+      page: 1,
+      query: const {
+        'primary_release_date.lte': '1999-12-31',
+        'vote_count.gte': 500,
+      },
+    );
+
+    expect(requests, hasLength(1));
+    expect(requests.single.uri.path, '/3/discover/movie');
+    expect(requests.single.uri.queryParameters['page'], '1');
+    expect(
+      requests.single.uri.queryParameters['sort_by'],
+      'popularity.desc',
+    );
+    expect(requests.single.uri.queryParameters['include_adult'], 'false');
+    expect(
+      requests.single.uri.queryParameters['primary_release_date.lte'],
+      '1999-12-31',
+    );
+    expect(requests.single.uri.queryParameters['vote_count.gte'], '500');
+    expect(first.hasMore, isTrue);
+    expect(second.items.single.id, first.items.single.id);
+  });
+
   test('趋势接口跳过 person 等不支持类型', () async {
     final requests = <_RecordedRequest>[];
     final server = await _serve(requests);

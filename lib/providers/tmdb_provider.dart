@@ -76,12 +76,7 @@ final tmdbImageBaseProvider = Provider<String>((ref) {
 /// 先立即产出首页壳（平台栏/续播区可先显示），再按各栏目实际完成顺序
 /// 逐步追加，避免四个栏目 + 服务器探测全部完成后才出现首屏。
 final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
-  const sectionKeys = [
-    'trending_day',
-    'trending_week',
-    'popular_movies',
-    'popular_tv',
-  ];
+  const sectionKeys = TmdbAggregateService.homeSectionKeys;
   final configured = ref.watch(
     settingsProvider.select((s) => s.hasTmdbCredentials),
   );
@@ -181,6 +176,116 @@ final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
     }
     yield snapshot(loading: false);
   }
+});
+
+/// 光盘栏目数据。
+///
+/// 分区数量由 [TmdbAggregateService.discSectionKeys] 决定，UI 不写死 5 个。
+/// 先当前服务器、再全服务器两阶段补齐；某分区补齐为空时不回退已有内容。
+final tmdbDiscProvider = StreamProvider<TmdbDiscData>((ref) async* {
+  const sectionKeys = TmdbAggregateService.discSectionKeys;
+  final configured = ref.watch(
+    settingsProvider.select((s) => s.hasTmdbCredentials),
+  );
+  if (!configured) {
+    yield const TmdbDiscData.unconfigured();
+    return;
+  }
+  final service = ref.watch(tmdbAggregateServiceProvider);
+  if (service == null) {
+    yield const TmdbDiscData.unconfigured();
+    return;
+  }
+  final servers = ref.watch(embyServerListProvider);
+  final activeId = ref.watch(embyConfigProvider)?.id;
+  final primary = _primaryServers(servers, activeId);
+  final initialServers = primary.isEmpty ? servers : primary;
+  final authenticatedCount = servers.where((s) => s.isAuthenticated).length;
+  final hasSecondary = primary.isNotEmpty && authenticatedCount > 1;
+
+  var disposed = false;
+  ref.onDispose(() => disposed = true);
+
+  final loaded = <String, TmdbDiscSectionData>{};
+  TmdbDiscData snapshot({required bool loading}) => TmdbDiscData(
+        configured: true,
+        loading: loading,
+        sections: [
+          for (final key in sectionKeys)
+            loaded[key] ??
+                TmdbDiscSectionData(
+                  key: key,
+                  title: TmdbAggregateService.sectionTitle(key),
+                  loading: true,
+                ),
+        ],
+      );
+
+  yield snapshot(loading: true);
+
+  Future<TmdbDiscSectionData> load(
+    String key,
+    List<EmbyServerConfig> targets,
+  ) async {
+    try {
+      final result = await service.fetchSection(
+        key,
+        targets,
+        activeServerId: activeId,
+        pages: 1,
+      );
+      return TmdbDiscSectionData(
+        key: key,
+        title: TmdbAggregateService.sectionTitle(key),
+        items: result.items,
+      );
+    } catch (_) {
+      return TmdbDiscSectionData(
+        key: key,
+        title: TmdbAggregateService.sectionTitle(key),
+      );
+    }
+  }
+
+  var pending = <(String, Future<TmdbDiscSectionData>)>[
+    for (final key in sectionKeys) (key, load(key, initialServers)),
+  ];
+  while (pending.isNotEmpty) {
+    final done = await Future.any([
+      for (final entry in pending)
+        entry.$2.then((section) => (entry.$1, section)),
+    ]);
+    pending.removeWhere((entry) => entry.$1 == done.$1);
+    if (disposed) return;
+    loaded[done.$1] = done.$2;
+    yield snapshot(loading: true);
+  }
+
+  if (disposed) return;
+  yield snapshot(loading: hasSecondary);
+  if (!hasSecondary) return;
+
+  pending = [
+    for (final key in sectionKeys) (key, load(key, servers)),
+  ];
+  while (pending.isNotEmpty) {
+    final done = await Future.any([
+      for (final entry in pending)
+        entry.$2.then((section) => (entry.$1, section)),
+    ]);
+    pending.removeWhere((entry) => entry.$1 == done.$1);
+    if (disposed) return;
+    final previous = loaded[done.$1];
+    if (done.$2.items.isNotEmpty ||
+        previous == null ||
+        previous.items.isEmpty) {
+      loaded[done.$1] = done.$2;
+    }
+    yield snapshot(loading: true);
+  }
+
+  if (disposed) return;
+  yield snapshot(loading: false);
 });
 
 /// 单个平台卡的每日海报（只取 TMDB 目录，不加载 TMDB 图片）。
@@ -286,6 +391,7 @@ final tmdbResumeProvider = FutureProvider<TmdbResumeResult>((ref) async {
 Future<void> refreshTmdbHome(WidgetRef ref) async {
   ref.invalidate(tmdbHomeProvider);
   ref.invalidate(tmdbResumeProvider);
+  ref.invalidate(tmdbDiscProvider);
   ref.invalidate(tmdbPlatformShowcaseProvider);
   ref.invalidate(tmdbPlatformAvailabilityProvider);
   for (final future in [
