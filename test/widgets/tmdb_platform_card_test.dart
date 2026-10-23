@@ -90,18 +90,17 @@ void main() {
     expect(image.height, 20);
 
     final cardRect = tester.getRect(find.byType(TmdbPlatformCard));
-    expect(tester.getCenter(logo).dx - cardRect.center.dx, closeTo(33, 1));
     final stack = find.byKey(const ValueKey('tmdbPlatformPosterStack_8'));
+    final gap = find.byKey(const ValueKey('tmdbPlatformLogoGap'));
     expect(tester.getSize(stack).width, 64);
+    expect(tester.getSize(gap).width, 10);
+    final stackRect = tester.getRect(stack);
+    final logoRect = tester.getRect(logo);
     expect(
-      tester.getSize(find.byKey(const ValueKey('tmdbPlatformLogoGap'))).width,
-      2,
-    );
-    expect(
-      tester.getCenter(back).dx - tester.getRect(stack).left,
-      closeTo(41, 1),
-      reason: '海报堆叠应右移贴近 Logo',
-    );
+        (stackRect.left + logoRect.right) / 2, closeTo(cardRect.center.dx, 1),
+        reason: '海报与 Logo 作为整组水平居中');
+    expect(logoRect.left, greaterThanOrEqualTo(stackRect.right + 10),
+        reason: '海报与 Logo 之间保留间距且不重叠');
 
     await tester.tap(find.byType(TmdbPlatformCard));
     expect(tapped, isTrue);
@@ -127,7 +126,11 @@ void main() {
     expect(disney.logoHeight, 24);
     expect(image.height, 24);
     final cardRect = tester.getRect(find.byType(TmdbPlatformCard));
-    expect(tester.getCenter(logo).dx - cardRect.center.dx, closeTo(33, 1));
+    final stack = find.byKey(const ValueKey('tmdbPlatformPosterStack_337'));
+    expect(
+      (tester.getRect(stack).left + tester.getRect(logo).right) / 2,
+      closeTo(cardRect.center.dx, 1),
+    );
   });
 
   testWidgets('只有一张海报时只展示一张', (tester) async {

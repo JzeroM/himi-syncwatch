@@ -162,4 +162,21 @@ void main() {
 
     expect(opened, ['section_0']);
   });
+
+  test('每个分区随机 3 张，同种子稳定，不同种子变化', () {
+    final items = [for (var i = 0; i < 8; i++) _entry(i)];
+
+    final first = pickTmdbDiscItems(items, 11, 'section_0');
+    final again = pickTmdbDiscItems(items, 11, 'section_0');
+    final other = pickTmdbDiscItems(items, 12, 'section_0');
+
+    expect(first, hasLength(3));
+    expect(again, first);
+    expect(other, isNot(first));
+  });
+
+  test('不足 3 张时保持原样', () {
+    final items = [_entry(1), _entry(2)];
+    expect(pickTmdbDiscItems(items, 3, 'section_0'), items);
+  });
 }

@@ -1,10 +1,14 @@
+import 'dart:math';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
+import 'package:himi_syncwatch/providers/image_quality_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/services/hero_image_selector.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
 
@@ -70,6 +74,12 @@ final tmdbImageBaseProvider = Provider<String>((ref) {
     settingsProvider.select((s) => s.effectiveTmdbImageBase),
   );
 });
+
+final tmdbHomeRandomSeedProvider = Provider<int>((ref) {
+  return Random().nextInt(0x7FFFFFFF);
+});
+
+final tmdbHomeRefreshEpochProvider = StateProvider<int>((ref) => 0);
 
 /// 当前 TMDB 聚合首页栏目数据。
 ///
@@ -176,6 +186,29 @@ final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
     }
     yield snapshot(loading: false);
   }
+});
+
+final tmdbHeroItemsProvider =
+    FutureProvider<List<TmdbAvailability>>((ref) async {
+  final data = ref.watch(tmdbHomeProvider).valueOrNull;
+  if (data == null || !data.configured) return const [];
+  final seed = ref.watch(tmdbHomeRandomSeedProvider) ^
+      ref.watch(tmdbHomeRefreshEpochProvider);
+  final candidates = <HeroImageCandidate<TmdbAvailability>>[];
+  final seen = <String>{};
+  for (final section in data.sections) {
+    for (final entry in section.items) {
+      final url = entry.item.backdropOriginalUrl;
+      if (url == null || url.isEmpty) continue;
+      if (!seen.add(entry.tmdb.key)) continue;
+      candidates.add(HeroImageCandidate(
+        value: entry,
+        url: url,
+        accessToken: entry.server.accessToken,
+      ));
+    }
+  }
+  return ref.watch(heroImageSelectorProvider).select(candidates, seed: seed);
 });
 
 /// 光盘栏目数据。
@@ -389,6 +422,7 @@ final tmdbResumeProvider = FutureProvider<TmdbResumeResult>((ref) async {
 });
 
 Future<void> refreshTmdbHome(WidgetRef ref) async {
+  ref.read(tmdbHomeRefreshEpochProvider.notifier).state++;
   ref.invalidate(tmdbHomeProvider);
   ref.invalidate(tmdbResumeProvider);
   ref.invalidate(tmdbDiscProvider);

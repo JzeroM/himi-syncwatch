@@ -35,7 +35,7 @@ class HomeHeroItem {
   factory HomeHeroItem.fromMediaItem(MediaItem item) {
     return HomeHeroItem(
       title: item.name,
-      imageUrl: item.backdropWideUrl ?? item.backdropUrl ?? item.posterUrl,
+      imageUrl: item.backdropOriginalUrl,
       logoUrl: item.logoUrl,
       year: item.year,
       rating: item.communityRating,
@@ -43,6 +43,17 @@ class HomeHeroItem {
       payload: item,
     );
   }
+}
+
+String? ambientBackdropUrl(String? url) {
+  if (url == null || url.isEmpty) return null;
+  final uri = Uri.tryParse(url);
+  if (uri == null || !uri.hasScheme) return url;
+  final query = Map<String, String>.from(uri.queryParameters);
+  query.remove('maxHeight');
+  query['maxWidth'] = '320';
+  query['quality'] = '70';
+  return uri.replace(queryParameters: query).toString();
 }
 
 Widget embyHeroImageBuilder(
@@ -424,12 +435,13 @@ class HomeHeroBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url = imageUrl;
+    final source = imageUrl;
+    final url = ambientBackdropUrl(source);
     if (url == null || url.isEmpty) return const SizedBox.shrink();
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 500),
       child: Stack(
-        key: ValueKey(url),
+        key: ValueKey(source),
         fit: StackFit.expand,
         children: [
           ImageFiltered(

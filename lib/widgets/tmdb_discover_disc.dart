@@ -8,6 +8,21 @@ import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 
+List<TmdbAvailability> pickTmdbDiscItems(
+  List<TmdbAvailability> items,
+  int seed,
+  String sectionKey,
+) {
+  if (items.length <= 3) return items;
+  final list = [...items];
+  var salt = 0;
+  for (final unit in sectionKey.codeUnits) {
+    salt = (salt * 31 + unit) & 0x7FFFFFFF;
+  }
+  list.shuffle(math.Random(seed ^ salt));
+  return list.take(3).toList(growable: false);
+}
+
 /// TMDB 首页的三槽位海报栏目。
 ///
 /// 数据由 [tmdbDiscProvider] 懒加载；组件只投影“左中右”三张面板，
@@ -30,9 +45,21 @@ class TmdbDiscoverDisc extends ConsumerWidget {
         .toList(growable: false);
     if (sections.isEmpty) return const SizedBox.shrink();
 
+    final seed = ref.watch(tmdbHomeRandomSeedProvider) ^
+        ref.watch(tmdbHomeRefreshEpochProvider);
+    final displaySections = [
+      for (final section in sections)
+        TmdbDiscSectionData(
+          key: section.key,
+          title: section.title,
+          items: pickTmdbDiscItems(section.items, seed, section.key),
+          loading: section.loading,
+        ),
+    ];
+
     return TmdbDiscCarousel(
       key: const ValueKey('tmdbDiscoverDisc'),
-      sections: sections,
+      sections: displaySections,
       imageBase: ref.watch(tmdbImageBaseProvider),
       tvMode: tvMode,
       onOpenSection: (section) => context.push('/tmdb/section/${section.key}'),

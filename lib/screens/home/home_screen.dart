@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,11 +10,13 @@ import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/image_quality_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/hero_image_selector.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
@@ -75,6 +78,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 首页轮播候选（每次加载随机抽取，最多 6 条）。
   List<HomeHeroItem> _heroItems = [];
   int _heroIndex = 0;
+  int _heroSeq = 0;
   final PageController _heroController = PageController();
 
   /// 启动静默检查更新定时器（首屏渲染后触发，dispose 时取消）。
@@ -248,7 +252,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               .then((items) {
             if (!mounted || seq != _loadSeq) return;
             slots[i] = _CategoryData(folder: libs[i], items: items);
-            _applyCategories(libs, slots);
+            _applyCategories(
+              libs,
+              slots,
+              accessToken: embyService.accessToken,
+            );
           }),
       ];
       await Future.wait(futures);
@@ -281,24 +289,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 按当前已返回的 [slots] 重建分类与媒体库栏（过滤空库、保持服务端排序），
   /// 首个分类到达即结束转圈。
-  void _applyCategories(List<LibraryFolder> libs, List<_CategoryData?> slots) {
+  void _applyCategories(
+    List<LibraryFolder> libs,
+    List<_CategoryData?> slots, {
+    String? accessToken,
+  }) {
     final categories = [
       for (final s in slots)
         if (s != null && s.items.isNotEmpty) s,
     ];
     final nonEmptyIds = {for (final c in categories) c.folder.id};
-    final heroItems = _pickHeroItems(categories);
     setState(() {
       _categories = categories;
-      _heroItems = heroItems;
-      if (_heroIndex >= heroItems.length) _heroIndex = 0;
       _libraries = [
         for (final lib in libs)
           if (nonEmptyIds.contains(lib.id)) lib,
       ];
       _isLoading = false;
     });
-    // 重新加载后轮播回到首页（items 变化时 PageView 可能停留在旧下标）
+    final heroSeq = ++_heroSeq;
+    unawaited(_refreshHeroItems(
+      categories,
+      seq: _loadSeq,
+      heroSeq: heroSeq,
+      accessToken: accessToken,
+    ));
+  }
+
+  Future<void> _refreshHeroItems(
+    List<_CategoryData> categories, {
+    required int seq,
+    required int heroSeq,
+    required String? accessToken,
+  }) async {
+    final seen = <String>{};
+    final candidates = <HeroImageCandidate<MediaItem>>[];
+    for (final category in categories) {
+      for (final item in category.items) {
+        if (!seen.add(item.id)) continue;
+        final url = item.backdropOriginalUrl;
+        if (url == null || url.isEmpty) continue;
+        candidates.add(HeroImageCandidate(
+          value: item,
+          url: url,
+          accessToken: accessToken,
+        ));
+      }
+    }
+    final picked = await ref.read(heroImageSelectorProvider).select(
+          candidates,
+          seed: Random().nextInt(0x7FFFFFFF),
+        );
+    if (!mounted || seq != _loadSeq || heroSeq != _heroSeq) return;
+    final heroItems =
+        picked.map(HomeHeroItem.fromMediaItem).toList(growable: false);
+    setState(() {
+      _heroItems = heroItems;
+      if (_heroIndex >= heroItems.length) _heroIndex = 0;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted &&
           _heroController.hasClients &&
@@ -306,23 +354,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _heroController.jumpToPage(0);
       }
     });
-  }
-
-  /// 从所有库条目中随机抽取最多 6 条做轮播；优先有宽幅背景的条目。
-  static List<HomeHeroItem> _pickHeroItems(List<_CategoryData> categories) {
-    final all = <MediaItem>[];
-    final seen = <String>{};
-    for (final c in categories) {
-      for (final item in c.items) {
-        if (seen.add(item.id)) all.add(item);
-      }
-    }
-    final withBackdrop = all.where((i) => i.backdropWideUrl != null).toList()
-      ..shuffle();
-    final rest = all.where((i) => i.backdropWideUrl == null).toList()
-      ..shuffle();
-    final pool = [...withBackdrop, ...rest];
-    return pool.take(6).map(HomeHeroItem.fromMediaItem).toList(growable: false);
   }
 
   @override

@@ -10,11 +10,13 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/image_quality_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
+import 'package:himi_syncwatch/services/image_size_probe.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -22,6 +24,13 @@ import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
+
+class _FakeImageSizeProbe extends ImageSizeProbe {
+  @override
+  Future<ImageSize?> probe(String url, {String? accessToken}) async {
+    return const ImageSize(3840, 2160);
+  }
+}
 
 Map<String, dynamic> _sessionJson({
   required String id,
@@ -52,6 +61,7 @@ Future<ProviderContainer> _pumpScreen(
   final container = ProviderContainer(
     overrides: [
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
+      imageSizeProbeProvider.overrideWithValue(_FakeImageSizeProbe()),
       embyAuthServiceProvider
           .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
@@ -1154,6 +1164,7 @@ void main() {
           name: '影片1',
           type: 'Movie',
           backdropWideUrl: 'https://a/1.jpg',
+          backdropOriginalUrl: 'https://a/1-original.jpg',
           backdropUrl: 'https://a/1s.jpg',
         ),
         MediaItem(
@@ -1161,6 +1172,7 @@ void main() {
           name: '影片2',
           type: 'Movie',
           backdropWideUrl: 'https://a/2.jpg',
+          backdropOriginalUrl: 'https://a/2-original.jpg',
           backdropUrl: 'https://a/2s.jpg',
         ),
       ],
@@ -1172,7 +1184,19 @@ void main() {
       settings: const AppSettings(homeCarousel: true),
     );
 
-    expect(find.byType(HomeHeroCarousel), findsOneWidget);
+    final carousel = tester.widget<HomeHeroCarousel>(
+      find.byType(HomeHeroCarousel),
+    );
+    expect(carousel.items, isNotEmpty);
+    expect(
+      carousel.items.every(
+        (item) =>
+            item.imageUrl!.contains('original') &&
+            !item.imageUrl!.contains('maxWidth='),
+      ),
+      isTrue,
+      reason: '顶部轮播只使用服务器原始背景',
+    );
     expect(find.byKey(const Key('homeAmbientImage')), findsOneWidget,
         reason: '轮播开启时首页背景改为虚化海报');
     expect(find.byKey(const Key('homeAmbientSeamLayer')), findsOneWidget,
@@ -1196,6 +1220,7 @@ void main() {
           name: '影片1',
           type: 'Movie',
           backdropWideUrl: 'https://a/1.jpg',
+          backdropOriginalUrl: 'https://a/1-original.jpg',
         ),
       ],
     );
@@ -1226,9 +1251,24 @@ void main() {
     final emby = FakeEmbyService(
       libraries: [_lib('lib1', '电影库')],
       items: [
-        MediaItem(id: 'm1', name: '影片1', type: 'Movie'),
-        MediaItem(id: 'm2', name: '影片2', type: 'Movie'),
-        MediaItem(id: 'm3', name: '影片3', type: 'Movie'),
+        MediaItem(
+          id: 'm1',
+          name: '影片1',
+          type: 'Movie',
+          backdropOriginalUrl: 'https://a/1-original.jpg',
+        ),
+        MediaItem(
+          id: 'm2',
+          name: '影片2',
+          type: 'Movie',
+          backdropOriginalUrl: 'https://a/2-original.jpg',
+        ),
+        MediaItem(
+          id: 'm3',
+          name: '影片3',
+          type: 'Movie',
+          backdropOriginalUrl: 'https://a/3-original.jpg',
+        ),
       ],
     );
     await _pumpScreen(

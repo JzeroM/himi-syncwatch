@@ -40,25 +40,27 @@ class TmdbPlatformCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           showShadow: false,
-          child: Row(
-            children: [
-              SizedBox(
-                key: ValueKey('tmdbPlatformPosterStack_${platform.providerId}'),
-                width: 64,
-                height: height - 16,
-                child: _PosterStack(
-                  platformId: platform.providerId,
-                  posters: posters,
-                  imageBase: imageBase,
-                  serverLookupComplete: serverLookupComplete,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  key: ValueKey(
+                      'tmdbPlatformPosterStack_${platform.providerId}'),
+                  width: 64,
+                  height: height - 16,
+                  child: _PosterStack(
+                    platformId: platform.providerId,
+                    posters: posters,
+                    imageBase: imageBase,
+                    serverLookupComplete: serverLookupComplete,
+                  ),
                 ),
-              ),
-              const SizedBox(
-                key: ValueKey('tmdbPlatformLogoGap'),
-                width: 2,
-              ),
-              Expanded(
-                child: Center(
+                const SizedBox(
+                  key: ValueKey('tmdbPlatformLogoGap'),
+                  width: 10,
+                ),
+                Flexible(
                   child: Image.asset(
                     platform.logoAsset,
                     key: ValueKey('tmdbPlatformLogo_${platform.providerId}'),
@@ -70,8 +72,8 @@ class TmdbPlatformCard extends StatelessWidget {
                     },
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

@@ -7,12 +7,12 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_discover_disc.dart';
-import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_platform_card.dart';
 import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
 import 'package:himi_syncwatch/widgets/tmdb_resume_bar.dart';
@@ -71,19 +71,12 @@ class _HomeListState extends ConsumerState<_HomeList> {
   final PageController _heroController = PageController();
   final Map<String, TmdbAvailability> _heroSources = {};
   int _heroIndex = 0;
+  late int _lastRefreshEpoch;
 
   @override
-  void didUpdateWidget(covariant _HomeList oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final heroes = _heroCandidates(widget.data);
-    if (_heroIndex >= heroes.length) {
-      _heroIndex = 0;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _heroController.hasClients) {
-          _heroController.jumpToPage(0);
-        }
-      });
-    }
+  void initState() {
+    super.initState();
+    _lastRefreshEpoch = ref.read(tmdbHomeRefreshEpochProvider);
   }
 
   @override
@@ -92,33 +85,16 @@ class _HomeListState extends ConsumerState<_HomeList> {
     super.dispose();
   }
 
-  static List<TmdbAvailability> _heroCandidates(TmdbHomeData data) {
-    final preferred = <TmdbAvailability>[];
-    final fallback = <TmdbAvailability>[];
-    final seen = <String>{};
-    for (final section in data.sections) {
-      for (final entry in section.items) {
-        if (!seen.add(entry.tmdb.key)) continue;
-        if (entry.tmdb.backdropPath != null) {
-          preferred.add(entry);
-        } else {
-          fallback.add(entry);
-        }
-      }
+  HomeHeroItem _toHero(TmdbAvailability entry) {
+    final serverUrl = entry.item.backdropOriginalUrl;
+    if (serverUrl != null) {
+      _heroSources[serverUrl] = entry;
+      final ambient = ambientBackdropUrl(serverUrl);
+      if (ambient != null) _heroSources[ambient] = entry;
     }
-    return [...preferred, ...fallback].take(6).toList(growable: false);
-  }
-
-  HomeHeroItem _toHero(TmdbAvailability entry, String imageBase) {
-    final serverUrl = entry.item.backdropWideUrl ??
-        entry.item.backdropUrl ??
-        entry.item.posterUrl;
-    final tmdbUrl = entry.tmdb.backdropUrl(imageBase, size: 'w780') ??
-        entry.tmdb.posterUrl(imageBase);
-    if (serverUrl != null) _heroSources[serverUrl] = entry;
     return HomeHeroItem(
       title: entry.tmdb.title,
-      imageUrl: serverUrl ?? tmdbUrl,
+      imageUrl: serverUrl,
       year: entry.tmdb.year,
       rating: entry.tmdb.voteAverage,
       genres: [entry.tmdb.type.label],
@@ -135,24 +111,15 @@ class _HomeListState extends ConsumerState<_HomeList> {
   }) {
     final entry = _heroSources[url];
     if (entry == null) {
-      return TmdbImage(
-        url: url,
-        fit: fit,
-        cacheWidth: cacheWidth,
-        placeholder: transparent ? const SizedBox.shrink() : null,
-        errorWidget:
-            errorWidget ?? (transparent ? const SizedBox.shrink() : null),
-      );
+      return errorWidget ?? const SizedBox.shrink();
     }
-    return TmdbAvailabilityImage(
-      entry: entry,
-      imageBase: ref.read(tmdbImageBaseProvider),
-      backdrop: true,
+    return EmbyImage(
+      url: url,
       fit: fit,
       cacheWidth: cacheWidth,
-      backdropSize: cacheWidth != null && cacheWidth <= 320 ? 'w300' : 'w780',
-      serverMaxWidth: cacheWidth,
-      transparent: transparent,
+      accessToken: entry.server.accessToken,
+      placeholder: transparent ? const SizedBox.shrink() : null,
+      errorWidget: errorWidget ?? const SizedBox.shrink(),
     );
   }
 
@@ -160,10 +127,23 @@ class _HomeListState extends ConsumerState<_HomeList> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final imageBase = ref.watch(tmdbImageBaseProvider);
+    final epoch = ref.watch(tmdbHomeRefreshEpochProvider);
+    if (epoch != _lastRefreshEpoch) {
+      _lastRefreshEpoch = epoch;
+      _heroIndex = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _heroController.hasClients) {
+          _heroController.jumpToPage(0);
+        }
+      });
+    }
     _heroSources.clear();
     final showHero = !widget.tvMode;
-    final heroes =
-        showHero ? _heroCandidates(widget.data) : const <TmdbAvailability>[];
+    final heroes = showHero
+        ? (ref.watch(tmdbHeroItemsProvider).valueOrNull ??
+            const <TmdbAvailability>[])
+        : const <TmdbAvailability>[];
+    if (_heroIndex >= heroes.length) _heroIndex = 0;
     final hero =
         heroes.isEmpty ? null : heroes[_heroIndex.clamp(0, heroes.length - 1)];
     final sections =
@@ -195,7 +175,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
             : carouselEnabled
                 ? HomeHeroCarousel(
                     items: [
-                      for (final entry in heroes) _toHero(entry, imageBase),
+                      for (final entry in heroes) _toHero(entry),
                     ],
                     controller: _heroController,
                     height: heroHeight,
@@ -211,7 +191,6 @@ class _HomeListState extends ConsumerState<_HomeList> {
                   )
                 : _Hero(
                     item: hero,
-                    imageBase: imageBase,
                     onTap: () => _openDetail(context, hero),
                   ),
       if (widget.resume.isNotEmpty)
@@ -270,7 +249,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
       children: [
         if (carouselEnabled && hero != null)
           HomeHeroBackground(
-            imageUrl: _toHero(hero, imageBase).imageUrl,
+            imageUrl: _toHero(hero).imageUrl,
             baseColor: Theme.of(context).scaffoldBackgroundColor,
             heroHeight: heroHeight,
             imageBuilder: _heroImage,
@@ -332,12 +311,10 @@ class _HeroSkeleton extends StatelessWidget {
 class _Hero extends StatelessWidget {
   const _Hero({
     required this.item,
-    required this.imageBase,
     required this.onTap,
   });
 
   final TmdbAvailability item;
-  final String imageBase;
   final VoidCallback onTap;
 
   @override
@@ -347,19 +324,19 @@ class _Hero extends StatelessWidget {
     final cacheWidth = (MediaQuery.sizeOf(context).width *
             MediaQuery.devicePixelRatioOf(context))
         .round();
+    final imageUrl = item.item.backdropOriginalUrl;
     return SizedBox(
       height: height,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          TmdbAvailabilityImage(
-            entry: item,
-            imageBase: imageBase,
-            backdrop: true,
-            backdropSize: 'w780',
-            cacheWidth: cacheWidth,
-            serverMaxWidth: cacheWidth,
-          ),
+          if (imageUrl != null)
+            EmbyImage(
+              url: imageUrl,
+              cacheWidth: cacheWidth,
+              accessToken: item.server.accessToken,
+              placeholder: const ColoredBox(color: Color(0xFF23252A)),
+            ),
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
