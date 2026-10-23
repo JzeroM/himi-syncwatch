@@ -8,11 +8,9 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
-import 'package:himi_syncwatch/providers/image_quality_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
-import 'package:himi_syncwatch/services/image_size_probe.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_image.dart';
@@ -38,13 +36,6 @@ const _netflix = TmdbPlatform(
   logoAsset: 'assets/images/platforms/netflix.png',
 );
 
-class _FakeImageSizeProbe extends ImageSizeProbe {
-  @override
-  Future<ImageSize?> probe(String url, {String? accessToken}) async {
-    return const ImageSize(3840, 2160);
-  }
-}
-
 TmdbAvailability _entry(int id) => TmdbAvailability(
       tmdb: TmdbItem(
         id: id,
@@ -55,7 +46,7 @@ TmdbAvailability _entry(int id) => TmdbAvailability(
         id: '$id',
         name: '影片$id',
         type: 'Movie',
-        backdropOriginalUrl: 'https://s1/backdrop/$id-original.jpg',
+        backdropWideUrl: 'https://s1/backdrop/$id.jpg?maxWidth=1600&quality=90',
       ),
       server: _server,
     );
@@ -95,7 +86,6 @@ Future<void> _pump(
         settingsProvider.overrideWith(
           (ref) => FakeSettingsNotifier(settings),
         ),
-        imageSizeProbeProvider.overrideWithValue(_FakeImageSizeProbe()),
         tmdbHomeProvider.overrideWith((ref) => Stream.value(data)),
         tmdbDiscProvider.overrideWith((ref) => Stream.value(discData)),
         tmdbPlatformShowcaseProvider.overrideWith((ref, platform) async {
@@ -347,11 +337,12 @@ void main() {
     expect(
       carousel.items.every(
         (item) =>
-            item.imageUrl!.contains('original') &&
+            item.imageUrl!.contains('maxWidth=1600') &&
+            item.imageUrl!.contains('quality=90') &&
             !item.imageUrl!.contains('image.tmdb.org'),
       ),
       isTrue,
-      reason: 'TMDB 顶部轮播只使用服务器原图',
+      reason: 'TMDB 顶部轮播使用服务器 1600 宽/质量 90 背景',
     );
 
     await tester.pumpWidget(const SizedBox());

@@ -86,7 +86,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
   }
 
   HomeHeroItem _toHero(TmdbAvailability entry) {
-    final serverUrl = entry.item.backdropOriginalUrl;
+    final serverUrl = entry.item.backdropWideUrl;
     if (serverUrl != null) {
       _heroSources[serverUrl] = entry;
       final ambient = ambientBackdropUrl(serverUrl);
@@ -140,8 +140,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
     _heroSources.clear();
     final showHero = !widget.tvMode;
     final heroes = showHero
-        ? (ref.watch(tmdbHeroItemsProvider).valueOrNull ??
-            const <TmdbAvailability>[])
+        ? ref.watch(tmdbHeroItemsProvider)
         : const <TmdbAvailability>[];
     if (_heroIndex >= heroes.length) _heroIndex = 0;
     final hero =
@@ -324,7 +323,7 @@ class _Hero extends StatelessWidget {
     final cacheWidth = (MediaQuery.sizeOf(context).width *
             MediaQuery.devicePixelRatioOf(context))
         .round();
-    final imageUrl = item.item.backdropOriginalUrl;
+    final imageUrl = item.item.backdropWideUrl;
     return SizedBox(
       height: height,
       child: Stack(

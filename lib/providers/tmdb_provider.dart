@@ -6,9 +6,7 @@ import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
-import 'package:himi_syncwatch/providers/image_quality_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/services/hero_image_selector.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
 
@@ -188,27 +186,22 @@ final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
   }
 });
 
-final tmdbHeroItemsProvider =
-    FutureProvider<List<TmdbAvailability>>((ref) async {
+final tmdbHeroItemsProvider = Provider<List<TmdbAvailability>>((ref) {
   final data = ref.watch(tmdbHomeProvider).valueOrNull;
   if (data == null || !data.configured) return const [];
   final seed = ref.watch(tmdbHomeRandomSeedProvider) ^
       ref.watch(tmdbHomeRefreshEpochProvider);
-  final candidates = <HeroImageCandidate<TmdbAvailability>>[];
+  final candidates = <TmdbAvailability>[];
   final seen = <String>{};
   for (final section in data.sections) {
     for (final entry in section.items) {
-      final url = entry.item.backdropOriginalUrl;
+      final url = entry.item.backdropWideUrl;
       if (url == null || url.isEmpty) continue;
-      if (!seen.add(entry.tmdb.key)) continue;
-      candidates.add(HeroImageCandidate(
-        value: entry,
-        url: url,
-        accessToken: entry.server.accessToken,
-      ));
+      if (seen.add(entry.tmdb.key)) candidates.add(entry);
     }
   }
-  return ref.watch(heroImageSelectorProvider).select(candidates, seed: seed);
+  candidates.shuffle(Random(seed));
+  return candidates.take(6).toList(growable: false);
 });
 
 /// 光盘栏目数据。

@@ -35,7 +35,7 @@ class HomeHeroItem {
   factory HomeHeroItem.fromMediaItem(MediaItem item) {
     return HomeHeroItem(
       title: item.name,
-      imageUrl: item.backdropOriginalUrl,
+      imageUrl: item.backdropWideUrl,
       logoUrl: item.logoUrl,
       year: item.year,
       rating: item.communityRating,

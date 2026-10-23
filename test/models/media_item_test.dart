@@ -87,35 +87,6 @@ void main() {
     });
   });
 
-  group('backdropOriginalUrl（轮播原图）', () {
-    test('有 Backdrop tag + serverUrl → 不带缩放/质量参数的原图 URL', () {
-      final item = MediaItem.fromJson({
-        'Id': 'm1',
-        'Name': '影片',
-        'Type': 'Movie',
-        'BackdropImageTags': ['b1'],
-      }, serverUrl: 'https://emby.test');
-
-      expect(
-        item.backdropOriginalUrl,
-        'https://emby.test/Items/m1/Images/Backdrop?tag=b1',
-      );
-      expect(item.backdropOriginalUrl, isNot(contains('maxWidth')));
-      expect(item.backdropOriginalUrl, isNot(contains('maxHeight')));
-      expect(item.backdropOriginalUrl, isNot(contains('quality')));
-    });
-
-    test('无 Backdrop tag → null', () {
-      final item = MediaItem.fromJson({
-        'Id': 'm1',
-        'Name': '影片',
-        'Type': 'Movie',
-        'ImageTags': {'Primary': 'p1'},
-      }, serverUrl: 'https://emby.test');
-      expect(item.backdropOriginalUrl, isNull);
-    });
-  });
-
   group('logoUrl（标题艺术字 ImageTags.Logo）', () {
     test('有 Logo tag + serverUrl → Logo 图 URL', () {
       final item = MediaItem.fromJson({

@@ -10,13 +10,11 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
-import 'package:himi_syncwatch/providers/image_quality_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
-import 'package:himi_syncwatch/services/image_size_probe.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -24,13 +22,6 @@ import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
-
-class _FakeImageSizeProbe extends ImageSizeProbe {
-  @override
-  Future<ImageSize?> probe(String url, {String? accessToken}) async {
-    return const ImageSize(3840, 2160);
-  }
-}
 
 Map<String, dynamic> _sessionJson({
   required String id,
@@ -61,7 +52,6 @@ Future<ProviderContainer> _pumpScreen(
   final container = ProviderContainer(
     overrides: [
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
-      imageSizeProbeProvider.overrideWithValue(_FakeImageSizeProbe()),
       embyAuthServiceProvider
           .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
@@ -1163,16 +1153,14 @@ void main() {
           id: 'm1',
           name: '影片1',
           type: 'Movie',
-          backdropWideUrl: 'https://a/1.jpg',
-          backdropOriginalUrl: 'https://a/1-original.jpg',
+          backdropWideUrl: 'https://a/1-backdrop.jpg?maxWidth=1600&quality=90',
           backdropUrl: 'https://a/1s.jpg',
         ),
         MediaItem(
           id: 'm2',
           name: '影片2',
           type: 'Movie',
-          backdropWideUrl: 'https://a/2.jpg',
-          backdropOriginalUrl: 'https://a/2-original.jpg',
+          backdropWideUrl: 'https://a/2-backdrop.jpg?maxWidth=1600&quality=90',
           backdropUrl: 'https://a/2s.jpg',
         ),
       ],
@@ -1191,11 +1179,11 @@ void main() {
     expect(
       carousel.items.every(
         (item) =>
-            item.imageUrl!.contains('original') &&
-            !item.imageUrl!.contains('maxWidth='),
+            item.imageUrl!.contains('maxWidth=1600') &&
+            item.imageUrl!.contains('quality=90'),
       ),
       isTrue,
-      reason: '顶部轮播只使用服务器原始背景',
+      reason: '顶部轮播使用服务器 1600 宽/质量 90 背景',
     );
     expect(find.byKey(const Key('homeAmbientImage')), findsOneWidget,
         reason: '轮播开启时首页背景改为虚化海报');
@@ -1219,8 +1207,7 @@ void main() {
           id: 'm1',
           name: '影片1',
           type: 'Movie',
-          backdropWideUrl: 'https://a/1.jpg',
-          backdropOriginalUrl: 'https://a/1-original.jpg',
+          backdropWideUrl: 'https://a/1-backdrop.jpg?maxWidth=1600&quality=90',
         ),
       ],
     );
@@ -1255,19 +1242,19 @@ void main() {
           id: 'm1',
           name: '影片1',
           type: 'Movie',
-          backdropOriginalUrl: 'https://a/1-original.jpg',
+          backdropWideUrl: 'https://a/1-backdrop.jpg?maxWidth=1600&quality=90',
         ),
         MediaItem(
           id: 'm2',
           name: '影片2',
           type: 'Movie',
-          backdropOriginalUrl: 'https://a/2-original.jpg',
+          backdropWideUrl: 'https://a/2-backdrop.jpg?maxWidth=1600&quality=90',
         ),
         MediaItem(
           id: 'm3',
           name: '影片3',
           type: 'Movie',
-          backdropOriginalUrl: 'https://a/3-original.jpg',
+          backdropWideUrl: 'https://a/3-backdrop.jpg?maxWidth=1600&quality=90',
         ),
       ],
     );
