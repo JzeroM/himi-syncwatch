@@ -248,6 +248,23 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       mounted && !switchingEngine;
 
+  /// 字幕样式属性写入序列（纯逻辑，可单测）。
+  ///
+  /// MDK 的 `subtitle.margin.y` 在字幕垂直居中时无效；PGS 等位图字幕
+  /// 部分资源会被按居中处理，导致只能缩放不能移动。位图且走 MDK 时先
+  /// 强制底部对齐，再写位置/缩放，使位置滑杆生效。
+  @visibleForTesting
+  static List<({String name, String value})> subtitleStyleWrites({
+    required bool forceBitmapBottom,
+    required double scale,
+    required int marginY,
+  }) =>
+      [
+        if (forceBitmapBottom) (name: 'subtitle.alignment.y', value: '1'),
+        (name: 'subtitle.scale', value: scale.toStringAsFixed(2)),
+        (name: 'subtitle.margin.y', value: '$marginY'),
+      ];
+
   /// 轮询等待 [ready] 为 true（超时返回 false）。
   @visibleForTesting
   static Future<bool> waitUntil(
@@ -3944,6 +3961,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _activeSubtitleIndex =
         _embySubtitleStreams.isNotEmpty ? _embySubtitleStreams[0].index : null;
     _activeLocalSubtitlePath = null;
+    _applySubtitleStyle();
   }
 
   void _refreshTracks() {
@@ -7398,16 +7416,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  /// 当前引擎 Erika 且激活字幕为位图（PGS/VobSub/DVB）→ 样式/位置/延迟不可调。
-  /// 位图字幕由 Erika 以原生尺寸/位置合成，libass 样式/缩放对其无效。
-  bool _erikaActiveSubtitleIsBitmap() {
-    if (_currentEngine != PlayerEngine.erika) return false;
+  /// 当前激活字幕是否为 PGS/VobSub/DVB 位图字幕。
+  bool get _activeSubtitleIsBitmap {
     final idx = _activeSubtitleIndex;
     if (idx == null || idx < 0) return false;
     final pos = _embySubtitleStreams.indexWhere((s) => s.index == idx);
     if (pos < 0) return false;
     return PlayerScreen.isBitmapSubtitleCodec(_embySubtitleStreams[pos].codec);
   }
+
+  /// 当前引擎 Erika 且激活字幕为位图（PGS/VobSub/DVB）→ 样式/位置/延迟不可调。
+  /// 位图字幕由 Erika 以原生尺寸/位置合成，libass 样式/缩放对其无效。
+  bool _erikaActiveSubtitleIsBitmap() =>
+      _currentEngine == PlayerEngine.erika && _activeSubtitleIsBitmap;
 
   // ── Erika 原生弹幕（引擎内 GPU 合成）──────────────────────
 
@@ -9174,6 +9195,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _useServerSubtitleBurnIn = false;
     _activeSubtitleIndex = stream.index;
     _activeLocalSubtitlePath = null;
+    _applySubtitleStyle();
     // 延迟 ≠0：立即用偏移后的 SRT 替换刚激活的轨
     _maybeApplySubtitleDelay();
   }
@@ -9203,8 +9225,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     )) {
       return;
     }
-    _player.setProperty('subtitle.scale', _subtitleScale.toStringAsFixed(2));
-    _player.setProperty('subtitle.margin.y', '$_subtitleMarginY');
+    final forceBitmapBottom =
+        _currentEngine == PlayerEngine.mdk && _activeSubtitleIsBitmap;
+    for (final write in PlayerScreen.subtitleStyleWrites(
+      forceBitmapBottom: forceBitmapBottom,
+      scale: _subtitleScale,
+      marginY: _subtitleMarginY,
+    )) {
+      _player.setProperty(write.name, write.value);
+    }
   }
 
   /// 滑杆拖动期间的去抖写入（100ms）；最终值由 [_applySubtitleStyle] 落定。
@@ -9394,6 +9423,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _activeLocalSubtitlePath = filePath;
         _useServerSubtitleBurnIn = false;
       });
+      _applySubtitleStyle();
       // 延迟 ≠0：用偏移后的副本替换本地原文件
       _maybeApplySubtitleDelay();
 
