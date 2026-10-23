@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -34,6 +35,34 @@ final tmdbAggregateServiceProvider = Provider<TmdbAggregateService?>((ref) {
   );
 });
 
+/// 平台卡服务器海报反查状态。
+class TmdbPlatformAvailabilityState {
+  const TmdbPlatformAvailabilityState({
+    this.entries = const {},
+    required this.complete,
+  });
+
+  final Map<String, TmdbAvailability> entries;
+
+  /// 是否已经查完全部服务器；false 时没有匹配也不能回退 TMDB。
+  final bool complete;
+}
+
+List<EmbyServerConfig> _primaryServers(
+  List<EmbyServerConfig> servers,
+  String? activeId,
+) {
+  final authenticated =
+      servers.where((s) => s.isAuthenticated).toList(growable: false);
+  if (authenticated.isEmpty) return const [];
+  if (activeId != null && activeId.isNotEmpty) {
+    for (final server in authenticated) {
+      if (server.id == activeId) return [server];
+    }
+  }
+  return [authenticated.first];
+}
+
 /// TMDB 图片基地址。
 final tmdbImageBaseProvider = Provider<String>((ref) {
   return ref.watch(
@@ -66,6 +95,10 @@ final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
   }
   final servers = ref.watch(embyServerListProvider);
   final activeId = ref.watch(embyConfigProvider)?.id;
+  final primary = _primaryServers(servers, activeId);
+  final initialServers = primary.isEmpty ? servers : primary;
+  final authenticatedCount = servers.where((s) => s.isAuthenticated).length;
+  final hasSecondary = primary.isNotEmpty && authenticatedCount > 1;
 
   var disposed = false;
   ref.onDispose(() => disposed = true);
@@ -84,11 +117,14 @@ final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
 
   yield snapshot(loading: true);
 
-  Future<TmdbSectionData?> load(String key) async {
+  Future<TmdbSectionData?> load(
+    String key,
+    List<EmbyServerConfig> targets,
+  ) async {
     try {
       final result = await service.fetchSection(
         key,
-        servers,
+        targets,
         activeServerId: activeId,
         pages: 1,
       );
@@ -103,8 +139,8 @@ final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
     }
   }
 
-  final pending = <(String, Future<TmdbSectionData?>)>[
-    for (final key in sectionKeys) (key, load(key)),
+  var pending = <(String, Future<TmdbSectionData?>)>[
+    for (final key in sectionKeys) (key, load(key, initialServers)),
   ];
   while (pending.isNotEmpty) {
     final done = await Future.any([
@@ -119,10 +155,34 @@ final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
   }
 
   if (disposed) return;
-  yield snapshot(loading: false);
+  final hasInitialContent = loaded.values.any((s) => s.items.isNotEmpty);
+  yield snapshot(loading: hasInitialContent ? false : hasSecondary);
+  if (!hasSecondary) return;
+
+  pending = [
+    for (final key in sectionKeys) (key, load(key, servers)),
+  ];
+  while (pending.isNotEmpty) {
+    final done = await Future.any([
+      for (final entry in pending)
+        entry.$2.then((section) => (entry.$1, section)),
+    ]);
+    pending.removeWhere((entry) => entry.$1 == done.$1);
+    if (disposed) return;
+    final section = done.$2;
+    if (section != null) {
+      final previous = loaded[section.key];
+      if (section.items.isNotEmpty ||
+          previous == null ||
+          previous.items.isEmpty) {
+        loaded[section.key] = section;
+      }
+    }
+    yield snapshot(loading: false);
+  }
 });
 
-/// 单个平台卡的每日海报（先只取 TMDB 图，尽快显示）。
+/// 单个平台卡的每日海报（只取 TMDB 目录，不加载 TMDB 图片）。
 final tmdbPlatformShowcaseProvider =
     FutureProvider.family<TmdbPlatformShowcase, TmdbPlatform>(
   (ref, platform) async {
@@ -141,24 +201,57 @@ final tmdbPlatformShowcaseProvider =
   },
 );
 
-/// 平台卡服务器实图补齐；不阻塞 TMDB 海报首帧。
+/// 平台卡服务器实图补齐；先当前服务器，再后台补齐其他服务器。
 final tmdbPlatformAvailabilityProvider =
-    FutureProvider.family<Map<String, TmdbAvailability>, TmdbPlatform>(
-  (ref, platform) async {
+    StreamProvider.family<TmdbPlatformAvailabilityState, TmdbPlatform>(
+  (ref, platform) async* {
     final configured =
         ref.watch(settingsProvider.select((s) => s.hasTmdbCredentials));
-    if (!configured) return const {};
+    if (!configured) {
+      yield const TmdbPlatformAvailabilityState(complete: true);
+      return;
+    }
     final service = ref.watch(tmdbAggregateServiceProvider);
-    if (service == null) return const {};
+    if (service == null) {
+      yield const TmdbPlatformAvailabilityState(complete: true);
+      return;
+    }
     final servers = ref.watch(embyServerListProvider);
     final activeId = ref.watch(embyConfigProvider)?.id;
+    final primary = _primaryServers(servers, activeId);
+    final initialServers = primary.isEmpty ? servers : primary;
+    final authenticatedCount = servers.where((s) => s.isAuthenticated).length;
+    final hasSecondary = primary.isNotEmpty && authenticatedCount > 1;
     final showcase =
         await ref.watch(tmdbPlatformShowcaseProvider(platform).future);
-    return service.resolvePlatformShowcase(
-      showcase,
-      servers,
-      activeServerId: activeId,
+
+    var entries = const <String, TmdbAvailability>{};
+    try {
+      entries = await service.resolvePlatformShowcase(
+        showcase,
+        initialServers,
+        activeServerId: activeId,
+      );
+    } catch (_) {}
+    yield TmdbPlatformAvailabilityState(
+      entries: entries,
+      complete: !hasSecondary,
     );
+    if (!hasSecondary) return;
+
+    try {
+      final full = await service.resolvePlatformShowcase(
+        showcase,
+        servers,
+        activeServerId: activeId,
+      );
+      yield TmdbPlatformAvailabilityState(
+        entries: {...entries, ...full},
+        complete: true,
+      );
+    } catch (_) {
+      yield TmdbPlatformAvailabilityState(entries: entries, complete: true);
+    }
   },
 );
 

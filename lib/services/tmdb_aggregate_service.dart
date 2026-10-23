@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:himi_syncwatch/models/emby_server_config.dart';
@@ -19,6 +20,15 @@ class _AvailCacheEntry {
   final DateTime expiresAt;
 
   bool get expired => DateTime.now().isAfter(expiresAt);
+}
+
+class _PendingProviderLookup {
+  _PendingProviderLookup(this.server, this.type);
+
+  final EmbyServerConfig server;
+  final TmdbMediaType type;
+  final Set<String> ids = {};
+  final List<Completer<Map<String, MediaItem>>> waiters = [];
 }
 
 class TmdbAvailabilityResult {
@@ -66,6 +76,7 @@ class TmdbAggregateService {
   final EmbyService Function(EmbyServerConfig server) serviceFactory;
 
   final Map<String, _AvailCacheEntry> _cache = {};
+  final Map<String, _PendingProviderLookup> _pendingLookups = {};
 
   static const _sectionTitles = <String, String>{
     'trending_day': '今日趋势',
@@ -107,54 +118,129 @@ class TmdbAggregateService {
     if (wanted.isEmpty || servers.isEmpty) return result;
 
     Future<void> runOne(EmbyServerConfig server) async {
-      final byId = <String, MediaItem>{};
-      final toQuery = <String>[];
-      for (final id in wanted) {
-        final key = _cacheKey(server.id, type, id);
-        final cached = _cache[key];
-        if (cached != null && !cached.expired) {
-          final item = cached.item;
-          if (item != null) byId[id] = item;
-        } else {
-          toQuery.add(id);
-        }
-      }
-      if (toQuery.isNotEmpty) {
-        try {
-          final service = serviceFactory(server);
-          for (var start = 0; start < toQuery.length; start += 20) {
-            final end =
-                start + 20 >= toQuery.length ? toQuery.length : start + 20;
-            final List<String> chunk = toQuery.sublist(start, end);
-            final items = await service.getItemsByProviderIds(
-              tmdbIds: chunk,
-              includeItemTypes: type.embyType,
-            );
-            final returned = <String>{};
-            for (final item in items) {
-              final tmdbId = item.tmdbId;
-              if (tmdbId == null || !chunk.contains(tmdbId)) continue;
-              final existing = byId[tmdbId];
-              if (existing == null ||
-                  (existing.posterUrl == null && item.posterUrl != null)) {
-                byId[tmdbId] = item;
-              }
-              returned.add(tmdbId);
-            }
-            for (final id in chunk) {
-              _cache[_cacheKey(server.id, type, id)] =
-                  _AvailCacheEntry(byId[id]);
-            }
-          }
-        } catch (_) {
-          failedServerIds.add(server.id);
-        }
-      }
-      result[server.id] = byId;
+      result[server.id] = await _lookupServer(
+        server,
+        type,
+        wanted,
+        failedServerIds,
+      );
     }
 
     await Future.wait(servers.map(runOne));
     return result;
+  }
+
+  Future<Map<String, MediaItem>> _lookupServer(
+    EmbyServerConfig server,
+    TmdbMediaType type,
+    List<String> wanted,
+    Set<String> failedServerIds,
+  ) async {
+    final byId = <String, MediaItem>{};
+    final toQuery = <String>[];
+    for (final id in wanted) {
+      final key = _cacheKey(server.id, type, id);
+      final cached = _cache[key];
+      if (cached != null && !cached.expired) {
+        final item = cached.item;
+        if (item != null) byId[id] = item;
+      } else {
+        toQuery.add(id);
+      }
+    }
+    if (toQuery.isEmpty) return byId;
+
+    try {
+      final queried = await _queryProviderIdsBatched(server, type, toQuery);
+      for (final id in toQuery) {
+        final item = queried[id];
+        if (item != null) byId[id] = item;
+      }
+    } catch (_) {
+      failedServerIds.add(server.id);
+    }
+    return byId;
+  }
+
+  /// 将同一服务器/类型的并发查询合并成一批，避免栏目与平台卡同时反查时
+  /// 对同一批 TMDB id 重复请求 Emby。
+  Future<Map<String, MediaItem>> _queryProviderIdsBatched(
+    EmbyServerConfig server,
+    TmdbMediaType type,
+    List<String> ids,
+  ) {
+    final key = '${server.id}|${type.embyType}';
+    final completer = Completer<Map<String, MediaItem>>();
+    final pending = _pendingLookups[key];
+    if (pending != null) {
+      pending.ids.addAll(ids);
+      pending.waiters.add(completer);
+      return completer.future;
+    }
+
+    final created = _PendingProviderLookup(server, type);
+    created.ids.addAll(ids);
+    created.waiters.add(completer);
+    _pendingLookups[key] = created;
+    Timer(const Duration(milliseconds: 8), () {
+      _flushProviderLookup(key, created);
+    });
+    return completer.future;
+  }
+
+  Future<void> _flushProviderLookup(
+    String key,
+    _PendingProviderLookup pending,
+  ) async {
+    if (identical(_pendingLookups[key], pending)) {
+      _pendingLookups.remove(key);
+    }
+    final ids = pending.ids.toList(growable: false);
+    try {
+      final byId = await _queryProviderIds(
+        pending.server,
+        pending.type,
+        ids,
+      );
+      for (final id in ids) {
+        _cache[_cacheKey(pending.server.id, pending.type, id)] =
+            _AvailCacheEntry(byId[id]);
+      }
+      for (final waiter in pending.waiters) {
+        if (!waiter.isCompleted) waiter.complete(byId);
+      }
+    } catch (e, stackTrace) {
+      for (final waiter in pending.waiters) {
+        if (!waiter.isCompleted) waiter.completeError(e, stackTrace);
+      }
+    }
+  }
+
+  Future<Map<String, MediaItem>> _queryProviderIds(
+    EmbyServerConfig server,
+    TmdbMediaType type,
+    List<String> ids,
+  ) async {
+    final byId = <String, MediaItem>{};
+    final service = serviceFactory(server);
+    for (var start = 0; start < ids.length; start += 20) {
+      final end = start + 20 >= ids.length ? ids.length : start + 20;
+      final List<String> chunk = ids.sublist(start, end);
+      final items = await service.getItemsByProviderIds(
+        tmdbIds: chunk,
+        includeItemTypes: type.embyType,
+      );
+      for (final item in items) {
+        final tmdbId = item.tmdbId;
+        if (tmdbId == null || !chunk.contains(tmdbId)) continue;
+        final existing = byId[tmdbId];
+        if (existing == null ||
+            (existing.posterUrl == null && item.posterUrl != null)) {
+          byId[tmdbId] = item;
+        }
+      }
+    }
+    return byId;
   }
 
   Future<TmdbAvailabilityResult> resolveAvailability(
@@ -183,16 +269,22 @@ class TmdbAggregateService {
       if (!seen.add(tmdbItem.key)) continue;
       final lookup = lookups[tmdbItem.type];
       if (lookup == null) continue;
+      TmdbAvailability? firstMatch;
       for (final server in ordered) {
         final local = lookup[server.id]?[tmdbItem.id.toString()];
         if (local == null) continue;
-        out.add(TmdbAvailability(
+        final match = TmdbAvailability(
           tmdb: tmdbItem,
           item: local,
           server: server,
-        ));
-        break;
+        );
+        firstMatch ??= match;
+        if (local.posterUrl != null) {
+          firstMatch = match;
+          break;
+        }
       }
+      if (firstMatch != null) out.add(firstMatch);
     }
     return TmdbAvailabilityResult(
       items: out,

@@ -361,6 +361,9 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
                                 cacheWidth: (cellWidth *
                                         MediaQuery.devicePixelRatioOf(context))
                                     .round(),
+                                posterSize: 'w154',
+                                fadeInDuration:
+                                    const Duration(milliseconds: 120),
                               ),
                               serverBadge: entry.server.label,
                               onTap: () => context.push(

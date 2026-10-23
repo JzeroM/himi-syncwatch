@@ -134,7 +134,7 @@ void main() {
     expect(find.byIcon(Icons.movie_outlined), findsNWidgets(2));
   });
 
-  testWidgets('有服务器实图时使用轻量图并在加载中先显示 TMDB', (tester) async {
+  testWidgets('有服务器实图时直接使用服务器图，不预加载 TMDB', (tester) async {
     final item = TmdbItem(
       id: 201,
       type: TmdbMediaType.movie,
@@ -183,8 +183,32 @@ void main() {
     );
     expect(image.posterSize, 'w154');
     expect(image.serverMaxHeight, 240);
-    expect(image.showTmdbWhileLoading, isTrue);
-    expect(find.byType(TmdbImage), findsOneWidget);
+    expect(image.showTmdbWhileLoading, isFalse);
+    expect(find.byType(TmdbImage), findsNothing);
+  });
+
+  testWidgets('服务器反查未完成时使用中性骨架，不加载 TMDB', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        TmdbPlatformCard(
+          showcase: const TmdbPlatformShowcase(
+            platform: _platform,
+            posters: [_poster0, _poster1],
+          ),
+          imageBase: 'https://image.example',
+          onTap: () {},
+          serverLookupComplete: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('tmdbPlatformPoster_8_0')),
+      findsOneWidget,
+    );
+    expect(find.byType(TmdbImage), findsNothing);
+    expect(find.byType(TmdbAvailabilityImage), findsNothing);
   });
 
   testWidgets('本地 Logo 加载失败时回退平台名称', (tester) async {

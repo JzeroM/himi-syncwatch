@@ -11,6 +11,8 @@ import 'package:himi_syncwatch/screens/tmdb/tmdb_grid_screen.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
+import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -175,6 +177,13 @@ void main() {
     expect(delegate.crossAxisCount, 6);
     expect(find.byKey(const ValueKey('tmdbGrid_s1_1')), findsOneWidget);
     expect(find.text('服务器A'), findsWidgets);
+
+    final card = tester.widget<TmdbPosterCard>(
+      find.byType(TmdbPosterCard).first,
+    );
+    final poster = card.poster! as TmdbAvailabilityImage;
+    expect(poster.posterSize, 'w154');
+    expect(poster.showTmdbWhileLoading, isFalse);
   });
 
   testWidgets('栏目全部页首屏一页并自动加载下一页', (tester) async {

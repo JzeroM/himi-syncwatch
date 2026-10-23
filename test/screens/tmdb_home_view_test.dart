@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
+import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_platform_card.dart';
 import 'package:himi_syncwatch/widgets/tmdb_poster_card.dart';
 
@@ -58,6 +59,8 @@ Future<void> _pump(
   required TmdbHomeData data,
   required AppSettings settings,
   List<TmdbPlatformShowcase> showcases = const [],
+  TmdbPlatformAvailabilityState availability =
+      const TmdbPlatformAvailabilityState(complete: true),
 }) async {
   tester.view.physicalSize = const Size(800, 1200);
   tester.view.devicePixelRatio = 1;
@@ -78,7 +81,7 @@ Future<void> _pump(
           return TmdbPlatformShowcase(platform: platform);
         }),
         tmdbPlatformAvailabilityProvider.overrideWith(
-          (ref, platform) async => const <String, TmdbAvailability>{},
+          (ref, platform) => Stream.value(availability),
         ),
       ],
       child: const MaterialApp(
@@ -114,7 +117,9 @@ void main() {
     final card = tester.widget<TmdbPosterCard>(
       find.byType(TmdbPosterCard).first,
     );
-    expect(card.poster, isA<TmdbAvailabilityImage>());
+    final poster = card.poster! as TmdbAvailabilityImage;
+    expect(poster.posterSize, 'w154');
+    expect(poster.showTmdbWhileLoading, isFalse);
   });
 
   testWidgets('首页轮播开启时最多取 6 个去重候选', (tester) async {
@@ -164,6 +169,43 @@ void main() {
         .firstWhere((list) => list.childrenDelegate.estimatedChildCount == 7);
     expect(platformList.scrollDirection, Axis.horizontal);
     expect(tmdbPlatforms[5].name, 'Prime Video');
+  });
+
+  testWidgets('平台栏反查未完成时只显示中性骨架，不加载 TMDB 图', (tester) async {
+    await _pump(
+      tester,
+      data: _data(1),
+      settings: const AppSettings(homeCarousel: false),
+      showcases: const [
+        TmdbPlatformShowcase(
+          platform: _netflix,
+          posters: [
+            TmdbPlatformPoster(
+              tmdb: TmdbItem(
+                id: 11,
+                type: TmdbMediaType.movie,
+                title: 'Poster 11',
+                posterPath: '/p11.jpg',
+              ),
+            ),
+          ],
+        ),
+      ],
+      availability: const TmdbPlatformAvailabilityState(complete: false),
+    );
+    await tester.pump();
+
+    final card = tester.widget<TmdbPlatformCard>(
+      find.byKey(const ValueKey('tmdbPlatform_8')),
+    );
+    expect(card.serverLookupComplete, isFalse);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tmdbPlatform_8')),
+        matching: find.byType(TmdbImage),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('平台栏展示两张海报与图片基地址', (tester) async {

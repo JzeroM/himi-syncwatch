@@ -111,8 +111,8 @@ class _HomeListState extends ConsumerState<_HomeList> {
     final serverUrl = entry.item.backdropWideUrl ??
         entry.item.backdropUrl ??
         entry.item.posterUrl;
-    final tmdbUrl =
-        entry.tmdb.backdropUrl(imageBase) ?? entry.tmdb.posterUrl(imageBase);
+    final tmdbUrl = entry.tmdb.backdropUrl(imageBase, size: 'w780') ??
+        entry.tmdb.posterUrl(imageBase);
     if (serverUrl != null) _heroSources[serverUrl] = entry;
     return HomeHeroItem(
       title: entry.tmdb.title,
@@ -148,6 +148,8 @@ class _HomeListState extends ConsumerState<_HomeList> {
       backdrop: true,
       fit: fit,
       cacheWidth: cacheWidth,
+      backdropSize: cacheWidth != null && cacheWidth <= 320 ? 'w300' : 'w780',
+      serverMaxWidth: cacheWidth,
       transparent: transparent,
     );
   }
@@ -246,7 +248,10 @@ class _HomeListState extends ConsumerState<_HomeList> {
             i--;
           }
           if (i == 0) {
-            return _PlatformBar(tvMode: widget.tvMode);
+            return _PlatformBar(
+              tvMode: widget.tvMode,
+              allowServerPosters: !widget.data.sectionsLoading,
+            );
           }
           i--;
           if (i < sections.length) {
@@ -346,6 +351,9 @@ class _Hero extends StatelessWidget {
   Widget build(BuildContext context) {
     final height =
         (MediaQuery.sizeOf(context).height * 0.40).clamp(260.0, 440.0);
+    final cacheWidth = (MediaQuery.sizeOf(context).width *
+            MediaQuery.devicePixelRatioOf(context))
+        .round();
     return SizedBox(
       height: height,
       child: Stack(
@@ -355,6 +363,9 @@ class _Hero extends StatelessWidget {
             entry: item,
             imageBase: imageBase,
             backdrop: true,
+            backdropSize: 'w780',
+            cacheWidth: cacheWidth,
+            serverMaxWidth: cacheWidth,
           ),
           const DecoratedBox(
             decoration: BoxDecoration(
@@ -437,9 +448,13 @@ class _Hero extends StatelessWidget {
 }
 
 class _PlatformBar extends ConsumerWidget {
-  const _PlatformBar({required this.tvMode});
+  const _PlatformBar({
+    required this.tvMode,
+    required this.allowServerPosters,
+  });
 
   final bool tvMode;
+  final bool allowServerPosters;
 
   static const double _height = 84;
 
@@ -470,6 +485,7 @@ class _PlatformBar extends ConsumerWidget {
                 child: _PlatformCard(
                   platform: tmdbPlatforms[index],
                   width: cardWidth,
+                  allowServerPosters: allowServerPosters,
                 ),
               );
             },
@@ -481,19 +497,26 @@ class _PlatformBar extends ConsumerWidget {
 }
 
 class _PlatformCard extends ConsumerWidget {
-  const _PlatformCard({required this.platform, required this.width});
+  const _PlatformCard({
+    required this.platform,
+    required this.width,
+    required this.allowServerPosters,
+  });
 
   final TmdbPlatform platform;
   final double width;
+  final bool allowServerPosters;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final base =
         ref.watch(tmdbPlatformShowcaseProvider(platform)).valueOrNull ??
             TmdbPlatformShowcase(platform: platform);
-    final availability =
-        ref.watch(tmdbPlatformAvailabilityProvider(platform)).valueOrNull;
-    final showcase = availability == null || availability.isEmpty
+    final availability = allowServerPosters
+        ? ref.watch(tmdbPlatformAvailabilityProvider(platform)).valueOrNull
+        : null;
+    final entries = availability?.entries;
+    final showcase = entries == null || entries.isEmpty
         ? base
         : TmdbPlatformShowcase(
             platform: platform,
@@ -501,8 +524,7 @@ class _PlatformCard extends ConsumerWidget {
               for (final poster in base.posters)
                 TmdbPlatformPoster(
                   tmdb: poster.tmdb,
-                  availability:
-                      availability[poster.tmdb.key] ?? poster.availability,
+                  availability: entries[poster.tmdb.key] ?? poster.availability,
                 ),
             ],
           );
@@ -511,6 +533,7 @@ class _PlatformCard extends ConsumerWidget {
       showcase: showcase,
       imageBase: ref.watch(tmdbImageBaseProvider),
       width: width,
+      serverLookupComplete: availability?.complete ?? false,
       onTap: () => context.push(
         '/tmdb/platform/${platform.providerId}',
       ),
@@ -587,6 +610,8 @@ class _SectionRow extends StatelessWidget {
                       imageBase: imageBase,
                       cacheWidth: (102 * MediaQuery.devicePixelRatioOf(context))
                           .round(),
+                      posterSize: 'w154',
+                      fadeInDuration: const Duration(milliseconds: 120),
                     ),
                     onTap: () => context.push(
                       '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',

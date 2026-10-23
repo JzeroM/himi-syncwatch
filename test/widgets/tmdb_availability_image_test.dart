@@ -65,6 +65,7 @@ void main() {
     expect(image.url, 'https://s1/Items/local/Images/Primary');
     expect(image.accessToken, 'token-a');
     expect(image.errorWidget, isA<TmdbImage>());
+    expect(find.byType(TmdbImage), findsNothing, reason: '服务器图存在时不预加载 TMDB');
   });
 
   testWidgets('服务器海报加载时先展示轻量 TMDB 图', (tester) async {
@@ -122,5 +123,45 @@ void main() {
 
     final image = tester.widget<EmbyImage>(find.byType(EmbyImage));
     expect(image.url, 'https://s1/Items/local/Images/Backdrop');
+  });
+
+  testWidgets('背景图限制 TMDB 尺寸与服务器宽度', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        TmdbAvailabilityImage(
+          entry: _entry(
+            backdropUrl: 'https://s1/Items/local/Images/Backdrop?maxWidth=1600',
+          ),
+          imageBase: 'https://image.example/t/p',
+          backdrop: true,
+          backdropSize: 'w780',
+          serverMaxWidth: 1080,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final image = tester.widget<EmbyImage>(find.byType(EmbyImage));
+    expect(image.url, contains('maxWidth=1080'));
+  });
+
+  testWidgets('没有服务器背景时才使用指定尺寸的 TMDB 背景', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        TmdbAvailabilityImage(
+          entry: _entry(),
+          imageBase: 'https://image.example/t/p',
+          backdrop: true,
+          backdropSize: 'w780',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final image = tester.widget<TmdbImage>(find.byType(TmdbImage));
+    expect(
+      image.url,
+      'https://image.example/t/p/w780/tmdb-backdrop.jpg',
+    );
   });
 }

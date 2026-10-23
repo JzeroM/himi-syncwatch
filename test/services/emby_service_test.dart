@@ -975,6 +975,83 @@ void main() {
     });
   });
 
+  group('按 TMDB id 反查的扫描降级', () {
+    Map<String, dynamic> item(String id, String tmdb) => {
+          'Id': id,
+          'Name': 'Movie $tmdb',
+          'Type': 'Movie',
+          'ProviderIds': {'Tmdb': tmdb},
+        };
+
+    void stubItems() {
+      respondWith = (path) => path == '/Items'
+          ? {
+              'Items': [
+                item('local-101', '101'),
+                item('local-102', '102'),
+              ],
+            }
+          : {'Items': <dynamic>[]};
+      statusFor = (path) {
+        if (path != '/Items') return HttpStatus.ok;
+        return captured.last.param('AnyProviderIdEquals') == null
+            ? HttpStatus.ok
+            : HttpStatus.badRequest;
+      };
+    }
+
+    test('过滤参数不支持时只扫描一次，并缓存后续查询', () async {
+      stubItems();
+
+      final first = await service.getItemsByProviderIds(
+        tmdbIds: ['101', '102'],
+        includeItemTypes: 'Movie',
+      );
+      expect(first.map((e) => e.tmdbId), ['101', '102']);
+
+      final filterCalls = captured
+          .where((r) => r.path == '/Items')
+          .where((r) => r.param('AnyProviderIdEquals') != null)
+          .length;
+      final scans = captured
+          .where((r) => r.path == '/Items')
+          .where((r) => r.param('AnyProviderIdEquals') == null)
+          .length;
+      expect(filterCalls, 1);
+      expect(scans, 1);
+
+      final second = await service.getItemsByProviderIds(
+        tmdbIds: ['102'],
+        includeItemTypes: 'Movie',
+      );
+      expect(second.map((e) => e.tmdbId), ['102']);
+      expect(captured, hasLength(2), reason: '扫描缓存命中后不再发请求');
+    });
+
+    test('并发扫描只发一次请求', () async {
+      stubItems();
+
+      final results = await Future.wait([
+        service.getItemsByProviderIds(
+          tmdbIds: ['101'],
+          includeItemTypes: 'Movie',
+        ),
+        service.getItemsByProviderIds(
+          tmdbIds: ['102'],
+          includeItemTypes: 'Movie',
+        ),
+      ]);
+      expect(results[0].single.tmdbId, '101');
+      expect(results[1].single.tmdbId, '102');
+
+      final scans = captured
+          .where((r) => r.path == '/Items')
+          .where((r) => r.param('AnyProviderIdEquals') == null)
+          .length;
+      expect(scans, 1);
+    });
+  });
+
   group('只读失败抛 EmbyException（v1.2.19 不再静默返回空）', () {
     test('非 401 的 5xx → EmbyException', () async {
       statusFor = (_) => HttpStatus.internalServerError;

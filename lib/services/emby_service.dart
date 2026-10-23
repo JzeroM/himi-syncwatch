@@ -26,6 +26,16 @@ class EmbyException implements Exception {
   String toString() => message;
 }
 
+class _ProviderScanCache {
+  _ProviderScanCache(this.items)
+      : expiresAt = DateTime.now().add(const Duration(minutes: 5));
+
+  final List<MediaItem> items;
+  final DateTime expiresAt;
+
+  bool get expired => DateTime.now().isAfter(expiresAt);
+}
+
 class EmbyService {
   late Dio _dio;
   String? _serverUrl;
@@ -34,6 +44,14 @@ class EmbyService {
   String? _userId;
   String? _serverId;
   String? _deviceId;
+
+  /// `/Items` 是否不支持 `AnyProviderIdEquals`；首次 400/404 后记住，
+  /// 后续查询直接走本地扫描，避免反复请求失败。
+  bool _providerIdFilterUnsupported = false;
+
+  /// 不支持服务端过滤时的整库扫描缓存，按 IncludeItemTypes + Fields 区分。
+  final Map<String, _ProviderScanCache> _providerScanCache = {};
+  final Map<String, Future<List<MediaItem>>> _providerScanInFlight = {};
 
   EmbyService() {
     _dio = Dio();
@@ -67,6 +85,9 @@ class EmbyService {
     _userId = userId;
     _serverId = serverId;
     _deviceId = deviceId;
+    _providerIdFilterUnsupported = false;
+    _providerScanCache.clear();
+    _providerScanInFlight.clear();
 
     _dio.options.baseUrl = serverUrl;
     // v1.2.19：给共享 _dio 加超时——此前无超时，弱网/服务器卡顿时请求可长
@@ -859,6 +880,9 @@ class EmbyService {
     if (ids.isEmpty) return const [];
     const fields =
         'ProviderIds,UserData,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateCreated,DateLastContentAdded';
+    if (_providerIdFilterUnsupported) {
+      return _scanByProviderIds(ids, includeItemTypes, fields);
+    }
     try {
       final response = await _dio.get(
         '/Items',
@@ -882,6 +906,7 @@ class EmbyService {
       if (e.response?.statusCode == 401) rethrow;
       final code = e.response?.statusCode;
       if (code == 400 || code == 404) {
+        _providerIdFilterUnsupported = true;
         return _scanByProviderIds(ids, includeItemTypes, fields);
       }
       throw _embyError(e);
@@ -893,13 +918,34 @@ class EmbyService {
     String includeItemTypes,
     String fields,
   ) async {
-    final items = await getItems(
-      includeItemTypes: includeItemTypes,
-      fields: fields,
-      limit: 10000,
-    );
     final wanted = ids.toSet();
-    return items.where((item) => wanted.contains(item.tmdbId)).toList();
+    final key = '$includeItemTypes|$fields';
+    final cached = _providerScanCache[key];
+    if (cached != null && !cached.expired) {
+      return cached.items
+          .where((item) => wanted.contains(item.tmdbId))
+          .toList();
+    }
+
+    var inFlight = _providerScanInFlight[key];
+    if (inFlight == null) {
+      inFlight = getItems(
+        includeItemTypes: includeItemTypes,
+        fields: fields,
+        limit: 10000,
+      );
+      _providerScanInFlight[key] = inFlight;
+    }
+
+    try {
+      final items = await inFlight;
+      _providerScanCache[key] = _ProviderScanCache(items);
+      return items.where((item) => wanted.contains(item.tmdbId)).toList();
+    } finally {
+      if (identical(_providerScanInFlight[key], inFlight)) {
+        _providerScanInFlight.remove(key);
+      }
+    }
   }
 
   /// 取官方 `PlaySessionId`（`POST /Items/{id}/PlaybackInfo`）。Emby 需要用它

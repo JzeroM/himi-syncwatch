@@ -94,10 +94,17 @@ EmbyServerConfig _server(String id) => EmbyServerConfig(
       userId: 'uid',
     );
 
-MediaItem _movie(String id, String tmdb, {String? name}) => MediaItem(
+MediaItem _movie(
+  String id,
+  String tmdb, {
+  String? name,
+  String? posterUrl,
+}) =>
+    MediaItem(
       id: id,
       name: name ?? 'Movie $tmdb',
       type: 'Movie',
+      posterUrl: posterUrl,
       providerIds: {'Tmdb': tmdb},
     );
 
@@ -153,6 +160,38 @@ void main() {
     expect(result.failedServerIds, isEmpty);
   });
 
+  test('当前服务器无海报时优先使用有海报的服务器副本', () async {
+    final s1 = _server('s1');
+    final s2 = _server('s2');
+    final services = {
+      's1': _ProviderEmbyService({
+        '101': [_movie('s1-m1', '101')],
+      }),
+      's2': _ProviderEmbyService({
+        '101': [
+          _movie(
+            's2-m1',
+            '101',
+            posterUrl: 'https://s2/Items/s2-m1/Images/Primary',
+          ),
+        ],
+      }),
+    };
+    final aggregate = TmdbAggregateService(
+      tmdb: _FakeTmdbService(),
+      serviceFactory: (s) => services[s.id]!,
+    );
+
+    final result = await aggregate.resolveAvailability(
+      const [_movie1],
+      [s1, s2],
+      activeServerId: 's1',
+    );
+
+    expect(result.items.single.server.id, 's2');
+    expect(result.items.single.item.posterUrl, isNotNull);
+  });
+
   test('可用性缓存：同一批 TMDB id 第二次不再请求 Emby', () async {
     final s1 = _server('s1');
     final service = _ProviderEmbyService({
@@ -167,6 +206,27 @@ void main() {
     await aggregate.resolveAvailability(const [_movie1], [s1]);
 
     expect(service.calls, 1);
+  });
+
+  test('同一服务器/类型的并发反查会合并成一次 Emby 请求', () async {
+    final s1 = _server('s1');
+    final service = _ProviderEmbyService({
+      '101': [_movie('m1', '101')],
+      '102': [_movie('m2', '102')],
+    });
+    final aggregate = TmdbAggregateService(
+      tmdb: _FakeTmdbService(),
+      serviceFactory: (_) => service,
+    );
+
+    final results = await Future.wait([
+      aggregate.resolveAvailability(const [_movie1], [s1]),
+      aggregate.resolveAvailability(const [_movie2], [s1]),
+    ]);
+
+    expect(service.calls, 1);
+    expect(results[0].items.single.tmdb.id, 101);
+    expect(results[1].items.single.tmdb.id, 102);
   });
 
   test('单服务器失败不影响其他服务器，并记录失败 id', () async {

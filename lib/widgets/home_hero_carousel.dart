@@ -257,6 +257,9 @@ class _HeroSlide extends StatelessWidget {
                 : imageBuilder(
                     bg,
                     fit: BoxFit.cover,
+                    cacheWidth: (MediaQuery.sizeOf(context).width *
+                            MediaQuery.devicePixelRatioOf(context))
+                        .round(),
                     transparent: true,
                   ),
           ),

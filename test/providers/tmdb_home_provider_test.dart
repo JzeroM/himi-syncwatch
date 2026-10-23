@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
+import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -33,6 +34,61 @@ class _FakeAggregate extends TmdbAggregateService {
     return sections[sectionKey]!.future;
   }
 }
+
+class _StagedAggregate extends TmdbAggregateService {
+  _StagedAggregate(this.byServer, {this.emptyFull = false})
+      : super(
+          tmdb: TmdbService(apiBase: 'http://localhost', credential: 'test'),
+          serviceFactory: (_) => FakeEmbyService(),
+        );
+
+  final Map<String, List<TmdbAvailability>> byServer;
+  final bool emptyFull;
+  final List<List<String>> calls = [];
+
+  @override
+  Future<TmdbAvailabilityResult> fetchSection(
+    String sectionKey,
+    List<EmbyServerConfig> servers, {
+    String? activeServerId,
+    int pages = 5,
+    bool allowCache = true,
+  }) async {
+    calls.add([for (final server in servers) server.id]);
+    if (emptyFull && calls.length > 4) {
+      return const TmdbAvailabilityResult(items: []);
+    }
+    return TmdbAvailabilityResult(
+      items: [
+        for (final server in servers) ...?byServer[server.id],
+      ],
+    );
+  }
+}
+
+EmbyServerConfig _server(String id) => EmbyServerConfig(
+      id: id,
+      serverUrl: 'https://$id.local',
+      serverName: '服务器$id',
+      serverId: '$id-sid',
+      username: 'user',
+      accessToken: 'token',
+      userId: 'uid',
+    );
+
+TmdbAvailability _entryT(String serverId, int tmdbId) => TmdbAvailability(
+      tmdb: TmdbItem(
+        id: tmdbId,
+        type: TmdbMediaType.movie,
+        title: '影片$tmdbId',
+      ),
+      item: MediaItem(
+        id: '$serverId-$tmdbId',
+        name: '影片$tmdbId',
+        type: 'Movie',
+      ),
+      server: _server(serverId),
+    );
 
 void main() {
   test('首页先产出壳，再按栏目完成顺序渐进更新', () async {
@@ -99,6 +155,109 @@ void main() {
       keys,
       reason: '全部完成后按固定顺序排列',
     );
+
+    subscription.close();
+  });
+
+  test('双服务器：先当前服务器出栏目，再后台补齐另一台服务器', () async {
+    final s1 = _server('s1');
+    final s2 = _server('s2');
+    final aggregate = _StagedAggregate({
+      's1': [_entryT('s1', 1)],
+      's2': [_entryT('s2', 2)],
+    });
+    final servers = EmbyServerListNotifier()..setList([s1, s2]);
+    final config = EmbyConfigNotifier()..setConfig(s1);
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(
+          (ref) => FakeSettingsNotifier(
+            const AppSettings(tmdbApiKey: 'test-key'),
+          ),
+        ),
+        tmdbAggregateServiceProvider.overrideWithValue(aggregate),
+        embyServerListProvider.overrideWith((ref) => servers),
+        embyConfigProvider.overrideWith((ref) => config),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final values = <TmdbHomeData>[];
+    final subscription = container.listen(
+      tmdbHomeProvider,
+      (_, next) {
+        if (next.hasValue) values.add(next.value!);
+      },
+      fireImmediately: true,
+    );
+    await pumpEventQueue(times: 20);
+
+    expect(
+      aggregate.calls
+          .take(4)
+          .every((ids) => ids.length == 1 && ids.first == 's1'),
+      isTrue,
+      reason: '首轮只查当前服务器',
+    );
+    expect(
+      aggregate.calls.skip(4).every((ids) => ids.length == 2),
+      isTrue,
+      reason: '第二轮补齐全部服务器',
+    );
+    expect(
+      values.any((data) =>
+          data.sections.any((s) => s.items.any((e) => e.server.id == 's1'))),
+      isTrue,
+    );
+    expect(
+      values.last.sections.any((s) => s.items.any((e) => e.server.id == 's2')),
+      isTrue,
+    );
+    expect(values.last.sectionsLoading, isFalse);
+
+    subscription.close();
+  });
+
+  test('后台补齐返回空时不回退已展示的当前服务器内容', () async {
+    final s1 = _server('s1');
+    final s2 = _server('s2');
+    final aggregate = _StagedAggregate(
+      {
+        's1': [_entryT('s1', 1)],
+      },
+      emptyFull: true,
+    );
+    final servers = EmbyServerListNotifier()..setList([s1, s2]);
+    final config = EmbyConfigNotifier()..setConfig(s1);
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(
+          (ref) => FakeSettingsNotifier(
+            const AppSettings(tmdbApiKey: 'test-key'),
+          ),
+        ),
+        tmdbAggregateServiceProvider.overrideWithValue(aggregate),
+        embyServerListProvider.overrideWith((ref) => servers),
+        embyConfigProvider.overrideWith((ref) => config),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final values = <TmdbHomeData>[];
+    final subscription = container.listen(
+      tmdbHomeProvider,
+      (_, next) {
+        if (next.hasValue) values.add(next.value!);
+      },
+      fireImmediately: true,
+    );
+    await pumpEventQueue(times: 20);
+
+    expect(
+      values.last.sections.first.items.single.server.id,
+      's1',
+    );
+    expect(values.last.sectionsLoading, isFalse);
 
     subscription.close();
   });

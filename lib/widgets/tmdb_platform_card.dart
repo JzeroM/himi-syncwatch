@@ -13,6 +13,7 @@ class TmdbPlatformCard extends StatelessWidget {
     required this.onTap,
     this.width = 170,
     this.height = 84,
+    this.serverLookupComplete = true,
   });
 
   final TmdbPlatformShowcase showcase;
@@ -20,6 +21,10 @@ class TmdbPlatformCard extends StatelessWidget {
   final VoidCallback onTap;
   final double width;
   final double height;
+
+  /// 服务器海报是否已全部反查完成；false 时缺失海报使用中性骨架，
+  /// 不提前加载 TMDB 图。
+  final bool serverLookupComplete;
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +49,7 @@ class TmdbPlatformCard extends StatelessWidget {
                   platformId: platform.providerId,
                   posters: posters,
                   imageBase: imageBase,
+                  serverLookupComplete: serverLookupComplete,
                 ),
               ),
               const SizedBox(width: 8),
@@ -74,6 +80,7 @@ class _PosterStack extends StatelessWidget {
     required this.platformId,
     required this.posters,
     required this.imageBase,
+    required this.serverLookupComplete,
   });
 
   static const double _posterWidth = 38;
@@ -82,6 +89,7 @@ class _PosterStack extends StatelessWidget {
   final int platformId;
   final List<TmdbPlatformPoster> posters;
   final String imageBase;
+  final bool serverLookupComplete;
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +114,7 @@ class _PosterStack extends StatelessWidget {
                     imageBase: imageBase,
                     width: _posterWidth,
                     height: _posterHeight,
+                    serverLookupComplete: serverLookupComplete,
                   ),
                 ),
               )
@@ -121,6 +130,7 @@ class _PosterStack extends StatelessWidget {
                     imageBase: imageBase,
                     width: _posterWidth,
                     height: _posterHeight,
+                    serverLookupComplete: serverLookupComplete,
                   ),
                 ),
               ),
@@ -135,6 +145,7 @@ class _PosterStack extends StatelessWidget {
                   imageBase: imageBase,
                   width: _posterWidth,
                   height: _posterHeight,
+                  serverLookupComplete: serverLookupComplete,
                 ),
               ),
             ),
@@ -152,12 +163,14 @@ class _PosterTile extends StatelessWidget {
     required this.imageBase,
     required this.width,
     required this.height,
+    required this.serverLookupComplete,
   });
 
   final TmdbPlatformPoster? poster;
   final String imageBase;
   final double width;
   final double height;
+  final bool serverLookupComplete;
 
   @override
   Widget build(BuildContext context) {
@@ -189,17 +202,26 @@ class _PosterTile extends StatelessWidget {
                   ),
                 ),
               )
-            : _PosterImage(poster: value, imageBase: imageBase),
+            : _PosterImage(
+                poster: value,
+                imageBase: imageBase,
+                serverLookupComplete: serverLookupComplete,
+              ),
       ),
     );
   }
 }
 
 class _PosterImage extends StatelessWidget {
-  const _PosterImage({required this.poster, required this.imageBase});
+  const _PosterImage({
+    required this.poster,
+    required this.imageBase,
+    required this.serverLookupComplete,
+  });
 
   final TmdbPlatformPoster poster;
   final String imageBase;
+  final bool serverLookupComplete;
 
   @override
   Widget build(BuildContext context) {
@@ -211,9 +233,11 @@ class _PosterImage extends StatelessWidget {
         cacheWidth: 120,
         posterSize: 'w154',
         serverMaxHeight: 240,
-        showTmdbWhileLoading: true,
         fadeInDuration: const Duration(milliseconds: 120),
       );
+    }
+    if (!serverLookupComplete) {
+      return const ColoredBox(color: Color(0xFF23252A));
     }
     final url = poster.tmdb.posterUrl(imageBase, size: 'w154');
     return TmdbImage(
