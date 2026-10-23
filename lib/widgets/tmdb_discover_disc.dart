@@ -8,11 +8,12 @@ import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
+import 'package:himi_syncwatch/widgets/tmdb_disc_shape.dart';
 
 /// TMDB 首页顶部的光盘栏目。
 ///
-/// 数据由 [tmdbDiscProvider] 懒加载；组件只使用虚拟下半盘的三段弧线，
-/// 画面上仅保留三张独立贴纸及其局部柔光，其余区域完全透明。
+/// 数据由 [tmdbDiscProvider] 懒加载；组件使用虚拟上拱半圆的三段弧线，
+/// 画面上仅保留三张会随位置形变的贴纸及其局部柔光，其余区域完全透明。
 class TmdbDiscoverDisc extends ConsumerWidget {
   const TmdbDiscoverDisc({super.key, required this.tvMode});
 
@@ -42,7 +43,7 @@ class TmdbDiscoverDisc extends ConsumerWidget {
   }
 }
 
-/// 下半盘三槽位贴纸轮播。
+/// 上拱半圆三槽位贴纸轮播。
 ///
 /// 分区数量动态；`_position` 是连续的分区位置，0 表示第 0 个分区居中。
 /// 始终只构建中间分区和左右相邻分区，避免未来分区增多后渲染量线性增长。
@@ -235,9 +236,24 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
               widget.sections[_mod(index, widget.sections.length)],
               index - _position,
               discSize,
+              width / 2,
               theme,
             ),
         ];
+        final activeSlot = _position.round();
+        final activeT = activeSlot - _position;
+        final activeAngle = activeT * _DiscMetrics.angleStep;
+        final orbitRadius = discSize * _DiscMetrics.orbitFactor;
+        final cardWidth = discSize * _DiscMetrics.cardWidthFactor;
+        final cardHeight = discSize * _DiscMetrics.cardHeightFactor;
+        final activeCenterX = width / 2 + math.sin(activeAngle) * orbitRadius;
+        final activeCenterY = discSize * _DiscMetrics.topInsetFactor +
+            cardHeight / 2 +
+            (1 - math.cos(activeAngle)) * orbitRadius;
+        final titleOpacity = (1 - 2 * activeT.abs()).clamp(0.0, 1.0);
+        final activeSection =
+            widget.sections[_mod(activeSlot, widget.sections.length)];
+        final titleWidth = cardWidth + 24;
 
         return SizedBox(
           height: height,
@@ -269,6 +285,22 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
                         ),
                       ),
                     ),
+                  if (titleOpacity > 0.01)
+                    Positioned(
+                      left: activeCenterX - titleWidth / 2,
+                      top: activeCenterY - cardHeight / 2 + 6,
+                      width: titleWidth,
+                      height: 32,
+                      child: Opacity(
+                        opacity: titleOpacity,
+                        child: _DiscSectionTitle(
+                          key: const ValueKey('tmdbDiscActiveTitle'),
+                          title: activeSection.title,
+                          accent: accent,
+                          onTap: () => widget.onOpenSection(activeSection),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -283,6 +315,7 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
     TmdbDiscSectionData section,
     double t,
     double discSize,
+    double discCenterX,
     ThemeData theme,
   ) {
     final absT = t.abs();
@@ -296,78 +329,50 @@ class _TmdbDiscCarouselState extends State<TmdbDiscCarousel>
     final cardWidth = discSize * _DiscMetrics.cardWidthFactor;
     final cardHeight = discSize * _DiscMetrics.cardHeightFactor;
     final orbitRadius = discSize * _DiscMetrics.orbitFactor;
-    final centerX = discSize / 2 + math.sin(angle) * orbitRadius;
-    final centerY =
-        discSize * _DiscMetrics.topInsetFactor + math.cos(angle) * orbitRadius;
+    final centerX = discCenterX + math.sin(angle) * orbitRadius;
+    final centerY = discSize * _DiscMetrics.topInsetFactor +
+        cardHeight / 2 +
+        (1 - math.cos(angle)) * orbitRadius;
+    final shape = TmdbDiscStickerShape.fromOffset(t);
 
     return Positioned(
       left: centerX - cardWidth / 2,
       top: centerY - cardHeight / 2,
       width: cardWidth,
       height: cardHeight,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: opacity,
-              child: Transform.translate(
-                offset: Offset(0, -lift),
-                child: Transform.rotate(
-                  angle: angle,
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.identity()
-                      ..setEntry(3, 2, _DiscMetrics.perspective)
-                      ..rotateX(_DiscMetrics.panelTilt),
-                    child: Transform.scale(
-                      scale: scale,
-                      child: RepaintBoundary(
-                        child: _DiscSectionCard(
-                          key: ValueKey('tmdbDiscPanel_${section.key}'),
-                          section: section,
-                          imageBase: widget.imageBase,
-                          active: active,
-                          accent: theme.colorScheme.primary,
-                          glassEnabled: widget.glassEnabled,
-                          onTap: () {
-                            if (active) {
-                              widget.onOpenSection(section);
-                            } else {
-                              _selectSection(section);
-                            }
-                          },
-                          onOpen: () => widget.onOpenSection(section),
-                        ),
-                      ),
-                    ),
-                  ),
+      child: Opacity(
+        opacity: opacity,
+        child: Transform.translate(
+          offset: Offset(0, -lift),
+          child: Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, _DiscMetrics.perspective)
+              ..rotateX(_DiscMetrics.panelTilt),
+            child: Transform.scale(
+              scale: scale,
+              child: RepaintBoundary(
+                child: _DiscSectionCard(
+                  key: ValueKey('tmdbDiscPanel_${section.key}'),
+                  section: section,
+                  imageBase: widget.imageBase,
+                  active: active,
+                  accent: theme.colorScheme.primary,
+                  glassEnabled: widget.glassEnabled,
+                  shape: shape,
+                  onTap: () {
+                    if (active) {
+                      widget.onOpenSection(section);
+                    } else {
+                      _selectSection(section);
+                    }
+                  },
+                  onOpen: () => widget.onOpenSection(section),
                 ),
               ),
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            top: cardHeight * _DiscMetrics.titleCenterFactor - 14,
-            height: 28,
-            child: Opacity(
-              opacity: opacity,
-              child: _DiscSectionTitle(
-                title: section.title,
-                active: active,
-                accent: theme.colorScheme.primary,
-                onTap: () {
-                  if (active) {
-                    widget.onOpenSection(section);
-                  } else {
-                    _selectSection(section);
-                  }
-                },
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -381,6 +386,7 @@ class _DiscSectionCard extends StatelessWidget {
     required this.active,
     required this.accent,
     required this.glassEnabled,
+    required this.shape,
     required this.onTap,
     required this.onOpen,
   });
@@ -390,6 +396,7 @@ class _DiscSectionCard extends StatelessWidget {
   final bool active;
   final Color accent;
   final bool glassEnabled;
+  final TmdbDiscStickerShape shape;
   final VoidCallback onTap;
   final VoidCallback onOpen;
 
@@ -418,18 +425,21 @@ class _DiscSectionCard extends StatelessWidget {
             ),
           ),
           Positioned.fill(
-            child: loading
-                ? _PosterFanSkeleton(active: active)
-                : empty
-                    ? _EmptyPanel(accent: accent)
-                    : _PosterFan(
-                        sectionKey: section.key,
-                        items: items,
-                        imageBase: imageBase,
-                        active: active,
-                        accent: accent,
-                        onOpen: onOpen,
-                      ),
+            child: _DiscStickerSurface(
+              shape: shape,
+              child: loading
+                  ? _PosterFanSkeleton(active: active)
+                  : empty
+                      ? _EmptyPanel(accent: accent)
+                      : _PosterFan(
+                          sectionKey: section.key,
+                          items: items,
+                          imageBase: imageBase,
+                          active: active,
+                          accent: accent,
+                          onOpen: onOpen,
+                        ),
+            ),
           ),
         ],
       ),
@@ -439,68 +449,53 @@ class _DiscSectionCard extends StatelessWidget {
 
 class _DiscSectionTitle extends StatelessWidget {
   const _DiscSectionTitle({
+    super.key,
     required this.title,
-    required this.active,
     required this.accent,
     required this.onTap,
   });
 
   final String title;
-  final bool active;
   final Color accent;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final base = TextStyle(
-      fontSize: active ? 20 : 15,
-      fontWeight: active ? FontWeight.w800 : FontWeight.w700,
-      letterSpacing: active ? 0.9 : 0.45,
+    final style = TextStyle(
+      fontSize: 20,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0.9,
       height: 1.05,
+      foreground: Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFFF9FCFF),
+            Color.lerp(Colors.white, accent, 0.62)!,
+          ],
+        ).createShader(const Rect.fromLTWH(0, 0, 600, 26)),
+      shadows: [
+        Shadow(
+          color: Colors.black.withValues(alpha: 0.80),
+          blurRadius: 9,
+          offset: const Offset(0, 2),
+        ),
+        Shadow(
+          color: accent.withValues(alpha: 0.55),
+          blurRadius: 16,
+        ),
+      ],
     );
-    final style = active
-        ? base.copyWith(
-            foreground: Paint()
-              ..shader = LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  const Color(0xFFF9FCFF),
-                  Color.lerp(Colors.white, accent, 0.62)!,
-                ],
-              ).createShader(const Rect.fromLTWH(0, 0, 600, 26)),
-            shadows: [
-              Shadow(
-                color: Colors.black.withValues(alpha: 0.80),
-                blurRadius: 9,
-                offset: const Offset(0, 2),
-              ),
-              Shadow(
-                color: accent.withValues(alpha: 0.55),
-                blurRadius: 16,
-              ),
-            ],
-          )
-        : base.copyWith(
-            color: Colors.white.withValues(alpha: 0.76),
-            shadows: [
-              Shadow(
-                color: Colors.black.withValues(alpha: 0.70),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          );
 
     return Semantics(
       button: true,
-      label: active ? '$title，进入栏目' : '$title，切换到该栏目',
+      label: '$title，进入栏目',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Center(
           child: SizedBox(
-            width: active ? null : 72,
             height: 24,
             child: FittedBox(
               fit: BoxFit.scaleDown,
@@ -613,52 +608,36 @@ class _DiscPosterTile extends StatelessWidget {
         child: SizedBox(
           width: width,
           height: height,
-          child: ShaderMask(
-            blendMode: BlendMode.dstIn,
-            shaderCallback: (bounds) => RadialGradient(
-              center: const Alignment(0, -0.02),
-              radius: 0.78,
-              colors: [
-                Colors.white,
-                Colors.white.withValues(alpha: 0.96),
-                Colors.transparent,
-              ],
-              stops: const [0, 0.80, 1],
-            ).createShader(bounds),
-            child: ClipPath(
-              clipper: const _DiscDecalClipper(),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  TmdbAvailabilityImage(
-                    entry: entry,
-                    imageBase: imageBase,
-                    posterSize: 'w154',
-                    cacheWidth: cacheWidth,
-                    serverMaxWidth: cacheWidth,
-                    fadeInDuration: const Duration(milliseconds: 120),
-                  ),
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Colors.white.withValues(alpha: 0.13),
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.18),
-                            ],
-                            stops: const [0, 0.38, 1],
-                          ),
-                        ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              TmdbAvailabilityImage(
+                entry: entry,
+                imageBase: imageBase,
+                posterSize: 'w154',
+                cacheWidth: cacheWidth,
+                serverMaxWidth: cacheWidth,
+                fadeInDuration: const Duration(milliseconds: 120),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.13),
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.18),
+                        ],
+                        stops: const [0, 0.38, 1],
                       ),
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -666,26 +645,55 @@ class _DiscPosterTile extends StatelessWidget {
   }
 }
 
-class _DiscDecalClipper extends CustomClipper<Path> {
-  const _DiscDecalClipper();
+class _DiscStickerSurface extends StatelessWidget {
+  const _DiscStickerSurface({
+    required this.shape,
+    required this.child,
+  });
+
+  final TmdbDiscStickerShape shape;
+  final Widget child;
 
   @override
-  Path getClip(Size size) {
-    final w = size.width;
-    final h = size.height;
-    return Path()
-      ..moveTo(w * 0.18, 0)
-      ..quadraticBezierTo(w * 0.5, h * 0.16, w * 0.82, 0)
-      ..quadraticBezierTo(w * 1.00, h * 0.12, w * 0.99, h * 0.62)
-      ..quadraticBezierTo(w * 0.97, h * 0.88, w * 0.90, h * 0.94)
-      ..quadraticBezierTo(w * 0.5, h, w * 0.10, h * 0.94)
-      ..quadraticBezierTo(w * 0.03, h * 0.88, w * 0.01, h * 0.62)
-      ..quadraticBezierTo(0, h * 0.12, w * 0.18, 0)
-      ..close();
+  Widget build(BuildContext context) {
+    return ClipPath(
+      clipper: _DiscStickerClipper(shape),
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => RadialGradient(
+          center: const Alignment(0, -0.02),
+          radius: 0.80,
+          colors: [
+            Colors.white,
+            Colors.white.withValues(alpha: 0.96),
+            Colors.transparent,
+          ],
+          stops: const [0, 0.80, 1],
+        ).createShader(bounds),
+        child: Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..setEntry(0, 0, shape.contentScaleX)
+            ..setEntry(0, 1, math.tan(shape.contentSkewX)),
+          child: child,
+        ),
+      ),
+    );
   }
+}
+
+class _DiscStickerClipper extends CustomClipper<Path> {
+  const _DiscStickerClipper(this.shape);
+
+  final TmdbDiscStickerShape shape;
 
   @override
-  bool shouldReclip(covariant _DiscDecalClipper oldClipper) => false;
+  Path getClip(Size size) => shape.buildClipPath(size);
+
+  @override
+  bool shouldReclip(covariant _DiscStickerClipper oldClipper) =>
+      oldClipper.shape.progress != shape.progress ||
+      oldClipper.shape.direction != shape.direction;
 }
 
 class _PosterFanSkeleton extends StatelessWidget {
@@ -717,13 +725,9 @@ class _PosterFanSkeleton extends StatelessWidget {
                     width: posterWidth,
                     height: posterHeight,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(3),
                       color: Colors.white.withValues(
                         alpha: active ? 0.09 : 0.05,
-                      ),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.09),
-                        width: 0.8,
                       ),
                     ),
                   ),
@@ -839,7 +843,8 @@ class _FocusRingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(
       size.width / 2,
-      discSize * (_DiscMetrics.topInsetFactor + _DiscMetrics.orbitFactor),
+      discSize *
+          (_DiscMetrics.topInsetFactor + _DiscMetrics.cardHeightFactor / 2),
     );
     final rect = Rect.fromCenter(
       center: center,
@@ -906,6 +911,7 @@ class _DiscSkeleton extends StatelessWidget {
                 _skeletonPanel(
                   slot: slot,
                   discSize: discSize,
+                  discCenterX: width / 2,
                   cardWidth: cardWidth,
                   cardHeight: cardHeight,
                   orbitRadius: orbitRadius,
@@ -921,6 +927,7 @@ class _DiscSkeleton extends StatelessWidget {
   Widget _skeletonPanel({
     required int slot,
     required double discSize,
+    required double discCenterX,
     required double cardWidth,
     required double cardHeight,
     required double orbitRadius,
@@ -928,9 +935,11 @@ class _DiscSkeleton extends StatelessWidget {
   }) {
     final angle = slot * _DiscMetrics.angleStep;
     final active = slot == 0;
-    final centerX = discSize / 2 + math.sin(angle) * orbitRadius;
-    final centerY =
-        discSize * _DiscMetrics.topInsetFactor + math.cos(angle) * orbitRadius;
+    final centerX = discCenterX + math.sin(angle) * orbitRadius;
+    final centerY = discSize * _DiscMetrics.topInsetFactor +
+        cardHeight / 2 +
+        (1 - math.cos(angle)) * orbitRadius;
+    final shape = TmdbDiscStickerShape.fromOffset(slot.toDouble());
 
     return Positioned(
       left: centerX - cardWidth / 2,
@@ -939,32 +948,32 @@ class _DiscSkeleton extends StatelessWidget {
       height: cardHeight,
       child: Opacity(
         opacity: active ? 1 : 0.62,
-        child: Transform.rotate(
-          angle: angle,
-          child: Transform(
-            alignment: Alignment.center,
-            transform: Matrix4.identity()
-              ..setEntry(3, 2, _DiscMetrics.perspective)
-              ..rotateX(_DiscMetrics.panelTilt),
-            child: Transform.scale(
-              scale: active ? _DiscMetrics.activeScale : _DiscMetrics.sideScale,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _DiscIslandPainter(
-                        active: active,
-                        accent: accent,
-                        glassEnabled: false,
-                      ),
+        child: Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, _DiscMetrics.perspective)
+            ..rotateX(_DiscMetrics.panelTilt),
+          child: Transform.scale(
+            scale: active ? _DiscMetrics.activeScale : _DiscMetrics.sideScale,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _DiscIslandPainter(
+                      active: active,
+                      accent: accent,
+                      glassEnabled: false,
                     ),
                   ),
-                  Positioned.fill(
+                ),
+                Positioned.fill(
+                  child: _DiscStickerSurface(
+                    shape: shape,
                     child: _PosterFanSkeleton(active: active),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -977,14 +986,13 @@ class _DiscMetrics {
   static const panelTilt = 0.64;
   static const perspective = 0.0012;
   static const heightFactor = 0.57;
-  static const topInsetFactor = 0.03;
-  static const orbitFactor = 0.36;
-  static const angleStep = 1.12;
+  static const topInsetFactor = 0.04;
+  static const orbitFactor = 0.38;
+  static const angleStep = 0.82;
   static const cardWidthFactor = 0.32;
   static const cardHeightFactor = 0.38;
-  static const titleCenterFactor = 0.22;
   static const dragFactor = 0.24;
-  static const liftFactor = 0.006;
-  static const activeScale = 1.02;
-  static const sideScale = 0.94;
+  static const liftFactor = 0.012;
+  static const activeScale = 1.04;
+  static const sideScale = 0.95;
 }
