@@ -266,7 +266,7 @@ void main() {
     }
   });
 
-  testWidgets('glassUi 开启：navBlob 是自研 LiquidBlobLens，胶囊作兄弟层不裁剪水珠', (
+  testWidgets('glassUi 开启：navBlob 是项目内 LiquidBlobLens，胶囊作兄弟层不裁剪水珠', (
     tester,
   ) async {
     await _pumpNav(tester, onSelect: (_) {});

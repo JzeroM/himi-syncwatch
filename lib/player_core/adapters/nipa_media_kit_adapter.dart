@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File, Platform;
+import 'dart:math' as math;
 import 'dart:math' show pow;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -57,6 +58,29 @@ bool isRetryableMediaKitLoadError(String message) {
       error.contains('cannot open');
 }
 
+@visibleForTesting
+double mediaKitCoverZoom({
+  required Size container,
+  required Size video,
+}) {
+  if (container.width <= 0 ||
+      container.height <= 0 ||
+      video.width <= 0 ||
+      video.height <= 0) {
+    return 0;
+  }
+  final containScale = math.min(
+    container.width / video.width,
+    container.height / video.height,
+  );
+  final coverScale = math.max(
+    container.width / video.width,
+    container.height / video.height,
+  );
+  if (containScale <= 0) return 0;
+  return math.log(coverScale / containScale) / math.ln2;
+}
+
 String normalizeExternalSubtitleTrackUri(String path) {
   final trimmed = path.trim();
   if (trimmed.isEmpty || kIsWeb) return trimmed;
@@ -92,6 +116,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
         MediaKitViewPlayer,
         MediaKitSettingsPlayer,
         PlayerAsyncSetMedia,
+        PlayerAsyncSeek,
+        VideoFitPlayer,
         TickerProvider {
   static bool _disableMpvLogs = false;
   static int? _cachedMacosMajor;
@@ -301,6 +327,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
   String _currentMedia = '';
   PlayerMediaInfo _mediaInfo = PlayerMediaInfo(duration: 0);
   PlayerPlaybackState _state = PlayerPlaybackState.stopped;
+  PlayerMediaStatus _lastStatus = PlayerMediaStatus.unloaded;
   final ValueNotifier<bool> _buffering = ValueNotifier<bool>(false);
   final _stateCtrl = StreamController<
       ({
@@ -1055,10 +1082,10 @@ class NipaMediaKitAdapter extends AbstractPlayer
       _interpolatedPosition = _lastActualPosition;
       _lastPositionTimestampUs = DateTime.now().microsecondsSinceEpoch;
       _buffering.value = buffering;
+      _notifyStatus();
     });
     _player.stream.playing.listen((playing) {
       final oldState = _state;
-      final oldStatus = _statusValue;
       _state = playing
           ? PlayerPlaybackState.playing
           : (_player.state.position.inMilliseconds > 0
@@ -1067,10 +1094,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
       if (oldState != _state) {
         _stateCtrl.add((oldValue: oldState, newValue: _state));
       }
-      final newStatus = _statusValue;
-      if (oldStatus != newStatus) {
-        _statusCtrl.add((oldValue: oldStatus, newValue: newStatus));
-      }
+      _notifyStatus();
       if (playing) {
         _lastActualPosition = _player.state.position;
         _lastPositionTimestampUs = DateTime.now().microsecondsSinceEpoch;
@@ -1198,6 +1222,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
       if (duration.inMilliseconds > 0) {
         _markCurrentMediaReady('duration');
       }
+      _notifyStatus();
       // 时长确定后尝试获取 MKV 章节列表（chapter-list 在 file-loaded 后可用，
       // 且常随 duration 一起就绪）。参考 REFERENCE/mpv/player/lua/osc.lua:3201
       // observe_cached("chapter-list")。此处用一次性 getProperty 兜底，避免
@@ -1233,6 +1258,15 @@ class NipaMediaKitAdapter extends AbstractPlayer
     _lastActualPosition = Duration.zero;
     _lastPositionTimestampUs = 0;
     _buffering.value = false;
+    _lastStatus = PlayerMediaStatus.unloaded;
+  }
+
+  void _notifyStatus() {
+    final next = _statusValue;
+    if (next == _lastStatus) return;
+    final old = _lastStatus;
+    _lastStatus = next;
+    _statusCtrl.add((oldValue: old, newValue: next));
   }
 
   void _markCurrentMediaReady(String evidence) {
@@ -1249,6 +1283,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
     debugPrint(
       'MediaKit: 媒体已就绪 generation=$_mediaLoadGeneration evidence=$evidence',
     );
+    _notifyStatus();
   }
 
   void _recordCurrentMediaLoadError(Object error) {
@@ -2280,6 +2315,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   PlayerMediaStatus get _statusValue {
     if (_buffering.value) return PlayerMediaStatus.buffering;
+    if (_mediaReady) return PlayerMediaStatus.loaded;
     return switch (_state) {
       PlayerPlaybackState.playing => PlayerMediaStatus.loaded,
       PlayerPlaybackState.paused => PlayerMediaStatus.prepared,
@@ -2753,15 +2789,48 @@ class NipaMediaKitAdapter extends AbstractPlayer
     if (!_isDisposed) {
       _printAllTracksInfo(_player.state.tracks);
     }
+    if (startMs > 0 && !_isDisposed) {
+      await seekAndWait(position: startMs);
+    }
   }
 
   @override
   void seek({required int position}) {
+    unawaited(seekAndWait(position: position));
+  }
+
+  @override
+  Future<void> seekAndWait({required int position}) async {
     final seekPosition = Duration(milliseconds: position);
-    _player.seek(seekPosition);
+    await _player.seek(seekPosition);
     _interpolatedPosition = seekPosition;
     _lastActualPosition = seekPosition;
     _lastPositionTimestampUs = DateTime.now().microsecondsSinceEpoch;
+  }
+
+  @override
+  void applyVideoFit(
+    BoxFit fit, {
+    required Size container,
+    required Size video,
+  }) {
+    if (_isDisposed) return;
+    if (fit != BoxFit.cover) {
+      setProperty('video-zoom', '0');
+      setProperty('video-align-y', '0');
+      setProperty('panscan', '0');
+      return;
+    }
+    final videoZoom = mediaKitCoverZoom(container: container, video: video);
+    if (videoZoom == 0) {
+      setProperty('video-zoom', '0');
+      setProperty('video-align-y', '0');
+      setProperty('panscan', '0');
+      return;
+    }
+    setProperty('video-zoom', videoZoom.toStringAsFixed(4));
+    setProperty('video-align-y', '0');
+    setProperty('panscan', '0');
   }
 
   Future<void>? _disposeAsyncFuture;

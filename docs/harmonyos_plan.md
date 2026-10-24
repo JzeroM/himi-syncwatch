@@ -21,7 +21,7 @@
 
 ## 1. 可行性结论
 
-**可行，路线：双 SDK 工具链 + 纯 Dart 层复用 + Erika 单引擎 + 关键原生能力自研桥接。**
+**可行，路线：双 SDK 工具链 + 纯 Dart 层复用 + Erika 单引擎 + 关键原生能力项目内桥接。**
 
 | 关键环节 | 结论 | 依据 |
 |---------|------|------|
@@ -29,7 +29,7 @@
 | 纯 Dart 业务层 | ✅ 直接复用 | Emby API（dio）、Riverpod 2、GoRouter、模型/路由/服务层均不依赖平台通道 |
 | 视频播放 | ✅ **Erika 唯一引擎** | 本仓库 vendored `third_party/erika_flutter` 0.2.1 **自带完整 `ohos/` 模块**（pubspec 已声明 `ohos: pluginClass: ErikaFlutterPlugin`）+ **预编译 `liberika_capi.so`**（`native_artifacts.properties` 含 `ERIKA_OPENHARMONY_ARM64_SHA256`）；与 Android/iOS/Windows 同源。上游 AimesSoft/Erika 另有 `erika_ohos` OHPM 包；同门应用 NipaPlay-Reload v1.11.8 已发布鸿蒙版 |
 | 多人观影 RTM | ✅ SDK 存在 | 声网 RTM 2 有 HarmonyOS 文档线（`doc.shengwang.cn/doc/rtm2/harmonyos`）；RTC 鸿蒙以 ohpm 包形态发布（`@shengwang/rtc-full`）。RTM 鸿蒙包名/形态需在开工前最终确认 |
-| 插件生态 | ⚠️ 部分需适配/自研 | CPF-Flutter `flutter_packages` 已适配官方常用插件；RTM/动态图标等需自研 ArkTS 桥 |
+| 插件生态 | ⚠️ 部分需适配/项目内实现 | CPF-Flutter `flutter_packages` 已适配官方常用插件；RTM/动态图标等需项目内 ArkTS 桥 |
 | 构建与上架 | ⚠️ 需新工具链 | DevEco Studio + HarmonyOS SDK + 华为 AGC 签名 + AppGallery 审核；GitHub Actions 无托管 runner 但**可自装 SDK CLI 构建**（华为官方《Setting Up a Pipeline》：`developer.huawei.com/.../ide-command-line-building-app`；社区先例：`harmonyos-dev/harmonyos-github-action-example`） |
 | 签名与分发 | ⚠️ 强制签名 | 「只有签名过的 HAP 才允许安装到设备」（华为官方）；发布证书包**本地装不上**（NEXT 只认市场分发包或调试签名包）；详见 §8 |
 
@@ -75,8 +75,8 @@
    Flutter 3.47.4              Flutter 3.47.4            Flutter-OH 3.41.9
    ├ MDK(fvp)                  ├ MDK(fvp)               ├ 播放器：Erika（唯一引擎）
    ├ Erika                     └ media_kit(libmpv)      │        （vendored ohos 模块）
-   └ agora_rtm 官方插件                                  ├ RTM：himi_ohos_rtm 自研插件
-   himi_windows_rtm（Windows 自研）                       └ 常用插件：CPF-Flutter 适配版
+   └ agora_rtm 官方插件                                  ├ RTM：himi_ohos_rtm 项目内插件
+   himi_windows_rtm（Windows 项目内）                       └ 常用插件：CPF-Flutter 适配版
 ```
 
 ### 3.1 关键决策
@@ -86,14 +86,14 @@
 | 工具链 | 双 SDK：主线 Flutter 管三平台，Flutter-OH 管 `ohos/` | Flutter-OH 与主线版本不齐，同仓双工具链互不污染；CI 中鸿蒙构建独立 job |
 | 仓库形态 | 同仓库新增 `ohos/` 平台目录 + `plugins/himi_ohos_rtm/` | 与现有 `himi_windows_rtm` 对称；`lib/` 单份源码 |
 | **播放器** | **Erika 唯一引擎，无 MDK/AVPlayer 兜底** | vendored 已带 ohos 模块与预编译 so，零集成成本；与三平台同源，弹幕/PGS/DV/字幕能力对齐；单一引擎维护面小；`resolveEngineForContent` ohos 列恒指 Erika |
-| RTM | 自研 `himi_ohos_rtm`（ArkTS 桥） | 与 Windows 自研插件同构，复用 `RtmBackend` 抽象，官方 flutter 插件不支持 ohos |
+| RTM | 项目内 `himi_ohos_rtm`（ArkTS 桥） | 与 Windows 项目内插件同构，复用 `RtmBackend` 抽象，官方 flutter 插件不支持 ohos |
 | 版本基线 | 主线保持 3.47.4 不动；鸿蒙锁 Flutter-OH 3.41.9 | 避免主线为鸿蒙降级；`lib/` 写法向下兼容（不用 3.47 新 API、依赖两边可解析、pubspec.lock 单独处理） |
 
 ### 3.2 Erika vs MDK 选型对比（存档：已选 Erika，MDK 弃用）
 
 | 维度 | Erika（已选） | MDK-OHOS（弃用，仅外部参考） |
 |------|--------------|------|
-| 与本项目关系 | ✅ 同源：三平台已用 Erika，鸿蒙同一套 `erika_flutter` API，`Engine` 抽象零改动 | fvp 无 ohos 后端；官方 ohpm 包 `@mediadevkit/libmdk-napi` 是 ArkTS/NAPI 形态，接 Dart 需自研桥 |
+| 与本项目关系 | ✅ 同源：三平台已用 Erika，鸿蒙同一套 `erika_flutter` API，`Engine` 抽象零改动 | fvp 无 ohos 后端；官方 ohpm 包 `@mediadevkit/libmdk-napi` 是 ArkTS/NAPI 形态，接 Dart 需项目内桥 |
 | 集成成本 | ✅ vendored 已内置 ohos 模块 + 预编译 so | ⚠️ ohpm 包 + 自写胶水 |
 | 渲染链路 | ✅ 外部纹理 → OHNativeWindow → wgpu Vulkan；AVCodec 硬解零拷贝；OHAudio；AVSession 全封装 | OH 硬解 0-copy + OHAudio，但 Flutter 宿主对接需自接 |
 | 弹幕 | ✅ 原生 DFM+ 碰撞轨道 + GPU 字形图集 | ❌ 无 |
@@ -139,7 +139,7 @@
 - [ ] **DV P5/P8 样片真机色彩对比 Android**（§3.3 POC 项）。
 - [ ] hvigor `modelVersion` ↔ DevEco 兼容核对（模板配套，hvigor-config 不得高于 DevEco 配套版本）；Flutter-OH API 基线核对。
 - [ ] POC 验收：真机上出现 HIMI 启动页，进入服务器配置页。
-- [ ] 输出物：《依赖插件鸿蒙可用性核对表》（逐个标记：CPF 适配版可用 / 需自研 / 可移除）。
+- [ ] 输出物：《依赖插件鸿蒙可用性核对表》（逐个标记：CPF 适配版可用 / 需项目内实现 / 可移除）。
 
 **验收标准**：POC HAP（调试签名）安装到真机，应用可启动不闪退；核对表覆盖 pubspec 全部运行时依赖。
 
@@ -148,7 +148,7 @@
 **目标**：核心 Emby 客户端体验闭环。
 
 - [ ] 播放器适配层：**唯一引擎 Erika**——在 `PlayerEngine` 抽象下接 `erika_flutter` ohos 模块；`resolveEngineForContent` 平台矩阵补 ohos 列（恒指 Erika）；无引擎对比、无 AVPlayer 兜底，打不开文件时报错 + 日志上报。
-- [ ] 逐个接入必需插件：`flutter_secure_storage`、`path_provider`、`permission_handler`、`file_picker`、`image_picker`、`share_plus`、`url_launcher`（CPF 适配版），不可用者自研 ArkTS 插件。
+- [ ] 逐个接入必需插件：`flutter_secure_storage`、`path_provider`、`permission_handler`、`file_picker`、`image_picker`、`share_plus`、`url_launcher`（CPF 适配版），不可用者项目内 ArkTS 插件。
 - [ ] 字幕：**大小/位置/延迟三项鸿蒙已可用（§3.4）**，验证外挂 srt/ass + Emby 内封轨；PGS 位图由 Erika 验证。
 - [ ] 起播性能与 seek 精度回归测试（对齐 Android 基线用例）。
 
@@ -199,7 +199,7 @@
 | R1 | Flutter-OH 停在 3.41.x，主线 3.47.4 的新 API/依赖在 ohos 编不过 | 阻塞 | `lib/` 避免使用 3.47 新增 API；依赖锁版本；跟踪 CPF-Flutter 3.47 适配进度（路线图 2026-12）；写法向下兼容（pubspec.lock 单独处理） |
 | R2 | **Erika 单引擎无备用**：ohos 路径较新，机型 bug 无替换项 | 播放体验 | Erika 为 Rust 源码可自修（MPL-2.0）；FFmpeg 软解内兜底；阶段 1 即建真机兼容测试清单（旗舰 + 中端各 1）；vendored 版本锁定可打补丁 |
 | R3 | 声网 RTM 鸿蒙 SDK 形态与预期不符 | 阶段 3 返工 | 阶段 0 即拉取 RTM 鸿蒙文档与示例做 2 天技术验证 |
-| R4 | 插件缺口需大量自研 ArkTS 桥 | 工期 | 核对表前置（阶段 0 交付）；缺口按「自研 / 替代 / 砍功能」三分决策 |
+| R4 | 插件缺口需大量项目内 ArkTS 桥 | 工期 | 核对表前置（阶段 0 交付）；缺口按「项目内 / 替代 / 砍功能」三分决策 |
 | R5 | ~~media_kit/Erika 不可用~~ **已收窄**：media_kit 不引入鸿蒙（仅 Windows HDR）；Erika 可用（DV/PGS/字幕齐备），剩余风险仅「Erika ohos 实测兼容性」 | 功能验证 | 阶段 0 POC 项覆盖（DV 色彩对比、硬解、软解回退） |
 | R6 | GitHub Actions 无官方鸿蒙 runner | CI | **已降级**：CLI 构建可行（官方文档 + 社区 action 先例），仅需应对坑点（镜像/超时/缓存/Secrets）；保留手动 workflow_dispatch |
 | R7 | AppGallery 审核（权限、版权内容、SDK 合规） | 上架 | 提前写隐私政策；APP 备案前置；RTM/RTC SDK 需附声网合规说明；预留 2 轮审核时间 |

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' show Size;
 
+import 'package:flutter/painting.dart' show BoxFit;
+
 import 'package:erika_flutter/erika_flutter.dart' show ErikaPlayer;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:media_kit_video/media_kit_video.dart' show VideoController;
@@ -23,6 +25,7 @@ class PlayerCoreBridge
         himi.ErikaPlayerProvider,
         himi.MediaKitPlayerProvider,
         himi.MediaKitSettingsApplier,
+        himi.MediaKitVideoFitApplier,
         himi.ErikaDanmakuPlayer {
   PlayerCoreBridge(this.core);
 
@@ -48,7 +51,25 @@ class PlayerCoreBridge
 
   @override
   Future<void> seek({required int positionMs}) async {
-    core.seek(position: positionMs);
+    final core = this.core;
+    if (core is PlayerAsyncSeek) {
+      await (core as PlayerAsyncSeek).seekAndWait(position: positionMs);
+    } else {
+      core.seek(position: positionMs);
+    }
+  }
+
+  @override
+  void applyVideoFit(
+    BoxFit fit, {
+    required Size container,
+    required Size video,
+  }) {
+    final core = this.core;
+    if (core is VideoFitPlayer) {
+      (core as VideoFitPlayer)
+          .applyVideoFit(fit, container: container, video: video);
+    }
   }
 
   @override

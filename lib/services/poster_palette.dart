@@ -5,7 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 
-/// 海报主色提取（零依赖自研）。
+/// 海报主色提取（零依赖内置实现）。
 ///
 /// 图片（多已磁盘缓存）→ 解码 → 缩至 64×64 → RGBA 采样 →
 /// 4-bit 量化分桶 → 严格池（防近黑/近白主导）选首色，候选按频次

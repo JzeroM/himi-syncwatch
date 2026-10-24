@@ -1,5 +1,7 @@
 import 'dart:ui' show Size;
 
+import 'package:flutter/painting.dart' show BoxFit;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 
 import 'player_data_models.dart';
@@ -127,6 +129,14 @@ abstract interface class ErikaViewPlayer {
 
 abstract interface class MediaKitViewPlayer {
   Object? get mediaKitController;
+}
+
+abstract interface class VideoFitPlayer {
+  void applyVideoFit(
+    BoxFit fit, {
+    required Size container,
+    required Size video,
+  });
 }
 
 abstract interface class MediaKitSettingsPlayer {

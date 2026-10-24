@@ -224,6 +224,7 @@ class NipaErikaAdapter extends AbstractPlayer
   StreamSubscription<ErikaPlayerEvent>? _eventSubscription;
   Future<void>? _disposeFuture;
   PlayerPlaybackState _state = PlayerPlaybackState.stopped;
+  bool _playRequested = false;
   PlayerMediaInfo _mediaInfo = PlayerMediaInfo(duration: 0);
   String _media = '';
   String _userAgent = '';
@@ -345,19 +346,30 @@ class NipaErikaAdapter extends AbstractPlayer
     if (value == _state) {
       return;
     }
+    final wasPlaying = _state == PlayerPlaybackState.playing;
+    _playRequested = value == PlayerPlaybackState.playing;
+    _emitState(value);
     switch (value) {
       case PlayerPlaybackState.playing:
         _dispatchStateCommand('play', playDirectly);
         break;
       case PlayerPlaybackState.paused:
-        _dispatchStateCommand('pause', pauseDirectly);
+        if (wasPlaying) {
+          _dispatchStateCommand('pause', pauseDirectly);
+        }
         break;
       case PlayerPlaybackState.stopped:
-        _state = PlayerPlaybackState.stopped;
         _lastPositionMs = 0;
         _dispatchStateCommand('stop', _player.stop);
         break;
     }
+  }
+
+  void _emitState(PlayerPlaybackState next) {
+    if (_state == next) return;
+    final old = _state;
+    _state = next;
+    _stateCtrl.add((oldValue: old, newValue: next));
   }
 
   void _dispatchStateCommand(
@@ -593,7 +605,8 @@ class NipaErikaAdapter extends AbstractPlayer
       httpHeaders: headers.isEmpty ? null : headers,
     );
     _subtitleTrace('prepare open complete media=$_media');
-    _state = PlayerPlaybackState.paused;
+    _playRequested = false;
+    _emitState(PlayerPlaybackState.paused);
     if (startMs > 0) {
       await _player.seek(Duration(milliseconds: startMs));
       _lastPositionMs = startMs;
@@ -753,16 +766,14 @@ class NipaErikaAdapter extends AbstractPlayer
     _ensureSupported();
     await _player.ensureCreated();
     await _player.play();
-    _state = PlayerPlaybackState.playing;
+    _playRequested = false;
+    _emitState(PlayerPlaybackState.playing);
     _lastPositionUpdate = DateTime.now();
   }
 
   @override
   Future<void> pauseDirectly() async {
     _ensureSupported();
-    if (_state != PlayerPlaybackState.playing) {
-      return;
-    }
     await _player.ensureCreated();
     _lastPositionMs = position;
     try {
@@ -775,7 +786,8 @@ class NipaErikaAdapter extends AbstractPlayer
       }
       rethrow;
     }
-    _state = PlayerPlaybackState.paused;
+    _playRequested = false;
+    _emitState(PlayerPlaybackState.paused);
     _lastPositionUpdate = DateTime.now();
   }
 
@@ -1325,26 +1337,32 @@ class NipaErikaAdapter extends AbstractPlayer
 
     if (event.kind == ErikaEventKind.stateChanged ||
         event.kind == ErikaEventKind.error) {
-      final oldState = _state;
       final oldStatus = mediaStatus;
+      final PlayerPlaybackState nextState;
       switch (event.state) {
         case ErikaPlaybackState.playing:
-          _state = PlayerPlaybackState.playing;
+          nextState = PlayerPlaybackState.playing;
           break;
         case ErikaPlaybackState.paused:
         case ErikaPlaybackState.ready:
         case ErikaPlaybackState.opening:
-          _state = PlayerPlaybackState.paused;
+          nextState = PlayerPlaybackState.paused;
           break;
         case ErikaPlaybackState.stopped:
         case ErikaPlaybackState.closed:
         case ErikaPlaybackState.idle:
         case ErikaPlaybackState.error:
-          _state = PlayerPlaybackState.stopped;
+          nextState = PlayerPlaybackState.stopped;
           break;
       }
-      if (oldState != _state) {
-        _stateCtrl.add((oldValue: oldState, newValue: _state));
+      if (nextState == PlayerPlaybackState.playing) {
+        _playRequested = false;
+        _emitState(nextState);
+      } else if (nextState == PlayerPlaybackState.paused) {
+        if (!_playRequested) _emitState(nextState);
+      } else {
+        _playRequested = false;
+        _emitState(nextState);
       }
       final newStatus = mediaStatus;
       if (oldStatus != newStatus) {

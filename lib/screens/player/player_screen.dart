@@ -21,7 +21,8 @@ import 'package:himi_syncwatch/services/player/stream_stall_guard.dart';
 import 'package:erika_flutter/erika_flutter.dart'
     show ErikaVideoView, ErikaOutputMode;
 import 'package:himi_syncwatch/services/player/erika_player_adapter.dart';
-import 'package:media_kit_video/media_kit_video.dart' show Video;
+import 'package:media_kit_video/media_kit_video.dart'
+    show Video, VideoController;
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/episode_info.dart';
@@ -1129,6 +1130,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
   BoxFit _videoFit = BoxFit.contain;
   Size? _videoNativeSize;
+  String? _lastMediaKitFitKey;
 
   /// 黑帧取证用纹理尺寸文本：textureSize 未 resolve 时显示 '-'。
   String get _textureSizeText => _videoNativeSize == null
@@ -3048,6 +3050,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted || _disposed) return;
     // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。
     _currentEngine = engine;
+    _lastMediaKitFitKey = null;
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
     _switchingEngine = false;
     await _initPlayerProperties();
@@ -6707,6 +6710,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  Widget _buildMediaKitVideo(VideoController controller) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final videoSize = _videoNativeSize;
+        if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
+          final container = Size(
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 0,
+          );
+          final key = '${_videoFit.index}:'
+              '${container.width.round()}x${container.height.round()}:'
+              '${videoSize.width.round()}x${videoSize.height.round()}';
+          if (key != _lastMediaKitFitKey) {
+            _lastMediaKitFitKey = key;
+            final player = _player;
+            if (player is MediaKitVideoFitApplier) {
+              (player as MediaKitVideoFitApplier).applyVideoFit(
+                _videoFit,
+                container: container,
+                video: videoSize,
+              );
+            }
+          }
+        }
+        return Video(
+          controller: controller,
+          controls: null,
+          fit: _videoFit == BoxFit.cover ? BoxFit.contain : _videoFit,
+          wakelock: false,
+        );
+      },
+    );
+  }
+
   Widget _buildVideoArea() {
     final videoAreaTvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     final clockFormat = ref.watch(
@@ -6739,13 +6776,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     ? ErikaVideoView(player: erikaPlayer)
                     : _currentEngine == PlayerEngine.mediaKit &&
                             mediaKitController != null
-                        // media_kit：挂载 Video widget（VideoController 注册 Flutter Texture）
-                        ? Video(
-                            controller: mediaKitController,
-                            controls: null,
-                            fit: _videoFit,
-                            wakelock: false,
-                          )
+                        ? _buildMediaKitVideo(mediaKitController)
                         : _usesSurfaceView
                             ? _buildSurfaceViewVideo()
                             : ValueListenableBuilder<int?>(

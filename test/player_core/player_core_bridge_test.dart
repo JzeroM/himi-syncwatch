@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show BoxFit;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/player_core/player_core.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart' as himi;
@@ -192,7 +193,50 @@ class _FakeCore extends AbstractPlayer
       this.colorSpace = colorSpace;
 }
 
+class _AsyncSeekFitCore extends _FakeCore
+    implements PlayerAsyncSeek, VideoFitPlayer {
+  int? awaitedSeekPosition;
+  BoxFit? appliedFit;
+  Size? appliedContainer;
+  Size? appliedVideo;
+
+  @override
+  Future<void> seekAndWait({required int position}) async {
+    awaitedSeekPosition = position;
+    this.position = position;
+  }
+
+  @override
+  void applyVideoFit(
+    BoxFit fit, {
+    required Size container,
+    required Size video,
+  }) {
+    appliedFit = fit;
+    appliedContainer = container;
+    appliedVideo = video;
+  }
+}
+
 void main() {
+  test('PlayerCoreBridge 优先等待异步 seek 并透传视频裁剪', () async {
+    final core = _AsyncSeekFitCore();
+    final bridge = PlayerCoreBridge(core);
+
+    await bridge.seek(positionMs: 4321);
+    expect(core.awaitedSeekPosition, 4321);
+    expect(core.position, 4321);
+
+    bridge.applyVideoFit(
+      BoxFit.cover,
+      container: const Size(2400, 1080),
+      video: const Size(1920, 1080),
+    );
+    expect(core.appliedFit, BoxFit.cover);
+    expect(core.appliedContainer, const Size(2400, 1080));
+    expect(core.appliedVideo, const Size(1920, 1080));
+  });
+
   test('PlayerCoreBridge 映射状态/媒体/轨道/截图', () async {
     final core = _FakeCore();
     final bridge = PlayerCoreBridge(core);

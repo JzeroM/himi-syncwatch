@@ -1,5 +1,6 @@
 import 'package:erika_flutter/erika_flutter.dart' show ErikaPlayer;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show BoxFit;
 import 'package:media_kit_video/media_kit_video.dart' show VideoController;
 import 'dart:ui' show Size;
 
@@ -8,7 +9,7 @@ import 'dart:ui' show Size;
 /// 平台分布（见 player_engine.dart）：
 /// - mdk：全平台默认
 /// - media_kit：仅 Windows（libmpv；其他平台 PGS/格式不支持，已收敛）
-/// - erika：非 TV 平台（自研 Rust 内核；手机真 HDR10 + 原生位图字幕/PGS）
+/// - erika：非 TV 平台（Rust 内核；手机真 HDR10 + 原生位图字幕/PGS）
 enum PlayerEngine {
   mdk('mdk', 'MDK'),
   mediaKit('media_kit', 'media_kit'),
@@ -172,6 +173,15 @@ abstract interface class MediaKitSettingsApplier {
     String? hwdec,
     String? toneMapping,
     double? cacheSizeMb,
+  });
+}
+
+/// 可选能力：media_kit 原生裁剪（保持字幕由 mpv 合成）。
+abstract interface class MediaKitVideoFitApplier {
+  void applyVideoFit(
+    BoxFit fit, {
+    required Size container,
+    required Size video,
   });
 }
 

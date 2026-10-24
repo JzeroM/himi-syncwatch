@@ -8,7 +8,7 @@ import 'package:himi_syncwatch/services/log_service.dart';
 
 import 'player_adapter.dart';
 
-/// Erika（自研 Rust 内核）播放器适配器：包装 [ErikaPlayer]，实现 [PlayerAdapter]。
+/// Erika（Rust 内核）播放器适配器：包装 [ErikaPlayer]，实现 [PlayerAdapter]。
 ///
 /// 平台：非 TV 平台（Android/iOS/macOS/Linux/Windows）；Android TV 不注册。
 /// 特性：手机真 HDR10 + 原生位图字幕（PGS/VobSub）+ 弹幕。
