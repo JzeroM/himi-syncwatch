@@ -1360,4 +1360,24 @@ void main() {
       );
     });
   });
+  group('playerKernel（播放内核）', () {
+    test('旧数据缺字段回退空串（平台默认）', () {
+      expect(AppSettings.fromJson(const {}).playerKernel, '');
+    });
+
+    test('toJson/fromJson 往返保留合法内核', () {
+      for (final kernel in const ['mdk', 'media_kit', 'erika']) {
+        final json = AppSettings(playerKernel: kernel).toJson();
+        expect(json['playerKernel'], kernel);
+        expect(AppSettings.fromJson(json).playerKernel, kernel);
+      }
+    });
+
+    test('非法内核回退空串', () {
+      expect(
+        AppSettings.fromJson(const {'playerKernel': 'bogus'}).playerKernel,
+        '',
+      );
+    });
+  });
 }

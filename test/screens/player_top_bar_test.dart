@@ -13,6 +13,11 @@ PlayerTopBar _bar({
   String? networkSpeedText,
   bool showDecodeButton = false,
   bool decodeMenuOpen = false,
+  bool showKernelButton = false,
+  String kernelLabel = 'MDK',
+  bool kernelMenuOpen = false,
+  FocusNode? kernelFocusNode,
+  VoidCallback? onToggleKernel,
   bool glassEnabled = true,
   bool showVideoFitButton = false,
   bool showShare = false,
@@ -33,6 +38,11 @@ PlayerTopBar _bar({
       networkSpeedText: networkSpeedText,
       showDecodeButton: showDecodeButton,
       decodeMenuOpen: decodeMenuOpen,
+      showKernelButton: showKernelButton,
+      kernelLabel: kernelLabel,
+      kernelMenuOpen: kernelMenuOpen,
+      kernelFocusNode: kernelFocusNode,
+      onToggleKernel: onToggleKernel,
       glassEnabled: glassEnabled,
       showVideoFitButton: showVideoFitButton,
       videoFitIcon: Icons.fit_screen,
@@ -436,6 +446,52 @@ void main() {
       final open = _chipDecoration(tester);
       expect(open.color, const Color(0xFF6366F1));
       expect(open.boxShadow, isNull);
+    });
+  });
+  group('播放内核胶囊', () {
+    testWidgets('显示当前内核并触发开关回调', (tester) async {
+      var tapped = false;
+      await tester.pumpWidget(_host(_bar(
+        showKernelButton: true,
+        kernelLabel: 'Erika',
+        onToggleKernel: () => tapped = true,
+      )));
+
+      final chip = find.byKey(const ValueKey('playerKernelButton'));
+      expect(chip, findsOneWidget);
+      expect(find.text('Erika'), findsOneWidget);
+      await tester.tap(chip);
+      expect(tapped, isTrue);
+    });
+
+    testWidgets('关闭时不渲染', (tester) async {
+      await tester.pumpWidget(_host(_bar(showKernelButton: false)));
+      expect(find.byKey(const ValueKey('playerKernelButton')), findsNothing);
+    });
+  });
+  group('播放内核胶囊布局', () {
+    testWidgets('窄屏叠加全部顶栏控件不溢出', (tester) async {
+      tester.view.physicalSize = const Size(800, 200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_host(_bar(
+        title: '斯巴达克斯 – S01E02',
+        networkSpeedText: '4.89 MB/s',
+        showKernelButton: true,
+        kernelLabel: 'Erika',
+        showDecodeButton: true,
+        showSubtitleStyleButton: true,
+        showVideoFitButton: true,
+        showSpeedButton: true,
+        showRotateButton: true,
+        showShare: true,
+        reserveClockSpace: true,
+      )));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('playerKernelButton')), findsOneWidget);
     });
   });
 }

@@ -23,6 +23,11 @@ class PlayerTopBar extends StatelessWidget {
     required this.onBack,
     required this.onToggleDecode,
     required this.onShare,
+    this.showKernelButton = false,
+    this.kernelLabel = 'MDK',
+    this.kernelMenuOpen = false,
+    this.kernelFocusNode,
+    this.onToggleKernel,
     this.showSubtitleStyleButton = true,
     this.subtitleStyleMenuOpen = false,
     this.subtitleStyleFocusNode,
@@ -46,6 +51,13 @@ class PlayerTopBar extends StatelessWidget {
 
   final bool showDecodeButton;
   final bool decodeMenuOpen;
+
+  /// 播放内核胶囊（MDK / Erika / MPV）：打开右侧内核选择面板。
+  final bool showKernelButton;
+  final String kernelLabel;
+  final bool kernelMenuOpen;
+  final FocusNode? kernelFocusNode;
+  final VoidCallback? onToggleKernel;
 
   /// 液态玻璃开关（设置页）；false 时解码方块降级纯色平底。
   final bool glassEnabled;
@@ -218,6 +230,32 @@ class PlayerTopBar extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          // 播放内核胶囊：显示当前内核短名，点击打开右侧内核面板
+          if (showKernelButton) ...[
+            TvFocusable(
+              key: const ValueKey('playerKernelButton'),
+              focusNode: kernelFocusNode,
+              radius: 10,
+              onTap: onToggleKernel,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: _decodeChipDecoration(
+                  open: kernelMenuOpen,
+                  glass: glassEnabled,
+                ),
+                child: Text(
+                  kernelLabel,
+                  style: TextStyle(
+                    color:
+                        kernelMenuOpen ? const Color(0xFF6366F1) : Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),

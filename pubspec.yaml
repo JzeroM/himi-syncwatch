@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.2.81+507
+version: 1.3.0+508
 
 environment:
   sdk: ^3.6.0
@@ -19,9 +19,15 @@ dependencies:
   # onMediaStatus 在 player 销毁后回调）；iOS scene disconnect 释放纹理播放器防崩溃
   fvp: ^0.39.1
   # 播放器第二引擎（media_kit/libmpv，仅手机/桌面，TV 模式不注册）
-  media_kit: ^1.2.6
-  media_kit_video: ^2.0.1
-  media_kit_libs_video: ^1.0.7
+  # 与 NipaPlay-Reload 对齐：使用其 media-kit fork 与 libs 1.0.8。
+  # 固定 NipaPlay 提交 9a3f5c1710ed21eb12e29d4bd80a6c50d57d09f8；
+  # media-kit submodule 7a2135661ff37a717f11d6012fefa56cae27ef36。
+  media_kit:
+    path: third_party/nipaplay/media_kit
+  media_kit_video:
+    path: third_party/nipaplay/media_kit_video
+  media_kit_libs_video:
+    path: third_party/nipaplay/media-kit-upstream/libs/universal/media_kit_libs_video
   # 播放器第三引擎（Erika，自研 Rust 内核；原生位图字幕/PGS + HDR/EDR）
   # 仅非 TV 平台注册；Android TV 不加。
   erika_flutter: ^0.2.1
@@ -91,6 +97,18 @@ dependency_overrides:
   # 升级需按此重新同步并去掉 linux/。
   erika_flutter:
     path: third_party/erika_flutter
+  # NipaPlay media-kit fork 的平台库固定为同一提交，避免 pub 解析到旧版
+  # media_kit_libs_windows_video 1.0.11。
+  media_kit:
+    path: third_party/nipaplay/media_kit
+  media_kit_video:
+    path: third_party/nipaplay/media_kit_video
+  media_kit_libs_android_video:
+    path: third_party/nipaplay/media-kit-upstream/libs/android/media_kit_libs_android_video
+  media_kit_libs_ios_video:
+    path: third_party/nipaplay/media-kit-upstream/libs/ios/media_kit_libs_ios_video
+  media_kit_libs_windows_video:
+    path: third_party/nipaplay/media-kit-upstream/libs/windows/media_kit_libs_windows_video
 
 dev_dependencies:
   flutter_test:
@@ -105,6 +123,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/subfont.ttf
     - assets/images/
     - assets/images/platforms/
     - assets/icons/

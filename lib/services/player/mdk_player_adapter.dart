@@ -1,10 +1,12 @@
 import 'dart:async' show unawaited;
+import 'dart:io' show Platform;
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
 import 'package:fvp/mdk.dart' as mdk;
 
 import 'player_adapter.dart';
+import 'subtitle_font_loader.dart';
 
 /// mdk（fvp）播放器适配器：包装 mdk.Player，实现 [PlayerAdapter] 接口。
 ///
@@ -12,9 +14,33 @@ import 'player_adapter.dart';
 /// MediaStatus / ColorSpace / SeekFlag / MediaType / MediaEvent）在
 /// 此层完成与 Adapter 抽象类型的双向映射。
 class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
-  MdkPlayerAdapter() : _player = mdk.Player();
+  MdkPlayerAdapter() : _player = mdk.Player() {
+    _configureSubtitleFonts();
+  }
 
   final mdk.Player _player;
+
+  void _configureSubtitleFonts() {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    unawaited(() async {
+      final info = await ensureSubtitleFontFromAsset(
+        assetPath: 'assets/subfont.ttf',
+      );
+      if (_disposed || info == null) return;
+      final dir = info['directory'];
+      final file = info['filePath'];
+      if (dir == null || file == null) return;
+      try {
+        _player.setProperty('subtitle.font', 'Droid Sans Fallback');
+        _player.setProperty('subtitle.fonts.dir', dir);
+        _player.setProperty('subtitle.fonts.file', file);
+        mdk.setGlobalOption('subtitle.font', 'Droid Sans Fallback');
+        mdk.setGlobalOption('subtitle.fonts.dir', dir);
+        mdk.setGlobalOption('subtitle.fonts.file', file);
+      } catch (_) {}
+    }());
+  }
+
   bool _disposed = false;
 
   /// 并发调用 [disposeAsync] 时共享同一个释放 Future，后到者等待前一个完成。

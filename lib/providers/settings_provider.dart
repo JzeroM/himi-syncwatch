@@ -33,6 +33,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> update({
     String? decodeMode,
+    String? playerKernel,
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
@@ -99,6 +100,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       decodeMode: decodeMode,
       // 手动改动解码方式即标记「用户已设置」，TV 模式默认硬解不再覆盖
       decodeModeUserSet: decodeMode != null ? true : null,
+      playerKernel: playerKernel,
       mkHwdec: mkHwdec,
       mkToneMapping: mkToneMapping,
       mkCacheSize: mkCacheSize,

@@ -11,6 +11,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
+import 'package:himi_syncwatch/player_core/player_core_bridge.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
@@ -20,7 +21,6 @@ import 'package:himi_syncwatch/services/player/stream_stall_guard.dart';
 import 'package:erika_flutter/erika_flutter.dart'
     show ErikaVideoView, ErikaOutputMode;
 import 'package:himi_syncwatch/services/player/erika_player_adapter.dart';
-import 'package:himi_syncwatch/services/player/media_kit_player_adapter.dart';
 import 'package:media_kit_video/media_kit_video.dart' show Video;
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
@@ -87,6 +87,7 @@ import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dar
 import 'package:himi_syncwatch/screens/player/widgets/version_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
+import 'package:himi_syncwatch/screens/player/widgets/player_kernel_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_bottom_row.dart';
 import 'package:himi_syncwatch/screens/player/player_lifecycle_policy.dart';
@@ -1011,6 +1012,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _showSubtitleMenu = false;
   bool _showAudioMenu = false;
+  bool _showKernelMenu = false;
+  bool _switchingKernel = false;
   bool _showDecodeModeMenu = false;
   bool _showSpeedMenu = false;
   bool _showSubtitleStyleMenu = false;
@@ -1084,6 +1087,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 顶栏「字幕样式」按钮焦点（面板打开来源，关闭时归还）。
   final FocusNode _subtitleStyleButtonFocusNode =
       FocusNode(debugLabel: 'subtitleStyleButton');
+
+  /// 顶栏「播放内核」胶囊焦点。
+  final FocusNode _kernelButtonFocusNode =
+      FocusNode(debugLabel: 'playerKernelButton');
 
   /// 当前播放倍速（单人模式；初始取设置持久值，换集/重载后恢复）。
   double _speed = 1.0;
@@ -1797,12 +1804,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       enabled: () => _showControls && mounted,
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
-    // 播放引擎：起播恒 mdk（v1.1.222 全自动路由）；HDR 内容在
-    // _loadEpisodeStream/_playFromUrl 开播前按 resolveEngineForContent 重建。
-    _currentEngine = PlayerEngine.mdk;
-    _player = PlayerEngineFactory.create(_currentEngine,
-        erikaOutputMode: PlayerEngineFactory.resolveErikaOutputMode(
-            hdr: _hdrContent, platform: defaultTargetPlatform));
+    // 播放内核：按平台矩阵 + 用户落盘选择；不再按 HDR/DV 内容自动路由。
+    // 切换内核由顶栏胶囊触发，见 _switchPlayerKernel。
+    _currentEngine = PlayerEngineFactory.resolveSelectedEngine(
+      ref.read(settingsProvider).playerKernel,
+    );
+    _player = PlayerEngineFactory.create(
+      _currentEngine,
+      erikaOutputMode: ErikaOutputMode.auto,
+    );
     // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
     // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
@@ -2003,6 +2013,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
   }
 
+  /// 迁移期取底层内核 adapter（factory 默认返回 PlayerCoreBridge）。
+  T? _wrappedAdapter<T extends PlayerAdapter>() {
+    final p = _player;
+    if (p is PlayerCoreBridge) return p.wrappedAs<T>();
+    return p is T ? p : null;
+  }
+
   Future<void> _initPlayerProperties() async {
     if (!mounted) return;
     final settings = ref.read(settingsProvider);
@@ -2016,8 +2033,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // media_kit 引擎：应用 hwdec/tone-mapping/cache-size 设置
     // mdk 专属属性（avformat.* / demux.* / avcodec.* / videoDecoders 等）
     // 对 mpv 无效，media_kit 档跳过
-    if (_player is MediaKitPlayerAdapter) {
-      (_player as MediaKitPlayerAdapter).applySettings(
+    if (_player is MediaKitSettingsApplier) {
+      await (_player as MediaKitSettingsApplier).applyMediaKitSettings(
         hwdec: settings.mkHwdec,
         toneMapping: settings.mkToneMapping,
         cacheSizeMb: settings.mkCacheSize,
@@ -2026,7 +2043,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     // Erika 引擎：无 mdk 属性可写，直接返回（Erika 设置经其 adapter/构造生效）
-    if (_player is ErikaPlayerAdapter) {
+    if (_player is ErikaPlayerProvider) {
       return;
     }
 
@@ -2212,21 +2229,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           unawaited(_broadcastRoomInfo());
         }
       } catch (_) {}
-
-      // 内容路由：按 HDR 解析目标引擎/输出模式，必要时开播前重建适配器
-      // （HDR→Erika 仅手机+开关+未手动切换；输出模式：HDR 协商 EDR/HDR10，其余 SDR）。
-      final contentHdr = _embyVideoStream?.isHDR == true ||
-          _embyVideoStream?.isDolbyVision == true;
-      final targetEngine = _resolveTargetEngineForContent(contentHdr);
-      final targetMode = PlayerEngineFactory.resolveErikaOutputMode(
-          hdr: contentHdr, platform: defaultTargetPlatform);
-      final modeMismatch = targetEngine == PlayerEngine.erika &&
-          _player is ErikaPlayerAdapter &&
-          (_player as ErikaPlayerAdapter).outputMode != targetMode;
-      if (targetEngine != _currentEngine || modeMismatch) {
-        await _recreateEngineForLoad(targetEngine, targetMode);
-        if (!mounted) return;
-      }
 
       // 第二步：探测 DV 解码能力（不覆盖解码器配置）
       await _probeDvCapability();
@@ -2996,20 +2998,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) LogService().log('Diag', '截帧: $_snapshotInfo');
   }
 
-  /// 内容路由：解析目标引擎（全自动；TV 与手机同一套规则）。
-  /// 非 HDR 恒 mdk；Dolby Vision 恒 mdk（mdk 以 LLDV 处理，输出 SDR/
-  /// HDR10）；HDR（非 DV）且 Erika 可渲染（Vulkan 或 GLES3）→ erika——
-  /// 无 HDR 显示设备由 Erika 内部回退 SDR；不可渲染（如无 Vulkan/
-  /// GLES3 的盒子）→ mdk 直写/HDR 透传；Windows HDR → media_kit。
-  PlayerEngine _resolveTargetEngineForContent(bool hdr) =>
-      PlayerEngineFactory.resolveEngineForContent(
-        hdr: hdr,
-        dolbyVision: _embyVideoStream?.isDolbyVision == true,
-        erikaRenderable: ref
-            .read(deviceProfileProvider)
-            .erikaRenderable(defaultTargetPlatform),
-      );
-
   /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），
   /// fvp(mdk) 为 `void async` → settle 等待其原生 teardown 落定。
   ///
@@ -3340,23 +3328,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _decoderReport = DecoderReport.empty;
       _codecProbeKey = '';
       _bufProgress = -1;
-
-      // 内容路由（v1.1.222，观众路径）：HDR 元数据来自房主 roomInfo
-      // （_handleRoomInfo 已写 _embyVideoStream 并 _refreshHdrContent，
-      // 早于本方法）；必要时开播前重建引擎。必须在 setHttpHeaders
-      // 之前——重建后的新 adapter 无鉴权头。
-      final contentHdr = _embyVideoStream?.isHDR == true ||
-          _embyVideoStream?.isDolbyVision == true;
-      final targetEngine = _resolveTargetEngineForContent(contentHdr);
-      final targetMode = PlayerEngineFactory.resolveErikaOutputMode(
-          hdr: contentHdr, platform: defaultTargetPlatform);
-      final modeMismatch = targetEngine == PlayerEngine.erika &&
-          _player is ErikaPlayerAdapter &&
-          (_player as ErikaPlayerAdapter).outputMode != targetMode;
-      if (targetEngine != _currentEngine || modeMismatch) {
-        await _recreateEngineForLoad(targetEngine, targetMode);
-        if (requestId != _playRequestId || !mounted) return;
-      }
 
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
@@ -5241,6 +5212,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       !_lockController.locked &&
       !_showSubtitleMenu &&
       !_showAudioMenu &&
+      !_showKernelMenu &&
       !_showDecodeModeMenu &&
       !_showSpeedMenu &&
       !_showSubtitleStyleMenu &&
@@ -5680,6 +5652,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showSegmentMarkPanel = true;
       _showControls = true;
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
@@ -5845,6 +5818,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     setState(() {
       _showControls = false;
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
@@ -5873,6 +5847,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _selectorOpenerNode = null;
     setState(() {
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
@@ -5902,6 +5877,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _selectorOpenerNode = null;
     setState(() {
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
@@ -6406,6 +6382,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _selectorFirstFocusNode.dispose();
     _selectorPanelRootFocusNode.dispose();
     _subtitleStyleButtonFocusNode.dispose();
+    _kernelButtonFocusNode.dispose();
     _skipPromptFocusNode.dispose();
     _segmentMarkFirstFocusNode.dispose();
     _segmentMarkScopeNode.dispose();
@@ -6542,6 +6519,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (ref.read(settingsProvider).tvMode) return false;
     if (_showSubtitleMenu ||
         _showAudioMenu ||
+        _showKernelMenu ||
         _showSpeedMenu ||
         _showSubtitleStyleMenu ||
         _showEpisodeMenu ||
@@ -6575,6 +6553,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
         if (_showSubtitleMenu ||
             _showAudioMenu ||
+            _showKernelMenu ||
             _showSpeedMenu ||
             _showSubtitleStyleMenu ||
             _showEpisodeMenu ||
@@ -6744,21 +6723,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       safeBottom: MediaQuery.of(context).padding.bottom,
     );
     // 视频 / 占位文字
+    final erikaPlayer = _player is ErikaPlayerProvider
+        ? (_player as ErikaPlayerProvider).erikaPlayer
+        : null;
+    final mediaKitController = _player is MediaKitPlayerProvider
+        ? (_player as MediaKitPlayerProvider).mediaKitController
+        : null;
     final videoContent = _isPlayerReady ||
             (!_hasEpisodeList && widget.roomCode == null)
         ? Center(
             child: _switchingEngine
                 ? const SizedBox.shrink()
-                : _currentEngine == PlayerEngine.erika
+                : _currentEngine == PlayerEngine.erika && erikaPlayer != null
                     // Erika：原生 surface/TextureView（自绘；含位图字幕 PGS 合成）
-                    ? ErikaVideoView(
-                        player: (_player as ErikaPlayerAdapter).erikaPlayer,
-                      )
-                    : _currentEngine == PlayerEngine.mediaKit
+                    ? ErikaVideoView(player: erikaPlayer)
+                    : _currentEngine == PlayerEngine.mediaKit &&
+                            mediaKitController != null
                         // media_kit：挂载 Video widget（VideoController 注册 Flutter Texture）
                         ? Video(
-                            controller: (_player as MediaKitPlayerAdapter)
-                                .videoController,
+                            controller: mediaKitController,
                             controls: null,
                             fit: _videoFit,
                             wakelock: false,
@@ -7081,6 +7064,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               !_switchingEngine &&
               (_showSubtitleMenu ||
                   _showAudioMenu ||
+                  _showKernelMenu ||
                   _showSpeedMenu ||
                   _showSubtitleStyleMenu ||
                   _showEpisodeMenu ||
@@ -7103,78 +7087,94 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   borderRadius: _showEpisodeMenu
                       ? const BorderRadius.horizontal(left: Radius.circular(16))
                       : const BorderRadius.all(Radius.circular(16)),
-                  title: _showSubtitleMenu
-                      ? '字幕'
-                      : _showAudioMenu
-                          ? '音轨'
-                          : _showEpisodeMenu
-                              ? '选集'
-                              : _showSubtitleStyleMenu
-                                  ? '显示调节'
-                                  : _showVersionMenu
-                                      ? '版本'
-                                      : '倍速',
-                  child: _showSubtitleStyleMenu
-                      ? _buildDisplayAdjustPanel()
+                  title: _showKernelMenu
+                      ? '播放内核'
                       : _showSubtitleMenu
-                          ? SubtitleMenuPanel(
-                              player: _player,
-                              subtitleStreams: _embySubtitleStreams,
-                              activeSubtitleIndex: _activeSubtitleIndex,
-                              useServerBurnIn: _useServerSubtitleBurnIn,
-                              itemId: _episodes.isNotEmpty &&
-                                      _currentEpisodeIndex >= 0 &&
-                                      _currentEpisodeIndex < _episodes.length
-                                  ? _episodes[_currentEpisodeIndex].id
-                                  : widget.itemId,
-                              mediaSourceId: widget.mediaSourceId,
-                              token: _currentToken,
-                              focusNode: _selectorFirstFocusNode,
-                              onSubtitleSelected: (index) {
-                                if (index == null) {
-                                  _player.activeSubtitleTracks = [];
-                                  _useServerSubtitleBurnIn = false;
-                                  _activeSubtitleIndex = null;
-                                  _activeLocalSubtitlePath = null;
-                                  _subtitleDelayReloadTimer?.cancel();
-                                } else {
-                                  _selectEmbySubtitle(index);
-                                }
-                              },
-                              onLoadLocal: _loadLocalSubtitle,
-                              onClose: _closeSelectorPanel,
-                            )
+                          ? '字幕'
                           : _showAudioMenu
-                              ? AudioTrackMenuPanel(
+                              ? '音轨'
+                              : _showEpisodeMenu
+                                  ? '选集'
+                                  : _showSubtitleStyleMenu
+                                      ? '显示调节'
+                                      : _showVersionMenu
+                                          ? '版本'
+                                          : '倍速',
+                  child: _showKernelMenu
+                      ? PlayerKernelPanel(
+                          current: _currentEngine,
+                          onSelect: (engine) {
+                            unawaited(_switchPlayerKernel(engine));
+                          },
+                          onClose: _closeSelectorPanel,
+                          focusNode: _selectorFirstFocusNode,
+                        )
+                      : _showSubtitleStyleMenu
+                          ? _buildDisplayAdjustPanel()
+                          : _showSubtitleMenu
+                              ? SubtitleMenuPanel(
                                   player: _player,
-                                  audioStreams: _embyAudioStreams,
+                                  subtitleStreams: _embySubtitleStreams,
+                                  activeSubtitleIndex: _activeSubtitleIndex,
+                                  useServerBurnIn: _useServerSubtitleBurnIn,
+                                  itemId: _episodes.isNotEmpty &&
+                                          _currentEpisodeIndex >= 0 &&
+                                          _currentEpisodeIndex <
+                                              _episodes.length
+                                      ? _episodes[_currentEpisodeIndex].id
+                                      : widget.itemId,
+                                  mediaSourceId: widget.mediaSourceId,
+                                  token: _currentToken,
                                   focusNode: _selectorFirstFocusNode,
-                                  onAudioSelected: _selectEmbyAudio,
+                                  onSubtitleSelected: (index) {
+                                    if (index == null) {
+                                      _player.activeSubtitleTracks = [];
+                                      _useServerSubtitleBurnIn = false;
+                                      _activeSubtitleIndex = null;
+                                      _activeLocalSubtitlePath = null;
+                                      _subtitleDelayReloadTimer?.cancel();
+                                    } else {
+                                      _selectEmbySubtitle(index);
+                                    }
+                                  },
+                                  onLoadLocal: _loadLocalSubtitle,
                                   onClose: _closeSelectorPanel,
                                 )
-                              : _showEpisodeMenu
-                                  ? EpisodeSelectPanel(
-                                      episodes: _episodes,
-                                      currentIndex: _currentEpisodeIndex,
+                              : _showAudioMenu
+                                  ? AudioTrackMenuPanel(
+                                      player: _player,
+                                      audioStreams: _embyAudioStreams,
                                       focusNode: _selectorFirstFocusNode,
-                                      onEpisodeSelected: (index) {
-                                        _switchToEpisode(index);
-                                        _closeSelectorPanel();
-                                      },
+                                      onAudioSelected: _selectEmbyAudio,
+                                      onClose: _closeSelectorPanel,
                                     )
-                                  : _showVersionMenu
-                                      ? VersionMenuPanel(
-                                          sources: _currentMediaSources,
-                                          activeSourceId: _activeMediaSourceId,
+                                  : _showEpisodeMenu
+                                      ? EpisodeSelectPanel(
+                                          episodes: _episodes,
+                                          currentIndex: _currentEpisodeIndex,
                                           focusNode: _selectorFirstFocusNode,
-                                          onSourceSelected: _switchMediaSource,
-                                          onClose: _closeSelectorPanel,
+                                          onEpisodeSelected: (index) {
+                                            _switchToEpisode(index);
+                                            _closeSelectorPanel();
+                                          },
                                         )
-                                      : SpeedMenuPanel(
-                                          current: _speed,
-                                          focusNode: _selectorFirstFocusNode,
-                                          onSelected: _applySpeed,
-                                        ),
+                                      : _showVersionMenu
+                                          ? VersionMenuPanel(
+                                              sources: _currentMediaSources,
+                                              activeSourceId:
+                                                  _activeMediaSourceId,
+                                              focusNode:
+                                                  _selectorFirstFocusNode,
+                                              onSourceSelected:
+                                                  _switchMediaSource,
+                                              onClose: _closeSelectorPanel,
+                                            )
+                                          : SpeedMenuPanel(
+                                              current: _speed,
+                                              focusNode:
+                                                  _selectorFirstFocusNode,
+                                              onSelected: _applySpeed,
+                                            ),
                 ),
               ),
             ),
@@ -7263,6 +7263,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     return PlayerTopBar(
       title: _currentEpisodeTitle,
+      showKernelButton: !_switchingKernel,
+      kernelLabel: _currentEngine.shortLabel,
+      kernelMenuOpen: _showKernelMenu,
+      kernelFocusNode: _kernelButtonFocusNode,
+      onToggleKernel: _toggleKernelMenu,
       networkSpeedText: settings.showNetworkSpeed && _networkSpeedBps != null
           ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
           : null,
@@ -7321,6 +7326,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     setState(() {
       _showSubtitleStyleMenu = !_showSubtitleStyleMenu;
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showDecodeModeMenu = false;
@@ -7338,6 +7344,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     setState(() {
       _showSpeedMenu = !_showSpeedMenu;
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showSubtitleStyleMenu = false;
       _showEpisodeMenu = false;
@@ -7348,12 +7355,121 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 顶栏「播放内核」胶囊：开关内核选择面板。
+  void _toggleKernelMenu() {
+    if (_switchingEngine || _switchingKernel) return;
+    setState(() {
+      _showSubtitleMenu = false;
+      _showKernelMenu = !_showKernelMenu;
+      _showAudioMenu = false;
+      _showSpeedMenu = false;
+      _showSubtitleStyleMenu = false;
+      _showEpisodeMenu = false;
+      _showVersionMenu = false;
+      _showDecodeModeMenu = false;
+    });
+    if (_showKernelMenu) _openSelectorPanel(_kernelButtonFocusNode);
+  }
+
+  /// 切换播放内核：保留当前位置/音轨/字幕，失败时提示。
+  Future<void> _switchPlayerKernel(PlayerEngine target) async {
+    if (_switchingKernel || _switchingEngine || target == _currentEngine) {
+      return;
+    }
+    if (!PlayerEngineFactory.isSupported(target)) {
+      if (mounted) showAppToast(context, '当前平台不支持 ${target.label}');
+      return;
+    }
+
+    final previous = _currentEngine;
+    final wasPlaying = _player.state == AdapterPlaybackState.playing;
+    final positionMs = _player.position;
+    final oldAudio = List<int>.of(_player.activeAudioTracks);
+    final oldSubtitleIndex = _activeSubtitleIndex;
+    final oldLocalSubtitle = _activeLocalSubtitlePath;
+    final oldVolume = _volume;
+    final oldSpeed = _speed;
+
+    setState(() {
+      _switchingKernel = true;
+      _showKernelMenu = false;
+      _showControls = true;
+    });
+    try {
+      await _recreateEngineForLoad(target, ErikaOutputMode.auto);
+      if (!mounted) return;
+
+      if (_currentPlayUrl.isNotEmpty) {
+        if (_currentToken.isNotEmpty) {
+          _player.setHttpHeaders({'X-Emby-Token': _currentToken});
+        }
+        _player.media = _currentPlayUrl;
+        await _player.prepare(startMs: positionMs);
+        if (!mounted) return;
+        await _ensureTexture();
+        await _syncVideoNativeSize();
+        await _waitSurfaceCreated();
+        if (!mounted) return;
+        _player.volume = (oldVolume / 100).clamp(0.0, 1.0);
+        _player.playbackRate = oldSpeed;
+        if (oldAudio.isNotEmpty) _player.activeAudioTracks = oldAudio;
+
+        if (oldLocalSubtitle != null) {
+          await _loadSubtitleFileIntoPlayer(oldLocalSubtitle);
+        } else if (oldSubtitleIndex != null) {
+          final pos = _embySubtitleStreams
+              .indexWhere((s) => s.index == oldSubtitleIndex);
+          if (pos >= 0) await _selectEmbySubtitle(pos);
+        }
+
+        _player.state = wasPlaying
+            ? AdapterPlaybackState.playing
+            : AdapterPlaybackState.paused;
+      }
+
+      await ref.read(settingsProvider.notifier).update(playerKernel: target.id);
+      _syncPlayState();
+    } catch (e) {
+      LogService().log('Player', '切换内核失败: $previous -> $target: $e');
+      if (mounted) {
+        showAppToast(context, '切换内核失败，保留 ${previous.label}');
+      }
+      // 旧内核已释放；尽可能回滚到原内核并重载当前位置。
+      if (mounted && _currentEngine != previous) {
+        try {
+          await _recreateEngineForLoad(previous, ErikaOutputMode.auto);
+          if (_currentPlayUrl.isNotEmpty) {
+            if (_currentToken.isNotEmpty) {
+              _player.setHttpHeaders({'X-Emby-Token': _currentToken});
+            }
+            _player.media = _currentPlayUrl;
+            await _player.prepare(startMs: positionMs);
+            await _ensureTexture();
+            await _syncVideoNativeSize();
+            await _waitSurfaceCreated();
+            _player.state = wasPlaying
+                ? AdapterPlaybackState.playing
+                : AdapterPlaybackState.paused;
+          }
+        } catch (rollbackError) {
+          LogService().log('Player', '内核回滚失败: $rollbackError');
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _switchingKernel = false);
+        _syncPlayState();
+      }
+    }
+  }
+
   /// 选集按钮（底栏音轨右侧；仅单人模式多集时显示）：开关选集面板
   /// （与字幕/音轨/倍速/显示调节互斥）。
   void _toggleEpisodeMenu() {
     setState(() {
       _showEpisodeMenu = !_showEpisodeMenu;
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
@@ -7371,6 +7487,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     setState(() {
       _showVersionMenu = !_showVersionMenu;
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
@@ -7436,9 +7553,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _applyErikaDanmaku() {
     if (_currentEngine != PlayerEngine.erika) return;
     final p = _player;
-    if (p is! ErikaPlayerAdapter) return;
-    unawaited(p.setDanmakuEnabled(_danmakuOn));
-    unawaited(p.loadDanmakuJson(_danmakuJson()));
+    if (p is! ErikaDanmakuPlayer) return;
+    final danmaku = p as ErikaDanmakuPlayer;
+    unawaited(danmaku.setDanmakuEnabled(_danmakuOn));
+    unawaited(danmaku.loadDanmakuJsonString(_danmakuJson()));
     unawaited(_applyErikaDanmakuConfig());
   }
 
@@ -7449,9 +7567,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _applyErikaDanmakuConfig() async {
     if (_currentEngine != PlayerEngine.erika) return;
     final p = _player;
-    if (p is! ErikaPlayerAdapter) return;
+    if (p is! ErikaDanmakuPlayer) return;
     final s = ref.read(settingsProvider);
-    await p.setDanmakuConfig(
+    await (p as ErikaDanmakuPlayer).setDanmakuConfigHimi(
       fontSize: DanmakuOverlay.baseFontSize * s.danmakuFontSize,
       opacity: s.danmakuOpacity,
       scrollDurationSeconds: s.danmakuSpeed > 0 ? 8.0 / s.danmakuSpeed : 8.0,
@@ -7488,6 +7606,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _resetHideTimer();
     setState(() {
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showSpeedMenu = false;
       _showSubtitleStyleMenu = false;
@@ -7502,8 +7621,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     // Erika 档：开关直接下发引擎原生弹幕
     if (_currentEngine == PlayerEngine.erika) {
-      final p = _player;
-      if (p is ErikaPlayerAdapter) unawaited(p.setDanmakuEnabled(_danmakuOn));
+      final p = _wrappedAdapter<ErikaPlayerAdapter>();
+      if (p != null) unawaited(p.setDanmakuEnabled(_danmakuOn));
     }
   }
 
@@ -7830,6 +7949,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     setState(() {
       _showControls = false;
       _showSubtitleMenu = false;
+      _showKernelMenu = false;
       _showAudioMenu = false;
       _showDecodeModeMenu = false;
       _showSpeedMenu = false;
@@ -7868,6 +7988,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     if (_showSubtitleMenu ||
         _showAudioMenu ||
+        _showKernelMenu ||
         _showDecodeModeMenu ||
         _showSpeedMenu ||
         _showSubtitleStyleMenu ||
@@ -8508,6 +8629,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       setState(() {
                         _showAudioMenu = !_showAudioMenu;
                         _showSubtitleMenu = false;
+                        _showKernelMenu = false;
                         _showSpeedMenu = false;
                         _showSubtitleStyleMenu = false;
                         _showEpisodeMenu = false;
@@ -9424,7 +9546,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// mdk 的 setMedia 是同步追加，count-1 语义成立。
   Future<int> _loadSubtitleFileIntoPlayer(String path) async {
     await _player.setMedia(path, type: AdapterMediaType.subtitle);
-    if (_player is MediaKitPlayerAdapter) {
+    if (_player is MediaKitPlayerProvider) {
       // sub-add select 已自动激活新轨
       return _player.activeSubtitleTracks.isNotEmpty
           ? _player.activeSubtitleTracks.first

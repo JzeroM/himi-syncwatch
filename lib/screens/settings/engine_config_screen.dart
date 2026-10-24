@@ -14,9 +14,9 @@ import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 /// 「播放器配置」：顶部 TabBar 按引擎分页（MDK / media_kit / Erika），
 /// 每个 tab 是**该引擎专属设置**。
 ///
-/// 引擎选择全自动路由（TV 与手机同一套规则），本页不提供切换。
-/// tab 列表 = 当前平台可用引擎（MDK/Erika 全平台；media_kit 仅 Windows）；
-/// MDK / Erika tab 顶部展示设备能力评估卡片。
+/// 内核选择在播放器顶栏切换；本页按当前平台可用内核展示各自设置。
+/// tab 列表 = 当前平台可用内核（Android/Windows: MDK/MediaKit/Erika；
+/// iOS: Erika）；MDK / Erika tab 顶部展示设备能力评估卡片。
 class EngineConfigScreen extends ConsumerStatefulWidget {
   const EngineConfigScreen({super.key});
 
@@ -293,7 +293,7 @@ class _EngineTabBody extends ConsumerWidget {
         child: Text(
           'Erika：原生位图字幕（PGS/VobSub）、原生 GPU 弹幕、'
           '真 HDR10/EDR 输出。\n'
-          '输出模式按内容自动路由（HDR 片源协商 EDR/HDR10，其余 SDR），无需手动设置。'
+          '输出模式由 Erika 按显示能力协商（HDR/EDR 或 SDR），不再按片源自动切内核。'
           'Android HDR 需可渲染（Vulkan/GLES3，能力卡片可查）：'
           '真 HDR10 另需 Vulkan + HDR 显示，无 HDR 显示时自动回退 SDR。',
           style: TextStyle(fontSize: 12, color: Colors.white54),

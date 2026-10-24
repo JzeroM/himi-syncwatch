@@ -1,4 +1,3 @@
-import 'package:erika_flutter/erika_flutter.dart' show ErikaOutputMode;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fvp/mdk.dart' as mdk;
@@ -10,166 +9,86 @@ import 'package:himi_syncwatch/services/player/player_engine.dart';
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  group('PlayerEngineFactory.resolveErikaOutputMode（按内容路由）', () {
-    test('非 HDR → SDR（全平台）', () {
-      for (final p in TargetPlatform.values) {
-        expect(
-          PlayerEngineFactory.resolveErikaOutputMode(hdr: false, platform: p),
-          ErikaOutputMode.sdr,
-          reason: '$p',
-        );
-      }
-    });
-
-    test('HDR：Android → extendedLinear', () {
-      expect(
-        PlayerEngineFactory.resolveErikaOutputMode(
-            hdr: true, platform: TargetPlatform.android),
-        ErikaOutputMode.extendedLinear,
-      );
-    });
-
-    test('HDR：iOS/macOS/其他 → auto（协商 EDR/HDR10）', () {
-      for (final p in const [
-        TargetPlatform.iOS,
-        TargetPlatform.macOS,
-        TargetPlatform.windows,
-      ]) {
-        expect(
-          PlayerEngineFactory.resolveErikaOutputMode(hdr: true, platform: p),
-          ErikaOutputMode.auto,
-          reason: '$p',
-        );
-      }
-    });
-  });
-
-  group('PlayerEngineFactory.supportedEngines（平台感知，TV 与手机一致）', () {
-    test('Android/iOS/macOS 含 Erika；Linux 不含（首版无预编译）', () {
+  group('PlayerEngineFactory.supportedEngines（平台矩阵）', () {
+    test('Android/Windows：MDK + MediaKit + Erika', () {
       for (final p in const [
         TargetPlatform.android,
-        TargetPlatform.iOS,
-        TargetPlatform.macOS,
+        TargetPlatform.windows,
       ]) {
         debugDefaultTargetPlatformOverride = p;
         final e = PlayerEngineFactory.supportedEngines();
-        expect(e, contains(PlayerEngine.mdk), reason: '$p');
-        expect(e, contains(PlayerEngine.erika), reason: '$p');
-        expect(e, isNot(contains(PlayerEngine.mediaKit)), reason: '$p');
+        expect(
+          e,
+          containsAll(<PlayerEngine>[
+            PlayerEngine.mdk,
+            PlayerEngine.mediaKit,
+            PlayerEngine.erika,
+          ]),
+          reason: '$p',
+        );
       }
-      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-      final linux = PlayerEngineFactory.supportedEngines();
-      expect(linux, contains(PlayerEngine.mdk));
-      expect(linux, isNot(contains(PlayerEngine.erika)));
-      expect(linux, isNot(contains(PlayerEngine.mediaKit)));
     });
 
-    test('Windows：MDK + media_kit（无 Erika）', () {
+    test('iOS：仅 Erika', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(
+        PlayerEngineFactory.supportedEngines(),
+        <PlayerEngine>[PlayerEngine.erika],
+      );
+    });
+
+    test('Linux：仅 MDK', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      expect(
+        PlayerEngineFactory.supportedEngines(),
+        <PlayerEngine>[PlayerEngine.mdk],
+      );
+    });
+  });
+
+  group('PlayerEngineFactory.defaultEngine / resolveSelectedEngine', () {
+    test('Android/Windows 默认 MDK；iOS 默认 Erika', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mdk);
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      final e = PlayerEngineFactory.supportedEngines();
-      expect(e, [PlayerEngine.mdk, PlayerEngine.mediaKit]);
-      expect(e, isNot(contains(PlayerEngine.erika)));
+      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mdk);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.erika);
+    });
+
+    test('落盘内核受平台限制，不支持时回退默认', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(
+        PlayerEngineFactory.resolveSelectedEngine('mdk'),
+        PlayerEngine.erika,
+      );
+      expect(
+        PlayerEngineFactory.resolveSelectedEngine('erika'),
+        PlayerEngine.erika,
+      );
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(
+        PlayerEngineFactory.resolveSelectedEngine('media_kit'),
+        PlayerEngine.mediaKit,
+      );
+      expect(
+        PlayerEngineFactory.resolveSelectedEngine('bogus'),
+        PlayerEngine.mdk,
+      );
     });
   });
 
   group('PlayerEngineFactory.isSupported', () {
-    test('非 Windows 不支持 media_kit；Windows 支持', () {
+    test('Android 支持三内核；iOS 仅 Erika；Windows 支持三内核', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      expect(
-        PlayerEngineFactory.isSupported(PlayerEngine.mediaKit),
-        isFalse,
-      );
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isTrue);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      expect(
-        PlayerEngineFactory.isSupported(PlayerEngine.mediaKit),
-        isTrue,
-      );
-    });
-
-    test('Windows/Linux 不支持 Erika；Android 支持', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      expect(
-        PlayerEngineFactory.isSupported(PlayerEngine.erika),
-        isFalse,
-      );
-      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-      expect(
-        PlayerEngineFactory.isSupported(PlayerEngine.erika),
-        isFalse,
-      );
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      expect(
-        PlayerEngineFactory.isSupported(PlayerEngine.erika),
-        isTrue,
-      );
-    });
-  });
-
-  group('PlayerEngineFactory.resolveEngineForContent（全自动路由）', () {
-    PlayerEngine route(
-      bool hdr,
-      bool dv,
-      bool renderable,
-      TargetPlatform p,
-    ) =>
-        PlayerEngineFactory.resolveEngineForContent(
-          hdr: hdr,
-          dolbyVision: dv,
-          erikaRenderable: renderable,
-          platformOverride: p,
-        );
-
-    test('非 HDR：全平台恒 mdk（能力满足与否无关）', () {
-      for (final p in TargetPlatform.values) {
-        expect(route(false, false, true, p), PlayerEngine.mdk, reason: '$p');
-        expect(route(false, false, false, p), PlayerEngine.mdk, reason: '$p');
-      }
-    });
-
-    test('Dolby Vision：全平台恒 mdk（hdr 无关、能力无关、含 Windows）', () {
-      for (final p in TargetPlatform.values) {
-        for (final hdr in const [true, false]) {
-          for (final renderable in const [true, false]) {
-            expect(
-              route(hdr, true, renderable, p),
-              PlayerEngine.mdk,
-              reason: '$p hdr=$hdr renderable=$renderable',
-            );
-          }
-        }
-      }
-    });
-
-    test('HDR（非 DV）+ Android/iOS 且 Erika 可渲染（Vulkan/GLES3 任一）→ erika',
-        () {
-      for (final p in const [
-        TargetPlatform.android,
-        TargetPlatform.iOS,
-      ]) {
-        expect(route(true, false, true, p), PlayerEngine.erika, reason: '$p');
-      }
-    });
-
-    test('HDR（非 DV）+ Android/iOS 不可渲染（如 ES2-only 盒子）→ mdk 直写兜底',
-        () {
-      expect(route(true, false, false, TargetPlatform.android), PlayerEngine.mdk);
-      expect(route(true, false, false, TargetPlatform.iOS), PlayerEngine.mdk);
-    });
-
-    test('HDR（非 DV）+ Windows → media_kit（能力参数不参与）', () {
-      expect(
-        route(true, false, false, TargetPlatform.windows),
-        PlayerEngine.mediaKit,
-      );
-    });
-
-    test('HDR（非 DV）+ macOS/Linux → mdk 兜底', () {
-      for (final p in const [
-        TargetPlatform.macOS,
-        TargetPlatform.linux,
-      ]) {
-        expect(route(true, false, true, p), PlayerEngine.mdk, reason: '$p');
-      }
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isTrue);
     });
   });
 
@@ -178,8 +97,7 @@ void main() {
       final flags = MdkPlayerAdapter.seekFlags;
       expect(flags.test(mdk.SeekFlag.keyFrame), isTrue);
       expect(flags.test(mdk.SeekFlag.inCache), isTrue);
-      expect(flags.rawValue,
-          mdk.SeekFlag.keyFrame | mdk.SeekFlag.inCache);
+      expect(flags.rawValue, mdk.SeekFlag.keyFrame | mdk.SeekFlag.inCache);
     });
   });
 

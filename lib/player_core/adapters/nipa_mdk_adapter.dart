@@ -1,0 +1,917 @@
+// ignore_for_file: unreachable_switch_default, dead_null_aware_expression
+import 'package:fvp/mdk.dart' as mdk;
+import 'package:flutter/foundation.dart';
+// Required for Uint8List
+import 'dart:async';
+import 'dart:ui' show Size;
+import '../abstract_player.dart';
+import '../player_data_models.dart';
+import '../player_enums.dart';
+import '../../services/log_service.dart';
+import '../../services/player/subtitle_font_loader.dart';
+
+@visibleForTesting
+StreamSubscription<({mdk.MediaStatus oldValue, mdk.MediaStatus newValue})>?
+    listenMdkMediaStatus(
+  Object source,
+  void Function(mdk.MediaStatus status) onStatus,
+) {
+  if (source
+      is Stream<({mdk.MediaStatus oldValue, mdk.MediaStatus newValue})>) {
+    return source.listen((event) => onStatus(event.newValue));
+  }
+  // Mainline FVP 0.33 registers a callback; the OHOS 0.37 fork uses a stream.
+  (source as void Function(
+    bool Function(mdk.MediaStatus oldStatus, mdk.MediaStatus status),
+  ))((oldStatus, status) {
+    onStatus(status);
+    return true;
+  });
+  return null;
+}
+
+@visibleForTesting
+void applyMdkUserAgentProperties(
+  void Function(String key, String value) setter,
+  String userAgent,
+) {
+  setter('avformat.user_agent', userAgent);
+  setter('avio.user_agent', userAgent);
+}
+
+@visibleForTesting
+void applyMdkHttpProxyProperties(
+  void Function(String key, String value) setter,
+  String httpProxy,
+) {
+  if (httpProxy.isEmpty) return;
+  setter('avformat.http_proxy', httpProxy);
+  setter('avio.http_proxy', httpProxy);
+}
+
+// Enum Converters
+PlayerPlaybackState _toPlayerPlaybackState(mdk.PlaybackState state) {
+  if (state == mdk.PlaybackState.stopped) return PlayerPlaybackState.stopped;
+  if (state == mdk.PlaybackState.paused) return PlayerPlaybackState.paused;
+  if (state == mdk.PlaybackState.playing) return PlayerPlaybackState.playing;
+  return PlayerPlaybackState.stopped;
+}
+
+mdk.PlaybackState _fromPlayerPlaybackState(PlayerPlaybackState state) {
+  switch (state) {
+    case PlayerPlaybackState.stopped:
+      return mdk.PlaybackState.stopped;
+    case PlayerPlaybackState.paused:
+      return mdk.PlaybackState.paused;
+    case PlayerPlaybackState.playing:
+      return mdk.PlaybackState.playing;
+  }
+}
+
+mdk.MediaType _fromPlayerMediaType(PlayerMediaType type) {
+  switch (type) {
+    case PlayerMediaType.unknown:
+      return mdk.MediaType.unknown;
+    case PlayerMediaType.video:
+      return mdk.MediaType.video;
+    case PlayerMediaType.audio:
+      return mdk.MediaType.audio;
+    case PlayerMediaType.subtitle:
+      return mdk.MediaType.subtitle;
+    default:
+      throw ArgumentError('Unknown PlayerMediaType: $type');
+  }
+}
+
+PlayerMediaInfo _toPlayerMediaInfo(mdk.MediaInfo mdkInfo,
+    {int internalAudioTrackCount = 0}) {
+  return PlayerMediaInfo(
+    duration: mdkInfo.duration,
+    video: mdkInfo.video?.map((v) {
+      String? codecNameValue;
+      try {
+        try {
+          dynamic trackCodecName = (v as dynamic).codecName;
+          if (trackCodecName is String && trackCodecName.isNotEmpty) {
+            codecNameValue = trackCodecName;
+          }
+        } catch (_) {}
+
+        if (codecNameValue == null) {
+          codecNameValue = v.codec.toString();
+          if (codecNameValue.startsWith('Instance of')) {
+            codecNameValue = 'Unknown Codec';
+          }
+        }
+      } catch (e) {
+        codecNameValue = 'Error Retrieving Codec';
+      }
+      return PlayerVideoStreamInfo(
+        codec: PlayerVideoCodecParams(
+            width: v.codec.width ?? 0,
+            height: v.codec.height ?? 0,
+            name: codecNameValue),
+        codecName: codecNameValue,
+      );
+    }).toList(),
+    subtitle: mdkInfo.subtitle?.map((sMdk) {
+      return PlayerSubtitleStreamInfo(
+        title: sMdk.metadata['title'] ??
+            'Subtitle track ${mdkInfo.subtitle!.indexOf(sMdk)}',
+        language: sMdk.metadata['language'] ?? 'unknown',
+        metadata: sMdk.metadata,
+        rawRepresentation: sMdk.toString(),
+      );
+    }).toList(),
+    audio: mdkInfo.audio?.map<PlayerAudioStreamInfo>((aMdk) {
+      String? codecNameValue;
+      int? bitRate;
+      int? channels;
+      int? sampleRate;
+      String? title;
+      String? language;
+      Map<String, String> metadata = {};
+      String rawRepresentation = 'Unknown Audio Track';
+
+      try {
+        rawRepresentation = aMdk.toString();
+        dynamic mdkAudioCodec = (aMdk as dynamic)?.codec;
+
+        if (mdkAudioCodec != null) {
+          try {
+            dynamic codecNameProp = (mdkAudioCodec as dynamic)?.name;
+            if (codecNameProp is String && codecNameProp.isNotEmpty) {
+              codecNameValue = codecNameProp;
+            } else {
+              codecNameValue = mdkAudioCodec.toString();
+              if (codecNameValue.startsWith('Instance of')) {
+                codecNameValue = 'Unknown Codec';
+              }
+            }
+          } catch (e) {
+            codecNameValue = mdkAudioCodec.toString();
+            if (codecNameValue.startsWith('Instance of')) {
+              codecNameValue = 'Unknown Codec';
+            }
+          }
+
+          try {
+            bitRate = (mdkAudioCodec as dynamic)?.bit_rate as int?;
+          } catch (e) {}
+          try {
+            channels = (mdkAudioCodec as dynamic)?.channels as int?;
+          } catch (e) {}
+          try {
+            sampleRate = (mdkAudioCodec as dynamic)?.sample_rate as int?;
+          } catch (e) {}
+        }
+
+        try {
+          dynamic mdkMetadata = (aMdk as dynamic)?.metadata;
+          if (mdkMetadata is Map) {
+            metadata = mdkMetadata.map(
+                (key, value) => MapEntry(key.toString(), value.toString()));
+            title = metadata['title'];
+            language = metadata['language'];
+          }
+        } catch (e) {}
+      } catch (e) {}
+
+      final trackIndex = mdkInfo.audio!.indexOf(aMdk);
+      return PlayerAudioStreamInfo(
+        codec: PlayerAudioCodecParams(
+          name: codecNameValue,
+          bitRate: bitRate,
+          channels: channels,
+          sampleRate: sampleRate,
+        ),
+        title: title ?? 'Audio track $trackIndex',
+        language: language ?? 'unknown',
+        metadata: metadata,
+        rawRepresentation: rawRepresentation,
+        isExternal: internalAudioTrackCount > 0 &&
+            trackIndex >= internalAudioTrackCount,
+      );
+    }).toList(),
+  );
+}
+
+class NipaMdkAdapter extends AbstractPlayer
+    implements
+        PlayerAsyncDisposable,
+        PlayerAsyncSeek,
+        PlayerBufferingAware,
+        PlayerEventSource,
+        MediaStatusPlayer,
+        NativeHandlePlayer,
+        TextureSizePlayer,
+        HttpHeadersPlayer,
+        ColorSpacePlayer,
+        AudioBackendsPlayer,
+        RenderVideoPlayer,
+        PlayerAsyncSetMedia {
+  final ValueNotifier<bool> _buffering = ValueNotifier<bool>(false);
+  final _stateCtrl = StreamController<
+      ({
+        PlayerPlaybackState oldValue,
+        PlayerPlaybackState newValue
+      })>.broadcast();
+  final _statusCtrl = StreamController<
+      ({PlayerMediaStatus oldValue, PlayerMediaStatus newValue})>.broadcast();
+  final _eventCtrl = StreamController<PlayerMediaEvent>.broadcast();
+  StreamSubscription? _stateSub;
+  StreamSubscription? _statusSub;
+  StreamSubscription? _eventSub;
+
+  @override
+  ValueListenable<bool> get buffering => _buffering;
+  late mdk.Player _mdkPlayer;
+  double _playbackRate = 1.0;
+  List<String> _videoDecoders = const [];
+  List<String> _audioDecoders = const [];
+  final Map<String, String> _stickyProperties = {};
+  String? _activeVideoDecoder;
+  String? _activeAudioDecoder;
+  int _internalAudioTrackCount = 0; // 内部音频轨道数，用于区分外挂MKA轨道
+  final String _httpProxy;
+  // 幂等守卫：热切换主路径（步骤 3.1）与 finally 兜底会先后调用
+  // disposeAsync，必须合并为同一次 teardown，杜绝 double mdkPlayerAPI_delete。
+  bool _isDisposed = false;
+  Future<void>? _disposeAsyncFuture;
+  final Set<String> _callsAfterTeardown = {};
+  // Bumped by every seek, so a resume seek stops asking again once anything
+  // has asked for another position.
+  int _seekGeneration = 0;
+  Completer<void>? _seekSettled;
+  StreamSubscription<({mdk.MediaStatus oldValue, mdk.MediaStatus newValue})>?
+      _mediaStatusSubscription;
+  NipaMdkAdapter({String? httpProxy}) : _httpProxy = (httpProxy ?? '').trim() {
+    _mdkPlayer = mdk.Player();
+    _attachMdkEventListeners();
+    _applyInitialSettings();
+  }
+
+  @visibleForTesting
+  NipaMdkAdapter.withPlayer(mdk.Player player) : _httpProxy = '' {
+    _mdkPlayer = player;
+    _attachMdkBufferingListener();
+  }
+
+  void _attachMdkBufferingListener() {
+    _mediaStatusSubscription =
+        listenMdkMediaStatus(_mdkPlayer.onMediaStatus, (status) {
+      if (!_isDisposed) {
+        _buffering.value = status.test(mdk.MediaStatus.buffering);
+      }
+      if (!status.test(mdk.MediaStatus.seeking)) _settleSeek();
+    });
+    _buffering.value = _mdkPlayer.mediaStatus.test(mdk.MediaStatus.buffering);
+  }
+
+  void _attachMdkEventListeners() {
+    _attachMdkBufferingListener();
+    _stateSub = _mdkPlayer.onStateChanged.listen((e) {
+      _stateCtrl.add((
+        oldValue: _toPlayerPlaybackState(e.oldValue),
+        newValue: _toPlayerPlaybackState(e.newValue),
+      ));
+    });
+    _statusSub = _mdkPlayer.onMediaStatus.listen((e) {
+      _statusCtrl.add((
+        oldValue: PlayerMediaStatus(_mapRawStatus(e.oldValue)),
+        newValue: PlayerMediaStatus(_mapRawStatus(e.newValue)),
+      ));
+    });
+    try {
+      void handleEvent(mdk.MediaEvent e) {
+        _eventCtrl.add(PlayerMediaEvent(e.error, e.category, e.detail));
+        switch (e.category) {
+          case 'decoder.video':
+            _activeVideoDecoder = e.detail;
+            break;
+          case 'decoder.audio':
+            _activeAudioDecoder = e.detail;
+            break;
+        }
+      }
+
+      // FVP 0.33 exposes onEvent as a callback registrar, while 0.37 exposes
+      // it as a Stream. Keep both forms working so the shared dependency graph
+      // can stay on the mainline version and HarmonyOS can use its newer fork.
+      final dynamic eventSource = _mdkPlayer.onEvent;
+      if (eventSource is Stream<mdk.MediaEvent>) {
+        eventSource.listen(handleEvent);
+      } else {
+        (eventSource as void Function(void Function(mdk.MediaEvent)))
+            .call(handleEvent);
+      }
+    } catch (e) {
+      debugPrint('MDK: 注册事件监听失败: $e');
+    }
+  }
+
+  void _setStickyProperty(String key, String value) {
+    _stickyProperties[key] = value;
+    _mdkPlayer.setProperty(key, value);
+  }
+
+  void _applyInitialSettings() {
+    try {
+      applyMdkHttpProxyProperties(_setStickyProperty, _httpProxy);
+      _setStickyProperty('auto_load', '0');
+      _setStickyProperty('subtitle', '1');
+      // 重新应用播放速度设置
+      if (_playbackRate != 1.0) {
+        _mdkPlayer.playbackRate = _playbackRate;
+        debugPrint('MDK: 初始化时应用播放速度: ${_playbackRate}x');
+      }
+    } catch (e) {
+      debugPrint('MDK: 初始化设置失败: $e');
+    }
+
+    _configureSubtitleFonts();
+  }
+
+  void _configureSubtitleFonts() {
+    if (!(defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform.name == 'ohos')) {
+      return;
+    }
+
+    unawaited(() async {
+      try {
+        final fontInfo = await ensureSubtitleFontFromAsset(
+          assetPath: 'assets/subfont.ttf',
+          fileName: 'subfont.ttf',
+        );
+
+        if (fontInfo == null) {
+          debugPrint('MDK: 字幕字体准备失败，使用系统默认字体');
+          return;
+        }
+
+        if (_isDisposed) return;
+        final fontsDir = fontInfo['directory'];
+        final fontFile = fontInfo['filePath'];
+        if (fontsDir == null || fontFile == null) {
+          debugPrint('MDK: 字幕字体路径信息不完整');
+          return;
+        }
+        const fontName = 'Droid Sans Fallback';
+
+        try {
+          _mdkPlayer.setProperty('subtitle.font', fontName);
+          _mdkPlayer.setProperty('subtitle.fonts.dir', fontsDir);
+          _mdkPlayer.setProperty('subtitle.fonts.file', fontFile);
+        } catch (e) {
+          debugPrint('MDK: 设置播放器字幕字体失败: $e');
+        }
+
+        try {
+          mdk.setGlobalOption('subtitle.font', fontName);
+          mdk.setGlobalOption('subtitle.fonts.dir', fontsDir);
+          mdk.setGlobalOption('subtitle.fonts.file', fontFile);
+        } catch (e) {
+          debugPrint('MDK: 设置全局字幕字体失败: $e');
+        }
+
+        debugPrint('MDK: 字幕字体已配置，目录: $fontsDir');
+      } catch (e) {
+        debugPrint('MDK: 配置字幕字体过程中出错: $e');
+      }
+    }());
+  }
+
+  /// fvp deletes the native player on another isolate while this one runs
+  /// on, and its members call through that player's function table, which
+  /// is gone then. Once teardown begins, members answer as a stopped player
+  /// with no media and change nothing; the first call of each is traced
+  /// with its caller.
+  bool _released(String member) {
+    if (!_isDisposed) return false;
+    if (_callsAfterTeardown.add(member)) {
+      final caller = StackTrace.current.toString().split('\n').skip(1).take(14);
+      LogService().log('Player',
+          'mdk $member called after teardown began\n${caller.join('\n')}');
+    }
+    return true;
+  }
+
+  @override
+  double get volume => _mdkPlayer.volume;
+  @override
+  set volume(double value) {
+    if (_released('volume=')) return;
+    _mdkPlayer.volume = value;
+  }
+
+  @override
+  double get playbackRate => _playbackRate;
+  @override
+  set playbackRate(double value) {
+    _playbackRate = value;
+    if (_released('playbackRate=')) return;
+    try {
+      _mdkPlayer.playbackRate = value;
+      debugPrint('MDK: 设置播放速度: ${value}x');
+    } catch (e) {
+      debugPrint('MDK: 设置播放速度失败: $e');
+    }
+  }
+
+  @override
+  PlayerPlaybackState get state => _toPlayerPlaybackState(_mdkPlayer.state);
+  @override
+  set state(PlayerPlaybackState value) {
+    if (_released('state=')) return;
+    _mdkPlayer.state = _fromPlayerPlaybackState(value);
+  }
+
+  @override
+  ValueListenable<int?> get textureId => _mdkPlayer.textureId;
+
+  @override
+  String get media => _mdkPlayer.media;
+  @override
+  set media(String value) {
+    if (_isDisposed) throw StateError('MDK player is disposed');
+    if (_mdkPlayer.media != value) {
+      _buffering.value = false;
+      _activeVideoDecoder = null;
+      _activeAudioDecoder = null;
+      _internalAudioTrackCount = 0;
+    }
+    _mdkPlayer.media = value;
+  }
+
+  @override
+  PlayerMediaInfo get mediaInfo => _released('mediaInfo')
+      ? PlayerMediaInfo(duration: 0)
+      : _toPlayerMediaInfo(_mdkPlayer.mediaInfo,
+          internalAudioTrackCount: _internalAudioTrackCount);
+
+  @override
+  List<int> get activeSubtitleTracks => _mdkPlayer.activeSubtitleTracks;
+  @override
+  set activeSubtitleTracks(List<int> value) {
+    if (_released('activeSubtitleTracks=')) return;
+    _mdkPlayer.activeSubtitleTracks = value;
+  }
+
+  @override
+  List<int> get activeAudioTracks => _mdkPlayer.activeAudioTracks;
+  @override
+  set activeAudioTracks(List<int> value) {
+    if (_released('activeAudioTracks=')) return;
+    _mdkPlayer.activeAudioTracks = value;
+  }
+
+  @override
+  int get position => _released('position') ? 0 : _mdkPlayer.position;
+
+  @override
+  int get bufferedPosition {
+    if (_released('bufferedPosition')) return 0;
+    try {
+      final bufferedDuration = _mdkPlayer.buffered();
+      if (bufferedDuration <= 0) {
+        return 0;
+      }
+      final endPosition = _mdkPlayer.position + bufferedDuration;
+      final duration = _mdkPlayer.mediaInfo.duration;
+      if (duration > 0) {
+        return endPosition.clamp(0, duration).toInt();
+      }
+      return endPosition;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  @override
+  void setBufferRange({int minMs = -1, int maxMs = -1, bool drop = false}) {
+    if (_released('setBufferRange')) return;
+    try {
+      _mdkPlayer.setBufferRange(min: minMs, max: maxMs, drop: drop);
+    } catch (e) {
+      debugPrint('MDK: 设置缓冲范围失败: $e');
+    }
+  }
+
+  @override
+  bool get supportsExternalSubtitles => true;
+
+  @override
+  Future<int?> updateTexture({int? width, int? height, bool? tunnel}) {
+    try {
+      final originalFuture = _mdkPlayer.updateTexture(
+          width: width, height: height, tunnel: tunnel);
+      return originalFuture.timeout(const Duration(seconds: 10), onTimeout: () {
+        throw TimeoutException(
+            'Texture update timed out for ${_mdkPlayer.media}');
+      });
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  @override
+  void setMedia(String path, PlayerMediaType type) {
+    if (_released('setMedia')) return;
+    if (type == PlayerMediaType.video || type == PlayerMediaType.unknown) {
+      _buffering.value = false;
+    }
+    if (type == PlayerMediaType.audio) {
+      if (path.isNotEmpty) {
+        // 记录当前内部音频轨道数，用于区分外挂MKA轨道
+        try {
+          _internalAudioTrackCount = _mdkPlayer.mediaInfo.audio?.length ?? 0;
+        } catch (_) {
+          _internalAudioTrackCount = 0;
+        }
+      } else {
+        _internalAudioTrackCount = 0;
+      }
+    }
+    _mdkPlayer.setMedia(path, _fromPlayerMediaType(type));
+  }
+
+  @override
+  Future<void> prepare({int startMs = 0}) async {
+    if (_released('prepare')) return;
+    try {
+      if (startMs > 0) {
+        _mdkPlayer.prepare(position: startMs);
+      } else {
+        _mdkPlayer.prepare();
+      }
+      // prepare后重新应用播放速度，确保设置生效
+      if (_playbackRate != 1.0) {
+        _mdkPlayer.playbackRate = _playbackRate;
+        debugPrint('MDK: prepare后应用播放速度: ${_playbackRate}x');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  @override
+  void seek({required int position}) {
+    if (_released('seek')) return;
+    _seekGeneration++;
+    _mdkPlayer.seek(position: position);
+  }
+
+  /// MDK cancels a seek (-2), or turns it away (-10), while a seek of its own
+  /// is running, such as the one an active-track change makes to the current
+  /// position; playback then goes on from where that one went. So this waits
+  /// for MDK's answer and, when MDK did not take the seek and nothing has
+  /// asked for another position since, asks again once MDK's own seek is
+  /// done.
+  @override
+  Future<void> seekAndWait({required int position}) async {
+    if (_released('seekAndWait')) return;
+    final generation = ++_seekGeneration;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final result = await _mdkPlayer
+          .seek(position: position)
+          .timeout(const Duration(seconds: 3), onTimeout: () => 0);
+      if (result >= 0 || _isDisposed || generation != _seekGeneration) return;
+      debugPrint('MDK: seek($position) 未被执行（$result），内核自己的 seek 结束后再请求一次');
+      await _untilSeekSettled();
+      if (_isDisposed || generation != _seekGeneration) return;
+    }
+  }
+
+  Future<void> _untilSeekSettled() {
+    if (!_mdkPlayer.mediaStatus.test(mdk.MediaStatus.seeking)) {
+      return Future<void>.value();
+    }
+    return (_seekSettled ??= Completer<void>())
+        .future
+        .timeout(const Duration(seconds: 2), onTimeout: () {});
+  }
+
+  void _settleSeek() {
+    final settled = _seekSettled;
+    _seekSettled = null;
+    if (settled != null && !settled.isCompleted) settled.complete();
+  }
+
+  @override
+  void dispose() {
+    unawaited(disposeAsync().catchError((Object error, StackTrace stack) {
+      debugPrint('MDK: asynchronous disposal failed: $error');
+    }));
+  }
+
+  @override
+  Future<void> disposeAsync() =>
+      _disposeAsyncFuture ??= _disposeAsyncInternal();
+
+  Future<void> _disposeAsyncInternal() async {
+    _isDisposed = true;
+    _buffering.dispose();
+    _settleSeek();
+    await _stateSub?.cancel();
+    await _statusSub?.cancel();
+    await _eventSub?.cancel();
+    await _stateCtrl.close();
+    await _statusCtrl.close();
+    await _eventCtrl.close();
+    await _mediaStatusSubscription?.cancel();
+    LogService().log('Player', 'mdk teardown: begin');
+    await Future<void>.sync(_mdkPlayer.dispose);
+    LogService().log('Player', 'mdk teardown: complete');
+  }
+
+  @override
+  Future<PlayerFrame?> snapshot({int width = 0, int height = 0}) async {
+    if (_released('snapshot')) return null;
+    final Uint8List? frameBytes =
+        await _mdkPlayer.snapshot(width: width, height: height);
+    if (frameBytes == null) {
+      if (width <= 0) width = 128;
+      if (height <= 0) height = 72;
+      final int numBytes = width * height * 4;
+      final Uint8List blackBytes = Uint8List(numBytes);
+      for (int i = 3; i < numBytes; i += 4) {
+        blackBytes[i] = 255;
+      }
+      return PlayerFrame(width: width, height: height, bytes: blackBytes);
+    }
+    return PlayerFrame(
+      width: width,
+      height: height,
+      bytes: frameBytes,
+    );
+  }
+
+  @override
+  PlayerMediaStatus get mediaStatus =>
+      PlayerMediaStatus(_mapRawStatus(_mdkPlayer.mediaStatus));
+
+  @override
+  int get nativeHandle => _mdkPlayer.nativeHandle;
+
+  @override
+  Future<Size?> get textureSize => _mdkPlayer.textureSize;
+
+  @override
+  void setHttpHeaders(Map<String, String> headers) {
+    if (_released('setHttpHeaders') || headers.isEmpty) return;
+    _mdkPlayer.setProperty(
+      'avio.headers',
+      headers.entries.map((e) => '${e.key}: ${e.value}').join(','),
+    );
+  }
+
+  @override
+  void setColorSpace(PlayerColorSpace colorSpace) {
+    if (_released('setColorSpace')) return;
+    _mdkPlayer.setColorSpace(_toMdkColorSpace(colorSpace));
+  }
+
+  @override
+  set audioBackends(List<String> backends) {
+    if (_released('audioBackends=')) return;
+    _mdkPlayer.audioBackends = backends;
+  }
+
+  @override
+  void renderVideo() {
+    if (_released('renderVideo')) return;
+    _mdkPlayer.renderVideo();
+  }
+
+  @override
+  Stream<({PlayerPlaybackState oldValue, PlayerPlaybackState newValue})>
+      get onStateChanged => _stateCtrl.stream;
+
+  @override
+  Stream<({PlayerMediaStatus oldValue, PlayerMediaStatus newValue})>
+      get onMediaStatus => _statusCtrl.stream;
+
+  @override
+  Stream<PlayerMediaEvent> get onEvent => _eventCtrl.stream;
+
+  @override
+  Future<void> setMediaAsync(String path, PlayerMediaType type) async {
+    setMedia(path, type);
+  }
+
+  static int _mapRawStatus(mdk.MediaStatus s) {
+    var v = 0;
+    if (s.test(mdk.MediaStatus.unloaded))
+      v |= PlayerMediaStatus.unloaded.rawValue;
+    if (s.test(mdk.MediaStatus.loading))
+      v |= PlayerMediaStatus.loading.rawValue;
+    if (s.test(mdk.MediaStatus.loaded)) v |= PlayerMediaStatus.loaded.rawValue;
+    if (s.test(mdk.MediaStatus.prepared))
+      v |= PlayerMediaStatus.prepared.rawValue;
+    if (s.test(mdk.MediaStatus.stalled))
+      v |= PlayerMediaStatus.stalled.rawValue;
+    if (s.test(mdk.MediaStatus.buffering))
+      v |= PlayerMediaStatus.buffering.rawValue;
+    if (s.test(mdk.MediaStatus.buffered))
+      v |= PlayerMediaStatus.buffered.rawValue;
+    if (s.test(mdk.MediaStatus.end)) v |= PlayerMediaStatus.end.rawValue;
+    if (s.test(mdk.MediaStatus.seeking))
+      v |= PlayerMediaStatus.seeking.rawValue;
+    if (s.test(mdk.MediaStatus.invalid))
+      v |= PlayerMediaStatus.invalid.rawValue;
+    return v;
+  }
+
+  static mdk.ColorSpace _toMdkColorSpace(PlayerColorSpace cs) => switch (cs) {
+        PlayerColorSpace.bt709 => mdk.ColorSpace.bt709,
+        PlayerColorSpace.bt2100PQ => mdk.ColorSpace.bt2100PQ,
+        PlayerColorSpace.bt2100hlg => mdk.ColorSpace.bt2100hlg,
+        PlayerColorSpace.unknown => mdk.ColorSpace.unknown,
+      };
+
+  @override
+  void setDecoders(PlayerMediaType type, List<String> decoders) {
+    switch (type) {
+      case PlayerMediaType.video:
+        _videoDecoders = List<String>.from(decoders);
+        break;
+      case PlayerMediaType.audio:
+        _audioDecoders = List<String>.from(decoders);
+        break;
+      default:
+        break;
+    }
+    if (_released('setDecoders')) return;
+    _mdkPlayer.setDecoders(_fromPlayerMediaType(type), decoders);
+  }
+
+  @override
+  List<String> getDecoders(PlayerMediaType type) {
+    switch (type) {
+      case PlayerMediaType.video:
+        if (_videoDecoders.isNotEmpty) return List<String>.from(_videoDecoders);
+        return List<String>.from(_mdkPlayer.videoDecoders);
+      case PlayerMediaType.audio:
+        if (_audioDecoders.isNotEmpty) return List<String>.from(_audioDecoders);
+        return List<String>.from(_mdkPlayer.audioDecoders);
+      default:
+        return const [];
+    }
+  }
+
+  @override
+  String? getProperty(String key) {
+    switch (key) {
+      case 'decoder.video':
+        return _activeVideoDecoder;
+      case 'decoder.audio':
+        return _activeAudioDecoder;
+    }
+    if (_released('getProperty')) return null;
+    return _mdkPlayer.getProperty(key);
+  }
+
+  @override
+  void setUserAgent(String ua) {
+    applyMdkUserAgentProperties(setProperty, ua);
+    debugPrint('MDK: 已设置 user-agent: ${ua.isEmpty ? "(默认)" : ua}');
+  }
+
+  @override
+  void setProperty(String key, String value) {
+    if (_released('setProperty')) return;
+    try {
+      _setStickyProperty(key, value);
+    } catch (e) {
+      debugPrint('MDK: 设置属性失败: $e');
+    }
+  }
+
+  @override
+  void stepForward() {
+    // MDK: 使用 seek 模拟逐帧前进（约 1/24 秒 = ~42ms）
+    final fps = mediaInfo.video?.isNotEmpty == true
+        ? (mediaInfo.video!.first.codec.width > 0 ? 24 : 24) // 默认24fps
+        : 24;
+    final frameDuration = 1000 ~/ fps;
+    final currentPos = position;
+    seek(position: currentPos + frameDuration);
+    state = PlayerPlaybackState.paused;
+  }
+
+  @override
+  void stepBackward() {
+    final fps = 24; // 默认24fps
+    final frameDuration = 1000 ~/ fps;
+    final currentPos = position;
+    seek(position: (currentPos - frameDuration).clamp(0, currentPos));
+    state = PlayerPlaybackState.paused;
+  }
+
+  @override
+  Future<void> setVideoSurfaceSize({int? width, int? height}) async {
+    // MDK 内核由自身窗口管理渲染尺寸，这里保持空实现。
+  }
+
+  @override
+  Future<void> setChapter(int index) async {
+    // MDK 内核暂未暴露章节跳转（MediaInfo.ChapterInfo 存在但适配器未接入）。
+  }
+
+  @override
+  Future<void> playDirectly() async {
+    if (_released('playDirectly')) return;
+    try {
+      _mdkPlayer.state = mdk.PlaybackState.playing;
+    } catch (e) {}
+  }
+
+  @override
+  Future<void> pauseDirectly() async {
+    if (_released('pauseDirectly')) return;
+    try {
+      _mdkPlayer.state = mdk.PlaybackState.paused;
+    } catch (e) {}
+  }
+
+  @override
+  void setPlaybackRate(double rate) {
+    playbackRate = rate;
+  }
+
+  // 提供详细播放技术信息（MDK）
+  Map<String, dynamic> getDetailedMediaInfo() {
+    if (_released('getDetailedMediaInfo')) {
+      return {
+        'kernel': 'MDK',
+        'video': <dynamic>[],
+        'audio': <dynamic>[],
+        'duration': 0
+      };
+    }
+    final info = _mdkPlayer.mediaInfo;
+    final Map<String, dynamic> ret = {
+      'kernel': 'MDK',
+      'video': <dynamic>[],
+      'audio': <dynamic>[],
+      'duration': info.duration,
+    };
+
+    try {
+      ret['video'] = (info.video ?? []).map((v) {
+        final codec = v.codec;
+        String codecName = 'unknown';
+        try {
+          final dynamic name = (v as dynamic).codecName;
+          if (name is String && name.isNotEmpty) codecName = name;
+        } catch (_) {
+          codecName = codec.toString();
+        }
+        return {
+          'codecName': codecName,
+          'width': codec.width,
+          'height': codec.height,
+          'raw': v.toString(),
+        };
+      }).toList();
+    } catch (_) {}
+
+    try {
+      ret['audio'] = (info.audio ?? []).map((a) {
+        final dynamic c = (a as dynamic).codec;
+        String? name;
+        int? bitRate;
+        int? channels;
+        int? sampleRate;
+        try {
+          name = c?.name as String?;
+        } catch (_) {}
+        try {
+          bitRate = c?.bit_rate as int?;
+        } catch (_) {}
+        try {
+          channels = c?.channels as int?;
+        } catch (_) {}
+        try {
+          sampleRate = c?.sample_rate as int?;
+        } catch (_) {}
+        return {
+          'codecName': name,
+          'bitRate': bitRate,
+          'channels': channels,
+          'sampleRate': sampleRate,
+          'raw': a.toString(),
+        };
+      }).toList();
+    } catch (_) {}
+
+    return ret;
+  }
+
+  // MDK 的异步接口：直接返回同步结果（MDK 获取多为同步）
+  Future<Map<String, dynamic>> getDetailedMediaInfoAsync() async {
+    return getDetailedMediaInfo();
+  }
+}

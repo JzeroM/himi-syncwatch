@@ -1,4 +1,6 @@
+import 'package:erika_flutter/erika_flutter.dart' show ErikaPlayer;
 import 'package:flutter/foundation.dart';
+import 'package:media_kit_video/media_kit_video.dart' show VideoController;
 import 'dart:ui' show Size;
 
 /// 播放器引擎标识。
@@ -17,9 +19,15 @@ enum PlayerEngine {
   final String id;
   final String label;
 
-  static PlayerEngine fromId(String? id) =>
-      PlayerEngine.values.firstWhere((e) => e.id == id,
-          orElse: () => PlayerEngine.mdk);
+  /// 播放器顶栏胶囊用的短名。
+  String get shortLabel => switch (this) {
+        PlayerEngine.mdk => 'MDK',
+        PlayerEngine.mediaKit => 'MPV',
+        PlayerEngine.erika => 'Erika',
+      };
+
+  static PlayerEngine fromId(String? id) => PlayerEngine.values
+      .firstWhere((e) => e.id == id, orElse: () => PlayerEngine.mdk);
 }
 
 /// 播放状态（引擎无关）。
@@ -147,6 +155,44 @@ abstract interface class AsyncDisposablePlayer {
 ///   统一走轮询避免全帧率事件洪水）。
 /// - 渲染通道：textureId 驱动 Flutter Texture；nativeHandle 供
 ///   SurfaceView platform view 挂载（media_kit 档无 SurfaceView）。
+
+/// 可选能力：暴露 Erika 原生播放器（给 ErikaVideoView）。
+abstract interface class ErikaPlayerProvider {
+  ErikaPlayer? get erikaPlayer;
+}
+
+/// 可选能力：暴露 media_kit 的 VideoController（给 Video widget）。
+abstract interface class MediaKitPlayerProvider {
+  VideoController? get mediaKitController;
+}
+
+/// 可选能力：应用 media_kit 专属设置。
+abstract interface class MediaKitSettingsApplier {
+  Future<void> applyMediaKitSettings({
+    String? hwdec,
+    String? toneMapping,
+    double? cacheSizeMb,
+  });
+}
+
+/// 可选能力：Erika 原生弹幕。
+abstract interface class ErikaDanmakuPlayer {
+  Future<void> loadDanmakuJsonString(String json);
+  Future<void> setDanmakuEnabled(bool enabled);
+  Future<void> setDanmakuConfigHimi({
+    double? fontSize,
+    double? opacity,
+    double? scrollDurationSeconds,
+    double? displayArea,
+    int? maxLinesPerMode,
+    int? maxQuantity,
+    bool? blockTop,
+    bool? blockBottom,
+    bool? blockScroll,
+    List<String>? blockWords,
+  });
+}
+
 abstract class PlayerAdapter {
   // ── 播放控制 ──────────────────────────────────────────────
 

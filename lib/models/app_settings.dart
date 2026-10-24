@@ -58,6 +58,9 @@ class AppSettings {
 
   /// 用户是否手动设置过解码方式（TV 模式默认硬解不覆盖手动选择）。
   final bool decodeModeUserSet;
+
+  /// 播放内核 id：'' = 平台默认；'mdk' / 'media_kit' / 'erika'。
+  final String playerKernel;
   final bool showSyncDebug;
 
   // ── media_kit 引擎专属设置（mpv 属性，通过 NativePlayer.setProperty 生效）──
@@ -318,6 +321,7 @@ class AppSettings {
   const AppSettings({
     this.decodeMode = 'auto',
     this.decodeModeUserSet = false,
+    this.playerKernel = '',
     this.mkHwdec = 'auto-safe',
     this.mkToneMapping = 'auto',
     this.mkCacheSize = 150,
@@ -420,6 +424,7 @@ class AppSettings {
   AppSettings copyWith({
     String? decodeMode,
     bool? decodeModeUserSet,
+    String? playerKernel,
     String? mkHwdec,
     String? mkToneMapping,
     double? mkCacheSize,
@@ -487,6 +492,7 @@ class AppSettings {
     return AppSettings(
       decodeMode: decodeMode ?? this.decodeMode,
       decodeModeUserSet: decodeModeUserSet ?? this.decodeModeUserSet,
+      playerKernel: playerKernel ?? this.playerKernel,
       mkHwdec: mkHwdec ?? this.mkHwdec,
       mkToneMapping: mkToneMapping ?? this.mkToneMapping,
       mkCacheSize: mkCacheSize ?? this.mkCacheSize,
@@ -578,6 +584,7 @@ class AppSettings {
   Map<String, dynamic> toJson() => {
         'decodeMode': decodeMode,
         'decodeModeUserSet': decodeModeUserSet,
+        'playerKernel': playerKernel,
         'mkHwdec': mkHwdec,
         'mkToneMapping': mkToneMapping,
         'mkCacheSize': mkCacheSize,
@@ -688,6 +695,10 @@ class AppSettings {
     return AppSettings(
       decodeMode: mode,
       decodeModeUserSet: decodeModeUserSet,
+      playerKernel:
+          const ['mdk', 'media_kit', 'erika'].contains(json['playerKernel'])
+              ? json['playerKernel'] as String
+              : '',
       mkHwdec: const ['auto-safe', 'auto', 'no'].contains(json['mkHwdec'])
           ? json['mkHwdec'] as String
           : 'auto-safe',

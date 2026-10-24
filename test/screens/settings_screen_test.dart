@@ -721,13 +721,14 @@ void main() {
     }
   });
 
-  testWidgets('iOS 平台 MDK 引擎子页隐藏音频后端设置项（Android 专属后端）', (tester) async {
+  testWidgets('iOS 平台按矩阵只显示 Erika 内核', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     try {
       await _pumpMdkSettings(tester);
 
+      expect(find.text('MDK'), findsNothing);
+      expect(find.text('Erika'), findsOneWidget);
       expect(find.text('音频后端'), findsNothing);
-      expect(find.text('立体声降混'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

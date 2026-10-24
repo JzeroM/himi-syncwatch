@@ -2,21 +2,20 @@ import 'package:erika_flutter/erika_flutter.dart' show ErikaOutputMode;
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 
+import '../../player_core/adapters/nipa_erika_adapter.dart';
+import '../../player_core/player_data_models.dart'
+    show PlayerErikaAndroidOutputMode;
+import '../../player_core/adapters/nipa_mdk_adapter.dart';
+import '../../player_core/adapters/nipa_media_kit_adapter.dart';
+import '../../player_core/player_core_bridge.dart';
 import 'player_adapter.dart';
-import 'mdk_player_adapter.dart';
-import 'media_kit_player_adapter.dart';
-import 'erika_player_adapter.dart';
 
 /// 播放器引擎工厂：根据 [PlayerEngine] 创建对应 [PlayerAdapter]。
 ///
-/// 平台分布：
-/// - mdk：全平台默认
-/// - media_kit：仅 Windows（libmpv；其他平台收敛移除）
-/// - erika：android/iOS/macOS（手机真 HDR10 + 原生位图字幕/弹幕）；
-///   Windows/Linux 无（Linux 无预编译；Windows 收敛为 mdk+media_kit）
-///
-/// TV 与手机同一套平台规则（TV 不再恒 mdk）：HDR 路由由设备能力
-/// 评估结果决定（见 [resolveEngineForContent]）。Dolby Vision 恒 mdk。
+/// 内核选择严格按平台能力 + 用户设置，不再按 HDR/DV 内容自动路由。
+/// - Android / Android TV：MDK、Erika、MediaKit
+/// - iOS：Erika
+/// - Windows：MDK、Erika、MediaKit
 class PlayerEngineFactory {
   PlayerEngineFactory._();
 
@@ -30,7 +29,7 @@ class PlayerEngineFactory {
 
   /// 创建指定引擎的播放器适配器。
   ///
-  /// [erikaOutputMode] 仅 Erika 使用（由内容路由结果传入）。
+  /// [erikaOutputMode] 仅 Erika 使用（由用户设置/调用方传入）。
   static PlayerAdapter create(
     PlayerEngine engine, {
     ErikaOutputMode erikaOutputMode = ErikaOutputMode.sdr,
@@ -41,91 +40,57 @@ class PlayerEngineFactory {
     }
     switch (engine) {
       case PlayerEngine.mdk:
-        return MdkPlayerAdapter();
+        return PlayerCoreBridge(NipaMdkAdapter());
       case PlayerEngine.mediaKit:
-        return MediaKitPlayerAdapter();
+        return PlayerCoreBridge(NipaMediaKitAdapter());
       case PlayerEngine.erika:
-        return ErikaPlayerAdapter(outputMode: erikaOutputMode);
+        return PlayerCoreBridge(NipaErikaAdapter(
+          androidOutputMode: PlayerErikaAndroidOutputMode.sdr,
+        ));
     }
   }
 
-  /// 按内容+HDR 解析 Erika 输出模式（纯函数，便于单测）。
+  /// 当前平台支持的引擎列表。
   ///
-  /// - 非 HDR → SDR（TextureView，省电更顺）
-  /// - HDR：Android 用 extended-linear scRGB（`auto` 在 Android 默认 SDR）；
-  ///   Apple/其余交给引擎/平台协商 EDR/HDR10。
-  static ErikaOutputMode resolveErikaOutputMode({
-    required bool hdr,
-    required TargetPlatform platform,
-  }) {
-    if (!hdr) return ErikaOutputMode.sdr;
-    switch (platform) {
-      case TargetPlatform.android:
-        return ErikaOutputMode.extendedLinear;
-      default:
-        return ErikaOutputMode.auto;
-    }
-  }
-
-  /// 按内容 HDR/DV + 设备能力解析目标引擎（全自动路由，纯函数，便于单测）。
-  ///
-  /// 规则（TV 与手机统一，同一套）：
-  /// - web：恒 mdk
-  /// - 非 HDR：恒 mdk
-  /// - Dolby Vision：恒 mdk（全平台）——mdk 以 LLDV 处理 DV 元数据，
-  ///   输出 SDR（SDR 屏）或 HDR10（HDR 屏），色彩由 mdk 内部保证；
-  ///   Erika/media_kit 不参与 DV。输出色彩由 `Player.set(ColorSpace)`
-  ///   按平台策略决定（见 PlayerScreen.dvOutputColorSpace）。
-  /// - HDR（非 DV）+ Android/iOS（含 iPad）且 [erikaRenderable]（Erika 可
-  ///   渲染：Vulkan 或 GLES3 任一，探针未命中时保持历史默认 true）：erika
-  ///   ——真 HDR10 由 Erika 内部按显示能力 extended-linear / SDR 自动回退
-  ///   （outputMode 由 [resolveErikaOutputMode] 继续按内容路由）
-  /// - HDR（非 DV）+ Windows：media_kit
-  /// - 其余（HDR + 不可渲染，如无 Vulkan/GLES3 的盒子）：mdk 兜底——
-  ///   直写/tunnel 档可透传 HDR10，由输出层路由继续判定 tone map。
-  ///
-  /// [platformOverride] 仅供单测注入平台；缺省取当前平台。
-  static PlayerEngine resolveEngineForContent({
-    required bool hdr,
-    required bool dolbyVision,
-    required bool erikaRenderable,
-    TargetPlatform? platformOverride,
-  }) {
-    if (kIsWeb) return PlayerEngine.mdk;
-    if (!hdr) return PlayerEngine.mdk;
-    if (dolbyVision) return PlayerEngine.mdk;
-    final platform = platformOverride ?? defaultTargetPlatform;
-    switch (platform) {
-      case TargetPlatform.android:
-      case TargetPlatform.iOS:
-        return erikaRenderable ? PlayerEngine.erika : PlayerEngine.mdk;
-      case TargetPlatform.windows:
-        return PlayerEngine.mediaKit;
-      default:
-        return PlayerEngine.mdk;
-    }
-  }
-
-  /// 当前平台支持的引擎列表（TV 与手机一致）。
-  ///
-  /// MDK + Erika（Erika 仅 android/iOS/macOS）；Windows 额外含 media_kit。
+  /// 对齐 NipaPlay 平台矩阵（HIMI 现有平台）：
+  /// - Android / Android TV：MDK、Erika、MediaKit
+  /// - iOS：Erika
+  /// - Windows：MDK、Erika、MediaKit
   static List<PlayerEngine> supportedEngines() {
-    final engines = <PlayerEngine>[PlayerEngine.mdk];
-    if (!kIsWeb) {
-      switch (defaultTargetPlatform) {
-        case TargetPlatform.android:
-        case TargetPlatform.iOS:
-        case TargetPlatform.macOS:
-          engines.add(PlayerEngine.erika);
-          break;
-        case TargetPlatform.windows:
-          engines.add(PlayerEngine.mediaKit);
-          break;
-        default:
-          break;
-      }
+    if (kIsWeb) return const <PlayerEngine>[PlayerEngine.mdk];
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return const <PlayerEngine>[
+          PlayerEngine.mdk,
+          PlayerEngine.mediaKit,
+          PlayerEngine.erika,
+        ];
+      case TargetPlatform.iOS:
+        return const <PlayerEngine>[PlayerEngine.erika];
+      case TargetPlatform.windows:
+        return const <PlayerEngine>[
+          PlayerEngine.mdk,
+          PlayerEngine.mediaKit,
+          PlayerEngine.erika,
+        ];
+      default:
+        return const <PlayerEngine>[PlayerEngine.mdk];
     }
-    return engines;
+  }
+
+  /// 平台默认引擎：NipaPlay 代码默认 MDK；iOS 矩阵只开放 Erika。
+  static PlayerEngine defaultEngine() {
+    if (kIsWeb) return PlayerEngine.mdk;
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return PlayerEngine.erika;
+    }
+    return PlayerEngine.mdk;
+  }
+
+  /// 解析落盘内核 id；不支持时回退平台默认。
+  static PlayerEngine resolveSelectedEngine(String? id) {
+    final selected = PlayerEngine.fromId(id);
+    return supportedEngines().contains(selected) ? selected : defaultEngine();
   }
 
   /// 引擎在指定平台是否可用（用于设置页 tab / 校验）。
