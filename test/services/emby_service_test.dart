@@ -953,6 +953,79 @@ void main() {
     });
   });
 
+  group('字幕下载 URL（Emby 官方路径）', () {
+    test('MediaSourceId 作为路径段，不再放查询串', () {
+      final url = service.getSubtitleUrl(
+        'item-1',
+        subtitleIndex: 4,
+        mediaSourceId: 'ms-1',
+      );
+      final uri = Uri.parse(url);
+
+      expect(uri.path, '/Videos/item-1/ms-1/Subtitles/4/Stream.srt');
+      expect(uri.query, isEmpty);
+    });
+
+    test('支持文本与位图字幕格式', () {
+      for (final format in ['srt', 'vtt', 'ass', 'ssa', 'sup', 'pgssub']) {
+        final uri = Uri.parse(service.getSubtitleUrl(
+          'item-1',
+          subtitleIndex: 4,
+          mediaSourceId: 'ms-1',
+          format: format,
+        ));
+        expect(uri.path, '/Videos/item-1/ms-1/Subtitles/4/Stream.$format',
+            reason: format);
+      }
+    });
+
+    test('StartPositionTicks 进入查询串', () {
+      final uri = Uri.parse(service.getSubtitleUrl(
+        'item-1',
+        subtitleIndex: 4,
+        mediaSourceId: 'ms-1',
+        startPositionTicks: 90000,
+      ));
+
+      expect(uri.path, '/Videos/item-1/ms-1/Subtitles/4/Stream.srt');
+      expect(uri.queryParameters, {'StartPositionTicks': '90000'});
+    });
+
+    test('反代 mediaUrl 的路径前缀保留', () {
+      service.configure(
+        serverUrl: 'http://127.0.0.1:${server.port}',
+        accessToken: 'test-token',
+        userId: 'user-1',
+        serverId: 'server-1',
+        mediaUrl: 'http://127.0.0.1:${server.port}/emby',
+      );
+
+      final uri = Uri.parse(service.getSubtitleUrl(
+        'item-1',
+        subtitleIndex: 4,
+        mediaSourceId: 'ms-1',
+      ));
+
+      expect(uri.path, '/emby/Videos/item-1/ms-1/Subtitles/4/Stream.srt');
+    });
+
+    test('fetchSubtitleText 实际请求官方字幕路径', () async {
+      respondWith = (_) => '1\n00:00:01,000 --> 00:00:02,000\n测试\n';
+
+      final text = await service.fetchSubtitleText(
+        'item-1',
+        subtitleIndex: 4,
+        mediaSourceId: 'ms-1',
+      );
+
+      final req = captured.single;
+      expect(req.method, 'GET');
+      expect(req.path, '/Videos/item-1/ms-1/Subtitles/4/Stream.srt');
+      expect(req.query, isEmpty);
+      expect(text, isNotEmpty);
+    });
+  });
+
   group('账号服务（改密 / 头像 URL）', () {
     test('changePassword → POST /Users/{userId}/Password + CurrentPw/NewPw',
         () async {

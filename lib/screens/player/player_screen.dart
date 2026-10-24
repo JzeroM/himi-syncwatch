@@ -9148,6 +9148,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         : (widget.itemId, null);
   }
 
+  /// 解析字幕请求使用的媒体源 id。
+  ///
+  /// 多版本切换/切集后 [_activeMediaSourceId] 是当前播放源；播放会话值
+  /// 与 widget 入参仅作兜底。都缺失时向 Emby 查询首个媒体源。
+  Future<String?> _resolveSubtitleMediaSourceId() async {
+    final direct =
+        _activeMediaSourceId ?? _reportMediaSourceId ?? widget.mediaSourceId;
+    if (direct != null && direct.isNotEmpty) return direct;
+
+    final (itemId, serverId) = _currentSubtitleContent;
+    try {
+      final service =
+          ref.read(embyServiceForProvider(serverId ?? widget.serverId));
+      final info = await service.getPlaybackInfo(itemId: itemId);
+      if (!mounted) return null;
+      for (final source in info.sources) {
+        if (source.id.isNotEmpty) return source.id;
+      }
+    } catch (e) {
+      LogService().log('Player', '解析字幕媒体源失败: $e');
+    }
+    return null;
+  }
+
   /// 字幕样式落盘键：当前播放内容 id（剧集 = 选中集）；多服务器时带
   /// serverId 前缀防碰撞。
   String get _subtitleStyleKey {
@@ -9172,10 +9196,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ref.read(embyServiceForProvider(serverId ?? widget.serverId));
       final config =
           ref.read(embyConfigForProvider(serverId ?? widget.serverId));
+      final mediaSourceId = await _resolveSubtitleMediaSourceId();
+      if (mediaSourceId == null) {
+        LogService().log('Player', '加载外挂字幕失败: 无法确定 MediaSourceId');
+        if (mounted) showAppToast(context, '无法确定媒体版本，无法加载字幕');
+        return;
+      }
       final subtitleUrl = embyService.getSubtitleUrl(
         itemId,
         subtitleIndex: stream.index,
-        mediaSourceId: widget.mediaSourceId,
+        mediaSourceId: mediaSourceId,
       );
       final token = config?.accessToken ?? '';
       if (token.isNotEmpty) {
@@ -9363,10 +9393,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final (itemId, serverId) = _currentSubtitleContent;
         final service =
             ref.read(embyServiceForProvider(serverId ?? widget.serverId));
+        final mediaSourceId = await _resolveSubtitleMediaSourceId();
+        if (mediaSourceId == null) {
+          LogService().log('Player', '字幕延迟重载失败: 无法确定 MediaSourceId');
+          return;
+        }
         text = await service.fetchSubtitleText(
           itemId,
           subtitleIndex: idx,
-          mediaSourceId: widget.mediaSourceId,
+          mediaSourceId: mediaSourceId,
         );
       }
       if (text.isEmpty || !mounted) return;

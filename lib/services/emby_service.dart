@@ -1085,19 +1085,39 @@ class EmbyService {
     return streamBase;
   }
 
-  /// 获取单个字幕轨道的直接下载 URL（用于 fvp 原生字幕加载）
+  /// 获取单个字幕轨道的直接下载 URL（用于原生字幕加载）。
+  ///
+  /// Emby 官方路径为
+  /// `/Videos/{Id}/{MediaSourceId}/Subtitles/{Index}/Stream.{Format}`；
+  /// `MediaSourceId` 必须作为路径段，不能放到查询串。
   String getSubtitleUrl(
     String itemId, {
     required int subtitleIndex,
-    String? mediaSourceId,
+    required String mediaSourceId,
     String format = 'srt',
+    int? startPositionTicks,
   }) {
-    var url =
-        '${mediaUrl ?? _serverUrl}/Videos/$itemId/Subtitles/$subtitleIndex/Stream.$format';
-    if (mediaSourceId != null) {
-      url += '?MediaSourceId=$mediaSourceId';
+    final baseUrl = mediaUrl ?? _serverUrl;
+    if (baseUrl == null || baseUrl.isEmpty) {
+      throw StateError('EmbyService 未配置服务器地址');
     }
-    return url;
+    final base = Uri.parse(baseUrl);
+    final segments = <String>[
+      ...base.pathSegments.where((s) => s.isNotEmpty),
+      'Videos',
+      itemId,
+      mediaSourceId,
+      'Subtitles',
+      '$subtitleIndex',
+      'Stream.$format',
+    ];
+    final withPath = base.replace(pathSegments: segments);
+    if (startPositionTicks == null) {
+      return withPath.replace(query: '').toString();
+    }
+    return withPath.replace(queryParameters: {
+      'StartPositionTicks': '$startPositionTicks',
+    }).toString();
   }
 
   /// 下载字幕文本（字幕延迟：解析偏移后写临时文件外挂）。
@@ -1105,7 +1125,7 @@ class EmbyService {
   Future<String> fetchSubtitleText(
     String itemId, {
     required int subtitleIndex,
-    String? mediaSourceId,
+    required String mediaSourceId,
     String format = 'srt',
   }) async {
     final url = getSubtitleUrl(
