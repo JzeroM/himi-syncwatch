@@ -7560,11 +7560,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final previous = _currentEngine;
     final wasPlaying = _player.state == AdapterPlaybackState.playing;
     final positionMs = _player.position;
-    final oldAudio = List<int>.of(_player.activeAudioTracks);
+    final oldAudioPositions = List<int>.of(_player.activeAudioTracks);
+    // 引擎的 activeAudioTracks 是「引擎轨表位置」；先换算成 Emby 流
+    // index，重载后按同一流找新引擎位置（与字幕恢复保持一致）。
+    final oldAudioStreamIndex = oldAudioPositions.isNotEmpty &&
+            oldAudioPositions.first >= 0 &&
+            oldAudioPositions.first < _embyAudioStreams.length
+        ? _embyAudioStreams[oldAudioPositions.first].index
+        : null;
     final oldSubtitleIndex = _activeSubtitleIndex;
     final oldLocalSubtitle = _activeLocalSubtitlePath;
     final oldVolume = _volume;
     final oldSpeed = _speed;
+
+    Future<void> restoreTracks() async {
+      final audioPos = oldAudioStreamIndex == null
+          ? -1
+          : _embyAudioStreams.indexWhere((s) => s.index == oldAudioStreamIndex);
+      if (audioPos >= 0) {
+        _selectEmbyAudio(audioPos);
+      } else if (oldAudioPositions.isNotEmpty) {
+        _player.activeAudioTracks = oldAudioPositions;
+        _applyAudioFilterPolicy();
+      }
+
+      if (oldLocalSubtitle != null) {
+        await _loadSubtitleFileIntoPlayer(oldLocalSubtitle);
+      } else if (oldSubtitleIndex != null) {
+        final pos =
+            _embySubtitleStreams.indexWhere((s) => s.index == oldSubtitleIndex);
+        if (pos >= 0) await _selectEmbySubtitle(pos);
+      }
+    }
 
     setState(() {
       _switchingKernel = true;
@@ -7588,15 +7615,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted) return;
         _player.volume = (oldVolume / 100).clamp(0.0, 1.0);
         _player.playbackRate = oldSpeed;
-        if (oldAudio.isNotEmpty) _player.activeAudioTracks = oldAudio;
-
-        if (oldLocalSubtitle != null) {
-          await _loadSubtitleFileIntoPlayer(oldLocalSubtitle);
-        } else if (oldSubtitleIndex != null) {
-          final pos = _embySubtitleStreams
-              .indexWhere((s) => s.index == oldSubtitleIndex);
-          if (pos >= 0) await _selectEmbySubtitle(pos);
-        }
+        await restoreTracks();
 
         _player.state = wasPlaying
             ? AdapterPlaybackState.playing
@@ -7622,6 +7641,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             await _ensureTexture();
             await _syncVideoNativeSize();
             await _waitSurfaceCreated();
+            if (!mounted) return;
+            _player.volume = (oldVolume / 100).clamp(0.0, 1.0);
+            _player.playbackRate = oldSpeed;
+            await restoreTracks();
             _player.state = wasPlaying
                 ? AdapterPlaybackState.playing
                 : AdapterPlaybackState.paused;

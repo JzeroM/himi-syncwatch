@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import '../abstract_player.dart';
 import '../player_data_models.dart';
 import '../player_enums.dart';
+import '../track_selection_queue.dart';
 
 class _ErikaDanmakuConfigPatch {
   _ErikaDanmakuConfigPatch({
@@ -263,6 +264,9 @@ class NipaErikaAdapter extends AbstractPlayer
   List<ErikaTrackInfo> _subtitleTrackInfos = const <ErikaTrackInfo>[];
   List<int> _activeAudioTracks = const <int>[];
   List<int> _activeSubtitleTracks = const <int>[];
+  final PendingTrackSelection _pendingAudioSelection = PendingTrackSelection();
+  final PendingTrackSelection _pendingSubtitleSelection =
+      PendingTrackSelection();
   final Set<int> _externalSubtitleTrackIds = <int>{};
   int _externalSubtitleGeneration = 0;
   Future<void> _externalSubtitleOperation = Future<void>.value();
@@ -449,11 +453,13 @@ class NipaErikaAdapter extends AbstractPlayer
     }
     // Empty selection means "no subtitle".
     if (value.isEmpty) {
+      _pendingSubtitleSelection.clear();
       unawaited(_selectSubtitleTrack(null, reason: 'activeSubtitleTracks=off'));
       return;
     }
     final index = value.first;
     if (index >= 0 && index < _subtitleTrackInfos.length) {
+      _pendingSubtitleSelection.clear();
       unawaited(
         _selectSubtitleTrack(
           _subtitleTrackInfos[index].id,
@@ -461,8 +467,12 @@ class NipaErikaAdapter extends AbstractPlayer
         ),
       );
     } else {
+      // 轨表尚未到达（Erika 打开媒体后异步回传）：暂存请求，待
+      // trackList 事件刷新轨表后自动下发。轨表已就绪但不含该下标时同样
+      // 保留，等待后续追加的外挂字幕轨。
+      _pendingSubtitleSelection.request(value);
       _subtitleTrace(
-        'activeSubtitleTracks ignored out-of-range index=$index '
+        'activeSubtitleTracks deferred index=$index '
         'known_count=${_subtitleTrackInfos.length}',
       );
     }
@@ -479,6 +489,7 @@ class NipaErikaAdapter extends AbstractPlayer
     }
     // Empty selection falls back to the first real audio track.
     if (value.isEmpty) {
+      _pendingAudioSelection.clear();
       if (_audioTrackInfos.isNotEmpty) {
         unawaited(_player.selectAudioTrack(_audioTrackInfos.first.id));
       }
@@ -486,7 +497,40 @@ class NipaErikaAdapter extends AbstractPlayer
     }
     final index = value.first;
     if (index >= 0 && index < _audioTrackInfos.length) {
+      _pendingAudioSelection.clear();
       unawaited(_player.selectAudioTrack(_audioTrackInfos[index].id));
+    } else {
+      // 轨表异步就绪前先暂存（切换内核等场景），trackList 到达后补发。
+      _pendingAudioSelection.request(value);
+      debugPrint(
+        '[Erika] activeAudioTracks deferred index=$index '
+        'known_count=${_audioTrackInfos.length}',
+      );
+    }
+  }
+
+  /// 轨表刷新后补发暂存的音轨/字幕选择。
+  void _flushPendingTrackSelections() {
+    final audioIndex = _pendingAudioSelection.takeReady(
+      _audioTrackInfos.length,
+    );
+    if (audioIndex != null) {
+      _activeAudioTracks = <int>[audioIndex];
+      final id = _audioTrackInfos[audioIndex].id;
+      debugPrint('[Erika] 补发音轨 index=$audioIndex id=$id');
+      unawaited(_player.selectAudioTrack(id));
+    }
+
+    final subtitleIndex = _pendingSubtitleSelection.takeReady(
+      _subtitleTrackInfos.length,
+    );
+    if (subtitleIndex != null) {
+      _activeSubtitleTracks = <int>[subtitleIndex];
+      final id = _subtitleTrackInfos[subtitleIndex].id;
+      _subtitleTrace('补发字幕 index=$subtitleIndex id=$id');
+      unawaited(
+        _selectSubtitleTrack(id, reason: 'pending activeSubtitleTracks'),
+      );
     }
   }
 
@@ -654,6 +698,15 @@ class NipaErikaAdapter extends AbstractPlayer
       _lastNativeError = null;
       _externalSubtitleTrackIds.clear();
       _externalSubtitleGeneration++;
+      // 新媒体的轨表由 trackList 事件重建；先清空旧表与待选请求，避免
+      // 用上一媒体的轨下标误映射/误触发选轨。
+      _videoTrackInfos = const <ErikaTrackInfo>[];
+      _audioTrackInfos = const <ErikaTrackInfo>[];
+      _subtitleTrackInfos = const <ErikaTrackInfo>[];
+      _activeAudioTracks = const <int>[];
+      _activeSubtitleTracks = const <int>[];
+      _pendingAudioSelection.clear();
+      _pendingSubtitleSelection.clear();
     }
   }
 
@@ -725,6 +778,8 @@ class NipaErikaAdapter extends AbstractPlayer
       return existing;
     }
     _disposed = true;
+    _pendingAudioSelection.clear();
+    _pendingSubtitleSelection.clear();
     _buffering.dispose();
     _danmakuConfigTimer?.cancel();
     _danmakuConfigTimer = null;
@@ -1604,6 +1659,7 @@ class NipaErikaAdapter extends AbstractPlayer
         'event activeSubtitleTracks=$_activeSubtitleTracks '
         'external_track_ids=$_externalSubtitleTrackIds',
       );
+      _flushPendingTrackSelections();
     }
     _mediaInfo = updatedInfo;
     if (durationChanged) {
