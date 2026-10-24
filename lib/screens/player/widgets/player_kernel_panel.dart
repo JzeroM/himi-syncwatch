@@ -48,7 +48,7 @@ class PlayerKernelPanel extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Text(
-            '切换内核会重新加载当前视频并恢复播放位置',
+            '切换仅影响当前播放，不改变默认引擎；下一集沿用当前内核',
             style: TextStyle(color: Colors.white54, fontSize: 12),
           ),
         ),

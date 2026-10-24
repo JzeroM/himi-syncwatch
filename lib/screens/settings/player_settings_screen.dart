@@ -4,13 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 
-/// 播放器设置枢纽页：引擎路由说明 / 播放器配置入口 / 网速 / 弹幕配置。
+/// 播放器设置枢纽页：默认播放器说明 / 播放器配置入口 / 网速 / 弹幕配置。
 ///
 /// 引擎专属设置（解码/音频/视频输出）在「播放器配置」tabbed 子页。
-/// 引擎选择全自动路由（TV 与手机同一套规则）：SDR→MDK；HDR→Erika
-/// 可渲染（Vulkan 或 GLES3）即用 Erika（无 HDR 显示自动回退 SDR），
-/// 不可渲染（如 ES2-only 盒子）→ MDK 直写/HDR 透传；Windows
-/// media_kit。本页不提供手动切换。
+/// 默认播放器为平台默认：Android/Windows 使用 MDK，iOS 使用 Erika。
+/// 每次进入播放器从平台默认开始；播放页顶栏切换仅当前播放会话生效，
+/// 不改变默认，剧集下一集沿用当前内核。
 class PlayerSettingsScreen extends ConsumerWidget {
   const PlayerSettingsScreen({super.key});
 
@@ -23,15 +22,16 @@ class PlayerSettingsScreen extends ConsumerWidget {
       pageKey: const ValueKey('playerSettingsPage'),
       title: '播放器',
       children: [
-        // ── 引擎自动路由说明（静态，不可切换）────────────────
+        // ── 默认播放器说明（静态，不提供选择器）────────────────
         ListTile(
-          key: const ValueKey('engineAutoRouteInfo'),
-          leading: const Icon(Icons.account_tree),
-          title: const Text('播放引擎'),
-          subtitle:
-              const Text('自动路由：SDR→MDK；HDR→Erika 可渲染（Vulkan/GLES3）时用 Erika'
-                  '（无 HDR 显示自动回退 SDR），否则 MDK 直写/HDR 透传；'
-                  'Windows media_kit'),
+          key: const ValueKey('defaultPlayerInfo'),
+          leading: const Icon(Icons.play_circle_outline),
+          title: const Text('默认播放器'),
+          subtitle: const Text(
+            '平台默认：Android/Windows 使用 MDK，iOS 使用 Erika。'
+            '每次进入播放器从默认引擎开始；播放页切换仅当前播放，'
+            '下一集沿用当前内核',
+          ),
         ),
         const Divider(height: 1),
         // ── 播放器配置（tabbed：MDK / media_kit / Erika）────────

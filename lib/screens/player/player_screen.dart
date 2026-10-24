@@ -590,6 +590,14 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       insideIntro && playbackElapsedMs < SegmentSkipController.introGateMs;
 
+  /// 切集/换源窗口内禁止片段提示：旧位置 + 新片段会误判片尾。
+  @visibleForTesting
+  static bool canEvaluateSkipPrompt({
+    required bool suppressed,
+    required bool switchingMedia,
+  }) =>
+      !suppressed && !switchingMedia;
+
   /// 是否自动执行片头/片尾跳过（总开关与自动开关同时开启且可控制播放）。
   @visibleForTesting
   static bool shouldAutoSkipSegment({
@@ -976,6 +984,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _segmentServerId = '';
   int _segmentDurationMs = 0;
   int _skipLoadSeq = 0;
+  bool _skipPromptSuppressed = false;
   bool _showSegmentMarkPanel = false;
 
   // ---- Emby 播放会话上报（续播/自动已观看）----
@@ -1806,11 +1815,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       enabled: () => _showControls && mounted,
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
-    // 播放内核：按平台矩阵 + 用户落盘选择；不再按 HDR/DV 内容自动路由。
-    // 切换内核由顶栏胶囊触发，见 _switchPlayerKernel。
-    _currentEngine = PlayerEngineFactory.resolveSelectedEngine(
-      ref.read(settingsProvider).playerKernel,
-    );
+    // 播放内核：每次进入播放器都从平台默认引擎开始；顶栏切换仅当前
+    // 播放会话生效，不写回默认设置。剧集切集沿用当前内核。
+    _currentEngine = PlayerEngineFactory.defaultEngine();
     _player = PlayerEngineFactory.create(
       _currentEngine,
       erikaOutputMode: ErikaOutputMode.auto,
@@ -2152,6 +2159,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final ep = _episodes[episodeIndex];
     final itemId = ep.id;
     final epMediaSourceId = ep.mediaSourceId;
+    _beginSkipPromptSuppression();
 
     // 立即标记就绪，显示视频区域（带黑色遮罩），避免卡在 placeholder
     if (mounted) {
@@ -2184,6 +2192,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _segmentDurationMs = 0;
       _duration = Duration.zero;
       _durationNotifier.value = _duration;
+      _position = Duration(milliseconds: startMs > 0 ? startMs : 0);
+      _positionNotifier.value = _position;
+      _lastSeekCompletedAt = null;
       _showSegmentMarkPanel = false;
       _skipPromptPlaybackWatch.reset();
       _skipController.reset();
@@ -3049,6 +3060,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
     // 换内核后位置会重新落点，清掉旧引擎的片段判定基线。
+    _skipPromptSuppressed = true;
     _skipController.reset();
     _skipPromptPlaybackWatch.reset();
     _skipPromptTimer?.cancel();
@@ -3097,6 +3109,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     int startMs = 0,
   }) async {
     if (!mounted) return false;
+    _beginSkipPromptSuppression();
     // 会话级 EGL 守卫基准（v1.2.14）：本次流加载前的检测器状态快照。
     _eglFaultAtSessionStart = eglFaultDetector.fault;
     final targetItemId = itemId ?? widget.itemId;
@@ -3242,6 +3255,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 启动播放（无条件，首播和切集都需要）
       if (mounted) {
         _player.state = AdapterPlaybackState.playing;
+        _skipPromptSuppressed = false;
         _syncPlayState();
         // 起播成功重新起算自动隐藏：慢流首开可能远超 5s，进入页时的
         // 计时器已到点（当时 state!=playing 被跳过），不重开则控件常驻。
@@ -5376,7 +5390,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _resetHideTimer();
   }
 
+  void _beginSkipPromptSuppression() {
+    _skipPromptSuppressed = true;
+    _skipPromptTimer?.cancel();
+    _skipPromptTimer = null;
+    _skipController.reset();
+    _skipPromptPlaybackWatch.reset();
+    if (mounted && _skipPromptSegment != null) {
+      setState(() => _skipPromptSegment = null);
+    } else {
+      _skipPromptSegment = null;
+    }
+  }
+
   void _evaluateSkipPrompt(int positionMs) {
+    if (!PlayerScreen.canEvaluateSkipPrompt(
+      suppressed: _skipPromptSuppressed,
+      switchingMedia: _isSwitchingMedia,
+    )) {
+      return;
+    }
     final playing = _player.state == AdapterPlaybackState.playing;
     if (!playing) {
       _skipPromptPlaybackWatch.stop();
@@ -6025,6 +6058,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _switchToEpisode(int index, {int? completedAtMs}) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
+    _beginSkipPromptSuppression();
 
     final requestId = ++_playRequestId;
     final previousReportService = _reportService;
@@ -7569,7 +7603,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             : AdapterPlaybackState.paused;
       }
 
-      await ref.read(settingsProvider.notifier).update(playerKernel: target.id);
       _syncPlayState();
     } catch (e) {
       LogService().log('Player', '切换内核失败: $previous -> $target: $e');
@@ -7599,6 +7632,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     } finally {
       if (mounted) {
+        _skipPromptSuppressed = false;
         setState(() => _switchingKernel = false);
         _syncPlayState();
       }

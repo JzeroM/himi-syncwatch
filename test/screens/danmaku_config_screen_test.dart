@@ -54,6 +54,9 @@ void main() {
 
       expect(
           find.byKey(const ValueKey('danmakuDefaultOnSwitch')), findsOneWidget);
+      expect(find.byKey(const ValueKey('danmakuQrConfigEntry')), findsNothing);
+      expect(
+          find.byKey(const ValueKey('danmakuClearConfigEntry')), findsNothing);
       expect(find.byKey(const ValueKey('danmakuApiUrlField')), findsOneWidget);
       expect(find.byKey(const ValueKey('danmakuScrollRowsSlider')),
           findsOneWidget);
@@ -102,55 +105,63 @@ void main() {
       );
     });
 
-    testWidgets('扫码配置入口在 API 地址输入框上方（v1.1.177）', (tester) async {
-      await _pumpConfig(tester);
+    testWidgets('TV 只显示扫码配置，不显示输入框', (tester) async {
+      await _pumpConfig(tester, initial: const AppSettings(tvMode: true));
 
       final entry = find.byKey(const ValueKey('danmakuQrConfigEntry'));
       expect(entry, findsOneWidget);
+      expect(find.byKey(const ValueKey('danmakuClearConfigEntry')),
+          findsOneWidget);
       expect(find.text('扫码配置'), findsOneWidget);
       expect(find.textContaining('手机扫码打开网页'), findsOneWidget);
+      expect(find.byKey(const ValueKey('danmakuApiUrlField')), findsNothing);
+      expect(
+          find.byKey(const ValueKey('danmakuBlockWordsField')), findsNothing);
 
-      // 坐标序：扫码入口在 API 输入框之上（TV 焦点主路径先经过扫码）
-      final entryTop = tester.getTopLeft(entry).dy;
-      final fieldTop =
-          tester.getTopLeft(find.byKey(const ValueKey('danmakuApiUrlField'))).dy;
-      expect(entryTop, lessThan(fieldTop),
-          reason: '扫码入口应渲染在 API 地址输入框上方');
+      // 行数/屏蔽开关等非输入项保留。
+      expect(find.byKey(const ValueKey('danmakuScrollRowsSlider')),
+          findsOneWidget);
+      await _scrollTo(tester, '屏蔽');
+      expect(
+          find.byKey(const ValueKey('danmakuBlockTopSwitch')), findsOneWidget);
     });
 
-    testWidgets('TV 模式两个输入框屏蔽焦点（ExcludeFocus，v1.1.177）',
-        (tester) async {
-      await _pumpConfig(tester, initial: const AppSettings(tvMode: true));
-
-      // API 地址与屏蔽关键词输入框均被 ExcludeFocus 包裹（TV 下
-      // directional 导航方向键被文本编辑快捷键吞掉 → 焦点卡死）
-      expect(
-        find.ancestor(
-            of: find.byKey(const ValueKey('danmakuApiUrlField')),
-            matching: find.byType(ExcludeFocus)),
-        findsOneWidget,
-        reason: 'API 地址输入框在 TV 下必须被 ExcludeFocus 包裹',
-      );
-
-      await _scrollTo(tester, '屏蔽关键词');
-      expect(
-        find.ancestor(
-            of: find.byKey(const ValueKey('danmakuBlockWordsField')),
-            matching: find.byType(ExcludeFocus)),
-        findsOneWidget,
-        reason: '屏蔽关键词输入框在 TV 下必须被 ExcludeFocus 包裹',
-      );
-    });
-
-    testWidgets('非 TV 输入框不包 ExcludeFocus（可正常输入）', (tester) async {
+    testWidgets('非 TV 不显示扫码入口，输入框可正常输入', (tester) async {
       await _pumpConfig(tester);
 
+      expect(find.byKey(const ValueKey('danmakuQrConfigEntry')), findsNothing);
+      expect(
+          find.byKey(const ValueKey('danmakuClearConfigEntry')), findsNothing);
       expect(
         find.ancestor(
             of: find.byKey(const ValueKey('danmakuApiUrlField')),
             matching: find.byType(ExcludeFocus)),
         findsNothing,
       );
+    });
+
+    testWidgets('TV 清除配置只清 API 地址，保留行数/屏蔽设置', (tester) async {
+      final container = await _pumpConfig(
+        tester,
+        initial: const AppSettings(
+          tvMode: true,
+          danmakuApiUrl: 'http://old',
+          danmakuScrollRows: 12,
+          danmakuBlockTop: true,
+          danmakuBlockWords: '旧词',
+        ),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('danmakuClearConfigEntry')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('tvConfirmOk')));
+      await tester.pumpAndSettle();
+
+      final s = container.read(settingsProvider);
+      expect(s.danmakuApiUrl, isEmpty);
+      expect(s.danmakuScrollRows, 12);
+      expect(s.danmakuBlockTop, isTrue);
+      expect(s.danmakuBlockWords, '旧词');
     });
 
     testWidgets('滚动行数滑杆拖动改值（钳在 1~30）', (tester) async {
@@ -261,8 +272,7 @@ void main() {
                 routes: [
                   GoRoute(
                     path: 'danmaku',
-                    builder: (context, state) =>
-                        const DanmakuConfigScreen(),
+                    builder: (context, state) => const DanmakuConfigScreen(),
                   ),
                 ],
               ),
@@ -294,6 +304,7 @@ void main() {
 
       expect(find.byType(DanmakuConfigScreen), findsOneWidget);
       expect(find.text('弹幕配置'), findsWidgets);
+      expect(find.byKey(const ValueKey('danmakuQrConfigEntry')), findsNothing);
       expect(find.byKey(const ValueKey('danmakuApiUrlField')), findsOneWidget);
     });
   });

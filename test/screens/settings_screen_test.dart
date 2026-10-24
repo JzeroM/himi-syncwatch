@@ -1409,13 +1409,57 @@ void main() {
     });
   });
 
-  testWidgets('非 TV：TMDB 设置保留手动输入框与扫码入口', (tester) async {
+  testWidgets('播放器子页：显示平台默认播放器说明，不提供选择器', (tester) async {
+    await _pumpScreen(tester, category: '播放器');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('defaultPlayerInfo')), findsOneWidget);
+    expect(find.text('默认播放器'), findsOneWidget);
+    expect(find.textContaining('平台默认'), findsOneWidget);
+    expect(find.byKey(const ValueKey('engineAutoRouteInfo')), findsNothing);
+    expect(find.textContaining('自动路由'), findsNothing);
+  });
+
+  testWidgets('TV：TMDB 清除配置恢复 Key/代理/区域', (tester) async {
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final container = await _pumpScreen(
+      tester,
+      initial: const AppSettings(
+        tvMode: true,
+        tmdbApiKey: 'key-old',
+        tmdbApiBase: 'https://proxy.example',
+        tmdbImageBase: 'https://img.example',
+        tmdbWatchRegion: 'JP',
+      ),
+      remote: true,
+      category: '外观',
+    );
+    await _scrollToText(tester, 'TMDB 聚合');
+    await tester.tap(find.byKey(const ValueKey('tmdbSettingsEntry')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tmdbClearConfigEntry')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tvConfirmOk')));
+    await tester.pumpAndSettle();
+
+    final s = container.read(settingsProvider);
+    expect(s.tmdbApiKey, isEmpty);
+    expect(s.tmdbApiBase, 'https://api.tmdb.org');
+    expect(s.tmdbImageBase, 'https://wsrv.nl/?url=https://image.tmdb.org');
+    expect(s.tmdbWatchRegion, 'US');
+  });
+
+  testWidgets('非 TV：TMDB 设置保留手动输入框且不显示扫码入口', (tester) async {
     await _pumpScreen(tester, category: '外观');
     await _scrollToText(tester, 'TMDB 聚合');
     await tester.tap(find.byKey(const ValueKey('tmdbSettingsEntry')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('tmdbQrConfigEntry')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tmdbQrConfigEntry')), findsNothing);
+    expect(find.byKey(const ValueKey('tmdbClearConfigEntry')), findsNothing);
     expect(find.byKey(const ValueKey('tmdbApiKeyField')), findsOneWidget);
     expect(find.byKey(const ValueKey('tmdbApiBaseField')), findsOneWidget);
     expect(find.byKey(const ValueKey('tmdbImageBaseField')), findsOneWidget);
@@ -1442,14 +1486,27 @@ void main() {
       findsNothing,
       reason: 'TV 模式隐藏无输入法的文本框，改走扫码',
     );
+    expect(find.byKey(const ValueKey('tmdbClearConfigEntry')), findsOneWidget);
     expect(focusWithin(qr), isTrue, reason: '扫码配置应成为 TMDB 设置的首个焦点');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    final clearFocus = find.ancestor(
+      of: find.byKey(const ValueKey('tmdbClearConfigEntry')),
+      matching: find.byType(TvFocusable),
+    );
+    expect(
+      focusWithin(clearFocus),
+      isTrue,
+      reason: '方向键应能从扫码配置下移到清除配置',
+    );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     expect(
       focusWithin(find.byKey(const ValueKey('tmdbWatchRegionTile'))),
       isTrue,
-      reason: '方向键应能从扫码配置下移到观看区域',
+      reason: '方向键应能继续下移到观看区域',
     );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);

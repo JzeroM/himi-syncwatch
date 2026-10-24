@@ -5,9 +5,10 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_confirm_dialog.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 弹幕配置页：默认开关 / API 地址 / 行数 / 屏蔽 / 同屏上限。
@@ -104,6 +105,22 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
     }
   }
 
+  Future<void> _clearApiConfig() async {
+    if (ref.read(settingsProvider).danmakuApiUrl.isEmpty) return;
+    final confirmed = await showTvConfirmDialog(
+      context: context,
+      title: '清除弹幕 API 地址？',
+      message: '只清除弹幕 API 地址，行数、屏蔽、同屏数量等设置保持不变。',
+      confirmLabel: '清除',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    await ref.read(settingsProvider.notifier).update(danmakuApiUrl: '');
+    if (!mounted) return;
+    _apiUrl.clear();
+    showAppToast(context, '弹幕 API 地址已清除');
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(settingsProvider);
@@ -138,31 +155,39 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
             ),
             const Divider(height: 1),
             _sectionHeader('弹幕源'),
-            // 扫码配置：TV 无输入法，手机扫码打开网页填地址提交即落库
-            // （复用 Emby 扫码管道，mode=danmaku 高亮对应区块）。放在
-            // 输入框上方：TV 焦点主路径（v1.1.177）。
-            settingsTvWrapRow(
-              tvMode: s.tvMode,
-              onTap: _openQrConfig,
-              child: ListTile(
-                key: const ValueKey('danmakuQrConfigEntry'),
-                leading: const Icon(Icons.qr_code),
-                title: const Text('扫码配置'),
-                subtitle: const Text('手机扫码打开网页，填弹幕 API 地址提交到电视'),
-                trailing: const Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: Colors.white54,
-                ),
-                onTap: _openQrConfig,
-              ),
-            ),
-            // TV 下输入框屏蔽焦点（directional 导航方向键被文本编辑快捷键
-            // 吞掉，焦点卡死；TV 无输入法，配置走扫码）。
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: tvExcludeEditable(
+            if (s.tvMode) ...[
+              // TV 无输入法：只保留扫码配置；手机扫码提交后落库。
+              settingsTvWrapRow(
                 tvMode: s.tvMode,
+                onTap: _openQrConfig,
+                child: ListTile(
+                  key: const ValueKey('danmakuQrConfigEntry'),
+                  leading: const Icon(Icons.qr_code),
+                  title: const Text('扫码配置'),
+                  subtitle: const Text('手机扫码打开网页，填弹幕 API 地址提交到电视'),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: Colors.white54,
+                  ),
+                  onTap: _openQrConfig,
+                ),
+              ),
+              settingsTvWrapRow(
+                tvMode: s.tvMode,
+                onTap: _clearApiConfig,
+                child: ListTile(
+                  key: const ValueKey('danmakuClearConfigEntry'),
+                  leading:
+                      Icon(Icons.delete_outline, color: Colors.red.shade300),
+                  title: const Text('清除配置'),
+                  subtitle: const Text('只清除弹幕 API 地址，保留行数/屏蔽设置'),
+                  onTap: _clearApiConfig,
+                ),
+              ),
+            ] else ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: TextField(
                   key: const ValueKey('danmakuApiUrlField'),
                   controller: _apiUrl,
@@ -178,7 +203,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                   onChanged: (v) => _update(danmakuApiUrl: v),
                 ),
               ),
-            ),
+            ],
             const Divider(height: 1),
             _sectionHeader('行数（滚动按屏高自动铺满，此值为上限）'),
             _rowsSlider(
@@ -222,10 +247,9 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                 onChanged: (v) => _update(danmakuBlockBottom: v),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: tvExcludeEditable(
-                tvMode: s.tvMode,
+            if (!s.tvMode)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: TextField(
                   key: const ValueKey('danmakuBlockWordsField'),
                   controller: _blockWords,
@@ -238,7 +262,6 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                   onChanged: (v) => _update(danmakuBlockWords: v),
                 ),
               ),
-            ),
             const Divider(height: 1),
             _sectionHeader('数量'),
             _tvWrapRow(

@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/services/tmdb_service.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/tv/tv_confirm_dialog.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 
 /// TMDB 聚合模式设置：凭据 / API 与图片代理 / 观看区域。
@@ -115,6 +116,28 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     if (_imageBase.text != s.tmdbImageBase) _imageBase.text = s.tmdbImageBase;
   }
 
+  Future<void> _clearConfig() async {
+    final confirmed = await showTvConfirmDialog(
+      context: context,
+      title: '清除 TMDB 配置？',
+      message: '将清除 API Key、API 代理、图片代理，并把观看区域恢复为美国 (US)。',
+      confirmLabel: '清除',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    await ref.read(settingsProvider.notifier).update(
+          tmdbApiKey: '',
+          tmdbApiBase: 'https://api.tmdb.org',
+          tmdbImageBase: 'https://wsrv.nl/?url=https://image.tmdb.org',
+          tmdbWatchRegion: 'US',
+        );
+    if (!mounted) return;
+    _key.clear();
+    _apiBase.text = 'https://api.tmdb.org';
+    _imageBase.text = 'https://wsrv.nl/?url=https://image.tmdb.org';
+    showAppToast(context, 'TMDB 配置已清除');
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(settingsProvider);
@@ -140,27 +163,40 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
           ),
         ),
         const Divider(height: 1),
-        KeyedSubtree(
-          key: const ValueKey('tmdbQrConfigFocus'),
-          child: settingsTvWrapRow(
-            tvMode: s.tvMode,
-            focusNode: _qrFocusNode,
-            onTap: _openQrConfig,
-            child: ListTile(
-              key: const ValueKey('tmdbQrConfigEntry'),
-              leading: const Icon(Icons.qr_code),
-              title: const Text('扫码配置'),
-              subtitle: const Text('手机扫码填写 API Key、代理地址与观看区域'),
-              trailing: const Icon(
-                Icons.chevron_right,
-                size: 18,
-                color: Colors.white54,
-              ),
+        if (s.tvMode) ...[
+          KeyedSubtree(
+            key: const ValueKey('tmdbQrConfigFocus'),
+            child: settingsTvWrapRow(
+              tvMode: s.tvMode,
+              focusNode: _qrFocusNode,
               onTap: _openQrConfig,
+              child: ListTile(
+                key: const ValueKey('tmdbQrConfigEntry'),
+                leading: const Icon(Icons.qr_code),
+                title: const Text('扫码配置'),
+                subtitle: const Text('手机扫码填写 API Key、代理地址与观看区域'),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Colors.white54,
+                ),
+                onTap: _openQrConfig,
+              ),
             ),
           ),
-        ),
-        const Divider(height: 1),
+          settingsTvWrapRow(
+            tvMode: s.tvMode,
+            onTap: _clearConfig,
+            child: ListTile(
+              key: const ValueKey('tmdbClearConfigEntry'),
+              leading: Icon(Icons.delete_outline, color: Colors.red.shade300),
+              title: const Text('清除配置'),
+              subtitle: const Text('清除 API Key、代理地址与观看区域'),
+              onTap: _clearConfig,
+            ),
+          ),
+          const Divider(height: 1),
+        ],
         if (!s.tvMode) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),

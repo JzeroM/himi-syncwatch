@@ -15,6 +15,30 @@ void main() {
     expect(PlayerScreen.playbackReportInterval, const Duration(seconds: 3));
   });
 
+  test('canEvaluateSkipPrompt：切集/换源窗口禁止片段提示', () {
+    expect(
+      PlayerScreen.canEvaluateSkipPrompt(
+        suppressed: false,
+        switchingMedia: false,
+      ),
+      isTrue,
+    );
+    expect(
+      PlayerScreen.canEvaluateSkipPrompt(
+        suppressed: true,
+        switchingMedia: false,
+      ),
+      isFalse,
+    );
+    expect(
+      PlayerScreen.canEvaluateSkipPrompt(
+        suppressed: false,
+        switchingMedia: true,
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('PlayerScreen.focusWithin：判定焦点是否在热键层子树内', (tester) async {
     final hotkey = FocusNode(debugLabel: 'hotkey');
     final inControls = FocusNode(debugLabel: 'inControls');
@@ -502,7 +526,8 @@ void main() {
     });
   });
 
-  group('PlayerScreen.outputColorSpace（1.1.191 SDR tone map，1.1.194 限 Android）', () {
+  group('PlayerScreen.outputColorSpace（1.1.191 SDR tone map，1.1.194 限 Android）',
+      () {
     test('恒返回 bt709（Android 用，iOS 不调用防黑屏）', () {
       expect(PlayerScreen.outputColorSpace(), AdapterColorSpace.bt709);
     });
