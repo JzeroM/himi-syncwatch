@@ -294,6 +294,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
   Object? get mediaKitController => _controller;
   final ValueNotifier<int?> _textureIdNotifier = ValueNotifier<int?>(null);
   final GlobalKey _repaintBoundaryKey = GlobalKey();
+  Map<String, String> _httpHeaders = const <String, String>{};
+  Future<void>? _pendingOpenMedia;
   bool _textureIdListenerAttached = false;
 
   String _currentMedia = '';
@@ -817,7 +819,10 @@ class NipaMediaKitAdapter extends AbstractPlayer
     return Media(
       media.uri,
       extras: options,
-      httpHeaders: media.httpHeaders,
+      httpHeaders: {
+        ..._httpHeaders,
+        ...?media.httpHeaders,
+      },
       start: media.start,
       end: media.end,
     );
@@ -2312,7 +2317,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   void setHttpHeaders(Map<String, String> headers) {
-    _properties['httpHeaders'] = jsonEncode(headers);
+    _httpHeaders = Map<String, String>.from(headers);
   }
 
   @override
@@ -2447,13 +2452,17 @@ class NipaMediaKitAdapter extends AbstractPlayer
     final media = Media(
       preparedMedia.url,
       extras: mediaOptions,
-      httpHeaders: preparedMedia.httpHeaders,
+      httpHeaders: {
+        ..._httpHeaders,
+        ...?preparedMedia.httpHeaders,
+      },
     );
 
     //debugPrint('MediaKitAdapter: 打开媒体 (MAIN VIDEO/AUDIO): $path');
     if (!_isDisposed) {
       if (_usesPlatformVideoSurface && _attachedPlatformViewId == null) {
         _pendingPlatformMedia = media;
+        _pendingOpenMedia = null;
         _logPlatformVideoSurface(
           'defer media open until native surface attaches media=$path',
         );
@@ -2464,7 +2473,9 @@ class NipaMediaKitAdapter extends AbstractPlayer
         }
       } else {
         _pendingPlatformMedia = null;
-        _openMainMedia(media);
+        final openFuture = _openMainMedia(media);
+        _pendingOpenMedia = openFuture;
+        unawaited(openFuture);
       }
     }
 
@@ -2509,7 +2520,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
     });
   }
 
-  void _openMainMedia(Media media) {
+  Future<void> _openMainMedia(Media media) async {
     if (_isDisposed) {
       return;
     }
@@ -2532,53 +2543,51 @@ class NipaMediaKitAdapter extends AbstractPlayer
     _chapterRetryTimer = null;
     _mediaInfo = _mediaInfo.copyWith(chapters: const []);
 
-    unawaited(() async {
-      try {
-        final dynamic platform = _player.platform;
-        if (_usesPlatformVideoSurface && platform != null) {
-          await _setMpvRuntimeProperty(platform, 'vid', 'auto');
-          await _setMpvRuntimeProperty(platform, 'vo', 'libmpv');
-          await _setMpvRuntimeProperty(platform, 'wid', '0');
-          await _setMpvRuntimeProperty(platform, 'force-window', 'no');
-          unawaited(_dumpPlatformMpvVideoDiagnostics('before-open'));
+    try {
+      final dynamic platform = _player.platform;
+      if (_usesPlatformVideoSurface && platform != null) {
+        await _setMpvRuntimeProperty(platform, 'vid', 'auto');
+        await _setMpvRuntimeProperty(platform, 'vo', 'libmpv');
+        await _setMpvRuntimeProperty(platform, 'wid', '0');
+        await _setMpvRuntimeProperty(platform, 'force-window', 'no');
+        unawaited(_dumpPlatformMpvVideoDiagnostics('before-open'));
+      }
+      await _player.open(media, play: false);
+      if (_isDisposed || openGeneration != _mediaLoadGeneration) {
+        return;
+      }
+      if (Platform.isWindows) {
+        // Windows 的 WASAPI 输出会在媒体打开时才完成初始化。首次播放前
+        // 下发的音量可能因此没有应用到新建的音频输出；内核热切换之所以
+        // 能恢复正常，是因为切换流程会在媒体就绪后再次写入音量。
+        final mpvValue = pow(_requestedVolume, 1.0 / 3.0) * 100.0;
+        try {
+          await _player.setVolume(mpvValue);
+        } catch (_) {
+          // 音量同步失败不应把已经成功打开的媒体标记成载入失败。
         }
-        await _player.open(media, play: false);
         if (_isDisposed || openGeneration != _mediaLoadGeneration) {
           return;
         }
-        if (Platform.isWindows) {
-          // Windows 的 WASAPI 输出会在媒体打开时才完成初始化。首次播放前
-          // 下发的音量可能因此没有应用到新建的音频输出；内核热切换之所以
-          // 能恢复正常，是因为切换流程会在媒体就绪后再次写入音量。
-          final mpvValue = pow(_requestedVolume, 1.0 / 3.0) * 100.0;
-          try {
-            await _player.setVolume(mpvValue);
-          } catch (_) {
-            // 音量同步失败不应把已经成功打开的媒体标记成载入失败。
-          }
-          if (_isDisposed || openGeneration != _mediaLoadGeneration) {
-            return;
-          }
-        }
-        if (_usesPlatformVideoSurface && platform != null) {
-          await _setMpvRuntimeProperty(platform, 'vid', 'auto');
-          await _setMpvRuntimeProperty(platform, 'vo', 'libmpv');
-          await _setMpvRuntimeProperty(platform, 'wid', '0');
-          await _setMpvRuntimeProperty(platform, 'force-window', 'no');
-          unawaited(_dumpPlatformMpvVideoDiagnostics('after-open'));
-          Future.delayed(
-            const Duration(milliseconds: 1500),
-            () => unawaited(
-                _dumpPlatformMpvVideoDiagnostics('after-open+1500ms')),
-          );
-        }
-      } catch (error) {
-        debugPrint('MediaKit: 打开媒体失败: $error');
-        if (openGeneration == _mediaLoadGeneration) {
-          _recordCurrentMediaLoadError(error);
-        }
       }
-    }());
+      if (_usesPlatformVideoSurface && platform != null) {
+        await _setMpvRuntimeProperty(platform, 'vid', 'auto');
+        await _setMpvRuntimeProperty(platform, 'vo', 'libmpv');
+        await _setMpvRuntimeProperty(platform, 'wid', '0');
+        await _setMpvRuntimeProperty(platform, 'force-window', 'no');
+        unawaited(_dumpPlatformMpvVideoDiagnostics('after-open'));
+        Future.delayed(
+          const Duration(milliseconds: 1500),
+          () =>
+              unawaited(_dumpPlatformMpvVideoDiagnostics('after-open+1500ms')),
+        );
+      }
+    } catch (error) {
+      debugPrint('MediaKit: 打开媒体失败: $error');
+      if (openGeneration == _mediaLoadGeneration) {
+        _recordCurrentMediaLoadError(error);
+      }
+    }
     _scheduleMacOSHdrDiagnostics();
 
     // 在主媒体加载后，通过audio-add命令加载外部音频文件（如MKA）
@@ -2731,6 +2740,13 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   Future<void> prepare({int startMs = 0}) async {
+    final pendingOpen = _pendingOpenMedia;
+    if (pendingOpen != null) {
+      await pendingOpen;
+    }
+    if (_isDisposed) return;
+    await waitUntilMediaReady(timeout: const Duration(seconds: 10));
+    if (_isDisposed) return;
     if (!_usesPlatformVideoSurface) {
       await updateTexture();
     }

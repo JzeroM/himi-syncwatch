@@ -542,9 +542,9 @@ class NipaMdkAdapter extends AbstractPlayer
     if (_released('prepare')) return;
     try {
       if (startMs > 0) {
-        _mdkPlayer.prepare(position: startMs);
+        await _mdkPlayer.prepare(position: startMs);
       } else {
-        _mdkPlayer.prepare();
+        await _mdkPlayer.prepare();
       }
       // prepare后重新应用播放速度，确保设置生效
       if (_playbackRate != 1.0) {
