@@ -232,6 +232,9 @@ class PlayerMediaStatus {
   bool get isBuffering => test(buffering);
   bool get isEnd => test(end);
 
+  PlayerMediaStatus operator |(PlayerMediaStatus other) =>
+      PlayerMediaStatus(rawValue | other.rawValue);
+
   @override
   bool operator ==(Object other) =>
       other is PlayerMediaStatus && other.rawValue == rawValue;

@@ -350,6 +350,10 @@ class NipaMediaKitAdapter extends AbstractPlayer
   // 根因：原实现未订阅 stream.position，_lastActualPosition 仅 playing/seek 时设一次，
   // 正常播放纯墙钟插值，永不被 mpv 真实 position 校正  与 mpv 漂移  下游 big-fwd snap  回弹。
   StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<bool>? _completedSubscription;
+  bool _completed = false;
+  int _seekGeneration = 0;
+  int? _pendingStartMs;
   bool _isDisposed = false;
   final Set<String> _callsAfterTeardown = {};
   // MKV 章节列表是否已成功获取过（用于 _refreshChapters 去重，避免 duration
@@ -1192,6 +1196,20 @@ class NipaMediaKitAdapter extends AbstractPlayer
       }
     });
 
+    _completedSubscription = _player.stream.completed.listen((completed) {
+      if (_isDisposed) return;
+      _completed = completed;
+      if (completed) {
+        final durationMs = _player.state.duration.inMilliseconds;
+        if (durationMs > 0) {
+          _interpolatedPosition = Duration(milliseconds: durationMs);
+          _lastActualPosition = _interpolatedPosition;
+          _lastPositionTimestampUs = DateTime.now().microsecondsSinceEpoch;
+        }
+      }
+      _notifyStatus(force: true);
+    });
+
     _trackSubscription = _player.stream.track.listen(
       (trackEvent) {
         // //debugPrint('MediaKitAdapter: Active track changed event received. Subtitle ID from event: ${trackEvent.subtitle.id}, Title: ${trackEvent.subtitle.title}');
@@ -1215,14 +1233,14 @@ class NipaMediaKitAdapter extends AbstractPlayer
     });
 
     _player.stream.duration.listen((duration) {
-      if (duration.inMilliseconds > 0 &&
-          _mediaInfo.duration != duration.inMilliseconds) {
+      final hasDuration = duration.inMilliseconds > 0;
+      if (hasDuration && _mediaInfo.duration != duration.inMilliseconds) {
         _mediaInfo = _mediaInfo.copyWith(duration: duration.inMilliseconds);
       }
-      if (duration.inMilliseconds > 0) {
+      if (hasDuration) {
         _markCurrentMediaReady('duration');
       }
-      _notifyStatus();
+      _notifyStatus(force: hasDuration);
       // 时长确定后尝试获取 MKV 章节列表（chapter-list 在 file-loaded 后可用，
       // 且常随 duration 一起就绪）。参考 REFERENCE/mpv/player/lua/osc.lua:3201
       // observe_cached("chapter-list")。此处用一次性 getProperty 兜底，避免
@@ -1258,12 +1276,13 @@ class NipaMediaKitAdapter extends AbstractPlayer
     _lastActualPosition = Duration.zero;
     _lastPositionTimestampUs = 0;
     _buffering.value = false;
+    _completed = false;
     _lastStatus = PlayerMediaStatus.unloaded;
   }
 
-  void _notifyStatus() {
+  void _notifyStatus({bool force = false}) {
     final next = _statusValue;
-    if (next == _lastStatus) return;
+    if (!force && next == _lastStatus) return;
     final old = _lastStatus;
     _lastStatus = next;
     _statusCtrl.add((oldValue: old, newValue: next));
@@ -2313,10 +2332,26 @@ class NipaMediaKitAdapter extends AbstractPlayer
     return bufferMs.clamp(0, durationMs).toInt();
   }
 
-  PlayerMediaStatus get _statusValue {
-    if (_buffering.value) return PlayerMediaStatus.buffering;
-    if (_mediaReady) return PlayerMediaStatus.loaded;
-    return switch (_state) {
+  PlayerMediaStatus get _statusValue => resolveMediaKitStatus(
+        completed: _completed,
+        ready: _mediaReady,
+        buffering: _buffering.value,
+        state: _state,
+      );
+
+  @visibleForTesting
+  static PlayerMediaStatus resolveMediaKitStatus({
+    required bool completed,
+    required bool ready,
+    required bool buffering,
+    required PlayerPlaybackState state,
+  }) {
+    if (completed && ready) {
+      return PlayerMediaStatus.loaded | PlayerMediaStatus.end;
+    }
+    if (buffering) return PlayerMediaStatus.buffering;
+    if (ready) return PlayerMediaStatus.loaded;
+    return switch (state) {
       PlayerPlaybackState.playing => PlayerMediaStatus.loaded,
       PlayerPlaybackState.paused => PlayerMediaStatus.prepared,
       PlayerPlaybackState.stopped => PlayerMediaStatus.unloaded,
@@ -2470,6 +2505,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
     _activeAudioTracks = [];
     _lastKnownActiveSubtitleId = null;
     _mediaInfo = PlayerMediaInfo(duration: 0);
+    _completed = false;
+    _pendingStartMs = null;
     // 标记需要在 AO 就绪后重新同步音量（首次 playing 事件时执行）
     _volumeResyncNeeded = true;
     // 递增代数计数器，使旧的延迟加载操作作废
@@ -2776,12 +2813,20 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   Future<void> prepare({int startMs = 0}) async {
+    if (startMs > 0) _pendingStartMs = startMs;
+    if (_pendingPlatformMedia != null) {
+      // Native surface 尚未 attach：媒体还没 open。起始位置留给
+      // attachPlatformVideoSurface 后的 _applyPendingStartAfterOpen()。
+      return;
+    }
     final pendingOpen = _pendingOpenMedia;
     if (pendingOpen != null) {
       await pendingOpen;
     }
     if (_isDisposed) return;
-    await waitUntilMediaReady(timeout: const Duration(seconds: 10));
+    final ready = await waitUntilMediaReady(
+      timeout: const Duration(seconds: 10),
+    );
     if (_isDisposed) return;
     if (!_usesPlatformVideoSurface) {
       await updateTexture();
@@ -2790,22 +2835,76 @@ class NipaMediaKitAdapter extends AbstractPlayer
       _printAllTracksInfo(_player.state.tracks);
     }
     if (startMs > 0 && !_isDisposed) {
+      if (ready) {
+        try {
+          await seekAndWait(position: startMs);
+        } catch (error) {
+          debugPrint('MediaKit: 初始 seek($startMs) 未确认: $error');
+        }
+      }
+    }
+  }
+
+  Future<void> _applyPendingStartAfterOpen() async {
+    final startMs = _pendingStartMs;
+    if (startMs == null || startMs <= 0 || _isDisposed) return;
+    final ready = await waitUntilMediaReady(
+      timeout: const Duration(seconds: 10),
+    );
+    if (!ready || _isDisposed || _pendingStartMs != startMs) return;
+    try {
       await seekAndWait(position: startMs);
+      if (_pendingStartMs == startMs) _pendingStartMs = null;
+    } catch (error) {
+      debugPrint('MediaKit: 延迟 surface 初始 seek($startMs) 未确认: $error');
     }
   }
 
   @override
   void seek({required int position}) {
-    unawaited(seekAndWait(position: position));
+    unawaited(
+      seekAndWait(position: position).catchError(
+        (Object error, StackTrace stack) {
+          debugPrint('MediaKit: seek($position) 未确认: $error');
+        },
+      ),
+    );
   }
 
   @override
   Future<void> seekAndWait({required int position}) async {
+    final generation = ++_seekGeneration;
     final seekPosition = Duration(milliseconds: position);
-    await _player.seek(seekPosition);
-    _interpolatedPosition = seekPosition;
-    _lastActualPosition = seekPosition;
-    _lastPositionTimestampUs = DateTime.now().microsecondsSinceEpoch;
+    _completed = false;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await _player.seek(seekPosition);
+      if (await _waitForSeekTarget(seekPosition, generation)) {
+        _interpolatedPosition = seekPosition;
+        _lastActualPosition = seekPosition;
+        _lastPositionTimestampUs = DateTime.now().microsecondsSinceEpoch;
+        _pendingStartMs = null;
+        _notifyStatus(force: true);
+        return;
+      }
+      if (_isDisposed || generation != _seekGeneration) return;
+    }
+    throw StateError('mpv seek 未到达 ${seekPosition.inMilliseconds}ms');
+  }
+
+  Future<bool> _waitForSeekTarget(
+    Duration target,
+    int generation,
+  ) async {
+    final deadline = DateTime.now().add(const Duration(milliseconds: 1200));
+    while (!_isDisposed && generation == _seekGeneration) {
+      final current = _player.state.position;
+      if ((current - target).abs() <= const Duration(milliseconds: 1000)) {
+        return true;
+      }
+      if (DateTime.now().isAfter(deadline)) return false;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    return false;
   }
 
   @override
@@ -2852,6 +2951,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
     _ticker?.dispose();
     await _trackSubscription?.cancel();
     await _positionSubscription?.cancel();
+    await _completedSubscription?.cancel();
     await _bufferingSubscription?.cancel();
     _buffering.dispose();
     _jellyfinRetryTimer?.cancel();
@@ -3393,6 +3493,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
           'extras=${mediaWithWindowOptions.extras}',
         );
         _openMainMedia(mediaWithWindowOptions);
+        unawaited(_applyPendingStartAfterOpen());
       }
 
       if (_mpvDiagnosticsEnabled) {

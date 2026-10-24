@@ -162,7 +162,24 @@ void main() {
     );
   });
 
-  test('手动 seek 进入片段不触发', () {
+  test('初始/手动 seek 允许片尾中段提示', () {
+    final controller = SegmentSkipController();
+    controller.onSeek(
+      positionMs: 2600000,
+      segments: const [outro],
+      markOutroHandled: false,
+    );
+    final trigger = controller.evaluate(
+      positionMs: 2600500,
+      durationMs: 3000000,
+      playing: true,
+      enabled: true,
+      segments: const [outro],
+    );
+    expect(trigger, same(outro));
+  });
+
+  test('手动 seek 进入片段默认不触发', () {
     final controller = SegmentSkipController();
     controller.onSeek(positionMs: 2600000, segments: const [outro]);
     expect(

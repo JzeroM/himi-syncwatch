@@ -26,6 +26,7 @@ class PlayerCoreBridge
         himi.MediaKitPlayerProvider,
         himi.MediaKitSettingsApplier,
         himi.MediaKitVideoFitApplier,
+        himi.MediaLoadWaitPlayer,
         himi.ErikaDanmakuPlayer {
   PlayerCoreBridge(this.core);
 
@@ -70,6 +71,16 @@ class PlayerCoreBridge
       (core as VideoFitPlayer)
           .applyVideoFit(fit, container: container, video: video);
     }
+  }
+
+  @override
+  Future<bool> waitUntilMediaReady({required Duration timeout}) async {
+    final core = this.core;
+    if (core is PlayerMediaLoadAware) {
+      return (core as PlayerMediaLoadAware)
+          .waitUntilMediaReady(timeout: timeout);
+    }
+    return true;
   }
 
   @override

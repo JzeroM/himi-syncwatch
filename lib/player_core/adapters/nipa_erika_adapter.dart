@@ -225,6 +225,10 @@ class NipaErikaAdapter extends AbstractPlayer
   Future<void>? _disposeFuture;
   PlayerPlaybackState _state = PlayerPlaybackState.stopped;
   bool _playRequested = false;
+  bool _mediaReady = false;
+  bool _ended = false;
+  bool _errored = false;
+  PlayerMediaStatus _lastStatus = PlayerMediaStatus.unloaded;
   PlayerMediaInfo _mediaInfo = PlayerMediaInfo(duration: 0);
   String _media = '';
   String _userAgent = '';
@@ -366,10 +370,41 @@ class NipaErikaAdapter extends AbstractPlayer
   }
 
   void _emitState(PlayerPlaybackState next) {
-    if (_state == next) return;
-    final old = _state;
-    _state = next;
-    _stateCtrl.add((oldValue: old, newValue: next));
+    if (_state != next) {
+      final old = _state;
+      _state = next;
+      _stateCtrl.add((oldValue: old, newValue: next));
+    }
+    _notifyStatus();
+  }
+
+  void _notifyStatus({bool force = false}) {
+    final next = mediaStatus;
+    if (!force && next.rawValue == _lastStatus.rawValue) return;
+    final old = _lastStatus;
+    _lastStatus = next;
+    if (!_statusCtrl.isClosed) {
+      _statusCtrl.add((oldValue: old, newValue: next));
+    }
+  }
+
+  bool _isAtEndOfMedia() {
+    final fence = _seekFenceUntil;
+    return classifyEndOfMedia(
+      positionMs: position,
+      durationMs: _mediaInfo.duration,
+      seekFenceActive: fence != null && DateTime.now().isBefore(fence),
+    );
+  }
+
+  @visibleForTesting
+  static bool classifyEndOfMedia({
+    required int positionMs,
+    required int durationMs,
+    required bool seekFenceActive,
+  }) {
+    if (durationMs <= 0 || seekFenceActive) return false;
+    return positionMs >= durationMs - 1000;
   }
 
   void _dispatchStateCommand(
@@ -462,17 +497,45 @@ class NipaErikaAdapter extends AbstractPlayer
     }
     final elapsedMs =
         DateTime.now().difference(_lastPositionUpdate).inMilliseconds;
-    return _lastPositionMs + (elapsedMs * _playbackRate).round();
+    final estimated = _lastPositionMs + (elapsedMs * _playbackRate).round();
+    final duration = _mediaInfo.duration;
+    if (duration > 0 && estimated > duration) return duration;
+    return estimated;
   }
 
   @override
   int get bufferedPosition => position;
 
   @override
-  PlayerMediaStatus get mediaStatus {
-    if (_buffering.value) return PlayerMediaStatus.buffering;
-    return switch (_state) {
-      PlayerPlaybackState.playing => PlayerMediaStatus.loaded,
+  PlayerMediaStatus get mediaStatus => resolveMediaStatus(
+        errored: _errored,
+        ended: _ended,
+        ready: _mediaReady,
+        buffering: _buffering.value,
+        state: _state,
+      );
+
+  @visibleForTesting
+  static PlayerMediaStatus resolveMediaStatus({
+    required bool errored,
+    required bool ended,
+    required bool ready,
+    required bool buffering,
+    required PlayerPlaybackState state,
+  }) {
+    if (errored && !ended) return PlayerMediaStatus.invalid;
+    if (ended) {
+      return ready
+          ? PlayerMediaStatus.loaded | PlayerMediaStatus.end
+          : PlayerMediaStatus.end;
+    }
+    if (buffering) return PlayerMediaStatus.buffering;
+    if (state == PlayerPlaybackState.stopped) {
+      return PlayerMediaStatus.unloaded;
+    }
+    if (ready) return PlayerMediaStatus.loaded;
+    return switch (state) {
+      PlayerPlaybackState.playing => PlayerMediaStatus.loading,
       PlayerPlaybackState.paused => PlayerMediaStatus.prepared,
       PlayerPlaybackState.stopped => PlayerMediaStatus.unloaded,
     };
@@ -576,7 +639,12 @@ class NipaErikaAdapter extends AbstractPlayer
       _lastPositionMs = 0;
       _lastPositionUpdate = DateTime.now();
       _buffering.value = false;
+      _mediaReady = false;
+      _ended = false;
+      _errored = false;
+      _lastStatus = PlayerMediaStatus.unloaded;
       _mediaInfo = PlayerMediaInfo(duration: 0);
+      _notifyStatus(force: true);
       _lastPresenterStats = const <String, dynamic>{};
       _lastOutputStatus = const <String, dynamic>{};
       _lastDecoderStatus = const <String, dynamic>{};
@@ -600,6 +668,8 @@ class NipaErikaAdapter extends AbstractPlayer
       ..._httpHeaders,
       if (_userAgent.isNotEmpty) 'User-Agent': _userAgent,
     };
+    _ended = false;
+    _errored = false;
     await _player.open(
       _media,
       httpHeaders: headers.isEmpty ? null : headers,
@@ -629,11 +699,14 @@ class NipaErikaAdapter extends AbstractPlayer
   @override
   Future<void> seekAndWait({required int position}) async {
     final clamped = position < 0 ? 0 : position;
+    _ended = false;
+    _errored = false;
     _lastPositionMs = clamped;
     _lastPositionUpdate = DateTime.now();
     _pendingSeekTargetMs = clamped;
     _seekFenceUntil = DateTime.now().add(const Duration(milliseconds: 1500));
     await _player.seek(Duration(milliseconds: clamped));
+    _notifyStatus(force: true);
   }
 
   @override
@@ -765,6 +838,8 @@ class NipaErikaAdapter extends AbstractPlayer
   Future<void> playDirectly() async {
     _ensureSupported();
     await _player.ensureCreated();
+    _ended = false;
+    _errored = false;
     await _player.play();
     _playRequested = false;
     _emitState(PlayerPlaybackState.playing);
@@ -1337,7 +1412,28 @@ class NipaErikaAdapter extends AbstractPlayer
 
     if (event.kind == ErikaEventKind.stateChanged ||
         event.kind == ErikaEventKind.error) {
-      final oldStatus = mediaStatus;
+      final atEnd = _isAtEndOfMedia();
+      final isError = event.kind == ErikaEventKind.error;
+      if (isError) {
+        if (atEnd) {
+          _ended = true;
+          _errored = false;
+        } else {
+          _ended = false;
+          _errored = true;
+        }
+      } else if (event.state == ErikaPlaybackState.playing) {
+        _ended = false;
+        _errored = false;
+      } else if (atEnd &&
+          (event.state == ErikaPlaybackState.stopped ||
+              event.state == ErikaPlaybackState.closed ||
+              event.state == ErikaPlaybackState.idle ||
+              event.state == ErikaPlaybackState.error)) {
+        _ended = true;
+        _errored = false;
+      }
+
       final PlayerPlaybackState nextState;
       switch (event.state) {
         case ErikaPlaybackState.playing:
@@ -1364,11 +1460,7 @@ class NipaErikaAdapter extends AbstractPlayer
         _playRequested = false;
         _emitState(nextState);
       }
-      final newStatus = mediaStatus;
-      if (oldStatus != newStatus) {
-        _statusCtrl.add((oldValue: oldStatus, newValue: newStatus));
-      }
-      if (event.kind == ErikaEventKind.error) {
+      if (isError && !_ended) {
         _eventCtrl.add(PlayerMediaEvent(
           event.status,
           'erika.error',
@@ -1398,15 +1490,25 @@ class NipaErikaAdapter extends AbstractPlayer
       }
       _lastPositionMs = eventPositionMs;
       _lastPositionUpdate = now;
+      if (_ended &&
+          (_mediaInfo.duration <= 0 ||
+              eventPositionMs < _mediaInfo.duration - 1000)) {
+        _ended = false;
+        _notifyStatus(force: true);
+      }
     }
 
     var updatedInfo = _mediaInfo;
+    var durationChanged = false;
     if (event.duration > Duration.zero) {
+      durationChanged = updatedInfo.duration != event.duration.inMilliseconds;
       updatedInfo = updatedInfo.copyWith(
         duration: event.duration.inMilliseconds,
       );
+      _mediaReady = true;
     }
     if (event.video.width > 0 && event.video.height > 0) {
+      _mediaReady = true;
       updatedInfo = updatedInfo.copyWith(
         video: <PlayerVideoStreamInfo>[
           PlayerVideoStreamInfo(
@@ -1424,6 +1526,7 @@ class NipaErikaAdapter extends AbstractPlayer
     // selected flag) on TracksChanged/TrackSelectionChanged. Use it to build
     // mediaInfo so the UI's index-based track selection maps to real ids.
     if (event.trackList.isNotEmpty) {
+      _mediaReady = true;
       final videoInfos = event.trackList
           .where((t) => t.kind == ErikaTrackKind.video)
           .toList(growable: false);
@@ -1503,6 +1606,11 @@ class NipaErikaAdapter extends AbstractPlayer
       );
     }
     _mediaInfo = updatedInfo;
+    if (durationChanged) {
+      _notifyStatus(force: true);
+    } else if (_mediaReady) {
+      _notifyStatus();
+    }
   }
 
   static String _formatPlaybackError(ErikaPlayerEvent event) {

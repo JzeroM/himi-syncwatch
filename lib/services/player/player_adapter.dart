@@ -176,6 +176,11 @@ abstract interface class MediaKitSettingsApplier {
   });
 }
 
+/// 可选能力：等待媒体就绪（MPV 延迟 native surface 场景）。
+abstract interface class MediaLoadWaitPlayer {
+  Future<bool> waitUntilMediaReady({required Duration timeout});
+}
+
 /// 可选能力：media_kit 原生裁剪（保持字幕由 mpv 合成）。
 abstract interface class MediaKitVideoFitApplier {
   void applyVideoFit(

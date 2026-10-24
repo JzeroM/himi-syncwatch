@@ -673,6 +673,16 @@ void main() {
       expect(clear.body['PlaybackPositionTicks'], 0);
     });
 
+    test('clearPlaybackPosition 只清进度、不调用 HideFromResume', () async {
+      final ok = await service.clearPlaybackPosition('item-9');
+      expect(ok, isTrue);
+      expect(captured, hasLength(1));
+      final clear = captured.single;
+      expect(clear.method, 'POST');
+      expect(clear.path, '/Users/user-1/Items/item-9/UserData');
+      expect(clear.body['PlaybackPositionTicks'], 0);
+    });
+
     test('getLibraryPlaybackSettings 解析按库阈值（ItemId + LibraryOptions）',
         () async {
       respondWith = (path) => path == '/Library/VirtualFolders/Query'

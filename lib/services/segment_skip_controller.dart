@@ -29,10 +29,13 @@ class SegmentSkipController {
   void onSeek({
     required int positionMs,
     required List<MediaSegment> segments,
+    bool markOutroHandled = true,
   }) {
     _lastPositionMs = positionMs;
     for (final segment in segments) {
-      if (segment.contains(positionMs)) _handled.add(segment.key);
+      if (markOutroHandled || segment.type != MediaSegmentType.outro) {
+        if (segment.contains(positionMs)) _handled.add(segment.key);
+      }
     }
   }
 
@@ -73,8 +76,11 @@ class SegmentSkipController {
           positionMs >= introGateMs &&
           positionMs < segment.endMs &&
           (last == null || last < introGateMs);
+      final outroInProgress = segment.type == MediaSegmentType.outro &&
+          positionMs >= segment.startMs &&
+          positionMs < segment.endMs;
 
-      if (crossedStart || introInProgress) {
+      if (crossedStart || introInProgress || outroInProgress) {
         _handled.add(segment.key);
         _lastPositionMs = positionMs;
         return segment;

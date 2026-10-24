@@ -535,6 +535,22 @@ class EmbyService {
     return ok;
   }
 
+  /// 清除单条目的续播位置，但不把条目移出「继续观看」。
+  ///
+  /// 与 [removeFromResume] 不同：这里只写 `PlaybackPositionTicks=0`，
+  /// 不调用 `HideFromResume`。用于用户明确选择「从头播放」。
+  Future<bool> clearPlaybackPosition(String itemId) async {
+    try {
+      await _dio.post(
+        '/Users/$_userId/Items/$itemId/UserData',
+        data: <String, dynamic>{'PlaybackPositionTicks': 0},
+      );
+      return true;
+    } on DioException {
+      return false;
+    }
+  }
+
   /// 各媒体库的播放阈值（按库）：`GET /Library/VirtualFolders/Query`
   /// → 每项 `ItemId`（库根条目 id）+ `LibraryOptions`（含阈值字段）。
   /// 任何失败返回空 Map（调用方回退全局设置）。

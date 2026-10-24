@@ -552,6 +552,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       _hideResumeOptimistically(ep.id);
       // 已观看的集重播 → 乐观复位未观看 + 服务器取消，重回续播列表
       _unwatchTargetOptimistically(ep.id, isSeries: true);
+      unawaited(_clearPlaybackPosition(ep.id));
     }
     final query = StringBuffer('isHost=true$_serverQuery');
     // 多版本：播可用版本栏当前生效版本（未选则偏好最高）；单版本不下发
@@ -580,6 +581,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (mounted) {
       _clearResumeHidden(ep.id);
       await _loadDetails(silent: true);
+    }
+  }
+
+  Future<void> _clearPlaybackPosition(String itemId) async {
+    final svc = ref.read(embyServiceForProvider(widget.serverId));
+    try {
+      final ok = await svc
+          .clearPlaybackPosition(itemId)
+          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      if (!ok) {
+        debugPrint('详情页: 清除续播进度失败 $itemId');
+      }
+    } catch (error) {
+      debugPrint('详情页: 清除续播进度异常 $itemId: $error');
     }
   }
 
@@ -698,8 +713,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   int get _resumeMs =>
       _resumeMsOverride ?? _resumeItem?.playbackPositionMs ?? 0;
 
-  double get _resumePct =>
-      (_resumeItem?.playedPercentage ?? 0).clamp(0.0, 100.0);
+  double get _resumePct {
+    final item = _resumeItem;
+    if (item == null) return 0;
+    return PlaybackRules.resumePercentage(item).clamp(0.0, 100.0);
+  }
 
   /// 播放目标是否已观看：电影=主条目；电视剧=当前选中集（播放按钮播的就是它）。
   bool get _targetWatched {
@@ -1004,6 +1022,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       _hideResumeOptimistically(item.id);
       // 已观看的电影重播 → 乐观复位未观看 + 服务器取消，重回续播列表
       _unwatchTargetOptimistically(item.id, isSeries: false);
+      unawaited(_clearPlaybackPosition(item.id));
     }
     await context.push('/player/${item.id}?${query.toString()}');
     if (mounted) {

@@ -2181,6 +2181,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _skipSegments = const [];
       _segmentMediaItem = null;
       _manualSegmentRecord = null;
+      _segmentDurationMs = 0;
+      _duration = Duration.zero;
+      _durationNotifier.value = _duration;
       _showSegmentMarkPanel = false;
       _skipPromptPlaybackWatch.reset();
       _skipController.reset();
@@ -2254,7 +2257,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _segmentMediaItem != null &&
           _segmentDurationMs <= 0 &&
           _duration.inMilliseconds > 0) {
-        await _loadSkipSegments(_segmentMediaItem!);
+        await _loadSkipSegments(_segmentMediaItem!, resetController: false);
       }
 
       // _loadStream 已在 updateTexture() 后设置播放状态，此处仅同步 UI
@@ -2709,8 +2712,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
   /// 媒体信息拿到视频尺寸即就绪。media_kit 档：VideoController 注册后即就绪。
   bool _videoOutputReady() {
-    if (_currentEngine == PlayerEngine.mediaKit ||
-        _currentEngine == PlayerEngine.erika) {
+    if (_currentEngine == PlayerEngine.erika) {
+      // Erika 使用原生 view，不注册 Flutter texture；页面/媒体就绪即可起播。
+      return _isPlayerReady;
+    }
+    if (_currentEngine == PlayerEngine.mediaKit) {
       return _player.textureId.value != null;
     }
     if (_usesSurfaceView) {
@@ -3042,6 +3048,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _skipPromptTimer?.cancel();
     _diagnosticTimer?.cancel();
     _sampleTimer?.cancel();
+    // 换内核后位置会重新落点，清掉旧引擎的片段判定基线。
+    _skipController.reset();
+    _skipPromptPlaybackWatch.reset();
+    _skipPromptTimer?.cancel();
+    _skipPromptTimer = null;
+    _skipPromptSegment = null;
     // 停后再卸载旧视频视图（避免旧 widget 访问已释放播放器）
     setState(() => _switchingEngine = true);
     await WidgetsBinding.instance.endOfFrame;
@@ -3135,9 +3147,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _currentPlayUrl = streamUrl;
       _currentToken = token;
 
-      // 重置进度（与首次播放状态一致）
-      _position = Duration.zero;
-      _positionNotifier.value = Duration.zero;
+      // 重置进度（与首次播放状态一致）；续播目标先占位，避免 UI 跳 0。
+      _position = Duration(milliseconds: startMs > 0 ? startMs : 0);
+      _positionNotifier.value = _position;
+      _duration = Duration.zero;
+      _durationNotifier.value = _duration;
+      _endHandled = false;
       // 切集零重建（v1.1.82 根修）：不拆 FvpSurfaceView、不置空尺寸、
       // 不动 epoch——旧 view/surface/EGL 上下文在遮罩下全程复用。
       // 此前 epoch+1 拆建会让 mdk renderer 在重建上下文上渲 1 帧后
@@ -3200,7 +3215,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _applyOutputColorSpace();
       _isSwitchingMedia = true;
       _player.media = streamUrl;
-      await _player.prepare();
+      await _player.prepare(startMs: startMs);
       // prepare 期间可能已 dispose：必须先复查再触碰 player。
       if (!mounted || _disposed) return false;
       // 媒体重载不携带倍速：恢复用户所选档（fvp 侧为 Dart 状态）
@@ -3220,14 +3235,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _waitSurfaceCreated();
       if (!mounted) return false;
 
-      // 继续观看：首次加载 seek 到上次进度（切集不传 startMs，从 0 播）
-      if (startMs > 0 && mounted) {
-        try {
-          await _player.seek(positionMs: startMs);
-          _position = Duration(milliseconds: startMs);
-          _positionNotifier.value = _position;
-        } catch (_) {}
-      }
+      // 继续观看：prepare 已尝试定位；这里等待媒体就绪并校验/兜底。
+      await _ensureInitialPosition(startMs);
+      if (!mounted) return false;
 
       // 启动播放（无条件，首播和切集都需要）
       if (mounted) {
@@ -3322,6 +3332,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 切换视频前重置进度（与首次播放状态一致）
       _position = Duration.zero;
       _positionNotifier.value = Duration.zero;
+      _duration = Duration.zero;
+      _durationNotifier.value = _duration;
+      _endHandled = false;
       // 切集零重建（v1.1.82 根修，同 _loadStream）：view/surface/
       // EGL 上下文全程复用，尺寸变化才走 _remountSurfaceView。
       _videoSizeRetry = 0;
@@ -3396,7 +3409,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 仅在视频输出就绪时启动播放，避免有声无画
       if (_videoOutputReady()) {
         if (position > 0) {
-          await _player.seek(positionMs: (position * 1000).toInt());
+          await _seekGuarded((position * 1000).toInt());
         }
 
         _player.state = AdapterPlaybackState.playing;
@@ -3453,6 +3466,67 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  void _syncDurationFromPlayer() {
+    final next = Duration(milliseconds: _player.mediaInfo.duration);
+    if (next.inMilliseconds <= 0) return;
+    _hasStartedPlayback = true;
+    if (next.inMilliseconds == _duration.inMilliseconds) return;
+    _duration = next;
+    _durationNotifier.value = _duration;
+    _refreshTracks();
+    final segmentItem = _segmentMediaItem;
+    if (segmentItem != null && _segmentDurationMs <= 0 && !_isSwitchingMedia) {
+      unawaited(_loadSkipSegments(segmentItem, resetController: false));
+    }
+  }
+
+  Future<void> _ensureInitialPosition(int startMs) async {
+    if (startMs <= 0 || !mounted) return;
+    final player = _player;
+    if (player is MediaLoadWaitPlayer) {
+      try {
+        await (player as MediaLoadWaitPlayer)
+            .waitUntilMediaReady(timeout: const Duration(seconds: 10));
+      } catch (_) {}
+    }
+    if (!mounted) return;
+
+    _isSeekingPlayback = true;
+    try {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final current = _player.position;
+        if ((current - startMs).abs() <= 1500) break;
+        try {
+          await _player
+              .seek(positionMs: startMs)
+              .timeout(const Duration(seconds: 2));
+        } catch (error) {
+          LogService().log('Player', '初始续播 seek 失败: $error');
+        }
+        if (!mounted) return;
+        if (attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          if (!mounted) return;
+        }
+      }
+    } finally {
+      _isSeekingPlayback = false;
+      _lastSeekCompletedAt = DateTime.now();
+    }
+    if (!mounted) return;
+    final actual = _player.position;
+    _position = Duration(
+      milliseconds: actual > 0 ? actual : startMs,
+    );
+    _positionNotifier.value = _position;
+    if ((actual - startMs).abs() > 1500) {
+      LogService().log(
+        'Player',
+        '初始续播未落到目标: target=${startMs}ms actual=${actual}ms',
+      );
+    }
+  }
+
   void _setupPlayerListeners() {
     // 使用 onStateChanged 监听播放状态变化
     _stateSub = _player.onStateChanged.listen((event) {
@@ -3465,6 +3539,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _volume = _player.volume * 100;
         _volumeNotifier.value = _volume;
       }
+      if (event.newValue == AdapterPlaybackState.playing) {
+        _syncDurationFromPlayer();
+      }
       _syncPlayState();
     });
 
@@ -3472,21 +3549,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _statusSub = _player.onMediaStatus.listen((event) {
       if (!mounted) return;
 
-      // 检查是否加载完成
-      if (event.newValue.test(AdapterMediaStatus.loaded)) {
-        final next = Duration(milliseconds: _player.mediaInfo.duration);
-        if (next.inMilliseconds == 0 && _duration.inMilliseconds > 0) {
-          // 重载后 mediaInfo 暂报 0 的场景（起播卡顿恢复窗口）留证。
-          LogService().log('Diag', '时长归零（重载后 mediaInfo 未就绪）');
-        }
-        if (next.inMilliseconds > 0) _hasStartedPlayback = true;
-        _duration = next;
-        _durationNotifier.value = _duration;
-        _refreshTracks();
-        // 注意：不再在此处设置 _player.state = playing
-        // loaded 通过 ReceivePort 异步到达，此时 updateTexture() 可能还没创建 texture
-        // 播放状态由 _loadStream 在 updateTexture() 之后统一设置
-      }
+      // duration 可能晚于 loaded/buffering 事件到达；任意状态事件都补读一次。
+      _syncDurationFromPlayer();
 
       // 检查是否播放结束
       if (event.newValue.test(AdapterMediaStatus.end)) {
@@ -3503,7 +3567,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           positionMs: _player.position,
           durationMs: _duration.inMilliseconds,
         )) {
-          _handleEpisodeFinished();
+          unawaited(_handleEpisodeFinished(
+            completedAtMs:
+                _duration.inMilliseconds > 0 ? _duration.inMilliseconds : null,
+          ));
         }
       }
 
@@ -3618,7 +3685,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             DateTime.now().difference(seekAt) <
                 PlayerScreen.autoNextSeekCooldown,
       )) {
-        _handleEpisodeFinished();
+        unawaited(_handleEpisodeFinished(
+          completedAtMs:
+              _duration.inMilliseconds > 0 ? _duration.inMilliseconds : null,
+        ));
       }
     });
 
@@ -4793,7 +4863,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ---- Emby 播放会话上报（续播/自动已观看，仅单人/房主）----
 
-  bool get _shouldReportPlayback => widget.roomCode == null || _isHost;
+  bool get _shouldReportPlayback => widget.roomCode == null;
+
+  /// 初始终点尚未被引擎确认时，避免把 0 写回服务器清掉续播。
+  int get _reportPosition {
+    final enginePosition = _player.position;
+    if (enginePosition > 0) return enginePosition;
+    return _position.inMilliseconds > 0 ? _position.inMilliseconds : 0;
+  }
 
   Future<void> _reportStart() async {
     final svc = _reportService;
@@ -4804,7 +4881,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       itemId: id,
       playSessionId: _playSessionId,
       mediaSourceId: _reportMediaSourceId,
-      positionMs: _player.position,
+      positionMs: _reportPosition,
     );
     _startReportTimer();
   }
@@ -4822,7 +4899,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       itemId: id,
       playSessionId: _playSessionId,
       mediaSourceId: _reportMediaSourceId,
-      positionMs: _player.position,
+      positionMs: _reportPosition,
       isPaused: _player.state == AdapterPlaybackState.paused,
     );
     // 进度变化即刷新续播栏（节流 ≤1 次/2s）
@@ -5024,18 +5101,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         id == null) {
       return;
     }
-    _reportStarted = false;
     final ok = await svc.reportPlaybackStopped(
       itemId: id,
       playSessionId: _playSessionId,
       mediaSourceId: _reportMediaSourceId,
-      positionMs: positionMs ?? _player.position,
+      positionMs: positionMs ?? _reportPosition,
     );
-    if (ok && mounted) {
-      _lastProgressBump = null;
-      _clearResumeHidden(id);
-      ref.read(resumeRevisionProvider.notifier).state++;
-    }
+    if (!ok) return;
+    _reportStarted = false;
+    if (!mounted) return;
+    _lastProgressBump = null;
+    _clearResumeHidden(id);
+    ref.read(resumeRevisionProvider.notifier).state++;
   }
 
   void _startReportTimer() {
@@ -5157,11 +5234,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 立即更新 UI 到目标位置，不等 Timer.periodic
     _position = Duration(milliseconds: value.toInt());
     _positionNotifier.value = _position;
-    unawaited(_seekGuarded(value.toInt()));
+    _skipController.onSeek(
+      positionMs: value.toInt(),
+      segments: _skipSegments,
+      markOutroHandled: false,
+    );
+    unawaited(_seekGuarded(value.toInt()).then((_) {
+      if (mounted) unawaited(_reportProgress());
+    }));
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: value / 1000);
     }
-    unawaited(_reportProgress());
   }
 
   /// 带守卫的 seek：置 `_isSeekingPlayback` → await adapter seek（2s
@@ -5238,6 +5321,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _loadSkipSegments(
     MediaItem item, {
     bool suppressAtCurrent = false,
+    bool resetController = true,
   }) async {
     final seq = ++_skipLoadSeq;
     final enabled =
@@ -5274,7 +5358,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       manual: manual,
       durationMs: durationMs,
     );
-    _skipController.reset();
+    if (resetController) _skipController.reset();
     if (suppressAtCurrent) {
       _skipController.onSeek(
         positionMs: _position.inMilliseconds,
@@ -5420,7 +5504,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         episodeCount: _episodes.length,
       );
       if (hasNextEpisode) {
-        _handleEpisodeFinished(completedAtMs: completedAtMs);
+        unawaited(_handleEpisodeFinished(completedAtMs: completedAtMs));
         return;
       }
       unawaited(_finishOutroAndExit(
@@ -5440,11 +5524,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       positionMs: targetMs,
       segments: _skipSegments,
     );
-    unawaited(_seekGuarded(targetMs));
+    unawaited(_seekGuarded(targetMs).then((_) {
+      if (mounted) unawaited(_reportProgress());
+    }));
     if (widget.roomCode != null) {
       _sendCommand(AppConstants.actionSeek, position: targetMs / 1000);
     }
-    unawaited(_reportProgress());
   }
 
   /// 片尾无下一集：跳到片尾终点、标记已观看并退出播放器。
@@ -5481,14 +5566,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (showSeriesFinished) {
       _addBroadcastMessage('所有剧集播放完毕');
       showAppToast(context, '所有剧集播放完毕');
+    } else {
+      showAppToast(context, '播放完毕');
+    }
+
+    if (widget.roomCode != null) {
+      // 房间会继续换资源播放：只停在片尾，不写进度、不标记、不解散。
+      return;
     }
 
     await _reportStopped(positionMs: completedAtMs);
     await _markWatched(service: reportService, itemId: reportItemId);
     if (!mounted) return;
 
-    final shouldPop = await _confirmLeaveRoom();
-    if (shouldPop && mounted) Navigator.pop(context);
+    Navigator.pop(context);
   }
 
   /// 显式标记当前条目已观看，并刷新本地续播/列表状态。
@@ -5899,20 +5990,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 当前集播放完毕：自动切下一集；已是最后一集则提示完播。
   /// `_endHandled` 保证单集只触发一次（mdk end 事件与位置兜底并存）。
   /// [completedAtMs] 用于跳过片尾：按总时长上报并显式标记已观看。
-  void _handleEpisodeFinished({int? completedAtMs}) {
+  Future<void> _handleEpisodeFinished({int? completedAtMs}) async {
     if (!mounted || _endHandled) return;
     if (_isSwitchingMedia) return;
     if (!_hasEpisodeList || !_canControlPlayback) return;
     _endHandled = true;
+    final completed = completedAtMs ??
+        (_duration.inMilliseconds > 0 ? _duration.inMilliseconds : null);
     final nextIndex = _currentEpisodeIndex + 1;
     if (nextIndex < _episodes.length) {
-      _switchToEpisode(nextIndex, completedAtMs: completedAtMs);
-    } else {
-      _addBroadcastMessage('所有剧集播放完毕');
+      unawaited(_switchToEpisode(nextIndex, completedAtMs: completed));
+      return;
     }
+    if (widget.roomCode != null) {
+      final message = _isSeriesPlayback ? '所有剧集播放完毕' : '播放完毕';
+      _addBroadcastMessage(message);
+      showAppToast(context, message);
+      return;
+    }
+    unawaited(_finishPlaybackAndExit(completedAtMs: completed));
   }
 
-  void _switchToEpisode(int index, {int? completedAtMs}) async {
+  Future<void> _finishPlaybackAndExit({required int? completedAtMs}) async {
+    final reportService = _reportService;
+    final reportItemId = _reportItemId;
+    await _reportStopped(positionMs: completedAtMs);
+    await _markWatched(service: reportService, itemId: reportItemId);
+    if (!mounted) return;
+    _addBroadcastMessage('播放完毕');
+    showAppToast(context, _isSeriesPlayback ? '所有剧集播放完毕' : '播放完毕');
+    Navigator.pop(context);
+  }
+
+  Future<void> _switchToEpisode(int index, {int? completedAtMs}) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisodeIndex && _isPlayerReady) return;
 
@@ -5920,14 +6030,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final previousReportService = _reportService;
     final previousReportItemId = _reportItemId;
 
-    // 切集前把上一集按「停止」上报（写入续播位置/自动已观看）
-    await _reportStopped(positionMs: completedAtMs);
-    if (completedAtMs != null) {
-      unawaited(_markWatched(
-        service: previousReportService,
-        itemId: previousReportItemId,
-      ));
-    }
+    // 切集前先落上一集的停止/已看；房间模式这两个能力内部自动 no-op。
+    await Future.wait([
+      _reportStopped(positionMs: completedAtMs),
+      if (completedAtMs != null)
+        _markWatched(
+          service: previousReportService,
+          itemId: previousReportItemId,
+        ),
+    ]);
 
     // 换集：先清空上一集弹幕（新集由 _loadEpisodeStream 就绪后并行触发加载，
     // 旧集在飞的请求由 _danmakuLoadSeq 作废）
@@ -5979,7 +6090,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (source.id == _activeMediaSourceId) return;
 
     // 切换前快照：进度 + 当前轨（供语言迁移）+ 播放态
-    final posMs = _positionMs;
+    final posMs = _player.position;
     final wasPlaying = _player.state == AdapterPlaybackState.playing;
     final oldAudio = List<MediaStream>.of(_embyAudioStreams);
     final oldSubtitle = List<MediaStream>.of(_embySubtitleStreams);

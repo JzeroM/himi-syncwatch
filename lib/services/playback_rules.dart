@@ -16,14 +16,28 @@ class PlaybackRules {
   /// 是否「已看完」：显式已观看标记，或进度百分比达到阈值上限。
   static bool isFinished(MediaItem item, EmbyPlaybackSettings s) {
     if (item.isWatched) return true;
-    return item.playedPercentage >= s.maxResumePct;
+    return resumePercentage(item) >= s.maxResumePct;
+  }
+
+  /// 续播百分比。服务器没返回 `PlayedPercentage` 时按位置/时长补算，
+  /// 避免有 `PlaybackPositionTicks` 却完全不显示续播。
+  static double resumePercentage(MediaItem item) {
+    if (item.playedPercentage > 0) return item.playedPercentage;
+    final positionMs = item.playbackPositionMs;
+    final ticks = item.runTimeTicks;
+    if (positionMs <= 0 || ticks == null || ticks <= 0) {
+      return item.playedPercentage;
+    }
+    final durationMs = ticks ~/ 10000;
+    if (durationMs <= 0) return item.playedPercentage;
+    return (positionMs / durationMs * 100).clamp(0.0, 100.0);
   }
 
   /// 是否「可续播」：未标记已观看、有进度、未达上限、不低于下限、且时长够长。
   static bool isResumable(MediaItem item, EmbyPlaybackSettings s) {
     if (item.isWatched) return false;
     if (item.playbackPositionMs <= 0) return false;
-    final pct = item.playedPercentage;
+    final pct = resumePercentage(item);
     if (pct >= s.maxResumePct) return false;
     if (pct < s.minResumePct) return false;
     // 时长未知时不据此拦截（服务器已按此时长过滤 Resume）。
