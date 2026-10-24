@@ -248,9 +248,15 @@ jobs:
 
       - name: Run flutter build ios --release --no-codesign
         run: |
-          # Agora 等 pod 走 download.agora.io，runner 偶发 DNS 解析失败（curl 6），重试 3 次
+          # Agora 等 pod 走 download.agora.io，runner 偶发 DNS 解析失败（curl 6），重试 3 次。
+          # 新版 Flutter 可能在 Xcode 已产出 Runner.app 后仍因未选 Development Team
+          # 返回非 0；无签名 IPA 只需要 Runner.app，因此以产物存在为准。
           for i in 1 2 3; do
-            if flutter build ios --release --no-codesign; then exit 0; fi
+            flutter build ios --release --no-codesign && exit 0
+            if [ -d build/ios/iphoneos/Runner.app ]; then
+              echo "⚠️ Flutter 退出非 0，但 Runner.app 已生成，继续打包未签名 IPA"
+              exit 0
+            fi
             echo "❌ iOS 构建失败，15 秒后重试（$i/3）"
             sleep 15
           done
