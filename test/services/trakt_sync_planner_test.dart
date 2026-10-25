@@ -170,17 +170,17 @@ void main() {
     expect(history.entry?.showIds.tmdb, 10);
     expect(history.entry?.season, 1);
     expect(history.entry?.episode, 2);
-    expect(plan.stats.shows, 0);
-    expect(plan.stats.episodes, 0);
+    expect(plan.stats.shows, 1);
+    expect(plan.stats.episodes, 1);
   });
 
-  test('未匹配 Trakt 的本地条目不计入同步统计', () {
+  test('本地进度首次同步也计入总量', () {
     final plan = _planner.build(
       local: [_movie(server: 'a', item: 'a1', position: 1000)],
       remote: const [],
     );
 
-    expect(plan.stats.movies, 0);
+    expect(plan.stats.movies, 1);
     expect(plan.stats.shows, 0);
     expect(plan.stats.episodes, 0);
   });

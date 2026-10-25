@@ -41,6 +41,7 @@ class TraktAppState {
   final TraktAccount? account;
   final TraktDeviceCode? deviceCode;
   final TraktSyncState syncState;
+  final TraktSyncProgress? liveSync;
   final String? error;
 
   const TraktAppState({
@@ -52,6 +53,7 @@ class TraktAppState {
     this.account,
     this.deviceCode,
     this.syncState = const TraktSyncState(),
+    this.liveSync,
     this.error,
   });
 
@@ -66,10 +68,12 @@ class TraktAppState {
     TraktAccount? account,
     TraktDeviceCode? deviceCode,
     TraktSyncState? syncState,
+    TraktSyncProgress? liveSync,
     String? error,
     bool clearTokens = false,
     bool clearAccount = false,
     bool clearDeviceCode = false,
+    bool clearLiveSync = false,
     bool clearError = false,
   }) {
     return TraktAppState(
@@ -81,14 +85,13 @@ class TraktAppState {
       account: clearAccount ? null : (account ?? this.account),
       deviceCode: clearDeviceCode ? null : (deviceCode ?? this.deviceCode),
       syncState: syncState ?? this.syncState,
+      liveSync: clearLiveSync ? null : (liveSync ?? this.liveSync),
       error: clearError ? null : (error ?? this.error),
     );
   }
 }
 
 class TraktProvider extends StateNotifier<TraktAppState> {
-  static const autoSyncInterval = Duration(hours: 6);
-
   final Ref _ref;
   final TraktAuthService _auth;
   final TraktClient _client;
@@ -314,7 +317,7 @@ class TraktProvider extends StateNotifier<TraktAppState> {
     final last = state.syncState.lastSuccessAt;
     if (last != null) {
       final elapsed = DateTime.now().toUtc().difference(last);
-      if (elapsed < autoSyncInterval) return;
+      if (elapsed < _ref.read(settingsProvider).traktSyncInterval) return;
     }
     await syncNow();
   }
@@ -325,17 +328,31 @@ class TraktProvider extends StateNotifier<TraktAppState> {
     if (pendingReset != null) await pendingReset;
     final servers = _buildServers();
     if (servers.isEmpty) return;
-    state = state.copyWith(syncing: true);
+    state = state.copyWith(
+      syncing: true,
+      liveSync: TraktSyncProgress(
+        phase: TraktSyncPhase.readingRemote,
+        serversTotal: servers.length,
+      ),
+    );
     try {
-      final result = await _syncService.sync(servers);
+      final result = await _syncService.sync(
+        servers,
+        onProgress: (progress) {
+          if (mounted) state = state.copyWith(liveSync: progress);
+        },
+      );
       if (mounted) {
         state = state.copyWith(
           syncing: false,
           syncState: result.state,
+          clearLiveSync: true,
         );
       }
     } catch (_) {
-      if (mounted) state = state.copyWith(syncing: false);
+      if (mounted) {
+        state = state.copyWith(syncing: false, clearLiveSync: true);
+      }
     }
   }
 

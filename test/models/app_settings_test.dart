@@ -1361,31 +1361,47 @@ void main() {
     });
   });
   group('Trakt 同步设置', () {
-    test('默认自动同步开启且全部服务器参与', () {
+    test('默认自动同步开启、30 分钟且全部服务器参与', () {
       final s = AppSettings.fromJson(const {});
       expect(s.traktAutoSync, isTrue);
+      expect(s.traktSyncIntervalMinutes, 30);
+      expect(s.traktSyncInterval, const Duration(minutes: 30));
       expect(s.traktDisabledServerIdSet, isEmpty);
       expect(s.isTraktServerEnabled('server-a'), isTrue);
     });
 
-    test('toJson/fromJson 往返保留开关与禁用服务器', () {
+    test('toJson/fromJson 往返保留开关、间隔与禁用服务器', () {
       const s = AppSettings(
         traktAutoSync: false,
+        traktSyncIntervalMinutes: 40,
         traktDisabledServerIds: 'b, a',
       );
       final decoded = AppSettings.fromJson(s.toJson());
       expect(decoded.traktAutoSync, isFalse);
+      expect(decoded.traktSyncIntervalMinutes, 40);
       expect(decoded.traktDisabledServerIdSet, {'a', 'b'});
       expect(decoded.isTraktServerEnabled('a'), isFalse);
       expect(decoded.isTraktServerEnabled('c'), isTrue);
     });
 
+    test('间隔按 10 分钟归一并限制在 10-60', () {
+      expect(AppSettings.normalizeTraktSyncInterval(null), 30);
+      expect(AppSettings.normalizeTraktSyncInterval('x'), 30);
+      expect(AppSettings.normalizeTraktSyncInterval(5), 10);
+      expect(AppSettings.normalizeTraktSyncInterval(14), 10);
+      expect(AppSettings.normalizeTraktSyncInterval(25), 30);
+      expect(AppSettings.normalizeTraktSyncInterval(60), 60);
+      expect(AppSettings.normalizeTraktSyncInterval(64), 60);
+    });
+
     test('copyWith 更新', () {
       final s = const AppSettings().copyWith(
         traktAutoSync: false,
+        traktSyncIntervalMinutes: 20,
         traktDisabledServerIds: 'x',
       );
       expect(s.traktAutoSync, isFalse);
+      expect(s.traktSyncIntervalMinutes, 20);
       expect(s.isTraktServerEnabled('x'), isFalse);
     });
   });

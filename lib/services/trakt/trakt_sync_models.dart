@@ -176,6 +176,49 @@ class TraktSyncPlan {
   const TraktSyncPlan({required this.actions, required this.stats});
 }
 
+enum TraktSyncPhase {
+  readingRemote,
+  scanningServers,
+  matching,
+  writing,
+}
+
+class TraktSyncProgress {
+  final TraktSyncPhase phase;
+  final int serversDone;
+  final int serversTotal;
+  final int actionsDone;
+  final int actionsTotal;
+  final TraktSyncStatistics? stats;
+
+  const TraktSyncProgress({
+    required this.phase,
+    this.serversDone = 0,
+    this.serversTotal = 0,
+    this.actionsDone = 0,
+    this.actionsTotal = 0,
+    this.stats,
+  });
+
+  TraktSyncProgress copyWith({
+    TraktSyncPhase? phase,
+    int? serversDone,
+    int? serversTotal,
+    int? actionsDone,
+    int? actionsTotal,
+    TraktSyncStatistics? stats,
+  }) {
+    return TraktSyncProgress(
+      phase: phase ?? this.phase,
+      serversDone: serversDone ?? this.serversDone,
+      serversTotal: serversTotal ?? this.serversTotal,
+      actionsDone: actionsDone ?? this.actionsDone,
+      actionsTotal: actionsTotal ?? this.actionsTotal,
+      stats: stats ?? this.stats,
+    );
+  }
+}
+
 class TraktSyncResult {
   final TraktSyncState state;
   final TraktSyncStatistics stats;

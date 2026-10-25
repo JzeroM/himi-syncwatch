@@ -29,26 +29,67 @@ class TraktSyncService {
     this.planner = const TraktSyncPlanner(),
   }) : store = store ?? TraktSyncStore();
 
-  Future<TraktSyncResult> sync(List<TraktServerHandle> servers) async {
+  Future<TraktSyncResult> sync(
+    List<TraktServerHandle> servers, {
+    void Function(TraktSyncProgress progress)? onProgress,
+  }) async {
     if (!client.isAuthenticated) {
       throw const TraktSyncException('未登录 Trakt');
     }
     if (servers.isEmpty) {
       throw const TraktSyncException('没有已启用的在线服务器');
     }
+    onProgress?.call(TraktSyncProgress(
+      phase: TraktSyncPhase.readingRemote,
+      serversTotal: servers.length,
+    ));
 
     final remote = await _fetchRemote();
-    final fetched = await _fetchActiveServers(servers);
+    onProgress?.call(TraktSyncProgress(
+      phase: TraktSyncPhase.scanningServers,
+      serversTotal: servers.length,
+    ));
+    final fetched = await _fetchActiveServers(
+      servers,
+      onServerDone: (done) => onProgress?.call(TraktSyncProgress(
+        phase: TraktSyncPhase.scanningServers,
+        serversDone: done,
+        serversTotal: servers.length,
+      )),
+    );
     if (fetched.serversProcessed == 0) {
       throw const TraktSyncException('没有可访问的在线服务器');
     }
+    onProgress?.call(TraktSyncProgress(
+      phase: TraktSyncPhase.matching,
+      serversDone: fetched.serversProcessed,
+      serversTotal: servers.length,
+    ));
     await _reverseLookup(servers, fetched, remote);
 
     final plan = planner.build(
       local: fetched.entries,
       remote: remote,
     );
-    await _execute(plan.actions, fetched.services);
+    onProgress?.call(TraktSyncProgress(
+      phase: TraktSyncPhase.writing,
+      serversDone: fetched.serversProcessed,
+      serversTotal: servers.length,
+      actionsTotal: plan.actions.length,
+      stats: plan.stats,
+    ));
+    await _execute(
+      plan.actions,
+      fetched.services,
+      onAction: (done, total) => onProgress?.call(TraktSyncProgress(
+        phase: TraktSyncPhase.writing,
+        serversDone: fetched.serversProcessed,
+        serversTotal: servers.length,
+        actionsDone: done,
+        actionsTotal: total,
+        stats: plan.stats,
+      )),
+    );
     final next = await store.recordSuccess(plan.stats);
     return TraktSyncResult(
       state: next,
@@ -58,9 +99,14 @@ class TraktSyncService {
   }
 
   Future<List<TraktSyncEntry>> _fetchRemote() async {
-    final movies = await client.getWatchedMovies();
-    final shows = await client.getWatchedShows();
-    final playback = await client.getPlayback();
+    final remote = await Future.wait([
+      client.getWatchedMovies(),
+      client.getWatchedShows(),
+      client.getPlayback(),
+    ]);
+    final movies = remote[0];
+    final shows = remote[1];
+    final playback = remote[2];
     final entries = <TraktSyncEntry>[];
 
     for (final row in movies) {
@@ -145,21 +191,29 @@ class TraktSyncService {
 
   Future<_FetchedServers> _fetchActiveServers(
     List<TraktServerHandle> servers, {
-    bool resolveSeries = true,
+    void Function(int done)? onServerDone,
   }) async {
     final entries = <TraktSyncEntry>[];
     final services = <String, EmbyService>{};
     var processed = 0;
-    for (final handle in servers) {
-      try {
-        final serverEntries = await _fetchActiveServer(
-          handle,
-          resolveSeries: resolveSeries,
-        );
-        entries.addAll(serverEntries);
-        services[handle.configId] = handle.service;
+    for (final group in _groups(servers, 3)) {
+      final results = await Future.wait(group.map((handle) async {
+        try {
+          return (
+            handle: handle,
+            entries: await _fetchActiveServer(handle),
+          );
+        } catch (_) {
+          return null;
+        }
+      }));
+      for (final result in results) {
+        if (result == null) continue;
+        entries.addAll(result.entries);
+        services[result.handle.configId] = result.handle.service;
         processed++;
-      } catch (_) {}
+        onServerDone?.call(processed);
+      }
     }
     return _FetchedServers(
       entries: entries,
@@ -169,19 +223,22 @@ class TraktSyncService {
   }
 
   Future<List<TraktSyncEntry>> _fetchActiveServer(
-    TraktServerHandle handle, {
-    required bool resolveSeries,
-  }) async {
-    final played = await _queryItems(
-      handle.service,
-      includeItemTypes: 'Movie,Episode',
-      filters: 'IsPlayed',
-    );
-    final resumable = await _queryItems(
-      handle.service,
-      includeItemTypes: 'Movie,Episode',
-      filters: 'IsResumable',
-    );
+    TraktServerHandle handle,
+  ) async {
+    final active = await Future.wait([
+      _queryItems(
+        handle.service,
+        includeItemTypes: 'Movie,Episode',
+        filters: 'IsPlayed',
+      ),
+      _queryItems(
+        handle.service,
+        includeItemTypes: 'Movie,Episode',
+        filters: 'IsResumable',
+      ),
+    ]);
+    final played = active[0];
+    final resumable = active[1];
 
     final byId = <String, MediaItem>{};
     for (final item in played) {
@@ -193,15 +250,13 @@ class TraktSyncService {
       _mergeActiveItem(byId, item);
     }
 
-    final seriesIds = resolveSeries
-        ? await _fetchSeriesMetadata(
-            handle.service,
-            byId.values
-                .where((e) => e.isEpisode)
-                .map((e) => e.seriesId)
-                .whereType<String>(),
-          )
-        : const <String, TraktMediaIds>{};
+    final seriesIds = await _fetchSeriesMetadata(
+      handle.service,
+      byId.values
+          .where((e) => e.isEpisode)
+          .map((e) => e.seriesId)
+          .whereType<String>(),
+    );
 
     final items = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
     final result = <TraktSyncEntry>[];
@@ -246,16 +301,18 @@ class TraktSyncService {
   ) async {
     final unique = ids.toSet().toList();
     final result = <String, TraktMediaIds>{};
-    for (final chunk in _chunks(unique, 50)) {
-      final series = await _queryItems(
-        service,
-        includeItemTypes: 'Series',
-        ids: chunk.join(','),
-        fields: 'ProviderIds',
-      );
-      for (final item in series) {
-        if (!item.isSeries) continue;
-        result[item.id] = _idsFromMedia(item);
+    for (final group in _groups(_chunks(unique, 50).toList(), 3)) {
+      final results = await Future.wait(group.map(
+        (chunk) => _queryItems(
+          service,
+          includeItemTypes: 'Series',
+          ids: chunk.join(','),
+          fields: 'ProviderIds',
+        ),
+      ));
+      for (final series in results.expand((e) => e)) {
+        if (!series.isSeries) continue;
+        result[series.id] = _idsFromMedia(series);
       }
     }
     return result;
@@ -330,28 +387,40 @@ class TraktSyncService {
     }
     if (movieTokens.isEmpty && showTargets.isEmpty) return;
 
-    for (final handle in servers) {
-      if (!fetched.services.containsKey(handle.configId)) continue;
-      final existingIds = fetched.entries
-          .where((e) => e.serverConfigId == handle.configId)
-          .map((e) => e.itemId)
-          .whereType<String>()
-          .toSet();
-      try {
-        await _reverseMovies(
+    for (final group in _groups(servers, 3)) {
+      final active =
+          group.where((e) => fetched.services.containsKey(e.configId)).toList();
+      final results = await Future.wait(active.map((handle) {
+        final existingIds = fetched.entries
+            .where((e) => e.serverConfigId == handle.configId)
+            .map((e) => e.itemId)
+            .whereType<String>()
+            .toSet();
+        return _reverseForServer(
           handle,
+          existingIds,
           movieTokens,
-          existingIds,
-          fetched.entries,
-        );
-        await _reverseEpisodes(
-          handle,
           showTargets,
-          existingIds,
-          fetched.entries,
         );
-      } catch (_) {}
+      }));
+      for (final entries in results) {
+        fetched.entries.addAll(entries);
+      }
     }
+  }
+
+  Future<List<TraktSyncEntry>> _reverseForServer(
+    TraktServerHandle handle,
+    Set<String> existingIds,
+    Set<String> movieTokens,
+    List<_ShowTarget> showTargets,
+  ) async {
+    final result = <TraktSyncEntry>[];
+    try {
+      await _reverseMovies(handle, movieTokens, existingIds, result);
+      await _reverseEpisodes(handle, showTargets, existingIds, result);
+    } catch (_) {}
+    return result;
   }
 
   Future<void> _reverseMovies(
@@ -451,6 +520,17 @@ class TraktSyncService {
     return itemTokens.any(tokens.contains);
   }
 
+  static List<List<T>> _groups<T>(List<T> values, int size) {
+    final result = <List<T>>[];
+    for (var start = 0; start < values.length; start += size) {
+      result.add(values.sublist(
+        start,
+        start + size > values.length ? values.length : start + size,
+      ));
+    }
+    return result;
+  }
+
   static Iterable<List<T>> _chunks<T>(List<T> values, int size) sync* {
     for (var start = 0; start < values.length; start += size) {
       yield values.sublist(
@@ -487,68 +567,78 @@ class TraktSyncService {
 
   Future<void> _execute(
     List<TraktSyncAction> actions,
-    Map<String, EmbyService> services,
-  ) async {
+    Map<String, EmbyService> services, {
+    void Function(int done, int total)? onAction,
+  }) async {
+    var done = 0;
+    final total = actions.length;
     final history = actions
         .where((a) => a.type == TraktActionType.addTraktHistory)
         .map((a) => a.entry)
         .whereType<TraktSyncEntry>()
         .toList();
     await _flushHistory(history);
+    done += history.length;
+    onAction?.call(done, total);
     for (final action in actions) {
       if (action.type == TraktActionType.addTraktHistory) continue;
-      final service = action.serverConfigId == null
-          ? null
-          : services[action.serverConfigId];
-      final entry = action.entry;
-      switch (action.type) {
-        case TraktActionType.markEmbyWatched:
-          if (service == null || action.itemId == null) continue;
-          if (!await service.setWatched(action.itemId!, true)) {
-            throw const TraktSyncException('写入已看失败');
-          }
-          break;
-        case TraktActionType.clearEmbyProgress:
-          if (service == null || action.itemId == null) continue;
-          if (!await service.setPlaybackPosition(action.itemId!, 0)) {
-            throw const TraktSyncException('清除进度失败');
-          }
-          break;
-        case TraktActionType.writeEmbyProgress:
-          if (service == null ||
-              action.itemId == null ||
-              action.positionMs == null) {
-            continue;
-          }
-          if (!await service.setPlaybackPosition(
-            action.itemId!,
-            action.positionMs!,
-          )) {
-            throw const TraktSyncException('写入进度失败');
-          }
-          break;
-        case TraktActionType.addTraktHistory:
-          break;
-        case TraktActionType.deleteTraktPlayback:
-          if (action.playbackId == null) continue;
-          await client.deletePlayback(action.playbackId!);
-          break;
-        case TraktActionType.pauseTrakt:
-          if (entry == null) continue;
-          final percent = action.progressPercent;
-          if (percent == null) continue;
-          if (entry.isMovie) {
-            await client.pauseMovie(ids: entry.ids, progress: percent);
-          } else {
-            await client.pauseEpisode(
-              ids: entry.ids,
-              showIds: entry.showIds,
-              season: entry.season ?? 0,
-              episode: entry.episode ?? 0,
-              progress: percent,
-            );
-          }
-          break;
+      try {
+        final service = action.serverConfigId == null
+            ? null
+            : services[action.serverConfigId];
+        final entry = action.entry;
+        switch (action.type) {
+          case TraktActionType.markEmbyWatched:
+            if (service == null || action.itemId == null) continue;
+            if (!await service.setWatched(action.itemId!, true)) {
+              throw const TraktSyncException('写入已看失败');
+            }
+            break;
+          case TraktActionType.clearEmbyProgress:
+            if (service == null || action.itemId == null) continue;
+            if (!await service.setPlaybackPosition(action.itemId!, 0)) {
+              throw const TraktSyncException('清除进度失败');
+            }
+            break;
+          case TraktActionType.writeEmbyProgress:
+            if (service == null ||
+                action.itemId == null ||
+                action.positionMs == null) {
+              continue;
+            }
+            if (!await service.setPlaybackPosition(
+              action.itemId!,
+              action.positionMs!,
+            )) {
+              throw const TraktSyncException('写入进度失败');
+            }
+            break;
+          case TraktActionType.addTraktHistory:
+            break;
+          case TraktActionType.deleteTraktPlayback:
+            if (action.playbackId == null) continue;
+            await client.deletePlayback(action.playbackId!);
+            break;
+          case TraktActionType.pauseTrakt:
+            if (entry == null) continue;
+            final percent = action.progressPercent;
+            if (percent == null) continue;
+            if (entry.isMovie) {
+              await client.pauseMovie(ids: entry.ids, progress: percent);
+            } else {
+              await client.pauseEpisode(
+                ids: entry.ids,
+                showIds: entry.showIds,
+                season: entry.season ?? 0,
+                episode: entry.episode ?? 0,
+                progress: percent,
+              );
+            }
+            break;
+        }
+      } finally {
+        done++;
+        onAction?.call(done, total);
       }
     }
   }

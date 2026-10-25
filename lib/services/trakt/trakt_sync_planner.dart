@@ -49,19 +49,15 @@ class TraktSyncPlanner {
 
     for (final group in groups.values) {
       if (group.local.isEmpty) continue;
-      final matched = group.remote.isNotEmpty;
+      if (group.local.first.isMovie) {
+        movieCount++;
+      } else {
+        episodeCount++;
+        showKeys.add(_showKeyFor(group));
+      }
       final remoteWatched = group.remote.any((e) => e.watched);
       final localWatched = group.local.any((e) => e.watched);
       final watched = remoteWatched || localWatched;
-
-      if (matched) {
-        if (group.local.first.isMovie) {
-          movieCount++;
-        } else {
-          episodeCount++;
-          showKeys.add(_showKeyFor(group));
-        }
-      }
 
       if (watched) {
         for (final localEntry in group.local) {

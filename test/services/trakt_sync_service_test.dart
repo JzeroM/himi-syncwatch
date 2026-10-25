@@ -271,11 +271,15 @@ void main() {
     ];
 
     final service = TraktSyncService(client: client, store: syncStore);
-    final result = await service.sync([
-      TraktServerHandle(configId: 'a', service: serverA),
-      TraktServerHandle(configId: 'b', service: serverB),
-      TraktServerHandle(configId: 'offline', service: offline),
-    ]);
+    final progress = <TraktSyncProgress>[];
+    final result = await service.sync(
+      [
+        TraktServerHandle(configId: 'a', service: serverA),
+        TraktServerHandle(configId: 'b', service: serverB),
+        TraktServerHandle(configId: 'offline', service: offline),
+      ],
+      onProgress: progress.add,
+    );
 
     expect(result.serversProcessed, 2);
     expect(serverB.watchedCalls, contains(('b-m1', true)));
@@ -284,8 +288,20 @@ void main() {
     expect(client.deletedPlayback, isEmpty);
     expect(client.addedMovies, hasLength(1));
     expect(client.addedMovies.single['ids'], {'tmdb': 3});
-    expect(result.stats.movies, 2);
+    expect(result.stats.movies, 3);
     expect((await syncStore.read()).lastSuccessAt, isNotNull);
+    expect(
+      progress.map((e) => e.phase).toSet(),
+      containsAll([
+        TraktSyncPhase.readingRemote,
+        TraktSyncPhase.scanningServers,
+        TraktSyncPhase.matching,
+        TraktSyncPhase.writing,
+      ]),
+    );
+    final last = progress.last;
+    expect(last.phase, TraktSyncPhase.writing);
+    expect(last.actionsDone, last.actionsTotal);
     expect(
       serverA.requests.where(
         (r) =>
@@ -339,13 +355,14 @@ void main() {
     ]);
 
     final service = TraktSyncService(client: client, store: syncStore);
-    await service.sync([
+    final result = await service.sync([
       TraktServerHandle(configId: 'a', service: serverA),
       TraktServerHandle(configId: 'b', service: serverB),
     ]);
 
     expect(serverA.positionCalls['a-m1'], isNull);
     expect(serverB.positionCalls['b-m1'], 50000);
+    expect(result.stats.movies, 1);
   });
 
   test('旧 reset_at 存档不再清除任何服务器进度', () async {

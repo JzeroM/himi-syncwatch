@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/trakt_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/trakt/trakt_sync_status_panel.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_confirm_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -149,7 +150,7 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
           child: Text(
             '以 Trakt 为中转，在多个 Emby 服务器之间同步电影与单集的已看状态和播放进度。'
             '已看取并集；全部未看时才取最长进度。自动同步在应用启动或回到前台时执行，'
-            '且距上次成功超过 6 小时才会运行。',
+            '间隔可在下方设置。',
             style: const TextStyle(
               fontSize: 12,
               color: Colors.white54,
@@ -291,30 +292,11 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
             ),
           ),
           const Divider(height: 1),
-          if (trakt.syncing)
-            const ListTile(
-              leading: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              title: Text('正在同步…'),
-            ),
-          ListTile(
-            leading: const Icon(Icons.history),
-            title: const Text('上次成功同步'),
-            subtitle: Text(
-              sync.lastSuccessAt == null
-                  ? '尚未同步'
-                  : '${_formatTime(sync.lastSuccessAt!)}  ·  '
-                      '电影 ${sync.movies} / 剧集 ${sync.shows} / 单集 ${sync.episodes}',
-            ),
-            trailing: TextButton(
-              onPressed: trakt.syncing
-                  ? null
-                  : () => ref.read(traktProvider.notifier).syncNow(),
-              child: const Text('立即同步'),
-            ),
+          TraktSyncStatusPanel(
+            syncState: sync,
+            live: trakt.liveSync,
+            syncing: trakt.syncing,
+            onSync: () => ref.read(traktProvider.notifier).syncNow(),
           ),
           const Divider(height: 1),
           settingsTvWrapRow(
@@ -324,13 +306,34 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
                 ),
             child: SwitchListTile(
               title: const Text('自动同步'),
-              subtitle: const Text('启动或回到前台时，距上次成功超过 6 小时自动执行'),
+              subtitle: const Text('启动或回到前台时，按设定间隔自动执行'),
               value: settings.traktAutoSync,
               onChanged: (value) => ref.read(settingsProvider.notifier).update(
                     traktAutoSync: value,
                   ),
             ),
           ),
+          if (settings.traktAutoSync) ...[
+            const Divider(height: 1),
+            settingOptionTile(
+              context: context,
+              tvMode: settings.tvMode,
+              title: '自动同步间隔',
+              subtitle: '10–60 分钟，步进 10 分钟',
+              labels: const {
+                '10': '10 分钟',
+                '20': '20 分钟',
+                '30': '30 分钟',
+                '40': '40 分钟',
+                '50': '50 分钟',
+                '60': '60 分钟',
+              },
+              value: '${settings.traktSyncIntervalMinutes}',
+              onSelected: (value) => ref.read(settingsProvider.notifier).update(
+                    traktSyncIntervalMinutes: int.parse(value),
+                  ),
+            ),
+          ],
           const Divider(height: 1),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
@@ -375,12 +378,5 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
         ],
       ],
     );
-  }
-
-  String _formatTime(DateTime time) {
-    final local = time.toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}';
   }
 }

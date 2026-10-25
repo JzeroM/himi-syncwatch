@@ -172,6 +172,8 @@ class AppSettings {
 
   final bool traktAutoSync;
 
+  final int traktSyncIntervalMinutes;
+
   final String traktDisabledServerIds;
 
   final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
@@ -364,6 +366,7 @@ class AppSettings {
     this.tmdbImageBase = 'https://wsrv.nl/?url=https://image.tmdb.org',
     this.tmdbWatchRegion = 'US',
     this.traktAutoSync = true,
+    this.traktSyncIntervalMinutes = defaultTraktSyncIntervalMinutes,
     this.traktDisabledServerIds = '',
     this.tvMode = false,
     this.tvSyncEnabled = true,
@@ -400,6 +403,17 @@ class AppSettings {
 
   /// TMDB 是否已配置凭据（不校验有效性）。
   bool get hasTmdbCredentials => tmdbApiKey.trim().isNotEmpty;
+
+  static const defaultTraktSyncIntervalMinutes = 30;
+  static const traktSyncIntervalOptions = [10, 20, 30, 40, 50, 60];
+
+  static int normalizeTraktSyncInterval(Object? value) {
+    if (value is! num) return defaultTraktSyncIntervalMinutes;
+    final rounded = (value.toInt() / 10).round() * 10;
+    return rounded.clamp(10, 60).toInt();
+  }
+
+  Duration get traktSyncInterval => Duration(minutes: traktSyncIntervalMinutes);
 
   Set<String> get traktDisabledServerIdSet => traktDisabledServerIds
       .split(',')
@@ -468,6 +482,7 @@ class AppSettings {
     String? tmdbImageBase,
     String? tmdbWatchRegion,
     bool? traktAutoSync,
+    int? traktSyncIntervalMinutes,
     String? traktDisabledServerIds,
     bool? tvMode,
     bool? tvSyncEnabled,
@@ -540,6 +555,8 @@ class AppSettings {
       tmdbImageBase: tmdbImageBase ?? this.tmdbImageBase,
       tmdbWatchRegion: tmdbWatchRegion ?? this.tmdbWatchRegion,
       traktAutoSync: traktAutoSync ?? this.traktAutoSync,
+      traktSyncIntervalMinutes:
+          traktSyncIntervalMinutes ?? this.traktSyncIntervalMinutes,
       traktDisabledServerIds:
           traktDisabledServerIds ?? this.traktDisabledServerIds,
       tvMode: tvMode ?? this.tvMode,
@@ -633,6 +650,7 @@ class AppSettings {
         'tmdbImageBase': tmdbImageBase,
         'tmdbWatchRegion': tmdbWatchRegion,
         'traktAutoSync': traktAutoSync,
+        'traktSyncIntervalMinutes': traktSyncIntervalMinutes,
         'traktDisabledServerIds': traktDisabledServerIds,
         'tvMode': tvMode,
         'tvSyncEnabled': tvSyncEnabled,
@@ -769,6 +787,9 @@ class AppSettings {
           ? json['tmdbWatchRegion'] as String
           : 'US',
       traktAutoSync: json['traktAutoSync'] as bool? ?? true,
+      traktSyncIntervalMinutes: normalizeTraktSyncInterval(
+        json['traktSyncIntervalMinutes'],
+      ),
       traktDisabledServerIds: json['traktDisabledServerIds'] as String? ?? '',
       tvMode: json['tvMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认开（v1.1.249 上线时行为不变）
