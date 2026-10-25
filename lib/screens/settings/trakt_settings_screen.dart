@@ -87,22 +87,6 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
     showAppToast(context, '设备码已复制');
   }
 
-  Future<void> _resetAll() async {
-    if (ref.read(traktProvider).resetting) return;
-    final confirmed = await showTvConfirmDialog(
-      context: context,
-      title: '重置所有观看记录？',
-      message: '将清除 Trakt 历史与播放进度，并清除已勾选且在线服务器上的已看与进度。'
-          '离线服务器会在下次上线后应用同一重置水位。此操作不可撤销。',
-      confirmLabel: '重置',
-      destructive: true,
-    );
-    if (!confirmed || !mounted) return;
-    final ok = await ref.read(traktProvider.notifier).resetAll();
-    if (!mounted || !ok) return;
-    showAppToast(context, '观看记录已重置');
-  }
-
   Future<void> _disconnect() async {
     final confirmed = await showTvConfirmDialog(
       context: context,
@@ -378,18 +362,6 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
               ),
               const Divider(height: 1),
             ],
-          settingsTvWrapRow(
-            tvMode: settings.tvMode,
-            onTap: _resetAll,
-            child: ListTile(
-              key: const ValueKey('traktResetAll'),
-              leading: Icon(Icons.restart_alt, color: Colors.red.shade300),
-              title: const Text('重置所有观看记录'),
-              subtitle: const Text('清除 Trakt 历史/进度与在线服务器的已看/进度'),
-              onTap: _resetAll,
-            ),
-          ),
-          const Divider(height: 1),
           settingsTvWrapRow(
             tvMode: settings.tvMode,
             onTap: _disconnect,

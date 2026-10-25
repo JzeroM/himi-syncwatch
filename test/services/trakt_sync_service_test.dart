@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/trakt_models.dart';
@@ -328,6 +330,51 @@ void main() {
     expect(server.watchedCalls, contains(('b-m1', true)));
   });
 
+  test('A 服有进度、B 服无进度时只补 B 进度，不清 A 进度', () async {
+    final serverA = _FakeEmbyService([
+      _movie('a-m1', '1', positionMs: 50000),
+    ]);
+    final serverB = _FakeEmbyService([
+      _movie('b-m1', '1'),
+    ]);
+
+    final service = TraktSyncService(client: client, store: syncStore);
+    await service.sync([
+      TraktServerHandle(configId: 'a', service: serverA),
+      TraktServerHandle(configId: 'b', service: serverB),
+    ]);
+
+    expect(serverA.positionCalls['a-m1'], isNull);
+    expect(serverB.positionCalls['b-m1'], 50000);
+  });
+
+  test('旧 reset_at 存档不再清除任何服务器进度', () async {
+    storage.data[TraktSyncStore.stateKey] = jsonEncode({
+      'reset_at': {
+        'a': DateTime.utc(2026, 1, 1).toIso8601String(),
+        'b': DateTime.utc(2026, 1, 1).toIso8601String(),
+      },
+      'movies': 10,
+      'shows': 10,
+      'episodes': 10,
+    });
+    final serverA = _FakeEmbyService([
+      _movie('a-m1', '1', positionMs: 50000),
+    ]);
+    final serverB = _FakeEmbyService([
+      _movie('b-m1', '1'),
+    ]);
+
+    final service = TraktSyncService(client: client, store: syncStore);
+    await service.sync([
+      TraktServerHandle(configId: 'a', service: serverA),
+      TraktServerHandle(configId: 'b', service: serverB),
+    ]);
+
+    expect(serverA.positionCalls['a-m1'], isNull);
+    expect(serverB.positionCalls['b-m1'], 50000);
+  });
+
   test('Trakt 进度反向写回本地未看条目', () async {
     final server = _FakeEmbyService([
       _movie('b-m1', '1'),
@@ -379,44 +426,5 @@ void main() {
       ),
       isEmpty,
     );
-  });
-
-  test('重置清空历史/播放进度并给全部已选服务器记录水位', () async {
-    final server = _FakeEmbyService([
-      _movie('a-m1', '1', watched: true),
-      _movie('a-m2', '2', positionMs: 50000),
-    ]);
-    final offline = _FakeEmbyService([], fail: true);
-    client.watchedMovies = [
-      {
-        'movie': {
-          'ids': {'tmdb': 1}
-        }
-      }
-    ];
-    client.playback = [
-      {
-        'id': 9,
-        'progress': 30.0,
-        'movie': {
-          'ids': {'tmdb': 2}
-        }
-      }
-    ];
-
-    final service = TraktSyncService(client: client, store: syncStore);
-    final result = await service.resetAll([
-      TraktServerHandle(configId: 'a', service: server),
-      TraktServerHandle(configId: 'offline', service: offline),
-    ]);
-
-    expect(client.removedMovies.single['ids'], {'tmdb': 1});
-    expect(client.deletedPlayback, [9]);
-    expect(server.watchedCalls, contains(('a-m1', false)));
-    expect(server.positionCalls['a-m2'], 0);
-    expect(result.stats.movies, 0);
-    final state = await syncStore.read();
-    expect(state.resetAt.keys, containsAll(['a', 'offline']));
-    expect(state.lastSuccessAt, isNotNull);
   });
 }

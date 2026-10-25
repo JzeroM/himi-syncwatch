@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
 import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
+import 'package:himi_syncwatch/providers/trakt_provider.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_context_menu.dart';
 
@@ -157,7 +160,14 @@ Future<void> _removeFromResume(
   final ok = await ref
       .read(embyServiceForProvider(serverId))
       .removeFromResume(item.id);
-  if (ok) return;
+  if (ok) {
+    unawaited(ref.read(traktProvider.notifier).resetItemProgress(
+          serverConfigId: serverId ?? '',
+          itemId: item.id,
+          removeWatched: false,
+        ));
+    return;
+  }
   // 失败回滚乐观隐藏
   notifier.state = {...notifier.state}..remove(item.id);
   ref.read(resumeRevisionProvider.notifier).state++;

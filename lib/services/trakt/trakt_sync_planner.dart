@@ -12,31 +12,9 @@ class TraktSyncPlanner {
   TraktSyncPlan build({
     required List<TraktSyncEntry> local,
     required List<TraktSyncEntry> remote,
-    Map<String, DateTime> resetAt = const {},
   }) {
     final actions = <TraktSyncAction>[];
-    final effective = <TraktSyncEntry>[];
-    for (final entry in local) {
-      final stale = _isStale(entry, resetAt);
-      if (stale && entry.watched) {
-        actions.add(TraktSyncAction(
-          type: TraktActionType.unmarkEmbyWatched,
-          entry: entry,
-          serverConfigId: entry.serverConfigId,
-          itemId: entry.itemId,
-        ));
-      }
-      if (stale && entry.positionMs > 0) {
-        actions.add(TraktSyncAction(
-          type: TraktActionType.clearEmbyProgress,
-          entry: entry,
-          serverConfigId: entry.serverConfigId,
-          itemId: entry.itemId,
-        ));
-      }
-      effective.add(_applyResetWatermark(entry, resetAt));
-    }
-    final all = [...effective, ...remote];
+    final all = [...local, ...remote];
     if (all.isEmpty) {
       return const TraktSyncPlan(
         actions: [],
@@ -168,36 +146,6 @@ class TraktSyncPlanner {
         shows: showKeys.length,
         episodes: episodeCount,
       ),
-    );
-  }
-
-  bool _isStale(TraktSyncEntry entry, Map<String, DateTime> resetAt) {
-    final serverId = entry.serverConfigId;
-    if (serverId == null) return false;
-    final reset = resetAt[serverId];
-    if (reset == null) return false;
-    final lastPlayed = entry.lastPlayed;
-    return lastPlayed == null || !lastPlayed.isAfter(reset);
-  }
-
-  TraktSyncEntry _applyResetWatermark(
-    TraktSyncEntry entry,
-    Map<String, DateTime> resetAt,
-  ) {
-    if (!_isStale(entry, resetAt)) return entry;
-    return TraktSyncEntry(
-      kind: entry.kind,
-      ids: entry.ids,
-      showIds: entry.showIds,
-      season: entry.season,
-      episode: entry.episode,
-      watched: false,
-      positionMs: 0,
-      progressPercent: null,
-      runtimeMs: entry.runtimeMs,
-      lastPlayed: entry.lastPlayed,
-      serverConfigId: entry.serverConfigId,
-      itemId: entry.itemId,
     );
   }
 

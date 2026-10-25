@@ -87,14 +87,12 @@ class TraktSyncState {
   final int movies;
   final int shows;
   final int episodes;
-  final Map<String, DateTime> resetAt;
 
   const TraktSyncState({
     this.lastSuccessAt,
     this.movies = 0,
     this.shows = 0,
     this.episodes = 0,
-    this.resetAt = const {},
   });
 
   Map<String, dynamic> toJson() => {
@@ -103,25 +101,15 @@ class TraktSyncState {
         'movies': movies,
         'shows': shows,
         'episodes': episodes,
-        'reset_at': resetAt.map((k, v) => MapEntry(k, v.toIso8601String())),
       };
 
   factory TraktSyncState.fromJson(Map<String, dynamic> json) {
-    final rawReset = json['reset_at'];
-    final reset = <String, DateTime>{};
-    if (rawReset is Map) {
-      rawReset.forEach((key, value) {
-        final parsed = DateTime.tryParse(value?.toString() ?? '');
-        if (parsed != null) reset[key.toString()] = parsed;
-      });
-    }
     return TraktSyncState(
       lastSuccessAt:
           DateTime.tryParse(json['last_success_at']?.toString() ?? ''),
       movies: (json['movies'] as num?)?.toInt() ?? 0,
       shows: (json['shows'] as num?)?.toInt() ?? 0,
       episodes: (json['episodes'] as num?)?.toInt() ?? 0,
-      resetAt: reset,
     );
   }
 
@@ -130,14 +118,12 @@ class TraktSyncState {
     int? movies,
     int? shows,
     int? episodes,
-    Map<String, DateTime>? resetAt,
   }) {
     return TraktSyncState(
       lastSuccessAt: lastSuccessAt ?? this.lastSuccessAt,
       movies: movies ?? this.movies,
       shows: shows ?? this.shows,
       episodes: episodes ?? this.episodes,
-      resetAt: resetAt ?? this.resetAt,
     );
   }
 }
@@ -156,7 +142,6 @@ class TraktSyncStatistics {
 
 enum TraktActionType {
   markEmbyWatched,
-  unmarkEmbyWatched,
   clearEmbyProgress,
   writeEmbyProgress,
   addTraktHistory,

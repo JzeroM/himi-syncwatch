@@ -149,42 +149,6 @@ void main() {
     );
   });
 
-  test('重置水位之后的新播放不被忽略', () {
-    final reset = DateTime.utc(2026, 1, 1);
-    final plan = _planner.build(
-      local: [
-        _movie(
-          server: 'a',
-          item: 'old',
-          tmdb: 1,
-          watched: true,
-          position: 30000,
-          lastPlayed: reset.subtract(const Duration(minutes: 1)),
-        ),
-        _movie(
-          server: 'a',
-          item: 'new',
-          tmdb: 2,
-          watched: true,
-          lastPlayed: reset.add(const Duration(minutes: 1)),
-        ),
-      ],
-      remote: const [],
-      resetAt: {'a': reset},
-    );
-
-    expect(
-      plan.actions
-          .where((a) => a.type == TraktActionType.unmarkEmbyWatched)
-          .map((a) => a.itemId),
-      ['old'],
-    );
-    expect(
-      plan.actions.where((a) => a.type == TraktActionType.addTraktHistory),
-      hasLength(1),
-    );
-  });
-
   test('单集按剧集身份跨服务器匹配，已看补齐并写入季度/集数', () {
     final plan = _planner.build(
       local: [

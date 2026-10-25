@@ -44,93 +44,15 @@ class TraktSyncService {
     }
     await _reverseLookup(servers, fetched, remote);
 
-    final state = await store.read();
     final plan = planner.build(
       local: fetched.entries,
       remote: remote,
-      resetAt: state.resetAt,
     );
     await _execute(plan.actions, fetched.services);
     final next = await store.recordSuccess(plan.stats);
     return TraktSyncResult(
       state: next,
       stats: plan.stats,
-      serversProcessed: fetched.serversProcessed,
-    );
-  }
-
-  Future<TraktSyncResult> resetAll(List<TraktServerHandle> servers) async {
-    if (!client.isAuthenticated) {
-      throw const TraktSyncException('未登录 Trakt');
-    }
-    if (servers.isEmpty) {
-      throw const TraktSyncException('没有已启用的在线服务器');
-    }
-
-    final remote = await _fetchRemote();
-    final watchedMovies = <Map<String, dynamic>>[];
-    final watchedShows = <Map<String, dynamic>>[];
-    final playbackIds = <int>{};
-
-    for (final entry in remote) {
-      if (entry.playbackId != null) {
-        playbackIds.add(entry.playbackId!);
-      }
-      if (!entry.watched) continue;
-      if (entry.isMovie && _hasIds(entry.ids)) {
-        watchedMovies.add({'ids': entry.ids.toJson()});
-      }
-    }
-
-    final showGroups = <String, _ResetShow>{};
-    for (final entry in remote.where((e) => e.watched && e.isEpisode)) {
-      if (!_hasIds(entry.showIds) ||
-          entry.season == null ||
-          entry.episode == null) {
-        continue;
-      }
-      final key = entry.showIds
-          .toJson()
-          .entries
-          .map((e) => '${e.key}:${e.value}')
-          .toList()
-        ..sort();
-      final grouped = showGroups.putIfAbsent(
-        key.join('|'),
-        () => _ResetShow(entry.showIds),
-      );
-      grouped.add(entry.season!, entry.episode!);
-    }
-    for (final show in showGroups.values) {
-      watchedShows.add(show.toJson());
-    }
-
-    await client.removeHistory(movies: watchedMovies, shows: watchedShows);
-    await client.deleteAllPlayback(playbackIds);
-
-    await store.recordReset(servers.map((e) => e.configId));
-    final fetched = await _fetchActiveServers(servers, resolveSeries: false);
-    if (fetched.serversProcessed == 0) {
-      throw const TraktSyncException('没有可访问的在线服务器');
-    }
-    for (final entry in fetched.entries) {
-      if (!entry.hasLocal) continue;
-      final service = fetched.services[entry.serverConfigId];
-      if (service == null) continue;
-      if (entry.watched) {
-        final ok = await service.setWatched(entry.itemId!, false);
-        if (!ok) throw const TraktSyncException('清除已看失败');
-      }
-      if (entry.positionMs > 0) {
-        final ok = await service.setPlaybackPosition(entry.itemId!, 0);
-        if (!ok) throw const TraktSyncException('清除进度失败');
-      }
-    }
-
-    final state = await store.recordSuccess(const TraktSyncStatistics());
-    return TraktSyncResult(
-      state: state,
-      stats: const TraktSyncStatistics(),
       serversProcessed: fetched.serversProcessed,
     );
   }
@@ -586,12 +508,6 @@ class TraktSyncService {
             throw const TraktSyncException('写入已看失败');
           }
           break;
-        case TraktActionType.unmarkEmbyWatched:
-          if (service == null || action.itemId == null) continue;
-          if (!await service.setWatched(action.itemId!, false)) {
-            throw const TraktSyncException('清除已看失败');
-          }
-          break;
         case TraktActionType.clearEmbyProgress:
           if (service == null || action.itemId == null) continue;
           if (!await service.setPlaybackPosition(action.itemId!, 0)) {
@@ -712,27 +628,6 @@ class _FetchedServers {
     required this.services,
     required this.serversProcessed,
   });
-}
-
-class _ResetShow {
-  final TraktMediaIds ids;
-  final Map<int, Set<int>> seasons = {};
-
-  _ResetShow(this.ids);
-
-  void add(int season, int episode) {
-    seasons.putIfAbsent(season, () => <int>{}).add(episode);
-  }
-
-  Map<String, dynamic> toJson() => {
-        'ids': ids.toJson(),
-        'seasons': seasons.entries
-            .map((e) => {
-                  'number': e.key,
-                  'episodes': e.value.map((n) => {'number': n}).toList(),
-                })
-            .toList(),
-      };
 }
 
 class _HistoryShow {

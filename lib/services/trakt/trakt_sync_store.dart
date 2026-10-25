@@ -30,18 +30,6 @@ class TraktSyncStore {
     await _storage.write(key: stateKey, value: jsonEncode(state.toJson()));
   }
 
-  Future<TraktSyncState> recordReset(Iterable<String> serverIds) async {
-    final current = await read();
-    final now = DateTime.now().toUtc();
-    final resetAt = Map<String, DateTime>.from(current.resetAt);
-    for (final id in serverIds) {
-      resetAt[id] = now;
-    }
-    final next = current.copyWith(resetAt: resetAt);
-    await write(next);
-    return next;
-  }
-
   Future<TraktSyncState> recordSuccess(TraktSyncStatistics stats) async {
     final current = await read();
     final next = current.copyWith(

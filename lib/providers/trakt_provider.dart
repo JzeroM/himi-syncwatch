@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/trakt/trakt_auth_service.dart';
 import 'package:himi_syncwatch/services/trakt/trakt_client.dart';
+import 'package:himi_syncwatch/services/trakt/trakt_item_reset_service.dart';
 import 'package:himi_syncwatch/services/trakt/trakt_sync_models.dart';
 import 'package:himi_syncwatch/services/trakt/trakt_sync_service.dart';
 import 'package:himi_syncwatch/services/trakt/trakt_sync_store.dart';
@@ -35,7 +36,6 @@ class TraktAppState {
   final bool initialized;
   final bool connecting;
   final bool syncing;
-  final bool resetting;
   final bool configured;
   final TraktTokens? tokens;
   final TraktAccount? account;
@@ -47,7 +47,6 @@ class TraktAppState {
     this.initialized = false,
     this.connecting = false,
     this.syncing = false,
-    this.resetting = false,
     this.configured = true,
     this.tokens,
     this.account,
@@ -62,7 +61,6 @@ class TraktAppState {
     bool? initialized,
     bool? connecting,
     bool? syncing,
-    bool? resetting,
     bool? configured,
     TraktTokens? tokens,
     TraktAccount? account,
@@ -78,7 +76,6 @@ class TraktAppState {
       initialized: initialized ?? this.initialized,
       connecting: connecting ?? this.connecting,
       syncing: syncing ?? this.syncing,
-      resetting: resetting ?? this.resetting,
       configured: configured ?? this.configured,
       tokens: clearTokens ? null : (tokens ?? this.tokens),
       account: clearAccount ? null : (account ?? this.account),
@@ -97,8 +94,10 @@ class TraktProvider extends StateNotifier<TraktAppState> {
   final TraktClient _client;
   final TraktSyncStore _syncStore;
   final TraktSyncService _syncService;
+  final TraktItemResetService _itemResetService;
 
   Future<void>? _initFuture;
+  Future<void>? _itemResetChain;
   bool _started = false;
   bool _devicePolling = false;
 
@@ -109,6 +108,9 @@ class TraktProvider extends StateNotifier<TraktAppState> {
         _syncService = TraktSyncService(
           client: _ref.read(traktClientProvider),
           store: TraktSyncStore(),
+        ),
+        _itemResetService = TraktItemResetService(
+          client: _ref.read(traktClientProvider),
         ),
         super(TraktAppState(
           configured: _ref.read(traktAuthServiceProvider).config.isConfigured,
@@ -319,6 +321,8 @@ class TraktProvider extends StateNotifier<TraktAppState> {
 
   Future<void> syncNow() async {
     if (state.syncing || !state.connected) return;
+    final pendingReset = _itemResetChain;
+    if (pendingReset != null) await pendingReset;
     final servers = _buildServers();
     if (servers.isEmpty) return;
     state = state.copyWith(syncing: true);
@@ -333,6 +337,31 @@ class TraktProvider extends StateNotifier<TraktAppState> {
     } catch (_) {
       if (mounted) state = state.copyWith(syncing: false);
     }
+  }
+
+  Future<void> resetItemProgress({
+    required String serverConfigId,
+    required String itemId,
+    required bool removeWatched,
+  }) {
+    if (!state.connected) return Future<void>.value();
+    final origin = _serverConfig(serverConfigId);
+    if (origin == null) return Future<void>.value();
+    final servers = _buildServers();
+    if (servers.isEmpty) return Future<void>.value();
+    final previous = _itemResetChain ?? Future<void>.value();
+    final next = previous.then((_) async {
+      try {
+        await _itemResetService.resetItem(
+          servers: servers,
+          serverConfigId: origin.id,
+          itemId: itemId,
+          removeWatched: removeWatched,
+        );
+      } catch (_) {}
+    });
+    _itemResetChain = next;
+    return next;
   }
 
   Future<void> reportPlaybackProgress({
@@ -528,26 +557,6 @@ class TraktProvider extends StateNotifier<TraktAppState> {
       }
     }
     return null;
-  }
-
-  Future<bool> resetAll() async {
-    if (state.resetting || !state.connected) return false;
-    final servers = _buildServers();
-    if (servers.isEmpty) return false;
-    state = state.copyWith(resetting: true);
-    try {
-      final result = await _syncService.resetAll(servers);
-      if (mounted) {
-        state = state.copyWith(
-          resetting: false,
-          syncState: result.state,
-        );
-      }
-      return true;
-    } catch (_) {
-      if (mounted) state = state.copyWith(resetting: false);
-      return false;
-    }
   }
 
   List<TraktServerHandle> _buildServers() {

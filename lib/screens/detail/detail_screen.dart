@@ -570,11 +570,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     ref.read(pendingRoomEpisodesProvider.notifier).state = episodesJson;
     if (!mounted) return;
     if (!resume) {
+      final wasWatched = _watchedEpisodeIds.contains(ep.id);
       setState(() => _resumeMsOverride = 0);
       _hideResumeOptimistically(ep.id);
       // 已观看的集重播 → 乐观复位未观看 + 服务器取消，重回续播列表
       _unwatchTargetOptimistically(ep.id, isSeries: true);
       unawaited(_clearPlaybackPosition(ep.id));
+      unawaited(ref.read(traktProvider.notifier).resetItemProgress(
+            serverConfigId: widget.serverId ?? '',
+            itemId: ep.id,
+            removeWatched: wasWatched,
+          ));
     }
     final query = StringBuffer('isHost=true$_serverQuery');
     // 多版本：播可用版本栏当前生效版本（未选则偏好最高）；单版本不下发
@@ -1040,11 +1046,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (!mounted) return;
     // 从头播放：乐观清本地续播态（主控件立刻恢复默认）+ 首页立即移除该条
     if (!resume) {
+      final wasWatched = _isWatched;
       setState(() => _resumeMsOverride = 0);
       _hideResumeOptimistically(item.id);
       // 已观看的电影重播 → 乐观复位未观看 + 服务器取消，重回续播列表
       _unwatchTargetOptimistically(item.id, isSeries: false);
       unawaited(_clearPlaybackPosition(item.id));
+      unawaited(ref.read(traktProvider.notifier).resetItemProgress(
+            serverConfigId: widget.serverId ?? '',
+            itemId: item.id,
+            removeWatched: wasWatched,
+          ));
     }
     await context.push('/player/${item.id}?${query.toString()}');
     if (mounted) {
