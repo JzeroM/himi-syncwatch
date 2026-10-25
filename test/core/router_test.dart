@@ -18,6 +18,7 @@ import 'package:himi_syncwatch/screens/room/qr_scanner_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
 import 'package:himi_syncwatch/screens/settings/settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/tmdb_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/trakt_settings_screen.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/screens/tmdb/tmdb_grid_screen.dart';
@@ -271,6 +272,14 @@ void main() {
     await tester.pumpAndSettle();
     grid = tester.widget<TmdbGridScreen>(find.byType(TmdbGridScreen));
     expect(grid.providerId, 8);
+  });
+
+  testWidgets('设置子路由：/settings/general/trakt 进 Trakt 设置页', (tester) async {
+    final router = await _pumpApp(tester);
+    router.go('/settings/general/trakt');
+    await tester.pumpAndSettle();
+    expect(find.byType(TraktSettingsScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('traktSettingsPage')), findsOneWidget);
   });
 
   testWidgets('设置子路由：/settings/experimental 进实验性子页', (tester) async {

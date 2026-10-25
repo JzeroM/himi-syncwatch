@@ -19,6 +19,7 @@ import 'package:himi_syncwatch/providers/playback_settings_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
+import 'package:himi_syncwatch/providers/trakt_provider.dart';
 import 'package:himi_syncwatch/screens/detail/episode_action_dialog.dart';
 import 'package:himi_syncwatch/screens/detail/episode_number_picker.dart';
 import 'package:himi_syncwatch/screens/detail/media_details_section.dart';
@@ -444,6 +445,21 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
     // 标记已观看会清除服务器续播位置 → 即时刷新首页「继续观看」栏
     ref.read(resumeRevisionProvider.notifier).state++;
+    if (!next) return;
+    final trakt = ref.read(traktProvider.notifier);
+    if (item.isMovie) {
+      unawaited(trakt.reportWatched(
+        serverConfigId: widget.serverId ?? '',
+        itemId: item.id,
+      ));
+    } else if (item.isSeries) {
+      unawaited(trakt.reportSeriesHistory(
+        serverConfigId: widget.serverId ?? '',
+        series: item,
+        episodes: _episodes,
+        watched: true,
+      ));
+    }
   }
 
   /// 标记 / 取消某一集已观看（剧集页横卡对勾/操作面板）。乐观更新，
@@ -474,6 +490,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
     // 标记该集已观看清除其续播位置 → 即时刷新首页「继续观看」栏
     ref.read(resumeRevisionProvider.notifier).state++;
+    if (next) {
+      unawaited(ref.read(traktProvider.notifier).reportWatched(
+            serverConfigId: widget.serverId ?? '',
+            itemId: episodeId,
+          ));
+    }
     return true;
   }
 

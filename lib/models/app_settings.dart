@@ -170,6 +170,10 @@ class AppSettings {
   /// TMDB watch region（流媒体平台可用区域），默认 US。
   final String tmdbWatchRegion;
 
+  final bool traktAutoSync;
+
+  final String traktDisabledServerIds;
+
   final bool tvMode; // TV 模式：遥控器 D-pad 操控适配（Android TV/盒子）
 
   /// 手机同步到 TV 功能开关（服务器页电视机控件显示；关闭仅藏 UI）。
@@ -359,6 +363,8 @@ class AppSettings {
     this.tmdbApiBase = 'https://api.tmdb.org',
     this.tmdbImageBase = 'https://wsrv.nl/?url=https://image.tmdb.org',
     this.tmdbWatchRegion = 'US',
+    this.traktAutoSync = true,
+    this.traktDisabledServerIds = '',
     this.tvMode = false,
     this.tvSyncEnabled = true,
     this.homeCarousel = true,
@@ -394,6 +400,15 @@ class AppSettings {
 
   /// TMDB 是否已配置凭据（不校验有效性）。
   bool get hasTmdbCredentials => tmdbApiKey.trim().isNotEmpty;
+
+  Set<String> get traktDisabledServerIdSet => traktDisabledServerIds
+      .split(',')
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toSet();
+
+  bool isTraktServerEnabled(String serverConfigId) =>
+      !traktDisabledServerIdSet.contains(serverConfigId);
 
   /// TMDB API 基地址：用户填代理根地址即可，自动补齐 `/3`。
   String get effectiveTmdbApiBase {
@@ -452,6 +467,8 @@ class AppSettings {
     String? tmdbApiBase,
     String? tmdbImageBase,
     String? tmdbWatchRegion,
+    bool? traktAutoSync,
+    String? traktDisabledServerIds,
     bool? tvMode,
     bool? tvSyncEnabled,
     bool? homeCarousel,
@@ -522,6 +539,9 @@ class AppSettings {
       tmdbApiBase: tmdbApiBase ?? this.tmdbApiBase,
       tmdbImageBase: tmdbImageBase ?? this.tmdbImageBase,
       tmdbWatchRegion: tmdbWatchRegion ?? this.tmdbWatchRegion,
+      traktAutoSync: traktAutoSync ?? this.traktAutoSync,
+      traktDisabledServerIds:
+          traktDisabledServerIds ?? this.traktDisabledServerIds,
       tvMode: tvMode ?? this.tvMode,
       tvSyncEnabled: tvSyncEnabled ?? this.tvSyncEnabled,
       homeCarousel: homeCarousel ?? this.homeCarousel,
@@ -612,6 +632,8 @@ class AppSettings {
         'tmdbApiBase': tmdbApiBase,
         'tmdbImageBase': tmdbImageBase,
         'tmdbWatchRegion': tmdbWatchRegion,
+        'traktAutoSync': traktAutoSync,
+        'traktDisabledServerIds': traktDisabledServerIds,
         'tvMode': tvMode,
         'tvSyncEnabled': tvSyncEnabled,
         'homeCarousel': homeCarousel,
@@ -746,6 +768,8 @@ class AppSettings {
       tmdbWatchRegion: tmdbWatchRegions.contains(json['tmdbWatchRegion'])
           ? json['tmdbWatchRegion'] as String
           : 'US',
+      traktAutoSync: json['traktAutoSync'] as bool? ?? true,
+      traktDisabledServerIds: json['traktDisabledServerIds'] as String? ?? '',
       tvMode: json['tvMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认开（v1.1.249 上线时行为不变）
       tvSyncEnabled: json['tvSyncEnabled'] as bool? ?? true,

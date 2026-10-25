@@ -73,6 +73,23 @@ class GeneralSettingsScreen extends ConsumerWidget {
         ],
         settingsTvWrapRow(
           tvMode: settings.tvMode,
+          onTap: () => context.push('/settings/general/trakt'),
+          child: ListTile(
+            key: const ValueKey('traktSettingsEntry'),
+            leading: const Icon(Icons.sync_alt),
+            title: const Text('Trakt 同步'),
+            subtitle: const Text('跨服务器同步已看状态与播放进度'),
+            trailing: const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Colors.white54,
+            ),
+            onTap: () => context.push('/settings/general/trakt'),
+          ),
+        ),
+        const Divider(height: 1),
+        settingsTvWrapRow(
+          tvMode: settings.tvMode,
           onTap: () => context.push('/settings/general/cache'),
           child: ListTile(
             key: const ValueKey('cacheSettingsEntry'),

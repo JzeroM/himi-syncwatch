@@ -1360,6 +1360,36 @@ void main() {
       );
     });
   });
+  group('Trakt 同步设置', () {
+    test('默认自动同步开启且全部服务器参与', () {
+      final s = AppSettings.fromJson(const {});
+      expect(s.traktAutoSync, isTrue);
+      expect(s.traktDisabledServerIdSet, isEmpty);
+      expect(s.isTraktServerEnabled('server-a'), isTrue);
+    });
+
+    test('toJson/fromJson 往返保留开关与禁用服务器', () {
+      const s = AppSettings(
+        traktAutoSync: false,
+        traktDisabledServerIds: 'b, a',
+      );
+      final decoded = AppSettings.fromJson(s.toJson());
+      expect(decoded.traktAutoSync, isFalse);
+      expect(decoded.traktDisabledServerIdSet, {'a', 'b'});
+      expect(decoded.isTraktServerEnabled('a'), isFalse);
+      expect(decoded.isTraktServerEnabled('c'), isTrue);
+    });
+
+    test('copyWith 更新', () {
+      final s = const AppSettings().copyWith(
+        traktAutoSync: false,
+        traktDisabledServerIds: 'x',
+      );
+      expect(s.traktAutoSync, isFalse);
+      expect(s.isTraktServerEnabled('x'), isFalse);
+    });
+  });
+
   group('playerKernel（播放内核）', () {
     test('旧数据缺字段回退空串（平台默认）', () {
       expect(AppSettings.fromJson(const {}).playerKernel, '');

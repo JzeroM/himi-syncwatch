@@ -81,11 +81,18 @@ jobs:
 
       - run: flutter pub get
       - name: Run flutter build apk --release --split-per-abi
+        env:
+          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
         run: |
+          if [ -z "$TRAKT_CLIENT_ID" ]; then
+            echo "❌ 缺少 GitHub Actions secret TRAKT_CLIENT_ID"
+            exit 1
+          fi
           # 发布构建偶发 runner 网络/缓存抖动（v1.2.57 首轮曾整步失败），
           # 与 iOS 一致增加 3 次重试，避免单次抖动阻断整条发布链。
           for i in 1 2 3; do
-            if flutter build apk --release --split-per-abi; then exit 0; fi
+            if flutter build apk --release --split-per-abi \
+              --dart-define=TRAKT_CLIENT_ID="$TRAKT_CLIENT_ID"; then exit 0; fi
             echo "❌ Android 构建失败，15 秒后重试（$i/3）"
             sleep 15
           done
@@ -247,12 +254,19 @@ jobs:
       - run: flutter pub get
 
       - name: Run flutter build ios --release --no-codesign
+        env:
+          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
         run: |
+          if [ -z "$TRAKT_CLIENT_ID" ]; then
+            echo "❌ 缺少 GitHub Actions secret TRAKT_CLIENT_ID"
+            exit 1
+          fi
           # Agora 等 pod 走 download.agora.io，runner 偶发 DNS 解析失败（curl 6），重试 3 次。
           # 新版 Flutter 可能在 Xcode 已产出 Runner.app 后仍因未选 Development Team
           # 返回非 0；无签名 IPA 只需要 Runner.app，因此以产物存在为准。
           for i in 1 2 3; do
-            flutter build ios --release --no-codesign && exit 0
+            flutter build ios --release --no-codesign \
+              --dart-define=TRAKT_CLIENT_ID="$TRAKT_CLIENT_ID" && exit 0
             if [ -d build/ios/iphoneos/Runner.app ]; then
               echo "⚠️ Flutter 退出非 0，但 Runner.app 已生成，继续打包未签名 IPA"
               exit 0
@@ -300,10 +314,16 @@ jobs:
       - run: flutter pub get
       - name: Run flutter build windows --release
         shell: pwsh
+        env:
+          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:TRAKT_CLIENT_ID)) {
+            Write-Host "❌ 缺少 GitHub Actions secret TRAKT_CLIENT_ID"
+            exit 1
+          }
           # Windows runner 偶发 Flutter 工具链/缓存抖动，失败后重试 3 次。
           for ($i = 1; $i -le 3; $i++) {
-            flutter build windows --release
+            flutter build windows --release --dart-define=TRAKT_CLIENT_ID=$env:TRAKT_CLIENT_ID
             if ($LASTEXITCODE -eq 0) { exit 0 }
             Write-Host "❌ Windows 构建失败，15 秒后重试（$i/3）"
             Start-Sleep -Seconds 15

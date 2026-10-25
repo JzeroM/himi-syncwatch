@@ -20,6 +20,8 @@ import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dar
 import 'package:himi_syncwatch/screens/settings/about_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
 import 'package:himi_syncwatch/screens/settings/tmdb_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/trakt_settings_screen.dart';
+import 'package:himi_syncwatch/screens/settings/trakt_qr_login_screen.dart';
 import 'package:himi_syncwatch/screens/tmdb/tmdb_grid_screen.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
 import 'package:himi_syncwatch/screens/servers/server_manager_screen.dart';
@@ -130,6 +132,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                       path: 'cache',
                       pageBuilder: (context, state) =>
                           _settingsFadePage(const CacheSettingsScreen()),
+                    ),
+                    GoRoute(
+                      path: 'trakt',
+                      pageBuilder: (context, state) =>
+                          _settingsFadePage(const TraktSettingsScreen()),
+                      routes: [
+                        GoRoute(
+                          path: 'qr',
+                          pageBuilder: (context, state) =>
+                              _settingsFadePage(const TraktQrLoginScreen()),
+                        ),
+                      ],
                     ),
                     GoRoute(
                       path: 'tmdb',

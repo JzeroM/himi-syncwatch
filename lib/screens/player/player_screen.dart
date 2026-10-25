@@ -38,6 +38,7 @@ import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
+import 'package:himi_syncwatch/providers/trakt_provider.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/track_migration.dart';
 import 'package:himi_syncwatch/services/server_route_service.dart';
@@ -992,6 +993,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _playSessionId = const Uuid().v4();
   EmbyService? _reportService;
   String? _reportItemId;
+  String? _reportServerConfigId;
   String? _reportMediaSourceId;
   bool _reportStarted = false;
 
@@ -3134,6 +3136,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 播放会话上报上下文（切集重生成 sessionId、重置 start 标记）
       _reportService = embyService;
       _reportItemId = targetItemId;
+      _reportServerConfigId = config?.id;
       _reportMediaSourceId = effectiveMediaSourceId;
       _reportStarted = false;
       _stopReportTimer();
@@ -5115,11 +5118,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         id == null) {
       return;
     }
+    final finalPosition = positionMs ?? _reportPosition;
     final ok = await svc.reportPlaybackStopped(
       itemId: id,
       playSessionId: _playSessionId,
       mediaSourceId: _reportMediaSourceId,
-      positionMs: positionMs ?? _reportPosition,
+      positionMs: finalPosition,
     );
     if (!ok) return;
     _reportStarted = false;
@@ -5127,6 +5131,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _lastProgressBump = null;
     _clearResumeHidden(id);
     ref.read(resumeRevisionProvider.notifier).state++;
+    _reportTraktProgress(id, finalPosition);
+  }
+
+  void _reportTraktProgress(String itemId, int positionMs) {
+    final serverConfigId = _reportServerConfigId;
+    if (serverConfigId == null || positionMs <= 0) return;
+    final durationMs = _duration.inMilliseconds;
+    if (durationMs > 0 && positionMs >= durationMs * 0.9) return;
+    unawaited(ref.read(traktProvider.notifier).reportPlaybackProgress(
+          serverConfigId: serverConfigId,
+          itemId: itemId,
+          positionMs: positionMs,
+        ));
   }
 
   void _startReportTimer() {
@@ -5633,6 +5650,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     ref.read(mediaStateOverrideProvider.notifier).setWatched(id, true);
     _clearResumeHidden(id);
     ref.read(resumeRevisionProvider.notifier).state++;
+    final serverConfigId = _reportServerConfigId;
+    if (serverConfigId != null) {
+      unawaited(ref.read(traktProvider.notifier).reportWatched(
+            serverConfigId: serverConfigId,
+            itemId: id,
+          ));
+    }
   }
 
   Future<void> _markSegmentAt(MediaSegmentType type) async {

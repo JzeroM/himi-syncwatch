@@ -461,7 +461,7 @@ class EmbyService {
           // ImageTags：详情页标题艺术字（ImageTags.Logo）依赖此字段
           // UserData：收藏状态（UserData.IsFavorite）
           'Fields':
-              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,Chapters,ImageTags,UserData,ProviderIds,ExternalUrls,Studios,Path,DateCreated',
+              'Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,Chapters,ImageTags,UserData,ProviderIds,ExternalUrls,Studios,Path,DateCreated,SeriesId,IndexNumber,ParentIndexNumber',
         },
       );
       return MediaItem.fromJson(response.data, serverUrl: _serverUrl);
@@ -533,6 +533,19 @@ class EmbyService {
       // 忽略：HideFromResume 已达成移出目的。
     }
     return ok;
+  }
+
+  Future<bool> setPlaybackPosition(String itemId, int positionMs) async {
+    final ticks = positionMs <= 0 ? 0 : positionMs * 10000;
+    try {
+      await _dio.post(
+        '/Users/$_userId/Items/$itemId/UserData',
+        data: <String, dynamic>{'PlaybackPositionTicks': ticks},
+      );
+      return true;
+    } on DioException {
+      return false;
+    }
   }
 
   /// 清除单条目的续播位置，但不把条目移出「继续观看」。

@@ -4,6 +4,7 @@ import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
+import 'package:himi_syncwatch/widgets/trakt_deep_link_listener.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -35,7 +36,9 @@ class HimiSyncApp extends ConsumerWidget {
             final subtree = child ?? const SizedBox.shrink();
             // 全平台统一 standard 玻璃路径（自带 RepaintBoundary 捕获）；
             // iOS 不再挂 premium 专用根层 AdaptiveLiquidGlassLayer。
-            return tvMode ? TvRemoteShell(child: subtree) : subtree;
+            final modeSubtree =
+                tvMode ? TvRemoteShell(child: subtree) : subtree;
+            return TraktDeepLinkListener(child: modeSubtree);
           },
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
