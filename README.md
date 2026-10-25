@@ -42,7 +42,7 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 | Windows x64 | 10+ | MDK | Erika / Media Kit（libmpv） |
 | HarmonyOS | 规划中 | — | Erika / MDK（规划中） |
 
-> 平台内核能力与默认值对齐 [NipaPlay 平台能力矩阵](https://github.com/AimesSoft/NipaPlay-Reload/blob/main/Documentation/platform-matrix.md)。Windows 发布包附带完整 libmpv。
+> Windows 发布包附带完整 libmpv。
 > Windows 7 不支持（Flutter 桌面运行时基线限制）。
 > macOS / Linux 暂停支持（多人观影 RTM 无对应原生实现，已从发版产物中移除）。
 
