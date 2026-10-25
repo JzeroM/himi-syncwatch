@@ -533,28 +533,18 @@ class EmbyService {
   /// —— 剧集在 `/Items/Resume` 中返回的是「当前未看完集」或「下一未观看集」
   /// （NextUp 条目，可能本身没有进度），单纯清进度对后者是空操作，故此前剧集
   /// 移除后重启会复现。该端点对两种条目都生效，且再次播放时服务器会自动
-  /// 重新武装（re-arm）。同时尽力清空已有进度以保持电影等旧行为。
+  /// 重新武装（re-arm）。不修改已有播放进度。
   /// 以 `HideFromResume` 是否成功作为返回值。
   Future<bool> removeFromResume(String itemId) async {
-    var ok = false;
     try {
       await _dio.post(
         '/Users/$_userId/Items/$itemId/HideFromResume',
         queryParameters: {'Hide': true},
       );
-      ok = true;
+      return true;
     } on DioException {
-      ok = false;
+      return false;
     }
-    try {
-      await _dio.post(
-        '/Users/$_userId/Items/$itemId/UserData',
-        data: <String, dynamic>{'PlaybackPositionTicks': 0},
-      );
-    } on DioException {
-      // 忽略：HideFromResume 已达成移出目的。
-    }
-    return ok;
   }
 
   Future<bool> setPlaybackPosition(String itemId, int positionMs) async {

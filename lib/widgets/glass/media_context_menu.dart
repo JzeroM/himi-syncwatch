@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,7 +6,6 @@ import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
 import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
-import 'package:himi_syncwatch/providers/trakt_provider.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_context_menu.dart';
 
@@ -18,7 +15,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_context_menu.dart';
 /// 对应修订号触发相应列表刷新：
 /// - 收藏/取消收藏 → `FavoriteItems`；bump `favoritesRevision`。
 /// - 标记/取消已观看 → `PlayedItems`（整部剧或单集）；bump `resumeRevision`。
-/// - 移除历史 → `UserData{PlaybackPositionTicks:0}` + 续播栏乐观隐藏。
+/// - 移除历史 → `HideFromResume` + 续播栏乐观隐藏，不清播放进度。
 
 /// 「继续观看」横卡菜单：收藏/取消收藏 + 移除历史。
 Future<void> showResumeCardMenu(
@@ -160,14 +157,7 @@ Future<void> _removeFromResume(
   final ok = await ref
       .read(embyServiceForProvider(serverId))
       .removeFromResume(item.id);
-  if (ok) {
-    unawaited(ref.read(traktProvider.notifier).resetItemProgress(
-          serverConfigId: serverId ?? '',
-          itemId: item.id,
-          removeWatched: false,
-        ));
-    return;
-  }
+  if (ok) return;
   // 失败回滚乐观隐藏
   notifier.state = {...notifier.state}..remove(item.id);
   ref.read(resumeRevisionProvider.notifier).state++;

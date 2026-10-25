@@ -164,7 +164,7 @@ void main() {
     client = _FakeTraktClient();
   });
 
-  test('移除继续观看：删 Trakt playback、清所有在线服务器进度、不动历史', () async {
+  test('重播未看条目：删 Trakt playback、清其他服务器进度、不动历史', () async {
     final serverA = _FakeEmbyService([
       _movie('a-m1', '1', positionMs: 50000),
     ]);

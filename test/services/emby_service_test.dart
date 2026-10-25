@@ -659,18 +659,22 @@ void main() {
       expect(items.single.playbackPositionMs, 169000);
     });
 
-    test('removeFromResume 走 HideFromResume 且附带清空进度', () async {
+    test('removeFromResume 只走 HideFromResume，不清播放进度', () async {
       final ok = await service.removeFromResume('item-9');
       expect(ok, isTrue);
-      expect(captured, hasLength(2));
-      final hide = captured[0];
+      expect(captured, hasLength(1));
+      final hide = captured.single;
       expect(hide.method, 'POST');
       expect(hide.path, '/Users/user-1/Items/item-9/HideFromResume');
       expect(hide.param('Hide'), 'true');
-      final clear = captured[1];
-      expect(clear.method, 'POST');
-      expect(clear.path, '/Users/user-1/Items/item-9/UserData');
-      expect(clear.body['PlaybackPositionTicks'], 0);
+      expect(
+        captured.where(
+          (r) =>
+              r.path == '/Users/user-1/Items/item-9/UserData' &&
+              r.body['PlaybackPositionTicks'] == 0,
+        ),
+        isEmpty,
+      );
     });
 
     test('clearPlaybackPosition 只清进度、不调用 HideFromResume', () async {
