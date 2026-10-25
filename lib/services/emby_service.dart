@@ -188,10 +188,22 @@ class EmbyService {
     String? sortBy,
     String? sortOrder,
     String? filters,
+    String? ids,
+    List<String>? anyProviderIds,
     String? genres,
     String? years,
     String? officialRatings,
   }) async {
+    final providerIds = anyProviderIds
+        ?.map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    if (providerIds != null &&
+        providerIds.isNotEmpty &&
+        _providerIdFilterUnsupported) {
+      return const [];
+    }
     try {
       final response = await _dio.get(
         '/Items',
@@ -204,6 +216,9 @@ class EmbyService {
           if (sortBy != null) 'SortBy': sortBy,
           if (sortOrder != null) 'SortOrder': sortOrder,
           if (filters != null && filters.isNotEmpty) 'Filters': filters,
+          if (ids != null && ids.isNotEmpty) 'Ids': ids,
+          if (providerIds != null && providerIds.isNotEmpty)
+            'AnyProviderIdEquals': providerIds.join(','),
           if (genres != null && genres.isNotEmpty) 'Genres': genres,
           if (years != null && years.isNotEmpty) 'Years': years,
           if (officialRatings != null && officialRatings.isNotEmpty)
@@ -223,6 +238,13 @@ class EmbyService {
           .toList();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) rethrow;
+      final code = e.response?.statusCode;
+      if (providerIds != null &&
+          providerIds.isNotEmpty &&
+          (code == 400 || code == 404)) {
+        _providerIdFilterUnsupported = true;
+        return const [];
+      }
       throw _embyError(e);
     }
   }

@@ -32,6 +32,35 @@ MediaItem _movie(
   );
 }
 
+MediaItem _series(String id, String tmdb) {
+  return MediaItem(
+    id: id,
+    name: 'Show $id',
+    type: 'Series',
+    providerIds: {'Tmdb': tmdb},
+  );
+}
+
+MediaItem _episode(
+  String id,
+  String seriesId, {
+  bool watched = false,
+  int positionMs = 0,
+}) {
+  return MediaItem(
+    id: id,
+    name: 'Episode $id',
+    type: 'Episode',
+    seriesId: seriesId,
+    parentIndexNumber: 1,
+    indexNumber: 2,
+    providerIds: const {},
+    isWatched: watched,
+    playbackPositionMs: positionMs,
+    runTimeTicks: 100000 * 10000,
+  );
+}
+
 class _FakeEmbyService extends EmbyService {
   _FakeEmbyService(this.items, {this.fail = false});
 
@@ -39,6 +68,7 @@ class _FakeEmbyService extends EmbyService {
   bool fail;
   final List<(String, bool)> watchedCalls = [];
   final Map<String, int> positionCalls = {};
+  final List<_ItemsRequest> requests = [];
 
   @override
   Future<List<MediaItem>> getItems({
@@ -50,13 +80,50 @@ class _FakeEmbyService extends EmbyService {
     String? sortBy,
     String? sortOrder,
     String? filters,
+    String? ids,
+    List<String>? anyProviderIds,
     String? genres,
     String? years,
     String? officialRatings,
   }) async {
     if (fail) throw StateError('offline');
-    if ((startIndex ?? 0) > 0) return const [];
-    return items;
+    requests.add(_ItemsRequest(
+      parentId: parentId,
+      includeItemTypes: includeItemTypes,
+      filters: filters,
+      ids: ids,
+      anyProviderIds: anyProviderIds,
+      startIndex: startIndex,
+    ));
+    Iterable<MediaItem> source = items;
+    if (ids != null && ids.isNotEmpty) {
+      final wanted = ids.split(',').toSet();
+      source = source.where((e) => wanted.contains(e.id));
+    }
+    if (anyProviderIds != null && anyProviderIds.isNotEmpty) {
+      final wanted = anyProviderIds.map((e) => e.toLowerCase()).toSet();
+      source = source.where(
+        (e) => _tokensFor(e).any(wanted.contains),
+      );
+    }
+    if (filters == 'IsPlayed') {
+      source = source.where((e) => e.isWatched);
+    } else if (filters == 'IsResumable') {
+      source = source.where((e) => e.playbackPositionMs > 0);
+    }
+    if (parentId != null) {
+      source = source.where((e) => e.seriesId == parentId);
+    }
+    if (includeItemTypes != null && includeItemTypes.isNotEmpty) {
+      final types = includeItemTypes.split(',').toSet();
+      source = source.where((e) => types.contains(e.type));
+    }
+    final list = source.toList();
+    final from = startIndex ?? 0;
+    if (from >= list.length) return const [];
+    final take = limit ?? list.length;
+    final to = (from + take) > list.length ? list.length : from + take;
+    return list.sublist(from, to);
   }
 
   @override
@@ -71,6 +138,31 @@ class _FakeEmbyService extends EmbyService {
     return true;
   }
 }
+
+class _ItemsRequest {
+  final String? parentId;
+  final String? includeItemTypes;
+  final String? filters;
+  final String? ids;
+  final List<String>? anyProviderIds;
+  final int? startIndex;
+
+  const _ItemsRequest({
+    this.parentId,
+    this.includeItemTypes,
+    this.filters,
+    this.ids,
+    this.anyProviderIds,
+    this.startIndex,
+  });
+}
+
+List<String> _tokensFor(MediaItem item) => [
+      if (item.providerId('tmdb') != null) 'tmdb.${item.providerId('tmdb')}',
+      if (item.providerId('tvdb') != null) 'tvdb.${item.providerId('tvdb')}',
+      if (item.providerId('imdb') != null)
+        'imdb.${item.providerId('imdb')!.toLowerCase()}',
+    ];
 
 class _FakeTraktClient extends TraktClient {
   _FakeTraktClient()
@@ -192,6 +284,101 @@ void main() {
     expect(client.addedMovies.single['ids'], {'tmdb': 3});
     expect(result.stats.movies, 2);
     expect((await syncStore.read()).lastSuccessAt, isNotNull);
+    expect(
+      serverA.requests.where(
+        (r) =>
+            r.filters == null &&
+            r.ids == null &&
+            r.anyProviderIds == null &&
+            r.parentId == null,
+      ),
+      isEmpty,
+    );
+    expect(
+      serverA.requests.any((r) => r.filters == 'IsPlayed'),
+      isTrue,
+    );
+    expect(
+      serverA.requests.any((r) => r.filters == 'IsResumable'),
+      isTrue,
+    );
+    expect(
+      serverA.requests.any((r) => r.anyProviderIds != null),
+      isTrue,
+    );
+  });
+
+  test('Trakt 已看条目反向补齐本地未看条目', () async {
+    final server = _FakeEmbyService([
+      _movie('b-m1', '1'),
+    ]);
+    client.watchedMovies = [
+      {
+        'movie': {
+          'ids': {'tmdb': 1}
+        }
+      }
+    ];
+
+    final service = TraktSyncService(client: client, store: syncStore);
+    await service.sync([
+      TraktServerHandle(configId: 'b', service: server),
+    ]);
+
+    expect(server.watchedCalls, contains(('b-m1', true)));
+  });
+
+  test('Trakt 进度反向写回本地未看条目', () async {
+    final server = _FakeEmbyService([
+      _movie('b-m1', '1'),
+    ]);
+    client.playback = [
+      {
+        'id': 5,
+        'progress': 50.0,
+        'movie': {
+          'ids': {'tmdb': 1}
+        }
+      }
+    ];
+
+    final service = TraktSyncService(client: client, store: syncStore);
+    await service.sync([
+      TraktServerHandle(configId: 'b', service: server),
+    ]);
+
+    expect(server.positionCalls['b-m1'], 50000);
+  });
+
+  test('单集按剧集 ProviderIds 反向补齐并写入 Trakt 历史', () async {
+    final serverA = _FakeEmbyService([
+      _series('s-a', '10'),
+      _episode('a-e1', 's-a', watched: true),
+    ]);
+    final serverB = _FakeEmbyService([
+      _series('s-b', '10'),
+      _episode('b-e1', 's-b'),
+    ]);
+
+    final service = TraktSyncService(client: client, store: syncStore);
+    await service.sync([
+      TraktServerHandle(configId: 'a', service: serverA),
+      TraktServerHandle(configId: 'b', service: serverB),
+    ]);
+
+    expect(serverB.watchedCalls, contains(('b-e1', true)));
+    expect(client.addedShows, hasLength(1));
+    expect(client.addedShows.single['ids'], {'tmdb': 10});
+    expect(
+      serverB.requests.where(
+        (r) =>
+            r.filters == null &&
+            r.ids == null &&
+            r.anyProviderIds == null &&
+            r.parentId == null,
+      ),
+      isEmpty,
+    );
   });
 
   test('重置清空历史/播放进度并给全部已选服务器记录水位', () async {

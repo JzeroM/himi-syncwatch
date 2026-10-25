@@ -312,8 +312,8 @@ class FakeEmbyService extends EmbyService {
   Map<String, List<String>> ancestorIds = const {};
 
   @override
-  Future<Map<String, EmbyPlaybackSettings>> getLibraryPlaybackSettings() async =>
-      libraryPlaybackSettings;
+  Future<Map<String, EmbyPlaybackSettings>>
+      getLibraryPlaybackSettings() async => libraryPlaybackSettings;
 
   @override
   Future<EmbyPlaybackSettings> getGlobalPlaybackSettings() async =>
@@ -371,6 +371,8 @@ class FakeEmbyService extends EmbyService {
     String? sortBy,
     String? sortOrder,
     String? filters,
+    String? ids,
+    List<String>? anyProviderIds,
     String? genres,
     String? years,
     String? officialRatings,

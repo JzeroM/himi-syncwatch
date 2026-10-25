@@ -1135,6 +1135,42 @@ void main() {
     });
   });
 
+  group('getItems 定向查询', () {
+    test('Ids 与 AnyProviderIdEquals 透传', () async {
+      await service.getItems(
+        includeItemTypes: 'Movie',
+        ids: 'a,b',
+        anyProviderIds: ['tmdb.1', 'imdb.tt2'],
+        limit: 10,
+      );
+
+      final req = captured.single;
+      expect(req.path, '/Items');
+      expect(req.param('Ids'), 'a,b');
+      expect(req.param('AnyProviderIdEquals'), 'tmdb.1,imdb.tt2');
+      expect(req.param('Recursive'), 'true');
+    });
+
+    test('AnyProviderIdEquals 不支持时返回空且不扫描全库', () async {
+      statusFor =
+          (path) => path == '/Items' ? HttpStatus.badRequest : HttpStatus.ok;
+
+      final first = await service.getItems(
+        includeItemTypes: 'Movie',
+        anyProviderIds: ['tmdb.1'],
+      );
+      final second = await service.getItems(
+        includeItemTypes: 'Movie',
+        anyProviderIds: ['tmdb.2'],
+      );
+
+      expect(first, isEmpty);
+      expect(second, isEmpty);
+      expect(captured, hasLength(1));
+      expect(captured.single.param('AnyProviderIdEquals'), 'tmdb.1');
+    });
+  });
+
   group('只读失败抛 EmbyException（v1.2.19 不再静默返回空）', () {
     test('非 401 的 5xx → EmbyException', () async {
       statusFor = (_) => HttpStatus.internalServerError;

@@ -38,10 +38,11 @@ class TraktSyncService {
     }
 
     final remote = await _fetchRemote();
-    final fetched = await _fetchLocalServers(servers);
+    final fetched = await _fetchActiveServers(servers);
     if (fetched.serversProcessed == 0) {
       throw const TraktSyncException('没有可访问的在线服务器');
     }
+    await _reverseLookup(servers, fetched, remote);
 
     final state = await store.read();
     final plan = planner.build(
@@ -108,7 +109,7 @@ class TraktSyncService {
     await client.deleteAllPlayback(playbackIds);
 
     await store.recordReset(servers.map((e) => e.configId));
-    final fetched = await _fetchLocalServers(servers);
+    final fetched = await _fetchActiveServers(servers, resolveSeries: false);
     if (fetched.serversProcessed == 0) {
       throw const TraktSyncException('没有可访问的在线服务器');
     }
@@ -220,15 +221,19 @@ class TraktSyncService {
     return entries;
   }
 
-  Future<_FetchedServers> _fetchLocalServers(
-    List<TraktServerHandle> servers,
-  ) async {
+  Future<_FetchedServers> _fetchActiveServers(
+    List<TraktServerHandle> servers, {
+    bool resolveSeries = true,
+  }) async {
     final entries = <TraktSyncEntry>[];
     final services = <String, EmbyService>{};
     var processed = 0;
     for (final handle in servers) {
       try {
-        final serverEntries = await _fetchServer(handle);
+        final serverEntries = await _fetchActiveServer(
+          handle,
+          resolveSeries: resolveSeries,
+        );
         entries.addAll(serverEntries);
         services[handle.configId] = handle.service;
         processed++;
@@ -241,37 +246,50 @@ class TraktSyncService {
     );
   }
 
-  Future<List<TraktSyncEntry>> _fetchServer(TraktServerHandle handle) async {
-    final items = <MediaItem>[];
-    var start = 0;
-    const limit = 500;
-    String? previousFirst;
-    for (var page = 0; page < 1000; page++) {
-      final chunk = await handle.service.getItems(
-        includeItemTypes: 'Movie,Episode,Series',
-        fields: localFields,
-        limit: limit,
-        startIndex: start,
-      );
-      if (chunk.isEmpty) break;
-      if (chunk.first.id == previousFirst) break;
-      previousFirst = chunk.first.id;
-      items.addAll(chunk);
-      start += chunk.length;
+  Future<List<TraktSyncEntry>> _fetchActiveServer(
+    TraktServerHandle handle, {
+    required bool resolveSeries,
+  }) async {
+    final played = await _queryItems(
+      handle.service,
+      includeItemTypes: 'Movie,Episode',
+      filters: 'IsPlayed',
+    );
+    final resumable = await _queryItems(
+      handle.service,
+      includeItemTypes: 'Movie,Episode',
+      filters: 'IsResumable',
+    );
+
+    final byId = <String, MediaItem>{};
+    for (final item in played) {
+      if (!item.isWatched) continue;
+      _mergeActiveItem(byId, item);
+    }
+    for (final item in resumable) {
+      if (item.playbackPositionMs <= 0) continue;
+      _mergeActiveItem(byId, item);
     }
 
-    final seriesIds = <String, TraktMediaIds>{};
-    for (final item in items.where((e) => e.isSeries)) {
-      seriesIds[item.id] = _idsFromMedia(item);
-    }
+    final seriesIds = resolveSeries
+        ? await _fetchSeriesMetadata(
+            handle.service,
+            byId.values
+                .where((e) => e.isEpisode)
+                .map((e) => e.seriesId)
+                .whereType<String>(),
+          )
+        : const <String, TraktMediaIds>{};
 
+    final items = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
     final result = <TraktSyncEntry>[];
     for (final item in items) {
       if (item.isMovie) {
         final ids = _idsFromMedia(item);
         if (!_hasIds(ids)) continue;
         result.add(
-            _localEntry(handle, item, ids: ids, kind: TraktItemKind.movie));
+          _localEntry(handle, item, ids: ids, kind: TraktItemKind.movie),
+        );
       } else if (item.isEpisode) {
         final season = item.parentIndexNumber;
         final number = item.indexNumber;
@@ -291,6 +309,233 @@ class TraktSyncService {
       }
     }
     return result;
+  }
+
+  void _mergeActiveItem(Map<String, MediaItem> byId, MediaItem item) {
+    final existing = byId[item.id];
+    if (existing == null || (!existing.isWatched && item.isWatched)) {
+      byId[item.id] = item;
+    }
+  }
+
+  Future<Map<String, TraktMediaIds>> _fetchSeriesMetadata(
+    EmbyService service,
+    Iterable<String> ids,
+  ) async {
+    final unique = ids.toSet().toList();
+    final result = <String, TraktMediaIds>{};
+    for (final chunk in _chunks(unique, 50)) {
+      final series = await _queryItems(
+        service,
+        includeItemTypes: 'Series',
+        ids: chunk.join(','),
+        fields: 'ProviderIds',
+      );
+      for (final item in series) {
+        if (!item.isSeries) continue;
+        result[item.id] = _idsFromMedia(item);
+      }
+    }
+    return result;
+  }
+
+  Future<List<MediaItem>> _queryItems(
+    EmbyService service, {
+    String? includeItemTypes,
+    String? filters,
+    String? parentId,
+    String? ids,
+    List<String>? anyProviderIds,
+    String fields = localFields,
+  }) async {
+    final result = <MediaItem>[];
+    var start = 0;
+    const pageSize = 500;
+    String? previousFirst;
+    for (var page = 0; page < 1000; page++) {
+      final chunk = await service.getItems(
+        includeItemTypes: includeItemTypes,
+        parentId: parentId,
+        filters: filters,
+        ids: ids,
+        anyProviderIds: anyProviderIds,
+        fields: fields,
+        limit: pageSize,
+        startIndex: start,
+      );
+      if (chunk.isEmpty) break;
+      if (chunk.first.id == previousFirst) break;
+      previousFirst = chunk.first.id;
+      result.addAll(chunk);
+      start += chunk.length;
+      if (ids != null) break;
+    }
+    return result;
+  }
+
+  Future<void> _reverseLookup(
+    List<TraktServerHandle> servers,
+    _FetchedServers fetched,
+    List<TraktSyncEntry> remote,
+  ) async {
+    final movieTokens = <String>{};
+    final showTargets = <_ShowTarget>[];
+    for (final entry in [...fetched.entries, ...remote]) {
+      if (entry.isMovie) {
+        movieTokens.addAll(_providerTokens(entry.ids));
+        continue;
+      }
+      if (!entry.isEpisode || entry.season == null || entry.episode == null) {
+        continue;
+      }
+      final tokens = _providerTokens(entry.showIds);
+      if (tokens.isEmpty) continue;
+      final episodeKey = 's${entry.season}|e${entry.episode}';
+      _ShowTarget? target;
+      for (final existing in showTargets) {
+        if (existing.tokens.any(tokens.contains)) {
+          target = existing;
+          break;
+        }
+      }
+      if (target == null) {
+        target = _ShowTarget(tokens: tokens.toSet());
+        showTargets.add(target);
+      } else {
+        target.tokens.addAll(tokens);
+      }
+      target.episodes.add(episodeKey);
+    }
+    if (movieTokens.isEmpty && showTargets.isEmpty) return;
+
+    for (final handle in servers) {
+      if (!fetched.services.containsKey(handle.configId)) continue;
+      final existingIds = fetched.entries
+          .where((e) => e.serverConfigId == handle.configId)
+          .map((e) => e.itemId)
+          .whereType<String>()
+          .toSet();
+      try {
+        await _reverseMovies(
+          handle,
+          movieTokens,
+          existingIds,
+          fetched.entries,
+        );
+        await _reverseEpisodes(
+          handle,
+          showTargets,
+          existingIds,
+          fetched.entries,
+        );
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _reverseMovies(
+    TraktServerHandle handle,
+    Set<String> tokens,
+    Set<String> existingIds,
+    List<TraktSyncEntry> output,
+  ) async {
+    for (final chunk in _chunks(tokens.toList(), 50)) {
+      final items = await _queryItems(
+        handle.service,
+        includeItemTypes: 'Movie',
+        anyProviderIds: chunk,
+      );
+      for (final item in items) {
+        if (!item.isMovie || existingIds.contains(item.id)) continue;
+        if (!_matchesProviderTokens(item, chunk)) continue;
+        final ids = _idsFromMedia(item);
+        if (!_hasIds(ids)) continue;
+        output.add(
+          _localEntry(handle, item, ids: ids, kind: TraktItemKind.movie),
+        );
+        existingIds.add(item.id);
+      }
+    }
+  }
+
+  Future<void> _reverseEpisodes(
+    TraktServerHandle handle,
+    List<_ShowTarget> targets,
+    Set<String> existingIds,
+    List<TraktSyncEntry> output,
+  ) async {
+    final showTokens = targets.expand((e) => e.tokens).toSet().toList();
+    final seriesById = <String, MediaItem>{};
+    for (final chunk in _chunks(showTokens, 50)) {
+      final series = await _queryItems(
+        handle.service,
+        includeItemTypes: 'Series',
+        anyProviderIds: chunk,
+        fields: 'ProviderIds',
+      );
+      for (final item in series) {
+        if (!item.isSeries) continue;
+        if (!_matchesProviderTokens(item, chunk)) continue;
+        seriesById[item.id] = item;
+      }
+    }
+
+    for (final series in seriesById.values) {
+      final seriesTokens = _providerTokens(_idsFromMedia(series));
+      if (seriesTokens.isEmpty) continue;
+      final wanted = <String>{};
+      for (final target in targets) {
+        if (target.tokens.any(seriesTokens.contains)) {
+          wanted.addAll(target.episodes);
+        }
+      }
+      if (wanted.isEmpty) continue;
+      final episodes = await _queryItems(
+        handle.service,
+        parentId: series.id,
+        includeItemTypes: 'Episode',
+      );
+      final showIds = _idsFromMedia(series);
+      for (final item in episodes) {
+        if (!item.isEpisode || existingIds.contains(item.id)) continue;
+        final season = item.parentIndexNumber;
+        final number = item.indexNumber;
+        if (season == null || number == null) continue;
+        if (!wanted.contains('s$season|e$number')) continue;
+        output.add(_localEntry(
+          handle,
+          item,
+          ids: _idsFromMedia(item),
+          showIds: showIds,
+          kind: TraktItemKind.episode,
+          season: season,
+          episode: number,
+        ));
+        existingIds.add(item.id);
+      }
+    }
+  }
+
+  List<String> _providerTokens(TraktMediaIds ids) {
+    final tokens = <String>[];
+    if (ids.tmdb != null && ids.tmdb! > 0) tokens.add('tmdb.${ids.tmdb}');
+    if (ids.tvdb != null && ids.tvdb! > 0) tokens.add('tvdb.${ids.tvdb}');
+    final imdb = ids.imdb?.trim().toLowerCase() ?? '';
+    if (imdb.isNotEmpty) tokens.add('imdb.$imdb');
+    return tokens;
+  }
+
+  bool _matchesProviderTokens(MediaItem item, List<String> tokens) {
+    final itemTokens = _providerTokens(_idsFromMedia(item));
+    return itemTokens.any(tokens.contains);
+  }
+
+  static Iterable<List<T>> _chunks<T>(List<T> values, int size) sync* {
+    for (var start = 0; start < values.length; start += size) {
+      yield values.sublist(
+        start,
+        start + size > values.length ? values.length : start + size,
+      );
+    }
   }
 
   TraktSyncEntry _localEntry(
@@ -448,6 +693,13 @@ class TraktSyncService {
       (ids.tmdb != null && ids.tmdb! > 0) ||
       (ids.tvdb != null && ids.tvdb! > 0) ||
       (ids.imdb != null && ids.imdb!.trim().isNotEmpty);
+}
+
+class _ShowTarget {
+  final Set<String> tokens;
+  final Set<String> episodes = {};
+
+  _ShowTarget({required this.tokens});
 }
 
 class _FetchedServers {
