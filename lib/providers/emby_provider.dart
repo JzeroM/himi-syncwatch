@@ -3,6 +3,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/services/emby_auth_service.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/global_search_service.dart';
+import 'package:himi_syncwatch/services/resume_hide_service.dart';
 
 final embyAuthServiceProvider = Provider<EmbyAuthService>((ref) {
   throw UnimplementedError('必须在 main.dart 中初始化');
@@ -126,6 +127,12 @@ final embyServiceProvider = Provider<EmbyService>((ref) {
     return EmbyService();
   }
   return ref.watch(embyServiceFactoryProvider)(config);
+});
+
+final resumeHideServiceProvider = Provider<ResumeHideService>((ref) {
+  return ResumeHideService(
+    serviceFactory: ref.watch(embyServiceFactoryProvider),
+  );
 });
 
 /// 未认证 EmbyService 实例（`authenticate` 用：重新登录等场景）。

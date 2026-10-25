@@ -407,4 +407,57 @@ void main() {
     expect(data.configured, isFalse);
     expect(data.sectionsLoading, isFalse);
   });
+
+  test('服务器轮播从全部已认证服务器抽取并保留服务器信息', () async {
+    final serverA = _server('a');
+    final serverB = _server('b');
+    final fakeA = FakeEmbyService(items: [
+      MediaItem(
+        id: 'a-m1',
+        name: 'A 电影',
+        type: 'Movie',
+        backdropWideUrl: 'https://a/backdrop/1.jpg',
+        logoUrl: 'https://a/logo/1.png',
+        year: '2024',
+        communityRating: 8.5,
+        genres: const ['动作'],
+        providerIds: const {'Tmdb': '1'},
+      ),
+    ]);
+    final fakeB = FakeEmbyService(items: [
+      MediaItem(
+        id: 'b-m2',
+        name: 'B 电影',
+        type: 'Movie',
+        backdropWideUrl: 'https://b/backdrop/2.jpg',
+        providerIds: const {'Tmdb': '2'},
+      ),
+    ]);
+    final list = EmbyServerListNotifier()..setList([serverA, serverB]);
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith(
+          (ref) => FakeSettingsNotifier(
+            const AppSettings(tmdbApiKey: 'test-key'),
+          ),
+        ),
+        embyServerListProvider.overrideWith((ref) => list),
+        embyServiceFactoryProvider.overrideWithValue(
+          (server) => server.id == 'b' ? fakeB : fakeA,
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final heroes = await container.read(tmdbHeroItemsProvider.future);
+
+    expect(heroes, hasLength(2));
+    expect(heroes.map((e) => e.item.id), containsAll(['a-m1', 'b-m2']));
+    final a = heroes.firstWhere((e) => e.item.id == 'a-m1');
+    expect(a.item.name, 'A 电影');
+    expect(a.item.logoUrl, 'https://a/logo/1.png');
+    expect(a.item.year, '2024');
+    expect(a.item.communityRating, 8.5);
+    expect(a.item.genres, ['动作']);
+  });
 }

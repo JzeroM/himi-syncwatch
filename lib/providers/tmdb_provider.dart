@@ -186,19 +186,46 @@ final tmdbHomeProvider = StreamProvider<TmdbHomeData>((ref) async* {
   }
 });
 
-final tmdbHeroItemsProvider = Provider<List<TmdbAvailability>>((ref) {
-  final data = ref.watch(tmdbHomeProvider).valueOrNull;
-  if (data == null || !data.configured) return const [];
+final tmdbHeroItemsProvider = FutureProvider<List<TmdbHeroEntry>>((ref) async {
+  final configured = ref.watch(
+    settingsProvider.select((s) => s.hasTmdbCredentials),
+  );
+  if (!configured) return const [];
+  final servers = ref.watch(embyServerListProvider);
+  final active = ref.watch(embyConfigProvider);
+  final configs = <String, EmbyServerConfig>{};
+  if (active != null && active.isAuthenticated) configs[active.id] = active;
+  for (final server in servers) {
+    if (server.isAuthenticated) configs[server.id] = server;
+  }
+  if (configs.isEmpty) return const [];
+  final serviceFactory = ref.watch(embyServiceFactoryProvider);
   final seed = ref.watch(tmdbHomeRandomSeedProvider) ^
       ref.watch(tmdbHomeRefreshEpochProvider);
-  final candidates = <TmdbAvailability>[];
-  final seen = <String>{};
-  for (final section in data.sections) {
-    for (final entry in section.items) {
-      final url = entry.item.backdropWideUrl;
-      if (url == null || url.isEmpty) continue;
-      if (seen.add(entry.tmdb.key)) candidates.add(entry);
+  final results = await Future.wait(configs.values.map((server) async {
+    try {
+      final items = await serviceFactory(server).getItems(
+        includeItemTypes: 'Movie,Series',
+        limit: 40,
+        fields:
+            'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Genres,ProviderIds',
+        sortBy: 'DateLastContentAdded',
+        sortOrder: 'Descending',
+      );
+      return [
+        for (final item in items)
+          if (item.backdropWideUrl?.isNotEmpty == true)
+            TmdbHeroEntry(item: item, server: server),
+      ];
+    } catch (_) {
+      return const <TmdbHeroEntry>[];
     }
+  }));
+  final candidates = <TmdbHeroEntry>[];
+  final seen = <String>{};
+  for (final entry in results.expand((e) => e)) {
+    final key = entry.item.tmdbId ?? '${entry.server.id}:${entry.item.id}';
+    if (seen.add(key)) candidates.add(entry);
   }
   candidates.shuffle(Random(seed));
   return candidates.take(6).toList(growable: false);
@@ -418,6 +445,7 @@ Future<void> refreshTmdbHome(WidgetRef ref) async {
   ref.read(tmdbHomeRefreshEpochProvider.notifier).state++;
   ref.invalidate(tmdbHomeProvider);
   ref.invalidate(tmdbResumeProvider);
+  ref.invalidate(tmdbHeroItemsProvider);
   ref.invalidate(tmdbDiscProvider);
   ref.invalidate(tmdbPlatformShowcaseProvider);
   ref.invalidate(tmdbPlatformAvailabilityProvider);

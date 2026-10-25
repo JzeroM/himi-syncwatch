@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
@@ -154,11 +155,34 @@ Future<void> _removeFromResume(
   }
   ref.read(resumeRevisionProvider.notifier).state++;
 
-  final ok = await ref
-      .read(embyServiceForProvider(serverId))
-      .removeFromResume(item.id);
-  if (ok) return;
-  // 失败回滚乐观隐藏
+  final configs = <String, EmbyServerConfig>{};
+  final current = ref.read(embyConfigProvider);
+  if (current != null) configs[current.id] = current;
+  for (final server in ref.read(embyServerListProvider)) {
+    configs[server.id] = server;
+  }
+  final servers =
+      configs.values.where((server) => server.isAuthenticated).toList();
+  final sourceId = serverId?.isNotEmpty == true
+      ? serverId!
+      : (current?.id ?? (servers.isEmpty ? '' : servers.first.id));
+  var sourceSucceeded = false;
+  if (servers.any((server) => server.id == sourceId)) {
+    final result = await ref.read(resumeHideServiceProvider).hideAcrossServers(
+          item: item,
+          sourceServerId: sourceId,
+          servers: servers,
+        );
+    sourceSucceeded = result.sourceSucceeded;
+  } else {
+    sourceSucceeded = await ref
+        .read(embyServiceForProvider(serverId))
+        .removeFromResume(item.id);
+  }
+  if (sourceSucceeded) {
+    ref.read(resumeRevisionProvider.notifier).state++;
+    return;
+  }
   notifier.state = {...notifier.state}..remove(item.id);
   ref.read(resumeRevisionProvider.notifier).state++;
   if (context.mounted) showAppToast(context, '移除失败，请检查网络');

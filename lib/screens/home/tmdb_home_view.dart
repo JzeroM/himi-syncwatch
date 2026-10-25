@@ -69,7 +69,7 @@ class _HomeList extends ConsumerStatefulWidget {
 
 class _HomeListState extends ConsumerState<_HomeList> {
   final PageController _heroController = PageController();
-  final Map<String, TmdbAvailability> _heroSources = {};
+  final Map<String, TmdbHeroEntry> _heroSources = {};
   int _heroIndex = 0;
   late int _lastRefreshEpoch;
 
@@ -85,21 +85,16 @@ class _HomeListState extends ConsumerState<_HomeList> {
     super.dispose();
   }
 
-  HomeHeroItem _toHero(TmdbAvailability entry) {
+  HomeHeroItem _toHero(TmdbHeroEntry entry) {
     final serverUrl = entry.item.backdropWideUrl;
     if (serverUrl != null) {
       _heroSources[serverUrl] = entry;
       final ambient = ambientBackdropUrl(serverUrl);
       if (ambient != null) _heroSources[ambient] = entry;
     }
-    return HomeHeroItem(
-      title: entry.tmdb.title,
-      imageUrl: serverUrl,
-      year: entry.tmdb.year,
-      rating: entry.tmdb.voteAverage,
-      genres: [entry.tmdb.type.label],
-      payload: entry,
-    );
+    final logo = entry.item.logoUrl;
+    if (logo != null && logo.isNotEmpty) _heroSources[logo] = entry;
+    return HomeHeroItem.fromMediaItem(entry.item, payload: entry);
   }
 
   Widget _heroImage(
@@ -139,9 +134,9 @@ class _HomeListState extends ConsumerState<_HomeList> {
     }
     _heroSources.clear();
     final showHero = !widget.tvMode;
-    final heroes = showHero
-        ? ref.watch(tmdbHeroItemsProvider)
-        : const <TmdbAvailability>[];
+    final heroAsync = showHero ? ref.watch(tmdbHeroItemsProvider) : null;
+    final heroes = heroAsync?.valueOrNull ?? const <TmdbHeroEntry>[];
+    final heroLoading = heroAsync?.isLoading ?? false;
     if (_heroIndex >= heroes.length) _heroIndex = 0;
     final hero =
         heroes.isEmpty ? null : heroes[_heroIndex.clamp(0, heroes.length - 1)];
@@ -157,7 +152,8 @@ class _HomeListState extends ConsumerState<_HomeList> {
 
     final carouselEnabled = showHero && settings.homeCarousel;
     final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
-    final headerCount = (showHero && (hero != null || sectionsLoading)) ? 1 : 0;
+    final headerCount =
+        (showHero && (hero != null || heroLoading || sectionsLoading)) ? 1 : 0;
     final weeklyIndex = sections.indexWhere((s) => s.key == 'trending_week');
     final discInsertAfter =
         weeklyIndex >= 0 ? weeklyIndex : sections.length - 1;
@@ -183,14 +179,14 @@ class _HomeListState extends ConsumerState<_HomeList> {
                         setState(() => _heroIndex = value),
                     onTap: (item) {
                       final entry = item.payload;
-                      if (entry is TmdbAvailability) {
-                        _openDetail(context, entry);
+                      if (entry is TmdbHeroEntry) {
+                        _openHero(context, entry);
                       }
                     },
                   )
                 : _Hero(
-                    item: hero,
-                    onTap: () => _openDetail(context, hero),
+                    entry: hero,
+                    onTap: () => _openHero(context, hero),
                   ),
       if (widget.resume.isNotEmpty)
         TmdbResumeBar(
@@ -268,7 +264,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
     }
   }
 
-  void _openDetail(BuildContext context, TmdbAvailability entry) {
+  void _openHero(BuildContext context, TmdbHeroEntry entry) {
     context.push(
       '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',
     );
@@ -309,11 +305,11 @@ class _HeroSkeleton extends StatelessWidget {
 
 class _Hero extends StatelessWidget {
   const _Hero({
-    required this.item,
+    required this.entry,
     required this.onTap,
   });
 
-  final TmdbAvailability item;
+  final TmdbHeroEntry entry;
   final VoidCallback onTap;
 
   @override
@@ -323,7 +319,8 @@ class _Hero extends StatelessWidget {
     final cacheWidth = (MediaQuery.sizeOf(context).width *
             MediaQuery.devicePixelRatioOf(context))
         .round();
-    final imageUrl = item.item.backdropWideUrl;
+    final item = entry.item;
+    final imageUrl = item.backdropWideUrl;
     return SizedBox(
       height: height,
       child: Stack(
@@ -333,7 +330,7 @@ class _Hero extends StatelessWidget {
             EmbyImage(
               url: imageUrl,
               cacheWidth: cacheWidth,
-              accessToken: item.server.accessToken,
+              accessToken: entry.server.accessToken,
               placeholder: const ColoredBox(color: Color(0xFF23252A)),
             ),
           const DecoratedBox(
@@ -358,7 +355,7 @@ class _Hero extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item.tmdb.title,
+                  item.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -371,17 +368,17 @@ class _Hero extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   [
-                    if (item.tmdb.year != null) item.tmdb.year!,
-                    item.tmdb.type.label,
-                    if (item.tmdb.voteAverage != null)
-                      '★ ${item.tmdb.voteAverage!.toStringAsFixed(1)}',
+                    if (item.year != null) item.year!,
+                    if (item.genres.isNotEmpty) item.genres.take(3).join(' '),
+                    if (item.communityRating != null)
+                      '★ ${item.communityRating!.toStringAsFixed(1)}',
                   ].join('  ·  '),
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
-                if (item.tmdb.overview?.isNotEmpty == true) ...[
+                if (item.overview?.isNotEmpty == true) ...[
                   const SizedBox(height: 8),
                   Text(
-                    item.tmdb.overview!,
+                    item.overview!,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(

@@ -170,6 +170,13 @@ class TmdbAvailability {
   final EmbyServerConfig server;
 }
 
+class TmdbHeroEntry {
+  const TmdbHeroEntry({required this.item, required this.server});
+
+  final MediaItem item;
+  final EmbyServerConfig server;
+}
+
 /// 跨服务器继续观看条目。
 class TmdbResumeEntry {
   const TmdbResumeEntry({required this.item, required this.server});

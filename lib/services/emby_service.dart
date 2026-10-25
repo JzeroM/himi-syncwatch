@@ -664,7 +664,7 @@ class EmbyService {
           if (officialRatings != null && officialRatings.isNotEmpty)
             'OfficialRatings': officialRatings,
           'Fields':
-              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded',
+              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded,ProviderIds,SeriesId,IndexNumber,ParentIndexNumber',
           'ImageTypeLimit': 1,
           'SortBy': sortBy ?? 'SortName',
           'SortOrder': sortOrder ?? 'Ascending',
@@ -886,7 +886,7 @@ class EmbyService {
           'MediaTypes': 'Video',
           'Limit': limit,
           'Fields':
-              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded',
+              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded,ProviderIds,SeriesId,IndexNumber,ParentIndexNumber',
           'ImageTypeLimit': 1,
         },
       );

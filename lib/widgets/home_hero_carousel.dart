@@ -32,7 +32,7 @@ class HomeHeroItem {
   final List<String> genres;
   final Object? payload;
 
-  factory HomeHeroItem.fromMediaItem(MediaItem item) {
+  factory HomeHeroItem.fromMediaItem(MediaItem item, {Object? payload}) {
     return HomeHeroItem(
       title: item.name,
       imageUrl: item.backdropWideUrl,
@@ -40,7 +40,7 @@ class HomeHeroItem {
       year: item.year,
       rating: item.communityRating,
       genres: item.genres.take(3).toList(),
-      payload: item,
+      payload: payload ?? item,
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
@@ -18,6 +19,16 @@ MediaItem _item({bool favorite = false, bool watched = false}) => MediaItem(
       isWatched: watched,
     );
 
+EmbyServerConfig _serverConfig(String id) => EmbyServerConfig(
+      id: id,
+      serverUrl: 'https://$id.local',
+      serverName: '服务器$id',
+      serverId: '$id-sid',
+      username: 'user',
+      accessToken: 'token',
+      userId: 'uid',
+    );
+
 Widget _host(
   FakeEmbyService fake, {
   required MediaItem item,
@@ -25,6 +36,7 @@ Widget _host(
   FakeEmbyService? sourceFake,
   String? serverId,
   Rect anchor = const Rect.fromLTWH(40, 300, 100, 150),
+  List<Override> extraOverrides = const [],
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -33,6 +45,7 @@ Widget _host(
       embyServiceForProvider.overrideWith(
         (ref, id) => id == null ? fake : (sourceFake ?? fake),
       ),
+      ...extraOverrides,
     ],
   );
   addTearDown(container.dispose);
@@ -155,6 +168,50 @@ void main() {
 
       expect(current.removedResumeCalls, isEmpty);
       expect(source.removedResumeCalls, ['m1']);
+    });
+
+    testWidgets('移除历史联动所有在线服务器的同一条目', (tester) async {
+      final serverA = _serverConfig('a');
+      final serverB = _serverConfig('b');
+      final fakeA = FakeEmbyService();
+      final fakeB = FakeEmbyService(
+        resumeItems: [
+          MediaItem(
+            id: 'b-m1',
+            name: '测试影片',
+            type: 'Movie',
+            providerIds: const {'Tmdb': '1'},
+          ),
+        ],
+      );
+      final list = EmbyServerListNotifier()..setList([serverA, serverB]);
+      final config = EmbyConfigNotifier()..setConfig(serverA);
+      final item = MediaItem(
+        id: 'a-m1',
+        name: '测试影片',
+        type: 'Movie',
+        providerIds: const {'Tmdb': '1'},
+      );
+      await tester.pumpWidget(_host(
+        fakeA,
+        item: item,
+        resume: true,
+        serverId: 'a',
+        extraOverrides: [
+          embyConfigProvider.overrideWith((ref) => config),
+          embyServerListProvider.overrideWith((ref) => list),
+          embyServiceFactoryProvider.overrideWithValue(
+            (server) => server.id == 'b' ? fakeB : fakeA,
+          ),
+        ],
+      ));
+
+      await _open(tester);
+      await tester.tap(find.text('移除历史'));
+      await tester.pumpAndSettle();
+
+      expect(fakeA.removedResumeCalls, ['a-m1']);
+      expect(fakeB.removedResumeCalls, ['b-m1']);
     });
   });
 

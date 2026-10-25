@@ -638,6 +638,11 @@ void main() {
       expect(req.path, '/Users/user-1/Items/Resume');
       expect(req.param('MediaTypes'), 'Video');
       expect(req.param('Limit'), '8');
+      final fields = req.param('Fields')!;
+      expect(fields, contains('ProviderIds'));
+      expect(fields, contains('SeriesId'));
+      expect(fields, contains('IndexNumber'));
+      expect(fields, contains('ParentIndexNumber'));
     });
 
     test('getResumeItems 解析进度字段', () async {

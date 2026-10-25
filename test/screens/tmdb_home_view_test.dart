@@ -47,6 +47,11 @@ TmdbAvailability _entry(int id) => TmdbAvailability(
         name: '影片$id',
         type: 'Movie',
         backdropWideUrl: 'https://s1/backdrop/$id.jpg?maxWidth=1600&quality=90',
+        logoUrl: 'https://s1/logo/$id.png',
+        year: '2024',
+        communityRating: 8.5,
+        genres: const ['动作', '科幻'],
+        providerIds: {'Tmdb': '$id'},
       ),
       server: _server,
     );
@@ -87,6 +92,13 @@ Future<void> _pump(
           (ref) => FakeSettingsNotifier(settings),
         ),
         tmdbHomeProvider.overrideWith((ref) => Stream.value(data)),
+        tmdbHeroItemsProvider.overrideWith(
+          (ref) async => [
+            for (final section in data.sections)
+              for (final entry in section.items)
+                TmdbHeroEntry(item: entry.item, server: entry.server),
+          ].take(6).toList(growable: false),
+        ),
         tmdbDiscProvider.overrideWith((ref) => Stream.value(discData)),
         tmdbPlatformShowcaseProvider.overrideWith((ref, platform) async {
           for (final showcase in showcases) {
@@ -344,6 +356,12 @@ void main() {
       isTrue,
       reason: 'TMDB 顶部轮播使用服务器 1600 宽/质量 90 背景',
     );
+    final first = carousel.items.first;
+    expect(first.title, '影片1');
+    expect(first.logoUrl, 'https://s1/logo/1.png');
+    expect(first.year, '2024');
+    expect(first.rating, 8.5);
+    expect(first.genres, ['动作', '科幻']);
 
     await tester.pumpWidget(const SizedBox());
   });
