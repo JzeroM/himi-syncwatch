@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
@@ -274,6 +275,10 @@ class RoomMenuButton extends ConsumerWidget {
 
   /// Windows 无相机：直接打开文件选择框，本地解码二维码。
   Future<String?> _pickRoomCodeFromImage(BuildContext context) async {
+    if (Platform.operatingSystem == 'ohos') {
+      if (context.mounted) showAppToast(context, '鸿蒙暂不支持相册选图，请手动输入房间码');
+      return null;
+    }
     try {
       final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
       if (picked == null) return null;

@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "HIMI Emby 客户端"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "HIMI"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "HIMI"
+    }
+  ]
+}

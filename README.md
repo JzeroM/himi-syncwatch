@@ -17,7 +17,7 @@
 
 ## 项目简介
 
-HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](https://emby.media)** 客户端，覆盖 Android / iOS / Windows / Android TV（HarmonyOS 规划中）。核心能力是完整的 Emby 媒体库体验：登录、浏览、搜索、收藏、选集、多线路播放，以及本地化高品质解码（多播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播）。多人异地同步观影房间、弹幕、液态玻璃 UI 等仅是附加增强功能。
+HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](https://emby.media)** 客户端，覆盖 Android / iOS / Windows / Android TV / HarmonyOS。核心能力是完整的 Emby 媒体库体验：登录、浏览、搜索、收藏、选集、多线路播放，以及本地化高品质解码（多播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播）。多人异地同步观影房间、弹幕、液态玻璃 UI 等仅是附加增强功能。
 
 ## 核心功能
 
@@ -40,9 +40,9 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 | Android TV | 8.0+ | MDK | Erika / Media Kit（libmpv） |
 | iOS / iPadOS | 12.0+ | Erika | — |
 | Windows x64 | 10+ | MDK | Erika / Media Kit（libmpv） |
-| HarmonyOS | 规划中 | — | Erika / MDK（规划中） |
+| HarmonyOS | 6.0+（API 26） | MPV | — |
 
-> Windows 发布包附带完整 libmpv。
+> Windows 发布包附带完整 libmpv。HarmonyOS 使用 MPV 内核，后续仅通过华为官方分发测试；房间同步、扫码、选图、动态图标暂不可用。HDR10 可播但偏暗，4K HDR 渲染会降采样，DV P5 走软解。
 > Windows 7 不支持（Flutter 桌面运行时基线限制）。
 > macOS / Linux 暂停支持（多人观影 RTM 无对应原生实现，已从发版产物中移除）。
 
@@ -54,6 +54,8 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 - `himi-sync-windows-<版本>-setup.exe` — Windows x64 安装包
 - `himi-sync-windows-<版本>.zip` — Windows x64 免安装包
 - `himi-sync-ios-unsigned-<版本>.ipa` — iOS（需自签工具安装）
+
+HarmonyOS 版本不在 GitHub Release 提供 HAP，后续通过 AppGallery 官方分发测试。
 
 ## 快速开始
 

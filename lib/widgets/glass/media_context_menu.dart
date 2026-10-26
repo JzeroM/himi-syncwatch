@@ -46,14 +46,15 @@ Future<void> showPosterCardMenu(
   BuildContext context,
   WidgetRef ref,
   MediaItem item,
-  Rect anchor,
-) {
+  Rect anchor, {
+  String? serverId,
+}) {
   return showGlassContextMenu(
     context,
     anchor: anchor,
     actions: [
-      _favoriteAction(context, ref, item),
-      _watchedAction(context, ref, item),
+      _favoriteAction(context, ref, item, serverId: serverId),
+      _watchedAction(context, ref, item, serverId: serverId),
     ],
   );
 }
@@ -84,19 +85,20 @@ GlassMenuAction _favoriteAction(
 GlassMenuAction _watchedAction(
   BuildContext context,
   WidgetRef ref,
-  MediaItem item,
-) {
+  MediaItem item, {
+  String? serverId,
+}) {
   if (_effectiveWatched(ref, item)) {
     return GlassMenuAction(
       icon: Icons.visibility_off_outlined,
       label: '取消已观看',
-      onTap: () => _setWatched(context, ref, item, false),
+      onTap: () => _setWatched(context, ref, item, false, serverId: serverId),
     );
   }
   return GlassMenuAction(
     icon: Icons.visibility_outlined,
     label: '标记已观看',
-    onTap: () => _setWatched(context, ref, item, true),
+    onTap: () => _setWatched(context, ref, item, true, serverId: serverId),
   );
 }
 
@@ -112,11 +114,21 @@ Future<void> _setWatched(
   BuildContext context,
   WidgetRef ref,
   MediaItem item,
-  bool watched,
-) async {
-  final ok = await ref.read(embyServiceProvider).setWatched(item.id, watched);
+  bool watched, {
+  String? serverId,
+}) async {
+  final ok = await ref
+      .read(embyServiceForProvider(serverId))
+      .setWatched(item.id, watched);
   if (ok) {
     ref.read(mediaStateOverrideProvider.notifier).setWatched(item.id, watched);
+    // 标记已看会让 Emby 清除续播位置：先乐观隐藏，首页立即联动。
+    if (watched) {
+      final hidden = ref.read(resumeOptimisticHiddenProvider.notifier);
+      if (!hidden.state.contains(item.id)) {
+        hidden.state = {...hidden.state, item.id};
+      }
+    }
     ref.read(resumeRevisionProvider.notifier).state++;
     return;
   }

@@ -13,7 +13,8 @@ import 'dart:ui' show Size;
 enum PlayerEngine {
   mdk('mdk', 'MDK'),
   mediaKit('media_kit', 'media_kit'),
-  erika('erika', 'Erika');
+  erika('erika', 'Erika'),
+  mpv('mpv', 'MPV');
 
   const PlayerEngine(this.id, this.label);
 
@@ -23,8 +24,9 @@ enum PlayerEngine {
   /// 播放器顶栏胶囊用的短名。
   String get shortLabel => switch (this) {
         PlayerEngine.mdk => 'MDK',
-        PlayerEngine.mediaKit => 'MPV',
+        PlayerEngine.mediaKit => 'libmpv',
         PlayerEngine.erika => 'Erika',
+        PlayerEngine.mpv => 'MPV',
       };
 
   static PlayerEngine fromId(String? id) => PlayerEngine.values

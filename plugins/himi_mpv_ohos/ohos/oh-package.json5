@@ -1,0 +1,15 @@
+{
+  "name": "himi_mpv_ohos",
+  "version": "1.0.0",
+  "description": "HIMI MPV player for HarmonyOS",
+  "main": "index.ets",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    // 注意：har 必须放在 hars/ 而不是 libs/。hvigor 会把模块 libs/ 下的 har
+    // 当作隐式依赖再解包一份（entry 的 libs/tmp_har/...），与这里显式依赖
+    // 的 so 重复打包，hap 平白多出一份 35MB 的 libmpv.so。
+    "@mpv-ohos/mpv-arkts": "file:./hars/mpv.har",
+    "@ohos/flutter_ohos": "file:./har/flutter.har"
+  }
+}

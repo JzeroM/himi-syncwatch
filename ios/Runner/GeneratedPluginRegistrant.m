@@ -54,8 +54,8 @@
 @import fvp;
 #endif
 
-#if __has_include(<image_picker_ios/FLTImagePickerPlugin.h>)
-#import <image_picker_ios/FLTImagePickerPlugin.h>
+#if __has_include(<image_picker_ios/ImagePickerPlugin.h>)
+#import <image_picker_ios/ImagePickerPlugin.h>
 #else
 @import image_picker_ios;
 #endif
@@ -132,8 +132,8 @@
 @import url_launcher_ios;
 #endif
 
-#if __has_include(<video_player_avfoundation/FVPVideoPlayerPlugin.h>)
-#import <video_player_avfoundation/FVPVideoPlayerPlugin.h>
+#if __has_include(<video_player_avfoundation/VideoPlayerPlugin.h>)
+#import <video_player_avfoundation/VideoPlayerPlugin.h>
 #else
 @import video_player_avfoundation;
 #endif
@@ -155,7 +155,7 @@
   [FlutterDynamicIconPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterDynamicIconPlusPlugin"]];
   [FlutterSecureStoragePlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterSecureStoragePlugin"]];
   [FvpPlugin registerWithRegistrar:[registry registrarForPlugin:@"FvpPlugin"]];
-  [FLTImagePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTImagePickerPlugin"]];
+  [ImagePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"ImagePickerPlugin"]];
   [IrisMethodChannelPlugin registerWithRegistrar:[registry registrarForPlugin:@"IrisMethodChannelPlugin"]];
   [MediaKitLibsIosVideoPlugin registerWithRegistrar:[registry registrarForPlugin:@"MediaKitLibsIosVideoPlugin"]];
   [MediaKitVideoPlugin registerWithRegistrar:[registry registrarForPlugin:@"MediaKitVideoPlugin"]];
@@ -168,7 +168,7 @@
   [FPPSharePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPSharePlusPlugin"]];
   [SqflitePlugin registerWithRegistrar:[registry registrarForPlugin:@"SqflitePlugin"]];
   [URLLauncherPlugin registerWithRegistrar:[registry registrarForPlugin:@"URLLauncherPlugin"]];
-  [FVPVideoPlayerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FVPVideoPlayerPlugin"]];
+  [VideoPlayerPlugin registerWithRegistrar:[registry registrarForPlugin:@"VideoPlayerPlugin"]];
   [WakelockPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"WakelockPlusPlugin"]];
 }
 

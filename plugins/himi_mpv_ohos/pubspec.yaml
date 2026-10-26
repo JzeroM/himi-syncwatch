@@ -1,0 +1,22 @@
+name: himi_mpv_ohos
+description: "HIMI 的 HarmonyOS MPV 播放内核（基于 @mpv-ohos/mpv-arkts）"
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ohos:
+        pluginClass: HimiMpvOhosPlugin

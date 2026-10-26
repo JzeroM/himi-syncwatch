@@ -61,3 +61,16 @@ web/
 
 # Agent instructions (local only, not published)
 AGENTS.md
+
+# HarmonyOS 构建产物
+himi-sync-ohos-*.hap
+
+# HarmonyOS local packages
+dist/ohos/
+
+# HarmonyOS generated
+**/oh_modules/
+**/.hvigor/
+**/BuildProfile.ets
+**/oh-package-lock.json5
+**/package-lock.json

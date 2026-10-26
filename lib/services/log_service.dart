@@ -53,6 +53,7 @@ class LogService {
 
   Future<void> shareLogs() async {
     final file = await exportToFile();
+    if (Platform.operatingSystem == 'ohos') return;
     await SharePlus.instance.share(
       ShareParams(files: [XFile(file.path)], text: 'HIMI 运行日志'),
     );

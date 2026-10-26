@@ -21,6 +21,7 @@ class DecodeModeService {
 
   /// 平台硬解器（不含 FFmpeg 回退，纯硬解）
   static List<String> _platformHwOnlyDecoders() {
+    if (Platform.operatingSystem == 'ohos') return ['ohcodec'];
     if (Platform.isAndroid) return ['AMediaCodec'];
     if (Platform.isIOS || Platform.isMacOS) return ['VT'];
     if (Platform.isWindows) return ['D3D11', 'DXVA'];
@@ -30,6 +31,7 @@ class DecodeModeService {
 
   /// 平台自适应解码器（优先硬解，失败回退软解）
   static List<String> _platformAutoDecoders() {
+    if (Platform.operatingSystem == 'ohos') return ['ohcodec', 'FFmpeg'];
     if (Platform.isAndroid) return ['AMediaCodec', 'FFmpeg'];
     if (Platform.isIOS || Platform.isMacOS) return ['VT', 'FFmpeg'];
     if (Platform.isWindows) return ['D3D11', 'DXVA', 'FFmpeg'];
@@ -114,8 +116,7 @@ class DecodeModeService {
     return decoders.map((d) {
       if (!d.startsWith('AMediaCodec')) return d;
       if (d.contains('low_latency=')) return d;
-      final parts =
-          d.split(':').where((p) => p.isNotEmpty).toList();
+      final parts = d.split(':').where((p) => p.isNotEmpty).toList();
       parts.add('low_latency=1');
       return parts.join(':');
     }).toList();

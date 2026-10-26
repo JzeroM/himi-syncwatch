@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "HIMI Emby client"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "HIMI"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "HIMI"
+    }
+  ]
+}

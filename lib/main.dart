@@ -109,6 +109,8 @@ Future<int> _runRtmSmoke() async {
   }
 }
 
+bool get _isOhos => Platform.operatingSystem == 'ohos';
+
 class _SelfSignedHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
@@ -161,17 +163,32 @@ Future<void> _bootstrap() async {
   HttpOverrides.global = _SelfSignedHttpOverrides();
 
   final authService = EmbyAuthService();
-  await authService.init();
+  try {
+    await authService.init();
+  } catch (e, st) {
+    LogService().log('FATAL', 'EmbyAuthService.init 失败（继续启动）: $e\n$st');
+  }
 
   final agoraNotifier = AgoraConfigNotifier();
-  await agoraNotifier.load();
+  try {
+    await agoraNotifier.load();
+  } catch (e, st) {
+    LogService().log('FATAL', 'AgoraConfigNotifier.load 失败（继续启动）: $e\n$st');
+  }
 
   final settingsNotifier = SettingsNotifier();
-  await settingsNotifier.load();
-  // 启动设备能力评估（只读原生探针，超时兜底不阻塞启动）：
-  // 结果供 HDR 自动路由 / 输出决策 /「播放器配置」页能力卡片共用。
-  final deviceProfile = await DeviceProfileService.instance.probe();
-  LogService().log('Diag', '设备能力评估: ${deviceProfile.summary}');
+  try {
+    await settingsNotifier.load();
+  } catch (e, st) {
+    LogService().log('FATAL', 'SettingsNotifier.load 失败（继续启动）: $e\n$st');
+  }
+  DeviceProfile deviceProfile = const DeviceProfile();
+  try {
+    deviceProfile = await DeviceProfileService.instance.probe();
+    LogService().log('Diag', '设备能力评估: ${deviceProfile.summary}');
+  } catch (e, st) {
+    LogService().log('FATAL', '设备能力评估失败（用默认值继续）: $e\n$st');
+  }
   // EGL 故障跨重启持久化（H96_Max_RK3528）：已确认故障的设备启动即
   // 置位检测器 → 首次进片走 SurfaceView 直写，跳过 texture GL 创建，
   // 根除「3004 → 自愈 stop 与 EGL 创建并发 → native crash」链路。
@@ -187,8 +204,12 @@ Future<void> _bootstrap() async {
         '启动能力评估: EGL 不可用（${deviceProfile.gl.error ?? deviceProfile.gl.windowError ?? "?"}）→ 已持久化直写标记');
   }
   // TV 自动识别（策略 A）：用户手动设置过则内部直接跳过，不覆盖
-  final isTv = await const TvDetectionService().isTelevision();
-  await settingsNotifier.applyTvAutoDetection(isTelevision: isTv);
+  try {
+    final isTv = await const TvDetectionService().isTelevision();
+    await settingsNotifier.applyTvAutoDetection(isTelevision: isTv);
+  } catch (e, st) {
+    LogService().log('FATAL', 'TV 识别失败（继续启动）: $e\n$st');
+  }
 
   // fvp/mdk 全局选项：registerWith 全局生效一次且须在首个播放器创建
   // 前调用 → 移到设置加载后，按已存盘设置注入（audio.xa2.persistent：
@@ -204,33 +225,41 @@ Future<void> _bootstrap() async {
     final ok = EnvService.instance.applyRenderDepth8();
     LogService().log('Diag', 'EGL_SDR_DEPTH=8: ${ok ? "已设置" : "设置失败"}');
   }
-  final fvpOptions = buildFvpOptions(
-    xa2Persistent: Platform.isWindows,
-    renderCompatMode: AppSettings.effectiveRenderCompatMode(
-        settingsNotifier.snapshot.renderCompatMode),
-    avsyncAudioAdaptive: settingsNotifier.snapshot.avsyncAudioAdaptive,
-  );
-  fvp.registerWith(options: fvpOptions);
-  // media_kit 全局初始化（第二引擎；TV 模式不注册，但 ensureInitialized
-  // 无副作用且需在首个 MediaKitPlayerAdapter 创建前调用）。
-  MediaKit.ensureInitialized();
-  // 注入取证行：真机上无法从其他途径证明 global 选项已生效
-  LogService().log('Diag', 'fvp options: $fvpOptions');
+  if (_isOhos) {
+    LogService().log('Diag', 'HarmonyOS: 仅 MPV 内核，跳过 fvp/media_kit/mdk 初始化');
+  } else {
+    final fvpOptions = buildFvpOptions(
+      xa2Persistent: Platform.isWindows,
+      renderCompatMode: AppSettings.effectiveRenderCompatMode(
+          settingsNotifier.snapshot.renderCompatMode),
+      avsyncAudioAdaptive: settingsNotifier.snapshot.avsyncAudioAdaptive,
+    );
+    fvp.registerWith(options: fvpOptions);
+    // media_kit 全局初始化（第二引擎；TV 模式不注册，但 ensureInitialized
+    // 无副作用且需在首个 MediaKitPlayerAdapter 创建前调用）。
+    MediaKit.ensureInitialized();
+    // 注入取证行：真机上无法从其他途径证明 global 选项已生效
+    LogService().log('Diag', 'fvp options: $fvpOptions');
 
-  // mdk 初始 log handler（深度诊断未开时生效，开启后由播放器接管）：
-  // EGL 故障签名检测（黑屏自愈，见 EglFaultDetector）+ error 行转发。
-  // 不用 setLogHandler(null)：那会永久关闭 mdk 内部日志。
-  mdk.setLogHandler((level, message) {
-    if (eglFaultDetector.feed(message)) {
-      LogService().log('mdk', message.trim());
-    } else if (level == mdk.LogLevel.error) {
-      LogService().log('mdk', message.trim());
-    }
-  });
+    // mdk 初始 log handler（深度诊断未开时生效，开启后由播放器接管）：
+    // EGL 故障签名检测（黑屏自愈，见 EglFaultDetector）+ error 行转发。
+    // 不用 setLogHandler(null)：那会永久关闭 mdk 内部日志。
+    mdk.setLogHandler((level, message) {
+      if (eglFaultDetector.feed(message)) {
+        LogService().log('mdk', message.trim());
+      } else if (level == mdk.LogLevel.error) {
+        LogService().log('mdk', message.trim());
+      }
+    });
+  }
 
   // 液态玻璃 shader 预热（纯异步磁盘 I/O，不阻塞窗口首帧；
   // 不预热则首次出现玻璃面板时有占位帧/白闪）。
-  await LiquidGlassWidgets.initialize();
+  try {
+    await LiquidGlassWidgets.initialize();
+  } catch (e, st) {
+    LogService().log('FATAL', '液态玻璃预热失败（继续启动）: $e\n$st');
+  }
 
   runApp(
     ProviderScope(

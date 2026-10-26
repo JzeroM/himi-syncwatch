@@ -86,6 +86,7 @@ class _EngineTabBody extends ConsumerWidget {
       PlayerEngine.mdk => _mdkChildren(context, settings, notifier),
       PlayerEngine.mediaKit => _mediaKitChildren(context, settings, notifier),
       PlayerEngine.erika => _erikaChildren(context, settings, notifier),
+      PlayerEngine.mpv => _mpvChildren(context, settings, notifier),
     };
 
     return ListView(
@@ -96,6 +97,30 @@ class _EngineTabBody extends ConsumerWidget {
       ),
       children: children,
     );
+  }
+
+  List<Widget> _mpvChildren(
+    BuildContext context,
+    AppSettings settings,
+    SettingsNotifier notifier,
+  ) {
+    return [
+      const ListTile(
+        leading: Icon(Icons.play_circle_outline),
+        title: Text('HarmonyOS MPV'),
+        subtitle: Text('libmpv 内核，支持 ohcodec 硬件解码、ASS/PGS 字幕与网络缓存'),
+      ),
+      const Divider(height: 1),
+      settingOptionTile(
+        context: context,
+        tvMode: settings.tvMode,
+        title: '解码方式',
+        subtitle: decodeModeDescription(settings.decodeMode),
+        labels: AppSettings.decodeModeLabels,
+        value: settings.decodeMode,
+        onSelected: (v) => notifier.update(decodeMode: v),
+      ),
+    ];
   }
 
   // ── MDK ───────────────────────────────────────────────────

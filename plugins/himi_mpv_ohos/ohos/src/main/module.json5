@@ -1,0 +1,11 @@
+{
+  "module": {
+    "name": "himi_mpv_ohos",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet",
+      "phone"
+    ]
+  }
+}

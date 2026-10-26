@@ -4,6 +4,20 @@ import 'package:flutter/foundation.dart';
 class PlayerPlatform {
   PlayerPlatform._();
 
+  /// 测试用 OHOS 覆盖：stock Flutter 没有 TargetPlatform.ohos，
+  /// 无法用 [debugDefaultTargetPlatformOverride] 模拟。
+  static bool? debugIsOhosOverride;
+
+  /// 是否 HarmonyOS。
+  static bool get isOhos =>
+      debugIsOhosOverride ?? (!kIsWeb && defaultTargetPlatform.name == 'ohos');
+
+  /// 手机形态：Android / iOS / HarmonyOS。
+  static bool get isMobile =>
+      isOhos ||
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
   /// Windows 取消音量/亮度垂直手势（改用控制条滑杆）。
   static bool get verticalVolumeBrightnessGesture =>
       defaultTargetPlatform != TargetPlatform.windows;
@@ -22,9 +36,9 @@ class PlayerPlatform {
       defaultTargetPlatform == TargetPlatform.macOS ||
       defaultTargetPlatform == TargetPlatform.linux;
 
-  /// 进入播放器时亮度跟随系统（仅 Windows，不强制覆盖系统亮度）。
+  /// 进入播放器时亮度跟随系统（手机/Windows，不强制覆盖系统亮度）。
   static bool get brightnessFollowsSystem =>
-      defaultTargetPlatform == TargetPlatform.windows;
+      isMobile || defaultTargetPlatform == TargetPlatform.windows;
 
   /// 进入播放器时的初始亮度。
   /// [current] 为当前实际亮度；[followSystem] 为真时采用当前值，否则采用 [fallback]。
@@ -40,8 +54,6 @@ class PlayerPlatform {
     return fallback;
   }
 
-  /// 长按视频区临时 2× 倍速（仅手机 Android/iOS；TV/桌面不做）。
-  static bool get mediaLongPressSpeedBoost =>
-      defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS;
+  /// 长按视频区临时 2× 倍速（手机 Android/iOS/HarmonyOS；TV/桌面不做）。
+  static bool get mediaLongPressSpeedBoost => isMobile;
 }

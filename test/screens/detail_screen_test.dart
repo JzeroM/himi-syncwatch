@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
@@ -2943,6 +2944,57 @@ void main() {
       expect(fake.watchedCalls.last.watched, isTrue);
       // 只动该集，主对勾不受影响（仍线框）
       expect(find.byIcon(Icons.check_circle_outline), findsWidgets);
+    });
+  });
+
+  group('跨页乐观覆盖（详情页操作后其他页弹窗联动）', () {
+    testWidgets('电影收藏/已看成功后写入覆盖', (tester) async {
+      final fake = FakeEmbyService(item: _item);
+      final container = await _pumpDetail(tester, emby: fake);
+
+      final heart = find.byKey(const Key('favoriteButton'));
+      await tester.ensureVisible(heart);
+      await tester.tap(heart);
+      await tester.pump();
+      await tester.pump();
+      expect(
+        container.read(mediaStateOverrideProvider)['m1']?.favorite,
+        isTrue,
+      );
+
+      final mark = find.byKey(const Key('watchedButton'));
+      await tester.ensureVisible(mark);
+      await tester.tap(mark);
+      await tester.pump();
+      await tester.pump();
+      expect(
+        container.read(mediaStateOverrideProvider)['m1']?.watched,
+        isTrue,
+      );
+    });
+
+    testWidgets('剧集整部已看写入主条目和所有集覆盖', (tester) async {
+      final fake = FakeEmbyService(
+        item: series,
+        itemsByParent: episodesByParent,
+        seasons: seasons,
+      );
+      final container = await _pumpDetail(
+        tester,
+        item: series,
+        emby: fake,
+      );
+
+      final mark = find.byKey(const Key('watchedButton'));
+      await tester.ensureVisible(mark);
+      await tester.tap(mark);
+      await tester.pump();
+      await tester.pump();
+
+      final overrides = container.read(mediaStateOverrideProvider);
+      expect(overrides['sv1']?.watched, isTrue);
+      expect(overrides['e1']?.watched, isTrue);
+      expect(overrides['e2']?.watched, isTrue);
     });
   });
 

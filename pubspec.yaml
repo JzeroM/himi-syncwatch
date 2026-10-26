@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.4.5+520
+version: 1.5.0+525
 
 environment:
   sdk: ^3.6.0
@@ -17,7 +17,8 @@ dependencies:
   # 播放器
   # 0.39.1: 修复 StreamController add-after-close 异常（onEvent/onStateChanged/
   # onMediaStatus 在 player 销毁后回调）；iOS scene disconnect 释放纹理播放器防崩溃
-  fvp: ^0.39.1
+  fvp:
+    path: third_party/fvp
   # 播放器第二引擎（media_kit/libmpv，仅手机/桌面，TV 模式不注册）
   # 与 NipaPlay-Reload 对齐：使用其 media-kit fork 与 libs 1.0.8。
   # 固定 NipaPlay 提交 9a3f5c1710ed21eb12e29d4bd80a6c50d57d09f8；
@@ -81,7 +82,8 @@ dependencies:
   # 工具
   intl: ^0.19.0
   uuid: ^4.5.1
-  flutter_secure_storage: ^9.2.4
+  flutter_secure_storage:
+    path: third_party/flutter_secure_storage
   device_info_plus: ^11.3.0
   logger: ^2.5.0
   path_provider: ^2.1.5
@@ -89,6 +91,24 @@ dependencies:
   # 运行时切换应用图标（Android activity-alias / iOS CFBundleAlternateIcons）
   flutter_dynamic_icon_plus: ^1.4.1
   app_links: ^7.2.2
+  # HarmonyOS 平台实现（federated 插件需显式依赖才会注册）
+  path_provider_ohos: ^2.2.1
+  url_launcher_ohos: ^6.3.0
+  screen_brightness_ohos: ^2.1.4
+  package_info_plus_ohos:
+    path: third_party/ohos_plugins/package_info_plus_ohos-0.0.7
+  permission_handler_ohos:
+    path: third_party/ohos_plugins/permission_handler_ohos-0.0.8
+  wakelock_plus_ohos:
+    path: third_party/ohos_plugins/wakelock_plus_ohos-0.0.3
+  device_info_plus_ohos:
+    path: third_party/ohos_plugins/device_info_plus_ohos-0.0.8
+  flutter_secure_storage_ohos:
+    path: third_party/ohos_plugins/flutter_secure_storage_ohos-1.0.0
+  file_picker_ohos:
+    path: third_party/ohos_plugins/file_picker_ohos-1.0.1
+  himi_mpv_ohos:
+    path: plugins/himi_mpv_ohos
 
 dependency_overrides:
   # path_provider_foundation 2.6.0 拉入 objective_c，其 build hook 在非 Apple 平台报 arm64e 错误

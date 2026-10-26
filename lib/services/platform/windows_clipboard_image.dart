@@ -24,7 +24,7 @@ Future<bool> copyPngToClipboard(Uint8List pngBytes) async {
 
     try {
       if (EmptyClipboard() == 0) return false;
-      final handle = GlobalAlloc(GLOBAL_ALLOC_FLAGS.GMEM_MOVEABLE, dib.length);
+      final handle = GlobalAlloc(GMEM_MOVEABLE, dib.length);
       if (handle == nullptr) return false;
       final locked = GlobalLock(handle);
       if (locked == nullptr) {
@@ -33,7 +33,7 @@ Future<bool> copyPngToClipboard(Uint8List pngBytes) async {
       }
       locked.cast<Uint8>().asTypedList(dib.length).setAll(0, dib);
       GlobalUnlock(handle);
-      if (SetClipboardData(CLIPBOARD_FORMAT.CF_DIB, handle.address) == 0) {
+      if (SetClipboardData(CF_DIB, handle.address) == 0) {
         GlobalFree(handle);
         return false;
       }

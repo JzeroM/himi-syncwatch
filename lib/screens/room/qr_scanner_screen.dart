@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -22,6 +24,10 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   @override
   void initState() {
     super.initState();
+    if (Platform.operatingSystem == 'ohos') {
+      _error = '鸿蒙暂不支持相机扫码，请手动输入房间码';
+      return;
+    }
     _initCamera();
   }
 

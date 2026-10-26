@@ -64,7 +64,8 @@ Widget _host(
                       anchor,
                       serverId: serverId,
                     )
-                  : showPosterCardMenu(context, ref, item, anchor),
+                  : showPosterCardMenu(context, ref, item, anchor,
+                      serverId: serverId),
               child: const Text('open'),
             ),
           ),
@@ -168,6 +169,26 @@ void main() {
 
       expect(current.removedResumeCalls, isEmpty);
       expect(source.removedResumeCalls, ['m1']);
+    });
+
+    testWidgets('海报卡标记已观看打到来源服务器', (tester) async {
+      final current = FakeEmbyService();
+      final source = FakeEmbyService();
+      await tester.pumpWidget(_host(
+        current,
+        item: _item(),
+        resume: false,
+        sourceFake: source,
+        serverId: 's2',
+      ));
+
+      await _open(tester);
+      await tester.tap(find.text('标记已观看'));
+      await tester.pumpAndSettle();
+
+      expect(current.watchedCalls, isEmpty);
+      expect(source.watchedCalls.single.id, 'm1');
+      expect(source.watchedCalls.single.watched, isTrue);
     });
 
     testWidgets('移除历史联动所有在线服务器的同一条目', (tester) async {

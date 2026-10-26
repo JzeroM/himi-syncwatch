@@ -1,0 +1,44 @@
+
+{
+  "app": {
+    "signingConfigs": [],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        // mpv.har（@mpv-ohos/mpv-arkts）要求 compatibleSdkVersion ≥ 24，
+        // 低于此值 hvigor 拒绝依赖。本机 SDK 为 26.0.0(26)，API≥26 时
+        // 该字段必须是 '26.0.0' 这种字符串格式。
+        "compileSdkVersion": 26,
+        "compatibleSdkVersion": 26,
+        "targetSdkVersion": 26,
+        "runtimeOS": "OpenHarmony",
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "profile"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

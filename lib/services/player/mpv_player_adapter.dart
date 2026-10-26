@@ -1,0 +1,1217 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:ui' show Size;
+
+import 'package:flutter/foundation.dart';
+import 'package:himi_mpv_ohos/himi_mpv_ohos.dart';
+import 'package:himi_mpv_ohos/mpv_event_hub.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:image/image.dart' as img;
+
+import 'player_adapter.dart';
+
+/// HarmonyOS MPV 播放器适配器：包装 [HimiMpvPlayer]，实现 [PlayerAdapter]。
+///
+/// 仅 HarmonyOS 平台使用。mpv 的属性观察通过原生 EventChannel 推送，
+/// [onMediaStatus]/[onStateChanged] 在此层转成 Adapter 抽象类型；
+/// position/duration 走 mpv 的 `time-pos/full`/`duration/full` 观察。
+///
+/// 与 mdk 适配器的关键差异：
+/// - 无 SurfaceView 通道（`nativeHandle` 恒 0），渲染恒走 Flutter 纹理；
+/// - mpv 的 `track-list`/`video-params`/`audio-params` 是 **JSON 字符串**
+///   （原生把 mpv_node 序列化后派发），需 `jsonDecode`；
+/// - 播完判定靠 `eof-reached` 属性 + `MPV_EVENT_END_FILE` 双保险
+///   （mpv 不像 mdk 那样自动把 end 位放进 mediaStatus）。
+class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
+  MpvPlayerAdapter({int startMs = 0, String hwdecMode = 'performance'})
+      : _startMs = startMs,
+        _hwdecRenderMode = hwdecMode;
+
+  final int _startMs;
+
+  /// 硬解渲染档位（standard/performance/extreme，来自设置，
+  /// 经 PlayerEngineFactory 传入；原生 create 时生效）。
+  final String _hwdecRenderMode;
+  HimiMpvPlayer? _player;
+  bool _disposed = false;
+  bool _prepared = false;
+
+  AdapterPlaybackState _state = AdapterPlaybackState.stopped;
+  AdapterMediaStatus _mediaStatus = AdapterMediaStatus.unloaded;
+  int _positionMs = 0;
+  int _durationMs = 0;
+  int _bufferedMs = 0;
+  double _volume = 1.0;
+  double _playbackRate = 1.0;
+  AdapterMediaInfo _mediaInfo = AdapterMediaInfo.empty;
+
+  /// 已知属性的字符串快照：`getProperty` 是同步接口，只能从缓存读。
+  final Map<String, String> _propertyCache = <String, String>{};
+
+  /// mpv `eof-reached` 状态（播完判定）。
+  bool _eofReached = false;
+
+  StreamController<
+          ({AdapterPlaybackState oldValue, AdapterPlaybackState newValue})>?
+      _stateCtrl;
+  StreamController<
+          ({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>?
+      _statusCtrl;
+  StreamController<AdapterMediaEvent>? _eventCtrl;
+
+  StreamSubscription<Map<Object?, Object?>>? _rawSub;
+
+  /// 并发调用 [disposeAsync] 时共享同一个释放 Future。
+  Future<void>? _disposeFuture;
+
+  /// 原生播放器句柄（mpv 无 SurfaceView 通道，恒 0）。
+  @override
+  int get nativeHandle => 0;
+
+  // ── 播放控制 ──────────────────────────────────────────────
+
+  @override
+  AdapterPlaybackState get state =>
+      _disposed ? AdapterPlaybackState.stopped : _state;
+
+  @override
+  set state(AdapterPlaybackState value) {
+    if (_disposed) return;
+    final player = _player;
+    if (player == null) return;
+    switch (value) {
+      case AdapterPlaybackState.playing:
+        unawaited(player.play());
+        break;
+      case AdapterPlaybackState.paused:
+        unawaited(player.pause());
+        break;
+      case AdapterPlaybackState.stopped:
+        unawaited(player.stop());
+        break;
+    }
+  }
+
+  @override
+  Future<void> seek({required int positionMs}) async {
+    if (_disposed) return;
+    // seek 冷却标记：部分 demuxer 在 seek 期间会瞬时报 eof-reached，
+    // 状态机若立即采信会触发自动重播（真机 v1.2.93「快进从头播」）。
+    _lastSeekCommandAt = DateTime.now();
+    await _player?.seek(positionMs);
+  }
+
+  /// 最近一次 seek 命令时间（eof 采信冷却依据）。
+  DateTime? _lastSeekCommandAt;
+
+  /// 播完判定：`eof-reached=true` → 置 end 位；回到 false（换集/重播）→ 清位。
+  ///
+  /// 双守卫（v1.2.94，免疫式修复「快进从头播」）：
+  /// 1. 时长未知（duration<=0）忽略——直播/转码流 seek 后瞬时报 eof；
+  /// 2. **seek 后 5 秒冷却期内忽略**——文件流 seek 期间 demuxer 也可能
+  ///    瞬时翻 eof 位，两路（事件/轮询）都过这道闸。
+  void _handleEofReached(bool reached) {
+    if (reached) {
+      if (_durationMs <= 0) {
+        LogService().log('mpv', 'eof-reached 但时长未知，忽略（防 seek 误判播完）');
+        return;
+      }
+      final lastSeek = _lastSeekCommandAt;
+      if (lastSeek != null &&
+          DateTime.now().difference(lastSeek).inSeconds < 5) {
+        LogService().log('mpv', 'eof-reached 在 seek 冷却期内，忽略');
+        return;
+      }
+    }
+    _eofReached = reached;
+    if (reached) {
+      _setStatus(_mediaStatus | AdapterMediaStatus.end);
+    } else {
+      _setStatus(AdapterMediaStatus(
+        _mediaStatus.rawValue & ~AdapterMediaStatus.end.rawValue,
+      ));
+    }
+  }
+
+  // ── 媒体加载 ──────────────────────────────────────────────
+
+  String? _uri;
+  Map<String, String> _headers = const {};
+
+  /// HDR 输入色彩提示（v1.2.91 引入，v1.2.93 改用输入标签覆盖）。
+  ///
+  /// 本构建 OHCodec 硬解输出的帧**不带色彩元数据**（side data 丢失），
+  /// 转码流的容器元数据也常被剥——mpv 把 PQ 像素当 SDR 直出 = 发灰发暗。
+  ///
+  /// v1.2.91 曾用 `vf=format=...` 强制标记——**那是错的**：显式 format
+  /// 滤镜会打断硬解零拷贝协商，mpv 整片退回软解（HDR10 10bit 软解跟不上
+  /// → 控制条永不隐藏/seek 重播/声音先出画面几秒，全部这一个根）。
+  ///
+  /// 正解：mpv 的**输入色彩标签覆盖**（`colormatrix*` 属性族）——只改
+  /// 帧的元数据解释，不触碰滤镜链，零拷贝硬解保持，tone mapping 在
+  /// libplacebo 渲染侧发生。SDR 时清空标签（回自动）。
+  String? _hdrInputTransfer;
+
+  set hdrInputTransfer(String? value) => _hdrInputTransfer = value;
+
+  /// 本媒体强制软解（v1.2.86）：仅用于 DV Profile 5（无 HDR10 兼容基础
+  /// 层，硬解输出紫绿偏色，必须软解解 RPU 才能正确显示）。上层按 Emby
+  /// 元数据在 prepare 前设置；其余内容一律硬解优先（智能/硬解档）。
+  bool _swForThisMedia = false;
+
+  set swDecodeForThisMedia(bool value) => _swForThisMedia = value;
+
+  /// 把 X-Emby-Token 拼进 URL 的 api_key 参数（Emby 流端点原生支持）。
+  ///
+  /// 真机（v1.2.77）证实 header 两条传递路径均不可靠，而 app 内同域名
+  /// 其他请求全部正常——鉴权必须与 header 传递解耦。URL 已带 api_key
+  /// 或无 token 时原样返回。
+  String _authorizeUrl(String url) {
+    if (url.isEmpty) return url;
+    if (url.contains('api_key=')) return url;
+    final token = _headers['X-Emby-Token'];
+    if (token == null || token.isEmpty) return url;
+    final sep = url.contains('?') ? '&' : '?';
+    return '${url}${sep}api_key=${Uri.encodeQueryComponent(token)}';
+  }
+
+  @override
+  set media(String uri) {
+    _uri = uri;
+  }
+
+  @override
+  Future<void> prepare({int startMs = 0}) async {
+    if (_disposed) return;
+    final start = startMs > 0 ? startMs : _startMs;
+
+    // 首次调用创建播放器并按需订阅原生事件。
+    // v1.2.73 起原生 create 内同步完成 initialize（不再等 surface），
+    // 所以这里的 setProperty/open 立即真正生效。
+    var player = _player;
+    if (player == null) {
+      // v1.2.98：HDR 内容初始纹理缓冲直接用 1280x720（GL OOM 根除的
+      // 上半段——video-params 到来前的首帧窗口也安全），SDR 保持 1920。
+      final initW = _hdrInputTransfer != null ? 1280 : 1920;
+      final initH = _hdrInputTransfer != null ? 720 : 1080;
+      player = await HimiMpvPlayer.create(
+          hwdecMode: _hwdecRenderMode, width: initW, height: initH);
+      if (_disposed) {
+        // 创建期间已被销毁：立刻回收，避免泄漏。
+        unawaited(player.dispose());
+        return;
+      }
+      _player = player;
+      _ensureEventSubscription();
+    }
+
+    // 渲染通道就绪标记：v1.2.80 起原生 create 自注册 Flutter 纹理并返回
+    // 真实纹理 id（>0 = 纹理渲染模式，上层挂 Texture）；0 = 回退平台视图
+    // 模式（上层挂 OhosView/XComponent）。上层 ValueListenableBuilder 靠
+    // 它决定渲染分支与视频区显形时机。
+    _textureIdListenable.value = player.textureId;
+
+    // 软硬解开关必须在 loadfile 之前写入：mpv 的 hwdec 在解码器创建时
+    // 读取，open 之后再改要重载才生效。这里每次都显式写一遍，确保
+    // 用户切换「硬解/软解/自动」后下一次起播立即按新配置走。
+    //
+    // v1.2.85 硬解最大化（用户指示：能硬解尽量硬解，软解耗电发烫）：
+    // 所有内容（含 HDR10）一律先按用户档位硬解；本构建 OHCodec 的
+    // 10bit interop 仅 Vulkan 路径可用（鸿蒙走 OpenGL），HDR 硬解互操作
+    // 失败时由「媒体在播但无 video-params」的自动软解回退兜底（见
+    // _maybeFallbackToSoftwareDecode，3s 快速降级）。
+    // 例外：DV Profile 5 无兼容基础层，硬解必然紫绿偏色 → 直接软解。
+    final effectiveHwdec = _swForThisMedia ? 'no' : _hwdec;
+    try {
+      await player.setProperty('hwdec', effectiveHwdec);
+      if (effectiveHwdec != 'no') {
+        // 硬解模式下允许 mpv 在硬件不支持时回退软解（auto 语义）；
+        // 纯硬解（auto-safe）档同样保留回退，否则不支持的编码会直接黑屏。
+        await player.setProperty('hwdec-software-fallback', 'yes');
+      }
+    } catch (e) {
+      LogService().log('mpv', 'prepare: hwdec 写入失败: $e');
+    }
+    // HDR 输入色彩标注（v1.2.98 最终定案）：
+    //
+    // 真机日志实锤（v1.2.97 抓取）：HDR10（4K 10bit）下 gpu-next 渲染
+    // 反复 GL_OUT_OF_MEMORY → Could not initialize video chain → 无画面
+    // → 控制条卡住/seek 重播。此前所有「标注」尝试（vf/colormatrix/
+    // vulkan-copy）都在向这根要爆的管线加纹理负担，只会更早 OOM。
+    //
+    // **HDR10 = 纯零拷贝 + 渲染降采样**：hwdec 走用户档位（零拷贝），
+    // 不加任何 vf/标签；渲染分辨率在 video-params 到手时压到 1280 宽
+    //（GL 纹理体积降 56%，OOM 根除）。亮度：内核 OHCodec 零拷贝丢失
+    // PQ 元数据导致 tone mapping 不触发，属 0.41-dev 内核限制——根治
+    // 需官方 buffer 模式内核（Plan B 留档）。SDR 路径不动。
+    try {
+      final t = _hdrInputTransfer;
+      if (t != null && t.isNotEmpty) {
+        LogService().log(
+            'mpv',
+            'HDR10 零拷贝直出（无标注；真机实测标注路径 GL OOM）'
+                ' transfer=$t 仅作元数据记录');
+      }
+    } catch (_) {}
+    LogService().log(
+        'mpv',
+        'prepare: hwdec=$effectiveHwdec'
+            '${_swForThisMedia ? '（DV P5 强制软解）' : ''} '
+            'url=${(_uri ?? '').length}字符');
+
+    // 起播恒以暂停态打开：由上层 state setter 决定何时出声，
+    // 避免页面未挂载/未就绪时先出声音（与 mdk 的 prepare 语义一致）。
+    //
+    // 原生侧在 surface 未就绪时缓存 URL（等 XComponent 就绪自动加载，
+    // 另有 8s watchdog 兜底），这里不需要等待。
+    //
+    // 鉴权：v1.2.78 起 token 直接拼进 URL（Emby 流端点原生支持 api_key
+    // 查询参数）。真机实测 header 路径（loadfile options + 全局属性双写）
+    // 仍未送达——"Failed to open"且 app 内同域名其他请求全部正常，
+    // 只可能是 mpv 的请求没带鉴权被服务器拒绝。URL 带 key 后不再依赖
+    // 任何 header 传递环节。
+    await player.open(
+      _authorizeUrl(_uri ?? ''),
+      headers: _headers,
+      startMs: start,
+      pause: true,
+    );
+    _prepared = true;
+    _openedAt = DateTime.now();
+    _kickCount = 0;
+    // 每次新起播重置软解回退标记：新文件重新给硬解机会
+    _swDecodeFallbackDone = false;
+    _swStillNoVideoNoted = false;
+    _videoWaitSince = null;
+    // 首帧等待状态复位（v1.2.89）
+    _videoParamsSeen = false;
+    _trackHasVideo = false;
+    firstFramePending.value = false;
+
+    // 启动轮询兜底：mpv 的事件/属性回调经 JSBind 绑定，在部分设备上
+    // 可能完全不送达（表现为纹理有了但时长/分辨率永远为空 → 无限转圈）。
+    // 轮询与事件流并行，谁先到用谁，互相补齐。
+    _startPolling();
+  }
+
+  /// 轮询定时器（事件流失效时的兜底数据源）。
+  Timer? _pollTimer;
+  bool _pollInFlight = false;
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      unawaited(_pollOnce());
+    });
+  }
+
+  Future<void> _pollOnce() async {
+    if (_disposed || _pollInFlight) return;
+    final player = _player;
+    if (player == null) return;
+    _pollInFlight = true;
+    try {
+      final state = await player.pollState().timeout(
+            const Duration(seconds: 2),
+          );
+      if (state == null || _disposed) return;
+      _applyPolledState(state);
+    } catch (_) {
+      // 轮询失败不影响主流程（事件流可能仍然正常）。
+    } finally {
+      _pollInFlight = false;
+    }
+  }
+
+  /// 时长变化统一入口：同步内部字段、属性缓存和 mediaInfo。
+  ///
+  /// 轮询路径此前只改 `_durationMs`，`mediaInfo.duration` 仍是
+  /// video-params 到达时的旧值（通常为 0），上层读 mediaInfo 会一直
+  /// 认为时长未知，导致初始转圈不消失。
+  void _updateDurationMs(int ms) {
+    _durationMs = ms;
+    _propertyCache['duration'] = (_durationMs / 1000.0).toStringAsFixed(3);
+    _mediaInfo = AdapterMediaInfo(
+      duration: _durationMs,
+      format: _mediaInfo.format,
+      audio: _mediaInfo.audio,
+      video: _mediaInfo.video,
+      subtitleCount: _mediaInfo.subtitleCount,
+    );
+  }
+
+  /// 把轮询结果并入状态机（与事件回调走同一套更新逻辑）。
+  void _applyPolledState(MpvPollResult state) {
+    final hasProgress = state.durationMs > 0 ||
+        state.positionMs > 0 ||
+        state.videoParams != null ||
+        !state.idleActive;
+    if (hasProgress) {
+      if (state.durationMs > 0 && state.durationMs != _durationMs) {
+        _updateDurationMs(state.durationMs);
+      }
+      // 时长可读、或位置在推进、或已非空闲（文件已加载）都算「已加载」——
+      // 转码 HLS 直播流可能永远报不出 duration，不能只看时长（v1.2.75）。
+      _setStatus(AdapterMediaStatus.loaded |
+          AdapterMediaStatus.prepared |
+          AdapterMediaStatus.buffered);
+    }
+    if (state.positionMs > 0) {
+      _positionMs = state.positionMs;
+      _propertyCache['time-pos'] = (_positionMs / 1000.0).toStringAsFixed(3);
+    }
+    if (state.bufferedMs > 0) _bufferedMs = state.bufferedMs;
+
+    if (state.videoParams != null) {
+      _parseVideoParams(state.videoParams);
+      _videoParamsSeen = true;
+    }
+    if (state.trackList != null) {
+      _parseTracks(state.trackList);
+    }
+    _trackHwdecActual(state.hwdecCurrent);
+    // 首帧等待标记（v1.2.89）：有视频轨、时长已到（声音/进度先出）但
+    // video-params 还没来 = 解码器起热中、画面未出——UI 据此盖一层
+    // 缓冲遮罩，把「黑屏但有声音」的观感变成「还在加载」。
+    _updateFirstFramePending(state);
+
+    if (state.eofReached != _eofReached) {
+      _handleEofReached(state.eofReached);
+    }
+    if (state.pausedForCache) {
+      _setBuffering(true);
+    } else if (state.bufferedMs > 0) {
+      _setBuffering(false);
+    }
+    if (_prepared && hasProgress) {
+      _setState(state.paused
+          ? AdapterPlaybackState.paused
+          : AdapterPlaybackState.playing);
+    }
+    _maybeKickStalledLoad(state);
+    _maybeFallbackToSoftwareDecode(state);
+  }
+
+  /// 有声无画的自动回退（v1.2.79）：媒体在播（时长/位置推进）但 5s 内
+  /// 一直无 video-params = 视频轨解码没起来——典型原因是 ohcodec 不支持
+  /// 该编码且软件回退未生效。自动切软解（hwdec=no）并按当前进度重载。
+  /// 单次触发；软解下仍无则记录一次线索不再动作（指向渲染层）。
+  bool _swDecodeFallbackDone = false;
+  bool _swStillNoVideoNoted = false;
+  DateTime? _videoWaitSince;
+
+  void _maybeFallbackToSoftwareDecode(MpvPollResult state) {
+    if (_disposed || !_prepared) return;
+    if (state.videoParams != null || state.idleActive) {
+      _videoWaitSince = null;
+      return;
+    }
+    // 只有确在播放（时长或位置在推进）才介入，避免加载窗口误触发。
+    if (state.durationMs <= 0 && state.positionMs <= 0) return;
+    final since = _videoWaitSince ??= DateTime.now();
+    if (DateTime.now().difference(since).inSeconds < 3) return;
+    if (_hwdec == 'no') {
+      if (!_swStillNoVideoNoted) {
+        _swStillNoVideoNoted = true;
+        _noteError('软解下仍无视频参数：视频轨可能不存在，或为渲染层问题（surface 已绑但 vo 未出帧）');
+      }
+      return;
+    }
+    if (_swDecodeFallbackDone) return;
+    _swDecodeFallbackDone = true;
+    _hwdec = 'no';
+    _noteError('有声音无画面：自动切软解重载（硬解疑似不支持该内容）');
+    unawaited(_player?.setProperty('hwdec', 'no'));
+    final uri = _uri;
+    if (uri == null || uri.isEmpty) return;
+    // 重载窗口复位首帧标记：遮罩重新盖上，声画同步起播逻辑重新生效。
+    _videoParamsSeen = false;
+    firstFramePending.value = true;
+    unawaited(_player?.open(
+      _authorizeUrl(uri),
+      headers: _headers,
+      startMs: _positionMs > 0 ? _positionMs : _startMs,
+      pause: false,
+    ));
+  }
+
+  /// open 之后 6s 无进展的自动救援：
+  /// - 空闲且播放列表有条目（loadFile 执行了但没开播）→ kickStart（轻踢，
+  ///   playlist-pos=0，不重载）；
+  /// - 空闲且播放列表为空（loadfile 从未生效）→ 重发 open（重载）。
+  /// 状态写进 lastMpvError 供屏幕诊断展示。
+  DateTime? _openedAt;
+  int _kickCount = 0;
+
+  void _maybeKickStalledLoad(MpvPollResult state) {
+    if (!_prepared || _disposed) return;
+    // 已非空闲 = 正在加载/播放，无需救援。
+    if (!state.idleActive) return;
+    final openedAt = _openedAt;
+    if (openedAt == null) return;
+    final elapsed = DateTime.now().difference(openedAt);
+    if (elapsed.inSeconds < 6 || _kickCount >= 3) return;
+    _kickCount += 1;
+    _openedAt = DateTime.now();
+    if (state.playlistCount > 0) {
+      _noteError('条目未开播，轻踢 playlist-pos（$_kickCount/3）');
+      unawaited(_player?.kickStart());
+      return;
+    }
+    _noteError('loadfile 未生效，重发 open（$_kickCount/3）');
+    final uri = _uri;
+    if (uri == null || uri.isEmpty) return;
+    unawaited(_player?.open(
+      _authorizeUrl(uri),
+      headers: _headers,
+      startMs: _positionMs > 0 ? _positionMs : _startMs,
+      pause: false,
+    ));
+  }
+
+  // ── 属性 ──────────────────────────────────────────────────
+
+  @override
+  int get position => _positionMs;
+
+  @override
+  int get duration => _durationMs;
+
+  @override
+  AdapterMediaInfo get mediaInfo => _mediaInfo;
+
+  @override
+  double get volume => _volume;
+
+  @override
+  set volume(double value) {
+    _volume = value;
+    unawaited(_player?.setVolume(value));
+  }
+
+  @override
+  double get playbackRate => _playbackRate;
+
+  @override
+  set playbackRate(double value) {
+    _playbackRate = value;
+    unawaited(_player?.setSpeed(value));
+  }
+
+  @override
+  AdapterMediaStatus get mediaStatus => _mediaStatus;
+
+  @override
+  int buffered() => _bufferedMs;
+
+  @override
+  ValueListenable<int?> get textureId => _textureIdListenable;
+
+  /// 平台视图模式：渲染走 XComponent，`textureId` 不用于挂 Texture。
+  ///
+  /// 上层据此切换到 [HimiMpvView] 分支。这里用「已就绪」语义填充
+  /// ValueListenable，让既有的「输出就绪」判定逻辑无需大改。
+  final ValueNotifier<int?> _textureIdListenable = ValueNotifier<int?>(null);
+
+  /// v1.2.80：纹理 id > 0 时为纹理渲染模式（Flutter Texture 合成）；
+  /// 仅在原生纹理注册失败回退平台视图时为 false（OhosView/XComponent）。
+  bool get usesPlatformView => (_textureIdListenable.value ?? 0) <= 0;
+
+  // ── 渲染 ──────────────────────────────────────────────────
+
+  @override
+  Future<int> updateTexture({int? width, int? height, bool? tunnel}) async {
+    if (_disposed) return -1;
+    final player = _player;
+    if (player == null) return -1;
+    // 纹理模式：同步真实纹理 id；平台视图回退模式为 0。
+    _textureIdListenable.value = player.textureId;
+    return player.textureId;
+  }
+
+  @override
+  Future<Size?> get textureSize async {
+    Size? known() {
+      final video = _mediaInfo.video;
+      if (video.isNotEmpty && video.first.width > 0 && video.first.height > 0) {
+        return Size(
+          video.first.width.toDouble(),
+          video.first.height.toDouble(),
+        );
+      }
+      return null;
+    }
+
+    // video-params 在文件加载完成后出现（事件或轮询任一喂到 _mediaInfo）。
+    // v1.2.73 起 mpv 在 create 时即完成 initialize，属性读取不依赖
+    // surface。这里短等 video-params（1.2s 上限，v1.2.81 起播提速：旧值
+    // 6s 会把起播关键路径拖住；屏幕层另有 1s×10 次的重试兜底，尺寸晚到
+    // 只影响画面比例一瞬，不阻塞开播）。
+    final immediate = known();
+    if (immediate != null) return immediate;
+
+    final player = _player;
+    if (player == null) return null;
+
+    final deadline = DateTime.now().add(const Duration(milliseconds: 1200));
+    while (DateTime.now().isBefore(deadline)) {
+      if (_disposed) return null;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final cached = known();
+      if (cached != null) return cached;
+      // 兜底：事件/轮询都还没喂到时直接问一次原生。
+      try {
+        final params = await player.getVideoParams();
+        if (params != null) {
+          final size = _sizeFromVideoParams(params);
+          if (size != null) return size;
+        }
+      } catch (_) {}
+    }
+    LogService().log('mpv', '等待 video-params 超时（1.2s），返回空尺寸（后续重试兜底）');
+    return null;
+  }
+
+  /// 从 mpv `video-params` JSON 解析分辨率；无效返回 null。
+  static Size? _sizeFromVideoParams(String raw) {
+    try {
+      final json = jsonDecode(raw);
+      if (json is! Map<String, dynamic>) return null;
+      final w = (json['w'] as num?)?.round() ?? 0;
+      final h = (json['h'] as num?)?.round() ?? 0;
+      if (w > 0 && h > 0) return Size(w.toDouble(), h.toDouble());
+    } catch (_) {}
+    return null;
+  }
+
+  @override
+  void setColorSpace(AdapterColorSpace cs) {
+    // mpv 自行处理色彩空间（gpu-next 按视频参数做 tone mapping / 色域转换），
+    // 无 mdk 那种逐内容 setColorSpace 的入口。
+  }
+
+  @override
+  void renderVideo() {
+    // mpv 的 vo 自主按 vsync 出帧，无需外部驱动。
+  }
+
+  // ── 轨道 ──────────────────────────────────────────────────
+
+  List<int> _activeAudioTracks = const [];
+  List<int> _activeSubtitleTracks = const [];
+
+  /// mpv `track-list` 里音轨/字幕轨的 id（1-based，按出现顺序）。
+  ///
+  /// 上层的 `activeAudioTracks`/`activeSubtitleTracks` 传的是 **Emby 流索引**
+  /// （0-based，与 Emby 元数据数组对齐），而 mpv 的 `aid`/`sid` 是它自己的
+  /// track id。两者必须映射，否则选第 2 条字幕会切到别的轨。
+  final List<int> _audioTrackIds = <int>[];
+  final List<int> _subtitleTrackIds = <int>[];
+
+  /// 把上层（Emby 索引）映射成 mpv track id；映射不到时返回 null。
+  static int? _mapIndexToTrackId(List<int> ids, int index) {
+    if (index < 0) return null;
+    if (index < ids.length) return ids[index];
+    return null;
+  }
+
+  @override
+  List<int> get activeAudioTracks => _activeAudioTracks;
+
+  @override
+  set activeAudioTracks(List<int> tracks) {
+    _activeAudioTracks = tracks;
+    if (tracks.isEmpty) return;
+    final index = tracks.first;
+    final trackId = _mapIndexToTrackId(_audioTrackIds, index);
+    // 轨道表未就绪（文件刚 open）时先按 index+1 兜底：mpv 的 aid 通常从 1 起。
+    unawaited(_player?.setAudioTrack(trackId ?? (index + 1)));
+  }
+
+  @override
+  List<int> get activeSubtitleTracks => _activeSubtitleTracks;
+
+  @override
+  set activeSubtitleTracks(List<int> tracks) {
+    _activeSubtitleTracks = tracks;
+    if (tracks.isEmpty) {
+      // 0 = 关闭字幕（mpv 的 sid 语义）。
+      unawaited(_player?.setSubtitleTrack(0));
+      return;
+    }
+    final index = tracks.first;
+    final trackId = _mapIndexToTrackId(_subtitleTrackIds, index);
+    unawaited(_player?.setSubtitleTrack(trackId ?? (index + 1)));
+  }
+
+  // ── 事件 ──────────────────────────────────────────────────
+
+  @override
+  Stream<({AdapterPlaybackState oldValue, AdapterPlaybackState newValue})>
+      get onStateChanged =>
+          (_stateCtrl ??= StreamController.broadcast()).stream;
+
+  @override
+  Stream<({AdapterMediaStatus oldValue, AdapterMediaStatus newValue})>
+      get onMediaStatus =>
+          (_statusCtrl ??= StreamController.broadcast()).stream;
+
+  @override
+  Stream<AdapterMediaEvent> get onEvent =>
+      (_eventCtrl ??= StreamController.broadcast()).stream;
+
+  void _ensureEventSubscription() {
+    if (_rawSub != null) return;
+    _rawSub = HimiMpvPlayer.events.listen(_handleRaw);
+  }
+
+  void _handleRaw(Map<Object?, Object?> raw) {
+    if (_disposed) return;
+    final prop = MpvPropertyEvent.tryParse(raw);
+    if (prop != null) {
+      _handleProperty(prop);
+      return;
+    }
+    final event = MpvEvent.tryParse(raw);
+    if (event != null) {
+      _handleMpvEvent(event);
+      return;
+    }
+    // 日志：warn 及以上转存（原生侧只订阅 warn 级）——保留最近 5 条环形
+    // 缓冲：mpv 报错顺序有信息量（「URL 打开失败」在前、「ytdl 回退失败」
+    // 在后），只留最后一条会把第一现场盖掉（v1.2.76 真机实测）。
+    if (raw['type'] == 'log') {
+      final level = raw['level'];
+      final message = raw['message'];
+      if (level == 'error' || level == 'fatal' || level == 'warn') {
+        final text = '${message ?? ''}'.trim();
+        if (text.isNotEmpty) {
+          _mpvErrors.add(text);
+          if (_mpvErrors.length > 5) {
+            _mpvErrors.removeAt(0);
+          }
+          LogService().log('mpv', text);
+        }
+      }
+    }
+  }
+
+  /// 最近 5 条 mpv warn/error（起播诊断展示用；含救援动作的说明行）。
+  final List<String> _mpvErrors = <String>[];
+
+  void _noteError(String text) {
+    _mpvErrors.add(text);
+    if (_mpvErrors.length > 5) {
+      _mpvErrors.removeAt(0);
+    }
+    LogService().log('mpv', text);
+  }
+
+  String? get lastMpvError => _mpvErrors.isEmpty ? null : _mpvErrors.last;
+
+  /// 起播卡住时的诊断快照（无 hilog 环境下直接展示到屏幕）。
+  ///
+  /// 覆盖「加载没发生 / 加载了没数据 / 解码失败」三段：
+  /// 空闲+播放列表0 = loadfile 未生效；非空闲+缓冲中 = 网络停滞；
+  /// 有时长+位置0 = 解码/输出侧问题。
+  Future<String> debugSnapshot() async {
+    final player = _player;
+    if (player == null) return 'mpv: 播放器已销毁';
+    final buffer = StringBuffer('mpv诊断:');
+    MpvPollResult? s;
+    try {
+      s = await player.pollState();
+    } catch (e) {
+      buffer.write(' poll异常:$e');
+    }
+    try {
+      buffer.write(' 初始化+surface=${await player.isReady()}');
+    } catch (e) {
+      buffer.write(' isReady异常:$e');
+    }
+    if (s != null) {
+      buffer
+        ..write(' 时长=${s.durationMs}ms 位置=${s.positionMs}ms')
+        ..write(' 空闲=${s.idleActive ? "是" : "否"} 播放列表=${s.playlistCount}')
+        ..write(' 视频参数=${s.videoParams != null ? "有" : "无"}')
+        ..write(' 暂停=${s.paused} 缓冲中=${s.pausedForCache}');
+      if (s.cachePercent >= 0) buffer.write(' 缓冲${s.cachePercent.round()}%');
+      if (s.bufferedMs > 0)
+        buffer.write(' 已缓冲${(s.bufferedMs / 1000).toStringAsFixed(1)}s');
+      final title = s.mediaTitle;
+      if (title != null && title.isNotEmpty) {
+        buffer.write(
+            '\n标题: ${title.length > 40 ? title.substring(0, 40) : title}');
+      }
+      final path = s.pathMasked;
+      if (path != null && path.isNotEmpty) buffer.write('\n地址: $path');
+    }
+    buffer.write(' hwdec=$_hwdec');
+    final actual = _hwdecActual;
+    if (actual != null) {
+      buffer.write('(实际:${actual.isEmpty ? "无" : actual})');
+    }
+    // 色彩管线实测回读（v1.2.90）：确认 tone mapping/目标色彩空间真的
+    // 生效——修 HDR 发暗时可真机验证，不再靠猜。
+    for (final p in const ['tone-mapping', 'target-trc', 'target-peak']) {
+      try {
+        final v = await player.getProperty(p);
+        if (v != null && v.isNotEmpty) buffer.write(' $p=$v');
+      } catch (_) {}
+    }
+    if (_mpvErrors.isNotEmpty) {
+      buffer.write('\n最近警告/错误（旧→新）:');
+      for (final e in _mpvErrors) {
+        buffer.write('\n· ${e.length > 150 ? e.substring(0, 150) : e}');
+      }
+    }
+    return buffer.toString();
+  }
+
+  void _handleProperty(MpvPropertyEvent prop) {
+    final value = prop.value;
+    switch (prop.name) {
+      case 'time-pos/full':
+        if (value is num) {
+          _positionMs = (value * 1000).round();
+          _propertyCache['time-pos'] =
+              (_positionMs / 1000.0).toStringAsFixed(3);
+        }
+        break;
+      case 'duration/full':
+        if (value is num) {
+          // 时长首显：事件路径同步更新 mediaInfo 并置 loaded 位。
+          _updateDurationMs((value * 1000).round());
+          _setStatus(AdapterMediaStatus.loaded |
+              AdapterMediaStatus.prepared |
+              AdapterMediaStatus.buffered);
+        }
+        break;
+      case 'demuxer-cache-time':
+        if (value is num) _bufferedMs = (value * 1000).round();
+        break;
+      case 'media-title':
+        if (value is String) _propertyCache['media-title'] = value;
+        break;
+      case 'seekable':
+        if (value is bool) _propertyCache['seekable'] = value.toString();
+        break;
+      case 'eof-reached':
+        if (value is bool) {
+          _propertyCache['eof-reached'] = value.toString();
+          _handleEofReached(value);
+        }
+        break;
+      case 'pause':
+        if (value is bool) {
+          _propertyCache['pause'] = value.toString();
+          // 只有已加载媒体后才把 pause 变化映射成播放状态，
+          // 否则 open 前的默认 pause 会把状态机打乱。
+          if (_prepared) {
+            _setState(value
+                ? AdapterPlaybackState.paused
+                : AdapterPlaybackState.playing);
+          }
+        }
+        break;
+      case 'paused-for-cache':
+        if (value is bool) {
+          _setBuffering(value);
+        }
+        break;
+      case 'video-params':
+        _parseVideoParams(value);
+        break;
+      case 'audio-params':
+        _parseAudioParams(value);
+        break;
+      case 'track-list':
+        _parseTracks(value);
+        break;
+    }
+  }
+
+  /// 缓冲态位：`paused-for-cache` 为 true 时置 buffering 位，false 时清掉。
+  void _setBuffering(bool buffering) {
+    if (buffering) {
+      _setStatus(_mediaStatus | AdapterMediaStatus.buffering);
+    } else {
+      _setStatus(AdapterMediaStatus(
+        _mediaStatus.rawValue &
+            ~(AdapterMediaStatus.buffering.rawValue |
+                AdapterMediaStatus.stalled.rawValue),
+      ));
+    }
+  }
+
+  /// 实际生效的硬解器（hwdec-current，轮询直读，非事件）。
+  String? _hwdecActual;
+
+  /// 首帧等待状态（v1.2.89）：true = 有视频轨且媒体在播，但视频参数
+  /// 尚未到手（解码器起热中）。UI 盖缓冲遮罩用。
+  final ValueNotifier<bool> firstFramePending = ValueNotifier<bool>(false);
+  bool _videoParamsSeen = false;
+  bool _trackHasVideo = false;
+
+  void _updateFirstFramePending(MpvPollResult state) {
+    if (state.trackList != null) {
+      try {
+        final decoded = jsonDecode(state.trackList!);
+        _trackHasVideo = decoded is List &&
+            decoded.any((t) => t is Map && t['type'] == 'video');
+      } catch (_) {}
+    }
+    final pending = _trackHasVideo &&
+        !_videoParamsSeen &&
+        (state.durationMs > 0 || state.positionMs > 0);
+    if (firstFramePending.value != pending) {
+      firstFramePending.value = pending;
+    }
+  }
+
+  /// 硬解实测监控（v1.2.83）：请求硬解但实际在软解（hwdec-current=no）
+  /// 时记录一条线索——软解正是 CPU 发烫的主因。值本身来自内核，
+  /// 诊断行展示「请求值(实际: x)」。
+  void _trackHwdecActual(String? actual) {
+    _hwdecActual = actual;
+    if (actual == null) return; // 无视频轨（纯音频/未起播）
+    if (actual == 'no' && _hwdec != 'no' && !_hwdecFallbackNoted) {
+      _hwdecFallbackNoted = true;
+      _noteError('注意：请求硬解($_hwdec)但内核实际在软解（hwdec-current=no），'
+          'CPU 解码会导致发热；可尝试切换解码档或渲染档');
+    }
+  }
+
+  bool _hwdecFallbackNoted = false;
+
+  /// 渲染分辨率封顶（v1.2.93 引入，v1.2.98 分级）：
+  /// - SDR：宽 ≤1920（4K 降采样，GPU 带宽减半）；
+  /// - HDR/10bit：宽 ≤**1280**——真机日志实锤 HDR10 4K 10bit 下 gpu-next
+  ///   反复 GL_OUT_OF_MEMORY（纹理体积是主因），1280 在 GLES 上安全，
+  ///   手机屏观感差异极小。视频仍由硬件解码全速解 4K，仅渲染缩小。
+  static const int _maxRenderWidthSdr = 1920;
+  static const int _maxRenderWidthHdr = 1280;
+
+  void _parseVideoParams(Object? value) {
+    if (value is! String) return;
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! Map<String, dynamic>) return;
+      final w = (decoded['w'] as num?)?.round() ?? 0;
+      final h = (decoded['h'] as num?)?.round() ?? 0;
+      if (w <= 0 || h <= 0) return;
+      final codec = (decoded['codec'] as String?) ?? '';
+      _mediaInfo = AdapterMediaInfo(
+        duration: _durationMs,
+        format: _mediaInfo.format,
+        audio: _mediaInfo.audio,
+        video: [
+          AdapterVideoStream(codec: codec, width: w, height: h),
+        ],
+        subtitleCount: _mediaInfo.subtitleCount,
+      );
+      // 渲染分辨率封顶：SDR ≤1920、HDR/10bit ≤1280（GL OOM 根除，
+      // v1.2.98；视频仍由硬解全速解原始分辨率，仅渲染缩小）。
+      final cap =
+          _hdrInputTransfer != null ? _maxRenderWidthHdr : _maxRenderWidthSdr;
+      var rw = w;
+      var rh = h;
+      if (rw > cap) {
+        rw = cap;
+        rh = (h * cap / w).round();
+      }
+      unawaited(_player?.resizeTexture(rw, rh));
+    } catch (_) {}
+  }
+
+  void _parseAudioParams(Object? value) {
+    if (value is! String) return;
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! Map<String, dynamic>) return;
+      final codec =
+          (decoded['format'] as String?) ?? (decoded['codec'] as String?) ?? '';
+      final channels = (decoded['channel-count'] as num?)?.round() ?? 0;
+      final sampleRate = (decoded['sample-rate'] as num?)?.round() ?? 0;
+      if (codec.isEmpty && channels == 0) return;
+      _mediaInfo = AdapterMediaInfo(
+        duration: _durationMs,
+        format: _mediaInfo.format,
+        audio: [
+          AdapterAudioStream(
+            codec: codec,
+            channels: channels,
+            sampleRate: sampleRate,
+          ),
+        ],
+        video: _mediaInfo.video,
+        subtitleCount: _mediaInfo.subtitleCount,
+      );
+    } catch (_) {}
+  }
+
+  void _parseTracks(Object? value) {
+    if (value is! String) return;
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! List) return;
+      final audioIds = <int>[];
+      final subIds = <int>[];
+      var subCount = 0;
+      for (final track in decoded) {
+        if (track is! Map) continue;
+        final type = track['type'];
+        final id = track['id'];
+        if (id is! int) continue;
+        if (type == 'audio') {
+          audioIds.add(id);
+        } else if (type == 'sub') {
+          subIds.add(id);
+          subCount++;
+        }
+      }
+      if (audioIds.isNotEmpty)
+        _audioTrackIds
+          ..clear()
+          ..addAll(audioIds);
+      if (subIds.isNotEmpty)
+        _subtitleTrackIds
+          ..clear()
+          ..addAll(subIds);
+      _mediaInfo = AdapterMediaInfo(
+        duration: _durationMs,
+        format: _mediaInfo.format,
+        audio: _mediaInfo.audio,
+        video: _mediaInfo.video,
+        subtitleCount: subCount,
+      );
+    } catch (_) {}
+  }
+
+  void _handleMpvEvent(MpvEvent event) {
+    switch (event.id) {
+      case 6: // MPV_EVENT_START_FILE
+        _eofReached = false;
+        _setStatus(AdapterMediaStatus.loading | AdapterMediaStatus.buffering);
+        break;
+      case 8: // MPV_EVENT_FILE_LOADED
+        _setStatus(AdapterMediaStatus.loaded |
+            AdapterMediaStatus.prepared |
+            AdapterMediaStatus.buffered);
+        break;
+      case 21: // MPV_EVENT_PLAYBACK_RESTART
+        _setStatus(_mediaStatus |
+            AdapterMediaStatus.prepared |
+            AdapterMediaStatus.buffered);
+        break;
+      case 7: // MPV_EVENT_END_FILE
+        // mpv 在播完后发 END_FILE；以 eof-reached 区分「自然播完」与
+        // 「被 stop/换源打断」，只有前者才置 end（否则会误触发自动下一集）。
+        // 时长未知时 _eofReached 已被 _handleEofReached 拦截（v1.2.91）。
+        if (_eofReached && _durationMs > 0) {
+          _setStatus(_mediaStatus | AdapterMediaStatus.end);
+        }
+        break;
+    }
+  }
+
+  // ── 属性通道 ──────────────────────────────────────────────
+
+  @override
+  void setProperty(String name, String value) {
+    if (_disposed) return;
+    _propertyCache[name] = value;
+    unawaited(_player?.setProperty(name, value));
+  }
+
+  @override
+  String? getProperty(String name) => _propertyCache[name];
+
+  @override
+  void setHttpHeaders(Map<String, String> headers) {
+    _headers = headers;
+  }
+
+  /// mpv 的 `hwdec` 取值（由上层 videoDecoders 映射而来）。
+  ///
+  /// v1.2.96 对齐官方 @ohos/ohos_mpv Demo 的三档语义（真机已验证过
+  /// ohcodec：v1.2.78 时代 HDR10 硬解即用此值）：
+  /// - 智能 → `auto`      优先硬解，失败自动回退软解
+  /// - 硬解 → `ohcodec`   官方 HW+ 档（零拷贝硬解）
+  /// - 软解 → `no`        纯软解
+  /// 且 hwdec 是**运行时属性**：切换即时生效于当前媒体（官方 Demo 确认
+  /// 无需重载流），decoder 在下一帧重建。
+  String _hwdec = 'auto';
+  String get hwdec => _hwdec;
+
+  @override
+  List<String> get videoDecoders =>
+      _hwdec == 'no' ? const ['FFmpeg'] : const ['ohcodec'];
+
+  @override
+  set videoDecoders(List<String> decoders) {
+    if (_disposed) return;
+    // 上层的语义（DecodeModeService）：
+    //   ['FFmpeg']           → 软解（no）
+    //   ['ohcodec']          → 硬解（官方 HW+ 档）
+    //   ['ohcodec','FFmpeg'] → 智能（auto，硬解优先软解兜底）
+    final hasHw = decoders.any((d) => d.toLowerCase().contains('ohcodec'));
+    final hasSw = decoders.any((d) => d.toLowerCase().contains('ffmpeg'));
+    final String next;
+    if (!hasHw && hasSw) {
+      next = 'no';
+    } else if (hasHw && !hasSw) {
+      next = 'ohcodec';
+    } else {
+      next = 'auto';
+    }
+    if (next == _hwdec) return;
+    _hwdec = next;
+    // 运行时属性：写入即对当前媒体生效（decoder 重建），无需重载流。
+    unawaited(_player?.setProperty('hwdec', next));
+    LogService().log('mpv', '解码器切换 → hwdec=$next (from $decoders)');
+  }
+
+  @override
+  List<String> get audioDecoders => const [];
+
+  @override
+  set audioDecoders(List<String> decoders) {}
+
+  @override
+  set audioBackends(List<String> backends) {}
+
+  @override
+  void setBufferRange({int min = -1, int max = -1, bool drop = false}) {
+    // mpv 通过原生侧 demuxer-max-bytes / demuxer-max-back-bytes 控制缓冲。
+  }
+
+  // ── 字幕 / 截图 ───────────────────────────────────────────
+
+  @override
+  Future<void> setMedia(String uri, {required AdapterMediaType type}) async {
+    if (_disposed) return;
+    if (type == AdapterMediaType.subtitle) {
+      await _player?.addSubtitle(_toMpvUri(uri));
+    }
+  }
+
+  /// 把本地路径转成 mpv 能识别的 URL。
+  ///
+  /// mpv 的 `sub-add` 接受 URL 或绝对路径，但纯路径在部分构建上会被当作
+  /// 相对路径解析失败；统一转成 `file://` URI 最稳。已是 http(s)/file
+  /// 协议的原样返回。
+  static String _toMpvUri(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.startsWith('http://') ||
+        lower.startsWith('https://') ||
+        lower.startsWith('file://')) {
+      return raw;
+    }
+    // Windows 盘符路径（D:\x\y.srt）与 POSIX 路径统一走 Uri.file。
+    try {
+      return Uri.file(raw).toString();
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  @override
+  Future<Uint8List?> snapshot({int? width, int? height}) {
+    // mpv `screenshot-raw` 返回 BGRA 原始像素；用 image 包组 PNG
+    //（v1.2.83：此前直接返回 null，播放页截图按钮无响应）。
+    return _snapshotPng();
+  }
+
+  Future<Uint8List?> _snapshotPng() async {
+    final player = _player;
+    if (player == null) return null;
+    final video = _mediaInfo.video;
+    final w = video.isNotEmpty ? video.first.width : 0;
+    final h = video.isNotEmpty ? video.first.height : 0;
+    if (w <= 0 || h <= 0) return null;
+    try {
+      final bgra = await player.screenshot();
+      if (bgra == null || bgra.length < w * h * 4) return null;
+      final image = img.Image.fromBytes(
+        width: w,
+        height: h,
+        bytes: bgra.buffer,
+        numChannels: 4,
+        order: img.ChannelOrder.bgra,
+      );
+      return Uint8List.fromList(img.encodePng(image));
+    } catch (e) {
+      LogService().log('mpv', '截图失败: $e');
+      return null;
+    }
+  }
+
+  // ── 生命周期 ──────────────────────────────────────────────
+
+  @override
+  void dispose() => unawaited(disposeAsync());
+
+  @override
+  Future<void> disposeAsync() {
+    final existing = _disposeFuture;
+    if (existing != null) return existing;
+    final future = _disposeImpl();
+    _disposeFuture = future;
+    return future;
+  }
+
+  Future<void> _disposeImpl() async {
+    // 先置销毁位：此后所有 setter / 属性回调直接忽略。
+    _disposed = true;
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    try {
+      await _rawSub?.cancel();
+    } catch (_) {}
+    _rawSub = null;
+
+    final player = _player;
+    _player = null;
+    if (player != null) {
+      try {
+        await player.dispose().timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+
+    _textureIdListenable.value = null;
+    try {
+      firstFramePending.value = false;
+      firstFramePending.dispose();
+    } catch (_) {}
+    try {
+      await _stateCtrl?.close();
+    } catch (_) {}
+    try {
+      await _statusCtrl?.close();
+    } catch (_) {}
+    try {
+      await _eventCtrl?.close();
+    } catch (_) {}
+    _stateCtrl = null;
+    _statusCtrl = null;
+    _eventCtrl = null;
+    _textureIdListenable.dispose();
+  }
+
+  // ── 内部辅助 ──────────────────────────────────────────────
+
+  void _setState(AdapterPlaybackState s) {
+    if (_state == s) return;
+    final old = _state;
+    _state = s;
+    _stateCtrl?.add((oldValue: old, newValue: s));
+  }
+
+  void _setStatus(AdapterMediaStatus s) {
+    if (_mediaStatus.rawValue == s.rawValue) return;
+    final old = _mediaStatus;
+    _mediaStatus = s;
+    _statusCtrl?.add((oldValue: old, newValue: s));
+  }
+}

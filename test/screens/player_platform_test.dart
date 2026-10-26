@@ -3,7 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/screens/player/player_platform.dart';
 
 void main() {
-  tearDown(() => debugDefaultTargetPlatformOverride = null);
+  tearDown(() {
+    debugDefaultTargetPlatformOverride = null;
+    PlayerPlatform.debugIsOhosOverride = null;
+  });
 
   group('平台开关', () {
     test('Windows：禁垂直手势、开滑杆、开空格、亮度跟随系统、开全屏按钮', () {
@@ -15,12 +18,12 @@ void main() {
       expect(PlayerPlatform.windowFullscreenButton, isTrue);
     });
 
-    test('Android：保留手势、无滑杆、无空格、亮度不跟随、无全屏按钮', () {
+    test('Android：保留手势、无滑杆、无空格、亮度跟随、无全屏按钮', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       expect(PlayerPlatform.verticalVolumeBrightnessGesture, isTrue);
       expect(PlayerPlatform.volumeBrightnessSliders, isFalse);
       expect(PlayerPlatform.spaceKeyPlayPause, isFalse);
-      expect(PlayerPlatform.brightnessFollowsSystem, isFalse);
+      expect(PlayerPlatform.brightnessFollowsSystem, isTrue);
       expect(PlayerPlatform.windowFullscreenButton, isFalse);
     });
 
@@ -29,7 +32,31 @@ void main() {
       expect(PlayerPlatform.verticalVolumeBrightnessGesture, isTrue);
       expect(PlayerPlatform.volumeBrightnessSliders, isFalse);
       expect(PlayerPlatform.spaceKeyPlayPause, isFalse);
+      expect(PlayerPlatform.brightnessFollowsSystem, isTrue);
       expect(PlayerPlatform.windowFullscreenButton, isFalse);
+    });
+
+    test('HarmonyOS：手机布局、跟随系统亮度、长按手势', () {
+      PlayerPlatform.debugIsOhosOverride = true;
+      expect(PlayerPlatform.isOhos, isTrue);
+      expect(PlayerPlatform.isMobile, isTrue);
+      expect(PlayerPlatform.verticalVolumeBrightnessGesture, isTrue);
+      expect(PlayerPlatform.volumeBrightnessSliders, isFalse);
+      expect(PlayerPlatform.spaceKeyPlayPause, isFalse);
+      expect(PlayerPlatform.brightnessFollowsSystem, isTrue);
+      expect(PlayerPlatform.windowFullscreenButton, isFalse);
+      expect(PlayerPlatform.mediaLongPressSpeedBoost, isTrue);
+    });
+
+    test('桌面不是手机形态', () {
+      for (final p in const [
+        TargetPlatform.windows,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        expect(PlayerPlatform.isMobile, isFalse);
+      }
     });
 
     test('macOS：全屏按钮开但空格/滑杆关', () {
@@ -55,6 +82,11 @@ void main() {
       expect(PlayerPlatform.mediaLongPressSpeedBoost, isTrue);
     });
 
+    test('HarmonyOS 开', () {
+      PlayerPlatform.debugIsOhosOverride = true;
+      expect(PlayerPlatform.mediaLongPressSpeedBoost, isTrue);
+    });
+
     test('桌面 / Web 关', () {
       for (final p in const [
         TargetPlatform.windows,
@@ -67,7 +99,8 @@ void main() {
     });
   });
 
-  group('initialBrightness', () {    test('跟随系统时采用当前值', () {
+  group('initialBrightness', () {
+    test('跟随系统时采用当前值', () {
       expect(
         PlayerPlatform.initialBrightness(current: 0.55, followSystem: true),
         closeTo(0.55, 1e-9),
@@ -95,8 +128,7 @@ void main() {
 
     test('不跟随系统时总是返回 fallback', () {
       expect(
-        PlayerPlatform.initialBrightness(
-            current: 0.3, followSystem: false),
+        PlayerPlatform.initialBrightness(current: 0.3, followSystem: false),
         closeTo(0.8, 1e-9),
       );
       expect(

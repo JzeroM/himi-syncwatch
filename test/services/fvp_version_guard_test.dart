@@ -18,8 +18,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   (int, int, int) parseVersion(String v) {
     final parts = v.trim().split('+').first.split('.');
-    int at(int i) =>
-        i < parts.length ? (int.tryParse(parts[i].replaceAll(RegExp(r'\D'), '')) ?? 0) : 0;
+    int at(int i) => i < parts.length
+        ? (int.tryParse(parts[i].replaceAll(RegExp(r'\D'), '')) ?? 0)
+        : 0;
     return (at(0), at(1), at(2));
   }
 
@@ -33,24 +34,38 @@ void main() {
 
   test('pubspec.yaml 的 fvp 约束下界 >= 0.39.1', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
-    final m = RegExp(r'^\s*fvp:\s*\^?([0-9]+\.[0-9]+\.[0-9]+)',
-            multiLine: true)
+    final pathDep = RegExp(r'^\s*fvp:\s*\n\s*path:\s*(\S+)', multiLine: true)
         .firstMatch(pubspec);
-    expect(m, isNotNull, reason: 'pubspec.yaml 必须声明 fvp 依赖');
-    final lower = parseVersion(m!.group(1)!);
+    String versionText;
+    if (pathDep != null) {
+      final vendored = File('${pathDep.group(1)!.trim()}/pubspec.yaml');
+      expect(vendored.existsSync(), isTrue, reason: 'fvp path 依赖目录不存在');
+      final vendoredPubspec = vendored.readAsStringSync();
+      final m = RegExp(r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)', multiLine: true)
+          .firstMatch(vendoredPubspec);
+      expect(m, isNotNull, reason: 'vendored fvp 必须声明版本');
+      versionText = m!.group(1)!;
+    } else {
+      final m =
+          RegExp(r'^\s*fvp:\s*\^?([0-9]+\.[0-9]+\.[0-9]+)', multiLine: true)
+              .firstMatch(pubspec);
+      expect(m, isNotNull, reason: 'pubspec.yaml 必须声明 fvp 依赖');
+      versionText = m!.group(1)!;
+    }
+    final lower = parseVersion(versionText);
     expect(
       gte(lower, required),
       isTrue,
-      reason: 'fvp 约束下界 ${m.group(1)} < 0.39.1：会丢掉 iOS scene 崩溃 / '
+      reason: 'fvp 版本 $versionText < 0.39.1：会丢掉 iOS scene 崩溃 / '
           'add-after-close 两条修复',
     );
   });
 
   test('pubspec.lock 解析到的 fvp 版本 >= 0.39.1', () {
     final lock = File('pubspec.lock').readAsStringSync();
-    final block = RegExp(r'^\s{2}fvp:.*?(?=^\s{2}\w)',
-            multiLine: true, dotAll: true)
-        .firstMatch(lock);
+    final block =
+        RegExp(r'^\s{2}fvp:.*?(?=^\s{2}\w)', multiLine: true, dotAll: true)
+            .firstMatch(lock);
     expect(block, isNotNull, reason: 'pubspec.lock 必须包含 fvp 条目');
     final m = RegExp(r'version:\s*"([^"]+)"').firstMatch(block!.group(0)!);
     expect(m, isNotNull, reason: 'fvp 锁定条目必须含 version 字段');

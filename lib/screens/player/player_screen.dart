@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/player_core/player_core_bridge.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
+import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/stream_reload_scheduler.dart';
 import 'package:himi_syncwatch/services/player/clock_offset_estimator.dart';
 import 'package:himi_syncwatch/services/player/stream_stall_guard.dart';
@@ -667,6 +668,35 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       switchingMedia || (durationMs == 0 && playerReady && !startedOnce);
 
+  /// 首帧加载转圈是否显示（纯函数，供测试）。
+  ///
+  /// 仅限「播放器就绪、时长未知、尚未起播、位置为 0、且未处于播放态」。
+  /// 转码/直播流可能永远报不出 duration；一旦位置推进或进入 playing，
+  /// 必须隐藏转圈，否则视频在播但遮罩永久停留。
+  @visibleForTesting
+  static bool shouldShowInitialLoadingSpinner({
+    required int durationMs,
+    required int positionMs,
+    required bool playerReady,
+    required bool startedOnce,
+    required bool playing,
+  }) =>
+      playerReady &&
+      durationMs == 0 &&
+      !startedOnce &&
+      positionMs == 0 &&
+      !playing;
+
+  /// 有效时长：播放器优先，拿不到时回退 Emby 元数据。
+  @visibleForTesting
+  static int effectiveDurationMs({
+    required int playerMs,
+    required int fallbackMs,
+  }) {
+    if (playerMs > 0) return playerMs;
+    return fallbackMs > 0 ? fallbackMs : 0;
+  }
+
   /// 手机版判定：移动端平台且非 TV（控制条布局分支）。
   @visibleForTesting
   static bool isMobilePhoneControls({
@@ -875,6 +905,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Duration _duration = Duration.zero;
   final ValueNotifier<Duration> _durationNotifier =
       ValueNotifier(Duration.zero);
+
+  /// Emby 元数据时长（播放器不报 duration 时的兜底）。
+  int _fallbackDurationMs = 0;
   String? _myUserId;
   String? _rtmChannel;
   String? _rtmAppId;
@@ -1835,10 +1868,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Windows 恒 HDR、iOS 不设置）；其余维持 hdrGlWorkaround 的 SDR 强制。
     _applyOutputColorSpace();
     // 字幕属性配置（大小/位置随会话状态，initState 后异步恢复落盘值）
-    _player.setProperty('subtitle', '1');
-    _player.setProperty('subtitle.font.size', '40');
-    _player.setProperty('subtitle.border', '2');
-    _player.setProperty('subtitle.shadow', '1');
+    if (_currentEngine != PlayerEngine.mpv) {
+      _player.setProperty('subtitle', '1');
+      _player.setProperty('subtitle.font.size', '40');
+      _player.setProperty('subtitle.border', '2');
+      _player.setProperty('subtitle.shadow', '1');
+    }
     _applySubtitleStyle();
     // 音频滤镜（立体声降混 / iOS TrueHD 无声规避）统一走策略，
     // 初始化时音轨编码未知，先按开关落一次；选轨/诊断再按编码刷新
@@ -2058,6 +2093,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return;
     }
 
+    if (_player is MpvPlayerAdapter) {
+      final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
+      _player.videoDecoders = decoders;
+      LogService()
+          .log('Player', 'MPV 解码配置: ${settings.decodeMode} → $decoders');
+      return;
+    }
+
     // 音频硬解接线（1.1.186）：Android 不接线时 mdk 音频默认直接
     // FFmpeg 软解（真机日志确证），EAC3 软解音频钟抖动会让视频按
     // avsync 成簇判迟到丢帧；auto/hw 档优先 AMediaCodec，FFmpeg 兜底。
@@ -2142,7 +2185,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (filter == _lastAudioFilter) return;
     _lastAudioFilter = filter;
     _lastAudioFilterCodec = effectiveCodec;
-    _player.setProperty('audio.avfilter', filter);
+    if (_currentEngine == PlayerEngine.mpv) {
+      _player.setProperty('af', filter);
+    } else {
+      _player.setProperty('audio.avfilter', filter);
+    }
     LogService().log(
       'Player',
       '音频滤镜: ${filter.isEmpty ? "(无)" : filter} '
@@ -2204,6 +2251,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
     if (mounted && _danmakuOn) unawaited(_loadDanmaku());
 
+    int? fallbackDurationMs;
     try {
       // 来源服务器（集可能来自其他服务器）
       final epServerId = ep.serverId ?? widget.serverId;
@@ -2225,6 +2273,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 details.mediaSources.firstOrNull ??
                 MediaSource(id: '', name: ''),
           );
+          final detailRunTimeMs =
+              details.runTimeTicks != null && details.runTimeTicks! > 0
+                  ? details.runTimeTicks! ~/ 10000
+                  : 0;
+          final sourceRunTimeMs =
+              source.runTimeTicks != null && source.runTimeTicks! > 0
+                  ? source.runTimeTicks! ~/ 10000
+                  : 0;
+          if (detailRunTimeMs > 0) {
+            fallbackDurationMs = detailRunTimeMs;
+          } else if (sourceRunTimeMs > 0) {
+            fallbackDurationMs = sourceRunTimeMs;
+          }
           final configuredServerId = config?.serverId ?? '';
           _segmentServerId = configuredServerId.isNotEmpty
               ? configuredServerId
@@ -2263,7 +2324,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           itemId: itemId,
           mediaSourceId: epMediaSourceId,
           serverId: epServerId,
-          startMs: startMs);
+          startMs: startMs,
+          fallbackDurationMs: fallbackDurationMs);
 
       // 详情缺 RunTimeTicks 时，等播放器时长就绪后再补解析片尾区间
       if (mounted &&
@@ -2461,6 +2523,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 根因验证 + 规避一体；8 对齐触发条件放过全部正常片源）。
   /// 触发值变化时显式写入，对齐时显式清空（换片尺寸变小路径）。
   void _applyVideoAvfilter(Size size) {
+    if (_currentEngine == PlayerEngine.mpv) return;
     final filter = VideoAvfilterPolicy.resolve(
       size.width.toInt(),
       size.height.toInt(),
@@ -2493,7 +2556,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _effectiveVideoOutput() {
     // media_kit / Erika 档：固定 texture（引擎自管理渲染，无 tunnel/surfaceView）
     if (_currentEngine == PlayerEngine.mediaKit ||
-        _currentEngine == PlayerEngine.erika) {
+        _currentEngine == PlayerEngine.erika ||
+        _currentEngine == PlayerEngine.mpv) {
       return 'texture';
     }
     final settings = ref.read(settingsProvider);
@@ -2729,7 +2793,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Erika 使用原生 view，不注册 Flutter texture；页面/媒体就绪即可起播。
       return _isPlayerReady;
     }
-    if (_currentEngine == PlayerEngine.mediaKit) {
+    if (_currentEngine == PlayerEngine.mediaKit ||
+        _currentEngine == PlayerEngine.mpv) {
       return _player.textureId.value != null;
     }
     if (_usesSurfaceView) {
@@ -3084,10 +3149,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // _initPlayerProperties 不覆盖的三项（initState 单独写、重建后会丢）：
     // 字幕属性 / 音频后端 / 音频滤镜策略（_disposeOldEngine 已复位去重态，
     // 此处重写保证新引擎与起播一致）。
-    _player.setProperty('subtitle', '1');
-    _player.setProperty('subtitle.font.size', '40');
-    _player.setProperty('subtitle.border', '2');
-    _player.setProperty('subtitle.shadow', '1');
+    if (_currentEngine != PlayerEngine.mpv) {
+      _player.setProperty('subtitle', '1');
+      _player.setProperty('subtitle.font.size', '40');
+      _player.setProperty('subtitle.border', '2');
+      _player.setProperty('subtitle.shadow', '1');
+    }
     _applySubtitleStyle();
     final renderer = AppSettings.effectiveAudioRenderer(
         ref.read(settingsProvider).audioRenderer);
@@ -3109,7 +3176,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     String? mediaSourceId,
     String? serverId,
     int startMs = 0,
+    int? fallbackDurationMs,
   }) async {
+    _fallbackDurationMs = fallbackDurationMs ?? 0;
     if (!mounted) return false;
     _beginSkipPromptSuppression();
     // 会话级 EGL 守卫基准（v1.2.14）：本次流加载前的检测器状态快照。
@@ -3153,6 +3222,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final strmEnabled =
           subtitleStreamIndex == null && (config?.strmDirectPlay ?? false);
       final source = playbackInfo.sourceById(effectiveMediaSourceId);
+      final sourceRuntimeMs =
+          source?.runTimeTicks != null && source!.runTimeTicks! > 0
+              ? source.runTimeTicks! ~/ 10000
+              : 0;
+      if (sourceRuntimeMs > 0) {
+        _fallbackDurationMs = sourceRuntimeMs;
+      }
       final streamUrl = strmEnabled
           ? resolveStrmDirectUrl(source: source, proxyUrl: proxyUrl)
           : proxyUrl;
@@ -3234,6 +3310,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _player.prepare(startMs: startMs);
       // prepare 期间可能已 dispose：必须先复查再触碰 player。
       if (!mounted || _disposed) return false;
+      // 播放器不报 duration 时，用 Emby RunTimeTicks 兜底显示总进度。
+      _syncDurationFromPlayer();
       // 媒体重载不携带倍速：恢复用户所选档（fvp 侧为 Dart 状态）
       _player.playbackRate = _speed;
 
@@ -3483,10 +3561,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  void _syncDurationFromPlayer() {
-    final next = Duration(milliseconds: _player.mediaInfo.duration);
-    if (next.inMilliseconds <= 0) return;
+  /// 首次确认已经真正起播：时长可读、位置推进或进入 playing。
+  ///
+  /// 转码/直播流可能永远报不出时长，不能只靠 duration 判断起播；
+  /// 置位后刷新一次，让初始转圈和加载期控件强显立即结束。
+  void _markPlaybackStarted() {
+    if (_hasStartedPlayback) return;
     _hasStartedPlayback = true;
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _syncDurationFromPlayer() {
+    final next = Duration(
+      milliseconds: PlayerScreen.effectiveDurationMs(
+        playerMs: _player.duration,
+        fallbackMs: _fallbackDurationMs,
+      ),
+    );
+    if (next.inMilliseconds <= 0) return;
+    _markPlaybackStarted();
     if (next.inMilliseconds == _duration.inMilliseconds) return;
     _duration = next;
     _durationNotifier.value = _duration;
@@ -3684,6 +3779,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 原生负值防御：seek 窗口/异常时 mdk position 可能返回 -1 等，
       // 不写入（跳过本 tick，等 seek 完成后回读同步）。
       if (pos < 0) return;
+      if (pos > 0) _markPlaybackStarted();
       if (pos != _positionNotifier.value.inMilliseconds) {
         _position = Duration(milliseconds: pos);
         _positionNotifier.value = _position;
@@ -3697,7 +3793,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         positionMs: pos,
         durationMs: _duration.inMilliseconds,
         playing: _player.state == AdapterPlaybackState.playing,
-        engineEmitsEnd: _currentEngine == PlayerEngine.mdk,
+        engineEmitsEnd: _currentEngine == PlayerEngine.mdk ||
+            _currentEngine == PlayerEngine.mpv,
         seekCooldownActive: seekAt != null &&
             DateTime.now().difference(seekAt) <
                 PlayerScreen.autoNextSeekCooldown,
@@ -3742,7 +3839,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _syncDeepDiagnostics() {
     // media_kit / Erika 档：mdk 深度诊断不可用（依赖 mdk.setGlobalOption/logHandler）
     if (_currentEngine == PlayerEngine.mediaKit ||
-        _currentEngine == PlayerEngine.erika) {
+        _currentEngine == PlayerEngine.erika ||
+        _currentEngine == PlayerEngine.mpv) {
       if (_deepLogActive) {
         _deepLogActive = false;
         _deepLogLines.clear();
@@ -4870,6 +4968,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _syncPlayState() {
     final playing = _player.state == AdapterPlaybackState.playing;
+    if (playing) _markPlaybackStarted();
     if (_isPlayingNotifier.value != playing) {
       _isPlayingNotifier.value = playing;
       // 开播边沿重启自动隐藏计时：初进计时若在加载期（非 playing）烧掉，
@@ -6781,7 +6880,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Widget _buildResponsiveLayout() {
     final isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait &&
-            (Platform.isAndroid || Platform.isIOS);
+            PlayerPlatform.isMobile;
 
     final showPanel = widget.roomCode != null && _showPanel;
 
@@ -6920,7 +7019,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     final videoAreaPhoneControls = PlayerScreen.isMobilePhoneControls(
       tvMode: videoAreaTvMode,
-      mobilePlatform: Platform.isAndroid || Platform.isIOS,
+      mobilePlatform: PlayerPlatform.isMobile,
     );
     // 选择器面板几何：选集面板上下右贴边铺满，其余面板避开顶栏/控制条
     final panelBox = PlayerScreen.selectorPanelBox(
@@ -7106,8 +7205,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          // 加载指示器（渲染在控件层之下：转圈期间顶栏/底栏仍可点返回）
-          if (_duration.inMilliseconds == 0 && _isPlayerReady)
+          // 加载指示器（渲染在控件层之下：转圈期间顶栏/底栏仍可点返回）。
+          // 时长未知的转码/直播流在起播后必须隐藏，不能只看 duration==0。
+          if (PlayerScreen.shouldShowInitialLoadingSpinner(
+            durationMs: _duration.inMilliseconds,
+            positionMs: _position.inMilliseconds,
+            playerReady: _isPlayerReady,
+            startedOnce: _hasStartedPlayback,
+            playing: _player.state == AdapterPlaybackState.playing,
+          ))
             const Center(
               child: CircularProgressIndicator(color: Color(0xFF6366F1)),
             ),
@@ -7456,7 +7562,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildTopBar() {
     final settings = ref.watch(settingsProvider);
-    final mobilePlatform = Platform.isAndroid || Platform.isIOS;
+    final mobilePlatform = PlayerPlatform.isMobile;
     final phoneControls = PlayerScreen.isMobilePhoneControls(
       tvMode: settings.tvMode,
       mobilePlatform: mobilePlatform,
@@ -8236,6 +8342,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 获取当前位置
       final currentPos = _player.position;
 
+      if (_currentEngine == PlayerEngine.mpv) {
+        _player.videoDecoders = DecodeModeService.resolveDecoders(mode);
+        await ref.read(settingsProvider.notifier).update(decodeMode: mode);
+        setState(() => _showDecodeModeMenu = false);
+        await _reloadSameLine();
+        return;
+      }
+
       // Step1: 暂停（防止切换期间解码器输出帧导致撕裂）
       if (wasPlaying) {
         _player.state = AdapterPlaybackState.paused;
@@ -8588,7 +8702,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildControls() {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
-    final mobilePlatform = Platform.isAndroid || Platform.isIOS;
+    final mobilePlatform = PlayerPlatform.isMobile;
     final phoneControls = PlayerScreen.isMobilePhoneControls(
       tvMode: tvMode,
       mobilePlatform: mobilePlatform,
@@ -9598,6 +9712,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       mounted: mounted,
       switchingEngine: _switchingEngine,
     )) {
+      return;
+    }
+    if (_currentEngine == PlayerEngine.mpv) {
+      _player.setProperty('sub-scale', _subtitleScale.toStringAsFixed(2));
+      final pos = (100 - _subtitleMarginY / 4).clamp(0, 150).round();
+      _player.setProperty('sub-pos', '$pos');
       return;
     }
     final forceBitmapBottom =

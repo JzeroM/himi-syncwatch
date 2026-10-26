@@ -43,6 +43,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   }
 
   Future<void> _shareRoomCode() async {
+    if (Platform.operatingSystem == 'ohos') {
+      if (mounted) showAppToast(context, '鸿蒙暂不支持系统分享');
+      return;
+    }
     await SharePlus.instance.share(
       ShareParams(
         text: '来一起看电影吧！\n\n房间码：\n${widget.roomCode}\n\n在 HIMI 中扫码或粘贴即可加入',
@@ -53,7 +57,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
   Future<Uint8List?> _captureQrImage() async {
     try {
-      final boundary = _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary =
+          _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return null;
       final image = await boundary.toImage(pixelRatio: 3.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -64,19 +69,25 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   }
 
   Future<void> _saveQrToGallery() async {
+    if (Platform.operatingSystem == 'ohos') {
+      if (mounted) showAppToast(context, '鸿蒙暂不支持系统分享');
+      return;
+    }
     final bytes = await _captureQrImage();
     if (bytes == null || !mounted) return;
 
     try {
       final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
+      final file = File(
+          '${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
       await file.writeAsBytes(bytes);
 
       if (Platform.isAndroid) {
         // Android: 复制到 DCIM
         final dcimDir = Directory('/storage/emulated/0/DCIM/Himi');
         if (!dcimDir.existsSync()) dcimDir.createSync(recursive: true);
-        final dest = File('${dcimDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
+        final dest = File(
+            '${dcimDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
         await file.copy(dest.path);
       } else if (Platform.isIOS) {
         // iOS: 复制到应用 Documents 目录供用户手动保存
@@ -96,6 +107,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   }
 
   Future<void> _shareQrImage() async {
+    if (Platform.operatingSystem == 'ohos') {
+      if (mounted) showAppToast(context, '鸿蒙暂不支持系统分享');
+      return;
+    }
     final bytes = await _captureQrImage();
     if (bytes == null || !mounted) return;
 
@@ -211,7 +226,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () {
-                            Clipboard.setData(ClipboardData(text: widget.roomCode));
+                            Clipboard.setData(
+                                ClipboardData(text: widget.roomCode));
                             showAppToast(context, '已复制房间码');
                           },
                           icon: const Icon(Icons.copy, size: 18),

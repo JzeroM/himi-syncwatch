@@ -279,6 +279,9 @@ class MediaSource {
   /// 总码率（Emby `MediaSourceInfo.Bitrate`，bit/s）；版本偏好排序用。
   final int? bitrate;
 
+  /// 服务器给出的媒体时长（Emby `MediaSourceInfo.RunTimeTicks`，100ns）。
+  final int? runTimeTicks;
+
   /// 服务器返回的直链播放地址（Emby `MediaSourceInfo.DirectStreamUrl`）。
   final String? directStreamUrl;
 
@@ -303,6 +306,7 @@ class MediaSource {
     this.defaultAudioStreamIndex,
     this.defaultSubtitleStreamIndex,
     this.bitrate,
+    this.runTimeTicks,
     this.directStreamUrl,
     this.transcodingUrl,
     this.protocol,
@@ -325,6 +329,7 @@ class MediaSource {
       defaultAudioStreamIndex: json['DefaultAudioStreamIndex'] as int?,
       defaultSubtitleStreamIndex: json['DefaultSubtitleStreamIndex'] as int?,
       bitrate: json['Bitrate'] as int?,
+      runTimeTicks: json['RunTimeTicks'] as int?,
       directStreamUrl: json['DirectStreamUrl'] as String?,
       transcodingUrl: json['TranscodingUrl'] as String?,
       protocol: json['Protocol'] as String?,

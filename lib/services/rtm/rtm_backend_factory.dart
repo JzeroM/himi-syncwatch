@@ -13,7 +13,9 @@ RtmBackend createRtmBackend() {
   if (Platform.isWindows) {
     return WindowsRtmBackend();
   }
-  if (Platform.isMacOS || Platform.isLinux) {
+  if (Platform.isMacOS ||
+      Platform.isLinux ||
+      Platform.operatingSystem == 'ohos') {
     return UnsupportedRtmBackend();
   }
   return AgoraRtmBackend();

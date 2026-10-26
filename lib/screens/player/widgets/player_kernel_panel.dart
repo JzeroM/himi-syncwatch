@@ -23,6 +23,7 @@ class PlayerKernelPanel extends StatelessWidget {
         PlayerEngine.mdk => 'MDK / FVP，兼容性与 HDR 直通',
         PlayerEngine.mediaKit => 'libmpv，格式覆盖广，适合桌面',
         PlayerEngine.erika => 'Erika，Rust 内核，原生位图字幕',
+        PlayerEngine.mpv => 'MPV / libmpv，鸿蒙专用，格式与字幕覆盖广',
       };
 
   @override

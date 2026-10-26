@@ -1,0 +1,42 @@
+name: flutter_secure_storage_ohos
+description: Flutter Secure Storage provides API to store data in secure storage. The preferences used in ohos.
+version: 1.0.0
+repository: https://gitee.com/openharmony-sig/fluttertpc_flutter_secure_storage
+
+environment:
+  # PATCH himi: 上游锁定 Dart 2（<3.0.0），鸿蒙 fork 为 Dart 3.9，放宽
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: ">=2.5.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_secure_storage_platform_interface: ^1.0.1
+  plugin_platform_interface: ^2.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+  mockito: ^5.0.12
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+  # This section identifies this Flutter project as a plugin project.
+  # The 'pluginClass' specifies the class (in Java, Kotlin, Swift, Objective-C, etc.)
+  # which should be registered in the plugin registry. This is required for
+  # using method channels.
+  # The Android 'package' specifies package in which the registered class is.
+  # This is required for using method channels on Android.
+  # The 'ffiPlugin' specifies that native code should be built and bundled.
+  # This is required for using `dart:ffi`.
+  # All these are used by the tooling to maintain consistency when
+  # adding or updating assets for this project.
+  plugin:
+    platforms:
+      ohos:
+        package: com.example.flutter_secure_storage_ohos
+        pluginClass: FlutterSecureStorageOhosPlugin

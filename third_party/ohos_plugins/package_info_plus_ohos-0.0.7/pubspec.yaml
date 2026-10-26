@@ -1,0 +1,40 @@
+name: package_info_plus_ohos
+description: OpenHarmony implementation of the package_info_plus plugin.
+version: 0.0.7
+repository: https://github.com/harmonycandies/package_info_plus_ohos
+topics:
+  - package-info
+  - package-info-plus
+  - ohos
+  - harmony-os
+  - openharmony
+
+environment:
+  # PATCH himi: 上游锁定 Dart 2（<3.0.0），鸿蒙 fork 为 Dart 3.9，放宽
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: ">=3.7.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+  # This section identifies this Flutter project as a plugin project.
+  # The 'pluginClass' specifies the class (in Java, Kotlin, Swift, Objective-C, etc.)
+  # which should be registered in the plugin registry. This is required for
+  # using method channels.
+  # The Android 'package' specifies package in which the registered class is.
+  # This is required for using method channels on Android.
+  # The 'ffiPlugin' specifies that native code should be built and bundled.
+  # This is required for using `dart:ffi`.
+  # All these are used by the tooling to maintain consistency when
+  # adding or updating assets for this project.
+  plugin:
+    platforms:
+      ohos:
+        pluginClass: PackageInfoPlusPlugin

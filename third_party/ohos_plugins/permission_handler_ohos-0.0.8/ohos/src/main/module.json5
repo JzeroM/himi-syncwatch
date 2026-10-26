@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "permission_handler_ohos",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet"
+    ]
+  }
+}

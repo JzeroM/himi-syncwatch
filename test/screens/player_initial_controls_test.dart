@@ -323,6 +323,109 @@ void main() {
     });
   });
 
+  group('shouldShowInitialLoadingSpinner（时长未知不永久转圈）', () {
+    test('首次就绪、无进度、未播放 → 显示', () {
+      expect(
+        PlayerScreen.shouldShowInitialLoadingSpinner(
+          durationMs: 0,
+          positionMs: 0,
+          playerReady: true,
+          startedOnce: false,
+          playing: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('时长未知但已进入 playing → 不显示', () {
+      expect(
+        PlayerScreen.shouldShowInitialLoadingSpinner(
+          durationMs: 0,
+          positionMs: 0,
+          playerReady: true,
+          startedOnce: false,
+          playing: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('时长未知但位置已推进 → 不显示', () {
+      expect(
+        PlayerScreen.shouldShowInitialLoadingSpinner(
+          durationMs: 0,
+          positionMs: 1,
+          playerReady: true,
+          startedOnce: false,
+          playing: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('已起播过 → 不显示', () {
+      expect(
+        PlayerScreen.shouldShowInitialLoadingSpinner(
+          durationMs: 0,
+          positionMs: 0,
+          playerReady: true,
+          startedOnce: true,
+          playing: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('时长已知 → 不显示', () {
+      expect(
+        PlayerScreen.shouldShowInitialLoadingSpinner(
+          durationMs: 1000,
+          positionMs: 0,
+          playerReady: true,
+          startedOnce: false,
+          playing: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('播放器未就绪 → 不显示', () {
+      expect(
+        PlayerScreen.shouldShowInitialLoadingSpinner(
+          durationMs: 0,
+          positionMs: 0,
+          playerReady: false,
+          startedOnce: false,
+          playing: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('effectiveDurationMs（播放器时长与 Emby 兜底）', () {
+    test('播放器有时长 → 优先播放器', () {
+      expect(
+        PlayerScreen.effectiveDurationMs(playerMs: 120000, fallbackMs: 90000),
+        120000,
+      );
+    });
+
+    test('播放器为 0 → 用 Emby 兜底', () {
+      expect(
+        PlayerScreen.effectiveDurationMs(playerMs: 0, fallbackMs: 90000),
+        90000,
+      );
+    });
+
+    test('两者都没有 → 0', () {
+      expect(
+        PlayerScreen.effectiveDurationMs(playerMs: 0, fallbackMs: 0),
+        0,
+      );
+    });
+  });
+
   // ---- 播完自动下一集（v1.1.239 位置兜底门控） ----
 
   group('shouldAutoNextEpisode（播完位置兜底判定）', () {

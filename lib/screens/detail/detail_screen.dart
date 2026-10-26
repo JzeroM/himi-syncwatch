@@ -14,6 +14,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
+import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/playback_settings_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
@@ -359,6 +360,18 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
   }
 
+  /// 详情页操作成功后写入跨页乐观覆盖，保证首页/分类等快照列表的
+  /// 长按弹窗重新打开时显示最新收藏/已看状态。
+  void _applyMediaStateOverride({
+    required String itemId,
+    bool? favorite,
+    bool? watched,
+  }) {
+    final notifier = ref.read(mediaStateOverrideProvider.notifier);
+    if (favorite != null) notifier.setFavorite(itemId, favorite);
+    if (watched != null) notifier.setWatched(itemId, watched);
+  }
+
   /// 收藏 / 取消收藏主条目（电影=电影；电视剧=整部剧）。乐观更新，
   /// 失败回滚并提示；成功 bump 收藏修订号让收藏页重取。
   Future<void> _toggleFavorite() async {
@@ -375,6 +388,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       showAppToast(context, '收藏操作失败，请检查网络');
       return;
     }
+    _applyMediaStateOverride(itemId: item.id, favorite: next);
     ref.read(favoritesRevisionProvider.notifier).state++;
   }
 
@@ -404,6 +418,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       showAppToast(context, '收藏操作失败，请检查网络');
       return false;
     }
+    _applyMediaStateOverride(itemId: episodeId, favorite: next);
     ref.read(favoritesRevisionProvider.notifier).state++;
     return true;
   }
@@ -442,6 +457,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       });
       showAppToast(context, '标记已观看失败，请检查网络');
       return;
+    }
+    _applyMediaStateOverride(itemId: item.id, watched: next);
+    if (item.isSeries) {
+      for (final episode in _episodes) {
+        _applyMediaStateOverride(itemId: episode.id, watched: next);
+      }
     }
     // 标记已观看会清除服务器续播位置 → 即时刷新首页「继续观看」栏
     ref.read(resumeRevisionProvider.notifier).state++;
@@ -488,6 +509,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       showAppToast(context, '标记已观看失败，请检查网络');
       return false;
     }
+    _applyMediaStateOverride(itemId: episodeId, watched: next);
     // 标记该集已观看清除其续播位置 → 即时刷新首页「继续观看」栏
     ref.read(resumeRevisionProvider.notifier).state++;
     if (next) {

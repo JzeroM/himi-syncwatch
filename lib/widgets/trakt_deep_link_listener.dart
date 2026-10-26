@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +18,7 @@ class TraktDeepLinkListener extends ConsumerStatefulWidget {
 
 class _TraktDeepLinkListenerState extends ConsumerState<TraktDeepLinkListener>
     with WidgetsBindingObserver {
-  final AppLinks _appLinks = AppLinks();
+  AppLinks? _appLinks;
   StreamSubscription<Uri>? _subscription;
   Uri? _lastHandledUri;
   DateTime? _lastHandledAt;
@@ -26,8 +27,12 @@ class _TraktDeepLinkListenerState extends ConsumerState<TraktDeepLinkListener>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _subscription = _appLinks.uriLinkStream.listen(_handleUri);
-    unawaited(_consumeInitialLink());
+    if (Platform.operatingSystem != 'ohos') {
+      final appLinks = AppLinks();
+      _appLinks = appLinks;
+      _subscription = appLinks.uriLinkStream.listen(_handleUri);
+      unawaited(_consumeInitialLink());
+    }
     unawaited(_initProvider());
   }
 
@@ -39,7 +44,7 @@ class _TraktDeepLinkListenerState extends ConsumerState<TraktDeepLinkListener>
 
   Future<void> _consumeInitialLink() async {
     try {
-      final uri = await _appLinks.getInitialLink();
+      final uri = await _appLinks?.getInitialLink();
       if (uri != null) await _handleUri(uri);
     } catch (_) {}
   }

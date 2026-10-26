@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
@@ -56,9 +58,7 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
     final input = await _promptRelogin();
     if (input == null || !mounted) return;
     try {
-      final authResult = await ref
-          .read(embyAuthClientProvider)
-          .authenticate(
+      final authResult = await ref.read(embyAuthClientProvider).authenticate(
             serverUrl: _server.effectiveUrl,
             username: input.username,
             password: input.password,
@@ -116,6 +116,10 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
   }
 
   Future<void> _uploadAvatar() async {
+    if (Platform.operatingSystem == 'ohos') {
+      if (mounted) showAppToast(context, '鸿蒙暂不支持选图上传头像');
+      return;
+    }
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       maxWidth: 512,

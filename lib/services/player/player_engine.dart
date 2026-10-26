@@ -8,6 +8,7 @@ import '../../player_core/player_data_models.dart'
 import '../../player_core/adapters/nipa_mdk_adapter.dart';
 import '../../player_core/adapters/nipa_media_kit_adapter.dart';
 import '../../player_core/player_core_bridge.dart';
+import 'mpv_player_adapter.dart';
 import 'player_adapter.dart';
 
 /// 播放器引擎工厂：根据 [PlayerEngine] 创建对应 [PlayerAdapter]。
@@ -47,8 +48,16 @@ class PlayerEngineFactory {
         return PlayerCoreBridge(NipaErikaAdapter(
           androidOutputMode: PlayerErikaAndroidOutputMode.sdr,
         ));
+      case PlayerEngine.mpv:
+        return MpvPlayerAdapter();
     }
   }
+
+  @visibleForTesting
+  static bool? debugIsOhosOverride;
+
+  static bool get isOhos =>
+      debugIsOhosOverride ?? (!kIsWeb && defaultTargetPlatform.name == 'ohos');
 
   /// 当前平台支持的引擎列表。
   ///
@@ -57,6 +66,7 @@ class PlayerEngineFactory {
   /// - iOS：Erika
   /// - Windows：MDK、Erika、MediaKit
   static List<PlayerEngine> supportedEngines() {
+    if (isOhos) return const <PlayerEngine>[PlayerEngine.mpv];
     if (kIsWeb) return const <PlayerEngine>[PlayerEngine.mdk];
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -80,6 +90,7 @@ class PlayerEngineFactory {
 
   /// 平台默认引擎：NipaPlay 代码默认 MDK；iOS 矩阵只开放 Erika。
   static PlayerEngine defaultEngine() {
+    if (isOhos) return PlayerEngine.mpv;
     if (kIsWeb) return PlayerEngine.mdk;
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       return PlayerEngine.erika;
