@@ -117,6 +117,8 @@ if [ "$MODE" = "mpv" ] || [ "$MODE" = "all" ]; then
   cp -f "$DEV_DIR/libmpv.dll.a" "$OUT/"
   mkdir -p "$OUT/include/mpv"
   cp -f "$DEV_DIR/include/mpv/"*.h "$OUT/include/mpv/"
+  # media_kit_video 的 Windows CMake 以 <client.h> 形式包含头文件。
+  cp -f "$DEV_DIR/include/mpv/"*.h "$OUT/include/"
   file "$OUT/libmpv-2.dll" | grep -q 'PE32+' || die "libmpv-2.dll 不是 64 位 PE"
   sha256sum "$OUT/libmpv-2.dll" "$OUT/libmpv.dll.a" | tee "$OUT/SHA256SUMS"
   log "Windows 内核完成: $OUT/libmpv-2.dll"

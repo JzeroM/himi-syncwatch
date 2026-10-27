@@ -87,17 +87,12 @@ case "$ABI" in
   armeabi-v7a) TRIPLE=arm-linux-androideabi ;;
   x86_64) TRIPLE=x86_64-linux-android ;;
 esac
-LIBCXX=$(find "$NDK_TOOLCHAIN/sysroot/usr/lib" -path "*/$TRIPLE/libc++_shared.so" | head -1)
-[ -n "$LIBCXX" ] || LIBCXX=$(find "$NDK_TOOLCHAIN" -name 'libc++_shared.so' | head -1)
-require_file "$LIBCXX"
-
 rm -rf "$OUT"/*
 cp -f "$PREFIX/lib/libmpv.so" "$OUT/libmpv.so"
 shopt -s nullglob
 for so in "$PREFIX"/lib/libav*.so* "$PREFIX"/lib/libsw*.so* "$PREFIX"/lib/libpostproc.so* "$PREFIX"/lib/libplacebo.so*; do
   cp -f "$so" "$OUT/"
 done
-cp -f "$LIBCXX" "$OUT/libc++_shared.so"
 STRIP="$NDK_TOOLCHAIN/bin/llvm-strip"
 [ -x "$STRIP" ] || STRIP=strip
 for so in "$OUT"/*.so*; do
