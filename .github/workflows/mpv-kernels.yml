@@ -87,9 +87,13 @@ jobs:
             build-essential git wget curl unzip zip python3 pkg-config \
             meson ninja-build cmake gperf nasm yasm bison flex gettext \
             autoconf automake libtool libtool-bin perl
+      # Ubuntu 24.04 apt 的 Meson 是 1.3.2，而 fontconfig 当前要求 >=1.11.0。
+      - name: Install newer Meson
+        run: sudo python3 -m pip install --break-system-packages 'meson>=1.11'
       - name: Build Android libmpv
         run: |
           set -o pipefail
+          meson --version
           echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
           if ! bash scripts/mpv/build_android.sh "${{ matrix.abi }}" 2>&1 | tee /tmp/android-libmpv.log; then
             tail -80 /tmp/android-libmpv.log
