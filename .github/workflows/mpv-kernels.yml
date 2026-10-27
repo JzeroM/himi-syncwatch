@@ -1,6 +1,11 @@
 name: MPV Kernels
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/mpv/**'
+      - '.github/workflows/mpv-kernels.yml'
   workflow_dispatch:
     inputs:
       build_ohos:
@@ -67,7 +72,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /opt/microsoft /usr/share/miniconda /usr/local/.ghcup || true
+          # 不要删除 /usr/local/lib/android：ANDROID_HOME 指向这里，
+          # mpv-android 的 download-sdk.sh 会向其安装 platform/build-tools。
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /opt/microsoft /usr/share/miniconda /usr/local/.ghcup || true
           sudo apt-get clean
       - uses: actions/setup-java@v4
         with:
@@ -81,7 +88,15 @@ jobs:
             meson ninja-build cmake gperf nasm yasm bison flex gettext \
             autoconf automake libtool libtool-bin perl
       - name: Build Android libmpv
-        run: bash scripts/mpv/build_android.sh "${{ matrix.abi }}"
+        run: |
+          set -o pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+          if ! bash scripts/mpv/build_android.sh "${{ matrix.abi }}" 2>&1 | tee /tmp/android-libmpv.log; then
+            tail -80 /tmp/android-libmpv.log
+            grep -nE 'ERROR|error:|fatal:|FAILED|undefined reference' /tmp/android-libmpv.log | tail -20 |
+              while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: android-libmpv-${{ matrix.abi }}
@@ -119,7 +134,15 @@ jobs:
             build/mpv/windows/packages
           key: mpv-winbuild-${{ env.WINDOWS_MPVBUILD }}-${{ env.WINDOWS_FFMPEG_TAG }}-v1
       - name: Build Windows libmpv
-        run: bash scripts/mpv/build_windows.sh mpv
+        run: |
+          set -o pipefail
+          git config --global --add safe.directory '*'
+          if ! bash scripts/mpv/build_windows.sh mpv 2>&1 | tee /tmp/windows-libmpv.log; then
+            tail -80 /tmp/windows-libmpv.log
+            grep -nE 'ERROR|error:|fatal:|FAILED|undefined reference|No such file' /tmp/windows-libmpv.log | tail -20 |
+              while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: windows-libmpv

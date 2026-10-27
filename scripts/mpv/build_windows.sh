@@ -73,7 +73,18 @@ fi
 
 if [ "$MODE" = "mpv" ] || [ "$MODE" = "all" ]; then
   log "构建 Windows libmpv"
-  ninja -C "$BUILD" mpv
+  # ExternalProject 用 git 克隆 mpv/FFmpeg（partial clone），CI 偶发网络中断。
+  # ninja 会从失败步骤继续，重试不会重复已完成依赖。
+  ok=0
+  for i in 1 2 3; do
+    if ninja -C "$BUILD" mpv; then
+      ok=1
+      break
+    fi
+    log "Windows libmpv 构建失败，15 秒后重试（$i/3）"
+    sleep 15
+  done
+  [ "$ok" -eq 1 ] || die "Windows libmpv 构建失败"
   DEV_DIR=$(find "$BUILD" -maxdepth 1 -type d -name "mpv-dev-x86_64-v3-*" | head -1)
   if [ -z "$DEV_DIR" ]; then
     DEV_DIR=$(find "$BUILD" -maxdepth 1 -type d -name "mpv-dev-x86_64-*" | head -1)
