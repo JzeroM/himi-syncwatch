@@ -10,6 +10,11 @@ env:
   FLUTTER_VERSION: '3.47.4'
 
 jobs:
+  build-mpv-kernels:
+    uses: ./.github/workflows/mpv-kernels.yml
+    with:
+      build_ohos: false
+
   flutter-analyze:
     runs-on: ubuntu-latest
     steps:
@@ -21,7 +26,7 @@ jobs:
       - run: dart analyze lib/
 
   build-android:
-    needs: [flutter-analyze]
+    needs: [flutter-analyze, build-mpv-kernels]
     runs-on: ubuntu-latest
     env:
       # mdk-sdk v0.39.0 版本锁定（GitHub Release，SHA 校验防资产替换）。
@@ -32,6 +37,14 @@ jobs:
       FVP_DEPS_SHA256: cd196c9f6fb1872c4f35184848522ca3ab9c91196da47ca9761d8fb50e3e9cf3
     steps:
       - uses: actions/checkout@v4
+      - name: Download self-built Android libmpv
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-libmpv-*
+          path: ${{ runner.temp }}/mpv-jars
+          merge-multiple: true
+      - name: Point media_kit to self-built Android jars
+        run: echo "MEDIA_KIT_ANDROID_LIBMPV_DIR=$RUNNER_TEMP/mpv-jars" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
@@ -291,7 +304,7 @@ jobs:
           path: himi-sync-ios-unsigned-*.ipa
 
   build-windows:
-    needs: [flutter-analyze]
+    needs: [flutter-analyze, build-mpv-kernels]
     # windows-latest = VS18/MSVC 14.51，与 mdk v0.39.0（vs2026 工具链构建）
     # 同家族配对（fvp.dll 与 mdk.dll 跨 DLL 交互 C++ 对象，须同工具链），
     # 对齐 fvp 上游 CI 成功配置；windows-2022 系初始模板遗留。
@@ -305,6 +318,15 @@ jobs:
       FVP_DEPS_SHA256: e492fd45f3a6828e44f75ce665708c9040abaa60602605437b71c95c714808e3
     steps:
       - uses: actions/checkout@v4
+      - name: Download self-built Windows libmpv
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-libmpv
+          path: ${{ runner.temp }}/mpv-win
+      - name: Point media_kit to self-built Windows libmpv
+        shell: pwsh
+        run: |
+          "MEDIA_KIT_LIBMPV_DIR=$env:RUNNER_TEMP\mpv-win" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -334,6 +356,7 @@ jobs:
       # 上游 media-kit 默认 libmpv 解码器不完整（PGS 位图字幕 / 10bit / HDR 等），
       # 换完整 build 以补齐格式与字幕能力（对齐 NipaPlay 做法）。
       - name: 替换为完整 libmpv（shinchiro，补齐 PGS/格式）
+        if: env.MEDIA_KIT_LIBMPV_DIR == ''
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -481,7 +504,7 @@ jobs:
           path: build/windows/setup/*.exe
 
   release:
-    needs: [build-android, build-ios, build-windows]
+    needs: [build-android, build-ios, build-windows, build-mpv-kernels]
     runs-on: ubuntu-latest
     # 默认仅在三平台构建全部成功时发布：此前 always() 会在平台失败时
     # 发布不完整 release（v1.2.11 实测缺 Android APK 仍发布，事故）。

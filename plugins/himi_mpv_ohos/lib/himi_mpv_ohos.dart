@@ -134,8 +134,8 @@ class HimiMpvPlayer {
         'lang': lang,
       });
 
-  Future<void> setProperty(String name, Object value) =>
-      _methods.invokeMethod<void>('setProperty', {'name': name, 'value': value});
+  Future<void> setProperty(String name, Object value) => _methods
+      .invokeMethod<void>('setProperty', {'name': name, 'value': value});
 
   Future<String?> getProperty(String name) =>
       _methods.invokeMethod<String>('getProperty', {'name': name});
@@ -148,7 +148,8 @@ class HimiMpvPlayer {
       });
 
   /// 截图（BGRA 原始字节，需上层自行组装像素格式）。
-  Future<Uint8List?> screenshot() => _methods.invokeMethod<Uint8List>('screenshot');
+  Future<Uint8List?> screenshot() =>
+      _methods.invokeMethod<Uint8List>('screenshot');
 
   /// 轨道列表（mpv `track-list` 的 JSON 字符串）。
   Future<String?> getTracks() => _methods.invokeMethod<String>('getTracks');
@@ -190,6 +191,8 @@ class MpvPollResult {
     this.videoParams,
     this.trackList,
     this.hwdecCurrent,
+    this.gpuContext,
+    this.currentVo,
     this.mediaTitle,
     this.pathMasked,
   });
@@ -222,6 +225,12 @@ class MpvPollResult {
   /// 'no' = 软解在跑）。验证硬解是否真的生效。
   final String? hwdecCurrent;
 
+  /// 实际 GPU 上下文后端（应为 ohosvk）。
+  final String? gpuContext;
+
+  /// 实际视频输出（应为 gpu-next）。
+  final String? currentVo;
+
   final String? mediaTitle;
 
   /// 掩码后的播放地址（无 query，尾部 72 字符）。
@@ -230,7 +239,8 @@ class MpvPollResult {
   static MpvPollResult fromMap(Map<Object?, Object?> raw) {
     int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
     bool asBool(Object? v) => v is bool ? v : false;
-    double asDouble(Object? v) => v is double ? v : (v is num ? v.toDouble() : -1);
+    double asDouble(Object? v) =>
+        v is double ? v : (v is num ? v.toDouble() : -1);
     return MpvPollResult(
       durationMs: asInt(raw['durationMs']),
       positionMs: asInt(raw['positionMs']),
@@ -244,6 +254,8 @@ class MpvPollResult {
       videoParams: raw['videoParams'] as String?,
       trackList: raw['trackList'] as String?,
       hwdecCurrent: raw['hwdecCurrent'] as String?,
+      gpuContext: raw['gpuContext'] as String?,
+      currentVo: raw['currentVo'] as String?,
       mediaTitle: raw['mediaTitle'] as String?,
       pathMasked: raw['pathMasked'] as String?,
     );

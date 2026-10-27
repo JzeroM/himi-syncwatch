@@ -138,28 +138,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   String? _uri;
   Map<String, String> _headers = const {};
 
-  /// HDR 输入色彩提示（v1.2.91 引入，v1.2.93 改用输入标签覆盖）。
-  ///
-  /// 本构建 OHCodec 硬解输出的帧**不带色彩元数据**（side data 丢失），
-  /// 转码流的容器元数据也常被剥——mpv 把 PQ 像素当 SDR 直出 = 发灰发暗。
-  ///
-  /// v1.2.91 曾用 `vf=format=...` 强制标记——**那是错的**：显式 format
-  /// 滤镜会打断硬解零拷贝协商，mpv 整片退回软解（HDR10 10bit 软解跟不上
-  /// → 控制条永不隐藏/seek 重播/声音先出画面几秒，全部这一个根）。
-  ///
-  /// 正解：mpv 的**输入色彩标签覆盖**（`colormatrix*` 属性族）——只改
-  /// 帧的元数据解释，不触碰滤镜链，零拷贝硬解保持，tone mapping 在
-  /// libplacebo 渲染侧发生。SDR 时清空标签（回自动）。
-  String? _hdrInputTransfer;
+  /// 当前媒体是否 HDR：仅用于首帧前纹理尺寸与渲染降采样保护。
+  bool _hdrContentForMedia = false;
 
-  set hdrInputTransfer(String? value) => _hdrInputTransfer = value;
-
-  /// 本媒体强制软解（v1.2.86）：仅用于 DV Profile 5（无 HDR10 兼容基础
-  /// 层，硬解输出紫绿偏色，必须软解解 RPU 才能正确显示）。上层按 Emby
-  /// 元数据在 prepare 前设置；其余内容一律硬解优先（智能/硬解档）。
-  bool _swForThisMedia = false;
-
-  set swDecodeForThisMedia(bool value) => _swForThisMedia = value;
+  set hdrContent(bool value) => _hdrContentForMedia = value;
 
   /// 把 X-Emby-Token 拼进 URL 的 api_key 参数（Emby 流端点原生支持）。
   ///
@@ -192,8 +174,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     if (player == null) {
       // v1.2.98：HDR 内容初始纹理缓冲直接用 1280x720（GL OOM 根除的
       // 上半段——video-params 到来前的首帧窗口也安全），SDR 保持 1920。
-      final initW = _hdrInputTransfer != null ? 1280 : 1920;
-      final initH = _hdrInputTransfer != null ? 720 : 1080;
+      final initW = _hdrContentForMedia ? 1280 : 1920;
+      final initH = _hdrContentForMedia ? 720 : 1080;
       player = await HimiMpvPlayer.create(
           hwdecMode: _hwdecRenderMode, width: initW, height: initH);
       if (_disposed) {
@@ -215,13 +197,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 读取，open 之后再改要重载才生效。这里每次都显式写一遍，确保
     // 用户切换「硬解/软解/自动」后下一次起播立即按新配置走。
     //
-    // v1.2.85 硬解最大化（用户指示：能硬解尽量硬解，软解耗电发烫）：
-    // 所有内容（含 HDR10）一律先按用户档位硬解；本构建 OHCodec 的
-    // 10bit interop 仅 Vulkan 路径可用（鸿蒙走 OpenGL），HDR 硬解互操作
-    // 失败时由「媒体在播但无 video-params」的自动软解回退兜底（见
-    // _maybeFallbackToSoftwareDecode，3s 快速降级）。
-    // 例外：DV Profile 5 无兼容基础层，硬解必然紫绿偏色 → 直接软解。
-    final effectiveHwdec = _swForThisMedia ? 'no' : _hwdec;
+    // 所有内容（含 HDR10 / DV P5）先按用户档位硬解；ohosvk 提供
+    // OHCodec 10bit Vulkan 零拷贝互操作。硬解失败时由「媒体在播但无
+    // video-params」的自动软解回退兜底（见 _maybeFallbackToSoftwareDecode）。
+    final effectiveHwdec = _hwdec;
     try {
       await player.setProperty('hwdec', effectiveHwdec);
       if (effectiveHwdec != 'no') {
@@ -232,32 +211,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     } catch (e) {
       LogService().log('mpv', 'prepare: hwdec 写入失败: $e');
     }
-    // HDR 输入色彩标注（v1.2.98 最终定案）：
-    //
-    // 真机日志实锤（v1.2.97 抓取）：HDR10（4K 10bit）下 gpu-next 渲染
-    // 反复 GL_OUT_OF_MEMORY → Could not initialize video chain → 无画面
-    // → 控制条卡住/seek 重播。此前所有「标注」尝试（vf/colormatrix/
-    // vulkan-copy）都在向这根要爆的管线加纹理负担，只会更早 OOM。
-    //
-    // **HDR10 = 纯零拷贝 + 渲染降采样**：hwdec 走用户档位（零拷贝），
-    // 不加任何 vf/标签；渲染分辨率在 video-params 到手时压到 1280 宽
-    //（GL 纹理体积降 56%，OOM 根除）。亮度：内核 OHCodec 零拷贝丢失
-    // PQ 元数据导致 tone mapping 不触发，属 0.41-dev 内核限制——根治
-    // 需官方 buffer 模式内核（Plan B 留档）。SDR 路径不动。
-    try {
-      final t = _hdrInputTransfer;
-      if (t != null && t.isNotEmpty) {
-        LogService().log(
-            'mpv',
-            'HDR10 零拷贝直出（无标注；真机实测标注路径 GL OOM）'
-                ' transfer=$t 仅作元数据记录');
-      }
-    } catch (_) {}
     LogService().log(
-        'mpv',
-        'prepare: hwdec=$effectiveHwdec'
-            '${_swForThisMedia ? '（DV P5 强制软解）' : ''} '
-            'url=${(_uri ?? '').length}字符');
+        'mpv', 'prepare: hwdec=$effectiveHwdec url=${(_uri ?? '').length}字符');
 
     // 起播恒以暂停态打开：由上层 state setter 决定何时出声，
     // 避免页面未挂载/未就绪时先出声音（与 mdk 的 prepare 语义一致）。
@@ -745,6 +700,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       }
       final path = s.pathMasked;
       if (path != null && path.isNotEmpty) buffer.write('\n地址: $path');
+      if (s.gpuContext != null) buffer.write(' gpu-context=${s.gpuContext}');
+      if (s.currentVo != null) buffer.write(' vo=${s.currentVo}');
     }
     buffer.write(' hwdec=$_hwdec');
     final actual = _hwdecActual;
@@ -912,8 +869,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       );
       // 渲染分辨率封顶：SDR ≤1920、HDR/10bit ≤1280（GL OOM 根除，
       // v1.2.98；视频仍由硬解全速解原始分辨率，仅渲染缩小）。
-      final cap =
-          _hdrInputTransfer != null ? _maxRenderWidthHdr : _maxRenderWidthSdr;
+      final cap = _hdrContentForMedia ? _maxRenderWidthHdr : _maxRenderWidthSdr;
       var rw = w;
       var rh = h;
       if (rw > cap) {

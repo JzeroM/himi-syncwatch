@@ -1,0 +1,269 @@
+diff --git a/libavcodec/mediacodecdec_common.c b/libavcodec/mediacodecdec_common.c
+index 9a627c0..d3b0b69 100644
+--- a/libavcodec/mediacodecdec_common.c
++++ b/libavcodec/mediacodecdec_common.c
+@@ -32,9 +32,13 @@
+ #include "libavutil/time.h"
+ #include "libavutil/timestamp.h"
+ #include "libavutil/channel_layout.h"
++#include "libavutil/dovi_meta.h"
+ 
+ #include "avcodec.h"
+ #include "decode.h"
++#include "dovi_rpu.h"
++#include "h2645_parse.h"
++#include "hevc/hevc.h"
+ 
+ #include "mediacodec.h"
+ #include "mediacodec_surface.h"
+@@ -109,6 +113,165 @@ static const struct {
+     { 0 }
+ };
+ 
++static void mediacodec_dovi_clear(MediaCodecDecContext *s)
++{
++    for (int i = 0; i < s->nb_dovi_frames; i++) {
++        av_buffer_unref(&s->dovi_frames[i].rpu);
++        av_buffer_unref(&s->dovi_frames[i].metadata);
++    }
++    s->nb_dovi_frames = 0;
++    ff_dovi_ctx_flush(&s->dovi_ctx);
++}
++
++static int mediacodec_dovi_split(H2645Packet *hp, AVCodecContext *avctx,
++                                 const AVPacket *pkt)
++{
++    static const int nal_length_sizes[] = { 0, 4, 2, 1 };
++
++    for (int i = 0; i < FF_ARRAY_ELEMS(nal_length_sizes); i++) {
++        int ret = ff_h2645_packet_split(hp, pkt->data, pkt->size, avctx,
++                                        nal_length_sizes[i], AV_CODEC_ID_HEVC,
++                                        H2645_FLAG_SMALL_PADDING);
++        if (ret >= 0 && hp->nb_nals > 0)
++            return 0;
++        ff_h2645_packet_uninit(hp);
++        memset(hp, 0, sizeof(*hp));
++    }
++    return AVERROR_INVALIDDATA;
++}
++
++static int mediacodec_dovi_parse(AVCodecContext *avctx, MediaCodecDecContext *s,
++                                 const AVPacket *pkt)
++{
++    H2645Packet hp = { 0 };
++    H2645NAL *rpu_nal = NULL;
++    AVBufferRef *rpu = NULL, *metadata = NULL;
++    AVDOVIMetadata *dovi = NULL;
++    const uint8_t *sd;
++    size_t sd_size;
++    int ret;
++
++    if (avctx->codec_id != AV_CODEC_ID_HEVC || !pkt->size)
++        return 0;
++
++    sd = av_packet_get_side_data(pkt, AV_PKT_DATA_DOVI_CONF, &sd_size);
++    if (!sd) {
++        for (int i = 0; i < avctx->nb_coded_side_data; i++) {
++            if (avctx->coded_side_data[i].type == AV_PKT_DATA_DOVI_CONF) {
++                sd = avctx->coded_side_data[i].data;
++                sd_size = avctx->coded_side_data[i].size;
++                break;
++            }
++        }
++    }
++    if (sd && sd_size >= sizeof(s->dovi_ctx.cfg))
++        memcpy(&s->dovi_ctx.cfg, sd, sizeof(s->dovi_ctx.cfg));
++
++    if (mediacodec_dovi_split(&hp, avctx, pkt) < 0)
++        return 0;
++
++    for (int i = hp.nb_nals - 1; i >= 0; i--) {
++        H2645NAL *nal = &hp.nals[i];
++        if (nal->type == HEVC_NAL_UNSPEC62 && nal->size > 2 &&
++            nal->raw_size > 2 && !nal->nuh_layer_id && !nal->temporal_id) {
++            rpu_nal = nal;
++            break;
++        }
++    }
++    if (!rpu_nal) {
++        ff_h2645_packet_uninit(&hp);
++        return 0;
++    }
++
++    rpu = av_buffer_alloc(rpu_nal->raw_size - 2);
++    if (!rpu) {
++        ff_h2645_packet_uninit(&hp);
++        return AVERROR(ENOMEM);
++    }
++    memcpy(rpu->data, rpu_nal->raw_data + 2, rpu_nal->raw_size - 2);
++
++    ret = ff_dovi_rpu_parse(&s->dovi_ctx, rpu_nal->data + 2,
++                            rpu_nal->size - 2, avctx->err_recognition);
++    if (ret < 0) {
++        av_buffer_unref(&rpu);
++        ff_h2645_packet_uninit(&hp);
++        return 0;
++    }
++
++    ret = ff_dovi_get_metadata(&s->dovi_ctx, &dovi);
++    if (ret < 0) {
++        av_buffer_unref(&rpu);
++        ff_h2645_packet_uninit(&hp);
++        return ret;
++    }
++    if (ret > 0) {
++        metadata = av_buffer_create((uint8_t *)dovi, ret, NULL, NULL, 0);
++        if (!metadata) {
++            av_free(dovi);
++            av_buffer_unref(&rpu);
++            ff_h2645_packet_uninit(&hp);
++            return AVERROR(ENOMEM);
++        }
++    }
++
++    if (s->nb_dovi_frames > 0 &&
++        s->dovi_frames[s->nb_dovi_frames - 1].pts == pkt->pts) {
++        av_buffer_unref(&rpu);
++        av_buffer_unref(&metadata);
++        ff_h2645_packet_uninit(&hp);
++        return 0;
++    }
++
++    if (s->nb_dovi_frames == MEDIACODEC_DOVI_QUEUE_SIZE) {
++        av_buffer_unref(&s->dovi_frames[0].rpu);
++        av_buffer_unref(&s->dovi_frames[0].metadata);
++        memmove(&s->dovi_frames[0], &s->dovi_frames[1],
++                sizeof(s->dovi_frames[0]) * (MEDIACODEC_DOVI_QUEUE_SIZE - 1));
++        s->nb_dovi_frames--;
++    }
++    s->dovi_frames[s->nb_dovi_frames++] = (MediaCodecDoviFrame) {
++        .pts = pkt->pts,
++        .rpu = rpu,
++        .metadata = metadata,
++    };
++    av_log(avctx, AV_LOG_VERBOSE, "MediaCodec DoVi RPU attached\n");
++
++    ff_h2645_packet_uninit(&hp);
++    return 0;
++}
++
++static void mediacodec_dovi_attach(MediaCodecDecContext *s, AVFrame *frame)
++{
++    int found = -1;
++
++    if (frame->pts == AV_NOPTS_VALUE)
++        return;
++
++    for (int i = 0; i < s->nb_dovi_frames; i++) {
++        if (s->dovi_frames[i].pts == frame->pts) {
++            found = i;
++            break;
++        }
++    }
++    if (found < 0)
++        return;
++
++    MediaCodecDoviFrame dovi = s->dovi_frames[found];
++    memmove(&s->dovi_frames[found], &s->dovi_frames[found + 1],
++            sizeof(s->dovi_frames[0]) * (s->nb_dovi_frames - found - 1));
++    s->nb_dovi_frames--;
++
++    if (dovi.rpu && !av_frame_new_side_data_from_buf(
++            frame, AV_FRAME_DATA_DOVI_RPU_BUFFER, dovi.rpu)) {
++        av_buffer_unref(&dovi.rpu);
++        av_buffer_unref(&dovi.metadata);
++        return;
++    }
++    if (dovi.metadata && !av_frame_new_side_data_from_buf(
++            frame, AV_FRAME_DATA_DOVI_METADATA, dovi.metadata))
++        av_buffer_unref(&dovi.metadata);
++}
++
+ static enum AVSampleFormat mcdec_map_pcm_format(AVCodecContext *avctx,
+                                                MediaCodecDecContext *s,
+                                                int pcm_format)
+@@ -724,6 +887,7 @@ static int mediacodec_dec_flush_codec(AVCodecContext *avctx, MediaCodecDecContex
+ 
+     s->output_buffer_count = 0;
+ 
++    mediacodec_dovi_clear(s);
+     s->draining = 0;
+     s->flushing = 0;
+     s->eos = 0;
+@@ -832,6 +996,8 @@ int ff_mediacodec_dec_init(AVCodecContext *avctx, MediaCodecDecContext *s,
+     int ret;
+     int status;
+ 
++    memset(&s->dovi_ctx, 0, sizeof(s->dovi_ctx));
++    s->dovi_ctx.logctx = avctx;
+     s->avctx = avctx;
+     atomic_init(&s->refcount, 1);
+     atomic_init(&s->hw_buffer_count, 0);
+@@ -900,6 +1066,7 @@ int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
+     size_t size;
+     FFAMediaCodec *codec = s->codec;
+     int status;
++    int ret;
+     int64_t input_dequeue_timeout_us = wait ? INPUT_DEQUEUE_TIMEOUT_US : 0;
+     int64_t pts;
+ 
+@@ -917,6 +1084,9 @@ int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
+         return AVERROR_EOF;
+     }
+ 
++    if (pkt->size && (ret = mediacodec_dovi_parse(avctx, s, pkt)) < 0)
++        return ret;
++
+     while (offset < pkt->size || (need_draining && !s->draining)) {
+         ssize_t index = s->current_input_buffer;
+         if (index < 0) {
+@@ -1042,6 +1212,7 @@ int ff_mediacodec_dec_receive(AVCodecContext *avctx, MediaCodecDecContext *s,
+                 }
+             }
+ 
++            mediacodec_dovi_attach(s, frame);
+             s->output_buffer_count++;
+             return 0;
+         } else {
+@@ -1142,6 +1313,8 @@ int ff_mediacodec_dec_close(AVCodecContext *avctx, MediaCodecDecContext *s)
+         }
+     }
+ 
++    mediacodec_dovi_clear(s);
++    ff_dovi_ctx_unref(&s->dovi_ctx);
+     ff_mediacodec_dec_unref(s);
+ 
+     return 0;
+diff --git a/libavcodec/mediacodecdec_common.h b/libavcodec/mediacodecdec_common.h
+index 0ab2903..e2e7c66 100644
+--- a/libavcodec/mediacodecdec_common.h
++++ b/libavcodec/mediacodecdec_common.h
+@@ -32,8 +32,17 @@
+ #include "libavutil/pixfmt.h"
+ 
+ #include "avcodec.h"
++#include "dovi_rpu.h"
+ #include "mediacodec_wrapper.h"
+ 
++#define MEDIACODEC_DOVI_QUEUE_SIZE 64
++
++typedef struct MediaCodecDoviFrame {
++    int64_t pts;
++    AVBufferRef *rpu;
++    AVBufferRef *metadata;
++} MediaCodecDoviFrame;
++
+ typedef struct MediaCodecDecContext {
+ 
+     AVCodecContext *avctx;
+@@ -71,6 +80,10 @@ typedef struct MediaCodecDecContext {
+     atomic_int serial;
+ 
+     bool use_ndk_codec;
++
++    DOVIContext dovi_ctx;
++    MediaCodecDoviFrame dovi_frames[MEDIACODEC_DOVI_QUEUE_SIZE];
++    int nb_dovi_frames;
+ } MediaCodecDecContext;
+ 
+ int ff_mediacodec_dec_init(AVCodecContext *avctx,

@@ -2144,6 +2144,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _player.setProperty('avcodec.threads', '0');
   }
 
+  void _applyMpvContentHints() {
+    if (_currentEngine != PlayerEngine.mpv) return;
+    final player = _player;
+    if (player is! MpvPlayerAdapter) return;
+    final stream = _embyVideoStream;
+    player.hdrContent =
+        _hdrContent || stream?.isHDR == true || stream?.isDolbyVision == true;
+  }
+
   /// 当前活跃音轨的编码名（小写），取不到返回 ''。
   ///
   /// 优先取 mdk 实测（mediaInfo 活跃轨），回退 Emby 元数据。
@@ -2740,6 +2749,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _hdrContent = true;
       _hdrType = panelLabel;
     });
+    _applyMpvContentHints();
     // HDR image=0 实验（1.1.190 官方 setDecoders 方式）：运行期判定
     // HDR（Emby 误标 SDR 的 strm/重封装项）兜底注入。属性内嵌在解码
     // 器名中，不受 mdk 内部 video.decoder=scale=WxH 覆写影响。
@@ -3306,6 +3316,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 其余仅 Android + hdrGlWorkaround 且显示无 HDR 能力时强制 bt709。
       _applyOutputColorSpace();
       _isSwitchingMedia = true;
+      _applyMpvContentHints();
       _player.media = streamUrl;
       await _player.prepare(startMs: startMs);
       // prepare 期间可能已 dispose：必须先复查再触碰 player。
@@ -3469,6 +3480,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       _isSwitchingMedia = true;
       _applyOutputColorSpace();
+      _applyMpvContentHints();
       // _currentPlayUrl/_currentToken 已在入口同步写入。
       _player.media = playUrl;
       await _player.prepare();

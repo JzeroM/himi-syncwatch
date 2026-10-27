@@ -35,6 +35,16 @@ void applyMediaKitNetworkOptions(
 }
 
 @visibleForTesting
+bool isHdrVideoParams(VideoParams params) {
+  final gamma = params.gamma?.toLowerCase() ?? '';
+  final primaries = params.primaries?.toLowerCase() ?? '';
+  return gamma.contains('pq') ||
+      gamma.contains('2084') ||
+      gamma.contains('hlg') ||
+      primaries.contains('2020');
+}
+
+@visibleForTesting
 bool isRetryableMediaKitLoadError(String message) {
   final error = message.toLowerCase();
   if (error.contains('401') ||
@@ -128,6 +138,9 @@ class NipaMediaKitAdapter extends AbstractPlayer
   static const String _hdrValidationFlag = 'NIPAPLAY_MACOS_HDR_VALIDATE';
   static const String _windowsHdrValidationFlag =
       'NIPAPLAY_WINDOWS_HDR_VALIDATE';
+  static const String _windowsLibplaceboHdrFilter =
+      'lavfi=[libplacebo=apply_dolbyvision=yes:tonemapping=bt.2390:'
+      'color_primaries=bt709:color_trc=bt709:colorspace=bt709:format=yuv420p]';
   static const MethodChannel _macOSNativeVideoChannel =
       MethodChannel('nipaplay/macos_native_video');
   static const MethodChannel _windowsNativeVideoChannel =
@@ -978,7 +991,12 @@ class NipaMediaKitAdapter extends AbstractPlayer
         return;
       }
       if (defaultTargetPlatform == TargetPlatform.android) {
-        (_player.platform as dynamic)?.setProperty('hwdec', 'mediacodec-copy');
+        final androidHwdec =
+            _envString('NIPAPLAY_ANDROID_HWDEC') ?? 'mediacodec';
+        (_player.platform as dynamic)?.setProperty('hwdec', androidHwdec);
+        (_player.platform as dynamic)
+            ?.setProperty('hwdec-software-fallback', 'yes');
+        _properties['hwdec'] = androidHwdec;
       } else {
         // 对于其他平台，'auto-copy' 仍然是一个好的通用选择
         (_player.platform as dynamic)?.setProperty('hwdec', 'auto-copy');
@@ -1135,6 +1153,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
     //debugPrint('[MediaKit] 设置videoParams监听器');
     _player.stream.videoParams.listen((params) {
       //debugPrint('[MediaKit] 视频参数变化: dw=${params.dw}, dh=${params.dh}');
+      _maybeApplyWindowsLibplaceboHdrFilter(params);
       // 当视频尺寸可用时，重新更新媒体信息
       if (params.dw != null &&
           params.dh != null &&
@@ -1257,6 +1276,27 @@ class NipaMediaKitAdapter extends AbstractPlayer
         debugPrint('MediaKit MPV日志: [${log.level}/${log.prefix}] ${log.text}');
       }
     });
+  }
+
+  void _maybeApplyWindowsLibplaceboHdrFilter(VideoParams params) {
+    if (!Platform.isWindows || _isDisposed) return;
+    if (_envFlagEnabled('NIPAPLAY_DISABLE_WINDOWS_LIBPLACEBO_HDR')) return;
+
+    final isHdr = isHdrVideoParams(params);
+    final alreadyApplied = _properties['vf']?.contains('libplacebo') == true;
+    if (!isHdr) {
+      if (alreadyApplied) {
+        _properties.remove('vf');
+        (_player.platform as dynamic)?.setProperty('vf', '');
+      }
+      return;
+    }
+    if (alreadyApplied) return;
+
+    _setMpvPropertyOption('vf', _windowsLibplaceboHdrFilter,
+        log: _mpvDiagnosticsEnabled);
+    debugPrint('MediaKit: Windows HDR libplacebo 滤镜已启用 '
+        'gamma=${params.gamma} primaries=${params.primaries}');
   }
 
   void _resetMediaLoadState({required bool preserveRetryCount}) {
@@ -2379,7 +2419,12 @@ class NipaMediaKitAdapter extends AbstractPlayer
     String? toneMapping,
     double? cacheSizeMb,
   }) {
-    if (hwdec != null) setProperty('hwdec', hwdec);
+    if (hwdec != null) {
+      final resolved = defaultTargetPlatform == TargetPlatform.android
+          ? (_envString('NIPAPLAY_ANDROID_HWDEC') ?? 'mediacodec')
+          : hwdec;
+      setProperty('hwdec', resolved);
+    }
     if (toneMapping != null) setProperty('tone-mapping', toneMapping);
     if (cacheSizeMb != null) {
       setProperty('cache-size', '${(cacheSizeMb * 1024 * 1024).toInt()}');
@@ -2517,6 +2562,9 @@ class NipaMediaKitAdapter extends AbstractPlayer
       _pendingExternalAudioFile = null;
     }
     _pendingExternalAudioIsFresh = false;
+    if (Platform.isWindows) {
+      _properties.remove('vf');
+    }
 
     final mediaOptions = _buildMediaOptions();
 

@@ -1,0 +1,127 @@
+name: MPV Kernels
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_ohos:
+        description: Build HarmonyOS libmpv
+        required: false
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      build_ohos:
+        description: Build HarmonyOS libmpv
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: mpv-kernels-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  WINDOWS_MPVBUILD: 1f8d2e76255abc48f0456d9be99b4cab9c6566e6
+  WINDOWS_FFMPEG_TAG: n9.0.2
+
+jobs:
+  ohos:
+    if: inputs.build_ohos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /opt/microsoft /usr/share/miniconda /usr/local/.ghcup || true
+          sudo apt-get clean
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git wget curl unzip zip python3 pkg-config \
+            meson ninja-build cmake gperf nasm yasm bison flex gettext \
+            autoconf automake libtool libtool-bin perl python3-pip
+      - name: Build HarmonyOS libmpv
+        run: bash scripts/mpv/build_ohos.sh
+      - name: Package HarmonyOS har
+        run: |
+          bash scripts/mpv/package_ohos_har.sh \
+            plugins/himi_mpv_ohos/ohos/hars/mpv.har \
+            build/mpv/out/ohos/libmpv.so \
+            build/mpv/out/ohos/mpv.har
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ohos-libmpv
+          path: build/mpv/out/ohos/
+          retention-days: 3
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /opt/microsoft /usr/share/miniconda /usr/local/.ghcup || true
+          sudo apt-get clean
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git wget curl unzip zip python3 pkg-config \
+            meson ninja-build cmake gperf nasm yasm bison flex gettext \
+            autoconf automake libtool libtool-bin perl
+      - name: Build Android libmpv
+        run: bash scripts/mpv/build_android.sh "${{ matrix.abi }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-libmpv-${{ matrix.abi }}
+          path: build/mpv/out/android/jars/full-${{ matrix.abi }}.jar
+          retention-days: 3
+
+  windows-toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    container:
+      image: ghcr.io/shinchiro/archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build/mpv/windows/build-x86_64-v3
+            build/mpv/windows/packages
+          key: mpv-winbuild-${{ env.WINDOWS_MPVBUILD }}-${{ env.WINDOWS_FFMPEG_TAG }}-v1
+      - name: Build Windows toolchain
+        run: bash scripts/mpv/build_windows.sh toolchain
+
+  windows-mpv:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    needs: windows-toolchain
+    container:
+      image: ghcr.io/shinchiro/archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build/mpv/windows/build-x86_64-v3
+            build/mpv/windows/packages
+          key: mpv-winbuild-${{ env.WINDOWS_MPVBUILD }}-${{ env.WINDOWS_FFMPEG_TAG }}-v1
+      - name: Build Windows libmpv
+        run: bash scripts/mpv/build_windows.sh mpv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-libmpv
+          path: build/mpv/out/windows/
+          retention-days: 3

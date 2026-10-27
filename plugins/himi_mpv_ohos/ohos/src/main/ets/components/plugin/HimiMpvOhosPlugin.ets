@@ -13,7 +13,7 @@
  * 正是死在这里：先 attach 后 initialize 被拒 → initialize 永不执行 →
  * pollState 恒空 → 无时长、无限转圈。
  *
- * 渲染走 PlatformView（XComponent）：mpv 的 ohos vo 需要真正的
+ * 渲染走 PlatformView（XComponent）：mpv 的 ohosvk vo 需要真正的
  * OHNativeWindow（Flutter 纹理的 producer surfaceId 不满足要求）。
  * surface 到达后 attachSurface（运行期可反复 attach/detach）；
  * 媒体加载不依赖 surface，surface 迟迟不到由 watchdog 兜底直载。
@@ -91,6 +91,8 @@ interface MpvPollPayload {
   cachePercent: number;
   /** 实际生效的硬件解码器（hwdec-current；''=无视频/未启用，'no'=软解）。 */
   hwdecCurrent: string | null;
+  gpuContext: string | null;
+  currentVo: string | null;
   mediaTitle: string | null;
   /** 掩码后的播放地址（去 query、取尾部）——加载失败回 idle 后由
    *  open 时缓存的 lastUrlMasked 兜底（v1.2.77）。
@@ -216,7 +218,7 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
 
     // 注册 MPV 平台视图工厂：Dart 侧用 PlatformViewLink(viewType:
     // 'himi_mpv_surface') 挂载，ArkTS 侧返回 XComponent。
-    // mpv 的 ohos vo 需要真实的 OHNativeWindow，只能用 XComponent 提供，
+    // mpv 的 ohosvk vo 需要真实的 OHNativeWindow，只能用 XComponent 提供，
     // 不能用 Flutter 纹理（见 HimiMpvSurface 顶部说明）。
     const registry = binding.getPlatformViewRegistry();
     if (registry !== null && registry !== undefined) {
@@ -587,16 +589,11 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     lib.setOptionString('osc', 'no');
     lib.setOptionString('osd-level', '0');
 
-    // 渲染后端（与 ydbox 稳态参数对齐）
+    // HarmonyOS Vulkan 输出：OHCodec 10bit 零拷贝互操作只在 ohosvk 下可用。
     lib.setOptionString('vo', 'gpu-next');
-    lib.setOptionString('gpu-context', 'ohos');
-    lib.setOptionString('opengl-es', 'yes');
-    // 该 option 在部分 mpv 构建里不存在（本 har 的 libmpv.so 里没有
-    // "egl-output-format" 字符串）；写入失败会被 mpv 忽略，不影响 initialize。
-    lib.setOptionString('egl-output-format', 'rgba8');
-    // hwdec 用 mpv 标准探测值 auto（v1.2.83：对齐 ydbox 真机验证值
-    // auto/auto-safe/no；此前裸值 ohcodec 未验证，若构建不识别会静默
-    // 落软解）。Dart 侧 prepare 会按用户解码档位覆盖。
+    lib.setOptionString('gpu-api', 'vulkan');
+    lib.setOptionString('gpu-context', 'ohosvk');
+    // hwdec 用 mpv 标准探测值 auto；Dart 侧 prepare 会按用户解码档位覆盖。
     lib.setOptionString('hwdec', 'auto');
     // v1.2.85 扩容：补 AV1/VP9/prores/mjpeg 等（解复用层支持即解码），
     // 硬件不支持时 mpv 自动回退软解。
@@ -990,6 +987,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     let pausedForCache = false;
     let cachePercent = -1.0;
     let hwdecCurrent: string | null = null;
+    let gpuContext: string | null = null;
+    let currentVo: string | null = null;
     let mediaTitle: string | null = null;
     let pathMasked: string | null = null;
     try {
@@ -1054,6 +1053,20 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     } catch (_) {
     }
     try {
+      const g = lib.getPropertyString('gpu-context');
+      if (g !== null && g.length > 0) {
+        gpuContext = g;
+      }
+    } catch (_) {
+    }
+    try {
+      const v = lib.getPropertyString('current-vo');
+      if (v !== null && v.length > 0) {
+        currentVo = v;
+      }
+    } catch (_) {
+    }
+    try {
       const t = lib.getPropertyString('media-title');
       if (t !== null && t.length > 0) {
         mediaTitle = t;
@@ -1085,6 +1098,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       pausedForCache: pausedForCache,
       cachePercent: cachePercent,
       hwdecCurrent: hwdecCurrent,
+      gpuContext: gpuContext,
+      currentVo: currentVo,
       mediaTitle: mediaTitle,
       pathMasked: pathMasked !== null ? pathMasked : this.lastUrlMasked,
     };

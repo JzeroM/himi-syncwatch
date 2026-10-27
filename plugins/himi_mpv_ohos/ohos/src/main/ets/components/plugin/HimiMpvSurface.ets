@@ -2,7 +2,7 @@
  * MPV 视频渲染平台视图（XComponent）。
  *
  * 为什么必须用 XComponent 而不是 Flutter 纹理：
- * mpv 的 `gpu-context=ohos` 后端需要的是**真正的 OHNativeWindow**
+ * mpv 的 `gpu-context=ohosvk` 后端需要的是**真正的 OHNativeWindow**
  * （XComponent 提供的 surface），它自己会在这个 surface 上创建 EGL
  * 上下文并直接输出帧。Flutter 的 TextureRegistry 给的是 OH_NativeImage
  * 的 producer surfaceId，mpv 拿到后 vo 初始化不完整——能 create、能
@@ -67,7 +67,7 @@ export class MpvXComponentController extends XComponentController {
  * 平台视图内容：一个填满父容器的 XComponent。
  *
  * 类型选 SURFACE（不是 TEXTURE）：要给 mpv 真实的 OHNativeWindow；
- * TEXTURE 类型给的是 OpenGL 纹理，mpv 的 ohos vo 不认。
+ * TEXTURE 类型给的是 OpenGL 纹理，mpv 的 ohosvk vo 不认。
  */
 @Component
 export struct HimiMpvSurface {

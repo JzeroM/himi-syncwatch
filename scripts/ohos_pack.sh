@@ -19,7 +19,7 @@ while [ $# -gt 0 ]; do
     --signed) SIGNED=1; shift ;;
     --unsigned) SIGNED=0; shift ;;
     -h|--help)
-      echo "用法: $0 --input <unsigned.hap> --output <out.hap> [--version-name 1.5.0] [--version-code 525] [--signed|--unsigned]"
+      echo "用法: $0 --input <unsigned.hap> --output <out.hap> [--version-name 1.5.1] [--version-code 526] [--signed|--unsigned]"
       exit 0
       ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;

@@ -100,50 +100,59 @@ else()
   set(LIBMPV_MD5 "5b507a35db13eee6cb7eb21e8be7c83d")
 endif()
 
-# Download URL for the libmpv archive from the latest release
-set(LIBMPV_URL "https://github.com/media-kit/libmpv-win32-video-cmake/releases/download/20241021/${LIBMPV}")
+# Prefer a locally built libmpv (CI artifact or developer build).
+set(LIBMPV_LOCAL "$ENV{MEDIA_KIT_LIBMPV_DIR}")
+if(LIBMPV_LOCAL)
+  set(LIBMPV_SRC "${LIBMPV_LOCAL}")
+  if(NOT EXISTS "${LIBMPV_SRC}/libmpv-2.dll")
+    message(FATAL_ERROR "MEDIA_KIT_LIBMPV_DIR 缺少 libmpv-2.dll: ${LIBMPV_SRC}")
+  endif()
+  message(STATUS "Using local libmpv: ${LIBMPV_SRC}")
+else()
+  set(LIBMPV_URL "https://github.com/media-kit/libmpv-win32-video-cmake/releases/download/20241021/${LIBMPV}")
 
-# Download location of the libmpv archive.
-set(LIBMPV_ARCHIVE "${CMAKE_BINARY_DIR}/${LIBMPV}")
-set(LIBMPV_SRC "${CMAKE_BINARY_DIR}/libmpv")
+  # Download location of the libmpv archive.
+  set(LIBMPV_ARCHIVE "${CMAKE_BINARY_DIR}/${LIBMPV}")
+  set(LIBMPV_SRC "${CMAKE_BINARY_DIR}/libmpv")
 
-download_and_verify(
-  ${LIBMPV_URL}
-  ${LIBMPV_MD5}
-  ${LIBMPV_ARCHIVE}
-)
+  download_and_verify(
+    ${LIBMPV_URL}
+    ${LIBMPV_MD5}
+    ${LIBMPV_ARCHIVE}
+  )
 
-check_directory_exists_and_not_empty(${LIBMPV_SRC} LIBMPV_SRC_VALID)
+  check_directory_exists_and_not_empty(${LIBMPV_SRC} LIBMPV_SRC_VALID)
 
-# Find 7zip for extraction (preferred for .7z files)
-find_program(SEVENZ_EXECUTABLE NAMES 7z 7za)
+  # Find 7zip for extraction (preferred for .7z files)
+  find_program(SEVENZ_EXECUTABLE NAMES 7z 7za)
 
-# Extract the libmpv archive.
-if(NOT LIBMPV_SRC_VALID)
-  message(STATUS "Extracting ${LIBMPV}...")
-  make_directory("${LIBMPV_SRC}")
-  add_custom_target("${PROJECT_NAME}_LIBMPV_EXTRACT" ALL)
-  
-  if(SEVENZ_EXECUTABLE)
-    message(STATUS "Using 7zip for extraction: ${SEVENZ_EXECUTABLE}")
-    add_custom_command(
-      TARGET "${PROJECT_NAME}_LIBMPV_EXTRACT"
-      COMMAND "${SEVENZ_EXECUTABLE}" x -y "\"${LIBMPV_ARCHIVE}\""
-      COMMAND xcopy "\"${LIBMPV_SRC}/include/mpv\"" "\"${LIBMPV_SRC}/mpv\"" /E /H /C /I
-      COMMAND rmdir "\"${LIBMPV_SRC}/include\"" /S /Q
-      COMMAND ren "\"${LIBMPV_SRC}/mpv\"" "\"include\""
-      WORKING_DIRECTORY "${LIBMPV_SRC}"
-    )
-  else()
-    message(STATUS "7zip not found, falling back to CMake tar")
-    add_custom_command(
-      TARGET "${PROJECT_NAME}_LIBMPV_EXTRACT"
-      COMMAND "${CMAKE_COMMAND}" -E tar xzf "\"${LIBMPV_ARCHIVE}\""
-      COMMAND xcopy "\"${LIBMPV_SRC}/include/mpv\"" "\"${LIBMPV_SRC}/mpv\"" /E /H /C /I
-      COMMAND rmdir "\"${LIBMPV_SRC}/include\"" /S /Q
-      COMMAND ren "\"${LIBMPV_SRC}/mpv\"" "\"include\""
-      WORKING_DIRECTORY "${LIBMPV_SRC}"
-    )
+  # Extract the libmpv archive.
+  if(NOT LIBMPV_SRC_VALID)
+    message(STATUS "Extracting ${LIBMPV}...")
+    make_directory("${LIBMPV_SRC}")
+    add_custom_target("${PROJECT_NAME}_LIBMPV_EXTRACT" ALL)
+
+    if(SEVENZ_EXECUTABLE)
+      message(STATUS "Using 7zip for extraction: ${SEVENZ_EXECUTABLE}")
+      add_custom_command(
+        TARGET "${PROJECT_NAME}_LIBMPV_EXTRACT"
+        COMMAND "${SEVENZ_EXECUTABLE}" x -y "\"${LIBMPV_ARCHIVE}\""
+        COMMAND xcopy "\"${LIBMPV_SRC}/include/mpv\"" "\"${LIBMPV_SRC}/mpv\"" /E /H /C /I
+        COMMAND rmdir "\"${LIBMPV_SRC}/include\"" /S /Q
+        COMMAND ren "\"${LIBMPV_SRC}/mpv\"" "\"include\""
+        WORKING_DIRECTORY "${LIBMPV_SRC}"
+      )
+    else()
+      message(STATUS "7zip not found, falling back to CMake tar")
+      add_custom_command(
+        TARGET "${PROJECT_NAME}_LIBMPV_EXTRACT"
+        COMMAND "${CMAKE_COMMAND}" -E tar xzf "\"${LIBMPV_ARCHIVE}\""
+        COMMAND xcopy "\"${LIBMPV_SRC}/include/mpv\"" "\"${LIBMPV_SRC}/mpv\"" /E /H /C /I
+        COMMAND rmdir "\"${LIBMPV_SRC}/include\"" /S /Q
+        COMMAND ren "\"${LIBMPV_SRC}/mpv\"" "\"include\""
+        WORKING_DIRECTORY "${LIBMPV_SRC}"
+      )
+    endif()
   endif()
 endif()
 
