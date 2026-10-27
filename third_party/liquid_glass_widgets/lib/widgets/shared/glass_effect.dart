@@ -1075,11 +1075,9 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
 
     // 3. Set Sampler
     final imageToBind = _backgroundImage ?? GlassEffect.dummyImage;
-    _shader.setImageSampler(
-      0,
-      imageToBind,
-      filterQuality: FilterQuality.medium,
-    );
+    // PATCH himi: filterQuality 命名参数是 3.41 新增，3.35 的 setImageSampler
+    // 只有 (index, image)，采样器默认线性过滤，视觉等价
+    _shader.setImageSampler(0, imageToBind);
 
     // 4. Paint shader overlay — inflate the draw rect by the clip expansion budget.
     //

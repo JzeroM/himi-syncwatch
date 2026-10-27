@@ -640,11 +640,8 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
               max(settings.blurWeight, 0.0),
             ]);
           })
-          ..setImageSampler(
-            1,
-            geometryImage,
-            filterQuality: FilterQuality.medium,
-          );
+          // PATCH himi: filterQuality 是 3.41 新增命名参数，3.35 无
+          ..setImageSampler(1, geometryImage);
         paintLiquidGlass(
           context,
           offset,
@@ -815,7 +812,7 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
       })
       // Slot 0: captured background image (replaces the BackdropFilter read).
       ..setImageSampler(0, capture)
-      ..setImageSampler(1, geometryImage!, filterQuality: FilterQuality.medium);
+      ..setImageSampler(1, geometryImage!);
 
     // Draw the capture path: no BackdropFilterLayer needed — draw directly
     // onto the canvas over the expanded clip rect.

@@ -379,7 +379,8 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
             OverlayPortal(
               controller: _overlayController,
               overlayChildBuilder: _buildMorphingOverlay,
-              overlayLocation: OverlayChildLocation.nearestOverlay,
+              // PATCH himi: overlayLocation 是 3.41 API；3.35 的 OverlayPortal
+              // 默认即 nearest overlay，等价行为无需该参数
             ),
           ],
         );

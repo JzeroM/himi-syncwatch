@@ -31,8 +31,27 @@ BUILD_NUMBER="$(printf '%s' "$VERSION_LINE" | sed -n 's/.*+\([0-9][0-9]*\).*/\1/
 VERSION_CODE="${OHOS_LOCAL_VERSION_CODE:-$BUILD_NUMBER}"
 
 flutter pub get
-flutter build hap --release --no-codesign \
-  --dart-define=TRAKT_CLIENT_ID="$TRAKT_CLIENT_ID"
+
+build_hap() {
+  flutter build hap --release --no-codesign \
+    --dart-define=TRAKT_CLIENT_ID="$TRAKT_CLIENT_ID"
+}
+
+BUILD_LOG="${TMPDIR:-/tmp}/himi-ohos-build.log"
+if ! build_hap 2>&1 | tee "$BUILD_LOG"; then
+  if grep -qE "has no exported member '(ViewData|AutoFillCallback|FillRequest)'|Property 'requestAutoFill' does not exist" "$BUILD_LOG"; then
+    HELPER="$(find ohos/oh_modules/.ohpm -path '*/@ohos/flutter_ohos/src/main/ets/plugin/editing/OhosAutoFillHelper.ets' -print -quit 2>/dev/null || true)"
+    if [ -z "$HELPER" ]; then
+      echo "检测到 autofill 类型缺失，但未找到 OhosAutoFillHelper.ets" >&2
+      exit 1
+    fi
+    echo "检测到旧 SDK 缺少 autofill 类型，应用兼容补丁后重试..." >&2
+    python3 "$ROOT/scripts/ohos_patch_autofill.py" "$HELPER"
+    build_hap
+  else
+    exit 1
+  fi
+fi
 
 INPUT="build/ohos/hap/entry-default-unsigned.hap"
 [ -f "$INPUT" ] || { echo "构建产物不存在: $INPUT" >&2; exit 1; }

@@ -30,6 +30,7 @@ class _VersionPreferenceSheetState
   late List<VersionPreference> _order = [...widget.initial];
 
   void _reorder(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex -= 1;
     setState(() {
       final item = _order.removeAt(oldIndex);
       _order.insert(newIndex, item);
@@ -101,7 +102,7 @@ class _VersionPreferenceSheetState
                 buildDefaultDragHandles: false,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 itemCount: _order.length,
-                onReorderItem: _reorder,
+                onReorder: _reorder,
                 itemBuilder: (context, i) {
                   final pref = _order[i];
                   return ListTile(

@@ -839,18 +839,12 @@ class _RenderLightweightGlass extends RenderProxyBox
 
     _updateShaderUniforms(size, uOrigin, uScale, bgRelativeOffset, bgSize);
 
+    // PATCH himi: filterQuality 是 3.41 新增命名参数，3.35 的 setImageSampler
+    // 只有 (index, image)
     if (_backgroundImage != null) {
-      _shader!.setImageSampler(
-        0,
-        _backgroundImage!,
-        filterQuality: FilterQuality.medium, // coverage:ignore-line
-      );
+      _shader!.setImageSampler(0, _backgroundImage!);
     } else {
-      _shader!.setImageSampler(
-        0,
-        LightweightLiquidGlass.dummyImage,
-        filterQuality: FilterQuality.medium, // coverage:ignore-line
-      );
+      _shader!.setImageSampler(0, LightweightLiquidGlass.dummyImage);
     }
 
     final paint = Paint()..shader = _shader!;

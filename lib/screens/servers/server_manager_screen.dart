@@ -426,8 +426,10 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
         bottom: GlassConfig.bottomReserveOf(context),
       ),
       itemCount: dedupedServers.length,
-      onReorderItem: (oldIndex, newIndex) =>
-          _reorderVisible(oldIndex, newIndex),
+      onReorder: (oldIndex, newIndex) {
+        if (newIndex > oldIndex) newIndex -= 1;
+        _reorderVisible(oldIndex, newIndex);
+      },
       itemBuilder: (context, index) {
         final server = dedupedServers[index];
         final isActive = currentConfig?.id == server.id;

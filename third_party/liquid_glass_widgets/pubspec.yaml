@@ -24,7 +24,7 @@ platforms:
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
-  flutter: ">=3.41.0"
+  flutter: ">=3.35.0"
 
 dependencies:
   flutter:

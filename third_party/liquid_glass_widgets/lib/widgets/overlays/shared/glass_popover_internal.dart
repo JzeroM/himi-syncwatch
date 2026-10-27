@@ -462,8 +462,8 @@ class _GlassPopoverState extends State<GlassPopover>
             // to avoid drift in nested embeddings.
             OverlayPortal(
               controller: _overlayController,
-              overlayLocation: OverlayChildLocation.nearestOverlay,
               overlayChildBuilder: _buildMorphingOverlay,
+              // PATCH himi: overlayLocation 是 3.41 API；3.35 默认 nearest overlay
             ),
           ],
         );
