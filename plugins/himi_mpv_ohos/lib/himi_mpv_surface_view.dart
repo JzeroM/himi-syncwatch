@@ -1,14 +1,11 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 /// HarmonyOS MPV 原生 Surface 平台视图。
 ///
-/// 使用 hybrid composition（`initExpensiveOhosView`）把 ArkUI XComponent
-/// 放进原生视图树，mpv 直接渲染到 XComponent 的 OHNativeWindow。Flutter
-/// 层保持透明，控件/弹幕由 Flutter 叠加在上方。
+/// 直接通过标准 `flutter/platform_views` 通道创建 hybrid 平台视图，
+/// 不依赖 Flutter-OH 专属的 `OhosViewController` 类型。这样同一份 Dart
+/// 代码也能在标准 Flutter（Windows）上编译。
 class HimiMpvSurfaceView extends StatelessWidget {
   const HimiMpvSurfaceView({
     super.key,
@@ -26,25 +23,137 @@ class HimiMpvSurfaceView extends StatelessWidget {
     return PlatformViewLink(
       viewType: viewType,
       surfaceFactory: (context, controller) {
-        return OhosViewSurface(
-          controller: controller as OhosViewController,
-          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
-          hitTestBehavior: PlatformViewHitTestBehavior.transparent,
+        return _HimiMpvOhosSurface(
+          controller: controller as _HimiMpvOhosController,
         );
       },
       onCreatePlatformView: (params) {
-        final controller = PlatformViewsService.initExpensiveOhosView(
-          id: params.id,
-          viewType: viewType,
+        return _HimiMpvOhosController(
+          viewId: params.id,
           layoutDirection: layoutDirection,
+          onCreated: (id) {
+            params.onPlatformViewCreated(id);
+            onPlatformViewCreated?.call(id);
+          },
         );
-        controller.addOnPlatformViewCreatedListener((id) {
-          params.onPlatformViewCreated(id);
-          onPlatformViewCreated?.call(id);
-        });
-        controller.create();
-        return controller;
       },
     );
+  }
+}
+
+class _HimiMpvOhosSurface extends StatefulWidget {
+  const _HimiMpvOhosSurface({required this.controller});
+
+  final _HimiMpvOhosController controller;
+
+  @override
+  State<_HimiMpvOhosSurface> createState() => _HimiMpvOhosSurfaceState();
+}
+
+class _HimiMpvOhosSurfaceState extends State<_HimiMpvOhosSurface> {
+  void _scheduleLayoutUpdate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) return;
+      widget.controller.updateLayout(
+        size: box.size,
+        offset: box.localToGlobal(Offset.zero),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _scheduleLayoutUpdate();
+    return const SizedBox.expand();
+  }
+}
+
+class _HimiMpvOhosController extends PlatformViewController {
+  _HimiMpvOhosController({
+    required this.viewId,
+    required this.layoutDirection,
+    required this.onCreated,
+  });
+
+  @override
+  final int viewId;
+  final TextDirection layoutDirection;
+  final ValueChanged<int> onCreated;
+
+  bool _created = false;
+  bool _disposed = false;
+  Size _lastSize = Size.zero;
+  Offset _lastOffset = Offset.zero;
+
+  @override
+  bool get awaitingCreation => !_created && !_disposed;
+
+  @override
+  Future<void> create({Size? size, Offset? position}) async {
+    if (_disposed || _created) return;
+    _lastSize = size ?? Size.zero;
+    _lastOffset = position ?? Offset.zero;
+    await SystemChannels.platform_views
+        .invokeMethod<void>('create', <String, dynamic>{
+      'id': viewId,
+      'viewType': HimiMpvSurfaceView.viewType,
+      'direction': layoutDirection == TextDirection.rtl ? 1 : 0,
+      'hybrid': true,
+    });
+    _created = true;
+    onCreated(viewId);
+  }
+
+  Future<void> updateLayout({
+    required Size size,
+    required Offset offset,
+  }) async {
+    if (_disposed || !_created || size.isEmpty) return;
+    if (size != _lastSize) {
+      _lastSize = size;
+      await SystemChannels.platform_views.invokeMapMethod<Object?, Object?>(
+        'resize',
+        <String, dynamic>{
+          'id': viewId,
+          'width': size.width,
+          'height': size.height,
+        },
+      );
+    }
+    if (offset != _lastOffset) {
+      _lastOffset = offset;
+      await SystemChannels.platform_views.invokeMethod<void>(
+        'offset',
+        <String, dynamic>{
+          'id': viewId,
+          'top': offset.dy,
+          'left': offset.dx,
+        },
+      );
+    }
+  }
+
+  @override
+  Future<void> dispatchPointerEvent(PointerEvent event) async {}
+
+  @override
+  Future<void> clearFocus() async {}
+
+  @override
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    if (_created) {
+      await SystemChannels.platform_views.invokeMethod<void>(
+        'dispose',
+        <String, dynamic>{
+          'id': viewId,
+          'hybrid': true,
+        },
+      );
+    }
+    _created = false;
   }
 }
