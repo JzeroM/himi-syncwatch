@@ -66,13 +66,6 @@ jobs:
           merge-multiple: true
           run-id: ${{ needs.kernels.outputs.run_id }}
           github-token: ${{ github.token }}
-      - name: Remove duplicate libc++_shared from self-built Android jars
-        run: |
-          # fvp 已经通过 ANDROID_STL=c++_shared 打包了 NDK 的 libc++_shared.so；
-          # 自建 jar 再带一份会触发 mergeReleaseNativeLibs 重复文件错误。
-          for jar in "$RUNNER_TEMP"/mpv-jars/full-*.jar; do
-            zip -d "$jar" 'lib/*/libc++_shared.so' >/dev/null 2>&1 || true
-          done
       - name: Point media_kit to self-built Android jars
         run: echo "MEDIA_KIT_ANDROID_LIBMPV_DIR=$RUNNER_TEMP/mpv-jars" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4

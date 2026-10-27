@@ -60,7 +60,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags ""
-                arguments '-DANDROID_STL=c++_shared' // default is static
+                arguments '-DANDROID_STL=c++_static' // 使用 libmpv jar 自带的 libc++_shared，避免重复/版本不匹配
             }
         }
         ndk {

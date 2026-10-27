@@ -93,6 +93,11 @@ shopt -s nullglob
 for so in "$PREFIX"/lib/libav*.so* "$PREFIX"/lib/libsw*.so* "$PREFIX"/lib/libpostproc.so* "$PREFIX"/lib/libplacebo.so*; do
   cp -f "$so" "$OUT/"
 done
+# libmpv 由 NDK r30 构建，必须携带同版本 libc++_shared；fvp 已改为静态 STL。
+LIBCXX=$(find "$NDK_TOOLCHAIN/sysroot/usr/lib" -path "*/$TRIPLE/libc++_shared.so" | head -1)
+[ -n "$LIBCXX" ] || LIBCXX=$(find "$NDK_TOOLCHAIN" -name 'libc++_shared.so' | head -1)
+require_file "$LIBCXX"
+cp -f "$LIBCXX" "$OUT/libc++_shared.so"
 STRIP="$NDK_TOOLCHAIN/bin/llvm-strip"
 [ -x "$STRIP" ] || STRIP=strip
 for so in "$OUT"/*.so*; do
