@@ -120,6 +120,7 @@ jobs:
         env:
           TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
         run: |
+          set -o pipefail
           if [ -z "$TRAKT_CLIENT_ID" ]; then
             echo "❌ 缺少 GitHub Actions secret TRAKT_CLIENT_ID"
             exit 1
@@ -128,10 +129,14 @@ jobs:
           # 与 iOS 一致增加 3 次重试，避免单次抖动阻断整条发布链。
           for i in 1 2 3; do
             if flutter build apk --release --split-per-abi \
-              --dart-define=TRAKT_CLIENT_ID="$TRAKT_CLIENT_ID"; then exit 0; fi
+              --dart-define=TRAKT_CLIENT_ID="$TRAKT_CLIENT_ID" 2>&1 | tee /tmp/android-app-build.log; then
+              exit 0
+            fi
             echo "❌ Android 构建失败，15 秒后重试（$i/3）"
             sleep 15
           done
+          grep -nE 'FAILURE|What went wrong|Execution failed|error:|Error:|Exception|Caused by|Unable|failed' /tmp/android-app-build.log | tail -40 |
+            while IFS= read -r line; do echo "::error::$line"; done
           exit 1
 
       - name: 验证 APK 签名
@@ -368,13 +373,20 @@ jobs:
             Write-Host "❌ 缺少 GitHub Actions secret TRAKT_CLIENT_ID"
             exit 1
           }
+          $log = Join-Path $env:RUNNER_TEMP 'windows-app-build.log'
           # Windows runner 偶发 Flutter 工具链/缓存抖动，失败后重试 3 次。
           for ($i = 1; $i -le 3; $i++) {
-            flutter build windows --release --dart-define=TRAKT_CLIENT_ID=$env:TRAKT_CLIENT_ID
-            if ($LASTEXITCODE -eq 0) { exit 0 }
+            flutter build windows --release --dart-define=TRAKT_CLIENT_ID=$env:TRAKT_CLIENT_ID 2>&1 |
+              Tee-Object -FilePath $log
+            $code = $LASTEXITCODE
+            if ($code -eq 0) { exit 0 }
             Write-Host "❌ Windows 构建失败，15 秒后重试（$i/3）"
             Start-Sleep -Seconds 15
           }
+          Get-Content $log |
+            Select-String -Pattern 'error|Error|FAILED|CMake|MSB|fatal|Caused by|无法|失败' |
+            Select-Object -Last 40 |
+            ForEach-Object { Write-Host "::error::$($_.Line)" }
           exit 1
 
       # 替换 media_kit 捆绑的 libmpv-2.dll 为完整版（shinchiro/mpv-winbuild-cmake）：
@@ -533,7 +545,8 @@ jobs:
     runs-on: ubuntu-latest
     # 默认仅在三平台构建全部成功时发布：此前 always() 会在平台失败时
     # 发布不完整 release（v1.2.11 实测缺 Android APK 仍发布，事故）。
-    if: startsWith(github.ref, 'refs/tags/')
+    # -debug 标签只用于验证构建，不创建 release。
+    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-debug')
     permissions:
       contents: write
     steps:
