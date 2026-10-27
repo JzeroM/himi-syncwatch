@@ -12,6 +12,9 @@ on:
       - feat/windows-mpv-ci
     paths:
       - 'plugins/himi_mpv_windows/**'
+      - 'plugins/himi_mpv_ohos/**'
+      - 'plugins/himi_mpv_core/**'
+      - 'lib/**'
       - 'lib/services/player/**'
       - 'third_party/nipaplay/media_kit/**'
       - 'windows/**'
