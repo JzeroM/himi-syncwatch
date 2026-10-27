@@ -396,10 +396,13 @@ jobs:
             Write-Host "❌ Windows 构建失败，15 秒后重试（$i/3）"
             Start-Sleep -Seconds 15
           }
-          Get-Content $log |
-            Select-String -Pattern 'CMake Error|file INSTALL|cannot find|does not exist|No such file|error C[0-9]+|fatal error|LNK[0-9]+|FAILURE:' |
-            Select-Object -Last 10 |
-            ForEach-Object { Write-Host "::error::$($_.Line)" }
+          $msg = @('Windows build log tail:')
+          $msg += Get-Content $log | Select-Object -Last 25
+          $msg += 'mpv-win contents:'
+          $msg += Get-ChildItem (Join-Path $env:RUNNER_TEMP 'mpv-win') -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 20 |
+            ForEach-Object { $_.FullName }
+          Write-Host "::error::$($msg -join '%0A')"
           exit 1
 
       # 替换 media_kit 捆绑的 libmpv-2.dll 为完整版（shinchiro/mpv-winbuild-cmake）：
