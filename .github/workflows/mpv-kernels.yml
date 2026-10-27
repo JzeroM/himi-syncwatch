@@ -60,7 +60,7 @@ jobs:
         with:
           name: ohos-libmpv
           path: build/mpv/out/ohos/
-          retention-days: 3
+          retention-days: 30
 
   android:
     runs-on: ubuntu-24.04
@@ -106,7 +106,7 @@ jobs:
         with:
           name: android-libmpv-${{ matrix.abi }}
           path: build/mpv/out/android/jars/full-${{ matrix.abi }}.jar
-          retention-days: 3
+          retention-days: 30
 
   windows-toolchain:
     runs-on: ubuntu-24.04
@@ -138,8 +138,18 @@ jobs:
             build/mpv/windows/build-x86_64-v3
             build/mpv/windows/packages
           key: mpv-winbuild-${{ env.WINDOWS_MPVBUILD }}-${{ env.WINDOWS_FFMPEG_TAG }}-v1
+      # 只缓存最终产物（约 130MB），命中时跳过整棵 FFmpeg/mpv 重编译。
+      - uses: actions/cache@v4
+        id: windows-libmpv-cache
+        with:
+          path: build/mpv/out/windows
+          key: mpv-built-${{ env.WINDOWS_MPVBUILD }}-${{ env.WINDOWS_FFMPEG_TAG }}-v1
       - name: Build Windows libmpv
         run: |
+          if [ -f build/mpv/out/windows/libmpv-2.dll ]; then
+            echo "复用缓存的 Windows libmpv 产物"
+            exit 0
+          fi
           set -o pipefail
           git config --global --add safe.directory '*'
           if ! bash scripts/mpv/build_windows.sh mpv 2>&1 | tee /tmp/windows-libmpv.log; then
@@ -152,4 +162,4 @@ jobs:
         with:
           name: windows-libmpv
           path: build/mpv/out/windows/
-          retention-days: 3
+          retention-days: 30

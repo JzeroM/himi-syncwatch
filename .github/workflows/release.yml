@@ -10,10 +10,31 @@ env:
   FLUTTER_VERSION: '3.47.4'
 
 jobs:
-  build-mpv-kernels:
-    uses: ./.github/workflows/mpv-kernels.yml
-    with:
-      build_ohos: false
+  # 复用 main 上最近一次成功的 MPV Kernels 产物，避免每次发布都冷编译
+  # FFmpeg/libmpv（Windows 单次可达 1 小时以上）。
+  kernels:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run_id: ${{ steps.latest.outputs.run_id }}
+    steps:
+      - name: 查找最近一次成功的 main 内核运行
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/mpv-kernels.yml/runs?branch=main&status=completed&per_page=20" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")][0].id // empty')
+          if [ -z "$run_id" ]; then
+            echo "未找到 main 上成功的 MPV Kernels 运行；请先触发 MPV Kernels" >&2
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "复用内核产物运行: $run_id"
 
   flutter-analyze:
     runs-on: ubuntu-latest
@@ -26,7 +47,7 @@ jobs:
       - run: dart analyze lib/
 
   build-android:
-    needs: [flutter-analyze, build-mpv-kernels]
+    needs: [flutter-analyze, kernels]
     runs-on: ubuntu-latest
     env:
       # mdk-sdk v0.39.0 版本锁定（GitHub Release，SHA 校验防资产替换）。
@@ -43,6 +64,8 @@ jobs:
           pattern: android-libmpv-*
           path: ${{ runner.temp }}/mpv-jars
           merge-multiple: true
+          run-id: ${{ needs.kernels.outputs.run_id }}
+          github-token: ${{ github.token }}
       - name: Point media_kit to self-built Android jars
         run: echo "MEDIA_KIT_ANDROID_LIBMPV_DIR=$RUNNER_TEMP/mpv-jars" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
@@ -304,7 +327,7 @@ jobs:
           path: himi-sync-ios-unsigned-*.ipa
 
   build-windows:
-    needs: [flutter-analyze, build-mpv-kernels]
+    needs: [flutter-analyze, kernels]
     # windows-latest = VS18/MSVC 14.51，与 mdk v0.39.0（vs2026 工具链构建）
     # 同家族配对（fvp.dll 与 mdk.dll 跨 DLL 交互 C++ 对象，须同工具链），
     # 对齐 fvp 上游 CI 成功配置；windows-2022 系初始模板遗留。
@@ -323,6 +346,8 @@ jobs:
         with:
           name: windows-libmpv
           path: ${{ runner.temp }}/mpv-win
+          run-id: ${{ needs.kernels.outputs.run_id }}
+          github-token: ${{ github.token }}
       - name: Point media_kit to self-built Windows libmpv
         shell: pwsh
         run: |
@@ -504,7 +529,7 @@ jobs:
           path: build/windows/setup/*.exe
 
   release:
-    needs: [build-android, build-ios, build-windows, build-mpv-kernels]
+    needs: [build-android, build-ios, build-windows]
     runs-on: ubuntu-latest
     # 默认仅在三平台构建全部成功时发布：此前 always() 会在平台失败时
     # 发布不完整 release（v1.2.11 实测缺 Android APK 仍发布，事故）。
