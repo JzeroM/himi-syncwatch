@@ -114,7 +114,17 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP 'windows-mpv-build.log'
           flutter build windows --release --dart-define=TRAKT_CLIENT_ID=dummy 2>&1 |
             Tee-Object -FilePath $log
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host '--- Windows build log tail ---'
+            $tail = Get-Content $log -Tail 120 -ErrorAction SilentlyContinue
+            foreach ($line in $tail) {
+              Write-Host $line
+              if ($line -match 'error|Error|FAILED|failed|fatal') {
+                Write-Host "::error::$line"
+              }
+            }
+            throw "flutter build windows failed with exit code $LASTEXITCODE"
+          }
 
       - name: Verify Windows artifacts
         shell: pwsh
