@@ -74,6 +74,7 @@ class PlayerEngineFactory {
           PlayerEngine.mdk,
           PlayerEngine.mediaKit,
           PlayerEngine.erika,
+          PlayerEngine.mpv,
         ];
       case TargetPlatform.iOS:
         return const <PlayerEngine>[PlayerEngine.erika];
@@ -82,6 +83,7 @@ class PlayerEngineFactory {
           PlayerEngine.mdk,
           PlayerEngine.mediaKit,
           PlayerEngine.erika,
+          PlayerEngine.mpv,
         ];
       default:
         return const <PlayerEngine>[PlayerEngine.mdk];

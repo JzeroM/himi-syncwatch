@@ -1,0 +1,72 @@
+diff --git a/packages/flutter/lib/src/services/platform_views.dart b/packages/flutter/lib/src/services/platform_views.dart
+index ef73e183c77..f9c534500ae 100644
+--- a/packages/flutter/lib/src/services/platform_views.dart
++++ b/packages/flutter/lib/src/services/platform_views.dart
+@@ -2516,6 +2516,12 @@ class _TextureOhosViewControllerInternals extends _OhosViewControllerInternals {
+ }
+ 
+ class _HybridOhosViewControllerInternals extends _OhosViewControllerInternals {
++  /// The current offset of the platform view.
++  Offset _offset = Offset.zero;
++
++  /// The last local→global affine sent to the engine, used to de-dupe sends.
++  List<double>? _transform;
++
+   @override
+   int get textureId {
+     throw UnimplementedError('Not supported for hybrid composition.');
+@@ -2525,8 +2531,17 @@ class _HybridOhosViewControllerInternals extends _OhosViewControllerInternals {
+   bool get requiresViewComposition => true;
+ 
+   @override
+-  Future<Size> setSize(Size size, {required int viewId, required _OhosViewState viewState}) {
+-    throw UnimplementedError('Not supported for hybrid composition.');
++  Future<Size> setSize(Size size, {required int viewId, required _OhosViewState viewState}) async {
++    assert(!size.isEmpty);
++    final Map<Object?, Object?>? meta = await SystemChannels.platform_views
++        .invokeMapMethod<Object?, Object?>('resize', <String, dynamic>{
++          'id': viewId,
++          'width': size.width,
++          'height': size.height,
++        });
++    final int width = (meta?['width'] as int?) ?? size.width.round();
++    final int height = (meta?['height'] as int?) ?? size.height.round();
++    return Size(width.toDouble(), height.toDouble());
+   }
+ 
+   @override
+@@ -2535,13 +2550,31 @@ class _HybridOhosViewControllerInternals extends _OhosViewControllerInternals {
+     required int viewId,
+     required _OhosViewState viewState,
+     List<double>? transform,
+-  }) {
+-    throw UnimplementedError('Not supported for hybrid composition.');
++  }) async {
++    if (transform != null &&
++        listEquals<double>(transform, _transform) &&
++        offset == _offset) {
++      return;
++    }
++    if (transform == null && offset == _offset && _transform == null) {
++      return;
++    }
++    if (viewState != _OhosViewState.created) {
++      return;
++    }
++    _offset = offset;
++    _transform = transform;
++    await SystemChannels.platform_views.invokeMethod<void>('offset', <String, dynamic>{
++      'id': viewId,
++      'top': offset.dy,
++      'left': offset.dx,
++      'transform': transform,
++    });
+   }
+ 
+   @override
+   Future<void> sendDisposeMessage({required int viewId}) {
+-    return SystemChannels.platform_views_2.invokeMethod<void>('dispose', <String, dynamic>{
++    return SystemChannels.platform_views.invokeMethod<void>('dispose', <String, dynamic>{
+       'id': viewId,
+       'hybrid': true,
+     });

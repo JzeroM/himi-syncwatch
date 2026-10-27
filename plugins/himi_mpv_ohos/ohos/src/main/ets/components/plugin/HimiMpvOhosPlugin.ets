@@ -35,6 +35,7 @@ import { TextureRegistry, SurfaceTextureEntry } from '@ohos/flutter_ohos';
 // commandWithReturn 的返回值按 ESObject 处理（运行时是 Map/标量/数组）。
 import { MpvLib, MpvFormat, EventObserver, LogObserver } from '@mpv-ohos/mpv-arkts';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import display from '@ohos.display';
 import { HimiMpvPlatformView, HimiMpvPlatformViewFactory, MPV_VIEW_TYPE } from './HimiMpvPlatformView';
 import { MpvSurfaceCallbacks } from './HimiMpvSurface';
 
@@ -258,6 +259,20 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     }
     try {
       switch (call.method) {
+        case 'queryHdrCapabilities': {
+          const formats: string[] = [];
+          try {
+            const d = display.getDefaultDisplaySync();
+            const hdrFormats: number[] = d.hdrFormats ?? [];
+            if (hdrFormats.includes(2)) formats.push('hdr10');
+            if (hdrFormats.includes(1)) formats.push('hlg');
+            if (hdrFormats.includes(3)) formats.push('dolbyVision');
+          } catch (e) {
+            hilog.error(DOMAIN, TAG, 'queryHdrCapabilities failed: %{public}s', String(e));
+          }
+          result.success({ 'formats': formats });
+          return;
+        }
         case 'create':
           this.createSession(args, result);
           return;
@@ -376,12 +391,15 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
 
     const width = Math.max(1, Math.trunc(this.number(args, 'width', DEFAULT_WIDTH)));
     const height = Math.max(1, Math.trunc(this.number(args, 'height', DEFAULT_HEIGHT)));
+    const nativeSurface = args.get('nativeSurface') === true;
+    const hdr = args.get('hdr') === true;
+    const hlg = args.get('hlg') === true;
 
     const session = new MpvSession();
     session.width = width;
     session.height = height;
     // 平台视图模式下没有 Flutter 纹理 id，返回一个稳定标识供上层记录。
-    session.textureId = -1;
+    session.textureId = nativeSurface ? 0 : -1;
 
     // 顺序与 mpv-arkts Player.ets 完全一致（真机验证可播，不可调换）：
     //   1) JSBind 回调最先注册：initialize() 启动 mpv 事件线程，事件派发走
@@ -402,6 +420,14 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       // 只订 error 会漏掉关键线索（v1.2.75）。
       session.lib.requestLogMessages('warn');
       this.applyOptions(session);
+      if (hdr) {
+        session.lib.setOptionString('target-colorspace-hint', 'yes');
+        session.lib.setOptionString('target-prim', 'bt.2020');
+        session.lib.setOptionString('target-trc', hlg ? 'hlg' : 'pq');
+        session.lib.setOptionString('hdr-compute-peak', 'auto');
+        session.lib.setOptionString('tone-mapping', 'clip');
+        hilog.info(DOMAIN, TAG, 'HDR 输出: %{public}s', hlg ? 'HLG' : 'HDR10');
+      }
       // 硬解渲染档位（standard/performance/extreme，v1.2.82）：
       // 由 Dart 侧从设置传入，未传时用 performance 默认。
       const modeValue: ESObject = args.get('hwdecMode');
@@ -435,17 +461,14 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     session.initialized = true;
     this.observeProperties(session.lib);
 
-    // 纹理渲染模式（v1.2.80）：注册 Flutter 纹理，把其生产者 surfaceId
-    // 交给 mpv 作为输出窗口——mpv 直接画进 Flutter 纹理，Flutter 正常合成
-    // 显示，弹幕/控件天然叠加。
-    //
-    // 为什么放弃 XComponent 平台视图：本引擎的平台视图走「离屏栅格化成
-    // 纹理」合成（RENDER_TYPE_TEXTURE），而 XComponent(SURFACE) 的画面由
-    // mpv 直接画在它自己的原生窗口层、不参与 ArkUI 栅格化——纹理里只剩
-    // 黑洞（真机 v1.2.78/79 实测：有声有进度、无画面）。
+    // 渲染模式：
+    // - SDR 纹理：注册 Flutter 纹理，把生产者 surfaceId 交给 mpv；
+    // - HDR/SDR 直出：nativeSurface=true，由 XComponent 平台视图提供真实
+    //   OHNativeWindow（RENDER_TYPE_DISPLAY），Flutter 仅做透明控件层。
     let textureSurfaceId: string | null = null;
-    try {
-      const registry: TextureRegistry | null = this.binding.getTextureRegistry();
+    if (!nativeSurface) {
+      try {
+        const registry: TextureRegistry | null = this.binding.getTextureRegistry();
       if (registry !== null) {
         const texId: number = registry.getTextureId();
         const entry: SurfaceTextureEntry = registry.registerTexture(texId);
@@ -455,8 +478,9 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
         hilog.info(DOMAIN, TAG, 'Flutter 纹理注册成功: id=%{public}d surface=%{public}s',
           texId, textureSurfaceId);
       }
-    } catch (e) {
-      hilog.error(DOMAIN, TAG, '纹理注册失败（回退平台视图模式）: %{public}s', String(e));
+      } catch (e) {
+        hilog.error(DOMAIN, TAG, '纹理注册失败（回退平台视图模式）: %{public}s', String(e));
+      }
     }
 
     if (textureSurfaceId !== null) {

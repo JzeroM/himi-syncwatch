@@ -1,0 +1,135 @@
+diff --git a/video/out/android_common.c b/video/out/android_common.c
+index 6b9ef67db1..eb5a5505a4 100644
+--- a/video/out/android_common.c
++++ b/video/out/android_common.c
+@@ -17,12 +17,15 @@
+ 
+ #include <libavcodec/jni.h>
+ #include <android/native_window_jni.h>
++#include <libplacebo/colorspace.h>
+ 
+ #include "android_common.h"
+ #include "common/msg.h"
+ #include "misc/jni.h"
+ #include "options/m_config.h"
+ #include "vo.h"
++#include "video/out/gpu/context.h"
++#include "video/mp_image.h"
+ 
+ struct vo_android_state {
+     struct mp_log *log;
+@@ -100,3 +103,14 @@ bool vo_android_surface_size(struct vo *vo, int *out_w, int *out_h)
+     *out_h = h;
+     return true;
+ }
++
++struct pl_color_space vo_android_preferred_csp(struct ra_ctx *ctx)
++{
++    const struct pl_color_space color = vo_get_current_params(ctx->vo).color;
++
++    if (color.transfer == PL_COLOR_TRC_PQ)
++        return pl_color_space_hdr10;
++    if (color.transfer == PL_COLOR_TRC_HLG)
++        return pl_color_space_bt2020_hlg;
++    return pl_color_space_srgb;
++}
+diff --git a/video/out/android_common.h b/video/out/android_common.h
+index 7f075ea33a..91472f022f 100644
+--- a/video/out/android_common.h
++++ b/video/out/android_common.h
+@@ -18,12 +18,15 @@
+ #pragma once
+ 
+ #include <android/native_window_jni.h>
++#include <libplacebo/colorspace.h>
+ 
+ #include "common/common.h"
+ 
+ struct vo;
++struct ra_ctx;
+ 
+ bool vo_android_init(struct vo *vo);
+ void vo_android_uninit(struct vo *vo);
+ ANativeWindow *vo_android_native_window(struct vo *vo);
+ bool vo_android_surface_size(struct vo *vo, int *w, int *h);
++struct pl_color_space vo_android_preferred_csp(struct ra_ctx *ctx);
+diff --git a/video/out/opengl/context_android.c b/video/out/opengl/context_android.c
+index 0a12cf8add..2f9edbf8c6 100644
+--- a/video/out/opengl/context_android.c
++++ b/video/out/opengl/context_android.c
+@@ -16,6 +16,7 @@
+  */
+ 
+ #include <EGL/egl.h>
++#include <android/data_space.h>
+ #include <EGL/eglext.h>
+ 
+ #include "video/out/android_common.h"
+@@ -33,6 +34,20 @@ struct priv {
+ static void android_swap_buffers(struct ra_ctx *ctx)
+ {
+     struct priv *p = ctx->priv;
++    ANativeWindow *window = vo_android_native_window(ctx->vo);
++#if __ANDROID_API__ >= 28
++    if (window) {
++        const struct pl_color_space color = vo_get_current_params(ctx->vo).color;
++        int32_t data_space = ADATASPACE_SRGB;
++        if (color.transfer == PL_COLOR_TRC_PQ)
++            data_space = ADATASPACE_BT2020_PQ;
++        else if (color.transfer == PL_COLOR_TRC_HLG)
++            data_space = ADATASPACE_BT2020_HLG;
++        ANativeWindow_setBuffersDataSpace(window, data_space);
++    }
++#else
++    (void)window;
++#endif
+     eglSwapBuffers(p->egl_display, p->egl_surface);
+ }
+ 
+@@ -92,6 +107,7 @@ static bool android_init(struct ra_ctx *ctx)
+ 
+     struct ra_ctx_params params = {
+         .swap_buffers = android_swap_buffers,
++        .preferred_csp = vo_android_preferred_csp,
+     };
+ 
+     if (!ra_gl_ctx_init(ctx, &p->gl, params))
+diff --git a/video/out/vulkan/context_android.c b/video/out/vulkan/context_android.c
+index 512830db9f..b85b10f7e6 100644
+--- a/video/out/vulkan/context_android.c
++++ b/video/out/vulkan/context_android.c
+@@ -16,6 +16,7 @@
+  */
+ 
+ #include <vulkan/vulkan.h>
++#include <android/data_space.h>
+ #include <vulkan/vulkan_android.h>
+ 
+ #include "video/out/android_common.h"
+@@ -53,7 +54,9 @@ static bool android_init(struct ra_ctx *ctx)
+          .window = vo_android_native_window(ctx->vo)
+     };
+ 
+-    struct ra_ctx_params params = {0};
++    struct ra_ctx_params params = {
++        .preferred_csp = vo_android_preferred_csp,
++    };
+ 
+     VkInstance inst = vk->vkinst->instance;
+     VkResult res = vkCreateAndroidSurfaceKHR(inst, &info, NULL, &vk->surface);
+@@ -80,6 +83,15 @@ static bool android_reconfig(struct ra_ctx *ctx)
+     // Update window geometry to prevent screen tearing
+     ANativeWindow *native_window = vo_android_native_window(ctx->vo);
+     if (native_window) {
++#if __ANDROID_API__ >= 28
++        const struct pl_color_space color = vo_get_current_params(ctx->vo).color;
++        int32_t data_space = ADATASPACE_SRGB;
++        if (color.transfer == PL_COLOR_TRC_PQ)
++            data_space = ADATASPACE_BT2020_PQ;
++        else if (color.transfer == PL_COLOR_TRC_HLG)
++            data_space = ADATASPACE_BT2020_HLG;
++        ANativeWindow_setBuffersDataSpace(native_window, data_space);
++#endif
+         int32_t current_format = ANativeWindow_getFormat(native_window);
+         ANativeWindow_setBuffersGeometry(native_window, w, h, current_format);
+     }

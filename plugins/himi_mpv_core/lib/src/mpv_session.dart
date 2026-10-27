@@ -1,0 +1,72 @@
+import 'dart:typed_data';
+
+import 'mpv_output_policy.dart';
+import 'mpv_poll_result.dart';
+
+/// 平台无关的 MPV 会话接口。
+///
+/// 鸿蒙、Android、Windows 各自实现，播放器适配器只依赖本接口。
+abstract class MpvSession {
+  /// >0 = Flutter 纹理 id；0 = 原生 Surface（平台视图）模式。
+  int get textureId;
+
+  bool get usesNativeSurface => textureId == 0;
+
+  /// 原生事件流（属性、mpv 事件、日志）。
+  Stream<Map<Object?, Object?>> get events;
+
+  Future<void> open(
+    String url, {
+    Map<String, String> headers = const {},
+    int startMs = 0,
+    bool pause = false,
+  });
+
+  Future<bool> isReady();
+  Future<void> kickStart();
+  Future<void> play();
+  Future<void> pause();
+  Future<void> stop();
+  Future<void> seek(int positionMs);
+  Future<void> setVolume(double volume);
+  Future<void> setSpeed(double speed);
+  Future<void> setAudioTrack(int id);
+  Future<void> setSubtitleTrack(int id);
+  Future<void> addSubtitle(
+    String url, {
+    String title = 'external',
+    String lang = 'auto',
+  });
+  Future<void> setProperty(String name, Object value);
+  Future<String?> getProperty(String name);
+  Future<void> resizeTexture(int width, int height);
+  Future<Uint8List?> screenshot();
+  Future<String?> getTracks();
+  Future<String?> getVideoParams();
+  Future<String?> getAudioParams();
+  Future<MpvPollResult?> pollState();
+  Future<void> dispose();
+}
+
+/// 平台 MPV 会话工厂。
+abstract class MpvSessionFactory {
+  Future<MpvSession> create({
+    int width = 1920,
+    int height = 1080,
+    String hwdecMode = 'performance',
+    bool nativeSurface = false,
+  });
+
+  Future<MpvHdrCapabilities> queryHdrCapabilities();
+}
+
+/// 原生 Surface 句柄（Android/Windows 的 HWND/Surface；鸿蒙由 XComponent 自行绑定）。
+class MpvSurfaceHandle {
+  const MpvSurfaceHandle({required this.id, this.kind = 'native'});
+
+  final int id;
+  final String kind;
+
+  @override
+  String toString() => 'MpvSurfaceHandle($kind:$id)';
+}

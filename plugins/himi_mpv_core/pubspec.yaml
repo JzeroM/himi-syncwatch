@@ -1,0 +1,7 @@
+name: himi_mpv_core
+description: Shared MPV session contract for HIMI desktop, mobile and HarmonyOS.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.6.0

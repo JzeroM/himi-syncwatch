@@ -3,21 +3,20 @@ import 'dart:convert';
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
-import 'package:himi_mpv_ohos/himi_mpv_ohos.dart';
-import 'package:himi_mpv_ohos/mpv_event_hub.dart';
+import 'package:himi_mpv_core/himi_mpv_core.dart';
+import 'mpv_session_platform.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:image/image.dart' as img;
 
 import 'player_adapter.dart';
 
-/// HarmonyOS MPV 播放器适配器：包装 [HimiMpvPlayer]，实现 [PlayerAdapter]。
-///
-/// 仅 HarmonyOS 平台使用。mpv 的属性观察通过原生 EventChannel 推送，
+/// 三端统一 MPV 播放器适配器：通过 [MpvSession] 抽象包装鸿蒙/Android/Windows
+/// 原生会话，实现 [PlayerAdapter]。mpv 的属性观察通过原生 EventChannel 推送，
 /// [onMediaStatus]/[onStateChanged] 在此层转成 Adapter 抽象类型；
 /// position/duration 走 mpv 的 `time-pos/full`/`duration/full` 观察。
 ///
 /// 与 mdk 适配器的关键差异：
-/// - 无 SurfaceView 通道（`nativeHandle` 恒 0），渲染恒走 Flutter 纹理；
+/// - `nativeHandle` 恒 0；HDR 走原生 Surface，SDR 走 Flutter 纹理；
 /// - mpv 的 `track-list`/`video-params`/`audio-params` 是 **JSON 字符串**
 ///   （原生把 mpv_node 序列化后派发），需 `jsonDecode`；
 /// - 播完判定靠 `eof-reached` 属性 + `MPV_EVENT_END_FILE` 双保险
@@ -32,7 +31,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 硬解渲染档位（standard/performance/extreme，来自设置，
   /// 经 PlayerEngineFactory 传入；原生 create 时生效）。
   final String _hwdecRenderMode;
-  HimiMpvPlayer? _player;
+  MpvSession? _player;
   bool _disposed = false;
   bool _prepared = false;
 
@@ -143,6 +142,17 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   set hdrContent(bool value) => _hdrContentForMedia = value;
 
+  /// 内容是否为 HLG（用于 HDR 直出时选择 target-trc）。
+  bool _hlgContentForMedia = false;
+  set hlgContent(bool value) => _hlgContentForMedia = value;
+
+  /// SDR 纹理链路不可用时强制原生 Surface。
+  bool _forceNativeSurface = false;
+  set forceNativeSurface(bool value) => _forceNativeSurface = value;
+
+  /// 当前输出是否走原生 Surface（平台视图）。
+  bool get usesNativeSurface => _player?.usesNativeSurface ?? false;
+
   /// 把 X-Emby-Token 拼进 URL 的 api_key 参数（Emby 流端点原生支持）。
   ///
   /// 真机（v1.2.77）证实 header 两条传递路径均不可靠，而 app 内同域名
@@ -171,13 +181,28 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // v1.2.73 起原生 create 内同步完成 initialize（不再等 surface），
     // 所以这里的 setProperty/open 立即真正生效。
     var player = _player;
+    final nativeSurface = _hdrContentForMedia || _forceNativeSurface;
+    if (player != null && player.usesNativeSurface != nativeSurface) {
+      // HDR 状态在运行期翻转时，渲染目标必须重建：纹理与原生 Surface
+      // 不能在同一 mpv 会话里热切换。
+      await _rawSub?.cancel();
+      _rawSub = null;
+      await player.dispose();
+      player = null;
+      _player = null;
+    }
     if (player == null) {
-      // v1.2.98：HDR 内容初始纹理缓冲直接用 1280x720（GL OOM 根除的
-      // 上半段——video-params 到来前的首帧窗口也安全），SDR 保持 1920。
+      // HDR 走原生 Surface，初始尺寸只作为提示；SDR 保留纹理初始缓冲。
       final initW = _hdrContentForMedia ? 1280 : 1920;
       final initH = _hdrContentForMedia ? 720 : 1080;
-      player = await HimiMpvPlayer.create(
-          hwdecMode: _hwdecRenderMode, width: initW, height: initH);
+      player = await MpvSessionPlatform.create(
+        hwdecMode: _hwdecRenderMode,
+        width: initW,
+        height: initH,
+        nativeSurface: nativeSurface,
+        hdr: _hdrContentForMedia,
+        hlg: _hlgContentForMedia,
+      );
       if (_disposed) {
         // 创建期间已被销毁：立刻回收，避免泄漏。
         unawaited(player.dispose());
@@ -617,7 +642,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   void _ensureEventSubscription() {
     if (_rawSub != null) return;
-    _rawSub = HimiMpvPlayer.events.listen(_handleRaw);
+    _rawSub = _player?.events.listen(_handleRaw);
   }
 
   void _handleRaw(Map<Object?, Object?> raw) {
@@ -876,7 +901,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         rw = cap;
         rh = (h * cap / w).round();
       }
-      unawaited(_player?.resizeTexture(rw, rh));
+      if (!usesNativeSurface) {
+        unawaited(_player?.resizeTexture(rw, rh));
+      }
     } catch (_) {}
   }
 

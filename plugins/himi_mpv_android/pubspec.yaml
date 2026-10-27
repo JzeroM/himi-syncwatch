@@ -1,0 +1,22 @@
+name: himi_mpv_android
+description: HIMI Android MPV native-surface session (libmpv via media_kit).
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  himi_mpv_core:
+    path: ../himi_mpv_core
+  media_kit:
+    path: ../../third_party/nipaplay/media_kit
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.himi.mpv.android
+        pluginClass: HimiMpvAndroidPlugin

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
@@ -5,6 +6,7 @@ import 'package:himi_syncwatch/services/player/player_engine.dart';
 void main() {
   tearDown(() {
     PlayerEngineFactory.debugIsOhosOverride = null;
+    debugDefaultTargetPlatformOverride = null;
   });
 
   test('HarmonyOS 仅支持并默认 MPV', () {
@@ -20,14 +22,24 @@ void main() {
     );
   });
 
-  test('非 HarmonyOS 不注册 MPV', () {
+  test('Android/Windows 注册 MPV，iOS 不注册', () {
     PlayerEngineFactory.debugIsOhosOverride = false;
 
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      debugDefaultTargetPlatformOverride = platform;
+      expect(
+        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
+        isTrue,
+        reason: '$platform',
+      );
+      expect(PlayerEngineFactory.defaultEngine(), isNot(PlayerEngine.mpv));
+    }
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     expect(
       PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
       isFalse,
     );
-    expect(PlayerEngineFactory.defaultEngine(), isNot(PlayerEngine.mpv));
   });
 
   test('MPV 引擎 id 与短名', () {

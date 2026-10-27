@@ -8,6 +8,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   flutter_secure_storage_windows
   fvp
+  himi_mpv_windows
   himi_windows_rtm
   iris_method_channel
   media_kit_libs_windows_video

@@ -10,7 +10,7 @@ void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
   group('PlayerEngineFactory.supportedEngines（平台矩阵）', () {
-    test('Android/Windows：MDK + MediaKit + Erika', () {
+    test('Android/Windows：MDK + MediaKit + Erika + MPV', () {
       for (final p in const [
         TargetPlatform.android,
         TargetPlatform.windows,
@@ -23,6 +23,7 @@ void main() {
             PlayerEngine.mdk,
             PlayerEngine.mediaKit,
             PlayerEngine.erika,
+            PlayerEngine.mpv,
           ]),
           reason: '$p',
         );
@@ -79,10 +80,11 @@ void main() {
   });
 
   group('PlayerEngineFactory.isSupported', () {
-    test('Android 支持三内核；iOS 仅 Erika；Windows 支持三内核', () {
+    test('Android/Windows 支持 MPV；iOS 仅 Erika', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isTrue);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);

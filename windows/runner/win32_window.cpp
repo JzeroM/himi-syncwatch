@@ -29,6 +29,15 @@ constexpr const wchar_t kGetPreferredBrightnessRegValue[] = L"AppsUseLightTheme"
 // The number of Win32Window objects that currently exist.
 static int g_active_window_count = 0;
 
+void EnableTransparentWindowBackground(HWND hwnd) {
+  if (hwnd == nullptr) return;
+  // Flutter EGL is configured with an 8-bit alpha channel. Extending the
+  // DWM frame into the client area lets the rasterizer's transparent pixels
+  // reveal the native video HWND placed underneath.
+  MARGINS margins = {-1};
+  DwmExtendFrameIntoClientArea(hwnd, &margins);
+}
+
 using EnableNonClientDpiScaling = BOOL __stdcall(HWND hwnd);
 
 // Scale helper to convert logical scaler values to physical using passed in
@@ -241,6 +250,8 @@ Win32Window* Win32Window::GetThisFromHandle(HWND const window) noexcept {
 void Win32Window::SetChildContent(HWND content) {
   child_content_ = content;
   SetParent(content, window_handle_);
+  EnableTransparentWindowBackground(window_handle_);
+  EnableTransparentWindowBackground(content);
   RECT frame = GetClientArea();
 
   MoveWindow(content, frame.left, frame.top, frame.right - frame.left,

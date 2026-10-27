@@ -1,6 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:himi_mpv_core/himi_mpv_core.dart';
+
+export 'package:himi_mpv_core/himi_mpv_core.dart'
+    show
+        MpvEvent,
+        MpvHdrCapabilities,
+        MpvPollResult,
+        MpvPropertyEvent,
+        MpvSession;
+export 'himi_mpv_surface_view.dart';
 
 /// HIMI HarmonyOS MPV 播放器的 Dart 侧接口。
 ///
@@ -9,23 +19,31 @@ import 'package:flutter/services.dart';
 ///
 /// 线程模型：所有方法都是异步的，且不阻塞 UI 线程；原生侧 mpv 自带事件
 /// 线程，属性观察由 mpv 主动推送。
-class HimiMpvPlayer {
+class HimiMpvPlayer implements MpvSession {
   HimiMpvPlayer._(this._textureId);
 
   static const MethodChannel _methods = MethodChannel('himi_mpv');
   static const EventChannel _events = EventChannel('himi_mpv/events');
 
   /// Flutter 纹理 id（用于 `Texture(textureId: ...)` 渲染视频）。
+  /// 0 = 原生 Surface（平台视图）模式。
   final int _textureId;
+  @override
   int get textureId => _textureId;
+
+  @override
+  bool get usesNativeSurface => _textureId == 0;
+
+  @override
+  Stream<Map<Object?, Object?>> get events => HimiMpvPlayer.eventStream;
 
   /// 原生属性/事件流（全局单例广播流）。
   static Stream<Map<Object?, Object?>>? _eventStream;
 
   /// 创建播放器。
   ///
-  /// 返回值：>0 = Flutter 纹理 id（v1.2.80 起原生自注册纹理，mpv 直绘）；
-  /// 0 = 纹理注册失败，回退平台视图（OhosView/XComponent）模式。
+  /// 返回值：>0 = Flutter 纹理 id；0 = 原生 Surface 平台视图模式
+  /// （`nativeSurface: true` 或纹理注册失败）。
   ///
   /// [hwdecMode] 硬解渲染档位：'standard'（完整画质：插值补帧+大缓冲）/
   /// 'performance'（高性能，默认）/ 'extreme'（极速）。
@@ -34,16 +52,39 @@ class HimiMpvPlayer {
     int width = 1920,
     int height = 1080,
     String hwdecMode = 'performance',
+    bool nativeSurface = false,
+    bool hdr = false,
+    bool hlg = false,
   }) async {
     final id = await _methods.invokeMethod<int>('create', {
       'width': width,
       'height': height,
       'hwdecMode': hwdecMode,
+      'nativeSurface': nativeSurface,
+      'hdr': hdr,
+      'hlg': hlg,
     });
     if (id == null) {
       throw StateError('mpv create failed');
     }
     return HimiMpvPlayer._(id);
+  }
+
+  /// 查询当前显示 HDR 能力（鸿蒙 display.hdrFormats）。
+  static Future<MpvHdrCapabilities> queryHdrCapabilities() async {
+    try {
+      final raw = await _methods.invokeMapMethod<String, Object?>(
+        'queryHdrCapabilities',
+      );
+      final formats = (raw?['formats'] as List<Object?>?) ?? const [];
+      return MpvHdrCapabilities(
+        hdr10: formats.contains('hdr10'),
+        hlg: formats.contains('hlg'),
+        displayHdr: formats.isNotEmpty,
+      );
+    } catch (e) {
+      return MpvHdrCapabilities(error: '$e');
+    }
   }
 
   /// 实时切换渲染档位（播放中生效；无会话时静默忽略，下次 create 生效）。
@@ -54,7 +95,7 @@ class HimiMpvPlayer {
   ///
   /// 用 `asBroadcastStream` 而非 `receiveBroadcastStream` 的返回值直接广播：
   /// 后者每次 listen 都会向原生发一次 listen 请求，多播放器场景会互相顶掉。
-  static Stream<Map<Object?, Object?>> get events {
+  static Stream<Map<Object?, Object?>> get eventStream {
     final existing = _eventStream;
     if (existing != null) return existing;
     final stream = _events
@@ -174,90 +215,4 @@ class HimiMpvPlayer {
 
   /// 销毁播放器并释放纹理。
   Future<void> dispose() => _methods.invokeMethod<void>('dispose');
-}
-
-/// [HimiMpvPlayer.pollState] 的结果。
-class MpvPollResult {
-  const MpvPollResult({
-    required this.durationMs,
-    required this.positionMs,
-    required this.bufferedMs,
-    required this.paused,
-    required this.eofReached,
-    required this.idleActive,
-    required this.playlistCount,
-    required this.pausedForCache,
-    required this.cachePercent,
-    this.videoParams,
-    this.trackList,
-    this.hwdecCurrent,
-    this.gpuContext,
-    this.currentVo,
-    this.mediaTitle,
-    this.pathMasked,
-  });
-
-  final int durationMs;
-  final int positionMs;
-  final int bufferedMs;
-  final bool paused;
-  final bool eofReached;
-
-  /// mpv 是否空闲（无文件）。
-  final bool idleActive;
-
-  /// 播放列表条数（0 = loadfile 从未成功）。
-  final int playlistCount;
-
-  /// 因缓冲暂停（网络/demuxer 停滞）。
-  final bool pausedForCache;
-
-  /// 缓冲进度（0-100，-1 = 不可用）。
-  final double cachePercent;
-
-  /// mpv `video-params` 的 JSON 文本（含 w/h/codec）；未就绪为 null。
-  final String? videoParams;
-
-  /// mpv `track-list` 的 JSON 文本；未就绪为 null。
-  final String? trackList;
-
-  /// 实际生效的硬件解码器（mpv `hwdec-current`；null = 无视频/未启用，
-  /// 'no' = 软解在跑）。验证硬解是否真的生效。
-  final String? hwdecCurrent;
-
-  /// 实际 GPU 上下文后端（应为 ohosvk）。
-  final String? gpuContext;
-
-  /// 实际视频输出（应为 gpu-next）。
-  final String? currentVo;
-
-  final String? mediaTitle;
-
-  /// 掩码后的播放地址（无 query，尾部 72 字符）。
-  final String? pathMasked;
-
-  static MpvPollResult fromMap(Map<Object?, Object?> raw) {
-    int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
-    bool asBool(Object? v) => v is bool ? v : false;
-    double asDouble(Object? v) =>
-        v is double ? v : (v is num ? v.toDouble() : -1);
-    return MpvPollResult(
-      durationMs: asInt(raw['durationMs']),
-      positionMs: asInt(raw['positionMs']),
-      bufferedMs: asInt(raw['bufferedMs']),
-      paused: asBool(raw['paused']),
-      eofReached: asBool(raw['eofReached']),
-      idleActive: asBool(raw['idleActive']),
-      playlistCount: asInt(raw['playlistCount']),
-      pausedForCache: asBool(raw['pausedForCache']),
-      cachePercent: asDouble(raw['cachePercent']),
-      videoParams: raw['videoParams'] as String?,
-      trackList: raw['trackList'] as String?,
-      hwdecCurrent: raw['hwdecCurrent'] as String?,
-      gpuContext: raw['gpuContext'] as String?,
-      currentVo: raw['currentVo'] as String?,
-      mediaTitle: raw['mediaTitle'] as String?,
-      pathMasked: raw['pathMasked'] as String?,
-    );
-  }
 }

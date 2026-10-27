@@ -11,6 +11,7 @@
 #include <file_selector_windows/file_selector_windows.h>
 #include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
 #include <fvp/fvp_plugin_c_api.h>
+#include <himi_mpv_windows/himi_mpv_windows_plugin_c_api.h>
 #include <himi_windows_rtm/himi_windows_rtm_plugin_c_api.h>
 #include <iris_method_channel/iris_method_channel_plugin_c_api.h>
 #include <media_kit_libs_windows_video/media_kit_libs_windows_video_plugin_c_api.h>
@@ -33,6 +34,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FlutterSecureStorageWindowsPlugin"));
   FvpPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FvpPluginCApi"));
+  HimiMpvWindowsPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("HimiMpvWindowsPluginCApi"));
   HimiWindowsRtmPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("HimiWindowsRtmPluginCApi"));
   IrisMethodChannelPluginCApiRegisterWithRegistrar(

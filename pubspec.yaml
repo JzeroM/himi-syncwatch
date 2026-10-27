@@ -107,8 +107,14 @@ dependencies:
     path: third_party/ohos_plugins/flutter_secure_storage_ohos-1.0.0
   file_picker_ohos:
     path: third_party/ohos_plugins/file_picker_ohos-1.0.1
+  himi_mpv_core:
+    path: plugins/himi_mpv_core
   himi_mpv_ohos:
     path: plugins/himi_mpv_ohos
+  himi_mpv_android:
+    path: plugins/himi_mpv_android
+  himi_mpv_windows:
+    path: plugins/himi_mpv_windows
 
 dependency_overrides:
   # path_provider_foundation 2.6.0 拉入 objective_c，其 build hook 在非 Apple 平台报 arm64e 错误

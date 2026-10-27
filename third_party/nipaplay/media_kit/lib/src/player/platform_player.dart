@@ -442,6 +442,19 @@ class PlayerConfiguration {
   /// Default: `null`.
   final String? vo;
 
+  /// Extra libmpv options applied before `mpv_initialize`.
+  ///
+  /// Useful for direct-surface output (`wid`, `gpu-api`, `gpu-context`,
+  /// HDR target options). Values are passed as strings.
+  final Map<String, String> options;
+
+  /// Native window handle for direct-surface output.
+  ///
+  /// Android: Java `Surface` global reference. Windows: child `HWND`.
+  /// The option is applied before `mpv_initialize`, so the surface must exist
+  /// before the player is created.
+  final int? wid;
+
   /// Enables on-screen controls for native backend.
   ///
   /// Default: `false`.
@@ -517,6 +530,8 @@ class PlayerConfiguration {
   /// {@macro player_configuration}
   const PlayerConfiguration({
     this.vo = 'null',
+    this.options = const <String, String>{},
+    this.wid,
     this.osc = false,
     this.pitch = false,
     this.title = 'package:media_kit',

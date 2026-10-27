@@ -13,7 +13,7 @@ struct Index {
 
   build() {
     Column() {
-      FlutterPage({ viewId: this.viewId })
+      FlutterPage({ viewId: this.viewId, xComponentOpaque: false })
     }
   }
 

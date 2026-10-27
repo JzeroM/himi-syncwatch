@@ -16,6 +16,11 @@ import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
+import 'package:himi_mpv_android/himi_mpv_android.dart'
+    show HimiMpvAndroidSurfaceView;
+import 'package:himi_mpv_ohos/himi_mpv_ohos.dart' show HimiMpvSurfaceView;
+import 'package:himi_mpv_windows/himi_mpv_windows.dart'
+    show HimiMpvWindowsSurfaceView;
 import 'package:himi_syncwatch/services/player/stream_reload_scheduler.dart';
 import 'package:himi_syncwatch/services/player/clock_offset_estimator.dart';
 import 'package:himi_syncwatch/services/player/stream_stall_guard.dart';
@@ -2144,6 +2149,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _player.setProperty('avcodec.threads', '0');
   }
 
+  /// HDR 内容强制切 MPV 原生 Surface 直出（三端统一）。
+  ///
+  /// SDR 保持用户当前内核/纹理；只有纹理链路被判定不可用时才由
+  /// [MpvOutputPolicy] 在适配器层切直出。
+  Future<void> _routeHdrToMpvIfNeeded() async {
+    if (_currentEngine == PlayerEngine.mpv || Platform.isIOS) return;
+    final hdr = _hdrContent ||
+        _embyVideoStream?.isHDR == true ||
+        _embyVideoStream?.isDolbyVision == true ||
+        _isHlgContent;
+    var textureUnavailable = false;
+    if (Platform.isAndroid) {
+      final profile = ref.read(deviceProfileProvider);
+      textureUnavailable = profile.eglBroken(
+            eglFaultSeen: eglFaultDetector.fault,
+          ) ||
+          (_is10BitContent && profile.tenBitGlBroken);
+    }
+    if ((!hdr && !textureUnavailable) ||
+        !PlayerEngineFactory.isSupported(PlayerEngine.mpv)) {
+      return;
+    }
+    if (hdr) _hdrContent = true;
+    await _recreateEngineForLoad(PlayerEngine.mpv, ErikaOutputMode.auto);
+    if (textureUnavailable && _player is MpvPlayerAdapter) {
+      (_player as MpvPlayerAdapter).forceNativeSurface = true;
+    }
+  }
+
   void _applyMpvContentHints() {
     if (_currentEngine != PlayerEngine.mpv) return;
     final player = _player;
@@ -2151,6 +2185,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final stream = _embyVideoStream;
     player.hdrContent =
         _hdrContent || stream?.isHDR == true || stream?.isDolbyVision == true;
+    player.hlgContent = _isHlgContent;
   }
 
   /// 当前活跃音轨的编码名（小写），取不到返回 ''。
@@ -2780,6 +2815,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _applyOutputColorSpace();
   }
 
+  /// 当前 MPV 输出是否走原生 Surface（平台视图）。
+  bool get _usesMpvNativeSurface =>
+      _currentEngine == PlayerEngine.mpv &&
+      _player is MpvPlayerAdapter &&
+      (_player as MpvPlayerAdapter).usesNativeSurface;
+
   /// 当前档位是否走 SurfaceView 平台视图通道（普通档或直写档）。
   bool get _usesSurfaceView =>
       AppSettings.isSurfaceViewMode(_effectiveVideoOutput());
@@ -3314,6 +3355,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 输出色彩空间：防 player 状态重置丢失 initState 的设置。
       // DV 内容按平台策略（Android HDR10/SDR、Windows 恒 HDR、iOS 不设置）；
       // 其余仅 Android + hdrGlWorkaround 且显示无 HDR 能力时强制 bt709。
+      await _routeHdrToMpvIfNeeded();
+      if (!mounted || _disposed) return false;
       _applyOutputColorSpace();
       _isSwitchingMedia = true;
       _applyMpvContentHints();
@@ -3478,6 +3521,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // media/prepare/纹理，避免落败调用在赢家流程上叠加渲染操作。
       if (requestId != _playRequestId || !mounted || _disposed) return;
 
+      await _routeHdrToMpvIfNeeded();
+      if (requestId != _playRequestId || !mounted || _disposed) return;
       _isSwitchingMedia = true;
       _applyOutputColorSpace();
       _applyMpvContentHints();
@@ -6878,7 +6923,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               : _playPauseFocusNode,
         ),
         child: Scaffold(
-          backgroundColor: Colors.black,
+          backgroundColor:
+              _usesMpvNativeSurface ? Colors.transparent : Colors.black,
           // 视频手势（点屏/双击/拖动 seek/音量亮度）在 _buildVideoArea
           // 内只包视频层：若放 body 层做浮层/控制条的祖先，拖动起点在
           // 字幕/音轨/倍速面板内时祖先 drag recognizer 先进手势竞技场
@@ -6990,6 +7036,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  void _onMpvSurfaceCreated() {
+    if (!mounted) return;
+    LogService().log('Diag', 'mpv 原生 Surface 平台视图已创建');
+    _nudgeOverlayRepaint('mpv 原生 Surface 创建后');
+  }
+
+  /// MPV 原生 Surface（鸿蒙 XComponent / Android SurfaceView / Windows HWND）：
+  /// mpv 直出到平台原生 Surface，Flutter 控件/弹幕叠加在上方。
+  Widget _buildMpvNativeVideo() {
+    final size = _videoNativeSize;
+    if (size == null || size.width <= 0 || size.height <= 0) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white54),
+      );
+    }
+    return Center(
+      child: AspectRatio(
+        aspectRatio: size.width / size.height,
+        child: Platform.isAndroid
+            ? HimiMpvAndroidSurfaceView(
+                onPlatformViewCreated: (_) => _onMpvSurfaceCreated(),
+              )
+            : Platform.isWindows
+                ? const HimiMpvWindowsSurfaceView()
+                : HimiMpvSurfaceView(
+                    onPlatformViewCreated: (_) => _onMpvSurfaceCreated(),
+                  ),
+      ),
+    );
+  }
+
   Widget _buildMediaKitVideo(VideoController controller) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -7057,87 +7134,95 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     : _currentEngine == PlayerEngine.mediaKit &&
                             mediaKitController != null
                         ? _buildMediaKitVideo(mediaKitController)
-                        : _usesSurfaceView
-                            ? _buildSurfaceViewVideo()
-                            : ValueListenableBuilder<int?>(
-                                valueListenable: _player.textureId,
-                                builder: (context, textureId, child) {
-                                  if (textureId == null) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(
-                                          color: Colors.white54),
-                                    );
-                                  }
-                                  // 无视频尺寸时先按原尺寸渲染，拿到尺寸后 setState 重新渲染
-                                  if (_videoNativeSize == null) {
-                                    return Center(
-                                      child: Texture(textureId: textureId),
-                                    );
-                                  }
-                                  return LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final containerW = constraints.maxWidth;
-                                      final containerH = constraints.maxHeight;
-                                      final renderW = _videoNativeSize!.width;
-                                      final renderH = _videoNativeSize!.height;
+                        : _usesMpvNativeSurface
+                            ? _buildMpvNativeVideo()
+                            : _usesSurfaceView
+                                ? _buildSurfaceViewVideo()
+                                : ValueListenableBuilder<int?>(
+                                    valueListenable: _player.textureId,
+                                    builder: (context, textureId, child) {
+                                      if (textureId == null) {
+                                        return const Center(
+                                          child: CircularProgressIndicator(
+                                              color: Colors.white54),
+                                        );
+                                      }
+                                      // 无视频尺寸时先按原尺寸渲染，拿到尺寸后 setState 重新渲染
+                                      if (_videoNativeSize == null) {
+                                        return Center(
+                                          child: Texture(textureId: textureId),
+                                        );
+                                      }
+                                      return LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final containerW =
+                                              constraints.maxWidth;
+                                          final containerH =
+                                              constraints.maxHeight;
+                                          final renderW =
+                                              _videoNativeSize!.width;
+                                          final renderH =
+                                              _videoNativeSize!.height;
 
-                                      switch (_videoFit) {
-                                        case BoxFit.none:
-                                          return Texture(textureId: textureId);
-                                        case BoxFit.fill:
-                                          return Center(
-                                            child: Transform(
-                                              alignment: Alignment.center,
-                                              transform:
-                                                  Matrix4.diagonal3Values(
-                                                containerW / renderW,
-                                                containerH / renderH,
-                                                1.0,
-                                              ),
-                                              child: UnconstrainedBox(
+                                          switch (_videoFit) {
+                                            case BoxFit.none:
+                                              return Texture(
+                                                  textureId: textureId);
+                                            case BoxFit.fill:
+                                              return Center(
+                                                child: Transform(
+                                                  alignment: Alignment.center,
+                                                  transform:
+                                                      Matrix4.diagonal3Values(
+                                                    containerW / renderW,
+                                                    containerH / renderH,
+                                                    1.0,
+                                                  ),
+                                                  child: UnconstrainedBox(
+                                                    child: SizedBox(
+                                                      width: renderW,
+                                                      height: renderH,
+                                                      child: Texture(
+                                                          textureId: textureId),
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            case BoxFit.cover:
+                                              final scale = max(
+                                                  containerW / renderW,
+                                                  containerH / renderH);
+                                              return ClipRect(
+                                                child: Center(
+                                                  child: Transform.scale(
+                                                    scale: scale,
+                                                    child: UnconstrainedBox(
+                                                      child: SizedBox(
+                                                        width: renderW,
+                                                        height: renderH,
+                                                        child: Texture(
+                                                            textureId:
+                                                                textureId),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            default: // contain
+                                              return FittedBox(
+                                                fit: BoxFit.contain,
                                                 child: SizedBox(
                                                   width: renderW,
                                                   height: renderH,
                                                   child: Texture(
                                                       textureId: textureId),
                                                 ),
-                                              ),
-                                            ),
-                                          );
-                                        case BoxFit.cover:
-                                          final scale = max(
-                                              containerW / renderW,
-                                              containerH / renderH);
-                                          return ClipRect(
-                                            child: Center(
-                                              child: Transform.scale(
-                                                scale: scale,
-                                                child: UnconstrainedBox(
-                                                  child: SizedBox(
-                                                    width: renderW,
-                                                    height: renderH,
-                                                    child: Texture(
-                                                        textureId: textureId),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        default: // contain
-                                          return FittedBox(
-                                            fit: BoxFit.contain,
-                                            child: SizedBox(
-                                              width: renderW,
-                                              height: renderH,
-                                              child:
-                                                  Texture(textureId: textureId),
-                                            ),
-                                          );
-                                      }
+                                              );
+                                          }
+                                        },
+                                      );
                                     },
-                                  );
-                                },
-                              ),
+                                  ),
           )
         : Center(
             child: Column(
@@ -7206,7 +7291,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // 视频矩形之外的区域引擎不再重绘，会裸露"进入播放器那一刻"含
           // 控件的死帧（隐藏后残留）；整屏铺满 + 视频矩形透明把死帧盖死
           // （见 LetterboxBarsCover）。仅 SurfaceView 档需要。
-          if (_usesSurfaceView &&
+          if ((_usesSurfaceView || _usesMpvNativeSurface) &&
               !_surfaceDetached &&
               _videoNativeSize != null &&
               _videoNativeSize!.width > 0 &&
@@ -7691,6 +7776,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 切换播放内核：保留当前位置/音轨/字幕，失败时提示。
   Future<void> _switchPlayerKernel(PlayerEngine target) async {
+    // HDR 内容必须走 MPV 原生 Surface 直出，用户手动切内核也不能绕过。
+    if (_hdrContent &&
+        target != PlayerEngine.mpv &&
+        PlayerEngineFactory.isSupported(PlayerEngine.mpv)) {
+      target = PlayerEngine.mpv;
+    }
     if (_switchingKernel || _switchingEngine || target == _currentEngine) {
       return;
     }

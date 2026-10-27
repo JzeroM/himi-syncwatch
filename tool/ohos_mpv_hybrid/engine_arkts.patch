@@ -1,0 +1,333 @@
+diff --git a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/embedding/ohos/EmbeddingNodeController.ets b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/embedding/ohos/EmbeddingNodeController.ets
+index ec8e99e7650..0ed786c9f12 100644
+--- a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/embedding/ohos/EmbeddingNodeController.ets
++++ b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/embedding/ohos/EmbeddingNodeController.ets
+@@ -4,7 +4,7 @@
+ * found in the LICENSE_KHZG file.
+ *
+ */
+-import { BuilderNode, FrameNode, NodeController, NodeRenderType } from '@kit.ArkUI';
++import { BuilderNode, FrameNode, NodeController, NodeRenderType, RenderOptions } from '@kit.ArkUI';
+ import { deviceInfo } from '@kit.BasicServicesKit';
+ import Any from '../../plugin/common/Any';
+ import PlatformView, { Params, PlatformViewVisibleAreaEventOptions } from '../../plugin/platform/PlatformView';
+@@ -134,7 +134,11 @@ export class EmbeddingNodeController extends NodeController {
+    * @returns The created FrameNode, or null if creation fails
+    */
+   makeNode(uiContext: UIContext): FrameNode | null {
+-    this.builderNode = new BuilderNode(uiContext, { surfaceId: this.surfaceId, type: this.renderType });
++    const renderOptions: RenderOptions = { type: this.renderType };
++    if (this.surfaceId !== undefined && this.surfaceId !== '') {
++      renderOptions.surfaceId = this.surfaceId;
++    }
++    this.builderNode = new BuilderNode(uiContext, renderOptions);
+ 
+     if (this.platformView && this.wrappedBuilder) {
+       this.builderNode.build(this.wrappedBuilder, { direction: this.direction, platformView: this.platformView });
+diff --git a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/embedding/ohos/FlutterPage.ets b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/embedding/ohos/FlutterPage.ets
+index 92027c9526b..546eb3add34 100644
+--- a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/embedding/ohos/FlutterPage.ets
++++ b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/embedding/ohos/FlutterPage.ets
+@@ -24,9 +24,11 @@ struct FlutterSurface {
+   @Prop xComponentRenderFit: RenderFit = RenderFit.RESIZE_FILL;
+   @Prop firstFrameDisplayed: boolean = false;
+   @Prop xComponentColor: Color = Color.Black
++  @Prop xComponentOpaque: boolean = true;
+   @Prop defaultFocusOnTouch: boolean = false;
+ 
+   private surfaceLifecycleToken: number = 0;
++  private xComponentController: XComponentController = new XComponentController();
+   private flutterView?: FlutterView | null;
+ 
+   private pushAutofillUiContext(source: string): void {
+@@ -42,11 +44,18 @@ struct FlutterSurface {
+   }
+ 
+   build() {
+-    XComponent({ id: this.viewId, type: this.xComponentType, libraryname: 'flutter' })
++    XComponent({ id: this.viewId, type: this.xComponentType, libraryname: 'flutter', controller: this.xComponentController })
+       .id(this.viewId)
+       .focusable(true)
+       .focusOnTouch(this.defaultFocusOnTouch)
+       .onLoad((context) => {
++        if (!this.xComponentOpaque && deviceInfo.sdkApiVersion >= 22) {
++          try {
++            this.xComponentController.setXComponentSurfaceConfig({ isOpaque: false });
++          } catch (error) {
++            Log.w(TAG, 'setXComponentSurfaceConfig transparent failed: ' + JSON.stringify(error));
++          }
++        }
+         this.flutterView = FlutterManager.getInstance().getFlutterView(this.viewId);
+         this.surfaceLifecycleToken = this.flutterView?.onSurfaceCreated() ?? 0;
+         this.pushAutofillUiContext('FlutterPage.XComponent.onLoad');
+@@ -71,7 +80,7 @@ struct FlutterSurface {
+         this.flutterView = null;
+       })
+       .renderFit(this.xComponentRenderFit)
+-      .backgroundColor(this.firstFrameDisplayed && this.xComponentRenderFit == RenderFit.RESIZE_FILL ?
++      .backgroundColor(this.xComponentOpaque && this.firstFrameDisplayed && this.xComponentRenderFit == RenderFit.RESIZE_FILL ?
+       this.xComponentColor : Color.Transparent)
+       .expandSafeArea(this.safeAreaTypes, this.safeAreaEdges)
+       .onAreaChange((oldValue: Area, newValue: Area) => {
+@@ -104,6 +113,8 @@ export struct FlutterPage {
+    * such as TOP_LEFT.
+    */
+   @Prop xComponentRenderFit: RenderFit = RenderFit.RESIZE_FILL;
++  /** Keep the Flutter surface translucent so native platform views below can show through. */
++  @Prop xComponentOpaque: boolean = true;
+ 
+   /**
+    * A switch for enabling the frame cache.
+@@ -154,6 +165,7 @@ export struct FlutterPage {
+         viewId: this.viewId,
+         xComponentType: this.xComponentType,
+         xComponentRenderFit: this.xComponentRenderFit,
++        xComponentOpaque: this.xComponentOpaque,
+         firstFrameDisplayed: this.firstFrameDisplayed,
+         xComponentColor: this.xComponentColor,
+         defaultFocusOnTouch: this.defaultFocusOnTouch
+@@ -220,6 +232,7 @@ export struct FlutterPage {
+         viewId: this.viewId,
+         xComponentType: this.xComponentType,
+         xComponentRenderFit: this.xComponentRenderFit,
++        xComponentOpaque: this.xComponentOpaque,
+         firstFrameDisplayed: this.firstFrameDisplayed,
+         xComponentColor: this.xComponentColor,
+         defaultFocusOnTouch: this.defaultFocusOnTouch
+diff --git a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/editing/OhosAutoFillHelper.ets b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/editing/OhosAutoFillHelper.ets
+index c2a0557eb16..d95da31a20a 100644
+--- a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/editing/OhosAutoFillHelper.ets
++++ b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/editing/OhosAutoFillHelper.ets
+@@ -75,7 +75,7 @@ export interface OhosAutoFillRect {
+   height: number;
+ }
+ 
+-/** Internal PageNodeInfo; mapped to autoFillManager.ViewData.pageNodeInfos at request time. */
++/** Internal PageNodeInfo; mapped to AutoFillManagerViewData.pageNodeInfos at request time. */
+ export interface OhosPageNodeInfo {
+   id: number;
+   depth: number;
+@@ -103,7 +103,7 @@ export interface OhosViewData {
+ interface AutoFillManagerPageNodeInfo {
+   id: number;
+   depth: number;
+-  autoFillType: autoFillManager.AutoFillType;
++  autoFillType: number;
+   tag: string;
+   value: string;
+   placeholder: string;
+@@ -127,6 +127,30 @@ interface AutoFillCustomData {
+   data: Record<string, string>;
+ }
+ 
++// SDK 26 exposes these declarations outside the autoFillManager namespace in
++// some public SDK builds. Keep local structural types so the embedding still
++// compiles; the runtime API is invoked dynamically below.
++interface AutoFillFillFailureResult {
++  errCode: number;
++}
++
++interface AutoFillCallback {
++  onSuccess(viewData: AutoFillManagerViewData): void;
++  onFailure(result: AutoFillFillFailureResult): void;
++}
++
++interface AutoFillFillRequest {
++  type: number;
++  viewData: AutoFillManagerViewData;
++  customData: AutoFillCustomData;
++  isPopup: boolean;
++  triggerType: number;
++}
++
++interface AutoFillSaveRequest {
++  viewData: AutoFillManagerViewData;
++}
++
+ /**
+  * Bridges Flutter AutofillGroup configuration to OpenHarmony autoFillManager APIs.
+  */
+@@ -201,8 +225,8 @@ export class OhosAutoFillHelper {
+     }
+   }
+ 
+-  private static toSdkAutoFillType(value: number): autoFillManager.AutoFillType {
+-    return value as autoFillManager.AutoFillType;
++  private static toSdkAutoFillType(value: number): number {
++    return value as number;
+   }
+ 
+   static hintToAutoFillType(hint: string): number {
+@@ -506,7 +530,7 @@ export class OhosAutoFillHelper {
+     };
+   }
+ 
+-  private static toManagerViewData(viewData: OhosViewData): autoFillManager.ViewData {
++  private static toManagerViewData(viewData: OhosViewData): AutoFillManagerViewData {
+     const pageNodeInfos: AutoFillManagerPageNodeInfo[] = [];
+     for (const node of viewData.pageNodeInfos) {
+       pageNodeInfos.push(OhosAutoFillHelper.toManagerPageNodeInfo(node));
+@@ -521,10 +545,10 @@ export class OhosAutoFillHelper {
+       isUserSelected: viewData.isUserSelected,
+       isOtherAccount: viewData.isOtherAccount,
+     };
+-    return managerViewData as autoFillManager.ViewData;
++    return managerViewData as AutoFillManagerViewData;
+   }
+ 
+-  static parseFillResult(viewData: autoFillManager.ViewData): Map<number, string> {
++  static parseFillResult(viewData: AutoFillManagerViewData): Map<number, string> {
+     const values: Map<number, string> = new Map();
+     const pageNodeInfos: OhosPageNodeInfo[] =
+       (viewData as AutoFillManagerViewData).pageNodeInfos;
+@@ -560,20 +584,25 @@ export class OhosAutoFillHelper {
+       viewData: managerViewData,
+       customData: OhosAutoFillHelper.createEmptyCustomData(),
+       isPopup: false,
+-      triggerType: AUTOFILL_TRIGGER_AUTO_REQUEST as autoFillManager.AutoFillTriggerType,
+-    } as autoFillManager.FillRequest;
+-    const callback: autoFillManager.AutoFillCallback = {
+-      onSuccess: (filledViewData: autoFillManager.ViewData): void => {
++      triggerType: AUTOFILL_TRIGGER_AUTO_REQUEST as number,
++    } as AutoFillFillRequest;
++    const callback: AutoFillCallback = {
++      onSuccess: (filledViewData: AutoFillManagerViewData): void => {
+         const values = OhosAutoFillHelper.parseFillResult(filledViewData);
+         onSuccess(values);
+       },
+-      onFailure: (result: autoFillManager.FillFailureResult): void => {
++      onFailure: (result: AutoFillFillFailureResult): void => {
+         Log.e(TAG, 'requestAutoFill onFailure: ' + JSON.stringify(result));
+         onFailure(result.errCode);
+       },
+     };
+     try {
+-      autoFillManager.requestAutoFill(uiContext, fillRequest, callback);
++      const manager = autoFillManager as ESObject;
++      if (typeof manager.requestAutoFill !== 'function') {
++        onFailure(-1);
++        return;
++      }
++      manager.requestAutoFill(uiContext, fillRequest, callback);
+     } catch (error) {
+       const businessError = error as BusinessError;
+       Log.e(TAG, 'requestAutoFill error code=' + businessError?.code +
+@@ -591,7 +620,7 @@ export class OhosAutoFillHelper {
+       napiCallback.onFailure();
+       return;
+     }
+-    const saveRequest: autoFillManager.SaveRequest = {
++    const saveRequest: AutoFillSaveRequest = {
+       viewData: OhosAutoFillHelper.toManagerViewData(viewData),
+     };
+     const validation = OhosAutoFillHelper.validateSaveViewData(viewData);
+@@ -601,7 +630,12 @@ export class OhosAutoFillHelper {
+       return;
+     }
+     try {
+-      autoFillManager.requestAutoSave(uiContext, saveRequest, napiCallback);
++      const manager = autoFillManager as ESObject;
++      if (typeof manager.requestAutoSave !== 'function') {
++        napiCallback.onFailure();
++        return;
++      }
++      manager.requestAutoSave(uiContext, saveRequest, napiCallback);
+     } catch (error) {
+       const businessError = error as BusinessError;
+       Log.e(TAG, 'requestAutoSave error code=' + businessError?.code +
+diff --git a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/platform/PlatformViewWrapper.ets b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/platform/PlatformViewWrapper.ets
+index 19978b0e085..e49473a4397 100644
+--- a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/platform/PlatformViewWrapper.ets
++++ b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/platform/PlatformViewWrapper.ets
+@@ -33,6 +33,7 @@ export class PlatformViewWrapper {
+   private view: PlatformView | undefined;
+   private surfaceId: string | undefined;
+   private direction: number | undefined;
++  private renderType: string = 'texture';
+ 
+   /**
+    * Sets the touch processor for handling touch events.
+@@ -115,6 +116,14 @@ export class PlatformViewWrapper {
+     this.direction = direction;
+   }
+ 
++  public setRenderType(renderType: string): void {
++    this.renderType = renderType;
++  }
++
++  public getRenderType(): string {
++    return this.renderType;
++  }
++
+   public getDirection(): number {
+     return this.direction!;
+   }
+diff --git a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/platform/PlatformViewsController.ets b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/platform/PlatformViewsController.ets
+index dc31dcfa016..687cc89c400 100644
+--- a/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/platform/PlatformViewsController.ets
++++ b/engine/src/flutter/shell/platform/ohos/flutter_embedding/flutter/src/main/ets/plugin/platform/PlatformViewsController.ets
+@@ -642,8 +642,9 @@ export default class PlatformViewsController implements PlatformViewsHandler {
+     let nodeController = this.viewIdWithNodeController.get(viewId)
+     if (nodeController != undefined && viewWrapper != undefined) {
+       viewWrapper.setDirection(direction);
+-      nodeController.setRenderOption(viewWrapper.getView(), viewWrapper.getSurfaceId(),
+-        NodeRenderType.RENDER_TYPE_TEXTURE, direction);
++      const renderType: NodeRenderType = viewWrapper.getRenderType() === 'display'
++        ? NodeRenderType.RENDER_TYPE_DISPLAY : NodeRenderType.RENDER_TYPE_TEXTURE;
++      nodeController.setRenderOption(viewWrapper.getView(), viewWrapper.getSurfaceId(), renderType, direction);
+       let oldBuilderNode = nodeController?.getBuilderNode();
+       if(oldBuilderNode != null){
+         oldBuilderNode?.getFrameNode()?.getRenderNode()?.dispose();
+@@ -767,9 +768,41 @@ export default class PlatformViewsController implements PlatformViewsHandler {
+    * @private
+    */
+   private configureForHybridComposition(platformView: PlatformView, request: PlatformViewCreationRequest): void {
+-    // This path is not implemented yet on OHOS. Keep that behavior explicit so
+-    // future readers do not assume the texture-path fix also covers hybrid.
+-    Log.i(TAG, "Using hybrid composition for platform view: " + request.viewId);
++    Log.i(TAG, "Hosting hybrid platform view: " + request.viewId);
++    let viewWrapper: PlatformViewWrapper = new PlatformViewWrapper();
++    viewWrapper.setView(platformView);
++    viewWrapper.setDirection(request.direction);
++    viewWrapper.setRenderType('display');
++
++    let physicalWidth: number = Math.max(1, this.toPhysicalPixels(request.logicalWidth));
++    let physicalHeight: number = Math.max(1, this.toPhysicalPixels(request.logicalHeight));
++
++    let nodeController = new EmbeddingNodeController();
++    nodeController.setRenderOption(platformView, '', NodeRenderType.RENDER_TYPE_DISPLAY, request.direction);
++    this.viewIdWithNodeController.set(request.viewId, nodeController);
++
++    let dvModel = createDVModelFromJson(new DVModelJson("NodeContainer",
++      [],
++      {
++        "width": physicalWidth,
++        "height": physicalHeight,
++        "nodeController": nodeController,
++        "left": request.logicalLeft,
++        "top": request.logicalTop
++      },
++      {},
++      undefined));
++    let params = dvModel.getLayoutParams() as Record<string, Any>;
++    this.attachTextInputHandoffOnTouch(params, request.viewId);
++    let events = dvModel.events as Record<string, Any>;
++    events.onBlur = () => {
++      this.textInputPlugin?.clearPlatformViewClient(request.viewId);
++    };
++    viewWrapper.setDvModel(dvModel);
++    this.viewWrappers.set(request.viewId, viewWrapper);
++    this.rootDVModel.children.push(dvModel);
++    platformView.onFlutterViewAttached(this.rootDVModel);
++    Log.i(TAG, "Create hybrid platform view success");
+   }
+ 
+   /**
+@@ -793,6 +826,7 @@ export default class PlatformViewsController implements PlatformViewsHandler {
+     }
+ 
+     viewWrapper.setView(platformView);
++    viewWrapper.setRenderType('texture');
+ 
+     let physicalWidth: number = this.toPhysicalPixels(request.logicalWidth);
+     let physicalHeight: number = this.toPhysicalPixels(request.logicalHeight);
