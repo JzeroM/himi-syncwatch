@@ -1,0 +1,143 @@
+name: Windows MPV Build Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_run_id:
+        description: 'Optional mpv-kernels run id; empty = latest successful run on main'
+        required: false
+        type: string
+  push:
+    branches:
+      - feat/windows-mpv-ci
+    paths:
+      - 'plugins/himi_mpv_windows/**'
+      - 'lib/services/player/**'
+      - 'third_party/nipaplay/media_kit/**'
+      - 'windows/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/windows-mpv-ci.yml'
+
+concurrency:
+  group: windows-mpv-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  kernels:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run_id: ${{ steps.resolve.outputs.run_id }}
+    steps:
+      - name: Resolve windows-libmpv artifact run
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RUN_ID: ${{ github.event.inputs.kernel_run_id }}
+        run: |
+          set -euo pipefail
+          run_id="${INPUT_RUN_ID:-}"
+          if [ -z "$run_id" ]; then
+            run_id=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/mpv-kernels.yml/runs?branch=main&status=completed&per_page=20" \
+              --jq '[.workflow_runs[] | select(.conclusion == "success")][0].id // empty')
+          fi
+          if [ -z "$run_id" ]; then
+            echo "未找到成功的 mpv-kernels 运行；请先触发 MPV Kernels 或传入 kernel_run_id" >&2
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "使用 mpv-kernels run: $run_id"
+
+  build-windows:
+    needs: kernels
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+    env:
+      FVP_DEPS_URL: https://github.com/JzeroM/himi-syncwatch/releases/download/deps-mirror
+      FVP_DEPS_SHA256: e492fd45f3a6828e44f75ce665708c9040abaa60602605437b71c95c714808e3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download self-built Windows libmpv
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-libmpv
+          path: ${{ runner.temp }}/mpv-win
+          run-id: ${{ needs.kernels.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Normalize libmpv headers
+        shell: pwsh
+        run: |
+          $src = Join-Path $env:RUNNER_TEMP 'mpv-win'
+          Copy-Item -Path (Join-Path $src 'include\mpv\*.h') -Destination (Join-Path $src 'include') -Force
+
+      - name: Point media_kit to self-built Windows libmpv
+        shell: pwsh
+        run: |
+          $libmpvDir = (Join-Path $env:RUNNER_TEMP 'mpv-win').Replace('\', '/')
+          "MEDIA_KIT_LIBMPV_DIR=$libmpvDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Verify generated plugin registration
+        shell: pwsh
+        run: |
+          $reg = 'windows/flutter/generated_plugin_registrant.cc'
+          if (!(Test-Path $reg)) { throw "缺少 $reg" }
+          $text = Get-Content $reg -Raw
+          if ($text -notmatch 'HimiMpvWindowsPluginCApiRegisterWithRegistrar') {
+            throw 'generated_plugin_registrant.cc 未包含 HimiMpvWindowsPluginCApiRegisterWithRegistrar'
+          }
+          if ($text -notmatch 'himi_mpv_windows_plugin_c_api\.h') {
+            throw 'generated_plugin_registrant.cc 未包含 himi_mpv_windows_plugin_c_api.h'
+          }
+          Write-Host 'Windows MPV plugin registration OK'
+
+      - name: Build Windows release
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'windows-mpv-build.log'
+          flutter build windows --release --dart-define=TRAKT_CLIENT_ID=dummy 2>&1 |
+            Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify Windows artifacts
+        shell: pwsh
+        run: |
+          $rel = 'build/windows/x64/runner/Release'
+          foreach ($f in @('himi_syncwatch.exe', 'himi_mpv_windows_plugin.dll', 'libmpv-2.dll')) {
+            $p = Join-Path $rel $f
+            if (!(Test-Path $p)) { throw "产物缺少 $f ($p)" }
+            Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
+          }
+
+      - name: Upload Windows release
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: build/windows/x64/runner/Release/
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-mpv-build-log
+          path: ${{ runner.temp }}/windows-mpv-build.log
+          if-no-files-found: ignore
+          retention-days: 14
