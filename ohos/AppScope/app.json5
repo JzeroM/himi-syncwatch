@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.himi.himi_syncwatch",
     "vendor": "himi-syncwatch",
-    "versionCode": 526,
-    "versionName": "1.5.1",
+    "versionCode": 527,
+    "versionName": "1.5.2",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }
