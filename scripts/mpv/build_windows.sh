@@ -5,6 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 . "$SCRIPT_DIR/common.sh"
 
+# mpv-winbuild-cmake 的补丁步骤会在容器内 git commit；Arch 容器默认没有
+# user.name/user.email，导致 openssl/spirv-cross patch 以 128 失败。
+export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-HIMI Build}"
+export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-build@himi.local}"
+export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-HIMI Build}"
+export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-build@himi.local}"
+
 MODE="${1:-all}"
 case "$MODE" in
   toolchain|mpv|all) ;;

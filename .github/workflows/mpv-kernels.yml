@@ -23,7 +23,8 @@ on:
 
 concurrency:
   group: mpv-kernels-${{ github.ref }}
-  cancel-in-progress: false
+  # 内核构建很重；同一分支有新提交时取消旧任务，避免排队等待过期结果。
+  cancel-in-progress: true
 
 env:
   WINDOWS_MPVBUILD: 1f8d2e76255abc48f0456d9be99b4cab9c6566e6
