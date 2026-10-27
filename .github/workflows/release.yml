@@ -398,10 +398,11 @@ jobs:
           }
           $msg = @('Windows build log tail:')
           $msg += Get-Content $log | Select-Object -Last 25
-          $msg += 'mpv-win contents:'
-          $msg += Get-ChildItem (Join-Path $env:RUNNER_TEMP 'mpv-win') -Recurse -ErrorAction SilentlyContinue |
-            Select-Object -First 20 |
-            ForEach-Object { $_.FullName }
+          $msg += 'cmake --install diagnostics:'
+          $installLog = Join-Path $env:RUNNER_TEMP 'windows-install.log'
+          cmake --install build/windows/x64 --config Release --prefix build/windows/x64/runner/Release 2>&1 |
+            Tee-Object -FilePath $installLog
+          $msg += Get-Content $installLog -ErrorAction SilentlyContinue | Select-Object -Last 30
           Write-Host "::error::$($msg -join '%0A')"
           exit 1
 
