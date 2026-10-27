@@ -369,7 +369,10 @@ jobs:
       - name: Point media_kit to self-built Windows libmpv
         shell: pwsh
         run: |
-          "MEDIA_KIT_LIBMPV_DIR=$env:RUNNER_TEMP\mpv-win" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # CMake 的 install 脚本会把反斜杠当转义符（D:\a 会报 invalid escape '\a'），
+          # 环境变量统一写成正斜杠路径。
+          $libmpvDir = (Join-Path $env:RUNNER_TEMP 'mpv-win').Replace('\', '/')
+          "MEDIA_KIT_LIBMPV_DIR=$libmpvDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
