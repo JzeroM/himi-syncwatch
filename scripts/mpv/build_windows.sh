@@ -51,6 +51,10 @@ pin(sys.argv[2], 'https://github.com/FFmpeg/FFmpeg.git', sys.argv[4])
 PY
 
 sed -i '/-Dsubrandr=enabled/d; /-Dlibcurl=enabled/d; s/-Dvapoursynth=enabled/-Dvapoursynth=disabled/' "$SRC/packages/mpv.cmake"
+# HIMI 不使用 mpv JS 脚本；mujs 在 Arch 容器里构建不稳定，直接关闭。
+# Lua/OSC 仍保留（luajit 不受影响）。
+sed -i 's/-Djavascript=enabled/-Djavascript=disabled/' "$SRC/packages/mpv.cmake"
+sed -i '/^[[:space:]]*mujs[[:space:]]*$/d' "$SRC/packages/mpv.cmake"
 cat >"$SRC/patch_mpv_angle.sh" <<'EOS'
 #!/bin/sh
 set -e
@@ -91,7 +95,16 @@ if [ "$MODE" = "mpv" ] || [ "$MODE" = "all" ]; then
     log "Windows libmpv 构建失败，15 秒后重试（$i/3）"
     sleep 15
   done
-  [ "$ok" -eq 1 ] || die "Windows libmpv 构建失败"
+  if [ "$ok" -ne 1 ]; then
+    log "最近的 ExternalProject 构建日志："
+    while IFS= read -r -d '' f; do
+      if [ -s "$f" ] && grep -qiE 'error|fatal|failed|undefined|cannot find|no such' "$f"; then
+        log "== $f"
+        tail -60 "$f" >&2
+      fi
+    done < <(find "$BUILD" -path '*-stamp/*-build-*.log' -type f -mmin -120 -print0)
+    die "Windows libmpv 构建失败"
+  fi
   DEV_DIR=$(find "$BUILD" -maxdepth 1 -type d -name "mpv-dev-x86_64-v3-*" | head -1)
   if [ -z "$DEV_DIR" ]; then
     DEV_DIR=$(find "$BUILD" -maxdepth 1 -type d -name "mpv-dev-x86_64-*" | head -1)
