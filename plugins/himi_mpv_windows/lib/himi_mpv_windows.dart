@@ -198,6 +198,8 @@ class HimiMpvWindowsSession implements MpvSession {
   bool _diagInFlight = false;
 
   Player? _player;
+  VideoController? _controller;
+  VoidCallback? _textureIdListener;
   int _surfaceHandle = 0;
   int _textureId = 0;
   Map<String, String> _optionOverrides = const <String, String>{};
@@ -338,6 +340,17 @@ class HimiMpvWindowsSession implements MpvSession {
           height: height,
         ),
       );
+      _controller = controller;
+      void updateTextureId() {
+        final id = controller.id.value;
+        if (id == null || id <= 0 || id == _textureId) return;
+        _textureId = id;
+        _log('texture id=$_textureId');
+        _emit('texture-id', id);
+      }
+
+      _textureIdListener = updateTextureId;
+      controller.id.addListener(updateTextureId);
       try {
         _textureId = await _waitForTextureId(controller);
         _log('texture id=$_textureId');
@@ -646,9 +659,10 @@ class HimiMpvWindowsSession implements MpvSession {
 
   @override
   Future<void> resizeTexture(int width, int height) async {
-    // 纹理尺寸由 VideoControllerConfiguration 固定；运行期重注册会改变
-    // textureId，而 MpvPlayerAdapter 只在会话创建时读取一次纹理 id。
     if (nativeSurface || width <= 0 || height <= 0) return;
+    try {
+      await _controller?.setSize(width: width, height: height);
+    } catch (_) {}
   }
 
   @override
@@ -729,6 +743,13 @@ class HimiMpvWindowsSession implements MpvSession {
     await _completedSub?.cancel();
     await _logSub?.cancel();
     await _errorSub?.cancel();
+    final controller = _controller;
+    final textureIdListener = _textureIdListener;
+    if (controller != null && textureIdListener != null) {
+      controller.id.removeListener(textureIdListener);
+    }
+    _controller = null;
+    _textureIdListener = null;
     try {
       await _player?.dispose();
     } catch (e) {

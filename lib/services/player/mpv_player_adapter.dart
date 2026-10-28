@@ -852,6 +852,13 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       case 'track-list':
         _parseTracks(value);
         break;
+      case 'texture-id':
+        // media_kit_video 在视频参数变化时会重建纹理，textureId 随之变化；
+        // 必须同步给 UI，否则 Texture 继续引用已注销的旧纹理（黑屏）。
+        if (value is int && value > 0 && value != _textureIdListenable.value) {
+          _textureIdListenable.value = value;
+        }
+        break;
     }
   }
 
