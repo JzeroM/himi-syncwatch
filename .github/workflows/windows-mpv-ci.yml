@@ -7,6 +7,14 @@ on:
         description: 'Optional mpv-kernels run id; empty = latest successful run on main'
         required: false
         type: string
+      libmpv_source:
+        description: 'Windows libmpv source'
+        required: false
+        type: choice
+        options:
+          - official
+          - self-built
+        default: official
   push:
     branches:
       - feat/windows-mpv-ci
@@ -27,9 +35,11 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.47.4'
+  LIBMPV_SOURCE: ${{ github.event.inputs.libmpv_source || 'official' }}
 
 jobs:
   kernels:
+    if: ${{ (github.event.inputs.libmpv_source || 'official') == 'self-built' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -59,6 +69,7 @@ jobs:
 
   build-windows:
     needs: kernels
+    if: ${{ always() && (needs.kernels.result == 'success' || needs.kernels.result == 'skipped') }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -70,7 +81,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show libmpv source
+        shell: pwsh
+        run: |
+          Write-Host "Windows libmpv source: $env:LIBMPV_SOURCE"
+
       - name: Download self-built Windows libmpv
+        if: ${{ (github.event.inputs.libmpv_source || 'official') == 'self-built' }}
         uses: actions/download-artifact@v4
         with:
           name: windows-libmpv
@@ -79,12 +96,14 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Normalize libmpv headers
+        if: ${{ (github.event.inputs.libmpv_source || 'official') == 'self-built' }}
         shell: pwsh
         run: |
           $src = Join-Path $env:RUNNER_TEMP 'mpv-win'
           Copy-Item -Path (Join-Path $src 'include\mpv\*.h') -Destination (Join-Path $src 'include') -Force
 
       - name: Point media_kit to self-built Windows libmpv
+        if: ${{ (github.event.inputs.libmpv_source || 'official') == 'self-built' }}
         shell: pwsh
         run: |
           $libmpvDir = (Join-Path $env:RUNNER_TEMP 'mpv-win').Replace('\', '/')
