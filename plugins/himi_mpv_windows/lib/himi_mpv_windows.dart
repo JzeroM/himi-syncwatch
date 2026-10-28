@@ -25,11 +25,16 @@ Map<String, String> buildWindowsMpvOptions({
       'force-window': 'no',
       'gpu-api': 'd3d11',
       'gpu-context': 'd3d11',
-      'd3d11-output-format': 'rgb10_a2',
+      'd3d11-output-mode': 'window',
+      'd3d11-output-format': hdr ? 'rgb10_a2' : 'auto',
       'd3d11-output-csp': 'auto',
-      'hwdec': 'auto',
+      'gpu-hwdec-interop': 'auto',
+      'hwdec': 'auto-copy',
       'hwdec-software-fallback': 'yes',
       'cache': 'yes',
+      'cache-on-disk': 'no',
+      'msg-level':
+          'all=warn,vo/gpu-next=v,vo/gpu-next/d3d11=debug,gpu=debug,vd=debug',
       'demuxer-max-bytes': '${256 * 1024 * 1024}',
       'demuxer-max-back-bytes': '${128 * 1024 * 1024}',
       'sub-ass': 'yes',
@@ -204,7 +209,7 @@ class HimiMpvWindowsSession implements MpvSession {
         wid: _surfaceHandle,
         options: options,
         libass: true,
-        logLevel: MPVLogLevel.warn,
+        logLevel: MPVLogLevel.debug,
       ),
     );
     _player = player;
@@ -221,7 +226,14 @@ class HimiMpvWindowsSession implements MpvSession {
       _pendingProperties.clear();
       if (_pendingVolume != null) await player.setVolume(_pendingVolume!);
       if (_pendingSpeed != null) await player.setRate(_pendingSpeed!);
-      for (final name in const ['vo', 'gpu-api', 'gpu-context', 'current-vo']) {
+      for (final name in const [
+        'vo',
+        'gpu-api',
+        'gpu-context',
+        'current-vo',
+        'cache-on-disk',
+        'hwdec',
+      ]) {
         try {
           _log('mpv $name=${await getProperty(name)}');
         } catch (_) {}

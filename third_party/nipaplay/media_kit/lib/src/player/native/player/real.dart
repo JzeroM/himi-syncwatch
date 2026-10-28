@@ -2447,7 +2447,7 @@ class NativePlayer extends PlatformPlayer {
         'dscale': 'bilinear',
         'dither': 'no',
         'cache': 'yes',
-        'cache-on-disk': 'yes',
+        'cache-on-disk': configuration.options['cache-on-disk'] ?? 'yes',
         'hr-seek': 'yes',
         'hr-seek-framedrop': 'no',
         'correct-downscaling': 'no',
