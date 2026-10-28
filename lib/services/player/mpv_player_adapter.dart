@@ -10,6 +10,17 @@ import 'package:image/image.dart' as img;
 
 import 'player_adapter.dart';
 
+/// 把应用层的硬解档位映射为 Windows libmpv 的 `hwdec` 值。
+///
+/// Windows 原生的 d3d11va 零拷贝互操作在部分显卡驱动上会在首帧前崩溃，
+/// 统一走 copy-back 更稳；纯软解保持 `no`。非 Windows 不做转换。
+String resolveWindowsHwdec(String mode, {required bool windows}) {
+  if (!windows) return mode;
+  if (mode == 'no') return 'no';
+  if (mode == 'auto' || mode == 'ohcodec') return 'auto-copy';
+  return mode;
+}
+
 /// 三端统一 MPV 播放器适配器：通过 [MpvSession] 抽象包装鸿蒙/Android/Windows
 /// 原生会话，实现 [PlayerAdapter]。mpv 的属性观察通过原生 EventChannel 推送，
 /// [onMediaStatus]/[onStateChanged] 在此层转成 Adapter 抽象类型；
@@ -232,7 +243,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 所有内容（含 HDR10 / DV P5）先按用户档位硬解；ohosvk 提供
     // OHCodec 10bit Vulkan 零拷贝互操作。硬解失败时由「媒体在播但无
     // video-params」的自动软解回退兜底（见 _maybeFallbackToSoftwareDecode）。
-    final effectiveHwdec = _hwdec;
+    final effectiveHwdec = resolveWindowsHwdec(
+      _hwdec,
+      windows: defaultTargetPlatform == TargetPlatform.windows,
+    );
     try {
       await player.setProperty('hwdec', effectiveHwdec);
       if (effectiveHwdec != 'no') {
@@ -244,7 +258,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       LogService().log('mpv', 'prepare: hwdec 写入失败: $e');
     }
     LogService().log(
-        'mpv', 'prepare: hwdec=$effectiveHwdec url=${(_uri ?? '').length}字符');
+        'mpv',
+        'prepare: hwdec=$effectiveHwdec (requested=$_hwdec) '
+            'url=${(_uri ?? '').length}字符');
 
     // 起播恒以暂停态打开：由上层 state setter 决定何时出声，
     // 避免页面未挂载/未就绪时先出声音（与 mdk 的 prepare 语义一致）。
@@ -1058,8 +1074,13 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     if (next == _hwdec) return;
     _hwdec = next;
     // 运行时属性：写入即对当前媒体生效（decoder 重建），无需重载流。
-    unawaited(_player?.setProperty('hwdec', next));
-    LogService().log('mpv', '解码器切换 → hwdec=$next (from $decoders)');
+    final effective = resolveWindowsHwdec(
+      next,
+      windows: defaultTargetPlatform == TargetPlatform.windows,
+    );
+    unawaited(_player?.setProperty('hwdec', effective));
+    LogService().log(
+        'mpv', '解码器切换 → hwdec=$effective (requested=$next, from $decoders)');
   }
 
   @override

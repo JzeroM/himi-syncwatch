@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
@@ -59,10 +60,64 @@ String _redactUrls(String text) {
   });
 }
 
+String redactWindowsMpvLog(String text) {
+  var safe = _redactUrls(text);
+  safe = safe.replaceAllMapped(
+    RegExp(
+      r'(X-Emby-Token|Authorization|api_key|token)(\s*[:=]\s*)(?:Bearer\s+)?([^\s",\]]+)',
+      caseSensitive: false,
+    ),
+    (match) => '${match.group(1)}${match.group(2)}<redacted>',
+  );
+  return safe;
+}
+
 void _log(String message) {
-  final safe = _redactUrls(message);
+  final safe = redactWindowsMpvLog(message);
   WindowsMpvLog.write('session', safe);
   MpvLog.log('windows', safe);
+}
+
+const Set<String> _allowedOptionOverrides = <String>{
+  'vo',
+  'hwdec',
+  'gpu-api',
+  'gpu-context',
+  'd3d11-output-mode',
+  'd3d11-output-format',
+  'd3d11-output-csp',
+  'gpu-hwdec-interop',
+  'target-colorspace-hint',
+  'target-colorspace-hint-mode',
+  'target-prim',
+  'target-trc',
+  'hdr-compute-peak',
+  'tone-mapping',
+};
+
+Map<String, String> _loadOptionOverrides() {
+  final result = <String, String>{};
+  try {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}'
+      'himi_mpv_windows_options.ini',
+    );
+    if (!file.existsSync()) return result;
+    for (final raw in file.readAsLinesSync()) {
+      final line = raw.trim();
+      if (line.isEmpty || line.startsWith('#') || line.startsWith(';')) {
+        continue;
+      }
+      final split = line.indexOf('=');
+      if (split <= 0) continue;
+      final key = line.substring(0, split).trim();
+      final value = line.substring(split + 1).trim();
+      if (_allowedOptionOverrides.contains(key) && value.isNotEmpty) {
+        result[key] = value;
+      }
+    }
+  } catch (_) {}
+  return result;
 }
 
 /// Windows MPV 会话：原生插件创建子 HWND，libmpv 通过 `wid` 直出。
@@ -99,6 +154,7 @@ class HimiMpvWindowsSession implements MpvSession {
 
   Player? _player;
   int _surfaceHandle = 0;
+  Map<String, String> _optionOverrides = const <String, String>{};
   bool _disposed = false;
   int _positionMs = 0;
   int _durationMs = 0;
@@ -159,7 +215,8 @@ class HimiMpvWindowsSession implements MpvSession {
   Stream<Map<Object?, Object?>> get events => _events.stream;
 
   Future<void> _start() async {
-    _log('session start');
+    _optionOverrides = _loadOptionOverrides();
+    _log('session start overrides=$_optionOverrides');
     _surfaceSub = _surfaceEvents.receiveBroadcastStream().listen((raw) {
       if (raw is! Map) return;
       if (raw['type'] == 'surface') {
@@ -201,11 +258,14 @@ class HimiMpvWindowsSession implements MpvSession {
   Future<void> _ensurePlayer() async {
     if (_disposed || _surfaceHandle == 0 || _player != null) return;
     _log('creating Player hwnd=$_surfaceHandle hdr=$hdr');
-    final options = buildWindowsMpvOptions(hdr: hdr, hlg: hlg);
+    final options = <String, String>{
+      ...buildWindowsMpvOptions(hdr: hdr, hlg: hlg),
+      ..._optionOverrides,
+    };
     _log('init options=$options');
     final player = Player(
       configuration: PlayerConfiguration(
-        vo: 'gpu-next',
+        vo: _optionOverrides['vo'] ?? 'gpu-next',
         wid: _surfaceHandle,
         options: options,
         libass: true,
@@ -468,9 +528,14 @@ class HimiMpvWindowsSession implements MpvSession {
 
   @override
   Future<void> setProperty(String name, Object value) async {
-    _pendingProperties[name] = '$value';
+    var effective = '$value';
+    final override = _optionOverrides[name];
+    if (override != null) {
+      effective = override;
+    }
+    _pendingProperties[name] = effective;
     try {
-      await (_player?.platform as dynamic)?.setProperty?.call(name, '$value');
+      await (_player?.platform as dynamic)?.setProperty?.call(name, effective);
     } catch (_) {}
   }
 
