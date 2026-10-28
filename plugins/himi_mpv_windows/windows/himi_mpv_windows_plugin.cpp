@@ -34,8 +34,8 @@ LONG WINAPI LogUnhandledException(EXCEPTION_POINTERS* info) {
                          temp_path) != S_OK) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
-  FILE* file = _wfopen(log_path, L"a, ccs=UTF-8");
-  if (file == nullptr) {
+  FILE* file = nullptr;
+  if (_wfopen_s(&file, log_path, L"a, ccs=UTF-8") != 0 || file == nullptr) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
   SYSTEMTIME now = {};
