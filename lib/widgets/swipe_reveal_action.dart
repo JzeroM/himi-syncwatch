@@ -35,32 +35,46 @@ class _SwipeRevealActionState extends State<SwipeRevealAction>
     with SingleTickerProviderStateMixin {
   static const Duration _snapDuration = Duration(milliseconds: 200);
 
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: _snapDuration,
-  );
+  /// 惰性创建：enabled=false 的实例直接透传 child，从不碰动画控制器。
+  ///
+  /// 不能用 `late final` 字段——它在 dispose 里首次被读取时会去查
+  /// TickerMode 祖先，而那时 Element 已 deactivate，触发
+  /// "Looking up a deactivated widget's ancestor is unsafe"
+  /// （手机端取消配对卡片会以 enabled=false 卸载）。
+  AnimationController? _controller;
+
+  AnimationController _ensureController() {
+    final existing = _controller;
+    if (existing != null) return existing;
+    final created = AnimationController(vsync: this, duration: _snapDuration);
+    _controller = created;
+    return created;
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
+    _controller = null;
     super.dispose();
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
-    final extents = _controller.value * widget.actionWidth;
+    final controller = _ensureController();
+    final extents = controller.value * widget.actionWidth;
     final next = (extents - details.delta.dx).clamp(0.0, widget.actionWidth);
-    _controller.value = next / widget.actionWidth;
+    controller.value = next / widget.actionWidth;
   }
 
   void _onDragEnd(DragEndDetails details) {
-    _controller.animateTo(
-      _controller.value >= 0.4 ? 1.0 : 0.0,
+    final controller = _ensureController();
+    controller.animateTo(
+      controller.value >= 0.4 ? 1.0 : 0.0,
       duration: _snapDuration,
       curve: Curves.easeOut,
     );
   }
 
-  void _close() => _controller.animateTo(
+  void _close() => _ensureController().animateTo(
         0.0,
         duration: _snapDuration,
         curve: Curves.easeOut,
@@ -69,6 +83,7 @@ class _SwipeRevealActionState extends State<SwipeRevealAction>
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled) return widget.child;
+    final controller = _ensureController();
 
     final radius = BorderRadius.circular(widget.borderRadius);
     final actionColor = widget.actionColor ?? Colors.red.shade600;
@@ -110,12 +125,12 @@ class _SwipeRevealActionState extends State<SwipeRevealAction>
     return ClipRRect(
       borderRadius: radius,
       child: AnimatedBuilder(
-        animation: _controller,
+        animation: controller,
         // builder 内联 GestureDetector：随动画值重建，保证「开启态点前景
         // 关闭、关闭态放行内层按钮」的 onTap 判定始终最新（不能用 build
         // 期一次性捕获的 open 快照，否则拖动后 onTap 仍是关闭态的空值）。
         builder: (context, child) {
-          final open = _controller.value;
+          final open = controller.value;
           return Stack(
             children: [
               // 操作区宽度随拖动从 0 增长：静止时不渲染、不命中、也不会透过

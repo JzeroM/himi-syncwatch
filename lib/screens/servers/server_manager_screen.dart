@@ -85,6 +85,12 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
   /// 挂载时捕获的容器（dispose 中 ref.read 非法，用它清壳层拦截器）。
   late final ProviderContainer _container;
 
+  /// 挂载时捕获的壳层返回拦截 notifier（dispose 时容器可能已释放，
+  /// 再经容器 read 会抛 "Tried to read a provider from a ProviderContainer
+  /// that was already disposed"——直接持有实例清理最稳）。
+  late final ShellBackInterceptNotifier _shellBackIntercept =
+      _container.read(shellBackInterceptProvider.notifier);
+
   FocusNode _cardNodeFor(String id) => _cardNodes.putIfAbsent(
         id,
         () => FocusNode(debugLabel: 'serverCard_$id'),
@@ -125,7 +131,7 @@ class _ServerManagerScreenState extends ConsumerState<ServerManagerScreen> {
     }
     _cardNodes.clear();
     serverActionPanelOpen.removeListener(_syncBackIntercept);
-    _container.read(shellBackInterceptProvider.notifier).clear();
+    _shellBackIntercept.clear();
     super.dispose();
   }
 
