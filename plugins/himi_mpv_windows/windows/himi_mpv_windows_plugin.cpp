@@ -222,6 +222,19 @@ void HimiMpvWindowsPlugin::HandleMethodCall(
     result->Success();
     return;
   }
+  if (method == "setSurfaceZOrder") {
+    bool top = false;
+    const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+    if (args != nullptr) {
+      auto it = args->find(flutter::EncodableValue("top"));
+      if (it != args->end()) {
+        if (auto p = std::get_if<bool>(&it->second)) top = *p;
+      }
+    }
+    SetSurfaceZOrder(top);
+    result->Success();
+    return;
+  }
   if (method == "hideSurface") {
     HideSurface();
     result->Success();
@@ -293,11 +306,19 @@ void HimiMpvWindowsPlugin::UpdateSurface(int left, int top, int width,
   POINT origin = {view_rect.left, view_rect.top};
   ::MapWindowPoints(nullptr, parent_hwnd_, &origin, 1);
 
+  surface_left_ = left;
+  surface_top_ = top;
   surface_width_ = width;
   surface_height_ = height;
-  ::SetWindowPos(surface_hwnd_, flutter_view_, origin.x + left,
-                 origin.y + top, width, height,
+  ::SetWindowPos(surface_hwnd_, surface_on_top_ ? HWND_TOP : flutter_view_,
+                 origin.x + left, origin.y + top, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+void HimiMpvWindowsPlugin::SetSurfaceZOrder(bool top) {
+  surface_on_top_ = top;
+  if (surface_hwnd_ == nullptr) return;
+  UpdateSurface(surface_left_, surface_top_, surface_width_, surface_height_);
 }
 
 void HimiMpvWindowsPlugin::HideSurface() {

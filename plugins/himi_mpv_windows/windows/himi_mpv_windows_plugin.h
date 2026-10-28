@@ -27,6 +27,7 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
 
   HWND CreateSurface();
   void UpdateSurface(int left, int top, int width, int height);
+  void SetSurfaceZOrder(bool top);
   void HideSurface();
   void DestroySurface();
   flutter::EncodableMap QueryHdrCapabilities();
@@ -35,8 +36,11 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
   HWND parent_hwnd_ = nullptr;
   HWND flutter_view_ = nullptr;
   HWND surface_hwnd_ = nullptr;
+  int surface_left_ = 0;
+  int surface_top_ = 0;
   int surface_width_ = 0;
   int surface_height_ = 0;
+  bool surface_on_top_ = false;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       method_channel_;
   std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>>

@@ -204,6 +204,7 @@ class HimiMpvWindowsSession implements MpvSession {
   int _textureId = 0;
   Map<String, String> _optionOverrides = const <String, String>{};
   bool _disposed = false;
+  bool _surfaceProbeStarted = false;
   int _positionMs = 0;
   int _durationMs = 0;
   int _bufferedMs = 0;
@@ -528,6 +529,32 @@ class HimiMpvWindowsSession implements MpvSession {
       play: !_pendingPause,
     );
     _log('open: returned');
+    if (nativeSurface) unawaited(_probeSurfaceTop());
+  }
+
+  /// 临时诊断：把原生视频 HWND 置顶 8 秒再放回，用于确认灰屏是 Flutter
+  /// 遮挡还是 mpv HDR 呈现本身的问题。验证完成后应删除。
+  Future<void> _probeSurfaceTop() async {
+    if (_surfaceProbeStarted || _surfaceHandle == 0) return;
+    _surfaceProbeStarted = true;
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (_disposed || _surfaceHandle == 0) return;
+    _log('surface probe: top');
+    try {
+      await _methods.invokeMethod<void>(
+        'setSurfaceZOrder',
+        <String, dynamic>{'top': true},
+      );
+      await Future<void>.delayed(const Duration(seconds: 8));
+      if (_disposed) return;
+      _log('surface probe: bottom');
+      await _methods.invokeMethod<void>(
+        'setSurfaceZOrder',
+        <String, dynamic>{'top': false},
+      );
+    } catch (e) {
+      _log('surface probe failed: $e');
+    }
   }
 
   @override
