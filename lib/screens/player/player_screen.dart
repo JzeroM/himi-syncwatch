@@ -7046,23 +7046,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// mpv 直出到平台原生 Surface，Flutter 控件/弹幕叠加在上方。
   Widget _buildMpvNativeVideo() {
     final size = _videoNativeSize;
+    final surface = Platform.isAndroid
+        ? HimiMpvAndroidSurfaceView(
+            onPlatformViewCreated: (_) => _onMpvSurfaceCreated(),
+          )
+        : Platform.isWindows
+            ? const HimiMpvWindowsSurfaceView()
+            : HimiMpvSurfaceView(
+                onPlatformViewCreated: (_) => _onMpvSurfaceCreated(),
+              );
+
+    // 必须先创建原生 Surface，mpv 才能输出 video-params。
+    // 拿不到尺寸时用可用区域占位，不能一直等尺寸而永远不挂载平台视图。
     if (size == null || size.width <= 0 || size.height <= 0) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white54),
-      );
+      return Center(child: surface);
     }
     return Center(
       child: AspectRatio(
         aspectRatio: size.width / size.height,
-        child: Platform.isAndroid
-            ? HimiMpvAndroidSurfaceView(
-                onPlatformViewCreated: (_) => _onMpvSurfaceCreated(),
-              )
-            : Platform.isWindows
-                ? const HimiMpvWindowsSurfaceView()
-                : HimiMpvSurfaceView(
-                    onPlatformViewCreated: (_) => _onMpvSurfaceCreated(),
-                  ),
+        child: surface,
       ),
     );
   }
