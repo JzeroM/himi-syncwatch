@@ -18,6 +18,7 @@ class HimiMpvAndroidSession implements MpvSession {
     required this.height,
     required this.hwdecMode,
     required this.nativeSurface,
+    required this.nativeUi,
     required this.hdr,
     required this.hlg,
   });
@@ -30,6 +31,9 @@ class HimiMpvAndroidSession implements MpvSession {
   final int height;
   final String hwdecMode;
   final bool nativeSurface;
+
+  /// 是否启用全屏原生播放器 UI（Dialog + SurfaceView）。
+  final bool nativeUi;
   final bool hdr;
   final bool hlg;
 
@@ -66,6 +70,7 @@ class HimiMpvAndroidSession implements MpvSession {
     int height = 1080,
     String hwdecMode = 'performance',
     bool nativeSurface = true,
+    bool nativeUi = false,
     bool hdr = false,
     bool hlg = false,
   }) async {
@@ -74,6 +79,7 @@ class HimiMpvAndroidSession implements MpvSession {
       height: height,
       hwdecMode: hwdecMode,
       nativeSurface: nativeSurface,
+      nativeUi: nativeUi,
       hdr: hdr,
       hlg: hlg,
     );

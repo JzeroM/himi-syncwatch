@@ -62,6 +62,10 @@ abstract class MpvSessionFactory {
     int height = 1080,
     String hwdecMode = 'performance',
     bool nativeSurface = false,
+
+    /// 是否启用全屏原生播放器 UI（鸿蒙子窗口 / Android Dialog）。
+    /// 仅 Surface 模式有意义；Texture 模式忽略。
+    bool nativeUi = false,
   });
 
   Future<MpvHdrCapabilities> queryHdrCapabilities();

@@ -5,6 +5,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'mpv_session_platform.dart';
+import 'native/native_player_gating.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:image/image.dart' as img;
 
@@ -212,6 +213,22 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   String? get mpvSurfaceError => _surfaceError;
   String? get mpvVoConfigured => _voConfigured;
 
+  // ── 原生播放器 UI（全屏原生窗口）门控 ──────────────────────
+
+  /// 用户设置：是否允许原生播放器 UI（默认开启）。
+  bool _nativeUiSettingEnabled = true;
+  bool get nativeUiSettingEnabled => _nativeUiSettingEnabled;
+  set nativeUiSettingEnabled(bool value) =>
+      _nativeUiSettingEnabled = value;
+
+  /// 本次会话是否实际启用原生播放器 UI。
+  ///
+  /// 门控条件（NativePlayerGating）：引擎 mpv + 实际输出 surface +
+  /// 平台 Android/鸿蒙 + 设置开启。会话创建后若原生回退到 Texture，
+  /// 则不启用。
+  bool _nativeUiEnabled = false;
+  bool get nativeUiEnabled => _nativeUiEnabled;
+
   /// 调试面板「HDR 直出」状态：按实际路径判断，不用请求值。
   String get mpvHdrOutputStatus {
     if (_player == null) return '未就绪';
@@ -337,6 +354,14 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       forceNativeSurface: _forceNativeSurface,
     );
     final nativeSurface = decision.nativeSurface;
+    // 原生播放器 UI 门控：请求路径为 surface 时才可能启用；实际是否
+    // 启用要等会话创建后按原生回报的 usesNativeSurface 确认。
+    final nativeUiRequested = nativeSurface &&
+        NativePlayerGating.shouldUseCurrent(
+          engine: 'mpv',
+          actualVideoOutput: MpvOutputPolicy.surface,
+          settingEnabled: _nativeUiSettingEnabled,
+        );
     if (player != null && player.usesNativeSurface != nativeSurface) {
       // HDR 状态在运行期翻转时，渲染目标必须重建：纹理与原生 Surface
       // 不能在同一 mpv 会话里热切换。
@@ -346,6 +371,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       player = null;
       _player = null;
       _appliedHdrOutput = false;
+      _nativeUiEnabled = false;
     }
     if (player == null) {
       // 初始尺寸只作为提示；实际 Surface/Texture 由设置决定。
@@ -356,6 +382,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         width: initW,
         height: initH,
         nativeSurface: nativeSurface,
+        nativeUi: nativeUiRequested,
         hdr: decision.hdrOutput,
         hlg: decision.hdrOutput && _hlgContentForMedia,
       );
@@ -365,13 +392,17 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         return;
       }
       _player = player;
+      // 原生确认实际为 Surface 才启用原生 UI；请求 Surface 但回退
+      // Texture 时不打开原生窗口，保持 Flutter UI。
+      _nativeUiEnabled = nativeUiRequested && player.usesNativeSurface;
       LogService().log(
           'mpv',
           'session created: native=${player.usesNativeSurface} '
               'texture=${player.textureId} requested=$effectiveOutput '
               'actual=${player.usesNativeSurface ? MpvOutputPolicy.surface : MpvOutputPolicy.texture} '
               'hdrRequested=${decision.hdrOutput} '
-              'hdrReported=${player.hdrOutputActive} displayHdr=$displayHdr');
+              'hdrReported=${player.hdrOutputActive} displayHdr=$displayHdr '
+              'nativeUi=$_nativeUiEnabled');
       if (nativeSurface && !player.usesNativeSurface) {
         LogService().log('mpv',
             '输出路径不一致: 请求 Surface，原生实际 Texture(textureId=${player.textureId})');

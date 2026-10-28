@@ -21,6 +21,7 @@ class MpvSessionPlatform {
     required bool nativeSurface,
     required bool hdr,
     required bool hlg,
+    bool nativeUi = false,
   }) {
     if (isOhos) {
       return HimiMpvPlayer.create(
@@ -28,6 +29,7 @@ class MpvSessionPlatform {
         height: height,
         hwdecMode: hwdecMode,
         nativeSurface: nativeSurface,
+        nativeUi: nativeUi,
         hdr: hdr,
         hlg: hlg,
       );
@@ -38,11 +40,13 @@ class MpvSessionPlatform {
         height: height,
         hwdecMode: hwdecMode,
         nativeSurface: nativeSurface,
+        nativeUi: nativeUi,
         hdr: hdr,
         hlg: hlg,
       );
     }
     if (Platform.isWindows) {
+      // Windows 不支持原生播放器 UI，参数透传但忽略。
       return HimiMpvWindowsSession.create(
         width: width,
         height: height,

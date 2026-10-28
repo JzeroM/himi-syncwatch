@@ -70,6 +70,7 @@ class HimiMpvPlayer implements MpvSession {
     int height = 1080,
     String hwdecMode = 'performance',
     bool nativeSurface = false,
+    bool nativeUi = false,
     bool hdr = false,
     bool hlg = false,
   }) async {
@@ -78,6 +79,7 @@ class HimiMpvPlayer implements MpvSession {
       'height': height,
       'hwdecMode': hwdecMode,
       'nativeSurface': nativeSurface,
+      'nativeUi': nativeUi,
       'hdr': hdr,
       'hlg': hlg,
     });
