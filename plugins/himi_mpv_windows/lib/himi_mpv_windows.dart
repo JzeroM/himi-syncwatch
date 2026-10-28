@@ -97,16 +97,19 @@ class HimiMpvWindowsSession implements MpvSession {
   Stream<Map<Object?, Object?>> get events => _events.stream;
 
   Future<void> _start() async {
+    MpvLog.log('windows', 'session start');
     _surfaceSub = _surfaceEvents.receiveBroadcastStream().listen((raw) {
       if (raw is! Map) return;
       if (raw['type'] == 'surface') {
         final handle = raw['handle'];
         if (handle is int && handle > 0) {
           _surfaceHandle = handle;
+          MpvLog.log('windows', 'surface event handle=$handle');
           unawaited(_ensurePlayer());
         }
       } else if (raw['type'] == 'surfaceDestroyed') {
         _surfaceHandle = 0;
+        MpvLog.log('windows', 'surface destroyed');
         unawaited(_detachPlayer());
       }
     });
@@ -117,7 +120,10 @@ class HimiMpvWindowsSession implements MpvSession {
       final handle = current?['handle'];
       if (handle is int && handle > 0) {
         _surfaceHandle = handle;
+        MpvLog.log('windows', 'getCurrentSurface handle=$handle');
         await _ensurePlayer();
+      } else {
+        MpvLog.log('windows', 'getCurrentSurface empty');
       }
     } catch (_) {}
   }
@@ -132,11 +138,15 @@ class HimiMpvWindowsSession implements MpvSession {
 
   Future<void> _ensurePlayer() async {
     if (_disposed || _surfaceHandle == 0 || _player != null) return;
+    MpvLog.log('windows', 'creating Player hwnd=$_surfaceHandle hdr=$hdr');
     final player = Player(
       configuration: PlayerConfiguration(
         vo: 'gpu-next',
         wid: _surfaceHandle,
         options: <String, String>{
+          // vo must be set before mpv_initialize; media_kit applies
+          // PlayerConfiguration.vo only after initialization.
+          'vo': 'gpu-next',
           'force-window': 'no',
           'gpu-api': 'd3d11',
           'gpu-context': 'd3d11',
@@ -164,6 +174,7 @@ class HimiMpvWindowsSession implements MpvSession {
       ),
     );
     _player = player;
+    MpvLog.log('windows', 'Player created');
     _wire(player);
     try {
       await (player.platform as dynamic)?.setProperty?.call('vid', 'auto');
@@ -175,6 +186,11 @@ class HimiMpvWindowsSession implements MpvSession {
       _pendingProperties.clear();
       if (_pendingVolume != null) await player.setVolume(_pendingVolume!);
       if (_pendingSpeed != null) await player.setRate(_pendingSpeed!);
+      for (final name in const ['vo', 'gpu-api', 'gpu-context', 'current-vo']) {
+        try {
+          MpvLog.log('windows', 'mpv $name=${await getProperty(name)}');
+        } catch (_) {}
+      }
     } catch (_) {}
     final pending = _pendingUrl;
     if (pending != null && pending.isNotEmpty) {
@@ -217,6 +233,7 @@ class HimiMpvWindowsSession implements MpvSession {
   }
 
   Future<void> _openNow(String url) async {
+    MpvLog.log('windows', 'open urlLen=${url.length} hwnd=$_surfaceHandle');
     final player = _player;
     if (player == null) {
       _pendingUrl = url;
@@ -404,6 +421,7 @@ class HimiMpvWindowsSession implements MpvSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    MpvLog.log('windows', 'dispose session');
     await _surfaceSub?.cancel();
     await _positionSub?.cancel();
     await _durationSub?.cancel();

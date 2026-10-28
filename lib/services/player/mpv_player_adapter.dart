@@ -24,7 +24,10 @@ import 'player_adapter.dart';
 class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   MpvPlayerAdapter({int startMs = 0, String hwdecMode = 'performance'})
       : _startMs = startMs,
-        _hwdecRenderMode = hwdecMode;
+        _hwdecRenderMode = hwdecMode {
+    MpvLog.sink ??=
+        (tag, message) => LogService().log('mpv', '[$tag] $message');
+  }
 
   final int _startMs;
 
@@ -209,6 +212,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         return;
       }
       _player = player;
+      LogService().log(
+          'mpv',
+          'session created: native=${player.usesNativeSurface} '
+              'texture=${player.textureId}');
       _ensureEventSubscription();
     }
 
