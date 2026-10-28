@@ -110,6 +110,11 @@ void HimiMpvWindowsPlugin::HandleMethodCall(
     result->Success();
     return;
   }
+  if (method == "hideSurface") {
+    HideSurface();
+    result->Success();
+    return;
+  }
   if (method == "destroySurface") {
     DestroySurface();
     result->Success();
@@ -124,6 +129,11 @@ void HimiMpvWindowsPlugin::HandleMethodCall(
 
 HWND HimiMpvWindowsPlugin::CreateSurface() {
   if (surface_hwnd_ != nullptr) {
+    ::ShowWindow(surface_hwnd_, SW_SHOW);
+    if (event_sink_ != nullptr) {
+      event_sink_->Success(flutter::EncodableValue(
+          SurfaceInfo(surface_hwnd_, surface_width_, surface_height_)));
+    }
     return surface_hwnd_;
   }
   HWND flutter_view = registrar_->GetView()->GetNativeWindow();
@@ -176,6 +186,12 @@ void HimiMpvWindowsPlugin::UpdateSurface(int left, int top, int width,
   ::SetWindowPos(surface_hwnd_, flutter_view_, origin.x + left,
                  origin.y + top, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+void HimiMpvWindowsPlugin::HideSurface() {
+  if (surface_hwnd_ != nullptr) {
+    ::ShowWindow(surface_hwnd_, SW_HIDE);
+  }
 }
 
 void HimiMpvWindowsPlugin::DestroySurface() {

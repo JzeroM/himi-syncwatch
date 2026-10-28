@@ -30,6 +30,10 @@ class _HimiMpvWindowsSurfaceViewState extends State<HimiMpvWindowsSurfaceView> {
   Future<void> _create() async {
     try {
       await _methods.invokeMethod<void>('createSurface');
+      if (!mounted) {
+        await _methods.invokeMethod<void>('hideSurface');
+        return;
+      }
       _created = true;
       _scheduleRectUpdate();
     } catch (_) {}
@@ -56,7 +60,9 @@ class _HimiMpvWindowsSurfaceViewState extends State<HimiMpvWindowsSurfaceView> {
 
   @override
   void dispose() {
-    unawaited(_methods.invokeMethod<void>('destroySurface'));
+    // HWND 生命周期归 Session 管理：只隐藏，避免 libmpv 仍持有窗口时
+    // 因 Widget 重建/卸载把窗口销毁导致原生崩溃。
+    unawaited(_methods.invokeMethod<void>('hideSurface'));
     super.dispose();
   }
 

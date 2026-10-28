@@ -27,6 +27,7 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
 
   HWND CreateSurface();
   void UpdateSurface(int left, int top, int width, int height);
+  void HideSurface();
   void DestroySurface();
   flutter::EncodableMap QueryHdrCapabilities();
 

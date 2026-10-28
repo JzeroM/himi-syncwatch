@@ -137,6 +137,9 @@ class HimiMpvAndroidSession implements MpvSession {
   Future<void> _ensurePlayer() async {
     if (_disposed || _surfaceHandle == 0 || _player != null) return;
     final options = <String, String>{
+      'vo': 'gpu-next',
+      'vid': 'auto',
+      'aid': 'auto',
       'force-window': 'no',
       'wid': '$_surfaceHandle',
       // The stock Android libmpv build used by media_kit is built without

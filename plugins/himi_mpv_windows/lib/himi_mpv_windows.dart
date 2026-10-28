@@ -5,7 +5,60 @@ import 'package:flutter/services.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'src/windows_mpv_log.dart';
+
 export 'himi_mpv_windows_surface_view.dart';
+
+/// Windows MPV 初始化 options。
+///
+/// `vid`/`aid` 必须在 `mpv_initialize` 前显式设为 auto：media_kit 默认
+/// 写入 `vid=no`，初始化后再改用 dynamic setProperty 存在失败可能，表现为
+/// Player 创建成功但没有 video-params。
+Map<String, String> buildWindowsMpvOptions({
+  required bool hdr,
+  required bool hlg,
+}) =>
+    <String, String>{
+      'vo': 'gpu-next',
+      'vid': 'auto',
+      'aid': 'auto',
+      'force-window': 'no',
+      'gpu-api': 'd3d11',
+      'gpu-context': 'd3d11',
+      'd3d11-output-format': 'rgb10_a2',
+      'd3d11-output-csp': 'auto',
+      'hwdec': 'auto',
+      'hwdec-software-fallback': 'yes',
+      'cache': 'yes',
+      'demuxer-max-bytes': '${256 * 1024 * 1024}',
+      'demuxer-max-back-bytes': '${128 * 1024 * 1024}',
+      'sub-ass': 'yes',
+      'sub-visibility': 'yes',
+      'osd-level': '0',
+      'osc': 'no',
+      if (hdr) ...<String, String>{
+        'target-colorspace-hint': 'yes',
+        'target-prim': 'bt.2020',
+        'target-trc': hlg ? 'hlg' : 'pq',
+        'hdr-compute-peak': 'auto',
+        'tone-mapping': 'clip',
+      },
+    };
+
+String _redactUrls(String text) {
+  return text.replaceAllMapped(RegExp(r'https?://[^\s"\\]+'), (match) {
+    final raw = match.group(0)!;
+    final uri = Uri.tryParse(raw);
+    if (uri == null) return '<url:${raw.length}>';
+    return '${uri.scheme}://${uri.host}/...?len=${raw.length}';
+  });
+}
+
+void _log(String message) {
+  final safe = _redactUrls(message);
+  WindowsMpvLog.write('session', safe);
+  MpvLog.log('windows', safe);
+}
 
 /// Windows MPV 会话：原生插件创建子 HWND，libmpv 通过 `wid` 直出。
 class HimiMpvWindowsSession implements MpvSession {
@@ -34,6 +87,10 @@ class HimiMpvWindowsSession implements MpvSession {
   StreamSubscription<Duration>? _durationSub;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<bool>? _completedSub;
+  StreamSubscription<PlayerLog>? _logSub;
+  StreamSubscription<String>? _errorSub;
+  Timer? _diagTimer;
+  bool _diagInFlight = false;
 
   Player? _player;
   int _surfaceHandle = 0;
@@ -97,19 +154,19 @@ class HimiMpvWindowsSession implements MpvSession {
   Stream<Map<Object?, Object?>> get events => _events.stream;
 
   Future<void> _start() async {
-    MpvLog.log('windows', 'session start');
+    _log('session start');
     _surfaceSub = _surfaceEvents.receiveBroadcastStream().listen((raw) {
       if (raw is! Map) return;
       if (raw['type'] == 'surface') {
         final handle = raw['handle'];
         if (handle is int && handle > 0) {
           _surfaceHandle = handle;
-          MpvLog.log('windows', 'surface event handle=$handle');
+          _log('surface event handle=$handle');
           unawaited(_ensurePlayer());
         }
       } else if (raw['type'] == 'surfaceDestroyed') {
         _surfaceHandle = 0;
-        MpvLog.log('windows', 'surface destroyed');
+        _log('surface destroyed');
         unawaited(_detachPlayer());
       }
     });
@@ -120,10 +177,10 @@ class HimiMpvWindowsSession implements MpvSession {
       final handle = current?['handle'];
       if (handle is int && handle > 0) {
         _surfaceHandle = handle;
-        MpvLog.log('windows', 'getCurrentSurface handle=$handle');
+        _log('getCurrentSurface handle=$handle');
         await _ensurePlayer();
       } else {
-        MpvLog.log('windows', 'getCurrentSurface empty');
+        _log('getCurrentSurface empty');
       }
     } catch (_) {}
   }
@@ -138,44 +195,22 @@ class HimiMpvWindowsSession implements MpvSession {
 
   Future<void> _ensurePlayer() async {
     if (_disposed || _surfaceHandle == 0 || _player != null) return;
-    MpvLog.log('windows', 'creating Player hwnd=$_surfaceHandle hdr=$hdr');
+    _log('creating Player hwnd=$_surfaceHandle hdr=$hdr');
+    final options = buildWindowsMpvOptions(hdr: hdr, hlg: hlg);
+    _log('init options=$options');
     final player = Player(
       configuration: PlayerConfiguration(
         vo: 'gpu-next',
         wid: _surfaceHandle,
-        options: <String, String>{
-          // vo must be set before mpv_initialize; media_kit applies
-          // PlayerConfiguration.vo only after initialization.
-          'vo': 'gpu-next',
-          'force-window': 'no',
-          'gpu-api': 'd3d11',
-          'gpu-context': 'd3d11',
-          'd3d11-output-format': 'rgb10_a2',
-          'd3d11-output-csp': 'auto',
-          'hwdec': 'auto',
-          'hwdec-software-fallback': 'yes',
-          'cache': 'yes',
-          'demuxer-max-bytes': '${256 * 1024 * 1024}',
-          'demuxer-max-back-bytes': '${128 * 1024 * 1024}',
-          'sub-ass': 'yes',
-          'sub-visibility': 'yes',
-          'osd-level': '0',
-          'osc': 'no',
-          if (hdr) ...<String, String>{
-            'target-colorspace-hint': 'yes',
-            'target-prim': 'bt.2020',
-            'target-trc': hlg ? 'hlg' : 'pq',
-            'hdr-compute-peak': 'auto',
-            'tone-mapping': 'clip',
-          },
-        },
+        options: options,
         libass: true,
-        logLevel: MPVLogLevel.error,
+        logLevel: MPVLogLevel.warn,
       ),
     );
     _player = player;
-    MpvLog.log('windows', 'Player created');
+    _log('Player created');
     _wire(player);
+    _startDiagnostics();
     try {
       await (player.platform as dynamic)?.setProperty?.call('vid', 'auto');
       for (final entry in _pendingProperties.entries) {
@@ -188,7 +223,7 @@ class HimiMpvWindowsSession implements MpvSession {
       if (_pendingSpeed != null) await player.setRate(_pendingSpeed!);
       for (final name in const ['vo', 'gpu-api', 'gpu-context', 'current-vo']) {
         try {
-          MpvLog.log('windows', 'mpv $name=${await getProperty(name)}');
+          _log('mpv $name=${await getProperty(name)}');
         } catch (_) {}
       }
     } catch (_) {}
@@ -197,6 +232,63 @@ class HimiMpvWindowsSession implements MpvSession {
       _pendingUrl = null;
       await _openNow(pending);
     }
+  }
+
+  void _startDiagnostics() {
+    _diagTimer?.cancel();
+    var ticks = 0;
+    _diagTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+      if (_disposed || _diagInFlight || _player == null) return;
+      ticks++;
+      if (ticks > 40) {
+        _diagTimer?.cancel();
+        _diagTimer = null;
+        return;
+      }
+      _diagInFlight = true;
+      try {
+        final values = <String, String?>{};
+        for (final name in const [
+          'idle-active',
+          'core-idle',
+          'pause',
+          'vid',
+          'path',
+          'playlist-count',
+          'current-vo',
+          'vo-configured',
+          'video-format',
+          'video-params',
+          'hwdec-current',
+          'track-list',
+        ]) {
+          final value = await getProperty(name);
+          if (name == 'path' || name == 'media-title') {
+            values[name] = _maskUrl(value);
+          } else {
+            values[name] = _clip(_redactUrls(value ?? ''));
+          }
+        }
+        _log('diag t=${ticks * 500}ms $values');
+      } catch (e) {
+        _log('diag failed: $e');
+      } finally {
+        _diagInFlight = false;
+      }
+    });
+  }
+
+  static String? _clip(String? value) {
+    if (value == null) return null;
+    if (value.length <= 800) return value;
+    return '${value.substring(0, 800)}...(${value.length})';
+  }
+
+  static String _maskUrl(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    final uri = Uri.tryParse(raw);
+    if (uri == null) return '<len=${raw.length}>';
+    return '${uri.scheme}://${uri.host}?len=${raw.length}';
   }
 
   void _wire(Player player) {
@@ -221,6 +313,12 @@ class HimiMpvWindowsSession implements MpvSession {
       _emit('eof-reached', completed);
     });
     player.stream.buffering.listen((b) => _emit('paused-for-cache', b));
+    _logSub = player.stream.log.listen((entry) {
+      _log('mpv log [${entry.prefix}/${entry.level}] ${entry.text}');
+    });
+    _errorSub = player.stream.error.listen((error) {
+      _log('mpv error $error');
+    });
   }
 
   void _emit(String name, Object? value) {
@@ -233,13 +331,14 @@ class HimiMpvWindowsSession implements MpvSession {
   }
 
   Future<void> _openNow(String url) async {
-    MpvLog.log('windows', 'open urlLen=${url.length} hwnd=$_surfaceHandle');
+    _log('open ${_maskUrl(url)} hwnd=$_surfaceHandle');
     final player = _player;
     if (player == null) {
       _pendingUrl = url;
       return;
     }
     await (player.platform as dynamic)?.setProperty?.call('vid', 'auto');
+    _log('open: calling media_kit open');
     await player.open(
       Media(
         url,
@@ -248,6 +347,7 @@ class HimiMpvWindowsSession implements MpvSession {
       ),
       play: !_pendingPause,
     );
+    _log('open: returned');
   }
 
   @override
@@ -271,20 +371,42 @@ class HimiMpvWindowsSession implements MpvSession {
   Future<bool> isReady() async => _player != null;
 
   @override
-  Future<void> kickStart() async => _player?.play();
+  Future<void> kickStart() async {
+    _log('kickStart');
+    await _player?.play();
+  }
 
   @override
-  Future<void> play() async => _player?.play();
+  Future<void> play() async {
+    _log('play called');
+    try {
+      await _player?.play();
+      _log('play returned');
+    } catch (e) {
+      _log('play failed: $e');
+      rethrow;
+    }
+  }
 
   @override
-  Future<void> pause() async => _player?.pause();
+  Future<void> pause() async {
+    _log('pause called');
+    await _player?.pause();
+  }
 
   @override
   Future<void> stop() async => _player?.stop();
 
   @override
   Future<void> seek(int positionMs) async {
-    await _player?.seek(Duration(milliseconds: positionMs));
+    _log('seek positionMs=$positionMs');
+    try {
+      await _player?.seek(Duration(milliseconds: positionMs));
+      _log('seek returned');
+    } catch (e) {
+      _log('seek failed: $e');
+      rethrow;
+    }
   }
 
   @override
@@ -421,19 +543,29 @@ class HimiMpvWindowsSession implements MpvSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    MpvLog.log('windows', 'dispose session');
+    _log('dispose session begin');
+    _diagTimer?.cancel();
+    _diagTimer = null;
     await _surfaceSub?.cancel();
     await _positionSub?.cancel();
     await _durationSub?.cancel();
     await _playingSub?.cancel();
     await _completedSub?.cancel();
+    await _logSub?.cancel();
+    await _errorSub?.cancel();
     try {
       await _player?.dispose();
-    } catch (_) {}
+    } catch (e) {
+      _log('player dispose failed: $e');
+    }
     _player = null;
+    // player 已释放后才允许销毁 HWND，避免 libmpv 继续访问已销毁窗口。
     try {
       await _methods.invokeMethod<void>('destroySurface');
-    } catch (_) {}
+    } catch (e) {
+      _log('destroySurface failed: $e');
+    }
+    _log('dispose session end');
     await _events.close();
   }
 }

@@ -7057,13 +7057,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               );
 
     // 必须先创建原生 Surface，mpv 才能输出 video-params。
-    // 拿不到尺寸时用可用区域占位，不能一直等尺寸而永远不挂载平台视图。
-    if (size == null || size.width <= 0 || size.height <= 0) {
-      return Center(child: surface);
-    }
+    // 无论尺寸是否就绪都保持同一 Widget 层级：尺寸变化只更新 AspectRatio，
+    // 不能拆掉 HimiMpvWindowsSurfaceView（否则会销毁 libmpv 正在使用的 HWND）。
+    final aspectRatio = size != null && size.width > 0 && size.height > 0
+        ? size.width / size.height
+        : 16 / 9;
     return Center(
       child: AspectRatio(
-        aspectRatio: size.width / size.height,
+        aspectRatio: aspectRatio,
         child: surface,
       ),
     );
