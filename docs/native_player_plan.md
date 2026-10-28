@@ -570,29 +570,32 @@ plugins {
 
 ### Phase 0：共享协议与门控
 
-- [ ] 新增 `NativePlayerState` / `NativePlayerCommand` / `NativePlayerController`。
-- [ ] `MpvSession` 工厂增加 `nativeUi`。
-- [ ] 门控逻辑与日志。
-- [ ] 单元测试：序列化、门控、命令路由。
-- [ ] 验收：Texture 模式无变化；Surface 模式不打开原生 UI（阶段 0 仅门控）。
+- [x] 新增 `NativePlayerState` / `NativePlayerCommand` / `NativePlayerController`。
+- [x] `MpvSession` 工厂增加 `nativeUi`。
+- [x] 门控逻辑与日志。
+- [x] 单元测试：序列化、门控、命令路由（45 项）。
+- [x] 验收：Texture 模式无变化；Surface 模式不打开原生 UI（阶段 0 仅门控）。
 
 ### Phase 1：双端最小原生壳（一起做）
 
 **鸿蒙**
 
-- [ ] 插件实现 `AbilityAware`。
-- [ ] 创建/销毁全屏子窗口。
-- [ ] 新增 `NativePlayer` 页面与 `main_pages.json`。
-- [ ] XComponent + surface 绑定。
-- [ ] 最小控件：播放/暂停、进度、时间、返回、诊断行。
-- [ ] `himi_mpv/native_ui` 状态与命令。
+- [x] 插件实现 `AbilityAware`。
+- [x] 创建/销毁全屏子窗口。
+- [x] 新增 `NativePlayer` 页面与 `main_pages.json`。
+- [x] XComponent + surface 绑定。
+- [x] 最小控件：播放/暂停、进度、时间、返回、诊断行。
+- [x] ArkTS 编译通过（hvigor `CompileArkTS`，随 HAP 构建验证）。
+- [x] `himi_mpv/native_ui` 状态与命令。
 
 **Android**
 
 - [ ] 全屏 Dialog + SurfaceView + Compose 最小壳。
-- [ ] `himi_native_player` 通道。
+  > 进行中：SurfaceView 已加 `useMediaOverlay` 开关并暴露 Dialog
+  > 宿主入口；Compose 壳待 CI 环境（本机无 Android SDK/JDK）验证。
+- [x] `himi_native_player` 通道。
 - [ ] Surface handle 顺序与重建。
-- [ ] 最小控件：播放/暂停、进度、时间、返回、诊断行。
+- [x] 最小控件：播放/暂停、进度、时间、返回、诊断行。
 
 **验收**
 
@@ -698,6 +701,20 @@ bash scripts/build_ohos_local.sh
 - 产物：`dist/ohos/local/himi-sync-ohos-<version>-<build>-local-signed.hap`
 - 校验：`hap-sign-tool.jar verify-app`
 - 更新两个 `main_pages.json` 后再构建。
+
+**环境依赖（本机实测）**
+
+- Flutter-OH SDK：`git clone --depth 1 -b oh-3.35.7-release
+  https://gitcode.com/CPF-Flutter/flutter_flutter.git /tmp/opencode/flutter_flutter`
+  → 版本 `3.35.7+ohos-1.0.5`，引擎 `f3113bb0309`，与 `ohos/oh-package-lock.json5`
+  及 `ohos/local.properties` 的 `flutter.sdk` 路径一致。
+- 首次需要 `flutter precache --ohos` 下载 `bin/cache/artifacts/engine/ohos-arm64-release`。
+- 本仓库的 MPV hybrid 平台视图补丁（`tool/ohos_mpv_hybrid/*.patch`）必须应用：
+  `framework_platform_views.patch` 直接 `git apply` 到 checkout；
+  `engine_arkts.patch` 需解包 `flutter_embedding_release.har` 后用
+  `patch -p9` 应用并重新打包（原包保留为 `.har.orig`）。
+- `JAVA_HOME` 必须指向 JDK 17，否则 hvigor 打包阶段报 `spawn java ENOENT`
+  （本机：`~/.local/share/mamba/pkgs/.../openjdk-17.0.18.../lib/jvm`）。
 
 ### 10.2 Android
 
