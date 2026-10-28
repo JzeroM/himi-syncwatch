@@ -6,7 +6,6 @@
 #include <flutter/event_stream_handler.h>
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
-#include <flutter/stream_handler.h>
 #include <windows.h>
 
 #include <memory>
