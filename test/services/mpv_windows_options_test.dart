@@ -35,5 +35,27 @@ void main() {
 
       expect(options['target-trc'], 'hlg');
     });
+
+    test('诊断日志覆盖音频输出', () {
+      final options = buildWindowsMpvOptions(hdr: false, hlg: false);
+
+      expect(options['msg-level'], contains('ao=debug'));
+      expect(options['msg-level'], contains('ao/wasapi=debug'));
+    });
+  });
+
+  group('parseWindowsMpvOptionOverrides', () {
+    test('只接受白名单键并忽略注释和空值', () {
+      final parsed = parseWindowsMpvOptionOverrides([
+        '# comment',
+        '; another',
+        'ao=null',
+        'hwdec = no ',
+        'unknown=value',
+        'gpu-api=',
+      ]);
+
+      expect(parsed, {'ao': 'null', 'hwdec': 'no'});
+    });
   });
 }

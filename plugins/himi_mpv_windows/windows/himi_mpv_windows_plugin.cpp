@@ -6,9 +6,13 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 #include <windows.h>
+#include <strsafe.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
+#include <cstdint>
+#include <cstdio>
+#include <cwchar>
 #include <memory>
 #include <string>
 #include <variant>
@@ -18,6 +22,55 @@ namespace {
 
 constexpr char kMethodChannel[] = "himi_mpv_windows";
 constexpr char kEventChannel[] = "himi_mpv_windows/surface";
+
+LONG WINAPI LogUnhandledException(EXCEPTION_POINTERS* info) {
+  wchar_t temp_path[MAX_PATH] = {};
+  const DWORD temp_len = ::GetTempPathW(MAX_PATH, temp_path);
+  if (temp_len == 0 || temp_len >= MAX_PATH) {
+    return EXCEPTION_CONTINUE_SEARCH;
+  }
+  wchar_t log_path[MAX_PATH] = {};
+  if (::StringCchPrintfW(log_path, MAX_PATH, L"%shimi_mpv_windows_crash.log",
+                         temp_path) != S_OK) {
+    return EXCEPTION_CONTINUE_SEARCH;
+  }
+  FILE* file = _wfopen(log_path, L"a, ccs=UTF-8");
+  if (file == nullptr) {
+    return EXCEPTION_CONTINUE_SEARCH;
+  }
+  SYSTEMTIME now = {};
+  ::GetLocalTime(&now);
+  const auto* record = info != nullptr ? info->ExceptionRecord : nullptr;
+  const auto address = record != nullptr
+                           ? reinterpret_cast<uintptr_t>(record->ExceptionAddress)
+                           : 0;
+  HMODULE module = nullptr;
+  if (address != 0) {
+    ::GetModuleHandleExW(
+        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(address), &module);
+  }
+  wchar_t module_path[MAX_PATH] = {};
+  if (module != nullptr) {
+    ::GetModuleFileNameW(module, module_path, MAX_PATH);
+  }
+  const auto module_base = reinterpret_cast<uintptr_t>(module);
+  fwprintf(
+      file,
+      L"[%04u-%02u-%02uT%02u:%02u:%02u][crash] code=0x%08lx address=0x%llx "
+      L"module=%ls base=0x%llx offset=0x%llx thread=%lu\n",
+      now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
+      record != nullptr ? record->ExceptionCode : 0,
+      static_cast<unsigned long long>(address),
+      module_path[0] != L'\0' ? module_path : L"<unknown>",
+      static_cast<unsigned long long>(module_base),
+      static_cast<unsigned long long>(address - module_base),
+      ::GetCurrentThreadId());
+  fflush(file);
+  fclose(file);
+  return EXCEPTION_CONTINUE_SEARCH;
+}
 
 flutter::EncodableMap SurfaceInfo(HWND hwnd, int width, int height) {
   flutter::EncodableMap map;
@@ -40,6 +93,12 @@ void HimiMpvWindowsPlugin::RegisterWithRegistrar(
 HimiMpvWindowsPlugin::HimiMpvWindowsPlugin(
     flutter::PluginRegistrarWindows* registrar)
     : registrar_(registrar) {
+  static bool crash_handler_installed = false;
+  if (!crash_handler_installed) {
+    crash_handler_installed = true;
+    ::SetUnhandledExceptionFilter(LogUnhandledException);
+  }
+
   method_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           registrar->messenger(), kMethodChannel,

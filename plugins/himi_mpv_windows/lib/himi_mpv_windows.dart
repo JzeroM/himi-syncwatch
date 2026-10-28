@@ -35,7 +35,7 @@ Map<String, String> buildWindowsMpvOptions({
       'cache': 'yes',
       'cache-on-disk': 'no',
       'msg-level':
-          'all=warn,vo/gpu-next=v,vo/gpu-next/d3d11=debug,gpu=debug,vd=debug',
+          'all=warn,vo/gpu-next=v,vo/gpu-next/d3d11=debug,gpu=debug,vd=debug,ao=debug,ao/wasapi=debug,af=debug,cplayer=debug',
       'demuxer-max-bytes': '${256 * 1024 * 1024}',
       'demuxer-max-back-bytes': '${128 * 1024 * 1024}',
       'sub-ass': 'yes',
@@ -93,31 +93,44 @@ const Set<String> _allowedOptionOverrides = <String>{
   'target-trc',
   'hdr-compute-peak',
   'tone-mapping',
+  'ao',
+  'audio-exclusive',
+  'audio-device',
 };
 
-Map<String, String> _loadOptionOverrides() {
+/// 解析 `%TEMP%\\himi_mpv_windows_options.ini` 内容。
+///
+/// 只接受白名单键，忽略注释、空行和空值，便于在真机上逐项隔离
+/// D3D11/WASAPI 问题而无需重新构建。
+Map<String, String> parseWindowsMpvOptionOverrides(Iterable<String> lines) {
   final result = <String, String>{};
+  for (final raw in lines) {
+    final line = raw.trim();
+    if (line.isEmpty || line.startsWith('#') || line.startsWith(';')) {
+      continue;
+    }
+    final split = line.indexOf('=');
+    if (split <= 0) continue;
+    final key = line.substring(0, split).trim();
+    final value = line.substring(split + 1).trim();
+    if (_allowedOptionOverrides.contains(key) && value.isNotEmpty) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+Map<String, String> _loadOptionOverrides() {
   try {
     final file = File(
       '${Directory.systemTemp.path}${Platform.pathSeparator}'
       'himi_mpv_windows_options.ini',
     );
-    if (!file.existsSync()) return result;
-    for (final raw in file.readAsLinesSync()) {
-      final line = raw.trim();
-      if (line.isEmpty || line.startsWith('#') || line.startsWith(';')) {
-        continue;
-      }
-      final split = line.indexOf('=');
-      if (split <= 0) continue;
-      final key = line.substring(0, split).trim();
-      final value = line.substring(split + 1).trim();
-      if (_allowedOptionOverrides.contains(key) && value.isNotEmpty) {
-        result[key] = value;
-      }
-    }
-  } catch (_) {}
-  return result;
+    if (!file.existsSync()) return <String, String>{};
+    return parseWindowsMpvOptionOverrides(file.readAsLinesSync());
+  } catch (_) {
+    return <String, String>{};
+  }
 }
 
 /// Windows MPV 会话：原生插件创建子 HWND，libmpv 通过 `wid` 直出。
@@ -293,6 +306,7 @@ class HimiMpvWindowsSession implements MpvSession {
         'current-vo',
         'cache-on-disk',
         'hwdec',
+        'ao',
       ]) {
         try {
           _log('mpv $name=${await getProperty(name)}');
@@ -333,6 +347,10 @@ class HimiMpvWindowsSession implements MpvSession {
           'video-params',
           'hwdec-current',
           'track-list',
+          'ao',
+          'audio-device',
+          'audio-codec-name',
+          'audio-out-params',
         ]) {
           final value = await getProperty(name);
           if (name == 'path' || name == 'media-title') {
