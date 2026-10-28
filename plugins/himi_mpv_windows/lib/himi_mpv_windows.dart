@@ -198,7 +198,6 @@ class HimiMpvWindowsSession implements MpvSession {
   bool _diagInFlight = false;
 
   Player? _player;
-  VideoController? _controller;
   int _surfaceHandle = 0;
   int _textureId = 0;
   Map<String, String> _optionOverrides = const <String, String>{};
@@ -339,7 +338,6 @@ class HimiMpvWindowsSession implements MpvSession {
           height: height,
         ),
       );
-      _controller = controller;
       try {
         _textureId = await _waitForTextureId(controller);
         _log('texture id=$_textureId');
@@ -648,10 +646,9 @@ class HimiMpvWindowsSession implements MpvSession {
 
   @override
   Future<void> resizeTexture(int width, int height) async {
+    // 纹理尺寸由 VideoControllerConfiguration 固定；运行期重注册会改变
+    // textureId，而 MpvPlayerAdapter 只在会话创建时读取一次纹理 id。
     if (nativeSurface || width <= 0 || height <= 0) return;
-    try {
-      await _controller?.setSize(width: width, height: height);
-    } catch (_) {}
   }
 
   @override
@@ -738,7 +735,6 @@ class HimiMpvWindowsSession implements MpvSession {
       _log('player dispose failed: $e');
     }
     _player = null;
-    _controller = null;
     _textureId = 0;
     // player 已释放后才允许销毁 HWND，避免 libmpv 继续访问已销毁窗口。
     try {
