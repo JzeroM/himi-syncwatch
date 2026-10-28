@@ -8,7 +8,7 @@ import 'dart:ui' show Size;
 ///
 /// 平台分布（见 player_engine.dart）：
 /// - mdk：全平台默认
-/// - media_kit：仅 Windows（libmpv；其他平台 PGS/格式不支持，已收敛）
+/// - media_kit：Android 等平台的 libmpv 纹理路径；Windows 不再暴露
 /// - erika：非 TV 平台（Rust 内核；手机真 HDR10 + 原生位图字幕/PGS）
 enum PlayerEngine {
   mdk('mdk', 'MDK'),

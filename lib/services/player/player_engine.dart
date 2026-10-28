@@ -62,9 +62,9 @@ class PlayerEngineFactory {
   /// 当前平台支持的引擎列表。
   ///
   /// 对齐 NipaPlay 平台矩阵（HIMI 现有平台）：
-  /// - Android / Android TV：MDK、Erika、MediaKit
+  /// - Android / Android TV：MDK、Erika、MediaKit、MPV
   /// - iOS：Erika
-  /// - Windows：MDK、Erika、MediaKit
+  /// - Windows：MDK、Erika、MPV（MPV 为默认；media_kit 不再暴露）
   static List<PlayerEngine> supportedEngines() {
     if (isOhos) return const <PlayerEngine>[PlayerEngine.mpv];
     if (kIsWeb) return const <PlayerEngine>[PlayerEngine.mdk];
@@ -81,7 +81,6 @@ class PlayerEngineFactory {
       case TargetPlatform.windows:
         return const <PlayerEngine>[
           PlayerEngine.mdk,
-          PlayerEngine.mediaKit,
           PlayerEngine.erika,
           PlayerEngine.mpv,
         ];
@@ -96,6 +95,9 @@ class PlayerEngineFactory {
     if (kIsWeb) return PlayerEngine.mdk;
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       return PlayerEngine.erika;
+    }
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return PlayerEngine.mpv;
     }
     return PlayerEngine.mdk;
   }

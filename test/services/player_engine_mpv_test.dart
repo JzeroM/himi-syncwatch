@@ -22,18 +22,26 @@ void main() {
     );
   });
 
-  test('Android/Windows 注册 MPV，iOS 不注册', () {
+  test('Android 注册 MPV 非默认；Windows 默认 MPV；iOS 不注册', () {
     PlayerEngineFactory.debugIsOhosOverride = false;
 
-    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-      debugDefaultTargetPlatformOverride = platform;
-      expect(
-        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
-        isTrue,
-        reason: '$platform',
-      );
-      expect(PlayerEngineFactory.defaultEngine(), isNot(PlayerEngine.mpv));
-    }
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    expect(
+      PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
+      isTrue,
+    );
+    expect(PlayerEngineFactory.defaultEngine(), isNot(PlayerEngine.mpv));
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    expect(
+      PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
+      isTrue,
+    );
+    expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
+    expect(
+      PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
+      isFalse,
+    );
 
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     expect(
