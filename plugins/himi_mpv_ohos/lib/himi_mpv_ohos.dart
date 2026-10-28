@@ -30,6 +30,8 @@ class HimiMpvPlayer implements MpvSession {
 
   static const MethodChannel _methods = MethodChannel('himi_mpv');
   static const EventChannel _events = EventChannel('himi_mpv/events');
+  static const EventChannel _nativeUiEvents =
+      EventChannel('himi_mpv/native_ui');
 
   /// Flutter 纹理 id（用于 `Texture(textureId: ...)` 渲染视频）。
   /// 0 = 原生 Surface（平台视图）模式。
@@ -255,4 +257,32 @@ class HimiMpvPlayer implements MpvSession {
 
   /// 销毁播放器并释放纹理。
   Future<void> dispose() => _methods.invokeMethod<void>('dispose');
+
+  // ── 原生播放器 UI（全屏子窗口）────────────────────────────
+
+  /// 原生 UI 命令流（原生 → Dart；同 [eventStream] 的单例广播模式）。
+  static Stream<Map<Object?, Object?>>? _nativeUiStream;
+
+  static Stream<Map<Object?, Object?>> get nativeUiCommandStream {
+    final existing = _nativeUiStream;
+    if (existing != null) return existing;
+    final stream = _nativeUiEvents
+        .receiveBroadcastStream()
+        .map((e) => (e as Map<Object?, Object?>))
+        .asBroadcastStream();
+    _nativeUiStream = stream;
+    return stream;
+  }
+
+  /// 打开全屏原生播放器子窗口（幂等；静态方法，经 MpvSessionPlatform 分发）。
+  static Future<void> openNativeUi() =>
+      _methods.invokeMethod<void>('openNativeUi');
+
+  /// 关闭原生播放器子窗口（幂等）。
+  static Future<void> closeNativeUi() =>
+      _methods.invokeMethod<void>('closeNativeUi');
+
+  /// Dart → 原生：推送权威状态 JSON 快照。
+  static Future<void> pushNativeState(String stateJson) =>
+      _methods.invokeMethod<void>('pushNativeState', {'state': stateJson});
 }

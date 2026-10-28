@@ -20,8 +20,11 @@
  */
 
 import {
+  AbilityAware,
+  AbilityPluginBinding,
   EventChannel,
   EventSink,
+  FlutterManager,
   FlutterPlugin,
   FlutterPluginBinding,
   MethodCall,
@@ -36,13 +39,19 @@ import { TextureRegistry, SurfaceTextureEntry } from '@ohos/flutter_ohos';
 import { MpvLib, MpvFormat, EventObserver, LogObserver } from '@mpv-ohos/mpv-arkts';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import display from '@ohos.display';
+import window from '@ohos.window';
+import UIAbility from '@ohos.app.ability.UIAbility';
 import { HimiMpvPlatformView, HimiMpvPlatformViewFactory, MPV_VIEW_TYPE } from './HimiMpvPlatformView';
 import { MpvSurfaceCallbacks } from './HimiMpvSurface';
+import { HimiMpvNativeHost, NativeHostBridge } from '../native/HimiMpvNativeHost';
 
 const TAG = 'HimiMpv';
 const DOMAIN = 0x0001;
 const METHOD_CHANNEL = 'himi_mpv';
 const EVENT_CHANNEL = 'himi_mpv/events';
+const NATIVE_UI_CHANNEL = 'himi_mpv/native_ui';
+const NATIVE_UI_WINDOW_NAME = 'himi_native_player';
+const NATIVE_UI_PAGE = 'pages/NativePlayer';
 
 /** 初始纹理尺寸；拿到 video-params 后按真实分辨率重建。 */
 const DEFAULT_WIDTH = 1920;
@@ -180,12 +189,52 @@ class MpvSession implements EventObserver, LogObserver {
   }
 }
 
-export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandler {
+/**
+ * 原生宿主 → 插件的转发桥：surface 生命周期直达 mpv 会话，命令经
+ * `himi_mpv/native_ui` EventChannel 回传 Dart。
+ */
+class PluginNativeBridge implements NativeHostBridge {
+  private readonly plugin: HimiMpvOhosPlugin;
+
+  constructor(plugin: HimiMpvOhosPlugin) {
+    this.plugin = plugin;
+  }
+
+  forwardSurfaceCreated(surfaceId: string): void {
+    this.plugin.handleSurfaceCreated(surfaceId);
+  }
+
+  forwardSurfaceChanged(surfaceId: string, width: number, height: number): void {
+    this.plugin.handleSurfaceChanged(surfaceId, width, height);
+  }
+
+  forwardSurfaceDestroyed(surfaceId: string): void {
+    this.plugin.handleSurfaceDestroyed(surfaceId);
+  }
+
+  forwardCommand(command: Map<string, Object>): void {
+    const sink = this.plugin.getNativeUiSink();
+    if (sink !== null) {
+      sink.success(command);
+    } else {
+      hilog.warn(DOMAIN, TAG, 'native_ui 未监听，命令丢失: %{public}s',
+        command.get('type') as Object as string ?? 'unknown');
+    }
+  }
+}
+
+export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandler, AbilityAware {
   private binding: FlutterPluginBinding | null = null;
   private methodChannel: MethodChannel | null = null;
   private eventChannel: EventChannel | null = null;
+  private nativeUiChannel: EventChannel | null = null;
   private static eventSink: EventSink | null = null;
+  private nativeUiSink: EventSink | null = null;
   private session: MpvSession | null = null;
+
+  /// 原生播放器 UI 子窗口（全屏 ArkUI 播放页）。
+  private ability: UIAbility | null = null;
+  private subWindow: window.Window | null = null;
 
   /// XComponent 已创建但 mpv 尚未 initialize 时，先把 surfaceId 存下来。
   private pendingSurfaceId: string | null = null;
@@ -204,6 +253,25 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     if (sink !== null) {
       sink.success(payload);
     }
+  }
+
+  getNativeUiSink(): EventSink | null {
+    return this.nativeUiSink;
+  }
+
+  // ── AbilityAware：拿 WindowStage 创建原生播放器子窗口 ────────
+
+  onAttachedToAbility(binding: AbilityPluginBinding): void {
+    this.ability = binding.getAbility();
+    hilog.info(DOMAIN, TAG, 'attached to ability');
+  }
+
+  onDetachedFromAbility(): void {
+    // 能力销毁：同步丢弃子窗口（子窗口随 UIAbility 生命周期一并回收，
+    // 这里显式销毁保证无残留悬浮窗）并清空引用。
+    this.destroySubWindowSync();
+    this.ability = null;
+    hilog.info(DOMAIN, TAG, 'detached from ability');
   }
 
   onAttachedToEngine(binding: FlutterPluginBinding): void {
@@ -228,6 +296,24 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       },
     });
 
+    // 原生播放器 UI 命令流（原生 UI → Dart）。
+    this.nativeUiChannel = new EventChannel(
+      binding.getBinaryMessenger(),
+      NATIVE_UI_CHANNEL,
+      StandardMethodCodec.INSTANCE,
+    );
+    this.nativeUiChannel.setStreamHandler({
+      onListen: (_args: ESObject, sink: EventSink): void => {
+        this.nativeUiSink = sink;
+      },
+      onCancel: (_args: ESObject): void => {
+        this.nativeUiSink = null;
+      },
+    });
+
+    // 宿主单例桥就位：XComponent surface 与命令经此转发。
+    HimiMpvNativeHost.getInstance().setBridge(new PluginNativeBridge(this));
+
     // 注册 MPV 平台视图工厂：Dart 侧用 PlatformViewLink(viewType:
     // 'himi_mpv_surface') 挂载，ArkTS 侧返回 XComponent。
     // mpv 的 ohosvk vo 需要真实的 OHNativeWindow，只能用 XComponent 提供，
@@ -248,6 +334,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
 
   onDetachedFromEngine(_binding: FlutterPluginBinding): void {
     this.destroySession();
+    this.destroySubWindowSync();
+    HimiMpvNativeHost.getInstance().setBridge(null);
     const methodChannel = this.methodChannel;
     if (methodChannel !== null) {
       methodChannel.setMethodCallHandler(null);
@@ -256,9 +344,15 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     if (eventChannel !== null) {
       eventChannel.setStreamHandler(null);
     }
+    const nativeUiChannel = this.nativeUiChannel;
+    if (nativeUiChannel !== null) {
+      nativeUiChannel.setStreamHandler(null);
+    }
     this.methodChannel = null;
     this.eventChannel = null;
+    this.nativeUiChannel = null;
     HimiMpvOhosPlugin.eventSink = null;
+    this.nativeUiSink = null;
     this.binding = null;
   }
 
@@ -290,6 +384,20 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
         case 'create':
           this.createSession(args, result);
           return;
+        case 'openNativeUi':
+          this.openNativeUi(result);
+          return;
+        case 'closeNativeUi':
+          this.closeNativeUi(result);
+          return;
+        case 'pushNativeState': {
+          const stateValue: ESObject = args.get('state');
+          if (typeof stateValue === 'string') {
+            HimiMpvNativeHost.getInstance().applyStateJson(stateValue as string);
+          }
+          result.success(null);
+          return;
+        }
         case 'dispose':
           this.destroySession();
           result.success(null);
@@ -392,6 +500,83 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       hilog.error(DOMAIN, TAG, 'method %{public}s failed: %{public}s', call.method, errMsg);
       result.error('HIMI_MPV_ERROR', errMsg, null);
     }
+  }
+
+  // ── 原生播放器子窗口生命周期（计划书 §5.2）─────────────────
+
+  /** 打开全屏原生播放器子窗口（幂等：已打开直接成功）。 */
+  private openNativeUi(result: MethodResult): void {
+    if (this.subWindow !== null) {
+      result.success(null);
+      return;
+    }
+    const ability = this.ability;
+    if (ability === null) {
+      result.error('NO_ABILITY', 'plugin is not attached to ability', null);
+      return;
+    }
+    this.openNativeUiAsync(ability).then((): void => {
+      hilog.info(DOMAIN, TAG, 'native ui window opened');
+      result.success(null);
+    }).catch((e: Object): void => {
+      hilog.error(DOMAIN, TAG, 'openNativeUi 失败: %{public}s', String(e));
+      this.destroySubWindowSync();
+      result.error('NATIVE_UI_OPEN_FAILED', String(e), null);
+    });
+  }
+
+  private async openNativeUiAsync(ability: UIAbility): Promise<void> {
+    const stage: window.WindowStage =
+      FlutterManager.getInstance().getWindowStage(ability);
+    const win: window.Window = await stage.createSubWindow(NATIVE_UI_WINDOW_NAME);
+    try {
+      await win.setWindowLayoutFullScreen(true);
+      await win.setWindowSystemBarEnable([]);
+      win.setWindowBackgroundColor('#000000');
+      await win.setUIContent(NATIVE_UI_PAGE);
+      await win.showWindow();
+      this.subWindow = win;
+    } catch (e) {
+      // 任何一步失败都回收半开的窗口，避免残留黑屏悬浮层。
+      try {
+        await win.destroyWindow();
+      } catch (_) {
+      }
+      throw new Error(String(e));
+    }
+  }
+
+  /** 关闭子窗口并恢复状态（幂等）。 */
+  private closeNativeUi(result: MethodResult): void {
+    const host = HimiMpvNativeHost.getInstance();
+    host.setControlsVisible(true);
+    const win = this.subWindow;
+    this.subWindow = null;
+    if (win === null) {
+      result.success(null);
+      return;
+    }
+    win.destroyWindow().then((): void => {
+      hilog.info(DOMAIN, TAG, 'native ui window destroyed');
+      result.success(null);
+    }).catch((e: Object): void => {
+      hilog.error(DOMAIN, TAG, 'destroyWindow 失败: %{public}s', String(e));
+      result.success(null);
+    });
+  }
+
+  /** 同步清理引用 + 异步销毁（引擎/能力解绑路径，不等回调）。 */
+  private destroySubWindowSync(): void {
+    const win = this.subWindow;
+    this.subWindow = null;
+    if (win === null) {
+      return;
+    }
+    win.destroyWindow().then((): void => {
+      hilog.info(DOMAIN, TAG, 'native ui window destroyed (sync path)');
+    }).catch((e: Object): void => {
+      hilog.error(DOMAIN, TAG, 'destroyWindow 失败: %{public}s', String(e));
+    });
   }
 
   // ── 会话生命周期 ─────────────────────────────────────────────

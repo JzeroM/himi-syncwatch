@@ -5,7 +5,10 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'mpv_session_platform.dart';
+import 'native/native_player_command.dart';
+import 'native/native_player_controller.dart';
 import 'native/native_player_gating.dart';
+import 'native/native_player_state.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:image/image.dart' as img;
 
@@ -105,6 +108,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         unawaited(player.stop());
         break;
     }
+    // 播放/暂停切换属 requiresImmediatePush 语义：立即同步原生 UI。
+    _pushNativeUiState(immediate: true);
   }
 
   @override
@@ -114,6 +119,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 状态机若立即采信会触发自动重播（真机 v1.2.93「快进从头播」）。
     _lastSeekCommandAt = DateTime.now();
     await _player?.seek(positionMs);
+    // seek 后进度权威值以轮询/事件回读为准；此处先推本地乐观值，
+    // 避免原生 UI 进度条回弹。
+    _nativeUiOptimisticSeek(positionMs);
+    _pushNativeUiState(immediate: true);
   }
 
   /// 最近一次 seek 命令时间（eof 采信冷却依据）。
@@ -189,6 +198,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   String? _surfaceError;
   String? _voConfigured;
 
+  /// 最近一次轮询的 vo / gpu-context（诊断与原生 UI 状态用）。
+  String? _currentVo;
+  String? _gpuContext;
+
   /// 当前 MPV 是否正在输出 HDR（仅 Surface + HDR 内容 + HDR 显示）。
   bool get hdrOutputActive => _hdrOutputActive;
 
@@ -218,8 +231,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 用户设置：是否允许原生播放器 UI（默认开启）。
   bool _nativeUiSettingEnabled = true;
   bool get nativeUiSettingEnabled => _nativeUiSettingEnabled;
-  set nativeUiSettingEnabled(bool value) =>
-      _nativeUiSettingEnabled = value;
+  set nativeUiSettingEnabled(bool value) => _nativeUiSettingEnabled = value;
 
   /// 本次会话是否实际启用原生播放器 UI。
   ///
@@ -228,6 +240,18 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 则不启用。
   bool _nativeUiEnabled = false;
   bool get nativeUiEnabled => _nativeUiEnabled;
+
+  /// 原生 UI 宿主是否打开（PlayerScreen 据此隐藏 Flutter 视频/控件层；
+  /// 值变化时经 [nativeUiActive] 通知重建）。
+  final ValueNotifier<bool> nativeUiActive = ValueNotifier<bool>(false);
+
+  /// 原生播放器 UI 控制器（计划书 §4.3；原生 UI 启用时创建）。
+  NativePlayerController? get nativeUiController => _nativeUiController;
+  NativePlayerController? _nativeUiController;
+
+  /// PlayerScreen 注入：原生 UI 请求退出（back/exit）时回调——由上层
+  /// 执行关闭原生宿主 + 退出播放页（适配器不持有导航能力）。
+  void Function()? onNativeUiExit;
 
   /// 调试面板「HDR 直出」状态：按实际路径判断，不用请求值。
   String get mpvHdrOutputStatus {
@@ -372,6 +396,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       _player = null;
       _appliedHdrOutput = false;
       _nativeUiEnabled = false;
+      unawaited(_closeNativeUi());
     }
     if (player == null) {
       // 初始尺寸只作为提示；实际 Surface/Texture 由设置决定。
@@ -406,6 +431,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       if (nativeSurface && !player.usesNativeSurface) {
         LogService().log('mpv',
             '输出路径不一致: 请求 Surface，原生实际 Texture(textureId=${player.textureId})');
+      }
+      // 原生 UI 启用：立即打开宿主窗口（幂等），Flutter 视频/控件层
+      // 随 nativeUiActive 翻转隐藏（计划书 §7.3）。
+      if (_nativeUiEnabled) {
+        unawaited(_openNativeUiIfNeeded());
       }
       _ensureEventSubscription();
       _appliedHdrOutput = decision.hdrOutput;
@@ -542,6 +572,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     _surfaceId = state.surfaceId;
     _surfaceError = state.surfaceError;
     _voConfigured = state.voConfigured;
+    _currentVo = state.currentVo;
+    _gpuContext = state.gpuContext;
     final hasProgress = state.durationMs > 0 ||
         state.positionMs > 0 ||
         state.videoParams != null ||
@@ -590,6 +622,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
     _maybeKickStalledLoad(state);
     _maybeFallbackToSoftwareDecode(state);
+    // 原生 UI 状态同步：轮询节拍推送（控制器内部 200ms 防抖合并）。
+    _pushNativeUiState();
   }
 
   /// 有声无画的自动回退（v1.2.79）：媒体在播（时长/位置推进）但 5s 内
@@ -687,6 +721,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   set volume(double value) {
     _volume = value;
     unawaited(_player?.setVolume(value));
+    _pushNativeUiState();
   }
 
   @override
@@ -696,6 +731,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   set playbackRate(double value) {
     _playbackRate = value;
     unawaited(_player?.setSpeed(value));
+    _pushNativeUiState(immediate: true);
   }
 
   @override
@@ -1056,6 +1092,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 实际生效的硬解器（hwdec-current，轮询直读，非事件）。
   String? _hwdecActual;
 
+  /// 最近一次 track-list JSON 原文（原生 UI 状态转换用）。
+  String? _lastTrackListRaw;
+
   /// 首帧等待状态（v1.2.89）：true = 有视频轨且媒体在播，但视频参数
   /// 尚未到手（解码器起热中）。UI 盖缓冲遮罩用。
   final ValueNotifier<bool> firstFramePending = ValueNotifier<bool>(false);
@@ -1162,6 +1201,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   void _parseTracks(Object? value) {
     if (value is! String) return;
+    _lastTrackListRaw = value;
     try {
       final decoded = jsonDecode(value);
       if (decoded is! List) return;
@@ -1362,6 +1402,168 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
   }
 
+  // ── 原生播放器 UI（计划书 §4/§7）──────────────────────────
+
+  /// 打开原生 UI 宿主（会话确认 Surface 后由 prepare 调用；幂等）。
+  Future<void> _openNativeUiIfNeeded() async {
+    if (!_nativeUiEnabled || _disposed || _nativeUiController != null) return;
+    final platform = MpvSessionPlatform.nativeUiPlatformName;
+    if (platform == null) return;
+    final controller = NativePlayerController(
+      onOpen: (_, __) => MpvSessionPlatform.openNativeUi(),
+      onClose: MpvSessionPlatform.closeNativeUi,
+      onPush: (state) =>
+          MpvSessionPlatform.pushNativeState(jsonEncode(state.toJson())),
+      onCommand: _handleNativeUiCommand,
+      log: (message) => LogService().log('mpv', message),
+    );
+    _nativeUiController = controller;
+    try {
+      await controller.open(
+        platform: platform,
+        initial: _buildNativePlayerState(),
+        commandStream: MpvSessionPlatform.nativeUiCommandStream(),
+      );
+      nativeUiActive.value = true;
+    } catch (e) {
+      LogService().log('mpv', '原生 UI 打开失败: $e');
+      _nativeUiController = null;
+      nativeUiActive.value = false;
+    }
+  }
+
+  /// 关闭原生 UI 宿主（公开入口：PlayerScreen 退出路径调用；幂等）。
+  Future<void> closeNativeUi() => _closeNativeUi();
+
+  /// 关闭原生 UI 宿主（幂等）。
+  Future<void> _closeNativeUi() async {
+    final controller = _nativeUiController;
+    _nativeUiController = null;
+    nativeUiActive.value = false;
+    if (controller == null) return;
+    try {
+      await controller.close();
+    } catch (_) {}
+    try {
+      await controller.dispose();
+    } catch (_) {}
+  }
+
+  /// 推送权威状态到原生宿主（无控制器时快速返回）。
+  void _pushNativeUiState({bool immediate = false}) {
+    final controller = _nativeUiController;
+    if (controller == null || !controller.isOpen || _disposed) return;
+    unawaited(
+        controller.update(_buildNativePlayerState(), immediate: immediate));
+  }
+
+  /// seek 乐观值：本地快照立即跟上目标位置，避免原生进度条回弹到旧值
+  ///（权威值仍由轮询/事件回读覆盖）。
+  void _nativeUiOptimisticSeek(int positionMs) {
+    _positionMs = positionMs;
+    _propertyCache['time-pos'] = (positionMs / 1000.0).toStringAsFixed(3);
+  }
+
+  /// 把适配器当前状态转成原生 UI 权威快照（计划书 §7.4 数据源）。
+  NativePlayerState _buildNativePlayerState() {
+    final paused = _state == AdapterPlaybackState.paused ||
+        _state == AdapterPlaybackState.stopped;
+    final buffering =
+        (_mediaStatus.rawValue & AdapterMediaStatus.buffering.rawValue) != 0;
+    return NativePlayerState(
+      engine: 'mpv',
+      videoOutputRequested: _requestedMpvVideoOutput,
+      videoOutputActual: mpvActualVideoOutput,
+      nativeSurface: usesNativeSurface,
+      textureId: _textureIdListenable.value ?? 0,
+      hdrOutput: _hdrOutputActive,
+      displayHdr: _displayHdr ?? false,
+      targetTrc: _targetTrc,
+      voConfigured: _voConfigured,
+      currentVo: _currentVo,
+      hwdecCurrent: _hwdecActual,
+      surfaceAttached: _surfaceAttached,
+      surfaceId: _surfaceId,
+      surfaceError: _surfaceError,
+      positionMs: _positionMs,
+      durationMs: _durationMs,
+      bufferedMs: _bufferedMs,
+      paused: paused,
+      buffering: buffering,
+      ended: _eofReached,
+      volume: _volume,
+      speed: _playbackRate,
+      mediaTitle: _propertyCache['media-title'],
+      tracks: _nativeTracksFromRaw(_lastTrackListRaw),
+      debugLines: _nativeDebugLines(),
+    );
+  }
+
+  /// track-list JSON → [NativeTrack] 列表（解析失败返回空）。
+  static List<NativeTrack> _nativeTracksFromRaw(String? raw) {
+    if (raw == null || raw.isEmpty) return const <NativeTrack>[];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const <NativeTrack>[];
+      return decoded
+          .whereType<Map>()
+          .map((t) => NativeTrack.fromJson(t.map(
+                (k, v) => MapEntry(k.toString(), v),
+              )))
+          .toList(growable: false);
+    } catch (_) {
+      return const <NativeTrack>[];
+    }
+  }
+
+  /// 原生 UI 顶部诊断行（vo/hwdec/surface 摘要，Phase 1 最小集）。
+  List<String> _nativeDebugLines() {
+    final buffer = StringBuffer('vo=${_voConfigured ?? "-"}');
+    if (_currentVo != null) buffer.write(' | ${_currentVo}');
+    if (_gpuContext != null) buffer.write(' | gpu=$_gpuContext');
+    buffer.write(' | hwdec=${_hwdecActual ?? "-"}');
+    if (!_surfaceAttached) buffer.write(' | surface未附着');
+    if (_surfaceError != null) buffer.write(' | err=$_surfaceError');
+    if (_hdrOutputActive) buffer.write(' | HDR');
+    return <String>[buffer.toString()];
+  }
+
+  /// 原生命令路由（计划书 §4.3）：适配器可直接执行的命令在此处理，
+  /// 选集/版本/弹幕/房间等需要 PlayerScreen 上下文的命令由上层监听
+  /// [NativePlayerController.commands] 处理（Phase 2+ 接入）。
+  Future<void> _handleNativeUiCommand(NativePlayerCommand command) async {
+    if (_disposed) return;
+    switch (command) {
+      case TogglePlay():
+        state = _state == AdapterPlaybackState.playing
+            ? AdapterPlaybackState.paused
+            : AdapterPlaybackState.playing;
+      case SeekTo(:final positionMs):
+        await seek(positionMs: positionMs);
+      case SeekRelative(:final deltaMs):
+        await seek(positionMs: _positionMs + deltaMs);
+      case SetVolume(:final volume):
+        this.volume = volume.clamp(0.0, 1.0);
+      case SetSpeed(:final speed):
+        playbackRate = speed.clamp(0.25, 4.0);
+      case RequestBack():
+      case RequestExit():
+        // 退出动作交给 PlayerScreen（关闭原生宿主 + 退出播放页）。
+        final exit = onNativeUiExit;
+        if (exit != null) {
+          exit();
+        } else {
+          unawaited(_closeNativeUi());
+        }
+      default:
+        LogService()
+            .log('mpv', '原生命令待接入 PlayerScreen: ${command.toMap()['type']}');
+    }
+    if (command.requiresImmediatePush) {
+      _pushNativeUiState(immediate: true);
+    }
+  }
+
   // ── 生命周期 ──────────────────────────────────────────────
 
   @override
@@ -1386,6 +1588,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     } catch (_) {}
     _rawSub = null;
 
+    // 原生 UI 宿主随会话销毁（幂等；先于 mpv dispose，避免子窗口
+    // XComponent 引用已销毁的 surface）。
+    await _closeNativeUi();
+    onNativeUiExit = null;
+
     final player = _player;
     _player = null;
     if (player != null) {
@@ -1398,6 +1605,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     try {
       firstFramePending.value = false;
       firstFramePending.dispose();
+    } catch (_) {}
+    try {
+      nativeUiActive.value = false;
+      nativeUiActive.dispose();
     } catch (_) {}
     try {
       await _stateCtrl?.close();

@@ -1862,6 +1862,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _currentEngine,
       erikaOutputMode: ErikaOutputMode.auto,
     );
+    _attachNativeUiBridge(_player);
     // 强制输出 SDR（BT709）：仅 Android + hdrGlWorkaround 开关（默认开启）。
     // Flutter 纹理恒 SDR（fvp 文档），mdk 默认 auto 会为 HDR10 内容建
     // bt2020_pq 表面，导致 Android SDR 面板发白 + HDR10 管线簇状丢帧
@@ -3190,6 +3191,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) LogService().log('Diag', '截帧: $_snapshotInfo');
   }
 
+  /// 原生播放器 UI 接线：状态监听（翻转时重建视频区）+ 退出回调。
+  /// 引擎创建/切换后调用；对应拆除见 [_detachNativeUiBridge]。
+  void _attachNativeUiBridge(PlayerAdapter player) {
+    if (player is! MpvPlayerAdapter) return;
+    player.nativeUiActive.addListener(_onNativeUiActiveChanged);
+    player.onNativeUiExit = _exitFromNativeUi;
+  }
+
+  void _detachNativeUiBridge(PlayerAdapter player) {
+    if (player is! MpvPlayerAdapter) return;
+    player.nativeUiActive.removeListener(_onNativeUiActiveChanged);
+    player.onNativeUiExit = null;
+  }
+
+  void _onNativeUiActiveChanged() {
+    if (mounted && !_disposed) setState(() {});
+  }
+
+  /// 原生 UI 请求退出（back/exit 命令）：先关原生宿主，再走与顶栏
+  /// 返回一致的离房确认 + pop 路径（播放页销毁时适配器释放会兜底
+  /// 再关一次，幂等）。
+  Future<void> _exitFromNativeUi() async {
+    if (!mounted || _disposed) return;
+    final mpv = _player;
+    if (mpv is MpvPlayerAdapter) {
+      try {
+        await mpv.closeNativeUi();
+      } catch (_) {}
+    }
+    if (!mounted || _disposed) return;
+    final shouldPop = await _confirmLeaveRoom();
+    if (shouldPop && context.mounted) Navigator.pop(context);
+  }
+
   /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），
   /// fvp(mdk) 为 `void async` → settle 等待其原生 teardown 落定。
   ///
@@ -3197,6 +3232,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// （TrueHD 卡顿）、原生状态回调劣化（播放/暂停图标不动）。
   Future<void> _disposeOldEngine() async {
     final old = _player;
+    // 原生 UI 桥先拆除：监听器随旧适配器销毁（在其 dispose 释放
+    // ValueNotifier 之前 removeListener，避免对已释放对象操作）。
+    _detachNativeUiBridge(old);
     if (old is AsyncDisposablePlayer) {
       final disposable = old as AsyncDisposablePlayer;
       try {
@@ -3249,6 +3287,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _currentEngine = engine;
     _lastMediaKitFitKey = null;
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
+    _attachNativeUiBridge(_player);
     _switchingEngine = false;
     await _initPlayerProperties();
     if (!mounted || _disposed) return;
@@ -6714,6 +6753,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _disposed = true;
     // 捕获当前适配器：延迟释放期间若引擎字段被替换，也不能释放错对象。
     final player = _player;
+    // 原生 UI 桥先拆除（监听器随适配器销毁；dispose 内部会关原生宿主）。
+    _detachNativeUiBridge(player);
     // 先停止播放器，确保音频立即停止；适配器内部会忽略已销毁后的写入。
     try {
       player.state = AdapterPlaybackState.stopped;
@@ -7157,7 +7198,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 原生播放器 UI 是否接管中（计划书 §7.3）：mpv Surface 会话 +
+  /// 门控通过 + 原生宿主窗口已打开。此时视频与控件全部由全屏原生
+  /// 窗口（鸿蒙子窗口 / Android Dialog）承担。
+  bool get _nativeUiActive {
+    if (_currentEngine != PlayerEngine.mpv) return false;
+    final mpv = _player;
+    return mpv is MpvPlayerAdapter && mpv.nativeUiActive.value;
+  }
+
   Widget _buildVideoArea() {
+    // 原生播放器 UI 接管：Flutter 侧视频/控件层整体退场（空占位）。
+    // 必须在挂载任何 Surface/Texture 之前短路——mpv surface 归属原生
+    // 子窗口的 XComponent，Flutter 再挂平台视图会争抢渲染通道。
+    if (_nativeUiActive) {
+      return const SizedBox.expand();
+    }
     final videoAreaTvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     final clockFormat = ref.watch(
       settingsProvider.select((s) => s.topBarClockFormat),

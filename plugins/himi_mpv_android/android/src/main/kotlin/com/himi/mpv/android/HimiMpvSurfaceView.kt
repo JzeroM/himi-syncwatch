@@ -13,8 +13,17 @@ import io.flutter.plugin.platform.PlatformView
  * libmpv's Android `wid` option expects. HDR metadata/format is configured by
  * libmpv on the ANativeWindow created from this Surface.
  */
-class HimiMpvSurfaceView(context: Context, private val viewId: Int) :
-    SurfaceView(context), PlatformView, SurfaceHolder.Callback {
+class HimiMpvSurfaceView(
+    context: Context,
+    private val viewId: Int,
+    /**
+     * true（默认）：Flutter hybrid composition 下需 `setZOrderMediaOverlay`
+     * 才能压在 PlatformViewWrapper 之上。
+     * false：作为全屏 Dialog 的顶层内容（Android 原生播放器 UI）时，
+     * media overlay 会让 Flutter 窗口表面盖住本 SurfaceView。
+     */
+    private val useMediaOverlay: Boolean = true,
+) : SurfaceView(context), PlatformView, SurfaceHolder.Callback {
 
     private var surfaceHandle: Long = 0L
     private var width = 0
@@ -25,7 +34,7 @@ class HimiMpvSurfaceView(context: Context, private val viewId: Int) :
         // SurfaceView 在 Flutter hybrid composition 的 PlatformViewWrapper
         // 下方时会被窗口表面遮住。MediaOverlay 让它位于其它 SurfaceView
         // 之上，但仍低于 Flutter 控件窗口。
-        setZOrderMediaOverlay(true)
+        if (useMediaOverlay) setZOrderMediaOverlay(true)
         setBackgroundColor(android.graphics.Color.BLACK)
     }
 
