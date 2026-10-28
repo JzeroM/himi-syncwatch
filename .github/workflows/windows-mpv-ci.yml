@@ -90,6 +90,29 @@ jobs:
           $libmpvDir = (Join-Path $env:RUNNER_TEMP 'mpv-win').Replace('\', '/')
           "MEDIA_KIT_LIBMPV_DIR=$libmpvDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Prepare Agora RTM Windows SDK
+        shell: pwsh
+        run: |
+          $url = 'https://download.agora.io/rtm2/release/Agora_RTM_C%2B%2B_SDK_for_Windows_v2.2.5.zip'
+          $zip = Join-Path $env:RUNNER_TEMP 'agora_rtm_sdk.zip'
+          $root = Join-Path $env:RUNNER_TEMP 'agora_rtm_sdk'
+          for ($i = 1; $i -le 3; $i++) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+              break
+            } catch {
+              Write-Host "Agora SDK download failed (attempt $i/3): $_"
+              if ($i -eq 3) { throw }
+              Start-Sleep -Seconds 10
+            }
+          }
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          Expand-Archive -Path $zip -DestinationPath $root -Force
+          $sdk = (Join-Path $root 'Agora_Native_SDK_for_Windows_MINI_RTM').Replace('\', '/')
+          $lib = Join-Path $sdk 'sdk/x86_64/agora_rtm_sdk.dll'
+          if (!(Test-Path $lib)) { throw "Agora RTM SDK 缺少: $lib" }
+          "AGORA_RTM_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
