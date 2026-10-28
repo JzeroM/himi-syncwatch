@@ -215,20 +215,30 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/player/:id',
-        builder: (context, state) {
-          return PlayerScreen(
-            itemId: state.pathParameters['id']!,
-            roomCode: state.uri.queryParameters['roomCode'],
-            mediaSourceId: state.uri.queryParameters['mediaSourceId'],
-            isHost: state.uri.queryParameters['isHost'] == 'true',
-            audienceName: state.uri.queryParameters['name'] ?? '',
-            serverId: state.uri.queryParameters['server'],
-            logoUrl: state.uri.queryParameters['logo'],
-            startMs:
-                int.tryParse(state.uri.queryParameters['startMs'] ?? '') ?? 0,
-            year: int.tryParse(state.uri.queryParameters['year'] ?? ''),
-            kind: state.uri.queryParameters['kind'],
-            isAnimation: state.uri.queryParameters['anim'] == '1',
+        pageBuilder: (context, state) {
+          // PlayerScreen 使用透明 Scaffold + Windows 原生视频子窗口。
+          // MaterialPage 会铺一层不透明 Material，遮住下层 HWND；这里改用
+          // 不自绘背景的 CustomTransitionPage，让视频区域保持 alpha=0。
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            opaque: true,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            transitionsBuilder: (_, __, ___, child) => child,
+            child: PlayerScreen(
+              itemId: state.pathParameters['id']!,
+              roomCode: state.uri.queryParameters['roomCode'],
+              mediaSourceId: state.uri.queryParameters['mediaSourceId'],
+              isHost: state.uri.queryParameters['isHost'] == 'true',
+              audienceName: state.uri.queryParameters['name'] ?? '',
+              serverId: state.uri.queryParameters['server'],
+              logoUrl: state.uri.queryParameters['logo'],
+              startMs:
+                  int.tryParse(state.uri.queryParameters['startMs'] ?? '') ?? 0,
+              year: int.tryParse(state.uri.queryParameters['year'] ?? ''),
+              kind: state.uri.queryParameters['kind'],
+              isAnimation: state.uri.queryParameters['anim'] == '1',
+            ),
           );
         },
       ),
