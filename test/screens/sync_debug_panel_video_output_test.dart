@@ -16,6 +16,7 @@ void main() {
     String videoFilter = '(未写入)',
     String? snapshotInfo,
     VoidCallback? onSnapshot,
+    String hdrDirectStatus = '-',
   }) {
     return ProviderScope(
       overrides: [
@@ -53,6 +54,7 @@ void main() {
             textureId: 7,
             textureSize: '1920x1080',
             videoOutput: videoOutput,
+            hdrDirectStatus: hdrDirectStatus,
             videoFilter: videoFilter,
             snapshotInfo: snapshotInfo,
             onSnapshot: onSnapshot,
@@ -89,6 +91,16 @@ void main() {
     await tester.pump();
 
     expect(find.text('tunnel'), findsOneWidget);
+  });
+
+  testWidgets('HDR直出行展示 MPV 输出状态', (tester) async {
+    await tester.pumpWidget(buildPanel(
+      hdrDirectStatus: 'Surface · HDR 直出',
+    ));
+    await tester.pump();
+
+    expect(find.text('HDR直出'), findsOneWidget);
+    expect(find.text('Surface · HDR 直出'), findsOneWidget);
   });
 
   testWidgets('视频滤镜行展示规范化滤镜取证（非标尺寸黑屏实验）', (tester) async {

@@ -120,6 +120,21 @@ class _EngineTabBody extends ConsumerWidget {
         value: settings.decodeMode,
         onSelected: (v) => notifier.update(decodeMode: v),
       ),
+      const Divider(height: 1),
+      settingOptionTile(
+        context: context,
+        tvMode: settings.tvMode,
+        title: '视频路径',
+        subtitle: defaultTargetPlatform == TargetPlatform.windows
+            ? 'Windows 默认纹理；Surface 为实验项，当前可能黑屏'
+            : '默认 Surface 直出；纹理走 Flutter 合成。HDR 直出需要显示端支持 HDR',
+        labels: AppSettings.mpvVideoOutputLabels,
+        value: AppSettings.effectiveMpvVideoOutput(
+          settings.mpvVideoOutput,
+          userSet: settings.mpvVideoOutputUserSet,
+        ),
+        onSelected: (v) => notifier.update(mpvVideoOutput: v),
+      ),
     ];
   }
 

@@ -13,6 +13,8 @@ dependencies:
     path: ../himi_mpv_core
   media_kit:
     path: ../../third_party/nipaplay/media_kit
+  media_kit_video:
+    path: ../../third_party/nipaplay/media_kit_video
 
 flutter:
   plugin:

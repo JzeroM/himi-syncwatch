@@ -1372,7 +1372,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _voStatus = '-'; // 视频输出驱动
   String _videoResolution = '-'; // 视频分辨率
   String _hdrType = 'SDR'; // HDR 类型标签
-  /// 内容是否为 HDR（闩锁，一旦判定不回退）：用于自动路由
+  /// 内容是否为 HDR（闩锁，一旦判定不回退）：用于 HDR 输出与诊断
   /// （mdk#361：直写 surface 在 HDR 上会 wedge/卡顿 → 降级为同载体 GL）。
   /// 由 Emby 元数据 + 运行期 mediaInfo **色彩信息**共同判定（bt2100
   /// PQ/HLG 或 doviProfile>0）；像素格式不再参与（10-bit SDR ≠ HDR）。
@@ -2101,8 +2101,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_player is MpvPlayerAdapter) {
       final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
       _player.videoDecoders = decoders;
-      LogService()
-          .log('Player', 'MPV 解码配置: ${settings.decodeMode} → $decoders');
+      final mpv = _player as MpvPlayerAdapter;
+      mpv.mpvVideoOutput = settings.mpvVideoOutput;
+      mpv.mpvVideoOutputUserSet = settings.mpvVideoOutputUserSet;
+      LogService().log(
+        'Player',
+        'MPV 解码配置: ${settings.decodeMode} → $decoders '
+            '| 视频路径=${AppSettings.effectiveMpvVideoOutput(settings.mpvVideoOutput, userSet: settings.mpvVideoOutputUserSet)}',
+      );
       return;
     }
 
@@ -2147,35 +2153,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // FFmpeg 解码线程数：0 = 逻辑核心数 + 1（仅软解回退时生效，硬解忽略）
     _player.setProperty('avcodec.threads', '0');
-  }
-
-  /// HDR 内容强制切 MPV 原生 Surface 直出（三端统一）。
-  ///
-  /// SDR 保持用户当前内核/纹理；只有纹理链路被判定不可用时才由
-  /// [MpvOutputPolicy] 在适配器层切直出。
-  Future<void> _routeHdrToMpvIfNeeded() async {
-    if (_currentEngine == PlayerEngine.mpv || Platform.isIOS) return;
-    final hdr = _hdrContent ||
-        _embyVideoStream?.isHDR == true ||
-        _embyVideoStream?.isDolbyVision == true ||
-        _isHlgContent;
-    var textureUnavailable = false;
-    if (Platform.isAndroid) {
-      final profile = ref.read(deviceProfileProvider);
-      textureUnavailable = profile.eglBroken(
-            eglFaultSeen: eglFaultDetector.fault,
-          ) ||
-          (_is10BitContent && profile.tenBitGlBroken);
-    }
-    if ((!hdr && !textureUnavailable) ||
-        !PlayerEngineFactory.isSupported(PlayerEngine.mpv)) {
-      return;
-    }
-    if (hdr) _hdrContent = true;
-    await _recreateEngineForLoad(PlayerEngine.mpv, ErikaOutputMode.auto);
-    if (textureUnavailable && _player is MpvPlayerAdapter) {
-      (_player as MpvPlayerAdapter).forceNativeSurface = true;
-    }
   }
 
   void _applyMpvContentHints() {
@@ -2779,7 +2756,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? embyLabel
         : (runtimeLabel.isNotEmpty ? runtimeLabel : embyLabel);
     LogService().log('Player',
-        'HDR 内容判定: true（元数据=$embyLabel 运行期=${runtimeLabel.isEmpty ? "-" : runtimeLabel}）→ 自动路由直写档为同载体 GL');
+        'HDR 内容判定: true（元数据=$embyLabel 运行期=${runtimeLabel.isEmpty ? "-" : runtimeLabel}）');
     setState(() {
       _hdrContent = true;
       _hdrType = panelLabel;
@@ -2820,6 +2797,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _currentEngine == PlayerEngine.mpv &&
       _player is MpvPlayerAdapter &&
       (_player as MpvPlayerAdapter).usesNativeSurface;
+
+  /// 调试面板 HDR 直出状态：只对 MPV 有效。
+  String get _mpvHdrDirectStatus {
+    if (_currentEngine != PlayerEngine.mpv || _player is! MpvPlayerAdapter) {
+      return '-（非 MPV）';
+    }
+    return (_player as MpvPlayerAdapter).mpvHdrOutputStatus;
+  }
 
   /// 当前档位是否走 SurfaceView 平台视图通道（普通档或直写档）。
   bool get _usesSurfaceView =>
@@ -3355,7 +3340,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 输出色彩空间：防 player 状态重置丢失 initState 的设置。
       // DV 内容按平台策略（Android HDR10/SDR、Windows 恒 HDR、iOS 不设置）；
       // 其余仅 Android + hdrGlWorkaround 且显示无 HDR 能力时强制 bt709。
-      await _routeHdrToMpvIfNeeded();
       if (!mounted || _disposed) return false;
       _applyOutputColorSpace();
       _isSwitchingMedia = true;
@@ -3521,7 +3505,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // media/prepare/纹理，避免落败调用在赢家流程上叠加渲染操作。
       if (requestId != _playRequestId || !mounted || _disposed) return;
 
-      await _routeHdrToMpvIfNeeded();
       if (requestId != _playRequestId || !mounted || _disposed) return;
       _isSwitchingMedia = true;
       _applyOutputColorSpace();
@@ -7600,6 +7583,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 clockCalibrated: _clockOffset.isCalibrated,
                 voStatus: _voStatus,
                 hdrType: _hdrType,
+                hdrDirectStatus: _mpvHdrDirectStatus,
                 isSinglePlayer: widget.roomCode == null,
                 // 播放状态
                 playbackState: _playbackState,
@@ -7779,12 +7763,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 切换播放内核：保留当前位置/音轨/字幕，失败时提示。
   Future<void> _switchPlayerKernel(PlayerEngine target) async {
-    // HDR 内容必须走 MPV 原生 Surface 直出，用户手动切内核也不能绕过。
-    if (_hdrContent &&
-        target != PlayerEngine.mpv &&
-        PlayerEngineFactory.isSupported(PlayerEngine.mpv)) {
-      target = PlayerEngine.mpv;
-    }
     if (_switchingKernel || _switchingEngine || target == _currentEngine) {
       return;
     }

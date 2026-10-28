@@ -20,6 +20,9 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   final bool clockCalibrated;
   final String voStatus;
   final String hdrType;
+
+  /// MPV HDR 直出状态（Surface/HDR、Surface/tone-map、Texture/tone-map）。
+  final String hdrDirectStatus;
   final bool isSinglePlayer;
 
   // 播放状态
@@ -117,6 +120,7 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     this.clockCalibrated = false,
     required this.voStatus,
     required this.hdrType,
+    this.hdrDirectStatus = '-',
     required this.isSinglePlayer,
     required this.playbackState,
     required this.mediaStatusStr,
@@ -239,8 +243,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                   onTap: () async {
                     await Clipboard.setData(
                         ClipboardData(text: _exportDiagnostics()));
-                    if (mounted)
-                      showAppToast(context, '诊断信息已复制');
+                    if (mounted) showAppToast(context, '诊断信息已复制');
                   },
                   child:
                       const Icon(Icons.copy, color: Colors.white54, size: 16),
@@ -308,6 +311,7 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                       _debugRow('DOVI', 'P${widget.doviProfile}'),
                     if (widget.hdrType != 'SDR')
                       _debugRow('HDR', widget.hdrType),
+                    _debugRow('HDR直出', widget.hdrDirectStatus),
                     // 黑帧分叉取证：null=纹理未创建；非 null 仍黑=无帧合成
                     _debugRow('纹理',
                         '${widget.textureId ?? 'null'} | ${widget.textureSize}'),
@@ -398,7 +402,8 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                           final text = widget.onExportStutter();
                           await Clipboard.setData(ClipboardData(text: text));
                           if (!context.mounted) return;
-                          showAppToast(context, '卡顿诊断已复制到剪贴板', duration: Duration(seconds: 2));
+                          showAppToast(context, '卡顿诊断已复制到剪贴板',
+                              duration: Duration(seconds: 2));
                         },
                       ),
                     ),

@@ -27,7 +27,7 @@ String resolveWindowsHwdec(String mode, {required bool windows}) {
 /// position/duration 走 mpv 的 `time-pos/full`/`duration/full` 观察。
 ///
 /// 与 mdk 适配器的关键差异：
-/// - `nativeHandle` 恒 0；HDR 走原生 Surface，SDR 走 Flutter 纹理；
+/// - `nativeHandle` 恒 0；Surface/Texture 由 MPV 视频路径设置决定；
 /// - mpv 的 `track-list`/`video-params`/`audio-params` 是 **JSON 字符串**
 ///   （原生把 mpv_node 序列化后派发），需 `jsonDecode`；
 /// - 播完判定靠 `eof-reached` 属性 + `MPV_EVENT_END_FILE` 双保险
@@ -48,6 +48,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   MpvSession? _player;
   bool _disposed = false;
   bool _prepared = false;
+  bool _appliedHdrOutput = false;
 
   AdapterPlaybackState _state = AdapterPlaybackState.stopped;
   AdapterMediaStatus _mediaStatus = AdapterMediaStatus.unloaded;
@@ -151,34 +152,119 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   String? _uri;
   Map<String, String> _headers = const {};
 
-  /// 当前媒体是否 HDR：仅用于首帧前纹理尺寸与渲染降采样保护。
+  /// 当前媒体是否 HDR：用于 HDR 输出决策与首帧前纹理尺寸保护。
   bool _hdrContentForMedia = false;
 
-  set hdrContent(bool value) => _hdrContentForMedia = value;
+  set hdrContent(bool value) {
+    if (_hdrContentForMedia == value) return;
+    _hdrContentForMedia = value;
+    unawaited(_refreshHdrOutputForCurrentSession());
+  }
 
   /// 内容是否为 HLG（用于 HDR 直出时选择 target-trc）。
   bool _hlgContentForMedia = false;
-  set hlgContent(bool value) => _hlgContentForMedia = value;
+  set hlgContent(bool value) {
+    if (_hlgContentForMedia == value) return;
+    _hlgContentForMedia = value;
+    unawaited(_refreshHdrOutputForCurrentSession());
+  }
 
   /// SDR 纹理链路不可用时强制原生 Surface。
   bool _forceNativeSurface = false;
   set forceNativeSurface(bool value) => _forceNativeSurface = value;
 
-  /// Windows 显示器是否真正支持 HDR；false 时 Windows 统一走纹理输出，
-  /// 避免原生子 HWND 被 Flutter 窗口遮挡。查询失败按 SDR 处理。
-  bool? _windowsDisplayHdr;
+  /// MPV 视频路径设置：surface/texture。仅 MPV 生效。
+  String _mpvVideoOutput = MpvOutputPolicy.surface;
+  bool _mpvVideoOutputUserSet = false;
+  set mpvVideoOutput(String value) => _mpvVideoOutput = value;
+  set mpvVideoOutputUserSet(bool value) => _mpvVideoOutputUserSet = value;
 
-  Future<bool> _windowsUsesTexture() async {
-    if (defaultTargetPlatform != TargetPlatform.windows) return false;
-    if (_windowsDisplayHdr == null) {
-      try {
-        final caps = await MpvSessionPlatform.queryHdrCapabilities();
-        _windowsDisplayHdr = caps.displayHdr;
-      } catch (_) {
-        _windowsDisplayHdr = false;
-      }
+  bool? _displayHdr;
+  bool _hdrOutputActive = false;
+  String _effectiveMpvVideoOutput = MpvOutputPolicy.surface;
+
+  /// 当前 MPV 是否正在输出 HDR（仅 Surface + HDR 内容 + HDR 显示）。
+  bool get hdrOutputActive => _hdrOutputActive;
+
+  /// 调试面板「HDR 直出」状态。
+  String get mpvHdrOutputStatus {
+    if (_player == null) return '未就绪';
+    final path =
+        _effectiveMpvVideoOutput == MpvOutputPolicy.texture ? '纹理' : 'Surface';
+    if (_effectiveMpvVideoOutput == MpvOutputPolicy.texture) {
+      return '$path · SDR（tone map）';
     }
-    return !(_windowsDisplayHdr ?? false);
+    return _hdrOutputActive ? '$path · HDR 直出' : '$path · SDR（tone map）';
+  }
+
+  Future<bool> _queryDisplayHdr() async {
+    final cached = _displayHdr;
+    if (cached != null) return cached;
+    try {
+      final caps = await MpvSessionPlatform.queryHdrCapabilities();
+      _displayHdr = caps.displayHdr;
+    } catch (_) {
+      _displayHdr = false;
+    }
+    return _displayHdr ?? false;
+  }
+
+  String _resolveMpvVideoOutput() => MpvOutputPolicy.effectiveVideoOutput(
+        configured: _mpvVideoOutput,
+        userSet: _mpvVideoOutputUserSet,
+        windows: defaultTargetPlatform == TargetPlatform.windows,
+      );
+
+  Future<void> _applyHdrOutputProperties(bool enabled) async {
+    final player = _player;
+    if (player == null) return;
+    final props = enabled
+        ? <String, String>{
+            'target-colorspace-hint': 'yes',
+            'target-prim': 'bt.2020',
+            'target-trc': _hlgContentForMedia ? 'hlg' : 'pq',
+            'hdr-compute-peak': 'auto',
+            'tone-mapping': 'clip',
+            if (defaultTargetPlatform == TargetPlatform.windows)
+              'd3d11-output-format': 'rgb10_a2',
+          }
+        : <String, String>{
+            'target-colorspace-hint': 'no',
+            'target-prim': 'auto',
+            'target-trc': 'auto',
+            if (defaultTargetPlatform == TargetPlatform.windows)
+              'd3d11-output-format': 'auto',
+          };
+    for (final entry in props.entries) {
+      try {
+        await player.setProperty(entry.key, entry.value);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _refreshHdrOutputForCurrentSession() async {
+    if (_disposed || !_prepared) return;
+    final player = _player;
+    if (player == null || !player.usesNativeSurface) return;
+    final effective = _resolveMpvVideoOutput();
+    if (effective != MpvOutputPolicy.surface) return;
+    final decision = MpvOutputPolicy.resolve(
+      videoOutput: effective,
+      contentHdr: _hdrContentForMedia,
+      displayHdr: await _queryDisplayHdr(),
+      forceNativeSurface: _forceNativeSurface,
+    );
+    if (!decision.nativeSurface || decision.hdrOutput == _hdrOutputActive) {
+      return;
+    }
+    await _applyHdrOutputProperties(decision.hdrOutput);
+    _hdrOutputActive = decision.hdrOutput;
+    LogService().log(
+      'mpv',
+      'HDR 输出更新: ${decision.hdrOutput ? "HDR 直出" : "SDR tone map"} '
+          '(content=${_hdrContentForMedia ? "HDR" : "SDR"}, '
+          'display=${decision.hdrOutput || !_hdrContentForMedia ? "-" : "SDR"})',
+    );
   }
 
   /// 当前输出是否走原生 Surface（平台视图）。
@@ -212,9 +298,15 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // v1.2.73 起原生 create 内同步完成 initialize（不再等 surface），
     // 所以这里的 setProperty/open 立即真正生效。
     var player = _player;
-    final windowsTexture = await _windowsUsesTexture();
-    final nativeSurface =
-        !windowsTexture && (_hdrContentForMedia || _forceNativeSurface);
+    final effectiveOutput = _resolveMpvVideoOutput();
+    final displayHdr = await _queryDisplayHdr();
+    final decision = MpvOutputPolicy.resolve(
+      videoOutput: effectiveOutput,
+      contentHdr: _hdrContentForMedia,
+      displayHdr: displayHdr,
+      forceNativeSurface: _forceNativeSurface,
+    );
+    final nativeSurface = decision.nativeSurface;
     if (player != null && player.usesNativeSurface != nativeSurface) {
       // HDR 状态在运行期翻转时，渲染目标必须重建：纹理与原生 Surface
       // 不能在同一 mpv 会话里热切换。
@@ -223,9 +315,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       await player.dispose();
       player = null;
       _player = null;
+      _appliedHdrOutput = false;
     }
     if (player == null) {
-      // HDR 走原生 Surface，初始尺寸只作为提示；SDR 保留纹理初始缓冲。
+      // 初始尺寸只作为提示；实际 Surface/Texture 由设置决定。
       final initW = _hdrContentForMedia ? 1280 : 1920;
       final initH = _hdrContentForMedia ? 720 : 1080;
       player = await MpvSessionPlatform.create(
@@ -233,8 +326,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         width: initW,
         height: initH,
         nativeSurface: nativeSurface,
-        hdr: windowsTexture ? false : _hdrContentForMedia,
-        hlg: windowsTexture ? false : _hlgContentForMedia,
+        hdr: decision.hdrOutput,
+        hlg: decision.hdrOutput && _hlgContentForMedia,
       );
       if (_disposed) {
         // 创建期间已被销毁：立刻回收，避免泄漏。
@@ -245,9 +338,16 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       LogService().log(
           'mpv',
           'session created: native=${player.usesNativeSurface} '
-              'texture=${player.textureId}');
+              'texture=${player.textureId} path=$effectiveOutput '
+              'hdr=${decision.hdrOutput} displayHdr=$displayHdr');
       _ensureEventSubscription();
+      _appliedHdrOutput = decision.hdrOutput;
+    } else if (_appliedHdrOutput != decision.hdrOutput) {
+      await _applyHdrOutputProperties(decision.hdrOutput);
+      _appliedHdrOutput = decision.hdrOutput;
     }
+    _effectiveMpvVideoOutput = effectiveOutput;
+    _hdrOutputActive = decision.hdrOutput;
 
     // 渲染通道就绪标记：v1.2.80 起原生 create 自注册 Flutter 纹理并返回
     // 真实纹理 id（>0 = 纹理渲染模式，上层挂 Texture）；0 = 回退平台视图

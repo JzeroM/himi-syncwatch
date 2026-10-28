@@ -199,6 +199,13 @@ class AppSettings {
   /// 手动选择，用于 texture 档对照实验与用户自主逃生）。
   final bool videoOutputUserSet;
 
+  /// MPV 专属视频路径：'surface' = 原生 Surface 直出；'texture' = Flutter 纹理。
+  /// 默认值统一存 'surface'，Windows 未手动设置时按 'texture' 生效。
+  final String mpvVideoOutput;
+
+  /// 用户是否手动设置过 MPV 视频路径。
+  final bool mpvVideoOutputUserSet;
+
   /// 渲染兼容模式（实验，Android）：以 mdk 全局选项启用
   /// `gl.yuv_sampler=1`（mdk wiki 注明 for android/rockchip 硬解渲染）
   /// 与 `surfacetexture.glcontext=1`（SurfaceTexture 无有效上下文时
@@ -374,6 +381,8 @@ class AppSettings {
     this.tvModeUserSet = false,
     this.videoOutput = 'texture',
     this.videoOutputUserSet = false,
+    this.mpvVideoOutput = 'surface',
+    this.mpvVideoOutputUserSet = false,
     this.renderCompatMode = false,
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
@@ -490,6 +499,8 @@ class AppSettings {
     bool? tvModeUserSet,
     String? videoOutput,
     bool? videoOutputUserSet,
+    String? mpvVideoOutput,
+    bool? mpvVideoOutputUserSet,
     bool? renderCompatMode,
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
@@ -565,6 +576,9 @@ class AppSettings {
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
+      mpvVideoOutput: mpvVideoOutput ?? this.mpvVideoOutput,
+      mpvVideoOutputUserSet:
+          mpvVideoOutputUserSet ?? this.mpvVideoOutputUserSet,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
       videoDecoderNoImage: videoDecoderNoImage ?? this.videoDecoderNoImage,
       videoDecoderLowLatency:
@@ -658,6 +672,8 @@ class AppSettings {
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
         'videoOutputUserSet': videoOutputUserSet,
+        'mpvVideoOutput': mpvVideoOutput,
+        'mpvVideoOutputUserSet': mpvVideoOutputUserSet,
         'renderCompatMode': renderCompatMode,
         'videoDecoderNoImage': videoDecoderNoImage,
         'videoDecoderLowLatency': videoDecoderLowLatency,
@@ -815,6 +831,12 @@ class AppSettings {
           : 'texture',
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
+      // 旧数据无此字段 → 默认 Surface；Windows 未手动设置时按 Texture 生效
+      mpvVideoOutput:
+          const ['surface', 'texture'].contains(json['mpvVideoOutput'])
+              ? json['mpvVideoOutput'] as String
+              : 'surface',
+      mpvVideoOutputUserSet: json['mpvVideoOutputUserSet'] as bool? ?? false,
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 image=1）
       videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
@@ -899,6 +921,25 @@ class AppSettings {
     'surfaceView': 'SurfaceView',
     'surfaceViewDirect': 'SurfaceView 直写',
   };
+
+  static const mpvVideoOutputLabels = {
+    'surface': 'Surface',
+    'texture': '纹理',
+  };
+
+  /// MPV 实际生效的视频路径：Windows 未手动设置时默认纹理，
+  /// Android/鸿蒙默认 Surface。
+  static String effectiveMpvVideoOutput(
+    String configured, {
+    required bool userSet,
+    TargetPlatform? platform,
+  }) {
+    if ((platform ?? defaultTargetPlatform) == TargetPlatform.windows &&
+        !userSet) {
+      return 'texture';
+    }
+    return configured == 'texture' ? 'texture' : 'surface';
+  }
 
   /// SurfaceView 系列档位（载体=SurfaceView）：普通档与直写档。
   static bool isSurfaceViewMode(String output) =>

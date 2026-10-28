@@ -67,6 +67,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? tvSyncEnabled,
     bool? homeCarousel,
     String? videoOutput,
+    String? mpvVideoOutput,
     bool? renderCompatMode,
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
@@ -143,6 +144,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       videoOutput: videoOutput,
       // 手动改动视频输出即标记「用户已设置」，EGL 故障归一不再覆盖
       videoOutputUserSet: videoOutput != null ? true : null,
+      mpvVideoOutput: mpvVideoOutput,
+      mpvVideoOutputUserSet: mpvVideoOutput != null ? true : null,
       renderCompatMode: renderCompatMode,
       videoDecoderNoImage: videoDecoderNoImage,
       videoDecoderLowLatency: videoDecoderLowLatency,

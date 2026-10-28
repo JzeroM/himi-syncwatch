@@ -3,37 +3,52 @@ import 'package:himi_mpv_core/himi_mpv_core.dart';
 
 void main() {
   group('MpvOutputPolicy', () {
-    test('HDR 内容始终走原生 Surface', () {
-      expect(
-        MpvOutputPolicy.useNativeSurface(
-          contentHdr: true,
-          textureCapable: true,
-        ),
-        isTrue,
+    test('Android/鸿蒙 Surface + HDR 内容 + HDR 显示才直出', () {
+      final d = MpvOutputPolicy.resolve(
+        videoOutput: MpvOutputPolicy.surface,
+        contentHdr: true,
+        displayHdr: true,
       );
-      expect(
-        MpvOutputPolicy.useNativeSurface(
-          contentHdr: true,
-          textureCapable: false,
-        ),
-        isTrue,
-      );
+      expect(d.nativeSurface, isTrue);
+      expect(d.hdrOutput, isTrue);
     });
 
-    test('SDR 优先纹理，纹理不可用才直出', () {
+    test('Surface + HDR 内容 + 非 HDR 显示降级为 SDR tone map', () {
+      final d = MpvOutputPolicy.resolve(
+        videoOutput: MpvOutputPolicy.surface,
+        contentHdr: true,
+        displayHdr: false,
+      );
+      expect(d.nativeSurface, isTrue);
+      expect(d.hdrOutput, isFalse);
+    });
+
+    test('Texture 永远不请求 HDR 输出', () {
+      final d = MpvOutputPolicy.resolve(
+        videoOutput: MpvOutputPolicy.texture,
+        contentHdr: true,
+        displayHdr: true,
+      );
+      expect(d.nativeSurface, isFalse);
+      expect(d.hdrOutput, isFalse);
+    });
+
+    test('Windows 未手动设置时默认纹理', () {
       expect(
-        MpvOutputPolicy.useNativeSurface(
-          contentHdr: false,
-          textureCapable: true,
+        MpvOutputPolicy.effectiveVideoOutput(
+          configured: 'surface',
+          userSet: false,
+          windows: true,
         ),
-        isFalse,
+        'texture',
       );
       expect(
-        MpvOutputPolicy.useNativeSurface(
-          contentHdr: false,
-          textureCapable: false,
+        MpvOutputPolicy.effectiveVideoOutput(
+          configured: 'surface',
+          userSet: true,
+          windows: true,
         ),
-        isTrue,
+        'surface',
       );
     });
 

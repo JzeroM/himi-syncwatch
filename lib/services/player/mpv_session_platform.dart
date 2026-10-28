@@ -2,14 +2,13 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:himi_mpv_android/himi_mpv_android.dart';
-import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'package:himi_mpv_ohos/himi_mpv_ohos.dart';
 import 'package:himi_mpv_windows/himi_mpv_windows.dart';
 
 /// 三端 MPV 会话工厂。
 ///
-/// HDR 直出统一走原生 Surface：鸿蒙 XComponent、Android SurfaceView、
-/// Windows 子 HWND。SDR 是否走直出由上层 [MpvOutputPolicy] 决定。
+/// Surface 模式：鸿蒙 XComponent、Android SurfaceView、Windows 子 HWND；
+/// Texture 模式由各平台会话创建 Flutter 纹理。具体路径由 MPV 设置决定。
 class MpvSessionPlatform {
   const MpvSessionPlatform._();
 

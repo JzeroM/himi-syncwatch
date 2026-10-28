@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 export 'himi_mpv_android_surface_view.dart';
 
@@ -16,6 +17,7 @@ class HimiMpvAndroidSession implements MpvSession {
     required this.width,
     required this.height,
     required this.hwdecMode,
+    required this.nativeSurface,
     required this.hdr,
     required this.hlg,
   });
@@ -27,6 +29,7 @@ class HimiMpvAndroidSession implements MpvSession {
   final int width;
   final int height;
   final String hwdecMode;
+  final bool nativeSurface;
   final bool hdr;
   final bool hlg;
 
@@ -39,7 +42,10 @@ class HimiMpvAndroidSession implements MpvSession {
   StreamSubscription<bool>? _completedSub;
 
   Player? _player;
+  VideoController? _controller;
+  VoidCallback? _textureIdListener;
   int _surfaceHandle = 0;
+  int _textureId = 0;
   bool _disposed = false;
   int _positionMs = 0;
   int _durationMs = 0;
@@ -67,6 +73,7 @@ class HimiMpvAndroidSession implements MpvSession {
       width: width,
       height: height,
       hwdecMode: hwdecMode,
+      nativeSurface: nativeSurface,
       hdr: hdr,
       hlg: hlg,
     );
@@ -91,15 +98,19 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   @override
-  int get textureId => 0;
+  int get textureId => _textureId;
 
   @override
-  bool get usesNativeSurface => true;
+  bool get usesNativeSurface => nativeSurface;
 
   @override
   Stream<Map<Object?, Object?>> get events => _events.stream;
 
   Future<void> _start() async {
+    if (!nativeSurface) {
+      await _ensurePlayer();
+      return;
+    }
     _surfaceSub = _surfaceEvents.receiveBroadcastStream().listen((raw) {
       if (raw is! Map) return;
       final type = raw['type'];
@@ -135,18 +146,19 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   Future<void> _ensurePlayer() async {
-    if (_disposed || _surfaceHandle == 0 || _player != null) return;
+    if (_disposed || _player != null) return;
+    if (nativeSurface && _surfaceHandle == 0) return;
     final options = <String, String>{
-      'vo': 'gpu-next',
+      if (nativeSurface) 'vo': 'gpu-next',
       'vid': 'auto',
       'aid': 'auto',
       'force-window': 'no',
-      'wid': '$_surfaceHandle',
+      if (nativeSurface) 'wid': '$_surfaceHandle',
       // The stock Android libmpv build used by media_kit is built without
       // Vulkan (libplacebo HAVE_VULKAN=0). Use the EGL/GLES Android context;
       // the HDR data-space patch tags the native window as BT.2020 PQ/HLG.
-      'gpu-api': 'opengl',
-      'gpu-context': 'android',
+      if (nativeSurface) 'gpu-api': 'opengl',
+      if (nativeSurface) 'gpu-context': 'android',
       'hwdec': hwdecMode == 'software' ? 'no' : 'auto',
       'hwdec-software-fallback': 'yes',
       'cache': 'yes',
@@ -156,7 +168,7 @@ class HimiMpvAndroidSession implements MpvSession {
       'sub-visibility': 'yes',
       'osd-level': '0',
       'osc': 'no',
-      if (hdr) ...<String, String>{
+      if (hdr && nativeSurface) ...<String, String>{
         'target-colorspace-hint': 'yes',
         'target-prim': 'bt.2020',
         'target-trc': hlg ? 'hlg' : 'pq',
@@ -166,14 +178,41 @@ class HimiMpvAndroidSession implements MpvSession {
     };
     final player = Player(
       configuration: PlayerConfiguration(
-        vo: 'gpu-next',
-        wid: _surfaceHandle,
+        vo: nativeSurface ? 'gpu-next' : 'libmpv',
+        wid: nativeSurface ? _surfaceHandle : null,
         options: options,
         libass: true,
         logLevel: MPVLogLevel.error,
       ),
     );
     _player = player;
+    if (!nativeSurface) {
+      final controller = VideoController(
+        player,
+        configuration: VideoControllerConfiguration(
+          vo: 'libmpv',
+          hwdec: 'auto-copy',
+          width: width,
+          height: height,
+        ),
+      );
+      _controller = controller;
+      void updateTextureId() {
+        final id = controller.id.value;
+        if (id != null && id > 0 && id != _textureId) {
+          _textureId = id;
+          _emit('texture-id', id);
+        }
+      }
+
+      _textureIdListener = updateTextureId;
+      controller.id.addListener(updateTextureId);
+      try {
+        _textureId = await _waitForTextureId(controller);
+      } catch (_) {
+        rethrow;
+      }
+    }
     _wire(player);
     try {
       await (player.platform as dynamic)?.setProperty?.call('vid', 'auto');
@@ -191,6 +230,23 @@ class HimiMpvAndroidSession implements MpvSession {
       _pendingUrl = null;
       await _openNow(pending);
     }
+  }
+
+  Future<int> _waitForTextureId(VideoController controller) {
+    final existing = controller.id.value;
+    if (existing != null && existing > 0) return Future<int>.value(existing);
+    final completer = Completer<int>();
+    void listener() {
+      final id = controller.id.value;
+      if (id != null && id > 0 && !completer.isCompleted) {
+        completer.complete(id);
+      }
+    }
+
+    controller.id.addListener(listener);
+    return completer.future.timeout(const Duration(seconds: 10)).whenComplete(
+          () => controller.id.removeListener(listener),
+        );
   }
 
   void _wire(Player player) {
@@ -350,7 +406,12 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   @override
-  Future<void> resizeTexture(int width, int height) async {}
+  Future<void> resizeTexture(int width, int height) async {
+    if (nativeSurface || width <= 0 || height <= 0) return;
+    try {
+      await _controller?.setSize(width: width, height: height);
+    } catch (_) {}
+  }
 
   @override
   Future<Uint8List?> screenshot() async {
@@ -420,6 +481,14 @@ class HimiMpvAndroidSession implements MpvSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    final controller = _controller;
+    final listener = _textureIdListener;
+    if (controller != null && listener != null) {
+      controller.id.removeListener(listener);
+    }
+    _controller = null;
+    _textureIdListener = null;
+    _textureId = 0;
     await _surfaceSub?.cancel();
     await _positionSub?.cancel();
     await _durationSub?.cancel();

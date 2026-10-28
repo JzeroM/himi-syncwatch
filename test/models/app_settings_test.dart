@@ -1406,6 +1406,51 @@ void main() {
     });
   });
 
+  group('mpvVideoOutput（MPV 视频路径）', () {
+    test('默认 Surface', () {
+      expect(const AppSettings().mpvVideoOutput, 'surface');
+      expect(const AppSettings().mpvVideoOutputUserSet, isFalse);
+      expect(AppSettings.fromJson(const {}).mpvVideoOutput, 'surface');
+    });
+
+    test('toJson/fromJson 往返保留用户选择', () {
+      const s = AppSettings(
+        mpvVideoOutput: 'texture',
+        mpvVideoOutputUserSet: true,
+      );
+      final decoded = AppSettings.fromJson(s.toJson());
+      expect(decoded.mpvVideoOutput, 'texture');
+      expect(decoded.mpvVideoOutputUserSet, isTrue);
+    });
+
+    test('Windows 未手动设置默认纹理，手动设置尊重用户', () {
+      expect(
+        AppSettings.effectiveMpvVideoOutput(
+          'surface',
+          userSet: false,
+          platform: TargetPlatform.windows,
+        ),
+        'texture',
+      );
+      expect(
+        AppSettings.effectiveMpvVideoOutput(
+          'surface',
+          userSet: true,
+          platform: TargetPlatform.windows,
+        ),
+        'surface',
+      );
+      expect(
+        AppSettings.effectiveMpvVideoOutput(
+          'surface',
+          userSet: false,
+          platform: TargetPlatform.android,
+        ),
+        'surface',
+      );
+    });
+  });
+
   group('playerKernel（播放内核）', () {
     test('旧数据缺字段回退空串（平台默认）', () {
       expect(AppSettings.fromJson(const {}).playerKernel, '');

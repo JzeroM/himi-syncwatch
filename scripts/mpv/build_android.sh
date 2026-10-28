@@ -68,6 +68,17 @@ else
   die "DoVi 补丁无法应用"
 fi
 
+log "应用 Android HDR colorspace 补丁"
+HDR_PATCH="$SCRIPT_DIR/patches/android-hdr-colorspace.patch"
+if git -C "$SCRIPTS/deps/mpv" apply --check "$HDR_PATCH"; then
+  git -C "$SCRIPTS/deps/mpv" apply "$HDR_PATCH"
+  log "HDR colorspace 补丁已应用"
+elif git -C "$SCRIPTS/deps/mpv" apply --check --reverse "$HDR_PATCH"; then
+  log "HDR colorspace 补丁已应用"
+else
+  die "Android HDR colorspace 补丁无法应用"
+fi
+
 log "构建 Android 依赖 ($ABI)"
 (
   cd "$SCRIPTS"
@@ -77,6 +88,8 @@ log "构建 Android 依赖 ($ABI)"
 
 PREFIX="$SCRIPTS/prefix/$BUILD_ARCH"
 require_file "$PREFIX/lib/libmpv.so"
+# libmpv.so 发布前会被 strip，HDR 符号只在未 strip 的前缀产物中可见。
+grep_binary "$PREFIX/lib/libmpv.so" 'vo_android_preferred_csp' || die "libmpv 缺少 Android HDR colorspace 支持"
 
 NDK="$SCRIPTS/sdk/android-ndk-$ANDROID_NDK"
 NDK_TOOLCHAIN=$(find "$NDK/toolchains/llvm/prebuilt" -maxdepth 1 -mindepth 1 -type d | head -1)
