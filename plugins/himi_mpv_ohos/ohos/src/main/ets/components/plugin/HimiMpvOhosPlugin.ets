@@ -266,7 +266,10 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
             const hdrFormats: number[] = d.hdrFormats ?? [];
             if (hdrFormats.includes(2)) formats.push('hdr10');
             if (hdrFormats.includes(1)) formats.push('hlg');
-            if (hdrFormats.includes(3)) formats.push('dolbyVision');
+            // 鸿蒙 HDRFormat: 3 = HDR_VIVID，不是 Dolby Vision。
+            if (hdrFormats.includes(3)) formats.push('hdrVivid');
+            hilog.info(DOMAIN, TAG, 'display hdrFormats: %{public}s',
+              JSON.stringify(hdrFormats));
           } catch (e) {
             hilog.error(DOMAIN, TAG, 'queryHdrCapabilities failed: %{public}s', String(e));
           }

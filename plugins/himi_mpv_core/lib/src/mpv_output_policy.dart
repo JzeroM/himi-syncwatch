@@ -3,6 +3,7 @@ class MpvHdrCapabilities {
   const MpvHdrCapabilities({
     this.hdr10 = false,
     this.hlg = false,
+    this.hdrVivid = false,
     this.displayHdr = false,
     this.textureCapable = true,
     this.error,
@@ -10,6 +11,7 @@ class MpvHdrCapabilities {
 
   final bool hdr10;
   final bool hlg;
+  final bool hdrVivid;
   final bool displayHdr;
 
   /// 当前平台/设备的纹理输出链路是否可靠（SDR 用）。
@@ -17,7 +19,7 @@ class MpvHdrCapabilities {
 
   final String? error;
 
-  bool get hdrCapable => displayHdr || hdr10 || hlg;
+  bool get hdrCapable => displayHdr || hdr10 || hlg || hdrVivid;
 
   static const unknown = MpvHdrCapabilities();
 }

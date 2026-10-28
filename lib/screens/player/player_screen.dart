@@ -2474,6 +2474,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// setDecoders(surface) 在此重开解码器）后再起播。
   /// 非 SurfaceView 档立即返回 true。
   Future<bool> _waitSurfaceCreated() async {
+    if (_usesMpvNativeSurface) return true;
     if (!_usesSurfaceView) return true;
     return PlayerScreen.waitUntil(() => _surfaceViewCreated || !mounted);
   }
@@ -2798,6 +2799,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player is MpvPlayerAdapter &&
       (_player as MpvPlayerAdapter).usesNativeSurface;
 
+  /// MPV 实际视频路径（用于诊断和切换判断）。
+  String get _mpvActualVideoPath {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).usesNativeSurface
+          ? 'surface'
+          : 'texture';
+    }
+    return _effectiveVideoOutput();
+  }
+
   /// 调试面板 HDR 直出状态：只对 MPV 有效。
   String get _mpvHdrDirectStatus {
     if (_currentEngine != PlayerEngine.mpv || _player is! MpvPlayerAdapter) {
@@ -2973,6 +2984,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 视频流为空），此时纹理恒为 null，UI 永远转圈。
   Future<void> _ensureTexture() async {
     if (!mounted || _disposed) return;
+    // MPV 原生 Surface 由 MpvSession 自己管理，不走 Flutter 纹理。
+    if (_usesMpvNativeSurface) return;
     final mode = _effectiveVideoOutput();
 
     if (_usesSurfaceView) {
@@ -7609,7 +7622,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 audioFilter: _audioFilterText,
                 textureId: _player.textureId.value,
                 textureSize: _textureSizeText,
-                videoOutput: _effectiveVideoOutput(),
+                videoOutput: _mpvActualVideoPath,
                 renderTarget: _renderTargetDesc,
                 videoFilter: _videoFilterText,
                 snapshotInfo: _snapshotInfo,

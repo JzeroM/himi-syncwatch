@@ -80,7 +80,10 @@ class HimiMpvPlayer implements MpvSession {
       return MpvHdrCapabilities(
         hdr10: formats.contains('hdr10'),
         hlg: formats.contains('hlg'),
-        displayHdr: formats.isNotEmpty,
+        hdrVivid: formats.contains('hdrVivid'),
+        displayHdr: formats.contains('hdr10') ||
+            formats.contains('hlg') ||
+            formats.contains('hdrVivid'),
       );
     } catch (e) {
       return MpvHdrCapabilities(error: '$e');

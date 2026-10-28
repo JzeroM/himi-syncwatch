@@ -22,6 +22,10 @@ class HimiMpvSurfaceView(context: Context, private val viewId: Int) :
 
     init {
         holder.addCallback(this)
+        // SurfaceView 在 Flutter hybrid composition 的 PlatformViewWrapper
+        // 下方时会被窗口表面遮住。MediaOverlay 让它位于其它 SurfaceView
+        // 之上，但仍低于 Flutter 控件窗口。
+        setZOrderMediaOverlay(true)
         setBackgroundColor(android.graphics.Color.BLACK)
     }
 
