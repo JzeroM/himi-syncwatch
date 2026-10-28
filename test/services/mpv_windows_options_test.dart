@@ -44,6 +44,21 @@ void main() {
     });
   });
 
+  group('buildWindowsMpvTextureOptions', () {
+    test('纹理输出不启用 D3D11 原生窗口参数', () {
+      final options = buildWindowsMpvTextureOptions(hdr: true, hlg: false);
+
+      expect(options['vid'], 'auto');
+      expect(options['aid'], 'auto');
+      expect(options['hwdec'], 'auto-copy');
+      expect(options.containsKey('vo'), isFalse);
+      expect(options.containsKey('gpu-api'), isFalse);
+      expect(options.containsKey('gpu-context'), isFalse);
+      expect(options.containsKey('d3d11-output-format'), isFalse);
+      expect(options['target-colorspace-hint'], 'no');
+    });
+  });
+
   group('parseWindowsMpvOptionOverrides', () {
     test('只接受白名单键并忽略注释和空值', () {
       final parsed = parseWindowsMpvOptionOverrides([

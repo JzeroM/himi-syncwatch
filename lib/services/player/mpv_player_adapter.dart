@@ -164,6 +164,23 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   bool _forceNativeSurface = false;
   set forceNativeSurface(bool value) => _forceNativeSurface = value;
 
+  /// Windows 显示器是否真正支持 HDR；false 时 Windows 统一走纹理输出，
+  /// 避免原生子 HWND 被 Flutter 窗口遮挡。查询失败按 SDR 处理。
+  bool? _windowsDisplayHdr;
+
+  Future<bool> _windowsUsesTexture() async {
+    if (defaultTargetPlatform != TargetPlatform.windows) return false;
+    if (_windowsDisplayHdr == null) {
+      try {
+        final caps = await MpvSessionPlatform.queryHdrCapabilities();
+        _windowsDisplayHdr = caps.displayHdr;
+      } catch (_) {
+        _windowsDisplayHdr = false;
+      }
+    }
+    return !(_windowsDisplayHdr ?? false);
+  }
+
   /// 当前输出是否走原生 Surface（平台视图）。
   bool get usesNativeSurface => _player?.usesNativeSurface ?? false;
 
@@ -195,7 +212,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // v1.2.73 起原生 create 内同步完成 initialize（不再等 surface），
     // 所以这里的 setProperty/open 立即真正生效。
     var player = _player;
-    final nativeSurface = _hdrContentForMedia || _forceNativeSurface;
+    final windowsTexture = await _windowsUsesTexture();
+    final nativeSurface =
+        !windowsTexture && (_hdrContentForMedia || _forceNativeSurface);
     if (player != null && player.usesNativeSurface != nativeSurface) {
       // HDR 状态在运行期翻转时，渲染目标必须重建：纹理与原生 Surface
       // 不能在同一 mpv 会话里热切换。
@@ -214,8 +233,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         width: initW,
         height: initH,
         nativeSurface: nativeSurface,
-        hdr: _hdrContentForMedia,
-        hlg: _hlgContentForMedia,
+        hdr: windowsTexture ? false : _hdrContentForMedia,
+        hlg: windowsTexture ? false : _hlgContentForMedia,
       );
       if (_disposed) {
         // 创建期间已被销毁：立刻回收，避免泄漏。

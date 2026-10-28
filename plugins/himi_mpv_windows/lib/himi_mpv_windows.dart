@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import 'src/windows_mpv_log.dart';
 
@@ -48,6 +49,35 @@ Map<String, String> buildWindowsMpvOptions({
         'target-trc': hlg ? 'hlg' : 'pq',
         'hdr-compute-peak': 'auto',
         'tone-mapping': 'clip',
+      },
+    };
+
+/// Windows MPV 纹理输出 options。
+///
+/// 使用 media_kit_video 的 render API 把 libmpv 画面注册成 Flutter 纹理，
+/// 避免 Windows 原生子 HWND 被 Flutter 不透明窗口遮挡。HDR 内容在此路径
+/// 由 mpv 色调映射到 SDR；原生 HDR 直出仍保留在 [buildWindowsMpvOptions]。
+Map<String, String> buildWindowsMpvTextureOptions({
+  required bool hdr,
+  required bool hlg,
+}) =>
+    <String, String>{
+      'vid': 'auto',
+      'aid': 'auto',
+      'hwdec': 'auto-copy',
+      'hwdec-software-fallback': 'yes',
+      'cache': 'yes',
+      'cache-on-disk': 'no',
+      'msg-level':
+          'all=warn,vo=debug,gpu=debug,vd=debug,ao=debug,ao/wasapi=debug,af=debug,cplayer=debug',
+      'demuxer-max-bytes': '${256 * 1024 * 1024}',
+      'demuxer-max-back-bytes': '${128 * 1024 * 1024}',
+      'sub-ass': 'yes',
+      'sub-visibility': 'yes',
+      'osd-level': '0',
+      'osc': 'no',
+      if (hdr) ...<String, String>{
+        'target-colorspace-hint': 'no',
       },
     };
 
@@ -139,6 +169,7 @@ class HimiMpvWindowsSession implements MpvSession {
     required this.width,
     required this.height,
     required this.hwdecMode,
+    required this.nativeSurface,
     required this.hdr,
     required this.hlg,
   });
@@ -150,6 +181,7 @@ class HimiMpvWindowsSession implements MpvSession {
   final int width;
   final int height;
   final String hwdecMode;
+  final bool nativeSurface;
   final bool hdr;
   final bool hlg;
 
@@ -166,7 +198,9 @@ class HimiMpvWindowsSession implements MpvSession {
   bool _diagInFlight = false;
 
   Player? _player;
+  VideoController? _controller;
   int _surfaceHandle = 0;
+  int _textureId = 0;
   Map<String, String> _optionOverrides = const <String, String>{};
   bool _disposed = false;
   int _positionMs = 0;
@@ -195,6 +229,7 @@ class HimiMpvWindowsSession implements MpvSession {
       width: width,
       height: height,
       hwdecMode: hwdecMode,
+      nativeSurface: nativeSurface,
       hdr: hdr,
       hlg: hlg,
     );
@@ -219,10 +254,10 @@ class HimiMpvWindowsSession implements MpvSession {
   }
 
   @override
-  int get textureId => 0;
+  int get textureId => _textureId;
 
   @override
-  bool get usesNativeSurface => true;
+  bool get usesNativeSurface => nativeSurface && _textureId == 0;
 
   @override
   Stream<Map<Object?, Object?>> get events => _events.stream;
@@ -230,6 +265,10 @@ class HimiMpvWindowsSession implements MpvSession {
   Future<void> _start() async {
     _optionOverrides = _loadOptionOverrides();
     _log('session start overrides=$_optionOverrides');
+    if (!nativeSurface) {
+      await _ensurePlayer();
+      return;
+    }
     _surfaceSub = _surfaceEvents.receiveBroadcastStream().listen((raw) {
       if (raw is! Map) return;
       if (raw['type'] == 'surface') {
@@ -269,23 +308,46 @@ class HimiMpvWindowsSession implements MpvSession {
   }
 
   Future<void> _ensurePlayer() async {
-    if (_disposed || _surfaceHandle == 0 || _player != null) return;
-    _log('creating Player hwnd=$_surfaceHandle hdr=$hdr');
+    if (_disposed || _player != null) return;
+    if (nativeSurface && _surfaceHandle == 0) return;
+    _log('creating Player hwnd=$_surfaceHandle hdr=$hdr '
+        'native=$nativeSurface');
     final options = <String, String>{
-      ...buildWindowsMpvOptions(hdr: hdr, hlg: hlg),
+      ...(nativeSurface
+          ? buildWindowsMpvOptions(hdr: hdr, hlg: hlg)
+          : buildWindowsMpvTextureOptions(hdr: hdr, hlg: hlg)),
       ..._optionOverrides,
     };
     _log('init options=$options');
     final player = Player(
       configuration: PlayerConfiguration(
-        vo: _optionOverrides['vo'] ?? 'gpu-next',
-        wid: _surfaceHandle,
+        vo: nativeSurface ? (_optionOverrides['vo'] ?? 'gpu-next') : 'libmpv',
+        wid: nativeSurface ? _surfaceHandle : null,
         options: options,
         libass: true,
         logLevel: MPVLogLevel.debug,
       ),
     );
     _player = player;
+    if (!nativeSurface) {
+      final controller = VideoController(
+        player,
+        configuration: VideoControllerConfiguration(
+          vo: 'libmpv',
+          hwdec: 'auto-copy',
+          width: width,
+          height: height,
+        ),
+      );
+      _controller = controller;
+      try {
+        _textureId = await _waitForTextureId(controller);
+        _log('texture id=$_textureId');
+      } catch (e) {
+        _log('texture init failed: $e');
+        rethrow;
+      }
+    }
     _log('Player created');
     _wire(player);
     _startDiagnostics();
@@ -318,6 +380,23 @@ class HimiMpvWindowsSession implements MpvSession {
       _pendingUrl = null;
       await _openNow(pending);
     }
+  }
+
+  Future<int> _waitForTextureId(VideoController controller) {
+    final existing = controller.id.value;
+    if (existing != null && existing > 0) return Future<int>.value(existing);
+    final completer = Completer<int>();
+    void listener() {
+      final id = controller.id.value;
+      if (id != null && id > 0 && !completer.isCompleted) {
+        completer.complete(id);
+      }
+    }
+
+    controller.id.addListener(listener);
+    return completer.future.timeout(const Duration(seconds: 10)).whenComplete(
+          () => controller.id.removeListener(listener),
+        );
   }
 
   void _startDiagnostics() {
@@ -568,7 +647,12 @@ class HimiMpvWindowsSession implements MpvSession {
   }
 
   @override
-  Future<void> resizeTexture(int width, int height) async {}
+  Future<void> resizeTexture(int width, int height) async {
+    if (nativeSurface || width <= 0 || height <= 0) return;
+    try {
+      await _controller?.setSize(width: width, height: height);
+    } catch (_) {}
+  }
 
   @override
   Future<Uint8List?> screenshot() async {
@@ -654,6 +738,8 @@ class HimiMpvWindowsSession implements MpvSession {
       _log('player dispose failed: $e');
     }
     _player = null;
+    _controller = null;
+    _textureId = 0;
     // player 已释放后才允许销毁 HWND，避免 libmpv 继续访问已销毁窗口。
     try {
       await _methods.invokeMethod<void>('destroySurface');
