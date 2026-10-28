@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -66,7 +69,15 @@ class _HimiMpvOhosSurfaceState extends State<_HimiMpvOhosSurface> {
   @override
   Widget build(BuildContext context) {
     _scheduleLayoutUpdate();
-    return const SizedBox.expand();
+    // 必须返回 PlatformViewSurface，而不是普通占位 Widget。
+    // PlatformViewSurface 会向 compositor 添加 PlatformViewLayer，鸿蒙
+    // hybrid composition 下的 XComponent 原生层才会真正显示；此前
+    // SizedBox.expand 只画了 Flutter 占位区域，Surface 模式因此白屏。
+    return PlatformViewSurface(
+      controller: widget.controller,
+      gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+      hitTestBehavior: PlatformViewHitTestBehavior.transparent,
+    );
   }
 }
 

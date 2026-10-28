@@ -94,6 +94,10 @@ interface MpvPollPayload {
   hwdecCurrent: string | null;
   gpuContext: string | null;
   currentVo: string | null;
+  surfaceAttached: boolean;
+  surfaceId: string | null;
+  surfaceError: string | null;
+  voConfigured: string | null;
   mediaTitle: string | null;
   /** 掩码后的播放地址（去 query、取尾部）——加载失败回 idle 后由
    *  open 时缓存的 lastUrlMasked 兜底（v1.2.77）。
@@ -138,6 +142,13 @@ class MpvSession implements EventObserver, LogObserver {
   initialized: boolean = false;
   /// mpv 的输出窗口已绑定（纹理模式的生成者 surface，或 XComponent surface）。
   surfaceAttached: boolean = false;
+  /// 原生实际渲染路径：true=XComponent Surface，false=Flutter 纹理。
+  nativeSurface: boolean = false;
+  /// 原生实际是否请求并走 HDR 直出。
+  hdrOutput: boolean = false;
+  /// XComponent 提供的 surfaceId / 最近一次 attach 错误。
+  surfaceId: string | null = null;
+  surfaceError: string | null = null;
   /// 当前渲染档位（standard/performance/extreme）。
   hwdecMode: string = 'performance';
 
@@ -394,15 +405,21 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
 
     const width = Math.max(1, Math.trunc(this.number(args, 'width', DEFAULT_WIDTH)));
     const height = Math.max(1, Math.trunc(this.number(args, 'height', DEFAULT_HEIGHT)));
-    const nativeSurface = args.get('nativeSurface') === true;
-    const hdr = args.get('hdr') === true;
-    const hlg = args.get('hlg') === true;
+    // 兼容 MethodCodec 的 bool/number/string 形态；不能用 === true
+    // 单点判断，否则某个平台打包通道把 bool 解成 1 时会静默退回纹理。
+    const nativeSurface = this.boolArg(args, 'nativeSurface', false);
+    const hdrRequested = this.boolArg(args, 'hdr', false);
+    const hlg = this.boolArg(args, 'hlg', false);
+    const hdr = hdrRequested && nativeSurface;
 
     const session = new MpvSession();
     session.width = width;
     session.height = height;
     // 平台视图模式下没有 Flutter 纹理 id，返回一个稳定标识供上层记录。
     session.textureId = nativeSurface ? 0 : -1;
+    hilog.info(DOMAIN, TAG,
+      'create request: nativeSurface=%{public}s hdrRequested=%{public}s hlg=%{public}s',
+      `${nativeSurface}`, `${hdrRequested}`, `${hlg}`);
 
     // 顺序与 mpv-arkts Player.ets 完全一致（真机验证可播，不可调换）：
     //   1) JSBind 回调最先注册：initialize() 启动 mpv 事件线程，事件派发走
@@ -502,8 +519,19 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     // 这里补 attach。
     this.tryBindSurface();
 
-    // 返回纹理 id：>0 = 纹理渲染模式（Dart 挂 Texture）；0 = 回退平台视图。
-    result.success(session.textureId);
+    // 纹理注册失败（textureId<=0）时回退平台视图，此时实际路径是 Surface。
+    session.nativeSurface = nativeSurface || session.textureId <= 0;
+    session.hdrOutput = hdr && session.nativeSurface;
+    hilog.info(DOMAIN, TAG,
+      'create result: textureId=%{public}d nativeSurface=%{public}s hdrOutput=%{public}s',
+      session.textureId, `${session.nativeSurface}`, `${session.hdrOutput}`);
+
+    // 返回真实路径，Dart 不再用 textureId 反推。
+    result.success({
+      'textureId': session.textureId,
+      'nativeSurface': session.nativeSurface,
+      'hdrOutput': session.hdrOutput,
+    });
   }
 
   // ── 平台视图 surface 生命周期 ────────────────────────────────
@@ -513,6 +541,11 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     // surface 属于 XComponent，不属于某次 mpv 会话：即便 create 还没来也
     // 先记下，createSession 完成后由 tryBindSurface 消费。
     this.pendingSurfaceId = surfaceId;
+    const session = this.session;
+    if (session !== null) {
+      session.surfaceId = surfaceId;
+      session.surfaceError = null;
+    }
     this.tryBindSurface();
   }
 
@@ -538,6 +571,7 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       } catch (_) {
       }
       session.surfaceAttached = false;
+      session.surfaceId = null;
     }
     this.pendingSurfaceId = null;
   }
@@ -560,9 +594,12 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       session.lib.attachSurface(surfaceId);
       hilog.info(DOMAIN, TAG, 'attachSurface ok: %{public}s', surfaceId);
       session.surfaceAttached = true;
+      session.surfaceError = null;
+      session.surfaceId = surfaceId;
       // surface 就绪后立即加载之前缓存的 URL（若有）。
       this.loadPendingUrl(false);
     } catch (e) {
+      session.surfaceError = String(e);
       hilog.error(DOMAIN, TAG, 'attachSurface 失败: %{public}s', String(e));
     }
   }
@@ -1018,6 +1055,7 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     let currentVo: string | null = null;
     let mediaTitle: string | null = null;
     let pathMasked: string | null = null;
+    let voConfigured: string | null = null;
     try {
       duration = lib.getProperty('duration/full');
     } catch (_) {
@@ -1094,6 +1132,13 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     } catch (_) {
     }
     try {
+      const vc = lib.getPropertyString('vo-configured');
+      if (vc !== null && vc.length > 0) {
+        voConfigured = vc;
+      }
+    } catch (_) {
+    }
+    try {
       const t = lib.getPropertyString('media-title');
       if (t !== null && t.length > 0) {
         mediaTitle = t;
@@ -1127,6 +1172,10 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       hwdecCurrent: hwdecCurrent,
       gpuContext: gpuContext,
       currentVo: currentVo,
+      surfaceAttached: session.surfaceAttached,
+      surfaceId: session.surfaceId,
+      surfaceError: session.surfaceError,
+      voConfigured: voConfigured,
       mediaTitle: mediaTitle,
       pathMasked: pathMasked !== null ? pathMasked : this.lastUrlMasked,
     };
@@ -1197,6 +1246,21 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     const value: ESObject = args.get(name);
     if (typeof value === 'number') {
       return value as number;
+    }
+    return fallback;
+  }
+
+  private boolArg(args: Map<string, ESObject>, name: string, fallback: boolean): boolean {
+    const value: ESObject = args.get(name);
+    if (typeof value === 'boolean') {
+      return value as boolean;
+    }
+    if (typeof value === 'number') {
+      return (value as number) !== 0;
+    }
+    if (typeof value === 'string') {
+      const text = value as string;
+      return text === 'true' || text === '1';
     }
     return fallback;
   }

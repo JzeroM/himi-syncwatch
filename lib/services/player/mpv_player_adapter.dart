@@ -181,20 +181,42 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   bool? _displayHdr;
   bool _hdrOutputActive = false;
-  String _effectiveMpvVideoOutput = MpvOutputPolicy.surface;
+  String _requestedMpvVideoOutput = MpvOutputPolicy.surface;
+  String _targetTrc = 'auto';
+  bool _surfaceAttached = false;
+  String? _surfaceId;
+  String? _surfaceError;
+  String? _voConfigured;
 
   /// 当前 MPV 是否正在输出 HDR（仅 Surface + HDR 内容 + HDR 显示）。
   bool get hdrOutputActive => _hdrOutputActive;
 
-  /// 调试面板「HDR 直出」状态。
+  /// 调试面板：请求的 MPV 视频路径（可能因原生回退与 actual 不同）。
+  String get mpvRequestedVideoOutput => _requestedMpvVideoOutput;
+
+  /// 调试面板：实际 MPV 视频路径。
+  String get mpvActualVideoOutput =>
+      usesNativeSurface ? MpvOutputPolicy.surface : MpvOutputPolicy.texture;
+
+  /// 调试面板：原生实际是否 Surface。
+  bool get mpvUsesNativeSurface => usesNativeSurface;
+
+  /// 调试面板：显示端 HDR 能力；null=尚未查询。
+  bool? get mpvDisplayHdr => _displayHdr;
+
+  /// 调试面板：当前目标 transfer（pq/hlg/auto）。
+  String get mpvTargetTrc => _targetTrc;
+
+  bool get mpvSurfaceAttached => _surfaceAttached;
+  String? get mpvSurfaceId => _surfaceId;
+  String? get mpvSurfaceError => _surfaceError;
+  String? get mpvVoConfigured => _voConfigured;
+
+  /// 调试面板「HDR 直出」状态：按实际路径判断，不用请求值。
   String get mpvHdrOutputStatus {
     if (_player == null) return '未就绪';
-    final path =
-        _effectiveMpvVideoOutput == MpvOutputPolicy.texture ? '纹理' : 'Surface';
-    if (_effectiveMpvVideoOutput == MpvOutputPolicy.texture) {
-      return '$path · SDR（tone map）';
-    }
-    return _hdrOutputActive ? '$path · HDR 直出' : '$path · SDR（tone map）';
+    if (!usesNativeSurface) return '纹理 · SDR（tone map）';
+    return _hdrOutputActive ? 'Surface · HDR 直出' : 'Surface · SDR（tone map）';
   }
 
   Future<bool> _queryDisplayHdr() async {
@@ -218,6 +240,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   Future<void> _applyHdrOutputProperties(bool enabled) async {
     final player = _player;
     if (player == null) return;
+    _targetTrc = enabled ? (_hlgContentForMedia ? 'hlg' : 'pq') : 'auto';
     final props = enabled
         ? <String, String>{
             'target-colorspace-hint': 'yes',
@@ -240,6 +263,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         await player.setProperty(entry.key, entry.value);
       } catch (_) {}
     }
+    try {
+      final actual = await player.getProperty('target-trc');
+      if (actual != null && actual.isNotEmpty) _targetTrc = actual;
+    } catch (_) {}
   }
 
   Future<void> _refreshHdrOutputForCurrentSession() async {
@@ -258,7 +285,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       return;
     }
     await _applyHdrOutputProperties(decision.hdrOutput);
-    _hdrOutputActive = decision.hdrOutput;
+    _hdrOutputActive = decision.hdrOutput && player.usesNativeSurface;
+    _targetTrc =
+        _hdrOutputActive ? (_hlgContentForMedia ? 'hlg' : 'pq') : 'auto';
     LogService().log(
       'mpv',
       'HDR 输出更新: ${decision.hdrOutput ? "HDR 直出" : "SDR tone map"} '
@@ -299,6 +328,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 所以这里的 setProperty/open 立即真正生效。
     var player = _player;
     final effectiveOutput = _resolveMpvVideoOutput();
+    _requestedMpvVideoOutput = effectiveOutput;
     final displayHdr = await _queryDisplayHdr();
     final decision = MpvOutputPolicy.resolve(
       videoOutput: effectiveOutput,
@@ -338,16 +368,29 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       LogService().log(
           'mpv',
           'session created: native=${player.usesNativeSurface} '
-              'texture=${player.textureId} path=$effectiveOutput '
-              'hdr=${decision.hdrOutput} displayHdr=$displayHdr');
+              'texture=${player.textureId} requested=$effectiveOutput '
+              'actual=${player.usesNativeSurface ? MpvOutputPolicy.surface : MpvOutputPolicy.texture} '
+              'hdrRequested=${decision.hdrOutput} '
+              'hdrReported=${player.hdrOutputActive} displayHdr=$displayHdr');
+      if (nativeSurface && !player.usesNativeSurface) {
+        LogService().log('mpv',
+            '输出路径不一致: 请求 Surface，原生实际 Texture(textureId=${player.textureId})');
+      }
       _ensureEventSubscription();
       _appliedHdrOutput = decision.hdrOutput;
     } else if (_appliedHdrOutput != decision.hdrOutput) {
       await _applyHdrOutputProperties(decision.hdrOutput);
       _appliedHdrOutput = decision.hdrOutput;
     }
-    _effectiveMpvVideoOutput = effectiveOutput;
-    _hdrOutputActive = decision.hdrOutput;
+    final reportedHdr = player.hdrOutputActive;
+    _hdrOutputActive =
+        player.usesNativeSurface && (reportedHdr ?? decision.hdrOutput);
+    if (reportedHdr != null && reportedHdr != decision.hdrOutput) {
+      LogService()
+          .log('mpv', 'HDR 状态不一致: 请求 ${decision.hdrOutput}，原生回报 $reportedHdr');
+    }
+    _targetTrc =
+        _hdrOutputActive ? (_hlgContentForMedia ? 'hlg' : 'pq') : 'auto';
 
     // 渲染通道就绪标记：v1.2.80 起原生 create 自注册 Flutter 纹理并返回
     // 真实纹理 id（>0 = 纹理渲染模式，上层挂 Texture）；0 = 回退平台视图
@@ -464,6 +507,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   /// 把轮询结果并入状态机（与事件回调走同一套更新逻辑）。
   void _applyPolledState(MpvPollResult state) {
+    _surfaceAttached = state.surfaceAttached;
+    _surfaceId = state.surfaceId;
+    _surfaceError = state.surfaceError;
+    _voConfigured = state.voConfigured;
     final hasProgress = state.durationMs > 0 ||
         state.positionMs > 0 ||
         state.videoParams != null ||

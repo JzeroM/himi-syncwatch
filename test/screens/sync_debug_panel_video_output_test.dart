@@ -17,6 +17,10 @@ void main() {
     String? snapshotInfo,
     VoidCallback? onSnapshot,
     String hdrDirectStatus = '-',
+    String requestedVideoOutput = '-',
+    bool? nativeSurface,
+    bool? displayHdr,
+    String targetTrc = '-',
   }) {
     return ProviderScope(
       overrides: [
@@ -55,6 +59,10 @@ void main() {
             textureSize: '1920x1080',
             videoOutput: videoOutput,
             hdrDirectStatus: hdrDirectStatus,
+            requestedVideoOutput: requestedVideoOutput,
+            nativeSurface: nativeSurface,
+            displayHdr: displayHdr,
+            targetTrc: targetTrc,
             videoFilter: videoFilter,
             snapshotInfo: snapshotInfo,
             onSnapshot: onSnapshot,
@@ -101,6 +109,28 @@ void main() {
 
     expect(find.text('HDR直出'), findsOneWidget);
     expect(find.text('Surface · HDR 直出'), findsOneWidget);
+  });
+
+  testWidgets('诊断分开展示请求/实际路径、原生 Surface 与 HDR 字段', (tester) async {
+    await tester.pumpWidget(buildPanel(
+      videoOutput: 'texture',
+      requestedVideoOutput: 'surface',
+      nativeSurface: false,
+      displayHdr: true,
+      targetTrc: 'auto',
+      hdrDirectStatus: '纹理 · SDR（tone map）',
+    ));
+    await tester.pump();
+
+    expect(find.text('请求输出'), findsOneWidget);
+    expect(find.text('surface'), findsOneWidget);
+    expect(find.text('texture'), findsOneWidget);
+    expect(find.text('nativeSurface'), findsOneWidget);
+    expect(find.text('false'), findsOneWidget);
+    expect(find.text('显示HDR'), findsOneWidget);
+    expect(find.text('支持'), findsOneWidget);
+    expect(find.text('target-trc'), findsOneWidget);
+    expect(find.text('auto'), findsOneWidget);
   });
 
   testWidgets('视频滤镜行展示规范化滤镜取证（非标尺寸黑屏实验）', (tester) async {

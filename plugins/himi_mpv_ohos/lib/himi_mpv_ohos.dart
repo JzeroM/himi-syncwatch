@@ -20,7 +20,13 @@ export 'himi_mpv_surface_view.dart';
 /// 线程模型：所有方法都是异步的，且不阻塞 UI 线程；原生侧 mpv 自带事件
 /// 线程，属性观察由 mpv 主动推送。
 class HimiMpvPlayer implements MpvSession {
-  HimiMpvPlayer._(this._textureId);
+  HimiMpvPlayer._({
+    required int textureId,
+    required bool nativeSurface,
+    required bool hdrOutput,
+  })  : _textureId = textureId,
+        _nativeSurface = nativeSurface,
+        _hdrOutput = hdrOutput;
 
   static const MethodChannel _methods = MethodChannel('himi_mpv');
   static const EventChannel _events = EventChannel('himi_mpv/events');
@@ -28,11 +34,20 @@ class HimiMpvPlayer implements MpvSession {
   /// Flutter 纹理 id（用于 `Texture(textureId: ...)` 渲染视频）。
   /// 0 = 原生 Surface（平台视图）模式。
   final int _textureId;
+
+  /// 原生确认的实际渲染路径，不再由 textureId 反推。
+  final bool _nativeSurface;
+
+  /// 原生确认的 HDR 直出状态。
+  final bool _hdrOutput;
   @override
   int get textureId => _textureId;
 
   @override
-  bool get usesNativeSurface => _textureId == 0;
+  bool get usesNativeSurface => _nativeSurface;
+
+  @override
+  bool? get hdrOutputActive => _hdrOutput;
 
   @override
   Stream<Map<Object?, Object?>> get events => HimiMpvPlayer.eventStream;
@@ -42,8 +57,10 @@ class HimiMpvPlayer implements MpvSession {
 
   /// 创建播放器。
   ///
-  /// 返回值：>0 = Flutter 纹理 id；0 = 原生 Surface 平台视图模式
-  /// （`nativeSurface: true` 或纹理注册失败）。
+  /// 原生返回 `{textureId, nativeSurface, hdrOutput}`：
+  /// - nativeSurface=true：XComponent 原生 Surface；
+  /// - nativeSurface=false：Flutter 纹理，textureId>0；
+  /// - hdrOutput：原生确认的 HDR 直出状态。
   ///
   /// [hwdecMode] 硬解渲染档位：'standard'（完整画质：插值补帧+大缓冲）/
   /// 'performance'（高性能，默认）/ 'extreme'（极速）。
@@ -56,7 +73,7 @@ class HimiMpvPlayer implements MpvSession {
     bool hdr = false,
     bool hlg = false,
   }) async {
-    final id = await _methods.invokeMethod<int>('create', {
+    final raw = await _methods.invokeMethod<Object?>('create', {
       'width': width,
       'height': height,
       'hwdecMode': hwdecMode,
@@ -64,10 +81,28 @@ class HimiMpvPlayer implements MpvSession {
       'hdr': hdr,
       'hlg': hlg,
     });
-    if (id == null) {
+    if (raw == null) {
       throw StateError('mpv create failed');
     }
-    return HimiMpvPlayer._(id);
+
+    // 兼容旧原生包：旧版只返回 int（0=平台视图，>0=纹理）。
+    if (raw is int) {
+      return HimiMpvPlayer._(
+        textureId: raw,
+        nativeSurface: raw == 0,
+        hdrOutput: hdr && raw == 0,
+      );
+    }
+    if (raw is! Map) {
+      throw StateError('mpv create returned unexpected type: $raw');
+    }
+    final textureId = (raw['textureId'] as num?)?.toInt() ?? 0;
+    final actualNativeSurface = raw['nativeSurface'] == true;
+    return HimiMpvPlayer._(
+      textureId: textureId,
+      nativeSurface: actualNativeSurface,
+      hdrOutput: raw['hdrOutput'] == true,
+    );
   }
 
   /// 查询当前显示 HDR 能力（鸿蒙 display.hdrFormats）。

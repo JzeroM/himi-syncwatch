@@ -12,6 +12,13 @@ abstract class MpvSession {
 
   bool get usesNativeSurface => textureId == 0;
 
+  /// 原生确认的 HDR 直出状态。
+  ///
+  /// null = 平台未上报（由适配器按输出策略推断）；非 null = 原生实际
+  /// 创建的输出路径是否带 HDR 直出。鸿蒙由 create 返回，避免 Dart 侧
+  /// 继续用 textureId 猜路径。
+  bool? get hdrOutputActive => null;
+
   /// 原生事件流（属性、mpv 事件、日志）。
   Stream<Map<Object?, Object?>> get events;
 

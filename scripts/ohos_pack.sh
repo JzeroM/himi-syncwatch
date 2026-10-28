@@ -76,6 +76,15 @@ cp "$TEMPLATE/pack.info.base" "$WORK/pack.info"
 unzip -q "$INPUT" -d "$TMP/new"
 rm -rf "$WORK/libs" "$WORK/resources/rawfile/flutter_assets"
 cp -a "$TMP/new/libs" "$WORK/libs"
+# ArkTS 编译产物必须取自本次 Flutter 构建，而不是 ohos/template 里的旧
+# modules.abc：否则插件 Dart 侧更新、原生 ArkTS 仍是旧版（鸿蒙实际
+# 输出 texture、HDR 诊断错误即由此产生）。
+if [ -f "$TMP/new/ets/modules.abc" ]; then
+  rm -rf "$WORK/ets"
+  cp -a "$TMP/new/ets" "$WORK/ets"
+else
+  echo "警告: 输入 HAP 不含 ets/modules.abc，沿用 template 旧 ArkTS" >&2
+fi
 mkdir -p "$WORK/resources/rawfile"
 cp -a "$TMP/new/resources/rawfile/flutter_assets" "$WORK/resources/rawfile/flutter_assets"
 if [ -f "$TMP/new/resources/rawfile/buildinfo.json5" ]; then

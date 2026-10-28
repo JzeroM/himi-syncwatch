@@ -2802,11 +2802,66 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// MPV 实际视频路径（用于诊断和切换判断）。
   String get _mpvActualVideoPath {
     if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).usesNativeSurface
-          ? 'surface'
-          : 'texture';
+      return (_player as MpvPlayerAdapter).mpvActualVideoOutput;
     }
     return _effectiveVideoOutput();
+  }
+
+  /// MPV 请求的视频路径（原生可能回退，需和实际路径分开显示）。
+  String get _mpvRequestedVideoPath {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).mpvRequestedVideoOutput;
+    }
+    return _effectiveVideoOutput();
+  }
+
+  bool? get _mpvNativeSurface {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).mpvUsesNativeSurface;
+    }
+    return null;
+  }
+
+  bool get _mpvSurfaceAttached {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).mpvSurfaceAttached;
+    }
+    return false;
+  }
+
+  String? get _mpvSurfaceId {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).mpvSurfaceId;
+    }
+    return null;
+  }
+
+  String? get _mpvSurfaceError {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).mpvSurfaceError;
+    }
+    return null;
+  }
+
+  String? get _mpvVoConfigured {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).mpvVoConfigured;
+    }
+    return null;
+  }
+
+  bool? get _mpvDisplayHdr {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).mpvDisplayHdr;
+    }
+    return null;
+  }
+
+  String get _mpvTargetTrc {
+    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
+      return (_player as MpvPlayerAdapter).mpvTargetTrc;
+    }
+    return '-';
   }
 
   /// 调试面板 HDR 直出状态：只对 MPV 有效。
@@ -2947,7 +3002,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _applyVideoOutputMode() async {
     if (!mounted) return;
     final mode = _effectiveVideoOutput();
-    LogService().log('Player', '视频输出档位切换 → $mode');
+    final loggedMode =
+        _currentEngine == PlayerEngine.mpv ? 'mpv:$_mpvActualVideoPath' : mode;
+    LogService().log('Player', '视频输出档位切换 → $loggedMode');
     // 档位切换销毁/重建 platform view：绑定标志复位，下次起播重新等待
     _surfaceViewCreated = false;
     if (_usesSurfaceView) {
@@ -7597,6 +7654,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 voStatus: _voStatus,
                 hdrType: _hdrType,
                 hdrDirectStatus: _mpvHdrDirectStatus,
+                requestedVideoOutput: _mpvRequestedVideoPath,
+                nativeSurface: _mpvNativeSurface,
+                surfaceAttached: _mpvSurfaceAttached,
+                surfaceId: _mpvSurfaceId,
+                surfaceError: _mpvSurfaceError,
+                voConfigured: _mpvVoConfigured,
+                displayHdr: _mpvDisplayHdr,
+                targetTrc: _mpvTargetTrc,
                 isSinglePlayer: widget.roomCode == null,
                 // 播放状态
                 playbackState: _playbackState,

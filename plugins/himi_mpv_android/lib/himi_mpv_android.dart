@@ -103,6 +103,10 @@ class HimiMpvAndroidSession implements MpvSession {
   @override
   bool get usesNativeSurface => nativeSurface;
 
+  /// HDR 实际状态本平台暂未单独上报，由适配器按输出策略推断。
+  @override
+  bool? get hdrOutputActive => null;
+
   @override
   Stream<Map<Object?, Object?>> get events => _events.stream;
 

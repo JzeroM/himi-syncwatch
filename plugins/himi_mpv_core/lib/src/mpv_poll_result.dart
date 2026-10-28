@@ -17,6 +17,10 @@ class MpvPollResult {
     this.currentVo,
     this.mediaTitle,
     this.pathMasked,
+    this.surfaceAttached = false,
+    this.surfaceId,
+    this.surfaceError,
+    this.voConfigured,
   });
 
   final int durationMs;
@@ -35,6 +39,14 @@ class MpvPollResult {
   final String? currentVo;
   final String? mediaTitle;
   final String? pathMasked;
+
+  /// 鸿蒙 XComponent surface 是否已绑定到 mpv。
+  final bool surfaceAttached;
+  final String? surfaceId;
+  final String? surfaceError;
+
+  /// mpv `vo-configured`（yes/no）。
+  final String? voConfigured;
 
   static MpvPollResult fromMap(Map<Object?, Object?> raw) {
     int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
@@ -58,6 +70,10 @@ class MpvPollResult {
       currentVo: raw['currentVo'] as String?,
       mediaTitle: raw['mediaTitle'] as String?,
       pathMasked: raw['pathMasked'] as String?,
+      surfaceAttached: asBool(raw['surfaceAttached']),
+      surfaceId: raw['surfaceId'] as String?,
+      surfaceError: raw['surfaceError'] as String?,
+      voConfigured: raw['voConfigured'] as String?,
     );
   }
 }

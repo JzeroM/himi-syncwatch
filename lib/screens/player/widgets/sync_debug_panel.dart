@@ -64,6 +64,24 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
   /// 产物身份项：同一台设备哪一档出画面直接记进导出报告。
   final String videoOutput;
 
+  /// MPV 请求的输出路径（surface/texture）；与 [videoOutput] 分开显示，
+  /// 便于识别「请求 Surface、原生回退 Texture」。
+  final String requestedVideoOutput;
+
+  /// 原生确认的实际 Surface 状态；null=非 MPV/未就绪。
+  final bool? nativeSurface;
+
+  final bool surfaceAttached;
+  final String? surfaceId;
+  final String? surfaceError;
+  final String? voConfigured;
+
+  /// 显示端 HDR 能力；null=未查询。
+  final bool? displayHdr;
+
+  /// 当前 mpv `target-trc`（pq/hlg/auto）。
+  final String targetTrc;
+
   /// 渲染目标尺寸取证（渲染夹紧）：`原生` =未夹紧；`原生 → 夹紧后`
   /// =生效夹紧；`-`=尺寸未就绪。
   final String renderTarget;
@@ -144,6 +162,14 @@ class SyncDebugPanel extends ConsumerStatefulWidget {
     required this.textureId,
     required this.textureSize,
     this.videoOutput = 'texture',
+    this.requestedVideoOutput = '-',
+    this.nativeSurface,
+    this.surfaceAttached = false,
+    this.surfaceId,
+    this.surfaceError,
+    this.voConfigured,
+    this.displayHdr,
+    this.targetTrc = '-',
     this.renderTarget = '-',
     this.videoFilter = '(未写入)',
     this.snapshotInfo,
@@ -312,10 +338,31 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
                     if (widget.hdrType != 'SDR')
                       _debugRow('HDR', widget.hdrType),
                     _debugRow('HDR直出', widget.hdrDirectStatus),
+                    _debugRow('请求输出', widget.requestedVideoOutput),
                     // 黑帧分叉取证：null=纹理未创建；非 null 仍黑=无帧合成
                     _debugRow('纹理',
                         '${widget.textureId ?? 'null'} | ${widget.textureSize}'),
                     _debugRow('输出', widget.videoOutput),
+                    if (widget.nativeSurface != null)
+                      _debugRow('nativeSurface',
+                          widget.nativeSurface! ? 'true' : 'false'),
+                    if (widget.nativeSurface == true) ...[
+                      _debugRow('Surface绑定',
+                          widget.surfaceAttached ? 'true' : 'false'),
+                      _debugRow('surfaceId', widget.surfaceId ?? '-'),
+                      _debugRow('vo-configured', widget.voConfigured ?? '-'),
+                      if (widget.surfaceError != null &&
+                          widget.surfaceError!.isNotEmpty)
+                        _debugRow('Surface错误', widget.surfaceError!),
+                    ],
+                    _debugRow(
+                        '显示HDR',
+                        widget.displayHdr == null
+                            ? '-'
+                            : widget.displayHdr!
+                                ? '支持'
+                                : '不支持'),
+                    _debugRow('target-trc', widget.targetTrc),
                     _debugRow('渲染尺寸', widget.renderTarget),
                     _debugRow('视频滤镜', widget.videoFilter),
                     if (widget.onSnapshot != null) _snapshotRow(),
@@ -498,6 +545,14 @@ class _SyncDebugPanelState extends ConsumerState<SyncDebugPanel> {
     final buf = StringBuffer();
     buf.writeln(widget.buildSummary);
     buf.writeln(_buildQuickSnapshot());
+    buf.writeln();
+    buf.writeln('=== MPV 输出 ===');
+    buf.writeln(
+        '请求: ${widget.requestedVideoOutput} | 实际: ${widget.videoOutput}');
+    buf.writeln('nativeSurface: ${widget.nativeSurface ?? '-'} | '
+        '显示HDR: ${widget.displayHdr == null ? '-' : widget.displayHdr! ? '支持' : '不支持'}');
+    buf.writeln('HDR直出: ${widget.hdrDirectStatus} | '
+        'target-trc: ${widget.targetTrc}');
     buf.writeln();
     buf.writeln('=== 解码器 ===');
     buf.writeln('模式: ${widget.decodeMode} | 配置: ${widget.actualVideoDecoders}');

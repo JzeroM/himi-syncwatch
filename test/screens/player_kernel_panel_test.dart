@@ -23,7 +23,7 @@ void main() {
     );
     expect(
       PlayerKernelPanel.descriptionOf(PlayerEngine.mpv),
-      contains('HDR 直出'),
+      contains('Surface/纹理可配'),
     );
   });
 }
