@@ -119,10 +119,10 @@ jobs:
             Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) {
             Write-Host '--- Windows build log tail ---'
-            $tail = Get-Content $log -Tail 120 -ErrorAction SilentlyContinue
+            $tail = Get-Content $log -Tail 300 -ErrorAction SilentlyContinue
             foreach ($line in $tail) {
               Write-Host $line
-              if ($line -match 'error|Error|FAILED|failed|fatal') {
+              if ($line.Trim().Length -gt 0) {
                 Write-Host "::error::$line"
               }
             }
