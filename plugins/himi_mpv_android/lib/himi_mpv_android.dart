@@ -65,6 +65,10 @@ class HimiMpvAndroidSession implements MpvSession {
   double? _pendingSpeed;
   final Map<String, String> _pendingProperties = <String, String>{};
 
+  /// 最近一次成功发起播放的地址（Surface 重建后据此恢复，见 [_detachPlayer]）。
+  String? _lastUrl;
+  Map<String, String> _lastHeaders = const {};
+
   static Future<HimiMpvAndroidSession> create({
     int width = 1920,
     int height = 1080,
@@ -148,8 +152,19 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   Future<void> _detachPlayer() async {
+    if (_disposed) return;
     final player = _player;
     _player = null;
+    // Surface 重建（旋转 / 原生 UI 宿主重建）：记住当前播放点，等新
+    // surface 到达后由 _ensurePlayer 用同一地址 + 当前位置重建，避免黑屏
+    // 或从头播（计划书 §6.3「Surface handle 顺序与重建」）。
+    final lastUrl = _lastUrl;
+    if (lastUrl != null && lastUrl.isNotEmpty) {
+      _pendingUrl = lastUrl;
+      _pendingHeaders = _lastHeaders;
+      _pendingStartMs = _positionMs > 0 ? _positionMs : _pendingStartMs;
+      _pendingPause = _paused || _eof;
+    }
     try {
       await player?.dispose();
     } catch (_) {}
@@ -318,6 +333,8 @@ class HimiMpvAndroidSession implements MpvSession {
     int startMs = 0,
     bool pause = false,
   }) async {
+    _lastUrl = url;
+    _lastHeaders = headers;
     _pendingUrl = url;
     _pendingHeaders = headers;
     _pendingStartMs = startMs;

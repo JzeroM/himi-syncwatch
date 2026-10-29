@@ -590,12 +590,21 @@ plugins {
 
 **Android**
 
-- [ ] 全屏 Dialog + SurfaceView + Compose 最小壳。
-  > 进行中：SurfaceView 已加 `useMediaOverlay` 开关并暴露 Dialog
-  > 宿主入口；Compose 壳待 CI 环境（本机无 Android SDK/JDK）验证。
+- [x] 全屏 Dialog + SurfaceView 最小壳。
+  > 实现说明：用**经典 View**（`FrameLayout` + `SeekBar` + `TextView`）而非
+  > Compose。原因：Compose 需新增 compose-bom / compiler 插件，本机与 CI
+  > 都缺少可验证的构建回路；经典 View 零新增依赖、与现有 AGP/Kotlin 配置
+  > 兼容，且能用 `android.jar` 在本机编译校验。Dart 仍是唯一权威状态源，
+  > 后续换实现不影响协议。
+  > 代码：`android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/`
+  > （`AndroidNativePlayerState` / `NativePlayerScreenView` /
+  > `AndroidNativePlayerHost` / `AndroidNativePlayerChannel`）。
 - [x] `himi_native_player` 通道。
-- [ ] Surface handle 顺序与重建。
+- [x] Surface handle 顺序与重建。
+  > `HimiMpvAndroidSession` 记住地址与播放点，`surfaceDestroyed` 后清空
+  > player，新 surface 到达时用同一地址 + 当前位置重建并保持暂停态。
 - [x] 最小控件：播放/暂停、进度、时间、返回、诊断行。
+- [x] 状态层纯 JVM 单测（`android/app/src/test`，11 项，本机 kotlinc 实测）。
 
 **验收**
 
@@ -604,6 +613,13 @@ plugins {
 - [ ] 播放/暂停/seek/返回可用。
 - [ ] Texture 模式回归正常。
 - [ ] 输出 signed HAP + signed APK。
+
+**已完成的本地验证（无真机/无 Android SDK 环境下能做的部分）**
+
+- [x] 鸿蒙 ArkTS 编译通过（hvigor `CompileArkTS`），signed HAP 构建并
+  `hap-sign-tool verify-app` 通过。
+- [x] Android Kotlin 全量编译通过（`android.jar` API 36 + Flutter 桩）。
+- [x] Android 原生播放器状态层 11 项 JVM 单测通过。
 
 ### Phase 2：鸿蒙完整原生控件
 

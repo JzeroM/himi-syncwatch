@@ -1,5 +1,6 @@
 package com.himi.syncwatch
 
+import com.himi.syncwatch.nativeplayer.AndroidNativePlayerChannel
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -23,6 +24,7 @@ class MainActivity : FlutterActivity() {
     private var dcChannel: MethodChannel? = null
     private var aiChannel: MethodChannel? = null
     private var appIconChannel: MethodChannel? = null
+    private var nativePlayerChannel: AndroidNativePlayerChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -75,6 +77,11 @@ class MainActivity : FlutterActivity() {
             // 应用图标切换：归一化 activity-alias，并 recreate/重启刷新桌面
             setMethodCallHandler(AppIconPlugin(this@MainActivity))
         }
+        // 原生播放器 UI（全屏 Dialog + SurfaceView，计划书 §6）
+        nativePlayerChannel = AndroidNativePlayerChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            this,
+        )
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -92,6 +99,9 @@ class MainActivity : FlutterActivity() {
         aiChannel = null
         appIconChannel?.setMethodCallHandler(null)
         appIconChannel = null
+        // 原生播放器：关闭 Dialog 并释放 surface，避免引擎重建后残留
+        nativePlayerChannel?.dispose()
+        nativePlayerChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

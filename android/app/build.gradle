@@ -44,3 +44,12 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // 原生播放器 UI 状态层的纯 JVM 单测（android/app/src/test）：
+    // - junit：测试运行器；
+    // - org.json：android.jar 里的 org.json 是「未实现桩」，本地单测
+    //   直接调用会抛 "not mocked"，显式引入真实实现覆盖之。
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20240303"
+}
