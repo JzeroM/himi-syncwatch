@@ -294,21 +294,40 @@ class HimiMpvAndroidSession implements MpvSession {
   static const MethodChannel _videoOutChannel =
       MethodChannel('com.alexmercerind/media_kit_video');
 
-  /// 主动踢纹理注册：调 `VideoOutputManager.SetSurfaceSize` 强制 native
+  /// 轮询踢纹理注册：调 `VideoOutputManager.SetSurfaceSize` 强制 native
   /// `onSurfaceAvailable()` → `VideoOutput.Resize` → `controller.id/wid`。
   /// 打破「vo=null 不产 video-params → 不 SetSurfaceSize → Resize 不触发 →
   /// wid 上不来 → vo 永远 null」的死锁。
-  Future<void> _kickTextureSurface(Player player) async {
-    try {
-      final handle = await player.handle;
-      await _videoOutChannel.invokeMethod('VideoOutputManager.SetSurfaceSize', {
-        'handle': '$handle',
-        'width': '$width',
-        'height': '$height',
-      });
-      _log('踢纹理注册: SetSurfaceSize handle=$handle ${width}x$height');
-    } catch (e) {
-      _log('踢纹理注册失败: $e');
+  ///
+  /// 轮询（而非踢一次）：`VideoController.create()`（含 native
+  /// `VideoOutputManager.Create`）是 async 且未 await，首次踢时 native 的
+  /// VideoOutput 可能还没建 → SetSurfaceSize 查不到 handle → no-op。每
+  /// 300ms 重踢一次，直到 id 出现或 [controller] 注销（由 20s 超时兜底）。
+  Future<void> _kickTextureSurface(
+    Player player,
+    VideoController controller,
+  ) async {
+    final handle = await player.handle;
+    var attempt = 0;
+    while (!_disposed && (controller.id.value == null || controller.id.value! <= 0)) {
+      attempt++;
+      try {
+        await _videoOutChannel.invokeMethod('VideoOutputManager.SetSurfaceSize', {
+          'handle': '$handle',
+          'width': '$width',
+          'height': '$height',
+        });
+        if (attempt <= 3 || attempt % 10 == 0) {
+          _log('踢纹理注册 #$attempt: SetSurfaceSize handle=$handle '
+              '${width}x$height（id=${controller.id.value}）');
+        }
+      } catch (e) {
+        _log('踢纹理注册 #$attempt 失败: $e');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    if (controller.id.value != null && controller.id.value! > 0) {
+      _log('纹理注册成功（踢 #$attempt 次后 id=${controller.id.value}）');
     }
   }
 
@@ -383,6 +402,9 @@ class HimiMpvAndroidSession implements MpvSession {
       _controller = controller;
       void updateTextureId() {
         final id = controller.id.value;
+        // Resize 到达（id 首次非空）必须进 LogService：它是纹理注册成功
+        // 的唯一标志，也是死锁是否解除的判决值（debugPrint 不进导出）。
+        _log('纹理 id 变化: id=$id');
         if (id != null && id > 0 && id != _textureId) {
           _textureId = id;
           _emit('texture-id', id);
@@ -396,7 +418,7 @@ class HimiMpvAndroidSession implements MpvSession {
       // video-params → 死锁（id 恒 null、wid=0、vo 永远上不来）。这里在
       // 注册后直接 SetSurfaceSize 强制 surface 就绪，打破对 videoParams
       // 的时序依赖。
-      unawaited(_kickTextureSurface(player));
+      unawaited(_kickTextureSurface(player, controller));
       try {
         _textureId = await _waitForTextureId(controller);
       } catch (e) {
