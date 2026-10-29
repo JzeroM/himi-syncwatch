@@ -57,6 +57,12 @@ class HimiMpvAndroidSession implements MpvSession {
   int _surfaceHandle = 0;
   int _textureId = 0;
   bool _disposed = false;
+
+  /// 踢纹理循环的代际计数：每轮 `_kickTextureSurface` 启动时 `++` 取快照，
+  /// detach/dispose 时再 `++` 让旧循环的快照失效立即退出。用计数而非布尔，
+  /// 避免「同会话重启踢循环把上一轮孤儿循环重新激活」（真机日志曾见孤儿
+  /// 循环空跑到 #160）。见 [_kickTextureSurface]。
+  int _kickGeneration = 0;
   /// 原生播放器 UI 是否接管中（adapter 在 open 前/关闭后同步）。
   /// 决定 surface 事件来源过滤：接管中只认 `src=native`。
   bool _nativeUiActive = false;
@@ -263,6 +269,7 @@ class HimiMpvAndroidSession implements MpvSession {
 
   Future<void> _detachPlayer() async {
     if (_disposed) return;
+    _kickGeneration++; // 作废孤儿踢循环（换绑/重建时旧 controller 已无意义）
     final player = _player;
     _log('detachPlayer: handle=$_surfaceHandle');
     _player = null;
@@ -307,9 +314,15 @@ class HimiMpvAndroidSession implements MpvSession {
     Player player,
     VideoController controller,
   ) async {
+    // 代际快照：detach/dispose 会 _kickGeneration++，让本代循环立即退出。
+    // 用计数而非布尔，避免「同一会话重启踢循环时把孤儿循环重新激活」——
+    // 新循环递增计数后只认自己的代际，旧循环的快照已过期。
+    final gen = ++_kickGeneration;
     final handle = await player.handle;
     var attempt = 0;
-    while (!_disposed && (controller.id.value == null || controller.id.value! <= 0)) {
+    while (gen == _kickGeneration &&
+        !_disposed &&
+        (controller.id.value == null || controller.id.value! <= 0)) {
       attempt++;
       try {
         await _videoOutChannel.invokeMethod('VideoOutputManager.SetSurfaceSize', {
@@ -735,6 +748,7 @@ class HimiMpvAndroidSession implements MpvSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _kickGeneration++; // 作废孤儿踢循环
     final controller = _controller;
     final listener = _textureIdListener;
     if (controller != null && listener != null) {
