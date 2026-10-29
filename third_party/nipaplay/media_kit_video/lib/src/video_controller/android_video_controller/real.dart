@@ -190,6 +190,9 @@ class AndroidVideoController extends PlatformVideoController {
         'handle': handle.toString(),
       },
     );
+    // 纹理注册定性：Create 后 native 造 SurfaceProducer，但 onSurfaceAvailable
+    // （→VideoOutput.Resize→id/wid）可能依赖 videoParams 或回调才触发。
+    debugPrint('[media_kit_video] VideoOutputManager.Create handle=$handle（等 Resize）');
 
     await controller.setProperties(
       {
@@ -267,6 +270,10 @@ class AndroidVideoController extends PlatformVideoController {
                     );
                     final int id = call.arguments['id'];
                     final int wid = call.arguments['wid'];
+                    // 黑屏/纹理注册定性：Resize 是 id/wid 的唯一来源，
+                    // 打出来即可判断「死锁（从不来）」还是「来了但晚/错」。
+                    debugPrint(
+                        '[media_kit_video] VideoOutput.Resize handle=$handle id=$id wid=$wid rect=$rect');
                     _controllers[handle]?.rect.value = rect;
                     _controllers[handle]?.id.value = id;
                     _controllers[handle]?.wid.value = wid;

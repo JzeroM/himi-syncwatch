@@ -14,20 +14,38 @@ if(NOT DEFINED AGORA_RTM_SDK)
     set(_agora_root "${CMAKE_CURRENT_BINARY_DIR}/agora_rtm_sdk_extract")
     set(_agora_marker "${_agora_root}/Agora_Native_SDK_for_Windows_MINI_RTM/sdk/x86_64/agora_rtm_sdk.dll.lib")
     if(NOT EXISTS "${_agora_marker}")
-      message(STATUS "Downloading Agora RTM C++ SDK 2.2.5 ...")
-      file(DOWNLOAD
-        "https://download.agora.io/rtm2/release/Agora_RTM_C%2B%2B_SDK_for_Windows_v2.2.5.zip"
-        "${_agora_zip}"
-        SHOW_PROGRESS
-        STATUS _agora_dl_status)
-      list(GET _agora_dl_status 0 _agora_dl_code)
-      if(NOT _agora_dl_code EQUAL 0)
-        list(GET _agora_dl_status 1 _agora_dl_msg)
-        message(FATAL_ERROR "下载 Agora RTM SDK 失败: ${_agora_dl_msg}")
-      endif()
-      file(ARCHIVE_EXTRACT INPUT "${_agora_zip}" DESTINATION "${_agora_root}")
-      if(NOT EXISTS "${_agora_marker}")
-        message(FATAL_ERROR "Agora RTM SDK 解压后缺少 ${_agora_marker}")
+      # download.agora.io 偶发 DNS/截断（release.yml 记载 curl 6），单次下载
+      # 可能拿到不完整 zip（有 .dll.lib 能链接、但缺运行时 .dll → 构建过、
+      # 产物验证缺 agora_rtm_sdk.dll/libaosl.dll）。重试 3 次 + 每次清残包。
+      set(_agora_dll "${_agora_root}/Agora_Native_SDK_for_Windows_MINI_RTM/sdk/x86_64/agora_rtm_sdk.dll")
+      set(_agora_ok FALSE)
+      foreach(_attempt RANGE 1 3)
+        message(STATUS "Downloading Agora RTM C++ SDK 2.2.5 (attempt ${_attempt}/3) ...")
+        file(REMOVE "${_agora_zip}")
+        file(DOWNLOAD
+          "https://download.agora.io/rtm2/release/Agora_RTM_C%2B%2B_SDK_for_Windows_v2.2.5.zip"
+          "${_agora_zip}"
+          SHOW_PROGRESS
+          STATUS _agora_dl_status)
+        list(GET _agora_dl_status 0 _agora_dl_code)
+        if(_agora_dl_code EQUAL 0)
+          file(ARCHIVE_EXTRACT INPUT "${_agora_zip}" DESTINATION "${_agora_root}")
+          # 解压后必须同时有导入库与运行时 DLL，缺一即视为下载不完整重试。
+          if(EXISTS "${_agora_marker}" AND EXISTS "${_agora_dll}")
+            set(_agora_ok TRUE)
+            break()
+          endif()
+          message(STATUS "Agora RTM SDK 解压不完整（缺 .dll 或 .lib），重试...")
+        else()
+          list(GET _agora_dl_status 1 _agora_dl_msg)
+          message(STATUS "下载失败: ${_agora_dl_msg}")
+        endif()
+        file(REMOVE_RECURSE "${_agora_root}")
+        math(EXPR _wait "${_attempt} * 5")
+        execute_process(COMMAND ${CMAKE_COMMAND} -E sleep ${_wait})
+      endforeach()
+      if(NOT _agora_ok)
+        message(FATAL_ERROR "下载 Agora RTM SDK 失败（重试 3 次仍不完整）")
       endif()
     endif()
     set(AGORA_RTM_SDK "${_agora_root}/Agora_Native_SDK_for_Windows_MINI_RTM")

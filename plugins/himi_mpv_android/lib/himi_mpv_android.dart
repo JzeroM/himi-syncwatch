@@ -290,6 +290,28 @@ class HimiMpvAndroidSession implements MpvSession {
     await _ensurePlayer();
   }
 
+  /// media_kit_video 原生 channel（与 AndroidVideoController 同一通道）。
+  static const MethodChannel _videoOutChannel =
+      MethodChannel('com.alexmercerind/media_kit_video');
+
+  /// 主动踢纹理注册：调 `VideoOutputManager.SetSurfaceSize` 强制 native
+  /// `onSurfaceAvailable()` → `VideoOutput.Resize` → `controller.id/wid`。
+  /// 打破「vo=null 不产 video-params → 不 SetSurfaceSize → Resize 不触发 →
+  /// wid 上不来 → vo 永远 null」的死锁。
+  Future<void> _kickTextureSurface(Player player) async {
+    try {
+      final handle = await player.handle;
+      await _videoOutChannel.invokeMethod('VideoOutputManager.SetSurfaceSize', {
+        'handle': '$handle',
+        'width': '$width',
+        'height': '$height',
+      });
+      _log('踢纹理注册: SetSurfaceSize handle=$handle ${width}x$height');
+    } catch (e) {
+      _log('踢纹理注册失败: $e');
+    }
+  }
+
   Future<void> _ensurePlayer() async {
     if (_disposed || _player != null) return;
     if (nativeSurface && _surfaceHandle == 0) return;
@@ -369,6 +391,12 @@ class HimiMpvAndroidSession implements MpvSession {
 
       _textureIdListener = updateTextureId;
       controller.id.addListener(updateTextureId);
+      // 主动踢：native onSurfaceAvailable（→VideoOutput.Resize→id/wid）原
+      // 依赖 videoParams→SetSurfaceSize，而 vo=null 时 mpv 可能不产出
+      // video-params → 死锁（id 恒 null、wid=0、vo 永远上不来）。这里在
+      // 注册后直接 SetSurfaceSize 强制 surface 就绪，打破对 videoParams
+      // 的时序依赖。
+      unawaited(_kickTextureSurface(player));
       try {
         _textureId = await _waitForTextureId(controller);
       } catch (e) {
