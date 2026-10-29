@@ -125,6 +125,8 @@ import 'package:himi_syncwatch/services/count_retry.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
+import 'package:himi_syncwatch/services/player/native/native_player_command.dart';
+import 'package:himi_syncwatch/services/player/native/native_player_state.dart';
 import 'package:himi_syncwatch/services/render_storm_detector.dart';
 import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
 import 'package:himi_syncwatch/services/switch_volume_guard.dart';
@@ -3191,18 +3193,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) LogService().log('Diag', '截帧: $_snapshotInfo');
   }
 
-  /// 原生播放器 UI 接线：状态监听（翻转时重建视频区）+ 退出回调。
+  /// 原生播放器 UI 接线：状态监听（翻转时重建视频区）+ 退出/命令回调。
   /// 引擎创建/切换后调用；对应拆除见 [_detachNativeUiBridge]。
   void _attachNativeUiBridge(PlayerAdapter player) {
     if (player is! MpvPlayerAdapter) return;
     player.nativeUiActive.addListener(_onNativeUiActiveChanged);
     player.onNativeUiExit = _exitFromNativeUi;
+    player.onNativeUiCommand = _handleNativeUiCommand;
   }
 
   void _detachNativeUiBridge(PlayerAdapter player) {
     if (player is! MpvPlayerAdapter) return;
     player.nativeUiActive.removeListener(_onNativeUiActiveChanged);
     player.onNativeUiExit = null;
+    player.onNativeUiCommand = null;
   }
 
   void _onNativeUiActiveChanged() {
@@ -3223,6 +3227,86 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted || _disposed) return;
     final shouldPop = await _confirmLeaveRoom();
     if (shouldPop && context.mounted) Navigator.pop(context);
+  }
+
+  /// 原生命令通用路由（Phase 2）：把 adapter 转发来的命令接到现成 handler。
+  ///
+  /// 路由矩阵见 docs/native_player_command_routing.md。adapter 自处理
+  /// 播放/seek/音量/倍速/退出，这里只收其余类。未接入的（Phase 4/5/6）
+  /// 打日志忽略，不崩。
+  Future<void> _handleNativeUiCommand(NativePlayerCommand command) async {
+    if (!mounted || _disposed) return;
+    switch (command) {
+      case SelectAudio(:final id):
+        _selectEmbyAudio(id);
+      case SelectSubtitle(:final id):
+        // id<=0 = 关闭字幕（与 Flutter 面板 null 分支一致）。
+        if (id <= 0) {
+          _player.activeSubtitleTracks = [];
+          _useServerSubtitleBurnIn = false;
+          _activeSubtitleIndex = null;
+          _activeLocalSubtitlePath = null;
+          _subtitleDelayReloadTimer?.cancel();
+        } else {
+          _selectEmbySubtitle(id - 1);
+        }
+      case AddSubtitle():
+        unawaited(_loadLocalSubtitle());
+      case SelectEpisode(:final index):
+        await _switchToEpisode(index);
+      case SelectVersion(:final index):
+        final sources = _currentMediaSources;
+        if (index >= 0 && index < sources.length) {
+          await _switchMediaSource(sources[index]);
+        }
+      case ToggleDanmaku():
+        _toggleDanmaku();
+      case SetSubtitleStyle(:final style):
+        _applyNativeSubtitleStyle(style);
+      case SetSubtitleDelay(:final delayMs):
+        _applyNativeSubtitleDelay(delayMs);
+      case SetDecodeMode(:final mode):
+        _applyNativeDecodeMode(mode);
+      case AdjustDisplay(:final key, :final value):
+        _applyNativeAdjustDisplay(key, value);
+      case SetSegmentMark(:final kind, :final positionMs):
+        _applyNativeSegmentMark(kind, positionMs);
+      case TakeScreenshot():
+        unawaited(_probeSnapshot());
+      default:
+        // Phase 4/5/6 才接的命令（弹幕设置/房间/调试/引擎）：忽略。
+        LogService().log('mpv',
+            '原生命令暂不支持（后续 Phase）: ${command.toMap()['type']}');
+    }
+  }
+
+  // ── 原生命令 → 现成机制的最小适配（Phase 2 协议层）──────────
+
+  /// 字幕样式：原生给 fontSize/opacity/色，映射到 Flutter 的 scale 机制
+  /// （scale = fontSize / 16 基准），再走既有的 apply+save。
+  void _applyNativeSubtitleStyle(NativeSubtitleStyle style) {
+    final scale = (style.fontSize / 16.0).clamp(0.5, 3.0);
+    _onSubtitleScaleChanged(scale);
+  }
+
+  /// 字幕延迟：直接复用既有 setter（含归零恢复原素材的分支）。
+  void _applyNativeSubtitleDelay(double delayMs) {
+    _onSubtitleDelayChanged(delayMs.round());
+  }
+
+  /// 解码模式：复用既有 `_switchDecodeMode`（含暂停/切解码/seek 刷新/持久化）。
+  Future<void> _applyNativeDecodeMode(String mode) =>
+      _switchDecodeMode(mode);
+
+  /// 显示调节：Phase 2 面板未出，先记日志（协议可解析不崩）。完整显示调节
+  /// 面板（缩放/裁剪/偏移）随 UI 里程碑接入。
+  void _applyNativeAdjustDisplay(String key, double value) {
+    LogService().log('Player', '原生显示调节（待面板接入）: $key=$value');
+  }
+
+  /// 片头片尾标记：Phase 2 面板未出，先记日志（协议可解析不崩）。
+  void _applyNativeSegmentMark(String kind, int positionMs) {
+    LogService().log('Player', '原生片头片尾标记（待面板接入）: $kind @${positionMs}ms');
   }
 
   /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），

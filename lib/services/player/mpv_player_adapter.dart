@@ -265,6 +265,13 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 执行关闭原生宿主 + 退出播放页（适配器不持有导航能力）。
   void Function()? onNativeUiExit;
 
+  /// PlayerScreen 注入：原生命令的通用出口（Phase 2）。
+  ///
+  /// adapter 自己处理 6 类（播放/seek/音量/倍速/退出），其余转发到此，
+  /// 由 PlayerScreen 路由到现成 handler（选集/版本/音轨/字幕/…）。路由
+  /// 矩阵见 `docs/native_player_command_routing.md`。
+  Future<void> Function(NativePlayerCommand command)? onNativeUiCommand;
+
   /// 调试面板「HDR 直出」状态：按实际路径判断，不用请求值。
   String get mpvHdrOutputStatus {
     if (_player == null) return '未就绪';
@@ -1619,8 +1626,15 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
           unawaited(_closeNativeUi());
         }
       default:
-        LogService()
-            .log('mpv', '原生命令待接入 PlayerScreen: ${command.toMap()['type']}');
+        // Phase 2 通用出口：其余命令（选集/版本/音轨/字幕/…）转发给
+        // PlayerScreen 路由到现成 handler（见 docs/native_player_command_routing.md）。
+        final forward = onNativeUiCommand;
+        if (forward != null) {
+          await forward(command);
+        } else {
+          LogService().log('mpv',
+              '原生命令待接入 PlayerScreen: ${command.toMap()['type']}');
+        }
     }
     if (command.requiresImmediatePush) {
       _pushNativeUiState(immediate: true);
