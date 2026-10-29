@@ -203,6 +203,17 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   String? _currentVo;
   String? _gpuContext;
 
+  /// 黑屏定性三元组（直读 mpv，见 [MpvPollResult.videoFps]）：
+  /// fps>0 = 在出帧 → 呈现问题；fps=0 → 解码/vo 问题。
+  double? _videoFps;
+  int? _frameDropCount;
+  int? _videoWidth;
+  int? _videoHeight;
+
+  /// 起播属性时间线已记录的时间点（2s/5s/10s 各一次，防重复打日志）。
+  final Set<int> _timelineLoggedSec = <int>{};
+  DateTime? _playbackStartedAt;
+
   /// 当前 MPV 是否正在输出 HDR（仅 Surface + HDR 内容 + HDR 显示）。
   bool get hdrOutputActive => _hdrOutputActive;
 
@@ -573,6 +584,28 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     );
   }
 
+  /// 起播属性时间线：2s/5s/10s 各打一次黑屏定性快照，导出日志里能直接
+  /// 看到 fps/丢帧/视频尺寸/vo 的演变（单张诊断行只能看到瞬时值）。
+  void _maybeLogPlaybackTimeline() {
+    final hasProgress = _positionMs > 0 || _durationMs > 0;
+    if (!hasProgress) return;
+    _playbackStartedAt ??= DateTime.now();
+    final elapsed = DateTime.now().difference(_playbackStartedAt!).inSeconds;
+    for (final mark in const <int>[2, 5, 10, 20]) {
+      if (elapsed >= mark && _timelineLoggedSec.add(mark)) {
+        LogService().log(
+          'mpv/timeline',
+          't+${mark}s fps=${_videoFps ?? "-"} drop=${_frameDropCount ?? "-"} '
+              'video=${_videoWidth ?? "-"}x${_videoHeight ?? "-"} '
+              'vo=${_voConfigured ?? "-"}(${_currentVo ?? "-"}) '
+              'hwdec=${_hwdecActual ?? "-"} '
+              'surface=${_surfaceAttached ? "att" : "no"} '
+              'pos=${_positionMs}ms',
+        );
+      }
+    }
+  }
+
   /// 把轮询结果并入状态机（与事件回调走同一套更新逻辑）。
   void _applyPolledState(MpvPollResult state) {
     _surfaceAttached = state.surfaceAttached;
@@ -581,6 +614,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     _voConfigured = state.voConfigured;
     _currentVo = state.currentVo;
     _gpuContext = state.gpuContext;
+    _videoFps = state.videoFps;
+    _frameDropCount = state.frameDropCount;
+    _videoWidth = state.videoWidth;
+    _videoHeight = state.videoHeight;
+    _maybeLogPlaybackTimeline();
     final hasProgress = state.durationMs > 0 ||
         state.positionMs > 0 ||
         state.videoParams != null ||
@@ -1541,6 +1579,12 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     if (_currentVo != null) buffer.write(' | ${_currentVo}');
     if (_gpuContext != null) buffer.write(' | gpu=$_gpuContext');
     buffer.write(' | hwdec=${_hwdecActual ?? "-"}');
+    // 黑屏定性：fps>0=mpv 在出帧（黑屏=呈现问题）；fps=0=解码/vo 问题。
+    buffer.write(' | fps=${_videoFps ?? "-"}');
+    if (_frameDropCount != null) buffer.write(' drop=$_frameDropCount');
+    if (_videoWidth != null && _videoWidth! > 0) {
+      buffer.write(' v=${_videoWidth}x$_videoHeight');
+    }
     if (!_surfaceAttached) buffer.write(' | surface未附着');
     if (_surfaceError != null) buffer.write(' | err=$_surfaceError');
     if (_hdrOutputActive) buffer.write(' | HDR');

@@ -101,6 +101,10 @@ class AndroidNativePlayerHost(
             // 无画面时 SurfaceView 的黑背景兜底仍是黑，视觉无回退。
             setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
             decorView.setBackgroundColor(Color.TRANSPARENT)
+            // 背景透明 ≠ surface 格式透明：窗口 surface 仍为 opaque 时，
+            // 部分 OEM 直接忽略 transparent region 提示（punch-hole 失效
+            // 的经典坑）。显式声明 TRANSLUCENT 让打洞真正生效。
+            setFormat(android.graphics.PixelFormat.TRANSLUCENT)
         }
         dialog = dlg
         view = playerView

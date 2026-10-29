@@ -21,6 +21,10 @@ class MpvPollResult {
     this.surfaceId,
     this.surfaceError,
     this.voConfigured,
+    this.videoFps,
+    this.frameDropCount,
+    this.videoWidth,
+    this.videoHeight,
   });
 
   final int durationMs;
@@ -48,6 +52,18 @@ class MpvPollResult {
   /// mpv `vo-configured`（yes/no）。
   final String? voConfigured;
 
+  /// 直读 mpv 属性（绕过 media_kit PlayerState，防状态失真）——黑屏定性
+  /// 的关键三元组：
+  /// - [videoFps] `estimated-vf-fps`：>0 = mpv 在持续出帧（解码+vo 正常），
+  ///   黑屏即呈现问题；0 = 没有帧流过（解码/vo 问题）。
+  /// - [frameDropCount] `frame-drop-count`：丢帧计数，配合 fps 判丢帧黑屏。
+  /// - [videoWidth]/[videoHeight] `width`/`height` 直读：视频轨是否真的
+  ///   配置出来（media_kit state 的 video-params 曾超时失真）。
+  final double? videoFps;
+  final int? frameDropCount;
+  final int? videoWidth;
+  final int? videoHeight;
+
   static MpvPollResult fromMap(Map<Object?, Object?> raw) {
     int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
     bool asBool(Object? v) => v is bool ? v : false;
@@ -74,6 +90,12 @@ class MpvPollResult {
       surfaceId: raw['surfaceId'] as String?,
       surfaceError: raw['surfaceError'] as String?,
       voConfigured: raw['voConfigured'] as String?,
+      videoFps: raw['videoFps'] is num ? (raw['videoFps'] as num).toDouble() : null,
+      frameDropCount:
+          raw['frameDropCount'] is num ? (raw['frameDropCount'] as num).toInt() : null,
+      videoWidth: raw['videoWidth'] is num ? (raw['videoWidth'] as num).toInt() : null,
+      videoHeight:
+          raw['videoHeight'] is num ? (raw['videoHeight'] as num).toInt() : null,
     );
   }
 }

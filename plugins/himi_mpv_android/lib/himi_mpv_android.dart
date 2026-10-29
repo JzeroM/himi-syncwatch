@@ -49,6 +49,7 @@ class HimiMpvAndroidSession implements MpvSession {
   StreamSubscription<Duration>? _durationSub;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<bool>? _completedSub;
+  StreamSubscription<PlayerLog>? _logSub;
 
   Player? _player;
   VideoController? _controller;
@@ -327,7 +328,7 @@ class HimiMpvAndroidSession implements MpvSession {
         wid: nativeSurface ? _surfaceHandle : null,
         options: options,
         libass: true,
-        logLevel: MPVLogLevel.error,
+        logLevel: MPVLogLevel.info,
       ),
     );
     _player = player;
@@ -418,6 +419,13 @@ class HimiMpvAndroidSession implements MpvSession {
     player.stream.buffering.listen((b) {
       _emit('paused-for-cache', b);
     });
+    // mpv 自身日志（logLevel=info 才有 [vd]/[vo]/[ffmpeg] 关键行）：
+    // 黑屏定性全靠它——解码器选择、vo 初始化、EGL/surface 报错都在这里。
+    // info 级别量可控（每秒个位数），直接进 LogService 落盘。
+    _logSub = player.stream.log.listen((log) {
+      if (_disposed) return;
+      _log('mpv[${log.level}][${log.prefix}] ${log.text}');
+    }, onError: (_) {});
   }
 
   void _emit(String name, Object? value) {
@@ -552,6 +560,19 @@ class HimiMpvAndroidSession implements MpvSession {
     }
   }
 
+  /// 数值属性直读（属性缺失/格式异常返回 null，不让轮询整体失败）。
+  Future<double?> _readDouble(String name) async {
+    final raw = await getProperty(name);
+    if (raw == null || raw.isEmpty) return null;
+    return double.tryParse(raw);
+  }
+
+  Future<int?> _readInt(String name) async {
+    final raw = await getProperty(name);
+    if (raw == null || raw.isEmpty) return null;
+    return int.tryParse(raw) ?? double.tryParse(raw)?.round();
+  }
+
   @override
   Future<void> resizeTexture(int width, int height) async {
     if (nativeSurface || width <= 0 || height <= 0) return;
@@ -619,6 +640,11 @@ class HimiMpvAndroidSession implements MpvSession {
       gpuContext: await getProperty('gpu-context'),
       currentVo: await getProperty('current-vo'),
       voConfigured: await getProperty('vo-configured'),
+      // 黑屏定性三元组：直读 mpv 属性（media_kit state 曾失真）。
+      videoFps: await _readDouble('estimated-vf-fps'),
+      frameDropCount: await _readInt('frame-drop-count'),
+      videoWidth: await _readInt('width'),
+      videoHeight: await _readInt('height'),
       // Android 侧 wid 直接指向 SurfaceView 的 Java Surface 全局引用：
       // 播放器存在且有有效 handle 即视为已附着（诊断行靠它定位黑屏）。
       surfaceAttached: _player != null && _surfaceHandle > 0,
@@ -646,6 +672,7 @@ class HimiMpvAndroidSession implements MpvSession {
     await _durationSub?.cancel();
     await _playingSub?.cancel();
     await _completedSub?.cancel();
+    await _logSub?.cancel();
     try {
       await _player?.dispose();
     } catch (_) {}
