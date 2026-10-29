@@ -669,12 +669,23 @@ plugins {
 
 ### Phase 7：测试、构建与交付
 
-- [ ] Dart 单元测试。
-- [ ] 鸿蒙 ArkTS 编译与真机测试。
-- [ ] Android CI signed APK。
-- [ ] TV 遥控器实测。
-- [ ] 全量测试与 `flutter analyze`。
-- [ ] 版本递增、构建产物、签名校验。
+- [x] Dart 单元测试（Phase 0 协议/门控/控制器 45 项 + 回归 107 项）。
+- [x] 鸿蒙 ArkTS 编译（`hvigor CompileArkTS` 零错误）。
+- [ ] 鸿蒙真机测试（SDR/HDR 出画、surface/vo 诊断）——需实机。
+- [ ] Android CI signed APK——需 CI 触发（本机无 Android SDK）。
+- [x] Android 本地编译校验（`android.jar` API 36 + Flutter 桩，全量零错误）
+  与状态层 11 项 JVM 单测。
+- [ ] TV 遥控器实测——需实机。
+- [x] 全量测试与 `flutter analyze`（Flutter-OH 3.35.7：2468 项全通过、
+  无任何 analyze 问题）。
+- [x] 版本递增（1.5.3+532）、构建产物、签名校验
+  （`himi-sync-ohos-1.5.3-532-local-signed.hap`，`verify-app` 通过）。
+
+> 工具链要求：`flutter test` / `flutter analyze` 必须用 Flutter-OH SDK。
+> 标准 Flutter 3.47 下 `test/services/ohos_hybrid_platform_view_test.dart`
+> 因缺 `PlatformViewsService.initExpensiveOhosView` 无法编译，且 M3 的
+> `InkSparkle` 会在测试环境尝试编译 `shaders/ink_sparkle.frag` 失败，
+> 波及约 32 个 widget 测试文件——均为工具链差异，与本计划无关。
 
 ---
 
