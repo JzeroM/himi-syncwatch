@@ -1419,9 +1419,29 @@ void main() {
       // 只发 KeyUp（模拟焦点中途转移后 OS 补发的孤立抬起）。
       // 修复前 _TvCardFocus 对任意 KeyUp 直接 widget.onTap() →
       // 误切换服务器；修复后仅在见过对应 KeyDown 时才 onTap。
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      //
+      // 不能走 tester.sendKeyUpEvent：真实事件模型里 KeyUp 必先有 KeyDown，
+      // Flutter 3.35+ 对孤立 KeyUp 直接在 HardwareKeyboard 断言失败（框架
+      // 认定这是非法事件流）。这里把同一个 KeyUpEvent 直接投给卡片节点的
+      // onKeyEvent，等价覆盖「本节点没见过 KeyDown 的抬起」这一分支。
+      // 祖先链上有多层 Focus（InkWell 等），取第一个挂了 onKeyEvent 的。
+      final cardFocus = tester
+          .widgetList<Focus>(
+            find.ancestor(of: find.text('家庭NAS'), matching: find.byType(Focus)),
+          )
+          .firstWhere((f) => f.onKeyEvent != null);
+      final cardNode = cardFocus.focusNode!;
+      final handled = cardFocus.onKeyEvent!(
+        cardNode,
+        const KeyUpEvent(
+          physicalKey: PhysicalKeyboardKey.enter,
+          logicalKey: LogicalKeyboardKey.enter,
+          timeStamp: Duration.zero,
+        ),
+      );
       await tester.pumpAndSettle();
 
+      expect(handled, KeyEventResult.handled, reason: '孤立 KeyUp 应被卡片吞掉');
       expect(container.read(embyConfigProvider), isNull,
           reason: '孤立 KeyUp 不应触发 onTap 打开服务器');
     });
