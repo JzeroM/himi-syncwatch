@@ -25,7 +25,9 @@ log "同步 mpv-android $ANDROID_BUILD_REPO"
 clone_at https://github.com/mpv-android/mpv-android "$SRC" "$ANDROID_BUILD_REPO"
 
 export IN_CI=1
-export WGET="wget --progress=bar:force"
+# 依赖下载来自 GitHub/dl.google.com：偶发 5xx 会让整个 matrix 失败（曾因
+# 单个 ABI 下载 500 挂掉 kernels 作业）。wget 按 tries 重试 5xx/超时。
+export WGET="wget --progress=bar:force --tries=10 --waitretry=15 --timeout=60"
 
 log "下载 Android SDK/NDK"
 (

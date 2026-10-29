@@ -781,6 +781,12 @@ class HimiMpvWindowsSession implements MpvSession {
   }
 
   @override
+  void setNativeUiActive(bool active) {}
+
+  @override
+  Future<void> refreshSurface() async {}
+
+  @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;

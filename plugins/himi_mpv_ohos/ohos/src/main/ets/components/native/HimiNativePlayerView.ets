@@ -289,7 +289,7 @@ export struct HimiNativePlayerView {
                 this.onTogglePlay();
               });
             // 倍速（只读展示；Phase 2 起可点开面板）
-            Text('${this.state().speed}x')
+            Text(`${this.state().speed}x`)
               .fontSize(14)
               .fontColor('#CCFFFFFF')
               .padding({ left: 10, right: 10 });

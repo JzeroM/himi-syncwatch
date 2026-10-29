@@ -44,6 +44,9 @@ class NativePlayerScreenView(context: Context) : FrameLayout(context) {
         SURFACE_VIEW_ID,
         // Dialog 是独立窗口，media overlay 反而会被 Flutter 窗口表面盖住。
         false,
+        // 来源标识：原生播放器 UI 的 surface，Dart 只在 nativeUiActive
+        // 时接受 src=native 的事件（防平台视图的过期事件抢回绑定）。
+        "native",
     )
 
     private val tapLayer = View(context).apply {
@@ -311,7 +314,10 @@ class NativePlayerScreenView(context: Context) : FrameLayout(context) {
         val parts = mutableListOf<String>()
         parts.add("vo=${state.currentVo ?: state.voConfigured ?: "-"}")
         parts.add("hwdec=${state.hwdecCurrent ?: "-"}")
-        if (!state.surfaceAttached) parts.add("surface未附着")
+        // surface 绑定是 Android 黑屏的第一现场：att + handle 必须可见
+        // （原诊断只有「surface未附着」一个布尔，看不出绑的是哪个 handle）。
+        parts.add("surface=${if (state.surfaceAttached) "att" else "未附着"}")
+        state.surfaceId?.takeIf { it.isNotEmpty() }?.let { parts.add("handle=$it") }
         state.surfaceError?.let { parts.add("err=$it") }
         if (state.buffering) parts.add("缓冲中")
         parts.addAll(state.debugLines)

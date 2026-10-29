@@ -53,6 +53,17 @@ abstract class MpvSession {
   Future<String?> getAudioParams();
   Future<MpvPollResult?> pollState();
   Future<void> dispose();
+
+  /// 原生播放器 UI 接管状态变化（Android：用于 surface 事件来源过滤）。
+  ///
+  /// 默认空实现：只有存在双 SurfaceView 的平台需要。
+  void setNativeUiActive(bool active) {}
+
+  /// 主动向原生重同步当前 surface（默认空实现）。
+  ///
+  /// 事件通道可能丢事件（宿主销毁不回调 / 事件早于监听），打开原生 UI
+  /// 后调用它按 `getCurrentSurface` 轮询兜底，避免永久绑在死 surface 上。
+  Future<void> refreshSurface() async {}
 }
 
 /// 平台 MPV 会话工厂。

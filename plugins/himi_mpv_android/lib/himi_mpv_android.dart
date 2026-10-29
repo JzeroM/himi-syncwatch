@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'package:media_kit/media_kit.dart';
@@ -55,6 +56,9 @@ class HimiMpvAndroidSession implements MpvSession {
   int _surfaceHandle = 0;
   int _textureId = 0;
   bool _disposed = false;
+  /// 原生播放器 UI 是否接管中（adapter 在 open 前/关闭后同步）。
+  /// 决定 surface 事件来源过滤：接管中只认 `src=native`。
+  bool _nativeUiActive = false;
   int _positionMs = 0;
   int _durationMs = 0;
   int _bufferedMs = 0;
@@ -124,6 +128,68 @@ class HimiMpvAndroidSession implements MpvSession {
   @override
   Stream<Map<Object?, Object?>> get events => _events.stream;
 
+  /// 诊断日志出口（adapter 注入 LogService；未注入时走 debugPrint）。
+  static void Function(String message)? debugLog;
+
+  static void _log(String message) {
+    final sink = debugLog;
+    if (sink != null) {
+      sink(message);
+    } else {
+      debugPrint('[HimiMpvAndroid] $message');
+    }
+  }
+
+  @override
+  void setNativeUiActive(bool active) {
+    if (_nativeUiActive == active) return;
+    _nativeUiActive = active;
+    _log('nativeUiActive=$active（surface 来源过滤切换）');
+  }
+
+  /// 主动重同步 surface：事件通道可能丢事件（宿主销毁不发回调 / 事件早于
+  /// 监听），按 `getCurrentSurface` 轮询兜底。
+  @override
+  Future<void> refreshSurface() async {
+    if (_disposed || !nativeSurface) return;
+    for (var attempt = 0; attempt < 10; attempt++) {
+      if (_disposed) return;
+      try {
+        final current = await _methods.invokeMapMethod<String, dynamic>(
+          'getCurrentSurface',
+        );
+        final handle = current?['handle'];
+        final src = current?['src'] as String?;
+        if (handle is int && handle > 0) {
+          if (!_policy.accept(
+              nativeUiActive: _nativeUiActive, eventSrc: src)) {
+            // 当前来源还没有 surface（原生宿主窗口尚未完成创建）。
+            _log('refreshSurface #$attempt: 跳过 src=$src '
+                'handle=$handle（nativeUiActive=$_nativeUiActive）');
+          } else if (handle != _surfaceHandle) {
+            _log('refreshSurface #$attempt: 重同步 handle=$handle '
+                '（原 $_surfaceHandle, src=$src）');
+            _surfaceHandle = handle;
+            unawaited(_player == null
+                ? _ensurePlayer()
+                : _rebindToSurface());
+            return;
+          } else {
+            _log('refreshSurface #$attempt: 已同步 handle=$handle');
+            if (_player == null) {
+              unawaited(_ensurePlayer());
+            }
+            return;
+          }
+        }
+      } catch (e) {
+        _log('refreshSurface #$attempt 失败: $e');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    _log('refreshSurface 超时：原生宿主未报出当前来源的 surface');
+  }
+
   Future<void> _start() async {
     if (!nativeSurface) {
       await _ensurePlayer();
@@ -134,12 +200,24 @@ class HimiMpvAndroidSession implements MpvSession {
       final type = raw['type'];
       final handle = raw['handle'];
       final handleInt = handle is int ? handle : 0;
+      final src = raw['src'] as String?;
+      // 来源过滤：原生 UI 接管中只认 native，未接管只认 platform。
+      // 垂死平台视图的 surfaceChanged 会把绑定抢回即将销毁的 handle，
+      // 过滤掉就不会再搁浅（v1.5.4 安卓黑屏根因）。
+      if (!_policy.accept(nativeUiActive: _nativeUiActive, eventSrc: src)) {
+        _log('忽略过期来源事件: $type src=$src handle=$handleInt '
+            '（nativeUiActive=$_nativeUiActive）');
+        return;
+      }
       if (type == 'surface') {
-        switch (_policy.plan(
+        final action = _policy.plan(
           currentHandle: _surfaceHandle,
           newHandle: handleInt,
           playerAlive: _player != null,
-        )) {
+        );
+        _log('surface 事件: src=$src handle=$handleInt current=$_surfaceHandle '
+            'playerAlive=${_player != null} → ${action.name}');
+        switch (action) {
           case SurfaceAction.ensurePlayer:
             _surfaceHandle = handleInt;
             unawaited(_ensurePlayer());
@@ -153,15 +231,17 @@ class HimiMpvAndroidSession implements MpvSession {
             break;
         }
       } else if (type == 'surfaceDestroyed') {
+        final action = _policy.onDestroyed(
+          currentHandle: _surfaceHandle,
+          destroyedHandle: handleInt,
+          playerAlive: _player != null,
+        );
+        _log('surfaceDestroyed: src=$src handle=$handleInt '
+            'current=$_surfaceHandle → ${action.name}');
         // 只处理当前绑定 surface 的销毁：原生 UI（Dialog）与 Flutter 平台
         // 视图各有自己的 SurfaceView，旧宿主销毁不能拆掉新 surface 的绑定
         // （否则表现为「解码正常但黑屏」）。
-        if (_policy.onDestroyed(
-              currentHandle: _surfaceHandle,
-              destroyedHandle: handleInt,
-              playerAlive: _player != null,
-            ) ==
-            SurfaceAction.detach) {
+        if (action == SurfaceAction.detach) {
           _surfaceHandle = 0;
           unawaited(_detachPlayer());
         }
@@ -174,6 +254,7 @@ class HimiMpvAndroidSession implements MpvSession {
       final handle = current?['handle'];
       if (handle is int && handle > 0) {
         _surfaceHandle = handle;
+        _log('初始 surface: handle=$handle src=${current?['src']}');
         await _ensurePlayer();
       }
     } catch (_) {}
@@ -182,6 +263,7 @@ class HimiMpvAndroidSession implements MpvSession {
   Future<void> _detachPlayer() async {
     if (_disposed) return;
     final player = _player;
+    _log('detachPlayer: handle=$_surfaceHandle');
     _player = null;
     // Surface 重建（旋转 / 原生 UI 宿主重建）：记住当前播放点，等新
     // surface 到达后由 _ensurePlayer 用同一地址 + 当前位置重建，避免黑屏
@@ -210,6 +292,7 @@ class HimiMpvAndroidSession implements MpvSession {
   Future<void> _ensurePlayer() async {
     if (_disposed || _player != null) return;
     if (nativeSurface && _surfaceHandle == 0) return;
+    _log('创建播放器: wid=$_surfaceHandle hwdec=$hwdecMode');
     final options = <String, String>{
       if (nativeSurface) 'vo': 'gpu-next',
       'vid': 'auto',

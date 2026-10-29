@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
+import 'package:himi_mpv_android/himi_mpv_android.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'mpv_session_platform.dart';
 import 'native/native_player_command.dart';
@@ -417,6 +418,12 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         return;
       }
       _player = player;
+      // Android 会话的诊断日志接到 LogService（进 App 调试面板 + 落盘 +
+      // logcat），否则 surface 事件时序完全不可见（黑屏盲区）。
+      if (player is HimiMpvAndroidSession) {
+        HimiMpvAndroidSession.debugLog =
+            (message) => LogService().log('mpv/surface', message);
+      }
       // 原生确认实际为 Surface 才启用原生 UI；请求 Surface 但回退
       // Texture 时不打开原生窗口，保持 Flutter UI。
       _nativeUiEnabled = nativeUiRequested && player.usesNativeSurface;
@@ -1423,16 +1430,23 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 两个 SurfaceView 会短暂并存，原生宿主的 surface 事件先到、被当作
     // 重绑目标，随后平台视图销毁又把播放器拆掉 → 黑屏。
     nativeUiActive.value = true;
+    // 同步给会话：surface 事件据此按来源（platform/native）过滤，
+    // 防止垂死平台视图的 surfaceChanged 把绑定抢回即将销毁的 handle。
+    _player?.setNativeUiActive(true);
     try {
       await controller.open(
         platform: platform,
         initial: _buildNativePlayerState(),
         commandStream: MpvSessionPlatform.nativeUiCommandStream(),
       );
+      // 事件可能丢（宿主销毁不发回调 / 事件早于监听）：主动按
+      // getCurrentSurface 轮询重同步，确保 mpv 绑在原生宿主的 surface 上。
+      await _player?.refreshSurface();
     } catch (e) {
       LogService().log('mpv', '原生 UI 打开失败: $e');
       _nativeUiController = null;
       nativeUiActive.value = false;
+      _player?.setNativeUiActive(false);
     }
   }
 
@@ -1444,6 +1458,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     final controller = _nativeUiController;
     _nativeUiController = null;
     nativeUiActive.value = false;
+    _player?.setNativeUiActive(false);
     if (controller == null) return;
     try {
       await controller.close();

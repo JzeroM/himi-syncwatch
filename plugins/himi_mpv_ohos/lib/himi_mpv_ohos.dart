@@ -255,6 +255,14 @@ class HimiMpvPlayer implements MpvSession {
     return raw == null ? null : MpvPollResult.fromMap(raw);
   }
 
+  /// 鸿蒙只有单个 XComponent surface（子窗口/平台视图互斥），无需
+  /// 来源过滤与主动重同步；保留空实现以符合 [MpvSession] 契约。
+  @override
+  void setNativeUiActive(bool active) {}
+
+  @override
+  Future<void> refreshSurface() async {}
+
   /// 销毁播放器并释放纹理。
   Future<void> dispose() => _methods.invokeMethod<void>('dispose');
 

@@ -14,7 +14,8 @@ import io.flutter.plugin.platform.PlatformViewFactory
 class HimiMpvSurfaceFactory(
     private val codec: MessageCodec<Any>,
     private val useMediaOverlay: Boolean = true,
+    private val source: String = "platform",
 ) : PlatformViewFactory(codec) {
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView =
-        HimiMpvSurfaceView(context, viewId, useMediaOverlay)
+        HimiMpvSurfaceView(context, viewId, useMediaOverlay, source)
 }
