@@ -298,7 +298,9 @@ class HimiMpvAndroidSession implements MpvSession {
       if (nativeSurface) 'vo': 'gpu-next',
       'vid': 'auto',
       'aid': 'auto',
-      'force-window': 'no',
+      // force-window 仅 surface 模式设 no（显式 wid 已给窗口）；纹理模式
+      // 由 AndroidVideoController 后置设 yes，此处若设 no 会与其冲突。
+      if (nativeSurface) 'force-window': 'no',
       if (nativeSurface) 'wid': '$_surfaceHandle',
       // The stock Android libmpv build used by media_kit is built without
       // Vulkan (libplacebo HAVE_VULKAN=0). Use the EGL/GLES Android context;
@@ -330,7 +332,11 @@ class HimiMpvAndroidSession implements MpvSession {
     };
     final player = Player(
       configuration: PlayerConfiguration(
-        vo: nativeSurface ? 'gpu-next' : 'libmpv',
+        // Android 纹理模式必须 vo=gpu（media_kit AndroidVideoController 走
+        // TextureRegistry Surface + wid + vo=gpu，非 libmpv 渲染 API）。
+        // 传 libmpv 会让 native VideoOutputManager 的 VideoOutput.Resize
+        // 事件永不触发 → texture id 恒 null → _waitForTextureId 10s 超时。
+        vo: nativeSurface ? 'gpu-next' : 'gpu',
         wid: nativeSurface ? _surfaceHandle : null,
         options: options,
         libass: true,
@@ -338,11 +344,15 @@ class HimiMpvAndroidSession implements MpvSession {
       ),
     );
     _player = player;
+    // 日志订阅必须在纹理等待之前：纹理路径若卡住/超时，也应有 mpv 日志
+    // 可查（曾因订阅在等待之后，纹理失败时全程零 mpv 日志 → 盲调）。
+    _wire(player);
     if (!nativeSurface) {
       final controller = VideoController(
         player,
         configuration: VideoControllerConfiguration(
-          vo: 'libmpv',
+          // 与上一致：Android 纹理走 gpu（wid），不走 libmpv。
+          vo: 'gpu',
           hwdec: 'auto-copy',
           width: width,
           height: height,
@@ -361,11 +371,13 @@ class HimiMpvAndroidSession implements MpvSession {
       controller.id.addListener(updateTextureId);
       try {
         _textureId = await _waitForTextureId(controller);
-      } catch (_) {
+      } catch (e) {
+        // 纹理注册失败：带上已等时长与当前 id，便于下次定位（不应再出现
+        // 「零日志 + 裸 TimeoutException」）。
+        _log('纹理注册失败: $e（当前 id=${controller.id.value}）');
         rethrow;
       }
     }
-    _wire(player);
     try {
       await (player.platform as dynamic)?.setProperty?.call('vid', 'auto');
       for (final entry in _pendingProperties.entries) {
@@ -396,9 +408,17 @@ class HimiMpvAndroidSession implements MpvSession {
     }
 
     controller.id.addListener(listener);
-    return completer.future.timeout(const Duration(seconds: 10)).whenComplete(
-          () => controller.id.removeListener(listener),
-        );
+    // 20s：4K HEVC + copy-back 首帧注册慢；超时前再复查一次，防错过瞬时
+    // 注册（listener 可能晚于实际赋值一帧）。
+    return completer.future.timeout(const Duration(seconds: 20)).whenComplete(() {
+      controller.id.removeListener(listener);
+      if (!completer.isCompleted) {
+        final id = controller.id.value;
+        if (id != null && id > 0) {
+          _log('纹理注册超时前复查命中 id=$id');
+        }
+      }
+    });
   }
 
   void _wire(Player player) {
