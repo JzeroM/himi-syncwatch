@@ -94,7 +94,13 @@ class AndroidNativePlayerHost(
                 attributes.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
-            decorView.setBackgroundColor(Color.BLACK)
+            // 【必须透明】SurfaceView 走 punch-hole：surface 位于窗口表面
+            // 之后，窗口在 SurfaceView 区域不透明就会把它盖死——表现为
+            // mpv 一切正常（vo-configured=yes / 硬解在跑 / 进度推进）但
+            // 全黑（v1.5.4 Android 黑屏根因）。控件栏自带半透明黑背景，
+            // 无画面时 SurfaceView 的黑背景兜底仍是黑，视觉无回退。
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            decorView.setBackgroundColor(Color.TRANSPARENT)
         }
         dialog = dlg
         view = playerView

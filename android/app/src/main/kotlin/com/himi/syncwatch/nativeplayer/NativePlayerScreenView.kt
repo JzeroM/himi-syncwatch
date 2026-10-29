@@ -318,6 +318,9 @@ class NativePlayerScreenView(context: Context) : FrameLayout(context) {
         // （原诊断只有「surface未附着」一个布尔，看不出绑的是哪个 handle）。
         parts.add("surface=${if (state.surfaceAttached) "att" else "未附着"}")
         state.surfaceId?.takeIf { it.isNotEmpty() }?.let { parts.add("handle=$it") }
+        // surface 实测尺寸：punch-hole 失效 / surfaceChanged 未到达时会是
+        // 0x0，与窗口不符即可判定为「画面没透出来」而不是解码问题。
+        parts.add("size=${surface.width}x${surface.height}")
         state.surfaceError?.let { parts.add("err=$it") }
         if (state.buffering) parts.add("缓冲中")
         parts.addAll(state.debugLines)
