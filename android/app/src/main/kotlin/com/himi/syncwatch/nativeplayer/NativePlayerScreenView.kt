@@ -28,7 +28,14 @@ import android.widget.TextView
  * 内部定时器也走主线程 Handler，不做跨线程加锁。
  */
 @SuppressLint("ViewConstructor")
-class NativePlayerScreenView(context: Context) : FrameLayout(context) {
+class NativePlayerScreenView(
+    context: Context,
+    /**
+     * surface 实测尺寸提供者（诊断行 `size=WxH`）。双窗口方案里 surface
+     * 已剥离到独立 surface 窗，控件层不再持有它，尺寸由宿主注入。
+     */
+    private val surfaceSizeProvider: () -> Pair<Int, Int> = { 0 to 0 },
+) : FrameLayout(context) {
 
     /** 视图 → 宿主 → Dart 的交互回调。 */
     interface Listener {
@@ -39,15 +46,6 @@ class NativePlayerScreenView(context: Context) : FrameLayout(context) {
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val surface = com.himi.mpv.android.HimiMpvSurfaceView(
-        context,
-        SURFACE_VIEW_ID,
-        // Dialog 是独立窗口，media overlay 反而会被 Flutter 窗口表面盖住。
-        false,
-        // 来源标识：原生播放器 UI 的 surface，Dart 只在 nativeUiActive
-        // 时接受 src=native 的事件（防平台视图的过期事件抢回绑定）。
-        "native",
-    )
 
     private val tapLayer = View(context).apply {
         isClickable = true
@@ -155,10 +153,9 @@ class NativePlayerScreenView(context: Context) : FrameLayout(context) {
     private val hideRunnable = Runnable { setControlsVisible(false) }
 
     init {
-        addView(
-            surface,
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
-        )
+        // surface 已剥离到独立 surface 窗（双窗口方案，zOrderOnTop 不打洞），
+        // 控件层只保留触控层 + 顶栏 + 底栏，全部画在透明的控件窗上，浮在
+        // surface 窗之上。
         addView(
             tapLayer,
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
@@ -273,7 +270,6 @@ class NativePlayerScreenView(context: Context) : FrameLayout(context) {
         mainHandler.removeCallbacks(tickRunnable)
         mainHandler.removeCallbacks(hideRunnable)
         listener = null
-        surface.dispose()
     }
 
     /** 用 Dart 推送的权威快照覆盖本地状态并刷新控件。 */
@@ -318,9 +314,11 @@ class NativePlayerScreenView(context: Context) : FrameLayout(context) {
         // （原诊断只有「surface未附着」一个布尔，看不出绑的是哪个 handle）。
         parts.add("surface=${if (state.surfaceAttached) "att" else "未附着"}")
         state.surfaceId?.takeIf { it.isNotEmpty() }?.let { parts.add("handle=$it") }
-        // surface 实测尺寸：punch-hole 失效 / surfaceChanged 未到达时会是
-        // 0x0，与窗口不符即可判定为「画面没透出来」而不是解码问题。
-        parts.add("size=${surface.width}x${surface.height}")
+        // surface 实测尺寸（宿主注入，来自独立 surface 窗）：punch-hole
+        // 失效 / surfaceChanged 未到达时会是 0x0，与窗口不符即可判定为
+        // 「画面没透出来」而不是解码问题。
+        val (sw, sh) = surfaceSizeProvider()
+        parts.add("size=${sw}x$sh")
         state.surfaceError?.let { parts.add("err=$it") }
         if (state.buffering) parts.add("缓冲中")
         parts.addAll(state.debugLines)
@@ -374,7 +372,6 @@ class NativePlayerScreenView(context: Context) : FrameLayout(context) {
         (value * resources.displayMetrics.density).toInt()
 
     private companion object {
-        const val SURFACE_VIEW_ID = -1
         const val SEEK_STEPS = 1000
         const val TICK_MS = 500L
         const val AUTO_HIDE_MS = 4000L

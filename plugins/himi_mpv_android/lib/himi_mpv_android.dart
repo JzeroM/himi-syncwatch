@@ -305,7 +305,13 @@ class HimiMpvAndroidSession implements MpvSession {
       // the HDR data-space patch tags the native window as BT.2020 PQ/HLG.
       if (nativeSurface) 'gpu-api': 'opengl',
       if (nativeSurface) 'gpu-context': 'android',
-      'hwdec': hwdecMode == 'software' ? 'no' : 'auto',
+      // 纹理模式（!nativeSurface）必须 copy-back 硬解：渲染纹理没有真实
+      // Surface 给 MediaCodec 直写，`auto` 会先试零拷贝 → "Both surface and
+      // native_window are NULL" → 首帧解码失败 → 上层弹「播放失败」。
+      // copy-back 解到系统内存再上传 GPU。Surface 模式保留 auto（可直写）。
+      'hwdec': !nativeSurface
+          ? 'auto-copy'
+          : (hwdecMode == 'software' ? 'no' : 'auto'),
       'hwdec-software-fallback': 'yes',
       'cache': 'yes',
       'demuxer-max-bytes': '${256 * 1024 * 1024}',

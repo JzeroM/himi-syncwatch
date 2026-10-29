@@ -35,6 +35,12 @@ class HimiMpvSurfaceView(
      * UI 的 SurfaceView。Dart 只接受当前激活来源的事件。
      */
     private val source: String = "platform",
+    /**
+     * true（仅原生 UI 独立 surface 窗口用）：surface 提到本窗口表面之上，
+     * 不走 punch-hole。punch-hole 在部分 OEM 上失效（帧已渲染但被窗口
+     * 表面盖住 → mpv fps=60 却全黑），置顶 surface 从机制上绕开它。
+     */
+    private val zOrderOnTop: Boolean = false,
 ) : SurfaceView(context), PlatformView, SurfaceHolder.Callback {
 
     private var surfaceHandle: Long = 0L
@@ -47,6 +53,9 @@ class HimiMpvSurfaceView(
         // 下方时会被窗口表面遮住。MediaOverlay 让它位于其它 SurfaceView
         // 之上，但仍低于 Flutter 控件窗口。
         if (useMediaOverlay) setZOrderMediaOverlay(true)
+        // 独立 surface 窗口：surface 提到本窗口表面之上，不打洞。
+        // 必须在 surface 创建前设置（attach 之后再改无效）。
+        if (zOrderOnTop) setZOrderOnTop(true)
         setBackgroundColor(android.graphics.Color.BLACK)
     }
 

@@ -11,11 +11,20 @@ import android.view.Window
 import android.view.WindowManager
 
 /**
- * 全屏原生播放器宿主（计划书 §6.2）：持有 [Dialog] 与
- * [NativePlayerScreenView] 的生命周期，并把用户交互转成命令回传 Dart。
+ * 全屏原生播放器宿主（计划书 §6.2 / §11 风险1 兜底升级）：持有 surface 窗
+ * 与控件窗两层窗口，并把用户交互转成命令回传 Dart。
+ *
+ * 【为什么要两个窗口】
+ * SurfaceView 默认走 punch-hole：surface 在窗口表面之后，窗口在 SurfaceView
+ * 区域不透明就把它盖死。v1.5.4 真机（SM8550）上 mpv fps=60、vo 配置成功、
+ * 硬解在跑却全黑——帧渲染了但没到屏幕，透明背景 + setFormat(TRANSLUCENT)
+ * 都救不回，即 punch-hole 在该设备失效。改为：
+ * - surface 窗：只放 [HimiMpvSurfaceView]（setZOrderOnTop(true)），surface
+ *   提到本窗口表面之上，不打洞、不依赖窗口透明；
+ * - 控件窗：透明背景，画触控层/顶栏/底栏，后创建保证 z-order 高于 surface 窗。
  *
  * 只做「宿主」职责：
- * - open/close 幂等（重复调用不会叠加多个 Dialog）；
+ * - open/close 幂等（重复调用不会叠加窗口）；
  * - 状态推送由 Dart 驱动（[pushState]），此处不轮询 mpv；
  * - 退出语义与 Flutter 一致：BACK 键统一转 `requestBack`，由 Dart 决定
  *   是否关闭宿主并退出播放页。
@@ -32,22 +41,52 @@ class AndroidNativePlayerHost(
         fun send(command: Map<String, Any?>)
     }
 
-    private var dialog: Dialog? = null
+    private var surfaceDialog: Dialog? = null
+    private var controlsDialog: Dialog? = null
+    private var surfaceView: com.himi.mpv.android.HimiMpvSurfaceView? = null
     private var view: NativePlayerScreenView? = null
 
     /** 最近一次 Dart 推送的快照（新视图首次渲染直接复用）。 */
     private var lastState: AndroidNativePlayerState = AndroidNativePlayerState()
     private var lastStateAtMs: Long = 0L
 
-    val isOpen: Boolean get() = dialog != null
+    val isOpen: Boolean get() = controlsDialog != null
 
-    /** 打开全屏 Dialog（幂等）。 */
+    /** 打开 surface 窗 + 控件窗（幂等）。 */
     fun open() {
-        if (dialog != null) return
-        val dlg = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        val playerView = NativePlayerScreenView(activity)
-        playerView.setListener(object : NativePlayerScreenView.Listener {
+        if (controlsDialog != null) return
+
+        // ── 窗 A：surface 窗（只放 surface，置顶，不打洞）──────────
+        val surf = com.himi.mpv.android.HimiMpvSurfaceView(
+            activity,
+            SURFACE_VIEW_ID,
+            // 独立窗口内不需要 media overlay（它只解决 Flutter 内嵌的遮挡）。
+            false,
+            // 来源标识：原生播放器 UI 的 surface，Dart 只在 nativeUiActive
+            // 时接受 src=native 的事件（防平台视图的过期事件抢回绑定）。
+            "native",
+            // 关键：surface 提到本窗口表面之上，绕开 punch-hole。
+            true,
+        )
+        val surfDlg = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        surfDlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        surfDlg.setContentView(
+            surf,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        surfDlg.setCanceledOnTouchOutside(false)
+        surfDlg.setCancelable(false) // BACK 由控件窗接管，surface 窗不响应
+        applyFullscreen(surfDlg)
+        surfaceDialog = surfDlg
+        surfaceView = surf
+        surfDlg.show()
+
+        // ── 窗 B：控件窗（后创建 → z-order 高于 surface 窗）─────────
+        val controls = NativePlayerScreenView(activity) { surfaceSize() }
+        controls.setListener(object : NativePlayerScreenView.Listener {
             override fun onBack() {
                 commandSink.send(mapOf("type" to "requestBack"))
             }
@@ -66,12 +105,14 @@ class AndroidNativePlayerHost(
                 )
             }
         })
-        playerView.render(lastState, lastStateAtMs)
-        dlg.setContentView(playerView)
-        dlg.setCanceledOnTouchOutside(false)
-        dlg.setCancelable(true)
-        dlg.setOnDismissListener { releaseView() }
-        dlg.setOnKeyListener { _, keyCode, event ->
+        controls.render(lastState, lastStateAtMs)
+        val ctrlDlg = Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)
+        ctrlDlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        ctrlDlg.setContentView(controls)
+        ctrlDlg.setCanceledOnTouchOutside(false)
+        ctrlDlg.setCancelable(true)
+        ctrlDlg.setOnDismissListener { close() }
+        ctrlDlg.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
                 commandSink.send(mapOf("type" to "requestBack"))
                 true
@@ -79,6 +120,24 @@ class AndroidNativePlayerHost(
                 false
             }
         }
+        applyFullscreen(ctrlDlg)
+        // 控件窗背景透明（顶/底栏自带半透明黑，中间区域透出 surface 窗）。
+        ctrlDlg.window?.setBackgroundDrawable(
+            android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),
+        )
+        controlsDialog = ctrlDlg
+        view = controls
+        ctrlDlg.show()
+    }
+
+    /** surface 实测尺寸（诊断行用；未就绪返回 0x0）。 */
+    private fun surfaceSize(): Pair<Int, Int> {
+        val surf = surfaceView ?: return 0 to 0
+        return surf.width to surf.height
+    }
+
+    /** 全屏 + 刘海 + 沉浸式（两个窗口共用）。 */
+    private fun applyFullscreen(dlg: Dialog) {
         dlg.window?.apply {
             setLayout(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -94,37 +153,30 @@ class AndroidNativePlayerHost(
                 attributes.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
-            // 【必须透明】SurfaceView 走 punch-hole：surface 位于窗口表面
-            // 之后，窗口在 SurfaceView 区域不透明就会把它盖死——表现为
-            // mpv 一切正常（vo-configured=yes / 硬解在跑 / 进度推进）但
-            // 全黑（v1.5.4 Android 黑屏根因）。控件栏自带半透明黑背景，
-            // 无画面时 SurfaceView 的黑背景兜底仍是黑，视觉无回退。
-            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-            decorView.setBackgroundColor(Color.TRANSPARENT)
-            // 背景透明 ≠ surface 格式透明：窗口 surface 仍为 opaque 时，
-            // 部分 OEM 直接忽略 transparent region 提示（punch-hole 失效
-            // 的经典坑）。显式声明 TRANSLUCENT 让打洞真正生效。
-            setFormat(android.graphics.PixelFormat.TRANSLUCENT)
         }
-        dialog = dlg
-        view = playerView
-        dlg.show()
     }
 
-    /** 关闭 Dialog 并释放 surface（幂等）。 */
+    /** 关闭双窗并释放 surface（幂等）。 */
     fun close() {
-        val current = dialog ?: run {
-            // 未打开也要保证视图引用被清掉（防止残留 JNI 引用）。
-            releaseView()
-            return
+        // 先关控件窗（z-order 高），再关 surface 窗；顺序反了会看到控件
+        // 短暂悬空在黑底上。
+        val ctrl = controlsDialog
+        controlsDialog = null
+        if (ctrl != null) {
+            try {
+                ctrl.setOnDismissListener(null)
+                ctrl.setOnKeyListener(null)
+                ctrl.dismiss()
+            } catch (_: Throwable) {
+            }
         }
-        dialog = null
-        try {
-            current.setOnDismissListener(null)
-            current.setOnKeyListener(null)
-            current.dismiss()
-        } catch (_: Throwable) {
-            // Activity 已销毁等场景：忽略，避免崩溃。
+        val surf = surfaceDialog
+        surfaceDialog = null
+        if (surf != null) {
+            try {
+                surf.dismiss()
+            } catch (_: Throwable) {
+            }
         }
         releaseView()
     }
@@ -143,22 +195,32 @@ class AndroidNativePlayerHost(
         return true
     }
 
-    /** Activity 销毁 / 引擎解绑时调用：关闭 Dialog 并释放 JNI surface 引用。 */
+    /** Activity 销毁 / 引擎解绑时调用：关闭窗口并释放 JNI surface 引用。 */
     fun release() {
         close()
     }
 
     /** 清空视图引用并释放 surface（只做一次，避免重复释放）。 */
     private fun releaseView() {
-        val playerView = view
+        val controls = view
         view = null
         try {
-            playerView?.release()
+            controls?.release()
+        } catch (_: Throwable) {
+        }
+        // surface 的 JNI global ref 由 surface 窗的 View 自己 dispose
+        // （window 销毁 → surfaceDestroyed → 事件 + 释放）。
+        val surf = surfaceView
+        surfaceView = null
+        try {
+            surf?.dispose()
         } catch (_: Throwable) {
         }
     }
 
     private companion object {
+        const val SURFACE_VIEW_ID = -1
+
         /** 倍速循环档位，与 Flutter 侧常用档位保持一致。 */
         val SPEED_STEPS = listOf(1.0, 1.25, 1.5, 2.0, 0.75)
 
