@@ -104,6 +104,53 @@ class AndroidNativePlayerHost(
                     mapOf("type" to "setSpeed", "speed" to nextSpeed(lastState.speed)),
                 )
             }
+
+            // ── Phase 2 面板命令（与鸿蒙 optimistic* 同构）──
+            override fun onSetSpeed(speed: Double) {
+                lastState = lastState.copy(speed = speed)
+                commandSink.send(mapOf("type" to "setSpeed", "speed" to speed))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onSelectAudio(trackId: Int) {
+                lastState = lastState.copy(
+                    selectedAudioId = trackId,
+                    tracks = lastState.tracks.map {
+                        if (it.type == "audio") it.copy(selected = it.id == trackId) else it
+                    },
+                )
+                commandSink.send(mapOf("type" to "selectAudio", "id" to trackId))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onSelectSubtitle(trackId: Int) {
+                lastState = lastState.copy(
+                    selectedSubtitleId = trackId,
+                    tracks = lastState.tracks.map {
+                        if (it.type == "sub") it.copy(selected = it.id == trackId) else it
+                    },
+                )
+                commandSink.send(mapOf("type" to "selectSubtitle", "id" to trackId))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onSelectEpisode(index: Int) {
+                lastState = lastState.copy(currentEpisodeIndex = index)
+                commandSink.send(mapOf("type" to "selectEpisode", "index" to index))
+            }
+
+            override fun onSelectVersion(index: Int) {
+                lastState = lastState.copy(currentVersionIndex = index)
+                commandSink.send(mapOf("type" to "selectVersion", "index" to index))
+            }
+
+            override fun onOpenPanel(panel: String) {
+                // 面板显隐由视图自理；此处仅记录，返回键经视图 closePanel。
+            }
+
+            override fun onClosePanel() {
+                // 同上。
+            }
         })
         controls.render(lastState, lastStateAtMs)
         val ctrlDlg = Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)

@@ -1,6 +1,45 @@
 package com.himi.syncwatch.nativeplayer
 
+import org.json.JSONArray
 import org.json.JSONObject
+
+/** 面板轨道项（与 Dart `NativeTrack.toJson` 字段一致）。 */
+data class AndroidTrack(
+    val id: Int = 0,
+    val type: String = "audio",
+    val title: String = "",
+    val lang: String = "",
+    val selected: Boolean = false,
+) {
+    val displayLabel: String
+        get() = when {
+            title.isNotBlank() -> title
+            lang.isNotBlank() -> lang
+            else -> "轨 $id"
+        }
+
+    companion object {
+        fun fromJson(o: JSONObject): AndroidTrack = AndroidTrack(
+            id = o.optInt("id", 0),
+            type = o.optString("type", "audio"),
+            title = o.optString("title", ""),
+            lang = o.optString("lang", ""),
+            selected = o.optBoolean("selected", false),
+        )
+    }
+}
+
+/** 面板选集项（与 Dart `NativeEpisode.toJson` 一致）。 */
+data class AndroidEpisode(val index: Int = 0, val title: String = "") {
+    val displayLabel: String
+        get() = if (title.isNotBlank()) title else "第 ${index + 1} 集"
+}
+
+/** 面板版本/线路项（与 Dart `NativeVersion.toJson` 一致）。 */
+data class AndroidVersion(val index: Int = 0, val title: String = "") {
+    val displayLabel: String
+        get() = if (title.isNotBlank()) title else "线路 ${index + 1}"
+}
 
 /**
  * 原生播放器 UI 的权威状态模型（Dart → 原生）。
@@ -52,6 +91,15 @@ data class AndroidNativePlayerState(
     val tvMode: Boolean = false,
     val canControl: Boolean = true,
     val debugLines: List<String> = emptyList(),
+    // ── Phase 2 面板数据 ──
+    val tracks: List<AndroidTrack> = emptyList(),
+    val episodes: List<AndroidEpisode> = emptyList(),
+    val versions: List<AndroidVersion> = emptyList(),
+    val selectedAudioId: Int = 0,
+    val selectedSubtitleId: Int = 0,
+    val subtitleDelayMs: Double = 0.0,
+    val currentEpisodeIndex: Int = 0,
+    val currentVersionIndex: Int = 0,
 ) {
     /** 最该展示的标题：显式标题 > 媒体标题 > 空串。 */
     val displayTitle: String
@@ -140,6 +188,14 @@ data class AndroidNativePlayerState(
             tvMode = json.optBoolean("tvMode", false),
             canControl = json.optBoolean("canControl", true),
             debugLines = json.optStringList("debugLines"),
+            tracks = json.optTrackList("tracks"),
+            episodes = json.optEpisodeList("episodes"),
+            versions = json.optVersionList("versions"),
+            selectedAudioId = json.optInt("selectedAudioId", 0),
+            selectedSubtitleId = json.optInt("selectedSubtitleId", 0),
+            subtitleDelayMs = json.optDouble("subtitleDelayMs", 0.0),
+            currentEpisodeIndex = json.optInt("currentEpisodeIndex", 0),
+            currentVersionIndex = json.optInt("currentVersionIndex", 0),
         )
 
         /** org.json 没有 isNull 判断的便捷方法：null / JSONObject.NULL → null。 */
@@ -153,6 +209,53 @@ data class AndroidNativePlayerState(
             for (i in 0 until arr.length()) {
                 val v = arr.opt(i)
                 if (v is String) out.add(v)
+            }
+            return out
+        }
+
+        /** 轨道数组；非数组或元素非对象时跳过该项。 */
+        fun JSONObject.optTrackList(key: String): List<AndroidTrack> {
+            val arr = optJSONArray(key) ?: return emptyList()
+            return arr.toTrackList()
+        }
+
+        /** 选集数组。 */
+        fun JSONObject.optEpisodeList(key: String): List<AndroidEpisode> {
+            val arr = optJSONArray(key) ?: return emptyList()
+            val out = ArrayList<AndroidEpisode>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.opt(i) as? JSONObject ?: continue
+                out.add(
+                    AndroidEpisode(
+                        index = o.optInt("index", 0),
+                        title = o.optString("title", ""),
+                    ),
+                )
+            }
+            return out
+        }
+
+        /** 版本/线路数组。 */
+        fun JSONObject.optVersionList(key: String): List<AndroidVersion> {
+            val arr = optJSONArray(key) ?: return emptyList()
+            val out = ArrayList<AndroidVersion>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.opt(i) as? JSONObject ?: continue
+                out.add(
+                    AndroidVersion(
+                        index = o.optInt("index", 0),
+                        title = o.optString("title", ""),
+                    ),
+                )
+            }
+            return out
+        }
+
+        private fun JSONArray.toTrackList(): List<AndroidTrack> {
+            val out = ArrayList<AndroidTrack>(length())
+            for (i in 0 until length()) {
+                val o = opt(i) as? JSONObject ?: continue
+                out.add(AndroidTrack.fromJson(o))
             }
             return out
         }

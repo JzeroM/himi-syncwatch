@@ -10,6 +10,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 
@@ -43,6 +44,13 @@ class NativePlayerScreenView(
         fun onTogglePlay()
         fun onSeek(positionMs: Long)
         fun onCycleSpeed()
+        fun onSetSpeed(speed: Double)
+        fun onSelectAudio(trackId: Int)
+        fun onSelectSubtitle(trackId: Int)
+        fun onSelectEpisode(index: Int)
+        fun onSelectVersion(index: Int)
+        fun onOpenPanel(panel: String)
+        fun onClosePanel()
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -116,10 +124,23 @@ class NativePlayerScreenView(
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         setPadding(dp(12), dp(6), dp(12), dp(6))
         isClickable = true
-        setOnClickListener {
-            listener?.onCycleSpeed()
-            scheduleAutoHide()
-        }
+        // Phase 2：点开倍速面板（面板内选档）。
+    }
+    private val audioButton = TextView(context).apply {
+        text = "音轨"
+        setTextColor(0xCCFFFFFF.toInt())
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        setPadding(dp(8), dp(6), dp(8), dp(6))
+        isClickable = true
+        visibility = GONE
+    }
+    private val subtitleButton = TextView(context).apply {
+        text = "字幕"
+        setTextColor(0xCCFFFFFF.toInt())
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        setPadding(dp(8), dp(6), dp(8), dp(6))
+        isClickable = true
+        visibility = GONE
     }
     private val hdrBadge = TextView(context).apply {
         text = "HDR"
@@ -143,6 +164,23 @@ class NativePlayerScreenView(
     private var dragging = false
     private var lastState: AndroidNativePlayerState = AndroidNativePlayerState()
     private var lastStateAtMs: Long = 0L
+
+    /** 当前打开的二级面板（null = 无）。与鸿蒙 activePanel 同构。 */
+    private var activePanel: String? = null
+
+    /** 面板遮罩：全屏半透明，点外关闭。 */
+    private val panelScrim = View(context).apply {
+        setBackgroundColor(0x80000000.toInt())
+        visibility = GONE
+        setOnClickListener { closePanel() }
+    }
+
+    /** 面板容器（底部圆角），按 activePanel 动态填充内容。 */
+    private val panelContainer = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setBackgroundColor(0xE61C1C1E.toInt())
+        visibility = GONE
+    }
 
     private val tickRunnable = object : Runnable {
         override fun run() {
@@ -212,6 +250,20 @@ class NativePlayerScreenView(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ),
         )
+        row.addView(
+            audioButton,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        row.addView(
+            subtitleButton,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
         bottomBar.addView(
             row,
             LinearLayout.LayoutParams(
@@ -235,6 +287,21 @@ class NativePlayerScreenView(
             bottomBar,
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM),
         )
+
+        // 面板层（Phase 2）：遮罩 + 底部面板，浮于控件之上。
+        addView(
+            panelScrim,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+        addView(
+            panelContainer,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM),
+        )
+
+        // 底部条面板入口（倍速/音轨/字幕）。
+        speedButton.setOnClickListener { openPanel(PANEL_SPEED) }
+        audioButton.setOnClickListener { openPanel(PANEL_AUDIO) }
+        subtitleButton.setOnClickListener { openPanel(PANEL_SUBTITLE) }
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
@@ -265,6 +332,220 @@ class NativePlayerScreenView(
         this.listener = listener
     }
 
+    // ── Phase 2 面板（与鸿蒙 NativePlayerPanel 同构）──────────────
+
+    /** 打开面板（同类型再点为切换关闭）。 */
+    private fun openPanel(panel: String) {
+        activePanel = if (activePanel == panel) null else panel
+        listener?.onOpenPanel(panel)
+        renderPanel()
+        scheduleAutoHide()
+    }
+
+    /** 关闭面板。 */
+    fun closePanel() {
+        if (activePanel == null) return
+        activePanel = null
+        listener?.onClosePanel()
+        renderPanel()
+    }
+
+    /** 按 activePanel 重建面板内容；无面板则隐藏。 */
+    private fun renderPanel() {
+        val panel = activePanel
+        if (panel == null) {
+            panelScrim.visibility = GONE
+            panelContainer.visibility = GONE
+            return
+        }
+        panelScrim.visibility = VISIBLE
+        panelContainer.visibility = VISIBLE
+        panelContainer.removeAllViews()
+        panelContainer.addView(panelHeader(panelTitle(panel)))
+        when (panel) {
+            PANEL_SPEED -> buildSpeedContent()
+            PANEL_AUDIO -> buildTrackContent(
+                lastState.tracks.filter { it.type == "audio" },
+                lastState.selectedAudioId,
+                allowOff = false,
+            ) { listener?.onSelectAudio(it) }
+            PANEL_SUBTITLE -> buildTrackContent(
+                lastState.tracks.filter { it.type == "sub" },
+                lastState.selectedSubtitleId,
+                allowOff = true,
+            ) { listener?.onSelectSubtitle(it) }
+            PANEL_EPISODE -> buildListContent(
+                lastState.episodes.map { it.displayLabel to it.index },
+                lastState.currentEpisodeIndex,
+            ) { listener?.onSelectEpisode(it) }
+            PANEL_VERSION -> buildListContent(
+                lastState.versions.map { it.displayLabel to it.index },
+                lastState.currentVersionIndex,
+            ) { listener?.onSelectVersion(it) }
+        }
+    }
+
+    private fun panelTitle(panel: String): String = when (panel) {
+        PANEL_SPEED -> "倍速"
+        PANEL_AUDIO -> "音轨"
+        PANEL_SUBTITLE -> "字幕"
+        PANEL_EPISODE -> "选集"
+        PANEL_VERSION -> "线路"
+        else -> "设置"
+    }
+
+    /** 面板标题行（标题 + 关闭）。 */
+    private fun panelHeader(title: String): View {
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(12), dp(8), dp(8))
+        }
+        header.addView(
+            TextView(context).apply {
+                text = title
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            },
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        header.addView(
+            TextView(context).apply {
+                text = "✕"
+                setTextColor(0xCCFFFFFF.toInt())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                setOnClickListener { closePanel() }
+            },
+        )
+        return header
+    }
+
+    /** 倍速网格（4 列）。 */
+    private fun buildSpeedContent() {
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val state = lastState
+        var rowLayout: LinearLayout? = null
+        SPEED_STEPS.forEachIndexed { i, v ->
+            if (i % 4 == 0) {
+                rowLayout = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+                grid.addView(
+                    rowLayout,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
+            val selected = Math.abs(state.speed - v) < 0.01
+            rowLayout!!.addView(
+                TextView(context).apply {
+                    text = "${v}x"
+                    setTextColor(if (selected) 0xFF4C8DFF.toInt() else Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    gravity = Gravity.CENTER
+                    setBackgroundColor(if (selected) 0x334C8DFF.toInt() else 0x1AFFFFFF.toInt())
+                    setPadding(dp(6), dp(14), dp(6), dp(14))
+                    setOnClickListener {
+                        listener?.onSetSpeed(v)
+                        closePanel()
+                    }
+                },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also { it.marginStart = dp(4); it.marginEnd = dp(4) },
+            )
+        }
+        panelContainer.addView(grid, panelMatch())
+    }
+
+    /** 通用轨道列表（音轨/字幕）：首项可选「关闭」。 */
+    private fun buildTrackContent(
+        tracks: List<AndroidTrack>,
+        selectedId: Int,
+        allowOff: Boolean,
+        onSelect: (Int) -> Unit,
+    ) {
+        val items = ArrayList<Pair<String, Pair<Int, Boolean>>>()
+        if (allowOff) items.add("关闭" to (0 to (selectedId == 0)))
+        tracks.forEach { items.add(it.displayLabel to (it.id to it.selected)) }
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        items.forEach { (label, meta) ->
+            val (id, selected) = meta
+            list.addView(
+                trackRow(label, selected) {
+                    onSelect(id)
+                    closePanel()
+                },
+            )
+        }
+        panelContainer.addView(wrapScroll(list), panelMatch())
+    }
+
+    /** 通用「标签 + 选中标记」列表（选集/线路）。 */
+    private fun buildListContent(
+        items: List<Pair<String, Int>>,
+        selectedIndex: Int,
+        onSelect: (Int) -> Unit,
+    ) {
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        items.forEach { (label, index) ->
+            list.addView(
+                trackRow(label, index == selectedIndex) {
+                    onSelect(index)
+                    closePanel()
+                },
+            )
+        }
+        panelContainer.addView(wrapScroll(list), panelMatch())
+    }
+
+    /** 单行：标签 + 选中标记。 */
+    private fun trackRow(label: String, selected: Boolean, onTap: () -> Unit): View {
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            isClickable = true
+            setOnClickListener { onTap() }
+            addView(
+                TextView(context).apply {
+                    text = label
+                    setTextColor(if (selected) 0xFF4C8DFF.toInt() else Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            if (selected) {
+                addView(
+                    TextView(context).apply {
+                        text = "✓"
+                        setTextColor(0xFF4C8DFF.toInt())
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    },
+                )
+            }
+        }
+    }
+
+    /** 面板内统一布局参数（限高 + 底部圆角留白）。 */
+    private fun panelMatch(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+
+    private fun wrapScroll(content: View): View {
+        val maxH = (resources.displayMetrics.heightPixels * 0.55).toInt()
+        return ScrollView(context).apply {
+            isFillViewport = true
+            addView(content)
+            minimumHeight = 0
+        }.also { it.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, maxH) }
+    }
+
+    /** 渲染后同步入口：外部状态刷新时，若面板开着则重建（高亮跟随）。 */
+    private fun refreshOpenPanel() {
+        if (activePanel != null) renderPanel()
+    }
+
     /** 释放 surface（JNI global ref）并停止内部定时器。 */
     fun release() {
         mainHandler.removeCallbacks(tickRunnable)
@@ -286,6 +567,11 @@ class NativePlayerScreenView(
         playPauseButton.text = if (state.paused) "▶" else "⏸"
         speedButton.text = trimSpeed(state.speed)
         hdrBadge.visibility = if (state.hdrOutput) VISIBLE else GONE
+        // 有音轨/字幕数据才显示入口（与鸿蒙按数据条件一致）。
+        audioButton.visibility = if (state.tracks.any { it.type == "audio" }) VISIBLE else GONE
+        subtitleButton.visibility = if (state.tracks.any { it.type == "sub" }) VISIBLE else GONE
+        // 面板开着时，权威快照到达后重建（选中高亮跟随）。
+        refreshOpenPanel()
 
         if (!dragging) {
             val pos = state.positionAt(now, lastStateAtMs)
@@ -375,5 +661,13 @@ class NativePlayerScreenView(
         const val SEEK_STEPS = 1000
         const val TICK_MS = 500L
         const val AUTO_HIDE_MS = 4000L
+
+        // ── Phase 2 面板类型（与鸿蒙 NativePlayerPanelType 同构）──
+        const val PANEL_SPEED = "speed"
+        const val PANEL_AUDIO = "audio"
+        const val PANEL_SUBTITLE = "subtitle"
+        const val PANEL_EPISODE = "episode"
+        const val PANEL_VERSION = "version"
+        val SPEED_STEPS = doubleArrayOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0)
     }
 }

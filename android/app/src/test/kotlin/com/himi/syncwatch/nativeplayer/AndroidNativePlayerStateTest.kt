@@ -162,4 +162,69 @@ class AndroidNativePlayerStateTest {
         )
         assertEquals(listOf("a", "c"), state.debugLines)
     }
+
+    @Test
+    fun `解析面板轨道选集版本数据`() {
+        val json = JSONObject(
+            """
+            {
+              "tracks":[
+                {"id":1,"type":"audio","title":"国语","lang":"zh","selected":true},
+                {"id":2,"type":"audio","title":"","lang":"ja","selected":false},
+                {"id":1,"type":"sub","title":"中字","lang":"zh","selected":false}
+              ],
+              "episodes":[{"index":0,"title":"第 1 集"},{"index":1,"title":""}],
+              "versions":[{"index":0,"title":"蓝光"},{"index":1,"title":""}],
+              "selectedAudioId":1,"selectedSubtitleId":0,
+              "subtitleDelayMs":200.0,
+              "currentEpisodeIndex":1,"currentVersionIndex":0
+            }
+            """.trimIndent(),
+        )
+
+        val state = AndroidNativePlayerState.fromJson(json)
+
+        assertEquals(3, state.tracks.size)
+        assertEquals(2, state.tracks.count { it.type == "audio" })
+        assertEquals(1, state.tracks.count { it.type == "sub" })
+        // 轨道显示名：title 优先，兜底 lang，再兜底「轨 N」
+        assertEquals("国语", state.tracks[0].displayLabel)
+        assertEquals("ja", state.tracks[1].displayLabel)
+        assertEquals("轨 2", AndroidTrack(id = 2).displayLabel)
+        assertTrue(state.tracks[0].selected)
+
+        assertEquals(2, state.episodes.size)
+        assertEquals("第 1 集", state.episodes[0].displayLabel)
+        assertEquals("第 2 集", state.episodes[1].displayLabel)
+
+        assertEquals(2, state.versions.size)
+        assertEquals("蓝光", state.versions[0].displayLabel)
+        assertEquals("线路 2", state.versions[1].displayLabel)
+
+        assertEquals(1, state.selectedAudioId)
+        assertEquals(0, state.selectedSubtitleId)
+        assertEquals(200.0, state.subtitleDelayMs, 1e-9)
+        assertEquals(1, state.currentEpisodeIndex)
+        assertEquals(0, state.currentVersionIndex)
+    }
+
+    @Test
+    fun `面板数据缺字段回落默认值`() {
+        val state = AndroidNativePlayerState.fromJson(JSONObject("""{"positionMs":10}"""))
+        assertTrue(state.tracks.isEmpty())
+        assertTrue(state.episodes.isEmpty())
+        assertTrue(state.versions.isEmpty())
+        assertEquals(0, state.selectedAudioId)
+        assertEquals(0, state.selectedSubtitleId)
+        assertEquals(0.0, state.subtitleDelayMs, 1e-9)
+    }
+
+    @Test
+    fun `轨道列表里非对象元素被跳过`() {
+        val state = AndroidNativePlayerState.fromJson(
+            JSONObject("""{"tracks":[{"id":1,"type":"audio"},2,null]}"""),
+        )
+        assertEquals(1, state.tracks.size)
+        assertEquals(1, state.tracks[0].id)
+    }
 }
