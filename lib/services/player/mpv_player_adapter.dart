@@ -1559,8 +1559,29 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       speed: _playbackRate,
       mediaTitle: _propertyCache['media-title'],
       tracks: _nativeTracksFromRaw(_lastTrackListRaw),
+      selectedAudioId: _selectedTrackId(_lastTrackListRaw, 'audio'),
+      selectedSubtitleId: _selectedTrackId(_lastTrackListRaw, 'sub'),
       debugLines: _nativeDebugLines(),
     );
+  }
+
+  /// 从 track-list JSON 里找指定类型当前 `selected` 的 mpv track id（无则 0）。
+  ///
+  /// 面板高亮用：原生 UI 据此标出「当前音轨/字幕」。
+  static int _selectedTrackId(String? raw, String type) {
+    if (raw == null || raw.isEmpty) return 0;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return 0;
+      for (final t in decoded) {
+        if (t is! Map) continue;
+        if (t['type'] == type && t['selected'] == true) {
+          final id = t['id'];
+          if (id is int) return id;
+        }
+      }
+    } catch (_) {}
+    return 0;
   }
 
   /// track-list JSON → [NativeTrack] 列表（解析失败返回空）。

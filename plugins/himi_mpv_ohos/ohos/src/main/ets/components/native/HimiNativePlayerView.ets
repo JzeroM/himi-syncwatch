@@ -16,8 +16,10 @@ import {
   HimiMpvNativeHost,
   NativePlayerUiState,
   NativePlayerViewListener,
+  NativePlayerPanelType,
   nativeDiagSummary,
 } from './HimiMpvNativeHost';
+import { NativePlayerPanel } from './NativePlayerPanel';
 import { MpvXComponentController, MpvSurfaceCallbacks } from '../plugin/HimiMpvSurface';
 
 const TAG = 'HimiNativePlayerView';
@@ -83,6 +85,7 @@ export struct HimiNativePlayerView {
   @State dragMs: number = 0;
   @State dragging: boolean = false;
   @State currentTime: string = '';
+  @State activePanel: string = '';
 
   private controller: MpvXComponentController = new MpvXComponentController();
   private listener: ViewListener | null = null;
@@ -123,6 +126,7 @@ export struct HimiNativePlayerView {
   onStateChanged(): void {
     const host = HimiMpvNativeHost.getInstance();
     this.showControls = host.controlsVisible;
+    this.activePanel = host.activePanel !== null ? host.activePanel : '';
     if (!this.dragging) {
       this.progressMs = host.positionNowMs();
       this.dragMs = this.progressMs;
@@ -172,6 +176,11 @@ export struct HimiNativePlayerView {
   private onTogglePlay(): void {
     this.pokeAutoHide();
     HimiMpvNativeHost.getInstance().optimisticTogglePaused();
+  }
+
+  private openPanel(type: string): void {
+    this.pokeAutoHide();
+    HimiMpvNativeHost.getInstance().togglePanel(type);
   }
 
   private state(): NativePlayerUiState {
@@ -225,6 +234,26 @@ export struct HimiNativePlayerView {
             .fontSize(14)
             .fontColor('#CCFFFFFF')
             .margin({ right: 12 });
+          // 选集（有集数据才显示）
+          if (this.state().episodes.length > 0) {
+            Text('选集')
+              .fontSize(13)
+              .fontColor(this.activePanel === NativePlayerPanelType.episode ? '#4C8DFF' : '#CCFFFFFF')
+              .padding({ left: 8, right: 8 })
+              .onClick((): void => {
+                this.openPanel(NativePlayerPanelType.episode);
+              });
+          }
+          // 线路（有多版本才显示）
+          if (this.state().versions.length > 1) {
+            Text('线路')
+              .fontSize(13)
+              .fontColor(this.activePanel === NativePlayerPanelType.version ? '#4C8DFF' : '#CCFFFFFF')
+              .padding({ left: 8, right: 8 })
+              .onClick((): void => {
+                this.openPanel(NativePlayerPanelType.version);
+              });
+          }
         }
         .width('100%')
         .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -288,11 +317,30 @@ export struct HimiNativePlayerView {
               .onClick((): void => {
                 this.onTogglePlay();
               });
-            // 倍速（只读展示；Phase 2 起可点开面板）
+            // 倍速（Phase 2：点开面板）
             Text(`${this.state().speed}x`)
               .fontSize(14)
-              .fontColor('#CCFFFFFF')
-              .padding({ left: 10, right: 10 });
+              .fontColor(this.activePanel === NativePlayerPanelType.speed ? '#4C8DFF' : '#CCFFFFFF')
+              .padding({ left: 10, right: 10 })
+              .onClick((): void => {
+                this.openPanel(NativePlayerPanelType.speed);
+              });
+            // 音轨
+            Text('音轨')
+              .fontSize(13)
+              .fontColor(this.activePanel === NativePlayerPanelType.audio ? '#4C8DFF' : '#CCFFFFFF')
+              .padding({ left: 8, right: 8 })
+              .onClick((): void => {
+                this.openPanel(NativePlayerPanelType.audio);
+              });
+            // 字幕
+            Text('字幕')
+              .fontSize(13)
+              .fontColor(this.activePanel === NativePlayerPanelType.subtitle ? '#4C8DFF' : '#CCFFFFFF')
+              .padding({ left: 8, right: 8 })
+              .onClick((): void => {
+                this.openPanel(NativePlayerPanelType.subtitle);
+              });
             Blank();
             if (this.state().hdrOutput) {
               Text('HDR')
@@ -318,6 +366,14 @@ export struct HimiNativePlayerView {
         })
         .position({ x: 0, y: '100%' })
         .markAnchor({ x: '0%', y: '100%' });
+      }
+
+      // ── 二级面板（Phase 2）：遮住视频，点外/返回关闭 ──
+      if (this.activePanel.length > 0) {
+        NativePlayerPanel({
+          panelType: this.activePanel,
+          revision: this.revision,
+        });
       }
     }
     .width('100%')
