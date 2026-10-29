@@ -59,9 +59,16 @@ class HimiMpvSurfaceView(
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        // 带上被销毁的 handle：原生 UI（Dialog）与 Flutter 平台视图各有
+        // 自己的 SurfaceView，Dart 侧要靠它判断销毁的是不是当前绑定的
+        // surface（发 0 会让 Dart 误拆掉新 surface 上的播放器 → 黑屏）。
+        val destroyedHandle = surfaceHandle
         releaseSurface()
+        if (HimiMpvAndroidPlugin.currentSurface === this) {
+            HimiMpvAndroidPlugin.currentSurface = null
+        }
         HimiMpvAndroidPlugin.eventSink?.success(
-            mapOf("type" to "surfaceDestroyed", "handle" to 0),
+            mapOf("type" to "surfaceDestroyed", "handle" to destroyedHandle),
         )
     }
 

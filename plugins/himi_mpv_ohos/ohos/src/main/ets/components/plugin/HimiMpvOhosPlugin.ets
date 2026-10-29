@@ -530,14 +530,31 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       FlutterManager.getInstance().getWindowStage(ability);
     const win: window.Window = await stage.createSubWindow(NATIVE_UI_WINDOW_NAME);
     try {
-      await win.setWindowLayoutFullScreen(true);
-      await win.setWindowSystemBarEnable([]);
-      win.setWindowBackgroundColor('#000000');
+      // setUIContent 必须最先：子窗口在没有 UI 实例（内容）之前处于
+      // abnormal 状态，setWindowBackgroundColor 等样式类 API 会直接抛
+      // "This window state is abnormal"，整个窗口被回滚 → 白屏。
       await win.setUIContent(NATIVE_UI_PAGE);
+      // 样式类设置降级为 best-effort：失败只记录，不拖垮窗口。
+      try {
+        await win.setWindowLayoutFullScreen(true);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'setWindowLayoutFullScreen 失败: %{public}s', String(e));
+      }
+      try {
+        await win.setWindowSystemBarEnable([]);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'setWindowSystemBarEnable 失败: %{public}s', String(e));
+      }
+      try {
+        win.setWindowBackgroundColor('#000000');
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'setWindowBackgroundColor 失败: %{public}s', String(e));
+      }
       await win.showWindow();
       this.subWindow = win;
     } catch (e) {
       // 任何一步失败都回收半开的窗口，避免残留黑屏悬浮层。
+      hilog.error(DOMAIN, TAG, 'openNativeUi 失败步骤: %{public}s', String(e));
       try {
         await win.destroyWindow();
       } catch (_) {
@@ -725,10 +742,11 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     hilog.info(DOMAIN, TAG, 'surface created: %{public}s', surfaceId);
     // surface 属于 XComponent，不属于某次 mpv 会话：即便 create 还没来也
     // 先记下，createSession 完成后由 tryBindSurface 消费。
+    // 注意：session.surfaceId 只在 attachSurface 成功后才更新（tryBindSurface
+    // 用它做「是否同一 surface」的幂等判断，提前写会让重绑失效）。
     this.pendingSurfaceId = surfaceId;
     const session = this.session;
     if (session !== null) {
-      session.surfaceId = surfaceId;
       session.surfaceError = null;
     }
     this.tryBindSurface();
@@ -749,6 +767,14 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
 
   handleSurfaceDestroyed(surfaceId: string): void {
     hilog.info(DOMAIN, TAG, 'surface destroyed: %{public}s', surfaceId);
+    // 只处理当前关心的 surface：原生 UI 子窗口与 Flutter 平台视图各有
+    // 自己的 XComponent，旧宿主销毁不能拆掉新 surface 的绑定（否则表现为
+    // 「解码正常但白屏」）。
+    if (this.pendingSurfaceId !== null && this.pendingSurfaceId !== surfaceId) {
+      hilog.info(DOMAIN, TAG,
+        '忽略非当前 surface 的销毁事件（current=%{public}s）', this.pendingSurfaceId);
+      return;
+    }
     const session = this.session;
     if (session !== null && session.initialized) {
       try {
@@ -771,9 +797,20 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     if (session === null || !session.initialized || surfaceId === null) {
       return;
     }
-    // 幂等：已 attach 过就跳过，避免重复写 wid。
-    if (session.surfaceAttached) {
+    // 幂等：绑定的就是同一 surface 时跳过。
+    if (session.surfaceAttached && session.surfaceId === surfaceId) {
       return;
+    }
+    // surfaceId 变化（原生 UI 子窗口与 Flutter 平台视图切换）：先解绑旧的，
+    // 再绑新的，否则 mpv 停在已销毁的 surface 上（白屏）。
+    if (session.surfaceAttached) {
+      try {
+        session.lib.detachSurface();
+      } catch (_) {
+      }
+      session.surfaceAttached = false;
+      hilog.info(DOMAIN, TAG, 'surface 变化，解绑旧 surface: %{public}s',
+        session.surfaceId === null ? '(null)' : session.surfaceId);
     }
     try {
       session.lib.attachSurface(surfaceId);

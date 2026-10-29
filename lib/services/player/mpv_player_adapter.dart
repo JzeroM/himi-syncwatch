@@ -1418,13 +1418,17 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       log: (message) => LogService().log('mpv', message),
     );
     _nativeUiController = controller;
+    // 先通知 nativeUiActive=true：PlayerScreen 据此卸载 Flutter 平台视图
+    // （其 SurfaceView 销毁、把 surface 让给原生宿主）。若等 open 成功再翻，
+    // 两个 SurfaceView 会短暂并存，原生宿主的 surface 事件先到、被当作
+    // 重绑目标，随后平台视图销毁又把播放器拆掉 → 黑屏。
+    nativeUiActive.value = true;
     try {
       await controller.open(
         platform: platform,
         initial: _buildNativePlayerState(),
         commandStream: MpvSessionPlatform.nativeUiCommandStream(),
       );
-      nativeUiActive.value = true;
     } catch (e) {
       LogService().log('mpv', '原生 UI 打开失败: $e');
       _nativeUiController = null;

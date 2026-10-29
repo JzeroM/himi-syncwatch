@@ -6,7 +6,10 @@ import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'surface_rebind_policy.dart';
+
 export 'himi_mpv_android_surface_view.dart';
+export 'surface_rebind_policy.dart';
 
 /// Android MPV 会话：SurfaceView 由原生插件提供，libmpv 由 media_kit 驱动。
 ///
@@ -39,6 +42,7 @@ class HimiMpvAndroidSession implements MpvSession {
 
   final StreamController<Map<Object?, Object?>> _events =
       StreamController<Map<Object?, Object?>>.broadcast();
+  static const SurfaceRebindPolicy _policy = SurfaceRebindPolicy();
   StreamSubscription<dynamic>? _surfaceSub;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration>? _durationSub;
@@ -128,15 +132,39 @@ class HimiMpvAndroidSession implements MpvSession {
     _surfaceSub = _surfaceEvents.receiveBroadcastStream().listen((raw) {
       if (raw is! Map) return;
       final type = raw['type'];
+      final handle = raw['handle'];
+      final handleInt = handle is int ? handle : 0;
       if (type == 'surface') {
-        final handle = raw['handle'];
-        if (handle is int && handle > 0) {
-          _surfaceHandle = handle;
-          unawaited(_ensurePlayer());
+        switch (_policy.plan(
+          currentHandle: _surfaceHandle,
+          newHandle: handleInt,
+          playerAlive: _player != null,
+        )) {
+          case SurfaceAction.ensurePlayer:
+            _surfaceHandle = handleInt;
+            unawaited(_ensurePlayer());
+          case SurfaceAction.rebind:
+            // surface 变化（原生 UI Dialog 抢占 / 旋转重建）：旧播放器绑在
+            // 已销毁的 surface 上，必须重建到新 handle（计划书 §6.3）。
+            _surfaceHandle = handleInt;
+            unawaited(_rebindToSurface());
+          case SurfaceAction.none:
+          case SurfaceAction.detach:
+            break;
         }
       } else if (type == 'surfaceDestroyed') {
-        _surfaceHandle = 0;
-        unawaited(_detachPlayer());
+        // 只处理当前绑定 surface 的销毁：原生 UI（Dialog）与 Flutter 平台
+        // 视图各有自己的 SurfaceView，旧宿主销毁不能拆掉新 surface 的绑定
+        // （否则表现为「解码正常但黑屏」）。
+        if (_policy.onDestroyed(
+              currentHandle: _surfaceHandle,
+              destroyedHandle: handleInt,
+              playerAlive: _player != null,
+            ) ==
+            SurfaceAction.detach) {
+          _surfaceHandle = 0;
+          unawaited(_detachPlayer());
+        }
       }
     });
     try {
@@ -168,6 +196,15 @@ class HimiMpvAndroidSession implements MpvSession {
     try {
       await player?.dispose();
     } catch (_) {}
+  }
+
+  /// 换绑到新 surface：销毁绑在旧 surface 上的播放器，用同一地址 + 当前
+  /// 播放点在新 handle 上重建（见 [_detachPlayer] 的恢复逻辑）。
+  Future<void> _rebindToSurface() async {
+    if (_disposed) return;
+    await _detachPlayer();
+    if (_disposed || _surfaceHandle == 0) return;
+    await _ensurePlayer();
   }
 
   Future<void> _ensurePlayer() async {
@@ -498,6 +535,11 @@ class HimiMpvAndroidSession implements MpvSession {
       hwdecCurrent: await getProperty('hwdec-current'),
       gpuContext: await getProperty('gpu-context'),
       currentVo: await getProperty('current-vo'),
+      voConfigured: await getProperty('vo-configured'),
+      // Android 侧 wid 直接指向 SurfaceView 的 Java Surface 全局引用：
+      // 播放器存在且有有效 handle 即视为已附着（诊断行靠它定位黑屏）。
+      surfaceAttached: _player != null && _surfaceHandle > 0,
+      surfaceId: _surfaceHandle > 0 ? '$_surfaceHandle' : null,
       mediaTitle: state.playlist.medias.isEmpty
           ? null
           : state.playlist.medias.first.uri,
