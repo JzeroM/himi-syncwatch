@@ -40,6 +40,24 @@ if [ -f android/app/build.gradle ] || [ -f android/app/build.gradle.kts ]; then
     err "缺少 $KOTLIN/MainActivity.kt（flutter create 模板没有它）"
   fi
 
+  # 原生播放器 UI（Phase 1）：MainActivity 在 configureFlutterEngine 里
+  # 注册 himi_native_player 通道，文件丢了不会报编译错，只会在真机上
+  # 表现为黑屏 + MissingPluginException。
+  if [ -f "$KOTLIN/nativeplayer/AndroidNativePlayerChannel.kt" ] \
+    && [ -f "$KOTLIN/nativeplayer/NativePlayerScreenView.kt" ] \
+    && [ -f "$KOTLIN/nativeplayer/AndroidNativePlayerHost.kt" ] \
+    && [ -f "$KOTLIN/nativeplayer/AndroidNativePlayerState.kt" ]; then
+    ok "原生播放器 UI 源码齐备（nativeplayer/）"
+  else
+    err "缺少 $KOTLIN/nativeplayer/ 下的原生播放器源码（himi_native_player 通道将失效）"
+  fi
+
+  if grep -q 'AndroidNativePlayerChannel' "$KOTLIN/MainActivity.kt"; then
+    ok "MainActivity 已注册 himi_native_player 通道"
+  else
+    err "MainActivity.kt 未注册 AndroidNativePlayerChannel（原生播放器 UI 不可用）"
+  fi
+
   if [ -f "$KOTLIN/DolbyVisionPlugin.kt" ]; then
     ok "DolbyVisionPlugin.kt 存在"
   else

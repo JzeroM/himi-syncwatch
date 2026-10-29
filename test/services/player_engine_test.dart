@@ -57,9 +57,9 @@ void main() {
   });
 
   group('PlayerEngineFactory.defaultEngine / resolveSelectedEngine', () {
-    test('Android 默认 MDK；Windows 默认 MPV；iOS 默认 Erika', () {
+    test('Android 与 Windows 默认 MPV；iOS 默认 Erika', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mdk);
+      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;

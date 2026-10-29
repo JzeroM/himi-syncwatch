@@ -89,12 +89,19 @@ class PlayerEngineFactory {
     }
   }
 
-  /// 平台默认引擎：NipaPlay 代码默认 MDK；iOS 矩阵只开放 Erika。
+  /// 平台默认引擎：Android / Windows / 鸿蒙均为 MPV。
+  ///
+  /// 2026-10 起 Android 默认改为 MPV（原 MDK）：原生 Surface + 原生播放器
+  /// UI 是双端统一方案，MDK 仅作为设置里可切换的备选内核保留。iOS 矩阵
+  /// 只开放 Erika。
   static PlayerEngine defaultEngine() {
     if (isOhos) return PlayerEngine.mpv;
     if (kIsWeb) return PlayerEngine.mdk;
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       return PlayerEngine.erika;
+    }
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return PlayerEngine.mpv;
     }
     if (defaultTargetPlatform == TargetPlatform.windows) {
       return PlayerEngine.mpv;

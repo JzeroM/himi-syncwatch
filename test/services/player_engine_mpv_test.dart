@@ -22,7 +22,7 @@ void main() {
     );
   });
 
-  test('Android 注册 MPV 非默认；Windows 默认 MPV；iOS 不注册', () {
+  test('Android 与 Windows 默认 MPV；iOS 不注册', () {
     PlayerEngineFactory.debugIsOhosOverride = false;
 
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -30,7 +30,8 @@ void main() {
       PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
       isTrue,
     );
-    expect(PlayerEngineFactory.defaultEngine(), isNot(PlayerEngine.mpv));
+    // 2026-10 起 Android 默认内核改为 MPV（原 MDK 保留为可选内核）。
+    expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
 
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     expect(
