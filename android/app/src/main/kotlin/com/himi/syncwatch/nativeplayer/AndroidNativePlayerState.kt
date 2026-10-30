@@ -2,6 +2,7 @@ package com.himi.syncwatch.nativeplayer
 
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /** 面板轨道项（与 Dart `NativeTrack.toJson` 字段一致）。 */
 data class AndroidTrack(
@@ -39,6 +40,21 @@ data class AndroidEpisode(val index: Int = 0, val title: String = "") {
 data class AndroidVersion(val index: Int = 0, val title: String = "") {
     val displayLabel: String
         get() = if (title.isNotBlank()) title else "线路 ${index + 1}"
+}
+
+/** 内核面板选项（与 Dart `NativeEngineOption.toJson` 一致）。 */
+data class AndroidEngineOption(
+    val id: String = "",
+    val label: String = "",
+    val description: String = "",
+) {
+    companion object {
+        fun fromJson(o: JSONObject): AndroidEngineOption = AndroidEngineOption(
+            id = o.optString("id", ""),
+            label = o.optString("label", ""),
+            description = o.optString("description", ""),
+        )
+    }
 }
 
 /**
@@ -100,6 +116,31 @@ data class AndroidNativePlayerState(
     val subtitleDelayMs: Double = 0.0,
     val currentEpisodeIndex: Int = 0,
     val currentVersionIndex: Int = 0,
+    // ── Phase 2.5 控制层布局/样式 ──
+    val logoUrl: String? = null,
+    val networkSpeedText: String? = null,
+    val clockFormat: String = "off",
+    val glassUi: Boolean = true,
+    val engineLabel: String = "MPV",
+    val engineOptions: List<AndroidEngineOption> = emptyList(),
+    val videoFit: String = "contain",
+    val decodeMode: String = "auto",
+    val subtitleScale: Double = 1.0,
+    val subtitleMarginY: Int = 22,
+    val subtitleDelayEnabled: Boolean = false,
+    val subtitleStyleDisabled: Boolean = false,
+    val danmakuEnabled: Boolean = false,
+    val danmakuSpeed: Double = 1.0,
+    val danmakuFontSize: Double = 0.5,
+    val danmakuOpacity: Double = 0.6,
+    val segmentEnabled: Boolean = false,
+    val segmentIntroEndMs: Int? = null,
+    val segmentOutroStartMs: Int? = null,
+    val showDebug: Boolean = false,
+    val isRoom: Boolean = false,
+    val canScreenshot: Boolean = false,
+    val audioStreamCount: Int = 0,
+    val subtitleStreamCount: Int = 0,
 ) {
     /** 最该展示的标题：显式标题 > 媒体标题 > 空串。 */
     val displayTitle: String
@@ -150,8 +191,46 @@ data class AndroidNativePlayerState(
         }
 
         /**
-         * Dart 推送 JSON（`NativePlayerState.toJson()`）→ 原生状态。
+         * 显示调节命令（adjustDisplay）→ 状态字段乐观更新。
          *
+         * 键名与 Dart `NativePlayerCommand.adjustDisplay` 的 key 一一对应；
+         * 范围夹取与 Dart `_applyNativeAdjustDisplay` 的 clamp 保持一致。
+         * 未知 key 原样返回（不改状态，协议向前兼容）。
+         */
+        fun applyAdjustDisplay(
+            state: AndroidNativePlayerState,
+            key: String,
+            value: Double,
+        ): AndroidNativePlayerState = when (key) {
+            "subtitleScale" -> state.copy(subtitleScale = value.coerceIn(0.5, 3.0))
+            "subtitleMarginY" -> state.copy(subtitleMarginY = value.roundToInt().coerceIn(0, 200))
+            "subtitleDelayMs" -> state.copy(subtitleDelayMs = value.roundToInt().coerceIn(-5000, 5000).toDouble())
+            "danmakuSpeed" -> state.copy(danmakuSpeed = value.coerceIn(0.5, 2.0))
+            "danmakuFontSize" -> state.copy(danmakuFontSize = value.coerceIn(0.5, 2.0))
+            "danmakuOpacity" -> state.copy(danmakuOpacity = value.coerceIn(0.1, 1.0))
+            else -> state
+        }
+
+        /**
+         * 进度条两侧数显（对齐 Flutter `formatPlayerDuration`）：
+         * 有小时 `HH:MM:SS`（全补零），否则 `MM:SS`（分钟补零）。
+         */
+        fun formatPlayerTime(ms: Long): String {
+            val total = if (ms < 0) 0L else ms / 1000
+            val h = total / 3600
+            val m = (total % 3600) / 60
+            val s = total % 60
+            val mm = m.toString().padStart(2, '0')
+            val ss = s.toString().padStart(2, '0')
+            return if (h > 0) {
+                "${h.toString().padStart(2, '0')}:$mm:$ss"
+            } else {
+                "$mm:$ss"
+            }
+        }
+
+        /**
+         * Dart 推送 JSON（`NativePlayerState.toJson()`）→ 原生状态。
          * 缺字段一律回落到默认值（不用 getString 抛异常），保证协议向前
          * 兼容：Dart 后续加字段不会让旧原生壳崩。
          */
@@ -196,11 +275,50 @@ data class AndroidNativePlayerState(
             subtitleDelayMs = json.optDouble("subtitleDelayMs", 0.0),
             currentEpisodeIndex = json.optInt("currentEpisodeIndex", 0),
             currentVersionIndex = json.optInt("currentVersionIndex", 0),
+            logoUrl = json.optNullableString("logoUrl"),
+            networkSpeedText = json.optNullableString("networkSpeedText"),
+            clockFormat = json.optString("clockFormat", "off"),
+            glassUi = json.optBoolean("glassUi", true),
+            engineLabel = json.optString("engineLabel", "MPV"),
+            engineOptions = json.optEngineList("engineOptions"),
+            videoFit = json.optString("videoFit", "contain"),
+            decodeMode = json.optString("decodeMode", "auto"),
+            subtitleScale = json.optDouble("subtitleScale", 1.0),
+            subtitleMarginY = json.optInt("subtitleMarginY", 22),
+            subtitleDelayEnabled = json.optBoolean("subtitleDelayEnabled", false),
+            subtitleStyleDisabled = json.optBoolean("subtitleStyleDisabled", false),
+            danmakuEnabled = json.optBoolean("danmakuEnabled", false),
+            danmakuSpeed = json.optDouble("danmakuSpeed", 1.0),
+            danmakuFontSize = json.optDouble("danmakuFontSize", 0.5),
+            danmakuOpacity = json.optDouble("danmakuOpacity", 0.6),
+            segmentEnabled = json.optBoolean("segmentEnabled", false),
+            segmentIntroEndMs = json.optNullableInt("segmentIntroEndMs"),
+            segmentOutroStartMs = json.optNullableInt("segmentOutroStartMs"),
+            showDebug = json.optBoolean("showDebug", false),
+            isRoom = json.optBoolean("isRoom", false),
+            canScreenshot = json.optBoolean("canScreenshot", false),
+            audioStreamCount = json.optInt("audioStreamCount", 0),
+            subtitleStreamCount = json.optInt("subtitleStreamCount", 0),
         )
 
         /** org.json 没有 isNull 判断的便捷方法：null / JSONObject.NULL → null。 */
         fun JSONObject.optNullableString(key: String): String? =
             if (!has(key) || isNull(key)) null else optString(key, "")
+
+        /** 可空整数（片头片尾标记）：缺省 / null → null。 */
+        fun JSONObject.optNullableInt(key: String): Int? =
+            if (!has(key) || isNull(key)) null else optInt(key, 0)
+
+        /** 内核选项数组；非数组或元素非对象时跳过该项。 */
+        fun JSONObject.optEngineList(key: String): List<AndroidEngineOption> {
+            val arr = optJSONArray(key) ?: return emptyList()
+            val out = ArrayList<AndroidEngineOption>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.opt(i) as? JSONObject ?: continue
+                out.add(AndroidEngineOption.fromJson(o))
+            }
+            return out
+        }
 
         /** 字符串数组；非数组或元素非字符串时跳过该项。 */
         fun JSONObject.optStringList(key: String): List<String> {

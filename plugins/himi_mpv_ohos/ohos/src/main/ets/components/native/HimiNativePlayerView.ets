@@ -25,6 +25,9 @@ import { MpvXComponentController, MpvSurfaceCallbacks } from '../plugin/HimiMpvS
 const TAG = 'HimiNativePlayerView';
 const DOMAIN = 0x0001;
 
+/** 选中主色（照抄 Flutter Color(0xFF6366F1)）。 */
+const SEL_COLOR = '#6366F1';
+
 /** 控件自动隐藏延时（播放中）。 */
 const AUTO_HIDE_MS = 4000;
 
@@ -187,6 +190,146 @@ export struct HimiNativePlayerView {
     return HimiMpvNativeHost.getInstance().state;
   }
 
+  // ── 图标字形（Material Icons 码点；与 tool/native_icons.json 同源）──
+
+  private backGlyph(): string {
+    return String.fromCodePoint(0xE092);
+  }
+
+  private speedGlyph(): string {
+    return String.fromCodePoint(0xE5E0);
+  }
+
+  private kernelGlyph(): string {
+    return String.fromCodePoint(0xE40D);
+  }
+
+  private subtitleStyleGlyph(): string {
+    return String.fromCodePoint(0xE683);
+  }
+
+  private decodeGlyph(): string {
+    return String.fromCodePoint(0xE3DB);
+  }
+
+  private videoFitGlyph(): string {
+    const fit: string = this.state().videoFit;
+    if (fit === 'cover') {
+      return String.fromCodePoint(0xE2CB);
+    }
+    if (fit === 'fill') {
+      return String.fromCodePoint(0xE6FF);
+    }
+    if (fit === 'none') {
+      return String.fromCodePoint(0xE0A3);
+    }
+    return String.fromCodePoint(0xE28C);
+  }
+
+  private rotateGlyph(): string {
+    return String.fromCodePoint(0xF07BF);
+  }
+
+  private danmakuGlyph(): string {
+    return this.state().danmakuEnabled
+      ? String.fromCodePoint(0xE17E)
+      : String.fromCodePoint(0xF04D2);
+  }
+
+  private versionGlyph(): string {
+    return String.fromCodePoint(0xE30F);
+  }
+
+  private subtitleGlyph(): string {
+    return String.fromCodePoint(0xE619);
+  }
+
+  private audioGlyph(): string {
+    return String.fromCodePoint(0xE0B6);
+  }
+
+  private playlistGlyph(): string {
+    return String.fromCodePoint(0xE4D4);
+  }
+
+  private prevGlyph(): string {
+    return String.fromCodePoint(0xE5BE);
+  }
+
+  private playGlyph(): string {
+    return String.fromCodePoint(0xE4CD);
+  }
+
+  private pauseGlyph(): string {
+    return String.fromCodePoint(0xE47E);
+  }
+
+  private nextGlyph(): string {
+    return String.fromCodePoint(0xE5BD);
+  }
+
+  private lockGlyph(): string {
+    return String.fromCodePoint(0xE3AE);
+  }
+
+  // ── 布局判定 ───────────────────────────────────────────────────
+
+  /** 倍速文本（1.0x / 1.25x …）。 */
+  private trimSpeed(speed: number): string {
+    const r = Math.round(speed * 10) / 10;
+    return `${r}`;
+  }
+
+  /** Logo 是否显示：仅单人播放且有 logo。 */
+  private showLogo(): boolean {
+    const s = this.state();
+    return !s.isRoom && s.logoUrl.length > 0;
+  }
+
+  /** 版本/线路按钮：非房间模式且有多版本。 */
+  private showVersionButton(): boolean {
+    return !this.state().isRoom && this.state().versions.length > 1;
+  }
+
+  /** 选集按钮：非房间模式且多集。 */
+  private showEpisodeButton(): boolean {
+    return !this.state().isRoom && this.state().episodes.length > 1;
+  }
+
+  /** 时间数显列宽：时长 ≥1h 用 HH:MM:SS 档（78），否则 MM:SS 档（56）。 */
+  private timeCellWidth(): number {
+    return this.state().durationMs >= 3600000 ? 78 : 56;
+  }
+
+  /** 是否有上一集。 */
+  private hasPrev(): boolean {
+    return this.state().currentEpisodeIndex > 0;
+  }
+
+  /** 是否有下一集。 */
+  private hasNext(): boolean {
+    const s = this.state();
+    return s.currentEpisodeIndex >= 0 && s.currentEpisodeIndex + 1 < s.episodes.length;
+  }
+
+  /** 上一集（经面板命令回传 Dart）。 */
+  private onPrevEpisode(): void {
+    const host = HimiMpvNativeHost.getInstance();
+    if (!this.hasPrev()) {
+      return;
+    }
+    host.optimisticSelectEpisode(this.state().currentEpisodeIndex - 1);
+  }
+
+  /** 下一集。 */
+  private onNextEpisode(): void {
+    const host = HimiMpvNativeHost.getInstance();
+    if (!this.hasNext()) {
+      return;
+    }
+    host.optimisticSelectEpisode(this.state().currentEpisodeIndex + 1);
+  }
+
   build() {
     Stack({ alignContent: Alignment.Top }) {
       // ── 视频层 ──
@@ -210,162 +353,13 @@ export struct HimiNativePlayerView {
         .hitTestBehavior(HitTestMode.Transparent);
 
       if (this.showControls) {
-        // ── 顶部条 ──
-        Row() {
-          Text('‹')
-            .fontSize(30)
-            .fontColor(Color.White)
-            .width(40)
-            .height(40)
-            .textAlign(TextAlign.Center)
-            .backgroundColor('#66000000')
-            .borderRadius(20)
-            .onClick((): void => {
-              this.onBack();
-            });
-          Text(this.state().title.length > 0 ? this.state().title : this.state().mediaTitle)
-            .fontSize(16)
-            .fontColor(Color.White)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-            .margin({ left: 8 });
-          Text(this.currentTime)
-            .fontSize(14)
-            .fontColor('#CCFFFFFF')
-            .margin({ right: 12 });
-          // 选集（有集数据才显示）
-          if (this.state().episodes.length > 0) {
-            Text('选集')
-              .fontSize(13)
-              .fontColor(this.activePanel === NativePlayerPanelType.episode ? '#4C8DFF' : '#CCFFFFFF')
-              .padding({ left: 8, right: 8 })
-              .onClick((): void => {
-                this.openPanel(NativePlayerPanelType.episode);
-              });
-          }
-          // 线路（有多版本才显示）
-          if (this.state().versions.length > 1) {
-            Text('线路')
-              .fontSize(13)
-              .fontColor(this.activePanel === NativePlayerPanelType.version ? '#4C8DFF' : '#CCFFFFFF')
-              .padding({ left: 8, right: 8 })
-              .onClick((): void => {
-                this.openPanel(NativePlayerPanelType.version);
-              });
-          }
+        if (this.state().locked && !this.state().tvMode) {
+          // ── 锁定态：仅左下锁钮（与进度条左数显同列）──
+          this.LockOnlyBar();
+        } else {
+          this.TopBar();
+          this.BottomBar();
         }
-        .width('100%')
-        .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-        .linearGradient({
-          angle: 180,
-          colors: [['#99000000', 0.0], ['#00000000', 1.0]],
-        });
-
-        // ── 底部条 ──
-        Column() {
-          // 诊断行（Phase 1 验收关键字段）
-          Text(nativeDiagSummary(this.state()))
-            .fontSize(10)
-            .fontColor('#99FFFFFF')
-            .maxLines(2)
-            .width('100%');
-
-          Row() {
-            Text(formatTime(this.dragging ? this.dragMs : this.progressMs))
-              .fontSize(13)
-              .fontColor(Color.White)
-              .width(58)
-              .textAlign(TextAlign.Start);
-            Slider({
-              value: this.dragging ? this.dragMs : this.progressMs,
-              min: 0,
-              max: this.state().durationMs > 0 ? this.state().durationMs : 1,
-              step: 1000,
-            })
-              .layoutWeight(1)
-              .selectedColor('#FF4C8DFF')
-              .trackColor('#33FFFFFF')
-              .onChange((value: number, mode: SliderChangeMode): void => {
-                this.pokeAutoHide();
-                if (mode === SliderChangeMode.Begin ||
-                  mode === SliderChangeMode.Moving) {
-                  this.dragging = true;
-                  this.dragMs = value;
-                } else if (mode === SliderChangeMode.End) {
-                  this.dragging = false;
-                  this.dragMs = value;
-                  this.progressMs = value;
-                  HimiMpvNativeHost.getInstance().optimisticSeek(Math.round(value));
-                }
-              });
-            Text(formatTime(this.state().durationMs))
-              .fontSize(13)
-              .fontColor(Color.White)
-              .width(58)
-              .textAlign(TextAlign.End);
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-
-          Row() {
-            // 播放/暂停
-            Text(this.state().paused ? '▶' : '⏸')
-              .fontSize(24)
-              .fontColor(Color.White)
-              .padding(8)
-              .onClick((): void => {
-                this.onTogglePlay();
-              });
-            // 倍速（Phase 2：点开面板）
-            Text(`${this.state().speed}x`)
-              .fontSize(14)
-              .fontColor(this.activePanel === NativePlayerPanelType.speed ? '#4C8DFF' : '#CCFFFFFF')
-              .padding({ left: 10, right: 10 })
-              .onClick((): void => {
-                this.openPanel(NativePlayerPanelType.speed);
-              });
-            // 音轨
-            Text('音轨')
-              .fontSize(13)
-              .fontColor(this.activePanel === NativePlayerPanelType.audio ? '#4C8DFF' : '#CCFFFFFF')
-              .padding({ left: 8, right: 8 })
-              .onClick((): void => {
-                this.openPanel(NativePlayerPanelType.audio);
-              });
-            // 字幕
-            Text('字幕')
-              .fontSize(13)
-              .fontColor(this.activePanel === NativePlayerPanelType.subtitle ? '#4C8DFF' : '#CCFFFFFF')
-              .padding({ left: 8, right: 8 })
-              .onClick((): void => {
-                this.openPanel(NativePlayerPanelType.subtitle);
-              });
-            Blank();
-            if (this.state().hdrOutput) {
-              Text('HDR')
-                .fontSize(12)
-                .fontColor('#FFFFC84C')
-                .padding(4)
-                .backgroundColor('#33FFC84C')
-                .borderRadius(4);
-            }
-            Text(this.state().buffering ? '缓冲中' : '')
-              .fontSize(12)
-              .fontColor('#CCFFFFFF')
-              .margin({ left: 8 });
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-        }
-        .width('100%')
-        .padding({ left: 12, right: 12, top: 8, bottom: 14 })
-        .linearGradient({
-          angle: 0,
-          colors: [['#99000000', 0.0], ['#00000000', 1.0]],
-        })
-        .position({ x: 0, y: '100%' })
-        .markAnchor({ x: '0%', y: '100%' });
       }
 
       // ── 二级面板（Phase 2）：遮住视频，点外/返回关闭 ──
@@ -379,5 +373,299 @@ export struct HimiNativePlayerView {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Black);
+  }
+
+  /** 手机锁定态：仅左下锁钮（与进度条左数显同列）。 */
+  @Builder
+  LockOnlyBar() {
+    Column() {
+      Row() {
+        Text('')
+          .fontFamily('MaterialIcons')
+          .fontSize(22)
+          .fontColor('#B3FFFFFF')
+          .width(56)
+          .height(56)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => {
+            this.pokeAutoHide();
+            HimiMpvNativeHost.getInstance().optimisticToggleLock();
+          });
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Bottom);
+    }
+    .width('100%')
+    .height('100%')
+    .linearGradient({
+      angle: 90,
+      colors: [['#00000000', 0.0], ['#99000000', 1.0]],
+    })
+    .position({ x: 0, y: '100%' })
+    .markAnchor({ x: '0%', y: '100%' });
+  }
+
+  /** 顶栏：返回 / 标题 / 网速 | 内核胶囊（+倍速）| 时钟（TV）。 */
+  @Builder
+  TopBar() {
+    Row() {
+      Text(this.backGlyph())
+        .fontFamily('MaterialIcons')
+        .fontSize(22)
+        .fontColor(Color.White)
+        .width(44)
+        .height(44)
+        .textAlign(TextAlign.Center)
+        .onClick((): void => {
+          this.onBack();
+        });
+      Text(this.state().displayTitle())
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Color.White)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+        .margin({ left: 4, right: 8 });
+      if (this.state().networkSpeedText.length > 0) {
+        Text(this.state().networkSpeedText)
+          .fontSize(12)
+          .fontColor('#B3FFFFFF');
+      }
+      if (!this.state().tvMode && !this.state().isRoom) {
+        this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`,
+          this.activePanel === NativePlayerPanelType.speed, (): void => {
+            this.openPanel(NativePlayerPanelType.speed);
+          });
+      }
+      this.Chip(this.kernelGlyph(), this.state().engineLabel,
+        this.activePanel === NativePlayerPanelType.kernel, (): void => {
+          this.openPanel(NativePlayerPanelType.kernel);
+        });
+      if (!this.state().tvMode) {
+        this.IconChip(this.subtitleStyleGlyph(),
+          this.activePanel === NativePlayerPanelType.display, (): void => {
+            this.openPanel(NativePlayerPanelType.display);
+          });
+        this.IconChip(this.decodeGlyph(),
+          this.activePanel === NativePlayerPanelType.decode, (): void => {
+            this.openPanel(NativePlayerPanelType.decode);
+          });
+        this.IconChip(this.videoFitGlyph(),
+          false, (): void => {
+            this.pokeAutoHide();
+            HimiMpvNativeHost.getInstance().optimisticCycleVideoFit();
+          });
+        this.IconChip(this.rotateGlyph(),
+          false, (): void => {
+            this.pokeAutoHide();
+            HimiMpvNativeHost.getInstance().optimisticToggleOrientation();
+          });
+      } else {
+        Text(this.currentTime)
+          .fontSize(13)
+          .fontColor('#B3FFFFFF')
+          .width(100)
+          .height(48)
+          .textAlign(TextAlign.Center);
+      }
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .alignItems(VerticalAlign.Center)
+    .linearGradient({
+      angle: 180,
+      colors: [['#CC000000', 0.0], ['#00000000', 1.0]],
+    });
+  }
+
+  /** 底栏：Logo / 进度条 / 播放组（手机居中·TV 置左）/ 右侧图标组。 */
+  @Builder
+  BottomBar() {
+    Column() {
+      if (this.showLogo()) {
+        Image(this.state().logoUrl)
+          .width(240)
+          .height(44)
+          .objectFit(ImageFit.Contain)
+          .margin({ bottom: 4 });
+      }
+      Row() {
+        Text(formatTime(this.dragging ? this.dragMs : this.progressMs))
+          .fontSize(12)
+          .fontColor('#B3FFFFFF')
+          .width(this.timeCellWidth())
+          .textAlign(TextAlign.End);
+        Slider({
+          value: this.dragging ? this.dragMs : this.progressMs,
+          min: 0,
+          max: this.state().durationMs > 0 ? this.state().durationMs : 1,
+          step: 1000,
+        })
+          .layoutWeight(1)
+          .selectedColor(SEL_COLOR)
+          .trackColor('#33FFFFFF')
+          .onChange((value: number, mode: SliderChangeMode): void => {
+            this.pokeAutoHide();
+            if (mode === SliderChangeMode.Begin || mode === SliderChangeMode.Moving) {
+              this.dragging = true;
+              this.dragMs = value;
+            } else if (mode === SliderChangeMode.End) {
+              this.dragging = false;
+              this.dragMs = value;
+              this.progressMs = value;
+              HimiMpvNativeHost.getInstance().optimisticSeek(Math.round(value));
+            }
+          });
+        Text(formatTime(this.state().durationMs))
+          .fontSize(12)
+          .fontColor('#B3FFFFFF')
+          .width(this.timeCellWidth())
+          .textAlign(TextAlign.Start);
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center);
+
+      this.ControlRow();
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 10, bottom: 14 })
+    .linearGradient({
+      angle: 0,
+      colors: [['#00000000', 0.0], ['#CC000000', 1.0]],
+    })
+    .position({ x: 0, y: '100%' })
+    .markAnchor({ x: '0%', y: '100%' });
+  }
+
+  /** 控件行：播放组（手机居中 / TV 置左）+ 右侧图标组。 */
+  @Builder
+  ControlRow() {
+    Stack({ alignContent: Alignment.Center }) {
+      Row() {
+        this.TransportGlyph(this.prevGlyph(), 28, this.hasPrev(), (): void => {
+          this.pokeAutoHide();
+          this.onPrevEpisode();
+        });
+        this.TransportGlyph(this.playGlyph(), 36, this.state().canControl, (): void => {
+          this.onTogglePlay();
+        });
+        this.TransportGlyph(this.nextGlyph(), 28, this.hasNext(), (): void => {
+          this.pokeAutoHide();
+          this.onNextEpisode();
+        });
+      }
+      .alignItems(VerticalAlign.Center)
+      .justifyContent(FlexAlign.Start)
+      .width('100%');
+
+      Row() {
+        this.IconChip(this.danmakuGlyph(),
+          this.state().danmakuEnabled, (): void => {
+            this.pokeAutoHide();
+            HimiMpvNativeHost.getInstance().optimisticToggleDanmaku();
+          });
+        if (this.showVersionButton()) {
+          this.IconChip(this.versionGlyph(),
+            this.activePanel === NativePlayerPanelType.version, (): void => {
+              this.openPanel(NativePlayerPanelType.version);
+            });
+        }
+        if (this.state().tvMode) {
+          this.IconChip(this.subtitleStyleGlyph(),
+            this.activePanel === NativePlayerPanelType.display, (): void => {
+              this.openPanel(NativePlayerPanelType.display);
+            });
+        }
+        this.IconChip(this.subtitleGlyph(),
+          this.activePanel === NativePlayerPanelType.subtitle, (): void => {
+            this.openPanel(NativePlayerPanelType.subtitle);
+          });
+        this.IconChip(this.audioGlyph(),
+          this.activePanel === NativePlayerPanelType.audio, (): void => {
+            this.openPanel(NativePlayerPanelType.audio);
+          });
+        if (this.showEpisodeButton()) {
+          this.IconChip(this.playlistGlyph(),
+            this.activePanel === NativePlayerPanelType.episode, (): void => {
+              this.openPanel(NativePlayerPanelType.episode);
+            });
+        }
+        if (this.state().tvMode && !this.state().isRoom) {
+          this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`,
+            this.activePanel === NativePlayerPanelType.speed, (): void => {
+              this.openPanel(NativePlayerPanelType.speed);
+            });
+        }
+      }
+      .alignItems(VerticalAlign.Center)
+      .width('100%')
+      .justifyContent(FlexAlign.End);
+
+      if (this.state().locked && this.state().tvMode) {
+        Row() {
+          Text('')
+            .fontFamily('MaterialIcons')
+            .fontSize(22)
+            .fontColor('#B3FFFFFF')
+            .onClick((): void => {
+              this.pokeAutoHide();
+              HimiMpvNativeHost.getInstance().optimisticToggleLock();
+            });
+        }
+        .alignItems(VerticalAlign.Center)
+        .width('100%')
+        .justifyContent(FlexAlign.Start);
+      }
+    }
+    .width('100%');
+  }
+
+  /** 文字胶囊（倍速/内核/TV 倍速）。 */
+  @Builder
+  Chip(icon: string, label: string, active: boolean, onTap: () => void) {
+    Row() {
+      Text(icon)
+        .fontFamily('MaterialIcons')
+        .fontSize(18)
+        .fontColor(active ? SEL_COLOR : Color.White);
+      if (label.length > 0) {
+        Text(label)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(active ? SEL_COLOR : Color.White)
+          .margin({ left: 4 });
+      }
+    }
+    .padding({ left: 9, right: 9, top: 6, bottom: 6 })
+    .backgroundColor('#26FFFFFF')
+    .borderRadius(10)
+    .onClick(onTap);
+  }
+
+  /** 图标玻璃方块（字幕样式/解码/画面比例/转屏/底栏图标组）。 */
+  @Builder
+  IconChip(icon: string, active: boolean, onTap: () => void) {
+    Text(icon)
+      .fontFamily('MaterialIcons')
+      .fontSize(24)
+      .fontColor(active ? SEL_COLOR : Color.White)
+      .padding(8)
+      .onClick(onTap);
+  }
+
+  /** 传输组按钮（上一集/播放/下一集）。 */
+  @Builder
+  TransportGlyph(icon: string, size: number, enabled: boolean, onTap: () => void) {
+    Text(icon)
+      .fontFamily('MaterialIcons')
+      .fontSize(size)
+      .fontColor(enabled ? Color.White : '#3DFFFFFF')
+      .padding(4)
+      .onClick((): void => {
+        if (enabled) {
+          onTap();
+        }
+      });
   }
 }

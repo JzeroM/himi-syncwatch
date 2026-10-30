@@ -159,6 +159,33 @@ void main() {
       expect(exit!.requiresImmediatePush, isTrue);
     });
 
+    test('Phase 2.5 新命令：锁定/比例/转屏/清除片头片尾', () {
+      final lock = NativePlayerCommand.fromMap(const {'type': 'toggleLock'});
+      expect(lock, isA<ToggleLock>());
+      expect(lock!.requiresImmediatePush, isTrue);
+
+      final fit = NativePlayerCommand.fromMap(const {'type': 'cycleVideoFit'});
+      expect(fit, isA<CycleVideoFit>());
+      expect(fit!.requiresImmediatePush, isTrue);
+
+      final orientation =
+          NativePlayerCommand.fromMap(const {'type': 'toggleOrientation'});
+      expect(orientation, isA<ToggleOrientation>());
+
+      final clear = NativePlayerCommand.fromMap(const {
+        'type': 'clearSegmentMark',
+        'kind': 'outro',
+      });
+      expect(clear, isA<ClearSegmentMark>());
+      expect((clear as ClearSegmentMark).kind, 'outro');
+      expect(clear.requiresImmediatePush, isTrue);
+
+      // kind 缺省回落 intro，不崩。
+      final clearDefault = NativePlayerCommand.fromMap(
+          const {'type': 'clearSegmentMark'});
+      expect((clearDefault as ClearSegmentMark).kind, 'intro');
+    });
+
     test('toMap → fromMap roundtrip', () {
       const commands = <NativePlayerCommand>[
         TogglePlay(),
@@ -183,6 +210,10 @@ void main() {
         TakeScreenshot(),
         ToggleDebug(),
         SetSegmentMark(kind: 'intro', positionMs: 90000),
+        ClearSegmentMark(kind: 'outro'),
+        ToggleLock(),
+        CycleVideoFit(),
+        ToggleOrientation(),
         RequestBack(),
         RequestExit(),
       ];

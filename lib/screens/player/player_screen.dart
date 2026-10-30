@@ -849,6 +849,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   NetworkSpeedMeter? _speedMeter;
   double? _networkSpeedBps;
 
+  /// 上一次推送给原生顶栏的网速文本（变化才重推，避免每秒全量快照）。
+  String? _lastNativeNetworkText;
+
   /// 热键层焦点（PlayerHotkey 外部节点）：控制条隐藏后焦点回落于此，
   /// 遥控器方向键恢复 seek/唤出控制条语义
   final FocusNode _hotkeyFocusNode = FocusNode(debugLabel: 'PlayerHotkey');
@@ -3243,22 +3246,69 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _syncNativePanelData() {
     final mpv = _player;
     if (mpv is! MpvPlayerAdapter || _disposed) return;
-    mpv.nativeEpisodes = List<NativeEpisode>.generate(
-      _episodes.length,
-      (i) => NativeEpisode(index: i, title: _episodes[i].name),
-      growable: false,
-    );
-    mpv.nativeCurrentEpisodeIndex = _currentEpisodeIndex;
-    mpv.nativeVersions = List<NativeVersion>.generate(
-      _currentMediaSources.length,
-      (i) => NativeVersion(index: i, title: _currentMediaSources[i].name),
-      growable: false,
-    );
     final activeId = _activeMediaSourceId;
     final activeIdx = activeId == null
         ? -1
         : _currentMediaSources.indexWhere((s) => s.id == activeId);
-    mpv.nativeCurrentVersionIndex = activeIdx < 0 ? 0 : activeIdx;
+
+    // ── Phase 2.5 控制层布局/样式：整体重建附加快照 ──
+    final settings = ref.read(settingsProvider);
+    final isRoom = widget.roomCode != null;
+    final networkText = settings.showNetworkSpeed && _networkSpeedBps != null
+        ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
+        : null;
+    final engines = PlayerEngineFactory.supportedEngines();
+    mpv.applyNativePanelData(
+      episodes: List<NativeEpisode>.generate(
+        _episodes.length,
+        (i) => NativeEpisode(index: i, title: _episodes[i].name),
+        growable: false,
+      ),
+      versions: List<NativeVersion>.generate(
+        _currentMediaSources.length,
+        (i) => NativeVersion(index: i, title: _currentMediaSources[i].name),
+        growable: false,
+      ),
+      currentEpisodeIndex: _currentEpisodeIndex,
+      currentVersionIndex: activeIdx < 0 ? 0 : activeIdx,
+      extras: NativePlayerUiExtras(
+        title: _currentEpisodeTitle,
+        logoUrl: isRoom ? null : widget.logoUrl,
+        networkSpeedText: networkText,
+        clockFormat: settings.topBarClockFormat.storageValue,
+        glassUi: settings.glassUi,
+        engineLabel: _currentEngine.shortLabel,
+        engineOptions: <NativeEngineOption>[
+          for (final engine in engines)
+            NativeEngineOption(
+              id: engine.id,
+              label: engine.shortLabel,
+              description: PlayerKernelPanel.descriptionOf(engine),
+            ),
+        ],
+        videoFit: _videoFit.name,
+        decodeMode: settings.decodeMode,
+        subtitleScale: _subtitleScale,
+        subtitleMarginY: _subtitleMarginY,
+        subtitleDelayEnabled: _activeSubtitleIndex != null,
+        subtitleStyleDisabled: _erikaActiveSubtitleIsBitmap(),
+        danmakuEnabled: _danmakuOn,
+        danmakuSpeed: settings.danmakuSpeed,
+        danmakuFontSize: settings.danmakuFontSize,
+        danmakuOpacity: settings.danmakuOpacity,
+        segmentEnabled: _segmentFeatureEnabled,
+        segmentIntroEndMs: _segmentIntroEndMs,
+        segmentOutroStartMs: _segmentCreditsStartMs,
+        showDebug: settings.showSyncDebug,
+        isRoom: isRoom,
+        canScreenshot: !Platform.isAndroid,
+        locked: _lockController.locked,
+        canControl: _canControlPlayback,
+        tvMode: settings.tvMode,
+        audioStreamCount: _embyAudioStreams.length,
+        subtitleStreamCount: _embySubtitleStreams.length,
+      ),
+    );
   }
 
   /// 原生命令通用路由（Phase 2）：把 adapter 转发来的命令接到现成 handler。
@@ -3303,6 +3353,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _applyNativeAdjustDisplay(key, value);
       case SetSegmentMark(:final kind, :final positionMs):
         _applyNativeSegmentMark(kind, positionMs);
+      case ClearSegmentMark(:final kind):
+        _applyNativeSegmentClear(kind);
+      case ToggleLock():
+        _toggleScreenLock();
+      case CycleVideoFit():
+        _cycleVideoFit();
+      case ToggleOrientation():
+        _toggleOrientation();
+      case SwitchEngine(:final engine):
+        final target = PlayerEngine.values.firstWhere(
+          (e) => e.id == engine,
+          orElse: () => _currentEngine,
+        );
+        await _switchPlayerKernel(target);
       case TakeScreenshot():
         unawaited(_probeSnapshot());
       default:
@@ -3330,15 +3394,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _applyNativeDecodeMode(String mode) =>
       _switchDecodeMode(mode);
 
-  /// 显示调节：Phase 2 面板未出，先记日志（协议可解析不崩）。完整显示调节
-  /// 面板（缩放/裁剪/偏移）随 UI 里程碑接入。
+  /// 显示调节：原生面板 6 个滑杆 key → 既有 setter（含持久化/应用）。
   void _applyNativeAdjustDisplay(String key, double value) {
-    LogService().log('Player', '原生显示调节（待面板接入）: $key=$value');
+    switch (key) {
+      case 'subtitleScale':
+        _onSubtitleScaleChanged(value.clamp(0.5, 3.0));
+      case 'subtitleMarginY':
+        _onSubtitleMarginYChanged(value.round().clamp(0, 200));
+      case 'subtitleDelayMs':
+        _onSubtitleDelayChanged(value.round().clamp(-5000, 5000));
+      case 'danmakuSpeed':
+        _onDanmakuSpeedChanged(value.clamp(0.5, 2.0));
+      case 'danmakuFontSize':
+        _onDanmakuFontSizeChanged(value.clamp(0.5, 2.0));
+      case 'danmakuOpacity':
+        _onDanmakuOpacityChanged(value.clamp(0.1, 1.0));
+      default:
+        LogService().log('Player', '未知原生显示调节 key: $key=$value');
+    }
   }
 
-  /// 片头片尾标记：Phase 2 面板未出，先记日志（协议可解析不崩）。
+  /// 片头片尾标记：原生面板已做二次确认，这里直接按命令位置落库。
   void _applyNativeSegmentMark(String kind, int positionMs) {
-    LogService().log('Player', '原生片头片尾标记（待面板接入）: $kind @${positionMs}ms');
+    final type =
+        kind == 'outro' ? MediaSegmentType.outro : MediaSegmentType.intro;
+    unawaited(_markSegmentAt(type, positionMs: positionMs));
+  }
+
+  /// 清除片头/片尾标记（原生二次确认里的「清除」）。
+  void _applyNativeSegmentClear(String kind) {
+    final type =
+        kind == 'outro' ? MediaSegmentType.outro : MediaSegmentType.intro;
+    unawaited(_clearSegmentAt(type));
   }
 
   /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），
@@ -5617,6 +5704,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final nextIndex =
         (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
     setState(() => _videoFit = _videoFitModes[nextIndex]);
+    _syncNativePanelData();
   }
 
   void _onSeekStart(double value) {
@@ -5769,6 +5857,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     _skipPromptTimer?.cancel();
     _resetHideTimer();
+    // 片头片尾标记变化（设置/清除）后刷新原生面板数据。
+    _syncNativePanelData();
   }
 
   void _beginSkipPromptSuppression() {
@@ -6023,27 +6113,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  Future<void> _markSegmentAt(MediaSegmentType type) async {
+  Future<void> _markSegmentAt(MediaSegmentType type, {int? positionMs}) async {
     if (!_segmentFeatureEnabled) return;
     final item = _segmentMediaItem;
     if (item == null) {
       showAppToast(context, '尚未获取到影片信息，请稍后再试');
       return;
     }
-    final positionMs = _position.inMilliseconds;
+    final markPositionMs = positionMs ?? _position.inMilliseconds;
     final durationMs = _duration.inMilliseconds > 0
         ? _duration.inMilliseconds
         : _segmentDurationMs;
-    if (positionMs <= 0) {
+    if (markPositionMs <= 0) {
       showAppToast(context, '当前位置为 0，无法标记');
       return;
     }
     if (type == MediaSegmentType.intro &&
-        !PlayerScreen.canSetIntroAt(positionMs)) {
+        !PlayerScreen.canSetIntroAt(markPositionMs)) {
       showAppToast(context, '播放 3 秒后才能设置片头');
       return;
     }
-    if (durationMs > 0 && positionMs >= durationMs) {
+    if (durationMs > 0 && markPositionMs >= durationMs) {
       showAppToast(context, '当前位置已到结尾，无法标记');
       return;
     }
@@ -6058,7 +6148,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           seriesId: item.seriesId,
           itemId: item.id,
           providerIds: providerIds,
-          introEndMs: positionMs,
+          introEndMs: markPositionMs,
         );
       } else {
         await _manualSegments.setCreditsStart(
@@ -6067,7 +6157,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           seriesId: item.seriesId,
           itemId: item.id,
           providerIds: providerIds,
-          creditsStartMs: positionMs,
+          creditsStartMs: markPositionMs,
         );
       }
       await _loadSkipSegments(item, suppressAtCurrent: true);
@@ -6075,7 +6165,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final label = type == MediaSegmentType.intro ? '片头结束点' : '片尾开始点';
       showAppToast(
         context,
-        '已设置$label：${SegmentMarkPanel.formatMs(positionMs)}'
+        '已设置$label：${SegmentMarkPanel.formatMs(markPositionMs)}'
         '${item.seriesId != null ? '（本剧所有集共用）' : ''}',
       );
     } catch (e) {
@@ -7079,6 +7169,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (prev != next) {
         _applyVideoOutputMode();
       }
+    });
+    // 设置变化（TV 模式/玻璃/网速/时钟/解码/弹幕/片头片尾/调试）→ 重推
+    // 原生控制层数据。原生 UI 未激活时 _syncNativePanelData 直接返回。
+    ref.listen(settingsProvider, (prev, next) {
+      if (identical(prev, next)) return;
+      _syncNativePanelData();
     });
     return TvBackConfirm(
       // TV：首按提示、2 秒窗口内第二按才确认退出；非 TV 直接确认（现状）
@@ -8122,6 +8218,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _skipPromptSuppressed = false;
         setState(() => _switchingKernel = false);
         _syncPlayState();
+        _syncNativePanelData();
       }
     }
   }
@@ -8287,6 +8384,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final p = _wrappedAdapter<ErikaPlayerAdapter>();
       if (p != null) unawaited(p.setDanmakuEnabled(_danmakuOn));
     }
+    _syncNativePanelData();
   }
 
   /// 取（或按地址重建）弹幕客户端。
@@ -8548,6 +8646,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _onLockStateChanged() {
     if (mounted) setState(() {});
+    _syncNativePanelData();
   }
 
   /// 应用倍速：立即生效 + 关闭面板 + 持久化入设置（换集/重启保持）。
@@ -8600,6 +8699,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
         if (!mounted) return;
         setState(() => _networkSpeedBps = bps);
+        final text = bps == null ? null : NetworkSpeedMeter.formatMBs(bps);
+        if (text != _lastNativeNetworkText) {
+          _lastNativeNetworkText = text;
+          _syncNativePanelData();
+        }
       },
     )..start();
   }
@@ -10094,6 +10198,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _scheduleSubtitleStyleApply();
     _resetHideTimer();
     _scheduleSubtitleStyleSave();
+    _syncNativePanelData();
   }
 
   void _onSubtitleMarginYChanged(int v) {
@@ -10101,12 +10206,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _scheduleSubtitleStyleApply();
     _resetHideTimer();
     _scheduleSubtitleStyleSave();
+    _syncNativePanelData();
   }
 
   void _onSubtitleDelayChanged(int v) {
     setState(() => _subtitleDelayMs = v);
     _resetHideTimer();
     _scheduleSubtitleStyleSave();
+    _syncNativePanelData();
     _subtitleDelayReloadTimer?.cancel();
     if (v == 0) {
       // 归零：立即恢复原素材轨

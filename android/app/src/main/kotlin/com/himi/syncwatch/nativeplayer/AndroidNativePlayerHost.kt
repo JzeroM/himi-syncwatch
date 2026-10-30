@@ -144,6 +144,73 @@ class AndroidNativePlayerHost(
                 commandSink.send(mapOf("type" to "selectVersion", "index" to index))
             }
 
+            // ── Phase 2.5 控制层命令 ──
+            override fun onSwitchEngine(engine: String) {
+                commandSink.send(mapOf("type" to "switchEngine", "engine" to engine))
+            }
+
+            override fun onSetDecodeMode(mode: String) {
+                lastState = lastState.copy(decodeMode = mode)
+                commandSink.send(mapOf("type" to "setDecodeMode", "mode" to mode))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onToggleDanmaku() {
+                lastState = lastState.copy(danmakuEnabled = !lastState.danmakuEnabled)
+                commandSink.send(mapOf("type" to "toggleDanmaku"))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onCycleVideoFit() {
+                val next = when (lastState.videoFit) {
+                    "contain" -> "cover"
+                    "cover" -> "fill"
+                    "fill" -> "none"
+                    else -> "contain"
+                }
+                lastState = lastState.copy(videoFit = next)
+                commandSink.send(mapOf("type" to "cycleVideoFit"))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onToggleOrientation() {
+                commandSink.send(mapOf("type" to "toggleOrientation"))
+            }
+
+            override fun onToggleLock() {
+                lastState = lastState.copy(locked = !lastState.locked)
+                commandSink.send(mapOf("type" to "toggleLock"))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onAdjustDisplay(key: String, value: Double) {
+                lastState = AndroidNativePlayerState.applyAdjustDisplay(lastState, key, value)
+                commandSink.send(mapOf("type" to "adjustDisplay", "key" to key, "value" to value))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onSetSegmentMark(kind: String, positionMs: Long) {
+                lastState = if (kind == "intro") {
+                    lastState.copy(segmentIntroEndMs = positionMs.toInt())
+                } else {
+                    lastState.copy(segmentOutroStartMs = positionMs.toInt())
+                }
+                commandSink.send(
+                    mapOf("type" to "setSegmentMark", "kind" to kind, "positionMs" to positionMs),
+                )
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onClearSegmentMark(kind: String) {
+                lastState = if (kind == "intro") {
+                    lastState.copy(segmentIntroEndMs = null)
+                } else {
+                    lastState.copy(segmentOutroStartMs = null)
+                }
+                commandSink.send(mapOf("type" to "clearSegmentMark", "kind" to kind))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
             override fun onOpenPanel(panel: String) {
                 // 面板显隐由视图自理；此处仅记录，返回键经视图 closePanel。
             }

@@ -227,4 +227,227 @@ class AndroidNativePlayerStateTest {
         assertEquals(1, state.tracks.size)
         assertEquals(1, state.tracks[0].id)
     }
+
+    // ── Phase 2.5 控制层字段 ──────────────────────────────────────
+
+    @Test
+    fun `解析控制层字段`() {
+        val json = JSONObject(
+            """
+            {
+              "logoUrl":"https://x/logo.png",
+              "networkSpeedText":"2.09 MB/s",
+              "clockFormat":"24h",
+              "glassUi":false,
+              "engineLabel":"MDK",
+              "engineOptions":[
+                {"id":"mdk","label":"MDK","description":"兼容内核"},
+                {"id":"mpv","label":"MPV","description":"默认内核"}
+              ],
+              "videoFit":"cover",
+              "decodeMode":"sw",
+              "subtitleScale":1.35,
+              "subtitleMarginY":48,
+              "subtitleDelayEnabled":true,
+              "subtitleStyleDisabled":true,
+              "danmakuEnabled":true,
+              "danmakuSpeed":1.5,
+              "danmakuFontSize":1.2,
+              "danmakuOpacity":0.4,
+              "segmentEnabled":true,
+              "segmentIntroEndMs":90000,
+              "segmentOutroStartMs":1400000,
+              "showDebug":true,
+              "isRoom":true,
+              "canScreenshot":true,
+              "audioStreamCount":3,
+              "subtitleStreamCount":5
+            }
+            """.trimIndent(),
+        )
+
+        val state = AndroidNativePlayerState.fromJson(json)
+
+        assertEquals("https://x/logo.png", state.logoUrl)
+        assertEquals("2.09 MB/s", state.networkSpeedText)
+        assertEquals("24h", state.clockFormat)
+        assertFalse(state.glassUi)
+        assertEquals("MDK", state.engineLabel)
+        assertEquals(2, state.engineOptions.size)
+        assertEquals("mdk", state.engineOptions[0].id)
+        assertEquals("MDK", state.engineOptions[0].label)
+        assertEquals("兼容内核", state.engineOptions[0].description)
+        assertEquals("mpv", state.engineOptions[1].id)
+        assertEquals("cover", state.videoFit)
+        assertEquals("sw", state.decodeMode)
+        assertEquals(1.35, state.subtitleScale, 1e-9)
+        assertEquals(48, state.subtitleMarginY)
+        assertTrue(state.subtitleDelayEnabled)
+        assertTrue(state.subtitleStyleDisabled)
+        assertTrue(state.danmakuEnabled)
+        assertEquals(1.5, state.danmakuSpeed, 1e-9)
+        assertEquals(1.2, state.danmakuFontSize, 1e-9)
+        assertEquals(0.4, state.danmakuOpacity, 1e-9)
+        assertTrue(state.segmentEnabled)
+        assertEquals(90000, state.segmentIntroEndMs)
+        assertEquals(1400000, state.segmentOutroStartMs)
+        assertTrue(state.showDebug)
+        assertTrue(state.isRoom)
+        assertTrue(state.canScreenshot)
+        assertEquals(3, state.audioStreamCount)
+        assertEquals(5, state.subtitleStreamCount)
+    }
+
+    @Test
+    fun `控制层字段缺省回落默认值`() {
+        val state = AndroidNativePlayerState.fromJson(JSONObject("""{"positionMs":10}"""))
+
+        assertNull(state.logoUrl)
+        assertNull(state.networkSpeedText)
+        assertEquals("off", state.clockFormat)
+        assertTrue(state.glassUi)
+        assertEquals("MPV", state.engineLabel)
+        assertTrue(state.engineOptions.isEmpty())
+        assertEquals("contain", state.videoFit)
+        assertEquals("auto", state.decodeMode)
+        assertEquals(1.0, state.subtitleScale, 1e-9)
+        assertEquals(22, state.subtitleMarginY)
+        assertFalse(state.subtitleDelayEnabled)
+        assertFalse(state.subtitleStyleDisabled)
+        assertFalse(state.danmakuEnabled)
+        assertEquals(1.0, state.danmakuSpeed, 1e-9)
+        assertEquals(0.5, state.danmakuFontSize, 1e-9)
+        assertEquals(0.6, state.danmakuOpacity, 1e-9)
+        assertFalse(state.segmentEnabled)
+        assertNull(state.segmentIntroEndMs)
+        assertNull(state.segmentOutroStartMs)
+        assertFalse(state.showDebug)
+        assertFalse(state.isRoom)
+        assertFalse(state.canScreenshot)
+        assertEquals(0, state.audioStreamCount)
+        assertEquals(0, state.subtitleStreamCount)
+    }
+
+    @Test
+    fun `片头片尾标记显式 null 回落 null`() {
+        val state = AndroidNativePlayerState.fromJson(
+            JSONObject("""{"segmentIntroEndMs":null,"segmentOutroStartMs":null}"""),
+        )
+        assertNull(state.segmentIntroEndMs)
+        assertNull(state.segmentOutroStartMs)
+    }
+
+    @Test
+    fun `引擎选项数组里非对象元素被跳过`() {
+        val state = AndroidNativePlayerState.fromJson(
+            JSONObject("""{"engineOptions":[{"id":"mpv","label":"MPV"},3,null]}"""),
+        )
+        assertEquals(1, state.engineOptions.size)
+        assertEquals("mpv", state.engineOptions[0].id)
+    }
+
+    @Test
+    fun `applyAdjustDisplay 范围夹取与 Dart clamp 一致`() {
+        val base = AndroidNativePlayerState()
+
+        // subtitleScale 0.5..3.0
+        assertEquals(
+            0.5,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "subtitleScale", 0.1).subtitleScale,
+            1e-9,
+        )
+        assertEquals(
+            3.0,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "subtitleScale", 9.0).subtitleScale,
+            1e-9,
+        )
+        assertEquals(
+            1.35,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "subtitleScale", 1.35).subtitleScale,
+            1e-9,
+        )
+
+        // subtitleMarginY 0..200（取整）
+        assertEquals(
+            0,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "subtitleMarginY", -10.0).subtitleMarginY,
+        )
+        assertEquals(
+            200,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "subtitleMarginY", 999.0).subtitleMarginY,
+        )
+        assertEquals(
+            48,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "subtitleMarginY", 48.0).subtitleMarginY,
+        )
+
+        // subtitleDelayMs -5000..5000
+        assertEquals(
+            -5000.0,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "subtitleDelayMs", -99999.0).subtitleDelayMs,
+            1e-9,
+        )
+        assertEquals(
+            5000.0,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "subtitleDelayMs", 99999.0).subtitleDelayMs,
+            1e-9,
+        )
+
+        // danmakuSpeed 0.5..2.0
+        assertEquals(
+            0.5,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "danmakuSpeed", 0.1).danmakuSpeed,
+            1e-9,
+        )
+        assertEquals(
+            2.0,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "danmakuSpeed", 5.0).danmakuSpeed,
+            1e-9,
+        )
+
+        // danmakuFontSize 0.5..2.0
+        assertEquals(
+            0.5,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "danmakuFontSize", 0.1).danmakuFontSize,
+            1e-9,
+        )
+        assertEquals(
+            2.0,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "danmakuFontSize", 5.0).danmakuFontSize,
+            1e-9,
+        )
+
+        // danmakuOpacity 0.1..1.0
+        assertEquals(
+            0.1,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "danmakuOpacity", 0.01).danmakuOpacity,
+            1e-9,
+        )
+        assertEquals(
+            1.0,
+            AndroidNativePlayerState.applyAdjustDisplay(base, "danmakuOpacity", 9.0).danmakuOpacity,
+            1e-9,
+        )
+    }
+
+    @Test
+    fun `applyAdjustDisplay 未知 key 返回原状态`() {
+        val base = AndroidNativePlayerState(subtitleScale = 1.5)
+        val next = AndroidNativePlayerState.applyAdjustDisplay(base, "brightness", 0.5)
+        assertEquals(1.5, next.subtitleScale, 1e-9)
+    }
+
+    @Test
+    fun `播放器时间格式化对齐 Flutter formatPlayerDuration`() {
+        // 无小时：MM:SS（分钟补零）
+        assertEquals("00:00", AndroidNativePlayerState.formatPlayerTime(0))
+        assertEquals("00:09", AndroidNativePlayerState.formatPlayerTime(9_000))
+        assertEquals("01:05", AndroidNativePlayerState.formatPlayerTime(65_000))
+        assertEquals("05:03", AndroidNativePlayerState.formatPlayerTime(303_000))
+        // 有小时：HH:MM:SS（全补零）
+        assertEquals("01:00:00", AndroidNativePlayerState.formatPlayerTime(3_600_000))
+        assertEquals("02:03:04", AndroidNativePlayerState.formatPlayerTime(7_384_000))
+        // 负数按 0
+        assertEquals("00:00", AndroidNativePlayerState.formatPlayerTime(-5))
+    }
 }

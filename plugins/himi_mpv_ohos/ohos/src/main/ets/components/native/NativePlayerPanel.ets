@@ -19,10 +19,55 @@ import {
   NativeTrackUi,
   NativeEpisodeUi,
   NativeVersionUi,
+  NativeEngineOptionUi,
 } from './HimiMpvNativeHost';
 
 /** 倍速档位（与 Flutter speedOptions 完全一致）。 */
 const SPEED_STEPS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
+
+/** 解码模式档位（与 Dart `decodeMode` 取值一致）。 */
+const DECODE_MODES: string[] = ['auto', 'hw', 'sw'];
+
+/** 解码模式中文标签。 */
+function decodeModeLabel(mode: string): string {
+  if (mode === 'auto') {
+    return '自动';
+  }
+  if (mode === 'hw') {
+    return '硬解';
+  }
+  if (mode === 'sw') {
+    return '软解';
+  }
+  return mode;
+}
+
+/** 显示调节滑杆行规格（标签 / 最小 / 最大 / 步长）。 */
+class DisplaySliderSpec {
+  key: string = '';
+  label: string = '';
+  min: number = 0;
+  max: number = 1;
+  step: number = 1;
+
+  constructor(key: string, label: string, min: number, max: number, step: number) {
+    this.key = key;
+    this.label = label;
+    this.min = min;
+    this.max = max;
+    this.step = step;
+  }
+}
+
+/** 显示调节滑杆行规格（字幕 3 行 + 弹幕 3 行，与 Flutter 显示调节一致）。 */
+const DISPLAY_SLIDERS: DisplaySliderSpec[] = [
+  new DisplaySliderSpec('subtitleScale', '大小', 0.5, 3.0, 0.05),
+  new DisplaySliderSpec('subtitleMarginY', '位置', 0, 200, 2),
+  new DisplaySliderSpec('subtitleDelayMs', '延迟', -5000, 5000, 100),
+  new DisplaySliderSpec('danmakuSpeed', '速度', 0.5, 2.0, 0.05),
+  new DisplaySliderSpec('danmakuFontSize', '大小', 0.5, 2.0, 0.05),
+  new DisplaySliderSpec('danmakuOpacity', '透明度', 0.1, 1.0, 0.05),
+];
 
 /** 选中主色（照抄 Flutter Color(0xFF6366F1)）。 */
 const SEL_COLOR = '#6366F1';
@@ -95,6 +140,12 @@ export struct NativePlayerPanel {
           this.EpisodeContent();
         } else if (this.panelType === 'version') {
           this.VersionContent();
+        } else if (this.panelType === 'kernel') {
+          this.KernelContent();
+        } else if (this.panelType === 'display') {
+          this.DisplayContent();
+        } else if (this.panelType === 'decode') {
+          this.DecodeContent();
         }
       }
       .width(320)
@@ -125,6 +176,12 @@ export struct NativePlayerPanel {
       return '选集';
     } else if (this.panelType === 'version') {
       return '线路';
+    } else if (this.panelType === 'kernel') {
+      return '播放内核';
+    } else if (this.panelType === 'display') {
+      return '显示调节';
+    } else if (this.panelType === 'decode') {
+      return '解码模式';
     }
     return '设置';
   }
@@ -193,6 +250,167 @@ export struct NativePlayerPanel {
   @Builder
   SubtitleContent() {
     this.TrackContent(this.subtitleTracks(), this.state().selectedSubtitleId, true);
+  }
+
+  /** 播放内核面板：短名 + 说明 + 当前项对勾。 */
+  @Builder
+  KernelContent() {
+    List() {
+      ForEach(this.state().engineOptions, (opt: NativeEngineOptionUi) => {
+        ListItem() {
+          Column() {
+            Row() {
+              Text(opt.label)
+                .fontSize(14)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(Color.White)
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis });
+              Text(opt.label === this.state().engineLabel ? '✓' : '')
+                .fontSize(18)
+                .fontColor(SEL_COLOR)
+                .width(18)
+                .textAlign(TextAlign.Center);
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center);
+
+            if (opt.description.length > 0) {
+              Text(opt.description)
+                .fontSize(11)
+                .fontColor('#8AFFFFFF')
+                .maxLines(2)
+                .margin({ top: 2 });
+            }
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .onClick((): void => {
+            this.host.optimisticSwitchEngine(opt.id);
+            this.close();
+          });
+        }
+      }, (opt: NativeEngineOptionUi): string => opt.id);
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
+  }
+
+  /** 显示调节面板：字幕 3 行 + 弹幕 3 行（与 Flutter DisplayAdjustPanel 一致）。 */
+  @Builder
+  DisplayContent() {
+    List() {
+      ForEach(DISPLAY_SLIDERS, (spec: DisplaySliderSpec, idx: number) => {
+        ListItem() {
+          Column() {
+            if (idx === 0 || idx === 3) {
+              Text(idx === 0 ? '字幕' : '弹幕')
+                .fontSize(11)
+                .fontColor('#62FFFFFF')
+                .width('100%')
+                .padding({ left: 16, right: 16, top: 10, bottom: 4 });
+            }
+            Row() {
+              Text(spec.label)
+                .fontSize(12)
+                .fontColor(Color.White)
+                .width(44);
+              Slider({
+                value: this.sliderValue(spec.key),
+                min: spec.min,
+                max: spec.max,
+                step: spec.step,
+              })
+                .layoutWeight(1)
+                .selectedColor(SEL_COLOR)
+                .trackColor('#33FFFFFF')
+                .onChange((v: number): void => {
+                  this.host.adjustDisplay(spec.key, v);
+                });
+              Text(this.sliderValue(spec.key).toFixed(2))
+                .fontSize(12)
+                .fontColor('#B3FFFFFF')
+                .width(48)
+                .textAlign(TextAlign.End);
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+            .alignItems(VerticalAlign.Center);
+          }
+          .width('100%');
+        }
+      }, (spec: DisplaySliderSpec, idx: number): string => `${spec.key}-${idx}`);
+    }
+    .width('100%')
+    .layoutWeight(1)
+  }
+
+  /** 当前滑杆值（按 key 从宿主状态读取）。 */
+  private sliderValue(key: string): number {
+    const s = this.state();
+    if (key === 'subtitleScale') {
+      return s.subtitleScale;
+    }
+    if (key === 'subtitleMarginY') {
+      return s.subtitleMarginY;
+    }
+    if (key === 'subtitleDelayMs') {
+      return s.subtitleDelayMs;
+    }
+    if (key === 'danmakuSpeed') {
+      return s.danmakuSpeed;
+    }
+    if (key === 'danmakuFontSize') {
+      return s.danmakuFontSize;
+    }
+    if (key === 'danmakuOpacity') {
+      return s.danmakuOpacity;
+    }
+    return 0;
+  }
+
+  /** 解码模式面板：标题 + 当前值 + 3 行单选。 */
+  @Builder
+  DecodeContent() {
+    Column() {
+      Text('当前：' + decodeModeLabel(this.state().decodeMode))
+        .fontSize(12)
+        .fontColor('#A5B4FC')
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 0, bottom: 6 });
+      List() {
+        ForEach(DECODE_MODES, (mode: string) => {
+          ListItem() {
+            Row() {
+              Text(this.state().decodeMode === mode ? '●' : '○')
+                .fontSize(16)
+                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : '#8AFFFFFF')
+                .width(20);
+              Text(decodeModeLabel(mode))
+                .fontSize(13)
+                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : Color.White)
+                .layoutWeight(1)
+                .margin({ left: 8 });
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+            .alignItems(VerticalAlign.Center)
+            .onClick((): void => {
+              this.host.optimisticSetDecodeMode(mode);
+              this.close();
+            });
+          }
+        }, (mode: string): string => mode);
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Start);
   }
 
   /** 选集列表。 */

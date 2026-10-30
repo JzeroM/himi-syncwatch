@@ -78,6 +78,14 @@ sealed class NativePlayerCommand {
         return SendRoomChat(text: map['text'] as String? ?? '');
       case 'takeScreenshot':
         return const TakeScreenshot();
+      case 'toggleLock':
+        return const ToggleLock();
+      case 'cycleVideoFit':
+        return const CycleVideoFit();
+      case 'toggleOrientation':
+        return const ToggleOrientation();
+      case 'clearSegmentMark':
+        return ClearSegmentMark(kind: map['kind'] as String? ?? 'intro');
       case 'toggleDebug':
         return const ToggleDebug();
       case 'setSegmentMark':
@@ -346,6 +354,54 @@ class TakeScreenshot extends NativePlayerCommand {
   @override
   Map<String, Object?> toMap() =>
       const <String, Object?>{'type': 'takeScreenshot'};
+}
+
+/// 锁定/解锁屏幕（手机左锁钮）。
+class ToggleLock extends NativePlayerCommand {
+  const ToggleLock();
+
+  @override
+  bool get requiresImmediatePush => true;
+
+  @override
+  Map<String, Object?> toMap() =>
+      const <String, Object?>{'type': 'toggleLock'};
+}
+
+/// 画面比例循环切换（自适应→裁剪→铺满→原始）。
+class CycleVideoFit extends NativePlayerCommand {
+  const CycleVideoFit();
+
+  @override
+  bool get requiresImmediatePush => true;
+
+  @override
+  Map<String, Object?> toMap() =>
+      const <String, Object?>{'type': 'cycleVideoFit'};
+}
+
+/// 手机手动转屏（命令回 Flutter 的 `_toggleOrientation`）。
+class ToggleOrientation extends NativePlayerCommand {
+  const ToggleOrientation();
+
+  @override
+  Map<String, Object?> toMap() =>
+      const <String, Object?>{'type': 'toggleOrientation'};
+}
+
+/// 清除片头/片尾标记（原生二次确认里的「清除」）。
+class ClearSegmentMark extends NativePlayerCommand {
+  const ClearSegmentMark({required this.kind});
+
+  /// intro / outro。
+  final String kind;
+
+  @override
+  bool get requiresImmediatePush => true;
+
+  @override
+  Map<String, Object?> toMap() =>
+      <String, Object?>{'type': 'clearSegmentMark', 'kind': kind};
 }
 
 class ToggleDebug extends NativePlayerCommand {

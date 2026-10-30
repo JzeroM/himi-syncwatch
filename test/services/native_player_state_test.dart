@@ -89,6 +89,27 @@ void main() {
         tvMode: false,
         canControl: true,
         debugLines: <String>['vo: gpu-next', 'hwdec: auto'],
+        logoUrl: 'https://x/logo.png',
+        networkSpeedText: '2.09 MB/s',
+        clockFormat: '24h',
+        glassUi: false,
+        engineLabel: 'MPV',
+        engineOptions: <NativeEngineOption>[
+          NativeEngineOption(id: 'mpv', label: 'MPV', description: '默认内核'),
+          NativeEngineOption(id: 'mdk', label: 'MDK', description: '兼容内核'),
+        ],
+        videoFit: 'cover',
+        decodeMode: 'hw',
+        subtitleScale: 1.35,
+        subtitleMarginY: 48,
+        subtitleDelayEnabled: true,
+        subtitleStyleDisabled: true,
+        segmentEnabled: true,
+        showDebug: true,
+        isRoom: true,
+        canScreenshot: true,
+        audioStreamCount: 3,
+        subtitleStreamCount: 5,
       );
 
       final restored = NativePlayerState.fromJson(original.toJson());
@@ -148,6 +169,24 @@ void main() {
       expect(restored.tvMode, original.tvMode);
       expect(restored.canControl, original.canControl);
       expect(restored.debugLines, original.debugLines);
+      expect(restored.logoUrl, original.logoUrl);
+      expect(restored.networkSpeedText, original.networkSpeedText);
+      expect(restored.clockFormat, original.clockFormat);
+      expect(restored.glassUi, original.glassUi);
+      expect(restored.engineLabel, original.engineLabel);
+      expect(restored.engineOptions, original.engineOptions);
+      expect(restored.videoFit, original.videoFit);
+      expect(restored.decodeMode, original.decodeMode);
+      expect(restored.subtitleScale, original.subtitleScale);
+      expect(restored.subtitleMarginY, original.subtitleMarginY);
+      expect(restored.subtitleDelayEnabled, original.subtitleDelayEnabled);
+      expect(restored.subtitleStyleDisabled, original.subtitleStyleDisabled);
+      expect(restored.segmentEnabled, original.segmentEnabled);
+      expect(restored.showDebug, original.showDebug);
+      expect(restored.isRoom, original.isRoom);
+      expect(restored.canScreenshot, original.canScreenshot);
+      expect(restored.audioStreamCount, original.audioStreamCount);
+      expect(restored.subtitleStreamCount, original.subtitleStreamCount);
       expect(restored, original);
     });
 
@@ -229,6 +268,110 @@ void main() {
       const style = NativeSubtitleStyle(
           fontSize: 22, opacity: 0.6, textColor: '#FF0000');
       expect(NativeSubtitleStyle.fromJson(style.toJson()), style);
+    });
+  });
+
+  group('NativeEngineOption', () {
+    test('roundtrip / 相等 / 默认描述', () {
+      const option =
+          NativeEngineOption(id: 'mpv', label: 'MPV', description: '默认内核');
+      expect(NativeEngineOption.fromJson(option.toJson()), option);
+      expect(
+        NativeEngineOption.fromJson(const <Object?, Object?>{'id': 'x'}),
+        const NativeEngineOption(id: 'x', label: ''),
+      );
+      expect(
+        const NativeEngineOption(id: 'a', label: 'A'),
+        const NativeEngineOption(id: 'a', label: 'A'),
+      );
+      expect(
+        const NativeEngineOption(id: 'a', label: 'A').hashCode,
+        const NativeEngineOption(id: 'a', label: 'A').hashCode,
+      );
+    });
+  });
+
+  group('NativePlayerUiExtras', () {
+    test('默认值', () {
+      const extras = NativePlayerUiExtras();
+      expect(extras.clockFormat, 'off');
+      expect(extras.glassUi, isTrue);
+      expect(extras.engineLabel, 'MPV');
+      expect(extras.engineOptions, isEmpty);
+      expect(extras.videoFit, 'contain');
+      expect(extras.decodeMode, 'auto');
+      expect(extras.subtitleScale, 1.0);
+      expect(extras.subtitleMarginY, 22);
+      expect(extras.danmakuEnabled, isFalse);
+      expect(extras.segmentEnabled, isFalse);
+      expect(extras.locked, isFalse);
+      expect(extras.canControl, isTrue);
+      expect(extras.tvMode, isFalse);
+      expect(extras.audioStreamCount, 0);
+      expect(extras.subtitleStreamCount, 0);
+    });
+
+    test('字段可读', () {
+      const extras = NativePlayerUiExtras(
+        title: '第 3 集',
+        logoUrl: 'https://x/logo.png',
+        networkSpeedText: '1.20 MB/s',
+        clockFormat: '12h',
+        glassUi: false,
+        engineLabel: 'MDK',
+        engineOptions: <NativeEngineOption>[
+          NativeEngineOption(id: 'mdk', label: 'MDK'),
+        ],
+        videoFit: 'fill',
+        decodeMode: 'sw',
+        subtitleScale: 2.0,
+        subtitleMarginY: 60,
+        subtitleDelayEnabled: true,
+        subtitleStyleDisabled: true,
+        danmakuEnabled: true,
+        danmakuSpeed: 1.5,
+        danmakuFontSize: 1.2,
+        danmakuOpacity: 0.4,
+        segmentEnabled: true,
+        segmentIntroEndMs: 90000,
+        segmentOutroStartMs: 1400000,
+        showDebug: true,
+        isRoom: true,
+        canScreenshot: true,
+        locked: true,
+        canControl: false,
+        tvMode: true,
+        audioStreamCount: 2,
+        subtitleStreamCount: 4,
+      );
+      expect(extras.title, '第 3 集');
+      expect(extras.logoUrl, 'https://x/logo.png');
+      expect(extras.networkSpeedText, '1.20 MB/s');
+      expect(extras.clockFormat, '12h');
+      expect(extras.glassUi, isFalse);
+      expect(extras.engineLabel, 'MDK');
+      expect(extras.engineOptions.single.id, 'mdk');
+      expect(extras.videoFit, 'fill');
+      expect(extras.decodeMode, 'sw');
+      expect(extras.subtitleScale, 2.0);
+      expect(extras.subtitleMarginY, 60);
+      expect(extras.subtitleDelayEnabled, isTrue);
+      expect(extras.subtitleStyleDisabled, isTrue);
+      expect(extras.danmakuEnabled, isTrue);
+      expect(extras.danmakuSpeed, 1.5);
+      expect(extras.danmakuFontSize, 1.2);
+      expect(extras.danmakuOpacity, 0.4);
+      expect(extras.segmentEnabled, isTrue);
+      expect(extras.segmentIntroEndMs, 90000);
+      expect(extras.segmentOutroStartMs, 1400000);
+      expect(extras.showDebug, isTrue);
+      expect(extras.isRoom, isTrue);
+      expect(extras.canScreenshot, isTrue);
+      expect(extras.locked, isTrue);
+      expect(extras.canControl, isFalse);
+      expect(extras.tvMode, isTrue);
+      expect(extras.audioStreamCount, 2);
+      expect(extras.subtitleStreamCount, 4);
     });
   });
 }

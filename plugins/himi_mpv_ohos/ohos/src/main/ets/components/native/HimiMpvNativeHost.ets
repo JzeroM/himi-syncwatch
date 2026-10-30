@@ -32,6 +32,14 @@ export class NativePlayerPanelType {
   static readonly version: string = 'version';
   static readonly settings: string = 'settings';
   static readonly lock: string = 'lock';
+  /** 播放内核选择（顶栏胶囊）。 */
+  static readonly kernel: string = 'kernel';
+  /** 显示调节（字幕/弹幕滑杆）。 */
+  static readonly display: string = 'display';
+  /** 解码模式（手机顶栏胶囊）。 */
+  static readonly decode: string = 'decode';
+  /** 片头片尾标记（居中玻璃卡）。 */
+  static readonly segment: string = 'segment';
 }
 
 /** 宿主 → 插件的转发桥（surface 生命周期与命令回传）。 */
@@ -84,6 +92,39 @@ export class NativeEpisodeUi {
 export class NativeVersionUi {
   index: number = 0;
   title: string = '';
+}
+
+/** 内核面板选项（与 Dart `NativeEngineOption.toJson` 一致）。 */
+export class NativeEngineOptionUi {
+  id: string = '';
+  label: string = '';
+  description: string = '';
+}
+
+function parseEngineOptions(v: ESObject): NativeEngineOptionUi[] {
+  const out: NativeEngineOptionUi[] = [];
+  if (Array.isArray(v)) {
+    const arr = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const item = new NativeEngineOptionUi();
+      const src = arr[i] as Record<string, Object>;
+      item.id = jsonStr(src['id'], '');
+      item.label = jsonStr(src['label'], '');
+      item.description = jsonStr(src['description'], '');
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+function jsonNullableInt(v: ESObject): number | null {
+  if (v === undefined || v === null) {
+    return null;
+  }
+  if (typeof v === 'number') {
+    return v as number;
+  }
+  return null;
 }
 
 function parseTracks(v: ESObject): NativeTrackUi[] {
@@ -169,6 +210,8 @@ export class NativePlayerUiState {
 
   canControl: boolean = true;
   locked: boolean = false;
+  /** TV 模式（遥控器排布：时钟/倍速在底栏、无锁钮与转屏等）。 */
+  tvMode: boolean = false;
   debugLines: string[] = [];
 
   // ── Phase 2 面板数据 ──
@@ -183,6 +226,52 @@ export class NativePlayerUiState {
   currentVersionIndex: number = 0;
   /** 音量（0-1），音量面板/滑杆用。 */
   volumeDisplay: number = 1.0;
+
+  // ── Phase 2.5 控制层布局/样式 ──
+  /** 左下角 Logo（Emby 剧集 logo；房间模式/无图时为空串）。 */
+  logoUrl: string = '';
+  /** 顶栏网速文本（如 `2.09 MB/s`）；设置关闭或未采样时为空串。 */
+  networkSpeedText: string = '';
+  /** TV 时钟格式：off / 12h / 24h。 */
+  clockFormat: string = 'off';
+  /** 液态玻璃开关（false 时面板/胶囊/滑杆降级纯色）。 */
+  glassUi: boolean = true;
+  /** 顶栏内核胶囊短名（MPV/MDK/Erika/libmpv）。 */
+  engineLabel: string = 'MPV';
+  /** 内核面板可选引擎。 */
+  engineOptions: NativeEngineOptionUi[] = [];
+  /** 画面比例：contain / cover / fill / none。 */
+  videoFit: string = 'contain';
+  /** 解码模式：auto / hw / sw。 */
+  decodeMode: string = 'auto';
+  /** 字幕缩放（1.0 = 100%）。 */
+  subtitleScale: number = 1.0;
+  /** 字幕底部边距 vp。 */
+  subtitleMarginY: number = 22;
+  /** 当前是否有激活字幕轨（延迟滑杆可用）。 */
+  subtitleDelayEnabled: boolean = false;
+  /** 位图字幕（PGS 等）不支持样式调节。 */
+  subtitleStyleDisabled: boolean = false;
+  /** 弹幕开关/速度/字号/透明度（面板显示调节用）。 */
+  danmakuEnabled: boolean = false;
+  danmakuSpeed: number = 1.0;
+  danmakuFontSize: number = 0.5;
+  danmakuOpacity: number = 0.6;
+  /** 片头片尾功能开关与已存标记（毫秒；无标记为 null）。 */
+  segmentEnabled: boolean = false;
+  segmentIntroEndMs: number | null = null;
+  segmentOutroStartMs: number | null = null;
+  /** 是否显示原生诊断行（设置→同步调试）。 */
+  showDebug: boolean = false;
+  /** 房间模式（隐藏选集/线路/画面比例等单人入口）。 */
+  isRoom: boolean = false;
+  /** 截图入口可用（Android 因 native crash 风险关闭）。 */
+  canScreenshot: boolean = false;
+  /** 服务端音轨/字幕流数量（角标）。 */
+  audioStreamCount: number = 0;
+  subtitleStreamCount: number = 0;
+  /** HDR 徽标（沿用既有字段，此处显式声明便于视图读取）。 */
+  hdr: boolean = false;
 
   /** 用 JSON 快照整体覆盖（缺失字段保持旧值，容忍字段增减）。 */
   update(obj: ESObject): void {
@@ -214,6 +303,7 @@ export class NativePlayerUiState {
     this.surfaceHeight = jsonNum(obj.surfaceHeight, this.surfaceHeight);
     this.canControl = jsonBool(obj.canControl, this.canControl);
     this.locked = jsonBool(obj.locked, this.locked);
+    this.tvMode = jsonBool(obj.tvMode, this.tvMode);
     this.debugLines = jsonStrList(obj.debugLines);
     // ── Phase 2 面板数据 ──
     if (obj.tracks !== undefined) {
@@ -231,6 +321,47 @@ export class NativePlayerUiState {
     this.currentEpisodeIndex = jsonNum(obj.currentEpisodeIndex, this.currentEpisodeIndex);
     this.currentVersionIndex = jsonNum(obj.currentVersionIndex, this.currentVersionIndex);
     this.volumeDisplay = jsonNum(obj.volume, this.volumeDisplay);
+    // ── Phase 2.5 控制层布局/样式 ──
+    this.logoUrl = jsonStr(obj.logoUrl, this.logoUrl);
+    this.networkSpeedText = jsonStr(obj.networkSpeedText, this.networkSpeedText);
+    this.clockFormat = jsonStr(obj.clockFormat, this.clockFormat);
+    this.glassUi = jsonBool(obj.glassUi, this.glassUi);
+    this.engineLabel = jsonStr(obj.engineLabel, this.engineLabel);
+    if (obj.engineOptions !== undefined) {
+      this.engineOptions = parseEngineOptions(obj.engineOptions);
+    }
+    this.videoFit = jsonStr(obj.videoFit, this.videoFit);
+    this.decodeMode = jsonStr(obj.decodeMode, this.decodeMode);
+    this.subtitleScale = jsonNum(obj.subtitleScale, this.subtitleScale);
+    this.subtitleMarginY = jsonNum(obj.subtitleMarginY, this.subtitleMarginY);
+    this.subtitleDelayEnabled = jsonBool(obj.subtitleDelayEnabled, this.subtitleDelayEnabled);
+    this.subtitleStyleDisabled = jsonBool(obj.subtitleStyleDisabled, this.subtitleStyleDisabled);
+    this.danmakuEnabled = jsonBool(obj.danmakuEnabled, this.danmakuEnabled);
+    this.danmakuSpeed = jsonNum(obj.danmakuSpeed, this.danmakuSpeed);
+    this.danmakuFontSize = jsonNum(obj.danmakuFontSize, this.danmakuFontSize);
+    this.danmakuOpacity = jsonNum(obj.danmakuOpacity, this.danmakuOpacity);
+    this.segmentEnabled = jsonBool(obj.segmentEnabled, this.segmentEnabled);
+    this.segmentIntroEndMs = jsonNullableInt(obj.segmentIntroEndMs);
+    this.segmentOutroStartMs = jsonNullableInt(obj.segmentOutroStartMs);
+    this.showDebug = jsonBool(obj.showDebug, this.showDebug);
+    this.isRoom = jsonBool(obj.isRoom, this.isRoom);
+    this.canScreenshot = jsonBool(obj.canScreenshot, this.canScreenshot);
+    this.audioStreamCount = jsonNum(obj.audioStreamCount, this.audioStreamCount);
+    this.subtitleStreamCount = jsonNum(obj.subtitleStreamCount, this.subtitleStreamCount);
+    this.hdr = this.hdrOutput;
+  }
+
+  /** 显示标题：显式标题 > 媒体标题 > 空串。 */
+  displayTitle(): string {
+    if (this.title.length > 0) {
+      return this.title;
+    }
+    return this.mediaTitle;
+  }
+
+  /** 时长未知（直播 / 转码 HLS / 仍在解析）。 */
+  isLiveLike(): boolean {
+    return this.durationMs <= 0;
   }
 }
 
@@ -494,6 +625,108 @@ export class HimiMpvNativeHost {
     const fields: Map<string, Object> = new Map<string, Object>();
     fields.set('index', index);
     this.sendCommand('selectVersion', fields);
+    this.notify();
+  }
+
+  // ── Phase 2.5 控制层命令 ───────────────────────────────────────
+
+  /** 锁定/解锁屏幕。 */
+  optimisticToggleLock(): void {
+    this.state.locked = !this.state.locked;
+    this.sendCommand('toggleLock', null);
+    this.notify();
+  }
+
+  /** 画面比例循环切换（自适应→裁剪→铺满→原始）。 */
+  optimisticCycleVideoFit(): void {
+    let next: string = 'contain';
+    if (this.state.videoFit === 'contain') {
+      next = 'cover';
+    } else if (this.state.videoFit === 'cover') {
+      next = 'fill';
+    } else if (this.state.videoFit === 'fill') {
+      next = 'none';
+    }
+    this.state.videoFit = next;
+    this.sendCommand('cycleVideoFit', null);
+    this.notify();
+  }
+
+  /** 手动转屏（命令回 Flutter 的 `_toggleOrientation`）。 */
+  optimisticToggleOrientation(): void {
+    this.sendCommand('toggleOrientation', null);
+  }
+
+  /** 弹幕开关（本地乐观翻转）。 */
+  optimisticToggleDanmaku(): void {
+    this.state.danmakuEnabled = !this.state.danmakuEnabled;
+    this.sendCommand('toggleDanmaku', null);
+    this.notify();
+  }
+
+  /** 解码模式选择（乐观更新）。 */
+  optimisticSetDecodeMode(mode: string): void {
+    this.state.decodeMode = mode;
+    const fields: Map<string, Object> = new Map<string, Object>();
+    fields.set('mode', mode);
+    this.sendCommand('setDecodeMode', fields);
+    this.notify();
+  }
+
+  /** 播放内核切换。 */
+  optimisticSwitchEngine(engineId: string): void {
+    const fields: Map<string, Object> = new Map<string, Object>();
+    fields.set('engine', engineId);
+    this.sendCommand('switchEngine', fields);
+  }
+
+  /** 显示调节（字幕/弹幕滑杆）。 */
+  adjustDisplay(key: string, value: number): void {
+    if (key === 'subtitleScale') {
+      this.state.subtitleScale = Math.min(Math.max(value, 0.5), 3.0);
+    } else if (key === 'subtitleMarginY') {
+      this.state.subtitleMarginY = Math.round(Math.min(Math.max(value, 0), 200));
+    } else if (key === 'subtitleDelayMs') {
+      this.state.subtitleDelayMs = Math.round(Math.min(Math.max(value, -5000), 5000));
+    } else if (key === 'danmakuSpeed') {
+      this.state.danmakuSpeed = Math.min(Math.max(value, 0.5), 2.0);
+    } else if (key === 'danmakuFontSize') {
+      this.state.danmakuFontSize = Math.min(Math.max(value, 0.5), 2.0);
+    } else if (key === 'danmakuOpacity') {
+      this.state.danmakuOpacity = Math.min(Math.max(value, 0.1), 1.0);
+    }
+    const fields: Map<string, Object> = new Map<string, Object>();
+    fields.set('key', key);
+    fields.set('value', value);
+    this.sendCommand('adjustDisplay', fields);
+    this.notify();
+  }
+
+  /** 以当前位置标记片头/片尾。 */
+  optimisticSetSegmentMark(kind: string): void {
+    const pos: number = this.positionNowMs();
+    if (kind === 'intro') {
+      this.state.segmentIntroEndMs = pos;
+    } else {
+      this.state.segmentOutroStartMs = pos;
+    }
+    const fields: Map<string, Object> = new Map<string, Object>();
+    fields.set('kind', kind);
+    fields.set('positionMs', pos);
+    this.sendCommand('setSegmentMark', fields);
+    this.notify();
+  }
+
+  /** 清除片头/片尾标记。 */
+  optimisticClearSegmentMark(kind: string): void {
+    if (kind === 'intro') {
+      this.state.segmentIntroEndMs = null;
+    } else {
+      this.state.segmentOutroStartMs = null;
+    }
+    const fields: Map<string, Object> = new Map<string, Object>();
+    fields.set('kind', kind);
+    this.sendCommand('clearSegmentMark', fields);
     this.notify();
   }
 

@@ -895,6 +895,36 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   int _nativeCurrentEpisodeIndex = -1;
   int _nativeCurrentVersionIndex = 0;
 
+  /// 控制层布局/样式附加状态（设置、锁定、网速、字幕/弹幕参数等）。
+  NativePlayerUiExtras _nativeUiExtras = const NativePlayerUiExtras();
+
+  /// PlayerScreen 注入控制层附加状态（整体替换后立即推送）。
+  void setNativeUiExtras(NativePlayerUiExtras extras) {
+    _nativeUiExtras = extras;
+    _pushNativeUiState();
+  }
+
+  /// 主动立即推送一次权威快照（设置变化/锁定/切集后调用）。
+  void refreshNativeUiState() {
+    _pushNativeUiState(immediate: true);
+  }
+
+  /// 批量注入控制层数据（选集/线路/附加状态），只推送一次快照。
+  void applyNativePanelData({
+    required List<NativeEpisode> episodes,
+    required List<NativeVersion> versions,
+    required int currentEpisodeIndex,
+    required int currentVersionIndex,
+    required NativePlayerUiExtras extras,
+  }) {
+    _nativeEpisodes = episodes;
+    _nativeVersions = versions;
+    _nativeCurrentEpisodeIndex = currentEpisodeIndex;
+    _nativeCurrentVersionIndex = currentVersionIndex;
+    _nativeUiExtras = extras;
+    _pushNativeUiState();
+  }
+
   /// PlayerScreen 注入选集列表（内容/剧集变化时调用）。
   set nativeEpisodes(List<NativeEpisode> episodes) {
     _nativeEpisodes = episodes;
@@ -1588,7 +1618,35 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       ended: _eofReached,
       volume: _volume,
       speed: _playbackRate,
+      title: _nativeUiExtras.title,
       mediaTitle: _propertyCache['media-title'],
+      logoUrl: _nativeUiExtras.logoUrl,
+      networkSpeedText: _nativeUiExtras.networkSpeedText,
+      clockFormat: _nativeUiExtras.clockFormat,
+      glassUi: _nativeUiExtras.glassUi,
+      engineLabel: _nativeUiExtras.engineLabel,
+      engineOptions: _nativeUiExtras.engineOptions,
+      videoFit: _nativeUiExtras.videoFit,
+      decodeMode: _nativeUiExtras.decodeMode,
+      subtitleScale: _nativeUiExtras.subtitleScale,
+      subtitleMarginY: _nativeUiExtras.subtitleMarginY,
+      subtitleDelayEnabled: _nativeUiExtras.subtitleDelayEnabled,
+      subtitleStyleDisabled: _nativeUiExtras.subtitleStyleDisabled,
+      danmakuEnabled: _nativeUiExtras.danmakuEnabled,
+      danmakuSpeed: _nativeUiExtras.danmakuSpeed,
+      danmakuFontSize: _nativeUiExtras.danmakuFontSize,
+      danmakuOpacity: _nativeUiExtras.danmakuOpacity,
+      segmentEnabled: _nativeUiExtras.segmentEnabled,
+      segmentIntroEndMs: _nativeUiExtras.segmentIntroEndMs,
+      segmentOutroStartMs: _nativeUiExtras.segmentOutroStartMs,
+      showDebug: _nativeUiExtras.showDebug,
+      isRoom: _nativeUiExtras.isRoom,
+      canScreenshot: _nativeUiExtras.canScreenshot,
+      locked: _nativeUiExtras.locked,
+      canControl: _nativeUiExtras.canControl,
+      tvMode: _nativeUiExtras.tvMode,
+      audioStreamCount: _nativeUiExtras.audioStreamCount,
+      subtitleStreamCount: _nativeUiExtras.subtitleStreamCount,
       tracks: _nativeTracksFromRaw(_lastTrackListRaw),
       selectedAudioId: _selectedTrackId(_lastTrackListRaw, 'audio'),
       selectedSubtitleId: _selectedTrackId(_lastTrackListRaw, 'sub'),

@@ -150,6 +150,40 @@ class NativeVersion {
   int get hashCode => Object.hash(index, title);
 }
 
+/// 播放内核选项（内核面板数据，由 Dart 按平台能力推送）。
+class NativeEngineOption {
+  const NativeEngineOption({
+    required this.id,
+    required this.label,
+    this.description = '',
+  });
+
+  /// PlayerEngine.id：mdk / media_kit / erika / mpv。
+  final String id;
+  final String label;
+  final String description;
+
+  factory NativeEngineOption.fromJson(Map<Object?, Object?> json) =>
+      NativeEngineOption(
+        id: json['id'] as String? ?? '',
+        label: json['label'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+      );
+
+  Map<String, Object?> toJson() =>
+      <String, Object?>{'id': id, 'label': label, 'description': description};
+
+  @override
+  bool operator ==(Object other) =>
+      other is NativeEngineOption &&
+      other.id == id &&
+      other.label == label &&
+      other.description == description;
+
+  @override
+  int get hashCode => Object.hash(id, label, description);
+}
+
 /// 弹幕条目（时间轴分片推送，原生按 positionMs 本地调度）。
 class NativeDanmakuItem {
   const NativeDanmakuItem({
@@ -288,6 +322,25 @@ class NativePlayerState {
     this.mediaTitle,
     this.videoParams,
     this.audioParams,
+    // ── Phase 2.5 控制层布局/样式 ──
+    this.logoUrl,
+    this.networkSpeedText,
+    this.clockFormat = 'off',
+    this.glassUi = true,
+    this.engineLabel = 'MPV',
+    this.engineOptions = const <NativeEngineOption>[],
+    this.videoFit = 'contain',
+    this.decodeMode = 'auto',
+    this.subtitleScale = 1.0,
+    this.subtitleMarginY = 22,
+    this.subtitleDelayEnabled = false,
+    this.subtitleStyleDisabled = false,
+    this.segmentEnabled = false,
+    this.showDebug = false,
+    this.isRoom = false,
+    this.canScreenshot = false,
+    this.audioStreamCount = 0,
+    this.subtitleStreamCount = 0,
     this.tracks = const <NativeTrack>[],
     this.selectedAudioId = 0,
     this.selectedSubtitleId = 0,
@@ -352,6 +405,60 @@ class NativePlayerState {
   final String? mediaTitle;
   final String? videoParams;
   final String? audioParams;
+
+  // ── Phase 2.5 控制层布局/样式 ──
+  /// 左下角 Logo（Emby 剧集 logo；房间模式/无图时 null）。
+  final String? logoUrl;
+
+  /// 顶栏网速文本（如 `2.09 MB/s`）；设置关闭或未采样时 null。
+  final String? networkSpeedText;
+
+  /// TV 时钟格式：off / 12h / 24h。
+  final String clockFormat;
+
+  /// 液态玻璃开关（false 时面板/胶囊/滑杆降级纯色）。
+  final bool glassUi;
+
+  /// 顶栏内核胶囊短名（MPV/MDK/Erika/libmpv）。
+  final String engineLabel;
+
+  /// 内核面板可选引擎。
+  final List<NativeEngineOption> engineOptions;
+
+  /// 画面比例：contain / cover / fill / none。
+  final String videoFit;
+
+  /// 解码模式：auto / hw / sw。
+  final String decodeMode;
+
+  /// 字幕缩放（1.0 = 100%）。
+  final double subtitleScale;
+
+  /// 字幕底部边距 px。
+  final int subtitleMarginY;
+
+  /// 当前是否有激活字幕轨（延迟滑杆可用）。
+  final bool subtitleDelayEnabled;
+
+  /// 位图字幕（PGS 等）不支持样式调节。
+  final bool subtitleStyleDisabled;
+
+  /// 片头片尾功能开关（TV 长按进度条入口）。
+  final bool segmentEnabled;
+
+  /// 是否显示原生诊断行（设置→同步调试）。
+  final bool showDebug;
+
+  /// 房间模式（隐藏选集/线路/画面比例等单人入口）。
+  final bool isRoom;
+
+  /// 截图入口可用（Android 因 native crash 风险关闭）。
+  final bool canScreenshot;
+
+  /// 服务端音轨/字幕流数量（角标）。
+  final int audioStreamCount;
+  final int subtitleStreamCount;
+
   final List<NativeTrack> tracks;
   final int selectedAudioId;
   final int selectedSubtitleId;
@@ -420,6 +527,28 @@ class NativePlayerState {
       mediaTitle: json['mediaTitle'] as String?,
       videoParams: json['videoParams'] as String?,
       audioParams: json['audioParams'] as String?,
+      logoUrl: json['logoUrl'] as String?,
+      networkSpeedText: json['networkSpeedText'] as String?,
+      clockFormat: json['clockFormat'] as String? ?? 'off',
+      glassUi: json['glassUi'] != false,
+      engineLabel: json['engineLabel'] as String? ?? 'MPV',
+      engineOptions:
+          ((json['engineOptions'] as List<Object?>?) ?? const <Object?>[])
+              .whereType<Map<Object?, Object?>>()
+              .map(NativeEngineOption.fromJson)
+              .toList(growable: false),
+      videoFit: json['videoFit'] as String? ?? 'contain',
+      decodeMode: json['decodeMode'] as String? ?? 'auto',
+      subtitleScale: (json['subtitleScale'] as num?)?.toDouble() ?? 1.0,
+      subtitleMarginY: (json['subtitleMarginY'] as num?)?.toInt() ?? 22,
+      subtitleDelayEnabled: json['subtitleDelayEnabled'] == true,
+      subtitleStyleDisabled: json['subtitleStyleDisabled'] == true,
+      segmentEnabled: json['segmentEnabled'] == true,
+      showDebug: json['showDebug'] == true,
+      isRoom: json['isRoom'] == true,
+      canScreenshot: json['canScreenshot'] == true,
+      audioStreamCount: (json['audioStreamCount'] as num?)?.toInt() ?? 0,
+      subtitleStreamCount: (json['subtitleStreamCount'] as num?)?.toInt() ?? 0,
       tracks: ((json['tracks'] as List<Object?>?) ?? const <Object?>[])
           .whereType<Map<Object?, Object?>>()
           .map(NativeTrack.fromJson)
@@ -506,6 +635,25 @@ class NativePlayerState {
         'mediaTitle': mediaTitle,
         'videoParams': videoParams,
         'audioParams': audioParams,
+        'logoUrl': logoUrl,
+        'networkSpeedText': networkSpeedText,
+        'clockFormat': clockFormat,
+        'glassUi': glassUi,
+        'engineLabel': engineLabel,
+        'engineOptions':
+            engineOptions.map((e) => e.toJson()).toList(growable: false),
+        'videoFit': videoFit,
+        'decodeMode': decodeMode,
+        'subtitleScale': subtitleScale,
+        'subtitleMarginY': subtitleMarginY,
+        'subtitleDelayEnabled': subtitleDelayEnabled,
+        'subtitleStyleDisabled': subtitleStyleDisabled,
+        'segmentEnabled': segmentEnabled,
+        'showDebug': showDebug,
+        'isRoom': isRoom,
+        'canScreenshot': canScreenshot,
+        'audioStreamCount': audioStreamCount,
+        'subtitleStreamCount': subtitleStreamCount,
         'tracks': tracks.map((t) => t.toJson()).toList(growable: false),
         'selectedAudioId': selectedAudioId,
         'selectedSubtitleId': selectedSubtitleId,
@@ -566,6 +714,24 @@ class NativePlayerState {
     String? mediaTitle,
     String? videoParams,
     String? audioParams,
+    String? logoUrl,
+    String? networkSpeedText,
+    String? clockFormat,
+    bool? glassUi,
+    String? engineLabel,
+    List<NativeEngineOption>? engineOptions,
+    String? videoFit,
+    String? decodeMode,
+    double? subtitleScale,
+    int? subtitleMarginY,
+    bool? subtitleDelayEnabled,
+    bool? subtitleStyleDisabled,
+    bool? segmentEnabled,
+    bool? showDebug,
+    bool? isRoom,
+    bool? canScreenshot,
+    int? audioStreamCount,
+    int? subtitleStreamCount,
     List<NativeTrack>? tracks,
     int? selectedAudioId,
     int? selectedSubtitleId,
@@ -623,6 +789,26 @@ class NativePlayerState {
         mediaTitle: mediaTitle ?? this.mediaTitle,
         videoParams: videoParams ?? this.videoParams,
         audioParams: audioParams ?? this.audioParams,
+        logoUrl: logoUrl ?? this.logoUrl,
+        networkSpeedText: networkSpeedText ?? this.networkSpeedText,
+        clockFormat: clockFormat ?? this.clockFormat,
+        glassUi: glassUi ?? this.glassUi,
+        engineLabel: engineLabel ?? this.engineLabel,
+        engineOptions: engineOptions ?? this.engineOptions,
+        videoFit: videoFit ?? this.videoFit,
+        decodeMode: decodeMode ?? this.decodeMode,
+        subtitleScale: subtitleScale ?? this.subtitleScale,
+        subtitleMarginY: subtitleMarginY ?? this.subtitleMarginY,
+        subtitleDelayEnabled:
+            subtitleDelayEnabled ?? this.subtitleDelayEnabled,
+        subtitleStyleDisabled:
+            subtitleStyleDisabled ?? this.subtitleStyleDisabled,
+        segmentEnabled: segmentEnabled ?? this.segmentEnabled,
+        showDebug: showDebug ?? this.showDebug,
+        isRoom: isRoom ?? this.isRoom,
+        canScreenshot: canScreenshot ?? this.canScreenshot,
+        audioStreamCount: audioStreamCount ?? this.audioStreamCount,
+        subtitleStreamCount: subtitleStreamCount ?? this.subtitleStreamCount,
         tracks: tracks ?? this.tracks,
         selectedAudioId: selectedAudioId ?? this.selectedAudioId,
         selectedSubtitleId: selectedSubtitleId ?? this.selectedSubtitleId,
@@ -695,6 +881,24 @@ class NativePlayerState {
       other.mediaTitle == mediaTitle &&
       other.videoParams == videoParams &&
       other.audioParams == audioParams &&
+      other.logoUrl == logoUrl &&
+      other.networkSpeedText == networkSpeedText &&
+      other.clockFormat == clockFormat &&
+      other.glassUi == glassUi &&
+      other.engineLabel == engineLabel &&
+      listEquals(other.engineOptions, engineOptions) &&
+      other.videoFit == videoFit &&
+      other.decodeMode == decodeMode &&
+      other.subtitleScale == subtitleScale &&
+      other.subtitleMarginY == subtitleMarginY &&
+      other.subtitleDelayEnabled == subtitleDelayEnabled &&
+      other.subtitleStyleDisabled == subtitleStyleDisabled &&
+      other.segmentEnabled == segmentEnabled &&
+      other.showDebug == showDebug &&
+      other.isRoom == isRoom &&
+      other.canScreenshot == canScreenshot &&
+      other.audioStreamCount == audioStreamCount &&
+      other.subtitleStreamCount == subtitleStreamCount &&
       listEquals(other.tracks, tracks) &&
       other.selectedAudioId == selectedAudioId &&
       other.selectedSubtitleId == selectedSubtitleId &&
@@ -753,6 +957,24 @@ class NativePlayerState {
         mediaTitle,
         videoParams,
         audioParams,
+        logoUrl,
+        networkSpeedText,
+        clockFormat,
+        glassUi,
+        engineLabel,
+        ...engineOptions,
+        videoFit,
+        decodeMode,
+        subtitleScale,
+        subtitleMarginY,
+        subtitleDelayEnabled,
+        subtitleStyleDisabled,
+        segmentEnabled,
+        showDebug,
+        isRoom,
+        canScreenshot,
+        audioStreamCount,
+        subtitleStreamCount,
         ...tracks,
         selectedAudioId,
         selectedSubtitleId,
@@ -781,4 +1003,70 @@ class NativePlayerState {
         canControl,
         ...debugLines,
       ]);
+}
+
+/// 原生控制层 UI 附加快照（Dart → adapter → 原生）。
+///
+/// 与播放状态分开维护：设置/布局类字段变化频率低，PlayerScreen 在
+/// 设置变更、锁定、网速采样、切集等时机整体重建一次即可。
+class NativePlayerUiExtras {
+  const NativePlayerUiExtras({
+    this.title,
+    this.logoUrl,
+    this.networkSpeedText,
+    this.clockFormat = 'off',
+    this.glassUi = true,
+    this.engineLabel = 'MPV',
+    this.engineOptions = const <NativeEngineOption>[],
+    this.videoFit = 'contain',
+    this.decodeMode = 'auto',
+    this.subtitleScale = 1.0,
+    this.subtitleMarginY = 22,
+    this.subtitleDelayEnabled = false,
+    this.subtitleStyleDisabled = false,
+    this.danmakuEnabled = false,
+    this.danmakuSpeed = 1.0,
+    this.danmakuFontSize = 0.5,
+    this.danmakuOpacity = 0.6,
+    this.segmentEnabled = false,
+    this.segmentIntroEndMs,
+    this.segmentOutroStartMs,
+    this.showDebug = false,
+    this.isRoom = false,
+    this.canScreenshot = false,
+    this.locked = false,
+    this.canControl = true,
+    this.tvMode = false,
+    this.audioStreamCount = 0,
+    this.subtitleStreamCount = 0,
+  });
+
+  final String? title;
+  final String? logoUrl;
+  final String? networkSpeedText;
+  final String clockFormat;
+  final bool glassUi;
+  final String engineLabel;
+  final List<NativeEngineOption> engineOptions;
+  final String videoFit;
+  final String decodeMode;
+  final double subtitleScale;
+  final int subtitleMarginY;
+  final bool subtitleDelayEnabled;
+  final bool subtitleStyleDisabled;
+  final bool danmakuEnabled;
+  final double danmakuSpeed;
+  final double danmakuFontSize;
+  final double danmakuOpacity;
+  final bool segmentEnabled;
+  final int? segmentIntroEndMs;
+  final int? segmentOutroStartMs;
+  final bool showDebug;
+  final bool isRoom;
+  final bool canScreenshot;
+  final bool locked;
+  final bool canControl;
+  final bool tvMode;
+  final int audioStreamCount;
+  final int subtitleStreamCount;
 }
