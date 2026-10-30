@@ -224,12 +224,6 @@ class NativePlayerScreenView(
         }
     }
 
-    init {
-        buildHierarchy()
-        setControlsVisible(true)
-        mainHandler.postDelayed(tickRunnable, TICK_MS)
-    }
-
     // ── 视图装配 ──────────────────────────────────────────────────
 
     /** 组装层级：tapLayer → topBar → bottomBar → 面板层。 */
@@ -1507,6 +1501,17 @@ class NativePlayerScreenView(
     private fun progressToMs(progress: Int, durationMs: Int): Long {
         if (durationMs <= 0) return 0
         return (progress.toLong() * durationMs) / SEEK_STEPS
+    }
+
+    /**
+     * 初始化顺序：本 init 块必须放在**所有**字段声明之后（Kotlin 按声明
+     * 顺序初始化）。buildHierarchy() 会访问 badgeTags 等字段，若在它们
+     * 声明前执行会 NPE（v1.5.5 真机回归：「有声无画」）。
+     */
+    init {
+        buildHierarchy()
+        setControlsVisible(true)
+        mainHandler.postDelayed(tickRunnable, TICK_MS)
     }
 
     companion object {
