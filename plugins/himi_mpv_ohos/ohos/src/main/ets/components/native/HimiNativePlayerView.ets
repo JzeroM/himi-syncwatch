@@ -31,6 +31,24 @@ const SEL_COLOR = '#6366F1';
 /** TV 焦点环颜色（照抄 Flutter TvFocusable 的 #C1C2FE）。 */
 const FOCUS_RING_COLOR: string = '#C1C2FE';
 
+// ── 顶栏芯片样式（Flutter player_top_bar._decodeChipDecoration）──────
+/** 玻璃芯片渐变：白 22% → 10%。 */
+const CHIP_GRAD: LinearGradientOptions = { angle: 180, colors: [['#38FFFFFF', 0.0], ['#1AFFFFFF', 1.0]] };
+/** 无底变体（倍速/裸图标）：透明渐变。 */
+const CHIP_GRAD_CLEAR: LinearGradientOptions = { angle: 180, colors: [['#00000000', 0.0], ['#00000000', 1.0]] };
+/** 玻璃胶囊内边距（h9 v6）。 */
+const PAD_CHIP: Padding = { left: 9, right: 9, top: 6, bottom: 6 };
+/** 倍速纯图标+文字内边距（4）。 */
+const PAD_PLAIN: Padding = { left: 4, right: 4, top: 4, bottom: 4 };
+/** 无描边。 */
+const BORDER_NONE: BorderOptions = { width: 0, color: Color.Transparent, radius: 10 };
+/** 玻璃芯片常规描边（白 24%）。 */
+const BORDER_CHIP: BorderOptions = { width: 1, color: '#3DFFFFFF', radius: 10 };
+/** 芯片打开态描边（强调色 1.5）。 */
+const BORDER_ACTIVE: BorderOptions = { width: 1.5, color: SEL_COLOR, radius: 10 };
+/** TV 焦点环描边（3px）。 */
+const BORDER_FOCUS: BorderOptions = { width: 3, color: FOCUS_RING_COLOR, radius: 10 };
+
 /** 控件自动隐藏延时（播放中）。 */
 const AUTO_HIDE_MS = 4000;
 
@@ -459,48 +477,52 @@ export struct HimiNativePlayerView {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
         .margin({ left: 4, right: 8 });
-      if (this.state().networkSpeedText.length > 0) {
-        Text(this.state().networkSpeedText)
-          .fontSize(12)
-          .fontColor('#B3FFFFFF');
+      // 右侧簇：项间距 8（Flutter SizedBox(8) 链）。
+      Row({ space: 8 }) {
+        if (this.state().networkSpeedText.length > 0) {
+          Text(this.state().networkSpeedText)
+            .fontSize(12)
+            .fontColor('#B3FFFFFF');
+        }
+        if (!this.state().tvMode && !this.state().isRoom) {
+          this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`, 20, true,
+            this.activePanel === NativePlayerPanelType.speed, 'topSpeed', (): void => {
+              this.openPanel(NativePlayerPanelType.speed);
+            });
+        }
+        this.Chip('', this.state().engineLabel, 0, false,
+          this.activePanel === NativePlayerPanelType.kernel, 'kernel', (): void => {
+            this.openPanel(NativePlayerPanelType.kernel);
+          });
+        if (!this.state().tvMode) {
+          this.IconChip(this.subtitleStyleGlyph(), 18, 6, true,
+            this.activePanel === NativePlayerPanelType.display, 'topDisplay', (): void => {
+              this.openPanel(NativePlayerPanelType.display);
+            });
+          this.IconChip(this.decodeGlyph(), 18, 6, true,
+            this.activePanel === NativePlayerPanelType.decode, 'decode', (): void => {
+              this.openPanel(NativePlayerPanelType.decode);
+            });
+          this.IconChip(this.videoFitGlyph(), 22, 6, false,
+            false, 'videoFit', (): void => {
+              this.pokeAutoHide();
+              HimiMpvNativeHost.getInstance().optimisticCycleVideoFit();
+            });
+          this.IconChip(this.rotateGlyph(), 22, 6, false,
+            false, 'rotate', (): void => {
+              this.pokeAutoHide();
+              HimiMpvNativeHost.getInstance().optimisticToggleOrientation();
+            });
+        } else {
+          Text(this.currentTime)
+            .fontSize(13)
+            .fontColor('#B3FFFFFF')
+            .width(100)
+            .height(48)
+            .textAlign(TextAlign.Center);
+        }
       }
-      if (!this.state().tvMode && !this.state().isRoom) {
-        this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`,
-          this.activePanel === NativePlayerPanelType.speed, 'topSpeed', (): void => {
-            this.openPanel(NativePlayerPanelType.speed);
-          });
-      }
-      this.Chip(this.kernelGlyph(), this.state().engineLabel,
-        this.activePanel === NativePlayerPanelType.kernel, 'kernel', (): void => {
-          this.openPanel(NativePlayerPanelType.kernel);
-        });
-      if (!this.state().tvMode) {
-        this.IconChip(this.subtitleStyleGlyph(),
-          this.activePanel === NativePlayerPanelType.display, 'topDisplay', (): void => {
-            this.openPanel(NativePlayerPanelType.display);
-          });
-        this.IconChip(this.decodeGlyph(),
-          this.activePanel === NativePlayerPanelType.decode, 'decode', (): void => {
-            this.openPanel(NativePlayerPanelType.decode);
-          });
-        this.IconChip(this.videoFitGlyph(),
-          false, 'videoFit', (): void => {
-            this.pokeAutoHide();
-            HimiMpvNativeHost.getInstance().optimisticCycleVideoFit();
-          });
-        this.IconChip(this.rotateGlyph(),
-          false, 'rotate', (): void => {
-            this.pokeAutoHide();
-            HimiMpvNativeHost.getInstance().optimisticToggleOrientation();
-          });
-      } else {
-        Text(this.currentTime)
-          .fontSize(13)
-          .fontColor('#B3FFFFFF')
-          .width(100)
-          .height(48)
-          .textAlign(TextAlign.Center);
-      }
+      .alignItems(VerticalAlign.Center);
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -589,7 +611,8 @@ export struct HimiNativePlayerView {
   @Builder
   ControlRow() {
     Stack({ alignContent: Alignment.Center }) {
-      Row() {
+      // 传输组：项间距 8（Flutter SizedBox(8)），单集/电影 prev/next 空占位 28。
+      Row({ space: 8 }) {
         if (this.multiEpisode()) {
           this.TransportGlyph(this.prevGlyph(), 28, this.hasPrev(), 'prev', (): void => {
             this.pokeAutoHide();
@@ -597,7 +620,7 @@ export struct HimiNativePlayerView {
           });
         } else {
           // 单集/电影：空占位保持播放键居中（与 Flutter SizedBox(28) 一致）。
-          Row().width(36).height(36);
+          Row().width(28).height(28);
         }
         this.TransportGlyph(this.playGlyph(), 36, this.state().canControl, 'play', (): void => {
           this.onTogglePlay();
@@ -608,15 +631,16 @@ export struct HimiNativePlayerView {
             this.onNextEpisode();
           });
         } else {
-          Row().width(36).height(36);
+          Row().width(28).height(28);
         }
       }
       .alignItems(VerticalAlign.Center)
       .justifyContent(FlexAlign.Start)
       .width('100%');
 
-      Row() {
-        this.IconChip(this.danmakuGlyph(),
+      // 右侧簇：项间距 20（Flutter SizedBox(20) 链）。
+      Row({ space: 20 }) {
+        this.IconChip(this.danmakuGlyph(), 24, 4, false,
           this.state().danmakuEnabled, 'danmaku', (): void => {
             this.pokeAutoHide();
             HimiMpvNativeHost.getInstance().optimisticToggleDanmaku();
@@ -628,7 +652,7 @@ export struct HimiNativePlayerView {
             });
         }
         if (this.state().tvMode) {
-          this.IconChip(this.subtitleStyleGlyph(),
+          this.IconChip(this.subtitleStyleGlyph(), 24, 4, false,
             this.activePanel === NativePlayerPanelType.display, 'tvDisplay', (): void => {
               this.openPanel(NativePlayerPanelType.display);
             });
@@ -648,7 +672,7 @@ export struct HimiNativePlayerView {
             });
         }
         if (this.state().tvMode && !this.state().isRoom) {
-          this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`,
+          this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`, 24, true,
             this.activePanel === NativePlayerPanelType.speed, 'bottomSpeed', (): void => {
               this.openPanel(NativePlayerPanelType.speed);
             });
@@ -679,48 +703,60 @@ export struct HimiNativePlayerView {
 
   /** 文字胶囊（倍速/内核/TV 倍速）。 */
   @Builder
-  Chip(icon: string, label: string, active: boolean, key: string, onTap: () => void) {
+  Chip(icon: string, label: string, iconSize: number, plain: boolean, active: boolean, key: string,
+    onTap: () => void) {
     Row() {
-      Text(icon)
-        .fontFamily(NativePlayerIcons.FONT_FAMILY)
-        .fontSize(18)
-        .fontColor(active ? SEL_COLOR : Color.White);
+      if (icon.length > 0) {
+        Text(icon)
+          .fontFamily(NativePlayerIcons.FONT_FAMILY)
+          .fontSize(iconSize)
+          .fontColor(active ? SEL_COLOR : Color.White);
+      }
       if (label.length > 0) {
         Text(label)
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
-          .fontColor(active ? SEL_COLOR : Color.White)
+          .fontColor(active ? SEL_COLOR : (plain ? '#B3FFFFFF' : Color.White))
           .margin({ left: 4 });
       }
     }
-    .padding({ left: 9, right: 9, top: 6, bottom: 6 })
-    .backgroundColor('#26FFFFFF')
+    // 倍速为纯图标+文字（Flutter 无底，padding 4）；内核为玻璃胶囊
+    //（Flutter _decodeChipDecoration：白 22%→10% 渐变 + 白 24% 描边）。
+    .padding(plain ? PAD_PLAIN : PAD_CHIP)
+    .linearGradient(plain ? CHIP_GRAD_CLEAR : CHIP_GRAD)
     .borderRadius(10)
-    // TV 遥控器可达：可聚焦 + 聚焦时 3px #C1C2FE 焦点环（照抄 Flutter
-    // TvFocusable 的描边观感），非 TV 设备 focusable 不影响触摸。
+    // TV 焦点环优先（3px #C1C2FE），否则常规芯片描边（打开态强调色）。
+    .border(this.focusedKey === key
+      ? BORDER_FOCUS
+      : (active ? BORDER_ACTIVE : (plain ? BORDER_NONE : BORDER_CHIP)))
+    // TV 遥控器可达：可聚焦（非 TV 设备 focusable 不影响触摸）。
     .focusable(true)
     .focusOnTouch(true)
-    .border(this.focusedKey === key
-      ? { width: 3, color: FOCUS_RING_COLOR, radius: 10 }
-      : { width: 0, color: Color.Transparent })
     .onFocus((): void => { this.focusedKey = key; })
     .onBlur((): void => { this.focusedKey = ''; })
     .onClick(onTap);
   }
 
-  /** 图标玻璃方块（字幕样式/解码/画面比例/转屏/底栏图标组）。 */
+  /**
+   * 图标玻璃方块。glass=true 为顶栏芯片（tune/memory：18 图标 + 6 内边距 +
+   * 玻璃底，Flutter _decodeChipDecoration）；glass=false 为裸图标
+   //（底栏 24 图标 + 4 内边距 / 顶栏比例转屏 22 图标 + 6 内边距）。
+   */
   @Builder
-  IconChip(icon: string, active: boolean, key: string, onTap: () => void) {
+  IconChip(icon: string, iconSize: number, pad: number, glass: boolean, active: boolean, key: string,
+    onTap: () => void) {
     Text(icon)
       .fontFamily(NativePlayerIcons.FONT_FAMILY)
-      .fontSize(24)
+      .fontSize(iconSize)
       .fontColor(active ? SEL_COLOR : Color.White)
-      .padding(8)
+      .padding(pad)
+      .linearGradient(glass ? CHIP_GRAD : CHIP_GRAD_CLEAR)
+      .borderRadius(10)
+      .border(this.focusedKey === key
+        ? BORDER_FOCUS
+        : (glass ? (active ? BORDER_ACTIVE : BORDER_CHIP) : BORDER_NONE))
       .focusable(true)
       .focusOnTouch(true)
-      .border(this.focusedKey === key
-        ? { width: 3, color: FOCUS_RING_COLOR, radius: 12 }
-        : { width: 0, color: Color.Transparent })
       .onFocus((): void => { this.focusedKey = key; })
       .onBlur((): void => { this.focusedKey = ''; })
       .onClick(onTap);
@@ -734,7 +770,7 @@ export struct HimiNativePlayerView {
   @Builder
   BadgeIconChip(icon: string, badge: string, active: boolean, key: string, onTap: () => void) {
     Stack({ alignContent: Alignment.TopEnd }) {
-      this.IconChip(icon, active, key, onTap);
+      this.IconChip(icon, 24, 4, false, active, key, onTap);
       if (badge.length > 0) {
         Text(badge)
           .fontSize(9)
@@ -744,7 +780,9 @@ export struct HimiNativePlayerView {
           .padding({ left: 2, right: 2, top: 2, bottom: 2 })
           .constraintSize({ minWidth: 14, minHeight: 14 })
           .textAlign(TextAlign.Center)
-          .margin({ top: -4, right: -6 });
+          // Flutter Positioned(right:-6, top:-4)：相对 24 图标边。本 Stack 含
+          // 4 内边距（图标位于 4..28），换算为 margin right -2 / top 0。
+          .margin({ right: -2 });
       }
     }
   }

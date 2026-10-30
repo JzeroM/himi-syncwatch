@@ -90,8 +90,8 @@ cp -a "$TMP/new/resources/rawfile/flutter_assets" "$WORK/resources/rawfile/flutt
 if [ -f "$TMP/new/resources/rawfile/buildinfo.json5" ]; then
   cp -a "$TMP/new/resources/rawfile/buildinfo.json5" "$WORK/resources/rawfile/buildinfo.json5"
 fi
-# 原生播放器控制层的图标字体（ArkUI `.fontFamily('MaterialIcons')` 依赖，
-# EntryAbility.onCreate 用 $rawfile 注册）。不拷则原生控制层图标全为空框。
+# 原生播放器控制层的图标字体（ArkUI fontFamily 依赖，EntryAbility 与
+# pages/NativePlayer 子窗口页用 $rawfile 注册）。不拷则原生控制层图标全为空框。
 if [ -f "$TMP/new/resources/rawfile/MaterialIcons-Regular.otf" ]; then
   cp -a "$TMP/new/resources/rawfile/MaterialIcons-Regular.otf" "$WORK/resources/rawfile/MaterialIcons-Regular.otf"
 fi

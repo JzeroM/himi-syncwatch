@@ -165,10 +165,16 @@ void main() {
           reason: '鸿蒙选中主色需与 Dart accent 一致');
       expect(arkts.contains('#1F1A1D23'), isTrue,
           reason: '鸿蒙面板着色需与 Dart panelTint 一致');
-      expect(RegExp(r'\.borderRadius\(16\)').hasMatch(arkts), isTrue,
-          reason: '鸿蒙面板圆角需与 Dart radiusPanel 一致');
-      expect(RegExp(r'\.width\(320\)').hasMatch(arkts), isTrue,
-          reason: '鸿蒙面板宽需与 Dart panelMaxWidth 一致');
+      // 圆角：常规面板 radiusPanel(16)；选集贴边左圆角 16（Flutter fullBleed）。
+      expect(arkts.contains('topLeft: 16, bottomLeft: 16'), isTrue,
+          reason: '鸿蒙选集面板左圆角需与 Dart radiusPanel 一致');
+      expect(arkts.contains('PANEL_RADIUS = 16'), isTrue,
+          reason: '鸿蒙常规面板圆角需与 Dart radiusPanel 一致');
+      // 宽度：clamp(0.42×屏宽, 260, 320)（Flutter selectorPanelWidth）。
+      expect(arkts.contains(".width('42%')"), isTrue,
+          reason: '鸿蒙面板宽比例需与 Dart panelWidthRatio 一致');
+      expect(arkts.contains('minWidth: 260, maxWidth: 320'), isTrue,
+          reason: '鸿蒙面板宽夹取需与 Dart panelMin/MaxWidth 一致');
       expect(RegExp(r'right: 12').hasMatch(arkts), isTrue,
           reason: '鸿蒙面板右距需与 Dart panelRight 一致');
       expect(RegExp(r'top: 48').hasMatch(arkts), isTrue,

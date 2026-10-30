@@ -171,6 +171,16 @@ void main() {
     expect(entry, contains('font.registerFont('),
         reason: 'EntryAbility 应保留 font.registerFont 兼容兜底');
 
+    // 子窗口页面（原生播放 UI 跑在 createSubWindow 子窗口里）：字体注册
+    // 作用域是当前窗口的 UIContext，主窗口注册不跨窗口生效——必须在
+    // 子窗口页面 aboutToAppear 里再注册（v1.5.5「图标全灭」根因）。
+    final page = File('ohos/entry/src/main/ets/pages/NativePlayer.ets')
+        .readAsStringSync();
+    expect(page, contains('getFont().registerFont'),
+        reason: 'NativePlayer 子窗口页缺 UIContext.getFont().registerFont 注册');
+    expect(page, contains("ICON_FONT_FAMILY = '$family'"),
+        reason: 'NativePlayer 子窗口页注册族名与 NativePlayerIcons.FONT_FAMILY 不一致');
+
     for (final path in <String>[
       'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
           'HimiNativePlayerView.ets',

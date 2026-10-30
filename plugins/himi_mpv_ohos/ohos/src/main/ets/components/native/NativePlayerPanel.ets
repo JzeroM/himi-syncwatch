@@ -95,6 +95,16 @@ const DISPLAY_SLIDERS: DisplaySliderSpec[] = [
 const SEL_COLOR = '#6366F1';
 /** 面板着色（照抄 GlassConfig.panelTint = 0x1F1A1D23）。 */
 const PANEL_TINT = '#1F1A1D23';
+/** 常规面板圆角（Dart radiusPanel=16）。 */
+const PANEL_RADIUS = 16;
+/** 选集贴边（Flutter fullBleed）：仅左侧圆角 16。 */
+const FULLBLEED_RADIUS: BorderRadiuses = { topLeft: 16, bottomLeft: 16, topRight: 0, bottomRight: 0 };
+/** 常规面板外边距（Flutter selectorPanelBox：right 12 / top 48 / bottom 116）。 */
+const PANEL_MARGIN: Margin = { right: 12 };
+const PANEL_PAD_V: Padding = { top: 48, bottom: 116 };
+/** 选集贴边：无外边距。 */
+const FULLBLEED_MARGIN: Margin = { right: 0 };
+const FULLBLEED_PAD: Padding = { top: 0, bottom: 0 };
 /** rim 边框（照抄 GlassConfig.rimColor 近似）。 */
 const RIM_COLOR = '#33FFFFFF';
 
@@ -146,7 +156,15 @@ export struct NativePlayerPanel {
       if (this.panelType === 'segment') {
         this.SegmentCard();
       } else {
-        this.SidePanel();
+        // 右侧浮层拉伸全高（Flutter Positioned(top,bottom) 语义）：
+        // 常规面板上避顶栏 48 / 下避控制条 116；选集面板贴边（fullBleed）。
+        Column() {
+          this.SidePanel();
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(HorizontalAlign.End)
+        .padding(this.panelType === 'episode' ? FULLBLEED_PAD : PANEL_PAD_V);
       }
     }
     .width('100%')
@@ -185,17 +203,16 @@ export struct NativePlayerPanel {
         this.DecodeContent();
       }
     }
-    .width(320)
-    .constraintSize({ maxHeight: '72%' })
+    .width('42%')
+    .constraintSize({ minWidth: 260, maxWidth: 320 })
+    .layoutWeight(1)
     .backgroundColor(PANEL_TINT)
     .backgroundBlurStyle(BlurStyle.Thin)
     .border({ width: 1, color: RIM_COLOR })
-    .borderRadius(16)
+    // 选集面板贴边（右侧圆角放平，与 Flutter BorderRadius.horizontal(left) 一致）。
+    .borderRadius(this.panelType === 'episode' ? FULLBLEED_RADIUS : PANEL_RADIUS)
     .clip(true)
-    // 贴右；上避顶栏（48），下避控制条（116），与 Flutter selectorPanelBox 一致。
-    .position({ x: '100%', y: 0 })
-    .markAnchor({ x: '100%', y: '0%' })
-    .margin({ right: 12, top: 48, bottom: 116 })
+    .margin(this.panelType === 'episode' ? FULLBLEED_MARGIN : PANEL_MARGIN)
     .animation({ duration: 180, curve: Curve.EaseOut });
   }
 

@@ -115,6 +115,16 @@ class NativePlayerScreenView(
     private fun lp(width: Int, height: Int, gravity: Int): LayoutParams =
         LayoutParams(width, height, gravity)
 
+    /**
+     * LinearLayout 子项布局。注意：lp() 造的是 FrameLayout.LayoutParams，
+     * 加进 LinearLayout 会被 generateLayoutParams 重造、**margin 丢失**——
+     * 间距类布局必须用本函数。
+     */
+    private fun llp(width: Int, height: Int, startMarginDp: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(width, height).also {
+            if (startMarginDp != 0) it.marginStart = dp(startMarginDp)
+        }
+
     /** Material Icons 图标视图：内置字体内取字形，支持着色/尺寸。 */
     private fun iconView(codePoint: Int, sizeSp: Float, color: Int = Color.WHITE): TextView =
         TextView(context).apply {
@@ -133,6 +143,20 @@ class NativePlayerScreenView(
             cornerRadius = dp(radiusDp).toFloat()
             setColor(tint)
             setStroke(dp(1), NPTheme.RIM)
+        }
+
+    /**
+     * 顶栏芯片玻璃底（Flutter player_top_bar._decodeChipDecoration）：
+     * 白 22%→10% 竖向渐变 + 白 24% 描边；面板打开态强调色描边 + 光晕。
+     */
+    private fun chipBackground(open: Boolean): GradientDrawable =
+        GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(0x38FFFFFF, 0x1AFFFFFF),
+        ).apply {
+            gradientType = GradientDrawable.LINEAR_GRADIENT
+            cornerRadius = dp(NPTheme.RADIUS_CHIP).toFloat()
+            setStroke(dp(if (open) 2 else 1), if (open) NPTheme.ACCENT else NPTheme.WHITE_24)
         }
 
     /** 顶栏/底栏渐变：底部透明 → 顶部 80% 黑（顶栏），反之（底栏）。 */
@@ -206,6 +230,11 @@ class NativePlayerScreenView(
     private val bottomSpeedLabel = TextView(context)
     private val panelToggleButton = TextView(context)
     private var displayAdjustButton: TextView? = null
+    private val danmakuButton = TextView(context)
+    private var versionButton: View? = null
+    private var subtitleButton: View? = null
+    private var audioButton: View? = null
+    private var episodeButton: View? = null
     private val diagText = TextView(context)
     private val bufferingView = ProgressBar(context)
     private val hdrBadge = TextView(context)
@@ -304,24 +333,24 @@ class NativePlayerScreenView(
         networkText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         networkText.gravity = Gravity.CENTER_VERTICAL
         networkText.visibility = GONE
-        topBar.addView(networkText, lp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)))
+        topBar.addView(networkText, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40), 8))
 
-        // 倍速胶囊（手机）
+        // 倍速（手机，网速右侧）：Flutter 为纯图标+文字（无胶囊底），
+        // icon 20 + label 12 white70，padding h4 v4。
         speedChip.orientation = LinearLayout.HORIZONTAL
         speedChip.gravity = Gravity.CENTER
-        speedChip.setPadding(dp(8), dp(4), dp(8), dp(4))
+        speedChip.setPadding(dp(4), dp(4), dp(4), dp(4))
         speedChip.isClickable = true
-        speedChip.background = glassBackground(10)
         speedChip.setOnClickListener { listener?.onCycleSpeed() }
-        speedChip.addView(iconView(NativePlayerIcons.ICON_SPEED, 16f), lp(dp(20), dp(20)))
-        speedLabel.setTextColor(Color.WHITE)
+        speedChip.addView(iconView(NativePlayerIcons.ICON_SPEED, 20f), lp(dp(20), dp(20)))
+        speedLabel.setTextColor(NPTheme.WHITE_70)
         speedLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         speedChip.addView(
             speedLabel,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .also { it.marginStart = dp(4) },
         )
-        topBar.addView(speedChip, lp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)))
+        topBar.addView(speedChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32), 8))
 
         // 内核胶囊（显示短名，点击打开右侧内核面板）
         kernelChip.setTextColor(Color.WHITE)
@@ -329,20 +358,20 @@ class NativePlayerScreenView(
         kernelChip.gravity = Gravity.CENTER
         kernelChip.setPadding(dp(9), dp(6), dp(9), dp(6))
         kernelChip.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        kernelChip.background = glassBackground(10)
+        kernelChip.background = chipBackground(false)
         kernelChip.isClickable = true
         kernelChip.setOnClickListener { openPanel(PANEL_KERNEL) }
-        topBar.addView(kernelChip, lp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)))
+        topBar.addView(kernelChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
 
         // 字幕样式胶囊（tune 图标，点击打开右侧显示调节面板）
         configureIconChip(subtitleStyleChip, NativePlayerIcons.ICON_TUNE)
         subtitleStyleChip.setOnClickListener { openPanel(PANEL_DISPLAY) }
-        topBar.addView(subtitleStyleChip, lp(dp(30), dp(30)))
+        topBar.addView(subtitleStyleChip, llp(dp(30), dp(30), 8))
 
         // 解码胶囊（memory 图标，点击打开右侧解码模式面板）
         configureIconChip(decodeChip, NativePlayerIcons.ICON_MEMORY)
         decodeChip.setOnClickListener { openPanel(PANEL_DECODE) }
-        topBar.addView(decodeChip, lp(dp(30), dp(30)))
+        topBar.addView(decodeChip, llp(dp(30), dp(30), 8))
 
         // 画面比例（循环切换）
         videoFitIcon.typeface = NativePlayerIcons.typeface(context)
@@ -352,7 +381,7 @@ class NativePlayerScreenView(
         videoFitIcon.setPadding(dp(6), dp(6), dp(6), dp(6))
         videoFitIcon.isClickable = true
         videoFitIcon.setOnClickListener { listener?.onCycleVideoFit() }
-        topBar.addView(videoFitIcon, lp(dp(34), dp(34)))
+        topBar.addView(videoFitIcon, llp(dp(34), dp(34), 8))
 
         // 手动转屏（仅手机）
         rotateIcon.text = String(Character.toChars(NativePlayerIcons.ICON_ROTATE))
@@ -363,7 +392,7 @@ class NativePlayerScreenView(
         rotateIcon.setPadding(dp(6), dp(6), dp(6), dp(6))
         rotateIcon.isClickable = true
         rotateIcon.setOnClickListener { listener?.onToggleOrientation() }
-        topBar.addView(rotateIcon, lp(dp(34), dp(34)))
+        topBar.addView(rotateIcon, llp(dp(34), dp(34), 8))
 
         // 时钟（TV：右贴边，100×48，13sp white70）
         clockText.setTextColor(NPTheme.WHITE_70)
@@ -381,7 +410,7 @@ class NativePlayerScreenView(
         chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
         chip.gravity = Gravity.CENTER
         chip.setPadding(dp(6), dp(6), dp(6), dp(6))
-        chip.background = glassBackground(10)
+        chip.background = chipBackground(false)
         chip.isClickable = true
     }
 
@@ -578,9 +607,6 @@ class NativePlayerScreenView(
         seekRow.addView(durationLabel, lp(dp(NPTheme.TIME_CELL), dp(40)))
         bottomBar.addView(seekRow, lp(LayoutParams.MATCH_PARENT, dp(40)))
 
-        // 控件行：FrameLayout 承载 3 组（leading START / transport CENTER / trailing END）
-        buttonRow.layoutParams = lp(LayoutParams.MATCH_PARENT, dp(NPTheme.TRANSPORT_PLAY + 8))
-
         // leading 组（锁钮）
         leadingGroup.orientation = LinearLayout.HORIZONTAL
         leadingGroup.gravity = Gravity.CENTER_VERTICAL
@@ -600,56 +626,50 @@ class NativePlayerScreenView(
         configureTransportButton(prevButton, NativePlayerIcons.ICON_SKIP_PREVIOUS, NPTheme.TRANSPORT_SIDE)
         configureTransportButton(playPauseButton, NativePlayerIcons.ICON_PLAY_CIRCLE, NPTheme.TRANSPORT_PLAY)
         configureTransportButton(nextButton, NativePlayerIcons.ICON_SKIP_NEXT, NPTheme.TRANSPORT_SIDE)
-        transportGroup.addView(prevButton, lp(dp(NPTheme.TRANSPORT_SIDE), dp(NPTheme.TRANSPORT_SIDE)))
+        transportGroup.addView(prevButton, llp(dp(NPTheme.TRANSPORT_SIDE), dp(NPTheme.TRANSPORT_SIDE)))
+        // 注：lp() 是 FrameLayout.LayoutParams，加进 LinearLayout 会丢 margin，
+        // 间距必须走 llp()（Flutter 播放组间距 8）。
         transportGroup.addView(
             playPauseButton,
-            lp(dp(NPTheme.TRANSPORT_PLAY), dp(NPTheme.TRANSPORT_PLAY)).also {
-                it.marginStart = dp(NPTheme.TRANSPORT_GAP)
-                it.marginEnd = dp(NPTheme.TRANSPORT_GAP)
-            },
+            llp(dp(NPTheme.TRANSPORT_PLAY), dp(NPTheme.TRANSPORT_PLAY), NPTheme.TRANSPORT_GAP),
         )
-        transportGroup.addView(nextButton, lp(dp(NPTheme.TRANSPORT_SIDE), dp(NPTheme.TRANSPORT_SIDE)))
+        transportGroup.addView(
+            nextButton,
+            llp(dp(NPTheme.TRANSPORT_SIDE), dp(NPTheme.TRANSPORT_SIDE), NPTheme.TRANSPORT_GAP),
+        )
 
         // trailing 组（弹幕 / 版本 / 显示调节 / 字幕 / 音轨 / 选集 / 倍速 / 面板）
+        // 间距 20（Flutter SizedBox(20)）；首项无前距。
         trailingGroup.orientation = LinearLayout.HORIZONTAL
         trailingGroup.gravity = Gravity.CENTER_VERTICAL
-        trailingGroup.addView(
-            iconButton(NativePlayerIcons.ICON_DANMAKU_ON) {
-                listener?.onToggleDanmaku()
-                scheduleAutoHide()
-            },
-            lp(dp(32), dp(32)),
-        )
-        trailingGroup.addView(
-            badgeButton(
-                NativePlayerIcons.ICON_HIGH_QUALITY,
-                { lastState.versions.size.takeIf { n -> n > 0 }?.toString() },
-            ) { openPanel(PANEL_VERSION) },
-            lp(dp(32), dp(32)),
-        )
+        configureTransportButton(danmakuButton, NativePlayerIcons.ICON_DANMAKU_ON, 24)
+        danmakuButton.setOnClickListener {
+            listener?.onToggleDanmaku()
+            scheduleAutoHide()
+        }
+        trailingGroup.addView(danmakuButton, llp(dp(32), dp(32)))
+        versionButton = badgeButton(
+            NativePlayerIcons.ICON_HIGH_QUALITY,
+            { lastState.versions.size.takeIf { n -> n > 0 }?.toString() },
+        ) { openPanel(PANEL_VERSION) }
+        trailingGroup.addView(versionButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
         displayAdjustButton = iconButton(NativePlayerIcons.ICON_TUNE) { openPanel(PANEL_DISPLAY) }
-        trailingGroup.addView(displayAdjustButton!!, lp(dp(32), dp(32)))
-        trailingGroup.addView(
-            badgeButton(
-                NativePlayerIcons.ICON_SUBTITLES,
-                { lastState.subtitleStreamCount.takeIf { n -> n > 0 }?.toString() },
-            ) { openPanel(PANEL_SUBTITLE) },
-            lp(dp(32), dp(32)),
-        )
-        trailingGroup.addView(
-            badgeButton(
-                NativePlayerIcons.ICON_AUDIO_TRACK,
-                { lastState.audioStreamCount.takeIf { n -> n > 0 }?.toString() },
-            ) { openPanel(PANEL_AUDIO) },
-            lp(dp(32), dp(32)),
-        )
-        trailingGroup.addView(
-            badgeButton(
-                NativePlayerIcons.ICON_PLAYLIST_PLAY,
-                { lastState.episodes.size.takeIf { n -> n > 0 }?.toString() },
-            ) { openPanel(PANEL_EPISODE) },
-            lp(dp(32), dp(32)),
-        )
+        trailingGroup.addView(displayAdjustButton!!, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
+        subtitleButton = badgeButton(
+            NativePlayerIcons.ICON_SUBTITLES,
+            { lastState.subtitleStreamCount.takeIf { n -> n > 0 }?.toString() },
+        ) { openPanel(PANEL_SUBTITLE) }
+        trailingGroup.addView(subtitleButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
+        audioButton = badgeButton(
+            NativePlayerIcons.ICON_AUDIO_TRACK,
+            { lastState.audioStreamCount.takeIf { n -> n > 0 }?.toString() },
+        ) { openPanel(PANEL_AUDIO) }
+        trailingGroup.addView(audioButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
+        episodeButton = badgeButton(
+            NativePlayerIcons.ICON_PLAYLIST_PLAY,
+            { lastState.episodes.size.takeIf { n -> n > 0 }?.toString() },
+        ) { openPanel(PANEL_EPISODE) }
+        trailingGroup.addView(episodeButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
         // 倍速胶囊（TV）
         bottomSpeedChip.orientation = LinearLayout.HORIZONTAL
         bottomSpeedChip.gravity = Gravity.CENTER
@@ -665,7 +685,10 @@ class NativePlayerScreenView(
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .also { it.marginStart = dp(4) },
         )
-        trailingGroup.addView(bottomSpeedChip, lp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)))
+        trailingGroup.addView(
+            bottomSpeedChip,
+            llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), NPTheme.CONTROL_GAP),
+        )
 
         // 面板切换（房间模式，点开右侧资源面板）
         panelToggleButton.text = String(Character.toChars(NativePlayerIcons.ICON_OPEN_IN_FULL))
@@ -676,7 +699,7 @@ class NativePlayerScreenView(
         panelToggleButton.setPadding(dp(4), dp(4), dp(4), dp(4))
         panelToggleButton.isClickable = true
         panelToggleButton.setOnClickListener { listener?.onBack() }
-        trailingGroup.addView(panelToggleButton, lp(dp(32), dp(32)))
+        trailingGroup.addView(panelToggleButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
 
         // HDR 徽标
         hdrBadge.text = "HDR"
@@ -687,7 +710,13 @@ class NativePlayerScreenView(
         hdrBadge.visibility = GONE
 
         // 组装三组
-        val leadingLp = FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER_VERTICAL or Gravity.START)
+        // leading 列宽 = 时间数显列宽（Flutter SeekTimeLabels.cellWidth），
+        // 保证锁钮与上方左时间数显同轴居中。
+        val leadingLp = FrameLayout.LayoutParams(
+            dp(NPTheme.TIME_CELL),
+            dp(44),
+            Gravity.CENTER_VERTICAL or Gravity.START,
+        )
         val transportLp = FrameLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             dp(NPTheme.TRANSPORT_PLAY),
@@ -701,7 +730,12 @@ class NativePlayerScreenView(
         buttonRow.addView(leadingGroup, leadingLp)
         buttonRow.addView(transportGroup, transportLp)
         buttonRow.addView(trailingGroup, trailingLp)
-        bottomBar.addView(buttonRow, lp(LayoutParams.MATCH_PARENT, dp(NPTheme.TRANSPORT_PLAY + 8)))
+        // 控件行与进度条行间距 8（Flutter SizedBox(height: 8)）。
+        bottomBar.addView(
+            buttonRow,
+            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(NPTheme.TRANSPORT_PLAY + 8))
+                .also { it.topMargin = dp(8) },
+        )
 
         // 诊断行（默认隐藏）
         diagText.setTextColor(0x99FFFFFF.toInt())
@@ -830,14 +864,32 @@ class NativePlayerScreenView(
             panelScrim.visibility = VISIBLE
             panelContainer.visibility = VISIBLE
             panelContainer.removeAllViews()
-            panelContainer.background = glassBackground(NPTheme.RADIUS_PANEL)
+            // 选集面板全高贴边（Flutter fullBleed：top/bottom/right 0、右圆角放平）；
+            // 常规面板上下避让（top safe+48 / bottom 116+safe），**拉伸全高**
+            //（Flutter Positioned(top,bottom) 语义，非 wrap-content）。
+            val fullBleed = panel == PANEL_EPISODE
+            panelContainer.background = if (fullBleed) {
+                GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadii = floatArrayOf(
+                        dp(NPTheme.RADIUS_PANEL).toFloat(), dp(NPTheme.RADIUS_PANEL).toFloat(),
+                        0f, 0f,
+                        0f, 0f,
+                        dp(NPTheme.RADIUS_PANEL).toFloat(), dp(NPTheme.RADIUS_PANEL).toFloat(),
+                    )
+                    setColor(NPTheme.PANEL_TINT)
+                    setStroke(dp(1), NPTheme.RIM)
+                }
+            } else {
+                glassBackground(NPTheme.RADIUS_PANEL)
+            }
             panelContainer.layoutParams = lp(
                 panelWidthDp(),
-                LayoutParams.WRAP_CONTENT,
+                LayoutParams.MATCH_PARENT,
             ).also {
-                it.topMargin = dp(NPTheme.PANEL_TOP_OFFSET)
-                it.bottomMargin = dp(NPTheme.PANEL_BOTTOM_OFFSET)
-                it.marginEnd = dp(NPTheme.PANEL_RIGHT)
+                it.topMargin = if (fullBleed) 0 else dp(NPTheme.PANEL_TOP_OFFSET)
+                it.bottomMargin = if (fullBleed) 0 else dp(NPTheme.PANEL_BOTTOM_OFFSET)
+                it.marginEnd = if (fullBleed) 0 else dp(NPTheme.PANEL_RIGHT)
                 it.gravity = Gravity.END or Gravity.TOP
             }
             panelContainer.addView(panelHeader(panelTitle(panel)))
@@ -901,17 +953,19 @@ class NativePlayerScreenView(
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             gravity = Gravity.START
-            setPadding(dp(NPTheme.PANEL_PAD_H), 0, dp(NPTheme.PANEL_PAD_H), dp(4))
+            // Flutter SelectorSidePanel：GlassContainer(top:10) + 标题 h16 + 4 间隙。
+            setPadding(dp(NPTheme.PANEL_PAD_H), dp(10), dp(NPTheme.PANEL_PAD_H), dp(4))
         }
 
-    /** 面板内容滚动包裹（限高）。 */
+    /** 面板内容滚动包裹（weight 1 撑满拉伸面板，超长滚动）。 */
     private fun scrollWrap(content: View): ScrollView =
         ScrollView(context).apply {
             isFillViewport = true
             addView(content)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                0,
+                1f,
             )
         }
 
@@ -938,7 +992,8 @@ class NativePlayerScreenView(
             )
             addView(
                 TextView(context).apply {
-                    text = if (selected) "✓" else ""
+                    text = if (selected) String(Character.toChars(NativePlayerIcons.ICON_CHECK)) else ""
+                    typeface = NativePlayerIcons.typeface(context)
                     setTextColor(NPTheme.ACCENT)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                     gravity = Gravity.CENTER
@@ -1497,6 +1552,14 @@ class NativePlayerScreenView(
         rotateIcon.visibility = if (!tv) VISIBLE else GONE
         clockWrap.visibility = if (tv) VISIBLE else GONE
 
+        // 芯片打开态（Flutter：面板打开时强调色描边/文字）
+        val panel = activePanel
+        kernelChip.background = chipBackground(panel == PANEL_KERNEL)
+        kernelChip.setTextColor(if (panel == PANEL_KERNEL) NPTheme.ACCENT else Color.WHITE)
+        subtitleStyleChip.background = chipBackground(panel == PANEL_DISPLAY)
+        decodeChip.background = chipBackground(panel == PANEL_DECODE)
+        speedLabel.setTextColor(if (panel == PANEL_SPEED) NPTheme.ACCENT else NPTheme.WHITE_70)
+
         // 底栏可见项
         lockButton.visibility = if (!tv) VISIBLE else GONE
         bottomSpeedChip.visibility = if (tv && !state.isRoom) VISIBLE else GONE
@@ -1504,11 +1567,42 @@ class NativePlayerScreenView(
         panelToggleButton.visibility = if (state.isRoom) VISIBLE else GONE
         hdrBadge.visibility = if (state.hdrOutput) VISIBLE else GONE
 
+        // 版本/选集按钮：非房间且多版本/多集才显示（与 Flutter 显隐条件一致）
+        versionButton?.visibility =
+            if (!state.isRoom && state.versions.size > 1) VISIBLE else GONE
+        episodeButton?.visibility =
+            if (!state.isRoom && state.episodes.size > 1) VISIBLE else GONE
+
+        // 弹幕图标随开关切换（comment ↔ comments_disabled）
+        danmakuButton.text = String(
+            Character.toChars(
+                if (state.danmakuEnabled) {
+                    NativePlayerIcons.ICON_DANMAKU_ON
+                } else {
+                    NativePlayerIcons.ICON_DANMAKU_OFF
+                },
+            ),
+        )
+        // 锁图标随锁定态切换（lock_open ↔ lock，与 Flutter PlayerLockButton 一致）
+        lockButton.text = String(
+            Character.toChars(
+                if (state.locked) NativePlayerIcons.ICON_LOCK else NativePlayerIcons.ICON_LOCK_OPEN,
+            ),
+        )
+
+        // 时间数显列宽：时长 ≥1h 用 HH:MM:SS 档（78），否则 MM:SS 档（56）
+        //（与 Flutter SeekTimeLabels.cellWidth 一致；leading 锁钮列同宽对齐）。
+        val cellW = dp(if (state.durationMs >= 3600000) NPTheme.TIME_CELL_WIDE else NPTheme.TIME_CELL)
+        (positionLabel.layoutParams as? LinearLayout.LayoutParams)?.width = cellW
+        (durationLabel.layoutParams as? LinearLayout.LayoutParams)?.width = cellW
+        (leadingGroup.layoutParams as? FrameLayout.LayoutParams)?.width = cellW
+
         // Logo（房间模式/无图时隐藏）
         val showLogo = state.logoUrl != null && state.logoUrl!!.isNotEmpty() && !state.isRoom
         // 网络加载失败时加载器会隐藏 logoImage（与 Flutter EmbyImage 一致）。
         NativeLogoLoader.load(logoImage, if (showLogo) state.logoUrl else null)
-        logoSpacer.visibility = if (showLogo) GONE else VISIBLE
+        // Logo 与进度条间的 4dp 间隙只在显示 Logo 时存在（Flutter if(showLogo) 块内）。
+        logoSpacer.visibility = if (showLogo) VISIBLE else GONE
 
         // 锁定态：只显示锁钮
         if (!tv && state.locked) {
