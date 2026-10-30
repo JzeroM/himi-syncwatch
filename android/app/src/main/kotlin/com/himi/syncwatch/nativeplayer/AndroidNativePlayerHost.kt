@@ -85,7 +85,25 @@ class AndroidNativePlayerHost(
         surfDlg.show()
 
         // ── 窗 B：控件窗（后创建 → z-order 高于 surface 窗）─────────
-        val controls = NativePlayerScreenView(activity) { surfaceSize() }
+        // 兜底：控件窗构造/render 抛异常时必须关掉 surface 窗。否则 surface
+        // 窗（不透明纯黑底）已 show 却无人关闭，会盖住一切 →「有声无画」。
+        // 异常继续上抛，让 Dart 侧走「原生 UI 打开失败」回退 Flutter 播放页。
+        try {
+            buildControlsWindow(surfaceSizeProvider = { surfaceSize() })
+        } catch (t: Throwable) {
+            android.util.Log.e("NativePlayerHost", "控件窗构建失败，回退", t)
+            try {
+                surfDlg.dismiss()
+            } catch (_: Throwable) {
+            }
+            surfaceDialog = null
+            surfaceView = null
+            throw t
+        }
+    }
+
+    private fun buildControlsWindow(surfaceSizeProvider: () -> Pair<Int, Int>) {
+        val controls = NativePlayerScreenView(activity, surfaceSizeProvider)
         controls.setListener(object : NativePlayerScreenView.Listener {
             override fun onBack() {
                 commandSink.send(mapOf("type" to "requestBack"))
