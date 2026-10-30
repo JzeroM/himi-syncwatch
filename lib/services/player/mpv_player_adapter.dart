@@ -888,6 +888,37 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   List<int> _activeAudioTracks = const [];
   List<int> _activeSubtitleTracks = const [];
 
+  /// 选集/版本列表：PlayerScreen 注入（Emby 元数据，非 mpv 轨道），
+  /// 纳入原生状态推送，供选集/线路面板展示。见 _buildNativePlayerState。
+  List<NativeEpisode> _nativeEpisodes = const <NativeEpisode>[];
+  List<NativeVersion> _nativeVersions = const <NativeVersion>[];
+  int _nativeCurrentEpisodeIndex = -1;
+  int _nativeCurrentVersionIndex = 0;
+
+  /// PlayerScreen 注入选集列表（内容/剧集变化时调用）。
+  set nativeEpisodes(List<NativeEpisode> episodes) {
+    _nativeEpisodes = episodes;
+    _pushNativeUiState();
+  }
+
+  /// PlayerScreen 注入版本/线路列表（媒体源变化时调用）。
+  set nativeVersions(List<NativeVersion> versions) {
+    _nativeVersions = versions;
+    _pushNativeUiState();
+  }
+
+  /// 当前选集下标（-1 = 未定）。
+  set nativeCurrentEpisodeIndex(int index) {
+    _nativeCurrentEpisodeIndex = index;
+    _pushNativeUiState();
+  }
+
+  /// 当前版本/线路上标。
+  set nativeCurrentVersionIndex(int index) {
+    _nativeCurrentVersionIndex = index;
+    _pushNativeUiState();
+  }
+
   /// mpv `track-list` 里音轨/字幕轨的 id（1-based，按出现顺序）。
   ///
   /// 上层的 `activeAudioTracks`/`activeSubtitleTracks` 传的是 **Emby 流索引**
@@ -1561,6 +1592,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       tracks: _nativeTracksFromRaw(_lastTrackListRaw),
       selectedAudioId: _selectedTrackId(_lastTrackListRaw, 'audio'),
       selectedSubtitleId: _selectedTrackId(_lastTrackListRaw, 'sub'),
+      episodes: _nativeEpisodes,
+      versions: _nativeVersions,
+      currentEpisodeIndex: _nativeCurrentEpisodeIndex,
+      currentVersionIndex: _nativeCurrentVersionIndex,
       debugLines: _nativeDebugLines(),
     );
   }

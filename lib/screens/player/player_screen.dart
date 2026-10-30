@@ -1976,6 +1976,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         });
       }
       _rebuildGroups();
+      // 剧集数据就绪后同步给原生选集面板（Phase 2）。
+      _syncNativePanelData();
     }
 
     _setupPlayerListeners();
@@ -2274,6 +2276,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     // 弹幕与媒体并行：集索引就绪即拉取（不等整流加载完成，缩短出弹幕时间）
     if (mounted && _danmakuOn) unawaited(_loadDanmaku());
+    // 切集后同步原生选集面板高亮（Phase 2）。
+    _syncNativePanelData();
 
     int? fallbackDurationMs;
     try {
@@ -2323,6 +2327,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _currentMediaSources = details.mediaSources;
             _activeMediaSourceId = source.id.isEmpty ? null : source.id;
           });
+          // 多版本源就绪后同步原生线路面板（Phase 2）。
+          _syncNativePanelData();
           await _loadSkipSegments(details);
           if (!mounted) return;
           // iOS TrueHD 无声规避：Emby 元数据已知默认音轨编码，load 前
@@ -3227,6 +3233,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted || _disposed) return;
     final shouldPop = await _confirmLeaveRoom();
     if (shouldPop && context.mounted) Navigator.pop(context);
+  }
+
+  /// 选集/版本面板数据同步（Phase 2）：把 PlayerScreen 的 Emby 元数据映射成
+  /// 原生协议类型并注入 adapter，随权威状态推给选集/线路面板展示。
+  ///
+  /// episodes 有多集、versions 有多源时面板才有意义；数据变化点（剧集加载 /
+  /// 切集 / 多版本源加载）调用。
+  void _syncNativePanelData() {
+    final mpv = _player;
+    if (mpv is! MpvPlayerAdapter || _disposed) return;
+    mpv.nativeEpisodes = List<NativeEpisode>.generate(
+      _episodes.length,
+      (i) => NativeEpisode(index: i, title: _episodes[i].name),
+      growable: false,
+    );
+    mpv.nativeCurrentEpisodeIndex = _currentEpisodeIndex;
+    mpv.nativeVersions = List<NativeVersion>.generate(
+      _currentMediaSources.length,
+      (i) => NativeVersion(index: i, title: _currentMediaSources[i].name),
+      growable: false,
+    );
+    final activeId = _activeMediaSourceId;
+    final activeIdx = activeId == null
+        ? -1
+        : _currentMediaSources.indexWhere((s) => s.id == activeId);
+    mpv.nativeCurrentVersionIndex = activeIdx < 0 ? 0 : activeIdx;
   }
 
   /// 原生命令通用路由（Phase 2）：把 adapter 转发来的命令接到现成 handler。
