@@ -621,26 +621,89 @@ plugins {
 - [x] Android Kotlin 全量编译通过（`android.jar` API 36 + Flutter 桩）。
 - [x] Android 原生播放器状态层 11 项 JVM 单测通过。
 
+### Phase 2.5：控制层重画（照 Flutter 观感）+ 第二批面板
+
+本轮目标：把原生控制层从「文本按钮壳」重画为与 Flutter 播放页一致的
+手机横屏 / TV 两套排布，并补齐第二批面板。
+
+**单一来源机制（防止三端漂移）**
+
+| 资产 | 单一来源 | 校验测试 |
+|---|---|---|
+| 图标码点（44 个） | `tool/native_icons.json` | `test/native_player_icons_test.dart` |
+| 视觉常量 | `lib/services/player/native/native_player_theme.dart` | `test/native_player_theme_test.dart` |
+| 控制层状态字段 | `lib/services/player/native/native_player_state.dart` | `test/services/native_player_state_test.dart` + `AndroidNativePlayerStateTest.kt` |
+
+一致性测试做三层比对：Dart 常量 ↔ `Icons.xxx.codePoint`（保证与 Flutter
+同款）↔ Kotlin `NPTheme` / ArkTS 源码字面量（保证原生真用同一套数值）。
+图标字体 `MaterialIcons-Regular.otf` 内置到 Android assets 与鸿蒙 rawfile，
+鸿蒙侧在 `EntryAbility.onCreate` 用 `font.registerFont` 注册。
+
+**协议扩展（Phase 2.5）**
+
+- `NativePlayerState` 新增 18 字段：`logoUrl` / `networkSpeedText` /
+  `clockFormat` / `glassUi` / `engineLabel` / `engineOptions` / `videoFit` /
+  `decodeMode` / `subtitleScale` / `subtitleMarginY` /
+  `subtitleDelayEnabled` / `subtitleStyleDisabled` / `segmentEnabled` /
+  `showDebug` / `isRoom` / `canScreenshot` / `audioStreamCount` /
+  `subtitleStreamCount`。
+- 新命令：`toggleLock` / `cycleVideoFit` / `toggleOrientation` /
+  `clearSegmentMark`；`switchEngine` 接入路由（内核热切换）。
+- `NativePlayerUiExtras` 承载低频快照，`PlayerScreen._syncNativePanelData`
+  在锁定、网速采样、设置变更、字幕样式、画面比例、弹幕开关、片头片尾、
+  内核切换等时机整体重推。
+
+**视觉规格（已从 Flutter 源码 + 截图确认）**
+
+- 手机顶栏：返回 / 标题 16 w600 / 网速 12 white70 / 倍速（speed20 +
+  `1.0x`）/ 内核胶囊 / 字幕样式胶囊（tune18）/ 解码胶囊（memory18）/
+  画面比例 22 / 转屏 22。
+- 手机底栏：Logo 240×44；时间 12 white70（56/78 格）；滑杆 track6 /
+  thumb8 / `#6366F1`；锁钮 22；播放组精确居中（28/36/28）；右侧图标 24、
+  间距 20（弹幕 / 版本 HQ+n / 字幕+n / 音轨+n / 选集+n），角标 9px
+  `#6366F1` 圆底。
+- TV 顶栏：返回 / 标题 / 网速 / 内核胶囊 / 时钟（右 12、100×48、13
+  white70）。
+- TV 底栏：Logo；进度条焦点环 3px `#C1C2FE` + blur14 / spread1.5；播放组
+  置左；右侧增加显示调节与倍速，隐藏锁、转屏、画面比例、解码入口。
+- 右侧浮层：宽 `clamp(0.42×屏宽, 260, 320)`、`right:12`、
+  `top = safeTop+48`、`bottom = 116+safeBottom`、圆角 16、着色
+  `0x1F1A1D23`、rim `0x4DFFFFFF`；选中 `#6366F1` + 加粗 + 对勾占 18px 槽；
+  标题 15 加粗、选项行 14、padding h16 v12。
+- 显示调节：字幕 3 行（大小 0.5–3.0/0.05、位置 0–200/2、延迟
+  -5000–5000/100）+ 弹幕 3 行（速度 0.5–2.0/0.05、大小 0.5–2.0/0.05、
+  透明度 0.1–1.0/0.05）；行 = 标签 44 / 滑杆 / 数值 48、padding h16 v10；
+  段标题 11 white38。
+- 解码模式：180 宽、`#1E1E2E`、圆角 8；标题 13 加粗 + 当前值 12
+  `#A5B4FC`；3 行单选。
+- 片头片尾：居中 360 玻璃卡圆角 18，标题 16 w600 + 当前位置 12 white54，
+  两行（icon22、标题14、提示11、chevron18）；已有标记走**原生**二次确认
+  （更新 / 清除 / 取消）——Flutter `showDialog` 在原生双窗之上不可见。
+
+**Android 特殊性**：控件层与视频层是两个独立窗口，无法跨窗口真模糊，
+用 tint + rim + 圆角近似；鸿蒙用 `backgroundBlurStyle` 真模糊。
+
 ### Phase 2：鸿蒙完整原生控件
 
-- [ ] 顶部/底部控制条。
-- [ ] 音量/倍速/锁定/自动隐藏。
-- [ ] 音轨/字幕/外挂字幕/字幕样式/延迟。
-- [ ] 选集/版本。
-- [ ] 内核/解码/显示调节。
-- [ ] 播放页设置。
+- [x] 顶部/底部控制条（手机横屏 / TV 两套排布，图标走 MaterialIcons 字体）。
+- [x] 倍速/锁定/自动隐藏（音量经命令回传 Flutter 处理）。
+- [x] 音轨/字幕（外挂字幕走 Flutter `addSubtitle`）。
+- [x] 字幕样式/延迟（「显示调节」面板：字幕 3 滑杆）。
+- [x] 选集/版本。
+- [x] 内核/解码/显示调节。
+- [ ] 播放页设置（房间/调试面板等 Phase 5 字段）。
 - [ ] 截图。
-- [ ] 片头片尾标记。
-- [ ] 手势。
-- [ ] 验收：手机触控全功能可用。
+- [x] 片头片尾标记（居中玻璃卡 + 原生二次确认）。
+- [ ] 手机手势（单独一轮）。
+- [ ] 验收：手机触控全功能可用（需真机）。
 
 ### Phase 3：Android 完整原生控件 + TV
 
-- [ ] 同 Phase 2 全部控件。
-- [ ] `TvKeyRouter` 与焦点导航。
-- [ ] 手机手势。
-- [ ] overscan/焦点描边。
-- [ ] 验收：手机 + TV 遥控器全部语义与 Flutter 一致。
+- [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
+- [x] `TvKeyRouter` 与焦点导航（D-pad 可达 + 3px `#C1C2FE` 焦点环）。
+- [ ] 手机手势（单独一轮）。
+- [x] overscan/焦点描边。
+- [ ] 验收：手机 + TV 遥控器全部语义与 Flutter 一致（需真机）。
 
 ### Phase 4：弹幕
 
@@ -648,6 +711,10 @@ plugins {
 - [ ] Android Compose Canvas 弹幕 + 设置面板。
 - [ ] 时间轴分片、轨道、滚动/顶部/底部、透明度、字号、速度、屏蔽词。
 - [ ] 验收：双端弹幕性能与时间轴正确。
+
+> 说明：弹幕**开关与样式参数**已在 Phase 2.5 接通设置（`adjustDisplay`
+> 的 danmakuSpeed/FontSize/Opacity 三个滑杆），但原生侧暂不绘制，
+> 绘制层属 Phase 4。
 
 ### Phase 5：房间同步、截图、调试、片头片尾
 
