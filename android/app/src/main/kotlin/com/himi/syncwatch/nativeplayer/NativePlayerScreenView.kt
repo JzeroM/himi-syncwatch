@@ -14,6 +14,7 @@ import android.os.Looper
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -135,6 +136,27 @@ class NativePlayerScreenView(
             gravity = Gravity.CENTER
             includeFontPadding = false
         }
+
+    /**
+     * 按下反馈：Flutter 的 TvFocusable/IconButton 自带 ripple/高亮，原生
+     * TextView 按钮默认无任何视觉反馈——真机表现为「点了没反应」。
+     * 这里用 alpha + 轻微缩放模拟按下态（ACTION_DOWN/UP/CANCEL）。
+     */
+    private fun applyPressFeedback(view: View) {
+        view.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate().alpha(0.55f).scaleX(0.92f).scaleY(0.92f)
+                        .setDuration(90).start()
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                        .setDuration(120).start()
+                }
+            }
+            false // 不消费事件，click 照常触发
+        }
+    }
 
     /** 玻璃胶囊/浮层背景：着色 + rim 描边 + 圆角（跨窗口无法真模糊）。 */
     private fun glassBackground(radiusDp: Int, tint: Int = NPTheme.PANEL_TINT): GradientDrawable =
@@ -312,9 +334,11 @@ class NativePlayerScreenView(
         backButton.setTextColor(Color.WHITE)
         backButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
         backButton.gravity = Gravity.CENTER
+        backButton.includeFontPadding = false
         backButton.setPadding(dp(6), dp(6), dp(6), dp(6))
         backButton.isClickable = true
         backButton.setOnClickListener { listener?.onBack() }
+        applyPressFeedback(backButton)
         topBar.addView(backButton, lp(dp(40), dp(40)))
 
         titleText.setTextColor(Color.WHITE)
@@ -378,9 +402,11 @@ class NativePlayerScreenView(
         videoFitIcon.setTextColor(Color.WHITE)
         videoFitIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
         videoFitIcon.gravity = Gravity.CENTER
+        videoFitIcon.includeFontPadding = false
         videoFitIcon.setPadding(dp(6), dp(6), dp(6), dp(6))
         videoFitIcon.isClickable = true
         videoFitIcon.setOnClickListener { listener?.onCycleVideoFit() }
+        applyPressFeedback(videoFitIcon)
         topBar.addView(videoFitIcon, llp(dp(34), dp(34), 8))
 
         // 手动转屏（仅手机）
@@ -389,9 +415,11 @@ class NativePlayerScreenView(
         rotateIcon.setTextColor(Color.WHITE)
         rotateIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
         rotateIcon.gravity = Gravity.CENTER
+        rotateIcon.includeFontPadding = false
         rotateIcon.setPadding(dp(6), dp(6), dp(6), dp(6))
         rotateIcon.isClickable = true
         rotateIcon.setOnClickListener { listener?.onToggleOrientation() }
+        applyPressFeedback(rotateIcon)
         topBar.addView(rotateIcon, llp(dp(34), dp(34), 8))
 
         // 时钟（TV：右贴边，100×48，13sp white70）
@@ -615,9 +643,11 @@ class NativePlayerScreenView(
         lockButton.setTextColor(Color.WHITE)
         lockButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.LOCK_ICON.toFloat())
         lockButton.gravity = Gravity.CENTER
+        lockButton.includeFontPadding = false
         lockButton.setPadding(dp(8), dp(8), dp(8), dp(8))
         lockButton.isClickable = true
         lockButton.setOnClickListener { listener?.onToggleLock() }
+        applyPressFeedback(lockButton)
         leadingGroup.addView(lockButton, lp(dp(44), dp(44)))
 
         // transport 组（上一集 / 播放暂停 / 下一集）
@@ -626,16 +656,18 @@ class NativePlayerScreenView(
         configureTransportButton(prevButton, NativePlayerIcons.ICON_SKIP_PREVIOUS, NPTheme.TRANSPORT_SIDE)
         configureTransportButton(playPauseButton, NativePlayerIcons.ICON_PLAY_CIRCLE, NPTheme.TRANSPORT_PLAY)
         configureTransportButton(nextButton, NativePlayerIcons.ICON_SKIP_NEXT, NPTheme.TRANSPORT_SIDE)
-        transportGroup.addView(prevButton, llp(dp(NPTheme.TRANSPORT_SIDE), dp(NPTheme.TRANSPORT_SIDE)))
+        // 传输组容器 = 字形尺寸 + 8dp 余量（28sp≈33dp / 36sp≈42dp），
+        // 否则字形上下被裁（真机「控件残缺」观感）。
+        transportGroup.addView(prevButton, llp(dp(NPTheme.TRANSPORT_SIDE + 8), dp(NPTheme.TRANSPORT_SIDE + 8)))
         // 注：lp() 是 FrameLayout.LayoutParams，加进 LinearLayout 会丢 margin，
         // 间距必须走 llp()（Flutter 播放组间距 8）。
         transportGroup.addView(
             playPauseButton,
-            llp(dp(NPTheme.TRANSPORT_PLAY), dp(NPTheme.TRANSPORT_PLAY), NPTheme.TRANSPORT_GAP),
+            llp(dp(NPTheme.TRANSPORT_PLAY + 8), dp(NPTheme.TRANSPORT_PLAY + 8), NPTheme.TRANSPORT_GAP),
         )
         transportGroup.addView(
             nextButton,
-            llp(dp(NPTheme.TRANSPORT_SIDE), dp(NPTheme.TRANSPORT_SIDE), NPTheme.TRANSPORT_GAP),
+            llp(dp(NPTheme.TRANSPORT_SIDE + 8), dp(NPTheme.TRANSPORT_SIDE + 8), NPTheme.TRANSPORT_GAP),
         )
 
         // trailing 组（弹幕 / 版本 / 显示调节 / 字幕 / 音轨 / 选集 / 倍速 / 面板）
@@ -643,6 +675,7 @@ class NativePlayerScreenView(
         trailingGroup.orientation = LinearLayout.HORIZONTAL
         trailingGroup.gravity = Gravity.CENTER_VERTICAL
         configureTransportButton(danmakuButton, NativePlayerIcons.ICON_DANMAKU_ON, 24)
+        applyPressFeedback(danmakuButton)
         danmakuButton.setOnClickListener {
             listener?.onToggleDanmaku()
             scheduleAutoHide()
@@ -696,9 +729,11 @@ class NativePlayerScreenView(
         panelToggleButton.setTextColor(Color.WHITE)
         panelToggleButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
         panelToggleButton.gravity = Gravity.CENTER
+        panelToggleButton.includeFontPadding = false
         panelToggleButton.setPadding(dp(4), dp(4), dp(4), dp(4))
         panelToggleButton.isClickable = true
         panelToggleButton.setOnClickListener { listener?.onBack() }
+        applyPressFeedback(panelToggleButton)
         trailingGroup.addView(panelToggleButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
 
         // HDR 徽标
@@ -748,21 +783,33 @@ class NativePlayerScreenView(
     // ── 控件工厂 ──────────────────────────────────────────────────
 
     /** 右侧纯图标按钮（24dp 图标 + 4dp 内边距，与 Flutter _buildControlButton 一致）。 */
+    /**
+     * 右侧图标按钮（无角标）。
+     *
+     * 24sp 字形净高约 28dp（含 ascent/descent），容器必须 ≥28dp 否则裁切。
+     * 统一 32dp 容器 + 4dp padding + includeFontPadding=false：
+     * 内容区 24dp，字形按 fontSize 自适应居中，不再被裁。
+     */
     private fun iconButton(codePoint: Int, onClick: () -> Unit): TextView =
         TextView(context).apply {
             text = String(Character.toChars(codePoint))
             typeface = NativePlayerIcons.typeface(context)
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.CONTROL_ICON.toFloat())
             gravity = Gravity.CENTER
-            setPadding(dp(4), dp(4), dp(4), dp(4))
+            includeFontPadding = false
+            setPadding(0, 0, 0, 0)
             isClickable = true
             setOnClickListener { onClick() }
+            applyPressFeedback(this)
         }
 
     /**
-     * 带角标的右侧图标按钮：图标 24dp，角标为 9sp 文字 + #6366F1 圆底，
-     * 贴在图标右上（Flutter Stack + Positioned(right:-6,top:-4)）。
+     * 带角标的右侧图标按钮：图标 24dp 字形、角标 9sp + #6366F1 圆底，
+     * 贴图标右上（Flutter Stack + Positioned(right:-6,top:-4)）。
+     *
+     * 关键：图标容器必须 ≥ 字形净高（24sp≈28dp），旧实现给 24dp → 字形
+     * 上下被裁（真机「控件残缺」观感）。这里用 28dp 容器。
      */
     private fun badgeButton(
         codePoint: Int,
@@ -770,11 +817,12 @@ class NativePlayerScreenView(
         onClick: () -> Unit,
     ): FrameLayout {
         val host = FrameLayout(context)
-        host.addView(iconButton(codePoint, onClick), lp(dp(24), dp(24), Gravity.CENTER))
+        host.addView(iconButton(codePoint, onClick), lp(dp(28), dp(28), Gravity.CENTER))
         val badge = TextView(context).apply {
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.BADGE_FONT)
             gravity = Gravity.CENTER
+            includeFontPadding = false
             setPadding(dp(3), dp(1), dp(3), dp(1))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -809,8 +857,11 @@ class NativePlayerScreenView(
         button.setTextColor(Color.WHITE)
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp.toFloat())
         button.gravity = Gravity.CENTER
-        button.setPadding(dp(4), dp(4), dp(4), dp(4))
+        // 关字体留白：28sp/36sp 字形净高超过容器时会被裁（真机残缺观感）。
+        button.includeFontPadding = false
+        button.setPadding(0, 0, 0, 0)
         button.isClickable = true
+        applyPressFeedback(button)
     }
 
     // ── 面板层 ────────────────────────────────────────────────────

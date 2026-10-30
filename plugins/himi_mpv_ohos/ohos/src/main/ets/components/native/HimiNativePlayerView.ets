@@ -101,6 +101,19 @@ class ViewListener implements NativePlayerViewListener {
   }
 }
 
+/**
+ * 按下反馈（所有可点击控件的统一按下态）。
+ *
+ * Flutter 侧 TvFocusable/IconButton 自带 ripple/高亮，ArkUI 的裸 Text
+ * 默认**无任何按下视觉反馈**——真机表现为「点了没反应」。用组件内
+ * @Styles + stateStyles(pressed) 补一层透明度/缩放反馈。
+ */
+@Styles
+function pressedFeedback() {
+  .opacity(0.5);
+  .scale({ x: 0.92, y: 0.92 });
+}
+
 @Component
 export struct HimiNativePlayerView {
   @State revision: number = 0;
@@ -599,9 +612,12 @@ export struct HimiNativePlayerView {
     .alignItems(HorizontalAlign.Start)
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: 14 })
+    // Flutter _buildControls：transparent → black@0.85 自上而下渐变。
+    // angle 180 = 自上而下；angle 0 = 自左向右（会把整条横向压黑成硬边
+    // 「黑幕」，即真机回归观感）。
     .linearGradient({
-      angle: 0,
-      colors: [['#00000000', 0.0], ['#CC000000', 1.0]],
+      angle: 180,
+      colors: [['#00000000', 0.0], ['#D9000000', 1.0]],
     })
     .position({ x: 0, y: '100%' })
     .markAnchor({ x: '0%', y: '100%' });
@@ -612,6 +628,9 @@ export struct HimiNativePlayerView {
   ControlRow() {
     Stack({ alignContent: Alignment.Center }) {
       // 传输组：项间距 8（Flutter SizedBox(8)），单集/电影 prev/next 空占位 28。
+      // 关键：**不设 width('100%')**，让 Row 保持内容宽度，靠外层
+      // Stack(alignContent: Center) 精确水平居中（设 width 100% + Start
+      // 会撑满整行并左对齐 → 播放键偏左，真机回归）。
       Row({ space: 8 }) {
         if (this.multiEpisode()) {
           this.TransportGlyph(this.prevGlyph(), 28, this.hasPrev(), 'prev', (): void => {
@@ -635,8 +654,7 @@ export struct HimiNativePlayerView {
         }
       }
       .alignItems(VerticalAlign.Center)
-      .justifyContent(FlexAlign.Start)
-      .width('100%');
+      .justifyContent(FlexAlign.Center);
 
       // 右侧簇：项间距 20（Flutter SizedBox(20) 链）。
       Row({ space: 20 }) {
@@ -681,6 +699,30 @@ export struct HimiNativePlayerView {
       .alignItems(VerticalAlign.Center)
       .width('100%')
       .justifyContent(FlexAlign.End);
+
+      // 左侧簇：手机模式锁钮（Flutter 底栏 leading 槽 PlayerLockButton）。
+      // 未锁显 lock_open（点击上锁），已锁显 lock（点击解锁）；列宽与
+      // 进度条左数显同宽（timeCellWidth），保证与上方时间数显同轴。
+      if (!this.state().tvMode && !this.state().isRoom) {
+        Row() {
+          Text(String.fromCodePoint(this.state().locked
+            ? NativePlayerIcons.ICON_LOCK
+            : NativePlayerIcons.ICON_LOCK_OPEN))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
+            .fontSize(22)
+            .fontColor('#B3FFFFFF')
+            .width(this.timeCellWidth())
+            .height(44)
+            .textAlign(TextAlign.Center)
+            .onClick((): void => {
+              this.pokeAutoHide();
+              HimiMpvNativeHost.getInstance().optimisticToggleLock();
+            });
+        }
+        .alignItems(VerticalAlign.Center)
+        .width('100%')
+        .justifyContent(FlexAlign.Start);
+      }
 
       if (this.state().locked && this.state().tvMode) {
         Row() {
@@ -732,6 +774,7 @@ export struct HimiNativePlayerView {
     // TV 遥控器可达：可聚焦（非 TV 设备 focusable 不影响触摸）。
     .focusable(true)
     .focusOnTouch(true)
+    .stateStyles({ pressed: pressedFeedback })
     .onFocus((): void => { this.focusedKey = key; })
     .onBlur((): void => { this.focusedKey = ''; })
     .onClick(onTap);
@@ -757,6 +800,7 @@ export struct HimiNativePlayerView {
         : (glass ? (active ? BORDER_ACTIVE : BORDER_CHIP) : BORDER_NONE))
       .focusable(true)
       .focusOnTouch(true)
+      .stateStyles({ pressed: pressedFeedback })
       .onFocus((): void => { this.focusedKey = key; })
       .onBlur((): void => { this.focusedKey = ''; })
       .onClick(onTap);
@@ -800,9 +844,12 @@ export struct HimiNativePlayerView {
       .border(this.focusedKey === key
         ? { width: 3, color: FOCUS_RING_COLOR, radius: 12 }
         : { width: 0, color: Color.Transparent })
+      .stateStyles({ pressed: pressedFeedback })
       .onFocus((): void => { this.focusedKey = key; })
       .onBlur((): void => { this.focusedKey = ''; })
       .onClick((): void => {
+        // 不可用（无上一集/无下一集/不可控制）时仍给按下反馈，只是不执行
+        // 动作——否则用户点击后毫无视觉响应，误以为控件失效（真机回归）。
         if (enabled) {
           onTap();
         }

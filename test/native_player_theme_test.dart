@@ -204,4 +204,107 @@ void main() {
           reason: '鸿蒙解码当前值颜色需与 Dart decodeCurrentText 一致');
     });
   });
+
+  group('原生控制层交互完整性（防真机回归）', () {
+    final view = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'HimiNativePlayerView.ets',
+    ).readAsStringSync();
+    final host = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'HimiMpvNativeHost.ets',
+    ).readAsStringSync();
+    final screen = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerScreenView.kt',
+    ).readAsStringSync();
+
+    test('鸿蒙底栏必须有锁控件（未锁 lock_open / 已锁 lock）', () {
+      // 真机回归：只有 LockOnlyBar（锁定态）有锁钮，正常态底栏左侧空着，
+      // 用户无法上锁。
+      expect(view, contains('ICON_LOCK_OPEN'),
+          reason: '鸿蒙底栏缺未锁态锁图标');
+      expect(view, contains('ICON_LOCK'),
+          reason: '鸿蒙底栏缺已锁态锁图标');
+    });
+
+    test('鸿蒙传输组不得 width 100%（否则播放键偏左不居中）', () {
+      // 真机回归：Row({space:8}).justifyContent(FlexAlign.Start).width('100%')
+      // 会撑满整行再左对齐，播放键明显偏左。
+      final lines = view.split('\n');
+      final idx = lines.indexWhere((l) => l.contains('this.TransportGlyph(this.prevGlyph()'));
+      expect(idx, greaterThan(0), reason: '未找到鸿蒙传输组（prevGlyph）');
+      // 取该 Row 起点到其 justify 声明之间的片段。
+      var start = idx;
+      while (start > 0 && !lines[start].contains('Row({ space: 8 })')) {
+        start--;
+      }
+      var end = idx;
+      while (end < lines.length && !lines[end].contains('justifyContent(FlexAlign.')) {
+        end++;
+      }
+      final block = lines.sublist(start, end + 1).join('\n');
+      expect(block.contains("width('100%')"), isFalse,
+          reason: '鸿蒙传输组不应设 width 100%（会导致播放键偏左）');
+      expect(block, contains('FlexAlign.Center'),
+          reason: '鸿蒙传输组应居中');
+    });
+
+    test('鸿蒙底栏渐变方向必须自上而下（angle 180）', () {
+      // 真机回归：angle 0 = 自左向右 → 整条横向压黑成硬边「黑幕」。
+      final lines = view.split('\n');
+      final idx = lines.indexWhere((l) => l.contains('this.ControlRow();'));
+      expect(idx, greaterThan(0), reason: '未找到 ControlRow 调用');
+      var end = idx;
+      while (end < lines.length && !lines[end].contains('angle:')) {
+        end++;
+      }
+      expect(end, lessThan(lines.length), reason: '底栏渐变未找到 angle');
+      final angle = int.parse(RegExp(r'angle: (\d+)').firstMatch(lines[end])!.group(1)!);
+      expect(angle, 180, reason: '鸿蒙底栏渐变应为自上而下（angle 180）');
+    });
+
+    test('鸿蒙可点击控件必须有按下反馈（stateStyles pressed）', () {
+      // 真机回归：ArkUI 裸 Text 无按下视觉反馈 → 用户以为「点了没反应」。
+      expect(view, contains('@Styles'),
+          reason: '鸿蒙缺 @Styles 按下反馈定义');
+      expect(RegExp(r'stateStyles\(\{ pressed:').hasMatch(view), isTrue,
+          reason: '鸿蒙控件缺 stateStyles(pressed) 按下反馈');
+      expect(RegExp(r'\.opacity\(0\.5\)').hasMatch(view), isTrue,
+          reason: '按下反馈应含透明度变化');
+    });
+
+    test('鸿蒙 bridge 未就绪时命令必须入队而非丢弃', () {
+      // 真机回归：bridge===null 时只 warn 就 return → 点击被静默丢弃。
+      expect(host, contains('pendingCommands'),
+          reason: '鸿蒙 host 缺待发命令队列');
+      expect(host, contains('补发积压命令'),
+          reason: '鸿蒙 host 未在 bridge 就绪后补发积压命令');
+    });
+
+    test('安卓图标容器必须容得下字形（防裁切残缺）', () {
+      // 真机回归：badgeButton 图标容器仅 24dp，24sp 字形净高≈28dp → 上下裁切。
+      expect(screen, contains('includeFontPadding = false'),
+          reason: '安卓图标控件应关闭字体留白防裁切');
+      final badgeBlock = RegExp(
+        r'host\.addView\(iconButton\(codePoint, onClick\), lp\(dp\((\d+)\), dp\((\d+)\)',
+      ).firstMatch(screen);
+      expect(badgeBlock, isNotNull, reason: '未找到安卓 badgeButton 图标容器');
+      expect(int.parse(badgeBlock!.group(1)!), greaterThanOrEqualTo(28),
+          reason: '安卓角标图标容器需 ≥28dp（24sp 字形净高）');
+    });
+
+    test('安卓控件必须有按下反馈 + 命令队列（防点击无反应）', () {
+      expect(screen, contains('applyPressFeedback'),
+          reason: '安卓控件缺按下反馈');
+      expect(RegExp(r'ACTION_DOWN').hasMatch(screen), isTrue,
+          reason: '按下反馈应处理 ACTION_DOWN');
+      final channelSrc = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'AndroidNativePlayerChannel.kt',
+      ).readAsStringSync();
+      expect(channelSrc, contains('pendingCommands'),
+          reason: '安卓通道缺 Dart 订阅前的命令队列');
+    });
+  });
 }

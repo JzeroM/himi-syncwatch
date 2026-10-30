@@ -400,8 +400,33 @@ export class HimiMpvNativeHost {
   private bridge: NativeHostBridge | null = null;
   private listener: NativePlayerViewListener | null = null;
 
+  /**
+   * bridge 未就绪期间的待发命令队列。
+   *
+   * 原生播放 UI 是独立子窗口，视图可能先于插件 setBridge 构建；此前
+   * sendCommand 在 bridge===null 时只打 warn 就丢弃 → 真机表现为「点了
+   * 没反应」。改为缓存，setBridge 就绪后按序补发。
+   */
+  private pendingCommands: Map<string, Object>[] = [];
+
   setBridge(bridge: NativeHostBridge | null): void {
     this.bridge = bridge;
+    if (bridge === null) {
+      return;
+    }
+    // 就绪：补发积压命令（按序，清空队列）。
+    const queued = this.pendingCommands;
+    this.pendingCommands = [];
+    for (const cmd of queued) {
+      try {
+        bridge.forwardCommand(cmd);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, '补发积压命令失败: %{public}s', String(e));
+      }
+    }
+    if (queued.length > 0) {
+      hilog.info(DOMAIN, TAG, '补发积压命令 %{public}d 条', queued.length);
+    }
   }
 
   registerListener(listener: NativePlayerViewListener): void {
@@ -496,17 +521,19 @@ export class HimiMpvNativeHost {
 
   /** 原生命令回传 Dart（经插件的 himi_mpv/native_ui EventChannel）。 */
   sendCommand(type: string, fields: Map<string, Object> | null): void {
-    const bridge = this.bridge;
-    if (bridge === null) {
-      hilog.warn(DOMAIN, TAG, 'sendCommand 被忽略（bridge 未就绪）: %{public}s', type);
-      return;
-    }
     const cmd: Map<string, Object> = new Map<string, Object>();
     cmd.set('type', type);
     if (fields !== null) {
       fields.forEach((value: Object, key: string): void => {
         cmd.set(key, value);
       });
+    }
+    const bridge = this.bridge;
+    if (bridge === null) {
+      // bridge 未就绪：入队待补发（不丢弃——丢弃会让点击「毫无反应」）。
+      this.pendingCommands.push(cmd);
+      hilog.warn(DOMAIN, TAG, 'sendCommand 暂存待发（bridge 未就绪）: %{public}s', type);
+      return;
     }
     bridge.forwardCommand(cmd);
   }

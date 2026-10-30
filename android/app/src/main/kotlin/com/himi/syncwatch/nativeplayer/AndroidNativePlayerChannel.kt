@@ -29,9 +29,23 @@ class AndroidNativePlayerChannel(
     private val commandChannel = EventChannel(messenger, COMMAND_CHANNEL)
     private var eventSink: EventChannel.EventSink? = null
 
+    /**
+     * Dart 订阅前的命令队列。
+     *
+     * 原生控件窗可能在 Dart 侧 `commandStream` 订阅**之前**就建好并产生
+     * 点击事件；`eventSink?.success(...)` 在 sink 为空时静默丢弃 → 真机
+     * 表现为「点了没反应」。这里缓存，onListen 时按序补发。
+     */
+    private val pendingCommands = mutableListOf<Map<String, Any?>>()
+
     /** 视图交互 → EventChannel → Dart。 */
     private val host = AndroidNativePlayerHost(activity) { command ->
-        eventSink?.success(command)
+        val sink = eventSink
+        if (sink == null) {
+            synchronized(pendingCommands) { pendingCommands.add(command) }
+        } else {
+            sink.success(command)
+        }
     }
 
     init {
@@ -66,6 +80,13 @@ class AndroidNativePlayerChannel(
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         eventSink = events
+        // 补发订阅前积压的命令（按序）。
+        val queued = synchronized(pendingCommands) {
+            val copy = pendingCommands.toList()
+            pendingCommands.clear()
+            copy
+        }
+        queued.forEach { events?.success(it) }
     }
 
     override fun onCancel(arguments: Any?) {
