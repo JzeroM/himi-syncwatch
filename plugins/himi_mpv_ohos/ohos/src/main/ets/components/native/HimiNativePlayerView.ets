@@ -20,6 +20,7 @@ import {
   nativeDiagSummary,
 } from './HimiMpvNativeHost';
 import { NativePlayerPanel } from './NativePlayerPanel';
+import { NativePlayerIcons } from './NativePlayerIcons';
 import { MpvXComponentController, MpvSurfaceCallbacks } from '../plugin/HimiMpvSurface';
 
 const TAG = 'HimiNativePlayerView';
@@ -316,6 +317,33 @@ export struct HimiNativePlayerView {
     return s.currentEpisodeIndex >= 0 && s.currentEpisodeIndex + 1 < s.episodes.length;
   }
 
+  /** 多集：transport 上一集/下一集仅此时显示，否则空占位（与 Flutter 一致）。 */
+  private multiEpisode(): boolean {
+    return this.state().episodes.length > 1;
+  }
+
+  /** 版本/线路角标：显示线路数（与 Flutter sources.length 一致）。 */
+  private versionBadge(): string {
+    return `${this.state().versions.length}`;
+  }
+
+  /** 字幕角标：仅在有字幕流时显示数量（与 Flutter 一致）。 */
+  private subtitleBadge(): string {
+    const n = this.state().subtitleStreamCount;
+    return n > 0 ? `${n}` : '';
+  }
+
+  /** 音轨角标：仅在有音轨流时显示数量（与 Flutter 一致）。 */
+  private audioBadge(): string {
+    const n = this.state().audioStreamCount;
+    return n > 0 ? `${n}` : '';
+  }
+
+  /** 选集角标：集数（与 Flutter totalEpisodeCount 一致）。 */
+  private episodeBadge(): string {
+    return `${this.state().episodes.length}`;
+  }
+
   /** 上一集（经面板命令回传 Dart）。 */
   private onPrevEpisode(): void {
     const host = HimiMpvNativeHost.getInstance();
@@ -384,8 +412,8 @@ export struct HimiNativePlayerView {
   LockOnlyBar() {
     Column() {
       Row() {
-        Text('')
-          .fontFamily('MaterialIcons')
+        Text(String.fromCodePoint(NativePlayerIcons.ICON_LOCK))
+          .fontFamily(NativePlayerIcons.FONT_FAMILY)
           .fontSize(22)
           .fontColor('#B3FFFFFF')
           .width(56)
@@ -414,7 +442,7 @@ export struct HimiNativePlayerView {
   TopBar() {
     Row() {
       Text(this.backGlyph())
-        .fontFamily('MaterialIcons')
+        .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(22)
         .fontColor(Color.White)
         .width(44)
@@ -509,6 +537,13 @@ export struct HimiNativePlayerView {
           .layoutWeight(1)
           .selectedColor(SEL_COLOR)
           .trackColor('#33FFFFFF')
+          // 与 Flutter 观感对齐（NativePlayerTheme）：track 6dp + 8dp 半径
+          // 蓝圆点拇指（直径 16），提示气泡关闭（原始毫秒值无意义）。
+          .trackThickness(6)
+          .trackBorderRadius(3)
+          .blockColor(SEL_COLOR)
+          .blockSize({ width: 16, height: 16 })
+          .showTips(false)
           .onChange((value: number, mode: SliderChangeMode): void => {
             this.pokeAutoHide();
             if (mode === SliderChangeMode.Begin || mode === SliderChangeMode.Moving) {
@@ -539,6 +574,7 @@ export struct HimiNativePlayerView {
 
       this.ControlRow();
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: 14 })
     .linearGradient({
@@ -554,17 +590,26 @@ export struct HimiNativePlayerView {
   ControlRow() {
     Stack({ alignContent: Alignment.Center }) {
       Row() {
-        this.TransportGlyph(this.prevGlyph(), 28, this.hasPrev(), 'prev', (): void => {
-          this.pokeAutoHide();
-          this.onPrevEpisode();
-        });
+        if (this.multiEpisode()) {
+          this.TransportGlyph(this.prevGlyph(), 28, this.hasPrev(), 'prev', (): void => {
+            this.pokeAutoHide();
+            this.onPrevEpisode();
+          });
+        } else {
+          // 单集/电影：空占位保持播放键居中（与 Flutter SizedBox(28) 一致）。
+          Row().width(36).height(36);
+        }
         this.TransportGlyph(this.playGlyph(), 36, this.state().canControl, 'play', (): void => {
           this.onTogglePlay();
         });
-        this.TransportGlyph(this.nextGlyph(), 28, this.hasNext(), 'next', (): void => {
-          this.pokeAutoHide();
-          this.onNextEpisode();
-        });
+        if (this.multiEpisode()) {
+          this.TransportGlyph(this.nextGlyph(), 28, this.hasNext(), 'next', (): void => {
+            this.pokeAutoHide();
+            this.onNextEpisode();
+          });
+        } else {
+          Row().width(36).height(36);
+        }
       }
       .alignItems(VerticalAlign.Center)
       .justifyContent(FlexAlign.Start)
@@ -577,7 +622,7 @@ export struct HimiNativePlayerView {
             HimiMpvNativeHost.getInstance().optimisticToggleDanmaku();
           });
         if (this.showVersionButton()) {
-          this.IconChip(this.versionGlyph(),
+          this.BadgeIconChip(this.versionGlyph(), this.versionBadge(),
             this.activePanel === NativePlayerPanelType.version, 'version', (): void => {
               this.openPanel(NativePlayerPanelType.version);
             });
@@ -588,16 +633,16 @@ export struct HimiNativePlayerView {
               this.openPanel(NativePlayerPanelType.display);
             });
         }
-        this.IconChip(this.subtitleGlyph(),
+        this.BadgeIconChip(this.subtitleGlyph(), this.subtitleBadge(),
           this.activePanel === NativePlayerPanelType.subtitle, 'subtitle', (): void => {
             this.openPanel(NativePlayerPanelType.subtitle);
           });
-        this.IconChip(this.audioGlyph(),
+        this.BadgeIconChip(this.audioGlyph(), this.audioBadge(),
           this.activePanel === NativePlayerPanelType.audio, 'audio', (): void => {
             this.openPanel(NativePlayerPanelType.audio);
           });
         if (this.showEpisodeButton()) {
-          this.IconChip(this.playlistGlyph(),
+          this.BadgeIconChip(this.playlistGlyph(), this.episodeBadge(),
             this.activePanel === NativePlayerPanelType.episode, 'episode', (): void => {
               this.openPanel(NativePlayerPanelType.episode);
             });
@@ -615,8 +660,8 @@ export struct HimiNativePlayerView {
 
       if (this.state().locked && this.state().tvMode) {
         Row() {
-          Text('')
-            .fontFamily('MaterialIcons')
+          Text(String.fromCodePoint(NativePlayerIcons.ICON_LOCK))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
             .fontSize(22)
             .fontColor('#B3FFFFFF')
             .onClick((): void => {
@@ -637,7 +682,7 @@ export struct HimiNativePlayerView {
   Chip(icon: string, label: string, active: boolean, key: string, onTap: () => void) {
     Row() {
       Text(icon)
-        .fontFamily('MaterialIcons')
+        .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(18)
         .fontColor(active ? SEL_COLOR : Color.White);
       if (label.length > 0) {
@@ -667,7 +712,7 @@ export struct HimiNativePlayerView {
   @Builder
   IconChip(icon: string, active: boolean, key: string, onTap: () => void) {
     Text(icon)
-      .fontFamily('MaterialIcons')
+      .fontFamily(NativePlayerIcons.FONT_FAMILY)
       .fontSize(24)
       .fontColor(active ? SEL_COLOR : Color.White)
       .padding(8)
@@ -681,11 +726,34 @@ export struct HimiNativePlayerView {
       .onClick(onTap);
   }
 
+  /**
+   * 带角标的图标玻璃方块（版本/字幕/音轨/选集）。
+   * 角标：#6366F1 圆底 + 9px 白字，贴图标右上（right:-6 top:-4，与 Flutter
+   * _buildControlButton 的 Positioned 一致）；badge 为空串时不渲染。
+   */
+  @Builder
+  BadgeIconChip(icon: string, badge: string, active: boolean, key: string, onTap: () => void) {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      this.IconChip(icon, active, key, onTap);
+      if (badge.length > 0) {
+        Text(badge)
+          .fontSize(9)
+          .fontColor(Color.White)
+          .backgroundColor(SEL_COLOR)
+          .borderRadius(9)
+          .padding({ left: 2, right: 2, top: 2, bottom: 2 })
+          .constraintSize({ minWidth: 14, minHeight: 14 })
+          .textAlign(TextAlign.Center)
+          .margin({ top: -4, right: -6 });
+      }
+    }
+  }
+
   /** 传输组按钮（上一集/播放/下一集）。 */
   @Builder
   TransportGlyph(icon: string, size: number, enabled: boolean, key: string, onTap: () => void) {
     Text(icon)
-      .fontFamily('MaterialIcons')
+      .fontFamily(NativePlayerIcons.FONT_FAMILY)
       .fontSize(size)
       .fontColor(enabled ? Color.White : '#3DFFFFFF')
       .padding(4)

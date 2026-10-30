@@ -2,9 +2,13 @@ package com.himi.syncwatch.nativeplayer
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ClipDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
@@ -14,6 +18,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
@@ -202,7 +207,7 @@ class NativePlayerScreenView(
     private val panelToggleButton = TextView(context)
     private var displayAdjustButton: TextView? = null
     private val diagText = TextView(context)
-    private val bufferingView = TextView(context)
+    private val bufferingView = ProgressBar(context)
     private val hdrBadge = TextView(context)
 
     // 面板层
@@ -236,16 +241,13 @@ class NativePlayerScreenView(
         addView(topBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))
         addView(bottomBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
 
-        // 缓冲指示：居中半透明圆底 + 「缓冲中」，随 state.buffering 显隐。
+        // 缓冲指示：居中细灰圆环转圈（与 Flutter CircularProgressIndicator 一致）。
         bufferingView.apply {
-            setTextColor(NPTheme.WHITE_70)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            gravity = Gravity.CENTER
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = glassBackground(NPTheme.RADIUS_CHIP)
+            isIndeterminate = true
+            indeterminateTintList = ColorStateList.valueOf(NPTheme.WHITE_70)
             visibility = GONE
         }
-        addView(bufferingView, lp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        addView(bufferingView, lp(dp(36), dp(36), Gravity.CENTER))
 
         // 面板层（二级浮层）：透明遮罩 + 右侧玻璃浮层 + 解码 popover + 片头片尾卡。
         addView(panelScrim, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -343,6 +345,7 @@ class NativePlayerScreenView(
         topBar.addView(decodeChip, lp(dp(30), dp(30)))
 
         // 画面比例（循环切换）
+        videoFitIcon.typeface = NativePlayerIcons.typeface(context)
         videoFitIcon.setTextColor(Color.WHITE)
         videoFitIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
         videoFitIcon.gravity = Gravity.CENTER
@@ -383,6 +386,53 @@ class NativePlayerScreenView(
     }
 
     // ── 交互绑定（可重入：手机 ↔ TV 切换时重建布局后重绑）──────────
+
+    /**
+     * 进度条样式（与 Flutter glass slider / NativePlayerTheme 对齐）：
+     * 6dp 圆角轨（未播 WHITE_24 / 已播 ACCENT）+ 8dp 半径 ACCENT 圆点拇指，
+     * 拇指外套 ACCENT_SOFT 光晕环。系统默认 SeekBar 是粗灰条，观感差异极大。
+     */
+    private fun applySeekBarStyle() {
+        val trackH = dp(NPTheme.SEEK_TRACK)
+        val thumbD = dp(NPTheme.SEEK_THUMB * 2)
+        val glowD = thumbD + dp(8)
+        val bg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = trackH / 2f
+            setColor(NPTheme.WHITE_24)
+        }
+        val fg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = trackH / 2f
+            setColor(NPTheme.ACCENT)
+        }
+        val track = LayerDrawable(
+            arrayOf<Drawable>(bg, ClipDrawable(fg, Gravity.START, ClipDrawable.HORIZONTAL)),
+        )
+        track.setId(0, android.R.id.background)
+        track.setId(1, android.R.id.progress)
+        val inset = (glowD - trackH) / 2
+        for (i in 0..1) {
+            track.setLayerInsetTop(i, inset)
+            track.setLayerInsetBottom(i, inset)
+        }
+        val glow = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(NPTheme.ACCENT_SOFT)
+            setSize(glowD, glowD)
+        }
+        val core = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(NPTheme.ACCENT)
+            setSize(thumbD, thumbD)
+        }
+        val pad = (glowD - thumbD) / 2
+        val thumb = LayerDrawable(arrayOf<Drawable>(glow, core))
+        thumb.setLayerInset(1, pad, pad, pad, pad)
+        seekBar.progressDrawable = track
+        seekBar.thumb = thumb
+        seekBar.splitTrack = false
+    }
 
     /** 进度条：拖动预览时间数显、松手回传 seek。 */
     private fun configureSeekListeners() {
@@ -479,7 +529,8 @@ class NativePlayerScreenView(
         leadingGroup.removeAllViews()
         transportGroup.removeAllViews()
         trailingGroup.removeAllViews()
-        speedChip.removeAllViews()
+        // speedChip 属于顶栏内容，由 configureTopBar 填充；这里清掉会导致
+        // 速度胶囊整块消失（v1.5.5 回归）。
         bottomSpeedChip.removeAllViews()
     }
 
@@ -511,9 +562,10 @@ class NativePlayerScreenView(
         seekBar.max = SEEK_STEPS
         seekBar.progress = 0
         seekBar.isEnabled = false
+        applySeekBarStyle()
         seekRow.addView(
             seekBar,
-            LinearLayout.LayoutParams(0, dp(NPTheme.SEEK_TRACK + 16), 1f).also {
+            LinearLayout.LayoutParams(0, dp(NPTheme.SEEK_THUMB * 2 + 8), 1f).also {
                 it.marginStart = dp(8)
                 it.marginEnd = dp(8)
             },
@@ -571,28 +623,31 @@ class NativePlayerScreenView(
         trailingGroup.addView(
             badgeButton(
                 NativePlayerIcons.ICON_HIGH_QUALITY,
-                { lastState.versions.size.takeIf { n -> n > 1 }?.toString() },
+                { lastState.versions.size.takeIf { n -> n > 0 }?.toString() },
             ) { openPanel(PANEL_VERSION) },
             lp(dp(32), dp(32)),
         )
         displayAdjustButton = iconButton(NativePlayerIcons.ICON_TUNE) { openPanel(PANEL_DISPLAY) }
         trailingGroup.addView(displayAdjustButton!!, lp(dp(32), dp(32)))
         trailingGroup.addView(
-            badgeButton(NativePlayerIcons.ICON_SUBTITLES, { lastState.subtitleStreamCount.toString() }) {
-                openPanel(PANEL_SUBTITLE)
-            },
+            badgeButton(
+                NativePlayerIcons.ICON_SUBTITLES,
+                { lastState.subtitleStreamCount.takeIf { n -> n > 0 }?.toString() },
+            ) { openPanel(PANEL_SUBTITLE) },
             lp(dp(32), dp(32)),
         )
         trailingGroup.addView(
-            badgeButton(NativePlayerIcons.ICON_AUDIO_TRACK, { lastState.audioStreamCount.toString() }) {
-                openPanel(PANEL_AUDIO)
-            },
+            badgeButton(
+                NativePlayerIcons.ICON_AUDIO_TRACK,
+                { lastState.audioStreamCount.takeIf { n -> n > 0 }?.toString() },
+            ) { openPanel(PANEL_AUDIO) },
             lp(dp(32), dp(32)),
         )
         trailingGroup.addView(
-            badgeButton(NativePlayerIcons.ICON_PLAYLIST_PLAY, { lastState.episodes.size.toString() }) {
-                openPanel(PANEL_EPISODE)
-            },
+            badgeButton(
+                NativePlayerIcons.ICON_PLAYLIST_PLAY,
+                { lastState.episodes.size.takeIf { n -> n > 0 }?.toString() },
+            ) { openPanel(PANEL_EPISODE) },
             lp(dp(32), dp(32)),
         )
         // 倍速胶囊（TV）
@@ -681,7 +736,7 @@ class NativePlayerScreenView(
         onClick: () -> Unit,
     ): FrameLayout {
         val host = FrameLayout(context)
-        host.addView(iconButton(codePoint, onClick), lp(dp(24), dp(24)))
+        host.addView(iconButton(codePoint, onClick), lp(dp(24), dp(24), Gravity.CENTER))
         val badge = TextView(context).apply {
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.BADGE_FONT)
@@ -692,11 +747,22 @@ class NativePlayerScreenView(
                 setColor(NPTheme.ACCENT)
             }
         }
-        host.addView(badge, lp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(NPTheme.BADGE_MIN)))
+        host.addView(badge, badgeLayoutParams(dp(NPTheme.BADGE_MIN)))
         // 角标数量在 applyState 中刷新
         badgeTags[badge] = badgeProvider
         return host
     }
+
+    /**
+     * 角标定位：贴图标右上角（Flutter _buildControlButton 的
+     * Positioned(right: -6, top: -4)）。32dp 命中框内图标 24dp 居中，
+     * 换算到命中框坐标为 top=0 / marginEnd=-2。
+     */
+    private fun badgeLayoutParams(widthDp: Int): LayoutParams =
+        LayoutParams(widthDp, dp(NPTheme.BADGE_MIN), Gravity.TOP or Gravity.END).apply {
+            topMargin = 0
+            marginEnd = -dp(2)
+        }
 
     /** 角标刷新表（TextView → 数量提供者）。 */
     private val badgeTags = HashMap<TextView, () -> String?>()
@@ -1357,12 +1423,33 @@ class NativePlayerScreenView(
             ),
         )
 
+        // 传输组：单集/电影只保留播放键（prev/next 空占位），多集才显示图标；
+        // 不可达时置灰（与 Flutter white24 一致）。
+        val multiEpisode = state.episodes.size > 1
+        val hasPrevEp = state.currentEpisodeIndex > 0
+        val hasNextEp = state.currentEpisodeIndex >= 0 &&
+            state.currentEpisodeIndex + 1 < state.episodes.size
+        prevButton.text = if (multiEpisode) {
+            String(Character.toChars(NativePlayerIcons.ICON_SKIP_PREVIOUS))
+        } else {
+            ""
+        }
+        nextButton.text = if (multiEpisode) {
+            String(Character.toChars(NativePlayerIcons.ICON_SKIP_NEXT))
+        } else {
+            ""
+        }
+        prevButton.setTextColor(if (hasPrevEp) Color.WHITE else NPTheme.WHITE_24)
+        nextButton.setTextColor(if (hasNextEp) Color.WHITE else NPTheme.WHITE_24)
+        prevButton.isEnabled = multiEpisode && hasPrevEp
+        nextButton.isEnabled = multiEpisode && hasNextEp
+
         // 角标
         badgeTags.forEach { (badge, provider) ->
             val text = provider()
             badge.text = text ?: ""
             badge.visibility = if (text.isNullOrEmpty()) GONE else VISIBLE
-            badge.layoutParams = lp(dp(14 + text.orEmpty().length * 5), dp(NPTheme.BADGE_MIN))
+            badge.layoutParams = badgeLayoutParams(dp(14 + text.orEmpty().length * 5))
         }
 
         // 顶栏网速
@@ -1389,7 +1476,6 @@ class NativePlayerScreenView(
         diagText.visibility = if (state.showDebug && diag.isNotEmpty()) VISIBLE else GONE
 
         // 缓冲指示：仅缓冲中显示，暂停态也保持可见（与 Flutter 加载遮罩一致）。
-        bufferingView.text = if (state.buffering) "缓冲中" else ""
         bufferingView.visibility = if (state.buffering) VISIBLE else GONE
 
         // TV / 手机布局差异
@@ -1420,7 +1506,8 @@ class NativePlayerScreenView(
 
         // Logo（房间模式/无图时隐藏）
         val showLogo = state.logoUrl != null && state.logoUrl!!.isNotEmpty() && !state.isRoom
-        logoImage.visibility = if (showLogo) VISIBLE else GONE
+        // 网络加载失败时加载器会隐藏 logoImage（与 Flutter EmbyImage 一致）。
+        NativeLogoLoader.load(logoImage, if (showLogo) state.logoUrl else null)
         logoSpacer.visibility = if (showLogo) GONE else VISIBLE
 
         // 锁定态：只显示锁钮

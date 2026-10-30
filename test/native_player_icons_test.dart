@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -132,4 +133,112 @@ void main() {
     expect(pack, contains('MaterialIcons-Regular.otf'),
         reason: 'ohos_pack.sh 未拷贝图标字体到 HAP rawfile');
   });
+
+  test('全部图标码点在两端字体 cmap 中真实存在', () {
+    // v1.5.5 真机回归「图标全灭」的防复发：码点在源码里对了，不代表字体里
+    // 有对应字形（字体被换/裁剪、码点超出字库范围时控件渲染为空）。
+    for (final path in <String>[
+      'android/app/src/main/res/font/material_icons.otf',
+      'ohos/entry/src/main/resources/rawfile/MaterialIcons-Regular.otf',
+    ]) {
+      final codepoints = _fontCodepoints(File(path).readAsBytesSync());
+      for (final entry in jsonIcons.entries) {
+        expect(codepoints.contains(entry.value), isTrue,
+            reason:
+                '$path 缺少 ${entry.key} 的字形 0x${entry.value.toRadixString(16)}');
+      }
+    }
+  });
+
+  test('图标字体族名唯一且注册链路完整（防 MaterialIcons 族名冲突回归）', () {
+    // Flutter 引擎按 FontManifest 注册 'MaterialIcons'（flutter_assets 子集），
+    // 自注册字体若同名会被覆盖/冲突，真机表现为图标渲染成空或乱码。
+    const family = 'HimiIcons';
+    final icons = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'NativePlayerIcons.ets',
+    ).readAsStringSync();
+    expect(icons, contains("FONT_FAMILY: string = '$family'"),
+        reason: '鸿蒙图标字体族名必须为 $family（与 Flutter 占用的 MaterialIcons 隔离）');
+
+    final entry = File('ohos/entry/src/main/ets/entryability/EntryAbility.ets')
+        .readAsStringSync();
+    expect(entry, contains("const ICON_FONT_FAMILY = '$family'"),
+        reason: 'EntryAbility 注册族名与 NativePlayerIcons.FONT_FAMILY 不一致');
+    // 现行注册 API：font.registerFont 自 API 18 废弃（旧调用可能静默失效）。
+    expect(entry, contains('getFont().registerFont'),
+        reason: 'EntryAbility 缺 UIContext.getFont().registerFont 现行注册');
+    expect(entry, contains('font.registerFont('),
+        reason: 'EntryAbility 应保留 font.registerFont 兼容兜底');
+
+    for (final path in <String>[
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+          'HimiNativePlayerView.ets',
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+          'NativePlayerPanel.ets',
+    ]) {
+      final src = File(path).readAsStringSync();
+      expect(src.contains("'MaterialIcons'"), isFalse,
+          reason: '$path 仍引用 Flutter 占用的 MaterialIcons 族名');
+      expect(src, contains('NativePlayerIcons.FONT_FAMILY'));
+    }
+  });
+
+  test('ArkTS 控件层不得内嵌 PUA 裸字形字符（不可见字符维护陷阱）', () {
+    // 图标一律走 String.fromCodePoint(...)，裸字符嵌在源码里不可见、
+    // 极易引错码点（v1.5.5 曾混入 0xE9B8 野码点）。
+    final pua = RegExp(r"Text\('[\u{E000}-\u{F8FF}]'\)", unicode: true);
+    for (final path in <String>[
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+          'HimiNativePlayerView.ets',
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+          'NativePlayerPanel.ets',
+    ]) {
+      final src = File(path).readAsStringSync();
+      expect(pua.hasMatch(src), isFalse, reason: '$path 含 PUA 裸字形字面量');
+    }
+  });
+}
+
+/// 解析 sfnt/OTF 的 cmap 表，返回全部已编码码点（支持 format 4/12）。
+Set<int> _fontCodepoints(List<int> bytes) {
+  final data = ByteData.sublistView(Uint8List.fromList(bytes));
+  final numTables = data.getUint16(4);
+  final result = <int>{};
+  for (var i = 0; i < numTables; i++) {
+    final rec = 12 + i * 16;
+    final tag = String.fromCharCodes(
+      List.generate(4, (k) => data.getUint8(rec + k)),
+    );
+    if (tag != 'cmap') continue;
+    final off = data.getUint32(rec + 8);
+    final numSub = data.getUint16(off + 2);
+    for (var j = 0; j < numSub; j++) {
+      final sub = off + data.getUint32(off + 4 + j * 8 + 4);
+      final fmt = data.getUint16(sub);
+      if (fmt == 4) {
+        final segX2 = data.getUint16(sub + 6);
+        final seg = segX2 ~/ 2;
+        for (var s = 0; s < seg; s++) {
+          final end = data.getUint16(sub + 14 + s * 2);
+          final start = data.getUint16(sub + 16 + segX2 + s * 2);
+          if (start == 0xFFFF && end == 0xFFFF) continue;
+          for (var c = start; c <= end; c++) {
+            result.add(c);
+          }
+        }
+      } else if (fmt == 12) {
+        final groups = data.getUint32(sub + 12);
+        for (var g = 0; g < groups; g++) {
+          final start = data.getUint32(sub + 16 + g * 12);
+          final end = data.getUint32(sub + 20 + g * 12);
+          for (var c = start; c <= end; c++) {
+            result.add(c);
+          }
+        }
+      }
+    }
+    break;
+  }
+  return result;
 }

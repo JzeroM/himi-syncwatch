@@ -5,7 +5,13 @@
  * 一致性由 test/native_player_icons_test.dart 校验，禁止手改单个数字。
  */
 export class NativePlayerIcons {
-  static readonly FONT_FAMILY: string = 'MaterialIcons';
+  /**
+   * 图标字体族名。刻意**不叫** 'MaterialIcons'：Flutter 引擎会按
+   * FontManifest 注册同名字体族（flutter_assets 里的 18KB 子集），与自
+   * 注册字体冲突时图标会渲染成空/乱码（v1.5.5 真机回归「图标全灭」）。
+   * 注册入口唯一：EntryAbility（entry 模块 rawfile，$rawfile 只解析 entry）。
+   */
+  static readonly FONT_FAMILY: string = 'HimiIcons';
   static readonly FONT_RAWFILE: string = 'MaterialIcons-Regular.otf';
 
   /** arrowBack */

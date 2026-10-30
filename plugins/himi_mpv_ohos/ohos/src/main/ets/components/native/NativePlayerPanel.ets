@@ -21,6 +21,7 @@ import {
   NativeVersionUi,
   NativeEngineOptionUi,
 } from './HimiMpvNativeHost';
+import { NativePlayerIcons } from './NativePlayerIcons';
 
 /** 倍速档位（与 Flutter speedOptions 完全一致）。 */
 const SPEED_STEPS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
@@ -274,7 +275,7 @@ export struct NativePlayerPanel {
   SegmentRow(icon: number, title: string, hint: string, kind: string) {
     Row() {
       Text(String.fromCodePoint(icon))
-        .fontFamily('MaterialIcons')
+        .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(22)
         .fontColor(Color.White)
         .width(22);
@@ -294,7 +295,7 @@ export struct NativePlayerPanel {
       .margin({ left: 10 });
 
       Text(String.fromCodePoint(0xE15F))
-        .fontFamily('MaterialIcons')
+        .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(18)
         .fontColor('#62FFFFFF')
         .width(18);
