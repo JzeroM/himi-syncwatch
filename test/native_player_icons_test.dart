@@ -100,7 +100,10 @@ void main() {
 
   test('两端字体文件已内置', () {
     for (final path in <String>[
-      'android/app/src/main/assets/fonts/MaterialIcons-Regular.otf',
+      // Android 字体走 res/font（资源 ID 加载），不能放 src/main/assets：
+      // assets 会与 Flutter 的 flutter_assets 合并目录冲突，冲突时 Flutter
+      // 引擎加载不到资源 → 整个 APK 黑屏（见下方 assets 目录断言）。
+      'android/app/src/main/res/font/material_icons.otf',
       // 鸿蒙字体必须放 entry 模块的 rawfile：插件 HAR 的 resources 不会
       // 合并进应用包，只有 entry rawfile 会被打进 HAP（$rawfile 解析到此）。
       'ohos/entry/src/main/resources/rawfile/MaterialIcons-Regular.otf',
@@ -110,6 +113,16 @@ void main() {
       expect(file.lengthSync(), greaterThan(100000),
           reason: '$path 体积异常（可能被占位文件替换）');
     }
+  });
+
+  test('Android 不得预置 src/main/assets（防 APK 黑屏回归）', () {
+    // Flutter 构建会把 flutter_assets 写进 android/app/src/main/assets/。
+    // 若仓库里预置同名目录及文件，Gradle 资源合并会冲突，导致 Flutter
+    // 引擎拿不到 AssetManifest → 整个 APK 黑屏（v1.5.5 真机回归）。
+    // Android 侧自有资源一律走 res/（如 res/font），不要放 assets。
+    final assets = Directory('android/app/src/main/assets');
+    expect(assets.existsSync(), isFalse,
+        reason: 'android/app/src/main/assets 不应存在（会与 flutter_assets 合并冲突致 APK 黑屏）');
   });
 
   test('打包脚本会把鸿蒙字体拷进 HAP', () {

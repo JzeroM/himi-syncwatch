@@ -2,6 +2,7 @@ package com.himi.syncwatch.nativeplayer
 
 import android.content.Context
 import android.graphics.Typeface
+import com.himi.syncwatch.R
 
 /**
  * 原生控制层图标码点（Material Icons）。
@@ -11,7 +12,6 @@ import android.graphics.Typeface
  */
 object NativePlayerIcons {
     const val FONT_FAMILY = "MaterialIcons"
-    const val FONT_ASSET = "fonts/MaterialIcons-Regular.otf"
 
     /** arrowBack */
     const val ICON_ARROW_BACK = 0xE092
@@ -145,20 +145,27 @@ object NativePlayerIcons {
     /** closeFullscreen */
     const val ICON_CLOSE_FULLSCREEN = 0xE16B
 
-    // ── 字体加载（内置 MaterialIcons-Regular.otf）──────────────────
+    // ── 字体加载（内置 res/font/material_icons.otf）────────────────
 
     @Volatile
     private var cached: Typeface? = null
 
     /**
-     * 内置图标字体：assets/fonts/MaterialIcons-Regular.otf。加载失败
-     * （文件被裁剪/资产未打进 APK）时回退系统默认字体——图标会显示成
-     * 方框/缺字，但不崩溃（渲染层其余控件不受影响）。
+     * 内置图标字体：res/font/material_icons.otf（经资源 ID 加载）。
+     *
+     * 为什么走 res/font 而不是 assets：`android/app/src/main/assets/`
+     * 会与 Flutter 的 `flutter_assets` 合并目录冲突，冲突时 Flutter 引擎
+     * 加载不到资源 → 整个 APK 黑屏。res/font 走 Android 资源管线，
+     * 与 Flutter 资源完全隔离。
+     *
+     * 加载失败（文件被裁剪/资源未打进 APK）时回退系统默认字体——图标
+     * 显示成方框/缺字，但不崩溃（渲染层其余控件不受影响）。
      */
     fun typeface(context: Context): Typeface {
         cached?.let { return it }
         return try {
-            val tf = Typeface.createFromAsset(context.assets, FONT_ASSET)
+            @Suppress("DEPRECATION")
+            val tf = context.resources.getFont(R.font.material_icons)
             cached = tf
             tf
         } catch (_: Throwable) {
