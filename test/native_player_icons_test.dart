@@ -101,13 +101,22 @@ void main() {
   test('两端字体文件已内置', () {
     for (final path in <String>[
       'android/app/src/main/assets/fonts/MaterialIcons-Regular.otf',
-      'plugins/himi_mpv_ohos/ohos/src/main/resources/rawfile/'
-          'MaterialIcons-Regular.otf',
+      // 鸿蒙字体必须放 entry 模块的 rawfile：插件 HAR 的 resources 不会
+      // 合并进应用包，只有 entry rawfile 会被打进 HAP（$rawfile 解析到此）。
+      'ohos/entry/src/main/resources/rawfile/MaterialIcons-Regular.otf',
     ]) {
       final file = File(path);
       expect(file.existsSync(), isTrue, reason: '$path 缺失');
       expect(file.lengthSync(), greaterThan(100000),
           reason: '$path 体积异常（可能被占位文件替换）');
     }
+  });
+
+  test('打包脚本会把鸿蒙字体拷进 HAP', () {
+    // ohos_pack.sh 重建 HAP 时按白名单拷贝 rawfile 项；字体漏拷会导致
+    // 原生控制层图标全部渲染为空框（EntryAbility 注册失败）。
+    final pack = File('scripts/ohos_pack.sh').readAsStringSync();
+    expect(pack, contains('MaterialIcons-Regular.otf'),
+        reason: 'ohos_pack.sh 未拷贝图标字体到 HAP rawfile');
   });
 }
