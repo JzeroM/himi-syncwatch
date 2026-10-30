@@ -636,8 +636,25 @@ plugins {
 
 一致性测试做三层比对：Dart 常量 ↔ `Icons.xxx.codePoint`（保证与 Flutter
 同款）↔ Kotlin `NPTheme` / ArkTS 源码字面量（保证原生真用同一套数值）。
-图标字体 `MaterialIcons-Regular.otf` 内置到 Android assets 与鸿蒙 rawfile，
-鸿蒙侧在 `EntryAbility.onCreate` 用 `font.registerFont` 注册。
+
+**鸿蒙字体打包陷阱（踩过一次，务必按此放置）**
+
+图标字体 `MaterialIcons-Regular.otf`（1.6MB）必须放在
+`ohos/entry/src/main/resources/rawfile/`，两处原因缺一不可：
+
+1. `$rawfile('MaterialIcons-Regular.otf')` 只解析到 **entry 模块**的
+   rawfile；插件 HAR 的 `resources/` 不会合并进应用包；
+2. `scripts/ohos_pack.sh` 重建 HAP 时按**白名单**拷贝 rawfile 项，目前只拷
+   `flutter_assets` / `buildinfo.json5` / `MaterialIcons-Regular.otf`。
+   新增 rawfile 资源时若忘了同步加白名单，资源不会进包。
+
+曾经的 bug：字体放在插件 HAR 的 rawfile → 既不合并、又没进白名单 →
+HAP 里根本没有字体 → `EntryAbility` 注册失败 → 原生控制层所有图标渲染成
+空框。`test/native_player_icons_test.dart` 已加两条断言锁死（字体位于
+entry rawfile、打包脚本含字体拷贝），改路径或删白名单会直接测试失败。
+
+Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
+`NativePlayerIcons.typeface()` 用 `Typeface.createFromAsset` 加载。
 
 **协议扩展（Phase 2.5）**
 
