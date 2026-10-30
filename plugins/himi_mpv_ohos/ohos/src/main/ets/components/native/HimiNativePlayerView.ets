@@ -523,6 +523,13 @@ export struct HimiNativePlayerView {
           .width(this.timeCellWidth())
           .textAlign(TextAlign.Start);
       }
+      // TV 长按进度条 → 片头片尾标记卡（与 Flutter onLongPress 一致）。
+      .gesture(
+        LongPressGesture().onAction((): void => {
+          this.pokeAutoHide();
+          HimiMpvNativeHost.getInstance().togglePanel(NativePlayerPanelType.segment);
+        }),
+      )
       .width('100%')
       .alignItems(VerticalAlign.Center);
 

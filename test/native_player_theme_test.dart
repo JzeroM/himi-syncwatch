@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart' show Color;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/player/native/native_player_theme.dart';
 

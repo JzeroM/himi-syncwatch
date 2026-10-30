@@ -28,6 +28,27 @@ const SPEED_STEPS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
 /** 解码模式档位（与 Dart `decodeMode` 取值一致）。 */
 const DECODE_MODES: string[] = ['auto', 'hw', 'sw'];
 
+/**
+ * 播放时间格式化：与 Dart `formatPlayerDuration` 一致——有小时用
+ * `HH:MM:SS`（全补零），否则 `MM:SS`（分钟补零）。片头片尾卡显示标记位置用。
+ */
+function formatPlayerTime(ms: number): string {
+  if (ms < 0 || !Number.isFinite(ms)) {
+    return '00:00';
+  }
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = m < 10 ? `0${m}` : `${m}`;
+  const ss = s < 10 ? `0${s}` : `${s}`;
+  if (h > 0) {
+    const hh = h < 10 ? `0${h}` : `${h}`;
+    return `${hh}:${mm}:${ss}`;
+  }
+  return `${mm}:${ss}`;
+}
+
 /** 解码模式中文标签。 */
 function decodeModeLabel(mode: string): string {
   if (mode === 'auto') {
@@ -80,6 +101,8 @@ const RIM_COLOR = '#33FFFFFF';
 export struct NativePlayerPanel {
   @Prop panelType: string = '';
   @Prop revision: number = 0;
+  /** 片头片尾二次确认上下文（'' = 无，'intro' / 'outro' = 待确认）。 */
+  @State confirmKind: string = '';
 
   private host: HimiMpvNativeHost = HimiMpvNativeHost.getInstance();
 
@@ -118,51 +141,195 @@ export struct NativePlayerPanel {
           this.close();
         }));
 
-      // ── 右侧玻璃浮层（照抄 SelectorSidePanel 定位：贴右 12 / 宽 320）──
-      Column() {
-        // 标题（照抄：fontSize 15 加粗，左对齐，padding h16）
-        Text(this.titleText())
-          .fontSize(15)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 10, bottom: 4 })
-          .textAlign(TextAlign.Start);
-
-        // 内容区（按类型）
-        if (this.panelType === 'speed') {
-          this.SpeedContent();
-        } else if (this.panelType === 'audio') {
-          this.TrackContent(this.audioTracks(), this.state().selectedAudioId, false);
-        } else if (this.panelType === 'subtitle') {
-          this.SubtitleContent();
-        } else if (this.panelType === 'episode') {
-          this.EpisodeContent();
-        } else if (this.panelType === 'version') {
-          this.VersionContent();
-        } else if (this.panelType === 'kernel') {
-          this.KernelContent();
-        } else if (this.panelType === 'display') {
-          this.DisplayContent();
-        } else if (this.panelType === 'decode') {
-          this.DecodeContent();
-        }
+      // ── 片头片尾：居中玻璃卡（照抄 SegmentMarkPanel，非右侧浮层）──
+      if (this.panelType === 'segment') {
+        this.SegmentCard();
+      } else {
+        this.SidePanel();
       }
-      .width(320)
-      .constraintSize({ maxHeight: '72%' })
-      .backgroundColor(PANEL_TINT)
-      .backgroundBlurStyle(BlurStyle.Thin)
-      .border({ width: 1, color: RIM_COLOR })
-      .borderRadius(16)
-      .clip(true)
-      // 贴右；上避顶栏（48），下避控制条（116），与 Flutter selectorPanelBox 一致。
-      .position({ x: '100%', y: 0 })
-      .markAnchor({ x: '100%', y: '0%' })
-      .margin({ right: 12, top: 48, bottom: 116 })
-      .animation({ duration: 180, curve: Curve.EaseOut });
     }
     .width('100%')
     .height('100%')
+  }
+
+  /** 右侧玻璃浮层（除片头片尾外的全部面板）。 */
+  @Builder
+  SidePanel() {
+    Column() {
+      // 标题（照抄：fontSize 15 加粗，左对齐，padding h16）
+      Text(this.titleText())
+        .fontSize(15)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Color.White)
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 10, bottom: 4 })
+        .textAlign(TextAlign.Start);
+
+      // 内容区（按类型）
+      if (this.panelType === 'speed') {
+        this.SpeedContent();
+      } else if (this.panelType === 'audio') {
+        this.TrackContent(this.audioTracks(), this.state().selectedAudioId, false);
+      } else if (this.panelType === 'subtitle') {
+        this.SubtitleContent();
+      } else if (this.panelType === 'episode') {
+        this.EpisodeContent();
+      } else if (this.panelType === 'version') {
+        this.VersionContent();
+      } else if (this.panelType === 'kernel') {
+        this.KernelContent();
+      } else if (this.panelType === 'display') {
+        this.DisplayContent();
+      } else if (this.panelType === 'decode') {
+        this.DecodeContent();
+      }
+    }
+    .width(320)
+    .constraintSize({ maxHeight: '72%' })
+    .backgroundColor(PANEL_TINT)
+    .backgroundBlurStyle(BlurStyle.Thin)
+    .border({ width: 1, color: RIM_COLOR })
+    .borderRadius(16)
+    .clip(true)
+    // 贴右；上避顶栏（48），下避控制条（116），与 Flutter selectorPanelBox 一致。
+    .position({ x: '100%', y: 0 })
+    .markAnchor({ x: '100%', y: '0%' })
+    .margin({ right: 12, top: 48, bottom: 116 })
+    .animation({ duration: 180, curve: Curve.EaseOut });
+  }
+
+  /**
+   * 片头片尾居中玻璃卡（360 宽、圆角 18）。
+   *
+   * 已有标记时点行进入**原生**二次确认（更新当前位置 / 清除 / 取消）——
+   * Flutter `showDialog` 在原生双窗之上不可见，必须在原生层实现。
+   * 确认态由 @State 驱动，确认后回落。
+   */
+  @Builder
+  SegmentCard() {
+    Column() {
+      Text(this.confirmKind.length > 0
+        ? (this.confirmKind === 'intro' ? '片头已设置' : '片尾已设置')
+        : '片头片尾')
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Color.White)
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 6 });
+
+      if (this.confirmKind.length > 0) {
+        Text(`当前标记：${this.existingMarkText(this.confirmKind)}\n要用当前位置更新，还是清除？`)
+          .fontSize(12)
+          .fontColor('#8AFFFFFF')
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 0, bottom: 10 });
+
+        Row() {
+          Blank();
+          Text('取消')
+            .fontSize(13)
+            .fontColor(SEL_COLOR)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick((): void => {
+              this.confirmKind = '';
+            });
+          Text('清除')
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(SEL_COLOR)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick((): void => {
+              this.host.optimisticClearSegmentMark(this.confirmKind);
+              this.confirmKind = '';
+            });
+          Text('更新')
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(SEL_COLOR)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick((): void => {
+              this.host.optimisticSetSegmentMark(this.confirmKind);
+              this.confirmKind = '';
+            });
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 0, bottom: 12 })
+        .justifyContent(FlexAlign.End);
+      } else {
+        this.SegmentRow(0xE5BD, '片头', this.markHint('intro'), 'intro');
+        this.SegmentRow(0xE5BE, '片尾', this.markHint('outro'), 'outro');
+      }
+    }
+    .width(360)
+    .backgroundColor(PANEL_TINT)
+    .backgroundBlurStyle(BlurStyle.Thin)
+    .border({ width: 1, color: RIM_COLOR })
+    .borderRadius(18)
+    .clip(true)
+    .alignItems(HorizontalAlign.Start);
+  }
+
+  /** 片头片尾单行（icon 22 / 标题 14 / 提示 11 / chevron 18）。 */
+  @Builder
+  SegmentRow(icon: number, title: string, hint: string, kind: string) {
+    Row() {
+      Text(String.fromCodePoint(icon))
+        .fontFamily('MaterialIcons')
+        .fontSize(22)
+        .fontColor(Color.White)
+        .width(22);
+
+      Column() {
+        Text(title)
+          .fontSize(14)
+          .fontColor(Color.White)
+          .width('100%');
+        Text(hint)
+          .fontSize(11)
+          .fontColor('#8AFFFFFF')
+          .width('100%');
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      .margin({ left: 10 });
+
+      Text(String.fromCodePoint(0xE15F))
+        .fontFamily('MaterialIcons')
+        .fontSize(18)
+        .fontColor('#62FFFFFF')
+        .width(18);
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .onClick((): void => {
+      // 无标记：直接以当前位置标记；有标记：进入二次确认。
+      if (this.hasMark(kind)) {
+        this.confirmKind = kind;
+      } else {
+        this.host.optimisticSetSegmentMark(kind);
+      }
+    });
+  }
+
+  /** 已有标记文本（无则「无」）。 */
+  private existingMarkText(kind: string): string {
+    const s = this.state();
+    const ms: number | null = kind === 'intro' ? s.segmentIntroEndMs : s.segmentOutroStartMs;
+    return ms === null ? '无' : formatPlayerTime(ms);
+  }
+
+  /** 是否已有该类标记。 */
+  private hasMark(kind: string): boolean {
+    const s = this.state();
+    return kind === 'intro' ? s.segmentIntroEndMs !== null : s.segmentOutroStartMs !== null;
+  }
+
+  /** 行提示文本：已标记显示时间，否则提示可标记。 */
+  private markHint(kind: string): string {
+    return this.hasMark(kind)
+      ? `已标记 ${this.existingMarkText(kind)}`
+      : '点击以当前位置标记';
   }
 
   private titleText(): string {

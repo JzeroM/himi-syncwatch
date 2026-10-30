@@ -83,8 +83,11 @@ class NativePlayerScreenView(
     /** 解码 popover 是否展开（与右侧面板互斥；仅手机）。 */
     private var decodePopoverOpen = false
 
-    /** 片头片尾卡片的二次确认上下文（null = 无卡片）。 */
+    /** 片头片尾卡片的二次确认上下文（null = 非确认态）。 */
     private var segmentConfirmKind: String? = null
+
+    /** 片头片尾卡片是否显示（与确认态解耦：卡片可无确认态显示）。 */
+    private var segmentCardOpen = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -152,8 +155,9 @@ class NativePlayerScreenView(
                 closePanel()
                 return@setOnClickListener
             }
-            if (decodePopoverOpen || segmentConfirmKind != null) {
+            if (decodePopoverOpen || segmentCardOpen) {
                 decodePopoverOpen = false
+                segmentCardOpen = false
                 segmentConfirmKind = null
                 renderOverlays()
                 return@setOnClickListener
@@ -214,6 +218,7 @@ class NativePlayerScreenView(
         setBackgroundColor(Color.TRANSPARENT)
         visibility = GONE
         setOnClickListener {
+            segmentCardOpen = false
             segmentConfirmKind = null
             renderOverlays()
         }
@@ -391,6 +396,17 @@ class NativePlayerScreenView(
                 scheduleAutoHide()
             }
         })
+        // TV 长按进度条 → 片头片尾标记卡片（与 Flutter onLongPress 一致）。
+        seekBar.setOnLongClickListener {
+            if (lastState.segmentEnabled && lastState.tvMode) {
+                segmentCardOpen = true
+                segmentConfirmKind = null
+                renderOverlays()
+                true
+            } else {
+                false
+            }
+        }
     }
 
     /** 播放组：上一集 / 播放暂停 / 下一集。 */
@@ -712,7 +728,7 @@ class NativePlayerScreenView(
     }
 
     /**
-     * 面板层总渲染：按 activePanel / decodePopoverOpen / segmentConfirmKind
+     * 面板层总渲染：按 activePanel / decodePopoverOpen / segmentCardOpen
      * 决定显示哪一层；无则全部隐藏。
      */
     private fun renderOverlays() {
@@ -767,10 +783,11 @@ class NativePlayerScreenView(
             decodePopover.visibility = GONE
         }
         // 片头片尾卡
-        if (segmentConfirmKind != null) {
+        if (segmentCardOpen) {
             renderSegmentCard()
         } else {
             segmentCard.visibility = GONE
+            segmentScrim.visibility = GONE
         }
     }
 
@@ -1179,14 +1196,20 @@ class NativePlayerScreenView(
             gravity = Gravity.END
             setPadding(dp(NPTheme.PANEL_PAD_H), 0, dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V))
         }
-        actions.addView(segmentAction("取消") { segmentConfirmKind = null; renderOverlays() })
+        actions.addView(segmentAction("取消") {
+            segmentCardOpen = false
+            segmentConfirmKind = null
+            renderOverlays()
+        })
         actions.addView(segmentAction("清除") {
             listener?.onClearSegmentMark(kind)
+            segmentCardOpen = false
             segmentConfirmKind = null
             renderOverlays()
         })
         actions.addView(segmentAction("更新") {
             listener?.onSetSegmentMark(kind, lastState.positionMs.toLong())
+            segmentCardOpen = false
             segmentConfirmKind = null
             renderOverlays()
         })
@@ -1255,6 +1278,8 @@ class NativePlayerScreenView(
         val existing = if (kind == "intro") lastState.segmentIntroEndMs else lastState.segmentOutroStartMs
         if (existing == null) {
             listener?.onSetSegmentMark(kind, lastState.positionMs.toLong())
+            segmentCardOpen = false
+            renderOverlays()
             return
         }
         segmentConfirmKind = kind
@@ -1343,7 +1368,7 @@ class NativePlayerScreenView(
         applyLayoutMode(state)
 
         // 面板开着时重建（高亮跟随）
-        if (activePanel != null || decodePopoverOpen || segmentConfirmKind != null) {
+        if (activePanel != null || decodePopoverOpen || segmentCardOpen) {
             renderOverlays()
         }
     }
