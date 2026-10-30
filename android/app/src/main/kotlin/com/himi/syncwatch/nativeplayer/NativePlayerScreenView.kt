@@ -168,18 +168,33 @@ class NativePlayerScreenView(
     /** 当前打开的二级面板（null = 无）。与鸿蒙 activePanel 同构。 */
     private var activePanel: String? = null
 
-    /** 面板遮罩：全屏半透明，点外关闭。 */
+    /** 面板遮罩：全屏透明（点外关闭；Flutter 面板不带暗遮罩）。 */
     private val panelScrim = View(context).apply {
-        setBackgroundColor(0x80000000.toInt())
+        setBackgroundColor(Color.TRANSPARENT)
         visibility = GONE
         setOnClickListener { closePanel() }
     }
 
-    /** 面板容器（底部圆角），按 activePanel 动态填充内容。 */
+    /**
+     * 面板容器：右侧玻璃浮层（照抄 Flutter SelectorSidePanel——贴右 12、
+     * 宽 320、上避顶栏 48、下避控制条 116、圆角 16、rim 边框）。
+     *
+     * Android 经典 View 跨窗口无法对 surface 真模糊，用「半透明着色 +
+     * rim 边框 + 圆角」近似 GlassContainer（见 Phase 2 样式对齐说明）。
+     */
     private val panelContainer = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(0xE61C1C1E.toInt())
         visibility = GONE
+        // 圆角 16 + 着色 + rim 边框（GradientDrawable 近似玻璃卡片）。
+        background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(16).toFloat()
+            setColor(PANEL_TINT)
+            setStroke(dp(1), RIM_COLOR)
+        }
+        clipToOutline = true
+        // 标题区留白：左 16 / 上 10 / 下 4（照抄 Flutter padding top:10 bottom:4）。
+        setPadding(0, dp(10), 0, dp(4))
     }
 
     private val tickRunnable = object : Runnable {
@@ -288,14 +303,18 @@ class NativePlayerScreenView(
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM),
         )
 
-        // 面板层（Phase 2）：遮罩 + 底部面板，浮于控件之上。
+        // 面板层（Phase 2）：透明遮罩 + 右侧玻璃浮层，浮于控件之上。
         addView(
             panelScrim,
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
         )
         addView(
             panelContainer,
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM),
+            LayoutParams(dp(PANEL_WIDTH_DP), LayoutParams.WRAP_CONTENT, Gravity.END or Gravity.TOP).apply {
+                rightMargin = dp(12)
+                topMargin = dp(48)
+                bottomMargin = dp(116)
+            },
         )
 
         // 底部条面板入口（倍速/音轨/字幕）。
@@ -394,67 +413,32 @@ class NativePlayerScreenView(
         else -> "设置"
     }
 
-    /** 面板标题行（标题 + 关闭）。 */
+    /** 面板标题（照抄 Flutter：fontSize 15 加粗、左对齐、无关闭钮）。 */
     private fun panelHeader(title: String): View {
-        val header = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(12), dp(8), dp(8))
+        return TextView(context).apply {
+            text = title
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.START
+            setPadding(dp(16), 0, dp(16), dp(4))
         }
-        header.addView(
-            TextView(context).apply {
-                text = title
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            },
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-        )
-        header.addView(
-            TextView(context).apply {
-                text = "✕"
-                setTextColor(0xCCFFFFFF.toInt())
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                setPadding(dp(12), dp(6), dp(12), dp(6))
-                setOnClickListener { closePanel() }
-            },
-        )
-        return header
     }
 
-    /** 倍速网格（4 列）。 */
+    /** 倍速：纵向列表（照抄 Flutter SpeedMenuPanel 的 ListView，非网格）。 */
     private fun buildSpeedContent() {
-        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         val state = lastState
-        var rowLayout: LinearLayout? = null
-        SPEED_STEPS.forEachIndexed { i, v ->
-            if (i % 4 == 0) {
-                rowLayout = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-                grid.addView(
-                    rowLayout,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ),
-                )
-            }
+        SPEED_STEPS.forEach { v ->
             val selected = Math.abs(state.speed - v) < 0.01
-            rowLayout!!.addView(
-                TextView(context).apply {
-                    text = "${v}x"
-                    setTextColor(if (selected) 0xFF4C8DFF.toInt() else Color.WHITE)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                    gravity = Gravity.CENTER
-                    setBackgroundColor(if (selected) 0x334C8DFF.toInt() else 0x1AFFFFFF.toInt())
-                    setPadding(dp(6), dp(14), dp(6), dp(14))
-                    setOnClickListener {
-                        listener?.onSetSpeed(v)
-                        closePanel()
-                    }
+            list.addView(
+                optionRow("${v}x", selected) {
+                    listener?.onSetSpeed(v)
+                    closePanel()
                 },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also { it.marginStart = dp(4); it.marginEnd = dp(4) },
             )
         }
-        panelContainer.addView(grid, panelMatch())
+        panelContainer.addView(wrapScroll(list), panelMatch())
     }
 
     /** 通用轨道列表（音轨/字幕）：首项可选「关闭」。 */
@@ -471,7 +455,7 @@ class NativePlayerScreenView(
         items.forEach { (label, meta) ->
             val (id, selected) = meta
             list.addView(
-                trackRow(label, selected) {
+                optionRow(label, selected) {
                     onSelect(id)
                     closePanel()
                 },
@@ -489,7 +473,7 @@ class NativePlayerScreenView(
         val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         items.forEach { (label, index) ->
             list.addView(
-                trackRow(label, index == selectedIndex) {
+                optionRow(label, index == selectedIndex) {
                     onSelect(index)
                     closePanel()
                 },
@@ -498,33 +482,39 @@ class NativePlayerScreenView(
         panelContainer.addView(wrapScroll(list), panelMatch())
     }
 
-    /** 单行：标签 + 选中标记。 */
-    private fun trackRow(label: String, selected: Boolean, onTap: () -> Unit): View {
+    /**
+     * 选项行（照抄 Flutter SideOptionRow）：文字左对齐、选中主色加粗、
+     * 右侧对勾占 18px 槽位（未选中也占位，保证各行对齐）、padding h16 v12。
+     */
+    private fun optionRow(label: String, selected: Boolean, onTap: () -> Unit): View {
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(13), dp(16), dp(13))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             isClickable = true
             setOnClickListener { onTap() }
             addView(
                 TextView(context).apply {
                     text = label
-                    setTextColor(if (selected) 0xFF4C8DFF.toInt() else Color.WHITE)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    setTextColor(if (selected) SEL_COLOR else Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    typeface = if (selected) android.graphics.Typeface.DEFAULT_BOLD
+                    else android.graphics.Typeface.DEFAULT
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 },
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
-            if (selected) {
-                addView(
-                    TextView(context).apply {
-                        text = "✓"
-                        setTextColor(0xFF4C8DFF.toInt())
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                    },
-                )
-            }
+            // 未选中占空位，保证各行文字/对勾对齐（与 Flutter SizedBox(width:18) 一致）。
+            addView(
+                TextView(context).apply {
+                    text = if (selected) "✓" else ""
+                    setTextColor(SEL_COLOR)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                    gravity = Gravity.CENTER
+                },
+                LinearLayout.LayoutParams(dp(18), LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
         }
     }
 
@@ -669,5 +659,15 @@ class NativePlayerScreenView(
         const val PANEL_EPISODE = "episode"
         const val PANEL_VERSION = "version"
         val SPEED_STEPS = doubleArrayOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0)
+
+        // ── Flutter 风格对齐（照抄 glass_config / selector_side_panel）──
+        /** 选中主色 Color(0xFF6366F1)。 */
+        const val SEL_COLOR = 0xFF6366F1.toInt()
+        /** 面板着色 GlassConfig.panelTint = 0x1F1A1D23。 */
+        const val PANEL_TINT = 0x1F1A1D23.toInt()
+        /** rim 边框近似色。 */
+        const val RIM_COLOR = 0x33FFFFFF
+        /** 面板宽（照抄 Flutter 侧 320）。 */
+        const val PANEL_WIDTH_DP = 320
     }
 }

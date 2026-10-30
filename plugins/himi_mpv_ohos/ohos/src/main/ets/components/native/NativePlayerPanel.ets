@@ -1,11 +1,16 @@
 /**
- * Phase 2 二级面板（计划书 §5.2）。
+ * Phase 2 二级面板（计划书 §5.2）——Flutter 风格对齐版。
  *
- * 单一模态容器 + 按 [panelType] 渲染对应内容：倍速 / 音轨 / 字幕 / 选集 /
- * 版本。所有交互经 [HimiMpvNativeHost] 的 optimistic* 方法乐观更新 + 回传
- * Dart；面板数据来自宿主权威快照的 tracks/episodes/versions。
+ * 视觉规格照抄 Flutter 侧（lib/screens/player/widgets/selector_side_panel.dart
+ * + glass_config.dart），保证 Surface 路径与 Texture 路径切换时观感一致：
+ * - 布局：右侧浮层（贴右 12，宽 320，上避顶栏、下避控制条），非底部弹出；
+ * - 容器：玻璃卡片（backdropEffect 真模糊 + 0x1F1A1D23 着色 + rim 边框，圆角 16）；
+ * - 选中态：靛蓝 #6366F1 + 加粗，右侧对勾占 18px 槽位对齐；
+ * - 倍速：纵向列表（与 Flutter ListView 一致，非网格）；
+ * - 排版：标题 15 加粗 / 选项行 14，padding h16 v12。
  *
- * 结构：半透明遮罩（点外关闭）+ 底部圆角面板（标题 + 列表）。
+ * 所有交互经 [HimiMpvNativeHost] 的 optimistic* 方法乐观更新 + 回传 Dart；
+ * 面板数据来自宿主权威快照的 tracks/episodes/versions。
  */
 
 import {
@@ -16,8 +21,15 @@ import {
   NativeVersionUi,
 } from './HimiMpvNativeHost';
 
-/** 倍速档位（与 Flutter 侧常用档一致）。 */
+/** 倍速档位（与 Flutter speedOptions 完全一致）。 */
 const SPEED_STEPS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
+
+/** 选中主色（照抄 Flutter Color(0xFF6366F1)）。 */
+const SEL_COLOR = '#6366F1';
+/** 面板着色（照抄 GlassConfig.panelTint = 0x1F1A1D23）。 */
+const PANEL_TINT = '#1F1A1D23';
+/** rim 边框（照抄 GlassConfig.rimColor 近似）。 */
+const RIM_COLOR = '#33FFFFFF';
 
 @Component
 export struct NativePlayerPanel {
@@ -53,41 +65,30 @@ export struct NativePlayerPanel {
 
   build() {
     Stack() {
-      // ── 遮罩：点外关闭 ──
+      // ── 遮罩：点外关闭（Flutter 面板不带遮罩，此处保留交互兜底）──
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
         .gesture(TapGesture().onAction((): void => {
           this.close();
         }));
 
-      // ── 面板主体（底部圆角）──
+      // ── 右侧玻璃浮层（照抄 SelectorSidePanel 定位：贴右 12 / 宽 320）──
       Column() {
-        // 标题行：面板名 + 关闭
-        Row() {
-          Text(this.titleText())
-            .fontSize(16)
-            .fontColor(Color.White)
-            .layoutWeight(1);
-          Text('✕')
-            .fontSize(18)
-            .fontColor('#CCFFFFFF')
-            .padding(8)
-            .onClick((): void => {
-              this.close();
-            });
-        }
-        .width('100%')
-        .padding({ left: 16, right: 8, top: 12, bottom: 8 });
-
-        Divider().color('#33FFFFFF').margin({ left: 16, right: 16 });
+        // 标题（照抄：fontSize 15 加粗，左对齐，padding h16）
+        Text(this.titleText())
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 10, bottom: 4 })
+          .textAlign(TextAlign.Start);
 
         // 内容区（按类型）
         if (this.panelType === 'speed') {
           this.SpeedContent();
         } else if (this.panelType === 'audio') {
-          this.TrackContent(this.audioTracks(), this.state().selectedAudioId, true);
+          this.TrackContent(this.audioTracks(), this.state().selectedAudioId, false);
         } else if (this.panelType === 'subtitle') {
           this.SubtitleContent();
         } else if (this.panelType === 'episode') {
@@ -96,12 +97,17 @@ export struct NativePlayerPanel {
           this.VersionContent();
         }
       }
-      .width('100%')
-      .backgroundColor('#E61C1C1E')
-      .borderRadius({ topLeft: 16, topRight: 16 })
-      .constraintSize({ maxHeight: '60%' })
-      .position({ x: 0, y: '100%' })
-      .markAnchor({ x: '0%', y: '100%' })
+      .width(320)
+      .constraintSize({ maxHeight: '72%' })
+      .backgroundColor(PANEL_TINT)
+      .backgroundBlurStyle(BlurStyle.Thin)
+      .border({ width: 1, color: RIM_COLOR })
+      .borderRadius(16)
+      .clip(true)
+      // 贴右；上避顶栏（48），下避控制条（116），与 Flutter selectorPanelBox 一致。
+      .position({ x: '100%', y: 0 })
+      .markAnchor({ x: '100%', y: '0%' })
+      .margin({ right: 12, top: 48, bottom: 116 })
       .animation({ duration: 180, curve: Curve.EaseOut });
     }
     .width('100%')
@@ -123,43 +129,52 @@ export struct NativePlayerPanel {
     return '设置';
   }
 
-  /** 倍速：档位网格。 */
+  /** 倍速：纵向列表（照抄 Flutter SpeedMenuPanel 的 ListView，非网格）。 */
   @Builder
   SpeedContent() {
-    Flex({ wrap: FlexWrap.Wrap }) {
+    List() {
       ForEach(SPEED_STEPS, (v: number) => {
-        Text(`${v}x`)
-          .fontSize(15)
-          .fontColor(Math.abs(this.state().speed - v) < 0.01 ? '#4C8DFF' : Color.White)
-          .width('25%')
-          .padding({ top: 14, bottom: 14 })
-          .textAlign(TextAlign.Center)
-          .backgroundColor(Math.abs(this.state().speed - v) < 0.01 ? '#334C8DFF' : '#1AFFFFFF')
-          .borderRadius(8)
-          .margin(4)
+        ListItem() {
+          Row() {
+            this.OptionLabel(`${v}x`, Math.abs(this.state().speed - v) < 0.01);
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
           .onClick((): void => {
             this.host.optimisticSetSpeed(v);
           });
+        }
       }, (v: number): string => `${v}`);
     }
     .width('100%')
-    .padding(12);
+    .layoutWeight(1)
+    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
   }
 
-  /** 轨道列表（音轨/字幕共用；[allowOff] 时首项为「关闭」）。 */
+  /** 轨道列表（音轨/字幕共用）。 */
   @Builder
   TrackContent(tracks: NativeTrackUi[], selectedId: number, allowOff: boolean) {
     List() {
       if (allowOff) {
         ListItem() {
-          this.TrackRow('关闭', selectedId === 0, (): void => {
+          Row() {
+            this.OptionLabel('关闭', selectedId === 0);
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+          .onClick((): void => {
             this.host.optimisticSelectSubtitle(0);
           });
         }
       }
       ForEach(tracks, (t: NativeTrackUi) => {
         ListItem() {
-          this.TrackRow(this.trackLabel(t), t.selected, (): void => {
+          Row() {
+            this.OptionLabel(this.trackLabel(t), t.selected);
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+          .onClick((): void => {
             if (this.panelType === 'audio') {
               this.host.optimisticSelectAudio(t.id);
             } else {
@@ -171,10 +186,10 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: '#22FFFFFF' });
+    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
   }
 
-  /** 字幕面板：音轨列表 + 关闭项。 */
+  /** 字幕面板：字幕轨列表 + 关闭项。 */
   @Builder
   SubtitleContent() {
     this.TrackContent(this.subtitleTracks(), this.state().selectedSubtitleId, true);
@@ -186,16 +201,21 @@ export struct NativePlayerPanel {
     List() {
       ForEach(this.state().episodes, (e: NativeEpisodeUi) => {
         ListItem() {
-          this.TrackRow(e.title.length > 0 ? e.title : `第 ${e.index + 1} 集`,
-            e.index === this.state().currentEpisodeIndex, (): void => {
-              this.host.optimisticSelectEpisode(e.index);
-            });
+          Row() {
+            this.OptionLabel(e.title.length > 0 ? e.title : `第 ${e.index + 1} 集`,
+              e.index === this.state().currentEpisodeIndex);
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+          .onClick((): void => {
+            this.host.optimisticSelectEpisode(e.index);
+          });
         }
       }, (e: NativeEpisodeUi): string => `${e.index}`);
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: '#22FFFFFF' });
+    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
   }
 
   /** 版本/线路列表。 */
@@ -204,36 +224,40 @@ export struct NativePlayerPanel {
     List() {
       ForEach(this.state().versions, (s: NativeVersionUi) => {
         ListItem() {
-          this.TrackRow(s.title.length > 0 ? s.title : `线路 ${s.index + 1}`,
-            s.index === this.state().currentVersionIndex, (): void => {
-              this.host.optimisticSelectVersion(s.index);
-            });
+          Row() {
+            this.OptionLabel(s.title.length > 0 ? s.title : `线路 ${s.index + 1}`,
+              s.index === this.state().currentVersionIndex);
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+          .onClick((): void => {
+            this.host.optimisticSelectVersion(s.index);
+          });
         }
       }, (s: NativeVersionUi): string => `${s.index}`);
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: '#22FFFFFF' });
+    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
   }
 
-  /** 通用行：标签 + 选中标记 + 点击。 */
+  /**
+   * 选项行内容（照抄 Flutter SideOptionRow）：文字左对齐、选中主色加粗、
+   * 右侧对勾占 18px 槽位（未选中也占位，保证各行对齐）。
+   */
   @Builder
-  TrackRow(label: string, selected: boolean, onTap: () => void) {
-    Row() {
-      Text(label)
-        .fontSize(15)
-        .fontColor(selected ? '#4C8DFF' : Color.White)
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis });
-      if (selected) {
-        Text('✓')
-          .fontSize(16)
-          .fontColor('#4C8DFF');
-      }
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 13, bottom: 13 })
-    .onClick(onTap);
+  OptionLabel(label: string, selected: boolean) {
+    Text(label)
+      .fontSize(14)
+      .fontWeight(selected ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(selected ? SEL_COLOR : Color.White)
+      .layoutWeight(1)
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis });
+    Text(selected ? '✓' : '')
+      .fontSize(18)
+      .fontColor(SEL_COLOR)
+      .width(18)
+      .textAlign(TextAlign.Center);
   }
 }
