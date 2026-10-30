@@ -273,6 +273,10 @@ class NativePlayerScreenView(
 
     /** 顶栏：返回 / 标题 / 网速 /（手机）倍速·内核·字幕样式·解码·画面比例·转屏 /（TV）时钟。 */
     private fun configureTopBar() {
+        // 幂等：重排（手机↔TV）会二次进入本函数，必须先清空容器，
+        // 否则对已有 parent 的子视图重复 addView 会抛 IllegalStateException。
+        topBar.removeAllViews()
+        clockWrap.removeAllViews()
         topBar.orientation = LinearLayout.HORIZONTAL
         topBar.gravity = Gravity.CENTER_VERTICAL
         topBar.setPadding(dp(12), dp(6), dp(12), dp(6))
@@ -473,8 +477,23 @@ class NativePlayerScreenView(
         }
     }
 
+    /** 底栏重排前清空所有容器（幂等）。 */
+    private fun clearBarContainers() {
+        bottomBar.removeAllViews()
+        seekRow.removeAllViews()
+        buttonRow.removeAllViews()
+        leadingGroup.removeAllViews()
+        transportGroup.removeAllViews()
+        trailingGroup.removeAllViews()
+        speedChip.removeAllViews()
+        bottomSpeedChip.removeAllViews()
+    }
+
     /** 底栏：Logo / 进度条 / 播放组（手机居中·TV 置左）/ 右侧图标组 / 诊断行。 */
     private fun configureBottomBar() {
+        // 幂等：重排（手机↔TV）会二次进入本函数，必须先清空所有容器，
+        // 否则对已有 parent 的子视图重复 addView 会抛 IllegalStateException。
+        clearBarContainers()
         bottomBar.orientation = LinearLayout.VERTICAL
         bottomBar.gravity = Gravity.START
         bottomBar.setPadding(dp(16), dp(10), dp(16), dp(12))
