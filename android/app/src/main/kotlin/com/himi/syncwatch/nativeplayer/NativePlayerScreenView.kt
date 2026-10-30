@@ -242,6 +242,17 @@ class NativePlayerScreenView(
         addView(topBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))
         addView(bottomBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
 
+        // 缓冲指示：居中半透明圆底 + 「缓冲中」，随 state.buffering 显隐。
+        bufferingView.apply {
+            setTextColor(NPTheme.WHITE_70)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = glassBackground(NPTheme.RADIUS_CHIP)
+            visibility = GONE
+        }
+        addView(bufferingView, lp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+
         // 面板层（二级浮层）：透明遮罩 + 右侧玻璃浮层 + 解码 popover + 片头片尾卡。
         addView(panelScrim, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(
@@ -1363,6 +1374,10 @@ class NativePlayerScreenView(
         val diag = buildDiag(state)
         diagText.text = diag
         diagText.visibility = if (state.showDebug && diag.isNotEmpty()) VISIBLE else GONE
+
+        // 缓冲指示：仅缓冲中显示，暂停态也保持可见（与 Flutter 加载遮罩一致）。
+        bufferingView.text = if (state.buffering) "缓冲中" else ""
+        bufferingView.visibility = if (state.buffering) VISIBLE else GONE
 
         // TV / 手机布局差异
         applyLayoutMode(state)
