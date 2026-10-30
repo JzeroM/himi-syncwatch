@@ -27,6 +27,8 @@ const DOMAIN = 0x0001;
 
 /** 选中主色（照抄 Flutter Color(0xFF6366F1)）。 */
 const SEL_COLOR = '#6366F1';
+/** TV 焦点环颜色（照抄 Flutter TvFocusable 的 #C1C2FE）。 */
+const FOCUS_RING_COLOR: string = '#C1C2FE';
 
 /** 控件自动隐藏延时（播放中）。 */
 const AUTO_HIDE_MS = 4000;
@@ -89,6 +91,8 @@ export struct HimiNativePlayerView {
   @State dragging: boolean = false;
   @State currentTime: string = '';
   @State activePanel: string = '';
+  /** TV 焦点态：记录当前聚焦控件的 key，条件描边实现焦点环。 */
+  @State focusedKey: string = '';
 
   private controller: MpvXComponentController = new MpvXComponentController();
   private listener: ViewListener | null = null;
@@ -434,30 +438,30 @@ export struct HimiNativePlayerView {
       }
       if (!this.state().tvMode && !this.state().isRoom) {
         this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`,
-          this.activePanel === NativePlayerPanelType.speed, (): void => {
+          this.activePanel === NativePlayerPanelType.speed, 'topSpeed', (): void => {
             this.openPanel(NativePlayerPanelType.speed);
           });
       }
       this.Chip(this.kernelGlyph(), this.state().engineLabel,
-        this.activePanel === NativePlayerPanelType.kernel, (): void => {
+        this.activePanel === NativePlayerPanelType.kernel, 'kernel', (): void => {
           this.openPanel(NativePlayerPanelType.kernel);
         });
       if (!this.state().tvMode) {
         this.IconChip(this.subtitleStyleGlyph(),
-          this.activePanel === NativePlayerPanelType.display, (): void => {
+          this.activePanel === NativePlayerPanelType.display, 'topDisplay', (): void => {
             this.openPanel(NativePlayerPanelType.display);
           });
         this.IconChip(this.decodeGlyph(),
-          this.activePanel === NativePlayerPanelType.decode, (): void => {
+          this.activePanel === NativePlayerPanelType.decode, 'decode', (): void => {
             this.openPanel(NativePlayerPanelType.decode);
           });
         this.IconChip(this.videoFitGlyph(),
-          false, (): void => {
+          false, 'videoFit', (): void => {
             this.pokeAutoHide();
             HimiMpvNativeHost.getInstance().optimisticCycleVideoFit();
           });
         this.IconChip(this.rotateGlyph(),
-          false, (): void => {
+          false, 'rotate', (): void => {
             this.pokeAutoHide();
             HimiMpvNativeHost.getInstance().optimisticToggleOrientation();
           });
@@ -550,14 +554,14 @@ export struct HimiNativePlayerView {
   ControlRow() {
     Stack({ alignContent: Alignment.Center }) {
       Row() {
-        this.TransportGlyph(this.prevGlyph(), 28, this.hasPrev(), (): void => {
+        this.TransportGlyph(this.prevGlyph(), 28, this.hasPrev(), 'prev', (): void => {
           this.pokeAutoHide();
           this.onPrevEpisode();
         });
-        this.TransportGlyph(this.playGlyph(), 36, this.state().canControl, (): void => {
+        this.TransportGlyph(this.playGlyph(), 36, this.state().canControl, 'play', (): void => {
           this.onTogglePlay();
         });
-        this.TransportGlyph(this.nextGlyph(), 28, this.hasNext(), (): void => {
+        this.TransportGlyph(this.nextGlyph(), 28, this.hasNext(), 'next', (): void => {
           this.pokeAutoHide();
           this.onNextEpisode();
         });
@@ -568,39 +572,39 @@ export struct HimiNativePlayerView {
 
       Row() {
         this.IconChip(this.danmakuGlyph(),
-          this.state().danmakuEnabled, (): void => {
+          this.state().danmakuEnabled, 'danmaku', (): void => {
             this.pokeAutoHide();
             HimiMpvNativeHost.getInstance().optimisticToggleDanmaku();
           });
         if (this.showVersionButton()) {
           this.IconChip(this.versionGlyph(),
-            this.activePanel === NativePlayerPanelType.version, (): void => {
+            this.activePanel === NativePlayerPanelType.version, 'version', (): void => {
               this.openPanel(NativePlayerPanelType.version);
             });
         }
         if (this.state().tvMode) {
           this.IconChip(this.subtitleStyleGlyph(),
-            this.activePanel === NativePlayerPanelType.display, (): void => {
+            this.activePanel === NativePlayerPanelType.display, 'tvDisplay', (): void => {
               this.openPanel(NativePlayerPanelType.display);
             });
         }
         this.IconChip(this.subtitleGlyph(),
-          this.activePanel === NativePlayerPanelType.subtitle, (): void => {
+          this.activePanel === NativePlayerPanelType.subtitle, 'subtitle', (): void => {
             this.openPanel(NativePlayerPanelType.subtitle);
           });
         this.IconChip(this.audioGlyph(),
-          this.activePanel === NativePlayerPanelType.audio, (): void => {
+          this.activePanel === NativePlayerPanelType.audio, 'audio', (): void => {
             this.openPanel(NativePlayerPanelType.audio);
           });
         if (this.showEpisodeButton()) {
           this.IconChip(this.playlistGlyph(),
-            this.activePanel === NativePlayerPanelType.episode, (): void => {
+            this.activePanel === NativePlayerPanelType.episode, 'episode', (): void => {
               this.openPanel(NativePlayerPanelType.episode);
             });
         }
         if (this.state().tvMode && !this.state().isRoom) {
           this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`,
-            this.activePanel === NativePlayerPanelType.speed, (): void => {
+            this.activePanel === NativePlayerPanelType.speed, 'bottomSpeed', (): void => {
               this.openPanel(NativePlayerPanelType.speed);
             });
         }
@@ -630,7 +634,7 @@ export struct HimiNativePlayerView {
 
   /** 文字胶囊（倍速/内核/TV 倍速）。 */
   @Builder
-  Chip(icon: string, label: string, active: boolean, onTap: () => void) {
+  Chip(icon: string, label: string, active: boolean, key: string, onTap: () => void) {
     Row() {
       Text(icon)
         .fontFamily('MaterialIcons')
@@ -647,28 +651,51 @@ export struct HimiNativePlayerView {
     .padding({ left: 9, right: 9, top: 6, bottom: 6 })
     .backgroundColor('#26FFFFFF')
     .borderRadius(10)
+    // TV 遥控器可达：可聚焦 + 聚焦时 3px #C1C2FE 焦点环（照抄 Flutter
+    // TvFocusable 的描边观感），非 TV 设备 focusable 不影响触摸。
+    .focusable(true)
+    .focusOnTouch(true)
+    .border(this.focusedKey === key
+      ? { width: 3, color: FOCUS_RING_COLOR, radius: 10 }
+      : { width: 0, color: Color.Transparent })
+    .onFocus((): void => { this.focusedKey = key; })
+    .onBlur((): void => { this.focusedKey = ''; })
     .onClick(onTap);
   }
 
   /** 图标玻璃方块（字幕样式/解码/画面比例/转屏/底栏图标组）。 */
   @Builder
-  IconChip(icon: string, active: boolean, onTap: () => void) {
+  IconChip(icon: string, active: boolean, key: string, onTap: () => void) {
     Text(icon)
       .fontFamily('MaterialIcons')
       .fontSize(24)
       .fontColor(active ? SEL_COLOR : Color.White)
       .padding(8)
+      .focusable(true)
+      .focusOnTouch(true)
+      .border(this.focusedKey === key
+        ? { width: 3, color: FOCUS_RING_COLOR, radius: 12 }
+        : { width: 0, color: Color.Transparent })
+      .onFocus((): void => { this.focusedKey = key; })
+      .onBlur((): void => { this.focusedKey = ''; })
       .onClick(onTap);
   }
 
   /** 传输组按钮（上一集/播放/下一集）。 */
   @Builder
-  TransportGlyph(icon: string, size: number, enabled: boolean, onTap: () => void) {
+  TransportGlyph(icon: string, size: number, enabled: boolean, key: string, onTap: () => void) {
     Text(icon)
       .fontFamily('MaterialIcons')
       .fontSize(size)
       .fontColor(enabled ? Color.White : '#3DFFFFFF')
       .padding(4)
+      .focusable(enabled)
+      .focusOnTouch(true)
+      .border(this.focusedKey === key
+        ? { width: 3, color: FOCUS_RING_COLOR, radius: 12 }
+        : { width: 0, color: Color.Transparent })
+      .onFocus((): void => { this.focusedKey = key; })
+      .onBlur((): void => { this.focusedKey = ''; })
       .onClick((): void => {
         if (enabled) {
           onTap();
