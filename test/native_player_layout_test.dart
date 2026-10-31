@@ -575,6 +575,25 @@ void main() {
       ).readAsStringSync();
       expect(kotlinGlass, contains('SAMPLE_INTERVAL_MS = 600L'));
       expect(kotlinGlass, contains('panelRect'));
+
+      // 采样位图与面板矩形必须 1:1：PixelCopy 的 Rect 重载要求目标位图
+      // 与源矩形同尺寸，否则抛 IllegalArgumentException → 玻璃永远
+      // 回落 tint（静默功能回归，真机才看得出）。
+      expect(kotlinGlass, isNot(contains('GLASS_BLUR_DOWNSAMPLE')),
+          reason: '按面板矩形采样后不得再降采样位图');
+    });
+
+    test('玻璃采样器关闭即真停（不得留回调空转偷帧）', () {
+      // stopGlassSampling() 的 removeCallbacks 拦不住「已出队、正在跑」
+      // 的那一棒；runnable 内必须自查开关再决定重排，否则面板关掉后
+      // 每秒仍 PixelCopy 一次 → 视频卡顿永不复原。
+      final match = RegExp(
+        r'glassSampleRunnable = object : Runnable \{[\s\S]*?\n    \}',
+      ).firstMatch(kotlinScreen);
+      expect(match, isNotNull, reason: '未找到 glassSampleRunnable');
+      final body = match!.group(0)!;
+      expect(body, contains('if (!glassSampling) return'),
+          reason: 'runnable 必须先自查 glassSampling 再重排');
     });
   });
 

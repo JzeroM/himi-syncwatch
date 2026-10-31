@@ -699,9 +699,13 @@ class NativePlayerScreenView(
         dp(NPTheme.RADIUS_CARD).toFloat(),
     )
 
-    /** 面板打开期间的采样节拍（4fps；关闭即停，零开销）。 */
+    /** 面板打开期间的采样节拍（~1.7fps；关闭即停，零开销）。 */
     private val glassSampleRunnable = object : Runnable {
         override fun run() {
+            // 必须自查：stopGlassSampling() 的 removeCallbacks 拦不住「已出队、
+            // 正在执行」的这一棒，若不返回会再排一个 —— 面板关闭后采样器
+            // 永久空转（每秒 PixelCopy，无面板也在偷帧 → 卡顿永不消失）。
+            if (!glassSampling) return
             glassPanel?.sampleAsync()
             glassCard?.sampleAsync()
             mainHandler.postDelayed(this, GlassBackdropDrawable.SAMPLE_INTERVAL_MS)
@@ -2480,7 +2484,7 @@ class NativePlayerScreenView(
         // 传输组重叠）。
         requestAdaptiveRelayout()
 
-        // 液态玻璃采样节拍：任一玻璃面/卡可见时开（4fps），全关即停。
+        // 液态玻璃采样节拍：任一玻璃面/卡可见时开（~1.7fps），全关即停。
         val glassActive =
             (panelContainer.visibility == VISIBLE && panelContainer.background === glassPanel) ||
                 (segmentCard.visibility == VISIBLE && segmentCard.background === glassCard)

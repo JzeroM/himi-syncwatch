@@ -15,10 +15,10 @@ import android.view.PixelCopy
 import android.view.SurfaceView
 
 /**
- * 液态玻璃背景（方案 A）：真采样 + 软模糊 + 边缘折射带 + 光学层。
+ * 液态玻璃背景（方案 A）：真采样 + 边缘折射带 + 光学层。
  *
- * - **采样**：PixelCopy 从 surface 窗（视频）截取帧，1/[GLASS_BLUR_DOWNSAMPLE]
- *   降采样——既是压缩又是**软模糊**（缩小再拉大 = 高斯近似，全版本可用）；
+ * - **采样**：PixelCopy 按面板屏幕矩形（`Rect` 重载）截取视频帧——只拷面板
+ *   那一块的像素，数据量比整帧小 ~30 倍，不阻塞 SurfaceFlinger 合成；
  * - **折射带**：面板边缘 [GLASS_REFRACTION_BAND]dp 带用
  *   [GLASS_REFRACTION_ZOOM] 倍放大帧（凸透镜边缘放大 = 液态玻璃典型折射观感）；
  * - **光学层**：tint 渐变（panelTint）+ rim 描边 + 顶部高光（菲涅尔近似）+
@@ -78,47 +78,36 @@ class GlassBackdropDrawable(
             null
         } ?: return
         if (surface.width <= 0 || surface.height <= 0) return
-        ensureSampleSize(surface.width, surface.height)
+        // 面板矩形未喂入时降级 tint（不清屏、绝不影响出画）。
+        if (panelRect.width() <= 2 || panelRect.height() <= 2) return
+        // 采样位图 = 面板矩形的逐像素副本（PixelCopy 目标必须与源矩形同尺寸；
+        // 模糊由 draw 时的 FILTER_BITMAP_FLAG + 折射带放大近似，不再靠降采样）。
+        ensureSampleSize(panelRect.width(), panelRect.height())
         val bmp = sample ?: return
         sampling = true
         try {
             // 只采面板矩形（panelRect），大幅降低 GPU→CPU 拷贝量。
-            if (panelRect.width() > 2 && panelRect.height() > 2) {
-                PixelCopy.request(
-                    surface,
-                    panelRect,
-                    bmp,
-                    { result ->
-                        sampling = false
-                        if (result == PixelCopy.SUCCESS) {
-                            invalidateSelf()
-                        }
-                    },
-                    mainHandler,
-                )
-            } else {
-                // 面板矩形未知时降级整帧采样（首次打开面板）。
-                PixelCopy.request(
-                    surface,
-                    bmp,
-                    { result ->
-                        sampling = false
-                        if (result == PixelCopy.SUCCESS) {
-                            invalidateSelf()
-                        }
-                    },
-                    mainHandler,
-                )
-            }
+            // 注意：这里是 surface 窗坐标，panelRect 已由宿主按窗坐标喂入。
+            PixelCopy.request(
+                surface,
+                panelRect,
+                bmp,
+                { result ->
+                    sampling = false
+                    if (result == PixelCopy.SUCCESS) {
+                        invalidateSelf()
+                    }
+                },
+                mainHandler,
+            )
         } catch (_: Throwable) {
             sampling = false
         }
     }
 
     /**
-     * 面板在屏幕上的矩形（像素）。由宿主在每次绘制前喂入——采样位图是
-     * **整个 surface 窗**，绘制时必须把它映射到面板所占的那一块，否则
-     * 会把整帧视频缩到面板里（真机截图回归「面板显示缩小版全视频」）。
+     * 面板在屏幕上的矩形（像素）。由宿主在每次绘制前喂入——PixelCopy 只
+     * 拷贝这一块，绘制时直接铺满面板 bounds（1:1，不做整窗换算）。
      */
     fun setPanelScreenRect(left: Int, top: Int, right: Int, bottom: Int) {
         panelRect.set(left, top, right, bottom)
@@ -130,10 +119,10 @@ class GlassBackdropDrawable(
         surfaceH = height
     }
 
-    /** 采样位图按目标尺寸（重）建；窗尺寸变化时重建。 */
-    private fun ensureSampleSize(windowW: Int, windowH: Int) {
-        val w = (windowW / NPTheme.GLASS_BLUR_DOWNSAMPLE).coerceAtLeast(2)
-        val h = (windowH / NPTheme.GLASS_BLUR_DOWNSAMPLE).coerceAtLeast(2)
+    /** 采样位图按面板尺寸（重）建；面板尺寸变化时重建。 */
+    private fun ensureSampleSize(panelW: Int, panelH: Int) {
+        val w = panelW.coerceAtLeast(2)
+        val h = panelH.coerceAtLeast(2)
         val cur = sample
         if (cur == null || cur.width != w || cur.height != h) {
             try {
@@ -198,14 +187,15 @@ class GlassBackdropDrawable(
     }
 
     /**
-     * 采样帧绘制：把**面板所占的那一块**从整帧采样里取出来铺满面板。
+     * 采样帧绘制：把面板采样铺满面板 bounds。
      *
-     * 采样位图是整个 surface 窗（视频区）。旧实现 `drawBitmap(bmp, null, rect)`
-     * 把整帧拉伸铺满面板矩形 → 面板里显示「缩小版全视频」（真机截图回归）。
-     * 正确做法：面板屏幕矩形 → 位图源矩形（按采样比例缩放），再画到面板 bounds。
+     * 采样位图**就是**面板矩形本身（PixelCopy 只拷 panelRect），因此源矩形
+     * 恒为整张位图（1:1）。若把位图当成「整窗的一块」去换算，
+     * 会取到面板之外的内容（采样图里根本没有）→ 玻璃错位/空白。
      */
     private fun drawRefractedSample(canvas: Canvas, bmp: Bitmap, rect: RectF) {
-        val src = panelSourceRect(bmp) ?: return
+        if (bmp.width < 2 || bmp.height < 2) return
+        val src = android.graphics.Rect(0, 0, bmp.width, bmp.height)
         canvas.drawBitmap(bmp, src, rect, paint)
 
         // 折射带：边缘 band 用放大 zoom 倍的同源区（凸透镜观感）。
@@ -271,8 +261,8 @@ class GlassBackdropDrawable(
     /**
      * 面板屏幕矩形 → 采样位图源矩形（纯映射，JVM 可单测）。
      *
-     * 位图覆盖整个 surface 窗，面板是其中一块，按 `bmp/surface` 比例缩放
-     * 并夹到位图范围内。数据缺失或结果过小返回 null（降级 tint）。
+     * PixelCopy 只拷贝面板矩形，位图恒等于面板；这里只做数据校验。
+     * 数据缺失或结果过小返回 null（降级 tint）。
      */
     private fun panelSourceRect(bmp: Bitmap): android.graphics.Rect? =
         mapPanelToSource(
@@ -292,9 +282,13 @@ class GlassBackdropDrawable(
         1f
     }
 
-    /** 宿主在 surface 窗尺寸已知时调用，按需（重）建采样位图。 */
-    fun prepare(windowW: Int, windowH: Int) {
-        ensureSampleSize(windowW, windowH)
+    /**
+     * 预留（宿主布局完成后调用）。采样位图尺寸现由面板矩形决定，故只按
+     * 当前已知面板矩形建一次；面板未定位时是空操作。
+     */
+    fun prepare() {
+        if (panelRect.width() <= 2 || panelRect.height() <= 2) return
+        ensureSampleSize(panelRect.width(), panelRect.height())
     }
 
     override fun setAlpha(alpha: Int) {
@@ -326,9 +320,11 @@ class GlassBackdropDrawable(
         /**
          * 面板屏幕矩形 → 采样位图源矩形（纯函数，JVM 可单测）。
          *
-         * 位图覆盖整个 surface 窗，面板是其中一块，按 `bmp/surface` 比例
-         * 缩放并夹到位图范围内。数据缺失或结果过小返回 null（降级 tint），
-         * 绝不画错（黑屏红线：面板失败不能影响出画）。
+         * 【契约】PixelCopy 只拷贝面板矩形，因此**位图恒等于面板**：源矩形
+         * 就是整张位图 `(0, 0, bmpW, bmpH)`。旧实现把位图当「整窗的一块」按
+         * `bmpW/surfaceW` 换算，在面板矩形采样下会取到面板之外的内容（玻璃
+         * 错位 / 空白）。数据缺失或结果过小返回 null（降级 tint），绝不画错
+         * （黑屏红线：面板失败不能影响出画）。
          */
         fun mapPanelToSource(
             panelLeft: Int,
@@ -342,14 +338,12 @@ class GlassBackdropDrawable(
         ): android.graphics.Rect? {
             if (panelRight <= panelLeft || panelBottom <= panelTop) return null
             if (surfaceW <= 0 || surfaceH <= 0 || bmpW <= 0 || bmpH <= 0) return null
-            val kx = bmpW.toDouble() / surfaceW
-            val ky = bmpH.toDouble() / surfaceH
-            val left = (panelLeft * kx).toInt().coerceIn(0, bmpW)
-            val top = (panelTop * ky).toInt().coerceIn(0, bmpH)
-            val right = (panelRight * kx).toInt().coerceIn(0, bmpW)
-            val bottom = (panelBottom * ky).toInt().coerceIn(0, bmpH)
-            if (right - left < 2 || bottom - top < 2) return null
-            return android.graphics.Rect(left, top, right, bottom)
+            // 采样源是 surface 窗；面板矩形必须落在窗内（越界 = 脏数据，降级）。
+            if (panelLeft < 0 || panelTop < 0) return null
+            if (panelRight > surfaceW || panelBottom > surfaceH) return null
+            if (bmpW < 2 || bmpH < 2) return null
+            // 位图 = 面板的逐像素副本 → 源矩形即整张位图。
+            return android.graphics.Rect(0, 0, bmpW, bmpH)
         }
 
         /** 安全工厂：任何异常返回 null（调用方降级 tint），绝不抛出。 */
