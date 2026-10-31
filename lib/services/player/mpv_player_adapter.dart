@@ -300,10 +300,14 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   /// 画面比例 → mpv 显示属性（真机回归：原生 UI 下 _videoFit 只改图标，
   /// 画面纹丝不动 →「点了没反应」。BoxFit 语义必须落到 mpv 属性）：
-  /// - contain 自适应：保持宽高比完整显示；
+  /// - contain 自适应：keepaspect 保持宽高比完整显示（letterbox）；
   /// - cover 裁剪：panscan=1 裁边填满；
   /// - fill 铺满：keepaspect=no 拉伸变形；
   /// - none 原始：video-unscaled=yes 1:1 像素。
+  ///
+  /// 注意：**不设** video-aspect-override——该属性取值语义随 mpv 版本漂移
+  ///（-1/no/0），设错会把画面拉变形（真机「竖屏比例不对」的高危源）。
+  /// keepaspect 自带按元数据显示宽高比（含旋转元数据）。
   Future<void> applyVideoFit(String fit) async {
     final player = _player;
     if (player == null) return;
@@ -312,13 +316,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
           'keepaspect': 'yes',
           'panscan': '1.0',
           'video-unscaled': 'no',
-          'video-aspect-override': '-1',
         },
       'fill' => <String, String>{
           'keepaspect': 'no',
           'panscan': '0',
           'video-unscaled': 'no',
-          'video-aspect-override': '-1',
         },
       'none' => <String, String>{
           'video-unscaled': 'yes',
@@ -328,7 +330,6 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
           'keepaspect': 'yes',
           'panscan': '0',
           'video-unscaled': 'no',
-          'video-aspect-override': '-1',
         },
     };
     for (final entry in props.entries) {
@@ -977,6 +978,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 最近一次落到 mpv 的画面比例（避免重复设置）。
   String _appliedVideoFit = '';
 
+  /// 最近解析的显示宽高（旋转互换后；尺寸变化重放 fit 的判据）。
+  int _lastVideoW = 0;
+  int _lastVideoH = 0;
+
   /// 弹幕全量列表（PlayerScreen 解析后注入；原生 UI 的弹幕渲染数据源）。
   List<DanmakuComment> _nativeDanmakuComments = const [];
 
@@ -1341,9 +1346,24 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     try {
       final decoded = jsonDecode(value);
       if (decoded is! Map<String, dynamic>) return;
-      final w = (decoded['w'] as num?)?.round() ?? 0;
-      final h = (decoded['h'] as num?)?.round() ?? 0;
+      var w = (decoded['w'] as num?)?.round() ?? 0;
+      var h = (decoded['h'] as num?)?.round() ?? 0;
       if (w <= 0 || h <= 0) return;
+      // 旋转元数据：mpv 显示时自动转 90/270 → UI 宽高互换（诊断/letterbox
+      // 计算用显示宽高；真机回归「竖屏视频比例不对」的元数据来源）。
+      final rotate = ((decoded['rotate'] as num?)?.round() ?? 0) % 360;
+      if (rotate == 90 || rotate == 270) {
+        final t = w;
+        w = h;
+        h = t;
+      }
+      // 尺寸变化（含旋转翻转）后重放画面比例——引擎重载/旋转会重置 mpv 属性。
+      final dimsChanged = _lastVideoW != w || _lastVideoH != h;
+      if (dimsChanged && _lastVideoW > 0 && _appliedVideoFit.isNotEmpty) {
+        unawaited(applyVideoFit(_appliedVideoFit));
+      }
+      _lastVideoW = w;
+      _lastVideoH = h;
       final codec = (decoded['codec'] as String?) ?? '';
       _mediaInfo = AdapterMediaInfo(
         duration: _durationMs,

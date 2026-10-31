@@ -146,4 +146,7 @@ export class NativePlayerIcons {
   /** closeFullscreen */
   static readonly ICON_CLOSE_FULLSCREEN: number = 0xE16B;
 
+  /** share */
+  static readonly ICON_SHARE: number = 0xE593;
+
 }

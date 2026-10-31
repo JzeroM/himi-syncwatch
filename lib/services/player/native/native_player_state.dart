@@ -106,25 +106,49 @@ class NativeTrack {
 
 /// 选集快照。
 class NativeEpisode {
-  const NativeEpisode({required this.index, required this.title});
+  const NativeEpisode({
+    required this.index,
+    required this.title,
+    this.poster = '',
+    this.number = 0,
+  });
 
   final int index;
   final String title;
 
+  /// 剧集封面图 URL（空串 = 无图，原生侧画占位底色）。
+  final String poster;
+
+  /// 集号（>0 时卡片标题格式 `1.集名`，与 Flutter EpisodeSelectPanel 一致）。
+  final int number;
+
   factory NativeEpisode.fromJson(Map<Object?, Object?> json) => NativeEpisode(
         index: (json['index'] as num?)?.toInt() ?? 0,
         title: json['title'] as String? ?? '',
+        poster: json['poster'] as String? ?? '',
+        number: (json['number'] as num?)?.toInt() ?? 0,
       );
 
-  Map<String, Object?> toJson() =>
-      <String, Object?>{'index': index, 'title': title};
+  Map<String, Object?> toJson() => <String, Object?>{
+        'index': index,
+        'title': title,
+        'poster': poster,
+        'number': number,
+      };
+
+  /// 卡片标题：`1.集名`（number>0），否则原名（与 Flutter cardTitle 一致）。
+  String get cardTitle => number > 0 ? '$number.$title' : title;
 
   @override
   bool operator ==(Object other) =>
-      other is NativeEpisode && other.index == index && other.title == title;
+      other is NativeEpisode &&
+      other.index == index &&
+      other.title == title &&
+      other.poster == poster &&
+      other.number == number;
 
   @override
-  int get hashCode => Object.hash(index, title);
+  int get hashCode => Object.hash(index, title, poster, number);
 }
 
 /// 版本（线路）快照。

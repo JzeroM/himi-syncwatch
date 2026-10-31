@@ -127,13 +127,17 @@ export struct HimiNativePlayerView {
   /** TV 焦点态：记录当前聚焦控件的 key，条件描边实现焦点环。 */
   @State focusedKey: string = '';
 
-  /** 顶栏宽度 / 尾组内容宽（onAreaChange 喂入，转屏自适应缩放）。 */
+  /** 顶栏宽度 / 尾组内容宽（onAreaChange 喂入，转屏自适应收窄间距）。 */
   @State topRowW: number = 0;
   @State topTailW: number = 0;
+  /** 顶栏尾组间距（8→4→2→0 逐级收窄，全部控件保持可见）。 */
+  @State topGap: number = 8;
   /** 控件行宽度 / 传输组宽 / 右侧簇内容宽（同上）。 */
   @State ctrlRowW: number = 0;
   @State transportW: number = 0;
   @State bottomTailW: number = 0;
+  /** 底栏右侧簇间距（20→8→4→0 逐级收窄）。 */
+  @State bottomGap: number = 20;
 
   private controller: MpvXComponentController = new MpvXComponentController();
   private listener: ViewListener | null = null;
@@ -363,27 +367,39 @@ export struct HimiNativePlayerView {
   }
 
   /**
-   * 顶栏尾组缩放（Flutter FittedBox(scaleDown) 语义）：可用宽 = 总宽 -
-   * 返回钮 - 余量；不足则锚右等比缩小，转屏/小窗不出屏。
+   * 顶栏尾组间距自适应（真实收窄，不出屏）：
+   * 放量（实宽 ≤ 可用 85%）回 8；超出则逐级 8→4→2→0。
    */
-  private topTailScale(): number {
+  private adjustTopGap(): void {
     const avail = this.topRowW - 44 - 24;
     if (this.topTailW <= 0 || avail <= 0) {
-      return 1;
+      return;
     }
-    return Math.min(1, Math.max(0.2, avail / this.topTailW));
+    if (this.topTailW * 1.15 < avail) {
+      this.topGap = 8;
+    } else if (this.topTailW > avail) {
+      this.topGap = Math.max(0, this.topGap - 2);
+    }
   }
 
   /**
-   * 底栏右侧簇缩放：Flutter 三段布局里 transport 绝对居中，右侧簇可用宽
-   * =（行宽 - 传输组宽）/2；不足则锚右等比缩小。
+   * 底栏右侧簇间距自适应：放量回 20；超出逐级 20→8→4→0（可用宽 =
+   * (行宽-传输组)/2，与 Flutter PlayerBottomRow 三段语义一致）。
    */
-  private bottomTailScale(): number {
+  private adjustBottomGap(): void {
     const avail = (this.ctrlRowW - this.transportW) / 2 - 8;
     if (this.bottomTailW <= 0 || avail <= 0) {
-      return 1;
+      return;
     }
-    return Math.min(1, Math.max(0.2, avail / this.bottomTailW));
+    if (this.bottomTailW * 1.15 < avail) {
+      this.bottomGap = 20;
+    } else if (this.bottomTailW > avail) {
+      if (this.bottomGap > 8) {
+        this.bottomGap = 8;
+      } else {
+        this.bottomGap = Math.max(0, this.bottomGap - 2);
+      }
+    }
   }
 
   /** 版本/线路角标：显示线路数（与 Flutter sources.length 一致）。 */
@@ -528,7 +544,7 @@ export struct HimiNativePlayerView {
         .layoutWeight(1)
         .margin({ left: 4, right: 8 });
       // 右侧簇：项间距 8（Flutter SizedBox(8) 链）。
-      Row({ space: 8 }) {
+      Row({ space: this.topGap }) {
         if (this.state().networkSpeedText.length > 0) {
           Text(this.state().networkSpeedText)
             .fontSize(12)
@@ -549,19 +565,33 @@ export struct HimiNativePlayerView {
             this.activePanel === NativePlayerPanelType.display, 'topDisplay', (): void => {
               this.openPanel(NativePlayerPanelType.display);
             });
-          this.IconChip(this.decodeGlyph(), 18, 6, true,
-            this.activePanel === NativePlayerPanelType.decode, 'decode', (): void => {
-              this.openPanel(NativePlayerPanelType.decode);
-            });
-          this.IconChip(this.videoFitGlyph(), 22, 6, false,
-            false, 'videoFit', (): void => {
-              this.pokeAutoHide();
-              HimiMpvNativeHost.getInstance().optimisticCycleVideoFit();
-            });
+          // 解码：Erika 无解码档位 → 隐藏（对齐 Flutter）。
+          if (this.state().engineLabel !== 'Erika') {
+            this.IconChip(this.decodeGlyph(), 18, 6, true,
+              this.activePanel === NativePlayerPanelType.decode, 'decode', (): void => {
+                this.openPanel(NativePlayerPanelType.decode);
+              });
+          }
+          // 画面比例：Erika 缩放不可用、房间不显示（对齐 Flutter）。
+          if (!this.state().isRoom && this.state().engineLabel !== 'Erika') {
+            this.IconChip(this.videoFitGlyph(), 22, 6, false,
+              false, 'videoFit', (): void => {
+                this.pokeAutoHide();
+                HimiMpvNativeHost.getInstance().optimisticCycleVideoFit();
+              });
+          }
           this.IconChip(this.rotateGlyph(), 22, 6, false,
             false, 'rotate', (): void => {
               this.pokeAutoHide();
               HimiMpvNativeHost.getInstance().optimisticToggleOrientation();
+            });
+        }
+        // 分享（仅房间模式；对齐 Flutter showShare）。
+        if (this.state().isRoom) {
+          this.IconChip(String.fromCodePoint(NativePlayerIcons.ICON_SHARE), 22, 6, false,
+            false, 'share', (): void => {
+              this.pokeAutoHide();
+              HimiMpvNativeHost.getInstance().shareRoom();
             });
         } else {
           Text(this.currentTime)
@@ -573,13 +603,12 @@ export struct HimiNativePlayerView {
         }
       }
       .alignItems(VerticalAlign.Center)
-      // 尾组自适应：markAnchor 仅作**变换锚点**（scale 缩向右缘），不参与
-      // 布局定位——此前用 position(百分比) 随父容器基准跑到屏幕中部
-      //（真机回归「控件位置偏差」）。
-      .markAnchor({ x: '100%', y: '50%' })
-      .scale({ x: this.topTailScale(), y: this.topTailScale() })
+      // 尾组自适应：真实收窄间距（8→4→2→0）。markAnchor/position 都会
+      // 真实位移布局（百分比基准随父容器漂移 → 控件跑位/被推出屏外，
+      // 真机回归），scale 只改绘制不改占位——全部弃用。
       .onAreaChange((_old: Area, area: Area): void => {
         this.topTailW = area.width as number;
+        this.adjustTopGap();
       });
     }
     .width('100%')
@@ -708,7 +737,7 @@ export struct HimiNativePlayerView {
       });
 
       // 右侧簇：项间距 20（Flutter SizedBox(20) 链）。
-      Row({ space: 20 }) {
+      Row({ space: this.bottomGap }) {
         this.IconChip(this.danmakuGlyph(), 24, 4, false,
           this.state().danmakuEnabled, 'danmaku', (): void => {
             this.pokeAutoHide();
@@ -748,15 +777,14 @@ export struct HimiNativePlayerView {
         }
       }
       .alignItems(VerticalAlign.Center)
-      // 右侧簇自适应：流式布局（width 100% + justify End 贴右）+ markAnchor
-      // 仅作变换锚点（scale 缩向右缘）。position(百分比) 会随父容器基准
-      // 跑位（真机回归「控件位置偏差/点不到」）。
+      // 右侧簇自适应：真实收窄间距（20→8→4→0），justify End 贴右。
+      // markAnchor/position 真实位移布局（跑位回归）、scale 不改占位（溢出
+      // 回归），全部弃用。
       .width('100%')
       .justifyContent(FlexAlign.End)
-      .markAnchor({ x: '100%', y: '50%' })
-      .scale({ x: this.bottomTailScale(), y: this.bottomTailScale() })
       .onAreaChange((_old: Area, area: Area): void => {
         this.bottomTailW = area.width as number;
+        this.adjustBottomGap();
       });
 
       // 左侧簇：手机模式锁钮（Flutter 底栏 leading 槽 PlayerLockButton）。

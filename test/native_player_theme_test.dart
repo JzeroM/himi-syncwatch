@@ -319,6 +319,76 @@ void main() {
           reason: '鸿蒙插件缺命令入队方法');
     });
 
+    test('安卓玻璃采样源必须是 SurfaceView（防黑底面板回归）', () {
+      // 真机回归：PixelCopy(window) 采到控件窗透明层 = 黑底；视频在
+      // setZOrderOnTop 的 SurfaceView 图层，必须用 SurfaceView 重载。
+      final glass = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'GlassBackdrop.kt',
+      ).readAsStringSync();
+      expect(RegExp(r'PixelCopy\.request\(\s*surface').hasMatch(glass), isTrue,
+          reason: '玻璃采样必须走 PixelCopy(SurfaceView) 重载');
+      expect(glass.contains('PixelCopy.request(\n                window'), isFalse,
+          reason: '禁用 PixelCopy(Window)（采样源是透明控件窗 → 黑底）');
+    });
+
+    test('安卓锁定态必须整体隐藏控件层（只留锁钮）', () {
+      // 真机回归：锁定分支只隐藏 transport/trailing → 顶栏/进度条仍显示。
+      final block = RegExp(r'锁定态（对齐 Flutter _buildLockOnlyControls）[\s\S]{0,700}')
+          .firstMatch(screen);
+      expect(block, isNotNull, reason: '未找到锁定态渲染分支');
+      final b = block!.group(0)!;
+      expect(b, contains('topBar.visibility = GONE'));
+      expect(b, contains('seekRow.visibility = GONE'));
+    });
+
+    test('安卓自适应必须真实收窄间距（禁 scale）', () {
+      // 真机回归：scaleX/Y 只改绘制不改测量宽度 → 流式溢出仍出屏。
+      expect(screen, contains('applyGroupGap'),
+          reason: '自适应须真实收窄间距（applyGroupGap）');
+      expect(screen.contains('trailingGroup.scaleX'), isFalse,
+          reason: '禁用 scale 自适应（不改占位会出屏）');
+    });
+
+    test('选集卡片必须带 16:9 封面（两端对齐 Flutter EpisodeSelectPanel）', () {
+      expect(screen, contains('NativeLogoLoader.load(this, ep.poster'),
+          reason: '安卓选集卡片须加载封面图');
+      final panel = File(
+        'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+        'NativePlayerPanel.ets',
+      ).readAsStringSync();
+      expect(panel, contains('Image(e.poster)'),
+          reason: '鸿蒙选集卡片须渲染封面图');
+      expect(panel, contains('aspectRatio(16 / 9)'),
+          reason: '鸿蒙选集封面须 16:9');
+    });
+
+    test('房间分享按钮全链（对齐 Flutter showShare）', () {
+      // 命令类 + 解析 + 两端发送 + Dart handler。
+      final cmd = File(
+        'lib/services/player/native/native_player_command.dart',
+      ).readAsStringSync();
+      expect(cmd, contains('class ShareRoom'));
+      expect(cmd, contains("case 'shareRoom'"));
+      final host = File(
+        'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+        'HimiMpvNativeHost.ets',
+      ).readAsStringSync();
+      expect(host, contains("sendCommand('shareRoom'"));
+      expect(screen, contains('shareButton'),
+          reason: '安卓顶栏须有分享按钮');
+    });
+
+    test('fit 映射禁设 video-aspect-override（竖屏比例防回归）', () {
+      // 该属性取值语义随 mpv 版本漂移（-1/no/0），设错把画面拉变形。
+      // 断言属性**设置**（引号键），不误伤解释性注释。
+      final adapter = File(
+        'lib/services/player/mpv_player_adapter.dart',
+      ).readAsStringSync();
+      expect(adapter.contains("'video-aspect-override'"), isFalse,
+          reason: 'applyVideoFit 禁设 video-aspect-override（版本语义漂移）');
+    });
+
     test('安卓 .apply 不得接在 Runnable/object 表达式后（控件层 GONE 回归）', () {
       // 真机回归：glassSampleRunnable 的 object 表达式后接 .apply，Kotlin 解析
       // 到外层 this（根视图）→ 整个控件层被 setVisibility(GONE) →「只有画面
@@ -339,6 +409,13 @@ void main() {
       // 布局 + markAnchor 变换锚。
       expect(RegExp(r"\.position\(\{[^}]*x: '100%'").hasMatch(view), isFalse,
           reason: '鸿蒙控件禁止 position 百分比定位（须流式布局 + markAnchor）');
+      // markAnchor 同样真实位移布局（debug26 回归），尾组禁用。
+      expect(RegExp(r"markAnchor\(\{ x: '100%'").hasMatch(view), isFalse,
+          reason: '鸿蒙尾组禁用 markAnchor（会把控件推出屏外）');
+      expect(view, contains('adjustTopGap'),
+          reason: '鸿蒙顶栏须真实收窄间距（adjustTopGap）');
+      expect(view, contains('adjustBottomGap'),
+          reason: '鸿蒙底栏须真实收窄间距（adjustBottomGap）');
     });
   });
 

@@ -86,6 +86,15 @@ export class NativeTrackUi {
 export class NativeEpisodeUi {
   index: number = 0;
   title: string = '';
+  /** 剧集封面图 URL（选集卡片 16:9 缩略图；空 = 占位底色）。 */
+  poster: string = '';
+  /** 集号（>0 时卡片标题 `1.集名`，与 Flutter cardTitle 一致）。 */
+  number: number = 0;
+
+  /** 卡片标题：`1.集名`（number>0），否则原名。 */
+  cardTitle(): string {
+    return this.number > 0 ? `${this.number}.${this.title}` : this.title;
+  }
 }
 
 /** 原生弹幕项（与 Dart `NativeDanmakuItem.toJson` 字段一致）。 */
@@ -163,6 +172,8 @@ function parseEpisodes(v: ESObject): NativeEpisodeUi[] {
       const src = arr[i] as Record<string, Object>;
       item.index = jsonNum(src['index'], 0);
       item.title = jsonStr(src['title'], '');
+      item.poster = jsonStr(src['poster'], '');
+      item.number = jsonNum(src['number'], 0);
       out.push(item);
     }
   }
@@ -693,6 +704,11 @@ export class HimiMpvNativeHost {
     this.state.locked = !this.state.locked;
     this.sendCommand('toggleLock', null);
     this.notify();
+  }
+
+  /** 房间分享（顶栏分享按钮；对齐 Flutter onShare → _showShareRoomDialog）。 */
+  shareRoom(): void {
+    this.sendCommand('shareRoom', null);
   }
 
   /** 画面比例循环切换（自适应→裁剪→铺满→原始）。 */

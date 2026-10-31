@@ -12,7 +12,7 @@ import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
-import android.view.Window
+import android.view.SurfaceView
 
 /**
  * 液态玻璃背景（方案 A）：真采样 + 软模糊 + 边缘折射带 + 光学层。
@@ -27,7 +27,7 @@ import android.view.Window
  *   隔离，绝不抛出（黑屏红线：控件窗失败必须不影响 surface 窗出画）。
  */
 class GlassBackdropDrawable(
-    private val windowProvider: () -> Window?,
+    private val surfaceProvider: () -> SurfaceView?,
     private val cornerRadiusPx: Float,
 ) : Drawable() {
 
@@ -55,23 +55,25 @@ class GlassBackdropDrawable(
     /**
      * 触发一次采样（异步）。成功后自动重绘。面板打开期间由宿主按节拍调用；
      * 失败静默（下次再试），不回调异常。
+     *
+     * 关键：采样源必须是 **SurfaceView**（视频所在的 z-on-top 图层）。
+     * 对 Window 重载只会截到控件窗自己的透明层 → 黑底（真机回归）。
      */
     fun sampleAsync() {
         if (sampling) return
-        val window = try {
-            windowProvider()
+        val surface = try {
+            surfaceProvider()
         } catch (_: Throwable) {
             null
         } ?: return
-        // 按窗尺寸（重）建采样位图；尺寸未知时跳过本轮。
-        val decor = window.decorView
-        if (decor.width <= 0 || decor.height <= 0) return
-        ensureSampleSize(decor.width, decor.height)
+        // 按 surfaceView 尺寸（重）建采样位图；尺寸未知时跳过本轮。
+        if (surface.width <= 0 || surface.height <= 0) return
+        ensureSampleSize(surface.width, surface.height)
         val bmp = sample ?: return
         sampling = true
         try {
             PixelCopy.request(
-                window,
+                surface,
                 bmp,
                 { result ->
                     sampling = false
@@ -251,10 +253,10 @@ class GlassBackdropDrawable(
 
         /** 安全工厂：任何异常返回 null（调用方降级 tint），绝不抛出。 */
         fun createOrNull(
-            windowProvider: () -> Window?,
+            surfaceProvider: () -> SurfaceView?,
             cornerRadiusPx: Float,
         ): GlassBackdropDrawable? = try {
-            GlassBackdropDrawable(windowProvider, cornerRadiusPx)
+            GlassBackdropDrawable(surfaceProvider, cornerRadiusPx)
         } catch (_: Throwable) {
             null
         }

@@ -47,8 +47,8 @@ class NativePlayerScreenView(
     ctx: Context,
     /** surface 实测尺寸提供者（诊断行 `size=WxH`）。 */
     private val surfaceSizeProvider: () -> Pair<Int, Int> = { 0 to 0 },
-    /** surface 窗口提供者（液态玻璃 PixelCopy 采样源；null = 降级 tint）。 */
-    private val surfaceWindowProvider: () -> android.view.Window? = { null },
+    /** surface 视频层提供者（液态玻璃 PixelCopy 采样源；null = 降级 tint）。 */
+    private val surfaceViewProvider: () -> android.view.SurfaceView? = { null },
 ) : FrameLayout(ctx) {
 
     /** 视图 → 宿主 → Dart 的交互回调。 */
@@ -68,6 +68,7 @@ class NativePlayerScreenView(
         fun onCycleVideoFit()
         fun onToggleOrientation()
         fun onToggleLock()
+        fun onShare()
         fun onAdjustDisplay(key: String, value: Double)
         fun onSetSegmentMark(kind: String, positionMs: Long)
         fun onClearSegmentMark(kind: String)
@@ -231,6 +232,8 @@ class NativePlayerScreenView(
     private val decodeChip = TextView(context)
     private val videoFitIcon = TextView(context)
     private val rotateIcon = TextView(context)
+    /** 顶栏分享（房间模式；对齐 Flutter showShare）。 */
+    private val shareButton = TextView(context)
     /** 顶栏右侧簇（网速~转屏）：小屏整组等比缩（自适应不出屏）。 */
     private val topTail = LinearLayout(context)
     private val clockWrap = FrameLayout(context)
@@ -282,11 +285,11 @@ class NativePlayerScreenView(
      * 创建失败/未开启玻璃时为 null → 走 tint 兜底，绝不影响出画（黑屏红线）。
      */
     private val glassPanel = GlassBackdropDrawable.createOrNull(
-        surfaceWindowProvider,
+        surfaceViewProvider,
         dp(NPTheme.RADIUS_PANEL).toFloat(),
     )
     private val glassCard = GlassBackdropDrawable.createOrNull(
-        surfaceWindowProvider,
+        surfaceViewProvider,
         dp(NPTheme.RADIUS_CARD).toFloat(),
     )
 
@@ -458,6 +461,19 @@ class NativePlayerScreenView(
         applyPressFeedback(rotateIcon)
         topTail.addView(rotateIcon, llp(dp(34), dp(34), 8))
 
+        // 分享（仅房间模式；对齐 Flutter showShare: roomCode != null）。
+        shareButton.text = String(Character.toChars(NativePlayerIcons.ICON_SHARE))
+        shareButton.typeface = NativePlayerIcons.typeface(context)
+        shareButton.setTextColor(Color.WHITE)
+        shareButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+        shareButton.gravity = Gravity.CENTER
+        shareButton.includeFontPadding = false
+        shareButton.setPadding(dp(6), dp(6), dp(6), dp(6))
+        shareButton.isClickable = true
+        shareButton.setOnClickListener { listener?.onShare() }
+        applyPressFeedback(shareButton)
+        topTail.addView(shareButton, llp(dp(34), dp(34), 8))
+
         topBar.addView(topTail, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -530,6 +546,10 @@ class NativePlayerScreenView(
         seekBar.progressDrawable = track
         seekBar.thumb = thumb
         seekBar.splitTrack = false
+        // 防裁切（真机回归：progress=0 时光晕 12dp 伸到左边界外被裁）：
+        // 内边距 = 光晕半径（12dp），thumb 中心不再贴边；minHeight ≥ 光晕高。
+        seekBar.setPadding(dp(12), 0, dp(12), 0)
+        seekBar.minimumHeight = dp(NPTheme.SEEK_THUMB * 2 + 8)
     }
 
     /** 进度条：拖动预览时间数显、松手回传 seek。 */
@@ -1000,10 +1020,7 @@ class NativePlayerScreenView(
                     lastState.selectedSubtitleId,
                     allowOff = true,
                 ) { listener?.onSelectSubtitle(it) }
-                PANEL_EPISODE -> buildListContent(
-                    lastState.episodes.map { it.displayLabel to it.index },
-                    lastState.currentEpisodeIndex,
-                ) { listener?.onSelectEpisode(it) }
+                PANEL_EPISODE -> buildEpisodeContent()
                 PANEL_VERSION -> buildListContent(
                     lastState.versions.map { it.displayLabel to it.index },
                     lastState.currentVersionIndex,
@@ -1136,6 +1153,95 @@ class NativePlayerScreenView(
     }
 
     /** 通用列表（选集/线路）。 */
+    /**
+     * 选集卡片（对齐 Flutter EpisodeSelectPanel）：16:9 封面在上 + `1.集名`
+     * 标题在下；选中集主色 2dp 描边 + 右上角半透明黑圆对勾。
+     */
+    private fun buildEpisodeContent() {
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        // 卡片宽 = 面板内容宽（面板 padding h12 对齐 Flutter ListView h12）。
+        val cardW = panelWidthDp() - dp(24)
+        val coverH = cardW * 9 / 16
+        lastState.episodes.forEach { ep ->
+            val selected = ep.index == lastState.currentEpisodeIndex
+            val card = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, dp(12), dp(10))
+                isClickable = true
+                setOnClickListener {
+                    listener?.onSelectEpisode(ep.index)
+                    closePanel()
+                }
+            }
+            // 封面：选中主色描边框（2dp）+ 内裁圆角 8（外框 10）。
+            val cover = ImageView(context).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(8).toFloat()
+                    setColor(0xFF1A1D23.toInt())
+                }
+                NativeLogoLoader.load(this, ep.poster.ifBlank { null })
+            }
+            val coverWrap = FrameLayout(context).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(10).toFloat()
+                    setColor(Color.TRANSPARENT)
+                    setStroke(dp(2), if (selected) NPTheme.ACCENT else Color.TRANSPARENT)
+                }
+                addView(cover, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+                if (selected) {
+                    // 对勾徽标：右上角半透明黑圆 + 主色 check（与 Flutter 一致）。
+                    val badge = TextView(context).apply {
+                        text = String(Character.toChars(NativePlayerIcons.ICON_CHECK))
+                        typeface = NativePlayerIcons.typeface(context)
+                        setTextColor(NPTheme.ACCENT)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                        gravity = Gravity.CENTER
+                        background = GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(0x8C000000.toInt())
+                        }
+                    }
+                    addView(
+                        badge,
+                        lp(dp(22), dp(22), Gravity.TOP or Gravity.END).also {
+                            it.topMargin = dp(6)
+                            it.marginEnd = dp(6)
+                        },
+                    )
+                }
+            }
+            card.addView(coverWrap, lp(cardW, coverH))
+            card.addView(
+                TextView(context).apply {
+                    text = ep.cardTitle
+                    setTextColor(if (selected) Color.WHITE else NPTheme.WHITE_70)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    typeface = if (selected) {
+                        Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    } else {
+                        Typeface.DEFAULT
+                    }
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(0, dp(6), 0, 0)
+                },
+                LinearLayout.LayoutParams(cardW, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+            list.addView(card)
+        }
+        val scroll = scrollWrap(list)
+        panelContainer.addView(scroll)
+        // 打开时把当前集滚进视口（与 Flutter EpisodeSelectPanel initState 一致）。
+        val selIdx = lastState.episodes.indexOfFirst { it.index == lastState.currentEpisodeIndex }
+        if (selIdx > 0) {
+            val rowH = coverH + dp(13 + 6 + 10) // 封面 + 标题(13+margin6) + 底距10
+            scroll.post { scroll.scrollTo(0, selIdx * rowH) }
+        }
+    }
+
     private fun buildListContent(
         items: List<Pair<String, Int>>,
         selectedIndex: Int,
@@ -1554,39 +1660,47 @@ class NativePlayerScreenView(
      * 整体等比缩小（锚定右缘），保证横竖屏切换/小窗下控件不出屏、不重叠
      *（真机回归：竖屏时右侧组与传输组挤压重叠）。
      */
+    /**
+     * 转屏/小屏自适应（对齐 Flutter：不出屏、全部控件保持可见）。
+     *
+     * 真实布局收窄间距（20→8→4→0）——`scale` 只改绘制不改测量宽度，
+     * 流式溢出时仍会把控件推出屏外（真机回归），因此弃用。
+     */
     private fun applyAdaptiveScale() {
         buttonRow.post {
             val total = buttonRow.width
             if (total <= 0) return@post
-            // Flutter PlayerBottomRow：leading/transport/trailing 三段里
-            // transport 绝对居中，trailing 的 Expanded 可用宽 =（总宽-传输组）/2。
+            // Flutter PlayerBottomRow：transport 绝对居中，trailing 可用宽
+            // =（总宽-传输组）/2。
             val avail = (total - transportGroup.width) / 2 - dp(8)
-            val needed = trailingGroup.width
-            val s = if (needed > 0 && avail > 0 && needed > avail) {
-                (avail.toFloat() / needed).coerceIn(0.2f, 1f)
-            } else {
-                1f
-            }
-            trailingGroup.pivotX = trailingGroup.width.toFloat()
-            trailingGroup.pivotY = trailingGroup.height / 2f
-            trailingGroup.scaleX = s
-            trailingGroup.scaleY = s
+            applyGroupGap(trailingGroup, avail, intArrayOf(NPTheme.CONTROL_GAP, 8, 4, 0))
         }
         topBar.post {
             val total = topBar.width
             if (total <= 0) return@post
-            // 顶栏：title 为 Expanded（可压缩至 0），尾组可用 = 总宽 - 返回钮。
             val avail = total - backButton.width - dp(8)
-            val needed = topTail.width
-            val s = if (needed > 0 && avail > 0 && needed > avail) {
-                (avail.toFloat() / needed).coerceIn(0.2f, 1f)
-            } else {
-                1f
+            applyGroupGap(topTail, avail, intArrayOf(8, 4, 2, 0))
+        }
+    }
+
+    /** 逐级收窄组内间距直到内容宽 ≤ 可用宽（首项无前距）。 */
+    private fun applyGroupGap(group: LinearLayout, availPx: Int, levels: IntArray) {
+        if (group.childCount == 0) return
+        val children = (0 until group.childCount).map { group.getChildAt(it) }
+        val contentW = children.sumOf { it.width }
+        val n = children.size - 1
+        if (n <= 0) return
+        var gap = levels.last()
+        for (g in levels) {
+            if (contentW + n * dp(g) <= availPx || g == levels.last()) {
+                gap = g
+                break
             }
-            topTail.pivotX = topTail.width.toFloat()
-            topTail.pivotY = topTail.height / 2f
-            topTail.scaleX = s
-            topTail.scaleY = s
+        }
+        children.forEachIndexed { i, child ->
+            val lp = child.layoutParams as? LinearLayout.LayoutParams ?: return@forEachIndexed
+            lp.marginStart = if (i == 0) 0 else dp(gap)
+            child.layoutParams = lp
         }
     }
 
@@ -1700,9 +1814,14 @@ class NativePlayerScreenView(
         // 顶栏可见项
         speedChip.visibility = if (!tv && !state.isRoom) VISIBLE else GONE
         subtitleStyleChip.visibility = if (!tv) VISIBLE else GONE
-        decodeChip.visibility = if (!tv) VISIBLE else GONE
-        videoFitIcon.visibility = if (!tv) VISIBLE else GONE
+        // 解码：Erika 无解码档位 → 隐藏（对齐 Flutter showDecodeButton && !erika）。
+        decodeChip.visibility = if (!tv && state.engineLabel != "Erika") VISIBLE else GONE
+        // 画面比例：Erika 缩放不可用、房间不显示（对齐 Flutter 判定）。
+        videoFitIcon.visibility =
+            if (!tv && !state.isRoom && state.engineLabel != "Erika") VISIBLE else GONE
         rotateIcon.visibility = if (!tv) VISIBLE else GONE
+        // 分享：仅房间模式（对齐 Flutter showShare）。
+        shareButton.visibility = if (state.isRoom) VISIBLE else GONE
         clockWrap.visibility = if (tv) VISIBLE else GONE
 
         // 芯片打开态（Flutter：面板打开时强调色描边/文字）
@@ -1757,13 +1876,29 @@ class NativePlayerScreenView(
         // Logo 与进度条间的 4dp 间隙只在显示 Logo 时存在（Flutter if(showLogo) 块内）。
         logoSpacer.visibility = if (showLogo) VISIBLE else GONE
 
-        // 锁定态：只显示锁钮
+        // 锁定态（对齐 Flutter _buildLockOnlyControls）：顶栏整体隐藏、底栏
+        // 只留锁钮（与时间数显同列）、进度条/Logo/面板全关。
         if (!tv && state.locked) {
+            topBar.visibility = GONE
+            seekRow.visibility = GONE
+            logoImage.visibility = GONE
+            logoSpacer.visibility = GONE
+            diagText.visibility = GONE
             transportGroup.visibility = GONE
             trailingGroup.visibility = GONE
             leadingGroup.visibility = VISIBLE
             lockButton.text = String(Character.toChars(NativePlayerIcons.ICON_LOCK))
+            // 锁定中不允许面板（Flutter 面板层带 !locked 条件）。
+            if (activePanel != null || decodePopoverOpen || segmentCardOpen) {
+                activePanel = null
+                decodePopoverOpen = false
+                segmentCardOpen = false
+                segmentConfirmKind = null
+                listener?.onClosePanel()
+            }
         } else {
+            topBar.visibility = VISIBLE
+            seekRow.visibility = VISIBLE
             transportGroup.visibility = VISIBLE
             trailingGroup.visibility = VISIBLE
             leadingGroup.visibility = if (!tv) VISIBLE else GONE

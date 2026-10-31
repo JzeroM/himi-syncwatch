@@ -48,9 +48,20 @@ data class AndroidDanmakuItem(
     }
 }
 
-data class AndroidEpisode(val index: Int = 0, val title: String = "") {
+data class AndroidEpisode(
+    val index: Int = 0,
+    val title: String = "",
+    /** 剧集封面图 URL（选集卡片 16:9 缩略图；空 = 占位底色）。 */
+    val poster: String = "",
+    /** 集号（>0 时卡片标题 `1.集名`，与 Flutter cardTitle 一致）。 */
+    val number: Int = 0,
+) {
     val displayLabel: String
         get() = if (title.isNotBlank()) title else "第 ${index + 1} 集"
+
+    /** 卡片标题：`1.集名`（number>0），否则原名。 */
+    val cardTitle: String
+        get() = if (number > 0) "$number.$title" else title
 }
 
 /** 面板版本/线路项（与 Dart `NativeVersion.toJson` 一致）。 */
@@ -369,6 +380,8 @@ data class AndroidNativePlayerState(
                     AndroidEpisode(
                         index = o.optInt("index", 0),
                         title = o.optString("title", ""),
+                        poster = o.optString("poster", ""),
+                        number = o.optInt("number", 0),
                     ),
                 )
             }

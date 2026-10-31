@@ -61,6 +61,9 @@ abstract final class NativePlayerIcons {
   static const int openInFull = 0xE45B;
   static const int closeFullscreen = 0xE16B;
 
+  /// share
+  static const int share = 0xE593;
+
   /// 名称 → 码点（与 `tool/native_icons.json` 的 `icons` 表一一对应）。
   static const Map<String, int> all = <String, int>{
     'arrowBack': arrowBack,
@@ -107,5 +110,6 @@ abstract final class NativePlayerIcons {
     'replay10': replay10,
     'openInFull': openInFull,
     'closeFullscreen': closeFullscreen,
+    'share': share,
   };
 }

@@ -84,6 +84,8 @@ sealed class NativePlayerCommand {
         return const CycleVideoFit();
       case 'toggleOrientation':
         return const ToggleOrientation();
+      case 'shareRoom':
+        return const ShareRoom();
       case 'clearSegmentMark':
         return ClearSegmentMark(kind: map['kind'] as String? ?? 'intro');
       case 'toggleDebug':
@@ -387,6 +389,14 @@ class ToggleOrientation extends NativePlayerCommand {
   @override
   Map<String, Object?> toMap() =>
       const <String, Object?>{'type': 'toggleOrientation'};
+}
+
+/// 房间分享（顶栏分享按钮；对齐 Flutter showShare/onShare）。
+class ShareRoom extends NativePlayerCommand {
+  const ShareRoom();
+
+  @override
+  Map<String, Object?> toMap() => const <String, Object?>{'type': 'shareRoom'};
 }
 
 /// 清除片头/片尾标记（原生二次确认里的「清除」）。

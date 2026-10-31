@@ -145,6 +145,9 @@ object NativePlayerIcons {
     /** closeFullscreen */
     const val ICON_CLOSE_FULLSCREEN = 0xE16B
 
+    /** share */
+    const val ICON_SHARE = 0xE593
+
     // ── 字体加载（内置 res/font/material_icons.otf）────────────────
 
     @Volatile

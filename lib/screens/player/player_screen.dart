@@ -3272,7 +3272,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     mpv.applyNativePanelData(
       episodes: List<NativeEpisode>.generate(
         _episodes.length,
-        (i) => NativeEpisode(index: i, title: _episodes[i].name),
+        (i) => NativeEpisode(
+          index: i,
+          title: _episodes[i].name,
+          poster: _episodes[i].poster,
+          number: _episodes[i].number,
+        ),
         growable: false,
       ),
       versions: List<NativeVersion>.generate(
@@ -3372,6 +3377,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _cycleVideoFit();
       case ToggleOrientation():
         _toggleOrientation();
+      case ShareRoom():
+        _showShareRoomDialog();
       case SwitchEngine(:final engine):
         final target = PlayerEngine.values.firstWhere(
           (e) => e.id == engine,

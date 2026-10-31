@@ -118,6 +118,8 @@ const RIM_COLOR = '#33FFFFFF';
 export struct NativePlayerPanel {
   @Prop panelType: string = '';
   @Prop revision: number = 0;
+  /** 选集列表滚动控制器（打开时定位当前集）。 */
+  private episodeScroller: Scroller = new Scroller();
   /** 片头片尾二次确认上下文（'' = 无，'intro' / 'outro' = 待确认）。 */
   @State confirmKind: string = '';
 
@@ -394,6 +396,7 @@ export struct NativePlayerPanel {
           .padding({ left: 16, right: 16, top: 12, bottom: 12 })
           .onClick((): void => {
             this.host.optimisticSetSpeed(v);
+            this.close();
           });
         }
       }, (v: number): string => `${v}`);
@@ -416,6 +419,7 @@ export struct NativePlayerPanel {
           .padding({ left: 16, right: 16, top: 12, bottom: 12 })
           .onClick((): void => {
             this.host.optimisticSelectSubtitle(0);
+            this.close();
           });
         }
       }
@@ -429,8 +433,10 @@ export struct NativePlayerPanel {
           .onClick((): void => {
             if (this.panelType === 'audio') {
               this.host.optimisticSelectAudio(t.id);
+              this.close();
             } else {
               this.host.optimisticSelectSubtitle(t.id);
+              this.close();
             }
           });
         }
@@ -611,24 +617,76 @@ export struct NativePlayerPanel {
   /** 选集列表。 */
   @Builder
   EpisodeContent() {
-    List() {
+    List({ scroller: this.episodeScroller }) {
       ForEach(this.state().episodes, (e: NativeEpisodeUi) => {
         ListItem() {
-          Row() {
-            this.OptionLabel(e.title.length > 0 ? e.title : `第 ${e.index + 1} 集`,
-              e.index === this.state().currentEpisodeIndex);
+          Column() {
+            // 封面：16:9 + 选中主色 2dp 描边 + 右上对勾徽标
+            //（对齐 Flutter EpisodeSelectPanel 卡片）。
+            Stack({ alignContent: Alignment.TopEnd }) {
+              if (e.poster.length > 0) {
+                Image(e.poster)
+                  .width('100%')
+                  .aspectRatio(16 / 9)
+                  .objectFit(ImageFit.Cover)
+                  .borderRadius(8)
+              } else {
+                Column()
+                  .width('100%')
+                  .aspectRatio(16 / 9)
+                  .backgroundColor('#1A1D23')
+                  .borderRadius(8);
+              }
+              if (e.index === this.state().currentEpisodeIndex) {
+                Text(String.fromCodePoint(NativePlayerIcons.ICON_CHECK))
+                  .fontFamily(NativePlayerIcons.FONT_FAMILY)
+                  .fontSize(14)
+                  .fontColor('#6366F1')
+                  .width(22)
+                  .height(22)
+                  .textAlign(TextAlign.Center)
+                  .backgroundColor('#8C000000')
+                  .borderRadius(11)
+                  .margin({ top: 6, right: 6 });
+              }
+            }
+            .width('100%')
+            .border({
+              width: e.index === this.state().currentEpisodeIndex ? 2 : 0,
+              color: e.index === this.state().currentEpisodeIndex ? '#6366F1' : Color.Transparent,
+              radius: 10,
+            });
+
+            Text(e.cardTitle())
+              .fontSize(13)
+              .fontColor(e.index === this.state().currentEpisodeIndex ? Color.White : '#B3FFFFFF')
+              .fontWeight(e.index === this.state().currentEpisodeIndex
+                ? FontWeight.Medium
+                : FontWeight.Normal)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+              .margin({ top: 6 });
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+          .padding({ left: 12, right: 12, bottom: 10 })
           .onClick((): void => {
             this.host.optimisticSelectEpisode(e.index);
+            this.close();
           });
         }
       }, (e: NativeEpisodeUi): string => `${e.index}`);
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
+    .padding({ top: 8 })
+    // 打开时把当前集滚进视口（与 Flutter EpisodeSelectPanel initState 一致）。
+    .onAppear((): void => {
+      const idx = this.state().currentEpisodeIndex;
+      if (idx > 0) {
+        this.episodeScroller.scrollToIndex(Math.min(idx, this.state().episodes.length - 1));
+      }
+    });
   }
 
   /** 版本/线路列表。 */
@@ -645,6 +703,7 @@ export struct NativePlayerPanel {
           .padding({ left: 16, right: 16, top: 12, bottom: 12 })
           .onClick((): void => {
             this.host.optimisticSelectVersion(s.index);
+            this.close();
           });
         }
       }, (s: NativeVersionUi): string => `${s.index}`);

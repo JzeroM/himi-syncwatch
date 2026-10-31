@@ -106,7 +106,7 @@ class AndroidNativePlayerHost(
         val controls = NativePlayerScreenView(
             activity,
             surfaceSizeProvider,
-            surfaceWindowProvider = { surfaceDialog?.window },
+            surfaceViewProvider = { surfaceView },
         )
         controls.setListener(object : NativePlayerScreenView.Listener {
             override fun onBack() {
@@ -203,6 +203,10 @@ class AndroidNativePlayerHost(
                 lastState = lastState.copy(locked = !lastState.locked)
                 commandSink.send(mapOf("type" to "toggleLock"))
                 view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onShare() {
+                commandSink.send(mapOf("type" to "shareRoom"))
             }
 
             override fun onAdjustDisplay(key: String, value: Double) {

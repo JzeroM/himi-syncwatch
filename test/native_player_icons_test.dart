@@ -69,6 +69,7 @@ void main() {
       'replay10': Icons.replay_10,
       'openInFull': Icons.open_in_full,
       'closeFullscreen': Icons.close_fullscreen,
+      'share': Icons.share,
     };
     expect(flutterIcons.keys.toSet(), jsonIcons.keys.toSet());
     for (final entry in jsonIcons.entries) {
