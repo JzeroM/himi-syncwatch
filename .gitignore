@@ -67,6 +67,7 @@ himi-sync-ohos-*.hap
 
 # HarmonyOS local packages
 dist/ohos/
+dist/android/
 
 # HarmonyOS generated
 **/oh_modules/
