@@ -262,7 +262,7 @@ class AndroidNativePlayerHost(
                 commandSink.send(mapOf("type" to "seekRelative", "deltaMs" to deltaMs))
             }
 
-            override fun onGestureBrightness(value01: Float) {
+            override fun onGestureBrightness(delta01: Double) {
                 // 亮度写入**控件窗**的 screenBrightness（Flutter 走
                 // `WindowManager.LayoutParams.screenBrightness`）。相对增量
                 // 累加到当前值，范围 0..1。
@@ -273,7 +273,7 @@ class AndroidNativePlayerHost(
                 win.attributes = attrs
             }
 
-            override fun onGestureVolumeDelta(delta01: Float) {
+            override fun onGestureVolumeDelta(delta01: Double) {
                 // 音量走播放器属性（与 Flutter `_player.volume = x` 一致，
                 // 0..1）。本地乐观更新 + 回传 Dart。
                 val next = (lastState.volume + delta01).coerceIn(0.0, 1.0)
@@ -361,7 +361,7 @@ class AndroidNativePlayerHost(
      * 刘海区——不避让时横屏顶栏被挖孔压住、底栏被手势条盖住（Flutter 靠
      * `MediaQuery.padding` 避让，原生必须自己读 insets）。
      */
-    private fun wireSafeInsets(dlg: Dialog, target: View) {
+    private fun wireSafeInsets(dlg: Dialog, target: NativePlayerScreenView) {
         val decor = dlg.window?.decorView ?: return
         val listener = View.OnApplyWindowInsetsListener { _, insets ->
             val top: Int
@@ -381,10 +381,11 @@ class AndroidNativePlayerHost(
                     ).bottom,
                 )
             } else {
+                // 旧 API 只有 systemWindowInset*（API 36 已移除 safeInset*）。
                 @Suppress("DEPRECATION")
-                top = maxOf(insets.systemWindowInsetTop, insets.safeInsetTop)
+                top = insets.systemWindowInsetTop
                 @Suppress("DEPRECATION")
-                bottom = maxOf(insets.systemWindowInsetBottom, insets.safeInsetBottom)
+                bottom = insets.systemWindowInsetBottom
             }
             target.applySafeInsets(top, bottom)
             insets

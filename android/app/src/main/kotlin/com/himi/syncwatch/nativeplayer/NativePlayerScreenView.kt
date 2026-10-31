@@ -82,14 +82,14 @@ class NativePlayerScreenView(
         /** 手势：相对 seek（横拖/甩动；对齐 Flutter `_seekRelative`，±60s 上限）。 */
         fun onSeekRelative(deltaMs: Long)
 
-        /** 手势：左侧纵拖调亮度（0..1，写入控件窗 `screenBrightness`）。 */
-        fun onGestureBrightness(value01: Float)
+        /** 手势：左侧纵拖调亮度（增量 0..1，写入控件窗 `screenBrightness`）。 */
+        fun onGestureBrightness(delta01: Double)
 
         /**
-         * 手势：右侧纵拖调音量（增量，0..1）。
+         * 手势：右侧纵拖调音量（增量 0..1）。
          * 宿主按本地乐观值累加后发 `setVolume`。
          */
-        fun onGestureVolumeDelta(delta01: Float)
+        fun onGestureVolumeDelta(delta01: Double)
 
         /** 手势：长按临时倍速（true=升到 2×，false=还原到长按前档位）。 */
         fun onSpeedBoost(active: Boolean)
@@ -368,7 +368,9 @@ class NativePlayerScreenView(
         GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(16).toFloat()
-            setColor(0x8C000000)
+            // 注意：0x8C000000 超出 Int 范围，Kotlin 推断为 Long，
+            // 必须显式 toInt()（CI 实测编译错误）。
+            setColor(0x8C000000.toInt())
         }
 
     /** 手势提示自动隐藏（每个提示各自持有，互不干扰）。 */
@@ -384,6 +386,11 @@ class NativePlayerScreenView(
         hideGestureHint?.let { mainHandler.removeCallbacks(it) }
         gestureHint.text = text
         gestureHint.typeface = iconFont ?: Typeface.DEFAULT_BOLD
+        // 图标态 48sp（Flutter `Icon(size: 48)`）；文本态 16sp。
+        gestureHint.setTextSize(
+            TypedValue.COMPLEX_UNIT_SP,
+            if (iconFont != null) GESTURE_ICON_SIZE_SP else GESTURE_TEXT_SIZE_SP,
+        )
         gestureHint.background = if (withBackground) hintBackground() else null
         gestureHint.visibility = VISIBLE
         if (ms <= 0L) return
@@ -457,7 +464,9 @@ class NativePlayerScreenView(
      */
     private fun showVerticalBar(onLeftSide: Boolean) {
         verticalBarOnLeft = onLeftSide
-        verticalBarPercent = Math.round((if (onLeftSide) brightness01 else volume01) * 100)
+        // Math.round(Double) 返回 Long，需显式 toInt()（CI 实测编译错误）。
+        verticalBarPercent =
+            Math.round((if (onLeftSide) brightness01 else volume01) * 100).toInt()
         paintVerticalBar()
         scheduleVerticalBarHide()
     }
@@ -2595,6 +2604,9 @@ class NativePlayerScreenView(
         const val GESTURE_HINT_TEXT_MS = 800L
         /** 手势图标提示显示时长（Flutter `_showGestureIcon` 500ms）。 */
         const val GESTURE_HINT_ICON_MS = 500L
+        /** 手势提示字号：图标态 48sp（Flutter `Icon(size: 48)`）/ 文本态 16sp。 */
+        const val GESTURE_ICON_SIZE_SP = 48f
+        const val GESTURE_TEXT_SIZE_SP = 16f
         /** 横拖换算系数：每 100px → 5000ms（Flutter `_onHorizontalDragUpdate`）。 */
         const val DRAG_PX_PER_5S = 100f
         const val DRAG_MS_PER_5S = 5000L
