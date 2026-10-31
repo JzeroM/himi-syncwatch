@@ -48,7 +48,9 @@ jobs:
 
   build-android:
     needs: [flutter-analyze, kernels]
-    runs-on: ubuntu-latest
+    # 固定 24.04：ubuntu-latest 自 2026-10-19 起开始迁移 Ubuntu 26，
+    # 镜像预装内容与可用空间随之变化，会引入无法复现的构建抖动。
+    runs-on: ubuntu-24.04
     env:
       # mdk-sdk v0.39.0 版本锁定（GitHub Release，SHA 校验防资产替换）。
       # v0.39.0 含 "Fix EGL platform apis attribute type in EGL 1.4~1.5"
@@ -58,6 +60,40 @@ jobs:
       FVP_DEPS_SHA256: cd196c9f6fb1872c4f35184848522ca3ab9c91196da47ca9761d8fb50e3e9cf3
     steps:
       - uses: actions/checkout@v4
+
+      # runner 预装了大量本 job 用不到的 SDK（dotnet/ghc/CodeQL/swift/miniconda…），
+      # 叠加本项目的 Gradle 缓存、CMake 原生编译中间产物与 3 个 100MB+ 的
+      # split APK，v1.5.5-debug27 在构建中途把盘写满：
+      #   System.IO.IOException: No space left on device
+      # 后果是 job 日志 blob 都没写成功（logs 端点返回 BlobNotFound），
+      # 线上只看到 "Gradle task assembleRelease failed"，极难定位。
+      # 清理清单与 android-hdr-ci.yml 保持一致；注意 /usr/local/lib/android
+      # 必须保留——那是本 job 依赖的 Android SDK，删掉构建必挂。
+      - name: 释放磁盘空间
+        run: |
+          echo "清理前："
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/share/swift /usr/local/share/powershell /opt/microsoft \
+            /usr/share/miniconda /usr/local/.ghcup || true
+          # 预装 Android SDK 里的模拟器/系统镜像/源码包对 `flutter build apk`
+          # 完全无用（合计数 GB），但 platforms/build-tools/ndk/cmake 必须保留。
+          if [ -n "${ANDROID_HOME:-}" ]; then
+            sudo rm -rf "$ANDROID_HOME/system-images" "$ANDROID_HOME/emulator" \
+              "$ANDROID_HOME/sources" || true
+          fi
+          sudo apt-get clean
+          echo "清理后："
+          df -h /
+          # 盘满时 runner 连日志都写不出，事后完全无法查证；宁可现在就带
+          # 明确原因失败，也不要跑 6 分钟再吐一个无信息的 exit code 1。
+          avail_gib=$(df -Pk / | awk 'NR==2 {printf "%d", $4 / 1024 / 1024}')
+          echo "可用空间: ${avail_gib}GiB"
+          if [ "$avail_gib" -lt 15 ]; then
+            echo "::error::清理后可用空间仅 ${avail_gib}GiB（需 ≥15GiB），构建必然中途盘满"
+            exit 1
+          fi
+
       - name: Download self-built Android libmpv
         uses: actions/download-artifact@v4
         with:
@@ -125,6 +161,9 @@ jobs:
             echo "❌ 缺少 GitHub Actions secret TRAKT_CLIENT_ID"
             exit 1
           fi
+          # 磁盘余量诊断：构建失败时能立刻区分「盘满」与「编译错误」
+          # （盘满时 runner 连日志 blob 都写不进，事后无从查证）。
+          df -h /
           # 发布构建偶发 runner 网络/缓存抖动（v1.2.57 首轮曾整步失败），
           # 与 iOS 一致增加 3 次重试，避免单次抖动阻断整条发布链。
           for i in 1 2 3; do
