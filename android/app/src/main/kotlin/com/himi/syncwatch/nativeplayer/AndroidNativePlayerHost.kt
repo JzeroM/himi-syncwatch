@@ -368,23 +368,21 @@ class AndroidNativePlayerHost(
             val top: Int
             val bottom: Int
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // 【只取 DisplayCutout】窗口是全屏沉浸式（FLAG_FULLSCREEN +
+                // HIDE_NAVIGATION），状态栏本不可见；若再叠加 statusBars 的
+                // inset 会把顶栏无故下移 ~24-48dp（真机截图回归）。
                 val cutout = insets.displayCutout
-                top = maxOf(
-                    cutout?.safeInsetTop ?: 0,
-                    insets.getInsetsIgnoringVisibility(
-                        WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout(),
-                    ).top,
-                )
-                bottom = maxOf(
-                    cutout?.safeInsetBottom ?: 0,
-                    insets.getInsetsIgnoringVisibility(
-                        WindowInsets.Type.navigationBars() or WindowInsets.Type.displayCutout(),
-                    ).bottom,
-                )
+                top = cutout?.safeInsetTop ?: 0
+                // 底部：手势条导航栏高度（全屏时 navigationBars 的 inset
+                // 不会被隐藏，仍会返回）。
+                bottom = insets.getInsetsIgnoringVisibility(
+                    WindowInsets.Type.navigationBars(),
+                ).bottom
             } else {
-                // 旧 API 只有 systemWindowInset*（API 36 已移除 safeInset*）。
-                @Suppress("DEPRECATION")
-                top = insets.systemWindowInsetTop
+                // 旧 API：全屏沉浸式下 status bar 不可见，top 直接取 0
+                //（只避让 DisplayCutout 需要 API 30+，旧 API 无法单独取）。
+                // 底部：导航条高度。
+                top = 0
                 @Suppress("DEPRECATION")
                 bottom = insets.systemWindowInsetBottom
             }

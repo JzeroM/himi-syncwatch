@@ -532,6 +532,67 @@ void main() {
     });
   });
 
+  group('安卓真机回归修复（563+）', () {
+    test('顶栏不叠加 statusBars inset（全屏沉浸式下不无故下移）', () {
+      final kotlinHost = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'AndroidNativePlayerHost.kt',
+      ).readAsStringSync();
+      // 全屏沉浸式下 statusBars 不可见，不应叠加其 inset。
+      expect(kotlinHost, contains('cutout?.safeInsetTop ?: 0'));
+      // 不再用 statusBars() 取 top。
+      expect(
+        kotlinHost,
+        isNot(contains('WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout()')),
+        reason: '全屏沉浸式下不应叠加 statusBars inset（会把顶栏下移）',
+      );
+    });
+
+    test('applyLayoutMode 不强制 VISIBLE（尊重自动隐藏）', () {
+      expect(
+        kotlinScreen,
+        contains('topBar.visibility = if (controlsVisible) VISIBLE else GONE'),
+        reason: 'applyLayoutMode 不应无条件设 VISIBLE（会覆盖 setControlsVisible(false)）',
+      );
+    });
+
+    test('pollState 返回 trackList（修音轨/字幕面板空白）', () {
+      final kotlinSession = File(
+        'plugins/himi_mpv_android/lib/himi_mpv_android.dart',
+      ).readAsStringSync();
+      expect(kotlinSession, contains('trackList: await getTracks()'));
+    });
+
+    test('选集封面带 api_key（修原生加载器无认证）', () {
+      final screen = File('lib/screens/player/player_screen.dart').readAsStringSync();
+      expect(screen, contains("api_key=\$_currentToken"));
+    });
+
+    test('玻璃采样节拍 600ms + 只采面板矩形（修面板区域视频卡顿）', () {
+      final kotlinGlass = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'GlassBackdrop.kt',
+      ).readAsStringSync();
+      expect(kotlinGlass, contains('SAMPLE_INTERVAL_MS = 600L'));
+      expect(kotlinGlass, contains('panelRect'));
+    });
+  });
+
+  group('鸿蒙回归修复（563+）', () {
+    test('ControlRow 右侧簇不加 height 100%（修底栏内容被顶到屏幕上方）', () {
+      expect(
+        ohosView,
+        isNot(matches(RegExp(r"\.width\('100%'\)\s*\n\s*\.height\('100%'\);\s*\n\s*// 左侧簇"))),
+        reason: '右侧簇外层 Stack 不应加 height 100%（会撑满 ControlRow 把底栏内容顶上去）',
+      );
+    });
+
+    test('底栏 Column 不设 height 100%（只设 width）', () {
+      // BottomBar 外层只设 width('100%')，不设 height('100%')。
+      expect(ohosView, contains("BottomBar"));
+    });
+  });
+
   group('主题常量引用完整性', () {
     test('Android 用到的新增常量都在 NPTheme 里定义', () {
       final kotlinTheme = File(

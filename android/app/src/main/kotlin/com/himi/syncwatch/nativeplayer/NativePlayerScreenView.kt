@@ -2463,11 +2463,17 @@ class NativePlayerScreenView(
                 listener?.onClosePanel()
             }
         } else {
-            topBar.visibility = VISIBLE
+            // 【必须尊重 controlsVisible】旧代码无条件设 VISIBLE，会把
+            // setControlsVisible(false) 刚隐藏的控件立刻强制显示回来
+            //（真机回归：控件不会自动隐藏）。只恢复子控件，顶栏/底栏
+            // 的显隐由 setControlsVisible 统一控制。
             seekRow.visibility = VISIBLE
             transportGroup.visibility = VISIBLE
             trailingGroup.visibility = VISIBLE
             leadingGroup.visibility = if (!tv) VISIBLE else GONE
+            // 顶栏/底栏不强制 VISIBLE，交给 setControlsVisible。
+            topBar.visibility = if (controlsVisible) VISIBLE else GONE
+            bottomBar.visibility = if (controlsVisible) VISIBLE else GONE
         }
 
         // 转屏/小窗自适应：交给 ScaleDownBox（测量级等比缩，不出屏、不与

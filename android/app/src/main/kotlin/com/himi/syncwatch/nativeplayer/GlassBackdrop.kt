@@ -64,6 +64,11 @@ class GlassBackdropDrawable(
      *
      * 关键：采样源必须是 **SurfaceView**（视频所在的 z-on-top 图层）。
      * 对 Window 重载只会截到控件窗自己的透明层 → 黑底（真机回归）。
+     *
+     * 【性能优化】只采面板矩形（`PixelCopy.request(SurfaceView, Rect, ...)`），
+     * 而非整帧（`PixelCopy.request(SurfaceView, Bitmap, ...)`）。整帧 = GPU→CPU
+     * 同步拷贝约 10MB/次（每秒 4 次），阻塞 SurfaceFlinger 合成队列 → 视频
+     * 呈现卡顿；只采面板矩形（约 320×600dp）降 ~30 倍数据量。
      */
     fun sampleAsync() {
         if (sampling) return
@@ -72,23 +77,39 @@ class GlassBackdropDrawable(
         } catch (_: Throwable) {
             null
         } ?: return
-        // 按 surfaceView 尺寸（重）建采样位图；尺寸未知时跳过本轮。
         if (surface.width <= 0 || surface.height <= 0) return
         ensureSampleSize(surface.width, surface.height)
         val bmp = sample ?: return
         sampling = true
         try {
-            PixelCopy.request(
-                surface,
-                bmp,
-                { result ->
-                    sampling = false
-                    if (result == PixelCopy.SUCCESS) {
-                        invalidateSelf()
-                    }
-                },
-                mainHandler,
-            )
+            // 只采面板矩形（panelRect），大幅降低 GPU→CPU 拷贝量。
+            if (panelRect.width() > 2 && panelRect.height() > 2) {
+                PixelCopy.request(
+                    surface,
+                    panelRect,
+                    bmp,
+                    { result ->
+                        sampling = false
+                        if (result == PixelCopy.SUCCESS) {
+                            invalidateSelf()
+                        }
+                    },
+                    mainHandler,
+                )
+            } else {
+                // 面板矩形未知时降级整帧采样（首次打开面板）。
+                PixelCopy.request(
+                    surface,
+                    bmp,
+                    { result ->
+                        sampling = false
+                        if (result == PixelCopy.SUCCESS) {
+                            invalidateSelf()
+                        }
+                    },
+                    mainHandler,
+                )
+            }
         } catch (_: Throwable) {
             sampling = false
         }
@@ -297,8 +318,10 @@ class GlassBackdropDrawable(
     }
 
     companion object {
-        /** 采样节拍（ms）：面板打开期间 4fps，足以覆盖玻璃慢变化。 */
-        const val SAMPLE_INTERVAL_MS = 250L
+        /** 采样节拍（ms）：面板打开期间 ~1.7fps，足够覆盖玻璃慢变化。
+         *  旧值 250ms（4fps）导致每秒 4 次 GPU→CPU 同步拷贝，阻塞
+         *  SurfaceFlinger 合成 → 视频呈现卡顿（真机回归）。 */
+        const val SAMPLE_INTERVAL_MS = 600L
 
         /**
          * 面板屏幕矩形 → 采样位图源矩形（纯函数，JVM 可单测）。

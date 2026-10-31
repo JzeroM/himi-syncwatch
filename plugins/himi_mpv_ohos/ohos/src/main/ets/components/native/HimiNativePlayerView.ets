@@ -1179,8 +1179,10 @@ export struct HimiNativePlayerView {
           this.adjustBottomScale();
         });
       }
-      .width('100%')
-      .height('100%');
+      // 【不要 height('100%')】外层 Stack 若撑满 ControlRow，会让 Column
+      // 高度异常、底栏内容整体被顶到屏幕上方（真机截图回归）。只保留
+      // width('100%') 撑满横向槽位。
+      .width('100%');
 
       // 左侧簇：手机模式锁钮（Flutter 底栏 leading 槽 PlayerLockButton）。
       // 未锁显 lock_open（点击上锁），已锁显 lock（点击解锁）；列宽与

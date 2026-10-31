@@ -3275,7 +3275,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         (i) => NativeEpisode(
           index: i,
           title: _episodes[i].name,
-          poster: _episodes[i].poster,
+          // 方案 A：给原生加载器带认证。Emby 图片需要 X-Emby-Token 或
+          // api_key 查询参数；原生 NativeLogoLoader 不带认证头，方案 A
+          // 直接在 URL 里带 token（本机内存，不落盘）。
+          poster: _episodes[i].poster.isNotEmpty
+              ? '${_episodes[i].poster}${_episodes[i].poster.contains('?') ? '&' : '?'}api_key=$_currentToken'
+              : '',
           number: _episodes[i].number,
         ),
         growable: false,

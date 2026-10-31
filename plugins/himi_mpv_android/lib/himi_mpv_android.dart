@@ -795,6 +795,7 @@ class HimiMpvAndroidSession implements MpvSession {
       pausedForCache: state.buffering,
       cachePercent: state.bufferingPercentage,
       videoParams: await getVideoParams(),
+      trackList: await getTracks(),
       hwdecCurrent: await getProperty('hwdec-current'),
       gpuContext: await getProperty('gpu-context'),
       currentVo: await getProperty('current-vo'),
