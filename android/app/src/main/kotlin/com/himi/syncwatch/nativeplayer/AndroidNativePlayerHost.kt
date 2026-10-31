@@ -269,7 +269,8 @@ class AndroidNativePlayerHost(
                 val win = controlsDialog?.window ?: return
                 val attrs = win.attributes
                 val current = if (attrs.screenBrightness >= 0f) attrs.screenBrightness else 1f
-                attrs.screenBrightness = (current + value01).coerceIn(0f, 1f)
+                attrs.screenBrightness =
+                    (current + delta01.toFloat()).coerceIn(0f, 1f)
                 win.attributes = attrs
             }
 
