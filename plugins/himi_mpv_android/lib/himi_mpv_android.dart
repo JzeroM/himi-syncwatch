@@ -58,6 +58,20 @@ class HimiMpvAndroidSession implements MpvSession {
   int _textureId = 0;
   bool _disposed = false;
 
+  /// surface 实测宽/高（像素）。由 `surfaceChanged` 事件喂入，用于给 mpv
+  /// 设 `android-surface-size`。
+  ///
+  /// 【竖屏画布根因】mpv 的 android 后端只认这个选项决定合成画布大小。
+  /// 不设时它用**初始** surface 尺寸（横屏 2400×1080）恒定合成，旋转到
+  /// 竖屏后 ANativeWindow 变成 1080×2400，帧被拉伸成 864×2400 + 左右黑边
+  /// （真机截图实测 862/108 与数学推导吻合）。鸿蒙侧有 `ohos-surface-size`
+  /// 所以没这个问题。
+  int _surfaceWidth = 0;
+  int _surfaceHeight = 0;
+  /// 已应用到 mpv 的 surface 尺寸（避免同尺寸重复 setProperty）。
+  int _appliedSurfaceWidth = 0;
+  int _appliedSurfaceHeight = 0;
+
   /// 踢纹理循环的代际计数：每轮 `_kickTextureSurface` 启动时 `++` 取快照，
   /// detach/dispose 时再 `++` 让旧循环的快照失效立即退出。用计数而非布尔，
   /// 避免「同会话重启踢循环把上一轮孤儿循环重新激活」（真机日志曾见孤儿
@@ -224,6 +238,10 @@ class HimiMpvAndroidSession implements MpvSession {
         );
         _log('surface 事件: src=$src handle=$handleInt current=$_surfaceHandle '
             'playerAlive=${_player != null} → ${action.name}');
+        // 同一 surface 的尺寸变化（旋转/折叠展开）也要同步给 mpv：mpv 的
+        // android 后端只认 android-surface-size，不更新就一直用初始尺寸
+        // 合成 → 竖屏被拉伸。放在这里统一处理（不同 handle 的首帧同样走）。
+        _noteSurfaceSize(raw);
         switch (action) {
           case SurfaceAction.ensurePlayer:
             _surfaceHandle = handleInt;
@@ -236,6 +254,11 @@ class HimiMpvAndroidSession implements MpvSession {
           case SurfaceAction.none:
           case SurfaceAction.detach:
             break;
+        }
+        // 重建/新建路径会在 _ensurePlayer 里带入尺寸；此处只补「同 handle
+        // 仅尺寸变化」的增量更新（rebind 会重建，无需重复 set）。
+        if (action == SurfaceAction.none && _player != null) {
+          unawaited(_syncAndroidSurfaceSize());
         }
       } else if (type == 'surfaceDestroyed') {
         final action = _policy.onDestroyed(
@@ -261,10 +284,49 @@ class HimiMpvAndroidSession implements MpvSession {
       final handle = current?['handle'];
       if (handle is int && handle > 0) {
         _surfaceHandle = handle;
-        _log('初始 surface: handle=$handle src=${current?['src']}');
+        if (current != null) _noteSurfaceSize(current);
+        _log('初始 surface: handle=$handle src=${current?['src']} '
+            'size=${_surfaceWidth}x$_surfaceHeight');
         await _ensurePlayer();
       }
     } catch (_) {}
+  }
+
+  /// 记录 surface 事件带来的实测尺寸（无效值忽略，保留上一次）。
+  void _noteSurfaceSize(Map<dynamic, dynamic> raw) {
+    final w = raw['width'];
+    final h = raw['height'];
+    final wi = w is int ? w : (w is num ? w.toInt() : 0);
+    final hi = h is int ? h : (h is num ? h.toInt() : 0);
+    if (wi <= 0 || hi <= 0) return;
+    _surfaceWidth = wi;
+    _surfaceHeight = hi;
+  }
+
+  /// 把当前 surface 尺寸同步给 mpv（`android-surface-size`）。
+  ///
+  /// mpv 的 android 后端用该选项决定**合成画布**大小；不随 surface 更新
+  /// 就一直按初始尺寸合成，旋转后被 ANativeWindow 拉伸（竖屏画布根因）。
+  /// 等价 media_kit `AndroidVideoController.widListener` 的处理，但**不需要
+  /// 重建 vo**：`android-surface-size` 是运行期可改属性，mpv 内部会重建
+  /// 窗口并重设 vo 输出尺寸（mpv 官方 android 示例即在 onSizeChanged 里
+  /// 直接 setProperty）。
+  Future<void> _syncAndroidSurfaceSize() async {
+    if (!nativeSurface || _disposed) return;
+    final w = _surfaceWidth;
+    final h = _surfaceHeight;
+    if (w <= 0 || h <= 0) return;
+    if (w == _appliedSurfaceWidth && h == _appliedSurfaceHeight) return;
+    _appliedSurfaceWidth = w;
+    _appliedSurfaceHeight = h;
+    _log('同步 android-surface-size: ${w}x$h');
+    try {
+      await (_player?.platform as dynamic)
+          ?.setProperty
+          ?.call('android-surface-size', '${w}x$h');
+    } catch (e) {
+      _log('同步 android-surface-size 失败: $e');
+    }
   }
 
   Future<void> _detachPlayer() async {
@@ -273,6 +335,9 @@ class HimiMpvAndroidSession implements MpvSession {
     final player = _player;
     _log('detachPlayer: handle=$_surfaceHandle');
     _player = null;
+    // 重建后必须重新应用尺寸：置零让下次 _syncAndroidSurfaceSize 视为未应用。
+    _appliedSurfaceWidth = 0;
+    _appliedSurfaceHeight = 0;
     // Surface 重建（旋转 / 原生 UI 宿主重建）：记住当前播放点，等新
     // surface 到达后由 _ensurePlayer 用同一地址 + 当前位置重建，避免黑屏
     // 或从头播（计划书 §6.3「Surface handle 顺序与重建」）。
@@ -356,6 +421,11 @@ class HimiMpvAndroidSession implements MpvSession {
       // 由 AndroidVideoController 后置设 yes，此处若设 no 会与其冲突。
       if (nativeSurface) 'force-window': 'no',
       if (nativeSurface) 'wid': '$_surfaceHandle',
+      // 合成画布尺寸：必须与 surface 实测一致，否则 mpv 按默认尺寸合成后
+      // 被 ANativeWindow 拉伸（竖屏画布根因）。初始未知时不写，等
+      // surfaceChanged 补。
+      if (nativeSurface && _surfaceWidth > 0 && _surfaceHeight > 0)
+        'android-surface-size': '${_surfaceWidth}x$_surfaceHeight',
       // The stock Android libmpv build used by media_kit is built without
       // Vulkan (libplacebo HAVE_VULKAN=0). Use the EGL/GLES Android context;
       // the HDR data-space patch tags the native window as BT.2020 PQ/HLG.

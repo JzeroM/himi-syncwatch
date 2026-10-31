@@ -38,6 +38,8 @@ void main() {
       expect(kotlinHex('WHITE_54'), NativePlayerTheme.white54.toARGB32());
       expect(kotlinHex('WHITE_38'), NativePlayerTheme.white38.toARGB32());
       expect(kotlinHex('WHITE_24'), NativePlayerTheme.white24.toARGB32());
+      expect(kotlinHex('WHITE_12'), NativePlayerTheme.white12.toARGB32());
+      expect(kotlinHex('ACCENT_30'), NativePlayerTheme.accent30.toARGB32());
     });
 
     test('玻璃/浮层色', () {
@@ -69,6 +71,10 @@ void main() {
         NativePlayerTheme.topChipIconSize.round(),
       );
       expect(kotlinInt('TITLE_SIZE'), NativePlayerTheme.titleSize.round());
+      expect(
+        kotlinInt('TITLE_MIN_WIDTH'),
+        NativePlayerTheme.titleMinWidth.round(),
+      );
       expect(kotlinInt('CAPTION_SIZE'), NativePlayerTheme.captionSize.round());
       expect(kotlinInt('CHIP_PAD_H'), NativePlayerTheme.chipPadH.round());
       expect(kotlinInt('CHIP_PAD_V'), NativePlayerTheme.chipPadV.round());
@@ -80,6 +86,22 @@ void main() {
     test('底栏', () {
       expect(kotlinInt('LOGO_WIDTH'), NativePlayerTheme.logoWidth.round());
       expect(kotlinInt('LOGO_HEIGHT'), NativePlayerTheme.logoHeight.round());
+      // 顶/底栏渐变实端 alpha：顶栏 0xCC(0.8) / 底栏 0xD9(0.85)，
+      // 与 Flutter `_buildTopBar` / `_buildControls` 同值。
+      expect(
+        kotlinHex('BAR_GRADIENT_SOLID'),
+        NativePlayerTheme.barGradientSolid.toARGB32(),
+      );
+      expect(
+        kotlinHex('BAR_BOTTOM_SOLID'),
+        NativePlayerTheme.barBottomSolid.toARGB32(),
+      );
+      expect(kotlinInt('BAR_PAD_H'), NativePlayerTheme.barPadH.round());
+      expect(kotlinInt('BAR_PAD_TOP'), NativePlayerTheme.barPadTop.round());
+      expect(
+        kotlinInt('BAR_PAD_BOTTOM'),
+        NativePlayerTheme.barPadBottom.round(),
+      );
       expect(kotlinInt('TIME_CELL'), NativePlayerTheme.timeCellWidth.round());
       expect(
         kotlinInt('TIME_CELL_WIDE'),
@@ -177,9 +199,10 @@ void main() {
           reason: '鸿蒙面板宽夹取需与 Dart panelMin/MaxWidth 一致');
       expect(RegExp(r'right: 12').hasMatch(arkts), isTrue,
           reason: '鸿蒙面板右距需与 Dart panelRight 一致');
-      expect(RegExp(r'top: 48').hasMatch(arkts), isTrue,
+      // 上/下距拆成具名常量后叠加安全区（Flutter safeTop+48 / 116+safeBottom）。
+      expect(arkts.contains('const PANEL_PAD_TOP = 48'), isTrue,
           reason: '鸿蒙面板上距需与 Dart panelTopOffset 一致');
-      expect(RegExp(r'bottom: 116').hasMatch(arkts), isTrue,
+      expect(arkts.contains('const PANEL_PAD_BOTTOM = 116'), isTrue,
           reason: '鸿蒙面板下距需与 Dart panelBottomOffset 一致');
       expect(RegExp(r'left: 16, right: 16, top: 10, bottom: 4').hasMatch(arkts),
           isTrue,

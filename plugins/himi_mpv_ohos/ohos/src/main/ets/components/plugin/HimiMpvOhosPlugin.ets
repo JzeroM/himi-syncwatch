@@ -579,6 +579,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       }
       await win.showWindow();
       this.subWindow = win;
+      // 全屏布局后读刘海/手势条避让区，喂给控件层（顶/底栏避让）。
+      this.feedSafeArea(win);
     } catch (e) {
       // 任何一步失败都回收半开的窗口，避免残留黑屏悬浮层。
       hilog.error(DOMAIN, TAG, 'openNativeUi 失败步骤: %{public}s', String(e));
@@ -587,6 +589,30 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       } catch (_) {
       }
       throw new Error(String(e));
+    }
+  }
+
+  /**
+   * 读全屏窗口的刘海/导航条避让区并喂给控件层。
+   *
+   * `setWindowLayoutFullScreen(true)` 后内容会延伸进刘海与手势条区域；
+   * 顶/底栏必须自己避让（Flutter 靠 `MediaQuery.padding`）。转屏时
+   * onAreaChange 会再次调用。
+   */
+  private feedSafeArea(win: window.Window): void {
+    try {
+      // 官方 AvoidArea 结构：topRect / bottomRect / leftRect / rightRect
+      //（参考 @ohos/flutter_ohos FlutterManager.ets:491 的用法）。
+      const cutout = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_CUTOUT);
+      const nav = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+      // 顶部避让 = 刘海（横屏时刘海在左右侧，topRect.height 自然为 0）。
+      const top = Math.max(cutout.topRect.height, 0);
+      // 底部避让 = 手势条（横屏时在左右侧，bottomRect.height 为 0）。
+      const bottom = Math.max(nav.bottomRect.height, 0);
+      HimiMpvNativeHost.getInstance().setSafeArea(top, bottom);
+      hilog.info(DOMAIN, TAG, 'safeArea top=%{public}f bottom=%{public}f', top, bottom);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'feedSafeArea 失败: %{public}s', String(e));
     }
   }
 

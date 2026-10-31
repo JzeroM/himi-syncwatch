@@ -86,6 +86,8 @@ sealed class NativePlayerCommand {
         return const ToggleOrientation();
       case 'shareRoom':
         return const ShareRoom();
+      case 'toggleResourcePanel':
+        return const ToggleResourcePanel();
       case 'clearSegmentMark':
         return ClearSegmentMark(kind: map['kind'] as String? ?? 'intro');
       case 'toggleDebug':
@@ -397,6 +399,20 @@ class ShareRoom extends NativePlayerCommand {
 
   @override
   Map<String, Object?> toMap() => const <String, Object?>{'type': 'shareRoom'};
+}
+
+/// 房间模式「资源面板」开关（对齐 Flutter `_showPanel`）。
+///
+/// Flutter 底栏在房间模式下有个 `open_in_full`/`close_fullscreen` 按钮，
+/// 点它切换视频区与资源面板的分栏。原生 UI 的资源面板属 Phase 5（尚未
+/// 实现），但按钮**必须存在且语义正确**——旧实现点它发 `requestBack`，
+/// 直接把用户退出播放页。
+class ToggleResourcePanel extends NativePlayerCommand {
+  const ToggleResourcePanel();
+
+  @override
+  Map<String, Object?> toMap() =>
+      const <String, Object?>{'type': 'toggleResourcePanel'};
 }
 
 /// 清除片头/片尾标记（原生二次确认里的「清除」）。

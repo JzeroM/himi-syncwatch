@@ -1,8 +1,13 @@
 package com.himi.syncwatch.nativeplayer
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
@@ -25,11 +30,15 @@ internal object NPTheme {
     // ── 基础色 ──
     const val ACCENT = 0xFF6366F1.toInt()
     const val ACCENT_SOFT = 0x4D6366F1
+    /** accent@0.30（Flutter 解码面板选中行底色）。 */
+    const val ACCENT_30 = 0x4D6366F1
     const val WHITE = 0xFFFFFFFF.toInt()
     const val WHITE_70 = 0xB3FFFFFF.toInt()
     const val WHITE_54 = 0x8AFFFFFF.toInt()
     const val WHITE_38 = 0x62FFFFFF.toInt()
     const val WHITE_24 = 0x3DFFFFFF.toInt()
+    /** white12（分隔线/次级描边；Flutter `Colors.white12`）。 */
+    const val WHITE_12 = 0x1FFFFFFF.toInt()
 
     // ── 玻璃 / 浮层 ──
     const val PANEL_TINT = 0x1F1A1D23
@@ -157,4 +166,52 @@ internal object NPTheme {
     // ── 动效 ──
     const val CONTROLS_FADE_MS = 200
     const val AUTO_HIDE_MS = 5000
+
+    // ── 顶栏标题保底宽 ──
+    /**
+     * 顶栏标题最小宽度（dp）。
+     *
+     * Flutter 用 `Expanded`（权重 1，可被压到 0 宽 → 极窄屏标题彻底消失）。
+     * 原生改用**保底宽**：标题至少留出这么多宽度并 ellipsize，观感与
+     * Flutter 一致（同样是「剩余空间」），但不会被尾簇挤成 0。
+     */
+    const val TITLE_MIN_WIDTH = 56
+
+    // ── 底栏渐变 ──
+    /**
+     * 底栏渐变实端 alpha（Flutter `_buildControls` = `black.withValues(alpha: 0.85)`）。
+     * 顶栏实端保持 `BAR_GRADIENT_SOLID`（0xCC = 0.8）。
+     */
+    const val BAR_BOTTOM_SOLID = 0xD9000000.toInt()
+}
+
+/**
+ * 角标圆形底（照 Flutter `BoxShape.circle`：正圆，直径 = 最短边）。
+ *
+ * 旧实现用 `GradientDrawable.OVAL` + 手算宽度 `14 + len*5`，"3" 变成
+ * 19×14 的**椭圆**、"47" 更扁（真机截图回归）。这里画正圆，直径取
+ * 视图最短边，与 Flutter 一致。
+ */
+internal class BadgeCircleDrawable(private val color: Int) : Drawable() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+
+    override fun draw(canvas: Canvas) {
+        val b = bounds
+        if (b.isEmpty) return
+        val cx = b.exactCenterX()
+        val cy = b.exactCenterY()
+        val radius = minOf(b.width(), b.height()) / 2f
+        canvas.drawCircle(cx, cy, radius, paint)
+    }
+
+    override fun setAlpha(alpha: Int) {
+        paint.alpha = alpha
+    }
+
+    override fun setColorFilter(colorFilter: ColorFilter?) {
+        paint.colorFilter = colorFilter
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }

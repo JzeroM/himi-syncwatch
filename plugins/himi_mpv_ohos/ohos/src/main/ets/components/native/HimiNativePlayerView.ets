@@ -50,8 +50,8 @@ const BORDER_ACTIVE: BorderOptions = { width: 1.5, color: SEL_COLOR, radius: 10 
 /** TV 焦点环描边（3px）。 */
 const BORDER_FOCUS: BorderOptions = { width: 3, color: FOCUS_RING_COLOR, radius: 10 };
 
-/** 控件自动隐藏延时（播放中）。 */
-const AUTO_HIDE_MS = 4000;
+/** 控件自动隐藏延时（播放中）。与 Flutter `controlsAutoHideAfter` 一致（5s）。 */
+const AUTO_HIDE_MS = 5000;
 
 /** 进度刷新周期（与本地插值配合，独立于 Dart 快照频率）。 */
 const TICK_MS = 250;
@@ -139,6 +139,17 @@ export struct HimiNativePlayerView {
   /** 底栏右侧簇间距（20→8→4→0 逐级收窄）。 */
   @State bottomGap: number = 20;
 
+  /** 手势提示文本（居中胶囊；空串 = 隐藏）。 */
+  @State gestureHint: string = '';
+  /** 手势提示是否为图标态（双击播放/暂停；无胶囊底）。 */
+  @State gestureHintIsIcon: boolean = false;
+  /** 亮度/音量柱条百分比（-1 = 隐藏）。 */
+  @State verticalBarPercent: number = -1;
+  /** 柱条贴哪边（true = 左侧亮度）。 */
+  @State verticalBarOnLeft: boolean = false;
+  /** 长按临时倍速是否激活中。 */
+  @State speedBoostActive: boolean = false;
+
   private controller: MpvXComponentController = new MpvXComponentController();
   private listener: ViewListener | null = null;
   private tickId: number = -1;
@@ -169,6 +180,15 @@ export struct HimiNativePlayerView {
     if (this.tickId >= 0) {
       clearInterval(this.tickId);
       this.tickId = -1;
+    }
+    // 手势提示/柱条定时器：不清理会在视图销毁后仍回调。
+    if (this.hintTimerId >= 0) {
+      clearInterval(this.hintTimerId);
+      this.hintTimerId = -1;
+    }
+    if (this.barTimerId >= 0) {
+      clearInterval(this.barTimerId);
+      this.barTimerId = -1;
     }
     // XComponent 销毁会触发 onSurfaceDestroyed → detachSurface，此处无需重复。
     hilog.info(DOMAIN, TAG, 'view disappeared');
@@ -202,11 +222,28 @@ export struct HimiNativePlayerView {
     this.showControls = host.controlsVisible;
   }
 
+  /**
+   * 顶栏时钟文本：尊重 `clockFormat`（off/12h/24h）。
+   *
+   * 旧实现写死 24h 且**非房间模式恒显示**（Flutter 只在 TV 且格式非 off
+   * 时显示），观感与 Flutter 不一致。文案照抄 `formatPlayerClock`：
+   * 12h 档为 `上午 H:MM` / `下午 H:MM`（12 点补 12、去掉前导零）。
+   */
   private nowClock(): string {
+    const fmt = this.state().clockFormat;
+    if (fmt === 'off') {
+      return '';
+    }
     const d = new Date();
-    const h = d.getHours();
     const m = d.getMinutes();
-    return `${h < 10 ? '0' : ''}${h}:${m < 10 ? '0' : ''}${m}`;
+    const mm = m < 10 ? `0${m}` : `${m}`;
+    if (fmt === '12h') {
+      const period = d.getHours() < 12 ? '上午' : '下午';
+      const h12 = d.getHours() % 12 === 0 ? 12 : d.getHours() % 12;
+      return `${period} ${h12}:${mm}`;
+    }
+    const h = d.getHours();
+    return `${h < 10 ? `0${h}` : `${h}`}:${mm}`;
   }
 
   private pokeAutoHide(): void {
@@ -229,6 +266,171 @@ export struct HimiNativePlayerView {
     this.pokeAutoHide();
     HimiMpvNativeHost.getInstance().optimisticTogglePaused();
   }
+
+  // ── 手势（对齐 Flutter VideoGestureLayer + player_screen.dart）────
+
+  /** 双击：播放/暂停 + 图标提示（500ms）。 */
+  private onDoubleTapGesture(): void {
+    const s = this.state();
+    if (s.locked || !s.canControl) {
+      return;
+    }
+    HimiMpvNativeHost.getInstance().optimisticTogglePaused();
+    // 提示显示切换**之后**的动作图标（与 Flutter 一致）。
+    this.showGestureIcon(s.paused ? 0xE4CD : 0xE47E);
+  }
+
+  /** 横拖累计像素（每 100px → ±5s）。 */
+  private hDragAccumPx: number = 0;
+  /** 纵拖起始点在左半屏（亮度）还是右半屏（音量）。 */
+  private dragOnLeftSide: boolean = false;
+  /** 纵拖本地回显（0..1）。 */
+  private brightness01: number = 1.0;
+  private volume01: number = 1.0;
+  /** 拖动起点的亮度/音量（ArkUI offsetY 是相对起点的累计位移，
+   *  必须以起点为基准换算，不能按增量累加）。 */
+  private dragBaseBrightness: number = 1.0;
+  private dragBaseVolume: number = 1.0;
+  /** 提示自动隐藏定时器。 */
+  private hintTimerId: number = -1;
+
+  /** 拖动开始：记录起始侧与起点亮度/音量。 */
+  private onPanStart(event: GestureEvent): void {
+    const s = this.state();
+    if (s.locked || !s.canControl) {
+      return;
+    }
+    this.hDragAccumPx = 0;
+    this.dragOnLeftSide = event.offsetX < this.areaWidth / 2;
+    this.dragBaseBrightness = this.brightness01;
+    this.dragBaseVolume = this.volume01;
+  }
+
+  /** 拖动中：|dx|>|dy| 判横拖 seek，否则纵拖亮度/音量。 */
+  private onPanUpdate(event: GestureEvent): void {
+    const s = this.state();
+    if (s.locked || !s.canControl) {
+      return;
+    }
+    // ArkUI PanGesture 的 offsetX/offsetY 是**相对起点的累计位移**，
+    // 与 Flutter 的 primaryDelta（增量）不同：这里直接以起点为基准换算。
+    const totalDx = event.offsetX;
+    const totalDy = event.offsetY;
+    if (Math.abs(totalDx) > Math.abs(totalDy)) {
+      // 横拖 seek：每 100px → 5s，上限 ±60s。
+      this.hDragAccumPx = totalDx;
+      const deltaMs = Math.round(totalDx / 100 * 5000);
+      const clamped = Math.max(-60000, Math.min(60000, deltaMs));
+      const preview = Math.max(0, Math.min(s.durationMs, s.positionMs + clamped));
+      this.showGestureHint(formatTime(preview));
+    } else {
+      // 纵拖：左亮度 / 右音量（600px 全量程）。totalDy 正值 = 手指下滑
+      // → 亮度/音量下降（与 Flutter `_brightness - delta/600` 一致）。
+      const delta01 = -totalDy / 600;
+      if (this.dragOnLeftSide) {
+        this.brightness01 = Math.max(0, Math.min(1, this.dragBaseBrightness + delta01));
+        this.verticalBarPercent = Math.round(this.brightness01 * 100);
+        this.verticalBarOnLeft = true;
+      } else {
+        this.volume01 = Math.max(0, Math.min(1, this.dragBaseVolume + delta01));
+        this.verticalBarPercent = Math.round(this.volume01 * 100);
+        this.verticalBarOnLeft = false;
+        HimiMpvNativeHost.getInstance().optimisticSetVolume(this.volume01);
+      }
+      this.scheduleVerticalBarHide();
+    }
+  }
+
+  /** 拖动结束：横拖按累计位移 seek。 */
+  private onPanEnd(): void {
+    const s = this.state();
+    if (s.locked || !s.canControl) {
+      return;
+    }
+    if (Math.abs(this.hDragAccumPx) < 10) {
+      return;
+    }
+    const deltaMs = Math.round(this.hDragAccumPx / 100 * 5000);
+    const clamped = Math.max(-60000, Math.min(60000, deltaMs));
+    this.hDragAccumPx = 0;
+    if (clamped === 0) {
+      return;
+    }
+    const target = Math.max(0, Math.min(s.durationMs, s.positionMs + clamped));
+    HimiMpvNativeHost.getInstance().optimisticSeek(target);
+    const seconds = Math.round(clamped / 1000);
+    this.showGestureHint(`${seconds > 0 ? '+' : ''}${seconds}s`);
+  }
+
+  /** 长按临时倍速：激活升到 2×。 */
+  private onSpeedBoostStart(): void {
+    const s = this.state();
+    if (s.locked || !s.canControl || this.speedBoostActive) {
+      return;
+    }
+    this.speedBoostActive = true;
+    this.boostBaseSpeed = s.speed;
+    HimiMpvNativeHost.getInstance().optimisticSetSpeed(this.boostBaseSpeed * 2.0);
+    this.showGestureHint(`${(2.0).toFixed(1)}× 播放中`, -1, false);
+  }
+
+  /** 长按结束：还原到长按前档位。 */
+  private onSpeedBoostEnd(): void {
+    if (!this.speedBoostActive) {
+      return;
+    }
+    this.speedBoostActive = false;
+    HimiMpvNativeHost.getInstance().optimisticSetSpeed(this.boostBaseSpeed);
+    this.gestureHint = '';
+  }
+
+  /** 长按临时倍速的基准档位（松手还原用）。 */
+  private boostBaseSpeed: number = 1.0;
+
+  /** 显示文本提示（800ms 后隐藏；[ms] 传 -1 表示常显）。 */
+  private showGestureHint(text: string, ms: number = 800, withBackground: boolean = true): void {
+    this.gestureHintIsIcon = !withBackground;
+    this.gestureHint = text;
+    if (this.hintTimerId >= 0) {
+      clearInterval(this.hintTimerId);
+      this.hintTimerId = -1;
+    }
+    if (ms < 0) {
+      return;
+    }
+    this.hintTimerId = setInterval((): void => {
+      this.gestureHint = '';
+      if (this.hintTimerId >= 0) {
+        clearInterval(this.hintTimerId);
+        this.hintTimerId = -1;
+      }
+    }, ms);
+  }
+
+  /** 显示图标提示（500ms 后隐藏；无胶囊底）。 */
+  private showGestureIcon(codePoint: number): void {
+    this.showGestureHint(String.fromCodePoint(codePoint), 500, false);
+  }
+
+  /** 柱条 800ms 后隐藏。 */
+  private scheduleVerticalBarHide(): void {
+    if (this.barTimerId >= 0) {
+      clearInterval(this.barTimerId);
+    }
+    this.barTimerId = setInterval((): void => {
+      this.verticalBarPercent = -1;
+      if (this.barTimerId >= 0) {
+        clearInterval(this.barTimerId);
+        this.barTimerId = -1;
+      }
+    }, 800);
+  }
+
+  /** 柱条隐藏定时器。 */
+  private barTimerId: number = -1;
+
+  /** 屏幕宽度（手势起始侧判定用；onAreaChange 喂入）。 */
+  private areaWidth: number = 0;
 
   private openPanel(type: string): void {
     this.pokeAutoHide();
@@ -453,14 +655,49 @@ export struct HimiNativePlayerView {
         .height('100%')
         .backgroundColor(Color.Black);
 
-      // ── 点按层：点屏显隐（位于视频之上、控件之下）──
+      // ── 点按层：视频手势（对齐 Flutter VideoGestureLayer）──
+      // 单击显隐控件；双击播放暂停；横拖 seek；纵拖左亮度/右音量；
+      // 长按临时倍速。锁定中只保留单击（与 Flutter 一致）。
+      //
+      // ArkUI 的 `.gesture()` 最多收 2 个参数，多个手势必须用
+      // `GestureGroup(Parallel)`——等价 Flutter 手势竞技场：单击/双击由
+      // 框架按时间消歧，长按与拖动按位移消歧（位移超阈值即取消长按）。
       Column()
         .width('100%')
         .height('100%')
         .gesture(
-          TapGesture().onAction((): void => {
-            this.onTapLayer();
-          }),
+          GestureGroup(GestureMode.Parallel,
+            // 单击：面板打开先关，否则切换控件显隐。
+            TapGesture({ count: 1 }).onAction((): void => {
+              this.onTapLayer();
+            }),
+            // 双击：播放/暂停。
+            TapGesture({ count: 2 }).onAction((): void => {
+              this.onDoubleTapGesture();
+            }),
+            // 拖动：横拖 seek / 纵拖亮度音量。
+            PanGesture({ direction: PanDirection.All })
+              .onActionStart((event: GestureEvent): void => {
+                this.onPanStart(event);
+              })
+              .onActionUpdate((event: GestureEvent): void => {
+                this.onPanUpdate(event);
+              })
+              .onActionEnd((): void => {
+                this.onPanEnd();
+              }),
+            // 长按：临时倍速（松手还原）。
+            LongPressGesture({ repeat: false })
+              .onAction((): void => {
+                this.onSpeedBoostStart();
+              })
+              .onActionEnd((): void => {
+                this.onSpeedBoostEnd();
+              })
+              .onActionCancel((): void => {
+                this.onSpeedBoostEnd();
+              }),
+          ),
         )
         .hitTestBehavior(HitTestMode.Transparent);
 
@@ -478,6 +715,43 @@ export struct HimiNativePlayerView {
         }
       }
 
+      // ── 手势提示与亮度/音量柱条（视频之上、控件之下）──
+      // 对齐 Flutter `_buildGestureHint` / `_buildVerticalBar` 的层级。
+      if (this.gestureHint.length > 0) {
+        Text(this.gestureHint)
+          .fontFamily(this.gestureHintIsIcon ? NativePlayerIcons.FONT_FAMILY : '')
+          .fontSize(this.gestureHintIsIcon ? 48 : 16)
+          .fontWeight(this.gestureHintIsIcon ? FontWeight.Normal : FontWeight.Bold)
+          .fontColor(this.gestureHintIsIcon ? '#B3FFFFFF' : Color.White)
+          .padding(this.gestureHintIsIcon ? 0 : {
+            left: 16, right: 16, top: 8, bottom: 8,
+          })
+          .backgroundColor(this.gestureHintIsIcon ? Color.Transparent : '#8C000000')
+          .borderRadius(this.gestureHintIsIcon ? 0 : 16)
+          .hitTestBehavior(HitTestMode.None)
+          .align(Alignment.Center);
+      }
+
+      if (this.verticalBarPercent >= 0) {
+        Text(`${this.verticalBarPercent}%`)
+          .fontSize(12)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .width(48)
+          .height(160)
+          .textAlign(TextAlign.Center)
+          .backgroundColor('#8C000000')
+          .borderRadius(16)
+          .hitTestBehavior(HitTestMode.None)
+          // 亮度柱在右、音量柱在左（与 Flutter 实现一致）。
+          .align(this.verticalBarOnLeft ? Alignment.TopStart : Alignment.TopEnd)
+          .margin({
+            left: this.verticalBarOnLeft ? 16 : 0,
+            top: 100,
+            right: this.verticalBarOnLeft ? 0 : 16,
+          });
+      }
+
       // ── 二级面板（Phase 2）：遮住视频，点外/返回关闭 ──
       if (this.activePanel.length > 0) {
         NativePlayerPanel({
@@ -488,34 +762,54 @@ export struct HimiNativePlayerView {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Color.Black);
+    .backgroundColor(Color.Black)
+    // 手势起始侧判定（左亮度 / 右音量）需要屏幕宽度。
+    .onAreaChange((_old: Area, area: Area): void => {
+      this.areaWidth = area.width as number;
+    });
   }
 
-  /** 手机锁定态：仅左下锁钮（与进度条左数显同列）。 */
+  /**
+   * 手机锁定态底栏：对齐 Flutter `_buildLockOnlyControls`——
+   * 底部渐变条（transparent → black@0.85，padding 16/10/16/12）内只放一个
+   * 锁钮，且锁钮在**时间数显列宽**（56/78）内居中（与进度条左数显同轴）。
+   *
+   * 旧实现是全屏 Column + 裸 56×56 文本、无渐变底、锁钮贴 x=0，与 Flutter
+   * 观感差异明显（真机回归）。
+   */
   @Builder
   LockOnlyBar() {
     Column() {
       Row() {
-        Text(String.fromCodePoint(NativePlayerIcons.ICON_LOCK))
-          .fontFamily(NativePlayerIcons.FONT_FAMILY)
-          .fontSize(22)
-          .fontColor('#B3FFFFFF')
-          .width(56)
-          .height(56)
-          .textAlign(TextAlign.Center)
-          .onClick((): void => {
-            this.pokeAutoHide();
-            HimiMpvNativeHost.getInstance().optimisticToggleLock();
-          });
+        // 时间数显列宽内居中（Flutter: SizedBox(cellWidth, Align(center, ...))）。
+        Row() {
+          Text(String.fromCodePoint(this.state().locked
+            ? NativePlayerIcons.ICON_LOCK
+            : NativePlayerIcons.ICON_LOCK_OPEN))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
+            .fontSize(22)
+            .fontColor(Color.White)
+            .padding(8)
+            .backgroundColor('#73000000')
+            .borderRadius(18)
+            .onClick((): void => {
+              this.pokeAutoHide();
+              HimiMpvNativeHost.getInstance().optimisticToggleLock();
+            });
+        }
+        .width(this.timeCellWidth())
+        .justifyContent(FlexAlign.Center);
       }
       .width('100%')
-      .alignItems(VerticalAlign.Bottom);
+      .padding({ left: 16, right: 16, top: 10, bottom: 12 })
+      .justifyContent(FlexAlign.Start);
     }
     .width('100%')
     .height('100%')
+    .justifyContent(FlexAlign.End)
     .linearGradient({
       angle: 90,
-      colors: [['#00000000', 0.0], ['#99000000', 1.0]],
+      colors: [['#00000000', 0.0], ['#D9000000', 1.0]],
     })
     .position({ x: 0, y: '100%' })
     .markAnchor({ x: '0%', y: '100%' });
@@ -587,19 +881,23 @@ export struct HimiNativePlayerView {
             });
         }
         // 分享（仅房间模式；对齐 Flutter showShare）。
+        // 时钟（仅 TV 且格式非 off；对齐 Flutter PlayerClockLayer：
+        // `if (!tvMode || !format.enabled) return shrink`）。
         if (this.state().isRoom) {
           this.IconChip(String.fromCodePoint(NativePlayerIcons.ICON_SHARE), 22, 6, false,
             false, 'share', (): void => {
               this.pokeAutoHide();
               HimiMpvNativeHost.getInstance().shareRoom();
             });
-        } else {
-          Text(this.currentTime)
+        } else if (this.state().tvMode && this.state().clockFormat !== 'off') {
+          Text(this.nowClock())
             .fontSize(13)
+            .fontWeight(FontWeight.Medium)
             .fontColor('#B3FFFFFF')
             .width(100)
             .height(48)
-            .textAlign(TextAlign.Center);
+            .textAlign(TextAlign.End)
+            .padding({ right: 0 });
         }
       }
       .alignItems(VerticalAlign.Center)
@@ -612,7 +910,13 @@ export struct HimiNativePlayerView {
       });
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    // 顶栏避让刘海（Flutter 靠 MediaQuery.padding.top；子窗口开了全屏布局）。
+    .padding({
+      left: 12,
+      right: 12,
+      top: 10 + HimiMpvNativeHost.getInstance().safeAreaTop,
+      bottom: 10,
+    })
     .alignItems(VerticalAlign.Center)
     .onAreaChange((_old: Area, area: Area): void => {
       this.topRowW = area.width as number;
@@ -648,9 +952,10 @@ export struct HimiNativePlayerView {
         })
           .layoutWeight(1)
           .selectedColor(SEL_COLOR)
-          .trackColor('#33FFFFFF')
-          // 与 Flutter 观感对齐（NativePlayerTheme）：track 6dp + 8dp 半径
-          // 蓝圆点拇指（直径 16），提示气泡关闭（原始毫秒值无意义）。
+          // 与 Flutter glassSliderTheme 对齐：未播段 = white@0.16
+          //（旧值 #33FFFFFF = 0.20 偏亮，与 Flutter/安卓都不一致）。
+          .trackColor('#29FFFFFF')
+          // track 6dp + 8dp 半径蓝圆点拇指（直径 16），提示气泡关闭。
           .trackThickness(6)
           .trackBorderRadius(3)
           .blockColor(SEL_COLOR)
@@ -674,12 +979,16 @@ export struct HimiNativePlayerView {
           .width(this.timeCellWidth())
           .textAlign(TextAlign.Start);
       }
-      // TV 长按进度条 → 片头片尾标记卡（与 Flutter onLongPress 一致）。
+      // TV + 片头片尾功能开启时，长按进度条 → 标记卡。
+      // 对齐 Flutter `segmentTvMark = _segmentFeatureEnabled && tvMode`；
+      // 旧实现无条件绑定，手机上长按进度条会误弹标记卡。
       .gesture(
-        LongPressGesture().onAction((): void => {
-          this.pokeAutoHide();
-          HimiMpvNativeHost.getInstance().togglePanel(NativePlayerPanelType.segment);
-        }),
+        this.state().tvMode && this.state().segmentEnabled
+          ? LongPressGesture().onAction((): void => {
+            this.pokeAutoHide();
+            HimiMpvNativeHost.getInstance().togglePanel(NativePlayerPanelType.segment);
+          })
+          : undefined,
       )
       .width('100%')
       .alignItems(VerticalAlign.Center);
@@ -688,7 +997,13 @@ export struct HimiNativePlayerView {
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: 14 })
+    // 底栏避让手势条（Flutter：`12 + MediaQuery.padding.bottom`）。
+    .padding({
+      left: 16,
+      right: 16,
+      top: 10,
+      bottom: 14 + HimiMpvNativeHost.getInstance().safeAreaBottom,
+    })
     // Flutter _buildControls：transparent → black@0.85 自上而下渐变。
     // angle 180 = 自上而下；angle 0 = 自左向右（会把整条横向压黑成硬边
     // 「黑幕」，即真机回归观感）。
@@ -898,8 +1213,15 @@ export struct HimiNativePlayerView {
 
   /**
    * 带角标的图标玻璃方块（版本/字幕/音轨/选集）。
-   * 角标：#6366F1 圆底 + 9px 白字，贴图标右上（right:-6 top:-4，与 Flutter
-   * _buildControlButton 的 Positioned 一致）；badge 为空串时不渲染。
+   *
+   * 角标：#6366F1 正圆底 + 9px 白字，贴图标右上（right:-6 top:-4，与
+   * Flutter `_buildControlButton` 的 Positioned 一致）；badge 为空串时不渲染。
+   *
+   * 关键修复（真机截图回归）：旧实现用 constraintSize + borderRadius(9)，
+   * 文本宽超过 14 时会变成椭圆/胶囊（"47" 明显压扁）。Flutter 的
+   * BoxShape.circle 画的是「内切于最短边的正圆」，这里改用**定宽定高**
+   * 容器 + borderRadius 取边长一半，保证恒为正圆；边长按文本长度阶梯取值
+   * （1~2 位 14dp，3 位起 18dp）。
    */
   @Builder
   BadgeIconChip(icon: string, badge: string, active: boolean, key: string, onTap: () => void) {
@@ -910,15 +1232,21 @@ export struct HimiNativePlayerView {
           .fontSize(9)
           .fontColor(Color.White)
           .backgroundColor(SEL_COLOR)
-          .borderRadius(9)
-          .padding({ left: 2, right: 2, top: 2, bottom: 2 })
-          .constraintSize({ minWidth: 14, minHeight: 14 })
+          .width(this.badgeSide(badge))
+          .height(this.badgeSide(badge))
+          .borderRadius(this.badgeSide(badge) / 2)
           .textAlign(TextAlign.Center)
+          .align(Alignment.Center)
           // Flutter Positioned(right:-6, top:-4)：相对 24 图标边。本 Stack 含
           // 4 内边距（图标位于 4..28），换算为 margin right -2 / top 0。
           .margin({ right: -2 });
       }
     }
+  }
+
+  /** 角标正圆边长（dp）：1~2 位 14，3 位起 18（文本加 padding 后仍内切）。 */
+  private badgeSide(badge: string): number {
+    return badge.length >= 3 ? 18 : 14;
   }
 
   /** 传输组按钮（上一集/播放/下一集）。 */

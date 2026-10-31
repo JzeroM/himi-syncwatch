@@ -107,7 +107,9 @@ const PANEL_RADIUS = 16;
 const FULLBLEED_RADIUS: BorderRadiuses = { topLeft: 16, bottomLeft: 16, topRight: 0, bottomRight: 0 };
 /** 常规面板外边距（Flutter selectorPanelBox：right 12 / top 48 / bottom 116）。 */
 const PANEL_MARGIN: Margin = { right: 12 };
-const PANEL_PAD_V: Padding = { top: 48, bottom: 116 };
+/** 常规面板上下避让（Flutter selectorPanelBox：top=safeTop+48 / bottom=116+safeBottom）。 */
+const PANEL_PAD_TOP = 48;
+const PANEL_PAD_BOTTOM = 116;
 /** 选集贴边：无外边距。 */
 const FULLBLEED_MARGIN: Margin = { right: 0 };
 const FULLBLEED_PAD: Padding = { top: 0, bottom: 0 };
@@ -172,7 +174,12 @@ export struct NativePlayerPanel {
         .width('100%')
         .height('100%')
         .alignItems(HorizontalAlign.End)
-        .padding(this.panelType === 'episode' ? FULLBLEED_PAD : PANEL_PAD_V);
+        .padding(this.panelType === 'episode'
+          ? FULLBLEED_PAD
+          : {
+            top: PANEL_PAD_TOP + HimiMpvNativeHost.getInstance().safeAreaTop,
+            bottom: PANEL_PAD_BOTTOM + HimiMpvNativeHost.getInstance().safeAreaBottom,
+          });
       }
     }
     .width('100%')
@@ -526,7 +533,14 @@ export struct NativePlayerPanel {
               })
                 .layoutWeight(1)
                 .selectedColor(SEL_COLOR)
-                .trackColor('#33FFFFFF')
+                // 与进度条同一玻璃观（track 6 / 未播 white@0.16 / 16dp 蓝点），
+                // 旧实现用系统默认滑杆（粗灰条 + 小圆点），与双端不一致。
+                .trackThickness(6)
+                .trackBorderRadius(3)
+                .trackColor('#29FFFFFF')
+                .blockColor(SEL_COLOR)
+                .blockSize({ width: 16, height: 16 })
+                .showTips(false)
                 .onChange((v: number): void => {
                   this.host.adjustDisplay(spec.key, v);
                 });

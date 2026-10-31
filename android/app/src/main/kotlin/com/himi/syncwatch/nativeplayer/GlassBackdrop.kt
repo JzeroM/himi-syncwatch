@@ -36,6 +36,12 @@ class GlassBackdropDrawable(
     private var sampling = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /** 面板在屏幕上的矩形（像素；未喂入时为零 → 降级 tint）。 */
+    private val panelRect = android.graphics.Rect()
+    /** 采样位图对应的 surface 窗尺寸（映射比例基准）。 */
+    private var surfaceW = 0
+    private var surfaceH = 0
+
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -86,6 +92,21 @@ class GlassBackdropDrawable(
         } catch (_: Throwable) {
             sampling = false
         }
+    }
+
+    /**
+     * 面板在屏幕上的矩形（像素）。由宿主在每次绘制前喂入——采样位图是
+     * **整个 surface 窗**，绘制时必须把它映射到面板所占的那一块，否则
+     * 会把整帧视频缩到面板里（真机截图回归「面板显示缩小版全视频」）。
+     */
+    fun setPanelScreenRect(left: Int, top: Int, right: Int, bottom: Int) {
+        panelRect.set(left, top, right, bottom)
+    }
+
+    /** 采样位图对应的 surface 窗尺寸（映射比例基准）。 */
+    fun setSurfaceSize(width: Int, height: Int) {
+        surfaceW = width
+        surfaceH = height
     }
 
     /** 采样位图按目标尺寸（重）建；窗尺寸变化时重建。 */
@@ -155,31 +176,41 @@ class GlassBackdropDrawable(
         canvas.restoreToCount(save)
     }
 
-    /** 采样帧绘制：主体模糊底 + 边缘折射带（放大裁边 = 凸透镜观感）。 */
+    /**
+     * 采样帧绘制：把**面板所占的那一块**从整帧采样里取出来铺满面板。
+     *
+     * 采样位图是整个 surface 窗（视频区）。旧实现 `drawBitmap(bmp, null, rect)`
+     * 把整帧拉伸铺满面板矩形 → 面板里显示「缩小版全视频」（真机截图回归）。
+     * 正确做法：面板屏幕矩形 → 位图源矩形（按采样比例缩放），再画到面板 bounds。
+     */
     private fun drawRefractedSample(canvas: Canvas, bmp: Bitmap, rect: RectF) {
-        // 主体：全铺（降采样帧拉大 = 软模糊背景）。
-        canvas.drawBitmap(bmp, null, rect, paint)
+        val src = panelSourceRect(bmp) ?: return
+        canvas.drawBitmap(bmp, src, rect, paint)
 
-        // 折射带：边缘 band 用 zoom 倍放大帧的对应区（中心不变、边缘放大）。
+        // 折射带：边缘 band 用放大 zoom 倍的同源区（凸透镜观感）。
         val band = NPTheme.GLASS_REFRACTION_BAND * resourcesDensity()
-        if (band <= 0f) return
+        if (band <= 0f || rect.width() <= 0f || rect.height() <= 0f) return
         val zoom = NPTheme.GLASS_REFRACTION_ZOOM
-        val srcW = bmp.width.toFloat()
-        val srcH = bmp.height.toFloat()
-        // 映射 rect→src 坐标。
-        val sx = { x: Float -> (x - rect.left) / rect.width() * srcW }
-        val sy = { y: Float -> (y - rect.top) / rect.height() * srcH }
-        // 四条边带：从放大帧取比原位更「靠里」的窄带，画到边缘 →
-        // 视觉上内容沿边缘被推移放大（折射位移近似）。
-        val z = (zoom - 1f) * 0.5f
-        val insetL = rect.width() * z
-        val insetT = rect.height() * z
+        // band 在源矩形里占的像素宽/高（等比换算）。
+        val bandSrcX = band / rect.width() * src.width()
+        val bandSrcY = band / rect.height() * src.height()
+        // 放大倍率对应的源区收缩（中心不变、边缘放大 = 内容沿边缘被推移）。
+        val insetSrcX = src.width() * (zoom - 1f) * 0.5f
+        val insetSrcY = src.height() * (zoom - 1f) * 0.5f
+        val sl = src.left.toFloat()
+        val st = src.top.toFloat()
+        val sr = src.right.toFloat()
+        val sb = src.bottom.toFloat()
+        val insetL = sl + insetSrcX
+        val insetT = st + insetSrcY
+        val insetR = sr - insetSrcX
+        val insetB = sb - insetSrcY
         // 上带
         canvas.drawBitmap(
             bmp,
             android.graphics.Rect(
-                sx(rect.left + insetL).toInt(), sy(rect.top + insetT).toInt(),
-                sx(rect.right - insetL).toInt(), sy(rect.top + band + insetT).toInt(),
+                insetL.toInt(), insetT.toInt(),
+                insetR.toInt(), (insetT + bandSrcY).toInt(),
             ),
             android.graphics.RectF(rect.left, rect.top, rect.right, rect.top + band),
             paint,
@@ -188,8 +219,8 @@ class GlassBackdropDrawable(
         canvas.drawBitmap(
             bmp,
             android.graphics.Rect(
-                sx(rect.left + insetL).toInt(), sy(rect.bottom - band - insetT).toInt(),
-                sx(rect.right - insetL).toInt(), sy(rect.bottom - insetT).toInt(),
+                insetL.toInt(), (insetB - bandSrcY).toInt(),
+                insetR.toInt(), insetB.toInt(),
             ),
             android.graphics.RectF(rect.left, rect.bottom - band, rect.right, rect.bottom),
             paint,
@@ -198,8 +229,8 @@ class GlassBackdropDrawable(
         canvas.drawBitmap(
             bmp,
             android.graphics.Rect(
-                sx(rect.left + insetL).toInt(), sy(rect.top + insetT).toInt(),
-                sx(rect.left + band + insetL).toInt(), sy(rect.bottom - insetT).toInt(),
+                insetL.toInt(), insetT.toInt(),
+                (insetL + bandSrcX).toInt(), insetB.toInt(),
             ),
             android.graphics.RectF(rect.left, rect.top, rect.left + band, rect.bottom),
             paint,
@@ -208,13 +239,31 @@ class GlassBackdropDrawable(
         canvas.drawBitmap(
             bmp,
             android.graphics.Rect(
-                sx(rect.right - band - insetL).toInt(), sy(rect.top + insetT).toInt(),
-                sx(rect.right - insetL).toInt(), sy(rect.bottom - insetT).toInt(),
+                (insetR - bandSrcX).toInt(), insetT.toInt(),
+                insetR.toInt(), insetB.toInt(),
             ),
             android.graphics.RectF(rect.right - band, rect.top, rect.right, rect.bottom),
             paint,
         )
     }
+
+    /**
+     * 面板屏幕矩形 → 采样位图源矩形（纯映射，JVM 可单测）。
+     *
+     * 位图覆盖整个 surface 窗，面板是其中一块，按 `bmp/surface` 比例缩放
+     * 并夹到位图范围内。数据缺失或结果过小返回 null（降级 tint）。
+     */
+    private fun panelSourceRect(bmp: Bitmap): android.graphics.Rect? =
+        mapPanelToSource(
+            panelLeft = panelRect.left,
+            panelTop = panelRect.top,
+            panelRight = panelRect.right,
+            panelBottom = panelRect.bottom,
+            surfaceW = surfaceW,
+            surfaceH = surfaceH,
+            bmpW = bmp.width,
+            bmpH = bmp.height,
+        )
 
     private fun resourcesDensity(): Float = try {
         android.content.res.Resources.getSystem().displayMetrics.density
@@ -250,6 +299,35 @@ class GlassBackdropDrawable(
     companion object {
         /** 采样节拍（ms）：面板打开期间 4fps，足以覆盖玻璃慢变化。 */
         const val SAMPLE_INTERVAL_MS = 250L
+
+        /**
+         * 面板屏幕矩形 → 采样位图源矩形（纯函数，JVM 可单测）。
+         *
+         * 位图覆盖整个 surface 窗，面板是其中一块，按 `bmp/surface` 比例
+         * 缩放并夹到位图范围内。数据缺失或结果过小返回 null（降级 tint），
+         * 绝不画错（黑屏红线：面板失败不能影响出画）。
+         */
+        fun mapPanelToSource(
+            panelLeft: Int,
+            panelTop: Int,
+            panelRight: Int,
+            panelBottom: Int,
+            surfaceW: Int,
+            surfaceH: Int,
+            bmpW: Int,
+            bmpH: Int,
+        ): android.graphics.Rect? {
+            if (panelRight <= panelLeft || panelBottom <= panelTop) return null
+            if (surfaceW <= 0 || surfaceH <= 0 || bmpW <= 0 || bmpH <= 0) return null
+            val kx = bmpW.toDouble() / surfaceW
+            val ky = bmpH.toDouble() / surfaceH
+            val left = (panelLeft * kx).toInt().coerceIn(0, bmpW)
+            val top = (panelTop * ky).toInt().coerceIn(0, bmpH)
+            val right = (panelRight * kx).toInt().coerceIn(0, bmpW)
+            val bottom = (panelBottom * ky).toInt().coerceIn(0, bmpH)
+            if (right - left < 2 || bottom - top < 2) return null
+            return android.graphics.Rect(left, top, right, bottom)
+        }
 
         /** 安全工厂：任何异常返回 null（调用方降级 tint），绝不抛出。 */
         fun createOrNull(

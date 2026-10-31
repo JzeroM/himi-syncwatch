@@ -3379,6 +3379,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _toggleOrientation();
       case ShareRoom():
         _showShareRoomDialog();
+      case ToggleResourcePanel():
+        // 房间模式资源面板：原生 UI 侧尚未实现分栏面板（Phase 5），但按钮
+        // 语义必须与 Flutter 一致——切换而非退出。这里只记录，等面板落地后
+        // 接 `_showPanel`。
+        LogService().log('mpv', '原生 UI 请求切换资源面板（Phase 5 待接入）');
       case SwitchEngine(:final engine):
         final target = PlayerEngine.values.firstWhere(
           (e) => e.id == engine,

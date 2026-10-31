@@ -714,10 +714,62 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 - [ ] 手机手势（单独一轮）。
 - [ ] 验收：手机触控全功能可用（需真机）。
 
+### Phase 2.6：与 Flutter 观感逐项对齐（1.5.5+562）
+
+> 起因：用户三张截图 + 要求「整体排查，交付效果与 Flutter 播放器一致、
+> 双端一致」。逐项对照 Flutter 播放页修正。
+
+**截图暴露的三个缺陷**
+
+- [x] A1 角标：改正圆（`BadgeCircleDrawable`，边长按实测文本宽 + 4dp）
+      + 整条父链 `clipChildren=false`（旧实现 19×14 椭圆且右半被切）。
+- [x] A2 玻璃面板：`drawRefractedSample` 改为面板屏幕矩形 → 位图源矩形
+      映射（旧实现整帧铺满 → 面板显示「缩小版全视频」）。
+- [x] A3 竖屏画布：surface 事件带 width/height → Dart 设
+      `android-surface-size`（旧实现从不设 → mpv 恒按初始尺寸合成被拉伸）。
+- [x] A3 竖屏控件：新增 `ScaleDownBox`（测量级等价 `FittedBox(scaleDown)`）
+      替换只收窄间距的 `applyGroupGap`；顶栏标题保底宽 56dp。
+- [x] 缩放态触摸热区补偿到 ≥44dp（只扩热区不改视觉）。
+
+**与 Flutter 的视觉/语义偏差**
+
+- [x] B1 TV 时钟：安卓 `clockWrap` 从未挂到顶栏（死代码）→ 已挂载；
+      鸿蒙改为仅 TV 显示（旧实现非房间模式恒显示）。
+- [x] B2 时钟格式：双端支持 off/12h/24h（鸿蒙旧实现写死 24h）。
+- [x] B3 房间「资源面板」按钮：新增 `toggleResourcePanel` 命令
+      （旧实现发 `requestBack` → 点一下直接退出播放页）。
+- [x] B4 底栏渐变 alpha 0xCC→0xD9（Flutter 0.85）。
+- [x] B5 顶/底栏安全区：安卓读 `WindowInsets`/`DisplayCutout`，鸿蒙读
+      `getWindowAvoidArea`，喂给控件层避让刘海与手势条。
+- [x] B6 鸿蒙自动隐藏 4000ms→5000ms（Flutter 5s）。
+- [x] B7 进度条未播段 white@0.16（0x29）统一双端。
+- [x] B8 缓冲圈颜色 WHITE_70→accent；鸿蒙补上缓冲圈所需状态字段。
+- [x] B9 移除安卓 HDR 徽标（Flutter 控制层无此元素）。
+- [x] B10 解码面板：改 180dp 独立 popover（对齐 Flutter `DecodeModePanel`
+      的位置/宽度/radio 行样式），删掉死代码 `decodePopoverOpen` 分支；
+      档位标签「自动」→「智能」（对齐 Flutter 播放页）。
+- [x] B11 面板几何叠加安全区（`safeTop+48` / `116+safeBottom`）。
+- [x] B12 显示调节滑杆补 track6/thumb16 玻璃观（鸿蒙旧用系统默认滑杆）。
+- [x] B13 鸿蒙长按进度条 → 片头片尾卡加 `tvMode && segmentEnabled` 条件
+      （旧实现无条件绑定，手机长按会误弹）。
+- [x] B14 鸿蒙锁定态底栏：对齐 Flutter `_buildLockOnlyControls`
+      （补渐变底 + 锁钮在时间数显列内居中）。
+- [x] B15 顶/底栏内边距统一走 `BAR_PAD_*` 常量。
+
+**跨语言一致性**
+
+- [x] Dart `NativePlayerTheme` 补 `white12`/`accent30`/`barGradientSolid`/
+      `barBottomSolid`/`barPad*`/`titleMinWidth`（唯一真相源）。
+- [x] 新增 `test/native_player_layout_test.dart`（布局语义 + 显隐谓词 +
+      面板几何 + 双端源码静态断言）。
+- [x] 扩展 `test/native_player_theme_test.dart`（新增常量三端比对）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
-- [x] `TvKeyRouter` 与焦点导航（D-pad 可达 + 3px `#C1C2FE` 焦点环）。
+- [ ] **`TvKeyRouter` 焦点/按键路由**（~~已勾选~~ 系**假勾选**：全仓无该
+      文件，实际只有 `makeFocusable` 焦点环，无 seek/音量/跨组跳焦/退出确认
+      等按键语义）。本轮已识别，待补。
 - [ ] 手机手势（单独一轮）。
 - [x] overscan/焦点描边。
 - [ ] 验收：手机 + TV 遥控器全部语义与 Flutter 一致（需真机）。

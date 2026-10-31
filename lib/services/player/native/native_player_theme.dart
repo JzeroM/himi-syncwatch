@@ -36,6 +36,12 @@ abstract final class NativePlayerTheme {
   /// 白 24%（不可用按钮）。
   static const Color white24 = Color(0x3DFFFFFF);
 
+  /// 白 12%（分隔线/次级描边；Flutter `Colors.white12`）。
+  static const Color white12 = Color(0x1FFFFFFF);
+
+  /// 强调色 30%（解码面板选中行底色）。
+  static const Color accent30 = Color(0x4D6366F1);
+
   // ── 玻璃 / 浮层 ───────────────────────────────────────────
   /// 面板着色（12% 深色膜）。
   static const Color panelTint = Color(0x1F1A1D23);
@@ -96,6 +102,11 @@ abstract final class NativePlayerTheme {
   static const double topChipIconSize = 18;
   static const double titleSize = 16;
   static const double titleWeight = 600;
+
+  /// 顶栏标题保底宽（原生侧新增；Flutter 用 Expanded 可被压到 0 宽，
+  /// 原生保底这么多宽度并 ellipsize，避免标题彻底消失）。
+  static const double titleMinWidth = 56;
+
   static const double captionSize = 12;
 
   /// 内核/字幕样式/解码胶囊内边距。
@@ -112,6 +123,17 @@ abstract final class NativePlayerTheme {
   /// Logo 尺寸 240×44。
   static const double logoWidth = 240;
   static const double logoHeight = 44;
+
+  /// 顶栏渐变实端（black@0.8，Flutter `_buildTopBar`）。
+  static const Color barGradientSolid = Color(0xCC000000);
+
+  /// 底栏渐变实端（black@0.85，Flutter `_buildControls`）。
+  static const Color barBottomSolid = Color(0xD9000000);
+
+  /// 控制条内边距（Flutter `EdgeInsets.fromLTRB(16, 10, 16, 12)`）。
+  static const double barPadH = 16;
+  static const double barPadTop = 10;
+  static const double barPadBottom = 12;
 
   /// 时间文本列宽（`56/78`）。
   static const double timeCellWidth = 56;

@@ -436,6 +436,26 @@ export class HimiMpvNativeHost {
   /** 控件层显隐（点屏切换 / 自动隐藏 / 返回键第一段）。 */
   controlsVisible: boolean = true;
 
+  /**
+   * 安全区（刘海 / 挖孔 / 手势条）高度，单位 vp。
+   *
+   * 子窗口开了 `setWindowLayoutFullScreen(true)`，内容会延伸进刘海区——
+   * 不避让时顶栏被挖孔压住、底栏被手势条盖住（Flutter 靠
+   * `MediaQuery.padding` 避让）。插件在窗口 show 后读 avoid area 喂进来。
+   */
+  safeAreaTop: number = 0;
+  safeAreaBottom: number = 0;
+
+  /** 喂入安全区（插件在窗口显示后 / 转屏时调用）。 */
+  setSafeArea(top: number, bottom: number): void {
+    const t = top >= 0 ? top : 0;
+    const b = bottom >= 0 ? bottom : 0;
+    if (t === this.safeAreaTop && b === this.safeAreaBottom) return;
+    this.safeAreaTop = t;
+    this.safeAreaBottom = b;
+    this.notify();
+  }
+
   /** 当前打开的二级面板（null = 无）。见 [NativePlayerPanelType]。 */
   activePanel: string | null = null;
 

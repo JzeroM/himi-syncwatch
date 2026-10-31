@@ -148,6 +148,12 @@ object NativePlayerIcons {
     /** share */
     const val ICON_SHARE = 0xE593
 
+    /** radio_button_checked（Flutter `Icons.radio_button_checked`）。 */
+    const val ICON_RADIO_CHECKED = 0xE838
+
+    /** radio_button_unchecked（Flutter `Icons.radio_button_unchecked`）。 */
+    const val ICON_RADIO_UNCHECKED = 0xE836
+
     // ── 字体加载（内置 res/font/material_icons.otf）────────────────
 
     @Volatile

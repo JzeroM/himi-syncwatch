@@ -14,6 +14,7 @@ import android.os.Looper
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
@@ -74,6 +75,24 @@ class NativePlayerScreenView(
         fun onClearSegmentMark(kind: String)
         fun onOpenPanel(panel: String)
         fun onClosePanel()
+
+        /** 房间模式「资源面板」开关（对齐 Flutter `_showPanel`）。 */
+        fun onToggleResourcePanel()
+
+        /** 手势：相对 seek（横拖/甩动；对齐 Flutter `_seekRelative`，±60s 上限）。 */
+        fun onSeekRelative(deltaMs: Long)
+
+        /** 手势：左侧纵拖调亮度（0..1，写入控件窗 `screenBrightness`）。 */
+        fun onGestureBrightness(value01: Float)
+
+        /**
+         * 手势：右侧纵拖调音量（增量，0..1）。
+         * 宿主按本地乐观值累加后发 `setVolume`。
+         */
+        fun onGestureVolumeDelta(delta01: Float)
+
+        /** 手势：长按临时倍速（true=升到 2×，false=还原到长按前档位）。 */
+        fun onSpeedBoost(active: Boolean)
     }
 
     // ── 状态 ──────────────────────────────────────────────────────
@@ -88,9 +107,6 @@ class NativePlayerScreenView(
 
     /** 当前打开的二级面板（null = 无）。 */
     private var activePanel: String? = null
-
-    /** 解码 popover 是否展开（与右侧面板互斥；仅手机）。 */
-    private var decodePopoverOpen = false
 
     /** 片头片尾卡片的二次确认上下文（null = 非确认态）。 */
     private var segmentConfirmKind: String? = null
@@ -112,6 +128,45 @@ class NativePlayerScreenView(
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    /**
+     * 安全区（刘海/挖孔/手势条）内边距，像素。由宿主在窗口 insets 变化时
+     * 喂入（[applySafeInsets]）。
+     *
+     * Flutter 侧对应 `MediaQuery.of(context).padding.top/bottom`：顶栏、
+     * 面板几何、底栏内边距都要叠加它（B5/B11）。旧实现固定 0 → 横屏刘海机
+     * 上顶栏被挖孔压住、面板顶到屏幕边缘。
+     */
+    private var safeInsetTopPx = 0
+    private var safeInsetBottomPx = 0
+
+    /** 面板顶部避让量（仅安全区；Flutter `safeTop + 48` 的 safeTop 部分）。 */
+    private fun safeTopPx(): Int = safeInsetTopPx
+
+    /** 面板底部避让量（手势条 / 横屏侧边安全区）。 */
+    private fun safeBottomPx(): Int = safeInsetBottomPx
+
+    /** 宿主喂入安全区（insets 变化时调用），并触发重排。 */
+    fun applySafeInsets(topPx: Int, bottomPx: Int) {
+        val t = topPx.coerceAtLeast(0)
+        val b = bottomPx.coerceAtLeast(0)
+        if (t == safeInsetTopPx && b == safeInsetBottomPx) return
+        safeInsetTopPx = t
+        safeInsetBottomPx = b
+        applyBarInsets()
+        requestLayout()
+    }
+
+    /** 顶/底栏内边距统一按安全区算（重排时也走这里，避免被覆盖）。 */
+    private fun applyBarInsets() {
+        topBar.setPadding(dp(12), dp(6) + safeInsetTopPx, dp(12), dp(6))
+        bottomBar.setPadding(
+            dp(NPTheme.BAR_PAD_H),
+            dp(NPTheme.BAR_PAD_TOP),
+            dp(NPTheme.BAR_PAD_H),
+            dp(NPTheme.BAR_PAD_BOTTOM) + safeInsetBottomPx,
+        )
+    }
 
     private fun lp(width: Int, height: Int): LayoutParams =
         LayoutParams(width, height)
@@ -184,14 +239,16 @@ class NativePlayerScreenView(
             setStroke(dp(if (open) 2 else 1), if (open) NPTheme.ACCENT else NPTheme.WHITE_24)
         }
 
-    /** 顶栏/底栏渐变：底部透明 → 顶部 80% 黑（顶栏），反之（底栏）。 */
+    /** 顶栏/底栏渐变：顶栏 顶部80%黑→透明；底栏 透明→底部85%黑。
+     *  alpha 分别 0xCC / 0xD9，与 Flutter `_buildTopBar`（black@0.8）与
+     *  `_buildControls`（black@0.85）逐项同值。 */
     private fun barGradient(topSolid: Boolean): GradientDrawable =
         GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
             if (topSolid) {
                 intArrayOf(NPTheme.BAR_GRADIENT_SOLID, NPTheme.BAR_GRADIENT_CLEAR)
             } else {
-                intArrayOf(NPTheme.BAR_GRADIENT_CLEAR, NPTheme.BAR_GRADIENT_SOLID)
+                intArrayOf(NPTheme.BAR_GRADIENT_CLEAR, NPTheme.BAR_BOTTOM_SOLID)
             },
         ).apply { gradientType = GradientDrawable.LINEAR_GRADIENT }
 
@@ -199,8 +256,71 @@ class NativePlayerScreenView(
         this.listener = listener
     }
 
+    // ── TV 按键路由访问器（见 [TvKeyRouter]）────────────────────
+
+    /** 控件是否可见（TV 方向键语义分支用）。 */
+    fun isControlsVisible(): Boolean = controlsVisible
+
+    /** 进度条（TV 焦点在其上时左右键改判为快进退）。 */
+    fun seekBarButton(): View = seekBar
+
+    /** 播放/暂停键（进度条上按下键时定向跳焦目标）。 */
+    fun playPauseView(): View = playPauseButton
+
+    /** 顺延自动隐藏计时（与控件交互时调用）。 */
+    fun extendAutoHide() = scheduleAutoHide()
+
+    /**
+     * TV 按键路由（对齐 Flutter `PlayerHotkey`）。
+     *
+     * 覆写 [onKeyDown] 而非用 `Dialog.setOnKeyListener`：后者只在**焦点视图
+     * 未消费**按键时触发，而我们要拦的正是「进度条焦点上的左右键」——
+     * SeekBar 会自己消费掉。`onKeyDown` 在事件进入子视图链之前调用，
+     * 优先级正确。
+     */
+    private val tvKeyRouter = TvKeyRouter(
+        rootProvider = { this },
+        seekBarProvider = { seekBar },
+        playPauseProvider = { playPauseButton },
+        controlsVisibleProvider = { controlsVisible },
+        onSeekRelative = { deltaMs ->
+            listener?.onSeekRelative(deltaMs)
+            val seconds = Math.round(deltaMs / 1000f)
+            showGestureHint("${if (seconds > 0) "+" else ""}${seconds}s")
+        },
+        onVolumeDelta = { deltaPercent ->
+            // TV 遥控器音量键：步长 5%（Flutter `_volumeStep`）。
+            volume01 = (volume01 + deltaPercent / 100.0).coerceIn(0.0, 1.0)
+            listener?.onGestureVolumeDelta(deltaPercent / 100.0)
+            showVerticalBar(onLeftSide = false)
+        },
+        onTogglePlay = { listener?.onTogglePlay() },
+        onShowControls = { setControlsVisible(true) },
+        onExtendAutoHide = { scheduleAutoHide() },
+    )
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        // TV 模式才接管遥控器语义；手机（触摸）不拦按键。
+        if (lastState.tvMode && tvKeyRouter.handleKey(keyCode, event)) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     // ── 视图 ──────────────────────────────────────────────────────
 
+    /**
+     * 视频区手势层：对齐 Flutter `VideoGestureLayer` + `player_screen.dart`
+     * 的手势语义（§手势控制）。
+     *
+     * - 单击：面板/浮层打开时先关；否则切换控件显隐
+     * - 双击：播放/暂停（锁定中不解绑）
+     * - 横拖：累计每 100px 预览 ±5s，松手 seek（上限 ±60s；锁定中不解绑）
+     * - 纵拖：左半屏亮度、右半屏音量（锁定中不解绑）
+     * - 长按：临时 2× 倍速（松手还原；锁定中不解绑）
+     *
+     * 锁定态只保留单击（Flutter：`_lockController.locked ? null : ...`）。
+     */
     private val tapLayer = View(context).apply {
         isClickable = true
         setBackgroundColor(Color.TRANSPARENT)
@@ -209,14 +329,278 @@ class NativePlayerScreenView(
                 closePanel()
                 return@setOnClickListener
             }
-            if (decodePopoverOpen || segmentCardOpen) {
-                decodePopoverOpen = false
+            if (segmentCardOpen) {
                 segmentCardOpen = false
                 segmentConfirmKind = null
                 renderOverlays()
                 return@setOnClickListener
             }
             setControlsVisible(!controlsVisible)
+        }
+    }
+
+    // ── 手势识别 ────────────────────────────────────────────────
+
+    /** 横拖累计像素（每 100px 换算一次 ±5s 预览/seek）。 */
+    private var hDragAccumPx = 0f
+
+    /** 长按临时倍速的基准档位（松手还原用）。 */
+    private var boostBaseSpeed = 1.0
+
+    /** 长按临时倍速是否激活中（松手需还原）。 */
+    private var boostActive = false
+
+    /** 纵拖起始点在左半屏（亮度）还是右半屏（音量）。 */
+    private var dragOnLeftSide = false
+
+    /** 手势提示文本（居中显示；null = 隐藏）。 */
+    private val gestureHint = TextView(context).apply {
+        visibility = GONE
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER
+        setPadding(dp(16), dp(8), dp(16), dp(8))
+        typeface = Typeface.DEFAULT_BOLD
+        background = hintBackground()
+    }
+
+    /** 提示胶囊底（黑 55% + 圆角 16；Flutter `_buildGestureHint`）。 */
+    private fun hintBackground(): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(16).toFloat()
+            setColor(0x8C000000)
+        }
+
+    /** 手势提示自动隐藏（每个提示各自持有，互不干扰）。 */
+    private var hideGestureHint: Runnable? = null
+    private var hideVerticalBar: Runnable? = null
+
+    private fun showHintFor(
+        text: String,
+        ms: Long,
+        iconFont: Typeface?,
+        withBackground: Boolean = true,
+    ) {
+        hideGestureHint?.let { mainHandler.removeCallbacks(it) }
+        gestureHint.text = text
+        gestureHint.typeface = iconFont ?: Typeface.DEFAULT_BOLD
+        gestureHint.background = if (withBackground) hintBackground() else null
+        gestureHint.visibility = VISIBLE
+        if (ms <= 0L) return
+        val hide = Runnable {
+            gestureHint.visibility = GONE
+            hideGestureHint = null
+        }
+        hideGestureHint = hide
+        mainHandler.postDelayed(hide, ms)
+    }
+
+    /** 手势提示文本（800ms 后隐藏，与 Flutter `_showGestureHint` 同）。 */
+    private fun showGestureHint(text: String) =
+        showHintFor(text, GESTURE_HINT_TEXT_MS, null)
+
+    /**
+     * 手势提示图标（500ms 后隐藏，与 Flutter `_showGestureIcon` 同）。
+     * 图标态**不带胶囊底**（Flutter 是裸 `Icon(white70, 48)`）。
+     */
+    private fun showGestureIcon(codePoint: Int) =
+        showHintFor(
+            String(Character.toChars(codePoint)),
+            GESTURE_HINT_ICON_MS,
+            NativePlayerIcons.typeface(context),
+            withBackground = false,
+        )
+
+    /**
+     * 临时倍速胶囊（长按期间常显，无自动隐藏；松手由
+     * [tapLayer] 的 ACTION_UP 隐藏）。
+     */
+    private fun showSpeedBoostChip() =
+        showHintFor("${PlayerScreenSpeedBoostMultiplier}× 播放中", 0L, null)
+
+    /** 亮度/音量柱式进度条（与 Flutter `_buildVerticalBar` 同观感）。 */
+    private val verticalBar = TextView(context).apply {
+        visibility = GONE
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+        textSize = 12f
+        background = hintBackground()
+    }
+
+    /** 纵拖/音量柱条百分比（-1 = 隐藏）。 */
+    private var verticalBarPercent: Int = -1
+    /** 柱条贴哪边（true = 左侧亮度）。 */
+    private var verticalBarOnLeft: Boolean = false
+
+    /** 纵拖过程中的本地亮度/音量回显（0..1）。 */
+    private var brightness01 = 1.0
+    private var volume01 = 1.0
+
+    /** 柱条 800ms 后隐藏（独立句柄，与手势提示互不干扰）。 */
+    private fun scheduleVerticalBarHide() {
+        hideVerticalBar?.let { mainHandler.removeCallbacks(it) }
+        val hide = Runnable {
+            verticalBarPercent = -1
+            verticalBar.visibility = GONE
+            hideVerticalBar = null
+        }
+        hideVerticalBar = hide
+        mainHandler.postDelayed(hide, GESTURE_HINT_TEXT_MS)
+    }
+
+    /**
+     * 显示纵拖柱条（[onLeftSide] 决定贴哪边）。
+     *
+     * Flutter 侧：`_buildBrightnessBar` 在**右**、`_buildVolumeBar` 在**左**
+     * （源码注释与实现相反，以实现为准）。这里保持一致。
+     */
+    private fun showVerticalBar(onLeftSide: Boolean) {
+        verticalBarOnLeft = onLeftSide
+        verticalBarPercent = Math.round((if (onLeftSide) brightness01 else volume01) * 100)
+        paintVerticalBar()
+        scheduleVerticalBarHide()
+    }
+
+    /** 按当前百分比/侧别刷新柱条。 */
+    private fun paintVerticalBar() {
+        if (verticalBarPercent < 0) {
+            verticalBar.visibility = GONE
+            return
+        }
+        verticalBar.text = "$verticalBarPercent%"
+        verticalBar.visibility = VISIBLE
+        val lp = verticalBar.layoutParams as? LayoutParams
+        if (lp != null) {
+            lp.gravity = if (verticalBarOnLeft) Gravity.END or Gravity.CENTER_VERTICAL
+            else Gravity.START or Gravity.CENTER_VERTICAL
+            lp.marginStart = if (verticalBarOnLeft) 0 else dp(16)
+            lp.marginEnd = if (verticalBarOnLeft) dp(16) else 0
+            verticalBar.layoutParams = lp
+        }
+    }
+
+    /**
+     * 手势识别器。
+     *
+     * 与 Flutter 的差别仅在**实现手段**：Flutter 用多个 GestureDetector
+     * 回调，这里用 `SimpleOnGestureListener` 统一分发，语义（阈值、换算
+     * 系数、上限）逐项照抄。
+     */
+    private val gestureDetector = android.view.GestureDetector(
+        context,
+        object : android.view.GestureDetector.SimpleOnGestureListener() {
+
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            // 双击：播放/暂停。
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                if (lastState.locked || !lastState.canControl) return false
+                listener?.onTogglePlay()
+                // 指示器显示切换后的动作图标（与 Flutter 一致，500ms 消失）。
+                showGestureIcon(
+                    if (lastState.paused) {
+                        NativePlayerIcons.ICON_PLAY_CIRCLE
+                    } else {
+                        NativePlayerIcons.ICON_PAUSE_CIRCLE
+                    },
+                )
+                return true
+            }
+
+            // 长按：临时 2× 倍速（松手还原）。
+            override fun onLongPress(e: MotionEvent) {
+                if (lastState.locked || !lastState.canControl) return
+                boostBaseSpeed = lastState.speed
+                boostActive = true
+                listener?.onSpeedBoost(true)
+                showSpeedBoostChip()
+            }
+
+            override fun onScroll(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                distanceX: Float,
+                distanceY: Float,
+            ): Boolean {
+                if (lastState.locked || !lastState.canControl) return false
+                if (e1 == null) return false
+                val dx = e2.x - e1.x
+                val dy = e2.y - e1.y
+                // 首次位移超过 touchSlop 时判定方向（与 Flutter 的手势竞技场等价）。
+                val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+                if (Math.abs(dx) > slop || Math.abs(dy) > slop) {
+                    val horizontal = Math.abs(dx) > Math.abs(dy)
+                    if (horizontal) {
+                        // 横拖 seek：每累计 100px 预览一次（±5s）。
+                        hDragAccumPx -= distanceX
+                        if (Math.abs(hDragAccumPx) > DRAG_PX_PER_5S) {
+                            val deltaMs = (hDragAccumPx / DRAG_PX_PER_5S * DRAG_MS_PER_5S)
+                                .toLong().coerceIn(-SEEK_MAX_DELTA_MS, SEEK_MAX_DELTA_MS)
+                            val preview = (lastState.positionMs + deltaMs)
+                                .coerceIn(0L, lastState.durationMs.toLong())
+                            showGestureHint(AndroidNativePlayerState.formatPlayerTime(preview))
+                        }
+                    } else {
+                        // 纵拖：左亮度 / 右音量。distanceY 正值 = 手指上滑
+                        //（Android 语义），Flutter 是 delta 正值 = 下滑，故取负。
+                        if (Math.abs(distanceY) > 0f) {
+                            val delta01 = (-distanceY / VERTICAL_PX_PER_FULL).toDouble()
+                            if (dragOnLeftSide) {
+                                brightness01 = (brightness01 + delta01).coerceIn(0.0, 1.0)
+                                listener?.onGestureBrightness(delta01)
+                            } else {
+                                volume01 = (volume01 + delta01).coerceIn(0.0, 1.0)
+                                listener?.onGestureVolumeDelta(delta01)
+                            }
+                            showVerticalBar(dragOnLeftSide)
+                        }
+                    }
+                    return true
+                }
+                return false
+            }
+
+            override fun onFling(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float,
+            ): Boolean {
+                if (lastState.locked || !lastState.canControl) return false
+                // 无足够拖动距离时用速度回退（与 Flutter 一致）。
+                val deltaMs = (velocityX / DRAG_PX_PER_5S * DRAG_MS_PER_5S)
+                    .toLong().coerceIn(-SEEK_MAX_DELTA_MS, SEEK_MAX_DELTA_MS)
+                if (deltaMs == 0L) return false
+                listener?.onSeekRelative(deltaMs)
+                val seconds = Math.round(deltaMs / 1000f)
+                showGestureHint("${if (seconds > 0) "+" else ""}${seconds}s")
+                return true
+            }
+        },
+    )
+
+    init {
+        tapLayer.setOnTouchListener { _, event ->
+            // 纵拖起始侧：DOWN 时判定（Flutter 用 globalPosition.dx < 半屏宽）。
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                hDragAccumPx = 0f
+                dragOnLeftSide = event.x < width / 2f
+            }
+            // 长按临时倍速：松手/取消时还原到长按前档位（Flutter
+            // `_onSpeedBoostEnd`）。
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) {
+                if (boostActive) {
+                    boostActive = false
+                    listener?.onSpeedBoost(false)
+                    gestureHint.visibility = GONE
+                }
+            }
+            gestureDetector.onTouchEvent(event)
+            // 不消费：让 click 照常触发（单击语义）。
+            false
         }
     }
 
@@ -236,6 +620,11 @@ class NativePlayerScreenView(
     private val shareButton = TextView(context)
     /** 顶栏右侧簇（网速~转屏）：小屏整组等比缩（自适应不出屏）。 */
     private val topTail = LinearLayout(context)
+    /**
+     * 顶栏右侧簇的测量级缩放容器（等价 Flutter `FittedBox(scaleDown)`）。
+     * `reservedPx` = 标题保底宽，保证尾簇再挤也不会把标题压成 0。
+     */
+    private val topTailBox = ScaleDownBox(context)
     private val clockWrap = FrameLayout(context)
     private val clockText = TextView(context)
 
@@ -247,14 +636,23 @@ class NativePlayerScreenView(
     private val positionLabel = TextView(context)
     private val seekBar = SeekBar(context)
     private val durationLabel = TextView(context)
-    private val buttonRow = FrameLayout(context)
+    /**
+     * 控件行：`leading槽(权重1, 贴左) | 传输组 | trailing槽(权重1, 贴右)`。
+     * 结构等价 Flutter `PlayerBottomRow(centered: true)`——两个 `Expanded`
+     * 让传输组**精确居中**，trailing 槽可用宽 = `(行宽-传输组)/2`。
+     */
+    private val buttonRow = LinearLayout(context)
     private val transportGroup = LinearLayout(context)
     private val prevButton = TextView(context)
     private val playPauseButton = TextView(context)
     private val nextButton = TextView(context)
     private val leadingGroup = LinearLayout(context)
+    /** leading 槽（权重 1，贴左）：内部放定宽 [leadingGroup]，锁钮与时间数显同列。 */
+    private val leadingSlot = LinearLayout(context)
     private val lockButton = TextView(context)
     private val trailingGroup = LinearLayout(context)
+    /** trailing 的测量级缩放容器（等价 Flutter FittedBox(scaleDown)）。 */
+    private val trailingBox = ScaleDownBox(context)
     private val bottomSpeedChip = LinearLayout(context)
     private val bottomSpeedLabel = TextView(context)
     private val panelToggleButton = TextView(context)
@@ -266,7 +664,6 @@ class NativePlayerScreenView(
     private var episodeButton: View? = null
     private val diagText = TextView(context)
     private val bufferingView = ProgressBar(context)
-    private val hdrBadge = TextView(context)
 
     // 面板层
     private val danmakuLayer = DanmakuLayerView(context)
@@ -318,6 +715,10 @@ class NativePlayerScreenView(
 
     /** 组装层级：tapLayer → topBar → bottomBar → 面板层。 */
     private fun buildHierarchy() {
+        // 角标伸出命中框右缘（marginEnd=-2），任何一级父容器默认
+        // clipChildren=true 都会把它右半切掉（真机截图回归）。整链关闭。
+        clipChildren = false
+        clipToPadding = false
         addView(
             tapLayer,
             lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
@@ -326,15 +727,32 @@ class NativePlayerScreenView(
         addView(danmakuLayer, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         addView(topBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))
+        topBar.clipChildren = false
+        topBar.clipToPadding = false
         addView(bottomBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        bottomBar.clipChildren = false
+        bottomBar.clipToPadding = false
 
-        // 缓冲指示：居中细灰圆环转圈（与 Flutter CircularProgressIndicator 一致）。
+        // 缓冲指示：居中转圈。颜色对齐 Flutter `_buildVideoArea` 的
+        // `CircularProgressIndicator(color: Color(0xFF6366F1))`——旧值
+        // WHITE_70 与 Flutter 观感不一致（B8）。
         bufferingView.apply {
             isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(NPTheme.WHITE_70)
+            indeterminateTintList = ColorStateList.valueOf(NPTheme.ACCENT)
             visibility = GONE
         }
         addView(bufferingView, lp(dp(36), dp(36), Gravity.CENTER))
+
+        // 手势提示（居中胶囊）与亮度/音量柱条：视频之上、控件之下，
+        // 与 Flutter `_buildGestureHint` / `_buildVerticalBar` 的层级一致。
+        addView(
+            gestureHint,
+            lp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER),
+        )
+        addView(
+            verticalBar,
+            lp(dp(48), dp(160), Gravity.END or Gravity.CENTER_VERTICAL),
+        )
 
         // 面板层（二级浮层）：透明遮罩 + 右侧玻璃浮层 + 解码 popover + 片头片尾卡。
         addView(panelScrim, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -362,7 +780,7 @@ class NativePlayerScreenView(
         clockWrap.removeAllViews()
         topBar.orientation = LinearLayout.HORIZONTAL
         topBar.gravity = Gravity.CENTER_VERTICAL
-        topBar.setPadding(dp(12), dp(6), dp(12), dp(6))
+        applyBarInsets()
         topBar.background = barGradient(topSolid = true)
 
         backButton.text = String(Character.toChars(NativePlayerIcons.ICON_ARROW_BACK))
@@ -377,11 +795,15 @@ class NativePlayerScreenView(
         applyPressFeedback(backButton)
         topBar.addView(backButton, lp(dp(40), dp(40)))
 
+        // 标题：Expanded（权重 1）+ **保底宽**。Flutter 的 Expanded 会被尾簇
+        // 挤到 0 宽（极窄屏标题彻底消失）；这里保底 56dp 并 ellipsize，观感
+        // 一致（同样是「剩余空间」）但不会塌成 0。
         titleText.setTextColor(Color.WHITE)
-        titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.TITLE_SIZE)
         titleText.maxLines = 1
         titleText.ellipsize = TextUtils.TruncateAt.END
         titleText.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        titleText.minimumWidth = dp(NPTheme.TITLE_MIN_WIDTH)
         topBar.addView(
             titleText,
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -474,17 +896,35 @@ class NativePlayerScreenView(
         applyPressFeedback(shareButton)
         topTail.addView(shareButton, llp(dp(34), dp(34), 8))
 
-        topBar.addView(topTail, LinearLayout.LayoutParams(
+        // 尾簇装进测量级缩放容器：小屏/竖屏整组等比缩小（等价 Flutter
+        // FittedBox(scaleDown)），保证不出屏、不与标题/传输组重叠。
+        topTailBox.removeAllViews()
+        topTailBox.addView(
+            topTail,
+            LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        topBar.addView(topTailBox, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ))
 
-        // 时钟（TV：右贴边，100×48，13sp white70）
+        // 时钟（TV：右贴边，100×48，13sp white70）。
+        // Flutter PlayerClockLayer 是**独立于顶栏 Row 的定位层**，但用
+        // `reserveClockSpace` 在 Row 尾部留 100dp 空位避免控件压到时间——
+        // 这里等价：时钟直接作顶栏最后一个子项（100dp 定宽），既占位又显示。
         clockText.setTextColor(NPTheme.WHITE_70)
-        clockText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        clockText.setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.CLOCK_FONT_SIZE)
         clockText.gravity = Gravity.CENTER
         clockText.visibility = GONE
+        clockWrap.removeAllViews()
         clockWrap.addView(clockText, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        topBar.addView(
+            clockWrap,
+            llp(dp(NPTheme.CLOCK_WIDTH), dp(NPTheme.CLOCK_HEIGHT)),
+        )
     }
 
     /** 顶栏玻璃图标胶囊（内核/字幕样式/解码共用）。 */
@@ -644,12 +1084,15 @@ class NativePlayerScreenView(
         bottomBar.removeAllViews()
         seekRow.removeAllViews()
         buttonRow.removeAllViews()
+        leadingSlot.removeAllViews()
         leadingGroup.removeAllViews()
         transportGroup.removeAllViews()
+        trailingBox.removeAllViews()
         trailingGroup.removeAllViews()
         // speedChip 属于顶栏内容，由 configureTopBar 填充；这里清掉会导致
         // 速度胶囊整块消失（v1.5.5 回归）。
         bottomSpeedChip.removeAllViews()
+        trailingBox.reset()
     }
 
     /** 底栏：Logo / 进度条 / 播放组（手机居中·TV 置左）/ 右侧图标组 / 诊断行。 */
@@ -659,7 +1102,7 @@ class NativePlayerScreenView(
         clearBarContainers()
         bottomBar.orientation = LinearLayout.VERTICAL
         bottomBar.gravity = Gravity.START
-        bottomBar.setPadding(dp(16), dp(10), dp(16), dp(12))
+        applyBarInsets()
         bottomBar.background = barGradient(topSolid = false)
 
         // 标题艺术字（Logo）：进度条上方左对齐，无图时占位 4dp 保持布局稳定。
@@ -793,39 +1236,59 @@ class NativePlayerScreenView(
         panelToggleButton.includeFontPadding = false
         panelToggleButton.setPadding(dp(4), dp(4), dp(4), dp(4))
         panelToggleButton.isClickable = true
-        panelToggleButton.setOnClickListener { listener?.onBack() }
+        // 房间模式「资源面板」开关：Flutter 是切换 `_showPanel`（视频区与
+        // 资源面板分栏）。旧实现发 onBack → 点一下直接退出播放页。
+        panelToggleButton.setOnClickListener { listener?.onToggleResourcePanel() }
         applyPressFeedback(panelToggleButton)
         trailingGroup.addView(panelToggleButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
 
-        // HDR 徽标
-        hdrBadge.text = "HDR"
-        hdrBadge.setTextColor(Color.BLACK)
-        hdrBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-        hdrBadge.setBackgroundColor(0xFFFFD54F.toInt())
-        hdrBadge.setPadding(dp(6), dp(2), dp(6), dp(2))
-        hdrBadge.visibility = GONE
+        // HDR 徽标：Flutter 控制层**没有**这个元素（只在调试面板里体现），
+        // 原生多画一个会与 Flutter 观感不一致 → 移除，HDR 信息走诊断行。
 
         // 组装三组
-        // leading 列宽 = 时间数显列宽（Flutter SeekTimeLabels.cellWidth），
-        // 保证锁钮与上方左时间数显同轴居中。
-        val leadingLp = FrameLayout.LayoutParams(
-            dp(NPTheme.TIME_CELL),
-            dp(44),
-            Gravity.CENTER_VERTICAL or Gravity.START,
+        // 结构等价 Flutter PlayerBottomRow(centered: true)：
+        //   Expanded(leading 贴左) | 传输组(精确居中) | Expanded(trailing 贴右 + 等比缩)
+        // 两个权重槽同宽 → 传输组自然居中；trailing 槽拿到的可用宽即
+        // `(行宽-传输组)/2`，与 Flutter FittedBox 的约束完全一致。
+        //
+        // leading 槽内部再放一个**定宽**的 [leadingGroup]：锁钮要在时间数显
+        // 列（56/78dp）内居中（Flutter leading 是 SizedBox(cellWidth) + Align），
+        // 不能随 Expanded 槽一起被拉宽。
+        buttonRow.orientation = LinearLayout.HORIZONTAL
+        buttonRow.gravity = Gravity.CENTER_VERTICAL
+        leadingSlot.orientation = LinearLayout.HORIZONTAL
+        leadingSlot.gravity = Gravity.CENTER_VERTICAL
+        leadingSlot.addView(leadingGroup)
+        leadingGroup.layoutParams = LinearLayout.LayoutParams(dp(NPTheme.TIME_CELL), dp(44))
+        leadingSlot.layoutParams = LinearLayout.LayoutParams(
+            0,
+            dp(NPTheme.TRANSPORT_PLAY),
+            1f,
         )
-        val transportLp = FrameLayout.LayoutParams(
+
+        transportGroup.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             dp(NPTheme.TRANSPORT_PLAY),
-            Gravity.CENTER,
         )
-        val trailingLp = FrameLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
+
+        // trailing 槽：权重 1（可用宽 = (行宽-传输组)/2），内部放缩放容器。
+        trailingBox.removeAllViews()
+        trailingBox.addView(
+            trailingGroup,
+            LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(NPTheme.TRANSPORT_PLAY),
+            ),
+        )
+        trailingBox.layoutParams = LinearLayout.LayoutParams(
+            0,
             dp(NPTheme.TRANSPORT_PLAY),
-            Gravity.CENTER_VERTICAL or Gravity.END,
+            1f,
         )
-        buttonRow.addView(leadingGroup, leadingLp)
-        buttonRow.addView(transportGroup, transportLp)
-        buttonRow.addView(trailingGroup, trailingLp)
+
+        buttonRow.addView(leadingSlot)
+        buttonRow.addView(transportGroup)
+        buttonRow.addView(trailingBox)
         // 控件行与进度条行间距 8（Flutter SizedBox(height: 8)）。
         bottomBar.addView(
             buttonRow,
@@ -866,31 +1329,36 @@ class NativePlayerScreenView(
         }
 
     /**
-     * 带角标的右侧图标按钮：图标 24dp 字形、角标 9sp + #6366F1 圆底，
+     * 带角标的右侧图标按钮：图标 24dp 字形、角标 9sp 白字 + #6366F1 **正圆**底，
      * 贴图标右上（Flutter Stack + Positioned(right:-6,top:-4)）。
      *
-     * 关键：图标容器必须 ≥ 字形净高（24sp≈28dp），旧实现给 24dp → 字形
-     * 上下被裁（真机「控件残缺」观感）。这里用 28dp 容器。
+     * 关键修复（真机截图回归）：
+     * - 角标旧实现宽 `14+len*5`、高固定 14 → "3" 是 19×14 **椭圆**。改用
+     *   [BadgeCircleDrawable] 画正圆，边长 = `max(BADGE_MIN, 文本宽+4dp)`；
+     * - `marginEnd=-2` 让角标伸出 host 右缘，而 FrameLayout 默认
+     *   `clipChildren=true` → 右半被切（截图 1）。host 与整条链显式
+     *   `clipChildren=false`（见 [buildHierarchy]）。
      */
     private fun badgeButton(
         codePoint: Int,
         badgeProvider: () -> String?,
         onClick: () -> Unit,
     ): FrameLayout {
-        val host = FrameLayout(context)
+        val host = FrameLayout(context).apply {
+            clipChildren = false
+            clipToPadding = false
+        }
         host.addView(iconButton(codePoint, onClick), lp(dp(28), dp(28), Gravity.CENTER))
         val badge = TextView(context).apply {
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.BADGE_FONT)
             gravity = Gravity.CENTER
             includeFontPadding = false
-            setPadding(dp(3), dp(1), dp(3), dp(1))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(NPTheme.ACCENT)
-            }
+            // Flutter Container(padding: EdgeInsets.all(2))。
+            setPadding(dp(2), dp(2), dp(2), dp(2))
+            background = BadgeCircleDrawable(NPTheme.ACCENT)
         }
-        host.addView(badge, badgeLayoutParams(dp(NPTheme.BADGE_MIN)))
+        host.addView(badge, badgeLayoutParams(badge, ""))
         // 角标数量在 applyState 中刷新
         badgeTags[badge] = badgeProvider
         return host
@@ -900,12 +1368,22 @@ class NativePlayerScreenView(
      * 角标定位：贴图标右上角（Flutter _buildControlButton 的
      * Positioned(right: -6, top: -4)）。32dp 命中框内图标 24dp 居中，
      * 换算到命中框坐标为 top=0 / marginEnd=-2。
+     *
+     * 尺寸为**正方形**（正圆底），边长按实测文本宽 + 4dp 内边距，下限 14dp。
      */
-    private fun badgeLayoutParams(widthDp: Int): LayoutParams =
-        LayoutParams(widthDp, dp(NPTheme.BADGE_MIN), Gravity.TOP or Gravity.END).apply {
+    private fun badgeLayoutParams(badge: TextView, text: String): LayoutParams {
+        val sideDp = if (text.isEmpty()) {
+            NPTheme.BADGE_MIN
+        } else {
+            val textPx = badge.paint.measureText(text)
+            val withPad = textPx / resources.displayMetrics.density + 4f
+            maxOf(NPTheme.BADGE_MIN.toFloat(), withPad).toInt()
+        }
+        return LayoutParams(dp(sideDp), dp(sideDp), Gravity.TOP or Gravity.END).apply {
             topMargin = 0
             marginEnd = -dp(2)
         }
+    }
 
     /** 角标刷新表（TextView → 数量提供者）。 */
     private val badgeTags = HashMap<TextView, () -> String?>()
@@ -949,7 +1427,6 @@ class NativePlayerScreenView(
     /** 打开面板（同类型再点为切换关闭）。 */
     private fun openPanel(panel: String) {
         activePanel = if (activePanel == panel) null else panel
-        decodePopoverOpen = false
         listener?.onOpenPanel(panel)
         renderOverlays()
         scheduleAutoHide()
@@ -964,77 +1441,90 @@ class NativePlayerScreenView(
     }
 
     /**
-     * 面板层总渲染：按 activePanel / decodePopoverOpen / segmentCardOpen
+     * 面板层总渲染：按 activePanel / segmentCardOpen 决定显示哪一层。
      * 决定显示哪一层；无则全部隐藏。
+     */
+    /**
+     * 面板层总渲染：按 activePanel / segmentCardOpen 决定显示哪一层。
+     *
+     * `PANEL_DECODE` 是特例：Flutter 的解码面板是贴右上的 **180dp popover**
+     * （非 260~320 通栏，见 player_screen.dart:7736），故单独走
+     * [renderDecodePopover]。
      */
     private fun renderOverlays() {
         val panel = activePanel
-        if (panel == null) {
-            panelScrim.visibility = GONE
-            panelContainer.visibility = GONE
-        } else {
+        // 解码 popover 与通栏面板互斥（Flutter 同一时刻只显示一个选择器）。
+        if (panel == PANEL_DECODE) {
             panelScrim.visibility = VISIBLE
-            panelContainer.visibility = VISIBLE
-            panelContainer.removeAllViews()
-            // 选集面板全高贴边（Flutter fullBleed：top/bottom/right 0、右圆角放平）；
-            // 常规面板上下避让（top safe+48 / bottom 116+safe），**拉伸全高**
-            //（Flutter Positioned(top,bottom) 语义，非 wrap-content）。
-            val fullBleed = panel == PANEL_EPISODE
-            // 液态玻璃（方案 A）：玻璃可用且开启 → 真采样折射背景；
-            // 否则降级 tint（GraphDrawable），全链路不抛出。
-            val useGlass = lastState.glassUi && glassPanel != null
-            panelContainer.background = when {
-                useGlass && !fullBleed -> glassPanel
-                fullBleed -> GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadii = floatArrayOf(
-                        dp(NPTheme.RADIUS_PANEL).toFloat(), dp(NPTheme.RADIUS_PANEL).toFloat(),
-                        0f, 0f,
-                        0f, 0f,
-                        dp(NPTheme.RADIUS_PANEL).toFloat(), dp(NPTheme.RADIUS_PANEL).toFloat(),
-                    )
-                    setColor(NPTheme.PANEL_TINT)
-                    setStroke(dp(1), NPTheme.RIM)
-                }
-                else -> glassBackground(NPTheme.RADIUS_PANEL)
-            }
-            panelContainer.layoutParams = lp(
-                panelWidthDp(),
-                LayoutParams.MATCH_PARENT,
-            ).also {
-                it.topMargin = if (fullBleed) 0 else dp(NPTheme.PANEL_TOP_OFFSET)
-                it.bottomMargin = if (fullBleed) 0 else dp(NPTheme.PANEL_BOTTOM_OFFSET)
-                it.marginEnd = if (fullBleed) 0 else dp(NPTheme.PANEL_RIGHT)
-                it.gravity = Gravity.END or Gravity.TOP
-            }
-            panelContainer.addView(panelHeader(panelTitle(panel)))
-            when (panel) {
-                PANEL_SPEED -> buildSpeedContent()
-                PANEL_AUDIO -> buildTrackContent(
-                    lastState.tracks.filter { it.type == "audio" },
-                    lastState.selectedAudioId,
-                    allowOff = false,
-                ) { listener?.onSelectAudio(it) }
-                PANEL_SUBTITLE -> buildTrackContent(
-                    lastState.tracks.filter { it.type == "sub" },
-                    lastState.selectedSubtitleId,
-                    allowOff = true,
-                ) { listener?.onSelectSubtitle(it) }
-                PANEL_EPISODE -> buildEpisodeContent()
-                PANEL_VERSION -> buildListContent(
-                    lastState.versions.map { it.displayLabel to it.index },
-                    lastState.currentVersionIndex,
-                ) { listener?.onSelectVersion(it) }
-                PANEL_KERNEL -> buildKernelContent()
-                PANEL_DISPLAY -> buildDisplayContent()
-                PANEL_DECODE -> buildDecodeContent()
-            }
-        }
-        // 解码 popover
-        if (decodePopoverOpen) {
+            panelContainer.visibility = GONE
             renderDecodePopover()
         } else {
             decodePopover.visibility = GONE
+            if (panel == null) {
+                panelScrim.visibility = GONE
+                panelContainer.visibility = GONE
+            } else {
+                panelScrim.visibility = VISIBLE
+                panelContainer.visibility = VISIBLE
+                panelContainer.removeAllViews()
+                // 选集面板全高贴边（Flutter fullBleed：top/bottom/right 0、右圆角放平）；
+                // 常规面板上下避让（top safe+48 / bottom 116+safe），**拉伸全高**
+                //（Flutter Positioned(top,bottom) 语义，非 wrap-content）。
+                val fullBleed = panel == PANEL_EPISODE
+                // 液态玻璃（方案 A）：玻璃可用且开启 → 真采样折射背景；
+                // 否则降级 tint（GradientDrawable），全链路不抛出。
+                val useGlass = lastState.glassUi && glassPanel != null
+                panelContainer.background = when {
+                    useGlass && !fullBleed -> glassPanel
+                    fullBleed -> GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadii = floatArrayOf(
+                            dp(NPTheme.RADIUS_PANEL).toFloat(), dp(NPTheme.RADIUS_PANEL).toFloat(),
+                            0f, 0f,
+                            0f, 0f,
+                            dp(NPTheme.RADIUS_PANEL).toFloat(), dp(NPTheme.RADIUS_PANEL).toFloat(),
+                        )
+                        setColor(NPTheme.PANEL_TINT)
+                        setStroke(dp(1), NPTheme.RIM)
+                    }
+                    else -> glassBackground(NPTheme.RADIUS_PANEL)
+                }
+                panelContainer.layoutParams = lp(
+                    panelWidthDp(),
+                    LayoutParams.MATCH_PARENT,
+                ).also {
+                    it.topMargin =
+                        if (fullBleed) 0 else dp(NPTheme.PANEL_TOP_OFFSET) + safeTopPx()
+                    it.bottomMargin =
+                        if (fullBleed) 0 else dp(NPTheme.PANEL_BOTTOM_OFFSET) + safeBottomPx()
+                    it.marginEnd = if (fullBleed) 0 else dp(NPTheme.PANEL_RIGHT)
+                    it.gravity = Gravity.END or Gravity.TOP
+                }
+                panelContainer.addView(panelHeader(panelTitle(panel)))
+                feedGlassRects()
+                when (panel) {
+                    PANEL_SPEED -> buildSpeedContent()
+                    PANEL_AUDIO -> buildTrackContent(
+                        lastState.tracks.filter { it.type == "audio" },
+                        lastState.selectedAudioId,
+                        allowOff = false,
+                    ) { listener?.onSelectAudio(it) }
+                    PANEL_SUBTITLE -> buildTrackContent(
+                        lastState.tracks.filter { it.type == "sub" },
+                        lastState.selectedSubtitleId,
+                        allowOff = true,
+                    ) { listener?.onSelectSubtitle(it) }
+                    PANEL_EPISODE -> buildEpisodeContent()
+                    PANEL_VERSION -> buildListContent(
+                        lastState.versions.map { it.displayLabel to it.index },
+                        lastState.currentVersionIndex,
+                    ) { listener?.onSelectVersion(it) }
+                    PANEL_KERNEL -> buildKernelContent()
+                    PANEL_DISPLAY -> buildDisplayContent()
+                    // PANEL_DECODE 走独立 popover（见函数开头分支）。
+                    else -> Unit
+                }
+            }
         }
         // 片头片尾卡
         if (segmentCardOpen) {
@@ -1417,77 +1907,141 @@ class NativePlayerScreenView(
         }
     }
 
-    // ── 解码模式 ──────────────────────────────────────────────────
+    // ── 解码模式（对齐 Flutter DecodeModePanel：180dp 独立 popover）──
 
-    /** 解码 popover：180dp 宽 #1E1E2E 圆角 8，标题 13 加粗 + 当前值 12 #A5B4FC。 */
+    /**
+     * 解码 popover：**180dp** 宽、#1E1E2E、圆角 8、白 12% 描边、
+     * `top = 安全区+48 / right = 12`。
+     *
+     * Flutter 的解码面板不是右侧 260~320 通栏，而是贴右上角的小 popover
+     * （`player_screen.dart:7736` `Positioned(top: padding.top+48, right: 12)`）。
+     * 旧实现把它塞进通栏面板，观感与 Flutter 不一致（B10）。
+     */
     private fun renderDecodePopover() {
         decodePopover.visibility = VISIBLE
         decodePopover.removeAllViews()
+        decodePopover.orientation = LinearLayout.VERTICAL
         decodePopover.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(NPTheme.RADIUS_DECODE).toFloat()
             setColor(NPTheme.DECODE_PANEL)
+            setStroke(dp(1), NPTheme.WHITE_12)
         }
-        decodePopover.layoutParams = lp(dp(NPTheme.DECODE_PANEL_WIDTH), LayoutParams.WRAP_CONTENT).also {
-            it.gravity = Gravity.BOTTOM or Gravity.END
-            it.marginEnd = dp(NPTheme.PANEL_RIGHT)
-            it.bottomMargin = dp(NPTheme.PANEL_BOTTOM_OFFSET)
-        }
-        decodePopover.addView(
-            TextView(context).apply {
-                text = "解码模式"
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                setPadding(dp(12), dp(10), dp(12), dp(2))
-            },
-        )
-        decodePopover.addView(
-            TextView(context).apply {
-                text = decodeModeLabel(lastState.decodeMode)
-                setTextColor(NPTheme.DECODE_CURRENT_TEXT)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setPadding(dp(12), 0, dp(12), dp(6))
-            },
-        )
-        DECODE_MODES.forEach { mode ->
-            decodePopover.addView(
-                optionRow(decodeModeLabel(mode), lastState.decodeMode == mode) {
-                    listener?.onSetDecodeMode(mode)
-                    decodePopoverOpen = false
-                    renderOverlays()
+        decodePopover.clipToOutline = true
+        decodePopover.layoutParams =
+            lp(dp(NPTheme.DECODE_PANEL_WIDTH), LayoutParams.WRAP_CONTENT).also {
+                it.gravity = Gravity.TOP or Gravity.END
+                it.topMargin = dp(NPTheme.PANEL_TOP_OFFSET) + safeTopPx()
+                it.marginEnd = dp(NPTheme.PANEL_RIGHT)
+            }
+
+        // 标题行：`解码模式` 13 加粗 + 当前档位 12 #A5B4FC（同一行）。
+        val titleRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(8))
+            addView(
+                TextView(context).apply {
+                    text = "解码模式"
+                    setTextColor(Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                },
+            )
+            addView(
+                TextView(context).apply {
+                    text = decodeModeLabel(lastState.decodeMode)
+                    setTextColor(NPTheme.DECODE_CURRENT_TEXT)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setPadding(dp(8), 0, 0, 0)
                 },
             )
         }
+        decodePopover.addView(titleRow)
+        decodePopover.addView(dividerLine())
+
+        DECODE_MODES.forEachIndexed { index, mode ->
+            decodePopover.addView(
+                decodeOptionRow(mode, selected = lastState.decodeMode == mode) {
+                    listener?.onSetDecodeMode(mode)
+                    closePanel()
+                },
+            )
+            if (index < DECODE_MODES.lastIndex) decodePopover.addView(dividerLine(0.5f))
+        }
     }
 
+    /** 0.5dp 白 12% 分隔线（Flutter `BorderSide(color: Colors.white12, width: 0.5)`）。 */
+    private fun dividerLine(heightDp: Float = 0.5f): View =
+        View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (heightDp * resources.displayMetrics.density).toInt().coerceAtLeast(1),
+            )
+            setBackgroundColor(NPTheme.WHITE_12)
+        }
+
+    /**
+     * 解码选项行（对齐 Flutter DecodeModePanel 的行）：
+     * radio 图标 16 + 间距 8 + (档位名 13[选中加粗] / 说明 10 白54)。
+     * 选中行铺 accent@0.3 底。
+     */
+    private fun decodeOptionRow(mode: String, selected: Boolean, onTap: () -> Unit): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            isClickable = true
+            setOnClickListener { onTap() }
+            if (selected) setBackgroundColor(NPTheme.ACCENT_30)
+            addView(
+                iconView(
+                    if (selected) NativePlayerIcons.ICON_RADIO_CHECKED
+                    else NativePlayerIcons.ICON_RADIO_UNCHECKED,
+                    16f,
+                    if (selected) NPTheme.ACCENT else NPTheme.WHITE_54,
+                ),
+                llp(dp(16), dp(16)),
+            )
+            val col = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(
+                    TextView(context).apply {
+                        text = decodeModeLabel(mode)
+                        setTextColor(Color.WHITE)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                        typeface = if (selected) {
+                            Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                        } else {
+                            Typeface.DEFAULT
+                        }
+                    },
+                )
+                addView(
+                    TextView(context).apply {
+                        text = decodeModeDesc(mode)
+                        setTextColor(NPTheme.WHITE_54)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                    },
+                )
+            }
+            addView(col, llp(0, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.weight = 1f })
+        }
+
+    /** 解码档位中文标签：与 Flutter 播放页 `DecodeModePanel` 同值。 */
     private fun decodeModeLabel(mode: String): String = when (mode) {
-        "auto" -> "自动"
+        "auto" -> "智能"
         "hw" -> "硬解"
         "sw" -> "软解"
         else -> mode
     }
 
-    /** 解码模式面板（手机顶栏胶囊打开时用右侧浮层；TV 无入口）。 */
-    private fun buildDecodeContent() {
-        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        list.addView(
-            TextView(context).apply {
-                text = decodeModeLabel(lastState.decodeMode)
-                setTextColor(NPTheme.DECODE_CURRENT_TEXT)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setPadding(dp(NPTheme.PANEL_PAD_H), 0, dp(NPTheme.PANEL_PAD_H), dp(6))
-            },
-        )
-        DECODE_MODES.forEach { mode ->
-            list.addView(
-                optionRow(decodeModeLabel(mode), lastState.decodeMode == mode) {
-                    listener?.onSetDecodeMode(mode)
-                    closePanel()
-                },
-            )
-        }
-        panelContainer.addView(scrollWrap(list))
+    /** 解码档位说明（Flutter DecodeModePanel `descriptions`）。 */
+    private fun decodeModeDesc(mode: String): String = when (mode) {
+        "auto" -> "优先硬解，失败回退软解"
+        "hw" -> "纯硬解，失败不回退"
+        "sw" -> "纯软解，CPU 占用高"
+        else -> ""
     }
 
     // ── 片头片尾卡（居中玻璃卡 + 二次确认）────────────────────────
@@ -1642,6 +2196,11 @@ class NativePlayerScreenView(
     fun release() {
         mainHandler.removeCallbacks(tickRunnable)
         mainHandler.removeCallbacks(hideRunnable)
+        // 手势提示/柱条定时器：不清理会在窗口销毁后仍回调（泄漏 + 触空指针）。
+        hideGestureHint?.let { mainHandler.removeCallbacks(it) }
+        hideGestureHint = null
+        hideVerticalBar?.let { mainHandler.removeCallbacks(it) }
+        hideVerticalBar = null
         stopGlassSampling()
         glassPanel?.release()
         glassCard?.release()
@@ -1656,52 +2215,52 @@ class NativePlayerScreenView(
     }
 
     /**
-     * 转屏/小屏自适应（Flutter FittedBox(scaleDown) 语义）：右侧组超宽时
-     * 整体等比缩小（锚定右缘），保证横竖屏切换/小窗下控件不出屏、不重叠
-     *（真机回归：竖屏时右侧组与传输组挤压重叠）。
-     */
-    /**
-     * 转屏/小屏自适应（对齐 Flutter：不出屏、全部控件保持可见）。
+     * 转屏/小屏自适应：交给 [ScaleDownBox]（顶栏尾簇 / 底栏 trailing）。
      *
-     * 真实布局收窄间距（20→8→4→0）——`scale` 只改绘制不改测量宽度，
-     * 流式溢出时仍会把控件推出屏外（真机回归），因此弃用。
+     * 旧方案 `applyGroupGap` 只逐级收窄组内间距（20→8→4→0）：间距归零后
+     * 内容宽仍可能超过可用宽，流式布局会把控件推出屏外（真机竖屏截图回归）。
+     * 单纯 `scaleX/Y` 也只改绘制不改测量宽，同样溢出。改为**测量级**等比
+     * 缩小——缩小后的宽度就是容器的测量宽度，父级按它排布兄弟控件，
+     * 结构上不可能再溢出。
+     *
+     * 本函数只负责在状态/布局变化后请求重测（[ScaleDownBox] 的可用宽由
+     * 父级传入，必须等一次布局才有值）。
      */
-    private fun applyAdaptiveScale() {
-        buttonRow.post {
-            val total = buttonRow.width
-            if (total <= 0) return@post
-            // Flutter PlayerBottomRow：transport 绝对居中，trailing 可用宽
-            // =（总宽-传输组）/2。
-            val avail = (total - transportGroup.width) / 2 - dp(8)
-            applyGroupGap(trailingGroup, avail, intArrayOf(NPTheme.CONTROL_GAP, 8, 4, 0))
-        }
-        topBar.post {
-            val total = topBar.width
-            if (total <= 0) return@post
-            val avail = total - backButton.width - dp(8)
-            applyGroupGap(topTail, avail, intArrayOf(8, 4, 2, 0))
-        }
+    private fun requestAdaptiveRelayout() {
+        topTailBox.requestLayout()
+        trailingBox.requestLayout()
     }
 
-    /** 逐级收窄组内间距直到内容宽 ≤ 可用宽（首项无前距）。 */
-    private fun applyGroupGap(group: LinearLayout, availPx: Int, levels: IntArray) {
-        if (group.childCount == 0) return
-        val children = (0 until group.childCount).map { group.getChildAt(it) }
-        val contentW = children.sumOf { it.width }
-        val n = children.size - 1
-        if (n <= 0) return
-        var gap = levels.last()
-        for (g in levels) {
-            if (contentW + n * dp(g) <= availPx || g == levels.last()) {
-                gap = g
-                break
-            }
+    /**
+     * 把面板/卡片的**屏幕矩形**与 surface 窗尺寸喂给玻璃采样器。
+     *
+     * 采样位图是整个 surface 窗，绘制时必须映射到面板所占的那一块；
+     * 不喂（或面板还没完成布局）时采样器降级纯 tint，不会画错。
+     */
+    private fun feedGlassRects() {
+        val surf = surfaceViewProvider()
+        val surfW = surf?.width ?: 0
+        val surfH = surf?.height ?: 0
+        glassPanel?.setSurfaceSize(surfW, surfH)
+        glassCard?.setSurfaceSize(surfW, surfH)
+        // 布局尚未完成时 width/height 为 0，post 到下一帧再取真实矩形。
+        panelContainer.post { pushScreenRect(panelContainer, glassPanel) }
+        segmentCard.post { pushScreenRect(segmentCard, glassCard) }
+    }
+
+    /** 取 [view] 当前屏幕矩形写入 [drawable]（越界/未布局则清零降级）。 */
+    private fun pushScreenRect(view: View, drawable: GlassBackdropDrawable?) {
+        if (drawable == null) return
+        if (view.width <= 0 || view.height <= 0) {
+            drawable.setPanelScreenRect(0, 0, 0, 0)
+            return
         }
-        children.forEachIndexed { i, child ->
-            val lp = child.layoutParams as? LinearLayout.LayoutParams ?: return@forEachIndexed
-            lp.marginStart = if (i == 0) 0 else dp(gap)
-            child.layoutParams = lp
-        }
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        drawable.setPanelScreenRect(
+            loc[0], loc[1],
+            loc[0] + view.width, loc[1] + view.height,
+        )
     }
 
     private fun applyState() {
@@ -1761,7 +2320,7 @@ class NativePlayerScreenView(
             val text = provider()
             badge.text = text ?: ""
             badge.visibility = if (text.isNullOrEmpty()) GONE else VISIBLE
-            badge.layoutParams = badgeLayoutParams(dp(14 + text.orEmpty().length * 5))
+            badge.layoutParams = badgeLayoutParams(badge, text.orEmpty())
         }
 
         // 顶栏网速
@@ -1804,7 +2363,7 @@ class NativePlayerScreenView(
         applyLayoutMode(state)
 
         // 面板开着时重建（高亮跟随）
-        if (activePanel != null || decodePopoverOpen || segmentCardOpen) {
+        if (activePanel != null || segmentCardOpen) {
             renderOverlays()
         }
     }
@@ -1837,7 +2396,6 @@ class NativePlayerScreenView(
         bottomSpeedChip.visibility = if (tv && !state.isRoom) VISIBLE else GONE
         displayAdjustButton?.visibility = if (tv) VISIBLE else GONE
         panelToggleButton.visibility = if (state.isRoom) VISIBLE else GONE
-        hdrBadge.visibility = if (state.hdrOutput) VISIBLE else GONE
 
         // 版本/选集按钮：非房间且多版本/多集才显示（与 Flutter 显隐条件一致）
         versionButton?.visibility =
@@ -1867,7 +2425,7 @@ class NativePlayerScreenView(
         val cellW = dp(if (state.durationMs >= 3600000) NPTheme.TIME_CELL_WIDE else NPTheme.TIME_CELL)
         (positionLabel.layoutParams as? LinearLayout.LayoutParams)?.width = cellW
         (durationLabel.layoutParams as? LinearLayout.LayoutParams)?.width = cellW
-        (leadingGroup.layoutParams as? FrameLayout.LayoutParams)?.width = cellW
+        (leadingGroup.layoutParams as? LinearLayout.LayoutParams)?.width = cellW
 
         // Logo（房间模式/无图时隐藏）
         val showLogo = state.logoUrl != null && state.logoUrl!!.isNotEmpty() && !state.isRoom
@@ -1889,9 +2447,8 @@ class NativePlayerScreenView(
             leadingGroup.visibility = VISIBLE
             lockButton.text = String(Character.toChars(NativePlayerIcons.ICON_LOCK))
             // 锁定中不允许面板（Flutter 面板层带 !locked 条件）。
-            if (activePanel != null || decodePopoverOpen || segmentCardOpen) {
+            if (activePanel != null || segmentCardOpen) {
                 activePanel = null
-                decodePopoverOpen = false
                 segmentCardOpen = false
                 segmentConfirmKind = null
                 listener?.onClosePanel()
@@ -1904,8 +2461,9 @@ class NativePlayerScreenView(
             leadingGroup.visibility = if (!tv) VISIBLE else GONE
         }
 
-        // 转屏/小窗自适应：右侧组超宽等比缩（不出屏、不与传输组重叠）。
-        applyAdaptiveScale()
+        // 转屏/小窗自适应：交给 ScaleDownBox（测量级等比缩，不出屏、不与
+        // 传输组重叠）。
+        requestAdaptiveRelayout()
 
         // 液态玻璃采样节拍：任一玻璃面/卡可见时开（4fps），全关即停。
         val glassActive =
@@ -2011,10 +2569,39 @@ class NativePlayerScreenView(
         mainHandler.postDelayed(tickRunnable, TICK_MS)
     }
 
+    /**
+     * 尺寸变化（转屏 / 折叠展开 / 分屏）→ 重测两个缩放容器。
+     *
+     * [ScaleDownBox] 的可用宽来自父级 MeasureSpec，父级尺寸变了必须重新
+     * 走一遍测量，否则竖屏/横屏切换后仍按旧比例渲染（真机回归：转屏后
+     * 控件不重排）。
+     */
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w != oldw || h != oldh) {
+            requestAdaptiveRelayout()
+        }
+    }
+
     companion object {
         const val SEEK_STEPS = 1000
         const val TICK_MS = 500L
         const val AUTO_HIDE_MS = 5000L
+
+        // ── 手势（对齐 Flutter player_screen.dart）──
+        /** 长按临时倍速倍率（Flutter `PlayerScreen.speedBoostMultiplier`）。 */
+        const val PlayerScreenSpeedBoostMultiplier = 2.0
+        /** 手势文本提示显示时长（Flutter `_showGestureHint` 800ms）。 */
+        const val GESTURE_HINT_TEXT_MS = 800L
+        /** 手势图标提示显示时长（Flutter `_showGestureIcon` 500ms）。 */
+        const val GESTURE_HINT_ICON_MS = 500L
+        /** 横拖换算系数：每 100px → 5000ms（Flutter `_onHorizontalDragUpdate`）。 */
+        const val DRAG_PX_PER_5S = 100f
+        const val DRAG_MS_PER_5S = 5000L
+        /** seek 相对跳转上限（Flutter `_seekRelative` ±60s）。 */
+        const val SEEK_MAX_DELTA_MS = 60_000L
+        /** 纵拖换算系数：600px → 全量程（Flutter `_onVerticalDragUpdate`）。 */
+        const val VERTICAL_PX_PER_FULL = 600f
 
         // 面板类型（与鸿蒙 NativePlayerPanelType 同构）
         const val PANEL_SPEED = "speed"

@@ -8,6 +8,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.WindowInsets
 import android.view.WindowManager
 
 /**
@@ -49,6 +50,9 @@ class AndroidNativePlayerHost(
     /** 最近一次 Dart 推送的快照（新视图首次渲染直接复用）。 */
     private var lastState: AndroidNativePlayerState = AndroidNativePlayerState()
     private var lastStateAtMs: Long = 0L
+
+    /** 长按临时倍速的基准档位（松手还原用；见 [Listener.onSpeedBoost]）。 */
+    private var boostBaseSpeed = 1.0
 
     val isOpen: Boolean get() = controlsDialog != null
 
@@ -244,6 +248,57 @@ class AndroidNativePlayerHost(
             override fun onClosePanel() {
                 // 同上。
             }
+
+            override fun onToggleResourcePanel() {
+                // 房间模式资源面板开关（对齐 Flutter `_showPanel`）。原生资源
+                // 面板属 Phase 5，先只发命令由 Dart 侧决定是否可用——**不能
+                // 发 requestBack**（旧实现点一下直接退出播放页）。
+                commandSink.send(mapOf("type" to "toggleResourcePanel"))
+            }
+
+            // ── 手机手势（对齐 Flutter player_screen.dart 手势控制）──
+
+            override fun onSeekRelative(deltaMs: Long) {
+                commandSink.send(mapOf("type" to "seekRelative", "deltaMs" to deltaMs))
+            }
+
+            override fun onGestureBrightness(value01: Float) {
+                // 亮度写入**控件窗**的 screenBrightness（Flutter 走
+                // `WindowManager.LayoutParams.screenBrightness`）。相对增量
+                // 累加到当前值，范围 0..1。
+                val win = controlsDialog?.window ?: return
+                val attrs = win.attributes
+                val current = if (attrs.screenBrightness >= 0f) attrs.screenBrightness else 1f
+                attrs.screenBrightness = (current + value01).coerceIn(0f, 1f)
+                win.attributes = attrs
+            }
+
+            override fun onGestureVolumeDelta(delta01: Float) {
+                // 音量走播放器属性（与 Flutter `_player.volume = x` 一致，
+                // 0..1）。本地乐观更新 + 回传 Dart。
+                val next = (lastState.volume + delta01).coerceIn(0.0, 1.0)
+                lastState = lastState.copy(volume = next)
+                commandSink.send(mapOf("type" to "setVolume", "volume" to next))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onSpeedBoost(active: Boolean) {
+                // 长按临时倍速：激活升到 2×，松手还原到长按前档位。
+                val base = if (active) {
+                    boostBaseSpeed = lastState.speed
+                    boostBaseSpeed
+                } else {
+                    boostBaseSpeed
+                }
+                val target = if (active) {
+                    base * NativePlayerScreenView.PlayerScreenSpeedBoostMultiplier
+                } else {
+                    base
+                }
+                lastState = lastState.copy(speed = target)
+                commandSink.send(mapOf("type" to "setSpeed", "speed" to target))
+                view?.render(lastState, System.currentTimeMillis())
+            }
         })
         controls.render(lastState, lastStateAtMs)
         val ctrlDlg = Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)
@@ -268,6 +323,9 @@ class AndroidNativePlayerHost(
         controlsDialog = ctrlDlg
         view = controls
         ctrlDlg.show()
+        // 安全区喂给控件层（顶/底栏避让刘海与手势条）。必须在 show() 之后：
+        // decorView 在 show 前拿不到 insets。
+        wireSafeInsets(ctrlDlg, controls)
     }
 
     /** surface 实测尺寸（诊断行用；未就绪返回 0x0）。 */
@@ -294,6 +352,46 @@ class AndroidNativePlayerHost(
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
+    }
+
+    /**
+     * 把安全区（刘海 / 手势条）喂给控件层。
+     *
+     * 窗口开了 `LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES`，内容会延伸进
+     * 刘海区——不避让时横屏顶栏被挖孔压住、底栏被手势条盖住（Flutter 靠
+     * `MediaQuery.padding` 避让，原生必须自己读 insets）。
+     */
+    private fun wireSafeInsets(dlg: Dialog, target: View) {
+        val decor = dlg.window?.decorView ?: return
+        val listener = View.OnApplyWindowInsetsListener { _, insets ->
+            val top: Int
+            val bottom: Int
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val cutout = insets.displayCutout
+                top = maxOf(
+                    cutout?.safeInsetTop ?: 0,
+                    insets.getInsetsIgnoringVisibility(
+                        WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout(),
+                    ).top,
+                )
+                bottom = maxOf(
+                    cutout?.safeInsetBottom ?: 0,
+                    insets.getInsetsIgnoringVisibility(
+                        WindowInsets.Type.navigationBars() or WindowInsets.Type.displayCutout(),
+                    ).bottom,
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                top = maxOf(insets.systemWindowInsetTop, insets.safeInsetTop)
+                @Suppress("DEPRECATION")
+                bottom = maxOf(insets.systemWindowInsetBottom, insets.safeInsetBottom)
+            }
+            target.applySafeInsets(top, bottom)
+            insets
+        }
+        decor.setOnApplyWindowInsetsListener(listener)
+        // 立即取一次当前值（listener 只在 insets 变化时触发）。
+        decor.requestApplyInsets()
     }
 
     /** 关闭双窗并释放 surface（幂等）。 */
