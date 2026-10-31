@@ -374,12 +374,6 @@ export struct HimiNativePlayerView {
     return Math.min(1, Math.max(0.2, avail / this.topTailW));
   }
 
-  /** 顶栏标题宽度：给尾组让位（尾组缩放后占位），下限 0。 */
-  private topTitleWidth(): number {
-    const w = this.topRowW - 44 - this.topTailW * this.topTailScale() - 32;
-    return Math.max(0, w);
-  }
-
   /**
    * 底栏右侧簇缩放：Flutter 三段布局里 transport 绝对居中，右侧簇可用宽
    * =（行宽 - 传输组宽）/2；不足则锚右等比缩小。
@@ -514,8 +508,7 @@ export struct HimiNativePlayerView {
   /** 顶栏：返回 / 标题 / 网速 | 内核胶囊（+倍速）| 时钟（TV）。 */
   @Builder
   TopBar() {
-    Stack() {
-      Row() {
+    Row() {
       Text(this.backGlyph())
         .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(22)
@@ -532,12 +525,8 @@ export struct HimiNativePlayerView {
         .fontColor(Color.White)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        // 标题宽度自适应（给尾组让位）：FittedBox 语义的配套约束。
-        .width(this.topTitleWidth())
+        .layoutWeight(1)
         .margin({ left: 4, right: 8 });
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center);
       // 右侧簇：项间距 8（Flutter SizedBox(8) 链）。
       Row({ space: 8 }) {
         if (this.state().networkSpeedText.length > 0) {
@@ -584,9 +573,10 @@ export struct HimiNativePlayerView {
         }
       }
       .alignItems(VerticalAlign.Center)
-      // 尾组绝对定位贴右 + 锚右等比缩（转屏/小窗自适应不出屏）。
+      // 尾组自适应：markAnchor 仅作**变换锚点**（scale 缩向右缘），不参与
+      // 布局定位——此前用 position(百分比) 随父容器基准跑到屏幕中部
+      //（真机回归「控件位置偏差」）。
       .markAnchor({ x: '100%', y: '50%' })
-      .position({ x: '100%', y: '50%' })
       .scale({ x: this.topTailScale(), y: this.topTailScale() })
       .onAreaChange((_old: Area, area: Area): void => {
         this.topTailW = area.width as number;
@@ -594,7 +584,7 @@ export struct HimiNativePlayerView {
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .alignContent(Alignment.Start)
+    .alignItems(VerticalAlign.Center)
     .onAreaChange((_old: Area, area: Area): void => {
       this.topRowW = area.width as number;
     })
@@ -758,9 +748,12 @@ export struct HimiNativePlayerView {
         }
       }
       .alignItems(VerticalAlign.Center)
-      // 右侧簇绝对定位贴右 + 锚右等比缩（转屏/小窗自适应不出屏）。
+      // 右侧簇自适应：流式布局（width 100% + justify End 贴右）+ markAnchor
+      // 仅作变换锚点（scale 缩向右缘）。position(百分比) 会随父容器基准
+      // 跑位（真机回归「控件位置偏差/点不到」）。
+      .width('100%')
+      .justifyContent(FlexAlign.End)
       .markAnchor({ x: '100%', y: '50%' })
-      .position({ x: '100%', y: '50%' })
       .scale({ x: this.bottomTailScale(), y: this.bottomTailScale() })
       .onAreaChange((_old: Area, area: Area): void => {
         this.bottomTailW = area.width as number;

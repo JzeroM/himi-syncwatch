@@ -267,7 +267,15 @@ class NativePlayerScreenView(
 
     // 面板层
     private val danmakuLayer = DanmakuLayerView(context)
-    private val panelScrim = View(context)
+
+    // 注意：.apply 只能接在 View 声明后面——接在 Runnable 的 object 表达式
+    // 后面会被 Kotlin 解析到外层 this（整个控件层根视图），把根视图设成
+    // GONE → 控件全消失（真机回归「只有画面没控件」）。
+    private val panelScrim = View(context).apply {
+        setBackgroundColor(Color.TRANSPARENT)
+        visibility = GONE
+        setOnClickListener { closePanel() }
+    }
 
     /**
      * 液态玻璃背景（方案 A：PixelCopy 采样视频帧 + 软模糊 + 折射带）。
@@ -289,10 +297,6 @@ class NativePlayerScreenView(
             glassCard?.sampleAsync()
             mainHandler.postDelayed(this, GlassBackdropDrawable.SAMPLE_INTERVAL_MS)
         }
-    }.apply {
-        setBackgroundColor(Color.TRANSPARENT)
-        visibility = GONE
-        setOnClickListener { closePanel() }
     }
     private val panelContainer = LinearLayout(context)
     private val decodePopover = LinearLayout(context)

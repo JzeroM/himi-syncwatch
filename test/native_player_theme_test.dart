@@ -318,6 +318,28 @@ void main() {
       expect(plugin, contains('enqueueNativeUiCommand'),
           reason: '鸿蒙插件缺命令入队方法');
     });
+
+    test('安卓 .apply 不得接在 Runnable/object 表达式后（控件层 GONE 回归）', () {
+      // 真机回归：glassSampleRunnable 的 object 表达式后接 .apply，Kotlin 解析
+      // 到外层 this（根视图）→ 整个控件层被 setVisibility(GONE) →「只有画面
+      // 没控件」。.apply 只能接在 View 声明后面。
+      expect(screen, contains('panelScrim = View(context).apply'),
+          reason: 'panelScrim 必须自带初始化（apply 接 View 声明）');
+      final runnableBlock = RegExp(
+        r'glassSampleRunnable = object : Runnable \{[\s\S]*?\n    \}',
+      ).firstMatch(screen);
+      expect(runnableBlock, isNotNull, reason: '未找到 glassSampleRunnable');
+      expect(runnableBlock!.group(0)!.contains('.apply'), isFalse,
+          reason: 'glassSampleRunnable（Runnable）后不得接 .apply（会命中根视图）');
+    });
+
+    test('鸿蒙控件定位禁用 position 百分比（跑位回归）', () {
+      // 真机回归：尾组 .position({x:'100%', y:'50%'}) 的百分比基准是父容器
+      // （Stack 高度不定）→ 控件跑到屏幕中部/屏外、点不到。定位一律走流式
+      // 布局 + markAnchor 变换锚。
+      expect(RegExp(r"\.position\(\{[^}]*x: '100%'").hasMatch(view), isFalse,
+          reason: '鸿蒙控件禁止 position 百分比定位（须流式布局 + markAnchor）');
+    });
   });
 
   group('液态玻璃参数（三端一致，对齐 Flutter GlassConfig）', () {
