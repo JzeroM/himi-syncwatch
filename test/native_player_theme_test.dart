@@ -306,5 +306,62 @@ void main() {
       expect(channelSrc, contains('pendingCommands'),
           reason: '安卓通道缺 Dart 订阅前的命令队列');
     });
+
+    test('鸿蒙插件层命令不得丢弃（nativeUiSink 未就绪须入队）', () {
+      // 真机回归：forwardCommand 在 sink==null 时只 warn 就丢 → 点击无反应。
+      final plugin = File(
+        'plugins/himi_mpv_ohos/ohos/src/main/ets/components/plugin/'
+        'HimiMpvOhosPlugin.ets',
+      ).readAsStringSync();
+      expect(plugin, contains('pendingNativeUiCommands'),
+          reason: '鸿蒙插件缺 nativeUi 命令队列');
+      expect(plugin, contains('enqueueNativeUiCommand'),
+          reason: '鸿蒙插件缺命令入队方法');
+    });
+  });
+
+  group('液态玻璃参数（三端一致，对齐 Flutter GlassConfig）', () {
+    final glassKotlin = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerUi.kt',
+    ).readAsStringSync();
+    final glassArkts = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'NativePlayerPanel.ets',
+    ).readAsStringSync();
+
+    test('模糊半径 20 与饱和度 1.6 三端一致', () {
+      expect(glassKotlin, contains('GLASS_BLUR_RADIUS = 20f'));
+      expect(glassKotlin, contains('GLASS_SATURATION = 1.6f'));
+      expect(glassArkts, contains('GLASS_BLUR_RADIUS = 20'));
+      expect(glassArkts, contains('GLASS_SATURATION = 1.6'));
+      final theme = File(
+        'lib/services/player/native/native_player_theme.dart',
+      ).readAsStringSync();
+      expect(theme, contains('glassBlurRadius = 20'));
+      expect(theme, contains('glassSaturation = 1.6'));
+    });
+
+    test('鸿蒙面板必须用 backgroundEffect 真模糊（非 tint-only）', () {
+      expect(
+        RegExp(r'backgroundEffect\(\{ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION \}\)')
+            .hasMatch(glassArkts),
+        isTrue,
+        reason: '鸿蒙面板玻璃须 backgroundEffect(radius/saturation) 模糊背后视频',
+      );
+    });
+
+    test('安卓玻璃降级链（采样失败不抛出，黑屏红线）', () {
+      final glass = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'GlassBackdrop.kt',
+      ).readAsStringSync();
+      expect(glass, contains('createOrNull'),
+          reason: '玻璃创建须有安全工厂（异常返回 null 降级）');
+      expect(glass, contains('PixelCopy'),
+          reason: '方案 A 玻璃须 PixelCopy 采样视频帧');
+      expect(glass, contains('GLASS_REFRACTION_ZOOM'),
+          reason: '玻璃须有折射带放大（液态玻璃折射观感）');
+    });
   });
 }

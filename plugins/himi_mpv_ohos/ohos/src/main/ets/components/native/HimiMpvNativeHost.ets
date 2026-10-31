@@ -88,6 +88,15 @@ export class NativeEpisodeUi {
   title: string = '';
 }
 
+/** 原生弹幕项（与 Dart `NativeDanmakuItem.toJson` 字段一致）。 */
+export class NativeDanmakuUi {
+  timeMs: number = 0;
+  text: string = '';
+  /** scroll / top / bottom。 */
+  mode: string = 'scroll';
+  color: string = '#FFFFFF';
+}
+
 /** 面板版本项（与 Dart `NativeVersion.toJson` 一致）。 */
 export class NativeVersionUi {
   index: number = 0;
@@ -154,6 +163,23 @@ function parseEpisodes(v: ESObject): NativeEpisodeUi[] {
       const src = arr[i] as Record<string, Object>;
       item.index = jsonNum(src['index'], 0);
       item.title = jsonStr(src['title'], '');
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+function parseDanmakuItems(v: ESObject): NativeDanmakuUi[] {
+  const out: NativeDanmakuUi[] = [];
+  if (Array.isArray(v)) {
+    const arr = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const item = new NativeDanmakuUi();
+      const src = arr[i] as Record<string, Object>;
+      item.timeMs = jsonNum(src['timeMs'], 0);
+      item.text = jsonStr(src['text'], '');
+      item.mode = jsonStr(src['mode'], 'scroll');
+      item.color = jsonStr(src['color'], '#FFFFFF');
       out.push(item);
     }
   }
@@ -257,6 +283,8 @@ export class NativePlayerUiState {
   danmakuSpeed: number = 1.0;
   danmakuFontSize: number = 0.5;
   danmakuOpacity: number = 0.6;
+  /** 弹幕时间窗（原生渲染；Dart 按 [当前位置-2s,+30s] 切窗推送）。 */
+  danmakuItems: NativeDanmakuUi[] = [];
   /** 片头片尾功能开关与已存标记（毫秒；无标记为 null）。 */
   segmentEnabled: boolean = false;
   segmentIntroEndMs: number | null = null;
@@ -340,6 +368,9 @@ export class NativePlayerUiState {
     this.danmakuSpeed = jsonNum(obj.danmakuSpeed, this.danmakuSpeed);
     this.danmakuFontSize = jsonNum(obj.danmakuFontSize, this.danmakuFontSize);
     this.danmakuOpacity = jsonNum(obj.danmakuOpacity, this.danmakuOpacity);
+    if (obj.danmakuItems !== undefined) {
+      this.danmakuItems = parseDanmakuItems(obj.danmakuItems);
+    }
     this.segmentEnabled = jsonBool(obj.segmentEnabled, this.segmentEnabled);
     this.segmentIntroEndMs = jsonNullableInt(obj.segmentIntroEndMs);
     this.segmentOutroStartMs = jsonNullableInt(obj.segmentOutroStartMs);

@@ -213,13 +213,7 @@ class PluginNativeBridge implements NativeHostBridge {
   }
 
   forwardCommand(command: Map<string, Object>): void {
-    const sink = this.plugin.getNativeUiSink();
-    if (sink !== null) {
-      sink.success(command);
-    } else {
-      hilog.warn(DOMAIN, TAG, 'native_ui 未监听，命令丢失: %{public}s',
-        command.get('type') as Object as string ?? 'unknown');
-    }
+    this.plugin.enqueueNativeUiCommand(command);
   }
 }
 
@@ -230,6 +224,15 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
   private nativeUiChannel: EventChannel | null = null;
   private static eventSink: EventSink | null = null;
   private nativeUiSink: EventSink | null = null;
+
+  /**
+   * Dart 订阅 native_ui 之前的待发命令队列。
+   *
+   * 原生播放器 UI 可能在 Dart 侧 EventChannel 订阅**之前**就产生点击
+   * （子窗口先建好）；sink 为 null 时直接丢弃会让点击「毫无反应」（真机
+   * 回归）。改为入队，onListen 时按序补发。
+   */
+  private pendingNativeUiCommands: Map<string, Object>[] = [];
   private session: MpvSession | null = null;
 
   /// 原生播放器 UI 子窗口（全屏 ArkUI 播放页）。
@@ -257,6 +260,21 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
 
   getNativeUiSink(): EventSink | null {
     return this.nativeUiSink;
+  }
+
+  /**
+   * 原生命令入队/直发：sink 就绪直接发，未就绪入队等 onListen 补发
+   *（不丢弃——丢弃会让用户点击毫无反应）。
+   */
+  enqueueNativeUiCommand(command: Map<string, Object>): void {
+    const sink = this.nativeUiSink;
+    if (sink !== null) {
+      sink.success(command);
+      return;
+    }
+    this.pendingNativeUiCommands.push(command);
+    hilog.warn(DOMAIN, TAG, 'native_ui 未监听，命令暂存待发: %{public}s',
+      command.get('type') as Object as string ?? 'unknown');
   }
 
   // ── AbilityAware：拿 WindowStage 创建原生播放器子窗口 ────────
@@ -305,6 +323,15 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     this.nativeUiChannel.setStreamHandler({
       onListen: (_args: ESObject, sink: EventSink): void => {
         this.nativeUiSink = sink;
+        // 补发订阅前积压的命令（按序；不补发会让早期点击全部丢失）。
+        const queued = this.pendingNativeUiCommands;
+        this.pendingNativeUiCommands = [];
+        for (const cmd of queued) {
+          sink.success(cmd);
+        }
+        if (queued.length > 0) {
+          hilog.info(DOMAIN, TAG, 'native_ui 就绪，补发积压命令 %{public}d 条', queued.length);
+        }
       },
       onCancel: (_args: ESObject): void => {
         this.nativeUiSink = null;

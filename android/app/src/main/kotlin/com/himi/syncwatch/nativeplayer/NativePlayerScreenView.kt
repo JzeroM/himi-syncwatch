@@ -47,6 +47,8 @@ class NativePlayerScreenView(
     ctx: Context,
     /** surface 实测尺寸提供者（诊断行 `size=WxH`）。 */
     private val surfaceSizeProvider: () -> Pair<Int, Int> = { 0 to 0 },
+    /** surface 窗口提供者（液态玻璃 PixelCopy 采样源；null = 降级 tint）。 */
+    private val surfaceWindowProvider: () -> android.view.Window? = { null },
 ) : FrameLayout(ctx) {
 
     /** 视图 → 宿主 → Dart 的交互回调。 */
@@ -229,6 +231,8 @@ class NativePlayerScreenView(
     private val decodeChip = TextView(context)
     private val videoFitIcon = TextView(context)
     private val rotateIcon = TextView(context)
+    /** 顶栏右侧簇（网速~转屏）：小屏整组等比缩（自适应不出屏）。 */
+    private val topTail = LinearLayout(context)
     private val clockWrap = FrameLayout(context)
     private val clockText = TextView(context)
 
@@ -262,7 +266,30 @@ class NativePlayerScreenView(
     private val hdrBadge = TextView(context)
 
     // 面板层
-    private val panelScrim = View(context).apply {
+    private val danmakuLayer = DanmakuLayerView(context)
+    private val panelScrim = View(context)
+
+    /**
+     * 液态玻璃背景（方案 A：PixelCopy 采样视频帧 + 软模糊 + 折射带）。
+     * 创建失败/未开启玻璃时为 null → 走 tint 兜底，绝不影响出画（黑屏红线）。
+     */
+    private val glassPanel = GlassBackdropDrawable.createOrNull(
+        surfaceWindowProvider,
+        dp(NPTheme.RADIUS_PANEL).toFloat(),
+    )
+    private val glassCard = GlassBackdropDrawable.createOrNull(
+        surfaceWindowProvider,
+        dp(NPTheme.RADIUS_CARD).toFloat(),
+    )
+
+    /** 面板打开期间的采样节拍（4fps；关闭即停，零开销）。 */
+    private val glassSampleRunnable = object : Runnable {
+        override fun run() {
+            glassPanel?.sampleAsync()
+            glassCard?.sampleAsync()
+            mainHandler.postDelayed(this, GlassBackdropDrawable.SAMPLE_INTERVAL_MS)
+        }
+    }.apply {
         setBackgroundColor(Color.TRANSPARENT)
         visibility = GONE
         setOnClickListener { closePanel() }
@@ -288,6 +315,8 @@ class NativePlayerScreenView(
             tapLayer,
             lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
         )
+        // 弹幕层：视频之上、控件之下（与 Flutter DanmakuOverlay 位置一致）。
+        addView(danmakuLayer, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         addView(topBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))
         addView(bottomBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
@@ -352,12 +381,15 @@ class NativePlayerScreenView(
                 .also { it.marginStart = dp(4); it.marginEnd = dp(8) },
         )
 
+        // 右侧簇容器（网速~转屏）：小屏整组等比缩（自适应不出屏）。
+        topTail.orientation = LinearLayout.HORIZONTAL
+        topTail.gravity = Gravity.CENTER_VERTICAL
         // 网速（12sp white70）
         networkText.setTextColor(NPTheme.WHITE_70)
         networkText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         networkText.gravity = Gravity.CENTER_VERTICAL
         networkText.visibility = GONE
-        topBar.addView(networkText, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40), 8))
+        topTail.addView(networkText, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40), 8))
 
         // 倍速（手机，网速右侧）：Flutter 为纯图标+文字（无胶囊底），
         // icon 20 + label 12 white70，padding h4 v4。
@@ -374,7 +406,7 @@ class NativePlayerScreenView(
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .also { it.marginStart = dp(4) },
         )
-        topBar.addView(speedChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32), 8))
+        topTail.addView(speedChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32), 8))
 
         // 内核胶囊（显示短名，点击打开右侧内核面板）
         kernelChip.setTextColor(Color.WHITE)
@@ -385,17 +417,17 @@ class NativePlayerScreenView(
         kernelChip.background = chipBackground(false)
         kernelChip.isClickable = true
         kernelChip.setOnClickListener { openPanel(PANEL_KERNEL) }
-        topBar.addView(kernelChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
+        topTail.addView(kernelChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
 
         // 字幕样式胶囊（tune 图标，点击打开右侧显示调节面板）
         configureIconChip(subtitleStyleChip, NativePlayerIcons.ICON_TUNE)
         subtitleStyleChip.setOnClickListener { openPanel(PANEL_DISPLAY) }
-        topBar.addView(subtitleStyleChip, llp(dp(30), dp(30), 8))
+        topTail.addView(subtitleStyleChip, llp(dp(30), dp(30), 8))
 
         // 解码胶囊（memory 图标，点击打开右侧解码模式面板）
         configureIconChip(decodeChip, NativePlayerIcons.ICON_MEMORY)
         decodeChip.setOnClickListener { openPanel(PANEL_DECODE) }
-        topBar.addView(decodeChip, llp(dp(30), dp(30), 8))
+        topTail.addView(decodeChip, llp(dp(30), dp(30), 8))
 
         // 画面比例（循环切换）
         videoFitIcon.typeface = NativePlayerIcons.typeface(context)
@@ -407,7 +439,7 @@ class NativePlayerScreenView(
         videoFitIcon.isClickable = true
         videoFitIcon.setOnClickListener { listener?.onCycleVideoFit() }
         applyPressFeedback(videoFitIcon)
-        topBar.addView(videoFitIcon, llp(dp(34), dp(34), 8))
+        topTail.addView(videoFitIcon, llp(dp(34), dp(34), 8))
 
         // 手动转屏（仅手机）
         rotateIcon.text = String(Character.toChars(NativePlayerIcons.ICON_ROTATE))
@@ -420,7 +452,12 @@ class NativePlayerScreenView(
         rotateIcon.isClickable = true
         rotateIcon.setOnClickListener { listener?.onToggleOrientation() }
         applyPressFeedback(rotateIcon)
-        topBar.addView(rotateIcon, llp(dp(34), dp(34), 8))
+        topTail.addView(rotateIcon, llp(dp(34), dp(34), 8))
+
+        topBar.addView(topTail, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
 
         // 时钟（TV：右贴边，100×48，13sp white70）
         clockText.setTextColor(NPTheme.WHITE_70)
@@ -919,8 +956,12 @@ class NativePlayerScreenView(
             // 常规面板上下避让（top safe+48 / bottom 116+safe），**拉伸全高**
             //（Flutter Positioned(top,bottom) 语义，非 wrap-content）。
             val fullBleed = panel == PANEL_EPISODE
-            panelContainer.background = if (fullBleed) {
-                GradientDrawable().apply {
+            // 液态玻璃（方案 A）：玻璃可用且开启 → 真采样折射背景；
+            // 否则降级 tint（GraphDrawable），全链路不抛出。
+            val useGlass = lastState.glassUi && glassPanel != null
+            panelContainer.background = when {
+                useGlass && !fullBleed -> glassPanel
+                fullBleed -> GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
                     cornerRadii = floatArrayOf(
                         dp(NPTheme.RADIUS_PANEL).toFloat(), dp(NPTheme.RADIUS_PANEL).toFloat(),
@@ -931,8 +972,7 @@ class NativePlayerScreenView(
                     setColor(NPTheme.PANEL_TINT)
                     setStroke(dp(1), NPTheme.RIM)
                 }
-            } else {
-                glassBackground(NPTheme.RADIUS_PANEL)
+                else -> glassBackground(NPTheme.RADIUS_PANEL)
             }
             panelContainer.layoutParams = lp(
                 panelWidthDp(),
@@ -1350,7 +1390,11 @@ class NativePlayerScreenView(
         segmentScrim.visibility = VISIBLE
         segmentCard.visibility = VISIBLE
         segmentCard.removeAllViews()
-        segmentCard.background = glassBackground(NPTheme.RADIUS_CARD)
+        segmentCard.background = if (lastState.glassUi && glassCard != null) {
+            glassCard
+        } else {
+            glassBackground(NPTheme.RADIUS_CARD)
+        }
         segmentCard.layoutParams = lp(dp(NPTheme.SEGMENT_CARD_WIDTH), LayoutParams.WRAP_CONTENT, Gravity.CENTER)
         val confirm = segmentConfirmKind
         if (confirm != null) {
@@ -1488,6 +1532,9 @@ class NativePlayerScreenView(
     fun release() {
         mainHandler.removeCallbacks(tickRunnable)
         mainHandler.removeCallbacks(hideRunnable)
+        stopGlassSampling()
+        glassPanel?.release()
+        glassCard?.release()
         listener = null
     }
 
@@ -1496,6 +1543,47 @@ class NativePlayerScreenView(
         lastState = state
         lastStateAtMs = snapshotAtMs
         applyState()
+    }
+
+    /**
+     * 转屏/小屏自适应（Flutter FittedBox(scaleDown) 语义）：右侧组超宽时
+     * 整体等比缩小（锚定右缘），保证横竖屏切换/小窗下控件不出屏、不重叠
+     *（真机回归：竖屏时右侧组与传输组挤压重叠）。
+     */
+    private fun applyAdaptiveScale() {
+        buttonRow.post {
+            val total = buttonRow.width
+            if (total <= 0) return@post
+            // Flutter PlayerBottomRow：leading/transport/trailing 三段里
+            // transport 绝对居中，trailing 的 Expanded 可用宽 =（总宽-传输组）/2。
+            val avail = (total - transportGroup.width) / 2 - dp(8)
+            val needed = trailingGroup.width
+            val s = if (needed > 0 && avail > 0 && needed > avail) {
+                (avail.toFloat() / needed).coerceIn(0.2f, 1f)
+            } else {
+                1f
+            }
+            trailingGroup.pivotX = trailingGroup.width.toFloat()
+            trailingGroup.pivotY = trailingGroup.height / 2f
+            trailingGroup.scaleX = s
+            trailingGroup.scaleY = s
+        }
+        topBar.post {
+            val total = topBar.width
+            if (total <= 0) return@post
+            // 顶栏：title 为 Expanded（可压缩至 0），尾组可用 = 总宽 - 返回钮。
+            val avail = total - backButton.width - dp(8)
+            val needed = topTail.width
+            val s = if (needed > 0 && avail > 0 && needed > avail) {
+                (avail.toFloat() / needed).coerceIn(0.2f, 1f)
+            } else {
+                1f
+            }
+            topTail.pivotX = topTail.width.toFloat()
+            topTail.pivotY = topTail.height / 2f
+            topTail.scaleX = s
+            topTail.scaleY = s
+        }
     }
 
     private fun applyState() {
@@ -1562,10 +1650,20 @@ class NativePlayerScreenView(
         networkText.text = state.networkSpeedText ?: ""
         networkText.visibility = if (state.networkSpeedText != null) VISIBLE else GONE
 
+        // 弹幕层：状态参数 + 时间窗（原生渲染，Flutter 弹幕层随视频区退场）。
+        danmakuLayer.update(
+            state.danmakuItems,
+            state.danmakuEnabled && !state.isRoom,
+            state.danmakuSpeed,
+            state.danmakuFontSize,
+            state.danmakuOpacity,
+        )
+
         // 时间数显
         if (!dragging) {
             val pos = state.positionAt(now, lastStateAtMs)
             positionLabel.text = AndroidNativePlayerState.formatPlayerTime(pos)
+            danmakuLayer.setClock(pos, state.paused)
             seekBar.progress =
                 if (state.durationMs > 0) {
                     ((pos * SEEK_STEPS) / state.durationMs).toInt().coerceIn(0, SEEK_STEPS)
@@ -1666,6 +1764,34 @@ class NativePlayerScreenView(
             trailingGroup.visibility = VISIBLE
             leadingGroup.visibility = if (!tv) VISIBLE else GONE
         }
+
+        // 转屏/小窗自适应：右侧组超宽等比缩（不出屏、不与传输组重叠）。
+        applyAdaptiveScale()
+
+        // 液态玻璃采样节拍：任一玻璃面/卡可见时开（4fps），全关即停。
+        val glassActive =
+            (panelContainer.visibility == VISIBLE && panelContainer.background === glassPanel) ||
+                (segmentCard.visibility == VISIBLE && segmentCard.background === glassCard)
+        if (glassActive) {
+            startGlassSampling()
+        } else {
+            stopGlassSampling()
+        }
+    }
+
+    private var glassSampling = false
+
+    private fun startGlassSampling() {
+        if (glassSampling) return
+        glassSampling = true
+        glassPanel?.sampleAsync()
+        glassCard?.sampleAsync()
+        mainHandler.postDelayed(glassSampleRunnable, GlassBackdropDrawable.SAMPLE_INTERVAL_MS)
+    }
+
+    private fun stopGlassSampling() {
+        glassSampling = false
+        mainHandler.removeCallbacks(glassSampleRunnable)
     }
 
     /** 手机 ↔ TV 切换时重排顶栏/底栏子控件（不递归回 applyState）。 */

@@ -21,6 +21,7 @@ import {
 } from './HimiMpvNativeHost';
 import { NativePlayerPanel } from './NativePlayerPanel';
 import { NativePlayerIcons } from './NativePlayerIcons';
+import { DanmakuLayer } from './DanmakuLayer';
 import { MpvXComponentController, MpvSurfaceCallbacks } from '../plugin/HimiMpvSurface';
 
 const TAG = 'HimiNativePlayerView';
@@ -125,6 +126,14 @@ export struct HimiNativePlayerView {
   @State activePanel: string = '';
   /** TV 焦点态：记录当前聚焦控件的 key，条件描边实现焦点环。 */
   @State focusedKey: string = '';
+
+  /** 顶栏宽度 / 尾组内容宽（onAreaChange 喂入，转屏自适应缩放）。 */
+  @State topRowW: number = 0;
+  @State topTailW: number = 0;
+  /** 控件行宽度 / 传输组宽 / 右侧簇内容宽（同上）。 */
+  @State ctrlRowW: number = 0;
+  @State transportW: number = 0;
+  @State bottomTailW: number = 0;
 
   private controller: MpvXComponentController = new MpvXComponentController();
   private listener: ViewListener | null = null;
@@ -353,6 +362,36 @@ export struct HimiNativePlayerView {
     return this.state().episodes.length > 1;
   }
 
+  /**
+   * 顶栏尾组缩放（Flutter FittedBox(scaleDown) 语义）：可用宽 = 总宽 -
+   * 返回钮 - 余量；不足则锚右等比缩小，转屏/小窗不出屏。
+   */
+  private topTailScale(): number {
+    const avail = this.topRowW - 44 - 24;
+    if (this.topTailW <= 0 || avail <= 0) {
+      return 1;
+    }
+    return Math.min(1, Math.max(0.2, avail / this.topTailW));
+  }
+
+  /** 顶栏标题宽度：给尾组让位（尾组缩放后占位），下限 0。 */
+  private topTitleWidth(): number {
+    const w = this.topRowW - 44 - this.topTailW * this.topTailScale() - 32;
+    return Math.max(0, w);
+  }
+
+  /**
+   * 底栏右侧簇缩放：Flutter 三段布局里 transport 绝对居中，右侧簇可用宽
+   * =（行宽 - 传输组宽）/2；不足则锚右等比缩小。
+   */
+  private bottomTailScale(): number {
+    const avail = (this.ctrlRowW - this.transportW) / 2 - 8;
+    if (this.bottomTailW <= 0 || avail <= 0) {
+      return 1;
+    }
+    return Math.min(1, Math.max(0.2, avail / this.bottomTailW));
+  }
+
   /** 版本/线路角标：显示线路数（与 Flutter sources.length 一致）。 */
   private versionBadge(): string {
     return `${this.state().versions.length}`;
@@ -415,6 +454,10 @@ export struct HimiNativePlayerView {
         )
         .hitTestBehavior(HitTestMode.Transparent);
 
+      // ── 弹幕层：视频之上、控件之下（原生渲染，Flutter 弹幕层随视频区
+      //    退场 → 弹幕开关在原生 UI 下必须由本层生效）──
+      DanmakuLayer({ revision: this.revision });
+
       if (this.showControls) {
         if (this.state().locked && !this.state().tvMode) {
           // ── 锁定态：仅左下锁钮（与进度条左数显同列）──
@@ -471,7 +514,8 @@ export struct HimiNativePlayerView {
   /** 顶栏：返回 / 标题 / 网速 | 内核胶囊（+倍速）| 时钟（TV）。 */
   @Builder
   TopBar() {
-    Row() {
+    Stack() {
+      Row() {
       Text(this.backGlyph())
         .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(22)
@@ -488,8 +532,12 @@ export struct HimiNativePlayerView {
         .fontColor(Color.White)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
+        // 标题宽度自适应（给尾组让位）：FittedBox 语义的配套约束。
+        .width(this.topTitleWidth())
         .margin({ left: 4, right: 8 });
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center);
       // 右侧簇：项间距 8（Flutter SizedBox(8) 链）。
       Row({ space: 8 }) {
         if (this.state().networkSpeedText.length > 0) {
@@ -535,11 +583,21 @@ export struct HimiNativePlayerView {
             .textAlign(TextAlign.Center);
         }
       }
-      .alignItems(VerticalAlign.Center);
+      .alignItems(VerticalAlign.Center)
+      // 尾组绝对定位贴右 + 锚右等比缩（转屏/小窗自适应不出屏）。
+      .markAnchor({ x: '100%', y: '50%' })
+      .position({ x: '100%', y: '50%' })
+      .scale({ x: this.topTailScale(), y: this.topTailScale() })
+      .onAreaChange((_old: Area, area: Area): void => {
+        this.topTailW = area.width as number;
+      });
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .alignItems(VerticalAlign.Center)
+    .alignContent(Alignment.Start)
+    .onAreaChange((_old: Area, area: Area): void => {
+      this.topRowW = area.width as number;
+    })
     .linearGradient({
       angle: 180,
       colors: [['#CC000000', 0.0], ['#00000000', 1.0]],
@@ -654,7 +712,10 @@ export struct HimiNativePlayerView {
         }
       }
       .alignItems(VerticalAlign.Center)
-      .justifyContent(FlexAlign.Center);
+      .justifyContent(FlexAlign.Center)
+      .onAreaChange((_old: Area, area: Area): void => {
+        this.transportW = area.width as number;
+      });
 
       // 右侧簇：项间距 20（Flutter SizedBox(20) 链）。
       Row({ space: 20 }) {
@@ -697,8 +758,13 @@ export struct HimiNativePlayerView {
         }
       }
       .alignItems(VerticalAlign.Center)
-      .width('100%')
-      .justifyContent(FlexAlign.End);
+      // 右侧簇绝对定位贴右 + 锚右等比缩（转屏/小窗自适应不出屏）。
+      .markAnchor({ x: '100%', y: '50%' })
+      .position({ x: '100%', y: '50%' })
+      .scale({ x: this.bottomTailScale(), y: this.bottomTailScale() })
+      .onAreaChange((_old: Area, area: Area): void => {
+        this.bottomTailW = area.width as number;
+      });
 
       // 左侧簇：手机模式锁钮（Flutter 底栏 leading 槽 PlayerLockButton）。
       // 未锁显 lock_open（点击上锁），已锁显 lock（点击解锁）；列宽与
@@ -740,7 +806,10 @@ export struct HimiNativePlayerView {
         .justifyContent(FlexAlign.Start);
       }
     }
-    .width('100%');
+    .width('100%')
+    .onAreaChange((_old: Area, area: Area): void => {
+      this.ctrlRowW = area.width as number;
+    });
   }
 
   /** 文字胶囊（倍速/内核/TV 倍速）。 */

@@ -103,7 +103,11 @@ class AndroidNativePlayerHost(
     }
 
     private fun buildControlsWindow(surfaceSizeProvider: () -> Pair<Int, Int>) {
-        val controls = NativePlayerScreenView(activity, surfaceSizeProvider)
+        val controls = NativePlayerScreenView(
+            activity,
+            surfaceSizeProvider,
+            surfaceWindowProvider = { surfaceDialog?.window },
+        )
         controls.setListener(object : NativePlayerScreenView.Listener {
             override fun onBack() {
                 commandSink.send(mapOf("type" to "requestBack"))

@@ -65,6 +65,31 @@ abstract final class NativePlayerTheme {
   static const double radiusDecode = 8;
   static const double radiusBadge = 9;
 
+  // ── 液态玻璃（对齐 Flutter GlassConfig / liquid_glass_widgets）──
+  /// 背景模糊半径（Flutter GlassConfig.blurSigma = 20）。
+  static const double glassBlurRadius = 20;
+
+  /// 背景饱和度增益（Flutter GlassConfig.saturation = 1.6）。
+  static const double glassSaturation = 1.6;
+
+  /// 顶部高光带（菲涅尔近似，Flutter GlassConfig.highlightTop）。
+  static const Color glassHighlightTop = Color(0xB3FFFFFF);
+
+  /// 底部高光渐隐端（Flutter GlassConfig.highlightBottom）。
+  static const Color glassHighlightBottom = Color(0x00FFFFFF);
+
+  /// 内缘暗描边（Flutter GlassConfig.innerRimColor）。
+  static const Color glassInnerRim = Color(0x33000000);
+
+  /// 折射带宽度（dp）：面板边缘的凸透镜折射观感带。
+  static const double glassRefractionBand = 10;
+
+  /// 折射带放大系数（边缘放大 = 液态玻璃典型折射观感）。
+  static const double glassRefractionZoom = 1.12;
+
+  /// 采样模糊降采样比（采样帧缩小 N 倍再拉大 = 软模糊）。
+  static const int glassBlurDownsample = 4;
+
   // ── 顶栏 ──────────────────────────────────────────────────
   static const double topBarHeight = 48;
   static const double topIconSize = 22;

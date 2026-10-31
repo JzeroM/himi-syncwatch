@@ -95,6 +95,12 @@ const DISPLAY_SLIDERS: DisplaySliderSpec[] = [
 const SEL_COLOR = '#6366F1';
 /** 面板着色（照抄 GlassConfig.panelTint = 0x1F1A1D23）。 */
 const PANEL_TINT = '#1F1A1D23';
+/** 液态玻璃：背景模糊半径 / 饱和度（对齐 Flutter GlassConfig blurSigma=20、saturation=1.6）。 */
+const GLASS_BLUR_RADIUS = 20;
+const GLASS_SATURATION = 1.6;
+/** 顶部高光带（菲涅尔近似）与内缘暗描边。 */
+const GLASS_HIGHLIGHT_TOP = '#B3FFFFFF';
+const GLASS_INNER_RIM = '#33000000';
 /** 常规面板圆角（Dart radiusPanel=16）。 */
 const PANEL_RADIUS = 16;
 /** 选集贴边（Flutter fullBleed）：仅左侧圆角 16。 */
@@ -207,7 +213,9 @@ export struct NativePlayerPanel {
     .constraintSize({ minWidth: 260, maxWidth: 320 })
     .layoutWeight(1)
     .backgroundColor(PANEL_TINT)
-    .backgroundBlurStyle(BlurStyle.Thin)
+    // 液态玻璃（方案 A）：backgroundEffect 真模糊**窗口背后**的视频合成层
+    //（blur 20 / saturation 1.6 对齐 Flutter GlassConfig）+ tint 叠色。
+    .backgroundEffect({ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION })
     .border({ width: 1, color: RIM_COLOR })
     // 选集面板贴边（右侧圆角放平，与 Flutter BorderRadius.horizontal(left) 一致）。
     .borderRadius(this.panelType === 'episode' ? FULLBLEED_RADIUS : PANEL_RADIUS)
@@ -280,7 +288,9 @@ export struct NativePlayerPanel {
     }
     .width(360)
     .backgroundColor(PANEL_TINT)
-    .backgroundBlurStyle(BlurStyle.Thin)
+    // 液态玻璃（方案 A）：backgroundEffect 真模糊**窗口背后**的视频合成层
+    //（blur 20 / saturation 1.6 对齐 Flutter GlassConfig）+ tint 叠色。
+    .backgroundEffect({ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION })
     .border({ width: 1, color: RIM_COLOR })
     .borderRadius(18)
     .clip(true)

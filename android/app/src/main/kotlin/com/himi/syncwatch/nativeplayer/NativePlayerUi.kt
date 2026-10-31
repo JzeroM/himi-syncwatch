@@ -51,6 +51,16 @@ internal object NPTheme {
     const val RADIUS_DECODE = 8
     const val RADIUS_BADGE = 9
 
+    // ── 液态玻璃（对齐 Dart NativePlayerTheme / Flutter GlassConfig）──
+    const val GLASS_BLUR_RADIUS = 20f
+    const val GLASS_SATURATION = 1.6f
+    const val GLASS_HIGHLIGHT_TOP = 0xB3FFFFFF.toInt()
+    const val GLASS_HIGHLIGHT_BOTTOM = 0x00FFFFFF
+    const val GLASS_INNER_RIM = 0x33000000.toInt()
+    const val GLASS_REFRACTION_BAND = 10
+    const val GLASS_REFRACTION_ZOOM = 1.12f
+    const val GLASS_BLUR_DOWNSAMPLE = 4
+
     // ── 顶栏 ──
     const val TOP_BAR_HEIGHT = 48
     const val TOP_ICON_SIZE = 22

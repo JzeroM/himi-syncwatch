@@ -1098,7 +1098,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   int _danmakuLoadSeq = 0;
 
   /// 已加载弹幕（关弹幕后保留，重开免请求；换集清空重载）。
-  List<DanmakuComment> _danmakuComments = const [];
+  /// 弹幕列表更新时同步到原生 UI 渲染数据源（原生 UI 下弹幕由原生层渲染）。
+  set _danmakuComments(List<DanmakuComment> value) {
+    __danmakuComments = value;
+    final mpv = _player;
+    if (mpv is MpvPlayerAdapter && !_disposed) {
+      mpv.nativeDanmakuComments = value;
+    }
+  }
+
+  List<DanmakuComment> get _danmakuComments => __danmakuComments;
+  List<DanmakuComment> __danmakuComments = const [];
 
   /// 当前已加载弹幕对应的集索引（-1 = 无）；避免起播/恢复时重复加载。
   int _danmakuLoadedIndex = -1;
@@ -3258,6 +3268,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
         : null;
     final engines = PlayerEngineFactory.supportedEngines();
+    mpv.nativeDanmakuComments = _danmakuComments;
     mpv.applyNativePanelData(
       episodes: List<NativeEpisode>.generate(
         _episodes.length,
@@ -5705,6 +5716,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         (_videoFitModes.indexOf(_videoFit) + 1) % _videoFitModes.length;
     setState(() => _videoFit = _videoFitModes[nextIndex]);
     _syncNativePanelData();
+    // 真机回归：必须把 fit 落到 mpv 属性，否则原生 UI 下画面纹丝不动
+    //（只有图标变化 → 用户以为「点了没反应」）。
+    final mpv = _player;
+    if (mpv is MpvPlayerAdapter) {
+      unawaited(mpv.applyVideoFit(_videoFit.name));
+    }
   }
 
   void _onSeekStart(double value) {

@@ -31,6 +31,23 @@ data class AndroidTrack(
 }
 
 /** 面板选集项（与 Dart `NativeEpisode.toJson` 一致）。 */
+/** 原生弹幕项（与 Dart `NativeDanmakuItem.toJson` 字段一致）。 */
+data class AndroidDanmakuItem(
+    val timeMs: Int = 0,
+    val text: String = "",
+    val mode: String = "scroll",
+    val color: String = "#FFFFFF",
+) {
+    companion object {
+        fun fromJson(o: JSONObject): AndroidDanmakuItem = AndroidDanmakuItem(
+            timeMs = o.optInt("timeMs", 0),
+            text = o.optString("text", ""),
+            mode = o.optString("mode", "scroll"),
+            color = o.optString("color", "#FFFFFF"),
+        )
+    }
+}
+
 data class AndroidEpisode(val index: Int = 0, val title: String = "") {
     val displayLabel: String
         get() = if (title.isNotBlank()) title else "第 ${index + 1} 集"
@@ -133,6 +150,8 @@ data class AndroidNativePlayerState(
     val danmakuSpeed: Double = 1.0,
     val danmakuFontSize: Double = 0.5,
     val danmakuOpacity: Double = 0.6,
+    /** 弹幕时间窗（原生渲染；Dart 按 [当前位置-2s,+30s] 切窗推送）。 */
+    val danmakuItems: List<AndroidDanmakuItem> = emptyList(),
     val segmentEnabled: Boolean = false,
     val segmentIntroEndMs: Int? = null,
     val segmentOutroStartMs: Int? = null,
@@ -291,6 +310,9 @@ data class AndroidNativePlayerState(
             danmakuSpeed = json.optDouble("danmakuSpeed", 1.0),
             danmakuFontSize = json.optDouble("danmakuFontSize", 0.5),
             danmakuOpacity = json.optDouble("danmakuOpacity", 0.6),
+            danmakuItems = json.optJSONArray("danmakuItems")?.let { arr ->
+                (0 until arr.length()).map { AndroidDanmakuItem.fromJson(arr.getJSONObject(it)) }
+            } ?: emptyList(),
             segmentEnabled = json.optBoolean("segmentEnabled", false),
             segmentIntroEndMs = json.optNullableInt("segmentIntroEndMs"),
             segmentOutroStartMs = json.optNullableInt("segmentOutroStartMs"),

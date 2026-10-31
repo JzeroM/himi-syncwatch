@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:himi_mpv_android/himi_mpv_android.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'mpv_session_platform.dart';
+import '../danmaku/danmaku_comment.dart';
 import 'native/native_player_command.dart';
 import 'native/native_player_controller.dart';
 import 'native/native_player_gating.dart';
@@ -296,6 +297,49 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         userSet: _mpvVideoOutputUserSet,
         windows: defaultTargetPlatform == TargetPlatform.windows,
       );
+
+  /// 画面比例 → mpv 显示属性（真机回归：原生 UI 下 _videoFit 只改图标，
+  /// 画面纹丝不动 →「点了没反应」。BoxFit 语义必须落到 mpv 属性）：
+  /// - contain 自适应：保持宽高比完整显示；
+  /// - cover 裁剪：panscan=1 裁边填满；
+  /// - fill 铺满：keepaspect=no 拉伸变形；
+  /// - none 原始：video-unscaled=yes 1:1 像素。
+  Future<void> applyVideoFit(String fit) async {
+    final player = _player;
+    if (player == null) return;
+    final props = switch (fit) {
+      'cover' => <String, String>{
+          'keepaspect': 'yes',
+          'panscan': '1.0',
+          'video-unscaled': 'no',
+          'video-aspect-override': '-1',
+        },
+      'fill' => <String, String>{
+          'keepaspect': 'no',
+          'panscan': '0',
+          'video-unscaled': 'no',
+          'video-aspect-override': '-1',
+        },
+      'none' => <String, String>{
+          'video-unscaled': 'yes',
+          'panscan': '0',
+        },
+      _ => <String, String>{
+          'keepaspect': 'yes',
+          'panscan': '0',
+          'video-unscaled': 'no',
+          'video-aspect-override': '-1',
+        },
+    };
+    for (final entry in props.entries) {
+      try {
+        await player.setProperty(entry.key, entry.value);
+      } catch (e) {
+        LogService().log('mpv', 'applyVideoFit ${entry.key}=${entry.value} 失败: $e');
+      }
+    }
+    LogService().log('mpv', 'applyVideoFit=$fit → $props');
+  }
 
   Future<void> _applyHdrOutputProperties(bool enabled) async {
     final player = _player;
@@ -923,6 +967,45 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     _nativeCurrentVersionIndex = currentVersionIndex;
     _nativeUiExtras = extras;
     _pushNativeUiState();
+    // 画面比例落 mpv 属性（引擎切换/重载会重置属性，这里兜底重放）。
+    if (extras.videoFit != _appliedVideoFit) {
+      _appliedVideoFit = extras.videoFit;
+      unawaited(applyVideoFit(extras.videoFit));
+    }
+  }
+
+  /// 最近一次落到 mpv 的画面比例（避免重复设置）。
+  String _appliedVideoFit = '';
+
+  /// 弹幕全量列表（PlayerScreen 解析后注入；原生 UI 的弹幕渲染数据源）。
+  List<DanmakuComment> _nativeDanmakuComments = const [];
+
+  /// 注入弹幕全量（原生 UI 打开期间由 [_buildDanmakuWindow] 切窗推送）。
+  set nativeDanmakuComments(List<DanmakuComment> comments) {
+    _nativeDanmakuComments = comments;
+    _pushNativeUiState();
+  }
+
+  /// 弹幕时间窗：[当前位置-2s, 当前位置+30s]，原生端按 timeMs 自调度。
+  /// 纯位置推导，seek 后自然对齐（与 Flutter DanmakuTimeline 语义一致）。
+  List<NativeDanmakuItem> _buildDanmakuWindow() {
+    if (_nativeDanmakuComments.isEmpty) return const [];
+    final posSec = _positionMs / 1000.0;
+    final out = <NativeDanmakuItem>[];
+    for (final c in _nativeDanmakuComments) {
+      if (c.time < posSec - 2 || c.time > posSec + 30) continue;
+      out.add(NativeDanmakuItem(
+        timeMs: (c.time * 1000).round(),
+        text: c.text,
+        mode: switch (c.mode) {
+          DanmakuMode.top => 'top',
+          DanmakuMode.bottom => 'bottom',
+          DanmakuMode.scroll => 'scroll',
+        },
+        color: '#${c.color.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+      ));
+    }
+    return out;
   }
 
   /// PlayerScreen 注入选集列表（内容/剧集变化时调用）。
@@ -1636,6 +1719,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       danmakuSpeed: _nativeUiExtras.danmakuSpeed,
       danmakuFontSize: _nativeUiExtras.danmakuFontSize,
       danmakuOpacity: _nativeUiExtras.danmakuOpacity,
+      // 弹幕时间窗：原生 UI 下 Flutter 弹幕层随视频区一并退场，弹幕改由
+      // 原生层渲染（真机回归「弹幕开关点了没反应」）。窗口随每次状态推送
+      // 刷新，原生端按 timeMs 与当前播放位置自调度（seek 自愈）。
+      danmakuItems: _buildDanmakuWindow(),
       segmentEnabled: _nativeUiExtras.segmentEnabled,
       segmentIntroEndMs: _nativeUiExtras.segmentIntroEndMs,
       segmentOutroStartMs: _nativeUiExtras.segmentOutroStartMs,
