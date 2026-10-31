@@ -75,8 +75,10 @@ void main() {
     });
 
     test('鸿蒙底栏右侧簇同样走等比缩放', () {
-      expect(ohosView, contains('bottomGap'));
-      expect(ohosView, contains('adjustBottomGap'));
+      // 旧方案「收窄间距 20→8→4→0」已移除（gap 归零仍溢出 32dp），
+      // 改为与安卓 ScaleDownBox 同语义的测量级缩放。
+      expect(ohosView, contains('bottomScale'));
+      expect(ohosView, contains('adjustBottomScale'));
     });
   });
 
@@ -433,6 +435,100 @@ void main() {
       expect(hotkey, contains('_seekStepMs'));
       expect(hotkey, contains('_volumeStep'));
       expect(hotkey, contains('seekFocusNode'));
+    });
+  });
+
+  group('鸿蒙控制层（真机回归修复）', () {
+    test('手势层用 Default，不用 Transparent（否则控件点击被抢）', () {
+      // Transparent 让手势层与控件**同时**进竞技场，Parallel 的 PanGesture
+      // 会抢走触摸流 → 底部 onClick 全失效、面板遮罩点不关（真机回归）。
+      expect(ohosView, contains('hitTestBehavior(HitTestMode.Default)'));
+      expect(
+        ohosView,
+        isNot(contains('hitTestBehavior(HitTestMode.Transparent)')),
+        reason: '全屏手势层不能用 Transparent（会与控件抢占触摸）',
+      );
+    });
+
+    test('顶/底栏有空点击吸收（点背景不隐藏控件，对齐 Flutter）', () {
+      // Flutter `_buildTopBar` / `_buildControls` 外层都有
+      // GestureDetector(onTap: () {}) 吸收点击。
+      expect(ohosView, contains('TopBar'));
+      expect(ohosView, contains('BottomBar'));
+      // 至少 3 处空 onClick（顶栏 / 底栏 / 锁定态底栏）。
+      final emptyClicks = RegExp(r'\.onClick\(\(\): void => \{\s*\}\)').allMatches(ohosView).length;
+      expect(
+        emptyClicks,
+        greaterThanOrEqualTo(3),
+        reason: '顶栏/底栏/锁定态底栏都需空点击吸收',
+      );
+    });
+
+    test('LockOnlyBar 渐变方向角 180（不是 90，否则右侧黑幕）', () {
+      // ArkUI linearGradient 的 angle 是方向角：180=自上而下；90=对角
+      // （透明左上 → 黑右下），会把右侧整条压黑成「黑幕」（真机截图回归）。
+      final lockBar = RegExp(
+        r'LockOnlyBar\(\) \{[\s\S]{0,1400}?angle: (\d+)',
+      ).firstMatch(ohosView);
+      expect(lockBar, isNotNull, reason: '找不到 LockOnlyBar 的渐变配置');
+      expect(lockBar!.group(1), '180', reason: '锁定态底栏渐变必须自上而下');
+    });
+
+    test('locked 是 @State（宿主字段不在观察链上，需显式同步）', () {
+      expect(ohosView, contains('@State locked: boolean = false'));
+      // 必须在状态回调与初始时同步。
+      expect(ohosView, contains('this.locked = host.state.locked'));
+      // build/锁定态读 @State 而非宿主字段。
+      expect(ohosView, contains('if (this.locked && !this.state().tvMode)'));
+    });
+
+    test('竖屏等比缩小（旧的收窄间距方案已移除）', () {
+      expect(ohosView, contains('@State bottomScale: number = 1'));
+      expect(ohosView, contains('private adjustBottomScale'));
+      // 用 transform 的 centerX/centerY 把缩放锚在右缘（本 SDK 无
+      // transformOrigin 属性）。
+      expect(ohosView, contains('scaleX: this.bottomScale'));
+      expect(ohosView, contains("centerX: '100%'"));
+      expect(ohosView, contains("centerY: '50%'"));
+      // 旧方案必须移除（gap 归零仍溢出 32dp）。
+      expect(ohosView, isNot(contains('private adjustBottomGap')));
+      expect(ohosView, isNot(contains('this.bottomGap')));
+    });
+
+    test('竖屏隐藏顶栏标题（Logo 保留）', () {
+      expect(ohosView, contains('@State portrait: boolean = false'));
+      expect(ohosView, contains('this.portrait = h > w && w > 0'));
+      expect(ohosView, contains('if (!this.portrait)'));
+      // Logo 保留（用户明确要求）。
+      expect(ohosView, contains('showLogo'));
+    });
+
+    test('surface 尺寸：initialize 前写 option + 转屏增量更新', () {
+      final ohosPlugin = File(
+        'plugins/himi_mpv_ohos/ohos/src/main/ets/components/plugin/'
+        'HimiMpvOhosPlugin.ets',
+      ).readAsStringSync();
+      // initialize 前写入 option（此前完全没写 → mpv 从初始化起不知尺寸）。
+      expect(ohosPlugin, contains("setOptionString(\n        'ohos-surface-size'"));
+      expect(ohosPlugin, contains('setOptionString'));
+      // 运行期更新 + 幂等保护（尺寸未变则跳过）。
+      expect(ohosPlugin, contains("setProperty('ohos-surface-size'"));
+      expect(ohosPlugin, contains('if (prevW !== width || prevH !== height)'));
+      // 诊断日志含前后尺寸。
+      expect(ohosPlugin, contains('prev %{public}dx%{public}d'));
+    });
+
+    test('XComponent 有 onAreaChange 兜底同步尺寸', () {
+      // 子窗口转屏时 onSurfaceChanged 可能不触发，需 onAreaChange 兜底。
+      expect(ohosView, contains("HimiMpvNativeHost.getInstance().surfaceChanged(''"));
+    });
+
+    test('宿主 surfaceChanged 转发到插件', () {
+      final ohosHost = File(
+        'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+        'HimiMpvNativeHost.ets',
+      ).readAsStringSync();
+      expect(ohosHost, contains('forwardSurfaceChanged'));
     });
   });
 

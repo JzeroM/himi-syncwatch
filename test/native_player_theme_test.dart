@@ -437,8 +437,10 @@ void main() {
           reason: '鸿蒙尾组禁用 markAnchor（会把控件推出屏外）');
       expect(view, contains('adjustTopGap'),
           reason: '鸿蒙顶栏须真实收窄间距（adjustTopGap）');
-      expect(view, contains('adjustBottomGap'),
-          reason: '鸿蒙底栏须真实收窄间距（adjustBottomGap）');
+      // 底栏改为测量级等比缩放（debug30）：旧的「收窄间距」在竖屏不可行，
+      // gap 归零仍溢出 32dp、最右两项被裁（真机截图回归）。
+      expect(view, contains('adjustBottomScale'),
+          reason: '鸿蒙底栏须测量级等比缩放（adjustBottomScale）');
     });
   });
 

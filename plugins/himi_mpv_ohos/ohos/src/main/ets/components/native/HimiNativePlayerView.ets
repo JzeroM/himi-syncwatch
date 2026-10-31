@@ -124,6 +124,16 @@ export struct HimiNativePlayerView {
   @State dragging: boolean = false;
   @State currentTime: string = '';
   @State activePanel: string = '';
+  /**
+   * 锁定态（**必须 @State**）。
+   *
+   * `state().locked` 是宿主的普通字段，不在 ArkUI 观察链上——乐观更新只靠
+   * `revision++` 间接触发重建，实测不可靠（真机回归：点锁后图标不实时变，
+   * 要等控件隐藏再现才更新）。显式复制到 @State 才能保证同步。
+   */
+  @State locked: boolean = false;
+  /** 竖屏判定（height > width）：竖屏隐藏顶栏标题。 */
+  @State portrait: boolean = false;
   /** TV 焦点态：记录当前聚焦控件的 key，条件描边实现焦点环。 */
   @State focusedKey: string = '';
 
@@ -136,8 +146,13 @@ export struct HimiNativePlayerView {
   @State ctrlRowW: number = 0;
   @State transportW: number = 0;
   @State bottomTailW: number = 0;
-  /** 底栏右侧簇间距（20→8→4→0 逐级收窄）。 */
-  @State bottomGap: number = 20;
+  /**
+   * 底栏右侧簇等比缩放比（1 = 不缩）。
+   *
+   * 对齐 Flutter `FittedBox(scaleDown)`：`min(1, 可用宽 / 自然宽)`。
+   * 旧方案「逐级收窄间距」在竖屏不可行（gap 归零仍溢出 32dp）。
+   */
+  @State bottomScale: number = 1;
 
   /** 手势提示文本（居中胶囊；空串 = 隐藏）。 */
   @State gestureHint: string = '';
@@ -161,6 +176,7 @@ export struct HimiNativePlayerView {
     host.registerListener(this.listener);
     this.controller.setCallbacks(new ViewSurfaceCallbacks());
     this.showControls = host.controlsVisible;
+    this.locked = host.state.locked;
     this.progressMs = host.positionNowMs();
     this.dragMs = this.progressMs;
     this.currentTime = this.nowClock();
@@ -199,6 +215,8 @@ export struct HimiNativePlayerView {
     const host = HimiMpvNativeHost.getInstance();
     this.showControls = host.controlsVisible;
     this.activePanel = host.activePanel !== null ? host.activePanel : '';
+    // 锁定态必须显式同步到 @State（见字段注释：宿主字段不在观察链上）。
+    this.locked = host.state.locked;
     if (!this.dragging) {
       this.progressMs = host.positionNowMs();
       this.dragMs = this.progressMs;
@@ -588,20 +606,21 @@ export struct HimiNativePlayerView {
    * 底栏右侧簇间距自适应：放量回 20；超出逐级 20→8→4→0（可用宽 =
    * (行宽-传输组)/2，与 Flutter PlayerBottomRow 三段语义一致）。
    */
-  private adjustBottomGap(): void {
-    const avail = (this.ctrlRowW - this.transportW) / 2 - 8;
+  /**
+   * 底栏右侧簇等比缩放（对齐 Flutter `FittedBox(scaleDown)`）。
+   *
+   * 可用宽 = `(控件行宽 - 传输组宽) / 2`（Flutter PlayerBottomRow 两个
+   * Expanded 同宽 → 传输组精确居中，trailing 槽拿到这一半）。
+   */
+  private adjustBottomScale(): void {
+    const avail = (this.ctrlRowW - this.transportW) / 2;
     if (this.bottomTailW <= 0 || avail <= 0) {
+      this.bottomScale = 1;
       return;
     }
-    if (this.bottomTailW * 1.15 < avail) {
-      this.bottomGap = 20;
-    } else if (this.bottomTailW > avail) {
-      if (this.bottomGap > 8) {
-        this.bottomGap = 8;
-      } else {
-        this.bottomGap = Math.max(0, this.bottomGap - 2);
-      }
-    }
+    this.bottomScale = this.bottomTailW > avail
+      ? Math.min(1, avail / this.bottomTailW)
+      : 1;
   }
 
   /** 版本/线路角标：显示线路数（与 Flutter sources.length 一致）。 */
@@ -653,7 +672,18 @@ export struct HimiNativePlayerView {
       })
         .width('100%')
         .height('100%')
-        .backgroundColor(Color.Black);
+        .backgroundColor(Color.Black)
+        // 【兜底：尺寸同步】XComponent 的 onSurfaceChanged 在部分转屏场景
+        // 不触发（子窗口尺寸变化但 surface 未重建），导致 mpv 仍按旧尺寸
+        // 合成 → 竖屏画面被拉长铺满。这里用 onAreaChange 补一次同步：
+        // 宿主的 surfaceChanged 有「尺寸未变则跳过」的幂等保护，重复调用无害。
+        .onAreaChange((_old: Area, area: Area): void => {
+          const w = area.width as number;
+          const h = area.height as number;
+          if (w > 0 && h > 0) {
+            HimiMpvNativeHost.getInstance().surfaceChanged('', Math.trunc(w), Math.trunc(h));
+          }
+        });
 
       // ── 点按层：视频手势（对齐 Flutter VideoGestureLayer）──
       // 单击显隐控件；双击播放暂停；横拖 seek；纵拖左亮度/右音量；
@@ -699,14 +729,19 @@ export struct HimiNativePlayerView {
               }),
           ),
         )
-        .hitTestBehavior(HitTestMode.Transparent);
+        // 【必须 Default，不能 Transparent】Stack 命中测试自上而下：
+        // 控件条在上层，若本层用 Transparent 会与控件**同时**进入手势竞技场，
+        // 而本层的 PanGesture（Parallel）会抢走触摸流 → 底部控件 onClick
+        // 全部失效、面板遮罩点不关（真机回归）。Default 下控件先声明成功，
+        // 本层不再介入；空视频区无控件声明，本层照常接管。
+        .hitTestBehavior(HitTestMode.Default);
 
       // ── 弹幕层：视频之上、控件之下（原生渲染，Flutter 弹幕层随视频区
       //    退场 → 弹幕开关在原生 UI 下必须由本层生效）──
       DanmakuLayer({ revision: this.revision });
 
       if (this.showControls) {
-        if (this.state().locked && !this.state().tvMode) {
+        if (this.locked && !this.state().tvMode) {
           // ── 锁定态：仅左下锁钮（与进度条左数显同列）──
           this.LockOnlyBar();
         } else {
@@ -763,9 +798,13 @@ export struct HimiNativePlayerView {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Black)
-    // 手势起始侧判定（左亮度 / 右音量）需要屏幕宽度。
+    // 手势起始侧判定（左亮度 / 右音量）需要屏幕宽度；竖屏判定（隐藏标题）
+    // 需要宽高比。
     .onAreaChange((_old: Area, area: Area): void => {
-      this.areaWidth = area.width as number;
+      const w = area.width as number;
+      const h = area.height as number;
+      this.areaWidth = w;
+      this.portrait = h > w && w > 0;
     });
   }
 
@@ -783,7 +822,7 @@ export struct HimiNativePlayerView {
       Row() {
         // 时间数显列宽内居中（Flutter: SizedBox(cellWidth, Align(center, ...))）。
         Row() {
-          Text(String.fromCodePoint(this.state().locked
+          Text(String.fromCodePoint(this.locked
             ? NativePlayerIcons.ICON_LOCK
             : NativePlayerIcons.ICON_LOCK_OPEN))
             .fontFamily(NativePlayerIcons.FONT_FAMILY)
@@ -805,14 +844,20 @@ export struct HimiNativePlayerView {
       .justifyContent(FlexAlign.Start);
     }
     .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.End)
+    // 【必须 angle:180】ArkUI linearGradient 的 angle 是**方向角**：
+    // 180 = 自上而下；90 = 对角（透明左上 → 黑右下），会把右侧整条压黑成
+    // 「黑幕」（真机截图回归）。与 BottomBar 同值。
     .linearGradient({
-      angle: 90,
+      angle: 180,
       colors: [['#00000000', 0.0], ['#D9000000', 1.0]],
     })
+    // 底部渐变条（非全屏高度）：wrap 高度 + 贴底，对齐 Flutter
+    // `_buildLockOnlyControls`（Container with bottom gradient）。
     .position({ x: 0, y: '100%' })
-    .markAnchor({ x: '0%', y: '100%' });
+    .markAnchor({ x: '0%', y: '100%' })
+    // 【空点击吸收】点背景不穿透到底层手势层（与顶/底栏一致）。
+    .onClick((): void => {
+    });
   }
 
   /** 顶栏：返回 / 标题 / 网速 | 内核胶囊（+倍速）| 时钟（TV）。 */
@@ -829,14 +874,23 @@ export struct HimiNativePlayerView {
         .onClick((): void => {
           this.onBack();
         });
-      Text(this.state().displayTitle())
-        .fontSize(16)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Color.White)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
-        .margin({ left: 4, right: 8 });
+      // 竖屏隐藏标题：竖屏可用宽窄，标题会被尾簇压成「…」（真机截图回归）。
+      // 横屏保留（横屏有足够宽度显示完整标题）。
+      if (!this.portrait) {
+        Text(this.state().displayTitle())
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Color.White)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+          .margin({ left: 4, right: 8 });
+      } else {
+        // 竖屏仍需一个权重占位，否则尾簇会左移贴到返回键。
+        Row()
+          .layoutWeight(1)
+          .margin({ left: 4, right: 8 });
+      }
       // 右侧簇：项间距 8（Flutter SizedBox(8) 链）。
       Row({ space: this.topGap }) {
         if (this.state().networkSpeedText.length > 0) {
@@ -920,6 +974,11 @@ export struct HimiNativePlayerView {
     .alignItems(VerticalAlign.Center)
     .onAreaChange((_old: Area, area: Area): void => {
       this.topRowW = area.width as number;
+    })
+    // 【空点击吸收】对齐 Flutter `_buildTopBar` 外层 GestureDetector：
+    // 点条形背景被吸收、**不穿透**到底层手势层（否则一点背景就隐藏控件）。
+    // 按钮自身的 onClick 优先，空 onClick 只兜住背景区域。
+    .onClick((): void => {
     })
     .linearGradient({
       angle: 180,
@@ -1011,6 +1070,10 @@ export struct HimiNativePlayerView {
       angle: 180,
       colors: [['#00000000', 0.0], ['#D9000000', 1.0]],
     })
+    // 【空点击吸收】对齐 Flutter `_buildControls` 外层 GestureDetector：
+    // 点条形背景被吸收、不穿透到底层手势层（否则一点背景就隐藏控件）。
+    .onClick((): void => {
+    })
     .position({ x: 0, y: '100%' })
     .markAnchor({ x: '0%', y: '100%' });
   }
@@ -1051,63 +1114,80 @@ export struct HimiNativePlayerView {
         this.transportW = area.width as number;
       });
 
-      // 右侧簇：项间距 20（Flutter SizedBox(20) 链）。
-      Row({ space: this.bottomGap }) {
-        this.IconChip(this.danmakuGlyph(), 24, 4, false,
-          this.state().danmakuEnabled, 'danmaku', (): void => {
-            this.pokeAutoHide();
-            HimiMpvNativeHost.getInstance().optimisticToggleDanmaku();
-          });
-        if (this.showVersionButton()) {
-          this.BadgeIconChip(this.versionGlyph(), this.versionBadge(),
-            this.activePanel === NativePlayerPanelType.version, 'version', (): void => {
-              this.openPanel(NativePlayerPanelType.version);
+      // 【右侧簇自适应】对齐 Flutter `FittedBox(scaleDown, alignment:
+      // centerRight)`。
+      //
+      // 结构：外层全宽槽位（Stack 贴右）→ 内层**自然宽** Row（测自然宽）
+      // → scale 朝右缘收缩。
+      //
+      // 旧方案「逐级收窄间距 20→8→4→0」不可行：竖屏可用宽 ~96dp，4 个图标
+      // 在 gap=0 时仍需 128dp → 仍溢出 32dp，最右两项被裁（真机截图回归）。
+      // 缩放从**自然宽**（gap 20）起算，与 Flutter 同语义。
+      Stack({ alignContent: Alignment.End }) {
+        Row({ space: 20 }) {
+          this.IconChip(this.danmakuGlyph(), 24, 4, false,
+            this.state().danmakuEnabled, 'danmaku', (): void => {
+              this.pokeAutoHide();
+              HimiMpvNativeHost.getInstance().optimisticToggleDanmaku();
             });
-        }
-        if (this.state().tvMode) {
-          this.IconChip(this.subtitleStyleGlyph(), 24, 4, false,
-            this.activePanel === NativePlayerPanelType.display, 'tvDisplay', (): void => {
-              this.openPanel(NativePlayerPanelType.display);
+          if (this.showVersionButton()) {
+            this.BadgeIconChip(this.versionGlyph(), this.versionBadge(),
+              this.activePanel === NativePlayerPanelType.version, 'version', (): void => {
+                this.openPanel(NativePlayerPanelType.version);
+              });
+          }
+          if (this.state().tvMode) {
+            this.IconChip(this.subtitleStyleGlyph(), 24, 4, false,
+              this.activePanel === NativePlayerPanelType.display, 'tvDisplay', (): void => {
+                this.openPanel(NativePlayerPanelType.display);
+              });
+          }
+          this.BadgeIconChip(this.subtitleGlyph(), this.subtitleBadge(),
+            this.activePanel === NativePlayerPanelType.subtitle, 'subtitle', (): void => {
+              this.openPanel(NativePlayerPanelType.subtitle);
             });
-        }
-        this.BadgeIconChip(this.subtitleGlyph(), this.subtitleBadge(),
-          this.activePanel === NativePlayerPanelType.subtitle, 'subtitle', (): void => {
-            this.openPanel(NativePlayerPanelType.subtitle);
-          });
-        this.BadgeIconChip(this.audioGlyph(), this.audioBadge(),
-          this.activePanel === NativePlayerPanelType.audio, 'audio', (): void => {
-            this.openPanel(NativePlayerPanelType.audio);
-          });
-        if (this.showEpisodeButton()) {
-          this.BadgeIconChip(this.playlistGlyph(), this.episodeBadge(),
-            this.activePanel === NativePlayerPanelType.episode, 'episode', (): void => {
-              this.openPanel(NativePlayerPanelType.episode);
+          this.BadgeIconChip(this.audioGlyph(), this.audioBadge(),
+            this.activePanel === NativePlayerPanelType.audio, 'audio', (): void => {
+              this.openPanel(NativePlayerPanelType.audio);
             });
+          if (this.showEpisodeButton()) {
+            this.BadgeIconChip(this.playlistGlyph(), this.episodeBadge(),
+              this.activePanel === NativePlayerPanelType.episode, 'episode', (): void => {
+                this.openPanel(NativePlayerPanelType.episode);
+              });
+          }
+          if (this.state().tvMode && !this.state().isRoom) {
+            this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`, 24, true,
+              this.activePanel === NativePlayerPanelType.speed, 'bottomSpeed', (): void => {
+                this.openPanel(NativePlayerPanelType.speed);
+              });
+          }
         }
-        if (this.state().tvMode && !this.state().isRoom) {
-          this.Chip(this.speedGlyph(), `${this.trimSpeed(this.state().speed)}x`, 24, true,
-            this.activePanel === NativePlayerPanelType.speed, 'bottomSpeed', (): void => {
-              this.openPanel(NativePlayerPanelType.speed);
-            });
-        }
+        .alignItems(VerticalAlign.Center)
+        // scale 只改渲染不改布局：内层 Row 仍按自然宽占位、贴右。
+        // 用 transform 的 centerX/centerY 指定变换锚点在**右缘 + 垂直中**，
+        // 让缩放朝右缘收缩（本 SDK 无 transformOrigin 属性）。
+        .transform({
+          scaleX: this.bottomScale,
+          scaleY: this.bottomScale,
+          centerX: '100%',
+          centerY: '50%',
+        })
+        .onAreaChange((_old: Area, area: Area): void => {
+          // onAreaChange 报的是**布局宽** = 自然宽（scale 不参与布局）。
+          this.bottomTailW = area.width as number;
+          this.adjustBottomScale();
+        });
       }
-      .alignItems(VerticalAlign.Center)
-      // 右侧簇自适应：真实收窄间距（20→8→4→0），justify End 贴右。
-      // markAnchor/position 真实位移布局（跑位回归）、scale 不改占位（溢出
-      // 回归），全部弃用。
       .width('100%')
-      .justifyContent(FlexAlign.End)
-      .onAreaChange((_old: Area, area: Area): void => {
-        this.bottomTailW = area.width as number;
-        this.adjustBottomGap();
-      });
+      .height('100%');
 
       // 左侧簇：手机模式锁钮（Flutter 底栏 leading 槽 PlayerLockButton）。
       // 未锁显 lock_open（点击上锁），已锁显 lock（点击解锁）；列宽与
       // 进度条左数显同宽（timeCellWidth），保证与上方时间数显同轴。
       if (!this.state().tvMode && !this.state().isRoom) {
         Row() {
-          Text(String.fromCodePoint(this.state().locked
+          Text(String.fromCodePoint(this.locked
             ? NativePlayerIcons.ICON_LOCK
             : NativePlayerIcons.ICON_LOCK_OPEN))
             .fontFamily(NativePlayerIcons.FONT_FAMILY)
@@ -1126,7 +1206,7 @@ export struct HimiNativePlayerView {
         .justifyContent(FlexAlign.Start);
       }
 
-      if (this.state().locked && this.state().tvMode) {
+      if (this.locked && this.state().tvMode) {
         Row() {
           Text(String.fromCodePoint(NativePlayerIcons.ICON_LOCK))
             .fontFamily(NativePlayerIcons.FONT_FAMILY)

@@ -808,14 +808,25 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
   handleSurfaceChanged(surfaceId: string, width: number, height: number): void {
     const session = this.session;
     if (session === null || !session.initialized) return;
+    const prevW = session.width;
+    const prevH = session.height;
     session.width = width;
     session.height = height;
     try {
-      // mpv 用它计算输出缩放；不设也能播，但设了更贴合窗口。
-      session.lib.setProperty('ohos-surface-size', `${width}x${height}`);
-    } catch (_) {
+      // 【第一级：只设属性】与安卓同法——mpv 的 android 后端（EGL）在运行期
+      // 设 android-surface-size 就能重配窗口，不拆解码器、无闪烁（已真机
+      // 验证）。鸿蒙的 ohosvk（Vulkan）是否同样支持运行期重配 swapchain
+      // 未知，故先走这条路；若真机仍拉伸，再升级到 vo 重初始化。
+      // 诊断：尺寸未变时跳过（避免每帧重复 setProperty）。
+      if (prevW !== width || prevH !== height) {
+        session.lib.setProperty('ohos-surface-size', `${width}x${height}`);
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'ohos-surface-size 设置失败: %{public}s', String(e));
     }
-    hilog.info(DOMAIN, TAG, 'surface changed: %{public}dx%{public}d', width, height);
+    hilog.info(DOMAIN, TAG,
+      'surface changed: %{public}dx%{public}d (prev %{public}dx%{public}d, size=%{public}s)',
+      width, height, prevW, prevH, `${session.width}x${session.height}`);
   }
 
   handleSurfaceDestroyed(surfaceId: string): void {
@@ -932,6 +943,15 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     lib.setOptionString('vo', 'gpu-next');
     lib.setOptionString('gpu-api', 'vulkan');
     lib.setOptionString('gpu-context', 'ohosvk');
+    // 合成画布尺寸：必须在 initialize 前写入，否则 mpv 从初始化起就不知道
+    // surface 尺寸（此前只在 handleSurfaceChanged 里运行期 setProperty，
+    // 真机竖屏表现为「画面被拉长铺满、无黑边」）。
+    // session.width/height 来自 Dart 传入的创建参数，surface 首次绑定前
+    // 已知；后续转屏由 handleSurfaceChanged 增量更新。
+    if (session.width > 0 && session.height > 0) {
+      lib.setOptionString(
+        'ohos-surface-size', `${Math.trunc(session.width)}x${Math.trunc(session.height)}`);
+    }
     // hwdec 用 mpv 标准探测值 auto；Dart 侧 prepare 会按用户解码档位覆盖。
     lib.setOptionString('hwdec', 'auto');
     // v1.2.85 扩容：补 AV1/VP9/prores/mjpeg 等（解复用层支持即解码），
