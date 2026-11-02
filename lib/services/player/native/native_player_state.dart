@@ -63,6 +63,7 @@ class NativeTrack {
     required this.type,
     this.title,
     this.lang,
+    this.label,
     this.selected = false,
   });
 
@@ -73,6 +74,11 @@ class NativeTrack {
   final String type;
   final String? title;
   final String? lang;
+
+  /// Emby 元数据显示名（`MediaStream.displayInfo`，如「简体中文 (SRT)」）。
+  /// null/空 = 原生回退 title/lang 命名。面板展示与 Emby 一致（真机回归：
+  /// 旧实现只用 mpv title/lang，显示 `chi`/`轨 2` 与 Emby 不一致）。
+  final String? label;
   final bool selected;
 
   factory NativeTrack.fromJson(Map<Object?, Object?> json) => NativeTrack(
@@ -80,6 +86,7 @@ class NativeTrack {
         type: json['type'] as String? ?? 'audio',
         title: json['title'] as String?,
         lang: json['lang'] as String?,
+        label: json['label'] as String?,
         selected: json['selected'] == true,
       );
 
@@ -88,8 +95,19 @@ class NativeTrack {
         'type': type,
         'title': title,
         'lang': lang,
+        'label': label,
         'selected': selected,
       };
+
+  /// 挂 Emby 显示名（不可变对象，返回新实例）。
+  NativeTrack withLabel(String value) => NativeTrack(
+        id: id,
+        type: type,
+        title: title,
+        lang: lang,
+        label: value,
+        selected: selected,
+      );
 
   @override
   bool operator ==(Object other) =>
@@ -98,10 +116,11 @@ class NativeTrack {
       other.type == type &&
       other.title == title &&
       other.lang == lang &&
+      other.label == label &&
       other.selected == selected;
 
   @override
-  int get hashCode => Object.hash(id, type, title, lang, selected);
+  int get hashCode => Object.hash(id, type, title, lang, label, selected);
 }
 
 /// 选集快照。
@@ -377,10 +396,14 @@ class NativePlayerState {
     this.danmakuEnabled = false,
     this.danmakuOpacity = 1.0,
     this.danmakuFontSize = 16.0,
-    this.danmakuSpeed = 1.0,
+    this.danmakuSpeed = 0.7,
     this.danmakuArea = 'scroll',
     this.danmakuBlockWords = const <String>[],
     this.danmakuItems = const <NativeDanmakuItem>[],
+    this.danmakuScrollRows = 30,
+    this.danmakuTopRows = 4,
+    this.danmakuBottomRows = 4,
+    this.danmakuMaxCount,
     this.roomCode,
     this.isHost = false,
     this.roomMembers = const <NativeRoomMember>[],
@@ -388,6 +411,7 @@ class NativePlayerState {
     this.roomSyncState = 'idle',
     this.segmentIntroEndMs,
     this.segmentOutroStartMs,
+    this.skipPrompt = '',
     this.locked = false,
     this.tvMode = false,
     this.canControl = true,
@@ -504,6 +528,15 @@ class NativePlayerState {
   final List<String> danmakuBlockWords;
   final List<NativeDanmakuItem> danmakuItems;
 
+  /// 弹幕行数设置（滚动 = 上限、按屏高自适应铺满；顶/底 = 行数）。
+  /// 原生渲染层据此排布（真机回归：旧实现硬编码行数，设置页改动失效）。
+  final int danmakuScrollRows;
+  final int danmakuTopRows;
+  final int danmakuBottomRows;
+
+  /// 弹幕数量上限（null = 不限制；超限由 Dart 等间隔采样后入窗口）。
+  final int? danmakuMaxCount;
+
   // ── 房间 ──
   final String? roomCode;
   final bool isHost;
@@ -514,6 +547,10 @@ class NativePlayerState {
   // ── 其他 ──
   final int? segmentIntroEndMs;
   final int? segmentOutroStartMs;
+
+  /// 跳过片头/片尾提示（'' = 隐藏，'intro' / 'outro'）。
+  /// 由 `_skipPromptSegment` 驱动，原生底栏据此显示跳过胶囊。
+  final String skipPrompt;
   final bool locked;
   final bool tvMode;
   final bool canControl;
@@ -598,7 +635,7 @@ class NativePlayerState {
       danmakuEnabled: json['danmakuEnabled'] == true,
       danmakuOpacity: (json['danmakuOpacity'] as num?)?.toDouble() ?? 1.0,
       danmakuFontSize: (json['danmakuFontSize'] as num?)?.toDouble() ?? 16.0,
-      danmakuSpeed: (json['danmakuSpeed'] as num?)?.toDouble() ?? 1.0,
+      danmakuSpeed: (json['danmakuSpeed'] as num?)?.toDouble() ?? 0.7,
       danmakuArea: json['danmakuArea'] as String? ?? 'scroll',
       danmakuBlockWords:
           ((json['danmakuBlockWords'] as List<Object?>?) ?? const <Object?>[])
@@ -608,6 +645,10 @@ class NativePlayerState {
           .whereType<Map<Object?, Object?>>()
           .map(NativeDanmakuItem.fromJson)
           .toList(growable: false),
+      danmakuScrollRows: (json['danmakuScrollRows'] as num?)?.toInt() ?? 30,
+      danmakuTopRows: (json['danmakuTopRows'] as num?)?.toInt() ?? 4,
+      danmakuBottomRows: (json['danmakuBottomRows'] as num?)?.toInt() ?? 4,
+      danmakuMaxCount: (json['danmakuMaxCount'] as num?)?.toInt(),
       roomCode: json['roomCode'] as String?,
       isHost: json['isHost'] == true,
       roomMembers: ((json['roomMembers'] as List<Object?>?) ?? const <Object?>[])
@@ -621,6 +662,7 @@ class NativePlayerState {
       roomSyncState: json['roomSyncState'] as String? ?? 'idle',
       segmentIntroEndMs: (json['segmentIntroEndMs'] as num?)?.toInt(),
       segmentOutroStartMs: (json['segmentOutroStartMs'] as num?)?.toInt(),
+      skipPrompt: json['skipPrompt'] as String? ?? '',
       locked: json['locked'] == true,
       tvMode: json['tvMode'] == true,
       canControl: json['canControl'] != false,
@@ -695,6 +737,10 @@ class NativePlayerState {
         'danmakuBlockWords': danmakuBlockWords,
         'danmakuItems':
             danmakuItems.map((d) => d.toJson()).toList(growable: false),
+        'danmakuScrollRows': danmakuScrollRows,
+        'danmakuTopRows': danmakuTopRows,
+        'danmakuBottomRows': danmakuBottomRows,
+        'danmakuMaxCount': danmakuMaxCount,
         'roomCode': roomCode,
         'isHost': isHost,
         'roomMembers':
@@ -703,6 +749,7 @@ class NativePlayerState {
         'roomSyncState': roomSyncState,
         'segmentIntroEndMs': segmentIntroEndMs,
         'segmentOutroStartMs': segmentOutroStartMs,
+        'skipPrompt': skipPrompt,
         'locked': locked,
         'tvMode': tvMode,
         'canControl': canControl,
@@ -772,6 +819,10 @@ class NativePlayerState {
     String? danmakuArea,
     List<String>? danmakuBlockWords,
     List<NativeDanmakuItem>? danmakuItems,
+    int? danmakuScrollRows,
+    int? danmakuTopRows,
+    int? danmakuBottomRows,
+    int? danmakuMaxCount,
     String? roomCode,
     bool? isHost,
     List<NativeRoomMember>? roomMembers,
@@ -779,6 +830,7 @@ class NativePlayerState {
     String? roomSyncState,
     int? segmentIntroEndMs,
     int? segmentOutroStartMs,
+    String? skipPrompt,
     bool? locked,
     bool? tvMode,
     bool? canControl,
@@ -849,6 +901,10 @@ class NativePlayerState {
         danmakuArea: danmakuArea ?? this.danmakuArea,
         danmakuBlockWords: danmakuBlockWords ?? this.danmakuBlockWords,
         danmakuItems: danmakuItems ?? this.danmakuItems,
+        danmakuScrollRows: danmakuScrollRows ?? this.danmakuScrollRows,
+        danmakuTopRows: danmakuTopRows ?? this.danmakuTopRows,
+        danmakuBottomRows: danmakuBottomRows ?? this.danmakuBottomRows,
+        danmakuMaxCount: danmakuMaxCount ?? this.danmakuMaxCount,
         roomCode: roomCode ?? this.roomCode,
         isHost: isHost ?? this.isHost,
         roomMembers: roomMembers ?? this.roomMembers,
@@ -856,6 +912,7 @@ class NativePlayerState {
         roomSyncState: roomSyncState ?? this.roomSyncState,
         segmentIntroEndMs: segmentIntroEndMs ?? this.segmentIntroEndMs,
         segmentOutroStartMs: segmentOutroStartMs ?? this.segmentOutroStartMs,
+        skipPrompt: skipPrompt ?? this.skipPrompt,
         locked: locked ?? this.locked,
         tvMode: tvMode ?? this.tvMode,
         canControl: canControl ?? this.canControl,
@@ -939,6 +996,10 @@ class NativePlayerState {
       other.danmakuArea == danmakuArea &&
       listEquals(other.danmakuBlockWords, danmakuBlockWords) &&
       listEquals(other.danmakuItems, danmakuItems) &&
+      other.danmakuScrollRows == danmakuScrollRows &&
+      other.danmakuTopRows == danmakuTopRows &&
+      other.danmakuBottomRows == danmakuBottomRows &&
+      other.danmakuMaxCount == danmakuMaxCount &&
       other.roomCode == roomCode &&
       other.isHost == isHost &&
       listEquals(other.roomMembers, roomMembers) &&
@@ -946,6 +1007,7 @@ class NativePlayerState {
       other.roomSyncState == roomSyncState &&
       other.segmentIntroEndMs == segmentIntroEndMs &&
       other.segmentOutroStartMs == segmentOutroStartMs &&
+      other.skipPrompt == skipPrompt &&
       other.locked == locked &&
       other.tvMode == tvMode &&
       other.canControl == canControl &&
@@ -1015,6 +1077,10 @@ class NativePlayerState {
         danmakuArea,
         ...danmakuBlockWords,
         ...danmakuItems,
+        danmakuScrollRows,
+        danmakuTopRows,
+        danmakuBottomRows,
+        danmakuMaxCount,
         roomCode,
         isHost,
         ...roomMembers,
@@ -1022,6 +1088,7 @@ class NativePlayerState {
         roomSyncState,
         segmentIntroEndMs,
         segmentOutroStartMs,
+        skipPrompt,
         locked,
         tvMode,
         canControl,
@@ -1049,12 +1116,17 @@ class NativePlayerUiExtras {
     this.subtitleDelayEnabled = false,
     this.subtitleStyleDisabled = false,
     this.danmakuEnabled = false,
-    this.danmakuSpeed = 1.0,
+    this.danmakuSpeed = 0.7,
     this.danmakuFontSize = 0.5,
     this.danmakuOpacity = 0.6,
+    this.danmakuScrollRows = 30,
+    this.danmakuTopRows = 4,
+    this.danmakuBottomRows = 4,
+    this.danmakuMaxCount,
     this.segmentEnabled = false,
     this.segmentIntroEndMs,
     this.segmentOutroStartMs,
+    this.skipPrompt = '',
     this.showDebug = false,
     this.isRoom = false,
     this.canScreenshot = false,
@@ -1082,9 +1154,17 @@ class NativePlayerUiExtras {
   final double danmakuSpeed;
   final double danmakuFontSize;
   final double danmakuOpacity;
+
+  /// 弹幕行数/数量上限（弹幕设置页）：滚动 = 上限按屏高自适应；
+  /// [danmakuMaxCount] null = 不限制。
+  final int danmakuScrollRows;
+  final int danmakuTopRows;
+  final int danmakuBottomRows;
+  final int? danmakuMaxCount;
   final bool segmentEnabled;
   final int? segmentIntroEndMs;
   final int? segmentOutroStartMs;
+  final String skipPrompt;
   final bool showDebug;
   final bool isRoom;
   final bool canScreenshot;

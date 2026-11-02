@@ -90,6 +90,8 @@ sealed class NativePlayerCommand {
         return const ToggleResourcePanel();
       case 'clearSegmentMark':
         return ClearSegmentMark(kind: map['kind'] as String? ?? 'intro');
+      case 'skipSegment':
+        return const SkipSegment();
       case 'toggleDebug':
         return const ToggleDebug();
       case 'setSegmentMark':
@@ -428,6 +430,14 @@ class ClearSegmentMark extends NativePlayerCommand {
   @override
   Map<String, Object?> toMap() =>
       <String, Object?>{'type': 'clearSegmentMark', 'kind': kind};
+}
+
+/// 跳过片头/片尾（原生底栏跳过胶囊 → Dart `_performSkipSegment`）。
+class SkipSegment extends NativePlayerCommand {
+  const SkipSegment();
+
+  @override
+  Map<String, Object?> toMap() => const <String, Object?>{'type': 'skipSegment'};
 }
 
 class ToggleDebug extends NativePlayerCommand {

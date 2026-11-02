@@ -86,7 +86,7 @@ void main() {
         danmakuBlockWords: '',
         danmakuLimitCount: false,
         danmakuMaxCount: 500,
-        danmakuSpeed: 1.0,
+        danmakuSpeed: 0.7,
         danmakuFontSize: 0.5,
         danmakuOpacity: 0.6,
       );
@@ -101,7 +101,7 @@ void main() {
       expect(s.danmakuBlockWords, '');
       expect(s.danmakuLimitCount, isFalse);
       expect(s.danmakuMaxCount, 500);
-      expect(s.danmakuSpeed, 1.0);
+      expect(s.danmakuSpeed, 0.7);
       expect(s.danmakuFontSize, 0.5);
       expect(s.danmakuOpacity, 0.6);
       expect(notifier.persistCount, 1);

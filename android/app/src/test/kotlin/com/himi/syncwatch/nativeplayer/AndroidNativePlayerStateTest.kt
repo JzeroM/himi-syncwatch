@@ -30,6 +30,7 @@ class AndroidNativePlayerStateTest {
               "positionMs":65000,"durationMs":3600000,"bufferedMs":120000,
               "paused":false,"buffering":false,"ended":false,"volume":0.8,"speed":1.5,
               "title":"第 3 集","mediaTitle":"Show.S01E03.mkv",
+              "skipPrompt":"intro",
               "debugLines":["vo=gpu-next | hwdec=ohcodec","HDR"]
             }
             """.trimIndent(),
@@ -53,6 +54,8 @@ class AndroidNativePlayerStateTest {
         assertEquals(1.5, state.speed, 1e-9)
         assertEquals("第 3 集", state.title)
         assertEquals(listOf("vo=gpu-next | hwdec=ohcodec", "HDR"), state.debugLines)
+        // 跳过片头/片尾提示（胶囊显隐驱动；对齐鸿蒙 skipPrompt 语义）。
+        assertEquals("intro", state.skipPrompt)
         // 显式标题优先于媒体标题
         assertEquals("第 3 集", state.displayTitle)
     }
@@ -71,6 +74,7 @@ class AndroidNativePlayerStateTest {
         assertNull(state.title)
         assertNull(state.voConfigured)
         assertTrue(state.debugLines.isEmpty())
+        assertEquals("", state.skipPrompt)
         assertEquals("", state.displayTitle)
     }
 

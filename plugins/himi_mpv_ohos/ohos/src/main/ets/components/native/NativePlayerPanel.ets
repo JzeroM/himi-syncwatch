@@ -22,6 +22,7 @@ import {
   NativeEngineOptionUi,
 } from './HimiMpvNativeHost';
 import { NativePlayerIcons } from './NativePlayerIcons';
+import { GlassSlider } from './GlassSlider';
 
 /** 倍速档位（与 Flutter speedOptions 完全一致）。 */
 const SPEED_STEPS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
@@ -81,7 +82,7 @@ class DisplaySliderSpec {
   }
 }
 
-/** 显示调节滑杆行规格（字幕 3 行 + 弹幕 3 行，与 Flutter 显示调节一致）。 */
+/** 显示调节滑杆规格（字幕 3 行 + 弹幕 3 行，与 Flutter 显示调节一致）。 */
 const DISPLAY_SLIDERS: DisplaySliderSpec[] = [
   new DisplaySliderSpec('subtitleScale', '大小', 0.5, 3.0, 0.05),
   new DisplaySliderSpec('subtitleMarginY', '位置', 0, 200, 2),
@@ -90,6 +91,93 @@ const DISPLAY_SLIDERS: DisplaySliderSpec[] = [
   new DisplaySliderSpec('danmakuFontSize', '大小', 0.5, 2.0, 0.05),
   new DisplaySliderSpec('danmakuOpacity', '透明度', 0.1, 1.0, 0.05),
 ];
+
+/**
+ * 显示调节「恢复默认」默认值——与安卓一致：
+ * 字幕段 = Flutter `SubtitleStylePanel` 默认（mdk 初始化属性 1.0 / 22 / 0）；
+ * 弹幕段 = 安卓 `AppSettings` 默认 = Flutter 播放器 onDanmakuReset 同值
+ *（1.0 / 0.5 / 0.8）。
+ */
+const DEFAULT_SUBTITLE_SCALE = 1.0;
+const DEFAULT_SUBTITLE_MARGIN_Y = 22;
+const DEFAULT_SUBTITLE_DELAY_MS = 0;
+const DEFAULT_DANMAKU_SPEED = 1.0;
+const DEFAULT_DANMAKU_FONT_SIZE = 0.5;
+const DEFAULT_DANMAKU_OPACITY = 0.8;
+
+/**
+ * 显示调节数值格式（照抄 Flutter：字幕段 SubtitleStylePanel、弹幕段
+ * DanmakuStylePanel 的 format* 系列）。
+ */
+function displayValueText(key: string, v: number): string {
+  if (key === 'subtitleScale' || key === 'danmakuSpeed' || key === 'danmakuFontSize') {
+    return `${v.toFixed(2)}×`;
+  }
+  if (key === 'subtitleMarginY') {
+    return `${Math.round(v)}px`;
+  }
+  if (key === 'subtitleDelayMs') {
+    const sign = v > 0 ? '+' : '';
+    return `${sign}${(v / 1000).toFixed(1)}s`;
+  }
+  return `${Math.round(v * 100)}%`; // danmakuOpacity
+}
+
+/**
+ * 显示调节滑杆数值（**自驱刷新**子组件）。
+ *
+ * 【真机回归：拖滑杆数值不同步】数值文本在 @Builder（DisplayContent）里，
+ * @Builder 子树只认节点重建——拖动时宿主状态变了文本不刷新。走
+ * DanmakuLayer 已验证机制：子组件自带 timer 写 @State → build() 直读
+ * → 100ms 级跟手刷新，Slider 本体不受重建影响（拖动不中断）。
+ */
+@Component
+struct DisplayValueText {
+  @Prop keyName: string = '';
+  @State text: string = '';
+  private timer: number = -1;
+
+  aboutToAppear(): void {
+    this.refresh();
+    this.timer = setInterval((): void => {
+      this.refresh();
+    }, 100);
+  }
+
+  aboutToDisappear(): void {
+    if (this.timer >= 0) {
+      clearInterval(this.timer);
+      this.timer = -1;
+    }
+  }
+
+  private refresh(): void {
+    const s = HimiMpvNativeHost.getInstance().state;
+    let v = 0;
+    if (this.keyName === 'subtitleScale') {
+      v = s.subtitleScale;
+    } else if (this.keyName === 'subtitleMarginY') {
+      v = s.subtitleMarginY;
+    } else if (this.keyName === 'subtitleDelayMs') {
+      v = s.subtitleDelayMs;
+    } else if (this.keyName === 'danmakuSpeed') {
+      v = s.danmakuSpeed;
+    } else if (this.keyName === 'danmakuFontSize') {
+      v = s.danmakuFontSize;
+    } else if (this.keyName === 'danmakuOpacity') {
+      v = s.danmakuOpacity;
+    }
+    this.text = displayValueText(this.keyName, v);
+  }
+
+  build() {
+    Text(this.text)
+      .fontSize(12)
+      .fontColor('#B3FFFFFF')
+      .width(48)
+      .textAlign(TextAlign.End);
+  }
+}
 
 /** 选中主色（照抄 Flutter Color(0xFF6366F1)）。 */
 const SEL_COLOR = '#6366F1';
@@ -124,8 +212,31 @@ export struct NativePlayerPanel {
   private episodeScroller: Scroller = new Scroller();
   /** 片头片尾二次确认上下文（'' = 无，'intro' / 'outro' = 待确认）。 */
   @State confirmKind: string = '';
+  /** 显示调节重建纪元（恢复默认 → 滑杆回位，见 DisplayContent 注释）。 */
+  @State resetEpoch: number = 0;
+  /** 确认来自长按手势（完成后关面板，对齐 Flutter dialog 关闭即结束）。 */
+  private confirmFromGesture: boolean = false;
 
   private host: HimiMpvNativeHost = HimiMpvNativeHost.getInstance();
+
+  aboutToAppear(): void {
+    // 长按标记遇旧标记直开确认（对齐 Flutter `_onSegmentMarkSelected`）：
+    // 取走宿主预设的 kind 直进确认模式。
+    const kind = this.host.consumeSegmentConfirmKind();
+    if (kind.length > 0) {
+      this.confirmKind = kind;
+      this.confirmFromGesture = true;
+    }
+  }
+
+  /** 确认收尾：手势来源直接关面板；面板行视图来源回到行视图。 */
+  private finishConfirm(): void {
+    this.confirmKind = '';
+    if (this.confirmFromGesture) {
+      this.confirmFromGesture = false;
+      this.close();
+    }
+  }
 
   private state(): NativePlayerUiState {
     return this.host.state;
@@ -145,22 +256,32 @@ export struct NativePlayerPanel {
     return this.state().tracks.filter((t: NativeTrackUi): boolean => t.type === 'sub');
   }
 
-  /** 轨道显示名：title 或 lang，兜底「轨 N」。 */
+  /** 轨道显示名：Emby label（displayInfo）优先，回退 title/lang，兜底「轨 N」。 */
   private trackLabel(t: NativeTrackUi): string {
+    if (t.label.length > 0) return t.label;
     if (t.title.length > 0) return t.title;
     if (t.lang.length > 0) return t.lang;
     return `轨 ${t.id}`;
   }
 
   build() {
-    Stack() {
-      // ── 遮罩：点外关闭（Flutter 面板不带遮罩，此处保留交互兜底）──
+    // 【对齐语义】片头片尾卡居中，其余面板一律贴右（对齐安卓侧面板）。
+    // 上一轮用 .align(Alignment.End) 定位不生效（Column-in-Stack），面板被
+    // Stack 默认居中（真机截图回归）——必须用 alignContent。
+    Stack({
+      alignContent: this.panelType === 'segment' ? Alignment.Center : Alignment.End,
+    }) {
+      // ── 遮罩垫底：点屏幕其他区域关闭（Flutter 面板不带遮罩，此处保留
+      //    交互兜底；对齐安卓 panelScrim 的 setOnClickListener(close)）──
+      // 关键：面板容器**不得 width('100%')**——全宽容器会把遮罩整块盖住，
+      // 点空白处到不了遮罩，面板只能靠返回键收回（真机回归）。容器宽 =
+      // 面板宽，屏幕其余区域直接落在遮罩上。
       Column()
         .width('100%')
         .height('100%')
-        .gesture(TapGesture().onAction((): void => {
+        .onClick((): void => {
           this.close();
-        }));
+        });
 
       // ── 片头片尾：居中玻璃卡（照抄 SegmentMarkPanel，非右侧浮层）──
       if (this.panelType === 'segment') {
@@ -168,18 +289,29 @@ export struct NativePlayerPanel {
       } else {
         // 右侧浮层拉伸全高（Flutter Positioned(top,bottom) 语义）：
         // 常规面板上避顶栏 48 / 下避控制条 116；选集面板贴边（fullBleed）。
+        // 容器宽 = 面板宽（42% 钳 260~320），不铺满全屏（见上方遮罩注释）。
+        //
+        // 【再次点击控件即收回】本容器全高、无点击处理时会吞掉被面板覆盖的
+        // 顶/底栏控件区点击（右侧控件全在 42% 宽区域内）→「再点按钮没反应」。
+        // 加 onClick(close)：点控件区/空白外侧都收回（对齐安卓 panelScrim
+        // 全覆盖语义：面板开着点任何非面板区都关）。面板自身空白由 SidePanel/
+        // SegmentCard 的空点击吸收，不会误关。
         Column() {
           this.SidePanel();
         }
-        .width('100%')
+        .width('42%')
+        .constraintSize({ minWidth: 260, maxWidth: 320 })
         .height('100%')
-        .alignItems(HorizontalAlign.End)
         .padding(this.panelType === 'episode'
           ? FULLBLEED_PAD
           : {
             top: PANEL_PAD_TOP + HimiMpvNativeHost.getInstance().safeAreaTop,
             bottom: PANEL_PAD_BOTTOM + HimiMpvNativeHost.getInstance().safeAreaBottom,
-          });
+          })
+        .margin(this.panelType === 'episode' ? FULLBLEED_MARGIN : PANEL_MARGIN)
+        .onClick((): void => {
+          this.close();
+        });
       }
     }
     .width('100%')
@@ -218,8 +350,9 @@ export struct NativePlayerPanel {
         this.DecodeContent();
       }
     }
-    .width('42%')
-    .constraintSize({ minWidth: 260, maxWidth: 320 })
+    // 宽 42%（钳 260~320）与上下避让移到外层容器（见 build()）：面板容器
+    // 不铺满全屏，遮罩才收得到「点外关闭」。
+    .width('100%')
     .layoutWeight(1)
     .backgroundColor(PANEL_TINT)
     // 液态玻璃（方案 A）：backgroundEffect 真模糊**窗口背后**的视频合成层
@@ -229,8 +362,12 @@ export struct NativePlayerPanel {
     // 选集面板贴边（右侧圆角放平，与 Flutter BorderRadius.horizontal(left) 一致）。
     .borderRadius(this.panelType === 'episode' ? FULLBLEED_RADIUS : PANEL_RADIUS)
     .clip(true)
-    .margin(this.panelType === 'episode' ? FULLBLEED_MARGIN : PANEL_MARGIN)
-    .animation({ duration: 180, curve: Curve.EaseOut });
+    .animation({ duration: 180, curve: Curve.EaseOut })
+    // 【空点击吸收】点面板自身空白（标题/行间隙）不透传到遮罩关面板——
+    // 只有点面板**外面**才关闭（对齐安卓 panelScrim 语义）。选项行等
+    // 子控件的 onClick 优先，空 onClick 只兜住面板背景。
+    .onClick((): void => {
+    });
   }
 
   /**
@@ -266,7 +403,7 @@ export struct NativePlayerPanel {
             .fontColor(SEL_COLOR)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick((): void => {
-              this.confirmKind = '';
+              this.finishConfirm();
             });
           Text('清除')
             .fontSize(13)
@@ -275,7 +412,7 @@ export struct NativePlayerPanel {
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick((): void => {
               this.host.optimisticClearSegmentMark(this.confirmKind);
-              this.confirmKind = '';
+              this.finishConfirm();
             });
           Text('更新')
             .fontSize(13)
@@ -284,7 +421,7 @@ export struct NativePlayerPanel {
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick((): void => {
               this.host.optimisticSetSegmentMark(this.confirmKind);
-              this.confirmKind = '';
+              this.finishConfirm();
             });
         }
         .width('100%')
@@ -303,7 +440,10 @@ export struct NativePlayerPanel {
     .border({ width: 1, color: RIM_COLOR })
     .borderRadius(18)
     .clip(true)
-    .alignItems(HorizontalAlign.Start);
+    .alignItems(HorizontalAlign.Start)
+    // 【空点击吸收】点卡片自身空白不透传到遮罩关面板（同 SidePanel）。
+    .onClick((): void => {
+    });
   }
 
   /** 片头片尾单行（icon 22 / 标题 14 / 提示 11 / chevron 18）。 */
@@ -420,7 +560,8 @@ export struct NativePlayerPanel {
       if (allowOff) {
         ListItem() {
           Row() {
-            this.OptionLabel('关闭', selectedId === 0);
+            // 对齐 Flutter SubtitleMenuPanel：「关闭字幕」。
+            this.OptionLabel('关闭字幕', selectedId === 0);
           }
           .width('100%')
           .padding({ left: 16, right: 16, top: 12, bottom: 12 })
@@ -509,57 +650,54 @@ export struct NativePlayerPanel {
   /** 显示调节面板：字幕 3 行 + 弹幕 3 行（与 Flutter DisplayAdjustPanel 一致）。 */
   @Builder
   DisplayContent() {
-    List() {
-      ForEach(DISPLAY_SLIDERS, (spec: DisplaySliderSpec, idx: number) => {
-        ListItem() {
-          Column() {
-            if (idx === 0 || idx === 3) {
-              Text(idx === 0 ? '字幕' : '弹幕')
-                .fontSize(11)
-                .fontColor('#62FFFFFF')
-                .width('100%')
-                .padding({ left: 16, right: 16, top: 10, bottom: 4 });
+    // 整段外包 ForEach(key=resetEpoch)：点「恢复默认」→ key 变 → 节点重建
+    // → 滑杆全部回位。拖动不改 epoch → 不打断拖动（数值文本走自驱子组件）。
+    ForEach([this.resetEpoch], (epoch: number): void => {
+      List() {
+        ForEach(DISPLAY_SLIDERS, (spec: DisplaySliderSpec, idx: number) => {
+          ListItem() {
+            Column() {
+              if (idx === 0 || idx === 3) {
+                Text(idx === 0 ? '字幕' : '弹幕')
+                  .fontSize(11)
+                  .fontColor('#62FFFFFF')
+                  .width('100%')
+                  .padding({ left: 16, right: 16, top: 10, bottom: 4 });
+              }
+              Row() {
+                Text(spec.label)
+                  .fontSize(12)
+                  .fontColor(Color.White)
+                  .width(44);
+                // 玻璃滑杆（完全复刻 Flutter glassSliderTheme，见 GlassSlider.ets）。
+                GlassSlider({
+                  value: this.sliderValue(spec.key),
+                  min: spec.min,
+                  max: spec.max,
+                  step: spec.step,
+                  onChange: (v: number): void => {
+                    this.host.adjustDisplay(spec.key, v);
+                  },
+                })
+                  .layoutWeight(1);
+                DisplayValueText({ keyName: spec.key });
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+              .alignItems(VerticalAlign.Center);
+              // 段末「恢复默认」：字幕段（idx 2 后）/ 弹幕段（idx 5 后），与
+              // Flutter DisplayAdjustPanel 的两段 reset 行一致。
+              if (idx === 2 || idx === 5) {
+                this.DisplayResetRow(idx === 2 ? 'subtitle' : 'danmaku');
+              }
             }
-            Row() {
-              Text(spec.label)
-                .fontSize(12)
-                .fontColor(Color.White)
-                .width(44);
-              Slider({
-                value: this.sliderValue(spec.key),
-                min: spec.min,
-                max: spec.max,
-                step: spec.step,
-              })
-                .layoutWeight(1)
-                .selectedColor(SEL_COLOR)
-                // 与进度条同一玻璃观（track 6 / 未播 white@0.16 / 16dp 蓝点），
-                // 旧实现用系统默认滑杆（粗灰条 + 小圆点），与双端不一致。
-                .trackThickness(6)
-                .trackBorderRadius(3)
-                .trackColor('#29FFFFFF')
-                .blockColor(SEL_COLOR)
-                .blockSize({ width: 16, height: 16 })
-                .showTips(false)
-                .onChange((v: number): void => {
-                  this.host.adjustDisplay(spec.key, v);
-                });
-              Text(this.sliderValue(spec.key).toFixed(2))
-                .fontSize(12)
-                .fontColor('#B3FFFFFF')
-                .width(48)
-                .textAlign(TextAlign.End);
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 10, bottom: 10 })
-            .alignItems(VerticalAlign.Center);
+            .width('100%');
           }
-          .width('100%');
-        }
-      }, (spec: DisplaySliderSpec, idx: number): string => `${spec.key}-${idx}`);
-    }
-    .width('100%')
-    .layoutWeight(1)
+        }, (spec: DisplaySliderSpec, idx: number): string => `${spec.key}-${idx}`);
+      }
+      .width('100%')
+      .layoutWeight(1);
+    }, (epoch: number): string => `display-${epoch}`);
   }
 
   /** 当前滑杆值（按 key 从宿主状态读取）。 */
@@ -584,6 +722,50 @@ export struct NativePlayerPanel {
       return s.danmakuOpacity;
     }
     return 0;
+  }
+
+  /**
+   * 显示调节「恢复默认」行（对齐 Flutter DisplayAdjustPanel：字幕段/
+   * 弹幕段各一行，全部处于默认值时高亮选中态）。
+   *
+   * 点击经 `adjustDisplay` 逐键回写——Dart 侧 `_applyNativeAdjustDisplay`
+   * 与滑杆同一处理路径（含落盘），与安卓恢复默认同语义。
+   */
+  @Builder
+  DisplayResetRow(kind: string) {
+    Text('恢复默认')
+      .fontSize(13)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.displayAtDefaults(kind) ? SEL_COLOR : '#8AFFFFFF')
+      .width('100%')
+      .textAlign(TextAlign.Start)
+      .padding({ left: 16, right: 16, top: 8, bottom: 12 })
+      .onClick((): void => {
+        if (kind === 'subtitle') {
+          this.host.adjustDisplay('subtitleScale', DEFAULT_SUBTITLE_SCALE);
+          this.host.adjustDisplay('subtitleMarginY', DEFAULT_SUBTITLE_MARGIN_Y);
+          this.host.adjustDisplay('subtitleDelayMs', DEFAULT_SUBTITLE_DELAY_MS);
+        } else {
+          this.host.adjustDisplay('danmakuSpeed', DEFAULT_DANMAKU_SPEED);
+          this.host.adjustDisplay('danmakuFontSize', DEFAULT_DANMAKU_FONT_SIZE);
+          this.host.adjustDisplay('danmakuOpacity', DEFAULT_DANMAKU_OPACITY);
+        }
+        // 节点重建 → 滑杆回位（key=resetEpoch，见 DisplayContent）。
+        this.resetEpoch = this.resetEpoch + 1;
+      });
+  }
+
+  /** 该段是否全部处于默认值（「恢复默认」行高亮条件，与 Flutter selected 同语义）。 */
+  private displayAtDefaults(kind: string): boolean {
+    const s = this.state();
+    if (kind === 'subtitle') {
+      return Math.abs(s.subtitleScale - DEFAULT_SUBTITLE_SCALE) < 0.001
+        && s.subtitleMarginY === DEFAULT_SUBTITLE_MARGIN_Y
+        && s.subtitleDelayMs === DEFAULT_SUBTITLE_DELAY_MS;
+    }
+    return Math.abs(s.danmakuSpeed - DEFAULT_DANMAKU_SPEED) < 0.001
+      && Math.abs(s.danmakuFontSize - DEFAULT_DANMAKU_FONT_SIZE) < 0.001
+      && Math.abs(s.danmakuOpacity - DEFAULT_DANMAKU_OPACITY) < 0.001;
   }
 
   /** 解码模式面板：标题 + 当前值 + 3 行单选。 */

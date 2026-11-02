@@ -241,6 +241,11 @@ class AndroidNativePlayerHost(
                 view?.render(lastState, System.currentTimeMillis())
             }
 
+            override fun onSkipSegment() {
+                // 跳过片头/片尾：跳转语义由 Dart `_performSkipSegment` 执行。
+                commandSink.send(mapOf("type" to "skipSegment"))
+            }
+
             override fun onOpenPanel(panel: String) {
                 // 面板显隐由视图自理；此处仅记录，返回键经视图 closePanel。
             }

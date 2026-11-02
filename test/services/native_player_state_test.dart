@@ -190,6 +190,47 @@ void main() {
       expect(restored, original);
     });
 
+    test('弹幕行数/上限与轨道 label 往返（设置生效 + Emby 命名）', () {
+      // 行数/上限：设置页 → 原生渲染层的协议字段（真机回归：旧协议缺失，
+      // 原生硬编码行数、无上限，设置类全部失效）。
+      const s = NativePlayerState(
+        danmakuScrollRows: 12,
+        danmakuTopRows: 3,
+        danmakuBottomRows: 5,
+        danmakuMaxCount: 800,
+        tracks: <NativeTrack>[
+          NativeTrack(
+            id: 1,
+            type: 'audio',
+            title: 'AAC',
+            lang: 'chi',
+            label: '国语 (AAC 立体声)',
+          ),
+          NativeTrack(id: 2, type: 'sub', label: '简体中文 (SRT)'),
+        ],
+      );
+      final r = NativePlayerState.fromJson(s.toJson());
+      expect(r.danmakuScrollRows, 12);
+      expect(r.danmakuTopRows, 3);
+      expect(r.danmakuBottomRows, 5);
+      expect(r.danmakuMaxCount, 800);
+      expect(r.tracks[0].label, '国语 (AAC 立体声)');
+      expect(r.tracks[1].label, '简体中文 (SRT)');
+      // 缺失字段走默认（旧包兼容）：30/4/4/不限。
+      const d = NativePlayerState();
+      expect(d.danmakuScrollRows, 30);
+      expect(d.danmakuTopRows, 4);
+      expect(d.danmakuBottomRows, 4);
+      expect(d.danmakuMaxCount, isNull);
+      // label 缺失（旧包）→ null，原生回退 title/lang。
+      final old = NativePlayerState.fromJson(const {
+        'tracks': <Object?>[
+          {'id': 1, 'type': 'audio', 'title': 'chi'}
+        ],
+      });
+      expect(old.tracks.single.label, isNull);
+    });
+
     test('fromJson 容忍缺失字段（旧原生包）', () {
       final s = NativePlayerState.fromJson(const <Object?, Object?>{
         'positionMs': 100,

@@ -936,6 +936,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 选集/版本列表：PlayerScreen 注入（Emby 元数据，非 mpv 轨道），
   /// 纳入原生状态推送，供选集/线路面板展示。见 _buildNativePlayerState。
   List<NativeEpisode> _nativeEpisodes = const <NativeEpisode>[];
+
+  /// Emby 轨显示名（`MediaStream.displayInfo`，按 Emby 流序；见
+  /// [applyNativePanelData]）。空 = 不挂 label，原生回退 title/lang。
+  List<String> _nativeAudioLabels = const <String>[];
+  List<String> _nativeSubtitleLabels = const <String>[];
   List<NativeVersion> _nativeVersions = const <NativeVersion>[];
   int _nativeCurrentEpisodeIndex = -1;
   int _nativeCurrentVersionIndex = 0;
@@ -961,12 +966,19 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     required int currentEpisodeIndex,
     required int currentVersionIndex,
     required NativePlayerUiExtras extras,
+    List<String> audioLabels = const <String>[],
+    List<String> subtitleLabels = const <String>[],
   }) {
     _nativeEpisodes = episodes;
     _nativeVersions = versions;
     _nativeCurrentEpisodeIndex = currentEpisodeIndex;
     _nativeCurrentVersionIndex = currentVersionIndex;
     _nativeUiExtras = extras;
+    // Emby 显示名（MediaStream.displayInfo）按 Emby 流序注入，构建快照时
+    // 挂到对应 mpv 轨上——面板命名与 Emby 一致（真机回归：旧实现只用
+    // mpv title/lang，显示 `chi`/`轨 2`）。
+    _nativeAudioLabels = audioLabels;
+    _nativeSubtitleLabels = subtitleLabels;
     _pushNativeUiState();
     // 画面比例落 mpv 属性（引擎切换/重载会重置属性，这里兜底重放）。
     if (extras.videoFit != _appliedVideoFit) {
@@ -991,14 +1003,35 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     _pushNativeUiState();
   }
 
-  /// 弹幕时间窗：[当前位置-2s, 当前位置+30s]，原生端按 timeMs 自调度。
+  /// 弹幕时间窗：[当前位置-保留时长, 当前位置+30s]，原生端按 timeMs 自调度。
   /// 纯位置推导，seek 后自然对齐（与 Flutter DanmakuTimeline 语义一致）。
+  ///
+  /// 【保留时长必须覆盖整段驻留/穿屏】滚动 8s÷speed、驻留 4s。旧下界
+  /// `pos-2s` 会把刚入屏 2 秒的滚动弹幕移出数据源 → 滚到一半就消失
+  ///（真机回归）。
   List<NativeDanmakuItem> _buildDanmakuWindow() {
     if (_nativeDanmakuComments.isEmpty) return const [];
+    var comments = _nativeDanmakuComments;
+    // 数量上限：超量按时间等间隔采样（照抄 Flutter DanmakuTimeline._sampleEvenly：
+    // 排序后确定性采样、保留首条）。在窗口切片前对全量采样 = 与 Flutter 全局
+    // 采样语义一致，且样本稳定（弹幕不会中途互换进出，防闪烁）。
+    final maxCount = _nativeUiExtras.danmakuMaxCount;
+    if (maxCount != null && maxCount > 0 && comments.length > maxCount) {
+      final sorted = [...comments]..sort((a, b) => a.time.compareTo(b.time));
+      final total = sorted.length;
+      final sampled = <DanmakuComment>[];
+      for (var i = 0; i < maxCount; i++) {
+        sampled.add(sorted[(i * total) ~/ maxCount]);
+      }
+      comments = sampled;
+    }
     final posSec = _positionMs / 1000.0;
+    final speed = _nativeUiExtras.danmakuSpeed.clamp(0.25, 4.0);
+    final travelSec = 8.0 / speed;
+    final keepSec = (travelSec > 4.0 ? travelSec : 4.0) + 2.0;
     final out = <NativeDanmakuItem>[];
-    for (final c in _nativeDanmakuComments) {
-      if (c.time < posSec - 2 || c.time > posSec + 30) continue;
+    for (final c in comments) {
+      if (c.time < posSec - keepSec || c.time > posSec + 30) continue;
       out.add(NativeDanmakuItem(
         timeMs: (c.time * 1000).round(),
         text: c.text,
@@ -1739,6 +1772,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       danmakuSpeed: _nativeUiExtras.danmakuSpeed,
       danmakuFontSize: _nativeUiExtras.danmakuFontSize,
       danmakuOpacity: _nativeUiExtras.danmakuOpacity,
+      danmakuScrollRows: _nativeUiExtras.danmakuScrollRows,
+      danmakuTopRows: _nativeUiExtras.danmakuTopRows,
+      danmakuBottomRows: _nativeUiExtras.danmakuBottomRows,
+      danmakuMaxCount: _nativeUiExtras.danmakuMaxCount,
       // 弹幕时间窗：原生 UI 下 Flutter 弹幕层随视频区一并退场，弹幕改由
       // 原生层渲染（真机回归「弹幕开关点了没反应」）。窗口随每次状态推送
       // 刷新，原生端按 timeMs 与当前播放位置自调度（seek 自愈）。
@@ -1746,6 +1783,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       segmentEnabled: _nativeUiExtras.segmentEnabled,
       segmentIntroEndMs: _nativeUiExtras.segmentIntroEndMs,
       segmentOutroStartMs: _nativeUiExtras.segmentOutroStartMs,
+      skipPrompt: _nativeUiExtras.skipPrompt,
       showDebug: _nativeUiExtras.showDebug,
       isRoom: _nativeUiExtras.isRoom,
       canScreenshot: _nativeUiExtras.canScreenshot,
@@ -1754,7 +1792,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       tvMode: _nativeUiExtras.tvMode,
       audioStreamCount: _nativeUiExtras.audioStreamCount,
       subtitleStreamCount: _nativeUiExtras.subtitleStreamCount,
-      tracks: _nativeTracksFromRaw(_lastTrackListRaw),
+      tracks: _nativeTracksWithLabels(_nativeTracksFromRaw(_lastTrackListRaw)),
       selectedAudioId: _selectedTrackId(_lastTrackListRaw, 'audio'),
       selectedSubtitleId: _selectedTrackId(_lastTrackListRaw, 'sub'),
       episodes: _nativeEpisodes,
@@ -1799,6 +1837,27 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     } catch (_) {
       return const <NativeTrack>[];
     }
+  }
+
+  /// 给 mpv 轨挂 Emby 显示名：mpv track id → Emby 流序（[_audioTrackIds] 与
+  /// Emby 流数组同序）→ label。映射不到保留原轨（原生回退 title/lang）。
+  List<NativeTrack> _nativeTracksWithLabels(List<NativeTrack> tracks) {
+    if (_nativeAudioLabels.isEmpty && _nativeSubtitleLabels.isEmpty) {
+      return tracks;
+    }
+    return tracks.map((t) {
+      final ids = t.type == 'audio'
+          ? _audioTrackIds
+          : t.type == 'sub'
+              ? _subtitleTrackIds
+              : const <int>[];
+      final labels =
+          t.type == 'audio' ? _nativeAudioLabels : _nativeSubtitleLabels;
+      final idx = ids.indexOf(t.id);
+      if (idx < 0 || idx >= labels.length) return t;
+      final label = labels[idx];
+      return label.isEmpty ? t : t.withLabel(label);
+    }).toList(growable: false);
   }
 
   /// 原生 UI 顶部诊断行（vo/hwdec/surface 摘要，Phase 1 最小集）。

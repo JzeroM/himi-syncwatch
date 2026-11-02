@@ -1021,7 +1021,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   final Stopwatch _skipPromptPlaybackWatch = Stopwatch();
 
   List<MediaSegment> _skipSegments = const [];
-  MediaSegment? _skipPromptSegment;
+  MediaSegment? _skipPromptSegmentRaw;
+
+  /// 当前待跳过段（驱动原生底栏跳过胶囊显隐）。setter 自动同步原生面板
+  /// 数据——保证胶囊与 Dart 提示同帧（8 秒自动消失/抑制/跳转即清都走这里）。
+  MediaSegment? get _skipPromptSegment => _skipPromptSegmentRaw;
+  set _skipPromptSegment(MediaSegment? value) {
+    if (_skipPromptSegmentRaw == value) return;
+    _skipPromptSegmentRaw = value;
+    _syncNativePanelData();
+  }
   Timer? _skipPromptTimer;
   MediaItem? _segmentMediaItem;
   ManualSegmentRecord? _manualSegmentRecord;
@@ -1139,6 +1148,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 延迟变更 → 重载偏移字幕的去抖（拖动连续触发只重载最后一次）。
   Timer? _subtitleDelayReloadTimer;
+
+  /// 切音轨后的滤镜延后写入（避免与 aid 重建窗口叠加卡顿，见 _selectEmbyAudio）。
+  Timer? _audioFilterDeferTimer;
 
   /// 样式变更 → 落盘的去抖。
   Timer? _subtitleStyleSaveTimer;
@@ -3317,9 +3329,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         danmakuSpeed: settings.danmakuSpeed,
         danmakuFontSize: settings.danmakuFontSize,
         danmakuOpacity: settings.danmakuOpacity,
+        danmakuScrollRows: settings.danmakuScrollRows,
+        danmakuTopRows: settings.danmakuTopRows,
+        danmakuBottomRows: settings.danmakuBottomRows,
+        danmakuMaxCount:
+            settings.danmakuLimitCount ? settings.danmakuMaxCount : null,
         segmentEnabled: _segmentFeatureEnabled,
         segmentIntroEndMs: _segmentIntroEndMs,
         segmentOutroStartMs: _segmentCreditsStartMs,
+        skipPrompt: _skipPromptSegment == null
+            ? ''
+            : (_skipPromptSegment!.type == MediaSegmentType.intro
+                ? 'intro'
+                : 'outro'),
         showDebug: settings.showSyncDebug,
         isRoom: isRoom,
         canScreenshot: !Platform.isAndroid,
@@ -3329,6 +3351,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         audioStreamCount: _embyAudioStreams.length,
         subtitleStreamCount: _embySubtitleStreams.length,
       ),
+      // Emby 轨显示名（displayInfo，与 Flutter 字幕/音轨菜单同源同名）。
+      audioLabels:
+          _embyAudioStreams.map((s) => s.displayInfo).toList(growable: false),
+      subtitleLabels: _embySubtitleStreams
+          .map((s) => s.displayInfo)
+          .toList(growable: false),
     );
   }
 
@@ -3376,6 +3404,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _applyNativeSegmentMark(kind, positionMs);
       case ClearSegmentMark(:final kind):
         _applyNativeSegmentClear(kind);
+      case SkipSegment():
+        // 原生底栏跳过胶囊 → 复用 Dart 跳转语义（片头跳段末；片尾进下一集/
+        // 结局退出），与安卓提示按钮完全一致。
+        _performSkipSegment();
       case ToggleLock():
         _toggleScreenLock();
       case CycleVideoFit():
@@ -3793,6 +3825,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _currentPlayUrl = playUrl;
     _currentToken = token;
     _isSyncing = true;
+    // 弹幕与媒体并行（对齐 Flutter perf「提前并行拉取弹幕」2e82103）：集索引
+    // 就绪即拉取，不等 _isPlayerReady——旧实现等媒体加载完成才拉，慢流下
+    // 弹幕要迟好几秒才出现（真机回归：弹幕太久才出现）。
+    if (epIndex != null) {
+      _currentEpisodeIndex = epIndex;
+      if (_danmakuOn) unawaited(_loadDanmaku());
+    }
     try {
       _addBroadcastMessage('同步主持人播放');
 
@@ -5923,6 +5962,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!_skipPromptPlaybackWatch.isRunning) {
       _skipPromptPlaybackWatch.start();
     }
+    // 画面就绪门禁（真机回归：切集后立马弹跳过片头）：起播已上报 playing
+    // 但位置仍为 0（首帧未出/解码未起）时不放行提示——计时照常（3 秒
+    // gate 从真正起播算），等位置回读 >0（视频加载出来）才显示。
+    if (positionMs <= 0) return;
     if (!_segmentFeatureEnabled || _skipSegments.isEmpty) return;
     final insideIntro = _skipSegments.any(
       (segment) =>
@@ -7050,6 +7093,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _segmentMarkScopeNode.dispose();
     _subtitleDelayReloadTimer?.cancel();
     _subtitleStyleSaveTimer?.cancel();
+    _audioFilterDeferTimer?.cancel();
     _subtitleStyleApplyTimer?.cancel();
     _heartbeatTimer?.cancel();
     _rateRestoreTimer?.cancel();
@@ -8317,7 +8361,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onDanmakuOpacityChanged: _onDanmakuOpacityChanged,
       onDanmakuReset: () {
         notifier.update(
-          danmakuSpeed: 1.0,
+          danmakuSpeed: 0.7,
           danmakuFontSize: 0.5,
           danmakuOpacity: 0.8,
         );
@@ -10162,14 +10206,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _selectEmbyAudio(int embyIndex) {
-    // fvp: 通过 activeAudioTracks 选择音轨
+    // fvp: 通过 activeAudioTracks 选择音轨。
+    // 【滤镜延后】mpv aid 切换本身要重建音频解码链（含 demuxer 重对齐），
+    // 紧接着同步写 af/audio.avfilter 会再触发一次音频输出重建——两次重建
+    // 叠加 = 明显卡顿（真机回归：切换音频卡住一下）。安卓 setAudioTrack
+    // 只做纯轨切换、不在切轨路径改滤镜，此处对齐：滤镜延后到切轨完成
+    //（300ms ≈ mpv 音频链重建窗口）后再按新 codec 落盘。
     _player.activeAudioTracks = [embyIndex];
-    // iOS TrueHD 无声规避：按新音轨编码刷新 audio.avfilter
-    _applyAudioFilterPolicy(
-      codec: embyIndex >= 0 && embyIndex < _embyAudioStreams.length
-          ? _embyAudioStreams[embyIndex].codec
-          : null,
-    );
+    this._audioFilterDeferTimer?.cancel();
+    this._audioFilterDeferTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _applyAudioFilterPolicy(
+        codec: embyIndex >= 0 && embyIndex < _embyAudioStreams.length
+            ? _embyAudioStreams[embyIndex].codec
+            : null,
+      );
+    });
   }
 
   // ========== 字幕样式（大小/位置/延迟） ==========

@@ -71,19 +71,31 @@ class DanmakuLayerView(context: Context) : View(context) {
     /** 同轨相邻弹幕间隙（ms）。 */
     private val trackGapMs = 150.0
 
+    /** 滚动/顶/底行数设置（滚动 = 上限按屏高自适应；顶/底 = 行数）。 */
+    private var scrollRows = 30
+    private var topRows = 4
+    private var bottomRows = 4
+
     fun update(
         items: List<AndroidDanmakuItem>,
         enabled: Boolean,
         speed: Double,
         fontSizeScale: Double,
         opacity: Double,
+        scrollRows: Int = 30,
+        topRows: Int = 4,
+        bottomRows: Int = 4,
     ) {
         this.items = items
         this.enabled = enabled
         this.speed = speed.coerceIn(0.25, 4.0)
         this.fontSizeScale = fontSizeScale.coerceIn(0.25, 4.0)
         this.opacity = opacity.coerceIn(0.0, 1.0)
-        val key = items.joinToString("|") { "${it.timeMs}:${it.text}:${it.mode}" }
+        this.scrollRows = scrollRows.coerceAtLeast(1)
+        this.topRows = topRows.coerceAtLeast(1)
+        this.bottomRows = bottomRows.coerceAtLeast(1)
+        val key = items.joinToString("|") { "${it.timeMs}:${it.text}:${it.mode}" } +
+            "|r$scrollRows/$topRows/$bottomRows"
         if (key != lastItemsKey) {
             lastItemsKey = key
             assignLanes()
@@ -116,6 +128,12 @@ class DanmakuLayerView(context: Context) : View(context) {
      * 行分配（镜像 DanmakuTimeline 冲突模型）：
      * - 滚动：占行直到「前沿越过左缘」+0.15s；textW 按 CJK/ASCII 近似；
      * - 顶/底：各自独立循环行。
+     *
+     * 行数取弹幕设置（真机回归：旧实现硬编码 4~16，设置页行数失效）：
+     * 滚动 = 用户值为上限、按屏高自适应铺满（同 Flutter
+     * `autoRows.clamp(1, config.scrollRows)`）；顶/底 = 用户值。
+     * 溢出 **丢弃**（lane=-1）：旧实现回 0 行叠加 = 弹幕重叠（对齐
+     * Flutter `if (row < 0) continue` 与鸿蒙实现）。
      */
     private fun assignLanes() {
         val n = items.size
@@ -123,9 +141,11 @@ class DanmakuLayerView(context: Context) : View(context) {
         if (n == 0) return
         val fontSize = baseFontSizeDp * fontSizeScale * resources.displayMetrics.density
         val rowH = fontSize + rowGapDp * resources.displayMetrics.density
-        // 行数按可用高度估算（面板配置的行数未入协议，此处按高度近似）。
-        val maxScrollRows = ((height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels) /
-            rowH).toInt().coerceIn(4, 16)
+        val autoRows = ((height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels) /
+            rowH).toInt().coerceAtLeast(1)
+        val maxScrollRows = scrollRows.coerceAtMost(autoRows)
+        val topRowCount = topRows.coerceAtMost(autoRows)
+        val bottomRowCount = bottomRows.coerceAtMost(autoRows)
         val scrollFreeAt = DoubleArray(maxScrollRows)
         var topRow = 0
         var bottomRow = 0
@@ -134,11 +154,11 @@ class DanmakuLayerView(context: Context) : View(context) {
             when (item.mode) {
                 "top" -> {
                     lanes[i] = topRow
-                    topRow = (topRow + 1) % maxScrollRows.coerceAtMost(6)
+                    topRow = (topRow + 1) % topRowCount
                 }
                 "bottom" -> {
                     lanes[i] = bottomRow
-                    bottomRow = (bottomRow + 1) % maxScrollRows.coerceAtMost(6)
+                    bottomRow = (bottomRow + 1) % bottomRowCount
                 }
                 else -> {
                     val travelMs = scrollBaseMs / speed
@@ -151,7 +171,10 @@ class DanmakuLayerView(context: Context) : View(context) {
                     while (lane < maxScrollRows && scrollFreeAt[lane] + trackGapMs > item.timeMs) {
                         lane++
                     }
-                    if (lane >= maxScrollRows) lane = 0 // 溢出兜底：回 0 行（允许叠加）
+                    if (lane >= maxScrollRows) {
+                        lanes[i] = -1 // 轨道满 → 丢弃（禁回 0 行叠加）
+                        continue
+                    }
                     lanes[i] = lane
                     scrollFreeAt[lane] = frontExitMs
                 }
@@ -192,9 +215,10 @@ class DanmakuLayerView(context: Context) : View(context) {
             when (item.mode) {
                 "top", "bottom" -> {
                     if (elapsed < 0 || elapsed > fixedMs) continue
+                    val lane = lanes.getOrNull(i) ?: 0
+                    if (lane < 0) continue // 轨道满丢弃
                     val textW = fillPaint.measureText(item.text)
                     val x = (width - textW) / 2f
-                    val lane = lanes.getOrNull(i) ?: 0
                     val y = if (item.mode == "top") {
                         edgePad + fontSize + lane * rowH
                     } else {
@@ -205,10 +229,11 @@ class DanmakuLayerView(context: Context) : View(context) {
                 }
                 else -> {
                     if (elapsed < 0 || elapsed > travelMs) continue
+                    val lane = lanes.getOrNull(i) ?: 0
+                    if (lane < 0) continue // 轨道满丢弃
                     val progress = (elapsed / travelMs).coerceIn(0.0, 1.0)
                     val textW = fillPaint.measureText(item.text)
                     val x = (width - progress * (width + textW)).toFloat()
-                    val lane = lanes.getOrNull(i) ?: 0
                     val y = edgePad + fontSize + lane * rowH
                     canvas.drawText(item.text, x, y, strokePaint)
                     canvas.drawText(item.text, x, y, fillPaint)

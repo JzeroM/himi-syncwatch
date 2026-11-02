@@ -8,8 +8,14 @@
  * - 行冲突：滚动弹幕占行直到「前沿越过左缘」+0.15s（同速不追尾）；
  * - 位置纯推导（elapsed = 播放位置 - timeMs），seek 自愈、暂停冻结。
  *
- * 实现：ArkUI Canvas 无每帧重绘接口，用 30fps @State 帧计数驱动
+ * 实现：ArkUI Canvas 无每帧重绘接口，用 30fps @State 帧排布数组驱动
  * Text.position 位移（状态驱动重排，弹幕为小节点树，开销可控）。
+ *
+ * 【关键】排布必须落进 **@State items** 并在 build() 里**直接**读取——
+ * 旧实现在 build() 里现算排布（把帧状态藏进方法调用），不进 ArkUI
+ * 细粒度依赖集，帧计数再怎么翻 build() 也不重跑 → 弹幕永远停在首帧
+ * （真机回归：弹幕不显示）。滚动项 key 带量化 x，保证两种 ForEach
+ * 复用语义下都逐帧重排。
  */
 
 import {
@@ -50,27 +56,47 @@ const EDGE_PAD = 8;
 @Component
 export struct DanmakuLayer {
   @Prop revision: number = 0;
-  @State frame: number = 0;
+  /** 当前帧的活跃弹幕排布（30fps 重写；build() 直读本数组 = 逐帧刷新）。 */
+  @State items: DanmakuFrameItem[] = [];
 
   /** 容器实际尺寸（onAreaChange 喂入，排布按真实宽高）。 */
   @State areaW: number = 1200;
   @State areaH: number = 700;
 
   private timer: number = -1;
-  /** 位置锚点（host 推送时的播放位置 + 墙钟），帧间自插值。 */
-  private anchorPosMs: number = 0;
-  private anchorWallMs: number = 0;
-  private anchorRevision: number = -1;
-  /** 弹幕窗口的行分配缓存（窗口变化时重建）。 */
-  private laneKey: string = '';
-  private lanes: number[] = [];
+  /**
+   * 当前播放位置 = 宿主插值时钟 `positionNowMs()`（快照 + 墙钟×倍速）——
+   * 与 Flutter `DanmakuOverlay._nowPosition`（`_lastPosition + (_elapsed -
+   * _alignElapsed)`）同构：两次快照之间**严格按墙钟匀速线性外推**。
+   *
+   * 【非匀速根因】旧实现在外推上叠了「漂移 10%/帧牵引」——每帧注入额外
+   * 位移、速度随漂移量变化 → 弹幕忽快忽慢（真机回归）。修复 = 删除一切
+   * 速度修正项：seek 由快照突变自然重对齐（同 Flutter 重锚），暂停由
+   * positionNowMs 冻结（同 Flutter playing=false 停 Ticker）。
+   */
+  private posOf(): number {
+    return HimiMpvNativeHost.getInstance().positionNowMs();
+  }
+  /**
+   * 行号绑定表（`timeMs:text` → lane）——**一旦分配不再变**。
+   *
+   * 【弹幕往上移动根因】旧实现对集合全量重分配行号：最老条目穿屏移除后
+   * 重算，后续条目全部拿到更小行号 → 整屏上移一行。行号必须绑定条目
+   * 生命周期（与 Flutter DanmakuTimeline 的 item.row 同语义）。
+   * -1 = 轨道满被丢弃（不渲染，同 Flutter `if (row < 0) continue`）。
+   */
+  private laneOf: Map<string, number> = new Map<string, number>();
+  /** 各行「轨道空闲起始时刻」（滚动/顶部/底部三组独立，冲突模型同 Flutter）。 */
+  private scrollRowAvail: number[] = [];
+  private topRowAvail: number[] = [];
+  private bottomRowAvail: number[] = [];
 
   aboutToAppear(): void {
-    this.syncAnchor();
-    // 30fps 帧驱动：Text 位移按帧重算（Flutter Ticker 的原生等价物）。
+    // 60fps 帧驱动（16ms ≈ vsync，对齐 Flutter Ticker）：重写 @State 排布
+    // 数组 → build() 直读 → Text 逐帧位移。
     this.timer = setInterval((): void => {
-      this.frame++;
-    }, 33);
+      this.items = this.frameItems();
+    }, 16);
   }
 
   aboutToDisappear(): void {
@@ -80,25 +106,8 @@ export struct DanmakuLayer {
     }
   }
 
-  /** 同步位置锚点（host 状态推送到达时）。 */
-  private syncAnchor(): void {
-    const s = HimiMpvNativeHost.getInstance().state;
-    this.anchorPosMs = s.positionMs;
-    this.anchorWallMs = Date.now();
-    this.anchorRevision = this.revision;
-  }
-
-  /** 当前播放位置（锚点 + 墙钟增量；暂停冻结）。 */
-  private positionMs(): number {
-    const s = HimiMpvNativeHost.getInstance().state;
-    if (this.anchorRevision !== this.revision) {
-      this.syncAnchor();
-    }
-    if (s.paused) {
-      return this.anchorPosMs;
-    }
-    return this.anchorPosMs + (Date.now() - this.anchorWallMs);
-  }
+  /** 飞行中弹幕缓存：窗口滑出后仍画到穿屏结束（防"滚到一半消失"）。 */
+  private flying: NativeDanmakuUi[] = [];
 
   /** CJK≈1em / ASCII≈0.55em 宽度近似（与 DanmakuTimeline 估算一致）。 */
   private estimateWidth(text: string, fontSize: number): number {
@@ -109,63 +118,125 @@ export struct DanmakuLayer {
     return w;
   }
 
-  /** 行分配（窗口变化时重建；冲突模型同 DanmakuTimeline）。 */
-  private assignLanes(items: NativeDanmakuUi[], speed: number, screenWidth: number): void {
-    const key = `${items.length}:${items.length > 0 ? items[0].timeMs : 0}:${speed}:${screenWidth}`;
-    if (key === this.laneKey) {
-      return;
-    }
-    this.laneKey = key;
-    this.lanes = [];
-    const fontSize = BASE_FONT_SIZE;
+  /**
+   * 增量行分配：只给**新条目**分配行号，laneOf 绑定生命周期不再变
+   *（模型完全复刻 Flutter DanmakuTimeline._pickRow）：
+   * - 滚动：占行到「完全入屏」+150ms（同速不追尾，textW/(W+textW) 为
+   *   完全入屏进度）；顶/底：占行 FIXED_MS+150ms；
+   * - **轨道满 → 丢弃（lane=-1，不渲染）**——旧实现溢出回 0 行叠加，
+   *   多条挤同一行 = 弹幕重叠（真机回归）。
+   *
+   * 行数取弹幕设置（真机回归：旧实现硬编码 16/6，设置页行数改动失效）：
+   * 滚动 = 用户值为上限、按屏高自适应铺满（同 Flutter
+   * `autoRows.clamp(1, config.scrollRows)`）；顶/底 = 用户值（夹到屏高
+   * 容量内）。
+   */
+  private assignLanes(items: NativeDanmakuUi[], speed: number, screenWidth: number,
+    screenH: number, fontSize: number): void {
+    const s = HimiMpvNativeHost.getInstance().state;
     const rowH = fontSize + ROW_GAP;
-    const maxScrollRows = Math.min(16, Math.max(4, Math.floor(screenWidth > 0 ? 900 / rowH : 12)));
-    const scrollFreeAt: number[] = new Array<number>(maxScrollRows).fill(0);
-    let topRow = 0;
-    let bottomRow = 0;
+    const autoRows = Math.floor((screenH - 2 * EDGE_PAD) / rowH);
+    const maxScrollRows = Math.max(1, Math.min(s.danmakuScrollRows, autoRows));
+    const topRows = Math.max(1, Math.min(s.danmakuTopRows, autoRows));
+    const bottomRows = Math.max(1, Math.min(s.danmakuBottomRows, autoRows));
+    if (this.scrollRowAvail.length !== maxScrollRows) {
+      this.scrollRowAvail = new Array<number>(maxScrollRows).fill(0);
+    }
+    if (this.topRowAvail.length !== topRows) {
+      this.topRowAvail = new Array<number>(topRows).fill(0);
+    }
+    if (this.bottomRowAvail.length !== bottomRows) {
+      this.bottomRowAvail = new Array<number>(bottomRows).fill(0);
+    }
+    const travelMs = SCROLL_BASE_MS / speed;
     for (const item of items) {
-      if (item.mode === 'top') {
-        this.lanes.push(topRow);
-        topRow = (topRow + 1) % Math.min(maxScrollRows, 6);
-      } else if (item.mode === 'bottom') {
-        this.lanes.push(bottomRow);
-        bottomRow = (bottomRow + 1) % Math.min(maxScrollRows, 6);
-      } else {
-        const travelMs = SCROLL_BASE_MS / speed;
-        const textW = this.estimateWidth(item.text, fontSize);
-        const frontExitMs = item.timeMs + travelMs * (screenWidth / (screenWidth + textW));
-        let lane = 0;
-        while (lane < maxScrollRows && scrollFreeAt[lane] + 150 > item.timeMs) {
-          lane++;
+      const key = `${item.timeMs}:${item.text}`;
+      if (this.laneOf.has(key)) {
+        continue; // 已分配（含 -1 丢弃）：不重分配（防上移/跳行）。
+      }
+      const textW = this.estimateWidth(item.text, fontSize);
+      const isFixed = item.mode === 'top' || item.mode === 'bottom';
+      const occupancy = isFixed
+        ? FIXED_MS + 150
+        : travelMs * (textW <= 0 ? 0 : textW / (screenWidth + textW)) + 150;
+      const avail = item.mode === 'top' ? this.topRowAvail
+        : item.mode === 'bottom' ? this.bottomRowAvail
+        : this.scrollRowAvail;
+      let lane = -1;
+      for (let r = 0; r < avail.length; r++) {
+        if (avail[r] <= item.timeMs) {
+          avail[r] = item.timeMs + occupancy;
+          lane = r;
+          break;
         }
-        if (lane >= maxScrollRows) {
-          lane = 0;
+      }
+      // lane = -1 → 轨道满丢弃（对齐 Flutter `if (row < 0) continue`）。
+      this.laneOf.set(key, lane);
+    }
+  }
+
+  /**
+   * 飞行中缓存维护：窗口新条目并入（timeMs+text 去重），穿屏结束才移除。
+   *
+   * 【防"莫名消失"】数据源窗口随播放滑动，旧实现窗口一移出就不再渲染——
+   * 滚动弹幕滚到一半被拦腰斩断。缓存保证已入屏的弹幕一定画到穿屏结束；
+   * 窗口抖动（推送延迟）也不影响在飞条目。
+   */
+  private syncFlying(all: NativeDanmakuUi[], pos: number, travelMs: number): NativeDanmakuUi[] {
+    for (const item of all) {
+      let seen = false;
+      for (const f of this.flying) {
+        if (f.timeMs === item.timeMs && f.text === item.text) {
+          seen = true;
+          break;
         }
-        this.lanes.push(lane);
-        scrollFreeAt[lane] = frontExitMs;
+      }
+      if (!seen) {
+        this.flying.push(item);
       }
     }
+    const alive: NativeDanmakuUi[] = [];
+    for (const f of this.flying) {
+      const elapsed = pos - f.timeMs;
+      const life = (f.mode === 'top' || f.mode === 'bottom') ? FIXED_MS : travelMs;
+      // 穿屏结束 +500ms 余量才移除（elapsed 边界抖动不误剔）。
+      if (elapsed > life + 500) {
+        // 生命周期结束：释放行号绑定（防 laneOf 无限增长）。
+        this.laneOf.delete(`${f.timeMs}:${f.text}`);
+        continue;
+      }
+      alive.push(f);
+    }
+    this.flying = alive;
+    return alive;
   }
 
   /** 当前帧的活跃弹幕排布。 */
   private frameItems(): DanmakuFrameItem[] {
     const s = HimiMpvNativeHost.getInstance().state;
     const out: DanmakuFrameItem[] = [];
-    if (!s.danmakuEnabled || s.isRoom || s.danmakuItems.length === 0) {
+    if (!s.danmakuEnabled || s.isRoom) {
+      this.flying = [];
       return out;
     }
-    const pos = this.positionMs();
+    const pos = this.posOf();
     const speed = Math.min(4, Math.max(0.25, s.danmakuSpeed));
     const fontSize = BASE_FONT_SIZE * Math.min(4, Math.max(0.25, s.danmakuFontSize));
     const rowH = fontSize + ROW_GAP;
     const screenWidth = this.areaW;
     const screenH = this.areaH;
-    this.assignLanes(s.danmakuItems, speed, screenWidth);
     const travelMs = SCROLL_BASE_MS / speed;
-    for (let i = 0; i < s.danmakuItems.length; i++) {
-      const item = s.danmakuItems[i];
+    // 飞行缓存 ∪ 当前窗口，按 timeMs 排序（新条目按时间序增量分配行号）。
+    const all = this.syncFlying(s.danmakuItems, pos, travelMs);
+    all.sort((a: NativeDanmakuUi, b: NativeDanmakuUi): number => a.timeMs - b.timeMs);
+    this.assignLanes(all, speed, screenWidth, screenH, fontSize);
+    for (let i = 0; i < all.length; i++) {
+      const item = all[i];
       const elapsed = pos - item.timeMs;
-      const lane = this.lanes.length > i ? this.lanes[i] : 0;
+      const lane = this.laneOf.get(`${item.timeMs}:${item.text}`);
+      if (lane === undefined || lane < 0) {
+        continue; // 轨道满丢弃（lane=-1）/尚未分配。
+      }
       if (item.mode === 'top' || item.mode === 'bottom') {
         if (elapsed < 0 || elapsed > FIXED_MS) {
           continue;
@@ -175,7 +246,8 @@ export struct DanmakuLayer {
         const y = item.mode === 'top'
           ? EDGE_PAD + lane * rowH
           : screenH - EDGE_PAD - (lane + 1) * rowH;
-        out.push(new DanmakuFrameItem(`${i}:${item.timeMs}`, item.text, x, y, item.color, fontSize));
+        // 驻留弹幕位置固定：key 不含坐标。
+        out.push(new DanmakuFrameItem(`${i}:${item.timeMs}:f`, item.text, x, y, item.color, fontSize));
       } else {
         if (elapsed < 0 || elapsed > travelMs) {
           continue;
@@ -184,7 +256,11 @@ export struct DanmakuLayer {
         const textW = this.estimateWidth(item.text, fontSize);
         const x = screenWidth - progress * (screenWidth + textW);
         const y = EDGE_PAD + lane * rowH;
-        out.push(new DanmakuFrameItem(`${i}:${item.timeMs}`, item.text, x, y, item.color, fontSize));
+        // key 带量化 x（1vp 档）：滚动弹幕逐帧位移，key 不变的复用语义下
+        // 位置属性不会刷新——key 随位置变保证两种 ForEach 语义都重排。
+        // 1vp 粒度 ≈ 每帧都有位移（100vp/s ≫ 60fps），消除台阶感。
+        out.push(new DanmakuFrameItem(
+          `${i}:${item.timeMs}:${Math.round(x)}`, item.text, x, y, item.color, fontSize));
       }
     }
     return out;
@@ -192,9 +268,13 @@ export struct DanmakuLayer {
 
   build() {
     Stack() {
-      ForEach(this.frameItems(), (it: DanmakuFrameItem) => {
+      ForEach(this.items, (it: DanmakuFrameItem) => {
         Text(it.text)
           .fontSize(it.fontSize)
+          // 观感照抄 Flutter DanmakuOverlay 的 TextStyle：w500 + 黑 54%
+          // blur3 描影（深色背景下可读性一致）。
+          .fontWeight(500)
+          .shadow({ radius: 3, color: '#8A000000', offsetX: 0, offsetY: 0 })
           .fontColor(it.color)
           .opacity(Math.min(1, Math.max(0, HimiMpvNativeHost.getInstance().state.danmakuOpacity)))
           .position({ x: it.x, y: it.y })

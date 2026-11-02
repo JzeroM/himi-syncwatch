@@ -1011,8 +1011,14 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     // 但本地文件/STRM 场景需要 fuzzy 才能自动带出同名字幕。
     lib.setOptionString('sub-auto', 'fuzzy');
     lib.setOptionString('subs-fallback', 'yes');
+    // 字幕渲染对齐安卓插件（himi_mpv_android）：libass 渲染 ASS/SSA 与
+    // SRT 转换轨（简易渲染器慢且丢样式 → 「字幕出现太慢」观感），并显式
+    // 开可见性（防 sid 状态残留把字幕关死）。
+    lib.setOptionString('sub-ass', 'yes');
+    lib.setOptionString('sub-visibility', 'yes');
     lib.setOptionString('osd-font', 'HarmonyOS Sans');
-    lib.setOptionString('sub-font-size', '38');
+    // 字号对齐 Dart `subtitle.font.size`（40）。
+    lib.setOptionString('sub-font-size', '40');
     lib.setOptionString('sub-color', '#ffffffff');
     lib.setOptionString('sub-outline-size', '2');
     lib.setOptionString('sub-outline-color', '#ff000000');

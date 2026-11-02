@@ -86,7 +86,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
       danmakuBlockWords: '',
       danmakuLimitCount: false,
       danmakuMaxCount: 500,
-      danmakuSpeed: 1.0,
+      danmakuSpeed: 0.7,
       danmakuFontSize: 0.5,
       danmakuOpacity: 0.8,
     );

@@ -10,10 +10,13 @@ data class AndroidTrack(
     val type: String = "audio",
     val title: String = "",
     val lang: String = "",
+    /** Emby 显示名（displayInfo）；空 = 回退 title/lang。 */
+    val label: String = "",
     val selected: Boolean = false,
 ) {
     val displayLabel: String
         get() = when {
+            label.isNotBlank() -> label
             title.isNotBlank() -> title
             lang.isNotBlank() -> lang
             else -> "轨 $id"
@@ -25,6 +28,7 @@ data class AndroidTrack(
             type = o.optString("type", "audio"),
             title = o.optString("title", ""),
             lang = o.optString("lang", ""),
+            label = o.optString("label", ""),
             selected = o.optBoolean("selected", false),
         )
     }
@@ -161,11 +165,18 @@ data class AndroidNativePlayerState(
     val danmakuSpeed: Double = 1.0,
     val danmakuFontSize: Double = 0.5,
     val danmakuOpacity: Double = 0.6,
+    /** 弹幕行数（滚动 = 上限按屏高自适应；顶/底 = 行数）与数量上限（null = 不限）。 */
+    val danmakuScrollRows: Int = 30,
+    val danmakuTopRows: Int = 4,
+    val danmakuBottomRows: Int = 4,
+    val danmakuMaxCount: Int? = null,
     /** 弹幕时间窗（原生渲染；Dart 按 [当前位置-2s,+30s] 切窗推送）。 */
     val danmakuItems: List<AndroidDanmakuItem> = emptyList(),
     val segmentEnabled: Boolean = false,
     val segmentIntroEndMs: Int? = null,
     val segmentOutroStartMs: Int? = null,
+    /** 跳过片头/片尾提示（'' = 隐藏，'intro' / 'outro'；Dart `_skipPromptSegment` 驱动）。 */
+    val skipPrompt: String = "",
     val showDebug: Boolean = false,
     val isRoom: Boolean = false,
     val canScreenshot: Boolean = false,
@@ -321,12 +332,21 @@ data class AndroidNativePlayerState(
             danmakuSpeed = json.optDouble("danmakuSpeed", 1.0),
             danmakuFontSize = json.optDouble("danmakuFontSize", 0.5),
             danmakuOpacity = json.optDouble("danmakuOpacity", 0.6),
+            danmakuScrollRows = json.optInt("danmakuScrollRows", 30),
+            danmakuTopRows = json.optInt("danmakuTopRows", 4),
+            danmakuBottomRows = json.optInt("danmakuBottomRows", 4),
+            danmakuMaxCount = if (json.has("danmakuMaxCount") && !json.isNull("danmakuMaxCount")) {
+                json.optInt("danmakuMaxCount", 0)
+            } else {
+                null
+            },
             danmakuItems = json.optJSONArray("danmakuItems")?.let { arr ->
                 (0 until arr.length()).map { AndroidDanmakuItem.fromJson(arr.getJSONObject(it)) }
             } ?: emptyList(),
             segmentEnabled = json.optBoolean("segmentEnabled", false),
             segmentIntroEndMs = json.optNullableInt("segmentIntroEndMs"),
             segmentOutroStartMs = json.optNullableInt("segmentOutroStartMs"),
+            skipPrompt = json.optString("skipPrompt", ""),
             showDebug = json.optBoolean("showDebug", false),
             isRoom = json.optBoolean("isRoom", false),
             canScreenshot = json.optBoolean("canScreenshot", false),

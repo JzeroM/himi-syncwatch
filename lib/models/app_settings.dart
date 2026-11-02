@@ -400,7 +400,7 @@ class AppSettings {
     this.danmakuBlockWords = '',
     this.danmakuLimitCount = false,
     this.danmakuMaxCount = 500,
-    this.danmakuSpeed = 1.0,
+    this.danmakuSpeed = 0.7,
     this.danmakuFontSize = 0.5,
     this.danmakuOpacity = 0.8,
   });
@@ -869,12 +869,17 @@ class AppSettings {
         danmakuMaxCountMin,
         danmakuMaxCountMax,
       ),
-      danmakuSpeed: _clampDouble(
-        json['danmakuSpeed'],
-        1.0,
-        danmakuSpeedMin,
-        danmakuSpeedMax,
-      ),
+      // 迁移：旧默认 1.0 → 0.7（全平台弹幕默认速度，无「是否手动设过」
+      // 记录，一并迁移；其余值按用户所选保留）。
+      danmakuSpeed: (json['danmakuSpeed'] is num &&
+              ((json['danmakuSpeed'] as num).toDouble() - 1.0).abs() < 1e-6)
+          ? 0.7
+          : _clampDouble(
+              json['danmakuSpeed'],
+              0.7,
+              danmakuSpeedMin,
+              danmakuSpeedMax,
+            ),
       danmakuFontSize: _clampDouble(
         json['danmakuFontSize'],
         0.5,

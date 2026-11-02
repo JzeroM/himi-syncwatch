@@ -75,3 +75,9 @@ dist/android/
 **/BuildProfile.ets
 **/oh-package-lock.json5
 **/package-lock.json
+
+# third_party 构建产物（mdk SDK 下载/解压/编译输出，数百 MB 级）
+third_party/fvp/android/.cxx/
+third_party/fvp/android/mdk-sdk/
+third_party/fvp/android/mdk-sdk-android.7z
+third_party/fvp/android/fvp-deps.lock

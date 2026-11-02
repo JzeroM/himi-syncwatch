@@ -184,6 +184,10 @@ void main() {
       final clearDefault = NativePlayerCommand.fromMap(
           const {'type': 'clearSegmentMark'});
       expect((clearDefault as ClearSegmentMark).kind, 'intro');
+
+      // 跳过片头/片尾（原生底栏跳过胶囊）。
+      final skip = NativePlayerCommand.fromMap(const {'type': 'skipSegment'});
+      expect(skip, isA<SkipSegment>());
     });
 
     test('toMap → fromMap roundtrip', () {
@@ -211,6 +215,7 @@ void main() {
         ToggleDebug(),
         SetSegmentMark(kind: 'intro', positionMs: 90000),
         ClearSegmentMark(kind: 'outro'),
+        SkipSegment(),
         ToggleLock(),
         CycleVideoFit(),
         ToggleOrientation(),

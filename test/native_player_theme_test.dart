@@ -275,15 +275,16 @@ void main() {
 
     test('鸿蒙底栏渐变方向必须自上而下（angle 180）', () {
       // 真机回归：angle 0 = 自左向右 → 整条横向压黑成硬边「黑幕」。
+      // 底栏渐变挂在 build() 的底栏壳（稳定层，见 573：logo/渐变不随
+      // epoch 重建），按底栏渐变色 D9000000 定位后回看 angle。
       final lines = view.split('\n');
-      final idx = lines.indexWhere((l) => l.contains('this.ControlRow();'));
-      expect(idx, greaterThan(0), reason: '未找到 ControlRow 调用');
-      var end = idx;
-      while (end < lines.length && !lines[end].contains('angle:')) {
-        end++;
+      final idx = lines.indexWhere((l) => l.contains('#D9000000'));
+      expect(idx, greaterThan(0), reason: '未找到底栏渐变（D9000000）');
+      var start = idx;
+      while (start > 0 && !lines[start].contains('angle:')) {
+        start--;
       }
-      expect(end, lessThan(lines.length), reason: '底栏渐变未找到 angle');
-      final angle = int.parse(RegExp(r'angle: (\d+)').firstMatch(lines[end])!.group(1)!);
+      final angle = int.parse(RegExp(r'angle: (\d+)').firstMatch(lines[start])!.group(1)!);
       expect(angle, 180, reason: '鸿蒙底栏渐变应为自上而下（angle 180）');
     });
 

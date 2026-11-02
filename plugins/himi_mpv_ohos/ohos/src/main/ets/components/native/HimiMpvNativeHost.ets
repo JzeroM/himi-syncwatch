@@ -79,6 +79,8 @@ export class NativeTrackUi {
   type: string = 'audio'; // audio / sub / video
   title: string = '';
   lang: string = '';
+  /** Emby 显示名（displayInfo）；空 = 回退 title/lang。 */
+  label: string = '';
   selected: boolean = false;
 }
 
@@ -156,6 +158,7 @@ function parseTracks(v: ESObject): NativeTrackUi[] {
       item.type = jsonStr(src['type'], 'audio');
       item.title = jsonStr(src['title'], '');
       item.lang = jsonStr(src['lang'], '');
+      item.label = jsonStr(src['label'], '');
       item.selected = jsonBool(src['selected'], false);
       out.push(item);
     }
@@ -300,6 +303,13 @@ export class NativePlayerUiState {
   segmentEnabled: boolean = false;
   segmentIntroEndMs: number | null = null;
   segmentOutroStartMs: number | null = null;
+  /** 跳过片头/片尾提示（'' = 隐藏，'intro' / 'outro'；Dart `_skipPromptSegment` 驱动）。 */
+  skipPrompt: string = '';
+  /** 弹幕行数（滚动 = 上限按屏高自适应；顶/底 = 行数）与数量上限（0 = 不限）。 */
+  danmakuScrollRows: number = 30;
+  danmakuTopRows: number = 4;
+  danmakuBottomRows: number = 4;
+  danmakuMaxCount: number = 0;
   /** 是否显示原生诊断行（设置→同步调试）。 */
   showDebug: boolean = false;
   /** 房间模式（隐藏选集/线路/画面比例等单人入口）。 */
@@ -385,6 +395,11 @@ export class NativePlayerUiState {
     this.segmentEnabled = jsonBool(obj.segmentEnabled, this.segmentEnabled);
     this.segmentIntroEndMs = jsonNullableInt(obj.segmentIntroEndMs);
     this.segmentOutroStartMs = jsonNullableInt(obj.segmentOutroStartMs);
+    this.skipPrompt = jsonStr(obj.skipPrompt, this.skipPrompt);
+    this.danmakuScrollRows = jsonNum(obj.danmakuScrollRows, this.danmakuScrollRows);
+    this.danmakuTopRows = jsonNum(obj.danmakuTopRows, this.danmakuTopRows);
+    this.danmakuBottomRows = jsonNum(obj.danmakuBottomRows, this.danmakuBottomRows);
+    this.danmakuMaxCount = jsonNum(obj.danmakuMaxCount, this.danmakuMaxCount);
     this.showDebug = jsonBool(obj.showDebug, this.showDebug);
     this.isRoom = jsonBool(obj.isRoom, this.isRoom);
     this.canScreenshot = jsonBool(obj.canScreenshot, this.canScreenshot);
@@ -458,6 +473,13 @@ export class HimiMpvNativeHost {
 
   /** 当前打开的二级面板（null = 无）。见 [NativePlayerPanelType]。 */
   activePanel: string | null = null;
+
+  /**
+   * 长按手势标记已有旧标记时，预设进片头片尾卡的二次确认 kind
+   * （'' = 无，'intro' / 'outro'）。面板 aboutToAppear 经
+   * [consumeSegmentConfirmKind] 取走。
+   */
+  segmentConfirmKind: string = '';
 
   private bridge: NativeHostBridge | null = null;
   private listener: NativePlayerViewListener | null = null;
@@ -546,6 +568,10 @@ export class HimiMpvNativeHost {
     if (this.activePanel === type) return;
     this.activePanel = type;
     this.setControlsVisible(true);
+    // setControlsVisible 在控件已可见时 early-return 不 notify —— 这里必须
+    // 显式刷新一次，否则控件可见时点面板按钮（选集/字幕/音轨/倍速/内核…）
+    // 毫无反应，要等 Dart 下一次状态推送才弹出（真机回归）。
+    this.notify();
   }
 
   /** 关闭当前面板（无面板时 no-op）。 */
@@ -562,6 +588,27 @@ export class HimiMpvNativeHost {
     } else {
       this.openPanel(type);
     }
+  }
+
+  /**
+   * 长按标记遇旧标记：直开片头片尾卡的二次确认（更新/清除/取消），
+   * 对齐 Flutter `_onSegmentMarkSelected` 的 dialog 流（Flutter dialog 在
+   * 原生双窗上不可见，必须走原生确认卡）。
+   */
+  openSegmentConfirm(kind: string): void {
+    this.segmentConfirmKind = kind;
+    if (this.activePanel !== NativePlayerPanelType.segment) {
+      this.togglePanel(NativePlayerPanelType.segment);
+    } else {
+      this.notify();
+    }
+  }
+
+  /** 取走并清空待确认 kind（'' = 无）。面板 aboutToAppear 调用。 */
+  consumeSegmentConfirmKind(): string {
+    const kind = this.segmentConfirmKind;
+    this.segmentConfirmKind = '';
+    return kind;
   }
 
   /**

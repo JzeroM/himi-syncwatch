@@ -38,12 +38,14 @@ void main() {
     'takeScreenshot': const {'type': 'takeScreenshot'},
     'toggleDebug': const {'type': 'toggleDebug'},
     'setSegmentMark': const {'type': 'setSegmentMark', 'kind': 'intro', 'positionMs': 500},
+    'clearSegmentMark': const {'type': 'clearSegmentMark', 'kind': 'outro'},
+    'skipSegment': const {'type': 'skipSegment'},
     'requestBack': const {'type': 'requestBack'},
     'requestExit': const {'type': 'requestExit'},
   };
 
   group('Phase 2 命令路由矩阵', () {
-    test('全部 30 类命令都能解析为非 null（无一落入 unknown）', () {
+    test('全部命令类都能解析为非 null（无一落入 unknown）', () {
       // fromMap 返回 null = 该类没接线，路由断裂。
       for (final entry in allCommands.entries) {
         final cmd = NativePlayerCommand.fromMap(entry.value);

@@ -5,10 +5,8 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.ClipDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.LayerDrawable
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
@@ -73,6 +71,9 @@ class NativePlayerScreenView(
         fun onAdjustDisplay(key: String, value: Double)
         fun onSetSegmentMark(kind: String, positionMs: Long)
         fun onClearSegmentMark(kind: String)
+
+        /** 跳过片头/片尾胶囊点击（Dart `_performSkipSegment` 执行跳转）。 */
+        fun onSkipSegment()
         fun onOpenPanel(panel: String)
         fun onClosePanel()
 
@@ -204,7 +205,8 @@ class NativePlayerScreenView(
         view.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    v.animate().alpha(0.55f).scaleX(0.92f).scaleY(0.92f)
+                    // 对齐鸿蒙 pressedFeedback：opacity 0.5 + scale 0.92。
+                    v.animate().alpha(0.5f).scaleX(0.92f).scaleY(0.92f)
                         .setDuration(90).start()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -643,7 +645,8 @@ class NativePlayerScreenView(
     private val logoSpacer = View(context)
     private val seekRow = LinearLayout(context)
     private val positionLabel = TextView(context)
-    private val seekBar = SeekBar(context)
+    /** 玻璃滑杆（自绘，完全复刻鸿蒙 GlassSlider.ets；替换系统 SeekBar）。 */
+    private val seekBar = GlassSeekBarView(context)
     private val durationLabel = TextView(context)
     /**
      * 控件行：`leading槽(权重1, 贴左) | 传输组 | trailing槽(权重1, 贴右)`。
@@ -659,6 +662,10 @@ class NativePlayerScreenView(
     /** leading 槽（权重 1，贴左）：内部放定宽 [leadingGroup]，锁钮与时间数显同列。 */
     private val leadingSlot = LinearLayout(context)
     private val lockButton = TextView(context)
+    /** 跳过片头/片尾胶囊（照抄鸿蒙 ControlRow leading 槽；显隐由 skipPrompt 驱动）。 */
+    private val skipPromptChip = LinearLayout(context)
+    private val skipPromptIcon = TextView(context)
+    private val skipPromptLabel = TextView(context)
     private val trailingGroup = LinearLayout(context)
     /** trailing 的测量级缩放容器（等价 Flutter FittedBox(scaleDown)）。 */
     private val trailingBox = ScaleDownBox(context)
@@ -839,6 +846,8 @@ class NativePlayerScreenView(
         speedChip.gravity = Gravity.CENTER
         speedChip.setPadding(dp(4), dp(4), dp(4), dp(4))
         speedChip.isClickable = true
+        // 与玻璃胶囊同高（32dp），同排芯片高低一致（截图回归）。
+        speedChip.minimumHeight = dp(32)
         speedChip.setOnClickListener { listener?.onCycleSpeed() }
         speedChip.addView(iconView(NativePlayerIcons.ICON_SPEED, 20f), lp(dp(20), dp(20)))
         speedLabel.setTextColor(NPTheme.WHITE_70)
@@ -854,10 +863,13 @@ class NativePlayerScreenView(
         kernelChip.setTextColor(Color.WHITE)
         kernelChip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         kernelChip.gravity = Gravity.CENTER
+        kernelChip.includeFontPadding = false
         kernelChip.setPadding(dp(9), dp(6), dp(9), dp(6))
         kernelChip.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         kernelChip.background = chipBackground(false)
         kernelChip.isClickable = true
+        // 与图标胶囊同高（32dp）：内容不同的芯片各自成高 → 高低不齐。
+        kernelChip.minimumHeight = dp(32)
         kernelChip.setOnClickListener { openPanel(PANEL_KERNEL) }
         topTail.addView(kernelChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
 
@@ -947,85 +959,36 @@ class NativePlayerScreenView(
         chip.setTextColor(Color.WHITE)
         chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
         chip.gravity = Gravity.CENTER
+        chip.includeFontPadding = false
         chip.setPadding(dp(6), dp(6), dp(6), dp(6))
         chip.background = chipBackground(false)
         chip.isClickable = true
+        // 统一最小高（照抄鸿蒙 Chip/IconChip 观感一致）：文本芯片与图标
+        // 芯片内容高度不同 → 各自成高，同排高低不齐（截图回归）。
+        chip.minimumHeight = dp(32)
     }
 
     // ── 交互绑定（可重入：手机 ↔ TV 切换时重建布局后重绑）──────────
 
     /**
-     * 进度条样式（与 Flutter glass slider / NativePlayerTheme 对齐）：
-     * 6dp 圆角轨（未播 WHITE_24 / 已播 ACCENT）+ 8dp 半径 ACCENT 圆点拇指，
-     * 拇指外套 ACCENT_SOFT 光晕环。系统默认 SeekBar 是粗灰条，观感差异极大。
+     * 进度条：拖动预览时间数显、松手回传 seek。
+     *
+     * 玻璃滑杆自带绘制（[GlassSeekBarView]），此处只接值映射回调：
+     * 值即毫秒（无 SEEK_STEPS 换算），拖动中 `onChanged` 预览、抬手
+     * `onCommit` 一次性 seek。
      */
-    private fun applySeekBarStyle() {
-        val trackH = dp(NPTheme.SEEK_TRACK)
-        val thumbD = dp(NPTheme.SEEK_THUMB * 2)
-        val glowD = thumbD + dp(8)
-        val bg = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = trackH / 2f
-            setColor(NPTheme.WHITE_24)
-        }
-        val fg = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = trackH / 2f
-            setColor(NPTheme.ACCENT)
-        }
-        val track = LayerDrawable(
-            arrayOf<Drawable>(bg, ClipDrawable(fg, Gravity.START, ClipDrawable.HORIZONTAL)),
-        )
-        track.setId(0, android.R.id.background)
-        track.setId(1, android.R.id.progress)
-        val inset = (glowD - trackH) / 2
-        for (i in 0..1) {
-            track.setLayerInsetTop(i, inset)
-            track.setLayerInsetBottom(i, inset)
-        }
-        val glow = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(NPTheme.ACCENT_SOFT)
-            setSize(glowD, glowD)
-        }
-        val core = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(NPTheme.ACCENT)
-            setSize(thumbD, thumbD)
-        }
-        val pad = (glowD - thumbD) / 2
-        val thumb = LayerDrawable(arrayOf<Drawable>(glow, core))
-        thumb.setLayerInset(1, pad, pad, pad, pad)
-        seekBar.progressDrawable = track
-        seekBar.thumb = thumb
-        seekBar.splitTrack = false
-        // 防裁切（真机回归：progress=0 时光晕 12dp 伸到左边界外被裁）：
-        // 内边距 = 光晕半径（12dp），thumb 中心不再贴边；minHeight ≥ 光晕高。
-        seekBar.setPadding(dp(12), 0, dp(12), 0)
-        seekBar.minimumHeight = dp(NPTheme.SEEK_THUMB * 2 + 8)
-    }
-
-    /** 进度条：拖动预览时间数显、松手回传 seek。 */
     private fun configureSeekListeners() {
-        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                dragging = true
-                val target = progressToMs(progress, lastState.durationMs)
-                positionLabel.text = AndroidNativePlayerState.formatPlayerTime(target)
-                scheduleAutoHide()
-            }
-
-            override fun onStartTrackingTouch(bar: SeekBar) {
-                dragging = true
-            }
-
-            override fun onStopTrackingTouch(bar: SeekBar) {
-                dragging = false
-                listener?.onSeek(progressToMs(bar.progress, lastState.durationMs))
-                scheduleAutoHide()
-            }
-        })
+        seekBar.step = 1000f // 1s 吸附（同鸿蒙 ProgressRow step: 1000）
+        seekBar.onChanged = { v ->
+            dragging = true
+            positionLabel.text = AndroidNativePlayerState.formatPlayerTime(v.toLong())
+            scheduleAutoHide()
+        }
+        seekBar.onCommit = { v ->
+            dragging = false
+            listener?.onSeek(v.toLong())
+            scheduleAutoHide()
+        }
         // TV 长按进度条 → 片头片尾标记卡片（与 Flutter onLongPress 一致）。
         seekBar.setOnLongClickListener {
             if (lastState.segmentEnabled && lastState.tvMode) {
@@ -1086,8 +1049,8 @@ class NativePlayerScreenView(
                 } else {
                     base
                 }
-                v.scaleX = if (hasFocus) 1.1f else 1.0f
-                v.scaleY = if (hasFocus) 1.1f else 1.0f
+                // 【不改几何】焦点只画环（照抄鸿蒙 BORDER_FOCUS）：旧实现
+                // scaleX/Y 1.1 会连带放大命中区 → 焦点态相邻控件误触。
             }
         }
     }
@@ -1099,6 +1062,8 @@ class NativePlayerScreenView(
         buttonRow.removeAllViews()
         leadingSlot.removeAllViews()
         leadingGroup.removeAllViews()
+        // 跳过胶囊内容重建（子视图复用，不清会在重排时重复 addView 抛异常）。
+        skipPromptChip.removeAllViews()
         transportGroup.removeAllViews()
         trailingBox.removeAllViews()
         trailingGroup.removeAllViews()
@@ -1133,13 +1098,14 @@ class NativePlayerScreenView(
         positionLabel.text = "00:00"
         seekRow.addView(positionLabel, lp(dp(NPTheme.TIME_CELL), dp(40)))
 
-        seekBar.max = SEEK_STEPS
-        seekBar.progress = 0
+        // 玻璃滑杆（自绘，GlassSeekBarView）：值即毫秒，范围随状态推进设置。
+        seekBar.minValue = 0f
+        seekBar.maxValue = 1f
+        seekBar.value = 0f
         seekBar.isEnabled = false
-        applySeekBarStyle()
         seekRow.addView(
             seekBar,
-            LinearLayout.LayoutParams(0, dp(NPTheme.SEEK_THUMB * 2 + 8), 1f).also {
+            LinearLayout.LayoutParams(0, dp(28), 1f).also {
                 it.marginStart = dp(8)
                 it.marginEnd = dp(8)
             },
@@ -1152,9 +1118,11 @@ class NativePlayerScreenView(
         seekRow.addView(durationLabel, lp(dp(NPTheme.TIME_CELL), dp(40)))
         bottomBar.addView(seekRow, lp(LayoutParams.MATCH_PARENT, dp(40)))
 
-        // leading 组（锁钮）
+        // leading 组（锁钮）：定宽 = 时间数显列宽（56/78），锁钮**列内居中**
+        // （照抄鸿蒙 ControlRow：width=cellW + textAlign Center，与进度条左
+        // 数显同轴）。旧实现 44dp 钮左贴 → 视觉偏左下（截图回归）。
         leadingGroup.orientation = LinearLayout.HORIZONTAL
-        leadingGroup.gravity = Gravity.CENTER_VERTICAL
+        leadingGroup.gravity = Gravity.CENTER
         lockButton.text = String(Character.toChars(NativePlayerIcons.ICON_LOCK))
         lockButton.typeface = NativePlayerIcons.typeface(context)
         lockButton.setTextColor(Color.WHITE)
@@ -1165,7 +1133,39 @@ class NativePlayerScreenView(
         lockButton.isClickable = true
         lockButton.setOnClickListener { listener?.onToggleLock() }
         applyPressFeedback(lockButton)
-        leadingGroup.addView(lockButton, lp(dp(44), dp(44)))
+        leadingGroup.addView(lockButton, lp(LayoutParams.MATCH_PARENT, dp(44)))
+
+        // 跳过片头/片尾胶囊（照抄鸿蒙 ControlRow leading 槽：圆角 14 /
+        // padding h12 v8 / 图标 20 + 6 + 13sp w600 / 玻璃底 #8C000000 /
+        // 宽上限 132dp 防撑行）。显隐由 Dart skipPrompt 推送驱动（8 秒
+        // 自动消失、章节/手动标记解析），点击回传 skipSegment。
+        skipPromptChip.orientation = LinearLayout.HORIZONTAL
+        skipPromptChip.gravity = Gravity.CENTER_VERTICAL
+        skipPromptChip.setPadding(dp(12), dp(8), dp(12), dp(8))
+        skipPromptChip.background = glassBackground(14, 0x8C000000.toInt())
+        skipPromptChip.isClickable = true
+        skipPromptChip.setOnClickListener {
+            listener?.onSkipSegment()
+            scheduleAutoHide()
+        }
+        applyPressFeedback(skipPromptChip)
+        skipPromptIcon.typeface = NativePlayerIcons.typeface(context)
+        skipPromptIcon.setTextColor(Color.WHITE)
+        skipPromptIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        skipPromptIcon.includeFontPadding = false
+        skipPromptChip.addView(skipPromptIcon, lp(dp(20), dp(20)))
+        skipPromptLabel.setTextColor(Color.WHITE)
+        skipPromptLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        skipPromptLabel.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        skipPromptLabel.maxWidth = dp(132)
+        skipPromptChip.addView(
+            skipPromptLabel,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).also { it.marginStart = dp(6) },
+        )
+        skipPromptChip.visibility = GONE
 
         // transport 组（上一集 / 播放暂停 / 下一集）
         transportGroup.orientation = LinearLayout.HORIZONTAL
@@ -1273,6 +1273,15 @@ class NativePlayerScreenView(
         leadingSlot.gravity = Gravity.CENTER_VERTICAL
         leadingSlot.addView(leadingGroup)
         leadingGroup.layoutParams = LinearLayout.LayoutParams(dp(NPTheme.TIME_CELL), dp(44))
+        // 跳过胶囊挂在锁钮列后（同鸿蒙 leading 槽顺序）。
+        leadingSlot.addView(
+            skipPromptChip,
+            llp(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                8,
+            ),
+        )
         leadingSlot.layoutParams = LinearLayout.LayoutParams(
             0,
             dp(NPTheme.TRANSPORT_PLAY),
@@ -1334,6 +1343,8 @@ class NativePlayerScreenView(
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.CONTROL_ICON.toFloat())
             gravity = Gravity.CENTER
+            // 关字体留白：与传输组按钮一致（鸿蒙 TransportGlyph/IconChip 无
+            // fontPadding）——不关时字形基线偏移 → 底栏图标高低不齐（截图回归）。
             includeFontPadding = false
             setPadding(0, 0, 0, 0)
             isClickable = true
@@ -1382,16 +1393,11 @@ class NativePlayerScreenView(
      * Positioned(right: -6, top: -4)）。32dp 命中框内图标 24dp 居中，
      * 换算到命中框坐标为 top=0 / marginEnd=-2。
      *
-     * 尺寸为**正方形**（正圆底），边长按实测文本宽 + 4dp 内边距，下限 14dp。
+     * 尺寸为**正方形**（正圆底），边长按鸿蒙 `badgeSide` 阶梯取值
+     * （1~2 位 14dp，3 位起 18dp）——与鸿蒙 BadgeIconChip 逐项同值。
      */
     private fun badgeLayoutParams(badge: TextView, text: String): LayoutParams {
-        val sideDp = if (text.isEmpty()) {
-            NPTheme.BADGE_MIN
-        } else {
-            val textPx = badge.paint.measureText(text)
-            val withPad = textPx / resources.displayMetrics.density + 4f
-            maxOf(NPTheme.BADGE_MIN.toFloat(), withPad).toInt()
-        }
+        val sideDp = if (text.length >= 3) NPTheme.BADGE_MIN + 4 else NPTheme.BADGE_MIN
         return LayoutParams(dp(sideDp), dp(sideDp), Gravity.TOP or Gravity.END).apply {
             topMargin = 0
             marginEnd = -dp(2)
@@ -1640,7 +1646,8 @@ class NativePlayerScreenView(
         onSelect: (Int) -> Unit,
     ) {
         val items = ArrayList<Pair<String, Pair<Int, Boolean>>>()
-        if (allowOff) items.add("关闭" to (0 to (selectedId == 0)))
+        // 对齐 Flutter SubtitleMenuPanel：「关闭字幕」。
+        if (allowOff) items.add("关闭字幕" to (0 to (selectedId == 0)))
         tracks.forEach { items.add(it.displayLabel to (it.id to it.selected)) }
         val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         items.forEach { (label, meta) ->
@@ -2287,7 +2294,11 @@ class NativePlayerScreenView(
             rebuildBars()
         }
 
-        titleText.text = state.displayTitle
+        // 竖屏隐藏标题（照抄鸿蒙：竖屏可用宽窄，标题会被尾簇压成「…」；
+        // 空文本 + 取消保底宽，仍占权重防尾簇左移贴返回键）。
+        val portrait = height > width
+        titleText.text = if (portrait) "" else state.displayTitle
+        titleText.minimumWidth = if (portrait) 0 else dp(NPTheme.TITLE_MIN_WIDTH)
         speedLabel.text = trimSpeed(state.speed)
         bottomSpeedLabel.text = trimSpeed(state.speed)
         kernelChip.text = state.engineLabel
@@ -2347,6 +2358,9 @@ class NativePlayerScreenView(
             state.danmakuSpeed,
             state.danmakuFontSize,
             state.danmakuOpacity,
+            state.danmakuScrollRows,
+            state.danmakuTopRows,
+            state.danmakuBottomRows,
         )
 
         // 时间数显
@@ -2354,12 +2368,10 @@ class NativePlayerScreenView(
             val pos = state.positionAt(now, lastStateAtMs)
             positionLabel.text = AndroidNativePlayerState.formatPlayerTime(pos)
             danmakuLayer.setClock(pos, state.paused)
-            seekBar.progress =
-                if (state.durationMs > 0) {
-                    ((pos * SEEK_STEPS) / state.durationMs).toInt().coerceIn(0, SEEK_STEPS)
-                } else {
-                    0
-                }
+            // 玻璃滑杆：值即毫秒（玻璃滑杆内部完成 ratio 映射，无步进换算）。
+            seekBar.minValue = 0f
+            seekBar.maxValue = state.durationMs.toFloat().coerceAtLeast(1f)
+            seekBar.value = pos.toFloat()
         }
         durationLabel.text = AndroidNativePlayerState.formatPlayerTime(state.durationMs.toLong())
         seekBar.isEnabled = !state.isLiveLike
@@ -2410,6 +2422,21 @@ class NativePlayerScreenView(
         displayAdjustButton?.visibility = if (tv) VISIBLE else GONE
         panelToggleButton.visibility = if (state.isRoom) VISIBLE else GONE
 
+        // 跳过片头/片尾胶囊（照抄鸿蒙 ControlRow）：图标/文案随 intro/outro
+        // 切换，显隐由 Dart skipPrompt + segmentEnabled 驱动。
+        if (state.skipPrompt.isNotEmpty()) {
+            val intro = state.skipPrompt == "intro"
+            skipPromptIcon.text = String(
+                Character.toChars(
+                    if (intro) NativePlayerIcons.ICON_SKIP_NEXT
+                    else NativePlayerIcons.ICON_SKIP_PREVIOUS,
+                ),
+            )
+            skipPromptLabel.text = if (intro) "跳过片头" else "跳过片尾"
+        }
+        skipPromptChip.visibility =
+            if (state.skipPrompt.isNotEmpty() && state.segmentEnabled) VISIBLE else GONE
+
         // 版本/选集按钮：非房间且多版本/多集才显示（与 Flutter 显隐条件一致）
         versionButton?.visibility =
             if (!state.isRoom && state.versions.size > 1) VISIBLE else GONE
@@ -2457,6 +2484,7 @@ class NativePlayerScreenView(
             diagText.visibility = GONE
             transportGroup.visibility = GONE
             trailingGroup.visibility = GONE
+            skipPromptChip.visibility = GONE
             leadingGroup.visibility = VISIBLE
             lockButton.text = String(Character.toChars(NativePlayerIcons.ICON_LOCK))
             // 锁定中不允许面板（Flutter 面板层带 !locked 条件）。
@@ -2570,11 +2598,6 @@ class NativePlayerScreenView(
     private fun trimSpeed(speed: Double): String {
         val rounded = Math.round(speed * 10.0) / 10.0
         return "${rounded}x"
-    }
-
-    private fun progressToMs(progress: Int, durationMs: Int): Long {
-        if (durationMs <= 0) return 0
-        return (progress.toLong() * durationMs) / SEEK_STEPS
     }
 
     /**

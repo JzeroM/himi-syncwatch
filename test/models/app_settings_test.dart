@@ -1088,7 +1088,7 @@ void main() {
       );
     });
 
-    test('弹幕字段默认值（默认开 / 滚动上限 30 / 上限 500 / 大小 0.5 / 透明度 0.6）', () {
+    test('弹幕字段默认值（默认开 / 滚动上限 30 / 上限 500 / 速度 0.7 / 大小 0.5）', () {
       const s = AppSettings();
       expect(s.danmakuDefaultOn, isTrue);
       expect(s.danmakuApiUrl, '');
@@ -1100,9 +1100,27 @@ void main() {
       expect(s.danmakuBlockWords, '');
       expect(s.danmakuLimitCount, isFalse);
       expect(s.danmakuMaxCount, 500);
-      expect(s.danmakuSpeed, 1.0);
+      expect(s.danmakuSpeed, 0.7);
       expect(s.danmakuFontSize, 0.5);
       expect(s.danmakuOpacity, 0.8);
+    });
+
+    test('弹幕速度迁移：旧默认 1.0 → 0.7，其余值保留', () {
+      // 强制迁移（用户确认）：无「是否手动设过」记录，存值恰为旧默认 1.0
+      // 的一并迁到 0.7；其它用户所选值不动；缺字段走新默认 0.7。
+      expect(
+        AppSettings.fromJson(const {'danmakuSpeed': 1.0}).danmakuSpeed,
+        0.7,
+      );
+      expect(
+        AppSettings.fromJson(const {'danmakuSpeed': 1.5}).danmakuSpeed,
+        1.5,
+      );
+      expect(
+        AppSettings.fromJson(const {'danmakuSpeed': 0.7}).danmakuSpeed,
+        0.7,
+      );
+      expect(AppSettings.fromJson(const {}).danmakuSpeed, 0.7);
     });
 
     test('旧数据缺弹幕字段回退默认', () {

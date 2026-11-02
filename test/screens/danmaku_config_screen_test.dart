@@ -243,7 +243,7 @@ void main() {
       expect(s.danmakuBlockWords, '');
       expect(s.danmakuLimitCount, isFalse);
       expect(s.danmakuMaxCount, 500);
-      expect(s.danmakuSpeed, 1.0);
+      expect(s.danmakuSpeed, 0.7);
       // 地址/屏蔽词输入框内容已随恢复默认清空（controller 归 State 所有，
       // 懒卸载不影响；此处以 settings 落盘值为准）
       expect(s.danmakuApiUrl, isEmpty);
