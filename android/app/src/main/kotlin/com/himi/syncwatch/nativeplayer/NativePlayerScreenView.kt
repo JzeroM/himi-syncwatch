@@ -208,10 +208,14 @@ class NativePlayerScreenView(
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     // 对齐鸿蒙 pressedFeedback：opacity 0.5 + scale 0.92。
+                    // 先 cancel：applyState 的 500ms 重建会打断进行中的动画
+                    //（残留半透明/缩放，观感像「控件没反应」）。
+                    v.animate().cancel()
                     v.animate().alpha(0.5f).scaleX(0.92f).scaleY(0.92f)
                         .setDuration(90).start()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.animate().cancel()
                     v.animate().alpha(1f).scaleX(1f).scaleY(1f)
                         .setDuration(120).start()
                 }
@@ -333,19 +337,24 @@ class NativePlayerScreenView(
         isClickable = true
         setBackgroundColor(Color.TRANSPARENT)
         setOnClickListener {
+            // 长按手势（片头片尾标记/倍速）结束后 GestureDetector 仍会派发
+            // tap → 会把刚弹出的片头片尾卡立刻收走（真机回归「面板弹出就
+            // 自动收回」）。长按后短窗内忽略 tap。
+            if (System.currentTimeMillis() < suppressTapUntilMs) return@setOnClickListener
+            // 锁定态点屏不显示顶栏（Flutter：只浮现左缘解锁钮）。
+            if (lastState.locked) return@setOnClickListener
             if (activePanel != null) {
                 closePanel()
                 return@setOnClickListener
             }
-            if (segmentCardOpen) {
-                segmentCardOpen = false
-                segmentConfirmKind = null
-                renderOverlays()
-                return@setOnClickListener
-            }
+            // 片头片尾卡的关闭只由 segmentScrim 点击负责（这里不再处理，
+            // 否则开卡手势自带的 tap 会立刻把它关掉）。
             setControlsVisible(!controlsVisible)
         }
     }
+
+    /** 长按结束后抑制 tap 的截止时刻（防同一手势的 tap 关掉刚开的面板）。 */
+    private var suppressTapUntilMs = 0L
 
     // ── 手势识别 ────────────────────────────────────────────────
 
@@ -574,6 +583,8 @@ class NativePlayerScreenView(
             override fun onLongPress(e: MotionEvent) {
                 if (lastState.locked || !lastState.canControl) return
                 if (lastState.tvMode || activePanel != null) return
+                // 长按手势结束会派发 tap：抑制紧随的 tap（防关掉刚开的卡）。
+                suppressTapUntilMs = System.currentTimeMillis() + 500
                 if (lastState.segmentEnabled) {
                     if (e.x < width / 3f) {
                         markSegmentFromGesture("intro")
@@ -930,7 +941,9 @@ class NativePlayerScreenView(
         speedChip.isClickable = true
         // 与玻璃胶囊同高（32dp），同排芯片高低一致（截图回归）。
         speedChip.minimumHeight = dp(32)
-        speedChip.setOnClickListener { listener?.onCycleSpeed() }
+        // 点击弹倍速面板（对齐 Flutter SpeedMenuPanel 入口；旧实现循环切换
+        // 无面板 →「倍速控件缺少弹出面板」）。
+        speedChip.setOnClickListener { openPanel(PANEL_SPEED) }
         speedChip.addView(iconView(NativePlayerIcons.ICON_SPEED, 20f), lp(dp(20), dp(20)))
         speedLabel.setTextColor(NPTheme.WHITE_70)
         speedLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
@@ -1074,6 +1087,7 @@ class NativePlayerScreenView(
         // TV 长按进度条 → 片头片尾标记卡片（与 Flutter onLongPress 一致）。
         seekBar.setOnLongClickListener {
             if (lastState.segmentEnabled && lastState.tvMode) {
+                suppressTapUntilMs = System.currentTimeMillis() + 500
                 segmentCardOpen = true
                 segmentConfirmKind = null
                 renderOverlays()
@@ -1488,6 +1502,9 @@ class NativePlayerScreenView(
 
     /** 角标刷新表（TextView → 数量提供者）。 */
     private val badgeTags = HashMap<TextView, () -> String?>()
+
+    /** 角标上次文本（数值不变则跳过 layoutParams 重算，防 500ms 抖动）。 */
+    private val badgeLastText = HashMap<TextView, String?>()
 
 
     /** 传输组按钮（上一集/播放/下一集）。 */
@@ -1996,6 +2013,10 @@ class NativePlayerScreenView(
     private fun resetRow(scope: String, isDefault: Boolean): View =
         optionRow("恢复默认", isDefault) {
             listener?.onResetDisplay(scope)
+            // 面板内容签名不含显示调节数值（防拖动重建）→ 恢复默认后显式
+            // 强制重建一次，滑杆/数值回默认位。
+            overlayContentSig = ""
+            renderOverlays()
             scheduleAutoHide()
         }
 
@@ -2489,12 +2510,16 @@ class NativePlayerScreenView(
         }
         prevButton.setTextColor(if (hasPrevEp) Color.WHITE else NPTheme.WHITE_24)
         nextButton.setTextColor(if (hasNextEp) Color.WHITE else NPTheme.WHITE_24)
-        prevButton.isEnabled = multiEpisode && hasPrevEp
-        nextButton.isEnabled = multiEpisode && hasNextEp
+        // 【不禁用】isEnabled=false 的 View 不触发 onClick（真机回归「播放/
+        // 上下集点了没反应」）：颜色置灰表达不可用，点击仍有按下反馈、
+        // onClick 内部条件守卫不执行动作（对齐 Flutter TransportGlyph）。
 
-        // 角标
+        // 角标：仅数值变化时重算尺寸/重排（旧实现每 500ms 重设 layoutParams
+        // → 角标视觉抖动，与其他引擎观感不一致）。
         badgeTags.forEach { (badge, provider) ->
             val text = provider()
+            if (badgeLastText[badge] == text) return@forEach
+            badgeLastText[badge] = text
             badge.text = text ?: ""
             badge.visibility = if (text.isNullOrEmpty()) GONE else VISIBLE
             badge.layoutParams = badgeLayoutParams(badge, text.orEmpty())
@@ -2522,12 +2547,17 @@ class NativePlayerScreenView(
             positionLabel.text = AndroidNativePlayerState.formatPlayerTime(pos)
             danmakuLayer.setClock(pos, state.paused)
             // 玻璃滑杆：值即毫秒（玻璃滑杆内部完成 ratio 映射，无步进换算）。
-            seekBar.minValue = 0f
-            seekBar.maxValue = state.durationMs.toFloat().coerceAtLeast(1f)
-            seekBar.value = pos.toFloat()
+            // durationMs 未就绪（起播早期为 0）时不覆盖 value（防归零抖动）。
+            if (state.durationMs > 0) {
+                seekBar.minValue = 0f
+                seekBar.maxValue = state.durationMs.toFloat()
+                seekBar.value = pos.toFloat()
+            }
         }
         durationLabel.text = AndroidNativePlayerState.formatPlayerTime(state.durationMs.toLong())
-        seekBar.isEnabled = !state.isLiveLike
+        // 恒可触摸（真机回归「进度条拖不动」）：旧实现 `!isLiveLike`（duration<=0
+        // 即禁用）把起播早期的滑杆锁死；空范围由 GlassSeekBarView 自守卫。
+        seekBar.isEnabled = true
 
         // 诊断行
         val diag = buildDiag(state)
@@ -2540,11 +2570,25 @@ class NativePlayerScreenView(
         // TV / 手机布局差异
         applyLayoutMode(state)
 
-        // 面板开着时重建（高亮跟随）
+        // 面板开着时按内容签名重建（高亮跟随）。签名**不含显示调节数值**：
+        // 否则拖滑杆时每帧变签名 → 面板每帧重建打断拖动（真机回归）；
+        // 旧实现每 500ms 无条件重建 → 拖动被打断、TV 焦点丢。
         if (activePanel != null || segmentCardOpen) {
-            renderOverlays()
+            val sig = "$activePanel|$segmentCardOpen|$segmentConfirmKind|" +
+                "${lastState.selectedAudioId}|${lastState.selectedSubtitleId}|" +
+                "${lastState.tracks.size}|${lastState.engineLabel}|" +
+                "${lastState.versions.size}|${lastState.currentVersionIndex}|" +
+                "${lastState.episodes.size}|${lastState.currentEpisodeIndex}|" +
+                "${lastState.segmentIntroEndMs}|${lastState.segmentOutroStartMs}"
+            if (sig != overlayContentSig) {
+                overlayContentSig = sig
+                renderOverlays()
+            }
         }
     }
+
+    /** 面板内容签名（见 applyState：仅签名变化才重建面板）。 */
+    private var overlayContentSig = ""
 
     private fun applyLayoutMode(state: AndroidNativePlayerState) {
         val tv = state.tvMode
@@ -2631,6 +2675,8 @@ class NativePlayerScreenView(
         // 只留锁钮（与时间数显同列）、进度条/Logo/面板全关。
         if (!tv && state.locked) {
             topBar.visibility = GONE
+            // 底栏不藏：锁定态锁钮在底栏 leading 槽（对齐 Flutter
+            // _buildLockOnlyControls 只留锁钮）。
             seekRow.visibility = GONE
             logoImage.visibility = GONE
             logoSpacer.visibility = GONE

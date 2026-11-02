@@ -152,14 +152,15 @@ class GlassBackdropDrawable(
             }
         }
 
-        // tint 渐变（Flutter GlassConfig：tint → tint → tint×0.72）。
-        val ta = (NPTheme.PANEL_TINT ushr 24) and 0xFF
+        // tint 渐变（逐值对齐 Flutter GlassContainer：`lerp(tint, white, 0.06)`
+        // → tint → `tint.a × 0.72`，竖向三段；玻璃观感与 MDK 引擎的
+        // Flutter 弹层一致）。
         tintPaint.shader = LinearGradient(
             0f, rect.top, 0f, rect.bottom,
             intArrayOf(
-                Color.argb(((ta * 1.15).toInt()).coerceAtMost(255), 0x24, 0x27, 0x2D),
+                0x2C282B30, // lerp(0x1F1A1D23, white, 0.06)
                 NPTheme.PANEL_TINT,
-                Color.argb((ta * 0.72).toInt(), 0x1A, 0x1D, 0x23),
+                0x161A1D23, // 0x1F1A1D23 alpha×0.72
             ),
             null as FloatArray?,
             Shader.TileMode.CLAMP,

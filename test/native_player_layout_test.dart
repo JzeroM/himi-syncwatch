@@ -1279,7 +1279,9 @@ void main() {
     test('字幕/音轨命名对齐 Emby displayInfo（禁裸 mpv title/lang）', () {
       // Dart 注入 Emby 显示名（与 Flutter 字幕/音轨菜单同源）。
       expect(screen, contains('.map((s) => s.displayInfo)'));
-      expect(adapter, contains('t.withLabel(label)'));
+      // 轨 label 直接由 Emby displayInfo 列表生成（_panelTracksFromEmby；
+      // 旧 t.withLabel 挂载链已并入生成逻辑）。
+      expect(adapter, contains('label: _nativeAudioLabels[i]'));
       // 原生命名优先 label，回退 title/lang（两端一致）。
       expect(ohosPanel, contains('if (t.label.length > 0) return t.label;'));
       expect(kotlinState, contains('label.isNotBlank() -> label'));
@@ -1456,6 +1458,82 @@ void main() {
       expect(list, contains('PlayerEngine.mpv'));
       expect(list, isNot(contains('mediaKit')),
           reason: 'libmpv 引擎选项已移除（与原生 MPV 共用 libmpv，仅去掉纹理路径选项）');
+    });
+  });
+
+  group('真机回归 584（MPV 控制层九项回归修复）', () {
+    final kotlinScreen = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerScreenView.kt',
+    ).readAsStringSync();
+    final glassSeek = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'GlassSeekBarView.kt',
+    ).readAsStringSync();
+    final glassBackdrop = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'GlassBackdrop.kt',
+    ).readAsStringSync();
+    final adapter =
+        File('lib/services/player/mpv_player_adapter.dart').readAsStringSync();
+    final screen = File('lib/screens/player/player_screen.dart').readAsStringSync();
+
+    test('进度条恒可触摸（durationMs=0 时禁用 → 拖不动，真机回归）', () {
+      expect(kotlinScreen, contains('seekBar.isEnabled = true'));
+      expect(kotlinScreen, isNot(contains('seekBar.isEnabled = !state.isLiveLike')));
+      // 空范围自守卫：不回调但触摸响应。
+      expect(glassSeek, contains('if (maxValue <= minValue)'));
+    });
+
+    test('传输组不禁用（disabled 不触发 onClick → 点了没反应）', () {
+      expect(kotlinScreen, isNot(contains('prevButton.isEnabled =')),
+          reason: 'isEnabled=false 的 View 不触发 onClick');
+      expect(kotlinScreen, isNot(contains('nextButton.isEnabled =')));
+      // 按下反馈动画先 cancel（防 applyState 重建打断留残影）。
+      expect(kotlinScreen, contains('v.animate().cancel()'));
+    });
+
+    test('倍速点击弹面板（旧实现只循环切换，手机无面板入口）', () {
+      expect(kotlinScreen, contains('speedChip.setOnClickListener { openPanel(PANEL_SPEED) }'));
+      expect(kotlinScreen, isNot(contains('speedChip.setOnClickListener { listener?.onCycleSpeed() }')));
+    });
+
+    test('字幕/音轨面板用 Emby 列表（不依赖 mpv track-list 事件）', () {
+      expect(adapter, contains('_panelTracksFromEmby()'));
+      expect(adapter, isNot(contains('_nativeTracksFromRaw(_lastTrackListRaw)')));
+      // 命令 id 约定统一：id = Emby 索引 + 1（SelectAudio 旧实现不减 1 → 错位）。
+      expect(screen, contains('if (id > 0) _selectEmbyAudio(id - 1);'));
+    });
+
+    test('锁定态点屏不再闪现顶栏（tap 抑制 + 顶栏 GONE）', () {
+      expect(kotlinScreen, contains('if (lastState.locked) return@setOnClickListener'));
+      final locked = RegExp(r'if \(!tv && state\.locked\) \{[\s\S]{0,120}topBar\.visibility = GONE')
+          .firstMatch(kotlinScreen);
+      expect(locked, isNotNull);
+    });
+
+    test('片头片尾卡不被紧随 tap 收走（长按抑制窗）', () {
+      expect(kotlinScreen, contains('suppressTapUntilMs'));
+      // tap 层不再关闭 segmentCard（关闭只由 scrim 负责）。
+      final tap = RegExp(r'setOnClickListener \{[\s\S]{0,700}?setControlsVisible\(!controlsVisible\)')
+          .firstMatch(kotlinScreen);
+      expect(tap, isNotNull);
+      expect(tap!.group(0), isNot(contains('segmentCardOpen = false')));
+    });
+
+    test('面板按内容签名重建（旧实现每 500ms 重建打断拖动）', () {
+      expect(kotlinScreen, contains('overlayContentSig'));
+      expect(kotlinScreen, contains('if (sig != overlayContentSig)'));
+    });
+
+    test('角标值缓存（防 500ms layoutParams 重算抖动）', () {
+      expect(kotlinScreen, contains('badgeLastText'));
+      expect(kotlinScreen, contains('if (badgeLastText[badge] == text) return@forEach'));
+    });
+
+    test('面板 tint 渐变逐值对齐 Flutter GlassContainer', () {
+      expect(glassBackdrop, contains('0x2C282B30'));
+      expect(glassBackdrop, contains('0x161A1D23'));
     });
   });
 

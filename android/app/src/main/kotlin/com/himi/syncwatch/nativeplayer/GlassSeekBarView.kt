@@ -239,7 +239,9 @@ class GlassSeekBarView(context: Context) : View(context) {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (dragging) {
                     dragging = false
-                    onCommit?.invoke(value)
+                    if (maxValue > minValue) {
+                        onCommit?.invoke(value)
+                    }
                 }
                 parent?.requestDisallowInterceptTouchEvent(false)
                 return true
@@ -251,6 +253,13 @@ class GlassSeekBarView(context: Context) : View(context) {
     /** 触点 → 值（与拇指定位同基准）→ 拖动回调 + 重绘。 */
     private fun emit(x: Float) {
         val trackW = max(0f, width - 2f * padPx)
+        if (maxValue <= minValue) {
+            // 范围未就绪（起播早期 duration=0）：钳到 min 但不回调
+            //（无意义 seek），触摸仍响应（真机回归「进度条拖不动」）。
+            value = minValue
+            invalidate()
+            return
+        }
         value = snapValue(x, trackW, padPx, minValue, maxValue, step)
         onChanged?.invoke(value)
         invalidate()

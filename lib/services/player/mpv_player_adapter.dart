@@ -1792,9 +1792,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       tvMode: _nativeUiExtras.tvMode,
       audioStreamCount: _nativeUiExtras.audioStreamCount,
       subtitleStreamCount: _nativeUiExtras.subtitleStreamCount,
-      tracks: _nativeTracksWithLabels(_nativeTracksFromRaw(_lastTrackListRaw)),
-      selectedAudioId: _selectedTrackId(_lastTrackListRaw, 'audio'),
-      selectedSubtitleId: _selectedTrackId(_lastTrackListRaw, 'sub'),
+      tracks: _panelTracksFromEmby(),
+      selectedAudioId: _panelSelectedId(_activeAudioTracks),
+      selectedSubtitleId: _panelSelectedId(_activeSubtitleTracks),
       episodes: _nativeEpisodes,
       versions: _nativeVersions,
       currentEpisodeIndex: _nativeCurrentEpisodeIndex,
@@ -1803,62 +1803,36 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     );
   }
 
-  /// 从 track-list JSON 里找指定类型当前 `selected` 的 mpv track id（无则 0）。
+  /// 面板轨道列表：**全部由 Emby 流生成**（真机回归「字幕/音轨面板没对接
+  /// 选项」：旧实现依赖 mpv `track-list` 属性事件，事件不送达则恒空）。
   ///
-  /// 面板高亮用：原生 UI 据此标出「当前音轨/字幕」。
-  static int _selectedTrackId(String? raw, String type) {
-    if (raw == null || raw.isEmpty) return 0;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) return 0;
-      for (final t in decoded) {
-        if (t is! Map) continue;
-        if (t['type'] == type && t['selected'] == true) {
-          final id = t['id'];
-          if (id is int) return id;
-        }
-      }
-    } catch (_) {}
-    return 0;
+  /// 约定与原生命令一致：`id = Emby 索引 + 1`（0 = 关闭字幕），
+  /// `selected` 由 Dart 侧 [_activeAudioTracks]/[_activeSubtitleTracks] 判定。
+  List<NativeTrack> _panelTracksFromEmby() {
+    final out = <NativeTrack>[];
+    for (var i = 0; i < _nativeAudioLabels.length; i++) {
+      out.add(NativeTrack(
+        id: i + 1,
+        type: 'audio',
+        label: _nativeAudioLabels[i],
+        selected: _activeAudioTracks.isNotEmpty && _activeAudioTracks.first == i,
+      ));
+    }
+    for (var i = 0; i < _nativeSubtitleLabels.length; i++) {
+      out.add(NativeTrack(
+        id: i + 1,
+        type: 'sub',
+        label: _nativeSubtitleLabels[i],
+        selected:
+            _activeSubtitleTracks.isNotEmpty && _activeSubtitleTracks.first == i,
+      ));
+    }
+    return out;
   }
 
-  /// track-list JSON → [NativeTrack] 列表（解析失败返回空）。
-  static List<NativeTrack> _nativeTracksFromRaw(String? raw) {
-    if (raw == null || raw.isEmpty) return const <NativeTrack>[];
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) return const <NativeTrack>[];
-      return decoded
-          .whereType<Map>()
-          .map((t) => NativeTrack.fromJson(t.map(
-                (k, v) => MapEntry(k.toString(), v),
-              )))
-          .toList(growable: false);
-    } catch (_) {
-      return const <NativeTrack>[];
-    }
-  }
-
-  /// 给 mpv 轨挂 Emby 显示名：mpv track id → Emby 流序（[_audioTrackIds] 与
-  /// Emby 流数组同序）→ label。映射不到保留原轨（原生回退 title/lang）。
-  List<NativeTrack> _nativeTracksWithLabels(List<NativeTrack> tracks) {
-    if (_nativeAudioLabels.isEmpty && _nativeSubtitleLabels.isEmpty) {
-      return tracks;
-    }
-    return tracks.map((t) {
-      final ids = t.type == 'audio'
-          ? _audioTrackIds
-          : t.type == 'sub'
-              ? _subtitleTrackIds
-              : const <int>[];
-      final labels =
-          t.type == 'audio' ? _nativeAudioLabels : _nativeSubtitleLabels;
-      final idx = ids.indexOf(t.id);
-      if (idx < 0 || idx >= labels.length) return t;
-      final label = labels[idx];
-      return label.isEmpty ? t : t.withLabel(label);
-    }).toList(growable: false);
-  }
+  /// 面板选中 id（Emby 索引 + 1；未选 = 0）。
+  static int _panelSelectedId(List<int> active) =>
+      active.isNotEmpty && active.first >= 0 ? active.first + 1 : 0;
 
   /// 原生 UI 顶部诊断行（vo/hwdec/surface 摘要，Phase 1 最小集）。
   List<String> _nativeDebugLines() {

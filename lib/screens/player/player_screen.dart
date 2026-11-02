@@ -3369,7 +3369,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted || _disposed) return;
     switch (command) {
       case SelectAudio(:final id):
-        _selectEmbyAudio(id);
+        // id = Emby 索引 + 1（与 SelectSubtitle 同约定；旧实现不减 1 →
+        // 面板点选项永远错位一条（真机回归「面板没对接选项」））。
+        if (id > 0) _selectEmbyAudio(id - 1);
       case SelectSubtitle(:final id):
         // id<=0 = 关闭字幕（与 Flutter 面板 null 分支一致）。
         if (id <= 0) {
