@@ -219,6 +219,24 @@ class AndroidNativePlayerHost(
                 view?.render(lastState, System.currentTimeMillis())
             }
 
+            override fun onResetDisplay(scope: String) {
+                // 乐观重置（默认值与 Dart 侧 reset 语义一致）+ 回传命令。
+                lastState = when (scope) {
+                    "subtitle" -> lastState.copy(
+                        subtitleScale = 1.0,
+                        subtitleMarginY = 22,
+                        subtitleDelayMs = 0.0,
+                    )
+                    else -> lastState.copy(
+                        danmakuSpeed = 0.7,
+                        danmakuFontSize = 0.5,
+                        danmakuOpacity = 0.8,
+                    )
+                }
+                commandSink.send(mapOf("type" to "resetDisplay", "scope" to scope))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
             override fun onSetSegmentMark(kind: String, positionMs: Long) {
                 lastState = if (kind == "intro") {
                     lastState.copy(segmentIntroEndMs = positionMs.toInt())
@@ -315,7 +333,9 @@ class AndroidNativePlayerHost(
         ctrlDlg.setOnDismissListener { close() }
         ctrlDlg.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                commandSink.send(mapOf("type" to "requestBack"))
+                // 三层返回语义（关面板 → 隐控件 → 退出），对齐 Flutter；
+                // 旧实现直接 requestBack（按返回就退出播放页）。
+                controls.handleBack()
                 true
             } else {
                 false

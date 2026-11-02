@@ -20,7 +20,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
-import android.widget.SeekBar
 import android.widget.TextView
 
 /**
@@ -69,6 +68,9 @@ class NativePlayerScreenView(
         fun onToggleLock()
         fun onShare()
         fun onAdjustDisplay(key: String, value: Double)
+
+        /** 显示调节「恢复默认」（scope: 'subtitle' 字幕段 / 'danmaku' 弹幕段）。 */
+        fun onResetDisplay(scope: String)
         fun onSetSegmentMark(kind: String, positionMs: Long)
         fun onClearSegmentMark(kind: String)
 
@@ -284,6 +286,10 @@ class NativePlayerScreenView(
         rootProvider = { this },
         seekBarProvider = { seekBar },
         playPauseProvider = { playPauseButton },
+        // 跨界 hop 两端（Flutter hopRight/hopLeft）：左组尾 = 传输组末项
+        //（nextButton，无下一集时是空占位仍可聚焦）；右组头 = trailing 首项。
+        leftTailProvider = { nextButton },
+        rightHeadProvider = { danmakuButton },
         controlsVisibleProvider = { controlsVisible },
         onSeekRelative = { deltaMs ->
             listener?.onSeekRelative(deltaMs)
@@ -345,6 +351,9 @@ class NativePlayerScreenView(
 
     /** 横拖累计像素（每 100px 换算一次 ±5s 预览/seek）。 */
     private var hDragAccumPx = 0f
+
+    /** 横拖累加器是否已在 UP 时提交（防 onFling 速度回退二次 seek）。 */
+    private var hDragCommitted = false
 
     /** 长按临时倍速的基准档位（松手还原用）。 */
     private var boostBaseSpeed = 1.0
@@ -419,6 +428,46 @@ class NativePlayerScreenView(
             NativePlayerIcons.typeface(context),
             withBackground = false,
         )
+
+    /**
+     * 长按标记片头/片尾（对齐 Flutter `_onSegmentMarkSelected` + `_markSegmentAt`
+     * / 鸿蒙 `markSegmentFromGesture`）：校验（0 秒 / 片头 3 秒门槛 /
+     * 结尾）→ 无旧标记直接标记并提示「已设置…」；有旧标记直开二次确认卡
+     * （更新 / 清除 / 取消）。
+     */
+    private fun markSegmentFromGesture(kind: String) {
+        val pos = lastState.positionAt(System.currentTimeMillis(), lastStateAtMs)
+        val existing = if (kind == "intro") {
+            lastState.segmentIntroEndMs
+        } else {
+            lastState.segmentOutroStartMs
+        }
+        if (pos <= 0) {
+            showHintFor("当前位置为 0，无法标记", 1500, null)
+            return
+        }
+        if (kind == "intro" && pos < 3000) {
+            showHintFor("播放 3 秒后才能设置片头", 1500, null)
+            return
+        }
+        if (lastState.durationMs > 0 && pos >= lastState.durationMs) {
+            showHintFor("当前位置已到结尾，无法标记", 1500, null)
+            return
+        }
+        if (existing != null) {
+            segmentCardOpen = true
+            segmentConfirmKind = kind
+            renderOverlays()
+            return
+        }
+        listener?.onSetSegmentMark(kind, pos)
+        val label = if (kind == "intro") "片头结束点" else "片尾开始点"
+        showHintFor(
+            "已设置$label ${AndroidNativePlayerState.formatPlayerTime(pos)}",
+            1500,
+            null,
+        )
+    }
 
     /**
      * 临时倍速胶囊（长按期间常显，无自动隐藏；松手由
@@ -519,9 +568,23 @@ class NativePlayerScreenView(
                 return true
             }
 
-            // 长按：临时 2× 倍速（松手还原）。
+            // 长按：三分区（对齐 Flutter `_onVideoLongPressStart` / 鸿蒙
+            // `onLongPressZone`）——左 1/3 标片头、右 1/3 标片尾、中间临时
+            // 2× 倍速；片头片尾功能未开（或 TV/面板开）时全区退化为倍速。
             override fun onLongPress(e: MotionEvent) {
                 if (lastState.locked || !lastState.canControl) return
+                if (lastState.tvMode || activePanel != null) return
+                if (lastState.segmentEnabled) {
+                    if (e.x < width / 3f) {
+                        markSegmentFromGesture("intro")
+                        return
+                    }
+                    if (e.x > width * 2f / 3f) {
+                        markSegmentFromGesture("outro")
+                        return
+                    }
+                }
+                if (boostActive) return
                 boostBaseSpeed = lastState.speed
                 boostActive = true
                 listener?.onSpeedBoost(true)
@@ -579,7 +642,10 @@ class NativePlayerScreenView(
                 velocityY: Float,
             ): Boolean {
                 if (lastState.locked || !lastState.canControl) return false
-                // 无足够拖动距离时用速度回退（与 Flutter 一致）。
+                // 累加器已提交过（ACTION_UP）则不再走速度回退（防二次 seek）。
+                if (hDragCommitted) return false
+                // 无足够拖动距离时用速度回退（与 Flutter `_onHorizontalDragEnd`
+                // 的 `deltaMs == 0 → primaryVelocity` 分支一致）。
                 val deltaMs = (velocityX / DRAG_PX_PER_5S * DRAG_MS_PER_5S)
                     .toLong().coerceIn(-SEEK_MAX_DELTA_MS, SEEK_MAX_DELTA_MS)
                 if (deltaMs == 0L) return false
@@ -596,6 +662,7 @@ class NativePlayerScreenView(
             // 纵拖起始侧：DOWN 时判定（Flutter 用 globalPosition.dx < 半屏宽）。
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 hDragAccumPx = 0f
+                hDragCommitted = false
                 dragOnLeftSide = event.x < width / 2f
             }
             // 长按临时倍速：松手/取消时还原到长按前档位（Flutter
@@ -607,6 +674,21 @@ class NativePlayerScreenView(
                     boostActive = false
                     listener?.onSpeedBoost(false)
                     gestureHint.visibility = GONE
+                }
+                // 横拖松手提交（对齐 Flutter `_onHorizontalDragEnd`）：累加器
+                // 非零 → 按累加器 seek（与预览同基准，预览/落点一致）；零 →
+                // onFling 速度回退。旧实现只在 onFling 里 seek，慢速拖动松手
+                // 不 seek（真机回归「拖了没反应」）。
+                if (Math.abs(hDragAccumPx) > 0f && !lastState.locked && lastState.canControl) {
+                    val deltaMs = (hDragAccumPx / DRAG_PX_PER_5S * DRAG_MS_PER_5S)
+                        .toLong().coerceIn(-SEEK_MAX_DELTA_MS, SEEK_MAX_DELTA_MS)
+                    hDragAccumPx = 0f
+                    hDragCommitted = true
+                    if (deltaMs != 0L) {
+                        listener?.onSeekRelative(deltaMs)
+                        val seconds = Math.round(deltaMs / 1000f)
+                        showGestureHint("${if (seconds > 0) "+" else ""}${seconds}s")
+                    }
                 }
             }
             gestureDetector.onTouchEvent(event)
@@ -1460,6 +1542,32 @@ class NativePlayerScreenView(
     }
 
     /**
+     * 返回键三层语义（对齐 Flutter 播放页 / 鸿蒙 `handleBack`）：
+     * 关面板/片尾卡 → 隐控件 → `requestBack` 退出。恒消费。
+     *
+     * 旧实现 BACK 直接发 requestBack（按返回就退出播放页，缺中间两层，
+     * 与 Flutter 操作不一致——真机回归）。
+     */
+    fun handleBack(): Boolean {
+        if (activePanel != null) {
+            closePanel()
+            return true
+        }
+        if (segmentCardOpen) {
+            segmentCardOpen = false
+            segmentConfirmKind = null
+            renderOverlays()
+            return true
+        }
+        if (controlsVisible) {
+            setControlsVisible(false)
+            return true
+        }
+        listener?.onBack()
+        return true
+    }
+
+    /**
      * 面板层总渲染：按 activePanel / segmentCardOpen 决定显示哪一层。
      * 决定显示哪一层；无则全部隐藏。
      */
@@ -1784,28 +1892,23 @@ class NativePlayerScreenView(
                     closePanel()
                 }
             }
-            val textCol = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(
-                    TextView(context).apply {
-                        text = opt.label
-                        setTextColor(Color.WHITE)
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                    },
-                )
-                if (opt.description.isNotEmpty()) {
-                    addView(
-                        TextView(context).apply {
-                            text = opt.description
-                            setTextColor(NPTheme.WHITE_54)
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                            maxLines = 2
-                        },
-                    )
-                }
-            }
-            row.addView(textCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            // 单行「短名 · 简介」（对齐 Flutter PlayerKernelPanel 的
+            // `label: '${shortLabel} · ${descriptionOf(engine)}'`；旧实现
+            // 双行堆叠 → 列表行高与 Flutter 不一致）。
+            row.addView(
+                TextView(context).apply {
+                    text = if (opt.description.isEmpty()) {
+                        opt.label
+                    } else {
+                        "${opt.label} · ${opt.description}"
+                    }
+                    setTextColor(Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
             row.addView(
                 TextView(context).apply {
                     text = if (opt.label == lastState.engineLabel) "✓" else ""
@@ -1820,61 +1923,105 @@ class NativePlayerScreenView(
         panelContainer.addView(scrollWrap(list))
     }
 
-    // ── 显示调节面板 ──────────────────────────────────────────────
+    // ── 显示调节面板（对齐 Flutter DisplayAdjustPanel：字幕段 + 弹幕段
+    //    各含滑杆行 + 分隔线 + 「恢复默认」行；段标题 11sp white38 l16 t10）──
 
     private fun buildDisplayContent() {
         val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         list.addView(sectionTitle("字幕"))
-        list.addView(
-            sliderRow("大小", lastState.subtitleScale, 0.5, 3.0, 0.05) {
+        if (lastState.subtitleStyleDisabled) {
+            // 位图字幕（PGS/VobSub/DVB）无法重设样式（对齐 Flutter
+            // `subtitleStyleDisabled` 分支：提示文案替换字幕滑杆段）。
+            list.addView(
+                TextView(context).apply {
+                    text = "位图字幕（PGS 等）不支持样式调节"
+                    setTextColor(NPTheme.WHITE_54)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setPadding(dp(NPTheme.PANEL_PAD_H), dp(8), dp(NPTheme.PANEL_PAD_H), dp(12))
+                },
+            )
+        } else {
+            list.addView(sliderRow("大小", lastState.subtitleScale, 0.5, 3.0, 0.05, ::formatScale) {
                 listener?.onAdjustDisplay("subtitleScale", it)
-            },
-        )
-        list.addView(
-            sliderRow("位置", lastState.subtitleMarginY.toDouble(), 0.0, 200.0, 2.0) {
+            })
+            list.addView(sliderRow("位置", lastState.subtitleMarginY.toDouble(), 0.0, 200.0, 2.0, ::formatMarginY) {
                 listener?.onAdjustDisplay("subtitleMarginY", it)
-            },
-        )
-        list.addView(
-            sliderRow("延迟", lastState.subtitleDelayMs, -5000.0, 5000.0, 100.0) {
+            })
+            list.addView(sliderRow("延迟", lastState.subtitleDelayMs, -5000.0, 5000.0, 100.0, ::formatDelayMs) {
                 listener?.onAdjustDisplay("subtitleDelayMs", it)
-            },
-        )
+            })
+            list.addView(sectionDivider())
+            list.addView(resetRow("subtitle", isSubtitleDefault()))
+        }
+        list.addView(sectionDivider())
         list.addView(sectionTitle("弹幕"))
-        list.addView(
-            sliderRow("速度", lastState.danmakuSpeed, 0.5, 2.0, 0.05) {
-                listener?.onAdjustDisplay("danmakuSpeed", it)
-            },
-        )
-        list.addView(
-            sliderRow("大小", lastState.danmakuFontSize, 0.5, 2.0, 0.05) {
-                listener?.onAdjustDisplay("danmakuFontSize", it)
-            },
-        )
-        list.addView(
-            sliderRow("透明度", lastState.danmakuOpacity, 0.1, 1.0, 0.05) {
-                listener?.onAdjustDisplay("danmakuOpacity", it)
-            },
-        )
+        list.addView(sliderRow("速度", lastState.danmakuSpeed, 0.5, 2.0, 0.05, ::formatScale) {
+            listener?.onAdjustDisplay("danmakuSpeed", it)
+        })
+        list.addView(sliderRow("大小", lastState.danmakuFontSize, 0.5, 2.0, 0.05, ::formatScale) {
+            listener?.onAdjustDisplay("danmakuFontSize", it)
+        })
+        list.addView(sliderRow("透明度", lastState.danmakuOpacity, 0.1, 1.0, 0.05, ::formatPercent) {
+            listener?.onAdjustDisplay("danmakuOpacity", it)
+        })
+        list.addView(sectionDivider())
+        list.addView(resetRow("danmaku", isDanmakuDefault()))
         panelContainer.addView(scrollWrap(list))
     }
 
+    /** 字幕段是否处于默认态（恢复默认行的选中态，对齐 Flutter selected 语义）。 */
+    private fun isSubtitleDefault(): Boolean =
+        Math.abs(lastState.subtitleScale - 1.0) < 1e-6 &&
+            lastState.subtitleMarginY == 22 &&
+            lastState.subtitleDelayMs.toInt() == 0
+
+    /** 弹幕段是否处于默认态（速度 0.7 / 大小 0.5 / 透明度 0.8，同 Dart 默认）。 */
+    private fun isDanmakuDefault(): Boolean =
+        Math.abs(lastState.danmakuSpeed - 0.7) < 1e-6 &&
+            Math.abs(lastState.danmakuFontSize - 0.5) < 1e-6 &&
+            Math.abs(lastState.danmakuOpacity - 0.8) < 1e-6
+
+    /** 段分隔线（Flutter `Divider(color: Colors.white24, height: 1)`）。 */
+    private fun sectionDivider(): View =
+        View(context).apply {
+            setBackgroundColor(0x3DFFFFFF.toInt())
+        }.also {
+            it.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(1),
+            )
+        }
+
+    /** 「恢复默认」行（Flutter `SideOptionRow(label: '恢复默认')`，选中=当前默认态）。 */
+    private fun resetRow(scope: String, isDefault: Boolean): View =
+        optionRow("恢复默认", isDefault) {
+            listener?.onResetDisplay(scope)
+            scheduleAutoHide()
+        }
+
+    /** 段标题（Flutter panelSectionHeader：11sp white38，padding l16 t10 r16 b0）。 */
     private fun sectionTitle(title: String): TextView =
         TextView(context).apply {
             text = title
             setTextColor(NPTheme.WHITE_38)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(NPTheme.PANEL_PAD_H), dp(6), dp(NPTheme.PANEL_PAD_H), dp(2))
+            setPadding(dp(NPTheme.PANEL_PAD_H), dp(10), dp(NPTheme.PANEL_PAD_H), 0)
         }
 
-    /** 显示调节滑杆行：标签 44dp / 滑杆 / 数值 48dp，padding h16 v10。 */
+    /**
+     * 显示调节滑杆行（对齐 Flutter `styleSliderRow`）：
+     * 标签 44dp / **玻璃滑杆**（thumb 18 / 光晕 32，同 Flutter
+     * `glassSliderTheme(thumbRadius: 9, overlayRadius: 16)`）/ 数值 48dp 右对齐。
+     * 标签 13sp white70、数值 12sp white70（旧实现 12sp 纯白 + 系统 SeekBar）。
+     */
     private fun sliderRow(
         label: String,
         value: Double,
         rangeMin: Double,
         rangeMax: Double,
         step: Double,
+        format: (Double) -> String,
         onChange: (Double) -> Unit,
     ): LinearLayout {
         val row = LinearLayout(context).apply {
@@ -1885,47 +2032,53 @@ class NativePlayerScreenView(
         row.addView(
             TextView(context).apply {
                 text = label
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(NPTheme.WHITE_70)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             },
             LinearLayout.LayoutParams(dp(NPTheme.ADJUST_LABEL_WIDTH), LinearLayout.LayoutParams.WRAP_CONTENT),
         )
-        val bar = SeekBar(context).apply {
-            max = ((rangeMax - rangeMin) / step).toInt()
-            progress = ((value - rangeMin) / step).toInt().coerceIn(0, this.max)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
-                    if (!fromUser) return
-                    onChange(rangeMin + progress * step)
-                    scheduleAutoHide()
-                }
-
-                override fun onStartTrackingTouch(bar: SeekBar) {}
-
-                override fun onStopTrackingTouch(bar: SeekBar) {}
-            })
+        val valueText = TextView(context).apply {
+            text = format(value)
+            setTextColor(NPTheme.WHITE_70)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            gravity = Gravity.CENTER or Gravity.END
         }
-        row.addView(bar, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val bar = GlassSeekBarView(context).apply {
+            thumbDp = 18f
+            glowDp = 32f
+            minValue = rangeMin.toFloat()
+            maxValue = rangeMax.toFloat()
+            this.step = step.toFloat()
+            this.value = value.toFloat()
+            onChanged = { v ->
+                valueText.text = format(v.toDouble())
+                onChange(v.toDouble())
+                scheduleAutoHide()
+            }
+            onCommit = { v ->
+                onChange(v.toDouble())
+                scheduleAutoHide()
+            }
+        }
+        row.addView(bar, LinearLayout.LayoutParams(0, dp(32), 1f))
         row.addView(
-            TextView(context).apply {
-                text = formatAdjustValue(value)
-                setTextColor(NPTheme.WHITE_70)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                gravity = Gravity.CENTER or Gravity.END
-            },
+            valueText,
             LinearLayout.LayoutParams(dp(NPTheme.ADJUST_VALUE_WIDTH), LinearLayout.LayoutParams.WRAP_CONTENT),
         )
         return row
     }
 
-    private fun formatAdjustValue(v: Double): String {
-        val rounded = Math.round(v * 100.0) / 100.0
-        return if (rounded == Math.floor(rounded) && Math.abs(rounded) < 1e9) {
-            "${rounded.toLong()}"
-        } else {
-            "$rounded"
-        }
+    // 数值格式（逐字对齐 Flutter：SubtitleStylePanel / DanmakuStylePanel）。
+    private fun formatScale(v: Double): String = String.format(java.util.Locale.US, "%.2f×", v)
+
+    private fun formatMarginY(v: Double): String = "${Math.round(v)}px"
+
+    private fun formatDelayMs(ms: Double): String {
+        val sign = if (ms < 0) "-" else "+"
+        return "$sign${String.format(java.util.Locale.US, "%.1f", Math.abs(ms) / 1000.0)}s"
     }
+
+    private fun formatPercent(v: Double): String = "${Math.round(v * 100)}%"
 
     // ── 解码模式（对齐 Flutter DecodeModePanel：180dp 独立 popover）──
 

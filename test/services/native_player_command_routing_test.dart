@@ -28,6 +28,7 @@ void main() {
     'switchEngine': const {'type': 'switchEngine', 'engine': 'mpv'},
     'setDecodeMode': const {'type': 'setDecodeMode', 'mode': 'hw'},
     'adjustDisplay': const {'type': 'adjustDisplay', 'key': 'zoom', 'value': 1.2},
+    'resetDisplay': const {'type': 'resetDisplay', 'scope': 'danmaku'},
     'toggleDanmaku': const {'type': 'toggleDanmaku'},
     'updateDanmakuSettings': const {
       'type': 'updateDanmakuSettings',

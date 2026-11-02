@@ -1358,6 +1358,107 @@ void main() {
     });
   });
 
+  group('真机回归 583（面板复刻 + TV 语义 + 手势 + 引擎选项）', () {
+    final kotlinScreen = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerScreenView.kt',
+    ).readAsStringSync();
+    final kotlinHost = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'AndroidNativePlayerHost.kt',
+    ).readAsStringSync();
+    final kotlinRouter = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'TvKeyRouter.kt',
+    ).readAsStringSync();
+    final engineFile = File(
+      'lib/services/player/player_engine.dart',
+    ).readAsStringSync();
+    final commandFile = File(
+      'lib/services/player/native/native_player_command.dart',
+    ).readAsStringSync();
+    final screen = File('lib/screens/player/player_screen.dart').readAsStringSync();
+
+    test('显示调节滑杆换玻璃滑杆（小号 thumb18/光晕32，对齐 Flutter）', () {
+      expect(kotlinScreen, contains('thumbDp = 18f'));
+      expect(kotlinScreen, contains('glowDp = 32f'));
+      expect(kotlinScreen, contains('val bar = GlassSeekBarView(context).apply'));
+    });
+
+    test('恢复默认行 + resetDisplay 命令链（字幕段/弹幕段）', () {
+      expect(kotlinScreen, contains('resetRow("subtitle"'));
+      expect(kotlinScreen, contains('resetRow("danmaku"'));
+      expect(kotlinScreen, contains('optionRow("恢复默认"'));
+      expect(commandFile, contains("case 'resetDisplay':"));
+      expect(commandFile, contains('class ResetDisplay'));
+      expect(screen, contains('case ResetDisplay(:final scope):'));
+      expect(kotlinHost, contains('"resetDisplay"'));
+    });
+
+    test('位图字幕提示 + 段分隔线 + 数值格式（对齐 Flutter）', () {
+      expect(kotlinScreen, contains('位图字幕（PGS 等）不支持样式调节'));
+      expect(kotlinScreen, contains('lastState.subtitleStyleDisabled'));
+      expect(kotlinScreen, contains('sectionDivider()'));
+      expect(kotlinScreen, contains('"%.2f×"'));
+      expect(kotlinScreen, contains('formatPercent'));
+    });
+
+    test('内核面板单行「短名 · 简介」（对齐 Flutter PlayerKernelPanel）', () {
+      expect(kotlinScreen, contains(r'"${opt.label} · ${opt.description}"'));
+      expect(kotlinScreen, isNot(contains('val textCol = LinearLayout')),
+          reason: '双行堆叠与 Flutter 行高不一致');
+    });
+
+    test('返回键三层语义（关面板 → 隐控件 → 退出，禁直发 requestBack）', () {
+      expect(kotlinScreen, contains('fun handleBack(): Boolean'));
+      expect(kotlinHost, contains('controls.handleBack()'));
+      // 三层顺序：先面板/片尾卡、再控件、最后退出。
+      final fn = RegExp(r'fun handleBack\(\): Boolean \{[\s\S]*?\n    \}')
+          .firstMatch(kotlinScreen);
+      expect(fn, isNotNull);
+      final body = fn!.group(0)!;
+      expect(body.indexOf('closePanel()'), lessThan(body.indexOf('setControlsVisible(false)')));
+      expect(body.indexOf('setControlsVisible(false)'), lessThan(body.indexOf('listener?.onBack()')));
+    });
+
+    test('TV 跨界 hop（左组尾↔右组头，对齐 Flutter hopRight/hopLeft）', () {
+      expect(kotlinRouter, contains('leftTailProvider'));
+      expect(kotlinRouter, contains('rightHeadProvider'));
+      expect(kotlinRouter, contains('requestFocus()'));
+      expect(kotlinScreen, contains('leftTailProvider = { nextButton }'));
+      expect(kotlinScreen, contains('rightHeadProvider = { danmakuButton }'));
+    });
+
+    test('横拖松手提交 seek（累加器路径，防慢速拖动不生效）', () {
+      expect(kotlinScreen, contains('hDragCommitted'));
+      final up = RegExp(r'hDragAccumPx\) > 0f[\s\S]{0,500}onSeekRelative')
+          .firstMatch(kotlinScreen);
+      expect(up, isNotNull, reason: 'UP 时按累加器提交 seek');
+    });
+
+    test('长按三分区（左片头/右片尾/中间倍速，含校验门槛）', () {
+      expect(kotlinScreen, contains('markSegmentFromGesture'));
+      expect(kotlinScreen, contains('e.x < width / 3f'));
+      expect(kotlinScreen, contains('e.x > width * 2f / 3f'));
+      expect(kotlinScreen, contains('播放 3 秒后才能设置片头'));
+      expect(kotlinScreen, contains('当前位置为 0，无法标记'));
+      expect(kotlinScreen, contains('当前位置已到结尾，无法标记'));
+    });
+
+    test('Android 引擎矩阵移除 mediaKit 选项（原生 MPV 不受影响）', () {
+      final androidCase = RegExp(
+        r'case TargetPlatform\.android:\s*return const <PlayerEngine>\[([^\]]*)\];',
+      ).firstMatch(engineFile);
+      expect(androidCase, isNotNull);
+      final list = androidCase!.group(1)!;
+      expect(list, contains('PlayerEngine.mdk'));
+      expect(list, contains('PlayerEngine.erika'));
+      expect(list, contains('PlayerEngine.mpv'));
+      expect(list, isNot(contains('mediaKit')),
+          reason: 'libmpv 引擎选项已移除（与原生 MPV 共用 libmpv，仅去掉纹理路径选项）');
+    });
+  });
+
   group('主题常量引用完整性', () {
     test('Android 用到的新增常量都在 NPTheme 里定义', () {
       final kotlinTheme = File(

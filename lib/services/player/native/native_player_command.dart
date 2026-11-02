@@ -63,6 +63,8 @@ sealed class NativePlayerCommand {
           key: map['key'] as String? ?? '',
           value: (map['value'] as num?)?.toDouble() ?? 0.0,
         );
+      case 'resetDisplay':
+        return ResetDisplay(scope: map['scope'] as String? ?? '');
       case 'toggleDanmaku':
         return const ToggleDanmaku();
       case 'updateDanmakuSettings':
@@ -307,6 +309,20 @@ class AdjustDisplay extends NativePlayerCommand {
   @override
   Map<String, Object?> toMap() =>
       <String, Object?>{'type': 'adjustDisplay', 'key': key, 'value': value};
+}
+
+/// 显示调节面板「恢复默认」（scope: 'subtitle' 字幕段 / 'danmaku' 弹幕段）。
+class ResetDisplay extends NativePlayerCommand {
+  const ResetDisplay({required this.scope});
+
+  final String scope;
+
+  @override
+  bool get requiresImmediatePush => true;
+
+  @override
+  Map<String, Object?> toMap() =>
+      <String, Object?>{'type': 'resetDisplay', 'scope': scope};
 }
 
 class ToggleDanmaku extends NativePlayerCommand {

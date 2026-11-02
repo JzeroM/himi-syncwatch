@@ -30,6 +30,8 @@ internal class TvKeyRouter(
     private val rootProvider: () -> ViewGroup?,
     private val seekBarProvider: () -> View?,
     private val playPauseProvider: () -> View?,
+    private val leftTailProvider: () -> View?,
+    private val rightHeadProvider: () -> View?,
     private val controlsVisibleProvider: () -> Boolean,
     private val onSeekRelative: (Long) -> Unit,
     private val onVolumeDelta: (Double) -> Unit,
@@ -137,6 +139,23 @@ internal class TvKeyRouter(
                 }
                 // 控件可见：交给焦点导航，仅顺延自动隐藏。
                 onExtendAutoHide()
+                // 跨界定向（对齐 Flutter `hopRight`/`hopLeft`）：左组尾
+                // Right → 右组头、右组头 Left → 左组尾（几何导航跨不过
+                // 两侧权重空槽，必须显式跳焦）。
+                if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && focused === leftTailProvider()) {
+                    rightHeadProvider()?.let {
+                        it.requestFocus()
+                        onShowControls()
+                    }
+                    return true
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && focused === rightHeadProvider()) {
+                    leftTailProvider()?.let {
+                        it.requestFocus()
+                        onShowControls()
+                    }
+                    return true
+                }
                 return false
             }
         }

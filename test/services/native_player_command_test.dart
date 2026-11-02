@@ -105,6 +105,11 @@ void main() {
       expect(display, isA<AdjustDisplay>());
       expect((display as AdjustDisplay).key, 'brightness');
       expect(display.value, closeTo(0.2, 1e-9));
+
+      final reset = NativePlayerCommand.fromMap(
+          const {'type': 'resetDisplay', 'scope': 'danmaku'});
+      expect(reset, isA<ResetDisplay>());
+      expect((reset as ResetDisplay).scope, 'danmaku');
     });
 
     test('弹幕命令', () {
@@ -207,6 +212,7 @@ void main() {
         SwitchEngine(engine: 'mpv'),
         SetDecodeMode(mode: 'auto'),
         AdjustDisplay(key: 'gamma', value: 0.1),
+        ResetDisplay(scope: 'subtitle'),
         ToggleDanmaku(),
         UpdateDanmakuSettings(values: <String, Object?>{'speed': 1.2}),
         ToggleRoomSync(),

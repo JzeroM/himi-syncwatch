@@ -3400,6 +3400,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _applyNativeDecodeMode(mode);
       case AdjustDisplay(:final key, :final value):
         _applyNativeAdjustDisplay(key, value);
+      case ResetDisplay(:final scope):
+        // 显示调节面板「恢复默认」：字幕段/弹幕段独立重置（对齐 Flutter
+        // DisplayAdjustPanel 的两个 onReset）。
+        if (scope == 'subtitle') {
+          _onSubtitleStyleReset();
+        } else if (scope == 'danmaku') {
+          ref.read(settingsProvider.notifier).update(
+                danmakuSpeed: 0.7,
+                danmakuFontSize: 0.5,
+                danmakuOpacity: 0.8,
+              );
+          unawaited(_applyErikaDanmakuConfig());
+          _syncNativePanelData();
+        }
       case SetSegmentMark(:final kind, :final positionMs):
         _applyNativeSegmentMark(kind, positionMs);
       case ClearSegmentMark(:final kind):

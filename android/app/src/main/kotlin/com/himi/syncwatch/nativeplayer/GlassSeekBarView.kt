@@ -93,6 +93,26 @@ class GlassSeekBarView(context: Context) : View(context) {
     var minValue: Float = 0f
     var maxValue: Float = 1f
 
+    /**
+     * 拇指体直径（dp，默认 16 = 进度条档）。调节面板用 18（Flutter
+     * `glassSliderTheme(thumbRadius: 9)`）。
+     */
+    var thumbDp: Float = THUMB_D
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    /**
+     * 拇指光晕直径（dp，默认 28 = 进度条档）。调节面板用 32（Flutter
+     * `overlayRadius: 16`）。
+     */
+    var glowDp: Float = GLOW_D
+        set(v) {
+            field = v
+            invalidate()
+        }
+
     /** 吸附步长（0 = 连续；seek 用 1000ms 档，同鸿蒙 ProgressRow step）。 */
     var step: Float = 0f
 
@@ -107,7 +127,7 @@ class GlassSeekBarView(context: Context) : View(context) {
         private set
 
     private val density = resources.displayMetrics.density
-    private val padPx get() = GLOW_D / 2f * density
+    private val padPx get() = glowDp / 2f * density
 
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -137,8 +157,8 @@ class GlassSeekBarView(context: Context) : View(context) {
         val trackW = max(0f, w - 2f * pad)
         val cy = h / 2f
         val trackHalf = TRACK_H / 2f * density
-        val thumbR = THUMB_D / 2f * density
-        val glowR = GLOW_D / 2f * density
+        val thumbR = thumbDp / 2f * density
+        val glowR = glowDp / 2f * density
         val ratio = if (maxValue > minValue) {
             ((value - minValue) / (maxValue - minValue)).coerceIn(0f, 1f)
         } else {
@@ -196,9 +216,9 @@ class GlassSeekBarView(context: Context) : View(context) {
         )
         canvas.drawOval(thumbRect, thumbPaint)
 
-        // 顶部高光弧：描边圆环（中心线半径 6.4dp ≈ THUMB_D/2−HIGHLIGHT_W），
+        // 顶部高光弧：描边圆环（中心线半径 ≈ thumbDp/2−HIGHLIGHT_W），
         // 扫角 ±75.6°（同 Flutter GlassSliderThumbShape drawArc）。
-        val hr = (THUMB_D / 2f - HIGHLIGHT_W) * density
+        val hr = (thumbDp / 2f - HIGHLIGHT_W) * density
         highlightRect.set(cx - hr, cy - hr, cx + hr, cy + hr)
         canvas.drawArc(highlightRect, -165.6f, 151.2f, false, highlightPaint)
     }

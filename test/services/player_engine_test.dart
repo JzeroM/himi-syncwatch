@@ -10,16 +10,21 @@ void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
   group('PlayerEngineFactory.supportedEngines（平台矩阵）', () {
-    test('Android：MDK + MediaKit + Erika + MPV', () {
+    test('Android：MDK + Erika + MPV（libmpv 引擎选项已移除）', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       expect(
         PlayerEngineFactory.supportedEngines(),
         <PlayerEngine>[
           PlayerEngine.mdk,
-          PlayerEngine.mediaKit,
           PlayerEngine.erika,
           PlayerEngine.mpv,
         ],
+      );
+      // mediaKit（libmpv 纹理路径）不再暴露：与原生 MPV 共用同一份 libmpv，
+      // 引擎选项移除不影响原生 MPV。
+      expect(
+        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
+        isFalse,
       );
     });
 
@@ -77,9 +82,10 @@ void main() {
         PlayerEngine.erika,
       );
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      // mediaKit 引擎选项已移除：落盘值回退平台默认（MPV）。
       expect(
         PlayerEngineFactory.resolveSelectedEngine('media_kit'),
-        PlayerEngine.mediaKit,
+        PlayerEngine.mpv,
       );
       expect(
         PlayerEngineFactory.resolveSelectedEngine('bogus'),
@@ -94,9 +100,9 @@ void main() {
   });
 
   group('PlayerEngineFactory.isSupported', () {
-    test('Android/Windows 支持 MPV；Windows 不支持 MediaKit', () {
+    test('Android/Windows 支持 MPV；MediaKit 选项已移除', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isTrue);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;

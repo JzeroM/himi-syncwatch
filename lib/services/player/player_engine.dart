@@ -62,7 +62,9 @@ class PlayerEngineFactory {
   /// 当前平台支持的引擎列表。
   ///
   /// 对齐 NipaPlay 平台矩阵（HIMI 现有平台）：
-  /// - Android / Android TV：MDK、Erika、MediaKit、MPV
+  /// - Android / Android TV：MDK、Erika、MPV（mediaKit/libmpv 引擎选项已移除：
+  ///   它只是 media_kit 的纹理路径，与原生 MPV 共用同一份 libmpv.so 与驱动，
+  ///   去掉选项不影响原生 MPV 的编译与运行）
   /// - iOS：Erika
   /// - Windows：MDK、Erika、MPV（MPV 为默认；media_kit 不再暴露）
   static List<PlayerEngine> supportedEngines() {
@@ -72,7 +74,6 @@ class PlayerEngineFactory {
       case TargetPlatform.android:
         return const <PlayerEngine>[
           PlayerEngine.mdk,
-          PlayerEngine.mediaKit,
           PlayerEngine.erika,
           PlayerEngine.mpv,
         ];
