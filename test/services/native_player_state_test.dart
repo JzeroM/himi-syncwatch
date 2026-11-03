@@ -346,6 +346,10 @@ void main() {
       expect(extras.subtitleScale, 1.0);
       expect(extras.subtitleMarginY, 22);
       expect(extras.danmakuEnabled, isFalse);
+      // 589：弹幕屏蔽链（原生 UI 下由 Dart 侧过滤）。
+      expect(extras.danmakuBlockTop, isFalse);
+      expect(extras.danmakuBlockBottom, isFalse);
+      expect(extras.danmakuBlockWords, isEmpty);
       expect(extras.segmentEnabled, isFalse);
       expect(extras.locked, isFalse);
       expect(extras.canControl, isTrue);
@@ -375,6 +379,9 @@ void main() {
         danmakuSpeed: 1.5,
         danmakuFontSize: 1.2,
         danmakuOpacity: 0.4,
+        danmakuBlockTop: true,
+        danmakuBlockBottom: true,
+        danmakuBlockWords: <String>['剧透', '刷屏'],
         segmentEnabled: true,
         segmentIntroEndMs: 90000,
         segmentOutroStartMs: 1400000,
@@ -404,6 +411,9 @@ void main() {
       expect(extras.danmakuSpeed, 1.5);
       expect(extras.danmakuFontSize, 1.2);
       expect(extras.danmakuOpacity, 0.4);
+      expect(extras.danmakuBlockTop, isTrue);
+      expect(extras.danmakuBlockBottom, isTrue);
+      expect(extras.danmakuBlockWords, <String>['剧透', '刷屏']);
       expect(extras.segmentEnabled, isTrue);
       expect(extras.segmentIntroEndMs, 90000);
       expect(extras.segmentOutroStartMs, 1400000);

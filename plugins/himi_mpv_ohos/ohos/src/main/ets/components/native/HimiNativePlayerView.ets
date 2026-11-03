@@ -292,6 +292,18 @@ export struct HimiNativePlayerView {
   @State audioStreamCount: number = 0;
   @State clockFormat: string = '24h';
   @State segmentEnabled: boolean = false;
+  /**
+   * 加载指示器可见位（589，**必须 @State**）。
+   *
+   * 【真机回归：正常播放还一直转圈】`build()` 里旧写法是
+   * `if (this.state().showLoading)`——`this.state()` 是宿主的**普通对象**，
+   * 不在 ArkUI 观察链上；而该 if 节点既不在 `ForEach([controlsEpoch])`
+   * 重建块里，也没有直读任何 @State → ArkUI 细粒度更新不会把它纳入更新
+   * 集合 → 条件只在创建时求值一次，起播前算出的 `true` 永久保留。
+   *
+   * 修法：显式镜像到 @State 并在 build() 直读（条件翻转即销毁/重建节点）。
+   */
+  @State showLoading: boolean = false;
   /** 跳过片头/片尾提示（'' = 隐藏，'intro' / 'outro'；Dart 推送驱动）。 */
   @State skipPrompt: string = '';
   /** Logo 地址（'' = 不显示；房间模式无 logo）。稳定层直读，不进重建块。 */
@@ -412,6 +424,9 @@ export struct HimiNativePlayerView {
     this.audioStreamCount = s.audioStreamCount;
     this.clockFormat = s.clockFormat;
     this.segmentEnabled = s.segmentEnabled;
+    // 加载指示器（589）：宿主字段不在观察链上，必须镜像到 @State，
+    // build() 才能随状态推送/250ms tick 即时收起。
+    this.showLoading = s.showLoading;
     // 跳过提示边沿处理（对齐 Flutter `_evaluateSkipPrompt`/`_dismissSkipPrompt`）：
     // 出现（''→非空）：强制显示控件 + 重置自动隐藏（胶囊所在底栏随之可见）；
     // 消失（非空→''）：重置计时，给用户完整 5 秒操作窗口。
@@ -1125,7 +1140,11 @@ export struct HimiNativePlayerView {
       //    （首帧未出 **或** 缓冲中），安卓读同一位。
       //
       //    旧实现**完全没有**加载指示器：鸿蒙起播那几秒是纯黑，什么都不转。
-      if (this.state().showLoading) {
+      //
+      //    【589 必须读 @State】旧写法 `this.state().showLoading` 是宿主普通
+      //    字段（不在 ArkUI 观察链上），该 if 节点也不在 epoch 重建块里 →
+      //    条件只求值一次，起播前的 true 永久保留（真机「播放中一直转圈」）。
+      if (this.showLoading) {
         Column() {
           LoadingProgress()
             .width(36)

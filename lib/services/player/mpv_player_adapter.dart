@@ -583,6 +583,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     _videoParamsSeen = false;
     _trackHasVideo = false;
     firstFramePending.value = false;
+    // 转圈看门狗复位（589）：新文件重新计时。
+    _loadingWatchdogFired = false;
 
     // 启动轮询兜底：mpv 的事件/属性回调经 JSBind 绑定，在部分设备上
     // 可能完全不送达（表现为纹理有了但时长/分辨率永远为空 → 无限转圈）。
@@ -729,6 +731,17 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
     _maybeKickStalledLoad(state);
     _maybeFallbackToSoftwareDecode(state);
+    // 转圈看门狗（589）：在播且位置已推进 ≥3s 即永久收起加载指示器。
+    // 位置推进不依赖任何视频属性（video-params/width/fps 都可能读不到），
+    // 是「媒体真的在跑」最可靠的证据。
+    if (!_loadingWatchdogFired &&
+        MpvPlayerAdapter.shouldFireLoadingWatchdog(
+          state: _state,
+          positionMs: _positionMs,
+        )) {
+      _loadingWatchdogFired = true;
+      LogService().log('mpv', '转圈看门狗触发（position=${_positionMs}ms）');
+    }
     // 原生 UI 状态同步：轮询节拍推送（控制器内部 200ms 防抖合并）。
     _pushNativeUiState();
   }
@@ -1022,6 +1035,24 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   List<NativeDanmakuItem> _buildDanmakuWindow() {
     if (_nativeDanmakuComments.isEmpty) return const [];
     var comments = _nativeDanmakuComments;
+    // 屏蔽链（588）：与 Flutter `DanmakuTimeline._filter` 逐条同序 ——
+    // 顶/底屏蔽 → 屏蔽词（子串）→ 数量采样 → 时间升序。
+    //
+    // 旧实现只做数量采样 + 时间窗，屏蔽完全没生效：原生 UI 下 Flutter 弹幕层
+    // 随视频区退场，屏蔽词/顶底开关在安卓与鸿蒙原生弹幕上全部失效（真机回归）。
+    final blockTop = _nativeUiExtras.danmakuBlockTop;
+    final blockBottom = _nativeUiExtras.danmakuBlockBottom;
+    final blockWords = _nativeUiExtras.danmakuBlockWords;
+    if (blockTop || blockBottom || blockWords.isNotEmpty) {
+      comments = comments.where((c) {
+        if (blockTop && c.mode == DanmakuMode.top) return false;
+        if (blockBottom && c.mode == DanmakuMode.bottom) return false;
+        for (final word in blockWords) {
+          if (word.isNotEmpty && c.text.contains(word)) return false;
+        }
+        return true;
+      }).toList(growable: false);
+    }
     // 数量上限：超量按时间等间隔采样（照抄 Flutter DanmakuTimeline._sampleEvenly：
     // 排序后确定性采样、保留首条）。在窗口切片前对全量采样 = 与 Flutter 全局
     // 采样语义一致，且样本稳定（弹幕不会中途互换进出，防闪烁）。
@@ -1053,6 +1084,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         color: '#${c.color.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
       ));
     }
+    // 时间升序（588）：原生行分配必须按时间序增量推进（与 Flutter/鸿蒙
+    // `sort(timeMs)` 一致）。旧实现保持原始顺序 → 行冲突表按乱序推进，
+    // 后到的早弹幕抢不到行被误丢、已入屏的被重排到别的行（整屏跳行）。
+    out.sort((a, b) => a.timeMs.compareTo(b.timeMs));
     return out;
   }
 
@@ -1348,15 +1383,38 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 588：作为「画面已出」的**独立**判据，与 `video-params` 字符串并列。
   /// 鸿蒙 `video-params`（NODE 属性）经 `getPropertyString` 常读不到，但
   /// `width`/`height` 可读——只靠 video-params 会永远判「首帧未出」。
+  ///
+  /// 589：再加 `estimated-vf-fps > 0` 作为第三判据——它表示 mpv **确实在
+  /// 持续出帧**，比尺寸更直接（某些设备连 `width`/`height` 也读不到）。
   @visibleForTesting
   static bool hasVideoFrame(MpvPollResult state) =>
-      (state.videoWidth ?? 0) > 0 && (state.videoHeight ?? 0) > 0;
+      ((state.videoWidth ?? 0) > 0 && (state.videoHeight ?? 0) > 0) ||
+      (state.videoFps ?? 0) > 0;
 
   /// 画面是否已出（供跳过片头/片尾提示门禁）。
   ///
   /// 「首帧未出」时不弹跳过提示：此时进度可能已推进（音频先出），
   /// 但用户看到的还是黑屏/转圈，弹「跳过片头」属于时机不对。
   bool get firstFrameReady => !firstFramePending.value;
+
+  /// 转圈看门狗：在播且位置已推进超过该时长即强制收起加载指示器。
+  ///
+  /// 589：所有「首帧已出」判据都依赖内核属性可读；只要有一条读不到就会
+  /// 永久转圈。看门狗是最后一道保险——位置推进是**不依赖任何视频属性**
+  /// 的铁证（有进度就说明媒体真的在跑）。
+  @visibleForTesting
+  static const int loadingWatchdogMs = 3000;
+
+  /// 看门狗是否应触发（纯函数，供测试）。
+  @visibleForTesting
+  static bool shouldFireLoadingWatchdog({
+    required AdapterPlaybackState state,
+    required int positionMs,
+  }) =>
+      state == AdapterPlaybackState.playing && positionMs >= loadingWatchdogMs;
+
+  /// 看门狗已触发（本集内一旦触发不再回退，避免缓冲期又闪出转圈）。
+  bool _loadingWatchdogFired = false;
 
   void _updateFirstFramePending(MpvPollResult state) {
     if (state.trackList != null) {
@@ -1766,11 +1824,16 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     //   未出（比 `position==0` 更准，起播后第一秒就能收起）；
     // - 时长与位置都为 0 且未进入 playing = 首帧前的纯黑窗口；
     // - [buffering]：中途卡顿。
-    final showLoading = buffering ||
-        firstFramePending.value ||
-        (_durationMs == 0 &&
-            _positionMs == 0 &&
-            _state != AdapterPlaybackState.playing);
+    //
+    // 589 看门狗兜底：即使「首帧已出」的判据全部失效（某些设备
+    // `video-params`/`width` 都读不到），只要确实在播放且位置已推进超过
+    // [loadingWatchdogMs]，就强制收起转圈——绝不允许永久转圈。
+    final showLoading = !_loadingWatchdogFired &&
+        (buffering ||
+            firstFramePending.value ||
+            (_durationMs == 0 &&
+                _positionMs == 0 &&
+                _state != AdapterPlaybackState.playing));
     return NativePlayerState(
       engine: 'mpv',
       videoOutputRequested: _requestedMpvVideoOutput,

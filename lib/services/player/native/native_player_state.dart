@@ -1142,6 +1142,9 @@ class NativePlayerUiExtras {
     this.danmakuTopRows = 4,
     this.danmakuBottomRows = 4,
     this.danmakuMaxCount,
+    this.danmakuBlockTop = false,
+    this.danmakuBlockBottom = false,
+    this.danmakuBlockWords = const <String>[],
     this.segmentEnabled = false,
     this.segmentIntroEndMs,
     this.segmentOutroStartMs,
@@ -1180,6 +1183,12 @@ class NativePlayerUiExtras {
   final int danmakuTopRows;
   final int danmakuBottomRows;
   final int? danmakuMaxCount;
+
+  /// 弹幕屏蔽（588 补齐）：原生 UI 下 Flutter 弹幕层退场，屏蔽链必须由
+  /// Dart 侧在切窗时先过滤（与 `DanmakuTimeline._filter` 同序）。
+  final bool danmakuBlockTop;
+  final bool danmakuBlockBottom;
+  final List<String> danmakuBlockWords;
   final bool segmentEnabled;
   final int? segmentIntroEndMs;
   final int? segmentOutroStartMs;

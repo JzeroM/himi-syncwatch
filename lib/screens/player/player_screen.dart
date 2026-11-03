@@ -546,6 +546,21 @@ class PlayerScreen extends ConsumerStatefulWidget {
   @visibleForTesting
   static bool showTopSubtitleStyleButton({required bool tvMode}) => !tvMode;
 
+  /// 顶栏标题是否显示（589）。
+  ///
+  /// 手机竖屏**一律不显示**：竖屏可用宽窄，标题会被右侧尾簇（网速/倍速/
+  /// 内核/字幕样式/解码/画面比例/转屏）压成「…」，极端情况把尾簇挤出屏外。
+  /// 横屏手机有足够宽度、TV/桌面全宽，均保留标题。
+  ///
+  /// 安卓/鸿蒙原生控制层早已按「竖屏隐藏标题」实现（`portrait` 判定），
+  /// 此处补齐 Flutter（MDK / Erika / media_kit 三个播放器共用本页）。
+  @visibleForTesting
+  static bool showTopBarTitle({
+    required bool portrait,
+    required bool mobilePlatform,
+  }) =>
+      !(portrait && mobilePlatform);
+
   @visibleForTesting
   static bool showBottomDisplayAdjustButton({required bool tvMode}) => tvMode;
 
@@ -3369,6 +3384,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         danmakuBottomRows: settings.danmakuBottomRows,
         danmakuMaxCount:
             settings.danmakuLimitCount ? settings.danmakuMaxCount : null,
+        // 屏蔽链（588）：原生 UI 下 Flutter 弹幕层退场，屏蔽必须在这里生效。
+        danmakuBlockTop: settings.danmakuBlockTop,
+        danmakuBlockBottom: settings.danmakuBlockBottom,
+        danmakuBlockWords: settings.danmakuBlockWords
+            .split(',')
+            .map((w) => w.trim())
+            .where((w) => w.isNotEmpty)
+            .toList(growable: false),
         segmentEnabled: _segmentFeatureEnabled,
         segmentIntroEndMs: _segmentIntroEndMs,
         segmentOutroStartMs: _segmentCreditsStartMs,
@@ -8160,8 +8183,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       tvMode: settings.tvMode,
       mobilePlatform: mobilePlatform,
     );
+    // 竖屏手机不显示标题（589）：尾簇控件多，标题会被压成「…」甚至把
+    // 尾簇挤出屏外。横屏/TV/桌面保留。
+    final portrait = MediaQuery.of(context).orientation == Orientation.portrait;
+    final showTitle = PlayerScreen.showTopBarTitle(
+      portrait: portrait,
+      mobilePlatform: mobilePlatform,
+    );
     return PlayerTopBar(
-      title: _currentEpisodeTitle,
+      title: showTitle ? _currentEpisodeTitle : '',
       showKernelButton: !_switchingKernel,
       kernelLabel: _currentEngine.shortLabel,
       kernelMenuOpen: _showKernelMenu,
@@ -9788,15 +9818,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 right: -6,
                 top: -4,
                 child: Container(
-                  // 三端统一深色磨砂以外的唯一视觉不变量：角标正圆按数量
-                  // 分档（1~2 位 15、3 位 19、4 位起 24），见
-                  // [NativePlayerTheme.badgeSizeFor]。
-                  constraints: BoxConstraints(
-                    minWidth: NativePlayerTheme.badgeSizeFor(badge),
-                    minHeight: NativePlayerTheme.badgeSizeFor(badge),
-                  ),
+                  // 角标正圆：按数量分档（1~2 位 15、3 位 19、4 位起 24），
+                  // 见 [NativePlayerTheme.badgeSizeFor]。
+                  // 必须固定 width == height（不能只给 constraints 下限）：
+                  // 两位数会把容器撑宽 → 15×17 变成椭圆（589 真机回归）。
+                  width: NativePlayerTheme.badgeSizeFor(badge),
+                  height: NativePlayerTheme.badgeSizeFor(badge),
                   alignment: Alignment.center,
-                  padding: const EdgeInsets.all(2),
+                  padding: EdgeInsets.zero,
                   decoration: const BoxDecoration(
                     color: NativePlayerTheme.accent,
                     shape: BoxShape.circle,

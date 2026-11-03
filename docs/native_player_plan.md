@@ -787,6 +787,35 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
       片尾开始点 ≥ 70%（`lib/utils/segment_mark_rules.dart` 权威校验 +
       安卓/鸿蒙手势与二次确认前置校验 + 设置页说明）。
 
+### Phase 2.8：弹幕重写 + 竖屏标题 + 角标圆底 + 鸿蒙转圈根因（1.5.9+589）
+
+> 起因：安卓 MPV 弹幕与鸿蒙此前遇到的是同一批问题（跳行/中途消失/速度
+> 不对）；手机竖屏顶栏标题把尾簇挤出屏；安卓角标只有白字没有靛蓝圆底；
+> 鸿蒙正常播放仍显示加载器。
+
+- [x] 安卓 `DanmakuLayerView` 重写：`laneOf` 行号绑定生命周期（禁全量重
+      分配）、`flying` 飞行缓存、`currentPositionMs × speed` 倍速外推、
+      底部 `(lane+1)`、顶/底冲突表（禁轮转）、行容量扣边距、固定弹幕首尾
+      10% 淡入淡出、`measureCache` 文本宽缓存、`onSizeChanged` 重排、
+      无活跃弹幕不重绘、w500 + 黑 54% blur3 描影（禁粗描边）。
+- [x] 弹幕屏蔽链进原生（三端共用）：`NativePlayerUiExtras` 新增
+      `danmakuBlockTop/Bottom/Words`，`_buildDanmakuWindow` 按
+      `DanmakuTimeline._filter` 同序过滤 + `timeMs` 升序。
+- [x] 鸿蒙弹幕行容量变化也清 `laneOf`（转屏后不越界）。
+- [x] 手机竖屏不显示顶栏标题（`PlayerScreen.showTopBarTitle`）；安卓/鸿蒙
+      原生早已按 `portrait` 隐藏。
+- [x] 安卓角标改系统 `GradientDrawable(OVAL)` + `NPTheme.BADGE_BG`：自绘
+      Drawable 的 `draw()` 依赖 `bounds`，`setBackground` 与首次
+      `onSizeChanged` 时序不保证 → bounds 恒空 → 圆底完全不画（真机「只有
+      白色数字」）。Flutter 角标同时改固定 `width==height`（只给
+      `constraints` 下限会被两位数撑成椭圆）。
+- [x] 鸿蒙转圈根因：`build()` 里 `this.state().showLoading` 是宿主普通字段
+      （不在 ArkUI 观察链上），该 if 节点也不在 epoch 重建块里 → 条件只求值
+      一次，起播前的 `true` 永久保留。改为 `@State showLoading` 镜像 +
+      build 直读。
+- [x] Dart 转圈兜底：`hasVideoFrame` 增 `estimated-vf-fps > 0` 第三判据；
+      新增 3s 看门狗（在播且位置已推进即强制收起，不依赖任何视频属性）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

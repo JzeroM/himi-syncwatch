@@ -1520,9 +1520,13 @@ class NativePlayerScreenView(
      * 带角标的右侧图标按钮：图标 24dp 字形、角标 9sp 白字 + #6366F1 **正圆**底，
      * 贴图标右上（Flutter Stack + Positioned(right:-6,top:-4)）。
      *
-     * 关键修复（真机截图回归）：
-     * - 角标旧实现宽 `14+len*5`、高固定 14 → "3" 是 19×14 **椭圆**。改用
-     *   [BadgeCircleDrawable] 画正圆，边长 = `max(BADGE_MIN, 文本宽+4dp)`；
+     * 关键修复：
+     * - 角标旧实现宽 `14+len*5`、高固定 14 → "3" 是 19×14 **椭圆**。
+     *   现按数量位数分档（15/19/24）且**宽==高**，OVAL 必为正圆；
+     * - 589：圆底改系统 `GradientDrawable(OVAL)`（[badgeCircleBackground]）。
+     *   旧的自绘 Drawable `draw()` 依赖 `bounds`，而 View 的 `setBackground`
+     *   与首次 `onSizeChanged` 时序不保证 → bounds 恒空 → **圆底完全不画**，
+     *   只剩白字（真机「角标只有白色数字」）；
      * - `marginEnd=-2` 让角标伸出 host 右缘，而 FrameLayout 默认
      *   `clipChildren=true` → 右半被切（截图 1）。host 与整条链显式
      *   `clipChildren=false`（见 [buildHierarchy]）。
@@ -1544,7 +1548,9 @@ class NativePlayerScreenView(
             includeFontPadding = false
             // Flutter Container(padding: EdgeInsets.all(2))。
             setPadding(dp(2), dp(2), dp(2), dp(2))
-            background = BadgeCircleDrawable(NPTheme.ACCENT)
+            // 589：系统 OVAL 正圆底（自绘 Drawable 的 bounds 陷阱会让圆底
+            // 完全不画，只剩白字——真机回归）。
+            background = badgeCircleBackground()
         }
         host.addView(badge, badgeLayoutParams(""))
         // 角标数量在 applyState 中刷新

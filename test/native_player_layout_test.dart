@@ -84,14 +84,46 @@ void main() {
   });
 
   group('角标正圆（对齐 Flutter BoxShape.circle）', () {
-    test('Android 用正圆 Drawable + 正方形边长', () {
-      expect(kotlinScreen, contains('BadgeCircleDrawable'));
-      // 585：直径随内容自适应，但仍是**正方形**（宽==高），否则正圆画成椭圆。
+    test('Android 角标用系统 OVAL 正圆底（禁自绘 bounds 陷阱）', () {
+      // 589 真机回归：自绘 Drawable 的 draw() 依赖 bounds，View 的
+      // setBackground 与首次 onSizeChanged 时序不保证 → bounds 恒空 →
+      // 圆底完全不画，只剩白字。改用系统 GradientDrawable(OVAL)。
+      expect(kotlinScreen, contains('badgeCircleBackground()'));
+      expect(kotlinScreen, isNot(contains('BadgeCircleDrawable(')));
+      final theme = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'NativePlayerUi.kt',
+      ).readAsStringSync();
+      expect(theme, contains('internal fun badgeCircleBackground()'));
+      expect(theme, contains('GradientDrawable.OVAL'));
+      expect(theme, contains('setColor(NPTheme.BADGE_BG)'));
+      expect(theme, contains('const val BADGE_BG = 0xFF6366F1.toInt()'));
+      // 直径必须**正方形**（宽==高），否则 OVAL 画成椭圆。
       expect(kotlinScreen, matches(RegExp(r'LayoutParams\(sidePx, sidePx')),
           reason: '角标必须是正方形边长（正圆底）');
       // 旧的手算宽度方案必须移除。
       expect(kotlinScreen, isNot(contains('14 + text.orEmpty().length * 5')),
           reason: '旧的 14+len*5 手算宽度会画成椭圆');
+    });
+
+    test('三端角标底色精确 ARGB 相同', () {
+      // Flutter 走 NativePlayerTheme.accent；安卓 BADGE_BG；鸿蒙 SEL_COLOR。
+      expect(NativePlayerTheme.accent.toARGB32(), 0xFF6366F1);
+      final theme = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'NativePlayerUi.kt',
+      ).readAsStringSync();
+      expect(theme, contains('const val BADGE_BG = 0xFF6366F1.toInt()'));
+      expect(ohosView, contains("const SEL_COLOR = '#6366F1';"));
+    });
+
+    test('Flutter 角标严格正方形（禁 constraints 只设下限）', () {
+      final screen = File('lib/screens/player/player_screen.dart').readAsStringSync();
+      // constraints(minWidth/minHeight) 只设下限：两位以上数字会把容器撑宽
+      // → 15×17 变椭圆。必须固定 width == height。
+      expect(screen, isNot(contains('minWidth: NativePlayerTheme.badgeSizeFor')));
+      expect(screen, contains('width: NativePlayerTheme.badgeSizeFor(badge)'));
+      expect(screen, contains('height: NativePlayerTheme.badgeSizeFor(badge)'));
     });
 
     test('Android 关闭整条父链裁切（角标伸出命中框不被切）', () {
@@ -1275,7 +1307,9 @@ void main() {
       expect(kotlinDanmaku, isNot(contains('coerceIn(4, 16)')),
           reason: '旧硬编码 4~16 行使设置失效');
       // 溢出丢弃（对齐 Flutter `if (row < 0) continue` 与鸿蒙）。
-      expect(kotlinDanmaku, contains('lanes[i] = -1'));
+      // 589 重写：行号绑定表 laneOf，溢出记 -1（不再有整表 lanes 数组）。
+      expect(kotlinDanmaku, contains('laneOf[key] = lane'));
+      expect(kotlinDanmaku, contains('if (lane < 0) continue'));
       expect(kotlinDanmaku, isNot(contains('lane = 0 // 溢出兜底')));
     });
 
@@ -1870,7 +1904,8 @@ void main() {
       expect(stateDart586, contains('showLoading'));
       expect(stateDart586, contains("'showLoading': showLoading,"));
       // 587：适配器每次推送**现算**，不再读低频 extras（转圈不停根因）。
-      expect(adapter586, contains('final showLoading = buffering ||'));
+      // 589：加看门狗前置条件（!fired && (...)），判据本身不变。
+      expect(adapter586, contains('buffering ||'));
       expect(adapter586, contains('showLoading: showLoading,'));
       expect(adapter586, isNot(contains('showLoading: _nativeUiExtras.showLoading')));
       // extras 类里不得再有该字段（否则又会被低频覆盖）。
@@ -1886,7 +1921,12 @@ void main() {
       expect(ohosViewFile, contains('LoadingProgress()'));
       expect(ohosViewFile, contains('.color(\'#6366F1\')'));
       expect(ohosHost, contains('this.showLoading = jsonBool(obj.showLoading'));
-      expect(ohosViewFile, contains('if (this.state().showLoading) {'));
+      // 589 根因修复：宿主普通字段不在 ArkUI 观察链上，必须镜像 @State 后
+      // 在 build() 直读（旧写法条件只求值一次 → 永久转圈）。
+      expect(ohosViewFile, contains('@State showLoading: boolean = false;'));
+      expect(ohosViewFile, contains('this.showLoading = s.showLoading;'));
+      expect(ohosViewFile, contains('if (this.showLoading) {'));
+      expect(ohosViewFile, isNot(contains('if (this.state().showLoading) {')));
       // 转圈层不得抢手势（None 而非 Transparent，565 老坑）。
       expect(ohosViewFile, contains('.hitTestBehavior(HitTestMode.None);'));
     });

@@ -1,13 +1,8 @@
 package com.himi.syncwatch.nativeplayer
 
 import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ColorFilter
-import android.graphics.Paint
-import android.graphics.PixelFormat
 import android.graphics.Typeface
-import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
@@ -128,6 +123,18 @@ internal object NPTheme {
     const val BADGE_MIN = 15
     const val BADGE_WIDE = 19
     const val BADGE_XL = 24
+
+    /**
+     * 角标圆底颜色（589）：与 Flutter `NativePlayerTheme.accent`、鸿蒙
+     * `SEL_COLOR '#6366F1'` 逐字节同值。
+     *
+     * 单独抽常量是因为旧实现把底色交给自绘 `BadgeCircleDrawable`，它的
+     * `draw` 依赖 `bounds`——View 在 `setBackground` 之后没走
+     * `mBackgroundSizeChanged` 时 bounds 恒空 → **圆底不画**，只剩白字
+     * （真机「角标只有白色数字、没有靛蓝圆底」）。改用系统
+     * `GradientDrawable(OVAL)` 后不再有这个时序陷阱。
+     */
+    const val BADGE_BG = 0xFF6366F1.toInt()
 
     /** 锁钮 22。 */
     const val LOCK_ICON = 22
@@ -287,32 +294,28 @@ internal object NPTheme {
 }
 
 /**
- * 角标圆形底（照 Flutter `BoxShape.circle`：正圆，直径 = 最短边）。
+ * 角标正圆底。
  *
- * 旧实现用 `GradientDrawable.OVAL` + 手算宽度 `14 + len*5`，"3" 变成
- * 19×14 的**椭圆**、"47" 更扁（真机截图回归）。这里画正圆，直径取
- * 视图最短边，与 Flutter 一致。
+ * 589：**改用系统 [GradientDrawable]（OVAL）**，删除自绘 Drawable。
+ *
+ * 旧实现是自绘 `Drawable`，`draw()` 依赖 `bounds`：
+ * ```kotlin
+ * override fun draw(canvas: Canvas) {
+ *     val b = bounds
+ *     if (b.isEmpty) return   // ← bounds 空 → 什么都不画
+ * }
+ * ```
+ * View 只在 `mBackgroundSizeChanged` 为 true 时才把 background 的 bounds
+ * 设成 `(0,0,w,h)`。角标 TextView 在 `addView` 时已带固定 LayoutParams，
+ * `setBackground` 与首次 `onSizeChanged` 的时序不保证 → bounds 恒空 →
+ * **圆底完全不画，只剩白字**（真机「角标只有白色数字，没有靛蓝圆底」）。
+ *
+ * 系统 `GradientDrawable` 由 View 的 `setBackground` 直接驱动绘制，不走
+ * 自定义 bounds 判定；容器是正方形（[NPTheme.badgeDiameterDp] 保证宽=高），
+ * OVAL 即为正圆。
  */
-internal class BadgeCircleDrawable(private val color: Int) : Drawable() {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
-
-    override fun draw(canvas: Canvas) {
-        val b = bounds
-        if (b.isEmpty) return
-        val cx = b.exactCenterX()
-        val cy = b.exactCenterY()
-        val radius = minOf(b.width(), b.height()) / 2f
-        canvas.drawCircle(cx, cy, radius, paint)
+internal fun badgeCircleBackground(): GradientDrawable =
+    GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(NPTheme.BADGE_BG)
     }
-
-    override fun setAlpha(alpha: Int) {
-        paint.alpha = alpha
-    }
-
-    override fun setColorFilter(colorFilter: ColorFilter?) {
-        paint.colorFilter = colorFilter
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
-}

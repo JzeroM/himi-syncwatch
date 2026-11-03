@@ -141,12 +141,16 @@ export struct DanmakuLayer {
     const bottomRows = Math.max(1, Math.min(s.danmakuBottomRows, autoRows));
     if (this.scrollRowAvail.length !== maxScrollRows) {
       this.scrollRowAvail = new Array<number>(maxScrollRows).fill(0);
+      // 589：行容量变化（转屏/改行数设置）→ 旧行号可能越界，整表重排。
+      this.laneOf.clear();
     }
     if (this.topRowAvail.length !== topRows) {
       this.topRowAvail = new Array<number>(topRows).fill(0);
+      this.laneOf.clear();
     }
     if (this.bottomRowAvail.length !== bottomRows) {
       this.bottomRowAvail = new Array<number>(bottomRows).fill(0);
+      this.laneOf.clear();
     }
     const travelMs = SCROLL_BASE_MS / speed;
     for (const item of items) {
