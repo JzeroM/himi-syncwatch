@@ -45,7 +45,7 @@ internal object NPTheme {
     const val FALLBACK_TINT = 0x1A1A1D23
     const val RIM = 0x4DFFFFFF
     const val DECODE_PANEL = 0xFF1E1E2E.toInt()
-    /** 解码当前值文字（585 起白底弹层用主色，旧 #A5B4FC 对比不足）。 */
+    /** 解码当前值文字（587 深色弹层上仍用主色，白字由 PANEL_TEXT 承担）。 */
     const val DECODE_CURRENT_TEXT = 0xFF6366F1.toInt()
     const val FOCUS_RING = 0xFFC1C2FE.toInt()
     const val SHADOW = 0x4A000000
@@ -161,7 +161,7 @@ internal object NPTheme {
     const val SEGMENT_ROW_HINT_SIZE = 12f
     const val SEGMENT_CHEVRON = 18
 
-    // ── 播放器弹层「白底磨砂」调色板 ──
+    // ── 播放器弹层「深色磨砂」调色板 ──
     //
     // 【范围铁律】仅用于播放器内的**弹出面板**（右侧侧栏 / 解码 popover /
     // 片头片尾卡）。顶栏、底栏、手势提示胶囊一律保持上面的深色常量
@@ -169,44 +169,48 @@ internal object NPTheme {
     // `GlassConfig.playerPanel*` 逐值一致。
 
     /**
-     * 暖白磨砂基色（90% 不透明）。
+     * 深色磨砂基色（65% 不透明）。
      *
-     * 586 由 585 的纯白基色改暖白：纯白在暗适应状态下亮度差近 20:1，
-     * 弹层一出现眼睛会本能躲闪；暖白（R>G>B 微弱偏暖）压住刺眼度，同时
-     * 保证黑字在任意画面上可读。
+     * 587 由 585 纯白 → 586 暖白 → 改深色：暖白即使压到 55% 仍是「一块亮
+     * 板」，暗场景与视频亮度差过大、弹层出现瞬间刺眼，且把磨砂完全盖死。
+     * 深色磨砂（近黑 + 65%）与顶/底栏同族，视频透过模糊层流动可见，
+     * 白字在任意画面（极亮/极暗）都稳。
+     *
+     * 安卓无节点级 backdrop blur（见 [PanelGlassDrawable] 注释），此处
+     * 不做模糊，靠深色半透 + 高光/描边表达「玻璃」；鸿蒙/Flutter 侧有
+     * 实时模糊，叠同一组深色后观感一致。
      */
-    const val PANEL_LIGHT_BASE = 0xE6F4F2EE.toInt()
+    const val PANEL_GLASS_BASE = 0xA61A1D23.toInt()
     /** 竖向渐变：顶部提亮（菲涅尔近似）→ 基色 → 底部略透。 */
-    const val PANEL_LIGHT_TOP = 0xF2FAF8F4.toInt()
-    const val PANEL_LIGHT_BOTTOM = 0xD6EAE7E1.toInt()
-    /** 暖白底定界描边（黑 15%；白描边在亮画面上会消失）。 */
-    const val PANEL_LIGHT_RIM = 0x26000000
-    /** 暖白面板投影（浅底靠投影浮起来）。 */
-    const val PANEL_LIGHT_SHADOW = 0x40000000
-    const val PANEL_LIGHT_SHADOW_BLUR = 24
-    const val PANEL_LIGHT_SHADOW_DY = 8
-    /** 深底不可见的内圈「玻璃厚度」暗线 → 暖白底改白 6% 微高光。 */
-    const val PANEL_LIGHT_INNER = 0x0FFFFFFF
+    const val PANEL_GLASS_TOP = 0xB31A1D23.toInt()
+    const val PANEL_GLASS_BOTTOM = 0x991A1D23.toInt()
+    /** 深色底定界描边（白 20%；深底必须靠亮边才有玻璃厚度感）。 */
+    const val PANEL_GLASS_RIM = 0x33FFFFFF
+    /** 面板投影（深色面板靠投影与视频分离）。 */
+    const val PANEL_GLASS_SHADOW = 0x66000000
+    const val PANEL_GLASS_SHADOW_BLUR = 24
+    const val PANEL_GLASS_SHADOW_DY = 8
+    /** 内圈「玻璃厚度」高光线（白 6%）。 */
+    const val PANEL_GLASS_INNER = 0x0FFFFFFF
 
     /**
      * 面板文字（586 起**取消三色分级**，只留两级）：
-     * - [TEXT_DARK]：正文一律近黑（选项行不再用强调色）；
-     * - [TEXT_DARK_72]：说明/占位黑 72%。
+     * - [PANEL_TEXT]：正文一律纯白（选项行不再用强调色）；
+     * - [PANEL_TEXT_DIM]：说明/占位白 70%。
      *
-     * [TEXT_DARK_54] / [TEXT_DARK_38] 保留为别名（历史调用点仍在用），
-     * 值与 72% 同级，避免同一面板出现三种灰度。
+     * [PANEL_TEXT_DIMER] 保留为别名（历史调用点仍在用），值与 DIM 同级，
+     * 避免同一面板出现三种灰度。
      */
-    const val TEXT_DARK = 0xFF1B1B1F.toInt()
-    const val TEXT_DARK_72 = 0xB8000000.toInt()
-    const val TEXT_DARK_54 = TEXT_DARK_72
-    const val TEXT_DARK_38 = TEXT_DARK_72
-    /** 暖白底分隔线（黑 12%；纯白底下 8% 几乎看不见）。 */
-    const val DIVIDER_LIGHT = 0x1F000000
-    /** 暖白底选中行底（accent@12%）与滑杆未填充段（黑 12%）。 */
-    const val SEL_BG_LIGHT = 0x1F6366F1
-    const val TRACK_LIGHT_INACTIVE = 0x1F000000
-    /** 暖白面板遮罩：黑 30%（暖白面板不需要纯白时那么重的遮罩）。 */
-    const val SCRIM_LIGHT = 0x4D000000
+    const val PANEL_TEXT = 0xFFFFFFFF.toInt()
+    const val PANEL_TEXT_DIM = 0xB3FFFFFF.toInt()
+    const val PANEL_TEXT_DIMER = PANEL_TEXT_DIM
+    /** 深色底分隔线（白 12%）。 */
+    const val PANEL_DIVIDER = 0x1FFFFFFF
+    /** 深色底选中行底（accent@20%）与滑杆未填充段（白 24%）。 */
+    const val SEL_BG = 0x336366F1
+    const val TRACK_INACTIVE = 0x3DFFFFFF
+    /** 面板遮罩：黑 45%（深色面板需要中等遮罩区分层次）。 */
+    const val SCRIM_DIM = 0x73000000
 
     /**
      * 面板标题字重（w600）：`sans-serif-medium` 是 Android 唯一可靠的

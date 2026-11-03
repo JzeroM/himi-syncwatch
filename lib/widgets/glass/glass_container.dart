@@ -20,7 +20,7 @@ class GlassContainer extends ConsumerWidget {
     this.tint = GlassConfig.panelTint,
     this.fallbackColor = GlassConfig.fallbackColor,
     this.showShadow = true,
-    this.light = false,
+    this.popup = false,
   });
 
   final Widget child;
@@ -36,13 +36,14 @@ class GlassContainer extends ConsumerWidget {
   /// 是否绘制悬浮投影（顶栏等贴边胶囊传 false，避免黑影）。
   final bool showShadow;
 
-  /// **播放器弹层暖白磨砂**变体（仅播放器弹层使用）。
+  /// **播放器弹层深色磨砂**变体（仅播放器内的弹出面板使用）。
   ///
-  /// 与深色玻璃的区别：暖白竖向渐变（顶部提亮）、**暗**描边定界、
-  /// 更重的投影、近黑文字由调用方配套。开启后不再叠深色 tint 渐变
-  /// （浅底上叠深色会脏）；`glassUi` 关闭时同样保持暖白底（弹层可读性
-  /// 优先于全局降级一致性）。
-  final bool light;
+  /// 587 由 585 纯白 → 586 暖白 → 深色磨砂。与顶/底栏同族的近黑叠色
+  /// （65%）+ 白描边 + 重投影，**走与全局玻璃同一条折射管线**（
+  /// `glassUi` 开启时是真·实时折射模糊，关闭时降级为实色深底），
+  /// 白字由调用方配套。旧实现（浅色分支）在关闭玻璃时也强制浅底、
+  /// 且不参与折射管线，反而与全局降级不一致且完全盖死磨砂。
+  final bool popup;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -51,61 +52,37 @@ class GlassContainer extends ConsumerWidget {
     final effectiveTint =
         tint == GlassConfig.panelTint ? GlassConfig.panelTintOf() : tint;
 
-    // 暖白磨砂（586）：暖白渐变 + 暗描边，不叠深色 tint。
-    if (light) {
-      Widget white = DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              GlassConfig.playerPanelWhiteTop,
-              GlassConfig.playerPanelWhite,
-              GlassConfig.playerPanelWhiteBottom,
-            ],
-          ),
-          borderRadius: borderRadius,
-          border: Border.all(color: GlassConfig.playerPanelRimLight),
-        ),
-        child: Padding(
-          padding: padding ?? EdgeInsets.zero,
-          child: child,
-        ),
-      );
-      white = ClipRRect(borderRadius: borderRadius, child: white);
-      if (showShadow) {
-        white = DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: borderRadius,
-            boxShadow: GlassConfig.playerPanelShadow,
-          ),
-          child: white,
-        );
-      }
-      if (margin != null) {
-        white = Padding(padding: margin!, child: white);
-      }
-      return white;
-    }
-
     Widget content = DecoratedBox(
       decoration: BoxDecoration(
-        color: glassEnabled ? null : fallbackColor,
+        // 关闭玻璃时：弹层降级为实色深底，普通容器降级为 `fallbackColor`。
+        color: glassEnabled
+            ? null
+            : (popup ? GlassConfig.playerPanelBase : fallbackColor),
         gradient: glassEnabled
             ? LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color.lerp(effectiveTint, Colors.white, 0.06)!,
-                  effectiveTint,
-                  effectiveTint.withValues(alpha: effectiveTint.a * 0.72),
-                ],
+                // 弹层（587）：深色磨砂三段渐变；普通玻璃沿用叠色。
+                colors: popup
+                    ? const [
+                        GlassConfig.playerPanelTop,
+                        GlassConfig.playerPanelBase,
+                        GlassConfig.playerPanelBottom,
+                      ]
+                    : [
+                        Color.lerp(effectiveTint, Colors.white, 0.06)!,
+                        effectiveTint,
+                        effectiveTint.withValues(alpha: effectiveTint.a * 0.72),
+                      ],
               )
             : null,
         borderRadius: borderRadius,
-        // 玻璃开启时不加本层白描边：包折射管线自带菲涅尔高光边缘，
+        // 普通玻璃开启时不加本层白描边：包折射管线自带菲涅尔高光边缘，
         // 双描边会压灰、破坏 Kyant 镜片观感；纯色降级态才需要边线定界。
-        border: glassEnabled ? null : Border.all(color: GlassConfig.rimColor),
+        // 弹层是深底，必须靠亮描边定界，开关玻璃都保留。
+        border: popup
+            ? Border.all(color: GlassConfig.playerPanelRim)
+            : (glassEnabled ? null : Border.all(color: GlassConfig.rimColor)),
       ),
       child: Padding(
         padding: padding ?? EdgeInsets.zero,
@@ -127,12 +104,14 @@ class GlassContainer extends ConsumerWidget {
 
     content = ClipRRect(borderRadius: borderRadius, child: content);
 
-    // 悬浮投影画在裁剪层之外，避免被 ClipRRect 吃掉
-    if (glassEnabled && showShadow) {
+    // 悬浮投影画在裁剪层之外，避免被 ClipRRect 吃掉。
+    // 弹层无论玻璃开关都要投影：深底浮在视频上靠投影分离层次。
+    if ((glassEnabled || popup) && showShadow) {
       content = DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: borderRadius,
-          boxShadow: GlassConfig.panelShadow,
+          boxShadow:
+              popup ? GlassConfig.playerPanelShadow : GlassConfig.panelShadow,
         ),
         child: content,
       );

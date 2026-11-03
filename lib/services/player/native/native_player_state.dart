@@ -446,11 +446,15 @@ class NativePlayerState {
   final bool paused;
   final bool buffering;
 
-  /// 加载指示器是否显示（586，三端统一）。
+  /// 加载指示器是否显示（586 三端统一，587 起改为**每次推送现算**）。
   ///
-  /// 由 [PlayerScreen.shouldShowLoadingSpinner] 的规则算出（首帧未出 **或**
+  /// 判定规则见 `MpvPlayerAdapter._buildNativePlayerState`（首帧未出 **或**
   /// 缓冲中），原生宿主直接读这一位决定转圈显隐——安卓/鸿蒙不再各自拼
   /// `state.buffering` 条件，避免「同一时刻两端一个转一个不转」。
+  ///
+  /// ⚠️ 586 的坑：该字段曾随 `NativePlayerUiExtras` 一起下发，而 extras
+  /// 只在设置变更/切集等低频时机重建 → 起播前算出的 `true` 被一直送下去，
+  /// 鸿蒙/安卓出现「视频都在播了还一直转圈」。不要再从 extras 读取它。
   final bool showLoading;
 
   final bool ended;
@@ -1143,7 +1147,6 @@ class NativePlayerUiExtras {
     this.segmentOutroStartMs,
     this.skipPrompt = '',
     this.showDebug = false,
-    this.showLoading = false,
     this.isRoom = false,
     this.canScreenshot = false,
     this.locked = false,
@@ -1182,13 +1185,6 @@ class NativePlayerUiExtras {
   final int? segmentOutroStartMs;
   final String skipPrompt;
   final bool showDebug;
-
-  /// 加载指示器是否显示（586，三端统一）。
-  ///
-  /// 由 PlayerScreen 按 `shouldShowLoadingSpinner` 算出后随快照下发；
-  /// 安卓/鸿蒙原生层只读这一位，不再各自拼 `buffering` 条件——否则
-  /// 「首帧未出」与「中途缓冲」两种时机会在两端各转一半。
-  final bool showLoading;
 
   final bool isRoom;
   final bool canScreenshot;

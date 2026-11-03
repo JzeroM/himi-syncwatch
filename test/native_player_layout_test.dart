@@ -287,8 +287,13 @@ void main() {
       expect(screen, contains('CircularProgressIndicator(color: Color(0xFF6366F1))'));
     });
 
-    test('Android 同值', () {
-      expect(kotlinScreen, contains('ColorStateList.valueOf(NPTheme.ACCENT)'));
+    test('Android 同值（587 自绘弧线，颜色默认 NPTheme.ACCENT）', () {
+      expect(kotlinScreen, contains('PlayerSpinnerView(context)'));
+      final spinner = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'PlayerSpinnerView.kt',
+      ).readAsStringSync();
+      expect(spinner, contains('color: Int = NPTheme.ACCENT'));
     });
   });
 
@@ -585,15 +590,15 @@ void main() {
       expect(screen, contains("api_key=\$_currentToken"));
     });
 
-    test('586 弹层改暖白渐变磨砂（不再采样 → 零跳帧零黑屏风险）', () {
+    test('587 弹层改深色渐变磨砂（不再采样 → 零跳帧零黑屏风险）', () {
       final kotlinGlass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
         'PanelGlassDrawable.kt',
       ).readAsStringSync();
-      // 暖白竖向渐变 + 顶部高光 + 暗描边 + 内圈微高光线。
-      expect(kotlinGlass, contains('PANEL_LIGHT_TOP'));
-      expect(kotlinGlass, contains('PANEL_LIGHT_BASE'));
-      expect(kotlinGlass, contains('PANEL_LIGHT_RIM'));
+      // 深色竖向渐变 + 顶部高光 + 亮描边 + 内圈微高光线。
+      expect(kotlinGlass, contains('PANEL_GLASS_TOP'));
+      expect(kotlinGlass, contains('PANEL_GLASS_BASE'));
+      expect(kotlinGlass, contains('PANEL_GLASS_RIM'));
       // 旧采样实现（PixelCopy / SurfaceView / 折射带）必须彻底消失。
       expect(kotlinGlass, isNot(contains('PixelCopy')));
       expect(kotlinGlass, isNot(contains('SAMPLE_INTERVAL_MS')));
@@ -1536,12 +1541,12 @@ void main() {
       expect(kotlinScreen, contains('if (badgeLastText[badge] == text) return@forEach'));
     });
 
-    test('面板背景逐值对齐 Flutter（585 改白底磨砂）', () {
-      // 584 时是深色 tint 三段渐变；585 统一改白底磨砂，对应常量换成
-      // PANEL_LIGHT_TOP / PANEL_LIGHT_BASE / PANEL_LIGHT_BOTTOM。
-      expect(glassBackdrop, contains('PANEL_LIGHT_TOP'));
-      expect(glassBackdrop, contains('PANEL_LIGHT_BASE'));
-      expect(glassBackdrop, contains('PANEL_LIGHT_BOTTOM'));
+    test('面板背景逐值对齐 Flutter（587 改深色磨砂）', () {
+      // 585~586 是浅底磨砂；587 三端统一改深色磨砂，对应常量换成
+      // PANEL_GLASS_TOP / PANEL_GLASS_BASE / PANEL_GLASS_BOTTOM。
+      expect(glassBackdrop, contains('PANEL_GLASS_TOP'));
+      expect(glassBackdrop, contains('PANEL_GLASS_BASE'));
+      expect(glassBackdrop, contains('PANEL_GLASS_BOTTOM'));
     });
   });
 
@@ -1620,9 +1625,9 @@ void main() {
       expect(kotlinScreen, isNot(contains('verticalBar.text = ')));
     });
 
-    test('安卓弹层改暖白磨砂且删除 PixelCopy 采样', () {
-      expect(lightGlass, contains('PANEL_LIGHT_TOP'));
-      expect(lightGlass, contains('PANEL_LIGHT_RIM'));
+    test('安卓弹层改深色磨砂且删除 PixelCopy 采样', () {
+      expect(lightGlass, contains('PANEL_GLASS_TOP'));
+      expect(lightGlass, contains('PANEL_GLASS_RIM'));
       // 采样链必须彻底消失（旧实现 600ms 回读 → 背景一帧一帧跳）。
       expect(kotlinScreen, isNot(contains('sampleAsync()')));
       expect(kotlinScreen, isNot(contains('startGlassSampling')));
@@ -1635,21 +1640,21 @@ void main() {
       expect(host, contains('"type" to "addSubtitle"'));
     });
 
-    test('Flutter 暖白磨砂只在播放器弹层（全局 panelTint 不变）', () {
+    test('Flutter 深色磨砂只在播放器弹层（全局 panelTint 不变）', () {
       // 全局深色常量必须原样保留（设置页/缓存页等仍在用）。
       expect(glassConfig, contains('static const Color panelTint = Color(0x1F1A1D23)'));
-      expect(glassConfig, contains('playerPanelWhite'));
-      expect(glassConfig, contains('playerPanelRimLight'));
-      // 弹层容器走 light 变体。
-      expect(glassContainer, contains('this.light = false'));
-      expect(selectorPanel, contains('light: true'));
+      expect(glassConfig, contains('playerPanelBase'));
+      expect(glassConfig, contains('playerPanelRim'));
+      // 弹层容器走 popup 变体。
+      expect(glassContainer, contains('this.popup = false'));
+      expect(selectorPanel, contains('popup: true'));
     });
 
-    test('鸿蒙弹层同步暖白磨砂（保留实时 backgroundEffect）', () {
-      expect(ohosPanel, contains('PANEL_LIGHT_TOP'));
-      expect(ohosPanel, contains('PANEL_LIGHT_RIM'));
+    test('鸿蒙弹层同步深色磨砂（保留实时 backgroundEffect）', () {
+      expect(ohosPanel, contains('PANEL_GLASS_TOP'));
+      expect(ohosPanel, contains('PANEL_GLASS_RIM'));
       expect(ohosPanel, contains('backgroundEffect'));
-      expect(ohosPanel, contains('TEXT_DARK'));
+      expect(ohosPanel, contains('PANEL_TEXT'));
     });
   });
 
@@ -1681,7 +1686,7 @@ void main() {
     });
   });
 
-  group('586 鸿蒙画布分辨率 + 弹层暖白 + 加载指示器统一', () {
+  group('586/587 鸿蒙画布分辨率 + 深色磨砂弹层 + 加载指示器统一', () {
     final ohosPlugin = File(
       'plugins/himi_mpv_ohos/ohos/src/main/ets/components/plugin/'
       'HimiMpvOhosPlugin.ets',
@@ -1763,26 +1768,45 @@ void main() {
       expect(ohosPlugin, contains("session.lib.setProperty('ohos-surface-size'"));
     });
 
-    test('三端暖白基色逐字节一致，且不再出现纯白 0xD1FFFFFF', () {
-      // Dart
-      expect(glassConfig586, contains('Color(0xE6F4F2EE)'));
-      expect(glassConfig586, contains('Color(0xF2FAF8F4)'));
-      expect(glassConfig586, contains('Color(0xD6EAE7E1)'));
+    test('三端深色磨砂基色逐字节一致，浅色残留彻底清零', () {
+      // Dart（顶/基/底三段 + 描边）。
+      expect(glassConfig586, contains('Color(0xB31A1D23)'));
+      expect(glassConfig586, contains('Color(0xA61A1D23)'));
+      expect(glassConfig586, contains('Color(0x991A1D23)'));
+      expect(glassConfig586, contains('Color(0x33FFFFFF)'));
       // Kotlin
-      expect(kotlinTheme586, contains('0xE6F4F2EE'));
-      expect(kotlinTheme586, contains('0xF2FAF8F4'));
-      expect(kotlinTheme586, contains('0xD6EAE7E1'));
+      expect(kotlinTheme586, contains('0xB31A1D23'));
+      expect(kotlinTheme586, contains('0xA61A1D23'));
+      expect(kotlinTheme586, contains('0x991A1D23'));
+      expect(kotlinTheme586, contains('0x33FFFFFF'));
       // ArkTS
-      expect(ohosPanelFile, contains("'#E6F4F2EE'"));
-      expect(ohosPanelFile, contains("'#F2FAF8F4'"));
-      expect(ohosPanelFile, contains("'#D6EAE7E1'"));
-      // 585 纯白必须彻底消失（防回流）。
-      expect(glassConfig586, isNot(contains('0xD1FFFFFF')));
-      expect(kotlinTheme586, isNot(contains('0xD1FFFFFF')));
-      expect(ohosPanelFile, isNot(contains('#D1FFFFFF')));
+      expect(ohosPanelFile, contains("'#B31A1D23'"));
+      expect(ohosPanelFile, contains("'#A61A1D23'"));
+      expect(ohosPanelFile, contains("'#991A1D23'"));
+      expect(ohosPanelFile, contains("'#33FFFFFF'"));
+      // 585 纯白 / 586 暖白都必须彻底消失（防回流）。
+      for (final old in ['0xD1FFFFFF', '0xE6F4F2EE', '0xF2FAF8F4', '0xD6EAE7E1']) {
+        expect(glassConfig586, isNot(contains(old)), reason: old);
+        expect(kotlinTheme586, isNot(contains(old)), reason: old);
+      }
+      for (final old in ['#D1FFFFFF', '#E6F4F2EE', '#F2FAF8F4', '#D6EAE7E1']) {
+        expect(ohosPanelFile, isNot(contains(old)), reason: old);
+      }
+      // 旧命名也必须清零（`light` 语义已反，改名防误用）。
+      for (final old in ['playerPanelWhite', 'playerPanelRimLight']) {
+        expect(glassConfig586, isNot(contains(old)), reason: old);
+      }
+      for (final old in ['PANEL_LIGHT_', 'TEXT_DARK', 'DIVIDER_LIGHT',
+          'SEL_BG_LIGHT', 'TRACK_LIGHT_INACTIVE', 'SCRIM_LIGHT']) {
+        expect(kotlinTheme586, isNot(contains(old)), reason: old);
+        expect(ohosPanelFile, isNot(contains(old)), reason: old);
+      }
+      // 全局深色常量（顶/底栏、App 其它页面）必须原样保留。
+      expect(glassConfig586,
+          contains('static const Color panelTint = Color(0x1F1A1D23)'));
     });
 
-    test('面板正文统一近黑，选中行不再用强调色当文字色', () {
+    test('面板正文统一纯白，选中行不再用强调色当文字色', () {
       // Flutter：SideOptionRow 文字恒为 playerPanelTextPrimary + w500。
       expect(
         selectorPanel586,
@@ -1791,15 +1815,15 @@ void main() {
       );
       expect(selectorPanel586, contains('GlassConfig.playerPanelBodySize'));
       expect(selectorPanel586, contains('fontWeight: FontWeight.w500'));
-      // 安卓：optionRow 文字恒 TEXT_DARK + bodyTypeface。
-      expect(kotlinScreen586, contains('setTextColor(NPTheme.TEXT_DARK)'));
+      // 安卓：optionRow 文字恒 PANEL_TEXT + bodyTypeface。
+      expect(kotlinScreen586, contains('setTextColor(NPTheme.PANEL_TEXT)'));
       expect(kotlinScreen586, contains('typeface = NPTheme.bodyTypeface'));
       expect(
         kotlinScreen586,
-        isNot(contains('setTextColor(if (selected) NPTheme.ACCENT else NPTheme.TEXT_DARK)')),
+        isNot(contains('setTextColor(if (selected) NPTheme.ACCENT else NPTheme.PANEL_TEXT)')),
       );
-      // 鸿蒙：OptionLabel 文字恒 TEXT_DARK + w500。
-      expect(ohosPanelFile, contains('.fontColor(TEXT_DARK)\n      .layoutWeight(1)'));
+      // 鸿蒙：OptionLabel 文字恒 PANEL_TEXT + w500。
+      expect(ohosPanelFile, contains('.fontColor(PANEL_TEXT)\n      .layoutWeight(1)'));
       expect(ohosPanelFile, contains('const PANEL_BODY_WEIGHT = 500'));
     });
 
@@ -1831,15 +1855,131 @@ void main() {
       // Dart 快照字段 + JSON 往返。
       expect(stateDart586, contains('showLoading'));
       expect(stateDart586, contains("'showLoading': showLoading,"));
-      expect(adapter586, contains('showLoading: _nativeUiExtras.showLoading'));
+      // 587：适配器每次推送**现算**，不再读低频 extras（转圈不停根因）。
+      expect(adapter586, contains('final showLoading = buffering ||'));
+      expect(adapter586, contains('showLoading: showLoading,'));
+      expect(adapter586, isNot(contains('showLoading: _nativeUiExtras.showLoading')));
+      // extras 类里不得再有该字段（否则又会被低频覆盖）。
+      final extrasBlock = stateDart586.substring(
+        stateDart586.indexOf('class NativePlayerUiExtras'),
+      );
+      expect(extrasBlock, isNot(contains('showLoading')));
       // 安卓只读 showLoading，不再自己判 buffering。
       expect(kotlinState586, contains('val showLoading: Boolean = false'));
       expect(kotlinScreen586,
           contains('bufferingView.visibility = if (state.showLoading) VISIBLE else GONE'));
-      // 鸿蒙新增 LoadingProgress。
+      // 鸿蒙 LoadingProgress 只读快照位，不自行拼缓冲条件。
       expect(ohosViewFile, contains('LoadingProgress()'));
       expect(ohosViewFile, contains('.color(\'#6366F1\')'));
       expect(ohosHost, contains('this.showLoading = jsonBool(obj.showLoading'));
+      expect(ohosViewFile, contains('if (this.state().showLoading) {'));
+      // 转圈层不得抢手势（None 而非 Transparent，565 老坑）。
+      expect(ohosViewFile, contains('.hitTestBehavior(HitTestMode.None);'));
+    });
+
+    test('587 转圈判定：首帧未出 / 缓冲中 / 起播前黑窗，起播后必收起', () {
+      // 三个条件缺一不可：仅看 buffering 会在首帧期不转；仅看首帧会在
+      // 中途卡顿时不转；都是 0 且未 playing 是起播前那段黑窗。
+      expect(adapter586, contains('buffering ||'));
+      expect(adapter586, contains('firstFramePending.value ||'));
+      expect(adapter586, contains('_durationMs == 0 &&'));
+      expect(adapter586, contains('_positionMs == 0 &&'));
+      expect(adapter586, contains('_state != AdapterPlaybackState.playing'));
+      // PlayerScreen 侧的静态谓词继续给 Flutter 自绘转圈用。
+      expect(screen586, contains('static bool shouldShowLoadingSpinner'));
+    });
+
+    test('587 安卓转圈为自绘弧线（禁系统 ProgressBar 的 ROM 差异）', () {
+      final spinner = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'PlayerSpinnerView.kt',
+      ).readAsStringSync();
+      // 尺寸/描边/颜色对齐 Flutter CircularProgressIndicator。
+      expect(spinner, contains('diameterDp: Float = 36f'));
+      expect(spinner, contains('strokeDp: Float = 4f'));
+      expect(spinner, contains('NPTheme.ACCENT'));
+      expect(spinner, contains('Paint.Cap.ROUND'));
+      // 动画：1333ms 线性旋转 + 弧长伸缩，不可见时停。
+      expect(spinner, contains('ROTATION_MS = 1333L'));
+      expect(spinner, contains('ValueAnimator.INFINITE'));
+      expect(spinner, contains('onVisibilityAggregated'));
+      expect(spinner, contains('canvas.drawArc'));
+      // 控件层必须改用它，且系统 ProgressBar 引用清除。
+      expect(kotlinScreen586, contains('PlayerSpinnerView(context)'));
+      expect(kotlinScreen586, isNot(contains('ProgressBar(context)')));
+      expect(kotlinScreen586, isNot(contains('isIndeterminate = true')));
+    });
+
+    test('587 鸿蒙解码面板完全对齐 Flutter（智能/硬解/软解 + 说明）', () {
+      // 档位文案：auto = 智能（旧实现写「自动」）。
+      expect(ohosPanelFile, contains("return '智能';"));
+      expect(ohosPanelFile, isNot(contains("return '自动';")));
+      // 三句说明逐字对齐 Flutter / 安卓。
+      expect(ohosPanelFile, contains("return '优先硬解，失败回退软解';"));
+      expect(ohosPanelFile, contains("return '纯硬解，失败不回退';"));
+      expect(ohosPanelFile, contains("return '纯软解，CPU 占用高';"));
+      // 标题行「解码模式 + 当前档位」。
+      expect(ohosPanelFile, contains("Text('解码模式')"));
+      expect(ohosPanelFile, contains('decodeModeLabel(this.state().decodeMode)'));
+      // 不再有「当前：xxx」旧布局。
+      expect(ohosPanelFile, isNot(contains("'当前：'")));
+      // 安卓说明文案同值。
+      expect(kotlinScreen586, contains('优先硬解，失败回退软解'));
+      expect(kotlinScreen586, contains('纯硬解，失败不回退'));
+      expect(kotlinScreen586, contains('纯软解，CPU 占用高'));
+      // Flutter 参考实现：同一组文案 + 走弹层容器。
+      final decodePanel = File(
+        'lib/screens/player/widgets/decode_mode_panel.dart',
+      ).readAsStringSync();
+      expect(decodePanel, contains("'auto': '智能'"));
+      expect(decodePanel, contains("'auto': '优先硬解，失败回退软解'"));
+      expect(decodePanel, contains('GlassContainer('));
+      expect(decodePanel, contains('popup: true'));
+    });
+
+    test('587 所有播放器弹层都走深色 popup 容器（无浅色档残留）', () {
+      final files = <String>[
+        'decode_mode_panel.dart',
+        'selector_side_panel.dart',
+        'segment_mark_panel.dart',
+        'subtitle_style_panel.dart',
+        'danmaku_style_panel.dart',
+      ];
+      for (final name in files) {
+        final src = File('lib/screens/player/widgets/$name').readAsStringSync();
+        expect(src, isNot(contains('light: true')), reason: name);
+        expect(src, isNot(contains('light: false')), reason: name);
+        expect(src, isNot(contains('playerPanelWhite')), reason: name);
+        expect(src, isNot(contains('playerPanelRimLight')), reason: name);
+      }
+      // 容器开关叫 popup，语义不再是「浅色」。
+      final container =
+          File('lib/widgets/glass/glass_container.dart').readAsStringSync();
+      expect(container, contains('this.popup = false'));
+      expect(container, isNot(contains('final bool light;')));
+      // 深色弹层必须靠亮描边定界 + 走折射管线（真模糊）。
+      expect(container, contains('GlassConfig.playerPanelRim'));
+      expect(container, contains('lg.GlassContainer('));
+      // 面板滑杆不再有浅色档参数。
+      final slider =
+          File('lib/screens/player/widgets/glass_slider_theme.dart').readAsStringSync();
+      expect(slider, isNot(contains('bool light = false')));
+    });
+
+    test('587 内核面板：单行「短名 · 说明」+ 底部说明（三端一致）', () {
+      const tail = '切换仅影响当前播放，不改变默认引擎；下一集沿用当前内核';
+      // Flutter 参考实现（bottom note 唯一真相源）。
+      final kernelPanel = File(
+        'lib/screens/player/widgets/player_kernel_panel.dart',
+      ).readAsStringSync();
+      expect(kernelPanel, contains(tail));
+      // 安卓：单行拼接 + 同一段底部说明。
+      expect(kotlinScreen586, contains(r'"${opt.label} · ${opt.description}"'));
+      expect(kotlinScreen586, contains(tail));
+      expect(kotlinScreen586, contains('NPTheme.PANEL_BODY_SIZE'));
+      // 鸿蒙：单行拼接 + 同一段底部说明（旧实现双行堆叠）。
+      expect(ohosPanelFile, contains(r'`${opt.label} · ${opt.description}`'));
+      expect(ohosPanelFile, contains(tail));
     });
 
     test('加载指示器统一规则（首帧未出 或 缓冲中）', () {

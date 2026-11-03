@@ -2,7 +2,6 @@ package com.himi.syncwatch.nativeplayer
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
@@ -18,7 +17,6 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 
@@ -805,7 +803,14 @@ class NativePlayerScreenView(
     private var audioButton: View? = null
     private var episodeButton: View? = null
     private val diagText = TextView(context)
-    private val bufferingView = ProgressBar(context)
+    /**
+     * 加载指示器：自绘弧线转圈（复刻 Flutter `CircularProgressIndicator`）。
+     *
+     * 旧实现用系统 [ProgressBar]：弧长/转速/是否动画全由 ROM 的
+     * `progressBarStyle` 决定，真机反馈「就一个圈、不是动态的」。自绘后
+     * 任何机型都是同一个「旋转 + 弧长伸缩」的圈（见 [PlayerSpinnerView]）。
+     */
+    private val bufferingView = PlayerSpinnerView(context)
 
     // 面板层
     private val danmakuLayer = DanmakuLayerView(context)
@@ -814,21 +819,21 @@ class NativePlayerScreenView(
     // 后面会被 Kotlin 解析到外层 this（整个控件层根视图），把根视图设成
     // GONE → 控件全消失（真机回归「只有画面没控件」）。
     private val panelScrim = View(context).apply {
-        // 白底面板需要更重的遮罩才有层次（Flutter 侧同步为黑 35%）。
-        setBackgroundColor(NPTheme.SCRIM_LIGHT)
+        // 深色面板用中等遮罩区分层次（587：黑 45%）。
+        setBackgroundColor(NPTheme.SCRIM_DIM)
         visibility = GONE
         setOnClickListener { closePanel() }
     }
 
     /**
-     * 播放器弹层「暖白磨砂」背景（纯渐变，不做任何背景采样）。
+     * 播放器弹层「深色磨砂」背景（纯渐变，不做任何背景采样）。
      *
      * 【为什么删掉 PixelCopy 采样】旧实现每 600ms 回读面板矩形做折射背景，
      * 视频运动时面板背景**一帧一帧地跳**（1.7fps 静帧序列），与 MDK
      * （Flutter `BackdropFilter` 实时模糊）差距极大。Android 无节点级
      * backdrop blur API，真·实时只能让面板独立成窗口走系统 cross-window
      * blur——但那会迫使视频层从硬件 overlay 降级为 GPU 合成（HDR 直通
-     * 失效）、且窗口插入可能打断 surface 绑定。权衡后改纯暖白渐变：
+     * 失效）、且窗口插入可能打断 surface 绑定。权衡后改纯深色渐变：
      * **零回读、零循环、零跳帧、零黑屏风险**。
      */
     private val glassPanel =
@@ -839,7 +844,7 @@ class NativePlayerScreenView(
     private val decodePopover = LinearLayout(context)
     private val segmentCard = LinearLayout(context)
     private val segmentScrim = View(context).apply {
-        setBackgroundColor(NPTheme.SCRIM_LIGHT)
+        setBackgroundColor(NPTheme.SCRIM_DIM)
         visibility = GONE
         setOnClickListener {
             segmentCardOpen = false
@@ -863,18 +868,15 @@ class NativePlayerScreenView(
         // 弹幕层：视频之上、控件之下（与 Flutter DanmakuOverlay 位置一致）。
         addView(danmakuLayer, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
-        // 加载指示器：居中转圈。颜色/尺寸对齐 Flutter `_buildVideoArea`
+        // 加载指示器：居中转圈。颜色/尺寸/动画对齐 Flutter `_buildVideoArea`
         // 的 `CircularProgressIndicator(color: Color(0xFF6366F1))`——旧值
-        // WHITE_70 与 Flutter 观感不一致（B8）。
+        // WHITE_70 与 Flutter 观感不一致（B8），系统 ProgressBar 的动画
+        // 又随 ROM 变化（587 改自绘）。
         //
         // 【层级修正（586）】必须**先于** topBar/bottomBar 添加：Flutter 的
         // 转圈画在控件层**之下**（「转圈期间顶栏/底栏仍可点返回」），而旧
         // 实现加在 bars 之后 → 转圈盖住控件区，与 Flutter 观感相反。
-        bufferingView.apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(NPTheme.ACCENT)
-            visibility = GONE
-        }
+        bufferingView.visibility = GONE
         addView(bufferingView, lp(dp(36), dp(36), Gravity.CENTER))
 
         addView(topBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))
@@ -1674,7 +1676,7 @@ class NativePlayerScreenView(
                 // 常规面板上下避让（top safe+48 / bottom 116+safe），**拉伸全高**
                 //（Flutter Positioned(top,bottom) 语义，非 wrap-content）。
                 val fullBleed = panel == PANEL_EPISODE
-                // 暖白磨砂（播放器弹层统一）：暖白渐变 + 顶部高光 + 暗描边，
+                // 深色磨砂（播放器弹层统一）：深色渐变 + 顶部高光 + 亮描边，
                 // 不做背景采样（零跳帧）。选集面板全高贴边时右侧圆角放平。
                 panelContainer.background = if (fullBleed) {
                     PanelGlassDrawable(
@@ -1746,8 +1748,8 @@ class NativePlayerScreenView(
     private fun panelHeader(title: String): TextView =
         TextView(context).apply {
             text = title
-            // 暖白磨砂弹层：标题近黑（顶/底栏仍白字，不受影响）。
-            setTextColor(NPTheme.TEXT_DARK)
+            // 深色磨砂弹层（587）：标题纯白（顶/底栏同样白字，观感统一）。
+            setTextColor(NPTheme.PANEL_TEXT)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_TITLE_SIZE)
             // 586：标题由 BOLD(700) 降到 w600，与 Flutter w600 逐值对齐。
             typeface = NPTheme.mediumTypeface
@@ -1771,7 +1773,7 @@ class NativePlayerScreenView(
     /**
      * 选项行：文字左对齐 + 右侧对勾占 18dp 槽位。
      *
-     * 586 统一排版：正文一律近黑 + w500，选中态只靠行底（[NPTheme.SEL_BG_LIGHT]）
+     * 586 统一排版：正文一律纯白 + w500，选中态只靠行底（[NPTheme.SEL_BG]）
      * 与右侧强调色对勾区分——旧实现选中行文字改强调色 + BOLD，同一面板
      * 出现两种字色/字重，观感散乱（用户真机反馈「字体不统一」）。
      */
@@ -1785,7 +1787,7 @@ class NativePlayerScreenView(
             addView(
                 TextView(context).apply {
                     text = label
-                    setTextColor(NPTheme.TEXT_DARK)
+                    setTextColor(NPTheme.PANEL_TEXT)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
                     typeface = NPTheme.bodyTypeface
                     maxLines = 1
@@ -1846,7 +1848,7 @@ class NativePlayerScreenView(
             list.addView(
                 TextView(context).apply {
                     text = if (allowOff) "当前视频无内嵌字幕轨道" else "当前视频无音轨选项"
-                    setTextColor(NPTheme.TEXT_DARK_72)
+                    setTextColor(NPTheme.PANEL_TEXT_DIM)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_CAPTION_SIZE)
                     typeface = NPTheme.bodyTypeface
                     setPadding(dp(NPTheme.PANEL_PAD_H), dp(8), dp(NPTheme.PANEL_PAD_H), dp(8))
@@ -1931,9 +1933,9 @@ class NativePlayerScreenView(
             card.addView(
                 TextView(context).apply {
                     text = ep.cardTitle
-                    // 586 统一排版：正文一律近黑 + w500（选中只靠封面描边与
+                    // 586 统一排版：正文一律纯白 + w500（选中只靠封面描边与
                     // 对勾表达；旧实现未选中行用次色、选中行 BOLD，同面板两种灰度）。
-                    setTextColor(NPTheme.TEXT_DARK)
+                    setTextColor(NPTheme.PANEL_TEXT)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
                     typeface = NPTheme.bodyTypeface
                     maxLines = 1
@@ -1991,13 +1993,16 @@ class NativePlayerScreenView(
             // 双行堆叠 → 列表行高与 Flutter 不一致）。
             row.addView(
                 TextView(context).apply {
+                    // 单行「短名 · 简介」：中间的「·」分隔与 Flutter
+                    // PlayerKernelPanel 的 label 拼法逐字一致。
                     text = if (opt.description.isEmpty()) {
                         opt.label
                     } else {
                         "${opt.label} · ${opt.description}"
                     }
-                    setTextColor(Color.WHITE)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setTextColor(NPTheme.PANEL_TEXT)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
+                    typeface = NPTheme.bodyTypeface
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
                 },
@@ -2014,6 +2019,17 @@ class NativePlayerScreenView(
             )
             list.addView(row)
         }
+        // 底部说明（对齐 Flutter PlayerKernelPanel 的 Divider + 说明文字）。
+        list.addView(dividerLine())
+        list.addView(
+            TextView(context).apply {
+                text = "切换仅影响当前播放，不改变默认引擎；下一集沿用当前内核"
+                setTextColor(NPTheme.PANEL_TEXT_DIM)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_CAPTION_SIZE)
+                typeface = NPTheme.bodyTypeface
+                setPadding(dp(NPTheme.PANEL_PAD_H), dp(10), dp(NPTheme.PANEL_PAD_H), dp(10))
+            },
+        )
         panelContainer.addView(scrollWrap(list))
     }
 
@@ -2029,8 +2045,9 @@ class NativePlayerScreenView(
             list.addView(
                 TextView(context).apply {
                     text = "位图字幕（PGS 等）不支持样式调节"
-                    setTextColor(NPTheme.WHITE_54)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setTextColor(NPTheme.PANEL_TEXT_DIM)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_CAPTION_SIZE)
+                    typeface = NPTheme.bodyTypeface
                     setPadding(dp(NPTheme.PANEL_PAD_H), dp(8), dp(NPTheme.PANEL_PAD_H), dp(12))
                 },
             )
@@ -2078,7 +2095,7 @@ class NativePlayerScreenView(
     /** 段分隔线（Flutter `Divider(color: Colors.white24, height: 1)`）。 */
     private fun sectionDivider(): View =
         View(context).apply {
-            setBackgroundColor(0x3DFFFFFF.toInt())
+            setBackgroundColor(NPTheme.PANEL_DIVIDER)
         }.also {
             it.layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -2097,11 +2114,11 @@ class NativePlayerScreenView(
             scheduleAutoHide()
         }
 
-    /** 段标题（586 统一排版：12sp 近黑 w500，padding l16 t10 r16 b0）。 */
+    /** 段标题（586 统一排版：12sp 纯白 w500，padding l16 t10 r16 b0）。 */
     private fun sectionTitle(title: String): TextView =
         TextView(context).apply {
             text = title
-            setTextColor(NPTheme.TEXT_DARK)
+            setTextColor(NPTheme.PANEL_TEXT)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_CAPTION_SIZE)
             typeface = NPTheme.bodyTypeface
             gravity = Gravity.CENTER_VERTICAL
@@ -2112,7 +2129,7 @@ class NativePlayerScreenView(
      * 显示调节滑杆行（对齐 Flutter `styleSliderRow`）：
      * 标签 44dp / **玻璃滑杆**（thumb 18 / 光晕 32，同 Flutter
      * `glassSliderTheme(thumbRadius: 9, overlayRadius: 16)`）/ 数值 48dp 右对齐。
-     * 586 统一排版：标签 14sp / w500 近黑，数值 13sp / w500 近黑（旧实现
+     * 586 统一排版：标签 14sp / w500 纯白，数值 13sp / w500 纯白（旧实现
      * 两者都用次色 54%，在同一面板里比正文浅一档，观感「灰糊」）。
      */
     private fun sliderRow(
@@ -2132,7 +2149,7 @@ class NativePlayerScreenView(
         row.addView(
             TextView(context).apply {
                 text = label
-                setTextColor(NPTheme.TEXT_DARK)
+                setTextColor(NPTheme.PANEL_TEXT)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
                 typeface = NPTheme.bodyTypeface
             },
@@ -2140,7 +2157,7 @@ class NativePlayerScreenView(
         )
         val valueText = TextView(context).apply {
             text = format(value)
-            setTextColor(NPTheme.TEXT_DARK)
+            setTextColor(NPTheme.PANEL_TEXT)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             typeface = NPTheme.bodyTypeface
             gravity = Gravity.CENTER or Gravity.END
@@ -2148,8 +2165,8 @@ class NativePlayerScreenView(
         val bar = GlassSeekBarView(context).apply {
             thumbDp = 18f
             glowDp = 32f
-            // 白底磨砂面板内：浅色档轨道（黑系），否则白渐变在白底上看不清。
-            light = true
+            // 587 面板改深色磨砂：轨道走深色档（白色渐变），黑系轨道在
+            // 深底上几乎不可见（与旧「白底看不清白轨道」是同一个问题反向）。
             minValue = rangeMin.toFloat()
             maxValue = rangeMax.toFloat()
             this.step = step.toFloat()
@@ -2187,7 +2204,7 @@ class NativePlayerScreenView(
     // ── 解码模式（对齐 Flutter DecodeModePanel：180dp 独立 popover）──
 
     /**
-     * 解码 popover：**180dp** 宽、白底磨砂、圆角 8、暗描边、
+     * 解码 popover：**180dp** 宽、深色磨砂（587）、圆角 8、亮描边、
      * `top = 安全区+48 / right = 12`。
      *
      * Flutter 的解码面板不是右侧 260~320 通栏，而是贴右上角的小 popover
@@ -2198,7 +2215,7 @@ class NativePlayerScreenView(
         decodePopover.visibility = VISIBLE
         decodePopover.removeAllViews()
         decodePopover.orientation = LinearLayout.VERTICAL
-        // 暖白磨砂（与侧栏/片头片尾卡同款），圆角 8 对齐 Flutter。
+        // 深色磨砂（与侧栏/片头片尾卡同款），圆角 8 对齐 Flutter。
         decodePopover.background =
             PanelGlassDrawable(NPTheme.RADIUS_DECODE, resources.displayMetrics.density)
         decodePopover.clipToOutline = true
@@ -2209,8 +2226,8 @@ class NativePlayerScreenView(
                 it.marginEnd = dp(NPTheme.PANEL_RIGHT)
             }
 
-        // 标题行：`解码模式` 15 w600 + 当前档位 14 w500（586 起正文一律
-        // 近黑，档位不再用强调色——强调只由选项行的单选圈/行底表达）。
+        // 标题行：`解码模式` 15 w600 + 当前档位 14 w500（正文一律纯白，
+        // 档位不用强调色——强调只由选项行的单选圈/行底表达）。
         val titleRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -2218,7 +2235,7 @@ class NativePlayerScreenView(
             addView(
                 TextView(context).apply {
                     text = "解码模式"
-                    setTextColor(NPTheme.TEXT_DARK)
+                    setTextColor(NPTheme.PANEL_TEXT)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.DECODE_TITLE_SIZE)
                     typeface = NPTheme.mediumTypeface
                 },
@@ -2226,7 +2243,7 @@ class NativePlayerScreenView(
             addView(
                 TextView(context).apply {
                     text = decodeModeLabel(lastState.decodeMode)
-                    setTextColor(NPTheme.TEXT_DARK)
+                    setTextColor(NPTheme.PANEL_TEXT)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.DECODE_VALUE_SIZE)
                     typeface = NPTheme.bodyTypeface
                     setPadding(dp(8), 0, 0, 0)
@@ -2254,13 +2271,13 @@ class NativePlayerScreenView(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 (heightDp * resources.displayMetrics.density).toInt().coerceAtLeast(1),
             )
-            setBackgroundColor(NPTheme.DIVIDER_LIGHT)
+            setBackgroundColor(NPTheme.PANEL_DIVIDER)
         }
 
     /**
      * 解码选项行（对齐 Flutter DecodeModePanel 的行）：
-     * radio 图标 16 + 间距 8 + (档位名 14 w500 / 说明 12 w500 黑 72%)。
-     * 选中行铺 accent@12% 底（586 统一排版：字色字重不随选中变化）。
+     * radio 图标 16 + 间距 8 + (档位名 14 w500 / 说明 12 w500 白 70%)。
+     * 选中行铺 accent@20% 底（586 统一排版：字色字重不随选中变化）。
      */
     private fun decodeOptionRow(mode: String, selected: Boolean, onTap: () -> Unit): LinearLayout =
         LinearLayout(context).apply {
@@ -2269,13 +2286,13 @@ class NativePlayerScreenView(
             setPadding(dp(12), dp(10), dp(12), dp(10))
             isClickable = true
             setOnClickListener { onTap() }
-            if (selected) setBackgroundColor(NPTheme.SEL_BG_LIGHT)
+            if (selected) setBackgroundColor(NPTheme.SEL_BG)
             addView(
                 iconView(
                     if (selected) NativePlayerIcons.ICON_RADIO_CHECKED
                     else NativePlayerIcons.ICON_RADIO_UNCHECKED,
                     16f,
-                    if (selected) NPTheme.ACCENT else NPTheme.TEXT_DARK_72,
+                    if (selected) NPTheme.ACCENT else NPTheme.PANEL_TEXT_DIM,
                 ),
                 llp(dp(16), dp(16)),
             )
@@ -2284,7 +2301,7 @@ class NativePlayerScreenView(
                 addView(
                     TextView(context).apply {
                         text = decodeModeLabel(mode)
-                        setTextColor(NPTheme.TEXT_DARK)
+                        setTextColor(NPTheme.PANEL_TEXT)
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.DECODE_VALUE_SIZE)
                         typeface = NPTheme.bodyTypeface
                     },
@@ -2292,7 +2309,7 @@ class NativePlayerScreenView(
                 addView(
                     TextView(context).apply {
                         text = decodeModeDesc(mode)
-                        setTextColor(NPTheme.TEXT_DARK_72)
+                        setTextColor(NPTheme.PANEL_TEXT_DIM)
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.DECODE_DESC_SIZE)
                         typeface = NPTheme.bodyTypeface
                     },
@@ -2359,8 +2376,9 @@ class NativePlayerScreenView(
         segmentCard.addView(
             TextView(context).apply {
                 text = "当前标记：${existingMs?.let { AndroidNativePlayerState.formatPlayerTime(it.toLong()) } ?: "无"}\n要用当前位置更新，还是清除？"
-                setTextColor(NPTheme.WHITE_54)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextColor(NPTheme.PANEL_TEXT_DIM)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_CAPTION_SIZE)
+                typeface = NPTheme.bodyTypeface
                 setPadding(dp(NPTheme.PANEL_PAD_H), 0, dp(NPTheme.PANEL_PAD_H), dp(10))
             },
         )
@@ -2411,7 +2429,7 @@ class NativePlayerScreenView(
                 TextView(context).apply {
                     text = String(Character.toChars(codePoint))
                     typeface = NativePlayerIcons.typeface(context)
-                    setTextColor(NPTheme.TEXT_DARK)
+                    setTextColor(NPTheme.PANEL_TEXT)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.SEGMENT_ROW_ICON.toFloat())
                     gravity = Gravity.CENTER
                 },
@@ -2422,7 +2440,7 @@ class NativePlayerScreenView(
                 addView(
                     TextView(context).apply {
                         text = title
-                        setTextColor(NPTheme.TEXT_DARK)
+                        setTextColor(NPTheme.PANEL_TEXT)
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
                         typeface = NPTheme.bodyTypeface
                     },
@@ -2430,7 +2448,7 @@ class NativePlayerScreenView(
                 addView(
                     TextView(context).apply {
                         text = hint
-                        setTextColor(NPTheme.TEXT_DARK_72)
+                        setTextColor(NPTheme.PANEL_TEXT_DIM)
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_CAPTION_SIZE)
                         typeface = NPTheme.bodyTypeface
                     },
@@ -2441,7 +2459,7 @@ class NativePlayerScreenView(
                 TextView(context).apply {
                     text = String(Character.toChars(NativePlayerIcons.ICON_CHEVRON_RIGHT))
                     typeface = NativePlayerIcons.typeface(context)
-                    setTextColor(NPTheme.TEXT_DARK_72)
+                    setTextColor(NPTheme.PANEL_TEXT_DIM)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.SEGMENT_CHEVRON.toFloat())
                     gravity = Gravity.CENTER
                 },

@@ -127,10 +127,11 @@ class GlassSeekBarView(context: Context) : View(context) {
         private set
 
     /**
-     * 浅色档（白底磨砂弹层内的显示调节滑杆）。
+     * 浅色档（浅底容器内的滑杆，默认 false）。
      *
-     * 深色档的白色渐变在白底上几乎不可见（真机回归「面板滑杆看不清」）；
-     * 浅色档改黑系轨道 + 纯白拇指 + accent 光晕。
+     * 深色档的白色渐变在浅底上几乎不可见（真机回归「面板滑杆看不清」）；
+     * 浅色档改黑系轨道 + 纯白拇指 + accent 光晕。587 弹层改深色后
+     * 面板滑杆恢复走深色档，此档保留供未来的浅底场景。
      */
     var light: Boolean = false
         set(v) {

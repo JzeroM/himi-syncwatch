@@ -131,7 +131,7 @@ class GlassSliderThumbShape extends SliderComponentShape {
 
   final double radius;
 
-  /// 覆盖圆体基色（浅色档传纯白：白底面板上 accent 圆点对比过强）。
+  /// 覆盖圆体基色（浅色档传纯白：浅底面板上 accent 圆点对比过强）。
   /// null = 沿用 [SliderThemeData.thumbColor]（深色档行为不变）。
   final Color? bodyColor;
 
@@ -224,9 +224,6 @@ SliderThemeData glassSliderTheme({
   double thumbRadius = 8,
   double overlayRadius = 14,
   bool glassEnabled = true,
-  /// 浅色档：白底磨砂弹层内使用（轨道黑系 + 纯白拇指）。
-  /// 深色档的白色轨道渐变在白底上几乎不可见。
-  bool light = false,
 }) {
   if (!glassEnabled) {
     return SliderThemeData(
@@ -235,23 +232,6 @@ SliderThemeData glassSliderTheme({
       thumbColor: accent,
       thumbShape: RoundSliderThumbShape(enabledThumbRadius: thumbRadius),
       trackHeight: 3,
-      overlayShape: RoundSliderOverlayShape(overlayRadius: overlayRadius),
-      overlayColor: accent.withValues(alpha: 0.25),
-    );
-  }
-  if (light) {
-    return SliderThemeData(
-      activeTrackColor: accent,
-      inactiveTrackColor: GlassConfig.playerPanelTrackInactive,
-      disabledActiveTrackColor: accent,
-      disabledInactiveTrackColor: GlassConfig.playerPanelTrackInactive,
-      trackHeight: trackHeight,
-      thumbColor: GlassConfig.playerPanelThumb,
-      disabledThumbColor: GlassConfig.playerPanelThumb,
-      thumbShape: GlassSliderThumbShape(
-        radius: thumbRadius,
-        bodyColor: GlassConfig.playerPanelThumb,
-      ),
       overlayShape: RoundSliderOverlayShape(overlayRadius: overlayRadius),
       overlayColor: accent.withValues(alpha: 0.25),
     );

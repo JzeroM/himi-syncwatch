@@ -144,7 +144,7 @@ class _EpisodeSelectPanelState extends State<EpisodeSelectPanel> {
                   EpisodeSelectPanel.cardTitle(ep),
                   key: Key('playerEpisodeTitle_$index'),
                   style: TextStyle(
-                    // 586 统一排版：正文一律近黑 + w500，选中只靠行底与
+                    // 586 统一排版：正文一律纯白 + w500，选中只靠行底与
                     // 对勾表达（旧实现未选中行用次色 54%，同一面板两种灰度）。
                     color: GlassConfig.playerPanelTextPrimary,
                     fontSize: GlassConfig.playerPanelBodySize,

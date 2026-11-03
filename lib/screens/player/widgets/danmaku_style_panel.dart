@@ -72,8 +72,6 @@ class DanmakuStylePanel extends StatelessWidget {
       thumbRadius: 9,
       overlayRadius: 16,
       glassEnabled: glassEnabled,
-      // 白底磨砂面板内：浅色档轨道 + 纯白拇指（深色档白轨道看不清）。
-      light: true,
     );
     final children = <Widget>[
       styleSliderRow(

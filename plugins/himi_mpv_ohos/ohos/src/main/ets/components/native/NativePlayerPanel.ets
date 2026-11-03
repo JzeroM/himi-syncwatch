@@ -51,10 +51,10 @@ function formatPlayerTime(ms: number): string {
   return `${mm}:${ss}`;
 }
 
-/** 解码模式中文标签。 */
+/** 解码模式中文标签（与 Flutter `DecodeModePanel` / 安卓 `decodeModeLabel` 同值）。 */
 function decodeModeLabel(mode: string): string {
   if (mode === 'auto') {
-    return '自动';
+    return '智能';
   }
   if (mode === 'hw') {
     return '硬解';
@@ -63,6 +63,26 @@ function decodeModeLabel(mode: string): string {
     return '软解';
   }
   return mode;
+}
+
+/**
+ * 解码模式说明（逐字对齐 Flutter `DecodeModePanel.descriptions`
+ * 与安卓 `decodeModeDesc`）。
+ *
+ * 旧实现鸿蒙面板只有档位名、没有说明，且 auto 写作「自动」——与 MDK
+ * （Flutter）面板不一致，切内核时观感突变。
+ */
+function decodeModeDesc(mode: string): string {
+  if (mode === 'auto') {
+    return '优先硬解，失败回退软解';
+  }
+  if (mode === 'hw') {
+    return '纯硬解，失败不回退';
+  }
+  if (mode === 'sw') {
+    return '纯软解，CPU 占用高';
+  }
+  return '';
 }
 
 /** 显示调节滑杆行规格（标签 / 最小 / 最大 / 步长）。 */
@@ -171,12 +191,12 @@ struct DisplayValueText {
   }
 
   build() {
-    // 586 统一排版：数值 13 / w500 近黑（旧实现 12sp 半透明白，暖白底上
+    // 统一排版：数值 13 / w500 纯白（旧实现 12sp 半透明白，在弹层底上
     // 几乎看不见——这是「面板文字不统一」最明显的一处）。
     Text(this.text)
       .fontSize(13)
       .fontWeight(PANEL_BODY_WEIGHT)
-      .fontColor(TEXT_DARK)
+      .fontColor(PANEL_TEXT)
       .width(48)
       .textAlign(TextAlign.End);
   }
@@ -186,37 +206,41 @@ struct DisplayValueText {
 const SEL_COLOR = '#6366F1';
 
 // ═══════════════════════════════════════════════════════════════
-// 播放器弹层「暖白磨砂」调色板（与 Flutter GlassConfig.playerPanel*、
-// Android NPTheme.PANEL_LIGHT_* 逐值一致）
+// 播放器弹层「深色磨砂」调色板（与 Flutter GlassConfig.playerPanel*、
+// Android NPTheme.PANEL_GLASS_* 逐值一致）
 // ═══════════════════════════════════════════════════════════════
 //
 // 【范围铁律】仅用于播放器内的**弹出面板**（右侧侧栏 / 解码 popover /
 // 片头片尾卡）。顶栏、底栏、手势提示胶囊保持深色玻璃（浮在视频上必须
 // 深色白字）。
-/** 暖白磨砂基色（90% 不透明；留出空间让 backgroundEffect 的模糊视频透出）。 */
-const PANEL_LIGHT_BASE = '#E6F4F2EE';
+/**
+ * 深色磨砂基色（65% 不透明；留出空间让 backgroundEffect 的模糊视频透出）。
+ *
+ * 587 由 585 纯白 → 586 暖白 → 改深色：暖白即使压到 55% 仍是「一块亮板」，
+ * 暗场景与视频亮度差过大、弹层出现瞬间刺眼，且把磨砂完全盖死。
+ */
+const PANEL_GLASS_BASE = '#A61A1D23';
 /** 竖向渐变：顶部提亮 → 基色 → 底部略透（菲涅尔近似）。 */
-const PANEL_LIGHT_TOP = '#F2FAF8F4';
-const PANEL_LIGHT_BOTTOM = '#D6EAE7E1';
-/** 暖白底定界描边（黑 15%；白描边在亮画面上会消失）。 */
-const PANEL_LIGHT_RIM = '#26000000';
+const PANEL_GLASS_TOP = '#B31A1D23';
+const PANEL_GLASS_BOTTOM = '#991A1D23';
+/** 深色底定界描边（白 20%；深底必须靠亮边才有玻璃厚度感）。 */
+const PANEL_GLASS_RIM = '#33FFFFFF';
 /**
  * 面板文字（586 起**取消三色分级**，只留两级）。
  *
- * - TEXT_DARK：正文一律近黑（选项行不再用强调色）；
- * - TEXT_DARK_72：说明/占位黑 72%。
+ * - PANEL_TEXT：正文一律纯白（选项行不再用强调色）；
+ * - PANEL_TEXT_DIM：说明/占位白 70%。
  *
- * TEXT_DARK_54 / TEXT_DARK_38 保留为别名（历史调用点仍在用），值与 72%
- * 同级，避免同一面板里出现三种灰度。
+ * PANEL_TEXT_DIMER 保留为别名（历史调用点仍在用），值与 DIM 同级，
+ * 避免同一面板里出现三种灰度。
  */
-const TEXT_DARK = '#1B1B1F';
-const TEXT_DARK_72 = '#B8000000';
-const TEXT_DARK_54 = TEXT_DARK_72;
-const TEXT_DARK_38 = TEXT_DARK_72;
-/** 暖白底分隔线（黑 12%；纯白底下 8% 几乎看不见）。 */
-const DIVIDER_LIGHT = '#1F000000';
-/** 暖白底选中行底（accent@12%）。 */
-const SEL_BG_LIGHT = '#1F6366F1';
+const PANEL_TEXT = '#FFFFFF';
+const PANEL_TEXT_DIM = '#B3FFFFFF';
+const PANEL_TEXT_DIMER = PANEL_TEXT_DIM;
+/** 深色底分隔线（白 12%）。 */
+const PANEL_DIVIDER = '#1FFFFFFF';
+/** 深色底选中行底（accent@20%）。 */
+const SEL_BG = '#336366F1';
 
 // ── 播放器弹层统一排版（586，三端逐值对齐）──
 // 标题 15/w600、正文 14/w500、说明 12/w500。Flutter 侧同名常量在
@@ -376,7 +400,7 @@ export struct NativePlayerPanel {
       Text(this.titleText())
         .fontSize(PANEL_TITLE_SIZE)
         .fontWeight(PANEL_TITLE_WEIGHT)
-        .fontColor(TEXT_DARK)
+        .fontColor(PANEL_TEXT)
         .width('100%')
         .padding({ left: 16, right: 16, top: 10, bottom: 4 })
         .textAlign(TextAlign.Start);
@@ -404,18 +428,18 @@ export struct NativePlayerPanel {
     // 不铺满全屏，遮罩才收得到「点外关闭」。
     .width('100%')
     .layoutWeight(1)
-    // 暖白磨砂（586）：竖向渐变（顶部提亮 → 基色 → 底部略透）+ 暗描边定界。
+    // 深色磨砂（587）：竖向渐变（顶部提亮 → 基色 → 底部略透）+ 亮描边定界。
     // 【保留 backgroundEffect】鸿蒙的 backgroundEffect 是**节点级实时**
     // backdrop blur（GPU 合成阶段做，60fps、零回读、零跳帧），与 Flutter
-    // 的 BackdropFilter / MDK 弹层同源能力 → 暖白之下仍能隐约看到视频
+    // 的 BackdropFilter / MDK 弹层同源能力 → 深色半透之下仍能看到视频
     // 流动，观感最佳。安卓侧无对应 API（只能回读采样，会一帧一帧跳），
-    // 故安卓为纯暖白渐变；两端在 90% 不透暖白底下观感几乎一致。
+    // 故安卓为纯深色渐变；两端在 65% 深底上观感接近。
     .backgroundEffect({ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION })
     .linearGradient({
       angle: 180,
-      colors: [[PANEL_LIGHT_TOP, 0], [PANEL_LIGHT_BASE, 0.5], [PANEL_LIGHT_BOTTOM, 1]],
+      colors: [[PANEL_GLASS_TOP, 0], [PANEL_GLASS_BASE, 0.5], [PANEL_GLASS_BOTTOM, 1]],
     })
-    .border({ width: 1, color: PANEL_LIGHT_RIM })
+    .border({ width: 1, color: PANEL_GLASS_RIM })
     // 选集面板贴边（右侧圆角放平，与 Flutter BorderRadius.horizontal(left) 一致）。
     .borderRadius(this.panelType === 'episode' ? FULLBLEED_RADIUS : PANEL_RADIUS)
     .clip(true)
@@ -442,7 +466,7 @@ export struct NativePlayerPanel {
         : '片头片尾')
         .fontSize(PANEL_TITLE_SIZE)
         .fontWeight(PANEL_TITLE_WEIGHT)
-        .fontColor(TEXT_DARK)
+        .fontColor(PANEL_TEXT)
         .width('100%')
         .padding({ left: 16, right: 16, top: 12, bottom: 6 });
 
@@ -450,7 +474,7 @@ export struct NativePlayerPanel {
         Text(`当前标记：${this.existingMarkText(this.confirmKind)}\n要用当前位置更新，还是清除？`)
           .fontSize(PANEL_CAPTION_SIZE)
           .fontWeight(PANEL_CAPTION_WEIGHT)
-          .fontColor(TEXT_DARK_72)
+          .fontColor(PANEL_TEXT_DIM)
           .width('100%')
           .padding({ left: 16, right: 16, top: 0, bottom: 10 });
 
@@ -492,13 +516,13 @@ export struct NativePlayerPanel {
       }
     }
     .width(360)
-    // 暖白磨砂（与侧栏同款）：实时 backdrop blur + 暖白竖向渐变 + 暗描边。
+    // 深色磨砂（与侧栏同款）：实时 backdrop blur + 深色竖向渐变 + 亮描边。
     .backgroundEffect({ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION })
     .linearGradient({
       angle: 180,
-      colors: [[PANEL_LIGHT_TOP, 0], [PANEL_LIGHT_BASE, 0.5], [PANEL_LIGHT_BOTTOM, 1]],
+      colors: [[PANEL_GLASS_TOP, 0], [PANEL_GLASS_BASE, 0.5], [PANEL_GLASS_BOTTOM, 1]],
     })
-    .border({ width: 1, color: PANEL_LIGHT_RIM })
+    .border({ width: 1, color: PANEL_GLASS_RIM })
     .borderRadius(18)
     .clip(true)
     .alignItems(HorizontalAlign.Start)
@@ -514,19 +538,19 @@ export struct NativePlayerPanel {
       Text(String.fromCodePoint(icon))
         .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(22)
-        .fontColor(TEXT_DARK)
+        .fontColor(PANEL_TEXT)
         .width(22);
 
       Column() {
         Text(title)
           .fontSize(PANEL_BODY_SIZE)
           .fontWeight(PANEL_BODY_WEIGHT)
-          .fontColor(TEXT_DARK)
+          .fontColor(PANEL_TEXT)
           .width('100%');
         Text(hint)
           .fontSize(PANEL_CAPTION_SIZE)
           .fontWeight(PANEL_CAPTION_WEIGHT)
-          .fontColor(TEXT_DARK_72)
+          .fontColor(PANEL_TEXT_DIM)
           .width('100%');
       }
       .layoutWeight(1)
@@ -536,7 +560,7 @@ export struct NativePlayerPanel {
       Text(String.fromCodePoint(0xE15F))
         .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(18)
-        .fontColor(TEXT_DARK_72)
+        .fontColor(PANEL_TEXT_DIM)
         .width(18);
     }
     .width('100%')
@@ -613,7 +637,7 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
+    .divider({ strokeWidth: 0.5, color: PANEL_DIVIDER });
   }
 
   /** 轨道列表（音轨/字幕共用）。 */
@@ -655,7 +679,7 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
+    .divider({ strokeWidth: 0.5, color: PANEL_DIVIDER });
   }
 
   /** 字幕面板：字幕轨列表 + 关闭项。 */
@@ -664,51 +688,61 @@ export struct NativePlayerPanel {
     this.TrackContent(this.subtitleTracks(), this.state().selectedSubtitleId, true);
   }
 
-  /** 播放内核面板：短名 + 说明 + 当前项对勾。 */
+  /**
+   * 播放内核面板（587 完全对齐 Flutter `PlayerKernelPanel`）。
+   *
+   * 行内容：单行「短名 · 说明」14/w500 + 右侧 accent 对勾；列表底部
+   * 分隔线 + 一行说明「切换仅影响当前播放，不改变默认引擎；下一集沿用
+   * 当前内核」。
+   *
+   * 旧实现是双行堆叠（短名一行、说明一行）且没有底部说明——与 Flutter
+   * 行高/内容都不一致，切内核时观感突变。
+   */
   @Builder
   KernelContent() {
     List() {
       ForEach(this.state().engineOptions, (opt: NativeEngineOptionUi) => {
         ListItem() {
-          Column() {
-            Row() {
-              Text(opt.label)
-                .fontSize(PANEL_BODY_SIZE)
-                .fontWeight(PANEL_TITLE_WEIGHT)
-                .fontColor(TEXT_DARK)
-                .layoutWeight(1)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis });
-              Text(opt.label === this.state().engineLabel ? '✓' : '')
-                .fontSize(18)
-                .fontColor(SEL_COLOR)
-                .width(18)
-                .textAlign(TextAlign.Center);
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center);
-
-            if (opt.description.length > 0) {
-              Text(opt.description)
-                .fontSize(PANEL_CAPTION_SIZE)
-                .fontWeight(PANEL_CAPTION_WEIGHT)
-                .fontColor(TEXT_DARK_72)
-                .maxLines(2)
-                .margin({ top: 2 });
-            }
+          Row() {
+            Text(opt.description.length > 0
+              ? `${opt.label} · ${opt.description}`
+              : opt.label)
+              .fontSize(PANEL_BODY_SIZE)
+              .fontWeight(PANEL_BODY_WEIGHT)
+              .fontColor(PANEL_TEXT)
+              .layoutWeight(1)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis });
+            Text(opt.label === this.state().engineLabel ? '✓' : '')
+              .fontSize(18)
+              .fontColor(SEL_COLOR)
+              .width(18)
+              .textAlign(TextAlign.Center);
           }
           .width('100%')
-          .alignItems(HorizontalAlign.Start)
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+          .alignItems(VerticalAlign.Center)
           .onClick((): void => {
             this.host.optimisticSwitchEngine(opt.id);
             this.close();
           });
         }
       }, (opt: NativeEngineOptionUi): string => opt.id);
+
+      // 底部说明（对齐 Flutter PlayerKernelPanel：行后 1px 分隔线 + 说明）。
+      // 不放进 Column 尾部固定：Flutter 里它是列表最后一项，随内容滚动。
+      ListItem() {
+        Text('切换仅影响当前播放，不改变默认引擎；下一集沿用当前内核')
+          .fontSize(PANEL_CAPTION_SIZE)
+          .fontWeight(PANEL_CAPTION_WEIGHT)
+          .fontColor(PANEL_TEXT_DIM)
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 10, bottom: 10 });
+      }
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
+    .divider({ strokeWidth: 0.5, color: PANEL_DIVIDER });
   }
 
   /** 显示调节面板：字幕 3 行 + 弹幕 3 行（与 Flutter DisplayAdjustPanel 一致）。 */
@@ -725,7 +759,7 @@ export struct NativePlayerPanel {
                 Text(idx === 0 ? '字幕' : '弹幕')
                   .fontSize(PANEL_CAPTION_SIZE)
                   .fontWeight(PANEL_CAPTION_WEIGHT)
-                  .fontColor(TEXT_DARK)
+                  .fontColor(PANEL_TEXT)
                   .width('100%')
                   .padding({ left: 16, right: 16, top: 10, bottom: 4 });
               }
@@ -733,7 +767,7 @@ export struct NativePlayerPanel {
                 Text(spec.label)
                   .fontSize(PANEL_BODY_SIZE)
                   .fontWeight(PANEL_BODY_WEIGHT)
-                  .fontColor(TEXT_DARK)
+                  .fontColor(PANEL_TEXT)
                   .width(44);
                 // 玻璃滑杆（完全复刻 Flutter glassSliderTheme，见 GlassSlider.ets）。
                 GlassSlider({
@@ -741,8 +775,8 @@ export struct NativePlayerPanel {
                   min: spec.min,
                   max: spec.max,
                   step: spec.step,
-                  // 面板内滑杆走浅色轨道（暖白磨砂弹层，深色轨道看不清）。
-                  light: true,
+                  // 587 面板改深色磨砂：滑杆走深色档（白系轨道），浅色档
+                  // 的黑系轨道在深底上几乎不可见。
                   onChange: (v: number): void => {
                     this.host.adjustDisplay(spec.key, v);
                   },
@@ -804,7 +838,7 @@ export struct NativePlayerPanel {
     Text('恢复默认')
       .fontSize(PANEL_BODY_SIZE)
       .fontWeight(PANEL_BODY_WEIGHT)
-      .fontColor(this.displayAtDefaults(kind) ? SEL_COLOR : TEXT_DARK)
+      .fontColor(this.displayAtDefaults(kind) ? SEL_COLOR : PANEL_TEXT)
       .width('100%')
       .textAlign(TextAlign.Start)
       .padding({ left: 16, right: 16, top: 8, bottom: 12 })
@@ -836,36 +870,70 @@ export struct NativePlayerPanel {
       && Math.abs(s.danmakuOpacity - DEFAULT_DANMAKU_OPACITY) < 0.001;
   }
 
-  /** 解码模式面板：标题 + 当前值 + 3 行单选。 */
+  /**
+   * 解码模式面板（587 完全对齐 Flutter `DecodeModePanel`）。
+   *
+   * 结构：标题行（`解码模式` 15/w600 + 当前档位 14/w500）→ 0.5 分隔线 →
+   * 三档单选（单选圈 16 + 档位名 14/w500 + 说明 12/w500 白 70%），选中行
+   * 铺 accent 20% 底。
+   *
+   * 旧实现差异：档位名 auto 写作「自动」（Flutter 是「智能」）、**没有
+   * 说明文字**、且把当前档位另起一行「当前：xxx」——切 MDK↔MPV 时面板
+   * 观感突变。现与 Flutter / 安卓三端逐字一致。
+   */
   @Builder
   DecodeContent() {
     Column() {
-      Text('当前：' + decodeModeLabel(this.state().decodeMode))
-        .fontSize(PANEL_CAPTION_SIZE)
-        .fontWeight(PANEL_CAPTION_WEIGHT)
-        .fontColor(TEXT_DARK)
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 0, bottom: 6 });
+      // 标题行：`解码模式` 15/w600 + 当前档位 14/w500（正文一律纯白，
+      // 档位不用强调色——强调只由单选圈/行底表达）。
+      Row() {
+        Text('解码模式')
+          .fontSize(PANEL_TITLE_SIZE)
+          .fontWeight(PANEL_TITLE_WEIGHT)
+          .fontColor(PANEL_TEXT);
+        Text(decodeModeLabel(this.state().decodeMode))
+          .fontSize(PANEL_BODY_SIZE)
+          .fontWeight(PANEL_BODY_WEIGHT)
+          .fontColor(PANEL_TEXT)
+          .margin({ left: 8 });
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 10, bottom: 8 })
+      .alignItems(VerticalAlign.Center);
+
+      Divider()
+        .strokeWidth(0.5)
+        .color(PANEL_DIVIDER)
+        .width('100%');
+
       List() {
         ForEach(DECODE_MODES, (mode: string) => {
           ListItem() {
             Row() {
               Text(this.state().decodeMode === mode ? '●' : '○')
                 .fontSize(16)
-                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : TEXT_DARK_72)
+                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : PANEL_TEXT_DIM)
                 .width(20);
-              // 586 统一排版：档位名一律近黑 + w500，选中只靠单选圈与
-              // 行底强调色表达（旧实现选中行改强调色，同面板两种字色）。
-              Text(decodeModeLabel(mode))
-                .fontSize(PANEL_BODY_SIZE)
-                .fontWeight(PANEL_BODY_WEIGHT)
-                .fontColor(TEXT_DARK)
-                .layoutWeight(1)
-                .margin({ left: 8 });
+              Column() {
+                Text(decodeModeLabel(mode))
+                  .fontSize(PANEL_BODY_SIZE)
+                  .fontWeight(PANEL_BODY_WEIGHT)
+                  .fontColor(PANEL_TEXT)
+                  .width('100%');
+                Text(decodeModeDesc(mode))
+                  .fontSize(PANEL_CAPTION_SIZE)
+                  .fontWeight(PANEL_CAPTION_WEIGHT)
+                  .fontColor(PANEL_TEXT_DIM)
+                  .width('100%');
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+              .margin({ left: 8 });
             }
             .width('100%')
-            .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+            .padding({ left: 12, right: 12, top: 10, bottom: 10 })
             .alignItems(VerticalAlign.Center)
+            .backgroundColor(this.state().decodeMode === mode ? SEL_BG : Color.Transparent)
             .onClick((): void => {
               this.host.optimisticSetDecodeMode(mode);
               this.close();
@@ -875,7 +943,7 @@ export struct NativePlayerPanel {
       }
       .width('100%')
       .layoutWeight(1)
-      .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
+      .divider({ strokeWidth: 0.5, color: PANEL_DIVIDER });
     }
     .width('100%')
     .layoutWeight(1)
@@ -925,11 +993,11 @@ export struct NativePlayerPanel {
               radius: 10,
             });
 
-            // 586 统一排版：正文一律近黑 + w500（选中只靠封面描边与
+            // 586 统一排版：正文一律纯白 + w500（选中只靠封面描边与
             // 对勾表达；旧实现未选中行用次色、选中行 Medium，同面板两种灰度）。
             Text(e.cardTitle())
               .fontSize(PANEL_BODY_SIZE)
-              .fontColor(TEXT_DARK)
+              .fontColor(PANEL_TEXT)
               .fontWeight(PANEL_BODY_WEIGHT)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -978,14 +1046,14 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
+    .divider({ strokeWidth: 0.5, color: PANEL_DIVIDER });
   }
 
   /**
    * 选项行内容（对齐 Flutter SideOptionRow）：文字左对齐、右侧对勾占
    * 18px 槽位（未选中也占位，保证各行对齐）。
    *
-   * 586 统一排版：正文一律近黑 + w500，选中态只靠行底强调色与对勾表达
+   * 586 统一排版：正文一律纯白 + w500，选中态只靠行底强调色与对勾表达
    * ——旧实现选中行改强调色 + Medium，同一面板出现两种字色/字重。
    */
   @Builder
@@ -993,7 +1061,7 @@ export struct NativePlayerPanel {
     Text(label)
       .fontSize(PANEL_BODY_SIZE)
       .fontWeight(PANEL_BODY_WEIGHT)
-      .fontColor(TEXT_DARK)
+      .fontColor(PANEL_TEXT)
       .layoutWeight(1)
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis });

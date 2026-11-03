@@ -346,15 +346,17 @@ void main() {
           reason: '鸿蒙插件缺命令入队方法');
     });
 
-    test('585 弹层为纯白渐变磨砂（采样链已删，无黑底风险）', () {
-      // 旧实现用 PixelCopy 采样视频帧；585 改为纯白渐变绘制，从根本上
-      // 不存在「采样源拿错层 → 黑底」这一类风险。
+    test('587 弹层为深色渐变磨砂（采样链已删，无黑底风险）', () {
+      // 旧实现用 PixelCopy 采样视频帧；585 起改为纯渐变绘制，从根本上
+      // 不存在「采样源拿错层 → 黑底」这一类风险（587 由暖白改深色）。
       final glass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
         'PanelGlassDrawable.kt',
       ).readAsStringSync();
       expect(glass, isNot(contains('PixelCopy')));
-      expect(glass, contains('PANEL_LIGHT_TOP'));
+      expect(glass, contains('PANEL_GLASS_TOP'));
+      expect(glass, contains('PANEL_GLASS_BASE'));
+      expect(glass, contains('PANEL_GLASS_RIM'));
     });
 
     test('安卓锁定态必须整体隐藏控件层（只留锁钮）', () {
@@ -477,7 +479,7 @@ void main() {
       );
     });
 
-    test('585 弹层为纯渐变绘制（无采样 → 无黑屏红线风险）', () {
+    test('587 弹层为纯渐变绘制（无采样 → 无黑屏红线风险）', () {
       final glass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
         'PanelGlassDrawable.kt',
@@ -487,7 +489,7 @@ void main() {
       expect(glass, isNot(contains('PixelCopy')));
       expect(glass, isNot(contains('SurfaceView')));
       expect(glass, contains('LinearGradient'));
-      expect(glass, contains('PANEL_LIGHT_TOP'));
+      expect(glass, contains('PANEL_GLASS_TOP'));
     });
   });
 }

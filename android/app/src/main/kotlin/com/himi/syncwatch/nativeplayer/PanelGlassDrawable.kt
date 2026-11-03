@@ -9,7 +9,7 @@ import android.graphics.Shader
 import android.graphics.drawable.Drawable
 
 /**
- * 播放器弹层「暖白磨砂」绘制（对齐 Flutter `GlassContainer(light: true)`）。
+ * 播放器弹层「深色磨砂」绘制（对齐 Flutter `GlassContainer(light: true)`）。
  *
  * 【为什么不做背景采样】
  * 旧实现按 600ms 周期回读视频帧（GPU→CPU）做折射背景。真机反馈：视频
@@ -19,17 +19,18 @@ import android.graphics.drawable.Drawable
  * Android 没有节点级 backdrop blur API；要真·实时只能把面板做成独立窗口
  * 走系统 cross-window blur——但那会迫使视频层从硬件 overlay 改为 GPU
  * 合成（HDR 直通失效），且窗口插入可能打断 surface 绑定。权衡后改为
- * **纯暖白渐变磨砂**（不做任何回读）：
+ * **纯深色渐变磨砂**（不做任何回读）：
  * - 零 GPU→CPU 拷贝、零循环、零跳帧、零黑屏风险；
- * - 暖白基渐变 + 顶部高光 + 暗描边 + 投影，玻璃质感靠光学层表达。
+ * - 近黑 65% 半透渐变 + 顶部高光 + 亮描边 + 投影，玻璃质感靠光学层表达。
  *
- * 586 由纯白改暖白：纯白在暗适应状态下亮度差近 20:1，弹层弹出时刺眼；
- * 暖白（R>G>B 微弱偏暖）压住亮度，黑字仍然可读。
+ * 587 由 586 的暖白改深色：暖白即使压到 55% 仍是「一块亮板」，暗场景
+ * 与视频亮度差过大、弹层出现瞬间刺眼，且把磨砂完全盖死。深色磨砂与
+ * 顶/底栏同族，视频从半透层隐约透出，白字在极亮/极暗画面都稳。
  *
  * 绘制层次（自下而上）：
- * 1. 暖白基竖向渐变（顶部提亮 = 菲涅尔近似）；
+ * 1. 深色基竖向渐变（顶部提亮 = 菲涅尔近似）；
  * 2. 顶部高光带（18% 高度，白 22% → 透明）；
- * 3. 外圈暗描边（1dp 黑 15%）；
+ * 3. 外圈亮描边（1dp 白 20%）；
  * 4. 内圈细高光线（0.5dp 白 6%，玻璃厚度暗示）。
  */
 internal class PanelGlassDrawable(
@@ -47,11 +48,11 @@ internal class PanelGlassDrawable(
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = NPTheme.PANEL_LIGHT_RIM
+        color = NPTheme.PANEL_GLASS_RIM
         style = Paint.Style.STROKE
     }
     private val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = NPTheme.PANEL_LIGHT_INNER
+        color = NPTheme.PANEL_GLASS_INNER
         style = Paint.Style.STROKE
     }
     private val rect = RectF()
@@ -63,13 +64,13 @@ internal class PanelGlassDrawable(
         val r = dp(cornerRadiusDp).toFloat()
         rect.set(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
 
-        // 1. 暖白基竖向渐变（顶部提亮 → 基色 → 底部略透）。
+        // 1. 深色基竖向渐变（顶部提亮 → 基色 → 底部略透）。
         fillPaint.shader = LinearGradient(
             0f, rect.top, 0f, rect.bottom,
             intArrayOf(
-                NPTheme.PANEL_LIGHT_TOP,
-                NPTheme.PANEL_LIGHT_BASE,
-                NPTheme.PANEL_LIGHT_BOTTOM,
+                NPTheme.PANEL_GLASS_TOP,
+                NPTheme.PANEL_GLASS_BASE,
+                NPTheme.PANEL_GLASS_BOTTOM,
             ),
             null as FloatArray?,
             Shader.TileMode.CLAMP,
@@ -89,7 +90,7 @@ internal class PanelGlassDrawable(
         canvas.drawPath(path, highlightPaint)
         highlightPaint.shader = null
 
-        // 3. 外圈暗描边（1dp）。
+        // 3. 外圈亮描边（1dp，深底靠亮边定界）。
         buildPath(rect, r)
         rimPaint.strokeWidth = dp(1).toFloat()
         canvas.drawPath(path, rimPaint)

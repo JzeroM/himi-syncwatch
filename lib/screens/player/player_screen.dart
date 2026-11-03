@@ -694,11 +694,12 @@ class PlayerScreen extends ConsumerStatefulWidget {
       positionMs == 0 &&
       !playing;
 
-  /// 加载指示器统一规则（586，三端共用）。
+  /// 加载指示器统一规则（586，三端共用语义）。
   ///
-  /// 首帧未出 **或** 正在缓冲 → 显示。原生侧（安卓/鸿蒙）不再各自拼条件，
-  /// 一律读状态快照里的 `showLoading`（见 `NativePlayerState.showLoading`），
-  /// 保证三端同一时刻转圈、同一时刻收起。
+  /// 首帧未出 **或** 正在缓冲 → 显示。Flutter 自绘转圈直接调本谓词；
+  /// 安卓/鸿蒙读快照的 `showLoading`，该字段由
+  /// `MpvPlayerAdapter._buildNativePlayerState` 按同一语义**每次推送现算**
+  /// （587 修复：它曾随低频 extras 下发 → 视频在播还一直转圈）。
   static bool shouldShowLoadingSpinner({
     required int durationMs,
     required int positionMs,
@@ -3365,16 +3366,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ? 'intro'
                 : 'outro'),
         showDebug: settings.showSyncDebug,
-        // 加载指示器（586）：三端共用同一判定（首帧未出 **或** 缓冲中），
-        // 原生宿主只读这一位（安卓 bufferingView / 鸿蒙 LoadingProgress）。
-        showLoading: PlayerScreen.shouldShowLoadingSpinner(
-          durationMs: _duration.inMilliseconds,
-          positionMs: _position.inMilliseconds,
-          playerReady: _isPlayerReady,
-          startedOnce: _hasStartedPlayback,
-          playing: _player.state == AdapterPlaybackState.playing,
-          buffering: _player.mediaStatus.test(AdapterMediaStatus.buffering),
-        ),
         isRoom: isRoom,
         canScreenshot: !Platform.isAndroid,
         locked: _lockController.locked,

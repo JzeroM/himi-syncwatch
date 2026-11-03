@@ -1728,6 +1728,24 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         _state == AdapterPlaybackState.stopped;
     final buffering =
         (_mediaStatus.rawValue & AdapterMediaStatus.buffering.rawValue) != 0;
+    // 加载指示器（587）：**必须在每次推送时现算**。
+    //
+    // 586 的坑：该值曾随 `NativePlayerUiExtras` 下发，而 extras 只在
+    // 设置变更/切集/开关面板等低频时机重建；播放态变化走本方法的 200ms
+    // 轮询，送下去的一直是起播前算出的 `true` → 鸿蒙/安卓「视频都在播了
+    // 还一直转圈」。
+    //
+    // 判定语义与 `PlayerScreen.shouldShowLoadingSpinner` 一致（首帧未出
+    // **或** 缓冲中），但这里只用手边的高频字段：
+    // - [firstFramePending]：有视频轨、时长已到但 video-params 未到 = 首帧
+    //   未出（比 `position==0` 更准，起播后第一秒就能收起）；
+    // - 时长与位置都为 0 且未进入 playing = 首帧前的纯黑窗口；
+    // - [buffering]：中途卡顿。
+    final showLoading = buffering ||
+        firstFramePending.value ||
+        (_durationMs == 0 &&
+            _positionMs == 0 &&
+            _state != AdapterPlaybackState.playing);
     return NativePlayerState(
       engine: 'mpv',
       videoOutputRequested: _requestedMpvVideoOutput,
@@ -1782,9 +1800,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       segmentOutroStartMs: _nativeUiExtras.segmentOutroStartMs,
       skipPrompt: _nativeUiExtras.skipPrompt,
       showDebug: _nativeUiExtras.showDebug,
-      // 加载指示器（586 三端统一）：只由 PlayerScreen 的
-      // `shouldShowLoadingSpinner` 决定，适配器不再自己拼条件。
-      showLoading: _nativeUiExtras.showLoading,
+      // 加载指示器（587）：现算值（见方法开头注释），不再读低频 extras。
+      showLoading: showLoading,
       isRoom: _nativeUiExtras.isRoom,
       canScreenshot: _nativeUiExtras.canScreenshot,
       locked: _nativeUiExtras.locked,

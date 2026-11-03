@@ -77,7 +77,7 @@ class GlassConfig {
   static const double shellBottomReserve = 96;
 
   // ═══════════════════════════════════════════════════════════════
-  // 播放器弹层专用「白底磨砂」调色板
+  // 播放器弹层专用「深色磨砂」调色板
   // ═══════════════════════════════════════════════════════════════
   //
   // 【范围铁律】仅播放器内的弹出面板（右侧侧栏 / 解码 popover /
@@ -86,47 +86,48 @@ class GlassConfig {
   //
   // 因此这里**不修改** panelTint / popupTint / fallbackColor 等既有
   // 常量（`test/native_player_layout_test.dart` 有断言锁死 panelTint
-  // 仍为 0x1F1A1D23），只新增播放器弹层专用的一组。
+  // 仍为 0x1F1A1D23），只维护播放器弹层专用的一组。
 
-  /// 播放器弹层**暖白磨砂**基色（90% 不透明）。
+  /// 播放器弹层**深色磨砂**基色（65% 不透明）。
   ///
-  /// 586 由 585 的纯白基色改暖白：纯白在暗适应状态下亮度差近 20:1，
-  /// 弹层一出现眼睛会本能躲闪；暖白（R>G>B 微弱偏暖）把刺眼度压下来，
-  /// 同时保证黑字在任意画面上可读。
-  static const Color playerPanelWhite = Color(0xE6F4F2EE);
+  /// 587 由 585 纯白 → 586 暖白 → 改深色：暖白即使压到 55% 仍是「一块亮
+  /// 板」，暗场景下与视频亮度差过大、弹层出现瞬间刺眼，且把磨砂完全盖死。
+  /// 深色磨砂（近黑 + 65%）与顶/底栏同族，视频透过模糊层流动可见，
+  /// 白字在任意画面（极亮/极暗）都稳。
+  static const Color playerPanelBase = Color(0xA61A1D23);
 
   /// 播放器弹层竖向渐变（顶部提亮 → 基色 → 底部略透 = 菲涅尔高光近似）。
-  static const Color playerPanelWhiteTop = Color(0xF2FAF8F4);
-  static const Color playerPanelWhiteBottom = Color(0xD6EAE7E1);
+  static const Color playerPanelTop = Color(0xB31A1D23);
+  static const Color playerPanelBottom = Color(0x991A1D23);
 
-  /// 暖白玻璃定界描边（浅底必须靠**暗**边，白描边在亮画面上会消失）。
-  static const Color playerPanelRimLight = Color(0x26000000);
+  /// 深色玻璃定界描边（白 20%；深底必须靠**亮**边才有「玻璃厚度」感）。
+  static const Color playerPanelRim = Color(0x33FFFFFF);
 
-  /// 播放器弹层投影（比深色版更重，浅色面板需要靠投影「浮」起来）。
+  /// 播放器弹层投影（深色面板靠投影与视频分离）。
   static const List<BoxShadow> playerPanelShadow = [
     BoxShadow(
-      color: Color(0x40000000),
+      color: Color(0x66000000),
       blurRadius: 24,
       offset: Offset(0, 8),
     ),
   ];
 
   /// 面板文字（586 起**取消三色分级**，只留两级）：
-  /// - 主：正文一律近黑 [playerPanelTextPrimary]（选项行不再用强调色）；
-  /// - 次：说明/占位黑 72% [playerPanelTextSecondary]。
+  /// - 主：正文一律纯白 [playerPanelTextPrimary]（选项行不再用强调色）；
+  /// - 次：说明/占位白 70% [playerPanelTextSecondary]。
   ///
   /// [playerPanelTextTertiary] 保留为别名（历史调用点仍在用），值与次同级，
   /// 避免同一面板里出现三种灰度。
-  static const Color playerPanelTextPrimary = Color(0xFF1B1B1F);
-  static const Color playerPanelTextSecondary = Color(0xB8000000);
-  static const Color playerPanelTextTertiary = Color(0xB8000000);
+  static const Color playerPanelTextPrimary = Color(0xFFFFFFFF);
+  static const Color playerPanelTextSecondary = Color(0xB3FFFFFF);
+  static const Color playerPanelTextTertiary = Color(0xB3FFFFFF);
 
-  /// 暖白底分隔线（黑 12%，0.5dp；纯白底下 8% 几乎看不见）。
-  static const Color playerPanelDivider = Color(0x1F000000);
+  /// 深色底分隔线（白 12%，0.5dp）。
+  static const Color playerPanelDivider = Color(0x1FFFFFFF);
 
   /// 播放器弹层统一排版（586）：标题 15/w600、正文 14/w500、说明 12/w500。
   ///
-  /// 三端逐值对齐（安卓 `NPTheme.TEXT_*` / 鸿蒙 `NativePlayerPanel.TEXT_*`），
+  /// 三端逐值对齐（安卓 `NPTheme.PANEL_*` / 鸿蒙 `NativePlayerPanel.PANEL_*`），
   /// 任一改动必须三处同步（`test/native_player_layout_test.dart` 有断言）。
   static const double playerPanelTitleSize = 15;
   static const double playerPanelTitleWeight = 600;
@@ -135,11 +136,11 @@ class GlassConfig {
   static const double playerPanelCaptionSize = 12;
   static const double playerPanelCaptionWeight = 500;
 
-  /// 浅色选中行底色（强调色 12%）与选中文字色。
-  static const Color playerPanelSelectedBg = Color(0x1F6366F1);
+  /// 深色选中行底色（强调色 20%）——文字恒白，选中只靠行底 + 对勾表达。
+  static const Color playerPanelSelectedBg = Color(0x336366F1);
 
-  /// 浅色滑杆：轨道（黑 12%）/ 已播（强调色）/ 拇指（纯白 + 微投影）。
-  static const Color playerPanelTrackInactive = Color(0x1F000000);
+  /// 深色滑杆：轨道（白 24%）/ 已播（强调色）/ 拇指（纯白 + 微投影）。
+  static const Color playerPanelTrackInactive = Color(0x3DFFFFFF);
   static const Color playerPanelThumb = Color(0xFFFFFFFF);
 
   /// 模糊 + 饱和增强合成滤镜。

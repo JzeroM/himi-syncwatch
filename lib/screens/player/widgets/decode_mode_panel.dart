@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 解码模式面板（播放器右上 popover，180dp 宽）。
 ///
-/// 【白底磨砂】与播放器其他弹层统一：白基竖向渐变 + 暗描边 + 重投影，
-/// 文字近黑、次级黑 54%，选中行强调色 12% 底 + 强调色文字/图标。
-/// 顶栏、底栏等浮在视频上的控件仍保持深色玻璃（白字）。
+/// 【深色磨砂（587）】与播放器其他弹层统一：走 [GlassContainer] 的
+/// `popup: true` 分支（近黑 65% 竖向渐变 + 白 20% 描边 + 重投影 + 实时
+/// 折射模糊）。文字恒白（正文 14/w500、说明 12/w500 白 70%），选中只靠
+/// 行底 accent 20% + 单选圈表达——与安卓 `decodeOptionRow` / 鸿蒙
+/// `DecodeContent` 逐值一致。
 class DecodeModePanel extends ConsumerWidget {
   final ValueChanged<String> onSwitchMode;
 
@@ -30,29 +33,17 @@ class DecodeModePanel extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {},
-      child: Container(
+      child: SizedBox(
         width: 180,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              GlassConfig.playerPanelWhiteTop,
-              GlassConfig.playerPanelWhite,
-              GlassConfig.playerPanelWhiteBottom,
-            ],
-          ),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: GlassConfig.playerPanelRimLight),
-          boxShadow: GlassConfig.playerPanelShadow,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+        child: GlassContainer(
+          popup: true,
+          padding: EdgeInsets.zero,
+          borderRadius: const BorderRadius.all(Radius.circular(8)),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 标题行：`解码模式` 15 w600 + 当前档位 14 w500（586 起正文
-              // 一律近黑，档位不再用强调色——强调只由选项行的单选圈/行底表达）。
+              // 标题行：`解码模式` 15 w600 + 当前档位 14 w500（正文一律纯白，
+              // 档位不用强调色——强调只由选项行的单选圈/行底表达）。
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                 child: Row(
@@ -93,7 +84,7 @@ class DecodeModePanel extends ConsumerWidget {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? const Color(0xFF6366F1).withValues(alpha: 0.12)
+                          ? GlassConfig.playerPanelSelectedBg
                           : null,
                       // 每行底边通栏 0.5dp（含末行，与深色版一致）
                       border: const Border(

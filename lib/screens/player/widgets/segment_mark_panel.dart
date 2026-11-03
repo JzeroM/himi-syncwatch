@@ -37,7 +37,7 @@ class SegmentMarkPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassContainer(
-      light: true,
+      popup: true,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       borderRadius: const BorderRadius.all(Radius.circular(18)),
       child: SizedBox(

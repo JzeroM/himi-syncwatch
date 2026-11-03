@@ -42,7 +42,7 @@ class SelectorSidePanel extends StatelessWidget {
     return GestureDetector(
       onTap: () {},
       child: GlassContainer(
-        light: true,
+        popup: true,
         borderRadius: borderRadius,
         padding: const EdgeInsets.only(top: 10, bottom: 4),
         child: Column(
@@ -112,7 +112,7 @@ class SideOptionRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  // 586 统一排版：正文一律近黑 + w500，选中态只靠行底
+                  // 586 统一排版：正文一律纯白 + w500，选中态只靠行底
                   // （[GlassConfig.playerPanelSelectedBg]）与右侧强调色对勾
                   // 区分——旧实现选中行文字改强调色 + w600，同一面板出现
                   // 两种字色/字重，观感散乱。
