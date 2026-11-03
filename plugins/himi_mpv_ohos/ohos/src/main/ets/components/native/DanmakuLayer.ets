@@ -139,16 +139,14 @@ export struct DanmakuLayer {
     const maxScrollRows = Math.max(1, Math.min(s.danmakuScrollRows, autoRows));
     const topRows = Math.max(1, Math.min(s.danmakuTopRows, autoRows));
     const bottomRows = Math.max(1, Math.min(s.danmakuBottomRows, autoRows));
-    if (this.scrollRowAvail.length !== maxScrollRows) {
+    // 589：行容量变化（转屏/改行数设置）→ 旧行号可能越界，整表重排。
+    // 必须在同步长度**之前**判定（同步后长度恒相等，判定会恒 false）。
+    const capacityChanged = this.scrollRowAvail.length !== maxScrollRows
+      || this.topRowAvail.length !== topRows
+      || this.bottomRowAvail.length !== bottomRows;
+    if (capacityChanged) {
       this.scrollRowAvail = new Array<number>(maxScrollRows).fill(0);
-      // 589：行容量变化（转屏/改行数设置）→ 旧行号可能越界，整表重排。
-      this.laneOf.clear();
-    }
-    if (this.topRowAvail.length !== topRows) {
       this.topRowAvail = new Array<number>(topRows).fill(0);
-      this.laneOf.clear();
-    }
-    if (this.bottomRowAvail.length !== bottomRows) {
       this.bottomRowAvail = new Array<number>(bottomRows).fill(0);
       this.laneOf.clear();
     }

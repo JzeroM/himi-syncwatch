@@ -250,16 +250,15 @@ class DanmakuLayerView(context: Context) : View(context) {
         val maxScrollRows = scrollRows.coerceAtMost(autoRows).coerceAtLeast(1)
         val topRowCount = topRows.coerceAtMost(autoRows).coerceAtLeast(1)
         val bottomRowCount = bottomRows.coerceAtMost(autoRows).coerceAtLeast(1)
-        if (scrollAvail.size != maxScrollRows) {
+        // 行容量变化（转屏/改行数设置）：旧行号可能越界 → 整表重排。
+        // 必须在分配循环**之前**判定：中途 clear 会让本帧已分配的行失效，
+        // 转屏瞬间闪一帧空白。
+        val capacityChanged = scrollAvail.size != maxScrollRows ||
+            topAvail.size != topRowCount ||
+            bottomAvail.size != bottomRowCount
+        if (capacityChanged) {
             scrollAvail = DoubleArray(maxScrollRows)
-            // 行容量变化：旧行号可能越界，整表重排（同 Flutter 重建 timeline）。
-            laneOf.clear()
-        }
-        if (topAvail.size != topRowCount) {
             topAvail = DoubleArray(topRowCount)
-            laneOf.clear()
-        }
-        if (bottomAvail.size != bottomRowCount) {
             bottomAvail = DoubleArray(bottomRowCount)
             laneOf.clear()
         }
