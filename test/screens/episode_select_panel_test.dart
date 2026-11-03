@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/screens/player/widgets/episode_select_panel.dart'
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 
 import '../helpers/test_fakes.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 
 Widget _host(Widget child, {AppSettings settings = const AppSettings()}) {
   final container = ProviderContainer(
@@ -97,7 +98,7 @@ void main() {
     expect(picked, 2);
   });
 
-  testWidgets('当前集标题白色加粗、非当前集 white70', (tester) async {
+  testWidgets('当前集标题近黑加粗、非当前集次要色（白底弹层）', (tester) async {
     await tester.pumpWidget(_host(
       EpisodeSelectPanel(
         episodes: _episodes(),
@@ -111,9 +112,10 @@ void main() {
         find.byKey(const Key('playerEpisodeTitle_1')));
     final normal = tester.widget<Text>(
         find.byKey(const Key('playerEpisodeTitle_0')));
-    expect(selected.style?.color, Colors.white);
+    // 585：播放器弹层改白底磨砂 → 选集卡片标题改浅色板。
+    expect(selected.style?.color, GlassConfig.playerPanelTextPrimary);
     expect(selected.style?.fontWeight, FontWeight.w600);
-    expect(normal.style?.color, Colors.white70);
+    expect(normal.style?.color, GlassConfig.playerPanelTextSecondary);
     expect(normal.style?.fontWeight, FontWeight.normal);
   });
 

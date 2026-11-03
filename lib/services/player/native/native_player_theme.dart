@@ -53,10 +53,17 @@ abstract final class NativePlayerTheme {
   static const Color rim = Color(0x4DFFFFFF);
 
   /// 解码模式面板实底（`#1E1E2E`）。
+  ///
+  /// 585 起播放器弹层改「白底磨砂」，解码 popover 不再使用这个深色实底
+  /// （保留常量供非弹层场景/历史对齐），实际背景走
+  /// `GlassConfig.playerPanelWhite`。
   static const Color decodePanel = Color(0xFF1E1E2E);
 
-  /// 解码模式面板当前值文字（`#A5B4FC`）。
-  static const Color decodeCurrentText = Color(0xFFA5B4FC);
+  /// 解码模式面板当前值文字。
+  ///
+  /// 585：白底弹层上用主色（与 Flutter `DecodeModePanel` 一致），
+  /// 旧 `#A5B4FC` 在浅底上对比不足。
+  static const Color decodeCurrentText = Color(0xFF6366F1);
 
   /// TV 进度条焦点环（`#C1C2FE`）。
   static const Color focusRing = Color(0xFFC1C2FE);

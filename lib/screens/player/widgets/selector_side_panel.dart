@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -41,6 +42,7 @@ class SelectorSidePanel extends StatelessWidget {
     return GestureDetector(
       onTap: () {},
       child: GlassContainer(
+        light: true,
         borderRadius: borderRadius,
         padding: const EdgeInsets.only(top: 10, bottom: 4),
         child: Column(
@@ -52,7 +54,7 @@ class SelectorSidePanel extends StatelessWidget {
                 child: Text(
                   title,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: GlassConfig.playerPanelTextPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                   ),
@@ -110,7 +112,9 @@ class SideOptionRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected ? const Color(0xFF6366F1) : Colors.white,
+                  color: selected
+                      ? const Color(0xFF6366F1)
+                      : GlassConfig.playerPanelTextPrimary,
                   fontSize: 14,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                 ),

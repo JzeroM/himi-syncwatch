@@ -21,9 +21,10 @@ void main() {
     'ScaleDownBox.kt',
   ).readAsStringSync();
 
+  // 585：PixelCopy 采样实现（GlassBackdrop.kt）已删除，弹层改纯白渐变磨砂。
   final kotlinGlass = File(
     'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-    'GlassBackdrop.kt',
+    'LightGlassDrawable.kt',
   ).readAsStringSync();
 
   final ohosView = File(
@@ -85,8 +86,8 @@ void main() {
   group('角标正圆（对齐 Flutter BoxShape.circle）', () {
     test('Android 用正圆 Drawable + 正方形边长', () {
       expect(kotlinScreen, contains('BadgeCircleDrawable'));
-      // 必须是正方形（宽==高），否则 OVAL 会画成椭圆。
-      expect(kotlinScreen, matches(RegExp(r'LayoutParams\(dp\(sideDp\), dp\(sideDp\)')),
+      // 585：直径随内容自适应，但仍是**正方形**（宽==高），否则正圆画成椭圆。
+      expect(kotlinScreen, matches(RegExp(r'LayoutParams\(sidePx, sidePx')),
           reason: '角标必须是正方形边长（正圆底）');
       // 旧的手算宽度方案必须移除。
       expect(kotlinScreen, isNot(contains('14 + text.orEmpty().length * 5')),
@@ -104,20 +105,19 @@ void main() {
     });
   });
 
-  group('玻璃面板源矩形映射（不显示整段缩小视频）', () {
-    test('Android 把面板屏幕矩形映射到位图源矩形', () {
-      expect(kotlinGlass, contains('mapPanelToSource'));
-      expect(kotlinGlass, contains('setPanelScreenRect'));
-      // 旧实现整帧铺满：drawBitmap(bmp, null, rect) 必须消失。
-      expect(kotlinGlass, isNot(contains('drawBitmap(bmp, null, rect, paint)')),
-          reason: '整帧铺满会让面板显示「缩小版全视频」');
-      expect(kotlinGlass, contains('drawBitmap(bmp, src, rect, paint)'));
+  group('玻璃面板源矩形映射（585 起改纯渐变，不再有映射）', () {
+    test('Android 弹层不做位图映射（纯渐变绘制）', () {
+      // 585：采样链整体删除，不再有位图/源矩形映射逻辑。
+      expect(kotlinGlass, isNot(contains('mapPanelToSource')));
+      expect(kotlinGlass, isNot(contains('drawBitmap')));
+      expect(kotlinGlass, contains('LinearGradient'));
     });
 
-    test('宿主喂入面板屏幕矩形与 surface 尺寸', () {
-      expect(kotlinScreen, contains('feedGlassRects'));
-      expect(kotlinScreen, contains('pushScreenRect'));
-      expect(kotlinScreen, contains('getLocationOnScreen'));
+    test('585 删除采样后不再需要喂入矩形', () {
+      // 白底磨砂为纯渐变绘制，不需要采样位图 → 矩形喂入链已整块移除。
+      expect(kotlinScreen, isNot(contains('feedGlassRects')));
+      expect(kotlinScreen, isNot(contains('pushScreenRect')));
+      expect(kotlinScreen, isNot(contains('setPanelScreenRect')));
     });
   });
 
@@ -576,32 +576,26 @@ void main() {
       expect(screen, contains("api_key=\$_currentToken"));
     });
 
-    test('玻璃采样节拍 600ms + 只采面板矩形（修面板区域视频卡顿）', () {
+    test('585 弹层改纯白渐变磨砂（不再采样 → 零跳帧零黑屏风险）', () {
       final kotlinGlass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-        'GlassBackdrop.kt',
+        'LightGlassDrawable.kt',
       ).readAsStringSync();
-      expect(kotlinGlass, contains('SAMPLE_INTERVAL_MS = 600L'));
-      expect(kotlinGlass, contains('panelRect'));
-
-      // 采样位图与面板矩形必须 1:1：PixelCopy 的 Rect 重载要求目标位图
-      // 与源矩形同尺寸，否则抛 IllegalArgumentException → 玻璃永远
-      // 回落 tint（静默功能回归，真机才看得出）。
-      expect(kotlinGlass, isNot(contains('GLASS_BLUR_DOWNSAMPLE')),
-          reason: '按面板矩形采样后不得再降采样位图');
+      // 白基竖向渐变 + 顶部高光 + 暗描边 + 内圈厚度线。
+      expect(kotlinGlass, contains('PANEL_LIGHT_TOP'));
+      expect(kotlinGlass, contains('PANEL_LIGHT_BASE'));
+      expect(kotlinGlass, contains('PANEL_LIGHT_RIM'));
+      // 旧采样实现（PixelCopy / SurfaceView / 折射带）必须彻底消失。
+      expect(kotlinGlass, isNot(contains('PixelCopy')));
+      expect(kotlinGlass, isNot(contains('SAMPLE_INTERVAL_MS')));
+      expect(kotlinGlass, isNot(contains('GLASS_REFRACTION_BAND')));
     });
 
-    test('玻璃采样器关闭即真停（不得留回调空转偷帧）', () {
-      // stopGlassSampling() 的 removeCallbacks 拦不住「已出队、正在跑」
-      // 的那一棒；runnable 内必须自查开关再决定重排，否则面板关掉后
-      // 每秒仍 PixelCopy 一次 → 视频卡顿永不复原。
-      final match = RegExp(
-        r'glassSampleRunnable = object : Runnable \{[\s\S]*?\n    \}',
-      ).firstMatch(kotlinScreen);
-      expect(match, isNotNull, reason: '未找到 glassSampleRunnable');
-      final body = match!.group(0)!;
-      expect(body, contains('if (!glassSampling) return'),
-          reason: 'runnable 必须先自查 glassSampling 再重排');
+    test('585 采样器整块删除（不再有偷帧空转风险）', () {
+      // 旧实现 600ms PixelCopy 周期采样，关闭时靠 glassSampling 自查兜底；
+      // 585 改纯白渐变后采样器连同回调全部删除，从根本上消除偷帧。
+      expect(kotlinScreen, isNot(contains('glassSampleRunnable')));
+      expect(kotlinScreen, isNot(contains('glassSampling')));
     });
   });
 
@@ -1338,13 +1332,14 @@ void main() {
       expect(glassSeek, contains('drawArc'));
     });
 
-    test('顶/底栏芯片统一规格（高 32dp + 关字体留白 + 角标 14/18 阶梯）', () {
+    test('顶/底栏芯片统一规格（高 32dp + 关字体留白）', () {
       // 文本/图标芯片各自成高 → 同排高低不齐（截图回归）：统一最小高。
       final minHeights = RegExp(r'minimumHeight = dp\(32\)').allMatches(kotlinScreen);
       expect(minHeights.length, greaterThanOrEqualTo(3),
           reason: 'speedChip/kernelChip/图标芯片都要统一最小高');
-      // 角标边长阶梯对齐鸿蒙 badgeSide（1~2 位 14，3 位起 18）。
-      expect(kotlinScreen, contains('if (text.length >= 3) NPTheme.BADGE_MIN + 4'));
+      // 585：角标直径改为**内容自适应**（旧 14/18 阶梯在三位数时被裁）。
+      expect(kotlinScreen, contains('badgeDiameterDp'));
+      expect(kotlinScreen, isNot(contains('if (text.length >= 3) NPTheme.BADGE_MIN + 4')));
     });
 
     test('竖屏隐藏标题 + 焦点不改几何（对齐鸿蒙）', () {
@@ -1470,9 +1465,10 @@ void main() {
       'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
       'GlassSeekBarView.kt',
     ).readAsStringSync();
+    // 585：GlassBackdrop.kt（PixelCopy 采样）已删除，改读白底磨砂实现。
     final glassBackdrop = File(
       'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-      'GlassBackdrop.kt',
+      'LightGlassDrawable.kt',
     ).readAsStringSync();
     final adapter =
         File('lib/services/player/mpv_player_adapter.dart').readAsStringSync();
@@ -1531,9 +1527,120 @@ void main() {
       expect(kotlinScreen, contains('if (badgeLastText[badge] == text) return@forEach'));
     });
 
-    test('面板 tint 渐变逐值对齐 Flutter GlassContainer', () {
-      expect(glassBackdrop, contains('0x2C282B30'));
-      expect(glassBackdrop, contains('0x161A1D23'));
+    test('面板背景逐值对齐 Flutter（585 改白底磨砂）', () {
+      // 584 时是深色 tint 三段渐变；585 统一改白底磨砂，对应常量换成
+      // PANEL_LIGHT_TOP / PANEL_LIGHT_BASE / PANEL_LIGHT_BOTTOM。
+      expect(glassBackdrop, contains('PANEL_LIGHT_TOP'));
+      expect(glassBackdrop, contains('PANEL_LIGHT_BASE'));
+      expect(glassBackdrop, contains('PANEL_LIGHT_BOTTOM'));
+    });
+  });
+
+  group('真机回归 585（控制层监听器接线 + 白底磨砂弹层）', () {
+    final kotlinScreen = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerScreenView.kt',
+    ).readAsStringSync();
+    final kotlinTheme = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerUi.kt',
+    ).readAsStringSync();
+    final lightGlass = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'LightGlassDrawable.kt',
+    ).readAsStringSync();
+    final gauge = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'VerticalGaugeView.kt',
+    ).readAsStringSync();
+    final host = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'AndroidNativePlayerHost.kt',
+    ).readAsStringSync();
+    final glassConfig =
+        File('lib/widgets/glass/glass_config.dart').readAsStringSync();
+    final glassContainer =
+        File('lib/widgets/glass/glass_container.dart').readAsStringSync();
+    final selectorPanel =
+        File('lib/screens/player/widgets/selector_side_panel.dart')
+            .readAsStringSync();
+    final ohosPanel = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'NativePlayerPanel.ets',
+    ).readAsStringSync();
+
+    test('【真凶】buildHierarchy 必须自己接 seek/transport 监听器', () {
+      // rebuildBars() 只在 tvMode 翻转时跑，手机端 tvMode 恒 false →
+      // 旧实现监听器从未挂上（进度条拖不动、播放/上下集没反应）。
+      final body = RegExp(
+        r'private fun buildHierarchy\(\) \{[\s\S]*?\n    \}',
+      ).firstMatch(kotlinScreen);
+      expect(body, isNotNull, reason: 'buildHierarchy 必须存在');
+      expect(body!.group(0), contains('configureSeekListeners()'),
+          reason: '初始化路径必须接进度条监听器');
+      expect(body.group(0), contains('configureTransportListeners()'),
+          reason: '初始化路径必须接播放/上下集监听器');
+    });
+
+    test('进度条 seek 保护窗（提交后不被旧位置弹回）', () {
+      expect(kotlinScreen, contains('pendingSeekMs'));
+      expect(kotlinScreen, contains('PENDING_SEEK_TOLERANCE_MS'));
+      // 保护期内滑杆停在目标位，而不是权威旧位置。
+      expect(kotlinScreen, contains('seekBar.value = target.toFloat()'));
+    });
+
+    test('角标按 Flutter 几何复刻（直径随内容 + 贴图标右上）', () {
+      expect(kotlinScreen, contains('badgeDiameterDp'));
+      // 旧实现固定 14/18 阶梯已删除。
+      expect(kotlinScreen, isNot(contains('BADGE_MIN + 4')));
+      expect(kotlinTheme, contains('const val BADGE_MIN = 14'));
+    });
+
+    test('手势柱条复刻 _buildVerticalBar（36dp/图标/竖向轨道/百分比）', () {
+      // 常量定义在 NPTheme（NativePlayerUi.kt）。
+      expect(kotlinTheme, contains('const val GAUGE_WIDTH = 36'));
+      expect(kotlinTheme, contains('const val GAUGE_BRIGHTNESS'));
+      expect(kotlinTheme, contains('const val GAUGE_VOLUME'));
+      expect(kotlinTheme, contains('const val GAUGE_RADIUS = 18'));
+      // 自绘：轨道 + 拇指 + 百分比 + 图标。
+      expect(gauge, contains('percentOf'));
+      expect(gauge, contains('drawRoundRect'));
+      expect(gauge, contains('setIcon'));
+      // 旧实现是纯 TextView 只显示百分比。
+      expect(kotlinScreen, contains('VerticalGaugeView(context)'));
+      expect(kotlinScreen, isNot(contains('verticalBar.text = ')));
+    });
+
+    test('安卓弹层改白底磨砂且删除 PixelCopy 采样', () {
+      expect(lightGlass, contains('PANEL_LIGHT_TOP'));
+      expect(lightGlass, contains('PANEL_LIGHT_RIM'));
+      // 采样链必须彻底消失（旧实现 600ms 回读 → 背景一帧一帧跳）。
+      expect(kotlinScreen, isNot(contains('sampleAsync()')));
+      expect(kotlinScreen, isNot(contains('startGlassSampling')));
+      expect(kotlinScreen, isNot(contains('SAMPLE_INTERVAL_MS')));
+    });
+
+    test('字幕面板补「加载本地字幕」+ 无轨道占位', () {
+      expect(kotlinScreen, contains('加载本地字幕文件...'));
+      expect(kotlinScreen, contains('当前视频无内嵌字幕轨道'));
+      expect(host, contains('"type" to "addSubtitle"'));
+    });
+
+    test('Flutter 白底磨砂只在播放器弹层（全局 panelTint 不变）', () {
+      // 全局深色常量必须原样保留（设置页/缓存页等仍在用）。
+      expect(glassConfig, contains('static const Color panelTint = Color(0x1F1A1D23)'));
+      expect(glassConfig, contains('playerPanelWhite'));
+      expect(glassConfig, contains('playerPanelRimLight'));
+      // 弹层容器走 light 变体。
+      expect(glassContainer, contains('this.light = false'));
+      expect(selectorPanel, contains('light: true'));
+    });
+
+    test('鸿蒙弹层同步白底磨砂（保留实时 backgroundEffect）', () {
+      expect(ohosPanel, contains('PANEL_LIGHT_TOP'));
+      expect(ohosPanel, contains('PANEL_LIGHT_RIM'));
+      expect(ohosPanel, contains('backgroundEffect'));
+      expect(ohosPanel, contains('TEXT_DARK'));
     });
   });
 

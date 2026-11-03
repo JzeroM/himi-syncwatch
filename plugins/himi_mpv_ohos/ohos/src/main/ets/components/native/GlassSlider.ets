@@ -29,6 +29,17 @@ const THUMB_BOT = '#5356CA'; // lerp(accent, black, 0.16)
 const GLOW = '#4D6366F1';
 /** 轨道高。 */
 const TRACK_H = 6;
+/**
+ * 浅色档（白底磨砂弹层内的滑杆）：未播轨黑 12%，已播 accent，拇指纯白。
+ * 深色档的白色渐变在白底上几乎不可见（真机回归「面板滑杆看不清」）。
+ */
+const TRACK_TOP_LIGHT = '#2E000000'; // 黑 18%
+const TRACK_BASE_LIGHT = '#1F000000'; // 黑 12%
+const TRACK_BOT_LIGHT = '#14000000'; // 黑 8%
+const THUMB_TOP_LIGHT = '#FFFFFF';
+const THUMB_MID_LIGHT = '#F5F5F7';
+const THUMB_BOT_LIGHT = '#E4E4E8';
+const GLOW_LIGHT = '#406366F1';
 /** 拇指直径 / 光晕直径。 */
 const THUMB_D = 16;
 const GLOW_D = 28;
@@ -43,6 +54,8 @@ export struct GlassSlider {
   onChange: (v: number) => void = (v: number): void => {};
   /** 抬手提交回调（seek 等一次性动作用）。 */
   onCommit: (v: number) => void = (v: number): void => {};
+  /** 浅色档（白底磨砂弹层内使用）：轨道黑系 + 纯白拇指。 */
+  @Prop light: boolean = false;
 
   /** 当前位置（0..1；触点驱动，value 变化经 @Watch 同步）。 */
   @State ratio: number = 0;
@@ -55,6 +68,28 @@ export struct GlassSlider {
 
   aboutToAppear(): void {
     this.ratio = this.toRatio(this.value);
+  }
+
+  /**
+   * 未播轨三段渐变（深色档白系 / 浅色档黑系）。
+   *
+   * 抽成方法而非内联三元：ArkTS 对 `linearGradient.colors` 的
+   * `Array<[ResourceColor, number]>` 类型推断在嵌套三元 + 数组字面量下
+   * 容易报错（编译期实测），显式返回类型最稳。
+   */
+  private trackColors(): Array<[string, number]> {
+    if (this.light) {
+      return [[TRACK_TOP_LIGHT, 0.0], [TRACK_BASE_LIGHT, 0.35], [TRACK_BOT_LIGHT, 1.0]];
+    }
+    return [[TRACK_TOP, 0.0], [TRACK_BASE, 0.35], [TRACK_BOT, 1.0]];
+  }
+
+  /** 拇指圆体三段渐变（浅色档纯白 / 深色档 accent）。 */
+  private thumbColors(): Array<[string, number]> {
+    if (this.light) {
+      return [[THUMB_TOP_LIGHT, 0.0], [THUMB_MID_LIGHT, 0.55], [THUMB_BOT_LIGHT, 1.0]];
+    }
+    return [[THUMB_TOP, 0.0], [THUMB_MID, 0.55], [THUMB_BOT, 1.0]];
   }
 
   /** value 变化 → 同步位置（播放推进/外部 seek/恢复默认都走这里）。 */
@@ -87,9 +122,7 @@ export struct GlassSlider {
           .borderRadius(TRACK_H / 2)
           .linearGradient({
             angle: 180,
-            colors: [
-              [TRACK_TOP, 0.0], [TRACK_BASE, 0.35], [TRACK_BOT, 1.0],
-            ],
+            colors: this.trackColors(),
           });
       }
       .width('100%')
@@ -125,7 +158,7 @@ export struct GlassSlider {
           .width(GLOW_D)
           .height(GLOW_D)
           .borderRadius(GLOW_D / 2)
-          .backgroundColor(GLOW);
+          .backgroundColor(this.light ? GLOW_LIGHT : GLOW);
         Stack({ alignContent: Alignment.Center }) {
           Row()
             .width(THUMB_D)
@@ -133,9 +166,7 @@ export struct GlassSlider {
             .borderRadius(THUMB_D / 2)
             .linearGradient({
               angle: 180,
-              colors: [
-                [THUMB_TOP, 0.0], [THUMB_MID, 0.55], [THUMB_BOT, 1.0],
-              ],
+              colors: this.thumbColors(),
             });
           // 顶部高光弧（真弧，照抄 Flutter GlassSliderThumbShape 的 drawArc：
           // 圆心=拇指中心、弧半径 6.4（r−1.6）、扫角 π·0.84、白 75% 描边

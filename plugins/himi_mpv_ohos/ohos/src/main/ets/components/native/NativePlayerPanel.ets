@@ -181,6 +181,31 @@ struct DisplayValueText {
 
 /** 选中主色（照抄 Flutter Color(0xFF6366F1)）。 */
 const SEL_COLOR = '#6366F1';
+
+// ═══════════════════════════════════════════════════════════════
+// 播放器弹层「白底磨砂」调色板（与 Flutter GlassConfig.playerPanel*、
+// Android NPTheme.PANEL_LIGHT_* 逐值一致）
+// ═══════════════════════════════════════════════════════════════
+//
+// 【范围铁律】仅用于播放器内的**弹出面板**（右侧侧栏 / 解码 popover /
+// 片头片尾卡）。顶栏、底栏、手势提示胶囊保持深色玻璃（浮在视频上必须
+// 深色白字）。
+/** 白底基色（72% 不透明；留出空间让 backgroundEffect 的模糊视频透出）。 */
+const PANEL_LIGHT_BASE = '#B8FFFFFF';
+/** 竖向渐变：顶部提亮 → 基色 → 底部略透（菲涅尔近似）。 */
+const PANEL_LIGHT_TOP = '#CCFFFFFF';
+const PANEL_LIGHT_BOTTOM = '#A6FFFFFF';
+/** 浅色定界描边（黑 13%；白描边在亮画面上会消失）。 */
+const PANEL_LIGHT_RIM = '#22000000';
+/** 浅色文字：主（近黑）/ 次（黑 54%）/ 弱（黑 38%）。 */
+const TEXT_DARK = '#1B1B1F';
+const TEXT_DARK_54 = '#8A000000';
+const TEXT_DARK_38 = '#61000000';
+/** 浅色分隔线（黑 8%）。 */
+const DIVIDER_LIGHT = '#14000000';
+/** 浅色选中行底（accent@12%）。 */
+const SEL_BG_LIGHT = '#1F6366F1';
+
 /** 面板着色（照抄 GlassConfig.panelTint = 0x1F1A1D23）。 */
 const PANEL_TINT = '#1F1A1D23';
 /** 液态玻璃：背景模糊半径 / 饱和度（对齐 Flutter GlassConfig blurSigma=20、saturation=1.6）。 */
@@ -326,7 +351,7 @@ export struct NativePlayerPanel {
       Text(this.titleText())
         .fontSize(15)
         .fontWeight(FontWeight.Bold)
-        .fontColor(Color.White)
+        .fontColor(TEXT_DARK)
         .width('100%')
         .padding({ left: 16, right: 16, top: 10, bottom: 4 })
         .textAlign(TextAlign.Start);
@@ -354,11 +379,18 @@ export struct NativePlayerPanel {
     // 不铺满全屏，遮罩才收得到「点外关闭」。
     .width('100%')
     .layoutWeight(1)
-    .backgroundColor(PANEL_TINT)
-    // 液态玻璃（方案 A）：backgroundEffect 真模糊**窗口背后**的视频合成层
-    //（blur 20 / saturation 1.6 对齐 Flutter GlassConfig）+ tint 叠色。
+    // 白底磨砂：竖向渐变（顶部提亮 → 基色 → 底部略透）+ 暗描边定界。
+    // 【保留 backgroundEffect】鸿蒙的 backgroundEffect 是**节点级实时**
+    // backdrop blur（GPU 合成阶段做，60fps、零回读、零跳帧），与 Flutter
+    // 的 BackdropFilter / MDK 弹层同源能力 → 白底之下仍能隐约看到视频
+    // 流动，观感最佳。安卓侧无对应 API（只能回读采样，会一帧一帧跳），
+    // 故安卓为纯白渐变；两端在 82% 不透明白底下观感几乎一致。
     .backgroundEffect({ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION })
-    .border({ width: 1, color: RIM_COLOR })
+    .linearGradient({
+      angle: 180,
+      colors: [[PANEL_LIGHT_TOP, 0], [PANEL_LIGHT_BASE, 0.5], [PANEL_LIGHT_BOTTOM, 1]],
+    })
+    .border({ width: 1, color: PANEL_LIGHT_RIM })
     // 选集面板贴边（右侧圆角放平，与 Flutter BorderRadius.horizontal(left) 一致）。
     .borderRadius(this.panelType === 'episode' ? FULLBLEED_RADIUS : PANEL_RADIUS)
     .clip(true)
@@ -385,14 +417,14 @@ export struct NativePlayerPanel {
         : '片头片尾')
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
-        .fontColor(Color.White)
+        .fontColor(TEXT_DARK)
         .width('100%')
         .padding({ left: 16, right: 16, top: 12, bottom: 6 });
 
       if (this.confirmKind.length > 0) {
         Text(`当前标记：${this.existingMarkText(this.confirmKind)}\n要用当前位置更新，还是清除？`)
           .fontSize(12)
-          .fontColor('#8AFFFFFF')
+          .fontColor(TEXT_DARK_54)
           .width('100%')
           .padding({ left: 16, right: 16, top: 0, bottom: 10 });
 
@@ -433,11 +465,13 @@ export struct NativePlayerPanel {
       }
     }
     .width(360)
-    .backgroundColor(PANEL_TINT)
-    // 液态玻璃（方案 A）：backgroundEffect 真模糊**窗口背后**的视频合成层
-    //（blur 20 / saturation 1.6 对齐 Flutter GlassConfig）+ tint 叠色。
+    // 白底磨砂（与侧栏同款）：实时 backdrop blur + 白色竖向渐变 + 暗描边。
     .backgroundEffect({ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION })
-    .border({ width: 1, color: RIM_COLOR })
+    .linearGradient({
+      angle: 180,
+      colors: [[PANEL_LIGHT_TOP, 0], [PANEL_LIGHT_BASE, 0.5], [PANEL_LIGHT_BOTTOM, 1]],
+    })
+    .border({ width: 1, color: PANEL_LIGHT_RIM })
     .borderRadius(18)
     .clip(true)
     .alignItems(HorizontalAlign.Start)
@@ -453,17 +487,17 @@ export struct NativePlayerPanel {
       Text(String.fromCodePoint(icon))
         .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(22)
-        .fontColor(Color.White)
+        .fontColor(TEXT_DARK)
         .width(22);
 
       Column() {
         Text(title)
           .fontSize(14)
-          .fontColor(Color.White)
+          .fontColor(TEXT_DARK)
           .width('100%');
         Text(hint)
           .fontSize(11)
-          .fontColor('#8AFFFFFF')
+          .fontColor(TEXT_DARK_54)
           .width('100%');
       }
       .layoutWeight(1)
@@ -550,7 +584,7 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
+    .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
   }
 
   /** 轨道列表（音轨/字幕共用）。 */
@@ -592,7 +626,7 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
+    .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
   }
 
   /** 字幕面板：字幕轨列表 + 关闭项。 */
@@ -612,7 +646,7 @@ export struct NativePlayerPanel {
               Text(opt.label)
                 .fontSize(14)
                 .fontWeight(FontWeight.Bold)
-                .fontColor(Color.White)
+                .fontColor(TEXT_DARK)
                 .layoutWeight(1)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis });
@@ -628,7 +662,7 @@ export struct NativePlayerPanel {
             if (opt.description.length > 0) {
               Text(opt.description)
                 .fontSize(11)
-                .fontColor('#8AFFFFFF')
+                .fontColor(TEXT_DARK_54)
                 .maxLines(2)
                 .margin({ top: 2 });
             }
@@ -644,7 +678,7 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
+    .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
   }
 
   /** 显示调节面板：字幕 3 行 + 弹幕 3 行（与 Flutter DisplayAdjustPanel 一致）。 */
@@ -667,7 +701,7 @@ export struct NativePlayerPanel {
               Row() {
                 Text(spec.label)
                   .fontSize(12)
-                  .fontColor(Color.White)
+                  .fontColor(TEXT_DARK)
                   .width(44);
                 // 玻璃滑杆（完全复刻 Flutter glassSliderTheme，见 GlassSlider.ets）。
                 GlassSlider({
@@ -675,6 +709,8 @@ export struct NativePlayerPanel {
                   min: spec.min,
                   max: spec.max,
                   step: spec.step,
+                  // 面板内滑杆走浅色轨道（白底磨砂弹层，深色轨道看不清）。
+                  light: true,
                   onChange: (v: number): void => {
                     this.host.adjustDisplay(spec.key, v);
                   },
@@ -736,7 +772,7 @@ export struct NativePlayerPanel {
     Text('恢复默认')
       .fontSize(13)
       .fontWeight(FontWeight.Medium)
-      .fontColor(this.displayAtDefaults(kind) ? SEL_COLOR : '#8AFFFFFF')
+      .fontColor(this.displayAtDefaults(kind) ? SEL_COLOR : TEXT_DARK_54)
       .width('100%')
       .textAlign(TextAlign.Start)
       .padding({ left: 16, right: 16, top: 8, bottom: 12 })
@@ -774,7 +810,7 @@ export struct NativePlayerPanel {
     Column() {
       Text('当前：' + decodeModeLabel(this.state().decodeMode))
         .fontSize(12)
-        .fontColor('#A5B4FC')
+        .fontColor(SEL_COLOR)
         .width('100%')
         .padding({ left: 16, right: 16, top: 0, bottom: 6 });
       List() {
@@ -783,11 +819,11 @@ export struct NativePlayerPanel {
             Row() {
               Text(this.state().decodeMode === mode ? '●' : '○')
                 .fontSize(16)
-                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : '#8AFFFFFF')
+                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : TEXT_DARK_54)
                 .width(20);
               Text(decodeModeLabel(mode))
                 .fontSize(13)
-                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : Color.White)
+                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : TEXT_DARK)
                 .layoutWeight(1)
                 .margin({ left: 8 });
             }
@@ -803,7 +839,7 @@ export struct NativePlayerPanel {
       }
       .width('100%')
       .layoutWeight(1)
-      .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
+      .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
     }
     .width('100%')
     .layoutWeight(1)
@@ -855,7 +891,7 @@ export struct NativePlayerPanel {
 
             Text(e.cardTitle())
               .fontSize(13)
-              .fontColor(e.index === this.state().currentEpisodeIndex ? Color.White : '#B3FFFFFF')
+              .fontColor(e.index === this.state().currentEpisodeIndex ? TEXT_DARK : TEXT_DARK_54)
               .fontWeight(e.index === this.state().currentEpisodeIndex
                 ? FontWeight.Medium
                 : FontWeight.Normal)
@@ -906,7 +942,7 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' });
+    .divider({ strokeWidth: 0.5, color: DIVIDER_LIGHT });
   }
 
   /**
@@ -918,7 +954,7 @@ export struct NativePlayerPanel {
     Text(label)
       .fontSize(14)
       .fontWeight(selected ? FontWeight.Medium : FontWeight.Normal)
-      .fontColor(selected ? SEL_COLOR : Color.White)
+      .fontColor(selected ? SEL_COLOR : TEXT_DARK)
       .layoutWeight(1)
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis });

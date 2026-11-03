@@ -1326,8 +1326,6 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 实际生效的硬解器（hwdec-current，轮询直读，非事件）。
   String? _hwdecActual;
 
-  /// 最近一次 track-list JSON 原文（原生 UI 状态转换用）。
-  String? _lastTrackListRaw;
 
   /// 首帧等待状态（v1.2.89）：true = 有视频轨且媒体在播，但视频参数
   /// 尚未到手（解码器起热中）。UI 盖缓冲遮罩用。
@@ -1450,7 +1448,6 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   void _parseTracks(Object? value) {
     if (value is! String) return;
-    _lastTrackListRaw = value;
     try {
       final decoded = jsonDecode(value);
       if (decoded is! List) return;

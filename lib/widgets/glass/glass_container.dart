@@ -20,6 +20,7 @@ class GlassContainer extends ConsumerWidget {
     this.tint = GlassConfig.panelTint,
     this.fallbackColor = GlassConfig.fallbackColor,
     this.showShadow = true,
+    this.light = false,
   });
 
   final Widget child;
@@ -35,12 +36,57 @@ class GlassContainer extends ConsumerWidget {
   /// 是否绘制悬浮投影（顶栏等贴边胶囊传 false，避免黑影）。
   final bool showShadow;
 
+  /// **白底磨砂**变体（仅播放器弹层使用）。
+  ///
+  /// 与深色玻璃的区别：白基竖向渐变（顶部提亮）、**暗**描边定界、
+  /// 更重的投影、浅色文字由调用方配套。开启后不再叠深色 tint 渐变
+  /// （白底上叠深色会脏）；`glassUi` 关闭时同样保持白底（弹层可读性
+  /// 优先于全局降级一致性）。
+  final bool light;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
     // iOS 用更淡的默认着色（自定义 tint 不覆盖）→ 背景更透。
     final effectiveTint =
         tint == GlassConfig.panelTint ? GlassConfig.panelTintOf() : tint;
+
+    // 白底磨砂：白基渐变 + 暗描边，不叠深色 tint。
+    if (light) {
+      Widget white = DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              GlassConfig.playerPanelWhiteTop,
+              GlassConfig.playerPanelWhite,
+              GlassConfig.playerPanelWhiteBottom,
+            ],
+          ),
+          borderRadius: borderRadius,
+          border: Border.all(color: GlassConfig.playerPanelRimLight),
+        ),
+        child: Padding(
+          padding: padding ?? EdgeInsets.zero,
+          child: child,
+        ),
+      );
+      white = ClipRRect(borderRadius: borderRadius, child: white);
+      if (showShadow) {
+        white = DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            boxShadow: GlassConfig.playerPanelShadow,
+          ),
+          child: white,
+        );
+      }
+      if (margin != null) {
+        white = Padding(padding: margin!, child: white);
+      }
+      return white;
+    }
 
     Widget content = DecoratedBox(
       decoration: BoxDecoration(

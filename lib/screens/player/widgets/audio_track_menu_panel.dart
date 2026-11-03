@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 
@@ -54,7 +55,8 @@ class AudioTrackMenuPanel extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               '当前视频无音轨选项',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
+              style: TextStyle(
+                  color: GlassConfig.playerPanelTextSecondary, fontSize: 13),
             ),
           ),
       ],

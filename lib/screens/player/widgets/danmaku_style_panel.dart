@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/style_slider_row.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 
 /// 弹幕样式调节面板：速度 / 大小 / 透明度三行滑杆 + 「恢复默认」。
 ///
@@ -71,6 +72,8 @@ class DanmakuStylePanel extends StatelessWidget {
       thumbRadius: 9,
       overlayRadius: 16,
       glassEnabled: glassEnabled,
+      // 白底磨砂面板内：浅色档轨道 + 纯白拇指（深色档白轨道看不清）。
+      light: true,
     );
     final children = <Widget>[
       styleSliderRow(
@@ -124,7 +127,7 @@ class DanmakuStylePanel extends StatelessWidget {
           ),
         ),
       ),
-      const Divider(color: Colors.white24, height: 1),
+      const Divider(color: GlassConfig.playerPanelDivider, height: 1),
       SideOptionRow(
         label: '恢复默认',
         selected: speed == defaultSpeed &&

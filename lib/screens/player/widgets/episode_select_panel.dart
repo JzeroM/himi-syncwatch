@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/models/episode_info.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 选集面板（放进 [SelectorSidePanel] 右侧浮层，滚动由本组件提供）。
@@ -143,7 +144,9 @@ class _EpisodeSelectPanelState extends State<EpisodeSelectPanel> {
                   EpisodeSelectPanel.cardTitle(ep),
                   key: Key('playerEpisodeTitle_$index'),
                   style: TextStyle(
-                    color: selected ? Colors.white : Colors.white70,
+                    color: selected
+                        ? GlassConfig.playerPanelTextPrimary
+                        : GlassConfig.playerPanelTextSecondary,
                     fontSize: 13,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                   ),

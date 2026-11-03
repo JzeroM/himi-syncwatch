@@ -127,9 +127,13 @@ class GlassSliderTrackShape extends SliderTrackShape with BaseSliderTrackShape {
 /// 玻璃 thumb：accent 圆点 + 主色光晕 + 顶部高光，按下时微放大
 /// （activationAnimation 驱动）。
 class GlassSliderThumbShape extends SliderComponentShape {
-  const GlassSliderThumbShape({this.radius = 8});
+  const GlassSliderThumbShape({this.radius = 8, this.bodyColor});
 
   final double radius;
+
+  /// 覆盖圆体基色（浅色档传纯白：白底面板上 accent 圆点对比过强）。
+  /// null = 沿用 [SliderThemeData.thumbColor]（深色档行为不变）。
+  final Color? bodyColor;
 
   @override
   Size getPreferredSize(bool isEnabled, bool isDiscrete) =>
@@ -151,12 +155,16 @@ class GlassSliderThumbShape extends SliderComponentShape {
     required Size sizeWithOverflow,
   }) {
     final Color enabledColor =
-        sliderTheme.thumbColor ?? const Color(0xFF6366F1);
+        bodyColor ?? sliderTheme.thumbColor ?? const Color(0xFF6366F1);
     final Color color = Color.lerp(
       sliderTheme.disabledThumbColor ?? enabledColor,
       enabledColor,
       enableAnimation.value,
     )!;
+    // 浅色档（bodyColor 非空）：光晕改 accent（白圆体本身没有彩色光晕会
+    // 显得「没选中」），高光弧改淡暗（白弧在白圆体上不可见）。
+    final bool lightBody = bodyColor != null;
+    final Color glowColor = lightBody ? const Color(0xFF6366F1) : color;
     final Canvas canvas = context.canvas;
     final double t = activationAnimation.value;
     final double r = radius * (1 + 0.10 * t);
@@ -166,7 +174,7 @@ class GlassSliderThumbShape extends SliderComponentShape {
       center,
       r + 6,
       Paint()
-        ..color = color.withValues(alpha: 0.30 + 0.20 * t)
+        ..color = glowColor.withValues(alpha: 0.30 + 0.20 * t)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8),
     );
     // 圆体（上亮下深玻璃渐变）
@@ -195,7 +203,9 @@ class GlassSliderThumbShape extends SliderComponentShape {
     canvas.drawPath(
       highlight,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.75)
+        ..color = lightBody
+            ? Colors.black.withValues(alpha: 0.20)
+            : Colors.white.withValues(alpha: 0.75)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.6
         ..strokeCap = StrokeCap.round,
@@ -214,6 +224,9 @@ SliderThemeData glassSliderTheme({
   double thumbRadius = 8,
   double overlayRadius = 14,
   bool glassEnabled = true,
+  /// 浅色档：白底磨砂弹层内使用（轨道黑系 + 纯白拇指）。
+  /// 深色档的白色轨道渐变在白底上几乎不可见。
+  bool light = false,
 }) {
   if (!glassEnabled) {
     return SliderThemeData(
@@ -222,6 +235,23 @@ SliderThemeData glassSliderTheme({
       thumbColor: accent,
       thumbShape: RoundSliderThumbShape(enabledThumbRadius: thumbRadius),
       trackHeight: 3,
+      overlayShape: RoundSliderOverlayShape(overlayRadius: overlayRadius),
+      overlayColor: accent.withValues(alpha: 0.25),
+    );
+  }
+  if (light) {
+    return SliderThemeData(
+      activeTrackColor: accent,
+      inactiveTrackColor: GlassConfig.playerPanelTrackInactive,
+      disabledActiveTrackColor: accent,
+      disabledInactiveTrackColor: GlassConfig.playerPanelTrackInactive,
+      trackHeight: trackHeight,
+      thumbColor: GlassConfig.playerPanelThumb,
+      disabledThumbColor: GlassConfig.playerPanelThumb,
+      thumbShape: GlassSliderThumbShape(
+        radius: thumbRadius,
+        bodyColor: GlassConfig.playerPanelThumb,
+      ),
       overlayShape: RoundSliderOverlayShape(overlayRadius: overlayRadius),
       overlayColor: accent.withValues(alpha: 0.25),
     );

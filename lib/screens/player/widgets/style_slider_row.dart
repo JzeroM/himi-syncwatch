@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 
 /// 调节面板共享滑杆行：标签(44) + 滑杆(自适应) + 数值(48)。
 ///
@@ -19,7 +20,8 @@ Widget styleSliderRow({
           width: 44,
           child: Text(
             label,
-            style: const TextStyle(fontSize: 13, color: Colors.white70),
+            style: const TextStyle(
+                fontSize: 13, color: GlassConfig.playerPanelTextSecondary),
           ),
         ),
         Expanded(child: slider),
@@ -29,7 +31,8 @@ Widget styleSliderRow({
             valueText,
             key: ValueKey(valueKey),
             textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 12, color: Colors.white70),
+            style: const TextStyle(
+                fontSize: 12, color: GlassConfig.playerPanelTextSecondary),
           ),
         ),
       ],
@@ -44,7 +47,8 @@ Widget panelSectionHeader(String title) {
     padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
     child: Text(
       title,
-      style: const TextStyle(fontSize: 11, color: Colors.white38),
+      style: const TextStyle(
+                fontSize: 11, color: GlassConfig.playerPanelTextTertiary),
     ),
   );
 }

@@ -160,6 +160,12 @@ class AndroidNativePlayerHost(
                 view?.render(lastState, System.currentTimeMillis())
             }
 
+            override fun onAddSubtitle() {
+                // 「加载本地字幕文件...」：交给 Dart `_loadLocalSubtitle`
+                //（文件选择器只能由 Flutter 侧调起）。
+                commandSink.send(mapOf("type" to "addSubtitle"))
+            }
+
             override fun onSelectEpisode(index: Int) {
                 lastState = lastState.copy(currentEpisodeIndex = index)
                 commandSink.send(mapOf("type" to "selectEpisode", "index" to index))

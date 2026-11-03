@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 
 /// 播放内核选择面板（放进 [SelectorSidePanel] 右侧浮层）。
 class PlayerKernelPanel extends StatelessWidget {
@@ -45,12 +46,13 @@ class PlayerKernelPanel extends StatelessWidget {
               onClose();
             },
           ),
-        const Divider(color: Colors.white24, height: 1),
+        const Divider(color: GlassConfig.playerPanelDivider, height: 1),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Text(
             '切换仅影响当前播放，不改变默认引擎；下一集沿用当前内核',
-            style: TextStyle(color: Colors.white54, fontSize: 12),
+            style: TextStyle(
+                color: GlassConfig.playerPanelTextSecondary, fontSize: 12),
           ),
         ),
       ],

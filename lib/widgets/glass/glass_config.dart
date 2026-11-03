@@ -76,6 +76,52 @@ class GlassConfig {
   /// 底部导航在每个标签页内容区预留的高度（不含安全区）。
   static const double shellBottomReserve = 96;
 
+  // ═══════════════════════════════════════════════════════════════
+  // 播放器弹层专用「白底磨砂」调色板
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // 【范围铁律】仅播放器内的弹出面板（右侧侧栏 / 解码 popover /
+  // 片头片尾卡）使用；顶栏、底栏、手势提示胶囊、以及 App 其他页面
+  // （设置页、缓存页、更新弹窗）**一律沿用上面的深色玻璃常量**。
+  //
+  // 因此这里**不修改** panelTint / popupTint / fallbackColor 等既有
+  // 常量（`test/native_player_layout_test.dart` 有断言锁死 panelTint
+  // 仍为 0x1F1A1D23），只新增播放器弹层专用的一组。
+
+  /// 播放器弹层白底基色（82% 不透明，保证黑字在任意画面上可读）。
+  static const Color playerPanelWhite = Color(0xD1FFFFFF);
+
+  /// 播放器弹层竖向渐变（白 → 白 → 白@72%，顶部提亮 = 菲涅尔高光近似）。
+  static const Color playerPanelWhiteTop = Color(0xE6FFFFFF);
+  static const Color playerPanelWhiteBottom = Color(0xB8FFFFFF);
+
+  /// 浅色玻璃定界描边（浅底必须靠**暗**边，白描边在亮画面上会消失）。
+  static const Color playerPanelRimLight = Color(0x22000000);
+
+  /// 播放器弹层投影（比深色版更重，浅色面板需要靠投影「浮」起来）。
+  static const List<BoxShadow> playerPanelShadow = [
+    BoxShadow(
+      color: Color(0x33000000),
+      blurRadius: 24,
+      offset: Offset(0, 8),
+    ),
+  ];
+
+  /// 浅色面板文字：主（近黑）/ 次（= 黑 54%）/ 弱（黑 38%）。
+  static const Color playerPanelTextPrimary = Color(0xFF1B1B1F);
+  static const Color playerPanelTextSecondary = Color(0x8A000000);
+  static const Color playerPanelTextTertiary = Color(0x61000000);
+
+  /// 浅色分隔线（黑 8%，0.5dp）。
+  static const Color playerPanelDivider = Color(0x14000000);
+
+  /// 浅色选中行底色（强调色 12%）与选中文字色。
+  static const Color playerPanelSelectedBg = Color(0x1F6366F1);
+
+  /// 浅色滑杆：轨道（黑 12%）/ 已播（强调色）/ 拇指（纯白 + 微投影）。
+  static const Color playerPanelTrackInactive = Color(0x1F000000);
+  static const Color playerPanelThumb = Color(0xFFFFFFFF);
+
   /// 模糊 + 饱和增强合成滤镜。
   static ImageFilter filter({
     double sigma = blurSigma,

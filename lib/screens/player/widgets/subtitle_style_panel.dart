@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/style_slider_row.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 
 /// 字幕样式调节面板：大小 / 位置 / 延迟三行滑杆 + 「恢复默认」。
 ///
@@ -97,6 +98,8 @@ class SubtitleStylePanel extends StatelessWidget {
       thumbRadius: 9,
       overlayRadius: 16,
       glassEnabled: glassEnabled,
+      // 白底磨砂面板内：浅色档轨道 + 纯白拇指（深色档白轨道看不清）。
+      light: true,
     );
     final children = <Widget>[
       _row(
@@ -154,10 +157,10 @@ class SubtitleStylePanel extends StatelessWidget {
           padding: EdgeInsets.only(left: 60, top: 4),
           child: Text(
             '当前无激活字幕轨，延迟不可调',
-            style: TextStyle(fontSize: 11, color: Colors.white38),
+            style: TextStyle(fontSize: 11, color: GlassConfig.playerPanelTextTertiary),
           ),
         ),
-      const Divider(color: Colors.white24, height: 1),
+      const Divider(color: GlassConfig.playerPanelDivider, height: 1),
       SideOptionRow(
         label: '恢复默认',
         selected: scale == defaultScale &&

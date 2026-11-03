@@ -45,7 +45,8 @@ internal object NPTheme {
     const val FALLBACK_TINT = 0x1A1A1D23
     const val RIM = 0x4DFFFFFF
     const val DECODE_PANEL = 0xFF1E1E2E.toInt()
-    const val DECODE_CURRENT_TEXT = 0xFFA5B4FC.toInt()
+    /** 解码当前值文字（585 起白底弹层用主色，旧 #A5B4FC 对比不足）。 */
+    const val DECODE_CURRENT_TEXT = 0xFF6366F1.toInt()
     const val FOCUS_RING = 0xFFC1C2FE.toInt()
     const val SHADOW = 0x4A000000
 
@@ -66,9 +67,6 @@ internal object NPTheme {
     const val GLASS_HIGHLIGHT_TOP = 0xB3FFFFFF.toInt()
     const val GLASS_HIGHLIGHT_BOTTOM = 0x00FFFFFF
     const val GLASS_INNER_RIM = 0x33000000.toInt()
-    const val GLASS_REFRACTION_BAND = 10
-    const val GLASS_REFRACTION_ZOOM = 1.12f
-    const val GLASS_BLUR_DOWNSAMPLE = 4
 
     // ── 顶栏 ──
     const val TOP_BAR_HEIGHT = 48
@@ -162,6 +160,59 @@ internal object NPTheme {
     const val SEGMENT_ROW_TITLE_SIZE = 14f
     const val SEGMENT_ROW_HINT_SIZE = 11f
     const val SEGMENT_CHEVRON = 18
+
+    // ── 播放器弹层「白底磨砂」调色板 ──
+    //
+    // 【范围铁律】仅用于播放器内的**弹出面板**（右侧侧栏 / 解码 popover /
+    // 片头片尾卡）。顶栏、底栏、手势提示胶囊一律保持上面的深色常量
+    // （浮在视频上必须是深色白字）。与 Flutter
+    // `GlassConfig.playerPanel*` 逐值一致。
+
+    /** 白底基色（82% 不透明）。 */
+    const val PANEL_LIGHT_BASE = 0xD1FFFFFF.toInt()
+    /** 竖向渐变：顶部提亮（菲涅尔近似）→ 基色 → 底部略透。 */
+    const val PANEL_LIGHT_TOP = 0xE6FFFFFF.toInt()
+    const val PANEL_LIGHT_BOTTOM = 0xB8FFFFFF.toInt()
+    /** 浅色定界描边（黑 13%；白描边在亮画面上会消失）。 */
+    const val PANEL_LIGHT_RIM = 0x22000000
+    /** 浅色面板投影（浅底靠投影浮起来）。 */
+    const val PANEL_LIGHT_SHADOW = 0x33000000
+    const val PANEL_LIGHT_SHADOW_BLUR = 24
+    const val PANEL_LIGHT_SHADOW_DY = 8
+
+    /** 浅色文字：主（近黑）/ 次（黑 54%）/ 弱（黑 38%）。 */
+    const val TEXT_DARK = 0xFF1B1B1F.toInt()
+    const val TEXT_DARK_54 = 0x8A000000.toInt()
+    const val TEXT_DARK_38 = 0x61000000.toInt()
+    /** 浅色分隔线（黑 8%）。 */
+    const val DIVIDER_LIGHT = 0x14000000
+    /** 浅色选中行底（accent@12%）与浅色滑杆未填充段（黑 12%）。 */
+    const val SEL_BG_LIGHT = 0x1F6366F1
+    const val TRACK_LIGHT_INACTIVE = 0x1F000000
+    /** 浅色面板遮罩：黑 35%（浅面板需要更重的遮罩才有层次）。 */
+    const val SCRIM_LIGHT = 0x59000000
+
+    // ── 手势亮度/音量柱条（对齐 Flutter `_buildVerticalBar`）──
+    /** 柱条宽 36dp、圆角 18、黑 54% 底（Flutter `width:36` / `radius:18`）。 */
+    const val GAUGE_WIDTH = 36
+    const val GAUGE_RADIUS = 18
+    const val GAUGE_BG = 0x8A000000.toInt()
+    /** 顶部图标 18dp、白 70%；左右内边距 0、上下 12/8（Flutter SizedBox）。 */
+    const val GAUGE_ICON = 18
+    const val GAUGE_TOP_PAD = 12
+    const val GAUGE_ICON_GAP = 8
+    /** 竖向轨道 4dp（Flutter `trackHeight: 4`），thumb 6、光晕 10。 */
+    const val GAUGE_TRACK = 4
+    const val GAUGE_THUMB = 6
+    const val GAUGE_OVERLAY = 10
+    /** 底部百分比 11sp 白 70%、下边距 8。 */
+    const val GAUGE_PERCENT_SIZE = 11f
+    const val GAUGE_BOTTOM_PAD = 8
+    /** 亮度轨道色 `#FFD54F`、音量轨道色 `#6366F1`（Flutter 逐值同色）。 */
+    const val GAUGE_BRIGHTNESS = 0xFFFFD54F.toInt()
+    const val GAUGE_VOLUME = 0xFF6366F1.toInt()
+    /** 柱条贴边距离 20dp（Flutter `Positioned(left/right: 20)`）。 */
+    const val GAUGE_EDGE = 20
 
     // ── 动效 ──
     const val CONTROLS_FADE_MS = 200

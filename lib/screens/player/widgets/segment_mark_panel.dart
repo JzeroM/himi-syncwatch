@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/models/media_segment.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -36,6 +37,7 @@ class SegmentMarkPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassContainer(
+      light: true,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       borderRadius: const BorderRadius.all(Radius.circular(18)),
       child: SizedBox(
@@ -45,12 +47,13 @@ class SegmentMarkPanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.content_cut, color: Colors.white70, size: 20),
+                const Icon(Icons.content_cut,
+                    color: GlassConfig.playerPanelTextSecondary, size: 20),
                 const SizedBox(width: 8),
                 const Text(
                   '片头 / 片尾',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: GlassConfig.playerPanelTextPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -58,7 +61,9 @@ class SegmentMarkPanel extends StatelessWidget {
                 const Spacer(),
                 Text(
                   '当前位置 ${formatMs(positionMs)}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  style: const TextStyle(
+                      color: GlassConfig.playerPanelTextSecondary,
+                      fontSize: 12),
                 ),
               ],
             ),
@@ -114,13 +119,13 @@ class _SegmentMarkRow extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
+          color: Colors.black.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
         ),
         child: Row(
           children: [
-            Icon(icon, color: Colors.white, size: 22),
+            Icon(icon, color: GlassConfig.playerPanelTextPrimary, size: 22),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -129,7 +134,7 @@ class _SegmentMarkRow extends StatelessWidget {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: GlassConfig.playerPanelTextPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
@@ -140,14 +145,17 @@ class _SegmentMarkRow extends StatelessWidget {
                         ? '已设置：${SegmentMarkPanel.formatMs(value!)}'
                         : hint,
                     style: TextStyle(
-                      color: hasValue ? Colors.greenAccent : Colors.white54,
+                      color: hasValue
+                          ? const Color(0xFF16A34A)
+                          : GlassConfig.playerPanelTextSecondary,
                       fontSize: 11,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: Colors.white38, size: 18),
+            const Icon(Icons.chevron_right,
+                color: GlassConfig.playerPanelTextTertiary, size: 18),
           ],
         ),
       ),

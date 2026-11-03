@@ -103,8 +103,18 @@ object NativePlayerIcons {
     /** volumeOff */
     const val ICON_VOLUME_OFF = 0xE6C4
 
-    /** brightness */
+    /** brightness_6（手势亮度柱条图标，Flutter `Icons.brightness_6` = 0xe10a）。 */
     const val ICON_BRIGHTNESS = 0xE10A
+
+    /**
+     * 音量图标按当前百分比切换（对齐 Flutter `_buildVolumeBar`：
+     * `volume == 0 → volume_off`，`< 50 → volume_down`，否则 `volume_up`）。
+     */
+    fun volumeIcon(percent: Int): Int = when {
+        percent <= 0 -> ICON_VOLUME_OFF
+        percent < 50 -> ICON_VOLUME_DOWN
+        else -> ICON_VOLUME_UP
+    }
 
     /** fastForward */
     const val ICON_FAST_FORWARD = 0xE258

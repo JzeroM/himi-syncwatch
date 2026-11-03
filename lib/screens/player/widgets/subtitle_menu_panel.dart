@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 
 import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 
@@ -73,10 +74,11 @@ class SubtitleMenuPanel extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               '当前视频无内嵌字幕轨道',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
+              style: TextStyle(
+                  color: GlassConfig.playerPanelTextSecondary, fontSize: 13),
             ),
           ),
-        Divider(color: Colors.white24, height: 1),
+        const Divider(color: GlassConfig.playerPanelDivider, height: 1),
         SideOptionRow(
           label: '加载本地字幕文件...',
           selected: false,

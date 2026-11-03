@@ -126,6 +126,19 @@ class GlassSeekBarView(context: Context) : View(context) {
     var dragging: Boolean = false
         private set
 
+    /**
+     * 浅色档（白底磨砂弹层内的显示调节滑杆）。
+     *
+     * 深色档的白色渐变在白底上几乎不可见（真机回归「面板滑杆看不清」）；
+     * 浅色档改黑系轨道 + 纯白拇指 + accent 光晕。
+     */
+    var light: Boolean = false
+        set(v) {
+            if (v == field) return
+            field = v
+            invalidate()
+        }
+
     private val density = resources.displayMetrics.density
     private val padPx get() = glowDp / 2f * density
 
@@ -169,7 +182,11 @@ class GlassSeekBarView(context: Context) : View(context) {
         trackRect.set(pad, cy - trackHalf, pad + trackW, cy + trackHalf)
         trackPaint.shader = LinearGradient(
             0f, trackRect.top, 0f, trackRect.bottom,
-            intArrayOf(0x58FFFFFF.toInt(), 0x29FFFFFF.toInt(), 0x22D1D1D1.toInt()),
+            if (light) {
+                intArrayOf(0x2E000000, 0x1F000000, 0x14000000)
+            } else {
+                intArrayOf(0x58FFFFFF.toInt(), 0x29FFFFFF.toInt(), 0x22D1D1D1.toInt())
+            },
             floatArrayOf(0f, 0.35f, 1f),
             Shader.TileMode.CLAMP,
         )
@@ -210,7 +227,11 @@ class GlassSeekBarView(context: Context) : View(context) {
         thumbRect.set(cx - thumbR, cy - thumbR, cx + thumbR, cy + thumbR)
         thumbPaint.shader = LinearGradient(
             0f, thumbRect.top, 0f, thumbRect.bottom,
-            intArrayOf(0xFF9EA0F6.toInt(), 0xFF6366F1.toInt(), 0xFF5356CA.toInt()),
+            if (light) {
+                intArrayOf(0xFFFFFFFF.toInt(), 0xFFF5F5F7.toInt(), 0xFFE4E4E8.toInt())
+            } else {
+                intArrayOf(0xFF9EA0F6.toInt(), 0xFF6366F1.toInt(), 0xFF5356CA.toInt())
+            },
             floatArrayOf(0f, 0.55f, 1f),
             Shader.TileMode.CLAMP,
         )
@@ -220,6 +241,9 @@ class GlassSeekBarView(context: Context) : View(context) {
         // 扫角 ±75.6°（同 Flutter GlassSliderThumbShape drawArc）。
         val hr = (thumbDp / 2f - HIGHLIGHT_W) * density
         highlightRect.set(cx - hr, cy - hr, cx + hr, cy + hr)
+        // 浅色档拇指是白的：白高光弧看不见 → 改用极淡暗弧表达「厚度」。
+        highlightPaint.color =
+            if (light) 0x33000000 else 0xB3FFFFFF.toInt()
         canvas.drawArc(highlightRect, -165.6f, 151.2f, false, highlightPaint)
     }
 

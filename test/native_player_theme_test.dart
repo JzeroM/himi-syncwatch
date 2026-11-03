@@ -223,8 +223,11 @@ void main() {
     });
 
     test('解码模式当前值颜色与 Dart 一致', () {
-      expect(arkts.contains('#A5B4FC'), isTrue,
-          reason: '鸿蒙解码当前值颜色需与 Dart decodeCurrentText 一致');
+      // 585：白底弹层上用主色（旧 #A5B4FC 在浅底上对比不足）。
+      expect(arkts.contains('SEL_COLOR'), isTrue,
+          reason: '鸿蒙解码当前值颜色需与 Dart decodeCurrentText（主色）一致');
+      expect(arkts.contains('#A5B4FC'), isFalse,
+          reason: '浅底上不再使用 #A5B4FC');
     });
   });
 
@@ -343,17 +346,15 @@ void main() {
           reason: '鸿蒙插件缺命令入队方法');
     });
 
-    test('安卓玻璃采样源必须是 SurfaceView（防黑底面板回归）', () {
-      // 真机回归：PixelCopy(window) 采到控件窗透明层 = 黑底；视频在
-      // setZOrderOnTop 的 SurfaceView 图层，必须用 SurfaceView 重载。
+    test('585 弹层为纯白渐变磨砂（采样链已删，无黑底风险）', () {
+      // 旧实现用 PixelCopy 采样视频帧；585 改为纯白渐变绘制，从根本上
+      // 不存在「采样源拿错层 → 黑底」这一类风险。
       final glass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-        'GlassBackdrop.kt',
+        'LightGlassDrawable.kt',
       ).readAsStringSync();
-      expect(RegExp(r'PixelCopy\.request\(\s*surface').hasMatch(glass), isTrue,
-          reason: '玻璃采样必须走 PixelCopy(SurfaceView) 重载');
-      expect(glass.contains('PixelCopy.request(\n                window'), isFalse,
-          reason: '禁用 PixelCopy(Window)（采样源是透明控件窗 → 黑底）');
+      expect(glass, isNot(contains('PixelCopy')));
+      expect(glass, contains('PANEL_LIGHT_TOP'));
     });
 
     test('安卓锁定态必须整体隐藏控件层（只留锁钮）', () {
@@ -419,12 +420,12 @@ void main() {
       // 没控件」。.apply 只能接在 View 声明后面。
       expect(screen, contains('panelScrim = View(context).apply'),
           reason: 'panelScrim 必须自带初始化（apply 接 View 声明）');
-      final runnableBlock = RegExp(
-        r'glassSampleRunnable = object : Runnable \{[\s\S]*?\n    \}',
-      ).firstMatch(screen);
-      expect(runnableBlock, isNotNull, reason: '未找到 glassSampleRunnable');
-      expect(runnableBlock!.group(0)!.contains('.apply'), isFalse,
-          reason: 'glassSampleRunnable（Runnable）后不得接 .apply（会命中根视图）');
+      // 585：glassSampleRunnable 连同采样链整体删除，该类风险已不存在；
+      // 仍保留「object 表达式后不接 .apply」的通用防线。
+      expect(screen, isNot(contains('glassSampleRunnable')));
+      final badApply = RegExp(r'object : Runnable \{[\s\S]*?\n    \}\s*\.apply');
+      expect(badApply.hasMatch(screen), isFalse,
+          reason: 'object 表达式后接 .apply 会命中外层 this（控件层 GONE 回归）');
     });
 
     test('鸿蒙控件定位禁用 position 百分比（跑位回归）', () {
@@ -476,17 +477,17 @@ void main() {
       );
     });
 
-    test('安卓玻璃降级链（采样失败不抛出，黑屏红线）', () {
+    test('585 弹层为纯渐变绘制（无采样 → 无黑屏红线风险）', () {
       final glass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-        'GlassBackdrop.kt',
+        'LightGlassDrawable.kt',
       ).readAsStringSync();
-      expect(glass, contains('createOrNull'),
-          reason: '玻璃创建须有安全工厂（异常返回 null 降级）');
-      expect(glass, contains('PixelCopy'),
-          reason: '方案 A 玻璃须 PixelCopy 采样视频帧');
-      expect(glass, contains('GLASS_REFRACTION_ZOOM'),
-          reason: '玻璃须有折射带放大（液态玻璃折射观感）');
+      // 纯 Canvas 渐变绘制：不触碰 surface / PixelCopy / JNI，
+      // 结构上不可能影响出画（黑屏红线）。
+      expect(glass, isNot(contains('PixelCopy')));
+      expect(glass, isNot(contains('SurfaceView')));
+      expect(glass, contains('LinearGradient'));
+      expect(glass, contains('PANEL_LIGHT_TOP'));
     });
   });
 }
