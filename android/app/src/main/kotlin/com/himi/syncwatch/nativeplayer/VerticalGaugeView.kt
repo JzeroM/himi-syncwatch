@@ -148,8 +148,11 @@ internal class VerticalGaugeView(context: Context) : View(context) {
             TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics,
         ).toInt()
 
-    private fun sp(v: Int): Float =
+    /** sp 换算：字号常量有 Int（18）与 Float（11f）两种，重载统一入口。 */
+    private fun sp(v: Int): Float = sp(v.toFloat())
+
+    private fun sp(v: Float): Float =
         TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP, v.toFloat(), resources.displayMetrics,
+            TypedValue.COMPLEX_UNIT_SP, v, resources.displayMetrics,
         )
 }
