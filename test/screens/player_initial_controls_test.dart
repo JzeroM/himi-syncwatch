@@ -403,6 +403,64 @@ void main() {
     });
   });
 
+  group('shouldShowLoadingSpinner（586 三端统一：首帧未出 或 缓冲中）', () {
+    test('缓冲中恒显示（即使时长已知、已起播）', () {
+      expect(
+        PlayerScreen.shouldShowLoadingSpinner(
+          durationMs: 240000,
+          positionMs: 60000,
+          playerReady: true,
+          startedOnce: true,
+          playing: true,
+          buffering: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('首帧未出（未缓冲）→ 显示', () {
+      expect(
+        PlayerScreen.shouldShowLoadingSpinner(
+          durationMs: 0,
+          positionMs: 0,
+          playerReady: true,
+          startedOnce: false,
+          playing: false,
+          buffering: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('已起播且未缓冲 → 不显示', () {
+      expect(
+        PlayerScreen.shouldShowLoadingSpinner(
+          durationMs: 240000,
+          positionMs: 60000,
+          playerReady: true,
+          startedOnce: true,
+          playing: true,
+          buffering: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('时长未知但已 playing 且未缓冲 → 不显示（不永久转圈）', () {
+      expect(
+        PlayerScreen.shouldShowLoadingSpinner(
+          durationMs: 0,
+          positionMs: 0,
+          playerReady: true,
+          startedOnce: false,
+          playing: true,
+          buffering: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('effectiveDurationMs（播放器时长与 Emby 兜底）', () {
     test('播放器有时长 → 优先播放器', () {
       expect(

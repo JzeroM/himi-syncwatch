@@ -51,7 +51,8 @@ class DecodeModePanel extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 标题行：`解码模式` 13 加粗 + 当前档位 12 强调色。
+              // 标题行：`解码模式` 15 w600 + 当前档位 14 w500（586 起正文
+              // 一律近黑，档位不再用强调色——强调只由选项行的单选圈/行底表达）。
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                 child: Row(
@@ -60,16 +61,17 @@ class DecodeModePanel extends ConsumerWidget {
                       '解码模式',
                       style: TextStyle(
                         color: GlassConfig.playerPanelTextPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
+                        fontSize: GlassConfig.playerPanelTitleSize,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       labels[currentMode] ?? '',
                       style: const TextStyle(
-                        color: Color(0xFF6366F1),
-                        fontSize: 12,
+                        color: GlassConfig.playerPanelTextPrimary,
+                        fontSize: GlassConfig.playerPanelBodySize,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -116,16 +118,15 @@ class DecodeModePanel extends ConsumerWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(labels[mode]!,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                       color: GlassConfig.playerPanelTextPrimary,
-                                      fontSize: 13,
-                                      fontWeight: isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.normal)),
+                                      fontSize: GlassConfig.playerPanelBodySize,
+                                      fontWeight: FontWeight.w500)),
                               Text(descriptions[mode]!,
                                   style: const TextStyle(
                                       color: GlassConfig.playerPanelTextSecondary,
-                                      fontSize: 10)),
+                                      fontSize: GlassConfig.playerPanelCaptionSize,
+                                      fontWeight: FontWeight.w500)),
                             ],
                           ),
                         ),

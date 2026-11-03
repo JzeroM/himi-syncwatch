@@ -55,8 +55,8 @@ class SelectorSidePanel extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     color: GlassConfig.playerPanelTextPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
+                    fontSize: GlassConfig.playerPanelTitleSize,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -112,11 +112,13 @@ class SideOptionRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected
-                      ? const Color(0xFF6366F1)
-                      : GlassConfig.playerPanelTextPrimary,
-                  fontSize: 14,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                  // 586 统一排版：正文一律近黑 + w500，选中态只靠行底
+                  // （[GlassConfig.playerPanelSelectedBg]）与右侧强调色对勾
+                  // 区分——旧实现选中行文字改强调色 + w600，同一面板出现
+                  // 两种字色/字重，观感散乱。
+                  color: GlassConfig.playerPanelTextPrimary,
+                  fontSize: GlassConfig.playerPanelBodySize,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),

@@ -46,7 +46,9 @@ class VersionMenuPanel extends StatelessWidget {
             child: Text(
               '当前视频无其他版本',
               style: TextStyle(
-                  color: GlassConfig.playerPanelTextSecondary, fontSize: 13),
+                  color: GlassConfig.playerPanelTextSecondary,
+                  fontSize: GlassConfig.playerPanelCaptionSize,
+                  fontWeight: FontWeight.w500),
             ),
           ),
       ],

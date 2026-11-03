@@ -98,7 +98,7 @@ void main() {
     expect(picked, 2);
   });
 
-  testWidgets('当前集标题近黑加粗、非当前集次要色（白底弹层）', (tester) async {
+  testWidgets('选集卡片标题统一近黑 + w500（暖白弹层，586 统一排版）', (tester) async {
     await tester.pumpWidget(_host(
       EpisodeSelectPanel(
         episodes: _episodes(),
@@ -112,11 +112,13 @@ void main() {
         find.byKey(const Key('playerEpisodeTitle_1')));
     final normal = tester.widget<Text>(
         find.byKey(const Key('playerEpisodeTitle_0')));
-    // 585：播放器弹层改白底磨砂 → 选集卡片标题改浅色板。
+    // 586：播放器弹层改暖白磨砂 + 排版统一——正文一律近黑 + w500，
+    // 选中态只靠封面描边与右上对勾表达（旧实现未选中行用次色、选中行
+    // w600，同一面板出现两种灰度，用户反馈「字体不统一」）。
     expect(selected.style?.color, GlassConfig.playerPanelTextPrimary);
-    expect(selected.style?.fontWeight, FontWeight.w600);
-    expect(normal.style?.color, GlassConfig.playerPanelTextSecondary);
-    expect(normal.style?.fontWeight, FontWeight.normal);
+    expect(selected.style?.fontWeight, FontWeight.w500);
+    expect(normal.style?.color, GlassConfig.playerPanelTextPrimary);
+    expect(normal.style?.fontWeight, FontWeight.w500);
   });
 
   testWidgets('currentIndex=-1 时无选中高亮（对勾 0 个）', (tester) async {

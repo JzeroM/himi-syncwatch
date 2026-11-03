@@ -40,6 +40,7 @@ void main() {
         bufferedMs: 30000,
         paused: false,
         buffering: false,
+        showLoading: true,
         ended: false,
         volume: 0.5,
         speed: 1.25,
@@ -135,6 +136,7 @@ void main() {
       expect(restored.bufferedMs, original.bufferedMs);
       expect(restored.paused, original.paused);
       expect(restored.buffering, original.buffering);
+      expect(restored.showLoading, original.showLoading);
       expect(restored.ended, original.ended);
       expect(restored.volume, original.volume);
       expect(restored.speed, original.speed);

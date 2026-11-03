@@ -805,13 +805,34 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     this.tryBindSurface();
   }
 
+  /**
+   * XComponent 画布尺寸变化（入参 **px**）。
+   *
+   * 两处来源：
+   * - XComponentController.onSurfaceChanged 的 `rect.surfaceWidth/Height`（px）；
+   * - `HimiNativePlayerView` 的 `onAreaChange` 兜底（vp → 调用方已 vp2px）。
+   *
+   * 【586 修正：不再丢弃初始化前的尺寸】旧实现在 `!session.initialized`
+   * 时直接 return，而这段尺寸**不会重发**——首次 surface 尺寸一旦在
+   * initialize 之前到达就被永久丢掉，mpv 只能退回创建期 Dart 猜的
+   * 1920×1080（与真实窗口不符 → 起播即糊/拉伸）。现在无论是否已初始化
+   * 都先缓存，由 [tryBindSurface] 在 attach 成功后立刻写入。
+   */
   handleSurfaceChanged(surfaceId: string, width: number, height: number): void {
     const session = this.session;
-    if (session === null || !session.initialized) return;
+    if (session === null) return;
+    if (width <= 0 || height <= 0) return;
     const prevW = session.width;
     const prevH = session.height;
+    // 先缓存：初始化前的尺寸也必须留下（见上方注释）。
     session.width = width;
     session.height = height;
+    if (!session.initialized) {
+      hilog.info(DOMAIN, TAG,
+        'surface changed 早于初始化，缓存待应用: %{public}dx%{public}d',
+        width, height);
+      return;
+    }
     try {
       // 【第一级：只设属性】与安卓同法——mpv 的 android 后端（EGL）在运行期
       // 设 android-surface-size 就能重配窗口，不拆解码器、无闪烁（已真机
@@ -882,6 +903,18 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       session.surfaceAttached = true;
       session.surfaceError = null;
       session.surfaceId = surfaceId;
+      // 【586】attach 成功后立刻用**真实 px** 覆盖创建期的猜测尺寸
+      // （applyOptions 写的 1920×1080 只是 initialize 前的兜底，与真实窗口
+      // 不符；不纠正会让 mpv 一直按猜测尺寸合成 → 起播即糊）。
+      try {
+        session.lib.setProperty('ohos-surface-size',
+          `${session.width}x${session.height}`);
+        hilog.info(DOMAIN, TAG,
+          'attach 后写入画布尺寸: %{public}dx%{public}d',
+          session.width, session.height);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'attach 后写入画布尺寸失败: %{public}s', String(e));
+      }
       // surface 就绪后立即加载之前缓存的 URL（若有）。
       this.loadPendingUrl(false);
     } catch (e) {
@@ -948,6 +981,11 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     // 真机竖屏表现为「画面被拉长铺满、无黑边」）。
     // session.width/height 来自 Dart 传入的创建参数，surface 首次绑定前
     // 已知；后续转屏由 handleSurfaceChanged 增量更新。
+    //
+    // 【586 说明】这里写的是 Dart 侧**猜的**初始值（1920×1080 / HDR 1280×720），
+    // 与真实窗口尺寸不符。它只作 initialize 前的兜底（此时 mpv 一个尺寸都
+    // 不知道，写 1×1 更糟）。真实 px 由 handleSurfaceChanged 缓存 +
+    // tryBindSurface attach 成功后立刻覆盖（见两处注释）。
     if (session.width > 0 && session.height > 0) {
       lib.setOptionString(
         'ohos-surface-size', `${Math.trunc(session.width)}x${Math.trunc(session.height)}`);

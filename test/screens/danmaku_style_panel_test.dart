@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/player/widgets/danmaku_style_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/display_adjust_panel.dart';
+import 'package:himi_syncwatch/screens/player/widgets/selector_side_panel.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -208,8 +209,15 @@ void main() {
   });
 }
 
-/// SideOptionRow 选中态（selected 时文字高亮主色）。
+/// SideOptionRow 选中态（586 起选中只靠右侧对勾表达，文字恒近黑）。
 bool _sideOptionSelected(WidgetTester tester, String label) {
-  final text = tester.widget<Text>(find.text(label));
-  return text.style?.color == const Color(0xFF6366F1);
+  final row = find.ancestor(
+    of: find.text(label),
+    matching: find.byType(SideOptionRow),
+  );
+  if (row.evaluate().isEmpty) return false;
+  return find
+      .descendant(of: row, matching: find.byIcon(Icons.check))
+      .evaluate()
+      .isNotEmpty;
 }

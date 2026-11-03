@@ -75,7 +75,9 @@ class SubtitleMenuPanel extends StatelessWidget {
             child: Text(
               '当前视频无内嵌字幕轨道',
               style: TextStyle(
-                  color: GlassConfig.playerPanelTextSecondary, fontSize: 13),
+                  color: GlassConfig.playerPanelTextSecondary,
+                  fontSize: GlassConfig.playerPanelCaptionSize,
+                  fontWeight: FontWeight.w500),
             ),
           ),
         const Divider(color: GlassConfig.playerPanelDivider, height: 1),

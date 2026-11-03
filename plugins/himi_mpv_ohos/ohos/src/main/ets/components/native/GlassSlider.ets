@@ -30,8 +30,8 @@ const GLOW = '#4D6366F1';
 /** 轨道高。 */
 const TRACK_H = 6;
 /**
- * 浅色档（白底磨砂弹层内的滑杆）：未播轨黑 12%，已播 accent，拇指纯白。
- * 深色档的白色渐变在白底上几乎不可见（真机回归「面板滑杆看不清」）。
+ * 浅色档（暖白磨砂弹层内的滑杆）：未播轨黑 12%，已播 accent，拇指纯白。
+ * 深色档的白色渐变在暖白底上几乎不可见（真机回归「面板滑杆看不清」）。
  */
 const TRACK_TOP_LIGHT = '#2E000000'; // 黑 18%
 const TRACK_BASE_LIGHT = '#1F000000'; // 黑 12%
@@ -54,7 +54,7 @@ export struct GlassSlider {
   onChange: (v: number) => void = (v: number): void => {};
   /** 抬手提交回调（seek 等一次性动作用）。 */
   onCommit: (v: number) => void = (v: number): void => {};
-  /** 浅色档（白底磨砂弹层内使用）：轨道黑系 + 纯白拇指。 */
+  /** 浅色档（暖白磨砂弹层内使用）：轨道黑系 + 纯白拇指。 */
   @Prop light: boolean = false;
 
   /** 当前位置（0..1；触点驱动，value 变化经 @Watch 同步）。 */

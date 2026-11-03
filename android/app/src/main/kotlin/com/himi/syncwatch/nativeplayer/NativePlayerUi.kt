@@ -144,21 +144,21 @@ internal object NPTheme {
     const val ADJUST_VALUE_WIDTH = 48
     const val ADJUST_ROW_PAD_H = 16
     const val ADJUST_ROW_PAD_V = 10
-    const val SECTION_TITLE_SIZE = 11f
+    const val SECTION_TITLE_SIZE = 12f
 
     // ── 解码模式 ──
     const val DECODE_PANEL_WIDTH = 180
-    const val DECODE_TITLE_SIZE = 13f
-    const val DECODE_VALUE_SIZE = 12f
-    const val DECODE_DESC_SIZE = 10f
+    const val DECODE_TITLE_SIZE = 15f
+    const val DECODE_VALUE_SIZE = 14f
+    const val DECODE_DESC_SIZE = 12f
     const val DECODE_RADIO = 16
 
     // ── 片头片尾卡 ──
     const val SEGMENT_CARD_WIDTH = 360
-    const val SEGMENT_TITLE_SIZE = 16f
+    const val SEGMENT_TITLE_SIZE = 15f
     const val SEGMENT_ROW_ICON = 22
     const val SEGMENT_ROW_TITLE_SIZE = 14f
-    const val SEGMENT_ROW_HINT_SIZE = 11f
+    const val SEGMENT_ROW_HINT_SIZE = 12f
     const val SEGMENT_CHEVRON = 18
 
     // ── 播放器弹层「白底磨砂」调色板 ──
@@ -168,29 +168,67 @@ internal object NPTheme {
     // （浮在视频上必须是深色白字）。与 Flutter
     // `GlassConfig.playerPanel*` 逐值一致。
 
-    /** 白底基色（82% 不透明）。 */
-    const val PANEL_LIGHT_BASE = 0xD1FFFFFF.toInt()
+    /**
+     * 暖白磨砂基色（90% 不透明）。
+     *
+     * 586 由 585 的纯白基色改暖白：纯白在暗适应状态下亮度差近 20:1，
+     * 弹层一出现眼睛会本能躲闪；暖白（R>G>B 微弱偏暖）压住刺眼度，同时
+     * 保证黑字在任意画面上可读。
+     */
+    const val PANEL_LIGHT_BASE = 0xE6F4F2EE.toInt()
     /** 竖向渐变：顶部提亮（菲涅尔近似）→ 基色 → 底部略透。 */
-    const val PANEL_LIGHT_TOP = 0xE6FFFFFF.toInt()
-    const val PANEL_LIGHT_BOTTOM = 0xB8FFFFFF.toInt()
-    /** 浅色定界描边（黑 13%；白描边在亮画面上会消失）。 */
-    const val PANEL_LIGHT_RIM = 0x22000000
-    /** 浅色面板投影（浅底靠投影浮起来）。 */
-    const val PANEL_LIGHT_SHADOW = 0x33000000
+    const val PANEL_LIGHT_TOP = 0xF2FAF8F4.toInt()
+    const val PANEL_LIGHT_BOTTOM = 0xD6EAE7E1.toInt()
+    /** 暖白底定界描边（黑 15%；白描边在亮画面上会消失）。 */
+    const val PANEL_LIGHT_RIM = 0x26000000
+    /** 暖白面板投影（浅底靠投影浮起来）。 */
+    const val PANEL_LIGHT_SHADOW = 0x40000000
     const val PANEL_LIGHT_SHADOW_BLUR = 24
     const val PANEL_LIGHT_SHADOW_DY = 8
+    /** 深底不可见的内圈「玻璃厚度」暗线 → 暖白底改白 6% 微高光。 */
+    const val PANEL_LIGHT_INNER = 0x0FFFFFFF
 
-    /** 浅色文字：主（近黑）/ 次（黑 54%）/ 弱（黑 38%）。 */
+    /**
+     * 面板文字（586 起**取消三色分级**，只留两级）：
+     * - [TEXT_DARK]：正文一律近黑（选项行不再用强调色）；
+     * - [TEXT_DARK_72]：说明/占位黑 72%。
+     *
+     * [TEXT_DARK_54] / [TEXT_DARK_38] 保留为别名（历史调用点仍在用），
+     * 值与 72% 同级，避免同一面板出现三种灰度。
+     */
     const val TEXT_DARK = 0xFF1B1B1F.toInt()
-    const val TEXT_DARK_54 = 0x8A000000.toInt()
-    const val TEXT_DARK_38 = 0x61000000.toInt()
-    /** 浅色分隔线（黑 8%）。 */
-    const val DIVIDER_LIGHT = 0x14000000
-    /** 浅色选中行底（accent@12%）与浅色滑杆未填充段（黑 12%）。 */
+    const val TEXT_DARK_72 = 0xB8000000.toInt()
+    const val TEXT_DARK_54 = TEXT_DARK_72
+    const val TEXT_DARK_38 = TEXT_DARK_72
+    /** 暖白底分隔线（黑 12%；纯白底下 8% 几乎看不见）。 */
+    const val DIVIDER_LIGHT = 0x1F000000
+    /** 暖白底选中行底（accent@12%）与滑杆未填充段（黑 12%）。 */
     const val SEL_BG_LIGHT = 0x1F6366F1
     const val TRACK_LIGHT_INACTIVE = 0x1F000000
-    /** 浅色面板遮罩：黑 35%（浅面板需要更重的遮罩才有层次）。 */
-    const val SCRIM_LIGHT = 0x59000000
+    /** 暖白面板遮罩：黑 30%（暖白面板不需要纯白时那么重的遮罩）。 */
+    const val SCRIM_LIGHT = 0x4D000000
+
+    /**
+     * 面板标题字重（w600）：`sans-serif-medium` 是 Android 唯一可靠的
+     * 「中等偏粗」族（`Typeface.BOLD` = 700 过粗，`DEFAULT` = 400 过细）。
+     */
+    val mediumTypeface: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+
+    /** 面板正文字重（w500）：同样落在 medium 族，观感与 Flutter w500 一致。 */
+    val bodyTypeface: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+
+    // ── 播放器弹层统一排版（586，三端逐值对齐）──
+    //
+    // 标题 15/w600、正文 14/w500、说明 12/w500。Flutter 侧同名常量在
+    // `GlassConfig.playerPanel*Size`，鸿蒙在 `NativePlayerPanel.ets`。
+    /** 标题 15 / w600。 */
+    const val PANEL_TITLE_WEIGHT = 600
+    /** 正文 14 / w500。 */
+    const val PANEL_BODY_SIZE = 14f
+    const val PANEL_BODY_WEIGHT = 500
+    /** 说明/占位 12 / w500。 */
+    const val PANEL_CAPTION_SIZE = 12f
+    const val PANEL_CAPTION_WEIGHT = 500
 
     // ── 手势亮度/音量柱条（对齐 Flutter `_buildVerticalBar`）──
     /** 柱条宽 36dp、圆角 18、黑 54% 底（Flutter `width:36` / `radius:18`）。 */

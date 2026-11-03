@@ -157,7 +157,10 @@ class SubtitleStylePanel extends StatelessWidget {
           padding: EdgeInsets.only(left: 60, top: 4),
           child: Text(
             '当前无激活字幕轨，延迟不可调',
-            style: TextStyle(fontSize: 11, color: GlassConfig.playerPanelTextTertiary),
+            style: TextStyle(
+                fontSize: GlassConfig.playerPanelCaptionSize,
+                fontWeight: FontWeight.w500,
+                color: GlassConfig.playerPanelTextPrimary),
           ),
         ),
       const Divider(color: GlassConfig.playerPanelDivider, height: 1),

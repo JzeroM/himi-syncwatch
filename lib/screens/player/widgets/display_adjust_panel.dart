@@ -75,7 +75,9 @@ class DisplayAdjustPanel extends StatelessWidget {
             child: Text(
               subtitleStyleDisabledHint,
               style: const TextStyle(
-                  color: GlassConfig.playerPanelTextSecondary, fontSize: 12),
+                  color: GlassConfig.playerPanelTextSecondary,
+                  fontSize: GlassConfig.playerPanelCaptionSize,
+                  fontWeight: FontWeight.w500),
             ),
           )
         else

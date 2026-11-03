@@ -9,7 +9,7 @@ import android.graphics.Shader
 import android.graphics.drawable.Drawable
 
 /**
- * 播放器弹层「白底磨砂」绘制（对齐 Flutter `GlassContainer(light: true)`）。
+ * 播放器弹层「暖白磨砂」绘制（对齐 Flutter `GlassContainer(light: true)`）。
  *
  * 【为什么不做背景采样】
  * 旧实现按 600ms 周期回读视频帧（GPU→CPU）做折射背景。真机反馈：视频
@@ -19,17 +19,20 @@ import android.graphics.drawable.Drawable
  * Android 没有节点级 backdrop blur API；要真·实时只能把面板做成独立窗口
  * 走系统 cross-window blur——但那会迫使视频层从硬件 overlay 改为 GPU
  * 合成（HDR 直通失效），且窗口插入可能打断 surface 绑定。权衡后改为
- * **纯白渐变磨砂**（不做任何回读）：
+ * **纯暖白渐变磨砂**（不做任何回读）：
  * - 零 GPU→CPU 拷贝、零循环、零跳帧、零黑屏风险；
- * - 白基渐变 + 顶部高光 + 暗描边 + 投影，玻璃质感靠光学层表达。
+ * - 暖白基渐变 + 顶部高光 + 暗描边 + 投影，玻璃质感靠光学层表达。
+ *
+ * 586 由纯白改暖白：纯白在暗适应状态下亮度差近 20:1，弹层弹出时刺眼；
+ * 暖白（R>G>B 微弱偏暖）压住亮度，黑字仍然可读。
  *
  * 绘制层次（自下而上）：
- * 1. 白基竖向渐变（顶部提亮 = 菲涅尔近似）；
+ * 1. 暖白基竖向渐变（顶部提亮 = 菲涅尔近似）；
  * 2. 顶部高光带（18% 高度，白 22% → 透明）；
- * 3. 外圈暗描边（1dp 黑 13%）；
- * 4. 内圈细暗线（0.5dp 黑 8%，玻璃厚度暗示）。
+ * 3. 外圈暗描边（1dp 黑 15%）；
+ * 4. 内圈细高光线（0.5dp 白 6%，玻璃厚度暗示）。
  */
-internal class LightGlassDrawable(
+internal class PanelGlassDrawable(
     private val cornerRadiusDp: Int,
     /**
      * 视图密度（必须由宿主传入，**不能用** `Resources.getSystem()`：
@@ -48,7 +51,7 @@ internal class LightGlassDrawable(
         style = Paint.Style.STROKE
     }
     private val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x14000000
+        color = NPTheme.PANEL_LIGHT_INNER
         style = Paint.Style.STROKE
     }
     private val rect = RectF()
@@ -60,7 +63,7 @@ internal class LightGlassDrawable(
         val r = dp(cornerRadiusDp).toFloat()
         rect.set(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
 
-        // 1. 白基竖向渐变（顶部提亮 → 基色 → 底部略透）。
+        // 1. 暖白基竖向渐变（顶部提亮 → 基色 → 底部略透）。
         fillPaint.shader = LinearGradient(
             0f, rect.top, 0f, rect.bottom,
             intArrayOf(
@@ -91,7 +94,7 @@ internal class LightGlassDrawable(
         rimPaint.strokeWidth = dp(1).toFloat()
         canvas.drawPath(path, rimPaint)
 
-        // 4. 内圈细暗线（0.5dp，暗示玻璃厚度）。
+        // 4. 内圈细高光线（0.5dp，暗示玻璃厚度）。
         val inset = dp(1).toFloat()
         buildPath(
             RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),

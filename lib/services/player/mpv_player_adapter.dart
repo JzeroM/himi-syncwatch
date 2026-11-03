@@ -1782,6 +1782,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       segmentOutroStartMs: _nativeUiExtras.segmentOutroStartMs,
       skipPrompt: _nativeUiExtras.skipPrompt,
       showDebug: _nativeUiExtras.showDebug,
+      // 加载指示器（586 三端统一）：只由 PlayerScreen 的
+      // `shouldShowLoadingSpinner` 决定，适配器不再自己拼条件。
+      showLoading: _nativeUiExtras.showLoading,
       isRoom: _nativeUiExtras.isRoom,
       canScreenshot: _nativeUiExtras.canScreenshot,
       locked: _nativeUiExtras.locked,

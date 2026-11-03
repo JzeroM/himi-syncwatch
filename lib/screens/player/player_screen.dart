@@ -694,6 +694,28 @@ class PlayerScreen extends ConsumerStatefulWidget {
       positionMs == 0 &&
       !playing;
 
+  /// 加载指示器统一规则（586，三端共用）。
+  ///
+  /// 首帧未出 **或** 正在缓冲 → 显示。原生侧（安卓/鸿蒙）不再各自拼条件，
+  /// 一律读状态快照里的 `showLoading`（见 `NativePlayerState.showLoading`），
+  /// 保证三端同一时刻转圈、同一时刻收起。
+  static bool shouldShowLoadingSpinner({
+    required int durationMs,
+    required int positionMs,
+    required bool playerReady,
+    required bool startedOnce,
+    required bool playing,
+    required bool buffering,
+  }) =>
+      buffering ||
+      shouldShowInitialLoadingSpinner(
+        durationMs: durationMs,
+        positionMs: positionMs,
+        playerReady: playerReady,
+        startedOnce: startedOnce,
+        playing: playing,
+      );
+
   /// 有效时长：播放器优先，拿不到时回退 Emby 元数据。
   @visibleForTesting
   static int effectiveDurationMs({
@@ -3343,6 +3365,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ? 'intro'
                 : 'outro'),
         showDebug: settings.showSyncDebug,
+        // 加载指示器（586）：三端共用同一判定（首帧未出 **或** 缓冲中），
+        // 原生宿主只读这一位（安卓 bufferingView / 鸿蒙 LoadingProgress）。
+        showLoading: PlayerScreen.shouldShowLoadingSpinner(
+          durationMs: _duration.inMilliseconds,
+          positionMs: _position.inMilliseconds,
+          playerReady: _isPlayerReady,
+          startedOnce: _hasStartedPlayback,
+          playing: _player.state == AdapterPlaybackState.playing,
+          buffering: _player.mediaStatus.test(AdapterMediaStatus.buffering),
+        ),
         isRoom: isRoom,
         canScreenshot: !Platform.isAndroid,
         locked: _lockController.locked,
@@ -7722,12 +7754,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
           // 加载指示器（渲染在控件层之下：转圈期间顶栏/底栏仍可点返回）。
           // 时长未知的转码/直播流在起播后必须隐藏，不能只看 duration==0。
-          if (PlayerScreen.shouldShowInitialLoadingSpinner(
+          // 586：改为「首帧未出 **或** 缓冲中」统一规则（[shouldShowLoadingSpinner]），
+          // 与安卓/鸿蒙原生侧读同一个判定（快照字段 `showLoading`）。
+          if (PlayerScreen.shouldShowLoadingSpinner(
             durationMs: _duration.inMilliseconds,
             positionMs: _position.inMilliseconds,
             playerReady: _isPlayerReady,
             startedOnce: _hasStartedPlayback,
             playing: _player.state == AdapterPlaybackState.playing,
+            buffering: _player.mediaStatus.test(AdapterMediaStatus.buffering),
           ))
             const Center(
               child: CircularProgressIndicator(color: Color(0xFF6366F1)),

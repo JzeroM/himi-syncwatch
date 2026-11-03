@@ -21,7 +21,9 @@ Widget styleSliderRow({
           child: Text(
             label,
             style: const TextStyle(
-                fontSize: 13, color: GlassConfig.playerPanelTextSecondary),
+                fontSize: GlassConfig.playerPanelBodySize,
+                fontWeight: FontWeight.w500,
+                color: GlassConfig.playerPanelTextPrimary),
           ),
         ),
         Expanded(child: slider),
@@ -32,7 +34,9 @@ Widget styleSliderRow({
             key: ValueKey(valueKey),
             textAlign: TextAlign.right,
             style: const TextStyle(
-                fontSize: 12, color: GlassConfig.playerPanelTextSecondary),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: GlassConfig.playerPanelTextPrimary),
           ),
         ),
       ],
@@ -48,7 +52,9 @@ Widget panelSectionHeader(String title) {
     child: Text(
       title,
       style: const TextStyle(
-                fontSize: 11, color: GlassConfig.playerPanelTextTertiary),
+          fontSize: GlassConfig.playerPanelCaptionSize,
+          fontWeight: FontWeight.w500,
+          color: GlassConfig.playerPanelTextPrimary),
     ),
   );
 }

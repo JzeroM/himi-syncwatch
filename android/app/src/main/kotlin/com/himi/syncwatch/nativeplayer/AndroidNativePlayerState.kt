@@ -126,6 +126,13 @@ data class AndroidNativePlayerState(
     val bufferedMs: Int = 0,
     val paused: Boolean = true,
     val buffering: Boolean = false,
+    /**
+     * 加载指示器是否显示（586，三端统一）。
+     *
+     * Dart 侧按 `PlayerScreen.shouldShowLoadingSpinner`（首帧未出 **或**
+     * 缓冲中）算好后随快照下发；宿主只读这一位，不再自己判 [buffering]。
+     */
+    val showLoading: Boolean = false,
     val ended: Boolean = false,
     val volume: Double = 1.0,
     val speed: Double = 1.0,
@@ -297,6 +304,7 @@ data class AndroidNativePlayerState(
             bufferedMs = json.optInt("bufferedMs", 0),
             paused = json.optBoolean("paused", true),
             buffering = json.optBoolean("buffering", false),
+            showLoading = json.optBoolean("showLoading", false),
             ended = json.optBoolean("ended", false),
             volume = json.optDouble("volume", 1.0),
             speed = json.optDouble("speed", 1.0),

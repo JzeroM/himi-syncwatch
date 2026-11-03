@@ -56,7 +56,9 @@ class AudioTrackMenuPanel extends StatelessWidget {
             child: Text(
               '当前视频无音轨选项',
               style: TextStyle(
-                  color: GlassConfig.playerPanelTextSecondary, fontSize: 13),
+                  color: GlassConfig.playerPanelTextSecondary,
+                  fontSize: GlassConfig.playerPanelCaptionSize,
+                  fontWeight: FontWeight.w500),
             ),
           ),
       ],

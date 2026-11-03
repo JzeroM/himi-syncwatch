@@ -351,7 +351,7 @@ void main() {
       // 不存在「采样源拿错层 → 黑底」这一类风险。
       final glass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-        'LightGlassDrawable.kt',
+        'PanelGlassDrawable.kt',
       ).readAsStringSync();
       expect(glass, isNot(contains('PixelCopy')));
       expect(glass, contains('PANEL_LIGHT_TOP'));
@@ -480,7 +480,7 @@ void main() {
     test('585 弹层为纯渐变绘制（无采样 → 无黑屏红线风险）', () {
       final glass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-        'LightGlassDrawable.kt',
+        'PanelGlassDrawable.kt',
       ).readAsStringSync();
       // 纯 Canvas 渐变绘制：不触碰 surface / PixelCopy / JNI，
       // 结构上不可能影响出画（黑屏红线）。

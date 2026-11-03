@@ -248,6 +248,9 @@ export class NativePlayerUiState {
   surfaceWidth: number = 0;
   surfaceHeight: number = 0;
 
+  /** 加载指示器是否显示（586，三端统一；首帧未出 **或** 缓冲中）。 */
+  showLoading: boolean = false;
+
   canControl: boolean = true;
   locked: boolean = false;
   /** TV 模式（遥控器排布：时钟/倍速在底栏、无锁钮与转屏等）。 */
@@ -331,6 +334,7 @@ export class NativePlayerUiState {
     this.bufferedMs = jsonNum(obj.bufferedMs, this.bufferedMs);
     this.paused = jsonBool(obj.paused, this.paused);
     this.buffering = jsonBool(obj.buffering, this.buffering);
+    this.showLoading = jsonBool(obj.showLoading, this.showLoading);
     this.ended = jsonBool(obj.ended, this.ended);
     this.volume = jsonNum(obj.volume, this.volume);
     this.speed = jsonNum(obj.speed, this.speed);
@@ -444,6 +448,16 @@ export class HimiMpvNativeHost {
   }
 
   readonly state: NativePlayerUiState = new NativePlayerUiState();
+
+  /**
+   * mpv 实际合成画布尺寸（px），由 [surfaceChanged] 本地记录。
+   *
+   * 与 `state.surfaceWidth/Height`（Dart 侧上报）不同：这里是**宿主亲自
+   * 收到**的 XComponent 尺寸，用于调试面板核验「画布 = 屏幕物理像素」——
+   * 真机「画面变糊」根因就是画布被按 vp 误当 px 写成了 1/3 尺寸。
+   */
+  canvasWidth: number = 0;
+  canvasHeight: number = 0;
 
   /** 最近一次快照落地时刻（本地插值基准）。 */
   lastStateAtMs: number = Date.now();
@@ -656,7 +670,24 @@ export class HimiMpvNativeHost {
     }
   }
 
+  /**
+   * 同步 surface 画布尺寸给 mpv。
+   *
+   * 【入参单位：px（物理像素）】——`ohos-surface-size` 只认 px。调用方
+   * 若从 ArkUI `Area`（单位 vp）取值，**必须**先 `getUIContext().vp2px()`
+   * 换算；直接把 vp 当 px 传会让 mpv 在 1/density 分辨率的小画布上合成，
+   * 再被合成器放大铺满 → 观感「不变形，但变糊」（586 真机回归根因）。
+   *
+   * [surfaceId] 传空串表示来自 `onAreaChange` 兜底（不是 XComponent
+   * 官方回调），插件侧按「当前 surface」处理。
+   */
   surfaceChanged(surfaceId: string, width: number, height: number): void {
+    // 防御：vp/px 误传或首帧 0 尺寸都会让 mpv 画布退化（宁可不设）。
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    this.canvasWidth = Math.trunc(width);
+    this.canvasHeight = Math.trunc(height);
     const bridge = this.bridge;
     if (bridge !== null) {
       bridge.forwardSurfaceChanged(surfaceId, width, height);

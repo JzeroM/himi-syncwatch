@@ -88,32 +88,52 @@ class GlassConfig {
   // 常量（`test/native_player_layout_test.dart` 有断言锁死 panelTint
   // 仍为 0x1F1A1D23），只新增播放器弹层专用的一组。
 
-  /// 播放器弹层白底基色（82% 不透明，保证黑字在任意画面上可读）。
-  static const Color playerPanelWhite = Color(0xD1FFFFFF);
+  /// 播放器弹层**暖白磨砂**基色（90% 不透明）。
+  ///
+  /// 586 由 585 的纯白基色改暖白：纯白在暗适应状态下亮度差近 20:1，
+  /// 弹层一出现眼睛会本能躲闪；暖白（R>G>B 微弱偏暖）把刺眼度压下来，
+  /// 同时保证黑字在任意画面上可读。
+  static const Color playerPanelWhite = Color(0xE6F4F2EE);
 
-  /// 播放器弹层竖向渐变（白 → 白 → 白@72%，顶部提亮 = 菲涅尔高光近似）。
-  static const Color playerPanelWhiteTop = Color(0xE6FFFFFF);
-  static const Color playerPanelWhiteBottom = Color(0xB8FFFFFF);
+  /// 播放器弹层竖向渐变（顶部提亮 → 基色 → 底部略透 = 菲涅尔高光近似）。
+  static const Color playerPanelWhiteTop = Color(0xF2FAF8F4);
+  static const Color playerPanelWhiteBottom = Color(0xD6EAE7E1);
 
-  /// 浅色玻璃定界描边（浅底必须靠**暗**边，白描边在亮画面上会消失）。
-  static const Color playerPanelRimLight = Color(0x22000000);
+  /// 暖白玻璃定界描边（浅底必须靠**暗**边，白描边在亮画面上会消失）。
+  static const Color playerPanelRimLight = Color(0x26000000);
 
   /// 播放器弹层投影（比深色版更重，浅色面板需要靠投影「浮」起来）。
   static const List<BoxShadow> playerPanelShadow = [
     BoxShadow(
-      color: Color(0x33000000),
+      color: Color(0x40000000),
       blurRadius: 24,
       offset: Offset(0, 8),
     ),
   ];
 
-  /// 浅色面板文字：主（近黑）/ 次（= 黑 54%）/ 弱（黑 38%）。
+  /// 面板文字（586 起**取消三色分级**，只留两级）：
+  /// - 主：正文一律近黑 [playerPanelTextPrimary]（选项行不再用强调色）；
+  /// - 次：说明/占位黑 72% [playerPanelTextSecondary]。
+  ///
+  /// [playerPanelTextTertiary] 保留为别名（历史调用点仍在用），值与次同级，
+  /// 避免同一面板里出现三种灰度。
   static const Color playerPanelTextPrimary = Color(0xFF1B1B1F);
-  static const Color playerPanelTextSecondary = Color(0x8A000000);
-  static const Color playerPanelTextTertiary = Color(0x61000000);
+  static const Color playerPanelTextSecondary = Color(0xB8000000);
+  static const Color playerPanelTextTertiary = Color(0xB8000000);
 
-  /// 浅色分隔线（黑 8%，0.5dp）。
-  static const Color playerPanelDivider = Color(0x14000000);
+  /// 暖白底分隔线（黑 12%，0.5dp；纯白底下 8% 几乎看不见）。
+  static const Color playerPanelDivider = Color(0x1F000000);
+
+  /// 播放器弹层统一排版（586）：标题 15/w600、正文 14/w500、说明 12/w500。
+  ///
+  /// 三端逐值对齐（安卓 `NPTheme.TEXT_*` / 鸿蒙 `NativePlayerPanel.TEXT_*`），
+  /// 任一改动必须三处同步（`test/native_player_layout_test.dart` 有断言）。
+  static const double playerPanelTitleSize = 15;
+  static const double playerPanelTitleWeight = 600;
+  static const double playerPanelBodySize = 14;
+  static const double playerPanelBodyWeight = 500;
+  static const double playerPanelCaptionSize = 12;
+  static const double playerPanelCaptionWeight = 500;
 
   /// 浅色选中行底色（强调色 12%）与选中文字色。
   static const Color playerPanelSelectedBg = Color(0x1F6366F1);

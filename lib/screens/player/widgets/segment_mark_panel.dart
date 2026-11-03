@@ -54,7 +54,7 @@ class SegmentMarkPanel extends StatelessWidget {
                   '片头 / 片尾',
                   style: TextStyle(
                     color: GlassConfig.playerPanelTextPrimary,
-                    fontSize: 16,
+                    fontSize: GlassConfig.playerPanelTitleSize,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -63,7 +63,8 @@ class SegmentMarkPanel extends StatelessWidget {
                   '当前位置 ${formatMs(positionMs)}',
                   style: const TextStyle(
                       color: GlassConfig.playerPanelTextSecondary,
-                      fontSize: 12),
+                      fontSize: GlassConfig.playerPanelCaptionSize,
+                      fontWeight: FontWeight.w500),
                 ),
               ],
             ),
@@ -135,7 +136,7 @@ class _SegmentMarkRow extends StatelessWidget {
                     title,
                     style: const TextStyle(
                       color: GlassConfig.playerPanelTextPrimary,
-                      fontSize: 14,
+                      fontSize: GlassConfig.playerPanelBodySize,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -148,7 +149,8 @@ class _SegmentMarkRow extends StatelessWidget {
                       color: hasValue
                           ? const Color(0xFF16A34A)
                           : GlassConfig.playerPanelTextSecondary,
-                      fontSize: 11,
+                      fontSize: GlassConfig.playerPanelCaptionSize,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],

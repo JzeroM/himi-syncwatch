@@ -1036,12 +1036,29 @@ export struct HimiNativePlayerView {
         // 不触发（子窗口尺寸变化但 surface 未重建），导致 mpv 仍按旧尺寸
         // 合成 → 竖屏画面被拉长铺满。这里用 onAreaChange 补一次同步：
         // 宿主的 surfaceChanged 有「尺寸未变则跳过」的幂等保护，重复调用无害。
+        //
+        // 【单位陷阱（586 真机「画面变糊」根因）】Area.width/height 的单位是
+        // **vp**，而 mpv 的 `ohos-surface-size` 只接受 **px**。旧实现直接把
+        // vp 当 px 传给 surfaceChanged：真机 1260×2720px（density≈3.06）
+        // 被写成 411×914 → mpv 在 1/3 分辨率的小画布上合成，再由合成器
+        // 放大铺满全屏。宽高比一致故**不变形，只变糊**。
+        // onAreaChange 在 onSurfaceChanged 之后触发，等于把正确值反复覆盖
+        // 成错误值 —— 不是偶发，是稳定复现。必须经 vp2px 换算。
         .onAreaChange((_old: Area, area: Area): void => {
-          const w = area.width as number;
-          const h = area.height as number;
-          if (w > 0 && h > 0) {
-            HimiMpvNativeHost.getInstance().surfaceChanged('', Math.trunc(w), Math.trunc(h));
+          const wVp = area.width as number;
+          const hVp = area.height as number;
+          if (wVp <= 0 || hVp <= 0) {
+            return;
           }
+          const wPx = Math.trunc(this.getUIContext().vp2px(wVp));
+          const hPx = Math.trunc(this.getUIContext().vp2px(hVp));
+          if (wPx <= 0 || hPx <= 0) {
+            return;
+          }
+          hilog.info(DOMAIN, TAG,
+            'area: %{public}dvp x %{public}dvp -> %{public}dpx x %{public}dpx',
+            wVp, hVp, wPx, hPx);
+          HimiMpvNativeHost.getInstance().surfaceChanged('', wPx, hPx);
         });
 
       // ── 点按层：视频手势（对齐 Flutter VideoGestureLayer）──
@@ -1095,6 +1112,29 @@ export struct HimiNativePlayerView {
         // 全部失效、面板遮罩点不关（真机回归）。Default 下控件先声明成功，
         // 本层不再介入；空视频区无控件声明，本层照常接管。
         .hitTestBehavior(HitTestMode.Default);
+
+      // ── 加载指示器（586）：居中转圈，在控件层**之下**（对齐 Flutter
+      //    `_buildVideoArea` 的 `CircularProgressIndicator`——转圈期间顶栏/
+      //    底栏仍可点返回）。显示时机由快照的 `showLoading` 统一决定
+      //    （首帧未出 **或** 缓冲中），安卓读同一位。
+      //
+      //    旧实现**完全没有**加载指示器：鸿蒙起播那几秒是纯黑，什么都不转。
+      if (this.state().showLoading) {
+        Column() {
+          LoadingProgress()
+            .width(36)
+            .height(36)
+            .color('#6366F1');
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        // 转圈不抢手势（点屏仍可显隐控件）。用 None 而非 Transparent：
+        // Transparent 会让本层与下层**同时**进入手势竞技场，全屏层会抢走
+        // 触摸流（565 真机回归的老坑）；None 表示本层及子节点完全不参与命中。
+        .hitTestBehavior(HitTestMode.None);
+      }
 
       // ── 弹幕层：视频之上、控件之下（原生渲染，Flutter 弹幕层随视频区
       //    退场 → 弹幕开关在原生 UI 下必须由本层生效）──
@@ -1470,9 +1510,39 @@ export struct HimiNativePlayerView {
       });
 
       this.ControlRow();
+
+      // ── 诊断行（586）：对齐安卓 `NativePlayerScreenView.diagText`。
+      //    仅 `showDebug`（设置页「同步调试」）为真时显示，薄文本整行宽。
+      //    关键字段 `canvas=` 是 mpv 实际合成画布尺寸（px）——真机「画面
+      //    变糊」就是它被写成了 1/3 尺寸，一眼可核验。
+      if (this.state().showDebug) {
+        Text(this.diagLine())
+          .fontSize(10)
+          .fontColor('#99FFFFFF')
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .margin({ top: 2 });
+      }
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%');
+  }
+
+  /**
+   * 底部诊断行文本（对齐安卓 buildDiag 的字段顺序）。
+   *
+   * `canvas=` 取宿主亲自收到的画布尺寸（px），不是 Dart 上报值——这是
+   * 验证「mpv 画布 = 屏幕物理像素」的唯一可靠口径。
+   */
+  private diagLine(): string {
+    const s = this.state();
+    const host = HimiMpvNativeHost.getInstance();
+    const vo = s.currentVo.length > 0 ? s.currentVo : (s.voConfigured.length > 0 ? s.voConfigured : '-');
+    const hw = s.hwdecCurrent.length > 0 ? s.hwdecCurrent : '-';
+    const canvas = `${host.canvasWidth}x${host.canvasHeight}`;
+    const video = s.debugLines.length > 0 ? ` | ${s.debugLines[0]}` : '';
+    return `vo=${vo} | hwdec=${hw} | surface=${s.surfaceAttached ? 'att' : '未附着'} | canvas=${canvas}${video}`;
   }
 
   /**

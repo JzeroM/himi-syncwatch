@@ -36,11 +36,11 @@ class GlassContainer extends ConsumerWidget {
   /// 是否绘制悬浮投影（顶栏等贴边胶囊传 false，避免黑影）。
   final bool showShadow;
 
-  /// **白底磨砂**变体（仅播放器弹层使用）。
+  /// **播放器弹层暖白磨砂**变体（仅播放器弹层使用）。
   ///
-  /// 与深色玻璃的区别：白基竖向渐变（顶部提亮）、**暗**描边定界、
-  /// 更重的投影、浅色文字由调用方配套。开启后不再叠深色 tint 渐变
-  /// （白底上叠深色会脏）；`glassUi` 关闭时同样保持白底（弹层可读性
+  /// 与深色玻璃的区别：暖白竖向渐变（顶部提亮）、**暗**描边定界、
+  /// 更重的投影、近黑文字由调用方配套。开启后不再叠深色 tint 渐变
+  /// （浅底上叠深色会脏）；`glassUi` 关闭时同样保持暖白底（弹层可读性
   /// 优先于全局降级一致性）。
   final bool light;
 
@@ -51,7 +51,7 @@ class GlassContainer extends ConsumerWidget {
     final effectiveTint =
         tint == GlassConfig.panelTint ? GlassConfig.panelTintOf() : tint;
 
-    // 白底磨砂：白基渐变 + 暗描边，不叠深色 tint。
+    // 暖白磨砂（586）：暖白渐变 + 暗描边，不叠深色 tint。
     if (light) {
       Widget white = DecoratedBox(
         decoration: BoxDecoration(

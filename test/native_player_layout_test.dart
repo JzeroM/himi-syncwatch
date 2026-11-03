@@ -24,7 +24,7 @@ void main() {
   // 585：PixelCopy 采样实现（GlassBackdrop.kt）已删除，弹层改纯白渐变磨砂。
   final kotlinGlass = File(
     'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-    'LightGlassDrawable.kt',
+    'PanelGlassDrawable.kt',
   ).readAsStringSync();
 
   final ohosView = File(
@@ -526,9 +526,18 @@ void main() {
       expect(ohosPlugin, contains('prev %{public}dx%{public}d'));
     });
 
-    test('XComponent 有 onAreaChange 兜底同步尺寸', () {
+    test('XComponent 有 onAreaChange 兜底同步尺寸（586：必须先 vp2px）', () {
       // 子窗口转屏时 onSurfaceChanged 可能不触发，需 onAreaChange 兜底。
+      //
+      // 【586 真机「画面变糊」根因】Area.width/height 单位是 **vp**，
+      // `ohos-surface-size` 只接受 **px**。旧实现直接传 vp，真机
+      // 1260x2720px 被写成 411x914 → mpv 在 1/3 分辨率画布上合成再放大
+      // → 宽高比一致故不变形，只变糊。断言锁死「必须换算」。
       expect(ohosView, contains("HimiMpvNativeHost.getInstance().surfaceChanged(''"));
+      expect(ohosView, contains('vp2px'));
+      // 传入 surfaceChanged 的必须是换算后的 px 变量，不能是 area.width。
+      expect(ohosView, contains("surfaceChanged('', wPx, hPx)"));
+      expect(ohosView, isNot(contains("surfaceChanged('', Math.trunc(w)")));
     });
 
     test('宿主 surfaceChanged 转发到插件', () {
@@ -576,12 +585,12 @@ void main() {
       expect(screen, contains("api_key=\$_currentToken"));
     });
 
-    test('585 弹层改纯白渐变磨砂（不再采样 → 零跳帧零黑屏风险）', () {
+    test('586 弹层改暖白渐变磨砂（不再采样 → 零跳帧零黑屏风险）', () {
       final kotlinGlass = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-        'LightGlassDrawable.kt',
+        'PanelGlassDrawable.kt',
       ).readAsStringSync();
-      // 白基竖向渐变 + 顶部高光 + 暗描边 + 内圈厚度线。
+      // 暖白竖向渐变 + 顶部高光 + 暗描边 + 内圈微高光线。
       expect(kotlinGlass, contains('PANEL_LIGHT_TOP'));
       expect(kotlinGlass, contains('PANEL_LIGHT_BASE'));
       expect(kotlinGlass, contains('PANEL_LIGHT_RIM'));
@@ -1468,7 +1477,7 @@ void main() {
     // 585：GlassBackdrop.kt（PixelCopy 采样）已删除，改读白底磨砂实现。
     final glassBackdrop = File(
       'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-      'LightGlassDrawable.kt',
+      'PanelGlassDrawable.kt',
     ).readAsStringSync();
     final adapter =
         File('lib/services/player/mpv_player_adapter.dart').readAsStringSync();
@@ -1547,7 +1556,7 @@ void main() {
     ).readAsStringSync();
     final lightGlass = File(
       'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
-      'LightGlassDrawable.kt',
+      'PanelGlassDrawable.kt',
     ).readAsStringSync();
     final gauge = File(
       'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
@@ -1611,7 +1620,7 @@ void main() {
       expect(kotlinScreen, isNot(contains('verticalBar.text = ')));
     });
 
-    test('安卓弹层改白底磨砂且删除 PixelCopy 采样', () {
+    test('安卓弹层改暖白磨砂且删除 PixelCopy 采样', () {
       expect(lightGlass, contains('PANEL_LIGHT_TOP'));
       expect(lightGlass, contains('PANEL_LIGHT_RIM'));
       // 采样链必须彻底消失（旧实现 600ms 回读 → 背景一帧一帧跳）。
@@ -1626,7 +1635,7 @@ void main() {
       expect(host, contains('"type" to "addSubtitle"'));
     });
 
-    test('Flutter 白底磨砂只在播放器弹层（全局 panelTint 不变）', () {
+    test('Flutter 暖白磨砂只在播放器弹层（全局 panelTint 不变）', () {
       // 全局深色常量必须原样保留（设置页/缓存页等仍在用）。
       expect(glassConfig, contains('static const Color panelTint = Color(0x1F1A1D23)'));
       expect(glassConfig, contains('playerPanelWhite'));
@@ -1636,7 +1645,7 @@ void main() {
       expect(selectorPanel, contains('light: true'));
     });
 
-    test('鸿蒙弹层同步白底磨砂（保留实时 backgroundEffect）', () {
+    test('鸿蒙弹层同步暖白磨砂（保留实时 backgroundEffect）', () {
       expect(ohosPanel, contains('PANEL_LIGHT_TOP'));
       expect(ohosPanel, contains('PANEL_LIGHT_RIM'));
       expect(ohosPanel, contains('backgroundEffect'));
@@ -1669,6 +1678,192 @@ void main() {
       expect(NativePlayerTheme.barBottomSolid.toARGB32(), 0xD9000000);
       expect(NativePlayerTheme.accent30.toARGB32(), 0x4D6366F1);
       expect(NativePlayerTheme.white12.toARGB32(), 0x1FFFFFFF);
+    });
+  });
+
+  group('586 鸿蒙画布分辨率 + 弹层暖白 + 加载指示器统一', () {
+    final ohosPlugin = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/plugin/'
+      'HimiMpvOhosPlugin.ets',
+    ).readAsStringSync();
+    final ohosHost = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'HimiMpvNativeHost.ets',
+    ).readAsStringSync();
+    final ohosViewFile = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'HimiNativePlayerView.ets',
+    ).readAsStringSync();
+    final ohosPanelFile = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'NativePlayerPanel.ets',
+    ).readAsStringSync();
+    final kotlinScreen586 = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerScreenView.kt',
+    ).readAsStringSync();
+    final kotlinTheme586 = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerUi.kt',
+    ).readAsStringSync();
+    final kotlinState586 = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'AndroidNativePlayerState.kt',
+    ).readAsStringSync();
+    final glassConfig586 =
+        File('lib/widgets/glass/glass_config.dart').readAsStringSync();
+    final selectorPanel586 = File(
+      'lib/screens/player/widgets/selector_side_panel.dart',
+    ).readAsStringSync();
+    final stateDart586 = File(
+      'lib/services/player/native/native_player_state.dart',
+    ).readAsStringSync();
+    final adapter586 =
+        File('lib/services/player/mpv_player_adapter.dart').readAsStringSync();
+    final screen586 =
+        File('lib/screens/player/player_screen.dart').readAsStringSync();
+
+    test('onAreaChange 必须 vp2px 后再同步画布尺寸', () {
+      // 真机「画面变糊」根因：vp 当 px 传 → 画布只有 1/density。
+      expect(ohosViewFile, contains('vp2px'));
+      expect(ohosViewFile, contains("surfaceChanged('', wPx, hPx)"));
+      // 不得把 Area 的 vp 直接当 px 传（旧实现写法）。
+      expect(ohosViewFile, isNot(contains("surfaceChanged('', Math.trunc(w)")));
+    });
+
+    test('宿主 surfaceChanged 声明 px 契约并做非正防御', () {
+      expect(ohosHost, contains('px（物理像素）'));
+      expect(ohosHost, contains('if (width <= 0 || height <= 0)'));
+      // 本地记录画布尺寸供调试面板核验。
+      expect(ohosHost, contains('this.canvasWidth = Math.trunc(width)'));
+      expect(ohosHost, contains('this.canvasHeight = Math.trunc(height)'));
+    });
+
+    test('初始化前的 surface 尺寸不再被丢弃（先缓存后应用）', () {
+      // 旧实现 `if (session === null || !session.initialized) return;` 把
+      // 初始化前到达的尺寸永久丢掉，而它不会重发。
+      expect(
+        ohosPlugin,
+        isNot(contains('if (session === null || !session.initialized) return;')),
+      );
+      // 缓存必须发生在 initialized 判断之前。
+      final body = ohosPlugin.substring(
+        ohosPlugin.indexOf('handleSurfaceChanged(surfaceId: string'),
+      );
+      final cacheIdx = body.indexOf('session.width = width;');
+      final initIdx = body.indexOf('if (!session.initialized)');
+      expect(cacheIdx, greaterThan(0));
+      expect(initIdx, greaterThan(cacheIdx),
+          reason: '尺寸缓存必须早于 initialized 判断');
+      expect(body, contains('缓存待应用'));
+    });
+
+    test('attach 成功后立刻用真实 px 覆盖创建期猜测尺寸', () {
+      expect(ohosPlugin, contains('attach 后写入画布尺寸'));
+      expect(ohosPlugin, contains("session.lib.setProperty('ohos-surface-size'"));
+    });
+
+    test('三端暖白基色逐字节一致，且不再出现纯白 0xD1FFFFFF', () {
+      // Dart
+      expect(glassConfig586, contains('Color(0xE6F4F2EE)'));
+      expect(glassConfig586, contains('Color(0xF2FAF8F4)'));
+      expect(glassConfig586, contains('Color(0xD6EAE7E1)'));
+      // Kotlin
+      expect(kotlinTheme586, contains('0xE6F4F2EE'));
+      expect(kotlinTheme586, contains('0xF2FAF8F4'));
+      expect(kotlinTheme586, contains('0xD6EAE7E1'));
+      // ArkTS
+      expect(ohosPanelFile, contains("'#E6F4F2EE'"));
+      expect(ohosPanelFile, contains("'#F2FAF8F4'"));
+      expect(ohosPanelFile, contains("'#D6EAE7E1'"));
+      // 585 纯白必须彻底消失（防回流）。
+      expect(glassConfig586, isNot(contains('0xD1FFFFFF')));
+      expect(kotlinTheme586, isNot(contains('0xD1FFFFFF')));
+      expect(ohosPanelFile, isNot(contains('#D1FFFFFF')));
+    });
+
+    test('面板正文统一近黑，选中行不再用强调色当文字色', () {
+      // Flutter：SideOptionRow 文字恒为 playerPanelTextPrimary + w500。
+      expect(
+        selectorPanel586,
+        isNot(contains('? const Color(0xFF6366F1)')),
+        reason: '选中行不得再用强调色当文字色',
+      );
+      expect(selectorPanel586, contains('GlassConfig.playerPanelBodySize'));
+      expect(selectorPanel586, contains('fontWeight: FontWeight.w500'));
+      // 安卓：optionRow 文字恒 TEXT_DARK + bodyTypeface。
+      expect(kotlinScreen586, contains('setTextColor(NPTheme.TEXT_DARK)'));
+      expect(kotlinScreen586, contains('typeface = NPTheme.bodyTypeface'));
+      expect(
+        kotlinScreen586,
+        isNot(contains('setTextColor(if (selected) NPTheme.ACCENT else NPTheme.TEXT_DARK)')),
+      );
+      // 鸿蒙：OptionLabel 文字恒 TEXT_DARK + w500。
+      expect(ohosPanelFile, contains('.fontColor(TEXT_DARK)\n      .layoutWeight(1)'));
+      expect(ohosPanelFile, contains('const PANEL_BODY_WEIGHT = 500'));
+    });
+
+    test('面板排版常量三端同值（标题 15/w600、正文 14/w500、说明 12/w500）', () {
+      expect(glassConfig586, contains('playerPanelTitleSize = 15'));
+      expect(glassConfig586, contains('playerPanelBodySize = 14'));
+      expect(glassConfig586, contains('playerPanelCaptionSize = 12'));
+      expect(kotlinTheme586, contains('const val PANEL_BODY_SIZE = 14f'));
+      expect(kotlinTheme586, contains('const val PANEL_CAPTION_SIZE = 12f'));
+      expect(ohosPanelFile, contains('const PANEL_BODY_SIZE = 14;'));
+      expect(ohosPanelFile, contains('const PANEL_CAPTION_SIZE = 12;'));
+      expect(ohosPanelFile, contains('const PANEL_TITLE_WEIGHT = 600;'));
+    });
+
+    test('内核面板与其它面板共用同一容器（不得分叉）', () {
+      // Flutter：PlayerKernelPanel 挂在 SelectorSidePanel 里。
+      expect(
+        File('lib/screens/player/player_screen.dart').readAsStringSync(),
+        contains('PlayerKernelPanel('),
+      );
+      // 安卓：PANEL_KERNEL 走同一个 panelContainer。
+      expect(kotlinScreen586, contains('PANEL_KERNEL -> buildKernelContent()'));
+      // 鸿蒙：panelType === 'kernel' 走同一 SidePanel。
+      expect(ohosPanelFile, contains("this.panelType === 'kernel'"));
+      expect(ohosPanelFile, contains('this.KernelContent();'));
+    });
+
+    test('加载指示器三端读同一个 showLoading 位', () {
+      // Dart 快照字段 + JSON 往返。
+      expect(stateDart586, contains('showLoading'));
+      expect(stateDart586, contains("'showLoading': showLoading,"));
+      expect(adapter586, contains('showLoading: _nativeUiExtras.showLoading'));
+      // 安卓只读 showLoading，不再自己判 buffering。
+      expect(kotlinState586, contains('val showLoading: Boolean = false'));
+      expect(kotlinScreen586,
+          contains('bufferingView.visibility = if (state.showLoading) VISIBLE else GONE'));
+      // 鸿蒙新增 LoadingProgress。
+      expect(ohosViewFile, contains('LoadingProgress()'));
+      expect(ohosViewFile, contains('.color(\'#6366F1\')'));
+      expect(ohosHost, contains('this.showLoading = jsonBool(obj.showLoading'));
+    });
+
+    test('加载指示器统一规则（首帧未出 或 缓冲中）', () {
+      expect(screen586, contains('shouldShowLoadingSpinner'));
+      expect(screen586, contains('buffering:'));
+      // 旧入口仍保留（其余调用点/测试在用）。
+      expect(screen586, contains('shouldShowInitialLoadingSpinner'));
+    });
+
+    test('安卓加载指示器在控件层之下（先于 bars 添加）', () {
+      final buffIdx = kotlinScreen586.indexOf('addView(bufferingView');
+      final topIdx = kotlinScreen586.indexOf(
+        'addView(topBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))',
+      );
+      expect(buffIdx, greaterThan(0));
+      expect(topIdx, greaterThan(0));
+      expect(buffIdx, lessThan(topIdx),
+          reason: '转圈必须先于顶/底栏添加（Flutter 转圈在控件层之下）');
+    });
+
+    test('鸿蒙调试面板含 canvas= 画布尺寸行', () {
+      expect(ohosViewFile, contains('canvas='));
+      expect(ohosViewFile, contains('private diagLine()'));
+      expect(ohosViewFile, contains('host.canvasWidth'));
     });
   });
 }

@@ -358,6 +358,7 @@ class NativePlayerState {
     this.bufferedMs = 0,
     this.paused = true,
     this.buffering = false,
+    this.showLoading = false,
     this.ended = false,
     this.volume = 1.0,
     this.speed = 1.0,
@@ -444,6 +445,14 @@ class NativePlayerState {
   final int bufferedMs;
   final bool paused;
   final bool buffering;
+
+  /// 加载指示器是否显示（586，三端统一）。
+  ///
+  /// 由 [PlayerScreen.shouldShowLoadingSpinner] 的规则算出（首帧未出 **或**
+  /// 缓冲中），原生宿主直接读这一位决定转圈显隐——安卓/鸿蒙不再各自拼
+  /// `state.buffering` 条件，避免「同一时刻两端一个转一个不转」。
+  final bool showLoading;
+
   final bool ended;
   final double volume;
   final double speed;
@@ -581,6 +590,7 @@ class NativePlayerState {
       bufferedMs: (json['bufferedMs'] as num?)?.toInt() ?? 0,
       paused: json['paused'] != false,
       buffering: json['buffering'] == true,
+      showLoading: json['showLoading'] == true,
       ended: json['ended'] == true,
       volume: (json['volume'] as num?)?.toDouble() ?? 1.0,
       speed: (json['speed'] as num?)?.toDouble() ?? 1.0,
@@ -694,6 +704,7 @@ class NativePlayerState {
         'bufferedMs': bufferedMs,
         'paused': paused,
         'buffering': buffering,
+        'showLoading': showLoading,
         'ended': ended,
         'volume': volume,
         'speed': speed,
@@ -778,6 +789,7 @@ class NativePlayerState {
     int? bufferedMs,
     bool? paused,
     bool? buffering,
+    bool? showLoading,
     bool? ended,
     double? volume,
     double? speed,
@@ -858,6 +870,7 @@ class NativePlayerState {
         bufferedMs: bufferedMs ?? this.bufferedMs,
         paused: paused ?? this.paused,
         buffering: buffering ?? this.buffering,
+        showLoading: showLoading ?? this.showLoading,
         ended: ended ?? this.ended,
         volume: volume ?? this.volume,
         speed: speed ?? this.speed,
@@ -955,6 +968,7 @@ class NativePlayerState {
       other.bufferedMs == bufferedMs &&
       other.paused == paused &&
       other.buffering == buffering &&
+      other.showLoading == showLoading &&
       other.ended == ended &&
       other.volume == volume &&
       other.speed == speed &&
@@ -1036,6 +1050,7 @@ class NativePlayerState {
         bufferedMs,
         paused,
         buffering,
+        showLoading,
         ended,
         volume,
         speed,
@@ -1128,6 +1143,7 @@ class NativePlayerUiExtras {
     this.segmentOutroStartMs,
     this.skipPrompt = '',
     this.showDebug = false,
+    this.showLoading = false,
     this.isRoom = false,
     this.canScreenshot = false,
     this.locked = false,
@@ -1166,6 +1182,14 @@ class NativePlayerUiExtras {
   final int? segmentOutroStartMs;
   final String skipPrompt;
   final bool showDebug;
+
+  /// 加载指示器是否显示（586，三端统一）。
+  ///
+  /// 由 PlayerScreen 按 `shouldShowLoadingSpinner` 算出后随快照下发；
+  /// 安卓/鸿蒙原生层只读这一位，不再各自拼 `buffering` 条件——否则
+  /// 「首帧未出」与「中途缓冲」两种时机会在两端各转一半。
+  final bool showLoading;
+
   final bool isRoom;
   final bool canScreenshot;
   final bool locked;

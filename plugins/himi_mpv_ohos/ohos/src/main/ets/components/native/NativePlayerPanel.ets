@@ -171,9 +171,12 @@ struct DisplayValueText {
   }
 
   build() {
+    // 586 统一排版：数值 13 / w500 近黑（旧实现 12sp 半透明白，暖白底上
+    // 几乎看不见——这是「面板文字不统一」最明显的一处）。
     Text(this.text)
-      .fontSize(12)
-      .fontColor('#B3FFFFFF')
+      .fontSize(13)
+      .fontWeight(PANEL_BODY_WEIGHT)
+      .fontColor(TEXT_DARK)
       .width(48)
       .textAlign(TextAlign.End);
   }
@@ -183,28 +186,50 @@ struct DisplayValueText {
 const SEL_COLOR = '#6366F1';
 
 // ═══════════════════════════════════════════════════════════════
-// 播放器弹层「白底磨砂」调色板（与 Flutter GlassConfig.playerPanel*、
+// 播放器弹层「暖白磨砂」调色板（与 Flutter GlassConfig.playerPanel*、
 // Android NPTheme.PANEL_LIGHT_* 逐值一致）
 // ═══════════════════════════════════════════════════════════════
 //
 // 【范围铁律】仅用于播放器内的**弹出面板**（右侧侧栏 / 解码 popover /
 // 片头片尾卡）。顶栏、底栏、手势提示胶囊保持深色玻璃（浮在视频上必须
 // 深色白字）。
-/** 白底基色（72% 不透明；留出空间让 backgroundEffect 的模糊视频透出）。 */
-const PANEL_LIGHT_BASE = '#B8FFFFFF';
+/** 暖白磨砂基色（90% 不透明；留出空间让 backgroundEffect 的模糊视频透出）。 */
+const PANEL_LIGHT_BASE = '#E6F4F2EE';
 /** 竖向渐变：顶部提亮 → 基色 → 底部略透（菲涅尔近似）。 */
-const PANEL_LIGHT_TOP = '#CCFFFFFF';
-const PANEL_LIGHT_BOTTOM = '#A6FFFFFF';
-/** 浅色定界描边（黑 13%；白描边在亮画面上会消失）。 */
-const PANEL_LIGHT_RIM = '#22000000';
-/** 浅色文字：主（近黑）/ 次（黑 54%）/ 弱（黑 38%）。 */
+const PANEL_LIGHT_TOP = '#F2FAF8F4';
+const PANEL_LIGHT_BOTTOM = '#D6EAE7E1';
+/** 暖白底定界描边（黑 15%；白描边在亮画面上会消失）。 */
+const PANEL_LIGHT_RIM = '#26000000';
+/**
+ * 面板文字（586 起**取消三色分级**，只留两级）。
+ *
+ * - TEXT_DARK：正文一律近黑（选项行不再用强调色）；
+ * - TEXT_DARK_72：说明/占位黑 72%。
+ *
+ * TEXT_DARK_54 / TEXT_DARK_38 保留为别名（历史调用点仍在用），值与 72%
+ * 同级，避免同一面板里出现三种灰度。
+ */
 const TEXT_DARK = '#1B1B1F';
-const TEXT_DARK_54 = '#8A000000';
-const TEXT_DARK_38 = '#61000000';
-/** 浅色分隔线（黑 8%）。 */
-const DIVIDER_LIGHT = '#14000000';
-/** 浅色选中行底（accent@12%）。 */
+const TEXT_DARK_72 = '#B8000000';
+const TEXT_DARK_54 = TEXT_DARK_72;
+const TEXT_DARK_38 = TEXT_DARK_72;
+/** 暖白底分隔线（黑 12%；纯白底下 8% 几乎看不见）。 */
+const DIVIDER_LIGHT = '#1F000000';
+/** 暖白底选中行底（accent@12%）。 */
 const SEL_BG_LIGHT = '#1F6366F1';
+
+// ── 播放器弹层统一排版（586，三端逐值对齐）──
+// 标题 15/w600、正文 14/w500、说明 12/w500。Flutter 侧同名常量在
+// `GlassConfig.playerPanel*Size`，安卓在 `NPTheme.PANEL_*`。
+/** 面板标题 15 / w600。 */
+const PANEL_TITLE_SIZE = 15;
+const PANEL_TITLE_WEIGHT = 600;
+/** 面板正文 14 / w500。 */
+const PANEL_BODY_SIZE = 14;
+const PANEL_BODY_WEIGHT = 500;
+/** 说明/占位 12 / w500。 */
+const PANEL_CAPTION_SIZE = 12;
+const PANEL_CAPTION_WEIGHT = 500;
 
 /** 面板着色（照抄 GlassConfig.panelTint = 0x1F1A1D23）。 */
 const PANEL_TINT = '#1F1A1D23';
@@ -347,10 +372,10 @@ export struct NativePlayerPanel {
   @Builder
   SidePanel() {
     Column() {
-      // 标题（照抄：fontSize 15 加粗，左对齐，padding h16）
+      // 标题（586 统一排版：15 / w600，左对齐，padding h16）
       Text(this.titleText())
-        .fontSize(15)
-        .fontWeight(FontWeight.Bold)
+        .fontSize(PANEL_TITLE_SIZE)
+        .fontWeight(PANEL_TITLE_WEIGHT)
         .fontColor(TEXT_DARK)
         .width('100%')
         .padding({ left: 16, right: 16, top: 10, bottom: 4 })
@@ -379,12 +404,12 @@ export struct NativePlayerPanel {
     // 不铺满全屏，遮罩才收得到「点外关闭」。
     .width('100%')
     .layoutWeight(1)
-    // 白底磨砂：竖向渐变（顶部提亮 → 基色 → 底部略透）+ 暗描边定界。
+    // 暖白磨砂（586）：竖向渐变（顶部提亮 → 基色 → 底部略透）+ 暗描边定界。
     // 【保留 backgroundEffect】鸿蒙的 backgroundEffect 是**节点级实时**
     // backdrop blur（GPU 合成阶段做，60fps、零回读、零跳帧），与 Flutter
-    // 的 BackdropFilter / MDK 弹层同源能力 → 白底之下仍能隐约看到视频
+    // 的 BackdropFilter / MDK 弹层同源能力 → 暖白之下仍能隐约看到视频
     // 流动，观感最佳。安卓侧无对应 API（只能回读采样，会一帧一帧跳），
-    // 故安卓为纯白渐变；两端在 82% 不透明白底下观感几乎一致。
+    // 故安卓为纯暖白渐变；两端在 90% 不透暖白底下观感几乎一致。
     .backgroundEffect({ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION })
     .linearGradient({
       angle: 180,
@@ -415,31 +440,33 @@ export struct NativePlayerPanel {
       Text(this.confirmKind.length > 0
         ? (this.confirmKind === 'intro' ? '片头已设置' : '片尾已设置')
         : '片头片尾')
-        .fontSize(16)
-        .fontWeight(FontWeight.Bold)
+        .fontSize(PANEL_TITLE_SIZE)
+        .fontWeight(PANEL_TITLE_WEIGHT)
         .fontColor(TEXT_DARK)
         .width('100%')
         .padding({ left: 16, right: 16, top: 12, bottom: 6 });
 
       if (this.confirmKind.length > 0) {
         Text(`当前标记：${this.existingMarkText(this.confirmKind)}\n要用当前位置更新，还是清除？`)
-          .fontSize(12)
-          .fontColor(TEXT_DARK_54)
+          .fontSize(PANEL_CAPTION_SIZE)
+          .fontWeight(PANEL_CAPTION_WEIGHT)
+          .fontColor(TEXT_DARK_72)
           .width('100%')
           .padding({ left: 16, right: 16, top: 0, bottom: 10 });
 
         Row() {
           Blank();
           Text('取消')
-            .fontSize(13)
+            .fontSize(PANEL_BODY_SIZE)
+            .fontWeight(PANEL_BODY_WEIGHT)
             .fontColor(SEL_COLOR)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick((): void => {
               this.finishConfirm();
             });
           Text('清除')
-            .fontSize(13)
-            .fontWeight(FontWeight.Bold)
+            .fontSize(PANEL_BODY_SIZE)
+            .fontWeight(PANEL_BODY_WEIGHT)
             .fontColor(SEL_COLOR)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick((): void => {
@@ -447,8 +474,8 @@ export struct NativePlayerPanel {
               this.finishConfirm();
             });
           Text('更新')
-            .fontSize(13)
-            .fontWeight(FontWeight.Bold)
+            .fontSize(PANEL_BODY_SIZE)
+            .fontWeight(PANEL_BODY_WEIGHT)
             .fontColor(SEL_COLOR)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick((): void => {
@@ -465,7 +492,7 @@ export struct NativePlayerPanel {
       }
     }
     .width(360)
-    // 白底磨砂（与侧栏同款）：实时 backdrop blur + 白色竖向渐变 + 暗描边。
+    // 暖白磨砂（与侧栏同款）：实时 backdrop blur + 暖白竖向渐变 + 暗描边。
     .backgroundEffect({ radius: GLASS_BLUR_RADIUS, saturation: GLASS_SATURATION })
     .linearGradient({
       angle: 180,
@@ -492,12 +519,14 @@ export struct NativePlayerPanel {
 
       Column() {
         Text(title)
-          .fontSize(14)
+          .fontSize(PANEL_BODY_SIZE)
+          .fontWeight(PANEL_BODY_WEIGHT)
           .fontColor(TEXT_DARK)
           .width('100%');
         Text(hint)
-          .fontSize(11)
-          .fontColor(TEXT_DARK_54)
+          .fontSize(PANEL_CAPTION_SIZE)
+          .fontWeight(PANEL_CAPTION_WEIGHT)
+          .fontColor(TEXT_DARK_72)
           .width('100%');
       }
       .layoutWeight(1)
@@ -507,7 +536,7 @@ export struct NativePlayerPanel {
       Text(String.fromCodePoint(0xE15F))
         .fontFamily(NativePlayerIcons.FONT_FAMILY)
         .fontSize(18)
-        .fontColor('#62FFFFFF')
+        .fontColor(TEXT_DARK_72)
         .width(18);
     }
     .width('100%')
@@ -644,8 +673,8 @@ export struct NativePlayerPanel {
           Column() {
             Row() {
               Text(opt.label)
-                .fontSize(14)
-                .fontWeight(FontWeight.Bold)
+                .fontSize(PANEL_BODY_SIZE)
+                .fontWeight(PANEL_TITLE_WEIGHT)
                 .fontColor(TEXT_DARK)
                 .layoutWeight(1)
                 .maxLines(1)
@@ -661,8 +690,9 @@ export struct NativePlayerPanel {
 
             if (opt.description.length > 0) {
               Text(opt.description)
-                .fontSize(11)
-                .fontColor(TEXT_DARK_54)
+                .fontSize(PANEL_CAPTION_SIZE)
+                .fontWeight(PANEL_CAPTION_WEIGHT)
+                .fontColor(TEXT_DARK_72)
                 .maxLines(2)
                 .margin({ top: 2 });
             }
@@ -693,14 +723,16 @@ export struct NativePlayerPanel {
             Column() {
               if (idx === 0 || idx === 3) {
                 Text(idx === 0 ? '字幕' : '弹幕')
-                  .fontSize(11)
-                  .fontColor('#62FFFFFF')
+                  .fontSize(PANEL_CAPTION_SIZE)
+                  .fontWeight(PANEL_CAPTION_WEIGHT)
+                  .fontColor(TEXT_DARK)
                   .width('100%')
                   .padding({ left: 16, right: 16, top: 10, bottom: 4 });
               }
               Row() {
                 Text(spec.label)
-                  .fontSize(12)
+                  .fontSize(PANEL_BODY_SIZE)
+                  .fontWeight(PANEL_BODY_WEIGHT)
                   .fontColor(TEXT_DARK)
                   .width(44);
                 // 玻璃滑杆（完全复刻 Flutter glassSliderTheme，见 GlassSlider.ets）。
@@ -709,7 +741,7 @@ export struct NativePlayerPanel {
                   min: spec.min,
                   max: spec.max,
                   step: spec.step,
-                  // 面板内滑杆走浅色轨道（白底磨砂弹层，深色轨道看不清）。
+                  // 面板内滑杆走浅色轨道（暖白磨砂弹层，深色轨道看不清）。
                   light: true,
                   onChange: (v: number): void => {
                     this.host.adjustDisplay(spec.key, v);
@@ -770,9 +802,9 @@ export struct NativePlayerPanel {
   @Builder
   DisplayResetRow(kind: string) {
     Text('恢复默认')
-      .fontSize(13)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(this.displayAtDefaults(kind) ? SEL_COLOR : TEXT_DARK_54)
+      .fontSize(PANEL_BODY_SIZE)
+      .fontWeight(PANEL_BODY_WEIGHT)
+      .fontColor(this.displayAtDefaults(kind) ? SEL_COLOR : TEXT_DARK)
       .width('100%')
       .textAlign(TextAlign.Start)
       .padding({ left: 16, right: 16, top: 8, bottom: 12 })
@@ -809,8 +841,9 @@ export struct NativePlayerPanel {
   DecodeContent() {
     Column() {
       Text('当前：' + decodeModeLabel(this.state().decodeMode))
-        .fontSize(12)
-        .fontColor(SEL_COLOR)
+        .fontSize(PANEL_CAPTION_SIZE)
+        .fontWeight(PANEL_CAPTION_WEIGHT)
+        .fontColor(TEXT_DARK)
         .width('100%')
         .padding({ left: 16, right: 16, top: 0, bottom: 6 });
       List() {
@@ -819,11 +852,14 @@ export struct NativePlayerPanel {
             Row() {
               Text(this.state().decodeMode === mode ? '●' : '○')
                 .fontSize(16)
-                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : TEXT_DARK_54)
+                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : TEXT_DARK_72)
                 .width(20);
+              // 586 统一排版：档位名一律近黑 + w500，选中只靠单选圈与
+              // 行底强调色表达（旧实现选中行改强调色，同面板两种字色）。
               Text(decodeModeLabel(mode))
-                .fontSize(13)
-                .fontColor(this.state().decodeMode === mode ? SEL_COLOR : TEXT_DARK)
+                .fontSize(PANEL_BODY_SIZE)
+                .fontWeight(PANEL_BODY_WEIGHT)
+                .fontColor(TEXT_DARK)
                 .layoutWeight(1)
                 .margin({ left: 8 });
             }
@@ -889,12 +925,12 @@ export struct NativePlayerPanel {
               radius: 10,
             });
 
+            // 586 统一排版：正文一律近黑 + w500（选中只靠封面描边与
+            // 对勾表达；旧实现未选中行用次色、选中行 Medium，同面板两种灰度）。
             Text(e.cardTitle())
-              .fontSize(13)
-              .fontColor(e.index === this.state().currentEpisodeIndex ? TEXT_DARK : TEXT_DARK_54)
-              .fontWeight(e.index === this.state().currentEpisodeIndex
-                ? FontWeight.Medium
-                : FontWeight.Normal)
+              .fontSize(PANEL_BODY_SIZE)
+              .fontColor(TEXT_DARK)
+              .fontWeight(PANEL_BODY_WEIGHT)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
@@ -946,15 +982,18 @@ export struct NativePlayerPanel {
   }
 
   /**
-   * 选项行内容（照抄 Flutter SideOptionRow）：文字左对齐、选中主色加粗、
-   * 右侧对勾占 18px 槽位（未选中也占位，保证各行对齐）。
+   * 选项行内容（对齐 Flutter SideOptionRow）：文字左对齐、右侧对勾占
+   * 18px 槽位（未选中也占位，保证各行对齐）。
+   *
+   * 586 统一排版：正文一律近黑 + w500，选中态只靠行底强调色与对勾表达
+   * ——旧实现选中行改强调色 + Medium，同一面板出现两种字色/字重。
    */
   @Builder
   OptionLabel(label: string, selected: boolean) {
     Text(label)
-      .fontSize(14)
-      .fontWeight(selected ? FontWeight.Medium : FontWeight.Normal)
-      .fontColor(selected ? SEL_COLOR : TEXT_DARK)
+      .fontSize(PANEL_BODY_SIZE)
+      .fontWeight(PANEL_BODY_WEIGHT)
+      .fontColor(TEXT_DARK)
       .layoutWeight(1)
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis });

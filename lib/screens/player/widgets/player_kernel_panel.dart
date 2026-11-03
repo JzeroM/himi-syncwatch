@@ -52,7 +52,9 @@ class PlayerKernelPanel extends StatelessWidget {
           child: Text(
             '切换仅影响当前播放，不改变默认引擎；下一集沿用当前内核',
             style: TextStyle(
-                color: GlassConfig.playerPanelTextSecondary, fontSize: 12),
+                color: GlassConfig.playerPanelTextSecondary,
+                fontSize: GlassConfig.playerPanelCaptionSize,
+                fontWeight: FontWeight.w500),
           ),
         ),
       ],
