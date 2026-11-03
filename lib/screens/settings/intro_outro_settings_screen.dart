@@ -61,7 +61,8 @@ class IntroOutroSettingsScreen extends ConsumerWidget {
               SizedBox(height: 8),
               Text(
                 '手动设置片头片尾：手机长按视频左侧 1/3 设置片头结束点，'
-                '长按右侧 1/3 设置片尾开始点；TV 长按进度条打开标记面板来设置。',
+                '长按右侧 1/3 设置片尾开始点；TV 长按进度条打开标记面板来设置。\n'
+                '范围限制：片头结束点不能超过总时长的 10%，片尾开始点不能低于总时长的 70%。',
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.6,

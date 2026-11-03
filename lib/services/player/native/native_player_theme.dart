@@ -163,8 +163,25 @@ abstract final class NativePlayerTheme {
   static const double controlGap = 20;
 
   /// 角标：9px 字、`#6366F1` 圆底。
+  ///
+  /// 尺寸分档（588 三端统一，对齐 MDK 观感）：1~2 位 15dp、3 位 19dp、
+  /// 4 位及以上 24dp。旧实现三端各算一套（Flutter 内容自适应 ≈14、安卓
+  /// `max(14, 文本宽+6)` "26"→19、鸿蒙按位数 14/18）→ 同款角标三端不一样大。
   static const double badgeFontSize = 9;
-  static const double badgeMinSize = 14;
+  static const double badgeMinSize = 15;
+  static const double badgeWideSize = 19;
+  static const double badgeXlSize = 24;
+
+  /// 角标正圆边长（dp）：按数量文本长度分档。
+  ///
+  /// 与安卓 `NativePlayerScreenView.badgeDiameterDp(textLength)`、鸿蒙
+  /// `HimiNativePlayerView.badgeSide(badge)` 逐值一致（测试校验三端同值）。
+  static double badgeSizeFor(String text) {
+    final len = text.length;
+    if (len >= 4) return badgeXlSize;
+    if (len == 3) return badgeWideSize;
+    return badgeMinSize;
+  }
 
   /// 锁钮 22。
   static const double lockIconSize = 22;

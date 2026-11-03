@@ -117,9 +117,17 @@ internal object NPTheme {
     const val CONTROL_ICON = 24
     const val CONTROL_GAP = 20
 
-    /** 角标 9sp，圆形，最小 14dp。 */
+    /**
+     * 角标 9sp，圆形，按数量文本长度分档（588 三端统一）。
+     *
+     * 1~2 位 [BADGE_MIN] 15dp、3 位 [BADGE_WIDE] 19dp、4 位起 [BADGE_XL]
+     * 24dp。旧实现 `max(14, 文本宽+6)` 与 Flutter/鸿蒙各算一套 → 同款角标
+     * 三端大小不一（真机对比「角标样式和 MDK 不一样」）。
+     */
     const val BADGE_FONT = 9f
-    const val BADGE_MIN = 14
+    const val BADGE_MIN = 15
+    const val BADGE_WIDE = 19
+    const val BADGE_XL = 24
 
     /** 锁钮 22。 */
     const val LOCK_ICON = 22

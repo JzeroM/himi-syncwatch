@@ -695,6 +695,13 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       _parseVideoParams(state.videoParams);
       _videoParamsSeen = true;
     }
+    // 画面已出的第二判据（588）：`video-params` 在鸿蒙上常读不到——它是
+    // NODE 类型属性，`getPropertyString` 返回空串，而 `width`/`height` 可读。
+    // 只认 video-params 会让 `_videoParamsSeen` 永远 false：
+    // ① 播放中一直转圈（showLoading 恒真）；
+    // ② 3 秒后被 `_maybeFallbackToSoftwareDecode` 误判「有声无画」→ 强制
+    //    切软解重载（真机「播一会儿闪一下重新加载」）。
+    if (hasVideoFrame(state)) _videoParamsSeen = true;
     if (state.trackList != null) {
       _parseTracks(state.trackList);
     }
@@ -709,7 +716,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
     if (state.pausedForCache) {
       _setBuffering(true);
-    } else if (state.bufferedMs > 0) {
+    } else if (state.bufferedMs > 0 || state.positionMs > 0) {
+      // 588：位置已推进也是「在出帧」的铁证。鸿蒙 `demuxer-cache-time`
+      // 常读不到（bufferedMs 恒 0），只看它会让缓冲位卡住 → 播放中一直
+      // 转圈。
       _setBuffering(false);
     }
     if (_prepared && hasProgress) {
@@ -733,7 +743,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   void _maybeFallbackToSoftwareDecode(MpvPollResult state) {
     if (_disposed || !_prepared) return;
-    if (state.videoParams != null || state.idleActive) {
+    if (state.videoParams != null || hasVideoFrame(state) || state.idleActive) {
       _videoWaitSince = null;
       return;
     }
@@ -1332,6 +1342,21 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   final ValueNotifier<bool> firstFramePending = ValueNotifier<bool>(false);
   bool _videoParamsSeen = false;
   bool _trackHasVideo = false;
+
+  /// 是否已拿到可用画面尺寸（= 首帧已出，渲染层已配置好视频轨）。
+  ///
+  /// 588：作为「画面已出」的**独立**判据，与 `video-params` 字符串并列。
+  /// 鸿蒙 `video-params`（NODE 属性）经 `getPropertyString` 常读不到，但
+  /// `width`/`height` 可读——只靠 video-params 会永远判「首帧未出」。
+  @visibleForTesting
+  static bool hasVideoFrame(MpvPollResult state) =>
+      (state.videoWidth ?? 0) > 0 && (state.videoHeight ?? 0) > 0;
+
+  /// 画面是否已出（供跳过片头/片尾提示门禁）。
+  ///
+  /// 「首帧未出」时不弹跳过提示：此时进度可能已推进（音频先出），
+  /// 但用户看到的还是黑屏/转圈，弹「跳过片头」属于时机不对。
+  bool get firstFrameReady => !firstFramePending.value;
 
   void _updateFirstFramePending(MpvPollResult state) {
     if (state.trackList != null) {

@@ -149,4 +149,10 @@ export class NativePlayerIcons {
   /** share */
   static readonly ICON_SHARE: number = 0xE593;
 
+  /** radio_button_checked（解码模式面板选中项） */
+  static readonly ICON_RADIO_BUTTON_CHECKED: number = 0xE503;
+
+  /** radio_button_unchecked（解码模式面板未选中项） */
+  static readonly ICON_RADIO_BUTTON_UNCHECKED: number = 0xE504;
+
 }

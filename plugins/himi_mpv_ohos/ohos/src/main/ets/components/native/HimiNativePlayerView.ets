@@ -21,7 +21,7 @@ import {
   NativePlayerPanelType,
   nativeDiagSummary,
 } from './HimiMpvNativeHost';
-import { NativePlayerPanel } from './NativePlayerPanel';
+import { NativePlayerPanel, segmentMarkReject } from './NativePlayerPanel';
 import { NativePlayerIcons } from './NativePlayerIcons';
 import { DanmakuLayer } from './DanmakuLayer';
 import { GlassSlider } from './GlassSlider';
@@ -749,6 +749,12 @@ export struct HimiNativePlayerView {
     }
     if (this.durationMs > 0 && pos >= this.durationMs) {
       this.showGestureHint('当前位置已到结尾，无法标记', 1500);
+      return;
+    }
+    // 范围约束（588）：片头 ≤10%、片尾 ≥70%（与 Dart SegmentMarkRules 一致）。
+    const reject = segmentMarkReject(kind, pos, this.durationMs);
+    if (reject !== null) {
+      this.showGestureHint(reject, 1500);
       return;
     }
     if (existing !== null) {
@@ -1819,9 +1825,20 @@ export struct HimiNativePlayerView {
     }
   }
 
-  /** 角标正圆边长（dp）：1~2 位 14，3 位起 18（文本加 padding 后仍内切）。 */
+  /**
+   * 角标正圆边长（vp，三端统一）：1~2 位 15、3 位 19、4 位起 24。
+   *
+   * 与 Flutter `NativePlayerTheme.badgeSizeFor` / 安卓 `badgeDiameterDp`
+   * 逐值一致（旧实现按位数 14/18，与另两端大小不一）。
+   */
   private badgeSide(badge: string): number {
-    return badge.length >= 3 ? 18 : 14;
+    if (badge.length >= 4) {
+      return 24;
+    }
+    if (badge.length === 3) {
+      return 19;
+    }
+    return 15;
   }
 
   /**

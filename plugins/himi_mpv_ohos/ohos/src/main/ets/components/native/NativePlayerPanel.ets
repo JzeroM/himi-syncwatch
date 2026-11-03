@@ -85,6 +85,28 @@ function decodeModeDesc(mode: string): string {
   return '';
 }
 
+/**
+ * 片头/片尾标记范围校验（588）：片头结束点 ≤ 总时长 10%、片尾开始点
+ * ≥ 总时长 70%。返回拒绝文案，null = 通过；时长未知（<=0）不校验。
+ *
+ * 与 Flutter `SegmentMarkRules.rejectReason` / 安卓 `segmentMarkReject`
+ * 逐字逐值一致（整数运算，避免浮点边界差 1ms）。Dart 仍是权威校验点，
+ * 这里前置拦截只为避免「已设置…」乐观提示后被 Dart 拒绝。
+ */
+export function segmentMarkReject(kind: string, positionMs: number, durationMs: number): string | null {
+  if (durationMs <= 0) {
+    return null;
+  }
+  if (kind === 'intro') {
+    return positionMs > Math.floor(durationMs * 10 / 100)
+      ? '片头结束点不能超过总时长的 10%'
+      : null;
+  }
+  return positionMs < Math.ceil(durationMs * 70 / 100)
+    ? '片尾开始点不能低于总时长的 70%'
+    : null;
+}
+
 /** 显示调节滑杆行规格（标签 / 最小 / 最大 / 步长）。 */
 class DisplaySliderSpec {
   key: string = '';
@@ -503,7 +525,20 @@ export struct NativePlayerPanel {
             .fontColor(SEL_COLOR)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick((): void => {
-              this.host.optimisticSetSegmentMark(this.confirmKind);
+              // 二次确认「更新」也走范围校验（588）：不关卡片，提示原因。
+              const kind: string = this.confirmKind;
+              const reject = segmentMarkReject(
+                kind, this.host.positionNowMs(), this.state().durationMs);
+              if (reject !== null) {
+                // 子窗口内必须走当前 UIContext 的 PromptAction，
+                // 否则 toast 会落到主窗口（原生播放 UI 在子窗口）。
+                this.getUIContext().getPromptAction().showToast({
+                  message: reject,
+                  duration: 1500,
+                });
+                return;
+              }
+              this.host.optimisticSetSegmentMark(kind);
               this.finishConfirm();
             });
         }
@@ -880,6 +915,9 @@ export struct NativePlayerPanel {
    * 旧实现差异：档位名 auto 写作「自动」（Flutter 是「智能」）、**没有
    * 说明文字**、且把当前档位另起一行「当前：xxx」——切 MDK↔MPV 时面板
    * 观感突变。现与 Flutter / 安卓三端逐字一致。
+   *
+   * 588：单选圈由「●/○」文本改为图标字体（`radio_button_checked/
+   * unchecked`），行底 0.5vp 分隔线含末行（List.divider 画不到末行）。
    */
   @Builder
   DecodeContent() {
@@ -910,10 +948,19 @@ export struct NativePlayerPanel {
         ForEach(DECODE_MODES, (mode: string) => {
           ListItem() {
             Row() {
-              Text(this.state().decodeMode === mode ? '●' : '○')
+              // 单选圈用图标字体（0xE503/0xE504），不再用「●/○」文本：
+              // 文本字形随系统字体变化、与 Flutter/安卓的 Material 单选圈
+              // 观感不同（真机对比「复选框要和 MDK 一样」）。
+              Text(String.fromCodePoint(this.state().decodeMode === mode
+                ? NativePlayerIcons.ICON_RADIO_BUTTON_CHECKED
+                : NativePlayerIcons.ICON_RADIO_BUTTON_UNCHECKED))
+                .fontFamily(NativePlayerIcons.FONT_FAMILY)
                 .fontSize(16)
                 .fontColor(this.state().decodeMode === mode ? SEL_COLOR : PANEL_TEXT_DIM)
-                .width(20);
+                // 只锁宽（16vp，与 Flutter Icon(size:16) 同）：锁高会把
+                // 16sp 字形的行盒（≈22vp）裁掉上下边（单选圈变缺口）。
+                .width(16)
+                .textAlign(TextAlign.Center);
               Column() {
                 Text(decodeModeLabel(mode))
                   .fontSize(PANEL_BODY_SIZE)
@@ -934,6 +981,9 @@ export struct NativePlayerPanel {
             .padding({ left: 12, right: 12, top: 10, bottom: 10 })
             .alignItems(VerticalAlign.Center)
             .backgroundColor(this.state().decodeMode === mode ? SEL_BG : Color.Transparent)
+            // 每行底边通栏 0.5vp（含末行，与 Flutter Border bottom 一致；
+            // List.divider 只在行之间画、末行没有）。
+            .border({ width: { bottom: 0.5 }, color: PANEL_DIVIDER })
             .onClick((): void => {
               this.host.optimisticSetDecodeMode(mode);
               this.close();
@@ -942,8 +992,7 @@ export struct NativePlayerPanel {
         }, (mode: string): string => mode);
       }
       .width('100%')
-      .layoutWeight(1)
-      .divider({ strokeWidth: 0.5, color: PANEL_DIVIDER });
+      .layoutWeight(1);
     }
     .width('100%')
     .layoutWeight(1)

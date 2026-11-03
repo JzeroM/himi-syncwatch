@@ -64,6 +64,12 @@ abstract final class NativePlayerIcons {
   /// share
   static const int share = 0xE593;
 
+  /// radio_button_checked（解码模式面板选中项）。
+  static const int radioButtonChecked = 0xE503;
+
+  /// radio_button_unchecked（解码模式面板未选中项）。
+  static const int radioButtonUnchecked = 0xE504;
+
   /// 名称 → 码点（与 `tool/native_icons.json` 的 `icons` 表一一对应）。
   static const Map<String, int> all = <String, int>{
     'arrowBack': arrowBack,
@@ -111,5 +117,7 @@ abstract final class NativePlayerIcons {
     'openInFull': openInFull,
     'closeFullscreen': closeFullscreen,
     'share': share,
+    'radioButtonChecked': radioButtonChecked,
+    'radioButtonUnchecked': radioButtonUnchecked,
   };
 }

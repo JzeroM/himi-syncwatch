@@ -75,6 +75,7 @@ import 'package:himi_syncwatch/services/danmaku/danmaku_timeline.dart';
 import 'package:himi_syncwatch/services/danmaku/dandanplay_client.dart';
 import 'package:himi_syncwatch/utils/playback_gesture.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
+import 'package:himi_syncwatch/utils/segment_mark_rules.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/room/room_share_dialog.dart';
@@ -127,6 +128,7 @@ import 'package:himi_syncwatch/services/mdk_log_parser.dart';
 import 'package:himi_syncwatch/services/playback_diagnostics.dart';
 import 'package:himi_syncwatch/services/player/native/native_player_command.dart';
 import 'package:himi_syncwatch/services/player/native/native_player_state.dart';
+import 'package:himi_syncwatch/services/player/native/native_player_theme.dart';
 import 'package:himi_syncwatch/services/render_storm_detector.dart';
 import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
 import 'package:himi_syncwatch/services/switch_volume_guard.dart';
@@ -606,6 +608,16 @@ class PlayerScreen extends ConsumerStatefulWidget {
     required bool switchingMedia,
   }) =>
       !suppressed && !switchingMedia;
+
+  /// 已显示的跳过提示是否仍然有效：当前位置必须还在该片段内。
+  ///
+  /// 588：旧实现只在「命中新片段」时设置提示，**从不校验现有提示是否
+  /// 还有效**——自然播过片尾、seek 离开片段、切集后旧胶囊仍然挂着，要等
+  /// 8 秒计时器才消失（真机回归「已经跳下一集还显示跳过片尾」）。
+  /// 现在每 tick 校验一次，离开片段立刻收起。
+  @visibleForTesting
+  static bool shouldKeepSkipPrompt(MediaSegment? segment, int positionMs) =>
+      segment != null && segment.contains(positionMs);
 
   /// 是否自动执行片头/片尾跳过（总开关与自动开关同时开启且可控制播放）。
   @visibleForTesting
@@ -5986,12 +5998,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 画面是否已出（首帧已渲染）。
+  ///
+  /// 只对 mpv 适配器有精确判据（[MpvPlayerAdapter.firstFrameReady]）；
+  /// 其他内核/尚未就绪时按「已出」放行，避免门禁误伤。
+  bool get _videoFrameReady {
+    final player = _player;
+    return player is MpvPlayerAdapter ? player.firstFrameReady : true;
+  }
+
   void _evaluateSkipPrompt(int positionMs) {
     if (!PlayerScreen.canEvaluateSkipPrompt(
       suppressed: _skipPromptSuppressed,
       switchingMedia: _isSwitchingMedia,
     )) {
       return;
+    }
+    // 588：已显示的提示每 tick 校验是否仍有效（位置仍在片段内）。
+    if (_skipPromptSegment != null &&
+        !PlayerScreen.shouldKeepSkipPrompt(_skipPromptSegment, positionMs)) {
+      _dismissSkipPrompt();
     }
     final playing = _player.state == AdapterPlaybackState.playing;
     if (!playing) {
@@ -6005,6 +6031,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 但位置仍为 0（首帧未出/解码未起）时不放行提示——计时照常（3 秒
     // gate 从真正起播算），等位置回读 >0（视频加载出来）才显示。
     if (positionMs <= 0) return;
+    // 588：首帧未出（有视频轨但解码器还在起热）时不弹提示。此时进度可能
+    // 已被音频推进，但用户看到的仍是黑屏/转圈，弹「跳过片头」时机不对。
+    if (!_videoFrameReady) return;
     if (!_segmentFeatureEnabled || _skipSegments.isEmpty) return;
     final insideIntro = _skipSegments.any(
       (segment) =>
@@ -6251,6 +6280,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     if (durationMs > 0 && markPositionMs >= durationMs) {
       showAppToast(context, '当前位置已到结尾，无法标记');
+      return;
+    }
+    // 范围约束（588，全平台全播放器）：片头 ≤10%、片尾 ≥70%。这是权威
+    // 校验——原生长按、原生二次确认「更新」、TV 标记面板最终都走本方法。
+    final rangeReject = SegmentMarkRules.rejectReason(
+      isIntro: type == MediaSegmentType.intro,
+      positionMs: markPositionMs,
+      durationMs: durationMs,
+    );
+    if (rangeReject != null) {
+      showAppToast(context, rangeReject);
       return;
     }
 
@@ -7883,6 +7923,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       child: FocusTraversalGroup(
                         child: SegmentMarkPanel(
                           positionMs: _position.inMilliseconds,
+                          durationMs: _duration.inMilliseconds > 0
+                              ? _duration.inMilliseconds
+                              : _segmentDurationMs,
                           introEndMs: _segmentIntroEndMs,
                           creditsStartMs: _segmentCreditsStartMs,
                           firstFocusNode: _segmentMarkFirstFocusNode,
@@ -9745,14 +9788,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 right: -6,
                 top: -4,
                 child: Container(
+                  // 三端统一深色磨砂以外的唯一视觉不变量：角标正圆按数量
+                  // 分档（1~2 位 15、3 位 19、4 位起 24），见
+                  // [NativePlayerTheme.badgeSizeFor]。
+                  constraints: BoxConstraints(
+                    minWidth: NativePlayerTheme.badgeSizeFor(badge),
+                    minHeight: NativePlayerTheme.badgeSizeFor(badge),
+                  ),
+                  alignment: Alignment.center,
                   padding: const EdgeInsets.all(2),
                   decoration: const BoxDecoration(
-                    color: Color(0xFF6366F1),
+                    color: NativePlayerTheme.accent,
                     shape: BoxShape.circle,
                   ),
                   child: Text(
                     badge,
-                    style: const TextStyle(color: Colors.white, fontSize: 9),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: NativePlayerTheme.badgeFontSize,
+                      height: 1.0,
+                    ),
                   ),
                 ),
               ),

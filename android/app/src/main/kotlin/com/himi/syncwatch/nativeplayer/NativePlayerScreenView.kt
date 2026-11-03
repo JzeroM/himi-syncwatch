@@ -2,7 +2,11 @@ package com.himi.syncwatch.nativeplayer
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -461,6 +465,23 @@ class NativePlayerScreenView(
      * 结尾）→ 无旧标记直接标记并提示「已设置…」；有旧标记直开二次确认卡
      * （更新 / 清除 / 取消）。
      */
+    /**
+     * 片头/片尾标记范围校验（588）：片头结束点 ≤ 总时长 10%、片尾开始点
+     * ≥ 总时长 70%。返回拒绝文案，null = 通过；时长未知（<=0）不校验。
+     *
+     * 与 Flutter `SegmentMarkRules.rejectReason` / 鸿蒙 `segmentMarkReject`
+     * 逐字逐值一致。Dart 仍是权威校验点，这里前置拦截只为避免原生先弹
+     * 「已设置…」乐观提示后被 Dart 拒绝（观感前后矛盾）。
+     */
+    internal fun segmentMarkReject(kind: String, positionMs: Long, durationMs: Long): String? {
+        if (durationMs <= 0L) return null
+        return if (kind == "intro") {
+            if (positionMs > durationMs * 10 / 100) "片头结束点不能超过总时长的 10%" else null
+        } else {
+            if (positionMs < (durationMs * 70 + 99) / 100) "片尾开始点不能低于总时长的 70%" else null
+        }
+    }
+
     private fun markSegmentFromGesture(kind: String) {
         val pos = lastState.positionAt(System.currentTimeMillis(), lastStateAtMs)
         val existing = if (kind == "intro") {
@@ -478,6 +499,10 @@ class NativePlayerScreenView(
         }
         if (lastState.durationMs > 0 && pos >= lastState.durationMs) {
             showHintFor("当前位置已到结尾，无法标记", 1500, null)
+            return
+        }
+        segmentMarkReject(kind, pos, lastState.durationMs.toLong())?.let {
+            showHintFor(it, 1500, null)
             return
         }
         if (existing != null) {
@@ -597,12 +622,15 @@ class NativePlayerScreenView(
             override fun onDoubleTap(e: MotionEvent): Boolean {
                 if (lastState.locked || !lastState.canControl) return false
                 listener?.onTogglePlay()
-                // 指示器显示切换后的动作图标（与 Flutter 一致，500ms 消失）。
+                // 指示器显示切换**后**的可执行动作图标（与 Flutter
+                // `playPauseHintIcon` 语义一致）：播放中→暂停、暂停→播放。
+                // 588 修正：旧实现读切换**前**的 `lastState.paused`（Dart
+                // 回推约 200ms 才到），图标正好相反。
                 showGestureIcon(
                     if (lastState.paused) {
-                        NativePlayerIcons.ICON_PLAY_CIRCLE
-                    } else {
                         NativePlayerIcons.ICON_PAUSE_CIRCLE
+                    } else {
+                        NativePlayerIcons.ICON_PLAY_CIRCLE
                     },
                 )
                 return true
@@ -1518,7 +1546,7 @@ class NativePlayerScreenView(
             setPadding(dp(2), dp(2), dp(2), dp(2))
             background = BadgeCircleDrawable(NPTheme.ACCENT)
         }
-        host.addView(badge, badgeLayoutParams(badge, ""))
+        host.addView(badge, badgeLayoutParams(""))
         // 角标数量在 applyState 中刷新
         badgeTags[badge] = badgeProvider
         return host
@@ -1532,33 +1560,27 @@ class NativePlayerScreenView(
      * 换算到 32dp 命中框：右缘 34（`marginEnd = -2`）、上缘 0
      * （`topMargin = 0`）——与 Flutter 完全同构。
      *
-     * **尺寸随内容**（旧实现固定 14/18dp 方块位，三位数不跳变但数字
-     * 被裁/压在图标上，观感「角标颜色不对」）：直径 = max(14dp,
-     * 文本宽 + 2×2dp 内边距 + 2dp 余量)，正圆底按 min 边取半径。
+     * 尺寸按数量文本长度分档（与 Flutter `NativePlayerTheme.badgeSizeFor`、
+     * 鸿蒙 `badgeSide` 逐值一致）。
      */
-    private fun badgeLayoutParams(badge: TextView, text: String): LayoutParams {
-        val sidePx = badgeDiameterPx(badge, text)
+    private fun badgeLayoutParams(text: String): LayoutParams {
+        val sidePx = dp(badgeDiameterDp(text.length))
         return LayoutParams(sidePx, sidePx, Gravity.TOP or Gravity.END).apply {
             topMargin = 0
             marginEnd = -dp(2)
         }
     }
 
-    /** 角标直径（像素）：内容自适应，下限 [NPTheme.BADGE_MIN]。 */
-    private fun badgeDiameterPx(badge: TextView, text: String): Int {
-        val paint = badge.paint
-        val textW = if (text.isEmpty()) 0f else paint.measureText(text)
-        return badgeDiameterDp(textW, resources.displayMetrics.density)
-    }
-
     /**
-     * 角标直径（纯函数，可单测）：文本像素宽 + 4dp 内边距 + 2dp 余量，
-     * 下限 14dp。数字位数越多圆越大（与 Flutter 内容自适应一致）。
+     * 角标正圆边长（dp，纯函数可单测）：1~2 位 15、3 位 19、4 位起 24。
+     *
+     * 与 Flutter `NativePlayerTheme.badgeSizeFor(String)` / 鸿蒙
+     * `badgeSide(badge)` 同值；[textLength] 是数量文本的字符数。
      */
-    internal fun badgeDiameterDp(textWidthPx: Float, density: Float): Int {
-        val contentDp = if (density <= 0f) 0f else textWidthPx / density
-        val needed = contentDp + 6f
-        return Math.max(NPTheme.BADGE_MIN.toFloat(), needed).toInt()
+    internal fun badgeDiameterDp(textLength: Int): Int = when {
+        textLength >= 4 -> NPTheme.BADGE_XL
+        textLength == 3 -> NPTheme.BADGE_WIDE
+        else -> NPTheme.BADGE_MIN
     }
 
     /** 角标刷新表（TextView → 数量提供者）。 */
@@ -1615,6 +1637,9 @@ class NativePlayerScreenView(
     fun closePanel() {
         if (activePanel == null) return
         activePanel = null
+        // 关面板即取消选集封面队列里还没跑的任务（正在跑的 4 个在回贴前
+        // 退出），避免关面板后仍在下载几十张图（588 封面提速的配套）。
+        NativeLogoLoader.cancelPending()
         listener?.onClosePanel()
         renderOverlays()
     }
@@ -1878,8 +1903,19 @@ class NativePlayerScreenView(
         // 卡片宽 = 面板内容宽（面板 padding h12 对齐 Flutter ListView h12）。
         val cardW = panelWidthDp() - dp(24)
         val coverH = cardW * 9 / 16
+        // 按卡片目标宽解码（588）：旧实现固定 960px 上限，900px 宽的封面
+        // 也被整图解码——解码耗时与内存都翻倍，20 集排队就更慢。
+        val targetPx = cardW.coerceAtLeast(1)
+        val currentIdx = lastState.currentEpisodeIndex
         lastState.episodes.forEach { ep ->
-            val selected = ep.index == lastState.currentEpisodeIndex
+            val selected = ep.index == currentIdx
+            // 优先级：当前集 0 → 邻集 1 → 其余 2（当前集先出图）。
+            val priority = when {
+                ep.index == currentIdx -> NativeLogoLoader.PRIORITY_CURRENT
+                (ep.index - currentIdx).let { it == 1 || it == -1 } ->
+                    NativeLogoLoader.PRIORITY_NEIGHBOR
+                else -> NativeLogoLoader.PRIORITY_REST
+            }
             val card = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), 0, dp(12), dp(10))
@@ -1897,7 +1933,7 @@ class NativePlayerScreenView(
                     cornerRadius = dp(8).toFloat()
                     setColor(0xFF1A1D23.toInt())
                 }
-                NativeLogoLoader.load(this, ep.poster.ifBlank { null })
+                NativeLogoLoader.load(this, ep.poster.ifBlank { null }, targetPx, priority)
             }
             val coverWrap = FrameLayout(context).apply {
                 background = GradientDrawable().apply {
@@ -2253,14 +2289,13 @@ class NativePlayerScreenView(
         decodePopover.addView(titleRow)
         decodePopover.addView(dividerLine())
 
-        DECODE_MODES.forEachIndexed { index, mode ->
+        DECODE_MODES.forEach { mode ->
             decodePopover.addView(
                 decodeOptionRow(mode, selected = lastState.decodeMode == mode) {
                     listener?.onSetDecodeMode(mode)
                     closePanel()
                 },
             )
-            if (index < DECODE_MODES.lastIndex) decodePopover.addView(dividerLine(0.5f))
         }
     }
 
@@ -2275,9 +2310,10 @@ class NativePlayerScreenView(
         }
 
     /**
-     * 解码选项行（对齐 Flutter DecodeModePanel 的行）：
+     * 解码选项行（逐项对齐 Flutter DecodeModePanel 的行）：
      * radio 图标 16 + 间距 8 + (档位名 14 w500 / 说明 12 w500 白 70%)。
-     * 选中行铺 accent@20% 底（586 统一排版：字色字重不随选中变化）。
+     * 选中行铺 accent@20% 底（统一排版：字色字重不随选中变化）；
+     * 每行底边通栏 0.5dp 分隔线（**含末行**，与 Flutter Border bottom 一致）。
      */
     private fun decodeOptionRow(mode: String, selected: Boolean, onTap: () -> Unit): LinearLayout =
         LinearLayout(context).apply {
@@ -2287,14 +2323,17 @@ class NativePlayerScreenView(
             isClickable = true
             setOnClickListener { onTap() }
             if (selected) setBackgroundColor(NPTheme.SEL_BG)
+            // 每行底边通栏分隔线：用行容器的前景 drawable 画，不额外插 View
+            //（插 View 会让行高多 1px，与 Flutter 的 border 内描边不同）。
+            foreground = rowBottomDivider()
             addView(
                 iconView(
-                    if (selected) NativePlayerIcons.ICON_RADIO_CHECKED
-                    else NativePlayerIcons.ICON_RADIO_UNCHECKED,
-                    16f,
+                    if (selected) NativePlayerIcons.ICON_RADIO_BUTTON_CHECKED
+                    else NativePlayerIcons.ICON_RADIO_BUTTON_UNCHECKED,
+                    NPTheme.DECODE_RADIO.toFloat(),
                     if (selected) NPTheme.ACCENT else NPTheme.PANEL_TEXT_DIM,
                 ),
-                llp(dp(16), dp(16)),
+                llp(dp(NPTheme.DECODE_RADIO), dp(NPTheme.DECODE_RADIO)),
             )
             val col = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -2315,8 +2354,49 @@ class NativePlayerScreenView(
                     },
                 )
             }
-            addView(col, llp(0, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.weight = 1f })
+            // 图标 → 文字 8dp（Flutter SizedBox(width: 8)；旧实现漏了这 8dp）。
+            addView(
+                col,
+                llp(0, LinearLayout.LayoutParams.WRAP_CONTENT).also {
+                    it.weight = 1f
+                    it.marginStart = dp(8)
+                },
+            )
         }
+
+    /**
+     * 行底 0.5dp 分隔线（只画底边，不占布局高度）。
+     *
+     * Flutter 的 `Border(bottom: 0.5)` 是内描边；插一个 1px View 会挤高
+     * 行高。这里作为 `foreground` 直接画在行底。
+     */
+    private fun rowBottomDivider(): Drawable = object : Drawable() {
+        private val paint = Paint().apply { color = NPTheme.PANEL_DIVIDER }
+
+        override fun draw(canvas: Canvas) {
+            val b = bounds
+            if (b.isEmpty) return
+            val h = (0.5f * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+            canvas.drawRect(
+                b.left.toFloat(),
+                (b.bottom - h).toFloat(),
+                b.right.toFloat(),
+                b.bottom.toFloat(),
+                paint,
+            )
+        }
+
+        override fun setAlpha(alpha: Int) {
+            paint.alpha = alpha
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            paint.colorFilter = colorFilter
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
 
     /** 解码档位中文标签：与 Flutter 播放页 `DecodeModePanel` 同值。 */
     private fun decodeModeLabel(mode: String): String = when (mode) {
@@ -2399,7 +2479,14 @@ class NativePlayerScreenView(
             renderOverlays()
         })
         actions.addView(segmentAction("更新") {
-            listener?.onSetSegmentMark(kind, lastState.positionMs.toLong())
+            val pos = lastState.positionMs.toLong()
+            val reject = segmentMarkReject(kind, pos, lastState.durationMs.toLong())
+            if (reject != null) {
+                // 二次确认也走范围校验：不关卡片，提示原因后可改位置再试。
+                showHintFor(reject, 1500, null)
+                return@segmentAction
+            }
+            listener?.onSetSegmentMark(kind, pos)
             segmentCardOpen = false
             segmentConfirmKind = null
             renderOverlays()
@@ -2582,7 +2669,7 @@ class NativePlayerScreenView(
             badgeLastText[badge] = text
             badge.text = text ?: ""
             badge.visibility = if (text.isNullOrEmpty()) GONE else VISIBLE
-            badge.layoutParams = badgeLayoutParams(badge, text.orEmpty())
+            badge.layoutParams = badgeLayoutParams(text.orEmpty())
         }
 
         // 顶栏网速
@@ -2747,7 +2834,12 @@ class NativePlayerScreenView(
         // Logo（房间模式/无图时隐藏）
         val showLogo = state.logoUrl != null && state.logoUrl!!.isNotEmpty() && !state.isRoom
         // 网络加载失败时加载器会隐藏 logoImage（与 Flutter EmbyImage 一致）。
-        NativeLogoLoader.load(logoImage, if (showLogo) state.logoUrl else null)
+        // 按展示宽解码（588）：Logo 容器 240dp 宽，旧实现按 960px 解码。
+        NativeLogoLoader.load(
+            logoImage,
+            if (showLogo) state.logoUrl else null,
+            dp(NPTheme.LOGO_WIDTH),
+        )
         // Logo 与进度条间的 4dp 间隙只在显示 Logo 时存在（Flutter if(showLogo) 块内）。
         logoSpacer.visibility = if (showLogo) VISIBLE else GONE
 

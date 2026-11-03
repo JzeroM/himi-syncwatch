@@ -47,6 +47,8 @@
     "replay10": 58660,
     "openInFull": 58459,
     "closeFullscreen": 57707,
-    "share": 58771
+    "share": 58771,
+    "radioButtonChecked": 58627,
+    "radioButtonUnchecked": 58628
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:himi_syncwatch/models/media_segment.dart';
+import 'package:himi_syncwatch/utils/segment_mark_rules.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -8,6 +9,8 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 /// TV 端长按进度条弹出的片头/片尾标记面板。
 ///
 /// 主面板只有两项（设置片头 / 设置片尾）；已有标记时由播放器再弹二次确认。
+/// 588 起携带 [durationMs]，行内直接提示范围约束（片头 ≤10%、片尾 ≥70%）：
+/// 超出范围的行提示改红字，用户不必点了才被拒。
 class SegmentMarkPanel extends StatelessWidget {
   const SegmentMarkPanel({
     super.key,
@@ -16,6 +19,7 @@ class SegmentMarkPanel extends StatelessWidget {
     required this.creditsStartMs,
     required this.firstFocusNode,
     required this.onSelect,
+    this.durationMs = 0,
   });
 
   final int positionMs;
@@ -23,6 +27,9 @@ class SegmentMarkPanel extends StatelessWidget {
   final int? creditsStartMs;
   final FocusNode firstFocusNode;
   final ValueChanged<MediaSegmentType> onSelect;
+
+  /// 总时长（毫秒，0 = 未知 → 不做范围提示）。
+  final int durationMs;
 
   static String formatMs(int ms) {
     final d = Duration(milliseconds: ms < 0 ? 0 : ms);
@@ -36,6 +43,17 @@ class SegmentMarkPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 范围约束提示（588）：超出 10% / 70% 时行内直接改红字提示，无需点了才被拒。
+    final introReject = SegmentMarkRules.rejectReason(
+      isIntro: true,
+      positionMs: positionMs,
+      durationMs: durationMs,
+    );
+    final outroReject = SegmentMarkRules.rejectReason(
+      isIntro: false,
+      positionMs: positionMs,
+      durationMs: durationMs,
+    );
     return GlassContainer(
       popup: true,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
@@ -74,7 +92,8 @@ class SegmentMarkPanel extends StatelessWidget {
               icon: Icons.skip_next,
               title: '设置片头',
               value: introEndMs,
-              hint: '当前位置作为片头结束 / 正片开始',
+              hint: introReject ?? '当前位置作为片头结束 / 正片开始',
+              hintIsWarning: introReject != null,
               onTap: () => onSelect(MediaSegmentType.intro),
             ),
             const SizedBox(height: 8),
@@ -82,7 +101,8 @@ class SegmentMarkPanel extends StatelessWidget {
               icon: Icons.skip_previous,
               title: '设置片尾',
               value: creditsStartMs,
-              hint: '当前位置作为片尾开始',
+              hint: outroReject ?? '当前位置作为片尾开始',
+              hintIsWarning: outroReject != null,
               onTap: () => onSelect(MediaSegmentType.outro),
             ),
           ],
@@ -99,6 +119,7 @@ class _SegmentMarkRow extends StatelessWidget {
     required this.title,
     required this.value,
     required this.hint,
+    this.hintIsWarning = false,
     required this.onTap,
   });
 
@@ -107,6 +128,9 @@ class _SegmentMarkRow extends StatelessWidget {
   final String title;
   final int? value;
   final String hint;
+
+  /// [hint] 是范围约束的拒绝文案（红字）。
+  final bool hintIsWarning;
   final VoidCallback onTap;
 
   @override
@@ -148,7 +172,9 @@ class _SegmentMarkRow extends StatelessWidget {
                     style: TextStyle(
                       color: hasValue
                           ? const Color(0xFF16A34A)
-                          : GlassConfig.playerPanelTextSecondary,
+                          : hintIsWarning
+                              ? const Color(0xFFEF4444)
+                              : GlassConfig.playerPanelTextSecondary,
                       fontSize: GlassConfig.playerPanelCaptionSize,
                       fontWeight: FontWeight.w500,
                     ),

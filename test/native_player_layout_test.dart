@@ -1603,11 +1603,25 @@ void main() {
       expect(kotlinScreen, contains('seekBar.value = target.toFloat()'));
     });
 
-    test('角标按 Flutter 几何复刻（直径随内容 + 贴图标右上）', () {
+    test('角标三端同值分档（1~2 位 15 / 3 位 19 / 4 位起 24）', () {
+      // 588：三端统一，对齐 MDK 观感（旧实现三端各算一套 → 同款角标大小不一）。
       expect(kotlinScreen, contains('badgeDiameterDp'));
-      // 旧实现固定 14/18 阶梯已删除。
       expect(kotlinScreen, isNot(contains('BADGE_MIN + 4')));
-      expect(kotlinTheme, contains('const val BADGE_MIN = 14'));
+      expect(kotlinTheme, contains('const val BADGE_MIN = 15'));
+      expect(kotlinTheme, contains('const val BADGE_WIDE = 19'));
+      expect(kotlinTheme, contains('const val BADGE_XL = 24'));
+      expect(NativePlayerTheme.badgeMinSize, 15);
+      expect(NativePlayerTheme.badgeWideSize, 19);
+      expect(NativePlayerTheme.badgeXlSize, 24);
+      expect(NativePlayerTheme.badgeSizeFor('3'), 15);
+      expect(NativePlayerTheme.badgeSizeFor('26'), 15);
+      expect(NativePlayerTheme.badgeSizeFor('108'), 19);
+      expect(NativePlayerTheme.badgeSizeFor('1080'), 24);
+      // 鸿蒙：同样三档。
+      expect(ohosView, contains('return 15;'));
+      expect(ohosView, contains('return 19;'));
+      expect(ohosView, contains('return 24;'));
+      expect(ohosView, isNot(contains('badge.length >= 3 ? 18 : 14')));
     });
 
     test('手势柱条复刻 _buildVerticalBar（36dp/图标/竖向轨道/百分比）', () {
@@ -2004,6 +2018,149 @@ void main() {
       expect(ohosViewFile, contains('canvas='));
       expect(ohosViewFile, contains('private diagLine()'));
       expect(ohosViewFile, contains('host.canvasWidth'));
+    });
+  });
+
+  group('588 鸿蒙转圈根因 + 手势图标 + 跳过提示时机 + 面板复选框 + 封面提速', () {
+    final ohosPlugin588 = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/plugin/'
+      'HimiMpvOhosPlugin.ets',
+    ).readAsStringSync();
+    final ohosView588 = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'HimiNativePlayerView.ets',
+    ).readAsStringSync();
+    final ohosPanel588 = File(
+      'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+      'NativePlayerPanel.ets',
+    ).readAsStringSync();
+    final kotlinScreen588 = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerScreenView.kt',
+    ).readAsStringSync();
+    final kotlinLoader588 = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativeLogoLoader.kt',
+    ).readAsStringSync();
+    final adapter588 =
+        File('lib/services/player/mpv_player_adapter.dart').readAsStringSync();
+    final screen588 =
+        File('lib/screens/player/player_screen.dart').readAsStringSync();
+
+    test('鸿蒙 pollState 补画面尺寸/出帧率（首帧已出的第二判据）', () {
+      // video-params 是 NODE 属性，getPropertyString 常返空；width/height 可读。
+      expect(ohosPlugin588, contains("lib.getProperty('width')"));
+      expect(ohosPlugin588, contains("lib.getProperty('height')"));
+      expect(ohosPlugin588, contains("lib.getProperty('estimated-vf-fps')"));
+      expect(ohosPlugin588, contains("lib.getProperty('frame-drop-count')"));
+      expect(ohosPlugin588, contains('videoWidth: videoWidth,'));
+      expect(ohosPlugin588, contains('videoHeight: videoHeight,'));
+      expect(ohosPlugin588, contains('videoFps: videoFps,'));
+      expect(ohosPlugin588, contains('frameDropCount: frameDropCount,'));
+      // payload 接口声明同步（ArkTS 对象字面量必须字段齐全）。
+      expect(ohosPlugin588, contains('videoWidth: number | null;'));
+      expect(ohosPlugin588, contains('videoHeight: number | null;'));
+    });
+
+    test('适配器把「画面尺寸可读」也当首帧已出（转圈/软解回退同判据）', () {
+      expect(adapter588, contains('static bool hasVideoFrame(MpvPollResult state)'));
+      expect(adapter588, contains('state.videoWidth ?? 0'));
+      expect(adapter588, contains('if (hasVideoFrame(state)) _videoParamsSeen = true;'));
+      // 软解回退误判同样要用第二判据（否则 3s 后强切软解重载）。
+      expect(adapter588,
+          contains('if (state.videoParams != null || hasVideoFrame(state) || state.idleActive)'));
+      // 跳过提示门禁：首帧未出不弹提示。
+      expect(adapter588, contains('bool get firstFrameReady => !firstFramePending.value;'));
+      expect(screen588, contains('if (!_videoFrameReady) return;'));
+    });
+
+    test('缓冲位：位置已推进也算在出帧（鸿蒙 cache-time 常读不到）', () {
+      expect(adapter588, contains('state.bufferedMs > 0 || state.positionMs > 0'));
+    });
+
+    test('安卓双击手势图标方向与 Flutter playPauseHintIcon 一致', () {
+      // Flutter：playing ? pause : play（显示切换后的可执行动作）。
+      final gesture = File('lib/utils/playback_gesture.dart').readAsStringSync();
+      expect(gesture, contains('playing ? Icons.pause : Icons.play_arrow'));
+      // 安卓：lastState.paused（切换前）为 true → 切后是播放中 → 暂停图标。
+      expect(kotlinScreen588, contains('if (lastState.paused) {\n                        NativePlayerIcons.ICON_PAUSE_CIRCLE'));
+      expect(kotlinScreen588, contains('} else {\n                        NativePlayerIcons.ICON_PLAY_CIRCLE'));
+    });
+
+    test('跳过提示：离开片段立刻收起 + 切集入口显式清理', () {
+      expect(screen588, contains('static bool shouldKeepSkipPrompt'));
+      expect(screen588,
+          contains('if (_skipPromptSegment != null &&\n        !PlayerScreen.shouldKeepSkipPrompt(_skipPromptSegment, positionMs)) {'));
+      expect(screen588, contains('_dismissSkipPrompt();'));
+      // 切集/重建引擎/加载流三处入口都有抑制清理。
+      expect(screen588, contains('void _beginSkipPromptSuppression()'));
+      expect(screen588, contains('_beginSkipPromptSuppression();'));
+    });
+
+    test('解码面板单选码点修正为 radio_button_checked/unchecked', () {
+      // 旧 0xE838/0xE836 实际是 cancel_sharp / cancel_presentation_sharp（方框叉）。
+      final icons = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'NativePlayerIcons.kt',
+      ).readAsStringSync();
+      expect(icons, contains('ICON_RADIO_BUTTON_CHECKED = 0xE503'));
+      expect(icons, contains('ICON_RADIO_BUTTON_UNCHECKED = 0xE504'));
+      expect(icons, isNot(contains('ICON_RADIO_CHECKED = 0xE838')));
+      expect(kotlinScreen588, contains('NativePlayerIcons.ICON_RADIO_BUTTON_CHECKED'));
+      expect(kotlinScreen588, contains('NativePlayerIcons.ICON_RADIO_BUTTON_UNCHECKED'));
+      // 鸿蒙改用图标字体（不再用 ●/○ 文本）。
+      expect(ohosPanel588, contains('NativePlayerIcons.ICON_RADIO_BUTTON_CHECKED'));
+      expect(ohosPanel588, contains('NativePlayerIcons.ICON_RADIO_BUTTON_UNCHECKED'));
+      expect(ohosPanel588, isNot(contains("? '●' : '○'")));
+    });
+
+    test('解码面板行：图标→文字 8dp + 每行（含末行）0.5 分隔线', () {
+      expect(kotlinScreen588, contains('it.marginStart = dp(8)'));
+      expect(kotlinScreen588, contains('foreground = rowBottomDivider()'));
+      expect(kotlinScreen588, contains('private fun rowBottomDivider()'));
+      // 鸿蒙：行底 0.5 边框（List.divider 画不到末行）。
+      expect(ohosPanel588, contains('width: { bottom: 0.5 }'));
+      expect(ohosPanel588, isNot(contains('.divider({ strokeWidth: 0.5, color: PANEL_DIVIDER });\n    }\n    .width(\'100%\')\n    .layoutWeight(1);')));
+    });
+
+    test('安卓选集封面：4 线程 + 磁盘 LRU + 目标宽解码 + 优先级', () {
+      expect(kotlinLoader588, contains('private const val THREADS = 4'));
+      expect(kotlinLoader588, contains('PriorityBlockingQueue'));
+      expect(kotlinLoader588, contains('native_poster'));
+      expect(kotlinLoader588, contains('DISK_CACHE_BYTES = 64L * 1024 * 1024'));
+      expect(kotlinLoader588, contains('fun cancelPending()'));
+      expect(kotlinLoader588, contains('PRIORITY_CURRENT = 0'));
+      // 按目标宽二次采样（不再固定 960）。
+      expect(kotlinLoader588, contains('decodeSampled(bytes, targetWidthPx.coerceAtLeast(1))'));
+      // 控件层传卡片宽 + 优先级，关面板取消队列。
+      expect(kotlinScreen588, contains('targetPx, priority'));
+      expect(kotlinScreen588, contains('NativeLogoLoader.cancelPending()'));
+    });
+
+    test('片头/片尾范围约束：Dart 权威 + 三端前置校验', () {
+      final rules = File('lib/utils/segment_mark_rules.dart').readAsStringSync();
+      expect(rules, contains('static const double introMaxFraction = 0.10;'));
+      expect(rules, contains('static const double outroMinFraction = 0.70;'));
+      expect(rules, contains('片头结束点不能超过总时长的 10%'));
+      expect(rules, contains('片尾开始点不能低于总时长的 70%'));
+      // 播放页调用（原生长按 / TV 面板 / 二次确认「更新」最终都走这里）。
+      expect(screen588, contains('SegmentMarkRules.rejectReason('));
+      // 安卓：手势前置 + 二次确认「更新」都校验。
+      expect(kotlinScreen588, contains('internal fun segmentMarkReject('));
+      expect(kotlinScreen588, contains('segmentMarkReject(kind, pos, lastState.durationMs.toLong())'));
+      expect(kotlinScreen588, contains('val reject = segmentMarkReject(kind, pos, lastState.durationMs.toLong())'));
+      // 鸿蒙：手势前置 + 二次确认「更新」都校验。
+      expect(ohosPanel588, contains('export function segmentMarkReject('));
+      expect(ohosView588, contains('const reject = segmentMarkReject(kind, pos, this.durationMs);'));
+      expect(ohosPanel588, contains('const reject = segmentMarkReject('));
+    });
+
+    test('设置页说明补范围约束', () {
+      final settings = File(
+        'lib/screens/settings/intro_outro_settings_screen.dart',
+      ).readAsStringSync();
+      expect(settings, contains('片头结束点不能超过总时长的 10%'));
+      expect(settings, contains('片尾开始点不能低于总时长的 70%'));
     });
   });
 }

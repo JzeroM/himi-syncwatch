@@ -112,6 +112,19 @@ interface MpvPollPayload {
    *  open 时缓存的 lastUrlMasked 兜底（v1.2.77）。
    */
   pathMasked: string | null;
+  /**
+   * 视频轨画面尺寸（mpv `width`/`height` 直读）。
+   *
+   * 588：`video-params`（NODE 属性）经 `getPropertyString` 常返回空串，
+   * Dart 侧「首帧已出」只有这一个判据时会永远判未出 → 播放中一直转圈，
+   * 并在 3s 后误判「有声无画」强制切软解重载。`width`/`height` 读得到，
+   * 作为第二判据（与安卓 `_readInt('width'/'height')` 同源）。
+   */
+  videoWidth: number | null;
+  videoHeight: number | null;
+  /** 出帧帧率与丢帧计数（黑屏/卡顿定性用，与安卓同源）。 */
+  videoFps: number | null;
+  frameDropCount: number | null;
 }
 
 /**
@@ -1385,6 +1398,10 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     let eof = false;
     let videoParams: string | null = null;
     let trackList: string | null = null;
+    let videoWidth: number | null = null;
+    let videoHeight: number | null = null;
+    let videoFps: number | null = null;
+    let frameDropCount: number | null = null;
     let idleActive = true;
     let playlistCount = 0;
     let pausedForCache = false;
@@ -1496,6 +1513,35 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       }
     } catch (_) {
     }
+    // 画面尺寸 / 出帧率（588）：`video-params` 读不到时的「首帧已出」判据。
+    try {
+      const w = lib.getProperty('width');
+      if (w > 0) {
+        videoWidth = Math.round(w);
+      }
+    } catch (_) {
+    }
+    try {
+      const h = lib.getProperty('height');
+      if (h > 0) {
+        videoHeight = Math.round(h);
+      }
+    } catch (_) {
+    }
+    try {
+      const f = lib.getProperty('estimated-vf-fps');
+      if (f > 0) {
+        videoFps = f;
+      }
+    } catch (_) {
+    }
+    try {
+      const d = lib.getProperty('frame-drop-count');
+      if (d >= 0) {
+        frameDropCount = Math.round(d);
+      }
+    } catch (_) {
+    }
     const payload: MpvPollPayload = {
       durationMs: Math.round(duration * 1000.0),
       positionMs: Math.round(position * 1000.0),
@@ -1517,6 +1563,10 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       voConfigured: voConfigured,
       mediaTitle: mediaTitle,
       pathMasked: pathMasked !== null ? pathMasked : this.lastUrlMasked,
+      videoWidth: videoWidth,
+      videoHeight: videoHeight,
+      videoFps: videoFps,
+      frameDropCount: frameDropCount,
     };
     result.success(payload);
   }

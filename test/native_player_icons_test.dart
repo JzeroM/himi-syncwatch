@@ -70,6 +70,8 @@ void main() {
       'openInFull': Icons.open_in_full,
       'closeFullscreen': Icons.close_fullscreen,
       'share': Icons.share,
+      'radioButtonChecked': Icons.radio_button_checked,
+      'radioButtonUnchecked': Icons.radio_button_unchecked,
     };
     expect(flutterIcons.keys.toSet(), jsonIcons.keys.toSet());
     for (final entry in jsonIcons.entries) {

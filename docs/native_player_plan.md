@@ -764,6 +764,29 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
       面板几何 + 双端源码静态断言）。
 - [x] 扩展 `test/native_player_theme_test.dart`（新增常量三端比对）。
 
+### Phase 2.7：真机回归修复（1.5.8+588）
+
+> 起因：鸿蒙「正常播放还一直转圈」、安卓双击手势图标反了、跳过片头/片尾
+> 时机与残留、角标三端不一致、安卓选集封面加载慢、解码面板单选圈错图标。
+
+- [x] 鸿蒙 `pollState` 补 `width`/`height`/`estimated-vf-fps`/
+      `frame-drop-count`；适配器 `hasVideoFrame` 作为「首帧已出」第二判据
+      （`video-params` 是 NODE 属性、`getPropertyString` 常返空）。
+- [x] 缓冲位：`positionMs > 0` 也算在出帧（鸿蒙 `demuxer-cache-time` 常读不到）。
+- [x] 安卓双击手势图标方向对齐 Flutter `playPauseHintIcon`。
+- [x] 跳过提示：`shouldKeepSkipPrompt` 每 tick 校验（离开片段立刻收起）+
+      首帧就绪门禁（`MpvPlayerAdapter.firstFrameReady`）。
+- [x] 角标三端统一分档：1~2 位 15dp / 3 位 19dp / 4 位起 24dp
+      （`NativePlayerTheme.badgeSizeFor`）。
+- [x] 安卓选集封面：4 线程优先级队列 + 磁盘 LRU（64MB）+ 目标宽二次采样 +
+      关面板取消队列（`NativeLogoLoader` 重做）。
+- [x] 解码面板单选圈：`ICON_RADIO_BUTTON_CHECKED/UNCHECKED = 0xE503/0xE504`
+      （旧 0xE838/0xE836 实为 `cancel_sharp`）；图标→文字 8dp；每行含末行
+      0.5dp 分隔线；鸿蒙改用图标字体（不再 `●/○`）。
+- [x] 手动片头/片尾范围约束（全平台全播放器）：片头结束点 ≤ 10%、
+      片尾开始点 ≥ 70%（`lib/utils/segment_mark_rules.dart` 权威校验 +
+      安卓/鸿蒙手势与二次确认前置校验 + 设置页说明）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

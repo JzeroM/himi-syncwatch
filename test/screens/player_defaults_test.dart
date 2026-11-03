@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/media_segment.dart';
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/services/device_profile.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
@@ -37,6 +38,32 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  test('shouldKeepSkipPrompt：离开片段立刻收起（588 片尾残留修复）', () {
+    const intro = MediaSegment(
+      type: MediaSegmentType.intro,
+      startMs: 0,
+      endMs: 90000,
+      source: MediaSegmentSource.manual,
+    );
+    const outro = MediaSegment(
+      type: MediaSegmentType.outro,
+      startMs: 3000000,
+      endMs: 3600000,
+      source: MediaSegmentSource.manual,
+    );
+    // 无提示 → 不保留。
+    expect(PlayerScreen.shouldKeepSkipPrompt(null, 5000), isFalse);
+    // 片头内：保留。
+    expect(PlayerScreen.shouldKeepSkipPrompt(intro, 30000), isTrue);
+    // 播过片头结束点：立即收起（旧实现要等 8 秒计时器）。
+    expect(PlayerScreen.shouldKeepSkipPrompt(intro, 90000), isFalse);
+    // 片尾内保留；播过 credits 区（>= endMs）收起。
+    expect(PlayerScreen.shouldKeepSkipPrompt(outro, 3100000), isTrue);
+    expect(PlayerScreen.shouldKeepSkipPrompt(outro, 3600000), isFalse);
+    // seek 回到片段之前也收起。
+    expect(PlayerScreen.shouldKeepSkipPrompt(outro, 100000), isFalse);
   });
 
   testWidgets('PlayerScreen.focusWithin：判定焦点是否在热键层子树内', (tester) async {
