@@ -319,8 +319,13 @@ void main() {
       expect(kotlinScreen, contains('private fun configureRoomPanel()'));
       expect(kotlinScreen, contains('private fun renderRoomPanel()'));
       expect(kotlinScreen, contains('private fun buildRoomPanelList('));
-      expect(kotlinScreen, contains('onToggleResourceGroup(gi)'));
-      expect(kotlinScreen, contains('onToggleResourceSeason(gi, si)'));
+      expect(kotlinScreen, contains('private fun buildRoomGroupHeader('));
+      expect(kotlinScreen, contains('private fun buildRoomSeasonHeader('));
+      expect(kotlinScreen, contains('private fun buildRoomEpisodeRow('));
+      // 592 重构成独立方法（buildRoomGroupHeader / buildRoomSeasonHeader /
+      // buildRoomEpisodeRow），参数名随结构变化。
+      expect(kotlinScreen, contains('onToggleResourceGroup(groupIndex)'));
+      expect(kotlinScreen, contains('onToggleResourceSeason(groupIndex, seasonIndex)'));
       expect(kotlinScreen, contains('onRemoveResourceEpisode(ep.index)'));
       expect(kotlinScreen, contains('onOpenResourceSearch()'));
       // 视觉对齐 Flutter：0xFF1A1A2E 底 + 组标题 0xFF16213E。

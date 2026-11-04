@@ -20,6 +20,8 @@ import {
   NativePlayerViewListener,
   NativePlayerPanelType,
   NativeResourceGroupUi,
+  NativeSeasonGroupUi,
+  NativeResourceItemUi,
   nativeDiagSummary,
 } from './HimiMpvNativeHost';
 import { NativePlayerPanel, segmentMarkReject } from './NativePlayerPanel';
@@ -1093,17 +1095,19 @@ export struct HimiNativePlayerView {
   }
 
   /**
-   * 房间资源面板（590）：右侧 320vp 常驻分栏。
+   * 房间资源面板（592，逐项复刻 Flutter `_buildResourcePanel`）。
    *
-   * 原生 UI 是全屏子窗口，会盖住 Flutter 的资源面板，且此前
-   * `toggleResourcePanel` 只打日志（真机「房间模式一播放就全屏、面板
-   * 展不开」）。现由原生自己渲染，视觉对齐 Flutter `_buildResourcePanel`：
-   * `#1A1A2E` 底 + 头部（资源/搜索/在线人数/房主徽章）+ 分组列表 + 播报板。
+   * 原生 UI 是全屏子窗口，会盖住 Flutter 的资源面板。结构对齐 Flutter：
+   * `#1A1A2E` 底 + 头部（资源/搜索/人数胶囊/角色徽章）+ 分组列表
+   * （组 → 季 → 集）+ 播报板 120vp。
+   *
+   * 图标一律走 `NativePlayerIcons` 字体（与 Flutter Material Icons 同源），
+   * 不用 emoji/文本符号。
    */
   @Builder
   RoomPanel() {
     Column() {
-      // 头部
+      // ── 头部：Expanded(资源) | 搜索 | 人数胶囊 | 角色徽章 ──
       Row({ space: 6 }) {
         Text('资源')
           .fontSize(14)
@@ -1112,7 +1116,9 @@ export struct HimiNativePlayerView {
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis });
-        if (this.state().isHost) {
+        // 搜索：房主 **且未在播放** 才显示（Flutter
+        // `_roomData != null && _isHost && state != playing`）。
+        if (this.state().isHost && !this.state().paused) {
           Text(String.fromCodePoint(NativePlayerIcons.ICON_SEARCH))
             .fontFamily(NativePlayerIcons.FONT_FAMILY)
             .fontSize(20)
@@ -1120,17 +1126,28 @@ export struct HimiNativePlayerView {
             .width(28)
             .height(28)
             .textAlign(TextAlign.Center)
-            .opacity(this.state().paused ? 1 : 0.4)
             .onClick((): void => {
               this.host().sendCommand('openResourceSearch', null);
             });
         }
-        Text(`${this.state().onlineUserCount}`)
-          .fontSize(11)
-          .fontColor('#B3FFFFFF')
-          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-          .backgroundColor('#1FFFFFFF')
-          .borderRadius(8);
+        // 人数胶囊：people 图标 12 + 数字 11（底 white12 圆角 8）。
+        Row({ space: 3 }) {
+          Text(String.fromCodePoint(NativePlayerIcons.ICON_PEOPLE))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
+            .fontSize(12)
+            .fontColor('#B3FFFFFF')
+            .width(12)
+            .height(12)
+            .textAlign(TextAlign.Center);
+          Text(`${this.state().onlineUserCount}`)
+            .fontSize(11)
+            .fontColor('#B3FFFFFF');
+        }
+        .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+        .backgroundColor('#1FFFFFFF')
+        .borderRadius(8)
+        .alignItems(VerticalAlign.Center);
+        // 角色徽章：房主 accent / 观众红。
         Text(this.state().isHost
           ? '房主'
           : (this.state().audienceName.length > 0 ? this.state().audienceName : '观众'))
@@ -1145,9 +1162,10 @@ export struct HimiNativePlayerView {
       .alignItems(VerticalAlign.Center)
       .border({ width: { bottom: 0.5 }, color: ROOM_PANEL_DIVIDER });
 
-      // 分组列表
+      // ── 分组列表（padding vertical 4，对齐 Flutter ListView）──
       List() {
         ForEach(this.state().resourceGroups, (g: NativeResourceGroupUi, gi: number) => {
+          // 组标题（chevron + 组名 + 计数）
           ListItem() {
             Row() {
               Text(String.fromCodePoint(g.collapsed
@@ -1166,8 +1184,8 @@ export struct HimiNativePlayerView {
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .margin({ left: 4 });
               Text(g.countLabel())
-                .fontSize(11)
-                .fontColor('#B3FFFFFF');
+                .fontSize(12)
+                .fontColor('#8AFFFFFF');
             }
             .width('100%')
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
@@ -1179,18 +1197,82 @@ export struct HimiNativePlayerView {
               this.host().sendCommand('toggleResourceGroup', fields);
             });
           }
+          // 展开内容：电影直接列集；剧集按季分组
+          if (!g.collapsed) {
+            if (g.isMovie) {
+              ForEach(g.seasons.length > 0 ? g.seasons[0].episodes : [],
+                (ep: NativeResourceItemUi, ei: number) => {
+                  ListItem() {
+                    this.RoomEpisodeRow(ep);
+                  }
+                }, (ep: NativeResourceItemUi, ei: number): string => `mv-${gi}-${ei}-${ep.index}`);
+            } else {
+              ForEach(g.seasons, (season: NativeSeasonGroupUi, si: number) => {
+                // 季标题（chevron + 第N季 + (N集)）
+                ListItem() {
+                  Row() {
+                    Text(String.fromCodePoint(season.collapsed
+                      ? NativePlayerIcons.ICON_CHEVRON_RIGHT
+                      : NativePlayerIcons.ICON_EXPAND_MORE))
+                      .fontFamily(NativePlayerIcons.FONT_FAMILY)
+                      .fontSize(16)
+                      .fontColor('#8AFFFFFF')
+                      .width(16);
+                    Text(`第${season.seasonNumber}季`)
+                      .fontSize(12)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor('#B3FFFFFF')
+                      .layoutWeight(1)
+                      .margin({ left: 4 });
+                    Text(`(${season.episodes.length}集)`)
+                      .fontSize(11)
+                      .fontColor('#62FFFFFF');
+                  }
+                  .width('100%')
+                  .padding({ left: 24, right: 12, top: 6, bottom: 6 })
+                  .alignItems(VerticalAlign.Center)
+                  .backgroundColor('#1A1A2E')
+                  .onClick((): void => {
+                    const fields: Map<string, Object> = new Map<string, Object>();
+                    fields.set('groupIndex', gi);
+                    fields.set('seasonIndex', si);
+                    this.host().sendCommand('toggleResourceSeason', fields);
+                  });
+                }
+                if (!season.collapsed) {
+                  ForEach(season.episodes, (ep: NativeResourceItemUi, ei: number) => {
+                    ListItem() {
+                      this.RoomEpisodeRow(ep);
+                    }
+                  }, (ep: NativeResourceItemUi, ei: number): string => `ep-${gi}-${si}-${ei}-${ep.index}`);
+                }
+              }, (season: NativeSeasonGroupUi, si: number): string => `sn-${gi}-${si}-${season.collapsed}`);
+            }
+          }
         }, (g: NativeResourceGroupUi, gi: number): string => `rg-${gi}-${g.collapsed}`);
       }
       .width('100%')
-      .layoutWeight(1);
+      .layoutWeight(1)
+      .padding({ top: 4, bottom: 4 });
 
-      // 播报板
+      // ── 播报板 120vp（campaign 图标 + 播报 (N) + 列表）──
       Column() {
-        Text(`播报 (${this.state().broadcasts.length})`)
-          .fontSize(11)
-          .fontColor('#B3FFFFFF')
-          .width('100%')
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 });
+        Row({ space: 4 }) {
+          Text(String.fromCodePoint(NativePlayerIcons.ICON_CAMPAIGN))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
+            .fontSize(12)
+            .fontColor('#B3FFFFFF')
+            .width(12)
+            .height(12)
+            .textAlign(TextAlign.Center);
+          Text(`播报 (${this.state().broadcasts.length})`)
+            .fontSize(11)
+            .fontColor('#B3FFFFFF');
+        }
+        .width('100%')
+        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+        .alignItems(VerticalAlign.Center);
+
         List() {
           ForEach(this.state().broadcasts, (line: string, bi: number) => {
             ListItem() {
@@ -1201,6 +1283,17 @@ export struct HimiNativePlayerView {
                 .padding({ left: 10, right: 10, top: 2, bottom: 2 });
             }
           }, (line: string, bi: number): string => `bc-${bi}-${line}`);
+          // 空态居中（对齐 Flutter `暂无消息`）。
+          if (this.state().broadcasts.length === 0) {
+            ListItem() {
+              Text('暂无消息')
+                .fontSize(11)
+                .fontColor('#3DFFFFFF')
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .padding({ top: 8, bottom: 8 });
+            }
+          }
         }
         .width('100%')
         .layoutWeight(1);
@@ -1213,6 +1306,117 @@ export struct HimiNativePlayerView {
     .height('100%')
     .backgroundColor('#1A1A2E')
     .alignItems(HorizontalAlign.Start);
+  }
+
+  /**
+   * 单条资源行（逐项复刻 Flutter `_buildEpisodeListItem`）。
+   *
+   * `[左 3vp accent 边] 播放/暂停(房主) 缩略图56×36 集信息 删除(房主)`
+   */
+  @Builder
+  RoomEpisodeRow(ep: NativeResourceItemUi) {
+    Row() {
+      // 当前集左 3vp accent 竖条（Flutter Border(left, 3)）。
+      if (ep.isPlaying) {
+        Column()
+          .width(3)
+          .height(44)
+          .backgroundColor(SEL_COLOR);
+      }
+      // 播放/暂停（房主）
+      if (this.state().isHost) {
+        Text(String.fromCodePoint(
+          ep.isPlaying && !this.state().paused
+            ? NativePlayerIcons.ICON_PAUSE_CIRCLE
+            : NativePlayerIcons.ICON_PLAY_CIRCLE))
+          .fontFamily(NativePlayerIcons.FONT_FAMILY)
+          .fontSize(22)
+          .fontColor(ep.isPlaying ? SEL_COLOR : '#8AFFFFFF')
+          .width(22)
+          .height(22)
+          .textAlign(TextAlign.Center)
+          .margin({ right: 8 });
+      }
+      // 缩略图 56×36（圆角 4；无图时灰底 + movie 图标）
+      Stack({ alignContent: Alignment.Center }) {
+        if (ep.poster.length > 0) {
+          Image(ep.poster)
+            .width(56)
+            .height(36)
+            .objectFit(ImageFit.Cover)
+            .borderRadius(4);
+        } else {
+          Column()
+            .width(56)
+            .height(36)
+            .backgroundColor('#424242')
+            .borderRadius(4);
+          Text(String.fromCodePoint(NativePlayerIcons.ICON_MOVIE))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
+            .fontSize(16)
+            .fontColor('#9E9E9E');
+        }
+      }
+      .width(56)
+      .height(36)
+      .margin({ right: 8 });
+
+      // 集信息
+      Column() {
+        if (ep.isMovie()) {
+          Text(ep.name)
+            .fontSize(12)
+            .fontColor(ep.isPlaying ? Color.White : '#8AFFFFFF')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%');
+        } else {
+          Text(ep.episodeCode())
+            .fontSize(11)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(ep.isPlaying ? SEL_COLOR : '#B3FFFFFF')
+            .width('100%');
+          Text(ep.name)
+            .fontSize(12)
+            .fontColor(ep.isPlaying ? Color.White : '#8AFFFFFF')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%');
+        }
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start);
+
+      // 删除（房主）
+      if (this.state().isHost) {
+        Text(String.fromCodePoint(NativePlayerIcons.ICON_CLOSE))
+          .fontFamily(NativePlayerIcons.FONT_FAMILY)
+          .fontSize(18)
+          .fontColor('#3DFFFFFF')
+          .width(24)
+          .height(24)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => {
+            const fields: Map<string, Object> = new Map<string, Object>();
+            fields.set('index', ep.index);
+            this.host().sendCommand('removeResourceEpisode', fields);
+          });
+      }
+    }
+    .width('100%')
+    .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(ep.isPlaying ? '#4D6366F1' : Color.Transparent)
+    .onClick((): void => {
+      if (!this.state().isHost) {
+        return;
+      }
+      if (ep.isPlaying) {
+        this.host().optimisticTogglePaused();
+      } else {
+        this.host().optimisticSelectEpisode(ep.index);
+      }
+    });
   }
 
   build() {

@@ -152,11 +152,22 @@ class NativePlayerScreenView(
     private var lastStateAtMs: Long = 0L
     private var lastTvMode = false
 
-    /** 房间资源面板数据签名（只在结构/折叠态/当前集变化时重建列表）。 */
-    private var roomPanelSig: String = ""
+    /**
+     * 房间资源面板数据签名（只在结构/折叠态/当前集变化时重建列表）。
+     *
+     * 【真机回归：资源面板全空】初值必须是**不可能与真实数据相等**的哨兵。
+     * 旧初值 `""` 与「零分组」产生的签名 `""` 相等 → `buildRoomPanelList`
+     * 从未执行 → 连「暂无资源」空态都不渲染，列表区纯空白。
+     */
+    private var roomPanelSig: String = ROOM_SIG_UNBUILT
 
-    /** 播报板数据签名。 */
-    private var roomBroadcastSig: String = ""
+    /**
+     * 播报板数据签名。
+     *
+     * 同上：初值 `""` 与「零播报」的 `joinToString("|") == ""` 相等 → 从不
+     * 重建 → 只显示标题 `播报 (0)`、列表空白。
+     */
+    private var roomBroadcastSig: String = ROOM_SIG_UNBUILT
 
     /** 上次通知宿主的视频右侧留白（像素，0 = 全屏）。 */
     private var lastVideoInsetRightPx: Int = -1
@@ -972,6 +983,13 @@ class NativePlayerScreenView(
     private val roomPanelRole = TextView(context)
     private val roomBroadcastHeader = TextView(context)
     private val roomBroadcastList = LinearLayout(context)
+    /** 播报板滚动容器（新消息自动滚到底用）。 */
+    private val roomBroadcastScroll = ScrollView(context)
+    /** 人数胶囊（people 图标 + 数字，对齐 Flutter）。 */
+    private val roomOnlineChip = LinearLayout(context)
+    private val roomOnlineIcon = TextView(context)
+    /** 播报标题图标（campaign，对齐 Flutter）。 */
+    private val roomBroadcastIcon = TextView(context)
 
     // ── 视图装配 ──────────────────────────────────────────────────
 
@@ -1791,15 +1809,47 @@ class NativePlayerScreenView(
         }
         applyPressFeedback(roomPanelSearch)
         roomPanelHeader.addView(roomPanelSearch, llp(dp(28), dp(28), 12))
-        roomPanelHeader.addView(roomPanelOnline, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(20), 12))
+
+        // 人数胶囊（Flutter：people 图标 12 + 数字 11 white70，
+        // 底 white12 圆角 8，padding h6 v2）。
+        roomOnlineChip.orientation = LinearLayout.HORIZONTAL
+        roomOnlineChip.gravity = Gravity.CENTER_VERTICAL
+        roomOnlineChip.setPadding(dp(6), dp(2), dp(6), dp(2))
+        roomOnlineChip.background = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(0x1FFFFFFF)
+        }
+        roomOnlineIcon.text = String(Character.toChars(NativePlayerIcons.ICON_PEOPLE))
+        roomOnlineIcon.typeface = NativePlayerIcons.typeface(context)
+        roomOnlineIcon.setTextColor(NPTheme.WHITE_70)
+        roomOnlineIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        roomOnlineIcon.gravity = Gravity.CENTER
+        roomOnlineIcon.includeFontPadding = false
+        roomOnlineChip.addView(roomOnlineIcon, llp(dp(12), dp(12)))
+        roomPanelOnline.setTextColor(NPTheme.WHITE_70)
+        roomPanelOnline.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+        roomOnlineChip.addView(
+            roomPanelOnline,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).also { it.marginStart = dp(3) },
+        )
+        roomPanelHeader.addView(roomOnlineChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(20), 12))
+
+        // 角色徽章（房主 accent / 观众红，圆角 8，padding h6 v2）。
+        roomPanelRole.setTextColor(Color.WHITE)
+        roomPanelRole.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+        roomPanelRole.setPadding(dp(6), dp(2), dp(6), dp(2))
         roomPanelHeader.addView(roomPanelRole, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(20), 6))
         roomPanel.addView(
             roomPanelHeader,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
         )
 
-        // 分组列表（滚动）
+        // 分组列表（滚动；Flutter `ListView.padding: vertical 4`）。
         roomPanelList.orientation = LinearLayout.VERTICAL
+        roomPanelList.setPadding(0, dp(4), 0, dp(4))
         roomPanelScroll.isFillViewport = true
         roomPanelScroll.addView(roomPanelList)
         roomPanel.addView(
@@ -1807,31 +1857,49 @@ class NativePlayerScreenView(
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
         )
 
-        // 播报板 120dp
+        // 播报板 120dp（Flutter：campaign 图标 12 + `播报 (N)` white70 11，
+        // padding h10 v6；列表 h10）。
+        roomBroadcastIcon.text = String(Character.toChars(NativePlayerIcons.ICON_CAMPAIGN))
+        roomBroadcastIcon.typeface = NativePlayerIcons.typeface(context)
+        roomBroadcastIcon.setTextColor(NPTheme.WHITE_70)
+        roomBroadcastIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        roomBroadcastIcon.gravity = Gravity.CENTER
+        roomBroadcastIcon.includeFontPadding = false
         roomBroadcastHeader.setTextColor(NPTheme.WHITE_70)
         roomBroadcastHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
         roomBroadcastHeader.typeface = NPTheme.bodyTypeface
-        roomBroadcastHeader.setPadding(dp(10), dp(6), dp(10), dp(6))
         roomBroadcastList.orientation = LinearLayout.VERTICAL
         roomBroadcastList.setPadding(dp(10), 0, dp(10), 0)
         // 【嵌套 apply 陷阱】内层 `ScrollView(context).apply { addView(...) }`
         // 里的 addView 会解析到**外层** LinearLayout（Kotlin 隐式 this），
         // 不是 ScrollView——584 真机回归踩过同类坑。这里显式建变量再挂。
-        val broadcastScroll = ScrollView(context)
-        broadcastScroll.isFillViewport = true
-        broadcastScroll.addView(roomBroadcastList)
+        roomBroadcastScroll.isFillViewport = true
+        roomBroadcastScroll.addView(roomBroadcastList)
+        // 标题行：campaign 图标 + `播报 (N)`（对齐 Flutter Row）。
+        val broadcastTitleRow = LinearLayout(context)
+        broadcastTitleRow.orientation = LinearLayout.HORIZONTAL
+        broadcastTitleRow.gravity = Gravity.CENTER_VERTICAL
+        broadcastTitleRow.setPadding(dp(10), dp(6), dp(10), dp(6))
+        broadcastTitleRow.addView(roomBroadcastIcon, llp(dp(12), dp(12)))
+        broadcastTitleRow.addView(
+            roomBroadcastHeader,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).also { it.marginStart = dp(4) },
+        )
         val broadcastWrap = LinearLayout(context)
         broadcastWrap.orientation = LinearLayout.VERTICAL
         broadcastWrap.foreground = rowBottomDivider()
         broadcastWrap.addView(
-            roomBroadcastHeader,
+            broadcastTitleRow,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ),
         )
         broadcastWrap.addView(
-            broadcastScroll,
+            roomBroadcastScroll,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
         )
         roomPanel.addView(
@@ -2836,6 +2904,15 @@ class NativePlayerScreenView(
      * 只在「数据签名」变化时重建列表，避免 500ms tick 反复销毁滚动视图
      * （滚动位置丢失、封面重载闪烁）。
      */
+    /**
+     * 房间资源面板渲染（592，逐项复刻 Flutter `_buildResourcePanel`）。
+     *
+     * 展开条件：房间模式 + `state.resourcePanelOpen`。展开时同步通知宿主把
+     * surface 收窄 [NPTheme.ROOM_PANEL_WIDTH]（否则视频被面板盖住）。
+     *
+     * 只在「数据签名」变化时重建列表，避免 500ms tick 反复销毁滚动视图
+     * （滚动位置丢失、封面重载闪烁）。
+     */
     private fun renderRoomPanel() {
         val state = lastState
         val show = state.isRoom && state.resourcePanelOpen
@@ -2847,28 +2924,23 @@ class NativePlayerScreenView(
         roomPanel.visibility = if (show) VISIBLE else GONE
         if (!show) return
 
-        // 头部：在线人数 + 房主/观众徽章
+        // ── 头部（对齐 Flutter：Expanded(资源) | 搜索 | 人数 | 角色）──
         roomPanelTitle.text = "资源"
-        roomPanelOnline.text = "👥 ${state.onlineUserCount}"
-        roomPanelOnline.setTextColor(NPTheme.WHITE_70)
-        roomPanelOnline.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+        roomPanelOnline.text = "${state.onlineUserCount}"
+        // 搜索按钮：房主 **且未在播放** 才显示（Flutter
+        // `_roomData != null && _isHost && state != playing`）。
+        // 旧实现只看 isHost（观众端也占位、只调 alpha），逻辑反了。
+        roomPanelSearch.visibility =
+            if (state.isHost && !state.paused) VISIBLE else GONE
         roomPanelRole.text = if (state.isHost) {
             "房主"
         } else {
             state.audienceName?.takeIf { it.isNotBlank() } ?: "观众"
         }
-        roomPanelRole.setTextColor(Color.WHITE)
-        roomPanelRole.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-        roomPanelRole.setPadding(dp(6), dp(2), dp(6), dp(2))
         roomPanelRole.background = GradientDrawable().apply {
             cornerRadius = dp(8).toFloat()
             setColor(if (state.isHost) NPTheme.ACCENT else 0xFFE53935.toInt())
         }
-        // 搜索：房主且未在播放时才可用（与 Flutter 一致）
-        val canSearch = state.isHost && !state.paused
-        roomPanelSearch.visibility = if (state.isHost) VISIBLE else GONE
-        roomPanelSearch.alpha = if (canSearch) 1f else 0.4f
-        roomPanelSearch.isEnabled = canSearch
 
         // 列表签名：分组/季/集结构 + 折叠态 + 当前集
         val sig = buildString {
@@ -2889,7 +2961,7 @@ class NativePlayerScreenView(
             buildRoomPanelList(state)
         }
 
-        // 播报板
+        // ── 播报板（对齐 Flutter `_buildBroadcastBoardInPanel`）──
         roomBroadcastHeader.text = "播报 (${state.broadcasts.size})"
         val bsig = state.broadcasts.joinToString("|")
         if (bsig != roomBroadcastSig) {
@@ -2901,8 +2973,13 @@ class NativePlayerScreenView(
                         text = "暂无消息"
                         setTextColor(NPTheme.WHITE_24)
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                        setPadding(0, dp(4), 0, dp(4))
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(8), 0, dp(8))
                     },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ),
                 )
             } else {
                 for (line in state.broadcasts) {
@@ -2915,11 +2992,15 @@ class NativePlayerScreenView(
                         },
                     )
                 }
+                // 新消息自动滚到底（Flutter `animateTo(maxScrollExtent)`）。
+                roomBroadcastScroll.post {
+                    roomBroadcastScroll.fullScroll(View.FOCUS_DOWN)
+                }
             }
         }
     }
 
-    /** 重建资源分组列表（分组 → 季 → 集）。 */
+    /** 重建资源分组列表（分组 → 季 → 集，对齐 Flutter `_buildGroupWidget`）。 */
     private fun buildRoomPanelList(state: AndroidNativePlayerState) {
         roomPanelList.removeAllViews()
         if (state.resourceGroups.isEmpty()) {
@@ -2939,97 +3020,27 @@ class NativePlayerScreenView(
             return
         }
         state.resourceGroups.forEachIndexed { gi, group ->
-            // 组标题行（chevron + 组名 + 计数）
-            roomPanelList.addView(
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(12), dp(8), dp(12), dp(8))
-                    setBackgroundColor(0xFF16213E.toInt())
-                    isClickable = true
-                    setOnClickListener {
-                        listener?.onToggleResourceGroup(gi)
-                        scheduleAutoHide()
-                    }
-                    applyPressFeedback(this)
-                    addView(
-                        iconView(
-                            if (group.collapsed) NativePlayerIcons.ICON_CHEVRON_RIGHT
-                            else NativePlayerIcons.ICON_EXPAND_MORE,
-                            20f,
-                            NPTheme.WHITE_70,
-                        ),
-                        llp(dp(20), dp(20)),
-                    )
-                    addView(
-                        TextView(context).apply {
-                            text = group.name
-                            setTextColor(Color.WHITE)
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                            maxLines = 1
-                            ellipsize = TextUtils.TruncateAt.END
-                        },
-                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                            .also { it.marginStart = dp(4) },
-                    )
-                    addView(
-                        TextView(context).apply {
-                            text = group.countLabel
-                            setTextColor(NPTheme.WHITE_70)
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                        },
-                    )
-                },
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ),
-            )
+            roomPanelList.addView(buildRoomGroupHeader(gi, group))
             if (group.collapsed) return@forEachIndexed
 
-            group.seasons.forEachIndexed { si, season ->
-                // 季标题（多季时显示）
-                if (group.seasons.size > 1) {
+            // 电影组：直接列出（Flutter `group.isMovie` 分支不套季循环）。
+            if (group.isMovie) {
+                group.seasons.firstOrNull()?.episodes?.forEach { ep ->
                     roomPanelList.addView(
-                        LinearLayout(context).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            gravity = Gravity.CENTER_VERTICAL
-                            setPadding(dp(16), dp(6), dp(12), dp(6))
-                            isClickable = true
-                            setOnClickListener {
-                                listener?.onToggleResourceSeason(gi, si)
-                                scheduleAutoHide()
-                            }
-                            applyPressFeedback(this)
-                            addView(
-                                iconView(
-                                    if (season.collapsed) NativePlayerIcons.ICON_CHEVRON_RIGHT
-                                    else NativePlayerIcons.ICON_EXPAND_MORE,
-                                    18f,
-                                    NPTheme.WHITE_70,
-                                ),
-                                llp(dp(18), dp(18)),
-                            )
-                            addView(
-                                TextView(context).apply {
-                                    text = "第${season.seasonNumber}季"
-                                    setTextColor(NPTheme.WHITE_70)
-                                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                                },
-                                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                                    .also { it.marginStart = dp(4) },
-                            )
-                        },
+                        buildRoomEpisodeRow(ep),
                         LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT,
                         ),
                     )
-                    if (season.collapsed) return@forEachIndexed
                 }
+                return@forEachIndexed
+            }
 
-                // 集行
+            // 剧集组：按季分组（季标题只在剧集组显示，与 Flutter 一致）。
+            group.seasons.forEachIndexed { si, season ->
+                roomPanelList.addView(buildRoomSeasonHeader(gi, si, season))
+                if (season.collapsed) return@forEachIndexed
                 for (ep in season.episodes) {
                     roomPanelList.addView(
                         buildRoomEpisodeRow(ep),
@@ -3043,13 +3054,114 @@ class NativePlayerScreenView(
         }
     }
 
-    /** 单条资源行（对齐 Flutter `_buildEpisodeListItem`）。 */
+    /** 分组标题行（chevron + 组名 + 计数），对齐 Flutter 组标题。 */
+    private fun buildRoomGroupHeader(
+        groupIndex: Int,
+        group: AndroidResourceGroup,
+    ): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(12), dp(8), dp(12), dp(8))
+        setBackgroundColor(0xFF16213E.toInt())
+        isClickable = true
+        setOnClickListener {
+            listener?.onToggleResourceGroup(groupIndex)
+            scheduleAutoHide()
+        }
+        applyPressFeedback(this)
+        addView(
+            iconView(
+                if (group.collapsed) NativePlayerIcons.ICON_CHEVRON_RIGHT
+                else NativePlayerIcons.ICON_EXPAND_MORE,
+                20f,
+                NPTheme.WHITE_70,
+            ),
+            llp(dp(20), dp(20)),
+        )
+        addView(
+            TextView(context).apply {
+                text = group.name
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            },
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .also { it.marginStart = dp(4) },
+        )
+        addView(
+            TextView(context).apply {
+                text = group.countLabel
+                // Flutter `Colors.white54` 12px（旧实现 WHITE_70 11sp）。
+                setTextColor(NPTheme.WHITE_54)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            },
+        )
+    }
+
+    /** 季标题行（chevron + 第N季 + (N集)），对齐 Flutter `_buildSeasonWidget`。 */
+    private fun buildRoomSeasonHeader(
+        groupIndex: Int,
+        seasonIndex: Int,
+        season: AndroidSeasonGroup,
+    ): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        // Flutter `EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6)`。
+        setPadding(dp(24), dp(6), dp(12), dp(6))
+        setBackgroundColor(0xFF1A1A2E.toInt())
+        isClickable = true
+        setOnClickListener {
+            listener?.onToggleResourceSeason(groupIndex, seasonIndex)
+            scheduleAutoHide()
+        }
+        applyPressFeedback(this)
+        addView(
+            iconView(
+                if (season.collapsed) NativePlayerIcons.ICON_CHEVRON_RIGHT
+                else NativePlayerIcons.ICON_EXPAND_MORE,
+                // Flutter `size: 16` + `Colors.white54`。
+                16f,
+                NPTheme.WHITE_54,
+            ),
+            llp(dp(16), dp(16)),
+        )
+        addView(
+            TextView(context).apply {
+                text = "第${season.seasonNumber}季"
+                // Flutter white70 12 w500。
+                setTextColor(NPTheme.WHITE_70)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                typeface = NPTheme.bodyTypeface
+            },
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .also { it.marginStart = dp(4) },
+        )
+        addView(
+            TextView(context).apply {
+                // Flutter 季标题右侧 `(N集)` white38 11px。
+                text = "(${season.episodes.size}集)"
+                setTextColor(NPTheme.WHITE_38)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            },
+        )
+    }
+
+    /**
+     * 单条资源行（逐项复刻 Flutter `_buildEpisodeListItem`）。
+     *
+     * 结构：`[左 3dp accent 边] 播放/暂停(房主) 缩略图56×36 集信息 删除(房主)`
+     * 当前集：accent@30% 底 + 左 3dp accent 边。
+     */
     private fun buildRoomEpisodeRow(ep: AndroidResourceItem): LinearLayout =
         LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            // Flutter `EdgeInsets.symmetric(horizontal: 8, vertical: 6)`。
             setPadding(dp(8), dp(6), dp(8), dp(6))
             if (ep.isPlaying) {
+                // Flutter `Color(0xFF6366F1).withValues(alpha: 0.3)`。
                 setBackgroundColor(0x4D6366F1)
             }
             isClickable = true
@@ -3061,6 +3173,15 @@ class NativePlayerScreenView(
                 scheduleAutoHide()
             }
             applyPressFeedback(this)
+
+            // 当前集左侧 3dp accent 竖条（Flutter `Border(left: BorderSide(accent, 3))`）。
+            // 旧实现只有底色、缺左边框。
+            if (ep.isPlaying) {
+                addView(
+                    View(context).apply { setBackgroundColor(NPTheme.ACCENT) },
+                    llp(dp(3), dp(44)),
+                )
+            }
 
             // 播放/暂停（房主）
             if (lastState.isHost) {
@@ -3079,20 +3200,36 @@ class NativePlayerScreenView(
                 addView(View(context), llp(dp(8), dp(1)))
             }
 
-            // 缩略图 56×36
+            // 缩略图 56×36（圆角 4；无图时灰底 + movie 图标，与 Flutter 一致）。
             addView(
                 FrameLayout(context).apply {
-                    setBackgroundColor(0xFF2A2A3E.toInt())
-                    addView(
-                        ImageView(context).apply {
-                            scaleType = ImageView.ScaleType.CENTER_CROP
-                            NativeLogoLoader.load(this, ep.poster.ifBlank { null }, dp(56), NativeLogoLoader.PRIORITY_REST)
-                        },
-                        FrameLayout.LayoutParams(
-                            FrameLayout.LayoutParams.MATCH_PARENT,
-                            FrameLayout.LayoutParams.MATCH_PARENT,
-                        ),
-                    )
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = dp(4).toFloat()
+                        setColor(0xFF424242.toInt())
+                    }
+                    if (ep.poster.isBlank()) {
+                        addView(
+                            iconView(NativePlayerIcons.ICON_MOVIE, 16f, 0xFF9E9E9E.toInt()),
+                            lp(dp(16), dp(16), Gravity.CENTER),
+                        )
+                    } else {
+                        addView(
+                            ImageView(context).apply {
+                                scaleType = ImageView.ScaleType.CENTER_CROP
+                                NativeLogoLoader.load(
+                                    this,
+                                    ep.poster,
+                                    dp(56),
+                                    NativeLogoLoader.PRIORITY_REST,
+                                )
+                            },
+                            FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                            ),
+                        )
+                    }
                 },
                 llp(dp(56), dp(36)),
             )
@@ -3149,6 +3286,8 @@ class NativePlayerScreenView(
                     llp(dp(24), dp(24)),
                 )
             }
+        }
+
         }
 
     private fun applyState() {
@@ -3562,6 +3701,9 @@ class NativePlayerScreenView(
         const val AXIS_NONE = 0
         const val AXIS_HORIZONTAL = 1
         const val AXIS_VERTICAL = 2
+
+        /** 房间面板签名哨兵（不可能与真实数据相等，见 roomPanelSig 注释）。 */
+        const val ROOM_SIG_UNBUILT = "\u0000unbuilt"
 
         // 面板类型（与鸿蒙 NativePlayerPanelType 同构）
         const val PANEL_SPEED = "speed"

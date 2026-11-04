@@ -875,6 +875,30 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 - [x] 安卓资源面板头部标题补 `ellipsize`，与 Flutter
       `Expanded(资源) | 搜索 | 人数 | 角色` 布局一致。
 
+### Phase 2.11：房间资源面板逐项复刻 Flutter（1.5.12+592）
+
+> 起因：真机房间模式面板全空（「资源」下面一片空白、播报 (0)），且与 Flutter
+> `_buildResourcePanel` 差距大。
+
+- [x] **根因：签名初值碰撞**。`roomPanelSig` / `roomBroadcastSig` 初值为 `""`，
+  与「零分组/零播报」产生的签名 `""` 相等 → `buildRoomPanelList` 与播报重建
+  **从未执行** → 连「暂无资源」「暂无消息」空态都不渲染，列表区纯空白。
+  改用哨兵 `ROOM_SIG_UNBUILT`（`"\u0000unbuilt"`）。
+- [x] 头部逐项对齐：搜索显隐改 `isHost && !paused`（旧只看 `isHost` 只调
+  alpha）；人数胶囊改 `people` 图标字体 12 + 数字 11（旧用 `👥` emoji）；
+  胶囊底 white12 圆角 8 padding h6 v2；角色徽章房主 accent / 观众红。
+- [x] 分组计数 white54 12sp（旧 WHITE_70 11sp）。
+- [x] 季标题：左 24 / 右 12 / 上下 6、white54 16 图标、`第N季` white70 12
+  w500、`(N集)` white38 11；且**只在剧集组显示**（旧按 `seasons.size > 1`）。
+- [x] 电影组直接列 `seasons.first.episodes`（旧套季循环）。
+- [x] 集行：当前集加**左 3dp accent 竖条**（旧只有底色）；缩略图圆角 4 +
+  无图时灰底 `movie` 图标；播放/暂停图标随状态；删除 `close` 18 white24。
+- [x] 播报板：标题加 `campaign` 图标 12；新消息自动 `fullScroll` 到底；
+  空态居中。
+- [x] 列表 `padding vertical 4`（对齐 Flutter `ListView`）。
+- [x] 鸿蒙 `RoomPanel` 同款复刻：补季行/集行/删除/播放图标/当前集左边框/
+  电影组直接展开/人数胶囊图标/播报标题图标/空态居中。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
