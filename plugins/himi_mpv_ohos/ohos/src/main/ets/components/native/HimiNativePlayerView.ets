@@ -40,6 +40,14 @@ const TAG = 'HimiNativePlayerView';
  */
 const ROOM_PANEL_WIDTH = 320;
 
+/**
+ * 房间资源面板高度（594，竖屏上下结构）。
+ *
+ * 与 Flutter `_buildResponsiveLayout` 竖屏分支 `SizedBox(height: 280)`
+ * 逐值一致。竖屏时面板贴视频区下缘、占满宽度。
+ */
+const ROOM_PANEL_HEIGHT = 280;
+
 /** 面板分隔线（与 NativePlayerPanel.PANEL_DIVIDER 同值，白 12%）。 */
 const ROOM_PANEL_DIVIDER = '#1FFFFFFF';
 
@@ -1302,8 +1310,8 @@ export struct HimiNativePlayerView {
       .height(120)
       .border({ width: { top: 0.5 }, color: ROOM_PANEL_DIVIDER });
     }
-    .width(ROOM_PANEL_WIDTH)
-    .height('100%')
+    .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
+    .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%')
     .backgroundColor('#1A1A2E')
     .alignItems(HorizontalAlign.Start);
   }
@@ -1419,29 +1427,28 @@ export struct HimiNativePlayerView {
     });
   }
 
-  build() {
-    Stack({ alignContent: Alignment.Top }) {
-      // ── 视频 + 房间资源面板：Row 分栏（590）──
-      // 【必须流式布局】鸿蒙禁止 position/markAnchor 百分比定位（真机跑位
-      // 回归，见 test/native_player_theme_test.dart）：尾组曾用
-      // `.position({x:'100%',y:'50%'})`，百分比基准是父容器、Stack 高度不定
-      // → 控件跑到屏幕中部/屏外。因此分栏用 Row + layoutWeight 实现，
-      // 与 Flutter `Row(Expanded(video), SizedBox(320))` 等价。
-      Row() {
+  /**
+   * 视频层 + 手势层（593/594 分栏复用）。
+   *
+   * 抽成 @Builder 是因为横屏 `Row` 与竖屏 `Column` 两个分支都要同一份
+   * 视频内容——ArkTS 不能动态换容器类型，只能各写一份并共用本 @Builder。
+   */
+  @Builder
+  VideoStack() {
       // ── 视频层 ──
       XComponent({
         type: XComponentType.SURFACE,
         controller: this.controller,
       })
-        // 宽度由外层 Row 分栏决定（见 build 顶部）：房间面板展开时视频区
-        // 收窄（593），与 Flutter `Row(Expanded(video), SizedBox(320))` 等价。
+        // 尺寸由外层分栏容器决定（见 build 顶部）：房间面板展开时视频区
+        // 收窄（593/594），横屏收窄宽度、竖屏收窄高度。
         //
-        // 【坑】`layoutWeight(1)` 与 `width('100%')` 同时设置时 width 优先，
-        // layoutWeight 失效 → 视频不收窄、面板盖在上面（真机回归）。
-        // 因此必须二选一：展开用 layoutWeight（吃掉剩余宽），收起用 100%。
+        // 【坑】`layoutWeight(1)` 与 `width/height('100%')` 同时设置时后者
+        // 优先，layoutWeight 失效 → 视频不收窄、面板盖在上面（真机回归）。
+        // 因此必须二选一：展开用 layoutWeight（吃掉剩余空间），收起用 100%。
         .width(this.roomPanelVisible() ? 'auto' : '100%')
+        .height(this.roomPanelVisible() ? 'auto' : '100%')
         .layoutWeight(this.roomPanelVisible() ? 1 : 0)
-        .height('100%')
         .backgroundColor(Color.Black)
         // 【兜底：尺寸同步】XComponent 的 onSurfaceChanged 在部分转屏场景
         // 不触发（子窗口尺寸变化但 surface 未重建），导致 mpv 仍按旧尺寸
@@ -1517,11 +1524,6 @@ export struct HimiNativePlayerView {
               }),
           ),
         )
-      }
-      .width('100%')
-      .height('100%')
-      .alignItems(VerticalAlign.Top);
-
       // ── 手势层（视频之上）──
       Column()
         .width('100%')
@@ -1562,6 +1564,64 @@ export struct HimiNativePlayerView {
         // 全部失效、面板遮罩点不关（真机回归）。Default 下控件先声明成功，
         // 本层不再介入；空视频区无控件声明，本层照常接管。
         .hitTestBehavior(HitTestMode.Default);
+
+  }
+
+  /** 房间资源面板槽（593/594）：横屏右侧 320vp / 竖屏底部 280vp。 */
+  @Builder
+  RoomPanelSlot() {
+    Column() {
+      this.RoomPanel();
+    }
+    .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
+    .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%');
+  }
+
+  build() {
+    Stack({ alignContent: Alignment.Top }) {
+      // ── 视频 + 房间资源面板：Row 分栏（590）──
+      // 【必须流式布局】鸿蒙禁止 position/markAnchor 百分比定位（真机跑位
+      // 回归，见 test/native_player_theme_test.dart）：尾组曾用
+      // `.position({x:'100%',y:'50%'})`，百分比基准是父容器、Stack 高度不定
+      // → 控件跑到屏幕中部/屏外。
+      //
+      // 【594 竖屏上下结构】用 Flex + direction 动态切换：
+      // - 横屏（`Row`）：视频左、面板右 320vp（Flutter
+      //   `Row(Expanded(video), SizedBox(320))`）；
+      // - 竖屏（`Column`）：视频上、面板下 280vp（Flutter
+      //   `Column(Expanded(video), SizedBox(280))`）。
+      // ArkTS 不能在 build() 里动态换容器类型，Flex 的 direction 是
+      // 唯一可行手段。
+      // ── 视频 + 房间资源面板分栏（593/594）──
+      // 【必须流式布局】鸿蒙禁止 position/markAnchor 百分比定位（真机跑位
+      // 回归，见 test/native_player_theme_test.dart）：尾组曾用
+      // `.position({x:'100%',y:'50%'})`，百分比基准是父容器、Stack 高度不定
+      // → 控件跑到屏幕中部/屏外。
+      //
+      // 【594 竖屏上下结构】用 if/else 双分支（Row / Column 各写一份）。
+      // 不用 `Flex({direction})`：ArkTS 对三元表达式推断方向枚举会报
+      // `arkts-no-any-unknown`（CI 实测），显式分支最稳。
+      // - 横屏 Row：视频左、面板右 320vp（Flutter
+      //   `Row(Expanded(video), SizedBox(320))`）；
+      // - 竖屏 Column：视频上、面板下 280vp（Flutter
+      //   `Column(Expanded(video), SizedBox(280))`）。
+      if (this.roomPanelVisible() && this.portrait) {
+        Column() {
+          this.VideoStack();
+          this.RoomPanelSlot();
+        }
+        .width('100%')
+        .height('100%');
+      } else {
+        Row() {
+          this.VideoStack();
+          if (this.roomPanelVisible()) {
+            this.RoomPanelSlot();
+          }
+        }
+        .width('100%')
+        .height('100%');
+      }
 
       // ── 加载指示器（586）：居中转圈，在控件层**之下**（对齐 Flutter
       //    `_buildVideoArea` 的 `CircularProgressIndicator`——转圈期间顶栏/

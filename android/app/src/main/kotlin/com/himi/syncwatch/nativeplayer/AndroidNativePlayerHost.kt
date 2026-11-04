@@ -420,15 +420,29 @@ class AndroidNativePlayerHost(
     private fun applyVideoInsetRight(insetPx: Int) {
         val dlg = surfaceDialog ?: return
         val win = dlg.window ?: return
-        val screenW = activity.resources.displayMetrics.widthPixels
-        val targetW = (screenW - insetPx.coerceAtLeast(0)).coerceAtLeast(1)
-        // 用 setLayout 而非改 attributes.width：后者会被之前 setLayout 的
-        // MATCH_PARENT 覆盖。不设短路——show() 后可能被重置，必须每次重申。
-        win.setLayout(targetW, ViewGroup.LayoutParams.MATCH_PARENT)
-        win.attributes = win.attributes.apply {
-            // 靠左对齐：面板占右侧，视频贴左。
+        val metrics = activity.resources.displayMetrics
+        val screenW = metrics.widthPixels
+        val screenH = metrics.heightPixels
+        val inset = insetPx.coerceAtLeast(0)
+        // 594：竖屏时面板占**高度**（上下结构），横屏占**宽度**（左右分栏）。
+        val portrait = screenH > screenW
+        val targetW: Int
+        val targetH: Int
+        val gravity: Int
+        if (portrait) {
+            targetW = screenW
+            targetH = (screenH - inset).coerceAtLeast(1)
+            // 视频贴左上，面板在其下。
+            gravity = android.view.Gravity.START or android.view.Gravity.TOP
+        } else {
+            targetW = (screenW - inset).coerceAtLeast(1)
+            targetH = screenH
             gravity = android.view.Gravity.START or android.view.Gravity.TOP
         }
+        // 用 setLayout 而非改 attributes.width：后者会被之前 setLayout 的
+        // MATCH_PARENT 覆盖。不设短路——show() 后可能被重置，必须每次重申。
+        win.setLayout(targetW, targetH)
+        win.attributes = win.attributes.apply { this.gravity = gravity }
     }
 
     /** 全屏 + 刘海 + 沉浸式（两个窗口共用）。 */

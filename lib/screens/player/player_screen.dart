@@ -3323,12 +3323,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// episodes 有多集、versions 有多源时面板才有意义；数据变化点（剧集加载 /
   /// 切集 / 多版本源加载）调用。
+  /// 上次推给原生的**非空**资源分组（594）。
+  ///
+  /// 【真机回归：一播放资源面板就空】观众端起播路径
+  /// `_playFromUrl` → `_loadEpisodeStream` 会先重置 `_episodes` 再重建，
+  /// 中间存在「重置后、重建前」窗口：此时 `_resourceGroups` 为空，推送下去
+  /// 原生就收到空列表；而原生签名已记为「空」，之后即使数据回来也要等签名
+  /// 再变一次才重建 → 面板长时间空白。
+  ///
+  /// 修法：Dart 侧保留上次非空值，窗口期返回旧数据（面板保持可见）；
+  /// 只有明确换片/退出房间才清空（[clearNativeResourceCache]）。
+  List<NativeResourceGroup> _lastNonEmptyResourceGroups =
+      const <NativeResourceGroup>[];
+
+  /// 明确清空资源缓存（换片/退出房间时调用，避免旧剧资源残留）。
+  @visibleForTesting
+  void clearNativeResourceCache() {
+    _lastNonEmptyResourceGroups = const <NativeResourceGroup>[];
+  }
+
   /// Flutter `_resourceGroups` → 原生资源面板数据（590）。
   ///
   /// 只带原生渲染需要的字段；折叠态照传（原生自己维护展开/收起，Dart 侧
   /// 的 `collapsed` 仅作初始值）。
+  ///
+  /// 594：`_resourceGroups` 为空时返回上次非空值（见
+  /// [_lastNonEmptyResourceGroups] 注释）。
   List<NativeResourceGroup> _nativeResourceGroups() {
-    return _resourceGroups
+    final groups = _resourceGroups
         .map((g) => NativeResourceGroup(
               name: g.name,
               isMovie: g.isMovie,
@@ -3354,6 +3376,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   .toList(growable: false),
             ))
         .toList(growable: false);
+    if (groups.isNotEmpty) {
+      _lastNonEmptyResourceGroups = groups;
+      return groups;
+    }
+    return _lastNonEmptyResourceGroups;
   }
 
   void _syncNativePanelData() {
@@ -5942,6 +5969,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final mpv = _player;
     if (mpv is MpvPlayerAdapter) {
       unawaited(mpv.applyVideoFit(_videoFit.name));
+      // 594：分栏后 surface 只有左区（横屏）或上区（竖屏）尺寸，
+      // `panscan`/`keepaspect` 依赖 surface 当前尺寸做 letterbox。
+      // 分栏刚切换时 surface 可能还没完成 onSizeChanged，这里补一次
+      // 重同步，确保 fit 落在**最新尺寸**上（真机「全屏控件失效」）。
+      unawaited(mpv.refreshSurfaceAfterFit());
     }
   }
 

@@ -918,6 +918,33 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   设置时 **width 优先**、layoutWeight 失效 → 视频不收窄。改为二选一
   （展开 `width('auto') + layoutWeight(1)`，收起 `width('100%')`）。
 
+### Phase 2.13：资源面板保留非空值 + 竖屏上下结构 + fit 重同步（1.5.14+594）
+
+> 起因：真机「一播放资源面板就空」；「全屏控件失效」；「手动竖屏应该是
+> 上下结构」。
+
+- [x] **资源面板一播放就空**：观众端起播路径
+  `_playFromUrl` → `_loadEpisodeStream` 会先重置 `_episodes` 再重建，中间
+  存在「重置后、重建前」窗口——此时 `_resourceGroups` 为空，推送下去原生
+  收到空列表；原生签名已记为「空」，之后要等签名再变一次才重建 → 面板
+  长时间空白。Dart 侧新增 `_lastNonEmptyResourceGroups` 保留上次非空值，
+  `_nativeResourceGroups()` 空时返回缓存；`clearNativeResourceCache()` 供
+  换片/退出房间时明确清空。
+- [x] **竖屏上下结构**：安卓 `applyVideoSplit` 增加 `portrait` 分支——视频区
+  高 = `屏高 - 280dp`、面板贴下缘全宽；宿主 `applyVideoInsetRight` 按方向
+  收窄高/宽（竖屏收窄高度）。新增 `NPTheme.ROOM_PANEL_HEIGHT = 280`
+  （对齐 Flutter `SizedBox(height: 280)`）。
+- [x] **鸿蒙竖屏**：`build()` 用 `if/else` 双分支（横屏 `Row`、竖屏
+  `Column`），视频层+手势层抽成 `VideoStack` @Builder 共用；
+  `RoomPanelSlot` 按 `portrait` 切 320vp / 280vp。
+  不用 `Flex({direction})`：ArkTS 对三元表达式推断方向枚举报
+  `arkts-no-any-unknown`（构建实测）。
+- [x] **全屏控件（fit）失效**：`applyVideoFit` 只写 mpv 属性，但 letterbox
+  依赖 surface **当前尺寸**；分栏 `setLayout` 异步生效 → 属性已改、尺寸
+  还没到，画面按旧尺寸裁切。新增
+  `MpvPlayerAdapter.refreshSurfaceAfterFit()`，`_cycleVideoFit` 调用它补
+  一次 surface 重同步。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

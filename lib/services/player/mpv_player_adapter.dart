@@ -342,6 +342,22 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     LogService().log('mpv', 'applyVideoFit=$fit → $props');
   }
 
+  /// 应用 fit 后重同步 surface 尺寸（594）。
+  ///
+  /// 【真机「全屏控件失效」】`applyVideoFit` 只写 mpv 属性
+  /// （`keepaspect`/`panscan`/`video-unscaled`），但 letterbox 依赖 surface
+  /// 的**当前尺寸**。分栏刚切换时 surface 窗 `setLayout` 是异步生效的：
+  /// 属性已改、尺寸还没到 → 画面按旧尺寸裁切，看起来「没全屏」。
+  ///
+  /// 这里补一次 surface 重同步，让 fit 落在最新尺寸上。
+  Future<void> refreshSurfaceAfterFit() async {
+    try {
+      await _player?.refreshSurface();
+    } catch (e) {
+      LogService().log('mpv', 'refreshSurfaceAfterFit 失败: $e');
+    }
+  }
+
   Future<void> _applyHdrOutputProperties(bool enabled) async {
     final player = _player;
     if (player == null) return;

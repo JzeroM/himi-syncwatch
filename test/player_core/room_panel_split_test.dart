@@ -27,7 +27,8 @@ void main() {
     test('用 setLayout 而非只改 attributes.width', () {
       // 旧实现 `lp.width = targetW; w.attributes = lp` 会被之前
       // applyFullscreen 的 setLayout(MATCH_PARENT) 覆盖，实际仍全屏。
-      expect(host, contains('win.setLayout(targetW, ViewGroup.LayoutParams.MATCH_PARENT)'));
+      // 594：竖屏收窄高度、横屏收窄宽度，故是 (targetW, targetH)。
+      expect(host, contains('win.setLayout(targetW, targetH)'));
       // 注释里保留了旧写法说明，所以只断言**可执行代码**里没有该短路。
       final fnStart = host.indexOf('private fun applyVideoInsetRight(insetPx: Int) {');
       expect(fnStart, greaterThan(0));
@@ -52,16 +53,18 @@ void main() {
 
     test('左区控件按 videoW 收窄', () {
       // 视频手势层 / 弹幕 / 顶栏 / 底栏 / 面板遮罩都要跟随。
-      expect(kotlinScreen, contains('val videoW = (screenW - insetPx).coerceAtLeast(1)'));
-      expect(kotlinScreen, contains('it.width = videoW; tapLayer.layoutParams = it'));
+      expect(kotlinScreen, contains('videoW = (screenW - panelSizePx).coerceAtLeast(1)'));
+      // 594：竖屏要同时收窄高度，故 tapLayer / danmaku / panelScrim 多一个
+      // `it.height = videoH` 赋值。
+      expect(kotlinScreen, contains('it.width = videoW; it.height = videoH; tapLayer.layoutParams = it'));
       expect(kotlinScreen, contains('it.width = videoW; topBar.layoutParams = it'));
-      expect(kotlinScreen, contains('it.width = videoW; bottomBar.layoutParams = it'));
-      expect(kotlinScreen, contains('it.width = videoW; panelScrim.layoutParams = it'));
+      expect(kotlinScreen, contains('it.width = videoW'));
+      expect(kotlinScreen, contains('bottomBar.layoutParams = it'));
     });
 
     test('右区面板贴左区右缘（不再是 Gravity.END 贴屏幕右缘）', () {
       expect(kotlinScreen, contains('it.leftMargin = videoW'));
-      expect(kotlinScreen, contains('it.width = insetPx.coerceAtLeast(0)'));
+      expect(kotlinScreen, contains('it.width = panelSizePx'));
     });
 
     test('转屏/尺寸变化后重算分栏', () {
@@ -82,8 +85,8 @@ void main() {
       expect(ohosView, isNot(contains(".layoutWeight(this.roomPanelVisible() ? 1 : 0)\n        .width('100%')")));
     });
 
-    test('RoomPanel 固定 320vp', () {
-      expect(ohosView, contains('.width(ROOM_PANEL_WIDTH)'));
+    test('RoomPanel 按方向切 320vp / 100%（594）', () {
+      expect(ohosView, contains(".width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)"));
     });
   });
 

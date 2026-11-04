@@ -152,6 +152,14 @@ internal object NPTheme {
      * 逐值一致。展开时 mpv surface 同步收窄该宽度（否则视频被面板盖住）。
      */
     const val ROOM_PANEL_WIDTH = 320
+
+    /**
+     * 房间资源面板高度（594，竖屏上下结构）。
+     *
+     * 与 Flutter `_buildResponsiveLayout` 竖屏分支的 `SizedBox(height: 280)`
+     * 逐值一致。竖屏时面板贴视频区下缘、占满宽度。
+     */
+    const val ROOM_PANEL_HEIGHT = 280
     const val PANEL_TOP_OFFSET = 48
     const val PANEL_BOTTOM_OFFSET = 116
 

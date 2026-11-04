@@ -2919,11 +2919,24 @@ class NativePlayerScreenView(
     private fun renderRoomPanel() {
         val state = lastState
         val show = state.isRoom && state.resourcePanelOpen
-        val panelPx = if (show) dp(NPTheme.ROOM_PANEL_WIDTH) else 0
+        // 594：竖屏面板占高度 280dp（Flutter `SizedBox(height: 280)`），
+        // 横屏占宽度 320dp。宿主据此决定收窄方向。
+        val screenW = width.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels
+        val screenH = height.takeIf { it > 0 }
+            ?: resources.displayMetrics.heightPixels
+        val portrait = screenH > screenW
+        val panelPx = if (!show) {
+            0
+        } else if (portrait) {
+            dp(NPTheme.ROOM_PANEL_HEIGHT)
+        } else {
+            dp(NPTheme.ROOM_PANEL_WIDTH)
+        }
         if (panelPx != lastVideoInsetRightPx) {
             lastVideoInsetRightPx = panelPx
             listener?.onVideoInsetRight(panelPx)
-            // 593：控件层同步分栏（左区控件收窄，右区让给面板）。
+            // 593/594：控件层同步分栏（横屏收窄宽度、竖屏收窄高度）。
             applyVideoSplit(panelPx)
         }
         roomPanel.visibility = if (show) VISIBLE else GONE
@@ -3305,24 +3318,61 @@ class NativePlayerScreenView(
      * 右区（inset）只放资源面板。与 Flutter
      * `Row(Expanded(video), SizedBox(320))` 完全等价。
      */
+    /**
+     * 控件层分栏（593/594）：房间资源面板展开时把控件区让出给面板。
+     *
+     * **横屏**（与 Flutter `Row(Expanded(video), SizedBox(320))` 等价）：
+     * 左区承载视频控件，右区 320dp 放资源面板。
+     *
+     * **竖屏**（与 Flutter `Column(Expanded(video), SizedBox(280))` 等价，
+     * 594 补齐）：上区承载视频控件，下区 280dp 放资源面板。旧实现只有横向
+     * 分支——竖屏时 `screenW - 320dp` 会得到极窄的 videoW（甚至 1px），
+     * 整个控件区被压扁（真机回归「手动竖屏没有上下结构」）。
+     */
     private fun applyVideoSplit(insetPx: Int) {
         if (insetPx == lastVideoSplitInsetPx) return
         lastVideoSplitInsetPx = insetPx
         val screenW = width.takeIf { it > 0 }
             ?: resources.displayMetrics.widthPixels
-        val videoW = (screenW - insetPx).coerceAtLeast(1)
+        val screenH = height.takeIf { it > 0 }
+            ?: resources.displayMetrics.heightPixels
+        val portrait = screenH > screenW
 
-        // 左区：视频手势层 / 弹幕 / 顶栏 / 底栏 / 手势提示 / 柱条 / 面板遮罩。
-        (tapLayer.layoutParams as? LayoutParams)?.let { it.width = videoW; tapLayer.layoutParams = it }
+        // 竖屏：面板高度固定 280dp（Flutter `SizedBox(height: 280)`），
+        // 视频区吃掉剩余高度。横屏：面板宽 320dp，视频区吃掉剩余宽度。
+        val panelSizePx = insetPx.coerceAtLeast(0)
+        val videoW: Int
+        val videoH: Int
+        if (portrait) {
+            videoW = screenW
+            videoH = (screenH - panelSizePx).coerceAtLeast(1)
+        } else {
+            videoW = (screenW - panelSizePx).coerceAtLeast(1)
+            videoH = screenH
+        }
+
+        // 左/上区：视频手势层 / 弹幕 / 顶栏 / 底栏 / 面板遮罩。
+        (tapLayer.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; it.height = videoH; tapLayer.layoutParams = it
+        }
         (danmakuLayer.layoutParams as? LayoutParams)?.let {
-            it.width = videoW; danmakuLayer.layoutParams = it
+            it.width = videoW; it.height = videoH; danmakuLayer.layoutParams = it
         }
         (topBar.layoutParams as? LayoutParams)?.let { it.width = videoW; topBar.layoutParams = it }
         (bottomBar.layoutParams as? LayoutParams)?.let {
-            it.width = videoW; bottomBar.layoutParams = it
+            it.width = videoW
+            // 竖屏：底栏贴视频区底缘（面板在其下），横屏：贴屏幕底缘。
+            if (portrait) {
+                it.height = LayoutParams.WRAP_CONTENT
+                it.topMargin = videoH - dp(NPTheme.BAR_PAD_TOP) - dp(NPTheme.TRANSPORT_PLAY + 8)
+                it.gravity = Gravity.START or Gravity.TOP
+            } else {
+                it.gravity = Gravity.START or Gravity.BOTTOM
+            }
+            bottomBar.layoutParams = it
         }
         (panelScrim.layoutParams as? LayoutParams)?.let {
-            it.width = videoW; panelScrim.layoutParams = it
+            it.width = videoW; it.height = videoH; panelScrim.layoutParams = it
         }
         (panelContainer.layoutParams as? LayoutParams)?.let {
             it.width = videoW; panelContainer.layoutParams = it
@@ -3331,17 +3381,29 @@ class NativePlayerScreenView(
             it.width = videoW; decodePopover.layoutParams = it
         }
         (segmentScrim.layoutParams as? LayoutParams)?.let {
-            it.width = videoW; segmentScrim.layoutParams = it
+            it.width = videoW; it.height = videoH; segmentScrim.layoutParams = it
         }
         (segmentCard.layoutParams as? LayoutParams)?.let {
             it.width = videoW; segmentCard.layoutParams = it
         }
 
-        // 右区：资源面板改为「贴左区右缘」（不再是 Gravity.END 贴屏幕右缘）。
+        // 右/下区：资源面板
         (roomPanel.layoutParams as? LayoutParams)?.let {
-            it.width = insetPx.coerceAtLeast(0)
-            it.gravity = Gravity.START or Gravity.TOP
-            it.leftMargin = videoW
+            if (portrait) {
+                // 竖屏：贴视频区下缘、全宽。
+                it.width = videoW
+                it.height = panelSizePx
+                it.gravity = Gravity.START or Gravity.TOP
+                it.leftMargin = 0
+                it.topMargin = videoH
+            } else {
+                // 横屏：贴左区右缘、全高。
+                it.width = panelSizePx
+                it.height = LayoutParams.MATCH_PARENT
+                it.gravity = Gravity.START or Gravity.TOP
+                it.leftMargin = videoW
+                it.topMargin = 0
+            }
             roomPanel.layoutParams = it
         }
         requestLayout()
