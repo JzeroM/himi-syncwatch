@@ -851,6 +851,30 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 - [x] 面板展开时视频区收窄：安卓收窄 surface 窗宽（`onVideoInsetRight`）；
       鸿蒙 `XComponent` 宽度 `calc(100% - 320vp)`。否则视频被面板盖住。
 
+### Phase 2.10：手势方向修正 + 房间面板推送（1.5.11+591）
+
+> 起因：安卓 MPV 手势音量/亮度方向反了（上滑减、下滑加）；向上滑时进度条
+> 会变；房间模式资源面板全空、播报 (0)、在线人数 0。
+
+- [x] 手势方向：安卓 `onScroll` 的 `distanceY` **正值 = 手指上滑**，旧实现
+      写成 `-distanceY`（误以为需与 Flutter 的「正值=下滑」对齐）→ 方向完全
+      反了。改为直接相加（上滑增大）。对照 Flutter
+      `_brightness - delta/600`（primaryDelta 上滑为负 → 减去后增大）。
+- [x] 手势方向锁：旧实现每帧用 `|dx| > |dy|` 重判方向，斜向拖动会在横/纵
+      之间来回切换 → 上滑误触发 seek。新增 `dragAxis` 一次性定轴
+      （0 未定 / 1 横向 / 2 纵向），`ACTION_DOWN` 复位，`onFling` 与
+      `ACTION_UP` 提交都加 `AXIS_HORIZONTAL` 守卫。安卓 + 鸿蒙同修。
+- [x] 在线人数：RTM presence 未同步时返回 0 会覆盖初始值 1。新增纯函数
+      `PlayerScreen.resolveOnlineCount`（`rtmCount > 0` 采用权威值，否则保留
+      当前值且至少 1）。
+- [x] 房间面板推送时机（真机「资源面板全空、播报 0」根因）：
+      `_addBroadcastMessage` / `_refreshOnlineCount` / `_applyRoomResources`
+      都补 `_syncNativePanelData()`。此前播报只更新 `_broadcastVersion`
+      （Flutter 内部通知），原生永远收不到。
+- [x] `ToggleRoomSync` 命令接线（此前解析后无 case 分支，静默丢弃）。
+- [x] 安卓资源面板头部标题补 `ellipsize`，与 Flutter
+      `Expanded(资源) | 搜索 | 人数 | 角色` 布局一致。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

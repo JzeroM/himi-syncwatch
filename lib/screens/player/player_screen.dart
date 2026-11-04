@@ -558,6 +558,18 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       !(portrait && mobilePlatform);
 
+  /// 在线人数解析（591，纯函数供测试）。
+  ///
+  /// RTM presence 尚未同步时会返回 0，直接采用会覆盖「自己至少占 1 个」的
+  /// 初始值（真机回归「资源面板在线人数显示 0」）。规则：
+  /// - [rtmCount] > 0 → 采用 RTM 权威值；
+  /// - [rtmCount] <= 0 → 保留 [current]，且至少为 1（房间里至少有自己）。
+  @visibleForTesting
+  static int resolveOnlineCount({required int current, required int rtmCount}) {
+    if (rtmCount > 0) return rtmCount;
+    return current > 0 ? current : 1;
+  }
+
   @visibleForTesting
   static bool showBottomDisplayAdjustButton({required bool tvMode}) => tvMode;
 
@@ -3533,6 +3545,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 切换 `_showPanel` 并立即重推快照（原生据此显隐 + 收窄 surface）。
         setState(() => _showPanel = !_showPanel);
         _syncNativePanelData();
+      case ToggleRoomSync():
+        // 591：该命令此前**无 case 分支**（解析后静默丢弃）。房间同步
+        // 重连（房主/观众手动触发），复用既有 `_setupRoomSync`。
+        LogService().log('mpv', '原生请求重连房间同步');
+        _setupRoomSync();
       case ToggleResourceGroup(:final index):
         // 折叠态由 Dart 持有（与 Flutter 面板同一份数据源），原生只发意图。
         if (index >= 0 && index < _resourceGroups.length) {
@@ -4976,10 +4993,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final count = await rtmService.getOnlineUserCount(_rtmChannel!);
     if (mounted) {
       setState(() {
-        _onlineUserCount = count;
+        // 591：RTM presence 未同步时返回 0，会覆盖 _setupRoomSync 里设的 1
+        // （真机回归「在线人数显示 0」）。至少保留自己一个。
+        _onlineUserCount = PlayerScreen.resolveOnlineCount(
+          current: _onlineUserCount,
+          rtmCount: count,
+        );
       });
       _logSyncEvent('在线人数更新: $count');
       LogService().log('Room', '在线人数更新: $count, channel: $_rtmChannel');
+      // 591：推送原生（否则原生头部永远是初始值）。
+      _syncNativePanelData();
     }
   }
 
@@ -5252,6 +5276,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _rebuildGroups();
       _addBroadcastMessage('已同步房间资源列表');
     }
+    // 591：无论是否有剧集列表，资源/房间数据变化后都要推原生——原生 UI
+    // 下 Flutter 面板不可见，推送缺失会让原生面板永远空白。
+    _syncNativePanelData();
   }
 
   /// 应用 roomInfo 中的流信息（每次调用都生效，流变化时重新选轨）。
@@ -5385,6 +5412,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     _broadcastMessages.add('[$time] $msg');
     _broadcastVersion.value++;
+    // 591：必须同步推原生——原生 UI 下 Flutter 播报板不可见，推送缺失时
+    // 原生永远显示「播报 (0)」（真机回归「资源面板全空、播报 0」）。
+    _syncNativePanelData();
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_broadcastScrollController.hasClients) {
         _broadcastScrollController.animateTo(

@@ -417,6 +417,20 @@ class NativePlayerScreenView(
     /** 横拖累加器是否已在 UP 时提交（防 onFling 速度回退二次 seek）。 */
     private var hDragCommitted = false
 
+    /**
+     * 手势方向锁（591，真机回归「上滑会改进度」根因）。
+     *
+     * 旧实现在 `onScroll` 里**每帧**用 `|dx| > |dy|` 重新判定方向：`dx/dy`
+     * 是 `e1→e2` 的总位移，斜着上滑时只要某一帧 `|dx| > |dy|`（先横后竖的
+     * 抖动）就切进横拖分支累加 `hDragAccumPx` → 触发 seek 预览，松手时
+     * `ACTION_UP` 又提交一次 seek。
+     *
+     * Flutter 靠手势竞技场（纵向 recognizer 胜出后横向被淘汰）天然互斥；
+     * 安卓这里用单个 `onScroll` 自判方向，必须**一次性锁定**：
+     * 首次超 slop 时定轴，之后只走该轴分支，不再重判。
+     */
+    private var dragAxis: Int = AXIS_NONE
+
     /** 长按临时倍速的基准档位（松手还原用）。 */
     private var boostBaseSpeed = 1.0
 
@@ -701,40 +715,55 @@ class NativePlayerScreenView(
             ): Boolean {
                 if (lastState.locked || !lastState.canControl) return false
                 if (e1 == null) return false
-                val dx = e2.x - e1.x
-                val dy = e2.y - e1.y
-                // 首次位移超过 touchSlop 时判定方向（与 Flutter 的手势竞技场等价）。
+                // 方向锁（591）：首次超 slop 时**一次性定轴**，之后只走该轴，
+                // 不再每帧重判——否则斜向拖动会在横/纵之间来回切换，上滑
+                // 时误触发 seek（真机回归「向上滑进度条会变」）。
                 val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
-                if (Math.abs(dx) > slop || Math.abs(dy) > slop) {
-                    val horizontal = Math.abs(dx) > Math.abs(dy)
-                    if (horizontal) {
-                        // 横拖 seek：每累计 100px 预览一次（±5s）。
-                        hDragAccumPx -= distanceX
-                        if (Math.abs(hDragAccumPx) > DRAG_PX_PER_5S) {
-                            val deltaMs = (hDragAccumPx / DRAG_PX_PER_5S * DRAG_MS_PER_5S)
-                                .toLong().coerceIn(-SEEK_MAX_DELTA_MS, SEEK_MAX_DELTA_MS)
-                            val preview = (lastState.positionMs + deltaMs)
-                                .coerceIn(0L, lastState.durationMs.toLong())
-                            showGestureHint(AndroidNativePlayerState.formatPlayerTime(preview))
-                        }
-                    } else {
-                        // 纵拖：左亮度 / 右音量。distanceY 正值 = 手指上滑
-                        //（Android 语义），Flutter 是 delta 正值 = 下滑，故取负。
-                        if (Math.abs(distanceY) > 0f) {
-                            val delta01 = (-distanceY / VERTICAL_PX_PER_FULL).toDouble()
-                            if (dragOnLeftSide) {
-                                brightness01 = (brightness01 + delta01).coerceIn(0.0, 1.0)
-                                listener?.onGestureBrightness(delta01)
-                            } else {
-                                volume01 = (volume01 + delta01).coerceIn(0.0, 1.0)
-                                listener?.onGestureVolumeDelta(delta01)
-                            }
-                            showVerticalBar(dragOnLeftSide)
-                        }
+                if (dragAxis == AXIS_NONE) {
+                    val dx = e2.x - e1.x
+                    val dy = e2.y - e1.y
+                    if (Math.abs(dx) <= slop && Math.abs(dy) <= slop) {
+                        return false // 位移未超阈值，方向未定
+                    }
+                    dragAxis =
+                        if (Math.abs(dx) > Math.abs(dy)) AXIS_HORIZONTAL else AXIS_VERTICAL
+                }
+                if (dragAxis == AXIS_HORIZONTAL) {
+                    // 横拖 seek：每累计 100px 预览一次（±5s）。
+                    hDragAccumPx -= distanceX
+                    if (Math.abs(hDragAccumPx) > DRAG_PX_PER_5S) {
+                        val deltaMs = (hDragAccumPx / DRAG_PX_PER_5S * DRAG_MS_PER_5S)
+                            .toLong().coerceIn(-SEEK_MAX_DELTA_MS, SEEK_MAX_DELTA_MS)
+                        val preview = (lastState.positionMs + deltaMs)
+                            .coerceIn(0L, lastState.durationMs.toLong())
+                        showGestureHint(AndroidNativePlayerState.formatPlayerTime(preview))
                     }
                     return true
                 }
-                return false
+                // 纵拖：左亮度 / 右音量。
+                //
+                // 【方向语义（591 修正）】Android `GestureDetector.onScroll` 的
+                // `distanceY` **正值 = 手指上滑**（e2.y < e1.y 时为正）。所以
+                // 上滑 → 正值 → 增大，直接加即可。
+                //
+                // 旧实现写成 `-distanceY`（注释误以为「distanceY 正值=上滑，
+                // 而 Flutter 正值=下滑所以要取负」），结果上滑减小、下滑增大，
+                // 方向完全反了（真机回归）。
+                //
+                // 对照 Flutter `_onVerticalDragUpdate`：
+                //   `primaryDelta` 上滑为负 → `_brightness - delta/600` 后增大 ✅
+                if (Math.abs(distanceY) > 0f) {
+                    val delta01 = (distanceY / VERTICAL_PX_PER_FULL).toDouble()
+                    if (dragOnLeftSide) {
+                        brightness01 = (brightness01 + delta01).coerceIn(0.0, 1.0)
+                        listener?.onGestureBrightness(delta01)
+                    } else {
+                        volume01 = (volume01 + delta01).coerceIn(0.0, 1.0)
+                        listener?.onGestureVolumeDelta(delta01)
+                    }
+                    showVerticalBar(dragOnLeftSide)
+                }
+                return true
             }
 
             override fun onFling(
@@ -746,6 +775,9 @@ class NativePlayerScreenView(
                 if (lastState.locked || !lastState.canControl) return false
                 // 累加器已提交过（ACTION_UP）则不再走速度回退（防二次 seek）。
                 if (hDragCommitted) return false
+                // 只有锁定为横向才是 seek（591）：纵向手势的横向速度分量不该
+                // 触发 seek（旧实现无守卫，上滑结束的抖动速度会被当横拖）。
+                if (dragAxis != AXIS_HORIZONTAL) return false
                 // 无足够拖动距离时用速度回退（与 Flutter `_onHorizontalDragEnd`
                 // 的 `deltaMs == 0 → primaryVelocity` 分支一致）。
                 val deltaMs = (velocityX / DRAG_PX_PER_5S * DRAG_MS_PER_5S)
@@ -765,6 +797,8 @@ class NativePlayerScreenView(
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 hDragAccumPx = 0f
                 hDragCommitted = false
+                // 591：方向锁复位（每个新手势重新定轴）。
+                dragAxis = AXIS_NONE
                 dragOnLeftSide = event.x < width / 2f
             }
             // 长按临时倍速：松手/取消时还原到长按前档位（Flutter
@@ -781,7 +815,13 @@ class NativePlayerScreenView(
                 // 非零 → 按累加器 seek（与预览同基准，预览/落点一致）；零 →
                 // onFling 速度回退。旧实现只在 onFling 里 seek，慢速拖动松手
                 // 不 seek（真机回归「拖了没反应」）。
-                if (Math.abs(hDragAccumPx) > 0f && !lastState.locked && lastState.canControl) {
+                //
+                // 591：只在锁定为横向时提交——纵向手势的 hDragAccumPx 恒 0，
+                // 但加这层守卫可防止未来改动引入误触发。
+                if (dragAxis == AXIS_HORIZONTAL &&
+                    Math.abs(hDragAccumPx) > 0f &&
+                    !lastState.locked && lastState.canControl
+                ) {
                     val deltaMs = (hDragAccumPx / DRAG_PX_PER_5S * DRAG_MS_PER_5S)
                         .toLong().coerceIn(-SEEK_MAX_DELTA_MS, SEEK_MAX_DELTA_MS)
                     hDragAccumPx = 0f
@@ -1728,6 +1768,11 @@ class NativePlayerScreenView(
         roomPanelTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         roomPanelTitle.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         roomPanelTitle.maxLines = 1
+        roomPanelTitle.ellipsize = TextUtils.TruncateAt.END
+        // 591：标题只占剩余空间（layoutWeight=1），但**必须给搜索/人数/角色
+        // 预留固定宽度**，否则标题撑满后把三者挤到最右（真机截图「资源」
+        // 与人数/角色贴在一起、中间大片空白）。
+        // 对齐 Flutter `Expanded(资源) | 搜索 | 人数胶囊 | 角色徽章`。
         roomPanelHeader.addView(
             roomPanelTitle,
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
@@ -3510,6 +3555,13 @@ class NativePlayerScreenView(
         const val SEEK_MAX_DELTA_MS = 60_000L
         /** 纵拖换算系数：600px → 全量程（Flutter `_onVerticalDragUpdate`）。 */
         const val VERTICAL_PX_PER_FULL = 600f
+
+        // ── 手势方向锁（591）──
+        // 旧实现每帧用 |dx|>|dy| 重判方向 → 斜向拖动会在横/纵之间来回切换，
+        // 上滑时误改进度。现在首次超 slop 时一次性定轴。
+        const val AXIS_NONE = 0
+        const val AXIS_HORIZONTAL = 1
+        const val AXIS_VERTICAL = 2
 
         // 面板类型（与鸿蒙 NativePlayerPanelType 同构）
         const val PANEL_SPEED = "speed"

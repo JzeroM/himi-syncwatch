@@ -40,6 +40,9 @@ const ROOM_PANEL_WIDTH = 320;
 
 /** 面板分隔线（与 NativePlayerPanel.PANEL_DIVIDER 同值，白 12%）。 */
 const ROOM_PANEL_DIVIDER = '#1FFFFFFF';
+
+/** 手势方向判定阈值（vp；对齐 Android ViewConfiguration 默认 8dp 量级）。 */
+const PAN_SLOP = 8;
 const DOMAIN = 0x0001;
 
 /** 选中主色（照抄 Flutter Color(0xFF6366F1)）。 */
@@ -589,6 +592,13 @@ export struct HimiNativePlayerView {
 
   /** 横拖累计像素（每 100px → ±5s）。 */
   private hDragAccumPx: number = 0;
+
+  /**
+   * 手势方向锁（591）：0 = 未定，1 = 横向 seek，2 = 纵向亮度/音量。
+   *
+   * 旧实现每帧重判方向 → 斜向拖动来回切换，上滑时误触发 seek。
+   */
+  private dragAxis: number = 0;
   /** 纵拖起始点在左半屏（亮度）还是右半屏（音量）。 */
   private dragOnLeftSide: boolean = false;
   /**
@@ -650,6 +660,7 @@ export struct HimiNativePlayerView {
       return;
     }
     this.hDragAccumPx = 0;
+    this.dragAxis = 0;
     // 【必须 fingerList】Pan 的 offsetX 是累计位移（起点恒 0）→ 半屏判定
     // 永远判左屏、音量手势永远不触发（真机回归，同长按分区教训）。
     // localX 与手势层（全屏）同基准。
@@ -661,7 +672,13 @@ export struct HimiNativePlayerView {
     this.dragBaseVolume = this.volume01;
   }
 
-  /** 拖动中：|dx|>|dy| 判横拖 seek，否则纵拖亮度/音量。 */
+  /**
+   * 拖动中：横拖 seek / 纵拖亮度音量。
+   *
+   * 【方向锁（591）】旧实现每帧用 |dx|>|dy| 重判方向：斜向拖动会在横/纵
+   * 之间来回切换 → 上滑时误触发 seek（真机回归「向上滑进度条会变」）。
+   * 现在首次超阈值时**一次性定轴**（dragAxis），之后只走该轴分支。
+   */
   private onPanUpdate(event: GestureEvent): void {
     const s = this.state();
     if (s.locked || !s.canControl) {
@@ -671,7 +688,13 @@ export struct HimiNativePlayerView {
     // 与 Flutter 的 primaryDelta（增量）不同：这里直接以起点为基准换算。
     const totalDx = event.offsetX;
     const totalDy = event.offsetY;
-    if (Math.abs(totalDx) > Math.abs(totalDy)) {
+    if (this.dragAxis === 0) {
+      if (Math.abs(totalDx) <= PAN_SLOP && Math.abs(totalDy) <= PAN_SLOP) {
+        return; // 位移未超阈值，方向未定
+      }
+      this.dragAxis = Math.abs(totalDx) > Math.abs(totalDy) ? 1 : 2;
+    }
+    if (this.dragAxis === 1) {
       // 横拖 seek：每 100px → 5s，上限 ±60s。
       this.hDragAccumPx = totalDx;
       const deltaMs = Math.round(totalDx / 100 * 5000);
@@ -704,12 +727,15 @@ export struct HimiNativePlayerView {
     if (s.locked || !s.canControl) {
       return;
     }
-    if (Math.abs(this.hDragAccumPx) < 10) {
+    // 591：只有锁定为横向才 seek（纵向手势不该改进度）。
+    if (this.dragAxis !== 1 || Math.abs(this.hDragAccumPx) < 10) {
+      this.dragAxis = 0;
       return;
     }
     const deltaMs = Math.round(this.hDragAccumPx / 100 * 5000);
     const clamped = Math.max(-60000, Math.min(60000, deltaMs));
     this.hDragAccumPx = 0;
+    this.dragAxis = 0;
     if (clamped === 0) {
       return;
     }
