@@ -3288,8 +3288,6 @@ class NativePlayerScreenView(
             }
         }
 
-        }
-
     private fun applyState() {
         val state = lastState
         val now = System.currentTimeMillis()
