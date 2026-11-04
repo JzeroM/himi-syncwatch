@@ -5,9 +5,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:himi_syncwatch/services/qr_export_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
@@ -43,10 +43,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   }
 
   Future<void> _shareRoomCode() async {
-    if (Platform.operatingSystem == 'ohos') {
-      if (mounted) showAppToast(context, '鸿蒙暂不支持系统分享');
-      return;
-    }
+    // 590：鸿蒙已支持系统分享（share_plus 有 OHOS 实现），不再拦截。
     await SharePlus.instance.share(
       ShareParams(
         text: '来一起看电影吧！\n\n房间码：\n${widget.roomCode}\n\n在 HIMI 中扫码或粘贴即可加入',
@@ -68,68 +65,62 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
   }
 
+  /// 保存二维码到相册（590）。
+  ///
+  /// 旧实现直写 `/storage/emulated/0/DCIM/Himi`：Android 10+ 抛
+  /// `PathAccessException: errno = 13`；鸿蒙被显式拦成「暂不支持」；iOS 写到
+  /// 应用私有 Documents（用户在相册里看不到）。现统一走 [QrExportService]。
   Future<void> _saveQrToGallery() async {
-    if (Platform.operatingSystem == 'ohos') {
-      if (mounted) showAppToast(context, '鸿蒙暂不支持系统分享');
+    final bytes = await _captureQrImage();
+    if (bytes == null) {
+      if (mounted) showAppToast(context, '二维码生成失败，请重试');
       return;
     }
-    final bytes = await _captureQrImage();
-    if (bytes == null || !mounted) return;
-
-    try {
-      final tempDir = await getTemporaryDirectory();
-      final file = File(
-          '${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
-      await file.writeAsBytes(bytes);
-
-      if (Platform.isAndroid) {
-        // Android: 复制到 DCIM
-        final dcimDir = Directory('/storage/emulated/0/DCIM/Himi');
-        if (!dcimDir.existsSync()) dcimDir.createSync(recursive: true);
-        final dest = File(
-            '${dcimDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
-        await file.copy(dest.path);
-      } else if (Platform.isIOS) {
-        // iOS: 复制到应用 Documents 目录供用户手动保存
-        final docsDir = await getApplicationDocumentsDirectory();
-        final dest = File('${docsDir.path}/himi_qr.png');
-        await file.copy(dest.path);
-      }
-
-      if (mounted) {
+    if (!mounted) return;
+    final result = await QrExportService.save(
+      bytes,
+      fileName: 'himi_qr',
+      subDir: 'Himi',
+    );
+    if (!mounted) return;
+    switch (result) {
+      case QrExportResult.ok:
         showAppToast(context, '已保存到相册');
-      }
-    } catch (e) {
-      if (mounted) {
-        showAppToast(context, '保存失败: $e');
-      }
+      case QrExportResult.cancelled:
+        break;
+      case QrExportResult.unsupported:
+        showAppToast(context, '当前平台暂不支持保存到相册');
+      case QrExportResult.failed:
+        showAppToast(context, '保存失败，请重试');
     }
   }
 
+  /// 分享二维码（590）：统一走 [QrExportService]（Windows 走剪贴板）。
   Future<void> _shareQrImage() async {
-    if (Platform.operatingSystem == 'ohos') {
-      if (mounted) showAppToast(context, '鸿蒙暂不支持系统分享');
+    final bytes = await _captureQrImage();
+    if (bytes == null) {
+      if (mounted) showAppToast(context, '二维码生成失败，请重试');
       return;
     }
-    final bytes = await _captureQrImage();
-    if (bytes == null || !mounted) return;
-
-    try {
-      final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/himi_qr.png');
-      await file.writeAsBytes(bytes);
-
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path, mimeType: 'image/png')],
-          subject: 'HIMI 房间二维码',
-          text: '来一起看电影吧！用 HIMI 扫描二维码加入房间',
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        showAppToast(context, '分享失败: $e');
-      }
+    if (!mounted) return;
+    final result = await QrExportService.share(
+      bytes,
+      fileName: 'himi_qr',
+      subject: 'HIMI 房间二维码',
+      text: '来一起看电影吧！用 HIMI 扫描二维码加入房间',
+    );
+    if (!mounted) return;
+    switch (result) {
+      case QrExportResult.ok:
+        if (Platform.isWindows) {
+          showAppToast(context, '二维码图片已复制，可直接粘贴');
+        }
+      case QrExportResult.cancelled:
+        break;
+      case QrExportResult.unsupported:
+        showAppToast(context, '当前平台暂不支持分享');
+      case QrExportResult.failed:
+        showAppToast(context, '分享失败，请重试');
     }
   }
 

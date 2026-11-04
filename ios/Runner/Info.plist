@@ -66,6 +66,8 @@
 	<string>扫描二维码加入房间</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>从相册选择二维码图片加入房间</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>保存房间二维码图片到相册</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

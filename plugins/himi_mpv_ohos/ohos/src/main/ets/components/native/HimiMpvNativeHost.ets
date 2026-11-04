@@ -108,6 +108,57 @@ export class NativeDanmakuUi {
   color: string = '#FFFFFF';
 }
 
+/** 房间资源项（590，与 Dart `NativeResourceItem.toJson` 一致）。 */
+export class NativeResourceItemUi {
+  index: number = 0;
+  name: string = '';
+  season: number = 0;
+  number: number = 0;
+  poster: string = '';
+  isPlaying: boolean = false;
+
+  isMovie(): boolean {
+    return this.season === 0 && this.number === 0;
+  }
+
+  /** 集码 `S01E03`；电影返回空串。 */
+  episodeCode(): string {
+    if (this.isMovie()) {
+      return '';
+    }
+    const s = this.season > 0 ? `${this.season}`.padStart(2, '0') : '01';
+    const e = this.number > 0 ? `${this.number}`.padStart(2, '0') : '01';
+    return `S${s}E${e}`;
+  }
+}
+
+/** 房间资源季分组（590）。 */
+export class NativeSeasonGroupUi {
+  seasonNumber: number = 0;
+  collapsed: boolean = true;
+  episodes: NativeResourceItemUi[] = [];
+}
+
+/** 房间资源分组（590）。 */
+export class NativeResourceGroupUi {
+  name: string = '';
+  isMovie: boolean = false;
+  collapsed: boolean = true;
+  seasons: NativeSeasonGroupUi[] = [];
+
+  totalCount(): number {
+    let n = 0;
+    for (const s of this.seasons) {
+      n += s.episodes.length;
+    }
+    return n;
+  }
+
+  countLabel(): string {
+    return this.isMovie ? `(${this.totalCount()})` : `(${this.totalCount()}集)`;
+  }
+}
+
 /** 面板版本项（与 Dart `NativeVersion.toJson` 一致）。 */
 export class NativeVersionUi {
   index: number = 0;
@@ -177,6 +228,61 @@ function parseEpisodes(v: ESObject): NativeEpisodeUi[] {
       item.title = jsonStr(src['title'], '');
       item.poster = jsonStr(src['poster'], '');
       item.number = jsonNum(src['number'], 0);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/** 解析资源项列表（590）。 */
+function parseResourceItems(v: ESObject): NativeResourceItemUi[] {
+  const out: NativeResourceItemUi[] = [];
+  if (Array.isArray(v)) {
+    const arr = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const item = new NativeResourceItemUi();
+      const src = arr[i] as Record<string, Object>;
+      item.index = jsonNum(src['index'], 0);
+      item.name = jsonStr(src['name'], '');
+      item.season = jsonNum(src['season'], 0);
+      item.number = jsonNum(src['number'], 0);
+      item.poster = jsonStr(src['poster'], '');
+      item.isPlaying = jsonBool(src['isPlaying'], false);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/** 解析季分组列表（590）。 */
+function parseSeasonGroups(v: ESObject): NativeSeasonGroupUi[] {
+  const out: NativeSeasonGroupUi[] = [];
+  if (Array.isArray(v)) {
+    const arr = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const item = new NativeSeasonGroupUi();
+      const src = arr[i] as Record<string, Object>;
+      item.seasonNumber = jsonNum(src['seasonNumber'], 0);
+      item.collapsed = jsonBool(src['collapsed'], true);
+      item.episodes = parseResourceItems(src['episodes']);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/** 解析资源分组列表（590）。 */
+function parseResourceGroups(v: ESObject): NativeResourceGroupUi[] {
+  const out: NativeResourceGroupUi[] = [];
+  if (Array.isArray(v)) {
+    const arr = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const item = new NativeResourceGroupUi();
+      const src = arr[i] as Record<string, Object>;
+      item.name = jsonStr(src['name'], '');
+      item.isMovie = jsonBool(src['isMovie'], false);
+      item.collapsed = jsonBool(src['collapsed'], true);
+      item.seasons = parseSeasonGroups(src['seasons']);
       out.push(item);
     }
   }
@@ -325,6 +431,15 @@ export class NativePlayerUiState {
   /** HDR 徽标（沿用既有字段，此处显式声明便于视图读取）。 */
   hdr: boolean = false;
 
+  // ── 房间资源面板（590）──
+  roomCode: string = '';
+  isHost: boolean = false;
+  onlineUserCount: number = 0;
+  audienceName: string = '';
+  resourceGroups: NativeResourceGroupUi[] = [];
+  broadcasts: string[] = [];
+  resourcePanelOpen: boolean = true;
+
   /** 用 JSON 快照整体覆盖（缺失字段保持旧值，容忍字段增减）。 */
   update(obj: ESObject): void {
     this.title = jsonStr(obj.title, this.title);
@@ -335,6 +450,18 @@ export class NativePlayerUiState {
     this.paused = jsonBool(obj.paused, this.paused);
     this.buffering = jsonBool(obj.buffering, this.buffering);
     this.showLoading = jsonBool(obj.showLoading, this.showLoading);
+    // 房间资源面板（590）
+    this.roomCode = jsonStr(obj.roomCode, this.roomCode);
+    this.isHost = jsonBool(obj.isHost, this.isHost);
+    this.onlineUserCount = jsonNum(obj.onlineUserCount, this.onlineUserCount);
+    this.audienceName = jsonStr(obj.audienceName, this.audienceName);
+    this.resourcePanelOpen = jsonBool(obj.resourcePanelOpen, this.resourcePanelOpen);
+    if (obj.resourceGroups !== undefined) {
+      this.resourceGroups = parseResourceGroups(obj.resourceGroups);
+    }
+    if (obj.broadcasts !== undefined) {
+      this.broadcasts = jsonStrList(obj.broadcasts);
+    }
     this.ended = jsonBool(obj.ended, this.ended);
     this.volume = jsonNum(obj.volume, this.volume);
     this.speed = jsonNum(obj.speed, this.speed);

@@ -1,15 +1,20 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/widgets/room/room_share_dialog.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+
+/// 二维码卡片的位置（590：弹窗自持 RepaintBoundary 的 key，测试改用
+/// QrImageView 定位——与 Flutter 侧实现解耦，不再需要外部传 key）。
+Finder _qrFinder() => find.byType(QrImageView);
 
 Future<void> _pump(
   WidgetTester tester, {
-  required GlobalKey qrKey,
   Size size = const Size(1200, 800),
-  Future<void> Function()? onShareQr,
-  Future<void> Function()? onSaveQr,
+  Future<void> Function(Uint8List?)? onShareQr,
+  Future<void> Function(Uint8List?)? onSaveQr,
   Future<void> Function()? onCopyCode,
 }) async {
   tester.view.physicalSize = size;
@@ -26,9 +31,8 @@ Future<void> _pump(
                 context: context,
                 builder: (_) => RoomShareDialog(
                   roomCode: 'ROOM-1234',
-                  qrKey: qrKey,
-                  onShareQr: onShareQr ?? () async {},
-                  onSaveQr: onSaveQr ?? () async {},
+                  onShareQr: onShareQr ?? (_) async {},
+                  onSaveQr: onSaveQr ?? (_) async {},
                   onCopyCode: onCopyCode ?? () async {},
                 ),
               ),
@@ -45,8 +49,7 @@ Future<void> _pump(
 
 void main() {
   testWidgets('宽屏为左二维码右操作双栏', (tester) async {
-    final qrKey = GlobalKey();
-    await _pump(tester, qrKey: qrKey);
+    await _pump(tester);
 
     expect(find.text('分享加入房间'), findsOneWidget);
     expect(find.text('分享二维码'), findsOneWidget);
@@ -54,7 +57,7 @@ void main() {
     expect(find.text('复制房间码'), findsOneWidget);
     expect(find.text('ROOM-1234'), findsNothing);
 
-    final qrRect = tester.getRect(find.byKey(qrKey));
+    final qrRect = tester.getRect(_qrFinder());
     final primaryRect =
         tester.getRect(find.byKey(const ValueKey('roomSharePrimary')));
     final saveRect =
@@ -68,36 +71,39 @@ void main() {
   });
 
   testWidgets('窄屏纵向排列且不溢出', (tester) async {
-    final qrKey = GlobalKey();
-    await _pump(tester, qrKey: qrKey, size: const Size(360, 640));
+    await _pump(tester, size: const Size(360, 640));
 
     expect(tester.takeException(), isNull);
-    final qrRect = tester.getRect(find.byKey(qrKey));
+    final qrRect = tester.getRect(_qrFinder());
     final primaryRect =
         tester.getRect(find.byKey(const ValueKey('roomSharePrimary')));
     expect(primaryRect.top, greaterThan(qrRect.bottom));
   });
 
   testWidgets('横屏小高度可滚动且不溢出', (tester) async {
-    final qrKey = GlobalKey();
-    await _pump(tester, qrKey: qrKey, size: const Size(640, 360));
+    await _pump(tester, size: const Size(640, 360));
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('动作完成前保持弹窗并禁用关闭', (tester) async {
-    final qrKey = GlobalKey();
     final completer = Completer<void>();
     var called = false;
     await _pump(
       tester,
-      qrKey: qrKey,
-      onShareQr: () {
+      onShareQr: (_) {
         called = true;
         return completer.future;
       },
     );
 
-    await tester.tap(find.byKey(const ValueKey('roomSharePrimary')));
+    // 截图走 RepaintBoundary.toImage（真实光栅化），必须用 runAsync 让
+    // 真实异步推进；否则 FakeAsync 下 future 永不完成。
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('roomSharePrimary')));
+      await tester.pump();
+      // 2s 超时兜底后回调才执行（测试环境 toImage 不会真正完成）。
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
+    });
     await tester.pump();
 
     expect(called, isTrue);
@@ -121,13 +127,11 @@ void main() {
   });
 
   testWidgets('保存与复制回调执行后关闭弹窗', (tester) async {
-    final qrKey = GlobalKey();
     var saves = 0;
     var copies = 0;
     await _pump(
       tester,
-      qrKey: qrKey,
-      onSaveQr: () async {
+      onSaveQr: (_) async {
         saves++;
       },
       onCopyCode: () async {
@@ -135,7 +139,11 @@ void main() {
       },
     );
 
-    await tester.tap(find.byKey(const ValueKey('roomShareSave')));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('roomShareSave')));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
+    });
     await tester.pumpAndSettle();
     expect(saves, 1);
     expect(find.byType(RoomShareDialog), findsNothing);
@@ -149,8 +157,7 @@ void main() {
   });
 
   testWidgets('关闭按钮可关闭弹窗', (tester) async {
-    final qrKey = GlobalKey();
-    await _pump(tester, qrKey: qrKey);
+    await _pump(tester);
 
     await tester.tap(find.byKey(const ValueKey('roomShareClose')));
     await tester.pumpAndSettle();

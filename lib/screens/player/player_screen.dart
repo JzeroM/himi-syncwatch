@@ -3,11 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
@@ -116,9 +114,7 @@ import 'package:himi_syncwatch/services/subtitle_style_store.dart';
 import 'package:himi_syncwatch/services/manual_segment_store.dart';
 import 'package:himi_syncwatch/services/media_segment_resolver.dart';
 import 'package:himi_syncwatch/services/segment_skip_controller.dart';
-import 'package:himi_syncwatch/services/platform/windows_clipboard_image.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
@@ -129,6 +125,7 @@ import 'package:himi_syncwatch/services/playback_diagnostics.dart';
 import 'package:himi_syncwatch/services/player/native/native_player_command.dart';
 import 'package:himi_syncwatch/services/player/native/native_player_state.dart';
 import 'package:himi_syncwatch/services/player/native/native_player_theme.dart';
+import 'package:himi_syncwatch/services/qr_export_service.dart';
 import 'package:himi_syncwatch/services/render_storm_detector.dart';
 import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
 import 'package:himi_syncwatch/services/switch_volume_guard.dart';
@@ -1553,7 +1550,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 解码器选择 / 丢帧 / 错误等关键行
   final List<String> _deepNoteLines = <String>[];
-  final GlobalKey _qrKey = GlobalKey();
   bool _shareDialogOpen = false;
 
   // 调试面板拖拽位置
@@ -3315,6 +3311,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// episodes 有多集、versions 有多源时面板才有意义；数据变化点（剧集加载 /
   /// 切集 / 多版本源加载）调用。
+  /// Flutter `_resourceGroups` → 原生资源面板数据（590）。
+  ///
+  /// 只带原生渲染需要的字段；折叠态照传（原生自己维护展开/收起，Dart 侧
+  /// 的 `collapsed` 仅作初始值）。
+  List<NativeResourceGroup> _nativeResourceGroups() {
+    return _resourceGroups
+        .map((g) => NativeResourceGroup(
+              name: g.name,
+              isMovie: g.isMovie,
+              collapsed: g.collapsed,
+              seasons: g.seasons
+                  .map((s) => NativeSeasonGroup(
+                        seasonNumber: s.seasonNumber,
+                        collapsed: s.collapsed,
+                        episodes: s.episodes
+                            .map((e) {
+                              final flatIndex = _findFlatIndex(e.id);
+                              return NativeResourceItem(
+                                index: flatIndex,
+                                name: e.name,
+                                season: e.season,
+                                number: e.number,
+                                poster: e.poster,
+                                isPlaying: flatIndex == _currentEpisodeIndex,
+                              );
+                            })
+                            .toList(growable: false),
+                      ))
+                  .toList(growable: false),
+            ))
+        .toList(growable: false);
+  }
+
   void _syncNativePanelData() {
     final mpv = _player;
     if (mpv is! MpvPlayerAdapter || _disposed) return;
@@ -3392,6 +3421,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             .map((w) => w.trim())
             .where((w) => w.isNotEmpty)
             .toList(growable: false),
+        // 房间资源面板（590）：原生全屏 Dialog 会盖住 Flutter 面板，
+        // 数据下发后由原生自己画（否则真机「面板展不开」）。
+        roomCode: widget.roomCode,
+        isHost: _isHost,
+        onlineUserCount: _onlineUserCount,
+        audienceName: _audienceName,
+        resourceGroups: _nativeResourceGroups(),
+        broadcasts: List<String>.from(_broadcastMessages),
+        resourcePanelOpen: _showPanel,
         segmentEnabled: _segmentFeatureEnabled,
         segmentIntroEndMs: _segmentIntroEndMs,
         segmentOutroStartMs: _segmentCreditsStartMs,
@@ -3491,10 +3529,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       case ShareRoom():
         _showShareRoomDialog();
       case ToggleResourcePanel():
-        // 房间模式资源面板：原生 UI 侧尚未实现分栏面板（Phase 5），但按钮
-        // 语义必须与 Flutter 一致——切换而非退出。这里只记录，等面板落地后
-        // 接 `_showPanel`。
-        LogService().log('mpv', '原生 UI 请求切换资源面板（Phase 5 待接入）');
+        // 房间模式资源面板（590）：原生全屏窗口内自带 320dp 面板，
+        // 切换 `_showPanel` 并立即重推快照（原生据此显隐 + 收窄 surface）。
+        setState(() => _showPanel = !_showPanel);
+        _syncNativePanelData();
+      case ToggleResourceGroup(:final index):
+        // 折叠态由 Dart 持有（与 Flutter 面板同一份数据源），原生只发意图。
+        if (index >= 0 && index < _resourceGroups.length) {
+          setState(() => _resourceGroups[index].collapsed =
+              !_resourceGroups[index].collapsed);
+          _syncNativePanelData();
+        }
+      case ToggleResourceSeason(:final groupIndex, :final seasonIndex):
+        if (groupIndex >= 0 && groupIndex < _resourceGroups.length) {
+          final seasons = _resourceGroups[groupIndex].seasons;
+          if (seasonIndex >= 0 && seasonIndex < seasons.length) {
+            setState(() => seasons[seasonIndex].collapsed =
+                !seasons[seasonIndex].collapsed);
+            _syncNativePanelData();
+          }
+        }
+      case RemoveResourceEpisode(:final index):
+        _removeEpisode(index);
+        _syncNativePanelData();
+      case OpenResourceSearch():
+        // 原生窗口内无法直接调 Flutter 路由：回到 Flutter 执行既有
+        // `pushRoomResourceSearch` 流程（选完资源再回播放页）。
+        unawaited(_openRoomResourceSearchFromNative());
       case SwitchEngine(:final engine):
         final target = PlayerEngine.values.firstWhere(
           (e) => e.id == engine,
@@ -6925,6 +6986,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
   }
 
+  /// 原生「聚合搜索加资源」入口（590）。
+  ///
+  /// 原生全屏 Dialog 内无法直接调 Flutter 路由，因此先关闭原生 UI、
+  /// 回到 Flutter 播放页执行既有 `pushRoomResourceSearch` 流程，选完资源
+  /// 后再由正常路径重开原生 UI。
+  Future<void> _openRoomResourceSearchFromNative() async {
+    final code = widget.roomCode;
+    if (code == null || !mounted) return;
+    final mpv = _player;
+    if (mpv is MpvPlayerAdapter && mpv.nativeUiActive.value) {
+      await mpv.closeNativeUi();
+    }
+    if (!mounted) return;
+    final resourceData = await pushRoomResourceSearch(context, roomCode: code);
+    if (!mounted) return;
+    if (resourceData != null) {
+      _addResourceLocally(resourceData);
+      _sendAddResourceRTM(resourceData);
+    }
+    // 回播放页后按当前内核重开原生 UI（幂等）。
+    _syncNativePanelData();
+  }
+
   void _sendAddResourceRTM(Map<String, dynamic> data) {
     if (_rtmChannel == null) return;
     final rtmService = ref.read(rtmServiceProvider);
@@ -6949,92 +7033,63 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) showAppToast(context, '已复制房间码');
   }
 
-  Future<Uint8List?> _captureQrImage() async {
-    try {
-      final boundary =
-          _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) return null;
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      return byteData?.buffer.asUint8List();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _saveQrToGallery() async {
-    final bytes = await _captureQrImage();
+  /// 保存二维码到相册（590）。
+  ///
+  /// [bytes] 由 [RoomShareDialog] 自己截图后传入（弹窗自持 RepaintBoundary
+  /// 的 GlobalKey，调用方不再依赖外部 key 的时序）。
+  ///
+  /// 旧实现直写 `/storage/emulated/0/DCIM/Himi`：Android 10+ 分区存储抛
+  /// `PathAccessException: errno = 13`（真机「保存二维码失败」）；鸿蒙同样
+  /// 报权限错误。现统一走 [QrExportService] 的四端实现。
+  Future<void> _saveQrToGallery(Uint8List? bytes) async {
     if (bytes == null) {
       if (mounted) showAppToast(context, '二维码生成失败，请重试');
       return;
     }
     if (!mounted) return;
-    try {
-      if (Platform.isWindows) {
-        final path = await FilePicker.platform.saveFile(
-          dialogTitle: '保存二维码',
-          fileName: 'himi_qr.png',
-          type: FileType.custom,
-          allowedExtensions: const ['png'],
-        );
-        if (path == null) return;
-        final target = path.toLowerCase().endsWith('.png') ? path : '$path.png';
-        await File(target).writeAsBytes(bytes, flush: true);
-        if (mounted) showAppToast(context, '二维码已保存');
-        return;
-      }
-      final tempDir = await getTemporaryDirectory();
-      final file = File(
-          '${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
-      await file.writeAsBytes(bytes);
-      if (Platform.isAndroid) {
-        final dcimDir = Directory('/storage/emulated/0/DCIM/Himi');
-        if (!dcimDir.existsSync()) dcimDir.createSync(recursive: true);
-        await file.copy('${dcimDir.path}/himi_qr.png');
-      }
-      if (mounted) {
+    final result = await QrExportService.save(
+      bytes,
+      fileName: 'himi_qr',
+      subDir: 'Himi',
+    );
+    if (!mounted) return;
+    switch (result) {
+      case QrExportResult.ok:
         showAppToast(context, '已保存到相册');
-      }
-    } catch (e) {
-      if (mounted) {
-        showAppToast(context, '保存失败: $e');
-      }
+      case QrExportResult.cancelled:
+        break; // 用户主动取消，不提示
+      case QrExportResult.unsupported:
+        showAppToast(context, '当前平台暂不支持保存到相册');
+      case QrExportResult.failed:
+        showAppToast(context, '保存失败，请重试');
     }
   }
 
-  Future<void> _shareQrImage() async {
-    final bytes = await _captureQrImage();
+  /// 分享二维码（590）：统一走 [QrExportService]（Windows 走剪贴板）。
+  Future<void> _shareQrImage(Uint8List? bytes) async {
     if (bytes == null) {
       if (mounted) showAppToast(context, '二维码生成失败，请重试');
       return;
     }
     if (!mounted) return;
-    if (Platform.isWindows) {
-      final copied = await copyPngToClipboard(bytes);
-      if (mounted) {
-        showAppToast(
-          context,
-          copied ? '二维码图片已复制，可直接粘贴' : '复制二维码失败，请重试',
-        );
-      }
-      return;
-    }
-    try {
-      final tempDir = await getTemporaryDirectory();
-      final file = File(
-          '${tempDir.path}/himi_qr_${DateTime.now().millisecondsSinceEpoch}.png');
-      await file.writeAsBytes(bytes);
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path, mimeType: 'image/png')],
-          subject: 'HIMI 房间二维码',
-          text: '来一起看电影吧！用 HIMI 扫描二维码加入房间',
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        showAppToast(context, '分享失败: $e');
-      }
+    final result = await QrExportService.share(
+      bytes,
+      fileName: 'himi_qr',
+      subject: 'HIMI 房间二维码',
+      text: '来一起看电影吧！用 HIMI 扫描二维码加入房间',
+    );
+    if (!mounted) return;
+    switch (result) {
+      case QrExportResult.ok:
+        if (Platform.isWindows) {
+          showAppToast(context, '二维码图片已复制，可直接粘贴');
+        }
+      case QrExportResult.cancelled:
+        break;
+      case QrExportResult.unsupported:
+        showAppToast(context, '当前平台暂不支持分享');
+      case QrExportResult.failed:
+        showAppToast(context, '分享失败，请重试');
     }
   }
 
@@ -7046,7 +7101,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       context: context,
       builder: (_) => RoomShareDialog(
         roomCode: roomCode,
-        qrKey: _qrKey,
         onShareQr: _shareQrImage,
         onSaveQr: _saveQrToGallery,
         onCopyCode: _copyRoomCode,

@@ -12,6 +12,10 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- 保存图片到相册：API 29+ 走 MediaStore 不需要权限；
+         API 28 及以下直写 DCIM 才需要（故限 maxSdkVersion=28） -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <!-- 应用内更新：调起 APK 安装器（配合「安装未知应用」授权） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 后台播放 -->

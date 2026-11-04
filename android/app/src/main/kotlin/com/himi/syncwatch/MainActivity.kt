@@ -24,6 +24,7 @@ class MainActivity : FlutterActivity() {
     private var dcChannel: MethodChannel? = null
     private var aiChannel: MethodChannel? = null
     private var appIconChannel: MethodChannel? = null
+    private var gallerySaverChannel: MethodChannel? = null
     private var nativePlayerChannel: AndroidNativePlayerChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -77,6 +78,13 @@ class MainActivity : FlutterActivity() {
             // 应用图标切换：归一化 activity-alias，并 recreate/重启刷新桌面
             setMethodCallHandler(AppIconPlugin(this@MainActivity))
         }
+        gallerySaverChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            GallerySaverPlugin.CHANNEL
+        ).apply {
+            // 图片保存到相册：API 29+ 走 MediaStore（无需存储权限）
+            setMethodCallHandler(GallerySaverPlugin(applicationContext))
+        }
         // 原生播放器 UI（全屏 Dialog + SurfaceView，计划书 §6）
         nativePlayerChannel = AndroidNativePlayerChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -99,6 +107,8 @@ class MainActivity : FlutterActivity() {
         aiChannel = null
         appIconChannel?.setMethodCallHandler(null)
         appIconChannel = null
+        gallerySaverChannel?.setMethodCallHandler(null)
+        gallerySaverChannel = null
         // 原生播放器：关闭 Dialog 并释放 surface，避免引擎重建后残留
         nativePlayerChannel?.dispose()
         nativePlayerChannel = null

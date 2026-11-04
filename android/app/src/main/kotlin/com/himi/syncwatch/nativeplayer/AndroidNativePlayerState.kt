@@ -52,6 +52,83 @@ data class AndroidDanmakuItem(
     }
 }
 
+/** 房间资源面板：一条可播放资源（590）。 */
+data class AndroidResourceItem(
+    val index: Int = 0,
+    val name: String = "",
+    val season: Int = 0,
+    val number: Int = 0,
+    val poster: String = "",
+    val isPlaying: Boolean = false,
+) {
+    val isMovie: Boolean get() = season == 0 && number == 0
+
+    /** 集码 `S01E03`；电影返回空串。 */
+    val episodeCode: String
+        get() {
+            if (isMovie) return ""
+            val s = if (season > 0) season.toString().padStart(2, '0') else "01"
+            val e = if (number > 0) number.toString().padStart(2, '0') else "01"
+            return "S${s}E$e"
+        }
+
+    companion object {
+        fun fromJson(o: JSONObject): AndroidResourceItem = AndroidResourceItem(
+            index = o.optInt("index", 0),
+            name = o.optString("name", ""),
+            season = o.optInt("season", 0),
+            number = o.optInt("number", 0),
+            poster = o.optString("poster", ""),
+            isPlaying = o.optBoolean("isPlaying", false),
+        )
+    }
+}
+
+/** 房间资源面板：一个季分组。 */
+data class AndroidSeasonGroup(
+    val seasonNumber: Int = 0,
+    val collapsed: Boolean = true,
+    val episodes: List<AndroidResourceItem> = emptyList(),
+) {
+    companion object {
+        fun fromJson(o: JSONObject): AndroidSeasonGroup = AndroidSeasonGroup(
+            seasonNumber = o.optInt("seasonNumber", 0),
+            collapsed = o.optBoolean("collapsed", true),
+            episodes = o.optJSONArray("episodes")?.let { arr ->
+                (0 until arr.length()).map {
+                    AndroidResourceItem.fromJson(arr.getJSONObject(it))
+                }
+            } ?: emptyList(),
+        )
+    }
+}
+
+/** 房间资源面板：一个资源分组（电影单条 / 剧集多季）。 */
+data class AndroidResourceGroup(
+    val name: String = "",
+    val isMovie: Boolean = false,
+    val collapsed: Boolean = true,
+    val seasons: List<AndroidSeasonGroup> = emptyList(),
+) {
+    val totalCount: Int get() = seasons.sumOf { it.episodes.size }
+
+    /** 分组标题右侧计数（电影 `(N)`、剧集 `(N集)`）。 */
+    val countLabel: String get() = if (isMovie) "($totalCount)" else "($totalCount集)"
+
+    companion object {
+        fun fromJson(o: JSONObject): AndroidResourceGroup = AndroidResourceGroup(
+            name = o.optString("name", ""),
+            isMovie = o.optBoolean("isMovie", false),
+            collapsed = o.optBoolean("collapsed", true),
+            seasons = o.optJSONArray("seasons")?.let { arr ->
+                (0 until arr.length()).map {
+                    AndroidSeasonGroup.fromJson(arr.getJSONObject(it))
+                }
+            } ?: emptyList(),
+        )
+    }
+}
+
 data class AndroidEpisode(
     val index: Int = 0,
     val title: String = "",
@@ -179,6 +256,14 @@ data class AndroidNativePlayerState(
     val danmakuMaxCount: Int? = null,
     /** 弹幕时间窗（原生渲染；Dart 按 [当前位置-2s,+30s] 切窗推送）。 */
     val danmakuItems: List<AndroidDanmakuItem> = emptyList(),
+    // ── 房间资源面板（590）──
+    val roomCode: String? = null,
+    val isHost: Boolean = false,
+    val onlineUserCount: Int = 0,
+    val audienceName: String? = null,
+    val resourceGroups: List<AndroidResourceGroup> = emptyList(),
+    val broadcasts: List<String> = emptyList(),
+    val resourcePanelOpen: Boolean = true,
     val segmentEnabled: Boolean = false,
     val segmentIntroEndMs: Int? = null,
     val segmentOutroStartMs: Int? = null,
@@ -351,6 +436,27 @@ data class AndroidNativePlayerState(
             danmakuItems = json.optJSONArray("danmakuItems")?.let { arr ->
                 (0 until arr.length()).map { AndroidDanmakuItem.fromJson(arr.getJSONObject(it)) }
             } ?: emptyList(),
+            roomCode = if (json.has("roomCode") && !json.isNull("roomCode")) {
+                json.optString("roomCode", "")
+            } else {
+                null
+            },
+            isHost = json.optBoolean("isHost", false),
+            onlineUserCount = json.optInt("onlineUserCount", 0),
+            audienceName = if (json.has("audienceName") && !json.isNull("audienceName")) {
+                json.optString("audienceName", "")
+            } else {
+                null
+            },
+            resourceGroups = json.optJSONArray("resourceGroups")?.let { arr ->
+                (0 until arr.length()).map {
+                    AndroidResourceGroup.fromJson(arr.getJSONObject(it))
+                }
+            } ?: emptyList(),
+            broadcasts = json.optJSONArray("broadcasts")?.let { arr ->
+                (0 until arr.length()).map { arr.optString(it, "") }
+            } ?: emptyList(),
+            resourcePanelOpen = json.optBoolean("resourcePanelOpen", true),
             segmentEnabled = json.optBoolean("segmentEnabled", false),
             segmentIntroEndMs = json.optNullableInt("segmentIntroEndMs"),
             segmentOutroStartMs = json.optNullableInt("segmentOutroStartMs"),

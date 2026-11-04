@@ -151,16 +151,40 @@ export struct DanmakuLayer {
       this.laneOf.clear();
     }
     const travelMs = SCROLL_BASE_MS / speed;
+
+    // ① 重建冲突表（关键修复，589 真机「只显示最顶一行」根因）：
+    // 只统计「已分配且仍在飞」的条目占用。旧实现把 avail[] 当跨帧持久状态
+    // 累积：老条目被 flying 清掉、laneOf 键被 remove 后，avail[r] 仍留着当初
+    // 写入的未来时刻 → 新条目在整张表上都找不到空行 → lane=-1 全部丢弃，
+    // 只剩偶尔空出的 0 行能画（表现为「只显示最顶一行、一条条冒出来」）。
+    // 已分配的行号保持不变（不跳行），离场条目的占用不再残留。
+    this.scrollRowAvail.fill(0);
+    this.topRowAvail.fill(0);
+    this.bottomRowAvail.fill(0);
+    for (const item of items) {
+      const lane = this.laneOf.get(`${item.timeMs}:${item.text}`);
+      if (lane === undefined || lane < 0) {
+        continue;
+      }
+      const avail = item.mode === 'top' ? this.topRowAvail
+        : item.mode === 'bottom' ? this.bottomRowAvail
+        : this.scrollRowAvail;
+      if (lane >= avail.length) {
+        continue;
+      }
+      const until = item.timeMs + this.occupancyMs(item, fontSize, screenWidth, travelMs);
+      if (until > avail[lane]) {
+        avail[lane] = until;
+      }
+    }
+
+    // ② 只给新条目分配。
     for (const item of items) {
       const key = `${item.timeMs}:${item.text}`;
       if (this.laneOf.has(key)) {
         continue; // 已分配（含 -1 丢弃）：不重分配（防上移/跳行）。
       }
-      const textW = this.estimateWidth(item.text, fontSize);
-      const isFixed = item.mode === 'top' || item.mode === 'bottom';
-      const occupancy = isFixed
-        ? FIXED_MS + 150
-        : travelMs * (textW <= 0 ? 0 : textW / (screenWidth + textW)) + 150;
+      const occupancy = this.occupancyMs(item, fontSize, screenWidth, travelMs);
       const avail = item.mode === 'top' ? this.topRowAvail
         : item.mode === 'bottom' ? this.bottomRowAvail
         : this.scrollRowAvail;
@@ -175,6 +199,20 @@ export struct DanmakuLayer {
       // lane = -1 → 轨道满丢弃（对齐 Flutter `if (row < 0) continue`）。
       this.laneOf.set(key, lane);
     }
+  }
+
+  /**
+   * 轨道占用时长（ms）：滚动 = 穿屏到「完全入屏」+ 间隙；顶/底 = 驻留 + 间隙。
+   * 与 Flutter `DanmakuTimeline._occupancySeconds` 同构。
+   */
+  private occupancyMs(item: NativeDanmakuUi, fontSize: number, screenWidth: number,
+    travelMs: number): number {
+    const isFixed = item.mode === 'top' || item.mode === 'bottom';
+    if (isFixed) {
+      return FIXED_MS + 150;
+    }
+    const textW = this.estimateWidth(item.text, fontSize);
+    return travelMs * (textW <= 0 ? 0 : textW / (screenWidth + textW)) + 150;
   }
 
   /**

@@ -816,6 +816,41 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 - [x] Dart 转圈兜底：`hasVideoFrame` 增 `estimated-vf-fps > 0` 第三判据；
       新增 3s 看门狗（在播且位置已推进即强制收起，不依赖任何视频属性）。
 
+### Phase 2.9：弹幕行分配重建 + 角标 + 四端二维码 + 原生房间资源面板（1.5.10+590）
+
+> 起因：安卓弹幕「只显示最顶一行、一条条冒出来」；角标被裁 + 空/0 显示
+> 空白圆点；保存二维码全平台报错；安卓房间模式一播放就全屏、资源面板展
+> 不开。
+
+- [x] 弹幕行分配：`assignLanes` 每帧按「当前在场且已分配」的条目重建三组
+      冲突表（`fill(0)` + 按 `laneOf` 回填 `max(occupancy)`），再给新条目
+      分配。旧实现把 `avail[]` 当跨帧持久状态，离场条目占用不释放 → 新条目
+      找不到空行 → `lane=-1` 全部丢弃（只显示最顶一行）。安卓 + 鸿蒙同修。
+- [x] 角标空/0：`badgeButton` 创建时 `visibility = GONE`（吸收
+      `badgeLastText` 短路歧义——HashMap 缺键取 null 与值为 null 无法区分，
+      导致 `visibility` 从未设成 GONE → 空白蓝圆点）；新增
+      `badgeText(count)` 统一入口；`applyState` 加
+      `toIntOrNull()?.takeIf { it > 0 }` 兜底。
+- [x] 角标裁剪：`badgeLayoutParams` 的 `marginEnd` 从 `-dp(2)` 改 0，角标
+      完整落在 32dp 命中框内，不再依赖父级 `clipChildren`（旧实现只关了根 /
+      topBar / bottomBar，中间层 `buttonRow`、`trailingGroup` 仍会裁）。
+- [x] 二维码保存/分享四端统一（`QrExportService`）：Android 走 MediaStore
+      （API 29+，`RELATIVE_PATH=DCIM/Himi` + `IS_PENDING`）/ 直写（≤28）；
+      iOS 走 `PHPhotoLibrary`；鸿蒙走 `photoAccessHelper.createAsset`；
+      Windows 走 FilePicker / 剪贴板。删除两处
+      `/storage/emulated/0/DCIM` 直写与「鸿蒙暂不支持」拦截。
+- [x] 二维码截图可靠性：`RoomShareDialog` 自持 `qrKey` 并暴露
+      `_captureBytes()`，调用方不再依赖跨层传入的 key 时序；加 2s 超时
+      兜底（`RepaintBoundary.toImage` 极端情况可能永不返回）。
+- [x] 原生房间资源面板（安卓 + 鸿蒙，完整移植）：`NativePlayerUiExtras`
+      下发 `roomCode`/`isHost`/`onlineUserCount`/`audienceName`/
+      `resourceGroups`/`broadcasts`/`resourcePanelOpen`；新增命令
+      `toggleResourceGroup`/`toggleResourceSeason`/`removeResourceEpisode`/
+      `openResourceSearch`；`ToggleResourcePanel` 从「只打日志」改为真正
+      切换 `_showPanel`。
+- [x] 面板展开时视频区收窄：安卓收窄 surface 窗宽（`onVideoInsetRight`）；
+      鸿蒙 `XComponent` 宽度 `calc(100% - 320vp)`。否则视频被面板盖住。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

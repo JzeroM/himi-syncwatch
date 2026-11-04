@@ -263,22 +263,42 @@ class DanmakuLayerView(context: Context) : View(context) {
             laneOf.clear()
         }
         val travelMs = scrollBaseMs / speed
+
+        // ① 重建冲突表（关键修复）：只统计「已分配且仍在飞」的条目占用。
+        //
+        // 【真机回归：只显示最顶一行、一条条冒出来】旧实现把 `avail[]` 当跨帧
+        // 持久状态累积：老条目被 `flying` 清掉、`laneOf` 键被 remove 后，
+        // `avail[r]` 仍留着当初写入的未来时刻 → 新条目在整张表上都找不到
+        // 空行 → lane=-1 全部丢弃，只剩偶尔空出的 0 行能画。
+        //
+        // 正确模型：每帧从「当前在场的已分配条目」重建占用时刻，已分配的
+        // 行号仍保持不变（不跳行），离场条目的占用不再残留。
+        scrollAvail.fill(0.0)
+        topAvail.fill(0.0)
+        bottomAvail.fill(0.0)
         for (item in all) {
-            val key = keyOf(item)
-            if (laneOf.containsKey(key)) continue // 已分配（含 -1 丢弃）：不重分配
-            val textW = estimateTextWidth(item.text, fontSizePx)
-            val isFixed = item.mode == "top" || item.mode == "bottom"
-            val occupancy = if (isFixed) {
-                fixedMs + trackGapMs
-            } else {
-                val fullyEntered = if (textW <= 0f) 0.0 else textW.toDouble() / (screenW + textW)
-                travelMs * fullyEntered + trackGapMs
-            }
+            val lane = laneOf[keyOf(item)] ?: continue
+            if (lane < 0) continue
             val avail = when (item.mode) {
                 "top" -> topAvail
                 "bottom" -> bottomAvail
                 else -> scrollAvail
             }
+            if (lane >= avail.size) continue
+            val occupiedUntil = item.timeMs + occupancyMs(item, fontSizePx, screenW, travelMs)
+            if (occupiedUntil > avail[lane]) avail[lane] = occupiedUntil
+        }
+
+        // ② 只给新条目分配（all 已按 timeMs 升序）。
+        for (item in all) {
+            val key = keyOf(item)
+            if (laneOf.containsKey(key)) continue // 已分配（含 -1 丢弃）：不重分配
+            val avail = when (item.mode) {
+                "top" -> topAvail
+                "bottom" -> bottomAvail
+                else -> scrollAvail
+            }
+            val occupancy = occupancyMs(item, fontSizePx, screenW, travelMs)
             var lane = -1
             for (r in avail.indices) {
                 if (avail[r] <= item.timeMs.toDouble()) {
@@ -290,6 +310,23 @@ class DanmakuLayerView(context: Context) : View(context) {
             // lane = -1 → 轨道满丢弃（对齐 Flutter `if (row < 0) continue`）。
             laneOf[key] = lane
         }
+    }
+
+    /**
+     * 轨道占用时长（ms）：滚动 = 穿屏到「完全入屏」+ 间隙；顶/底 = 驻留 + 间隙。
+     * 与 Flutter `DanmakuTimeline._occupancySeconds` 同构。
+     */
+    private fun occupancyMs(
+        item: AndroidDanmakuItem,
+        fontSizePx: Float,
+        screenW: Float,
+        travelMs: Double,
+    ): Double {
+        val isFixed = item.mode == "top" || item.mode == "bottom"
+        if (isFixed) return fixedMs + trackGapMs
+        val textW = estimateTextWidth(item.text, fontSizePx)
+        val fullyEntered = if (textW <= 0f) 0.0 else textW.toDouble() / (screenW + textW)
+        return travelMs * fullyEntered + trackGapMs
     }
 
     /**

@@ -279,10 +279,47 @@ class AndroidNativePlayerHost(
             }
 
             override fun onToggleResourcePanel() {
-                // 房间模式资源面板开关（对齐 Flutter `_showPanel`）。原生资源
-                // 面板属 Phase 5，先只发命令由 Dart 侧决定是否可用——**不能
-                // 发 requestBack**（旧实现点一下直接退出播放页）。
+                // 房间模式资源面板开关（对齐 Flutter `_showPanel`）。
+                // **不能发 requestBack**（旧实现点一下直接退出播放页）。
                 commandSink.send(mapOf("type" to "toggleResourcePanel"))
+            }
+
+            // ── 房间资源面板交互（590）──
+            override fun onToggleResourceGroup(index: Int) {
+                commandSink.send(
+                    mapOf("type" to "toggleResourceGroup", "index" to index),
+                )
+            }
+
+            override fun onToggleResourceSeason(groupIndex: Int, seasonIndex: Int) {
+                commandSink.send(
+                    mapOf(
+                        "type" to "toggleResourceSeason",
+                        "groupIndex" to groupIndex,
+                        "seasonIndex" to seasonIndex,
+                    ),
+                )
+            }
+
+            override fun onRemoveResourceEpisode(index: Int) {
+                commandSink.send(
+                    mapOf("type" to "removeResourceEpisode", "index" to index),
+                )
+            }
+
+            override fun onOpenResourceSearch() {
+                commandSink.send(mapOf("type" to "openResourceSearch"))
+            }
+
+            /**
+             * 视频区右侧留白（590）：房间资源面板展开时收窄 surface 窗。
+             *
+             * 旧实现视频始终全屏，面板只能盖在视频上（视频被遮一部分）。
+             * 现在 surface 窗按 inset 收窄，视频只占左侧，与 Flutter
+             * `Row(Expanded(video), SizedBox(320))` 等价。
+             */
+            override fun onVideoInsetRight(insetPx: Int) {
+                applyVideoInsetRight(insetPx)
             }
 
             // ── 手机手势（对齐 Flutter player_screen.dart 手势控制）──
@@ -364,6 +401,26 @@ class AndroidNativePlayerHost(
     private fun surfaceSize(): Pair<Int, Int> {
         val surf = surfaceView ?: return 0 to 0
         return surf.width to surf.height
+    }
+
+    /**
+     * 视频区右侧留白（590）：房间资源面板展开时收窄 surface 窗。
+     *
+     * 通过调整 surface 窗的 `layoutParams.width` 实现——surface 窗只放
+     * [HimiMpvSurfaceView]，宽度改小后 SurfaceView 会重新 `onSizeChanged`，
+     * 原生 mpv 收到新尺寸后重新 letterbox（与 Flutter 分栏一致）。
+     */
+    private fun applyVideoInsetRight(insetPx: Int) {
+        val dlg = surfaceDialog ?: return
+        val w = dlg.window ?: return
+        val lp = w.attributes
+        val screenW = activity.resources.displayMetrics.widthPixels
+        val targetW = (screenW - insetPx.coerceAtLeast(0)).coerceAtLeast(1)
+        if (lp.width == targetW) return
+        lp.width = targetW
+        // 靠左对齐：面板占右侧，视频贴左。
+        lp.gravity = android.view.Gravity.START or android.view.Gravity.TOP
+        w.attributes = lp
     }
 
     /** 全屏 + 刘海 + 沉浸式（两个窗口共用）。 */

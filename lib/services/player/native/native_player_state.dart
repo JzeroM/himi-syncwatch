@@ -1119,6 +1119,133 @@ class NativePlayerState {
 ///
 /// 与播放状态分开维护：设置/布局类字段变化频率低，PlayerScreen 在
 /// 设置变更、锁定、网速采样、切集等时机整体重建一次即可。
+/// 房间资源面板：一条可播放资源（590）。
+///
+/// 对应 Flutter `_ResourceItem`：电影 season/number 均为 0 且 seriesName 为空。
+class NativeResourceItem {
+  const NativeResourceItem({
+    required this.index,
+    required this.name,
+    this.season = 0,
+    this.number = 0,
+    this.poster = '',
+    this.isPlaying = false,
+  });
+
+  /// 在 `episodes` 扁平列表里的下标（点它切集）。
+  final int index;
+  final String name;
+  final int season;
+  final int number;
+  final String poster;
+
+  /// 当前正在播放的集（原生侧高亮 accent 左缘 + 20% 底）。
+  final bool isPlaying;
+
+  bool get isMovie => season == 0 && number == 0;
+
+  /// 集码（`S01E03`；电影返回空串）。
+  String get episodeCode {
+    if (isMovie) return '';
+    final s = season > 0 ? season.toString().padLeft(2, '0') : '01';
+    final e = number > 0 ? number.toString().padLeft(2, '0') : '01';
+    return 'S${s}E$e';
+  }
+
+  factory NativeResourceItem.fromJson(Map<Object?, Object?> json) =>
+      NativeResourceItem(
+        index: (json['index'] as num?)?.toInt() ?? 0,
+        name: json['name'] as String? ?? '',
+        season: (json['season'] as num?)?.toInt() ?? 0,
+        number: (json['number'] as num?)?.toInt() ?? 0,
+        poster: json['poster'] as String? ?? '',
+        isPlaying: json['isPlaying'] == true,
+      );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'index': index,
+        'name': name,
+        'season': season,
+        'number': number,
+        'poster': poster,
+        'isPlaying': isPlaying,
+      };
+}
+
+/// 房间资源面板：一个季分组（剧集类资源）。
+class NativeSeasonGroup {
+  const NativeSeasonGroup({
+    required this.seasonNumber,
+    this.collapsed = true,
+    this.episodes = const <NativeResourceItem>[],
+  });
+
+  final int seasonNumber;
+  final bool collapsed;
+  final List<NativeResourceItem> episodes;
+
+  factory NativeSeasonGroup.fromJson(Map<Object?, Object?> json) =>
+      NativeSeasonGroup(
+        seasonNumber: (json['seasonNumber'] as num?)?.toInt() ?? 0,
+        collapsed: json['collapsed'] != false,
+        episodes: ((json['episodes'] as List<Object?>?) ?? const <Object?>[])
+            .whereType<Map<Object?, Object?>>()
+            .map(NativeSeasonGroup._item)
+            .toList(growable: false),
+      );
+
+  static NativeResourceItem _item(Map<Object?, Object?> json) =>
+      NativeResourceItem.fromJson(json);
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'seasonNumber': seasonNumber,
+        'collapsed': collapsed,
+        'episodes': episodes.map((e) => e.toJson()).toList(growable: false),
+      };
+}
+
+/// 房间资源面板：一个资源分组（电影单条 / 剧集多季）。
+class NativeResourceGroup {
+  const NativeResourceGroup({
+    required this.name,
+    required this.isMovie,
+    this.collapsed = true,
+    this.seasons = const <NativeSeasonGroup>[],
+  });
+
+  final String name;
+  final bool isMovie;
+  final bool collapsed;
+  final List<NativeSeasonGroup> seasons;
+
+  int get totalCount =>
+      seasons.fold(0, (sum, s) => sum + s.episodes.length);
+
+  /// 分组标题右侧计数（电影 `(N)`、剧集 `(N集)`）。
+  String get countLabel => isMovie ? '($totalCount)' : '($totalCount集)';
+
+  factory NativeResourceGroup.fromJson(Map<Object?, Object?> json) =>
+      NativeResourceGroup(
+        name: json['name'] as String? ?? '',
+        isMovie: json['isMovie'] == true,
+        collapsed: json['collapsed'] != false,
+        seasons: ((json['seasons'] as List<Object?>?) ?? const <Object?>[])
+            .whereType<Map<Object?, Object?>>()
+            .map(NativeResourceGroup._season)
+            .toList(growable: false),
+      );
+
+  static NativeSeasonGroup _season(Map<Object?, Object?> json) =>
+      NativeSeasonGroup.fromJson(json);
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'name': name,
+        'isMovie': isMovie,
+        'collapsed': collapsed,
+        'seasons': seasons.map((s) => s.toJson()).toList(growable: false),
+      };
+}
+
 class NativePlayerUiExtras {
   const NativePlayerUiExtras({
     this.title,
@@ -1145,6 +1272,13 @@ class NativePlayerUiExtras {
     this.danmakuBlockTop = false,
     this.danmakuBlockBottom = false,
     this.danmakuBlockWords = const <String>[],
+    this.roomCode,
+    this.isHost = false,
+    this.onlineUserCount = 0,
+    this.audienceName,
+    this.resourceGroups = const <NativeResourceGroup>[],
+    this.broadcasts = const <String>[],
+    this.resourcePanelOpen = true,
     this.segmentEnabled = false,
     this.segmentIntroEndMs,
     this.segmentOutroStartMs,
@@ -1189,6 +1323,24 @@ class NativePlayerUiExtras {
   final bool danmakuBlockTop;
   final bool danmakuBlockBottom;
   final List<String> danmakuBlockWords;
+
+  // ── 房间资源面板（590）──
+  //
+  // 原生 UI 是全屏 Dialog，会盖住 Flutter 的资源面板，且原生侧此前只把
+  // `ToggleResourcePanel` 打日志（真机「房间模式一播放就全屏、资源面板展
+  // 不开」）。数据经本快照下发，原生自己画面板。
+  final String? roomCode;
+  final bool isHost;
+  final int onlineUserCount;
+  final String? audienceName;
+  final List<NativeResourceGroup> resourceGroups;
+
+  /// 播报板消息（`[09:07] 房主 加入了房间` 这类已格式化文本）。
+  final List<String> broadcasts;
+
+  /// 资源面板是否展开（原生 Dialog 内右侧 320dp）。
+  final bool resourcePanelOpen;
+
   final bool segmentEnabled;
   final int? segmentIntroEndMs;
   final int? segmentOutroStartMs;

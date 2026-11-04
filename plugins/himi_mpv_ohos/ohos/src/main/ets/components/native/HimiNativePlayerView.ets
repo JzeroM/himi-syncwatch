@@ -19,6 +19,7 @@ import {
   NativePlayerUiState,
   NativePlayerViewListener,
   NativePlayerPanelType,
+  NativeResourceGroupUi,
   nativeDiagSummary,
 } from './HimiMpvNativeHost';
 import { NativePlayerPanel, segmentMarkReject } from './NativePlayerPanel';
@@ -28,6 +29,17 @@ import { GlassSlider } from './GlassSlider';
 import { MpvXComponentController, MpvSurfaceCallbacks } from '../plugin/HimiMpvSurface';
 
 const TAG = 'HimiNativePlayerView';
+
+/**
+ * 房间资源面板宽度（vp，590）。
+ *
+ * 与 Flutter `_buildResponsiveLayout` 横屏分栏 `SizedBox(width: 320)` 逐值一致。
+ * 展开时视频区同步收窄该宽度（否则面板盖住视频）。
+ */
+const ROOM_PANEL_WIDTH = 320;
+
+/** 面板分隔线（与 NativePlayerPanel.PANEL_DIVIDER 同值，白 12%）。 */
+const ROOM_PANEL_DIVIDER = '#1FFFFFFF';
 const DOMAIN = 0x0001;
 
 /** 选中主色（照抄 Flutter Color(0xFF6366F1)）。 */
@@ -1043,13 +1055,159 @@ export struct HimiNativePlayerView {
     host.optimisticSelectEpisode(this.currentEpisodeIndex + 1);
   }
 
+  /** 宿主单例（资源面板交互用）。 */
+  private host(): HimiMpvNativeHost {
+    return HimiMpvNativeHost.getInstance();
+  }
+
+  /** 房间资源面板是否可见（房间模式 + 面板展开）。 */
+  private roomPanelVisible(): boolean {
+    const s = this.state();
+    return s.isRoom && s.resourcePanelOpen;
+  }
+
+  /**
+   * 房间资源面板（590）：右侧 320vp 常驻分栏。
+   *
+   * 原生 UI 是全屏子窗口，会盖住 Flutter 的资源面板，且此前
+   * `toggleResourcePanel` 只打日志（真机「房间模式一播放就全屏、面板
+   * 展不开」）。现由原生自己渲染，视觉对齐 Flutter `_buildResourcePanel`：
+   * `#1A1A2E` 底 + 头部（资源/搜索/在线人数/房主徽章）+ 分组列表 + 播报板。
+   */
+  @Builder
+  RoomPanel() {
+    Column() {
+      // 头部
+      Row({ space: 6 }) {
+        Text('资源')
+          .fontSize(14)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis });
+        if (this.state().isHost) {
+          Text(String.fromCodePoint(NativePlayerIcons.ICON_SEARCH))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
+            .fontSize(20)
+            .fontColor('#B3FFFFFF')
+            .width(28)
+            .height(28)
+            .textAlign(TextAlign.Center)
+            .opacity(this.state().paused ? 1 : 0.4)
+            .onClick((): void => {
+              this.host().sendCommand('openResourceSearch', null);
+            });
+        }
+        Text(`${this.state().onlineUserCount}`)
+          .fontSize(11)
+          .fontColor('#B3FFFFFF')
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .backgroundColor('#1FFFFFFF')
+          .borderRadius(8);
+        Text(this.state().isHost
+          ? '房主'
+          : (this.state().audienceName.length > 0 ? this.state().audienceName : '观众'))
+          .fontSize(11)
+          .fontColor(Color.White)
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .backgroundColor(this.state().isHost ? SEL_COLOR : '#E53935')
+          .borderRadius(8);
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+      .alignItems(VerticalAlign.Center)
+      .border({ width: { bottom: 0.5 }, color: ROOM_PANEL_DIVIDER });
+
+      // 分组列表
+      List() {
+        ForEach(this.state().resourceGroups, (g: NativeResourceGroupUi, gi: number) => {
+          ListItem() {
+            Row() {
+              Text(String.fromCodePoint(g.collapsed
+                ? NativePlayerIcons.ICON_CHEVRON_RIGHT
+                : NativePlayerIcons.ICON_EXPAND_MORE))
+                .fontFamily(NativePlayerIcons.FONT_FAMILY)
+                .fontSize(20)
+                .fontColor('#B3FFFFFF')
+                .width(20);
+              Text(g.name)
+                .fontSize(13)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(Color.White)
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .margin({ left: 4 });
+              Text(g.countLabel())
+                .fontSize(11)
+                .fontColor('#B3FFFFFF');
+            }
+            .width('100%')
+            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+            .alignItems(VerticalAlign.Center)
+            .backgroundColor('#16213E')
+            .onClick((): void => {
+              const fields: Map<string, Object> = new Map<string, Object>();
+              fields.set('index', gi);
+              this.host().sendCommand('toggleResourceGroup', fields);
+            });
+          }
+        }, (g: NativeResourceGroupUi, gi: number): string => `rg-${gi}-${g.collapsed}`);
+      }
+      .width('100%')
+      .layoutWeight(1);
+
+      // 播报板
+      Column() {
+        Text(`播报 (${this.state().broadcasts.length})`)
+          .fontSize(11)
+          .fontColor('#B3FFFFFF')
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 });
+        List() {
+          ForEach(this.state().broadcasts, (line: string, bi: number) => {
+            ListItem() {
+              Text(line)
+                .fontSize(11)
+                .fontColor('#8AFFFFFF')
+                .width('100%')
+                .padding({ left: 10, right: 10, top: 2, bottom: 2 });
+            }
+          }, (line: string, bi: number): string => `bc-${bi}-${line}`);
+        }
+        .width('100%')
+        .layoutWeight(1);
+      }
+      .width('100%')
+      .height(120)
+      .border({ width: { top: 0.5 }, color: ROOM_PANEL_DIVIDER });
+    }
+    .width(ROOM_PANEL_WIDTH)
+    .height('100%')
+    .backgroundColor('#1A1A2E')
+    .alignItems(HorizontalAlign.Start);
+  }
+
   build() {
     Stack({ alignContent: Alignment.Top }) {
+      // ── 视频 + 房间资源面板：Row 分栏（590）──
+      // 【必须流式布局】鸿蒙禁止 position/markAnchor 百分比定位（真机跑位
+      // 回归，见 test/native_player_theme_test.dart）：尾组曾用
+      // `.position({x:'100%',y:'50%'})`，百分比基准是父容器、Stack 高度不定
+      // → 控件跑到屏幕中部/屏外。因此分栏用 Row + layoutWeight 实现，
+      // 与 Flutter `Row(Expanded(video), SizedBox(320))` 等价。
+      Row() {
       // ── 视频层 ──
       XComponent({
         type: XComponentType.SURFACE,
         controller: this.controller,
       })
+        // 宽度由外层 Row 分栏决定（见 build 顶部）：房间面板展开时视频区
+        // 收窄（590），与 Flutter `Row(Expanded(video), SizedBox(320))` 等价。
+        // 展开：layoutWeight(1) 吃掉剩余宽（不设 width，避免两者冲突）；
+        // 收起：width 100% 铺满（不设 layoutWeight）。
+        .layoutWeight(this.roomPanelVisible() ? 1 : 0)
         .width('100%')
         .height('100%')
         .backgroundColor(Color.Black)
@@ -1115,6 +1273,45 @@ export struct HimiNativePlayerView {
               }),
             // 长按三分区：左 1/3 设片头、右 1/3 设片尾、中间临时倍速
             // （对齐 Flutter `_onVideoLongPressStart`；功能未开时全区退化为倍速）。
+            LongPressGesture({ repeat: false })
+              .onAction((event: GestureEvent): void => {
+                this.onLongPressZone(event);
+              })
+              .onActionEnd((): void => {
+                this.onSpeedBoostEnd();
+              })
+              .onActionCancel((): void => {
+                this.onSpeedBoostEnd();
+              }),
+          ),
+        )
+      }
+      .width('100%')
+      .height('100%')
+      .alignItems(VerticalAlign.Top);
+
+      // ── 手势层（视频之上）──
+      Column()
+        .width('100%')
+        .height('100%')
+        .gesture(
+          GestureGroup(GestureMode.Parallel,
+            TapGesture({ count: 1 }).onAction((): void => {
+              this.onTapLayer();
+            }),
+            TapGesture({ count: 2 }).onAction((): void => {
+              this.onDoubleTapGesture();
+            }),
+            PanGesture({ direction: PanDirection.All })
+              .onActionStart((event: GestureEvent): void => {
+                this.onPanStart(event);
+              })
+              .onActionUpdate((event: GestureEvent): void => {
+                this.onPanUpdate(event);
+              })
+              .onActionEnd((): void => {
+                this.onPanEnd();
+              }),
             LongPressGesture({ repeat: false })
               .onAction((event: GestureEvent): void => {
                 this.onLongPressZone(event);

@@ -90,6 +90,19 @@ sealed class NativePlayerCommand {
         return const ShareRoom();
       case 'toggleResourcePanel':
         return const ToggleResourcePanel();
+      case 'toggleResourceGroup':
+        return ToggleResourceGroup(
+            index: (map['index'] as num?)?.toInt() ?? 0);
+      case 'toggleResourceSeason':
+        return ToggleResourceSeason(
+          groupIndex: (map['groupIndex'] as num?)?.toInt() ?? 0,
+          seasonIndex: (map['seasonIndex'] as num?)?.toInt() ?? 0,
+        );
+      case 'removeResourceEpisode':
+        return RemoveResourceEpisode(
+            index: (map['index'] as num?)?.toInt() ?? 0);
+      case 'openResourceSearch':
+        return const OpenResourceSearch();
       case 'clearSegmentMark':
         return ClearSegmentMark(kind: map['kind'] as String? ?? 'intro');
       case 'skipSegment':
@@ -498,4 +511,56 @@ class RequestExit extends NativePlayerCommand {
   @override
   Map<String, Object?> toMap() =>
       const <String, Object?>{'type': 'requestExit'};
+}
+
+/// 切换资源分组折叠（房间资源面板）。
+class ToggleResourceGroup extends NativePlayerCommand {
+  const ToggleResourceGroup({required this.index});
+
+  final int index;
+
+  @override
+  Map<String, Object?> toMap() =>
+      <String, Object?>{'type': 'toggleResourceGroup', 'index': index};
+}
+
+/// 切换季分组折叠（房间资源面板）。
+class ToggleResourceSeason extends NativePlayerCommand {
+  const ToggleResourceSeason({
+    required this.groupIndex,
+    required this.seasonIndex,
+  });
+
+  final int groupIndex;
+  final int seasonIndex;
+
+  @override
+  Map<String, Object?> toMap() => <String, Object?>{
+        'type': 'toggleResourceSeason',
+        'groupIndex': groupIndex,
+        'seasonIndex': seasonIndex,
+      };
+}
+
+/// 从房间资源列表移除一条（房主，对应 Flutter `_removeEpisode`）。
+class RemoveResourceEpisode extends NativePlayerCommand {
+  const RemoveResourceEpisode({required this.index});
+
+  final int index;
+
+  @override
+  bool get requiresImmediatePush => true;
+
+  @override
+  Map<String, Object?> toMap() =>
+      <String, Object?>{'type': 'removeResourceEpisode', 'index': index};
+}
+
+/// 打开聚合搜索加资源（房主，对应 Flutter `pushRoomResourceSearch`）。
+class OpenResourceSearch extends NativePlayerCommand {
+  const OpenResourceSearch();
+
+  @override
+  Map<String, Object?> toMap() =>
+      const <String, Object?>{'type': 'openResourceSearch'};
 }

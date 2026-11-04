@@ -144,6 +144,14 @@ internal object NPTheme {
     const val PANEL_MIN_WIDTH = 260f
     const val PANEL_MAX_WIDTH = 320f
     const val PANEL_RIGHT = 12
+
+    /**
+     * 房间资源面板宽度（590）。
+     *
+     * 与 Flutter `_buildResponsiveLayout` 横屏分栏的 `SizedBox(width: 320)`
+     * 逐值一致。展开时 mpv surface 同步收窄该宽度（否则视频被面板盖住）。
+     */
+    const val ROOM_PANEL_WIDTH = 320
     const val PANEL_TOP_OFFSET = 48
     const val PANEL_BOTTOM_OFFSET = 116
 
