@@ -112,8 +112,14 @@ data class AndroidResourceGroup(
 ) {
     val totalCount: Int get() = seasons.sumOf { it.episodes.size }
 
-    /** 分组标题右侧计数（电影 `(N)`、剧集 `(N集)`）。 */
-    val countLabel: String get() = if (isMovie) "($totalCount)" else "($totalCount集)"
+    /**
+     * 分组标题右侧计数（电影 `(N)`、剧集 `(N集)`）。
+     *
+     * 【必须用 `${}` 包裹】Kotlin 的简单模板 `"$totalCount集"` 会把
+     * `totalCount集` 整体当成一个标识符（中文字符是合法标识符字符）→
+     * `Unresolved reference 'totalCount集'`（CI 编译失败）。
+     */
+    val countLabel: String get() = if (isMovie) "($totalCount)" else "(${totalCount}集)"
 
     companion object {
         fun fromJson(o: JSONObject): AndroidResourceGroup = AndroidResourceGroup(

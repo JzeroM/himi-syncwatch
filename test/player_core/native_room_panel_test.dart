@@ -203,6 +203,41 @@ void main() {
       expect(movieGroup.countLabel, '(1)');
     });
 
+    test('Kotlin 字符串模板紧跟中文必须用花括号包裹（防 Unresolved reference）', () {
+      // CI 真机编译失败：Kotlin 把 `"$totalCount集"` 里的 `totalCount集`
+      // 整体当成标识符（中文字符是合法标识符字符）→ Unresolved reference。
+      final state = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'AndroidNativePlayerState.kt',
+      ).readAsStringSync();
+      expect(state, contains(r'(${totalCount}集)'));
+      expect(state, isNot(contains(r'($totalCount集)')));
+      // 全仓扫描：任何 `$ident` 后紧跟中文的简单模板都视为隐患。
+      final badPattern = RegExp(r'\$[a-zA-Z_][a-zA-Z0-9_]*(?=[\u4e00-\u9fff])');
+      for (final f in Directory(
+        'android/app/src/main/kotlin/com/himi/syncwatch',
+      ).listSync(recursive: true).whereType<File>()) {
+        if (!f.path.endsWith('.kt')) continue;
+        // 逐行扫描并跳过注释行（注释里会写「旧写法 `$var中文`」做说明，
+        // 那不是可执行代码）。
+        final hits = <String>[];
+        for (final line in f.readAsStringSync().split('\n')) {
+          final trimmed = line.trimLeft();
+          if (trimmed.startsWith('//') || trimmed.startsWith('*') ||
+              trimmed.startsWith('/*')) {
+            continue;
+          }
+          for (final m in badPattern.allMatches(line)) {
+            // 排除 `${...}`（有花括号的合法形式）。
+            if (line.substring(m.end).startsWith('}')) continue;
+            hits.add('${f.path}: $line');
+          }
+        }
+        expect(hits, isEmpty,
+            reason: '${f.path} 存在美元变量紧跟中文的简单模板');
+      }
+    });
+
     test('extras 携带房间字段', () {
       const extras = NativePlayerUiExtras(
         roomCode: 'ABC123',
