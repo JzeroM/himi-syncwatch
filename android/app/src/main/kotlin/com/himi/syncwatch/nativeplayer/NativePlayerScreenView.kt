@@ -2672,6 +2672,42 @@ class NativePlayerScreenView(
      * Flutter 的 `Border(bottom: 0.5)` 是内描边；插一个 1px View 会挤高
      * 行高。这里作为 `foreground` 直接画在行底。
      */
+    /**
+     * 当前集左侧 3dp accent 边框（596）。
+     *
+     * 与 Flutter `Border(left: BorderSide(color: accent, width: 3))` 等价：
+     * 画在容器内边缘、**不占布局宽度**。
+     *
+     * 旧实现用独立 `View` 占 `dp(3)` 宽——视觉上「多出一条竖条」并把右侧
+     * 内容整体右推（真机截图回归）。
+     */
+    private fun leftAccentDivider(): Drawable = object : Drawable() {
+        private val paint = Paint().apply { color = NPTheme.ACCENT }
+
+        override fun draw(canvas: Canvas) {
+            val b = bounds
+            if (b.isEmpty) return
+            canvas.drawRect(
+                b.left.toFloat(),
+                b.top.toFloat(),
+                (b.left + dp(3)).toFloat(),
+                b.bottom.toFloat(),
+                paint,
+            )
+        }
+
+        override fun setAlpha(alpha: Int) {
+            paint.alpha = alpha
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            paint.colorFilter = colorFilter
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
+
     private fun rowBottomDivider(): Drawable = object : Drawable() {
         private val paint = Paint().apply { color = NPTheme.PANEL_DIVIDER }
 
@@ -2953,11 +2989,16 @@ class NativePlayerScreenView(
         // ── 头部（对齐 Flutter：Expanded(资源) | 搜索 | 人数 | 角色）──
         roomPanelTitle.text = "资源"
         roomPanelOnline.text = "${state.onlineUserCount}"
-        // 搜索按钮：房主 **且未在播放** 才显示（Flutter
-        // `_roomData != null && _isHost && state != playing`）。
-        // 旧实现只看 isHost（观众端也占位、只调 alpha），逻辑反了。
+        // 搜索按钮：房主 **且暂停中** 才显示（596 修正）。
+        //
+        // 【595 写反了】当时写成 `isHost && !paused`（播放中显示），而
+        // Flutter 是 `_roomData != null && _isHost && _player.state !=
+        // AdapterPlaybackState.playing`——播放中**不**显示。
+        // 原生侧 `paused == (state == paused || state == stopped)`，
+        // 因此等价条件就是 `isHost && paused`。
+        // 真机截图回归：房主播放中仍能看到右上角放大镜。
         roomPanelSearch.visibility =
-            if (state.isHost && !state.paused) VISIBLE else GONE
+            if (state.isHost && state.paused) VISIBLE else GONE
         roomPanelRole.text = if (state.isHost) {
             "房主"
         } else {
@@ -3200,13 +3241,17 @@ class NativePlayerScreenView(
             }
             applyPressFeedback(this)
 
-            // 当前集左侧 3dp accent 竖条（Flutter `Border(left: BorderSide(accent, 3))`）。
-            // 旧实现只有底色、缺左边框。
+            // 当前集左侧 3dp accent 边框（596 修正）。
+            //
+            // 【真机回归：当前集前面多了一条竖条】旧实现用独立 `View` 占
+            // `dp(3)` 布局宽——视觉上「多出一条竖条」且把右侧内容整体右推。
+            // Flutter 用的是 `Border(left: BorderSide(accent, 3))`——画在
+            // 容器内边缘、**不占布局宽度**。
+            //
+            // 这里改用 `foreground` 自绘 Drawable：只在左边 3dp 涂 accent，
+            // 不参与测量，与 Flutter 完全等价。
             if (ep.isPlaying) {
-                addView(
-                    View(context).apply { setBackgroundColor(NPTheme.ACCENT) },
-                    llp(dp(3), dp(44)),
-                )
+                foreground = leftAccentDivider()
             }
 
             // 播放/暂停（房主）
@@ -3368,18 +3413,17 @@ class NativePlayerScreenView(
         }
         (topBar.layoutParams as? LayoutParams)?.let { it.width = videoW; topBar.layoutParams = it }
         (bottomBar.layoutParams as? LayoutParams)?.let {
-            it.width = videoW
-            // 595：竖屏底栏改用「父级高度 = videoH + Gravity.BOTTOM」，
-            // 不再用 `WRAP_CONTENT + topMargin` 估算。
+            // 【真机回归：进度条/底栏跑到屏幕顶部】596 修正。
             //
-            // 【真机回归：竖屏底栏消失】旧实现 `it.height = WRAP_CONTENT` +
-            // `it.topMargin = videoH - BAR_PAD_TOP - (TRANSPORT_PLAY+8)`：
-            // 底栏真实高度 ≈ 进度条行 + 控件行 + padding（约 100dp），
-            // topMargin 只减了 44dp → 底栏底部超出 videoH，被资源面板盖住
-            // 或裁掉，用户看到「底栏控件消失」。
-            // 现在把底栏高度设为 videoH、内部用 Gravity.BOTTOM 贴底，
-            // 不依赖任何高度估算。
-            it.height = if (portrait) videoH else LayoutParams.MATCH_PARENT
+            // 595 把 `height` 设成 `MATCH_PARENT`（横屏）——底栏内部是
+            // `LinearLayout.VERTICAL`，撑满高度后内容从**顶部**开始排，
+            // 于是进度条行与控件行跑到屏幕最上方，和顶栏叠在一起。
+            //
+            // 底栏**根本不需要改 height**：它的 LayoutParams 挂在根
+            // FrameLayout 里，`Gravity.BOTTOM + WRAP_CONTENT` 天然贴底。
+            // 只改 width 与 gravity 即可，横竖屏一致。
+            it.width = videoW
+            it.height = LayoutParams.WRAP_CONTENT
             it.topMargin = 0
             it.gravity = Gravity.START or Gravity.BOTTOM
             bottomBar.layoutParams = it
@@ -3387,9 +3431,15 @@ class NativePlayerScreenView(
         (panelScrim.layoutParams as? LayoutParams)?.let {
             it.width = videoW; it.height = videoH; panelScrim.layoutParams = it
         }
-        (panelContainer.layoutParams as? LayoutParams)?.let {
-            it.width = videoW; panelContainer.layoutParams = it
-        }
+        // 【真机回归：控件弹出面板没显示】596 修正。
+        //
+        // 595 在这里把 panelContainer.width 改成了 videoW（整个视频区宽），
+        // 而 `renderOverlays()` 用 `lp(panelWidthDp(), MATCH_PARENT)` 重建时
+        // 又会重置宽度——两者顺序冲突：若 applyVideoSplit 在 renderOverlays
+        // 之后跑，面板被撑满视频区，看起来像「没显示」。
+        //
+        // 面板宽度必须由 `panelWidthDp()` 统一决定（它已按 videoW 计算），
+        // 这里只限制遮罩范围，不动面板宽度。
         (decodePopover.layoutParams as? LayoutParams)?.let {
             it.width = videoW; decodePopover.layoutParams = it
         }

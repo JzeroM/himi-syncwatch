@@ -1126,7 +1126,10 @@ export struct HimiNativePlayerView {
           .textOverflow({ overflow: TextOverflow.Ellipsis });
         // 搜索：房主 **且未在播放** 才显示（Flutter
         // `_roomData != null && _isHost && state != playing`）。
-        if (this.state().isHost && !this.state().paused) {
+        // 596：房主 **且暂停中** 才显示（Flutter
+        // `_roomData != null && _isHost && state != playing`）。
+        // 595 写成 `!paused`（播放中显示），逻辑反了。
+        if (this.state().isHost && this.state().paused) {
           Text(String.fromCodePoint(NativePlayerIcons.ICON_SEARCH))
             .fontFamily(NativePlayerIcons.FONT_FAMILY)
             .fontSize(20)
@@ -1325,12 +1328,10 @@ export struct HimiNativePlayerView {
   RoomEpisodeRow(ep: NativeResourceItemUi) {
     Row() {
       // 当前集左 3vp accent 竖条（Flutter Border(left, 3)）。
-      if (ep.isPlaying) {
-        Column()
-          .width(3)
-          .height(44)
-          .backgroundColor(SEL_COLOR);
-      }
+      // 596：当前集左边框改为容器 border（不占布局宽）。
+      // 旧实现用独立 `Column().width(3)` 占位——视觉上「多一条竖条」且把
+      // 右侧内容右推。这里删掉占位，改在行容器上画左 3vp 边框（见行尾
+      // `.border({ width: { left: 3 }, color: SEL_COLOR })`）。
       // 播放/暂停（房主）
       if (this.state().isHost) {
         Text(String.fromCodePoint(
@@ -1415,6 +1416,10 @@ export struct HimiNativePlayerView {
     .padding({ left: 8, right: 8, top: 6, bottom: 6 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(ep.isPlaying ? '#4D6366F1' : Color.Transparent)
+    // 596：当前集左 3vp accent 边框（Flutter Border(left, 3)，不占布局宽）。
+    .border(ep.isPlaying
+      ? { width: { left: 3 }, color: SEL_COLOR }
+      : { width: 0, color: Color.Transparent })
     .onClick((): void => {
       if (!this.state().isHost) {
         return;

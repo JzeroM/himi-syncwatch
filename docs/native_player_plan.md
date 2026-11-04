@@ -968,6 +968,32 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   ≈100dp，topMargin 只减 44dp → 底部超出 `videoH` 被裁。改为
   `height = videoH` + `gravity = BOTTOM`，不依赖高度估算。
 
+### Phase 2.15：底栏定位 / 当前集边框 / 搜索条件 / 弹出面板宽度（1.5.16+596）
+
+> 起因：真机「进度条和底栏跑到屏幕顶部」「资源列表当前集前面多一条竖条」
+> 「搜索控件应只在暂停时显示」「控件弹出面板没显示」。
+
+- [x] **底栏跑到顶部**：595 把 `bottomBar.height` 设成 `MATCH_PARENT`
+  （横屏分支）——底栏内部是 `LinearLayout.VERTICAL`，撑满高度后内容从
+  **顶部**开始排，进度条行与控件行跑到屏幕最上方、与顶栏重叠。
+  修法：底栏**不改 height**（`WRAP_CONTENT` + `Gravity.BOTTOM` 天然贴底），
+  只改 `width` 与 `gravity`，横竖屏一致。
+- [x] **当前集竖条**：旧实现用独立 `View` 占 `dp(3)` 布局宽——视觉上
+  「多一条竖条」且把右侧内容整体右推。Flutter 用
+  `Border(left: BorderSide(accent, 3))` 画在容器内边缘、不占宽。
+  修法：安卓改 `foreground = leftAccentDivider()` 自绘（只涂左侧 3dp）；
+  鸿蒙改行容器 `.border({ width: { left: 3 }, color: SEL_COLOR })`。
+- [x] **搜索控件条件（595 写反了）**：595 写成 `isHost && !paused`
+  （播放中显示），而 Flutter 是
+  `_roomData != null && _isHost && _player.state != AdapterPlaybackState.playing`
+  ——播放中**不**显示。原生侧 `paused == (state == paused || stopped)`，
+  等价条件为 `isHost && paused`。真机截图回归：房主播放中仍显示放大镜。
+- [x] **弹出面板没显示**：595 在 `applyVideoSplit` 里把
+  `panelContainer.width` 改成 `videoW`（整个视频区宽），与
+  `renderOverlays()` 的 `lp(panelWidthDp(), MATCH_PARENT)` 冲突 → 面板
+  撑满视频区，看起来像「没显示」。修法：`applyVideoSplit` 不动面板宽度
+  （由 `panelWidthDp()` 统一决定，它已按 `videoW` 计算），只限制遮罩范围。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

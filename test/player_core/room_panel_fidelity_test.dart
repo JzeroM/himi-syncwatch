@@ -32,10 +32,12 @@ void main() {
   });
 
   group('头部：资源 | 搜索 | 人数胶囊 | 角色徽章', () {
-    test('搜索显隐：房主且未播放（旧实现只看 isHost）', () {
+    test('搜索显隐：房主且**暂停中**才显示（596 修正 595 的反向条件）', () {
+      // Flutter `_roomData != null && _isHost && state != playing`——播放中
+      // **不**显示；原生 paused 等价于 state != playing。
       expect(kotlinScreen,
-          contains('if (state.isHost && !state.paused) VISIBLE else GONE'));
-      expect(ohosView, contains('if (this.state().isHost && !this.state().paused) {'));
+          contains('if (state.isHost && state.paused) VISIBLE else GONE'));
+      expect(ohosView, contains('if (this.state().isHost && this.state().paused) {'));
     });
 
     test('人数胶囊用 people 图标字体（不是 emoji）', () {
@@ -87,10 +89,12 @@ void main() {
   });
 
   group('集行：左边框 + 播放图标 + 缩略图 + 集码 + 删除', () {
-    test('当前集左 3dp accent 竖条（旧实现只有底色）', () {
-      expect(kotlinScreen, contains('llp(dp(3), dp(44))'));
-      expect(kotlinScreen, contains('setBackgroundColor(NPTheme.ACCENT)'));
-      expect(ohosView, contains('.width(3)\n          .height(44)\n          .backgroundColor(SEL_COLOR)'));
+    test('当前集左 3dp accent 边框（不占布局宽，596）', () {
+      // 旧实现用独立 View 占 3dp 宽 → 视觉多一条竖条 + 右推内容。
+      // Flutter 是 Border(left, 3) 内边缘描边。
+      expect(kotlinScreen, contains('foreground = leftAccentDivider()'));
+      expect(kotlinScreen, contains('private fun leftAccentDivider()'));
+      expect(ohosView, contains('width: { left: 3 }, color: SEL_COLOR'));
     });
 
     test('当前集底色 accent@30%', () {
