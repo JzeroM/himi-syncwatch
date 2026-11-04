@@ -1913,9 +1913,17 @@ class NativePlayerScreenView(
 
     /** 面板容器几何：宽 clamp(0.42×屏宽, 260, 320)，贴右 12、上避顶栏 48、下避控制条 116。 */
     private fun panelWidthDp(): Int {
+        // 595：分栏时面板要按**视频区宽度**（左区）算，而不是全屏宽。
+        // 旧实现用全屏宽 → 收窄后的父级只有 videoW，面板按全屏 0.42 算会
+        // 过宽，右缘被父级裁掉、视觉上像「被资源面板遮挡」（真机回归）。
         val w = width.takeIf { it > 0 }
             ?: resources.displayMetrics.widthPixels
-        val target = (w * 0.42f).toInt()
+        val available = if (lastVideoSplitInsetPx > 0) {
+            (w - lastVideoSplitInsetPx).coerceAtLeast(1)
+        } else {
+            w
+        }
+        val target = (available * 0.42f).toInt()
         return target.coerceIn(dp(NPTheme.PANEL_MIN_WIDTH.toInt()), dp(NPTheme.PANEL_MAX_WIDTH.toInt()))
     }
 
@@ -3361,14 +3369,19 @@ class NativePlayerScreenView(
         (topBar.layoutParams as? LayoutParams)?.let { it.width = videoW; topBar.layoutParams = it }
         (bottomBar.layoutParams as? LayoutParams)?.let {
             it.width = videoW
-            // 竖屏：底栏贴视频区底缘（面板在其下），横屏：贴屏幕底缘。
-            if (portrait) {
-                it.height = LayoutParams.WRAP_CONTENT
-                it.topMargin = videoH - dp(NPTheme.BAR_PAD_TOP) - dp(NPTheme.TRANSPORT_PLAY + 8)
-                it.gravity = Gravity.START or Gravity.TOP
-            } else {
-                it.gravity = Gravity.START or Gravity.BOTTOM
-            }
+            // 595：竖屏底栏改用「父级高度 = videoH + Gravity.BOTTOM」，
+            // 不再用 `WRAP_CONTENT + topMargin` 估算。
+            //
+            // 【真机回归：竖屏底栏消失】旧实现 `it.height = WRAP_CONTENT` +
+            // `it.topMargin = videoH - BAR_PAD_TOP - (TRANSPORT_PLAY+8)`：
+            // 底栏真实高度 ≈ 进度条行 + 控件行 + padding（约 100dp），
+            // topMargin 只减了 44dp → 底栏底部超出 videoH，被资源面板盖住
+            // 或裁掉，用户看到「底栏控件消失」。
+            // 现在把底栏高度设为 videoH、内部用 Gravity.BOTTOM 贴底，
+            // 不依赖任何高度估算。
+            it.height = if (portrait) videoH else LayoutParams.MATCH_PARENT
+            it.topMargin = 0
+            it.gravity = Gravity.START or Gravity.BOTTOM
             bottomBar.layoutParams = it
         }
         (panelScrim.layoutParams as? LayoutParams)?.let {

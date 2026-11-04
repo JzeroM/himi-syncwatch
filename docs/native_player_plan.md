@@ -945,6 +945,29 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   `MpvPlayerAdapter.refreshSurfaceAfterFit()`，`_cycleVideoFit` 调用它补
   一次 surface 重同步。
 
+### Phase 2.14：修复房间面板数据链路（1.5.15+595）
+
+> 起因：真机「资源面板还是空」「显示/隐藏资源面板控件点击没反应」「横屏
+> 弹出面板被资源面板遮挡」「竖屏底栏控件消失」。
+
+- [x] **数据链路断裂（前三轮一直没修好的真正原因）**：
+  `onlineUserCount` / `audienceName` / `resourceGroups` / `broadcasts` /
+  `resourcePanelOpen` 此前**只存在于 `NativePlayerUiExtras`**，从未进入
+  `NativePlayerState`——构造时漏传、`toJson` 未序列化、`fromJson` 未解析。
+  原生 `optJSONArray("resourceGroups")` 永远 null、
+  `optBoolean("resourcePanelOpen", true)` 永远默认 true → 面板永远空白、
+  开关点了也没变化。
+  修法：五层全补（`NativePlayerState` 构造参数 + 字段 + `toJson` +
+  `fromJson` + `copyWith` + `==`/`hashCode`，以及
+  `MpvPlayerAdapter._buildNativePlayerState()` 传值）。
+- [x] **横屏弹出面板被遮挡**：`panelWidthDp()` 按全屏宽算 0.42，分栏后
+  父级只有 `videoW` → 面板过宽、右缘被裁。改为按
+  `w - lastVideoSplitInsetPx`（视频区宽）计算。
+- [x] **竖屏底栏消失**：旧实现 `height = WRAP_CONTENT` +
+  `topMargin = videoH - BAR_PAD_TOP - (TRANSPORT_PLAY+8)`——底栏真实高度
+  ≈100dp，topMargin 只减 44dp → 底部超出 `videoH` 被裁。改为
+  `height = videoH` + `gravity = BOTTOM`，不依赖高度估算。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

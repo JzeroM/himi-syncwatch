@@ -410,6 +410,11 @@ class NativePlayerState {
     this.roomMembers = const <NativeRoomMember>[],
     this.roomChat = const <NativeRoomChat>[],
     this.roomSyncState = 'idle',
+    this.onlineUserCount = 0,
+    this.audienceName,
+    this.resourceGroups = const <NativeResourceGroup>[],
+    this.broadcasts = const <String>[],
+    this.resourcePanelOpen = true,
     this.segmentIntroEndMs,
     this.segmentOutroStartMs,
     this.skipPrompt = '',
@@ -557,6 +562,19 @@ class NativePlayerState {
   final List<NativeRoomChat> roomChat;
   final String roomSyncState;
 
+  // ── 房间资源面板（595）──
+  //
+  // 【真机「资源面板永远空白、开关没反应」根因】这 5 个字段此前只存在于
+  // `NativePlayerUiExtras`，**从未进入 NativePlayerState**——构造时没传、
+  // toJson 没序列化、fromJson 没解析。原生 `optJSONArray("resourceGroups")`
+  // 永远 null、`optBoolean("resourcePanelOpen", true)` 永远默认 true，
+  // 所以面板永远空、开关点了也没变化。
+  final int onlineUserCount;
+  final String? audienceName;
+  final List<NativeResourceGroup> resourceGroups;
+  final List<String> broadcasts;
+  final bool resourcePanelOpen;
+
   // ── 其他 ──
   final int? segmentIntroEndMs;
   final int? segmentOutroStartMs;
@@ -674,6 +692,17 @@ class NativePlayerState {
           .map(NativeRoomChat.fromJson)
           .toList(growable: false),
       roomSyncState: json['roomSyncState'] as String? ?? 'idle',
+      onlineUserCount: (json['onlineUserCount'] as num?)?.toInt() ?? 0,
+      audienceName: json['audienceName'] as String?,
+      resourceGroups:
+          ((json['resourceGroups'] as List<Object?>?) ?? const <Object?>[])
+              .whereType<Map<Object?, Object?>>()
+              .map(NativeResourceGroup.fromJson)
+              .toList(growable: false),
+      broadcasts: ((json['broadcasts'] as List<Object?>?) ?? const <Object?>[])
+          .whereType<String>()
+          .toList(growable: false),
+      resourcePanelOpen: json['resourcePanelOpen'] != false,
       segmentIntroEndMs: (json['segmentIntroEndMs'] as num?)?.toInt(),
       segmentOutroStartMs: (json['segmentOutroStartMs'] as num?)?.toInt(),
       skipPrompt: json['skipPrompt'] as String? ?? '',
@@ -762,6 +791,12 @@ class NativePlayerState {
             roomMembers.map((m) => m.toJson()).toList(growable: false),
         'roomChat': roomChat.map((c) => c.toJson()).toList(growable: false),
         'roomSyncState': roomSyncState,
+        'onlineUserCount': onlineUserCount,
+        'audienceName': audienceName,
+        'resourceGroups':
+            resourceGroups.map((g) => g.toJson()).toList(growable: false),
+        'broadcasts': broadcasts,
+        'resourcePanelOpen': resourcePanelOpen,
         'segmentIntroEndMs': segmentIntroEndMs,
         'segmentOutroStartMs': segmentOutroStartMs,
         'skipPrompt': skipPrompt,
@@ -844,6 +879,11 @@ class NativePlayerState {
     List<NativeRoomMember>? roomMembers,
     List<NativeRoomChat>? roomChat,
     String? roomSyncState,
+    int? onlineUserCount,
+    String? audienceName,
+    List<NativeResourceGroup>? resourceGroups,
+    List<String>? broadcasts,
+    bool? resourcePanelOpen,
     int? segmentIntroEndMs,
     int? segmentOutroStartMs,
     String? skipPrompt,
@@ -927,6 +967,11 @@ class NativePlayerState {
         roomMembers: roomMembers ?? this.roomMembers,
         roomChat: roomChat ?? this.roomChat,
         roomSyncState: roomSyncState ?? this.roomSyncState,
+        onlineUserCount: onlineUserCount ?? this.onlineUserCount,
+        audienceName: audienceName ?? this.audienceName,
+        resourceGroups: resourceGroups ?? this.resourceGroups,
+        broadcasts: broadcasts ?? this.broadcasts,
+        resourcePanelOpen: resourcePanelOpen ?? this.resourcePanelOpen,
         segmentIntroEndMs: segmentIntroEndMs ?? this.segmentIntroEndMs,
         segmentOutroStartMs: segmentOutroStartMs ?? this.segmentOutroStartMs,
         skipPrompt: skipPrompt ?? this.skipPrompt,
@@ -1023,6 +1068,11 @@ class NativePlayerState {
       listEquals(other.roomMembers, roomMembers) &&
       listEquals(other.roomChat, roomChat) &&
       other.roomSyncState == roomSyncState &&
+      other.onlineUserCount == onlineUserCount &&
+      other.audienceName == audienceName &&
+      listEquals(other.resourceGroups, resourceGroups) &&
+      listEquals(other.broadcasts, broadcasts) &&
+      other.resourcePanelOpen == resourcePanelOpen &&
       other.segmentIntroEndMs == segmentIntroEndMs &&
       other.segmentOutroStartMs == segmentOutroStartMs &&
       other.skipPrompt == skipPrompt &&
@@ -1105,6 +1155,11 @@ class NativePlayerState {
         ...roomMembers,
         ...roomChat,
         roomSyncState,
+        onlineUserCount,
+        audienceName,
+        Object.hashAll(resourceGroups),
+        Object.hashAll(broadcasts),
+        resourcePanelOpen,
         segmentIntroEndMs,
         segmentOutroStartMs,
         skipPrompt,

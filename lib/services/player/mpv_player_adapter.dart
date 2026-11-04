@@ -1906,6 +1906,17 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       showDebug: _nativeUiExtras.showDebug,
       // 加载指示器（587）：现算值（见方法开头注释），不再读低频 extras。
       showLoading: showLoading,
+      // 房间资源面板（595）：这 5 个字段此前**从未传入** NativePlayerState
+      // （构造时漏传 + toJson 未序列化），导致原生 `resourceGroups` 永远空、
+      // `resourcePanelOpen` 永远默认 true（真机「面板永远空白、开关点了没
+      // 反应」）。
+      roomCode: _nativeUiExtras.roomCode,
+      isHost: _nativeUiExtras.isHost,
+      onlineUserCount: _nativeUiExtras.onlineUserCount,
+      audienceName: _nativeUiExtras.audienceName,
+      resourceGroups: _nativeUiExtras.resourceGroups,
+      broadcasts: _nativeUiExtras.broadcasts,
+      resourcePanelOpen: _nativeUiExtras.resourcePanelOpen,
       isRoom: _nativeUiExtras.isRoom,
       canScreenshot: _nativeUiExtras.canScreenshot,
       locked: _nativeUiExtras.locked,
