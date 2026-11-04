@@ -1434,11 +1434,13 @@ export struct HimiNativePlayerView {
         controller: this.controller,
       })
         // 宽度由外层 Row 分栏决定（见 build 顶部）：房间面板展开时视频区
-        // 收窄（590），与 Flutter `Row(Expanded(video), SizedBox(320))` 等价。
-        // 展开：layoutWeight(1) 吃掉剩余宽（不设 width，避免两者冲突）；
-        // 收起：width 100% 铺满（不设 layoutWeight）。
+        // 收窄（593），与 Flutter `Row(Expanded(video), SizedBox(320))` 等价。
+        //
+        // 【坑】`layoutWeight(1)` 与 `width('100%')` 同时设置时 width 优先，
+        // layoutWeight 失效 → 视频不收窄、面板盖在上面（真机回归）。
+        // 因此必须二选一：展开用 layoutWeight（吃掉剩余宽），收起用 100%。
+        .width(this.roomPanelVisible() ? 'auto' : '100%')
         .layoutWeight(this.roomPanelVisible() ? 1 : 0)
-        .width('100%')
         .height('100%')
         .backgroundColor(Color.Black)
         // 【兜底：尺寸同步】XComponent 的 onSurfaceChanged 在部分转屏场景

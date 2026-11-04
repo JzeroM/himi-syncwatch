@@ -172,6 +172,9 @@ class NativePlayerScreenView(
     /** 上次通知宿主的视频右侧留白（像素，0 = 全屏）。 */
     private var lastVideoInsetRightPx: Int = -1
 
+    /** 上次应用的控件层分栏留白（像素，0 = 全屏）。 */
+    private var lastVideoSplitInsetPx: Int = -1
+
     /** 当前打开的二级面板（null = 无）。 */
     private var activePanel: String? = null
 
@@ -2920,6 +2923,8 @@ class NativePlayerScreenView(
         if (panelPx != lastVideoInsetRightPx) {
             lastVideoInsetRightPx = panelPx
             listener?.onVideoInsetRight(panelPx)
+            // 593：控件层同步分栏（左区控件收窄，右区让给面板）。
+            applyVideoSplit(panelPx)
         }
         roomPanel.visibility = if (show) VISIBLE else GONE
         if (!show) return
@@ -3287,6 +3292,60 @@ class NativePlayerScreenView(
                 )
             }
         }
+
+    /**
+     * 控件层分栏（593）：房间资源面板展开时，把视频区控件收窄到左区。
+     *
+     * 【真机回归：面板盖在视频上】surface 窗已经收窄（见
+     * `AndroidNativePlayerHost.applyVideoInsetRight`），但控件层仍是全屏
+     * `MATCH_PARENT`：顶栏/底栏/手势层横跨整屏、资源面板贴最右——
+     * 视觉上就是「面板盖在视频右侧」。
+     *
+     * 现在控件层也按分栏布局：左区（`屏宽 - inset`）承载视频控件，
+     * 右区（inset）只放资源面板。与 Flutter
+     * `Row(Expanded(video), SizedBox(320))` 完全等价。
+     */
+    private fun applyVideoSplit(insetPx: Int) {
+        if (insetPx == lastVideoSplitInsetPx) return
+        lastVideoSplitInsetPx = insetPx
+        val screenW = width.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels
+        val videoW = (screenW - insetPx).coerceAtLeast(1)
+
+        // 左区：视频手势层 / 弹幕 / 顶栏 / 底栏 / 手势提示 / 柱条 / 面板遮罩。
+        (tapLayer.layoutParams as? LayoutParams)?.let { it.width = videoW; tapLayer.layoutParams = it }
+        (danmakuLayer.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; danmakuLayer.layoutParams = it
+        }
+        (topBar.layoutParams as? LayoutParams)?.let { it.width = videoW; topBar.layoutParams = it }
+        (bottomBar.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; bottomBar.layoutParams = it
+        }
+        (panelScrim.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; panelScrim.layoutParams = it
+        }
+        (panelContainer.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; panelContainer.layoutParams = it
+        }
+        (decodePopover.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; decodePopover.layoutParams = it
+        }
+        (segmentScrim.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; segmentScrim.layoutParams = it
+        }
+        (segmentCard.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; segmentCard.layoutParams = it
+        }
+
+        // 右区：资源面板改为「贴左区右缘」（不再是 Gravity.END 贴屏幕右缘）。
+        (roomPanel.layoutParams as? LayoutParams)?.let {
+            it.width = insetPx.coerceAtLeast(0)
+            it.gravity = Gravity.START or Gravity.TOP
+            it.leftMargin = videoW
+            roomPanel.layoutParams = it
+        }
+        requestLayout()
+    }
 
     private fun applyState() {
         val state = lastState
@@ -3659,6 +3718,13 @@ class NativePlayerScreenView(
         super.onSizeChanged(w, h, oldw, oldh)
         if (w != oldw || h != oldh) {
             requestAdaptiveRelayout()
+            // 593：转屏/窗口尺寸变化后必须按新屏宽重算分栏（否则仍按旧屏宽
+            // 收窄 → 视频区与面板比例错乱）。
+            if (lastVideoSplitInsetPx > 0) {
+                val prev = lastVideoSplitInsetPx
+                lastVideoSplitInsetPx = -1
+                applyVideoSplit(prev)
+            }
         }
     }
 

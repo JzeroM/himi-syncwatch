@@ -404,23 +404,31 @@ class AndroidNativePlayerHost(
     }
 
     /**
-     * 视频区右侧留白（590）：房间资源面板展开时收窄 surface 窗。
+     * 视频区右侧留白（593）：房间资源面板展开时收窄 surface 窗。
      *
-     * 通过调整 surface 窗的 `layoutParams.width` 实现——surface 窗只放
-     * [HimiMpvSurfaceView]，宽度改小后 SurfaceView 会重新 `onSizeChanged`，
-     * 原生 mpv 收到新尺寸后重新 letterbox（与 Flutter 分栏一致）。
+     * 【真机回归：面板盖在视频上、视频仍全屏】旧实现只改
+     * `window.attributes.width`：
+     * - `applyFullscreen()` 里已经 `setLayout(MATCH_PARENT, MATCH_PARENT)`，
+     *   之后改 `attributes.width` 与它冲突，实际生效的仍是全屏；
+     * - 还有 `if (lp.width == targetW) return` 短路——首次调用时
+     *   `lp.width` 可能已是 `MATCH_PARENT(-1)`，与 targetW 不等所以不拦，
+     *   但 `show()` 时 `setContentView` 又会把宽度重置回全屏。
+     *
+     * 正确做法：**每次都调 `window.setLayout(w, MATCH_PARENT)`**（它会写
+     * attributes 并立即 apply），且必须发生在 `applyFullscreen` 之后。
      */
     private fun applyVideoInsetRight(insetPx: Int) {
         val dlg = surfaceDialog ?: return
-        val w = dlg.window ?: return
-        val lp = w.attributes
+        val win = dlg.window ?: return
         val screenW = activity.resources.displayMetrics.widthPixels
         val targetW = (screenW - insetPx.coerceAtLeast(0)).coerceAtLeast(1)
-        if (lp.width == targetW) return
-        lp.width = targetW
-        // 靠左对齐：面板占右侧，视频贴左。
-        lp.gravity = android.view.Gravity.START or android.view.Gravity.TOP
-        w.attributes = lp
+        // 用 setLayout 而非改 attributes.width：后者会被之前 setLayout 的
+        // MATCH_PARENT 覆盖。不设短路——show() 后可能被重置，必须每次重申。
+        win.setLayout(targetW, ViewGroup.LayoutParams.MATCH_PARENT)
+        win.attributes = win.attributes.apply {
+            // 靠左对齐：面板占右侧，视频贴左。
+            gravity = android.view.Gravity.START or android.view.Gravity.TOP
+        }
     }
 
     /** 全屏 + 刘海 + 沉浸式（两个窗口共用）。 */

@@ -899,6 +899,25 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 - [x] 鸿蒙 `RoomPanel` 同款复刻：补季行/集行/删除/播放图标/当前集左边框/
   电影组直接展开/人数胶囊图标/播报标题图标/空态居中。
 
+### Phase 2.12：原生播放器与资源面板真双窗口分栏（1.5.13+593）
+
+> 起因：真机房间模式「播放器全屏、资源面板盖在播放器上」，与 Flutter
+> `Row(Expanded(video), SizedBox(320))` 的分屏差距大。
+
+- [x] **根因：surface 窗宽度从未真正生效**。`applyVideoInsetRight` 只改
+  `window.attributes.width`，而 `applyFullscreen()` 已
+  `setLayout(MATCH_PARENT, MATCH_PARENT)`——后者覆盖前者，实际仍全屏。
+  改为 **每次都调 `window.setLayout(targetW, MATCH_PARENT)`**（写 attributes
+  并立即 apply），并去掉 `if (lp.width == targetW) return` 短路（`show()`
+  后可能被重置，必须重申）。
+- [x] 控件层同步分栏（`applyVideoSplit`）：左区（`屏宽 - inset`）承载
+  手势层/弹幕/顶栏/底栏/面板遮罩/解码 popover/片头片尾卡；右区资源面板改
+  「贴左区右缘」（`leftMargin = videoW`）而非 `Gravity.END` 贴屏幕右缘。
+- [x] 转屏/尺寸变化后按新屏宽重算分栏（`onSizeChanged` 里重置并重应用）。
+- [x] 鸿蒙 `XComponent` 宽度修正：`layoutWeight(1)` 与 `width('100%')` 同时
+  设置时 **width 优先**、layoutWeight 失效 → 视频不收窄。改为二选一
+  （展开 `width('auto') + layoutWeight(1)`，收起 `width('100%')`）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
