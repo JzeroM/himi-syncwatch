@@ -162,6 +162,21 @@ class NativePlayerScreenView(
     private var roomPanelSig: String = ROOM_SIG_UNBUILT
 
     /**
+     * 资源行播放/暂停图标登记表（598）：`图标视图 → 是否当前集`。
+     *
+     * 【真机回归：图标与实际播放状态不匹配】列表签名只含 `isPlaying`
+     * （是否当前集），**不含 `paused`**；而图标判定是
+     * `ep.isPlaying && !lastState.paused`。暂停/恢复时签名不变 →
+     * `buildRoomPanelList()` 不重跑 → 图标停留在建列表那一刻的值
+     * （播放中建的就永远是暂停圈）。
+     *
+     * 修法对齐 Flutter `ValueListenableBuilder` 逐行监听：**不重建列表**，
+     * 只就地改图标文字/颜色（[refreshRoomPlayIcons]）。把 `paused` 加进
+     * 签名也能修，但每次暂停都整表重建 → 滚动位置归零、封面重新解码闪烁。
+     */
+    private val roomPlayIcons = mutableListOf<Pair<TextView, Boolean>>()
+
+    /**
      * 播报板数据签名。
      *
      * 同上：初值 `""` 与「零播报」的 `joinToString("|") == ""` 相等 → 从不
@@ -3098,8 +3113,14 @@ class NativePlayerScreenView(
             setColor(if (state.isHost) NPTheme.ACCENT else 0xFFE53935.toInt())
         }
 
-        // 列表签名：分组/季/集结构 + 折叠态 + 当前集
+        // 列表签名：分组/季/集结构 + 折叠态 + 当前集 + 角色。
+        //
+        // 598：补 `isHost`——播放/暂停图标只有房主看得到，角色切换
+        // （房主↔观众）必须重建列表（否则图标不会出现/消失）。
+        // `paused` **不进签名**（每次暂停整表重建会让滚动位置归零、封面
+        // 重新解码闪烁），改由 `refreshRoomPlayIcons()` 就地刷新图标。
         val sig = buildString {
+            append(state.isHost).append('|')
             for (g in state.resourceGroups) {
                 append(g.name).append('|').append(g.isMovie).append('|')
                     .append(g.collapsed).append(';')
@@ -3116,6 +3137,9 @@ class NativePlayerScreenView(
             roomPanelSig = sig
             buildRoomPanelList(state)
         }
+        // 598：播放/暂停图标就地刷新（`paused` 不进签名，见 roomPlayIcons
+        // 注释）。列表重建时刚登记完也要跑一次，保证首帧图标正确。
+        refreshRoomPlayIcons(state)
 
         // ── 播报板（对齐 Flutter `_buildBroadcastBoardInPanel`）──
         roomBroadcastHeader.text = "播报 (${state.broadcasts.size})"
@@ -3157,8 +3181,36 @@ class NativePlayerScreenView(
     }
 
     /** 重建资源分组列表（分组 → 季 → 集，对齐 Flutter `_buildGroupWidget`）。 */
+    /**
+     * 就地刷新资源行播放/暂停图标（598）。
+     *
+     * 与 Flutter `ValueListenableBuilder` 逐行监听等价：**不重建列表**，
+     * 只按最新 `paused` 改图标文字与颜色。
+     *
+     * 【为什么不在列表签名里加 `paused`】那会让每次暂停/恢复都整表重建：
+     * 滚动位置回到顶部、封面重新走 `NativeLogoLoader` 解码（闪烁）。
+     *
+     * 颜色语义与 Flutter 一致：当前集用强调色（`isPlaying ? accent :
+     * white54`），**与是否正在播无关**——Flutter 里颜色只看 `isPlaying`。
+     */
+    private fun refreshRoomPlayIcons(state: AndroidNativePlayerState) {
+        for ((icon, isCurrent) in roomPlayIcons) {
+            val text = if (isCurrent && !state.paused) {
+                NativePlayerIcons.ICON_PAUSE_CIRCLE
+            } else {
+                NativePlayerIcons.ICON_PLAY_CIRCLE
+            }
+            val glyph = String(Character.toChars(text))
+            if (icon.text != glyph) icon.text = glyph
+            val color = if (isCurrent) NPTheme.ACCENT else NPTheme.WHITE_54
+            if (icon.currentTextColor != color) icon.setTextColor(color)
+        }
+    }
+
     private fun buildRoomPanelList(state: AndroidNativePlayerState) {
         roomPanelList.removeAllViews()
+        // 598：重建时重置图标登记表（旧视图已随 removeAllViews 丢弃）。
+        roomPlayIcons.clear()
         if (state.resourceGroups.isEmpty()) {
             roomPanelList.addView(
                 TextView(context).apply {
@@ -3345,18 +3397,18 @@ class NativePlayerScreenView(
 
             // 播放/暂停（房主）
             if (lastState.isHost) {
-                addView(
-                    iconView(
-                        if (ep.isPlaying && !lastState.paused) {
-                            NativePlayerIcons.ICON_PAUSE_CIRCLE
-                        } else {
-                            NativePlayerIcons.ICON_PLAY_CIRCLE
-                        },
-                        22f,
-                        if (ep.isPlaying) NPTheme.ACCENT else NPTheme.WHITE_54,
-                    ),
-                    llp(dp(22), dp(22)),
+                val playIcon = iconView(
+                    if (ep.isPlaying && !lastState.paused) {
+                        NativePlayerIcons.ICON_PAUSE_CIRCLE
+                    } else {
+                        NativePlayerIcons.ICON_PLAY_CIRCLE
+                    },
+                    22f,
+                    if (ep.isPlaying) NPTheme.ACCENT else NPTheme.WHITE_54,
                 )
+                // 598：登记进刷新表，暂停/恢复时就地改文字（不重建列表）。
+                roomPlayIcons.add(playIcon to ep.isPlaying)
+                addView(playIcon, llp(dp(22), dp(22)))
                 addView(View(context), llp(dp(8), dp(1)))
             }
 

@@ -304,15 +304,6 @@ const RIM_COLOR = '#33FFFFFF';
 export struct NativePlayerPanel {
   @Prop panelType: string = '';
   @Prop revision: number = 0;
-  /**
-   * 底部避让高度（vp，597）。
-   *
-   * 竖屏房间模式下资源面板占底部 280vp（Flutter `Column(Expanded, SizedBox
-   * 280))`）——本面板挂在根 Stack（全屏）上，若不避让，右侧浮层会伸到
-   * 资源面板区域、遮罩也会盖住面板（真机「弹出面板不在视频区内」）。
-   * 横屏/非房间传 0。
-   */
-  @Prop bottomInset: number = 0;
   /** 选集列表滚动控制器（打开时定位当前集）。 */
   private episodeScroller: Scroller = new Scroller();
   /** 片头片尾二次确认上下文（'' = 无，'intro' / 'outro' = 待确认）。 */
@@ -421,8 +412,6 @@ export struct NativePlayerPanel {
     }
     .width('100%')
     .height('100%')
-    // 597：竖屏房间模式把可用区收窄到视频区（见 bottomInset 注释）。
-    .padding({ bottom: this.bottomInset })
   }
 
   /** 右侧玻璃浮层（除片头片尾外的全部面板）。 */

@@ -1717,18 +1717,7 @@ export struct HimiNativePlayerView {
           .onClick((): void => {
           })
           .position({ x: 0, y: '100%' })
-          .markAnchor({ x: '0%', y: '100%' })
-          // 【真机回归：竖屏没有进度条和底栏】597 修正。
-          //
-          // `position y:'100%'` 贴的是**根 Stack 底缘**（全屏高）。竖屏
-          // 分栏后资源面板占底部 280vp → 底栏整个落在面板下方、被完全
-          // 盖住（用户看到「竖屏没有进度条和底栏」）。
-          //
-          // 用 `translate` 上移面板高度（vp 数值，非百分比定位，不触发
-          // 真机跑位），底栏底缘正好落在视频区底缘。
-          .translate({
-            y: (this.roomPanelVisible() && this.portrait) ? -ROOM_PANEL_HEIGHT : 0,
-          });
+          .markAnchor({ x: '0%', y: '100%' });
         }
       }
 
@@ -1815,8 +1804,6 @@ export struct HimiNativePlayerView {
         NativePlayerPanel({
           panelType: this.activePanel,
           revision: this.revision,
-          // 597：竖屏房间模式把面板/遮罩收窄到视频区（否则伸到资源面板）。
-          bottomInset: (this.roomPanelVisible() && this.portrait) ? ROOM_PANEL_HEIGHT : 0,
         });
       }
     }
@@ -1880,11 +1867,6 @@ export struct HimiNativePlayerView {
     // `_buildLockOnlyControls`（Container with bottom gradient）。
     .position({ x: 0, y: '100%' })
     .markAnchor({ x: '0%', y: '100%' })
-    // 597：竖屏分栏时上移面板高度，让锁钮落在视频区底缘（不再被资源
-    // 面板盖住 → 真机「锁定态切资源后锁控件消失」的鸿蒙同源问题）。
-    .translate({
-      y: (this.roomPanelVisible() && this.portrait) ? -ROOM_PANEL_HEIGHT : 0,
-    })
     // 【空点击吸收】点背景不穿透到底层手势层（与顶/底栏一致）。
     .onClick((): void => {
     });

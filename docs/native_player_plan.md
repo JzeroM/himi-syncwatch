@@ -1038,6 +1038,39 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   `setControlsVisible()` / `scheduleAutoHide()` / `tick()` 在锁定态
   直接跳过隐藏（锁定态本就该常显，对齐 Flutter `_buildLockOnlyControls`）。
 
+### Phase 2.17：资源行播放图标就地刷新 + 鸿蒙 597 回归回滚（1.5.18+598）
+
+> 起因：真机「资源列表里每个资源前面的播放/暂停图标和实际状态不匹配，
+> 暂停了图标也一样该变成暂停」；以及「鸿蒙现在播放控件全消失了」。
+
+- [x] **鸿蒙控件全消失（597 引入的回归）**：597 在**已有**
+  `position({y:'100%'}) + markAnchor({x:'0%', y:'100%'})` 的节点上又加
+  `.translate({ y: -280 })`。`position` 百分比基准是父容器高度、
+  `markAnchor` 再按百分比偏移，本已依赖「Stack 高度已确定」；再叠一个
+  绘制层平移 → **布局与绘制两套坐标系打架**，底栏被推到屏幕外，顶栏/
+  底栏全部消失（真机「一进入就消失」）。
+  触发条件 `roomPanelVisible() && portrait` 只在房间模式 + 竖屏为真，
+  非房间模式恒为 0，所以前几轮没暴露。
+  修法：**整体回滚鸿蒙 597 改动**（两处 `.translate` + `bottomInset`
+  传参与声明），恢复到 596 真机验证过的状态（`git diff 4207239` 为空）。
+  **教训**：`.translate` 是全项目首次使用，且与项目明令禁用的
+  `position/markAnchor` 百分比定位叠加——不能在没有真机验证的情况下
+  「顺手同步三端」。鸿蒙竖屏底栏若仍需修，必须走**流式布局**（`Column`
+  + `Blank` 占位），不碰任何百分比定位与平移属性。
+- [x] **资源行播放/暂停图标与实际状态不匹配**：列表签名只含 `isPlaying`
+  （是否当前集），**不含 `paused`**；而图标判定是
+  `ep.isPlaying && !lastState.paused`。暂停/恢复时签名不变 →
+  `buildRoomPanelList()` 不重跑 → 图标停留在建列表那一刻的值（播放中
+  建的就永远是暂停圈）。
+  修法：对齐 Flutter `ValueListenableBuilder` **逐行监听**——
+  `roomPlayIcons` 登记 `图标视图 → 是否当前集`，
+  `refreshRoomPlayIcons(state)` 就地改文字/颜色，`renderRoomPanel()` 每次
+  调用（500ms 轮询推来的 `paused` 立刻生效）。**不把 `paused` 加进签名**：
+  那会让每次暂停都整表重建（滚动位置归零、封面重新解码闪烁）。
+  颜色语义与 Flutter 一致：只看 `isPlaying`（`isPlaying ? accent :
+  white54`），与是否正在播无关。
+  签名补 `isHost`——图标只有房主看得到，角色切换必须重建。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
