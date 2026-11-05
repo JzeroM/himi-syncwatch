@@ -388,6 +388,36 @@ export struct HimiNativePlayerView {
   @State roomPlayEpoch: number = 0;
   private roomPlaySig: string = '';
 
+  /**
+   * 房间资源面板显隐（605，**必须 @State**）。
+   *
+   * 【真机回归：点面板开关「收起」后视频全屏了，但面板还在】
+   * `build()` 里的 `if (this.roomPanelVisible())` 读的是
+   * `this.state().resourcePanelOpen`——宿主**普通字段**，不在 ArkUI 观察链
+   * 上 → 这个 `if` 节点**不会随状态变化重新求值**，面板节点一直留在树里。
+   * 而 `videoW`/`videoH` 是 `@State`（会刷新）→ 视频区确实恢复了全屏，
+   * 两者不同步 → 「视频全屏了但面板还在」。
+   *
+   * 修法：镜像到 `@State`，`if` 条件直读它才会随变化销毁/重建节点。
+   */
+  @State roomPanelShown: boolean = false;
+
+  /**
+   * 房间头部三个控件的数据源（605，**必须 @State**）。
+   *
+   * 【真机回归：初始房间无播放时头部缺搜索、人数、角色徽章】这三个控件
+   * 的条件/文案读的是 `this.state().isHost` / `onlineUserCount` /
+   * `audienceName`——宿主普通字段（不在观察链），只能靠面板节点重建才取到
+   * 新值；而空房间时重建签名（paused|currentEpisodeIndex）恒定，节点根本
+   * 不重建 → 永远停在首次渲染时的空值。
+   *
+   * 修法：镜像到 `@State`，`@Builder` 内直读 `@State` → 任何变化立即刷新
+   * （不依赖重建纪元）。
+   */
+  @State roomIsHost: boolean = false;
+  @State roomOnlineCount: number = 0;
+  @State roomAudienceName: string = '';
+
   /** 顶栏宽度 / 尾组内容宽（onAreaChange 喂入，转屏自适应收窄间距）。 */
   @State topRowW: number = 0;
   @State topTailW: number = 0;
@@ -518,6 +548,12 @@ export struct HimiNativePlayerView {
     }
     this.skipPrompt = s.skipPrompt;
     this.logoUrl = s.isRoom ? '' : s.logoUrl;
+    // 605：房间面板显隐 + 头部三个控件的数据源镜像到 @State
+    //（宿主普通字段不在 ArkUI 观察链上，见字段注释）。
+    this.roomPanelShown = s.isRoom && s.resourcePanelOpen;
+    this.roomIsHost = s.isHost;
+    this.roomOnlineCount = s.onlineUserCount;
+    this.roomAudienceName = s.audienceName;
     // 资源面板重建纪元（604 补全签名）。
     //
     // 【真机回归：空房间/未播放时头部缺搜索、人数、角色徽章】
@@ -530,15 +566,19 @@ export struct HimiNativePlayerView {
     //
     // 修法：签名补全所有**驱动面板渲染**的字段。分组内容用轻量签名
     //（组名/季数/各季集数），不逐条比 name/poster——那会每 tick 都变。
+    // 【真机回归：资源列表无法展开子分支】604 的签名只算「组名:季数:各季
+    // 集数」，**不含 collapsed**——折叠/展开只改折叠态，签名不变 → 列表
+    // 不重建 → 箭头与内容都不变。605 补上组/季的折叠态。
     const groupsSig = this.state().resourceGroups
       .map((g: NativeResourceGroupUi): string =>
-        `${g.name}:${g.seasons.length}:${g.seasons
-          .map((s: NativeSeasonGroupUi): string => `${s.episodes.length}`)
+        `${g.name}:${g.collapsed}:${g.seasons.length}:${g.seasons
+          .map((s: NativeSeasonGroupUi): string =>
+            `${s.collapsed}/${s.episodes.length}`)
           .join(',')}`)
       .join('|');
     const playSig = `${this.paused}|${this.currentEpisodeIndex}`
-      + `|${this.state().isHost}|${this.state().onlineUserCount}`
-      + `|${this.state().audienceName}|${this.state().resourcePanelOpen}`
+      + `|${this.roomIsHost}|${this.roomOnlineCount}`
+      + `|${this.roomAudienceName}|${this.roomPanelShown}`
       + `|${groupsSig}`
       + `|${this.state().broadcasts.length}`;
     if (playSig !== this.roomPlaySig) {
@@ -656,7 +696,9 @@ export struct HimiNativePlayerView {
   private updateControlsSplit(): void {
     const w = this.areaWidth;
     const h = this.areaHeight;
-    const split = this.roomPanelVisible() && w > 0 && h > 0;
+    // 605：用 @State 镜像（`roomPanelVisible()` 读宿主普通字段，与本方法
+    // 的 @State 结果可能不同步）。
+    const split = this.roomPanelShown && w > 0 && h > 0;
     if (split && !this.portrait) {
       this.controlsW = Math.max(1, w - ROOM_PANEL_WIDTH);
       this.controlsH = 0;
@@ -1217,7 +1259,14 @@ export struct HimiNativePlayerView {
     return HimiMpvNativeHost.getInstance();
   }
 
-  /** 房间资源面板是否可见（房间模式 + 面板展开）。 */
+  /**
+   * 房间资源面板是否可见（房间模式 + 面板展开）。
+   *
+   * 【605：仅供诊断/表达式复用，不再用于 `build()` 的条件】
+   * ArkUI 的 `if` 节点不会随宿主**普通字段**变化重新求值——渲染条件必须
+   * 读 `@State roomPanelShown`（见该字段注释）。本方法保留是因为
+   * `roomPanelShown` 的语义与它完全一致，便于对照排查。
+   */
   private roomPanelVisible(): boolean {
     const s = this.state();
     return s.isRoom && s.resourcePanelOpen;
@@ -1245,12 +1294,11 @@ export struct HimiNativePlayerView {
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis });
-        // 搜索：房主 **且未在播放** 才显示（Flutter
+        // 搜索：房主 **且暂停中** 才显示（Flutter
         // `_roomData != null && _isHost && state != playing`）。
-        // 596：房主 **且暂停中** 才显示（Flutter
-        // `_roomData != null && _isHost && state != playing`）。
-        // 595 写成 `!paused`（播放中显示），逻辑反了。
-        if (this.state().isHost && this.state().paused) {
+        // 605：读 @State 镜像（`this.state().isHost` 是宿主普通字段，不在
+        // ArkUI 观察链 → 空房间时永远取不到值、控件不出现）。
+        if (this.roomIsHost && this.paused) {
           Text(String.fromCodePoint(NativePlayerIcons.ICON_SEARCH))
             .fontFamily(NativePlayerIcons.FONT_FAMILY)
             .fontSize(20)
@@ -1271,7 +1319,7 @@ export struct HimiNativePlayerView {
             .width(12)
             .height(12)
             .textAlign(TextAlign.Center);
-          Text(`${this.state().onlineUserCount}`)
+          Text(`${this.roomOnlineCount}`)
             .fontSize(11)
             .fontColor('#B3FFFFFF');
         }
@@ -1280,13 +1328,13 @@ export struct HimiNativePlayerView {
         .borderRadius(8)
         .alignItems(VerticalAlign.Center);
         // 角色徽章：房主 accent / 观众红。
-        Text(this.state().isHost
+        Text(this.roomIsHost
           ? '房主'
-          : (this.state().audienceName.length > 0 ? this.state().audienceName : '观众'))
+          : (this.roomAudienceName.length > 0 ? this.roomAudienceName : '观众'))
           .fontSize(11)
           .fontColor(Color.White)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-          .backgroundColor(this.state().isHost ? SEL_COLOR : '#E53935')
+          .backgroundColor(this.roomIsHost ? SEL_COLOR : '#E53935')
           .borderRadius(8);
       }
       .width('100%')
@@ -1454,9 +1502,10 @@ export struct HimiNativePlayerView {
       // 右侧内容右推。这里删掉占位，改在行容器上画左 3vp 边框（见行尾
       // `.border({ width: { left: 3 }, color: SEL_COLOR })`）。
       // 播放/暂停（房主）
-      if (this.state().isHost) {
+      if (this.roomIsHost) {
         // 600：读 @State 镜像 `this.paused`（在观察链上）；旧实现读
         // `state().paused`（宿主普通字段，不在观察链）→ 图标不刷新。
+        // 605：`isHost` 同样改读 @State（否则空房间时图标不出现）。
         Text(String.fromCodePoint(
           ep.isPlaying && !this.paused
             ? NativePlayerIcons.ICON_PAUSE_CIRCLE
@@ -1536,7 +1585,7 @@ export struct HimiNativePlayerView {
       .alignItems(VerticalAlign.Center)
       .onClick((): void => {
         // 内容区点击：当前集→暂停/继续，其它集→切集。
-        if (!this.state().isHost) {
+        if (!this.roomIsHost) {
           return;
         }
         if (ep.isPlaying) {
@@ -1547,7 +1596,7 @@ export struct HimiNativePlayerView {
       });
 
       // 删除（房主）—— 与内容区是兄弟节点，点击不再冒泡到切集逻辑。
-      if (this.state().isHost) {
+      if (this.roomIsHost) {
         Text(String.fromCodePoint(NativePlayerIcons.ICON_CLOSE))
           .fontFamily(NativePlayerIcons.FONT_FAMILY)
           .fontSize(18)
@@ -1784,7 +1833,9 @@ export struct HimiNativePlayerView {
       // margin 由 videoW/videoH 推出（都是 @State，随转屏/面板开关更新）：
       // - 横屏：面板贴右 → `marginStart = videoW`（= 屏宽 - 面板宽）；
       // - 竖屏：面板贴底 → `marginTop = videoH`（= 屏高 - 面板高）。
-      if (this.roomPanelVisible()) {
+      // 605：必须读 @State（`roomPanelVisible()` 是宿主普通字段，`if` 节点
+      // 不会随它变化重新求值 → 收起后视频全屏了但面板还留在树里）。
+      if (this.roomPanelShown) {
         this.RoomPanelSlot();
       }
 

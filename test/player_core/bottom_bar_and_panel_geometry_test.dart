@@ -60,7 +60,8 @@ void main() {
     });
 
     test('鸿蒙条件同步', () {
-      expect(ohosView, contains('if (this.state().isHost && this.state().paused) {'));
+      // 605 起读 @State 镜像（宿主普通字段不在观察链，空房间时取不到值）。
+      expect(ohosView, contains('if (this.roomIsHost && this.paused) {'));
       expect(ohosView, isNot(contains('if (this.state().isHost && !this.state().paused) {')));
     });
 

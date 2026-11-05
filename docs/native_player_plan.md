@@ -1280,6 +1280,39 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   `_resumeNativeUiAfterDialog()`；分享面板与「房间已解散」提示都改为
   「隐藏原生窗口 → 弹框 → 关闭后恢复」（session 未销毁 → 零黑屏）。
 
+### Phase 2.24：鸿蒙面板显隐/头部控件改走 @State（1.5.25+605）
+
+> 起因：真机「鸿蒙初始房间无播放时头部缺搜索、人数、角色徽章」（澄清：
+> 播放后就出现，初始也要有）「资源面板收起/展开有问题，横屏竖屏都不对」
+> （澄清：点收起后视频全屏了，但面板还在）「资源列表无法展开子分支」。
+
+- [x] **收起后视频全屏了但面板还在**：`build()` 里的
+  `if (this.roomPanelVisible())` 读的是 `this.state().resourcePanelOpen`
+  ——宿主**普通字段**，不在 ArkUI 观察链上 → 这个 `if` 节点**不会随状态
+  变化重新求值**，面板节点一直留在树里。而 `videoW`/`videoH` 是 `@State`
+  （会刷新）→ 视频区确实恢复了全屏，两者不同步。
+  修法：新增 `@State roomPanelShown`，`syncFromHost()` 里同步
+  `s.isRoom && s.resourcePanelOpen`；`build()` 的 `if` 与
+  `updateControlsSplit()` 都改读它。
+- [x] **初始房间无播放时头部缺三个控件**：搜索/人数/角色徽章的条件与文案
+  读 `this.state().isHost` / `onlineUserCount` / `audienceName`——宿主
+  普通字段（不在观察链），只能靠面板节点重建才取到新值；而空房间时重建
+  签名（`paused|currentEpisodeIndex`）恒定，节点根本不重建 → 永远停在
+  首次渲染时的空值。
+  修法：新增 `@State roomIsHost` / `roomOnlineCount` / `roomAudienceName`，
+  `@Builder` 内直读 `@State` → 任何变化立即刷新（不依赖重建纪元）。
+  资源行的房主判断（播放图标/删除按钮/内容区点击）一并改读 `roomIsHost`。
+- [x] **资源列表无法展开子分支**：604 的 `groupsSig` 只算
+  「组名:季数:各季集数」，**不含 `collapsed`**——折叠/展开只改折叠态，
+  签名不变 → 列表不重建 → 箭头与内容都不变。
+  修法：签名补组/季的 `collapsed`：
+  `${g.name}:${g.collapsed}:${g.seasons.length}:${各季 ${s.collapsed}/${集数}}`。
+
+> **本轮的根因共性**：ArkUI 的 `if` 条件与 `@Builder` 内部**读宿主普通
+> 字段都不会自动刷新**，必须镜像到 `@State`。600 在资源行图标上踩过一次
+>（`ep.isPlaying && !this.state().paused`），但当时只在那一处修了，没有
+> 推广到面板显隐与头部控件——605 一次性补齐。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

@@ -37,7 +37,8 @@ void main() {
       // **不**显示；原生 paused 等价于 state != playing。
       expect(kotlinScreen,
           contains('if (state.isHost && state.paused) VISIBLE else GONE'));
-      expect(ohosView, contains('if (this.state().isHost && this.state().paused) {'));
+      // 605 起读 @State 镜像。
+      expect(ohosView, contains('if (this.roomIsHost && this.paused) {'));
     });
 
     test('人数胶囊用 people 图标字体（不是 emoji）', () {
@@ -58,7 +59,8 @@ void main() {
     test('角色徽章：房主 accent / 观众红', () {
       expect(kotlinScreen,
           contains('setColor(if (state.isHost) NPTheme.ACCENT else 0xFFE53935.toInt())'));
-      expect(ohosView, contains("backgroundColor(this.state().isHost ? SEL_COLOR : '#E53935')"));
+      // 605 起读 @State 镜像。
+      expect(ohosView, contains("backgroundColor(this.roomIsHost ? SEL_COLOR : '#E53935')"));
     });
   });
 

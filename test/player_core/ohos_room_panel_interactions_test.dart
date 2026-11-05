@@ -18,11 +18,12 @@ void main() {
     test('签名含 isHost / onlineUserCount / audienceName / resourcePanelOpen', () {
       final idx = view.indexOf('const playSig =');
       expect(idx, greaterThan(0));
-      final body = view.substring(idx, idx + 700);
-      expect(body, contains('this.state().isHost'));
-      expect(body, contains('this.state().onlineUserCount'));
-      expect(body, contains('this.state().audienceName'));
-      expect(body, contains('this.state().resourcePanelOpen'));
+      // 605 起改用 @State 镜像（宿主普通字段不在 ArkUI 观察链）。
+      final body = view.substring(idx, idx + 900);
+      expect(body, contains('this.roomIsHost'));
+      expect(body, contains('this.roomOnlineCount'));
+      expect(body, contains('this.roomAudienceName'));
+      expect(body, contains('this.roomPanelShown'));
     });
 
     test('注释记录空房间根因', () {
