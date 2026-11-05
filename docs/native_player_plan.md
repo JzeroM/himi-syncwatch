@@ -1147,6 +1147,25 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   - `ProgressRow` 的 `max` 兜底改为
     `Math.max(dragging ? dragMs : posMs, 1)`，保证 `value <= max` 恒成立。
 
+### Phase 2.20：鸿蒙横屏控件贴左 + 房间模式锁控件（1.5.21+601）
+
+> 起因：真机「鸿蒙横屏房间模式控件位置不对」（截图：控件整体居中、右缘
+> 被资源面板切掉）、「横屏竖屏都没了锁控件」（且确认只在房间模式消失）。
+
+- [x] **横屏控件层整体居中、被面板切掉**：根 `Stack` 的
+  `alignContent: Alignment.Top`——`Top` 的**水平**对齐是 `Center`。600
+  给控件层容器设的宽度是**具体数值**（`屏宽 - 320vp`，不足 100%），在
+  Stack 里就按 Top 的水平居中规则摆放 → 控件整体右移居中、右缘被资源
+  面板切掉。
+  修法：容器显式 `.align(Alignment.TopStart)` 贴左上。**不改根 Stack 的
+  `alignContent`**（会影响所有子节点，风险大）。
+- [x] **房间模式锁控件消失（横竖屏都没有）**：`ControlRow` 的底栏锁钮
+  条件写死 `!tvMode && !isRoom`——房间模式下整个跳过锁钮，用户无法锁定
+  屏幕。而 Flutter 是 `showPhoneLock = phoneControls &&
+  showLockButton(tvMode)`（**与房间模式无关**），安卓是
+  `lockButton.visibility = if (!tv) VISIBLE else GONE`（也不看 `isRoom`）。
+  修法：去掉 `&& !this.state().isRoom`，只看 `tvMode`，对齐两端。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

@@ -1811,6 +1811,16 @@ export struct HimiNativePlayerView {
         // 未分栏时 0 → 回落 '100%'（与分栏前的行为完全一致）。
         .width(this.controlsW > 0 ? this.controlsW : '100%')
         .height(this.controlsH > 0 ? this.controlsH : '100%')
+        // 【真机回归：横屏控件位置不对（整体居中、被面板切掉）】601 修正。
+        //
+        // 根 Stack 是 `alignContent: Alignment.Top`——`Top` 的**水平**对齐
+        // 是 `Center`。本容器宽度是具体数值（`屏宽 - 320vp`，不足 100%），
+        // 在 Stack 里就按 Top 的水平居中规则摆放 → 控件层整体右移居中、
+        // 右缘被资源面板切掉（真机截图回归）。
+        //
+        // 必须显式 `.align(Alignment.TopStart)` 贴左上。改根 Stack 的
+        // alignContent 会影响所有子节点（风险大），故只约束本容器。
+        .align(Alignment.TopStart)
         .alignItems(HorizontalAlign.Start)
         // 不挡下层手势层：控件条自身有 onClick 吸收点击，空白区放行。
         .hitTestBehavior(HitTestMode.Transparent);
@@ -2184,7 +2194,14 @@ export struct HimiNativePlayerView {
       // leading 槽（权重 1，贴左）：手机锁钮 / TV 锁定态锁钮，与进度条时间
       // 数显同轴（同列宽）；无锁钮时空占位保传输组精确居中。
       Row() {
-        if (!this.state().tvMode && !this.state().isRoom) {
+        // 【真机回归：房间模式锁控件消失（横竖屏都没了）】601 修正。
+        //
+        // 旧条件 `!tvMode && !isRoom` 在房间模式下把锁钮整个跳过 → 用户
+        // 无法锁定屏幕。Flutter 的 `showPhoneLock = phoneControls &&
+        // showLockButton(tvMode)` **与房间模式无关**；安卓侧同样是
+        // `lockButton.visibility = if (!tv) VISIBLE else GONE`。
+        // 这里对齐两端：只看 tvMode，不看 isRoom。
+        if (!this.state().tvMode) {
           Text(String.fromCodePoint(this.locked
             ? NativePlayerIcons.ICON_LOCK
             : NativePlayerIcons.ICON_LOCK_OPEN))
