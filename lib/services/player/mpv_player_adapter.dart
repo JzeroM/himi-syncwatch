@@ -1750,7 +1750,15 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   // ── 原生播放器 UI（计划书 §4/§7）──────────────────────────
 
   /// 打开原生 UI 宿主（会话确认 Surface 后由 prepare 调用；幂等）。
-  Future<void> _openNativeUiIfNeeded() async {
+  ///
+  /// [waitForPlatformViewTeardown]：重开场景（597 搜索返回）需要多等
+  /// 两帧，让 Flutter 侧平台视图先卸载、其 SurfaceView 销毁，再打开
+  /// 原生宿主窗口；否则两个 SurfaceView 短暂并存会抢 surface 绑定
+  /// （v1.5.4 安卓黑屏根因）。prepare 首次打开时平台视图尚未挂载，
+  /// 无需等待。
+  Future<void> _openNativeUiIfNeeded({
+    bool waitForPlatformViewTeardown = false,
+  }) async {
     if (!_nativeUiEnabled || _disposed || _nativeUiController != null) return;
     final platform = MpvSessionPlatform.nativeUiPlatformName;
     if (platform == null) return;
@@ -1772,6 +1780,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 防止垂死平台视图的 surfaceChanged 把绑定抢回即将销毁的 handle。
     _player?.setNativeUiActive(true);
     try {
+      if (waitForPlatformViewTeardown) {
+        // 两帧 + 少量余量：足够 Flutter 侧重建并卸载平台视图。
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (_disposed || _nativeUiController != controller) return;
+      }
       await controller.open(
         platform: platform,
         initial: _buildNativePlayerState(),
@@ -1790,6 +1803,30 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   /// 关闭原生 UI 宿主（公开入口：PlayerScreen 退出路径调用；幂等）。
   Future<void> closeNativeUi() => _closeNativeUi();
+
+  /// 重新打开原生 UI 宿主（597）。
+  ///
+  /// 【真机回归：原生入口进资源搜索后回播放页黑屏】`closeNativeUi()` 会
+  /// 关掉宿主并把 `nativeUiActive` 置 false，PlayerScreen 随之重新挂载
+  /// Flutter 平台视图；但 `_openNativeUiIfNeeded()` 只在 `prepare()` 里
+  /// 调用，**没有任何路径会再打开宿主**。于是搜完资源回到播放页时：
+  /// 原生窗口已关、Flutter 视频层也因 `nativeUiActive` 曾是 true 而未
+  /// 挂载 → 纯黑（当前暂停的视频与新添加的资源都一样）。
+  ///
+  /// 这里提供显式重开入口，走的是已验证的 `_openNativeUiIfNeeded()` 路径
+  /// （含 `nativeUiActive=true` → `open` → `refreshSurface()` 的顺序，
+  /// 避免两个 SurfaceView 并存抢绑定）。
+  Future<void> reopenNativeUi() async {
+    if (_disposed) return;
+    if (nativeUiActive.value && _nativeUiController != null) {
+      // 已开着：只需重新推一次权威状态（房间面板数据可能已变）。
+      _pushNativeUiState(immediate: true);
+      return;
+    }
+    // 残留控制器（宿主已被系统销毁等）先清干净，避免 open 被守卫拦掉。
+    _nativeUiController = null;
+    await _openNativeUiIfNeeded(waitForPlatformViewTeardown: true);
+  }
 
   /// 关闭原生 UI 宿主（幂等）。
   Future<void> _closeNativeUi() async {

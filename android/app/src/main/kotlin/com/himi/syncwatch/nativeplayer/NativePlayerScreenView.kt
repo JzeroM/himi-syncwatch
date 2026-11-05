@@ -175,6 +175,7 @@ class NativePlayerScreenView(
     /** 上次应用的控件层分栏留白（像素，0 = 全屏）。 */
     private var lastVideoSplitInsetPx: Int = -1
 
+
     /** 当前打开的二级面板（null = 无）。 */
     private var activePanel: String? = null
 
@@ -1912,17 +1913,82 @@ class NativePlayerScreenView(
     }
 
     /** 面板容器几何：宽 clamp(0.42×屏宽, 260, 320)，贴右 12、上避顶栏 48、下避控制条 116。 */
-    private fun panelWidthDp(): Int {
-        // 595：分栏时面板要按**视频区宽度**（左区）算，而不是全屏宽。
-        // 旧实现用全屏宽 → 收窄后的父级只有 videoW，面板按全屏 0.42 算会
-        // 过宽，右缘被父级裁掉、视觉上像「被资源面板遮挡」（真机回归）。
-        val w = width.takeIf { it > 0 }
-            ?: resources.displayMetrics.widthPixels
-        val available = if (lastVideoSplitInsetPx > 0) {
+    /**
+     * 视频区宽度（597）。
+     *
+     * - 横屏分栏：`屏宽 - inset`（左区）。
+     * - 竖屏分栏：inset 是**面板高度**（280dp），视频区仍是全宽——
+     *   旧实现统一用 `w - inset`，竖屏时会白白减掉 280dp，面板被算窄。
+     * - 未分栏：全屏宽。
+     */
+    private fun videoAreaWidth(): Int {
+        val w = width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val h = height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val portrait = h > w
+        return if (!portrait && lastVideoSplitInsetPx > 0) {
             (w - lastVideoSplitInsetPx).coerceAtLeast(1)
         } else {
             w
         }
+    }
+
+    /**
+     * 弹出面板左偏移（597）：让面板贴**视频区**右缘，而不是根容器右缘。
+     *
+     * 根 FrameLayout 是全屏宽；分栏后资源面板占右侧，`Gravity.END` 会把
+     * 面板推到全屏右缘、正好被资源面板盖住（真机：只看到视频区变黑）。
+     */
+    private fun panelLeftMarginPx(panelW: Int, fullBleed: Boolean): Int {
+        if (fullBleed) return 0
+        return (videoAreaWidth() - panelW - dp(NPTheme.PANEL_RIGHT)).coerceAtLeast(0)
+    }
+
+    /** 视频区高度（597）：竖屏分栏时 = 屏高 - 面板高；否则全屏高。 */
+    private fun videoAreaHeight(): Int {
+        val w = width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val h = height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val portrait = h > w
+        return if (portrait && lastVideoSplitInsetPx > 0) {
+            (h - lastVideoSplitInsetPx).coerceAtLeast(1)
+        } else {
+            h
+        }
+    }
+
+    /**
+     * 把浮层卡片在**视频区**内水平/垂直居中（597）。
+     *
+     * 旧实现用 `Gravity.CENTER`，它相对根 FrameLayout（全屏）居中——分栏
+     * 后卡片会落到资源面板区域。这里改成 `START|TOP` + 精确 margin，
+     * 垂直方向用 `post{}` 读实测高度（卡片是 WRAP_CONTENT）。
+     */
+    private fun positionVideoCenteredCard(v: View) {
+        val videoW = videoAreaWidth()
+        val videoH = videoAreaHeight()
+        (v.layoutParams as? LayoutParams)?.let {
+            it.gravity = Gravity.START or Gravity.TOP
+            it.leftMargin = ((videoW - it.width) / 2).coerceAtLeast(0)
+            v.layoutParams = it
+        }
+        v.post {
+            val h = v.height
+            if (h > 0) {
+                (v.layoutParams as? LayoutParams)?.let {
+                    val target = ((videoH - h) / 2).coerceAtLeast(0)
+                    if (it.topMargin != target) {
+                        it.topMargin = target
+                        v.layoutParams = it
+                    }
+                }
+            }
+        }
+    }
+
+    private fun panelWidthDp(): Int {
+        // 595/597：面板按**视频区宽度**算，而不是全屏宽。
+        // 旧实现用全屏宽 → 收窄后的父级只有 videoW，面板按全屏 0.42 算会
+        // 过宽，右缘被父级裁掉、视觉上像「被资源面板遮挡」（真机回归）。
+        val available = videoAreaWidth()
         val target = (available * 0.42f).toInt()
         return target.coerceIn(dp(NPTheme.PANEL_MIN_WIDTH.toInt()), dp(NPTheme.PANEL_MAX_WIDTH.toInt()))
     }
@@ -2014,16 +2080,32 @@ class NativePlayerScreenView(
                 } else {
                     glassPanel
                 }
+                // 【真机回归：弹出面板不显示、只让视频区变黑】597 修正。
+                //
+                // 旧实现用 `Gravity.END` + `marginEnd`：父级是**根
+                // FrameLayout（全屏宽）**，分栏后面板贴在「全屏右缘」——
+                // 正好落在资源面板下方被完全盖住；而遮罩（黑 45%）盖住
+                // 视频区 → 用户只看到「视频区变黑、面板不见」。
+                //
+                // 改为 `Gravity.START` + `leftMargin = 视频区宽 - 面板宽 -
+                // 12dp`：贴视频区右缘，与 Flutter 的
+                // `Positioned(right: 12)` 在视频区内等价。
+                val panelW = panelWidthDp()
+                // 高度必须限制在**视频区**内（597）：旧实现用 MATCH_PARENT
+                // （= 根 FrameLayout 全屏高），竖屏分栏时面板会一直伸到屏幕
+                // 底、压在资源面板上。
+                val panelTop =
+                    if (fullBleed) 0 else dp(NPTheme.PANEL_TOP_OFFSET) + safeTopPx()
+                val panelBottom =
+                    if (fullBleed) 0 else dp(NPTheme.PANEL_BOTTOM_OFFSET) + safeBottomPx()
+                val panelH = (videoAreaHeight() - panelTop - panelBottom).coerceAtLeast(1)
                 panelContainer.layoutParams = lp(
-                    panelWidthDp(),
-                    LayoutParams.MATCH_PARENT,
+                    panelW,
+                    panelH,
+                    Gravity.START or Gravity.TOP,
                 ).also {
-                    it.topMargin =
-                        if (fullBleed) 0 else dp(NPTheme.PANEL_TOP_OFFSET) + safeTopPx()
-                    it.bottomMargin =
-                        if (fullBleed) 0 else dp(NPTheme.PANEL_BOTTOM_OFFSET) + safeBottomPx()
-                    it.marginEnd = if (fullBleed) 0 else dp(NPTheme.PANEL_RIGHT)
-                    it.gravity = Gravity.END or Gravity.TOP
+                    it.topMargin = panelTop
+                    it.leftMargin = panelLeftMarginPx(panelW, fullBleed)
                 }
                 panelContainer.addView(panelHeader(panelTitle(panel)))
                 when (panel) {
@@ -2557,11 +2639,13 @@ class NativePlayerScreenView(
         decodePopover.background =
             PanelGlassDrawable(NPTheme.RADIUS_DECODE, resources.displayMetrics.density)
         decodePopover.clipToOutline = true
+        // 597：贴**视频区**右缘（`Gravity.END` 会贴根容器右缘，分栏后被
+        // 资源面板盖住，真机「只看到视频区变黑」）。
         decodePopover.layoutParams =
             lp(dp(NPTheme.DECODE_PANEL_WIDTH), LayoutParams.WRAP_CONTENT).also {
-                it.gravity = Gravity.TOP or Gravity.END
+                it.gravity = Gravity.START or Gravity.TOP
                 it.topMargin = dp(NPTheme.PANEL_TOP_OFFSET) + safeTopPx()
-                it.marginEnd = dp(NPTheme.PANEL_RIGHT)
+                it.leftMargin = panelLeftMarginPx(dp(NPTheme.DECODE_PANEL_WIDTH), false)
             }
 
         // 标题行：`解码模式` 15 w600 + 当前档位 14 w500（正文一律纯白，
@@ -2763,7 +2847,12 @@ class NativePlayerScreenView(
         segmentCard.visibility = VISIBLE
         segmentCard.removeAllViews()
         segmentCard.background = glassCard
-        segmentCard.layoutParams = lp(dp(NPTheme.SEGMENT_CARD_WIDTH), LayoutParams.WRAP_CONTENT, Gravity.CENTER)
+        segmentCard.layoutParams = lp(
+            dp(NPTheme.SEGMENT_CARD_WIDTH),
+            LayoutParams.WRAP_CONTENT,
+            Gravity.START or Gravity.TOP,
+        )
+        positionVideoCenteredCard(segmentCard)
         val confirm = segmentConfirmKind
         if (confirm != null) {
             renderSegmentConfirm(confirm)
@@ -3419,17 +3508,75 @@ class NativePlayerScreenView(
             // `LinearLayout.VERTICAL`，撑满高度后内容从**顶部**开始排，
             // 于是进度条行与控件行跑到屏幕最上方，和顶栏叠在一起。
             //
-            // 底栏**根本不需要改 height**：它的 LayoutParams 挂在根
-            // FrameLayout 里，`Gravity.BOTTOM + WRAP_CONTENT` 天然贴底。
-            // 只改 width 与 gravity 即可，横竖屏一致。
+            // 底栏**根本不需要改 height**：`WRAP_CONTENT` 让它按内容量高度。
             it.width = videoW
             it.height = LayoutParams.WRAP_CONTENT
-            it.topMargin = 0
-            it.gravity = Gravity.START or Gravity.BOTTOM
+            // 竖屏**分栏时**（面板展开，inset > 0）才需要 TOP + topMargin；
+            // 未分栏时 videoH == 屏高，`Gravity.BOTTOM` 本就贴底，不要多此
+            // 一举（估值偏差反而让底栏浮起来）。
+            val portraitSplit = portrait && panelSizePx > 0
+            if (portraitSplit) {
+                // 【真机回归：竖屏进度条和底栏没有】597 修正。
+                //
+                // 竖屏分栏后资源面板占底部 280dp，而底栏的 LayoutParams 挂在
+                // **根 FrameLayout（全屏高）**：`Gravity.BOTTOM` 贴的是全屏
+                // 底缘 → 底栏整个落在资源面板下方、被完全盖住（用户看到
+                // 「竖屏没有进度条和底栏」）。
+                //
+                // 改为 `Gravity.TOP + topMargin = 视频区高 - 底栏高`，贴视频区
+                // 底缘。底栏真实高度未知（随模式/字号变化），先按估值放，
+                // 再在 `post{}` 里用实测 `bottomBar.height` 修正（零误差）。
+                it.gravity = Gravity.START or Gravity.TOP
+                it.topMargin = (videoH - dp(BOTTOM_BAR_ESTIMATED_HEIGHT)).coerceAtLeast(0)
+            } else {
+                // 横屏 / 竖屏未分栏：全屏高，`Gravity.BOTTOM` 天然贴底。
+                it.topMargin = 0
+                it.gravity = Gravity.START or Gravity.BOTTOM
+            }
             bottomBar.layoutParams = it
+        }
+        if (portrait && panelSizePx > 0) {
+            // 实测修正：布局完成后底栏才有真实高度，用它重算 topMargin。
+            // 不用 `doOnLayout`（可能已被消费），直接 post 一次即可。
+            bottomBar.post {
+                val barH = bottomBar.height
+                if (barH > 0) {
+                    (bottomBar.layoutParams as? LayoutParams)?.let {
+                        val target = (videoH - barH).coerceAtLeast(0)
+                        if (it.topMargin != target) {
+                            it.topMargin = target
+                            bottomBar.layoutParams = it
+                        }
+                    }
+                }
+            }
         }
         (panelScrim.layoutParams as? LayoutParams)?.let {
             it.width = videoW; it.height = videoH; panelScrim.layoutParams = it
+        }
+        // 597：分栏后同步面板的 leftMargin（贴视频区右缘，见
+        // renderOverlays 注释）。面板宽度由 panelWidthDp() 决定，这里只改
+        // 左偏移，不动 width（避免与 renderOverlays 冲突）。
+        (panelContainer.layoutParams as? LayoutParams)?.let {
+            val panelW = panelWidthDp()
+            it.width = panelW
+            // 高度必须扣掉 renderOverlays 设的上下避让（否则面板会溢出
+            // 视频区底缘，压到底栏/资源面板上）。fullBleed（选集面板）的
+            // top/bottomMargin 是 0，扣减自然为 0。
+            it.height = (videoH - it.topMargin - it.bottomMargin).coerceAtLeast(1)
+            it.gravity = Gravity.START or Gravity.TOP
+            it.leftMargin = (videoW - panelW - dp(NPTheme.PANEL_RIGHT)).coerceAtLeast(0)
+            panelContainer.layoutParams = it
+        }
+        // 解码 popover 与面板同区：分栏后也要贴视频区右缘，否则同样被
+        // 资源面板盖住（597）。宽度保持 DECODE_PANEL_WIDTH（180dp），
+        // 不能用 panelWidthDp()（那是主面板宽 260~320dp）。
+        (decodePopover.layoutParams as? LayoutParams)?.let {
+            val popW = dp(NPTheme.DECODE_PANEL_WIDTH)
+            it.width = popW
+            it.gravity = Gravity.START or Gravity.TOP
+            it.leftMargin = (videoW - popW - dp(NPTheme.PANEL_RIGHT)).coerceAtLeast(0)
+            decodePopover.layoutParams = it
         }
         // 【真机回归：控件弹出面板没显示】596 修正。
         //
@@ -3440,15 +3587,18 @@ class NativePlayerScreenView(
         //
         // 面板宽度必须由 `panelWidthDp()` 统一决定（它已按 videoW 计算），
         // 这里只限制遮罩范围，不动面板宽度。
-        (decodePopover.layoutParams as? LayoutParams)?.let {
-            it.width = videoW; decodePopover.layoutParams = it
-        }
         (segmentScrim.layoutParams as? LayoutParams)?.let {
             it.width = videoW; it.height = videoH; segmentScrim.layoutParams = it
         }
+        // 片头片尾卡：固定在**视频区内**居中（597）。
+        // 旧实现 `Gravity.CENTER` 相对根 FrameLayout（全屏）居中，竖屏分栏
+        // 后卡片落到资源面板区域；且 width 被撑成 videoW，与 Flutter
+        // `Center + SizedBox(width: 360)` 不一致。
         (segmentCard.layoutParams as? LayoutParams)?.let {
-            it.width = videoW; segmentCard.layoutParams = it
+            it.width = dp(NPTheme.SEGMENT_CARD_WIDTH)
+            segmentCard.layoutParams = it
         }
+        positionVideoCenteredCard(segmentCard)
 
         // 右/下区：资源面板
         (roomPanel.layoutParams as? LayoutParams)?.let {
@@ -3722,8 +3872,6 @@ class NativePlayerScreenView(
         // 只留锁钮（与时间数显同列）、进度条/Logo/面板全关。
         if (!tv && state.locked) {
             topBar.visibility = GONE
-            // 底栏不藏：锁定态锁钮在底栏 leading 槽（对齐 Flutter
-            // _buildLockOnlyControls 只留锁钮）。
             seekRow.visibility = GONE
             logoImage.visibility = GONE
             logoSpacer.visibility = GONE
@@ -3732,6 +3880,18 @@ class NativePlayerScreenView(
             trailingGroup.visibility = GONE
             skipPromptChip.visibility = GONE
             leadingGroup.visibility = VISIBLE
+            // 【真机回归：锁定态切资源后锁控件消失】597 修正。
+            //
+            // 旧实现只把 `leadingGroup` 设为 VISIBLE，**没设 bottomBar 自身**
+            // 的可见性——它由 `setControlsVisible()` 控制。锁定期间用户去
+            // 资源面板切集/切资源时，宿主会走 `closePanel()` →
+            // `renderOverlays()`，而自动隐藏计时器（5s）也可能已把
+            // `controlsVisible` 置 false；之后没有任何路径把底栏显回来，
+            // 锁钮就永久消失（只能解锁一次才恢复）。
+            //
+            // 锁定态本就该常显底栏（里面只剩锁钮），与 Flutter
+            // `_buildLockOnlyControls` 一致——这里强制 VISIBLE。
+            bottomBar.visibility = VISIBLE
             lockButton.text = String(Character.toChars(NativePlayerIcons.ICON_LOCK))
             // 锁定中不允许面板（Flutter 面板层带 !locked 条件）。
             if (activePanel != null || segmentCardOpen) {
@@ -3786,7 +3946,12 @@ class NativePlayerScreenView(
 
     private fun tick() {
         clockText.text = currentClock()
-        if (controlsVisible && !lastState.paused && System.currentTimeMillis() > hideDeadlineMs) {
+        // 锁定态不自动隐藏（597）：底栏里只剩锁钮，藏掉后用户无法解锁，
+        // 只能退出播放页。与 Flutter `_buildLockOnlyControls` 常显一致。
+        val lockedUi = !lastState.tvMode && lastState.locked
+        if (!lockedUi && controlsVisible && !lastState.paused &&
+            System.currentTimeMillis() > hideDeadlineMs
+        ) {
             setControlsVisible(false)
             return
         }
@@ -3795,6 +3960,13 @@ class NativePlayerScreenView(
 
     private fun setControlsVisible(visible: Boolean) {
         controlsVisible = visible
+        // 锁定态底栏常显（只剩锁钮，对齐 Flutter `_buildLockOnlyControls`）。
+        // 597：自动隐藏计时器会在切资源/切集时把底栏藏掉，锁钮随之消失。
+        if (!lastState.tvMode && lastState.locked) {
+            topBar.visibility = GONE
+            bottomBar.visibility = VISIBLE
+            return
+        }
         topBar.visibility = if (visible) VISIBLE else GONE
         bottomBar.visibility = if (visible) VISIBLE else GONE
         if (visible) scheduleAutoHide()
@@ -3803,6 +3975,8 @@ class NativePlayerScreenView(
     private fun scheduleAutoHide() {
         hideDeadlineMs = System.currentTimeMillis() + AUTO_HIDE_MS
         mainHandler.removeCallbacks(hideRunnable)
+        // 锁定态不自动隐藏（Flutter 锁定态控件常显，否则锁钮无法再点）。
+        if (!lastState.tvMode && lastState.locked) return
         if (!lastState.paused) mainHandler.postDelayed(hideRunnable, AUTO_HIDE_MS)
     }
 
@@ -3855,6 +4029,12 @@ class NativePlayerScreenView(
 
     companion object {
         const val SEEK_STEPS = 1000
+        /**
+         * 竖屏底栏高度估值（597）：仅作为首帧占位，`applyVideoSplit` 会在
+         * `post{}` 里用实测 `bottomBar.height` 修正，最终位置零误差。
+         * 取值 = 进度条行 + 控件行 + 上下 padding 的经验值。
+         */
+        const val BOTTOM_BAR_ESTIMATED_HEIGHT = 100
         const val TICK_MS = 500L
         const val AUTO_HIDE_MS = 5000L
         /**

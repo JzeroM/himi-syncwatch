@@ -14,14 +14,11 @@ void main() {
   ).readAsStringSync();
 
   group('底栏定位：不再用 MATCH_PARENT 撑满（跑到顶部根因）', () {
-    test('安卓底栏高度恢复 WRAP_CONTENT', () {
+    test('安卓底栏高度保持 WRAP_CONTENT（597 竖屏分栏另有 TOP 定位）', () {
       // 595 把 height 设成 MATCH_PARENT（横屏）→ 底栏内部
       // LinearLayout.VERTICAL 撑满高度后内容从顶部排 → 进度条/控件跑到
       // 屏幕最上方与顶栏重叠（真机截图回归）。
-      expect(
-        kotlinScreen,
-        contains('it.height = LayoutParams.WRAP_CONTENT\n            it.topMargin = 0\n            it.gravity = Gravity.START or Gravity.BOTTOM'),
-      );
+      expect(kotlinScreen, contains('it.height = LayoutParams.WRAP_CONTENT'));
       expect(
         kotlinScreen,
         isNot(contains('it.height = if (portrait) videoH else LayoutParams.MATCH_PARENT')),
@@ -86,9 +83,12 @@ void main() {
       expect(body, contains('panelScrim.layoutParams = it'));
     });
 
-    test('panelWidthDp 按视频区宽计算', () {
-      expect(kotlinScreen, contains('val available = if (lastVideoSplitInsetPx > 0)'));
+    test('panelWidthDp 按视频区宽计算（597 抽成 videoAreaWidth）', () {
+      expect(kotlinScreen, contains('private fun videoAreaWidth(): Int {'));
+      expect(kotlinScreen, contains('val available = videoAreaWidth()'));
       expect(kotlinScreen, contains('(w - lastVideoSplitInsetPx).coerceAtLeast(1)'));
+      // 竖屏 inset 是面板**高度**，不能拿它减宽度（否则面板被算窄）。
+      expect(kotlinScreen, contains('val portrait = h > w'));
     });
   });
 }

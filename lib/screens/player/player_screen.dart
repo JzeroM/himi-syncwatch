@@ -7069,6 +7069,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     // 回播放页后按当前内核重开原生 UI（幂等）。
     _syncNativePanelData();
+    // 【真机回归：搜索后回播放页黑屏】597 修正。
+    //
+    // 上面 `closeNativeUi()` 关掉了宿主，而 `_openNativeUiIfNeeded()` 只在
+    // `prepare()` 里调用——没有任何路径会再打开。此时 `nativeUiActive`
+    // 为 false、Flutter 视频层又因曾是 true 而未挂载 → 纯黑（当前暂停的
+    // 视频与新添加的资源都一样）。
+    //
+    // 必须显式重开；`reopenNativeUi()` 内部走已验证的
+    // `nativeUiActive=true → open → refreshSurface()` 顺序，不会让两个
+    // SurfaceView 并存抢绑定。
+    final reopen = _player;
+    if (reopen is MpvPlayerAdapter && !_disposed) {
+      try {
+        await reopen.reopenNativeUi();
+      } catch (e) {
+        LogService().log('mpv', '搜索返回重开原生 UI 失败: $e');
+      }
+    }
   }
 
   void _sendAddResourceRTM(Map<String, dynamic> data) {

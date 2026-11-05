@@ -994,6 +994,50 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   撑满视频区，看起来像「没显示」。修法：`applyVideoSplit` 不动面板宽度
   （由 `panelWidthDp()` 统一决定，它已按 `videoW` 计算），只限制遮罩范围。
 
+### Phase 2.16：弹出面板分栏定位 / 竖屏底栏 / 搜索后重开 / 锁定态底栏（1.5.17+597）
+
+> 起因：真机「弹出面板不显示在视频区内、只让视频区变黑」「竖屏后进度条
+> 和底栏没有」「搜索后添加资源、播回来当前暂停的视频黑屏」「锁定态去
+> 资源栏切资源后锁控件消失」。
+
+- [x] **弹出面板只让视频区变黑（面板不见）**：`panelContainer` 用
+  `Gravity.END + marginEnd`，父级是**根 FrameLayout（全屏宽）**；分栏后
+  面板贴在「全屏右缘」——正好落在资源面板下方被完全盖住，而遮罩（黑
+  45%）盖住视频区 → 只看到「视频区变黑」。
+  修法：改 `Gravity.START + leftMargin = videoAreaWidth() - 面板宽 - 12dp`，
+  贴**视频区**右缘；高度也限制在视频区内（`videoAreaHeight() - 上下避让`）。
+  `applyVideoSplit` 同步 `leftMargin`（不动 width，避免与 `renderOverlays`
+  冲突）。解码 popover（180dp）同理。
+- [x] **片头片尾卡相对全屏居中**：`Gravity.CENTER` 是相对根容器，
+  竖屏分栏后卡片落到资源面板区；且 width 被撑成 videoW。
+  修法：抽 `positionVideoCenteredCard()`——`START|TOP` + 精确 leftMargin，
+  垂直方向 `post{}` 读实测高度修正。
+- [x] **竖屏进度条/底栏没有**：`bottomBar` 的 LayoutParams 挂在根
+  FrameLayout（全屏高），`Gravity.BOTTOM` 贴**全屏底缘**——竖屏分栏后
+  资源面板占底部 280dp，底栏整个落在面板下方被盖住。
+  修法：竖屏**分栏时**改 `Gravity.TOP + topMargin = videoH - 底栏高`；
+  高度未知，先按 `BOTTOM_BAR_ESTIMATED_HEIGHT = 100dp` 估值，再在
+  `post{}` 里用实测 `bottomBar.height` 修正（零误差）。未分栏仍走
+  `Gravity.BOTTOM`（videoH == 屏高，不必偏移）。鸿蒙用
+  `.translate({ y: -ROOM_PANEL_HEIGHT })` 同理。
+- [x] **搜索后黑屏**：`_openRoomResourceSearchFromNative()` 里
+  `closeNativeUi()` 关掉宿主，回来后只调 `_syncNativePanelData()`，
+  **没有任何路径重开原生 UI**（`_openNativeUiIfNeeded()` 只在 `prepare()`
+  里调用）→ 原生窗口没了、Flutter 视频层又因 `nativeUiActive` 曾是 true
+  而未挂载 → 纯黑。
+  修法：`MpvPlayerAdapter.reopenNativeUi()`（清残留控制器 → 走已验证的
+  `nativeUiActive=true → open → refreshSurface()` 路径），并在搜索返回后
+  `await` 调用。重开前多等 250ms 让 Flutter 平台视图先卸载，避免两个
+  SurfaceView 并存抢绑定（v1.5.4 安卓黑屏根因）。
+- [x] **锁定态切资源后锁控件消失**：`applyState()` 锁定分支只设
+  `leadingGroup.visibility = VISIBLE`，**没设 `bottomBar` 自身**——它由
+  `setControlsVisible()` 控制；切资源会走 `closePanel()` →
+  `renderOverlays()`，自动隐藏计时器（5s）也可能已把 `controlsVisible`
+  置 false，之后无路径显回底栏。
+  修法：锁定分支强制 `bottomBar.visibility = VISIBLE`；
+  `setControlsVisible()` / `scheduleAutoHide()` / `tick()` 在锁定态
+  直接跳过隐藏（锁定态本就该常显，对齐 Flutter `_buildLockOnlyControls`）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
