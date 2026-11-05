@@ -430,6 +430,14 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
         case 'closeNativeUi':
           this.closeNativeUi(result);
           return;
+        // 603：临时隐藏/恢复原生子窗口（不销毁 session 与 surface 绑定）。
+        // 用于需要在 Flutter 层显示界面（搜索页 / 确认对话框）的场景。
+        case 'suspendNativeUi':
+          this.suspendNativeUi(result);
+          return;
+        case 'resumeNativeUi':
+          this.resumeNativeUi(result);
+          return;
         case 'pushNativeState': {
           const stateValue: ESObject = args.get('state');
           if (typeof stateValue === 'string') {
@@ -644,6 +652,54 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       result.success(null);
     }).catch((e: Object): void => {
       hilog.error(DOMAIN, TAG, 'destroyWindow 失败: %{public}s', String(e));
+      result.success(null);
+    });
+  }
+
+  /**
+   * 临时隐藏原生子窗口（**不销毁**，603）。
+   *
+   * 【603 真机回归：点「取消」后播任何视频都白屏】原生子窗口的 z-order
+   * 在主窗口（Flutter 页面）之上——不隐藏会盖住 Flutter 的「解散房间」
+   * 确认框 / 资源搜索页。
+   *
+   * 与 [closeNativeUi] 的区别：本方法只 `hideWindow()`，窗口与 XComponent
+   * 都不销毁 → [resumeNativeUi] 恢复时画面立刻回来，**零白屏**。
+   * 旧实现用 close + 重开（reopenNativeUi），要重建窗口并重新绑定 surface，
+   * 有「两个 XComponent 抢绑定」的风险。
+   */
+  private suspendNativeUi(result: MethodResult): void {
+    const win = this.subWindow;
+    if (win === null) {
+      result.success(null);
+      return;
+    }
+    // 【必须是 minimize 而不是 hideWindow】SDK 的 Window 没有 hideWindow；
+    // 官方文档明确：子窗口/悬浮窗调用 minimize() 即「隐藏」，且可用
+    // showWindow() 恢复（不会被挂到任务栏）。
+    win.minimize().then((): void => {
+      hilog.info(DOMAIN, TAG, 'native ui window hidden (suspend)');
+      result.success(null);
+    }).catch((e: Object): void => {
+      hilog.error(DOMAIN, TAG, 'minimize 失败: %{public}s', String(e));
+      result.success(null);
+    });
+  }
+
+  /** 恢复被 [suspendNativeUi] 隐藏的子窗口（幂等）。 */
+  private resumeNativeUi(result: MethodResult): void {
+    const win = this.subWindow;
+    if (win === null) {
+      result.success(null);
+      return;
+    }
+    win.showWindow().then((): void => {
+      hilog.info(DOMAIN, TAG, 'native ui window shown (resume)');
+      // 恢复后补一次安全区读取（转屏/隐藏期间可能变化）。
+      this.feedSafeArea(win);
+      result.success(null);
+    }).catch((e: Object): void => {
+      hilog.error(DOMAIN, TAG, 'showWindow 失败: %{public}s', String(e));
       result.success(null);
     });
   }

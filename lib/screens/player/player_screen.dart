@@ -3308,14 +3308,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _exitFromNativeUi() async {
     if (!mounted || _disposed) return;
     final mpv = _player;
+    // 【603 真机回归：点「取消」后播任何视频都白屏】
+    //
+    // 旧实现先 `closeNativeUi()`（销毁宿主）再弹确认框：取消分支不 pop，
+    // 于是原生窗口已关、nativeUiActive 为 false → Flutter 视频层重建，
+    // 但 mpv surface 仍绑在已销毁的原生窗口上 → 白屏（且没有任何路径
+    // 恢复）。
+    //
+    // 改为三段式：**先 suspend（只隐藏、不销毁）** → 弹框 → 取消则
+    // resume（session/surface 原封不动，零白屏）；确认才真正 close 退出。
+    if (mpv is MpvPlayerAdapter) {
+      try {
+        await mpv.suspendNativeUi();
+      } catch (_) {}
+    }
+    if (!mounted || _disposed) return;
+    final shouldPop = await _confirmLeaveRoom();
+    if (!mounted || _disposed) return;
+    if (!shouldPop) {
+      // 取消：恢复原生窗口（零白屏）。
+      if (mpv is MpvPlayerAdapter) {
+        try {
+          await mpv.resumeNativeUi();
+        } catch (e) {
+          LogService().log('mpv', '取消离房后恢复原生 UI 失败: $e');
+        }
+      }
+      return;
+    }
+    // 确认：真正关闭原生宿主并退出播放页。
     if (mpv is MpvPlayerAdapter) {
       try {
         await mpv.closeNativeUi();
       } catch (_) {}
     }
     if (!mounted || _disposed) return;
-    final shouldPop = await _confirmLeaveRoom();
-    if (shouldPop && context.mounted) Navigator.pop(context);
+    if (context.mounted) Navigator.pop(context);
   }
 
   /// 选集/版本面板数据同步（Phase 2）：把 PlayerScreen 的 Emby 元数据映射成
@@ -7057,8 +7085,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final code = widget.roomCode;
     if (code == null || !mounted) return;
     final mpv = _player;
+    // 603：改为 suspend（只隐藏，不销毁）——搜索页返回后 resume 即恢复，
+    // 零黑屏。旧实现 closeNativeUi + reopenNativeUi 要重建窗口并重新绑定
+    // surface，有「两个 SurfaceView 抢绑定」风险（597 曾为此加 250ms 等待）。
     if (mpv is MpvPlayerAdapter && mpv.nativeUiActive.value) {
-      await mpv.closeNativeUi();
+      await mpv.suspendNativeUi();
     }
     if (!mounted) return;
     final resourceData = await pushRoomResourceSearch(context, roomCode: code);
@@ -7067,24 +7098,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _addResourceLocally(resourceData);
       _sendAddResourceRTM(resourceData);
     }
-    // 回播放页后按当前内核重开原生 UI（幂等）。
+    // 回播放页后按当前内核同步面板数据。
     _syncNativePanelData();
-    // 【真机回归：搜索后回播放页黑屏】597 修正。
-    //
-    // 上面 `closeNativeUi()` 关掉了宿主，而 `_openNativeUiIfNeeded()` 只在
-    // `prepare()` 里调用——没有任何路径会再打开。此时 `nativeUiActive`
-    // 为 false、Flutter 视频层又因曾是 true 而未挂载 → 纯黑（当前暂停的
-    // 视频与新添加的资源都一样）。
-    //
-    // 必须显式重开；`reopenNativeUi()` 内部走已验证的
-    // `nativeUiActive=true → open → refreshSurface()` 顺序，不会让两个
-    // SurfaceView 并存抢绑定。
-    final reopen = _player;
-    if (reopen is MpvPlayerAdapter && !_disposed) {
+    // 603：恢复被 suspend 隐藏的原生窗口（session 未销毁 → 零黑屏）。
+    final resume = _player;
+    if (resume is MpvPlayerAdapter && !_disposed) {
       try {
-        await reopen.reopenNativeUi();
+        await resume.resumeNativeUi();
       } catch (e) {
-        LogService().log('mpv', '搜索返回重开原生 UI 失败: $e');
+        LogService().log('mpv', '搜索返回恢复原生 UI 失败: $e');
       }
     }
   }

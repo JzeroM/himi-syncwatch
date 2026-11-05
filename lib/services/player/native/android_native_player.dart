@@ -44,6 +44,22 @@ class AndroidNativePlayer {
     await channel.invokeMethod<void>('close');
   }
 
+  /// 临时隐藏原生 Dialog（**不销毁** session / surface 绑定，603）。
+  ///
+  /// 用于需要在 Flutter 层显示界面的场景（资源搜索页 / 离房确认框）：
+  /// 原生 Dialog 的 z-order 在 Flutter 页面之上，不隐藏会盖住它们。
+  /// 与 [close] 的区别：只 `hide()`，恢复时 [resume] 即可，零白屏。
+  static Future<void> suspend() async {
+    if (!supported) return;
+    await channel.invokeMethod<void>('suspend');
+  }
+
+  /// 恢复被 [suspend] 隐藏的原生 Dialog（幂等）。
+  static Future<void> resume() async {
+    if (!supported) return;
+    await channel.invokeMethod<void>('resume');
+  }
+
   /// Dart → 原生：推送权威状态 JSON 快照。
   static Future<void> pushNativeState(String stateJson) async {
     if (!supported) return;

@@ -65,6 +65,18 @@ class AndroidNativePlayerChannel(
                 result.success(null)
             }
 
+            // 603：临时隐藏/恢复原生窗口（不销毁 session 与 surface 绑定）。
+            // 用于需要在 Flutter 层显示界面（搜索页 / 确认对话框）的场景。
+            "suspend" -> {
+                host.suspend()
+                result.success(null)
+            }
+
+            "resume" -> {
+                host.resume()
+                result.success(null)
+            }
+
             "pushNativeState" -> {
                 val json = call.argument<String>("state")
                 when {

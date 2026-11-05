@@ -304,6 +304,21 @@ const RIM_COLOR = '#33FFFFFF';
 export struct NativePlayerPanel {
   @Prop panelType: string = '';
   @Prop revision: number = 0;
+
+  /**
+   * 视频区宽度（vp，603；0 = 未分栏，用全屏）。
+   *
+   * 【真机回归：横屏房间模式所有弹出面板不在视频区】本面板挂在根 Stack
+   * 上，根容器原本是 `100% × 100%`（**全屏**）+ 内部 `Alignment.End` →
+   * 贴**全屏右缘**；房间模式横屏时资源面板占右侧 320vp，面板正好压在
+   * 它上面（截图回归）。
+   *
+   * 安卓用 `panelLeftMarginPx`（= `videoAreaWidth() - 面板宽 - 12dp`）
+   * 贴视频区右缘，鸿蒙缺这一层。这里把根容器宽度收窄到视频区宽后，
+   * 内部 `Alignment.End` 自然落在视频区右缘——与安卓等价，无需额外
+   * margin 计算。遮罩也同步收窄到视频区（对齐安卓 `panelScrim`）。
+   */
+  @Prop videoW: number = 0;
   /** 选集列表滚动控制器（打开时定位当前集）。 */
   private episodeScroller: Scroller = new Scroller();
   /** 片头片尾二次确认上下文（'' = 无，'intro' / 'outro' = 待确认）。 */
@@ -410,7 +425,10 @@ export struct NativePlayerPanel {
         });
       }
     }
-    .width('100%')
+    // 603：收窄到**视频区**（横屏分栏时 = 屏宽 - 320vp），让内部
+    // `Alignment.End` 落在视频区右缘而不是全屏右缘。
+    // 未分栏（videoW = 0）时回落 100%，行为与改动前完全一致。
+    .width(this.videoW > 0 ? this.videoW : '100%')
     .height('100%')
   }
 

@@ -93,6 +93,23 @@ class MpvSessionPlatform {
     return Future<void>.value();
   }
 
+  /// 临时隐藏原生播放器 UI 宿主（**不销毁** session / surface 绑定，603）。
+  ///
+  /// 用于需要在 Flutter 层显示界面的场景（资源搜索页 / 离房确认框）：
+  /// 原生窗口 z-order 在 Flutter 页面之上，不隐藏会盖住它们。
+  static Future<void> suspendNativeUi() {
+    if (isOhos) return HimiMpvPlayer.suspendNativeUi();
+    if (Platform.isAndroid) return AndroidNativePlayer.suspend();
+    return Future<void>.value();
+  }
+
+  /// 恢复被 [suspendNativeUi] 隐藏的原生播放器 UI 宿主（幂等）。
+  static Future<void> resumeNativeUi() {
+    if (isOhos) return HimiMpvPlayer.resumeNativeUi();
+    if (Platform.isAndroid) return AndroidNativePlayer.resume();
+    return Future<void>.value();
+  }
+
   /// Dart → 原生：推送权威状态 JSON 快照。
   static Future<void> pushNativeState(String stateJson) {
     if (isOhos) return HimiMpvPlayer.pushNativeState(stateJson);

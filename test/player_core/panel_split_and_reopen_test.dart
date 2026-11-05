@@ -114,19 +114,24 @@ void main() {
       expect(adapter, contains('await Future<void>.delayed(const Duration(milliseconds: 250));'));
     });
 
-    test('搜索流程末尾调用 reopenNativeUi', () {
-      final idx = screen.indexOf('Future<void> _openRoomResourceSearchFromNative() async {');
+    test('603：搜索流程改用 suspend/resume（不再 close + reopen）', () {
+      // 597 用 closeNativeUi + reopenNativeUi 修黑屏，但那是**销毁后重建**
+      // ——要重新绑定 surface，有「两个 SurfaceView 抢绑定」风险。
+      // 603 改为 suspend（只隐藏）→ 搜索页 → resume，session 原封不动，
+      // 零黑屏。
+      final idx = screen.indexOf(
+          'Future<void> _openRoomResourceSearchFromNative() async {');
       expect(idx, greaterThan(0));
       final body = screen.substring(idx, idx + 3000);
-      expect(body, contains('await reopen.reopenNativeUi();'));
-      // 关宿主仍然保留（原生 Dialog 里无法直接起 Flutter 路由）。
-      expect(body, contains('await mpv.closeNativeUi();'));
+      expect(body, contains('await mpv.suspendNativeUi();'));
+      expect(body, contains('await resume.resumeNativeUi();'));
+      expect(body, isNot(contains('await mpv.closeNativeUi();')));
+      expect(body, isNot(contains('reopenNativeUi()')));
     });
 
     test('失败不抛给 UI（只记日志）', () {
-      final idx = screen.indexOf('await reopen.reopenNativeUi();');
-      final body = screen.substring(idx, idx + 400);
-      expect(body, contains("LogService().log('mpv', '搜索返回重开原生 UI 失败:"));
+      final idx = screen.indexOf("LogService().log('mpv', '搜索返回恢复原生 UI 失败");
+      expect(idx, greaterThan(0));
     });
   });
 

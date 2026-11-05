@@ -1195,6 +1195,42 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   竖屏 `videoH = 屏高 - 280vp`。资源面板改用 `Blank` 弹性推到边缘
   （竖屏贴底、横屏贴右）。
 
+### Phase 2.22：弹出面板收窄到视频区 + suspend/resume 替代 close/reopen（1.5.23+603）
+
+> 起因：真机「鸿蒙横屏房间模式，所有弹出面板不在视频区域」（截图：显示
+> 调节面板整个压在右侧资源面板上）；「点击返回弹出确认框，点取消后播
+> 任何视频都白屏」。
+
+- [x] **弹出面板不在视频区**：`NativePlayerPanel` 挂在根 Stack 上，根容器
+  是 `100% × 100%`（**全屏**）+ 内部 `Alignment.End` → 贴**全屏右缘**；
+  房间模式横屏时资源面板占右侧 320vp，面板正好压在它上面。
+  安卓有 `panelLeftMarginPx`（`videoAreaWidth() - 面板宽 - 12dp`）贴视频区
+  右缘，鸿蒙完全没有——**599~602 四轮都在改控件层（顶栏/底栏），从未处理
+  过弹出面板**。
+  修法：`NativePlayerPanel` 新增 `@Prop videoW`，根容器
+  `.width(videoW > 0 ? videoW : '100%')`——收窄后内部 `Alignment.End`
+  自然落在视频区右缘（与安卓等价，无需额外 margin）。遮罩同步收窄
+  （对齐安卓 `panelScrim` 的 `videoW × videoH`）。
+  **本轮只改横屏**（竖屏面板避让留待下轮）。
+- [x] **取消离房后白屏**：`_exitFromNativeUi` 先 `closeNativeUi()`（销毁
+  宿主）再弹确认框；取消分支不 pop → 原生窗口已关、`nativeUiActive` 为
+  false → Flutter 视频层重建，但 mpv surface 仍绑在已销毁的原生窗口上
+  → 白屏（且无任何恢复路径）。
+  修法：三段式 —— **先 `suspendNativeUi()`（只隐藏、不销毁）** → 弹框
+  → 取消则 `resumeNativeUi()`（session/surface 原封不动，零白屏）；
+  确认才 `closeNativeUi()` + pop。
+- [x] **搜索返回黑屏改用 suspend/resume**：597 用
+  `closeNativeUi()` + `reopenNativeUi()` 修黑屏，但那是**销毁后重建**——
+  要重新绑定 surface，有「两个 SurfaceView 抢绑定」风险（597 为此加了
+  250ms 等待）。603 统一改为 `suspendNativeUi()` → 搜索页 →
+  `resumeNativeUi()`，session 原封不动。
+- [x] **平台侧实现（只隐藏不销毁）**：
+  - 鸿蒙：`win.hideWindow()` / `win.showWindow()`（**不** `destroyWindow`），
+    resume 后补一次 `feedSafeArea`（隐藏期间安全区可能变化）；
+  - 安卓：`dialog.hide()` / `dialog.show()`（**不** `dismiss`），resume 后
+    重新 `applyFullscreen` + 按 `lastVideoInsetPx` 重新收窄（`show()` 会把
+    窗口尺寸重置回全屏）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

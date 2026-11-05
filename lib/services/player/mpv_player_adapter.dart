@@ -1804,6 +1804,47 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 关闭原生 UI 宿主（公开入口：PlayerScreen 退出路径调用；幂等）。
   Future<void> closeNativeUi() => _closeNativeUi();
 
+  /// 临时隐藏原生 UI 宿主（**不销毁** session / surface 绑定，603）。
+  ///
+  /// 【603 真机回归：点「取消」后播任何视频都白屏 / 搜索后黑屏】
+  /// 原生窗口 z-order 在 Flutter 页面之上，要显示 Flutter UI（搜索页 /
+  /// 离房确认框）必须先隐藏它。
+  ///
+  /// 与 [closeNativeUi] 的区别：只 hide 窗口，controller / session /
+  /// surface 绑定**全部保留** → [resumeNativeUi] 恢复时画面立刻回来，
+  /// 零白屏。旧实现用 close + [reopenNativeUi] 要重建窗口并重新绑定
+  /// surface，有「两个 SurfaceView 抢绑定」风险（v1.5.4 安卓黑屏根因）。
+  Future<void> suspendNativeUi() async {
+    if (_disposed || _nativeUiController == null) return;
+    try {
+      await MpvSessionPlatform.suspendNativeUi();
+      _nativeUiSuspended = true;
+    } catch (e) {
+      LogService().log('mpv', '隐藏原生 UI 失败: $e');
+    }
+  }
+
+  /// 恢复被 [suspendNativeUi] 隐藏的宿主（幂等；未 suspend 时无副作用）。
+  Future<void> resumeNativeUi() async {
+    if (_disposed || _nativeUiController == null) return;
+    if (!_nativeUiSuspended) {
+      // 没 suspend 过：只需补推一次状态（数据可能已变）。
+      _pushNativeUiState(immediate: true);
+      return;
+    }
+    try {
+      await MpvSessionPlatform.resumeNativeUi();
+      _nativeUiSuspended = false;
+      // 恢复后立即补推权威状态（隐藏期间面板数据/播放态可能已变）。
+      _pushNativeUiState(immediate: true);
+    } catch (e) {
+      LogService().log('mpv', '恢复原生 UI 失败: $e');
+    }
+  }
+
+  /// 原生宿主是否处于「已隐藏」状态（见 [suspendNativeUi]）。
+  bool _nativeUiSuspended = false;
+
   /// 重新打开原生 UI 宿主（597）。
   ///
   /// 【真机回归：原生入口进资源搜索后回播放页黑屏】`closeNativeUi()` 会
@@ -1832,6 +1873,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   Future<void> _closeNativeUi() async {
     final controller = _nativeUiController;
     _nativeUiController = null;
+    _nativeUiSuspended = false;
     nativeUiActive.value = false;
     _player?.setNativeUiActive(false);
     if (controller == null) return;

@@ -290,6 +290,18 @@ class HimiMpvPlayer implements MpvSession {
   static Future<void> closeNativeUi() =>
       _methods.invokeMethod<void>('closeNativeUi');
 
+  /// 临时隐藏原生子窗口（**不销毁** session / surface 绑定，603）。
+  ///
+  /// 用于需要在 Flutter 层显示界面的场景（资源搜索页 / 离房确认框）：
+  /// 原生子窗口 z-order 在 Flutter 页面之上，不隐藏会盖住它们。
+  /// 与 [closeNativeUi] 的区别：只 hide，[resumeNativeUi] 恢复时零白屏。
+  static Future<void> suspendNativeUi() =>
+      _methods.invokeMethod<void>('suspendNativeUi');
+
+  /// 恢复被 [suspendNativeUi] 隐藏的原生子窗口（幂等）。
+  static Future<void> resumeNativeUi() =>
+      _methods.invokeMethod<void>('resumeNativeUi');
+
   /// Dart → 原生：推送权威状态 JSON 快照。
   static Future<void> pushNativeState(String stateJson) =>
       _methods.invokeMethod<void>('pushNativeState', {'state': stateJson});

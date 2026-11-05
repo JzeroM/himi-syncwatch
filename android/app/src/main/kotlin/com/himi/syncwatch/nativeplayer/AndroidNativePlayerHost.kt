@@ -54,6 +54,14 @@ class AndroidNativePlayerHost(
     /** 长按临时倍速的基准档位（松手还原用；见 [Listener.onSpeedBoost]）。 */
     private var boostBaseSpeed = 1.0
 
+    /**
+     * 最近一次视频区右侧留白（像素，603）。
+     *
+     * `resume()` 里 `show()` 会把窗口尺寸重置回全屏，需要按这个值重新
+     * 收窄——否则恢复后视频区又变回全屏、盖住资源面板。
+     */
+    private var lastVideoInsetPx = 0
+
     val isOpen: Boolean get() = controlsDialog != null
 
     /** 打开 surface 窗 + 控件窗（幂等）。 */
@@ -418,6 +426,7 @@ class AndroidNativePlayerHost(
      * attributes 并立即 apply），且必须发生在 `applyFullscreen` 之后。
      */
     private fun applyVideoInsetRight(insetPx: Int) {
+        lastVideoInsetPx = insetPx.coerceAtLeast(0)
         val dlg = surfaceDialog ?: return
         val win = dlg.window ?: return
         val metrics = activity.resources.displayMetrics
@@ -502,6 +511,58 @@ class AndroidNativePlayerHost(
         decor.setOnApplyWindowInsetsListener(listener)
         // 立即取一次当前值（listener 只在 insets 变化时触发）。
         decor.requestApplyInsets()
+    }
+
+    /**
+     * 临时隐藏双窗（**不销毁**，session / surface 绑定全部保留）。
+     *
+     * 【603 真机回归：点「取消」后播任何视频都白屏】原生窗口是独立
+     * Dialog，z-order 在 Flutter 页面**之上**——不隐藏会盖住 Flutter 的
+     * 「解散房间」确认框 / 资源搜索页。
+     *
+     * 与 [close] 的区别：本方法只 `hide()`，Dialog 与 SurfaceView 都不
+     * 销毁 → [resume] 恢复时画面立刻回来，**零白屏**。
+     * 旧实现用 `close()` + 重开（`reopenNativeUi()`），要重建窗口并重新
+     * 绑定 surface，有「两个 SurfaceView 抢绑定」的风险（v1.5.4 黑屏根因）。
+     */
+    fun suspend() {
+        val ctrl = controlsDialog ?: return
+        try {
+            ctrl.hide()
+        } catch (_: Throwable) {
+        }
+        val surf = surfaceDialog
+        if (surf != null) {
+            try {
+                surf.hide()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    /** 恢复被 [suspend] 隐藏的双窗（幂等；未 suspend 时无副作用）。 */
+    fun resume() {
+        val surf = surfaceDialog
+        if (surf != null) {
+            try {
+                if (!surf.isShowing) surf.show()
+            } catch (_: Throwable) {
+            }
+        }
+        // 控件窗后 show → z-order 保持在 surface 窗之上。
+        val ctrl = controlsDialog
+        if (ctrl != null) {
+            try {
+                if (!ctrl.isShowing) ctrl.show()
+            } catch (_: Throwable) {
+            }
+            // 重新应用全屏布局与视频区收窄（show() 可能把尺寸重置回全屏）。
+            try {
+                applyFullscreen(ctrl)
+                if (lastVideoInsetPx > 0) applyVideoInsetRight(lastVideoInsetPx)
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     /** 关闭双窗并释放 surface（幂等）。 */

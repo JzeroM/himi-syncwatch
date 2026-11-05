@@ -1957,6 +1957,8 @@ export struct HimiNativePlayerView {
         NativePlayerPanel({
           panelType: this.activePanel,
           revision: this.revision,
+          // 603：横屏房间模式收窄到视频区（否则面板压在资源面板上）。
+          videoW: this.videoW,
         });
       }
     }
