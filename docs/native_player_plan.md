@@ -1098,6 +1098,55 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   `XComponent` 的 `onAreaChange` **仍挂在它自己身上**（挂外层 Stack 会
   拿到外层尺寸 → 586 的画质/拉伸问题会复发），`vp2px` 换算一行未动。
 
+### Phase 2.19：鸿蒙房间模式控件收窄 + 资源行图标刷新 + 起播进度条（1.5.20+600）
+
+> 起因：真机「房间模式控件是全屏的，应该和安卓一样」「资源列表前面的
+> 播放/暂停控件状态不变化」「每次起播还在加载进度条时进度条会跑到最
+> 末端，正常播放了就回到了开头」。
+
+- [x] **房间模式控件层是全屏**：599 已把 `VideoStack` 收窄，但控件层
+  （顶栏/底栏）挂在根 Stack 上、宽高都是 `'100%'`（全屏）→ 横跨整屏、
+  压在资源面板上。安卓有 `applyVideoSplit()` 专门收窄控件层，鸿蒙没有
+  对应逻辑。
+  修法：新增 `@State controlsW` / `@State controlsH`，控件层包一层 Column
+  按它们收窄（0 时回落 `'100%'`）。语义对齐安卓：
+  - **横屏**只收宽度：`controlsW = 屏宽 - ROOM_PANEL_WIDTH`（视频区底
+    就是屏幕底）；
+  - **竖屏**只收高度：`controlsH = 屏高 - ROOM_PANEL_HEIGHT`（视频区宽
+    就是屏幕宽）；
+  - **未分栏**两者归零。
+  **关键**：`onAreaChange` 只在**屏幕尺寸变化**时触发，房间面板开关时
+  屏幕尺寸不变 → 抽成 `updateControlsSplit()`，在 `onAreaChange` /
+  `onStateChanged` / `tick` 三处都调用（否则收窄永远不生效）。
+- [x] **控件层改流式布局（彻底移除百分比定位）**：底栏壳原本用
+  `.position({y:'100%'}) + markAnchor({y:'100%'})` 贴根 Stack 底缘——
+  分栏后那是「全屏底」而非「视频区底」（竖屏被资源面板盖住），且百分比
+  定位与任何附加属性叠加都会跑位（597 的 `.translate` 就是这么把控件推
+  到屏幕外的）。
+  修法：控件层改 `Column + Blank` 流式布局——顶栏贴顶、`Blank()` 吃掉
+  中间剩余、底栏自然落在容器（= 视频区）底缘。`LockOnlyBar` 同样处理
+  （锁定分支 `Blank` 在前推到底）。**全文件不再有 `.position` /
+  `.markAnchor` 实际调用**。
+- [x] **资源行播放/暂停图标不随状态变化**（与安卓 598 同源 bug）：
+  `RoomEpisodeRow` 读 `state().paused` 是宿主**普通字段**（不在 ArkUI
+  观察链上），而 `RoomPanel` 又不在任何 `ForEach` 重建块里 → 暂停/恢复
+  时面板节点不重建 → 图标停在建列表那一刻的值。
+  修法：新增 `@State roomPlayEpoch`，`syncFromHost()` 里按
+  `${paused}|${currentEpisodeIndex}` 签名比对、变化才自增（**不用 tick
+  每 250ms 推进**——那会把列表滚动位置每 250ms 归零）；`RoomPanelSlot`
+  外包 `ForEach([this.roomPlayEpoch])` 按 epoch 重建；图标判定改读
+  `@State this.paused`。
+- [x] **起播加载时进度条跑到最末端、正常播放后回到开头**：
+  `positionNowMs()` 在 `durationMs` 未解析出来时（起播前几秒仍为 0）走
+  **无上限外推**，而 `GlassSlider` 的 `max` 此时是兜底值 `1`
+  （`durationMs > 0 ? durationMs : 1`）→ `value` 被外推到几千 /
+  `max=1` → `toRatio` 钳到 1 → **进度条顶到最右**；等时长就绪、`max`
+  变成真实毫秒数，`value` 回到正常位置 → 又跳回开头。
+  修法（双保险）：
+  - `positionNowMs()` 加前置守卫：`durationMs <= 0` 时直接返回上报位置；
+  - `ProgressRow` 的 `max` 兜底改为
+    `Math.max(dragging ? dragMs : posMs, 1)`，保证 `value <= max` 恒成立。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

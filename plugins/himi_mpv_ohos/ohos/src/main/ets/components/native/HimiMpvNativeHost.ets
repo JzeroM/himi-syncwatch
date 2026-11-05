@@ -686,6 +686,20 @@ export class HimiMpvNativeHost {
     if (s.paused || s.buffering || s.ended || s.speed <= 0) {
       return s.positionMs;
     }
+    // 【600 真机回归：起播加载时进度条跑到最末端、正常播放后回到开头】
+    //
+    // 起播前几秒 `durationMs` 还没解析出来（仍为 0），而 `paused` /
+    // `buffering` 都可能是 false（首帧未出但未标缓冲）→ 走到下面的
+    // **无上限外推**。此时 `GlassSlider` 的 `max` 是兜底值 1
+    //（`durationMs > 0 ? durationMs : 1`），而 `value` 已被外推到几千
+    // → `toRatio` 算出 (v-0)/(1-0) 再钳到 1 → **进度条顶到最右端**；
+    // 等时长就绪、`max` 变成真实毫秒数，`value` 回到正常位置 → 又跳回
+    // 开头（用户看到「先跑末端、再回开头」）。
+    //
+    // 时长未知时不能外推：直接返回上报位置（通常是 0）。
+    if (s.durationMs <= 0) {
+      return s.positionMs;
+    }
     const elapsed = Date.now() - this.lastStateAtMs;
     const projected = s.positionMs + elapsed * s.speed;
     if (s.durationMs > 0 && projected > s.durationMs) {

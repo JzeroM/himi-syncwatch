@@ -196,7 +196,12 @@ struct ProgressRow {
       GlassSlider({
         value: this.dragging ? this.dragMs : this.posMs,
         min: 0,
-        max: this.durationMs > 0 ? this.durationMs : 1,
+        // 【600 双保险】时长未知时 max 不能是 1——旧兜底会让任何非零
+        // value 都算出 ratio=1（进度条顶到最右）。改用「至少覆盖当前
+        // 位置」的兜底，保证 value <= max 恒成立。
+        max: this.durationMs > 0
+          ? this.durationMs
+          : Math.max(this.dragging ? this.dragMs : this.posMs, 1),
         step: 1000,
         onChange: (v: number): void => {
           this.onInteract();
@@ -334,6 +339,37 @@ export struct HimiNativePlayerView {
   /** Logo 地址（'' = 不显示；房间模式无 logo）。稳定层直读，不进重建块。 */
   @State logoUrl: string = '';
 
+  /**
+   * 控件层（顶栏 + 底栏）可用宽高（600，**必须 @State**）。
+   *
+   * 【真机回归：房间模式控件是全屏的】资源面板展开时视频区已收窄
+   * （`VideoStack` 的 layoutWeight），但控件层挂在根 Stack 上、宽高都是
+   * `'100%'`（全屏）→ 顶栏/底栏横跨整屏、压在资源面板上。
+   *
+   * 对齐安卓 `applyVideoSplit` 的语义：
+   * - **横屏分栏**：只收宽度（视频区底就是屏幕底）→
+   *   `controlsW = 屏宽 - ROOM_PANEL_WIDTH`，`controlsH = 0`（用 100% 高）；
+   * - **竖屏分栏**：只收高度（视频区宽就是屏幕宽）→
+   *   `controlsW = 0`（用 100% 宽），`controlsH = 屏高 - ROOM_PANEL_HEIGHT`；
+   * - **未分栏**：两者 0 → 回落 `'100%'`，行为与分栏前完全一致。
+   */
+  @State controlsW: number = 0;
+  @State controlsH: number = 0;
+
+  /**
+   * 资源行播放/暂停图标重建纪元（600，**必须 @State**）。
+   *
+   * 【真机回归：资源列表前的播放/暂停图标状态不变化】`RoomEpisodeRow` 读
+   * `state().paused` 是宿主普通字段（不在 ArkUI 观察链上），而 `RoomPanel`
+   * 又不在任何 `ForEach` 重建块里 → 暂停/恢复时面板节点不重建 → 图标停在
+   * 建列表那一刻的值。
+   *
+   * 只在 `paused | currentEpisodeIndex` 变化时自增（不用 tick 每 250ms
+   * 推进——那会把列表滚动位置每 250ms 归零）。
+   */
+  @State roomPlayEpoch: number = 0;
+  private roomPlaySig: string = '';
+
   /** 顶栏宽度 / 尾组内容宽（onAreaChange 喂入，转屏自适应收窄间距）。 */
   @State topRowW: number = 0;
   @State topTailW: number = 0;
@@ -464,6 +500,14 @@ export struct HimiNativePlayerView {
     }
     this.skipPrompt = s.skipPrompt;
     this.logoUrl = s.isRoom ? '' : s.logoUrl;
+    // 600：资源行播放/暂停图标重建纪元（见 roomPlayEpoch 注释）。
+    // 只在「暂停态 / 当前集」变化时推进——不用 tick 每 250ms 推进，
+    // 否则列表滚动位置每 250ms 归零。
+    const playSig = `${this.paused}|${this.currentEpisodeIndex}`;
+    if (playSig !== this.roomPlaySig) {
+      this.roomPlaySig = playSig;
+      this.roomPlayEpoch = this.roomPlayEpoch + 1;
+    }
   }
 
   /**
@@ -496,6 +540,8 @@ export struct HimiNativePlayerView {
       this.progressMs = host.positionNowMs();
       this.dragMs = this.progressMs;
     }
+    // 600：房间面板开关 / 转屏都要重算控件层分栏收窄。
+    this.updateControlsSplit();
     // 显式赋值（不用 ++ 后缀自增，确保经过 @State setter 触发重建）。
     this.revision = this.revision + 1;
     // 渲染触发器：状态一到就全树重绘（见 renderTick 注释）。
@@ -530,6 +576,8 @@ export struct HimiNativePlayerView {
     // 缩放比同样自愈（集数/角标变化会改变簇自然宽）。
     this.syncFromHost();
     this.adjustBottomScale();
+    // 600：分栏收窄兜底（onAreaChange 在面板开关时不触发）。
+    this.updateControlsSplit();
     this.renderTick = this.renderTick + 1;
     this.refreshControlsEpoch();
   }
@@ -556,6 +604,32 @@ export struct HimiNativePlayerView {
     }
     const h = d.getHours();
     return `${h < 10 ? `0${h}` : `${h}`}:${mm}`;
+  }
+
+  /**
+   * 控件层分栏收窄（600）。
+   *
+   * 对齐安卓 `applyVideoSplit`：横屏只收宽度（视频区底 == 屏幕底），竖屏
+   * 只收高度（视频区宽 == 屏幕宽），未分栏时两者置 0（回落 '100%'）。
+   *
+   * 【必须显式调用】`onAreaChange` 只在**屏幕尺寸变化**时触发；房间面板
+   * 开关时屏幕尺寸不变，只靠它会让收窄永远不生效（面板盖住控件）。
+   * 因此 `onStateChanged`（每次状态推送）与 `tick`（250ms 兜底）都要调。
+   */
+  private updateControlsSplit(): void {
+    const w = this.areaWidth;
+    const h = this.areaHeight;
+    const split = this.roomPanelVisible() && w > 0 && h > 0;
+    if (split && !this.portrait) {
+      this.controlsW = Math.max(1, w - ROOM_PANEL_WIDTH);
+      this.controlsH = 0;
+    } else if (split && this.portrait) {
+      this.controlsW = 0;
+      this.controlsH = Math.max(1, h - ROOM_PANEL_HEIGHT);
+    } else {
+      this.controlsW = 0;
+      this.controlsH = 0;
+    }
   }
 
   private pokeAutoHide(): void {
@@ -901,6 +975,8 @@ export struct HimiNativePlayerView {
 
   /** 屏幕宽度（手势起始侧判定用；onAreaChange 喂入）。 */
   private areaWidth: number = 0;
+  /** 屏幕高度（600：控件层竖屏分栏收窄用；onAreaChange 喂入）。 */
+  private areaHeight: number = 0;
 
   private openPanel(type: string): void {
     this.pokeAutoHide();
@@ -1334,8 +1410,10 @@ export struct HimiNativePlayerView {
       // `.border({ width: { left: 3 }, color: SEL_COLOR })`）。
       // 播放/暂停（房主）
       if (this.state().isHost) {
+        // 600：读 @State 镜像 `this.paused`（在观察链上）；旧实现读
+        // `state().paused`（宿主普通字段，不在观察链）→ 图标不刷新。
         Text(String.fromCodePoint(
-          ep.isPlaying && !this.state().paused
+          ep.isPlaying && !this.paused
             ? NativePlayerIcons.ICON_PAUSE_CIRCLE
             : NativePlayerIcons.ICON_PLAY_CIRCLE))
           .fontFamily(NativePlayerIcons.FONT_FAMILY)
@@ -1561,11 +1639,18 @@ export struct HimiNativePlayerView {
   /** 房间资源面板槽（593/594）：横屏右侧 320vp / 竖屏底部 280vp。 */
   @Builder
   RoomPanelSlot() {
-    Column() {
-      this.RoomPanel();
-    }
-    .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
-    .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%');
+    // 600：按 roomPlayEpoch 重建面板子树——`RoomEpisodeRow` 的播放/暂停
+    // 图标读的是 `this.paused`（@State 镜像），但 `RoomPanel` 不在任何
+    // ForEach 重建块里 → 暂停/恢复时节点不重建、图标不刷新（真机
+    // 「资源列表前面的播放/暂停图标状态不变化」）。
+    // key 随 epoch 变 → 旧节点销毁、新节点创建 → 图标取最新值。
+    ForEach([this.roomPlayEpoch], (epoch: number): void => {
+      Column() {
+        this.RoomPanel();
+      }
+      .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
+      .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%');
+    }, (epoch: number): string => `room-${epoch}`);
   }
 
   build() {
@@ -1654,57 +1739,81 @@ export struct HimiNativePlayerView {
       // 属性绑定的 @State 变化会触发 @Builder 重新执行 → 整条链一次性刷新。
       // renderTick 每 250ms + 每次状态推送必变 → 控件层持续刷新。
       if (this.showControls && this.renderTick >= 0) {
-        // 【节点重建 = @Builder 子树唯一认的刷新】ForEach key 变化 → 旧节点
-        // 销毁、新节点创建 → TopBar/LockOnlyBar 重新执行 → 图标/角标全部取
-        // 最新值（与"隐藏再现"同一机制，由 controlsEpoch 即时触发）。
-        ForEach([this.controlsEpoch], (epoch: number): void => {
+        // 【600 流式布局：顶栏贴顶、Blank 弹性推底栏贴底】
+        //
+        // 旧实现底栏壳用 `.position({x:0, y:'100%'}) + markAnchor({y:'100%'})`
+        // 绝对定位贴根 Stack 底缘。问题：
+        // - 分栏后根 Stack 仍是全屏 → 底栏贴「全屏底」而不是「视频区底」
+        //  （竖屏时被资源面板完全盖住）；
+        // - 百分比定位 + 其他属性叠加会跑位（597 的 `.translate` 就是这么
+        //   把控件推到屏幕外的）。
+        //
+        // 改为 **Column + Blank 流式布局**：容器高度 = 视频区高
+        // （`controlsH`，未分栏时 100%），顶栏在顶部、Blank 吃掉中间剩余、
+        // 底栏自然落在容器底缘。不依赖任何百分比定位与平移属性。
+        Column() {
           if (this.locked && !this.state().tvMode) {
-            // ── 锁定态：仅左下锁钮（与进度条左数显同列）──
-            this.LockOnlyBar({ rev: this.renderTick });
-          } else {
-            this.TopBar({ rev: this.renderTick });
-          }
-        }, (epoch: number): string => `ctl-${epoch}`);
-
-        if (!this.locked || this.state().tvMode) {
-          // ── 底栏壳（稳定层，不随 epoch 重建）──
-          // 显隐条件与旧逻辑一致：仅「锁定 + 手机」走 LockOnlyBar、不出底栏；
-          // 锁定 + TV 仍显示底栏（锁钮在 ControlRow 里）。
-          // logo 进重建块会随每秒重建反复销毁/重载图片 → 闪烁（真机回归）；
-          // 渐变/定位/空点击吸收同样保持稳定。动态内容（进度行 + 控件行）
-          // 在壳内的独立 ForEach 里按 epoch 重建取新值。
-          Column() {
-            if (this.logoUrl.length > 0) {
-              Image(this.logoUrl)
-                .width(240)
-                .height(44)
-                .objectFit(ImageFit.Contain)
-                .margin({ bottom: 4 });
-            }
+            // ── 锁定态：仅左下锁钮（贴容器底，与进度条左数显同列）──
+            // Blank 在前把锁钮推到视频区底缘（对齐 Flutter
+            // `_buildLockOnlyControls` 的底部渐变条）。
+            Blank();
             ForEach([this.controlsEpoch], (epoch: number): void => {
-              this.BottomBar({ rev: this.renderTick });
-            }, (epoch: number): string => `bb-${epoch}`);
+              this.LockOnlyBar({ rev: this.renderTick });
+            }, (epoch: number): string => `ctl-${epoch}`);
+          } else {
+            // 【节点重建 = @Builder 子树唯一认的刷新】ForEach key 变化 → 旧节点
+            // 销毁、新节点创建 → TopBar 重新执行 → 图标/角标全部取最新值
+            //（与"隐藏再现"同一机制，由 controlsEpoch 即时触发）。
+            ForEach([this.controlsEpoch], (epoch: number): void => {
+              this.TopBar({ rev: this.renderTick });
+            }, (epoch: number): string => `ctl-${epoch}`);
+
+            // 弹性占位：把底栏推到容器（= 视频区）底缘。
+            Blank();
+            // ── 底栏壳（稳定层，不随 epoch 重建）──
+            // 显隐条件与旧逻辑一致：仅「锁定 + 手机」走 LockOnlyBar、不出底栏；
+            // 锁定 + TV 仍显示底栏（锁钮在 ControlRow 里）。
+            // logo 进重建块会随每秒重建反复销毁/重载图片 → 闪烁（真机回归）；
+            // 渐变/空点击吸收同样保持稳定。动态内容（进度行 + 控件行）
+            // 在壳内的独立 ForEach 里按 epoch 重建取新值。
+            Column() {
+              if (this.logoUrl.length > 0) {
+                Image(this.logoUrl)
+                  .width(240)
+                  .height(44)
+                  .objectFit(ImageFit.Contain)
+                  .margin({ bottom: 4 });
+              }
+              ForEach([this.controlsEpoch], (epoch: number): void => {
+                this.BottomBar({ rev: this.renderTick });
+              }, (epoch: number): string => `bb-${epoch}`);
+            }
+            .alignItems(HorizontalAlign.Start)
+            .width('100%')
+            // 底栏避让手势条（Flutter：`12 + MediaQuery.padding.bottom`）。
+            .padding({
+              left: 16,
+              right: 16,
+              top: 10,
+              bottom: 14 + HimiMpvNativeHost.getInstance().safeAreaBottom,
+            })
+            // Flutter _buildControls：transparent → black@0.85 自上而下渐变。
+            .linearGradient({
+              angle: 180,
+              colors: [['#00000000', 0.0], ['#D9000000', 1.0]],
+            })
+            // 【空点击吸收】点条形背景被吸收、不穿透到底层手势层。
+            .onClick((): void => {
+            });
           }
-          .alignItems(HorizontalAlign.Start)
-          .width('100%')
-          // 底栏避让手势条（Flutter：`12 + MediaQuery.padding.bottom`）。
-          .padding({
-            left: 16,
-            right: 16,
-            top: 10,
-            bottom: 14 + HimiMpvNativeHost.getInstance().safeAreaBottom,
-          })
-          // Flutter _buildControls：transparent → black@0.85 自上而下渐变。
-          .linearGradient({
-            angle: 180,
-            colors: [['#00000000', 0.0], ['#D9000000', 1.0]],
-          })
-          // 【空点击吸收】点条形背景被吸收、不穿透到底层手势层。
-          .onClick((): void => {
-          })
-          .position({ x: 0, y: '100%' })
-          .markAnchor({ x: '0%', y: '100%' });
         }
+        // 分栏收窄（对齐安卓 applyVideoSplit）：横屏收宽度、竖屏收高度；
+        // 未分栏时 0 → 回落 '100%'（与分栏前的行为完全一致）。
+        .width(this.controlsW > 0 ? this.controlsW : '100%')
+        .height(this.controlsH > 0 ? this.controlsH : '100%')
+        .alignItems(HorizontalAlign.Start)
+        // 不挡下层手势层：控件条自身有 onClick 吸收点击，空白区放行。
+        .hitTestBehavior(HitTestMode.Transparent);
       }
 
       // ── 手势提示与亮度/音量柱条（视频之上、控件之下）──
@@ -1802,7 +1911,10 @@ export struct HimiNativePlayerView {
       const w = area.width as number;
       const h = area.height as number;
       this.areaWidth = w;
+      this.areaHeight = h;
       this.portrait = h > w && w > 0;
+      // 600：控件层分栏收窄（见 updateControlsSplit 注释）。
+      this.updateControlsSplit();
     });
   }
 
@@ -1849,10 +1961,15 @@ export struct HimiNativePlayerView {
       angle: 180,
       colors: [['#00000000', 0.0], ['#D9000000', 1.0]],
     })
-    // 底部渐变条（非全屏高度）：wrap 高度 + 贴底，对齐 Flutter
+    // 底部渐变条（非全屏高度）：wrap 高度，对齐 Flutter
     // `_buildLockOnlyControls`（Container with bottom gradient）。
-    .position({ x: 0, y: '100%' })
-    .markAnchor({ x: '0%', y: '100%' })
+    //
+    // 【600 去掉百分比定位】旧实现用 `.position({y:'100%'}) +
+    // markAnchor({y:'100%'})` 贴根 Stack 底缘——分栏后那是「全屏底」而非
+    // 「视频区底」，且百分比定位与任何附加属性叠加都会跑位（597 的
+    // `.translate` 就是这么把控件推到屏幕外的）。
+    // 现在它已在控件层 Column 内、前面有 `Blank()` 弹性占位 → 天然贴
+    // 容器（= 视频区）底缘，不需要任何定位属性。
     // 【空点击吸收】点背景不穿透到底层手势层（与顶/底栏一致）。
     .onClick((): void => {
     });

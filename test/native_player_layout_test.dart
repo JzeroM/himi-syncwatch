@@ -484,11 +484,18 @@ void main() {
     test('手势层用 Default，不用 Transparent（否则控件点击被抢）', () {
       // Transparent 让手势层与控件**同时**进竞技场，Parallel 的 PanGesture
       // 会抢走触摸流 → 底部 onClick 全失效、面板遮罩点不关（真机回归）。
-      expect(ohosView, contains('hitTestBehavior(HitTestMode.Default)'));
+      //
+      // 600：断言范围收窄到**手势层本身**。控件层容器现在是
+      // `HitTestMode.Transparent`（那是「放行空白区给下层手势层」的正确
+      // 语义，与手势层自身必须是 Default 无关）。
+      final vsIdx = ohosView.indexOf('VideoStack() {');
+      expect(vsIdx, greaterThan(0));
+      final vsBody = ohosView.substring(vsIdx, vsIdx + 6000);
+      expect(vsBody, contains('hitTestBehavior(HitTestMode.Default)'));
       expect(
-        ohosView,
+        vsBody,
         isNot(contains('hitTestBehavior(HitTestMode.Transparent)')),
-        reason: '全屏手势层不能用 Transparent（会与控件抢占触摸）',
+        reason: '手势层不能用 Transparent（会与控件抢占触摸）',
       );
     });
 

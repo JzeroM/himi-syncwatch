@@ -37,22 +37,22 @@ void main() {
       expect(ohosPanel, isNot(contains('this.bottomInset')));
     });
 
-    test('底栏仍走 596 验证过的 position + markAnchor 贴底', () {
-      // 回滚后必须保留原组合（这是 596 真机验证过的定位方式）。
+    test('600 已改为流式布局：不再有 position + markAnchor', () {
+      // 598 时这里是「回滚到 596 的 position + markAnchor」；600 起控件层
+      // 改为 Column + Blank 流式布局，百分比定位全部移除（那类定位与任何
+      // 附加属性叠加都会跑位，597 的 .translate 就是这么把控件推出屏外的）。
       expect(
-        ohosView,
-        contains(".position({ x: 0, y: '100%' })\n"
-            "          .markAnchor({ x: '0%', y: '100%' });"),
+        RegExp(r'^\s*\.position\(', multiLine: true).hasMatch(ohosView),
+        isFalse,
+      );
+      expect(
+        RegExp(r'^\s*\.markAnchor\(', multiLine: true).hasMatch(ohosView),
+        isFalse,
       );
     });
 
-    test('锁控件同样只保留 position + markAnchor', () {
-      expect(
-        ohosView,
-        contains(".position({ x: 0, y: '100%' })\n"
-            "    .markAnchor({ x: '0%', y: '100%' })\n"
-            '    // 【空点击吸收】点背景不穿透到底层手势层（与顶/底栏一致）。'),
-      );
+    test('控件层靠 Blank 弹性推底（替代百分比定位）', () {
+      expect(ohosView, contains('Blank();'));
     });
   });
 
