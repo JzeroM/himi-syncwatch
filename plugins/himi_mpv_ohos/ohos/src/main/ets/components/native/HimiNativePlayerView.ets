@@ -1440,20 +1440,28 @@ export struct HimiNativePlayerView {
    */
   @Builder
   VideoStack() {
+    // 【599 结构性修复：单 Stack 包裹】594 抽 @Builder 时把原本在根 Stack
+    // 上的手势层误搬了进来 → 本 @Builder 有 **3 个平级子节点**
+    //（XComponent + 手势层 A + 手势层 B）。而它被放进 `Row()`：
+    //   Row() { this.VideoStack(); this.RoomPanelSlot(); }
+    // @Builder 展开后 Row 里是 4 个节点、其中 3 个都设 `'100%'` → 横向挤占，
+    // XComponent 只占第一格（画面偏左/被裁），手势层被挤出屏外（点屏无
+    // 反应），Row 尺寸异常又破坏根 Stack 后续控件层的定位基准（顶栏/底栏
+    // 全部消失）。真机「每次进播放页都没控件、点屏幕完全没反应」根因。
+    //
+    // 修法：本 @Builder 只保留**一个顶层节点**（Stack），视频与手势层在
+    // Stack 内叠放、各占 100%；分栏用的 layoutWeight/width/height 上移到
+    // 这个 Stack 上（`layoutWeight` 与 `width('100%')` 同时设会后者优先，
+    // 故展开用 'auto' + layoutWeight、收起用 '100%' + layoutWeight 0）。
+    Stack({ alignContent: Alignment.Top }) {
       // ── 视频层 ──
       XComponent({
         type: XComponentType.SURFACE,
         controller: this.controller,
       })
-        // 尺寸由外层分栏容器决定（见 build 顶部）：房间面板展开时视频区
-        // 收窄（593/594），横屏收窄宽度、竖屏收窄高度。
-        //
-        // 【坑】`layoutWeight(1)` 与 `width/height('100%')` 同时设置时后者
-        // 优先，layoutWeight 失效 → 视频不收窄、面板盖在上面（真机回归）。
-        // 因此必须二选一：展开用 layoutWeight（吃掉剩余空间），收起用 100%。
-        .width(this.roomPanelVisible() ? 'auto' : '100%')
-        .height(this.roomPanelVisible() ? 'auto' : '100%')
-        .layoutWeight(this.roomPanelVisible() ? 1 : 0)
+        // 撑满本 Stack（分栏收窄由外层 Stack 的 layoutWeight 负责）。
+        .width('100%')
+        .height('100%')
         .backgroundColor(Color.Black)
         // 【兜底：尺寸同步】XComponent 的 onSurfaceChanged 在部分转屏场景
         // 不触发（子窗口尺寸变化但 surface 未重建），导致 mpv 仍按旧尺寸
@@ -1467,6 +1475,9 @@ export struct HimiNativePlayerView {
         // 放大铺满全屏。宽高比一致故**不变形，只变糊**。
         // onAreaChange 在 onSurfaceChanged 之后触发，等于把正确值反复覆盖
         // 成错误值 —— 不是偶发，是稳定复现。必须经 vp2px 换算。
+        //
+        // 【必须挂在 XComponent 自己身上】挂在包裹它的 Stack 上会拿到外层
+        // 尺寸（与视频实际画布未必一致），画质/拉伸问题会复发。
         .onAreaChange((_old: Area, area: Area): void => {
           const wVp = area.width as number;
           const hVp = area.height as number;
@@ -1484,13 +1495,17 @@ export struct HimiNativePlayerView {
           HimiMpvNativeHost.getInstance().surfaceChanged('', wPx, hPx);
         });
 
-      // ── 点按层：视频手势（对齐 Flutter VideoGestureLayer）──
+      // ── 手势层（视频之上，同尺寸叠放）──
       // 单击显隐控件；双击播放暂停；横拖 seek；纵拖左亮度/右音量；
       // 长按临时倍速。锁定中只保留单击（与 Flutter 一致）。
       //
       // ArkUI 的 `.gesture()` 最多收 2 个参数，多个手势必须用
       // `GestureGroup(Parallel)`——等价 Flutter 手势竞技场：单击/双击由
       // 框架按时间消歧，长按与拖动按位移消歧（位移超阈值即取消长按）。
+      //
+      // 【599 只保留这一层】590 引入时 Row 里已有一层、根 Stack 顶层又写了
+      // 一层完全等价的（重复）；594 又把后者搬进本 @Builder → 同屏两个
+      // 手势层抢触摸且被挤出屏外。现在全文件只此一处。
       Column()
         .width('100%')
         .height('100%')
@@ -1529,47 +1544,18 @@ export struct HimiNativePlayerView {
               }),
           ),
         )
-      // ── 手势层（视频之上）──
-      Column()
-        .width('100%')
-        .height('100%')
-        .gesture(
-          GestureGroup(GestureMode.Parallel,
-            TapGesture({ count: 1 }).onAction((): void => {
-              this.onTapLayer();
-            }),
-            TapGesture({ count: 2 }).onAction((): void => {
-              this.onDoubleTapGesture();
-            }),
-            PanGesture({ direction: PanDirection.All })
-              .onActionStart((event: GestureEvent): void => {
-                this.onPanStart(event);
-              })
-              .onActionUpdate((event: GestureEvent): void => {
-                this.onPanUpdate(event);
-              })
-              .onActionEnd((): void => {
-                this.onPanEnd();
-              }),
-            LongPressGesture({ repeat: false })
-              .onAction((event: GestureEvent): void => {
-                this.onLongPressZone(event);
-              })
-              .onActionEnd((): void => {
-                this.onSpeedBoostEnd();
-              })
-              .onActionCancel((): void => {
-                this.onSpeedBoostEnd();
-              }),
-          ),
-        )
         // 【必须 Default，不能 Transparent】Stack 命中测试自上而下：
         // 控件条在上层，若本层用 Transparent 会与控件**同时**进入手势竞技场，
         // 而本层的 PanGesture（Parallel）会抢走触摸流 → 底部控件 onClick
         // 全部失效、面板遮罩点不关（真机回归）。Default 下控件先声明成功，
         // 本层不再介入；空视频区无控件声明，本层照常接管。
         .hitTestBehavior(HitTestMode.Default);
-
+    }
+    // 分栏（593/594）：房间面板展开时本 Stack 收窄（横屏收窄宽度、竖屏
+    // 收窄高度），吃掉 Row/Column 的剩余空间；收起时铺满 100%。
+    .width(this.roomPanelVisible() ? 'auto' : '100%')
+    .height(this.roomPanelVisible() ? 'auto' : '100%')
+    .layoutWeight(this.roomPanelVisible() ? 1 : 0);
   }
 
   /** 房间资源面板槽（593/594）：横屏右侧 320vp / 竖屏底部 280vp。 */

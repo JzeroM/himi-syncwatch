@@ -1071,6 +1071,33 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   white54`），与是否正在播无关。
   签名补 `isHost`——图标只有房主看得到，角色切换必须重建。
 
+### Phase 2.18：鸿蒙 VideoStack 单 Stack 重构（1.5.19+599）
+
+> 起因：真机「鸿蒙进播放页还是没控件」+「点屏幕完全没反应」+「每次进
+> 都没有」（截图是**横屏**）。
+
+- [x] **根因（594 引入的结构性 bug，与前两轮判断都不同）**：594 把视频区
+  抽成 `@Builder VideoStack()` 时，**误把原本在根 Stack 上的手势层一起搬
+  了进去** → 该 @Builder 有 **3 个平级子节点**
+  （`XComponent` + 手势层 A + 手势层 B）。而它被放进 `Row()`：
+  ```
+  Row() { this.VideoStack(); this.RoomPanelSlot(); }
+  ```
+  @Builder 展开后 Row 里是 4 个节点、其中 3 个都设 `'100%'` →
+  - `XComponent` 只占第一格 → **画面偏左/被裁**；
+  - 手势层被挤出屏外 → 触摸点落不到它上面 → **点屏幕完全没反应**；
+  - Row 尺寸异常 → 破坏根 Stack 后续控件层的定位基准 → **顶栏/底栏全消失**。
+- [x] **为什么前两轮都没修好**：597 的 `.translate` 在**横屏**下恒为 `0`
+  （`portrait=false`），回滚它必然无效；598 回滚后
+  `git diff 4207239 -- plugins/himi_mpv_ohos/` 为 0 行、问题依旧，正是反证。
+  根因是 594 的结构错误，一直没被触碰。
+- [x] **修法**：`VideoStack()` 只保留**一个顶层节点**（`Stack`），视频与
+  手势层在 Stack 内叠放、各占 `100%`；分栏用的
+  `layoutWeight`/`width`/`height` 上移到这个 Stack 上。同时删除 590 遗留的
+  重复手势层（`GestureGroup` 全文件从 2 处减到 1 处）。
+  `XComponent` 的 `onAreaChange` **仍挂在它自己身上**（挂外层 Stack 会
+  拿到外层尺寸 → 586 的画质/拉伸问题会复发），`vp2px` 换算一行未动。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
