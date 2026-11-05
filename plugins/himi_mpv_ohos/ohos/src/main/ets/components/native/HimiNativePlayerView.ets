@@ -518,10 +518,29 @@ export struct HimiNativePlayerView {
     }
     this.skipPrompt = s.skipPrompt;
     this.logoUrl = s.isRoom ? '' : s.logoUrl;
-    // 600：资源行播放/暂停图标重建纪元（见 roomPlayEpoch 注释）。
-    // 只在「暂停态 / 当前集」变化时推进——不用 tick 每 250ms 推进，
-    // 否则列表滚动位置每 250ms 归零。
-    const playSig = `${this.paused}|${this.currentEpisodeIndex}`;
+    // 资源面板重建纪元（604 补全签名）。
+    //
+    // 【真机回归：空房间/未播放时头部缺搜索、人数、角色徽章】
+    // 600 的签名只含 `paused | currentEpisodeIndex`——空房间时这两项恒定
+    // → epoch 不推进 → `RoomPanel` 节点不重建 → 头部那些读宿主普通字段
+    // （不在 ArkUI 观察链上）的条件永远取不到新值。
+    //
+    // 【真机回归：搜索添加的新资源不立即显示】同理——签名不含资源分组
+    // 内容，新资源加进来后签名不变 → 列表不重建。
+    //
+    // 修法：签名补全所有**驱动面板渲染**的字段。分组内容用轻量签名
+    //（组名/季数/各季集数），不逐条比 name/poster——那会每 tick 都变。
+    const groupsSig = this.state().resourceGroups
+      .map((g: NativeResourceGroupUi): string =>
+        `${g.name}:${g.seasons.length}:${g.seasons
+          .map((s: NativeSeasonGroupUi): string => `${s.episodes.length}`)
+          .join(',')}`)
+      .join('|');
+    const playSig = `${this.paused}|${this.currentEpisodeIndex}`
+      + `|${this.state().isHost}|${this.state().onlineUserCount}`
+      + `|${this.state().audienceName}|${this.state().resourcePanelOpen}`
+      + `|${groupsSig}`
+      + `|${this.state().broadcasts.length}`;
     if (playSig !== this.roomPlaySig) {
       this.roomPlaySig = playSig;
       this.roomPlayEpoch = this.roomPlayEpoch + 1;
@@ -1450,6 +1469,19 @@ export struct HimiNativePlayerView {
           .textAlign(TextAlign.Center)
           .margin({ right: 8 });
       }
+      // 【604 真机回归：列表里删除无效（点了变成切集）】
+      //
+      // 旧结构：删除按钮是行容器 `Row` 的**子节点**，而 `Row` 自己有
+      // onClick（切集/暂停）。ArkUI 的 onClick 会**冒泡到父节点** →
+      // 点删除时先发 removeResourceEpisode、再触发一次切集，删除动作被
+      // 掩盖。`ClickEvent` 上**没有** stopPropagation（只有 Hover/Mouse/
+      // Touch/Key 有），无法就地阻止。
+      //
+      // 修法：把「缩略图 + 集信息」包进一个可点击容器，行容器 `Row` 本身
+      // 不再挂 onClick。删除按钮与播放图标都是它的**兄弟节点** → 互不冒泡。
+      // 与 Flutter（InkWell 包内容区 + IconButton 兄弟）和安卓（子 View
+      // 各自 setOnClickListener）一致。
+      Row() {
       // 缩略图 56×36（圆角 4；无图时灰底 + movie 图标）
       Stack({ alignContent: Alignment.Center }) {
         if (ep.poster.length > 0) {
@@ -1499,8 +1531,22 @@ export struct HimiNativePlayerView {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start);
+      }
+      .layoutWeight(1)
+      .alignItems(VerticalAlign.Center)
+      .onClick((): void => {
+        // 内容区点击：当前集→暂停/继续，其它集→切集。
+        if (!this.state().isHost) {
+          return;
+        }
+        if (ep.isPlaying) {
+          this.host().optimisticTogglePaused();
+        } else {
+          this.host().optimisticSelectEpisode(ep.index);
+        }
+      });
 
-      // 删除（房主）
+      // 删除（房主）—— 与内容区是兄弟节点，点击不再冒泡到切集逻辑。
       if (this.state().isHost) {
         Text(String.fromCodePoint(NativePlayerIcons.ICON_CLOSE))
           .fontFamily(NativePlayerIcons.FONT_FAMILY)
@@ -1523,17 +1569,7 @@ export struct HimiNativePlayerView {
     // 596：当前集左 3vp accent 边框（Flutter Border(left, 3)，不占布局宽）。
     .border(ep.isPlaying
       ? { width: { left: 3 }, color: SEL_COLOR }
-      : { width: 0, color: Color.Transparent })
-    .onClick((): void => {
-      if (!this.state().isHost) {
-        return;
-      }
-      if (ep.isPlaying) {
-        this.host().optimisticTogglePaused();
-      } else {
-        this.host().optimisticSelectEpisode(ep.index);
-      }
-    });
+      : { width: 0, color: Color.Transparent });
   }
 
   /**
@@ -2389,6 +2425,23 @@ export struct HimiNativePlayerView {
               this.activePanel === NativePlayerPanelType.speed, 'bottomSpeed', (): void => {
                 this.openPanel(NativePlayerPanelType.speed);
               }, this.bottomScale);
+          }
+          // 【真机回归：播放时资源面板无法手动展开/收起】604 修正。
+          //
+          // 鸿蒙此前**完全没有**资源面板开关按钮（安卓有 panelToggleButton，
+          // 条件 `if (state.isRoom)`）→ 面板一旦打开就再也关不掉，视频区
+          // 一直被压缩，其它底栏控件被挤掉。
+          //
+          // 图标与安卓同源（ICON_OPEN_IN_FULL），条件 `isRoom`。
+          if (this.state().isRoom) {
+            this.IconChip(
+              String.fromCodePoint(NativePlayerIcons.ICON_OPEN_IN_FULL),
+              24, 4, false, false, 'panelToggle',
+              (): void => {
+                this.pokeAutoHide();
+                this.host().sendCommand('toggleResourcePanel', null);
+              },
+              this.bottomScale);
           }
         }
         .alignItems(VerticalAlign.Center);

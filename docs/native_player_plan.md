@@ -1231,6 +1231,55 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
     重新 `applyFullscreen` + 按 `lastVideoInsetPx` 重新收窄（`show()` 会把
     窗口尺寸重置回全屏）。
 
+### Phase 2.23：鸿蒙房间面板交互补全 + 分享面板遮挡（1.5.24+604）
+
+> 起因：真机「鸿蒙开空房间或房间未播放资源时资源面板顶部缺几个控件：
+> 搜索、人数、用户」「播放时资源面板无法手动展开收起」「资源列表里只能
+> 播放/暂停和切换视频（删除无效）」「搜索添加的新资源不能立马显示」
+> 「删除不了列表最后一个资源」「安卓和鸿蒙的分享控件弹出面板被原生层
+> 遮挡，没显示」。
+
+- [x] **空房间头部缺搜索/人数/角色徽章**：`RoomPanel` 包在
+  `ForEach([roomPlayEpoch])` 里，而 600 的签名只含
+  `paused | currentEpisodeIndex`——空房间时这两项恒定 → epoch 不推进 →
+  面板节点不重建 → 头部那些读宿主普通字段（不在 ArkUI 观察链）的条件
+  永远取不到新值。
+  修法：签名补全 `isHost` / `onlineUserCount` / `audienceName` /
+  `resourcePanelOpen` / `broadcasts.length`，另加轻量的资源分组内容签名
+  （组名/季数/各季集数）。
+- [x] **播放时无法手动展开/收起资源面板**：鸿蒙**完全没有**资源面板开关
+  按钮（安卓有 `panelToggleButton`，条件 `if (state.isRoom)`）→ 面板一旦
+  打开就再也关不掉，视频区一直被压缩、其它底栏控件被挤掉。
+  修法：`ControlRow` 右侧簇加 `panelToggle` 按钮（图标 `ICON_OPEN_IN_FULL`
+  与安卓同源，条件 `isRoom`，发 `toggleResourcePanel` 命令）。
+- [x] **列表里删除无效（点了变成切集）**：删除按钮 `Text` 是行容器 `Row`
+  的**子节点**，而 `Row` 自己有 onClick（切集/暂停）。ArkUI 的 onClick
+  会**冒泡到父节点** → 点删除先发 `removeResourceEpisode`、再触发一次切集。
+  且 `ClickEvent` 上**没有** `stopPropagation`（只有 Hover/Mouse/Touch/
+  Key 有），无法就地阻止。
+  修法：把「缩略图 + 集信息」包进可点击容器，行容器 `Row` 不再挂 onClick
+  ——删除按钮与播放图标成为它的**兄弟节点**，互不冒泡。与 Flutter
+  （`InkWell` 包内容区 + `IconButton` 兄弟）和安卓（子 View 各自
+  `setOnClickListener`）一致。
+- [x] **搜索添加的资源不立即显示**：`_addResourceLocally` 只做
+  `setState(_rebuildGroups())`，没有推原生；且原生重建签名不含资源分组
+  内容 → 新资源加进来后签名不变、列表不重建。
+  修法：`_addResourceLocally` 末尾补 `_syncNativePanelData()`；签名补
+  资源分组内容（同第一条）。
+- [x] **删不掉列表最后一个资源**：594 的「保留非空值」逻辑在
+  `_resourceGroups` 为空时返回上次快照——删到最后一个时原生收到的仍是
+  删除前的旧列表。（原生命令路径本就有 `_syncNativePanelData()`，问题是
+  推送了**旧数据**。）
+  修法：新增 `_resourceGroupsCleared` 标记，只由「用户主动删除」置位；
+  `_nativeResourceGroups()` 据此放行空列表。594 的保护仍兜住起播瞬态。
+  同时 `_removeEpisode` 末尾补 `_syncNativePanelData()`（删除后立即刷新）。
+- [x] **分享面板/房间解散提示被原生层遮挡**：原生播放窗口（鸿蒙子窗口 /
+  安卓 Dialog）的 z-order 在 Flutter 页面**之上**，`showDialog` 被完全
+  盖住。603 已修「离房确认」与「资源搜索」，但**漏了分享**。
+  修法：抽公共辅助 `_suspendNativeUiForDialog()` /
+  `_resumeNativeUiAfterDialog()`；分享面板与「房间已解散」提示都改为
+  「隐藏原生窗口 → 弹框 → 关闭后恢复」（session 未销毁 → 零黑屏）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

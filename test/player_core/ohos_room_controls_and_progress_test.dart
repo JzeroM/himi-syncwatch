@@ -96,13 +96,13 @@ void main() {
       expect(view, contains("private roomPlaySig: string = '';"));
     });
 
-    test('签名只含 paused | currentEpisodeIndex（不每 250ms 推进）', () {
-      expect(
-        view,
-        contains(r'const playSig = `${this.paused}|${this.currentEpisodeIndex}`;'),
-      );
-      // 只有变化时才自增（不是 tick 无条件推进）。
+    test('签名按「变化才自增」推进（不每 250ms 无条件推进）', () {
+      // 604 起签名已补全（原 600 只含 paused|currentEpisodeIndex，导致
+      // 空房间时头部控件与新增资源都不刷新）。核心约束仍是「变化才自增」。
+      expect(view, contains('const playSig ='));
       expect(view, contains('if (playSig !== this.roomPlaySig) {'));
+      // 不允许 tick 无条件自增。
+      expect(view, isNot(contains('this.roomPlayEpoch = this.roomPlayEpoch + 1;\n    this.renderTick')));
     });
 
     test('RoomPanelSlot 按 roomPlayEpoch 重建', () {

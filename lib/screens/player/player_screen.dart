@@ -3364,6 +3364,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   List<NativeResourceGroup> _lastNonEmptyResourceGroups =
       const <NativeResourceGroup>[];
 
+  /// 用户主动删空资源后允许推送**空列表**（604）。
+  ///
+  /// 【真机回归：删不掉列表最后一个资源】594 的「保留非空值」逻辑在
+  /// `_resourceGroups` 为空时返回上次快照——删到最后一个时原生收到的仍是
+  /// 删除前的旧列表。
+  ///
+  /// 该标记只由「用户主动删除」置位：起播瞬态的瞬时清空仍被 594 的
+  /// 保护逻辑兜住（那是它原本要解决的问题）。
+  bool _resourceGroupsCleared = false;
+
   /// 明确清空资源缓存（换片/退出房间时调用，避免旧剧资源残留）。
   @visibleForTesting
   void clearNativeResourceCache() {
@@ -3404,6 +3414,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   .toList(growable: false),
             ))
         .toList(growable: false);
+    if (_resourceGroupsCleared) {
+      // 用户主动删空：真清空（否则原生永远显示删除前的旧列表）。
+      _resourceGroupsCleared = false;
+      _lastNonEmptyResourceGroups = groups;
+      return groups;
+    }
     if (groups.isNotEmpty) {
       _lastNonEmptyResourceGroups = groups;
       return groups;
@@ -5412,6 +5428,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         rtmService.unsubscribe(_rtmChannel!);
       } catch (_) {}
     }
+    // 604：先隐藏原生窗口，否则「房间已解散」对话框被它盖住
+    //（观众端收到通知时原生 UI 通常还开着）。
+    unawaited(_suspendNativeUiForDialog());
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -7009,9 +7028,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     _hasEpisodeList = _episodes.isNotEmpty;
     _addBroadcastMessage('已移除: $removedName');
+    // 604：标记「用户主动删空」，允许推空列表（见 _resourceGroupsCleared）。
+    _resourceGroupsCleared = true;
     setState(() {
       _rebuildGroups();
     });
+    // 604：删除后立即推原生（否则列表要等下一次播放才刷新）。
+    _syncNativePanelData();
 
     // 房主发送删除命令
     if (sendRtm && _rtmChannel != null) {
@@ -7074,6 +7097,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     setState(() {
       _rebuildGroups();
     });
+    // 604：添加后立即推原生（否则原生资源列表要等下一次播放才刷新）。
+    _syncNativePanelData();
   }
 
   /// 原生「聚合搜索加资源」入口（590）。
@@ -7195,21 +7220,62 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  void _showShareRoomDialog() {
+  /// 弹 Flutter 对话框前隐藏原生窗口（604）。
+  ///
+  /// 【604 真机回归：分享面板被原生层遮挡】原生播放窗口（鸿蒙子窗口 /
+  /// 安卓 Dialog）的 z-order 在 Flutter 页面**之上**——不隐藏会完全盖住
+  /// `showDialog`。与 603 的离房确认/资源搜索同一修法。
+  ///
+  /// 返回是否真的隐藏了（供 [_resumeNativeUiAfterDialog] 判断）。
+  Future<bool> _suspendNativeUiForDialog() async {
+    final mpv = _player;
+    if (mpv is! MpvPlayerAdapter || !mpv.nativeUiActive.value) return false;
+    try {
+      await mpv.suspendNativeUi();
+      return true;
+    } catch (e) {
+      LogService().log('mpv', '隐藏原生 UI 失败: $e');
+      return false;
+    }
+  }
+
+  /// 对话框关闭后恢复原生窗口（604；session 未销毁 → 零黑屏）。
+  Future<void> _resumeNativeUiAfterDialog(bool suspended) async {
+    if (!suspended || !mounted || _disposed) return;
+    final mpv = _player;
+    if (mpv is! MpvPlayerAdapter) return;
+    try {
+      await mpv.resumeNativeUi();
+    } catch (e) {
+      LogService().log('mpv', '恢复原生 UI 失败: $e');
+    }
+  }
+
+  Future<void> _showShareRoomDialog() async {
     final roomCode = widget.roomCode;
     if (_shareDialogOpen || roomCode == null) return;
     _shareDialogOpen = true;
-    showDialog<void>(
-      context: context,
-      builder: (_) => RoomShareDialog(
-        roomCode: roomCode,
-        onShareQr: _shareQrImage,
-        onSaveQr: _saveQrToGallery,
-        onCopyCode: _copyRoomCode,
-      ),
-    ).whenComplete(() {
+    // 604：先隐藏原生窗口，否则分享面板被它完全盖住。
+    final suspended = await _suspendNativeUiForDialog();
+    if (!mounted) {
       _shareDialogOpen = false;
-    });
+      await _resumeNativeUiAfterDialog(suspended);
+      return;
+    }
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => RoomShareDialog(
+          roomCode: roomCode,
+          onShareQr: _shareQrImage,
+          onSaveQr: _saveQrToGallery,
+          onCopyCode: _copyRoomCode,
+        ),
+      );
+    } finally {
+      _shareDialogOpen = false;
+      await _resumeNativeUiAfterDialog(suspended);
+    }
   }
 
   @override
