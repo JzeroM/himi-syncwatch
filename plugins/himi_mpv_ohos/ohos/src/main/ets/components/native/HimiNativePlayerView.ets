@@ -357,6 +357,24 @@ export struct HimiNativePlayerView {
   @State controlsH: number = 0;
 
   /**
+   * 视频区宽高（602，**必须 @State**）。
+   *
+   * 【真机回归：横竖屏切换短暂黑屏】`VideoStack()` 原本在 `if (portrait) {
+   * Column{VideoStack} } else { Row{VideoStack} }` 两个分支里各调用一次——
+   * ArkUI 的 if/else 条件翻转会**整体销毁旧分支、创建新分支**，里面的
+   * `XComponent` 随之销毁重建（onSurfaceDestroyed → 解绑 → 黑一帧 →
+   * onSurfaceCreated → 重绑 → 画面回来）。
+   *
+   * 修法：视频层提到分支**之外**、只在根 Stack 里存在一份实例，方向切换
+   * 只移动资源面板、不动视频。尺寸改用显式值（0 = '100%'）：
+   * - 横屏分栏：`videoW = 屏宽 - ROOM_PANEL_WIDTH`，`videoH = 0`；
+   * - 竖屏分栏：`videoW = 0`，`videoH = 屏高 - ROOM_PANEL_HEIGHT`；
+   * - 未分栏：两者 0 → 铺满。
+   */
+  @State videoW: number = 0;
+  @State videoH: number = 0;
+
+  /**
    * 资源行播放/暂停图标重建纪元（600，**必须 @State**）。
    *
    * 【真机回归：资源列表前的播放/暂停图标状态不变化】`RoomEpisodeRow` 读
@@ -623,12 +641,20 @@ export struct HimiNativePlayerView {
     if (split && !this.portrait) {
       this.controlsW = Math.max(1, w - ROOM_PANEL_WIDTH);
       this.controlsH = 0;
+      // 602：视频层同样按显式宽度收窄（横屏视频区底 == 屏幕底）。
+      this.videoW = Math.max(1, w - ROOM_PANEL_WIDTH);
+      this.videoH = 0;
     } else if (split && this.portrait) {
       this.controlsW = 0;
       this.controlsH = Math.max(1, h - ROOM_PANEL_HEIGHT);
+      // 602：竖屏视频区宽 == 屏幕宽，只收高度。
+      this.videoW = 0;
+      this.videoH = Math.max(1, h - ROOM_PANEL_HEIGHT);
     } else {
       this.controlsW = 0;
       this.controlsH = 0;
+      this.videoW = 0;
+      this.videoH = 0;
     }
   }
 
@@ -1629,11 +1655,16 @@ export struct HimiNativePlayerView {
         // 本层不再介入；空视频区无控件声明，本层照常接管。
         .hitTestBehavior(HitTestMode.Default);
     }
-    // 分栏（593/594）：房间面板展开时本 Stack 收窄（横屏收窄宽度、竖屏
-    // 收窄高度），吃掉 Row/Column 的剩余空间；收起时铺满 100%。
-    .width(this.roomPanelVisible() ? 'auto' : '100%')
-    .height(this.roomPanelVisible() ? 'auto' : '100%')
-    .layoutWeight(this.roomPanelVisible() ? 1 : 0);
+    // 分栏尺寸（602）：改用**显式宽高**而非 layoutWeight。
+    //
+    // 视频层已提到 if/else 分支之外（转屏不再销毁 XComponent，见 videoW
+    // 注释），因此它不再处于 Row/Column 的弹性布局里，layoutWeight 不再
+    // 适用。尺寸由 videoW/videoH 显式计算（0 = 铺满 100%）。
+    //
+    // 对齐安卓 applyVideoSplit 语义：横屏只收宽度（视频区底 == 屏幕底），
+    // 竖屏只收高度（视频区宽 == 屏幕宽）。
+    .width(this.videoW > 0 ? this.videoW : '100%')
+    .height(this.videoH > 0 ? this.videoH : '100%');
   }
 
   /** 房间资源面板槽（593/594）：横屏右侧 320vp / 竖屏底部 280vp。 */
@@ -1649,12 +1680,25 @@ export struct HimiNativePlayerView {
         this.RoomPanel();
       }
       .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
-      .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%');
+      .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%')
+      // 602：用 margin 推到边缘（见 build 里的定位注释）。
+      // 触摸命中范围 = 面板自身区域，视频区不受影响。
+      // - 竖屏：面板贴底 → marginTop = 视频区高（= 屏高 - 面板高）；
+      // - 横屏：面板贴右 → marginStart = 视频区宽（= 屏宽 - 面板宽）。
+      .margin(this.portrait
+        ? { top: this.videoH > 0 ? this.videoH : 0 }
+        : { left: this.videoW > 0 ? this.videoW : 0 });
     }, (epoch: number): string => `room-${epoch}`);
   }
 
   build() {
-    Stack({ alignContent: Alignment.Top }) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      // 【602：根 Stack 对齐改 TopStart】`Alignment.Top` 的**水平**对齐是
+      // `Center`——控件层容器宽度是具体数值（屏宽 - 320vp，不足 100%）时
+      // 会被水平居中，右缘被资源面板切掉（真机截图回归）。
+      // `TopStart` 让不足宽的子节点贴左。已核实其余子节点全是 100%（不受
+      // 影响），只有控件层会受此约束。
+      //
       // ── 视频 + 房间资源面板：Row 分栏（590）──
       // 【必须流式布局】鸿蒙禁止 position/markAnchor 百分比定位（真机跑位
       // 回归，见 test/native_player_theme_test.dart）：尾组曾用
@@ -1674,29 +1718,38 @@ export struct HimiNativePlayerView {
       // `.position({x:'100%',y:'50%'})`，百分比基准是父容器、Stack 高度不定
       // → 控件跑到屏幕中部/屏外。
       //
-      // 【594 竖屏上下结构】用 if/else 双分支（Row / Column 各写一份）。
-      // 不用 `Flex({direction})`：ArkTS 对三元表达式推断方向枚举会报
-      // `arkts-no-any-unknown`（CI 实测），显式分支最稳。
-      // - 横屏 Row：视频左、面板右 320vp（Flutter
-      //   `Row(Expanded(video), SizedBox(320))`）；
-      // - 竖屏 Column：视频上、面板下 280vp（Flutter
-      //   `Column(Expanded(video), SizedBox(280))`）。
-      if (this.roomPanelVisible() && this.portrait) {
-        Column() {
-          this.VideoStack();
-          this.RoomPanelSlot();
-        }
-        .width('100%')
-        .height('100%');
-      } else {
-        Row() {
-          this.VideoStack();
-          if (this.roomPanelVisible()) {
-            this.RoomPanelSlot();
-          }
-        }
-        .width('100%')
-        .height('100%');
+      // ── 视频层（唯一实例，转屏不销毁重建）──
+      //
+      // 【真机回归：横竖屏切换短暂黑屏】594 用 `if (portrait) {
+      // Column{VideoStack} } else { Row{VideoStack} }` 双分支各写一份
+      // `VideoStack()`——ArkUI 条件翻转会**整体销毁旧分支、创建新分支**，
+      // 里面的 `XComponent` 随之销毁重建（onSurfaceDestroyed → 解绑 →
+      // 黑一帧 → onSurfaceCreated → 重绑 → 画面回来）。
+      //
+      // 602 修法：视频层提到分支**之外**、根 Stack 里只存在一份。方向切换
+      // 只移动资源面板，视频节点完全不动 → 无黑屏。
+      // 尺寸由 videoW/videoH 显式控制（见字段注释）。
+      this.VideoStack();
+
+      // ── 房间资源面板（按方向定位，不动视频层）──
+      // 横屏：贴右侧 320vp、全高（Flutter `Row(Expanded, SizedBox(320))`）；
+      // 竖屏：贴底部 280vp、全宽（Flutter `Column(Expanded, SizedBox(280))`）。
+      // 用 Stack 的 `alignContent` + 显式尺寸实现，不依赖 Row/Column 弹性。
+      // 【定位方式：显式尺寸 + margin，不用 Blank 铺满】
+      //
+      // 曾试过「全尺寸容器 + Blank 推边」，但两个方向都有问题：
+      // - 容器用 Default 会**阻断**下层视频手势层的触摸（房间模式点视频区
+      //   唤不出控件）；
+      // - 容器用 Transparent 会让面板区域与视频手势层**同时**响应（点资源
+      //   列表会顺带切换控件显隐）。
+      // 正确做法：面板容器只占**面板自身尺寸**，用 margin 推到边缘——
+      // 触摸命中范围恰好等于面板区域，视频区完全不受影响。
+      //
+      // margin 由 videoW/videoH 推出（都是 @State，随转屏/面板开关更新）：
+      // - 横屏：面板贴右 → `marginStart = videoW`（= 屏宽 - 面板宽）；
+      // - 竖屏：面板贴底 → `marginTop = videoH`（= 屏高 - 面板高）。
+      if (this.roomPanelVisible()) {
+        this.RoomPanelSlot();
       }
 
       // ── 加载指示器（586）：居中转圈，在控件层**之下**（对齐 Flutter
@@ -1811,16 +1864,11 @@ export struct HimiNativePlayerView {
         // 未分栏时 0 → 回落 '100%'（与分栏前的行为完全一致）。
         .width(this.controlsW > 0 ? this.controlsW : '100%')
         .height(this.controlsH > 0 ? this.controlsH : '100%')
-        // 【真机回归：横屏控件位置不对（整体居中、被面板切掉）】601 修正。
-        //
-        // 根 Stack 是 `alignContent: Alignment.Top`——`Top` 的**水平**对齐
-        // 是 `Center`。本容器宽度是具体数值（`屏宽 - 320vp`，不足 100%），
-        // 在 Stack 里就按 Top 的水平居中规则摆放 → 控件层整体右移居中、
-        // 右缘被资源面板切掉（真机截图回归）。
-        //
-        // 必须显式 `.align(Alignment.TopStart)` 贴左上。改根 Stack 的
-        // alignContent 会影响所有子节点（风险大），故只约束本容器。
-        .align(Alignment.TopStart)
+        // 【602：控件层贴左靠根 Stack 的 alignContent】601 曾在这里加
+        // `.align(Alignment.TopStart)`——那是**错的**：`.align()` 的语义是
+        // 「组件内容在自身绘制区内的对齐」，不能定位组件在父 Stack 中的
+        // 位置，真机截图证实无效（控件仍居中）。
+        // 正确修法是根 Stack 改 `Alignment.TopStart`（见 build 顶部注释）。
         .alignItems(HorizontalAlign.Start)
         // 不挡下层手势层：控件条自身有 onClick 吸收点击，空白区放行。
         .hitTestBehavior(HitTestMode.Transparent);

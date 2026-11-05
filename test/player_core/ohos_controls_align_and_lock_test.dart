@@ -15,14 +15,18 @@ void main() {
   final flutter = File('lib/screens/player/player_screen.dart').readAsStringSync();
 
   group('① 横屏控件层贴左上（不再居中/被面板切掉）', () {
-    test('控件层容器显式 .align(Alignment.TopStart)', () {
-      // 根 Stack 是 `alignContent: Alignment.Top`，其**水平**对齐是 Center。
-      // 容器宽度是具体数值（屏宽 - 320vp，不足 100%）→ 按 Top 的水平居中
-      // 规则摆放 → 控件整体右移居中、右缘被资源面板切掉（真机截图回归）。
-      final idx = view.indexOf('if (this.showControls && this.renderTick >= 0) {');
-      expect(idx, greaterThan(0));
-      final body = view.substring(idx, idx + 5000);
-      expect(body, contains('.align(Alignment.TopStart)'));
+    test('控件层靠根 Stack 的 TopStart 贴左（不是 .align）', () {
+      // `Alignment.Top` 的**水平**对齐是 Center——容器宽度是具体数值
+      //（屏宽 - 320vp，不足 100%）时会被水平居中，右缘被资源面板切掉。
+      // `.align()` 只管「内容在自身绘制区内对齐」，无法定位自身在父 Stack
+      // 的位置（601 用它是错的，真机截图证实无效）。
+      expect(view, contains('Stack({ alignContent: Alignment.TopStart })'));
+      // 601 的无效写法已移除（注释里提到它不算，只检查属性行）。
+      final attrLines = view
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(attrLines, isNot(contains('.align(Alignment.TopStart)')));
     });
 
     test('控件层仍按 controlsW/controlsH 收窄', () {
@@ -32,8 +36,11 @@ void main() {
       expect(body, contains(".height(this.controlsH > 0 ? this.controlsH : '100%')"));
     });
 
-    test('注释记录根因', () {
-      expect(view, contains('横屏控件位置不对'));
+    test('根 Stack 改为 TopStart（.align 无效已被替换）', () {
+      // 601 加的 `.align(Alignment.TopStart)` 是**错的**：`.align()` 语义是
+      // 「组件内容在自身绘制区内的对齐」，不能定位组件在父 Stack 中的位置。
+      expect(view, contains('Stack({ alignContent: Alignment.TopStart })'));
+      expect(view, contains('根 Stack 对齐改 TopStart'));
     });
   });
 

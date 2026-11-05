@@ -78,18 +78,15 @@ void main() {
   });
 
   group('鸿蒙 XComponent 分栏', () {
-    test('分栏属性挂在 VideoStack 的外层 Stack 上（599 重构）', () {
-      // 594/599：分栏尺寸由 VideoStack() 内**外层 Stack** 承担，XComponent
-      // 自身恒为 100%（撑满该 Stack）。旧实现把 layoutWeight/width 挂在
-      // XComponent 上——而它与两个手势层是 Row 的三个兄弟节点 → 横向挤占、
-      // 画面偏左、手势层被挤出屏外（真机「没控件 + 点屏无反应」）。
-      expect(ohosView, contains(".width(this.roomPanelVisible() ? 'auto' : '100%')"));
-      expect(ohosView, contains(".height(this.roomPanelVisible() ? 'auto' : '100%')"));
-      expect(ohosView, contains('.layoutWeight(this.roomPanelVisible() ? 1 : 0)'));
-      // XComponent 自身不得再带分栏属性（必须 100% 撑满外层 Stack）。
+    test('分栏尺寸挂在 VideoStack 的外层 Stack 上（602 显式 videoW/videoH）', () {
+      // 599：分栏尺寸由 VideoStack() 内**外层 Stack** 承担，XComponent 恒
+      // 100%（撑满该 Stack）。602 把 layoutWeight 改成显式 videoW/videoH
+      // ——视频层提到 if/else 分支外后不再处于 Row/Column 弹性布局。
+      expect(ohosView, contains(".width(this.videoW > 0 ? this.videoW : '100%')"));
+      expect(ohosView, contains(".height(this.videoH > 0 ? this.videoH : '100%')"));
+      // XComponent 自身不得带分栏属性。
       final xIdx = ohosView.indexOf('XComponent({');
       final xEnd = ohosView.indexOf('// ── 手势层', xIdx);
-      // 只检查属性行（注释里会提到 layoutWeight 这个词）。
       final attrLines = ohosView
           .substring(xIdx, xEnd)
           .split('\n')
@@ -98,7 +95,7 @@ void main() {
       expect(attrLines, contains(".width('100%')"));
       expect(attrLines, contains(".height('100%')"));
       expect(attrLines, isNot(contains('layoutWeight')));
-      expect(attrLines, isNot(contains("this.roomPanelVisible() ? 'auto' : '100%'")));
+      expect(attrLines, isNot(contains('videoW')));
     });
 
     test('RoomPanel 按方向切 320vp / 100%（594）', () {

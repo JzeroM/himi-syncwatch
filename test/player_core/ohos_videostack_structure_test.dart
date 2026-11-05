@@ -45,9 +45,9 @@ void main() {
       final gestureIdx = block.indexOf('.gesture(');
       expect(xIdx, greaterThan(stackIdx));
       expect(gestureIdx, greaterThan(xIdx));
-      // Stack 的收尾属性（分栏）必须在手势层之后。
-      final layoutWeightIdx = block.indexOf('.layoutWeight(');
-      expect(layoutWeightIdx, greaterThan(gestureIdx));
+      // Stack 的收尾属性（分栏尺寸）必须在手势层之后。
+      final sizeIdx = block.indexOf('.width(this.videoW');
+      expect(sizeIdx, greaterThan(gestureIdx));
     });
 
     test('根 Stack 里没有第二个手势层', () {
@@ -65,34 +65,32 @@ void main() {
   });
 
   group('② 分栏属性归属正确', () {
-    test('layoutWeight / auto-width 挂在外层 Stack，不在 XComponent', () {
+    test('分栏尺寸由外层 Stack 的 videoW/videoH 控制，XComponent 恒 100%', () {
       final block = videoStackBlock();
       final xIdx = block.indexOf('XComponent({');
-      // XComponent 的属性链到「手势层注释」为止（不含外层 Stack 的属性）。
       final xEnd = block.indexOf('// ── 手势层', xIdx);
-      final xBody = block.substring(xIdx, xEnd);
-      // 只检查**属性行**（注释里会提到 layoutWeight 这个词，不能误判）。
-      final attrLines = xBody
+      final attrLines = block
+          .substring(xIdx, xEnd)
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
       expect(attrLines, contains(".width('100%')"));
       expect(attrLines, contains(".height('100%')"));
       expect(attrLines, isNot(contains('layoutWeight')));
-      expect(attrLines, isNot(contains("this.roomPanelVisible() ? 'auto'")));
-      // 分栏属性出现在 XComponent 段之后（属于外层 Stack）。
-      expect(block.lastIndexOf('.layoutWeight('), greaterThan(xEnd));
+      expect(attrLines, isNot(contains('videoW')));
+      // 分栏尺寸在外层 Stack 上（XComponent 段之后）。
+      expect(block.lastIndexOf('.width(this.videoW'), greaterThan(xEnd));
     });
 
-    test('竖屏/横屏分支都调用同一个 VideoStack', () {
-      expect(ohosView, contains('this.VideoStack();'));
-      // 竖屏 Column 与横屏 Row 各调用一次（注释里的示例行不算）。
+    test('VideoStack 全文件只调用一次（转屏不销毁 XComponent）', () {
+      // 602：视频层提到 if/else 分支之外。旧实现 Row/Column 各调用一次 →
+      // 方向翻转时整分支销毁重建，XComponent 解绑 → 黑一帧（真机回归）。
       final calls = ohosView
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .where((l) => l.contains('this.VideoStack();'))
           .length;
-      expect(calls, 2);
+      expect(calls, 1, reason: '视频层必须只有一个实例，转屏才不黑屏');
     });
   });
 

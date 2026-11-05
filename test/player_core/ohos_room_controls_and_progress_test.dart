@@ -160,10 +160,10 @@ void main() {
       expect(RegExp(r'XComponent\(\{').allMatches(view).length, 1);
     });
 
-    test('VideoStack 仍是单 Stack 包裹', () {
+    test('VideoStack 仍是单 Stack 包裹，尺寸改由 videoW/videoH 控制', () {
       expect(view, contains('Stack({ alignContent: Alignment.Top }) {'));
-      expect(view, contains(".width(this.roomPanelVisible() ? 'auto' : '100%')"));
-      expect(view, contains('.layoutWeight(this.roomPanelVisible() ? 1 : 0)'));
+      expect(view, contains(".width(this.videoW > 0 ? this.videoW : '100%')"));
+      expect(view, contains(".height(this.videoH > 0 ? this.videoH : '100%')"));
     });
 
     test('不含 .translate', () {

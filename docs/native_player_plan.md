@@ -1166,6 +1166,35 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   `lockButton.visibility = if (!tv) VISIBLE else GONE`（也不看 `isRoom`）。
   修法：去掉 `&& !this.state().isRoom`，只看 `tvMode`，对齐两端。
 
+### Phase 2.21：鸿蒙横竖屏切换黑屏 + 控件贴左（1.5.22+602）
+
+> 起因：真机「鸿蒙横屏房间模式的控件 UI 还是老样子」（截图：控件仍居中、
+> 右缘被资源面板切掉）、「横竖屏切换为什么会短暂黑屏」。
+
+- [x] **601 的修法无效（`.align()` 用错了）**：601 给控件层容器加了
+  `.align(Alignment.TopStart)`。但 `.align()` 的 ArkUI 语义是
+  「**组件内容**在自身绘制区内的对齐」，**不能**定位组件在父 `Stack`
+  中的位置——真机截图证实控件仍居中。
+  正确修法：根 `Stack` 的 `alignContent` 从 `Alignment.Top` 改为
+  `Alignment.TopStart`（`Top` 的**水平**对齐是 `Center`）。已核实根
+  Stack 其余子节点全部是 `100% × 100%`（分栏容器 / 加载指示器 /
+  `DanmakuLayer` / 手势提示 / 倍速提示 / 音量柱条 / `NativePlayerPanel`），
+  只有控件层容器宽度是具体数值（`屏宽 - 320vp`）——改 `alignContent`
+  只影响控件层，风险可控。
+- [x] **横竖屏切换短暂黑屏**：594 的分栏结构是
+  `if (portrait) { Column{ VideoStack } } else { Row{ VideoStack } }`——
+  `VideoStack()` 在两个分支里**各调用一次**。ArkUI 的 `if/else` 条件翻转
+  会**整体销毁旧分支、创建新分支**，里面的 `XComponent` 随之
+  `onSurfaceDestroyed`（解绑 → 黑一帧）→ `onSurfaceCreated`（重绑 → 画面
+  回来）。
+  修法：**视频层提到 if/else 分支之外**，根 Stack 里只存在一份实例；方向
+  切换只移动资源面板，视频节点完全不动。
+  配套：`VideoStack` 的尺寸从 `layoutWeight`（依赖 Row/Column 弹性布局）
+  改为显式 `videoW`/`videoH`（0 = 铺满 100%），由
+  `updateControlsSplit()` 一并计算——横屏 `videoW = 屏宽 - 320vp`，
+  竖屏 `videoH = 屏高 - 280vp`。资源面板改用 `Blank` 弹性推到边缘
+  （竖屏贴底、横屏贴右）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
