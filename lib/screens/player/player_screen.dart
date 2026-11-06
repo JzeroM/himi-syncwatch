@@ -10624,13 +10624,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _player.setHttpHeaders({'X-Emby-Token': token});
       }
       try {
+        // 617：外挂字幕走 `sub-add ... select`，mpv 会把它**追加到容器末尾**
+        // 并自动选中——此时「Emby 索引」与「容器内轨道序号」不再对应
+        //（外挂轨总在最后）。故这里**不能**再按 `[embyIndex]` 选轨，否则会
+        // 切到别的内嵌轨，面板显示与实际播放不一致。
         await _player.setMedia(subtitleUrl, type: AdapterMediaType.subtitle);
       } catch (e) {
         LogService().log('Player', '加载外挂字幕失败: $e');
       }
-      _player.activeSubtitleTracks = [embyIndex];
+      // sub-add select 已自动激活新轨（media_kit 语义）；非 media_kit 引擎
+      // 用「真实字幕轨数 - 1」选中末尾那条（外挂轨追加在末尾）。
+      if (_player is! MediaKitPlayerProvider) {
+        final count = _player.mediaInfo.subtitleCount;
+        if (count > 0) _player.activeSubtitleTracks = [count - 1];
+      }
     } else {
-      // 内嵌字幕：用 fvp 原生轨道切换，瞬间完成
+      // 内嵌字幕：按 Emby 服务端流顺序映射到 mpv track id。
       _player.activeSubtitleTracks = [embyIndex];
     }
 

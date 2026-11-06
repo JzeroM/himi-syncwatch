@@ -477,10 +477,15 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
           result.success(null);
           return;
         case 'setAudioTrack':
+          // 617：`id` 是 **真实 mpv track id**（Dart 侧 `_parseTracks` 解析
+          // 本平台 getTracks 返回的原生 track-list 后映射得出），直接写 `aid`
+          // 语义正确。轨道表未就绪时 Dart 侧传 Emby 序号兜底，此时 aid 可能
+          // 不匹配——但那种状态下也无从精确选轨，保持现状不额外纠偏。
           this.requireLib().setProperty('aid', this.number(args, 'id', 0));
           result.success(null);
           return;
         case 'setSubtitleTrack':
+          // 617：同上，`sid` 收真实 mpv track id（0 = 关闭字幕）。
           this.requireLib().setProperty('sid', this.number(args, 'id', 0));
           result.success(null);
           return;

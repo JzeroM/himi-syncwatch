@@ -1676,6 +1676,56 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   时钟、位置公式、平滑收敛、倍速、冻结、空态停帧、销毁清理、Flutter
   参考语义）；同步更新 5 个旧测试文件的 8 条断言。
 
+### Phase 2.36：MPV 音轨/字幕按 Emby 服务端顺序映射（1.5.37+617）
+
+> 起因：用户「我指的是选择的字幕音频和实际不一致」——面板里点第 1 条音轨/
+> 字幕，实际播放出来的却是另一条。与 616 的弹幕抖动是**独立问题**，但同属
+> 「映射层语义不统一」。
+
+- [x] **根因（三处缺陷叠加，缺一不可）**：
+  1. **`_parseTracks` 结构不匹配**：`if (decoded is! List) return` —— 安卓
+     `getTracks()` 返回的是**分组 Map**（`{video:[], audio:[], subtitle:[]}`），
+     不是 mpv 原生 List → 整段跳过；
+  2. **`id` 类型不匹配**：`if (id is! int) continue` —— media_kit 的
+     `_Track.id` 是 **String**，即使结构对上也被全部跳过；
+  3. **`catch (_) {}` 静默吞异常** —— 上面两个失败都无声无息，真机无从诊断
+     （**本 bug 潜伏这么久的直接原因**）。
+  → `_audioTrackIds`/`_subtitleTrackIds` **恒为空** → `_mapIndexToTrackId`
+  永远返回 null → 选轨退回「Emby 索引 + 1」兜底。
+- [x] **致命偏移：media_kit 前置 2 条伪轨**
+  ```dart
+  // third_party/nipaplay/media_kit real.dart:1752
+  final audio = [AudioTrack.auto(), AudioTrack.no()];      // 伪轨
+  final subtitle = [SubtitleTrack.auto(), SubtitleTrack.no()];
+  ```
+  | 下标 | 内容 |
+  |---|---|
+  | `[0]` | `auto`（mpv 自选） |
+  | `[1]` | `no`（关闭） |
+  | `[2]` | 第 1 条真实轨 |
+
+  而安卓选轨是 `tracks[id - 1]` → **选第 1 条拿到 `auto`（mpv 自选，可能
+  落到别的轨）、选第 2 条拿到 `no`（关闭字幕）**。这就是「选的和实际完全
+  不一致」。
+- [x] **修法**：
+  1. `_parseTracks` 同时兼容 **List（鸿蒙 mpv 原生，带 type 字段）** 与
+     **Map（安卓分组，无 type 字段）**，`id` 统一 `int.tryParse`；
+  2. 两类 id 表**无条件落表**（旧实现 `isNotEmpty 才覆盖` → 换集后上一集的
+     id 残留 → 选轨错位）；`subtitleCount` 改用解析结果；
+  3. 失败/异常**改为打日志**（`track-list 解析无结果` / `解析失败`）；
+  4. 安卓 + Windows 侧新增 `_isRealTrack`（排除 `auto`/`no`），
+     `getTracks()` 与 `setAudioTrack`/`setSubtitleTrack` 全部过滤伪轨；
+  5. 选轨改为**真实 track id 优先、1-based 序号兜底**（`int.tryParse(t.id) == id`）；
+  6. **外挂字幕单独处理**：`sub-add` 把新轨追加到**容器末尾**，此时 Emby
+     索引与容器序号不再对应 → 不再按 `[embyIndex]` 选，改为「真实轨数 - 1」
+     选中末尾那条（media_kit 的 `sub-add ... select` 已自动激活）；
+  7. 鸿蒙侧 `aid`/`sid` 语义本就正确（收真实 mpv track id），补注释说明。
+- [x] 顺带：`activeAudioTracks` 空列表改为下发 `0`（关闭），旧实现直接
+  `return` 会静默忽略。
+- [x] 测试：`mpv_track_mapping_test.dart` 23 项（两种结构解析、id 类型兼容、
+  Emby 顺序保持、空表清空、失败打日志、伪轨过滤、id 优先选轨、外挂字幕末尾、
+  空列表关闭、鸿蒙 aid/sid 语义）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

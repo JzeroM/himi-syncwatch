@@ -666,15 +666,47 @@ class HimiMpvAndroidSession implements MpvSession {
     await _player?.setRate(speed);
   }
 
+  /// media_kit 的 `state.tracks.*` **前置 `[auto, no]` 两条伪轨**（id 分别是
+  /// `'auto'` / `'no'`，见 media_kit `real.dart` 的 track-list 解析）。
+  ///
+  /// 【617 真机回归：选中的音轨/字幕与实际不一致】旧实现直接 `tracks[id-1]`：
+  /// 选第 1 条 → `tracks[0] = auto`（mpv 自选，可能落到别的轨）；选第 2 条 →
+  /// `tracks[1] = no`（关闭）。必须跳过这两条伪轨再按 Emby 顺序取。
+  static bool _isRealTrack(dynamic track) {
+    final id = track?.id;
+    return id != 'auto' && id != 'no';
+  }
+
+  /// 真实轨道（已剔除 auto/no 伪轨），顺序 = 容器内出现顺序 = Emby 流顺序。
+  List<AudioTrack> _realAudioTracks() =>
+      (_player?.state.tracks.audio ?? const <AudioTrack>[])
+          .where(_isRealTrack)
+          .toList(growable: false);
+
+  List<SubtitleTrack> _realSubtitleTracks() =>
+      (_player?.state.tracks.subtitle ?? const <SubtitleTrack>[])
+          .where(_isRealTrack)
+          .toList(growable: false);
+
+  @override
   @override
   Future<void> setAudioTrack(int id) async {
     if (id <= 0) {
       await _player?.setAudioTrack(AudioTrack.no());
-    } else {
-      final tracks = _player?.state.tracks.audio ?? const <AudioTrack>[];
-      if (id - 1 < tracks.length) {
-        await _player?.setAudioTrack(tracks[id - 1]);
-      }
+      return;
+    }
+    // 617：`id` 可能是**真实 mpv track id**（track-list 映射命中）或
+    // **1-based Emby 序号**（轨道表未就绪的兜底）。先按真实 id 精确匹配，
+    // 匹配不到再按序号取——只按下标取会忽略真实 id，且踩中 auto/no 伪轨。
+    final real = _realAudioTracks();
+    final byTrackId =
+        real.where((t) => int.tryParse(t.id) == id).firstOrNull;
+    if (byTrackId != null) {
+      await _player?.setAudioTrack(byTrackId);
+      return;
+    }
+    if (id - 1 < real.length) {
+      await _player?.setAudioTrack(real[id - 1]);
     }
   }
 
@@ -682,11 +714,18 @@ class HimiMpvAndroidSession implements MpvSession {
   Future<void> setSubtitleTrack(int id) async {
     if (id <= 0) {
       await _player?.setSubtitleTrack(SubtitleTrack.no());
-    } else {
-      final tracks = _player?.state.tracks.subtitle ?? const <SubtitleTrack>[];
-      if (id - 1 < tracks.length) {
-        await _player?.setSubtitleTrack(tracks[id - 1]);
-      }
+      return;
+    }
+    // 语义同 setAudioTrack：真实 track id 优先、1-based 序号兜底。
+    final real = _realSubtitleTracks();
+    final byTrackId =
+        real.where((t) => int.tryParse(t.id) == id).firstOrNull;
+    if (byTrackId != null) {
+      await _player?.setSubtitleTrack(byTrackId);
+      return;
+    }
+    if (id - 1 < real.length) {
+      await _player?.setSubtitleTrack(real[id - 1]);
     }
   }
 
@@ -753,10 +792,12 @@ class HimiMpvAndroidSession implements MpvSession {
   Future<String?> getTracks() async {
     final tracks = _player?.state.tracks;
     if (tracks == null) return null;
+    // 617：剔除 media_kit 前置的 auto/no 伪轨——否则 Dart 侧解析出的
+    // track id 表比 Emby 流多 2 项，面板顺序整体错位。
     return jsonEncode(<String, dynamic>{
-      'video': tracks.video.map(_trackJson).toList(),
-      'audio': tracks.audio.map(_trackJson).toList(),
-      'subtitle': tracks.subtitle.map(_trackJson).toList(),
+      'video': tracks.video.where(_isRealTrack).map(_trackJson).toList(),
+      'audio': tracks.audio.where(_isRealTrack).map(_trackJson).toList(),
+      'subtitle': tracks.subtitle.where(_isRealTrack).map(_trackJson).toList(),
     });
   }
 

@@ -1136,6 +1136,16 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 上层的 `activeAudioTracks`/`activeSubtitleTracks` 传的是 **Emby 流索引**
   /// （0-based，与 Emby 元数据数组对齐），而 mpv 的 `aid`/`sid` 是它自己的
   /// track id。两者必须映射，否则选第 2 条字幕会切到别的轨。
+  ///
+  /// 【617 真机回归：面板选中的字幕/音频与实际不一致】映射表此前**恒为空**
+  /// （见 [_parseTracks] 的三处缺陷），选轨永远退回「Emby 索引 + 1」兜底；
+  /// 而安卓 `setAudioTrack(id)` 把该值当 **1-based 数组下标**用，media_kit
+  /// 的 `tracks` 又前置 `[auto, no]` 两条伪轨 → 选第 1 条实际落到 `auto`
+  ///（mpv 自选），选第 2 条落到 `no`（关闭）。这就是「选的和实际不一致」。
+  ///
+  /// 现统一语义：**这里始终传真实 mpv track id**（映射成功时取表内 id，
+  /// 未就绪时退回 1-based 序号），两端平台按「真实轨 id」或「第 N 条真实轨」
+  /// 解析，顺序严格跟随 Emby 服务端流顺序。
   final List<int> _audioTrackIds = <int>[];
   final List<int> _subtitleTrackIds = <int>[];
 
@@ -1152,10 +1162,15 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   set activeAudioTracks(List<int> tracks) {
     _activeAudioTracks = tracks;
-    if (tracks.isEmpty) return;
+    if (tracks.isEmpty) {
+      // 空列表 = 关闭音频（与字幕同语义；旧实现直接 return 会静默忽略）。
+      unawaited(_player?.setAudioTrack(0));
+      return;
+    }
     final index = tracks.first;
     final trackId = _mapIndexToTrackId(_audioTrackIds, index);
-    // 轨道表未就绪（文件刚 open）时先按 index+1 兜底：mpv 的 aid 通常从 1 起。
+    // 轨道表未就绪（文件刚 open）时按 Emby 序号 +1 兜底（平台侧按
+    // 「第 N 条真实轨」解析，跳过 auto/no 伪轨）。
     unawaited(_player?.setAudioTrack(trackId ?? (index + 1)));
   }
 
@@ -1545,42 +1560,91 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     } catch (_) {}
   }
 
+  /// 解析 `track-list` → 音轨/字幕轨的 mpv track id（按**出现顺序**）。
+  ///
+  /// 【617 真机回归：面板选中的字幕/音频与实际不一致】
+  ///
+  /// 旧实现有三处缺陷，导致映射表恒为空、选轨退回「Emby 索引 + 1」兜底：
+  /// 1. `if (decoded is! List) return`——安卓 `getTracks()` 返回的是**分组
+  ///    Map**（`{video:[], audio:[], subtitle:[]}`），不是 mpv 原生 List，
+  ///    直接 return → 整段跳过；
+  /// 2. `if (id is! int) continue`——media_kit 的 `_Track.id` 是 **String**，
+  ///    即使结构对上也会被全部跳过；
+  /// 3. `catch (_) {}`——失败静默，真机无从诊断（本 bug 潜伏的根因）。
+  ///
+  /// 现同时兼容两平台结构，并把 id 统一转 int（保留出现顺序 =
+  /// **Emby 服务端流顺序**，见 `_mapIndexToTrackId`）。
   void _parseTracks(Object? value) {
     if (value is! String) return;
     try {
       final decoded = jsonDecode(value);
-      if (decoded is! List) return;
       final audioIds = <int>[];
       final subIds = <int>[];
-      var subCount = 0;
-      for (final track in decoded) {
-        if (track is! Map) continue;
-        final type = track['type'];
-        final id = track['id'];
-        if (id is! int) continue;
+
+      void take(Object? track, String type) {
+        if (track is! Map) return;
+        // media_kit 的 id 是 String；鸿蒙 mpv 原生 track-list 是 int。
+        final raw = track['id'];
+        final id = raw is int
+            ? raw
+            : raw is String
+                ? int.tryParse(raw)
+                : null;
+        if (id == null) return;
         if (type == 'audio') {
           audioIds.add(id);
         } else if (type == 'sub') {
           subIds.add(id);
-          subCount++;
         }
       }
-      if (audioIds.isNotEmpty)
-        _audioTrackIds
-          ..clear()
-          ..addAll(audioIds);
-      if (subIds.isNotEmpty)
-        _subtitleTrackIds
-          ..clear()
-          ..addAll(subIds);
+
+      if (decoded is List) {
+        // 鸿蒙：mpv 原生 `track-list`（每项自带 type 字段）。
+        for (final track in decoded) {
+          take(track, track is Map ? '${track['type']}' : '');
+        }
+      } else if (decoded is Map) {
+        // 安卓：分组 Map（无 type 字段，靠分组名判定）。
+        final audio = decoded['audio'];
+        if (audio is List) {
+          for (final track in audio) {
+            take(track, 'audio');
+          }
+        }
+        final sub = decoded['subtitle'];
+        if (sub is List) {
+          for (final track in sub) {
+            take(track, 'sub');
+          }
+        }
+      }
+
+      if (audioIds.isEmpty && subIds.isEmpty) {
+        // 617：不再静默——解析不出轨道说明结构与预期不符，必须可诊断。
+        final preview =
+            value.length > 200 ? '${value.substring(0, 200)}...' : value;
+        LogService().log('mpv', 'track-list 解析无结果（结构不符？）: $preview');
+        return;
+      }
+      // 617：即使某一类为空也要落表（空列表 = 该类无轨），否则旧的
+      // 「isNotEmpty 才覆盖」会让上一集的 id 残留 → 换集后选轨错位。
+      _audioTrackIds
+        ..clear()
+        ..addAll(audioIds);
+      _subtitleTrackIds
+        ..clear()
+        ..addAll(subIds);
       _mediaInfo = AdapterMediaInfo(
         duration: _durationMs,
         format: _mediaInfo.format,
         audio: _mediaInfo.audio,
         video: _mediaInfo.video,
-        subtitleCount: subCount,
+        subtitleCount: subIds.length,
       );
-    } catch (_) {}
+    } catch (e) {
+      // 617：解析异常不再静默吞掉（真机日志可见）。
+      LogService().log('mpv', 'track-list 解析失败: $e');
+    }
   }
 
   void _handleMpvEvent(MpvEvent event) {
