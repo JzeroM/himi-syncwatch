@@ -1331,7 +1331,17 @@ export struct HimiNativePlayerView {
           .fontColor(Color.White)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          // 可收缩（空间不足时压缩标题），但不抢占兄弟空间。
+          // 【612 真机回归：三个控件挤在标题左边、没有靠右】修正。
+          //
+          // 611 只给了 `flexShrink(1)`——它只是「空间不足时可收缩」，
+          // **不会撑开**。标题按内容宽度（"资源" 2 字 ≈ 28vp），剩余空间
+          // 没人占 → 右侧控件紧跟在标题后面（靠左）。
+          // 安卓能靠右是因为 `LayoutParams(0, WRAP_CONTENT, 1f)` 的**权重
+          // 1 让标题吃掉剩余空间**，把右侧控件推过去。
+          //
+          // 修法：补 `flexGrow(1)`（吃掉剩余空间）+ 保留 `flexShrink(1)`
+          // （空间不足时压缩）——与安卓权重 1 等价。
+          .flexGrow(1)
           .flexShrink(1)
           .margin({ right: 6 });
         // 搜索：房主 **且暂停中** 才显示（Flutter

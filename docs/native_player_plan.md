@@ -1509,6 +1509,39 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   ——对齐 Flutter（MDK 路径）`DanmakuOverlay` 的
   `_nowPosition = _lastPosition + (_elapsed - _alignElapsed)` 语义。
 
+### Phase 2.31：原生 UI 初始快照补推 + 头部 flexGrow + Kotlin 类型修复（1.5.32+612）
+
+> 起因：真机「鸿蒙房间模式初始未播放时头部不显示搜索/人数/房主徽章，
+> 选资源播放后才显示」（已修 5 轮）；「三个控件挤在左边、没靠右」；
+> 以及 CI 失败（Kotlin 类型不匹配）。
+
+- [x] **初始未播放时头部三控件不显示（第 6 轮，找到真根因）**：前 5 轮
+  全在改**布局代码**（`constraintSize` / `Blank` / `flexShrink`），方向
+  错了。**根因是数据没送达**：
+  `_syncNativePanelData()` 开头有守卫
+  `if (mpv is! MpvPlayerAdapter || _disposed) return;`
+  ——初始进房间时 `_player` **还不是 MpvPlayerAdapter**（播放器尚未创建）
+  → 首次推送被**静默拦截** → `_nativeUiExtras` 从未赋值、保持默认
+  `isHost: false` → 原生 UI 打开时读到的就是 false → 头部三控件不渲染。
+  播放后（起播/切集路径）再次调用时 `_player` 已是适配器 → 推送成功 →
+  头部才显示。
+  **关键线索**：同一份布局代码「未播放没有、播放后有」→ 说明不是布局
+  问题，是数据问题。
+  修法：`_onNativeUiActiveChanged()` 里在 `_nativeUiActive` 为 true 时补推
+  一次完整快照——那时 `_player` 必定已创建、守卫不会拦截，不依赖
+  `initState` 的调用时机。
+- [x] **三个控件挤在标题左边、没靠右**：611 只给了 `flexShrink(1)`——它
+  只是「空间不足时可收缩」，**不会撑开**。标题按内容宽度（"资源" 2 字
+  ≈28vp），剩余空间没人占 → 右侧控件紧跟标题（靠左）。
+  安卓能靠右是因为 `LayoutParams(0, WRAP_CONTENT, 1f)` 的**权重 1 让
+  标题吃掉剩余空间**。
+  修法：补 `flexGrow(1)`（吃掉剩余空间）+ 保留 `flexShrink(1)`——与安卓
+  权重 1 等价。
+- [x] **CI Kotlin 类型错误**：`setClock(state.positionMs, ...)` 的
+  `positionMs` 是 `Int`，而 `setClock` 签名要 `Long` → 编译失败
+  `Argument type mismatch: actual type is 'Int', but 'Long' was expected`。
+  修法：`state.positionMs.toLong()`。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

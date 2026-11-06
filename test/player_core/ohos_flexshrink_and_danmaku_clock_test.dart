@@ -23,9 +23,12 @@ void main() {
       expect(before, contains('ItemAlign.Center'));
     });
 
-    test('标题 flexShrink(1)（可收缩但不抢占）', () {
+    test('标题 flexGrow(1) + flexShrink(1)（对齐安卓权重 1）', () {
       final idx = view.indexOf("Text('资源')");
-      final body = view.substring(idx, idx + 500);
+      final body = view.substring(idx, idx + 800);
+      // 612：flexGrow 吃掉剩余空间（把右侧控件推到最右）；
+      // flexShrink 空间不足时压缩。等价安卓 LayoutParams(weight=1)。
+      expect(body, contains('.flexGrow(1)'));
       expect(body, contains('.flexShrink(1)'));
       // 不再用 layoutWeight / Blank。
       expect(body, isNot(contains('layoutWeight')));
@@ -103,7 +106,11 @@ void main() {
 
   group('③ 安卓弹幕单层插值（对齐 Flutter）', () {
     test('setClock 传 state.positionMs（不是 positionAt 插值结果）', () {
-      expect(kotlinScreen, contains('danmakuLayer.setClock(state.positionMs, state.paused)'));
+      // 612：positionMs 是 Int，setClock 要 Long → 补 .toLong()。
+      expect(
+        kotlinScreen,
+        contains('danmakuLayer.setClock(state.positionMs.toLong(), state.paused)'),
+      );
       expect(
         kotlinScreen,
         isNot(contains('danmakuLayer.setClock(pos, state.paused)')),

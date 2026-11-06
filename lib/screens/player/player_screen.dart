@@ -3299,7 +3299,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _onNativeUiActiveChanged() {
-    if (mounted && !_disposed) setState(() {});
+    if (!mounted || _disposed) return;
+    setState(() {});
+    // 【612 真机回归：初始未播放时房间头部不显示搜索/人数/房主徽章】
+    //
+    // `_syncNativePanelData()` 开头有守卫：
+    //   `if (mpv is! MpvPlayerAdapter || _disposed) return;`
+    // 初始进房间时 `_player` **还不是 MpvPlayerAdapter**（播放器尚未创建）
+    // → 首次推送被静默拦截 → `_nativeUiExtras` 从未赋值、保持默认
+    // `isHost: false`。原生 UI 打开时 `_buildNativePlayerState()` 读到的
+    // 就是 false → `roomIsHost=false` → 头部三个控件不渲染（真机图1）。
+    // 播放后（起播/切集路径）再次调用时 `_player` 已是适配器 → 推送成功
+    // → 头部才显示（真机图2）。
+    //
+    // 修法：原生 UI **真正打开后**补推一次完整快照——那时 `_player` 必定
+    // 已创建、守卫不会拦截，不依赖 `initState` 的调用时机。
+    if (_nativeUiActive) _syncNativePanelData();
   }
 
   /// 原生 UI 请求退出（back/exit 命令）：先关原生宿主，再走与顶栏

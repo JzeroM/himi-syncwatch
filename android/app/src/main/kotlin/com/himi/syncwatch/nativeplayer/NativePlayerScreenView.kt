@@ -3825,7 +3825,7 @@ class NativePlayerScreenView(
             //   `_nowPosition = _lastPosition + (_elapsed - _alignElapsed)`
             // ——`_lastPosition` 是**未插值的原始位置源**，插值只在渲染层
             // 做一层。这里同样传 `state.positionMs`（原始快照值）。
-            danmakuLayer.setClock(state.positionMs, state.paused)
+            danmakuLayer.setClock(state.positionMs.toLong(), state.paused)
             // 玻璃滑杆：值即毫秒（玻璃滑杆内部完成 ratio 映射，无步进换算）。
             // durationMs 未就绪（起播早期为 0）时不覆盖 value（防归零抖动）。
             if (state.durationMs > 0) {
