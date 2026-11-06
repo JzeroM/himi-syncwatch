@@ -1058,12 +1058,6 @@ class NativePlayerScreenView(
             lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
         )
         // 弹幕层：视频之上、控件之下（与 Flutter DanmakuOverlay 位置一致）。
-        // 【614】弹幕位置源：宿主插值时钟（单层插值、单一锚点）。
-        // 与鸿蒙 `DanmakuLayer.nowPosition()` → 宿主 `positionNowMs()`
-        // 完全等价——弹幕层不再自维护锚点。
-        danmakuLayer.setPositionProvider {
-            lastState.positionAt(System.currentTimeMillis(), lastStateAtMs)
-        }
         addView(danmakuLayer, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         // 加载指示器：居中转圈。颜色/尺寸/动画对齐 Flutter `_buildVideoArea`
@@ -3833,21 +3827,26 @@ class NativePlayerScreenView(
         if (!dragging) {
             val pos = state.positionAt(now, lastStateAtMs)
             positionLabel.text = AndroidNativePlayerState.formatPlayerTime(pos)
-            // 【611 真机回归：安卓弹幕抖动/抽搐】修正。
+            // 【616 真机回归：安卓弹幕还是有点抖动、左右跳】修正。
             //
-            // 旧实现传的是 `pos`（= `state.positionAt(now, lastStateAtMs)`
-            // 的**插值结果**），而 `DanmakuLayerView.setClock` 内部又会用
-            // 墙钟再插值一次 → **两层插值叠加**。每次快照刷新（500ms）时
-            // `positionAt` 的基准变化会让 `pos` 跳变，弹幕位置随之跳动。
+            // 611 起传的是 `state.positionMs`（原始快照），弹幕层再用墙钟
+            // 插值——看似单层，但快照值带「Dart 500ms 轮询延迟」，与宿主
+            // 接收时刻**不同源** → 每次快照刷新位置就突变一次（左右跳）。
             //
             // 对齐 Flutter（MDK 路径）`DanmakuOverlay` 的语义：
             //   `_nowPosition = _lastPosition + (_elapsed - _alignElapsed)`
-            // ——`_lastPosition` 是**未插值的原始位置源**，插值只在渲染层
-            // 做一层。这里同样传 `state.positionMs`（原始快照值）。
-            // 【614】位置源：宿主插值时钟（快照 + 墙钟×倍速，单层插值、
-            // 单一锚点 `lastStateAtMs`）——与鸿蒙 `positionNowMs()` 等价。
-            // 弹幕层不再自维护锚点（那会与这里的插值叠加成两层 → 跳跃）。
-            danmakuLayer.setClock(state.paused)
+            // 这里同样只传**原始快照位置**，由弹幕层用 Choreographer 帧
+            // 时间（单调 `nanoTime`）插值 + 平滑收敛（吸收 10% 偏差），
+            // 与 Flutter Ticker 等价。
+            //
+            // 第二参传「暂停 / 缓冲 / 播完」三态合并——与宿主 `positionAt`
+            // 的冻结条件一致（这几种状态下不外推）；第三参传倍速，否则
+            // 2x 播放会被平滑收敛误判成持续大跳。
+            danmakuLayer.setClock(
+                state.positionMs.toLong(),
+                state.paused || state.buffering || state.ended,
+                state.speed,
+            )
             // 玻璃滑杆：值即毫秒（玻璃滑杆内部完成 ratio 映射，无步进换算）。
             // durationMs 未就绪（起播早期为 0）时不覆盖 value（防归零抖动）。
             if (state.durationMs > 0) {

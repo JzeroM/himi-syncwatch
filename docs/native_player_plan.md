@@ -1629,6 +1629,53 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 - [x] 顺带：`placeholderView`（610 新增的空态占位层）纳入 `applyVideoSplit`
   的收窄列表（否则分栏时会盖住资源面板、转屏后尺寸不跟随）。
 
+### Phase 2.35：安卓弹幕 Choreographer 帧驱动 + 平滑收敛（对齐 Flutter Ticker）（1.5.36+616）
+
+> 起因：用户「安卓 MPV 弹幕还是有点抖动，左右跳，参考 Flutter 如何优化
+> 弹幕，保持一致」。615 已修转屏裁切，本轮专攻弹幕时钟。
+
+- [x] **根因（614 引入的「看似单层、实则不同源」缺陷）**：
+  614 起弹幕层改为直接读宿主
+  `positionAt(System.currentTimeMillis(), lastStateAtMs)`，本意是「单层
+  插值、单一锚点」（对齐鸿蒙 `positionNowMs()`）。但其中两个输入**不同源**：
+  - `positionMs`：Dart 侧 **500ms 轮询采样**得到的播放位置；
+  - `lastStateAtMs`：本机**接收快照的时刻**。
+  两者之间有「轮询延迟 + 传输延迟」差（几十毫秒且随网络抖动变化）→
+  **每次新快照到达，`positionAt` 的输出就突变一次** → 弹幕 x 位置
+  左右跳。播放倍速不为 1 时偏差还会被放大。
+- [x] **Flutter 为什么平滑**（`DanmakuOverlay`）：
+  ```dart
+  Duration get _nowPosition => _lastPosition + (_elapsed - _alignElapsed);
+  ```
+  - `_elapsed` 是 **Ticker 帧时间**（每帧回调，单调递增）；
+  - `_lastPosition` 与 `_alignElapsed` 在 `_onPositionChanged` 里
+    **同一时刻赋值**（同步采样）→ 增量项连续，位置不会跳。
+- [x] **修法（帧驱动 + 平滑收敛）**：
+  1. **Choreographer 帧驱动**：`startFrameLoop()/stopFrameLoop()` 逐帧
+     `postFrameCallback` → `invalidate()`，等价 Flutter `Ticker`；
+  2. **单调时钟**：帧时间用 `System.nanoTime()`（`frameStartNanos` 构造时
+     初始化），不受系统时间调整影响；
+  3. **位置公式**：`currentPositionMs() = anchorPosMs + (帧时间 - anchorFrameMs) * playRate`
+     ——与 `_lastPosition + (_elapsed - _alignElapsed)` 同构；
+  4. **平滑收敛**（消除「不同源」跳变）：快照刷新时算
+     `drift = 快照值 - 当前插值`；
+     - `|drift| > 150ms`（seek/换集）→ **直接重锚**；
+     - 否则 → `anchorPosMs = projected + drift / 10`（**吸收 10%**），
+       位置连续推进、无视觉跳变；
+  5. **倍速**：第三参 `speed` → `playRate`，否则 2x 播放每秒偏差 1s，
+     会被误判成持续大跳（永远走重锚分支）；
+  6. **冻结语义**：第二参传「暂停 / 缓冲 / 播完」三态合并，与宿主
+     `positionAt` 的冻结条件一致（这几种状态不外推）；
+  7. **空态停帧**：`onDraw` 的 `!enabled || items.isEmpty()` 分支与
+     `!drewAny` 分支都 `stopFrameLoop()`，防 Choreographer 空转耗电；
+  8. **防泄漏**：`onDetachedFromWindow()` 里 `stopFrameLoop()`
+     （帧回调持有 this）。
+- [x] **顺带**：移除 614 的 `positionProvider`/`setPositionProvider`
+  （调用点改回传原始快照位置，避免与帧时间插值叠加成两层）。
+- [x] 测试：`android_danmaku_frame_clock_test.dart` 16 项（帧驱动、单调
+  时钟、位置公式、平滑收敛、倍速、冻结、空态停帧、销毁清理、Flutter
+  参考语义）；同步更新 5 个旧测试文件的 8 条断言。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

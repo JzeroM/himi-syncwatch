@@ -105,17 +105,16 @@ void main() {
   });
 
   group('③ 安卓弹幕单层插值（对齐 Flutter）', () {
-    test('614 起 setClock 只传 paused（位置由 positionProvider 现算）', () {
-      // 614 对齐鸿蒙：弹幕层不自维护锚点，直接读宿主插值时钟。
-      expect(kotlinScreen, contains('danmakuLayer.setClock(state.paused)'));
+    test('616 起 setClock 传原始快照位置（弹幕层帧时间插值）', () {
+      // 616：弹幕层用 Choreographer 帧驱动 + 平滑收敛，宿主只传原始快照值。
       expect(
         kotlinScreen,
-        isNot(contains('danmakuLayer.setClock(state.positionMs')),
+        contains('state.positionMs.toLong(),'),
       );
     });
 
-    test('注释记录双重插值根因', () {
-      expect(kotlinScreen, contains('两层插值叠加'));
+    test('注释记录「不同源」根因（616）', () {
+      expect(kotlinScreen, contains('不同源'));
     });
 
     test('Flutter 参考实现（_lastPosition + 增量）', () {
@@ -123,11 +122,12 @@ void main() {
       expect(flutter, contains('_lastPosition + (_elapsed - _alignElapsed)'));
     });
 
-    test('弹幕层改为读 positionProvider（不再自维护锚点）', () {
+    test('弹幕层用 Choreographer 帧时间插值（616）', () {
       final danmaku = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/DanmakuLayerView.kt',
       ).readAsStringSync();
-      expect(danmaku, contains('private fun currentPositionMs(): Long = positionProvider()'));
+      expect(danmaku, contains('anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate'));
+      expect(danmaku, contains('Choreographer'));
     });
   });
 }

@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.view.Choreographer
 import android.view.View
 
 /**
@@ -55,10 +56,10 @@ class DanmakuLayerView(context: Context) : View(context) {
     private var bottomRows = 4
 
     /**
-     * 暂停冻结（614）。
+     * 暂停冻结（616）。
      *
-     * 位置由 [positionProvider] 现算——宿主侧 `positionAt` 在暂停态直接
-     * 返回快照位置，所以这里只需知道暂停位以决定是否继续逐帧重绘。
+     * 暂停时 `stopFrameLoop()` 停掉 Choreographer 帧回调（等价 Flutter
+     * `Ticker.stop()`），位置锚点冻结在最后推送值。
      */
     private var paused = true
 
@@ -97,6 +98,13 @@ class DanmakuLayerView(context: Context) : View(context) {
     private val edgePadDp = 8f
 
     /** 滚动穿屏基准时长（ms÷speed）。 */
+    /**
+     * 大跳阈值（ms，616）：宿主快照与帧时间插值的偏差超过它才直接重锚
+     *（seek / 换集）；否则平滑收敛（吸收 10%），消除「不同源」造成的
+     * 弹幕左右跳。
+     */
+    private val SEEK_THRESHOLD_MS = 150L
+
     private val scrollBaseMs = 8000.0
 
     /** 顶/底驻留时长（ms，不受速度影响）。 */
@@ -146,39 +154,109 @@ class DanmakuLayerView(context: Context) : View(context) {
     }
 
     /**
-     * 位置源（614）：**直接读宿主的插值时钟**，与鸿蒙 `DanmakuLayer`
-     * 完全一致——本层**不再自维护锚点**。
+     * 弹幕时钟（616）：**Choreographer 帧驱动 + 平滑收敛**。
      *
-     * 【真机回归：安卓弹幕前后跳跃、不流畅】旧实现自己维护
-     * `anchorPosMs/anchorWallMs`，而 `setClock` 每 500ms 被 `applyState`
-     * 调用一次、每次都重置锚点；传入的 `positionMs` 又是**快照时刻**的
-     * 位置（距调用已过去 0~500ms）→ 弹幕位置**倒退**再外推 → 视觉「前后
-     * 跳跃」。叠加调用方此前传 `positionAt()` 的插值结果，还形成**两层
-     * 插值**。
+     * 【真机回归：安卓弹幕还是有点抖动、左右跳】614 起改为直接读宿主
+     * `positionAt(System.currentTimeMillis(), lastStateAtMs)`——看似单层
+     * 插值，但 `positionMs`（Dart 500ms 轮询采样值）与 `lastStateAtMs`
+     *（本机接收时刻）**不同源**，两者之间有传输+轮询延迟差（几十毫秒）。
+     * 每次新快照到达，`positionAt` 输出就突变一次 → 弹幕 x 位置左右跳。
      *
-     * 鸿蒙的做法是：弹幕层每次渲染直接调宿主 `positionNowMs()`
-     *（快照 + 墙钟×倍速，**单一锚点、单层插值**）→ 天然平滑。
-     * 这里改为同样的架构。
+     * **Flutter 的做法**（`DanmakuOverlay`）：
+     * ```dart
+     * Duration get _nowPosition => _lastPosition + (_elapsed - _alignElapsed);
+     * ```
+     * - `_elapsed` 是 **Ticker 帧时间**（每帧回调、单调递增）；
+     * - `_lastPosition` 与 `_alignElapsed` **同步采样**（`_onPositionChanged`
+     *   里同时赋值）→ 位置连续。
+     *
+     * **本类对齐该语义**：
+     * - 用 `Choreographer` 帧回调驱动重绘（等价 Flutter Ticker）；
+     * - 用 `System.nanoTime()`（**单调时钟**）算帧时间增量；
+     * - 位置 = `anchorPosMs + (帧时间 - anchorFrameMs)`；
+     * - 快照刷新时**平滑收敛**（吸收 10% 偏差）而不是硬切——消除
+     *   「不同源」造成的左右跳；只有大跳（seek/换集 >150ms）才直接重锚。
      */
-    private var positionProvider: () -> Long = { 0L }
+    private var frameCallback: Choreographer.FrameCallback? = null
 
-    /** 注入位置源（614）。由宿主在 `applyState` 时绑定一次。 */
-    fun setPositionProvider(provider: () -> Long) {
-        positionProvider = provider
-    }
+    /** 帧时间基准（`System.nanoTime()`，单调）。构造时初始化，避免首帧
+     * 算出巨大值（`System.nanoTime()` 是任意起点的纳秒计数）。 */
+    private var frameStartNanos = System.nanoTime()
 
-    /** 宿主 tick 通知暂停态变化（位置由 [positionProvider] 现算）。 */
-    fun setClock(paused: Boolean) {
+    /**
+     * 位置锚点（ms，用 Double 避免 1ms 取整误差在平滑收敛里累积）
+     * 与当时的帧时间（ms）。
+     */
+    private var anchorPosMs = 0.0
+    private var anchorFrameMs = 0L
+
+    /** 播放倍速（616）：位置按倍速推进，否则 2x 播放会被误判成「大跳」。 */
+    private var playRate = 1.0
+
+    /** 当前帧时间（毫秒，自 [frameStartNanos] 起单调递增）。 */
+    private fun frameElapsedMs(): Long =
+        (System.nanoTime() - frameStartNanos) / 1_000_000L
+
+    /** 当前播放位置（帧时间插值，与 Flutter `_nowPosition` 等价）。 */
+    private fun currentPositionMs(): Long =
+        (anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate).toLong()
+
+    /**
+     * 宿主推送位置 + 暂停态 + 倍速（616）。
+     *
+     * 快照值带「Dart 轮询延迟」——与帧时间不同源。这里做平滑收敛：
+     * 小偏差吸收 10%（位置连续推进、无视觉跳变），大偏差（seek/换集）
+     * 直接重锚（保证 seek 立即生效）。
+     *
+     * [paused] 语义与宿主 `positionAt` 一致：**暂停 / 缓冲 / 播完** 都冻结
+     *（宿主这几种状态下 `positionAt` 直接返回快照值，不按时间外推）。
+     */
+    fun setClock(positionMs: Long, paused: Boolean, speed: Double = 1.0) {
         this.paused = paused
-        if (visibility == VISIBLE && !paused) {
-            postInvalidateOnAnimation()
-        } else if (visibility == VISIBLE) {
-            invalidate()
+        this.playRate = if (speed > 0.0) speed else 1.0
+        if (paused) {
+            anchorPosMs = positionMs.toDouble()
+            anchorFrameMs = frameElapsedMs()
+            stopFrameLoop()
+            if (visibility == VISIBLE) invalidate()
+            return
         }
+        // 只取一次帧时间——两次调用会相差几毫秒，让锚点与插值基准错位。
+        val nowFrameMs = frameElapsedMs()
+        val projected = anchorPosMs + (nowFrameMs - anchorFrameMs) * playRate
+        val drift = positionMs - projected
+        if (Math.abs(drift) > SEEK_THRESHOLD_MS) {
+            // 大跳（seek / 换集 / 明显漂移）：直接重锚。
+            anchorPosMs = positionMs.toDouble()
+        } else {
+            // 小漂移（500ms 快照的正常延迟差）：吸收 10%，位置连续。
+            anchorPosMs = projected + drift / 10.0
+        }
+        anchorFrameMs = nowFrameMs
+        startFrameLoop()
     }
 
-    /** 当前播放位置：直接问位置源（单层插值，无自维护锚点）。 */
-    private fun currentPositionMs(): Long = positionProvider()
+    /** 启动帧循环（幂等）。等价 Flutter `Ticker.start()`。 */
+    private fun startFrameLoop() {
+        if (frameCallback != null || paused || visibility != VISIBLE) return
+        val cb = object : Choreographer.FrameCallback {
+            override fun doFrame(frameTimeNanos: Long) {
+                frameCallback = null
+                if (!paused && visibility == VISIBLE) {
+                    invalidate()
+                    startFrameLoop()
+                }
+            }
+        }
+        frameCallback = cb
+        Choreographer.getInstance().postFrameCallback(cb)
+    }
+
+    /** 停止帧循环（暂停/销毁）。等价 Flutter `Ticker.stop()`。 */
+    private fun stopFrameLoop() {
+        frameCallback?.let { Choreographer.getInstance().removeFrameCallback(it) }
+        frameCallback = null
+    }
 
     /**
      * 转屏/尺寸变化：**只在行容量真的变了**才重排行号与冲突表。
@@ -192,6 +270,12 @@ class DanmakuLayerView(context: Context) : View(context) {
      * 修法：按**行容量**（`autoRows`）判断——容量不变就不清，行号保持稳定。
      */
     private var lastAutoRows = -1
+
+    /** 616：视图脱离窗口时停掉帧循环，防泄漏（`Choreographer` 回调持有 this）。 */
+    override fun onDetachedFromWindow() {
+        stopFrameLoop()
+        super.onDetachedFromWindow()
+    }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -408,7 +492,11 @@ class DanmakuLayerView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (!enabled || items.isEmpty()) return
+        if (!enabled || items.isEmpty()) {
+            // 616：无弹幕可画时停掉帧循环（否则 Choreographer 空转耗电）。
+            stopFrameLoop()
+            return
+        }
         val pos = currentPositionMs()
         val density = resources.displayMetrics.density
         val fontSizePx = baseFontSizeDp * fontSizeScale.toFloat() * density
@@ -474,11 +562,10 @@ class DanmakuLayerView(context: Context) : View(context) {
             }
         }
 
-        // 自驱重绘：仅在「播放中且有弹幕真的画出来」时继续（旧实现无条件
-        // postInvalidate → 空层也 60fps 重绘，白耗电）。
-        if (!paused && drewAny) {
-            postInvalidateOnAnimation()
-        }
+        // 616：重绘改由 `Choreographer` 帧回调统一驱动（见 startFrameLoop）——
+        // 这里不再自驱 `postInvalidateOnAnimation`，避免与帧回调叠加成
+        // 双倍频率。`drewAny` 仅用于「无弹幕时停掉帧循环省电」。
+        if (!drewAny) stopFrameLoop()
     }
 
     private fun parseColor(hex: String): Int = try {

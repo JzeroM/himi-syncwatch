@@ -69,36 +69,25 @@ void main() {
   });
 
   group('③ 安卓弹幕单层插值（对齐鸿蒙）', () {
-    test('DanmakuLayerView 用 positionProvider，不自维护锚点', () {
-      expect(danmaku, contains('private var positionProvider: () -> Long'));
-      expect(danmaku, contains('fun setPositionProvider(provider: () -> Long)'));
-      expect(danmaku, contains('private fun currentPositionMs(): Long = positionProvider()'));
-      // 锚点字段已删除（注释里可能提到，只查代码行）。
-      final code = danmaku
-          .split('\n')
-          .where((l) => !l.trimLeft().startsWith('//'))
-          .where((l) => !l.trimLeft().startsWith('*'))
-          .join('\n');
-      expect(code, isNot(contains('anchorPosMs =')));
-      expect(code, isNot(contains('anchorWallMs =')));
+    test('616 起改用 Choreographer 帧驱动 + 平滑收敛', () {
+      expect(danmaku, contains('Choreographer'));
+      expect(danmaku, contains('anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate'));
+      expect(danmaku, contains('anchorPosMs = projected + drift / 10.0'));
+      // 614 的 positionProvider 方案已移除。
+      expect(danmaku, isNot(contains('fun setPositionProvider')));
     });
 
-    test('setClock 只收 paused（位置由 provider 现算）', () {
-      expect(danmaku, contains('fun setClock(paused: Boolean)'));
-      expect(danmaku, isNot(contains('fun setClock(positionMs: Long, paused: Boolean)')));
+    test('setClock 收 positionMs + paused（616 帧驱动）', () {
+      expect(danmaku, contains('fun setClock(positionMs: Long, paused: Boolean, speed: Double = 1.0)'));
     });
 
-    test('宿主绑定位置源（单层插值、单一锚点 lastStateAtMs）', () {
-      expect(kotlinScreen, contains('danmakuLayer.setPositionProvider {'));
-      expect(kotlinScreen, contains('lastState.positionAt(System.currentTimeMillis(), lastStateAtMs)'));
+    test('宿主传原始快照位置（不叠加宿主插值）', () {
+      expect(kotlinScreen, contains('state.positionMs.toLong(),'));
+      expect(kotlinScreen, isNot(contains('danmakuLayer.setPositionProvider {')));
     });
 
-    test('调用点传 paused（不再传 positionMs）', () {
-      expect(kotlinScreen, contains('danmakuLayer.setClock(state.paused)'));
-      expect(
-        kotlinScreen,
-        isNot(contains('danmakuLayer.setClock(state.positionMs')),
-      );
+    test('调用点传 positionMs + paused（616）', () {
+      expect(kotlinScreen, contains('state.positionMs.toLong(),'));
     });
 
     test('鸿蒙参考：弹幕直接读宿主 positionNowMs（单层插值）', () {

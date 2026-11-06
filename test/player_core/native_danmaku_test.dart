@@ -71,15 +71,13 @@ void main() {
     });
   });
 
-  group('安卓弹幕：位置源（614 对齐鸿蒙，单层插值）', () {
-    test('位置由宿主 provider 现算（弹幕层不再自维护锚点/自乘倍速）', () {
-      // 614：倍速已在宿主 `positionAt` 内处理（单层插值、单一锚点
-      // `lastStateAtMs`），弹幕层只读结果——与鸿蒙 `positionNowMs()` 等价。
+  group('安卓弹幕：时钟（616 Choreographer 帧驱动 + 平滑收敛）', () {
+    test('帧时间插值（对齐 Flutter Ticker）', () {
+      // 616：位置 = 锚点 + 帧时间增量；快照刷新做平滑收敛（吸收 10%）。
       expect(kotlinDanmaku,
-          contains('private fun currentPositionMs(): Long = positionProvider()'));
-      // 旧的「自维护锚点 + 自乘倍速」写法必须消失。
-      expect(kotlinDanmaku, isNot(contains('anchorPosMs + (')));
-      expect(kotlinDanmaku, isNot(contains('anchorWallMs)')));
+          contains('anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate'));
+      expect(kotlinDanmaku, contains('Choreographer'));
+      expect(kotlinDanmaku, contains('anchorPosMs = projected + drift / 10.0'));
     });
   });
 
@@ -121,7 +119,8 @@ void main() {
     });
 
     test('无活跃弹幕不重绘（旧实现无条件 postInvalidate）', () {
-      expect(kotlinDanmaku, contains('if (!paused && drewAny)'));
+      // 616：重绘由 Choreographer 帧回调驱动，无弹幕时停掉帧循环省电。
+      expect(kotlinDanmaku, contains('if (!drewAny) stopFrameLoop()'));
       expect(kotlinDanmaku, contains('var drewAny = false'));
     });
 
