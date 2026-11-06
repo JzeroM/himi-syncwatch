@@ -1307,23 +1307,33 @@ export struct HimiNativePlayerView {
   RoomPanel() {
     Column() {
       // ── 头部：Expanded(资源) | 搜索 | 人数胶囊 | 角色徽章 ──
-      Row({ space: 6 }) {
+      //
+      // 【真机回归：初始房间头部不显示搜索/人数/房主徽章】611 修正（第 5 轮）。
+      //
+      // 前 4 轮都在 ArkUI 里试「让兄弟节点不被压扁」的写法，但方向错了：
+      // - 606 `constraintSize({ minWidth })` —— **无效**，`layoutWeight(1)`
+      //   的优先级高于它；
+      // - 607 `Blank()` —— **无效**，Blank 在 Row 里没能按预期撑开；
+      // - 608/610 也没解决。
+      //
+      // 根因：**ArkUI 的 `layoutWeight` 与安卓 `LinearLayout` 权重语义不同**
+      // ——安卓 `LayoutParams(0, WRAP_CONTENT, 1f)` 是「先测量兄弟节点的
+      // 自身宽度，剩余空间才给权重节点」；而 ArkUI `layoutWeight(1)` 会
+      // 直接抢占剩余空间，把兄弟压成 0 宽。
+      //
+      // 611 对齐安卓做法：改用 `Flex`，标题 `flexShrink(1)`（可收缩但不
+      // 抢占），右侧三个控件 `flexShrink(0)`（固定尺寸、不参与收缩）——
+      // 等价安卓给它们固定 `LayoutParams`。
+      Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Center }) {
         Text('资源')
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
           .fontColor(Color.White)
           .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
-        // 【真机回归：初始房间头部不显示搜索/人数/房主徽章】607 修正。
-        //
-        // 606 曾给人数胶囊/角色徽章加 `constraintSize({ minWidth })`——**无效**：
-        // ArkUI 里 `layoutWeight(1)` 的优先级**高于** `constraintSize`，
-        // 标题仍吃掉全部剩余空间，把兄弟节点压成 0 宽（截图里连无条件渲染
-        // 的人数胶囊/徽章都不见了）。
-        //
-        // 607 改用 `Blank()` 弹性占位——ArkUI 里唯一可靠「吃掉剩余空间且
-        // 不压扁兄弟节点」的手段（等价 Flutter 的 `Expanded(资源)`）。
-        Blank();
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          // 可收缩（空间不足时压缩标题），但不抢占兄弟空间。
+          .flexShrink(1)
+          .margin({ right: 6 });
         // 搜索：房主 **且暂停中** 才显示（Flutter
         // `_roomData != null && _isHost && state != playing`）。
         // 605：读 @State 镜像（`this.state().isHost` 是宿主普通字段，不在
@@ -1336,6 +1346,9 @@ export struct HimiNativePlayerView {
             .width(28)
             .height(28)
             .textAlign(TextAlign.Center)
+            // 611：固定尺寸、不参与收缩（等价安卓 llp(dp(28), dp(28))）。
+            .flexShrink(0)
+            .margin({ right: 6 })
             .onClick((): void => {
               this.host().sendCommand('openResourceSearch', null);
             });
@@ -1357,14 +1370,11 @@ export struct HimiNativePlayerView {
         .backgroundColor('#1FFFFFFF')
         .borderRadius(8)
         .alignItems(VerticalAlign.Center)
-        // 【真机回归：初始房间头部不显示搜索/人数/房主徽章】606 修正。
-        //
-        // 标题 `Text('资源')` 用 `layoutWeight(1)`——ArkUI 里它会吃掉全部
-        // 剩余空间，把后面的兄弟节点压到 0 宽（安卓注释记录过同一 bug：
-        // 「标题撑满后把三者挤到最右」）。
-        // 安卓的解法是给每个控件**显式固定尺寸**；这里给人数胶囊与角色
-        // 徽章加 `constraintSize({ minWidth })` 保底，避免被压成 0。
-        .constraintSize({ minWidth: 40, minHeight: 20 });
+        // 611：固定尺寸、不参与收缩（等价安卓 llp(WRAP_CONTENT, dp(20))）。
+        // `constraintSize` 只是保底，`flexShrink(0)` 才是「不被压扁」的正解。
+        .constraintSize({ minWidth: 40, minHeight: 20 })
+        .flexShrink(0)
+        .margin({ right: 6 });
         // 角色徽章：房主 accent / 观众红。
         Text(this.roomIsHost
           ? '房主'
@@ -1374,12 +1384,12 @@ export struct HimiNativePlayerView {
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .backgroundColor(this.roomIsHost ? SEL_COLOR : '#E53935')
           .borderRadius(8)
-          // 606：同上，给固定下限防被标题的 layoutWeight 压成 0 宽。
-          .constraintSize({ minWidth: 32, minHeight: 20 });
+          // 611：固定尺寸、不参与收缩（等价安卓 llp(WRAP_CONTENT, dp(20))）。
+          .constraintSize({ minWidth: 32, minHeight: 20 })
+          .flexShrink(0);
       }
       .width('100%')
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-      .alignItems(VerticalAlign.Center)
       .border({ width: { bottom: 0.5 }, color: ROOM_PANEL_DIVIDER });
 
       // ── 分组列表（padding vertical 4，对齐 Flutter ListView）──
@@ -1897,46 +1907,45 @@ export struct HimiNativePlayerView {
       Flex({
         direction: this.portrait ? FlexDirection.Column : FlexDirection.Row,
       }) {
-        this.VideoStack();
+        // 【611 真机回归：删除后资源面板变整块黑色】修正。
+        //
+        // 607 把空态占位层放在根 `Stack` 上、且是 `width('100%') +
+        // backgroundColor(Color.Black)` → **不透明黑底盖住了整个屏幕**，
+        // 包括 `Flex` 里的资源面板（真机截图「面板整块黑色、标题列表全无」）。
+        //
+        // 修法：占位层放进 `Flex` 的**视频子节点**内（用 Stack 包住视频 +
+        // 占位），只覆盖视频区，资源面板不受影响。
+        Stack() {
+          this.VideoStack();
+          if (!this.playerReady) {
+            Column() {
+              Text(String.fromCodePoint(NativePlayerIcons.ICON_PLAY_CIRCLE))
+                .fontFamily(NativePlayerIcons.FONT_FAMILY)
+                .fontSize(64)
+                .fontColor('#3DFFFFFF'); // Flutter Colors.white24
+              Text('请从资源面板选择要播放的内容')
+                .fontSize(14)
+                .fontColor('#61FFFFFF') // Flutter Colors.white38
+                .margin({ top: 16 });
+            }
+            .width('100%')
+            .height('100%')
+            // mpv `stop()` 后 surface 上仍残留最后一帧，占位层若不透明才
+            // 能盖住（透明会让旧画面透出来，真机截图能看到人像隐约浮现）。
+            .backgroundColor(Color.Black)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            // 不抢手势：点屏仍可显隐控件（与加载指示器同款）。
+            .hitTestBehavior(HitTestMode.None);
+          }
+        }
+        .layoutWeight(1);
         if (this.roomPanelShown) {
           this.RoomPanelSlot();
         }
       }
       .width('100%')
       .height('100%');
-
-      // ── 空态占位（607）：对齐 Flutter `_buildVideoArea` 的空态分支 ──
-      //
-      // Flutter 在无播放内容时显示 `▶ play_circle_outline(64, white24)`
-      // + `请从资源面板选择要播放的内容`(14, white38)。
-      // 删除当前播放资源后 Flutter 置 `_isPlayerReady = false` 走这个分支；
-      // 原生此前没有占位 UI，画面停在最后一帧（看起来像「没删掉」）。
-      //
-      // 尺寸/颜色/间距逐值对齐 Flutter：图标 64 / 间距 16 / 文案 14。
-      if (!this.playerReady) {
-        Column() {
-          Text(String.fromCodePoint(NativePlayerIcons.ICON_PLAY_CIRCLE))
-            .fontFamily(NativePlayerIcons.FONT_FAMILY)
-            .fontSize(64)
-            .fontColor('#3DFFFFFF'); // Flutter Colors.white24
-          Text('请从资源面板选择要播放的内容')
-            .fontSize(14)
-            .fontColor('#61FFFFFF') // Flutter Colors.white38
-            .margin({ top: 16 });
-        }
-        .width('100%')
-        .height('100%')
-        // 【608 真机回归：删除后出现隐约的之前视频画面】修正。
-        //
-        // mpv `stop()` 后 surface 上**仍残留最后一帧**，占位层若透明就会
-        // 让旧画面透出来（真机截图能看到人像隐约浮现）。Flutter 侧视频区
-        // 是独立 Widget 栈、天然不透明，原生必须自己盖一层。
-        .backgroundColor(Color.Black)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        // 不抢手势：点屏仍可显隐控件（与加载指示器同款）。
-        .hitTestBehavior(HitTestMode.None);
-      }
 
       // ── 加载指示器（586）：居中转圈，在控件层**之下**（对齐 Flutter
       //    `_buildVideoArea` 的 `CircularProgressIndicator`——转圈期间顶栏/

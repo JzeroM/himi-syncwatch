@@ -1478,6 +1478,37 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   修法：按**行容量**（`autoRows`）判断——容量不变就不清；`h <= 0` 时直接
   返回（不基于无效高度重排）。
 
+### Phase 2.30：鸿蒙头部 flexShrink + 占位层收进视频区 + 弹幕单层插值（1.5.31+611）
+
+> 起因：真机「鸿蒙房间模式头部仍然不显示搜索、人数、房主徽章」（已修 4 轮
+> 仍不生效）「鸿蒙删除正在播放的资源后资源面板变成整块黑色」「安卓 MPV
+> 弹幕还是抖动」。
+
+- [x] **头部三控件不显示（第 5 轮，终于找到正确方向）**：前 4 轮都在
+  ArkUI 里试「让兄弟节点不被压扁」的写法——606 `constraintSize`
+  （无效：`layoutWeight` 优先级更高）、607 `Blank()`（无效）、608/610
+  也没解决。
+  **真正的根因**：**ArkUI 的 `layoutWeight` 与安卓 `LinearLayout` 权重
+  语义不同**——安卓 `LayoutParams(0, WRAP_CONTENT, 1f)` 是「先测量兄弟
+  节点的自身宽度，剩余空间才给权重节点」；ArkUI `layoutWeight(1)` 会
+  直接抢占剩余空间、把兄弟压成 0 宽。
+  **修法（对齐安卓）**：改用 `Flex`，标题 `flexShrink(1)`（可收缩但不
+  抢占），右侧三个控件 `flexShrink(0)`（固定尺寸、不参与收缩）——
+  等价安卓给它们固定 `LayoutParams`。
+- [x] **删除后资源面板整块黑色**：607 把空态占位层放在根 `Stack` 上、
+  且是 `width('100%') + backgroundColor(Color.Black)` → **不透明黑底盖住
+  了整个屏幕**，包括 `Flex` 里的资源面板（截图「面板整块黑色、标题列表
+  全无」）。
+  修法：占位层放进 `Flex` 的**视频子节点**内（用 `Stack` 包住
+  `VideoStack` + 占位），只覆盖视频区。
+- [x] **安卓弹幕抖动**：调用方传的是 `pos`（`positionAt()` 的**插值
+  结果**），而 `DanmakuLayerView.setClock` 内部又会用墙钟再插值一次 →
+  **两层插值叠加**。每次快照刷新（500ms）时 `positionAt` 的基准变化会让
+  `pos` 跳变，弹幕位置随之跳动。
+  修法：传**未插值的原始位置源** `state.positionMs`，由弹幕层单层插值
+  ——对齐 Flutter（MDK 路径）`DanmakuOverlay` 的
+  `_nowPosition = _lastPosition + (_elapsed - _alignElapsed)` 语义。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

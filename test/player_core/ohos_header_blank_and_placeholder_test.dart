@@ -26,14 +26,15 @@ void main() {
       expect(body, isNot(contains('layoutWeight')));
     });
 
-    test('头部 Row 内有 Blank()', () {
+    test('611 起改用 Flex + flexShrink（Blank 方案已废弃）', () {
       final idx = view.indexOf("Text('资源')");
       final body = view.substring(idx, idx + 700);
-      expect(body, contains('Blank();'));
+      expect(body, contains('.flexShrink(1)'));
+      expect(body, isNot(contains('Blank();')));
     });
 
-    test('注释记录 layoutWeight 优先级高于 constraintSize', () {
-      expect(view, contains('优先级**高于**'));
+    test('注释记录 layoutWeight 与安卓权重语义不同', () {
+      expect(view, contains('`layoutWeight` 与安卓 `LinearLayout` 权重语义不同'));
     });
 
     test('人数胶囊/角色徽章仍保留 constraintSize 保底', () {

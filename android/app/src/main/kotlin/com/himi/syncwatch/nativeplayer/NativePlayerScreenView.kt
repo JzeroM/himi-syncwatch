@@ -3814,7 +3814,18 @@ class NativePlayerScreenView(
         if (!dragging) {
             val pos = state.positionAt(now, lastStateAtMs)
             positionLabel.text = AndroidNativePlayerState.formatPlayerTime(pos)
-            danmakuLayer.setClock(pos, state.paused)
+            // 【611 真机回归：安卓弹幕抖动/抽搐】修正。
+            //
+            // 旧实现传的是 `pos`（= `state.positionAt(now, lastStateAtMs)`
+            // 的**插值结果**），而 `DanmakuLayerView.setClock` 内部又会用
+            // 墙钟再插值一次 → **两层插值叠加**。每次快照刷新（500ms）时
+            // `positionAt` 的基准变化会让 `pos` 跳变，弹幕位置随之跳动。
+            //
+            // 对齐 Flutter（MDK 路径）`DanmakuOverlay` 的语义：
+            //   `_nowPosition = _lastPosition + (_elapsed - _alignElapsed)`
+            // ——`_lastPosition` 是**未插值的原始位置源**，插值只在渲染层
+            // 做一层。这里同样传 `state.positionMs`（原始快照值）。
+            danmakuLayer.setClock(state.positionMs, state.paused)
             // 玻璃滑杆：值即毫秒（玻璃滑杆内部完成 ratio 映射，无步进换算）。
             // durationMs 未就绪（起播早期为 0）时不覆盖 value（防归零抖动）。
             if (state.durationMs > 0) {

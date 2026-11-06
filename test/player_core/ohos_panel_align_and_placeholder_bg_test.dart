@@ -35,9 +35,9 @@ void main() {
 
     test('610 起面板是流式子节点，不再需要 Transparent 放行', () {
       // 流式布局下 Flex 容器只占自身尺寸，视频区触摸天然不受影响。
-      final idx = view.indexOf('Flex({');
+      final idx = view.indexOf('Flex({\n        direction: this.portrait ? FlexDirection.Column');
       expect(idx, greaterThan(0));
-      final body = view.substring(idx, idx + 600);
+      final body = view.substring(idx, idx + 1200);
       expect(body, contains('.width('));
       expect(body, contains('.height('));
     });
@@ -89,10 +89,10 @@ void main() {
   });
 
   group('④ 607 的修复保持不回退', () {
-    test('头部仍用 Blank 弹性占位', () {
+    test('611 起头部改用 Flex + flexShrink', () {
       final idx = view.indexOf("Text('资源')");
       final body = view.substring(idx, idx + 700);
-      expect(body, contains('Blank();'));
+      expect(body, contains('.flexShrink(1)'));
     });
 
     test('播放图标仍有独立 onClick + Block', () {
