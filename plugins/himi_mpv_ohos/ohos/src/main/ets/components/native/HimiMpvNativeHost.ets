@@ -357,6 +357,15 @@ export class NativePlayerUiState {
   /** 加载指示器是否显示（586，三端统一；首帧未出 **或** 缓冲中）。 */
   showLoading: boolean = false;
 
+  /**
+   * 是否有可播放内容（607）。
+   *
+   * 【真机回归：删除正在播放的资源后画面停在最后一帧】Flutter 删除当前集
+   * 时置 `_isPlayerReady = false` → 视频区走「请从资源面板选择要播放的
+   * 内容」占位分支。原生侧此前完全没有这个占位 UI。
+   */
+  playerReady: boolean = true;
+
   canControl: boolean = true;
   locked: boolean = false;
   /** TV 模式（遥控器排布：时钟/倍速在底栏、无锁钮与转屏等）。 */
@@ -450,6 +459,7 @@ export class NativePlayerUiState {
     this.paused = jsonBool(obj.paused, this.paused);
     this.buffering = jsonBool(obj.buffering, this.buffering);
     this.showLoading = jsonBool(obj.showLoading, this.showLoading);
+    this.playerReady = jsonBool(obj.playerReady, this.playerReady);
     // 房间资源面板（590）
     this.roomCode = jsonStr(obj.roomCode, this.roomCode);
     this.isHost = jsonBool(obj.isHost, this.isHost);

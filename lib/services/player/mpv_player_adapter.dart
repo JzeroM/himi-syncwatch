@@ -2020,6 +2020,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       showDebug: _nativeUiExtras.showDebug,
       // 加载指示器（587）：现算值（见方法开头注释），不再读低频 extras。
       showLoading: showLoading,
+      // 是否有可播放内容（607）：无内容时原生渲染「请从资源面板选择要
+      // 播放的内容」占位（对齐 Flutter `_buildVideoArea` 的空态分支）。
+      // 判据与 PlayerScreen 一致：未就绪（删除了当前集 / 尚未起播）。
+      playerReady: _prepared && !_disposed,
       // 房间资源面板（595）：这 5 个字段此前**从未传入** NativePlayerState
       // （构造时漏传 + toJson 未序列化），导致原生 `resourceGroups` 永远空、
       // `resourcePanelOpen` 永远默认 true（真机「面板永远空白、开关点了没

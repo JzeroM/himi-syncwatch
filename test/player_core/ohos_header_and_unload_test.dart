@@ -68,7 +68,8 @@ void main() {
       //（ArkTS 报 "Property 'margin' does not exist on type 'void'"）。
       final idx = view.indexOf("'panelToggle'");
       final body = view.substring(idx, idx + 700);
-      expect(body, contains(".margin({ left: 20 * this.bottomScale })"));
+      // 607 起额外加了 right: 8（防压线资源面板边界）。
+      expect(body, contains(".margin({ left: 20 * this.bottomScale, right: 8 })"));
       // 必须由外层 Row 承载。
       final before = view.substring(idx - 300, idx);
       expect(before, contains('Row() {'));

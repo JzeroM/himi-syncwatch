@@ -334,6 +334,16 @@ export struct HimiNativePlayerView {
    * 修法：显式镜像到 @State 并在 build() 直读（条件翻转即销毁/重建节点）。
    */
   @State showLoading: boolean = false;
+
+  /**
+   * 是否有可播放内容（607，**必须 @State**）。
+   *
+   * 【真机回归：删除正在播放的资源后画面停在最后一帧】Flutter 侧删除当前
+   * 集时置 `_isPlayerReady = false` → 视频区走占位分支（`▶ + 请从资源面板
+   * 选择要播放的内容`）。原生侧此前**完全没有**占位 UI，删除后停在最后
+   * 一帧（看起来像「没删掉」）。
+   */
+  @State playerReady: boolean = true;
   /** 跳过片头/片尾提示（'' = 隐藏，'intro' / 'outro'；Dart 推送驱动）。 */
   @State skipPrompt: string = '';
   /** Logo 地址（'' = 不显示；房间模式无 logo）。稳定层直读，不进重建块。 */
@@ -536,6 +546,8 @@ export struct HimiNativePlayerView {
     // 加载指示器（589）：宿主字段不在观察链上，必须镜像到 @State，
     // build() 才能随状态推送/250ms tick 即时收起。
     this.showLoading = s.showLoading;
+    // 607：无播放内容 → 渲染占位提示（见 playerReady 注释）。
+    this.playerReady = s.playerReady;
     // 跳过提示边沿处理（对齐 Flutter `_evaluateSkipPrompt`/`_dismissSkipPrompt`）：
     // 出现（''→非空）：强制显示控件 + 重置自动隐藏（胶囊所在底栏随之可见）；
     // 消失（非空→''）：重置计时，给用户完整 5 秒操作窗口。
@@ -1291,9 +1303,18 @@ export struct HimiNativePlayerView {
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
           .fontColor(Color.White)
-          .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis });
+        // 【真机回归：初始房间头部不显示搜索/人数/房主徽章】607 修正。
+        //
+        // 606 曾给人数胶囊/角色徽章加 `constraintSize({ minWidth })`——**无效**：
+        // ArkUI 里 `layoutWeight(1)` 的优先级**高于** `constraintSize`，
+        // 标题仍吃掉全部剩余空间，把兄弟节点压成 0 宽（截图里连无条件渲染
+        // 的人数胶囊/徽章都不见了）。
+        //
+        // 607 改用 `Blank()` 弹性占位——ArkUI 里唯一可靠「吃掉剩余空间且
+        // 不压扁兄弟节点」的手段（等价 Flutter 的 `Expanded(资源)`）。
+        Blank();
         // 搜索：房主 **且暂停中** 才显示（Flutter
         // `_roomData != null && _isHost && state != playing`）。
         // 605：读 @State 镜像（`this.state().isHost` 是宿主普通字段，不在
@@ -1526,7 +1547,25 @@ export struct HimiNativePlayerView {
           .width(22)
           .height(22)
           .textAlign(TextAlign.Center)
-          .margin({ right: 8 });
+          .margin({ right: 8 })
+          // 【真机回归：资源行前面的播放/暂停控件点击没反应】607 修正。
+          //
+          // 604 修「删除按钮冒泡到切集」时把行容器的 onClick 移到了内容区
+          // 容器（缩略图 + 集信息），但**遗漏了本图标**——它既没有自己的
+          // onClick，也不再能靠父容器冒泡 → 点击完全无响应（死区）。
+          //
+          // Flutter 的 `TvFocusable(onTap)` 是独立点击：当前集→暂停/继续，
+          // 其它集→切集。这里补齐同样语义。
+          .onClick((): void => {
+            if (ep.isPlaying) {
+              this.host().optimisticTogglePaused();
+            } else {
+              this.host().optimisticSelectEpisode(ep.index);
+            }
+          })
+          // 自身响应并阻止被遮挡节点：确保点击只作用于本图标、不穿透到
+          // 内容区（否则会同时触发切集，出现双重动作）。
+          .hitTestBehavior(HitTestMode.Block);
       }
       // 【604 真机回归：列表里删除无效（点了变成切集）】
       //
@@ -1847,6 +1886,33 @@ export struct HimiNativePlayerView {
       // 不会随它变化重新求值 → 收起后视频全屏了但面板还留在树里）。
       if (this.roomPanelShown) {
         this.RoomPanelSlot();
+      }
+
+      // ── 空态占位（607）：对齐 Flutter `_buildVideoArea` 的空态分支 ──
+      //
+      // Flutter 在无播放内容时显示 `▶ play_circle_outline(64, white24)`
+      // + `请从资源面板选择要播放的内容`(14, white38)。
+      // 删除当前播放资源后 Flutter 置 `_isPlayerReady = false` 走这个分支；
+      // 原生此前没有占位 UI，画面停在最后一帧（看起来像「没删掉」）。
+      //
+      // 尺寸/颜色/间距逐值对齐 Flutter：图标 64 / 间距 16 / 文案 14。
+      if (!this.playerReady) {
+        Column() {
+          Text(String.fromCodePoint(NativePlayerIcons.ICON_PLAY_CIRCLE))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
+            .fontSize(64)
+            .fontColor('#3DFFFFFF'); // Flutter Colors.white24
+          Text('请从资源面板选择要播放的内容')
+            .fontSize(14)
+            .fontColor('#61FFFFFF') // Flutter Colors.white38
+            .margin({ top: 16 });
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        // 不抢手势：点屏仍可显隐控件（与加载指示器同款）。
+        .hitTestBehavior(HitTestMode.None);
       }
 
       // ── 加载指示器（586）：居中转圈，在控件层**之下**（对齐 Flutter
@@ -2510,8 +2576,13 @@ export struct HimiNativePlayerView {
                 },
                 this.bottomScale);
             }
-            // 与图标簇之间留 CONTROL_GAP（对齐安卓 marginStart）。
-            .margin({ left: 20 * this.bottomScale });
+            // 与图标簇之间留 CONTROL_GAP（对齐安卓 marginStart）；
+            // 右侧再留 8vp——【607 真机回归：按钮几乎压线资源面板边界】
+            // `controlsW` 已生效（底栏只到视频区），但本按钮是 trailing 槽
+            // 最末元素，右缘正好落在控件层右缘（= 视频区/面板分界），
+            // 视觉上「压在资源面板上」。安卓靠 bottomBar 的 16dp padding
+            // 留白，这里补一层显式右间距。
+            .margin({ left: 20 * this.bottomScale, right: 8 });
           }
         }
         .alignItems(VerticalAlign.Center);

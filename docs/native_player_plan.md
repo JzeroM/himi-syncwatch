@@ -1351,6 +1351,38 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   `_mediaStatus = unloaded`、显式 `stop()`，让轮询不再认为「有进度在播」。
   `_removeEpisode` 删除当前播放资源时调它。
 
+### Phase 2.26：鸿蒙头部 Blank 占位 + 播放图标点击 + 空态提示（1.5.27+607）
+
+> 起因：真机「鸿蒙初始进房间（未播放）头部还是不显示搜索、人数、房主
+> 徽章」「面板开关按钮跑到资源面板里、几乎压线」「删除正在播放的资源
+> 不是要暂停，是要把正在播的视频清空（参考 Flutter 房间的删除）」
+> 「资源面板每列前面的播放/暂停控件点击没反应」。
+
+- [x] **头部三控件仍不显示**：606 加的 `constraintSize({ minWidth })`
+  **无效**——ArkUI 里 `layoutWeight(1)` 的优先级**高于** `constraintSize`，
+  `Text('资源')` 仍吃掉全部剩余空间、把兄弟节点压成 0 宽。
+  修法：`layoutWeight(1)` → `Blank()` 弹性占位（ArkUI 里唯一可靠「吃掉
+  剩余空间且不压扁兄弟节点」的手段，等价 Flutter 的 `Expanded(资源)`）。
+- [x] **面板开关按钮压线资源面板边界**：`controlsW` 已生效（底栏只到视频
+  区），但 `panelToggle` 是 trailing 槽**最末元素**，右缘正好落在控件层
+  右缘（= 视频区/面板分界）。
+  修法：`.margin({ left: 20 * bottomScale, right: 8 })` 补右侧留白。
+- [x] **播放/暂停图标点击无响应**：604 修「删除按钮冒泡到切集」时把行容器
+  的 onClick 移到了内容区容器（缩略图 + 集信息），但**遗漏了播放图标**
+  ——它既没有自己的 onClick、也不再能靠父容器冒泡 → 点击完全无响应。
+  修法：补独立 `onClick`（对齐 Flutter `TvFocusable.onTap`：当前集→暂停/
+  继续，其它集→切集）+ `.hitTestBehavior(HitTestMode.Block)` 防穿透。
+- [x] **删除当前播放资源后要「清空视频」而非暂停**：Flutter 侧置
+  `_isPlayerReady = false` → 视频区走占位分支（`▶ play_circle_outline
+  (64, white24)` + `请从资源面板选择要播放的内容`(14, white38)）。
+  原生侧此前**完全没有**这个占位 UI，删除后停在最后一帧（看起来像
+  「没删掉」）。
+  修法：`NativePlayerState` 新增 `playerReady`（8 层补全：构造参数/字段/
+  `fromJson`/`toJson`/`copyWith`/`==`/`hashCode`/`_buildNativePlayerState`），
+  与 `_prepared` 绑定（`unloadMedia()` 会重置它）；鸿蒙新增 `@State
+  playerReady` + 占位层（尺寸/颜色/间距逐值对齐 Flutter，`hitTestBehavior
+  (None)` 不抢手势）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

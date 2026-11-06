@@ -359,6 +359,7 @@ class NativePlayerState {
     this.paused = true,
     this.buffering = false,
     this.showLoading = false,
+    this.playerReady = true,
     this.ended = false,
     this.volume = 1.0,
     this.speed = 1.0,
@@ -461,6 +462,16 @@ class NativePlayerState {
   /// 只在设置变更/切集等低频时机重建 → 起播前算出的 `true` 被一直送下去，
   /// 鸿蒙/安卓出现「视频都在播了还一直转圈」。不要再从 extras 读取它。
   final bool showLoading;
+
+  /// 是否有可播放内容（607）。
+  ///
+  /// 【真机回归：删除正在播放的资源后画面停在最后一帧】Flutter 侧删除当前
+  /// 集时置 `_isPlayerReady = false` → `_buildVideoArea` 走占位分支
+  /// （`▶ + 请从资源面板选择要播放的内容`）。原生侧此前**完全没有**这个
+  /// 占位 UI，删除后停在最后一帧（看起来像「没删掉」）。
+  ///
+  /// `false` 时原生渲染同样的占位提示。
+  final bool playerReady;
 
   final bool ended;
   final double volume;
@@ -613,6 +624,7 @@ class NativePlayerState {
       paused: json['paused'] != false,
       buffering: json['buffering'] == true,
       showLoading: json['showLoading'] == true,
+      playerReady: json['playerReady'] != false,
       ended: json['ended'] == true,
       volume: (json['volume'] as num?)?.toDouble() ?? 1.0,
       speed: (json['speed'] as num?)?.toDouble() ?? 1.0,
@@ -738,6 +750,7 @@ class NativePlayerState {
         'paused': paused,
         'buffering': buffering,
         'showLoading': showLoading,
+        'playerReady': playerReady,
         'ended': ended,
         'volume': volume,
         'speed': speed,
@@ -829,6 +842,7 @@ class NativePlayerState {
     bool? paused,
     bool? buffering,
     bool? showLoading,
+    bool? playerReady,
     bool? ended,
     double? volume,
     double? speed,
@@ -915,6 +929,7 @@ class NativePlayerState {
         paused: paused ?? this.paused,
         buffering: buffering ?? this.buffering,
         showLoading: showLoading ?? this.showLoading,
+        playerReady: playerReady ?? this.playerReady,
         ended: ended ?? this.ended,
         volume: volume ?? this.volume,
         speed: speed ?? this.speed,
@@ -1018,6 +1033,7 @@ class NativePlayerState {
       other.paused == paused &&
       other.buffering == buffering &&
       other.showLoading == showLoading &&
+      other.playerReady == playerReady &&
       other.ended == ended &&
       other.volume == volume &&
       other.speed == speed &&
@@ -1105,6 +1121,7 @@ class NativePlayerState {
         paused,
         buffering,
         showLoading,
+        playerReady,
         ended,
         volume,
         speed,
