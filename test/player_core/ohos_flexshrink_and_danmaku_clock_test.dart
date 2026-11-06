@@ -105,15 +105,12 @@ void main() {
   });
 
   group('③ 安卓弹幕单层插值（对齐 Flutter）', () {
-    test('setClock 传 state.positionMs（不是 positionAt 插值结果）', () {
-      // 612：positionMs 是 Int，setClock 要 Long → 补 .toLong()。
+    test('614 起 setClock 只传 paused（位置由 positionProvider 现算）', () {
+      // 614 对齐鸿蒙：弹幕层不自维护锚点，直接读宿主插值时钟。
+      expect(kotlinScreen, contains('danmakuLayer.setClock(state.paused)'));
       expect(
         kotlinScreen,
-        contains('danmakuLayer.setClock(state.positionMs.toLong(), state.paused)'),
-      );
-      expect(
-        kotlinScreen,
-        isNot(contains('danmakuLayer.setClock(pos, state.paused)')),
+        isNot(contains('danmakuLayer.setClock(state.positionMs')),
       );
     });
 
@@ -126,11 +123,11 @@ void main() {
       expect(flutter, contains('_lastPosition + (_elapsed - _alignElapsed)'));
     });
 
-    test('弹幕层内部仍保留墙钟插值（单层）', () {
+    test('弹幕层改为读 positionProvider（不再自维护锚点）', () {
       final danmaku = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/DanmakuLayerView.kt',
       ).readAsStringSync();
-      expect(danmaku, contains('anchorPosMs + ((System.currentTimeMillis() - anchorWallMs) * speed).toLong()'));
+      expect(danmaku, contains('private fun currentPositionMs(): Long = positionProvider()'));
     });
   });
 }

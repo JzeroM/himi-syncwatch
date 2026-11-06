@@ -71,13 +71,15 @@ void main() {
     });
   });
 
-  group('安卓弹幕：倍速外推（旧实现漏乘 speed）', () {
-    test('currentPositionMs 乘倍速', () {
+  group('安卓弹幕：位置源（614 对齐鸿蒙，单层插值）', () {
+    test('位置由宿主 provider 现算（弹幕层不再自维护锚点/自乘倍速）', () {
+      // 614：倍速已在宿主 `positionAt` 内处理（单层插值、单一锚点
+      // `lastStateAtMs`），弹幕层只读结果——与鸿蒙 `positionNowMs()` 等价。
       expect(kotlinDanmaku,
-          contains('anchorPosMs + ((System.currentTimeMillis() - anchorWallMs) * speed).toLong()'));
-      // 旧写法（不乘 speed）必须消失。
-      expect(kotlinDanmaku,
-          isNot(contains('anchorPosMs + (System.currentTimeMillis() - anchorWallMs)')));
+          contains('private fun currentPositionMs(): Long = positionProvider()'));
+      // 旧的「自维护锚点 + 自乘倍速」写法必须消失。
+      expect(kotlinDanmaku, isNot(contains('anchorPosMs + (')));
+      expect(kotlinDanmaku, isNot(contains('anchorWallMs)')));
     });
   });
 

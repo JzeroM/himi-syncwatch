@@ -1764,8 +1764,16 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // → `prepare()` 不调用 → `_nativeUiEnabled` 从未计算过。此时按设置
     // 预判（`prefersNativeRoomUi` 是纯计算、不建会话）补算一次。
     if (!_nativeUiEnabled) {
-      _nativeUiEnabled = prefersNativeRoomUi;
-      if (!_nativeUiEnabled) return;
+      // 【614 真机回归：安卓画面拉伸 / 视频贴左上角】613 在这里补算并
+      // **写回** `_nativeUiEnabled`，导致安卓非房间播放也打开原生窗口，
+      // 而安卓 surface 尺寸与窗口尺寸不同步（`window.setLayout` 用
+      // displayMetrics 反推）→ 画面被缩成左上角一小块。
+      // 613 的「提前打开」只在**鸿蒙**生效（鸿蒙用 Flex 流式布局、
+      // 尺寸由框架算，不存在这个不同步问题）；安卓回退到 612 行为
+      //（只在 prepare() 里按实际会话判定）。
+      if (!MpvSessionPlatform.isOhos) return;
+      if (!prefersNativeRoomUi) return;
+      // 不写回 `_nativeUiEnabled`（避免跨会话残留，见 _closeNativeUi）。
     }
     final platform = MpvSessionPlatform.nativeUiPlatformName;
     if (platform == null) return;
@@ -1936,6 +1944,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     final controller = _nativeUiController;
     _nativeUiController = null;
     _nativeUiSuspended = false;
+    // 【614】重置门控——否则该字段一旦为 true 就跨会话残留，后续非房间
+    // 播放也会误走原生窗口（真机「613 起非房间竖屏画面不在屏幕内」）。
+    _nativeUiEnabled = false;
     nativeUiActive.value = false;
     _player?.setNativeUiActive(false);
     if (controller == null) return;
@@ -1985,7 +1996,12 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 589 看门狗兜底：即使「首帧已出」的判据全部失效（某些设备
     // `video-params`/`width` 都读不到），只要确实在播放且位置已推进超过
     // [loadingWatchdogMs]，就强制收起转圈——绝不允许永久转圈。
-    final showLoading = !_loadingWatchdogFired &&
+    // 【614 真机回归：初始未播放时仍有加载器】旧判定没有「是否加载了媒体」
+    // 的守卫——空房间/初始未播放时 `_durationMs==0 && _positionMs==0 &&
+    // 非playing` 恒真 → 转圈永久显示（真机截图：占位提示旁一直转圈）。
+    final hasMedia = _prepared || _uri != null;
+    final showLoading = hasMedia &&
+        !_loadingWatchdogFired &&
         (buffering ||
             firstFramePending.value ||
             (_durationMs == 0 &&

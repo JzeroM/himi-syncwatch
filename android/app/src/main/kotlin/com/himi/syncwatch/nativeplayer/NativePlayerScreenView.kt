@@ -1058,6 +1058,12 @@ class NativePlayerScreenView(
             lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
         )
         // 弹幕层：视频之上、控件之下（与 Flutter DanmakuOverlay 位置一致）。
+        // 【614】弹幕位置源：宿主插值时钟（单层插值、单一锚点）。
+        // 与鸿蒙 `DanmakuLayer.nowPosition()` → 宿主 `positionNowMs()`
+        // 完全等价——弹幕层不再自维护锚点。
+        danmakuLayer.setPositionProvider {
+            lastState.positionAt(System.currentTimeMillis(), lastStateAtMs)
+        }
         addView(danmakuLayer, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         // 加载指示器：居中转圈。颜色/尺寸/动画对齐 Flutter `_buildVideoArea`
@@ -3825,7 +3831,10 @@ class NativePlayerScreenView(
             //   `_nowPosition = _lastPosition + (_elapsed - _alignElapsed)`
             // ——`_lastPosition` 是**未插值的原始位置源**，插值只在渲染层
             // 做一层。这里同样传 `state.positionMs`（原始快照值）。
-            danmakuLayer.setClock(state.positionMs.toLong(), state.paused)
+            // 【614】位置源：宿主插值时钟（快照 + 墙钟×倍速，单层插值、
+            // 单一锚点 `lastStateAtMs`）——与鸿蒙 `positionNowMs()` 等价。
+            // 弹幕层不再自维护锚点（那会与这里的插值叠加成两层 → 跳跃）。
+            danmakuLayer.setClock(state.paused)
             // 玻璃滑杆：值即毫秒（玻璃滑杆内部完成 ratio 映射，无步进换算）。
             // durationMs 未就绪（起播早期为 0）时不覆盖 value（防归零抖动）。
             if (state.durationMs > 0) {

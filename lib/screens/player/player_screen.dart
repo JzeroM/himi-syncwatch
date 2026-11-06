@@ -14,6 +14,7 @@ import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
+import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 import 'package:himi_mpv_android/himi_mpv_android.dart'
     show HimiMpvAndroidSurfaceView;
 import 'package:himi_mpv_ohos/himi_mpv_ohos.dart' show HimiMpvSurfaceView;
@@ -2090,8 +2091,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _setupRoomSync();
       // 房间 UI 的渲染层跟随「引擎 + 输出路径设置」：原生内核开原生房
       // （不等 prepare() 有媒体才开），非原生内核走 Flutter 房。
+      // 614：提前打开原生窗口**只在鸿蒙生效**——安卓的 surface 尺寸同步
+      // 依赖 `applyVideoInsetRight`（displayMetrics 反推），提前打开会在
+      // 窗口尺寸未就绪时合成 → 画面拉伸/贴左上角（真机回归）。
       final roomPlayer = _player;
-      if (roomPlayer is MpvPlayerAdapter && roomPlayer.prefersNativeRoomUi) {
+      if (MpvSessionPlatform.isOhos &&
+          roomPlayer is MpvPlayerAdapter &&
+          roomPlayer.prefersNativeRoomUi) {
         unawaited(roomPlayer.reopenNativeUi());
       }
     }
@@ -7882,8 +7888,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     //
     // 613：房间模式下用 `_roomUiShouldBeNative`（按设置判定）而不是
     // `_nativeUiActive`（要等 prepare）——空房间/未播放也走原生层。
+    //
+    // 【614 真机回归：安卓画面拉伸 / 视频贴左上角】安卓的 surface 尺寸由
+    // `window.setLayout` + `displayMetrics` 反推，与鸿蒙的 Flex 流式布局
+    // 机制不同——提前退场（窗口尚未按分栏设置好 surface 尺寸）会让 mpv
+    // 用旧尺寸合成。因此 613 的提前退场**只在鸿蒙生效**，安卓回退到
+    // 612 行为（`_nativeUiActive`：窗口真的打开了才退场）。
     final nativeShortCircuit = widget.roomCode != null
-        ? _roomUiShouldBeNative
+        ? (MpvSessionPlatform.isOhos ? _roomUiShouldBeNative : _nativeUiActive)
         : _nativeUiActive;
     if (nativeShortCircuit) {
       return const SizedBox.expand();
@@ -8698,7 +8710,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 非原生内核 → 关闭原生窗口、交回 Flutter 层。
         // 旧实现只在 `prepare()` 里打开，切到非原生内核时不会关闭，
         // 导致「切到 MDK 后仍是原生房」或「切回 mpv 后仍是 Flutter 房」。
-        if (widget.roomCode != null) {
+        // 614：房间 UI 层的重新判定**只在鸿蒙生效**（安卓保持 612 行为）。
+        if (widget.roomCode != null && MpvSessionPlatform.isOhos) {
           final p = _player;
           if (p is MpvPlayerAdapter) {
             if (p.prefersNativeRoomUi) {

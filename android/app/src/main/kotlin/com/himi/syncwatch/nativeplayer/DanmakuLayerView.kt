@@ -54,13 +54,12 @@ class DanmakuLayerView(context: Context) : View(context) {
     private var topRows = 4
     private var bottomRows = 4
 
-    /** 当前播放位置锚点（ms）；由宿主 tick 喂入。 */
-    private var anchorPosMs = 0L
-
-    /** 锚点的墙钟时刻（锚点间自插值，不等 tick 的 500ms 跳变）。 */
-    private var anchorWallMs = 0L
-
-    /** 暂停冻结（暂停时锚点不推进）。 */
+    /**
+     * 暂停冻结（614）。
+     *
+     * 位置由 [positionProvider] 现算——宿主侧 `positionAt` 在暂停态直接
+     * 返回快照位置，所以这里只需知道暂停位以决定是否继续逐帧重绘。
+     */
     private var paused = true
 
     /**
@@ -147,12 +146,29 @@ class DanmakuLayerView(context: Context) : View(context) {
     }
 
     /**
-     * 宿主 tick 喂入位置锚点。锚点间由本层按墙钟×倍速自插值并逐帧重绘
-     * （镜像 Flutter Ticker：500ms 轮询跳变间平滑滚动，暂停冻结、seek 自愈）。
+     * 位置源（614）：**直接读宿主的插值时钟**，与鸿蒙 `DanmakuLayer`
+     * 完全一致——本层**不再自维护锚点**。
+     *
+     * 【真机回归：安卓弹幕前后跳跃、不流畅】旧实现自己维护
+     * `anchorPosMs/anchorWallMs`，而 `setClock` 每 500ms 被 `applyState`
+     * 调用一次、每次都重置锚点；传入的 `positionMs` 又是**快照时刻**的
+     * 位置（距调用已过去 0~500ms）→ 弹幕位置**倒退**再外推 → 视觉「前后
+     * 跳跃」。叠加调用方此前传 `positionAt()` 的插值结果，还形成**两层
+     * 插值**。
+     *
+     * 鸿蒙的做法是：弹幕层每次渲染直接调宿主 `positionNowMs()`
+     *（快照 + 墙钟×倍速，**单一锚点、单层插值**）→ 天然平滑。
+     * 这里改为同样的架构。
      */
-    fun setClock(positionMs: Long, paused: Boolean) {
-        this.anchorPosMs = positionMs
-        this.anchorWallMs = System.currentTimeMillis()
+    private var positionProvider: () -> Long = { 0L }
+
+    /** 注入位置源（614）。由宿主在 `applyState` 时绑定一次。 */
+    fun setPositionProvider(provider: () -> Long) {
+        positionProvider = provider
+    }
+
+    /** 宿主 tick 通知暂停态变化（位置由 [positionProvider] 现算）。 */
+    fun setClock(paused: Boolean) {
         this.paused = paused
         if (visibility == VISIBLE && !paused) {
             postInvalidateOnAnimation()
@@ -161,15 +177,8 @@ class DanmakuLayerView(context: Context) : View(context) {
         }
     }
 
-    /**
-     * 自插值当前播放位置：锚点 + 墙钟增量 **× 倍速**。
-     *
-     * 旧实现漏了倍速因子：2× 播放时播放位置每墙钟秒走 2s，而弹幕只走 1s
-     * → 锚点间弹幕半速、每 500ms 跳一下（真机「弹幕忽快忽慢」）。
-     */
-    private fun currentPositionMs(): Long =
-        if (paused) anchorPosMs
-        else anchorPosMs + ((System.currentTimeMillis() - anchorWallMs) * speed).toLong()
+    /** 当前播放位置：直接问位置源（单层插值，无自维护锚点）。 */
+    private fun currentPositionMs(): Long = positionProvider()
 
     /**
      * 转屏/尺寸变化：**只在行容量真的变了**才重排行号与冲突表。

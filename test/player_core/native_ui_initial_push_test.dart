@@ -65,19 +65,19 @@ void main() {
   });
 
   group('③ Kotlin 类型修复（positionMs Int → Long）', () {
-    test('setClock 传 .toLong()', () {
-      expect(kotlinScreen, contains('danmakuLayer.setClock(state.positionMs.toLong(), state.paused)'));
+    test('614 起 setClock 只传 paused（位置由 positionProvider 现算）', () {
+      expect(kotlinScreen, contains('danmakuLayer.setClock(state.paused)'));
       expect(
         kotlinScreen,
-        isNot(contains('danmakuLayer.setClock(state.positionMs, state.paused)')),
+        isNot(contains('danmakuLayer.setClock(state.positionMs')),
       );
     });
 
-    test('setClock 签名是 Long', () {
+    test('614 起 setClock 只收 paused（位置由 provider 现算）', () {
       final danmaku = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/DanmakuLayerView.kt',
       ).readAsStringSync();
-      expect(danmaku, contains('fun setClock(positionMs: Long, paused: Boolean)'));
+      expect(danmaku, contains('fun setClock(paused: Boolean)'));
     });
   });
 }

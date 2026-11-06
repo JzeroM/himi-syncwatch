@@ -1572,6 +1572,37 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 - [x] **空房间的预期表现**：原生窗口打开后无 mpv 会话 → 视频区显示
   「▶ 请从资源面板选择要播放的内容」占位（黑底），头部三控件正常。
 
+### Phase 2.33：无媒体不转圈 + 安卓回退 613 + 弹幕单层插值对齐鸿蒙（1.5.34+614）
+
+> 起因：真机「安卓和鸿蒙初始未播放不应该有加载器」「安卓房间竖屏画面被
+> 拉伸」「点全屏隐藏资源面板时横竖屏画面也拉伸」「安卓非房间竖屏画面和
+> 控件都不在屏幕内」「安卓 MPV 弹幕还是前后跳跃、不流畅」。
+
+- [x] **初始未播放仍有加载器（安卓 + 鸿蒙）**：`showLoading` 没有「是否
+  加载了媒体」的守卫——空房间/初始未播放时
+  `_durationMs==0 && _positionMs==0 && 非playing` 恒真 → 转圈永久显示。
+  修法：`final hasMedia = _prepared || _uri != null;` 前置守卫。
+- [x] **安卓画面拉伸 / 视频贴左上角一小块（613 回归）**：613 在
+  `_openNativeUiIfNeeded` 里补算并**写回** `_nativeUiEnabled`，导致安卓
+  非房间播放也打开原生窗口。而安卓的 surface 尺寸由 `window.setLayout` +
+  `displayMetrics` 反推（与鸿蒙的 Flex 流式布局机制不同）→ 窗口尺寸未
+  就绪时合成 → 画面被缩成左上角一小块。截图实测视频块约 870px 高，与
+  `280dp × 3.06 = 857px`（房间面板高度）几乎吻合。
+  修法：613 的「提前打开」**只在鸿蒙生效**（`MpvSessionPlatform.isOhos`
+  守卫）；安卓回退到 612 行为（只在 `prepare()` 里按实际会话判定）。
+  同时 `_closeNativeUi()` 补 `_nativeUiEnabled = false`——该字段此前
+  跨会话残留为 true，导致后续非房间播放也误走原生窗口。
+- [x] **安卓弹幕前后跳跃**：弹幕层自己维护 `anchorPosMs/anchorWallMs`，
+  而 `setClock` 每 500ms 被 `applyState` 调用一次、每次重置锚点；传入的
+  位置是**快照时刻**的值（距调用已过去 0~500ms）→ 位置**倒退**再外推
+  → 视觉跳跃。叠加调用方此前传 `positionAt()` 的插值结果，还形成
+  **两层插值**。
+  **鸿蒙为什么平滑**：弹幕层每次渲染直接调宿主 `positionNowMs()`
+  （快照 + 墙钟×倍速，**单一锚点、单层插值**），不自维护锚点。
+  修法：安卓对齐鸿蒙——`DanmakuLayerView` 改为 `setPositionProvider`
+  注入位置源（宿主 `positionAt(now, lastStateAtMs)` 现算），
+  `setClock(paused)` 只传暂停态；删除 `anchorPosMs/anchorWallMs`。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
