@@ -2082,7 +2082,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _startOrientationSensor();
 
     if (widget.roomCode != null) {
+      // 【613 真机回归：空房间/初始未播放时房间头部三控件不显示】
+      // `_roomData` 原在 async 的 `_setupRoomSync()` 里才赋值，而 Flutter
+      // 头部条件依赖它 → 初始为 null → 三控件不显示。
+      // `RoomCode.decode` 是**纯同步解码**，提前到 initState 即可。
+      _roomData = RoomCode.decode(widget.roomCode!);
       _setupRoomSync();
+      // 房间 UI 的渲染层跟随「引擎 + 输出路径设置」：原生内核开原生房
+      // （不等 prepare() 有媒体才开），非原生内核走 Flutter 房。
+      final roomPlayer = _player;
+      if (roomPlayer is MpvPlayerAdapter && roomPlayer.prefersNativeRoomUi) {
+        unawaited(roomPlayer.reopenNativeUi());
+      }
     }
 
     _switchToLandscape(_OrientationMode.landscapeLeft);
@@ -7848,11 +7859,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return mpv is MpvPlayerAdapter && mpv.nativeUiActive.value;
   }
 
+  /// 房间 UI 是否应走**原生层**（613）。
+  ///
+  /// 【真机回归：空房间/初始未播放时房间头部三控件不显示】旧判定只用
+  /// `_nativeUiActive`——它要等 `prepare()` 打开原生窗口后才为 true，而
+  /// 空房间没有剧集要加载 → `prepare()` 不调用 → Flutter 层一直显示，
+  /// 而 Flutter 头部条件 `_roomData != null` 在 async 的
+  /// `_setupRoomSync()` 里才满足 → 三控件不显示。
+  ///
+  /// 修法：房间 UI 的渲染层**跟随播放器内核 + 输出路径设置**（
+  /// `prefersNativeRoomUi` 是纯计算、不建会话），不等有媒体才决定。
+  bool get _roomUiShouldBeNative {
+    if (_currentEngine != PlayerEngine.mpv) return false;
+    final mpv = _player;
+    return mpv is MpvPlayerAdapter && mpv.prefersNativeRoomUi;
+  }
+
   Widget _buildVideoArea() {
     // 原生播放器 UI 接管：Flutter 侧视频/控件层整体退场（空占位）。
     // 必须在挂载任何 Surface/Texture 之前短路——mpv surface 归属原生
     // 子窗口的 XComponent，Flutter 再挂平台视图会争抢渲染通道。
-    if (_nativeUiActive) {
+    //
+    // 613：房间模式下用 `_roomUiShouldBeNative`（按设置判定）而不是
+    // `_nativeUiActive`（要等 prepare）——空房间/未播放也走原生层。
+    final nativeShortCircuit = widget.roomCode != null
+        ? _roomUiShouldBeNative
+        : _nativeUiActive;
+    if (nativeShortCircuit) {
       return const SizedBox.expand();
     }
     final videoAreaTvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
@@ -8661,6 +8694,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         setState(() => _switchingKernel = false);
         _syncPlayState();
         _syncNativePanelData();
+        // 【613】切内核后重新判定房间 UI 层：原生内核 → 打开原生窗口；
+        // 非原生内核 → 关闭原生窗口、交回 Flutter 层。
+        // 旧实现只在 `prepare()` 里打开，切到非原生内核时不会关闭，
+        // 导致「切到 MDK 后仍是原生房」或「切回 mpv 后仍是 Flutter 房」。
+        if (widget.roomCode != null) {
+          final p = _player;
+          if (p is MpvPlayerAdapter) {
+            if (p.prefersNativeRoomUi) {
+              unawaited(p.reopenNativeUi());
+            } else {
+              unawaited(p.closeNativeUi());
+            }
+          }
+          // 非 mpv 内核：`_recreateEngineForLoad` 已释放旧适配器（其 dispose
+          // 会兜底关原生窗口），此处无需额外处理。
+        }
       }
     }
   }

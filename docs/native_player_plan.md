@@ -1542,6 +1542,36 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   `Argument type mismatch: actual type is 'Int', but 'Long' was expected`。
   修法：`state.positionMs.toLong()`。
 
+### Phase 2.32：房间 UI 渲染层跟随播放器内核（1.5.33+613）
+
+> 起因：真机「鸿蒙初始未播放/空房间时房间头部三控件不显示」已修 6 轮；
+> 用户澄清需求：「播放器是原生就打开原生房，不是原生就开 Flutter 房，
+> 切换播放器也同理」，且明确「不用提前创建 mpv 会话」。
+
+- [x] **根因（第 7 轮，终于定位到渲染层错配）**：原生 UI 只在
+  `prepare()` 里打开，而 `prepare()` 只在加载剧集时调用——**空房间没有
+  剧集 → 原生窗口从未打开 → 用户看到的是 Flutter 播放页**。而 Flutter
+  头部条件 `_roomData != null && _isHost && 非playing` 里的 `_roomData`
+  在 **async 的 `_setupRoomSync()`** 里才赋值 → 初始为 null → 三控件不
+  显示。播放后（`prepare()` 打开原生窗口、`isHost` 已推送）才显示。
+  **关键线索**：同一份布局代码「未播放没有、播放后有」→ 不是布局问题，
+  是**渲染层错配 + 数据时序**。
+- [x] **修法（按用户要求，不提前建会话）**：
+  1. `MpvPlayerAdapter.prefersNativeRoomUi` —— 纯计算 getter，只读
+     `_resolveMpvVideoOutput()`（设置+平台）与 `NativePlayerGating`，
+     **不创建会话**；
+  2. `_openNativeUiIfNeeded()` 允许在 `prepare()` 之前打开（
+     `_nativeUiEnabled` 未算时按 `prefersNativeRoomUi` 补算）；
+  3. `PlayerScreen._roomUiShouldBeNative` 用它决定 Flutter 层是否退场
+     （房间模式走新判定，非房间模式仍走 `_nativeUiActive`）；
+  4. `initState` 里房间模式按判定 `reopenNativeUi()`，且 `_roomData`
+     改为**同步** `RoomCode.decode()`（纯同步解码）；
+  5. `_switchPlayerKernel` 的 `finally` 里重新判定——原生内核开原生房、
+     非原生内核关原生房（旧实现切到 MDK 后仍是原生房、切回 mpv 后仍是
+     Flutter 房）。
+- [x] **空房间的预期表现**：原生窗口打开后无 mpv 会话 → 视频区显示
+  「▶ 请从资源面板选择要播放的内容」占位（黑底），头部三控件正常。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

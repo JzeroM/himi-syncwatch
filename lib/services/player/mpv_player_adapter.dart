@@ -1759,7 +1759,14 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   Future<void> _openNativeUiIfNeeded({
     bool waitForPlatformViewTeardown = false,
   }) async {
-    if (!_nativeUiEnabled || _disposed || _nativeUiController != null) return;
+    if (_disposed || _nativeUiController != null) return;
+    // 【613：允许在 prepare() 之前打开】空房间/初始未播放时没有剧集要加载
+    // → `prepare()` 不调用 → `_nativeUiEnabled` 从未计算过。此时按设置
+    // 预判（`prefersNativeRoomUi` 是纯计算、不建会话）补算一次。
+    if (!_nativeUiEnabled) {
+      _nativeUiEnabled = prefersNativeRoomUi;
+      if (!_nativeUiEnabled) return;
+    }
     final platform = MpvSessionPlatform.nativeUiPlatformName;
     if (platform == null) return;
     final controller = NativePlayerController(
@@ -1878,6 +1885,26 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
     _setState(AdapterPlaybackState.stopped);
     _pushNativeUiState(immediate: true);
+  }
+
+  /// 按当前设置预判「房间 UI 该走原生还是 Flutter」（613）。
+  ///
+  /// 【真机回归：空房间/初始未播放时房间头部三控件不显示】原生 UI 只在
+  /// `prepare()` 里打开，而 `prepare()` 只在加载剧集时调用——空房间没有
+  /// 剧集 → 原生窗口从未打开 → 用户看到的是 **Flutter 播放页**，而 Flutter
+  /// 头部条件 `_roomData != null` 在 async 的 `_setupRoomSync()` 里才满足
+  /// → 三控件不显示。播放后才打开原生窗口、那时 `isHost` 已推送 → 显示。
+  ///
+  /// 本 getter **不创建会话**，只按「引擎 + 输出路径设置 + 平台门控」算出
+  /// 该走哪条路——与 `prepare()` 里的判定同源（`_resolveMpvVideoOutput()`
+  /// 是纯计算，只读设置与平台，不需要会话）。
+  bool get prefersNativeRoomUi {
+    if (_disposed) return false;
+    return NativePlayerGating.shouldUseCurrent(
+      engine: 'mpv',
+      actualVideoOutput: _resolveMpvVideoOutput(),
+      settingEnabled: _nativeUiSettingEnabled,
+    );
   }
 
   /// 重新打开原生 UI 宿主（597）。
