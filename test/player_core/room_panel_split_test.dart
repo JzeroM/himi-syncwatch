@@ -68,12 +68,17 @@ void main() {
     });
 
     test('转屏/尺寸变化后重算分栏', () {
-      expect(kotlinScreen, contains('if (lastVideoSplitInsetPx > 0)'));
-      expect(kotlinScreen, contains('applyVideoSplit(prev)'));
+      // 615：转屏后**无条件**重置重算（旧写法只在 inset>0 时重置，
+      // 非房间模式转屏后 surface 窗口尺寸不更新 → 画面被裁切）。
+      expect(kotlinScreen, contains('val prevInset = lastVideoSplitInsetPx.coerceAtLeast(0)'));
+      expect(kotlinScreen, contains('listener?.onVideoInsetRight(prevInset)'));
+      expect(kotlinScreen, contains('applyVideoSplit(prevInset)'));
     });
 
     test('幂等（同 inset 不重复应用）', () {
-      expect(kotlinScreen, contains('if (insetPx == lastVideoSplitInsetPx) return'));
+      // 615：只对**分栏值**（inset>0）做幂等短路；恢复全屏（inset<=0）
+      // 必须执行，否则转屏错位后永远回不到全屏。
+      expect(kotlinScreen, contains('if (insetPx > 0 && insetPx == lastVideoSplitInsetPx) return'));
     });
   });
 

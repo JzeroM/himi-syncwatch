@@ -3132,7 +3132,12 @@ class NativePlayerScreenView(
         } else {
             dp(NPTheme.ROOM_PANEL_WIDTH)
         }
-        if (panelPx != lastVideoInsetRightPx) {
+        // 【615 真机回归：非房间竖屏画面被裁切】非房间模式必须强制恢复
+        // 全屏——即便 `lastVideoInsetRightPx` 残留了房间模式的分栏值，
+        // 或转屏后未更新，也要立即恢复（幂等短路在「值已相等但 surface
+        // 窗口尺寸不对」时会拦住恢复）。
+        val forceFullscreen = !show && lastVideoInsetRightPx != 0
+        if (panelPx != lastVideoInsetRightPx || forceFullscreen) {
             lastVideoInsetRightPx = panelPx
             listener?.onVideoInsetRight(panelPx)
             // 593/594：控件层同步分栏（横屏收窄宽度、竖屏收窄高度）。
@@ -3575,7 +3580,10 @@ class NativePlayerScreenView(
      * 整个控件区被压扁（真机回归「手动竖屏没有上下结构」）。
      */
     private fun applyVideoSplit(insetPx: Int) {
-        if (insetPx == lastVideoSplitInsetPx) return
+        // 【615】恢复全屏（inset<=0）必须执行——旧实现同值直接返回，若
+        // `lastVideoSplitInsetPx` 已是 0 但控件层仍留着上次收窄的参数
+        //（转屏时可能出现这种错位），就永远不会恢复全屏。
+        if (insetPx > 0 && insetPx == lastVideoSplitInsetPx) return
         lastVideoSplitInsetPx = insetPx
         val screenW = width.takeIf { it > 0 }
             ?: resources.displayMetrics.widthPixels
@@ -3653,6 +3661,11 @@ class NativePlayerScreenView(
                     }
                 }
             }
+        }
+        // 615：空态占位层也要收窄到视频区（否则分栏时它会盖住资源面板，
+        // 且转屏后尺寸不跟随）。
+        (placeholderView.layoutParams as? LayoutParams)?.let {
+            it.width = videoW; it.height = videoH; placeholderView.layoutParams = it
         }
         (panelScrim.layoutParams as? LayoutParams)?.let {
             it.width = videoW; it.height = videoH; panelScrim.layoutParams = it
@@ -4134,16 +4147,25 @@ class NativePlayerScreenView(
      */
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        if (w != oldw || h != oldh) {
-            requestAdaptiveRelayout()
-            // 593：转屏/窗口尺寸变化后必须按新屏宽重算分栏（否则仍按旧屏宽
-            // 收窄 → 视频区与面板比例错乱）。
-            if (lastVideoSplitInsetPx > 0) {
-                val prev = lastVideoSplitInsetPx
-                lastVideoSplitInsetPx = -1
-                applyVideoSplit(prev)
-            }
-        }
+        if (w == oldw && h == oldh) return
+        requestAdaptiveRelayout()
+        // 【615 真机回归：安卓横转竖后画面被裁切、只显示左上角一块】
+        //
+        // 根因（590/593 引入的设计缺陷）：`applyVideoInsetRight` 用
+        // `window.setLayout` 收窄 surface 窗口，但**只在 inset 值变化时**
+        // 调用（`renderRoomPanel` 的幂等短路）；而这里又只在
+        // `lastVideoSplitInsetPx > 0`（房间分栏）时重置。非房间模式 inset
+        // 恒为 0 → 转屏后**两条短路同时拦住** → surface 窗口尺寸停留在
+        // 上一方向（横屏 1900×880 在竖屏下只显示左边 880×880）→ 画面被
+        // 裁切（内容比例不变，故「没拉伸、只是显示部分」）。
+        //
+        // 修法：转屏后**无条件**重置两个 inset 并重新应用——inset 值本身
+        // 不变，但 surface 窗口必须按新屏幕尺寸重新 setLayout。
+        val prevInset = lastVideoSplitInsetPx.coerceAtLeast(0)
+        lastVideoSplitInsetPx = -1
+        lastVideoInsetRightPx = -1
+        applyVideoSplit(prevInset)
+        listener?.onVideoInsetRight(prevInset)
     }
 
     companion object {

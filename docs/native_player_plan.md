@@ -1603,6 +1603,32 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   注入位置源（宿主 `positionAt(now, lastStateAtMs)` 现算），
   `setClock(paused)` 只传暂停态；删除 `anchorPosMs/anchorWallMs`。
 
+### Phase 2.34：安卓横转竖后画面被裁切（surface 窗口尺寸未随转屏重设）（1.5.35+615）
+
+> 起因：真机「安卓非房间模式竖屏画面和控件有问题」——截图显示视频块贴
+> 左上角、约占 45% 高，下方大片黑色（Flutter 转圈在其中）。用户澄清
+> 「**没拉伸、只是显示部分**」「**横转竖后裁切**」「以前正常过」。
+
+- [x] **根因（590/593 引入的设计缺陷，非新 bug）**：
+  `applyVideoInsetRight`（590）用 `window.setLayout` 收窄 surface 窗口，
+  但**只在 inset 值变化时**调用（`renderRoomPanel` 的幂等短路
+  `if (panelPx != lastVideoInsetRightPx)`）；而 `onSizeChanged`（593）
+  又只在 `lastVideoSplitInsetPx > 0`（房间分栏）时重置。
+  **非房间模式 inset 恒为 0 → 转屏后两条短路同时拦住** → surface 窗口
+  尺寸停留在上一方向（横屏 1900×880 在竖屏下只显示左边 880×880）→
+  画面被裁切（内容比例不变，故用户感知为「没拉伸、只是显示部分」）。
+  **为什么「以前正常过」**：只有「先横屏播放 → 转竖屏」这个顺序才暴露。
+- [x] **修法（三重防御）**：
+  1. `onSizeChanged` **无条件**重置两个 inset 并重新应用
+     （`applyVideoSplit(prevInset)` + `listener?.onVideoInsetRight(prevInset)`）
+     ——inset 值本身不变，但 surface 窗口必须按新屏幕尺寸重新 `setLayout`；
+  2. `applyVideoSplit` 的幂等短路改为 `if (insetPx > 0 && insetPx ==
+     lastVideoSplitInsetPx) return`——**恢复全屏必须执行**；
+  3. `renderRoomPanel` 加 `forceFullscreen = !show &&
+     lastVideoInsetRightPx != 0`——非房间模式强制恢复全屏。
+- [x] 顺带：`placeholderView`（610 新增的空态占位层）纳入 `applyVideoSplit`
+  的收窄列表（否则分栏时会盖住资源面板、转屏后尺寸不跟随）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
