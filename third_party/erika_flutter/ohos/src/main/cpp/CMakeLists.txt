@@ -59,8 +59,11 @@ if(NOT "$ENV{ERIKA_FORCE_SOURCE_BUILD}" STREQUAL "1")
   set(ERIKA_PREBUILT_RUNTIME
     "${ERIKA_PREBUILT_DIR}/erika-capi-openharmony-arm64/lib/liberika_capi.so"
   )
+  # 【上游仓库改名 609】AimesSoft/Erika 已改名为 AimesSoft/liberika——
+  # 旧地址 404。本地已有预编译缓存时会跳过下载（掩盖问题），CI 全新环境
+  # 必然失败。从上游同步时**不要回退**此处。
   set(ERIKA_PREBUILT_URL
-    "https://github.com/AimesSoft/Erika/releases/download/${ERIKA_PREBUILT_TAG}/erika-capi-openharmony-arm64.zip"
+    "https://github.com/AimesSoft/liberika/releases/download/${ERIKA_PREBUILT_TAG}/erika-capi-openharmony-arm64.zip"
   )
 
   if(EXISTS "${ERIKA_PREBUILT_ZIP}")

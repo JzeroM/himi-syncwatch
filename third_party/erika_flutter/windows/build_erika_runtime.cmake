@@ -67,8 +67,11 @@ if(NOT "$ENV{ERIKA_FORCE_SOURCE_BUILD}" STREQUAL "1")
   set(ERIKA_WORK
     "${ERIKA_CACHE_ROOT}/${ERIKA_CACHE_TAG}-${ERIKA_ASSET_ARCH}")
   set(ERIKA_ZIP "${ERIKA_WORK}/bundle.zip")
+  # 【上游仓库改名 609】AimesSoft/Erika 已改名为 AimesSoft/liberika——
+  # 旧地址返回 404（实际下载到 9 字节 "Not Found"，SHA 校验必然失败，
+  # Windows CI 因此连续失败）。从上游同步时**不要回退**此处。
   set(ERIKA_URL
-    "https://github.com/AimesSoft/Erika/releases/download/${ERIKA_PREBUILT_TAG}/erika-capi-windows-${ERIKA_ASSET_ARCH}.zip")
+    "https://github.com/AimesSoft/liberika/releases/download/${ERIKA_PREBUILT_TAG}/erika-capi-windows-${ERIKA_ASSET_ARCH}.zip")
 
   if(EXISTS "${ERIKA_ZIP}")
     file(SHA256 "${ERIKA_ZIP}" ERIKA_CACHED_SHA256)

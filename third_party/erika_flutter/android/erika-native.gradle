@@ -296,8 +296,11 @@ tasks.register("buildErikaAndroidRuntime") {
                         prebuiltCacheDirectory,
                         "${prebuiltName}.zip",
                     )
+                    // 【上游仓库改名 609】AimesSoft/Erika 已改名为
+                    // AimesSoft/liberika——旧地址 404。本地有缓存时跳过下载
+                    // （掩盖问题），CI 全新环境必然失败。同步上游时不要回退。
                     def prebuiltUrl =
-                        "https://github.com/AimesSoft/Erika/releases/download/" +
+                        "https://github.com/AimesSoft/liberika/releases/download/" +
                         "$prebuiltTag/${prebuiltName}.zip"
                     if (prebuiltArchive.isFile()) {
                         def cachedSha256 = sha256(prebuiltArchive)

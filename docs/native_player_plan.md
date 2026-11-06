@@ -1416,6 +1416,32 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 > 这个值在子窗口场景不可靠。改用框架自己的对齐能力（`Stack.alignContent`）
 > 才是正确方向。
 
+### Phase 2.28：erika 预编译包下载地址失效（上游改名）（1.5.29+609）
+
+> 起因：Windows CI 从 607 起连续失败（重跑两次仍红），报
+> `MSB8066: Custom build for erika_capi_runtime ... exited with code 1`，
+> 且 CMake 输出被 MSBuild 吞掉、看不到具体错误。
+
+- [x] **根因：上游仓库改名导致下载 404**：
+  `AimesSoft/Erika` 已改名为 **`AimesSoft/liberika`**，旧下载地址返回
+  **404**。脚本用 `file(DOWNLOAD ... EXPECTED_HASH)`，拿到的是 9 字节
+  `Not Found` 文本 → SHA 校验必然失败 → 自定义构建退出码 1。
+- [x] **为什么之前误判为「偶发失败」**：我用 `curl -sIL` 检查地址，看到
+  200 就以为正常——但 `-I` 只取响应头、`-L` 跟随重定向后的 200 是重定向链
+  的假象。真正用 `curl -sL -o` **实际下载**才暴露：文件只有 9 字节、
+  内容是 `Not Found`。
+- [x] **修复 3 处下载地址**（`AimesSoft/Erika` → `AimesSoft/liberika`）：
+  | 文件 | 平台 |
+  |---|---|
+  | `third_party/erika_flutter/windows/build_erika_runtime.cmake` | Windows（CI 当前失败） |
+  | `third_party/erika_flutter/ohos/src/main/cpp/CMakeLists.txt` | 鸿蒙（本地有预编译缓存掩盖，CI 全新环境会失败） |
+  | `third_party/erika_flutter/android/erika-native.gradle` | Android（同上） |
+  每处都加了「上游改名、同步时不要回退」的注释。
+- [x] **验证**：实际下载 `liberika` 的 windows-x64（143MB）与
+  openharmony-arm64（17.6MB），SHA-256 与
+  `native_artifacts.properties` 声明值**完全一致**——说明只换了域名、
+  包内容未变，无需更新校验值。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
