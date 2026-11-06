@@ -108,7 +108,7 @@ void main() {
     test('RoomPanelSlot 按 roomPlayEpoch 重建', () {
       final idx = view.indexOf('RoomPanelSlot() {');
       expect(idx, greaterThan(0));
-      final body = view.substring(idx, idx + 900);
+      final body = view.substring(idx, idx + 1600);
       expect(body, contains('ForEach([this.roomPlayEpoch]'));
       expect(body, contains(r'`room-${epoch}`'));
       expect(body, contains('this.RoomPanel();'));

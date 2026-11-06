@@ -22,15 +22,15 @@ void main() {
       expect(calls, 1, reason: '视频层必须只有一个实例，转屏才不黑屏');
     });
 
-    test('面板按方向用 margin 定位（只移动面板，不动视频）', () {
-      // 视频层唯一实例后，方向切换只改面板的 margin。
-      // - 竖屏：marginTop = videoH（贴底）；
-      // - 横屏：marginStart(left) = videoW（贴右）。
+    test('面板按方向用 Stack alignContent 定位（只移动面板，不动视频）', () {
+      // 608：改用 Stack 的 alignContent（框架按父容器实测宽摆放），
+      // 不再用 videoW/videoH 反推 margin（那会因 areaWidth 偏大而溢出）。
       final idx = view.indexOf('RoomPanelSlot() {');
       expect(idx, greaterThan(0));
-      final body = view.substring(idx, idx + 1200);
-      expect(body, contains('this.videoH > 0 ? this.videoH : 0'));
-      expect(body, contains('this.videoW > 0 ? this.videoW : 0'));
+      final end = view.indexOf('  build() {', idx);
+      final body = view.substring(idx, end);
+      expect(body, contains('Alignment.BottomStart'));
+      expect(body, contains('Alignment.TopEnd'));
     });
   });
 

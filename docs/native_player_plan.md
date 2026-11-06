@@ -1383,6 +1383,39 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   playerReady` + 占位层（尺寸/颜色/间距逐值对齐 Flutter，`hitTestBehavior
   (None)` 不抢手势）。
 
+### Phase 2.27：鸿蒙面板定位改 Stack 对齐 + 缩放宽度补算 + 占位层黑底（1.5.28+608）
+
+> 起因：真机「鸿蒙初始进房间（未播放）和开空资源房间：头部还是没显示
+> 搜索、人数、房主徽章」「面板开关按钮横屏不在视频区、竖屏超出手机界面」
+> 「删除正在播放的资源会出现隐约的之前视频画面」。
+
+- [x] **头部三控件"消失" + 面板开关按钮飞出屏幕（同一根因）**：
+  602~607 一直用 `margin({ left: videoW })` 把面板推到右/下边缘——而
+  `videoW` 是用 `areaWidth` 反推的，`areaWidth` 在**子窗口**场景可能大于
+  实际内容宽 → `margin.left + 320 > 实际宽` → **面板右缘被裁到屏外**。
+  头部右侧三个控件（搜索/人数/徽章）正好落在被裁区域，看起来"消失了"；
+  面板开关按钮同理被挤出。
+  **截图佐证**：竖屏（面板全宽、无 margin 计算）头部三控件正常；横屏
+  （有 margin 计算）全无。
+  修法：`RoomPanelSlot` 改用 `Stack` 的 `alignContent` 让框架按**父容器
+  实测宽**摆放——横屏 `TopEnd`（贴右上）、竖屏 `BottomStart`（贴左下），
+  不参与任何数值计算，从根上消除溢出。容器 `hitTestBehavior(Transparent)`
+  让空白区放行给下层手势层。
+- [x] **缩放比偏大导致按钮超出**：`trailingNaturalWidth()` 从 604 起**漏算
+  房间模式的 `panelToggle`**（32vp + 20 间距）→ `natural` 少 52vp →
+  `bottomScale` 算得偏大 → 簇实际宽度超出 trailing 槽 → 按钮被挤出可视区
+  （竖屏尤其明显）。
+  修法：`if (this.state().isRoom) blocks++;`。
+- [x] **删除后出现隐约的旧视频画面**：mpv `stop()` 后 surface 上**仍残留
+  最后一帧**，占位层若透明就会让旧画面透出来（真机截图能看到人像隐约
+  浮现）。Flutter 侧视频区是独立 Widget 栈、天然不透明，原生必须自己盖
+  一层。修法：占位层加 `.backgroundColor(Color.Black)`。
+
+> **本轮的教训**：①和②前几轮一直在调数值（`minWidth` / `margin.right` /
+> `constraintSize`），但真正的问题是**用 `areaWidth` 反推布局位置**——
+> 这个值在子窗口场景不可靠。改用框架自己的对齐能力（`Stack.alignContent`）
+> 才是正确方向。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

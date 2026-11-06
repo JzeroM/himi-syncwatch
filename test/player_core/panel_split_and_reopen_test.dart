@@ -165,8 +165,8 @@ void main() {
       // 鸿蒙侧面板在分栏容器内（Row/Column 的第二子项），天然只在视频区，
       // 不需要安卓那套 leftMargin 换算；此处确认结构仍在。
       expect(ohosView, contains('this.RoomPanelSlot();'));
-      // 602：方向定位改为 margin（视频层已移出分支）。
-      expect(ohosView, contains('this.videoH > 0 ? this.videoH : 0'));
+      // 608：方向定位改由 Stack alignContent（视频层已移出分支）。
+      expect(ohosView, contains('Alignment.BottomStart'));
     });
 
     test('鸿蒙锁定态只出 LockOnlyBar（底栏壳走 else 分支）', () {

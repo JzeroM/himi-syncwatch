@@ -1223,8 +1223,17 @@ export struct HimiNativePlayerView {
     if (!this.state().isRoom && this.episodeCount > 1) {
       blocks++;
     }
+    // 【608 真机回归：面板开关按钮飞出屏幕（竖屏超出界面）】修正。
+    //
+    // 604 起房间模式在 trailing 槽尾部加了 `panelToggle`（32vp + 间距），
+    // 但这里**一直漏算它** → `natural` 少 52vp → `bottomScale` 算得偏大 →
+    // 簇实际宽度超出 trailing 槽 → 按钮被挤出可视区（竖屏尤其明显）。
+    if (this.state().isRoom) {
+      blocks++;
+    }
     const speedChip = this.state().tvMode && !this.state().isRoom;
     const widths = blocks * 32 + (speedChip ? 64 : 0);
+    // panelToggle 额外带 `margin.left`（与图标簇的间距）——已含在 gaps 里。
     const gaps = (blocks - 1 + (speedChip ? 1 : 0)) * 20;
     return widths + gaps;
   }
@@ -1810,18 +1819,34 @@ export struct HimiNativePlayerView {
     // 「资源列表前面的播放/暂停图标状态不变化」）。
     // key 随 epoch 变 → 旧节点销毁、新节点创建 → 图标取最新值。
     ForEach([this.roomPlayEpoch], (epoch: number): void => {
-      Column() {
-        this.RoomPanel();
+      // 【608 真机回归：横屏头部缺三控件 / 面板开关按钮飞出屏幕】修正。
+      //
+      // 602~607 一直用 `margin({ left: videoW })` 把面板推到右/下边缘——
+      // 但 `videoW` 是用 `areaWidth` 反推的，而 `areaWidth` 在子窗口场景
+      // 可能大于实际内容宽 → `margin.left + 320 > 实际宽` → **面板右缘被
+      // 裁到屏外**。头部右侧的三个控件（搜索/人数/徽章）正好落在被裁区域，
+      // 看起来「消失了」；面板开关按钮同理被挤出。
+      // 截图佐证：竖屏（面板全宽、无 margin 计算）头部三控件正常，横屏全无。
+      //
+      // 修法：改用 `Stack` 的 `alignContent` 让框架按**父容器实测宽**摆放
+      // ——不参与任何数值计算，从根上消除溢出：
+      // - 横屏：贴右上（`TopEnd`）= 视频区右侧；
+      // - 竖屏：贴左下（`BottomStart`）= 视频区下方。
+      Stack({
+        alignContent: this.portrait
+          ? Alignment.BottomStart
+          : Alignment.TopEnd,
+      }) {
+        Column() {
+          this.RoomPanel();
+        }
+        .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
+        .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%');
       }
-      .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
-      .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%')
-      // 602：用 margin 推到边缘（见 build 里的定位注释）。
-      // 触摸命中范围 = 面板自身区域，视频区不受影响。
-      // - 竖屏：面板贴底 → marginTop = 视频区高（= 屏高 - 面板高）；
-      // - 横屏：面板贴右 → marginStart = 视频区宽（= 屏宽 - 面板宽）。
-      .margin(this.portrait
-        ? { top: this.videoH > 0 ? this.videoH : 0 }
-        : { left: this.videoW > 0 ? this.videoW : 0 });
+      .width('100%')
+      .height('100%')
+      // 空白区放行给下层视频手势层（面板自身有背景色，只消费自己的区域）。
+      .hitTestBehavior(HitTestMode.Transparent);
     }, (epoch: number): string => `room-${epoch}`);
   }
 
@@ -1909,6 +1934,12 @@ export struct HimiNativePlayerView {
         }
         .width('100%')
         .height('100%')
+        // 【608 真机回归：删除后出现隐约的之前视频画面】修正。
+        //
+        // mpv `stop()` 后 surface 上**仍残留最后一帧**，占位层若透明就会
+        // 让旧画面透出来（真机截图能看到人像隐约浮现）。Flutter 侧视频区
+        // 是独立 Widget 栈、天然不透明，原生必须自己盖一层。
+        .backgroundColor(Color.Black)
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         // 不抢手势：点屏仍可显隐控件（与加载指示器同款）。

@@ -65,8 +65,8 @@ void main() {
     test('鸿蒙 if/else 双分支 + 面板 280vp（594）', () {
       // 不用 Flex({direction})：ArkTS 对三元表达式推断方向枚举报
       // arkts-no-any-unknown（构建实测）。改用 if/else 双分支。
-      // 602：视频层移出分支后，竖屏/横屏只在 RoomPanelSlot 的 margin 上体现。
-      expect(ohosView, contains('this.videoH > 0 ? this.videoH : 0'));
+      // 608：方向定位改由 RoomPanelSlot 的 Stack alignContent 体现。
+      expect(ohosView, contains('Alignment.BottomStart'));
       expect(ohosView, contains('this.VideoStack();'));
       expect(ohosView, contains('this.RoomPanelSlot();'));
       expect(ohosView, contains('const ROOM_PANEL_HEIGHT = 280;'));
