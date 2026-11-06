@@ -942,6 +942,41 @@ class NativePlayerScreenView(
      */
     private val bufferingView = PlayerSpinnerView(context)
 
+    /**
+     * 空态占位（610）：无播放内容时盖住视频区。
+     *
+     * 【真机回归：删除正在播放的资源后旧画面还在】Flutter 侧删除当前集时置
+     * `_isPlayerReady = false` → 视频区走「▶ + 请从资源面板选择要播放的
+     * 内容」占位分支。安卓原生侧此前**完全没有**占位 UI，mpv `stop()` 后
+     * surface 上残留的最后一帧一直可见。
+     *
+     * **必须有不透明黑底**：mpv stop 后 surface 残留最后一帧，透明占位层
+     * 会让旧画面透出来（真机截图能看到人像隐约浮现）。
+     * 尺寸/颜色/间距逐值对齐 Flutter：图标 64 / 间距 16 / 文案 14。
+     */
+    private val placeholderView = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setBackgroundColor(Color.BLACK)
+        visibility = GONE
+        addView(
+            iconView(NativePlayerIcons.ICON_PLAY_CIRCLE, 64f, NPTheme.WHITE_24),
+            LinearLayout.LayoutParams(dp(64), dp(64)),
+        )
+        addView(
+            TextView(context).apply {
+                text = "请从资源面板选择要播放的内容"
+                setTextColor(NPTheme.WHITE_38)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                gravity = Gravity.CENTER
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).also { it.topMargin = dp(16) },
+        )
+    }
+
     // 面板层
     private val danmakuLayer = DanmakuLayerView(context)
 
@@ -1033,6 +1068,10 @@ class NativePlayerScreenView(
         // 【层级修正（586）】必须**先于** topBar/bottomBar 添加：Flutter 的
         // 转圈画在控件层**之下**（「转圈期间顶栏/底栏仍可点返回」），而旧
         // 实现加在 bars 之后 → 转圈盖住控件区，与 Flutter 观感相反。
+        // 空态占位（610）：全屏不透明黑底，盖住 mpv stop 后的残留帧。
+        // 加在 bufferingView 之前 → z-order 低于转圈（起播时转圈仍可见）。
+        placeholderView.visibility = GONE
+        addView(placeholderView, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         bufferingView.visibility = GONE
         addView(bufferingView, lp(dp(36), dp(36), Gravity.CENTER))
 
@@ -1954,8 +1993,14 @@ class NativePlayerScreenView(
      * 面板推到全屏右缘、正好被资源面板盖住（真机：只看到视频区变黑）。
      */
     private fun panelLeftMarginPx(panelW: Int, fullBleed: Boolean): Int {
-        if (fullBleed) return 0
-        return (videoAreaWidth() - panelW - dp(NPTheme.PANEL_RIGHT)).coerceAtLeast(0)
+        // 【610 真机回归：非房间模式选集面板跑到左边】旧实现
+        // `if (fullBleed) return 0` —— 把 leftMargin 设成 0 = 贴**左**边。
+        // 而 Flutter 的 `selectorPanelBox(fullBleed: true)` 是
+        // `right: 0.0`：贴**右**、只是没有 12dp 间距。
+        //
+        // 修法：fullBleed 时仍贴右，只是把右侧 12dp 间距去掉。
+        val rightPad = if (fullBleed) 0 else dp(NPTheme.PANEL_RIGHT)
+        return (videoAreaWidth() - panelW - rightPad).coerceAtLeast(0)
     }
 
     /** 视频区高度（597）：竖屏分栏时 = 屏高 - 面板高；否则全屏高。 */
@@ -3810,6 +3855,8 @@ class NativePlayerScreenView(
         // 缓冲中），不再自己判 `state.buffering`——否则 Flutter 首帧转圈时
         // 安卓不转、安卓中途缓冲转时 Flutter 不转。
         bufferingView.visibility = if (state.showLoading) VISIBLE else GONE
+        // 空态占位（610）：无播放内容时显示（对齐 Flutter `_isPlayerReady`）。
+        placeholderView.visibility = if (!state.playerReady) VISIBLE else GONE
 
         // TV / 手机布局差异
         applyLayoutMode(state)

@@ -45,8 +45,8 @@ void main() {
       final gestureIdx = block.indexOf('.gesture(');
       expect(xIdx, greaterThan(stackIdx));
       expect(gestureIdx, greaterThan(xIdx));
-      // Stack 的收尾属性（分栏尺寸）必须在手势层之后。
-      final sizeIdx = block.indexOf('.width(this.videoW');
+      // 610：分栏尺寸改为 layoutWeight 弹性（必须在手势层之后）。
+      final sizeIdx = block.indexOf('.layoutWeight(1)');
       expect(sizeIdx, greaterThan(gestureIdx));
     });
 
@@ -65,7 +65,7 @@ void main() {
   });
 
   group('② 分栏属性归属正确', () {
-    test('分栏尺寸由外层 Stack 的 videoW/videoH 控制，XComponent 恒 100%', () {
+    test('分栏尺寸由 layoutWeight 弹性控制，XComponent 恒 100%', () {
       final block = videoStackBlock();
       final xIdx = block.indexOf('XComponent({');
       final xEnd = block.indexOf('// ── 手势层', xIdx);
@@ -78,8 +78,8 @@ void main() {
       expect(attrLines, contains(".height('100%')"));
       expect(attrLines, isNot(contains('layoutWeight')));
       expect(attrLines, isNot(contains('videoW')));
-      // 分栏尺寸在外层 Stack 上（XComponent 段之后）。
-      expect(block.lastIndexOf('.width(this.videoW'), greaterThan(xEnd));
+      // 610：分栏尺寸用 layoutWeight（XComponent 段之后）。
+      expect(block.lastIndexOf('.layoutWeight(1)'), greaterThan(xEnd));
     });
 
     test('VideoStack 全文件只调用一次（转屏不销毁 XComponent）', () {

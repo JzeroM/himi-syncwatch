@@ -216,6 +216,16 @@ data class AndroidNativePlayerState(
      * 缓冲中）算好后随快照下发；宿主只读这一位，不再自己判 [buffering]。
      */
     val showLoading: Boolean = false,
+
+    /**
+     * 是否有可播放内容（610）。
+     *
+     * 【真机回归：删除正在播放的资源后旧画面还在】Flutter 删除当前集时置
+     * `_isPlayerReady = false` → 视频区走「请从资源面板选择要播放的内容」
+     * 占位分支。安卓原生侧此前**完全没有**占位 UI，mpv `stop()` 后 surface
+     * 上残留的最后一帧一直可见。
+     */
+    val playerReady: Boolean = true,
     val ended: Boolean = false,
     val volume: Double = 1.0,
     val speed: Double = 1.0,
@@ -396,6 +406,7 @@ data class AndroidNativePlayerState(
             paused = json.optBoolean("paused", true),
             buffering = json.optBoolean("buffering", false),
             showLoading = json.optBoolean("showLoading", false),
+            playerReady = json.optBoolean("playerReady", true),
             ended = json.optBoolean("ended", false),
             volume = json.optDouble("volume", 1.0),
             speed = json.optDouble("speed", 1.0),

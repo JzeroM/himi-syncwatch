@@ -65,13 +65,14 @@ void main() {
     test('鸿蒙 if/else 双分支 + 面板 280vp（594）', () {
       // 不用 Flex({direction})：ArkTS 对三元表达式推断方向枚举报
       // arkts-no-any-unknown（构建实测）。改用 if/else 双分支。
-      // 608：方向定位改由 RoomPanelSlot 的 Stack alignContent 体现。
-      expect(ohosView, contains('Alignment.BottomStart'));
+      // 610：方向改由 Flex 的 direction 体现（面板是流式子节点）。
+      expect(ohosView, contains('FlexDirection.Column : FlexDirection.Row'));
       expect(ohosView, contains('this.VideoStack();'));
       expect(ohosView, contains('this.RoomPanelSlot();'));
       expect(ohosView, contains('const ROOM_PANEL_HEIGHT = 280;'));
       expect(ohosView, contains(".height(this.portrait ? ROOM_PANEL_HEIGHT : '100%')"));
-      expect(ohosView, isNot(contains('FlexDirection.Column')));
+      // 610：Flex direction 是合法方案（594 曾因类型推断放弃，现在已验证可编译）。
+      expect(ohosView, contains('FlexDirection.Column'));
     });
   });
 

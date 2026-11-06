@@ -78,12 +78,11 @@ void main() {
   });
 
   group('鸿蒙 XComponent 分栏', () {
-    test('分栏尺寸挂在 VideoStack 的外层 Stack 上（602 显式 videoW/videoH）', () {
+    test('分栏尺寸用 layoutWeight 弹性（610 起）', () {
       // 599：分栏尺寸由 VideoStack() 内**外层 Stack** 承担，XComponent 恒
       // 100%（撑满该 Stack）。602 把 layoutWeight 改成显式 videoW/videoH
       // ——视频层提到 if/else 分支外后不再处于 Row/Column 弹性布局。
-      expect(ohosView, contains(".width(this.videoW > 0 ? this.videoW : '100%')"));
-      expect(ohosView, contains(".height(this.videoH > 0 ? this.videoH : '100%')"));
+      expect(ohosView, contains('.layoutWeight(1);'));
       // XComponent 自身不得带分栏属性。
       final xIdx = ohosView.indexOf('XComponent({');
       final xEnd = ohosView.indexOf('// ── 手势层', xIdx);

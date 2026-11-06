@@ -1442,6 +1442,42 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   `native_artifacts.properties` 声明值**完全一致**——说明只换了域名、
   包内容未变，无需更新校验值。
 
+### Phase 2.29：鸿蒙 Flex 流式分栏 + 安卓占位层/选集面板/弹幕重排（1.5.30+610）
+
+> 起因：真机「鸿蒙横屏房间模式头部还是不显示搜索、人数、房主徽章」
+> 「安卓 + 鸿蒙删除正在播放的资源，安卓占位提示下方还会透出旧画面，鸿蒙
+> 整个资源面板都没了」「安卓非房间模式选集面板跑到左边」「安卓原生 MPV
+> 的弹幕只有顶部一行、前后跳动抽搐」。
+
+- [x] **鸿蒙横屏面板跑到屏外（头部三控件随之不可见）**：602~608 一直是
+  「视频层常驻 + 面板用 `Stack.alignContent` 或 `margin` 叠加定位」，而
+  那个 `Stack` 容器是**全屏尺寸**（`width('100%')`）→ `TopEnd` 让面板贴
+  **全屏右缘**、正好落在资源面板下面；`margin.left = videoW` 又依赖不可靠
+  的 `areaWidth`（子窗口场景偏大 → 面板右缘被裁到屏外）。
+  修法：改回**流式布局**——`Flex` 把视频与面板作为兄弟节点排布，宽度由
+  框架按父容器实测值分配（`layoutWeight(1)` 吃剩余），不参与任何数值反推。
+  **为什么用 Flex 而不是 if/else 换 Row/Column**：换容器类型会让 ArkUI
+  整体销毁子树 → `XComponent` 销毁重建 → 转屏黑一帧（594 真机回归）；
+  `Flex` 的 `direction` 是**属性**，转屏只改属性、子树不销毁。
+- [x] **安卓删除后旧画面还在**：安卓原生侧**完全没有**占位层（607 只给
+  鸿蒙加了）。mpv `stop()` 后 surface 残留最后一帧一直可见。
+  修法：`AndroidNativePlayerState` 补 `playerReady`；`NativePlayerScreenView`
+  新增 `placeholderView`（图标 64 + 文案 14 + **不透明黑底**），加在
+  `bufferingView` 之前保证 z-order 低于转圈。
+- [x] **安卓非房间选集面板跑到左边**：`panelLeftMarginPx` 旧实现
+  `if (fullBleed) return 0` —— `leftMargin = 0` 即贴**左**。而 Flutter 的
+  `selectorPanelBox(fullBleed: true)` 是 `right: 0.0`（贴**右**、只是没有
+  12dp 间距）。
+  修法：`val rightPad = if (fullBleed) 0 else dp(PANEL_RIGHT)`，再算
+  `videoAreaWidth() - panelW - rightPad`。
+- [x] **安卓弹幕只有一行 + 抽搐**：`onSizeChanged` 只要尺寸变化就
+  `laneOf.clear()` —— 而弹幕层在分栏/控件层收窄/视频区缩放时会**频繁**
+  触发（尺寸微调但行容量不变），每次都清空所有行号绑定 → 下一帧全部重新
+  分配 → 视觉「抽搐」；且首帧布局未完成时 `h` 偏小 → `autoRows` 算成 1 →
+  只剩顶行。
+  修法：按**行容量**（`autoRows`）判断——容量不变就不清；`h <= 0` 时直接
+  返回（不基于无效高度重排）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

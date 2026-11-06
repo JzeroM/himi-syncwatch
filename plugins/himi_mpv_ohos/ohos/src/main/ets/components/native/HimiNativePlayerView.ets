@@ -1798,16 +1798,15 @@ export struct HimiNativePlayerView {
         // 本层不再介入；空视频区无控件声明，本层照常接管。
         .hitTestBehavior(HitTestMode.Default);
     }
-    // 分栏尺寸（602）：改用**显式宽高**而非 layoutWeight。
+    // 分栏尺寸（610）：回到 **layoutWeight 弹性**——视频层现在是 `Flex`
+    // 的第一个子节点，由框架按父容器实测宽分配剩余空间，不参与数值反推。
     //
-    // 视频层已提到 if/else 分支之外（转屏不再销毁 XComponent，见 videoW
-    // 注释），因此它不再处于 Row/Column 的弹性布局里，layoutWeight 不再
-    // 适用。尺寸由 videoW/videoH 显式计算（0 = 铺满 100%）。
+    // 【必须与 width/height 二选一】ArkUI 里 `layoutWeight` 与 `width('100%')`
+    // 同时设置时后者优先、layoutWeight 失效（594 真机回归「视频不收窄、
+    // 面板盖在上面」）。因此这里**只设 layoutWeight**，由 Flex 决定尺寸。
     //
-    // 对齐安卓 applyVideoSplit 语义：横屏只收宽度（视频区底 == 屏幕底），
-    // 竖屏只收高度（视频区宽 == 屏幕宽）。
-    .width(this.videoW > 0 ? this.videoW : '100%')
-    .height(this.videoH > 0 ? this.videoH : '100%');
+    // 面板收起时 Flex 只有视频一个子节点 → layoutWeight(1) 自然铺满。
+    .layoutWeight(1);
   }
 
   /** 房间资源面板槽（593/594）：横屏右侧 320vp / 竖屏底部 280vp。 */
@@ -1818,35 +1817,21 @@ export struct HimiNativePlayerView {
     // ForEach 重建块里 → 暂停/恢复时节点不重建、图标不刷新（真机
     // 「资源列表前面的播放/暂停图标状态不变化」）。
     // key 随 epoch 变 → 旧节点销毁、新节点创建 → 图标取最新值。
+    //
+    // 【610 真机回归：横屏头部缺三控件 / 面板整个消失】602~608 这里一直
+    // 用 `Stack` + `alignContent`（或更早的 `margin`）叠加定位，而那个
+    // `Stack` 容器是全屏尺寸 → 面板贴到**全屏右缘**、落在资源面板下面；
+    // 或 `margin.left = videoW` 因 `areaWidth` 在子窗口场景偏大而被裁到屏外。
+    //
+    // 610 起本 @Builder 只作为 `Flex` 的**流式子节点**参与布局——尺寸由
+    // Flex 按父容器实测值分配（横屏固定 320vp、竖屏固定 280vp），
+    // 不参与任何数值反推，从根上消除「跑到屏幕外」。
     ForEach([this.roomPlayEpoch], (epoch: number): void => {
-      // 【608 真机回归：横屏头部缺三控件 / 面板开关按钮飞出屏幕】修正。
-      //
-      // 602~607 一直用 `margin({ left: videoW })` 把面板推到右/下边缘——
-      // 但 `videoW` 是用 `areaWidth` 反推的，而 `areaWidth` 在子窗口场景
-      // 可能大于实际内容宽 → `margin.left + 320 > 实际宽` → **面板右缘被
-      // 裁到屏外**。头部右侧的三个控件（搜索/人数/徽章）正好落在被裁区域，
-      // 看起来「消失了」；面板开关按钮同理被挤出。
-      // 截图佐证：竖屏（面板全宽、无 margin 计算）头部三控件正常，横屏全无。
-      //
-      // 修法：改用 `Stack` 的 `alignContent` 让框架按**父容器实测宽**摆放
-      // ——不参与任何数值计算，从根上消除溢出：
-      // - 横屏：贴右上（`TopEnd`）= 视频区右侧；
-      // - 竖屏：贴左下（`BottomStart`）= 视频区下方。
-      Stack({
-        alignContent: this.portrait
-          ? Alignment.BottomStart
-          : Alignment.TopEnd,
-      }) {
-        Column() {
-          this.RoomPanel();
-        }
-        .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
-        .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%');
+      Column() {
+        this.RoomPanel();
       }
-      .width('100%')
-      .height('100%')
-      // 空白区放行给下层视频手势层（面板自身有背景色，只消费自己的区域）。
-      .hitTestBehavior(HitTestMode.Transparent);
+      .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
+      .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%');
     }, (epoch: number): string => `room-${epoch}`);
   }
 
@@ -1888,30 +1873,37 @@ export struct HimiNativePlayerView {
       // 602 修法：视频层提到分支**之外**、根 Stack 里只存在一份。方向切换
       // 只移动资源面板，视频节点完全不动 → 无黑屏。
       // 尺寸由 videoW/videoH 显式控制（见字段注释）。
-      this.VideoStack();
-
-      // ── 房间资源面板（按方向定位，不动视频层）──
-      // 横屏：贴右侧 320vp、全高（Flutter `Row(Expanded, SizedBox(320))`）；
-      // 竖屏：贴底部 280vp、全宽（Flutter `Column(Expanded, SizedBox(280))`）。
-      // 用 Stack 的 `alignContent` + 显式尺寸实现，不依赖 Row/Column 弹性。
-      // 【定位方式：显式尺寸 + margin，不用 Blank 铺满】
+      // ── 视频 + 房间资源面板：Flex 流式分栏（610）──
       //
-      // 曾试过「全尺寸容器 + Blank 推边」，但两个方向都有问题：
-      // - 容器用 Default 会**阻断**下层视频手势层的触摸（房间模式点视频区
-      //   唤不出控件）；
-      // - 容器用 Transparent 会让面板区域与视频手势层**同时**响应（点资源
-      //   列表会顺带切换控件显隐）。
-      // 正确做法：面板容器只占**面板自身尺寸**，用 margin 推到边缘——
-      // 触摸命中范围恰好等于面板区域，视频区完全不受影响。
+      // 【610 真机回归：横屏头部仍缺三控件 / 面板整个消失】602~608 一直是
+      // 「视频层常驻 + 面板用 Stack alignContent 或 margin 叠加定位」，而
+      // 那个 Stack 容器是**全屏尺寸**（`width('100%')`）→ `TopEnd` 让面板贴
+      // **全屏右缘**，正好落在资源面板下面（被盖住）；`margin.left = videoW`
+      // 又依赖不可靠的 `areaWidth`（子窗口场景偏大 → 面板右缘被裁到屏外）。
+      // 两者都会让面板跑到屏幕外，头部三个控件随之不可见。
       //
-      // margin 由 videoW/videoH 推出（都是 @State，随转屏/面板开关更新）：
-      // - 横屏：面板贴右 → `marginStart = videoW`（= 屏宽 - 面板宽）；
-      // - 竖屏：面板贴底 → `marginTop = videoH`（= 屏高 - 面板高）。
-      // 605：必须读 @State（`roomPanelVisible()` 是宿主普通字段，`if` 节点
-      // 不会随它变化重新求值 → 收起后视频全屏了但面板还留在树里）。
-      if (this.roomPanelShown) {
-        this.RoomPanelSlot();
+      // 修法：改回**流式布局**——`Flex` 把视频与面板作为兄弟节点排布，
+      // 宽度由框架按父容器实测值分配（`layoutWeight(1)` 吃剩余），
+      // 不参与任何数值反推。
+      //
+      // 【为什么用 Flex 而不是 if/else 换 Row/Column】
+      // - `if/else` 换**容器类型**会让 ArkUI 整体销毁子树 → `XComponent`
+      //   随之销毁重建 → 转屏黑一帧（594 真机回归）；
+      // - `Flex` 的 `direction` 是**属性**，转屏只改属性、子树不销毁。
+      //
+      // 【方向语义】横屏 = Row（视频左、面板右 320vp）；
+      // 竖屏 = Column（视频上、面板下 280vp）——对齐 Flutter
+      // `Row(Expanded(video), SizedBox(320))` / `Column(Expanded, SizedBox(280))`。
+      Flex({
+        direction: this.portrait ? FlexDirection.Column : FlexDirection.Row,
+      }) {
+        this.VideoStack();
+        if (this.roomPanelShown) {
+          this.RoomPanelSlot();
+        }
       }
+      .width('100%')
+      .height('100%');
 
       // ── 空态占位（607）：对齐 Flutter `_buildVideoArea` 的空态分支 ──
       //

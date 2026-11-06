@@ -10,14 +10,13 @@ void main() {
   ).readAsStringSync();
 
   group('① 面板定位用 Stack alignContent（不再用 margin 反推）', () {
-    test('RoomPanelSlot 用 Stack + TopEnd / BottomStart', () {
+    test('610 起改用 Flex 流式分栏（Stack 叠加方案已废弃）', () {
+      expect(view, contains('Flex({'));
+      expect(view, contains('direction: this.portrait ? FlexDirection.Column : FlexDirection.Row'));
       final idx = view.indexOf('RoomPanelSlot() {');
-      expect(idx, greaterThan(0));
       final end = view.indexOf('  build() {', idx);
       final body = view.substring(idx, end);
-      expect(body, contains('Stack({'));
-      expect(body, contains('Alignment.BottomStart'));
-      expect(body, contains('Alignment.TopEnd'));
+      expect(body, isNot(contains('Stack({')));
     });
 
     test('不再用 margin 推算面板位置', () {
@@ -31,13 +30,16 @@ void main() {
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
       expect(code, isNot(contains('margin(')));
+      expect(code, isNot(contains('alignContent')));
     });
 
-    test('空白区放行触摸给下层手势层', () {
-      final idx = view.indexOf('RoomPanelSlot() {');
-      final end = view.indexOf('  build() {', idx);
-      final body = view.substring(idx, end);
-      expect(body, contains('.hitTestBehavior(HitTestMode.Transparent)'));
+    test('610 起面板是流式子节点，不再需要 Transparent 放行', () {
+      // 流式布局下 Flex 容器只占自身尺寸，视频区触摸天然不受影响。
+      final idx = view.indexOf('Flex({');
+      expect(idx, greaterThan(0));
+      final body = view.substring(idx, idx + 600);
+      expect(body, contains('.width('));
+      expect(body, contains('.height('));
     });
 
     test('注释记录 areaWidth 反推的根因', () {

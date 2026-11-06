@@ -171,10 +171,28 @@ class DanmakuLayerView(context: Context) : View(context) {
         if (paused) anchorPosMs
         else anchorPosMs + ((System.currentTimeMillis() - anchorWallMs) * speed).toLong()
 
-    /** 转屏/尺寸变化：行容量变了，行号与冲突表必须重排（否则只铺旧行数）。 */
+    /**
+     * 转屏/尺寸变化：**只在行容量真的变了**才重排行号与冲突表。
+     *
+     * 【真机回归：安卓弹幕只有一行 + 前后抽搐】旧实现只要尺寸变化就
+     * `laneOf.clear()` —— 而弹幕层在房间分栏 / 控件层收窄 / 视频区缩放时
+     * 会频繁触发 `onSizeChanged`（尺寸微调但行容量不变），每次都把所有
+     * 弹幕的行号绑定清空 → 下一帧全部重新分配 → 视觉上「抽搐」；
+     * 且首帧布局未完成时 `h` 偏小 → `autoRows` 算成 1 → 只剩顶行。
+     *
+     * 修法：按**行容量**（`autoRows`）判断——容量不变就不清，行号保持稳定。
+     */
+    private var lastAutoRows = -1
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w == oldw && h == oldh) return
+        if (h <= 0) return // 布局未完成：不基于无效高度重排（否则容量算成 1 行）
+        val density = resources.displayMetrics.density
+        val rowH = baseFontSizeDp * fontSizeScale.toFloat() * density + rowGapDp * density
+        val newAuto = ((h - 2 * edgePadDp * density) / rowH).toInt().coerceAtLeast(1)
+        if (newAuto == lastAutoRows) return
+        lastAutoRows = newAuto
         laneOf.clear()
         scrollAvail = DoubleArray(0)
         topAvail = DoubleArray(0)

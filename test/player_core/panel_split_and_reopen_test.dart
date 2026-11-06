@@ -34,9 +34,10 @@ void main() {
 
     test('panelLeftMarginPx = 视频区宽 - 面板宽 - 12dp', () {
       expect(kotlinScreen, contains('private fun panelLeftMarginPx(panelW: Int, fullBleed: Boolean): Int'));
+      // 610：fullBleed 时 rightPad=0（贴右无间距）。
       expect(
         kotlinScreen,
-        contains('return (videoAreaWidth() - panelW - dp(NPTheme.PANEL_RIGHT)).coerceAtLeast(0)'),
+        contains('return (videoAreaWidth() - panelW - rightPad).coerceAtLeast(0)'),
       );
     });
 
@@ -165,8 +166,8 @@ void main() {
       // 鸿蒙侧面板在分栏容器内（Row/Column 的第二子项），天然只在视频区，
       // 不需要安卓那套 leftMargin 换算；此处确认结构仍在。
       expect(ohosView, contains('this.RoomPanelSlot();'));
-      // 608：方向定位改由 Stack alignContent（视频层已移出分支）。
-      expect(ohosView, contains('Alignment.BottomStart'));
+      // 610：方向定位改由 Flex 的 direction 体现（面板是流式子节点）。
+      expect(ohosView, contains('FlexDirection.Column : FlexDirection.Row'));
     });
 
     test('鸿蒙锁定态只出 LockOnlyBar（底栏壳走 else 分支）', () {

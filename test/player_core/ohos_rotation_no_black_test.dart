@@ -22,15 +22,15 @@ void main() {
       expect(calls, 1, reason: '视频层必须只有一个实例，转屏才不黑屏');
     });
 
-    test('面板按方向用 Stack alignContent 定位（只移动面板，不动视频）', () {
-      // 608：改用 Stack 的 alignContent（框架按父容器实测宽摆放），
-      // 不再用 videoW/videoH 反推 margin（那会因 areaWidth 偏大而溢出）。
+    test('面板作为 Flex 流式子节点参与布局（不再叠加定位）', () {
+      // 610：改用 Flex 流式布局（框架按父容器实测宽分配），
+      // 不再用 Stack/margin 叠加定位（那会因 areaWidth 偏大而溢出）。
       final idx = view.indexOf('RoomPanelSlot() {');
       expect(idx, greaterThan(0));
       final end = view.indexOf('  build() {', idx);
       final body = view.substring(idx, end);
-      expect(body, contains('Alignment.BottomStart'));
-      expect(body, contains('Alignment.TopEnd'));
+      expect(body, contains('ROOM_PANEL_WIDTH'));
+      expect(body, contains('ROOM_PANEL_HEIGHT'));
     });
   });
 
@@ -40,9 +40,9 @@ void main() {
       expect(view, contains('@State videoH: number = 0;'));
     });
 
-    test('VideoStack 按 videoW/videoH 收窄，0 时回落 100%', () {
-      expect(view, contains(".width(this.videoW > 0 ? this.videoW : '100%')"));
-      expect(view, contains(".height(this.videoH > 0 ? this.videoH : '100%')"));
+    test('VideoStack 用 layoutWeight 弹性（610 起不再是显式尺寸）', () {
+      expect(view, contains('.layoutWeight(1);'));
+      expect(view, isNot(contains(".width(this.videoW > 0 ? this.videoW : '100%')")));
     });
 
     test('不再使用 layoutWeight（视频层已不在弹性布局里）', () {

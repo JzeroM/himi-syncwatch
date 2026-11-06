@@ -52,7 +52,9 @@ void main() {
         'NativePlayerScreenView.kt',
       ).readAsStringSync();
       expect(kotlin, contains('private fun panelLeftMarginPx(panelW: Int, fullBleed: Boolean): Int'));
-      expect(kotlin, contains('videoAreaWidth() - panelW - dp(NPTheme.PANEL_RIGHT)'));
+      // 610：fullBleed 时 rightPad=0（贴右无间距），非 fullBleed 时 12dp。
+      expect(kotlin, contains('val rightPad = if (fullBleed) 0 else dp(NPTheme.PANEL_RIGHT)'));
+      expect(kotlin, contains('videoAreaWidth() - panelW - rightPad'));
     });
   });
 
