@@ -1845,6 +1845,41 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 原生宿主是否处于「已隐藏」状态（见 [suspendNativeUi]）。
   bool _nativeUiSuspended = false;
 
+  /// 卸载当前媒体并停止播放（606）。
+  ///
+  /// 【真机回归：删除正在播放的资源后仍在播】
+  /// `_removeEpisode` 设了 `state = AdapterPlaybackState.stopped`（该 setter
+  /// 确实会调 `player.stop()`），但适配器的 500ms 轮询里
+  /// `_applyPolledState` 有：
+  /// ```dart
+  /// if (_prepared && hasProgress) {
+  ///   _setState(state.paused ? paused : playing);   // ← 把 stopped 覆盖回 playing
+  /// }
+  /// ```
+  /// `_prepared` 只在 `prepare()` 里置 true、**从不重置**，而 `durationMs`
+  /// / `positionMs` 仍在 → 下一轮轮询立刻把状态改回 `playing` →
+  /// `player.play()` → 画面继续播。
+  ///
+  /// 本方法重置 `_prepared` 与进度字段，让轮询不再认为「有进度在播」，
+  /// 并显式 stop。删除当前播放资源时调用。
+  Future<void> unloadMedia() async {
+    if (_disposed) return;
+    _prepared = false;
+    _positionMs = 0;
+    _durationMs = 0;
+    _bufferedMs = 0;
+    _propertyCache.remove('time-pos');
+    _propertyCache.remove('duration');
+    _mediaStatus = AdapterMediaStatus.unloaded;
+    try {
+      await _player?.stop();
+    } catch (e) {
+      LogService().log('mpv', '卸载媒体失败: $e');
+    }
+    _setState(AdapterPlaybackState.stopped);
+    _pushNativeUiState(immediate: true);
+  }
+
   /// 重新打开原生 UI 宿主（597）。
   ///
   /// 【真机回归：原生入口进资源搜索后回播放页黑屏】`closeNativeUi()` 会

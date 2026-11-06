@@ -1326,7 +1326,15 @@ export struct HimiNativePlayerView {
         .padding({ left: 6, right: 6, top: 2, bottom: 2 })
         .backgroundColor('#1FFFFFFF')
         .borderRadius(8)
-        .alignItems(VerticalAlign.Center);
+        .alignItems(VerticalAlign.Center)
+        // 【真机回归：初始房间头部不显示搜索/人数/房主徽章】606 修正。
+        //
+        // 标题 `Text('资源')` 用 `layoutWeight(1)`——ArkUI 里它会吃掉全部
+        // 剩余空间，把后面的兄弟节点压到 0 宽（安卓注释记录过同一 bug：
+        // 「标题撑满后把三者挤到最右」）。
+        // 安卓的解法是给每个控件**显式固定尺寸**；这里给人数胶囊与角色
+        // 徽章加 `constraintSize({ minWidth })` 保底，避免被压成 0。
+        .constraintSize({ minWidth: 40, minHeight: 20 });
         // 角色徽章：房主 accent / 观众红。
         Text(this.roomIsHost
           ? '房主'
@@ -1335,7 +1343,9 @@ export struct HimiNativePlayerView {
           .fontColor(Color.White)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .backgroundColor(this.roomIsHost ? SEL_COLOR : '#E53935')
-          .borderRadius(8);
+          .borderRadius(8)
+          // 606：同上，给固定下限防被标题的 layoutWeight 压成 0 宽。
+          .constraintSize({ minWidth: 32, minHeight: 20 });
       }
       .width('100%')
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -2477,22 +2487,31 @@ export struct HimiNativePlayerView {
                 this.openPanel(NativePlayerPanelType.speed);
               }, this.bottomScale);
           }
-          // 【真机回归：播放时资源面板无法手动展开/收起】604 修正。
+          // 【真机回归：面板开关控件太靠右】606 修正。
           //
-          // 鸿蒙此前**完全没有**资源面板开关按钮（安卓有 panelToggleButton，
-          // 条件 `if (state.isRoom)`）→ 面板一旦打开就再也关不掉，视频区
-          // 一直被压缩，其它底栏控件被挤掉。
+          // 604 把 panelToggle 放进了内层 `Row({ space: 20 * bottomScale })`
+          // ——那个间距是图标簇内部用的（20×缩放），与安卓的 trailing 槽
+          // 子项布局不同，真机上按钮贴到最右边缘、与其它图标脱节。
           //
-          // 图标与安卓同源（ICON_OPEN_IN_FULL），条件 `isRoom`。
+          // 安卓的 panelToggleButton 是 trailing 槽的**独立子项**
+          //（`llp(dp(32), dp(32), NPTheme.CONTROL_GAP)`）。这里同样放在
+          // trailing 槽内（图标簇之后，由槽的 justifyContent: End 排布）。
           if (this.state().isRoom) {
-            this.IconChip(
-              String.fromCodePoint(NativePlayerIcons.ICON_OPEN_IN_FULL),
-              24, 4, false, false, 'panelToggle',
-              (): void => {
-                this.pokeAutoHide();
-                this.host().sendCommand('toggleResourcePanel', null);
-              },
-              this.bottomScale);
+            // 【@Builder 调用不能接链式属性】`this.IconChip(...)` 返回 void，
+            // 不能写 `.margin(...)`（ArkTS 报 "Property 'margin' does not
+            // exist on type 'void'"）。用外层 Row 承载间距。
+            Row() {
+              this.IconChip(
+                String.fromCodePoint(NativePlayerIcons.ICON_OPEN_IN_FULL),
+                24, 4, false, false, 'panelToggle',
+                (): void => {
+                  this.pokeAutoHide();
+                  this.host().sendCommand('toggleResourcePanel', null);
+                },
+                this.bottomScale);
+            }
+            // 与图标簇之间留 CONTROL_GAP（对齐安卓 marginStart）。
+            .margin({ left: 20 * this.bottomScale });
           }
         }
         .alignItems(VerticalAlign.Center);

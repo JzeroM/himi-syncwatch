@@ -1313,6 +1313,44 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 >（`ep.isPlaying && !this.state().paused`），但当时只在那一处修了，没有
 > 推广到面板显隐与头部控件——605 一次性补齐。
 
+### Phase 2.25：鸿蒙头部挤压 + 面板开关位置 + 删除播放中资源不停播（1.5.26+606）
+
+> 起因：真机「鸿蒙初始进房间（未播放）头部还是不显示搜索、人数、房主
+> 徽章」「面板开关控件在视频区横竖屏都太靠右」「安卓和鸿蒙都有的问题：
+> 点击删除正在播放的资源，该资源还在播」。
+
+- [x] **头部三控件被标题挤压到不可见**：`Text('资源')` 用
+  `layoutWeight(1)`——ArkUI 里它会吃掉**全部**剩余空间，把兄弟节点压到
+  0 宽。安卓注释记录过同一 bug：「标题只占剩余空间（layoutWeight=1），
+  但必须给搜索/人数/角色预留固定宽度，否则标题撑满后把三者挤到最右」。
+  修法：给人数胶囊 `constraintSize({ minWidth: 40, minHeight: 20 })`、
+  角色徽章 `constraintSize({ minWidth: 32, minHeight: 20 })` 保底（搜索
+  图标本就有 28×28 显式尺寸）。截图里连**无条件渲染**的人数胶囊/角色徽章
+  都不见了，正是被压成 0 宽的表现。
+- [x] **面板开关按钮太靠右**：604 把它放进了内层
+  `Row({ space: 20 * bottomScale })`——那是图标簇内部用的间距（20×缩放），
+  与安卓的 trailing 槽子项布局不同，真机上按钮贴到最右边缘、与其它图标
+  脱节。
+  修法：移到外层 trailing 槽（`justifyContent: End` 会把它排在图标簇之后），
+  并加 `.margin({ left: 20 * bottomScale })` 与簇留间距——对齐安卓
+  `trailingGroup.addView(panelToggleButton, llp(dp(32), dp(32), CONTROL_GAP))`。
+- [x] **删除正在播放的资源后仍在播（安卓 + 鸿蒙都有）**：
+  `_removeEpisode` 设了 `_player.state = AdapterPlaybackState.stopped`
+  （该 setter **确实**会调 `player.stop()`），但适配器的 500ms 轮询
+  `_applyPolledState` 里有：
+  ```dart
+  if (_prepared && hasProgress) {
+    _setState(state.paused ? paused : playing);   // ← 把 stopped 覆盖回 playing
+  }
+  ```
+  `_prepared` 只在 `prepare()` 里置 true、**从不重置**，而
+  `durationMs`/`positionMs` 仍在 → 下一轮轮询立刻把状态改回 `playing` →
+  `player.play()` → 画面继续播（暂停态删除同样会被拉回 playing）。
+  修法：新增 `MpvPlayerAdapter.unloadMedia()`——重置 `_prepared` /
+  `_positionMs` / `_durationMs` / `_bufferedMs` 与属性缓存、置
+  `_mediaStatus = unloaded`、显式 `stop()`，让轮询不再认为「有进度在播」。
+  `_removeEpisode` 删除当前播放资源时调它。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

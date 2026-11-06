@@ -35,7 +35,7 @@ void main() {
     test('ControlRow 右侧簇有 panelToggle 按钮', () {
       final idx = view.indexOf('ControlRow() {');
       expect(idx, greaterThan(0));
-      final body = view.substring(idx, idx + 7600);
+      final body = view.substring(idx, idx + 8200);
       expect(body, contains("'panelToggle'"));
       expect(body, contains("sendCommand('toggleResourcePanel', null)"));
     });

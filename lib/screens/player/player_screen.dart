@@ -7020,7 +7020,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_currentEpisodeIndex == index) {
       _currentEpisodeIndex = -1;
       _isPlayerReady = false;
-      _player.state = AdapterPlaybackState.stopped;
+      // 【606 真机回归：删除正在播放的资源后仍在播】
+      // 旧实现只设 `_player.state = stopped`（该 setter 会调 player.stop()），
+      // 但适配器的 500ms 轮询 `_applyPolledState` 里有
+      // `if (_prepared && hasProgress) _setState(paused ? paused : playing)`
+      // ——`_prepared` 从不重置、duration/position 仍在 → 下一轮立刻把状态
+      // 改回 playing → player.play() → 画面继续播。
+      // 必须真正卸载媒体（重置 _prepared 与进度字段）。
+      final p = _player;
+      if (p is MpvPlayerAdapter) {
+        unawaited(p.unloadMedia());
+      } else {
+        p.state = AdapterPlaybackState.stopped;
+      }
       _syncPlayState();
     } else if (_currentEpisodeIndex > index) {
       _currentEpisodeIndex--;
