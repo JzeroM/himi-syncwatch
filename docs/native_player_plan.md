@@ -1997,6 +1997,61 @@ await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
   弹幕 update 无效重绘优化、MDK/Erika 路径未受影响）。
 
 
+### Phase 2.41：房间模式观众权限 + 指示器视频区定位（1.5.42+622）
+
+> 起因：用户要求「房间模式 MPV 原生播放器非房主成员不允许控制播放/暂停
+>（包括手势）、切集、换资源和拖进度；非房主成员隐藏播放/暂停、切集和
+> 分享房间控件；手势显示控件和加载指示器也应该在视频区域，横竖屏都垂直
+> 居中于视频画布；房主所有成员都应该可以手势调节音量和亮度」，补充
+> 「资源面板观众也不可点击播放、切换」。
+
+#### 一、排查结果（安卓 vs 鸿蒙差异大）
+
+| 项 | 安卓 | 鸿蒙 |
+|---|---|---|
+| 双击/长按/横拖手势 | ✅ 有 `canControl` | ✅ 有 |
+| **纵拖（音量/亮度）** | ❌ 被 `canControl` 拦 | ❌ 被拦 |
+| **播放/暂停按钮** | ❌ **无检查** | ✅ `TransportGlyph(canControl)` |
+| **上一集/下一集** | ❌ **无检查** | ✅ 参数已传 |
+| **进度条 seek** | ❌ **无检查** | ❌ 无检查 |
+| **资源行点集** | ❌ **无检查** | ✅ `if (!roomIsHost) return` |
+| **Dart 命令路由** | ❌ **无守卫** | ❌ 同 |
+| **分享按钮（观众）** | ❌ 观众也显示 | ❌ 同 |
+| **播放/切集按钮（观众）** | ❌ 不隐藏 | ❌ 只置灰不隐藏 |
+| **指示器定位** | ❌ 全屏居中 | ❌ 全屏居中 |
+
+#### 二、修复
+
+- [x] **① Dart 命令白名单（最后一道防线）**：新增
+  `PlayerScreen.isPlaybackControlCommand`（9 类播放控制）+ 在
+  `_handleNativeUiCommand` 开头守卫。即使原生按钮漏守卫也拦得住。
+  - 拒绝：`TogglePlay` / `SeekTo` / `SeekRelative` / `SelectEpisode` /
+    `SelectVersion` / `RemoveResourceEpisode` / `SetSpeed` /
+    `SwitchEngine` / `ShareRoom`
+  - 放行（本地设备类）：`SetVolume` / `RequestBack` / `RequestExit` /
+    `ToggleResourcePanel` / `ToggleResourceGroup` / `ToggleResourceSeason` /
+    `OpenResourceSearch` / `ToggleDebug`
+- [x] **② 安卓按钮层**：`configureTransportListeners` 的 prev/play/next
+  各加 `if (!lastState.canControl) return@setOnClickListener`；进度条
+  `onCommit` 加守卫并**回弹到权威位置**（否则滑杆停在观众拖到的位置）；
+  资源行点集加守卫。
+- [x] **③ 观众隐藏控件（`INVISIBLE` 占位，布局不塌）**：
+  - 安卓：分享、播放/暂停、上一集、下一集
+  - 鸿蒙：分享（`Visibility.Hidden`）、`TransportGlyph` 新增 `visible` 参数
+    （prev/play/next 传 `canControl`）
+- [x] **④ 指示器在视频区内居中**：
+  - 安卓：`paintVerticalBar` 从 `CENTER_VERTICAL`（全屏）改
+    `TOP` + `(videoAreaHeight() - barH) / 2`；新增
+    `positionBufferingInVideoArea()`（加载转圈，显示时按当前视频区重算，
+    转屏/分栏自动跟随）
+  - 鸿蒙：竖条与加载转圈的容器 `.height(this.videoH > 0 ? this.videoH : '100%')`
+- [x] **⑤ 音量/亮度手势对所有人开放**：`onScroll`（安卓）/
+  `onPanUpdate`（鸿蒙）只保留 `locked` 检查；**横拖 seek** 仍单独检查
+  `canControl`（seek 是播放控制）。
+- [x] 测试：新增 `room_audience_permission_test.dart` 18 项（白名单 9 类
+  拒绝 + 8 类放行、安卓三处按钮守卫、进度条回弹、资源行守卫、
+  观众隐藏、指示器视频区定位、手势权限、鸿蒙进度条与显隐）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

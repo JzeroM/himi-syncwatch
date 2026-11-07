@@ -781,6 +781,29 @@ class PlayerScreen extends ConsumerStatefulWidget {
   }) =>
       mobilePlatform && !tvMode;
 
+  /// 该命令是否属于「播放控制」（房间观众一律拒绝）。
+  ///
+  /// 622：房间模式下非房主不得控制播放/暂停、切集、换资源、拖进度、换内核、
+  /// 改倍速、分享房间。**本地设备类**命令（音量/退出/面板开关/折叠浏览/
+  /// 搜索/调试）不受限——它们不影响房间同步。
+  ///
+  /// 这是**最后一道防线**：即使原生按钮层漏了 `canControl` 守卫，命令到
+  /// 这里也会被拦下。
+  @visibleForTesting
+  static bool isPlaybackControlCommand(NativePlayerCommand command) =>
+      switch (command) {
+        TogglePlay() => true,
+        SeekTo() => true,
+        SeekRelative() => true,
+        SelectEpisode() => true,
+        SelectVersion() => true,
+        RemoveResourceEpisode() => true,
+        SetSpeed() => true,
+        SwitchEngine() => true,
+        ShareRoom() => true,
+        _ => false,
+      };
+
   /// 顶栏倍速键是否显示：仅手机本地单人（房间模式由房主节奏接管，
   /// 转屏键见 [showRotateButton] 复用同一手机判定）。
   @visibleForTesting
@@ -3596,6 +3619,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 打日志忽略，不崩。
   Future<void> _handleNativeUiCommand(NativePlayerCommand command) async {
     if (!mounted || _disposed) return;
+    // 622：房间观众拒绝播放控制类命令（兜底，不依赖原生按钮是否守卫）。
+    if (!_canControlPlayback &&
+        PlayerScreen.isPlaybackControlCommand(command)) {
+      LogService().log('Player', '观众无权执行: ${command.runtimeType}');
+      return;
+    }
     switch (command) {
       case SelectAudio(:final id):
         // id = Emby 索引 + 1（与 SelectSubtitle 同约定；旧实现不减 1 →

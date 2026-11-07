@@ -163,6 +163,8 @@ struct ProgressRow {
   onInteract: () => void = (): void => {};
   /** TV 长按 → 片头片尾标记卡。 */
   onSegmentMark: () => void = (): void => {};
+  /** 622：是否可控制播放（房间观众 false → 拖进度不生效并回弹）。 */
+  canControl: boolean = true;
 
   /** 当前位置（100ms 自驱；拖动中冻结，显示拖动值）。 */
   @State posMs: number = 0;
@@ -211,6 +213,11 @@ struct ProgressRow {
         onCommit: (v: number): void => {
           this.onInteract();
           this.dragging = false;
+          // 622：房间观众不得拖进度（回弹到当前权威位置）。
+          if (!this.canControl) {
+            this.dragMs = this.posMs;
+            return;
+          }
           this.dragMs = v;
           this.posMs = v;
           this.onSeek(v);
@@ -864,7 +871,9 @@ export struct HimiNativePlayerView {
    */
   private onPanUpdate(event: GestureEvent): void {
     const s = this.state();
-    if (s.locked || !s.canControl) {
+    // 622：音量/亮度是**本地设备属性**，与房间同步无关 → 所有成员可调。
+    // 只保留锁定态检查；横拖 seek 是播放控制，在下面单独检查 canControl。
+    if (s.locked) {
       return;
     }
     // ArkUI PanGesture 的 offsetX/offsetY 是**相对起点的累计位移**，
@@ -878,6 +887,10 @@ export struct HimiNativePlayerView {
       this.dragAxis = Math.abs(totalDx) > Math.abs(totalDy) ? 1 : 2;
     }
     if (this.dragAxis === 1) {
+      // 622：横拖 seek 是**播放控制** → 观众不允许。
+      if (!s.canControl) {
+        return;
+      }
       // 横拖 seek：每 100px → 5s，上限 ±60s。
       this.hDragAccumPx = totalDx;
       const deltaMs = Math.round(totalDx / 100 * 5000);
@@ -1975,7 +1988,9 @@ export struct HimiNativePlayerView {
             .color('#6366F1');
         }
         .width('100%')
-        .height('100%')
+        // 622：高度改**视频区高**（`videoH > 0` 时）→ 转圈在视频画布内
+        // 居中；竖屏分栏时旧 `height('100%')` 会落到资源面板区域。
+        .height(this.videoH > 0 ? this.videoH : '100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         // 转圈不抢手势（点屏仍可显隐控件）。用 None 而非 Transparent：
@@ -2138,6 +2153,10 @@ export struct HimiNativePlayerView {
         // 侧别对齐安卓 paintVerticalBar（Flutter 注释与实现相反、以实现
         // 为准）：**亮度柱在右、音量柱在左**。用全屏容器定位（align 属性
         // 在根 Stack 子节点不生效，同手势提示的教训）。
+        //
+        // 622：容器高度改为**视频区高**（`videoH > 0` 时），使竖条在视频
+        // 画布内垂直居中；竖屏分栏时视频区只占上方（屏高 - 资源面板），
+        // 旧实现 `height('100%')` 会落到资源面板区域（真机截图回归）。
         Column() {
           Text(`${this.verticalBarPercent}%`)
             .fontSize(12)
@@ -2150,7 +2169,7 @@ export struct HimiNativePlayerView {
             .borderRadius(16);
         }
         .width('100%')
-        .height('100%')
+        .height(this.videoH > 0 ? this.videoH : '100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(this.verticalBarOnLeft ? HorizontalAlign.End : HorizontalAlign.Start)
         .padding({ left: this.verticalBarOnLeft ? 0 : 16, right: this.verticalBarOnLeft ? 16 : 0 })
@@ -2314,15 +2333,22 @@ export struct HimiNativePlayerView {
               HimiMpvNativeHost.getInstance().optimisticToggleOrientation();
             }, 1);
         }
-        // 分享（仅房间模式；对齐 Flutter showShare）。
+        // 分享（仅房间**房主**；对齐 Flutter showShare）。
+        // 622：观众隐藏分享——只有房主能分享房间。用 Visibility.Hidden
+        // 占位（等价安卓 INVISIBLE），保持顶栏尾部布局不塌。
         // 时钟（仅 TV 且格式非 off；对齐 Flutter PlayerClockLayer：
         // `if (!tvMode || !format.enabled) return shrink`）。
         if (this.state().isRoom) {
-          this.IconChip(String.fromCodePoint(NativePlayerIcons.ICON_SHARE), 22, 6, false,
-            false, 'share', (): void => {
-              this.pokeAutoHide();
-              HimiMpvNativeHost.getInstance().shareRoom();
-            }, 1);
+          // 622：观众隐藏分享（@Builder 返回 void，不能链式加 .visibility
+          // ——用容器包一层控制可见性，保持占位不塌）。
+          Row() {
+            this.IconChip(String.fromCodePoint(NativePlayerIcons.ICON_SHARE), 22, 6, false,
+              false, 'share', (): void => {
+                this.pokeAutoHide();
+                HimiMpvNativeHost.getInstance().shareRoom();
+              }, 1);
+          }
+          .visibility(this.state().isHost ? Visibility.Visible : Visibility.Hidden);
         } else if (this.state().tvMode && this.clockFormat !== 'off') {
           Text(this.currentTime)
             .fontSize(13)
@@ -2383,6 +2409,8 @@ export struct HimiNativePlayerView {
       // 脱节（真机回归）。
       ProgressRow({
         durationMs: this.durationMs,
+        // 622：房间观众不可拖进度（ProgressRow 内会回弹）。
+        canControl: this.canControl,
         segmentMarkEnabled: this.state().tvMode && this.segmentEnabled,
         onSeek: (v: number): void => {
           HimiMpvNativeHost.getInstance().optimisticSeek(Math.round(v));
@@ -2521,7 +2549,7 @@ export struct HimiNativePlayerView {
           this.TransportGlyph(this.prevGlyph(), 28, this.currentEpisodeIndex > 0, 'prev', (): void => {
             this.pokeAutoHide();
             this.onPrevEpisode();
-          });
+          }, this.canControl);
         } else {
           // 单集/电影：空占位保持播放键居中（与 Flutter SizedBox(28) 一致）。
           Row().width(28).height(28);
@@ -2532,14 +2560,14 @@ export struct HimiNativePlayerView {
         this.TransportGlyph(this.paused ? this.playGlyph() : this.pauseGlyph(), 36,
           this.canControl, 'play', (): void => {
             this.onTogglePlay();
-          });
+          }, this.canControl);
         if (this.episodeCount > 1) {
           this.TransportGlyph(this.nextGlyph(), 28,
             this.currentEpisodeIndex >= 0 && this.currentEpisodeIndex + 1 < this.episodeCount,
             'next', (): void => {
               this.pokeAutoHide();
               this.onNextEpisode();
-            });
+            }, this.canControl);
         } else {
           Row().width(28).height(28);
         }
@@ -2782,8 +2810,11 @@ export struct HimiNativePlayerView {
 
   /** 传输组按钮（上一集/播放/下一集）。 */
   @Builder
-  TransportGlyph(icon: string, size: number, enabled: boolean, key: string, onTap: () => void) {
+  TransportGlyph(icon: string, size: number, enabled: boolean, key: string, onTap: () => void,
+    visible: boolean = true) {
     Text(icon)
+      // 622：房间观众隐藏播放/切集控件（用 Hidden 占位，布局不塌）。
+      .visibility(visible ? Visibility.Visible : Visibility.Hidden)
       .fontFamily(NativePlayerIcons.FONT_FAMILY)
       .fontSize(size)
       .fontColor(enabled ? Color.White : '#3DFFFFFF')

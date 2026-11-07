@@ -671,10 +671,21 @@ class NativePlayerScreenView(
         )
         verticalBar.value = verticalBarPercent / 100.0
         verticalBar.visibility = VISIBLE
+        // 622：指示器在**视频区**内垂直居中（横竖屏都对）。
+        //
+        // 旧实现 `Gravity.CENTER_VERTICAL` 相对根 FrameLayout（全屏）居中
+        // ——竖屏分栏时视频区只占上方（屏高 - 280dp 资源面板），指示器会
+        // 偏下、落在资源面板区域（真机截图回归）。
+        //
+        // 改 `TOP` + 精确 topMargin = (视频区高 - 指示器高) / 2。
+        // 竖条高度固定 dp(160)（见 addView 处），无需 post 实测。
+        val barH = dp(160)
+        val videoH = videoAreaHeight()
         val lp = verticalBar.layoutParams as? LayoutParams
         if (lp != null) {
-            lp.gravity = if (brightness) Gravity.END or Gravity.CENTER_VERTICAL
-            else Gravity.START or Gravity.CENTER_VERTICAL
+            lp.gravity = if (brightness) Gravity.END or Gravity.TOP
+            else Gravity.START or Gravity.TOP
+            lp.topMargin = ((videoH - barH) / 2).coerceAtLeast(0)
             lp.marginStart = if (brightness) 0 else dp(NPTheme.GAUGE_EDGE)
             lp.marginEnd = if (brightness) dp(NPTheme.GAUGE_EDGE) else 0
             verticalBar.layoutParams = lp
@@ -743,7 +754,10 @@ class NativePlayerScreenView(
                 distanceX: Float,
                 distanceY: Float,
             ): Boolean {
-                if (lastState.locked || !lastState.canControl) return false
+                // 622：音量/亮度是**本地设备属性**，与房间同步无关
+                // → 所有成员（含观众）都能调。只保留锁定态检查。
+                // 横拖 seek 是播放控制，仍在下面单独检查 canControl。
+                if (lastState.locked) return false
                 if (e1 == null) return false
                 // 方向锁（591）：首次超 slop 时**一次性定轴**，之后只走该轴，
                 // 不再每帧重判——否则斜向拖动会在横/纵之间来回切换，上滑
@@ -759,6 +773,8 @@ class NativePlayerScreenView(
                         if (Math.abs(dx) > Math.abs(dy)) AXIS_HORIZONTAL else AXIS_VERTICAL
                 }
                 if (dragAxis == AXIS_HORIZONTAL) {
+                    // 622：横拖 seek 是**播放控制** → 观众不允许（只提示不 seek）。
+                    if (!lastState.canControl) return false
                     // 横拖 seek：每累计 100px 预览一次（±5s）。
                     hDragAccumPx -= distanceX
                     if (Math.abs(hDragAccumPx) > DRAG_PX_PER_5S) {
@@ -1073,7 +1089,10 @@ class NativePlayerScreenView(
         placeholderView.visibility = GONE
         addView(placeholderView, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         bufferingView.visibility = GONE
-        addView(bufferingView, lp(dp(36), dp(36), Gravity.CENTER))
+        // 622：加载指示器在**视频区**内居中（旧实现 Gravity.CENTER 相对
+        // 全屏 → 竖屏分栏时落到资源面板区域）。36dp 固定尺寸，直接算；
+        // 显示时由 positionBufferingInVideoArea() 按当前视频区重算。
+        addView(bufferingView, lp(dp(36), dp(36), Gravity.START or Gravity.TOP))
 
         addView(topBar, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))
         topBar.clipChildren = false
@@ -1090,7 +1109,8 @@ class NativePlayerScreenView(
         )
         addView(
             verticalBar,
-            lp(dp(NPTheme.GAUGE_WIDTH), dp(160), Gravity.END or Gravity.CENTER_VERTICAL),
+            // 622：初始也用 TOP（运行时由 paintVerticalBar 按视频区高重算）。
+            lp(dp(NPTheme.GAUGE_WIDTH), dp(160), Gravity.END or Gravity.TOP),
         )
 
         // 面板层（二级浮层）：透明遮罩 + 右侧玻璃浮层 + 解码 popover + 片头片尾卡。
@@ -1317,7 +1337,17 @@ class NativePlayerScreenView(
             positionLabel.text = AndroidNativePlayerState.formatPlayerTime(v.toLong())
             scheduleAutoHide()
         }
-        seekBar.onCommit = { v ->
+        seekBar.onCommit = commit@{ v ->
+            // 622：房间观众不得拖进度。
+            if (!lastState.canControl) {
+                // 回弹到当前权威位置（否则滑杆停在观众拖到的位置）。
+                seekBar.value = lastState.positionAt(
+                    System.currentTimeMillis(),
+                    lastStateAtMs,
+                ).toFloat()
+                dragging = false
+                return@commit
+            }
             dragging = false
             // 保护窗：等权威位置追上目标前，禁止 tick 把滑杆写回旧值。
             pendingSeekMs = v.toLong()
@@ -1341,17 +1371,23 @@ class NativePlayerScreenView(
 
     /** 播放组：上一集 / 播放暂停 / 下一集。 */
     private fun configureTransportListeners() {
+        // 622：房间观众不得控制播放/暂停、切集。
+        // 旧实现只在**手势层**检查 `canControl`，按钮层完全没守卫 →
+        // 观众点底栏播放/上一集/下一集仍然生效（真机回归）。
         prevButton.setOnClickListener {
+            if (!lastState.canControl) return@setOnClickListener
             if (lastState.currentEpisodeIndex > 0) {
                 listener?.onSelectEpisode(lastState.currentEpisodeIndex - 1)
             }
             scheduleAutoHide()
         }
         playPauseButton.setOnClickListener {
+            if (!lastState.canControl) return@setOnClickListener
             listener?.onTogglePlay()
             scheduleAutoHide()
         }
         nextButton.setOnClickListener {
+            if (!lastState.canControl) return@setOnClickListener
             if (lastState.currentEpisodeIndex < lastState.episodes.size - 1) {
                 listener?.onSelectEpisode(lastState.currentEpisodeIndex + 1)
             }
@@ -2044,6 +2080,24 @@ class NativePlayerScreenView(
         }
     }
 
+    /**
+     * 622：加载指示器在**视频区**内居中。
+     *
+     * 竖屏分栏时视频区高 = 屏高 - 资源面板高，而根 FrameLayout 是全屏高
+     * ——`Gravity.CENTER` 会落到资源面板区域（真机截图回归）。
+     */
+    private fun positionBufferingInVideoArea() {
+        val videoW = videoAreaWidth()
+        val videoH = videoAreaHeight()
+        val size = dp(36)
+        (bufferingView.layoutParams as? LayoutParams)?.let {
+            it.gravity = Gravity.START or Gravity.TOP
+            it.leftMargin = ((videoW - size) / 2).coerceAtLeast(0)
+            it.topMargin = ((videoH - size) / 2).coerceAtLeast(0)
+            bufferingView.layoutParams = it
+        }
+    }
+
     private fun panelWidthDp(): Int {
         // 595/597：面板按**视频区宽度**算，而不是全屏宽。
         // 旧实现用全屏宽 → 收窄后的父级只有 videoW，面板按全屏 0.42 算会
@@ -2365,6 +2419,9 @@ class NativePlayerScreenView(
                 setPadding(dp(12), 0, dp(12), dp(10))
                 isClickable = true
                 setOnClickListener {
+                    // 622：房间观众不得切集（鸿蒙侧早已有同款守卫，
+                    // 安卓漏了 → 观众点资源行仍会切集）。
+                    if (!lastState.canControl) return@setOnClickListener
                     listener?.onSelectEpisode(ep.index)
                     closePanel()
                 }
@@ -3889,6 +3946,8 @@ class NativePlayerScreenView(
         // 缓冲中），不再自己判 `state.buffering`——否则 Flutter 首帧转圈时
         // 安卓不转、安卓中途缓冲转时 Flutter 不转。
         bufferingView.visibility = if (state.showLoading) VISIBLE else GONE
+        // 622：显示时按当前视频区重算居中位置（转屏/分栏会改变视频区高）。
+        if (state.showLoading) positionBufferingInVideoArea()
         // 空态占位（610）：无播放内容时显示（对齐 Flutter `_isPlayerReady`）。
         placeholderView.visibility = if (!state.playerReady) VISIBLE else GONE
 
@@ -3927,7 +3986,12 @@ class NativePlayerScreenView(
             if (!tv && !state.isRoom && state.engineLabel != "Erika") VISIBLE else GONE
         rotateIcon.visibility = if (!tv) VISIBLE else GONE
         // 分享：仅房间模式（对齐 Flutter showShare）。
-        shareButton.visibility = if (state.isRoom) VISIBLE else GONE
+        // 622：房间**观众**隐藏分享（只有房主能分享房间）。
+        // 用 INVISIBLE 而非 GONE：保持顶栏尾部布局不塌（与 Flutter 观感一致）。
+        shareButton.visibility =
+            if (state.isRoom && !state.isHost) INVISIBLE
+            else if (state.isRoom) VISIBLE
+            else GONE
         clockWrap.visibility = if (tv) VISIBLE else GONE
 
         // 芯片打开态（Flutter：面板打开时强调色描边/文字）
@@ -3940,6 +4004,14 @@ class NativePlayerScreenView(
 
         // 底栏可见项
         lockButton.visibility = if (!tv) VISIBLE else GONE
+        // 622：房间**观众**隐藏播放/暂停、上一集、下一集。
+        // 用 INVISIBLE 而非 GONE——保持底栏布局不塌（其余按钮不移位，
+        // 与 Flutter 观感一致）。锁定按钮保留（本地 UI 锁定，非播放控制）。
+        val hideTransportForAudience = state.isRoom && !state.isHost
+        val transportVisibility = if (hideTransportForAudience) INVISIBLE else VISIBLE
+        playPauseButton.visibility = transportVisibility
+        prevButton.visibility = transportVisibility
+        nextButton.visibility = transportVisibility
         bottomSpeedChip.visibility = if (tv && !state.isRoom) VISIBLE else GONE
         displayAdjustButton?.visibility = if (tv) VISIBLE else GONE
         panelToggleButton.visibility = if (state.isRoom) VISIBLE else GONE
