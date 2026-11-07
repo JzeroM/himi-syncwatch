@@ -38,22 +38,35 @@ export default class HimiOhosRtmPlugin implements FlutterPlugin, MethodCallHandl
     this.eventChannel.setStreamHandler({
       onListen: (args: Object, sink: EventSink): void => {
         this.eventSink = sink;
-        this.manager.setEventSink((event: Map<string, Object>): void => {
-          if (this.eventSink !== null) {
-            this.eventSink.success(event);
-          }
-        });
+        this._attachSink();
       },
       onCancel: (args: Object): void => {
+        // 635：只清 eventSink，不主动清 manager.sink——
+        // Dart 侧重新 listen 时 onListen 会立刻重挂，避免中间窗口丢事件。
         this.eventSink = null;
-        this.manager.setEventSink(null);
       },
     });
     hilog.info(DOMAIN, TAG, '插件已注册');
   }
 
+  /// 635：把事件出口挂到 manager。
+  ///
+  /// 必须由 `onListen` **和** `initialize` 都调用：
+  /// - `onListen`：Dart 侧首次/重新订阅 EventChannel 时挂载；
+  /// - `initialize`：`RtmManager.initialize()` 内部会先调 `release()`
+  ///   重建 client，重建后需要确保出口仍在（防御性兜底）。
+  private _attachSink(): void {
+    this.manager.setEventSink((event: Map<string, Object>): void => {
+      if (this.eventSink !== null) {
+        this.eventSink.success(event);
+      }
+    });
+  }
+
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
     this.manager.release();
+    // 635：引擎真正销毁时才清空事件出口。
+    this.manager.setEventSink(null);
     this.channel?.setMethodCallHandler(null);
     this.channel = null;
     this.eventChannel?.setStreamHandler(null);
@@ -93,6 +106,9 @@ export default class HimiOhosRtmPlugin implements FlutterPlugin, MethodCallHandl
         const appId: string = (call.argument('appId') as string) ?? '';
         const userId: string = (call.argument('userId') as string) ?? '';
         this.manager.initialize(appId, userId);
+        // 635：`initialize` 内部若已有实例会先 `release()` 重建 client，
+        // 这里确保事件出口仍然挂上（防止 sink 被意外清空后无人恢复）。
+        this._attachSink();
         result.success(true);
         return;
       }

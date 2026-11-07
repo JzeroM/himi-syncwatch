@@ -307,7 +307,20 @@ export class RtmManager {
       }
       this.instanceId = -1;
     }
-    this.sink = null;
+    // 635：**不再清空 sink**。
+    //
+    // sink 是 Plugin 提供的「事件出口」回调，与 client 实例生命周期无关。
+    // 旧实现在这里 `this.sink = null`，而重建 client 时（`initialize` 会先
+    // 调 `release()`）**没有任何地方恢复它** → `emit()` 里
+    // `if (this.sink !== null)` 恒为假 → 所有事件被丢弃。
+    //
+    // 真机表现（重进房 / 房主重开房后再加入）：
+    // - 在线人数正常（whoNow 直调 MethodChannel，不经 sink）
+    // - 播报正常（本地 _addBroadcastMessage，不经 sink）
+    // - **资源列表为空**（roomInfo 走 emit → sink 为 null → 丢弃）
+    // - **约 20 秒后被踢**（收不到 roomInfo → 超时 → 误判房间解散）
+    //
+    // sink 的清空只在 Plugin `onDetachedFromEngine`（引擎真正销毁）时做。
   }
 
   private requireId(): number {

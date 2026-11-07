@@ -2782,6 +2782,110 @@ static Future<void> release() => _invoke('release');  // ← 不复位
 - [ ] Windows：同上两项。
 - [ ] 连续进出房 5 次，每次资源列表都正常。
 
+### Phase 2.53：重进房仍失败的真根因（ArkTS sink 被清空）（1.5.55+635）
+
+> 起因：634 打包后真机仍失败——「进房 → 退出 → 再次进房：资源列表空，
+> 被踢；房主解散重开房 → 邀请同一观众：还是被踢」。
+
+#### 一、634 的判断不完整
+
+634 只修了 Dart 侧插件静态标志 `_listening` 的复位（**必要但不充分**），
+真正的根因在 **ArkTS 侧**：
+
+```typescript
+// RtmManager.ets（635 前）—— 问题代码
+release(): void {
+  if (this.instanceId >= 0) {
+    releaseRtmClient(this.instanceId);
+    this.instanceId = -1;
+  }
+  this.sink = null;        // ← 清空了事件出口
+}
+```
+
+**`initialize()` 开头若已有实例会先调 `release()` 重建 client**，重建后
+**没有任何地方恢复 sink**：
+
+```typescript
+initialize(appId, userId) {
+  if (this.instanceId >= 0) this.release();   // ← 这里把 sink 清成 null
+  ...createRtmClient...
+  this.attachListeners(id);                    // 只注册 SDK 监听，不设 sink
+}
+```
+
+于是 `emit()` 里 `if (this.sink !== null)` 恒为假 → **所有事件被丢弃**。
+
+#### 二、为什么 `onListen` 没能救回来
+
+**关键事实**：`rtmServiceProvider` 是普通 `Provider`（非 `autoDispose`），
+在 Riverpod 2.x 中**一旦创建就存活到 ProviderContainer 销毁**——不会因为
+播放页退出、监听者消失而被回收。
+
+因此真机实际路径是：
+
+| 步骤 | 状态 |
+|---|---|
+| 第一次进房 | `RtmService` 创建；`_ensureListening()` 订阅 EventChannel → `onListen` 触发 → `setEventSink(cb)` |
+| 退出播放页 | `RtmService` **不销毁**（Provider 常驻）；EventChannel 订阅**从未断开** |
+| 第二次进房 | 复用同一 `RtmService`；`_ensureListening()` 因 `_listening == true` 直接 return；**`onListen` 不再触发** |
+| 结果 | `RtmManager.release()` 清掉的 sink **无人恢复** → `emit()` 全部丢弃 |
+
+也就是说，634 的 `_listening` 复位**根本不会被触发**（`dispose()` 从未调用），
+所以 634 对本次现象无效——真正必须修的是 **ArkTS 侧 `sink` 被清空**。
+
+#### 三、现象完全吻合
+
+| 现象 | 原因 |
+|---|---|
+| 在线人数正常 | `whoNow` **直调** MethodChannel，不经 sink |
+| 播报正常 | **本地** `_addBroadcastMessage`，不经 sink |
+| **资源列表为空** | roomInfo 走 `emit()` → sink 为 null → 丢弃 |
+| **约 20 秒后被踢** | 收不到 roomInfo → `_roomInfoTimeout` → 误判解散 → `popUntil` |
+
+#### 四、修复
+
+- [x] `RtmManager.release()`：**删除 `this.sink = null`**。
+      sink 是 Plugin 提供的「事件出口」，与 client 实例生命周期无关；
+      只在 Plugin `onDetachedFromEngine`（引擎真正销毁）时清空。
+- [x] `HimiOhosRtmPlugin` 新增 `_attachSink()`，由两处调用：
+      - `onListen`：Dart 侧首次/重新订阅时挂载；
+      - `initialize` 分支：`RtmManager.initialize()` 内部会先 `release()`
+        重建 client，重建后兜底重挂。
+- [x] `onCancel`：**只清 `eventSink`，不主动清 `manager.sink`**——
+      Dart 侧重新 listen 时 `onListen` 会立刻重挂，避免中间窗口丢事件。
+- [x] `onDetachedFromEngine`：显式 `manager.setEventSink(null)` + 清 `eventSink`。
+
+#### 五、Windows 不受影响（对照验证）
+
+```cpp
+// rtm_client.cpp —— Release 只清 client 指针
+void RtmClient::Release() {
+  IRtmClient* client = nullptr;
+  { std::lock_guard<std::mutex> lock(mutex_);
+    pending_.clear(); client = client_; client_ = nullptr;
+    storage_ = nullptr; presence_ = nullptr; }
+  if (client) client->release();
+}
+```
+
+`event_sink_` 由 `StreamHandler` 管理，仅在 Dart 侧 `onCancel` 时
+`event_sink_.reset()`，**Release 不触碰**。故 Windows 无此缺陷
+（634 的 `_listening` 修复对 Windows 仍然有效且必要）。
+
+#### 六、测试
+
+- [x] 新增 `test/services/rtm/rtm_sink_reattach_test.dart` 10 项：
+      `release` 不清 sink、`_attachSink` 双点调用、`onCancel` 不清
+      `manager.sink`、`onDetachedFromEngine` 才清、Windows 对照验证、
+      回归锁（sink 写入点仅 `setEventSink`）。
+
+#### 七、待真机验证
+
+- [ ] 鸿蒙：进房 → 退出 → **再次进房**，资源列表正常、不被踢。
+- [ ] 鸿蒙：房主解散重开房 → 邀请同一观众 → 正常进房。
+- [ ] 鸿蒙：连续进出房 5 次，每次资源列表都正常。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
