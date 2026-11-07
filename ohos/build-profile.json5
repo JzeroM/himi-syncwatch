@@ -13,16 +13,23 @@
         "compatibleSdkVersion": "26.0.0",
         "targetSdkVersion": "26.0.0",
         "runtimeOS": "HarmonyOS",
-        // 声网 RTM SDK 是 **bytecode HAR**（`metadata.byteCodeHar: true`），
-        // 必须开启 `buildOption.strictMode.useNormalizedOHMUrl` 才能被
-        // 依赖解析。不加会报：
-        //   Bytecode HARs: [@shengwang/rtm-full] not supported
-        //   when useNormalizedOHMUrl is not true.
-        // 注意：该字段**不在** products 顶层（schema 会拒绝），
-        // 正确位置是 products[].buildOption.strictMode。
+        // ⚠️ 必须保持 false。
+        //
+        // 声网 RTM 的 `@shengwang/rtm-full` 是 **bytecode HAR**
+        // （`metadata.byteCodeHar: true`），hvigor 会强制要求本开关为 true。
+        // 但该开关是**项目级**的，会改变所有模块的 OHM URL 解析规则，破坏
+        // Flutter-OH 生成的 `entry` 模块解析（其 `entryPath` 是目录
+        // `src/main/`，精确模式要求文件路径）→ 启动即闪退：
+        //   Cannot find module 'ets/entryability/EntryAbility',
+        //   which is application Entry Point
+        //
+        // 因此本项目**不依赖** bytecode HAR，改为直连声网原生库
+        // `libagora-rtm-sdk.so`（标准 NAPI 模块，nm_modname = "agora-rtm-sdk"），
+        // 与 mpv 插件 `import libmpv from 'libmpv_wrapper.so'` 同理。
+        // 详见 plugins/himi_ohos_rtm/ohos/src/main/ets/RtmManager.ets。
         "buildOption": {
           "strictMode": {
-            "useNormalizedOHMUrl": true,
+            "useNormalizedOHMUrl": false,
           },
         },
       }

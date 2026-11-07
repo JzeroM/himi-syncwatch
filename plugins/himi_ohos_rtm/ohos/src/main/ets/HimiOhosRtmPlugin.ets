@@ -128,7 +128,12 @@ export default class HimiOhosRtmPlugin implements FlutterPlugin, MethodCallHandl
       case 'getOnlineUsers': {
         const channel: string = (call.argument('channel') as string) ?? '';
         const data = await this.manager.getOnlineUsers(channel);
-        result.success(data);
+        // Dart 侧 `_invoke` 约定：Map 结果要自带 `ok`，否则会被当成失败
+        // （`r['ok'] != true`）。这里统一包成 {ok, value}。
+        const out: Map<string, Object> = new Map<string, Object>();
+        out.set('ok', true);
+        out.set('value', data);
+        result.success(out);
         return;
       }
       case 'setChannelMetadata': {
@@ -138,13 +143,21 @@ export default class HimiOhosRtmPlugin implements FlutterPlugin, MethodCallHandl
           ? this.toStrMap(raw)
           : new Map<string, string>();
         const rev = await this.manager.setChannelMetadata(channel, metadata);
-        result.success(rev);
+        const out: Map<string, Object> = new Map<string, Object>();
+        out.set('ok', true);
+        out.set('value', rev);
+        result.success(out);
         return;
       }
       case 'getChannelMetadata': {
         const channel: string = (call.argument('channel') as string) ?? '';
         const data = await this.manager.getChannelMetadata(channel);
-        result.success(data);
+        // 同 getOnlineUsers：必须带 `ok`，否则 Dart 侧一律当失败。
+        const out: Map<string, Object> = new Map<string, Object>();
+        out.set('ok', true);
+        out.set('metadata', data.get('metadata') ?? new Map<string, string>());
+        out.set('updatedAt', data.get('updatedAt') ?? '');
+        result.success(out);
         return;
       }
       case 'release':

@@ -167,9 +167,13 @@
 
 ### 阶段 3：多人观影 RTM（预计 1~2 周）
 
-- [ ] 确认声网 RTM 2 鸿蒙 SDK 包名、下载与鉴权方式（对照 `doc.shengwang.cn/doc/rtm2/harmonyos`）。
-- [ ] 新建 `plugins/himi_ohos_rtm`：ArkTS 插件封装，MethodChannel 协议对齐 `himi_windows_rtm`（消息流 / Presence 流 / 错误码）。
-- [ ] `rtm_backend_factory.dart` 新增 ohos 分支；复用现有房间状态机、二维码加入、同步控制全部 `lib/` 逻辑。
+- [x] 确认声网 RTM 2 鸿蒙 SDK 形态：`@shengwang/rtm-full` v2.3.0 是
+  **bytecode HAR**，强制 `useNormalizedOHMUrl: true`，而该开关破坏
+  Flutter-OH 的 entry 解析 → 启动闪退。**改为直连 NAPI `.so`**
+  （`libagora-rtm-sdk.so`，49 个导出函数），仍是官方 SDK 与服务器。
+  详见 `docs/native_player_plan.md` Phase 2.48。
+- [x] 新建 `plugins/himi_ohos_rtm`：ArkTS 插件封装，MethodChannel 协议对齐 `himi_windows_rtm`（消息流 / Presence 流 / 错误码）。
+- [x] `rtm_backend_factory.dart` 新增 ohos 分支；复用现有房间状态机、二维码加入、同步控制全部 `lib/` 逻辑。
 - [ ] 双端互通测试：Android 房主 ↔ 鸿蒙加入者（反之亦然）。
 
 **验收标准**：`RtmBackend` 全部接口在 ohos 有实现；冒烟用例（对齐 `HIMI_RTM_SMOKE` 思路）通过；跨平台互通至少完成 10 次连续进出房间无泄漏。

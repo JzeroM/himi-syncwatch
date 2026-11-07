@@ -1,33 +1,68 @@
 /**
- * 声网 RTM ArkTS SDK 封装（鸿蒙）。
+ * 声网 RTM NAPI 直连封装（鸿蒙）。
  *
- * 与 Windows `RtmClient`（C++）职责一致：把 SDK 的 Promise API 包成
- * 便于 MethodChannel 调用的形态，并把事件回调转成统一 JSON 结构。
+ * 为什么不用 `@shengwang/rtm-full` HAR：
+ * 它是 **bytecode HAR**（`metadata.byteCodeHar: true`），hvigor 强制要求
+ * `buildOption.strictMode.useNormalizedOHMUrl: true` 才能解析；而该开关是
+ * **项目级**的，会改变所有模块的 OHM URL 解析规则，导致 Flutter-OH 生成的
+ * `entry` 模块（`entryPath` 是目录 `src/main/`）找不到 `EntryAbility` →
+ * 启动即闪退：
+ *   Cannot find module 'ets/entryability/EntryAbility',
+ *   which is application Entry Point
+ *
+ * 绕开办法：bytecode HAR 内部的 `ets/modules.abc` 只是一层薄壳，唯一关键
+ * 字符串是 `@normalized:Y&&&libagora-rtm-sdk.so&`——真正的实现全在
+ * `libagora-rtm-sdk.so` 这个 **标准 NAPI 模块**里：
+ *   - `nm_modname = "agora-rtm-sdk"`（文件名去掉 lib/.so，规则同 mpv）
+ *   - `nm_register_func` → `napi_define_properties` 导出 49 个函数
+ *   - `.rodata` 里能找到全部 49 个导出名
+ *
+ * 所以这里直接 `import ... from 'libagora-rtm-sdk.so'`，与 `mpv.har` 用
+ * `import libmpv from 'libmpv_wrapper.so'` 的做法完全一致。仍然是声网
+ * 官方 SDK 与官方服务器，跨端互通不变，只是不需要 `useNormalizedOHMUrl`。
  */
-import { RtmClient, RtmChannelType } from '@shengwang/rtm-full';
+import {
+  createRtmClient,
+  releaseRtmClient,
+  login,
+  logout,
+  subscribe,
+  unsubscribe,
+  publish,
+  addEventListener,
+  whoNow,
+  setChannelMetadata,
+  getChannelMetadata,
+  getVersion,
+} from 'libagora-rtm-sdk.so';
+// 直接复用 SDK 的类型声明，避免自定义 interface 与 SDK interface 之间
+// 出现 `as` 断言（ArkTS 禁 arkts-no-structural-typing）。
 import type {
-  RtmConfig,
-  MessageEvent,
-  PresenceEvent,
+  RtmClientConfig,
+  Metadata,
+  MetadataItem,
+  MetadataOptions,
   SubscribeOptions,
   PublishOptions,
   PresenceOptions,
-  Metadata,
-  MetadataItem,
-  UserState,
-  WhoNowResponse,
-  GetChannelMetadataResponse,
-} from '@shengwang/rtm-full';
+  MessageEvent,
+  PresenceEvent,
+  LinkStateEvent,
+} from 'libagora-rtm-sdk.so';
 import hilog from '@ohos.hilog';
 
 const DOMAIN: number = 0x0001;
 const TAG: string = 'HimiOhosRtm';
 
+/** `RtmChannelType.MESSAGE`（见 SDK `RtmBase.d.ets`）。 */
+const CHANNEL_TYPE_MESSAGE: number = 1;
+
 /** 事件回调（由 Plugin 转 EventChannel）。 */
 export type RtmEventSink = (event: Map<string, Object>) => void;
 
 export class RtmManager {
-  private client: RtmClient | null = null;
+  /** NAPI 实例句柄；-1 表示未创建。 */
+  private instanceId: number = -1;
   private userId: string = '';
   private sink: RtmEventSink | null = null;
 
@@ -36,25 +71,32 @@ export class RtmManager {
   }
 
   isReady(): boolean {
-    return this.client !== null;
+    return this.instanceId >= 0;
   }
 
   /** 创建客户端并挂事件监听（不登录）。 */
   initialize(appId: string, userId: string): void {
-    if (this.client !== null) {
+    if (this.instanceId >= 0) {
       this.release();
     }
     this.userId = userId;
-    const config: RtmConfig = { appId: appId, userId: userId };
-    this.client = new RtmClient(config);
-    this.attachListeners(this.client);
-    hilog.info(DOMAIN, TAG, '初始化成功 userId=%{public}s', userId);
+    // 必须用 index.d.ts 声明的 RtmClientConfig（ArkTS 禁无类型对象字面量）。
+    const config: RtmClientConfig = { appId: appId, userId: userId };
+    const id: number = createRtmClient(config);
+    if (id < 0) {
+      throw new Error(`createRtmClient 失败, code=${id}`);
+    }
+    this.instanceId = id;
+    this.attachListeners(id);
+    hilog.info(DOMAIN, TAG, '初始化成功 userId=%{public}s sdk=%{public}s',
+      userId, getVersion());
   }
 
-  private attachListeners(client: RtmClient): void {
+  private attachListeners(id: number): void {
     // 消息：{publisher, message}
-    client.addEventListener('message', (raw: object): void => {
-      const e = raw as MessageEvent;
+    // 用 index.d.ts 的 'message' 重载，回调参数已是 MessageEvent，
+    // 无需 `as`（ArkTS 禁结构性断言）。
+    addEventListener(id, 'message', (e: MessageEvent): void => {
       const out: Map<string, Object> = new Map<string, Object>();
       out.set('event', 'message');
       out.set('publisher', e.publisher ?? '');
@@ -62,8 +104,7 @@ export class RtmManager {
       this.emit(out);
     });
     // Presence：{type, publisher}
-    client.addEventListener('presence', (raw: object): void => {
-      const e = raw as PresenceEvent;
+    addEventListener(id, 'presence', (e: PresenceEvent): void => {
       const out: Map<string, Object> = new Map<string, Object>();
       out.set('event', 'presence');
       out.set('type', this.mapPresenceType(e.eventType));
@@ -71,10 +112,13 @@ export class RtmManager {
       this.emit(out);
     });
     // 连接状态（诊断用）
-    client.addEventListener('linkState', (raw: object): void => {
+    addEventListener(id, 'linkState', (e: LinkStateEvent): void => {
       const out: Map<string, Object> = new Map<string, Object>();
       out.set('event', 'connection');
-      out.set('state', `${raw}`);
+      out.set('state', `${e.currentState}`);
+      if (e.reason !== undefined && e.reason.length > 0) {
+        out.set('reason', e.reason);
+      }
       this.emit(out);
     });
   }
@@ -105,53 +149,55 @@ export class RtmManager {
   }
 
   async login(token: string): Promise<void> {
-    const c = this.requireClient();
-    await c.login(token);
+    const id = this.requireId();
+    await login(id, token);
     hilog.info(DOMAIN, TAG, '登录成功');
   }
 
   async logout(): Promise<void> {
-    const c = this.requireClient();
-    await c.logout();
+    const id = this.requireId();
+    await logout(id);
   }
 
   async subscribe(channel: string): Promise<void> {
-    const c = this.requireClient();
+    const id = this.requireId();
     const options: SubscribeOptions = {
       withMessage: true,
       withMetadata: false,
       withPresence: true,
       withLock: false,
     };
-    await c.subscribe(channel, options);
+    await subscribe(id, channel, options);
   }
 
   async unsubscribe(channel: string): Promise<void> {
-    const c = this.requireClient();
-    await c.unsubscribe(channel);
+    const id = this.requireId();
+    await unsubscribe(id, channel);
   }
 
   async publish(channel: string, message: string): Promise<void> {
-    const c = this.requireClient();
+    const id = this.requireId();
     const options: PublishOptions = {
-      channelType: RtmChannelType.MESSAGE,
+      channelType: CHANNEL_TYPE_MESSAGE,
       customType: '',
     };
-    await c.publish(channel, message, options);
+    await publish(id, channel, message, options);
   }
 
   /** 在线人数 + 用户 ID 列表（一次 whoNow）。 */
   async getOnlineUsers(channel: string): Promise<Map<string, Object>> {
-    const c = this.requireClient();
+    const id = this.requireId();
     const options: PresenceOptions = {
       includeUserId: true,
       includeState: false,
     };
-    const resp: WhoNowResponse =
-      await c.presence.whoNow(channel, RtmChannelType.MESSAGE, options);
+    // 注意：whoNow 的返回类型由 index.d.ts 推断为 WhoNowResponse，
+    // 不能写 `as RtmWhoNowResponse`——ArkTS 禁结构性类型断言
+    // （arkts-no-structural-typing）。
+    const resp = await whoNow(id, channel, CHANNEL_TYPE_MESSAGE, options);
     const ids: string[] = [];
-    const list: UserState[] = resp.userStateList;
-    if (list !== undefined) {
+    const list = resp.userStateList;
+    if (list !== undefined && list !== null) {
       for (const u of list) {
         const uid: string = u.userId;
         if (uid !== undefined && uid.length > 0) {
@@ -160,7 +206,8 @@ export class RtmManager {
       }
     }
     const out: Map<string, Object> = new Map<string, Object>();
-    out.set('count', resp.totalOccupancy ?? ids.length);
+    const total: number = resp.totalOccupancy;
+    out.set('count', total !== undefined && total > 0 ? total : ids.length);
     out.set('userIds', ids);
     return out;
   }
@@ -170,7 +217,7 @@ export class RtmManager {
     channel: string,
     metadata: Map<string, string>,
   ): Promise<string> {
-    const c = this.requireClient();
+    const id = this.requireId();
     const items: MetadataItem[] = [];
     const keys: string[] = Array.from(metadata.keys());
     for (const k of keys) {
@@ -179,53 +226,57 @@ export class RtmManager {
       items.push(item);
     }
     const md: Metadata = { majorRevision: -1, items: items };
+    const opts: MetadataOptions = {};
     // 注意：SetChannelMetadataResponse **没有** metadata 字段（只有
     // channelName/channelType），故无法回读 revision；返回空串，
     // 由 Dart 侧 `storage_null` 之外的语义兜底。
-    await c.storage.setChannelMetadata(channel, RtmChannelType.MESSAGE, md);
+    await setChannelMetadata(id, channel, CHANNEL_TYPE_MESSAGE, md, opts);
     return '';
   }
 
   /** 读频道元数据 → {metadata, updatedAt}。 */
   async getChannelMetadata(channel: string): Promise<Map<string, Object>> {
-    const c = this.requireClient();
-    const resp: GetChannelMetadataResponse = await c.storage.getChannelMetadata(
-      channel, RtmChannelType.MESSAGE);
+    const id = this.requireId();
+    // 同 whoNow：不能 `as RtmGetChannelMetadataResponse`（ArkTS 禁结构性断言）。
+    const resp = await getChannelMetadata(id, channel, CHANNEL_TYPE_MESSAGE);
     const map: Map<string, string> = new Map<string, string>();
     // 注意：GetChannelMetadataResponse 的字段名是 **data**（不是 metadata）。
-    const data: Metadata = resp.data;
-    const items: MetadataItem[] = data.items;
-    if (items !== undefined) {
-      for (const it of items) {
-        const k: string = it.key;
-        if (k !== undefined) {
-          map.set(k, it.value ?? '');
+    const data = resp.data;
+    if (data !== undefined && data !== null) {
+      const items = data.items;
+      if (items !== undefined && items !== null) {
+        for (const it of items) {
+          const k: string = it.key;
+          if (k !== undefined) {
+            map.set(k, it.value ?? '');
+          }
         }
       }
     }
     const out: Map<string, Object> = new Map<string, Object>();
     out.set('metadata', map);
-    out.set('updatedAt', `${data !== undefined ? data.majorRevision : ''}`);
+    out.set('updatedAt',
+      `${data !== undefined && data !== null ? data.majorRevision : ''}`);
     return out;
   }
 
   release(): void {
-    if (this.client !== null) {
+    if (this.instanceId >= 0) {
       try {
-        this.client.release();
+        releaseRtmClient(this.instanceId);
       } catch (e) {
         hilog.warn(DOMAIN, TAG, 'release 异常: %{public}s', String(e));
       }
-      this.client = null;
+      this.instanceId = -1;
     }
     this.sink = null;
   }
 
-  private requireClient(): RtmClient {
-    const c: RtmClient | null = this.client;
-    if (c === null) {
+  private requireId(): number {
+    const id: number = this.instanceId;
+    if (id < 0) {
       throw new Error('RTM client not initialized');
     }
-    return c;
+    return id;
   }
 }

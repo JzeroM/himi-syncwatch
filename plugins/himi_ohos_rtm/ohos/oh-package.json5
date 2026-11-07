@@ -7,8 +7,13 @@
   "license": "",
   "dependencies": {
     "@ohos/flutter_ohos": "file:./har/flutter.har",
-    // 声网 RTM SDK（bytecode HAR）。插件模块自己也要声明——entry 的
-    // 依赖不会传递到 har 模块的编译上下文。
-    "@shengwang/rtm-full": "file:../../../ohos/entry/har/AgoraRtmSDK.har"
+    // 声网 RTM 原生库的 **类型声明**（不是 SDK 实现）。
+    // 真正的实现是同目录 libs/arm64-v8a/libagora-rtm-sdk.so（NAPI 模块），
+    // 这里只是让 ArkTS 编译器拿到 49 个导出函数的签名。
+    //
+    // 刻意 **不依赖** `@shengwang/rtm-full`：它是 bytecode HAR，会强制
+    // `useNormalizedOHMUrl: true`，而该开关破坏 Flutter-OH 的 entry 解析
+    // → 启动闪退。详见 RtmManager.ets 顶部注释。
+    "libagora-rtm-sdk.so": "file:./src/main/cpp/types/libagora-rtm-sdk"
   }
 }

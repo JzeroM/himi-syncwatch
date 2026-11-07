@@ -1,0 +1,6 @@
+{
+  "name": "libagora-rtm-sdk.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "Agora RTM SDK Native Library Type Definitions"
+}

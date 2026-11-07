@@ -2,18 +2,38 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 鸿蒙 RTM 接入的**源码级**校验。
+/// 鸿蒙 RTM 接入的**源码级**校验（NAPI 直连方案）。
 ///
 /// 单元测试无法真连声网（需 App ID + 真机），故这里验证：
-/// ① SDK 集成配置正确（依赖 / 权限 / bytecode HAR 开关）；
+/// ① NAPI 集成配置正确（.so / 类型声明 / 依赖，且**不含** bytecode HAR）；
 /// ② 插件与 Dart 后端的方法/事件协议一致；
 /// ③ 工厂正确路由到鸿蒙后端；
-/// ④ 关键 SDK API 用法与实测签名匹配（避免编译期才发现）。
+/// ④ 关键 NAPI API 用法与实测签名匹配（避免编译期才发现）。
+///
+/// 为什么强调「不含 bytecode HAR」：
+/// `@shengwang/rtm-full` 是 bytecode HAR，强制 `useNormalizedOHMUrl: true`，
+/// 而该开关破坏 Flutter-OH 的 entry 解析 → 真机启动闪退（628 事故）。
+/// 本测试把这条约束锁死，防止后续误加回依赖。
+/// 去掉 json5 的行注释，避免「注释里提到 @shengwang/rtm-full」被误判成依赖。
+String stripLineComments(String src) => src
+    .split('\n')
+    .map((line) {
+      final i = line.indexOf('//');
+      return i >= 0 ? line.substring(0, i) : line;
+    })
+    .join('\n');
+
 void main() {
   final buildProfile =
       File('ohos/build-profile.json5').readAsStringSync();
+  final buildProfileCode = stripLineComments(buildProfile);
   final entryPackage =
       File('ohos/entry/oh-package.json5').readAsStringSync();
+  final entryPackageCode = stripLineComments(entryPackage);
+  final pluginPackage = File(
+    'plugins/himi_ohos_rtm/ohos/oh-package.json5',
+  ).readAsStringSync();
+  final pluginPackageCode = stripLineComments(pluginPackage);
   final moduleJson =
       File('ohos/entry/src/main/module.json5').readAsStringSync();
   final factory = File(
@@ -33,27 +53,92 @@ void main() {
   ).readAsStringSync();
   final pubspec = File('pubspec.yaml').readAsStringSync();
 
-  group('① SDK 集成配置', () {
-    test('.har 已入库', () {
+  group('① NAPI 集成配置', () {
+    test('原生库 .so 已入库（libagora-rtm-sdk + libaosl）', () {
       expect(
-        File('ohos/entry/har/AgoraRtmSDK.har').existsSync(),
+        File('plugins/himi_ohos_rtm/ohos/libs/arm64-v8a/libagora-rtm-sdk.so')
+            .existsSync(),
         isTrue,
-        reason: '声网 .har 必须提交到仓库（5.2MB）',
+        reason: 'NAPI 直连的核心：声网原生库必须在插件 libs/ 下',
+      );
+      expect(
+        File('plugins/himi_ohos_rtm/ohos/libs/arm64-v8a/libaosl.so')
+            .existsSync(),
+        isTrue,
+        reason: 'libagora-rtm-sdk.so 的 NEEDED 依赖，缺了会加载失败',
       );
     });
 
-    test('entry 声明 @shengwang/rtm-full 依赖', () {
-      expect(entryPackage, contains('@shengwang/rtm-full'));
-      expect(entryPackage, contains('har/AgoraRtmSDK.har'));
+    test('NAPI 类型声明已入库（index.d.ts + oh-package.json5）', () {
+      final dts = File(
+        'plugins/himi_ohos_rtm/ohos/src/main/cpp/types/libagora-rtm-sdk/index.d.ts',
+      );
+      expect(dts.existsSync(), isTrue);
+      final content = dts.readAsStringSync();
+      // 关键导出必须存在，否则 ArkTS 编译期就会报 undefined。
+      for (final fn in [
+        'createRtmClient',
+        'releaseRtmClient',
+        'login',
+        'logout',
+        'subscribe',
+        'unsubscribe',
+        'publish',
+        'addEventListener',
+        'whoNow',
+        'setChannelMetadata',
+        'getChannelMetadata',
+        'getVersion',
+      ]) {
+        expect(content, contains('export const $fn'),
+            reason: 'index.d.ts 缺 $fn');
+      }
+      expect(
+        File(
+          'plugins/himi_ohos_rtm/ohos/src/main/cpp/types/libagora-rtm-sdk/oh-package.json5',
+        ).existsSync(),
+        isTrue,
+        reason: '类型包必须有 oh-package.json5，否则 ohpm 不认',
+      );
     });
 
-    test('bytecode HAR 必须开 useNormalizedOHMUrl（buildOption.strictMode）', () {
-      // 第一轮验证踩坑：不开会报
-      //   Bytecode HARs: [...] not supported when useNormalizedOHMUrl is not true.
-      expect(buildProfile, contains('"useNormalizedOHMUrl": true'));
-      // 第二轮验证踩坑：放 products 顶层会 schema 校验失败。
-      expect(buildProfile, contains('"buildOption"'));
-      expect(buildProfile, contains('"strictMode"'));
+    test('插件依赖 NAPI 类型包，且不含 bytecode HAR', () {
+      expect(pluginPackageCode, contains('libagora-rtm-sdk.so'));
+      expect(pluginPackageCode, contains('src/main/cpp/types/libagora-rtm-sdk'));
+      // 关键回归锁：绝不能依赖 @shengwang/rtm-full（bytecode HAR）。
+      expect(
+        pluginPackageCode,
+        isNot(contains('@shengwang/rtm-full')),
+        reason: 'bytecode HAR 会强制 useNormalizedOHMUrl → 启动闪退',
+      );
+    });
+
+    test('entry 不含 bytecode HAR 依赖', () {
+      expect(
+        entryPackageCode,
+        isNot(contains('@shengwang/rtm-full')),
+        reason: 'entry 若依赖 bytecode HAR，hvigor 会强制开开关',
+      );
+      expect(entryPackageCode, isNot(contains('AgoraRtmSDK.har')));
+    });
+
+    test('useNormalizedOHMUrl 必须为 false（防启动闪退）', () {
+      // 真机日志实证（628 事故）：
+      //   Cannot find module 'ets/entryability/EntryAbility',
+      //   which is application Entry Point
+      expect(
+        buildProfileCode,
+        contains('"useNormalizedOHMUrl": false'),
+        reason: '该开关会破坏 Flutter-OH 的 entry 模块解析',
+      );
+      expect(
+        buildProfileCode,
+        isNot(contains('"useNormalizedOHMUrl": true')),
+        reason: '绝不能开，否则鸿蒙版启动即闪退',
+      );
+      // 字段位置仍需在 products[].buildOption.strictMode（放顶层 schema 拒绝）。
+      expect(buildProfileCode, contains('"buildOption"'));
+      expect(buildProfileCode, contains('"strictMode"'));
     });
 
     test('网络权限齐全（INTERNET + GET_NETWORK_INFO）', () {
@@ -64,6 +149,15 @@ void main() {
     test('插件已加入 pubspec', () {
       expect(pubspec, contains('himi_ohos_rtm'));
       expect(pubspec, contains('plugins/himi_ohos_rtm'));
+    });
+
+    test('ArkTS 侧 import 的是 .so，不是 @shengwang/rtm-full', () {
+      expect(arktsManager, contains("from 'libagora-rtm-sdk.so'"));
+      expect(
+        arktsManager,
+        isNot(contains("from '@shengwang/rtm-full'")),
+        reason: 'bytecode HAR 已弃用，改直连 NAPI',
+      );
     });
   });
 
@@ -97,17 +191,28 @@ void main() {
         expect(dartClient, contains("'$m'"), reason: 'Dart 缺 $m');
       }
     });
+
+    test('Map 结果必须带 ok 字段（否则 Dart 一律当失败）', () {
+      // 628 遗留 bug：getOnlineUsers / getChannelMetadata 直接 result.success(data)，
+      // 返回的 Map 没有 ok，Dart `_invoke` 走 `r['ok'] == true` 判定为失败。
+      for (final m in ['getOnlineUsers', 'setChannelMetadata', 'getChannelMetadata']) {
+        final start = arktsPlugin.indexOf("case '$m':");
+        expect(start, greaterThan(0), reason: '找不到 case $m');
+        // 取该 case 到下一个 case 之间的片段。
+        final next = arktsPlugin.indexOf("case '", start + 10);
+        final body =
+            arktsPlugin.substring(start, next > 0 ? next : arktsPlugin.length);
+        expect(body, contains("out.set('ok', true)"),
+            reason: '$m 的返回值缺 ok 字段');
+      }
+    });
   });
 
   group('③ 工厂路由', () {
-    test('ohos 返回 OhosRtmBackend（不再 Unsupported）', () {
+    test('ohos 返回 OhosRtmBackend（不是 Unsupported）', () {
       expect(factory, contains("Platform.operatingSystem == 'ohos'"));
       expect(factory, contains('OhosRtmBackend()'));
-      // 旧实现把 ohos 归入不支持平台。
-      expect(
-        factory,
-        isNot(contains("Platform.isLinux ||\n      Platform.operatingSystem == 'ohos'")),
-      );
+      expect(factory, isNot(contains('UnsupportedRtmBackend();\n  }\n  if (Platform.isMacOS')));
     });
 
     test('macOS / Linux 仍降级', () {
@@ -116,7 +221,7 @@ void main() {
     });
   });
 
-  group('④ SDK API 用法与实测签名匹配', () {
+  group('④ NAPI API 用法与实测签名匹配', () {
     test('presence 事件类型映射（join=3 / leave=4 / timeout=5）', () {
       final body = arktsManager.substring(
         arktsManager.indexOf('private mapPresenceType'),
@@ -140,18 +245,20 @@ void main() {
 
     test('getChannelMetadata 用 resp.data（不是 metadata）', () {
       // 实测：GetChannelMetadataResponse 字段名是 data。
-      expect(arktsManager, contains('const data: Metadata = resp.data;'));
-      expect(arktsManager, contains('const items: MetadataItem[] = data.items;'));
+      expect(arktsManager, contains('resp.data'));
+      expect(arktsManager, contains('RtmGetChannelMetadataResponse'));
     });
 
     test('setChannelMetadata 不回读 revision（响应无该字段）', () {
       // 实测：SetChannelMetadataResponse 只有 channelName/channelType。
       expect(arktsManager, isNot(contains('resp.metadata')));
+      expect(arktsManager, contains('return \'\';'));
     });
 
-    test('whoNow 参数与返回字段正确', () {
-      expect(arktsManager, contains('c.presence.whoNow('));
-      expect(arktsManager, contains('RtmChannelType.MESSAGE'));
+    test('whoNow 用 instanceId + channelType=MESSAGE', () {
+      // NAPI 签名：(instanceId, channelName, channelType, options)
+      expect(arktsManager, contains('whoNow(id, channel, CHANNEL_TYPE_MESSAGE, options)'));
+      expect(arktsManager, contains('CHANNEL_TYPE_MESSAGE: number = 1'));
       expect(arktsManager, contains('totalOccupancy'));
       expect(arktsManager, contains('userStateList'));
     });
@@ -162,8 +269,21 @@ void main() {
     });
 
     test('publish 传 channelType: MESSAGE', () {
-      expect(arktsManager, contains('RtmChannelType.MESSAGE'));
+      expect(arktsManager, contains('channelType: CHANNEL_TYPE_MESSAGE'));
       expect(arktsManager, contains('customType'));
+    });
+
+    test('实例句柄用 instanceId（-1 表示未创建）', () {
+      expect(arktsManager, contains('private instanceId: number = -1'));
+      expect(arktsManager, contains('createRtmClient(config)'));
+      expect(arktsManager, contains('releaseRtmClient(this.instanceId)'));
+    });
+
+    test('三个事件监听都用 addEventListener(instanceId, ...)', () {
+      for (final ev in ['message', 'presence', 'linkState']) {
+        expect(arktsManager, contains("addEventListener(id, '$ev'"),
+            reason: '缺 $ev 事件监听');
+      }
     });
   });
 

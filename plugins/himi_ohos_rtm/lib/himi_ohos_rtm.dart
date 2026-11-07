@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-/// 鸿蒙端 RTM 客户端：MethodChannel/EventChannel 桥接到声网 RTM ArkTS SDK
-/// （`@shengwang/rtm-full` v2.3.0）。
+/// 鸿蒙端 RTM 客户端：MethodChannel/EventChannel 桥接到声网 RTM 原生库
+/// （`libagora-rtm-sdk.so`，NAPI 直连，绕开 bytecode HAR 的
+/// `useNormalizedOHMUrl` 依赖——详见 ArkTS 侧 `RtmManager.ets` 注释）。
 ///
-/// 与 Windows 插件的差异：鸿蒙 SDK 全部 API 返回 **Promise**，ArkTS 侧
+/// 与 Windows 插件的差异：鸿蒙原生库全部 API 返回 **Promise**，ArkTS 侧
 /// 可直接 `await` 后回传结果——不需要 requestId 关联机制。
 class HimiOhosRtmClient {
   HimiOhosRtmClient._();

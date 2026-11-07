@@ -2328,8 +2328,118 @@ await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
 - [x] 测试：新增 `test/services/rtm/ohos_rtm_backend_test.dart` 20 项
   （SDK 配置、协议一致性、工厂路由、SDK API 用法、后端行为对齐 Windows）。
 
-#### 五、待真机验证（需声网 App ID）
+#### 五、真机事故（见 Phase 2.48）
 
+首次接入打包成功、CI 双绿，但真机**启动即闪退**。根因与改造详见下一节。
+
+### Phase 2.48：鸿蒙 RTM 改 NAPI 直连（绕开 bytecode HAR）（1.5.49+629）
+
+**事故**：1.5.48+628 打包成功、CI 双绿，但真机**启动即闪退**。
+
+真机日志（用户提供 hilog）：
+
+```
+com.himi.himi_syncwatch is about to exit due to RuntimeError
+Error type: ReferenceError
+Error message: Cannot find module 'ets/entryability/EntryAbility',
+               which is application Entry Point
+```
+
+**根因链**（与 RTM 业务逻辑无关，是构建配置与工具链的兼容性问题）：
+
+| 环节 | 事实 |
+|---|---|
+| 1 | `@shengwang/rtm-full` 是 bytecode HAR（`metadata.byteCodeHar: true`） |
+| 2 | hvigor **硬性校验**：bytecode HAR 必须开 `useNormalizedOHMUrl: true` |
+| 3 | 该字段**只能项目级**开（模块级 schema 无此字段，已核 schema） |
+| 4 | 开启后改变**全项目** OHM URL 解析规则 |
+| 5 | **Flutter-OH 工具链完全不处理该开关**（`flutter_tools/lib/src/ohos/` 零命中） |
+| 6 | `pkgContextInfo.json` 里 `entry` 的 `entryPath` 是**目录** `src/main/`（其他包都是 `index.ets` 文件），精确解析模式下 `ets/entryability/EntryAbility` 解析失败 → 启动崩 |
+
+`entryPath` 对照（实测 `ohos/entry/build/.../pkgContextInfo.json`）：
+
+| 包 | entryPath |
+|---|---|
+| `himi_mpv_ohos` | `index.ets` ✅ |
+| `@ohos/flutter_ohos` | `index.ets` ✅ |
+| **`entry`（应用本体）** | **`src/main/`**（目录）❌ |
+| `@shengwang/rtm-full` | `Index`（无扩展名）⚠️ |
+
+**此前的错误结论（已更正）**
+
+第一轮排查曾判定「`.so` 已 stripped、符号为 0、无法 NAPI 封装」，据此认为
+bytecode 是死结。**这个结论是错的**——根因是**本机没有 `readelf` / `nm` /
+`objdump`**，命令失败被误读成「没有符号」。改用鸿蒙 SDK 自带的
+`$OHOS_BASE_SDK_HOME/26.0.0/native/llvm/bin/llvm-readelf` 重新验证：
+
+| 项 | 实测结果 |
+|---|---|
+| 动态符号总数 | **427** |
+| 已定义导出函数 | 13（`createAgoraRtmClient` / `getVersion` / `getErrorReason` …） |
+| NAPI 注册 | `napi_module_register`（UND）+ `napi_define_properties` |
+| `nm_modname` | **`agora-rtm-sdk`**（从 `.rela.dyn` 重定位 addend 解出） |
+| `nm_register_func` | `0x4aff28` → 调用 `napi_define_properties` |
+| `.rodata` 导出名 | 49 个 API **全部存在** |
+| NEEDED | `libc.so` / `libaosl.so` / `libace_napi.z.so` / `libhilog_ndk.z.so` … |
+
+**关键洞察**：`ets/modules.abc` 只有 41KB，里面唯一关键字符串是
+
+```
+@normalized:Y&&&libagora-rtm-sdk.so&
+```
+
+即 ArkTS 层原本就是 `import ... from 'libagora-rtm-sdk.so'`，`.abc` 只是
+编译后的空壳，**真正的实现 100% 在 `.so`**。所以不需要反编译 `.abc`，
+直接绕过 bytecode 本身即可。
+
+**项目内已有先例**：`mpv.har` 就是这么做的，且已在鸿蒙版稳定运行：
+
+```ts
+// plugins/himi_mpv_ohos/ohos/hars/mpv.har → src/main/ets/MpvLib.ets
+import libmpv from 'libmpv_wrapper.so';
+```
+
+命名规则完全吻合：`libmpv_wrapper.so` → `nm_modname = mpv_wrapper`；
+`libagora-rtm-sdk.so` → `nm_modname = agora-rtm-sdk`。
+
+**改造方案（NAPI 直连）**
+
+| # | 动作 |
+|---|---|
+| 1 | 从 `AgoraRtmSDK.har` 提取 `libagora-rtm-sdk.so`（11.6MB）+ `libaosl.so`（782KB）→ `plugins/himi_ohos_rtm/ohos/libs/arm64-v8a/` |
+| 2 | 提取 `src/main/cpp/types/libagora-rtm-sdk/index.d.ts`（766 行，49 个 API 签名）+ 自建 `oh-package.json5` |
+| 3 | 插件 `oh-package.json5` 声明 `"libagora-rtm-sdk.so": "file:./src/main/cpp/types/libagora-rtm-sdk"`，**移除** `@shengwang/rtm-full` |
+| 4 | 改写 `RtmManager.ets`：`import { ... } from 'libagora-rtm-sdk.so'`，用 `instanceId` 调 NAPI |
+| 5 | entry **不**声明 `@shengwang/rtm-full`；`useNormalizedOHMUrl` 保持 `false` |
+
+**API 映射（一对一，业务逻辑零改动）**
+
+| `RtmManager` 方法 | 原 SDK（bytecode） | NAPI（直连） |
+|---|---|---|
+| `initialize` | `new RtmClient(config)` | `createRtmClient(config)` → `instanceId` |
+| `attachListeners` | `client.addEventListener(name, cb)` | `addEventListener(id, name, cb)` |
+| `login` | `client.login(token)` | `login(id, token)` |
+| `logout` | `client.logout()` | `logout(id)` |
+| `subscribe` | `client.subscribe(ch, opts)` | `subscribe(id, ch, opts)` |
+| `unsubscribe` | `client.unsubscribe(ch)` | `unsubscribe(id, ch)` |
+| `publish` | `client.publish(ch, msg, opts)` | `publish(id, ch, msg, opts)` |
+| `getOnlineUsers` | `client.presence.whoNow(...)` | `whoNow(id, ch, 1, opts)` |
+| `setChannelMetadata` | `client.storage.setChannelMetadata(...)` | `setChannelMetadata(id, ch, 1, data, opts)` |
+| `getChannelMetadata` | `client.storage.getChannelMetadata(...)` | `getChannelMetadata(id, ch, 1)` |
+| `release` | `client.release()` | `releaseRtmClient(id)` |
+
+> `RtmChannelType.MESSAGE = 1`（从 `RtmBase.d.ets` 确认）。
+
+**顺带修掉的 628 遗留 bug**：`getOnlineUsers` / `getChannelMetadata` /
+`setChannelMetadata` 三个 case 直接 `result.success(data)`，返回的 Map 没有
+`ok` 字段，而 Dart 侧 `_invoke` 用 `r['ok'] == true` 判定 → **一律误判为失败**
+（在线人数永远走 `_lastOnlineCount` 兜底、房间元数据永远 `storage_null`）。
+现已统一包成 `{ok: true, value/metadata/updatedAt}`，并加测试锁死。
+
+**待真机验证（需声网 App ID）**
+
+- [ ] 安装后**不闪退**（`useNormalizedOHMUrl: false`）。
+- [ ] 创建房间成功（`createRtmClient` + `login` + `subscribe`）。
 - [ ] 鸿蒙创建房间 → 生成房间码/二维码。
 - [ ] Android 加入鸿蒙房间 / 鸿蒙加入 Android 房间（消息 + Presence + 同步控制）。
 - [ ] 连续进出房间 10 次无泄漏。
