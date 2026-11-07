@@ -25,7 +25,9 @@ class WindowsRtmClient {
   static Stream<Map<String, dynamic>> get events => _controller.stream;
 
   static void _ensureListening() {
-    if (_listening) return;
+    // 634：除标志位外还校验订阅对象是否仍有效——防止「标志为 true 但订阅
+    // 已被外部取消」的僵尸状态（dispose 取消订阅却没复位标志）。
+    if (_listening && _eventSubscription != null) return;
     _listening = true;
     _eventSubscription =
         eventChannel.receiveBroadcastStream().listen((event) {
@@ -214,11 +216,26 @@ class WindowsRtmClient {
   }
 
   static Future<void> release() async {
-    _ensureListening();
+    // 634：这里**不能**调 `_ensureListening()`——释放时反而建立订阅是错的，
+    // 且会掩盖 `_listening` 未复位的问题。
     try {
       await methodChannel.invokeMethod('release');
     } on PlatformException {
       // 忽略：释放失败不阻塞
     }
+    // 634：**必须**重置事件监听状态。
+    //
+    // 与鸿蒙插件同源缺陷：`_listening` 是静态标志，dispose 取消 EventChannel
+    // 订阅却没复位 → 第二次 `_ensureListening()` 直接 return →
+    // 消息流 / presence 流永久失效。表现为「重进房后在线人数与播报正常，
+    // 但资源列表为空、约 20 秒后误判房间解散并退回首页」。
+    await _resetListening();
+  }
+
+  /// 634：断开并复位事件监听，使下一次 [_ensureListening] 能重新订阅。
+  static Future<void> _resetListening() async {
+    await _eventSubscription?.cancel();
+    _eventSubscription = null;
+    _listening = false;
   }
 }

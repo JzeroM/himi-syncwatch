@@ -382,6 +382,8 @@ class RtmService {
     _presenceSubscription?.cancel();
     _messageController.close();
     _presenceController.close();
-    _backend.dispose();
+    // 634：backend 释放会顺带复位插件的静态监听标志（`_listening`），
+    // 必须保证被调用；用 unawaited 显式表达「不阻塞同步 dispose」。
+    unawaited(_backend.dispose());
   }
 }

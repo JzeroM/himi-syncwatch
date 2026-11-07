@@ -2698,6 +2698,90 @@ Windows 是 C++ 原生层直接拿指针 + 长度，不存在「类型判断」�
 - [ ] 房主短暂断网后恢复 → 不误踢（`join` 取消待执行退出）。
 - [ ] 安卓 / Windows 观众同样验证（改动在共享层，三端一致）。
 
+### Phase 2.52：重进房消息流失效（插件静态监听标志未复位）（1.5.54+634）
+
+> 起因：用户反馈「第一次进房正常，再重进房就不行了，会退到首页，人数和
+> 播报都正常，但是列表是空的」，补充「房主重开房再邀请观众还是退回首页」，
+> 最后要求「windows 也修复相同问题」。
+
+#### 一、根因：插件静态标志 `_listening` 在释放时未复位
+
+```dart
+// plugins/himi_ohos_rtm/lib/himi_ohos_rtm.dart（634 前）
+static bool _listening = false;
+
+static void _ensureListening() {
+  if (_listening) return;      // ← 一旦为 true，永不重新订阅
+  _listening = true;
+  _eventSubscription = eventChannel.receiveBroadcastStream().listen(...);
+}
+
+static Future<void> release() => _invoke('release');  // ← 不复位
+```
+
+**完整时序**：
+
+| 步骤 | 状态 |
+|---|---|
+| 第一次进房 | `_ensureListening()` 设 `_listening = true`，EventChannel 已订阅 → 一切正常 |
+| 退出播放页 | `RtmService.dispose()` → `backend.dispose()` → 插件 `release()`：取消 `_eventSubscription`，**但 `_listening` 仍为 true** |
+| 第二次进房 / 房主重开房后加入 | `_ensureListening()` 看到 `_listening == true` → **直接 return** → EventChannel 永不重新订阅 |
+| 结果 | **消息流 / presence 流永久失效** |
+
+#### 二、为什么「人数和播报正常，列表为空」
+
+| 数据 | 路径 | 是否受影响 |
+|---|---|---|
+| 在线人数 | `whoNow` **直调** MethodChannel | ❌ 不受影响 |
+| 播报消息 | **本地** `_addBroadcastMessage()` | ❌ 不受影响 |
+| **资源列表** | `messageStream` → EventChannel | ✅ **完全失效** |
+| 房主离线检测 | `presenceStream` → EventChannel | ✅ **完全失效** |
+
+**「退回首页」的真正原因**：消息流失效 → 收不到 roomInfo →
+20 秒后 `_roomInfoTimeout` 触发 → 弹「房间已解散」→ 1.5s 后 `popUntil`。
+（用户感知为「几秒」，实际是 20s 超时。）
+
+#### 三、影响范围：鸿蒙 + Windows，安卓不受影响
+
+| 平台 | 插件 | 是否有静态 `_listening` |
+|---|---|---|
+| 鸿蒙 | `himi_ohos_rtm` | ✅ 有 → **受影响** |
+| **Windows** | `himi_windows_rtm` | ✅ 有 → **同样受影响** |
+| 安卓 | 官方 `agora_rtm` | ❌ 无（每次新建 client）→ 不受影响 |
+
+#### 四、修复
+
+- [x] 两个插件均新增 `_resetListening()`：
+      `cancel()` 订阅 → `_eventSubscription = null` → `_listening = false`。
+- [x] 鸿蒙 `release()` 末尾调用 `_resetListening()`。
+- [x] Windows `release()` 末尾调用 `_resetListening()`，并**移除**原先错误的
+      `_ensureListening()`（释放时反而建立订阅是错的，且会掩盖未复位问题）。
+- [x] 两个插件的 `_ensureListening()` 增加**订阅有效性自检**：
+      `if (_listening && _eventSubscription != null) return;`
+      防止「标志为 true 但订阅已被外部取消」的僵尸状态。
+- [x] 鸿蒙 `debugReset()` 复用 `_resetListening()`（避免两套逻辑漂移）。
+- [x] `RtmService.dispose()` 改用 `unawaited(_backend.dispose())`，
+      显式表达「不阻塞同步 dispose」并确保 backend 一定被释放。
+
+> 说明：ArkTS 侧 `RtmManager.release()` 里的 `this.sink = null` **无需改动**
+> —— 只要 Dart 侧重新 `listen()`，EventChannel 的 `onListen` 会重新设置
+> `eventSink` 与 `manager.setEventSink(...)`，自动自愈。
+
+#### 五、测试
+
+- [x] 新增 `test/services/rtm/rtm_relisten_test.dart` 12 项：
+      两插件 `_resetListening` 存在且被 `release` 调用、Windows `release`
+      不再调 `_ensureListening`、`_ensureListening` 订阅有效性自检、
+      `RtmService.dispose` 调用 backend、回归锁（release 与
+      `_ensureListening` 双向配对）。
+
+#### 六、待真机验证
+
+- [ ] 鸿蒙：进房 → 退出 → **再次进房**，资源列表正常、不被踢。
+- [ ] 鸿蒙：房主解散重开房 → 邀请同一观众 → 正常进房。
+- [ ] Windows：同上两项。
+- [ ] 连续进出房 5 次，每次资源列表都正常。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

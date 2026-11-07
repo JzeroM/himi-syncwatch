@@ -24,7 +24,9 @@ class HimiOhosRtmClient {
   static Stream<Map<String, dynamic>> get events => _controller.stream;
 
   static void _ensureListening() {
-    if (_listening) return;
+    // 634：除标志位外还校验订阅对象是否仍有效——防止「标志为 true 但订阅
+    // 已被外部取消」的僵尸状态（dispose 取消订阅却没复位标志）。
+    if (_listening && _eventSubscription != null) return;
     _listening = true;
     _eventSubscription =
         eventChannel.receiveBroadcastStream().listen((event) {
@@ -35,11 +37,7 @@ class HimiOhosRtmClient {
   }
 
   /// 测试专用：断开事件订阅，允许下一次测试重建 listen。
-  static Future<void> debugReset() async {
-    await _eventSubscription?.cancel();
-    _eventSubscription = null;
-    _listening = false;
-  }
+  static Future<void> debugReset() => _resetListening();
 
   /// 通用调用：把 MethodChannel 的异常转成 `{ok:false, reason}`，调用方无需
   /// 逐个 try/catch（与 Windows 插件的 result map 语义对齐）。
@@ -117,5 +115,26 @@ class HimiOhosRtmClient {
     return (map, '${r['updatedAt'] ?? ''}');
   }
 
-  static Future<void> release() => _invoke('release');
+  static Future<void> release() async {
+    await _invoke('release');
+    // 634：**必须**重置事件监听状态。
+    //
+    // 真机回归：第一次进房正常；重进房 / 房主重开房后再加入 → 约 20 秒后
+    // 弹「房间已解散」并退回首页，但**在线人数与播报都正常**。
+    //
+    // 根因：`_listening` 是**静态**标志。`RtmService.dispose()` →
+    // `backend.dispose()` 会取消 EventChannel 订阅，却没复位该标志 →
+    // 第二次 `_ensureListening()` 看到 `_listening == true` 直接 return →
+    // EventChannel 永不重新订阅 → 消息流 / presence 流永久失效。
+    // 在线人数走 `whoNow` 直调 MethodChannel、播报是本地添加，故二者仍正常，
+    // 只有依赖 EventChannel 的资源列表与房主离线检测失效。
+    await _resetListening();
+  }
+
+  /// 634：断开并复位事件监听，使下一次 [_ensureListening] 能重新订阅。
+  static Future<void> _resetListening() async {
+    await _eventSubscription?.cancel();
+    _eventSubscription = null;
+    _listening = false;
+  }
 }
