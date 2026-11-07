@@ -154,7 +154,7 @@ class DanmakuLayerView(context: Context) : View(context) {
         visibility = newVisibility
         // 内容变化判据：条数 + 首尾条目键（切片窗口滑动的典型表现）。
         // 比逐条比较便宜，且足以覆盖「窗口滑动/换集/开关弹幕」三类变化。
-        val newSignature = if (items.isEmpty) {
+        val newSignature = if (items.isEmpty()) {
             0
         } else {
             items.size * 31 +

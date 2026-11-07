@@ -187,6 +187,18 @@ void main() {
       expect(body, contains('items.first().timeMs'));
       expect(body, contains('items.last().timeMs'));
     });
+
+    test('Kotlin 语法：isEmpty 必须带括号（CI 曾因此编译失败）', () {
+      // Kotlin 的 isEmpty 是函数，不是属性——`items.isEmpty` 编译报
+      // "Function invocation 'isEmpty()' expected"。
+      final code = danmaku
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(code, isNot(contains('items.isEmpty)')));
+      expect(code, isNot(contains('items.isEmpty ')));
+      expect(code, isNot(contains('items.isEmpty{')));
+    });
   });
 
   group('⑤ MDK / Erika 路径未受影响', () {
