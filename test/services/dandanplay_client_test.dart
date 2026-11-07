@@ -363,7 +363,10 @@ void main() {
     });
   });
 
-  group('DandanplayClient.fetchComments', () {    test('GET 带 withRelated+format 参数，返回解析后弹幕', () async {
+  group('DandanplayClient.fetchComments', () {
+    // 619：去掉 withRelated——实测该参数让服务端实时聚合第三方源，
+    // 首次请求 12.15s vs 1.05s，而响应体 MD5 完全相同（纯延迟）。
+    test('GET 带 format 参数（619 起不带 withRelated），返回解析后弹幕', () async {
       late RequestOptions seen;
       final client = _client((options) async {
         seen = options;
@@ -378,8 +381,7 @@ void main() {
       final list = await client.fetchComments(100001);
       expect(
         seen.uri.toString(),
-        'http://10.0.0.2:9321/api/v2/comment/100001'
-        '?withRelated=true&format=json',
+        'http://10.0.0.2:9321/api/v2/comment/100001?format=json',
       );
       expect(seen.method, 'GET');
       expect(list.length, 2);

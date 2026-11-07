@@ -99,10 +99,12 @@ void main() {
   });
 
   group('④ 解析失败不再静默（本 bug 潜伏的根因）', () {
-    test('无结果时打日志', () {
+    test('有轨道但解析不出 id 时打日志（619：空表不再误报）', () {
       final body = bodyOf(adapter, 'void _parseTracks(Object? value) {');
-      expect(body, contains('track-list 解析无结果'));
+      expect(body, contains('track-list 有轨道但解析无 id'));
       expect(body, contains("LogService().log('mpv'"));
+      // 619：起播早期空表是正常状态，不得报警（真机日志曾被刷 20+ 条）。
+      expect(body, contains('hasRawTracks'));
     });
 
     test('异常不再被空 catch 吞掉', () {

@@ -248,6 +248,15 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// Emby 播放进度上报间隔（3 秒）。
   static const Duration playbackReportInterval = Duration(seconds: 3);
 
+  /// 弹幕候选尝试上限（619）。
+  ///
+  /// `search/episodes` 可能返回**上百个**候选（实测某番剧 105 个），
+  /// `_tryDanmakuCandidates` 是**串行**逐个 fetch——不设上限时最坏
+  /// 105 × 1s ≈ 105 秒才出弹幕。`DanmakuCandidateSelector.ordered` 已按
+  /// 「集号命中优先 + 同年优先 + match 组优先」排序，前 12 个覆盖绝大
+  /// 多数命中场景；超出即放弃（宁可不显示也不无限等待）。
+  static const int maxDanmakuCandidates = 12;
+
   /// 字幕样式属性写入门控（纯逻辑，可单测）：
   /// - 未挂载（页面已销毁）
   /// - 引擎热切换/内容路由重建中（`_player` 可能仍指向已释放的旧引擎）
@@ -8925,6 +8934,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 「剧名.SxxExx」标准格式（619）。
+  ///
+  /// Emby 的 `ep.name` 常含字幕组标签（`[ANi]`、`[Lilith-Raws]` 等），
+  /// `_danmakuMatchFileName()` 走 `DanmakuMatcher.resolve` 会优先用
+  /// **path / 单集名**，导致 match 返回 0 命中（实测 `[ANi] xxx - 01` →
+  /// isMatched=false, 0 条）→ 必然落到 search 兜底（实测 105 个候选串行试）。
+  ///
+  /// 用**纯剧名 + 标准集号**（`葬送的芙莉莲.S01E01`）重试 match 可精确
+  /// 命中（实测 isMatched=true，1 条候选），完全跳过 search。
+  String? _danmakuSeriesMatchFileName() {
+    if (_currentEpisodeIndex < 0 || _currentEpisodeIndex >= _episodes.length) {
+      return null;
+    }
+    final ep = _episodes[_currentEpisodeIndex];
+    final series = ep.seriesName.trim().isNotEmpty ? ep.seriesName : ep.name;
+    if (series.isEmpty || ep.season <= 0 || ep.number <= 0) return null;
+    return DanmakuMatcher.fromEpisode(
+      name: ep.name,
+      seriesName: series,
+      season: ep.season,
+      number: ep.number,
+    );
+  }
+
   /// 搜索兜底关键词：剧集优先用剧名，电影用片名；清洗发布标签后
   /// 供 `search/episodes` 使用。无可用名返回 null。
   String? _danmakuSearchKeyword() {
@@ -9042,6 +9075,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           () async {
             try {
               matched = await client.match(fileName: fileName);
+              // 619：Emby 单集名含字幕组标签时 resolve() 产物匹配不到
+              //（实测 0 命中）→ 用「纯剧名.SxxExx」再试一次即可精确命中
+              //（实测 isMatched=true, 1 条），完全跳过 105 候选的 search。
+              if (matched.isEmpty) {
+                final seriesFileName = _danmakuSeriesMatchFileName();
+                if (seriesFileName != null && seriesFileName != fileName) {
+                  matched = await client.match(fileName: seriesFileName);
+                  LogService().log(
+                    'Danmaku',
+                    'match 重试（剧名+集号）: $seriesFileName → '
+                        '${matched.length} 条',
+                  );
+                }
+              }
             } on DanmakuApiException catch (e) {
               LogService()
                   .log('Danmaku', 'match failed: ${e.kind.name} ${e.message}');
@@ -9060,7 +9107,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
         found = await _tryDanmakuCandidates(
           client,
-          _orderedDanmakuCandidates(matched, searched),
+          _orderedDanmakuCandidates(matched, searched)
+              .take(PlayerScreen.maxDanmakuCandidates)
+              .toList(growable: false),
           seq,
         );
         if (!mounted || seq != _danmakuLoadSeq) return;

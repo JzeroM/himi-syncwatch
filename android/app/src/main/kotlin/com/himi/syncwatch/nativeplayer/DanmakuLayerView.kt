@@ -192,6 +192,31 @@ class DanmakuLayerView(context: Context) : View(context) {
     private var lastDiagPosMs = 0L
 
     /**
+     * 619 值去重：上一次 setClock 收到的输入三元组。
+     *
+     * 【619 真机回归：安卓弹幕仍然抽搐】618 的 `setClock` **无条件**把
+     * `snapAtMs` 重置为当前墙钟。而 `setClock` 被**两条路径**调用：
+     *   ① Dart 每 200ms 的 `render()` → `applyState()`（新快照）；
+     *   ② 本地每 500ms 的 `tick()` → `applyState()`（**同一份旧快照**）。
+     *
+     * 本地 tick 触发时传入的是**上一份快照的位置**（比当前插值落后
+     * ~150ms），却把 `snapAtMs` 重置为 now → 插值基准被抹掉 →
+     * 位置瞬间**回退 150ms**，下一帧再跳回来 → 视觉「抽搐」。
+     *
+     * 精确模拟（Dart 200ms 推 / 本地 tick 500ms / 相位差 250ms）：
+     *   t=700ms 偏差 -100ms（正常滞后）
+     *   t=750ms 偏差 **-250ms**（← 本地 tick 重锚，突跳 150ms）
+     *   t=800ms 偏差 -100ms（跳回）
+     *
+     * 修法：**值去重**（对齐 Flutter `ValueNotifier` 的
+     * `if (pos != _positionNotifier.value.inMilliseconds)`）——
+     * 输入完全相同时直接返回，不重锚。
+     */
+    private var lastClockPosMs = Long.MIN_VALUE
+    private var lastClockPaused = true
+    private var lastClockSpeed = 1.0
+
+    /**
      * 当前播放位置：**无状态纯函数**，与鸿蒙 `positionNowMs()` 逐条等价。
      *
      * 幂等性保证：同一份快照 + 同一墙钟时刻 → 同一结果；重复调用同一份
@@ -220,6 +245,20 @@ class DanmakuLayerView(context: Context) : View(context) {
         speed: Double,
         durationMs: Long,
     ) {
+        // 619 值去重（核心）：本地 tick 每 500ms 用**同一份旧快照**重复
+        // 调用，若无条件重锚会让位置回退 ~150ms 再跳回 = 抽搐。
+        // 输入三元组不变 → 只补时长（可能后到），不动插值基准。
+        val sameInput = positionMs == lastClockPosMs &&
+            paused == lastClockPaused &&
+            speed == lastClockSpeed
+        if (sameInput) {
+            snapDurationMs = durationMs
+            return
+        }
+        lastClockPosMs = positionMs
+        lastClockPaused = paused
+        lastClockSpeed = speed
+
         snapPosMs = positionMs
         snapAtMs = System.currentTimeMillis()
         snapPaused = paused

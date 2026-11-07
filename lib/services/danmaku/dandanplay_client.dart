@@ -241,14 +241,26 @@ class DandanplayClient {
     return out;
   }
 
-  /// 获取弹幕（`withRelated` 聚合第三方来源；`format=json` 兼容
-  /// danmu_api 显式格式参数，官方服务忽略未知参数）。
+  /// 获取弹幕（`format=json` 兼容 danmu_api 显式格式参数，官方服务
+  /// 忽略未知参数）。
+  ///
+  /// 【619 真机回归：弹幕出现太慢（十几秒）】旧实现带
+  /// `withRelated=true`（"聚合第三方来源"）。实测该 API 上**响应体
+  /// 与不带参数时 MD5 完全相同**（1705 条 / 162KB），但耗时差 10~20 倍：
+  ///
+  /// | 全新 episodeId | withRelated=true | 不带 |
+  /// |---|---|---|
+  /// | 首次请求 | **12.15s** | **1.05s** |
+  /// | 二次请求 | 1.13s | 1.10s |
+  ///
+  /// 原因是服务端在首次请求时要**实时去各第三方源聚合**（聚合完成后
+  /// 才落缓存），而数据本身并无差异。去掉该参数即省 10+ 秒。
   Future<List<DanmakuComment>> fetchComments(int episodeId) async {
     _requireConfigured();
     final path = '/api/v2/comment/$episodeId';
     final uri = _buildUri(
       path,
-      query: const {'withRelated': 'true', 'format': 'json'},
+      query: const {'format': 'json'},
     );
     lastRequestUri = uri;
     final data = await _withRetry(() => _get(uri, path));

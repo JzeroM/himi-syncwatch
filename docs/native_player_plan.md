@@ -1792,6 +1792,91 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   - 新增 `mpv_track_switch_speed_test.dart` 20 项（`async: false`、
     `synchronized: false`、切轨窗口、延迟重载避让、MDK 对照基准）。
 
+### Phase 2.38：弹幕加载加速 + 安卓弹幕抽搐修复（全平台）（1.5.39+619）
+
+> 起因：用户「HIMI 的弹幕出现太慢了，有没有可优化的地方，加快匹配」
+> 「安卓 MPV 的弹幕还是抽搐」+ 真机日志。用户明确要求「弹幕优化是指
+> **所有平台所有播放器所有模式**」。
+
+#### 一、弹幕「出现太慢」（全平台共用链路，一处修复全覆盖）
+
+- [x] **根因 ①：`withRelated=true` 触发服务端实时聚合（最大单点收益）**
+  实测该 API 上**响应体 MD5 完全相同**，但耗时差 10~20 倍：
+
+  | 全新 episodeId | `withRelated=true` | 不带 |
+  |---|---|---|
+  | 首次请求 | **12.15s** | **1.05s** |
+  | 二次请求 | 1.13s | 1.10s |
+  | 响应体 MD5 | `6565cfd7…` | `6565cfd7…` **相同** |
+
+  服务端首次请求要**实时去各第三方源聚合**（聚合完才落缓存），而数据
+  本身无差异。去掉该参数即省 10+ 秒。
+- [x] **根因 ②：字幕组命名导致 match 0 命中 → 落到 105 候选的 search**
+  Emby 的 `ep.name` 常含 `[ANi]`/`[Lilith-Raws]` 等标签，
+  `DanmakuMatcher.resolve` 优先用 path/单集名 → `match` 返回
+  `isMatched=false, 0 条`（实测）→ 必然走 `search/episodes`（实测某番剧
+  **105 个候选**）→ 串行逐个 fetch。
+  **修法**：match 空结果时用「纯剧名.SxxExx」重试一次（实测
+  `葬送的芙莉莲.S01E01` → `isMatched=true`，**1 条候选**），完全跳过 search。
+- [x] **根因 ③：候选无上限 + 串行**
+  `_tryDanmakuCandidates` 是 `for` 循环内 `await`（串行）。105 候选 × 1s
+  ≈ **最坏 105 秒**。新增 `maxDanmakuCandidates = 12` 上限
+  （`ordered` 已按「集号命中 + 同年 + match 优先」排序，前 12 覆盖绝大
+  多数场景）。
+  **不做并行**：实测并行不改变「服务端单请求耗时」这个瓶颈，且曾触发
+  429 限流（并行 6 个 → 2 个 429）。
+- [x] **覆盖范围**：`DandanplayClient` 是**唯一**弹幕 API 客户端、
+  `_loadDanmaku` 是**唯一**加载入口（房间/同步起播/手动开关均走它）→
+  ①②③ 天然覆盖**所有平台、所有引擎、所有模式**。
+
+#### 二、安卓弹幕「抽搐」（仅安卓原生 MPV 一处）
+
+- [x] **根因（618 的 `setClock` 缺值去重）**：618 改无状态纯函数后，
+  `setClock` **无条件**把 `snapAtMs` 重置为当前墙钟。而它被**两条路径**
+  调用：
+  | 路径 | 频率 | 传入 |
+  |---|---|---|
+  | Dart `render()` → `applyState()` | 每 200ms | 新快照 |
+  | 本地 `tick()` → `applyState()` | 每 500ms | **同一份旧快照** |
+
+  本地 tick 用落后 ~150ms 的旧快照却重置了插值基准 → 位置瞬间**回退
+  150ms**，下一帧再跳回 → 视觉「抽搐」。
+
+  **精确模拟**（Dart 200ms / 本地 500ms / 相位差 250ms）：
+  | 时刻 | 618 偏差 | 619 修复后 |
+  |---|---|---|
+  | 700ms | -100ms | -100ms |
+  | **750ms** | **-250ms**（突跳 150ms） | -100ms |
+  | 800ms | -100ms | -100ms |
+- [x] **修法**：`setClock` 加**值去重**（对齐 Flutter `ValueNotifier` 的
+  `if (pos != _positionNotifier.value.inMilliseconds)`）——输入三元组
+  （位置/暂停/倍速）不变则直接返回，只补 `durationMs`，不动锚点。
+- [x] **全平台覆盖矩阵**（确认只有安卓原生一处有该缺陷）：
+  | 平台/引擎 | 渲染层 | 位置源 | 值去重 |
+  |---|---|---|---|
+  | Android MPV 原生 UI | `DanmakuLayerView.kt` | `setClock` | ✅ 619 新增 |
+  | 鸿蒙 MPV 原生 UI | `DanmakuLayer.ets` | `positionNowMs()` 纯函数 | ✅ 天然幂等 |
+  | Android/鸿蒙 Flutter UI | `DanmakuOverlay`（Ticker） | `_positionNotifier` | ✅ ValueNotifier |
+  | Windows MPV | `DanmakuOverlay`（Ticker） | `_positionNotifier` | ✅ ValueNotifier |
+  | MDK / media_kit | `DanmakuOverlay`（Ticker） | `_positionNotifier` | ✅ ValueNotifier |
+  | Erika | 引擎内部 GPU 合成 | 引擎内部 | 不在本仓 |
+  - 鸿蒙 `applyStateJson` 虽也无条件重置 `lastStateAtMs`，但**没有「用旧
+    快照重复推送」的路径**（本地 100ms timer 只读 `positionNowMs()`，
+    不写基准）→ 无抽搐。
+  - Windows 不在 `NativePlayerGating.supportedPlatforms`（仅
+    `android`/`ohos`）→ 走 Flutter 弹幕层，已值去重。
+
+#### 三、顺带：日志噪音
+
+- [x] `track-list` 空表误报 20+ 条（真机日志）：
+  ```text
+  [mpv] track-list 解析无结果（结构不符？）: {"video":[],"audio":[],"subtitle":[]}
+  ```
+  起播早期轨道表本来就是空的（正常状态）。改为只在「**有轨道数据但
+  解析不出 id**」时才报警（`hasRawTracks` 守卫）。
+- [x] 测试：新增 `danmaku_speed_test.dart` 19 项（withRelated 移除、
+  match 重试、候选上限、setClock 去重、日志噪音、**全平台覆盖矩阵**）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

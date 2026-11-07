@@ -1620,10 +1620,22 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       }
 
       if (audioIds.isEmpty && subIds.isEmpty) {
-        // 617：不再静默——解析不出轨道说明结构与预期不符，必须可诊断。
-        final preview =
-            value.length > 200 ? '${value.substring(0, 200)}...' : value;
-        LogService().log('mpv', 'track-list 解析无结果（结构不符？）: $preview');
+        // 619：起播早期轨道表**本来就是空的**（`{"video":[],"audio":[],
+        // "subtitle":[]}`）——这是正常状态，不是结构不符。旧实现在这里
+        // 每次都打日志，真机日志被刷了 20+ 条（纯噪音）。
+        // 只在「确实有轨道数据但解析不出 id」时才报警。
+        final hasRawTracks = (decoded is List && decoded.isNotEmpty) ||
+            (decoded is Map &&
+                ((decoded['audio'] is List &&
+                        (decoded['audio'] as List).isNotEmpty) ||
+                    (decoded['subtitle'] is List &&
+                        (decoded['subtitle'] as List).isNotEmpty)));
+        if (hasRawTracks) {
+          final preview =
+              value.length > 200 ? '${value.substring(0, 200)}...' : value;
+          LogService()
+              .log('mpv', 'track-list 有轨道但解析无 id（结构不符？）: $preview');
+        }
         return;
       }
       // 617：即使某一类为空也要落表（空列表 = 该类无轨），否则旧的
