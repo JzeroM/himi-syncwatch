@@ -87,8 +87,8 @@ void main() {
     });
 
     test('XComponent 用 videoFitW/H 布局', () {
-      expect(ohos, contains('this.videoFitW() > 0 ? this.videoFitW()'));
-      expect(ohos, contains('this.videoFitH() > 0 ? this.videoFitH()'));
+      expect(ohos, contains('this.fitVideoW > 0 ? this.fitVideoW'));
+      expect(ohos, contains('this.fitVideoH > 0 ? this.fitVideoH'));
     });
 
     test('videoAreaW/H 由视频子节点实测', () {

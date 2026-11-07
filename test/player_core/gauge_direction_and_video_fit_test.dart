@@ -117,8 +117,9 @@ void main() {
       final idx = ohos.indexOf('XComponent({');
       expect(idx, greaterThan(0));
       final body = ohos.substring(idx, idx + 1500);
-      expect(body, contains('this.videoFitW() > 0 ? this.videoFitW() : \'100%\''));
-      expect(body, contains('this.videoFitH() > 0 ? this.videoFitH() : \'100%\''));
+      // 627：改为直读 @State 镜像（方法体内读取不进 ArkUI 依赖集）。
+      expect(body, contains('this.fitVideoW > 0 ? this.fitVideoW'));
+      expect(body, contains('this.fitVideoH > 0 ? this.fitVideoH'));
     });
 
     test('视频区实测 + Center 对齐（黑边对称）', () {

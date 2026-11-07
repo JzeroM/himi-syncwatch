@@ -402,6 +402,23 @@ export struct HimiNativePlayerView {
   @State videoAreaH: number = 0;
 
   /**
+   * 627：XComponent 的 letterbox 显示尺寸（`@State` **镜像**）。
+   *
+   * 【为什么必须镜像】ArkUI 只收集 `build()` 体内**直接读取**的依赖；
+   * `videoFitW()` 方法体内的 `@State`/宿主字段读取**不进依赖集** →
+   * 宽高变化不触发重绘。
+   *
+   * 真机症状：**初始进房间拉伸，隐藏再显示资源面板后才正常**——那次
+   * 重绘是 `roomPanelShown` 翻转引起的整树重建（顺带重算了尺寸），
+   * 不是依赖生效。
+   *
+   * 本文件已有三处同款记录（播放/暂停图标、控件状态、加载指示器），
+   * 都是「方法体内读取不进依赖集」这个坑。
+   */
+  @State fitVideoW: number = -1;
+  @State fitVideoH: number = -1;
+
+  /**
    * XComponent 实测尺寸（vp）——`onAreaChange` 缓存，供 tick 兜底同步。
    *
    * 【623 真机回归：鸿蒙房间面板初始展开时画布拉伸】`XComponent` 的
@@ -586,6 +603,8 @@ export struct HimiNativePlayerView {
     // 加载指示器（589）：宿主字段不在观察链上，必须镜像到 @State，
     // build() 才能随状态推送/250ms tick 即时收起。
     this.showLoading = s.showLoading;
+    // 627：快照推送即重算 letterbox（videoWidth/Height 随快照到达）。
+    this.refreshVideoFit();
     // 607：无播放内容 → 渲染占位提示（见 playerReady 注释）。
     this.playerReady = s.playerReady;
     // 跳过提示边沿处理（对齐 Flutter `_evaluateSkipPrompt`/`_dismissSkipPrompt`）：
@@ -709,6 +728,8 @@ export struct HimiNativePlayerView {
     this.updateControlsSplit();
     // 623：画布尺寸兜底同步（面板初始展开时 onAreaChange 可能拿到全屏值）。
     this.syncSurfaceSize();
+    // 627：视频宽高到达后重算 letterbox（250ms 内跟上）。
+    this.refreshVideoFit();
     this.renderTick = this.renderTick + 1;
     this.refreshControlsEpoch();
   }
@@ -851,6 +872,24 @@ export struct HimiNativePlayerView {
     const videoAspect = vw / vh;
     const areaAspect = aw / ah;
     return videoAspect > areaAspect ? aw / videoAspect : ah;
+  }
+
+  /**
+   * 627：重算 letterbox 尺寸并镜像到 `@State`。
+   *
+   * 调用点：`tick()`（250ms）、`videoArea` 的 `onAreaChange`、
+   * `syncFromHost()`。三处覆盖「视频宽高到达 / 分栏变化 / 转屏 / 快照
+   * 推送」全部路径。
+   */
+  private refreshVideoFit(): void {
+    const w = this.videoFitW();
+    const h = this.videoFitH();
+    if (w !== this.fitVideoW) {
+      this.fitVideoW = w;
+    }
+    if (h !== this.fitVideoH) {
+      this.fitVideoH = h;
+    }
   }
 
   private pokeAutoHide(): void {
@@ -1880,8 +1919,12 @@ export struct HimiNativePlayerView {
         // → 结构上不可能拉伸。黑边由外层 Stack 的黑色背景提供。
         //
         // 未就绪（videoWidth/Height = 0）时回落 `'100%'` 撑满（保持旧行为）。
-        .width(this.videoFitW() > 0 ? this.videoFitW() : '100%')
-        .height(this.videoFitH() > 0 ? this.videoFitH() : '100%')
+        //
+        // 【627 必须直读 @State】旧实现写 `this.videoFitW()`——**方法体内**
+        // 的读取不进 ArkUI 依赖集 → 视频宽高到达后不触发重绘 → 初始进房间
+        // 拉伸，只有「隐藏再显示面板」（整树重建）才正常。
+        .width(this.fitVideoW > 0 ? this.fitVideoW : '100%')
+        .height(this.fitVideoH > 0 ? this.fitVideoH : '100%')
         .backgroundColor(Color.Black)
         // 【兜底：尺寸同步】XComponent 的 onSurfaceChanged 在部分转屏场景
         // 不触发（子窗口尺寸变化但 surface 未重建），导致 mpv 仍按旧尺寸
@@ -1994,6 +2037,8 @@ export struct HimiNativePlayerView {
       if (h > 0 && h !== this.videoAreaH) {
         this.videoAreaH = h;
       }
+      // 627：视频区尺寸变化 → 重算 letterbox。
+      this.refreshVideoFit();
     });
   }
 

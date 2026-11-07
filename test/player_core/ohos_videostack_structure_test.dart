@@ -78,8 +78,8 @@ void main() {
           .join('\n');
       // 625：XComponent 改为**按视频比例**布局（letterbox），不再撑满
       // ——鸿蒙 ohosvk 不响应运行时 swapchain 重配，只能让画布本身正确。
-      expect(attrLines, contains('this.videoFitW() > 0 ? this.videoFitW()'));
-      expect(attrLines, contains('this.videoFitH() > 0 ? this.videoFitH()'));
+      expect(attrLines, contains('this.fitVideoW > 0 ? this.fitVideoW'));
+      expect(attrLines, contains('this.fitVideoH > 0 ? this.fitVideoH'));
       // 未就绪时仍回落 100%（保持旧行为）。
       expect(attrLines, contains("'100%'"));
       expect(attrLines, isNot(contains('layoutWeight')));

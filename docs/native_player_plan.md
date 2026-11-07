@@ -2244,6 +2244,33 @@ await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
   标量属性、Dart 兜底赋值含守卫、下发/接收/布局全链路、`videoFitW/H`
   缺失时返回 -1）。
 
+### Phase 2.46：鸿蒙 letterbox 尺寸镜像到 @State（初始拉伸的真根因）（1.5.47+627）
+
+> 起因：用户「鸿蒙进房间（面板初始展开）：还是拉伸画面了，**只有点击
+> 隐藏资源面板后再显示资源面板后画面才正常**」。
+
+- [x] **根因（ArkUI 依赖收集机制）**：`build()` 里写
+  `this.videoFitW()`——**方法体内**的 `@State`/宿主字段读取**不进
+  ArkUI 细粒度依赖集** → 视频宽高到达后**不触发重绘** → XComponent
+  停留在 `'100%'`。
+- [x] **为什么「隐藏再显示面板」就正常**：`roomPanelShown`（@State）翻转
+  引起**整树重建**，顺带重算了尺寸——不是依赖生效，是巧合。
+- [x] **本文件已有三处同款记录**（都是同一个坑）：
+  - 2802 行：播放/暂停图标「不能藏进方法调用——方法体内的读取不进
+    ArkUI 细粒度依赖集……隐藏再现才更新」；
+  - 299/312 行：控件状态「显式复制到 @State 才能保证同步」；
+  - 加载指示器（589）：「宿主字段不在观察链上，必须镜像到 @State」。
+- [x] **修法**：
+  1. 新增 `@State fitVideoW/fitVideoH`（初值 -1）；
+  2. 新增 `refreshVideoFit()`：调 `videoFitW/H()` 后**比对再赋值**
+     （防无效重绘）；
+  3. `build()` 改**直读** `@State`：
+     `.width(this.fitVideoW > 0 ? this.fitVideoW : '100%')`；
+  4. 三处触发：`tick()`（250ms）/ `videoArea` 的 `onAreaChange` /
+     `syncFromHost()`——覆盖「视频宽高到达 / 分栏变化 / 转屏 / 快照推送」。
+- [x] 测试：新增 `ohos_video_fit_state_mirror_test.dart` 6 项；更新 4 条
+  旧断言（`videoFitW()` → `fitVideoW`）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
