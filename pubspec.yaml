@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.5.47+627
+version: 1.5.48+628
 
 environment:
   sdk: ^3.6.0
@@ -115,6 +115,8 @@ dependencies:
     path: plugins/himi_mpv_android
   himi_mpv_windows:
     path: plugins/himi_mpv_windows
+  himi_ohos_rtm:
+    path: plugins/himi_ohos_rtm
 
 dependency_overrides:
   # path_provider_foundation 2.6.0 拉入 objective_c，其 build hook 在非 Apple 平台报 arm64e 错误

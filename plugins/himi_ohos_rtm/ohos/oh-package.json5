@@ -1,0 +1,14 @@
+{
+  "name": "himi_ohos_rtm",
+  "version": "1.0.0",
+  "description": "HIMI RTM (Agora) for HarmonyOS",
+  "main": "index.ets",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "@ohos/flutter_ohos": "file:./har/flutter.har",
+    // 声网 RTM SDK（bytecode HAR）。插件模块自己也要声明——entry 的
+    // 依赖不会传递到 har 模块的编译上下文。
+    "@shengwang/rtm-full": "file:../../../ohos/entry/har/AgoraRtmSDK.har"
+  }
+}

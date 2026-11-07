@@ -1,0 +1,17 @@
+name: himi_ohos_rtm
+description: HIMI HarmonyOS RTM (Agora RTM ArkTS SDK) plugin.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ohos:
+        pluginClass: HimiOhosRtmPlugin

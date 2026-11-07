@@ -36,6 +36,8 @@
     ],
     "requestPermissions": [
       {"name" :  "ohos.permission.INTERNET"},
+      // 声网 RTM 需要读取网络状态（断线重连判定）。
+      {"name" :  "ohos.permission.GET_NETWORK_INFO"},
     ]
   }
 }

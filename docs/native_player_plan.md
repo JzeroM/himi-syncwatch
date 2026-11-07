@@ -2271,6 +2271,69 @@ await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
 - [x] 测试：新增 `ohos_video_fit_state_mirror_test.dart` 6 项；更新 4 条
   旧断言（`videoFitW()` → `fitVideoW`）。
 
+### Phase 2.47：鸿蒙 RTM 接入（声网 RTM ArkTS SDK）（1.5.48+628）
+
+> 起因：鸿蒙房间模式此前走 `UnsupportedRtmBackend`（`createRtmBackend` 把
+> `ohos` 归入不支持平台），无法创建/加入房间。
+
+#### 一、SDK 可行性验证（阶段 0，先做后写）
+
+- [x] **SDK 存在**：`RTM_ArkTS_SDK_for_HarmonyOS_v2.3.0.zip`（10MB）
+  → 解压得 `AgoraRtmSDK.har`（5.2MB），包名 `@shengwang/rtm-full`。
+- [x] **编译兼容**：`compatibleSdkVersion: 12`（项目 26，向下兼容）；
+  仅 `arm64-v8a`（鸿蒙设备均为该架构，已确认接受）。
+- [x] **API 完整性**：14 个 `RtmBackend` 方法全部有对应 SDK API，
+  无需降级。
+
+#### 二、8 个鸿蒙专属坑（全部靠分阶段验证暴露）
+
+| # | 错误 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | `Bytecode HARs not supported when useNormalizedOHMUrl is not true` | 声网 `.har` 是 **bytecode HAR**（`metadata.byteCodeHar: true`） | `build-profile.json5` 开 `useNormalizedOHMUrl` |
+| 2 | `Schema validate failed` | 该字段**不在** `products` 顶层 | 放 `products[].buildOption.strictMode` |
+| 3 | `build-profile.json5 does not comply with the schema` | 插件模块用了 `appTasks` | 改 `harTasks`（har 模块专用） |
+| 4 | `arkts-no-any-unknown`（循环变量/Map 回调） | ArkTS 禁 any | 补显式类型 + `Array.from(map.keys())` 替代 `forEach` |
+| 5 | `Cannot find module '@shengwang/rtm-full'` | **entry 的依赖不传递到 har 模块** | 插件 `oh-package.json5` 自己声明 |
+| 6 | `Cannot find name 'MethodChannel'` | 漏导入 | 补 import |
+| 7 | `Fetch local file package error` | `file:` 路径**相对 `ohos/` 目录** | `../../../ohos/entry/har/...` |
+| 8 | `Expected 0 type arguments` | 鸿蒙 Flutter 的 `call.argument(key)` **不带泛型** | 改 `(call.argument(k) as string)` |
+
+#### 三、SDK API 实测修正（对照 `.d.ets` 声明，避免编译期才发现）
+
+| 项 | 直觉写法 | 实测签名 |
+|---|---|---|
+| `RtmError` 构造 | `new RtmError('msg')` | `(operation, errorCode, reason)` **三参** → 改用 `Error` |
+| `getChannelMetadata` 响应 | `resp.metadata` | **`resp.data`** |
+| `setChannelMetadata` 响应 | `resp.metadata.majorRevision` | **无该字段**（只有 channelName/channelType） |
+
+#### 四、实现
+
+- [x] **`ohos/entry/har/AgoraRtmSDK.har`**：SDK 入库（5.2MB）。
+- [x] **`ohos/entry/oh-package.json5`**：声明 `@shengwang/rtm-full`。
+- [x] **`ohos/entry/src/main/module.json5`**：补 `GET_NETWORK_INFO` 权限。
+- [x] **`plugins/himi_ohos_rtm/`**（项目内插件，与 `himi_windows_rtm` 同构）：
+  - `lib/himi_ohos_rtm.dart`：MethodChannel + EventChannel 封装；
+  - `ohos/src/main/ets/RtmManager.ets`：SDK 封装（14 个方法 + 事件映射）；
+  - `ohos/src/main/ets/HimiOhosRtmPlugin.ets`：插件入口；
+  - `ohos/oh-package.json5`：**自己声明 SDK 依赖**（不传递）；
+  - `ohos/hvigorfile.ts`：`harTasks`；
+  - `ohos/src/main/module.json5`：`type: har`。
+- [x] **`lib/services/rtm/ohos_rtm_backend.dart`**：Dart 后端，与
+  `WindowsRtmBackend` 同构（含订阅失败 500ms 重试、查询失败保留上次值）。
+- [x] **`rtm_backend_factory.dart`**：`ohos` 分支返回 `OhosRtmBackend`
+  （不再 `Unsupported`）；macOS/Linux 仍降级。
+- [x] **Presence 事件映射**：SDK 枚举 `REMOTE_JOIN_CHANNEL=3` /
+  `REMOTE_LEAVE_CHANNEL=4` / `REMOTE_TIMEOUT=5` → 字符串
+  `join`/`leave`/`timeout` → Dart 枚举。
+- [x] 测试：新增 `test/services/rtm/ohos_rtm_backend_test.dart` 20 项
+  （SDK 配置、协议一致性、工厂路由、SDK API 用法、后端行为对齐 Windows）。
+
+#### 五、待真机验证（需声网 App ID）
+
+- [ ] 鸿蒙创建房间 → 生成房间码/二维码。
+- [ ] Android 加入鸿蒙房间 / 鸿蒙加入 Android 房间（消息 + Presence + 同步控制）。
+- [ ] 连续进出房间 10 次无泄漏。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

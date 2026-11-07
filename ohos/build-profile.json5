@@ -13,6 +13,18 @@
         "compatibleSdkVersion": "26.0.0",
         "targetSdkVersion": "26.0.0",
         "runtimeOS": "HarmonyOS",
+        // 声网 RTM SDK 是 **bytecode HAR**（`metadata.byteCodeHar: true`），
+        // 必须开启 `buildOption.strictMode.useNormalizedOHMUrl` 才能被
+        // 依赖解析。不加会报：
+        //   Bytecode HARs: [@shengwang/rtm-full] not supported
+        //   when useNormalizedOHMUrl is not true.
+        // 注意：该字段**不在** products 顶层（schema 会拒绝），
+        // 正确位置是 products[].buildOption.strictMode。
+        "buildOption": {
+          "strictMode": {
+            "useNormalizedOHMUrl": true,
+          },
+        },
       }
     ],
     "buildModeSet": [
