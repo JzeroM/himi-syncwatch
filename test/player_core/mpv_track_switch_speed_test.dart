@@ -7,9 +7,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// MDK 的 `setActiveTracks` 是**同步 FFI、无锁**；MPV 却是
 /// `mpv_set_property_async` + `await` + 全局 `Lock` + 叠加重建。
 /// 三项优化叠加即可对齐：
-/// ① `async: false`（同步 FFI）
+/// ① `async: false`（同步 FFI）—— **631 起 Windows 回退 true**（见下）
 /// ② `synchronized: false`（绕过全局锁）
 /// ③ 抑制切轨窗口内的叠加重建
+///
+/// 【631 真机回归】① 在 Windows 上会导致「从 MPV 切引擎点击即闪退」：
+/// 同步 FFI 直接解引用 ctx，而 media_kit 的 `Player.dispose()` 内部
+/// 先 `stop()` 才置 `disposed = true` → dispose 竞态下访问已释放内存。
+/// Windows 回退默认 `async: true`；Android 保留 false（未观察到崩溃）。
 void main() {
   final android = File(
     'plugins/himi_mpv_android/lib/himi_mpv_android.dart',
@@ -19,6 +24,15 @@ void main() {
   ).readAsStringSync();
   final screen = File('lib/screens/player/player_screen.dart').readAsStringSync();
   final mdk = File('lib/services/player/mdk_player_adapter.dart').readAsStringSync();
+
+  /// 去掉行注释，避免「注释里提到 async: false」被误判成真实配置。
+  String stripComments(String src) => src
+      .split('\n')
+      .map((line) {
+        final i = line.indexOf('//');
+        return i >= 0 ? line.substring(0, i) : line;
+      })
+      .join('\n');
 
   String bodyOf(String src, String signature) {
     final idx = src.indexOf(signature);
@@ -40,14 +54,25 @@ void main() {
     fail('$signature 的大括号未配平');
   }
 
-  group('① async: false（同步 FFI，对齐 MDK setActiveTracks）', () {
-    for (final (name, src) in [('安卓', android), ('Windows', windows)]) {
-      test('$name：PlayerConfiguration 传 async: false', () {
-        expect(src, contains('async: false,'));
-        // 注释记录理由（MDK 同语义 + media_kit 默认 true 是为 macOS）。
-        expect(src, contains('618'));
-      });
-    }
+  group('① async 配置（631：Windows 回退 true，Android 保留 false）', () {
+    test('Windows：**不得**再传 async: false（631 闪退根因）', () {
+      // 631 真机回归：从 MPV 切引擎「点击即闪退」。
+      // 根因 = 同步 FFI（mpv_command(ctx)）在 media_kit `Player.dispose()`
+      // 的 `stop()` 阶段解引用已释放的 ctx（此时 disposed 仍为 false）。
+      expect(
+        stripComments(windows),
+        isNot(contains('async: false')),
+        reason: 'Windows 必须用默认 async: true（异步入队，dispose 安全）',
+      );
+      // 根因注释必须留档，防止后人又「优化」回去。
+      expect(windows, contains('631'));
+      expect(windows, contains('async'));
+    });
+
+    test('Android：保留 async: false（未观察到同类崩溃）', () {
+      expect(stripComments(android), contains('async: false,'));
+      expect(android, contains('618'));
+    });
 
     test('MDK 侧确实是同步 FFI（对照基准）', () {
       final fvp = File('third_party/fvp/lib/src/player.dart').readAsStringSync();

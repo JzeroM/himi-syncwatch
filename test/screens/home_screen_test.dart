@@ -16,6 +16,7 @@ import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/utils/gallery_picker.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
@@ -787,7 +788,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('加入房间'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('扫码加入'));
+      // 631：Windows/鸿蒙 无相机扫码实现，按钮文案改为「从相册选图」。
+      await tester.tap(find.text('从相册选图'));
       await tester.pumpAndSettle();
 
       final codeField = tester.widget<TextField>(find.byType(TextField).at(0));
@@ -797,6 +799,51 @@ void main() {
       expect(find.text('将二维码放入框内自动扫描'), findsNothing);
       await _settleSnackbars(tester);
     } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('631 鸿蒙：与 Windows 同走相册选图（不进相机页）', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    GalleryPicker.debugIsOhosOverride = true;
+    try {
+      final auth = FakeEmbyAuthService(
+        serverIds: ['s1'],
+        sessions: {
+          's1':
+              _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+        },
+      );
+      final code = _validRoomCode();
+      var cameraScans = 0;
+      await _pumpScreen(
+        tester,
+        auth: auth,
+        qrScan: () async {
+          cameraScans++;
+          return null;
+        },
+        imageScan: () async => code,
+      );
+
+      await tester.tap(find.byIcon(Icons.meeting_room_outlined));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('加入房间'));
+      await tester.pumpAndSettle();
+
+      // 鸿蒙没有 image_picker / mobile_scanner 实现，文案应为「从相册选图」。
+      expect(find.text('从相册选图'), findsOneWidget);
+      expect(find.text('扫码加入'), findsNothing);
+
+      await tester.tap(find.text('从相册选图'));
+      await tester.pumpAndSettle();
+
+      final codeField = tester.widget<TextField>(find.byType(TextField).at(0));
+      expect(codeField.controller!.text, code);
+      expect(cameraScans, 0, reason: '鸿蒙不应走相机扫码');
+      await _settleSnackbars(tester);
+    } finally {
+      GalleryPicker.debugIsOhosOverride = null;
       debugDefaultTargetPlatformOverride = null;
     }
   });

@@ -1,16 +1,15 @@
-import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/room/qr_image_decoder.dart';
+import 'package:himi_syncwatch/utils/gallery_picker.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
@@ -209,12 +208,17 @@ class RoomMenuButton extends ConsumerWidget {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    final result =
-                        defaultTargetPlatform == TargetPlatform.windows
-                            ? await (imageScan?.call() ??
-                                _pickRoomCodeFromImage(context))
-                            : await (qrScan?.call() ??
-                                context.push<String>('/scan'));
+                    // 631：鸿蒙没有 image_picker 实现，相机扫码
+                    // （mobile_scanner）也无鸿蒙实现，故与 Windows 同路
+                    // ——从相册选图后用纯 Dart 的 QrImageDecoder 解码。
+                    final galleryOnly =
+                        defaultTargetPlatform == TargetPlatform.windows ||
+                            GalleryPicker.isOhos;
+                    final result = galleryOnly
+                        ? await (imageScan?.call() ??
+                            _pickRoomCodeFromImage(context))
+                        : await (qrScan?.call() ??
+                            context.push<String>('/scan'));
                     if (result == null || !context.mounted) return;
                     final roomData = RoomCode.decode(result);
                     if (roomData == null) {
@@ -234,12 +238,18 @@ class RoomMenuButton extends ConsumerWidget {
                     );
                   },
                   icon: Icon(
-                    defaultTargetPlatform == TargetPlatform.windows
+                    defaultTargetPlatform == TargetPlatform.windows ||
+                            GalleryPicker.isOhos
                         ? Icons.image_outlined
                         : Icons.qr_code_scanner,
                     size: 18,
                   ),
-                  label: const Text('扫码加入'),
+                  label: Text(
+                    defaultTargetPlatform == TargetPlatform.windows ||
+                            GalleryPicker.isOhos
+                        ? '从相册选图'
+                        : '扫码加入',
+                  ),
                 ),
               ),
             ],
@@ -273,14 +283,15 @@ class RoomMenuButton extends ConsumerWidget {
     );
   }
 
-  /// Windows 无相机：直接打开文件选择框，本地解码二维码。
+  /// Windows / 鸿蒙无相机扫码实现：打开相册选图，本地解码二维码。
+  ///
+  /// 631：鸿蒙此前被硬编码拦截（「鸿蒙暂不支持相册选图」），但底层能力
+  /// 其实齐备——`QrImageDecoder` 是**纯 Dart**（image + zxing2，零平台
+  /// 依赖），`file_picker_ohos` 提供鸿蒙原生相册选择并返回真实文件路径。
+  /// 故与 Windows 走同一条路。
   Future<String?> _pickRoomCodeFromImage(BuildContext context) async {
-    if (Platform.operatingSystem == 'ohos') {
-      if (context.mounted) showAppToast(context, '鸿蒙暂不支持相册选图，请手动输入房间码');
-      return null;
-    }
     try {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      final picked = await GalleryPicker.pickImage();
       if (picked == null) return null;
       final code = await Isolate.run(
         () => QrImageDecoder.decodeFile(picked.path),

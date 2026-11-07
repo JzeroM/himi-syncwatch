@@ -25,7 +25,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   void initState() {
     super.initState();
     if (Platform.operatingSystem == 'ohos') {
-      _error = '鸿蒙暂不支持相机扫码，请手动输入房间码';
+      _error = '鸿蒙暂不支持相机扫码，请返回后用「从相册选图」或手动输入房间码';
       return;
     }
     _initCamera();

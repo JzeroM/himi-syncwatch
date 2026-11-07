@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
@@ -8,11 +6,11 @@ import 'package:himi_syncwatch/providers/server_avatar_provider.dart';
 import 'package:himi_syncwatch/services/emby_error.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/server_route_service.dart';
+import 'package:himi_syncwatch/utils/gallery_picker.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/server_card.dart';
 import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
-import 'package:image_picker/image_picker.dart';
 
 /// 打开「服务设置」底部面板（重新登录 / 修改密码 / 上传头像 / STRM 直链播放）。
 Future<void> showServiceSettingsSheet(
@@ -116,19 +114,13 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
   }
 
   Future<void> _uploadAvatar() async {
-    if (Platform.operatingSystem == 'ohos') {
-      if (mounted) showAppToast(context, '鸿蒙暂不支持选图上传头像');
-      return;
-    }
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 512,
-      maxHeight: 512,
-    );
+    // 631：鸿蒙此前被硬编码拦截（image_picker 无鸿蒙实现），现统一走
+    // GalleryPicker（鸿蒙内部用 file_picker_ohos 的原生相册选择器）。
+    final picked = await GalleryPicker.pickImage(maxWidth: 512, maxHeight: 512);
     if (picked == null || !mounted) return;
     try {
       final bytes = await picked.readAsBytes();
-      final isPng = picked.path.toLowerCase().endsWith('.png');
+      final isPng = picked.isPng;
       await _service.uploadUserImage(
         bytes,
         contentType: isPng ? 'image/png' : 'image/jpeg',

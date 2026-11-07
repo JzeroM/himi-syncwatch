@@ -71,7 +71,9 @@ typedef GetSaveFileNameWDart = int Function(
 ///
 /// Reference:
 /// https://docs.microsoft.com/en-us/windows/win32/api/shlobj_core/ns-shlobj_core-browseinfoa
-class BROWSEINFOA extends Struct {
+// PATCH himi: Dart 3.9 起 Struct 是 base，子类必须显式标注（否则
+// `flutter test` 在 Linux 上因条件导入命中本文件而编译失败）。
+base class BROWSEINFOA extends Struct {
   /// A handle to the owner window for the dialog box.
   external Pointer hwndOwner;
 
@@ -112,7 +114,8 @@ class BROWSEINFOA extends Struct {
 ///
 /// Reference:
 /// https://docs.microsoft.com/en-us/windows/win32/api/commdlg/ns-commdlg-openfilenamew
-class OPENFILENAMEW extends Struct {
+// PATCH himi: 同上。
+base class OPENFILENAMEW extends Struct {
   /// The length, in bytes, of the structure. Use sizeof [OPENFILENAMEW] for this parameter.
   @Uint32()
   external int lStructSize;

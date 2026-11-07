@@ -306,4 +306,32 @@ void main() {
       expect(body, contains('_presenceController.close()'));
     });
   });
+
+  group('⑥ 鸿蒙加入房间的取码途径（631）', () {
+    final roomMenu =
+        File('lib/widgets/room_menu_button.dart').readAsStringSync();
+    final scanner = File(
+      'lib/screens/room/qr_scanner_screen.dart',
+    ).readAsStringSync();
+    final picker = File('lib/utils/gallery_picker.dart').readAsStringSync();
+
+    test('房间码支持鸿蒙从相册选图（不再硬编码拦截）', () {
+      // 631 前：_pickRoomCodeFromImage 里 `if (ohos) return null`。
+      // 631 后：鸿蒙与 Windows 同走相册 + 纯 Dart 解码。
+      expect(roomMenu, contains('GalleryPicker.pickImage'));
+      expect(roomMenu, contains('GalleryPicker.isOhos'));
+      expect(roomMenu, contains('galleryOnly'));
+    });
+
+    test('相册选图在鸿蒙走 file_picker（image_picker 无鸿蒙实现）', () {
+      expect(picker, contains('FileType.image'));
+      expect(picker, contains('FilePicker.platform.pickFiles'));
+    });
+
+    test('相机扫码页的鸿蒙提示引导到「从相册选图」', () {
+      expect(scanner, contains('鸿蒙暂不支持相机扫码'));
+      expect(scanner, contains('从相册选图'));
+      expect(scanner, contains('手动输入房间码'));
+    });
+  });
 }

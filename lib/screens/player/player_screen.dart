@@ -3803,7 +3803,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (old is AsyncDisposablePlayer) {
       final disposable = old as AsyncDisposablePlayer;
       try {
-        await disposable.disposeAsync().timeout(const Duration(seconds: 2));
+        // 631：2s → 4s。Windows 的 MPV 销毁要依次释放 libmpv ctx、等
+        // mpv SHUTDOWN 事件、再 destroySurface（HWND）；2s 在慢机器上
+        // 容易超时，超时后本方法继续返回、新引擎立刻创建，旧 session 仍在
+        // 后台销毁 → 与新建的 gpu-next 渲染上下文抢同一 HWND/驱动资源。
+        await disposable.disposeAsync().timeout(const Duration(seconds: 4));
       } catch (_) {}
       await Future<void>.delayed(const Duration(milliseconds: 150));
     } else {

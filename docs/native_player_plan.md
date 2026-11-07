@@ -2444,6 +2444,103 @@ import libmpv from 'libmpv_wrapper.so';
 - [ ] Android 加入鸿蒙房间 / 鸿蒙加入 Android 房间（消息 + Presence + 同步控制）。
 - [ ] 连续进出房间 10 次无泄漏。
 
+### Phase 2.49：Windows 切引擎闪退 + 鸿蒙选图支持（1.5.51+631）
+
+> 起因：用户反馈「windows 版现在切换引擎会闪退」，随后要求把此前
+> 讨论的鸿蒙选图改造「一起做」。
+
+#### 一、Windows 切换引擎闪退（回归，根因在 618）
+
+**现象**：Windows 上**从 MPV 切出去**（MPV → MDK/Erika），**点击即闪退**
+（进程直接退出，Dart 层 try/catch 抓不到）。
+
+**根因链（全部可从源码验证）**：
+
+| # | 事实 |
+|---|---|
+| 1 | 618 给 Windows 设了 `async: false`（唯一 Windows MPV 行为变更；此前是默认 `true`） |
+| 2 | `async: false` → media_kit 走**同步 FFI**：`mpv_set_property_string(ctx,…)` / `mpv_command(ctx,…)`，**直接解引用 ctx，无有效性检查** |
+| 3 | media_kit `Player.dispose()` 内部顺序：`NativeReferenceHolder.remove(ctx)` → **`stop()`** → 才 `disposed = true` |
+| 4 | `stop()` 执行时 `disposed` 仍是 false，`_command` 的守卫 `if (_isClosing \|\| disposed) return;` **放行** → 真的往 ctx 写 |
+| 5 | `_disposeOldEngine()` 对 dispose 只加 **2s 超时**；超时后继续创建新引擎，旧 session 仍在后台销毁 |
+| 6 | 第 4+5 叠加 → 同步 FFI 访问已释放内存 → **段错误** |
+
+**为什么只有 Windows**：
+
+| 平台 | `async` | 结果 |
+|---|---|---|
+| Windows | `false`（618 改） | ❌ 同步 FFI 解引用悬垂 ctx |
+| Android | `false`（618 改） | ⚠️ 同风险但未观察到崩溃 |
+| 鸿蒙 / macOS | 默认 `true` | ✅ 不崩 |
+
+**修复（方案 C：只回退 Windows 的 async，保留切轨加速）**：
+
+- [x] `himi_mpv_windows.dart`：删除 `async: false`（回退默认 `true`，
+  命令走 `mpv_command_async` **入队**，由 libmpv 内部串行处理，dispose 安全）。
+  **保留** `_selectTrackNoLock`（跳过 media_kit 全局 `static Lock`），
+  切轨仍比 618 之前快。
+- [x] `player_screen.dart`：`_disposeOldEngine` 超时 **2s → 4s**（Windows
+  销毁要依次释放 libmpv ctx、等 `MPV_EVENT_SHUTDOWN`、再 `destroySurface`
+  销毁 HWND；2s 在慢机器上易超时）。
+- [x] Android 保持 `async: false`（未观察到同类崩溃，保留 618 加速）。
+- [x] 测试：`mpv_track_switch_speed_test.dart` 改为「Windows 必须
+  `async: true` + Android 保留 `false`」；新增
+  `mpv_async_dispose_safety_test.dart` 8 项（含 dispose 超时 ≥4s 的
+  源码断言、注释留档）。
+
+#### 二、鸿蒙选图支持（相册扫码 + 头像上传）
+
+**根因**：`image_picker` **无鸿蒙实现**（`ohos/entry/oh_modules/` 里没有该
+插件），导致三处选图全部被硬编码拦截或失效。
+
+| 位置 | 用途 | 631 前 |
+|---|---|---|
+| `room_menu_button.dart` | 房间码图片解码 | 硬编码 `if (ohos) return null` |
+| `room_menu_button.dart` | 扫码按钮分支 | 鸿蒙走 `/scan` 相机页 → 必报错 |
+| `server_service_settings_sheet.dart` | 头像上传 | 硬编码拦截 |
+
+**为什么能修（已验证到底层）**：
+
+| 环节 | 验证结果 |
+|---|---|
+| 二维码解码 | `QrImageDecoder` 是**纯 Dart**（`image` + `zxing2`），零平台依赖 |
+| 相册选图 | `file_picker_ohos` 底层是鸿蒙原生 `picker.PhotoViewPicker`（`MIMEType = IMAGE_TYPE`） |
+| 返回真实路径 | `FileUtils.openFileStream` 把相册 URI 复制到 `context.cacheDir/file_picker/`，`file.path` 可直接 `File()` 读 |
+| 项目先例 | `player_screen.dart` 已在用 `FilePicker.platform.pickFiles` 选字幕 |
+
+**实现**：
+
+- [x] **新增 `lib/utils/gallery_picker.dart`**：统一封装
+  - Android / iOS / Windows → `image_picker`（保留 `maxWidth/maxHeight` 缩放）
+  - 鸿蒙 → `file_picker_ohos`（`FileType.image`）
+  - 产出 `GalleryImage { path, name, readAsBytes(), isPng }`
+- [x] `room_menu_button.dart`：解除鸿蒙拦截，与 Windows 同走相册；
+  按钮文案/图标按平台自适应（Windows/鸿蒙 = `image_outlined` +「从相册选图」，
+  Android/iOS = `qr_code_scanner` +「扫码加入」）。
+- [x] `server_service_settings_sheet.dart`：解除头像拦截，改走 `GalleryPicker`，
+  MIME 判断改用 `GalleryImage.isPng`（兼容鸿蒙缓存文件名）。
+- [x] `qr_scanner_screen.dart`：鸿蒙提示改为
+  「鸿蒙暂不支持相机扫码，请返回后用「从相册选图」或手动输入房间码」
+  （相机扫码仍不支持——`mobile_scanner` 无鸿蒙实现）。
+- [x] 测试：新增 `test/utils/gallery_picker_test.dart` 19 项（平台分流、
+  取消返回 null、path 判空、isPng 双路判断、三处调用点不再拦截鸿蒙、
+  已移除 image_picker 依赖）；`ohos_rtm_backend_test.dart` 追加 3 项
+  （鸿蒙取码途径）。
+
+**实现中踩到的两个坑（重要，勿回退）**：
+
+| # | 坑 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | 鸿蒙调 `FilePicker.platform` 抛 `LateInitializationError` | 主包 `file_picker` 的 pubspec **没有 ohos 平台声明**，`dart_plugin_registrant.dart` 的 ohos 分支只注册了 PathProvider / UrlLauncher，**不会**调 `FilePickerIO.registerWith()`；主包 `_instance` 是 `late` | **直接 import `package:file_picker_ohos/file_picker_ohos.dart`**——它的 `_instance = FilePicker._setPlatform()` 是**静态字段初始化**，ohos 分支直接返回 `FilePickerIO()`，**import 即就绪**。两者底层是同一个 MethodChannel（`miguelruivo.flutter.plugins.filepicker`），链路完整 |
+| 2 | `flutter test` 编译失败：`BROWSEINFOA`/`OPENFILENAMEW` 必须 `base`/`final`/`sealed` | `file_picker_ohos` 的 `src/windows/file_picker_windows_ffi_types.dart` 用 `dart.library.io` 条件导入，Linux 测试环境也会命中该实现；Dart 3.9 起 `Struct` 是 `base`，子类必须显式标注 | 给两个类加 `base` 修饰（`base class BROWSEINFOA extends Struct`） |
+
+#### 三、待真机验证
+
+- [ ] **Windows**：MPV ↔ MDK ↔ Erika 反复切换 5 次，不闪退、能继续播放。
+- [ ] **鸿蒙**：房间「加入」→「从相册选图」→ 选中含二维码的截图 → 自动填码。
+- [ ] **鸿蒙**：设置 → 服务器 → 更换头像 → 从相册选图 → 上传成功。
+- [ ] 鸿蒙 RTM NAPI 直连（Phase 2.48 遗留）：启动不闪退、创建/加入房间。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

@@ -332,9 +332,24 @@ class HimiMpvWindowsSession implements MpvSession {
         options: options,
         libass: true,
         logLevel: MPVLogLevel.debug,
-        // 618：同步 FFI（与 MDK `setActiveTracks` 同语义，与安卓同修）——
-        // 属性/命令不再 `await` 异步回调，切轨观感接近 MDK。
-        async: false,
+        // 【631 真机回归：Windows 从 MPV 切引擎「点击即闪退」】
+        //
+        // 618 曾设 `async: false` 追求切轨速度，但那是**同步 FFI**：
+        //   mpv_set_property_string(ctx, ...) / mpv_command(ctx, ...)
+        // 直接解引用 `ctx`，**没有有效性检查**。
+        //
+        // 而 media_kit 的 `Player.dispose()` 内部顺序是：
+        //   NativeReferenceHolder.remove(ctx) → stop() → 才置 disposed = true
+        // 也就是说 `stop()` 执行时 `disposed` 仍是 false，同步 `mpv_command`
+        // 会真的往 `ctx` 里写；一旦与释放竞态（切换引擎时 `_disposeOldEngine`
+        // 只有 2s 超时，超时后继续建新引擎，旧 session 仍在后台销毁），
+        // 就会访问已释放内存 → 段错误（Dart 层 try/catch 抓不到）。
+        //
+        // 回退默认 `async: true`：命令走 `mpv_command_async` **入队**，由
+        // libmpv 内部串行处理，dispose 时安全。切轨加速仍由
+        // `_selectTrackNoLock`（跳过 media_kit 全局 static Lock）承担。
+        //
+        // Android 保持 `async: false`（未观察到同类崩溃）。
       ),
     );
     _player = player;
