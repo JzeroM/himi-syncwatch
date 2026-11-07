@@ -2143,6 +2143,81 @@ await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
 - [x] **加载指示器不再铺满全屏**：622 只改了 `height(videoH)`，漏了
   宽度 → 横屏分栏时水平居中偏右。现宽高**都**取视频区。
 
+### Phase 2.44：鸿蒙画布按视频比例 + 竖条方向 + 安卓手势视频区定位（1.5.45+625）
+
+> 起因：用户「鸿蒙遗留画布拉伸问题怎么解决」「手势音量亮度玻璃柱动画
+> 方向反了，是从下往上增长」「安卓 MPV 房间模式的播放/暂停、2 倍速手势
+> 图标不在画布中心（现在还是全屏的），音量亮度手势柱也不再画布两侧」。
+
+#### 一、鸿蒙画布拉伸：改「让画布本身就是视频比例」（根治）
+
+- [x] **为什么 623 的 tick 兜底无效**：代码注释早已写明——
+  *鸿蒙的 `ohosvk`（Vulkan）是否同样支持运行期重配 swapchain **未知**，
+  故先走这条路；若真机仍拉伸，再升级到 vo 重初始化*。真机验证确认
+  **ohosvk 不响应运行时 `ohos-surface-size`**，反复写属性无用。
+- [x] **根治思路**：不让 mpv 适配画布，而是**让画布本身**就是视频比例。
+  XComponent 的物理尺寸即正确比例 → mpv 往里合成时无需缩放 →
+  **结构上不可能拉伸**。黑边由外层 Stack 的黑色背景提供。
+- [x] **链路打通（此前断了三处）**：
+  | 环节 | 修前 | 修后 |
+  |---|---|---|
+  | mpv 上报 `video-params` | ✅ | ✅ |
+  | Dart 解析（含旋转翻转） | ✅ `_lastVideoW/H` | ✅ |
+  | **Dart 下发** | ❌ | ✅ `videoWidth`/`videoHeight` |
+  | **鸿蒙宿主解析** | ❌ | ✅ `NativePlayerUiState` |
+  | **XComponent 布局** | ❌ 撑满 100% | ✅ `videoFitW/H()` |
+- [x] **比例算法**（与 mpv `keepaspect` 一致）：
+  ```typescript
+  videoAspect > areaAspect ? aw : ah * videoAspect   // 宽
+  videoAspect > areaAspect ? aw / videoAspect : ah   // 高
+  ```
+  视频更宽 → 以区域宽为准（上下黑边）；否则以区域高为准（左右黑边）。
+  未就绪（0）时返回 -1 → 回落 `'100%'` 撑满（保持旧行为）。
+- [x] **视频区实测**：新增 `videoAreaW/H`（`@State`），挂在**视频子节点**
+  的 `onAreaChange` 上（不是根 Stack，否则拿到全屏）。
+- [x] **Stack 对齐改 Center**：letterbox 黑边需上下/左右**对称**分布
+  （旧 `Top` 会把画面顶到上方）。
+
+#### 二、鸿蒙竖条方向反了
+
+- [x] **根因**：旧实现用 `.align(Alignment.Bottom)` —— **ArkUI 的
+  `.align()` 只控制组件内容在其绘制区域内的对齐，不定位组件在父 Stack
+  中的位置**（AGENTS.md 已记录该坑）。故它跟随外层
+  `alignContent: Alignment.Top` 从**顶部往下**长。
+- [x] **修法**：改用**容器级** `alignContent`（真正决定子节点位置）：
+  ```typescript
+  Stack({ alignContent: Alignment.Bottom }) {
+    Row().width(4).height(`${percent}%`).backgroundColor(accent);
+  }.width('100%').height('100%')
+  ```
+  与 Flutter `RotatedBox(-1)`（值 0 在底部）/ 安卓
+  `trackBottom - filled` 同向。
+
+#### 三、安卓手势图标/柱条不在视频区
+
+- [x] **根因**：两处都用**相对根 FrameLayout（全屏）**的定位：
+  - 手势提示 `Gravity.CENTER`（全屏居中 → 横屏分栏时偏右）；
+  - 柱条 `Gravity.END`（贴全屏右缘 → 亮度柱落在资源面板上）。
+- [x] **修法**：
+  - 新增 `positionGestureHintInVideoArea()`：`post{}` 拿 `WRAP_CONTENT`
+    实测宽高后按 `videoAreaWidth()/Height()` 算 `leftMargin/topMargin`；
+    在 `showHintFor` 里调用（**覆盖双击播放/暂停图标、长按 2 倍速图标、
+    横拖 seek 预览、所有文本提示**——它们全走该入口）；
+  - 柱条改 `Gravity.START` + 精确 `marginStart`：
+    亮度 `videoW - barW - edge`（贴视频区右缘）/ 音量 `edge`（贴左缘）。
+
+#### 四、修掉的 ArkTS 编译错误
+
+- [x] `arkts-no-any-unknown`：`HimiMpvNativeHost.getInstance()` 返回值被
+  推断为 any → 改为 `HimiMpvNativeHost.getInstance().state.videoWidth`
+  （显式 `number`）。
+- [x] `Property 'videoWidth' does not exist on type 'HimiMpvNativeHost'`：
+  字段一度加错类。正确位置是 **`NativePlayerUiState`**（状态快照类，负责
+  `update()` 解析），`HimiMpvNativeHost` 通过 `readonly state` 暴露。
+
+- [x] 测试：新增 `gauge_direction_and_video_fit_test.dart` 13 项；更新
+  4 条旧断言（竖条结构变长、XComponent 不再撑满、Stack 对齐改 Center）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

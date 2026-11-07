@@ -366,6 +366,8 @@ class NativePlayerState {
     this.title,
     this.mediaTitle,
     this.videoParams,
+    this.videoWidth = 0,
+    this.videoHeight = 0,
     this.audioParams,
     // ── Phase 2.5 控制层布局/样式 ──
     this.logoUrl,
@@ -481,6 +483,15 @@ class NativePlayerState {
   final String? title;
   final String? mediaTitle;
   final String? videoParams;
+
+  /// 视频**显示**宽高（px，已含旋转翻转）；0 = 未就绪。
+  ///
+  /// 625：鸿蒙原生 UI 用它算 XComponent 的 letterbox 尺寸——鸿蒙的
+  /// `ohosvk`（Vulkan）不响应运行时 `ohos-surface-size` 重配 swapchain，
+  /// 靠改属性无法消除拉伸。改为让**画布本身**就是视频比例，mpv 往里
+  /// 合成时无需缩放 → 结构上不可能拉伸。
+  final int videoWidth;
+  final int videoHeight;
   final String? audioParams;
 
   // ── Phase 2.5 控制层布局/样式 ──
@@ -631,6 +642,8 @@ class NativePlayerState {
       title: json['title'] as String?,
       mediaTitle: json['mediaTitle'] as String?,
       videoParams: json['videoParams'] as String?,
+      videoWidth: (json['videoWidth'] as num?)?.toInt() ?? 0,
+      videoHeight: (json['videoHeight'] as num?)?.toInt() ?? 0,
       audioParams: json['audioParams'] as String?,
       logoUrl: json['logoUrl'] as String?,
       networkSpeedText: json['networkSpeedText'] as String?,
@@ -757,6 +770,8 @@ class NativePlayerState {
         'title': title,
         'mediaTitle': mediaTitle,
         'videoParams': videoParams,
+        'videoWidth': videoWidth,
+        'videoHeight': videoHeight,
         'audioParams': audioParams,
         'logoUrl': logoUrl,
         'networkSpeedText': networkSpeedText,
@@ -849,6 +864,8 @@ class NativePlayerState {
     String? title,
     String? mediaTitle,
     String? videoParams,
+    int? videoWidth,
+    int? videoHeight,
     String? audioParams,
     String? logoUrl,
     String? networkSpeedText,
@@ -936,6 +953,8 @@ class NativePlayerState {
         title: title ?? this.title,
         mediaTitle: mediaTitle ?? this.mediaTitle,
         videoParams: videoParams ?? this.videoParams,
+        videoWidth: videoWidth ?? this.videoWidth,
+        videoHeight: videoHeight ?? this.videoHeight,
         audioParams: audioParams ?? this.audioParams,
         logoUrl: logoUrl ?? this.logoUrl,
         networkSpeedText: networkSpeedText ?? this.networkSpeedText,
@@ -1040,6 +1059,8 @@ class NativePlayerState {
       other.title == title &&
       other.mediaTitle == mediaTitle &&
       other.videoParams == videoParams &&
+      other.videoWidth == videoWidth &&
+      other.videoHeight == videoHeight &&
       other.audioParams == audioParams &&
       other.logoUrl == logoUrl &&
       other.networkSpeedText == networkSpeedText &&
@@ -1128,6 +1149,8 @@ class NativePlayerState {
         title,
         mediaTitle,
         videoParams,
+        videoWidth,
+        videoHeight,
         audioParams,
         logoUrl,
         networkSpeedText,

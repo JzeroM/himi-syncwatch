@@ -2108,6 +2108,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       speed: _playbackRate,
       title: _nativeUiExtras.title,
       mediaTitle: _propertyCache['media-title'],
+      // 625：视频显示宽高（已含旋转翻转）——鸿蒙原生 UI 用它算 XComponent
+      // 的 letterbox 尺寸（鸿蒙 ohosvk 不响应运行时画布重配，靠属性改不掉
+      // 拉伸；让画布本身就是视频比例才是根治）。
+      videoWidth: _lastVideoW,
+      videoHeight: _lastVideoH,
       logoUrl: _nativeUiExtras.logoUrl,
       networkSpeedText: _nativeUiExtras.networkSpeedText,
       clockFormat: _nativeUiExtras.clockFormat,

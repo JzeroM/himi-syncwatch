@@ -494,6 +494,31 @@ class NativePlayerScreenView(
     private var hideGestureHint: Runnable? = null
     private var hideVerticalBar: Runnable? = null
 
+    /**
+     * 625：把手势提示在**视频区**内居中。
+     *
+     * 旧实现用 `Gravity.CENTER` 相对根 FrameLayout（全屏）居中——横屏
+     * 分栏时视频区只有 `屏宽 - 320dp`，居中点偏右，双击播放/暂停图标、
+     * 长按 2 倍速图标、横拖 seek 预览全部落到资源面板一侧（真机回归）。
+     *
+     * `WRAP_CONTENT` 必须 `post{}` 拿实测宽高才能算准居中偏移。
+     */
+    private fun positionGestureHintInVideoArea() {
+        val videoW = videoAreaWidth()
+        val videoH = videoAreaHeight()
+        gestureHint.post {
+            val w = gestureHint.width
+            val h = gestureHint.height
+            if (w <= 0 || h <= 0) return@post
+            (gestureHint.layoutParams as? LayoutParams)?.let {
+                it.gravity = Gravity.START or Gravity.TOP
+                it.leftMargin = ((videoW - w) / 2).coerceAtLeast(0)
+                it.topMargin = ((videoH - h) / 2).coerceAtLeast(0)
+                gestureHint.layoutParams = it
+            }
+        }
+    }
+
     private fun showHintFor(
         text: String,
         ms: Long,
@@ -510,6 +535,8 @@ class NativePlayerScreenView(
         )
         gestureHint.background = if (withBackground) hintBackground() else null
         gestureHint.visibility = VISIBLE
+        // 625：每次显示按当前视频区重算居中位置（分栏/转屏后视频区会变）。
+        positionGestureHintInVideoArea()
         if (ms <= 0L) return
         val hide = Runnable {
             gestureHint.visibility = GONE
@@ -680,15 +707,29 @@ class NativePlayerScreenView(
         // 改 `TOP` + 精确 topMargin = (视频区高 - 指示器高) / 2。
         // 624：长度统一为**视频区高 40%**（旧实现固定 dp(160)，与 Flutter
         // 的 70% 屏高、鸿蒙的 70% 视频区高都不一致）。
-        val barH = (videoAreaHeight() * 0.4f).toInt()
         val videoH = videoAreaHeight()
+        val videoW = videoAreaWidth()
+        val barH = (videoH * 0.4f).toInt()
+        val barW = dp(NPTheme.GAUGE_WIDTH)
+        val edge = dp(NPTheme.GAUGE_EDGE)
         val lp = verticalBar.layoutParams as? LayoutParams
         if (lp != null) {
-            lp.gravity = if (brightness) Gravity.END or Gravity.TOP
-            else Gravity.START or Gravity.TOP
+            // 625：统一 `Gravity.START` + 精确 `marginStart`。
+            //
+            // 旧实现亮度用 `Gravity.END`（贴**全屏**右缘）+ `marginEnd`——
+            // 横屏分栏时视频区只有 `屏宽 - 320dp`，亮度柱正好落在资源
+            // 面板上（真机回归）。改用 START 后横向位置完全由视频区宽
+            // 决定，不受根 FrameLayout 尺寸影响。
+            lp.gravity = Gravity.START or Gravity.TOP
             lp.topMargin = ((videoH - barH) / 2).coerceAtLeast(0)
-            lp.marginStart = if (brightness) 0 else dp(NPTheme.GAUGE_EDGE)
-            lp.marginEnd = if (brightness) dp(NPTheme.GAUGE_EDGE) else 0
+            lp.marginStart = if (brightness) {
+                // 亮度贴**视频区**右缘
+                (videoW - barW - edge).coerceAtLeast(0)
+            } else {
+                // 音量贴视频区左缘
+                edge
+            }
+            lp.marginEnd = 0
             verticalBar.layoutParams = lp
         }
     }
@@ -1104,18 +1145,26 @@ class NativePlayerScreenView(
 
         // 手势提示（居中胶囊）与亮度/音量柱条：视频之上、控件之下，
         // 与 Flutter `_buildGestureHint` / `_buildVerticalBar` 的层级一致。
+        // 625：手势提示改用 START/TOP + 精确 margin（视频区内居中）。
+        //
+        // 旧实现 `Gravity.CENTER` 相对**根 FrameLayout（全屏）**居中——
+        // 横屏分栏时视频区只有 `屏宽 - 320dp`，居中点偏右，图标落到
+        // 资源面板一侧（真机回归）。位置由
+        // [positionGestureHintInVideoArea] 在每次显示时重算。
         addView(
             gestureHint,
-            lp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER),
+            lp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.START or Gravity.TOP),
         )
         addView(
             verticalBar,
             // 622：初始也用 TOP（运行时由 paintVerticalBar 按视频区高重算）。
             // 624：初始高度同步改 40%（避免首帧跳动）。
+            // 625：gravity 改 START（旧 END 贴**全屏**右缘 → 横屏分栏时
+            // 亮度柱落到资源面板上）；横向位置由 marginStart 精确控制。
             lp(
                 dp(NPTheme.GAUGE_WIDTH),
                 (videoAreaHeight() * 0.4f).toInt(),
-                Gravity.END or Gravity.TOP,
+                Gravity.START or Gravity.TOP,
             ),
         )
 

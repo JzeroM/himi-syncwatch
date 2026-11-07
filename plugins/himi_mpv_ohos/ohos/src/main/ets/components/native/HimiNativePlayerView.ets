@@ -392,6 +392,16 @@ export struct HimiNativePlayerView {
   @State videoH: number = 0;
 
   /**
+   * 视频区**实测**宽高（vp）——625。
+   *
+   * 与 `videoW`/`videoH`（分栏收窄的**显式**值）不同：这里是 Flex 实际
+   * 分配给视频子节点的尺寸（未分栏时 = 全屏）。用于按视频比例算
+   * XComponent 的 letterbox 尺寸。
+   */
+  @State videoAreaW: number = 0;
+  @State videoAreaH: number = 0;
+
+  /**
    * XComponent 实测尺寸（vp）——`onAreaChange` 缓存，供 tick 兜底同步。
    *
    * 【623 真机回归：鸿蒙房间面板初始展开时画布拉伸】`XComponent` 的
@@ -805,6 +815,42 @@ export struct HimiNativePlayerView {
     }
     const ratio = Math.max(0, Math.min(1, this.verticalBarPercent / 100));
     return Math.max(0, (1 - ratio) * h - radius);
+  }
+
+  /**
+   * 625：视频按比例适配可用区域的**显示宽**（vp）。
+   *
+   * 返回 -1 表示「未就绪/无法计算」→ 调用方回落到 `'100%'`（撑满）。
+   *
+   * 算法（与 mpv `keepaspect` 语义一致）：
+   * - 视频比区域"更宽" → 以区域宽为准（上下留黑边）；
+   * - 否则以区域高为准（左右留黑边）。
+   */
+  private videoFitW(): number {
+    const vw: number = HimiMpvNativeHost.getInstance().state.videoWidth;
+    const vh: number = HimiMpvNativeHost.getInstance().state.videoHeight;
+    const aw: number = this.videoAreaW;
+    const ah: number = this.videoAreaH;
+    if (vw <= 0 || vh <= 0 || aw <= 0 || ah <= 0) {
+      return -1;
+    }
+    const videoAspect = vw / vh;
+    const areaAspect = aw / ah;
+    return videoAspect > areaAspect ? aw : ah * videoAspect;
+  }
+
+  /** 625：视频按比例适配可用区域的**显示高**（vp）。-1 = 未就绪。 */
+  private videoFitH(): number {
+    const vw: number = HimiMpvNativeHost.getInstance().state.videoWidth;
+    const vh: number = HimiMpvNativeHost.getInstance().state.videoHeight;
+    const aw: number = this.videoAreaW;
+    const ah: number = this.videoAreaH;
+    if (vw <= 0 || vh <= 0 || aw <= 0 || ah <= 0) {
+      return -1;
+    }
+    const videoAspect = vw / vh;
+    const areaAspect = aw / ah;
+    return videoAspect > areaAspect ? aw / videoAspect : ah;
   }
 
   private pokeAutoHide(): void {
@@ -1815,15 +1861,27 @@ export struct HimiNativePlayerView {
     // Stack 内叠放、各占 100%；分栏用的 layoutWeight/width/height 上移到
     // 这个 Stack 上（`layoutWeight` 与 `width('100%')` 同时设会后者优先，
     // 故展开用 'auto' + layoutWeight、收起用 '100%' + layoutWeight 0）。
-    Stack({ alignContent: Alignment.Top }) {
+    // 625：对齐改 **Center**——XComponent 按视频比例收窄后，黑边要在
+    // 上下/左右**对称**分布（旧 Top 会把画面顶到上方）。
+    Stack({ alignContent: Alignment.Center }) {
       // ── 视频层 ──
       XComponent({
         type: XComponentType.SURFACE,
         controller: this.controller,
       })
-        // 撑满本 Stack（分栏收窄由外层 Stack 的 layoutWeight 负责）。
-        .width('100%')
-        .height('100%')
+        // 625：按**视频比例**布局（letterbox/pillarbox），不再撑满。
+        //
+        // 【真机回归：鸿蒙房间面板初始展开时画布拉伸】鸿蒙 `ohosvk`
+        // （Vulkan）**不响应运行时 `ohos-surface-size` 重配 swapchain**
+        // ——623 的 tick 兜底反复写属性也无效（真机验证）。
+        //
+        // 根治思路：不让 mpv 适配画布，而是**让画布本身**就是视频比例。
+        // 这样 XComponent 的物理尺寸即正确比例，mpv 往里合成时无需缩放
+        // → 结构上不可能拉伸。黑边由外层 Stack 的黑色背景提供。
+        //
+        // 未就绪（videoWidth/Height = 0）时回落 `'100%'` 撑满（保持旧行为）。
+        .width(this.videoFitW() > 0 ? this.videoFitW() : '100%')
+        .height(this.videoFitH() > 0 ? this.videoFitH() : '100%')
         .backgroundColor(Color.Black)
         // 【兜底：尺寸同步】XComponent 的 onSurfaceChanged 在部分转屏场景
         // 不触发（子窗口尺寸变化但 surface 未重建），导致 mpv 仍按旧尺寸
@@ -1924,7 +1982,19 @@ export struct HimiNativePlayerView {
     // 面板盖在上面」）。因此这里**只设 layoutWeight**，由 Flex 决定尺寸。
     //
     // 面板收起时 Flex 只有视频一个子节点 → layoutWeight(1) 自然铺满。
-    .layoutWeight(1);
+    .layoutWeight(1)
+    // 625：实测 Flex 分配给视频子节点的尺寸，供 videoFitW/H 算 letterbox。
+    // 挂在**视频子节点**上（不是根 Stack），拿到的是视频区而非全屏。
+    .onAreaChange((_old: Area, area: Area): void => {
+      const w = area.width as number;
+      const h = area.height as number;
+      if (w > 0 && w !== this.videoAreaW) {
+        this.videoAreaW = w;
+      }
+      if (h > 0 && h !== this.videoAreaH) {
+        this.videoAreaH = h;
+      }
+    });
   }
 
   /** 房间资源面板槽（593/594）：横屏右侧 320vp / 竖屏底部 280vp。 */
@@ -2273,13 +2343,26 @@ export struct HimiNativePlayerView {
                 .height('100%')
                 .backgroundColor('#3DFFFFFF')
                 .borderRadius(2);
-              // 已填充段（从**底部**往上 = 值越大越高，与安卓同向）
-              Row()
-                .width(4)
-                .height(`${this.verticalBarPercent}%`)
-                .backgroundColor(this.verticalBarOnLeft ? '#FFD54F' : '#6366F1')
-                .borderRadius(2)
-                .align(Alignment.Bottom);
+              // 已填充段：从**底部**往上（值越大越高，与 Flutter
+              // `RotatedBox(-1)` / 安卓 `trackBottom - filled` 同向）。
+              //
+              // 【625 真机回归：填充从顶部往下长，方向反了】旧实现用
+              // `.align(Alignment.Bottom)` —— **ArkUI 的 `.align()` 只控制
+              // 组件内容在其绘制区域内的对齐，不定位组件在父 Stack 中的
+              // 位置**（AGENTS.md 已记录该坑）。故它跟随外层
+              // `alignContent: Alignment.Top` 顶部对齐。
+              //
+              // 修法：用**容器级** `alignContent`（真正决定子节点在容器内
+              // 的位置）——嵌套一层 `Stack({ alignContent: Bottom })`。
+              Stack({ alignContent: Alignment.Bottom }) {
+                Row()
+                  .width(4)
+                  .height(`${this.verticalBarPercent}%`)
+                  .backgroundColor(this.verticalBarOnLeft ? '#FFD54F' : '#6366F1')
+                  .borderRadius(2);
+              }
+              .width('100%')
+              .height('100%');
               // 光晕（Flutter overlayRadius:10 / 安卓 GAUGE_OVERLAY=10）
               Row()
                 .width(20)

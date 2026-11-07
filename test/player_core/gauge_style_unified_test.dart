@@ -74,7 +74,8 @@ void main() {
     test('鸿蒙上下留白 0.30', () {
       final idx = ohos.indexOf('if (this.verticalBarPercent >= 0) {');
       expect(idx, greaterThan(0));
-      final body = ohos.substring(idx, idx + 4000);
+      // 625：竖条结构变长（新增嵌套 Stack），截取范围放宽。
+      final body = ohos.substring(idx, idx + 6500);
       expect(body, contains('* 0.30'));
       expect(body, isNot(contains('* 0.15')));
     });
@@ -105,7 +106,7 @@ void main() {
 
     test('左右贴边 20（音量左/亮度右）', () {
       final idx = ohos.indexOf('if (this.verticalBarPercent >= 0) {');
-      final body = ohos.substring(idx, idx + 4000);
+      final body = ohos.substring(idx, idx + 6500);
       expect(body, contains('left: this.verticalBarOnLeft ? 0 : 20'));
       expect(body, contains('right: this.verticalBarOnLeft ? 20 : 0'));
     });

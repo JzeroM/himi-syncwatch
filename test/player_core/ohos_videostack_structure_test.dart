@@ -39,8 +39,10 @@ void main() {
     test('VideoStack 内 XComponent 与手势层都在同一个 Stack 里', () {
       final block = videoStackBlock();
       // 顶层容器：Stack（不是裸的 XComponent + Column 平级）。
-      expect(block, contains('Stack({ alignContent: Alignment.Top }) {'));
-      final stackIdx = block.indexOf('Stack({ alignContent: Alignment.Top }) {');
+      // 625：对齐改 Center（XComponent 按视频比例收窄后，黑边需上下/左右
+      // 对称分布；旧 Top 会把画面顶到上方）。
+      expect(block, contains('Stack({ alignContent: Alignment.Center }) {'));
+      final stackIdx = block.indexOf('Stack({ alignContent: Alignment.Center }) {');
       final xIdx = block.indexOf('XComponent({');
       final gestureIdx = block.indexOf('.gesture(');
       expect(xIdx, greaterThan(stackIdx));
@@ -74,8 +76,12 @@ void main() {
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
-      expect(attrLines, contains(".width('100%')"));
-      expect(attrLines, contains(".height('100%')"));
+      // 625：XComponent 改为**按视频比例**布局（letterbox），不再撑满
+      // ——鸿蒙 ohosvk 不响应运行时 swapchain 重配，只能让画布本身正确。
+      expect(attrLines, contains('this.videoFitW() > 0 ? this.videoFitW()'));
+      expect(attrLines, contains('this.videoFitH() > 0 ? this.videoFitH()'));
+      // 未就绪时仍回落 100%（保持旧行为）。
+      expect(attrLines, contains("'100%'"));
       expect(attrLines, isNot(contains('layoutWeight')));
       expect(attrLines, isNot(contains('videoW')));
       // 610：分栏尺寸用 layoutWeight（XComponent 段之后）。

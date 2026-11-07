@@ -96,8 +96,10 @@ void main() {
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
-      expect(attrLines, contains(".width('100%')"));
-      expect(attrLines, contains(".height('100%')"));
+      // 625：XComponent 改为按**视频比例**布局（letterbox），未就绪回落 100%。
+      expect(attrLines, contains('this.videoFitW() > 0 ? this.videoFitW()'));
+      expect(attrLines, contains('this.videoFitH() > 0 ? this.videoFitH()'));
+      expect(attrLines, contains("'100%'"));
       expect(attrLines, isNot(contains('layoutWeight')));
       expect(attrLines, isNot(contains('videoW')));
     });

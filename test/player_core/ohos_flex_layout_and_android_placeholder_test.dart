@@ -31,7 +31,9 @@ void main() {
       final idx = ohosView.indexOf('VideoStack() {');
       final end = ohosView.indexOf('  /** 房间资源面板槽', idx);
       final body = ohosView.substring(idx, end);
-      expect(body, contains('.layoutWeight(1);'));
+      // 625：`.layoutWeight(1)` 后紧跟 `.onAreaChange`（视频区实测），
+      // 故不再断言以 `;` 结尾。
+      expect(body, contains('.layoutWeight(1)'));
       // 不得同时设 width('100%')（会覆盖 layoutWeight）。
       expect(body, isNot(contains(".width(this.videoW > 0")));
     });

@@ -352,7 +352,19 @@ export class NativePlayerUiState {
   surfaceId: string = '';
   surfaceError: string = '';
   surfaceWidth: number = 0;
+
   surfaceHeight: number = 0;
+
+  /**
+   * 视频**显示**宽高（px，已含旋转翻转）；0 = 未就绪（625）。
+   *
+   * 鸿蒙原生 UI 用它算 XComponent 的 letterbox 尺寸：鸿蒙 `ohosvk`
+   * （Vulkan）不响应运行时 `ohos-surface-size` 重配 swapchain，靠改属性
+   * 无法消除拉伸。改为让**画布本身**就是视频比例 → mpv 往里合成时无需
+   * 缩放，结构上不可能拉伸。
+   */
+  videoWidth: number = 0;
+  videoHeight: number = 0;
 
   /** 加载指示器是否显示（586，三端统一；首帧未出 **或** 缓冲中）。 */
   showLoading: boolean = false;
@@ -490,6 +502,8 @@ export class NativePlayerUiState {
     this.surfaceId = jsonStr(obj.surfaceId, this.surfaceId);
     this.surfaceError = jsonStr(obj.surfaceError, this.surfaceError);
     this.surfaceWidth = jsonNum(obj.surfaceWidth, this.surfaceWidth);
+    this.videoWidth = jsonNum(obj.videoWidth, this.videoWidth);
+    this.videoHeight = jsonNum(obj.videoHeight, this.videoHeight);
     this.surfaceHeight = jsonNum(obj.surfaceHeight, this.surfaceHeight);
     this.canControl = jsonBool(obj.canControl, this.canControl);
     this.locked = jsonBool(obj.locked, this.locked);
