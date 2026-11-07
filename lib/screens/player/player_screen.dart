@@ -10706,9 +10706,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _activeLocalSubtitlePath = null;
     // 618：样式写入延后到切轨窗口之后（窗口内写会叠加重建 → 卡顿）。
     _enterTrackSwitchWindow();
-    // 延迟 ≠0：窗口结束后再用偏移后的 SRT 替换刚激活的轨（避免在
-    // 重建窗口内再触发一次 sub-add）。
-    _maybeApplySubtitleDelay();
+    // 620：MPV 的延迟是原生属性，切轨窗口结束后由 _enterTrackSwitchWindow
+    // 的定时器补写（不再重新下载/改写字幕文件）。其他引擎仍走偏移重载。
+    if (_currentEngine != PlayerEngine.mpv) {
+      // 延迟 ≠0：窗口结束后再用偏移后的 SRT 替换刚激活的轨（避免在
+      // 重建窗口内再触发一次 sub-add）。
+      _maybeApplySubtitleDelay();
+    }
   }
 
   void _selectEmbyAudio(int embyIndex) {
@@ -10751,6 +10755,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _trackSwitchInFlight = false;
       if (!mounted) return;
       // 窗口结束后补写一次样式（切轨期间被跳过的值在这里落地）。
+      // 620：MPV 分支的 _applySubtitleStyle 已包含 sub-delay，无需另调。
       _applySubtitleStyle();
     });
   }
@@ -10777,6 +10782,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.setProperty('sub-scale', _subtitleScale.toStringAsFixed(2));
       final pos = (100 - _subtitleMarginY / 4).clamp(0, 150).round();
       _player.setProperty('sub-pos', '$pos');
+      // 620：延迟也走原生属性（毫秒 → 秒）。切轨后 mpv 会重建字幕链，
+      // 三项在这里一次落全（比单独调 _applyMpvSubtitleDelay 更省）。
+      _player.setProperty(
+        'sub-delay',
+        (_subtitleDelayMs / 1000.0).toStringAsFixed(3),
+      );
       return;
     }
     final forceBitmapBottom =
@@ -10836,12 +10847,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _scheduleSubtitleStyleSave();
     _syncNativePanelData();
     _subtitleDelayReloadTimer?.cancel();
+    // 620：MPV 走原生 `sub-delay`（毫秒 → 秒，正=晚显示，与面板语义一致）。
+    //
+    // 【真机回归：拖延迟滑杆要等好几秒才生效】旧实现（重写字幕文件）流程是
+    //   ① 重新下载整份字幕 → ② 改写时间轴 + 写临时文件 → ③ sub-add 新轨
+    // 每拖一格都可能触发一次，且：
+    // - 位图字幕（PGS/VobSub）**完全无法改写**（二进制），延迟彻底失效；
+    // - 连续拖动会**堆积多条临时轨**（每次 sub-add 都新增一条）；
+    // - 归零时要重新下载原轨（黑屏一瞬）；
+    // - 每次都有网络往返。
+    // mpv 的 `sub-delay` 是**单个属性**：立即生效、毫秒精度、对位图字幕
+    // 同样有效、零网络、不动字幕内容（不影响 ASS 的 \move/\fade 相对时序）。
+    if (_currentEngine == PlayerEngine.mpv) {
+      _applyMpvSubtitleDelay(v);
+      return;
+    }
+    // 其他引擎（MDK/media_kit/Erika 无等价属性）保留重写文件方案。
     if (v == 0) {
       // 归零：立即恢复原素材轨
       _restoreActiveSubtitleSource();
     } else {
       _maybeApplySubtitleDelay();
     }
+  }
+
+  /// MPV 字幕延迟：写原生 `sub-delay` 属性（620）。
+  ///
+  /// mpv 语义：正值 = 字幕**延后**出现，负值 = **提前**——与面板
+  /// 「正=晚显示」一致，故直接 `delayMs / 1000` 映射。
+  ///
+  /// 单位是**秒**（浮点），面板是毫秒整数（±5000ms / 步进 100ms）。
+  void _applyMpvSubtitleDelay(int delayMs) {
+    // 切轨窗口内不写（618）：sid 重建期间写属性会叠加重建 → 卡顿。
+    // 窗口结束后 _enterTrackSwitchWindow 的定时器会补写样式；
+    // 延迟值已在 `_subtitleDelayMs` 里，补写时随 _applySubtitleStyle 一起落。
+    if (_trackSwitchInFlight) return;
+    final seconds = (delayMs / 1000.0).toStringAsFixed(3);
+    _player.setProperty('sub-delay', seconds);
+    LogService().log('Player', 'MPV sub-delay=$seconds（${delayMs}ms）');
   }
 
   void _onSubtitleStyleReset() {
@@ -10855,7 +10898,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _resetHideTimer();
     _scheduleSubtitleStyleSave();
     _subtitleDelayReloadTimer?.cancel();
-    if (hadDelay) _restoreActiveSubtitleSource();
+    // 620：MPV 归零只需把 `sub-delay` 写成 0（无需重新下载原轨）。
+    if (_currentEngine == PlayerEngine.mpv) {
+      _applyMpvSubtitleDelay(0);
+    } else if (hadDelay) {
+      _restoreActiveSubtitleSource();
+    }
   }
 
   /// 样式落盘去抖（500ms）：滑杆连续拖动只写最后一次。

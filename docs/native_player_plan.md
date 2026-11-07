@@ -1877,6 +1877,64 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
 - [x] 测试：新增 `danmaku_speed_test.dart` 19 项（withRelated 移除、
   match 重试、候选上限、setClock 去重、日志噪音、**全平台覆盖矩阵**）。
 
+### Phase 2.39：MPV 字幕延迟改用原生 `sub-delay`（1.5.40+620）
+
+> 起因：用户问「mpv 的 sub-delay 会更好吗」。排查确认：**明显更好**，
+> 而且是当前实现所有痛点的直接解药。
+
+#### 旧实现（重写字幕文件）的四个痛点
+
+```dart
+// _reloadSubtitleForDelay 全流程
+text = await service.fetchSubtitleText(...)    // ① 重新下载整份字幕
+final path = await SubtitleDelayFile.write(...) // ② 改写时间轴 + 写临时文件
+await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
+```
+
+面板滑杆是 **±5000ms / 步进 100ms**——拖一次跨 100 格，每格都可能触发
+完整三步流程。
+
+| 痛点 | 后果 |
+|---|---|
+| ① 三步流程 | 拖滑杆要**等好几秒**才生效 |
+| ② 位图字幕（PGS/VobSub） | **完全无法改写**（二进制）→ 延迟彻底失效 |
+| ③ 每次 `sub-add` 新轨 | 连续拖动**堆积多条临时轨** |
+| ④ 归零重新下载原轨 | **黑屏一瞬** + 每次都有网络往返 |
+
+#### 对比
+
+| 维度 | 旧（重写文件） | `sub-delay` |
+|---|---|---|
+| 生效延迟 | 几秒 | **立即** |
+| 精度 | 受 SRT/ASS 文本格式限制 | **毫秒级** |
+| 位图字幕 | **失效** | **正常生效** |
+| 连续拖动 | 堆积临时轨 | 只改一个数值 |
+| 网络依赖 | 每次往返 | **零网络** |
+| 归零 | 重新下载（黑屏） | 属性归零 |
+| ASS 动画 | 可能影响 `\move`/`\fade` 相对时序 | **完全不碰字幕内容** |
+
+#### 改动
+
+- [x] **符号方向已对齐**：面板「正=晚显示」（`subtitle_style_panel.dart:51`）
+  与 mpv `sub-delay`（正值=延后）**同向**，直接 `delayMs / 1000` 映射
+  （mpv 单位是**秒**，浮点）。
+- [x] 新增 `_applyMpvSubtitleDelay(int delayMs)`：写 `sub-delay` +
+  打日志；切轨窗口内跳过（618 的叠加重建保护）。
+- [x] `_onSubtitleDelayChanged`：MPV 分流到 `sub-delay` 并 **early-return**
+  （不再走重写文件流程）；其他引擎保留。
+- [x] `_applySubtitleStyle` 的 MPV 分支**并入 `sub-delay`**——切轨后
+  mpv 重建字幕链，`sub-scale`/`sub-pos`/`sub-delay` 一次落全（比单独
+  调用更省）。
+- [x] `_onSubtitleStyleReset`：MPV 只写 `sub-delay=0`，**不再重新下载
+  原轨**（`_restoreActiveSubtitleSource` 仅非 MPV 执行）。
+- [x] `_selectEmbySubtitle`：MPV 不再走 `_maybeApplySubtitleDelay`
+  （延迟由切轨窗口结束后的 `_applySubtitleStyle` 补写）。
+- [x] **其他引擎保持现状**：核实 MDK（`third_party/fvp`）、media_kit、
+  Erika **均无等价延迟属性**（全仓搜索零命中），仍走重写文件方案
+  （`_reloadSubtitleForDelay` / `_restoreActiveSubtitleSource` 保留）。
+- [x] 测试：新增 `mpv_subtitle_delay_test.dart` 14 项（符号方向、属性写入、
+  分流 early-return、切轨落全、归零不重下载、其他引擎保留）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
