@@ -2541,6 +2541,163 @@ import libmpv from 'libmpv_wrapper.so';
 - [ ] **鸿蒙**：设置 → 服务器 → 更换头像 → 从相册选图 → 上传成功。
 - [ ] 鸿蒙 RTM NAPI 直连（Phase 2.48 遗留）：启动不闪退、创建/加入房间。
 
+### Phase 2.50：房间同步三连修（鸿蒙消息丢失 + 暂停不同步 + 中途进房）（1.5.52+632）
+
+> 起因：用户连续反馈三个现象——
+> ① 「鸿蒙端作为观众，房主暂停，鸿蒙没暂停」
+> ② 「鸿蒙作为观众中途进房间，资源列表为空」
+> ③ 「中途进房显示房间已解散，但实际没解散」
+> 随后追问「windows 也有同样问题」，并指出「win 端没问题」。
+
+#### 一、根因：三个现象其实是**同一个根因**
+
+**消息层（鸿蒙 ArkTS 侧）**：
+
+```typescript
+// RtmManager.ets —— 632 前的错误实现
+out.set('message', typeof e.message === 'string' ? e.message : '');
+```
+
+声网 SDK 的 `MessageEvent.message` 声明是 **`string | Uint8Array`**
+（`RtmMessageType.STRING = 1` / `BINARY = 0`，见 `RtmEvent.d.ets`）。
+只要 SDK 返回的不是原生 string（BINARY 类型，或跨 NAPI 语言边界的包装），
+**内容就被丢成空串**。
+
+后果链：
+
+| 环节 | 结果 |
+|---|---|
+| ArkTS 输出 `message: ''` | — |
+| Dart `jsonDecode('')` | 抛 `FormatException` |
+| `catch` 里只打一行日志 | **静默吞掉整条消息** |
+
+于是**所有** RTM 消息失效：`roomInfo`、`join`、`heartbeat`、`syncPlay`、`pause`。
+
+这正好解释三个现象：
+- 收不到 `roomInfo` → **资源列表为空**
+- 收不到 `roomInfo` → 20s 超时 → **误报房间已解散**
+- 收不到 `pause` / `heartbeat` → **房主暂停观众不暂停**
+
+**为什么 Windows 正常**：
+
+```cpp
+// rtm_client.cpp:264 —— 按字节取，永远成功
+out.message.assign(event.message, event.messageLength);
+```
+
+Windows 是 C++ 原生层直接拿指针 + 长度，不存在「类型判断」这一步，
+所以同样的 bug 不会显现。
+
+#### 二、逻辑层：三个独立的次生缺陷（即使消息通了也要修）
+
+| # | 缺陷 | 位置 | 后果 |
+|---|---|---|---|
+| 1 | 心跳因 `state != playing` 停发 | `_startHeartbeat` | 房主一暂停就再无心跳 → 观众收不到 `playing:false` |
+| 2 | `if (_syncPaused) return;` 前置 | `_handleHeartbeat` | 刚收到 pause 命令的 3 秒窗口内，心跳的暂停状态被整体丢弃 |
+| 3 | 观众从不主动请求 roomInfo | `_scheduleStreamRetry` | 它挂在 `_applyStreamsFromRoomInfo` 末尾 = **必须先收到 roomInfo 才会重请求** → 首次丢失就死循环 |
+| 4 | `whoNow == 0` 直接判解散 | `_setupRoomSync` | 刚 subscribe 时 presence 未同步返回 0 是常态（鸿蒙 NAPI 订阅更快，更易踩中） |
+| 5 | `_roomInfoTimeout` 仅 10s | `_setupRoomSync` | 覆盖不了退避周期 |
+
+#### 三、修复
+
+**消息层**：
+
+- [x] `RtmManager.ets` 新增 `extractMessageText()`：`string` 直返，
+      `Uint8Array` 走 `util.TextDecoder.create('utf-8').decodeToString()`；
+      `import util from '@ohos.util'`。
+- [x] `rtm_service.dart`：空消息不再静默丢弃，显式记
+      「收到空消息（内容丢失），publisher=…」；解析失败日志补 `len` 与前 100 字。
+
+**逻辑层**：
+
+- [x] `_startHeartbeat`：去掉 `state != playing` 守卫，心跳常发；
+      暂停时 `rate` 传 `1.0`（避免观众按暂停前倍速外推位置）。
+- [x] `_handleHeartbeat`：**播放/暂停状态应用提到所有守卫之前**，
+      `_syncPaused` / `_isSyncing` / buffering / seeking 只抑制位置校正。
+- [x] 新增 `_startRoomInfoRequestRetry()`：观众进房即主动拉 roomInfo，
+      指数退避 1/2/4/8/16s（最多 6 次），收到即停。
+- [x] `_setupRoomSync`：`whoNow == 0` 不再判解散（只记日志）；
+      `_roomInfoTimeout` 10s → **20s**（覆盖 1+2+4+8=15s 退避周期）。
+- [x] `_handleRoomInfo` / `dispose`：清理重请求定时器。
+- [x] `sendCommand` / `sendRoomInfo` 新增 `paused` 参数；房主下发真实状态，
+      观众起播后 `_pauseAfterAudienceStart()` 立即回到暂停态
+      （修「房主暂停时中途进房的观众自顾自播放」）。
+
+#### 四、测试
+
+- [x] 新增 `test/player_core/room_sync_632_test.dart` 19 项：
+      消息层（`extractMessageText` 存在 / 不再丢弃非 string / string+Uint8Array
+      双路）、Dart 侧空消息不静默、心跳常发、状态应用前置、`paused` 透传、
+      主动重请求、不误判解散、超时 20s。
+
+#### 五、待真机验证
+
+- [ ] 鸿蒙观众：房主暂停 → 观众暂停；房主恢复 → 观众恢复。
+- [ ] 鸿蒙观众：房主播放中**中途进房** → 资源列表正常、不弹「已解散」。
+- [ ] 鸿蒙观众：房主暂停时中途进房 → 观众起播后立即暂停。
+- [ ] 反复暂停/播放 3 次，状态始终一致。
+
+### Phase 2.51：房主离线判定加 3 秒复核（防网络抖动误踢）（1.5.53+633）
+
+> 起因：632 打包真机测试后用户反馈「鸿蒙加入房间就自动退出」，补充说明
+> 「进房间了，播报也显示进房了，但是几秒就退出了房间」（退回首页，非闪退），
+> 房主是 Android。随后追问「windows 会有同样问题吗」「安卓是怎么处理的」。
+
+#### 一、根因：632 修好消息层后暴露的既有隐患
+
+| 时序 | 状态 |
+|---|---|
+| 632 之前 | 鸿蒙收不到 roomInfo → `_hostUserId` 永远是 `null` → Presence 离线判定被跳过 |
+| **632 之后** | roomInfo 能收到了 → `_hostUserId` **首次被真正赋值** → Presence 判定**首次生效** |
+| 真机表现 | RTM 网络抖动短暂上报 `remoteTimeout`（房主其实还在）→ 直接弹「房间已解散」→ **1.5s 后 `popUntil` 弹回首页** |
+
+用户看到「播报显示进房了」正说明 roomInfo 已到、`_hostUserId` 已赋值，
+精确命中这条路径。**所以这不是新 bug，而是消息修好后浮出的脆弱点。**
+
+#### 二、三端对比：**完全同构，都会中招**
+
+| 维度 | 安卓（官方 `agora_rtm`） | Windows（C++ 插件） | 鸿蒙（NAPI 直连） |
+|---|---|---|---|
+| `withPresence` | `true`（SDK 默认） | `true`（显式） | `true`（显式） |
+| 事件 `type` 传递 | `event.type` 直接是枚举对象 | int 索引 → `values[i]` | ArkTS 字符串 → Dart 枚举 |
+| 值语义 | `none=0/snapshot=1/interval=2/join=3/leave=4/timeout=5` | 同 | 同 |
+| Presence 判定 | **共享 Dart `player_screen.dart`** | 同 | 同 |
+| 误判后行为 | 弹框 + 1.5s `popUntil` | 同 | 同 |
+
+三条路径最终都产出同一个 `RtmPresenceEventType`，判定逻辑**完全等价**。
+之所以先由鸿蒙暴露，是**触发概率差异**（鸿蒙后台管控更严 + NAPI 直连
+订阅返回更快，更容易踩中 presence 未同步/抖动的窗口），而非逻辑差异。
+
+#### 三、修复（共享 Dart 层，三端同时生效）
+
+- [x] 新增 `Timer? _hostOfflineTimer` 字段。
+- [x] Presence 监听：房主 `leave`/`timeout` **不再直接弹解散框**，改为
+      `_scheduleHostOfflineCheck()`；房主重新 `join` 则 `_cancelHostOfflineCheck()`。
+- [x] 新增 `_scheduleHostOfflineCheck()`：**3 秒后**查 `whoNow`，
+      在线 ≥2 人（房主 + 自己）视为抖动、忽略本次事件；否则确认离线才解散。
+- [x] 新增 `_cancelHostOfflineCheck()`（带「房主已重新上线」日志）与
+      `_clearHostOfflineCheck()`（静默版，解散流程 / dispose 用）。
+- [x] `_handleRoomInfo`：`_hostUserId` 赋值排除**空串**与**自己**
+      （`hostId != _myUserId`）——若拿到自己的 id，Presence 会把自己的
+      leave 当成房主离线。
+- [x] `dispose` / `_showRoomDestroyedDialog` 清理定时器（防重复触发）。
+- [x] **保留** 1.5s 自动 `popUntil`（用户明确选择「保留自动退出」）。
+
+#### 四、测试
+
+- [x] 新增 `test/player_core/room_host_offline_debounce_test.dart` 13 项：
+      Presence 不再直接判解散、房主 join 取消退出、3 秒复核、whoNow 二次确认、
+      ≥2 人视为抖动、`_hostUserId` 排除自己、生命周期清理、
+      **三端一致性锁**（复核逻辑内不得出现 `Platform.is*` 分支）、
+      保留 1.5s 自动退回。
+
+#### 五、待真机验证
+
+- [ ] 鸿蒙观众进房后停留 ≥1 分钟，不因网络抖动被踢。
+- [ ] 房主真正退出 → 3 秒后正确弹「房间已解散」并退回首页。
+- [ ] 房主短暂断网后恢复 → 不误踢（`join` 取消待执行退出）。
+- [ ] 安卓 / Windows 观众同样验证（改动在共享层，三端一致）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

@@ -50,6 +50,7 @@ import type {
   LinkStateEvent,
 } from 'libagora-rtm-sdk.so';
 import hilog from '@ohos.hilog';
+import util from '@ohos.util';
 
 const DOMAIN: number = 0x0001;
 const TAG: string = 'HimiOhosRtm';
@@ -100,7 +101,14 @@ export class RtmManager {
       const out: Map<string, Object> = new Map<string, Object>();
       out.set('event', 'message');
       out.set('publisher', e.publisher ?? '');
-      out.set('message', typeof e.message === 'string' ? e.message : '');
+      // 【632 根因】旧实现 `typeof e.message === 'string' ? e.message : ''`
+      // 在 SDK 返回 Uint8Array（BINARY 类型，或跨 NAPI 语言边界的包装）时
+      // 会把内容丢成空串 → Dart 侧 jsonDecode('') 抛异常被 catch 静默吞掉
+      // → **所有** RTM 消息（roomInfo / join / heartbeat / syncPlay / pause）
+      // 全部失效，表现为：中途进房资源列表为空、误报房间已解散、
+      // 房主暂停观众不暂停。
+      // Windows 侧是 `assign(message, messageLength)` 按字节取，故不受影响。
+      out.set('message', this.extractMessageText(e.message));
       this.emit(out);
     });
     // Presence：{type, publisher}
@@ -126,6 +134,36 @@ export class RtmManager {
   private emit(event: Map<string, Object>): void {
     if (this.sink !== null) {
       this.sink(event);
+    }
+  }
+
+  /**
+   * 把 SDK 的消息内容统一转成 UTF-8 字符串。
+   *
+   * 632 根因修复：`MessageEvent.message` 的声明是 `string | Uint8Array`
+   * （见 SDK `RtmEvent.d.ets`）：
+   * - `RtmMessageType.STRING` → string
+   * - `RtmMessageType.BINARY` → Uint8Array
+   *
+   * 旧实现只认 `string`，其余一律丢成空串，导致 Dart 侧 `jsonDecode('')`
+   * 抛异常并被 catch 静默吞掉 → 整条消息失效。这里用 TextDecoder 兜底，
+   * 保证两种形态都能还原成原始 JSON 文本。
+   */
+  private extractMessageText(raw: string | Uint8Array | undefined): string {
+    if (raw === undefined || raw === null) {
+      return '';
+    }
+    if (typeof raw === 'string') {
+      return raw;
+    }
+    // 632：走到这里 raw 已被 TS 收窄为 Uint8Array，无需 `as` 断言
+    // （ArkTS 严格模式禁 arkts-no-structural-typing）。
+    try {
+      const decoder: util.TextDecoder = util.TextDecoder.create('utf-8');
+      return decoder.decodeToString(raw);
+    } catch (err) {
+      hilog.warn(DOMAIN, TAG, '消息解码失败: %{public}s', String(err));
+      return '';
     }
   }
 

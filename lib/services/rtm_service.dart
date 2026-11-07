@@ -37,14 +37,23 @@ class RtmService {
 
   void _bindBackend() {
     _messageSubscription = _backend.messageStream.listen((event) {
+      final raw = '${event['message']}';
+      // 632：空消息不再静默丢弃——鸿蒙旧实现会把非 string 消息丢成空串，
+      // 这里显式记日志，避免「所有消息失效但日志一片安静」的盲区。
+      if (raw.isEmpty) {
+        LogService().log(
+            'RTM', '收到空消息（内容丢失），publisher=${event['publisher']}');
+        return;
+      }
       try {
-        final raw = '${event['message']}';
         final data = jsonDecode(raw) as Map<String, dynamic>;
         LogService().log(
             'RTM', '收到消息 type=${data['type']}, userId=${data['userId']}');
         _messageController.add(data);
       } catch (e) {
-        LogService().log('RTM', '消息解析失败: $e');
+        final preview = raw.length > 100 ? raw.substring(0, 100) : raw;
+        LogService()
+            .log('RTM', '消息解析失败: $e, len=${raw.length}, 前 100 字: $preview');
       }
     });
     _presenceSubscription = _backend.presenceStream.listen((event) {
@@ -176,6 +185,7 @@ class RtmService {
     List<Map<String, dynamic>>? audioStreams,
     Map<String, dynamic>? videoStream,
     int? defaultAudioStreamIndex,
+    bool? paused,
   }) async {
     if (!_backend.isReady || _currentChannelId == null) return;
 
@@ -189,6 +199,9 @@ class RtmService {
       if (itemId != null) 'itemId': itemId,
       if (playUrl != null) 'playUrl': playUrl,
       if (token != null) 'token': token,
+      // 632：房主暂停状态下起播时，观众据此立即回到暂停态
+      // （否则中途进房的观众会自顾自开始播放）。
+      if (paused != null) 'paused': paused,
       // 流随 syncPlay 下发：观众在 roomInfo 丢失/晚到时仍能拿到字幕音轨
       if (subtitleStreams != null) 'subtitleStreams': subtitleStreams,
       if (audioStreams != null) 'audioStreams': audioStreams,
@@ -300,6 +313,7 @@ class RtmService {
     Map<String, dynamic>? videoStream,
     int? defaultAudioStreamIndex,
     String? serverId,
+    bool? paused,
   }) async {
     if (!_backend.isReady) return;
 
@@ -326,6 +340,8 @@ class RtmService {
       if (videoStream != null) 'videoStream': videoStream,
       if (defaultAudioStreamIndex != null)
         'defaultAudioStreamIndex': defaultAudioStreamIndex,
+      // 632：roomInfo 也可能单独触发起播，带上暂停状态保证一致。
+      if (paused != null) 'paused': paused,
     };
 
     try {

@@ -1015,6 +1015,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String? _rtmAppId;
   String? _hostUserId;
 
+  /// 633：房主离线**延迟复核**定时器。
+  ///
+  /// RTM 网络抖动会短暂上报 `remoteTimeout`（房主其实还在），旧实现直接
+  /// 弹「房间已解散」并在 1.5s 后 `popUntil` 弹回首页 → 真机「鸿蒙加入
+  /// 房间几秒后自动退出」。三端（安卓/Windows/鸿蒙）共用同一判定逻辑。
+  Timer? _hostOfflineTimer;
+
   double _volume = kPlayerDefaultVolume * 100;
   double _brightness = kPlayerDefaultBrightness;
   final ValueNotifier<double> _brightnessNotifier =
@@ -1327,6 +1334,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // 房间解散检测
   bool _hasReceivedRoomInfo = false;
   Timer? _roomInfoTimeout;
+
+  // 632：观众进房后主动拉 roomInfo 的退避重试。
+  //
+  // 旧实现只有 `_streamRequestTimer`，而它只在 `_applyStreamsFromRoomInfo`
+  // 末尾启动——即「必须先收到 roomInfo 才会重请求」→ 首次丢失就永久等待
+  // → 10 秒后误判房间已解散、资源列表永远为空。
+  Timer? _roomInfoRequestTimer;
+  int _roomInfoRequestAttempts = 0;
 
   // 观众侧流为空时的退避重试（修「菜单全空」）：流晚到时主动再要 roomInfo
   Timer? _streamRequestTimer;
@@ -4974,17 +4989,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 观众：检测频道内是否有人（房主是否在线）
     if (!_isHost) {
       final onlineCount = await rtmService.getOnlineUserCount(_rtmChannel!);
-      _logSyncEvent('频道在线人数: $onlineCount');
-      if (onlineCount == 0) {
-        _logSyncEvent('频道无人在线，房间已解散');
-        _showRoomDestroyedDialog();
-        return;
-      }
-      // 启动 roomInfo 等待超时（10 秒）
+      // 632：**不能**用 whoNow 返回 0 判定房间已解散。
+      //
+      // 刚 subscribe 时 presence 尚未同步，whoNow 返回 0 是常态
+      // （鸿蒙 NAPI 直连订阅返回极快，更容易踩中）。旧实现在这里直接
+      // `_showRoomDestroyedDialog()` → 真机「中途进房立刻弹房间已解散」。
+      // 解散判定统一交给 roomInfo 超时（且有主动重请求兜底）。
+      _logSyncEvent('频道在线人数: $onlineCount（presence 可能未同步，仅参考）');
+
+      // 632：主动请求 roomInfo，不依赖房主是否收到 join。
+      _startRoomInfoRequestRetry();
+
+      // roomInfo 等待超时（632：10s → 20s，覆盖 1+2+4+8=15s 的退避周期）
       _roomInfoTimeout?.cancel();
-      _roomInfoTimeout = Timer(const Duration(seconds: 10), () {
+      _roomInfoTimeout = Timer(const Duration(seconds: 20), () {
         if (mounted && !_hasReceivedRoomInfo) {
-          _logSyncEvent('等待 roomInfo 超时，房间可能已解散');
+          _logSyncEvent('等待 roomInfo 超时（已重试 $_roomInfoRequestAttempts 次），房间可能已解散');
           _showRoomDestroyedDialog();
         }
       });
@@ -5049,9 +5069,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 token: _currentToken,
                 subtitleStreams:
                     _embySubtitleStreams.map((s) => s.toJson()).toList(),
-                audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
+                audioStreams:
+                    _embyAudioStreams.map((s) => s.toJson()).toList(),
                 videoStream: _embyVideoStream?.toJson(),
                 defaultAudioStreamIndex: _embyDefaultAudioIndex,
+                // 632：把房主当前播放/暂停状态一起下发，
+                // 避免「房主暂停时中途进房的观众自顾自开始播放」。
+                paused: _player.state != AdapterPlaybackState.playing,
               );
             }
           }
@@ -5103,11 +5127,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (mounted && !_isHost && _hostUserId != null) {
         final type = event['type'];
         final publisher = event['publisher'] as String?;
-        if (publisher == _hostUserId &&
-            (type == RtmPresenceEventType.remoteLeaveChannel ||
-                type == RtmPresenceEventType.remoteTimeout)) {
-          _showRoomDestroyedDialog();
-          return;
+        if (publisher == _hostUserId) {
+          if (type == RtmPresenceEventType.remoteLeaveChannel ||
+              type == RtmPresenceEventType.remoteTimeout) {
+            // 633：**不立即判解散**。RTM 网络抖动会短暂报 timeout/leave
+            //（房主其实还在线），旧实现直接弹框 + 1.5s 后 popUntil →
+            // 真机「加入房间几秒后自动退出」。改为延迟复核，见
+            // [_scheduleHostOfflineCheck]。
+            _scheduleHostOfflineCheck();
+            return;
+          }
+          if (type == RtmPresenceEventType.remoteJoinChannel) {
+            // 房主回来了：取消待执行的退出。
+            _cancelHostOfflineCheck();
+          }
         }
       }
       if (mounted) {
@@ -5174,16 +5207,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _handleHeartbeat(Map<String, dynamic> message) {
     if (_isHost) return;
-    if (_syncPaused) return;
-    if (_isSyncing) return;
-    // fvp: 检查是否在缓冲中
-    if (_player.mediaStatus.test(AdapterMediaStatus.buffering)) return;
-    if (_player.mediaStatus.test(AdapterMediaStatus.seeking)) return;
 
     final position = (message['position'] as num?)?.toDouble() ?? 0.0;
     final playing = message['playing'] as bool? ?? false;
     final rate = (message['rate'] as num?)?.toDouble() ?? 1.0;
     final timestamp = message['ts'] as int? ?? 0;
+
+    // 632：播放/暂停状态**必须始终应用**。
+    //
+    // 旧实现把 `if (_syncPaused) return;` 放在最前面，导致刚收到 pause
+    // 命令的 3 秒窗口内，心跳里的 `playing: false` 被整体丢弃；若 pause
+    // 命令本身丢失，观众就永远停在播放态。状态同步优先级高于位置校正，
+    // 因此提到所有守卫之前。
+    if (playing && _player.state != AdapterPlaybackState.playing) {
+      _player.state = AdapterPlaybackState.playing;
+      _syncPlayState();
+    } else if (!playing && _player.state == AdapterPlaybackState.playing) {
+      _player.state = AdapterPlaybackState.paused;
+      _syncPlayState();
+    }
+
+    // 以下位置校正仍受保护：刚收到命令、正在同步、缓冲中、seek 中。
+    if (_syncPaused) return;
+    if (_isSyncing) return;
+    // fvp: 检查是否在缓冲中
+    if (_player.mediaStatus.test(AdapterMediaStatus.buffering)) return;
+    if (_player.mediaStatus.test(AdapterMediaStatus.seeking)) return;
 
     // 用时钟校准把房主时间戳换算到本机时钟，再算流逝时间；未校准时
     // 回退旧行为（两机假设同钟，等效 offset=0）。
@@ -5213,15 +5262,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       try {
         _player.seek(positionMs: (expectedPos * 1000).toInt());
       } catch (_) {}
-    }
-
-    // 主持人控制播放/暂停状态
-    if (playing && _player.state != AdapterPlaybackState.playing) {
-      _player.state = AdapterPlaybackState.playing;
-      _syncPlayState();
-    } else if (!playing && _player.state == AdapterPlaybackState.playing) {
-      _player.state = AdapterPlaybackState.paused;
-      _syncPlayState();
     }
   }
 
@@ -5277,8 +5317,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               token: token ?? '',
               position: position,
               epIndex: epIndex);
+          // 632：房主暂停时中途进房 → 起播后立即回到暂停态，
+          // 否则观众会自顾自播放（与房主状态不一致）。
+          if (message['paused'] == true) {
+            _pauseAfterAudienceStart();
+          }
         } else if (playUrl != null && playUrl.isNotEmpty) {
           _logSyncEvent('syncPlay 同 URL 已就绪，跳过重复起播');
+          // 632：同 URL 不重复起播，但暂停状态仍需对齐。
+          if (message['paused'] == true) {
+            _pauseAfterAudienceStart();
+          }
         }
         break;
       case AppConstants.actionRemoveEpisode:
@@ -5324,6 +5373,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             audioStreams: _embyAudioStreams.map((s) => s.toJson()).toList(),
             videoStream: _embyVideoStream?.toJson(),
             defaultAudioStreamIndex: _embyDefaultAudioIndex,
+            // 632：带上房主当前播放/暂停状态，观众起播后据此对齐。
+            paused: _player.state != AdapterPlaybackState.playing,
           );
     } catch (e) {
       LogService().log('Room', '_broadcastRoomInfo 失败: $e');
@@ -5335,13 +5386,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _handleRoomInfo(Map<String, dynamic> message) {
     if (_isHost) return;
 
-    // 收到 roomInfo，取消超时
+    // 收到 roomInfo，取消超时与主动重请求
     _hasReceivedRoomInfo = true;
     _roomInfoTimeout?.cancel();
+    // 632：roomInfo 已到，停止主动重请求（否则会一直发到 6 次上限）。
+    _stopRoomInfoRequestRetry();
 
     // 记录房主 userId（用于 Presence 检测房主离线）
+    //
+    // 633：排除「空串」与「自己」——roomInfo 的 `userId` 是发送方 id，
+    // 若异常拿到自己的 id，会导致 Presence 把自己的 leave 当成房主离线，
+    // 进而误判解散。
     final hostId = message['userId'] as String?;
-    if (hostId != null && hostId.isNotEmpty) {
+    if (hostId != null && hostId.isNotEmpty && hostId != _myUserId) {
       _hostUserId = hostId;
     }
 
@@ -5368,6 +5425,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           inFlightPlayUrl: _inFlightPlayUrl,
         )) {
       _playFromUrl(playUrl: playUrl, token: token ?? '');
+      // 632：房主暂停时中途进房 → 起播后立即回到暂停态。
+      if (message['paused'] == true) {
+        _pauseAfterAudienceStart();
+      }
+    } else if (playUrl != null && playUrl.isNotEmpty) {
+      // 632：同 URL 不重复起播，但暂停状态仍需对齐。
+      if (message['paused'] == true) {
+        _pauseAfterAudienceStart();
+      }
     }
   }
 
@@ -5475,6 +5541,52 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _scheduleStreamRetry();
   }
 
+  /// 632：观众进房后**主动**拉 roomInfo，指数退避直到收到。
+  ///
+  /// 旧实现只有 [_scheduleStreamRetry]，而它挂在 `_applyStreamsFromRoomInfo`
+  /// 末尾——即「必须先收到 roomInfo 才会重请求」，首次丢失就永久等待，
+  /// 10 秒后误判房间解散、资源列表永远为空。
+  ///
+  /// 退避节奏 1/2/4/8/16 秒（最多 6 次，共约 31 秒），收到即停。
+  void _startRoomInfoRequestRetry() {
+    _roomInfoRequestTimer?.cancel();
+    _roomInfoRequestAttempts = 0;
+    void tick() {
+      if (!mounted || _hasReceivedRoomInfo) return;
+      if (_roomInfoRequestAttempts >= 6) return;
+      final delaySec = 1 << _roomInfoRequestAttempts.clamp(0, 4);
+      _roomInfoRequestAttempts++;
+      _roomInfoRequestTimer = Timer(Duration(seconds: delaySec), () {
+        if (!mounted || _hasReceivedRoomInfo) return;
+        _logSyncEvent('主动请求 roomInfo (#$_roomInfoRequestAttempts)');
+        ref.read(rtmServiceProvider).sendRequestRoomInfo();
+        tick();
+      });
+    }
+
+    tick();
+  }
+
+  void _stopRoomInfoRequestRetry() {
+    _roomInfoRequestTimer?.cancel();
+    _roomInfoRequestTimer = null;
+    _roomInfoRequestAttempts = 0;
+  }
+
+  /// 632：房主处于暂停态时，观众起播后立即回到暂停。
+  ///
+  /// 为什么延迟 300ms：`_playFromUrl` 内部要 await `prepare()` + 纹理就绪，
+  /// 期间会把 state 置为 playing；等它落定后再改，否则会被覆盖回去。
+  void _pauseAfterAudienceStart() {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      if (_player.state != AdapterPlaybackState.playing) return;
+      _player.state = AdapterPlaybackState.paused;
+      _syncPlayState();
+      _logSyncEvent('房主处于暂停态，观众已同步暂停');
+    });
+  }
+
   /// 观众侧字幕/音轨都为空时，按退避（2/4/8/16s，最多 6 次）重请求 roomInfo。
   void _scheduleStreamRetry() {
     if (_isHost) return;
@@ -5500,9 +5612,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _streamRequestAttempts = 0;
   }
 
+  /// 633：房主离线**延迟复核**，避免 RTM 网络抖动误判解散。
+  ///
+  /// 真机回归：鸿蒙观众进房后几秒被弹回首页（播报已显示进房成功）。
+  /// 根因是 632 修好消息层后 `_hostUserId` 首次被真正赋值，Presence 的
+  /// leave/timeout 判定随之生效，而网络抖动会短暂误报。
+  ///
+  /// 复核策略：3 秒后查 `whoNow`，能查到 ≥2 人（房主 + 自己）即视为抖动，
+  /// 忽略本次事件；否则确认离线才弹解散框。
+  ///
+  /// 注意：该逻辑位于**共享 Dart 层**，安卓 / Windows / 鸿蒙三端同时生效
+  ///（三者的 `withPresence` 均为 true，判定链路完全同构）。
+  void _scheduleHostOfflineCheck() {
+    _hostOfflineTimer?.cancel();
+    _hostOfflineTimer = Timer(const Duration(seconds: 3), () async {
+      _hostOfflineTimer = null;
+      if (!mounted || _rtmChannel == null) return;
+      final count = await ref
+          .read(rtmServiceProvider)
+          .getOnlineUserCount(_rtmChannel!);
+      if (!mounted) return;
+      if (count >= 2) {
+        _logSyncEvent('房主离线事件为抖动（在线 $count 人），忽略');
+        return;
+      }
+      _logSyncEvent('房主确认离线（在线 $count 人），房间解散');
+      _showRoomDestroyedDialog();
+    });
+  }
+
+  void _cancelHostOfflineCheck() {
+    if (_hostOfflineTimer == null) return;
+    _hostOfflineTimer!.cancel();
+    _hostOfflineTimer = null;
+    _logSyncEvent('房主已重新上线，取消解散判定');
+  }
+
+  /// 静默取消（进入解散流程 / dispose 时用，不打印「房主重新上线」）。
+  void _clearHostOfflineCheck() {
+    _hostOfflineTimer?.cancel();
+    _hostOfflineTimer = null;
+  }
+
   void _showRoomDestroyedDialog() {
     _heartbeatTimer?.cancel();
     _stopClockSync();
+    // 633：进入解散流程后取消待复核，避免重复触发。
+    _clearHostOfflineCheck();
     _player.state = AdapterPlaybackState.stopped;
     _syncPlayState();
     if (_rtmChannel != null) {
@@ -5589,12 +5745,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _heartbeatTimer = Timer.periodic(
       const Duration(milliseconds: AppConstants.rtmHeartbeatIntervalMs),
       (_) {
-        if (!mounted || _player.state != AdapterPlaybackState.playing) return;
+        if (!mounted) return;
+        // 632：暂停也要发心跳。
+        //
+        // 旧实现 `if (_player.state != AdapterPlaybackState.playing) return;`
+        // 让房主一暂停就彻底停发心跳 → 观众再也收不到 `playing: false`
+        // → 永远不知道房主已暂停（真机回归「房主暂停，鸿蒙观众没暂停」）。
+        // 暂停时 position 不再推进，心跳用真实 playing 字段携带状态即可。
+        final playing = _player.state == AdapterPlaybackState.playing;
         final rtmService = ref.read(rtmServiceProvider);
         rtmService.sendHeartbeat(
           position: _player.position / 1000.0,
-          playing: _player.state == AdapterPlaybackState.playing,
-          rate: _player.playbackRate,
+          playing: playing,
+          // 暂停时倍速无意义，传 1.0 避免观众按暂停前的倍速外推位置。
+          rate: playing ? _player.playbackRate : 1.0,
         );
       },
     );
@@ -7520,6 +7684,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _gestureHintTimer?.cancel();
     _gestureBarTimer?.cancel();
     _roomInfoTimeout?.cancel();
+    _stopRoomInfoRequestRetry();
+    _clearHostOfflineCheck();
     _stopStreamRetry();
     _countRetryScheduler.cancel();
     _rtmSubscription?.cancel();
