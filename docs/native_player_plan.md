@@ -2052,6 +2052,54 @@ await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
   拒绝 + 8 类放行、安卓三处按钮守卫、进度条回弹、资源行守卫、
   观众隐藏、指示器视频区定位、手势权限、鸿蒙进度条与显隐）。
 
+### Phase 2.42：鸿蒙画布自适应 + 手势指示器/柱条对齐 Flutter（1.5.43+623）
+
+> 起因：用户「鸿蒙开房间资源面板未隐藏时画布铺满拉伸了，应该是自适应
+>（上下有黑边）才对，当隐藏资源面板再显示资源面板后画布又正常自适应了；
+> 前一轮改的手势图标还是没变化，播放/暂停的手势图标不在视频画布中心，
+> 音量和亮度的手势进度滑杆也不在画布左右两侧，而且滑杆样式不对，应该
+> 和 flutter 的一样」。
+
+#### 一、画布拉伸（核心）
+
+- [x] **根因**：`XComponent.onAreaChange` 在「房间面板**初始就展开**」
+  场景可能**早于 Flex 布局完成**（拿到全屏尺寸）→ mpv 按全屏画布合成
+  → 画面被拉伸铺满。「隐藏再显示面板」时尺寸**二次变化**、
+  `onAreaChange` 正确触发 → 正常自适应。
+  **兜底缺失**：`tick()`（250ms）里有 `updateControlsSplit()` 兜底，
+  但**没有 surface 尺寸兜底**。
+- [x] **修法**：
+  1. 新增 `xcWidth`/`xcHeight` 缓存 `onAreaChange` 实测值（vp）；
+  2. 新增 `syncSurfaceSize()`：每 tick 把实测值（vp → px）同步给 mpv，
+     尺寸未变直接返回（`handleSurfaceChanged` 内部也有
+     `prevW !== width` 幂等保护，**双保险**）；
+  3. `tick()` 里与 `updateControlsSplit()` 并列调用。
+
+#### 二、手势提示在视频区居中（三处）
+
+- [x] `gestureHint`（双击播放/暂停图标 + 横拖 seek 预览）与长按倍速胶囊
+  的容器从 `width('100%') + height('100%')`（**全屏**）改为
+  `videoW`/`videoH`（**视频区**）。分栏时不再落到资源面板区域。
+
+#### 三、音量/亮度柱条完整复刻 Flutter
+
+- [x] **旧实现**：单个 `Text("45%")`（48 宽灰底），位置贴边 16vp。
+- [x] **新实现**（逐项对齐 Flutter `_buildVerticalBar`）：
+  - 竖条本体：**36 宽** · 圆角 **18** · 黑54 底（`#8C000000`）；
+  - 三段结构：图标 18（white70）→ 竖排滑杆（`rotate(-90)`，轨道白24%
+    + 已填充段 accent + 滑块 12/圆角6）→ 数值 11（white70，**无 % 号**）；
+  - 配色：**音量 `#6366F1`（靛蓝）/ 亮度 `#FFD54F`（琥珀）**；
+  - 音量图标随百分比切换（`volumeGlyphFor`：0 → off、<50 → down、
+    其余 → up）；
+  - 定位：容器取视频区尺寸，左右 `20`（音量左/亮度右），上下留白
+    `videoH * 0.15`（Flutter 是屏高 15%，这里按视频区高算，分栏后仍在
+    画布内）。
+- [x] 测试：新增 `ohos_canvas_and_gesture_test.dart` 11 项（缓存字段、
+  tick 兜底、幂等短路、vp→px 换算、三处手势提示视频区、竖条 36/18/黑54、
+  三段结构、图标切换、配色、15% 定位）。
+- [x] 顺带修正 `ohos_rotation_no_black_test` 的一条旧断言（`videoW` 现在
+  被手势提示/竖条容器**合法使用**，只断言 `VideoStack` 内不用显式宽度）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

@@ -392,6 +392,20 @@ export struct HimiNativePlayerView {
   @State videoH: number = 0;
 
   /**
+   * XComponent 实测尺寸（vp）——`onAreaChange` 缓存，供 tick 兜底同步。
+   *
+   * 【623 真机回归：鸿蒙房间面板初始展开时画布拉伸】`XComponent` 的
+   * `onAreaChange` 在「面板初始就展开」场景可能**早于 Flex 布局完成**
+   * （拿到全屏尺寸）→ mpv 按全屏画布合成 → 画面被拉伸铺满。
+   * 「隐藏再显示面板」时尺寸二次变化、onAreaChange 正确触发 → 正常。
+   *
+   * 修法：缓存实测值，`tick()` 每 250ms 纠一次（`handleSurfaceChanged`
+   * 内部有 `prevW !== width` 幂等保护，重复调用无副作用）。
+   */
+  private xcWidth: number = 0;
+  private xcHeight: number = 0;
+
+  /**
    * 资源行播放/暂停图标重建纪元（600，**必须 @State**）。
    *
    * 【真机回归：资源列表前的播放/暂停图标状态不变化】`RoomEpisodeRow` 读
@@ -674,6 +688,8 @@ export struct HimiNativePlayerView {
     this.adjustBottomScale();
     // 600：分栏收窄兜底（onAreaChange 在面板开关时不触发）。
     this.updateControlsSplit();
+    // 623：画布尺寸兜底同步（面板初始展开时 onAreaChange 可能拿到全屏值）。
+    this.syncSurfaceSize();
     this.renderTick = this.renderTick + 1;
     this.refreshControlsEpoch();
   }
@@ -736,6 +752,33 @@ export struct HimiNativePlayerView {
       this.videoW = 0;
       this.videoH = 0;
     }
+  }
+
+  /**
+   * 623：画布尺寸兜底同步。
+   *
+   * 把 `XComponent` 最新实测尺寸（vp → px）同步给 mpv；尺寸未变时直接
+   * 返回（`handleSurfaceChanged` 内部也有幂等保护，双重保险）。
+   *
+   * 为什么需要：`onAreaChange` 在「房间面板初始就展开」场景可能早于
+   * Flex 布局完成 → 拿到全屏尺寸 → mpv 按错误画布合成 → 画面拉伸。
+   */
+  private syncSurfaceSize(): void {
+    const wVp = this.xcWidth;
+    const hVp = this.xcHeight;
+    if (wVp <= 0 || hVp <= 0) {
+      return;
+    }
+    const host = HimiMpvNativeHost.getInstance();
+    const wPx = Math.trunc(this.getUIContext().vp2px(wVp));
+    const hPx = Math.trunc(this.getUIContext().vp2px(hVp));
+    if (wPx <= 0 || hPx <= 0) {
+      return;
+    }
+    if (wPx === host.canvasWidth && hPx === host.canvasHeight) {
+      return; // 尺寸未变：跳过（避免每 tick 重复 setProperty）
+    }
+    host.surfaceChanged('', wPx, hPx);
   }
 
   private pokeAutoHide(): void {
@@ -1103,6 +1146,19 @@ export struct HimiNativePlayerView {
 
   private backGlyph(): string {
     return String.fromCodePoint(0xE092);
+  }
+
+  /**
+   * 音量图标码位（对齐 Flutter `_buildVolumeBar`）：
+   * 0 → off、<50 → down、其余 → up。
+   */
+  private volumeGlyphFor(percent: number): number {
+    if (percent <= 0) {
+      return NativePlayerIcons.ICON_VOLUME_OFF;
+    }
+    return percent < 50
+      ? NativePlayerIcons.ICON_VOLUME_DOWN
+      : NativePlayerIcons.ICON_VOLUME_UP;
   }
 
   private speedGlyph(): string {
@@ -1769,6 +1825,9 @@ export struct HimiNativePlayerView {
           if (wPx <= 0 || hPx <= 0) {
             return;
           }
+          // 623：缓存实测值，供 tick 兜底同步（见 xcWidth 注释）。
+          this.xcWidth = wVp;
+          this.xcHeight = hVp;
           hilog.info(DOMAIN, TAG,
             'area: %{public}dvp x %{public}dvp -> %{public}dpx x %{public}dpx',
             wVp, hVp, wPx, hPx);
@@ -2112,8 +2171,10 @@ export struct HimiNativePlayerView {
             .backgroundColor(this.gestureHintIsIcon ? Color.Transparent : '#8C000000')
             .borderRadius(this.gestureHintIsIcon ? 0 : 16);
         }
-        .width('100%')
-        .height('100%')
+        // 623：容器尺寸取**视频区**（旧实现 100%/100% 是全屏 → 分栏时
+        // 提示落到资源面板区域，双击播放/暂停图标不在画布中心）。
+        .width(this.videoW > 0 ? this.videoW : '100%')
+        .height(this.videoH > 0 ? this.videoH : '100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         .hitTestBehavior(HitTestMode.None);
@@ -2142,37 +2203,88 @@ export struct HimiNativePlayerView {
           .backgroundColor('#8C000000')
           .borderRadius(16);
         }
-        .width('100%')
-        .height('100%')
+        // 623：同手势提示，容器取视频区尺寸（画布内居中）。
+        .width(this.videoW > 0 ? this.videoW : '100%')
+        .height(this.videoH > 0 ? this.videoH : '100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         .hitTestBehavior(HitTestMode.None);
       }
 
       if (this.verticalBarPercent >= 0) {
-        // 侧别对齐安卓 paintVerticalBar（Flutter 注释与实现相反、以实现
-        // 为准）：**亮度柱在右、音量柱在左**。用全屏容器定位（align 属性
-        // 在根 Stack 子节点不生效，同手势提示的教训）。
+        // 音量/亮度柱条（623：完整复刻 Flutter `_buildVerticalBar`）。
         //
-        // 622：容器高度改为**视频区高**（`videoH > 0` 时），使竖条在视频
-        // 画布内垂直居中；竖屏分栏时视频区只占上方（屏高 - 资源面板），
-        // 旧实现 `height('100%')` 会落到资源面板区域（真机截图回归）。
+        // 侧别：**音量在左、亮度在右**（对齐 Flutter
+        // `_buildVolumeBar` left:20 / `_buildBrightnessBar` right:20）。
+        //
+        // 竖条本体（对齐 Flutter）：36 宽 · 圆角 18 · 黑54 底 ·
+        // [图标 18 white70] → [竖排滑杆（rotate -90）] → [数值 11 white70]。
+        // 配色：音量 #6366F1（靛蓝）/ 亮度 #FFD54F（琥珀）。
+        //
+        // 定位：外层容器取**视频区**尺寸（`videoH`），上下留白
+        // `videoH * 0.15`（Flutter 是屏高 15%，这里按视频区高算，
+        // 分栏后仍落在画布内）。
         Column() {
-          Text(`${this.verticalBarPercent}%`)
-            .fontSize(12)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(Color.White)
-            .width(48)
-            .height(160)
-            .textAlign(TextAlign.Center)
-            .backgroundColor('#8C000000')
-            .borderRadius(16);
+          Column() {
+            // 图标：音量随百分比切换（off/down/up），亮度固定。
+            Text(String.fromCodePoint(this.verticalBarOnLeft
+              ? NativePlayerIcons.ICON_BRIGHTNESS
+              : this.volumeGlyphFor(this.verticalBarPercent)))
+              .fontFamily(NativePlayerIcons.FONT_FAMILY)
+              .fontSize(18)
+              .fontColor('#B3FFFFFF')
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .margin({ top: 12 });
+
+            // 竖排滑杆：轨道（白24%）+ 已填充段（accent）+ 滑块（白）。
+            // ArkUI 无 RotatedBox，用 `.rotate({ angle: -90 })` 把横向滑杆转竖。
+            Stack({ alignContent: Alignment.Start }) {
+              Row()
+                .width('100%')
+                .height(4)
+                .backgroundColor('#3DFFFFFF')
+                .borderRadius(2);
+              Row()
+                .width(`${this.verticalBarPercent}%`)
+                .height(4)
+                .backgroundColor(this.verticalBarOnLeft ? '#FFD54F' : '#6366F1')
+                .borderRadius(2);
+              // 滑块（对齐 Flutter thumbRadius 6）
+              Row()
+                .width(12)
+                .height(12)
+                .borderRadius(6)
+                .backgroundColor(Color.White)
+                .margin({ left: `calc(${this.verticalBarPercent}% - 6vp)` });
+            }
+            .width('100%')
+            .height(12)
+            .rotate({ angle: -90 })
+            .layoutWeight(1);
+
+            // 数值（Flutter 只显示数字，无 % 号）
+            Text(`${this.verticalBarPercent}`)
+              .fontSize(11)
+              .fontColor('#B3FFFFFF')
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .margin({ bottom: 8 });
+          }
+          .width(36)
+          .backgroundColor('#8C000000')
+          .borderRadius(18);
         }
         .width('100%')
         .height(this.videoH > 0 ? this.videoH : '100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(this.verticalBarOnLeft ? HorizontalAlign.End : HorizontalAlign.Start)
-        .padding({ left: this.verticalBarOnLeft ? 0 : 16, right: this.verticalBarOnLeft ? 16 : 0 })
+        .padding({
+          left: this.verticalBarOnLeft ? 0 : 20,
+          right: this.verticalBarOnLeft ? 20 : 0,
+          top: (this.videoH > 0 ? this.videoH : 400) * 0.15,
+          bottom: (this.videoH > 0 ? this.videoH : 400) * 0.15,
+        })
         .hitTestBehavior(HitTestMode.None);
       }
 

@@ -42,7 +42,12 @@ void main() {
 
     test('VideoStack 用 layoutWeight 弹性（610 起不再是显式尺寸）', () {
       expect(view, contains('.layoutWeight(1);'));
-      expect(view, isNot(contains(".width(this.videoW > 0 ? this.videoW : '100%')")));
+      // 623：`videoW` 仍被**手势提示/竖条容器**合法使用（它们要在视频区内
+      // 定位），故只断言 VideoStack 的 @Builder 体内不用显式宽度。
+      final start = view.indexOf('VideoStack() {');
+      expect(start, greaterThan(0));
+      final body = view.substring(start, start + 4000);
+      expect(body, isNot(contains(".width(this.videoW > 0 ? this.videoW")));
     });
 
     test('不再使用 layoutWeight（视频层已不在弹性布局里）', () {
