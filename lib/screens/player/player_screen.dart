@@ -9612,8 +9612,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildBrightnessBar() {
     return Positioned(
-      top: MediaQuery.of(context).size.height * 0.15,
-      bottom: MediaQuery.of(context).size.height * 0.15,
+      // 624：长度统一为 40%（上下各留 30%；旧值 15% → 70% 偏高）。
+      top: MediaQuery.of(context).size.height * 0.30,
+      bottom: MediaQuery.of(context).size.height * 0.30,
       right: 20,
       child: ValueListenableBuilder<double>(
         valueListenable: _brightnessNotifier,
@@ -9630,8 +9631,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   Widget _buildVolumeBar() {
     return Positioned(
-      top: MediaQuery.of(context).size.height * 0.15,
-      bottom: MediaQuery.of(context).size.height * 0.15,
+      // 624：长度统一为 40%（与亮度条、安卓、鸿蒙一致）。
+      top: MediaQuery.of(context).size.height * 0.30,
+      bottom: MediaQuery.of(context).size.height * 0.30,
       left: 20,
       child: ValueListenableBuilder<double>(
         valueListenable: _volumeNotifier,

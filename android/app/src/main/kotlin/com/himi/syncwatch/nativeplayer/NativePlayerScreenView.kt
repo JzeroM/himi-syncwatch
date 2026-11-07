@@ -678,8 +678,9 @@ class NativePlayerScreenView(
         // 偏下、落在资源面板区域（真机截图回归）。
         //
         // 改 `TOP` + 精确 topMargin = (视频区高 - 指示器高) / 2。
-        // 竖条高度固定 dp(160)（见 addView 处），无需 post 实测。
-        val barH = dp(160)
+        // 624：长度统一为**视频区高 40%**（旧实现固定 dp(160)，与 Flutter
+        // 的 70% 屏高、鸿蒙的 70% 视频区高都不一致）。
+        val barH = (videoAreaHeight() * 0.4f).toInt()
         val videoH = videoAreaHeight()
         val lp = verticalBar.layoutParams as? LayoutParams
         if (lp != null) {
@@ -1110,7 +1111,12 @@ class NativePlayerScreenView(
         addView(
             verticalBar,
             // 622：初始也用 TOP（运行时由 paintVerticalBar 按视频区高重算）。
-            lp(dp(NPTheme.GAUGE_WIDTH), dp(160), Gravity.END or Gravity.TOP),
+            // 624：初始高度同步改 40%（避免首帧跳动）。
+            lp(
+                dp(NPTheme.GAUGE_WIDTH),
+                (videoAreaHeight() * 0.4f).toInt(),
+                Gravity.END or Gravity.TOP,
+            ),
         )
 
         // 面板层（二级浮层）：透明遮罩 + 右侧玻璃浮层 + 解码 popover + 片头片尾卡。

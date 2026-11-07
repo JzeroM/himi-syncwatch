@@ -92,24 +92,24 @@ void main() {
     test('竖条本体 36 宽 / 圆角 18 / 黑54 底', () {
       final idx = ohos.indexOf('if (this.verticalBarPercent >= 0) {');
       expect(idx, greaterThan(0));
-      final body = ohos.substring(idx, idx + 3000);
+      final body = ohos.substring(idx, idx + 5000);
       expect(body, contains('.width(36)'));
       expect(body, contains('.borderRadius(18)'));
       expect(body, contains("'#8C000000'")); // black54
     });
 
-    test('三段结构：图标 + 竖排滑杆 + 数值', () {
+    test('三段结构：图标 + 轨道 + 数值', () {
       final idx = ohos.indexOf('if (this.verticalBarPercent >= 0) {');
-      final body = ohos.substring(idx, idx + 3000);
+      final body = ohos.substring(idx, idx + 5000);
       // 图标（18px white70）
       expect(body, contains('.fontSize(18)'));
       expect(body, contains("'#B3FFFFFF'"));
-      // 竖排滑杆（rotate -90）
-      expect(body, contains('.rotate({ angle: -90 })'));
+      // 轨道区（624：改为垂直 Stack + onAreaChange 实测，不再用 rotate）
+      expect(body, contains('Stack({ alignContent: Alignment.Top })'));
+      expect(body, contains('.onAreaChange('));
       // 数值（11px，无 % 号）
       expect(body, contains('.fontSize(11)'));
       expect(body, contains('Text(`\${this.verticalBarPercent}`)'));
-      // 旧实现是「48 宽 + 单个 Text 显示百分比」，现已拆成三段。
       expect(body, isNot(contains('.width(48)')));
       expect(body, isNot(contains('Text(`\${this.verticalBarPercent}%`)')));
     });
@@ -129,13 +129,15 @@ void main() {
       expect(body, contains("'#FFD54F'")); // 亮度
     });
 
-    test('定位：视频区两侧 + 上下 15%', () {
+    test('定位：视频区两侧 + 上下 30%（长度 40%，624 统一）', () {
       final idx = ohos.indexOf('if (this.verticalBarPercent >= 0) {');
-      final body = ohos.substring(idx, idx + 3000);
+      final body = ohos.substring(idx, idx + 5000);
       expect(body, contains('left: this.verticalBarOnLeft ? 0 : 20'));
       expect(body, contains('right: this.verticalBarOnLeft ? 20 : 0'));
-      expect(body, contains('* 0.15'));
+      expect(body, contains('* 0.30'));
       expect(body, contains('.height(this.videoH > 0 ? this.videoH'));
+      // 624：宽度也取视频区（旧实现 '100%' → 亮度条落到资源面板上）。
+      expect(body, contains('.width(this.videoW > 0 ? this.videoW'));
     });
   });
 }

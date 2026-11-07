@@ -140,7 +140,9 @@ internal class VerticalGaugeView(context: Context) : View(context) {
 
         // 底部百分比
         val textY = h - dp(NPTheme.GAUGE_BOTTOM_PAD).toFloat()
-        canvas.drawText("${percentOf(value)}%", cx, textY, percentPaint)
+        // 624：三端统一为**纯数字**（无 % 号），对齐 Flutter
+        // `Text('${(value * 100).round()}')`。
+        canvas.drawText("${percentOf(value)}", cx, textY, percentPaint)
     }
 
     private fun dp(v: Int): Int =

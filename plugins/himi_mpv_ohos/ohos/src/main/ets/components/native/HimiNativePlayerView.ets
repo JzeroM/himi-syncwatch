@@ -475,6 +475,15 @@ export struct HimiNativePlayerView {
   @State verticalBarPercent: number = -1;
   /** 柱条贴哪边（true = 左侧亮度）。 */
   @State verticalBarOnLeft: boolean = false;
+  /**
+   * 柱条轨道实测高度（vp）——624。
+   *
+   * ArkUI **不支持 `calc()`**，旧实现用
+   * `margin({ left: \`calc(${percent}% - 6vp)\` })` 定位滑块 → 位置无效
+   * （真机滑块跑到轨道外）。改为 `onAreaChange` 拿实测高度、按
+   * `ratio * h` 算 `margin.top`（与安卓 `VerticalGaugeView` 自绘同精度）。
+   */
+  @State gaugeTrackH: number = 0;
   /** 长按临时倍速是否激活中。 */
   @State speedBoostActive: boolean = false;
 
@@ -779,6 +788,23 @@ export struct HimiNativePlayerView {
       return; // 尺寸未变：跳过（避免每 tick 重复 setProperty）
     }
     host.surfaceChanged('', wPx, hPx);
+  }
+
+  /**
+   * 624：柱条滑块/光晕的 `margin.top`（vp）。
+   *
+   * 轨道从底部往上填充（值越大越高），故 top = (1 - ratio) * 轨道高 - 半径，
+   * 使圆点中心落在填充顶端。轨道高由 `onAreaChange` 实测（ArkUI 无 calc）。
+   *
+   * @param radius 光晕 10 / 拇指 6
+   */
+  private gaugeThumbTop(radius: number): number {
+    const h = this.gaugeTrackH;
+    if (h <= 0) {
+      return 0;
+    }
+    const ratio = Math.max(0, Math.min(1, this.verticalBarPercent / 100));
+    return Math.max(0, (1 - ratio) * h - radius);
   }
 
   private pokeAutoHide(): void {
@@ -2046,9 +2072,9 @@ export struct HimiNativePlayerView {
             .height(36)
             .color('#6366F1');
         }
-        .width('100%')
-        // 622：高度改**视频区高**（`videoH > 0` 时）→ 转圈在视频画布内
-        // 居中；竖屏分栏时旧 `height('100%')` 会落到资源面板区域。
+        // 624：宽高**都**取视频区（622 只改了高度 → 横屏分栏时宽度仍是
+        // 全屏，水平居中偏右、转圈落到资源面板区域）。
+        .width(this.videoW > 0 ? this.videoW : '100%')
         .height(this.videoH > 0 ? this.videoH : '100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
@@ -2212,18 +2238,20 @@ export struct HimiNativePlayerView {
       }
 
       if (this.verticalBarPercent >= 0) {
-        // 音量/亮度柱条（623：完整复刻 Flutter `_buildVerticalBar`）。
+        // 音量/亮度柱条（624：三端样式统一 + 长度 40%）。
         //
-        // 侧别：**音量在左、亮度在右**（对齐 Flutter
-        // `_buildVolumeBar` left:20 / `_buildBrightnessBar` right:20）。
+        // 参数逐项对齐 Flutter `_buildVerticalBar` / 安卓
+        // `VerticalGaugeView`：
+        //   宽 36 · 圆角 18 · 黑54 底
+        //   [图标 18 white70，上边距 12]
+        //   [间距 8]
+        //   [轨道：粗 4 白24% + 填充 accent + 光晕 r10 alpha0x40 + 拇指 r6 白]
+        //   [间距 8]
+        //   [数值 11 white70，纯数字无 % 号]
         //
-        // 竖条本体（对齐 Flutter）：36 宽 · 圆角 18 · 黑54 底 ·
-        // [图标 18 white70] → [竖排滑杆（rotate -90）] → [数值 11 white70]。
-        // 配色：音量 #6366F1（靛蓝）/ 亮度 #FFD54F（琥珀）。
-        //
-        // 定位：外层容器取**视频区**尺寸（`videoH`），上下留白
-        // `videoH * 0.15`（Flutter 是屏高 15%，这里按视频区高算，
-        // 分栏后仍落在画布内）。
+        // 位置：容器取**视频区**尺寸（624 修：旧实现 `width('100%')` 是
+        // 全屏 → 亮度条贴全屏右缘、落到资源面板上）。
+        // 长度：上下各留 30% → 柱条高 40%（用户要求「缩短点」）。
         Column() {
           Column() {
             // 图标：音量随百分比切换（off/down/up），亮度固定。
@@ -2237,31 +2265,51 @@ export struct HimiNativePlayerView {
               .textAlign(TextAlign.Center)
               .margin({ top: 12 });
 
-            // 竖排滑杆：轨道（白24%）+ 已填充段（accent）+ 滑块（白）。
-            // ArkUI 无 RotatedBox，用 `.rotate({ angle: -90 })` 把横向滑杆转竖。
-            Stack({ alignContent: Alignment.Start }) {
+            // 轨道区（图标下间距 8 → 数值上间距 8）
+            Stack({ alignContent: Alignment.Top }) {
+              // 未填充整段（白24%，粗 4）
               Row()
-                .width('100%')
-                .height(4)
+                .width(4)
+                .height('100%')
                 .backgroundColor('#3DFFFFFF')
                 .borderRadius(2);
+              // 已填充段（从**底部**往上 = 值越大越高，与安卓同向）
               Row()
-                .width(`${this.verticalBarPercent}%`)
-                .height(4)
+                .width(4)
+                .height(`${this.verticalBarPercent}%`)
                 .backgroundColor(this.verticalBarOnLeft ? '#FFD54F' : '#6366F1')
-                .borderRadius(2);
-              // 滑块（对齐 Flutter thumbRadius 6）
+                .borderRadius(2)
+                .align(Alignment.Bottom);
+              // 光晕（Flutter overlayRadius:10 / 安卓 GAUGE_OVERLAY=10）
+              Row()
+                .width(20)
+                .height(20)
+                .borderRadius(10)
+                .backgroundColor(this.verticalBarOnLeft ? '#FFD54F' : '#6366F1')
+                .opacity(0.25)
+                .margin({
+                  top: this.gaugeThumbTop(10),
+                });
+              // 拇指（Flutter thumbRadius:6 / 安卓 GAUGE_THUMB=6）
               Row()
                 .width(12)
                 .height(12)
                 .borderRadius(6)
                 .backgroundColor(Color.White)
-                .margin({ left: `calc(${this.verticalBarPercent}% - 6vp)` });
+                .margin({
+                  top: this.gaugeThumbTop(6),
+                });
             }
             .width('100%')
-            .height(12)
-            .rotate({ angle: -90 })
-            .layoutWeight(1);
+            .layoutWeight(1)
+            .margin({ top: 8, bottom: 8 })
+            // 624：实测轨道高度（ArkUI 无 calc()，滑块/光晕位置靠它算准）。
+            .onAreaChange((_old: Area, area: Area): void => {
+              const h = area.height as number;
+              if (h > 0 && h !== this.gaugeTrackH) {
+                this.gaugeTrackH = h;
+              }
+            });
 
             // 数值（Flutter 只显示数字，无 % 号）
             Text(`${this.verticalBarPercent}`)
@@ -2275,15 +2323,16 @@ export struct HimiNativePlayerView {
           .backgroundColor('#8C000000')
           .borderRadius(18);
         }
-        .width('100%')
+        .width(this.videoW > 0 ? this.videoW : '100%')
         .height(this.videoH > 0 ? this.videoH : '100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(this.verticalBarOnLeft ? HorizontalAlign.End : HorizontalAlign.Start)
         .padding({
           left: this.verticalBarOnLeft ? 0 : 20,
           right: this.verticalBarOnLeft ? 20 : 0,
-          top: (this.videoH > 0 ? this.videoH : 400) * 0.15,
-          bottom: (this.videoH > 0 ? this.videoH : 400) * 0.15,
+          // 624：长度 40%（上下各留 30%）。
+          top: (this.videoH > 0 ? this.videoH : 400) * 0.30,
+          bottom: (this.videoH > 0 ? this.videoH : 400) * 0.30,
         })
         .hitTestBehavior(HitTestMode.None);
       }
