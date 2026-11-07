@@ -72,11 +72,12 @@ void main() {
       );
     });
 
-    test('616 起 setClock 收 positionMs + paused（帧驱动）', () {
+    test('618 起 setClock 收四参（位置/冻结三态/倍速/时长）', () {
       final danmaku = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/DanmakuLayerView.kt',
       ).readAsStringSync();
-      expect(danmaku, contains('fun setClock(positionMs: Long, paused: Boolean, speed: Double = 1.0)'));
+      expect(danmaku, contains('durationMs: Long,'));
+      expect(danmaku, contains('snapDurationMs = durationMs'));
     });
   });
 }

@@ -113,8 +113,9 @@ void main() {
       );
     });
 
-    test('注释记录「不同源」根因（616）', () {
-      expect(kotlinScreen, contains('不同源'));
+    test('注释记录 618 根因（两条调用路径 + 无状态纯函数）', () {
+      expect(kotlinScreen, contains('618 真机回归'));
+      expect(kotlinScreen, contains('无状态纯函数'));
     });
 
     test('Flutter 参考实现（_lastPosition + 增量）', () {
@@ -122,11 +123,11 @@ void main() {
       expect(flutter, contains('_lastPosition + (_elapsed - _alignElapsed)'));
     });
 
-    test('弹幕层用 Choreographer 帧时间插值（616）', () {
+    test('弹幕层用无状态纯函数 + Choreographer 帧驱动（618）', () {
       final danmaku = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/DanmakuLayerView.kt',
       ).readAsStringSync();
-      expect(danmaku, contains('anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate'));
+      expect(danmaku, contains('elapsed * snapSpeed'));
       expect(danmaku, contains('Choreographer'));
     });
   });

@@ -1212,6 +1212,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 切音轨后的滤镜延后写入（避免与 aid 重建窗口叠加卡顿，见 _selectEmbyAudio）。
   Timer? _audioFilterDeferTimer;
 
+  /// 切轨窗口标志（618）：mpv 切换 `aid`/`sid` 会重建解码链 + demuxer
+  /// 重对齐；此窗口内若再写属性（字幕样式、音频滤镜等）会**再触发一次
+  /// 重建** → 两次叠加 = 明显卡顿（真机「切轨后画面卡住好久」）。
+  /// 置位期间 [_applySubtitleStyle] 直接跳过，窗口结束后补写一次。
+  bool _trackSwitchInFlight = false;
+
+  /// 切轨窗口定时器（复位 [_trackSwitchInFlight] 并补写样式）。
+  Timer? _trackSwitchTimer;
+
   /// 样式变更 → 落盘的去抖。
   Timer? _subtitleStyleSaveTimer;
 
@@ -10646,8 +10655,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _useServerSubtitleBurnIn = false;
     _activeSubtitleIndex = stream.index;
     _activeLocalSubtitlePath = null;
-    _applySubtitleStyle();
-    // 延迟 ≠0：立即用偏移后的 SRT 替换刚激活的轨
+    // 618：样式写入延后到切轨窗口之后（窗口内写会叠加重建 → 卡顿）。
+    _enterTrackSwitchWindow();
+    // 延迟 ≠0：窗口结束后再用偏移后的 SRT 替换刚激活的轨（避免在
+    // 重建窗口内再触发一次 sub-add）。
     _maybeApplySubtitleDelay();
   }
 
@@ -10658,6 +10669,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 叠加 = 明显卡顿（真机回归：切换音频卡住一下）。安卓 setAudioTrack
     // 只做纯轨切换、不在切轨路径改滤镜，此处对齐：滤镜延后到切轨完成
     //（300ms ≈ mpv 音频链重建窗口）后再按新 codec 落盘。
+    // 618：进入切轨窗口（窗口内抑制字幕样式写入；音频滤镜本就延后 300ms）。
+    _enterTrackSwitchWindow();
     _player.activeAudioTracks = [embyIndex];
     this._audioFilterDeferTimer?.cancel();
     this._audioFilterDeferTimer = Timer(const Duration(milliseconds: 300), () {
@@ -10667,6 +10680,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ? _embyAudioStreams[embyIndex].codec
             : null,
       );
+    });
+  }
+
+  // ========== 切轨窗口（618） ==========
+
+  /// 进入切轨窗口：抑制样式写入，窗口结束后补写一次。
+  ///
+  /// 【618 真机回归：MPV 选字幕/音轨后画面卡住好久】`aid`/`sid` 切换本身
+  /// 要重建解码链 + demuxer 重对齐；紧接着同步写 `sub-scale`/`sub-pos` 或
+  /// 音频滤镜会**再触发一次重建** → 两次叠加 = 明显卡顿。
+  ///
+  /// 音轨侧早有 `_audioFilterDeferTimer`（300ms）先例；字幕侧一直是同步
+  /// 写入，本轮补齐同构保护。
+  ///
+  /// 300ms ≈ mpv 轨道重建窗口（与 `_audioFilterDeferTimer` 取值一致）。
+  void _enterTrackSwitchWindow() {
+    _trackSwitchInFlight = true;
+    _trackSwitchTimer?.cancel();
+    _trackSwitchTimer = Timer(const Duration(milliseconds: 300), () {
+      _trackSwitchInFlight = false;
+      if (!mounted) return;
+      // 窗口结束后补写一次样式（切轨期间被跳过的值在这里落地）。
+      _applySubtitleStyle();
     });
   }
 
@@ -10684,6 +10720,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     )) {
       return;
     }
+    // 618：切轨窗口内不写——mpv 正在重建解码链，此刻写属性会再触发一次
+    // 重建（两次叠加 = 明显卡顿）。窗口结束后 _enterTrackSwitchWindow
+    // 的定时器会补写。
+    if (_trackSwitchInFlight) return;
     if (_currentEngine == PlayerEngine.mpv) {
       _player.setProperty('sub-scale', _subtitleScale.toStringAsFixed(2));
       final pos = (100 - _subtitleMarginY / 4).clamp(0, 150).round();
@@ -10790,6 +10830,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _maybeApplySubtitleDelay({bool immediate = false}) {
     _subtitleDelayReloadTimer?.cancel();
     if (_activeSubtitleIndex == null || _subtitleDelayMs == 0) return;
+    // 618：切轨窗口内不重载——`_reloadSubtitleForDelay` 会重新下载整份
+    // 字幕 + 写临时文件 + `sub-add` 新轨，在 mpv 重建窗口内叠加 = 卡顿。
+    // 窗口结束后再走（`immediate` 也延后到窗口外，语义仍正确）。
+    if (_trackSwitchInFlight) {
+      _subtitleDelayReloadTimer = Timer(
+        const Duration(milliseconds: 300),
+        () => _maybeApplySubtitleDelay(immediate: true),
+      );
+      return;
+    }
     if (immediate) {
       unawaited(_reloadSubtitleForDelay());
     } else {

@@ -71,13 +71,12 @@ void main() {
     });
   });
 
-  group('安卓弹幕：时钟（616 Choreographer 帧驱动 + 平滑收敛）', () {
-    test('帧时间插值（对齐 Flutter Ticker）', () {
-      // 616：位置 = 锚点 + 帧时间增量；快照刷新做平滑收敛（吸收 10%）。
-      expect(kotlinDanmaku,
-          contains('anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate'));
+  group('安卓弹幕：时钟（618 无状态纯函数，对齐鸿蒙）', () {
+    test('位置 = 快照 + 墙钟×倍速', () {
+      // 618：删除 616 的锚点 + 平滑收敛（鸿蒙已证明会「忽快忽慢」）。
+      expect(kotlinDanmaku, contains('elapsed * snapSpeed'));
       expect(kotlinDanmaku, contains('Choreographer'));
-      expect(kotlinDanmaku, contains('anchorPosMs = projected + drift / 10.0'));
+      expect(kotlinDanmaku, isNot(contains('drift / 10')));
     });
   });
 

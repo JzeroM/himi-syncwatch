@@ -332,6 +332,9 @@ class HimiMpvWindowsSession implements MpvSession {
         options: options,
         libass: true,
         logLevel: MPVLogLevel.debug,
+        // 618：同步 FFI（与 MDK `setActiveTracks` 同语义，与安卓同修）——
+        // 属性/命令不再 `await` 异步回调，切轨观感接近 MDK。
+        async: false,
       ),
     );
     _player = player;
@@ -672,10 +675,25 @@ class HimiMpvWindowsSession implements MpvSession {
           .toList(growable: false);
 
   @override
+  /// 选轨直调 `platform` 并跳过 media_kit 的全局锁（618，与安卓同修）。
+  Future<void> _selectTrackNoLock(
+    Future<void> Function(dynamic platform) apply,
+  ) async {
+    final platform = _player?.platform as dynamic;
+    if (platform == null) return;
+    try {
+      await apply(platform);
+    } catch (e) {
+      _log('选轨直调失败: $e');
+    }
+  }
+
   @override
   Future<void> setAudioTrack(int id) async {
     if (id <= 0) {
-      await _player?.setAudioTrack(AudioTrack.no());
+      await _selectTrackNoLock(
+        (p) => p.setAudioTrack(AudioTrack.no(), synchronized: false),
+      );
       return;
     }
     // 617：`id` 可能是真实 mpv track id（映射命中）或 1-based Emby 序号
@@ -683,30 +701,32 @@ class HimiMpvWindowsSession implements MpvSession {
     final real = _realAudioTracks();
     final byTrackId =
         real.where((t) => int.tryParse(t.id) == id).firstOrNull;
-    if (byTrackId != null) {
-      await _player?.setAudioTrack(byTrackId);
-      return;
-    }
-    if (id - 1 < real.length) await _player?.setAudioTrack(real[id - 1]);
+    final track = byTrackId ??
+        (id - 1 < real.length ? real[id - 1] : null);
+    if (track == null) return;
+    await _selectTrackNoLock(
+      (p) => p.setAudioTrack(track, synchronized: false),
+    );
   }
 
   @override
   Future<void> setSubtitleTrack(int id) async {
     if (id <= 0) {
-      await _player?.setSubtitleTrack(SubtitleTrack.no());
+      await _selectTrackNoLock(
+        (p) => p.setSubtitleTrack(SubtitleTrack.no(), synchronized: false),
+      );
       return;
     }
     // 语义同 setAudioTrack：真实 track id 优先、1-based 序号兜底。
     final real = _realSubtitleTracks();
     final byTrackId =
         real.where((t) => int.tryParse(t.id) == id).firstOrNull;
-    if (byTrackId != null) {
-      await _player?.setSubtitleTrack(byTrackId);
-      return;
-    }
-    if (id - 1 < real.length) {
-      await _player?.setSubtitleTrack(real[id - 1]);
-    }
+    final track = byTrackId ??
+        (id - 1 < real.length ? real[id - 1] : null);
+    if (track == null) return;
+    await _selectTrackNoLock(
+      (p) => p.setSubtitleTrack(track, synchronized: false),
+    );
   }
 
   @override

@@ -465,6 +465,12 @@ class HimiMpvAndroidSession implements MpvSession {
         options: options,
         libass: true,
         logLevel: MPVLogLevel.info,
+        // 618：走**同步 FFI**（与 MDK `setActiveTracks` 同语义）——属性写入
+        // 与命令不再 `await` 异步回调，切轨观感接近 MDK（旧行为是
+        // `mpv_set_property_async` + `await completer.future`，每次切轨要
+        // 等 mpv 处理完才返回）。media_kit 默认 `true` 是为 macOS 初始化期
+        // AppKit 重入；Android 无此约束。
+        async: false,
       ),
     );
     _player = player;
@@ -688,11 +694,31 @@ class HimiMpvAndroidSession implements MpvSession {
           .where(_isRealTrack)
           .toList(growable: false);
 
-  @override
+  /// 选轨直调 `platform` 并**跳过 media_kit 的全局锁**（618）。
+  ///
+  /// `Player.setAudioTrack` 内部走 `lock.synchronized(...)`，而该 `lock` 是
+  /// `static final`（**全进程所有 player 操作共用**）——切轨要排在其它
+  /// 播放操作后面。MDK 的 `setActiveTracks` 是同步 FFI、无锁，这正是
+  /// 「MDK 切轨无感、MPV 卡一下」的结构性差异。这里用 `synchronized: false`
+  /// 直调（切轨是单次操作，不存在与自身并发的风险）。
+  Future<void> _selectTrackNoLock(
+    Future<void> Function(dynamic platform) apply,
+  ) async {
+    final platform = _player?.platform as dynamic;
+    if (platform == null) return;
+    try {
+      await apply(platform);
+    } catch (e) {
+      _log('选轨直调失败: $e');
+    }
+  }
+
   @override
   Future<void> setAudioTrack(int id) async {
     if (id <= 0) {
-      await _player?.setAudioTrack(AudioTrack.no());
+      await _selectTrackNoLock(
+        (p) => p.setAudioTrack(AudioTrack.no(), synchronized: false),
+      );
       return;
     }
     // 617：`id` 可能是**真实 mpv track id**（track-list 映射命中）或
@@ -701,32 +727,32 @@ class HimiMpvAndroidSession implements MpvSession {
     final real = _realAudioTracks();
     final byTrackId =
         real.where((t) => int.tryParse(t.id) == id).firstOrNull;
-    if (byTrackId != null) {
-      await _player?.setAudioTrack(byTrackId);
-      return;
-    }
-    if (id - 1 < real.length) {
-      await _player?.setAudioTrack(real[id - 1]);
-    }
+    final track = byTrackId ??
+        (id - 1 < real.length ? real[id - 1] : null);
+    if (track == null) return;
+    await _selectTrackNoLock(
+      (p) => p.setAudioTrack(track, synchronized: false),
+    );
   }
 
   @override
   Future<void> setSubtitleTrack(int id) async {
     if (id <= 0) {
-      await _player?.setSubtitleTrack(SubtitleTrack.no());
+      await _selectTrackNoLock(
+        (p) => p.setSubtitleTrack(SubtitleTrack.no(), synchronized: false),
+      );
       return;
     }
     // 语义同 setAudioTrack：真实 track id 优先、1-based 序号兜底。
     final real = _realSubtitleTracks();
     final byTrackId =
         real.where((t) => int.tryParse(t.id) == id).firstOrNull;
-    if (byTrackId != null) {
-      await _player?.setSubtitleTrack(byTrackId);
-      return;
-    }
-    if (id - 1 < real.length) {
-      await _player?.setSubtitleTrack(real[id - 1]);
-    }
+    final track = byTrackId ??
+        (id - 1 < real.length ? real[id - 1] : null);
+    if (track == null) return;
+    await _selectTrackNoLock(
+      (p) => p.setSubtitleTrack(track, synchronized: false),
+    );
   }
 
   @override

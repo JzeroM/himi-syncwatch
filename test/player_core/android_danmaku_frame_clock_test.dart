@@ -2,7 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 616：安卓弹幕 Choreographer 帧驱动 + 平滑收敛（对齐 Flutter Ticker）。
+/// 618：安卓弹幕重写为**无状态纯函数**（对齐鸿蒙 `positionNowMs()`）。
+///
+/// 【真机回归：616 后弹幕仍然左右跳】616 引入了自维护锚点
+///（`anchorPosMs`/`anchorFrameMs`）+ `drift/10` 平滑收敛——这正是鸿蒙在
+/// 600 轮次**已经删掉**的东西（`DanmakuLayer.ets` 的「非匀速根因」注释：
+/// *旧实现在外推上叠了「漂移 10%/帧牵引」→ 弹幕忽快忽慢*）。
+///
+/// 自维护锚点的致命缺陷：`setClock` 被两条路径调用——
+///   ① Dart 每 200ms 的 `render()`（新快照）；
+///   ② 本地 500ms 的 `applyState()`（**同一份旧快照**）。
+/// 本地 tick 触发时帧时间已推进 ~250ms，`drift` 超过 150ms 阈值 → 重锚
+/// → 位置回退 250ms → 视觉左右跳。
 void main() {
   final danmaku = File(
     'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
@@ -12,24 +23,107 @@ void main() {
     'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
     'NativePlayerScreenView.kt',
   ).readAsStringSync();
-  final flutter = File('lib/screens/player/widgets/danmaku_overlay.dart')
-      .readAsStringSync();
+  final ohos = File(
+    'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+    'DanmakuLayer.ets',
+  ).readAsStringSync();
+  final ohosHost = File(
+    'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+    'HimiMpvNativeHost.ets',
+  ).readAsStringSync();
 
-  group('① Choreographer 帧驱动（等价 Flutter Ticker）', () {
-    test('引入 Choreographer 并维护帧回调', () {
+  /// 提取函数体（配平大括号）。
+  String bodyOf(String src, String signature) {
+    final idx = src.indexOf(signature);
+    expect(idx, greaterThan(0), reason: '未找到 $signature');
+    var depth = 0;
+    var started = false;
+    for (var i = idx; i < src.length; i++) {
+      final ch = src[i];
+      if (ch == '{') {
+        depth++;
+        started = true;
+      } else if (ch == '}') {
+        depth--;
+        if (started && depth == 0) return src.substring(idx, i + 1);
+      }
+    }
+    fail('$signature 的大括号未配平');
+  }
+
+  group('① 位置计算：无状态纯函数（对齐鸿蒙）', () {
+    test('616 的自维护锚点已全部删除（只查代码行，注释可留根因说明）', () {
+      // 剥离注释后再断言——保留注释说明「为什么删」是必要的。
+      final code = danmaku
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .where((l) => !l.trimLeft().startsWith('*'))
+          .join('\n');
+      expect(code, isNot(contains('anchorPosMs')));
+      expect(code, isNot(contains('anchorFrameMs')));
+      expect(code, isNot(contains('SEEK_THRESHOLD_MS')));
+      expect(code, isNot(contains('drift / 10')));
+      expect(code, isNot(contains('frameStartNanos')));
+      expect(code, isNot(contains('playRate')));
+    });
+
+    test('位置 = 快照 + 墙钟×倍速（与鸿蒙 positionNowMs 同构）', () {
+      final body = bodyOf(danmaku, 'private fun currentPositionMs(): Long {');
+      expect(body, contains('snapPosMs'));
+      expect(body, contains('System.currentTimeMillis() - snapAtMs'));
+      expect(body, contains('elapsed * snapSpeed'));
+    });
+
+    test('暂停 / 倍速<=0 时冻结在快照值', () {
+      final body = bodyOf(danmaku, 'private fun currentPositionMs(): Long {');
+      expect(body, contains('if (snapPaused || snapSpeed <= 0.0) return snapPosMs'));
+    });
+
+    test('时长未知（<=0）不外推（同鸿蒙 600 防御）', () {
+      final body = bodyOf(danmaku, 'private fun currentPositionMs(): Long {');
+      expect(body, contains('if (snapDurationMs <= 0) return snapPosMs'));
+    });
+
+    test('钳到时长上限、负数归零', () {
+      final body = bodyOf(danmaku, 'private fun currentPositionMs(): Long {');
+      expect(body, contains('if (projected > snapDurationMs) snapDurationMs'));
+      expect(body, contains('if (capped < 0) 0'));
+    });
+  });
+
+  group('② setClock 幂等（重复调用同一份快照无副作用）', () {
+    test('直接覆盖快照字段，无收敛/无阈值', () {
+      final body = bodyOf(danmaku, 'fun setClock(');
+      expect(body, contains('snapPosMs = positionMs'));
+      expect(body, contains('snapAtMs = System.currentTimeMillis()'));
+      expect(body, contains('snapPaused = paused'));
+      expect(body, contains('snapSpeed = if (speed > 0.0) speed else 1.0'));
+      expect(body, contains('snapDurationMs = durationMs'));
+      // 不得出现任何「漂移吸收」逻辑。
+      expect(body, isNot(contains('drift')));
+      expect(body, isNot(contains('anchor')));
+    });
+
+    test('接收 durationMs 参数（第四参）', () {
+      expect(danmaku, contains('durationMs: Long,'));
+    });
+
+    test('暂停停帧循环、播放启动帧循环', () {
+      final body = bodyOf(danmaku, 'fun setClock(');
+      expect(body, contains('stopFrameLoop()'));
+      expect(body, contains('startFrameLoop()'));
+    });
+  });
+
+  group('③ Choreographer 帧驱动保留（只负责重绘）', () {
+    test('帧回调仍用 Choreographer', () {
       expect(danmaku, contains('import android.view.Choreographer'));
-      expect(danmaku, contains('private var frameCallback: Choreographer.FrameCallback? = null'));
+      expect(
+        danmaku,
+        contains('private var frameCallback: Choreographer.FrameCallback? = null'),
+      );
       expect(danmaku, contains('Choreographer.getInstance().postFrameCallback(cb)'));
       expect(danmaku, contains('Choreographer.getInstance().removeFrameCallback(it)'));
-    });
-
-    test('帧时间基准用单调时钟 nanoTime', () {
-      expect(danmaku, contains('private var frameStartNanos = System.nanoTime()'));
-      expect(danmaku, contains('(System.nanoTime() - frameStartNanos) / 1_000_000L'));
-    });
-
-    test('位置 = 锚点 + 帧时间增量（与 Flutter _nowPosition 等价）', () {
-      expect(danmaku, contains('anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate'));
     });
 
     test('onDraw 不再自驱 postInvalidate（帧回调统一驱动）', () {
@@ -40,85 +134,61 @@ void main() {
       expect(body, contains('if (!drewAny) stopFrameLoop()'));
     });
 
-    test('无弹幕空态也停帧循环（防空转耗电）', () {
-      expect(
-        danmaku,
-        contains('''        if (!enabled || items.isEmpty()) {
-            // 616：无弹幕可画时停掉帧循环（否则 Choreographer 空转耗电）。
-            stopFrameLoop()
-            return
-        }'''),
-      );
-    });
-
-    test('暂停停帧循环、销毁清理', () {
-      expect(danmaku, contains('stopFrameLoop()'));
+    test('空态停帧 + 销毁清理', () {
+      expect(danmaku, contains('if (!enabled || items.isEmpty())'));
       expect(danmaku, contains('override fun onDetachedFromWindow()'));
     });
   });
 
-  group('② 平滑收敛（消除「不同源」造成的左右跳）', () {
-    test('大跳阈值常量存在', () {
-      expect(danmaku, contains('private val SEEK_THRESHOLD_MS = 150L'));
+  group('④ 618 诊断：位置回退打日志', () {
+    test('回退时 Log.w 记录快照上下文', () {
+      expect(danmaku, contains('import android.util.Log'));
+      expect(danmaku, contains('位置回退'));
+      expect(danmaku, contains('Log.w('));
+      // 日志内容包含快照字段，便于定位是哪份快照导致的回退。
+      expect(danmaku, contains('snap=\${snapPosMs}'));
     });
 
-    test('小漂移吸收 10%、大跳直接重锚', () {
-      expect(danmaku, contains('if (Math.abs(drift) > SEEK_THRESHOLD_MS) {'));
-      expect(danmaku, contains('anchorPosMs = projected + drift / 10.0'));
-      expect(danmaku, contains('val drift = positionMs - projected'));
-    });
-
-    test('注释记录「不同源」根因', () {
-      expect(danmaku, contains('不同源'));
+    test('正常播放不刷屏（仅回退且非暂停时打）', () {
+      expect(danmaku, contains('if (pos < lastDiagPosMs && !paused)'));
     });
   });
 
-  group('③ 倍速与冻结语义（对齐宿主 positionAt）', () {
-    test('位置按播放倍速推进（2x 不被误判成大跳）', () {
-      expect(danmaku, contains('private var playRate = 1.0'));
-      expect(
-        danmaku,
-        contains('(anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate).toLong()'),
-      );
-      expect(
-        danmaku,
-        contains('anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate'),
-      );
-    });
-
-    test('setClock 接收倍速（第三参默认 1.0）', () {
-      expect(danmaku, contains('fun setClock(positionMs: Long, paused: Boolean, speed: Double = 1.0)'));
-      expect(danmaku, contains('this.playRate = if (speed > 0.0) speed else 1.0'));
-    });
-
-    test('暂停 / 缓冲 / 播完 三态合并传入（与 positionAt 冻结一致）', () {
+  group('⑤ 调用方传四参（位置/冻结三态/倍速/时长）', () {
+    test('setClock 传 state.durationMs', () {
       expect(
         kotlinScreen,
         contains('state.paused || state.buffering || state.ended'),
       );
-      expect(kotlinScreen, contains('state.speed,'));
+      expect(kotlinScreen, contains('state.durationMs.toLong(),'));
+    });
+
+    test('注释记录 618 根因（两条调用路径）', () {
+      expect(kotlinScreen, contains('618 真机回归：安卓弹幕仍然左右跳'));
+      expect(kotlinScreen, contains('无状态纯函数'));
     });
   });
 
-  group('④ 调用方传原始快照位置（不叠加宿主插值）', () {
-    test('setClock 传 state.positionMs', () {
-      expect(kotlinScreen, contains('state.positionMs.toLong(),'));
+  group('⑥ 鸿蒙参考实现（语义基准，证明这是已验证做法）', () {
+    test('鸿蒙弹幕直接读宿主 positionNowMs（无自维护锚点）', () {
+      expect(ohos, contains('positionNowMs()'));
+      expect(ohos, isNot(contains('anchorPosMs')));
     });
 
-    test('不再绑定 positionProvider', () {
-      expect(kotlinScreen, isNot(contains('setPositionProvider')));
-      expect(danmaku, isNot(contains('fun setPositionProvider')));
-    });
-  });
-
-  group('④ Flutter 参考实现（语义基准）', () {
-    test('_nowPosition = _lastPosition + (_elapsed - _alignElapsed)', () {
-      expect(flutter, contains('_lastPosition + (_elapsed - _alignElapsed)'));
+    test('鸿蒙 positionNowMs = 快照 + 墙钟×倍速', () {
+      final body = bodyOf(ohosHost, 'positionNowMs(): number {');
+      expect(body, contains('Date.now() - this.lastStateAtMs'));
+      expect(body, contains('s.positionMs + elapsed * s.speed'));
+      // 同样的三态冻结 + 时长未知不外推。
+      expect(body, contains('s.paused || s.buffering || s.ended'));
+      expect(body, contains('if (s.durationMs <= 0)'));
     });
 
-    test('Ticker 逐帧驱动', () {
-      expect(flutter, contains('createTicker'));
-      expect(flutter, contains('_ticker.start()'));
+    test('鸿蒙注释记录了「删除速度修正项」的教训', () {
+      expect(ohos, contains('非匀速根因'));
+      // 原文跨行：「修复 = 删除一切\n   * 速度修正项」。
+      expect(ohos, contains('删除一切'));
+      expect(ohos, contains('速度修正项'));
     });
   });
 }

@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.util.Log
 import android.view.Choreographer
 import android.view.View
 
@@ -98,13 +99,6 @@ class DanmakuLayerView(context: Context) : View(context) {
     private val edgePadDp = 8f
 
     /** 滚动穿屏基准时长（ms÷speed）。 */
-    /**
-     * 大跳阈值（ms，616）：宿主快照与帧时间插值的偏差超过它才直接重锚
-     *（seek / 换集）；否则平滑收敛（吸收 10%），消除「不同源」造成的
-     * 弹幕左右跳。
-     */
-    private val SEEK_THRESHOLD_MS = 150L
-
     private val scrollBaseMs = 8000.0
 
     /** 顶/底驻留时长（ms，不受速度影响）。 */
@@ -154,86 +148,90 @@ class DanmakuLayerView(context: Context) : View(context) {
     }
 
     /**
-     * 弹幕时钟（616）：**Choreographer 帧驱动 + 平滑收敛**。
+     * 弹幕时钟（618）：**无状态纯函数**（对齐鸿蒙 `DanmakuLayer.positionNowMs()`）。
      *
-     * 【真机回归：安卓弹幕还是有点抖动、左右跳】614 起改为直接读宿主
-     * `positionAt(System.currentTimeMillis(), lastStateAtMs)`——看似单层
-     * 插值，但 `positionMs`（Dart 500ms 轮询采样值）与 `lastStateAtMs`
-     *（本机接收时刻）**不同源**，两者之间有传输+轮询延迟差（几十毫秒）。
-     * 每次新快照到达，`positionAt` 输出就突变一次 → 弹幕 x 位置左右跳。
+     * 【真机回归：安卓弹幕仍然左右跳】616 引入了自维护锚点
+     *（`anchorPosMs`/`anchorFrameMs`）+ `drift/10` 平滑收敛——这正是鸿蒙
+     * 在 600 轮次**已经删掉**的东西（见 `DanmakuLayer.ets` 的
+     *「非匀速根因」注释：*旧实现在外推上叠了「漂移 10%/帧牵引」——每帧
+     * 注入额外位移、速度随漂移量变化 → 弹幕忽快忽慢*）。
      *
-     * **Flutter 的做法**（`DanmakuOverlay`）：
-     * ```dart
-     * Duration get _nowPosition => _lastPosition + (_elapsed - _alignElapsed);
-     * ```
-     * - `_elapsed` 是 **Ticker 帧时间**（每帧回调、单调递增）；
-     * - `_lastPosition` 与 `_alignElapsed` **同步采样**（`_onPositionChanged`
-     *   里同时赋值）→ 位置连续。
+     * 自维护锚点的致命缺陷：`setClock` 被**两条路径**调用——
+     *   ① Dart 每 200ms 的 `render()`（新快照）；
+     *   ② 本地 500ms 的 `applyState()`（**同一份旧快照**）。
+     * 本地 tick 触发时帧时间已推进 ~250ms，`drift = 旧快照 - 当前插值`
+     * 超过 150ms 阈值 → 走重锚分支 → **位置回退 250ms** → 视觉左右跳。
+     *（真机两条路径相位随机错开，故「有时跳、有时不跳」。）
      *
-     * **本类对齐该语义**：
-     * - 用 `Choreographer` 帧回调驱动重绘（等价 Flutter Ticker）；
-     * - 用 `System.nanoTime()`（**单调时钟**）算帧时间增量；
-     * - 位置 = `anchorPosMs + (帧时间 - anchorFrameMs)`；
-     * - 快照刷新时**平滑收敛**（吸收 10% 偏差）而不是硬切——消除
-     *   「不同源」造成的左右跳；只有大跳（seek/换集 >150ms）才直接重锚。
+     * 修法：位置改为**无状态纯函数**——完全由「快照值 + 墙钟×倍速」
+     * 决定，重复调用同一份快照必然得到同一结果（天然幂等、天然单调）。
+     * 与 Flutter `DanmakuOverlay._nowPosition` / 鸿蒙 `positionNowMs()`
+     * 三者同构。
+     *
+     * Choreographer 帧回调**保留**：它只负责「每帧重绘」驱动（等价
+     * Flutter Ticker），与位置计算无关。
      */
     private var frameCallback: Choreographer.FrameCallback? = null
 
-    /** 帧时间基准（`System.nanoTime()`，单调）。构造时初始化，避免首帧
-     * 算出巨大值（`System.nanoTime()` 是任意起点的纳秒计数）。 */
-    private var frameStartNanos = System.nanoTime()
+    /** 最新快照位置（ms）。 */
+    private var snapPosMs = 0L
+
+    /** 快照落地时刻（墙钟 ms）——外推基准。 */
+    private var snapAtMs = 0L
+
+    /** 快照时长（ms）：未知（<=0）时**不外推**（同鸿蒙 600 的防御）。 */
+    private var snapDurationMs = 0L
+
+    /** 快照暂停态（暂停/缓冲/播完 三态合并，由调用方传入）。 */
+    private var snapPaused = true
+
+    /** 快照倍速（<=0 时按 1.0 兜底）。 */
+    private var snapSpeed = 1.0
+
+    /** 618 诊断：上一次算出的位置（仅在回退时打日志，正常播放不刷屏）。 */
+    private var lastDiagPosMs = 0L
 
     /**
-     * 位置锚点（ms，用 Double 避免 1ms 取整误差在平滑收敛里累积）
-     * 与当时的帧时间（ms）。
+     * 当前播放位置：**无状态纯函数**，与鸿蒙 `positionNowMs()` 逐条等价。
+     *
+     * 幂等性保证：同一份快照 + 同一墙钟时刻 → 同一结果；重复调用同一份
+     * 快照（本地 tick 场景）不会产生任何位置变化。
      */
-    private var anchorPosMs = 0.0
-    private var anchorFrameMs = 0L
-
-    /** 播放倍速（616）：位置按倍速推进，否则 2x 播放会被误判成「大跳」。 */
-    private var playRate = 1.0
-
-    /** 当前帧时间（毫秒，自 [frameStartNanos] 起单调递增）。 */
-    private fun frameElapsedMs(): Long =
-        (System.nanoTime() - frameStartNanos) / 1_000_000L
-
-    /** 当前播放位置（帧时间插值，与 Flutter `_nowPosition` 等价）。 */
-    private fun currentPositionMs(): Long =
-        (anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate).toLong()
+    private fun currentPositionMs(): Long {
+        if (snapPaused || snapSpeed <= 0.0) return snapPosMs
+        // 起播早期时长未解析：不外推（否则位置会一路跑到时长上限）。
+        if (snapDurationMs <= 0) return snapPosMs
+        val elapsed = System.currentTimeMillis() - snapAtMs
+        val projected = snapPosMs + (elapsed * snapSpeed).toLong()
+        val capped = if (projected > snapDurationMs) snapDurationMs else projected
+        return if (capped < 0) 0 else capped
+    }
 
     /**
-     * 宿主推送位置 + 暂停态 + 倍速（616）。
+     * 宿主推送快照（618）：**直接覆盖，无锚点、无收敛、无阈值**。
      *
-     * 快照值带「Dart 轮询延迟」——与帧时间不同源。这里做平滑收敛：
-     * 小偏差吸收 10%（位置连续推进、无视觉跳变），大偏差（seek/换集）
-     * 直接重锚（保证 seek 立即生效）。
-     *
-     * [paused] 语义与宿主 `positionAt` 一致：**暂停 / 缓冲 / 播完** 都冻结
-     *（宿主这几种状态下 `positionAt` 直接返回快照值，不按时间外推）。
+     * [paused] 传「暂停 / 缓冲 / 播完」三态合并——与宿主 `positionAt`
+     * 的冻结条件一致（这几种状态不外推）。
+     * [durationMs] 为 0 时本层不外推（防起播早期位置跑到时长上限）。
      */
-    fun setClock(positionMs: Long, paused: Boolean, speed: Double = 1.0) {
+    fun setClock(
+        positionMs: Long,
+        paused: Boolean,
+        speed: Double,
+        durationMs: Long,
+    ) {
+        snapPosMs = positionMs
+        snapAtMs = System.currentTimeMillis()
+        snapPaused = paused
+        snapSpeed = if (speed > 0.0) speed else 1.0
+        snapDurationMs = durationMs
         this.paused = paused
-        this.playRate = if (speed > 0.0) speed else 1.0
         if (paused) {
-            anchorPosMs = positionMs.toDouble()
-            anchorFrameMs = frameElapsedMs()
             stopFrameLoop()
             if (visibility == VISIBLE) invalidate()
-            return
-        }
-        // 只取一次帧时间——两次调用会相差几毫秒，让锚点与插值基准错位。
-        val nowFrameMs = frameElapsedMs()
-        val projected = anchorPosMs + (nowFrameMs - anchorFrameMs) * playRate
-        val drift = positionMs - projected
-        if (Math.abs(drift) > SEEK_THRESHOLD_MS) {
-            // 大跳（seek / 换集 / 明显漂移）：直接重锚。
-            anchorPosMs = positionMs.toDouble()
         } else {
-            // 小漂移（500ms 快照的正常延迟差）：吸收 10%，位置连续。
-            anchorPosMs = projected + drift / 10.0
+            startFrameLoop()
         }
-        anchorFrameMs = nowFrameMs
-        startFrameLoop()
     }
 
     /** 启动帧循环（幂等）。等价 Flutter `Ticker.start()`。 */
@@ -498,6 +496,17 @@ class DanmakuLayerView(context: Context) : View(context) {
             return
         }
         val pos = currentPositionMs()
+        // 618 诊断：位置回退才打日志（正常播放不刷屏）。无状态纯函数下
+        // 这里应当**永不触发**；一旦出现即为回归信号（快照被异常覆盖）。
+        if (pos < lastDiagPosMs && !paused) {
+            Log.w(
+                "HimiDanmaku",
+                "位置回退 ${lastDiagPosMs}ms -> ${pos}ms " +
+                    "snap=${snapPosMs} at=${snapAtMs} dur=${snapDurationMs} " +
+                    "speed=$snapSpeed paused=$snapPaused",
+            )
+        }
+        lastDiagPosMs = pos
         val density = resources.displayMetrics.density
         val fontSizePx = baseFontSizeDp * fontSizeScale.toFloat() * density
         val rowH = fontSizePx + rowGapDp * density

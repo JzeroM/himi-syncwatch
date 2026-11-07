@@ -3827,25 +3827,27 @@ class NativePlayerScreenView(
         if (!dragging) {
             val pos = state.positionAt(now, lastStateAtMs)
             positionLabel.text = AndroidNativePlayerState.formatPlayerTime(pos)
-            // 【616 真机回归：安卓弹幕还是有点抖动、左右跳】修正。
+            // 【618 真机回归：安卓弹幕仍然左右跳】修正。
             //
-            // 611 起传的是 `state.positionMs`（原始快照），弹幕层再用墙钟
-            // 插值——看似单层，但快照值带「Dart 500ms 轮询延迟」，与宿主
-            // 接收时刻**不同源** → 每次快照刷新位置就突变一次（左右跳）。
+            // 616 的「自维护锚点 + drift/10 平滑收敛」已被移除——那是鸿蒙
+            // 在 600 轮次已证明错误的东西（见 `DanmakuLayer.ets` 的
+            //「非匀速根因」注释）。根因：`setClock` 被两条路径调用
+            //（Dart 200ms 的 render + 本地 500ms 的 applyState），本地 tick
+            // 传同一份**旧快照**，此时帧时间已推进 ~250ms → drift 超阈值
+            // → 重锚 → 位置回退 → 左右跳。
             //
-            // 对齐 Flutter（MDK 路径）`DanmakuOverlay` 的语义：
-            //   `_nowPosition = _lastPosition + (_elapsed - _alignElapsed)`
-            // 这里同样只传**原始快照位置**，由弹幕层用 Choreographer 帧
-            // 时间（单调 `nanoTime`）插值 + 平滑收敛（吸收 10% 偏差），
-            // 与 Flutter Ticker 等价。
+            // 现改为**无状态纯函数**（与鸿蒙 `positionNowMs()` /
+            // Flutter `_nowPosition` 三者同构）：位置 = 快照 + 墙钟×倍速，
+            // 重复调用同一份快照天然幂等。
             //
-            // 第二参传「暂停 / 缓冲 / 播完」三态合并——与宿主 `positionAt`
-            // 的冻结条件一致（这几种状态下不外推）；第三参传倍速，否则
-            // 2x 播放会被平滑收敛误判成持续大跳。
+            // 第二参传「暂停 / 缓冲 / 播完」三态合并（与宿主 `positionAt`
+            // 冻结条件一致）；第三参倍速；第四参时长（0 时不外推，防起播
+            // 早期位置跑到时长上限）。
             danmakuLayer.setClock(
                 state.positionMs.toLong(),
                 state.paused || state.buffering || state.ended,
                 state.speed,
+                state.durationMs.toLong(),
             )
             // 玻璃滑杆：值即毫秒（玻璃滑杆内部完成 ratio 映射，无步进换算）。
             // durationMs 未就绪（起播早期为 0）时不覆盖 value（防归零抖动）。

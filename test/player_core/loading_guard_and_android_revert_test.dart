@@ -69,16 +69,17 @@ void main() {
   });
 
   group('③ 安卓弹幕单层插值（对齐鸿蒙）', () {
-    test('616 起改用 Choreographer 帧驱动 + 平滑收敛', () {
+    test('618 起改用无状态纯函数（Choreographer 帧驱动保留）', () {
       expect(danmaku, contains('Choreographer'));
-      expect(danmaku, contains('anchorPosMs + (frameElapsedMs() - anchorFrameMs) * playRate'));
-      expect(danmaku, contains('anchorPosMs = projected + drift / 10.0'));
+      expect(danmaku, contains('elapsed * snapSpeed'));
+      // 616 的锚点/收敛方案已移除（鸿蒙已验证会「忽快忽慢」）。
+      expect(danmaku, isNot(contains('drift / 10')));
       // 614 的 positionProvider 方案已移除。
       expect(danmaku, isNot(contains('fun setPositionProvider')));
     });
 
-    test('setClock 收 positionMs + paused（616 帧驱动）', () {
-      expect(danmaku, contains('fun setClock(positionMs: Long, paused: Boolean, speed: Double = 1.0)'));
+    test('setClock 收四参（618：位置/冻结三态/倍速/时长）', () {
+      expect(danmaku, contains('durationMs: Long,'));
     });
 
     test('宿主传原始快照位置（不叠加宿主插值）', () {

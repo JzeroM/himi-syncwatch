@@ -132,12 +132,15 @@ void main() {
         final audio = bodyOf(src, 'Future<void> setAudioTrack(int id) async {');
         expect(audio, contains('_realAudioTracks()'));
         expect(audio, contains('int.tryParse(t.id) == id'));
-        expect(audio, contains('byTrackId != null'));
+        // 618 改为三元表达式（byTrackId ?? 序号兜底）。
+        expect(audio, contains('byTrackId ??'));
+        expect(audio, contains('synchronized: false'));
 
         final sub =
             bodyOf(src, 'Future<void> setSubtitleTrack(int id) async {');
         expect(sub, contains('_realSubtitleTracks()'));
         expect(sub, contains('int.tryParse(t.id) == id'));
+        expect(sub, contains('synchronized: false'));
       });
 
       test('$name：id<=0 走 no()（关闭语义）', () {

@@ -1726,6 +1726,72 @@ Android 侧字体位于 `android/app/src/main/assets/fonts/`，由
   Emby 顺序保持、空表清空、失败打日志、伪轨过滤、id 优先选轨、外挂字幕末尾、
   空列表关闭、鸿蒙 aid/sid 语义）。
 
+### Phase 2.37：弹幕改无状态纯函数 + MPV 切轨加速（1.5.38+618）
+
+> 起因：用户「MPV 选字幕和音轨切换后画面卡住好久才切换过来，可不可以
+> 优化，弹幕仍然跳动」，并明确要求「切换基本无感，和 MDK 一样」「重头写
+> MPV 的弹幕，要求效果和 MDK、Erika 弹幕一样」。
+
+#### 一、弹幕：删除 616 的自维护锚点，改无状态纯函数
+
+- [x] **根因（616 方向反了）**：616 引入的「自维护锚点 + `drift/10`
+  平滑收敛」正是**鸿蒙在 600 轮次已删除**的东西。`DanmakuLayer.ets` 的
+  「非匀速根因」注释原文：*旧实现在外推上叠了「漂移 10%/帧牵引」——每帧
+  注入额外位移、速度随漂移量变化 → 弹幕忽快忽慢（真机回归）。修复 =
+  删除一切速度修正项*。
+- [x] **为什么 616 必跳**：`setClock` 被**两条路径**调用——
+  ① Dart 每 200ms 的 `render()`（新快照）；
+  ② 本地 500ms 的 `applyState()`（**同一份旧快照**）。
+  本地 tick 触发时帧时间已推进 ~250ms，`drift = 旧快照 - 当前插值`
+  超过 150ms 阈值 → 走重锚分支 → **位置回退 250ms** → 视觉左右跳。
+  （真机两条路径相位随机错开，故「有时跳、有时不跳」。）
+- [x] **量化复现**（Dart 200ms 推送 / 本地 tick 500ms / 相位错开 250ms）：
+  | 方案 | 位置序列（每 100ms） | 回退 |
+  |---|---|---|
+  | 616 现状 | `0,100,200,285,385,485,585,685,`**`550`**`,650…` | **-135ms** |
+  | 无状态纯函数 | 单调递增 | **0 次** |
+- [x] **修法**：位置改为**无状态纯函数**（与鸿蒙 `positionNowMs()` /
+  Flutter `_nowPosition` 三者同构）：
+  - 删除 `anchorPosMs` / `anchorFrameMs` / `drift/10` / `SEEK_THRESHOLD_MS`
+    / `frameStartNanos` / `playRate`；
+  - 新增 `snapPosMs` / `snapAtMs` / `snapDurationMs` / `snapPaused` /
+    `snapSpeed`；
+  - `currentPositionMs() = snapPosMs + (now - snapAtMs) × snapSpeed`；
+  - 三态冻结（暂停/缓冲/播完）、时长未知（<=0）不外推、钳到时长上限；
+  - **重复调用同一份快照天然幂等**——这是消除跳动的核心。
+  - Choreographer 帧回调**保留**（只负责每帧重绘，等价 Flutter Ticker）。
+- [x] 顺带：`setClock` 增第四参 `durationMs`；新增回退诊断日志
+  （`Log.w("HimiDanmaku", "位置回退 …")`，正常播放不刷屏）。
+
+#### 二、切轨加速：三项叠加，观感对齐 MDK
+
+- [x] **根因（结构性差异）**：
+  | | MDK | MPV（修前） |
+  |---|---|---|
+  | 选轨调用 | `setActiveTracks` **同步 FFI** | `mpv_set_property_async` + **`await`** |
+  | 锁 | **无** | 全局 `static final Lock`（所有 player 操作共用） |
+  | 样式属性 | 同步写 | `await` 每个 `setProperty` |
+  | 叠加重建 | 无 | 切轨后立刻写样式 → **再触发一次重建** |
+- [x] **修法**：
+  1. **`async: false`**（安卓 + Windows）：`PlayerConfiguration` 改走
+     **同步 FFI**（`mpv_set_property` / `mpv_command` 直调，不再
+     `await completer.future`），与 MDK `setActiveTracks` 同语义。
+     media_kit 默认 `true` 是为 macOS 初始化期 AppKit 重入；Android/Windows
+     无此约束。
+  2. **`synchronized: false`**：新增 `_selectTrackNoLock`，直调
+     `platform.setAudioTrack/setSubtitleTrack` 并跳过全局 `Lock`
+     （切轨是单次操作，不存在与自身并发的风险）。
+  3. **抑制叠加重建**：新增 `_trackSwitchInFlight` 标志 + 300ms 窗口
+     （与音轨侧早已有的 `_audioFilterDeferTimer` 同构）——
+     `_applySubtitleStyle` 窗口内直接跳过、窗口结束后补写；
+     `_maybeApplySubtitleDelay` 窗口内不重载（避免再 `sub-add` 一次）。
+- [x] 顺带：修 617 遗留的重复 `@override`（`himi_mpv_android.dart`）。
+- [x] 测试：
+  - `android_danmaku_frame_clock_test.dart` 重写为 18 项（无状态纯函数、
+    幂等、三态冻结、时长未知不外推、钳位、诊断日志、鸿蒙对照基准）；
+  - 新增 `mpv_track_switch_speed_test.dart` 20 项（`async: false`、
+    `synchronized: false`、切轨窗口、延迟重载避让、MDK 对照基准）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
