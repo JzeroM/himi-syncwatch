@@ -2218,6 +2218,32 @@ await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
 - [x] 测试：新增 `gauge_direction_and_video_fit_test.dart` 13 项；更新
   4 条旧断言（竖条结构变长、XComponent 不再撑满、Stack 对齐改 Center）。
 
+### Phase 2.45：鸿蒙画布比例链路补齐（video-params 读不到）（1.5.46+626）
+
+> 起因：用户「鸿蒙进房间初始播视频：画布还是拉伸的」——625 已实现
+> `videoFitW/H()` 按比例布局，但真机仍拉伸。
+
+- [x] **根因（625 的链路只通了一半）**：`_lastVideoW/H`（真正下发给
+  鸿蒙的值）**恒为 0**。原因：
+  - `_lastVideoW/H` 只在 `_parseVideoParams` 里赋值；
+  - 而 `video-params` 在鸿蒙上是 **NODE 属性**，`getPropertyString`
+    返回空串（代码注释 588 已记录）→ `_parseVideoParams` **永不触发**；
+  - → `videoFitW()` 返回 -1 → XComponent 回落 `'100%'` 撑满 → 拉伸。
+- [x] **修法**：用 `pollState` 的 `videoWidth`/`videoHeight` 兜底赋值。
+  这两个值来自鸿蒙的 `width`/`height` **标量属性**（可读），
+  `hasVideoFrame`（588）早就用它做「首帧已出」判据，只是没同步给
+  `_lastVideoW/H`：
+  ```dart
+  if ((state.videoWidth ?? 0) > 0 && (state.videoHeight ?? 0) > 0) {
+    _lastVideoW = state.videoWidth!;
+    _lastVideoH = state.videoHeight!;
+  }
+  ```
+  加 `> 0` 守卫避免 0 覆盖有效值。
+- [x] 测试：新增 `video_aspect_chain_test.dart` 9 项（鸿蒙用 width/height
+  标量属性、Dart 兜底赋值含守卫、下发/接收/布局全链路、`videoFitW/H`
+  缺失时返回 -1）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

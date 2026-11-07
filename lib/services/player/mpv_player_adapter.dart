@@ -688,6 +688,18 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     _frameDropCount = state.frameDropCount;
     _videoWidth = state.videoWidth;
     _videoHeight = state.videoHeight;
+    // 626：`video-params` 在鸿蒙上**读不到**（NODE 属性，`getPropertyString`
+    // 返回空串），`_parseVideoParams` 永不触发 → `_lastVideoW/H` 恒为 0
+    // → 鸿蒙原生 UI 的 `videoFitW/H()` 返回 -1 → XComponent 回落 100%
+    // 撑满 → 画布仍然拉伸（真机回归）。
+    //
+    // 这里用 `pollState` 的 `videoWidth`/`videoHeight`（走 `width`/`height`
+    // 标量属性，鸿蒙可读）做兜底——`hasVideoFrame` 早就用它做「首帧已出」
+    // 判据（588），只是没同步给 `_lastVideoW/H`。
+    if ((state.videoWidth ?? 0) > 0 && (state.videoHeight ?? 0) > 0) {
+      _lastVideoW = state.videoWidth!;
+      _lastVideoH = state.videoHeight!;
+    }
     _maybeLogPlaybackTimeline();
     final hasProgress = state.durationMs > 0 ||
         state.positionMs > 0 ||
