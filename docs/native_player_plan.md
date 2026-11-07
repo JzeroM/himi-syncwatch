@@ -1935,6 +1935,68 @@ await _loadSubtitleFileIntoPlayer(path);        // ③ sub-add 新轨
 - [x] 测试：新增 `mpv_subtitle_delay_test.dart` 14 项（符号方向、属性写入、
   分流 early-return、切轨落全、归零不重下载、其他引擎保留）。
 
+### Phase 2.40：弹幕位置统一数据源 + 弹幕无效重绘优化 + 字幕 clamp 修正（1.5.41+621）
+
+> 起因：用户「HIMI 字幕还是起播后好久才出现；安卓 MPV 字幕还是跳动」，
+> 随后澄清「我说错了，不是字幕，是**弹幕**跳动」，并追问
+> 「MPV 字幕位置改用像素更好吗，适用所有类型字幕吗」「位置也用
+> sub-delay 不行吗」，最后明确「位置还是走 sub-pos（百分比，
+> clamp(0, 100)）；前面提到的弹幕问题一起做」。
+
+#### 一、弹幕跳动：统一位置数据源（真根因）
+
+- [x] **619 只拦住了「同一份快照」，没拦住「两条数据源互相打架」**：
+  `positionMs` 有**两条写入路径**：
+  | 路径 | 来源 | 频率 | 特性 |
+  |---|---|---|---|
+  | A（事件） | `media_kit` `player.stream.position` → `_emit('time-pos/full')` → Dart `round(v*1000)` | 高频 | 走 **Stream/EventChannel（异步）** |
+  | B（轮询） | `pollState()` → `positionMs: _positionMs`（**会话缓存字段**） | 500ms | **同步直读** |
+
+  事件异步投递、轮询同步读取 → Dart 侧 `_positionMs` 在 `X` 与 `X±几十ms`
+  之间**反复横跳** → 619 的「值去重」拦不住（值每次不同）→ `setClock`
+  反复重锚 → 弹幕跳动。
+- [x] **修法（统一数据源）**：`pollState()` 改为**直读 mpv 实时属性**
+  `time-pos`（与事件路径同一个源头），轮询与事件从此给出**同一个值**，
+  横跳消失。安卓 + Windows 同步修。属性读不到时回落缓存（不阻塞播放）。
+- [x] 顺带：修 618 遗留的重复/错位 `@override`（Windows `_selectTrackNoLock`）。
+
+#### 二、弹幕 `update()` 无效重绘优化
+
+- [x] **根因**：`update()` 每 200ms 被 `applyState()` 调用一次（Dart 快照
+  节拍），旧实现**无条件** `invalidate()`；叠加 Choreographer 帧循环后
+  实际重绘频率高于 60fps，浪费绘制预算、加剧视觉抖动（4K60 解码吃紧时
+  更明显）。
+- [x] **修法**：加内容签名（条数 + 首尾 `timeMs`，覆盖「窗口滑动/换集/
+  开关弹幕」三类变化），只在 `visibilityChanged || contentChanged` 时
+  `invalidate()`。
+
+#### 三、MPV 字幕位置：统一 `sub-pos` + `clamp(0, 100)`
+
+- [x] **权威依据（mpv manual）**：
+  - `--sub-margin-y`：*vertical margins of **unstyled text subtitles*** →
+    **对 ASS 无效**（ASS 自带 `[V4+ Styles]` 定位）。
+  - `--sub-pos`：*vertical position in **% of screen height*** + *Warning:
+    Text subtitles may be **cut off** if the value is above 100* +
+    *This affects **ASS subtitles as well**.*
+  - `--sub-delay`：*Delays primary subtitles by `<sec>` seconds.* → **只改
+    时间轴**，不能改位置（用户问「位置也用 sub-delay 不行吗」→ 不行）。
+- [x] **决策：位置统一走 `sub-pos`（百分比）**，不按类型分流。
+  理由：`sub-pos` 对**所有类型**（SRT/ASS/位图）都生效，行为一致；
+  若按类型分流（SRT 用 `sub-margin-y`）会让同一滑杆在不同字幕上表现
+  不一致，且 ASS 分支仍需回退 `sub-pos`，复杂度不划算。
+- [x] **相对 v1.5.40 的唯一修正**：`clamp(0, 150)` → `clamp(0, 100)`。
+  手册警告 >100 文本字幕会被 libass **裁切**；旧值允许到 150 是越界。
+  位图字幕不受影响（`sub-pos` 对其本就无效），行为与 v1.5.40 一致。
+- [x] **位图字幕面板保持可调**：曾尝试把 `_erikaActiveSubtitleIsBitmap`
+  扩展到 MPV，但 `subtitleStyleDisabled` 是**整段禁用**（大小/位置/延迟
+  三行全没），而 `sub-delay` 对位图**有效** → 会禁掉「延迟可调」。
+  已回退，**只限 Erika**（MPV + 位图：三项仍可拖，位置/大小无效但无害，
+  延迟有效）。
+- [x] 测试：`mpv_subtitle_position_split_test.dart` 17 项（统一 sub-pos、
+  clamp 0~100、delay 与位置互不替代、位图面板保持可调、
+  弹幕 update 无效重绘优化、MDK/Erika 路径未受影响）。
+
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

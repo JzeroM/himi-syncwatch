@@ -674,7 +674,6 @@ class HimiMpvWindowsSession implements MpvSession {
           .where(_isRealTrack)
           .toList(growable: false);
 
-  @override
   /// 选轨直调 `platform` 并跳过 media_kit 的全局锁（618，与安卓同修）。
   Future<void> _selectTrackNoLock(
     Future<void> Function(dynamic platform) apply,
@@ -816,9 +815,17 @@ class HimiMpvWindowsSession implements MpvSession {
     final player = _player;
     if (player == null) return null;
     final state = player.state;
+    // 621：统一位置数据源（与安卓同修）——旧实现读会话缓存字段，而它由
+    // 异步 Stream 写入、又异步 emit 给 Dart，两条路径时序不同步会让
+    // Dart 侧位置横跳 → 弹幕重锚 → 跳动。改为直读 mpv 实时属性。
+    final rawPos = await getProperty('time-pos');
+    final parsedPos = rawPos == null ? null : double.tryParse(rawPos);
+    final positionMs = parsedPos != null && parsedPos >= 0
+        ? (parsedPos * 1000).round()
+        : _positionMs;
     return MpvPollResult(
       durationMs: _durationMs,
-      positionMs: _positionMs,
+      positionMs: positionMs,
       bufferedMs: _bufferedMs,
       paused: _paused,
       eofReached: _eof || state.completed,

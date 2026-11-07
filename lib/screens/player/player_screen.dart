@@ -8825,7 +8825,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 当前引擎 Erika 且激活字幕为位图（PGS/VobSub/DVB）→ 样式/位置/延迟不可调。
+  ///
   /// 位图字幕由 Erika 以原生尺寸/位置合成，libass 样式/缩放对其无效。
+  ///
+  /// 621：**只限 Erika**（回退「扩展到 MPV」的尝试）。原因：
+  /// `subtitleStyleDisabled` 会**整段**替换字幕面板（大小/位置/延迟三行
+  /// 全没了），但 mpv 的 `sub-delay` 对位图字幕**是有效的**（手册只说
+  /// 样式/位置 *cannot be changed for fundamental reasons*，时间轴不受限）。
+  /// 扩展到 MPV 会把「延迟可调」一并禁掉 = 功能倒退。
+  ///
+  /// MPV + 位图：保持面板可操作（大小/位置对位图无效但无害，延迟有效）。
   bool _erikaActiveSubtitleIsBitmap() =>
       _currentEngine == PlayerEngine.erika && _activeSubtitleIsBitmap;
 
@@ -10780,9 +10789,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_trackSwitchInFlight) return;
     if (_currentEngine == PlayerEngine.mpv) {
       _player.setProperty('sub-scale', _subtitleScale.toStringAsFixed(2));
-      final pos = (100 - _subtitleMarginY / 4).clamp(0, 150).round();
+      // 621：位置统一走 `sub-pos`（**百分比**，对所有字幕类型生效）。
+      //
+      // 为什么不用 `sub-margin-y`（像素）：mpv 手册明确它只对
+      // *unstyled text subtitles* 生效——**对 ASS 无效**；而 `sub-pos`
+      // 手册写明 *This affects ASS subtitles as well*。统一用 `sub-pos`
+      // 才能让 ASS / 位图 / SRT 三种类型都走同一条路径、行为一致。
+      //
+      // 相对 v1.5.40 的两处修正：
+      // - `clamp(0, 150)` → `clamp(0, 100)`：手册警告 *Text subtitles may
+      //   be **cut off** if the value is above 100*（libass 限制）；
+      // - 保留 `(100 - marginY/4)` 的映射方向（marginY↑ = 字幕上移），
+      //   与面板「位置」语义一致。
+      final pos = (100 - _subtitleMarginY / 4).clamp(0, 100).round();
       _player.setProperty('sub-pos', '$pos');
-      // 620：延迟也走原生属性（毫秒 → 秒）。切轨后 mpv 会重建字幕链，
+      // 620：延迟走原生属性（毫秒 → 秒）。切轨后 mpv 会重建字幕链，
       // 三项在这里一次落全（比单独调 _applyMpvSubtitleDelay 更省）。
       _player.setProperty(
         'sub-delay',

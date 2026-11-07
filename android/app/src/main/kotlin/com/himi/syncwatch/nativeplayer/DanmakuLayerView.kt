@@ -143,8 +143,27 @@ class DanmakuLayerView(context: Context) : View(context) {
             topAvail = DoubleArray(0)
             bottomAvail = DoubleArray(0)
         }
-        visibility = if (enabled && items.isNotEmpty()) VISIBLE else GONE
-        invalidate()
+        // 621：只在**内容/可见性真的变化**时才重绘。
+        //
+        // 【真机回归：安卓弹幕抖动】旧实现无条件 `invalidate()`——而
+        // `update()` 每 200ms 被 `applyState()` 调用一次（Dart 快照节拍），
+        // 叠加 Choreographer 帧循环后实际重绘频率高于 60fps，浪费绘制
+        // 预算、加剧视觉抖动（尤其 4K60 解码本就吃紧时）。
+        val newVisibility = if (enabled && items.isNotEmpty()) VISIBLE else GONE
+        val visibilityChanged = visibility != newVisibility
+        visibility = newVisibility
+        // 内容变化判据：条数 + 首尾条目键（切片窗口滑动的典型表现）。
+        // 比逐条比较便宜，且足以覆盖「窗口滑动/换集/开关弹幕」三类变化。
+        val newSignature = if (items.isEmpty) {
+            0
+        } else {
+            items.size * 31 +
+                items.first().timeMs.toInt() * 7 +
+                items.last().timeMs.toInt()
+        }
+        val contentChanged = newSignature != lastContentSignature
+        lastContentSignature = newSignature
+        if (visibilityChanged || contentChanged) invalidate()
     }
 
     /**
@@ -190,6 +209,13 @@ class DanmakuLayerView(context: Context) : View(context) {
 
     /** 618 诊断：上一次算出的位置（仅在回退时打日志，正常播放不刷屏）。 */
     private var lastDiagPosMs = 0L
+
+    /**
+     * 621：上一次 `update()` 的内容签名（条数 + 首尾时间）。
+     * 用于跳过「内容没变」的无效 `invalidate()`（每 200ms 一次的快照节拍
+     * 会无条件触发重绘，叠加帧循环后浪费绘制预算、加剧抖动）。
+     */
+    private var lastContentSignature = -1
 
     /**
      * 619 值去重：上一次 setClock 收到的输入三元组。

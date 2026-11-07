@@ -851,9 +851,24 @@ class HimiMpvAndroidSession implements MpvSession {
     final player = _player;
     if (player == null) return null;
     final state = player.state;
+    // 【621 真机回归：安卓弹幕仍然跳动】统一位置数据源。
+    //
+    // 旧实现 `positionMs: _positionMs` 读的是**会话缓存字段**——它由
+    // `player.stream.position`（异步 Stream）在 564 行写入，而事件路径
+    // 又把同一个值 `_emit` 给 Dart（走 EventChannel，**也是异步**）。
+    // 两条路径到达 Dart 的时序不确定 → Dart 侧 `_positionMs` 在
+    // `X` 与 `X±几十ms` 之间反复横跳 → 619 的「值去重」拦不住（值不同）
+    // → `setClock` 反复重锚 → 弹幕跳动。
+    //
+    // 改为**直读 mpv 实时属性**（与事件路径同一个源头），轮询与事件
+    // 从此给出**同一个值**，横跳消失。
+    final rawPos = await _readDouble('time-pos');
+    final positionMs = rawPos != null && rawPos >= 0
+        ? (rawPos * 1000).round()
+        : _positionMs;   // 属性读不到时回落缓存（不阻塞播放）
     return MpvPollResult(
       durationMs: _durationMs,
-      positionMs: _positionMs,
+      positionMs: positionMs,
       bufferedMs: _bufferedMs,
       paused: _paused,
       eofReached: _eof || state.completed,
