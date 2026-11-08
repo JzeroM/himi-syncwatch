@@ -104,6 +104,9 @@ class _FakeStreamingPlayerAdapter implements PlayerAdapter {
   @override
   Future<Uint8List?> snapshot({int? width, int? height}) async => null;
   @override
+  bool get isDisposed => false;
+
+  @override
   void dispose() {}
 }
 

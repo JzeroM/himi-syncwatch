@@ -2335,6 +2335,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   // ── 生命周期 ──────────────────────────────────────────────
 
   @override
+  @override
+  bool get isDisposed => _disposed;
+
   void dispose() => unawaited(disposeAsync());
 
   @override

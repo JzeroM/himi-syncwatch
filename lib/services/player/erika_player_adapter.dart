@@ -739,6 +739,9 @@ class ErikaPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   }
 
   @override
+  bool get isDisposed => _disposed;
+
+  @override
   void dispose() {
     unawaited(disposeAsync());
   }

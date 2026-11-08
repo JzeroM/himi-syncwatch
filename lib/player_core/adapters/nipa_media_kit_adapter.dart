@@ -114,6 +114,7 @@ class NipaMediaKitAdapter extends AbstractPlayer
     implements
         PlayerMediaLoadAware,
         PlayerAsyncDisposable,
+        PlayerDisposableState,
         PlayerBufferingAware,
         PlayerEventSource,
         MediaStatusPlayer,
@@ -1951,6 +1952,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
   }
 
   void _ensureDefaultTracksSelected() {
+    // 644：dispose 后禁止操作原生（会访问已释放的 mpv ctx → 0xc0000005）。
+    if (_isDisposed) return;
     // Audio track selection (existing logic)
     try {
       if (_mediaInfo.audio != null &&
@@ -2091,6 +2094,9 @@ class NipaMediaKitAdapter extends AbstractPlayer
   @override
   set volume(double value) {
     _requestedVolume = value.clamp(0.0, 2.0).toDouble();
+    // 644：dispose 后禁止操作原生（0xc0000005 无法被 try/catch 捕获）。
+    // `_requestedVolume` 仍更新——本地状态需保持一致。
+    if (_isDisposed) return;
     // 对用户值取立方根，补偿 mpv 的三次方缩放
     final mpvValue = pow(_requestedVolume, 1.0 / 3.0) * 100.0;
     _player.setVolume(mpvValue);
@@ -2109,6 +2115,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
     _lastPositionTimestampUs = DateTime.now().microsecondsSinceEpoch;
 
     _playbackRate = value;
+    // 644：dispose 后禁止操作原生（0xc0000005 无法被 try/catch 捕获）。
+    if (_isDisposed) return;
     try {
       _player.setRate(value);
       debugPrint('MediaKit: 设置播放速度: ${value}x');
@@ -2122,6 +2130,21 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   set state(PlayerPlaybackState value) {
+    // 644：dispose 后禁止操作 Player（真机崩溃直接根因）。
+    //
+    // 【日志实证】1.5.63 崩溃前最后一行是「内容路由重建引擎: media_kit →
+    // MDK」，紧接着 `_recreateEngineForLoad` 执行
+    // `_player.state = stopped` → 本 setter → `_player.stop()`。
+    // 而 media_kit 的 `stop()` 会依次发 `stop` / `playlist-clear` /
+    // `playlist-play-index none` 三条 mpv 命令——若 Player 已释放，
+    // 访问已销毁的 mpv ctx → `0xc0000005`（Windows SEH，Dart try/catch
+    // 抓不到，进程直接终止）。
+    //
+    // `_state` 仍更新：本地状态需保持与调用方一致，避免上层读到过期值。
+    if (_isDisposed) {
+      _state = value;
+      return;
+    }
     switch (value) {
       case PlayerPlaybackState.stopped:
         _ticker?.stop();
@@ -2140,6 +2163,10 @@ class NipaMediaKitAdapter extends AbstractPlayer
     }
     _state = value;
   }
+
+  /// 适配器是否已释放（644）：供调用方在跨 await 操作前防御。
+  @override
+  bool get isDisposed => _isDisposed;
 
   @override
   ValueListenable<int?> get textureId => _textureIdNotifier;
@@ -2160,6 +2187,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   set activeSubtitleTracks(List<int> value) {
+    // 644：dispose 后禁止操作原生（会访问已释放的 mpv ctx → 0xc0000005）。
+    if (_isDisposed) return;
     try {
       //debugPrint('MediaKitAdapter: UI wants to set activeSubtitleTracks (indices in _mediaInfo.subtitle) to: $value');
       final List<PlayerSubtitleStreamInfo>? mediaInfoSubtitles =
@@ -2238,6 +2267,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   set activeAudioTracks(List<int> value) {
+    // 644：dispose 后禁止操作原生（会访问已释放的 mpv ctx → 0xc0000005）。
+    if (_isDisposed) return;
     try {
       _activeAudioTracks = value;
       final List<PlayerAudioStreamInfo>? mediaInfoAudios = _mediaInfo.audio;
@@ -2921,6 +2952,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   Future<void> seekAndWait({required int position}) async {
+    // 644：dispose 后禁止操作原生（会访问已释放的 mpv ctx → 0xc0000005）。
+    if (_isDisposed) return;
     final generation = ++_seekGeneration;
     final seekPosition = Duration(milliseconds: position);
     _completed = false;
@@ -3354,11 +3387,15 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   Future<void> playDirectly() async {
+    // 644：dispose 后禁止操作原生。
+    if (_isDisposed) return;
     await _player.play();
   }
 
   @override
   Future<void> pauseDirectly() async {
+    // 644：dispose 后禁止操作原生。
+    if (_isDisposed) return;
     await _player.pause();
   }
 
@@ -3386,6 +3423,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   @override
   void stepBackward() {
+    // 644：dispose 后禁止操作原生。
+    if (_isDisposed) return;
     try {
       // frame-back-step 会跳回上一个关键帧导致循环问题，
       // 改用 seek 相对后退一帧（约 42ms @24fps）
@@ -3778,6 +3817,8 @@ class NipaMediaKitAdapter extends AbstractPlayer
 
   /// 重试Jellyfin播放
   void _retryJellyfinPlayback() {
+    // 644：dispose 后禁止操作原生。
+    if (_isDisposed) return;
     if (_currentMedia.isEmpty) return;
 
     try {

@@ -364,8 +364,24 @@ class PlayerCoreBridge
     }
   }
 
+  /// 适配器是否已释放（644）：转发给底层 core。
+  ///
+  /// 底层若实现了 [PlayerDisposableState] 则用其权威值；否则回退到
+  /// 本桥自身的 `_disposed` 标记（[dispose] 被调用过即视为已释放）。
   @override
-  void dispose() => core.dispose();
+  bool get isDisposed {
+    final c = core;
+    if (c is PlayerDisposableState) return (c as PlayerDisposableState).isDisposed;
+    return _disposed;
+  }
+
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    core.dispose();
+  }
 
   @override
   Future<void> disposeAsync() async {

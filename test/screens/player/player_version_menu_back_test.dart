@@ -115,6 +115,9 @@ class _FakeStreamingPlayerAdapter implements PlayerAdapter {
   @override
   Stream<AdapterMediaEvent> get onEvent => const Stream.empty();
   @override
+  bool get isDisposed => false;
+
+  @override
   void dispose() {
     _statusCtrl.close();
   }

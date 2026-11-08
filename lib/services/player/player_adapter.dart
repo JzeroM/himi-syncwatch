@@ -311,5 +311,20 @@ abstract class PlayerAdapter {
 
   // ── 生命周期 ──────────────────────────────────────────────
 
+  /// 适配器是否已释放（644）。
+  ///
+  /// 【真机崩溃背景】调用方在异步间隙（await）之后仍可能操作适配器，
+  /// 此时底层原生资源（libmpv ctx / mdk handle / D3D 纹理）已被释放。
+  /// 再调用会触发**原生访问违例**（`0xc0000005`）——这是 Windows SEH
+  /// 异常，Dart 的 `try/catch` **无法捕获**，进程直接终止。
+  ///
+  /// 实测崩溃链（1.5.63，日志最后一行「内容路由重建引擎」之后立刻崩）：
+  /// `_recreateEngineForLoad` → `_player.state = stopped`
+  /// → media_kit 适配器 `state` setter → `_player.stop()`
+  /// → mpv ctx 已释放 → 0xc0000005。
+  ///
+  /// 故所有适配器必须实现本 getter，调用方在跨 await 操作前应先判断。
+  bool get isDisposed;
+
   void dispose();
 }

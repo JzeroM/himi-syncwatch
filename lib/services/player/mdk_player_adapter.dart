@@ -342,6 +342,9 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   // ── 生命周期 ──────────────────────────────────────────────
 
   @override
+  @override
+  bool get isDisposed => _disposed;
+
   void dispose() => unawaited(disposeAsync());
 
   /// 确定性释放（v1.1.222）：fvp 的 `dispose()` 是 `void async`

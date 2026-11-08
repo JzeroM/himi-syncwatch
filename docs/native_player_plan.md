@@ -3810,6 +3810,127 @@ Future<void> _safePopPlayerPage({bool popUntilFirst = false}) async {
 - [ ] 若仍崩：`%TEMP%\himi_runtime.log` 现在应有**崩溃前完整现场**
       （同步写 + 补写），可直接定位。
 
+> **结果：643 未修好。** 真机 1.5.63 复现「点返回闪退」与「切 MDK 闪退」。
+> 但 643 的日志同步写生效了，直接定位到真正根因 → 见 Phase 2.62。
+
+### Phase 2.62：Windows 闪退真正根因——media_kit 适配器缺 dispose 守卫（1.5.64+644）
+
+> 起因：643 发布后真机仍崩（点返回 / 切 MDK 各崩一次）。
+> 但 643 的**日志同步写**起了决定性作用，`himi_runtime.log` 保留了
+> 崩溃前最后一行。
+
+#### 一、日志实证：崩溃点在「切引擎」的第一行
+
+```
+[23:25:29.615] 启动 #2
+[23:25:39.350] 纹理: 返回 2974389074560, textureId 2974389074560, tunnel false
+[23:25:41.356] DV 检测(Emby API): isDV=false, hdrType=SDR
+[23:25:41.671] 控件隐藏（点屏）
+[23:25:42.528] 控件显示（点屏）
+[23:25:45.001] 内容路由重建引擎: media_kit → MDK     ← 最后一行
+        ↓ 日志彻底终止（无 dispose、无任何后续）
+```
+
+`_recreateEngineForLoad` 的代码紧接这行日志：
+
+```dart
+LogService().log('Player', '内容路由重建引擎: ...');   // ← 日志写到这
+try {
+  _player.state = AdapterPlaybackState.stopped;        // ← 💥 崩在这
+} catch (_) {}
+```
+
+#### 二、崩溃链
+
+```
+_player.state = stopped
+  → PlayerCoreBridge.state setter
+  → NipaMediaKitAdapter.state setter          ← 无 _isDisposed 守卫
+  → _player.stop()                            ← 无 await、无守卫
+  → media_kit stop(): _command(['stop'])
+                      _command(['playlist-clear'])
+                      _command(['playlist-play-index', 'none'])
+  → 访问已释放的 mpv ctx
+  → 0xc0000005（Windows SEH）
+```
+
+**`try/catch` 抓不到**：`0xc0000005` 是 Windows 结构化异常（SEH），
+不是 Dart 异常，进程直接终止。
+
+#### 三、为什么「自编译 MPV 之前」不崩（关键问答）
+
+项目里**有两个 media_kit 适配器**：
+
+| 文件 | 大小 | 何时使用 |
+|---|---|---|
+| `lib/services/player/media_kit_player_adapter.dart` | 16 KB | **v1.3.0 之前 Windows 用的** |
+| `lib/player_core/adapters/nipa_media_kit_adapter.dart` | 166 KB | v1.3.0 迁移 NipaPlay 后（现用） |
+
+旧适配器的 `state` setter：
+
+```dart
+case AdapterPlaybackState.stopped:
+  _player.pause();        // ← 只暂停，**全文从不调 _player.stop()**
+```
+
+新适配器的 `state` setter：
+
+```dart
+case PlayerPlaybackState.stopped:
+  _player.stop();         // ← 执行 3 条 mpv 命令
+```
+
+时间线：
+
+```
+v1.1.x ~ v1.2.x    Windows 用旧 media_kit 适配器（stopped→pause）  → 不崩 ✅
+v1.3.0 (1fe4bd2)   迁移 NipaPlay，换成 NipaMediaKitAdapter（stopped→stop）
+                   但 Windows 默认仍是 MDK → 未暴露
+3ca77fe (10/28)    Windows 默认改 MPV → 走 MPV 路径，仍未暴露
+641 (本轮)         Windows 默认改回 media_kit → 首次走新适配器默认路径
+                   → 💥 暴露 state setter 无守卫的缺口
+```
+
+**结论：不是「自编译 MPV」引入的**，而是 v1.3.0 换适配器时埋下，
+641 把 media_kit 设为默认后才被触发。
+
+#### 四、改动
+
+- [x] `PlayerAdapter` 接口新增 `bool get isDisposed`（文档注明 SEH 不可捕获）。
+- [x] 新增 `PlayerDisposableState` 接口（`lib/player_core/abstract_player.dart`）。
+- [x] `NipaMediaKitAdapter` 实现 `PlayerDisposableState`，补 **10 处守卫**：
+      | 位置 | 说明 |
+      |---|---|
+      | `state` setter | **崩溃直接点**（守卫在 switch 前，`_state` 仍更新） |
+      | `volume` setter | `_requestedVolume` 仍更新 |
+      | `playbackRate` setter | `_playbackRate` 仍更新 |
+      | `activeAudioTracks` setter | 5 处 `setAudioTrack` |
+      | `activeSubtitleTracks` setter | 5 处 `setSubtitleTrack` |
+      | `_ensureDefaultTracksSelected` | 默认轨选择 |
+      | `seekAndWait` | seek 入口 |
+      | `playDirectly` / `pauseDirectly` | 直控入口 |
+      | `stepBackward` | 逐帧后退 |
+      | `_retryJellyfinPlayback` | 重试播放 |
+- [x] `MdkPlayerAdapter` / `MpvPlayerAdapter` / `MediaKitPlayerAdapter`（旧）/
+      `ErikaPlayerAdapter` / `PlayerCoreBridge` 均实现 `isDisposed`。
+
+#### 五、测试
+
+- [x] 新增 `test/player_core/media_kit_dispose_guard_644_test.dart`（17 项）：
+  - 接口声明 + 5 个适配器实现
+  - `state` setter 守卫位置 + `_state` 仍更新 + `stop()` 语义不变
+  - 9 个入口逐个断言「守卫在原生调用之前」
+  - **全量守卫审计**：扫描所有 `_player.xxx(` 原生调用，
+    要求所在方法体内出现 `_isDisposed`（防止将来新增无守卫调用）
+  - 对照测试：旧适配器全文无 `_player.stop()`（回归证据）
+
+#### 六、待真机验证
+
+- [ ] **播放视频 → 点返回**：不闪退。
+- [ ] **播放视频 → 切 MDK**：不闪退。
+- [ ] **播放视频 → 切 media_kit**：不闪退。
+- [ ] 侧边栏切 tab、遥控返回、房间解散：不闪退。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

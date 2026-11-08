@@ -13,6 +13,15 @@ abstract interface class PlayerAsyncDisposable {
   Future<void> disposeAsync();
 }
 
+/// 底层播放器是否已释放（644）。
+///
+/// 调用方在异步间隙后操作播放器前应先判断——原生访问违例
+/// （Windows `0xc0000005`）是 SEH 异常，Dart 的 `try/catch` 抓不到，
+/// 进程会直接终止。
+abstract interface class PlayerDisposableState {
+  bool get isDisposed;
+}
+
 abstract interface class PlayerAsyncSeek {
   Future<void> seekAndWait({required int position});
 }

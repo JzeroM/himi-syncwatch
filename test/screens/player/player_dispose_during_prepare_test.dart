@@ -142,6 +142,9 @@ class _HangingPreparePlayerAdapter
   Stream<AdapterMediaEvent> get onEvent => const Stream.empty();
 
   @override
+  bool get isDisposed => false;
+
+  @override
   void dispose() {
     disposeCalls++;
     disposed = true;
