@@ -1375,6 +1375,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   final List<String> _broadcastMessages = [];
   final ValueNotifier<int> _broadcastVersion = ValueNotifier(0);
   int _onlineUserCount = 0;
+
+  /// 639：在线成员 ID 集合（事件驱动，`whoNow` 只做校准）。
+  ///
+  /// 真机回归「观众退房，房主在线人数未减」（两个方向都失败，含安卓房主）：
+  /// 旧实现只依赖 `whoNow` 的结果，而
+  /// - `resolveOnlineCount` 在查询返回 0 时**保留旧值**（人数永不下降）；
+  /// - 观众 `unsubscribe` 有 300ms 延迟，重查时序不稳；
+  /// - presence 未同步时查询结果不可靠。
+  /// 改为事件驱动：join / 心跳 / presence-join → 加入，
+  /// leave / presence-leave → 移除，`whoNow` 成功且有结果时覆盖校准。
+  final Set<String> _onlineUserIds = <String>{};
   StreamSubscription? _presenceSubscription;
   final ScrollController _broadcastScrollController = ScrollController();
   String? _audienceName;
@@ -5058,6 +5069,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final type = message['type'];
       LogService().log('Room', '收到消息 type=$type, sender=$senderId');
       if (type == AppConstants.msgTypeHeartbeat) {
+        // 639：收到心跳说明发送方在线 → 兜底加入集合
+        //（join 消息丢失时靠它恢复人数）。
+        _onUserJoined(message['userId'] as String?);
         _handleHeartbeat(message);
       } else if (type == AppConstants.msgTypeRoomInfo) {
         LogService().log('Room',
@@ -5071,6 +5085,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 加入了房间');
           _logSyncEvent('$name 加入房间');
+          // 639：事件驱动加入成员集合（不等 whoNow）。
+          _onUserJoined(message['userId'] as String?);
           _countRetryScheduler.restart();
           // 主持人发送房间信息（含媒体数据 + 剧集列表 + playUrl）
           if (_isHost) {
@@ -5106,6 +5122,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         } else if (action == 'leave') {
           final name = message['userName'] as String? ?? '观众';
           _addBroadcastMessage('$name 离开了房间');
+          // 639：事件驱动移除成员（立即生效，不等 whoNow 时序）。
+          _onUserLeft(message['userId'] as String?);
           _countRetryScheduler.restart();
         } else if (action == AppConstants.actionRequestRoomInfo) {
           if (_isHost) {
@@ -5167,7 +5185,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
         }
       }
+      // 639：presence 事件同样驱动成员集合（跨端更可靠）。
       if (mounted) {
+        final type = event['type'];
+        final publisher = event['publisher'] as String?;
+        if (type == RtmPresenceEventType.remoteJoinChannel) {
+          _onUserJoined(publisher);
+        } else if (type == RtmPresenceEventType.remoteLeaveChannel ||
+            type == RtmPresenceEventType.remoteTimeout) {
+          _onUserLeft(publisher);
+        }
         _countRetryScheduler.restart();
       }
     });
@@ -5180,7 +5207,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
 
     // 初始化在线人数（自己）
-    _onlineUserCount = 1;
+    // 639：初始化成员集合（自己），人数以集合长度为准。
+    final me = _myUserId;
+    if (me != null && me.isNotEmpty) _onlineUserIds.add(me);
+    _onlineUserCount = _onlineUserIds.isEmpty ? 1 : _onlineUserIds.length;
     if (mounted) setState(() {});
 
     // 延迟刷新在线人数（等待 RTM presence 同步）
@@ -5199,23 +5229,71 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 639：用 `whoNow` 的结果**校准**成员集合（不是唯一数据源）。
+  ///
+  /// 只在拿到非空列表时覆盖——查询失败/为空时保留事件驱动的结果，
+  /// 避免一次抖动把人数清空。
+  void _applyOnlineUsers(Iterable<String> ids) {
+    final next = <String>{
+      for (final id in ids)
+        if (id.isNotEmpty) id,
+    };
+    // 自己始终在集合里（房间里至少有自己）。
+    final me = _myUserId;
+    if (me != null && me.isNotEmpty) next.add(me);
+    if (next.length == _onlineUserIds.length &&
+        next.every(_onlineUserIds.contains)) {
+      return;
+    }
+    _onlineUserIds
+      ..clear()
+      ..addAll(next);
+    setState(() => _onlineUserCount = _onlineUserIds.length);
+    _syncNativePanelData();
+  }
+
+  /// 639：成员加入（join 消息 / 心跳 / presence-join）。
+  void _onUserJoined(String? userId) {
+    if (userId == null || userId.isEmpty) return;
+    if (_onlineUserIds.add(userId)) {
+      setState(() => _onlineUserCount = _onlineUserIds.length);
+      _syncNativePanelData();
+      LogService().log(
+          'Room', '成员加入: $userId → ${_onlineUserIds.length} 人');
+    }
+  }
+
+  /// 639：成员离开（leave 消息 / presence-leave/timeout）。
+  ///
+  /// 自己不会被移除——否则房主把自己算掉会出现「0 人」。
+  void _onUserLeft(String? userId) {
+    if (userId == null || userId.isEmpty) return;
+    if (userId == _myUserId) return;
+    if (_onlineUserIds.remove(userId)) {
+      setState(() => _onlineUserCount = _onlineUserIds.length);
+      _syncNativePanelData();
+      LogService().log(
+          'Room', '成员离开: $userId → ${_onlineUserIds.length} 人');
+    }
+  }
+
   void _refreshOnlineCount(RtmService rtmService) async {
     if (_rtmChannel == null) return;
-    final count = await rtmService.getOnlineUserCount(_rtmChannel!);
-    if (mounted) {
-      setState(() {
-        // 591：RTM presence 未同步时返回 0，会覆盖 _setupRoomSync 里设的 1
-        // （真机回归「在线人数显示 0」）。至少保留自己一个。
-        _onlineUserCount = PlayerScreen.resolveOnlineCount(
-          current: _onlineUserCount,
-          rtmCount: count,
-        );
-      });
-      _logSyncEvent('在线人数更新: $count');
-      LogService().log('Room', '在线人数更新: $count, channel: $_rtmChannel');
-      // 591：推送原生（否则原生头部永远是初始值）。
-      _syncNativePanelData();
+    // 639：用 `whoNow` 的**用户列表**校准集合（不再只看 count）。
+    //
+    // 旧实现只取 count 并交给 `resolveOnlineCount`——它在查询返回 0 时
+    // 保留旧值，导致「观众退房人数永不下降」。改为：
+    // - 有非空列表 → 覆盖集合（以服务端为准）；
+    // - 空/失败 → **保留**事件驱动的集合（不清空）。
+    final ids = await rtmService.getOnlineUserIds(_rtmChannel!);
+    if (!mounted) return;
+    if (ids.isNotEmpty) {
+      _applyOnlineUsers(ids);
     }
+    _logSyncEvent('在线人数更新: ${_onlineUserIds.length}（rtm=${ids.length}）');
+    LogService().log('Room',
+        '在线人数更新: ${_onlineUserIds.length} (rtm=${ids.length}), channel: $_rtmChannel');
+    _syncNativePanelData();
   }
 
   /// 成员变化（join/leave/presence）后的重查序列：
@@ -7870,7 +7948,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_playerDisposeStarted) return;
     _playerDisposeStarted = true;
     try {
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      // 639：Windows **不延迟**——texture 路径下 Flutter 纹理随 widget
+      // 卸载立即销毁，而延迟期间 mpv render context 仍在向已销毁的纹理
+      // 渲染 → libmpv-2.dll 访问违例（真机回归「从播放页返回闪退」）。
+      //
+      // 150ms 延迟原本是为 fvp/mdk 的 surfaceDestroyed 时序准备的
+      // （见下方注释），Windows MPV texture 不适用。
+      final isWindowsMpv =
+          defaultTargetPlatform == TargetPlatform.windows && player is MpvPlayerAdapter;
+      if (!isWindowsMpv) {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
       final disposable = player is AsyncDisposablePlayer
           ? player as AsyncDisposablePlayer
           : null;

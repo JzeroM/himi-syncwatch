@@ -89,9 +89,25 @@ void main() {
       expect(PlayerScreen.resolveOnlineCount(current: -1, rtmCount: 0), 1);
     });
 
-    test('_refreshOnlineCount 使用该纯函数 + 推原生', () {
-      expect(playerScreen, contains('PlayerScreen.resolveOnlineCount('));
-      expect(playerScreen, contains('_onlineUserCount = PlayerScreen.resolveOnlineCount('));
+    test('639：_refreshOnlineCount 改用成员集合（不再用 resolveOnlineCount）', () {
+      // 真机回归「观众退房人数未减」：resolveOnlineCount 在 rtmCount==0 时
+      // 保留旧值 → 人数永不下降。改为事件驱动的成员集合 + ids 校准。
+      // resolveOnlineCount 纯函数本身保留（边界测试仍有效），但主路径不再用。
+      final body = playerScreen.substring(
+        playerScreen.indexOf('void _refreshOnlineCount('),
+      );
+      final head = body.substring(0, body.indexOf('\n  }'));
+      // 去注释后再断言，避免注释里提到旧实现被误判。
+      final code = head
+          .split('\n')
+          .map((l) {
+            final i = l.indexOf('//');
+            return i >= 0 ? l.substring(0, i) : l;
+          })
+          .join('\n');
+      expect(code, contains('getOnlineUserIds'));
+      expect(code, contains('_applyOnlineUsers'));
+      expect(code, isNot(contains('resolveOnlineCount')));
     });
   });
 

@@ -52,22 +52,26 @@ class MpvOutputPolicy {
   static String normalizeVideoOutput(String? value) =>
       value == texture ? texture : surface;
 
-  /// 平台默认路径：Android / 鸿蒙 / Windows 均默认 Surface。
+  /// 平台默认路径：Android / 鸿蒙默认 Surface；**Windows 默认 Texture**。
   ///
-  /// 637：Windows 原先默认 Texture（`vo=libmpv` + `VideoController`），真机
-  /// 开播首帧即闪退，事件查看器实证：
-  ///   错误模块 libmpv-2.dll / 异常代码 0xc0000005（访问违例）
-  ///   错误偏移 0x1856fc → mpv_render_context_render + 0x1ab7c
-  /// 即 render context 失效后仍被渲染循环调用。改走 Surface
-  /// （`gpu-next` + HWND）后不再创建 render context，与 Android/鸿蒙一致。
+  /// Windows 为什么不能用 Surface（639 回退，真机实证）：
+  /// - 637 曾让 Windows 默认 Surface（`gpu-next` + HWND），但**灰屏**：
+  ///   有声音/字幕/进度，画面区域全灰——原生子 HWND 被 Flutter 不透明窗口
+  ///   遮挡（见 `buildWindowsMpvTextureOptions` 的注释：texture 走
+  ///   media_kit render API 正是为了避开这个遮挡）。
+  /// - 项目里的透明化方案（dwm-blur / layered-alpha / region-hole）目前只是
+  ///   `setTransparencyProbe` 探测代码，**未在正常播放时启用**。
+  /// - 而 637 的崩溃（`libmpv-2.dll` + 0xc0000005）已在 638 通过换掉自建
+  ///   libmpv（改 media_kit 官方 + shinchiro 完整版）解决，与渲染模式无关。
   ///
-  /// 用户仍可在设置里显式选 Texture（`userSet == true` 时尊重配置）。
+  /// 后续要做 Surface + HDR 直出时，需先实现窗口挖洞（region-hole）。
+  /// 用户仍可在设置里显式选 Surface（`userSet == true` 时尊重配置）。
   static String effectiveVideoOutput({
     required String configured,
     required bool userSet,
     required bool windows,
   }) {
-    // windows 参数保留（调用方语义不变），但不再改变默认值。
+    if (windows && !userSet) return texture;
     return normalizeVideoOutput(configured);
   }
 

@@ -3146,6 +3146,114 @@ out.set('count', total !== undefined && total > 0 ? total : ids.length);
 - [ ] **Windows 开播不闪退**（换官方 libmpv 后）。
 - [ ] 连续进出房 5 次，人数始终正确。
 
+### Phase 2.57：老 GPU 降级 + 人数改成员集合 + Windows 回退 texture（1.5.59+639）
+
+> 起因：638 打包后真机反馈——
+> ①「安卓 TV 模式 MPV 为什么走 surface 黑屏，还是之前的盒子」
+>   （H96 Max RK3528 / Mali-450 MP / Android 13）
+> ②「房间人数问题仍在，观众退房，人数未减」，且补充
+>   「鸿蒙观众+安卓房主」与「鸿蒙房主+安卓观众」**两个方向都未减**
+> ③「Windows MPV 灰屏有声」（截图：有字幕/进度/声音，画面全灰）
+> ④「win 从播放页返回闪退」
+> 另：用户明确「Windows 纹理模式实测正常，但后续需要走 surface 实现
+> HDR 直出」，故本次先回退 texture。
+
+#### 一、安卓 TV 盒子 surface 黑屏（Mali-450 / GLES 3.0）
+
+**根因**：Android surface 路径用 `vo=gpu-next`，而 mpv 官方手册明确
+`--target-colorspace-hint`（HDR 直出的唯一途径）**仅 `--vo=gpu-next`
+支持**，且 `gpu-next` 需要 **OpenGL ES 3.1+**。Mali-450 MP 只支持
+**GLES 3.0** → 渲染初始化失败 → 黑屏（有声音、无画面）。
+
+**修复**（探测 + 分档）：
+
+| GLES 版本 | `vo` | HDR 处理 |
+|---|---|---|
+| **≥ 3.1** | `gpu-next` | ✅ HDR 直出（`target-colorspace-hint=yes`） |
+| **< 3.1** | **`gpu`** | ❌ 不支持直出 → **SDR tone mapping**（`spline` + `bt.709`/`srgb`） |
+
+- [x] Kotlin `queryGlEsVersion`：用**无 surface 的 EGL 上下文**（1×1
+      pbuffer）读 `GL_VERSION`/`GL_RENDERER` 后立即销毁，全程 try-catch，
+      失败返回 0.0（调用方保持乐观默认）。
+- [x] Dart `_probeGlSupport()`：进程内只探测一次，按
+      `major > 3 || (major == 3 && minor >= 1)` 判定。
+- [x] `vo` 改为 `useGpuNext ? 'gpu-next' : 'gpu'`。
+- [x] HDR 直出参数只在 `useGpuNext` 时写入；老 GPU 改写 tone mapping
+      参数，避免 HDR 内容过曝/发灰。
+
+> 注：Mali-450 这类 2012 年 GPU 本身不支持 HDR 输出，故降级不影响实际体验。
+
+#### 二、人数未减（两个方向都失败）
+
+**关键判断**：`鸿蒙房主 + 安卓观众` 也失败 → **不是鸿蒙 `whoNow` 的问题**
+（638 的 `totalOccupancy` 修复方向对但不充分），而是**房主侧的人数来源**。
+
+**根因**：
+
+```dart
+// 旧实现
+_onlineUserCount = PlayerScreen.resolveOnlineCount(
+  current: _onlineUserCount,
+  rtmCount: count,
+);
+// resolveOnlineCount: rtmCount > 0 ? rtmCount : current   ← 0 时保留旧值
+```
+
+观众退房后若 `whoNow` 返回 0（presence 未同步 / 查询失败 / 时序未到），
+人数**永不下降**。
+
+**修复**：改为**事件驱动成员集合 + `whoNow` 校准**。
+
+- [x] 新增 `Set<String> _onlineUserIds`。
+- [x] `_onUserJoined`：`join` 消息 / 心跳 / presence-join → 加入。
+- [x] `_onUserLeft`：`leave` 消息 / presence-leave/timeout → 移除；
+      **自己永不移除**（否则房主会出现 0 人）。
+- [x] `_applyOnlineUsers`：`whoNow` 返回**非空列表**时覆盖校准，
+      并始终把自己加回。
+- [x] `_refreshOnlineCount` 改用 `getOnlineUserIds`（不再只取 count），
+      空结果**不清空**集合（保留事件驱动的结果）。
+- [x] 初始化时把自己加入集合。
+
+#### 三、Windows 灰屏（有声音/字幕，画面全灰）
+
+**根因**：637 让 Windows 默认 Surface（`gpu-next` + HWND），但**原生子
+HWND 被 Flutter 不透明窗口遮挡**——`buildWindowsMpvTextureOptions` 的
+注释早已写明 texture 路径正是为避开这个遮挡。项目里的透明化方案
+（`dwm-blur` / `layered-alpha` / `region-hole`）目前只是
+`setTransparencyProbe` 探测代码，**未在正常播放时启用**。
+
+**修复**：`effectiveVideoOutput` 恢复 `if (windows && !userSet) return texture;`。
+637 的崩溃（`libmpv-2.dll` + 0xc0000005）已在 638 通过换掉自建 libmpv
+解决，**与渲染模式无关**，故回退 texture 不会带回崩溃。
+
+> 后续要做 Surface + HDR 直出时，需先实现窗口挖洞（region-hole）。
+
+#### 四、Windows 从播放页返回闪退
+
+**根因**：`_disposePlayerAfterDelay` 固定延迟 **150ms** 才 dispose player。
+该延迟是为 fvp/mdk 的 `surfaceDestroyed` 时序准备的；但 **Windows MPV
+texture 路径下，Flutter 纹理随 widget 卸载立即销毁**，这 150ms 内 mpv
+render context 仍在向已销毁的纹理渲染 → `libmpv-2.dll` 访问违例。
+
+**修复**：Windows + MPV 时**不延迟**，立即 dispose。
+
+#### 五、测试
+
+- [x] 新增 `test/player_core/android_gpu_and_room_count_639_test.dart`
+      16 项：GLES 探测与 3.1 阈值、`vo` 分档、HDR 直出/降级 tone map、
+      成员集合增删、自己不移除、whoNow 校准、空结果保留、
+      Windows 默认 texture、Windows 不延迟 dispose。
+- [x] 更新 `mpv_output_policy_test.dart`（Windows 默认回 texture）、
+      `gesture_and_room_push_test.dart`（人数改集合）、
+      `room_sync_637_test.dart`（Windows 回 texture）。
+
+#### 六、待真机验证
+
+- [ ] **安卓 TV 盒子（Mali-450）surface 不再黑屏**。
+- [ ] 现代手机（GLES 3.1+）仍走 `gpu-next` + HDR 直出。
+- [ ] **观众退房 → 房主人数减少**（两个方向都验）。
+- [ ] **Windows 画面正常**（不灰屏）+ 从播放页返回不闪退。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

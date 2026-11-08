@@ -885,6 +885,10 @@ class HimiMpvWindowsSession implements MpvSession {
     }
     _controller = null;
     _textureIdListener = null;
+    // 639：VideoController 没有公开 dispose()——它通过
+    // `player.platform?.release` 回调在 Player.dispose 时自动释放 mpv
+    // render context（见 media_kit_video 的 video_controller.dart）。
+    // 因此这里只需确保 player.dispose() 一定被调用且**先于** destroySurface。
     try {
       await _player?.dispose();
     } catch (e) {

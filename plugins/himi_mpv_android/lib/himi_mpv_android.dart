@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
 import 'package:media_kit/media_kit.dart';
@@ -136,6 +136,51 @@ class HimiMpvAndroidSession implements MpvSession {
     }
   }
 
+  /// 639：设备是否支持 `vo=gpu-next`（要求 OpenGL ES 3.1+）。
+  ///
+  /// 真机回归：H96 Max RK3528（Mali-450 MP，仅 GLES 3.0）在 TV 模式走
+  /// surface 路径时**黑屏**——`gpu-next` 的渲染初始化失败。降级到
+  /// `vo=gpu`（支持 ES 2.0+）即可正常出画，代价是该路径**不支持 HDR 直出**
+  ///（mpv 官方手册：`--target-colorspace-hint` 仅 `--vo=gpu-next` 支持），
+  /// 故同时对 HDR 内容启用 SDR tone mapping。
+  ///
+  /// 探测失败时保持乐观默认（true），避免误伤现代设备。
+  static bool _glSupportsGpuNext = true;
+
+  /// 已探测过则跳过（每次进程只查一次，EGL 查询有开销）。
+  static bool _glProbed = false;
+
+  static Future<void> _probeGlSupport() async {
+    if (_glProbed) return;
+    _glProbed = true;
+    try {
+      final raw = await _methods.invokeMapMethod<String, Object?>(
+        'queryGlEsVersion',
+      );
+      final major = raw?['major'] as int? ?? 0;
+      final minor = raw?['minor'] as int? ?? 0;
+      final renderer = raw?['renderer'] as String? ?? '';
+      if (major > 0) {
+        _glSupportsGpuNext = major > 3 || (major == 3 && minor >= 1);
+        // ignore: avoid_print
+        print('[mpv] GLES $major.$minor ($renderer) → '
+            'vo=${_glSupportsGpuNext ? "gpu-next" : "gpu(降级)"}');
+      }
+    } catch (_) {
+      // 查询失败：保持乐观默认。
+    }
+  }
+
+  /// 测试注入点。
+  @visibleForTesting
+  static set debugGlSupportsGpuNext(bool value) {
+    _glSupportsGpuNext = value;
+    _glProbed = true;
+  }
+
+  @visibleForTesting
+  static bool get debugGlSupportsGpuNextValue => _glSupportsGpuNext;
+
   @override
   int get textureId => _textureId;
 
@@ -212,6 +257,9 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   Future<void> _start() async {
+    // 639：先探测 GLES 能力（决定 vo=gpu-next 还是降级 gpu）。
+    // 纹理模式不涉及 gpu-next，跳过探测。
+    if (nativeSurface) await _probeGlSupport();
     if (!nativeSurface) {
       await _ensurePlayer();
       return;
@@ -413,8 +461,10 @@ class HimiMpvAndroidSession implements MpvSession {
     if (_disposed || _player != null) return;
     if (nativeSurface && _surfaceHandle == 0) return;
     _log('创建播放器: wid=$_surfaceHandle hwdec=$hwdecMode');
+    // 639：gpu-next 需 GLES 3.1+；老 GPU（Mali-450 等）降级 vo=gpu 避免黑屏。
+    final useGpuNext = nativeSurface && _glSupportsGpuNext;
     final options = <String, String>{
-      if (nativeSurface) 'vo': 'gpu-next',
+      if (nativeSurface) 'vo': useGpuNext ? 'gpu-next' : 'gpu',
       'vid': 'auto',
       'aid': 'auto',
       // force-window 仅 surface 模式设 no（显式 wid 已给窗口）；纹理模式
@@ -446,12 +496,22 @@ class HimiMpvAndroidSession implements MpvSession {
       'sub-visibility': 'yes',
       'osd-level': '0',
       'osc': 'no',
-      if (hdr && nativeSurface) ...<String, String>{
+      // HDR 直出：mpv 官方手册明确 `--target-colorspace-hint` 仅
+      // `--vo=gpu-next` 支持，故老 GPU 降级时不能走这条。
+      if (hdr && nativeSurface && useGpuNext) ...<String, String>{
         'target-colorspace-hint': 'yes',
         'target-prim': 'bt.2020',
         'target-trc': hlg ? 'hlg' : 'pq',
         'hdr-compute-peak': 'auto',
         'tone-mapping': 'clip',
+      },
+      // 639：老 GPU 无法 HDR 直出 → 对 HDR 内容做 SDR tone mapping，
+      // 避免直接输出导致过曝/发灰。
+      if (hdr && nativeSurface && !useGpuNext) ...<String, String>{
+        'tone-mapping': 'spline',
+        'target-prim': 'bt.709',
+        'target-trc': 'srgb',
+        'hdr-compute-peak': 'auto',
       },
     };
     final player = Player(
@@ -460,7 +520,7 @@ class HimiMpvAndroidSession implements MpvSession {
         // TextureRegistry Surface + wid + vo=gpu，非 libmpv 渲染 API）。
         // 传 libmpv 会让 native VideoOutputManager 的 VideoOutput.Resize
         // 事件永不触发 → texture id 恒 null → _waitForTextureId 10s 超时。
-        vo: nativeSurface ? 'gpu-next' : 'gpu',
+        vo: useGpuNext ? 'gpu-next' : 'gpu',
         wid: nativeSurface ? _surfaceHandle : null,
         options: options,
         libass: true,

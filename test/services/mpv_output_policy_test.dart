@@ -33,18 +33,21 @@ void main() {
       expect(d.hdrOutput, isFalse);
     });
 
-    test('637：Windows 未手动设置时默认 Surface（不再默认纹理）', () {
-      // 真机崩溃实证：texture 路径（vo=libmpv + VideoController）在开播
-      // 首帧访问失效的 render context →
-      //   libmpv-2.dll / 0xc0000005 @ mpv_render_context_render+0x1ab7c
-      // 改走 Surface（gpu-next + HWND）后不再创建 render context。
+    test('639：Windows 未手动设置时回到 Texture（Surface 会灰屏）', () {
+      // 真机实证：637 让 Windows 默认 Surface 后**灰屏**——有声音/字幕/进度，
+      // 画面全灰：原生子 HWND 被 Flutter 不透明窗口遮挡（项目里的
+      // dwm-blur / layered-alpha / region-hole 仅是探测代码，未在正常播放
+      // 时启用）。texture 走 media_kit render API，不受遮挡影响。
+      //
+      // 注：637 的崩溃（libmpv-2.dll + 0xc0000005）已在 638 通过换掉自建
+      // libmpv 解决，与渲染模式无关。
       expect(
         MpvOutputPolicy.effectiveVideoOutput(
           configured: MpvOutputPolicy.surface,
           userSet: false,
           windows: true,
         ),
-        MpvOutputPolicy.surface,
+        MpvOutputPolicy.texture,
       );
       expect(
         MpvOutputPolicy.effectiveVideoOutput(
@@ -67,7 +70,7 @@ void main() {
       );
     });
 
-    test('637：Windows 默认配置下解析出的 decision 是 nativeSurface', () {
+    test('639：Windows 默认配置下解析出的 decision 不是 nativeSurface', () {
       final output = MpvOutputPolicy.effectiveVideoOutput(
         configured: MpvOutputPolicy.surface,
         userSet: false,
@@ -78,7 +81,7 @@ void main() {
         contentHdr: false,
         displayHdr: false,
       );
-      expect(d.nativeSurface, isTrue);
+      expect(d.nativeSurface, isFalse);
     });
 
     test('HDR 能力映射', () {
