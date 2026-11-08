@@ -49,7 +49,12 @@ CACHE_KEY="$(printf '%s' "$PREBUILT_TAG" | tr -c 'A-Za-z0-9._-' '_')"
 WORK="$CACHE_BASE/$CACHE_KEY/$ASSET"
 ZIP="$WORK/$ASSET.zip"
 UNPACKED="$WORK/unpacked"
-URL="https://github.com/AimesSoft/Erika/releases/download/$PREBUILT_TAG/$ASSET.zip"
+# 【上游仓库改名 609】AimesSoft/Erika 已改名为 AimesSoft/liberika——
+# 旧地址 404（实际下载到 9 字节 "Not Found"，SHA 校验必然失败，iOS CI 因此
+# 连续失败）。Android（erika-native.gradle）与 Windows
+# （build_erika_runtime.cmake）已在 609 修过，此处 Apple 分支漏改。
+# 从上游同步时**不要回退**此处。
+URL="https://github.com/AimesSoft/liberika/releases/download/$PREBUILT_TAG/$ASSET.zip"
 mkdir -p "$WORK"
 
 verify_sha256() {

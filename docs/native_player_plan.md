@@ -2886,6 +2886,68 @@ void RtmClient::Release() {
 - [ ] 鸿蒙：房主解散重开房 → 邀请同一观众 → 正常进房。
 - [ ] 鸿蒙：连续进出房 5 次，每次资源列表都正常。
 
+### Phase 2.54：iOS CI 失败——Erika 上游改名漏改 Apple 分支（1.5.56+636）
+
+> 起因：打 `v1.5.55` 标签后 CI 失败。排查发现 Android / Windows / analyze
+> 全部成功，只有 `build-ios` 失败。用户提示「前面遇到过相同问题，好像是换了
+> 名字 liberika」。
+
+#### 一、根因：609 轮次漏改了 Apple 分支
+
+上游仓库 `AimesSoft/Erika` 已改名为 **`AimesSoft/liberika`**，旧地址全部
+返回 404（实际下载到 9 字节 `"Not Found"`，SHA-256 校验必然失败）。
+
+609 轮次已修过两处：
+
+| 文件 | 609 状态 |
+|---|---|
+| `android/erika-native.gradle` | ✅ 已改 `liberika` |
+| `windows/build_erika_runtime.cmake` | ✅ 已改 `liberika` |
+| **`native/prepare_apple_prebuilt.sh`** | ❌ **漏改，仍是旧名** |
+
+CI 报错：
+
+```
+Error (Xcode): failed to download Erika prebuilt v0.2.1
+❌ iOS 构建失败，15 秒后重试（3/3）
+```
+
+#### 二、为什么 Android/Windows 没受影响
+
+| 平台 | 构建时是否下载 Erika 预编译包 |
+|---|---|
+| Android | ✅ 会下载，但 609 已改好 URL → 成功 |
+| Windows | ✅ 会下载，但 609 已改好 URL → 成功 |
+| **iOS/tvOS/macOS** | ✅ 会下载，**URL 仍是旧名 → 404 失败** |
+
+#### 三、验证（改前 / 改后）
+
+| 产物 | 旧地址 `AimesSoft/Erika` | 新地址 `AimesSoft/liberika` |
+|---|---|---|
+| `erika-capi-ios.zip` | ❌ 404 | ✅ **200** |
+| `erika-capi-tvos.zip` | ❌ 404 | ✅ **200** |
+| `erika-capi-macos-arm64.zip` | ❌ 404 | ✅ **200** |
+| `erika-capi-macos-x64.zip` | ❌ 404 | ✅ **200** |
+| `erika-capi-macos-universal.zip` | ❌ 404 | ✅ **200** |
+
+**SHA-256 完全一致**（本地 `native_artifacts.properties` 与上游
+`SHA256SUMS` 逐项比对，5 个平台全部匹配），因此只需改 URL，无需改校验值。
+
+#### 四、修复
+
+- [x] `native/prepare_apple_prebuilt.sh`：URL 改为
+      `https://github.com/AimesSoft/liberika/releases/download/...`，
+      并补 609 根因注释（提醒从上游同步时不要回退）。
+- [x] 全仓复查：所有 `AimesSoft/Erika/releases/download` 已无残留
+      （`homepage` / `repository` 等元数据字段不影响构建，保持原样）。
+- [x] 新增 `test/player_core/erika_prebuilt_url_test.dart` 11 项：
+      三处下载地址都必须用 `liberika`、不得残留旧下载 URL、Apple 脚本
+      保留 SHA 校验、版本清单未变。
+
+#### 五、待验证
+
+- [ ] 重新打 `v1.5.56` 标签，确认 iOS job 通过、Release 正常发布。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
