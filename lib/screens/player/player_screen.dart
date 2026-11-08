@@ -1490,6 +1490,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 避免旧 widget 在旧引擎释放后仍访问其原生对象（崩溃/错误）。
   bool _switchingEngine = false;
 
+  /// 646：视频区锚点（用于把屏幕几何同步给原生顶层窗口）。
+  ///
+  /// Windows HDR 直出走独立 `WS_POPUP` 顶层窗口，不在 Flutter 布局树里，
+  /// 必须靠这个 key 拿到视频区的实际屏幕位置/尺寸再驱动原生窗口。
+  final GlobalKey _videoAreaKey = GlobalKey();
+
   /// 应用已进入后台/熄屏（收到 paused/inactive/hidden）：回前台（resumed）
   /// 时据此触发一次视频输出恢复（纹理重建 / SurfaceView 补帧）。
   bool _appBackgrounded = false;
@@ -3474,6 +3480,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 修法：原生 UI **真正打开后**补推一次完整快照——那时 `_player` 必定
     // 已创建、守卫不会拦截，不依赖 `initState` 的调用时机。
     if (_nativeUiActive) _syncNativePanelData();
+    // 646：原生 UI 打开后同步顶层窗口几何（Windows HDR 直出）。
+    _syncNativeHostGeometry();
+  }
+
+  /// 646：把视频区的屏幕几何同步给原生**顶层窗口**。
+  ///
+  /// Windows 的 HDR 直出走独立 `WS_POPUP` 顶层窗口（不被 Flutter 的
+  /// DirectComposition 遮挡），该窗口不在 Flutter 布局树里 → 位置/尺寸
+  /// 必须由 Dart 侧显式驱动，否则拖动/缩放/全屏时会错位。
+  void _syncNativeHostGeometry() {
+    if (!mounted || _disposed) return;
+    final mpv = _player;
+    if (mpv is! MpvPlayerAdapter || !mpv.nativeUiActive.value) return;
+    final box = _videoAreaKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final origin = box.localToGlobal(Offset.zero);
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    unawaited(mpv.updateHostGeometry(
+      x: (origin.dx * dpr).round(),
+      y: (origin.dy * dpr).round(),
+      width: (box.size.width * dpr).round(),
+      height: (box.size.height * dpr).round(),
+    ));
   }
 
   /// 原生 UI 请求退出（back/exit 命令）：先关原生宿主，再走与顶栏
@@ -8409,7 +8438,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? (MpvSessionPlatform.isOhos ? _roomUiShouldBeNative : _nativeUiActive)
         : _nativeUiActive;
     if (nativeShortCircuit) {
-      return const SizedBox.expand();
+      // 646：原生 UI 接管时仍挂 key，用于把视频区几何同步给原生顶层窗口
+      // （Windows HDR 直出）。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _syncNativeHostGeometry();
+      });
+      return SizedBox.expand(key: _videoAreaKey);
     }
     final videoAreaTvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     final clockFormat = ref.watch(

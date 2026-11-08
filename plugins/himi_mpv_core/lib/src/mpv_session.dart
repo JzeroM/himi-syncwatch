@@ -66,6 +66,23 @@ abstract class MpvSession {
   Future<void> refreshSurface() async {}
 }
 
+/// 646：支持原生**顶层窗口**几何驱动的会话（目前仅 Windows）。
+///
+/// 单独成接口而非放进 [MpvSession]：Dart 的 `implements` 不继承默认实现，
+/// 加进主接口会强制 Android/鸿蒙/所有实现类都写一遍空方法。
+abstract interface class MpvHostWindowSession {
+  /// 同步原生顶层窗口的屏幕几何（物理像素）。
+  ///
+  /// Windows 的 HDR 直出走独立 `WS_POPUP` 顶层窗口，不在 Flutter 布局树内，
+  /// 位置/尺寸必须由 Dart 侧显式驱动，否则拖动/缩放/全屏时会错位。
+  Future<void> updateHostGeometry({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+  });
+}
+
 /// 平台 MPV 会话工厂。
 abstract class MpvSessionFactory {
   Future<MpvSession> create({

@@ -193,12 +193,16 @@ void main() {
       expect(ohosLayer, isNot(contains('anchorPosMs')));
     });
 
-    test('Windows 不走原生 UI（故用 Flutter 弹幕层，已值去重）', () {
+    test('Windows 646 起也走原生 UI（顶层窗口 + 原生弹幕层）', () {
       final gating = File(
         'lib/services/player/native/native_player_gating.dart',
       ).readAsStringSync();
-      expect(gating, contains("supportedPlatforms = <String>{'android', 'ohos'}"));
-      expect(gating, isNot(contains("'windows'")));
+      // 646：Windows 加入原生 UI 平台——HDR 直出走独立 WS_POPUP 顶层窗口
+      // （子 HWND 会被 Flutter 的 DirectComposition 遮挡），弹幕随之改由
+      // 原生层绘制（阶段 5）。
+      expect(gating, contains("'android'"));
+      expect(gating, contains("'ohos'"));
+      expect(gating, contains("'windows'"));
     });
 
     test('Erika 用引擎内部合成（不在本仓，故不适用）', () {

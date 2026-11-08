@@ -48,12 +48,18 @@ class MpvSessionPlatform {
       );
     }
     if (Platform.isWindows) {
-      // Windows 不支持原生播放器 UI，参数透传但忽略。
+      // 646：Windows 也支持原生播放器 UI——走**顶层窗口**（WS_POPUP）+
+      // MPV `vo=gpu-next` 直出，实现真 HDR。
+      //
+      // 旧注释「Windows 不支持原生播放器 UI」已过时：限制在于
+      // **子 HWND 会被 Flutter 的 DirectComposition 不透明层遮挡**
+      // （surface 灰屏根因），而非不能做原生 UI。改用顶层窗口后可行。
       return HimiMpvWindowsSession.create(
         width: width,
         height: height,
         hwdecMode: hwdecMode,
         nativeSurface: nativeSurface,
+        nativeUi: nativeUi,
         hdr: hdr,
         hlg: hlg,
       );

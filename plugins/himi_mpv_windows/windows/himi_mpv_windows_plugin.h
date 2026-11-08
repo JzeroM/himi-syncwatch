@@ -37,6 +37,26 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
   void DestroySurface();
   flutter::EncodableMap QueryHdrCapabilities();
 
+  // ── 646：原生播放器顶层窗口（HDR 直出）──────────────────────
+  //
+  // 【为什么需要】Windows 上 Flutter 用 DirectComposition 呈现到一个
+  // 不透明的顶层窗口，原生子 HWND **不在其合成树里** → 只能被整体遮挡
+  // （真机实证：MPV surface 灰屏、texture 崩 flutter_windows.dll 0x1551f）。
+  // Flutter 又不提供 Windows PlatformView（platform_views.dart 无 windows
+  // 分支），所以无法像安卓/鸿蒙那样把原生视图嵌进 Flutter 布局。
+  //
+  // 唯一可行路径：**自建顶层窗口**（WS_POPUP + WS_EX_TOPMOST），
+  // MPV 用 vo=gpu-next + wid 渲染进去 → 真 HDR 直出；
+  // UI 后续用 Direct2D 叠加在同一窗口内（阶段 2+）。
+  HWND CreateHostWindow(int x, int y, int width, int height);
+  HWND CreateRenderSurface();
+  void UpdateHostWindow(int x, int y, int width, int height);
+  void DestroyHostWindow();
+  flutter::EncodableMap GetHostWindowInfo() const;
+
+  static LRESULT CALLBACK HostWndProc(HWND hwnd, UINT message, WPARAM wparam,
+                                      LPARAM lparam);
+
   flutter::PluginRegistrarWindows* registrar_;
   HWND parent_hwnd_ = nullptr;
   HWND flutter_view_ = nullptr;
@@ -50,6 +70,13 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
   std::wstring original_window_title_;
   LONG_PTR original_view_ex_style_ = 0;
   HRGN original_view_region_ = nullptr;
+  // 646：原生播放器顶层窗口。
+  HWND host_hwnd_ = nullptr;
+  HWND render_hwnd_ = nullptr;
+  int host_x_ = 0;
+  int host_y_ = 0;
+  int host_width_ = 0;
+  int host_height_ = 0;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       method_channel_;
   std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>>

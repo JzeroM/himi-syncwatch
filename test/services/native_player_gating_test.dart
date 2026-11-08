@@ -64,20 +64,23 @@ void main() {
       );
     });
 
-    test('Windows/iOS 等平台不启用', () {
+    test('Windows 646 起也启用（顶层窗口 HDR 直出）；iOS 等不启用', () {
+      // 646：Windows 加入 supportedPlatforms——原生 UI 走独立 WS_POPUP
+      // 顶层窗口（子 HWND 会被 Flutter 的 DirectComposition 遮挡），
+      // 从而支持 MPV vo=gpu-next 真 HDR 直出。
       expect(
         NativePlayerGating.shouldUse(
           engine: 'mpv',
           actualVideoOutput: 'surface',
           platformName: 'windows',
         ),
-        isFalse,
+        isTrue,
       );
       expect(
         NativePlayerGating.shouldUse(
           engine: 'mpv',
           actualVideoOutput: 'surface',
-          platformName: 'iOS',
+          platformName: 'ios',
         ),
         isFalse,
       );
@@ -110,7 +113,8 @@ void main() {
           actualVideoOutput: 'surface',
           platform: TargetPlatform.windows,
         ),
-        isFalse,
+        isTrue,
+        reason: '646：Windows 也启用（顶层窗口 HDR 直出）',
       );
     });
   });
@@ -148,9 +152,9 @@ void main() {
         NativePlayerGating.denyReason(
           engine: 'mpv',
           actualVideoOutput: 'surface',
-          platformName: 'windows',
+          platformName: 'ios',
         ),
-        contains('windows'),
+        contains('ios'),
       );
       expect(
         NativePlayerGating.denyReason(

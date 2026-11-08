@@ -164,7 +164,7 @@ Map<String, String> _loadOptionOverrides() {
 }
 
 /// Windows MPV 会话：原生插件创建子 HWND，libmpv 通过 `wid` 直出。
-class HimiMpvWindowsSession implements MpvSession {
+class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
   HimiMpvWindowsSession._({
     required this.width,
     required this.height,
@@ -172,6 +172,7 @@ class HimiMpvWindowsSession implements MpvSession {
     required this.nativeSurface,
     required this.hdr,
     required this.hlg,
+    this.nativeUi = false,
   });
 
   static const MethodChannel _methods = MethodChannel('himi_mpv_windows');
@@ -184,6 +185,13 @@ class HimiMpvWindowsSession implements MpvSession {
   final bool nativeSurface;
   final bool hdr;
   final bool hlg;
+
+  /// 646：是否走**原生顶层窗口**（Windows HDR 直出）。
+  ///
+  /// true 时插件创建独立 `WS_POPUP` 顶层窗口，MPV 用 `vo=gpu-next` +
+  /// `wid` 渲染进去（真 HDR 直出）；Flutter 播放页视频层退场。
+  /// false 时沿用旧的子 HWND / Flutter 纹理路径。
+  final bool nativeUi;
 
   final StreamController<Map<Object?, Object?>> _events =
       StreamController<Map<Object?, Object?>>.broadcast();
@@ -226,14 +234,17 @@ class HimiMpvWindowsSession implements MpvSession {
     bool nativeSurface = true,
     bool hdr = false,
     bool hlg = false,
+    bool nativeUi = false,
   }) async {
     final session = HimiMpvWindowsSession._(
       width: width,
       height: height,
       hwdecMode: hwdecMode,
-      nativeSurface: nativeSurface,
+      // 646：nativeUi 模式下强制走原生 surface（顶层窗口渲染）。
+      nativeSurface: nativeUi ? true : nativeSurface,
       hdr: hdr,
       hlg: hlg,
+      nativeUi: nativeUi,
     );
     await session._start();
     return session;
@@ -270,7 +281,32 @@ class HimiMpvWindowsSession implements MpvSession {
 
   Future<void> _start() async {
     _optionOverrides = _loadOptionOverrides();
-    _log('session start overrides=$_optionOverrides');
+    _log('session start overrides=$_optionOverrides nativeUi=$nativeUi');
+    // 646：原生顶层窗口模式。
+    //
+    // 创建 WS_POPUP 顶层窗口 + 渲染子窗口，用渲染子窗口的 HWND 作为
+    // mpv 的 `wid` → `vo=gpu-next` 直出到该窗口（真 HDR）。
+    // 不走 Flutter 纹理（那条路必崩：flutter_windows.dll 0x1551f）。
+    if (nativeUi) {
+      try {
+        final host = await _methods.invokeMethod<int>('createHostWindow', {
+          'x': 0,
+          'y': 0,
+          'width': width,
+          'height': height,
+        });
+        final render = await _methods.invokeMethod<int>('createRenderSurface');
+        _log('nativeUi host=$host render=$render');
+        if (render != null && render > 0) {
+          _surfaceHandle = render;
+          await _ensurePlayer();
+          return;
+        }
+      } catch (e) {
+        _log('nativeUi create failed: $e');
+      }
+      return;
+    }
     if (!nativeSurface) {
       await _ensurePlayer();
       return;
@@ -897,12 +933,45 @@ class HimiMpvWindowsSession implements MpvSession {
     _player = null;
     _textureId = 0;
     // player 已释放后才允许销毁 HWND，避免 libmpv 继续访问已销毁窗口。
-    try {
-      await _methods.invokeMethod<void>('destroySurface');
-    } catch (e) {
-      _log('destroySurface failed: $e');
+    if (nativeUi) {
+      // 646：顶层窗口（含渲染子窗口）一并销毁。
+      try {
+        await _methods.invokeMethod<void>('destroyHostWindow');
+      } catch (e) {
+        _log('destroyHostWindow failed: $e');
+      }
+    } else {
+      try {
+        await _methods.invokeMethod<void>('destroySurface');
+      } catch (e) {
+        _log('destroySurface failed: $e');
+      }
     }
     _log('dispose session end');
     await _events.close();
+  }
+
+  /// 646：同步顶层窗口位置/尺寸（播放页几何变化时调用）。
+  ///
+  /// 顶层窗口不在 Flutter 布局树里，必须由 Dart 侧显式驱动几何，
+  /// 否则窗口会停在初始位置（拖动/缩放/全屏时错位）。
+  @override
+  Future<void> updateHostGeometry({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+  }) async {
+    if (!nativeUi || _disposed) return;
+    try {
+      await _methods.invokeMethod<void>('updateHostWindow', {
+        'x': x,
+        'y': y,
+        'width': width,
+        'height': height,
+      });
+    } catch (e) {
+      _log('updateHostWindow failed: $e');
+    }
   }
 }

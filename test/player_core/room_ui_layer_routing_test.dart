@@ -30,7 +30,10 @@ void main() {
     test('门控语义仍是 engine=mpv + surface + 平台支持', () {
       expect(gating, contains("engine == 'mpv'"));
       expect(gating, contains("actualVideoOutput == 'surface'"));
-      expect(gating, contains("supportedPlatforms = <String>{'android', 'ohos'}"));
+      // 646：Windows 加入原生 UI 平台（顶层窗口 HDR 直出）。
+      expect(gating, contains("'android'"));
+      expect(gating, contains("'ohos'"));
+      expect(gating, contains("'windows'"));
     });
   });
 

@@ -11,7 +11,15 @@ class NativePlayerGating {
   const NativePlayerGating._();
 
   /// 支持原生 UI 的平台名（`defaultTargetPlatform.name`）。
-  static const Set<String> supportedPlatforms = <String>{'android', 'ohos'};
+  ///
+  /// 646：加入 `windows`。Windows 的原生 UI 走**顶层窗口**（WS_POPUP）+
+  /// MPV `vo=gpu-next` 直出——子 HWND 会被 Flutter 的 DirectComposition
+  /// 不透明层遮挡（灰屏根因），顶层窗口则不受此限制，可实现真 HDR。
+  static const Set<String> supportedPlatforms = <String>{
+    'android',
+    'ohos',
+    'windows',
+  };
 
   /// 设置项默认值：开启。
   static const bool defaultSettingEnabled = true;

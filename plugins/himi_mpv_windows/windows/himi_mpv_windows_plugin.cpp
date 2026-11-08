@@ -186,6 +186,7 @@ HimiMpvWindowsPlugin::HimiMpvWindowsPlugin(
 }
 
 HimiMpvWindowsPlugin::~HimiMpvWindowsPlugin() {
+  DestroyHostWindow();
   DestroySurface();
 }
 
@@ -262,7 +263,204 @@ void HimiMpvWindowsPlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(QueryHdrCapabilities()));
     return;
   }
+  // ── 646：原生播放器顶层窗口 ─────────────────────────────────
+  if (method == "createHostWindow") {
+    int x = 0, y = 0, w = 0, h = 0;
+    if (const auto* args =
+            std::get_if<flutter::EncodableMap>(method_call.arguments())) {
+      auto read_int = [&](const char* key) -> int {
+        auto it = args->find(flutter::EncodableValue(key));
+        if (it == args->end()) return 0;
+        if (auto p = std::get_if<int32_t>(&it->second)) return *p;
+        if (auto p = std::get_if<int64_t>(&it->second))
+          return static_cast<int>(*p);
+        return 0;
+      };
+      x = read_int("x");
+      y = read_int("y");
+      w = read_int("width");
+      h = read_int("height");
+    }
+    const HWND host = CreateHostWindow(x, y, w, h);
+    result->Success(flutter::EncodableValue(
+        static_cast<int64_t>(reinterpret_cast<intptr_t>(host))));
+    return;
+  }
+  if (method == "createRenderSurface") {
+    const HWND render = CreateRenderSurface();
+    result->Success(flutter::EncodableValue(
+        static_cast<int64_t>(reinterpret_cast<intptr_t>(render))));
+    return;
+  }
+  if (method == "updateHostWindow") {
+    if (const auto* args =
+            std::get_if<flutter::EncodableMap>(method_call.arguments())) {
+      auto read_int = [&](const char* key) -> int {
+        auto it = args->find(flutter::EncodableValue(key));
+        if (it == args->end()) return 0;
+        if (auto p = std::get_if<int32_t>(&it->second)) return *p;
+        if (auto p = std::get_if<int64_t>(&it->second))
+          return static_cast<int>(*p);
+        return 0;
+      };
+      UpdateHostWindow(read_int("x"), read_int("y"), read_int("width"),
+                       read_int("height"));
+    }
+    result->Success();
+    return;
+  }
+  if (method == "destroyHostWindow") {
+    DestroyHostWindow();
+    result->Success();
+    return;
+  }
+  if (method == "getHostWindowInfo") {
+    result->Success(flutter::EncodableValue(GetHostWindowInfo()));
+    return;
+  }
   result->NotImplemented();
+}
+
+LRESULT CALLBACK HimiMpvWindowsPlugin::HostWndProc(HWND hwnd, UINT message,
+                                                   WPARAM wparam,
+                                                   LPARAM lparam) {
+  switch (message) {
+    case WM_CLOSE:
+      // 顶层窗口不自行销毁：由 Dart 侧 destroyHostWindow 统一管理，
+      // 避免与播放器 session 释放顺序竞争。
+      return 0;
+    case WM_DESTROY:
+      return 0;
+    default:
+      return ::DefWindowProc(hwnd, message, wparam, lparam);
+  }
+}
+
+HWND HimiMpvWindowsPlugin::CreateHostWindow(int x, int y, int width,
+                                            int height) {
+  if (host_hwnd_ != nullptr) {
+    // 已存在：仅更新位置/尺寸并显示。
+    UpdateHostWindow(x, y, width, height);
+    ::ShowWindow(host_hwnd_, SW_SHOW);
+    return host_hwnd_;
+  }
+
+  static bool class_registered = false;
+  if (!class_registered) {
+    WNDCLASSEX wc = {};
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = &HimiMpvWindowsPlugin::HostWndProc;
+    wc.hInstance = ::GetModuleHandle(nullptr);
+    wc.lpszClassName = L"HIMI_NATIVE_PLAYER_HOST";
+    wc.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
+    // 不设 hbrBackground：避免窗口首次显示时闪白（HDR 内容前先黑底）。
+    wc.hbrBackground = nullptr;
+    ::RegisterClassEx(&wc);
+    class_registered = true;
+  }
+
+  if (width <= 0) width = 1280;
+  if (height <= 0) height = 720;
+
+  // 顶层窗口：WS_POPUP + parent = nullptr。
+  // 这是与旧 CreateSurface（WS_CHILD 挂在 Flutter 窗口下）的本质区别——
+  // 子窗口会被 Flutter 的 DirectComposition 不透明层整体遮挡（灰屏根因），
+  // 顶层窗口则盖在其之上，MPV 可真正输出画面。
+  host_hwnd_ = ::CreateWindowEx(
+      WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+      L"HIMI_NATIVE_PLAYER_HOST", L"HIMI Player", WS_POPUP | WS_VISIBLE,
+      x, y, width, height, nullptr, nullptr, ::GetModuleHandle(nullptr),
+      nullptr);
+
+  if (host_hwnd_ == nullptr) {
+    return nullptr;
+  }
+
+  host_x_ = x;
+  host_y_ = y;
+  host_width_ = width;
+  host_height_ = height;
+
+  ::ShowWindow(host_hwnd_, SW_SHOW);
+  ::UpdateWindow(host_hwnd_);
+  return host_hwnd_;
+}
+
+HWND HimiMpvWindowsPlugin::CreateRenderSurface() {
+  if (host_hwnd_ == nullptr) return nullptr;
+  if (render_hwnd_ != nullptr) {
+    ::ShowWindow(render_hwnd_, SW_SHOW);
+    return render_hwnd_;
+  }
+
+  static bool class_registered = false;
+  if (!class_registered) {
+    WNDCLASSEX wc = {};
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.lpfnWndProc = ::DefWindowProc;
+    wc.hInstance = ::GetModuleHandle(nullptr);
+    wc.lpszClassName = L"HIMI_MPV_RENDER";
+    wc.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = ::CreateSolidBrush(RGB(0, 0, 0));
+    ::RegisterClassEx(&wc);
+    class_registered = true;
+  }
+
+  // MPV 渲染子窗口：挂在 host 下、铺满整个客户区。
+  // 后续 UI 层（阶段 2+）会作为**同级子窗口**叠在其上方。
+  render_hwnd_ = ::CreateWindowEx(
+      0, L"HIMI_MPV_RENDER", L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+      0, 0, host_width_, host_height_, host_hwnd_, nullptr,
+      ::GetModuleHandle(nullptr), nullptr);
+
+  if (render_hwnd_ != nullptr) {
+    ::ShowWindow(render_hwnd_, SW_SHOW);
+  }
+  return render_hwnd_;
+}
+
+void HimiMpvWindowsPlugin::UpdateHostWindow(int x, int y, int width,
+                                            int height) {
+  if (host_hwnd_ == nullptr) return;
+  if (width <= 0 || height <= 0) return;
+  host_x_ = x;
+  host_y_ = y;
+  host_width_ = width;
+  host_height_ = height;
+  ::SetWindowPos(host_hwnd_, HWND_TOPMOST, x, y, width, height,
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  if (render_hwnd_ != nullptr) {
+    ::SetWindowPos(render_hwnd_, nullptr, 0, 0, width, height,
+                   SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+  }
+}
+
+void HimiMpvWindowsPlugin::DestroyHostWindow() {
+  if (render_hwnd_ != nullptr) {
+    ::DestroyWindow(render_hwnd_);
+    render_hwnd_ = nullptr;
+  }
+  if (host_hwnd_ != nullptr) {
+    ::DestroyWindow(host_hwnd_);
+    host_hwnd_ = nullptr;
+  }
+  host_width_ = 0;
+  host_height_ = 0;
+}
+
+flutter::EncodableMap HimiMpvWindowsPlugin::GetHostWindowInfo() const {
+  flutter::EncodableMap info;
+  info[flutter::EncodableValue("host")] = flutter::EncodableValue(
+      static_cast<int64_t>(reinterpret_cast<intptr_t>(host_hwnd_)));
+  info[flutter::EncodableValue("render")] = flutter::EncodableValue(
+      static_cast<int64_t>(reinterpret_cast<intptr_t>(render_hwnd_)));
+  info[flutter::EncodableValue("x")] = flutter::EncodableValue(host_x_);
+  info[flutter::EncodableValue("y")] = flutter::EncodableValue(host_y_);
+  info[flutter::EncodableValue("width")] = flutter::EncodableValue(host_width_);
+  info[flutter::EncodableValue("height")] =
+      flutter::EncodableValue(host_height_);
+  return info;
 }
 
 HWND HimiMpvWindowsPlugin::CreateSurface() {

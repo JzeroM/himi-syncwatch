@@ -371,6 +371,31 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
   }
 
+  /// 646：同步原生顶层窗口几何（Windows HDR 直出模式）。
+  ///
+  /// 视频渲染在独立 `WS_POPUP` 顶层窗口里，不在 Flutter 布局树内，
+  /// 故播放页几何变化（拖动/缩放/全屏/分栏）时必须显式驱动。
+  Future<void> updateHostGeometry({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+  }) async {
+    final session = _player;
+    if (session == null || session is! MpvHostWindowSession) return;
+    final host = session as MpvHostWindowSession;
+    try {
+      await host.updateHostGeometry(
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+      );
+    } catch (e) {
+      LogService().log('mpv', 'updateHostGeometry 失败: $e');
+    }
+  }
+
   Future<void> _applyHdrOutputProperties(bool enabled) async {
     final player = _player;
     if (player == null) return;

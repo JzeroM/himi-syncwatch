@@ -4045,6 +4045,126 @@ Future<void> dispose({bool synchronized = true}) {
 - [ ] 若仍崩：日志现在会包含 `[rebuild] N/7` 与 `[dispose-old]` 步骤，
       以及适配器内部 `debugPrint`，可直接定位到具体行。
 
+> **结果：645 未修好。** 真机 1.5.65 仍崩。
+> 用户补充关键线索：**v1.5.3 默认 MDK 正常，但 v1.5.3 切 media_kit 也闪退**
+> → 说明 media_kit / MPV 在 Windows 上**从未可用**，只有 MDK 可用。
+> 用户要求 Windows 也要 HDR 直出 → 转向「原生顶层窗口」方案，见 Phase 2.64。
+
+### Phase 2.64：Windows 原生播放器（顶层窗口 + MPV HDR 直出）阶段 1（1.5.66+646）
+
+> 起因：用户要求 Windows 像安卓/鸿蒙一样走原生播放器，以获得 **HDR 直出**。
+
+#### 一、为什么 Windows 之前做不到（关键约束）
+
+| 平台 | Flutter 渲染 | 原生视频层如何插入 |
+|---|---|---|
+| Android | PlatformView | SurfaceFlinger **分层合成**，视频层在 Flutter 层下方 ✅ |
+| 鸿蒙 | ArkUI 布局 | 系统合成器分层 ✅ |
+| **Windows** | **DirectComposition**（不透明顶层窗口） | 原生**子** HWND 不在合成树里 → **被整体遮挡** ❌ |
+
+Flutter **不提供 Windows PlatformView**（`platform_views.dart` 无 windows
+分支），所以「把原生视图嵌进 Flutter 布局」这条路在 Windows 上不存在。
+
+真机实证：
+- MPV **texture** 路径 → 崩 `flutter_windows.dll` `0x1551f`
+- MPV **surface**（子 HWND）路径 → 灰屏（被 Flutter 遮挡）
+- media_kit → 同 texture 路径，同崩溃
+
+#### 二、方案：自建顶层窗口
+
+```
+Flutter 主窗口（播放页视频层退场，黑底）
+    ↓ 之上
+WS_POPUP 顶层窗口（WS_EX_TOPMOST）
+├─ 渲染子窗口：MPV vo=gpu-next + wid → 真 HDR 直出
+└─ UI 层（阶段 2+ 用 Direct2D 叠加，弹幕可覆盖画面）
+```
+
+关键：**顶层窗口**（`parent = nullptr`）不受 Flutter 的 DirectComposition
+遮挡——这是与旧 `CreateSurface`（`WS_CHILD` 挂 Flutter 窗口下）的本质区别。
+
+#### 三、阶段 1 改动（仅验证 HDR 能出图）
+
+**C++（`himi_mpv_windows_plugin.cpp/.h`）**
+
+- [x] `CreateHostWindow(x,y,w,h)`：`WS_POPUP | WS_EX_TOPMOST |
+      WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`，`parent = nullptr`。
+- [x] `CreateRenderSurface()`：`WS_CHILD` 挂在 host 下、铺满客户区。
+- [x] `UpdateHostWindow(x,y,w,h)`：`SetWindowPos` + `HWND_TOPMOST`。
+- [x] `DestroyHostWindow()`：先销毁 render 再销毁 host。
+- [x] `GetHostWindowInfo()`：诊断用。
+- [x] `HostWndProc`：拦截 `WM_CLOSE`（窗口由 Dart 侧统一销毁，
+      避免与播放器 session 释放顺序竞争）。
+- [x] 析构函数调用 `DestroyHostWindow()`。
+- [x] Channel 暴露 5 个方法。
+
+**Dart（`himi_mpv_windows.dart`）**
+
+- [x] `create(nativeUi: bool)`：`nativeUi` 时强制 `nativeSurface = true`。
+- [x] `_start()`：`nativeUi` 下 `createHostWindow` + `createRenderSurface`，
+      用 render HWND 作 `_surfaceHandle`（即 mpv 的 `wid`）。
+- [x] `dispose()`：`nativeUi` 下 `destroyHostWindow`（否则 `destroySurface`）。
+- [x] `updateHostGeometry(...)`：驱动窗口位置/尺寸。
+
+**接口（`mpv_session.dart`）**
+
+- [x] `MpvSession.updateHostGeometry(...)` 默认空实现（仅 Windows 覆写）。
+
+**适配器（`mpv_player_adapter.dart`）**
+
+- [x] `updateHostGeometry(...)` 转发给 session。
+
+**门控（`native_player_gating.dart`）**
+
+- [x] `supportedPlatforms` 加入 `'windows'`。
+
+**播放页（`player_screen.dart`）**
+
+- [x] 新增 `_videoAreaKey`（GlobalKey）与 `_syncNativeHostGeometry()`：
+      按 `devicePixelRatio` 把视频区屏幕几何换算成物理像素同步给原生窗口。
+- [x] `_buildVideoArea()` 原生接管分支挂 key 并 postFrame 触发同步。
+
+**HDR 配置（已有，确认）**
+
+```dart
+'gpu-api': 'd3d11', 'gpu-context': 'd3d11',
+'d3d11-output-format': hdr ? 'rgb10_a2' : 'auto',
+'target-colorspace-hint': 'yes',   // 仅 vo=gpu-next 支持
+'hdr-compute-peak': 'auto',
+```
+
+#### 四、测试
+
+- [x] 新增 `test/player_core/windows_native_ui_646_test.dart`（20 项）：
+  - C++ 顶层窗口（`WS_POPUP` 且实际 `CreateWindowEx` 调用无 `WS_CHILD`）
+  - render 子窗口挂 host、销毁顺序、析构清理、channel 方法齐全
+  - Dart `nativeUi` 贯通、`_start` 用 render HWND 作 wid、dispose 分支
+  - HDR 配置（`target-colorspace-hint=yes`、`rgb10_a2`）
+  - 门控（Windows 已支持）、会话工厂传参
+  - 播放页几何同步（DPR 换算、key 挂载）
+- [x] 更新 `test/services/native_player_gating_test.dart` 3 处旧断言。
+
+#### 五、阶段规划（后续）
+
+| 阶段 | 内容 | 预估 |
+|---|---|---|
+| 1 ✅ | 顶层窗口 + MPV HDR 渲染 | ~800 行 |
+| 2 | Direct2D UI 框架（UiNode/布局/绘制） | ~1500 行 |
+| 3 | 顶栏 + 底栏（复刻 Flutter） | ~1200 行 |
+| 4 | 7 个选择器面板 | ~1500 行 |
+| 5 | 弹幕层（Direct2D，覆盖画面） | ~800 行 |
+| 6 | 房间 UI | ~900 行 |
+| 7 | 手势/快捷键/HDR 元数据 | ~600 行 |
+
+#### 六、待真机验证（阶段 1）
+
+- [ ] **播放 HDR 视频 → 画面可见**（不灰屏、不黑屏）——本轮唯一目标。
+- [ ] 系统 HDR 开启时亮度/色彩正确（真 HDR 直出）。
+- [ ] 系统 HDR 关闭时自动 tone map，画面正常。
+- [ ] 拖动/缩放窗口时画面跟随（几何同步生效）。
+- [ ] 退出播放页后顶层窗口销毁、无残留。
+- [ ] Flutter 主窗口播放页显示黑底（预期行为）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
