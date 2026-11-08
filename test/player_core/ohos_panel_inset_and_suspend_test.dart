@@ -147,11 +147,14 @@ void main() {
       expect(cancelBody, isNot(contains('closeNativeUi')));
     });
 
-    test('确认分支 close + pop', () {
+    test('确认分支 close + 安全退出（643：先卸视频层再 pop）', () {
       final idx = screen.indexOf('Future<void> _exitFromNativeUi() async {');
       final body = screen.substring(idx, idx + 2600);
       expect(body, contains('await mpv.closeNativeUi();'));
-      expect(body, contains('Navigator.pop(context)'));
+      // 643：改走 _safePopPlayerPage（先卸视频层 → 等纹理释放 → 再 pop），
+      // 直接 Navigator.pop 会重现 flutter_windows.dll 纹理竞态崩溃。
+      expect(body, contains('_safePopPlayerPage()'));
+      expect(body, isNot(contains('Navigator.pop(context)')));
     });
   });
 

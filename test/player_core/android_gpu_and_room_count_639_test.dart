@@ -170,22 +170,35 @@ void main() {
     });
   });
 
-  group('④ Windows 返回闪退：不做 150ms 延迟', () {
-    test('Windows + MPV 立即 dispose', () {
+  group('④ Windows 返回闪退：不做 150ms 延迟（643 扩展为全引擎）', () {
+    test('Windows 下所有引擎都立即 dispose（不再只特判 MPV）', () {
       final body = stripComments(bodyOf(
         screen,
         'Future<void> _disposePlayerAfterDelay(PlayerAdapter player) async {',
       ));
-      expect(body, contains('isWindowsMpv'));
+      // 643：旧实现只让 MPV 不延迟，MDK 仍等 150ms —— 反而更危险
+      // （widget 树早已卸载，150ms 后才注销纹理 → 撞上已释放资源）。
+      // 现在 Windows 全引擎统一不延迟，时序由 _safePopPlayerPage 保证。
       expect(
         body,
-        contains('defaultTargetPlatform == TargetPlatform.windows'),
+        contains('defaultTargetPlatform != TargetPlatform.windows'),
+        reason: '非 Windows 才延迟；Windows 一律立即释放',
       );
       expect(
         body,
-        contains('if (!isWindowsMpv)'),
-        reason: 'Windows texture 下纹理随 widget 卸载立即销毁，延迟会访问失效纹理',
+        isNot(contains('isWindowsMpv')),
+        reason: '按引擎特判已移除（MDK 同样崩溃，偏移一致）',
       );
+    });
+
+    test('退出前先卸视频层（_safePopPlayerPage）', () {
+      final body = stripComments(bodyOf(
+        screen,
+        'Future<void> _safePopPlayerPage({bool popUntilFirst = false}) async {',
+      ));
+      expect(body, contains('_videoLayerDetached = true'));
+      expect(body, contains('endOfFrame'));
+      expect(body, contains('Navigator.pop(context)'));
     });
   });
 }

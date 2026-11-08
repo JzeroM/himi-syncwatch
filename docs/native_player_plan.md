@@ -3676,6 +3676,140 @@ if (!platformSupportsTv && next.tvMode) {
 - [ ] 鸿蒙/iOS/Windows：设置里**无 TV 模式开关**；鸿蒙旧存档若开过 TV，
       升级后自动回到手机布局。
 
+### Phase 2.61：Windows 退出播放页闪退真根因（双重 pop + 纹理时序）（1.5.63+643）
+
+> 起因：642 发布后 Windows 真机仍反馈「播放视频 → 点返回 → 闪退」。
+> 事件查看器两次崩溃（1.5.60.640 / 1.5.62.642）：
+> ```
+> 错误模块:   flutter_windows.dll
+> 异常代码:   0xc0000005
+> 错误偏移量: 0x000000000001551f   ← 两次完全相同
+> ```
+> 加上 639 那次，**三次偏移量一致**。
+
+#### 一、关键判断：与播放器引擎无关
+
+641 把 Windows 默认引擎从 MPV 换成 media_kit，崩溃**没有任何变化**。
+真机补充信息更是决定性：**MPV 崩、MDK 也崩，偏移量还完全一样**。
+
+三个引擎的共同点只有一个——**都走 Flutter `Texture` widget**
+（MPV 走 `_player.textureId` 分支，media_kit 走 `video_texture.dart:420`，
+MDK 走 fvp `updateTexture`）。偏移一致说明崩溃点在
+**Flutter 引擎的纹理/路由清理路径**，不在任何播放器内部。
+
+#### 二、根因 A：`_goBranch` 双重 pop（侧边栏切 tab）
+
+`himi_runtime.log` 里崩溃前连续出现 **4 次**
+`Bad state: Future already completed`，堆栈完全一致：
+
+```
+#1  ImperativeRouteMatch.complete   (go_router/match.dart:456)
+#5  NavigatorState.pop
+#6  NavigatorState.popUntil
+#7  _MainShellState._goBranch       ← main_shell.dart:71
+#8  ShellDesktopLayout._buildItem   ← shell_side_drawer.dart:118
+#9  TapGestureRecognizer.handleTapUp  ← 点了侧边栏
+```
+
+原实现：
+
+```dart
+source.navigatorKey.currentState?.popUntil((r) => r.isFirst);  // ① complete
+...
+widget.shell.goBranch(index, ...);   // ② 内部又退栈 → 再次 complete
+```
+
+**同一条路由被 complete 两次**。若此时正处于播放页（`PlayerScreen.dispose`
+中，纹理 / mpv ctx 正在释放），该异常会**打断清理流程** → 引擎状态不一致
+→ `flutter_windows.dll` 访问违例。
+
+修法：加 `canPop()` 守卫。
+
+```dart
+if (nav != null && nav.canPop()) {
+  nav.popUntil((r) => r.isFirst);
+}
+```
+
+#### 三、根因 B：`dispose` 与纹理注销竞态（播放页返回键）
+
+```dart
+void dispose() {
+  unawaited(_disposePlayerAfterDelay(player));  // 异步启动，立即返回
+  super.dispose();                              // widget 树卸载 → Texture 移除
+}
+```
+
+150ms（MDK）或 0ms（MPV）后适配器才执行 `updateTexture(width: -1)` 注销
+纹理 → **引擎已随 widget 释放纹理，随后又被注销** → 访问违例。
+
+> 639 曾试图修这个，但只让 **MPV** 不延迟，**MDK 仍延迟 150ms**——
+> 反而更危险（间隔越大，越确定撞上已释放资源）。
+
+修法：退出前**先把视频层移出 widget 树**，等纹理真正释放落定，再 pop。
+
+```dart
+Future<void> _safePopPlayerPage({bool popUntilFirst = false}) async {
+  if (!_videoLayerDetached) {
+    setState(() => _videoLayerDetached = true);   // 视频层退场
+    await WidgetsBinding.instance.endOfFrame;      // 等一帧（Texture.dispose）
+    await Future<void>.delayed(const Duration(milliseconds: 50));  // 引擎落定
+  }
+  if (!mounted) return;
+  popUntilFirst
+      ? Navigator.of(context).popUntil((route) => route.isFirst)
+      : Navigator.pop(context);
+}
+```
+
+`build` 里：`_videoLayerDetached ? SizedBox.shrink() : (原视频层)`。
+
+#### 四、改动清单
+
+- [x] `main_shell.dart` `_goBranch`：`canPop()` 守卫，消除双重 pop。
+- [x] `player_screen.dart` 新增 `_videoLayerDetached` + `_safePopPlayerPage`。
+- [x] 覆盖**全部 4 条退出路径**：
+      | 路径 | 处理 |
+      |---|---|
+      | 顶栏返回按钮 | `_safePopPlayerPage()` |
+      | 遥控返回键确认 | `_safePopPlayerPage()` |
+      | 原生 UI 关闭退出 | `_safePopPlayerPage()` |
+      | 房间解散 | `_safePopPlayerPage(popUntilFirst: true)` |
+- [x] `dispose()` 改 `try/finally`：路由异常时 `super.dispose()` 也必须执行，
+      否则 widget 树永不卸载 → 原生资源泄漏。
+- [x] Windows **全引擎**都不延迟（原只跳过 MPV）。
+- [x] **日志改同步写**：`writeAsString` → `writeAsStringSync(flush: true)`。
+
+#### 五、为什么日志要改同步写
+
+真机日志暴露了取证能力缺陷：`20:38:23` → `21:53:53` 之间 **75 分钟只有
+1 行日志**——因为 `writeAsString` 异步且不 await，原生访问违例让进程
+**立即终止**，缓冲区里未落盘的日志全丢。
+
+改法：
+- `writeAsStringSync(..., flush: true)`；
+- `getTemporaryDirectory()` 就绪前的日志先入 `_pendingRuntimeLines`，
+  就绪后一次性补写（启动早期是最容易崩的阶段，不能丢）。
+
+#### 六、测试
+
+- [x] 新增 `test/player_core/windows_exit_crash_643_test.dart`（15 项）：
+  - `_goBranch` canPop 守卫 + 守卫先于 popUntil + goBranch 不丢
+  - `_safePopPlayerPage` 四步顺序（卸层 → 一帧 → 50ms → pop）
+  - 4 条退出路径全部走安全退出
+  - `dispose` try/finally
+  - Windows 全引擎不延迟（`isWindowsMpv` 已移除）
+  - 日志同步写 + 缓冲补写
+
+#### 七、待真机验证
+
+- [ ] **播放视频 → 点返回**：不闪退（原崩溃路径 B）。
+- [ ] **播放视频 → 点侧边栏切 tab**：不闪退（原崩溃路径 A）。
+- [ ] **播放视频 → 遥控/键盘返回**：不闪退。
+- [ ] **房间内房主退出/房间解散**：不闪退。
+- [ ] 若仍崩：`%TEMP%\himi_runtime.log` 现在应有**崩溃前完整现场**
+      （同步写 + 补写），可直接定位。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

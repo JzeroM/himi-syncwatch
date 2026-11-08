@@ -68,7 +68,23 @@ class _MainShellState extends ConsumerState<MainShell> {
     // 丢弃子页/弹层/未保存表单，保证下次切回落在该 tab 首页。
     if (index != widget.shell.currentIndex) {
       final source = widget.shell.route.branches[widget.shell.currentIndex];
-      source.navigatorKey.currentState?.popUntil((r) => r.isFirst);
+      final nav = source.navigatorKey.currentState;
+      // 643：仅在**真的能退栈**时才 popUntil。
+      //
+      // 真机根因（事件查看器 + himi_runtime.log 双证）：原实现无条件
+      // `popUntil((r) => r.isFirst)`，紧接着 `widget.shell.goBranch(...)`
+      // ——后者内部同样会退栈到分支根，于是**同一条路由被 complete 两次**
+      // → `Bad state: Future already completed`（go_router
+      // ImperativeRouteMatch.complete / Route.didComplete）。
+      //
+      // 若此时正处于播放页（PlayerScreen.dispose 中，视频纹理 / mpv ctx
+      // 正在释放），该异常会**打断清理流程** → `flutter_windows.dll`
+      // 访问违例（0xc0000005 @ 0x1551f）。三个引擎（MPV / MDK / media_kit）
+      // 崩溃偏移完全一致，正是因为崩溃点在 Flutter 引擎的路由/纹理清理
+      // 路径，与具体播放器无关——这也是 641「换引擎」无效的原因。
+      if (nav != null && nav.canPop()) {
+        nav.popUntil((r) => r.isFirst);
+      }
       ref.read(shellBranchEpochProvider.notifier).bump(widget.shell.currentIndex);
     }
     widget.shell.goBranch(

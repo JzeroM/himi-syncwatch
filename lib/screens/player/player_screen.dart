@@ -1464,6 +1464,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 延迟释放只允许启动一次（防止引擎切换/异常路径重复释放）。
   bool _playerDisposeStarted = false;
 
+  /// 视频层是否已主动退场（643）。
+  ///
+  /// 【真机根因】退出播放页时，`dispose()` 先 `unawaited` 启动异步释放，
+  /// 再 `super.dispose()` 卸载 widget 树 → `Texture` widget 随树移除；
+  /// 而适配器的 `updateTexture(width: -1)` 注销纹理要等 150ms（MDK）或
+  /// 立即（MPV）才执行 → **Flutter 引擎已释放纹理，随后又被注销** →
+  /// `flutter_windows.dll` 访问违例（0xc0000005 @ 0x1551f）。
+  ///
+  /// 三个引擎崩溃偏移完全一致即因崩溃点在引擎纹理清理路径。
+  /// 修法：退出前先把视频层移出 widget 树（置本标志），等纹理真正
+  /// 释放落定，再执行 `Navigator.pop`。
+  bool _videoLayerDetached = false;
+
   /// 是否已成功起播过（首次获知非零时长置位）：`duration==0` 强制显
   /// 控件的加载兜底只在首次起播前生效，避免播放中重载的 duration 抖动
   /// 把控件反复强留屏上（见 [isLoadingMaskVisible]）。
@@ -3504,7 +3517,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } catch (_) {}
     }
     if (!mounted || _disposed) return;
-    if (context.mounted) Navigator.pop(context);
+    // 643：走安全退出（先卸视频层 → 等纹理释放 → 再 pop）。
+    await _safePopPlayerPage();
   }
 
   /// 选集/版本面板数据同步（Phase 2）：把 PlayerScreen 的 Emby 元数据映射成
@@ -5862,7 +5876,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       ),
     );
     Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+      // 643：走安全退出（先卸视频层 → 等纹理释放 → 再 popUntil 根路由）。
+      if (mounted) unawaited(_safePopPlayerPage(popUntilFirst: true));
     });
   }
 
@@ -7997,23 +8012,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 并发是「返回播放页闪退回桌面」的主嫌。错开 150ms 让 surface 先
     // 释放；随后由适配器等待进行中的 prepare/updateTexture 落定再 delete
     // （加载中返回时 prepare 可能仍在原生线程运行）。
-    unawaited(_disposePlayerAfterDelay(player));
-    super.dispose();
+    //
+    // 643：用 try/finally 保证 super.dispose() 一定执行。
+    // 路由异常（如 go_router `Future already completed`）若在此抛出，
+    // 旧实现会让 widget 树永不卸载 → 纹理/原生资源泄漏 → 后续崩溃。
+    try {
+      unawaited(_disposePlayerAfterDelay(player));
+    } finally {
+      super.dispose();
+    }
+  }
+
+  /// 安全退出播放页（643）。
+  ///
+  /// 顺序：**先卸视频层 → 等纹理释放落定 → 再 pop**。
+  ///
+  /// 直接 `Navigator.pop` 会让 `PlayerScreen.dispose()` 与路由出栈并发：
+  /// widget 树先卸载（`Texture` 随树移除），适配器的纹理注销后到 →
+  /// `flutter_windows.dll` 访问违例（0xc0000005 @ 0x1551f）。
+  /// 三个引擎偏移一致证明与播放器无关，是公共时序问题。
+  ///
+  /// [popUntilFirst] 为 true 时用 `popUntil((r) => r.isFirst)`
+  /// （房间解散场景需要一次退回根路由）。
+  Future<void> _safePopPlayerPage({bool popUntilFirst = false}) async {
+    if (!mounted) return;
+    if (!_videoLayerDetached) {
+      setState(() => _videoLayerDetached = true);
+      // 等一帧：让 Texture/Video widget 真正 dispose，触发引擎释放纹理。
+      await WidgetsBinding.instance.endOfFrame;
+      // 再给引擎 50ms 落定（Windows D3D 纹理释放是异步的）。
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    if (!mounted) return;
+    if (popUntilFirst) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } else {
+      Navigator.pop(context);
+    }
   }
 
   Future<void> _disposePlayerAfterDelay(PlayerAdapter player) async {
     if (_playerDisposeStarted) return;
     _playerDisposeStarted = true;
     try {
-      // 639：Windows **不延迟**——texture 路径下 Flutter 纹理随 widget
-      // 卸载立即销毁，而延迟期间 mpv render context 仍在向已销毁的纹理
-      // 渲染 → libmpv-2.dll 访问违例（真机回归「从播放页返回闪退」）。
+      // 643：Windows **所有引擎都不延迟**。
       //
-      // 150ms 延迟原本是为 fvp/mdk 的 surfaceDestroyed 时序准备的
-      // （见下方注释），Windows MPV texture 不适用。
-      final isWindowsMpv =
-          defaultTargetPlatform == TargetPlatform.windows && player is MpvPlayerAdapter;
-      if (!isWindowsMpv) {
+      // 639 只让 MPV 不延迟，MDK 仍等 150ms——反而更危险：widget 树早已
+      // 卸载（纹理随树释放），150ms 后才注销纹理 → 撞上已释放的资源。
+      // 时序现在统一由 `_safePopPlayerPage` 保证（先卸视频层、等落定、再 pop），
+      // 此处无需再额外等待。
+      if (defaultTargetPlatform != TargetPlatform.windows) {
         await Future<void>.delayed(const Duration(milliseconds: 150));
       }
       final disposable = player is AsyncDisposablePlayer
@@ -8094,7 +8142,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 退出前按「停止」上报（带最终位置）→ 服务器写入续播/自动已观看
         await _reportStopped();
         final shouldPop = await _confirmLeaveRoom();
-        if (shouldPop && mounted) Navigator.pop(context);
+        // 643：走安全退出（先卸视频层 → 等纹理释放 → 再 pop）。
+        if (shouldPop) await _safePopPlayerPage();
       },
       child: PlayerHotkey(
         onTogglePlayPause: _handleHotkeyTogglePlayPause,
@@ -8367,8 +8416,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final mediaKitController = _player is MediaKitPlayerProvider
         ? (_player as MediaKitPlayerProvider).mediaKitController
         : null;
-    final videoContent = _isPlayerReady ||
-            (!_hasEpisodeList && widget.roomCode == null)
+    // 643：退出前视频层已主动退场 → 不再挂任何 Texture/Video widget。
+    // 这是 `_safePopPlayerPage` 的关键一步：让纹理在页面仍挂载时释放，
+    // 避免与路由出栈的引擎销毁并发（真机崩溃 0x1551f 根因）。
+    final videoContent = _videoLayerDetached
+        ? const SizedBox.shrink()
+        : _isPlayerReady || (!_hasEpisodeList && widget.roomCode == null)
         ? Center(
             child: _switchingEngine
                 ? const SizedBox.shrink()
@@ -9023,7 +9076,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       showShare: widget.roomCode != null,
       onBack: () async {
         final shouldPop = await _confirmLeaveRoom();
-        if (shouldPop && context.mounted) Navigator.pop(context);
+        // 643：走安全退出（先卸视频层 → 等纹理释放 → 再 pop）。
+        if (shouldPop) await _safePopPlayerPage();
       },
       onToggleDecode: () =>
           setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
