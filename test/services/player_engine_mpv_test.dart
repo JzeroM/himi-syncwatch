@@ -22,7 +22,7 @@ void main() {
     );
   });
 
-  test('Android 与 Windows 默认 MPV；iOS 不注册', () {
+  test('Android 默认 MPV；641 起 Windows 默认 media_kit 且移除 MPV', () {
     PlayerEngineFactory.debugIsOhosOverride = false;
 
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -33,15 +33,19 @@ void main() {
     // 2026-10 起 Android 默认内核改为 MPV（原 MDK 保留为可选内核）。
     expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
 
+    // 641：Windows 改用 media_kit（MPV 在 Windows 上 texture 返回崩溃、
+    // surface 灰屏），MPV 从可选列表移除，MDK 保留。
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final winEngines = PlayerEngineFactory.supportedEngines();
+    expect(winEngines, contains(PlayerEngine.mediaKit));
+    expect(winEngines, contains(PlayerEngine.mdk));
+    expect(winEngines, contains(PlayerEngine.erika));
+    expect(winEngines, isNot(contains(PlayerEngine.mpv)));
+    expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mediaKit);
+    // 旧存档选过 mpv → 自动回退到新默认（media_kit）。
     expect(
-      PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
-      isTrue,
-    );
-    expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
-    expect(
-      PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
-      isFalse,
+      PlayerEngineFactory.resolveSelectedEngine('mpv'),
+      PlayerEngine.mediaKit,
     );
 
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;

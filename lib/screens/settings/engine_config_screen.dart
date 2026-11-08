@@ -110,9 +110,10 @@ class _EngineTabBody extends ConsumerWidget {
         // 640：原文案写死「HarmonyOS MPV」+「ohcodec 硬件解码」——Android /
         // Windows 也用 MPV（默认内核），且硬解器按平台不同
         // （Android=MediaCodec、Windows=D3D11/DXVA、鸿蒙=ohcodec）。
+        // 641：Windows 已移除 MPV（texture 返回崩溃、surface 灰屏）。
         title: Text('MPV'),
         subtitle: Text(
-          'libmpv 内核（Android / Windows / 鸿蒙默认），'
+          'libmpv 内核（Android / 鸿蒙默认），'
           '支持平台硬件解码、ASS/PGS 字幕与网络缓存',
         ),
       ),
@@ -320,8 +321,8 @@ class _EngineTabBody extends ConsumerWidget {
       const Padding(
         padding: EdgeInsets.all(16),
         child: Text(
-          'media_kit（libmpv）：Windows 专用引擎。Release 会替换为完整 libmpv。'
-          '遇到兼容性问题可切换到 MDK / Erika。',
+          'media_kit（libmpv）：Windows 默认引擎（641 起），走 Flutter 纹理渲染。'
+          'Release 会替换为完整 libmpv。遇到兼容性问题可切换到 MDK / Erika。',
           style: TextStyle(fontSize: 12, color: Colors.white54),
         ),
       ),

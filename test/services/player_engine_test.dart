@@ -28,18 +28,20 @@ void main() {
       );
     });
 
-    test('Windows：MDK + Erika + MPV，不暴露 MediaKit', () {
+    test('Windows：MDK + media_kit + Erika，MPV 已移除（641）', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       expect(
         PlayerEngineFactory.supportedEngines(),
         <PlayerEngine>[
           PlayerEngine.mdk,
+          PlayerEngine.mediaKit,
           PlayerEngine.erika,
-          PlayerEngine.mpv,
         ],
       );
+      // 641：Windows 上 MPV texture 返回崩溃（flutter_windows.dll）、
+      // surface 灰屏（HWND 被遮挡），故从可选列表移除。
       expect(
-        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
+        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
         isFalse,
       );
     });
@@ -62,11 +64,12 @@ void main() {
   });
 
   group('PlayerEngineFactory.defaultEngine / resolveSelectedEngine', () {
-    test('Android 与 Windows 默认 MPV；iOS 默认 Erika', () {
+    test('Android 默认 MPV；641 起 Windows 默认 media_kit；iOS 默认 Erika', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
+      // 641：MPV → media_kit。
+      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mediaKit);
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.erika);
     });
@@ -92,15 +95,21 @@ void main() {
         PlayerEngine.mdk,
       );
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      // 641：Windows 上 media_kit 重新可用（且为默认），落盘值直接生效。
       expect(
         PlayerEngineFactory.resolveSelectedEngine('media_kit'),
-        PlayerEngine.mpv,
+        PlayerEngine.mediaKit,
+      );
+      // 旧存档选过 mpv → Windows 已移除，回退到新默认 media_kit。
+      expect(
+        PlayerEngineFactory.resolveSelectedEngine('mpv'),
+        PlayerEngine.mediaKit,
       );
     });
   });
 
   group('PlayerEngineFactory.isSupported', () {
-    test('Android/Windows 支持 MPV；MediaKit 选项已移除', () {
+    test('Android 支持 MPV 不支持 MediaKit；Windows 支持 MediaKit 不支持 MPV', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
@@ -110,8 +119,10 @@ void main() {
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
+      // 641：Windows 反转——media_kit 可用、MPV 移除、MDK 保留。
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isFalse);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isTrue);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isTrue);
     });
   });
 

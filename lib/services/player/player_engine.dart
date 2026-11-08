@@ -66,7 +66,17 @@ class PlayerEngineFactory {
   ///   它只是 media_kit 的纹理路径，与原生 MPV 共用同一份 libmpv.so 与驱动，
   ///   去掉选项不影响原生 MPV 的编译与运行）
   /// - iOS：Erika
-  /// - Windows：MDK、Erika、MPV（MPV 为默认；media_kit 不再暴露）
+  /// - **Windows：MDK、media_kit、Erika（media_kit 为默认，MPV 已移除）**
+  ///
+  /// 【641 真机回归：Windows 移除 MPV】
+  /// Windows 上 MPV 两条渲染路径都不可用：
+  /// - texture：从播放页返回时崩在 `flutter_windows.dll`
+  ///   （0xc0000005，`ValueListenableBuilder` 与 textureId notifier 的
+  ///   生命周期竞态）；
+  /// - surface：原生子 HWND 被 Flutter 不透明窗口遮挡 → 灰屏（有声音无画面）。
+  /// 故 Windows 改用 media_kit（走 Flutter 纹理，长期验证稳定），
+  /// MDK 保留为备选。旧存档选过 mpv 的由 [resolveSelectedEngine]
+  /// 自动回退到新的平台默认。
   static List<PlayerEngine> supportedEngines() {
     if (isOhos) return const <PlayerEngine>[PlayerEngine.mpv];
     if (kIsWeb) return const <PlayerEngine>[PlayerEngine.mdk];
@@ -82,19 +92,21 @@ class PlayerEngineFactory {
       case TargetPlatform.windows:
         return const <PlayerEngine>[
           PlayerEngine.mdk,
+          PlayerEngine.mediaKit,
           PlayerEngine.erika,
-          PlayerEngine.mpv,
         ];
       default:
         return const <PlayerEngine>[PlayerEngine.mdk];
     }
   }
 
-  /// 平台默认引擎：Android / Windows / 鸿蒙均为 MPV。
+  /// 平台默认引擎：Android / 鸿蒙为 MPV，**Windows 为 media_kit**，
+  /// iOS 为 Erika。
   ///
   /// 2026-10 起 Android 默认改为 MPV（原 MDK）：原生 Surface + 原生播放器
-  /// UI 是双端统一方案，MDK 仅作为设置里可切换的备选内核保留。iOS 矩阵
-  /// 只开放 Erika。
+  /// UI 是双端统一方案，MDK 仅作为设置里可切换的备选内核保留。
+  /// 641：Windows 从 MPV 改为 media_kit（MPV 在 Windows 上 texture 返回崩溃、
+  /// surface 灰屏，见 [supportedEngines] 注释）。
   static PlayerEngine defaultEngine() {
     if (isOhos) return PlayerEngine.mpv;
     if (kIsWeb) return PlayerEngine.mdk;
@@ -105,7 +117,8 @@ class PlayerEngineFactory {
       return PlayerEngine.mpv;
     }
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      return PlayerEngine.mpv;
+      // 641：MPV → media_kit（MPV 在 Windows 上 texture 返回崩溃、surface 灰屏）。
+      return PlayerEngine.mediaKit;
     }
     return PlayerEngine.mdk;
   }

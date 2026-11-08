@@ -162,7 +162,12 @@ void main() {
         stripComments(playerSettings),
         isNot(contains('Android/Windows 使用 MDK')),
       );
-      expect(playerSettings, contains('Android / Windows / 鸿蒙使用 MPV'));
+      // 641：Windows 改为 media_kit（MPV 在 Windows 上 texture 返回崩溃、
+      // surface 灰屏），文案同步。
+      expect(
+        playerSettings,
+        contains('Android / 鸿蒙使用 MPV，Windows 使用 media_kit'),
+      );
     });
 
     test('MPV 配置页不再写死 HarmonyOS / ohcodec', () {

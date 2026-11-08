@@ -7,8 +7,8 @@ import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 /// 播放器设置枢纽页：默认播放器说明 / 播放器配置入口 / 网速 / 弹幕配置。
 ///
 /// 引擎专属设置（解码/音频/视频输出）在「播放器配置」tabbed 子页。
-/// 默认播放器为平台默认：**Android / Windows / 鸿蒙使用 MPV**，
-/// iOS 使用 Erika（MDK 作为备选内核保留在设置里）。
+/// 默认播放器为平台默认：**Android / 鸿蒙使用 MPV，Windows 使用
+/// media_kit，iOS 使用 Erika**（MDK 作为备选内核保留在设置里）。
 /// 每次进入播放器从平台默认开始；播放页顶栏切换仅当前播放会话生效，
 /// 不改变默认，剧集下一集沿用当前内核。
 class PlayerSettingsScreen extends ConsumerWidget {
@@ -29,9 +29,9 @@ class PlayerSettingsScreen extends ConsumerWidget {
           leading: const Icon(Icons.play_circle_outline),
           title: const Text('默认播放器'),
           subtitle: const Text(
-            '平台默认：Android / Windows / 鸿蒙使用 MPV，iOS 使用 Erika。'
-            '每次进入播放器从默认引擎开始；播放页切换仅当前播放，'
-            '下一集沿用当前内核',
+            '平台默认：Android / 鸿蒙使用 MPV，Windows 使用 media_kit，'
+            'iOS 使用 Erika。每次进入播放器从默认引擎开始；'
+            '播放页切换仅当前播放，下一集沿用当前内核',
           ),
         ),
         const Divider(height: 1),

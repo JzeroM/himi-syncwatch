@@ -3413,6 +3413,145 @@ rtmUserId = tokenData['tokenId'] as String;                    // RTM 实际
       `hwdec-current` 非 `no`）。
 - [ ] TV 模式引擎按钮在弹幕开关之后，遥控可进面板/选择/返回。
 
+### Phase 2.59：Windows 移除 MPV、默认改 media_kit（1.5.61+641）
+
+> 起因：640 打包后 Windows 真机反馈——**从播放页返回仍然闪退**。
+> 事件查看器（Windows Application Error，Event ID 1000）：
+> ```
+> 错误应用程序: himi_syncwatch.exe  版本: 1.5.59.639
+> 错误模块:     flutter_windows.dll
+> 异常代码:     0xc0000005（访问冲突）
+> 错误偏移量:   0x000000000001551f
+> ```
+> 注意版本是 **639**，不是 640——即 639 的「Windows 回退 texture」已生效
+> （崩溃点从 `libmpv-2.dll` 转移到 `flutter_windows.dll`），但问题没解决。
+
+#### 一、为什么 639/640 的修法都不够
+
+639 的判断是「texture 路径下 Flutter 纹理随 widget 卸载立即销毁，而 mpv
+render context 仍在向已销毁纹理渲染」→ 于是 Windows 不延迟 dispose。
+崩溃点确实从 `libmpv-2.dll` 移到了 `flutter_windows.dll`，但**根因仍在
+Dart/Flutter 层**：
+
+```dart
+// player_screen.dart 视频层
+ValueListenableBuilder<int?>(
+  valueListenable: _player.textureId,   // ← 监听 adapter 的 ValueNotifier
+  ...
+)
+
+// mpv_player_adapter.dart _disposeImpl()（异步）
+...
+_textureIdListenable.dispose();          // ← 最后销毁
+```
+
+而 `PlayerScreen.dispose()` 是**同步**的：
+
+```dart
+void dispose() {
+  unawaited(_disposePlayerAfterDelay(player));  // 异步启动，立即返回
+  super.dispose();                              // widget 树立即卸载
+}
+```
+
+`super.dispose()` 卸载 widget 时 `ValueListenableBuilder` 会
+`removeListener`，与 `_disposeImpl()` 里的 `_textureIdListenable.dispose()`
+形成**生命周期竞态** → 访问已销毁的 `ChangeNotifier` → Flutter 引擎
+访问违例（`0xc0000005 @ flutter_windows.dll+0x1551f`）。
+
+另一条路（surface）也已证伪：Windows 上 mpv 用 `wid` 绑原生子 HWND，
+而 Flutter 窗口是不透明合成层，**子窗口被整片遮挡** → 灰屏（有声音无画面）。
+
+**结论：Windows 上 MPV 的两条渲染路径都不可用**，继续在 MPV 上打补丁
+属于在错误的地基上修房子。
+
+#### 二、改动：Windows 默认改 media_kit，移除 MPV
+
+`lib/services/player/player_engine.dart`：
+
+| 项 | 640 | 641 |
+|---|---|---|
+| `supportedEngines()` Windows | `[mdk, erika, mpv]` | **`[mdk, mediaKit, erika]`** |
+| `defaultEngine()` Windows | `mpv` | **`mediaKit`** |
+
+```dart
+case TargetPlatform.windows:
+  return const <PlayerEngine>[
+    PlayerEngine.mdk,
+    PlayerEngine.mediaKit,   // 641：默认（走 Flutter 纹理）
+    PlayerEngine.erika,
+    // MPV 移除：texture 返回崩溃、surface 灰屏
+  ];
+```
+
+- [x] media_kit 走 `VideoController` → **Flutter 引擎纹理**，不创建原生
+      子窗口、也不自己管 mpv render context 与纹理的销毁顺序。
+- [x] **MDK 保留**为备选（Windows 上长期验证最稳的内核）。
+- [x] **Erika 保留**（Rust 内核，原生位图字幕）。
+- [x] **旧存档自动回退**：`resolveSelectedEngine()` 逻辑未改
+      （`supportedEngines().contains(selected) ? selected : defaultEngine()`），
+      存过 `mpv` 的用户升级后自动落到 `mediaKit`，无需迁移代码。
+- [x] 设置页 tab 由 `supportedEngines()` 生成 → Windows 自动少一个 MPV 页，
+      无需额外删 UI 代码。
+
+#### 三、平台矩阵（641 后）
+
+| 平台 | 默认 | 可选 |
+|---|---|---|
+| Android / Android TV | MPV | MDK、Erika、MPV |
+| **Windows** | **media_kit** | **MDK、media_kit、Erika** |
+| 鸿蒙 | MPV | 仅 MPV |
+| iOS | Erika | 仅 Erika |
+| Web | MDK | 仅 MDK |
+
+#### 四、文案同步
+
+- [x] `player_settings_screen.dart`：「平台默认：Android / 鸿蒙使用 MPV，
+      **Windows 使用 media_kit**，iOS 使用 Erika」。
+- [x] `engine_config_screen.dart`：MPV 页副标题去掉 Windows
+      （「libmpv 内核（Android / 鸿蒙默认）」）；media_kit 页说明改为
+      「**Windows 默认引擎（641 起）**，走 Flutter 纹理渲染」。
+- [x] `player_adapter.dart` 枚举注释按 641 现状重写。
+
+#### 五、测试
+
+- [x] 新增 `test/player_core/windows_engine_641_test.dart`（10 项）：
+      Windows 引擎矩阵/默认值/旧存档回退/其他平台不受影响/源码守卫。
+- [x] 更新 `test/services/player_engine_test.dart` 4 处旧断言
+      （Windows 矩阵、默认引擎、落盘回退、`isSupported`）。
+- [x] 更新 `test/services/player_engine_mpv_test.dart`（Windows 段）。
+- [x] 更新 `test/screens/player_kernel_panel_test.dart`（面板入口反转）。
+- [x] 更新 `test/player_core/surface_fallback_640_test.dart` 文案断言。
+
+#### 六、顺带修 CI：外部依赖下载加重试
+
+641 之前的 `v1.5.60` CI 三平台里 Windows / iOS 双双失败，**都与代码无关**，
+是外部依赖下载的瞬时故障：
+
+| 平台 | 失败点 | 表象 |
+|---|---|---|
+| Windows | `fvp/cmake/deps.cmake:79` | `Failed to download "HTTP response code said error"` |
+| iOS | `media_kit_libs_ios_video/ios/Makefile` | `Frameworks/` 为空 → Swift 报 `Cannot find 'mpv_error_string' in scope` |
+
+两处原本都是「一次失败即 FATAL_ERROR」，把偶发网络抖动放大成整条流水线失败。
+本轮补上重试：
+
+- [x] `third_party/fvp/cmake/deps.cmake`：`_fvp_download_file()` 改为
+      3 次重试 + 每次失败清残片 + `cmake -E sleep 5` 退避 + `TIMEOUT 600`。
+      （`deps.cmake:79` 正是这个函数的 `FATAL_ERROR`。）
+- [x] `media_kit_libs_ios_video/ios/Makefile`：`curl` 加
+      `--fail --retry 5 --retry-delay 5 --retry-all-errors`。
+      加 `--fail` 很关键——否则 4xx/5xx 会被当成成功写进文件，
+      后面才在 `shasum` 或 Swift 编译处报错，掩盖真实原因。
+
+#### 七、待真机验证
+
+- [ ] **Windows 从播放页返回不再闪退**（关键）。
+- [ ] Windows 播放画面正常（不灰屏、有画面有声音）。
+- [ ] Windows 字幕（ASS/PGS）、音轨切换、seek 正常。
+- [ ] Windows HDR 内容 tone map 正常（media_kit 走 `vo=gpu` 路径）。
+- [ ] 旧存档选过 MPV 的用户：升级后设置页显示 media_kit，播放正常。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

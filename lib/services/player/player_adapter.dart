@@ -7,9 +7,10 @@ import 'dart:ui' show Size;
 /// 播放器引擎标识。
 ///
 /// 平台分布（见 player_engine.dart）：
-/// - mdk：全平台默认
-/// - media_kit：Android 等平台的 libmpv 纹理路径；Windows 不再暴露
-/// - erika：非 TV 平台（Rust 内核；手机真 HDR10 + 原生位图字幕/PGS）
+/// - mdk：Android / Windows / Web 的备选内核（Windows 长期验证最稳）
+/// - media_kit：**Windows 默认**（641 起，走 Flutter 纹理）
+/// - erika：iOS 默认 + 手机真 HDR10 + 原生位图字幕/PGS
+/// - mpv：Android / 鸿蒙默认（原生 Surface + 原生播放器 UI）
 enum PlayerEngine {
   mdk('mdk', 'MDK'),
   mediaKit('media_kit', 'media_kit'),

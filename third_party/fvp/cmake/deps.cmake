@@ -65,18 +65,43 @@ function(_fvp_download_file URL OUTPUT EXPECTED_SHA256)
   get_filename_component(OUTPUT_DIR "${OUTPUT}" DIRECTORY)
   file(MAKE_DIRECTORY "${OUTPUT_DIR}")
   set(PARTIAL_OUTPUT "${OUTPUT}.part")
-  file(REMOVE "${PARTIAL_OUTPUT}")
 
-  message(STATUS "Downloading ${URL}")
-  file(DOWNLOAD "${URL}" "${PARTIAL_OUTPUT}"
-    SHOW_PROGRESS
-    STATUS DOWNLOAD_STATUS
-  )
-  list(GET DOWNLOAD_STATUS 0 DOWNLOAD_STATUS_CODE)
-  list(GET DOWNLOAD_STATUS 1 DOWNLOAD_STATUS_MESSAGE)
-  if(NOT DOWNLOAD_STATUS_CODE EQUAL 0)
+  # 641：下载加重试（3 次）。
+  #
+  # 起因：CI `build-windows` 多次因这一行失败——
+  #   CMake Error at fvp/cmake/deps.cmake:79 (message):
+  #     Failed to download "HTTP response code said error"
+  # 属 GitHub Releases 侧的瞬时故障（同一提交重跑即可成功），
+  # 但 `file(DOWNLOAD)` 一次失败就直接 FATAL_ERROR，把整个 Windows
+  # 构建打断。此处改为「失败清残片 + 退避后重试」，3 次仍失败才报错。
+  set(DOWNLOAD_OK FALSE)
+  set(LAST_DOWNLOAD_MESSAGE "")
+  foreach(ATTEMPT RANGE 1 3)
     file(REMOVE "${PARTIAL_OUTPUT}")
-    message(FATAL_ERROR "Failed to download ${URL}: ${DOWNLOAD_STATUS_MESSAGE}")
+    message(STATUS "Downloading ${URL} (attempt ${ATTEMPT}/3)")
+    file(DOWNLOAD "${URL}" "${PARTIAL_OUTPUT}"
+      SHOW_PROGRESS
+      STATUS DOWNLOAD_STATUS
+      TIMEOUT 600
+    )
+    list(GET DOWNLOAD_STATUS 0 DOWNLOAD_STATUS_CODE)
+    list(GET DOWNLOAD_STATUS 1 DOWNLOAD_STATUS_MESSAGE)
+    if(DOWNLOAD_STATUS_CODE EQUAL 0)
+      set(DOWNLOAD_OK TRUE)
+      break()
+    endif()
+    set(LAST_DOWNLOAD_MESSAGE "${DOWNLOAD_STATUS_MESSAGE}")
+    message(STATUS "Download failed (${DOWNLOAD_STATUS_CODE}): ${DOWNLOAD_STATUS_MESSAGE}")
+    if(ATTEMPT LESS 3)
+      # CMake 3.17 无内置 sleep，用 -E sleep（3.0+ 可用）。
+      execute_process(COMMAND ${CMAKE_COMMAND} -E sleep 5)
+    endif()
+  endforeach()
+
+  if(NOT DOWNLOAD_OK)
+    file(REMOVE "${PARTIAL_OUTPUT}")
+    message(FATAL_ERROR
+      "Failed to download ${URL} after 3 attempts: ${LAST_DOWNLOAD_MESSAGE}")
   endif()
 
   if(NOT "${EXPECTED_SHA256}" STREQUAL "")
