@@ -3931,6 +3931,120 @@ v1.3.0 (1fe4bd2)   迁移 NipaPlay，换成 NipaMediaKitAdapter（stopped→stop
 - [ ] **播放视频 → 切 media_kit**：不闪退。
 - [ ] 侧边栏切 tab、遥控返回、房间解散：不闪退。
 
+> **结果：644 未修好。** 真机 1.5.64 仍然「点返回崩 + 切任何引擎都崩」。
+> 但这次日志暴露了 644 推断的错误，并指向最终根因 → 见 Phase 2.63。
+
+### Phase 2.63：Windows 闪退最终根因——stop() 与 dispose() 竞争 mpv ctx（1.5.65+645）
+
+> 起因：644 发布后真机仍崩（点返回、切任何引擎都崩）。
+> 用户提示「参考旧适配器」，对照后发现决定性差异。
+
+#### 一、644 的推断错在哪
+
+644 的判断是「dispose 后仍调用 `state=stopped`」→ 加 `_isDisposed` 守卫。
+但**守卫在崩溃时不会触发**，因为 `_isDisposed` 当时还是 `false`：
+
+```
+_recreateEngineForLoad:
+  _player.state = stopped      ← 此刻 Player 还活着（_isDisposed=false）
+  ...
+  await _disposeOldEngine()    ← 之后才 dispose
+```
+
+另外我当时用「日志里没有 `media_kit teardown`」推断「dispose 未执行」——
+**这个推断也是错的**：那行是 `debugPrint`，release 版不输出，也不进
+`himi_runtime.log`。
+
+#### 二、对照旧适配器找到真正差异
+
+| 维度 | 旧适配器（`media_kit_player_adapter.dart`，Windows 从不崩） | 新适配器（`nipa_media_kit_adapter.dart`，必崩） |
+|---|---|---|
+| `stopped` 分支 | **`_player.pause()`** | **`_player.stop()`** |
+
+旧适配器全文**从不调用 `_player.stop()`**。
+
+#### 三、竞争链（为什么 stop() 必崩）
+
+media_kit 源码（`player/native/player/real.dart`）：
+
+```dart
+// stop()：排队进 lock
+Future<void> stop({bool synchronized = true}) {
+  Future<void> function() async {
+    ...
+    for (final command in [['stop'], ['playlist-clear'],
+                           ['playlist-play-index','none']]) {
+      await _command(command);      // ← 访问 mpv ctx
+    }
+  }
+  if (synchronized) return lock.synchronized(function);
+}
+
+// dispose()：内部再调 stop，但**不加锁**
+Future<void> dispose({bool synchronized = true}) {
+  Future<void> function() async {
+    await NativeReferenceHolder.instance.remove(ctx);
+    await stop(notify: false, synchronized: false);   // ← 立即执行
+    disposed = true;
+    await super.dispose();
+    await Initializer(mpv).dispose(ctx);              // ← ctx 销毁
+    await _terminateNativePlayer(...);
+  }
+  if (synchronized) return lock.synchronized(function);
+}
+```
+
+时序：
+
+```
+外部：_player.stop()            → 排队等 lock
+紧接：_player.dispose()          → 进 lock，内部
+                                  stop(synchronized:false) 立即跑完
+                                  → ctx 销毁
+外部 stop 续体这时才执行 _command(['stop'])  → 访问已销毁 ctx
+                                             → 0xc0000005
+```
+
+**这解释了所有现象**：
+
+| 现象 | 原因 |
+|---|---|
+| 点返回崩 | 退出路径同样「先 stop 再 dispose」 |
+| 切任何引擎都崩 | 旧引擎只要是 media_kit 就中招（641 起 Windows 默认 media_kit） |
+| 三次崩溃偏移完全一致（0x1551f） | 同一个 mpv ctx 访问违例 |
+| 换引擎无效（641） | 崩溃在旧引擎的销毁竞争，与目标引擎无关 |
+| 644 守卫无效 | 崩溃时 `_isDisposed` 仍为 false |
+
+#### 四、改动
+
+- [x] **核心**：`state` setter 的 `stopped` 分支
+      `_player.stop()` → **`_player.pause()`**（对齐旧适配器）。
+      `pause()` 只写 `pause` 属性，不参与 teardown 序列，完全避开竞争。
+      语义无损：真正的资源释放由 `dispose()` 完成。
+- [x] `debugPrint` 重定向到 `LogService`（`main.dart` `_installErrorHooks`）：
+      本次误判的根源就是适配器内部诊断全走 `debugPrint`，release 不输出。
+- [x] `_recreateEngineForLoad` 加 **7 步日志**（`[rebuild] 1/7` … `7/7`）。
+- [x] `_disposeOldEngine` 加开始/完成/异常日志（`[dispose-old]`）。
+- [x] 保留 643（`_safePopPlayerPage`、`_goBranch` 守卫、日志同步写）
+      与 644（`isDisposed` 接口 + 10 处守卫）——防御性正确，无副作用。
+
+#### 五、测试
+
+- [x] 新增 `test/player_core/media_kit_stopped_uses_pause_645_test.dart`（12 项）：
+  - `stopped` 分支用 `pause()` 而非 `stop()`（剥离注释后断言）
+  - `_ticker?.stop()` 保留、playing/paused 分支不变、644 守卫仍在
+  - 回归守卫：`state` setter 内不得出现 `_player.stop()`
+  - 对照旧适配器：`stopped` 用 `pause()`、全文无 `_player.stop()`
+  - `debugPrint` 已重定向、7 步日志齐全、`[dispose-old]` 日志齐全
+
+#### 六、待真机验证
+
+- [ ] **播放视频 → 点返回**：不闪退（核心）。
+- [ ] **播放视频 → 切 MDK / media_kit / Erika**：不闪退（核心）。
+- [ ] 侧边栏切 tab、遥控返回、房间解散：不闪退。
+- [ ] 若仍崩：日志现在会包含 `[rebuild] N/7` 与 `[dispose-old]` 步骤，
+      以及适配器内部 `debugPrint`，可直接定位到具体行。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

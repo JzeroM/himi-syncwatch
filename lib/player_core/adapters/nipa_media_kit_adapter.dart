@@ -2148,7 +2148,30 @@ class NipaMediaKitAdapter extends AbstractPlayer
     switch (value) {
       case PlayerPlaybackState.stopped:
         _ticker?.stop();
-        _player.stop();
+        // 645：对齐旧适配器（lib/services/player/media_kit_player_adapter.dart）
+        // ——Windows 用旧适配器时从未因此崩溃。
+        //
+        // 【为什么不能用 stop()】
+        // media_kit 的 `dispose()` 内部会调
+        //   `stop(notify: false, synchronized: false)`
+        // ——**不加锁、立即执行**，随后 `Initializer(mpv).dispose(ctx)` +
+        // `_terminateNativePlayer(...)` 销毁 mpv ctx。
+        //
+        // 而本 setter 的 `_player.stop()` 是 fire-and-forget（不 await），
+        // 它内部走 `lock.synchronized(function)` 排队；等它真正执行
+        // `_command(['stop'])` / `['playlist-clear']` /
+        // `['playlist-play-index','none']` 时，ctx 已被 dispose 销毁
+        // → `0xc0000005`（Windows SEH，Dart try/catch 抓不到）。
+        //
+        // 【调用方时序正好踩中】
+        //   _recreateEngineForLoad: _player.state = stopped  ← 发起 stop
+        //   → _disposeOldEngine()  → _player.dispose()       ← 销毁 ctx
+        // 点返回路径同理（退出前先 stop 再 dispose）。
+        // 这就是「所有引擎都崩」的原因：旧引擎只要是 media_kit 就会中招。
+        //
+        // `pause()` 只写 `pause` 属性，不参与 teardown 序列，完全避开竞争。
+        // 语义无损：真正的资源释放由 dispose() 完成，stop() 并非必需。
+        _player.pause();
         break;
       case PlayerPlaybackState.paused:
         _ticker?.stop();

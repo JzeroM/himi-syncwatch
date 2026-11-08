@@ -3902,6 +3902,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 原生 UI 桥先拆除：监听器随旧适配器销毁（在其 dispose 释放
     // ValueNotifier 之前 removeListener，避免对已释放对象操作）。
     _detachNativeUiBridge(old);
+    LogService().log('Player', '[dispose-old] 开始 type=${old.runtimeType}');
     if (old is AsyncDisposablePlayer) {
       final disposable = old as AsyncDisposablePlayer;
       try {
@@ -3910,14 +3911,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 容易超时，超时后本方法继续返回、新引擎立刻创建，旧 session 仍在
         // 后台销毁 → 与新建的 gpu-next 渲染上下文抢同一 HWND/驱动资源。
         await disposable.disposeAsync().timeout(const Duration(seconds: 4));
-      } catch (_) {}
+      } catch (e) {
+        LogService().log('Player', '[dispose-old] disposeAsync 异常: $e');
+      }
+      LogService().log('Player', '[dispose-old] disposeAsync 完成');
       await Future<void>.delayed(const Duration(milliseconds: 150));
     } else {
       try {
         old.dispose();
-      } catch (_) {}
+      } catch (e) {
+        LogService().log('Player', '[dispose-old] dispose 异常: $e');
+      }
       await Future<void>.delayed(const Duration(milliseconds: 400));
     }
+    LogService().log('Player', '[dispose-old] 结束');
     // 复位 per-player 去重态：确保新引擎一定重写 audio.avfilter/后端
     _lastAudioFilter = null;
     _lastAudioFilterCodec = '';
@@ -3929,10 +3936,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted) return;
     LogService().log('Player',
         '内容路由重建引擎: ${_currentEngine.label} → ${engine.label} (erikaMode=$outputMode)');
+    // 645：分步日志。上次崩溃前只有「内容路由重建引擎」一行，无法判断
+    // 崩在哪一步。这里每步都落盘（同步写），崩溃现场可精确到行。
+    LogService().log('Player', '[rebuild] 1/7 停旧引擎');
     // 先停旧引擎（原生视图还在渲染时摘掉会访问已分离 surface → 卡顿/崩溃）
     try {
       _player.state = AdapterPlaybackState.stopped;
     } catch (_) {}
+    LogService().log('Player', '[rebuild] 2/7 取消订阅');
     _stateSub?.cancel();
     _statusSub?.cancel();
     _eventSub?.cancel();
@@ -3949,19 +3960,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _skipPromptTimer = null;
     _skipPromptSegment = null;
     // 停后再卸载旧视频视图（避免旧 widget 访问已释放播放器）
+    LogService().log('Player', '[rebuild] 3/7 隐藏视频层');
     setState(() => _switchingEngine = true);
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || _disposed) return;
+    LogService().log('Player', '[rebuild] 4/7 释放旧引擎');
     await _disposeOldEngine();
     if (!mounted || _disposed) return;
+    LogService().log('Player', '[rebuild] 5/7 创建新引擎');
     // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。
     _currentEngine = engine;
     _lastMediaKitFitKey = null;
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
     _attachNativeUiBridge(_player);
     _switchingEngine = false;
+    LogService().log('Player', '[rebuild] 6/7 初始化属性');
     await _initPlayerProperties();
     if (!mounted || _disposed) return;
+    LogService().log('Player', '[rebuild] 7/7 完成');
     // _initPlayerProperties 不覆盖的三项（initState 单独写、重建后会丢）：
     // 字幕属性 / 音频后端 / 音频滤镜策略（_disposeOldEngine 已复位去重态，
     // 此处重写保证新引擎与起播一致）。

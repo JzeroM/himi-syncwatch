@@ -135,6 +135,33 @@ void _installErrorHooks() {
     LogService().log('FATAL', 'Uncaught async error: $error\n$stack');
     return true;
   };
+  // 645：把 debugPrint 也接入运行时日志。
+  //
+  // 【教训】排查 644/643 时，media_kit 适配器内部全部用 debugPrint 输出
+  // （如 `media_kit teardown: native dispose`）。而 release 版 debugPrint
+  // 不产生任何输出，也不进 himi_runtime.log → 无法判断 dispose 是否执行，
+  // 直接导致我误判过一次根因（以为 teardown 从未发生）。
+  //
+  // 【限流】media_kit 在高频路径也会 debugPrint（位置更新等），
+  // 同步写盘不能无节制。这里做两件事：
+  // 1. 总量上限 2000 行（超过后静默丢弃，避免日志文件无限膨胀）；
+  // 2. 相同内容 1 秒内只记一次（去掉高频重复噪音）。
+  var debugForwarded = 0;
+  String lastDebugMessage = '';
+  DateTime lastDebugAt = DateTime.fromMillisecondsSinceEpoch(0);
+  debugPrint = (String? message, {int? wrapWidth}) {
+    if (message == null || message.isEmpty) return;
+    if (debugForwarded >= 2000) return;
+    final now = DateTime.now();
+    if (message == lastDebugMessage &&
+        now.difference(lastDebugAt) < const Duration(seconds: 1)) {
+      return;
+    }
+    lastDebugMessage = message;
+    lastDebugAt = now;
+    debugForwarded++;
+    LogService().log('debug', message);
+  };
 }
 
 Future<void> _cleanupInstalledUpdatePackages() async {
