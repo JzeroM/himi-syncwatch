@@ -371,7 +371,9 @@ jobs:
           path: himi-sync-ios-unsigned-*.ipa
 
   build-windows:
-    needs: [flutter-analyze, kernels]
+    # 638：不再需要 kernels 产物（已改走 media_kit 官方 + shinchiro 完整版），
+    # 去掉该依赖可省一次内核 job 的等待。
+    needs: [flutter-analyze]
     # windows-latest = VS18/MSVC 14.51，与 mdk v0.39.0（vs2026 工具链构建）
     # 同家族配对（fvp.dll 与 mdk.dll 跨 DLL 交互 C++ 对象，须同工具链），
     # 对齐 fvp 上游 CI 成功配置；windows-2022 系初始模板遗留。
@@ -385,26 +387,13 @@ jobs:
       FVP_DEPS_SHA256: e492fd45f3a6828e44f75ce665708c9040abaa60602605437b71c95c714808e3
     steps:
       - uses: actions/checkout@v4
-      - name: Download self-built Windows libmpv
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-libmpv
-          path: ${{ runner.temp }}/mpv-win
-          run-id: ${{ needs.kernels.outputs.run_id }}
-          github-token: ${{ github.token }}
-      - name: Normalize self-built Windows libmpv headers
-        shell: pwsh
-        run: |
-          # media_kit_video 期望 include/client.h；内核产物默认是 include/mpv/*.h。
-          $src = Join-Path $env:RUNNER_TEMP 'mpv-win'
-          Copy-Item -Path (Join-Path $src 'include\mpv\*.h') -Destination (Join-Path $src 'include') -Force
-      - name: Point media_kit to self-built Windows libmpv
-        shell: pwsh
-        run: |
-          # CMake 的 install 脚本会把反斜杠当转义符（D:\a 会报 invalid escape '\a'），
-          # 环境变量统一写成正斜杠路径。
-          $libmpvDir = (Join-Path $env:RUNNER_TEMP 'mpv-win').Replace('\', '/')
-          "MEDIA_KIT_LIBMPV_DIR=$libmpvDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # 638：**不再注入自建 libmpv**。
+      #
+      # 真机崩溃实证（v1.5.56 / v1.5.57）：自建 libmpv-2.dll（mpvbuild
+      # 1f8d2e76255 + ffmpeg n9.0.2）在 texture 与 surface 两条渲染路径都会
+      # 访问违例（0xc0000005），两次崩溃偏移不同（0x1856fc / 0x84e31）。
+      # 改为走 media_kit 官方预编译（CMake 默认分支）+ 后续 shinchiro 完整版
+      # 替换（补齐 PGS/10bit/HDR），与 NipaPlay 做法一致。
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -444,8 +433,10 @@ jobs:
       # 替换 media_kit 捆绑的 libmpv-2.dll 为完整版（shinchiro/mpv-winbuild-cmake）：
       # 上游 media-kit 默认 libmpv 解码器不完整（PGS 位图字幕 / 10bit / HDR 等），
       # 换完整 build 以补齐格式与字幕能力（对齐 NipaPlay 做法）。
+      #
+      # 638：不再有「自建 libmpv」分支（已移除注入，见上方说明），
+      # 本步骤恒定执行。
       - name: 替换为完整 libmpv（shinchiro，补齐 PGS/格式）
-        if: env.MEDIA_KIT_LIBMPV_DIR == ''
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ github.token }}

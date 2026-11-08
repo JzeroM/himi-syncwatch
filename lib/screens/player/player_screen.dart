@@ -5671,7 +5671,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 注意：该逻辑位于**共享 Dart 层**，安卓 / Windows / 鸿蒙三端同时生效
   ///（三者的 `withPresence` 均为 true，判定链路完全同构）。
-  void _scheduleHostOfflineCheck() {
+  void _scheduleHostOfflineCheck({bool isSecondRound = false}) {
     _hostOfflineTimer?.cancel();
     _hostOfflineTimer = Timer(const Duration(seconds: 3), () async {
       _hostOfflineTimer = null;
@@ -5684,7 +5684,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _logSyncEvent('房主离线事件为抖动（在线 $count 人），忽略');
         return;
       }
-      _logSyncEvent('房主确认离线（在线 $count 人），房间解散');
+      // 637：**二次复核**。
+      //
+      // 真机回归：鸿蒙观众在「房主尚未起播」时进房会被判解散退出，而房主
+      // 播放中进房正常。原因是房主未起播时 presence 可能尚未同步，whoNow
+      // 只返回观众自己（count=1）→ 单次判定即误判离线。
+      // 改为连续两轮（3s + 3s）都 < 2 才确认解散。
+      if (!isSecondRound) {
+        _logSyncEvent('首轮复核在线 $count 人，3 秒后再确认一次');
+        _scheduleHostOfflineCheck(isSecondRound: true);
+        return;
+      }
+      _logSyncEvent('房主确认离线（连续两轮在线 $count 人），房间解散');
       _showRoomDestroyedDialog();
     });
   }

@@ -244,8 +244,15 @@ export class RtmManager {
       }
     }
     const out: Map<string, Object> = new Map<string, Object>();
-    const total: number = resp.totalOccupancy;
-    out.set('count', total !== undefined && total > 0 ? total : ids.length);
+    // 637：**只用 ids.length**，不再用 `totalOccupancy`。
+    //
+    // 真机回归「观众退房，房主在线人数未减」：`totalOccupancy` 是服务端的
+    // **累计占用数**，观众离开后不一定立即回落；而 `userStateList` 是本次
+    // 查询的真实在线列表，其长度才是当前在线人数。
+    //
+    // 对照：Windows（rtm_client.cpp）一直用回调参数 `count`
+    // （= userStateList 长度），安卓官方 SDK 同理，故只有鸿蒙有此问题。
+    out.set('count', ids.length);
     out.set('userIds', ids);
     return out;
   }

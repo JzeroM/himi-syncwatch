@@ -72,18 +72,18 @@ void main() {
 
   group('② 复核逻辑：3 秒 + whoNow 二次确认', () {
     test('新增 _scheduleHostOfflineCheck，延迟 3 秒', () {
-      final body = bodyOf(screen, 'void _scheduleHostOfflineCheck()');
+      final body = bodyOf(screen, 'void _scheduleHostOfflineCheck({bool isSecondRound = false}) {');
       expect(body, contains('Duration(seconds: 3)'));
     });
 
     test('复核用 getOnlineUserCount（whoNow）', () {
-      final body = bodyOf(screen, 'void _scheduleHostOfflineCheck()');
+      final body = bodyOf(screen, 'void _scheduleHostOfflineCheck({bool isSecondRound = false}) {');
       expect(body, contains('getOnlineUserCount'));
     });
 
     test('在线 ≥2 人视为抖动、不退出', () {
       final body = stripComments(
-          bodyOf(screen, 'void _scheduleHostOfflineCheck()'));
+          bodyOf(screen, 'void _scheduleHostOfflineCheck({bool isSecondRound = false}) {'));
       expect(body, contains('if (count >= 2)'));
       expect(body, contains('抖动'));
       // count>=2 分支必须 return，不能落到 _showRoomDestroyedDialog。
@@ -94,13 +94,13 @@ void main() {
 
     test('确认离线才弹解散框', () {
       final body = stripComments(
-          bodyOf(screen, 'void _scheduleHostOfflineCheck()'));
+          bodyOf(screen, 'void _scheduleHostOfflineCheck({bool isSecondRound = false}) {'));
       expect(body, contains('房主确认离线'));
       expect(body, contains('_showRoomDestroyedDialog()'));
     });
 
     test('复核期间再次触发时重置计时（防重复）', () {
-      final body = bodyOf(screen, 'void _scheduleHostOfflineCheck()');
+      final body = bodyOf(screen, 'void _scheduleHostOfflineCheck({bool isSecondRound = false}) {');
       expect(body, contains('_hostOfflineTimer?.cancel()'));
     });
   });
@@ -140,7 +140,7 @@ void main() {
   group('⑤ 三端一致性（共享层，无平台分支）', () {
     test('Presence 判定与复核逻辑内无 Platform.is* 分支', () {
       for (final sig in [
-        'void _scheduleHostOfflineCheck()',
+        'void _scheduleHostOfflineCheck({bool isSecondRound = false}) {',
         'void _cancelHostOfflineCheck()',
       ]) {
         final body = stripComments(bodyOf(screen, sig));

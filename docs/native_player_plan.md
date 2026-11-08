@@ -3055,6 +3055,97 @@ _playFromUrl(playUrl: playUrl, token: token ?? '');   // ← 无 epIndex
 - [ ] 观众退出：房主在线人数减少。
 - [ ] 连续进出房 5 次。
 
+### Phase 2.56：人数统计根因 + 离线复核二轮 + Windows 换官方 libmpv（1.5.58+638）
+
+> 起因：637 打包后真机反馈——
+> ①「房间人数问题仍在，观众退房，人数未减」
+> ②「鸿蒙作为观众，房主未播放时加入房间就会自动退出，而房主播放时进入
+>   正常」
+> ③「windows 播放进了播放器加载会儿就灰屏闪退」（新日志：偏移 0x84e31）
+> 另：用户澄清「鸿蒙创建房间刚进就弹解散面板是设备问题，换了鸿蒙设备又
+> 正常」——该问题不再处理。
+
+#### 一、人数未减：`totalOccupancy` 语义误用（仅鸿蒙）
+
+**根因**（`RtmManager.ets` 的 `getOnlineUsers`）：
+
+```typescript
+const total: number = resp.totalOccupancy;
+out.set('count', total !== undefined && total > 0 ? total : ids.length);
+```
+
+`totalOccupancy` 是服务端的**累计占用数**，观众离开后不一定立即回落；
+而 `userStateList` 是本次查询的真实在线列表。
+
+**三端对照**：
+
+| 平台 | count 来源 | 离开后是否减少 |
+|---|---|---|
+| **Windows** | `rtm_client.cpp` 的 `event.online_count = count`（回调参数 = 列表长度） | ✅ |
+| **安卓** | 官方 SDK 的 `userStateList.length` | ✅ |
+| **鸿蒙** | `totalOccupancy` 优先 | ❌ **不减少** |
+
+这解释了为什么只有鸿蒙有问题。637 加的「退出前发 leave」是对的但不充分
+——房主收到 leave 后重查人数，拿到的仍是虚高的 `totalOccupancy`。
+
+**修复**：`count` 改用 `ids.length`，不再读 `totalOccupancy`。
+
+#### 二、房主未起播时观众进房被判解散
+
+**根因**：`_scheduleHostOfflineCheck` 单次 `whoNow < 2` 即确认离线。
+房主未起播时 presence 可能尚未同步，`whoNow` 只返回观众自己（count=1）
+→ 误判；房主播放中进房则因 presence 已就绪而正常。
+
+**修复**：改为**连续两轮**（3s + 3s）都 < 2 才确认解散；
+首轮不足时打印日志并再等一轮。
+
+#### 三、Windows 灰屏后闪退（新偏移）
+
+新日志：
+
+```
+错误模块 libmpv-2.dll  异常代码 0xc0000005
+错误偏移 0x0000000000084e31     （637 之前是 0x1856fc）
+```
+
+两次偏移不同说明 **texture 与 surface 两条渲染路径都会崩**，因此不是渲染
+模式问题，而是**自建 `libmpv-2.dll` 本身**的问题
+（`mpvbuild 1f8d2e76255` + `ffmpeg n9.0.2`）。
+
+**修复**：CI 不再注入自建 libmpv，改走：
+
+1. CMake 默认分支下载 **media_kit 官方**预编译
+   （`mpv-dev-x86_64-20241021-git-0f78584.7z`，MD5 已内置校验）；
+2. 随后由既有「替换为完整 libmpv（shinchiro）」步骤覆盖为完整版
+   （补齐 PGS / 10bit / HDR，对齐 NipaPlay 做法）。
+
+**改动**（`.github/workflows/release.yml`）：
+
+- 移除 `Download self-built Windows libmpv`；
+- 移除 `Normalize self-built Windows libmpv headers`；
+- 移除 `Point media_kit to self-built Windows libmpv`（不再设
+  `MEDIA_KIT_LIBMPV_DIR`）；
+- 移除 shinchiro 步骤的 `if: env.MEDIA_KIT_LIBMPV_DIR == ''` 条件
+  （现已恒定执行）；
+- `build-windows` 的 `needs` 去掉 `kernels`（不再消费内核产物，
+  `build-android` 仍需要）。
+
+#### 四、测试
+
+- [x] 新增 `test/player_core/room_count_638_test.dart` 10 项：
+      count 来自 `ids.length`、不再读 `totalOccupancy`、离线复核二轮、
+      CI 不再注入 `MEDIA_KIT_LIBMPV_DIR`、不再下载 `windows-libmpv`、
+      `build-windows` 不依赖 kernels、仍保留 shinchiro 替换。
+- [x] 更新 `room_host_offline_debounce_test.dart` 的方法签名锚点
+      （新增 `isSecondRound` 参数）。
+
+#### 五、待真机验证
+
+- [ ] **鸿蒙观众退房 → 房主人数减少**（本次核心）。
+- [ ] 鸿蒙观众在房主**未起播**时进房：不被判解散。
+- [ ] **Windows 开播不闪退**（换官方 libmpv 后）。
+- [ ] 连续进出房 5 次，人数始终正确。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
