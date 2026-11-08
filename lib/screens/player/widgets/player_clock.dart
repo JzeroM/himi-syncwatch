@@ -23,6 +23,7 @@ class PlayerClockLayer extends StatelessWidget {
     required this.tvMode,
     this.now,
     this.autoTick = true,
+    this.onLeft = false,
   });
 
   final TopBarClockFormat format;
@@ -30,18 +31,25 @@ class PlayerClockLayer extends StatelessWidget {
   final DateTime Function()? now;
   final bool autoTick;
 
+  /// 时钟是否贴**左侧**（642）。
+  ///
+  /// TV 模式隐藏了左上角返回按钮，左侧空出来 → 时钟从右贴边移到左贴边，
+  /// 原右侧位置让给网速。手机/桌面保持右贴边（左侧是返回按钮）。
+  final bool onLeft;
+
   @override
   Widget build(BuildContext context) {
     if (!tvMode || !format.enabled) return const SizedBox.shrink();
     return Positioned(
       top: MediaQuery.paddingOf(context).top,
-      right: 12,
+      left: onLeft ? 12 : null,
+      right: onLeft ? null : 12,
       width: 100,
       height: 48,
       child: IgnorePointer(
         child: ExcludeFocus(
           child: Align(
-            alignment: Alignment.centerRight,
+            alignment: onLeft ? Alignment.centerLeft : Alignment.centerRight,
             child: PlayerClock(
               format: format,
               now: now,

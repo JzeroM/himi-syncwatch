@@ -12,6 +12,22 @@ import 'package:himi_syncwatch/services/log_service.dart';
 class GeneralSettingsScreen extends ConsumerWidget {
   const GeneralSettingsScreen({super.key});
 
+  /// 测试用平台覆盖（642）。
+  ///
+  /// 真实判定是 `Platform.isAndroid`，但 `flutter test` 跑在 Linux 主机上，
+  /// 无法用 `debugDefaultTargetPlatformOverride` 影响 `dart:io` 的
+  /// `Platform.isAndroid` → 需要这个显式开关验证「TV 模式开关仅安卓可见」。
+  @visibleForTesting
+  static bool? debugPlatformIsAndroidOverride;
+
+  /// TV 模式开关是否显示：**仅安卓**（642）。
+  ///
+  /// TV 模式是「遥控器 D-pad 适配」，只有安卓 TV/盒子有遥控。Windows /
+  /// 鸿蒙 / iOS 显示它只会把布局切成 TV 观感却无法用遥控操作。
+  @visibleForTesting
+  static bool showTvModeSwitch() =>
+      debugPlatformIsAndroidOverride ?? Platform.isAndroid;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
@@ -21,8 +37,13 @@ class GeneralSettingsScreen extends ConsumerWidget {
       pageKey: const ValueKey('generalSettingsPage'),
       title: '通用',
       children: [
-        // TV 模式：Windows 桌面隐藏（无遥控；加载时已强制关闭）
-        if (!Platform.isWindows) ...[
+        // TV 模式：**仅安卓显示**（642）。
+        //
+        // 原条件 `!Platform.isWindows` 只挡了 Windows，鸿蒙/iOS 仍会看到
+        // 这个开关——但 TV 模式是「遥控器 D-pad 适配」，只有安卓 TV/盒子
+        // 有遥控。鸿蒙/iOS 打开它只会把布局切成 TV 观感却无法用遥控操作。
+        // 加载时非安卓已由 `applyTvAutoDetection` 强制关闭并清存档。
+        if (showTvModeSwitch()) ...[
           settingsTvWrapRow(
             tvMode: settings.tvMode,
             onTap: () => notifier.update(tvMode: !settings.tvMode),

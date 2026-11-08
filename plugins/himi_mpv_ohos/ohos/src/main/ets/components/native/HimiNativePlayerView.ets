@@ -2548,20 +2548,28 @@ export struct HimiNativePlayerView {
     });
   }
 
-  /** 顶栏：返回 / 标题 / 网速 | 内核胶囊（+倍速）| 时钟（TV）。 */
+  /**
+   * 顶栏：返回 / 标题 / 网速 | 内核胶囊（+倍速）| 时钟（TV）。
+   *
+   * 642：TV 模式隐藏左上角返回（遥控返回键已覆盖退出），并让左侧空出
+   * 给标题/时钟。鸿蒙自 642 起不再提供 TV 模式开关（仅安卓有），但存档
+   * 被强制关闭前若仍为 TV 态，这里保持与安卓一致的隐藏行为。
+   */
   @Builder
   TopBar($$: ControlsRef) {
     Row() {
-      Text(this.backGlyph())
-        .fontFamily(NativePlayerIcons.FONT_FAMILY)
-        .fontSize(22)
-        .fontColor(Color.White)
-        .width(44)
-        .height(44)
-        .textAlign(TextAlign.Center)
-        .onClick((): void => {
-          this.onBack();
-        });
+      if (!this.state().tvMode) {
+        Text(this.backGlyph())
+          .fontFamily(NativePlayerIcons.FONT_FAMILY)
+          .fontSize(22)
+          .fontColor(Color.White)
+          .width(44)
+          .height(44)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => {
+            this.onBack();
+          });
+      }
       // 竖屏隐藏标题：竖屏可用宽窄，标题会被尾簇压成「…」（真机截图回归）。
       // 横屏保留（横屏有足够宽度显示完整标题）。
       if (!this.portrait) {

@@ -219,10 +219,15 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> applyTvAutoDetection({required bool isTelevision}) async {
     var next = state;
     var changed = false;
-    // Windows：隐藏并强制关闭 TV 模式（桌面无遥控；清理遗留状态）
-    if (!kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.windows &&
-        next.tvMode) {
+    // 642：TV 模式**只有安卓有**（遥控器 D-pad 适配）。
+    //
+    // 原实现只强制关 Windows，鸿蒙/iOS 的旧存档若 `tvMode=true` 会一直
+    // 按 TV 观感渲染，而设置页开关在 642 起已隐藏 → 用户**无法关闭**，
+    // 卡死在「TV 布局 + 无遥控」。故非安卓一律强制关闭并标记 userSet
+    // （避免后续 `isTelevision` 又把它打开）。
+    final platformSupportsTv =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    if (!platformSupportsTv && next.tvMode) {
       next = next.copyWith(tvMode: false, tvModeUserSet: true);
       changed = true;
     }

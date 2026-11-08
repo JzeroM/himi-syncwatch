@@ -554,6 +554,24 @@ class PlayerScreen extends ConsumerStatefulWidget {
   @visibleForTesting
   static bool showTopSubtitleStyleButton({required bool tvMode}) => !tvMode;
 
+  /// 顶栏左上角返回按钮是否显示（642）。
+  ///
+  /// TV 模式隐藏：遥控返回键已完整覆盖退出语义（`TvBackConfirm` 首按提示、
+  /// 2 秒内二按确认 → `_confirmLeaveRoom`），顶栏左侧让给系统时钟/标题，
+  /// 观感更沉浸。手机/桌面保持显示（触摸设备无硬件返回键）。
+  ///
+  /// 安卓原生控制层（MPV + surface 时接管全屏 UI）在
+  /// `NativePlayerScreenView.applyLayoutMode` 里同条件隐藏。
+  @visibleForTesting
+  static bool showTopBarBackButton({required bool tvMode}) => !tvMode;
+
+  /// 顶栏内是否渲染网速文字（642）。
+  ///
+  /// TV 为 false：网速移到**最右侧**（原系统时钟的位置），由播放页单独
+  /// 定位渲染。非 TV 仍在顶栏 Row 尾部（网速 → 倍速 → 内核 …）。
+  @visibleForTesting
+  static bool showTopBarNetworkSpeed({required bool tvMode}) => !tvMode;
+
   /// 顶栏标题是否显示（589）。
   ///
   /// 手机竖屏**一律不显示**：竖屏可用宽窄，标题会被右侧尾簇（网速/倍速/
@@ -8593,7 +8611,48 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          PlayerClockLayer(format: clockFormat, tvMode: videoAreaTvMode),
+          // 642：TV 时钟移到左贴边（返回按钮已隐藏，左侧空出），
+          // 原右侧位置让给网速（见下方 TV 网速定位层）。
+          PlayerClockLayer(
+            format: clockFormat,
+            tvMode: videoAreaTvMode,
+            onLeft: true,
+          ),
+
+          // 642：TV 网速移到最右（原系统时钟位置）。
+          // 显隐与顶栏一致（含加载遮罩期），避免黑屏时网速孤立残留。
+          if (videoAreaTvMode &&
+              (_showControls || _isLoadingMaskVisible) &&
+              !_lockController.locked &&
+              ref.watch(settingsProvider.select((s) => s.showNetworkSpeed)) &&
+              _networkSpeedBps != null)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top,
+              right: 12,
+              width: 100,
+              height: 48,
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    NetworkSpeedMeter.formatMBs(_networkSpeedBps!),
+                    key: const ValueKey('playerTvNetworkSpeed'),
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.3,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                      shadows: [
+                        Shadow(color: Colors.black54, blurRadius: 4),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // 左缘锁/解锁钮（手机版已移入底栏左数显列；此处置留给桌面；
           // TV 无锁）
@@ -8914,6 +8973,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     return PlayerTopBar(
       title: showTitle ? _currentEpisodeTitle : '',
+      // 642：TV 隐藏左上角返回（遥控返回键已覆盖退出），左侧让给时钟/标题。
+      showBack: PlayerScreen.showTopBarBackButton(tvMode: settings.tvMode),
+      // 642：TV 的网速移到最右（原时钟位置），顶栏 Row 内不再渲染。
+      showNetworkSpeed:
+          PlayerScreen.showTopBarNetworkSpeed(tvMode: settings.tvMode),
       // 640：TV 模式的引擎切换移到**底栏弹幕开关之后**（遥控更顺手），
       // 顶栏只在非 TV 显示。
       showKernelButton: !settings.tvMode && !_switchingKernel,
@@ -8964,7 +9028,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onToggleDecode: () =>
           setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
       onShare: _showShareRoomDialog,
-      reserveClockSpace: settings.tvMode && settings.topBarClockFormat.enabled,
+      // 642：TV 时钟已移到左贴边，顶栏尾部不再需要预留 100px。
+      reserveClockSpace: false,
     );
   }
 

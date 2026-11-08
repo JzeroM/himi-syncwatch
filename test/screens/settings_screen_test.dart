@@ -250,6 +250,9 @@ void main() {
   });
 
   testWidgets('通用子页：TV 模式开关默认关，切换后 tvMode 为 true', (tester) async {
+    // 642：TV 模式开关仅安卓可见；测试跑在 Linux 上需显式打开覆盖。
+    GeneralSettingsScreen.debugPlatformIsAndroidOverride = true;
+    addTearDown(() => GeneralSettingsScreen.debugPlatformIsAndroidOverride = null);
     final container = await _pumpScreen(tester, category: '通用');
     await tester.scrollUntilVisible(
       find.text('TV 模式'),
@@ -330,6 +333,9 @@ void main() {
   });
 
   testWidgets('通用子页：TV 模式开启时不显示同步到 TV 开关', (tester) async {
+    // 642：TV 模式开关仅安卓可见。
+    GeneralSettingsScreen.debugPlatformIsAndroidOverride = true;
+    addTearDown(() => GeneralSettingsScreen.debugPlatformIsAndroidOverride = null);
     await _pumpScreen(tester,
         initial: const AppSettings(tvMode: true), category: '通用');
     await tester.scrollUntilVisible(

@@ -932,6 +932,14 @@ class NativePlayerScreenView(
     private val backButton = TextView(context)
     private val titleText = TextView(context)
     private val networkText = TextView(context)
+    /**
+     * 642：TV 模式下的网速（移到**最右**，原系统时钟位置）。
+     *
+     * 手机仍用 [networkText]（在尾簇首位）。两者同时只有一个 VISIBLE，
+     * 由 [applyLayoutMode] 按 tvMode 切换——不复用同一个 View，避免
+     * LinearLayout 子项顺序在不同父容器间搬移。
+     */
+    private val networkTextTv = TextView(context)
     private val speedChip = LinearLayout(context)
     private val speedLabel = TextView(context)
     private val kernelChip = TextView(context)
@@ -1198,7 +1206,14 @@ class NativePlayerScreenView(
         configureTransportListeners()
     }
 
-    /** 顶栏：返回 / 标题 / 网速 /（手机）倍速·内核·字幕样式·解码·画面比例·转屏 /（TV）时钟。 */
+    /**
+     * 顶栏：时钟 / 返回 / 标题 /（手机）网速·倍速·内核·字幕样式·解码·
+     * 画面比例·转屏 /（TV）网速在最右。
+     *
+     * 642 结构（顺序固定，靠 visibility 切换模式）：
+     * - 手机：`[返回][标题]...[网速 倍速 内核 …][（无）]`
+     * - TV：`[时钟][标题]...[（尾簇）][网速]`（返回 GONE、时钟跟随设置）
+     */
     private fun configureTopBar() {
         // 幂等：重排（手机↔TV）会二次进入本函数，必须先清空容器，
         // 否则对已有 parent 的子视图重复 addView 会抛 IllegalStateException。
@@ -1208,6 +1223,20 @@ class NativePlayerScreenView(
         topBar.gravity = Gravity.CENTER_VERTICAL
         applyBarInsets()
         topBar.background = barGradient(topSolid = true)
+
+        // 642：TV 时钟占最左（返回按钮已隐藏，左侧空出）；手机最左仍是
+        // 返回按钮。两者都常驻为 topBar 子项、只靠 visibility 切换 →
+        // 顺序稳定，无需运行时搬移（configureTopBar 幂等重建即可）。
+        clockText.setTextColor(NPTheme.WHITE_70)
+        clockText.setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.CLOCK_FONT_SIZE)
+        clockText.gravity = Gravity.CENTER
+        clockText.visibility = GONE
+        clockWrap.removeAllViews()
+        clockWrap.addView(clockText, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        topBar.addView(
+            clockWrap,
+            llp(dp(NPTheme.CLOCK_WIDTH), dp(NPTheme.CLOCK_HEIGHT)),
+        )
 
         backButton.text = String(Character.toChars(NativePlayerIcons.ICON_ARROW_BACK))
         backButton.typeface = NativePlayerIcons.typeface(context)
@@ -1239,7 +1268,9 @@ class NativePlayerScreenView(
         // 右侧簇容器（网速~转屏）：小屏整组等比缩（自适应不出屏）。
         topTail.orientation = LinearLayout.HORIZONTAL
         topTail.gravity = Gravity.CENTER_VERTICAL
-        // 网速（12sp white70）
+        // 642：网速不再挂尾簇——TV 时它在 topBar 最右（见函数末尾），
+        // 手机时也在 topBar 尾簇之前独立定位，靠 visibility 切换。
+        // 手机网速（12sp white70）仍在尾簇首位（Flutter 非 TV 顶栏顺序）。
         networkText.setTextColor(NPTheme.WHITE_70)
         networkText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         networkText.gravity = Gravity.CENTER_VERTICAL
@@ -1344,18 +1375,13 @@ class NativePlayerScreenView(
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ))
 
-        // 时钟（TV：右贴边，100×48，13sp white70）。
-        // Flutter PlayerClockLayer 是**独立于顶栏 Row 的定位层**，但用
-        // `reserveClockSpace` 在 Row 尾部留 100dp 空位避免控件压到时间——
-        // 这里等价：时钟直接作顶栏最后一个子项（100dp 定宽），既占位又显示。
-        clockText.setTextColor(NPTheme.WHITE_70)
-        clockText.setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.CLOCK_FONT_SIZE)
-        clockText.gravity = Gravity.CENTER
-        clockText.visibility = GONE
-        clockWrap.removeAllViews()
-        clockWrap.addView(clockText, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        // 642：TV 网速（最右，原时钟位置）与手机网速（尾簇首位）二选一。
+        networkTextTv.setTextColor(NPTheme.WHITE_70)
+        networkTextTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        networkTextTv.gravity = Gravity.CENTER
+        networkTextTv.visibility = GONE
         topBar.addView(
-            clockWrap,
+            networkTextTv,
             llp(dp(NPTheme.CLOCK_WIDTH), dp(NPTheme.CLOCK_HEIGHT)),
         )
     }
@@ -1452,8 +1478,12 @@ class NativePlayerScreenView(
 
     /** TV：为所有可交互控件开启 D-pad 焦点并挂焦点环。 */
     private fun applyFocusability() {
+        // 642：TV 隐藏返回按钮 → 不加入焦点链，避免遥控焦点落到不可见控件。
+        // 手机保留（触摸设备不依赖 D-pad，但保持一致的可聚焦语义）。
+        val tv = lastState.tvMode
         val focusables = listOfNotNull(
-            backButton, speedChip, kernelChip, subtitleStyleChip, decodeChip,
+            if (tv) null else backButton,
+            speedChip, kernelChip, subtitleStyleChip, decodeChip,
             videoFitIcon, rotateIcon, prevButton, playPauseButton, nextButton,
             lockButton, bottomSpeedChip, panelToggleButton,
         ) + (0 until trailingGroup.childCount).map { trailingGroup.getChildAt(it) }
@@ -3916,9 +3946,17 @@ class NativePlayerScreenView(
             badge.layoutParams = badgeLayoutParams(text.orEmpty())
         }
 
-        // 顶栏网速
+        // 顶栏网速（642：TV 在最右 / 手机在尾簇首位，二选一）
+        val speedVisible = state.networkSpeedText != null
         networkText.text = state.networkSpeedText ?: ""
-        networkText.visibility = if (state.networkSpeedText != null) VISIBLE else GONE
+        networkTextTv.text = state.networkSpeedText ?: ""
+        if (state.tvMode) {
+            networkText.visibility = GONE
+            networkTextTv.visibility = if (speedVisible) VISIBLE else GONE
+        } else {
+            networkTextTv.visibility = GONE
+            networkText.visibility = if (speedVisible) VISIBLE else GONE
+        }
 
         // 房间资源面板（590）：显隐 + 列表 + 播报 + surface 收窄。
         renderRoomPanel()
@@ -4031,6 +4069,11 @@ class NativePlayerScreenView(
 
     private fun applyLayoutMode(state: AndroidNativePlayerState) {
         val tv = state.tvMode
+        // 642：TV 隐藏左上角返回（遥控返回键 → handleBack() 三层语义已
+        // 覆盖退出：关面板 → 收控件 → 退出；且左侧位置让给系统时钟）。
+        // 手机保留（触摸设备无硬件返回键）。GONE 而非 INVISIBLE：让标题
+        // 自然左移填充留白。
+        backButton.visibility = if (tv) GONE else VISIBLE
         // 顶栏可见项
         speedChip.visibility = if (!tv && !state.isRoom) VISIBLE else GONE
         subtitleStyleChip.visibility = if (!tv) VISIBLE else GONE
@@ -4047,7 +4090,18 @@ class NativePlayerScreenView(
             if (state.isRoom && !state.isHost) INVISIBLE
             else if (state.isRoom) VISIBLE
             else GONE
-        clockWrap.visibility = if (tv) VISIBLE else GONE
+        // 642：时钟显隐跟随设置（默认 off）。原实现 TV 恒显示，导致
+        // 「时钟关闭」时左侧仍占 100dp 空白，标题无法左移填充。
+        clockWrap.visibility =
+            if (tv && state.clockFormat != "off") VISIBLE else GONE
+        // 642：网速随模式换位——TV 在最右（networkTextTv），手机在尾簇首位
+        // （networkText）。两者由 applyState 按「是否有值」置 VISIBLE/GONE，
+        // 这里只负责把**不属于当前模式**的那个收掉，避免同屏出现两份。
+        if (tv) {
+            networkText.visibility = GONE
+        } else {
+            networkTextTv.visibility = GONE
+        }
 
         // 芯片打开态（Flutter：面板打开时强调色描边/文字）
         val panel = activePanel

@@ -41,6 +41,8 @@ class PlayerTopBar extends StatelessWidget {
     this.rotateButtonIcon = Icons.screen_rotation_alt,
     this.onRotate,
     this.reserveClockSpace = false,
+    this.showBack = true,
+    this.showNetworkSpeed = true,
   });
 
   /// 左上角影视信息（电影名 / `剧名 – S01E02`）；空串不渲染。
@@ -108,6 +110,19 @@ class PlayerTopBar extends StatelessWidget {
   /// 顶栏时钟开启时，在右侧预留时钟位置，避免控件压到时间。
   final bool reserveClockSpace;
 
+  /// 左上角返回按钮是否显示（642）。
+  ///
+  /// TV 模式隐藏：遥控返回键（`TvBackConfirm` 首按提示、2 秒内二按确认）
+  /// 已完整覆盖退出语义，顶栏左侧让给系统时间/标题，观感更沉浸。
+  /// 手机/桌面保持显示（触摸设备没有硬件返回键）。
+  final bool showBack;
+
+  /// 顶栏内是否渲染网速文字（642）。
+  ///
+  /// TV 模式为 false——网速移到**最右侧**（原系统时钟的位置），由
+  /// [PlayerClockLayer] 之外的单列定位承担，见 `player_screen.dart`。
+  final bool showNetworkSpeed;
+
   /// 解码方块装饰：
   /// - 玻璃开：白 22%→10% 渐变 + 白 24% 细描边；展开态换 accent 1.5px
   ///   描边 + accent 外发光（不用实心底，顶栏不突兀）
@@ -170,11 +185,12 @@ class PlayerTopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          IconButton(
-            key: const ValueKey('playerBackButton'),
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: onBack,
-          ),
+          if (showBack)
+            IconButton(
+              key: const ValueKey('playerBackButton'),
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: onBack,
+            ),
           if (title.isNotEmpty) ...[
             const SizedBox(width: 4),
             Expanded(
@@ -192,7 +208,7 @@ class PlayerTopBar extends StatelessWidget {
             ),
           ] else
             const Spacer(),
-          if (networkSpeedText != null) ...[
+          if (showNetworkSpeed && networkSpeedText != null) ...[
             Text(
               networkSpeedText!,
               key: const ValueKey('playerNetworkSpeed'),
@@ -263,7 +279,9 @@ class PlayerTopBar extends StatelessWidget {
           ],
           // 字幕样式按钮（网速与解码之间）：右侧选择器面板调大小/位置/延迟
           if (showSubtitleStyleButton) ...[
-            if (networkSpeedText == null && !showSpeedButton)
+            // 642：网速被移出顶栏（TV）时也要补间距。
+            if ((!showNetworkSpeed || networkSpeedText == null) &&
+                !showSpeedButton)
               const SizedBox(width: 8),
             TvFocusable(
               key: const ValueKey('playerSubtitleStyleButton'),

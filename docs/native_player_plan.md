@@ -3552,6 +3552,130 @@ case TargetPlatform.windows:
 - [ ] Windows HDR 内容 tone map 正常（media_kit 走 `vo=gpu` 路径）。
 - [ ] 旧存档选过 MPV 的用户：升级后设置页显示 media_kit，播放正常。
 
+### Phase 2.60：TV 模式开关仅安卓 + TV 顶栏去返回/时钟网速换位（1.5.62+642）
+
+> 起因（真机反馈三条）：
+> ①「TV 模式只有安卓有，隐藏其他平台的 TV 模式开关」
+> ②「安卓 TV 模式去掉播放器里左上角返回按钮」
+> ③「系统时间移到留白处，然后网速显示改到原系统时间位置（都是只改 TV 模式）」
+
+#### 一、TV 模式开关只在安卓
+
+**问题**：`general_settings_screen.dart` 原条件 `if (!Platform.isWindows)`
+只挡了 Windows —— **鸿蒙 / iOS 仍然显示**这个开关。但 TV 模式是
+「遥控器 D-pad 适配」，只有安卓 TV/盒子有遥控；在鸿蒙/iOS 打开它只会把
+布局切成 TV 观感却无法用遥控操作。
+
+**改法**：
+
+```dart
+// general_settings_screen.dart
+if (showTvModeSwitch()) ...[
+
+@visibleForTesting
+static bool showTvModeSwitch() =>
+    debugPlatformIsAndroidOverride ?? Platform.isAndroid;
+```
+
+（`debugPlatformIsAndroidOverride` 是测试注入点：`flutter test` 跑在 Linux
+上，`debugDefaultTargetPlatformOverride` 影响不到 `dart:io` 的
+`Platform.isAndroid`，只能显式开覆盖。）
+
+**连带必修：存档清理**（`settings_provider.dart` `applyTvAutoDetection`）：
+
+```dart
+// 原实现只强制关 Windows
+if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows && next.tvMode)
+// 改为非安卓一律强制关闭
+final platformSupportsTv =
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+if (!platformSupportsTv && next.tvMode) {
+  next = next.copyWith(tvMode: false, tvModeUserSet: true);
+  changed = true;
+}
+```
+
+⚠️ 这不是可选优化：只隐藏开关而不清理存档，鸿蒙老用户升级后会卡在
+**「TV 布局 + 无法关闭」的死状态**（开关已不可见）。标记 `tvModeUserSet`
+是为了防止后续 `isTelevision` 又把它自动打开。
+
+#### 二、安卓 TV 去掉左上角返回按钮
+
+**为什么可以直接去掉**——退出语义完好无损：
+
+| 层 | 返回键链路 |
+|---|---|
+| Flutter | `TvBackConfirm` → 首按提示、2 秒内二按确认 → `_confirmLeaveRoom()` |
+| Android 原生 | `AndroidNativePlayerHost` 拦 `KEYCODE_BACK` → `handleBack()` 三层语义（关面板 → 收控件 → 退出） |
+
+改动：
+
+- [x] `player_top_bar.dart`：新增 `showBack`（默认 `true`），false 时不渲染
+      `playerBackButton`。
+- [x] `player_screen.dart`：新增 `showTopBarBackButton(tvMode)` 纯函数，
+      TV 传 `false`。
+- [x] `NativePlayerScreenView.applyLayoutMode`：
+      `backButton.visibility = if (tv) GONE else VISIBLE`
+      （`GONE` 而非 `INVISIBLE`：让标题自然左移填充留白）。
+- [x] `NativePlayerScreenView.applyFocusability`：TV 时把 `backButton`
+      从焦点链排除（`if (tv) null else backButton`），避免遥控焦点落到
+      不可见控件。
+- [x] 鸿蒙原生 `HimiNativePlayerView.TopBar`：`if (!this.state().tvMode)`
+      包裹返回按钮（鸿蒙已无 TV 开关，但存档强制关闭前若仍是 TV 态，
+      行为与安卓一致）。
+
+#### 三、TV 顶栏：时钟移到左侧留白、网速移到原时钟位置
+
+**用户确认的两个细节**：
+- 时钟默认是 `TopBarClockFormat.off` → **保持默认 off**，关闭时标题左移填充；
+- 网速移到**最右**（原时钟位置）。
+
+**Flutter 层**：
+
+- [x] `PlayerClockLayer` 新增 `onLeft`：TV 时 `left: 12` + `Align.centerLeft`，
+      非 TV 仍 `right: 12` + `Align.centerRight`（手机不变）。
+- [x] `PlayerTopBar` 新增 `showNetworkSpeed`：TV 传 `false`，顶栏 Row 内不再
+      渲染网速。
+- [x] `player_screen.dart` 新增 TV 网速独立定位层（`ValueKey('playerTvNetworkSpeed')`）：
+      与时钟同为 `Positioned`，`right: 12` + `width: 100`，样式与时钟一致
+      （13sp white70、tabularFigures、黑色阴影），只在顶栏可见且未锁定时显示。
+- [x] `reserveClockSpace` 改为恒 `false`：TV 时钟已在左贴边，尾部不需要
+      再预留 100px。
+
+**Android 原生层**（`configureTopBar` 顺序固定，靠 `visibility` 切换模式）：
+
+| 位置 | 手机 | TV |
+|---|---|---|
+| 首项 | 返回按钮 | 时钟（`clockWrap`，跟随设置显隐） |
+| 中间 | 标题 | 标题 |
+| 尾部 | 网速 → 倍速/内核/… | 尾簇（无网速） |
+| 最末 | — | 网速（`networkTextTv`） |
+
+- [x] 新增 `networkTextTv` 视图（不复用 `networkText`，避免 LinearLayout
+      子项跨父容器搬移）：手机用 `networkText`（尾簇首位）、TV 用
+      `networkTextTv`（最右），`applyState` 里按 tvMode 二选一置 VISIBLE。
+- [x] `clockWrap.visibility` 从「TV 恒显示」改为
+      `if (tv && state.clockFormat != "off") VISIBLE else GONE`——
+      原实现时钟关闭时左侧仍占 100dp 空白，标题无法左移填充。
+
+#### 四、测试
+
+- [x] 新增 `test/player_core/tv_ui_642_test.dart`（21 项）：
+  - TV 开关仅安卓（源码守卫 + 非安卓强制关闭 + 安卓不误伤）
+  - 返回按钮 TV 隐藏/手机保留（纯函数 + widget + Kotlin/ArkTS 源码守卫）
+  - 时钟左移 / 网速最右（widget 位置断言 + Kotlin 顺序守卫）
+- [x] 更新 `test/screens/settings_screen_test.dart` 2 处（加安卓覆盖）。
+
+#### 五、待真机验证
+
+- [ ] 安卓 TV：顶栏左上角**无返回按钮**，遥控返回键可退出（首按提示、
+      二按确认）。
+- [ ] 安卓 TV：时钟开启时在**左上角**，网速在**最右上角**。
+- [ ] 安卓 TV：时钟关闭时标题从最左侧开始（无 100dp 空白）。
+- [ ] 安卓手机：返回按钮、网速位置**完全不变**。
+- [ ] 鸿蒙/iOS/Windows：设置里**无 TV 模式开关**；鸿蒙旧存档若开过 TV，
+      升级后自动回到手机布局。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
