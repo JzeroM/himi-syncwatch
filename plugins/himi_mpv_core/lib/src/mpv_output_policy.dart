@@ -52,13 +52,22 @@ class MpvOutputPolicy {
   static String normalizeVideoOutput(String? value) =>
       value == texture ? texture : surface;
 
-  /// 平台默认路径：Android/鸿蒙 Surface；Windows 当前仍默认 Texture。
+  /// 平台默认路径：Android / 鸿蒙 / Windows 均默认 Surface。
+  ///
+  /// 637：Windows 原先默认 Texture（`vo=libmpv` + `VideoController`），真机
+  /// 开播首帧即闪退，事件查看器实证：
+  ///   错误模块 libmpv-2.dll / 异常代码 0xc0000005（访问违例）
+  ///   错误偏移 0x1856fc → mpv_render_context_render + 0x1ab7c
+  /// 即 render context 失效后仍被渲染循环调用。改走 Surface
+  /// （`gpu-next` + HWND）后不再创建 render context，与 Android/鸿蒙一致。
+  ///
+  /// 用户仍可在设置里显式选 Texture（`userSet == true` 时尊重配置）。
   static String effectiveVideoOutput({
     required String configured,
     required bool userSet,
     required bool windows,
   }) {
-    if (windows && !userSet) return texture;
+    // windows 参数保留（调用方语义不变），但不再改变默认值。
     return normalizeVideoOutput(configured);
   }
 

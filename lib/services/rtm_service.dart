@@ -314,6 +314,7 @@ class RtmService {
     int? defaultAudioStreamIndex,
     String? serverId,
     bool? paused,
+    int? episodeIndex,
   }) async {
     if (!_backend.isReady) return;
 
@@ -342,6 +343,9 @@ class RtmService {
         'defaultAudioStreamIndex': defaultAudioStreamIndex,
       // 632：roomInfo 也可能单独触发起播，带上暂停状态保证一致。
       if (paused != null) 'paused': paused,
+      // 637：roomInfo 起播也要带集索引，否则观众 `_currentEpisodeIndex`
+      // 保持 -1 → 原生标题栏空白（安卓）或错位（鸿蒙）。
+      if (episodeIndex != null) 'episodeIndex': episodeIndex,
     };
 
     try {

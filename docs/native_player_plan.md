@@ -2946,7 +2946,114 @@ Error (Xcode): failed to download Erika prebuilt v0.2.1
 
 #### 五、待验证
 
-- [ ] 重新打 `v1.5.56` 标签，确认 iOS job 通过、Release 正常发布。
+- [x] 重新打 `v1.5.56` 标签，确认 iOS job 通过、Release 正常发布。
+      （2026-11-08 已验证：五个 job 全绿，Release 产出 3 个 APK + IPA +
+      Windows setup/zip。）
+
+### Phase 2.55：Windows 开播闪退 + 房间同步四连修（1.5.57+637）
+
+> 起因：v1.5.56 真机反馈四条——
+> ①「退出房间，人数未减」
+> ②「win 端一播放就闪退」（事件查看器日志见下）
+> ③「房主暂停后再播放，播放指令也要传递」（补充：观众会恢复但很慢）
+> ④「观众中途加入后视频左上角标题显示错误或未显示」（补充：安卓不显示、
+> 鸿蒙显示内容错）
+
+#### 一、Windows 开播即闪退（最严重）
+
+**事件查看器实证**：
+
+```
+错误应用程序: himi_syncwatch.exe  1.5.56.636
+错误模块:     libmpv-2.dll  2.0.0.0
+异常代码:     0xc0000005（访问违例）
+错误偏移:     0x00000000001856fc
+```
+
+**定位过程**：下载 CI 的 `windows-libmpv` 产物（`libmpv-2.dll` 125MB），
+按段表换算崩溃 RVA（`.text` VMA `0x3ba531000` + `0x1856fc`）后反汇编：
+
+```
+00000003ba64bb80 <mpv_render_context_render>:
+3ba6b66a8:  movq (%rbx), %rcx
+3ba6b66db:  testq %rcx, %rcx
+3ba6b66de:  je   ...
+3ba6b66ec:  callq ...
+```
+
+→ 崩溃点落在 **`mpv_render_context_render + 0x1ab7c`**，即 render context
+失效后仍被渲染循环调用。
+
+**根因**：`mpv_output_policy.dart` 里
+
+```dart
+if (windows && !userSet) return texture;   // ← Windows 默认 texture
+```
+
+Windows 默认走 **texture**（`vo=libmpv` + `VideoController`），必然创建
+mpv render context；而 Android/鸿蒙默认 Surface（`gpu-next` + HWND），
+根本不创建 render context —— 这解释了「只有 Windows 崩」。
+
+**修复**：Windows 也默认 Surface（与 Android/鸿蒙一致）。
+`windows` 参数保留（调用方语义不变），但不再改变默认值；用户仍可在设置里
+显式选 texture（`userSet == true` 时尊重配置）。
+
+#### 二、观众中途加入标题不显示/错位
+
+**根因**：`_handleRoomInfo` 起播时**不传 `epIndex`**：
+
+```dart
+_playFromUrl(playUrl: playUrl, token: token ?? '');   // ← 无 epIndex
+```
+
+而 `_currentEpisodeIndex` 只在 `epIndex != null` 时更新 → 保持 `-1` →
+`_currentEpisodeTitle`（`mediaTitleAt`）返回空串 → 原生标题栏空白（安卓）
+或沿用旧值错位（鸿蒙）。
+
+**修复**（三处）：
+
+- `sendRoomInfo` 新增 `episodeIndex` 字段；
+- 房主 `_broadcastRoomInfo` 带上 `_currentEpisodeIndex`；
+- 观众起播改用 `PlayerScreen.resolveRoomInfoEpisodeIndex()`：
+  优先显式 `episodeIndex`，旧版房主不带时按 `itemId` / `mediaItemId`
+  在列表里反查兜底。
+
+#### 三、房主暂停后再播放，观众恢复很慢
+
+**根因**：房主发 `play` **不带位置**，观众只切状态，随后要等 5s 心跳把
+位置硬拉回去 → 观感「恢复很慢」。
+
+**修复**：
+
+- 房主 `_togglePlayPause` 发 `actionPlay` 时带 `position`；
+- 观众 `actionPlay` 分支先 `seek` 到该位置再起播。
+
+#### 四、退出房间人数未减
+
+**根因**：观众退出（`dispose`）只 `unsubscribe` + `logout`，**没发 `leave`**；
+房主只能靠 Presence 的 `remoteLeaveChannel` 感知，而退订后立即登出，
+事件常常来不及投递。
+
+**修复**：`dispose` 里改为串行 `unawaited` 流程——
+`sendJoinLeave(leave)` → 等 300ms（RTM 无 ACK）→ `unsubscribe` → `logout`。
+
+#### 五、测试
+
+- [x] `test/services/mpv_output_policy_test.dart`：更新为「Windows 未手动
+      设置时默认 Surface」+ 新增「显式选 texture 仍尊重」「decision 是
+      nativeSurface」两项。
+- [x] 新增 `test/player_core/room_sync_637_test.dart` 12 项：roomInfo 带
+      episodeIndex、观众起播传 epIndex、`resolveRoomInfoEpisodeIndex`
+      四种输入、房主 play 带位置、观众先 seek 再起播、退出必发 leave 且
+      在 unsubscribe 之前、仍会 logout、源码不再强制 Windows texture。
+
+#### 六、待真机验证
+
+- [ ] **Windows**：开播不再闪退（最关键）；显式选 texture 是否仍崩。
+- [ ] 观众中途加入：标题正确（安卓 + 鸿蒙）。
+- [ ] 房主暂停→播放：观众快速恢复。
+- [ ] 观众退出：房主在线人数减少。
+- [ ] 连续进出房 5 次。
 
 ### Phase 3：Android 完整原生控件 + TV
 

@@ -33,23 +33,52 @@ void main() {
       expect(d.hdrOutput, isFalse);
     });
 
-    test('Windows 未手动设置时默认纹理', () {
+    test('637：Windows 未手动设置时默认 Surface（不再默认纹理）', () {
+      // 真机崩溃实证：texture 路径（vo=libmpv + VideoController）在开播
+      // 首帧访问失效的 render context →
+      //   libmpv-2.dll / 0xc0000005 @ mpv_render_context_render+0x1ab7c
+      // 改走 Surface（gpu-next + HWND）后不再创建 render context。
       expect(
         MpvOutputPolicy.effectiveVideoOutput(
-          configured: 'surface',
+          configured: MpvOutputPolicy.surface,
           userSet: false,
           windows: true,
         ),
-        'texture',
+        MpvOutputPolicy.surface,
       );
       expect(
         MpvOutputPolicy.effectiveVideoOutput(
-          configured: 'surface',
+          configured: MpvOutputPolicy.surface,
           userSet: true,
           windows: true,
         ),
-        'surface',
+        MpvOutputPolicy.surface,
       );
+    });
+
+    test('637：Windows 显式选纹理时仍尊重用户配置', () {
+      expect(
+        MpvOutputPolicy.effectiveVideoOutput(
+          configured: MpvOutputPolicy.texture,
+          userSet: true,
+          windows: true,
+        ),
+        MpvOutputPolicy.texture,
+      );
+    });
+
+    test('637：Windows 默认配置下解析出的 decision 是 nativeSurface', () {
+      final output = MpvOutputPolicy.effectiveVideoOutput(
+        configured: MpvOutputPolicy.surface,
+        userSet: false,
+        windows: true,
+      );
+      final d = MpvOutputPolicy.resolve(
+        videoOutput: output,
+        contentHdr: false,
+        displayHdr: false,
+      );
+      expect(d.nativeSurface, isTrue);
     });
 
     test('HDR 能力映射', () {

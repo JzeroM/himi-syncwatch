@@ -840,6 +840,30 @@ class PlayerScreen extends ConsumerStatefulWidget {
     return '${info.seriesName} – ${episodeCode(info.season, info.number)}';
   }
 
+  /// 637：解析观众从 roomInfo 起播时应使用的集索引。
+  ///
+  /// 优先用房主显式下发的 `episodeIndex`；旧版房主不带该字段时，按
+  /// `itemId` / `mediaItemId` 在已构建的列表里反查兜底。
+  /// 都找不到返回 null（`_playFromUrl` 会保持 `_currentEpisodeIndex`
+  /// 不变，标题可能为空，但不至于错位）。
+  @visibleForTesting
+  static int? resolveRoomInfoEpisodeIndex({
+    required int? explicitIndex,
+    required String? itemId,
+    required String? mediaItemId,
+    required List<EpisodeInfo> episodes,
+  }) {
+    if (explicitIndex != null &&
+        explicitIndex >= 0 &&
+        explicitIndex < episodes.length) {
+      return explicitIndex;
+    }
+    final target = itemId ?? mediaItemId;
+    if (target == null || target.isEmpty) return null;
+    final idx = episodes.indexWhere((e) => e.id == target);
+    return idx >= 0 ? idx : null;
+  }
+
   /// 按下标取影视信息标题：[index] 为负（初进未选定集）或越界时返回
   /// 空串。详情页开房 host 初进时 `_episodes` 已有数据而
   /// `_currentEpisodeIndex` 仍为 -1，直取 `_episodes[index]` 会
@@ -5276,6 +5300,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     switch (action) {
       case AppConstants.actionPlay:
+        // 637：若房主带了进度，先 seek 对齐再起播——避免观众从暂停点
+        // 继续、随后被心跳硬拉回（观感「恢复很慢」）。
+        final playPos = (message['position'] as num?)?.toDouble();
+        if (playPos != null && playPos > 0) {
+          try {
+            _player.seek(positionMs: (playPos * 1000).toInt());
+          } catch (_) {}
+        }
         _player.state = AdapterPlaybackState.playing;
         _syncPlayState();
         break;
@@ -5375,6 +5407,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             defaultAudioStreamIndex: _embyDefaultAudioIndex,
             // 632：带上房主当前播放/暂停状态，观众起播后据此对齐。
             paused: _player.state != AdapterPlaybackState.playing,
+            // 637：带上当前集索引——roomInfo 也可能单独触发起播，
+            // 不带则观众 `_currentEpisodeIndex` 保持 -1 → 标题空白/错位。
+            episodeIndex:
+                _currentEpisodeIndex >= 0 ? _currentEpisodeIndex : null,
           );
     } catch (e) {
       LogService().log('Room', '_broadcastRoomInfo 失败: $e');
@@ -5424,7 +5460,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           currentPlayUrl: _currentPlayUrl,
           inFlightPlayUrl: _inFlightPlayUrl,
         )) {
-      _playFromUrl(playUrl: playUrl, token: token ?? '');
+      // 637：roomInfo 起播必须带集索引，否则 `_currentEpisodeIndex`
+      // 保持 -1 → 原生标题栏空白（安卓）/ 错位（鸿蒙）。
+      // 优先用显式 `episodeIndex`，缺失时按 `itemId` 反查列表兜底。
+      _playFromUrl(
+        playUrl: playUrl,
+        token: token ?? '',
+        epIndex: PlayerScreen.resolveRoomInfoEpisodeIndex(
+          explicitIndex: message['episodeIndex'] as int?,
+          itemId: message['itemId'] as String?,
+          mediaItemId: message['mediaItemId'] as String?,
+          episodes: _episodes,
+        ),
+      );
       // 632：房主暂停时中途进房 → 起播后立即回到暂停态。
       if (message['paused'] == true) {
         _pauseAfterAudienceStart();
@@ -5820,7 +5868,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (pos > 0) unawaited(_reengageAfterResume(pos));
       }
       if (widget.roomCode != null) {
-        _sendCommand(AppConstants.actionPlay);
+        // 637：带上当前进度——观众据此立即 seek 对齐，不必等 5s 心跳
+        // 纠正（真机回归「房主暂停后再播放，观众恢复很慢」）。
+        _sendCommand(
+          AppConstants.actionPlay,
+          position: _player.position / 1000.0,
+        );
       }
     }
     _syncPlayState();
@@ -7757,10 +7810,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (widget.roomCode != null) {
       try {
         final rtmService = ref.read(rtmServiceProvider);
-        if (_rtmChannel != null) {
-          rtmService.unsubscribe(_rtmChannel!);
+        final channel = _rtmChannel;
+        if (channel != null) {
+          // 637：**先广播 leave 再退订/登出**。
+          //
+          // 旧实现只 unsubscribe + logout，房主只能靠 Presence 的
+          // remoteLeaveChannel 感知；而退订后立即登出，事件常常来不及
+          // 投递 → 房主在线人数不减（真机回归）。
+          // dispose 是同步方法，故用 unawaited 串行：leave → 等 300ms
+          // （RTM 无 ACK，留投递时间）→ unsubscribe → logout。
+          unawaited(() async {
+            try {
+              await rtmService.sendJoinLeave(
+                action: 'leave',
+                userName: _audienceName ?? '观众',
+              );
+              await Future<void>.delayed(
+                  const Duration(milliseconds: 300));
+              await rtmService.unsubscribe(channel);
+              await rtmService.logout();
+            } catch (_) {}
+          }());
+        } else {
+          unawaited(rtmService.logout());
         }
-        rtmService.logout();
       } catch (_) {}
     }
 
