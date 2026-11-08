@@ -11,6 +11,7 @@ import 'native/native_player_command.dart';
 import 'native/native_player_controller.dart';
 import 'native/native_player_gating.dart';
 import 'native/native_player_state.dart';
+import 'package:himi_syncwatch/services/decode_mode_service.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:image/image.dart' as img;
 
@@ -21,6 +22,15 @@ import 'player_adapter.dart';
 /// Windows 原生的 d3d11va 零拷贝互操作在部分显卡驱动上会在首帧前崩溃，
 /// 统一走 copy-back 更稳；纯软解保持 `no`。非 Windows 不做转换。
 String resolveWindowsHwdec(String mode, {required bool windows}) {
+  // 内部语义（本文件的 `_hwdec` 取值）：
+  //   'no'   → 纯软解
+  //   'hw'   → 纯硬解（不回退）        ← 640 新增
+  //   'auto' → 硬解优先、软解兜底
+  //
+  // 映射到 mpv 的合法 `hwdec` 取值（'hw' 不是 mpv 认的值，直接传会导致
+  // 解码器初始化失败）。mpv 的 `auto-safe` 语义 = 只用白名单内的硬解器、
+  // 不做软解兜底，正是「纯硬解」。
+  if (mode == 'hw') return windows ? 'auto-copy-safe' : 'auto-safe';
   if (!windows) return mode;
   if (mode == 'no') return 'no';
   if (mode == 'auto' || mode == 'ohcodec') return 'auto-copy';
@@ -273,6 +283,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 矩阵见 `docs/native_player_command_routing.md`。
   Future<void> Function(NativePlayerCommand command)? onNativeUiCommand;
 
+  /// 640：surface 渲染失败回调（上层据此持久化 texture 输出设置）。
+  void Function()? onSurfaceRenderFailed;
+
   /// 调试面板「HDR 直出」状态：按实际路径判断，不用请求值。
   String get mpvHdrOutputStatus {
     if (_player == null) return '未就绪';
@@ -502,6 +515,16 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       if (player is HimiMpvAndroidSession) {
         HimiMpvAndroidSession.debugLog =
             (message) => LogService().log('mpv/surface', message);
+        // 640：surface 渲染失败 → 通知上层持久化「该设备走 texture」。
+        //
+        // 真机：Mali-450 盒子上 `vo=gpu-next` + `gpu-context=android` 的
+        // EGL 初始化失败 → 有声音无画面。插件检测到后自动重建纹理会话，
+        // 这里负责记住该设备，避免下次启动再次黑屏 5s。
+        player.onSurfaceRenderFailed = () {
+          LogService().log('mpv',
+              'surface 渲染失败 → 持久化该设备使用 texture 输出');
+          onSurfaceRenderFailed?.call();
+        };
       }
       // 原生确认实际为 Surface 才启用原生 UI；请求 Surface 但回退
       // Texture 时不打开原生窗口，保持 Flutter UI。
@@ -1728,23 +1751,51 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   String get hwdec => _hwdec;
 
   @override
-  List<String> get videoDecoders =>
-      _hwdec == 'no' ? const ['FFmpeg'] : const ['ohcodec'];
+  List<String> get videoDecoders {
+    // 640：按当前平台返回对应硬解器名（旧实现恒返回 'ohcodec'，会让
+    // Android/Windows 的诊断面板与设置回显显示成鸿蒙硬解器）。
+    final hw = DecodeModeService.platformHwDecoderName;
+    switch (_hwdec) {
+      case 'no':
+        return const ['FFmpeg'];
+      case 'hw':
+        return <String>[hw];
+      default:
+        return <String>[hw, 'FFmpeg'];
+    }
+  }
 
   @override
   set videoDecoders(List<String> decoders) {
     if (_disposed) return;
-    // 上层的语义（DecodeModeService）：
-    //   ['FFmpeg']           → 软解（no）
-    //   ['ohcodec']          → 硬解（官方 HW+ 档）
-    //   ['ohcodec','FFmpeg'] → 智能（auto，硬解优先软解兜底）
-    final hasHw = decoders.any((d) => d.toLowerCase().contains('ohcodec'));
+    // 上层的语义（DecodeModeService，按平台返回不同硬解器名）：
+    //   ['FFmpeg']                    → 软解（no）
+    //   [<硬解器>]                     → 纯硬解
+    //   [<硬解器>, 'FFmpeg']           → 智能（auto，硬解优先软解兜底）
+    //
+    // 640：**平台无关**识别硬解器名。旧实现只认 `ohcodec`（鸿蒙），
+    // 导致 Android 的 `AMediaCodec` / Windows 的 `D3D11`/`DXVA` /
+    // Apple 的 `VT` 全被判为「无硬解」→ `decodeMode='hw'` 静默退化成
+    // `auto`（真机「MPV 硬解模式没生效」）。
+    const hwDecoderHints = <String>[
+      'ohcodec', // 鸿蒙
+      'mediacodec', // Android
+      'd3d11', 'dxva', // Windows
+      'vt', 'videotoolbox', // Apple
+      'vaapi', 'vdpau', 'nvdec', 'cuda', // Linux/NVIDIA
+    ];
+    final hasHw = decoders.any((d) {
+      final lower = d.toLowerCase();
+      return hwDecoderHints.any(lower.contains);
+    });
     final hasSw = decoders.any((d) => d.toLowerCase().contains('ffmpeg'));
     final String next;
     if (!hasHw && hasSw) {
       next = 'no';
     } else if (hasHw && !hasSw) {
-      next = 'ohcodec';
+      // 纯硬解：不写具体解码器名（mpv 的 hwdec 取值是 auto/mediacodec 等
+      // 语义名，不是 DecodeModeService 的平台解码器名）。
+      next = 'hw';
     } else {
       next = 'auto';
     }

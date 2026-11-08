@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
+import 'package:himi_mpv_core/himi_mpv_core.dart' show MpvOutputPolicy;
 import 'package:himi_syncwatch/player_core/player_core_bridge.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
@@ -3397,6 +3398,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     player.nativeUiActive.addListener(_onNativeUiActiveChanged);
     player.onNativeUiExit = _exitFromNativeUi;
     player.onNativeUiCommand = _handleNativeUiCommand;
+    // 640：surface 渲染失败（Mali-450 等盒子的 EGL 初始化失败）→ 记住该
+    // 设备改用 texture，避免下次启动再次黑屏。
+    player.onSurfaceRenderFailed = _onSurfaceRenderFailed;
+  }
+
+  /// 640：surface 渲染失败 → 持久化 `mpvVideoOutput=texture`。
+  ///
+  /// 注意 `userSet` 保持 false（自动语义）：用户仍可在设置里手动改回
+  /// surface。写 texture 只是让「自动」在本机选对路径。
+  Future<void> _onSurfaceRenderFailed() async {
+    try {
+      final notifier = ref.read(settingsProvider.notifier);
+      final current = ref.read(settingsProvider);
+      if (current.mpvVideoOutput == MpvOutputPolicy.texture) return;
+      await notifier.update(mpvVideoOutput: MpvOutputPolicy.texture);
+      LogService().log('mpv', '已持久化 texture 输出（surface 渲染失败自愈）');
+    } catch (e) {
+      LogService().log('mpv', '持久化 texture 输出失败: $e');
+    }
   }
 
   void _detachNativeUiBridge(PlayerAdapter player) {
@@ -4984,6 +5004,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       rtmUserId = tokenData['tokenId'] as String;
       loginToken = tokenData['token'] as String;
+      // 640：观众端 `_myUserId` **必须**与 RTM 实际 userId（tokenId）一致。
+      //
+      // 真机回归「观众端显示 3 人，实际 2 人」：
+      // - `_myUserId` 原为自造的 `user_<timestamp>`；
+      // - RTM 实际用的是房间码里的 `tokenId`（如 "1"）；
+      // - 成员集合先加入自造 id，`whoNow` 又返回真实 tokenId
+      //   → 集合里同时有两个「自己」→ 人数多 1。
+      _myUserId = rtmUserId;
 
       await rtmService.initialize(
         appId: _rtmAppId!,
@@ -7758,6 +7786,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
+    // 640：RTM 清理参数必须在 dispose **开头**捕获——此时 `ref` 仍有效。
+    //
+    // 真机回归「观众退房后房主人数完全不变」：旧实现在 dispose 末尾的
+    // `unawaited` 闭包里 `ref.read(rtmServiceProvider)`，组件销毁后该
+    // 调用可能抛异常 → `leave` 消息根本没发出去 → 房主永远收不到离开。
+    RtmService? rtmForLeave;
+    String? channelForLeave;
+    final nameForLeave = _audienceName;
+    if (widget.roomCode != null) {
+      try {
+        rtmForLeave = ref.read(rtmServiceProvider);
+        channelForLeave = _rtmChannel;
+      } catch (_) {}
+    }
     _disposed = true;
     // 捕获当前适配器：延迟释放期间若引擎字段被替换，也不能释放错对象。
     final player = _player;
@@ -7895,35 +7937,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       WakelockPlus.disable();
     } catch (_) {}
 
-    // 清理 RTM
-    if (widget.roomCode != null) {
-      try {
-        final rtmService = ref.read(rtmServiceProvider);
-        final channel = _rtmChannel;
-        if (channel != null) {
-          // 637：**先广播 leave 再退订/登出**。
-          //
-          // 旧实现只 unsubscribe + logout，房主只能靠 Presence 的
-          // remoteLeaveChannel 感知；而退订后立即登出，事件常常来不及
-          // 投递 → 房主在线人数不减（真机回归）。
-          // dispose 是同步方法，故用 unawaited 串行：leave → 等 300ms
-          // （RTM 无 ACK，留投递时间）→ unsubscribe → logout。
-          unawaited(() async {
-            try {
-              await rtmService.sendJoinLeave(
-                action: 'leave',
-                userName: _audienceName ?? '观众',
-              );
-              await Future<void>.delayed(
-                  const Duration(milliseconds: 300));
-              await rtmService.unsubscribe(channel);
-              await rtmService.logout();
-            } catch (_) {}
-          }());
-        } else {
-          unawaited(rtmService.logout());
-        }
-      } catch (_) {}
+    // 清理 RTM（用 dispose 开头捕获的引用，不再读 ref）
+    final rtmLeave = rtmForLeave;
+    final channelLeave = channelForLeave;
+    if (rtmLeave != null) {
+      if (channelLeave != null) {
+        // 637：**先广播 leave 再退订/登出**。
+        //
+        // 旧实现只 unsubscribe + logout，房主只能靠 Presence 的
+        // remoteLeaveChannel 感知；而退订后立即登出，事件常常来不及
+        // 投递 → 房主在线人数不减（真机回归）。
+        // dispose 是同步方法，故用 unawaited 串行：leave → 等 300ms
+        // （RTM 无 ACK，留投递时间）→ unsubscribe → logout。
+        unawaited(() async {
+          try {
+            await rtmLeave.sendJoinLeave(
+              action: 'leave',
+              userName: nameForLeave ?? '观众',
+            );
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+            await rtmLeave.unsubscribe(channelLeave);
+            await rtmLeave.logout();
+          } catch (_) {}
+        }());
+      } else {
+        unawaited(rtmLeave.logout());
+      }
     }
 
     SystemChrome.setPreferredOrientations([
@@ -8875,7 +8914,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     return PlayerTopBar(
       title: showTitle ? _currentEpisodeTitle : '',
-      showKernelButton: !_switchingKernel,
+      // 640：TV 模式的引擎切换移到**底栏弹幕开关之后**（遥控更顺手），
+      // 顶栏只在非 TV 显示。
+      showKernelButton: !settings.tvMode && !_switchingKernel,
       kernelLabel: _currentEngine.shortLabel,
       kernelMenuOpen: _showKernelMenu,
       kernelFocusNode: _kernelButtonFocusNode,
@@ -10293,6 +10334,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     onTap: _toggleDanmaku,
                   ),
                   const SizedBox(width: 20),
+
+                  // 640：TV 模式的引擎切换（从顶栏移来，紧邻弹幕开关）。
+                  // 遥控链路：OK → _toggleKernelMenu → _openSelectorPanel
+                  // 把焦点交给面板首项；面板内 D-pad 选择；返回 → 
+                  // _closeSelectorPanel 把焦点还给本按钮。
+                  if (tvMode && !_switchingKernel) ...[
+                    _buildControlButton(
+                      icon: Icons.memory,
+                      focusNode: _kernelButtonFocusNode,
+                      onTap: _toggleKernelMenu,
+                      badge: _currentEngine.shortLabel,
+                    ),
+                    const SizedBox(width: 20),
+                  ],
 
                   // 多版本切换（弹幕之后；仅非房间模式且有多版本时显示）
                   if (widget.roomCode == null &&

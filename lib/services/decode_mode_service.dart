@@ -19,6 +19,16 @@ class DecodeModeService {
     }
   }
 
+  /// 640：当前平台的首选硬解器名（供 MPV 适配器回显 videoDecoders）。
+  static String get platformHwDecoderName {
+    if (Platform.operatingSystem == 'ohos') return 'ohcodec';
+    if (Platform.isAndroid) return 'AMediaCodec';
+    if (Platform.isIOS || Platform.isMacOS) return 'VT';
+    if (Platform.isWindows) return 'D3D11';
+    if (Platform.isLinux) return 'VAAPI';
+    return 'FFmpeg';
+  }
+
   /// 平台硬解器（不含 FFmpeg 回退，纯硬解）
   static List<String> _platformHwOnlyDecoders() {
     if (Platform.operatingSystem == 'ohos') return ['ohcodec'];

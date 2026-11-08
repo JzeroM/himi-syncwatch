@@ -67,7 +67,8 @@ void main() {
       await notifier.applyTvAutoDetection(isTelevision: true);
 
       expect(notifier.state.tvMode, isFalse);
-      expect(notifier.state.decodeMode, 'auto');
+      // 640：默认解码模式改为「硬解」（原 'auto'）。
+      expect(notifier.state.decodeMode, 'hw');
       expect(notifier.state.videoOutput, 'texture');
       expect(notifier.state.audioRenderer, 'auto');
     });
@@ -110,7 +111,8 @@ void main() {
       await notifier.applyTvAutoDetection(isTelevision: false);
 
       expect(notifier.state.tvMode, isFalse);
-      expect(notifier.state.decodeMode, 'auto');
+      // 640：默认解码模式改为「硬解」（原 'auto'）。
+      expect(notifier.state.decodeMode, 'hw');
       expect(notifier.state.videoOutput, 'texture');
       expect(notifier.state.audioRenderer, 'auto');
       expect(notifier.persistCount, 0, reason: '无变更不落盘');
@@ -230,26 +232,27 @@ void main() {
       expect(notifier.state.decodeModeUserSet, isTrue);
     });
 
-    test('旧数据 hw/sw 视为手动设置，旧 auto 迁移为硬解', () async {
+    test('640：默认已是 hw，只有 sw/auto 视为手动设置', () async {
+      // 640：默认解码模式改为 'hw'，故旧数据 'hw' 与默认同值 → 不算手动。
       final hw = FakeSettingsNotifier(
         AppSettings.fromJson(const {'tvMode': true, 'decodeMode': 'hw'}),
       );
       await hw.applyTvAutoDetection(isTelevision: true);
       expect(hw.state.decodeMode, 'hw');
-      expect(hw.state.decodeModeUserSet, isTrue);
+      expect(hw.state.decodeModeUserSet, isFalse);
 
       final sw = FakeSettingsNotifier(
         AppSettings.fromJson(const {'tvMode': true, 'decodeMode': 'sw'}),
       );
       await sw.applyTvAutoDetection(isTelevision: true);
-      expect(sw.state.decodeMode, 'sw');
+      expect(sw.state.decodeMode, 'sw', reason: '手动软解优先');
       expect(sw.state.decodeModeUserSet, isTrue);
 
       final auto = FakeSettingsNotifier(
         AppSettings.fromJson(const {'tvMode': true, 'decodeMode': 'auto'}),
       );
       await auto.applyTvAutoDetection(isTelevision: true);
-      expect(auto.state.decodeMode, 'hw');
+      expect(auto.state.decodeMode, 'hw', reason: 'TV 自动识别强制硬解');
       expect(auto.state.decodeModeUserSet, isFalse);
     });
   });

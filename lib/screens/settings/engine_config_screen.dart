@@ -107,8 +107,14 @@ class _EngineTabBody extends ConsumerWidget {
     return [
       const ListTile(
         leading: Icon(Icons.play_circle_outline),
-        title: Text('HarmonyOS MPV'),
-        subtitle: Text('libmpv 内核，支持 ohcodec 硬件解码、ASS/PGS 字幕与网络缓存'),
+        // 640：原文案写死「HarmonyOS MPV」+「ohcodec 硬件解码」——Android /
+        // Windows 也用 MPV（默认内核），且硬解器按平台不同
+        // （Android=MediaCodec、Windows=D3D11/DXVA、鸿蒙=ohcodec）。
+        title: Text('MPV'),
+        subtitle: Text(
+          'libmpv 内核（Android / Windows / 鸿蒙默认），'
+          '支持平台硬件解码、ASS/PGS 字幕与网络缓存',
+        ),
       ),
       const Divider(height: 1),
       settingOptionTile(
@@ -125,9 +131,13 @@ class _EngineTabBody extends ConsumerWidget {
         context: context,
         tvMode: settings.tvMode,
         title: '视频路径',
+        // 640：更新为当前实际行为——
+        // - Windows 默认纹理（Surface 会被 Flutter 不透明窗口遮挡 → 灰屏）
+        // - Android / 鸿蒙默认 Surface 直出；渲染失败会自动回退纹理并记住
         subtitle: defaultTargetPlatform == TargetPlatform.windows
-            ? 'Windows 默认纹理；Surface 为实验项，当前可能黑屏'
-            : '默认 Surface 直出；纹理走 Flutter 合成。HDR 直出需要显示端支持 HDR',
+            ? 'Windows 默认纹理；Surface 需先实现窗口挖洞，暂不可用'
+            : '默认 Surface 直出（渲染失败自动回退纹理）；'
+                '纹理走 Flutter 合成。HDR 直出需要显示端支持 HDR',
         labels: AppSettings.mpvVideoOutputLabels,
         value: AppSettings.effectiveMpvVideoOutput(
           settings.mpvVideoOutput,

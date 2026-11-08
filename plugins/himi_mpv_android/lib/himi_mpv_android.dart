@@ -58,6 +58,22 @@ class HimiMpvAndroidSession implements MpvSession {
   int _textureId = 0;
   bool _disposed = false;
 
+  /// 640：surface 渲染失败后回退纹理（本会话生效）。
+  ///
+  /// 真机：Mali-450 盒子（H96 Max RK3528）上 `vo=gpu-next` +
+  /// `gpu-context=android` 的 EGL 初始化失败 → 有声音无画面。检测到后
+  /// 重建为 texture 会话（走 Flutter 引擎的 EGL，已验证可用）。
+  bool _forceTexture = false;
+
+  /// 已尝试过回退（防重入）。
+  bool _textureFallbackTried = false;
+
+  /// `vo-configured` 连续非 yes 的计数（500ms × 10 = 5s 兜底）。
+  int _voNotConfiguredTicks = 0;
+
+  /// 渲染失败时回调 Dart 层持久化「该设备走 texture」。
+  void Function()? onSurfaceRenderFailed;
+
   /// surface 实测宽/高（像素）。由 `surfaceChanged` 事件喂入，用于给 mpv
   /// 设 `android-surface-size`。
   ///
@@ -459,33 +475,38 @@ class HimiMpvAndroidSession implements MpvSession {
 
   Future<void> _ensurePlayer() async {
     if (_disposed || _player != null) return;
-    if (nativeSurface && _surfaceHandle == 0) return;
-    _log('创建播放器: wid=$_surfaceHandle hwdec=$hwdecMode');
+    // 640：回退后按纹理路径处理（忽略 nativeSurface）。
+    final effectiveSurface = nativeSurface && !_forceTexture;
+    if (effectiveSurface && _surfaceHandle == 0) return;
+    _log('创建播放器: wid=$_surfaceHandle hwdec=$hwdecMode '
+        'surface=$effectiveSurface forceTexture=$_forceTexture');
     // 639：gpu-next 需 GLES 3.1+；老 GPU（Mali-450 等）降级 vo=gpu 避免黑屏。
-    final useGpuNext = nativeSurface && _glSupportsGpuNext;
+    final useGpuNext = effectiveSurface && _glSupportsGpuNext;
+    // 640：弱 GPU（GLES < 3.1）copy-back 渲染易落后音频时钟 → 音画不同步。
+    final lowEndGpu = nativeSurface && !_glSupportsGpuNext;
     final options = <String, String>{
-      if (nativeSurface) 'vo': useGpuNext ? 'gpu-next' : 'gpu',
+      if (effectiveSurface) 'vo': useGpuNext ? 'gpu-next' : 'gpu',
       'vid': 'auto',
       'aid': 'auto',
       // force-window 仅 surface 模式设 no（显式 wid 已给窗口）；纹理模式
       // 由 AndroidVideoController 后置设 yes，此处若设 no 会与其冲突。
-      if (nativeSurface) 'force-window': 'no',
-      if (nativeSurface) 'wid': '$_surfaceHandle',
+      if (effectiveSurface) 'force-window': 'no',
+      if (effectiveSurface) 'wid': '$_surfaceHandle',
       // 合成画布尺寸：必须与 surface 实测一致，否则 mpv 按默认尺寸合成后
       // 被 ANativeWindow 拉伸（竖屏画布根因）。初始未知时不写，等
       // surfaceChanged 补。
-      if (nativeSurface && _surfaceWidth > 0 && _surfaceHeight > 0)
+      if (effectiveSurface && _surfaceWidth > 0 && _surfaceHeight > 0)
         'android-surface-size': '${_surfaceWidth}x$_surfaceHeight',
       // The stock Android libmpv build used by media_kit is built without
       // Vulkan (libplacebo HAVE_VULKAN=0). Use the EGL/GLES Android context;
       // the HDR data-space patch tags the native window as BT.2020 PQ/HLG.
-      if (nativeSurface) 'gpu-api': 'opengl',
-      if (nativeSurface) 'gpu-context': 'android',
+      if (effectiveSurface) 'gpu-api': 'opengl',
+      if (effectiveSurface) 'gpu-context': 'android',
       // 纹理模式（!nativeSurface）必须 copy-back 硬解：渲染纹理没有真实
       // Surface 给 MediaCodec 直写，`auto` 会先试零拷贝 → "Both surface and
       // native_window are NULL" → 首帧解码失败 → 上层弹「播放失败」。
       // copy-back 解到系统内存再上传 GPU。Surface 模式保留 auto（可直写）。
-      'hwdec': !nativeSurface
+      'hwdec': !effectiveSurface
           ? 'auto-copy'
           : (hwdecMode == 'software' ? 'no' : 'auto'),
       'hwdec-software-fallback': 'yes',
@@ -498,7 +519,7 @@ class HimiMpvAndroidSession implements MpvSession {
       'osc': 'no',
       // HDR 直出：mpv 官方手册明确 `--target-colorspace-hint` 仅
       // `--vo=gpu-next` 支持，故老 GPU 降级时不能走这条。
-      if (hdr && nativeSurface && useGpuNext) ...<String, String>{
+      if (hdr && effectiveSurface && useGpuNext) ...<String, String>{
         'target-colorspace-hint': 'yes',
         'target-prim': 'bt.2020',
         'target-trc': hlg ? 'hlg' : 'pq',
@@ -507,11 +528,18 @@ class HimiMpvAndroidSession implements MpvSession {
       },
       // 639：老 GPU 无法 HDR 直出 → 对 HDR 内容做 SDR tone mapping，
       // 避免直接输出导致过曝/发灰。
-      if (hdr && nativeSurface && !useGpuNext) ...<String, String>{
+      if (hdr && effectiveSurface && !useGpuNext) ...<String, String>{
         'tone-mapping': 'spline',
         'target-prim': 'bt.709',
         'target-trc': 'srgb',
         'hdr-compute-peak': 'auto',
+      },
+      // 640：弱 GPU（TV 盒子）copy-back 渲染落后音频时钟 → 音画不同步。
+      // 允许渲染丢帧追赶（不阻塞音频），并限制解码线程减少 CPU 争抢。
+      if (lowEndGpu) ...<String, String>{
+        'framedrop': 'vo',
+        'audio-buffer': '0.2',
+        'vd-lavc-threads': '2',
       },
     };
     final player = Player(
@@ -520,8 +548,8 @@ class HimiMpvAndroidSession implements MpvSession {
         // TextureRegistry Surface + wid + vo=gpu，非 libmpv 渲染 API）。
         // 传 libmpv 会让 native VideoOutputManager 的 VideoOutput.Resize
         // 事件永不触发 → texture id 恒 null → _waitForTextureId 10s 超时。
-        vo: useGpuNext ? 'gpu-next' : 'gpu',
-        wid: nativeSurface ? _surfaceHandle : null,
+        vo: effectiveSurface ? (useGpuNext ? 'gpu-next' : 'gpu') : 'gpu',
+        wid: effectiveSurface ? _surfaceHandle : null,
         options: options,
         libass: true,
         logLevel: MPVLogLevel.info,
@@ -537,7 +565,7 @@ class HimiMpvAndroidSession implements MpvSession {
     // 日志订阅必须在纹理等待之前：纹理路径若卡住/超时，也应有 mpv 日志
     // 可查（曾因订阅在等待之后，纹理失败时全程零 mpv 日志 → 盲调）。
     _wire(player);
-    if (!nativeSurface) {
+    if (!effectiveSurface) {
       final controller = VideoController(
         player,
         configuration: VideoControllerConfiguration(
@@ -568,14 +596,16 @@ class HimiMpvAndroidSession implements MpvSession {
       // 注册后直接 SetSurfaceSize 强制 surface 就绪，打破对 videoParams
       // 的时序依赖。
       unawaited(_kickTextureSurface(player, controller));
-      try {
-        _textureId = await _waitForTextureId(controller);
-      } catch (e) {
-        // 纹理注册失败：带上已等时长与当前 id，便于下次定位（不应再出现
-        // 「零日志 + 裸 TimeoutException」）。
-        _log('纹理注册失败: $e（当前 id=${controller.id.value}）');
-        rethrow;
-      }
+      // 640：**不阻塞**——纹理在后台等，拿到即 emit。
+      //
+      // 真机回归「加载好久后失败，重试才正常」（手机与 TV 都复现）：
+      // 旧实现在**打开媒体之前**就 `await _waitForTextureId`（最长 20s），
+      // 而纹理注册依赖 `VideoOutput.Resize` → 需要 mpv 已有视频输出 →
+      // 需要媒体已打开。形成时序死锁：慢设备上必然超时 → 抛异常 →
+      // 上层「播放失败」→ 重试时媒体已开、纹理就绪 → 正常。
+      //
+      // 改为先开媒体（下方 `_openNow`），纹理在后台等，不阻塞播放启动。
+      unawaited(_awaitTextureInBackground(controller));
     }
     try {
       await (player.platform as dynamic)?.setProperty?.call('vid', 'auto');
@@ -592,6 +622,26 @@ class HimiMpvAndroidSession implements MpvSession {
     if (pending != null && pending.isNotEmpty) {
       _pendingUrl = null;
       await _openNow(pending);
+      // 640：媒体已开 → 启动 vo-configured 兜底监控（渲染失败 5s 回退）。
+      _startVoConfiguredWatch();
+    }
+  }
+
+  /// 640：后台等待纹理 id（不阻塞播放启动）。
+  ///
+  /// 拿到即 `_emit('texture-id')`；超时只记日志，**不抛异常**——上层
+  /// 不应因纹理慢而判「播放失败」。注册成功后 listener 仍会补发。
+  Future<void> _awaitTextureInBackground(VideoController controller) async {
+    try {
+      final id = await _waitForTextureId(controller);
+      if (_disposed) return;
+      if (_textureId != id) {
+        _textureId = id;
+        _emit('texture-id', id);
+      }
+      _log('纹理就绪（后台）id=$id');
+    } catch (e) {
+      _log('纹理后台等待超时/异常: $e（当前 id=${controller.id.value}）');
     }
   }
 
@@ -650,7 +700,98 @@ class HimiMpvAndroidSession implements MpvSession {
     _logSub = player.stream.log.listen((log) {
       if (_disposed) return;
       _log('mpv[${log.level}][${log.prefix}] ${log.text}');
+      // 640：surface 渲染失败**最快**的信号来自 mpv 日志（1-2s 内出现），
+      // 比等 `vo-configured` 兜底（5s）快得多。
+      _maybeFallbackOnLog(log.text);
     }, onError: (_) {});
+  }
+
+  /// 640：从 mpv 日志里识别「渲染器初始化失败」。
+  ///
+  /// 真机（Mali-450 盒子）`vo=gpu-next` + `gpu-context=android` 的 EGL
+  /// 初始化失败时会打出形如：
+  ///   [vo/gpu-next] Could not create EGL context
+  ///   [vo/gpu] Failed to create...
+  ///   [vo] VO does not support...
+  void _maybeFallbackOnLog(String text) {
+    if (_disposed || !nativeSurface || _forceTexture) return;
+    if (_textureFallbackTried) return;
+    final t = text.toLowerCase();
+    final failed = (t.contains('egl') &&
+            (t.contains('fail') ||
+                t.contains('could not') ||
+                t.contains('error'))) ||
+        t.contains('could not create') ||
+        t.contains('failed to create') ||
+        (t.contains('vo/') && t.contains('not supported')) ||
+        t.contains('no video output');
+    if (!failed) return;
+    _textureFallbackTried = true;
+    _log('检测到渲染失败日志 → 回退纹理: $text');
+    unawaited(_fallbackToTexture());
+  }
+
+  /// 640：`vo-configured` 兜底——播放中 5s 仍未就绪即判渲染失败。
+  ///
+  /// 为什么不能提前检测：`vo-configured` 表示「VO 当前是否已配置」，
+  /// 依赖媒体加载触发 VO 初始化，播放前读不到有意义的值（mpv 官方手册）。
+  void _startVoConfiguredWatch() {
+    if (_disposed || !nativeSurface || _forceTexture) return;
+    if (_textureFallbackTried) return;
+    _voNotConfiguredTicks = 0;
+    Future<void>.delayed(const Duration(milliseconds: 500), () async {
+      if (_disposed || _forceTexture || _textureFallbackTried) return;
+      if (_player == null) return;
+      // 无媒体在播时不判定（VO 本就未配置）。
+      final idle = _player?.state.playlist.medias.isEmpty ?? true;
+      if (idle) {
+        _startVoConfiguredWatch();
+        return;
+      }
+      final vo = await getProperty('vo-configured');
+      if (_disposed || _forceTexture || _textureFallbackTried) return;
+      if (vo == 'yes') {
+        _voNotConfiguredTicks = 0;
+      } else {
+        _voNotConfiguredTicks++;
+        if (_voNotConfiguredTicks >= 10) {
+          _textureFallbackTried = true;
+          _log('vo-configured 持续非 yes（${_voNotConfiguredTicks * 500}ms）'
+              ' → 回退纹理');
+          await _fallbackToTexture();
+          return;
+        }
+      }
+      _startVoConfiguredWatch();
+    });
+  }
+
+  /// 640：surface 渲染失败 → 重建为纹理会话，并通知 Dart 层持久化。
+  Future<void> _fallbackToTexture() async {
+    if (_disposed || _forceTexture) return;
+    _log('surface 渲染失败 → 回退纹理（重建会话）');
+    final url = _lastUrl;
+    final pos = _positionMs;
+    // 640：用真实暂停状态判断（旧写法 `_playingSub != null` 只表示
+    // 「订阅存在」，恒为 true，回退后会强制播放，与用户暂停冲突）。
+    final wasPlaying = !_paused;
+    // 1. 本会话改走纹理
+    _forceTexture = true;
+    // 2. 通知 Dart 层持久化「该设备走 texture」
+    try {
+      onSurfaceRenderFailed?.call();
+    } catch (_) {}
+    // 3. 重建会话——`_detachPlayer` 内部已保存
+    //    `_pendingUrl` / `_pendingStartMs` / `_pendingPause`（见其注释），
+    //    这里只补一次明确的暂停态（回退前用户可能已暂停）。
+    await _detachPlayer();
+    if (_disposed) return;
+    if (url != null && url.isNotEmpty) {
+      _pendingUrl = url;
+      _pendingStartMs = pos;
+      _pendingPause = !wasPlaying;
+    }
+    await _ensurePlayer();
   }
 
   void _emit(String name, Object? value) {

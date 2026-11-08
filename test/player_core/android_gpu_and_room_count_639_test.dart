@@ -73,21 +73,22 @@ void main() {
     });
 
     test('vo 按能力选择 gpu-next / gpu', () {
+      // 640：`nativeSurface` 改为 `effectiveSurface`（回退纹理后按纹理处理）。
       expect(
         android,
-        contains("if (nativeSurface) 'vo': useGpuNext ? 'gpu-next' : 'gpu'"),
+        contains("if (effectiveSurface) 'vo': useGpuNext ? 'gpu-next' : 'gpu'"),
       );
     });
 
     test('HDR 直出只在 gpu-next 时写入', () {
       final body = stripComments(bodyOf(android, 'Future<void> _ensurePlayer() async {'));
-      expect(body, contains('if (hdr && nativeSurface && useGpuNext)'));
+      expect(body, contains('if (hdr && effectiveSurface && useGpuNext)'));
       expect(body, contains("'target-colorspace-hint': 'yes'"));
     });
 
     test('老 GPU 的 HDR 内容走 SDR tone mapping', () {
       final body = stripComments(bodyOf(android, 'Future<void> _ensurePlayer() async {'));
-      expect(body, contains('if (hdr && nativeSurface && !useGpuNext)'));
+      expect(body, contains('if (hdr && effectiveSurface && !useGpuNext)'));
       expect(body, contains("'tone-mapping': 'spline'"));
       expect(body, contains("'target-prim': 'bt.709'"));
       expect(body, contains("'target-trc': 'srgb'"));

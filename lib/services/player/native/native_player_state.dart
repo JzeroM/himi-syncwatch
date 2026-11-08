@@ -377,7 +377,8 @@ class NativePlayerState {
     this.engineLabel = 'MPV',
     this.engineOptions = const <NativeEngineOption>[],
     this.videoFit = 'contain',
-    this.decodeMode = 'auto',
+    // 640：与 AppSettings 默认值保持一致（默认硬解）。
+    this.decodeMode = 'hw',
     this.subtitleScale = 1.0,
     this.subtitleMarginY = 22,
     this.subtitleDelayEnabled = false,
@@ -1351,7 +1352,8 @@ class NativePlayerUiExtras {
     this.engineLabel = 'MPV',
     this.engineOptions = const <NativeEngineOption>[],
     this.videoFit = 'contain',
-    this.decodeMode = 'auto',
+    // 640：与 AppSettings 默认值保持一致（默认硬解）。
+    this.decodeMode = 'hw',
     this.subtitleScale = 1.0,
     this.subtitleMarginY = 22,
     this.subtitleDelayEnabled = false,

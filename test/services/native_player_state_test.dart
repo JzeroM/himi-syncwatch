@@ -342,7 +342,8 @@ void main() {
       expect(extras.engineLabel, 'MPV');
       expect(extras.engineOptions, isEmpty);
       expect(extras.videoFit, 'contain');
-      expect(extras.decodeMode, 'auto');
+      // 640：默认解码模式改为「硬解」。
+      expect(extras.decodeMode, 'hw');
       expect(extras.subtitleScale, 1.0);
       expect(extras.subtitleMarginY, 22);
       expect(extras.danmakuEnabled, isFalse);

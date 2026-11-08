@@ -179,7 +179,8 @@ void main() {
     test('leave 在 unsubscribe 之前，并留 300ms 投递时间', () {
       final body = stripComments(bodyOf(screen, 'void dispose() {'));
       final leaveIdx = body.indexOf("action: 'leave'");
-      final unsubIdx = body.indexOf('unsubscribe(channel)');
+      // 640：变量名改为捕获的 `channelLeave`（不再在 dispose 末尾读 ref）。
+      final unsubIdx = body.indexOf('unsubscribe(channelLeave)');
       expect(leaveIdx, greaterThan(0));
       expect(unsubIdx, greaterThan(0));
       expect(leaveIdx, lessThan(unsubIdx), reason: '必须先广播 leave');

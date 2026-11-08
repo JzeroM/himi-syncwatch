@@ -47,7 +47,8 @@ void main() {
   group('AppSettings', () {
     test('默认值', () {
       const settings = AppSettings();
-      expect(settings.decodeMode, equals('auto'));
+      // 640：默认解码模式改为「硬解」（原 'auto'）。
+      expect(settings.decodeMode, equals('hw'));
       expect(settings.decodeModeUserSet, isFalse);
       expect(settings.showSyncDebug, isFalse);
       expect(settings.showNetworkSpeed, isTrue, reason: '网速显示默认开');
@@ -405,7 +406,8 @@ void main() {
     test('fromJson 默认值', () {
       final json = <String, dynamic>{};
       final settings = AppSettings.fromJson(json);
-      expect(settings.decodeMode, equals('auto'));
+      // 640：默认解码模式改为「硬解」（原 'auto'）。
+      expect(settings.decodeMode, equals('hw'));
       expect(settings.decodeModeUserSet, isFalse);
       expect(settings.showSyncDebug, isFalse);
       expect(settings.stereoDownmix, isFalse);
@@ -413,15 +415,22 @@ void main() {
     });
 
     test('decodeModeUserSet：旧值推断与显式值优先', () {
+      // 640：默认值改为 'hw'。'hw'（当前默认）与 'auto'（历史默认）都
+      // 不算「用户手动设置」——后者是旧数据的默认值，不代表用户选过智能。
       expect(AppSettings.fromJson(const {}).decodeModeUserSet, isFalse);
       expect(
-        AppSettings.fromJson(const {'decodeMode': 'auto'}).decodeModeUserSet,
+        AppSettings.fromJson(const {'decodeMode': 'hw'}).decodeModeUserSet,
         isFalse,
       );
       expect(
-        AppSettings.fromJson(const {'decodeMode': 'hw'}).decodeModeUserSet,
+        AppSettings.fromJson(const {'decodeMode': 'auto'}).decodeModeUserSet,
+        isFalse,
+        reason: 'auto 是历史默认值，不代表用户手动设置',
+      );
+      expect(
+        AppSettings.fromJson(const {'decodeMode': 'sw'}).decodeModeUserSet,
         isTrue,
-        reason: '旧数据中的非默认解码方式视为用户已设置',
+        reason: '软解明确偏离默认，视为用户已设置',
       );
       expect(
         AppSettings.fromJson(const {
@@ -471,7 +480,8 @@ void main() {
     test('fromJson 兼容旧版 bool hardwareDecoding', () {
       final json = {'hardwareDecoding': true};
       final settings = AppSettings.fromJson(json);
-      expect(settings.decodeMode, equals('auto'));
+      // 640：默认改为硬解，旧版 true 与默认同向。
+      expect(settings.decodeMode, equals('hw'));
     });
 
     test('fromJson 兼容旧版 false hardwareDecoding', () {
@@ -480,10 +490,10 @@ void main() {
       expect(settings.decodeMode, equals('sw'));
     });
 
-    test('fromJson 兼容旧版 hw+ 迁移到 auto', () {
+    test('fromJson 兼容旧版 hw+ 迁移到 hw（640 默认即硬解）', () {
       final json = {'decodeMode': 'hw+'};
       final settings = AppSettings.fromJson(json);
-      expect(settings.decodeMode, equals('auto'));
+      expect(settings.decodeMode, equals('hw'));
     });
 
     test('toJson/fromJson 往返保持一致', () {
@@ -1201,7 +1211,8 @@ void main() {
         'hdrAutoRoute': false,
       });
       // 字段已移除：仅验证 fromJson 不抛错且其余字段正常
-      expect(s.decodeMode, 'auto');
+      // 640：默认解码模式改为 'hw'。
+      expect(s.decodeMode, 'hw');
       expect(s.toJson().containsKey('defaultEngine'), isFalse);
       expect(s.toJson().containsKey('hdrAutoRoute'), isFalse);
     });

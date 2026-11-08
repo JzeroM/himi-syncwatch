@@ -3254,6 +3254,165 @@ render context 仍在向已销毁的纹理渲染 → `libmpv-2.dll` 访问违例
 - [ ] **观众退房 → 房主人数减少**（两个方向都验）。
 - [ ] **Windows 画面正常**（不灰屏）+ 从播放页返回不闪退。
 
+### Phase 2.58：surface 失败自动回退 + texture 时序死锁 + 硬解默认 + 文案（1.5.60+640）
+
+> 起因：639 打包后真机反馈——
+> ①「TV 盒子还是黑屏」
+> ②「TV 不强制 texture，默认 Surface，毕竟有的盒子可以用 Surface」
+> ③「MPV 的 texture 路径有问题：加载好久后出现加载失败重试后才正常播，
+>   而且在 TV 盒子上音画不同步，手机音画正常」（补充：手机也复现加载慢）
+> ④「MPV 默认解码模式为硬解」
+> ⑤「设置里默认播放器文案和 MPV 的文案更新一下」（截图：仍写
+>   「Android/Windows 使用 MDK」「HarmonyOS MPV / ohcodec 硬件解码」）
+> 另要求：TV 模式切换引擎控件移到弹幕开关后面，遥控可进面板/选择/返回。
+
+#### 一、为什么 MDK 能播、MPV surface 黑屏（关键结论）
+
+| 引擎 | 渲染方式 | 是否经 GL/EGL |
+|---|---|---|
+| **MDK (fvp)** | `FvpSurfaceView` + `tunnel: true` → MediaCodec **直写 SurfaceView buffer queue** | ❌ **完全绕过 GL/EGL** |
+| **MPV surface** | `vo=gpu-next` + `gpu-context=android` → mpv **自建 EGL 上下文** | ✅ 必须走 EGL |
+| **MPV texture** | `VideoController` → **Flutter 引擎的 EGL** → 纹理 | ✅ 但由 Flutter 管理 |
+
+Mali-450 的 EGL 驱动在这台盒子上无法满足 mpv 自建上下文的要求，而 MDK
+的 tunnel 根本不创建 EGL、MPV texture 用的是 Flutter 已验证的 EGL。
+
+**因此 639 的「GLES 版本探测」不足以判定**（驱动可能虚报版本号）→ 改为
+**运行时检测渲染失败并自动回退**，同时保留 Surface 作为默认（部分盒子可用）。
+
+#### 二、surface 渲染失败自动回退（双保险 + 持久化）
+
+- [x] 新增 `_forceTexture` / `_textureFallbackTried` / `_voNotConfiguredTicks`。
+- [x] `effectiveSurface = nativeSurface && !_forceTexture`，回退后整条链路
+      按纹理处理（`vo`/`wid`/`hwdec`/HDR 分支全部改判）。
+- [x] **最快信号**：mpv 日志匹配 `egl`+`fail/could not/error`、
+      `could not create`、`failed to create`、`vo/* not supported`、
+      `no video output` → 立即回退（1-2s）。
+- [x] **兜底信号**：媒体打开后启动 `vo-configured` 轮询（500ms），
+      连续 10 次（5s）非 `yes` → 回退。
+      （`vo-configured` 依赖 VO 初始化，**无法在播放前检测**——mpv 手册：
+      "Whether the VO is configured right now"。）
+- [x] `_fallbackToTexture()`：设 `_forceTexture` → 通知 Dart 层 → 重建会话
+      （保留地址与位置）。
+- [x] Dart 层 `MpvPlayerAdapter.onSurfaceRenderFailed` →
+      播放页 `_onSurfaceRenderFailed()` 持久化 `mpvVideoOutput=texture`
+      （`userSet` 保持 false，用户仍可手动改回 surface）。
+
+#### 三、texture 时序死锁（手机与 TV 都复现的「加载好久后失败」）
+
+**根因**：`_ensurePlayer()` 在**打开媒体之前**就 `await _waitForTextureId`
+（最长 20s），而纹理注册依赖 `VideoOutput.Resize` → 需要 mpv 已有视频输出
+→ 需要媒体已打开。**时序死锁**：慢设备必然超时 → 抛异常 → 上层「播放失败」
+→ 重试时媒体已开、纹理就绪 → 正常。
+
+**修复**：改为先 `_openNow(media)`，纹理由 `_awaitTextureInBackground()`
+后台等待（拿到即 `_emit('texture-id')`，超时只记日志**不抛异常**）。
+
+#### 四、MPV 硬解默认生效
+
+**根因（两处）**：
+
+1. 设置默认 `decodeMode = 'auto'`；
+2. `videoDecoders` setter **只认 `ohcodec`**（鸿蒙）——
+   Android 的 `AMediaCodec`、Windows 的 `D3D11/DXVA`、Apple 的 `VT`
+   全被判为「无硬解」→ `decodeMode='hw'` 静默退化成 `auto`。
+
+**修复**：
+
+- [x] `AppSettings.decodeMode` 默认 `'auto'` → **`'hw'`**（构造器 +
+      `fromJson` 兜底 + `NativePlayerUiState` 默认值三处同步）。
+- [x] `fromJson` 的 `decodeModeUserSet` 推断：`'hw'`（当前默认）与
+      `'auto'`（历史默认）都**不算**用户手动设置，避免旧数据被误标为
+      「已手动选过智能」而挡住 TV 自动识别迁移到硬解；`'sw'` 才算。
+- [x] `videoDecoders` setter 改为**平台无关**识别（`hwDecoderHints`：
+      `ohcodec` / `mediacodec` / `d3d11` / `dxva` / `vt` / `videotoolbox` /
+      `vaapi` / `vdpau` / `nvdec` / `cuda`）。
+- [x] 纯硬解映射为内部语义 `'hw'`，再由 `resolveWindowsHwdec` 转成
+      **mpv 合法值** `auto-safe`（Windows 用 `auto-copy-safe`）——
+      `'hw'` 不是 mpv 认的 `hwdec` 取值，直接传会导致解码器初始化失败。
+- [x] `videoDecoders` getter 不再恒返回 `['ohcodec']`，改用
+      `DecodeModeService.platformHwDecoderName`。
+
+#### 五、弱 GPU 音画同步
+
+- [x] `lowEndGpu = nativeSurface && !_glSupportsGpuNext` 时写入：
+      `framedrop=vo`（渲染落后丢帧追赶）、`audio-buffer=0.2`、
+      `vd-lavc-threads=2`。
+
+#### 六、TV 模式引擎控件移到弹幕开关后
+
+- [x] 顶栏：`showKernelButton: !settings.tvMode && !_switchingKernel`。
+- [x] 底栏 `trailing`：弹幕开关之后插入引擎按钮（仅 TV），复用
+      `_kernelButtonFocusNode` + `_toggleKernelMenu`。
+- [x] 遥控链路已完整：OK → `_toggleKernelMenu` → `_openSelectorPanel`
+      把焦点交给面板首项（`_selectorFirstFocusNode`）；面板内选项是
+      `TvFocusable`；返回 → `_closeSelectorPanel` 把焦点还给
+      `_selectorOpenerNode`。
+
+#### 七、设置文案更新
+
+- [x] 播放器设置页：「平台默认：**Android / Windows / 鸿蒙使用 MPV**，
+      iOS 使用 Erika」（原写「Android/Windows 使用 MDK」）。
+- [x] MPV 配置页：标题 `HarmonyOS MPV` → **`MPV`**；
+      副标题改为「libmpv 内核（Android / Windows / 鸿蒙默认），支持
+      平台硬件解码、ASS/PGS 字幕与网络缓存」。
+- [x] 视频路径副标题：Windows「默认纹理；Surface 需先实现窗口挖洞，
+      暂不可用」；其他平台「默认 Surface 直出（渲染失败自动回退纹理）」。
+- [x] 同步修正 `player_settings_screen.dart` 的类注释。
+
+#### 八、测试
+
+- [x] 新增 `test/player_core/surface_fallback_640_test.dart` 17 项：
+      回退字段、`effectiveSurface`、日志关键字、`vo-configured` 5s 兜底、
+      媒体先开后监控、持久化回调、纹理后台等待不抛异常、
+      默认 `decodeMode='hw'`、平台无关硬解器识别、`'hw'`→`auto-safe`
+      映射、getter 不再恒 `ohcodec`、两处文案、TV 引擎控件位置。
+- [x] 更新 `android_gpu_and_room_count_639_test.dart`（`nativeSurface`
+      → `effectiveSurface`）。
+
+#### 八点五、人数修复（本轮补做）
+
+> 640 首版遗漏了这两项（上一轮只做了 639 的成员集合，未解决根因）。
+
+**根因 1：观众端 `_myUserId` 与 RTM userId 不一致（人数多 1）**
+
+```dart
+_myUserId = 'user_${DateTime.now().millisecondsSinceEpoch}';  // 自造
+rtmUserId = tokenData['tokenId'] as String;                    // RTM 实际
+```
+
+| 端 | 成员集合 | 人数 |
+|---|---|---|
+| 房主 | `{user_host, "1"}` | 2 ✅ |
+| **观众** | `{user_自造, user_host, "1"}` | **3** ❌ |
+
+**修复**：观众分支 `rtmUserId = tokenData['tokenId']` 之后立即
+`_myUserId = rtmUserId;`。
+
+**根因 2：观众退出时 `leave` 消息根本没发出（人数完全不变）**
+
+`dispose()` 末尾的 `unawaited` 闭包里读 `ref.read(rtmServiceProvider)`，
+组件销毁后该调用可能抛异常 → `sendJoinLeave` 被跳过。
+
+**修复**：在 `dispose()` **开头**（`ref` 仍有效）捕获
+`rtmForLeave` / `channelForLeave` / `nameForLeave`，末尾用捕获的引用
+执行 `leave → 300ms → unsubscribe → logout`。
+
+- [x] 新增测试 3 项（ID 统一、开头捕获、leave 顺序）。
+
+#### 九、待真机验证
+
+- [ ] **观众端人数正确**（不再多 1）。
+- [ ] **观众退房 → 房主人数立即减少**（两个方向都验）。
+- [ ] **Mali-450 盒子**：surface 黑屏后自动回退 texture，正常出画；
+      下次启动直接走 texture（已持久化）。
+- [ ] 可用 Surface 的盒子：仍走 Surface（HDR 直出）。
+- [ ] **手机**：texture 路径不再「加载好久后失败重试」。
+- [ ] **TV 盒子音画同步**恢复正常。
+- [ ] 设置里默认解码模式显示「硬解」且实际生效（诊断面板
+      `hwdec-current` 非 `no`）。
+- [ ] TV 模式引擎按钮在弹幕开关之后，遥控可进面板/选择/返回。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

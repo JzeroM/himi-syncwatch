@@ -1016,7 +1016,8 @@ void main() {
     expect(find.byKey(const Key('settingOption_auto')), findsOneWidget);
     expect(find.byKey(const Key('settingOption_hw')), findsOneWidget);
     expect(find.byKey(const Key('settingOption_sw')), findsOneWidget);
-    expect(container.read(settingsProvider).decodeMode, 'auto');
+    // 640：默认解码模式改为「硬解」（原 'auto'）。
+    expect(container.read(settingsProvider).decodeMode, 'hw');
 
     await tester.tap(find.byKey(const Key('settingOption_sw')));
     await tester.pumpAndSettle();
@@ -1055,18 +1056,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget, reason: '居中弹层');
     expect(find.byType(BottomSheet), findsNothing, reason: '不再用底部弹窗');
-    expect(container.read(settingsProvider).decodeMode, 'auto');
+    // 640：默认解码模式改为「硬解」，故当前值行是 hw。
+    expect(container.read(settingsProvider).decodeMode, 'hw');
 
     // 打开后当前值行 autofocused
-    final autoRow =
-        tester.widget<TvFocusable>(find.byKey(const Key('settingOption_auto')));
-    expect(autoRow.autofocus, isTrue);
+    final currentRow =
+        tester.widget<TvFocusable>(find.byKey(const Key('settingOption_hw')));
+    expect(currentRow.autofocus, isTrue);
 
     // 方向键下移焦点：弹层不关闭、设置不变（RadioGroup 劫持回归验证）
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     expect(find.byType(AlertDialog), findsOneWidget, reason: '方向键不应关闭弹层');
-    expect(container.read(settingsProvider).decodeMode, 'auto',
+    expect(container.read(settingsProvider).decodeMode, 'hw',
         reason: '方向键不应触发选择');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);

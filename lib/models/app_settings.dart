@@ -332,7 +332,12 @@ class AppSettings {
   static const Object unsetValue = Object();
 
   const AppSettings({
-    this.decodeMode = 'auto',
+    // 640：默认解码模式改为**硬解**（原 'auto'）。
+    //
+    // 真机反馈「MPV 默认解码模式为硬解」：auto 在部分设备上会先尝试软解
+    // 路径（或硬解失败后静默回退），观感是「没走硬解」。改为 'hw' 后
+    // 明确优先纯硬解；用户仍可在设置里切回「智能」或「软解」。
+    this.decodeMode = 'hw',
     this.decodeModeUserSet = false,
     this.playerKernel = '',
     this.mkHwdec = 'auto-safe',
@@ -710,20 +715,27 @@ class AppSettings {
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
     final raw = json['decodeMode'];
+    // 640：默认解码模式改为「硬解」（与构造器默认值保持一致）。
+    // 未存过设置的新用户 / 旧版无该字段 → 'hw'；显式存过则按存档。
     String mode;
     if (raw is String && ['auto', 'hw', 'sw'].contains(raw)) {
       mode = raw;
     } else if (raw == 'hw+') {
-      mode = 'auto';
+      mode = 'hw';
     } else if (raw == true || json['hardwareDecoding'] == true) {
-      mode = 'auto';
+      mode = 'hw';
     } else if (raw == false || json['hardwareDecoding'] == false) {
       mode = 'sw';
     } else {
-      mode = 'auto';
+      mode = 'hw';
     }
-    final decodeModeUserSet =
-        json['decodeModeUserSet'] as bool? ?? (mode != 'auto');
+    // 未显式标记时，只有**明确非默认且非历史默认**才算「用户手动设置」。
+    //
+    // 640：默认值从 'auto' 改为 'hw'，但旧数据里存的是 'auto'（当时的
+    // 默认值）——它并不代表用户手动选过「智能」。故把 'auto' 也视为
+    // 未手动设置，让 TV 自动识别仍能把旧数据迁移到硬解。
+    final decodeModeUserSet = json['decodeModeUserSet'] as bool? ??
+        (mode != const AppSettings().decodeMode && mode != 'auto');
     final bufferMin = _clampInt(
       json['mdkBufferMinMs'],
       mdkBufferMinMsDefault,
