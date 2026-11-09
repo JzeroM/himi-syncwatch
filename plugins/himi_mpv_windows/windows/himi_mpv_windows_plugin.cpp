@@ -668,6 +668,12 @@ RECT HimiMpvWindowsPlugin::SurfaceRectInClient(HWND target) const {
   return RECT{points[0].x, points[0].y, points[1].x, points[1].y};
 }
 
+void HimiMpvWindowsPlugin::SetSurfaceZOrder(bool top) {
+  surface_on_top_ = top;
+  if (surface_hwnd_ == nullptr) return;
+  UpdateSurface(surface_left_, surface_top_, surface_width_, surface_height_);
+}
+
 void HimiMpvWindowsPlugin::HideSurface() {
   if (surface_hwnd_ != nullptr) {
     ::ShowWindow(surface_hwnd_, SW_HIDE);
