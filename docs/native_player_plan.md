@@ -4511,6 +4511,91 @@ dist/ohos/local/
   上架 AppGallery 需华为官方签发的发布证书。
 - 构建时间增加约 2 分钟（`assembleApp` 会重新编译 ArkTS）。
 
+#### 七、上架踩坑：AGC 校验 API Release 类型（651 后续）
+
+> 提交 AppTest 邀请测试时 AGC 报：
+> 「经检测发现，您的应用使用了 HarmonyOS **beta 版本**的 API」
+
+**根因**：本机 Command Line Tools 是 **beta 渠道**：
+
+```json
+// 替换前 sdk/default/sdk-pkg.json
+{ "version": "26.0.0.23", "releaseType": "Beta1", "stage": "Beta1" }
+```
+
+包内元数据随之变成 `apiReleaseType = Beta1` → AGC 拒绝。
+
+**修复**：换成 Release 渠道的 Command Line Tools。
+
+| 项 | 替换前（beta） | 替换后（release） |
+|---|---|---|
+| CLI 版本 | `26.0.0.461` | **`26.0.0.865`** |
+| SDK 版本 | `26.0.0.23` Beta1 | **`26.0.0.105` Release** |
+| `releaseType` | `beta` | **`release`** |
+| hvigor | 6.26.1 | 6.26.9 |
+| ohpm | 26.0.0.410 | 26.0.0.630 |
+| 包内 `apiReleaseType` | `Beta1` | **`Release`** |
+
+**替换时的两个坑**：
+
+1. **目录层级不同**：新版解压后是 `command-line-tools/`，但仓库脚本与环境
+   变量一直用 `harmonyos-clt/` 作为根（旧版是
+   `harmonyos-clt/command-line-tools/`）。放置时需注意层级一致。
+2. **`~/.config/flutter/settings` 硬编码旧路径**：
+   ```json
+   { "ohos-sdk": "/home/mojito/harmonyos-clt/command-line-tools/sdk" }
+   ```
+   目录层级变更后该路径失效 → Flutter-OH 报
+   `No Hmos SDK found. Try setting the HOS_SDK_HOME environment variable.`
+   需同步改为新路径。
+
+**回滚方式**：
+
+```bash
+rm -rf /home/mojito/harmonyos-clt
+mv /home/mojito/harmonyos-clt.beta.bak/command-line-tools /home/mojito/harmonyos-clt
+# 并把 ~/.config/flutter/settings 的 ohos-sdk 改回 .../command-line-tools/sdk
+```
+
+**其他 AGC 权限校验坑**（同批遇到）：
+AGC 会比对「隐私政策声明的 user_grant 权限」与「包内实际权限」。
+本项目包内只有 `INTERNET` + `GET_NETWORK_INFO`（都是 system_grant），
+所以隐私政策里**不应**声明 `READ_IMAGEVIDEO` / `WRITE_IMAGEVIDEO` /
+`DISTRIBUTED_DATASYNC`——相册读写走 `photoAccessHelper.createAsset`
+与系统文件选择器，无需显式权限声明。
+
+#### 八、`.app` 云调试报「应用版本错误」（652）
+
+> 现象：云调试 Mate 90 Pro（HarmonyOS 7.0.0.109）上
+> **`.hap` 能装、`.app` 报「应用版本错误」**。
+
+**根因：两个包的 `deviceTypes` 不一致**
+
+| 包 | `deviceTypes` | 来源 |
+|---|---|---|
+| `.hap`（能装） | `['phone']` | `ohos_pack.sh` 重打包时强制改写 |
+| `.app`（报错） | `['default', 'tablet']` | hvigor 原生产出，**跳过重打包故未改写** |
+
+`ohos/entry/src/main/module.json5` 原本声明的是
+`["default", "tablet"]`——`default` 不是有效设备类型，且**缺 `phone`**
+→ 云机（phone 类型）判定「不适用此设备」→ 报「应用版本错误」。
+
+**修复**：
+
+- [x] `module.json5`：`["default","tablet"]` → **`["phone","tablet"]`**。
+- [x] `ohos_pack.sh`：定义 `DEVICE_TYPES = ['phone','tablet']`，
+      3 处硬编码 `['phone']`（module / pack.info 的 modules / packages）
+      统一引用该常量，避免 `.hap` 与 `.app` 再次漂移。
+- [x] 新增 `test/ci/ohos_device_types_652_test.dart`（5 项）：
+      声明含 phone、不含 default、脚本用统一常量。
+
+**验证**：重建后 `.app` 的 `pack.info`（modules + packages）与内部
+`entry-default.hap` 的 `module.deviceTypes` 均为 `['phone','tablet']`。
+
+**教训**：`.app` 走「跳过重打包」分支，**不经过 `ohos_pack.sh` 的任何
+改写**。凡是在该脚本里对 `module.json` 做的修正，都必须同步到源头
+`module.json5`，否则 `.app` 与 `.hap` 会漂移。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

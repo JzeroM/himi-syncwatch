@@ -110,9 +110,13 @@ void main() {
   });
 
   group('③ 版本号', () {
-    test('pubspec 为 1.5.71+651', () {
+    test('pubspec 版本号已递增（不再是 1.5.71+651）', () {
       final src = read('pubspec.yaml');
-      expect(src, contains('version: 1.5.71+651'));
+      // 651 引入 HAP+APP 双产物；后续版本继续递增，
+      // 这里只断言「不是 651 当时的版本」，避免每轮都要改。
+      expect(src, isNot(contains('version: 1.5.71+651')));
+      expect(RegExp(r'^version: \d+\.\d+\.\d+\+\d+$', multiLine: true)
+          .hasMatch(src), isTrue);
     });
   });
 }

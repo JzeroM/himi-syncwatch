@@ -138,7 +138,12 @@ app['targetMinorAPIVersion'] = 0
 app['compileSdkType'] = 'HarmonyOS'
 app['compileSdkVersion'] = '26.0.0.105'
 app['apiReleaseType'] = 'Release'
-module['module']['deviceTypes'] = ['phone']
+# 652：deviceTypes 与 module.json5 保持一致（phone + tablet）。
+# 旧值只写 'phone'，会让 .hap 与 .app 的声明不一致：
+# .hap 经此改写为 phone，.app 跳过重打包仍是 hvigor 原值 →
+# 云调试侧载 .app 时因设备类型不匹配报「应用版本错误」。
+DEVICE_TYPES = ['phone', 'tablet']
+module['module']['deviceTypes'] = DEVICE_TYPES
 with open(module_path, 'w', encoding='utf-8') as f:
     json.dump(module, f, ensure_ascii=False, separators=(',', ':'))
 
@@ -146,12 +151,12 @@ with open(pack_path, encoding='utf-8') as f:
     pack = json.load(f)
 pack['summary']['app']['version'] = {'code': code, 'name': version_name}
 for item in pack.get('summary', {}).get('modules', []):
-    item['deviceType'] = ['phone']
+    item['deviceType'] = DEVICE_TYPES
     item.setdefault('apiVersion', {}).update(
         {'compatible': 26, 'releaseType': 'Release', 'target': 26}
     )
 for item in pack.get('packages', []):
-    item['deviceType'] = ['phone']
+    item['deviceType'] = DEVICE_TYPES
 with open(pack_path, 'w', encoding='utf-8') as f:
     json.dump(pack, f, ensure_ascii=False, separators=(',', ':'))
 PY
