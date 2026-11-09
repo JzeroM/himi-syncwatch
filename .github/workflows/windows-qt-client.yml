@@ -1,6 +1,12 @@
-name: Windows Qt Client Build
+name: Windows Qt Player Spike
 
-# 仅手动触发，避免 native 改动触发 Flutter 的自动 bump/release 全流程
+# 654：Qt 播放器窗口 spike 构建。
+#
+# 【为什么是手动触发】本工作流只产出验证用的 exe（Qt + mpv + HDR 直出），
+# 不参与正式发版；正式 Windows 产物仍由 release.yml 的 build-windows 负责。
+# 等 660 把 Qt 播放器接进主流程后，这里才会并入 release.yml。
+#
+# 【本轮验证目标】mpv 用 `wid` 直出到 Qt 创建的 HWND 时，HDR 是否还在？
 on:
   workflow_dispatch:
     inputs:
@@ -10,33 +16,55 @@ on:
         default: 'native/windows_qt_client'
 
 env:
-  QT_VERSION: '6.7.2'
+  QT_VERSION: '6.8.3'
   CLIENT_DIR: ${{ inputs.client_dir || 'native/windows_qt_client' }}
-  AGORA_RTM_SDK_URL: 'https://download.agora.io/rtm2/release/Agora_RTM_C%2B%2B_SDK_for_Windows_v2.2.5.zip'
-  AGORA_RTM_SDK: 'D:/a/himi-syncwatch/agora_extract/Agora_Native_SDK_for_Windows_MINI_RTM'
 
 jobs:
   build-windows:
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装 Qt 6 (Quick / QuickControls2 属基础包，无需额外模块)
+      - name: 安装 Qt 6（Quick / QuickControls2 属基础包）
+        id: install-qt
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
-          arch: 'win64_msvc2019_64'
+          arch: 'win64_msvc2022_64'
           cache: true
 
-      - name: 下载并解压 Agora RTM C++ SDK
+      # mpv dev 包：既提供 libmpv-2.dll，也提供 include/mpv/client.h
+      # 与 libmpv.dll.a。release.yml 目前只取了 DLL，这里需要全套。
+      - name: 下载 libmpv dev 包（shinchiro）
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Invoke-WebRequest -Uri $env:AGORA_RTM_SDK_URL -OutFile agora_sdk.zip
-          New-Item -ItemType Directory -Force -Path (Split-Path $env:AGORA_RTM_SDK)
-          Expand-Archive -Path agora_sdk.zip -DestinationPath (Split-Path $env:AGORA_RTM_SDK) -Force
-          Write-Host "SDK dir: $env:AGORA_RTM_SDK"
-          Test-Path "$env:AGORA_RTM_SDK/sdk/x86_64/agora_rtm_sdk.dll"
+          $headers = @{ 'User-Agent' = 'himi-build'; 'Accept' = 'application/vnd.github+json' }
+          if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)" }
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' -Headers $headers -UseBasicParsing
+          $asset = $release.assets | Where-Object { $_.name -match 'mpv-dev-x86_64-v3.*\.7z' } | Select-Object -First 1
+          if (-not $asset) { $asset = $release.assets | Where-Object { $_.name -match 'mpv-dev-x86_64.*\.7z' } | Select-Object -First 1 }
+          if (-not $asset) { throw '未找到 shinchiro libmpv dev 包' }
+          Write-Host "libmpv dev 资源：$($asset.name)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile mpv-dev.7z -UseBasicParsing
+          # 7z 在 windows-latest 上已预装（choco 亦可）
+          $sevenZip = Join-Path ${env:ProgramFiles} '7-Zip\7z.exe'
+          if (!(Test-Path $sevenZip)) {
+            choco install 7zip -y --no-progress | Out-Null
+            $sevenZip = Join-Path ${env:ProgramFiles} '7-Zip\7z.exe'
+          }
+          if (!(Test-Path $sevenZip)) { throw '7z.exe 未找到' }
+          Remove-Item -Recurse -Force mpv-dev -ErrorAction SilentlyContinue
+          & $sevenZip x mpv-dev.7z "-ompv-dev" -y | Out-Null
+          Get-ChildItem -Recurse mpv-dev | Select-Object -First 30 FullName | Format-Table -AutoSize
+          $header = Get-ChildItem -Path mpv-dev -Recurse -Filter 'client.h' |
+            Where-Object { $_.DirectoryName -match 'mpv' } | Select-Object -First 1
+          if (-not $header) { throw '包内未找到 mpv/client.h' }
+          $root = Split-Path (Split-Path $header.DirectoryName -Parent) -Parent
+          Write-Host "LIBMPV_DIR=$root"
+          "LIBMPV_DIR=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: 配置 CMake (MSVC)
         shell: pwsh
@@ -44,22 +72,33 @@ jobs:
           cmake -S $env:CLIENT_DIR -B build `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_PREFIX_PATH="${{ steps.install-qt.outputs.qt-dir }}" `
-            -DAGORA_RTM_SDK="$env:AGORA_RTM_SDK"
+            -DLIBMPV_DIR="$env:LIBMPV_DIR"
 
       - name: 编译
+        shell: pwsh
         run: cmake --build build --config Release --parallel
 
-      - name: 部署 Qt6 runtime DLLs (包括 Qt6Qml.dll)
+      - name: 部署 Qt6 runtime DLLs
         shell: pwsh
         run: |
           $qtBin = "${{ steps.install-qt.outputs.qt-dir }}/bin"
-          & "$qtBin/windeployqt.exe" "build/Release/himi_qt_win.exe"
+          & "$qtBin/windeployqt.exe" --qmldir "$env:CLIENT_DIR/src/qml" "build/Release/himi_qt_win.exe"
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt 失败" }
+
+      - name: 校验产物完整性
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = 'build/Release'
+          foreach ($f in @('himi_qt_win.exe', 'libmpv-2.dll', 'Qt6Core.dll', 'Qt6Quick.dll', 'Qt6Qml.dll')) {
+            $p = Join-Path $rel $f
+            if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
+            Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
+          }
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: himi-qt-win
-          path: |
-            build/Release/himi_qt_win.exe
-            build/Release/*.dll
+          name: himi-qt-spike-654
+          path: build/Release/**
           if-no-files-found: error
