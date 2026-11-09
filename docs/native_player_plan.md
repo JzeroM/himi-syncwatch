@@ -4357,6 +4357,94 @@ Flutter 播放页黑底退场
 - [ ] 若仍是 Flutter 播放页（有控件）：发 `%TEMP%\himi_runtime.log` 里
       含 `nativeUi` / `session created` 的行。
 
+> **结果：648 暴露两个问题。** 真机截图显示两个窗口：
+> - `HIMI PROBE: layered-alpha`（Flutter 主窗口，**标题被改、全透明**）
+> - `HIMI Player`（原生播放器，正常）
+>
+> 根因与修复见 Phase 2.67。
+
+### Phase 2.67：两个窗口共存 + 删除透明探测调试代码（1.5.69+649）
+
+#### 一、`HIMI PROBE` 窗口的根因（639 遗留调试代码）
+
+639 时期为调试「子 HWND 被 Flutter 遮挡」，写了一套**自动运行的透明探测**：
+
+```dart
+// himi_mpv_windows.dart（已删）
+if (!_transparencyProbeStarted && nativeSurface && hdr &&
+    values['vo-configured'] == 'yes') {
+  _transparencyProbeStarted = true;
+  unawaited(_runTransparencyProbe());   // ← 原生 surface + HDR 时自动跑
+}
+```
+
+```dart
+// _runTransparencyProbe（已删）
+for (final mode in ['dwm-blur', 'layered-alpha', 'region-hole']) {
+  await setTransparencyProbe(mode);          // ← 把 Flutter 窗口设成全透明
+  await Future.delayed(Duration(seconds: 8)); // ← 每种停留 8 秒
+}
+```
+
+```cpp
+// 插件把 Flutter 窗口标题改成 HIMI PROBE: <mode>（已删）
+const std::wstring title = L"HIMI PROBE: " + mode;
+```
+
+648 改用**独立窗口**后，这套探测完全无用且有害（会改标题、全透明 30 秒）。
+
+#### 二、改动
+
+**删除探测代码**
+
+- [x] Dart：删 `_transparencyProbeStarted`、`_runTransparencyProbe()`、
+      诊断回调里的自动触发。
+- [x] C++：删 `SetTransparencyProbe()` / `CaptureTransparencyState()` /
+      `ClearTransparencyProbe()`、`setTransparencyProbe` channel 分支、
+      `original_window_title_` / `original_view_ex_style_` /
+      `original_view_region_` / `transparency_state_captured_` 字段、
+      `HIMI PROBE:` 改标题逻辑（共约 5.8KB 代码）。
+
+**两个窗口共存**
+
+- [x] `player_screen.dart`：`_nativeUiActive && Windows` 时
+      `return const SizedBox.shrink()`——播放页不渲染任何可见内容，
+      但 State 保留在路由栈里，业务逻辑（房间/弹幕/进度上报/选集）继续运行。
+      **守卫放在所有 `ref.watch`/`ref.listen` 之后**，否则会跳过设置监听。
+- [x] `router.dart`：`/player/:id` 的 `CustomTransitionPage.opaque: true → false`
+      ——详情页在下方透出。
+- [x] `CreateHostWindow`：已存在时 `ShowWindow(SW_RESTORE)` +
+      `SetForegroundWindow`（聚焦而非重复创建）。
+- [x] 新增 channel `focusHostWindow` + Dart `HimiMpvWindowsSession.focusHostWindow()`
+      + `MpvSessionPlatform.focusHostWindow()`。
+- [x] 新增 `lib/providers/native_player_provider.dart`：
+      `nativePlayerActiveProvider`（StateProvider<bool>）。
+- [x] `player_screen.dart`：`_syncNativePlayerActiveFlag()` 同步该标志；
+      `_safePopPlayerPage()` 里复位。
+- [x] 7 处播放入口加守卫（窗口已开 → 只聚焦，不重复 push）：
+      - `detail_screen.dart`：`_focusNativePlayerIfActive()` 辅助方法 + 3 处
+        （剧集 / 电影 / 房间模式）
+      - `room_screen.dart`：1 处（进入播放）
+      - `room_menu_button.dart`：3 处（扫码加入 / 输码加入 / 创建房间）
+
+#### 三、测试
+
+- [x] 新增 `test/player_core/windows_coexist_649_test.dart`（15 项）：
+  - 探测代码已删（Dart/C++/头文件，含 `HIMI PROBE` 断言）
+  - 聚焦已有窗口（C++ `SetForegroundWindow` + channel + Dart 三层）
+  - 全局 provider + 同步/复位
+  - 7 处入口守卫（详情页 3 / 房间页 1 / 房间菜单 3）
+  - 播放页不可见 + 守卫位置（在 ref.listen 之后）+ 路由 `opaque: false`
+
+#### 四、待真机验证
+
+- [ ] 进播放页 → **只弹出 `HIMI Player` 一个窗口**（不再有 `HIMI PROBE`）。
+- [ ] Flutter 窗口显示**详情页**（不再黑屏/全透明）。
+- [ ] 两窗口可互相切换；拖动/缩放播放器窗口画面跟随。
+- [ ] 详情页**再次点播放** → 聚焦已有播放器窗口，不开第二个。
+- [ ] 关闭播放器窗口 / ESC → 回详情页。
+- [ ] **已知限制**：仍无控件 UI（顶栏/底栏/弹幕），阶段 3~5 实现。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

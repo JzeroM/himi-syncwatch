@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/providers/native_player_provider.dart';
 import 'package:himi_syncwatch/services/room/qr_image_decoder.dart';
 import 'package:himi_syncwatch/utils/gallery_picker.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
@@ -15,6 +17,7 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 
 /// 顶部「房间」入口按钮 + 房间卡片全套交互
 /// （创建房间 / 加入房间 / 扫码 / 房间码）。
@@ -233,6 +236,11 @@ class RoomMenuButton extends ConsumerWidget {
                       return;
                     }
                     Navigator.pop(dialogContext);
+                    // 649：原生播放器已开着 → 只聚焦窗口，不重复 push。
+                    if (ref.read(nativePlayerActiveProvider)) {
+                      await MpvSessionPlatform.focusHostWindow();
+                      return;
+                    }
                     context.push(
                       '/player/_?roomCode=${Uri.encodeComponent(result)}&isHost=false&name=${Uri.encodeComponent(name)}',
                     );
@@ -269,6 +277,11 @@ class RoomMenuButton extends ConsumerWidget {
                 final roomData = RoomCode.decode(code);
                 if (roomData == null) {
                   showAppToast(context, '房间码无效');
+                  return;
+                }
+                // 649：原生播放器已开着 → 只聚焦窗口，不重复 push。
+                if (ref.read(nativePlayerActiveProvider)) {
+                  unawaited(MpvSessionPlatform.focusHostWindow());
                   return;
                 }
                 context.push(
@@ -327,6 +340,11 @@ class RoomMenuButton extends ConsumerWidget {
     );
 
     if (context.mounted) {
+      // 649：原生播放器已开着 → 只聚焦窗口，不重复 push。
+      if (ref.read(nativePlayerActiveProvider)) {
+        await MpvSessionPlatform.focusHostWindow();
+        return;
+      }
       context.push(
         '/player/_?roomCode=${Uri.encodeComponent(roomCode)}&isHost=true',
       );

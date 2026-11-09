@@ -29,10 +29,7 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
   HWND CreateSurface();
   void UpdateSurface(int left, int top, int width, int height);
   void SetSurfaceZOrder(bool top);
-  flutter::EncodableMap SetTransparencyProbe(const std::string& mode);
   RECT SurfaceRectInClient(HWND target) const;
-  void CaptureTransparencyState();
-  void ClearTransparencyProbe();
   void HideSurface();
   void DestroySurface();
   flutter::EncodableMap QueryHdrCapabilities();
@@ -72,10 +69,6 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
   int surface_width_ = 0;
   int surface_height_ = 0;
   bool surface_on_top_ = false;
-  bool transparency_state_captured_ = false;
-  std::wstring original_window_title_;
-  LONG_PTR original_view_ex_style_ = 0;
-  HRGN original_view_region_ = nullptr;
   // 646：原生播放器顶层窗口。
   HWND host_hwnd_ = nullptr;
   HWND render_hwnd_ = nullptr;

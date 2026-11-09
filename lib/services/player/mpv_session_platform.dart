@@ -116,6 +116,14 @@ class MpvSessionPlatform {
     return Future<void>.value();
   }
 
+  /// 649：聚焦 Windows 原生独立窗口（详情页重复点播放时用）。
+  ///
+  /// 返回 true 表示窗口已存在并被置前；false 表示尚未创建。
+  static Future<bool> focusHostWindow() {
+    if (!Platform.isWindows) return Future<bool>.value(false);
+    return HimiMpvWindowsSession.focusHostWindow();
+  }
+
   /// Dart → 原生：推送权威状态 JSON 快照。
   static Future<void> pushNativeState(String stateJson) {
     if (isOhos) return HimiMpvPlayer.pushNativeState(stateJson);

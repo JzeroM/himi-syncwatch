@@ -221,7 +221,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           // 不自绘背景的 CustomTransitionPage，让视频区域保持 alpha=0。
           return CustomTransitionPage<void>(
             key: state.pageKey,
-            opaque: true,
+            // 649：Windows 原生独立窗口接管时，播放页不渲染可见内容，
+            // 详情页需在下方透出 → opaque 必须为 false。
+            opaque: false,
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
             transitionsBuilder: (_, __, ___, child) => child,

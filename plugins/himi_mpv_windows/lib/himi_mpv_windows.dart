@@ -222,7 +222,6 @@ class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
   int _textureId = 0;
   Map<String, String> _optionOverrides = const <String, String>{};
   bool _disposed = false;
-  bool _transparencyProbeStarted = false;
   int _positionMs = 0;
   int _durationMs = 0;
   int _bufferedMs = 0;
@@ -258,6 +257,18 @@ class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
     );
     await session._start();
     return session;
+  }
+
+  /// 649：聚焦已有原生独立窗口（详情页重复点播放时用）。
+  ///
+  /// 返回 true 表示窗口已存在并被置前；false 表示尚未创建。
+  static Future<bool> focusHostWindow() async {
+    try {
+      final ok = await _methods.invokeMethod<bool>('focusHostWindow');
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<MpvHdrCapabilities> queryHdrCapabilities() async {
@@ -529,13 +540,6 @@ class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
           }
         }
         _log('diag t=${ticks * 500}ms $values');
-        if (!_transparencyProbeStarted &&
-            nativeSurface &&
-            hdr &&
-            values['vo-configured'] == 'yes') {
-          _transparencyProbeStarted = true;
-          unawaited(_runTransparencyProbe());
-        }
       } catch (e) {
         _log('diag failed: $e');
       } finally {
@@ -614,45 +618,6 @@ class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
       play: !_pendingPause,
     );
     _log('open: returned');
-  }
-
-  /// 临时诊断：依次验证 DWM blur、分层透明、窗口区域挖洞三种
-  /// Flutter 透出原生 HDR 视频的方式。验证完成后应删除。
-  Future<void> _runTransparencyProbe() async {
-    await Future<void>.delayed(const Duration(seconds: 1));
-    if (_disposed || _surfaceHandle == 0) return;
-    try {
-      await _methods.invokeMethod<void>(
-        'setSurfaceZOrder',
-        <String, dynamic>{'top': false},
-      );
-    } catch (_) {}
-    for (final mode in const ['dwm-blur', 'layered-alpha', 'region-hole']) {
-      if (_disposed) return;
-      _log('transparency probe begin: $mode');
-      try {
-        final result = await _methods.invokeMapMethod<String, Object?>(
-          'setTransparencyProbe',
-          <String, dynamic>{'mode': mode},
-        );
-        _log('transparency probe applied: $mode $result');
-      } catch (e) {
-        _log('transparency probe apply failed: $mode $e');
-      }
-      await Future<void>.delayed(const Duration(seconds: 8));
-      if (_disposed) return;
-      try {
-        await _methods.invokeMethod<void>(
-          'setTransparencyProbe',
-          <String, dynamic>{'mode': 'none'},
-        );
-      } catch (e) {
-        _log('transparency probe clear failed: $mode $e');
-      }
-      _log('transparency probe end: $mode');
-      await Future<void>.delayed(const Duration(seconds: 2));
-    }
-    if (!_disposed) _log('transparency probe complete');
   }
 
   @override

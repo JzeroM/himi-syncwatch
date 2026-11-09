@@ -11,6 +11,8 @@ import 'package:himi_syncwatch/services/qr_export_service.dart';
 import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
+import 'package:himi_syncwatch/providers/native_player_provider.dart';
+import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomCode;
@@ -309,7 +311,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             width: double.infinity,
             height: 50,
             child: FilledButton.icon(
-              onPressed: () {
+              onPressed: () async {
+                // 649：原生播放器已开着 → 只聚焦窗口，不重复 push。
+                if (ref.read(nativePlayerActiveProvider)) {
+                  await MpvSessionPlatform.focusHostWindow();
+                  return;
+                }
                 final nameParam = widget.audienceName.isNotEmpty
                     ? '&name=${Uri.encodeComponent(widget.audienceName)}'
                     : '';

@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/models/emby_playback_settings.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
 import 'package:himi_syncwatch/services/playback_rules.dart';
+import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 import 'package:himi_syncwatch/services/track_migration.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -15,6 +16,7 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
 import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
+import 'package:himi_syncwatch/providers/native_player_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/playback_settings_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
@@ -156,6 +158,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   MediaItem? _item;
   List<MediaItem> _episodes = [];
   List<MediaItem> _similarItems = [];
+
+  /// 649：原生播放器窗口已开着时，点播放只聚焦窗口，不再 push 播放页
+  ///（否则会创建第二个原生窗口）。
+  ///
+  /// 返回 true 表示已处理（调用方应直接 return）。
+  Future<bool> _focusNativePlayerIfActive() async {
+    if (!ref.read(nativePlayerActiveProvider)) return false;
+    await MpvSessionPlatform.focusHostWindow();
+    return true;
+  }
 
   /// 本条目所属媒体库的播放阈值（服务器同步；缺省 Emby 默认）。
   EmbyPlaybackSettings _playbackSettings = EmbyPlaybackSettings.fallback;
@@ -627,6 +639,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
     query.write(
         '&anim=${DetailScreen.isAnimationGenres(_item?.genres ?? const []) ? 1 : 0}');
+    // 649：原生播放器已开着 → 只聚焦窗口，不重复 push（否则开第二个窗口）。
+    if (await _focusNativePlayerIfActive()) return;
+    if (!mounted) return;
     await context.push('/player/${ep.id}?$query');
     if (mounted) {
       _clearResumeHidden(ep.id);
@@ -1080,6 +1095,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             removeWatched: wasWatched,
           ));
     }
+    // 649：原生播放器已开着 → 只聚焦窗口，不重复 push。
+    if (await _focusNativePlayerIfActive()) return;
+    if (!mounted) return;
     await context.push('/player/${item.id}?${query.toString()}');
     if (mounted) {
       _clearResumeHidden(item.id);
@@ -1160,6 +1178,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         };
         ref.read(pendingRoomMovieProvider.notifier).state = movieData;
       }
+      // 649：原生播放器已开着 → 只聚焦窗口，不重复 push。
+      if (await _focusNativePlayerIfActive()) return;
+      if (!mounted) return;
       context.push('/player/${_item!.id}?$query');
     }
   }

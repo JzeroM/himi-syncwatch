@@ -224,18 +224,6 @@ void HimiMpvWindowsPlugin::HandleMethodCall(
     result->Success();
     return;
   }
-  if (method == "setTransparencyProbe") {
-    std::string mode;
-    const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
-    if (args != nullptr) {
-      auto it = args->find(flutter::EncodableValue("mode"));
-      if (it != args->end()) {
-        if (auto p = std::get_if<std::string>(&it->second)) mode = *p;
-      }
-    }
-    result->Success(flutter::EncodableValue(SetTransparencyProbe(mode)));
-    return;
-  }
   if (method == "setSurfaceZOrder") {
     bool top = false;
     const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
@@ -318,6 +306,17 @@ void HimiMpvWindowsPlugin::HandleMethodCall(
   }
   if (method == "getHostWindowInfo") {
     result->Success(flutter::EncodableValue(GetHostWindowInfo()));
+    return;
+  }
+  // 649：聚焦已有原生窗口（详情页重复点播放时用）。
+  if (method == "focusHostWindow") {
+    if (host_hwnd_ != nullptr) {
+      ::ShowWindow(host_hwnd_, SW_RESTORE);
+      ::SetForegroundWindow(host_hwnd_);
+      result->Success(flutter::EncodableValue(true));
+    } else {
+      result->Success(flutter::EncodableValue(false));
+    }
     return;
   }
   result->NotImplemented();
@@ -403,9 +402,10 @@ void HimiMpvWindowsPlugin::EmitHostEvent(const char* type) {
 HWND HimiMpvWindowsPlugin::CreateHostWindow(int x, int y, int width,
                                             int height) {
   if (host_hwnd_ != nullptr) {
-    // 已存在：仅更新位置/尺寸并显示。
-    UpdateHostWindow(x, y, width, height);
-    ::ShowWindow(host_hwnd_, SW_SHOW);
+    // 649：已存在 → 聚焦并置前，不重复创建。
+    // （用户从详情页再次点播放时，应回到已有窗口而不是开第二个。）
+    ::ShowWindow(host_hwnd_, SW_RESTORE);
+    ::SetForegroundWindow(host_hwnd_);
     return host_hwnd_;
   }
 
@@ -668,146 +668,6 @@ RECT HimiMpvWindowsPlugin::SurfaceRectInClient(HWND target) const {
   return RECT{points[0].x, points[0].y, points[1].x, points[1].y};
 }
 
-void HimiMpvWindowsPlugin::CaptureTransparencyState() {
-  if (transparency_state_captured_ || flutter_view_ == nullptr) return;
-  transparency_state_captured_ = true;
-  original_view_ex_style_ = ::GetWindowLongPtrW(flutter_view_, GWL_EXSTYLE);
-  const int title_length = ::GetWindowTextLengthW(parent_hwnd_);
-  if (title_length > 0) {
-    std::wstring title_buffer(static_cast<size_t>(title_length) + 1, L'\0');
-    ::GetWindowTextW(parent_hwnd_, title_buffer.data(), title_length + 1);
-    original_window_title_ = title_buffer.c_str();
-  } else {
-    original_window_title_.clear();
-  }
-  original_view_region_ = ::CreateRectRgn(0, 0, 0, 0);
-  if (original_view_region_ != nullptr &&
-      ::GetWindowRgn(flutter_view_, original_view_region_) == ERROR) {
-    ::DeleteObject(original_view_region_);
-    original_view_region_ = nullptr;
-  }
-}
-
-void HimiMpvWindowsPlugin::ClearTransparencyProbe() {
-  if (!transparency_state_captured_) return;
-  DWM_BLURBEHIND disabled = {};
-  disabled.dwFlags = DWM_BB_ENABLE;
-  disabled.fEnable = FALSE;
-  if (flutter_view_ != nullptr) {
-    ::DwmEnableBlurBehindWindow(flutter_view_, &disabled);
-  }
-  if (parent_hwnd_ != nullptr) {
-    ::DwmEnableBlurBehindWindow(parent_hwnd_, &disabled);
-  }
-  if (flutter_view_ != nullptr) {
-    ::SetWindowLongPtrW(flutter_view_, GWL_EXSTYLE,
-                       original_view_ex_style_);
-    ::SetWindowPos(flutter_view_, nullptr, 0, 0, 0, 0,
-                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
-                       SWP_FRAMECHANGED);
-    if (original_view_region_ != nullptr) {
-      ::SetWindowRgn(flutter_view_, original_view_region_, TRUE);
-      original_view_region_ = nullptr;
-    } else {
-      ::SetWindowRgn(flutter_view_, nullptr, TRUE);
-    }
-  }
-  if (parent_hwnd_ != nullptr) {
-    ::SetWindowTextW(parent_hwnd_, original_window_title_.c_str());
-  }
-  transparency_state_captured_ = false;
-  surface_on_top_ = false;
-  if (surface_hwnd_ != nullptr) {
-    UpdateSurface(surface_left_, surface_top_, surface_width_, surface_height_);
-  }
-}
-
-flutter::EncodableMap HimiMpvWindowsPlugin::SetTransparencyProbe(
-    const std::string& mode) {
-  flutter::EncodableMap result;
-  result[flutter::EncodableValue("mode")] = flutter::EncodableValue(mode);
-  if (mode.empty() || mode == "none") {
-    ClearTransparencyProbe();
-    result[flutter::EncodableValue("cleared")] = flutter::EncodableValue(true);
-    return result;
-  }
-  CaptureTransparencyState();
-  surface_on_top_ = false;
-  if (surface_hwnd_ != nullptr) {
-    UpdateSurface(surface_left_, surface_top_, surface_width_, surface_height_);
-  }
-  const RECT view_rect = SurfaceRectInClient(flutter_view_);
-  const RECT root_rect = SurfaceRectInClient(parent_hwnd_);
-  bool applied = false;
-  if (mode == "dwm-blur") {
-    bool view_ok = false;
-    bool root_ok = false;
-    if (flutter_view_ != nullptr && view_rect.right > view_rect.left &&
-        view_rect.bottom > view_rect.top) {
-      DWM_BLURBEHIND blur = {};
-      blur.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
-      blur.fEnable = TRUE;
-      blur.hRgnBlur = ::CreateRectRgn(view_rect.left, view_rect.top,
-                                      view_rect.right, view_rect.bottom);
-      view_ok = SUCCEEDED(::DwmEnableBlurBehindWindow(flutter_view_, &blur));
-      if (blur.hRgnBlur != nullptr) ::DeleteObject(blur.hRgnBlur);
-    }
-    if (parent_hwnd_ != nullptr && root_rect.right > root_rect.left &&
-        root_rect.bottom > root_rect.top) {
-      DWM_BLURBEHIND blur = {};
-      blur.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
-      blur.fEnable = TRUE;
-      blur.hRgnBlur = ::CreateRectRgn(root_rect.left, root_rect.top,
-                                      root_rect.right, root_rect.bottom);
-      root_ok = SUCCEEDED(::DwmEnableBlurBehindWindow(parent_hwnd_, &blur));
-      if (blur.hRgnBlur != nullptr) ::DeleteObject(blur.hRgnBlur);
-    }
-    result[flutter::EncodableValue("dwm_view")] =
-        flutter::EncodableValue(view_ok);
-    result[flutter::EncodableValue("dwm_root")] =
-        flutter::EncodableValue(root_ok);
-    applied = view_ok || root_ok;
-  } else if (mode == "layered-alpha") {
-    if (flutter_view_ != nullptr) {
-      const LONG_PTR style = ::GetWindowLongPtrW(flutter_view_, GWL_EXSTYLE);
-      ::SetWindowLongPtrW(flutter_view_, GWL_EXSTYLE, style | WS_EX_LAYERED);
-      applied = ::SetLayeredWindowAttributes(flutter_view_, 0, 0, LWA_ALPHA) != FALSE;
-      ::SetWindowPos(flutter_view_, nullptr, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
-                         SWP_FRAMECHANGED);
-    }
-    result[flutter::EncodableValue("layered")] =
-        flutter::EncodableValue(applied);
-  } else if (mode == "region-hole") {
-    if (flutter_view_ != nullptr) {
-      RECT client = {};
-      ::GetClientRect(flutter_view_, &client);
-      HRGN full = ::CreateRectRgn(0, 0, client.right, client.bottom);
-      HRGN hole = ::CreateRectRgn(view_rect.left, view_rect.top,
-                                  view_rect.right, view_rect.bottom);
-      ::CombineRgn(full, full, hole, RGN_DIFF);
-      ::DeleteObject(hole);
-      applied = ::SetWindowRgn(flutter_view_, full, TRUE) != 0;
-      if (!applied) ::DeleteObject(full);
-    }
-    result[flutter::EncodableValue("region")] =
-        flutter::EncodableValue(applied);
-  }
-  if (parent_hwnd_ != nullptr) {
-    const std::wstring title = L"HIMI PROBE: " +
-                               std::wstring(mode.begin(), mode.end());
-    ::SetWindowTextW(parent_hwnd_, title.c_str());
-  }
-  result[flutter::EncodableValue("applied")] = flutter::EncodableValue(applied);
-  return result;
-}
-
-void HimiMpvWindowsPlugin::SetSurfaceZOrder(bool top) {
-  surface_on_top_ = top;
-  if (surface_hwnd_ == nullptr) return;
-  UpdateSurface(surface_left_, surface_top_, surface_width_, surface_height_);
-}
-
 void HimiMpvWindowsPlugin::HideSurface() {
   if (surface_hwnd_ != nullptr) {
     ::ShowWindow(surface_hwnd_, SW_HIDE);
@@ -815,7 +675,6 @@ void HimiMpvWindowsPlugin::HideSurface() {
 }
 
 void HimiMpvWindowsPlugin::DestroySurface() {
-  ClearTransparencyProbe();
   if (surface_hwnd_ != nullptr) {
     ::DestroyWindow(surface_hwnd_);
     surface_hwnd_ = nullptr;

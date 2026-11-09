@@ -39,6 +39,7 @@ import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/device_profile_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
+import 'package:himi_syncwatch/providers/native_player_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/room_provider.dart';
 import 'package:himi_syncwatch/providers/rtm_provider.dart';
@@ -3482,6 +3483,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_nativeUiActive) _syncNativePanelData();
     // 648：订阅原生窗口事件（独立窗口独占焦点，Flutter 收不到输入）。
     _attachHostWindowEvents();
+    // 649：同步全局状态——详情页据此判断「已开则聚焦」而非重复 push。
+    _syncNativePlayerActiveFlag();
+  }
+
+  /// 649：把原生窗口激活状态同步到全局 provider。
+  void _syncNativePlayerActiveFlag() {
+    if (!mounted) return;
+    final active = _nativeUiActive;
+    final notifier = ref.read(nativePlayerActiveProvider.notifier);
+    if (notifier.state != active) notifier.state = active;
   }
 
   /// 648：订阅原生独立窗口的事件（关闭/按键/点击）。
@@ -8100,6 +8111,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// （房间解散场景需要一次退回根路由）。
   Future<void> _safePopPlayerPage({bool popUntilFirst = false}) async {
     if (!mounted) return;
+    // 649：退出前先复位全局标志，避免详情页误判「窗口还开着」。
+    try {
+      final notifier = ref.read(nativePlayerActiveProvider.notifier);
+      if (notifier.state) notifier.state = false;
+    } catch (_) {}
     if (!_videoLayerDetached) {
       setState(() => _videoLayerDetached = true);
       // 等一帧：让 Texture/Video widget 真正 dispose，触发引擎释放纹理。
@@ -8180,6 +8196,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (identical(prev, next)) return;
       _syncNativePanelData();
     });
+    // 649：Windows 原生独立窗口接管时，Flutter 播放页不渲染任何可见内容
+    //（详情页在下方透出），但 State 保留在路由栈里，业务逻辑（房间同步/
+    // 弹幕加载/进度上报/选集/音轨/字幕）继续运行。
+    //
+    // 必须放在所有 ref.watch / ref.listen 之后——否则会跳过设置监听。
+    if (_nativeUiActive && defaultTargetPlatform == TargetPlatform.windows) {
+      return const SizedBox.shrink();
+    }
     return TvBackConfirm(
       // TV：首按提示、2 秒窗口内第二按才确认退出；非 TV 直接确认（现状）
       enabled: ref.watch(settingsProvider.select((s) => s.tvMode)),
