@@ -152,6 +152,21 @@ jobs:
         run: chmod +x scripts/verify_sources.sh && bash scripts/verify_sources.sh
 
       - run: flutter pub get
+      # 650：缓存 Erika Android 预编译包 + fvp MDK SDK。
+      #
+      # 【为什么】两者都从 GitHub Releases 下载（实测 v1.5.70 报
+      # `Can't get .../erika-flutter-android-x86_64.zip`），故障时整条
+      # Android 构建失败。缓存命中后 gradle/CMake 发现文件已在 → 跳过下载。
+      - name: Cache Erika + MDK SDK (Android)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/erika
+            third_party/fvp/mdk-sdk-android.7z
+          key: android-deps-${{ hashFiles('third_party/erika_flutter/native_artifacts.properties') }}-${{ env.FVP_DEPS_SHA256 }}
+          restore-keys: |
+            android-deps-
+
       - name: Run flutter build apk --release --split-per-abi
         env:
           TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
@@ -271,6 +286,22 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      # 650：缓存 Swift Package Manager 依赖。
+      #
+      # 【为什么】Erika / mdk-sdk 走 SPM 二进制依赖，xcodebuild 解析时会从
+      # GitHub Releases 下载（实测 v1.5.70 报
+      # `failed downloading '.../mdk-sdk-apple.zip': badResponseStatusCode(504)`）。
+      # 缓存命中后 SPM 直接用本地包，不再下载。
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-ios-${{ hashFiles('pubspec.yaml', 'third_party/erika_flutter/native_artifacts.properties') }}
+          restore-keys: |
+            spm-ios-
 
       - name: 生成 iOS 平台文件
         run: |
@@ -397,6 +428,19 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      # 650：缓存 MDK SDK（fvp 的 CMake 会下载到插件目录）。
+      #
+      # 【为什么】GitHub Releases 偶发 504/连接错误，fvp 的 deps.cmake 下载
+      # 3 次都失败会让整个 Windows 构建中断（实测 v1.5.69/v1.5.70）。
+      # 缓存命中后 deps.cmake 发现文件已存在且 SHA256 匹配 → 跳过下载。
+      #
+      # key 用 FVP_DEPS_SHA256（依赖版本标识）：换 SDK 版本时自动失效。
+      - name: Cache MDK SDK (fvp)
+        uses: actions/cache@v4
+        with:
+          path: third_party/fvp/mdk-sdk-windows-x64.7z
+          key: fvp-mdk-sdk-win-${{ env.FVP_DEPS_SHA256 }}
 
       # 仓库内 windows/ 为事实来源（HIMI 窗口标题、app_icon、插件注册由
       # flutter pub get 生成），不再用模板重建覆盖本地定制
