@@ -15,19 +15,11 @@ on:
           - official
           - self-built
         default: official
-  push:
-    branches:
-      - feat/windows-mpv-ci
-    paths:
-      - 'plugins/himi_mpv_windows/**'
-      - 'plugins/himi_mpv_ohos/**'
-      - 'plugins/himi_mpv_core/**'
-      - 'lib/**'
-      - 'lib/services/player/**'
-      - 'third_party/nipaplay/media_kit/**'
-      - 'windows/**'
-      - 'pubspec.yaml'
-      - '.github/workflows/windows-mpv-ci.yml'
+  # 650：去掉 push 自动触发（改为**仅手动**）。
+  #
+  # 原因：与 release.yml 的 build-windows 重叠，且每次推 commit 都跟着跑
+  # → 一个 commit 触发 3 个 CI（release + windows-mpv-ci + android-hdr-ci）。
+  # 现在打 tag 只跑 release.yml；需要单独验证 Windows 时手动触发本 workflow。
 
 concurrency:
   group: windows-mpv-ci-${{ github.ref }}

@@ -1,18 +1,15 @@
 name: Android HDR Signed Build
 
 on:
+  # 650：改为**仅手动触发**。
+  #
+  # 原因：该 workflow 与 release.yml 的 build-android 重叠（都构建 Android
+  # 签名包），且每次推 commit 都会跟着跑 → 一个 commit 触发 3 个 CI
+  # （release + windows-mpv-ci + android-hdr-ci），浪费 runner 时间。
+  #
+  # 现在：推 commit 不跑任何 CI；打 tag 只跑 release.yml（含三平台构建
+  # 与发布）。需要单独验证 Android HDR 时手动触发本 workflow。
   workflow_dispatch:
-  push:
-    branches:
-      - feat/windows-mpv-ci
-    paths:
-      - 'scripts/mpv/**'
-      - 'plugins/himi_mpv_android/**'
-      - 'plugins/himi_mpv_core/**'
-      - 'lib/**'
-      - 'pubspec.yaml'
-      - 'android/**'
-      - '.github/workflows/android-hdr-ci.yml'
 
 concurrency:
   group: android-hdr-ci-${{ github.ref }}
