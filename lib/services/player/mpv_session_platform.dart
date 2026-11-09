@@ -75,13 +75,26 @@ class MpvSessionPlatform {
     return Future<MpvHdrCapabilities>.value(MpvHdrCapabilities.unknown);
   }
 
-  // ── 原生播放器 UI 宿主（鸿蒙子窗口 / Android Dialog）──────────
+  // ── 原生播放器 UI 宿主（鸿蒙子窗口 / Android Dialog / Windows 独立窗口）
 
-  /// 原生 UI 宿主平台名（'ohos' / 'android'）；不支持为 null（Windows 恒
-  /// null，门控已在上游排除）。
+  /// 原生 UI 宿主平台名（'ohos' / 'android' / 'windows'）；不支持为 null。
+  ///
+  /// 【653 真机回归：Flutter 窗口同时显示详情页与播放控件】
+  /// 旧实现 Windows 恒返回 null，于是
+  /// `_openNativeUiIfNeeded()` 在 `if (platform == null) return;` 处直接
+  /// 退出 → `nativeUiActive` **永不置 true** →
+  /// `PlayerScreen` 的 `SizedBox.shrink()` 守卫不生效 →
+  /// Flutter 窗口把详情页与播放页顶/底栏一起渲染出来
+  /// （真机截图：左侧 Flutter 窗口叠着控制 UI，右侧是原生播放器）。
+  ///
+  /// Windows 自 646 起也走原生独立窗口（`WS_POPUP` + `vo=gpu-next`
+  /// HDR 直出），窗口在 `HimiMpvWindowsSession._start()` 里就已创建，
+  /// 因此 `openNativeUi()` 等配套方法在 Windows 上是空实现即可；
+  /// 但**门控必须能通过**，否则播放页不会退场。
   static String? get nativeUiPlatformName {
     if (isOhos) return 'ohos';
     if (Platform.isAndroid) return 'android';
+    if (Platform.isWindows) return 'windows';
     return null;
   }
 

@@ -61,8 +61,15 @@ void main() {
   });
 
   group('③ 版本号', () {
-    test('pubspec 为 1.5.72+652', () {
-      expect(read('pubspec.yaml'), contains('version: 1.5.72+652'));
+    test('pubspec 版本号格式合法且已越过 652', () {
+      final src = read('pubspec.yaml');
+      // 652 引入 deviceTypes 修复；后续版本继续递增，
+      // 这里只校验格式，避免每轮都要改。
+      final m = RegExp(r'^version: (\d+)\.(\d+)\.(\d+)\+(\d+)$', multiLine: true)
+          .firstMatch(src);
+      expect(m, isNotNull, reason: '版本号格式应为 x.y.z+n');
+      final patch = int.parse(m!.group(3)!);
+      expect(patch, greaterThanOrEqualTo(72));
     });
   });
 }

@@ -4596,6 +4596,82 @@ AGC 会比对「隐私政策声明的 user_grant 权限」与「包内实际权�
 改写**。凡是在该脚本里对 `module.json` 做的修正，都必须同步到源头
 `module.json5`，否则 `.app` 与 `.hap` 会漂移。
 
+#### 九、Windows 原生窗口建了但播放页不退场（653）
+
+> 现象：Windows 真机截图——**左侧 Flutter 窗口同时显示详情页与播放页
+> 顶栏/底栏**（`末路兼职 – S01E03` + 进度条 + 控制按钮），右侧是原生
+> `HIMI Player` 窗口。
+
+**根因：门控链断在 `nativeUiPlatformName`**
+
+```dart
+// 修复前
+static String? get nativeUiPlatformName {
+  if (isOhos) return 'ohos';
+  if (Platform.isAndroid) return 'android';
+  return null;              // ← Windows 返回 null
+}
+```
+
+调用链：
+
+```
+_openNativeUiIfNeeded()
+  final platform = MpvSessionPlatform.nativeUiPlatformName;
+  if (platform == null) return;      // ← Windows 在这里退出
+  ...
+  nativeUiActive.value = true;       // ← 永不执行
+```
+
+于是：
+
+```
+nativeUiActive == false
+  → PlayerScreen._nativeUiActive == false
+  → build() 的 `if (_nativeUiActive && Windows) return SizedBox.shrink();`
+    守卫不生效
+  → Flutter 播放页照常渲染（叠在详情页上）
+```
+
+**关键误判点**：原生窗口**是正常创建的**（走 `nativeUi: true` 会话路径，
+`HimiMpvWindowsSession._start()` 里建 `WS_POPUP`）。所以「窗口建了 ≠
+门控通过」——只看窗口是否出现会得出错误结论。
+
+**修复**：
+
+- [x] `mpv_session_platform.dart` `nativeUiPlatformName` 加 Windows 分支：
+      `if (Platform.isWindows) return 'windows';`
+- [x] 配套方法在 Windows 保持空实现（窗口由会话创建，无需 open/close）：
+      `openNativeUi` / `closeNativeUi` / `pushNativeState` /
+      `nativeUiCommandStream`。
+- [x] 新增 `test/player_core/windows_native_ui_active_653_test.dart`（10 项）：
+      平台名覆盖、门控顺序（active 在 platform 检查之后）、退场守卫、
+      配套方法空实现。
+- [x] `test/ci/ohos_device_types_652_test.dart` 的版本号断言改为格式校验
+      （避免每轮都要改具体版本）。
+
+**修复后的完整链路**：
+
+```
+Windows + MPV + surface
+  → _nativeUiEnabled = true（会话创建时按实际 surface 算好）
+  → _openNativeUiIfNeeded()
+  → platform = 'windows'                ← 新增
+  → nativeUiActive.value = true         ← 关键
+  → _onNativeUiActiveChanged()
+      ├─ setState（触发重建）
+      ├─ _attachHostWindowEvents()（订阅关闭/按键/tap）
+      └─ _syncNativePlayerActiveFlag()（详情页「已开则聚焦」）
+  → build() 命中守卫 → SizedBox.shrink()
+  → Flutter 窗口只剩详情页
+```
+
+**已知限制（阶段 3 处理）**：
+
+`suspendNativeUi()` / `resumeNativeUi()` 在 Windows 上是空实现 →
+原生播放器窗口会**盖住** Flutter 的离房确认框与房间资源搜索页。
+需在阶段 3 实现原生 UI 后一并解决（或用 `ShowWindow(SW_HIDE)` 临时隐藏）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。
