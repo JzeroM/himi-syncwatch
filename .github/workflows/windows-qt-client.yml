@@ -69,27 +69,35 @@ jobs:
       - name: 配置 CMake (MSVC)
         shell: pwsh
         run: |
+          # 用 Ninja 而不是 "Visual Studio 17 2022"：windows-latest 已升级到
+          # VS2026，写死 VS2022 生成器会报 "could not find any instance of
+          # Visual Studio"（v1.5.75 的 654 spike 实测）。
+          #
+          # Qt 路径用 QT_ROOT_DIR 环境变量（install-qt-action 必然导出），
+          # 不用 steps.install-qt.outputs.qt-dir —— 该输出在本版本 action 里
+          # 为空，会让 CMAKE_PREFIX_PATH 变成空串。
           cmake -S $env:CLIENT_DIR -B build `
-            -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_PREFIX_PATH="${{ steps.install-qt.outputs.qt-dir }}" `
+            -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
             -DLIBMPV_DIR="$env:LIBMPV_DIR"
 
       - name: 编译
         shell: pwsh
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
 
       - name: 部署 Qt6 runtime DLLs
         shell: pwsh
         run: |
-          $qtBin = "${{ steps.install-qt.outputs.qt-dir }}/bin"
-          & "$qtBin/windeployqt.exe" --qmldir "$env:CLIENT_DIR/src/qml" "build/Release/himi_qt_win.exe"
+          $qtBin = "$env:QT_ROOT_DIR/bin"
+          & "$qtBin/windeployqt.exe" --qmldir "$env:CLIENT_DIR/src/qml" "build/himi_qt_win.exe"
           if ($LASTEXITCODE -ne 0) { throw "windeployqt 失败" }
 
       - name: 校验产物完整性
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $rel = 'build/Release'
+          $rel = 'build'
           foreach ($f in @('himi_qt_win.exe', 'libmpv-2.dll', 'Qt6Core.dll', 'Qt6Quick.dll', 'Qt6Qml.dll')) {
             $p = Join-Path $rel $f
             if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
@@ -100,5 +108,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: himi-qt-spike-654
-          path: build/Release/**
+          path: build/**
           if-no-files-found: error

@@ -361,6 +361,29 @@ void main() {
       expect(workflow, contains('QT_VERSION'));
     });
 
+    test('用 Ninja 生成器（windows-latest 已升级 VS2026）', () {
+      // 写死 "Visual Studio 17 2022" 会报 "could not find any instance of
+      // Visual Studio"（v1.5.75 的 654 spike 实测失败）。
+      expect(workflow, contains('-G "Ninja"'));
+      // 只检查实际命令行（注释里可以提到历史原因）
+      final cmdLines = workflow
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('#'))
+          .join('\n');
+      expect(cmdLines, isNot(contains('-G "Visual Studio 17 2022"')));
+    });
+
+    test('Qt 路径用 QT_ROOT_DIR 环境变量', () {
+      // `steps.install-qt.outputs.qt-dir` 在本版本 action 里为空，
+      // 会让 CMAKE_PREFIX_PATH 变成空串 → 找不到 Qt。
+      expect(workflow, contains(r'$env:QT_ROOT_DIR'));
+      final cmdLines = workflow
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('#'))
+          .join('\n');
+      expect(cmdLines, isNot(contains('steps.install-qt.outputs.qt-dir')));
+    });
+
     test('下载 shinchiro mpv dev 包并提供 LIBMPV_DIR', () {
       expect(workflow, contains('shinchiro'));
       expect(workflow, contains('mpv-dev-x86_64'));
