@@ -43,7 +43,7 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 | HarmonyOS | 6.0+（API 26） | MPV | — |
 
 > Windows / Android 默认走 MPV（原生 Surface），支持 HDR 直出；MDK 作为备选内核（Flutter 纹理，兼容性优先）。
-> HarmonyOS 使用 MPV + Vulkan（ohosvk）内核，后续仅通过华为官方分发测试；房间同步、扫码、选图、动态图标暂不可用。鸿蒙 P1 输出经 tone map 的 SDR 纹理，真 HDR 直出仍在验证；DoVi P5/P8 依赖内核 RPU 解析，P7 仅解基础层，不做 FEL。
+> HarmonyOS 使用 MPV + Vulkan（ohosvk）内核，后续仅通过华为官方分发测试。DoVi P5/P8 依赖内核 RPU 解析，P7 仅解基础层，不做 FEL。
 > Windows 7 不支持（Flutter 桌面运行时基线限制）。
 > macOS / Linux 暂停支持（多人观影 RTM 无对应原生实现，已从发版产物中移除）。
 

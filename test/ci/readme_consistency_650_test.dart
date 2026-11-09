@@ -84,6 +84,23 @@ void main() {
     test('技术栈包含 MPV 行', () {
       expect(readme, contains('播放引擎（Android/Windows/鸿蒙，默认）'));
     });
+
+    test('不再声称鸿蒙「房间同步、扫码、选图、动态图标暂不可用」', () {
+      // 该描述已过时：鸿蒙 RTM 已接入（629 NAPI 直连），选图有
+      // file_picker_ohos 实现，扫码/动态图标也已可用。
+      expect(
+        readme,
+        isNot(contains('房间同步、扫码、选图、动态图标暂不可用')),
+      );
+    });
+
+    test('不再声称鸿蒙 P1 只输出 SDR 纹理', () {
+      // 该描述已过时（鸿蒙也走 MPV 原生 Surface）。
+      expect(
+        readme,
+        isNot(contains('鸿蒙 P1 输出经 tone map 的 SDR 纹理')),
+      );
+    });
   });
 
   group('④ 项目结构完整', () {
