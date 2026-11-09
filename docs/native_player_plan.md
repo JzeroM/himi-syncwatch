@@ -4445,6 +4445,72 @@ const std::wstring title = L"HIMI PROBE: " + mode;
 - [ ] 关闭播放器窗口 / ESC → 回详情页。
 - [ ] **已知限制**：仍无控件 UI（顶栏/底栏/弹幕），阶段 3~5 实现。
 
+### Phase 2.68：鸿蒙 HAP + APP 双产物构建（1.5.71+651）
+
+> 起因：需要鸿蒙 `.app` 包（应用市场分发包），而非只有 `.hap`。
+
+#### 一、HAP 与 APP 的区别
+
+| 项 | HAP | APP |
+|---|---|---|
+| 本质 | 单模块安装包 | 完整应用包（含各模块 hap + pack.info） |
+| 用途 | 设备调试安装（`hdc install`） | AppGallery / 企业分发 |
+| 能否直接装设备 | ✅ | ❌（需经应用市场） |
+| 构建命令 | `flutter build hap` | `hvigorw assembleApp` |
+
+#### 二、关键技术点（实测确认）
+
+- **`flutter build hap` 不产出 `.app`** —— 必须用 hvigor。
+- **`assembleApp` 必须 `--mode project`**：用 `--mode module` 会报
+  `Task ['assembleApp'] was not found in the project ohos`。
+- **必须 JAVA 在 PATH**：否则 `spawn java ENOENT`（错误信息不直观）。
+- 产物路径：`ohos/build/outputs/default/ohos-default-unsigned.app`。
+- **签名命令与 HAP 相同**（`hap-sign-tool sign-app` + `verify-app`），
+  实测 53MB app 签名与校验均成功。
+
+#### 三、改动
+
+**`scripts/ohos_pack.sh`**
+
+- [x] 按扩展名识别输入：`*.app` → `IS_APP=1`。
+- [x] `.app` **跳过 `app_packing_tool` 重打包**（hvigor 产物已含版本号
+      与 pack.info），直接进入签名。
+- [x] `.hap` 保持原流程（重打包写入 versionName/versionCode）。
+- [x] 输出提示按类型区分（`HAP:` / `APP:`）。
+
+**`scripts/build_ohos_local.sh`**
+
+- [x] 新增 `build_app()`：`hvigorw assembleApp --mode project
+      -p product=default --no-daemon`。
+- [x] 构建前检查 `command -v java`（提前拦截，避免 `spawn java ENOENT`）。
+- [x] 新增 `sign_one()`：hap 与 app 各签名一次并生成 `.sha256`。
+- [x] 清理逻辑同时覆盖 `*-local-signed.hap` / `*.app` / `*.sha256`。
+
+#### 四、产物
+
+```
+dist/ohos/local/
+├── himi-sync-ohos-<ver>-<code>-local-signed.hap       # 设备调试
+├── himi-sync-ohos-<ver>-<code>-local-signed.hap.sha256
+├── himi-sync-ohos-<ver>-<code>-local-signed.app       # 应用市场分发
+└── himi-sync-ohos-<ver>-<code>-local-signed.app.sha256
+```
+
+#### 五、测试
+
+- [x] 新增 `test/ci/ohos_app_build_651_test.dart`（12 项）：
+  - `build_app()` 存在、用 `--mode project`、构建前查 java
+  - APP 产物路径、hap/app 各签名一次、清理覆盖两种格式
+  - `ohos_pack.sh` 按扩展名识别、`.app` 跳过重打包、签名命令通用
+  - 版本号 1.5.71+651
+
+#### 六、注意事项
+
+- **`.app` 不能直接安装到设备**，设备调试仍用 `.hap`。
+- 当前用**自签证书**（`~/himi-signing/himi-release-linux.*`）；
+  上架 AppGallery 需华为官方签发的发布证书。
+- 构建时间增加约 2 分钟（`assembleApp` 会重新编译 ArkTS）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

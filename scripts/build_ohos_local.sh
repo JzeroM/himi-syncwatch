@@ -37,6 +37,28 @@ build_hap() {
     --dart-define=TRAKT_CLIENT_ID="$TRAKT_CLIENT_ID"
 }
 
+# 651：构建 APP 包（应用市场分发包）。
+#
+# 与 HAP 的区别：HAP 是单模块安装包（设备调试用），APP 是完整应用包
+# （含各模块 hap + pack.info，用于 AppGallery / 企业分发）。
+#
+# 注意：`flutter build hap` 不产出 .app，必须用 hvigor 的 assembleApp，
+# 且 **--mode project**（--mode module 会报「任务不存在」）。
+# 另需 JAVA 在 PATH，否则报 `spawn java ENOENT`。
+build_app() {
+  echo "=== 构建 APP 包（hvigor assembleApp）==="
+  # assembleApp 内部会 spawn java 做签名/打包；不在 PATH 时报
+  # `spawn java ENOENT`（错误信息不直观，这里提前拦截）。
+  if ! command -v java >/dev/null 2>&1; then
+    echo "java 未在 PATH：hvigor assembleApp 需要 JDK 17+，请把其 bin 目录加入 PATH" >&2
+    exit 1
+  fi
+  (
+    cd "$ROOT/ohos"
+    hvigorw assembleApp --mode project -p product=default --no-daemon
+  )
+}
+
 BUILD_LOG="${TMPDIR:-/tmp}/himi-ohos-build.log"
 if ! build_hap 2>&1 | tee "$BUILD_LOG"; then
   if grep -qE "has no exported member '(ViewData|AutoFillCallback|FillRequest)'|Property 'requestAutoFill' does not exist" "$BUILD_LOG"; then
@@ -56,28 +78,41 @@ fi
 INPUT="build/ohos/hap/entry-default-unsigned.hap"
 [ -f "$INPUT" ] || { echo "构建产物不存在: $INPUT" >&2; exit 1; }
 
+# 651：构建 APP 包（在 hap 之后，复用同一次 Flutter 构建的产物）。
+build_app
+APP_INPUT="ohos/build/outputs/default/ohos-default-unsigned.app"
+[ -f "$APP_INPUT" ] || { echo "APP 产物不存在: $APP_INPUT" >&2; exit 1; }
+
 OUT_DIR="$ROOT/dist/ohos/local"
 mkdir -p "$OUT_DIR"
 STAGING="$(mktemp -d "$OUT_DIR/.staging.XXXXXX")"
 trap 'rm -rf "$STAGING"' EXIT
-BASE="himi-sync-ohos-${VERSION_NAME}-${VERSION_CODE}-local-signed.hap"
-STAGED="$STAGING/$BASE"
 
-"$ROOT/scripts/ohos_pack.sh" \
-  --input "$INPUT" \
-  --output "$STAGED" \
-  --version-name "$VERSION_NAME" \
-  --version-code "$VERSION_CODE" \
-  --signed
+sign_one() {
+  local input="$1" ext="$2"
+  local base="himi-sync-ohos-${VERSION_NAME}-${VERSION_CODE}-local-signed.${ext}"
+  local staged="$STAGING/$base"
+  "$ROOT/scripts/ohos_pack.sh" \
+    --input "$input" \
+    --output "$staged" \
+    --version-name "$VERSION_NAME" \
+    --version-code "$VERSION_CODE" \
+    --signed
+  find "$OUT_DIR" -maxdepth 1 -type f -name "$base" -delete
+  mv "$staged" "$OUT_DIR/$base"
+  chmod 600 "$OUT_DIR/$base"
+  (
+    cd "$OUT_DIR"
+    sha256sum "$base" > "$base.sha256"
+    chmod 600 "$base.sha256"
+  )
+  echo "本地包: $OUT_DIR/$base"
+  cat "$OUT_DIR/$base.sha256"
+}
 
+# 清理旧产物（hap / app / 校验和）
 find "$OUT_DIR" -maxdepth 1 -type f \
-  \( -name '*-local-signed.hap' -o -name '*.sha256' \) -delete
-mv "$STAGED" "$OUT_DIR/$BASE"
-chmod 600 "$OUT_DIR/$BASE"
-(
-  cd "$OUT_DIR"
-  sha256sum "$BASE" > "$BASE.sha256"
-  chmod 600 "$BASE.sha256"
-)
-echo "本地调试包: $OUT_DIR/$BASE"
-cat "$OUT_DIR/$BASE.sha256"
+  \( -name '*-local-signed.hap' -o -name '*-local-signed.app' -o -name '*.sha256' \) -delete
+
+sign_one "$INPUT" hap
+sign_one "$APP_INPUT" app

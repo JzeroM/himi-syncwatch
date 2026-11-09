@@ -19,14 +19,25 @@ while [ $# -gt 0 ]; do
     --signed) SIGNED=1; shift ;;
     --unsigned) SIGNED=0; shift ;;
     -h|--help)
-      echo "用法: $0 --input <unsigned.hap> --output <out.hap> [--version-name 1.5.1] [--version-code 526] [--signed|--unsigned]"
+      echo "用法: $0 --input <unsigned.hap|unsigned.app> --output <out> [--version-name 1.5.1] [--version-code 526] [--signed|--unsigned]"
+      echo ""
+      echo "  输入 .hap：用 app_packing_tool 重打包（写入版本号）后签名"
+      echo "  输入 .app：hvigor assembleApp 产物已是完整包，直接签名"
       exit 0
       ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done
 
-[ -f "$INPUT" ] || { echo "输入 HAP 不存在: $INPUT" >&2; exit 1; }
+[ -f "$INPUT" ] || { echo "输入包不存在: $INPUT" >&2; exit 1; }
+
+# 651：识别输入类型。.app 是 hvigor assembleApp 产出的完整应用包
+# （内含各模块 hap + pack.info），版本号在 build-profile.json5 里已定，
+# 无需再用 app_packing_tool 重打包 → 直接走签名。
+case "$INPUT" in
+  *.app) IS_APP=1 ;;
+  *)     IS_APP=0 ;;
+esac
 [ -d "$TEMPLATE" ] || { echo "模板不存在: $TEMPLATE" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "缺少 python3" >&2; exit 1; }
 
@@ -67,6 +78,15 @@ fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+# 651：.app 是 hvigor assembleApp 的容器（内含 entry-default.hap +
+# pack.info + pac.json），**没有 libs/resources 等目录结构**，
+# 不能用 app_packing_tool 重打包。直接拷贝后签名。
+if [ "$IS_APP" = "1" ]; then
+  UNSIGNED="$TMP/unsigned.app"
+  cp "$INPUT" "$UNSIGNED"
+  echo "APP 输入：跳过重打包（版本号来自 build-profile.json5）"
+else
 WORK="$TMP/work"
 mkdir -p "$WORK"
 cp -a "$TEMPLATE/ets" "$TEMPLATE/resources" "$TEMPLATE/pkgSdkInfo.json" "$TEMPLATE/resources.index" "$WORK/"
@@ -136,22 +156,27 @@ with open(pack_path, 'w', encoding='utf-8') as f:
     json.dump(pack, f, ensure_ascii=False, separators=(',', ':'))
 PY
 
+  UNSIGNED="$TMP/unsigned.hap"
+  "$JAVA_BIN" -jar "$PACK_TOOL" --mode hap --force true \
+    --lib-path "$WORK/libs" \
+    --json-path "$WORK/module.json" \
+    --resources-path "$WORK/resources" \
+    --index-path "$WORK/resources.index" \
+    --pack-info-path "$WORK/pack.info" \
+    --ets-path "$WORK/ets" \
+    --file-path "$WORK/pkgSdkInfo.json" \
+    --out-path "$UNSIGNED" >/tmp/ohos_pack.log 2>&1
+fi
+
 mkdir -p "$(dirname "$OUTPUT")"
-UNSIGNED="$TMP/unsigned.hap"
-"$JAVA_BIN" -jar "$PACK_TOOL" --mode hap --force true \
-  --lib-path "$WORK/libs" \
-  --json-path "$WORK/module.json" \
-  --resources-path "$WORK/resources" \
-  --index-path "$WORK/resources.index" \
-  --pack-info-path "$WORK/pack.info" \
-  --ets-path "$WORK/ets" \
-  --file-path "$WORK/pkgSdkInfo.json" \
-  --out-path "$UNSIGNED" >/tmp/ohos_pack.log 2>&1
+
+KIND="HAP"
+[ "$IS_APP" = "1" ] && KIND="APP"
 
 if [ "$SIGNED" = "0" ]; then
   cp "$UNSIGNED" "$OUTPUT"
   chmod 600 "$OUTPUT"
-  echo "HAP: $OUTPUT"
+  echo "$KIND: $OUTPUT"
   sha256sum "$OUTPUT"
   exit 0
 fi
@@ -195,5 +220,5 @@ PASS="$(cat "$PASSFILE")"
   -outCertChain "$TMP/verify-cert.cer" \
   -outProfile "$TMP/verify-profile.p7b" >/tmp/ohos_verify.log 2>&1
 chmod 600 "$OUTPUT"
-echo "HAP: $OUTPUT"
+echo "$KIND: $OUTPUT"
 sha256sum "$OUTPUT"
