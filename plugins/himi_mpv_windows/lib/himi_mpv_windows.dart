@@ -195,6 +195,16 @@ class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
 
   final StreamController<Map<Object?, Object?>> _events =
       StreamController<Map<Object?, Object?>>.broadcast();
+
+  /// 648：原生窗口事件（关闭/按键/点击）——独立窗口独占焦点，Flutter
+  /// 收不到这些输入，必须由原生转发。
+  final StreamController<Map<Object?, Object?>> _hostEvents =
+      StreamController<Map<Object?, Object?>>.broadcast();
+
+  /// 648：原生窗口事件流。
+  @override
+  Stream<Map<Object?, Object?>> get hostEvents => _hostEvents.stream;
+
   StreamSubscription<dynamic>? _surfaceSub;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration>? _durationSub;
@@ -289,6 +299,8 @@ class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
     // 不走 Flutter 纹理（那条路必崩：flutter_windows.dll 0x1551f）。
     if (nativeUi) {
       try {
+        // 648：独立标准窗口——不再依赖 Flutter 几何，给固定初始尺寸，
+        // 由用户自由拖动/缩放/最大化。
         final host = await _methods.invokeMethod<int>('createHostWindow', {
           'x': 0,
           'y': 0,
@@ -297,6 +309,14 @@ class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
         });
         final render = await _methods.invokeMethod<int>('createRenderSurface');
         _log('nativeUi host=$host render=$render');
+        // 648：监听原生窗口事件（关闭/按键/点击），转发给 Dart 层。
+        _surfaceSub ??= _surfaceEvents.receiveBroadcastStream().listen((raw) {
+          if (raw is! Map) return;
+          final type = raw['type'];
+          if (type is String) {
+            _hostEvents.add(<Object?, Object?>{'type': type});
+          }
+        });
         if (render != null && render > 0) {
           _surfaceHandle = render;
           await _ensurePlayer();
@@ -948,6 +968,7 @@ class HimiMpvWindowsSession implements MpvSession, MpvHostWindowSession {
       }
     }
     _log('dispose session end');
+    await _hostEvents.close();
     await _events.close();
   }
 

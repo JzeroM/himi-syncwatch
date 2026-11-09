@@ -4253,6 +4253,107 @@ Flutter 播放页黑底退场
 - [ ] **播放页变为 Flutter 黑底**（视频在独立原生窗口）——本轮关键判据。
 - [ ] 播放 HDR 视频 → 画面可见且亮度/色彩正确。
 - [ ] 设置 → 播放器配置 → 能看到 **MPV** tab（不再是 media_kit）。
+
+> **结果：647 部分成功。** 真机截图显示：
+> - ✅ 内核胶囊已是 **MPV**（引擎对了）
+> - ✅ 视频**通过原生窗口渲染出来了**（HDR 直出路线可行！）
+> - ❌ 但窗口是 `WS_POPUP` 覆盖式，飘在左上角、尺寸不匹配播放页
+> - ❌ Flutter 控件被原生窗口遮挡，用户看不到/点不到
+> → 转向「独立标准窗口」方案，见 Phase 2.66。
+
+### Phase 2.66：Windows 独立原生播放器窗口（标准窗口）（1.5.68+648）
+
+> 起因：647 后真机截图显示视频已能通过原生窗口渲染，但窗口样式不对。
+
+#### 一、问题
+
+646/647 用 `WS_POPUP | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`
+创建「覆盖 Flutter 窗口」的无边框窗口：
+
+| 问题 | 后果 |
+|---|---|
+| `WS_POPUP` 无标题栏/边框 | 用户无法拖动/缩放/关闭 |
+| 依赖 Flutter 几何同步 | 坐标基准算错 → 窗口飘在左上角 |
+| 无 UI 层 | Flutter 控件在原生窗口**后面**，完全不可见 |
+
+#### 二、方案：独立标准窗口（像 PotPlayer）
+
+```
+独立窗口（WS_OVERLAPPEDWINDOW：标题栏/边框/最小化/最大化/关闭）
+├─ 子窗口 A：MPV 渲染（vo=gpu-next + wid → HDR 直出）
+└─ 子窗口 B：UI 叠加层（WS_EX_LAYERED 透明，阶段 3 画控件）
+```
+
+关键变化：
+
+| 项 | 646/647 | 648 |
+|---|---|---|
+| 窗口样式 | `WS_POPUP` | **`WS_OVERLAPPEDWINDOW`** |
+| 扩展样式 | TOPMOST/NOACTIVATE/TOOLWINDOW | **无**（普通窗口） |
+| 尺寸 | 跟随 Flutter 几何 | **固定初始 1280×720，用户自由调整** |
+| Flutter 播放页 | 退场但仍有控件层 | **整页退场** |
+| 退出 | Flutter 接管 | **窗口关闭按钮 / ESC** |
+
+#### 三、改动
+
+**C++**
+
+- [x] `CreateHostWindow`：`WS_OVERLAPPEDWINDOW | WS_VISIBLE`，
+      扩展样式归零；`CW_USEDEFAULT` 初始位置。
+- [x] `SetWindowLongPtrW(GWLP_USERDATA, this)`：让 `HostWndProc` 能访问实例
+      （静态 wndproc 需要反查指针）。
+- [x] `WM_SIZE`：渲染子窗口与 UI 层跟随客户区尺寸。
+- [x] `WM_CLOSE`：先 `EmitHostEvent("window-close")` 通知 Dart 走离房确认，
+      但**仍放行 `DefWindowProc`**——Dart 若未响应，用户仍需能关掉窗口。
+- [x] `WM_KEYDOWN`：转发 ESC（关闭）/ 空格（播放暂停）/ 左右（seek）/
+      F11（全屏）。
+- [x] `WM_LBUTTONDOWN`：转发 `tap`（阶段 3 接控件显隐）。
+- [x] `CreateUiOverlay()`：`WS_EX_LAYERED | WS_EX_TRANSPARENT` 透明子窗口，
+      `SetLayeredWindowAttributes(0,255,LWA_ALPHA)`。
+- [x] `createRenderSurface` 之后立即 `CreateUiOverlay()`（创建顺序决定 Z 序）。
+- [x] `DestroyHostWindow`：UI 层 → 渲染层 → 主窗口。
+- [x] `UpdateHostWindow`：去掉 `HWND_TOPMOST`（独立窗口普通 Z 序）。
+- [x] `EmitHostEvent(type)`：通过 event_sink 把事件发给 Dart。
+
+**Dart（`himi_mpv_windows.dart`）**
+
+- [x] 新增 `_hostEvents` 流 + `hostEvents` getter。
+- [x] `nativeUi` 分支订阅 surface 事件通道，把窗口事件转发到 `_hostEvents`。
+- [x] `dispose` 关闭 `_hostEvents`。
+
+**接口 / 适配器**
+
+- [x] `MpvHostWindowSession.hostEvents` 声明。
+- [x] `MpvPlayerAdapter.hostEvents` 转发（类型判断，非 Windows 返回空流）。
+
+**播放页（`player_screen.dart`）**
+
+- [x] 新增 `_attachHostWindowEvents()` 订阅并映射事件：
+      `window-close` → `_safePopPlayerPage()`；
+      `toggle-play` → `_togglePlayPause()`；
+      `seek-backward/forward` → `_seekRelative(∓5000)`；
+      `toggle-fullscreen` → 记录（原生窗口自管）；
+      `tap` → 切换控件显隐。
+- [x] `dispose` 取消 `_hostEventSub`。
+- [x] **移除 `_syncNativeHostGeometry`**（独立窗口不再跟随 Flutter 布局）。
+
+#### 四、测试
+
+- [x] 新增 `test/player_core/windows_standalone_window_648_test.dart`（21 项）：
+  - C++ 窗口样式（`WS_OVERLAPPEDWINDOW`、无 POPUP/TOPMOST/NOACTIVATE/TOOLWINDOW）
+  - `WM_SIZE` 子窗口跟随、`WM_CLOSE` 放行、按键/点击转发
+  - UI 叠加层（`WS_EX_LAYERED`、Z 序、销毁顺序）
+  - Dart `hostEvents` 流、订阅转发、dispose 关闭
+  - 接口/适配器声明、播放页事件映射与退场
+
+#### 五、待真机验证
+
+- [ ] 进播放页 → 弹出**独立标准窗口**（标题栏/边框/最小化/最大化/关闭）。
+- [ ] 可拖动、缩放、最大化，画面跟随（`WM_SIZE`）。
+- [ ] 播放视频正常（HDR 直出）。
+- [ ] 点关闭按钮 / 按 ESC → 走离房确认 → 返回。
+- [ ] 空格播放暂停、左右方向键 seek。
+- [ ] **已知限制**：本轮**无控件 UI**（顶栏/底栏/弹幕），阶段 3~5 实现。
 - [ ] 若仍是 Flutter 播放页（有控件）：发 `%TEMP%\himi_runtime.log` 里
       含 `nativeUi` / `session created` 的行。
 

@@ -396,6 +396,18 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     }
   }
 
+  /// 648：原生窗口事件流（关闭/按键/点击）。
+  ///
+  /// 独立窗口独占焦点，Flutter 收不到这些输入，必须由原生转发后在此
+  /// 交给播放页处理（离房确认 / 播放暂停 / seek / 全屏 / 控件显隐）。
+  Stream<Map<Object?, Object?>> get hostEvents {
+    final session = _player;
+    if (session == null || session is! MpvHostWindowSession) {
+      return const Stream<Map<Object?, Object?>>.empty();
+    }
+    return (session as MpvHostWindowSession).hostEvents;
+  }
+
   Future<void> _applyHdrOutputProperties(bool enabled) async {
     final player = _player;
     if (player == null) return;

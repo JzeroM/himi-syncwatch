@@ -54,6 +54,12 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
   void DestroyHostWindow();
   flutter::EncodableMap GetHostWindowInfo() const;
 
+  /// 648：创建 UI 叠加层（透明子窗口，阶段 3 用 Direct2D 往里画控件）。
+  HWND CreateUiOverlay();
+
+  /// 648：把窗口事件（关闭/按键/点击）转发给 Dart 侧。
+  void EmitHostEvent(const char* type);
+
   static LRESULT CALLBACK HostWndProc(HWND hwnd, UINT message, WPARAM wparam,
                                       LPARAM lparam);
 
@@ -73,6 +79,8 @@ class HimiMpvWindowsPlugin : public flutter::Plugin {
   // 646：原生播放器顶层窗口。
   HWND host_hwnd_ = nullptr;
   HWND render_hwnd_ = nullptr;
+  /// 648：UI 叠加层（透明子窗口，阶段 3 用 Direct2D 画控件）。
+  HWND ui_hwnd_ = nullptr;
   int host_x_ = 0;
   int host_y_ = 0;
   int host_width_ = 0;

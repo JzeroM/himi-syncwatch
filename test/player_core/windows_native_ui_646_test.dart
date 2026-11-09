@@ -219,31 +219,31 @@ void main() {
     });
   });
 
-  group('⑤ 播放页几何同步', () {
+  group('⑤ 播放页退场（648：独立窗口，无需几何同步）', () {
     late String screen;
 
     setUp(() => screen = read('lib/screens/player/player_screen.dart'));
 
-    test('有视频区 GlobalKey 与几何同步方法', () {
-      expect(screen, contains('final GlobalKey _videoAreaKey'));
-      expect(screen, contains('void _syncNativeHostGeometry()'));
-      expect(screen, contains('updateHostGeometry('));
-    });
-
-    test('几何按 devicePixelRatio 换算为物理像素', () {
-      final start = screen.indexOf('void _syncNativeHostGeometry()');
-      expect(start, greaterThan(-1));
-      final body = screen.substring(start, start + 1200);
-      expect(body, contains('devicePixelRatio'));
-      expect(body, contains('localToGlobal'));
-    });
-
-    test('原生 UI 接管时挂 key 并触发同步', () {
+    test('原生 UI 接管时视频区挂 key 并退场', () {
       final start = screen.indexOf('Widget _buildVideoArea()');
       expect(start, greaterThan(-1));
       final body = screen.substring(start, start + 2600);
       expect(body, contains('SizedBox.expand(key: _videoAreaKey)'));
-      expect(body, contains('_syncNativeHostGeometry()'));
+    });
+
+    test('648 起移除几何同步（独立窗口不跟随 Flutter 布局）', () {
+      // 646 曾用 _syncNativeHostGeometry 把视频区几何传给覆盖式窗口，
+      // 但坐标基准错误导致窗口飘在左上角。648 改为独立标准窗口后不再需要。
+      expect(
+        screen,
+        isNot(contains('_syncNativeHostGeometry')),
+        reason: '独立窗口由用户自由摆放，无需跟随 Flutter 布局',
+      );
+    });
+
+    test('改为订阅原生窗口事件（关闭/按键/点击）', () {
+      expect(screen, contains('void _attachHostWindowEvents()'));
+      expect(screen, contains('_hostEventSub'));
     });
   });
 }

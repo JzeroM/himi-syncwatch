@@ -288,6 +288,8 @@ void HimiMpvWindowsPlugin::HandleMethodCall(
   }
   if (method == "createRenderSurface") {
     const HWND render = CreateRenderSurface();
+    // 648：紧随其后创建 UI 叠加层，保证它在渲染窗口之上（Z 序）。
+    CreateUiOverlay();
     result->Success(flutter::EncodableValue(
         static_cast<int64_t>(reinterpret_cast<intptr_t>(render))));
     return;
@@ -324,16 +326,78 @@ void HimiMpvWindowsPlugin::HandleMethodCall(
 LRESULT CALLBACK HimiMpvWindowsPlugin::HostWndProc(HWND hwnd, UINT message,
                                                    WPARAM wparam,
                                                    LPARAM lparam) {
+  // 648：从窗口句柄反查插件实例（GWLP_USERDATA），以便把窗口事件转发给
+  // Dart 侧（关闭/按键/点击）。CreateHostWindow 里已挂上指针。
+  auto* self = reinterpret_cast<HimiMpvWindowsPlugin*>(
+      ::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
   switch (message) {
+    case WM_SIZE:
+      // 648：客户区尺寸变化时，渲染子窗口与 UI 叠加层跟随铺满。
+      if (self != nullptr && wparam != SIZE_MINIMIZED) {
+        RECT rc = {};
+        ::GetClientRect(hwnd, &rc);
+        const int w = rc.right - rc.left;
+        const int h = rc.bottom - rc.top;
+        if (w > 0 && h > 0) {
+          if (self->render_hwnd_ != nullptr) {
+            ::SetWindowPos(self->render_hwnd_, nullptr, 0, 0, w, h,
+                           SWP_NOZORDER | SWP_NOACTIVATE);
+          }
+          if (self->ui_hwnd_ != nullptr) {
+            ::SetWindowPos(self->ui_hwnd_, nullptr, 0, 0, w, h,
+                           SWP_NOZORDER | SWP_NOACTIVATE);
+          }
+        }
+      }
+      return 0;
     case WM_CLOSE:
-      // 顶层窗口不自行销毁：由 Dart 侧 destroyHostWindow 统一管理，
-      // 避免与播放器 session 释放顺序竞争。
+      // 648：先通知 Dart 走离房确认；但**不拦截**关闭——
+      // Dart 若因故未响应（异常/未订阅），用户仍需能关掉窗口。
+      // 真正的销毁统一由 Dart 侧 destroyHostWindow 完成（幂等）。
+      if (self != nullptr) self->EmitHostEvent("window-close");
+      return ::DefWindowProc(hwnd, message, wparam, lparam);
+    case WM_KEYDOWN:
+      // 648：快捷键转发给 Dart（原生窗口独占焦点，Flutter 收不到）。
+      if (self != nullptr) {
+        switch (wparam) {
+          case VK_ESCAPE:
+            self->EmitHostEvent("window-close");
+            return 0;
+          case VK_SPACE:
+            self->EmitHostEvent("toggle-play");
+            return 0;
+          case VK_LEFT:
+            self->EmitHostEvent("seek-backward");
+            return 0;
+          case VK_RIGHT:
+            self->EmitHostEvent("seek-forward");
+            return 0;
+          case VK_F11:
+            self->EmitHostEvent("toggle-fullscreen");
+            return 0;
+          default:
+            break;
+        }
+      }
+      return 0;
+    case WM_LBUTTONDOWN:
+      // 648：点击画面切换控件显隐（阶段 3 接 UI 后生效）。
+      if (self != nullptr) self->EmitHostEvent("tap");
       return 0;
     case WM_DESTROY:
       return 0;
     default:
       return ::DefWindowProc(hwnd, message, wparam, lparam);
   }
+}
+
+void HimiMpvWindowsPlugin::EmitHostEvent(const char* type) {
+  if (event_sink_ == nullptr) return;
+  flutter::EncodableMap event;
+  event[flutter::EncodableValue("type")] =
+      flutter::EncodableValue(std::string(type));
+  event_sink_->Success(flutter::EncodableValue(event));
 }
 
 HWND HimiMpvWindowsPlugin::CreateHostWindow(int x, int y, int width,
@@ -363,19 +427,29 @@ HWND HimiMpvWindowsPlugin::CreateHostWindow(int x, int y, int width,
   if (width <= 0) width = 1280;
   if (height <= 0) height = 720;
 
-  // 顶层窗口：WS_POPUP + parent = nullptr。
-  // 这是与旧 CreateSurface（WS_CHILD 挂在 Flutter 窗口下）的本质区别——
-  // 子窗口会被 Flutter 的 DirectComposition 不透明层整体遮挡（灰屏根因），
-  // 顶层窗口则盖在其之上，MPV 可真正输出画面。
+  // 648：独立**标准窗口**（标题栏/边框/最小化/最大化/关闭），像普通播放器。
+  //
+  // 演进史：
+  // - 646 用 WS_POPUP + WS_EX_TOPMOST 覆盖 Flutter 窗口 → 视频能出但窗口
+  //   飘在左上角、控件不可见（真机截图）。
+  // - 648 改为独立窗口：不再依赖 Flutter 几何同步，用户可自由拖动/缩放/
+  //   最大化/全屏；Flutter 播放页退场，退出由本窗口的关闭按钮/ESC 驱动。
+  //
+  // 注意：不能用 WS_POPUP（无边框无标题栏），否则用户无法关闭/缩放。
+  // 也不能加 WS_EX_NOACTIVATE（需要能获得焦点以接收按键）。
   host_hwnd_ = ::CreateWindowEx(
-      WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-      L"HIMI_NATIVE_PLAYER_HOST", L"HIMI Player", WS_POPUP | WS_VISIBLE,
-      x, y, width, height, nullptr, nullptr, ::GetModuleHandle(nullptr),
-      nullptr);
+      0, L"HIMI_NATIVE_PLAYER_HOST", L"HIMI Player",
+      WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+      x > 0 ? x : CW_USEDEFAULT, y > 0 ? y : CW_USEDEFAULT, width, height,
+      nullptr, nullptr, ::GetModuleHandle(nullptr), nullptr);
 
   if (host_hwnd_ == nullptr) {
     return nullptr;
   }
+
+  // 挂实例指针：HostWndProc 靠它转发事件与调整子窗口。
+  ::SetWindowLongPtrW(host_hwnd_, GWLP_USERDATA,
+                      reinterpret_cast<LONG_PTR>(this));
 
   host_x_ = x;
   host_y_ = y;
@@ -420,6 +494,45 @@ HWND HimiMpvWindowsPlugin::CreateRenderSurface() {
   return render_hwnd_;
 }
 
+HWND HimiMpvWindowsPlugin::CreateUiOverlay() {
+  if (host_hwnd_ == nullptr) return nullptr;
+  if (ui_hwnd_ != nullptr) {
+    ::ShowWindow(ui_hwnd_, SW_SHOW);
+    return ui_hwnd_;
+  }
+
+  static bool class_registered = false;
+  if (!class_registered) {
+    WNDCLASSEX wc = {};
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.lpfnWndProc = ::DefWindowProc;
+    wc.hInstance = ::GetModuleHandle(nullptr);
+    wc.lpszClassName = L"HIMI_UI_OVERLAY";
+    wc.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr;
+    ::RegisterClassEx(&wc);
+    class_registered = true;
+  }
+
+  RECT rc = {};
+  ::GetClientRect(host_hwnd_, &rc);
+  const int w = (rc.right - rc.left) > 0 ? (rc.right - rc.left) : host_width_;
+  const int h = (rc.bottom - rc.top) > 0 ? (rc.bottom - rc.top) : host_height_;
+
+  // 648：透明叠加层，铺在 MPV 渲染子窗口**之上**（创建顺序决定 Z 序）。
+  // WS_EX_LAYERED + 全 alpha → 透明但可绘制；阶段 3 用 Direct2D 画控件。
+  ui_hwnd_ = ::CreateWindowEx(
+      WS_EX_LAYERED | WS_EX_TRANSPARENT, L"HIMI_UI_OVERLAY", L"",
+      WS_CHILD | WS_VISIBLE, 0, 0, w, h, host_hwnd_, nullptr,
+      ::GetModuleHandle(nullptr), nullptr);
+
+  if (ui_hwnd_ != nullptr) {
+    ::SetLayeredWindowAttributes(ui_hwnd_, 0, 255, LWA_ALPHA);
+    ::ShowWindow(ui_hwnd_, SW_SHOW);
+  }
+  return ui_hwnd_;
+}
+
 void HimiMpvWindowsPlugin::UpdateHostWindow(int x, int y, int width,
                                             int height) {
   if (host_hwnd_ == nullptr) return;
@@ -428,15 +541,32 @@ void HimiMpvWindowsPlugin::UpdateHostWindow(int x, int y, int width,
   host_y_ = y;
   host_width_ = width;
   host_height_ = height;
-  ::SetWindowPos(host_hwnd_, HWND_TOPMOST, x, y, width, height,
+  // 648：独立标准窗口——不再用 HWND_TOPMOST（那是 646 覆盖 Flutter 窗口时
+  // 的做法）。现在窗口由用户自由摆放，保持普通 Z 序即可。
+  ::SetWindowPos(host_hwnd_, nullptr, x, y, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
-  if (render_hwnd_ != nullptr) {
-    ::SetWindowPos(render_hwnd_, nullptr, 0, 0, width, height,
-                   SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+  RECT rc = {};
+  ::GetClientRect(host_hwnd_, &rc);
+  const int cw = rc.right - rc.left;
+  const int ch = rc.bottom - rc.top;
+  if (cw > 0 && ch > 0) {
+    if (render_hwnd_ != nullptr) {
+      ::SetWindowPos(render_hwnd_, nullptr, 0, 0, cw, ch,
+                     SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+    }
+    if (ui_hwnd_ != nullptr) {
+      ::SetWindowPos(ui_hwnd_, nullptr, 0, 0, cw, ch,
+                     SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+    }
   }
 }
 
 void HimiMpvWindowsPlugin::DestroyHostWindow() {
+  // 648：先销毁 UI 叠加层，再渲染子窗口，最后主窗口。
+  if (ui_hwnd_ != nullptr) {
+    ::DestroyWindow(ui_hwnd_);
+    ui_hwnd_ = nullptr;
+  }
   if (render_hwnd_ != nullptr) {
     ::DestroyWindow(render_hwnd_);
     render_hwnd_ = nullptr;

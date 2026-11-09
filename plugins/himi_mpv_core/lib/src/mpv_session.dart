@@ -81,6 +81,13 @@ abstract interface class MpvHostWindowSession {
     required int width,
     required int height,
   });
+
+  /// 648：原生窗口事件流（关闭/按键/点击）。
+  ///
+  /// 独立窗口独占焦点，Flutter 收不到这些输入，必须由原生转发：
+  /// `window-close` / `toggle-play` / `seek-backward` / `seek-forward` /
+  /// `toggle-fullscreen` / `tap`。
+  Stream<Map<Object?, Object?>> get hostEvents;
 }
 
 /// 平台 MPV 会话工厂。

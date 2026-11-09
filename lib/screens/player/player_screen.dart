@@ -3480,29 +3480,46 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 修法：原生 UI **真正打开后**补推一次完整快照——那时 `_player` 必定
     // 已创建、守卫不会拦截，不依赖 `initState` 的调用时机。
     if (_nativeUiActive) _syncNativePanelData();
-    // 646：原生 UI 打开后同步顶层窗口几何（Windows HDR 直出）。
-    _syncNativeHostGeometry();
+    // 648：订阅原生窗口事件（独立窗口独占焦点，Flutter 收不到输入）。
+    _attachHostWindowEvents();
   }
 
-  /// 646：把视频区的屏幕几何同步给原生**顶层窗口**。
+  /// 648：订阅原生独立窗口的事件（关闭/按键/点击）。
   ///
-  /// Windows 的 HDR 直出走独立 `WS_POPUP` 顶层窗口（不被 Flutter 的
-  /// DirectComposition 遮挡），该窗口不在 Flutter 布局树里 → 位置/尺寸
-  /// 必须由 Dart 侧显式驱动，否则拖动/缩放/全屏时会错位。
-  void _syncNativeHostGeometry() {
-    if (!mounted || _disposed) return;
+  /// 独立窗口拥有焦点后 Flutter 收不到键盘/鼠标，必须由原生转发。
+  StreamSubscription<Map<Object?, Object?>>? _hostEventSub;
+
+  void _attachHostWindowEvents() {
     final mpv = _player;
-    if (mpv is! MpvPlayerAdapter || !mpv.nativeUiActive.value) return;
-    final box = _videoAreaKey.currentContext?.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) return;
-    final origin = box.localToGlobal(Offset.zero);
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    unawaited(mpv.updateHostGeometry(
-      x: (origin.dx * dpr).round(),
-      y: (origin.dy * dpr).round(),
-      width: (box.size.width * dpr).round(),
-      height: (box.size.height * dpr).round(),
-    ));
+    if (mpv is! MpvPlayerAdapter) return;
+    _hostEventSub?.cancel();
+    _hostEventSub = mpv.hostEvents.listen((event) {
+      if (!mounted || _disposed) return;
+      final type = event['type'];
+      if (type is! String) return;
+      switch (type) {
+        case 'window-close':
+          unawaited(_safePopPlayerPage());
+        case 'toggle-play':
+          _togglePlayPause();
+        case 'seek-backward':
+          _seekRelative(-5000);
+        case 'seek-forward':
+          _seekRelative(5000);
+        case 'toggle-fullscreen':
+          unawaited(_toggleNativeWindowFullscreen());
+        case 'tap':
+          setState(() => _showControls = !_showControls);
+      }
+    });
+  }
+
+  /// 648：切换原生窗口全屏（独立窗口模式下由原生窗口自己管）。
+  Future<void> _toggleNativeWindowFullscreen() async {
+    final mpv = _player;
+    if (mpv is! MpvPlayerAdapter) return;
+    // 播放页已退场，全屏由原生窗口处理；这里仅记录日志便于诊断。
+    LogService().log('mpv', '[native-ui] 请求切换全屏');
   }
 
   /// 原生 UI 请求退出（back/exit 命令）：先关原生宿主，再走与顶栏
@@ -7957,6 +7974,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _stateSub?.cancel();
     _statusSub?.cancel();
     _eventSub?.cancel();
+    // 648：取消原生窗口事件订阅（独立窗口模式的按键/关闭转发）。
+    _hostEventSub?.cancel();
     try {
       _broadcastScrollController.dispose();
     } catch (_) {}
@@ -8438,11 +8457,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? (MpvSessionPlatform.isOhos ? _roomUiShouldBeNative : _nativeUiActive)
         : _nativeUiActive;
     if (nativeShortCircuit) {
-      // 646：原生 UI 接管时仍挂 key，用于把视频区几何同步给原生顶层窗口
-      // （Windows HDR 直出）。
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _syncNativeHostGeometry();
-      });
+      // 648：独立原生窗口模式——Flutter 播放页整页退场，不再需要几何同步
+      //（窗口由用户自由拖动/缩放，与 Flutter 布局无关）。
       return SizedBox.expand(key: _videoAreaKey);
     }
     final videoAreaTvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
