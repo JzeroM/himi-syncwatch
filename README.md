@@ -24,11 +24,11 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 | 功能 | 说明 |
 |------|------|
 | **Emby 媒体库** | 登录、浏览、搜索、收藏、详情页、选集、播放线路 |
-| **高品质播放** | 三播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播 |
+| **高品质播放** | 四播放引擎、HDR 全链路、原生位图字幕/PGS、低延迟起播 |
 | **多人同步房间** | 房间码 / 二维码扫码加入，播放控制全员同步（可选功能） |
 | **弹幕** | [弹弹 Play](https://www.dandanplay.com) 协议兼容（免签名），时间轴匹配 + 本地缓存 |
-| **多播放引擎** | [MDK（fvp）](https://github.com/wang-bin/fvp) / [media_kit](https://github.com/media-kit/media-kit)（libmpv）/ [Erika](https://github.com/AimesSoft/Erika)（Rust 内核，HDR10 + 原生位图字幕/PGS） |
-| **TV 模式** | Android TV 遥控器焦点导航、顶部横排导航，支持 MDK / Erika / Media Kit |
+| **多播放引擎** | [MDK（fvp）](https://github.com/wang-bin/fvp) / [media_kit](https://github.com/media-kit/media-kit)（libmpv）/ [Erika](https://github.com/AimesSoft/Erika)（Rust 内核，HDR10 + 原生位图字幕/PGS）/ **MPV**（原生 Surface，HDR 直出） |
+| **TV 模式** | Android TV 遥控器焦点导航、顶部横排导航，支持 MPV / MDK / Erika |
 | **液态玻璃 UI** | 真折射 shader，参数可调（强度/折射率/色散），基于 [liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets) |
 | **多图标集** | 默认 / 艺术 / 玻璃 / 霓虹，运行时切换 |
 
@@ -36,13 +36,14 @@ HIMI 本质是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Em
 
 | 平台 | 最低要求 | 默认引擎 | 可选引擎 |
 |------|---------|----------|----------|
-| Android | 8.0（API 26） | MDK | Erika / Media Kit（libmpv） |
-| Android TV | 8.0+ | MDK | Erika / Media Kit（libmpv） |
+| Android | 8.0（API 26） | MPV | MDK / Erika |
+| Android TV | 8.0+ | MPV | MDK / Erika |
 | iOS / iPadOS | 12.0+ | Erika | — |
-| Windows x64 | 10+ | MDK | Erika / Media Kit（libmpv） |
+| Windows x64 | 10+ | MPV（HDR 直出） | MDK / Erika |
 | HarmonyOS | 6.0+（API 26） | MPV | — |
 
-> Windows / Android 发布包使用自编译 libmpv 内核。HarmonyOS 使用 MPV + Vulkan（ohosvk）内核，后续仅通过华为官方分发测试；房间同步、扫码、选图、动态图标暂不可用。鸿蒙 P1 输出经 tone map 的 SDR 纹理，真 HDR 直出仍在验证；DoVi P5/P8 依赖内核 RPU 解析，P7 仅解基础层，不做 FEL。
+> Windows / Android 默认走 MPV（原生 Surface），支持 HDR 直出；MDK 作为备选内核（Flutter 纹理，兼容性优先）。
+> HarmonyOS 使用 MPV + Vulkan（ohosvk）内核，后续仅通过华为官方分发测试；房间同步、扫码、选图、动态图标暂不可用。鸿蒙 P1 输出经 tone map 的 SDR 纹理，真 HDR 直出仍在验证；DoVi P5/P8 依赖内核 RPU 解析，P7 仅解基础层，不做 FEL。
 > Windows 7 不支持（Flutter 桌面运行时基线限制）。
 > macOS / Linux 暂停支持（多人观影 RTM 无对应原生实现，已从发版产物中移除）。
 
@@ -71,7 +72,8 @@ HarmonyOS 版本不在 GitHub Release 提供 HAP，后续通过 AppGallery 官�
 | 框架 | Flutter 3.47（Dart SDK ^3.6） | https://flutter.dev |
 | 状态管理 | Riverpod 2 | https://github.com/rrousselGit/riverpod |
 | 播放引擎（Android/iOS） | MDK（fvp 插件封装 [Bilibili MDK](https://github.com/bilibili/MDK)） | https://github.com/wang-bin/fvp |
-| 播放引擎（Windows） | media_kit（libmpv） | https://github.com/media-kit/media-kit |
+| 播放引擎（Android/Windows/鸿蒙，默认） | MPV（原生 Surface，HDR 直出） | https://mpv.io |
+| 播放引擎（Windows 备选） | media_kit（libmpv，Flutter 纹理） | https://github.com/media-kit/media-kit |
 | 播放引擎（手机 HDR/字幕） | Erika（Rust 播放内核） | https://github.com/AimesSoft/Erika |
 | 实时通信 | Agora RTM 2 | https://github.com/AgoraIO-Extensions/Agora-Flutter-RTM-SDK |
 | Windows RTM | himi_windows_rtm 插件（本仓库） | 本地插件 |
@@ -86,14 +88,23 @@ HarmonyOS 版本不在 GitHub Release 提供 HAP，后续通过 AppGallery 官�
 lib/
 ├── core/          # 应用入口、主题、路由、TV 壳层
 ├── models/        # 数据模型（AppSettings 等）
+├── player_core/   # NipaPlay player_core 迁移层（统一引擎抽象 + 适配器）
 ├── providers/     # Riverpod providers
 ├── screens/       # 页面（home/detail/player/room/settings/...）
 ├── services/      # 业务服务
-│   ├── player/    #   多引擎抽象
+│   ├── player/    #   多引擎抽象与平台会话（mpv_session_platform 等）
 │   ├── danmaku/   #   弹弹 Play 弹幕
 │   └── rtm/       #   声网 RTM 房间
 ├── utils/         # 工具
 └── widgets/       # 通用组件
+
+plugins/
+├── himi_mpv_core/     # MPV 会话接口（跨平台抽象）
+├── himi_mpv_android/  # Android MPV（Surface / 原生 UI）
+├── himi_mpv_ohos/     # HarmonyOS MPV（XComponent / 原生 UI）
+├── himi_mpv_windows/  # Windows MPV（原生窗口 / HDR 直出）
+├── himi_ohos_rtm/     # HarmonyOS RTM（NAPI 直连）
+└── himi_windows_rtm/  # Windows RTM
 ```
 
 ## 许可
