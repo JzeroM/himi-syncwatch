@@ -364,13 +364,21 @@ void main() {
     test('用 Ninja 生成器（windows-latest 已升级 VS2026）', () {
       // 写死 "Visual Studio 17 2022" 会报 "could not find any instance of
       // Visual Studio"（v1.5.75 的 654 spike 实测失败）。
-      expect(workflow, contains('-G "Ninja"'));
-      // 只检查实际命令行（注释里可以提到历史原因）
+      expect(workflow, contains('-G Ninja'));
       final cmdLines = workflow
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('#'))
           .join('\n');
       expect(cmdLines, isNot(contains('-G "Visual Studio 17 2022"')));
+    });
+
+    test('必须用 vcvars64 初始化 MSVC（否则 Ninja 会挑到 MinGW gcc）', () {
+      // 【实测失败】改用 Ninja 后 CMake 默认挑 PATH 里的 gcc（runner 预装
+      // MinGW），而 Qt 是 MSVC 构建 → ABI 不兼容，链接期报
+      // "undefined reference to __imp__ZNK9QJSEngine8hasErrorEv"。
+      expect(workflow, contains('vcvars64.bat'));
+      expect(workflow, contains('vswhere'));
+      expect(workflow, contains('Microsoft.VisualStudio.Component.VC.Tools.x86.x64'));
     });
 
     test('Qt 路径用 QT_ROOT_DIR 环境变量', () {

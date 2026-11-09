@@ -69,22 +69,46 @@ jobs:
       - name: 配置 CMake (MSVC)
         shell: pwsh
         run: |
-          # 用 Ninja 而不是 "Visual Studio 17 2022"：windows-latest 已升级到
-          # VS2026，写死 VS2022 生成器会报 "could not find any instance of
-          # Visual Studio"（v1.5.75 的 654 spike 实测）。
+          # 【坑 1】不能用 "Visual Studio 17 2022" 生成器：windows-latest 已
+          # 升级到 VS2026，会报 "could not find any instance of Visual
+          # Studio"（v1.5.75 首次实跑失败）。
           #
-          # Qt 路径用 QT_ROOT_DIR 环境变量（install-qt-action 必然导出），
-          # 不用 steps.install-qt.outputs.qt-dir —— 该输出在本版本 action 里
-          # 为空，会让 CMAKE_PREFIX_PATH 变成空串。
-          cmake -S $env:CLIENT_DIR -B build `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
-            -DLIBMPV_DIR="$env:LIBMPV_DIR"
+          # 【坑 2】改用 Ninja 后，CMake 默认会挑 PATH 里的 gcc（runner 预装
+          # MinGW），而 Qt 是 MSVC 构建 → ABI 不兼容，链接期报
+          # "undefined reference to __imp__ZNK9QJSEngine8hasErrorEv"
+          # （v1.5.75 第二次实跑失败）。必须显式指定 cl.exe。
+          #
+          # 【坑 3】Qt 路径用 QT_ROOT_DIR 环境变量（install-qt-action 必然
+          # 导出），不用 steps.install-qt.outputs.qt-dir —— 该输出在本版本
+          # action 里为空，会让 CMAKE_PREFIX_PATH 变成空串。
+          #
+          # 用 vcvars64 初始化 MSVC 环境（含 cl.exe / link.exe / 系统库路径），
+          # 再调 cmake，让 Ninja 生成器找到正确的编译器。
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (!(Test-Path $vswhere)) { throw "未找到 vswhere.exe" }
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ([string]::IsNullOrWhiteSpace($vsPath)) { throw "未找到含 VC 工具集的 Visual Studio" }
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+          if (!(Test-Path $vcvars)) { throw "未找到 vcvars64.bat: $vcvars" }
+          Write-Host "VS: $vsPath"
+
+          # 在 vcvars64 环境里执行 cmake（cmd /c 保证环境变量生效）
+          $cmd = 'call "' + $vcvars + '" >nul && cmake -S ' + $env:CLIENT_DIR +
+                 ' -B build -G Ninja -DCMAKE_BUILD_TYPE=Release' +
+                 ' -DCMAKE_PREFIX_PATH="' + $env:QT_ROOT_DIR + '"' +
+                 ' -DLIBMPV_DIR="' + $env:LIBMPV_DIR + '"'
+          cmd /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw "CMake 配置失败" }
 
       - name: 编译
         shell: pwsh
-        run: cmake --build build --parallel
+        run: |
+          # 同样要在 vcvars64 环境里构建（Ninja 需要 cl.exe 在 PATH）
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c ('call "' + $vcvars + '" >nul && cmake --build build --parallel')
+          if ($LASTEXITCODE -ne 0) { throw "编译失败" }
 
       - name: 部署 Qt6 runtime DLLs
         shell: pwsh
