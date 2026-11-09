@@ -5,6 +5,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:himi_mpv_android/himi_mpv_android.dart';
 import 'package:himi_mpv_core/himi_mpv_core.dart';
+import 'package:himi_syncwatch/models/app_settings.dart' show AppSettings;
 import 'mpv_session_platform.dart';
 import '../danmaku/danmaku_comment.dart';
 import 'native/native_player_command.dart';
@@ -198,6 +199,15 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// MPV 视频路径设置：surface/texture。仅 MPV 生效。
   String _mpvVideoOutput = MpvOutputPolicy.surface;
   bool _mpvVideoOutputUserSet = false;
+
+  /// 655：Android Surface 路径的渲染器（'auto' / 'gpu-next' / 'gpu'）。
+  ///
+  /// 由 `AppSettings.mpvRenderer` 经播放页注入。`auto` 与 `gpu-next` 等价
+  /// （新设备默认），`gpu` 用于老 GPU 兼容。见 `AppSettings.mpvRenderer`
+  /// 注释里对「删除 GLES 自动探测」的说明。
+  String _mpvRenderer = 'auto';
+  set mpvRenderer(String value) => _mpvRenderer = value;
+
   set mpvVideoOutput(String value) => _mpvVideoOutput = value;
   set mpvVideoOutputUserSet(bool value) => _mpvVideoOutputUserSet = value;
 
@@ -283,8 +293,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 矩阵见 `docs/native_player_command_routing.md`。
   Future<void> Function(NativePlayerCommand command)? onNativeUiCommand;
 
-  /// 640：surface 渲染失败回调（上层据此持久化 texture 输出设置）。
-  void Function()? onSurfaceRenderFailed;
+  /// 655：**已移除** 640 的 surface 渲染失败回调。
+  ///
+  /// 旧字段 `onSurfaceRenderFailed` 用于「检测到 EGL 失败就持久化
+  /// texture 输出」，现已删除——视频路径改为纯手动设置（见
+  /// `MpvSessionPlatform` / 插件类注释）。保留此说明避免将来重复引入。
 
   /// 调试面板「HDR 直出」状态：按实际路径判断，不用请求值。
   String get mpvHdrOutputStatus {
@@ -540,6 +553,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         nativeUi: nativeUiRequested,
         hdr: decision.hdrOutput,
         hlg: decision.hdrOutput && _hlgContentForMedia,
+        // 655：渲染器由设置决定（Android Surface 路径）。
+        vo: AppSettings.resolveMpvVo(
+          renderer: _mpvRenderer,
+          nativeSurface: nativeSurface,
+        ),
       );
       if (_disposed) {
         // 创建期间已被销毁：立刻回收，避免泄漏。
@@ -549,19 +567,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       _player = player;
       // Android 会话的诊断日志接到 LogService（进 App 调试面板 + 落盘 +
       // logcat），否则 surface 事件时序完全不可见（黑屏盲区）。
+      //
+      // 655：不再接 `onSurfaceRenderFailed`（该回调已随自动回退一起删除）。
       if (player is HimiMpvAndroidSession) {
         HimiMpvAndroidSession.debugLog =
             (message) => LogService().log('mpv/surface', message);
-        // 640：surface 渲染失败 → 通知上层持久化「该设备走 texture」。
-        //
-        // 真机：Mali-450 盒子上 `vo=gpu-next` + `gpu-context=android` 的
-        // EGL 初始化失败 → 有声音无画面。插件检测到后自动重建纹理会话，
-        // 这里负责记住该设备，避免下次启动再次黑屏 5s。
-        player.onSurfaceRenderFailed = () {
-          LogService().log('mpv',
-              'surface 渲染失败 → 持久化该设备使用 texture 输出');
-          onSurfaceRenderFailed?.call();
-        };
       }
       // 原生确认实际为 Surface 才启用原生 UI；请求 Surface 但回退
       // Texture 时不打开原生窗口，保持 Flutter UI。

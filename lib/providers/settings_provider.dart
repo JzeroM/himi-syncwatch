@@ -24,11 +24,27 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> load() async {
     final raw = await _storage.read(key: _storageKey);
-    if (raw != null) {
-      try {
-        state = AppSettings.fromJson(jsonDecode(raw));
-      } catch (_) {}
-    }
+    if (raw == null) return;
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final loaded = AppSettings.fromJson(decoded);
+      state = loaded;
+      // 655：640 锁死纹理的一次性迁移若已生效，立刻回写存档。
+      //
+      // 【为什么要回写】`fromJson` 的迁移是**纯函数**（只改内存值）。
+      // 不回写的话存档里仍是 `texture + userSet=true`，每次启动都会重新
+      // 计算一遍——结果虽然一致（幂等），但存档与实际行为长期不一致，
+      // 排查问题时会看到「设置页显示 Surface，存档里却是 texture」的
+      // 误导性现象。回写后存档立即反映迁移结果，且
+      // `mpvTextureAutoMigrated=true` 落盘保证迁移不再重复。
+      if (loaded.mpvTextureAutoMigrated &&
+          decoded['mpvTextureAutoMigrated'] != true) {
+        await _storage.write(
+          key: _storageKey,
+          value: jsonEncode(loaded.toJson()),
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> update({
@@ -68,6 +84,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     bool? homeCarousel,
     String? videoOutput,
     String? mpvVideoOutput,
+    String? mpvRenderer,
     bool? renderCompatMode,
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
@@ -145,6 +162,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       // 手动改动视频输出即标记「用户已设置」，EGL 故障归一不再覆盖
       videoOutputUserSet: videoOutput != null ? true : null,
       mpvVideoOutput: mpvVideoOutput,
+      mpvRenderer: mpvRenderer,
       mpvVideoOutputUserSet: mpvVideoOutput != null ? true : null,
       renderCompatMode: renderCompatMode,
       videoDecoderNoImage: videoDecoderNoImage,

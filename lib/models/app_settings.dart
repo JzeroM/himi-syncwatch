@@ -206,6 +206,25 @@ class AppSettings {
   /// 用户是否手动设置过 MPV 视频路径。
   final bool mpvVideoOutputUserSet;
 
+  /// MPV 渲染器（Android Surface 路径）：'auto' / 'gpu-next' / 'gpu'。
+  ///
+  /// 655：从「按 GLES 版本自动探测」改为**手动选择**。
+  ///
+  /// 【为什么删除自动探测】`queryGlEsVersion` 查的是驱动**声明的版本号**，
+  /// 而 `vo=gpu-next` 能否真正跑起来取决于驱动实现质量、扩展集、带宽等
+  /// 版本号无法反映的因素。640 提交说明自己也承认「驱动可能虚报版本」——
+  /// Mali-450 报告 GLES 3.1/3.2，但 mpv 自建上下文仍然失败。
+  ///
+  /// 探测还有两个具体缺陷：
+  /// 1. 探测用 1×1 pbuffer（最宽松的 EGL 配置），与 mpv 实际用的
+  ///    ANativeWindow + 可能 10bit 配置差距很大；
+  /// 2. 探测结束时 `eglTerminate(EGL_DEFAULT_DISPLAY)`，而该 display 是
+  ///    进程级共享的（Flutter 引擎可能正在用），有破坏渲染状态的风险。
+  ///
+  /// 现在：`auto` = 用 `gpu-next`（新设备默认，支持 HDR 直出）；
+  /// 用户若遇到黑屏/花屏，手动切 `gpu`。
+  final String mpvRenderer;
+
   /// 渲染兼容模式（实验，Android）：以 mdk 全局选项启用
   /// `gl.yuv_sampler=1`（mdk wiki 注明 for android/rockchip 硬解渲染）
   /// 与 `surfacetexture.glcontext=1`（SurfaceTexture 无有效上下文时
@@ -264,6 +283,18 @@ class AppSettings {
   /// 根除「3004 两轮全败 → 自愈 stop 与 EGL 创建流程并发 → 偶发
   /// native crash（卡 00:00 后闪退回桌面）」。
   final bool eglFaultSeen;
+
+  /// 655：640 的 surface→texture 自动回退是否已迁移。
+  ///
+  /// 【为什么需要这个字段】640 的自动回退会把 `mpvVideoOutput` 写成
+  /// `texture`，而 `settings_provider.update()` 会把任何写入都标成
+  /// `mpvVideoOutputUserSet = true`（最高优先级）。结果是一旦误判，
+  /// 该设备就**永久锁定纹理**，重启也不恢复。
+  ///
+  /// 655 删除自动回退后，需要把这些被锁死的设备一次性迁回 `surface`。
+  /// 用这个标记保证迁移**只执行一次**：迁移后用户再手动选纹理，不会被
+  /// 后续启动反复重置。
+  final bool mpvTextureAutoMigrated;
 
   // ── 弹幕（v1.1.134，自定义 danmu_api 源）──
 
@@ -388,6 +419,7 @@ class AppSettings {
     this.videoOutputUserSet = false,
     this.mpvVideoOutput = 'surface',
     this.mpvVideoOutputUserSet = false,
+    this.mpvRenderer = 'auto',
     this.renderCompatMode = false,
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
@@ -395,6 +427,7 @@ class AppSettings {
     this.hdrGlWorkaround = false,
     this.avsyncAudioAdaptive = false,
     this.eglFaultSeen = false,
+    this.mpvTextureAutoMigrated = false,
     this.danmakuDefaultOn = true,
     this.danmakuApiUrl = '',
     this.danmakuScrollRows = 30,
@@ -506,6 +539,7 @@ class AppSettings {
     bool? videoOutputUserSet,
     String? mpvVideoOutput,
     bool? mpvVideoOutputUserSet,
+    String? mpvRenderer,
     bool? renderCompatMode,
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
@@ -513,6 +547,7 @@ class AppSettings {
     bool? hdrGlWorkaround,
     bool? avsyncAudioAdaptive,
     bool? eglFaultSeen,
+    bool? mpvTextureAutoMigrated,
     bool? danmakuDefaultOn,
     String? danmakuApiUrl,
     int? danmakuScrollRows,
@@ -584,6 +619,7 @@ class AppSettings {
       mpvVideoOutput: mpvVideoOutput ?? this.mpvVideoOutput,
       mpvVideoOutputUserSet:
           mpvVideoOutputUserSet ?? this.mpvVideoOutputUserSet,
+      mpvRenderer: mpvRenderer ?? this.mpvRenderer,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
       videoDecoderNoImage: videoDecoderNoImage ?? this.videoDecoderNoImage,
       videoDecoderLowLatency:
@@ -592,6 +628,8 @@ class AppSettings {
       hdrGlWorkaround: hdrGlWorkaround ?? this.hdrGlWorkaround,
       avsyncAudioAdaptive: avsyncAudioAdaptive ?? this.avsyncAudioAdaptive,
       eglFaultSeen: eglFaultSeen ?? this.eglFaultSeen,
+      mpvTextureAutoMigrated:
+          mpvTextureAutoMigrated ?? this.mpvTextureAutoMigrated,
       danmakuDefaultOn: danmakuDefaultOn ?? this.danmakuDefaultOn,
       danmakuApiUrl: danmakuApiUrl ?? this.danmakuApiUrl,
       danmakuScrollRows: danmakuScrollRows ?? this.danmakuScrollRows,
@@ -679,6 +717,7 @@ class AppSettings {
         'videoOutputUserSet': videoOutputUserSet,
         'mpvVideoOutput': mpvVideoOutput,
         'mpvVideoOutputUserSet': mpvVideoOutputUserSet,
+        'mpvRenderer': mpvRenderer,
         'renderCompatMode': renderCompatMode,
         'videoDecoderNoImage': videoDecoderNoImage,
         'videoDecoderLowLatency': videoDecoderLowLatency,
@@ -686,6 +725,7 @@ class AppSettings {
         'hdrGlWorkaround': hdrGlWorkaround,
         'avsyncAudioAdaptive': avsyncAudioAdaptive,
         'eglFaultSeen': eglFaultSeen,
+        'mpvTextureAutoMigrated': mpvTextureAutoMigrated,
         'danmakuDefaultOn': danmakuDefaultOn,
         'danmakuApiUrl': danmakuApiUrl,
         'danmakuScrollRows': danmakuScrollRows,
@@ -713,7 +753,50 @@ class AppSettings {
           'glassRefractiveIndex': glassRefractiveIndex,
       };
 
+  /// 655：一次性迁移 640 自动回退留下的「锁死纹理」设置。
+  ///
+  /// 返回三个字段的最终值（`mpvVideoOutput` / `mpvVideoOutputUserSet` /
+  /// `mpvTextureAutoMigrated`），供 [fromJson] 直接取用。
+  ///
+  /// 【为什么需要迁移】640 的自动回退把 `mpvVideoOutput` 写成 `texture`，
+  /// 而 `settings_provider.update()` 会把任何写入都标成
+  /// `mpvVideoOutputUserSet = true`。`userSet == true` 是最高优先级，
+  /// `effectiveVideoOutput` 会完全跳过平台默认值 → 一次误判 = 该设备
+  /// **永久锁定纹理，重启也不恢复**。
+  ///
+  /// 触发条件（三个必须同时满足）：
+  ///   1. 存档为 `texture`
+  ///   2. `mpvVideoOutputUserSet == true`（640 的自动回退会置 true）
+  ///   3. `mpvTextureAutoMigrated` 不为 true（保证只迁移一次）
+  ///
+  /// 不满足条件时原样返回存档值（含「用户真的手动选了纹理」的情形）。
+  ///
+  /// 代价：极少数真的手动选过 texture 的用户会被重置一次，需要重新选。
+  /// 这个代价远小于「误判后永远卡在纹理」。
+  static Map<String, Object> mpvTextureMigration(Map<String, dynamic> json) {
+    final stored = json['mpvVideoOutput'];
+    final userSet = json['mpvVideoOutputUserSet'] == true;
+    final alreadyMigrated = json['mpvTextureAutoMigrated'] == true;
+
+    if (stored == 'texture' && userSet && !alreadyMigrated) {
+      return const <String, Object>{
+        'mpvVideoOutput': 'surface',
+        'mpvVideoOutputUserSet': false,
+        'mpvTextureAutoMigrated': true,
+      };
+    }
+
+    return <String, Object>{
+      'mpvVideoOutput':
+          const ['surface', 'texture'].contains(stored) ? stored as String : 'surface',
+      'mpvVideoOutputUserSet': userSet,
+      'mpvTextureAutoMigrated': alreadyMigrated,
+    };
+  }
+
   factory AppSettings.fromJson(Map<String, dynamic> json) {
+    // 655：640 锁死纹理的一次性迁移（详见 [mpvTextureMigration] 注释）。
+    final mpvTextureMigration = AppSettings.mpvTextureMigration(json);
     final raw = json['decodeMode'];
     // 640：默认解码模式改为「硬解」（与构造器默认值保持一致）。
     // 未存过设置的新用户 / 旧版无该字段 → 'hw'；显式存过则按存档。
@@ -844,11 +927,19 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
       // 旧数据无此字段 → 默认 Surface；Windows 未手动设置时按 Texture 生效
-      mpvVideoOutput:
-          const ['surface', 'texture'].contains(json['mpvVideoOutput'])
-              ? json['mpvVideoOutput'] as String
-              : 'surface',
-      mpvVideoOutputUserSet: json['mpvVideoOutputUserSet'] as bool? ?? false,
+      //
+      // 655：`mpvVideoOutput` / `mpvVideoOutputUserSet` /
+      // `mpvTextureAutoMigrated` 三个字段由 [mpvTextureMigration] 统一算好
+      // （含 640 锁死纹理的一次性迁移，见该变量的注释）。
+      mpvVideoOutput: mpvTextureMigration['mpvVideoOutput'] as String,
+      mpvVideoOutputUserSet:
+          mpvTextureMigration['mpvVideoOutputUserSet'] as bool,
+      mpvTextureAutoMigrated:
+          mpvTextureMigration['mpvTextureAutoMigrated'] as bool,
+      // 655：渲染器改为手动选择。旧数据无此字段 → 'auto'（用 gpu-next）。
+      mpvRenderer: const ['auto', 'gpu-next', 'gpu'].contains(json['mpvRenderer'])
+          ? json['mpvRenderer'] as String
+          : 'auto',
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 image=1）
       videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
@@ -943,6 +1034,28 @@ class AppSettings {
     'surface': 'Surface',
     'texture': '纹理',
   };
+
+  /// 655：MPV 渲染器选项（仅 Android Surface 路径有意义）。
+  static const mpvRendererLabels = {
+    'auto': '自动（gpu-next）',
+    'gpu-next': 'gpu-next',
+    'gpu': 'gpu（兼容）',
+  };
+
+  /// 解析渲染器设置 → 实际传给 mpv 的 `vo` 值。
+  ///
+  /// 655：从「按 GLES 版本自动探测」改为手动。见 [mpvRenderer] 注释。
+  ///
+  /// 纹理路径**恒为 `gpu`**（不受此设置影响）：media_kit 的 Android
+  /// VideoController 走 TextureRegistry Surface + wid + vo=gpu，传别的值
+  /// 会让 `VideoOutput.Resize` 事件永不触发 → 纹理 id 恒 null → 超时。
+  static String resolveMpvVo({
+    required String renderer,
+    required bool nativeSurface,
+  }) {
+    if (!nativeSurface) return 'gpu';
+    return renderer == 'gpu' ? 'gpu' : 'gpu-next';
+  }
 
   /// MPV 实际生效的视频路径：Windows 未手动设置时默认 **surface**，
   /// Android/鸿蒙默认 Surface。

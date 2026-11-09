@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/models/app_settings.dart';
 
 /// 639：四个真机问题的防回归。
 ///
@@ -18,9 +19,6 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final android = File(
     'plugins/himi_mpv_android/lib/himi_mpv_android.dart',
-  ).readAsStringSync();
-  final androidKt = File(
-    'plugins/himi_mpv_android/android/src/main/kotlin/com/himi/mpv/android/HimiMpvAndroidPlugin.kt',
   ).readAsStringSync();
   final screen =
       File('lib/screens/player/player_screen.dart').readAsStringSync();
@@ -54,26 +52,30 @@ void main() {
     fail('$signature 的大括号未配平');
   }
 
-  group('① 老 GPU 降级 vo=gpu（Mali-450 / GLES 3.0）', () {
-    test('Kotlin 暴露 queryGlEsVersion', () {
-      expect(androidKt, contains('"queryGlEsVersion"'));
-      expect(androidKt, contains('private fun queryGlEsVersion()'));
-      expect(androidKt, contains('GL_VERSION'));
-      expect(androidKt, contains('OpenGL ES'));
+  group('① 渲染器改为手动选择（655 取代 639 的 GLES 自动探测）', () {
+    test('不再探测 GLES 版本', () {
+      // 655：删除 `_probeGlSupport` / `_glSupportsGpuNext` / `_glProbed`。
+      // 原因：版本号无法预测 gpu-next 能否真正跑起来（驱动可能虚报），
+      // 且探测用 1×1 pbuffer 与实际 ANativeWindow 路径不同。
+      final code = stripComments(android);
+      expect(code, isNot(contains('_probeGlSupport')));
+      expect(code, isNot(contains('_glSupportsGpuNext')));
+      expect(code, isNot(contains('_glProbed')));
     });
 
-    test('Dart 探测 GLES 并按 3.1 阈值判定', () {
-      expect(android, contains('_probeGlSupport'));
-      expect(android, contains('_glSupportsGpuNext'));
+    test('vo 由构造参数决定（不再按版本判定）', () {
+      expect(android, contains('final String _voOverride;'));
+      final body =
+          stripComments(bodyOf(android, 'Future<void> _ensurePlayer() async {'));
+      expect(body, contains("_voOverride == 'gpu-next'"));
       expect(
-        android,
-        contains('major > 3 || (major == 3 && minor >= 1)'),
-        reason: 'gpu-next 要求 GLES 3.1+',
+        body,
+        isNot(contains('major > 3 || (major == 3 && minor >= 1)')),
+        reason: '版本阈值判据已删除',
       );
     });
 
     test('vo 按能力选择 gpu-next / gpu', () {
-      // 640：`nativeSurface` 改为 `effectiveSurface`（回退纹理后按纹理处理）。
       expect(
         android,
         contains("if (effectiveSurface) 'vo': useGpuNext ? 'gpu-next' : 'gpu'"),
@@ -86,7 +88,7 @@ void main() {
       expect(body, contains("'target-colorspace-hint': 'yes'"));
     });
 
-    test('老 GPU 的 HDR 内容走 SDR tone mapping', () {
+    test('非 gpu-next 的 HDR 内容走 SDR tone mapping', () {
       final body = stripComments(bodyOf(android, 'Future<void> _ensurePlayer() async {'));
       expect(body, contains('if (hdr && effectiveSurface && !useGpuNext)'));
       expect(body, contains("'tone-mapping': 'spline'"));
@@ -94,9 +96,34 @@ void main() {
       expect(body, contains("'target-trc': 'srgb'"));
     });
 
-    test('纹理模式跳过 GL 探测（不涉及 gpu-next）', () {
+    test('纹理模式跳过探测（本就不涉及 gpu-next）', () {
       final body = bodyOf(android, 'Future<void> _start() async {');
-      expect(body, contains('if (nativeSurface) await _probeGlSupport();'));
+      expect(body, isNot(contains('_probeGlSupport')));
+      expect(body, contains('if (!nativeSurface)'));
+    });
+
+    test('设置项 resolveMpvVo：纹理恒 gpu，Surface 按设置', () {
+      expect(
+        AppSettings.resolveMpvVo(renderer: 'gpu', nativeSurface: false),
+        'gpu',
+      );
+      expect(
+        AppSettings.resolveMpvVo(renderer: 'gpu-next', nativeSurface: false),
+        'gpu',
+        reason: '纹理路径必须 gpu，否则纹理 id 永不注册',
+      );
+      expect(
+        AppSettings.resolveMpvVo(renderer: 'gpu', nativeSurface: true),
+        'gpu',
+      );
+      expect(
+        AppSettings.resolveMpvVo(renderer: 'auto', nativeSurface: true),
+        'gpu-next',
+      );
+      expect(
+        AppSettings.resolveMpvVo(renderer: 'gpu-next', nativeSurface: true),
+        'gpu-next',
+      );
     });
   });
 

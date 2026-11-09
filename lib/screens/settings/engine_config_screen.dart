@@ -135,11 +135,14 @@ class _EngineTabBody extends ConsumerWidget {
         title: '视频路径',
         // 646.1：Windows 改为默认 Surface（原生顶层窗口 + vo=gpu-next
         // HDR 直出）；纹理路径在 Windows 上会崩（0xc0000005 @ 0x1551f）。
+        //
+        // 655：删除「渲染失败自动回退纹理」——自动判据会误伤正常设备，
+        // 且误判会持久化锁死。现在完全由用户手动选择。
         subtitle: defaultTargetPlatform == TargetPlatform.windows
             ? 'Windows 默认 Surface（原生顶层窗口，HDR 直出）；'
                 '纹理路径在 Windows 会闪退，请勿切换'
-            : '默认 Surface 直出（渲染失败自动回退纹理）；'
-                '纹理走 Flutter 合成。HDR 直出需要显示端支持 HDR',
+            : '默认 Surface 直出（HDR 需显示端支持）；'
+                '若出现有声音无画面，请手动切到「纹理」',
         labels: AppSettings.mpvVideoOutputLabels,
         value: AppSettings.effectiveMpvVideoOutput(
           settings.mpvVideoOutput,
@@ -147,6 +150,24 @@ class _EngineTabBody extends ConsumerWidget {
         ),
         onSelected: (v) => notifier.update(mpvVideoOutput: v),
       ),
+      // 655：渲染器手动选择（仅 Android Surface 路径有意义）。
+      //
+      // 取代 639 的「GLES 版本自动探测」——版本号无法预测 gpu-next 能否
+      // 真正跑起来（驱动可能虚报，Mali-450 就是典型）。现在由用户决定，
+      // 遇到黑屏/花屏时手动切 gpu。
+      if (defaultTargetPlatform == TargetPlatform.android) ...[
+        const Divider(height: 1),
+        settingOptionTile(
+          context: context,
+          tvMode: settings.tvMode,
+          title: '渲染器',
+          subtitle: '默认 gpu-next（支持 HDR 直出）。'
+              '若出现黑屏或花屏，切到「gpu（兼容）」',
+          labels: AppSettings.mpvRendererLabels,
+          value: settings.mpvRenderer,
+          onSelected: (v) => notifier.update(mpvRenderer: v),
+        ),
+      ],
     ];
   }
 

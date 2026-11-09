@@ -24,6 +24,9 @@ class MpvSessionPlatform {
     required bool hdr,
     required bool hlg,
     bool nativeUi = false,
+    /// 655：Android Surface 路径的渲染器（'gpu-next' / 'gpu'），由设置决定。
+    /// 其它平台忽略此参数（各自在插件内部固定）。
+    String vo = 'gpu-next',
   }) {
     if (isOhos) {
       return HimiMpvPlayer.create(
@@ -45,6 +48,7 @@ class MpvSessionPlatform {
         nativeUi: nativeUi,
         hdr: hdr,
         hlg: hlg,
+        vo: vo,
       );
     }
     if (Platform.isWindows) {

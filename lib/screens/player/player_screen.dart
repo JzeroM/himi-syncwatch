@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fvp/mdk.dart' as mdk;
-import 'package:himi_mpv_core/himi_mpv_core.dart' show MpvOutputPolicy;
 import 'package:himi_syncwatch/player_core/player_core_bridge.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
@@ -2339,10 +2338,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final mpv = _player as MpvPlayerAdapter;
       mpv.mpvVideoOutput = settings.mpvVideoOutput;
       mpv.mpvVideoOutputUserSet = settings.mpvVideoOutputUserSet;
+      mpv.mpvRenderer = settings.mpvRenderer;
       LogService().log(
         'Player',
         'MPV 解码配置: ${settings.decodeMode} → $decoders '
-            '| 视频路径=${AppSettings.effectiveMpvVideoOutput(settings.mpvVideoOutput, userSet: settings.mpvVideoOutputUserSet)}',
+            '| 视频路径=${AppSettings.effectiveMpvVideoOutput(settings.mpvVideoOutput, userSet: settings.mpvVideoOutputUserSet)}'
+            '| 渲染器=${settings.mpvRenderer}',
       );
       return;
     }
@@ -3436,25 +3437,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     player.nativeUiActive.addListener(_onNativeUiActiveChanged);
     player.onNativeUiExit = _exitFromNativeUi;
     player.onNativeUiCommand = _handleNativeUiCommand;
-    // 640：surface 渲染失败（Mali-450 等盒子的 EGL 初始化失败）→ 记住该
-    // 设备改用 texture，避免下次启动再次黑屏。
-    player.onSurfaceRenderFailed = _onSurfaceRenderFailed;
-  }
-
-  /// 640：surface 渲染失败 → 持久化 `mpvVideoOutput=texture`。
-  ///
-  /// 注意 `userSet` 保持 false（自动语义）：用户仍可在设置里手动改回
-  /// surface。写 texture 只是让「自动」在本机选对路径。
-  Future<void> _onSurfaceRenderFailed() async {
-    try {
-      final notifier = ref.read(settingsProvider.notifier);
-      final current = ref.read(settingsProvider);
-      if (current.mpvVideoOutput == MpvOutputPolicy.texture) return;
-      await notifier.update(mpvVideoOutput: MpvOutputPolicy.texture);
-      LogService().log('mpv', '已持久化 texture 输出（surface 渲染失败自愈）');
-    } catch (e) {
-      LogService().log('mpv', '持久化 texture 输出失败: $e');
-    }
+    // 655：不再接 `onSurfaceRenderFailed`。
+    //
+    // 640 曾在这里「surface 渲染失败 → 持久化 mpvVideoOutput=texture」，
+    // 已删除：判据太宽会误伤正常设备，且 `settings_provider.update()`
+    // 把任何写入都标成 `userSet=true`，导致一次误判就永久锁定纹理。
+    // 视频路径现在只由设置页决定（用户手动选择）。
   }
 
   void _detachNativeUiBridge(PlayerAdapter player) {

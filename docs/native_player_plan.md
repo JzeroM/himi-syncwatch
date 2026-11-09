@@ -4672,6 +4672,310 @@ Windows + MPV + surface
 原生播放器窗口会**盖住** Flutter 的离房确认框与房间资源搜索页。
 需在阶段 3 实现原生 UI 后一并解决（或用 `ShowWindow(SW_HIDE)` 临时隐藏）。
 
+#### 十、Windows 播放器 UI 方案：为什么最终选 Qt（654）
+
+> 背景：653 之后 Windows 有了「能播放、能 HDR 直出、能拖动缩放」的原生
+> 窗口，但**里面没有任何控件**（`ui_hwnd_` 只是个透明空壳）。要补齐底栏
+> / 顶栏 / 面板 / 弹幕，必须先定 UI 技术方案。
+
+**候选方案对比**
+
+| 方案 | 工作量 | 观感还原 | 主要风险 |
+|---|---|---|---|
+| C++ 手绘 Direct2D + DirectComposition | ~2500 行 | ⭐⭐ | DComp 初始化复杂、逐像素调 |
+| Dear ImGui | ~500 行 | ⭐⭐⭐ | 默认观感偏调试工具，主题定制量大 |
+| Slint | ~300 行 | ⭐⭐⭐⭐ | 需引入 Rust 构建链 |
+| WebView2 + HTML/CSS | ~400 行 | ⭐⭐⭐⭐⭐ | 依赖 Edge Runtime，+50MB 内存 |
+| **Qt Quick / QML** | ~1200 行 | ⭐⭐⭐⭐⭐ | 引入 Qt 依赖（~1.5GB，仅 CI） |
+| Flutter 多窗口（`desktop_multi_window`） | ~800 行 | ⭐⭐⭐⭐⭐ | **会重现 Z 序问题**，不可行 |
+
+**选 Qt 的理由**：
+
+- 仓库里**已有** `native/windows_qt_client/` 骨架（M0 完成），不是从零开始
+- QML 与 Flutter 心智模型极近（声明式布局 + 属性绑定 + 动画）
+- 圆角/渐变/阴影/透明度都是原生能力，观感可精确还原
+- 本机没装 Qt **不构成障碍**——Windows C++ 代码本来只在 CI 编译
+
+**决定性的技术约束（必须先说清）**
+
+想让 QML 覆盖在视频上，就得把 mpv 渲染进 QML 场景
+（`mpv_render_context`）。但 **libmpv 的 render API 只有 OpenGL 与软件
+后端，没有 D3D11**：
+
+```
+OpenGL FBO 路径 → mpv 转成 SDR RGBA 交给 Qt → HDR 直出丢失
+```
+
+所以「QML 单窗覆盖视频」与「HDR 直出」**不可兼得**。用户选择保 HDR，
+即路线 A：mpv 独占 HWND 直出，QML 用**独立透明窗口**叠加。
+
+**职责边界（用户明确要求）**：Qt **只做播放器窗口**。RTM、房间同步、
+Emby、弹幕拉取与匹配全部留在 Flutter——Flutter 是唯一逻辑权威。
+推论：弹幕只能在 Qt 侧绘制（Flutter 窗口不覆盖视频区），Flutter 负责
+拉取/匹配/算时间轴，通过 IPC 把 `{time, text, color, mode}` 推给 Qt。
+
+**654 spike：先验证唯一的致命假设**
+
+> mpv 用 `wid` 直出到 Qt 创建的 HWND 时，HDR 是否还在？
+
+刻意保持最小（不接 Flutter / IPC / RTM，片源走命令行），因为假设不成立
+的话前面写的 IPC 与 QML UI 全部白费。
+
+同时内置**两种挂载模式**来隔离两类失败——这是本轮最关键的设计：
+
+| 模式 | 形态 | 用途 |
+|---|---|---|
+| `Child`（默认） | mpv 子窗口挂在 Qt 窗口客户区 | 最终架构形态 |
+| `TopLevel`（`--video-top-level`） | mpv 独立顶层窗口，跟随 Qt 几何 | 排除「Qt 遮挡子窗口」因素 |
+
+判读表：
+
+```
+子窗有画面              → 最终架构可行，直接看 HDR 结论
+子窗黑屏 / 顶层有画面   → Qt 遮挡子窗口（同 Flutter 灰屏根因），655 改覆盖层
+两种都黑屏              → mpv 侧问题（片源/解码），与 Qt 无关
+```
+
+只做一种模式的话，一旦黑屏就分不清是「Qt 遮挡」还是「HDR 失败」，
+结论会被带偏——Flutter 当年就栽在这个混淆上（`surface` 灰屏被误判为
+渲染失败，实际是被 DirectComposition 遮挡）。
+
+**HDR 判据（唯一权威来源）**
+
+```cpp
+// 观察两个属性，但只用 video-out-params 判定
+mpv_observe_property(mpv_, 0, "video-out-params", MPV_FORMAT_NODE);
+mpv_observe_property(mpv_, 0, "video-params", MPV_FORMAT_NODE);
+```
+
+| 属性 | 含义 | 误用后果 |
+|---|---|---|
+| `video-params` | **片源**参数（HDR 片源恒为 pq/bt.2020） | 会把「tone map 成 SDR」误判成直出成功 |
+| `video-out-params` | mpv 真正交给 swapchain 的参数 | ✅ 直出 = pq/bt.2020；tone map = bt.1886/bt.709 |
+
+辅助判据（截图法）：HDR 直出时 `Win+Shift+S` 截图会**明显过曝**
+（屏幕 1000nit 被压到 100nit）；降成 SDR 时截图与屏幕基本一致。
+
+**改动清单**
+
+- [x] `CMakeLists.txt`：删除 M1 的声网 RTM 强制依赖（旧版缺
+      `AGORA_RTM_SDK` 直接 `FATAL_ERROR`，spike 无法独立构建）；
+      改为 `LIBMPV_DIR`，校验 `include/mpv/client.h`，兼容
+      `libmpv.dll.a` 与 `libmpv.lib`，POST_BUILD 拷 `libmpv-2.dll`。
+- [x] 新增 `src/mpv_window.{h,cpp}`（约 580 行）：子 HWND / 顶层 HWND
+      双模式、`wid` 注入、HDR 选项、`video-out-params` 观测、
+      显示器 HDR 探测（`IDXGIOutput6`）、标题栏状态摘要、按键交互。
+- [x] `main.cpp`：去掉 `RtmEngine`，加 `QCommandLineParser`
+      （`url` / `--no-hdr` / `--video-top-level`）。
+- [x] `Main.qml`：黑底空壳 + 底部操作提示条（全屏隐藏）。
+- [x] 删除 `src/rtm_engine.{h,cpp}`（RTM 留在 Flutter，不再需要）。
+- [x] `.github/workflows/windows-qt-client.yml`：改手动触发、Qt 6.8.3
+      `msvc2022_64`、下载 shinchiro dev 包提供 `LIBMPV_DIR`、
+      `windeployqt --qmldir`、产物完整性校验。
+- [x] 新增 `test/ci/windows_qt_spike_654_test.dart`（46 项）：构建配置、
+      `wid` 时序、HDR 判据、选项一致性、验证辅助、事件泵、inset、
+      「不接 RTM」、CI 工作流。
+
+**关键实现细节（每条都有明确失败模式）**
+
+| 细节 | 写错的后果 |
+|---|---|
+| `wid` 必须在 `mpv_initialize` **之前**设置 | mpv 自己开一个黑窗，视频不在 Qt 窗口里 |
+| 原生 HWND 永远画在 QML 之上（Win32 硬规则） | 底部提示条被盖住 → 子窗口高度要减去 inset |
+| 析构先 `mpv_terminate_destroy` 再 `DestroyWindow` | 反过来 mpv 会往已释放的 HWND 里画 |
+| 必须 `mpv_request_log_messages` | 不请求则 `MPV_EVENT_LOG_MESSAGE` 永不到来 |
+| 几何同步要做变化检测 | 20ms 泵一次，无条件 `SetWindowPos` 会持续触发重绘 |
+
+**两个编译期坑（都已加测试锁定）**
+
+1. **窗口类名必须是 `wchar_t`**：`WNDCLASSEX::lpszClassName` 与
+   `CreateWindowEx` 第 2 参都是 `LPCWSTR`，写成 `char[]` 直接 C2664。
+2. **raw string 必须用自定义分隔符**：验证文本里有
+   `"HDR10 ✓ (BT.2020/PQ)"`，其中的 `)"` 会被默认终止符 `R"( ... )"`
+   误判为结束 → 字符串提前截断 → C2001/C2143。改用
+   `R"himi( ... )himi"`。
+
+#### 十一、删除 Android surface→texture 自动回退，改为纯手动（655）
+
+> 用户真机：「安卓 MPV surface 为啥之前手机播是好的，现在会自动回退到
+> 纹理？」
+
+**时间线对得上**：640（2026-11-08）引入自动回退，之后才出现该现象。
+
+**640 原本要解决什么**：Mali-450 盒子（H96 Max RK3528）上
+`vo=gpu-next` + `gpu-context=android` 的 EGL 初始化失败 → 有声音无画面。
+而 MDK 能播是因为它走 `tunnel`（MediaCodec 直写 SurfaceView buffer
+queue，**完全绕过 GL/EGL**）。640 于是加了「运行时检测失败并自动回退」。
+
+**为什么必须删掉**——两个致命缺陷：
+
+**缺陷 1：判据太宽，正常设备会误判**
+
+```dart
+final failed = (t.contains('egl') && (t.contains('fail') || ...)) ||
+    t.contains('could not create') ||     // ← 没有前缀限定
+    t.contains('failed to create') ||     // ← 没有前缀限定
+    (t.contains('vo/') && t.contains('not supported')) ||
+    t.contains('no video output');
+```
+
+`could not create` / `failed to create` 是通用短语，mpv 的 info 级日志里
+音频设备、字幕字体、某个解码 profile 都会打。**命中一行就判定
+「surface 渲染失败」**。
+
+另一条 `vo-configured` 连续 5s 非 `yes` 同样误伤：网络转码起播慢、
+4K HEVC 硬解初始化慢、片头黑场都满足条件。
+
+**缺陷 2：误判被持久化后无法自愈（这才是「永久」的原因）**
+
+640 提交说明写「持久化 `mpvVideoOutput=texture`（**userSet 保持
+false**）」，但实际实现是：
+
+```dart
+// settings_provider.dart
+mpvVideoOutput: mpvVideoOutput,
+mpvVideoOutputUserSet: mpvVideoOutput != null ? true : null,  // ← 恒置 true
+```
+
+`update()` 无法区分「用户手动改」与「程序自动改」，一律置
+`userSet = true`。而 `userSet == true` 是最高优先级：
+
+```dart
+static String effectiveVideoOutput({...}) {
+  if (windows && !userSet) return texture;
+  return normalizeVideoOutput(configured);   // userSet 时直接用 configured
+}
+```
+
+→ **一次误判 = 该设备永久锁定纹理，重启也不恢复**。
+
+**为什么测试没发现**：640 的测试只断言「回调被调用」，**从未断言
+`userSet` 的值**。
+
+**完整因果链**
+
+```
+Mali-450 盒子真黑屏（真实问题）
+  → 640 加两条自动检测规则
+  → 规则太宽（裸 could not create、5s vo-configured）
+  → 普通手机播慢源/4K 时误命中
+  → _fallbackToTexture() → onSurfaceRenderFailed()
+  → notifier.update(mpvVideoOutput: 'texture')
+  → settings_provider:148 把 userSet 置成 true   ← 违反 640 原意
+  → 下次启动 effectiveVideoOutput 直接采用 texture，跳过平台默认
+  → 「以前手机播是好的，现在自动回退到纹理」
+```
+
+**改动清单**
+
+- [x] 删除插件侧全部自动回退：`_forceTexture` / `_textureFallbackTried` /
+      `_voNotConfiguredTicks` 三个字段，以及 `_maybeFallbackOnLog` /
+      `_startVoConfiguredWatch` / `_fallbackToTexture` 三个方法。
+- [x] `effectiveSurface` 回归 `= nativeSurface`（只由设置决定）。
+- [x] 日志订阅只记日志，不再触发任何回退（诊断能力保留）。
+- [x] 删除 adapter 的 `onSurfaceRenderFailed` 字段与播放页的
+      `_onSurfaceRenderFailed()`（不再自动写 `mpvVideoOutput`）。
+- [x] 设置文案：`渲染失败自动回退纹理` → `若出现有声音无画面，请手动
+      切到「纹理」`（Windows 文案不变）。
+- [x] **一次性迁移**：`AppSettings.mpvTextureMigration()` 对
+      「`texture` + `userSet=true` + 未迁移过」重置为 `surface` +
+      `userSet=false`，并用新字段 `mpvTextureAutoMigrated` 保证**只跑
+      一次**（之后用户手动选纹理不会被反复重置）。
+- [x] 测试重构：`surface_fallback_640_test.dart` 改写为「验证自动回退已
+      彻底删除」（18 项）；640 里**仍然有效**的修复（texture 时序死锁、
+      硬解默认、人数修复、TV 控件位置）移到
+      `surface_fallback_640_retained_test.dart`（13 项）；新增
+      `mpv_texture_migration_655_test.dart`（12 项）。
+
+**保留 vs 删除的边界**
+
+| 640 内容 | 655 处置 |
+|---|---|
+| surface 失败自动回退 | **删除** |
+| 回退后持久化 texture | **删除** |
+| texture 时序死锁修复（先开媒体再等纹理） | 保留 |
+| MPV 硬解默认生效（`decodeMode='hw'`） | 保留 |
+| 人数修复（观众 ID 统一 + 退出必发 leave） | 保留 |
+| TV 引擎控件位置 | 保留 |
+
+**教训**：**自动判断不该变成永久设置**。`settings_provider.update()` 缺少
+「用户手动改」与「程序自动改」的来源区分，是这个 bug 的根子。同类隐患
+在 `videoOutput`（fvp/MDK 那套）上仍然存在，只是被
+`eglFaultWriteBack` 的 `if (userSet) return null` 挡住了。
+
+#### 十二、渲染器 `vo` 也改为手动选择（655 续）
+
+> 用户追问：「GLES 版本探测准吗？」→ 不准。→ 「也该手动设置」。
+
+**639 的探测做了什么**
+
+```kotlin
+// HimiMpvAndroidPlugin.kt: queryGlEsVersion()
+display = EGL14.eglGetDisplay(EGL_DEFAULT_DISPLAY)
+EGL14.eglInitialize(display, ...)
+for (clientVersion in intArrayOf(3, 2)) {   // 试 ES 3.x，失败退 2.0
+    eglCreateContext(...)                    // 1×1 pbuffer
+}
+val glVersion = GLES20.glGetString(GL_VERSION)   // "OpenGL ES 3.2 ..."
+val match = Regex("OpenGL ES (\\d+)\\.(\\d+)").find(glVersion)
+EGL14.eglTerminate(display)                  // ← finally 里
+```
+
+```dart
+_glSupportsGpuNext = major > 3 || (major == 3 && minor >= 1);  // GLES ≥ 3.1
+```
+
+**三个缺陷**
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| 1 | 版本号不能预测可用性 | `gpu-next` 需要的不只是版本号，还有扩展集、驱动实现质量、带宽。**640 提交说明自己就承认「驱动可能虚报版本」**——Mali-450 报 GLES 3.1/3.2，但 mpv 自建上下文仍失败 |
+| 2 | 探测路径 ≠ 实际渲染路径 | 探测用 1×1 pbuffer（EGL 配置里最宽松的一种），mpv 实际用 ANativeWindow + 可能的 10bit 配置。pbuffer 成功不代表真实路径成功 |
+| 3 | `eglTerminate` 风险 | `EGL_DEFAULT_DISPLAY` 是**进程级共享**的（Flutter 引擎可能正在用），在上面 terminate 会释放关联资源。而探测在 `_start()` 里同步 await，Flutter 正在跑 |
+
+**还有一处逻辑是反的**：
+
+```dart
+static bool _glSupportsGpuNext = true;   // 默认 true
+} catch (_) {
+  // 查询失败：保持乐观默认。   ← 查不到能力时反而选激进值
+}
+```
+
+**改动清单**
+
+- [x] 删除 `_probeGlSupport()` / `_glSupportsGpuNext` / `_glProbed`。
+- [x] **连带删除 Kotlin 侧 `queryGlEsVersion` 实现与 MethodChannel 分支**
+      （死代码，Dart 已不再调用；顺带消除了 `eglTerminate` 的隐患）。
+- [x] `_start()` 不再探测；`HimiMpvAndroidSession.create(vo:)` 接收渲染器。
+- [x] 新增 `AppSettings.mpvRenderer`（`auto` / `gpu-next` / `gpu`，默认
+      `auto`）+ `resolveMpvVo()` 解析。
+- [x] 参数贯通：设置页 → `SettingsNotifier.update(mpvRenderer:)` →
+      `MpvPlayerAdapter._mpvRenderer` → `MpvSessionPlatform.create(vo:)` →
+      `HimiMpvAndroidSession._voOverride`。
+- [x] 低端 GPU 的音画同步补偿（`framedrop=vo` / `audio-buffer=0.2` /
+      `vd-lavc-threads=2`）改为跟随手动选择（选 `gpu` 时启用）。
+- [x] 设置页新增「渲染器」项（**仅 Android 显示**），文案给出「黑屏/花屏
+      时切 gpu（兼容）」的手动指引。
+- [x] `resolveMpvVo` 保证**纹理路径恒为 `gpu`**（不受设置影响）——
+      media_kit 的 AndroidVideoController 走 TextureRegistry Surface +
+      wid + vo=gpu，传别的值会让 `VideoOutput.Resize` 永不触发 →
+      纹理 id 恒 null → 超时。
+- [x] 测试：新增 `mpv_renderer_manual_655_test.dart`（22 项）；
+      `android_gpu_and_room_count_639_test.dart` 的探测断言改写为
+      「验证探测已删除」（7 项）。
+
+**手动设置清单（655 后 Android 的全部相关开关）**
+
+| 设置项 | 位置 | 取值 | 默认 |
+|---|---|---|---|
+| 视频路径 | 播放器配置 → MPV | Surface / 纹理 | Surface |
+| 渲染器 | 播放器配置 → MPV | 自动 / gpu-next / gpu（兼容） | 自动 |
+| 解码方式 | 播放器配置 → MPV | 智能 / 硬解 / 软解 | 硬解 |
+
+**仍未解决**：无。`queryGlEsVersion` 的 Kotlin 实现与调用分支已一并删除
+（含 `eglTerminate(EGL_DEFAULT_DISPLAY)` 那个潜在隐患）。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

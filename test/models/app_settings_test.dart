@@ -1442,10 +1442,17 @@ void main() {
       expect(AppSettings.fromJson(const {}).mpvVideoOutput, 'surface');
     });
 
-    test('toJson/fromJson 往返保留用户选择', () {
+    test('toJson/fromJson 往返保留用户选择（迁移已完成的前提下）', () {
+      // 655：`texture + userSet=true` 的组合会被 `mpvTextureMigration`
+      // 视为「640 自动回退留下的锁死值」并一次性迁回 surface。因此这里
+      // 必须显式带上 `mpvTextureAutoMigrated: true`（表示迁移已跑过），
+      // 才能验证「往返保留用户选择」这个本意。
+      //
+      // 迁移本身的正确性见 test/models/mpv_texture_migration_655_test.dart。
       const s = AppSettings(
         mpvVideoOutput: 'texture',
         mpvVideoOutputUserSet: true,
+        mpvTextureAutoMigrated: true,
       );
       final decoded = AppSettings.fromJson(s.toJson());
       expect(decoded.mpvVideoOutput, 'texture');

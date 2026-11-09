@@ -25,7 +25,8 @@ class HimiMpvAndroidSession implements MpvSession {
     required this.nativeUi,
     required this.hdr,
     required this.hlg,
-  });
+    required String vo,
+  }) : _voOverride = vo;
 
   static const MethodChannel _methods = MethodChannel('himi_mpv_android');
   static const EventChannel _surfaceEvents =
@@ -58,21 +59,28 @@ class HimiMpvAndroidSession implements MpvSession {
   int _textureId = 0;
   bool _disposed = false;
 
-  /// 640：surface 渲染失败后回退纹理（本会话生效）。
+  /// 655：**已移除 surface→texture 自动回退**。
   ///
-  /// 真机：Mali-450 盒子（H96 Max RK3528）上 `vo=gpu-next` +
-  /// `gpu-context=android` 的 EGL 初始化失败 → 有声音无画面。检测到后
-  /// 重建为 texture 会话（走 Flutter 引擎的 EGL，已验证可用）。
-  bool _forceTexture = false;
-
-  /// 已尝试过回退（防重入）。
-  bool _textureFallbackTried = false;
-
-  /// `vo-configured` 连续非 yes 的计数（500ms × 10 = 5s 兜底）。
-  int _voNotConfiguredTicks = 0;
-
-  /// 渲染失败时回调 Dart 层持久化「该设备走 texture」。
-  void Function()? onSurfaceRenderFailed;
+  /// 640 曾在这里实现「检测到 EGL 失败就自动切纹理并持久化」。删除原因：
+  ///
+  /// 1. **判据太宽，正常设备会误判**。`could not create` / `failed to create`
+  ///    没有限定在 `[vo/gpu*]` 前缀下，mpv 的 info 日志里任何一行命中就
+  ///    触发（音频设备、字幕字体、某个解码 profile 都会打这两个短语）；
+  ///    `vo-configured` 连续 5s 非 yes 同样会误伤慢源（网络转码、4K HEVC
+  ///    初始化、片头黑场）。
+  /// 2. **误判被持久化后无法自愈**。`_onSurfaceRenderFailed()` 调
+  ///    `notifier.update(mpvVideoOutput: texture)`，而 `settings_provider`
+  ///    把任何 `mpvVideoOutput != null` 的写入都标成 `userSet = true`——
+  ///    这与 640 注释里「userSet 保持 false」的意图相反。`userSet = true`
+  ///    是最高优先级，`effectiveVideoOutput` 会完全跳过平台默认值，于是
+  ///    **一次误判 = 该设备永久锁定纹理，重启也不恢复**。
+  ///
+  /// 现在改为**纯手动**：视频路径只由设置页决定（`mpvVideoOutput` +
+  /// `userSet`）。渲染失败不再自动改写设置，只在日志里留诊断信息，
+  /// 由用户自行在「设置 → 播放内核 → MPV 视频输出」切换。
+  ///
+  /// 真机（Mali-450 / H96 Max RK3528）仍可正常使用——只是需要用户手动
+  /// 选一次「纹理」，而不是程序替用户做永久决定。
 
   /// surface 实测宽/高（像素）。由 `surfaceChanged` 事件喂入，用于给 mpv
   /// 设 `android-surface-size`。
@@ -122,6 +130,8 @@ class HimiMpvAndroidSession implements MpvSession {
     bool nativeUi = false,
     bool hdr = false,
     bool hlg = false,
+    /// 655：渲染器由设置决定（'gpu-next' / 'gpu'）；纹理路径恒为 'gpu'。
+    String vo = 'gpu-next',
   }) async {
     final session = HimiMpvAndroidSession._(
       width: width,
@@ -131,6 +141,7 @@ class HimiMpvAndroidSession implements MpvSession {
       nativeUi: nativeUi,
       hdr: hdr,
       hlg: hlg,
+      vo: vo,
     );
     await session._start();
     return session;
@@ -152,50 +163,30 @@ class HimiMpvAndroidSession implements MpvSession {
     }
   }
 
-  /// 639：设备是否支持 `vo=gpu-next`（要求 OpenGL ES 3.1+）。
+  /// 655：**已删除 GLES 版本探测**，`vo` 改为由设置决定（手动选择）。
   ///
-  /// 真机回归：H96 Max RK3528（Mali-450 MP，仅 GLES 3.0）在 TV 模式走
-  /// surface 路径时**黑屏**——`gpu-next` 的渲染初始化失败。降级到
-  /// `vo=gpu`（支持 ES 2.0+）即可正常出画，代价是该路径**不支持 HDR 直出**
-  ///（mpv 官方手册：`--target-colorspace-hint` 仅 `--vo=gpu-next` 支持），
-  /// 故同时对 HDR 内容启用 SDR tone mapping。
+  /// 旧的 `_probeGlSupport()` 用 `queryGlEsVersion` 查驱动声明的版本号，
+  /// 再按 `major > 3 || (major == 3 && minor >= 1)` 决定 `gpu-next`/`gpu`。
+  /// 删除原因：
   ///
-  /// 探测失败时保持乐观默认（true），避免误伤现代设备。
-  static bool _glSupportsGpuNext = true;
+  /// 1. **版本号不能预测可用性**。`vo=gpu-next` 能否跑起来取决于驱动实现
+  ///    质量、扩展集、带宽等版本号无法反映的因素。640 提交说明自己也承认
+  ///    「驱动可能虚报版本」——Mali-450 报告 GLES 3.1/3.2，但 mpv 自建
+  ///    上下文仍然失败。
+  /// 2. **探测路径与实际渲染路径不同**。探测用 1×1 pbuffer（EGL 配置里
+  ///    最宽松的一种），mpv 实际用 ANativeWindow + 可能的 10bit 配置。
+  ///    pbuffer 成功不代表真实路径成功。
+  /// 3. **`eglTerminate` 有破坏进程 EGL 状态的风险**。探测用的
+  ///    `EGL_DEFAULT_DISPLAY` 是进程级共享的（Flutter 引擎可能正在用），
+  ///    在上面 terminate 不安全。
+  ///
+  /// 现在：`vo` 由 `AppSettings.mpvRenderer` 决定，经
+  /// `MpvSessionPlatform.create(vo:)` 传入本类构造函数。
+  final String _voOverride;
 
-  /// 已探测过则跳过（每次进程只查一次，EGL 查询有开销）。
-  static bool _glProbed = false;
-
-  static Future<void> _probeGlSupport() async {
-    if (_glProbed) return;
-    _glProbed = true;
-    try {
-      final raw = await _methods.invokeMapMethod<String, Object?>(
-        'queryGlEsVersion',
-      );
-      final major = raw?['major'] as int? ?? 0;
-      final minor = raw?['minor'] as int? ?? 0;
-      final renderer = raw?['renderer'] as String? ?? '';
-      if (major > 0) {
-        _glSupportsGpuNext = major > 3 || (major == 3 && minor >= 1);
-        // ignore: avoid_print
-        print('[mpv] GLES $major.$minor ($renderer) → '
-            'vo=${_glSupportsGpuNext ? "gpu-next" : "gpu(降级)"}');
-      }
-    } catch (_) {
-      // 查询失败：保持乐观默认。
-    }
-  }
-
-  /// 测试注入点。
+  /// 测试注入点：读取本会话实际使用的 `vo`。
   @visibleForTesting
-  static set debugGlSupportsGpuNext(bool value) {
-    _glSupportsGpuNext = value;
-    _glProbed = true;
-  }
-
-  @visibleForTesting
-  static bool get debugGlSupportsGpuNextValue => _glSupportsGpuNext;
+  String get debugVo => _voOverride;
 
   @override
   int get textureId => _textureId;
@@ -273,9 +264,7 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   Future<void> _start() async {
-    // 639：先探测 GLES 能力（决定 vo=gpu-next 还是降级 gpu）。
-    // 纹理模式不涉及 gpu-next，跳过探测。
-    if (nativeSurface) await _probeGlSupport();
+    // 655：不再探测 GLES 版本（见 _voOverride 注释）。`vo` 由设置决定。
     if (!nativeSurface) {
       await _ensurePlayer();
       return;
@@ -475,15 +464,17 @@ class HimiMpvAndroidSession implements MpvSession {
 
   Future<void> _ensurePlayer() async {
     if (_disposed || _player != null) return;
-    // 640：回退后按纹理路径处理（忽略 nativeSurface）。
-    final effectiveSurface = nativeSurface && !_forceTexture;
+    // 655：视频路径完全由设置决定（`nativeSurface`），不再有自动回退。
+    final effectiveSurface = nativeSurface;
     if (effectiveSurface && _surfaceHandle == 0) return;
     _log('创建播放器: wid=$_surfaceHandle hwdec=$hwdecMode '
-        'surface=$effectiveSurface forceTexture=$_forceTexture');
-    // 639：gpu-next 需 GLES 3.1+；老 GPU（Mali-450 等）降级 vo=gpu 避免黑屏。
-    final useGpuNext = effectiveSurface && _glSupportsGpuNext;
-    // 640：弱 GPU（GLES < 3.1）copy-back 渲染易落后音频时钟 → 音画不同步。
-    final lowEndGpu = nativeSurface && !_glSupportsGpuNext;
+        'surface=$effectiveSurface');
+    // 655：渲染器由设置决定（`_voOverride`），不再按 GLES 版本探测。
+    // 纹理路径必须 gpu（见下方 PlayerConfiguration 注释）。
+    final useGpuNext = effectiveSurface && _voOverride == 'gpu-next';
+    // 655：弱 GPU 的音画同步补偿改为跟随手动选择——用户选 `gpu` 说明
+    // 设备渲染能力有限，此时启用丢帧追赶 + 限制解码线程。
+    final lowEndGpu = nativeSurface && _voOverride == 'gpu';
     final options = <String, String>{
       if (effectiveSurface) 'vo': useGpuNext ? 'gpu-next' : 'gpu',
       'vid': 'auto',
@@ -622,8 +613,6 @@ class HimiMpvAndroidSession implements MpvSession {
     if (pending != null && pending.isNotEmpty) {
       _pendingUrl = null;
       await _openNow(pending);
-      // 640：媒体已开 → 启动 vo-configured 兜底监控（渲染失败 5s 回退）。
-      _startVoConfiguredWatch();
     }
   }
 
@@ -697,102 +686,21 @@ class HimiMpvAndroidSession implements MpvSession {
     // mpv 自身日志（logLevel=info 才有 [vd]/[vo]/[ffmpeg] 关键行）：
     // 黑屏定性全靠它——解码器选择、vo 初始化、EGL/surface 报错都在这里。
     // info 级别量可控（每秒个位数），直接进 LogService 落盘。
+    //
+    // 655：这里**不再**触发任何自动回退。日志只用于诊断；视频路径由
+    // 设置页决定（见类注释里对 640 自动回退的删除说明）。
     _logSub = player.stream.log.listen((log) {
       if (_disposed) return;
       _log('mpv[${log.level}][${log.prefix}] ${log.text}');
-      // 640：surface 渲染失败**最快**的信号来自 mpv 日志（1-2s 内出现），
-      // 比等 `vo-configured` 兜底（5s）快得多。
-      _maybeFallbackOnLog(log.text);
     }, onError: (_) {});
   }
 
-  /// 640：从 mpv 日志里识别「渲染器初始化失败」。
-  ///
-  /// 真机（Mali-450 盒子）`vo=gpu-next` + `gpu-context=android` 的 EGL
-  /// 初始化失败时会打出形如：
-  ///   [vo/gpu-next] Could not create EGL context
-  ///   [vo/gpu] Failed to create...
-  ///   [vo] VO does not support...
-  void _maybeFallbackOnLog(String text) {
-    if (_disposed || !nativeSurface || _forceTexture) return;
-    if (_textureFallbackTried) return;
-    final t = text.toLowerCase();
-    final failed = (t.contains('egl') &&
-            (t.contains('fail') ||
-                t.contains('could not') ||
-                t.contains('error'))) ||
-        t.contains('could not create') ||
-        t.contains('failed to create') ||
-        (t.contains('vo/') && t.contains('not supported')) ||
-        t.contains('no video output');
-    if (!failed) return;
-    _textureFallbackTried = true;
-    _log('检测到渲染失败日志 → 回退纹理: $text');
-    unawaited(_fallbackToTexture());
-  }
-
-  /// 640：`vo-configured` 兜底——播放中 5s 仍未就绪即判渲染失败。
-  ///
-  /// 为什么不能提前检测：`vo-configured` 表示「VO 当前是否已配置」，
-  /// 依赖媒体加载触发 VO 初始化，播放前读不到有意义的值（mpv 官方手册）。
-  void _startVoConfiguredWatch() {
-    if (_disposed || !nativeSurface || _forceTexture) return;
-    if (_textureFallbackTried) return;
-    _voNotConfiguredTicks = 0;
-    Future<void>.delayed(const Duration(milliseconds: 500), () async {
-      if (_disposed || _forceTexture || _textureFallbackTried) return;
-      if (_player == null) return;
-      // 无媒体在播时不判定（VO 本就未配置）。
-      final idle = _player?.state.playlist.medias.isEmpty ?? true;
-      if (idle) {
-        _startVoConfiguredWatch();
-        return;
-      }
-      final vo = await getProperty('vo-configured');
-      if (_disposed || _forceTexture || _textureFallbackTried) return;
-      if (vo == 'yes') {
-        _voNotConfiguredTicks = 0;
-      } else {
-        _voNotConfiguredTicks++;
-        if (_voNotConfiguredTicks >= 10) {
-          _textureFallbackTried = true;
-          _log('vo-configured 持续非 yes（${_voNotConfiguredTicks * 500}ms）'
-              ' → 回退纹理');
-          await _fallbackToTexture();
-          return;
-        }
-      }
-      _startVoConfiguredWatch();
-    });
-  }
-
-  /// 640：surface 渲染失败 → 重建为纹理会话，并通知 Dart 层持久化。
-  Future<void> _fallbackToTexture() async {
-    if (_disposed || _forceTexture) return;
-    _log('surface 渲染失败 → 回退纹理（重建会话）');
-    final url = _lastUrl;
-    final pos = _positionMs;
-    // 640：用真实暂停状态判断（旧写法 `_playingSub != null` 只表示
-    // 「订阅存在」，恒为 true，回退后会强制播放，与用户暂停冲突）。
-    final wasPlaying = !_paused;
-    // 1. 本会话改走纹理
-    _forceTexture = true;
-    // 2. 通知 Dart 层持久化「该设备走 texture」
-    try {
-      onSurfaceRenderFailed?.call();
-    } catch (_) {}
-    // 3. 重建会话——`_detachPlayer` 内部已保存
-    //    `_pendingUrl` / `_pendingStartMs` / `_pendingPause`（见其注释），
-    //    这里只补一次明确的暂停态（回退前用户可能已暂停）。
-    await _detachPlayer();
-    if (_disposed) return;
-    if (url != null && url.isNotEmpty) {
-      _pendingUrl = url;
-      _pendingStartMs = pos;
-      _pendingPause = !wasPlaying;
-    }
-    await _ensurePlayer();
-  }
+  // 655：640 的三个自动回退方法（`_maybeFallbackOnLog` /
+  // `_startVoConfiguredWatch` / `_fallbackToTexture`）已全部删除。
+  //
+  // 删除理由见类字段处的注释。要点：判据太宽会误伤正常设备，且误判被
+  // 持久化成 `userSet=true` 后无法自愈（一次误判 = 永久锁定纹理）。
+  // 视频路径改为**纯手动**：只由设置页的 `mpvVideoOutput` 决定。
 
   void _emit(String name, Object? value) {
     if (_disposed || _events.isClosed) return;
