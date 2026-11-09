@@ -1452,14 +1452,16 @@ void main() {
       expect(decoded.mpvVideoOutputUserSet, isTrue);
     });
 
-    test('Windows 未手动设置默认纹理，手动设置尊重用户', () {
+    test('Windows 未手动设置默认 surface（646.1），手动设置尊重用户', () {
+      // 646.1：Windows 默认从 texture 改为 surface——原生顶层窗口需要
+      // vo=gpu-next + wid 才能 HDR 直出；texture 路径会崩（0x1551f）。
       expect(
         AppSettings.effectiveMpvVideoOutput(
-          'surface',
+          'texture',
           userSet: false,
           platform: TargetPlatform.windows,
         ),
-        'texture',
+        'surface',
       );
       expect(
         AppSettings.effectiveMpvVideoOutput(

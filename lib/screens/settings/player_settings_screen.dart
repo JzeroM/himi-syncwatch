@@ -29,8 +29,8 @@ class PlayerSettingsScreen extends ConsumerWidget {
           leading: const Icon(Icons.play_circle_outline),
           title: const Text('默认播放器'),
           subtitle: const Text(
-            '平台默认：Android / 鸿蒙使用 MPV，Windows 使用 media_kit，'
-            'iOS 使用 Erika。每次进入播放器从默认引擎开始；'
+            '平台默认：Android / Windows / 鸿蒙使用 MPV，iOS 使用 Erika。'
+            '每次进入播放器从默认引擎开始；'
             '播放页切换仅当前播放，下一集沿用当前内核',
           ),
         ),

@@ -113,8 +113,9 @@ class _EngineTabBody extends ConsumerWidget {
         // 641：Windows 已移除 MPV（texture 返回崩溃、surface 灰屏）。
         title: Text('MPV'),
         subtitle: Text(
-          'libmpv 内核（Android / 鸿蒙默认），'
-          '支持平台硬件解码、ASS/PGS 字幕与网络缓存',
+          'libmpv 内核（Android / Windows / 鸿蒙默认），'
+          '支持平台硬件解码、ASS/PGS 字幕与网络缓存。'
+          'Windows 走原生顶层窗口 + vo=gpu-next，支持 HDR 直出',
         ),
       ),
       const Divider(height: 1),
@@ -132,11 +133,11 @@ class _EngineTabBody extends ConsumerWidget {
         context: context,
         tvMode: settings.tvMode,
         title: '视频路径',
-        // 640：更新为当前实际行为——
-        // - Windows 默认纹理（Surface 会被 Flutter 不透明窗口遮挡 → 灰屏）
-        // - Android / 鸿蒙默认 Surface 直出；渲染失败会自动回退纹理并记住
+        // 646.1：Windows 改为默认 Surface（原生顶层窗口 + vo=gpu-next
+        // HDR 直出）；纹理路径在 Windows 上会崩（0xc0000005 @ 0x1551f）。
         subtitle: defaultTargetPlatform == TargetPlatform.windows
-            ? 'Windows 默认纹理；Surface 需先实现窗口挖洞，暂不可用'
+            ? 'Windows 默认 Surface（原生顶层窗口，HDR 直出）；'
+                '纹理路径在 Windows 会闪退，请勿切换'
             : '默认 Surface 直出（渲染失败自动回退纹理）；'
                 '纹理走 Flutter 合成。HDR 直出需要显示端支持 HDR',
         labels: AppSettings.mpvVideoOutputLabels,
@@ -321,8 +322,10 @@ class _EngineTabBody extends ConsumerWidget {
       const Padding(
         padding: EdgeInsets.all(16),
         child: Text(
-          'media_kit（libmpv）：Windows 默认引擎（641 起），走 Flutter 纹理渲染。'
-          'Release 会替换为完整 libmpv。遇到兼容性问题可切换到 MDK / Erika。',
+          'media_kit（libmpv）：Android 等平台的 Flutter 纹理路径。'
+          '646.1 起 Windows 已移除该选项（Windows 纹理路径会崩在 '
+          'flutter_windows.dll 0x1551f），Windows 请用 MPV（原生 HDR 直出）'
+          '或 MDK。',
           style: TextStyle(fontSize: 12, color: Colors.white54),
         ),
       ),

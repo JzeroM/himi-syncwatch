@@ -4165,6 +4165,97 @@ WS_POPUP 顶层窗口（WS_EX_TOPMOST）
 - [ ] 退出播放页后顶层窗口销毁、无残留。
 - [ ] Flutter 主窗口播放页显示黑底（预期行为）。
 
+> **结果：646 阶段 1 未生效。** 真机截图显示右上角内核胶囊是 **`libmpv`**
+> （= `PlayerEngine.mediaKit.shortLabel`），说明当前引擎是 media_kit，
+> 而原生 UI 门控要求 `engine == 'mpv'` → 顶层窗口代码从未执行。
+> 根因与修复见 Phase 2.65。
+
+### Phase 2.65：Windows 启用 MPV 原生 HDR（引擎矩阵 + 视频路径）（1.5.67+647）
+
+> 起因：646 交付后真机截图显示 `libmpv`，原生 UI 未生效。
+
+#### 一、两层根因
+
+**第一层：默认引擎是 media_kit，不是 MPV**
+
+```dart
+// player_screen.dart
+bool get _nativeUiActive {
+  if (_currentEngine != PlayerEngine.mpv) return false;   // ← media_kit 直接返回 false
+```
+
+641 把 Windows 默认引擎从 MPV 改成 media_kit；而 646 的原生 UI 只对
+MPV 生效 → 顶层窗口代码永远不执行。
+
+**第二层：Windows 引擎列表里根本没有 MPV**
+
+```dart
+// 641 之后
+case TargetPlatform.windows:
+  return const <PlayerEngine>[
+    PlayerEngine.mdk,
+    PlayerEngine.mediaKit,   // ← 没有 mpv
+    PlayerEngine.erika,
+  ];
+```
+
+设置页 tab 由 `supportedEngines()` 生成 → **用户在设置里也选不到 MPV**。
+
+#### 二、改动
+
+- [x] `player_engine.dart` `supportedEngines()` Windows：
+      `[mdk, mediaKit, erika]` → **`[mdk, mpv, erika]`**。
+- [x] `defaultEngine()` Windows：`mediaKit` → **`mpv`**。
+- [x] `app_settings.dart` `effectiveMpvVideoOutput()` Windows 默认：
+      `texture` → **`surface`**（原生顶层窗口需要 `vo=gpu-next` + `wid`
+      才能 HDR 直出；texture 路径在 Windows 必崩 `0x1551f`）。
+- [x] 文案同步：
+      - 播放器页：「平台默认：Android / **Windows** / 鸿蒙使用 **MPV**」
+      - MPV 页：「libmpv 内核（Android / **Windows** / 鸿蒙默认）…
+        Windows 走原生顶层窗口 + vo=gpu-next，支持 HDR 直出」
+      - MPV 页视频路径：「Windows 默认 **Surface**（原生顶层窗口，
+        HDR 直出）；纹理路径在 Windows 会闪退，请勿切换」
+      - media_kit 页：「646.1 起 Windows 已移除该选项（纹理路径会崩在
+        flutter_windows.dll 0x1551f）」
+
+#### 三、修复后的完整链路
+
+```
+Windows 默认引擎 = MPV
+    ↓
+默认视频路径 = surface
+    ↓
+NativePlayerGating.shouldUse(engine='mpv', output='surface',
+                             platform='windows') → true
+    ↓
+_nativeUiActive → true
+    ↓
+MpvSessionPlatform.create(nativeUi: true) → 创建 WS_POPUP 顶层窗口
+    ↓
+MPV vo=gpu-next + wid → 真 HDR 直出
+    ↓
+Flutter 播放页黑底退场
+```
+
+#### 四、测试
+
+- [x] 新增 `test/player_core/windows_mpv_native_646_1_test.dart`（15 项）：
+  - 引擎矩阵（列表/默认/设置页可见/旧存档回退）
+  - 视频路径（surface 默认、userSet 尊重、Android 不受影响）
+  - **门控全链路**（Windows+mpv+surface=true；media_kit/texture=false）
+  - 源码守卫（引擎分支、defaultEngine、effectiveMpvVideoOutput、文案）
+- [x] 重写 `windows_engine_641_test.dart` → `windows_engine_646_1_test.dart`。
+- [x] 更新 `player_engine_test.dart`（4 处）、`player_engine_mpv_test.dart`（1 处）、
+      `player_kernel_panel_test.dart`（1 处）、`app_settings_test.dart`（1 处）。
+
+#### 五、待真机验证
+
+- [ ] **播放页变为 Flutter 黑底**（视频在独立原生窗口）——本轮关键判据。
+- [ ] 播放 HDR 视频 → 画面可见且亮度/色彩正确。
+- [ ] 设置 → 播放器配置 → 能看到 **MPV** tab（不再是 media_kit）。
+- [ ] 若仍是 Flutter 播放页（有控件）：发 `%TEMP%\himi_runtime.log` 里
+      含 `nativeUi` / `session created` 的行。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

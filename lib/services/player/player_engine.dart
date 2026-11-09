@@ -90,9 +90,21 @@ class PlayerEngineFactory {
       case TargetPlatform.iOS:
         return const <PlayerEngine>[PlayerEngine.erika];
       case TargetPlatform.windows:
+        // 646.1：加回 MPV，移除 media_kit。
+        //
+        // 【真机证据链】
+        // - v1.5.3 默认 MDK → 正常；手动切 media_kit → 闪退
+        // - 1.5.59/1.5.60 用 MPV texture → 闪退（flutter_windows.dll 0x1551f）
+        // - 641 移除 MPV 后，Windows 只剩 media_kit（必崩）+ MDK
+        // - 646 实现了原生顶层窗口（HDR 直出），但原生 UI 门控要求
+        //   `engine == 'mpv'`，而列表里没有 MPV → 永远不启用
+        //   （真机截图右上角显示 `libmpv` 即为证据）
+        //
+        // 故加回 MPV 作为**默认**（走原生顶层窗口 + vo=gpu-next HDR 直出），
+        // MDK 保留为备选（Flutter 纹理，不崩但 SDR tone map）。
         return const <PlayerEngine>[
           PlayerEngine.mdk,
-          PlayerEngine.mediaKit,
+          PlayerEngine.mpv,
           PlayerEngine.erika,
         ];
       default:
@@ -117,8 +129,12 @@ class PlayerEngineFactory {
       return PlayerEngine.mpv;
     }
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      // 641：MPV → media_kit（MPV 在 Windows 上 texture 返回崩溃、surface 灰屏）。
-      return PlayerEngine.mediaKit;
+      // 646.1：media_kit → MPV。
+      //
+      // 646 已实现原生顶层窗口（WS_POPUP + vo=gpu-next HDR 直出），但原生
+      // UI 门控要求 `engine == 'mpv'`；media_kit 不走该路径，仍用 Flutter
+      // 纹理（真机截图右上角显示 `libmpv` 即为证据）。
+      return PlayerEngine.mpv;
     }
     return PlayerEngine.mdk;
   }

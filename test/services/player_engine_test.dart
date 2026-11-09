@@ -28,20 +28,20 @@ void main() {
       );
     });
 
-    test('Windows：MDK + media_kit + Erika，MPV 已移除（641）', () {
+    test('Windows：MDK + MPV + Erika，media_kit 已移除（646.1）', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       expect(
         PlayerEngineFactory.supportedEngines(),
         <PlayerEngine>[
           PlayerEngine.mdk,
-          PlayerEngine.mediaKit,
+          PlayerEngine.mpv,
           PlayerEngine.erika,
         ],
       );
-      // 641：Windows 上 MPV texture 返回崩溃（flutter_windows.dll）、
-      // surface 灰屏（HWND 被遮挡），故从可选列表移除。
+      // 646.1：MPV 加回——走原生顶层窗口（WS_POPUP）+ vo=gpu-next
+      // HDR 直出；media_kit 移除（Flutter 纹理路径必崩 0x1551f）。
       expect(
-        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
+        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
         isFalse,
       );
     });
@@ -64,12 +64,12 @@ void main() {
   });
 
   group('PlayerEngineFactory.defaultEngine / resolveSelectedEngine', () {
-    test('Android 默认 MPV；641 起 Windows 默认 media_kit；iOS 默认 Erika', () {
+    test('Android / Windows 默认 MPV；iOS 默认 Erika', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      // 641：MPV → media_kit。
-      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mediaKit);
+      // 646.1：Windows 也默认 MPV（原生顶层窗口 HDR 直出）。
+      expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.erika);
     });
@@ -95,15 +95,15 @@ void main() {
         PlayerEngine.mdk,
       );
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      // 641：Windows 上 media_kit 重新可用（且为默认），落盘值直接生效。
+      // 646.1：Windows 上 media_kit 已移除 → 落盘值回退平台默认（MPV）。
       expect(
         PlayerEngineFactory.resolveSelectedEngine('media_kit'),
-        PlayerEngine.mediaKit,
+        PlayerEngine.mpv,
       );
-      // 旧存档选过 mpv → Windows 已移除，回退到新默认 media_kit。
+      // 存档 mpv 在 Windows 上直接生效（且为默认）。
       expect(
         PlayerEngineFactory.resolveSelectedEngine('mpv'),
-        PlayerEngine.mediaKit,
+        PlayerEngine.mpv,
       );
     });
   });
@@ -119,9 +119,9 @@ void main() {
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
-      // 641：Windows 反转——media_kit 可用、MPV 移除、MDK 保留。
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isFalse);
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isTrue);
+      // 646.1：Windows——MPV 可用（原生 HDR 直出）、media_kit 移除、MDK 保留。
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isTrue);
     });
   });

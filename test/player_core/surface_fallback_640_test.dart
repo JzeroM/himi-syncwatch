@@ -162,11 +162,10 @@ void main() {
         stripComments(playerSettings),
         isNot(contains('Android/Windows 使用 MDK')),
       );
-      // 641：Windows 改为 media_kit（MPV 在 Windows 上 texture 返回崩溃、
-      // surface 灰屏），文案同步。
+      // 646.1：Windows 也回到 MPV（走原生顶层窗口 + vo=gpu-next HDR 直出）。
       expect(
         playerSettings,
-        contains('Android / 鸿蒙使用 MPV，Windows 使用 media_kit'),
+        contains('Android / Windows / 鸿蒙使用 MPV'),
       );
     });
 
@@ -178,7 +177,9 @@ void main() {
     });
 
     test('视频路径文案反映当前行为', () {
-      expect(engineConfig, contains('Windows 默认纹理'));
+      // 646.1：Windows 改为默认 Surface（原生顶层窗口 HDR 直出）；
+      // 纹理路径在 Windows 会闪退，文案已警示。
+      expect(engineConfig, contains('Windows 默认 Surface'));
       expect(engineConfig, contains('渲染失败自动回退纹理'));
     });
   });

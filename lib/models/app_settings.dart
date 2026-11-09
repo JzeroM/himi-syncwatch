@@ -944,8 +944,12 @@ class AppSettings {
     'texture': '纹理',
   };
 
-  /// MPV 实际生效的视频路径：Windows 未手动设置时默认纹理，
+  /// MPV 实际生效的视频路径：Windows 未手动设置时默认 **surface**，
   /// Android/鸿蒙默认 Surface。
+  ///
+  /// 646.1：Windows 从 texture 改为 surface。原生顶层窗口（WS_POPUP）需要
+  /// `vo=gpu-next` + `wid` 才能 HDR 直出；texture 路径在 Windows 上会崩
+  /// （`flutter_windows.dll` 0xc0000005 @ 0x1551f，三次真机实证）。
   static String effectiveMpvVideoOutput(
     String configured, {
     required bool userSet,
@@ -953,7 +957,7 @@ class AppSettings {
   }) {
     if ((platform ?? defaultTargetPlatform) == TargetPlatform.windows &&
         !userSet) {
-      return 'texture';
+      return 'surface';
     }
     return configured == 'texture' ? 'texture' : 'surface';
   }
