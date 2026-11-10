@@ -1303,4 +1303,22 @@ void main() {
       expect(mainQmlSrc, isNot(contains('BottomBar')));
     });
   });
+  group('㉔ 668 CI 修复：main.cpp 编译错误回归', () {
+    final mainCpp = read('$dir/src/main.cpp');
+
+    test('Qt 枚举双冒号（Qt::FramelessWindowHint，笔误 Qt. 编译失败）', () {
+      expect(mainCpp, contains('Qt::Tool | Qt::FramelessWindowHint'));
+      expect(mainCpp, isNot(contains('Qt.FramelessWindowHint')));
+    });
+
+    test('最小化判定走 visibility（QWindow 没有 isMinimized）', () {
+      expect(mainCpp, contains('QWindow::Minimized'));
+      // 只查代码行（注释里允许出现 isMinimized 说明文字）
+      final code = mainCpp
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(code, isNot(contains('isMinimized')));
+    });
+  });
 }

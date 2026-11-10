@@ -229,7 +229,7 @@ int main(int argc, char* argv[]) {
         qCritical("[qml] Overlay 根对象不是 Window");
         return -5;
     }
-    overlay->setFlags(Qt::Tool | Qt.FramelessWindowHint);
+    overlay->setFlags(Qt::Tool | Qt::FramelessWindowHint);
     overlay->setColor(Qt::transparent);
     overlay->requestActivate();
 
@@ -239,7 +239,9 @@ int main(int argc, char* argv[]) {
     QObject::connect(syncTimer, &QTimer::timeout, &app,
                      [host, overlay]() {
         if (host == nullptr || overlay == nullptr) return;
-        const bool show = host->isVisible() && !host->isMinimized();
+        // QQuickWindow（QWindow）没有 isMinimized()，用 visibility 判定
+        const bool show = host->isVisible()
+                && host->visibility() != QWindow::Minimized;
         if (overlay->isVisible() != show) overlay->setVisible(show);
         if (!show) return;
         HWND h = reinterpret_cast<HWND>(host->winId());
