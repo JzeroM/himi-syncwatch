@@ -368,10 +368,9 @@ void main() {
       //   QQmlApplicationEngine failed to load component
       //   qrc:/qt/qml/HimiPlayer/Main.qml: 此文件或目录不存在
       //
-      // 根因：QML_FILES 写成 `src/qml/Main.qml`，qt_add_qml_module 会
-      // **原样保留相对路径**，注册成：
-      //   qrc:/qt/qml/HimiPlayer/src/qml/Main.qml
-      // 而 main.cpp 加载 `qrc:/qt/qml/HimiPlayer/Main.qml` → 差 src/qml/。
+      // 坑 1：QML_FILES 写成 `src/qml/Main.qml`，qt_add_qml_module 会
+      // **原样保留相对路径**，注册成 `.../HimiPlayer/src/qml/Main.qml`。
+      // 用 QT_RESOURCE_ALIAS 抹掉目录前缀。
       expect(cmake, contains('QT_RESOURCE_ALIAS'));
       for (final name in [
         'Main',
@@ -386,7 +385,6 @@ void main() {
     });
 
     test('别名设置必须在 qt_add_qml_module 之前', () {
-      // set_source_files_properties 必须在模块处理文件列表之前生效。
       final aliasIdx = cmake.indexOf('QT_RESOURCE_ALIAS');
       final moduleIdx = cmake.indexOf('qt_add_qml_module(himi_qt_player');
       expect(aliasIdx, greaterThan(-1));
@@ -395,22 +393,51 @@ void main() {
           reason: '别名晚于 qt_add_qml_module 就不生效了');
     });
 
-    test('启动时打印 qrc 内实际 QML 列表（下次出问题能直接看到）', () {
-      expect(mainCpp, contains('QDirIterator'));
-      expect(mainCpp, contains('qrc 内实际 QML'));
+    test('显式设置 RESOURCE_PREFIX /qt/qml（默认是 /）', () {
+      // 【658 真机退出码 -3】坑 2：RESOURCE_PREFIX 默认是 `/`，
+      // 不设置时 qmldir 里是 `prefer :/HimiPlayer/`，
+      // 实际路径 `qrc:/HimiPlayer/Main.qml`，
+      // 与代码里的 `qrc:/qt/qml/HimiPlayer/Main.qml` 差 `/qt/qml`。
+      expect(cmake, contains('RESOURCE_PREFIX /qt/qml'));
     });
 
-    test('有文件日志（detached 模式下 stdout 全丢）', () {
-      // Flutter 用 detached 启动（避免管道阻塞），代价是看不到输出。
-      // 装 qInstallMessageHandler 把日志写进 exe 同级文件。
+    test('CMake 的 RESOURCE_PREFIX 与 main.cpp 加载路径一致', () {
+      // 只看非注释行，避免匹配到说明文字。
+      final cmakeCode = cmake
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('#'))
+          .join('\n');
+      final prefixMatch =
+          RegExp(r'RESOURCE_PREFIX\s+(\S+)').firstMatch(cmakeCode);
+      expect(prefixMatch, isNotNull, reason: '必须显式设置 RESOURCE_PREFIX');
+      final prefix = prefixMatch!.group(1)!;   // 形如 /qt/qml
+
+      final urlMatch =
+          RegExp(r'qrc:([^"]*)/Main\.qml').firstMatch(mainCpp);
+      expect(urlMatch, isNotNull, reason: '找不到 main.cpp 里的 QML 加载路径');
+      final urlPrefix = urlMatch!.group(1)!;   // 形如 /qt/qml/HimiPlayer
+
+      expect(urlPrefix, startsWith(prefix),
+          reason: '加载路径 $urlPrefix 必须以 RESOURCE_PREFIX $prefix 开头，'
+              '否则运行时 QML 加载失败（退出码 -3）');
+    });
+
+    test('启动时同时探测两个可能的 qrc 前缀', () {
+      // 万一前缀又写错，日志里能直接看出实际注册在哪个前缀下。
+      expect(mainCpp, contains(':/qt/qml/HimiPlayer'));
+      expect(mainCpp, contains(':/HimiPlayer'));
+    });
+
+    test('日志同时写控制台和文件（detached 模式下 stdout 全丢）', () {
       expect(mainCpp, contains('qInstallMessageHandler'));
       expect(mainCpp, contains('himi_qt_player.log'));
-      expect(mainCpp, contains('installFileLogger'));
+      // 658 首版只写文件，手动跑 exe 时一行输出都没有 → 必须也写 stderr
+      expect(mainCpp, contains('stderr'));
     });
 
     test('logger 在 main 开头就装上（后面的错误才能落盘）', () {
       final mainIdx = mainCpp.indexOf('int main(int argc, char* argv[])');
-      final installIdx = mainCpp.indexOf('installFileLogger();', mainIdx);
+      final installIdx = mainCpp.indexOf('installLogger();', mainIdx);
       final parserIdx = mainCpp.indexOf('QCommandLineParser parser;', mainIdx);
       expect(installIdx, greaterThan(mainIdx));
       expect(parserIdx, greaterThan(installIdx),

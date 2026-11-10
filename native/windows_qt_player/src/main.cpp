@@ -15,33 +15,33 @@
 #include <QTimer>
 #include <QtGlobal>   // qRound（DPI 换算用）
 
+#include <cstdio>     // stderr（控制台日志）
+
 #include "mpv_window.h"
 #include "pipe_server.h"
 #include "player_state.h"
 
 namespace {
 
-/// 657.1：把 Qt 日志同时写到 exe 同级的 `himi_qt_player.log`。
+/// 657.1：把 Qt 日志**同时**写到文件与控制台。
 ///
-/// 【为什么需要】Flutter 侧用 `ProcessStartMode.detached` 启动本程序
+/// 【为什么需要文件】Flutter 侧用 `ProcessStartMode.detached` 启动本程序
 /// （`detachedWithStdio` 的管道不读会阻塞子进程，656 真机踩过）。
 /// 代价是 stdout/stderr 全丢——QML 加载失败、缺 DLL、mpv 初始化失败
-/// 都**看不到任何错误**，只能靠手动在命令行跑 exe。
+/// 都**看不到任何错误**。
 ///
-/// 装了 handler 之后，任何 `qInfo/qWarning/qCritical` 都会落盘，
-/// 用户把 log 发过来就能定位。
-void installFileLogger() {
+/// 【为什么还要控制台】658 首版只写文件，导致手动在 PowerShell 跑 exe
+/// 时**一行输出都没有**（用户看到「立刻返回」以为没跑）。必须两者都写。
+void installLogger() {
     static QFile* logFile = nullptr;
     logFile = new QFile(QCoreApplication::applicationDirPath() +
                         QStringLiteral("/himi_qt_player.log"));
-    // 每次启动覆盖（不 append）：只关心本次运行的日志，
-    // 避免文件无限增长。
+    // 每次启动覆盖（不 append）：只关心本次运行，避免文件无限增长。
     const bool ok = logFile->open(QIODevice::WriteOnly | QIODevice::Truncate |
                                   QIODevice::Text);
 
     qInstallMessageHandler([](QtMsgType type, const QMessageLogContext&,
                               const QString& msg) {
-        if (logFile == nullptr || !logFile->isOpen()) return;
         const char* level = "INFO";
         switch (type) {
             case QtDebugMsg: level = "DEBUG"; break;
@@ -50,10 +50,20 @@ void installFileLogger() {
             case QtCriticalMsg: level = "CRIT"; break;
             case QtFatalMsg: level = "FATAL"; break;
         }
-        QTextStream out(logFile);
-        out << QDateTime::currentDateTime().toString("HH:mm:ss.zzz")
-            << " [" << level << "] " << msg << "\n";
-        out.flush();   // 秒退也要留下（不依赖析构）
+        const QString line =
+            QStringLiteral("%1 [%2] %3")
+                .arg(QDateTime::currentDateTime().toString("HH:mm:ss.zzz"),
+                     QString::fromLatin1(level), msg);
+
+        // 控制台（手动跑 exe 时看得到）
+        QTextStream(stderr) << line << "\n";
+
+        // 文件（Flutter detached 启动时唯一能拿到的证据）
+        if (logFile != nullptr && logFile->isOpen()) {
+            QTextStream out(logFile);
+            out << line << "\n";
+            out.flush();   // 秒退也要留下（不依赖析构）
+        }
     });
 
     if (ok) {
@@ -86,7 +96,7 @@ int main(int argc, char* argv[]) {
     QGuiApplication::setOrganizationName("Himi");
 
     // 必须尽早装：后面任何 qWarning/qCritical 都要落盘。
-    installFileLogger();
+    installLogger();
 
     QCommandLineParser parser;
     parser.setApplicationDescription("HIMI Windows 播放器窗口");
@@ -131,13 +141,28 @@ int main(int argc, char* argv[]) {
     qInfo().noquote() << "[qml] 加载" << qmlUrl.toString();
     // 启动时把 qrc 里实际存在的 QML 列出来：万一别名失效，
     // 一眼就能看出「注册的路径」与「加载的路径」差在哪。
+    // 诊断：把 qrc 里实际存在的 QML 列出来。
+    //
+    // 【为什么探测两个前缀】`RESOURCE_PREFIX` 默认是 `/`，若忘记显式设置
+    // 会变成 `qrc:/HimiPlayer/...`，与代码里的 `qrc:/qt/qml/HimiPlayer/...`
+    // 不一致（658 真机退出码 -3 就是这么来的）。同时列出两边，一眼能看出
+    // 实际用的是哪个。
     {
-        QDirIterator it(QStringLiteral(":/qt/qml/HimiPlayer"),
-                        QStringList{QStringLiteral("*.qml")},
-                        QDir::Files, QDirIterator::Subdirectories);
-        QStringList found;
-        while (it.hasNext()) found << it.next();
-        qInfo().noquote() << "[qml] qrc 内实际 QML:" << found.join(QLatin1String(", "));
+        for (const char* prefix : {":/qt/qml/HimiPlayer", ":/HimiPlayer"}) {
+            QDirIterator it(QString::fromLatin1(prefix),
+                            QStringList{QStringLiteral("*.qml")}, QDir::Files,
+                            QDirIterator::Subdirectories);
+            QStringList found;
+            while (it.hasNext()) found << it.next();
+            qInfo().noquote()
+                << QStringLiteral("[qml] %1 → %2 个文件%3")
+                       .arg(QString::fromLatin1(prefix))
+                       .arg(found.size())
+                       .arg(found.isEmpty()
+                                ? QString()
+                                : QStringLiteral(": ") +
+                                      found.join(QLatin1String(", ")));
+        }
     }
 
     QObject::connect(

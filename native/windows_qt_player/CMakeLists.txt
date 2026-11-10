@@ -38,18 +38,21 @@ qt_add_executable(himi_qt_player
     src/player_state.cpp
 )
 
-# 657.1：QML_FILES 的相对路径会**原样保留**在 qrc 里。
+# ── QML 资源路径的两个坑（657.1 / 658 真机实测）────────────────────
 #
-# 写成 `src/qml/Main.qml` 会被注册成：
-#     qrc:/qt/qml/HimiPlayer/src/qml/Main.qml
-# 而 main.cpp 加载的是：
-#     qrc:/qt/qml/HimiPlayer/Main.qml
-# → 差一个 `src/qml/` 前缀 → 真机报
-#   「QQmlApplicationEngine failed to load component
-#     qrc:/qt/qml/HimiPlayer/Main.qml: 此文件或目录不存在」
+# 坑 1：QML_FILES 的相对路径会**原样保留**在 qrc 里。
+#   写 `src/qml/Main.qml` → 注册成 `.../HimiPlayer/src/qml/Main.qml`
+#   → 用 QT_RESOURCE_ALIAS 抹掉目录前缀。
 #
-# 用 QT_RESOURCE_ALIAS 把目录前缀抹掉，让注册路径与加载路径一致。
-# （必须在 qt_add_qml_module **之前**设置，否则 CMake 已处理完文件列表。）
+# 坑 2：`RESOURCE_PREFIX` 默认是 **`/`**，不是 `/qt/qml`。
+#   不显式设置时，qmldir 里写的是 `prefer :/HimiPlayer/`，
+#   实际路径 `qrc:/HimiPlayer/Main.qml`；
+#   而 main.cpp 加载 `qrc:/qt/qml/HimiPlayer/Main.qml` → 差 `/qt/qml`
+#   → 退出码 -3（QML 加载失败）。
+#
+#   虽然改代码成 `qrc:/HimiPlayer/...` 也能跑，但 `/qt/qml` 是 Qt 6 的
+#   标准约定（QQmlEngine 会自动搜索该前缀，`import HimiPlayer` 的模块
+#   解析也依赖它），所以显式设置 RESOURCE_PREFIX 保持标准。
 foreach(_qml Main TopBar BottomBar SeekBar ControlButton Panel)
     set_source_files_properties("src/qml/${_qml}.qml" PROPERTIES
         QT_RESOURCE_ALIAS "${_qml}.qml")
@@ -58,6 +61,9 @@ endforeach()
 qt_add_qml_module(himi_qt_player
     URI HimiPlayer
     VERSION 1.0
+    # 必须显式指定：默认是 `/`，会导致 qrc:/HimiPlayer/... 与代码里的
+    # qrc:/qt/qml/HimiPlayer/... 不一致。
+    RESOURCE_PREFIX /qt/qml
     QML_FILES
         src/qml/Main.qml
         src/qml/TopBar.qml
@@ -69,8 +75,9 @@ qt_add_qml_module(himi_qt_player
         fonts/MaterialIcons-Regular.otf
 )
 
-# 字体同理：RESOURCES 里的 `fonts/xxx.otf` 也会保留前缀，
-# 但 QML 里用的就是 `qrc:/qt/qml/HimiPlayer/fonts/...`，两边一致，无需别名。
+# 字体路径随 RESOURCE_PREFIX 变化：现在实际是
+#   qrc:/qt/qml/HimiPlayer/fonts/MaterialIcons-Regular.otf
+# 与 Main.qml 里的 FontLoader source 一致。
 
 if(NOT LIBMPV_DIR)
     message(FATAL_ERROR
