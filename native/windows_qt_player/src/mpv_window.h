@@ -1,6 +1,7 @@
 #ifndef MPV_WINDOW_H
 #define MPV_WINDOW_H
 
+#include <QMap>
 #include <QObject>
 #include <QString>
 #include <QUrl>

@@ -5,6 +5,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 
 /// 656：Flutter 推送的播放器状态（只取 UI 需要的字段）。
 ///

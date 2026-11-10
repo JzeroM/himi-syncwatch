@@ -1,6 +1,7 @@
 #include <QCommandLineParser>
 #include <QGuiApplication>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -92,6 +93,10 @@ int main(int argc, char* argv[]) {
 
     // ── mpv ──
     MpvWindow mpv;
+    // 当前已加载的 URL（去重：同一 URL 不重复 loadfile）。
+    // 用局部变量而不是 host->property("loadedUrl")——后者会往 QQuickWindow
+    // 上挂动态属性，语义不清且 QML 侧也能改到。
+    QString loadedUrl;
     QTimer::singleShot(0, &app, [&]() {
         if (!mpv.attach(host, hdr, hlg)) {
             qCritical("mpv 初始化失败");
@@ -107,15 +112,14 @@ int main(int argc, char* argv[]) {
     QObject::connect(&pipe, &PipeServer::stateReceived, &state,
                      [&](const QJsonObject& json) {
                          state.applyJson(json);
-                         // 播放地址也由 Flutter 下发（不放在命令行，
-                         // 避免 URL 泄露到任务管理器 + 规避长度限制）
-                         const QString url =
-                             json.value(QLatin1String("playUrl")).toString();
-                         if (!url.isEmpty() &&
-                             url != host->property("loadedUrl").toString()) {
-                             host->setProperty("loadedUrl", url);
-                             mpv.load(url);
-                         }
+                         // 【不做 loadfile】播放地址只由 `command` 帧的
+                         // `load` 指令驱动（单一入口）。
+                         //
+                         // 曾经这里也读 `playUrl` 直接 load，但那样有两个
+                         // 入口：state 推送（20Hz）与 load 命令会竞争，虽然
+                         // 有 loadedUrl 去重，但两者时序不共享——state 先到
+                         // 时 loadedUrl 已置位，随后 load 命令的 seek(startMs)
+                         // 会被当成「同一个 URL」跳过，导致续播位置丢失。
                      });
 
     // ── 控制指令：Flutter → mpv ──
@@ -130,8 +134,12 @@ int main(int argc, char* argv[]) {
                                  cmd.value(QLatin1String("startMs"))
                                      .toDouble(0));
                              if (!url.isEmpty()) {
-                                 host->setProperty("loadedUrl", url);
-                                 mpv.load(url);
+                                 // 同一 URL 不重复 load（切集/续播才换）。
+                                 // 但 startMs 仍需应用——续播位置可能变。
+                                 if (url != loadedUrl) {
+                                     loadedUrl = url;
+                                     mpv.load(url);
+                                 }
                                  if (startMs > 0) mpv.seekTo(startMs);
                              }
                          } else if (type == QLatin1String("setPaused")) {
