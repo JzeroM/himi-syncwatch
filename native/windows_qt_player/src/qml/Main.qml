@@ -99,6 +99,9 @@ ApplicationWindow {
         onVolumeChanged: (v) => pipeServer.sendCommand({
             "type": "setVolume", "volume": v
         })
+        onBrightnessChanged: (v) => pipeServer.sendCommand({
+            "type": "setBrightness", "brightness": v
+        })
         onSeekFinished: (ratio) => pipeServer.sendCommand({
             "type": "seekTo",
             "positionMs": Math.round(ratio * playerState.durationMs)
