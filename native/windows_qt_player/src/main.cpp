@@ -1,16 +1,68 @@
 #include <QCommandLineParser>
+#include <QDateTime>
+#include <QDebug>
+#include <QDir>
+#include <QDirIterator>
+#include <QFile>
 #include <QGuiApplication>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QStringList>
+#include <QTextStream>
 #include <QTimer>
 #include <QtGlobal>   // qRound（DPI 换算用）
 
 #include "mpv_window.h"
 #include "pipe_server.h"
 #include "player_state.h"
+
+namespace {
+
+/// 657.1：把 Qt 日志同时写到 exe 同级的 `himi_qt_player.log`。
+///
+/// 【为什么需要】Flutter 侧用 `ProcessStartMode.detached` 启动本程序
+/// （`detachedWithStdio` 的管道不读会阻塞子进程，656 真机踩过）。
+/// 代价是 stdout/stderr 全丢——QML 加载失败、缺 DLL、mpv 初始化失败
+/// 都**看不到任何错误**，只能靠手动在命令行跑 exe。
+///
+/// 装了 handler 之后，任何 `qInfo/qWarning/qCritical` 都会落盘，
+/// 用户把 log 发过来就能定位。
+void installFileLogger() {
+    static QFile* logFile = nullptr;
+    logFile = new QFile(QCoreApplication::applicationDirPath() +
+                        QStringLiteral("/himi_qt_player.log"));
+    // 每次启动覆盖（不 append）：只关心本次运行的日志，
+    // 避免文件无限增长。
+    const bool ok = logFile->open(QIODevice::WriteOnly | QIODevice::Truncate |
+                                  QIODevice::Text);
+
+    qInstallMessageHandler([](QtMsgType type, const QMessageLogContext&,
+                              const QString& msg) {
+        if (logFile == nullptr || !logFile->isOpen()) return;
+        const char* level = "INFO";
+        switch (type) {
+            case QtDebugMsg: level = "DEBUG"; break;
+            case QtInfoMsg: level = "INFO"; break;
+            case QtWarningMsg: level = "WARN"; break;
+            case QtCriticalMsg: level = "CRIT"; break;
+            case QtFatalMsg: level = "FATAL"; break;
+        }
+        QTextStream out(logFile);
+        out << QDateTime::currentDateTime().toString("HH:mm:ss.zzz")
+            << " [" << level << "] " << msg << "\n";
+        out.flush();   // 秒退也要留下（不依赖析构）
+    });
+
+    if (ok) {
+        qInfo().noquote() << "=== himi_qt_player 启动 ===";
+        qInfo().noquote() << "exe:" << QCoreApplication::applicationDirPath();
+    }
+}
+
+}  // namespace
 
 /// 656：HIMI Windows 播放器窗口（Qt Quick + libmpv）
 ///
@@ -32,6 +84,9 @@ int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName("HIMI Player");
     QGuiApplication::setOrganizationName("Himi");
+
+    // 必须尽早装：后面任何 qWarning/qCritical 都要落盘。
+    installFileLogger();
 
     QCommandLineParser parser;
     parser.setApplicationDescription("HIMI Windows 播放器窗口");
@@ -73,18 +128,35 @@ int main(int argc, char* argv[]) {
     engine.rootContext()->setContextProperty("pipeServer", &pipe);
 
     const QUrl qmlUrl(QStringLiteral("qrc:/qt/qml/HimiPlayer/Main.qml"));
+    qInfo().noquote() << "[qml] 加载" << qmlUrl.toString();
+    // 启动时把 qrc 里实际存在的 QML 列出来：万一别名失效，
+    // 一眼就能看出「注册的路径」与「加载的路径」差在哪。
+    {
+        QDirIterator it(QStringLiteral(":/qt/qml/HimiPlayer"),
+                        QStringList{QStringLiteral("*.qml")},
+                        QDir::Files, QDirIterator::Subdirectories);
+        QStringList found;
+        while (it.hasNext()) found << it.next();
+        qInfo().noquote() << "[qml] qrc 内实际 QML:" << found.join(QLatin1String(", "));
+    }
+
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreated, &app,
         [qmlUrl](QObject* obj, const QUrl& objUrl) {
             if (!obj && qmlUrl == objUrl) {
-                qCritical("Main.qml 加载失败");
+                qCritical().noquote()
+                    << "[qml] Main.qml 加载失败:" << objUrl.toString()
+                    << "—— 检查 CMakeLists 的 QT_RESOURCE_ALIAS 是否生效";
                 QCoreApplication::exit(-3);
             }
         },
         Qt::QueuedConnection);
     engine.load(qmlUrl);
 
-    if (engine.rootObjects().isEmpty()) return -3;
+    if (engine.rootObjects().isEmpty()) {
+        qCritical("[qml] rootObjects 为空，退出");
+        return -3;
+    }
 
     auto* host = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
     if (host == nullptr) {

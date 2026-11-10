@@ -361,4 +361,83 @@ void main() {
       expect(codeLines, contains('flags: Qt.Window'));
     });
   });
+
+  group('⑩ 真机回归：QML 加载失败（qrc 路径错位）', () {
+    test('CMakeLists 给每个 QML 设了 QT_RESOURCE_ALIAS', () {
+      // 【真机报错】手动跑 exe：
+      //   QQmlApplicationEngine failed to load component
+      //   qrc:/qt/qml/HimiPlayer/Main.qml: 此文件或目录不存在
+      //
+      // 根因：QML_FILES 写成 `src/qml/Main.qml`，qt_add_qml_module 会
+      // **原样保留相对路径**，注册成：
+      //   qrc:/qt/qml/HimiPlayer/src/qml/Main.qml
+      // 而 main.cpp 加载 `qrc:/qt/qml/HimiPlayer/Main.qml` → 差 src/qml/。
+      expect(cmake, contains('QT_RESOURCE_ALIAS'));
+      for (final name in [
+        'Main',
+        'TopBar',
+        'BottomBar',
+        'SeekBar',
+        'ControlButton',
+        'Panel',
+      ]) {
+        expect(cmake, contains(name), reason: '别名循环里缺 $name');
+      }
+    });
+
+    test('别名设置必须在 qt_add_qml_module 之前', () {
+      // set_source_files_properties 必须在模块处理文件列表之前生效。
+      final aliasIdx = cmake.indexOf('QT_RESOURCE_ALIAS');
+      final moduleIdx = cmake.indexOf('qt_add_qml_module(himi_qt_player');
+      expect(aliasIdx, greaterThan(-1));
+      expect(moduleIdx, greaterThan(-1));
+      expect(aliasIdx, lessThan(moduleIdx),
+          reason: '别名晚于 qt_add_qml_module 就不生效了');
+    });
+
+    test('启动时打印 qrc 内实际 QML 列表（下次出问题能直接看到）', () {
+      expect(mainCpp, contains('QDirIterator'));
+      expect(mainCpp, contains('qrc 内实际 QML'));
+    });
+
+    test('有文件日志（detached 模式下 stdout 全丢）', () {
+      // Flutter 用 detached 启动（避免管道阻塞），代价是看不到输出。
+      // 装 qInstallMessageHandler 把日志写进 exe 同级文件。
+      expect(mainCpp, contains('qInstallMessageHandler'));
+      expect(mainCpp, contains('himi_qt_player.log'));
+      expect(mainCpp, contains('installFileLogger'));
+    });
+
+    test('logger 在 main 开头就装上（后面的错误才能落盘）', () {
+      final mainIdx = mainCpp.indexOf('int main(int argc, char* argv[])');
+      final installIdx = mainCpp.indexOf('installFileLogger();', mainIdx);
+      final parserIdx = mainCpp.indexOf('QCommandLineParser parser;', mainIdx);
+      expect(installIdx, greaterThan(mainIdx));
+      expect(parserIdx, greaterThan(installIdx),
+          reason: 'logger 要早于参数解析，否则解析失败时没日志');
+    });
+  });
+
+  group('⑪ 真机回归：关闭播放器后 Flutter 变手机布局', () {
+    final screen =
+        File('lib/screens/player/player_screen.dart').readAsStringSync();
+
+    test('退出播放器时保证窗口不小于桌面断点', () {
+      // 【真机现象】关闭播放器后 Flutter 主界面变成底部胶囊导航
+      // （手机布局）。根因：`window_manager.setFullScreen(false)` 会恢复
+      // 到「进入全屏前的窗口 bounds」，若那时窗口已被缩小，退出后就
+      // 落在 < kShellDesktopBreakpoint(1000) 的宽度。
+      expect(screen, contains('kShellDesktopBreakpoint'),
+          reason: '退出全屏后要检查窗口宽度');
+      expect(screen, contains('windowManager.setSize'));
+    });
+
+    test('断点常量确实来自 shell 布局定义（单一来源）', () {
+      final shell = File('lib/screens/shell/shell_side_drawer.dart')
+          .readAsStringSync();
+      expect(shell, contains('kShellDesktopBreakpoint = 1000'));
+      // 播放页必须 import 同一个常量，不能自己写死 1000
+      expect(screen, contains('show kShellDesktopBreakpoint'));
+    });
+  });
 }

@@ -38,6 +38,23 @@ qt_add_executable(himi_qt_player
     src/player_state.cpp
 )
 
+# 657.1：QML_FILES 的相对路径会**原样保留**在 qrc 里。
+#
+# 写成 `src/qml/Main.qml` 会被注册成：
+#     qrc:/qt/qml/HimiPlayer/src/qml/Main.qml
+# 而 main.cpp 加载的是：
+#     qrc:/qt/qml/HimiPlayer/Main.qml
+# → 差一个 `src/qml/` 前缀 → 真机报
+#   「QQmlApplicationEngine failed to load component
+#     qrc:/qt/qml/HimiPlayer/Main.qml: 此文件或目录不存在」
+#
+# 用 QT_RESOURCE_ALIAS 把目录前缀抹掉，让注册路径与加载路径一致。
+# （必须在 qt_add_qml_module **之前**设置，否则 CMake 已处理完文件列表。）
+foreach(_qml Main TopBar BottomBar SeekBar ControlButton Panel)
+    set_source_files_properties("src/qml/${_qml}.qml" PROPERTIES
+        QT_RESOURCE_ALIAS "${_qml}.qml")
+endforeach()
+
 qt_add_qml_module(himi_qt_player
     URI HimiPlayer
     VERSION 1.0
@@ -52,8 +69,8 @@ qt_add_qml_module(himi_qt_player
         fonts/MaterialIcons-Regular.otf
 )
 
-# QML 里用 `qrc:/qt/qml/HimiPlayer/fonts/MaterialIcons-Regular.otf` 访问字体。
-# qt_add_qml_module 的 RESOURCES 会把它放在模块 URI 下（Qt 6.5+ 行为）。
+# 字体同理：RESOURCES 里的 `fonts/xxx.otf` 也会保留前缀，
+# 但 QML 里用的就是 `qrc:/qt/qml/HimiPlayer/fonts/...`，两边一致，无需别名。
 
 if(NOT LIBMPV_DIR)
     message(FATAL_ERROR

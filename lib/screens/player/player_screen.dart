@@ -133,6 +133,9 @@ import 'package:himi_syncwatch/services/rtm/room_info_codec.dart';
 import 'package:himi_syncwatch/services/switch_volume_guard.dart';
 import 'package:himi_syncwatch/services/video_avfilter_policy.dart';
 import 'package:himi_syncwatch/services/window_fullscreen_service.dart';
+import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart'
+    show kShellDesktopBreakpoint;
+import 'package:window_manager/window_manager.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// 兼容 re-export：既有测试/调用方从 player_screen 导入 [EpisodeInfo]。
@@ -8151,7 +8154,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 离开播放器时退出窗口全屏，回到普通窗口
     if (_isWindowFullscreen) {
       _isWindowFullscreen = false;
-      _windowFullscreenService.setFullScreen(false);
+      // 【658 真机回归：关闭播放器后 Flutter UI 变成手机布局】
+      //
+      // `window_manager.setFullScreen(false)` 会恢复到「进入全屏前的
+      // 窗口 bounds」。若那时窗口已被缩小（比如用户手动拖过、或
+      // Qt 播放器窗口抢占导致系统缩小），退出后就会落在 < 1000px
+      // 的宽度 → 触发 `kShellDesktopBreakpoint` 的手机布局（底部胶囊
+      // 导航代替侧边栏）。
+      //
+      // 这里在退出全屏后补一次「保证不小于桌面断点」，让主界面始终
+      // 是桌面布局。桌面端最小可用宽度按断点留 100px 余量。
+      unawaited(() async {
+        await _windowFullscreenService.setFullScreen(false);
+        try {
+          final size = await windowManager.getSize();
+          if (size.width < kShellDesktopBreakpoint + 100) {
+            await windowManager.setSize(Size(
+              kShellDesktopBreakpoint + 100,
+              size.height < 700 ? 700 : size.height,
+            ));
+          }
+        } catch (_) {}
+      }());
     }
 
     // 释放锁屏保持
