@@ -4264,6 +4264,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _applyOutputColorSpace();
       _isSwitchingMedia = true;
       _applyMpvContentHints();
+
+      // 656：Windows 独立 Qt 播放器窗口（带完整控件）。
+      //
+      // 【为什么放在这里】单人播放走 _loadStream，房间观众走 _playFromUrl。
+      // 656 首版只接了 _playFromUrl，导致单人点「开始播放」时 Qt 从不启动
+      // （真机现象：任务管理器里只有 HIMI / HIMI Player，没有
+      // himi_qt_player.exe，窗口仍是 646 的原生窗口）。
+      //
+      // 启动失败则继续走下面的 646 路径，不影响正常播放。
+      if (defaultTargetPlatform == TargetPlatform.windows &&
+          MpvSessionPlatform.qtPlayerEnabled) {
+        final mpv = _player is MpvPlayerAdapter ? _player as MpvPlayerAdapter : null;
+        final tookOver = await _startQtPlayer(
+          url: streamUrl,
+          hdr: mpv?.isHdrContent ?? false,
+          hlg: mpv?.isHlgContent ?? false,
+          headers: token.isNotEmpty ? {'X-Emby-Token': token} : const {},
+          startMs: startMs,
+        );
+        if (tookOver) {
+          _isSwitchingMedia = false;
+          LogService().log('Player', 'Qt 播放器接管，跳过内置播放器起播');
+          return true;
+        }
+      }
+
       _player.media = streamUrl;
       await _player.prepare(startMs: startMs);
       // prepare 期间可能已 dispose：必须先复查再触碰 player。

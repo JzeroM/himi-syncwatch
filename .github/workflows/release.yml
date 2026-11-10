@@ -730,9 +730,53 @@ jobs:
           cp ios-build/*.ipa release/ 2>/dev/null || true
           ls -la release/
 
+      # 656：Release 说明改为「分平台手写说明 + 自动 commit 列表」。
+      #
+      # 【为什么要手写】`generate_release_notes: true` 只生成 commit 标题
+      # 列表（如「fix(android): 655 删除两项自动检测」），普通用户看不懂，
+      # 也不知道「这个改动对我有什么影响」。
+      #
+      # 【为什么分平台】一次发版通常只有部分平台有变更（比如 1.5.76 只改了
+      # Windows 和 Android，鸿蒙无变化）。分平台写清楚，用户只看自己用的端。
+      #
+      # 【为什么两者都保留】手写说明给用户，自动 commit 列表给开发者排查。
+      # `body_path` 与 `generate_release_notes: true` 可共存——手写内容在前，
+      # 自动列表追加在后。
+      - name: 拼装分平台 Release 说明
+        run: |
+          set -euo pipefail
+          OUT=release-notes.md
+          : > "$OUT"
+          SRC=docs/release_notes_by_platform.md
+          if [ -f "$SRC" ]; then
+            # 只提取三个平台章节（维护说明在 docs/release_notes_README.md，
+            # 不参与发布）。
+            #
+            # 不能用 `sed '1,/^---$/d'`——文档里平台之间也有 `---`，
+            # 那样会把 Android 整节删掉（实测踩过）。
+            awk '
+              /^# (Android|Windows|HarmonyOS) 更新说明/ { started = 1 }
+              started { print }
+            ' "$SRC" >> "$OUT"
+            if [ ! -s "$OUT" ]; then
+              echo "::warning::未能从 $SRC 提取平台章节，改为整份拷贝"
+              cp "$SRC" "$OUT"
+            fi
+          else
+            echo "本版本更新说明待补充。" > "$OUT"
+          fi
+          echo "" >> "$OUT"
+          echo "---" >> "$OUT"
+          echo "" >> "$OUT"
+          # 与上一个 tag 对比：`<tag>~1` 是 git 的「父提交」语法
+          echo "**完整变更对比**：https://github.com/${{ github.repository }}/compare/${{ github.ref_name }}~1...${{ github.ref_name }}" >> "$OUT"
+          echo "=== 生成的 Release 说明 ==="
+          cat "$OUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release-notes.md
           generate_release_notes: true
           files: |
             release/*.apk

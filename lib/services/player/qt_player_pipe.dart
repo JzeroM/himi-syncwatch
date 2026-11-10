@@ -65,7 +65,19 @@ class QtPlayerPipe {
         '--hdr', hdr ? '1' : '0',
         '--hlg', hlg ? '1' : '0',
       ],
-      mode: ProcessStartMode.detachedWithStdio,
+      // 【必须用 detached，不能用 detachedWithStdio】
+      //
+      // `detachedWithStdio` 会给子进程创建 stdout/stderr 管道，但 Dart 侧
+      // 从不读取（Qt 的 qInfo 日志没人消费）→ 管道缓冲区（约 4KB）写满 →
+      // Qt 的 qInfo 阻塞 → 主线程卡死 → IPC 5 秒连不上 → Flutter 判定
+      // 「启动失败」静默回退 646。
+      //
+      // 真机现象：任务管理器里完全看不到 himi_qt_player.exe，窗口仍是
+      // 646 的原生窗口。
+      //
+      // 代价：看不到 Qt 侧日志。但关键状态（HDR 实际输出、播放位置等）
+      // 都通过 IPC 回传，不影响功能。
+      mode: ProcessStartMode.detached,
     );
     LogService().log('QtPlayer', 'Qt 进程已启动 pid=${process.pid} port=$port');
 

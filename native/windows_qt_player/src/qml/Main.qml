@@ -20,7 +20,12 @@ ApplicationWindow {
     visible: true
     title: playerState.title !== "" ? playerState.title + " — HIMI" : "HIMI Player"
     color: "#000000"
-    flags: Qt.Window | Qt.FramelessWindowHint
+    // 【不要 FramelessWindowHint】656 首版用了无边框窗口，结果：
+    //   - 用户无法拖动/缩放/最小化（没有标题栏）
+    //   - 与 646 的原生窗口观感不一致（那个有标准标题栏）
+    // 真机反馈「Qt 窗口没看到控件」时，实际是走回了 646 窗口——但那也说明
+    // 用户期望的是「像普通播放器一样有标题栏」。
+    flags: Qt.Window
 
     // Material Icons 字体（与 Flutter/安卓/鸿蒙同字形，图标用码点渲染）
     FontLoader {

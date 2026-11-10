@@ -319,4 +319,46 @@ void main() {
           isFalse);
     });
   });
+
+  group('⑨ 真机回归：Qt 窗口没出现（三个 bug）', () {
+    final screen =
+        File('lib/screens/player/player_screen.dart').readAsStringSync();
+
+    test('单人播放路径（_loadStream）也接入 Qt', () {
+      // 【真机现象】任务管理器里只有 HIMI / HIMI Player，没有
+      // himi_qt_player.exe —— 656 首版只把 _startQtPlayer 挂在
+      // _playFromUrl（房间观众路径），单人点「开始播放」走的是
+      // _loadStream，那里没接 → Qt 从不启动。
+      final start = screen.indexOf('Future<bool> _loadStream({');
+      expect(start, greaterThan(-1), reason: '找不到 _loadStream');
+      final end = screen.indexOf('Future<', start + 10);
+      final body = screen.substring(start, end > 0 ? end : start + 12000);
+      expect(body, contains('_startQtPlayer'),
+          reason: '单人播放必须也能拉起 Qt 播放器');
+    });
+
+    test('启动子进程用 detached（不能 detachedWithStdio）', () {
+      // 【真机现象】同样看不到 himi_qt_player.exe。根因是
+      // detachedWithStdio 会创建 stdout/stderr 管道，而 Dart 从不读取
+      // → 缓冲区（约 4KB）写满 → Qt 的 qInfo 阻塞 → 主线程卡死
+      // → IPC 5 秒超时 → 静默回退 646。
+      final codeLines = pipeDart
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(codeLines, contains('ProcessStartMode.detached'));
+      expect(codeLines, isNot(contains('detachedWithStdio')),
+          reason: 'detachedWithStdio 的管道不读会阻塞子进程');
+    });
+
+    test('Qt 窗口不用 FramelessWindowHint（否则无法拖动缩放）', () {
+      final codeLines = mainQml
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(codeLines, isNot(contains('FramelessWindowHint')),
+          reason: '无边框窗口没有标题栏，用户无法拖动/缩放/最小化');
+      expect(codeLines, contains('flags: Qt.Window'));
+    });
+  });
 }

@@ -5071,6 +5071,52 @@ Dart 没有内置支持，得再写一个 Flutter 插件做桥接，不划算。
 | 首帧必须 auth + token | 同机其他进程可误连并注入命令 |
 | 析构先 `mpv_terminate_destroy` 再 `DestroyWindow` | mpv 往已释放 HWND 里画 |
 
+#### 十四、真机回归：Qt 窗口没出现（657）
+
+> 现象：开启「使用 Qt 播放器窗口」后播放视频，任务管理器里**只有
+> `HIMI` 和 `HIMI Player`，没有 `himi_qt_player.exe`**；窗口仍是 646 的
+> Win32 原生窗口（有标准标题栏）。
+
+**三个独立 bug 叠加**：
+
+**bug 1：单人播放路径没接 Qt**
+
+`_startQtPlayer` 只挂在 `_playFromUrl`（房间观众路径）。而单人点「开始播放」
+走的是 `_loadStream` —— 那里完全没有 Qt 分支 → 进程从不启动。
+
+**bug 2：`detachedWithStdio` 的管道不读会阻塞子进程**
+
+```dart
+mode: ProcessStartMode.detachedWithStdio,   // 创建 stdout/stderr 管道
+// 但从来没读 process.stdout / process.stderr
+```
+
+Qt 侧 `qInfo()` 往管道写（`[pipe] 监听...`、`[hdr] 实际输出...` 等），
+Dart 从不消费 → 缓冲区（约 4KB）写满 → Qt 的 `qInfo` **阻塞主线程**
+→ IPC 5 秒连不上 → Flutter 判定「启动失败」→ 静默回退 646。
+
+改为 `ProcessStartMode.detached`（无管道，输出丢弃）。代价是看不到 Qt
+日志，但关键状态都通过 IPC 回传。
+
+**bug 3：`FramelessWindowHint` 导致无法拖动缩放**
+
+QML 首版设了 `flags: Qt.Window | Qt.FramelessWindowHint` —— 无标题栏，
+用户无法拖动/缩放/最小化，与 646 窗口观感不一致。改为 `flags: Qt.Window`。
+
+**顺带修：HighDPI 下 inset 错位**
+
+QML 的顶栏/底栏高度（48/96）是**逻辑像素**，而 `SetWindowPos` 用
+**物理像素**。Qt 6 默认启用 HighDPI 缩放，150% 下视频窗口会少让出
+24/48 像素 → 控件被视频盖住一半。
+
+```cpp
+const qreal dpr = host->devicePixelRatio();
+mpv.setOverlayInsets(qRound(48 * dpr), qRound(96 * dpr));
+```
+
+**教训**：两个播放入口（`_loadStream` 单人 / `_playFromUrl` 房间观众）
+必须同时接，否则「房间里能、单人不行」这种半残状态很难第一时间发现。
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

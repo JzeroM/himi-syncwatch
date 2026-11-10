@@ -6,6 +6,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QTimer>
+#include <QtGlobal>   // qRound（DPI 换算用）
 
 #include "mpv_window.h"
 #include "pipe_server.h"
@@ -105,7 +106,13 @@ int main(int argc, char* argv[]) {
         }
         // 顶栏 48 + 底栏 96：视频子窗口收窄，把控件区域让出来。
         // 原生子 HWND 永远画在 QML 之上（Win32 硬规则）。
-        mpv.setOverlayInsets(48, 96);
+        //
+        // 【必须按 DPI 换算】QML 的 48/96 是**逻辑像素**，而
+        // SetWindowPos 用**物理像素**。Qt 6 默认启用 HighDPI 缩放，
+        // 150% 缩放下若不换算，视频窗口会少让出 24/48 像素 →
+        // 控件被视频盖住一半。
+        const qreal dpr = host->devicePixelRatio();
+        mpv.setOverlayInsets(qRound(48 * dpr), qRound(96 * dpr));
     });
 
     // ── 状态：Flutter → mpv + QML ──
