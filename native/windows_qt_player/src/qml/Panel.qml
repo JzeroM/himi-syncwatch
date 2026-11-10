@@ -46,6 +46,8 @@ EUI.ECard {
                          ? Math.ceil(items.length / 2) * 196 + 8
                          : rowsHeight))
     radius: 20
+    // 668：液态玻璃卡（半透明，视频透过来）
+    cardColor: Qt.rgba(0.07, 0.07, 0.09, 0.72)
     visible: false
 
     // ── 标题行（无 ✕：照 Flutter，点别处/再点控件收回）──

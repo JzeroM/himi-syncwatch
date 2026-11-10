@@ -53,8 +53,8 @@ qt_add_executable(himi_qt_player
 #   虽然改代码成 `qrc:/HimiPlayer/...` 也能跑，但 `/qt/qml` 是 Qt 6 的
 #   标准约定（QQmlEngine 会自动搜索该前缀，`import HimiPlayer` 的模块
 #   解析也依赖它），所以显式设置 RESOURCE_PREFIX 保持标准。
-foreach(_qml Main TopBar BottomBar ControlButton Panel Theme Icons
-             PlayerSlider EpisodeLogo DisplayAdjustPanel)
+foreach(_qml Main Overlay PlayerShortcuts TopBar BottomBar ControlButton
+             Panel Theme Icons PlayerSlider EpisodeLogo DisplayAdjustPanel)
     set_source_files_properties("src/qml/${_qml}.qml" PROPERTIES
         QT_RESOURCE_ALIAS "${_qml}.qml")
 endforeach()
@@ -80,6 +80,8 @@ qt_add_qml_module(himi_qt_player
     RESOURCE_PREFIX /qt/qml
     QML_FILES
         src/qml/Main.qml
+        src/qml/Overlay.qml
+        src/qml/PlayerShortcuts.qml
         src/qml/TopBar.qml
         src/qml/BottomBar.qml
         src/qml/ControlButton.qml

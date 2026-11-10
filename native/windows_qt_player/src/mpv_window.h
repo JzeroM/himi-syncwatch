@@ -65,14 +65,12 @@ public:
     /// 给 QML 控件让出的高度（顶栏 + 底栏）。视频子窗口会相应收窄。
     void setOverlayInsets(int top, int bottom);
 
-    /// 【664：视频窗口挖孔】QML 浮层（锁钮/Logo/面板）落在视频子窗口
-    /// 覆盖带内会被 Win32 子窗口盖住（永远在 QML 之上）——面板点不到、
-    /// 锁钮/Logo 不可见（真机截图实证）。把浮层矩形从视频窗口的
-    /// SetWindowRgn 区域里挖掉，孔内露出下层 QML，可点可渲染。
-    /// `rects` 元素为 QVariantMap：{x,y,w,h,r}（窗口**逻辑像素**坐标，
-    /// r = 圆角半径；0 = 直角）。667：改圆角孔——直角孔在圆形按钮/圆角
-    /// 胶囊四周露黑角（真机截图「黑边角」）。
-    Q_INVOKABLE void setOverlayHoles(const QVariantList& rects);
+    // 【668】挖孔机制已退役：控件层移到**逐像素透明悬浮窗**（顶层窗口
+    // 永远盖住子窗口 = 真合成），视频满铺直出、玻璃任意半透明、零黑底。
+
+    /// 切换宿主窗口全屏（控件在悬浮层，全屏对象是视频宿主）。
+    Q_INVOKABLE void toggleHostFullscreen();
+    Q_INVOKABLE bool isHostFullscreen() const;
 
     /// 通用 mpv 命令透传（sub-add / sub-remove / screenshot-to-file …）。
     Q_INVOKABLE bool command(const QStringList& args);
@@ -82,10 +80,6 @@ public:
     /// 与弹幕可同时渲染（wid 直出架构下 QML 画不进视频，ASS 是唯一
     /// 浮绘通道）。空文本 = 移除弹幕轨。
     Q_INVOKABLE void setDanmakuAss(const QString& assText);
-
-    /// 664：QML 逻辑坐标 → 物理坐标用（与 setOverlayInsets 的换算一致，
-    /// 由 main.cpp 在 attach 后注入 host 的 devicePixelRatio）。
-    void setDevicePixelRatio(qreal dpr);
 
     /// 实际输出是否为 HDR（`video-out-params` 的 gamma/primaries 判定）。
     bool hdrOutput() const;
@@ -111,9 +105,6 @@ private:
     void applyHdrOptions(bool hdr, bool hlg);
     void refreshOutputParams();
 
-    /// 664：按 holes_ 重建视频窗口区域（整窗减去浮层孔）。
-    void applyRegion();
-
     static LRESULT CALLBACK VideoWndProc(HWND hwnd, UINT msg, WPARAM wparam,
                                          LPARAM lparam);
 
@@ -129,9 +120,7 @@ private:
     int lastW_ = -1;
     int lastH_ = -1;
 
-    QVariantList holes_;   ///< 浮层孔（窗口逻辑坐标 QRectF）
-    QString holesSig_;     ///< 已应用孔签名（几何/孔都没变就不重建区域）
-    qreal dpr_ = 1.0;      ///< 逻辑→物理像素换算（main.cpp 注入）
+
     QString danmakuFile_;  ///< 当前弹幕 ASS 临时文件
     int danmakuSubId_ = -1;  ///< 当前弹幕轨 id（次字幕轨）
 

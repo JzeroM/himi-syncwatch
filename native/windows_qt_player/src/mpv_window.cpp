@@ -182,8 +182,6 @@ void MpvWindow::syncGeometry() {
     lastH_ = h;
     ::SetWindowPos(video_hwnd_, nullptr, x, y, w, h,
                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
-    // 664：几何变化后重建挖孔区域（孔是窗口坐标，不随 resize 缩放）
-    applyRegion();
 }
 
 void MpvWindow::setOverlayInsets(int top, int bottom) {
@@ -298,68 +296,17 @@ void MpvWindow::selectTrack(const QString& type, int index) {
     }
 }
 
-void MpvWindow::setOverlayHoles(const QVariantList& rects) {
-    holes_ = rects;
-    applyRegion();
+void MpvWindow::toggleHostFullscreen() {
+    if (host_ == nullptr) return;
+    if (host_->visibility() == QWindow::FullScreen) {
+        host_->showNormal();
+    } else {
+        host_->showFullScreen();
+    }
 }
 
-void MpvWindow::setDevicePixelRatio(qreal dpr) {
-    if (dpr <= 0) return;
-    dpr_ = dpr;
-    applyRegion();
-}
-
-void MpvWindow::applyRegion() {
-    if (video_hwnd_ == nullptr) return;
-    // 几何 + 孔都没变就不重建区域（SetWindowRgn 会触发重绘）。
-    QString sig = QStringLiteral("g%1,%2,%3,%4;")
-                      .arg(lastX_)
-                      .arg(lastY_)
-                      .arg(lastW_)
-                      .arg(lastH_);
-    for (const QVariant& v : holes_) {
-        const QVariantMap m = v.toMap();
-        sig += QStringLiteral("%1,%2,%3,%4,%5;")
-                   .arg(m.value(QStringLiteral("x")).toDouble())
-                   .arg(m.value(QStringLiteral("y")).toDouble())
-                   .arg(m.value(QStringLiteral("w")).toDouble())
-                   .arg(m.value(QStringLiteral("h")).toDouble())
-                   .arg(m.value(QStringLiteral("r")).toDouble());
-    }
-    if (sig == holesSig_) return;
-    holesSig_ = sig;
-
-    RECT rc = {};
-    ::GetClientRect(video_hwnd_, &rc);
-    HRGN rgn = ::CreateRectRgn(rc.left, rc.top, rc.right, rc.bottom);
-    for (const QVariant& v : holes_) {
-        const QVariantMap m = v.toMap();
-        // QML 逻辑坐标（窗口客户区）→ 视频子窗口物理坐标
-        const double rx = m.value(QStringLiteral("x")).toDouble();
-        const double ry = m.value(QStringLiteral("y")).toDouble();
-        const double rw = m.value(QStringLiteral("w")).toDouble();
-        const double rh = m.value(QStringLiteral("h")).toDouble();
-        const qreal radiusLogical = m.value(QStringLiteral("r")).toDouble();
-        const int x1 = qRound(rx * dpr_);
-        const int y1 = qRound(ry * dpr_) - insetTop_;
-        const int x2 = qRound((rx + rw) * dpr_);
-        const int y2 = qRound((ry + rh) * dpr_) - insetTop_;
-        if (x2 <= rc.left || y2 <= rc.top || x1 >= rc.right || y1 >= rc.bottom) {
-            continue;
-        }
-        // 667：圆角孔（直角孔在圆形按钮/胶囊四周露黑角）
-        const int radius = qRound(radiusLogical * dpr_ * 2);
-        HRGN hole = radius > 0
-                ? ::CreateRoundRectRgn(x1, y1, x2, y2, radius, radius)
-                : ::CreateRectRgn(x1, y1, x2, y2);
-        HRGN diff = ::CreateRectRgn(0, 0, 0, 0);
-        ::CombineRgn(diff, rgn, hole, RGN_DIFF);
-        ::DeleteObject(rgn);
-        ::DeleteObject(hole);
-        rgn = diff;
-    }
-    // SetWindowRgn 接管 rgn 所有权（MSDN），之后不得 DeleteObject。
-    ::SetWindowRgn(video_hwnd_, rgn, TRUE);
+bool MpvWindow::isHostFullscreen() const {
+    return host_ != nullptr && host_->visibility() == QWindow::FullScreen;
 }
 
 bool MpvWindow::command(const QStringList& args) {

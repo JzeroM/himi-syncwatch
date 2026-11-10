@@ -32,6 +32,8 @@ EUI.ECard {
                                   - Theme.panelBottomOffset : 400,
                      root.padding * 2 + 36 + contentCol.implicitHeight)
     radius: 20
+    // 668：液态玻璃卡（半透明，视频透过来）
+    cardColor: Qt.rgba(0.07, 0.07, 0.09, 0.72)
     visible: false
 
     // ── 段标题 ──

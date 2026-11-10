@@ -37,14 +37,14 @@ Rectangle {
     opacity: showControls ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: Theme.controlsFadeMs } }
 
-    // 667：浮岛圆角胶囊底（孔 = 胶囊矩形 + 圆角孔，不露黑角）。
-    // 全宽渐变遮罩改由 mpv ASS 画进视频（真半透明压视频，同 Flutter）。
+    // 668：渐变玻璃条（透明→黑 85%）——控件悬浮层逐像素透明，
+    // 视频透过玻璃层 = Flutter 同款液态玻璃观感。
     Rectangle {
-        id: chip
         anchors.fill: parent
-        anchors.margins: 4
-        radius: 20
-        color: Qt.rgba(0.08, 0.08, 0.10, 0.82)
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 1.0; color: Theme.barGradientSolid }
+        }
     }
 
     // ── 画面比例图标映射（与 Flutter `_videoFitModes/_videoFitIcons` 同序）──

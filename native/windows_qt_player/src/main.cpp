@@ -207,22 +207,51 @@ int main(int argc, char* argv[]) {
             QCoreApplication::exit(-4);
             return;
         }
-        // 顶栏 48 + 底栏 96：视频子窗口收窄，把控件区域让出来。
-        // 原生子 HWND 永远画在 QML 之上（Win32 硬规则）。
-        //
-        // 【必须按 DPI 换算】QML 的 48/96 是**逻辑像素**，而
-        // SetWindowPos 用**物理像素**。Qt 6 默认启用 HighDPI 缩放，
-        // 150% 缩放下若不换算，视频窗口会少让出 24/48 像素 →
-        // 控件被视频盖住一半。
-        const qreal dpr = host->devicePixelRatio();
-        // 665：视频**满铺全窗口**（inset 归零）——此前上下让出 48/96
-        // 造成「视频被控件包裹」观感（16:9 内容被迫横向 pillarbox）。
-        // 控件区改由**挖孔**让位（QML 浮层矩形 → SetWindowRgn），
-        // 与 Flutter「视频满窗、控件浮在视频上」同构：控件显隐联动孔的
-        // 收放（隐藏时孔消失 = 纯视频满窗）。
+        // 668：视频满铺宿主客户区；控件层在**逐像素透明悬浮窗**
+        // （Overlay.qml）——顶层窗口永远盖住子窗口 = 真合成，
+        // 玻璃任意半透明、零黑底，HDR 直出路径不变。
         mpv.setOverlayInsets(0, 0);
-        mpv.setDevicePixelRatio(dpr);
     });
+
+    // ── 控件悬浮层（668：液态玻璃控件层）──
+    //
+    // 透明顶层工具窗盖在视频宿主客户区之上；QQuickWindow 默认
+    // alphaBuffer 才能得到逐像素透明（Windows 分层窗口合成）。
+    QQuickWindow::setDefaultAlphaBuffer(true);
+    engine.load(QUrl(QStringLiteral("qrc:/qt/qml/HimiPlayer/Overlay.qml")));
+    if (engine.rootObjects().size() < 2) {
+        qCritical("[qml] Overlay.qml 加载失败");
+        return -5;
+    }
+    auto* overlay =
+        qobject_cast<QQuickWindow*>(engine.rootObjects().constLast());
+    if (overlay == nullptr) {
+        qCritical("[qml] Overlay 根对象不是 Window");
+        return -5;
+    }
+    overlay->setFlags(Qt::Tool | Qt.FramelessWindowHint);
+    overlay->setColor(Qt::transparent);
+    overlay->requestActivate();
+
+    // 位置同步：悬浮层恒贴住宿主客户区（拖动/缩放/最小化/全屏）。
+    // 50ms 轮询 + 变化才动（无抖动），宿主活跃时 raise 保证在视频之上。
+    auto* syncTimer = new QTimer(&app);
+    QObject::connect(syncTimer, &QTimer::timeout, &app,
+                     [host, overlay]() {
+        if (host == nullptr || overlay == nullptr) return;
+        const bool show = host->isVisible() && !host->isMinimized();
+        if (overlay->isVisible() != show) overlay->setVisible(show);
+        if (!show) return;
+        HWND h = reinterpret_cast<HWND>(host->winId());
+        RECT rc = {};
+        ::GetClientRect(h, &rc);
+        ::MapWindowPoints(h, nullptr, reinterpret_cast<POINT*>(&rc), 2);
+        const QRect g(rc.left, rc.top, rc.right - rc.left,
+                      rc.bottom - rc.top);
+        if (overlay->geometry() != g) overlay->setGeometry(g);
+        if (host->isActive()) overlay->raise();
+    });
+    syncTimer->start(50);
 
     // ── 状态：Flutter → mpv + QML ──
     QObject::connect(&pipe, &PipeServer::stateReceived, &state,

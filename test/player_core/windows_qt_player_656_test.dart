@@ -54,7 +54,9 @@ void main() {
     pipeCpp = read('$dir/src/pipe_server.cpp');
     stateH = read('$dir/src/player_state.h');
     stateCpp = read('$dir/src/player_state.cpp');
-    mainQml = read('$dir/src/qml/Main.qml');
+    mainQml = (read('$dir/src/qml/Overlay.qml')
+        + read('$dir/src/qml/Main.qml')
+        + read('$dir/src/qml/PlayerShortcuts.qml'));
     topBar = read('$dir/src/qml/TopBar.qml');
     bottomBar = read('$dir/src/qml/BottomBar.qml');
     pipeDart = read('lib/services/player/qt_player_pipe.dart');
@@ -379,13 +381,14 @@ void main() {
           reason: 'detachedWithStdio 的管道不读会阻塞子进程');
     });
 
-    test('Qt 窗口不用 FramelessWindowHint（否则无法拖动缩放）', () {
-      final codeLines = mainQml
+    test('宿主窗口不用 FramelessWindowHint（可拖动缩放；悬浮层除外）', () {
+      // 668：控件悬浮层（Overlay）必须无边框，断言只针对宿主 Main.qml
+      final codeLines = read('$dir/src/qml/Main.qml')
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
       expect(codeLines, isNot(contains('FramelessWindowHint')),
-          reason: '无边框窗口没有标题栏，用户无法拖动/缩放/最小化');
+          reason: '无边框宿主窗没有标题栏，用户无法拖动/缩放/最小化');
       expect(codeLines, contains('flags: Qt.Window'));
     });
   });
@@ -531,7 +534,7 @@ void main() {
     // 按钮齐全、右组顺序、命令链路、面板场景。
     final topBar = read('$dir/src/qml/TopBar.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
-    final mainQmlSrc = read('$dir/src/qml/Main.qml');
+    final mainQmlSrc = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
 
     test('顶栏按钮齐全：返回/标题/网速/显示调节/解码/比例（引擎控件已删）', () {
       for (final token in [
@@ -582,10 +585,7 @@ void main() {
           reason: '倍速应是文字标签，不是图标角标');
     });
 
-    test('视频区：左缘锁钮 + 左下角 Logo', () {
-      expect(mainQmlSrc, contains('Icons.lockOpen'));
-      expect(mainQmlSrc, contains('"type": "toggleLock"'));
-      expect(mainQmlSrc, contains('!playerState.locked'));
+    test('视频区：左下角 Logo（668 锁钮已去除）', () {
       expect(mainQmlSrc, contains('EpisodeLogo'));
     });
 
@@ -612,7 +612,7 @@ void main() {
   group('⑭ 660：照 Flutter 截图对齐的细节', () {
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
     final themeQml = read('$dir/src/qml/Theme.qml');
-    final mainQmlSrc = read('$dir/src/qml/Main.qml');
+    final mainQmlSrc = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
     final stateH = read('$dir/src/player_state.h');
     final stateCpp = read('$dir/src/player_state.cpp');
 
@@ -702,7 +702,7 @@ void main() {
   group('⑮ 662：复刻 Flutter 播放器 UI（多版本/锁钮/显示调节/命令链路）', () {
     final topBar = read('$dir/src/qml/TopBar.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
-    final mainQml = read('$dir/src/qml/Main.qml');
+    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
     final stateH = read('$dir/src/player_state.h');
     final adapterSrc =
         File('lib/services/player/qt_player_adapter.dart').readAsStringSync();
@@ -760,13 +760,10 @@ void main() {
       expect(topBar, isNot(contains('icon: Icons.fullscreen')));
     });
 
-    test('左缘锁钮：圆形 black45 + lock_open/lock + toggleLock 回环', () {
-      expect(mainQml, contains('Icons.lockOpen'));
-      expect(mainQml, contains('Icons.lock'));
-      expect(mainQml, contains('Qt.rgba(0, 0, 0, 0.45)'));
-      expect(mainQml, contains('"type": "toggleLock"'));
-      // 锁定态顶栏/底栏被 locked 门禁
-      expect(mainQml, contains('!playerState.locked'));
+    test('668 锁钮已去除（含 locked 门禁清理）', () {
+      expect(mainQml, isNot(contains('lockButton')));
+      expect(mainQml, isNot(contains('"type": "toggleLock"')));
+      expect(mainQml, isNot(contains('!playerState.locked')));
     });
 
     test('版本面板发 selectVersion（Flutter SelectVersion 已有处理）', () {
@@ -845,7 +842,7 @@ void main() {
     });
   });
   group('⑯ EvolveUI 集成（vendor 零补丁 + 上下文注入 + 资源对齐）', () {
-    final mainQml = read('$dir/src/qml/Main.qml');
+    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
     final evolveDir = Directory('$dir/src/qml/evolveui');
 
     test('vendor 组件齐全（ETheme/EButton/ESlider/ECard/ELoader）', () {
@@ -929,7 +926,7 @@ void main() {
     final iconsQml = read('$dir/src/qml/Icons.qml');
     final topBar = read('$dir/src/qml/TopBar.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
-    final mainQml = read('$dir/src/qml/Main.qml');
+    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
     final slider = read('$dir/src/qml/PlayerSlider.qml');
     final controlBtn = read('$dir/src/qml/ControlButton.qml');
 
@@ -1044,7 +1041,7 @@ void main() {
   group('⑲ 664：播不了/面板被盖/回详情页（headers·挖孔·本地化·会话）', () {
     final mainCpp = read('$dir/src/main.cpp');
     final mpvCpp = read('$dir/src/mpv_window.cpp');
-    final mainQml = read('$dir/src/qml/Main.qml');
+    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
     final panelQml = read('$dir/src/qml/Panel.qml');
     final adjustQml = read('$dir/src/qml/DisplayAdjustPanel.qml');
     final elistQml = read('$dir/src/qml/evolveui/EList.qml');
@@ -1058,13 +1055,9 @@ void main() {
       expect(mpvCpp, contains('http-header-fields'));
     });
 
-    test('视频 HWND 挖孔（SetWindowRgn：浮层不被视频子窗口盖住）', () {
-      // 真机回归：面板点不到/锁钮 Logo 不可见 = 子 HWND 盖住 QML
-      expect(mpvCpp, contains('SetWindowRgn'));
-      expect(mpvCpp, contains('CombineRgn'));
+    test('控件悬浮层架构（透明顶层窗 + mpvWindow 上下文）', () {
       expect(mainCpp, contains('setContextProperty("mpvWindow"'));
-      expect(mainQml, contains('updateOverlayHoles'));
-      expect(mainQml, contains('mpvWindow.setOverlayHoles'));
+      expect(mainCpp, contains('setDefaultAlphaBuffer(true)'));
     });
 
     test('播放控件本地化（mpvWindow 直驱 + 通知 Flutter 双写）', () {
@@ -1119,26 +1112,20 @@ void main() {
   });
   group('⑳ 665：视频满铺全窗（控件带挖孔，观感同 Flutter）', () {
     final mainCpp = read('$dir/src/main.cpp');
-    final mainQml = read('$dir/src/qml/Main.qml');
+    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
 
     test('inset 归零：视频满铺（不再被上下让位逼出横向黑边）', () {
       // 真机回归：48/96 inset 把视频压成中间一块 → 「被控件包裹」。
       expect(mainCpp, contains('setOverlayInsets(0, 0)'));
     });
 
-    test('顶栏/底栏整条带走挖孔（控件浮在视频上、可点）', () {
-      expect(mainQml, contains('add(topBar, 20, 4)'));
-      expect(mainQml, contains('add(bottomBar, 20, 4)'));
-    });
-
-    test('控件隐藏 → 孔收放为纯视频（add 的 visible 门禁）', () {
-      // topBar/bottomBar 的 visible 跟随 opacity；自动隐藏后
-      // add() 不收录 → 无孔 → 视频满窗。
-      expect(mainQml, contains('if (!it.visible'));
+    test('668：挖孔退役，控件走透明悬浮窗（真合成零黑底）', () {
+      expect(mpvCpp, isNot(contains('SetWindowRgn')));
+      expect(mainQml, isNot(contains('setOverlayHoles')));
     });
   });
   group('㉑ 665：功能全量对齐 Flutter（面板/手势/弹幕/自动下一集）', () {
-    final mainQml = read('$dir/src/qml/Main.qml');
+    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
     final panelQml = read('$dir/src/qml/Panel.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
     final topBar = read('$dir/src/qml/TopBar.qml');
@@ -1158,7 +1145,7 @@ void main() {
       expect(mainQml, contains('if (adjustOpen) { closePanels(); return }'));
       // 点视频区：有面板→收回；无→切换控件（Flutter _onVideoAreaTap）
       expect(mainQml, contains('if (root.panelOpen || root.adjustOpen)'));
-      expect(mainQml, contains('function toggleControls()'));
+      expect(mainQml, contains('function closePanels()'));
     });
 
     test('手势：双击播放暂停 / 横滑 seek / 纵滑音量亮度', () {
@@ -1217,17 +1204,15 @@ void main() {
     });
   });
   group('㉒ 667：透明控件层/面板排版/恢复默认/去引擎/点击修复', () {
-    final mainQml = read('$dir/src/qml/Main.qml');
+    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
     final topBar = read('$dir/src/qml/TopBar.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
     final adjustQml = read('$dir/src/qml/DisplayAdjustPanel.qml');
     final logoQml = read('$dir/src/qml/EpisodeLogo.qml');
     final mpvCpp = read('$dir/src/mpv_window.cpp');
 
-    test('圆角挖孔（CreateRoundRectRgn：圆形按钮/胶囊不露黑角）', () {
-      expect(mpvCpp, contains('CreateRoundRectRgn'));
-      expect(mainQml, contains('add(lockButton, 19, 0)'));
-      expect(mainQml, contains('add(panel, 20, 0)'));
+    test('挖孔机制全退役（668 起悬浮层真合成）', () {
+      expect(mpvCpp, isNot(contains('CreateRoundRectRgn')));
     });
 
     test('ASS 全宽渐变遮罩（mpv 画进视频 = 真半透明压视频）', () {
@@ -1238,11 +1223,11 @@ void main() {
       expect(mainQml, contains('danmakuBuildTimer.restart()'));
     });
 
-    test('浮岛胶囊底（顶/底栏 chip，渐变由 ASS 承担）', () {
-      expect(topBar, contains('id: chip'));
-      expect(topBar, contains('radius: 20'));
-      expect(bottomBar, contains('id: chip'));
-      expect(logoQml, contains('radius: 10'));
+    test('液态玻璃材质（渐变玻璃条/玻璃卡/玻璃滑杆）', () {
+      expect(topBar, contains('Theme.barGradientSolid'));
+      expect(bottomBar, contains('Theme.barBottomSolid'));
+      expect(adjustQml, contains('cardColor: Qt.rgba(0.07, 0.07, 0.09, 0.72)'));
+      expect(logoQml, isNot(contains('radius: 10')));
     });
 
     test('面板排版修复：不能 top+bottom 双锚（撑满高=行漂中部根因）', () {
@@ -1273,6 +1258,49 @@ void main() {
       expect(mainQml, contains('property bool wasVisible'));
       expect(mainQml, contains('wasVisible = root.controlsVisible'));
       expect(mainQml, contains('if (videoArea.wasVisible)'));
+    });
+  });
+  group('㉓ 668：液态玻璃播放器（透明悬浮层真合成）', () {
+    final overlayQml = read('$dir/src/qml/Overlay.qml');
+    final mainQmlSrc = read('$dir/src/qml/Main.qml');
+    final shortcuts = read('$dir/src/qml/PlayerShortcuts.qml');
+    final mainCpp = read('$dir/src/main.cpp');
+    final mpvH = read('$dir/src/mpv_window.h');
+
+    test('透明悬浮层窗口（Qt.Tool|Frameless + 透明底 = 逐像素合成）', () {
+      expect(overlayQml, contains('Qt.Tool | Qt.FramelessWindowHint'));
+      expect(overlayQml, contains('color: "transparent"'));
+      expect(mainCpp, contains('setDefaultAlphaBuffer(true)'));
+      expect(mainCpp, contains('Overlay.qml'));
+    });
+
+    test('悬浮层恒贴附宿主客户区（移动/缩放/最小化同步）', () {
+      expect(mainCpp, contains('MapWindowPoints'));
+      expect(mainCpp, contains('syncTimer'));
+      expect(mainCpp, contains('overlay->raise()'));
+    });
+
+    test('全屏/退出走宿主窗口（控件在悬浮层）', () {
+      expect(mpvH, contains('toggleHostFullscreen'));
+      expect(overlayQml, contains('mpvWindow.toggleHostFullscreen'));
+    });
+
+    test('快捷键两窗共用（焦点任一窗都有效）', () {
+      expect(shortcuts, contains('mpvWindow.togglePause'));
+      expect(mainQmlSrc, contains('PlayerShortcuts'));
+      expect(overlayQml, contains('PlayerShortcuts'));
+    });
+
+    test('液态玻璃：滑杆半透明轨道 + 面板玻璃卡', () {
+      final slider = read('$dir/src/qml/PlayerSlider.qml');
+      expect(slider, contains('Qt.rgba(1, 1, 1, 0.14)'));
+      expect(read('$dir/src/qml/Panel.qml'),
+          contains('cardColor: Qt.rgba(0.07, 0.07, 0.09, 0.72)'));
+    });
+
+    test('视频宿主窗口极简（只承载视频+标题+快捷键）', () {
+      expect(mainQmlSrc, contains('ApplicationWindow'));
+      expect(mainQmlSrc, isNot(contains('BottomBar')));
     });
   });
 }

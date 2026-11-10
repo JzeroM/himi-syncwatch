@@ -25,7 +25,8 @@ Item {
     property int decimals: 0
     property bool showValue: true         // 右侧数值（纯文字，非 SpinBox）
     property int labelWidth: 44           // 与 Flutter styleSliderRow 标签列同宽
-    property color trackColor: theme.secondaryColor
+    // 668：玻璃轨道（半透明白，视频透过来）
+    property color trackColor: Qt.rgba(1, 1, 1, 0.14)
     property color fillColor: theme.focusColor
 
     /// 拖动/点击连续回调（对应 Flutter Slider onChanged）
