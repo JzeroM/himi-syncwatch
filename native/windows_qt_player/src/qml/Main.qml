@@ -134,6 +134,14 @@ ApplicationWindow {
         }
     }
 
+    // ── 左下角剧集 Logo（660 照 Flutter 截图）──
+    EpisodeLogo {
+        anchors.left: parent.left
+        anchors.bottom: bottomBar.top
+        anchors.leftMargin: Theme.barPadH
+        anchors.bottomMargin: 8
+    }
+
     // ── 面板（右侧浮层，与 Flutter 位置一致）──
     Panel {
         id: panel

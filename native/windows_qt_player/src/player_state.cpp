@@ -75,6 +75,13 @@ void PlayerState::applyJson(const QJsonObject& json) {
     dirty |= assign(isHost_, readBool(json, "isHost", isHost_));
     dirty |= assign(clockFormat_, readString(json, "clockFormat", clockFormat_));
 
+    // ── Logo（660）──
+    dirty |= assign(logoUrl_, readString(json, "logoUrl", logoUrl_));
+
+    // ── 亮度（660，0.0 ~ 1.0）──
+    dirty |= assign(brightness_,
+                    readDouble(json, "brightness", brightness_));
+
     // ── 弹幕 ──
     dirty |= assign(danmakuEnabled_,
                     readBool(json, "danmakuEnabled", danmakuEnabled_));

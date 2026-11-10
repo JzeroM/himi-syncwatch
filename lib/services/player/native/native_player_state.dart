@@ -363,6 +363,7 @@ class NativePlayerState {
     this.ended = false,
     this.volume = 1.0,
     this.speed = 1.0,
+    this.brightness = 0.5,
     this.title,
     this.mediaTitle,
     this.videoParams,
@@ -479,6 +480,7 @@ class NativePlayerState {
   final bool ended;
   final double volume;
   final double speed;
+  final double brightness;
 
   // ── 媒体 ──
   final String? title;
@@ -640,6 +642,7 @@ class NativePlayerState {
       ended: json['ended'] == true,
       volume: (json['volume'] as num?)?.toDouble() ?? 1.0,
       speed: (json['speed'] as num?)?.toDouble() ?? 1.0,
+      brightness: (json['brightness'] as num?)?.toDouble() ?? 0.5,
       title: json['title'] as String?,
       mediaTitle: json['mediaTitle'] as String?,
       videoParams: json['videoParams'] as String?,
@@ -768,6 +771,7 @@ class NativePlayerState {
         'ended': ended,
         'volume': volume,
         'speed': speed,
+        'brightness': brightness,
         'title': title,
         'mediaTitle': mediaTitle,
         'videoParams': videoParams,
@@ -862,6 +866,7 @@ class NativePlayerState {
     bool? ended,
     double? volume,
     double? speed,
+    double? brightness,
     String? title,
     String? mediaTitle,
     String? videoParams,
@@ -951,6 +956,7 @@ class NativePlayerState {
         ended: ended ?? this.ended,
         volume: volume ?? this.volume,
         speed: speed ?? this.speed,
+        brightness: brightness ?? this.brightness,
         title: title ?? this.title,
         mediaTitle: mediaTitle ?? this.mediaTitle,
         videoParams: videoParams ?? this.videoParams,

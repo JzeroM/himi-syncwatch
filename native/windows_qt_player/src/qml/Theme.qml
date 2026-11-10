@@ -86,6 +86,26 @@ QtObject {
     readonly property int controlsFadeMs: 200
     readonly property int autoHideMs: 5000
 
+    // ── Flutter 播放页专用（截图实测，与原生 UI 规格不同）──
+    //
+    // 【为什么单独一组】Flutter 播放页（`_buildVolumeSlider` 等）与原生
+    // UI（`NativePlayerTheme`）的规格**不同**：
+    //   - Flutter 进度条 track 4 / thumb 6（原生是 6/8）
+    //   - Flutter 音量滑杆 96 宽 + 数值 28/34 宽（原生无数值列）
+    //   - Flutter 亮度图标 #FFD54F（原生无此色）
+    // 用户给的截图是 Flutter 播放页，所以 QML 照这组。
+    readonly property real fpSeekTrackHeight: 4
+    readonly property real fpSeekThumbRadius: 6
+    readonly property real fpSliderWidth: 96
+    readonly property real fpSliderIconSize: 18
+    readonly property real fpSliderTrackHeight: 4
+    readonly property real fpSliderThumbRadius: 6
+    readonly property real fpVolumeValueWidth: 28
+    readonly property real fpBrightnessValueWidth: 34
+    readonly property color fpBrightnessIcon: "#FFD54F"
+    readonly property real fpLogoWidth: 240
+    readonly property real fpLogoHeight: 44
+
     /// 角标正圆边长（按文本长度分档，与 Dart `badgeSizeFor` 一致）
     function badgeSizeFor(text) {
         var len = text.length

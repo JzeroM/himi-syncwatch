@@ -3514,6 +3514,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted || _disposed) return;
       unawaited(_safePopPlayerPage());
     };
+    // Qt 亮度滑杆 → Flutter（写入系统亮度 + 刷新 UI）
+    adapter.onBrightnessChanged = (v) {
+      if (!mounted || _disposed) return;
+      _brightness = v;
+      _brightnessNotifier.value = v;
+      _setBrightness(v);
+    };
     // 播放地址与鉴权头通过 IPC 下发（不放命令行：URL 会在任务管理器
     // 可见，且 Emby URL 可能超过命令行长度限制）
     adapter.media = url;
@@ -3832,10 +3839,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     //
     // Qt 侧消费的是同一份 `NativePlayerState`（87 字段），与安卓/鸿蒙
     // 原生 UI 一致。这里额外附带 `playUrl`，Qt 据此决定是否需要 loadfile。
+    // 660：补充 `brightness`（在 _brightnessNotifier，不在 adapter）和
+    // `logoUrl`（已在 NativePlayerState，但需确认传入）。
     final qt = MpvSessionPlatform.activeQtAdapter;
     if (qt != null && !qt.isDisposed) {
+      final stateJson = mpv.buildNativePlayerState().toJson();
+      stateJson['brightness'] = _brightnessNotifier.value;
       qt.pushNativeState(
-        mpv.buildNativePlayerState().toJson(),
+        stateJson,
         playUrl: _currentPlayUrl,
       );
     }

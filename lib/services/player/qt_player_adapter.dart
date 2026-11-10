@@ -73,6 +73,9 @@ class QtPlayerAdapter implements PlayerAdapter {
   /// Qt 进程退出回调（上层据此回详情页）。
   void Function()? onProcessExited;
 
+  /// Qt 亮度滑杆变更回调（由播放页注入）。
+  void Function(double value)? onBrightnessChanged;
+
   void _bindPipe() {
     _pipe.commands.listen(_handleCommand);
     _pipe.onDisconnected = () {
@@ -105,6 +108,9 @@ class QtPlayerAdapter implements PlayerAdapter {
         volume = (cmd['volume'] as num?)?.toDouble() ?? 1.0;
       case 'setSpeed':
         playbackRate = (cmd['speed'] as num?)?.toDouble() ?? 1.0;
+      case 'setBrightness':
+        final v = (cmd['brightness'] as num?)?.toDouble() ?? 0.5;
+        onBrightnessChanged?.call(v);
       default:
         // 其余命令转发给上层（与原生 UI 命令链路一致）
         _eventController.add(

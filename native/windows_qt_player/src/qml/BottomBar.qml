@@ -3,14 +3,18 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import HimiPlayer
 
-// 659：底栏（对应 Flutter `PlayerBottomRow`）。
+// 660：底栏（照 Flutter `PlayerBottomRow` 截图实测布局）。
 //
-// 规格（NativePlayerTheme）：
-//   - 渐变：透明 → black@0.85
-//   - 内边距 h16 / top10 / bottom12
-//   - 进度条 track 6 / thumb 8，时间列 56
-//   - 播放组：上一个 28 / 播放 36 / 下一个 28，间距 8
-//   - 右侧图标 24、间距 20
+// 【布局（两行）】
+//   第一行：00:33  [进度条─────────────]  38:51
+//   第二行：⏮ ⏸ ⏭  🔊 ── 80  ☀ ── 38%  💬 📄 🎵 ⋮ 1.0x ⛶
+//
+// 【与 Flutter 截图逐项对齐】
+//   进度条：track 4 / thumb 6（比原生 UI 的 6/8 更细）
+//   音量：图标 18(white70) + 滑杆 96 + 数值列 28(11px)
+//   亮度：图标 18(#FFD54F) + 滑杆 96 + 数值列 34(11px)
+//   播放组：28/36/28，间距 8，紧接音量左侧
+//   右侧：弹幕/字幕/音轨/选集/倍速/全屏，间距 20
 Rectangle {
     id: root
 
@@ -28,8 +32,8 @@ Rectangle {
     signal episodeClicked()
     signal speedClicked()
     signal fullscreenClicked()
-    signal volumeChanged(real volume)
-    signal brightnessChanged(real value)
+    signal volumeChanged(real v)
+    signal brightnessChanged(real v)
     signal seekFinished(real ratio)
 
     height: 96
@@ -53,45 +57,42 @@ Rectangle {
         anchors.rightMargin: Theme.barPadH
         anchors.topMargin: Theme.barPadTop
         anchors.bottomMargin: Theme.barPadBottom
-        spacing: 0
+        spacing: 2
 
-        // ── 进度条 ──
-        SeekBar {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 32
-            position: root.seekRatio
-            leftText: formatTime(playerState.positionMs)
-            rightText: formatTime(playerState.durationMs)
-            onSeekFinished: (ratio) => root.seekFinished(ratio)
-        }
-
-        Item { Layout.fillHeight: true }
-
-        // ── 控制行 ──
+        // ── 第一行：进度条 + 时间 ──
         RowLayout {
             Layout.fillWidth: true
-            spacing: Theme.controlGap
+            spacing: 0
 
-            // 左槽：音量（图标 + 滑杆）
-            RowLayout {
-                spacing: 6
-                ControlButton {
-                    icon: playerState.volume <= 0.001 ? Icons.volumeOff
-                                                      : Icons.volumeUp
-                    tooltip: "音量 " + Math.round(playerState.volume * 100)
-                    onClicked: root.volumeChanged(playerState.volume > 0.5 ? 0 : 1)
-                }
-                Slider {
-                    Layout.preferredWidth: 80
-                    from: 0; to: 1
-                    value: playerState.volume
-                    onMoved: root.volumeChanged(value)
-                }
+            Text {
+                Layout.preferredWidth: Theme.timeCellWidth
+                text: formatTime(playerState.positionMs)
+                color: Theme.white54
+                font.pixelSize: Theme.captionSize
             }
+            GlassSlider {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 24
+                value: root.seekRatio
+                trackHeight: Theme.fpSeekTrackHeight
+                thumbRadius: Theme.fpSeekThumbRadius
+                onSeekFinished: (ratio) => root.seekFinished(ratio)
+            }
+            Text {
+                Layout.preferredWidth: Theme.timeCellWidth
+                text: formatTime(playerState.durationMs)
+                color: Theme.white54
+                font.pixelSize: Theme.captionSize
+                horizontalAlignment: Text.AlignRight
+            }
+        }
 
-            Item { Layout.preferredWidth: 8 }
+        // ── 第二行：控制条 ──
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 0
 
-            // 播放组：上一个 / 播放暂停 / 下一个
+            // 播放组（紧接左侧，间距 8）
             RowLayout {
                 spacing: Theme.transportGap
                 ControlButton {
@@ -117,9 +118,66 @@ Rectangle {
                 }
             }
 
+            Item { Layout.preferredWidth: 8 }
+
+            // 音量：图标 18 + 滑杆 96 + 数值 28
+            RowLayout {
+                spacing: 4
+                Text {
+                    text: playerState.volume <= 0.001 ? Icons.volumeOff
+                          : playerState.volume < 0.5 ? Icons.volumeDown
+                          : Icons.volumeUp
+                    font.family: "Material Icons"
+                    font.pixelSize: Theme.fpSliderIconSize
+                    color: Theme.white70
+                }
+                GlassSlider {
+                    Layout.preferredWidth: Theme.fpSliderWidth
+                    Layout.preferredHeight: 24
+                    value: playerState.volume
+                    onSeekFinished: (v) => root.volumeChanged(v)
+                    onSeekStarted: root.volumeChanged(value)
+                }
+                Text {
+                    Layout.preferredWidth: Theme.fpVolumeValueWidth
+                    text: Math.round(playerState.volume * 100).toString()
+                    color: Theme.white70
+                    font.pixelSize: 11
+                    horizontalAlignment: Text.AlignRight
+                }
+            }
+
+            Item { Layout.preferredWidth: 16 }
+
+            // 亮度：图标 18(#FFD54F) + 滑杆 96 + 数值 34
+            RowLayout {
+                spacing: 4
+                Text {
+                    text: Icons.brightness
+                    font.family: "Material Icons"
+                    font.pixelSize: Theme.fpSliderIconSize
+                    color: Theme.fpBrightnessIcon
+                }
+                GlassSlider {
+                    Layout.preferredWidth: Theme.fpSliderWidth
+                    Layout.preferredHeight: 24
+                    value: playerState.brightness
+                    accent: Theme.fpBrightnessIcon
+                    onSeekFinished: (v) => root.brightnessChanged(v)
+                    onSeekStarted: root.brightnessChanged(value)
+                }
+                Text {
+                    Layout.preferredWidth: Theme.fpBrightnessValueWidth
+                    text: Math.round(playerState.brightness * 100) + "%"
+                    color: Theme.white70
+                    font.pixelSize: 11
+                    horizontalAlignment: Text.AlignRight
+                }
+            }
+
             Item { Layout.fillWidth: true }
 
-            // 右组：弹幕 / 字幕 / 音轨 / 选集 / 倍速 / 全屏
+            // 右侧：弹幕/字幕/音轨/选集/倍速/全屏
             ControlButton {
                 icon: playerState.danmakuEnabled ? Icons.danmakuOn : Icons.danmakuOff
                 tooltip: "弹幕"

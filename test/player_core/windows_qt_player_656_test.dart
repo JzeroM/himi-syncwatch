@@ -193,7 +193,8 @@ void main() {
     });
 
     test('底栏含进度条/时间/播放暂停/音量/字幕/音轨/选集/倍速/全屏', () {
-      expect(bottomBar, contains('SeekBar'));
+      // 660：进度条改为 GlassSlider（照 Flutter 观感），不再是 SeekBar
+      expect(bottomBar, contains('GlassSlider'));
       expect(bottomBar, contains('formatTime'));
       expect(bottomBar, contains('playerState.paused'));
       expect(bottomBar, contains('playerState.volume'));
@@ -650,6 +651,76 @@ void main() {
         expect(hardcoded, isEmpty,
             reason: '$name 里还有硬编码颜色 $hardcoded，应改用 Theme.xxx');
       }
+    });
+  });
+
+  group('⑭ 660：照 Flutter 截图对齐的细节', () {
+    final bottomBar = read('$dir/src/qml/BottomBar.qml');
+    final themeQml = read('$dir/src/qml/Theme.qml');
+    final mainQmlSrc = read('$dir/src/qml/Main.qml');
+    final stateH = read('$dir/src/player_state.h');
+    final stateCpp = read('$dir/src/player_state.cpp');
+
+    test('底栏是两行（进度条 + 控制条）', () {
+      expect(bottomBar, contains('GlassSlider'));
+      expect(bottomBar, contains('skipPrevious'));
+      expect(bottomBar, contains('skipNext'));
+      expect(bottomBar, contains('Icons.brightness'));
+    });
+
+    test('音量滑杆 96 宽 + 数值 28（Flutter 规格）', () {
+      expect(themeQml, contains('fpSliderWidth: 96'));
+      expect(themeQml, contains('fpVolumeValueWidth: 28'));
+    });
+
+    test('亮度滑杆用黄色 #FFD54F（Flutter 规格）', () {
+      expect(themeQml, contains('fpBrightnessIcon: "#FFD54F"'));
+    });
+
+    test('进度条 track 4 / thumb 6（Flutter 规格）', () {
+      expect(themeQml, contains('fpSeekTrackHeight: 4'));
+      expect(themeQml, contains('fpSeekThumbRadius: 6'));
+    });
+
+    test('GlassSlider 多层绘制齐全', () {
+      final slider = read('$dir/src/qml/GlassSlider.qml');
+      expect(slider, contains('shadowBlur'));
+      expect(slider, contains('createLinearGradient'));
+      expect(slider, contains('arcTo'));
+    });
+
+    test('Main.qml 有 Logo 组件', () {
+      expect(mainQmlSrc, contains('EpisodeLogo'));
+    });
+
+    test('PlayerState 有 brightness 与 logoUrl', () {
+      expect(stateH, contains('Q_PROPERTY(double brightness'));
+      expect(stateH, contains('Q_PROPERTY(QString logoUrl'));
+      expect(stateCpp, contains('"brightness"'));
+    });
+
+    test('5 位码点用 fromCharCode', () {
+      final iconsQml = read('$dir/src/qml/Icons.qml');
+      expect(iconsQml, contains('String.fromCharCode(0xF07BF)'));
+      expect(iconsQml, contains('String.fromCharCode(0xF04D2)'));
+    });
+
+    test('NativePlayerState 有 brightness 字段', () {
+      final ns = File(
+        'lib/services/player/native/native_player_state.dart',
+      ).readAsStringSync();
+      expect(ns, contains('this.brightness = 0.5'));
+      expect(ns, contains("'brightness': brightness"));
+    });
+
+    test('Qt 亮度回调链路连通', () {
+      final adapterSrc =
+          File('lib/services/player/qt_player_adapter.dart').readAsStringSync();
+      final screenSrc =
+          File('lib/screens/player/player_screen.dart').readAsStringSync();
+      expect(adapterSrc, contains('onBrightnessChanged'));
+      expect(adapterSrc, contains("'setBrightness'"));
+      expect(screenSrc, contains('adapter.onBrightnessChanged'));
     });
   });
 }

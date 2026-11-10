@@ -45,6 +45,12 @@ class PlayerState : public QObject {
     Q_PROPERTY(bool isHost READ isHost NOTIFY changed)
     Q_PROPERTY(QString clockFormat READ clockFormat NOTIFY changed)
 
+    // ── 剧集 Logo（660，照 Flutter）──
+    Q_PROPERTY(QString logoUrl READ logoUrl NOTIFY changed)
+
+    // ── 亮度（660，照 Flutter 播放页亮度滑杆）──
+    Q_PROPERTY(double brightness READ brightness NOTIFY changed)
+
     // ── 弹幕 ──
     Q_PROPERTY(bool danmakuEnabled READ danmakuEnabled NOTIFY changed)
 
@@ -94,6 +100,10 @@ public:
     int onlineUserCount() const { return onlineUserCount_; }
     bool isHost() const { return isHost_; }
     QString clockFormat() const { return clockFormat_; }
+
+    QString logoUrl() const { return logoUrl_; }
+
+    double brightness() const { return brightness_; }
 
     bool danmakuEnabled() const { return danmakuEnabled_; }
 
@@ -163,6 +173,10 @@ private:
     int onlineUserCount_ = 0;
     bool isHost_ = false;
     QString clockFormat_;
+
+    QString logoUrl_;
+
+    double brightness_ = 0.5;
 
     bool danmakuEnabled_ = false;
 
