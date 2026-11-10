@@ -19,6 +19,11 @@ QtObject {
     readonly property color white24: "#3DFFFFFF"
     readonly property color white12: "#1FFFFFFF"
 
+    // 次级文本色（662 瑕疵修复：此前误用 EvolveUI 的
+    // theme.getBorderColor(true)——它的 true 是「高亮态」返回
+    // focusColor(#6366F1)，把时间/网速全染成了蓝紫色）。
+    readonly property color mutedText: "#B3FFFFFF"
+
     /// 面板背景（`panelTint` = 0x1F1A1D23，深色磨砂基色）
     readonly property color panelTint: "#1F1A1D23"
     readonly property color rim: "#4DFFFFFF"

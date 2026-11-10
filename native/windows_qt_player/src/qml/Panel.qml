@@ -96,7 +96,7 @@ Rectangle {
                         width: parent.width
                         text: modelData.sub || ""
                         color: modelData.selected ? theme.primaryColor
-                                                  : theme.getBorderColor(true)
+                                                  : Theme.mutedText
                         font.pixelSize: Theme.captionSize
                         elide: Text.ElideRight
                     }

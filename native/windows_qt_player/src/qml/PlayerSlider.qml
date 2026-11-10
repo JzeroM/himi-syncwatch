@@ -66,9 +66,13 @@ Item {
         showValueText: root.showValue
         showSpinBox: false
         labelWidth: root.labelWidth
-        backgroundVisible: false
+        backgroundVisible: true
         trackColor: root.trackColor
         fillColor: root.fillColor
+        // 【662 瑕疵修复】ESlider 的 backgroundVisible:false 只藏底色，
+        // **描边仍画**（1px theme.textColor 白）→ 滑杆带白框（真机截图）。
+        // 走「透明描边」路线：保留暗色轨道底，去掉整圈描边。
+        borderColor: "transparent"
         itemSpacing: 8
 
         // 【绑定保护】拖动期间暂停外部绑定，松手恢复。

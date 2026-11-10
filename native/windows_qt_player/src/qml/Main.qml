@@ -51,8 +51,6 @@ ApplicationWindow {
     // 控件自动隐藏（播放中 5 秒无操作，与 Flutter `autoHideMs` 一致）
     property bool controlsVisible: true
 
-    /// 当前展开的菜单（"decode"/"subtitleStyle"），驱动顶栏玻璃方块高亮
-    property string openMenu: ""
     /// 列表面板（Panel）是否展开
     property bool panelOpen: false
     /// 显示调节面板是否展开
@@ -74,7 +72,6 @@ ApplicationWindow {
     function closePanels() {
         panelOpen = false
         adjustOpen = false
-        openMenu = ""
     }
 
     // 窗口内任意鼠标移动都重新计时
@@ -92,7 +89,9 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         showControls: root.controlsVisible && !playerState.locked
-        openMenu: root.openMenu
+        // 662 瑕疵修复：高亮由面板**真实可见性**驱动（不再用字符串插销）
+        decodeOpen: panel.visible && panel.title === "解码方式"
+        adjustOpen: adjustPanel.visible
         onBackClicked: {
             pipeServer.sendCommand({"type": "requestExit"})
             root.close()
@@ -175,21 +174,35 @@ ApplicationWindow {
     }
 
     // ── 等待主程序连接 ──
-    Column {
+    //
+    // 【662 瑕疵修复】深色圆角底衬 + 白色文案：loader.gif 是深色系，
+    // 黑窗口里裸放完全看不见（真机截图中央全黑）。
+    Rectangle {
         anchors.centerIn: parent
-        spacing: 12
+        width: waitingCol.implicitWidth + 48
+        height: waitingCol.implicitHeight + 32
+        radius: 12
+        color: Qt.rgba(0, 0, 0, 0.55)
+        border.color: theme.borderColor
+        border.width: 1
         visible: !pipeServer.hasClient
 
-        EUI.ELoader {
-            anchors.horizontalCenter: parent.horizontalCenter
-            running: true
-            size: 48
-        }
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: "等待主程序连接…"
-            color: theme.getBorderColor(true)
-            font.pixelSize: Theme.panelOptionSize
+        Column {
+            id: waitingCol
+            anchors.centerIn: parent
+            spacing: 12
+
+            EUI.ELoader {
+                anchors.horizontalCenter: parent.horizontalCenter
+                running: true
+                size: 48
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "等待主程序连接…"
+                color: Theme.white
+                font.pixelSize: Theme.panelOptionSize
+            }
         }
     }
 
@@ -213,12 +226,10 @@ ApplicationWindow {
         visible: root.panelOpen && !playerState.locked
         onClosed: {
             root.panelOpen = false
-            root.openMenu = ""
         }
         onItemClicked: (id) => {
             root.handlePanelItem(id)
             root.panelOpen = false
-            root.openMenu = ""
         }
     }
 
@@ -232,7 +243,6 @@ ApplicationWindow {
         visible: root.adjustOpen && !playerState.locked
         onClosed: {
             root.adjustOpen = false
-            root.openMenu = ""
         }
         onAdjust: (key, value) => pipeServer.sendCommand({
             "type": "adjustDisplay", "key": key, "value": value
@@ -257,7 +267,6 @@ ApplicationWindow {
         panel.title = "选集"
         panel.items = list
         adjustOpen = false
-        openMenu = ""
         panelOpen = true
     }
 
@@ -276,7 +285,6 @@ ApplicationWindow {
         panel.title = "音轨"
         panel.items = list
         adjustOpen = false
-        openMenu = ""
         panelOpen = true
     }
 
@@ -295,7 +303,6 @@ ApplicationWindow {
         panel.title = "字幕"
         panel.items = list
         adjustOpen = false
-        openMenu = ""
         panelOpen = true
     }
 
@@ -314,7 +321,6 @@ ApplicationWindow {
         panel.title = "播放速度"
         panel.items = list
         adjustOpen = false
-        openMenu = ""
         panelOpen = true
     }
 
@@ -340,7 +346,6 @@ ApplicationWindow {
         panel.title = "版本"
         panel.items = list
         adjustOpen = false
-        openMenu = ""
         panelOpen = true
     }
 
@@ -357,14 +362,12 @@ ApplicationWindow {
         ]
         adjustOpen = false
         panelOpen = true
-        openMenu = "decode"
     }
 
     // ── 662：显示调节面板 ──
     function openAdjustPanel() {
         panelOpen = false
         adjustOpen = true
-        openMenu = "subtitleStyle"
     }
 
     function handlePanelItem(id) {

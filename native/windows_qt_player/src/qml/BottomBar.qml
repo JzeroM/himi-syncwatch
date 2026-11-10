@@ -91,7 +91,7 @@ Rectangle {
             Text {
                 Layout.preferredWidth: root.timeCellWidthFor(playerState.durationMs)
                 text: formatTime(playerState.positionMs)
-                color: theme.getBorderColor(true)
+                color: Theme.mutedText
                 font.pixelSize: Theme.captionSize
             }
             PlayerSlider {
@@ -109,7 +109,7 @@ Rectangle {
             Text {
                 Layout.preferredWidth: root.timeCellWidthFor(playerState.durationMs)
                 text: formatTime(playerState.durationMs)
-                color: theme.getBorderColor(true)
+                color: Theme.mutedText
                 font.pixelSize: Theme.captionSize
                 horizontalAlignment: Text.AlignRight
             }
@@ -158,7 +158,7 @@ Rectangle {
                           : Icons.volumeUp
                     font.family: iconFont.name
                     font.pixelSize: Theme.fpSliderIconSize
-                    color: theme.getBorderColor(true)
+                    color: Theme.mutedText
                 }
                 PlayerSlider {
                     Layout.preferredWidth: Theme.fpSliderWidth
@@ -250,31 +250,44 @@ Rectangle {
                     onClicked: root.episodeClicked()
                 }
 
-                // 倍速（图标 + 文字标签；仅非房间显示）
-                EUI.EButton {
+                // 倍速（662 瑕疵修复：EButton 的 label 强制 bold，"1.0x"
+                // 渲染得发糊发斜——改「图标 + 独立 Text(12px)」，与
+                // Flutter `Icon(speed,24) + Text(12px white70)` 同构）
+                Item {
                     visible: !playerState.isRoom
                     Layout.preferredHeight: 32
                     Layout.preferredWidth: speedRow.implicitWidth + 16
-                    text: root.formatSpeed(playerState.speed)
-                    iconCharacter: Icons.speed
-                    iconFontFamily: iconFont.name
-                    size: "m"
-                    radius: 8
-                    shadowEnabled: false
-                    containerColor: "transparent"
-                    hoverColor: theme.isDark ? Qt.rgba(1, 1, 1, 0.12)
-                                             : Qt.rgba(0, 0, 0, 0.08)
-                    textColor: theme.getBorderColor(true)
-                    iconColor: theme.textColor
-                    onClicked: root.speedClicked()
 
-                    Text {
-                        id: speedRow
-                        visible: false
-                        text: Icons.speed + root.formatSpeed(playerState.speed)
-                        font.pixelSize: 20
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 8
+                        color: speedHover.hovered
+                               ? (theme.isDark ? Qt.rgba(1, 1, 1, 0.12)
+                                               : Qt.rgba(0, 0, 0, 0.08))
+                               : "transparent"
                     }
-
+                    Row {
+                        id: speedRow
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text {
+                            text: Icons.speed
+                            font.family: iconFont.name
+                            font.pixelSize: Theme.controlIconSize
+                            color: theme.textColor
+                        }
+                        Text {
+                            text: root.formatSpeed(playerState.speed)
+                            color: Theme.mutedText
+                            font.pixelSize: Theme.captionSize
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.speedClicked()
+                    }
                     HoverHandler { id: speedHover }
                     ToolTip.visible: speedHover.hovered
                     ToolTip.text: "播放速度"

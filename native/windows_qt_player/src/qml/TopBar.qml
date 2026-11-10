@@ -19,8 +19,10 @@ Rectangle {
     id: root
 
     property bool showControls: true
-    /// 当前展开的菜单（"decode"/"subtitleStyle"），对应按钮换高亮
-    property string openMenu: ""
+    /// 面板真实可见性驱动的高亮（662 瑕疵修复：不再用字符串插销
+    /// openMenu——面板创建失败/被锁隐藏时插销会残留，图标卡在高亮色）
+    property bool decodeOpen: false
+    property bool adjustOpen: false
 
     signal backClicked()
     signal kernelClicked()
@@ -86,7 +88,7 @@ Rectangle {
         Text {
             visible: playerState.networkSpeedText !== ""
             text: playerState.networkSpeedText
-            color: theme.getBorderColor(true)
+            color: Theme.mutedText
             font.pixelSize: Theme.captionSize
         }
 
@@ -114,21 +116,21 @@ Rectangle {
             }
         }
 
-        // 显示调节（展开态高亮）
+        // 显示调节（面板可见时高亮）
         ControlButton {
             icon: Icons.tune
             iconSize: 18
-            iconColor: root.openMenu === "subtitleStyle"
+            iconColor: root.adjustOpen
                        ? theme.focusColor : theme.textColor
             tooltip: "显示调节"
             onClicked: root.subtitleStyleClicked()
         }
 
-        // 解码方式（展开态高亮）
+        // 解码方式（面板可见时高亮）
         ControlButton {
             icon: Icons.memory
             iconSize: 18
-            iconColor: root.openMenu === "decode"
+            iconColor: root.decodeOpen
                        ? theme.focusColor : theme.textColor
             tooltip: "解码方式：" + playerState.decodeMode
             onClicked: root.decodeClicked()

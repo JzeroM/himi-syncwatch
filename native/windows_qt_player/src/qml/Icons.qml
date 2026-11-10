@@ -40,7 +40,7 @@ QtObject {
     readonly property string volumeOff: "\uf6a9"          // fa-volume-xmark
     readonly property string brightness: "\uf185"         // fa-sun
     readonly property string danmakuOn: "\uf086"          // fa-comments
-    readonly property string danmakuOff: "\uf4b5"         // fa-comment-slash
+    readonly property string danmakuOff: "\uf4b3"         // fa-comment-slash
     readonly property string subtitles: "\uf20a"          // fa-closed-captioning
     readonly property string audioTrack: "\uf001"         // fa-music
     readonly property string playlistPlay: "\uf0cb"       // fa-list-ol（选集）

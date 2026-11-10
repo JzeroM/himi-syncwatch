@@ -83,7 +83,7 @@ Rectangle {
             anchors.leftMargin: Theme.panelPadH
             anchors.bottom: parent.bottom
             text: parent.label
-            color: theme.getBorderColor(true)
+            color: Theme.mutedText
             font.pixelSize: Theme.captionSize
             font.weight: 500
         }

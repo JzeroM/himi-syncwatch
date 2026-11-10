@@ -925,4 +925,71 @@ void main() {
       }
     });
   });
+
+  group('⑰ 662 真机截图瑕疵修复（白描边/蓝紫文本/图标码点/按钮底）', () {
+    final iconsQml = read('$dir/src/qml/Icons.qml');
+    final topBar = read('$dir/src/qml/TopBar.qml');
+    final bottomBar = read('$dir/src/qml/BottomBar.qml');
+    final mainQml = read('$dir/src/qml/Main.qml');
+    final slider = read('$dir/src/qml/PlayerSlider.qml');
+    final controlBtn = read('$dir/src/qml/ControlButton.qml');
+
+    test('danmakuOff 码点是 F4B3（fontTools 对 FA 6.7.2 字体核对过）', () {
+      // 真机回归：此前写 F4B5——该码点**不在字体里**，无字形 →
+      // 弹幕按钮整个空白（用户截图「弹幕按钮缺失」）。
+      // fa-comment-slash 的真值是 U+F4B3。
+      expect(iconsQml, contains(r'\uf4b3'));
+      expect(iconsQml, isNot(contains(r'\uf4b5')));
+    });
+
+    test('滑杆不再带白色描边（ESlider 描边透明化）', () {
+      // 真机回归：ESlider 的 backgroundVisible:false 只藏底色，
+      // 描边仍画 1px 白 → 三条滑杆带白框。
+      expect(slider, contains('backgroundVisible: true'));
+      expect(slider, contains('borderColor: "transparent"'));
+    });
+
+    test('次级文本走 Theme.mutedText（禁用 getBorderColor(true) 高亮色）', () {
+      // 真机回归：getBorderColor(true) 的 true 是「高亮态」→ 返回
+      // focusColor(#6366F1)，时间/网速全变蓝紫。
+      for (final f in [topBar, bottomBar, read('$dir/src/qml/Panel.qml'),
+                       read('$dir/src/qml/DisplayAdjustPanel.qml')]) {
+        expect(f, isNot(contains('getBorderColor(true)')));
+      }
+      expect(topBar, contains('Theme.mutedText'));
+      expect(bottomBar, contains('Theme.mutedText'));
+      final themeQml = read('$dir/src/qml/Theme.qml');
+      expect(themeQml, contains('readonly property color mutedText'));
+    });
+
+    test('顶栏高亮由面板真实可见性驱动（无 openMenu 插销残留）', () {
+      // 真机回归：字符串插销会残留——面板没显示图标却卡在高亮色。
+      expect(mainQml, isNot(contains('openMenu')));
+      expect(topBar, contains('decodeOpen'));
+      expect(topBar, contains('adjustOpen'));
+      expect(mainQml, contains('adjustOpen: adjustPanel.visible'));
+      expect(mainQml, contains('decodeOpen: panel.visible'));
+    });
+
+    test('图标按钮底自绘（EButton backgroundVisible:false，深底疑云排除）', () {
+      expect(controlBtn, contains('backgroundVisible: false'));
+      expect(controlBtn, contains('hover.hovered'));
+      // 字号档拉层级：36→xl(32) / 28→l(24) / 18→m(20)
+      expect(controlBtn, contains('"xl"'));
+      expect(controlBtn, contains('"l"'));
+      expect(controlBtn, contains('"m"'));
+    });
+
+    test('倍速是图标 + 独立 Text 12px（EButton label 强制 bold 弃用）', () {
+      expect(bottomBar, contains('Theme.captionSize'));
+      final speedBlock = bottomBar.split('Icons.speed')[1];
+      expect(speedBlock.split('ControlButton').first,
+          isNot(contains('EUI.EButton')));
+    });
+
+    test('等待连接提示有深色底衬 + 白色文案（黑底可读）', () {
+      expect(mainQml, contains('等待主程序连接'));
+      expect(mainQml, contains('Qt.rgba(0, 0, 0, 0.55)'));
+    });
+  });
 }
