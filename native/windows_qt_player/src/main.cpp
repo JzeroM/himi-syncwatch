@@ -132,6 +132,10 @@ int main(int argc, char* argv[]) {
         return -2;
     }
 
+    // ── mpv 窗口（664：声明提前到 QML load 之前——mpvWindow 上下文
+    // 属性必须在 engine.load 前注册，否则 QML 解析不到）──
+    MpvWindow mpv;
+
     // ── QML ──
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("playerState", &state);
@@ -192,7 +196,7 @@ int main(int argc, char* argv[]) {
     }
 
     // ── mpv ──
-    MpvWindow mpv;
+    // （MpvWindow 已提前声明在 QML 段之前：mpvWindow 上下文属性需要）
     // 当前已加载的 URL（去重：同一 URL 不重复 loadfile）。
     // 用局部变量而不是 host->property("loadedUrl")——后者会往 QQuickWindow
     // 上挂动态属性，语义不清且 QML 侧也能改到。

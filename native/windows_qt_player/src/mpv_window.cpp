@@ -1,6 +1,8 @@
 #include "mpv_window.h"
 
 #include <QDebug>
+#include <QRectF>
+#include <QVariant>
 #include <QTimer>
 
 #include <mpv/client.h>
@@ -172,6 +174,8 @@ void MpvWindow::syncGeometry() {
     lastH_ = h;
     ::SetWindowPos(video_hwnd_, nullptr, x, y, w, h,
                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+    // 664：几何变化后重建挖孔区域（孔是窗口坐标，不随 resize 缩放）
+    applyRegion();
 }
 
 void MpvWindow::setOverlayInsets(int top, int bottom) {
