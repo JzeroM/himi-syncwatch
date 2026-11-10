@@ -6,6 +6,7 @@ import 'package:himi_mpv_ohos/himi_mpv_ohos.dart';
 import 'package:himi_mpv_windows/himi_mpv_windows.dart';
 
 import 'native/android_native_player.dart';
+import 'qt_player_adapter.dart';
 
 /// 三端 MPV 会话工厂。
 ///
@@ -81,6 +82,20 @@ class MpvSessionPlatform {
 
   // ── 原生播放器 UI 宿主（鸿蒙子窗口 / Android Dialog / Windows 独立窗口）
 
+  /// 656：Windows 是否启用 Qt 播放器窗口。
+  ///
+  /// 由播放页按设置注入（`AppSettings.useQtPlayer`）。为 true 时
+  /// `openNativeUi` 会拉起 Qt 进程而不是走 646 的 Win32 顶层窗口。
+  static bool qtPlayerEnabled = false;
+
+  /// 656：Qt 播放器进程的 exe 路径（Windows）。
+  ///
+  /// Flutter 产物里 Qt 目录放在 `himi_qt_player\`（与主 exe 同级）。
+  static String? qtPlayerExePath;
+
+  /// 656：当前活跃的 Qt 适配器（同一时刻只允许一个播放窗口）。
+  static QtPlayerAdapter? activeQtAdapter;
+
   /// 原生 UI 宿主平台名（'ohos' / 'android' / 'windows'）；不支持为 null。
   ///
   /// 【653 真机回归：Flutter 窗口同时显示详情页与播放控件】
@@ -106,13 +121,52 @@ class MpvSessionPlatform {
   static Future<void> openNativeUi() {
     if (isOhos) return HimiMpvPlayer.openNativeUi();
     if (Platform.isAndroid) return AndroidNativePlayer.open();
+    // 656：Windows 的 Qt 播放器由 [launchQtPlayer] 单独拉起（需要
+    // URL/HDR 等参数），这里保持空实现——646 的原生窗口已在会话
+    // 创建时就建好了。
     return Future<void>.value();
+  }
+
+  /// 656：拉起 Qt 播放器窗口（Windows）。
+  ///
+  /// 返回适配器；失败返回 null（上层应回退到 646 路径）。
+  static Future<QtPlayerAdapter?> launchQtPlayer({
+    required String exePath,
+    required bool hdr,
+    required bool hlg,
+  }) async {
+    if (!Platform.isWindows) return null;
+    try {
+      // 同一时刻只允许一个 Qt 播放窗口：先关旧的。
+      await closeQtPlayer();
+      final adapter = await QtPlayerAdapter.launch(
+        exePath: exePath,
+        hdr: hdr,
+        hlg: hlg,
+      );
+      activeQtAdapter = adapter;
+      return adapter;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// 656：关闭 Qt 播放器窗口（幂等）。
+  static Future<void> closeQtPlayer() async {
+    final adapter = activeQtAdapter;
+    activeQtAdapter = null;
+    if (adapter == null) return;
+    try {
+      adapter.dispose();
+    } catch (_) {}
   }
 
   /// 关闭原生播放器 UI 宿主（幂等）。
   static Future<void> closeNativeUi() {
     if (isOhos) return HimiMpvPlayer.closeNativeUi();
     if (Platform.isAndroid) return AndroidNativePlayer.close();
+    // 656：Windows 若启用了 Qt 播放器，关闭时同时结束那个进程。
+    if (Platform.isWindows) return closeQtPlayer();
     return Future<void>.value();
   }
 

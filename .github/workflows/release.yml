@@ -573,6 +573,71 @@ jobs:
             Write-Host "已捆绑 $dll"
           }
 
+      - name: 安装 Qt 6（播放器窗口）
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: 'win64_msvc2022_64'
+          cache: true
+
+      - name: 编译 Qt 播放器
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $clientDir = 'native/windows_qt_player'
+          if (!(Test-Path $clientDir)) { throw "缺少 $clientDir" }
+
+          # libmpv dev 包头（include/mpv/client.h + libmpv.dll.a）。
+          # 主程序那边只取了 libmpv-2.dll，这里需要完整的 dev 包。
+          $headers = @{ 'User-Agent' = 'himi-build'; 'Accept' = 'application/vnd.github+json' }
+          if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)" }
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' -Headers $headers -UseBasicParsing
+          $asset = $release.assets | Where-Object { $_.name -match 'mpv-dev-x86_64-v3.*\.7z' } | Select-Object -First 1
+          if (-not $asset) { $asset = $release.assets | Where-Object { $_.name -match 'mpv-dev-x86_64.*\.7z' } | Select-Object -First 1 }
+          if (-not $asset) { throw '未找到 shinchiro libmpv dev 包' }
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile mpv-dev.7z -UseBasicParsing
+          $sevenZip = Join-Path ${env:ProgramFiles} '7-Zip\7z.exe'
+          if (!(Test-Path $sevenZip)) {
+            choco install 7zip -y --no-progress | Out-Null
+            $sevenZip = Join-Path ${env:ProgramFiles} '7-Zip\7z.exe'
+          }
+          Remove-Item -Recurse -Force mpv-dev -ErrorAction SilentlyContinue
+          & $sevenZip x mpv-dev.7z "-ompv-dev" -y | Out-Null
+          $header = Get-ChildItem -Path mpv-dev -Recurse -Filter 'client.h' |
+            Where-Object { $_.DirectoryName -match 'mpv' } | Select-Object -First 1
+          if (-not $header) { throw '包内未找到 mpv/client.h' }
+          $libmpvDir = Split-Path (Split-Path $header.DirectoryName -Parent) -Parent
+          Write-Host "LIBMPV_DIR=$libmpvDir"
+
+          # 三个坑（654 实测）：
+          # 1. 不能用 "Visual Studio 17 2022" 生成器（runner 已 VS2026）
+          # 2. 不能用 steps.install-qt.outputs.qt-dir（为空）→ QT_ROOT_DIR
+          # 3. Ninja 默认挑 MinGW gcc → 必须 vcvars64 初始化 MSVC
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (!(Test-Path $vswhere)) { throw "未找到 vswhere.exe" }
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ([string]::IsNullOrWhiteSpace($vsPath)) { throw "未找到含 VC 工具集的 Visual Studio" }
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+          if (!(Test-Path $vcvars)) { throw "未找到 vcvars64.bat" }
+
+          cmd /c ('call "' + $vcvars + '" >nul && cmake -S ' + $clientDir +
+                  ' -B build-qt -G Ninja -DCMAKE_BUILD_TYPE=Release' +
+                  ' -DCMAKE_PREFIX_PATH="' + $env:QT_ROOT_DIR + '"' +
+                  ' -DLIBMPV_DIR="' + $libmpvDir + '"')
+          if ($LASTEXITCODE -ne 0) { throw "Qt 播放器 CMake 配置失败" }
+
+          cmd /c ('call "' + $vcvars + '" >nul && cmake --build build-qt --parallel')
+          if ($LASTEXITCODE -ne 0) { throw "Qt 播放器编译失败" }
+
+          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --qmldir "$clientDir/src/qml" "build-qt/himi_qt_player.exe"
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt 失败" }
+
+          # 放到主程序目录下（Flutter 按 <exe目录>/himi_qt_player/ 查找）
+          $dest = 'build/windows/x64/runner/Release/himi_qt_player'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Path 'build-qt/*' -Destination $dest -Recurse -Force
+          Write-Host "Qt 播放器已放入 $dest"
+
       - name: 编译 Inno Setup 安装包
         shell: pwsh
         run: |
@@ -617,11 +682,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ISCC 编译失败，退出码 $LASTEXITCODE" }
           Get-ChildItem 'build/windows/setup' | ForEach-Object { Write-Host "产物: $($_.Name) ($($_.Length) bytes)" }
 
+      # 656：Qt 播放器窗口（带完整控件）。
+      #
+      # 【为什么在 release.yml 里内联构建】Qt 播放器需要和主程序**同一个
+      # 提交、同一套 libmpv**。用单独的 workflow + artifact 传递会引入
+      # 「哪个版本配哪个」的漂移风险，且多一次 job 等待。
+      #
+      # 产物落到 `build/windows/x64/runner/Release/himi_qt_player/`，
+      # Flutter 侧按 `<exe目录>/himi_qt_player/himi_qt_player.exe` 查找。
       - uses: actions/upload-artifact@v4
         with:
           name: windows-exe
           path: build/windows/x64/runner/Release/
-
       - uses: actions/upload-artifact@v4
         with:
           name: windows-setup

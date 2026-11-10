@@ -192,6 +192,12 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     unawaited(_refreshHdrOutputForCurrentSession());
   }
 
+  /// 656：当前媒体是否 HDR（只读，供 Qt 播放器启动时传参）。
+  bool get isHdrContent => _hdrContentForMedia;
+
+  /// 656：当前媒体是否 HLG（只读，供 Qt 播放器启动时传参）。
+  bool get isHlgContent => _hlgContentForMedia;
+
   /// SDR 纹理链路不可用时强制原生 Surface。
   bool _forceNativeSurface = false;
   set forceNativeSurface(bool value) => _forceNativeSurface = value;
@@ -2159,9 +2165,14 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     _propertyCache['time-pos'] = (positionMs / 1000.0).toStringAsFixed(3);
   }
 
+  /// 656：公开的状态快照（供 Qt 播放器推送用）。
+  ///
+  /// 内部仍走 [_buildNativePlayerState]，保证与安卓/鸿蒙原生 UI 拿到的
+  /// 是**同一份** 87 字段结构，三端行为天然一致。
+  NativePlayerState buildNativePlayerState() => _buildNativePlayerState();
+
   /// 把适配器当前状态转成原生 UI 权威快照（计划书 §7.4 数据源）。
-  NativePlayerState _buildNativePlayerState() {
-    final paused = _state == AdapterPlaybackState.paused ||
+  NativePlayerState _buildNativePlayerState() {    final paused = _state == AdapterPlaybackState.paused ||
         _state == AdapterPlaybackState.stopped;
     final buffering =
         (_mediaStatus.rawValue & AdapterMediaStatus.buffering.rawValue) != 0;

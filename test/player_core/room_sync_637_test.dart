@@ -194,16 +194,20 @@ void main() {
   });
 
   group('④ Windows 默认输出（策略层已在 mpv_output_policy_test 覆盖）', () {
-    test('639：Windows 已回退 texture（637 的 Surface 会灰屏）', () {
-      // 637 曾让 Windows 默认 Surface，但真机灰屏（HWND 被 Flutter 不透明
-      // 窗口遮挡）。637 的崩溃（libmpv-2.dll + 0xc0000005）已在 638 通过
-      // 换掉自建 libmpv 解决，与渲染模式无关，故 639 回退 texture。
+    test('656：Windows 默认 surface（646 顶层窗口已解决灰屏）', () {
+      // 639 曾把 Windows 默认改成 texture，因为当时 surface 灰屏（原生子
+      // HWND 被 Flutter 不透明窗口遮挡）。但 646 用**原生顶层窗口**解决
+      // 了遮挡，647 真机已验证 HDR 直出成功。
+      //
+      // 647 只改了 AppSettings（设置页显示）漏了 MpvOutputPolicy（实际
+      // 播放判定）→ 设置页显示 Surface、实际走 texture → 新用户 HDR
+      // 永远用不上。656 统一为 surface。
       final policy = File(
         'plugins/himi_mpv_core/lib/src/mpv_output_policy.dart',
       ).readAsStringSync();
       expect(
         stripComments(policy),
-        contains('if (windows && !userSet) return texture;'),
+        contains('if (windows && !userSet) return surface;'),
       );
     });
   });

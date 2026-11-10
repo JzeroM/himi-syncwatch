@@ -2309,6 +2309,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted) return;
     final settings = ref.read(settingsProvider);
 
+    // 656：Windows 独立 Qt 播放器窗口开关。
+    //
+    // 这里只做「参数注入」——真正的进程拉起点在 [_startQtPlayer]，
+    // 由起播流程调用（那时才知道 URL 与 HDR 决策）。
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      MpvSessionPlatform.qtPlayerEnabled = settings.useQtPlayer;
+      MpvSessionPlatform.qtPlayerExePath = _qtPlayerExePath();
+      LogService().log('Player',
+          'Qt 播放器开关=${settings.useQtPlayer} exe=${MpvSessionPlatform.qtPlayerExePath}');
+    }
+
     // 配置解码器
     // 锁屏保持
     try {
@@ -3452,6 +3463,62 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     player.onNativeUiCommand = null;
   }
 
+  /// 656：Qt 播放器 exe 的绝对路径。
+  ///
+  /// 产物布局：`<主 exe 目录>\himi_qt_player\himi_qt_player.exe`
+  /// （CI 把 Qt 目录整体放进 Windows zip）。
+  String? _qtPlayerExePath() {
+    if (defaultTargetPlatform != TargetPlatform.windows) return null;
+    try {
+      final exeDir = File(Platform.resolvedExecutable).parent;
+      final path = '${exeDir.path}${Platform.pathSeparator}himi_qt_player'
+          '${Platform.pathSeparator}himi_qt_player.exe';
+      return File(path).existsSync() ? path : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 656：拉起 Qt 播放器窗口。
+  ///
+  /// 返回 true 表示已接管（调用方应跳过 Flutter 侧的播放流程）；
+  /// false 表示未启用或启动失败（回退到现有 646 路径）。
+  Future<bool> _startQtPlayer({
+    required String url,
+    required bool hdr,
+    required bool hlg,
+    required Map<String, String> headers,
+    int startMs = 0,
+  }) async {
+    if (!MpvSessionPlatform.qtPlayerEnabled) return false;
+    final exePath = MpvSessionPlatform.qtPlayerExePath;
+    if (exePath == null) {
+      LogService().log('Player', 'Qt 播放器已启用但找不到 exe，回退内置窗口');
+      return false;
+    }
+    final adapter = await MpvSessionPlatform.launchQtPlayer(
+      exePath: exePath,
+      hdr: hdr,
+      hlg: hlg,
+    );
+    if (adapter == null) {
+      LogService().log('Player', 'Qt 播放器启动失败，回退内置窗口');
+      return false;
+    }
+    LogService().log('Player', 'Qt 播放器已接管播放');
+    // 进程退出 → 回详情页（与原生 UI 关闭同语义）
+    adapter.onProcessExited = () {
+      if (!mounted || _disposed) return;
+      unawaited(_safePopPlayerPage());
+    };
+    // 播放地址与鉴权头通过 IPC 下发（不放命令行：URL 会在任务管理器
+    // 可见，且 Emby URL 可能超过命令行长度限制）
+    adapter.media = url;
+    adapter.setHttpHeaders(headers);
+    await adapter.prepare(startMs: startMs);
+    return true;
+  }
+
   void _onNativeUiActiveChanged() {
     if (!mounted || _disposed) return;
     setState(() {});
@@ -3757,6 +3824,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           .map((s) => s.displayInfo)
           .toList(growable: false),
     );
+
+    // 656：同步推送给 Qt 播放器窗口（若已接管播放）。
+    //
+    // Qt 侧消费的是同一份 `NativePlayerState`（87 字段），与安卓/鸿蒙
+    // 原生 UI 一致。这里额外附带 `playUrl`，Qt 据此决定是否需要 loadfile。
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (qt != null && !qt.isDisposed) {
+      qt.pushNativeState(
+        mpv.buildNativePlayerState().toJson(),
+        playUrl: _currentPlayUrl,
+      );
+    }
   }
 
   /// 原生命令通用路由（Phase 2）：把 adapter 转发来的命令接到现成 handler。
@@ -4329,6 +4408,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 设置媒体并准备播放
       if (token.isNotEmpty) {
         _player.setHttpHeaders({'X-Emby-Token': token});
+      }
+
+      // 656：Windows 独立 Qt 播放器窗口（带完整控件）。
+      //
+      // 开启后由 Qt 进程接管播放与控件，Flutter 播放页退场（与原生 UI
+      // 同语义）。启动失败则继续走下面的 646 路径，不影响正常播放。
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        final mpv = _player is MpvPlayerAdapter ? _player as MpvPlayerAdapter : null;
+        final tookOver = await _startQtPlayer(
+          url: playUrl,
+          hdr: mpv?.isHdrContent ?? false,
+          hlg: mpv?.isHlgContent ?? false,
+          headers: token.isNotEmpty ? {'X-Emby-Token': token} : const {},
+          startMs: (position * 1000).round(),
+        );
+        if (tookOver) {
+          _isSyncing = false;
+          _inFlightPlayUrl = null;
+          if (mounted) setState(() {});
+          return;
+        }
       }
 
       // prepare 前探测 DV 解码能力

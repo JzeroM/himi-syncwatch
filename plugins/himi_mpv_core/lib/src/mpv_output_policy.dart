@@ -52,26 +52,37 @@ class MpvOutputPolicy {
   static String normalizeVideoOutput(String? value) =>
       value == texture ? texture : surface;
 
-  /// 平台默认路径：Android / 鸿蒙默认 Surface；**Windows 默认 Texture**。
+  /// 平台默认路径：Android / 鸿蒙 / **Windows 均为 Surface**。
   ///
-  /// Windows 为什么不能用 Surface（639 回退，真机实证）：
-  /// - 637 曾让 Windows 默认 Surface（`gpu-next` + HWND），但**灰屏**：
-  ///   有声音/字幕/进度，画面区域全灰——原生子 HWND 被 Flutter 不透明窗口
-  ///   遮挡（见 `buildWindowsMpvTextureOptions` 的注释：texture 走
-  ///   media_kit render API 正是为了避开这个遮挡）。
-  /// - 项目里的透明化方案（dwm-blur / layered-alpha / region-hole）目前只是
-  ///   `setTransparencyProbe` 探测代码，**未在正常播放时启用**。
-  /// - 而 637 的崩溃（`libmpv-2.dll` + 0xc0000005）已在 638 通过换掉自建
-  ///   libmpv（改 media_kit 官方 + shinchiro 完整版）解决，与渲染模式无关。
+  /// 【656：Windows 默认从 texture 改回 surface】
   ///
-  /// 后续要做 Surface + HDR 直出时，需先实现窗口挖洞（region-hole）。
-  /// 用户仍可在设置里显式选 Surface（`userSet == true` 时尊重配置）。
+  /// 639 曾把 Windows 默认改成 texture，因为当时 surface **灰屏**（原生子
+  /// HWND 被 Flutter 的 DirectComposition 不透明层遮挡）。639 的注释写
+  /// 「后续要做 Surface + HDR 直出时，需先实现窗口挖洞（region-hole）」。
+  ///
+  /// 但 646 用**原生顶层窗口**（`WS_OVERLAPPEDWINDOW`，不是 Flutter 的
+  /// 子窗口）解决了遮挡——不需要挖洞，因为 mpv 不再挂在 Flutter 窗口下，
+  /// 而是自己拥有一个顶层窗口。646/647 真机已验证
+  /// `vo=gpu-next` + `target-colorspace-hint=yes` 的 **HDR 直出成功**。
+  ///
+  /// 【这个 bug 为什么隐蔽】647 只改了
+  /// `AppSettings.effectiveMpvVideoOutput`（设置页显示用）→ `surface`，
+  /// 但本函数（**实际播放路径判定**）没同步改，仍返回 `texture`。于是：
+  ///
+  ///   设置页显示：视频路径 = Surface
+  ///   实际播放：  走 texture（SDR tone map，HDR 永远用不上）
+  ///
+  /// 只有**手动选过 Surface**（`userSet == true`）的用户才真正走了 HDR
+  /// 直出——这也解释了为什么 646 真机验证能成功（当时手动设置过）。
+  /// 新用户 / 重装用户从未手动设置 → 默认 texture → HDR 用不上。
+  ///
+  /// 现在两处统一为 surface。手动选过 texture 的仍尊重用户选择。
   static String effectiveVideoOutput({
     required String configured,
     required bool userSet,
     required bool windows,
   }) {
-    if (windows && !userSet) return texture;
+    if (windows && !userSet) return surface;
     return normalizeVideoOutput(configured);
   }
 

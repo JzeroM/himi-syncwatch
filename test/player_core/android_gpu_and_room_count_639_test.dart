@@ -179,16 +179,20 @@ void main() {
     });
   });
 
-  group('③ Windows 默认回退 Texture（Surface 会灰屏）', () {
-    test('策略层 Windows 默认 texture', () {
+  group('③ Windows 默认 Surface（656：646 顶层窗口已解决灰屏）', () {
+    test('策略层 Windows 默认 surface', () {
       final body = stripComments(bodyOf(
         policy,
         'static String effectiveVideoOutput({\n    required String configured,\n    required bool userSet,\n    required bool windows,\n  }) {',
       ));
-      expect(body, contains('if (windows && !userSet) return texture;'));
+      // 656：639 的 texture 默认值已过时。646 用原生顶层窗口解决了
+      // 「子 HWND 被 Flutter 不透明层遮挡」的灰屏根因，647 真机已验证
+      // HDR 直出成功。647 只改了 AppSettings（设置页显示）漏了本函数，
+      // 导致「设置页显示 Surface、实际走 texture」——新用户 HDR 用不上。
+      expect(body, contains('if (windows && !userSet) return surface;'));
     });
 
-    test('显式选 Surface 时仍尊重用户配置', () {
+    test('显式选纹理时仍尊重用户配置', () {
       final body = stripComments(bodyOf(
         policy,
         'static String effectiveVideoOutput({\n    required String configured,\n    required bool userSet,\n    required bool windows,\n  }) {',

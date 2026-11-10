@@ -33,21 +33,22 @@ void main() {
       expect(d.hdrOutput, isFalse);
     });
 
-    test('639：Windows 未手动设置时回到 Texture（Surface 会灰屏）', () {
-      // 真机实证：637 让 Windows 默认 Surface 后**灰屏**——有声音/字幕/进度，
-      // 画面全灰：原生子 HWND 被 Flutter 不透明窗口遮挡（项目里的
-      // dwm-blur / layered-alpha / region-hole 仅是探测代码，未在正常播放
-      // 时启用）。texture 走 media_kit render API，不受遮挡影响。
+    test('656：Windows 未手动设置时默认 Surface（HDR 直出）', () {
+      // 【656 修复】639 曾把 Windows 默认改成 texture，因为当时 surface
+      // 灰屏（原生子 HWND 被 Flutter 不透明层遮挡）。但 646 用**原生顶层
+      // 窗口**解决了遮挡，647 真机已验证 HDR 直出成功。
       //
-      // 注：637 的崩溃（libmpv-2.dll + 0xc0000005）已在 638 通过换掉自建
-      // libmpv 解决，与渲染模式无关。
+      // 647 只改了 AppSettings.effectiveMpvVideoOutput（设置页显示），
+      // 漏了本函数（实际播放判定）→ 设置页显示 Surface，实际走 texture
+      // → 新用户 HDR 永远用不上。只有手动选过 Surface 的才真正 HDR 直出
+      // （这就是 646 真机验证能成功的原因）。
       expect(
         MpvOutputPolicy.effectiveVideoOutput(
           configured: MpvOutputPolicy.surface,
           userSet: false,
           windows: true,
         ),
-        MpvOutputPolicy.texture,
+        MpvOutputPolicy.surface,
       );
       expect(
         MpvOutputPolicy.effectiveVideoOutput(
@@ -70,7 +71,7 @@ void main() {
       );
     });
 
-    test('639：Windows 默认配置下解析出的 decision 不是 nativeSurface', () {
+    test('656：Windows 默认配置下解析出的 decision 是 nativeSurface', () {
       final output = MpvOutputPolicy.effectiveVideoOutput(
         configured: MpvOutputPolicy.surface,
         userSet: false,
@@ -81,7 +82,7 @@ void main() {
         contentHdr: false,
         displayHdr: false,
       );
-      expect(d.nativeSurface, isFalse);
+      expect(d.nativeSurface, isTrue);
     });
 
     test('HDR 能力映射', () {

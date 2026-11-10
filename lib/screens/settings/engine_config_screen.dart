@@ -168,6 +168,19 @@ class _EngineTabBody extends ConsumerWidget {
           onSelected: (v) => notifier.update(mpvRenderer: v),
         ),
       ],
+      // 656：Windows 独立 Qt 播放器窗口（带顶栏/底栏/面板控件）。
+      if (defaultTargetPlatform == TargetPlatform.windows) ...[
+        const Divider(height: 1),
+        SwitchListTile(
+          value: settings.useQtPlayer,
+          onChanged: (v) => notifier.update(useQtPlayer: v),
+          title: const Text('使用 Qt 播放器窗口'),
+          subtitle: const Text(
+            '开启后播放视频会打开独立窗口，带完整控件（进度条/播放控制/'
+            '音量/选集/音轨/字幕）。关闭则使用内置原生窗口（只有视频）。',
+          ),
+        ),
+      ],
     ];
   }
 

@@ -4976,6 +4976,101 @@ static bool _glSupportsGpuNext = true;   // 默认 true
 **仍未解决**：无。`queryGlEsVersion` 的 Kotlin 实现与调用分支已一并删除
 （含 `eglTerminate(EGL_DEFAULT_DISPLAY)` 那个潜在隐患）。
 
+#### 十三、Windows 播放器窗口改用 Qt（带完整控件）（656）
+
+> 用户质问：「Qt 方案的初衷是给 Windows 播放器加控件，现在做成啥了？」
+
+**盘点 654 的实际产出**：
+
+| 项 | 状态 |
+|---|---|
+| 初衷 | 给 Windows 播放器加**控件**（底栏/顶栏/面板/弹幕） |
+| 654 产出 | 877 行 C++，**零控件**（只有黑底窗口 + 一行提示文字） |
+| 646 的 Win32 播放器窗口 | 也是空壳（`WS_EX_LAYERED` 透明窗，不画任何东西） |
+
+**核心失误**：把「验证技术假设」当成了「交付功能」。spike 本身没错，但
+没在 spike 之后立刻推进控件，中间还插了两轮无关的 Android 修复。
+
+**架构决策（656）**
+
+```
+Flutter 进程（唯一逻辑权威）              Qt 进程（渲染 + 控件）
+├─ Emby / 房间同步 / RTM / 弹幕拉取        ├─ mpv（wid 直出，HDR）
+├─ 所有播放决策                            ├─ QML 顶栏/底栏/面板
+└─ IPC 客户端 ←──── JSON 双向 ────────────→ └─ IPC 服务端
+```
+
+**为什么视频不能画进 QML**：libmpv 的 render API 只有 OpenGL 与软件
+后端，没有 D3D11。画进 QML 就得走 OpenGL FBO → mpv 先转 SDR RGBA →
+**HDR 直出必然丢失**。所以 mpv 自己拥有 HWND，QML 只做控件层，靠
+`setOverlayInsets(48, 96)` 给顶栏/底栏让出区域（原生子 HWND 永远画在
+QML 之上，这是 Win32 硬规则）。
+
+**协议复用（不重新设计）**
+
+| 层 | 内容 | 来源 |
+|---|---|---|
+| 状态 | `NativePlayerState`（87 字段） | ✅ 现有，安卓/鸿蒙也在用 |
+| 命令 | `NativePlayerCommand`（35 种） | ✅ 现有 |
+| 传输 | TCP localhost + token | 🆕 新增 |
+
+**为什么不用命名管道**：最初设计用 `CreateNamedPipe`，但 **Dart 无法
+连接 Windows 命名管道**——`Socket.connect` 的 `InternetAddressType.unix`
+只支持 Unix domain socket；命名管道必须走 `CreateFile`（原生 API），
+Dart 没有内置支持，得再写一个 Flutter 插件做桥接，不划算。改用 TCP
+只绑 `127.0.0.1` + 一次性 token 校验，安全性等价。
+
+**为什么 Qt 做服务端**：Flutter 先启动，再由它 `Process.start` 拉起 Qt。
+若 Flutter 做服务端，Qt 必须在 Flutter 建好监听前就绪——启动竞态更难
+处理。反过来：Qt 启动后立即监听，Flutter 拿到端口后再连，天然没竞态。
+端口由 Flutter 选好（绑 0 让系统分配）通过 `--port` 传给 Qt。
+
+**改动清单**
+
+- [x] 删除 654 的 Qt spike（`native/windows_qt_client/`、旧 CI、旧测试）。
+- [x] 新建 `native/windows_qt_player/`：
+      - `mpv_window.{h,cpp}`：mpv `wid` 直出 + HDR 选项 + `setOverlayInsets`
+      - `pipe_server.{h,cpp}`：QTcpServer + auth + NDJSON
+      - `player_state.{h,cpp}`：解析 87 字段 JSON，只在变化时发信号
+      - `main.cpp`：命令行（`--port` / `--token` / `--hdr` / `--hlg`）
+      - QML：`Main.qml` / `TopBar.qml` / `BottomBar.qml` / `SeekBar.qml` /
+        `ControlButton.qml` / `Panel.qml`
+- [x] 新增 `lib/services/player/qt_player_pipe.dart`（Dart 侧 TCP 客户端）。
+- [x] 新增 `lib/services/player/qt_player_adapter.dart`（实现 `PlayerAdapter`，
+      把调用翻译成 IPC 命令；渲染相关全空实现）。
+- [x] `AppSettings.useQtPlayer`（默认 false，Windows 设置页可见）。
+- [x] `MpvSessionPlatform.launchQtPlayer` / `closeQtPlayer`。
+- [x] CI：`.github/workflows/windows-qt-player.yml`（Ninja + vcvars64 +
+      QT_ROOT_DIR + 捆绑 MSVC CRT + 产物校验）。
+- [x] 新增 `test/player_core/windows_qt_player_656_test.dart`（30 项）。
+
+**控件清单（复刻 Windows Flutter 播放器）**
+
+| 区域 | 元素 |
+|---|---|
+| 顶栏 | 返回 / 标题 / 网速 / 内核 / 解码 / 画面比例 / 倍速 / 全屏 |
+| 底栏 | 进度条+时间 / 音量 / 播放暂停 / 下一集 / 弹幕 / 字幕 / 音轨 / 选集 / 倍速 / 全屏 |
+| 面板 | 选集（集数+标题）/ 音轨 / 字幕（含关闭）/ 倍速（0.5~3.0） |
+| 快捷键 | 空格暂停 / ←→ 快退快进 10s / ↑↓ 音量 / F 全屏 / Esc 退出 |
+
+**顺带修复（656）**
+
+`MpvOutputPolicy.effectiveVideoOutput` 的 Windows 默认值 `texture` →
+`surface`。647 只改了 `AppSettings.effectiveMpvVideoOutput`（设置页显示），
+漏了这个（**实际播放判定**），导致「设置页显示 Surface、实际走 texture」
+——新用户 HDR 永远用不上。646 真机验证能成功，是因为当时手动设置过。
+
+**关键实现细节（每条都有明确失败模式）**
+
+| 细节 | 写错的后果 |
+|---|---|
+| `wid` 必须在 `mpv_initialize` **之前**设置 | mpv 自己开一个黑窗 |
+| 视频子窗口要让出 `insetTop + insetBottom` | 顶栏/底栏被原生窗口盖住，看不见 |
+| 状态只在字段变化时发信号 | 20Hz 推送会让 QML 属性绑定反复重建 |
+| 端口由 Flutter 选好传参 | 双方各自选端口会撞车 |
+| 首帧必须 auth + token | 同机其他进程可误连并注入命令 |
+| 析构先 `mpv_terminate_destroy` 再 `DestroyWindow` | mpv 往已释放 HWND 里画 |
+
 ### Phase 3：Android 完整原生控件 + TV
 
 - [x] 同 Phase 2 全部控件（`NativePlayerScreenView` 照 Flutter 观感重画）。

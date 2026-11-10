@@ -119,14 +119,24 @@ void main() {
 
     setUp(() => src = read(platformPath));
 
-    test('openNativeUi / closeNativeUi 无 Windows 分支（返回空 Future）', () {
-      for (final name in ['openNativeUi', 'closeNativeUi']) {
-        final start = src.indexOf('static Future<void> $name()');
-        expect(start, greaterThan(-1), reason: '找不到 $name');
-        final body = src.substring(start, start + 300);
-        expect(body, isNot(contains('isWindows')),
-            reason: '$name 在 Windows 应为空实现（窗口由会话创建）');
-      }
+    test('openNativeUi 在 Windows 无分支（窗口由会话创建）', () {
+      // 656：closeNativeUi 现在有 Windows 分支（关闭 Qt 播放器进程），
+      // 但 openNativeUi 仍是空实现——646 的原生窗口在会话创建时就建好了，
+      // Qt 播放器则由 MpvSessionPlatform.launchQtPlayer 单独拉起。
+      final start = src.indexOf('static Future<void> openNativeUi()');
+      expect(start, greaterThan(-1), reason: '找不到 openNativeUi');
+      // 精确取到函数体结束（避免窗口过长把 closeNativeUi 的 isWindows 算进来）
+      final end = src.indexOf('\n  }', start);
+      final body = src.substring(start, end);
+      expect(body, isNot(contains('isWindows')),
+          reason: 'openNativeUi 在 Windows 应为空实现');
+    });
+
+    test('closeNativeUi 在 Windows 会关闭 Qt 播放器（656）', () {
+      final start = src.indexOf('static Future<void> closeNativeUi()');
+      expect(start, greaterThan(-1), reason: '找不到 closeNativeUi');
+      final body = src.substring(start, start + 500);
+      expect(body, contains('closeQtPlayer'));
     });
 
     test('pushNativeState / nativeUiCommandStream 对 Windows 返回空', () {

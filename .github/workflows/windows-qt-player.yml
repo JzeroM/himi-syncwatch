@@ -1,23 +1,20 @@
-name: Windows Qt Player Spike
+name: Windows Qt Player Build
 
-# 654：Qt 播放器窗口 spike 构建。
+# 656：HIMI Windows 播放器窗口（Qt Quick + libmpv）构建。
 #
-# 【为什么是手动触发】本工作流只产出验证用的 exe（Qt + mpv + HDR 直出），
-# 不参与正式发版；正式 Windows 产物仍由 release.yml 的 build-windows 负责。
-# 等 660 把 Qt 播放器接进主流程后，这里才会并入 release.yml。
-#
-# 【本轮验证目标】mpv 用 `wid` 直出到 Qt 创建的 HWND 时，HDR 是否还在？
+# 【产物去向】本工作流只产出 Qt 播放器目录（含 exe + Qt 运行时 + libmpv），
+# 由 release.yml 的 build-windows 步骤下载后打进 Windows zip。
+# 也可以手动触发单独下载来调试。
 on:
   workflow_dispatch:
-    inputs:
-      client_dir:
-        description: 'Qt 客户端源目录'
-        required: false
-        default: 'native/windows_qt_client'
+  push:
+    paths:
+      - 'native/windows_qt_player/**'
+      - '.github/workflows/windows-qt-player.yml'
 
 env:
   QT_VERSION: '6.8.3'
-  CLIENT_DIR: ${{ inputs.client_dir || 'native/windows_qt_client' }}
+  CLIENT_DIR: native/windows_qt_player
 
 jobs:
   build-windows:
@@ -25,16 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装 Qt 6（Quick / QuickControls2 属基础包）
-        id: install-qt
+      - name: 安装 Qt 6
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
           arch: 'win64_msvc2022_64'
           cache: true
 
-      # mpv dev 包：既提供 libmpv-2.dll，也提供 include/mpv/client.h
-      # 与 libmpv.dll.a。release.yml 目前只取了 DLL，这里需要全套。
+      # mpv dev 包：libmpv-2.dll + include/mpv/client.h + libmpv.dll.a
       - name: 下载 libmpv dev 包（shinchiro）
         shell: pwsh
         env:
@@ -49,7 +44,6 @@ jobs:
           if (-not $asset) { throw '未找到 shinchiro libmpv dev 包' }
           Write-Host "libmpv dev 资源：$($asset.name)"
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile mpv-dev.7z -UseBasicParsing
-          # 7z 在 windows-latest 上已预装（choco 亦可）
           $sevenZip = Join-Path ${env:ProgramFiles} '7-Zip\7z.exe'
           if (!(Test-Path $sevenZip)) {
             choco install 7zip -y --no-progress | Out-Null
@@ -58,7 +52,6 @@ jobs:
           if (!(Test-Path $sevenZip)) { throw '7z.exe 未找到' }
           Remove-Item -Recurse -Force mpv-dev -ErrorAction SilentlyContinue
           & $sevenZip x mpv-dev.7z "-ompv-dev" -y | Out-Null
-          Get-ChildItem -Recurse mpv-dev | Select-Object -First 30 FullName | Format-Table -AutoSize
           $header = Get-ChildItem -Path mpv-dev -Recurse -Filter 'client.h' |
             Where-Object { $_.DirectoryName -match 'mpv' } | Select-Object -First 1
           if (-not $header) { throw '包内未找到 mpv/client.h' }
@@ -66,24 +59,14 @@ jobs:
           Write-Host "LIBMPV_DIR=$root"
           "LIBMPV_DIR=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      # 【三个坑，都是 654 spike 实测踩过的】
+      # 1. 不能用 "Visual Studio 17 2022" 生成器：runner 已升级 VS2026
+      # 2. steps.install-qt.outputs.qt-dir 为空 → 用 QT_ROOT_DIR
+      # 3. Ninja 默认挑 PATH 里的 gcc（预装 MinGW），与 MSVC 构建的 Qt
+      #    ABI 不兼容 → 必须用 vcvars64 初始化 MSVC 环境
       - name: 配置 CMake (MSVC)
         shell: pwsh
         run: |
-          # 【坑 1】不能用 "Visual Studio 17 2022" 生成器：windows-latest 已
-          # 升级到 VS2026，会报 "could not find any instance of Visual
-          # Studio"（v1.5.75 首次实跑失败）。
-          #
-          # 【坑 2】改用 Ninja 后，CMake 默认会挑 PATH 里的 gcc（runner 预装
-          # MinGW），而 Qt 是 MSVC 构建 → ABI 不兼容，链接期报
-          # "undefined reference to __imp__ZNK9QJSEngine8hasErrorEv"
-          # （v1.5.75 第二次实跑失败）。必须显式指定 cl.exe。
-          #
-          # 【坑 3】Qt 路径用 QT_ROOT_DIR 环境变量（install-qt-action 必然
-          # 导出），不用 steps.install-qt.outputs.qt-dir —— 该输出在本版本
-          # action 里为空，会让 CMAKE_PREFIX_PATH 变成空串。
-          #
-          # 用 vcvars64 初始化 MSVC 环境（含 cl.exe / link.exe / 系统库路径），
-          # 再调 cmake，让 Ninja 生成器找到正确的编译器。
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           if (!(Test-Path $vswhere)) { throw "未找到 vswhere.exe" }
           $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -92,7 +75,6 @@ jobs:
           if (!(Test-Path $vcvars)) { throw "未找到 vcvars64.bat: $vcvars" }
           Write-Host "VS: $vsPath"
 
-          # 在 vcvars64 环境里执行 cmake（cmd /c 保证环境变量生效）
           $cmd = 'call "' + $vcvars + '" >nul && cmake -S ' + $env:CLIENT_DIR +
                  ' -B build -G Ninja -DCMAKE_BUILD_TYPE=Release' +
                  ' -DCMAKE_PREFIX_PATH="' + $env:QT_ROOT_DIR + '"' +
@@ -103,7 +85,6 @@ jobs:
       - name: 编译
         shell: pwsh
         run: |
-          # 同样要在 vcvars64 环境里构建（Ninja 需要 cl.exe 在 PATH）
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
@@ -114,15 +95,40 @@ jobs:
         shell: pwsh
         run: |
           $qtBin = "$env:QT_ROOT_DIR/bin"
-          & "$qtBin/windeployqt.exe" --qmldir "$env:CLIENT_DIR/src/qml" "build/himi_qt_win.exe"
+          & "$qtBin/windeployqt.exe" --qmldir "$env:CLIENT_DIR/src/qml" "build/himi_qt_player.exe"
           if ($LASTEXITCODE -ne 0) { throw "windeployqt 失败" }
+
+      # 捆绑 MSVC 运行时：纯净系统缺 VCRUNTIME140/MSVCP140 会直接闪退。
+      # 做法与 release.yml 一致（vswhere 定位 + 通配 Microsoft.VC*.CRT）。
+      - name: 捆绑 MSVC CRT DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = 'build'
+          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (!(Test-Path $vsWhere)) { throw "未找到 vswhere.exe" }
+          $vsPath = & $vsWhere -latest -products * -property installationPath
+          $redistRoot = Join-Path $vsPath 'VC\Redist\MSVC'
+          $crtDir = $null
+          if (Test-Path $redistRoot) {
+            $crtDir = Get-ChildItem -Path $redistRoot -Directory |
+              Sort-Object Name -Descending |
+              ForEach-Object { Get-ChildItem -Path (Join-Path $_.FullName 'x64') -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue } |
+              Select-Object -First 1
+          }
+          if ($crtDir) {
+            Copy-Item -Path (Join-Path $crtDir.FullName '*.dll') -Destination $rel -Force
+            Write-Host "已捆绑 CRT: $($crtDir.FullName)"
+          } else {
+            Write-Host "::warning::未找到 VC Redist CRT 目录，跳过捆绑"
+          }
 
       - name: 校验产物完整性
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $rel = 'build'
-          foreach ($f in @('himi_qt_win.exe', 'libmpv-2.dll', 'Qt6Core.dll', 'Qt6Quick.dll', 'Qt6Qml.dll')) {
+          foreach ($f in @('himi_qt_player.exe', 'libmpv-2.dll', 'Qt6Core.dll', 'Qt6Quick.dll', 'Qt6Qml.dll', 'Qt6Network.dll')) {
             $p = Join-Path $rel $f
             if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
             Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
@@ -131,6 +137,6 @@ jobs:
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: himi-qt-spike-654
+          name: himi-qt-player-windows
           path: build/**
           if-no-files-found: error

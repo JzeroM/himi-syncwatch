@@ -225,6 +225,20 @@ class AppSettings {
   /// 用户若遇到黑屏/花屏，手动切 `gpu`。
   final String mpvRenderer;
 
+  /// 656：是否使用独立的 Qt 播放器窗口（Windows 专用）。
+  ///
+  /// `true` 时 Flutter 会 `Process.start` 拉起 `himi_qt_player.exe`，
+  /// 由 Qt 进程负责 mpv 渲染 + 控件（顶栏/底栏/面板），Flutter 只做
+  /// 状态同步与逻辑决策（Emby / 房间 / 弹幕）。
+  ///
+  /// `false`（默认）走现有 646 路径：Flutter 插件内的原生顶层窗口，
+  /// 只有视频、没有控件。
+  ///
+  /// 【为什么做成开关而不是直接替换】Qt 是独立进程 + IPC，链路更长，
+  /// 出问题时不好定位。保留开关可以随时回退到 646，也能让用户自行
+  /// 选择（有人可能更在意稳定性而非控件）。
+  final bool useQtPlayer;
+
   /// 渲染兼容模式（实验，Android）：以 mdk 全局选项启用
   /// `gl.yuv_sampler=1`（mdk wiki 注明 for android/rockchip 硬解渲染）
   /// 与 `surfacetexture.glcontext=1`（SurfaceTexture 无有效上下文时
@@ -420,6 +434,7 @@ class AppSettings {
     this.mpvVideoOutput = 'surface',
     this.mpvVideoOutputUserSet = false,
     this.mpvRenderer = 'auto',
+    this.useQtPlayer = false,
     this.renderCompatMode = false,
     this.videoDecoderNoImage = false,
     this.videoDecoderLowLatency = false,
@@ -540,6 +555,7 @@ class AppSettings {
     String? mpvVideoOutput,
     bool? mpvVideoOutputUserSet,
     String? mpvRenderer,
+    bool? useQtPlayer,
     bool? renderCompatMode,
     bool? videoDecoderNoImage,
     bool? videoDecoderLowLatency,
@@ -620,6 +636,7 @@ class AppSettings {
       mpvVideoOutputUserSet:
           mpvVideoOutputUserSet ?? this.mpvVideoOutputUserSet,
       mpvRenderer: mpvRenderer ?? this.mpvRenderer,
+      useQtPlayer: useQtPlayer ?? this.useQtPlayer,
       renderCompatMode: renderCompatMode ?? this.renderCompatMode,
       videoDecoderNoImage: videoDecoderNoImage ?? this.videoDecoderNoImage,
       videoDecoderLowLatency:
@@ -718,6 +735,7 @@ class AppSettings {
         'mpvVideoOutput': mpvVideoOutput,
         'mpvVideoOutputUserSet': mpvVideoOutputUserSet,
         'mpvRenderer': mpvRenderer,
+        'useQtPlayer': useQtPlayer,
         'renderCompatMode': renderCompatMode,
         'videoDecoderNoImage': videoDecoderNoImage,
         'videoDecoderLowLatency': videoDecoderLowLatency,
@@ -940,6 +958,8 @@ class AppSettings {
       mpvRenderer: const ['auto', 'gpu-next', 'gpu'].contains(json['mpvRenderer'])
           ? json['mpvRenderer'] as String
           : 'auto',
+      // 656：Qt 播放器开关。旧数据无此字段 → false（走现有 646 路径）。
+      useQtPlayer: json['useQtPlayer'] as bool? ?? false,
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 image=1）
       videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
