@@ -176,15 +176,17 @@ void main() {
 
   group('④ 控件：复刻 Windows Flutter 播放器', () {
     test('顶栏含返回/标题/网速/内核/解码/比例/倍速/全屏', () {
+      // 659：图标改为走 Icons 单例（与 Flutter NativePlayerIcons 同码点），
+      // 不再在 QML 里写死 \uXXXX。
       for (final icon in [
-        '\\ue5c4',  // arrow_back
-        '\\ue322',  // memory
-        '\\ue3c9',  // high_quality
-        '\\ue3c4',  // aspect_ratio
-        '\\ue9e4',  // speed
-        '\\ue5d0',  // fullscreen
+        'Icons.arrowBack',
+        'Icons.memory',
+        'Icons.highQuality',
+        'Icons.aspectRatio',
+        'Icons.speed',
+        'Icons.fullscreen',
       ]) {
-        expect(topBar, contains(icon), reason: '顶栏缺图标 $icon');
+        expect(topBar, contains(icon), reason: '顶栏缺 $icon');
       }
       expect(topBar, contains('playerState.title'));
       expect(topBar, contains('playerState.networkSpeedText'));
@@ -217,7 +219,8 @@ void main() {
     });
 
     test('控件 5 秒无操作自动隐藏（播放中）', () {
-      expect(mainQml, contains('interval: 5000'));
+      // 659：时长改为走 Theme.autoHideMs（与 Flutter NativePlayerTheme 同值）
+      expect(mainQml, contains('interval: Theme.autoHideMs'));
       expect(mainQml, contains('controlsVisible'));
     });
   });
@@ -463,8 +466,190 @@ void main() {
       final shell = File('lib/screens/shell/shell_side_drawer.dart')
           .readAsStringSync();
       expect(shell, contains('kShellDesktopBreakpoint = 1000'));
-      // 播放页必须 import 同一个常量，不能自己写死 1000
       expect(screen, contains('show kShellDesktopBreakpoint'));
+    });
+  });
+
+  group('⑫ 真机回归：全黑 + Component is not ready（缺 qt.conf）', () {
+    test('CMake 生成 qt.conf（否则 Qt 去编译机绝对路径找 QML 模块）', () {
+      // 【真机现象】窗口弹出但全黑，控制台刷满
+      //   QWARN QmlComponent: Component is not ready
+      //
+      // 根因：windeployqt 拷了 qml/ 目录，但没有 qt.conf → Qt 按编译期
+      // 写死的绝对路径（D:/a/himi-syncwatch/.../qml）找模块，用户机器
+      // 上没有 → `import QtQuick.Controls.Basic` 全失败。
+      expect(cmake, contains('qt.conf'));
+      expect(cmake, contains('Qml2Imports = ./qml'));
+      expect(cmake, contains('Prefix = .'));
+    });
+
+    test('Theme / Icons 注册为 QML 单例', () {
+      expect(cmake, contains('QT_QML_SINGLETON_TYPE TRUE'));
+      expect(cmake, contains('src/qml/Theme.qml'));
+      expect(cmake, contains('src/qml/Icons.qml'));
+      // 单例属性必须在 qt_add_qml_module 之前设置
+      final singletonIdx = cmake.indexOf('QT_QML_SINGLETON_TYPE');
+      final moduleIdx = cmake.indexOf('qt_add_qml_module(himi_qt_player');
+      expect(singletonIdx, lessThan(moduleIdx));
+    });
+  });
+
+  group('⑬ UI 与 Flutter 一致（逐项对齐 NativePlayerTheme）', () {
+    final themeDart = File(
+      'lib/services/player/native/native_player_theme.dart',
+    ).readAsStringSync();
+    final iconsDart = File(
+      'lib/services/player/native/native_player_icons.dart',
+    ).readAsStringSync();
+    final themeQml = File('$dir/src/qml/Theme.qml').readAsStringSync();
+    final iconsQml = File('$dir/src/qml/Icons.qml').readAsStringSync();
+
+    /// 从 Dart 源码取 `static const double xxx = N;`
+    String? dartDouble(String name) {
+      final m = RegExp('static const double $name = ([0-9.]+);')
+          .firstMatch(themeDart);
+      return m?.group(1);
+    }
+
+    /// 从 QML 源码取 `readonly property real xxx: N`
+    String? qmlReal(String name) {
+      final m = RegExp('readonly property real $name: ([0-9.]+)')
+          .firstMatch(themeQml);
+      return m?.group(1);
+    }
+
+    test('关键尺寸逐值一致（顶栏/底栏/图标/进度条）', () {
+      const pairs = <String, String>{
+        'topBarHeight': 'topBarHeight',
+        'topIconSize': 'topIconSize',
+        'titleSize': 'titleSize',
+        'captionSize': 'captionSize',
+        'barPadH': 'barPadH',
+        'barPadTop': 'barPadTop',
+        'barPadBottom': 'barPadBottom',
+        'seekTrackHeight': 'seekTrackHeight',
+        'seekThumbRadius': 'seekThumbRadius',
+        'transportPlaySize': 'transportPlaySize',
+        'transportSideSize': 'transportSideSize',
+        'controlIconSize': 'controlIconSize',
+        'controlGap': 'controlGap',
+      };
+      pairs.forEach((dartName, qmlName) {
+        final dartVal = dartDouble(dartName);
+        final qmlVal = qmlReal(qmlName);
+        expect(dartVal, isNotNull, reason: 'Dart 里找不到 $dartName');
+        expect(qmlVal, isNotNull, reason: 'QML 里找不到 $qmlName');
+        expect(qmlVal, dartVal,
+            reason: '$qmlName 与 Flutter 的 $dartName 不一致'
+                '（QML=$qmlVal, Dart=$dartVal）');
+      });
+    });
+
+    test('面板尺寸逐值一致', () {
+      const pairs = <String, String>{
+        'panelMinWidth': 'panelMinWidth',
+        'panelMaxWidth': 'panelMaxWidth',
+        'panelRight': 'panelRight',
+        'panelTopOffset': 'panelTopOffset',
+        'panelPadH': 'panelPadH',
+        'panelPadV': 'panelPadV',
+        'panelTitleSize': 'panelTitleSize',
+        'panelOptionSize': 'panelOptionSize',
+      };
+      pairs.forEach((dartName, qmlName) {
+        final dartVal = dartDouble(dartName);
+        final qmlVal = qmlReal(qmlName);
+        expect(dartVal, isNotNull, reason: 'Dart 里找不到 $dartName');
+        expect(qmlVal, dartVal,
+            reason: '$qmlName 与 Flutter 的 $dartName 不一致');
+      });
+    });
+
+    test('强调色一致（#6366F1）', () {
+      expect(themeDart, contains('accent = Color(0xFF6366F1)'));
+      expect(themeQml, contains('accent: "#6366F1"'));
+    });
+
+    test('图标码点与 NativePlayerIcons 一致（关键项）', () {
+      // 【656 的教训】首版我凭记忆写码点（如 \ue5c4 当返回），
+      // 那是 Flutter 的 Icons.arrow_back，与项目统一使用的
+      // NativePlayerIcons.arrowBack = 0xE092 不是同一个字形。
+      const pairs = <String, String>{
+        'arrowBack': 'E092',
+        'memory': 'E3DB',
+        'highQuality': 'E30F',
+        'aspectRatio': 'E0A3',
+        'speed': 'E5E0',
+        'fullscreen': 'E2CB',
+        'playCircle': 'E4CD',
+        'pauseCircle': 'E47E',
+        'skipNext': 'E5BD',
+        'subtitles': 'E619',
+        'audioTrack': 'E0B6',
+        'playlistPlay': 'E4D4',
+        'danmakuOn': 'E17E',
+        'volumeUp': 'E6C5',
+        'volumeOff': 'E6C4',
+        'check': 'E156',
+        'close': 'E16A',
+      };
+      pairs.forEach((name, hex) {
+        expect(iconsDart, contains(RegExp('$name = 0x$hex',
+                caseSensitive: false)),
+            reason: 'Dart 里 $name 不是 0x$hex');
+        // QML 里是小写 \ue092 形式
+        final lower = hex.toLowerCase();
+        expect(iconsQml, contains('\\u$lower'),
+            reason: 'QML 里 $name 应为 \\u$lower');
+      });
+    });
+
+    test('渐变实端一致（black@0.85）', () {
+      // Flutter: Colors.black.withValues(alpha: 0.85)
+      // 0.85 × 255 ≈ 217 = 0xD9
+      expect(themeQml, contains('barGradientSolid: "#D9000000"'));
+      expect(themeQml, contains('barBottomSolid: "#D9000000"'));
+      final screenSrc =
+          File('lib/screens/player/player_screen.dart').readAsStringSync();
+      expect(screenSrc, contains('Colors.black.withValues(alpha: 0.85)'));
+    });
+
+    test('角标分档一致（15/19/24）', () {
+      expect(themeDart, contains('badgeMinSize = 15'));
+      expect(themeDart, contains('badgeWideSize = 19'));
+      expect(themeDart, contains('badgeXlSize = 24'));
+      expect(themeQml, contains('badgeMinSize: 15'));
+      expect(themeQml, contains('badgeWideSize: 19'));
+      expect(themeQml, contains('badgeXlSize: 24'));
+    });
+
+    test('自动隐藏时长一致（5000ms）', () {
+      expect(themeDart, contains('autoHideMs = 5000'));
+      expect(themeQml, contains('autoHideMs: 5000'));
+    });
+
+    test('QML 不再硬编码颜色/尺寸（必须走 Theme）', () {
+      for (final name in [
+        'TopBar.qml',
+        'BottomBar.qml',
+        'SeekBar.qml',
+        'ControlButton.qml',
+        'Panel.qml',
+      ]) {
+        // 只看非注释行（注释里可以写「对应 Flutter 的 #6366F1」这类说明）
+        final src = File('$dir/src/qml/$name')
+            .readAsStringSync()
+            .split('\n')
+            .where((l) => !l.trimLeft().startsWith('//'))
+            .join('\n');
+        // 允许 #000000（窗口底色）与 Qt.rgba(1,1,1,x)（hover 微调）
+        final hardcoded = RegExp(r'#[0-9A-Fa-f]{6,8}').allMatches(src)
+            .map((m) => m.group(0)!)
+            .where((c) => c.toUpperCase() != '#000000')
+            .toList();
+        expect(hardcoded, isEmpty,
+            reason: '$name 里还有硬编码颜色 $hardcoded，应改用 Theme.xxx');
+      }
     });
   });
 }

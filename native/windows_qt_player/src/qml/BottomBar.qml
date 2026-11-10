@@ -1,12 +1,16 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import HimiPlayer
 
-// 656：底栏（对应 Flutter 的 PlayerBottomRow）。
+// 659：底栏（对应 Flutter `PlayerBottomRow`）。
 //
-// 布局（复刻 Flutter 播放页）：
-//   第一行：进度条 + 时间
-//   第二行：左组（音量/亮度）| 播放暂停 | 下一集 …… 右组（弹幕/字幕/音轨/选集/倍速/全屏）
+// 规格（NativePlayerTheme）：
+//   - 渐变：透明 → black@0.85
+//   - 内边距 h16 / top10 / bottom12
+//   - 进度条 track 6 / thumb 8，时间列 56
+//   - 播放组：上一个 28 / 播放 36 / 下一个 28，间距 8
+//   - 右侧图标 24、间距 20
 Rectangle {
     id: root
 
@@ -16,6 +20,7 @@ Rectangle {
                               : 0
 
     signal playPauseClicked()
+    signal prevEpisodeClicked()
     signal nextEpisodeClicked()
     signal danmakuClicked()
     signal subtitleClicked()
@@ -24,119 +29,132 @@ Rectangle {
     signal speedClicked()
     signal fullscreenClicked()
     signal volumeChanged(real volume)
+    signal brightnessChanged(real value)
     signal seekFinished(real ratio)
 
     height: 96
-    color: Qt.rgba(0, 0, 0, 0.55)
+    color: "transparent"
     visible: opacity > 0
     opacity: showControls ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: 200 } }
+    Behavior on opacity { NumberAnimation { duration: Theme.controlsFadeMs } }
+
+    // 渐变背景：透明 → black@0.85
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 1.0; color: Theme.barBottomSolid }
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: 16
-        anchors.rightMargin: 16
-        anchors.topMargin: 4
-        anchors.bottomMargin: 8
-        spacing: 2
+        anchors.leftMargin: Theme.barPadH
+        anchors.rightMargin: Theme.barPadH
+        anchors.topMargin: Theme.barPadTop
+        anchors.bottomMargin: Theme.barPadBottom
+        spacing: 0
 
         // ── 进度条 ──
         SeekBar {
             Layout.fillWidth: true
+            Layout.preferredHeight: 32
             position: root.seekRatio
             leftText: formatTime(playerState.positionMs)
             rightText: formatTime(playerState.durationMs)
             onSeekFinished: (ratio) => root.seekFinished(ratio)
         }
 
+        Item { Layout.fillHeight: true }
+
         // ── 控制行 ──
         RowLayout {
             Layout.fillWidth: true
-            Layout.topMargin: 18
-            spacing: 8
+            spacing: Theme.controlGap
 
-            // 音量图标
-            ControlButton {
-                icon: playerState.volume <= 0.001 ? "\ue04f" : "\ue050"
-                tooltip: "音量 " + Math.round(playerState.volume * 100)
-                onClicked: root.volumeChanged(playerState.volume > 0.5 ? 0 : 1)
-            }
-
-            // 音量滑杆
-            Slider {
-                Layout.preferredWidth: 90
-                from: 0
-                to: 1
-                value: playerState.volume
-                onMoved: root.volumeChanged(value)
+            // 左槽：音量（图标 + 滑杆）
+            RowLayout {
+                spacing: 6
+                ControlButton {
+                    icon: playerState.volume <= 0.001 ? Icons.volumeOff
+                                                      : Icons.volumeUp
+                    tooltip: "音量 " + Math.round(playerState.volume * 100)
+                    onClicked: root.volumeChanged(playerState.volume > 0.5 ? 0 : 1)
+                }
+                Slider {
+                    Layout.preferredWidth: 80
+                    from: 0; to: 1
+                    value: playerState.volume
+                    onMoved: root.volumeChanged(value)
+                }
             }
 
             Item { Layout.preferredWidth: 8 }
 
-            // 播放 / 暂停
-            ControlButton {
-                icon: playerState.paused ? "\ue037" : "\ue034"
-                iconSize: 32
-                tooltip: playerState.paused ? "播放" : "暂停"
-                onClicked: root.playPauseClicked()
-            }
-
-            // 下一集
-            ControlButton {
-                icon: "\ue044"   // skip_next
-                enabled: playerState.currentEpisodeIndex >= 0
-                tooltip: "下一集"
-                onClicked: root.nextEpisodeClicked()
+            // 播放组：上一个 / 播放暂停 / 下一个
+            RowLayout {
+                spacing: Theme.transportGap
+                ControlButton {
+                    icon: Icons.skipPrevious
+                    iconSize: Theme.transportSideSize
+                    enabled: playerState.currentEpisodeIndex > 0
+                    tooltip: "上一集"
+                    onClicked: root.prevEpisodeClicked()
+                }
+                ControlButton {
+                    icon: playerState.paused ? Icons.playCircle : Icons.pauseCircle
+                    iconSize: Theme.transportPlaySize
+                    tooltip: playerState.paused ? "播放" : "暂停"
+                    onClicked: root.playPauseClicked()
+                }
+                ControlButton {
+                    icon: Icons.skipNext
+                    iconSize: Theme.transportSideSize
+                    enabled: playerState.currentEpisodeIndex >= 0
+                             && playerState.currentEpisodeIndex < playerState.episodeCount - 1
+                    tooltip: "下一集"
+                    onClicked: root.nextEpisodeClicked()
+                }
             }
 
             Item { Layout.fillWidth: true }
 
-            // 弹幕
+            // 右组：弹幕 / 字幕 / 音轨 / 选集 / 倍速 / 全屏
             ControlButton {
-                icon: playerState.danmakuEnabled ? "\ue0b9" : "\ue5c4"
+                icon: playerState.danmakuEnabled ? Icons.danmakuOn : Icons.danmakuOff
                 tooltip: "弹幕"
                 onClicked: root.danmakuClicked()
             }
-
-            // 字幕
             ControlButton {
-                icon: "\ue048"   // subtitles
+                icon: Icons.subtitles
                 badge: playerState.subtitleCount > 0
                        ? playerState.subtitleCount.toString() : ""
                 tooltip: "字幕"
                 onClicked: root.subtitleClicked()
             }
-
-            // 音轨
             ControlButton {
-                icon: "\ue3a1"   // audiotrack
+                icon: Icons.audioTrack
                 badge: playerState.audioCount > 0
                        ? playerState.audioCount.toString() : ""
                 tooltip: "音轨"
                 onClicked: root.audioClicked()
             }
-
-            // 选集
             ControlButton {
-                icon: "\ue063"   // playlist_play
+                icon: Icons.playlistPlay
                 enabled: playerState.episodeCount > 1
                 badge: playerState.episodeCount > 1
                        ? playerState.episodeCount.toString() : ""
                 tooltip: "选集"
                 onClicked: root.episodeClicked()
             }
-
-            // 倍速
             ControlButton {
-                icon: "\ue9e4"   // speed
+                icon: Icons.speed
                 badge: playerState.speed.toFixed(1)
                 tooltip: "播放速度"
                 onClicked: root.speedClicked()
             }
-
-            // 全屏
             ControlButton {
-                icon: "\ue5d0"   // fullscreen
+                icon: Icons.fullscreen
                 tooltip: "全屏"
                 onClicked: root.fullscreenClicked()
             }

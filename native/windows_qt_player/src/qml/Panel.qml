@@ -1,57 +1,65 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import HimiPlayer
 
-// 656：通用选择面板（对应 Flutter 的 _openSelectorPanel）。
+// 659：通用选择面板（对应 Flutter `_openSelectorPanel`）。
 //
-// 同一套 UI 服务四个场景：选集 / 音轨 / 字幕 / 倍速。
-// 通过 `items`（[{label, sub, selected}]）驱动，避免四份重复 QML。
+// 规格（NativePlayerTheme）：
+//   - 宽 clamp(0.42×屏宽, 260, 320)
+//   - 圆角 16，内边距 h16 v12
+//   - 标题 15/w600，选项 14
+//   - 选中项文字用 accent(#6366F1)，右侧对勾占 18 宽
+//   - 背景 panelTint(#1F1A1D23) + rim 描边
 Rectangle {
     id: root
 
     property string title: ""
     property var items: []          // [{ id, label, sub, selected }]
-    property int selectedIndex: -1
 
-    signal itemClicked(int id)
+    signal itemClicked(var id)
     signal closed()
 
-    width: 320
-    height: Math.min(420, 56 + items.length * 52 + 16)
-    radius: 12
-    color: Qt.rgba(0.11, 0.11, 0.14, 0.96)
-    border.color: Qt.rgba(1, 1, 1, 0.12)
+    width: Math.max(Theme.panelMinWidth,
+                    Math.min(Theme.panelMaxWidth,
+                             parent ? parent.width * 0.42 : Theme.panelMinWidth))
+    height: Math.min(parent ? parent.height - Theme.panelTopOffset
+                                  - Theme.panelBottomOffset : 400,
+                     titleBar.height + list.contentHeight + Theme.panelPadV * 2 + 8)
+    radius: Theme.radiusPanel
+    color: Theme.panelTint
+    border.color: Theme.rim
     border.width: 1
     visible: false
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8
+        anchors.margins: Theme.panelPadV
         spacing: 4
 
-        // 标题栏
         RowLayout {
+            id: titleBar
             Layout.fillWidth: true
-            Layout.leftMargin: 8
+            Layout.leftMargin: Theme.panelPadH - Theme.panelPadV
             Layout.rightMargin: 4
 
             Text {
                 Layout.fillWidth: true
                 text: root.title
-                color: "#FFFFFF"
-                font.pixelSize: 15
-                font.bold: true
+                color: Theme.white
+                font.pixelSize: Theme.panelTitleSize
+                font.weight: 600
             }
             ControlButton {
-                icon: "\ue5cd"   // close
+                icon: Icons.close
                 iconSize: 18
                 tooltip: "关闭"
                 onClicked: root.closed()
             }
         }
 
-        // 列表
         ListView {
+            id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -60,46 +68,54 @@ Rectangle {
 
             delegate: Rectangle {
                 width: ListView.view.width
-                height: 48
-                radius: 6
+                height: 44
+                radius: 8
                 color: modelData.selected
-                       ? Qt.rgba(1, 1, 1, 0.16)
-                       : (itemMouse.containsMouse
-                          ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                       ? Theme.white12
+                       : (rowMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.06)
+                                                 : "transparent")
 
                 Column {
                     anchors.left: parent.left
-                    anchors.leftMargin: 12
+                    anchors.leftMargin: 8
+                    anchors.right: checkMark.left
+                    anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
 
                     Text {
+                        width: parent.width
                         text: modelData.label
-                        color: modelData.selected ? "#FFFFFF" : "#DDDDDD"
-                        font.pixelSize: 14
+                        color: modelData.selected ? Theme.accent : Theme.white
+                        font.pixelSize: Theme.panelOptionSize
+                        elide: Text.ElideRight
                     }
                     Text {
                         visible: modelData.sub !== undefined && modelData.sub !== ""
+                        width: parent.width
                         text: modelData.sub || ""
-                        color: "#80FFFFFF"
-                        font.pixelSize: 11
+                        color: Theme.white38
+                        font.pixelSize: Theme.captionSize
+                        elide: Text.ElideRight
                     }
                 }
 
-                // 选中标记
                 Text {
+                    id: checkMark
                     visible: modelData.selected === true
                     anchors.right: parent.right
-                    anchors.rightMargin: 12
+                    anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "\ue5ca"   // check
+                    width: Theme.panelCheckSlot
+                    text: Icons.check
                     font.family: "Material Icons"
                     font.pixelSize: 18
-                    color: "#4CAF50"
+                    color: Theme.accent
+                    horizontalAlignment: Text.AlignRight
                 }
 
                 MouseArea {
-                    id: itemMouse
+                    id: rowMouse
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor

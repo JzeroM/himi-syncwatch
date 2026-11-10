@@ -1,12 +1,13 @@
 import QtQuick
-import QtQuick.Controls.Basic
-import QtQuick.Layouts
+import HimiPlayer
 
-// 656：可拖动的进度条（对应 Flutter 的 SeekBar + 时间标签）。
+// 659：进度条（对应 Flutter 的 seek bar）。
 //
-// 【为什么不用 Slider】Qt Quick Controls 的 Slider 默认带手柄和主题样式，
-// 与播放器观感差距大，且拖拽时无法方便地「拖中不跟播放位置」。这里用
-// 自绘轨道 + MouseArea，逻辑更可控。
+// 规格（NativePlayerTheme）：
+//   - track 高 6，圆角 3
+//   - thumb 半径 8（16px 圆）
+//   - 时间文本 12px white54，左右各 56 宽
+//   - 已播放部分纯白，未播放 white24
 Item {
     id: root
 
@@ -18,76 +19,91 @@ Item {
     signal seekStarted()
     signal seekFinished(real ratio)
 
-    implicitHeight: 36
+    implicitHeight: 32
 
-    Rectangle {
-        id: track
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: 4
-        radius: 2
-        color: Qt.rgba(1, 1, 1, 0.3)
-
-        // 已播放部分
-        Rectangle {
-            width: parent.width * Math.max(0, Math.min(1, root.position))
-            height: parent.height
-            radius: parent.radius
-            color: "#FFFFFF"
-        }
-
-        // 拖拽手柄（hover 或拖动时显示）
-        Rectangle {
-            visible: mouse.containsMouse || root.dragging
-            x: parent.width * Math.max(0, Math.min(1, root.position)) - width / 2
-            anchors.verticalCenter: parent.verticalCenter
-            width: 12
-            height: 12
-            radius: 6
-            color: "#FFFFFF"
-        }
-    }
-
-    MouseArea {
-        id: mouse
-        anchors.fill: parent
-        anchors.topMargin: 8
-        anchors.bottomMargin: 8
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-
-        onPressed: {
-            root.dragging = true
-            root.seekStarted()
-            root.position = Math.max(0, Math.min(1, mouse.x / width))
-        }
-        onPositionChanged: {
-            if (!root.dragging) return
-            root.position = Math.max(0, Math.min(1, mouse.x / width))
-        }
-        onReleased: {
-            if (!root.dragging) return
-            root.dragging = false
-            root.seekFinished(root.position)
-        }
-    }
-
-    // 时间标签（左当前 / 右总时长）
+    // 时间标签（左当前 / 右总时长），占固定列宽
     Text {
+        id: leftLabel
         anchors.left: parent.left
-        anchors.top: parent.bottom
-        anchors.topMargin: 2
+        anchors.verticalCenter: trackArea.verticalCenter
+        width: Theme.timeCellWidth
         text: root.leftText
-        color: "#CCFFFFFF"
-        font.pixelSize: 12
+        color: Theme.white54
+        font.pixelSize: Theme.captionSize
+        horizontalAlignment: Text.AlignLeft
     }
+
     Text {
+        id: rightLabel
         anchors.right: parent.right
-        anchors.top: parent.bottom
-        anchors.topMargin: 2
+        anchors.verticalCenter: trackArea.verticalCenter
+        width: Theme.timeCellWidth
         text: root.rightText
-        color: "#CCFFFFFF"
-        font.pixelSize: 12
+        color: Theme.white54
+        font.pixelSize: Theme.captionSize
+        horizontalAlignment: Text.AlignRight
+    }
+
+    Item {
+        id: trackArea
+        anchors.left: leftLabel.right
+        anchors.right: rightLabel.left
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: 8
+        anchors.rightMargin: 8
+        height: parent.height
+
+        Rectangle {
+            id: track
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width
+            height: Theme.seekTrackHeight
+            radius: height / 2
+            color: Theme.white24
+
+            Rectangle {
+                width: parent.width * Math.max(0, Math.min(1, root.position))
+                height: parent.height
+                radius: parent.radius
+                color: Theme.white
+            }
+
+            // thumb（hover 或拖动时显示）
+            Rectangle {
+                visible: mouse.containsMouse || root.dragging
+                x: parent.width * Math.max(0, Math.min(1, root.position)) - radius
+                anchors.verticalCenter: parent.verticalCenter
+                width: Theme.seekThumbRadius * 2
+                height: width
+                radius: Theme.seekThumbRadius
+                color: Theme.white
+            }
+        }
+
+        MouseArea {
+            id: mouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+
+            function ratioAt(px) {
+                return Math.max(0, Math.min(1, px / width))
+            }
+
+            onPressed: {
+                root.dragging = true
+                root.seekStarted()
+                root.position = ratioAt(mouse.x)
+            }
+            onPositionChanged: {
+                if (!root.dragging) return
+                root.position = ratioAt(mouse.x)
+            }
+            onReleased: {
+                if (!root.dragging) return
+                root.dragging = false
+                root.seekFinished(root.position)
+            }
+        }
     }
 }

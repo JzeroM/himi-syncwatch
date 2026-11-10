@@ -1,16 +1,20 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import HimiPlayer
 
-// 656：播放器主窗口。
+// 659：播放器主窗口。
 //
 // 【层次】
 //   底层：原生视频子窗口（mpv，由 C++ 创建，永远在 QML 之上）
 //   上层：QML 控件（顶栏/底栏/面板）——通过视频子窗口的 inset 让出区域
 //
 // 【为什么控件能看见】原生子 HWND 会盖住 QML（Win32 硬规则），所以
-// C++ 侧把视频窗口高度减去 `insetTop + insetBottom`（48 + 96），
-// 顶栏/底栏所在的那两条区域没有视频窗口，QML 就能正常显示。
+// C++ 侧把视频窗口高度减去 `insetTop + insetBottom`，顶栏/底栏所在的
+// 那两条区域没有视频窗口，QML 就能正常显示。
+//
+// 【659】inset 按 DPI 换算（QML 逻辑像素 → Win32 物理像素），
+// 数值取自 Theme，与 Flutter 完全一致。
 ApplicationWindow {
     id: root
     width: 1280
@@ -20,26 +24,20 @@ ApplicationWindow {
     visible: true
     title: playerState.title !== "" ? playerState.title + " — HIMI" : "HIMI Player"
     color: "#000000"
-    // 【不要 FramelessWindowHint】656 首版用了无边框窗口，结果：
-    //   - 用户无法拖动/缩放/最小化（没有标题栏）
-    //   - 与 646 的原生窗口观感不一致（那个有标准标题栏）
-    // 真机反馈「Qt 窗口没看到控件」时，实际是走回了 646 窗口——但那也说明
-    // 用户期望的是「像普通播放器一样有标题栏」。
     flags: Qt.Window
 
-    // Material Icons 字体（与 Flutter/安卓/鸿蒙同字形，图标用码点渲染）
+    // Material Icons 字体（与 Flutter/安卓/鸿蒙同字形）
     FontLoader {
         id: materialIcons
         source: "qrc:/qt/qml/HimiPlayer/fonts/MaterialIcons-Regular.otf"
     }
 
-    // 控件自动隐藏（播放中 5 秒无操作）
+    // 控件自动隐藏（播放中 5 秒无操作，与 Flutter `autoHideMs` 一致）
     property bool controlsVisible: true
-    property bool cursorHidden: false
 
     Timer {
         id: hideTimer
-        interval: 5000
+        interval: Theme.autoHideMs
         running: !playerState.paused && controlsVisible
         onTriggered: root.controlsVisible = false
     }
@@ -68,17 +66,11 @@ ApplicationWindow {
             pipeServer.sendCommand({"type": "requestExit"})
             root.close()
         }
-        onKernelClicked: {
-            pipeServer.sendCommand({"type": "switchEngine"})
-        }
-        onDecodeClicked: {
-            pipeServer.sendCommand({"type": "setDecodeMode"})
-        }
-        onVideoFitClicked: {
-            pipeServer.sendCommand({"type": "cycleVideoFit"})
-        }
-        onSpeedClicked: openSpeedPanel()
-        onFullscreenClicked: toggleFullscreen()
+        onKernelClicked: pipeServer.sendCommand({"type": "switchEngine"})
+        onDecodeClicked: pipeServer.sendCommand({"type": "setDecodeMode"})
+        onVideoFitClicked: pipeServer.sendCommand({"type": "cycleVideoFit"})
+        onSpeedClicked: root.openSpeedPanel()
+        onFullscreenClicked: root.toggleFullscreen()
     }
 
     // ── 底栏 ──
@@ -90,18 +82,20 @@ ApplicationWindow {
         showControls: root.controlsVisible
 
         onPlayPauseClicked: pipeServer.sendCommand({"type": "togglePlay"})
-        onNextEpisodeClicked: {
-            pipeServer.sendCommand({
-                "type": "selectEpisode",
-                "index": playerState.currentEpisodeIndex + 1
-            })
-        }
+        onPrevEpisodeClicked: pipeServer.sendCommand({
+            "type": "selectEpisode",
+            "index": playerState.currentEpisodeIndex - 1
+        })
+        onNextEpisodeClicked: pipeServer.sendCommand({
+            "type": "selectEpisode",
+            "index": playerState.currentEpisodeIndex + 1
+        })
         onDanmakuClicked: pipeServer.sendCommand({"type": "toggleDanmaku"})
-        onSubtitleClicked: openSubtitlePanel()
-        onAudioClicked: openAudioPanel()
-        onEpisodeClicked: openEpisodePanel()
-        onSpeedClicked: openSpeedPanel()
-        onFullscreenClicked: toggleFullscreen()
+        onSubtitleClicked: root.openSubtitlePanel()
+        onAudioClicked: root.openAudioPanel()
+        onEpisodeClicked: root.openEpisodePanel()
+        onSpeedClicked: root.openSpeedPanel()
+        onFullscreenClicked: root.toggleFullscreen()
         onVolumeChanged: (v) => pipeServer.sendCommand({
             "type": "setVolume", "volume": v
         })
@@ -126,31 +120,37 @@ ApplicationWindow {
         spacing: 12
         visible: !pipeServer.hasClient
 
-        BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter
-                        running: true; width: 48; height: 48 }
+        BusyIndicator {
+            anchors.horizontalCenter: parent.horizontalCenter
+            running: true
+            width: 48
+            height: 48
+        }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "等待主程序连接…"
-            color: "#80FFFFFF"
-            font.pixelSize: 14
+            color: Theme.white54
+            font.pixelSize: Theme.panelOptionSize
         }
     }
 
-    // ── 面板 ──
+    // ── 面板（右侧浮层，与 Flutter 位置一致）──
     Panel {
         id: panel
         anchors.right: parent.right
+        anchors.top: parent.top
         anchors.bottom: bottomBar.top
-        anchors.rightMargin: 16
+        anchors.rightMargin: Theme.panelRight
+        anchors.topMargin: Theme.panelTopOffset
         anchors.bottomMargin: 8
         onClosed: panel.visible = false
         onItemClicked: (id) => {
-            handlePanelItem(id)
+            root.handlePanelItem(id)
             panel.visible = false
         }
     }
 
-    // ── 面板内容填充 ──
+    // ── 面板内容 ──
     function openEpisodePanel() {
         var list = []
         for (var i = 0; i < playerState.episodes.length; i++) {
@@ -173,7 +173,8 @@ ApplicationWindow {
             var t = playerState.audioTracks[i]
             list.push({
                 id: t.id,
-                label: t.label !== "" ? t.label : (t.title !== "" ? t.title : "音轨 " + t.id),
+                label: t.label !== "" ? t.label
+                       : (t.title !== "" ? t.title : "音轨 " + t.id),
                 sub: t.lang,
                 selected: t.selected
             })
@@ -189,7 +190,8 @@ ApplicationWindow {
             var t = playerState.subtitleTracks[i]
             list.push({
                 id: t.id,
-                label: t.label !== "" ? t.label : (t.title !== "" ? t.title : "字幕 " + t.id),
+                label: t.label !== "" ? t.label
+                       : (t.title !== "" ? t.title : "字幕 " + t.id),
                 sub: t.lang,
                 selected: t.selected
             })
@@ -228,11 +230,8 @@ ApplicationWindow {
     }
 
     function toggleFullscreen() {
-        if (visibility === Window.FullScreen) {
-            showNormal()
-        } else {
-            showFullScreen()
-        }
+        if (visibility === Window.FullScreen) showNormal()
+        else showFullScreen()
     }
 
     // ── 键盘快捷键 ──
@@ -245,11 +244,8 @@ ApplicationWindow {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (root.visibility === Window.FullScreen) {
-                root.showNormal()
-            } else {
-                root.close()
-            }
+            if (root.visibility === Window.FullScreen) root.showNormal()
+            else root.close()
         }
     }
 }

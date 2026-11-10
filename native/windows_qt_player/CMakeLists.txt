@@ -53,10 +53,16 @@ qt_add_executable(himi_qt_player
 #   虽然改代码成 `qrc:/HimiPlayer/...` 也能跑，但 `/qt/qml` 是 Qt 6 的
 #   标准约定（QQmlEngine 会自动搜索该前缀，`import HimiPlayer` 的模块
 #   解析也依赖它），所以显式设置 RESOURCE_PREFIX 保持标准。
-foreach(_qml Main TopBar BottomBar SeekBar ControlButton Panel)
+foreach(_qml Main TopBar BottomBar SeekBar ControlButton Panel Theme Icons)
     set_source_files_properties("src/qml/${_qml}.qml" PROPERTIES
         QT_RESOURCE_ALIAS "${_qml}.qml")
 endforeach()
+
+# 单例注册：Theme / Icons 是 `pragma Singleton`，必须显式声明
+# QT_QML_SINGLETON_TYPE，否则 `import HimiPlayer` 后拿不到 Theme.xxx。
+# 必须在 qt_add_qml_module **之前**设置。
+set_source_files_properties(src/qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(src/qml/Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(himi_qt_player
     URI HimiPlayer
@@ -71,6 +77,8 @@ qt_add_qml_module(himi_qt_player
         src/qml/SeekBar.qml
         src/qml/ControlButton.qml
         src/qml/Panel.qml
+        src/qml/Theme.qml
+        src/qml/Icons.qml
     RESOURCES
         fonts/MaterialIcons-Regular.otf
 )
@@ -78,6 +86,25 @@ qt_add_qml_module(himi_qt_player
 # 字体路径随 RESOURCE_PREFIX 变化：现在实际是
 #   qrc:/qt/qml/HimiPlayer/fonts/MaterialIcons-Regular.otf
 # 与 Main.qml 里的 FontLoader source 一致。
+
+# ── qt.conf（659 真机全黑的根因）────────────────────────────────────
+#
+# 【现象】窗口能弹出但全黑，控制台刷满
+#   QWARN  QmlComponent: Component is not ready
+#
+# 【根因】windeployqt 把 qml/ 目录拷到输出目录了，但**没有 qt.conf**。
+# Qt 运行时找不到 qt.conf 时会按**编译期写死的绝对路径**去找 QML 模块：
+#   D:/a/himi-syncwatch/.../qml
+# 用户机器上当然没有这个路径 → `import QtQuick.Controls.Basic` 全部失败
+# → 所有子组件创建不出来 → 全黑。
+#
+# 【修法】在 exe 同级生成 qt.conf，把 Qml2Imports 指到相对目录 ./qml。
+# 这是 Qt 官方推荐的部署方式（windeployqt 的 --qml 分支也会这么做）。
+file(WRITE "${CMAKE_BINARY_DIR}/qt.conf"
+"[Paths]\n"
+"Prefix = .\n"
+"Plugins = .\n"
+"Qml2Imports = ./qml\n")
 
 if(NOT LIBMPV_DIR)
     message(FATAL_ERROR
