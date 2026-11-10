@@ -992,4 +992,34 @@ void main() {
       expect(mainQml, contains('Qt.rgba(0, 0, 0, 0.55)'));
     });
   });
+  group('⑱ 安装包整合（Qt 播放器随 setup.exe 分发）', () {
+    final iss = read('scripts/windows/himi_sync.iss');
+    final rel = read('.github/workflows/release.yml');
+
+    test('Inno Setup 递归收录 Release 全目录（含 himi_qt_player 子目录）', () {
+      expect(iss, contains(r'Release\*'));
+      expect(iss, contains('recursesubdirs'));
+    });
+
+    test('release.yml 内联构建 Qt 并放入 Flutter 查找约定目录', () {
+      expect(rel, contains("Release/himi_qt_player'"));
+      expect(rel, contains('windeployqt'));
+    });
+
+    test('CRT 必须进 Qt 目录（DLL 搜索不含父目录，缺了纯净系统启动即败）', () {
+      expect(rel, contains('vcruntime140.dll'));
+      expect(rel, contains('Qt 目录已捆绑'));
+    });
+
+    test('release 产物校验含 Qt exe / CRT / EvolveUI QML 插件', () {
+      expect(rel, contains(r'himi_qt_player\himi_qt_player.exe'));
+      expect(rel, contains(r'himi_qt_player\qml\QtQuick\Effects'));
+      expect(rel, contains(r'himi_qt_player\HimiPlayer\evolveui'));
+      expect(rel, contains(r'himi_qt_player\qt.conf'));
+    });
+
+    test('发布仍由 tag 门禁（workflow_dispatch 不会误发 Release）', () {
+      expect(rel, contains("startsWith(github.ref, 'refs/tags/')"));
+    });
+  });
 }

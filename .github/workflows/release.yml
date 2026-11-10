@@ -517,6 +517,24 @@ jobs:
             if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
             Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
           }
+          # 663：Qt 播放器整合校验（安装包 recursesubdirs 收录的就是这个
+          # 目录——这里缺一项，安装包就缺一项，且无人发现）。
+          foreach ($f in @('himi_qt_player\himi_qt_player.exe',
+                           'himi_qt_player\vcruntime140.dll',
+                           'himi_qt_player\msvcp140.dll',
+                           'himi_qt_player\qt.conf')) {
+            $p = Join-Path $rel $f
+            if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
+            Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
+          }
+          # EvolveUI 依赖的 QML 插件（MultiEffect=QtQuick.Effects）
+          foreach ($q in @('himi_qt_player\qml\QtQuick\Effects',
+                           'himi_qt_player\qml\QtQuick\Controls',
+                           'himi_qt_player\HimiPlayer\evolveui')) {
+            $p = Join-Path $rel $q
+            if (!(Test-Path $p)) { throw "产物缺少 QML 目录 $q($p)" }
+            Write-Host "OK: $q"
+          }
 
       # 捆绑 MSVC CRT：Flutter Windows release 动态链接 VCRUNTIME140/MSVCP140，
       # 纯净 Win 系统或缺运行库时应用直接闪退。从 runner 的 VS CRT 再发行目录
@@ -636,6 +654,16 @@ jobs:
           $dest = 'build/windows/x64/runner/Release/himi_qt_player'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Copy-Item -Path 'build-qt/*' -Destination $dest -Recurse -Force
+          # 【663 整合缺口】CRT 必须进 Qt 目录：Windows DLL 搜索本目录
+          # 优先、**不含父目录**——{app}\himi_qt_player\ 里的 Qt DLLs 找
+          # 不到 {app}\ 根的 VCRUNTIME140 → 纯净系统启动即失败（缺 DLL）
+          # → 静默回退内置窗口。与 windows-qt-player.yml 的捆绑对齐。
+          foreach ($dll in @('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')) {
+            $src = Join-Path 'build/windows/x64/runner/Release' $dll
+            if (!(Test-Path $src)) { throw "缺少 CRT $src（前置捆绑步骤异常）" }
+            Copy-Item -Path $src -Destination $dest -Force
+            Write-Host "Qt 目录已捆绑 $dll"
+          }
           Write-Host "Qt 播放器已放入 $dest"
 
       - name: 编译 Inno Setup 安装包
