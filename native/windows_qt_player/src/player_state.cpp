@@ -42,6 +42,12 @@ QString readString(const QJsonObject& json, const char* key,
 
 PlayerState::PlayerState(QObject* parent) : QObject(parent) {}
 
+void PlayerState::setControlsVisible(bool visible) {
+    if (controlsVisible_ == visible) return;
+    controlsVisible_ = visible;
+    emit controlsVisibleChanged();
+}
+
 void PlayerState::applyJson(const QJsonObject& json) {
     if (json.isEmpty()) return;
 

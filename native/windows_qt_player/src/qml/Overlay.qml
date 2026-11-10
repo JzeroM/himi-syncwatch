@@ -22,7 +22,8 @@ ApplicationWindow {
     id: root
     width: 1280
     height: 720
-    visible: true
+    // 669：隐藏创建→main.cpp 配置完 flags/alpha/几何再 show（防重建丢 alpha）
+    visible: false
     flags: Qt.Tool | Qt.FramelessWindowHint
     color: "transparent"
     title: "HIMI 控件层"
@@ -40,7 +41,8 @@ ApplicationWindow {
         focusColor: "#6366F1"
     }
 
-    property bool controlsVisible: true
+    // 控件显隐走**共享状态** playerState.controlsVisible（VideoGestures
+    // 双窗实例任一被点击都能唤出本层）。
     property bool panelOpen: false
     property bool adjustOpen: false
 
@@ -58,12 +60,12 @@ ApplicationWindow {
     Timer {
         id: hideTimer
         interval: Theme.autoHideMs
-        running: !playerState.paused && controlsVisible
-        onTriggered: root.controlsVisible = false
+        running: !playerState.paused && playerState.controlsVisible
+        onTriggered: playerState.controlsVisible = false
     }
 
     function showControls() {
-        controlsVisible = true
+        playerState.controlsVisible = true
         hideTimer.restart()
     }
 
@@ -82,97 +84,27 @@ ApplicationWindow {
         noticeTimer.restart()
     }
 
+    Component.onCompleted: console.log(
+        "[overlay] QML 就绪 controlsVisible=" + playerState.controlsVisible
+        + " size=" + width + "x" + height)
+
     Timer { id: gestureTimer; interval: 700; onTriggered: root.gestureIcon = "" }
     Timer { id: noticeTimer; interval: 3000; onTriggered: root.notice = "" }
 
-    // ── 手势层（透明区也吃鼠标：整窗即手势面，与 Flutter 一致）──
-    MouseArea {
-        id: videoArea
+    // ── 669 A3：alpha≈0 全窗底（1/255，肉眼不可见）──
+    // 保证每个像素都参与命中测试，堵死「全透明像素点击穿透」。
+    Rectangle {
         anchors.fill: parent
-        hoverEnabled: true
-        acceptedButtons: Qt.LeftButton
-
-        property real startX: 0
-        property real startY: 0
-        property real pressX: 0
-        property real startVolume: 0
-        property real startBrightness: 0
-        property real seekAccum: 0
-        property bool dragging: false
-        // 667：按下瞬间的显隐快照（tapTimer 按它判定，防「唤出秒消」）
-        property bool wasVisible: true
-
-        onPositionChanged: (mouse) => {
-            root.showControls()
-            if (!pressed) return
-            var dx = mouse.x - startX
-            var dy = mouse.y - startY
-            if (!dragging && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
-                dragging = true
-            }
-            if (!dragging) return
-            if (Math.abs(dx) > Math.abs(dy)) {
-                seekAccum = dx / 100 * 5000
-                var deltaS = Math.round(seekAccum / 1000)
-                root.showGesture((deltaS >= 0 ? "+" : "") + deltaS + "s")
-            } else if (pressX > width / 2) {
-                var v = Math.max(0, Math.min(1, startVolume - dy / 300))
-                mpvWindow.setVolume(v)
-                pipeServer.sendCommand({"type": "setVolume", "volume": v})
-                root.showGesture(Icons.volumeUp)
-            } else {
-                var b = Math.max(0, Math.min(1, startBrightness - dy / 300))
-                pipeServer.sendCommand({"type": "setBrightness", "brightness": b})
-                root.showGesture(Icons.brightness)
-            }
-        }
-
-        onPressed: (mouse) => {
-            startX = mouse.x
-            startY = mouse.y
-            pressX = mouse.x
-            startVolume = playerState.volume
-            startBrightness = playerState.brightness
-            seekAccum = 0
-            dragging = false
-            wasVisible = root.controlsVisible
-            root.showControls()
-        }
-
-        onReleased: {
-            if (dragging && Math.abs(seekAccum) > 500) {
-                var target = Math.max(0, playerState.positionMs + Math.round(seekAccum))
-                mpvWindow.seekTo(target)
-                pipeServer.sendCommand({"type": "seekTo", "positionMs": target})
-            }
-            dragging = false
-            seekAccum = 0
-        }
-
-        onClicked: tapTimer.restart()
-        onDoubleClicked: {
-            tapTimer.stop()
-            mpvWindow.togglePause()
-            pipeServer.sendCommand({"type": "togglePlay"})
-            root.showGesture(playerState.paused ? Icons.playCircle
-                                                : Icons.pauseCircle)
-        }
+        z: -1000
+        color: Qt.rgba(0, 0, 0, 0.004)
     }
 
-    Timer {
-        id: tapTimer
-        interval: 250
-        onTriggered: {
-            if (root.panelOpen || root.adjustOpen) {
-                root.closePanels()
-                return
-            }
-            if (videoArea.wasVisible) {
-                root.controlsVisible = false
-            } else {
-                root.showControls()
-            }
-        }
+    // ── 手势层（669：共享组件 VideoGestures，与宿主双窗各挂一份）──
+    VideoGestures {
+        panelsOpen: () => root.panelOpen || root.adjustOpen
+        closePanels: root.closePanels
+        showControls: () => root.hideTimer.restart()
+        showGesture: (iconOrText) => root.showGesture(iconOrText)
     }
 
     // ── 播放快捷键（与宿主共用组件）──
@@ -198,7 +130,7 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        showControls: root.controlsVisible
+        showControls: playerState.controlsVisible
         decodeOpen: panel.visible && panel.title === "解码方式"
         adjustOpen: adjustPanel.visible
         videoFitMode: root.fitModes[root.fitIndex]
@@ -217,7 +149,7 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        showControls: root.controlsVisible
+        showControls: playerState.controlsVisible
 
         onPlayPauseClicked: {
             mpvWindow.togglePause()
@@ -443,27 +375,10 @@ ApplicationWindow {
         lines.push("[V4+ Styles]")
         lines.push("Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")
         lines.push("Style: Danmaku, sans-serif, " + fs + ", &H00FFFFFF, &H00000000, &H7F000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 1, 0, 5, 0, 0, 0")
-        lines.push("Style: Scrim, sans-serif, 28, &H00000000, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0, 0, 7, 0, 0, 0")
+
         lines.push("")
         lines.push("[Events]")
         lines.push("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
-
-        // 667：渐变遮罩（多条递减 alpha 带近似渐变；FF=全透明）
-        function pushScrim(y, bandH, alphaStart) {
-            var eff = "{\\an7\\pos(0," + y + ")\\alpha&H"
-                    + ("0" + Math.round(alphaStart * 255).toString(16)).slice(-2)
-                    + "&\\p1}m 0 0 l " + W + " 0 " + W + " " + bandH
-                    + " 0 " + bandH + "{\\p0}"
-            lines.push("Dialogue: 1,0:00:00.00,99:00:00.00,Scrim,,0,0,0,," + eff)
-        }
-        for (var t = 0; t < 6; t++) {
-            pushScrim(Math.round(t * 64 / 6), Math.ceil(64 / 6) + 1,
-                      0.55 * (1 - t / 6))
-        }
-        for (var b = 0; b < 8; b++) {
-            pushScrim(Math.round(H - 110 + b * 110 / 8), Math.ceil(110 / 8) + 1,
-                      0.70 * (1 - b / 8))
-        }
 
         var rows = Math.max(4, Math.floor((H - 80) / (fs + 6)))
         for (var i = 0; i < items.length; i++) {

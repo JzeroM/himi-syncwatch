@@ -10,6 +10,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QStringList>
 #include <QTextStream>
 #include <QTimer>
@@ -91,6 +92,11 @@ void installLogger() {
 /// 因为 Emby 的 URL 可能很长（含 token/MediaSourceId），命令行有长度限制，
 /// 且 URL 出现在进程命令行里不安全（任务管理器可见）。
 int main(int argc, char* argv[]) {
+    // 【669：透明渲染保障】Windows 上逐像素透明的 QQuickWindow 只有
+    // D3D11 / 软件 RHI 后端可靠（GL 后端的 alpha 合成时灵时不灵，
+    // 真机现象：控件层整窗不可见 = 「没见到控件」）。
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::Direct3D11);
+
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName("HIMI Player");
     QGuiApplication::setOrganizationName("Himi");
@@ -229,21 +235,24 @@ int main(int argc, char* argv[]) {
         qCritical("[qml] Overlay 根对象不是 Window");
         return -5;
     }
+
+    // 【669 A1：owned 窗根治 z-order】Win32 规则：owned 窗永远盖在
+    // owner 之上、随 owner 一起抬升——控件层结构性压住视频子窗口，
+    // 不再赌 50ms 轮询 raise 的时序（真机现象：控件被视频盖住
+    // = 「没见到控件 + 点击没反应」）。双保险：
+    //   ① setTransientParent（Qt 原生 = 设 owner）
+    //   ② GWLP_HWNDPARENT（Win32 直设 owner，幂等）
+    overlay->setTransientParent(host);
     overlay->setFlags(Qt::Tool | Qt::FramelessWindowHint);
     overlay->setColor(Qt::transparent);
-    overlay->requestActivate();
+    ::SetWindowLongPtrW(reinterpret_cast<HWND>(overlay->winId()),
+                        GWLP_HWNDPARENT,
+                        reinterpret_cast<LONG_PTR>(
+                            reinterpret_cast<HWND>(host->winId())));
 
     // 位置同步：悬浮层恒贴住宿主客户区（拖动/缩放/最小化/全屏）。
-    // 50ms 轮询 + 变化才动（无抖动），宿主活跃时 raise 保证在视频之上。
-    auto* syncTimer = new QTimer(&app);
-    QObject::connect(syncTimer, &QTimer::timeout, &app,
-                     [host, overlay]() {
-        if (host == nullptr || overlay == nullptr) return;
-        // QQuickWindow（QWindow）没有 isMinimized()，用 visibility 判定
-        const bool show = host->isVisible()
-                && host->visibility() != QWindow::Minimized;
-        if (overlay->isVisible() != show) overlay->setVisible(show);
-        if (!show) return;
+    // 50ms 轮询 + 变化才动（无抖动），宿主活跃时 raise 双保险。
+    const auto syncOverlayGeometry = [host, overlay]() {
         HWND h = reinterpret_cast<HWND>(host->winId());
         RECT rc = {};
         ::GetClientRect(h, &rc);
@@ -251,6 +260,38 @@ int main(int argc, char* argv[]) {
         const QRect g(rc.left, rc.top, rc.right - rc.left,
                       rc.bottom - rc.top);
         if (overlay->geometry() != g) overlay->setGeometry(g);
+    };
+    syncOverlayGeometry();
+
+    // 【669 A4：自检日志】窗口/几何/alpha 落日志文件——复测异常时
+    // 一份 himi_qt_player.log 即可定位（透明合成失效 / 几何错位）。
+    qInfo().noquote() << "[overlay] 创建完成"
+                      << "winId=" << Qt::hex
+                      << reinterpret_cast<quintptr>(overlay->winId())
+                      << Qt::dec << "geometry=" << overlay->geometry()
+                      << "alphaBuffer=" << overlay->format().alphaBufferSize()
+                      << "rhi=" << QSGRendererInterface::Direct3D11;
+    if (overlay->format().alphaBufferSize() <= 0) {
+        qWarning("[overlay] alphaBuffer 未生效——透明合成可能失败（控件不可见）");
+    }
+
+    // 配置全部就绪后再显示（隐藏创建→配置→显示：防 flags 重建丢 alpha）。
+    overlay->show();
+    overlay->requestActivate();
+
+    auto* syncTimer = new QTimer(&app);
+    QObject::connect(syncTimer, &QTimer::timeout, &app,
+                     [host, overlay, syncOverlayGeometry]() {
+        if (host == nullptr || overlay == nullptr) return;
+        // QQuickWindow（QWindow）没有 isMinimized()，用 visibility 判定
+        const bool show = host->isVisible()
+                && host->visibility() != QWindow::Minimized;
+        if (overlay->isVisible() != show) {
+            qInfo() << "[overlay] 跟随宿主显隐 ->" << show;
+            overlay->setVisible(show);
+        }
+        if (!show) return;
+        syncOverlayGeometry();
         if (host->isActive()) overlay->raise();
     });
     syncTimer->start(50);
@@ -324,6 +365,12 @@ int main(int argc, char* argv[]) {
                              if (!name.isEmpty()) {
                                  mpv.setProperty(name, value);
                              }
+                         } else if (type == QLatin1String("setHdrMode")) {
+                             // 669：HDR 晚绑定——进程提前拉起（起播直接
+                             // 弹窗），媒体信息解析完先切 HDR 档再 load。
+                             mpv.setHdrMode(
+                                 cmd.value(QLatin1String("hdr")).toBool(),
+                                 cmd.value(QLatin1String("hlg")).toBool());
                          } else if (type == QLatin1String("selectAudio")) {
                              // 664：切轨命令此前无人处理（两头都断）。
                              // id = Emby 索引 + 1（与 SelectAudio 约定一致），

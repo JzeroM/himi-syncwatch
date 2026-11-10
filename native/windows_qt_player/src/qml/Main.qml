@@ -21,6 +21,11 @@ ApplicationWindow {
     // 播放快捷键（两窗共用组件；焦点在任一窗都有效）
     PlayerShortcuts { }
 
+    // 669：手势兜底实例（共享组件，两窗 z-order 互斥只有一份收到事件）。
+    // 悬浮层失活时点击穿透（视频子窗 WS_EX_TRANSPARENT）落到本窗——
+    // 双击暂停/横滑 seek/点击唤出控件仍然有效。
+    VideoGestures { }
+
     Shortcut {
         sequence: "Escape"
         onActivated: {

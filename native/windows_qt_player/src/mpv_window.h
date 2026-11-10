@@ -72,6 +72,11 @@ public:
     Q_INVOKABLE void toggleHostFullscreen();
     Q_INVOKABLE bool isHostFullscreen() const;
 
+    /// 【669：HDR 晚绑定】媒体信息解析完才决定 HDR/HLG 档位，而进程
+    /// 为「起播直接弹窗」早已拉起（Flutter 侧 _ensureQtPlayerProcess）。
+    /// 流程：先 setHdrMode 再 load，mpv 首帧前应用与启动参数等效。
+    Q_INVOKABLE void setHdrMode(bool hdr, bool hlg);
+
     /// 通用 mpv 命令透传（sub-add / sub-remove / screenshot-to-file …）。
     Q_INVOKABLE bool command(const QStringList& args);
 
@@ -103,6 +108,9 @@ private:
     void syncGeometry();
     void pumpEvents();
     void applyHdrOptions(bool hdr, bool hlg);
+
+    /// 669：初始化前用 option、初始化后用 property（mpv 规则）。
+    void setMpvString(const char* name, const QString& value);
     void refreshOutputParams();
 
     static LRESULT CALLBACK VideoWndProc(HWND hwnd, UINT msg, WPARAM wparam,
@@ -128,6 +136,7 @@ private:
     qint64 durationMs_ = 0;
     bool paused_ = true;
     bool hdrRequested_ = false;
+    bool initialized_ = false;  ///< mpv_initialize 已完成（option→property）
 
     QString outPrimaries_;
     QString outGamma_;

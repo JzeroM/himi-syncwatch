@@ -114,6 +114,7 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
         lastError_ = QStringLiteral("mpv_initialize 失败");
         return false;
     }
+    initialized_ = true;
 
     mpv_observe_property(mpv_, 0, "video-out-params", MPV_FORMAT_NODE);
     mpv_observe_property(mpv_, 0, "pause", MPV_FORMAT_FLAG);
@@ -198,16 +199,37 @@ void MpvWindow::setOverlayInsets(int top, int bottom) {
 void MpvWindow::applyHdrOptions(bool hdr, bool hlg) {
     if (mpv_ == nullptr) return;
     if (hdr) {
-        mpv_set_option_string(mpv_, "d3d11-output-format", "rgb10_a2");
-        mpv_set_option_string(mpv_, "target-colorspace-hint", "yes");
-        mpv_set_option_string(mpv_, "target-prim", "bt.2020");
-        mpv_set_option_string(mpv_, "target-trc", hlg ? "hlg" : "pq");
-        mpv_set_option_string(mpv_, "hdr-compute-peak", "auto");
-        mpv_set_option_string(mpv_, "tone-mapping", "clip");
+        setMpvString("d3d11-output-format", QStringLiteral("rgb10_a2"));
+        setMpvString("target-colorspace-hint", QStringLiteral("yes"));
+        setMpvString("target-prim", QStringLiteral("bt.2020"));
+        setMpvString("target-trc", hlg ? QStringLiteral("hlg")
+                                      : QStringLiteral("pq"));
+        setMpvString("hdr-compute-peak", QStringLiteral("auto"));
+        setMpvString("tone-mapping", QStringLiteral("clip"));
     } else {
-        mpv_set_option_string(mpv_, "d3d11-output-format", "auto");
-        mpv_set_option_string(mpv_, "target-colorspace-hint", "no");
+        setMpvString("d3d11-output-format", QStringLiteral("auto"));
+        setMpvString("target-colorspace-hint", QStringLiteral("no"));
     }
+}
+
+void MpvWindow::setMpvString(const char* name, const QString& value) {
+    if (mpv_ == nullptr) return;
+    const QByteArray utf8 = value.toUtf8();
+    // mpv 规则：mpv_initialize 之前用 option，之后必须用 property
+    //（option 在初始化后写入会被拒绝 → 运行时 HDR 切换静默失效）。
+    const int rc = initialized_
+            ? mpv_set_property_string(mpv_, name, utf8.constData())
+            : mpv_set_option_string(mpv_, name, utf8.constData());
+    if (rc < 0) {
+        qWarning().noquote() << "[hdr] 设置失败" << name << "=" << value
+                             << "rc=" << rc;
+    }
+}
+
+void MpvWindow::setHdrMode(bool hdr, bool hlg) {
+    qInfo().noquote() << "[hdr] setHdrMode hdr=" << hdr << "hlg=" << hlg;
+    hdrRequested_ = hdr;
+    applyHdrOptions(hdr, hlg);
 }
 
 void MpvWindow::load(const QString& url, const QMap<QString, QString>& headers) {

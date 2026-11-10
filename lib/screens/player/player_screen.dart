@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
+import 'package:himi_syncwatch/services/player/qt_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/qt_player_session.dart';
 import 'package:himi_mpv_android/himi_mpv_android.dart'
     show HimiMpvAndroidSurfaceView;
@@ -2050,6 +2051,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _manualSegments =
         widget.manualSegmentRepository ?? LocalManualSegmentStore();
     WidgetsBinding.instance.addObserver(this);
+    // 669 B1/B3：Qt 模式（非房间）起播**不露 Flutter 播放页**——首帧即
+    // 隐藏本页 UI（详情页在下方透出），并立即预启动 Qt 进程：窗口直接
+    // 弹出、加载在 Qt 窗口内完成。任何失败路径走 [_abandonQtTakeover]
+    // 恢复本页 UI（646 回退链路不变）。
+    if (defaultTargetPlatform == TargetPlatform.windows &&
+        widget.roomCode == null &&
+        ref.read(settingsProvider).useQtPlayer &&
+        _qtPlayerExePath() != null) {
+      _qtUiHidden = true;
+      unawaited(_ensureQtPlayerProcess());
+    }
     // Android：预取显示器真实输出分辨率（渲染尺寸夹紧目标）。TV/盒子
     // 的 UI 层常只报 1080p，须用 Display 真实尺寸才能保住 4K 输出模式
     // 下的全分辨率扫描输出；失败/null 由 _clampDisplayPhysical 回退
@@ -2280,6 +2292,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         } catch (_) {
           LogService()
               .log('Player', '_loadEpisodeStream 异常，强制设置 _isPlayerReady');
+          _abandonQtTakeover();
           if (mounted) {
             setState(() {
               _isPlayerReady = true;
@@ -3483,6 +3496,80 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 669 B3：Qt 接管进行中——本页 UI 隐藏（起播不露 Flutter 播放页）。
+  /// initState 按「Windows + 非房间 + useQtPlayer + exe 存在」置 true；
+  /// 任何失败路径经 [_abandonQtTakeover] 清除并恢复 UI。
+  bool _qtUiHidden = false;
+
+  /// 669 B4：Qt 已交接（会话已接管）——此后进程归 QtPlayerSession 管，
+  /// 页面退出/错误路径不得再关 Qt 窗。
+  bool _qtHandedOver = false;
+
+  /// 669 B1：Qt 进程拉起**单飞**（预启动与 _startQtPlayer 共用一次），
+  /// 防两路并发拉起互杀（launchQtPlayer 内部会先关旧窗）。
+  Future<QtPlayerAdapter?>? _qtLaunchFuture;
+
+  Future<QtPlayerAdapter?> _qtLaunchSingleFlight() {
+    return _qtLaunchFuture ??= _doLaunchQtProcess().then((adapter) {
+      if (adapter == null) {
+        _qtLaunchFuture = null;  // 启动失败：清缓存，下次加载可重试
+      }
+      return adapter;
+    });
+  }
+
+  /// 669 B1：实际拉起 Qt 进程（窗口即刻弹出，窗内显示等待/加载态）。
+  Future<QtPlayerAdapter?> _doLaunchQtProcess() async {
+    final exePath =
+        MpvSessionPlatform.qtPlayerExePath ?? _qtPlayerExePath();
+    if (exePath == null) return null;
+    MpvSessionPlatform.qtPlayerExePath = exePath;
+    try {
+      final adapter = await MpvSessionPlatform.launchQtPlayer(
+        exePath: exePath,
+        // 669 B2：HDR 晚绑定——媒体信息解析完由 _startQtPlayer 先发
+        // setHdrMode 再 load，与启动参数等效（mpv 首帧前应用）。
+        hdr: false,
+        hlg: false,
+      );
+      return adapter;
+    } catch (e) {
+      LogService().log('Player', 'Qt 播放器拉起异常: $e');
+      return null;
+    }
+  }
+
+  /// 669 B1：预启动引导（initState 触发）——失败即回退。
+  Future<void> _ensureQtPlayerProcess() async {
+    final adapter = await _qtLaunchSingleFlight();
+    if (adapter == null) {
+      LogService().log('Player', 'Qt 预启动失败，回退内置播放器');
+      _abandonQtTakeover();
+      return;
+    }
+    // 交接前进程意外退出 → 清死适配器（防 _startQtPlayer 误复用）+ 回退。
+    // 交接后 QtPlayerSession.attach 覆盖此回调（回详情页语义）。
+    adapter.onProcessExited = () {
+      LogService().log('Player', 'Qt 预启动后进程退出，回退内置播放器');
+      unawaited(MpvSessionPlatform.closeQtPlayer());
+      _abandonQtTakeover();
+    };
+    LogService().log('Player', 'Qt 播放器已预启动（窗口直接弹出，加载在窗内）');
+  }
+
+  /// 669 B4：Qt 接管落空（失败/回退）——恢复 Flutter 播放页 UI。
+  ///
+  /// 未交接就落空时顺手关掉 Qt 窗（防「等待连接」孤儿窗口）；
+  /// 已交接的进程归 QtPlayerSession 管，这里不碰。
+  void _abandonQtTakeover() {
+    if (!_qtUiHidden) return;
+    _qtUiHidden = false;
+    if (!_qtHandedOver) {
+      unawaited(MpvSessionPlatform.closeQtPlayer());
+    }
+    if (mounted && !_disposed) setState(() {});
+  }
+
   /// 656：拉起 Qt 播放器窗口。
   ///
   /// 返回 true 表示已接管（调用方应跳过 Flutter 侧的播放流程）；
@@ -3496,27 +3583,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     Future<QtMediaTarget?> Function(int episodeIndex)? resolveEpisode,
     Future<QtMediaTarget?> Function(int versionIndex)? resolveVersion,
   }) async {
-    if (!MpvSessionPlatform.qtPlayerEnabled) return false;
-    final exePath = MpvSessionPlatform.qtPlayerExePath;
-    if (exePath == null) {
-      LogService().log('Player', 'Qt 播放器已启用但找不到 exe，回退内置窗口');
+    if (!MpvSessionPlatform.qtPlayerEnabled) {
+      _abandonQtTakeover();
       return false;
     }
-    final adapter = await MpvSessionPlatform.launchQtPlayer(
-      exePath: exePath,
-      hdr: hdr,
-      hlg: hlg,
-    );
+    // 669 B1：进程已在 initState 预启动（起播直接弹窗）；单飞复用，
+    // 房间/直链等未预启动的路径在此现拉（时序与旧行为一致）。
+    final adapter = await _qtLaunchSingleFlight();
     if (adapter == null) {
       LogService().log('Player', 'Qt 播放器启动失败，回退内置窗口');
+      _abandonQtTakeover();
       return false;
     }
     LogService().log('Player', 'Qt 播放器已接管播放');
+    // 669 B2：HDR 晚绑定——先切档再 load（mpv 首帧前应用与启动参数等效）。
+    adapter.setHdrMode(hdr: hdr, hlg: hlg);
     // 播放地址与鉴权头通过 IPC 下发（不放命令行：URL 会在任务管理器
     // 可见，且 Emby URL 可能超过命令行长度限制）
     adapter.media = url;
     adapter.setHttpHeaders(headers);
     await adapter.prepare(startMs: startMs);
+    // 669 B4：已交接——此后进程归 QtPlayerSession 管。
+    _qtHandedOver = true;
 
     // 664：Qt 窗口已出现 → **会话常驻接管 + 主窗口立即回详情页**
     // （用户要求：Qt 窗口一出现，另一个窗口就是详情页）。
@@ -4418,6 +4506,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return _videoOutputReady();
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
+      // 669 B4：Qt 接管落空（未走到交接）——恢复 Flutter 播放页 UI。
+      _abandonQtTakeover();
       _isSwitchingMedia = false;
       // 换源途中失败：把渐出到 0 的音量恢复，避免整场静音
       _fader.cancel();
@@ -8091,6 +8181,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } catch (_) {}
     }
     _disposed = true;
+    // 669 B4：预启动的 Qt 进程没等到交接就被退出（返回/中断）——
+    // 关掉「等待连接」孤儿窗口。已交接的进程归 QtPlayerSession 管。
+    if (_qtUiHidden && !_qtHandedOver) {
+      unawaited(MpvSessionPlatform.closeQtPlayer());
+    }
     // 捕获当前适配器：延迟释放期间若引擎字段被替换，也不能释放错对象。
     final player = _player;
     // 原生 UI 桥先拆除（监听器随适配器销毁；dispose 内部会关原生宿主）。
@@ -8407,6 +8502,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     //
     // 必须放在所有 ref.watch / ref.listen 之后——否则会跳过设置监听。
     if (_nativeUiActive && defaultTargetPlatform == TargetPlatform.windows) {
+      return const SizedBox.shrink();
+    }
+    // 669 B3：Qt 模式起播**不露 Flutter 播放页**——起播直接弹 Qt 窗口，
+    // 加载在 Qt 窗口内完成；本页首帧即退场（详情页在下方透出）。
+    // 任何失败路径走 [_abandonQtTakeover] 恢复本页 UI（回退兜底）。
+    if (_qtUiHidden) {
       return const SizedBox.shrink();
     }
     return TvBackConfirm(

@@ -56,7 +56,8 @@ void main() {
     stateCpp = read('$dir/src/player_state.cpp');
     mainQml = (read('$dir/src/qml/Overlay.qml')
         + read('$dir/src/qml/Main.qml')
-        + read('$dir/src/qml/PlayerShortcuts.qml'));
+        + read('$dir/src/qml/PlayerShortcuts.qml')
+        + read('$dir/src/qml/VideoGestures.qml'));
     topBar = read('$dir/src/qml/TopBar.qml');
     bottomBar = read('$dir/src/qml/BottomBar.qml');
     pipeDart = read('lib/services/player/qt_player_pipe.dart');
@@ -85,9 +86,15 @@ void main() {
     test('HDR 选项与 Flutter 插件一致', () {
       expect(mpvCpp, contains('"vo", "gpu-next"'));
       expect(mpvCpp, contains('"d3d11-output-mode", "window"'));
-      expect(mpvCpp, contains('"d3d11-output-format", "rgb10_a2"'));
-      expect(mpvCpp, contains('"target-colorspace-hint", "yes"'));
-      expect(mpvCpp, contains('"target-prim", "bt.2020"'));
+      // 669：HDR 晚绑定——setMpvString（init 前 option / init 后 property），
+      // 运行时可重设（进程提前拉起，档位随媒体信息晚到）。
+      expect(mpvCpp,
+          contains('setMpvString("d3d11-output-format", QStringLiteral("rgb10_a2"))'));
+      expect(mpvCpp,
+          contains('setMpvString("target-colorspace-hint", QStringLiteral("yes"))'));
+      expect(mpvCpp,
+          contains('setMpvString("target-prim", QStringLiteral("bt.2020"))'));
+      expect(mpvCpp, contains('void MpvWindow::setHdrMode(bool hdr, bool hlg)'));
     });
 
     test('HDR 判据读 video-out-params（不是 video-params）', () {
@@ -702,7 +709,10 @@ void main() {
   group('⑮ 662：复刻 Flutter 播放器 UI（多版本/锁钮/显示调节/命令链路）', () {
     final topBar = read('$dir/src/qml/TopBar.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
-    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
+    final mainQml = (read('$dir/src/qml/Overlay.qml')
+        + read('$dir/src/qml/Main.qml')
+        + read('$dir/src/qml/PlayerShortcuts.qml')
+        + read('$dir/src/qml/VideoGestures.qml'));
     final stateH = read('$dir/src/player_state.h');
     final adapterSrc =
         File('lib/services/player/qt_player_adapter.dart').readAsStringSync();
@@ -842,7 +852,10 @@ void main() {
     });
   });
   group('⑯ EvolveUI 集成（vendor 零补丁 + 上下文注入 + 资源对齐）', () {
-    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
+    final mainQml = (read('$dir/src/qml/Overlay.qml')
+        + read('$dir/src/qml/Main.qml')
+        + read('$dir/src/qml/PlayerShortcuts.qml')
+        + read('$dir/src/qml/VideoGestures.qml'));
     final evolveDir = Directory('$dir/src/qml/evolveui');
 
     test('vendor 组件齐全（ETheme/EButton/ESlider/ECard/ELoader）', () {
@@ -926,7 +939,10 @@ void main() {
     final iconsQml = read('$dir/src/qml/Icons.qml');
     final topBar = read('$dir/src/qml/TopBar.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
-    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
+    final mainQml = (read('$dir/src/qml/Overlay.qml')
+        + read('$dir/src/qml/Main.qml')
+        + read('$dir/src/qml/PlayerShortcuts.qml')
+        + read('$dir/src/qml/VideoGestures.qml'));
     final slider = read('$dir/src/qml/PlayerSlider.qml');
     final controlBtn = read('$dir/src/qml/ControlButton.qml');
 
@@ -1041,7 +1057,10 @@ void main() {
   group('⑲ 664：播不了/面板被盖/回详情页（headers·挖孔·本地化·会话）', () {
     final mainCpp = read('$dir/src/main.cpp');
     final mpvCpp = read('$dir/src/mpv_window.cpp');
-    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
+    final mainQml = (read('$dir/src/qml/Overlay.qml')
+        + read('$dir/src/qml/Main.qml')
+        + read('$dir/src/qml/PlayerShortcuts.qml')
+        + read('$dir/src/qml/VideoGestures.qml'));
     final panelQml = read('$dir/src/qml/Panel.qml');
     final adjustQml = read('$dir/src/qml/DisplayAdjustPanel.qml');
     final elistQml = read('$dir/src/qml/evolveui/EList.qml');
@@ -1112,7 +1131,10 @@ void main() {
   });
   group('⑳ 665：视频满铺全窗（控件带挖孔，观感同 Flutter）', () {
     final mainCpp = read('$dir/src/main.cpp');
-    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
+    final mainQml = (read('$dir/src/qml/Overlay.qml')
+        + read('$dir/src/qml/Main.qml')
+        + read('$dir/src/qml/PlayerShortcuts.qml')
+        + read('$dir/src/qml/VideoGestures.qml'));
 
     test('inset 归零：视频满铺（不再被上下让位逼出横向黑边）', () {
       // 真机回归：48/96 inset 把视频压成中间一块 → 「被控件包裹」。
@@ -1125,7 +1147,10 @@ void main() {
     });
   });
   group('㉑ 665：功能全量对齐 Flutter（面板/手势/弹幕/自动下一集）', () {
-    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
+    final mainQml = (read('$dir/src/qml/Overlay.qml')
+        + read('$dir/src/qml/Main.qml')
+        + read('$dir/src/qml/PlayerShortcuts.qml')
+        + read('$dir/src/qml/VideoGestures.qml'));
     final panelQml = read('$dir/src/qml/Panel.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
     final topBar = read('$dir/src/qml/TopBar.qml');
@@ -1204,7 +1229,10 @@ void main() {
     });
   });
   group('㉒ 667：透明控件层/面板排版/恢复默认/去引擎/点击修复', () {
-    final mainQml = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
+    final mainQml = (read('$dir/src/qml/Overlay.qml')
+        + read('$dir/src/qml/Main.qml')
+        + read('$dir/src/qml/PlayerShortcuts.qml')
+        + read('$dir/src/qml/VideoGestures.qml'));
     final topBar = read('$dir/src/qml/TopBar.qml');
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
     final adjustQml = read('$dir/src/qml/DisplayAdjustPanel.qml');
@@ -1215,10 +1243,10 @@ void main() {
       expect(mpvCpp, isNot(contains('CreateRoundRectRgn')));
     });
 
-    test('ASS 全宽渐变遮罩（mpv 画进视频 = 真半透明压视频）', () {
-      expect(mainQml, contains('pushScrim'));
-      expect(mainQml, contains('Style: Scrim'));
-      // 遮罩常驻：弹幕关时重生成（不藏轨）
+    test('ASS 渐变遮罩已退役（669：玻璃条自画渐变，防顶/底双重压暗）', () {
+      expect(mainQml, isNot(contains('pushScrim')));
+      expect(mainQml, isNot(contains('Style: Scrim')));
+      // 弹幕开关只增减弹幕行（重生成，不藏轨）
       expect(mainQml, contains('danmakuOn ? playerState.danmakuItems : []'));
       expect(mainQml, contains('danmakuBuildTimer.restart()'));
     });
@@ -1256,7 +1284,8 @@ void main() {
 
     test('点击唤出不立马隐藏（按下瞬间快照判定）', () {
       expect(mainQml, contains('property bool wasVisible'));
-      expect(mainQml, contains('wasVisible = root.controlsVisible'));
+      // 669：显隐走共享态 playerState.controlsVisible（双窗手势都能唤出）
+      expect(mainQml, contains('wasVisible = playerState.controlsVisible'));
       expect(mainQml, contains('if (videoArea.wasVisible)'));
     });
   });
@@ -1319,6 +1348,70 @@ void main() {
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
       expect(code, isNot(contains('isMinimized')));
+    });
+  });
+  group('㉕ 669：悬浮层可见性根治 + 起播直接弹 Qt 窗口', () {
+    final overlayQml = read('$dir/src/qml/Overlay.qml');
+    final hostQml = read('$dir/src/qml/Main.qml');
+    final gestures = read('$dir/src/qml/VideoGestures.qml');
+    final mainCpp2 = read('$dir/src/main.cpp');
+    final mpvH2 = read('$dir/src/mpv_window.h');
+    final stateH2 = read('$dir/src/player_state.h');
+    final screen = read('lib/screens/player/player_screen.dart');
+    final qtAdapter = read('lib/services/player/qt_player_adapter.dart');
+
+    test('A1 owned 窗根治 z-order（owned 窗永远盖住宿主 = 结构性保证）', () {
+      expect(mainCpp2, contains('setTransientParent(host)'));
+      expect(mainCpp2, contains('GWLP_HWNDPARENT'));
+    });
+
+    test('A2 手势双窗共用（VideoGestures 两份实例 + 共享显隐态）', () {
+      expect(gestures, contains('tapTimer'));
+      expect(gestures, contains('onDoubleClicked'));
+      expect(hostQml, contains('VideoGestures'));
+      expect(overlayQml, contains('VideoGestures'));
+      // 控件显隐共享态（任一实例点击都能唤出）
+      expect(stateH2, contains('controlsVisible'));
+      expect(stateH2, contains('WRITE setControlsVisible'));
+    });
+
+    test('A3 透明渲染保障（D3D11 后端 + 隐藏创建→显示 + alpha 底）', () {
+      expect(mainCpp2, contains('QSGRendererInterface::Direct3D11'));
+      expect(overlayQml, contains('visible: false'));
+      expect(mainCpp2, contains('overlay->show()'));
+      // alpha≈0 全窗底：堵死透明像素点击穿透
+      expect(overlayQml, contains('Qt.rgba(0, 0, 0, 0.004)'));
+    });
+
+    test('A4 自检日志（alphaBuffer/几何/QML 就绪落盘）', () {
+      expect(mainCpp2, contains('alphaBufferSize'));
+      expect(mainCpp2, contains('[overlay] 创建完成'));
+      expect(overlayQml, contains('[overlay] QML 就绪'));
+    });
+
+    test('A5 渐变遮罩退役（玻璃条自画渐变）', () {
+      expect(overlayQml, isNot(contains('pushScrim')));
+    });
+
+    test('B1 起播直接弹 Qt 窗口（预启动单飞 + 首帧隐藏播放页）', () {
+      expect(screen, contains('_qtLaunchSingleFlight'));
+      expect(screen, contains('_ensureQtPlayerProcess'));
+      expect(screen, contains('if (_qtUiHidden)'));
+      // B5：房间不动（门禁只挂非房间路径）
+      expect(screen, contains('widget.roomCode == null'));
+    });
+
+    test('B2 HDR 晚绑定（先 setHdrMode 再 load）', () {
+      expect(qtAdapter, contains("'type': 'setHdrMode'"));
+      expect(mpvH2, contains('Q_INVOKABLE void setHdrMode(bool hdr, bool hlg)'));
+      expect(mainCpp2, contains('QLatin1String("setHdrMode")'));
+      expect(screen, contains('adapter.setHdrMode(hdr: hdr, hlg: hlg)'));
+    });
+
+    test('B4 回退兜底（失败恢复 UI + 未交接关孤儿窗）', () {
+      expect(screen, contains('_abandonQtTakeover'));
+      expect(screen, contains('_qtHandedOver'));
+      expect(screen, contains('MpvSessionPlatform.closeQtPlayer'));
     });
   });
 }

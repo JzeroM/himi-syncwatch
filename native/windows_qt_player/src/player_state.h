@@ -93,6 +93,13 @@ class PlayerState : public QObject {
     Q_PROPERTY(bool hdrOutput READ hdrOutput NOTIFY changed)
     Q_PROPERTY(QString videoOutputActual READ videoOutputActual NOTIFY changed)
 
+    // ── 669：控件层显隐共享态（悬浮层渲染绑定 + 双窗手势共写）──
+    // 纯 UI 本地状态，不参与 Flutter 状态同步（applyJson 不含此键）。
+    // 控件悬浮层与宿主窗口的 VideoGestures 实例都能写——点击唤出在
+    // 任何 z-order 状态下都有效。
+    Q_PROPERTY(bool controlsVisible READ controlsVisible
+                   WRITE setControlsVisible NOTIFY controlsVisibleChanged)
+
 public:
     explicit PlayerState(QObject* parent = nullptr);
 
@@ -163,6 +170,9 @@ public:
     bool hdrOutput() const { return hdrOutput_; }
     QString videoOutputActual() const { return videoOutputActual_; }
 
+    bool controlsVisible() const { return controlsVisible_; }
+    void setControlsVisible(bool visible);
+
     /// 选集列表（`episodes` 数组的轻量投影）。
     struct Episode {
         int index = 0;
@@ -198,6 +208,7 @@ public:
 
 signals:
     void changed();
+    void controlsVisibleChanged();
 
     /// 剧集列表变化（QML 的 ListView 需要单独通知才能刷新 model）。
     void episodesChanged();
@@ -219,6 +230,7 @@ private:
     bool buffering_ = false;
     bool showLoading_ = false;
     bool playerReady_ = false;
+    bool controlsVisible_ = true;
 
     QString title_;
     QString mediaTitle_;

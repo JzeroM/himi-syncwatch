@@ -311,6 +311,16 @@ class QtPlayerAdapter implements PlayerAdapter {
 
   // ── 属性通道 ──────────────────────────────────────────────
 
+  /// 669：HDR/HLG 档位晚绑定（进程提前拉起，媒体信息解析完才决定）。
+  ///
+  /// 时序约定：**先 setHdrMode 再 prepare(load)**——mpv 首帧前应用
+  /// 与启动参数等效（Qt 侧 `MpvWindow::setHdrMode`）。
+  void setHdrMode({required bool hdr, required bool hlg}) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({'type': 'setHdrMode', 'hdr': hdr, 'hlg': hlg});
+    LogService().log('QtPlayer', 'setHdrMode hdr=$hdr hlg=$hlg');
+  }
+
   @override
   void setProperty(String name, String value) {
     if (_disposed) return;
