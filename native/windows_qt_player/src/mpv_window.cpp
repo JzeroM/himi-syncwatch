@@ -361,7 +361,9 @@ bool MpvWindow::command(const QStringList& args) {
     argv.reserve(storage.size() + 1);
     for (const QByteArray& b : storage) argv.append(b.constData());
     argv.append(nullptr);
-    const int rc = mpv_command(mpv_, argv.constData());
+    // 注意用 data()（非 const）：mpv_command 签名是 const char**，
+    // constData() 的 const char* const* 在 MSVC 下转换不过去。
+    const int rc = mpv_command(mpv_, argv.data());
     if (rc < 0) {
         qWarning().noquote() << "[mpv] command 失败:"
                              << QString::fromUtf8(mpv_error_string(rc));
