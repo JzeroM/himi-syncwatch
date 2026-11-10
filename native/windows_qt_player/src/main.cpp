@@ -266,9 +266,8 @@ int main(int argc, char* argv[]) {
     // 【669 A4：自检日志】窗口/几何/alpha 落日志文件——复测异常时
     // 一份 himi_qt_player.log 即可定位（透明合成失效 / 几何错位）。
     qInfo().noquote() << "[overlay] 创建完成"
-                      << "winId=" << Qt::hex
-                      << reinterpret_cast<quintptr>(overlay->winId())
-                      << Qt::dec << "geometry=" << overlay->geometry()
+                      << "winId=" << Qt::hex << overlay->winId() << Qt::dec
+                      << "geometry=" << overlay->geometry()
                       << "alphaBuffer=" << overlay->format().alphaBufferSize()
                       << "rhi=" << QSGRendererInterface::Direct3D11;
     if (overlay->format().alphaBufferSize() <= 0) {

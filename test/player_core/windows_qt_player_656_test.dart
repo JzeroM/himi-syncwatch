@@ -1340,6 +1340,11 @@ void main() {
       expect(mainCpp, isNot(contains('Qt.FramelessWindowHint')));
     });
 
+    test('WId 就是 quintptr（reinterpret_cast 同型转换编译不过）', () {
+      // Qt 6 的 WId = quintptr，reinterpret_cast<quintptr>(winId()) 非法
+      expect(mainCpp, isNot(contains('reinterpret_cast<quintptr>')));
+    });
+
     test('最小化判定走 visibility（QWindow 没有 isMinimized）', () {
       expect(mainCpp, contains('QWindow::Minimized'));
       // 只查代码行（注释里允许出现 isMinimized 说明文字）
