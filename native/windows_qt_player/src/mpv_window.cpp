@@ -318,12 +318,13 @@ void MpvWindow::applyRegion() {
                       .arg(lastW_)
                       .arg(lastH_);
     for (const QVariant& v : holes_) {
-        const QRectF r = v.toRectF();
-        sig += QStringLiteral("%1,%2,%3,%4;")
-                   .arg(r.x())
-                   .arg(r.y())
-                   .arg(r.width())
-                   .arg(r.height());
+        const QVariantMap m = v.toMap();
+        sig += QStringLiteral("%1,%2,%3,%4,%5;")
+                   .arg(m.value(QStringLiteral("x")).toDouble())
+                   .arg(m.value(QStringLiteral("y")).toDouble())
+                   .arg(m.value(QStringLiteral("w")).toDouble())
+                   .arg(m.value(QStringLiteral("h")).toDouble())
+                   .arg(m.value(QStringLiteral("r")).toDouble());
     }
     if (sig == holesSig_) return;
     holesSig_ = sig;
@@ -332,16 +333,25 @@ void MpvWindow::applyRegion() {
     ::GetClientRect(video_hwnd_, &rc);
     HRGN rgn = ::CreateRectRgn(rc.left, rc.top, rc.right, rc.bottom);
     for (const QVariant& v : holes_) {
-        const QRectF r = v.toRectF();
+        const QVariantMap m = v.toMap();
         // QML 逻辑坐标（窗口客户区）→ 视频子窗口物理坐标
-        const int x1 = qRound(r.x() * dpr_);
-        const int y1 = qRound(r.y() * dpr_) - insetTop_;
-        const int x2 = qRound((r.x() + r.width()) * dpr_);
-        const int y2 = qRound((r.y() + r.height()) * dpr_) - insetTop_;
+        const double rx = m.value(QStringLiteral("x")).toDouble();
+        const double ry = m.value(QStringLiteral("y")).toDouble();
+        const double rw = m.value(QStringLiteral("w")).toDouble();
+        const double rh = m.value(QStringLiteral("h")).toDouble();
+        const qreal radiusLogical = m.value(QStringLiteral("r")).toDouble();
+        const int x1 = qRound(rx * dpr_);
+        const int y1 = qRound(ry * dpr_) - insetTop_;
+        const int x2 = qRound((rx + rw) * dpr_);
+        const int y2 = qRound((ry + rh) * dpr_) - insetTop_;
         if (x2 <= rc.left || y2 <= rc.top || x1 >= rc.right || y1 >= rc.bottom) {
             continue;
         }
-        HRGN hole = ::CreateRectRgn(x1, y1, x2, y2);
+        // 667：圆角孔（直角孔在圆形按钮/胶囊四周露黑角）
+        const int radius = qRound(radiusLogical * dpr_ * 2);
+        HRGN hole = radius > 0
+                ? ::CreateRoundRectRgn(x1, y1, x2, y2, radius, radius)
+                : ::CreateRectRgn(x1, y1, x2, y2);
         HRGN diff = ::CreateRectRgn(0, 0, 0, 0);
         ::CombineRgn(diff, rgn, hole, RGN_DIFF);
         ::DeleteObject(rgn);

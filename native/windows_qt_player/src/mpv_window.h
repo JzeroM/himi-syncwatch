@@ -69,8 +69,9 @@ public:
     /// 覆盖带内会被 Win32 子窗口盖住（永远在 QML 之上）——面板点不到、
     /// 锁钮/Logo 不可见（真机截图实证）。把浮层矩形从视频窗口的
     /// SetWindowRgn 区域里挖掉，孔内露出下层 QML，可点可渲染。
-    /// `rects` 元素为 QRectF，坐标是**窗口逻辑像素**（QML
-    /// `mapToItem(null, 0, 0)` 的结果），内部按 DPR 换算。
+    /// `rects` 元素为 QVariantMap：{x,y,w,h,r}（窗口**逻辑像素**坐标，
+    /// r = 圆角半径；0 = 直角）。667：改圆角孔——直角孔在圆形按钮/圆角
+    /// 胶囊四周露黑角（真机截图「黑边角」）。
     Q_INVOKABLE void setOverlayHoles(const QVariantList& rects);
 
     /// 通用 mpv 命令透传（sub-add / sub-remove / screenshot-to-file …）。

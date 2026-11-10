@@ -139,6 +139,11 @@ ApplicationWindow {
             }
         }
 
+        // 667：按下瞬间的控件显隐快照（tapTimer 按它决定动作）。
+        // showControls 会把状态置真，直接用当前值会让「唤出」被
+        // 250ms 后的 toggle 藏掉（真机回归：点击唤出立马隐藏）。
+        property bool wasVisible: true
+
         onPressed: (mouse) => {
             startX = mouse.x
             startY = mouse.y
@@ -148,6 +153,7 @@ ApplicationWindow {
             startBrightness = playerState.brightness
             seekAccum = 0
             dragging = false
+            wasVisible = root.controlsVisible
             root.showControls()
         }
 
@@ -176,7 +182,7 @@ ApplicationWindow {
         id: tapTimer
         interval: 250
         onTriggered: {
-            // Flutter `_onVideoAreaTap` 语义
+            // Flutter `_onVideoAreaTap` 语义（667：按按下瞬间快照判定）
             if (playerState.locked) {
                 root.showControls()
                 return
@@ -185,7 +191,11 @@ ApplicationWindow {
                 root.closePanels()
                 return
             }
-            root.toggleControls()
+            if (videoArea.wasVisible) {
+                root.controlsVisible = false
+            } else {
+                root.showControls()
+            }
         }
     }
 
@@ -203,7 +213,6 @@ ApplicationWindow {
             pipeServer.sendCommand({"type": "requestExit"})
             root.close()
         }
-        onKernelClicked: root.openKernelPanel()
         onDecodeClicked: root.openDecodePanel()
         onSubtitleStyleClicked: root.openAdjustPanel()
         onVideoFitClicked: root.cycleVideoFitLocal()
@@ -231,10 +240,10 @@ ApplicationWindow {
             "index": playerState.currentEpisodeIndex + 1
         })
         onDanmakuClicked: {
-            // 弹幕 = mpv 次字幕轨（ASS 旁路）：本地切可见性 + 记账
+            // 弹幕 = mpv 次字幕轨（ASS 旁路）。667：开关改**重生成 ASS**
+            // （遮罩常驻、弹幕行随开关）——直接藏轨会把渐变遮罩一起藏掉。
             danmakuOn = !danmakuOn
-            mpvWindow.command(["set", "secondary-sub-visibility",
-                               danmakuOn ? "yes" : "no"])
+            danmakuBuildTimer.restart()
             pipeServer.sendCommand({"type": "toggleDanmaku"})
         }
         onVersionClicked: root.openVersionPanel()
@@ -376,19 +385,25 @@ ApplicationWindow {
 
     function updateOverlayHoles() {
         var holes = []
-        function add(it) {
+        // 667：圆角孔（直角孔在圆形按钮/胶囊四周露黑角）
+        function add(it, r, inset) {
             if (!it.visible || it.width <= 0 || it.height <= 0) return
             var p = it.mapToItem(null, 0, 0)
-            holes.push(Qt.rect(p.x, p.y, it.width, it.height))
+            var ins = inset || 0
+            holes.push({
+                x: p.x + ins, y: p.y + ins,
+                w: it.width - ins * 2, h: it.height - ins * 2,
+                r: r
+            })
         }
-        add(topBar)
-        add(bottomBar)
-        add(lockButton)
-        add(episodeLogo)
-        add(loadingLoader)
-        add(waitingOverlay)
-        if (panel.visible) add(panel)
-        if (adjustPanel.visible) add(adjustPanel)
+        add(topBar, 20, 4)          // 浮岛胶囊
+        add(bottomBar, 20, 4)
+        add(lockButton, 19, 0)      // 圆孔贴合圆钮
+        add(episodeLogo, 10, 0)     // 徽章底圆角
+        add(loadingLoader, 12, 0)
+        add(waitingOverlay, 12, 0)
+        if (panel.visible) add(panel, 20, 0)
+        if (adjustPanel.visible) add(adjustPanel, 20, 0)
         mpvWindow.setOverlayHoles(holes)
     }
 
@@ -397,10 +412,11 @@ ApplicationWindow {
         id: panel
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.bottom: bottomBar.top
+        // 667：**不能锚 bottom**——top+bottom 双锚会把面板高度撑满
+        // （排版丑根因：行漂在中部、大片空白）。高度由 Panel 自身
+        // 内容自适应绑定决定。
         anchors.rightMargin: Theme.panelRight
         anchors.topMargin: Theme.panelTopOffset
-        anchors.bottomMargin: 8
         visible: root.panelOpen && !playerState.locked
         onClosed: root.closePanels()
         onItemClicked: (id) => {
@@ -488,11 +504,9 @@ ApplicationWindow {
     }
 
     function buildDanmakuAss() {
-        var items = playerState.danmakuItems
-        if (items.length === 0) {
-            mpvWindow.setDanmakuAss("")
-            return
-        }
+        // 667：ASS 里**常驻渐变遮罩**（顶/底全宽软渐变，mpv 画进视频 =
+        // 真半透明压视频，同 Flutter 控件层观感）；弹幕行随开关增减。
+        var items = danmakuOn ? playerState.danmakuItems : []
         var W = 1280, H = 720
         var fs = Math.round(28 * playerState.danmakuFontSize)
         var lines = []
@@ -504,9 +518,29 @@ ApplicationWindow {
         lines.push("[V4+ Styles]")
         lines.push("Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")
         lines.push("Style: Danmaku, sans-serif, " + fs + ", &H00FFFFFF, &H00000000, &H7F000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 1, 0, 5, 0, 0, 0")
+        lines.push("Style: Scrim, sans-serif, 28, &H00000000, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0, 0, 7, 0, 0, 0")
         lines.push("")
         lines.push("[Events]")
         lines.push("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
+
+        // ── 渐变遮罩（多条递减 alpha 带近似渐变；FF=全透明）──
+        function pushScrim(y, bandH, alphaStart) {
+            var eff = "{\\an7\\pos(0," + y + ")\\alpha&H"
+                    + ("0" + Math.round(alphaStart * 255).toString(16)).slice(-2)
+                    + "&\\p1}m 0 0 l " + W + " 0 " + W + " " + bandH
+                    + " 0 " + bandH + "{\\p0}"
+            lines.push("Dialogue: 1,0:00:00.00,99:00:00.00,Scrim,,0,0,0,," + eff)
+        }
+        // 顶部 6 带（高 64，alpha 0.55→0）
+        for (var t = 0; t < 6; t++) {
+            pushScrim(Math.round(t * 64 / 6), Math.ceil(64 / 6) + 1,
+                      0.55 * (1 - t / 6))
+        }
+        // 底部 8 带（高 110，alpha 0.70→0，从下往上递减）
+        for (var b = 0; b < 8; b++) {
+            pushScrim(Math.round(H - 110 + b * 110 / 8), Math.ceil(110 / 8) + 1,
+                      0.70 * (1 - b / 8))
+        }
 
         var rows = Math.max(4, Math.floor((H - 80) / (fs + 6)))
         for (var i = 0; i < items.length; i++) {
@@ -656,20 +690,6 @@ ApplicationWindow {
             { id: "sw", display: "软解", sub: "纯软解，CPU 占用高",
               selected: playerState.decodeMode === "sw" }
         ]
-        adjustOpen = false
-        panelOpen = true
-    }
-
-    function openKernelPanel() {
-        if (panelOpen && panel.title === "播放内核") { closePanels(); return }
-        // Qt 独立窗口恒为 MPV（内核切换需回 Flutter 设置）
-        panel.title = "播放内核"
-        panel.cardMode = false
-        panel.items = [{
-            id: "mpv", display: "MPV",
-            sub: "当前内核（独立窗口恒为 MPV）",
-            selected: true
-        }]
         adjustOpen = false
         panelOpen = true
     }

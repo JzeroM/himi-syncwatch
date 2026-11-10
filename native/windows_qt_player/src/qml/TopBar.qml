@@ -27,7 +27,6 @@ Rectangle {
     property string videoFitMode: "contain"
 
     signal backClicked()
-    signal kernelClicked()
     signal decodeClicked()
     signal subtitleStyleClicked()
     signal videoFitClicked()
@@ -38,13 +37,14 @@ Rectangle {
     opacity: showControls ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: Theme.controlsFadeMs } }
 
-    // 渐变背景：透明 → 半黑（视频可读性需要，与 Flutter `_buildTopBar` 同构）
+    // 667：浮岛圆角胶囊底（孔 = 胶囊矩形 + 圆角孔，不露黑角）。
+    // 全宽渐变遮罩改由 mpv ASS 画进视频（真半透明压视频，同 Flutter）。
     Rectangle {
+        id: chip
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "transparent" }
-            GradientStop { position: 1.0; color: Theme.barGradientSolid }
-        }
+        anchors.margins: 4
+        radius: 20
+        color: Qt.rgba(0.08, 0.08, 0.10, 0.82)
     }
 
     // ── 画面比例图标映射（与 Flutter `_videoFitModes/_videoFitIcons` 同序）──
@@ -92,30 +92,6 @@ Rectangle {
             text: playerState.networkSpeedText
             color: Theme.mutedText
             font.pixelSize: Theme.captionSize
-        }
-
-        // 内核胶囊（纯文字，EButton 胶囊）
-        EUI.EButton {
-            visible: playerState.engineLabel !== ""
-            Layout.preferredHeight: 30
-            Layout.preferredWidth: kernelText.implicitWidth + Theme.chipPadH * 2
-            text: playerState.engineLabel
-            size: "xs"
-            radius: Theme.radiusChip
-            shadowEnabled: false
-            containerColor: theme.secondaryColor
-            hoverColor: theme.focusColor
-            textColor: theme.textColor
-            onClicked: root.kernelClicked()
-
-            // EButton 内部 Text 不可直接引用，这里叠一层量宽的隐藏文本
-            Text {
-                id: kernelText
-                visible: false
-                text: playerState.engineLabel
-                font.pixelSize: Theme.captionSize
-                font.weight: Theme.titleWeight
-            }
         }
 
         // 显示调节（面板可见时高亮）

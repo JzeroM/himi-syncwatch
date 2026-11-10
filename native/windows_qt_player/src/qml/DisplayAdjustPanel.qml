@@ -103,19 +103,33 @@ EUI.ECard {
             onMoved: (v) => root.adjust("subtitleDelayMs", Math.round(v * 1000))
         }
         // 恢复默认（EList 单行；选中 = 当前已是默认值）
-        EUI.EList {
+        // 恢复默认（自绘行；667：EList 播放委托缺失角色报错 → 行不显示）
+        Rectangle {
             width: contentCol.width
             height: 44
-            backgroundVisible: false
-            shadowEnabled: false
-            buttonHeight: 44
-            model: [{
-                display: "恢复默认",
-                selected: Math.abs(playerState.subtitleScale - 1.0) < 0.01
-                          && playerState.subtitleMarginY === 22
-                          && Math.abs(playerState.subtitleDelayMs) < 0.5
-            }]
-            onItemClicked: (index, data) => root.reset("subtitle")
+            radius: 8
+            color: subResetMouse.containsMouse
+                   ? (theme.isDark ? Qt.rgba(1, 1, 1, 0.08)
+                                   : Qt.rgba(0, 0, 0, 0.06))
+                   : "transparent"
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.panelPadH
+                anchors.verticalCenter: parent.verticalCenter
+                text: "恢复默认"
+                color: (Math.abs(playerState.subtitleScale - 1.0) < 0.01
+                        && playerState.subtitleMarginY === 22
+                        && Math.abs(playerState.subtitleDelayMs) < 0.5)
+                       ? theme.focusColor : theme.textColor
+                font.pixelSize: Theme.panelOptionSize
+            }
+            MouseArea {
+                id: subResetMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.reset("subtitle")
+            }
         }
 
         Rectangle {
@@ -156,19 +170,32 @@ EUI.ECard {
             value: playerState.danmakuOpacity * 100
             onMoved: (v) => root.adjust("danmakuOpacity", v / 100)
         }
-        EUI.EList {
+        Rectangle {
             width: contentCol.width
             height: 44
-            backgroundVisible: false
-            shadowEnabled: false
-            buttonHeight: 44
-            model: [{
-                display: "恢复默认",
-                selected: Math.abs(playerState.danmakuSpeed - 0.7) < 0.01
-                          && Math.abs(playerState.danmakuFontSize - 0.5) < 0.01
-                          && Math.abs(playerState.danmakuOpacity - 0.8) < 0.01
-            }]
-            onItemClicked: (index, data) => root.reset("danmaku")
+            radius: 8
+            color: dmResetMouse.containsMouse
+                   ? (theme.isDark ? Qt.rgba(1, 1, 1, 0.08)
+                                   : Qt.rgba(0, 0, 0, 0.06))
+                   : "transparent"
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.panelPadH
+                anchors.verticalCenter: parent.verticalCenter
+                text: "恢复默认"
+                color: (Math.abs(playerState.danmakuSpeed - 0.7) < 0.01
+                        && Math.abs(playerState.danmakuFontSize - 0.5) < 0.01
+                        && Math.abs(playerState.danmakuOpacity - 0.8) < 0.01)
+                       ? theme.focusColor : theme.textColor
+                font.pixelSize: Theme.panelOptionSize
+            }
+            MouseArea {
+                id: dmResetMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.reset("danmaku")
+            }
         }
     }
 }

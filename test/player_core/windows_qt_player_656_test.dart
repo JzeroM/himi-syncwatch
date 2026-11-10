@@ -175,7 +175,7 @@ void main() {
   });
 
   group('④ 控件：复刻 Windows Flutter 播放器', () {
-    test('顶栏含返回/标题/网速/内核胶囊/显示调节/解码/比例', () {
+    test('顶栏含返回/标题/网速/显示调节/解码/比例', () {
       // 659：图标改为走 Icons 单例（与 Flutter NativePlayerIcons 同码点）。
       // 662：照 Flutter `player_top_bar.dart` 修正——
       //   解码图标是 memory（原 highQuality 是「HD」错字形）；
@@ -190,8 +190,7 @@ void main() {
       }
       expect(topBar, contains('playerState.title'));
       expect(topBar, contains('playerState.networkSpeedText'));
-      // 内核胶囊是纯文字（Flutter Text(kernelLabel)）
-      expect(topBar, contains('playerState.engineLabel'));
+      // 667：内核胶囊已删（Qt 恒 MPV，用户要求去引擎控件）
       // 顶栏不得有倍速/全屏/解码旧图标（全屏按钮只在底栏；比例映射
       // 里的 `return Icons.fullscreen` 是 cover 模式图标，不算按钮）
       expect(topBar, isNot(contains('Icons.speed')));
@@ -534,12 +533,11 @@ void main() {
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
     final mainQmlSrc = read('$dir/src/qml/Main.qml');
 
-    test('顶栏按钮齐全：返回/标题/网速/内核胶囊/显示调节/解码/比例', () {
+    test('顶栏按钮齐全：返回/标题/网速/显示调节/解码/比例（引擎控件已删）', () {
       for (final token in [
         'Icons.arrowBack',
         'playerState.title',
         'playerState.networkSpeedText',
-        'playerState.engineLabel',
         'Icons.tune',
         'Icons.memory',
         'videoFitMode',
@@ -733,9 +731,9 @@ void main() {
     });
 
     test('顶栏按钮走 EvolveUI（ControlButton/EButton 封装）', () {
-      // 样式组件库换 EvolveUI（用户决策），芯片/图标钮不再自制玻璃渐变
+      // 样式组件库换 EvolveUI（用户决策），芯片/图标钮不再自制玻璃渐变。
+      // 667：内核胶囊已删（Qt 恒 MPV），顶栏全走 ControlButton（EButton 封装）
       expect(topBar, contains('ControlButton'));
-      expect(topBar, contains('EUI.EButton'));
       expect(topBar, contains('import "evolveui" as EUI'));
     });
 
@@ -1106,7 +1104,8 @@ void main() {
       expect(panelQml, contains('EUI.ECard'));
       expect(panelQml, contains('modelData.display'));
       expect(adjustQml, contains('EUI.ECard'));
-      expect(adjustQml, contains('EUI.EList'));
+      expect(adjustQml, contains('恢复默认'));
+      expect(adjustQml, isNot(contains('EUI.EList')));
     });
 
     test('EList 扩展 sub/selected（NOTICE 记录）', () {
@@ -1128,8 +1127,8 @@ void main() {
     });
 
     test('顶栏/底栏整条带走挖孔（控件浮在视频上、可点）', () {
-      expect(mainQml, contains('add(topBar)'));
-      expect(mainQml, contains('add(bottomBar)'));
+      expect(mainQml, contains('add(topBar, 20, 4)'));
+      expect(mainQml, contains('add(bottomBar, 20, 4)'));
     });
 
     test('控件隐藏 → 孔收放为纯视频（add 的 visible 门禁）', () {
@@ -1159,7 +1158,7 @@ void main() {
       expect(mainQml, contains('if (adjustOpen) { closePanels(); return }'));
       // 点视频区：有面板→收回；无→切换控件（Flutter _onVideoAreaTap）
       expect(mainQml, contains('if (root.panelOpen || root.adjustOpen)'));
-      expect(mainQml, contains('root.toggleControls()'));
+      expect(mainQml, contains('function toggleControls()'));
     });
 
     test('手势：双击播放暂停 / 横滑 seek / 纵滑音量亮度', () {
@@ -1175,8 +1174,7 @@ void main() {
       expect(mainQml, contains('加载本地字幕文件...'));
       expect(mainQml, contains('subDialog'));
       expect(mainQml, contains('panel.cardMode = true'));
-      expect(mainQml, contains('openKernelPanel'));
-      expect(mainQml, contains('panel.title = "播放内核"'));
+      expect(mainQml, isNot(contains('openKernelPanel')));
     });
 
     test('播完自动下一集 + 所有剧集播放完毕提示', () {
@@ -1216,6 +1214,65 @@ void main() {
     test('本地字幕 + 命令通道（sub-add 走 file:// URL）', () {
       expect(mpvCpp, contains('MpvWindow::command'));
       expect(mainQml, contains('"sub-add"'));
+    });
+  });
+  group('㉒ 667：透明控件层/面板排版/恢复默认/去引擎/点击修复', () {
+    final mainQml = read('$dir/src/qml/Main.qml');
+    final topBar = read('$dir/src/qml/TopBar.qml');
+    final bottomBar = read('$dir/src/qml/BottomBar.qml');
+    final adjustQml = read('$dir/src/qml/DisplayAdjustPanel.qml');
+    final logoQml = read('$dir/src/qml/EpisodeLogo.qml');
+    final mpvCpp = read('$dir/src/mpv_window.cpp');
+
+    test('圆角挖孔（CreateRoundRectRgn：圆形按钮/胶囊不露黑角）', () {
+      expect(mpvCpp, contains('CreateRoundRectRgn'));
+      expect(mainQml, contains('add(lockButton, 19, 0)'));
+      expect(mainQml, contains('add(panel, 20, 0)'));
+    });
+
+    test('ASS 全宽渐变遮罩（mpv 画进视频 = 真半透明压视频）', () {
+      expect(mainQml, contains('pushScrim'));
+      expect(mainQml, contains('Style: Scrim'));
+      // 遮罩常驻：弹幕关时重生成（不藏轨）
+      expect(mainQml, contains('danmakuOn ? playerState.danmakuItems : []'));
+      expect(mainQml, contains('danmakuBuildTimer.restart()'));
+    });
+
+    test('浮岛胶囊底（顶/底栏 chip，渐变由 ASS 承担）', () {
+      expect(topBar, contains('id: chip'));
+      expect(topBar, contains('radius: 20'));
+      expect(bottomBar, contains('id: chip'));
+      expect(logoQml, contains('radius: 10'));
+    });
+
+    test('面板排版修复：不能 top+bottom 双锚（撑满高=行漂中部根因）', () {
+      // Panel 实例只锚 top，高度由内容自适应
+      expect(mainQml, isNot(contains('anchors.bottom: bottomBar.top\n        anchors.rightMargin: Theme.panelRight\n        anchors.topMargin: Theme.panelTopOffset\n        anchors.bottomMargin: 8\n        visible: root.panelOpen')));
+    });
+
+    test('显示调节两个恢复默认（自绘行，默认值同 Flutter）', () {
+      expect(adjustQml, contains('subResetMouse'));
+      expect(adjustQml, contains('dmResetMouse'));
+      expect(adjustQml, contains('"恢复默认"'));
+      // Flutter 默认：字幕 1.00×/22px/0.0s、弹幕 0.70×/0.50×/80%
+      expect(adjustQml, contains('playerState.subtitleMarginY === 22'));
+      expect(adjustQml, contains('playerState.danmakuOpacity - 0.8'));
+    });
+
+    test('引擎控件已删（Qt 恒 MPV）', () {
+      final code = topBar
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(code, isNot(contains('engineLabel')));
+      expect(code, isNot(contains('kernel')));
+      expect(mainQml, isNot(contains('openKernelPanel')));
+    });
+
+    test('点击唤出不立马隐藏（按下瞬间快照判定）', () {
+      expect(mainQml, contains('property bool wasVisible'));
+      expect(mainQml, contains('wasVisible = root.controlsVisible'));
+      expect(mainQml, contains('if (videoArea.wasVisible)'));
     });
   });
 }
