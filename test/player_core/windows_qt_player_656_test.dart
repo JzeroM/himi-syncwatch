@@ -542,7 +542,7 @@ void main() {
         'playerState.engineLabel',
         'Icons.tune',
         'Icons.memory',
-        'playerState.videoFit',
+        'videoFitMode',
       ]) {
         expect(topBar, contains(token), reason: '顶栏缺 $token');
       }
@@ -1100,9 +1100,11 @@ void main() {
       expect(session, contains('DecodeModeService.resolveDecoders'));
     });
 
-    test('面板 EvolveUI 化（ECard 容器 + EList 行）', () {
+    test('面板 EvolveUI 化（ECard 容器 + modelData 行）', () {
+      // 665：Panel 行弃用 EList（缺失角色报错 → 空面板），改 modelData
+      // 自绘行；容器保持 ECard。DisplayAdjustPanel 仍用 EList（恢复默认行）。
       expect(panelQml, contains('EUI.ECard'));
-      expect(panelQml, contains('EUI.EList'));
+      expect(panelQml, contains('modelData.display'));
       expect(adjustQml, contains('EUI.ECard'));
       expect(adjustQml, contains('EUI.EList'));
     });
@@ -1134,6 +1136,86 @@ void main() {
       // topBar/bottomBar 的 visible 跟随 opacity；自动隐藏后
       // add() 不收录 → 无孔 → 视频满窗。
       expect(mainQml, contains('if (!it.visible'));
+    });
+  });
+  group('㉑ 665：功能全量对齐 Flutter（面板/手势/弹幕/自动下一集）', () {
+    final mainQml = read('$dir/src/qml/Main.qml');
+    final panelQml = read('$dir/src/qml/Panel.qml');
+    final bottomBar = read('$dir/src/qml/BottomBar.qml');
+    final topBar = read('$dir/src/qml/TopBar.qml');
+    final mpvCpp = read('$dir/src/mpv_window.cpp');
+    final stateH = read('$dir/src/player_state.h');
+
+    test('面板行 modelData 渲染（空面板回归：EList 缺失角色报错）', () {
+      expect(panelQml, contains('modelData.display'));
+      expect(panelQml, contains('modelData.sub'));
+      expect(panelQml, contains('modelData.selected'));
+    });
+
+    test('无 ✕ 关闭钮：toggle 收回 + 点空白收回', () {
+      expect(panelQml, isNot(contains('Icons.close')));
+      // 入口函数首行 toggle（再点同控件收回）
+      expect(mainQml, contains('if (panelOpen && panel.title === "字幕") { closePanels(); return }'));
+      expect(mainQml, contains('if (adjustOpen) { closePanels(); return }'));
+      // 点视频区：有面板→收回；无→切换控件（Flutter _onVideoAreaTap）
+      expect(mainQml, contains('if (root.panelOpen || root.adjustOpen)'));
+      expect(mainQml, contains('root.toggleControls()'));
+    });
+
+    test('手势：双击播放暂停 / 横滑 seek / 纵滑音量亮度', () {
+      expect(mainQml, contains('onDoubleClicked'));
+      expect(mainQml, contains('tapTimer'));
+      expect(mainQml, contains('seekAccum'));
+      expect(mainQml, contains('startVolume'));
+      expect(mainQml, contains('startBrightness'));
+    });
+
+    test('面板内容对齐：倍速标题/本地字幕行/选集卡片/内核面板', () {
+      expect(mainQml, contains('panel.title = "倍速"'));
+      expect(mainQml, contains('加载本地字幕文件...'));
+      expect(mainQml, contains('subDialog'));
+      expect(mainQml, contains('panel.cardMode = true'));
+      expect(mainQml, contains('openKernelPanel'));
+      expect(mainQml, contains('panel.title = "播放内核"'));
+    });
+
+    test('播完自动下一集 + 所有剧集播放完毕提示', () {
+      expect(mainQml, contains('onPlaybackEnded'));
+      expect(mainQml, contains('所有剧集播放完毕'));
+    });
+
+    test('弹幕 ASS 旁路（secondary-sid 双字幕轨）', () {
+      expect(mpvCpp, contains('setDanmakuAss'));
+      expect(mpvCpp, contains('secondary-sid'));
+      expect(mpvCpp, contains('sub-add'));
+      expect(mainQml, contains('buildDanmakuAss'));
+      expect(mainQml, contains('onDanmakuChanged'));
+      expect(stateH, contains('Q_PROPERTY(QVariantList danmakuItems'));
+    });
+
+    test('跳过片头/片尾胶囊（片段字段 + skipSegmentClicked）', () {
+      expect(stateH, contains('Q_PROPERTY(qint64 segmentIntroEndMs'));
+      expect(stateH, contains('Q_PROPERTY(qint64 segmentOutroStartMs'));
+      expect(bottomBar, contains('跳过片头'));
+      expect(bottomBar, contains('skipSegmentClicked'));
+      expect(mainQml, contains('skipSegmentLocal'));
+    });
+
+    test('画面比例本地循环（panscan/video-aspect-override/video-unscaled）', () {
+      expect(mainQml, contains('cycleVideoFitLocal'));
+      expect(mainQml, contains('"panscan"'));
+      expect(mainQml, contains('"video-aspect-override"'));
+      expect(mainQml, contains('"video-unscaled"'));
+      expect(topBar, contains('videoFitMode'));
+    });
+
+    test('视频窗口点击穿透（手势落到 QML 的前提）', () {
+      expect(mpvCpp, contains('WS_EX_TRANSPARENT'));
+    });
+
+    test('本地字幕 + 命令通道（sub-add 走 file:// URL）', () {
+      expect(mpvCpp, contains('MpvWindow::command'));
+      expect(mainQml, contains('"sub-add"'));
     });
   });
 }

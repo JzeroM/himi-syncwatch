@@ -110,6 +110,25 @@ void PlayerState::applyJson(const QJsonObject& json) {
     // ── 屏幕锁定（662，Flutter toggleLock 命令回写）──
     dirty |= assign(locked_, readBool(json, "locked", locked_));
 
+    // ── 弹幕/片段（665）──
+    const QJsonValue danm = json.value(QLatin1String("danmakuItems"));
+    if (danm.isArray()) setDanmakuItems(danm.toArray());
+    // null = 无片段；-1 为缺省
+    if (json.contains(QLatin1String("segmentIntroEndMs"))) {
+        const QJsonValue v =
+            json.value(QLatin1String("segmentIntroEndMs"));
+        dirty |= assign(segmentIntroEndMs_,
+                        v.isDouble() ? static_cast<qint64>(v.toDouble())
+                                     : static_cast<qint64>(-1));
+    }
+    if (json.contains(QLatin1String("segmentOutroStartMs"))) {
+        const QJsonValue v =
+            json.value(QLatin1String("segmentOutroStartMs"));
+        dirty |= assign(segmentOutroStartMs_,
+                        v.isDouble() ? static_cast<qint64>(v.toDouble())
+                                     : static_cast<qint64>(-1));
+    }
+
     // ── 显示调节（662）──
     //
     // 字幕大小在协议里是 `subtitleStyle.fontSize`（16.0 = 1.0×基准），
@@ -235,6 +254,51 @@ void PlayerState::setVersions(const QJsonArray& arr) {
     if (same) return;
     versions_ = next;
     emit versionsChanged();
+}
+
+void PlayerState::setDanmakuItems(const QJsonArray& arr) {
+    QList<Danmaku> next;
+    next.reserve(arr.size());
+    for (const QJsonValue& v : arr) {
+        if (!v.isObject()) continue;
+        const QJsonObject o = v.toObject();
+        Danmaku d;
+        d.timeMs = static_cast<qint64>(readInt64(o, "timeMs", 0));
+        d.text = readString(o, "text");
+        d.mode = readString(o, "mode", QStringLiteral("scroll"));
+        d.color = readString(o, "color", QStringLiteral("#FFFFFF"));
+        if (!d.text.isEmpty()) next.append(d);
+    }
+    bool same = next.size() == danmakuItems_.size();
+    if (same) {
+        for (int i = 0; i < next.size(); ++i) {
+            if (next[i].timeMs != danmakuItems_[i].timeMs ||
+                next[i].text != danmakuItems_[i].text ||
+                next[i].mode != danmakuItems_[i].mode ||
+                next[i].color != danmakuItems_[i].color) {
+                same = false;
+                break;
+            }
+        }
+    }
+    if (same) return;
+    danmakuItems_ = next;
+    emit danmakuChanged();
+}
+
+QVariantList PlayerState::danmakuItemsVariant() const {
+    QVariantList out;
+    out.reserve(danmakuItems_.size());
+    for (const Danmaku& d : danmakuItems_) {
+        QVariantMap m;
+        m.insert(QStringLiteral("timeMs"),
+                 static_cast<qlonglong>(d.timeMs));
+        m.insert(QStringLiteral("text"), d.text);
+        m.insert(QStringLiteral("mode"), d.mode);
+        m.insert(QStringLiteral("color"), d.color);
+        out.append(m);
+    }
+    return out;
 }
 
 QVariantList PlayerState::versionsVariant() const {

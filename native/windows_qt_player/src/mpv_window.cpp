@@ -1,9 +1,13 @@
 #include "mpv_window.h"
 
 #include <QDebug>
+#include <QFile>
+#include <QCoreApplication>
 #include <QRectF>
-#include <QVariant>
+#include <QStandardPaths>
 #include <QTimer>
+#include <QVariant>
+#include <QVector>
 
 #include <mpv/client.h>
 
@@ -145,7 +149,11 @@ void MpvWindow::createVideoWindow() {
     RECT rc = {};
     ::GetClientRect(host_hwnd_, &rc);
     video_hwnd_ = ::CreateWindowEx(
-        0, kVideoClass, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0,
+        // 665：WS_EX_TRANSPARENT = 点击穿透——鼠标事件穿过视频窗口
+        // 落给下层 QML（单击收面板/双击播放/拖动手势全靠它；视频渲染
+        // 不受影响，孔仅用于可见性）。
+        WS_EX_TRANSPARENT, kVideoClass, L"",
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0,
         insetTop_, rc.right - rc.left,
         rc.bottom - rc.top - insetTop_ - insetBottom_, host_hwnd_, nullptr,
         ::GetModuleHandle(nullptr), nullptr);
@@ -342,6 +350,95 @@ void MpvWindow::applyRegion() {
     }
     // SetWindowRgn 接管 rgn 所有权（MSDN），之后不得 DeleteObject。
     ::SetWindowRgn(video_hwnd_, rgn, TRUE);
+}
+
+bool MpvWindow::command(const QStringList& args) {
+    if (mpv_ == nullptr || args.isEmpty()) return false;
+    QVector<QByteArray> storage;
+    storage.reserve(args.size() + 1);
+    for (const QString& s : args) storage.append(s.toUtf8());
+    QVector<const char*> argv;
+    argv.reserve(storage.size() + 1);
+    for (const QByteArray& b : storage) argv.append(b.constData());
+    argv.append(nullptr);
+    const int rc = mpv_command(mpv_, argv.constData());
+    if (rc < 0) {
+        qWarning().noquote() << "[mpv] command 失败:"
+                             << QString::fromUtf8(mpv_error_string(rc));
+    }
+    return rc >= 0;
+}
+
+void MpvWindow::setDanmakuAss(const QString& assText) {
+    if (mpv_ == nullptr) return;
+    // 移除旧弹幕轨（次字幕轨）
+    if (danmakuSubId_ > 0) {
+        command({QStringLiteral("sub-remove"),
+                 QString::number(danmakuSubId_)});
+        danmakuSubId_ = -1;
+    }
+    if (assText.isEmpty()) return;
+
+    // 写临时 ASS（每次新文件：mpv 不重载同路径文件）
+    const QString dir =
+        QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    static int seq = 0;
+    danmakuFile_ = dir + QStringLiteral("/himi_danmaku_%1_%2.ass")
+                           .arg(QCoreApplication::applicationPid())
+                           .arg(++seq);
+    QFile f(danmakuFile_);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        qWarning() << "[mpv] 弹幕 ASS 写入失败" << danmakuFile_;
+        return;
+    }
+    f.write(assText.toUtf8());
+    f.close();
+
+    if (!command({QStringLiteral("sub-add"), danmakuFile_,
+                  QStringLiteral("select")})) {
+        return;
+    }
+    // 新轨挂为**次字幕轨**（secondary-sid）：主字幕与弹幕同时渲染
+    // （mpv 0.37+ 双字幕轨；wid 直出下 ASS 是唯一浮绘通道）。
+    mpv_node node{};
+    if (mpv_get_property(mpv_, "track-list", MPV_FORMAT_NODE, &node) < 0) {
+        return;
+    }
+    if (node.format == MPV_FORMAT_NODE_ARRAY && node.u.list != nullptr) {
+        for (int i = 0; i < node.u.list->num; ++i) {
+            const mpv_node& item = node.u.list->values[i];
+            if (item.format != MPV_FORMAT_NODE_MAP || item.u.list == nullptr) {
+                continue;
+            }
+            QString type, file;
+            int id = -1;
+            for (int j = 0; j < item.u.list->num; ++j) {
+                const char* k = item.u.list->keys[j];
+                const mpv_node& v = item.u.list->values[j];
+                if (v.format != MPV_FORMAT_STRING && qstrcmp(k, "id") != 0) {
+                    continue;
+                }
+                if (qstrcmp(k, "type") == 0) {
+                    type = QString::fromUtf8(v.u.string);
+                } else if (qstrcmp(k, "id") == 0 &&
+                           v.format == MPV_FORMAT_INT64) {
+                    id = static_cast<int>(v.u.int64);
+                } else if (qstrcmp(k, "external-filename") == 0) {
+                    file = QString::fromUtf8(v.u.string);
+                }
+            }
+            if (type == QLatin1String("sub") && file == danmakuFile_) {
+                danmakuSubId_ = id;
+                break;
+            }
+        }
+    }
+    mpv_free_node_contents(&node);
+    if (danmakuSubId_ > 0) {
+        mpv_set_property_string(mpv_, "secondary-sid",
+                                QByteArray::number(danmakuSubId_)
+                                    .constData());
+    }
 }
 
 void MpvWindow::setVolume(double volume) {

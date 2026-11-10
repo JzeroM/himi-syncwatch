@@ -73,6 +73,15 @@ public:
     /// `mapToItem(null, 0, 0)` 的结果），内部按 DPR 换算。
     Q_INVOKABLE void setOverlayHoles(const QVariantList& rects);
 
+    /// 通用 mpv 命令透传（sub-add / sub-remove / screenshot-to-file …）。
+    Q_INVOKABLE bool command(const QStringList& args);
+
+    /// 【665：弹幕 ASS 旁路】把弹幕生成的 ASS 内容写临时文件并挂成
+    /// **次字幕轨**（`secondary-sid`）——mpv 0.37+ 支持双字幕轨，主字幕
+    /// 与弹幕可同时渲染（wid 直出架构下 QML 画不进视频，ASS 是唯一
+    /// 浮绘通道）。空文本 = 移除弹幕轨。
+    Q_INVOKABLE void setDanmakuAss(const QString& assText);
+
     /// 664：QML 逻辑坐标 → 物理坐标用（与 setOverlayInsets 的换算一致，
     /// 由 main.cpp 在 attach 后注入 host 的 devicePixelRatio）。
     void setDevicePixelRatio(qreal dpr);
@@ -122,6 +131,8 @@ private:
     QVariantList holes_;   ///< 浮层孔（窗口逻辑坐标 QRectF）
     QString holesSig_;     ///< 已应用孔签名（几何/孔都没变就不重建区域）
     qreal dpr_ = 1.0;      ///< 逻辑→物理像素换算（main.cpp 注入）
+    QString danmakuFile_;  ///< 当前弹幕 ASS 临时文件
+    int danmakuSubId_ = -1;  ///< 当前弹幕轨 id（次字幕轨）
 
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;

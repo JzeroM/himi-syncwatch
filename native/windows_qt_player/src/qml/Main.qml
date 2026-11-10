@@ -1,28 +1,25 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import HimiPlayer
 import "evolveui" as EUI
 
-// 662：播放器主窗口。
+// 665：播放器主窗口（功能全量对齐 Flutter 播放器；房间模式暂缓）。
 //
-// 【层次】
-//   底层：原生视频子窗口（mpv，由 C++ 创建，永远在 QML 之上）
-//   上层：QML 控件（顶栏/底栏/面板）——通过视频子窗口的 inset 让出区域
+// 【层次】底层 = 原生视频子窗口（mpv wid 直出，保 HDR）；上层 = QML。
+// 视频窗口满铺 + WS_EX_TRANSPARENT 点击穿透 + SetWindowRgn 挖孔：
+// 鼠标事件全部落给 QML（手势层），浮层通过挖孔可见可点。
 //
-// 【为什么控件能看见】原生子 HWND 会盖住 QML（Win32 硬规则），所以
-// C++ 侧把视频窗口高度减去 `insetTop + insetBottom`，顶栏/底栏所在的
-// 那两条区域没有视频窗口，QML 就能正常显示。
+// 【交互（照 Flutter `_onVideoAreaTap` / `video_gesture_layer`）】
+//   单击视频：有面板→收回；无面板→切换控件显隐；锁定态只浮现锁钮
+//   双击视频：播放/暂停 + 手势图标
+//   横向拖动：seek（100px ≈ 5s，松手提交）
+//   纵向拖动：右半屏音量 / 左半屏亮度（实时生效）
 //
-// 【659】inset 按 DPI 换算（QML 逻辑像素 → Win32 物理像素），
-// 数值取自 Theme，与 Flutter 完全一致。
-//
-// 【662】UI 组件库换 EvolveUI（third_party/evolveui，MIT）：
-//   - 本文件根级 `id: theme`（ETheme）与 `id: iconFont`（FontAwesome
-//     FontLoader）按 EvolveUI 的上下文链约定提供给所有子组件
-//     （EButton/ESlider/ECard/ELoader 内部直接用 `theme`/`iconFont`）
-//   - 功能不变：左缘锁钮（toggleLock 回环）、多版本面板（selectVersion）、
-//     解码面板（setDecodeMode）、显示调节（adjustDisplay/resetDisplay）
+// 【665 新增功能】播完自动下一集、弹幕 ASS 旁路（secondary-sid 双字幕
+// 轨）、跳过片头/片尾胶囊、本地字幕加载、内核面板、选集海报卡片、
+// 画面比例本地循环、面板 toggle/点空白收回（无 ✕）。
 ApplicationWindow {
     id: root
     width: 1280
@@ -34,8 +31,7 @@ ApplicationWindow {
     color: "#000000"
     flags: Qt.Window
 
-    // FontAwesome 图标字体（EvolveUI 生态字形；Flutter/安卓/鸿蒙仍是
-    // Material Icons，两侧语义一一对应）
+    // FontAwesome 图标字体（EvolveUI 生态字形；上下文链注入子组件）
     FontLoader {
         id: iconFont
         source: "qrc:/new/prefix1/fonts/fontawesome-free-6.7.2-desktop/otfs/Font Awesome 6 Free-Solid-900.otf"
@@ -48,13 +44,18 @@ ApplicationWindow {
         focusColor: "#6366F1"
     }
 
-    // 控件自动隐藏（播放中 5 秒无操作，与 Flutter `autoHideMs` 一致）
+    // 控件自动隐藏（播放中 5 秒无操作）
     property bool controlsVisible: true
-
-    /// 列表面板（Panel）是否展开
     property bool panelOpen: false
-    /// 显示调节面板是否展开
     property bool adjustOpen: false
+
+    // 画面比例（本地循环：contain→cover→fill→none）
+    readonly property var fitModes: ["contain", "cover", "fill", "none"]
+    property int fitIndex: 0
+
+    // 手势/提示浮层
+    property string gestureIcon: ""
+    property string notice: ""
 
     Timer {
         id: hideTimer
@@ -68,18 +69,124 @@ ApplicationWindow {
         hideTimer.restart()
     }
 
-    /// 关闭所有面板（开新面板/锁定时调用）
+    function toggleControls() {
+        if (controlsVisible) {
+            controlsVisible = false
+        } else {
+            showControls()
+        }
+    }
+
     function closePanels() {
         panelOpen = false
         adjustOpen = false
     }
 
-    // 窗口内任意鼠标移动都重新计时
+    function showGesture(iconOrText) {
+        gestureIcon = iconOrText
+        gestureTimer.restart()
+    }
+
+    function showNotice(text) {
+        notice = text
+        noticeTimer.restart()
+    }
+
+    Timer { id: gestureTimer; interval: 700; onTriggered: root.gestureIcon = "" }
+    Timer { id: noticeTimer; interval: 3000; onTriggered: root.notice = "" }
+
+    // ── 手势层（视频区单击/双击/拖动；Flutter video_gesture_layer 语义）──
     MouseArea {
+        id: videoArea
         anchors.fill: parent
         hoverEnabled: true
-        acceptedButtons: Qt.NoButton
-        onPositionChanged: root.showControls()
+        acceptedButtons: Qt.LeftButton
+
+        property real pressX: 0
+        property real pressY: 0
+        property real startX: 0
+        property real startY: 0
+        property real startVolume: 0
+        property real startBrightness: 0
+        property real seekAccum: 0
+        property bool dragging: false
+
+        onPositionChanged: (mouse) => {
+            root.showControls()
+            if (!pressed) return
+            var dx = mouse.x - startX
+            var dy = mouse.y - startY
+            if (!dragging && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
+                dragging = true
+            }
+            if (!dragging) return
+            if (Math.abs(dx) > Math.abs(dy)) {
+                // 横向：seek 预览（100px ≈ 5s，与 Flutter 一致）
+                seekAccum = dx / 100 * 5000
+                var deltaS = Math.round(seekAccum / 1000)
+                root.showGesture((deltaS >= 0 ? "+" : "") + deltaS + "s")
+            } else if (pressX > width / 2) {
+                // 右半纵向：音量
+                var v = Math.max(0, Math.min(1, startVolume - dy / 300))
+                mpvWindow.setVolume(v)
+                pipeServer.sendCommand({"type": "setVolume", "volume": v})
+                root.showGesture(Icons.volumeUp)
+            } else {
+                // 左半纵向：亮度
+                var b = Math.max(0, Math.min(1, startBrightness - dy / 300))
+                pipeServer.sendCommand({"type": "setBrightness", "brightness": b})
+                root.showGesture(Icons.brightness)
+            }
+        }
+
+        onPressed: (mouse) => {
+            startX = mouse.x
+            startY = mouse.y
+            pressX = mouse.x
+            pressY = mouse.y
+            startVolume = playerState.volume
+            startBrightness = playerState.brightness
+            seekAccum = 0
+            dragging = false
+            root.showControls()
+        }
+
+        onReleased: {
+            if (dragging && Math.abs(seekAccum) > 500) {
+                var target = Math.max(0, playerState.positionMs + Math.round(seekAccum))
+                mpvWindow.seekTo(target)
+                pipeServer.sendCommand({"type": "seekTo", "positionMs": target})
+            }
+            dragging = false
+            seekAccum = 0
+        }
+
+        // 单击延迟 250ms 执行（等双击判定，与 Flutter 手势仲裁一致）
+        onClicked: tapTimer.restart()
+        onDoubleClicked: {
+            tapTimer.stop()
+            mpvWindow.togglePause()
+            pipeServer.sendCommand({"type": "togglePlay"})
+            root.showGesture(playerState.paused ? Icons.playCircle
+                                                : Icons.pauseCircle)
+        }
+    }
+
+    Timer {
+        id: tapTimer
+        interval: 250
+        onTriggered: {
+            // Flutter `_onVideoAreaTap` 语义
+            if (playerState.locked) {
+                root.showControls()
+                return
+            }
+            if (root.panelOpen || root.adjustOpen) {
+                root.closePanels()
+                return
+            }
+            root.toggleControls()
+        }
     }
 
     // ── 顶栏 ──
@@ -89,17 +196,17 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         showControls: root.controlsVisible && !playerState.locked
-        // 662 瑕疵修复：高亮由面板**真实可见性**驱动（不再用字符串插销）
         decodeOpen: panel.visible && panel.title === "解码方式"
         adjustOpen: adjustPanel.visible
+        videoFitMode: root.fitModes[root.fitIndex]
         onBackClicked: {
             pipeServer.sendCommand({"type": "requestExit"})
             root.close()
         }
-        onKernelClicked: pipeServer.sendCommand({"type": "switchEngine"})
+        onKernelClicked: root.openKernelPanel()
         onDecodeClicked: root.openDecodePanel()
         onSubtitleStyleClicked: root.openAdjustPanel()
-        onVideoFitClicked: pipeServer.sendCommand({"type": "cycleVideoFit"})
+        onVideoFitClicked: root.cycleVideoFitLocal()
     }
 
     // ── 底栏 ──
@@ -110,9 +217,7 @@ ApplicationWindow {
         anchors.right: parent.right
         showControls: root.controlsVisible && !playerState.locked
 
-        // 664 控件本地化：播放控制先直驱本地 mpv（Flutter 侧无人应答时
-        // 控件仍可用），同时把命令发给 Flutter 做记账（弹幕同步等）——
-        // 两边都幂等，重复应用无副作用。
+        // 播放控制：本地直驱 + 通知 Flutter 双写（幂等）
         onPlayPauseClicked: {
             mpvWindow.togglePause()
             pipeServer.sendCommand({"type": "togglePlay"})
@@ -125,13 +230,20 @@ ApplicationWindow {
             "type": "selectEpisode",
             "index": playerState.currentEpisodeIndex + 1
         })
-        onDanmakuClicked: pipeServer.sendCommand({"type": "toggleDanmaku"})
+        onDanmakuClicked: {
+            // 弹幕 = mpv 次字幕轨（ASS 旁路）：本地切可见性 + 记账
+            danmakuOn = !danmakuOn
+            mpvWindow.command(["set", "secondary-sub-visibility",
+                               danmakuOn ? "yes" : "no"])
+            pipeServer.sendCommand({"type": "toggleDanmaku"})
+        }
         onVersionClicked: root.openVersionPanel()
         onSubtitleClicked: root.openSubtitlePanel()
         onAudioClicked: root.openAudioPanel()
         onEpisodeClicked: root.openEpisodePanel()
         onSpeedClicked: root.openSpeedPanel()
         onFullscreenClicked: root.toggleFullscreen()
+        onSkipSegmentClicked: root.skipSegmentLocal()
         onVolumeChanged: (v) => {
             mpvWindow.setVolume(v)
             pipeServer.sendCommand({"type": "setVolume", "volume": v})
@@ -146,11 +258,10 @@ ApplicationWindow {
         }
     }
 
-    // ── 左缘锁钮（662，照 Flutter PlayerLockButton）──
-    //
-    // 圆形半黑底 + lock_open/lock，画面左缘垂直居中。
-    // 显隐跟随控件栏；锁定态顶栏/底栏被 locked 门禁，点视频任意处
-    // 仅浮现锁钮供解锁（与 Flutter「锁定态点屏」同语义）。
+    // 弹幕开关本地态（次字幕轨可见性）
+    property bool danmakuOn: true
+
+    // ── 左缘锁钮（圆形半黑底；锁定态控件被门禁，仅锁钮供解锁）──
     EUI.EButton {
         id: lockButton
         visible: root.controlsVisible
@@ -182,10 +293,39 @@ ApplicationWindow {
         size: 56
     }
 
+    // ── 手势图标/提示 ──
+    Text {
+        visible: root.gestureIcon !== ""
+        anchors.centerIn: parent
+        text: root.gestureIcon
+        font.family: iconFont.name
+        font.pixelSize: 48
+        color: Theme.white
+        style: Text.Outline
+        styleColor: Qt.rgba(0, 0, 0, 0.6)
+    }
+
+    // ── 通知（所有剧集播放完毕 等）──
+    Rectangle {
+        visible: root.notice !== ""
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: bottomBar.top
+        anchors.bottomMargin: 24
+        width: noticeText.implicitWidth + 32
+        height: 36
+        radius: 18
+        color: Qt.rgba(0, 0, 0, 0.65)
+
+        Text {
+            id: noticeText
+            anchors.centerIn: parent
+            text: root.notice
+            color: Theme.white
+            font.pixelSize: Theme.panelOptionSize
+        }
+    }
+
     // ── 等待主程序连接 ──
-    //
-    // 【662 瑕疵修复】深色圆角底衬 + 白色文案：loader.gif 是深色系，
-    // 黑窗口里裸放完全看不见（真机截图中央全黑）。
     Rectangle {
         id: waitingOverlay
         anchors.centerIn: parent
@@ -216,7 +356,7 @@ ApplicationWindow {
         }
     }
 
-    // ── 左下角剧集 Logo（660 照 Flutter 截图）──
+    // ── 左下角剧集 Logo ──
     EpisodeLogo {
         id: episodeLogo
         anchors.left: parent.left
@@ -225,18 +365,7 @@ ApplicationWindow {
         anchors.bottomMargin: 8
     }
 
-    // ── 664：视频 HWND 挖孔联动 ──
-    //
-    // 原生视频子窗口永远盖住 QML（Win32 硬规则），QML 浮层落在视频上
-    // 会被盖住（真机截图：面板点不到、锁钮/Logo 不可见）。
-    //
-    // 665：视频**满铺全窗口**（main.cpp inset 归零），顶栏/底栏也走
-    // 挖孔——观感与 Flutter「视频满窗、控件浮在视频上」同构：
-    //   - 16:9 内容横向到边（不再被上下 inset 逼出黑边）
-    //   - 控件带可点（孔内鼠标落给 QML）
-    //   - 控件自动隐藏时浮层 visible=false → **孔随之消失 = 纯视频**
-    // QML 每 150ms 把浮层矩形交给 mpvWindow.setOverlayHoles 挖孔，
-    // C++ 侧几何/孔无变化不重建区域。
+    // ── 视频 HWND 挖孔联动（150ms 轮询；显隐自动收放）──
     Timer {
         interval: 150
         repeat: true
@@ -252,7 +381,6 @@ ApplicationWindow {
             var p = it.mapToItem(null, 0, 0)
             holes.push(Qt.rect(p.x, p.y, it.width, it.height))
         }
-        // 顶/底栏整条带（visible 跟随 opacity：自动隐藏后孔消失）
         add(topBar)
         add(bottomBar)
         add(lockButton)
@@ -264,7 +392,7 @@ ApplicationWindow {
         mpvWindow.setOverlayHoles(holes)
     }
 
-    // ── 列表面板（右侧浮层，与 Flutter 位置一致）──
+    // ── 列表面板（无 ✕：toggle / 点空白收回）──
     Panel {
         id: panel
         anchors.right: parent.right
@@ -274,16 +402,14 @@ ApplicationWindow {
         anchors.topMargin: Theme.panelTopOffset
         anchors.bottomMargin: 8
         visible: root.panelOpen && !playerState.locked
-        onClosed: {
-            root.panelOpen = false
-        }
+        onClosed: root.closePanels()
         onItemClicked: (id) => {
             root.handlePanelItem(id)
-            root.panelOpen = false
+            root.closePanels()
         }
     }
 
-    // ── 显示调节面板（662，顶栏 tune 入口）──
+    // ── 显示调节面板 ──
     DisplayAdjustPanel {
         id: adjustPanel
         anchors.right: parent.right
@@ -291,9 +417,7 @@ ApplicationWindow {
         anchors.rightMargin: Theme.panelRight
         anchors.topMargin: Theme.panelTopOffset
         visible: root.adjustOpen && !playerState.locked
-        onClosed: {
-            root.adjustOpen = false
-        }
+        onClosed: root.closePanels()
         onAdjust: (key, value) => pipeServer.sendCommand({
             "type": "adjustDisplay", "key": key, "value": value
         })
@@ -302,73 +426,193 @@ ApplicationWindow {
         })
     }
 
+    // ── 本地字幕文件选择（照 Flutter「加载本地字幕文件...」）──
+    FileDialog {
+        id: subDialog
+        title: "选择字幕文件"
+        nameFilters: ["字幕文件 (*.srt *.ass *.ssa *.sub *.vtt)",
+                      "所有文件 (*)"]
+        onAccepted: {
+            var url = currentFile.toString()
+            mpvWindow.command(["sub-add", url, "select"])
+            pipeServer.sendCommand({"type": "addSubtitle", "url": url,
+                                    "title": "external", "lang": "auto"})
+            root.showNotice("已加载本地字幕")
+        }
+    }
+
+    // ── 播完自动下一集（照 Flutter autoNext）──
+    Connections {
+        target: mpvWindow
+        function onPlaybackEnded() {
+            if (playerState.currentEpisodeIndex >= 0
+                && playerState.currentEpisodeIndex < playerState.episodeCount - 1) {
+                pipeServer.sendCommand({"type": "selectEpisode",
+                                        "index": playerState.currentEpisodeIndex + 1})
+            } else {
+                root.showNotice("所有剧集播放完毕")
+            }
+        }
+    }
+
+    // ── 弹幕 ASS 旁路（danmakuItems → ASS → mpv 次字幕轨）──
+    Timer {
+        id: danmakuBuildTimer
+        interval: 600
+        onTriggered: root.buildDanmakuAss()
+    }
+    Connections {
+        target: playerState
+        function onDanmakuChanged() { danmakuBuildTimer.restart() }
+    }
+
+    function assTime(sec) {
+        var h = Math.floor(sec / 3600)
+        var m = Math.floor((sec % 3600) / 60)
+        var s = sec - h * 3600 - m * 60
+        function pad(n, w) {
+            var t = n.toString()
+            while (t.length < w) t = "0" + t
+            return t
+        }
+        return h + ":" + pad(m, 2) + ":" + pad(Math.floor(s), 2)
+                 + "." + pad(Math.floor((s % 1) * 100), 2)
+    }
+
+    function assColor(hex) {
+        // #RRGGBB → &H00BBGGRR
+        var c = (hex || "#FFFFFF").replace("#", "")
+        if (c.length < 6) c = "FFFFFF"
+        return "&H00" + c.substring(4, 6) + c.substring(2, 4)
+                 + c.substring(0, 2)
+    }
+
+    function buildDanmakuAss() {
+        var items = playerState.danmakuItems
+        if (items.length === 0) {
+            mpvWindow.setDanmakuAss("")
+            return
+        }
+        var W = 1280, H = 720
+        var fs = Math.round(28 * playerState.danmakuFontSize)
+        var lines = []
+        lines.push("[Script Info]")
+        lines.push("ScriptType: v4.00+")
+        lines.push("PlayResX: " + W)
+        lines.push("PlayResY: " + H)
+        lines.push("")
+        lines.push("[V4+ Styles]")
+        lines.push("Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")
+        lines.push("Style: Danmaku, sans-serif, " + fs + ", &H00FFFFFF, &H00000000, &H7F000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 1, 0, 5, 0, 0, 0")
+        lines.push("")
+        lines.push("[Events]")
+        lines.push("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
+
+        var rows = Math.max(4, Math.floor((H - 80) / (fs + 6)))
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i]
+            var t0 = it.timeMs / 1000
+            var body = (it.text || "").replace(/\\\\/g, "\\")
+                                     .replace(/\{/g, "(")
+                                     .replace(/\}/g, ")")
+                                     .replace(/\n/g, " ")
+            var col = assColor(it.color)
+            var dur = (it.mode === "scroll") ? 8 : 4
+            var eff
+            if (it.mode === "top") {
+                eff = "{\\an8\\pos(" + Math.round(W / 2) + ",30)\\c" + col + "}"
+            } else if (it.mode === "bottom") {
+                eff = "{\\an2\\pos(" + Math.round(W / 2) + "," + (H - 30) + ")\\c" + col + "}"
+            } else {
+                var y = 20 + (i % rows) * (fs + 6)
+                eff = "{\\move(" + (W + 120) + "," + y + "," + -120 + "," + y
+                        + ")\\c" + col + "}"
+            }
+            lines.push("Dialogue: 0," + assTime(t0) + "," + assTime(t0 + dur)
+                        + ",Danmaku,,0,0,0,," + eff + body)
+        }
+        mpvWindow.setDanmakuAss(lines.join("\n"))
+    }
+
     // ── 面板内容 ──
     function openEpisodePanel() {
+        if (panelOpen && panel.title === "选集") { closePanels(); return }
         var list = []
         for (var i = 0; i < playerState.episodes.length; i++) {
             var e = playerState.episodes[i]
+            // cardTitle 照 Flutter：`number.name`（电影/无编号 = 纯名）
+            var name = (e.number > 0) ? (e.number + "." + e.title) : e.title
             list.push({
                 id: e.index,
-                display: "第 " + e.number + " 集",
-                sub: e.title,
+                display: name,
+                sub: "",
+                poster: e.poster,
                 selected: e.index === playerState.currentEpisodeIndex
             })
         }
         panel.title = "选集"
+        panel.cardMode = true
         panel.items = list
         adjustOpen = false
         panelOpen = true
     }
 
     function openAudioPanel() {
+        if (panelOpen && panel.title === "音轨") { closePanels(); return }
         var list = []
         for (var i = 0; i < playerState.audioTracks.length; i++) {
             var t = playerState.audioTracks[i]
             list.push({
                 id: t.id,
                 display: t.label !== "" ? t.label
-                       : (t.title !== "" ? t.title : "音轨 " + t.id),
+                         : (t.title !== "" ? t.title : "音轨 " + t.id),
                 sub: t.lang,
                 selected: t.selected
             })
         }
         panel.title = "音轨"
+        panel.cardMode = false
         panel.items = list
         adjustOpen = false
         panelOpen = true
     }
 
     function openSubtitlePanel() {
+        if (panelOpen && panel.title === "字幕") { closePanels(); return }
         var list = [{ id: -1, display: "关闭字幕", sub: "", selected: false }]
         for (var i = 0; i < playerState.subtitleTracks.length; i++) {
             var t = playerState.subtitleTracks[i]
             list.push({
                 id: t.id,
                 display: t.label !== "" ? t.label
-                       : (t.title !== "" ? t.title : "字幕 " + t.id),
+                         : (t.title !== "" ? t.title : "字幕 " + t.id),
                 sub: t.lang,
                 selected: t.selected
             })
         }
+        // 照 Flutter SubtitleMenuPanel 末行
+        list.push({ id: -2, display: "加载本地字幕文件...", sub: "", selected: false })
         panel.title = "字幕"
+        panel.cardMode = false
         panel.items = list
         adjustOpen = false
         panelOpen = true
     }
 
     function openSpeedPanel() {
+        if (panelOpen && panel.title === "倍速") { closePanels(); return }
         var speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
         var list = []
         for (var i = 0; i < speeds.length; i++) {
             list.push({
                 id: speeds[i],
-                // 与 Flutter `SpeedMenuPanel.formatSpeedLabel` 同格式
                 display: formatSpeedLabel(speeds[i]),
                 sub: "",
                 selected: Math.abs(speeds[i] - playerState.speed) < 0.01
             })
         }
-        panel.title = "播放速度"
+        panel.title = "倍速"
+        panel.cardMode = false
         panel.items = list
         adjustOpen = false
         panelOpen = true
@@ -381,8 +625,8 @@ ApplicationWindow {
         return s + "x"
     }
 
-    // ── 662：多版本面板（照 Flutter VersionMenuPanel）──
     function openVersionPanel() {
+        if (panelOpen && panel.title === "版本") { closePanels(); return }
         var list = []
         for (var i = 0; i < playerState.versions.length; i++) {
             var v = playerState.versions[i]
@@ -394,14 +638,16 @@ ApplicationWindow {
             })
         }
         panel.title = "版本"
+        panel.cardMode = false
         panel.items = list
         adjustOpen = false
         panelOpen = true
     }
 
-    // ── 662：解码方式面板（照 Flutter DecodeModePanel 三档）──
     function openDecodePanel() {
+        if (panelOpen && panel.title === "解码方式") { closePanels(); return }
         panel.title = "解码方式"
+        panel.cardMode = false
         panel.items = [
             { id: "auto", display: "智能", sub: "优先硬解，失败回退软解",
               selected: playerState.decodeMode === "auto" },
@@ -414,8 +660,22 @@ ApplicationWindow {
         panelOpen = true
     }
 
-    // ── 662：显示调节面板 ──
+    function openKernelPanel() {
+        if (panelOpen && panel.title === "播放内核") { closePanels(); return }
+        // Qt 独立窗口恒为 MPV（内核切换需回 Flutter 设置）
+        panel.title = "播放内核"
+        panel.cardMode = false
+        panel.items = [{
+            id: "mpv", display: "MPV",
+            sub: "当前内核（独立窗口恒为 MPV）",
+            selected: true
+        }]
+        adjustOpen = false
+        panelOpen = true
+    }
+
     function openAdjustPanel() {
+        if (adjustOpen) { closePanels(); return }
         panelOpen = false
         adjustOpen = true
     }
@@ -424,13 +684,16 @@ ApplicationWindow {
         if (panel.title === "选集") {
             pipeServer.sendCommand({"type": "selectEpisode", "index": id})
         } else if (panel.title === "音轨") {
-            // 664：切轨先本地生效（id = Emby 索引 + 1 → mpv 序号），再通知
             mpvWindow.selectTrack("audio", id > 0 ? id - 1 : -1)
             pipeServer.sendCommand({"type": "selectAudio", "id": id})
         } else if (panel.title === "字幕") {
+            if (id === -2) {
+                subDialog.open()
+                return
+            }
             mpvWindow.selectTrack("subtitle", id > 0 ? id - 1 : -1)
             pipeServer.sendCommand({"type": "selectSubtitle", "id": id})
-        } else if (panel.title === "播放速度") {
+        } else if (panel.title === "倍速") {
             mpvWindow.setSpeed(id)
             pipeServer.sendCommand({"type": "setSpeed", "speed": id})
         } else if (panel.title === "版本") {
@@ -440,12 +703,49 @@ ApplicationWindow {
         }
     }
 
+    /// 画面比例循环（contain→cover→fill→none，本地 mpv 生效）
+    function cycleVideoFitLocal() {
+        fitIndex = (fitIndex + 1) % fitModes.length
+        var m = fitModes[fitIndex]
+        if (m === "contain") {
+            mpvWindow.command(["set", "panscan", "0"])
+            mpvWindow.command(["set", "video-unscaled", "no"])
+            mpvWindow.command(["set", "video-aspect-override", "0"])
+        } else if (m === "cover") {
+            mpvWindow.command(["set", "panscan", "1.0"])
+            mpvWindow.command(["set", "video-unscaled", "no"])
+            mpvWindow.command(["set", "video-aspect-override", "0"])
+        } else if (m === "fill") {
+            mpvWindow.command(["set", "panscan", "0"])
+            mpvWindow.command(["set", "video-unscaled", "no"])
+            mpvWindow.command(["set", "video-aspect-override", "-1"])
+        } else {
+            mpvWindow.command(["set", "panscan", "0"])
+            mpvWindow.command(["set", "video-unscaled", "yes"])
+            mpvWindow.command(["set", "video-aspect-override", "0"])
+        }
+        pipeServer.sendCommand({"type": "cycleVideoFit"})
+    }
+
+    /// 跳过片头/片尾（胶囊点击）
+    function skipSegmentLocal() {
+        if (playerState.segmentIntroEndMs >= 0
+            && playerState.positionMs < playerState.segmentIntroEndMs) {
+            mpvWindow.seekTo(playerState.segmentIntroEndMs)
+            pipeServer.sendCommand({"type": "seekTo",
+                                    "positionMs": playerState.segmentIntroEndMs})
+        } else {
+            pipeServer.sendCommand({"type": "selectEpisode",
+                                    "index": playerState.currentEpisodeIndex + 1})
+        }
+    }
+
     function toggleFullscreen() {
         if (visibility === Window.FullScreen) showNormal()
         else showFullScreen()
     }
 
-    // ── 键盘快捷键（664：与控件同策略——本地直驱 + 通知 Flutter）──
+    // ── 键盘快捷键（本地直驱 + 通知）──
     Shortcut { sequence: "Space"; onActivated: {
         mpvWindow.togglePause()
         pipeServer.sendCommand({"type": "togglePlay"})

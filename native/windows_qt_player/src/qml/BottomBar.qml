@@ -36,6 +36,7 @@ Rectangle {
     signal volumeChanged(real v)
     signal brightnessChanged(real v)
     signal seekFinished(real ratio)
+    signal skipSegmentClicked()
 
     height: 96
     color: "transparent"
@@ -148,6 +149,37 @@ Rectangle {
 
             // Flutter：transport 尾 8 + leading 头 16
             Item { Layout.preferredWidth: 24 }
+
+            // 跳过片头/片尾胶囊（665，照 Flutter _buildSkipPromptButton）
+            Rectangle {
+                visible: (playerState.segmentIntroEndMs >= 0
+                          && playerState.positionMs < playerState.segmentIntroEndMs)
+                         || (playerState.segmentOutroStartMs >= 0
+                          && playerState.positionMs >= playerState.segmentOutroStartMs)
+                Layout.preferredHeight: 32
+                Layout.preferredWidth: skipLabel.implicitWidth + 24
+                radius: 16
+                color: theme.isDark ? Qt.rgba(1, 1, 1, 0.14)
+                                    : Qt.rgba(0, 0, 0, 0.10)
+                border.color: theme.borderColor
+                border.width: 1
+
+                Text {
+                    id: skipLabel
+                    anchors.centerIn: parent
+                    text: (playerState.segmentIntroEndMs >= 0
+                           && playerState.positionMs < playerState.segmentIntroEndMs)
+                          ? "跳过片头" : "跳过片尾"
+                    color: theme.textColor
+                    font.pixelSize: Theme.captionSize
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.skipSegmentClicked()
+                }
+            }
 
             // 音量：图标 + 滑杆(96) + 数值
             RowLayout {

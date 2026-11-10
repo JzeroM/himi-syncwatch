@@ -23,6 +23,8 @@ Rectangle {
     /// openMenu——面板创建失败/被锁隐藏时插销会残留，图标卡在高亮色）
     property bool decodeOpen: false
     property bool adjustOpen: false
+    /// 当前画面比例（665：本地循环状态，图标随之切换）
+    property string videoFitMode: "contain"
 
     signal backClicked()
     signal kernelClicked()
@@ -138,9 +140,9 @@ Rectangle {
 
         // 画面比例（图标随模式）
         ControlButton {
-            icon: root.videoFitIconFor(playerState.videoFit)
+            icon: root.videoFitIconFor(root.videoFitMode)
             iconSize: Theme.topIconSize
-            tooltip: "画面比例：" + root.videoFitLabelFor(playerState.videoFit)
+            tooltip: "画面比例：" + root.videoFitLabelFor(root.videoFitMode)
             onClicked: root.videoFitClicked()
         }
     }

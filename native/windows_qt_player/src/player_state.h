@@ -67,6 +67,13 @@ class PlayerState : public QObject {
     // ── 屏幕锁定（662，照 Flutter 左缘锁钮）──
     Q_PROPERTY(bool locked READ locked NOTIFY changed)
 
+    // ── 弹幕渲染（665，ASS 旁路喂 mpv）──
+    Q_PROPERTY(QVariantList danmakuItems READ danmakuItemsVariant NOTIFY danmakuChanged)
+
+    // ── 片段标记（665，跳过片头/片尾胶囊；-1 = 无片段）──
+    Q_PROPERTY(qint64 segmentIntroEndMs READ segmentIntroEndMs NOTIFY changed)
+    Q_PROPERTY(qint64 segmentOutroStartMs READ segmentOutroStartMs NOTIFY changed)
+
     // ── 弹幕 ──
     Q_PROPERTY(bool danmakuEnabled READ danmakuEnabled NOTIFY changed)
 
@@ -139,6 +146,18 @@ public:
 
     bool locked() const { return locked_; }
 
+    /// 弹幕项（{timeMs, text, mode, color}；ASS 旁路渲染用）。
+    struct Danmaku {
+        qint64 timeMs = 0;
+        QString text;
+        QString mode;   ///< scroll / top / bottom
+        QString color;  ///< #RRGGBB
+    };
+    const QList<Danmaku>& danmakuItems() const { return danmakuItems_; }
+    QVariantList danmakuItemsVariant() const;
+    qint64 segmentIntroEndMs() const { return segmentIntroEndMs_; }
+    qint64 segmentOutroStartMs() const { return segmentOutroStartMs_; }
+
     bool danmakuEnabled() const { return danmakuEnabled_; }
 
     bool hdrOutput() const { return hdrOutput_; }
@@ -184,11 +203,13 @@ signals:
     void episodesChanged();
     void tracksChanged();
     void versionsChanged();
+    void danmakuChanged();
 
 private:
     void setEpisodes(const QJsonArray& arr);
     void setTracks(const QJsonArray& arr);
     void setVersions(const QJsonArray& arr);
+    void setDanmakuItems(const QJsonArray& arr);
 
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;
@@ -234,6 +255,9 @@ private:
     int currentEpisodeIndex_ = -1;
     QList<Version> versions_;
     int currentVersionIndex_ = 0;
+    QList<Danmaku> danmakuItems_;
+    qint64 segmentIntroEndMs_ = -1;
+    qint64 segmentOutroStartMs_ = -1;
     QList<Track> audioTracks_;
     QList<Track> subtitleTracks_;
 };

@@ -50,7 +50,7 @@ EUI.ECard {
         }
     }
 
-    // ── 标题栏 ──
+    // ── 标题栏（无 ✕：照 Flutter，点别处/再点控件收回）──
     RowLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 36
@@ -61,12 +61,6 @@ EUI.ECard {
             color: theme.textColor
             font.pixelSize: Theme.panelTitleSize
             font.weight: 600
-        }
-        ControlButton {
-            icon: Icons.close
-            iconSize: 18
-            tooltip: "关闭"
-            onClicked: root.closed()
         }
     }
 
