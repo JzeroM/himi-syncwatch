@@ -230,6 +230,116 @@ void MpvWindow::setPaused(bool paused) {
     mpv_set_property_string(mpv_, "pause", paused ? "yes" : "no");
 }
 
+void MpvWindow::togglePause() {
+    setPaused(!paused_);
+}
+
+void MpvWindow::selectTrack(const QString& type, int index) {
+    if (mpv_ == nullptr) return;
+    // 664：切轨此前两头都断（QML→Flutter→适配器发回的 selectAudio/
+    // selectSubtitle 命令无人处理）。现在 QML 直驱本地 mpv：
+    // 序号 = NativePlayerState 轨道列表序号（Emby id-1）→ 按 `track-list`
+    // 同类型第 index 项映射到 mpv 轨道 id。
+    const char* prop = type == QLatin1String("subtitle") ? "sid" : "aid";
+    if (index < 0) {
+        mpv_set_property_string(mpv_, prop, "no");
+        return;
+    }
+    mpv_node node{};
+    if (mpv_get_property(mpv_, "track-list", MPV_FORMAT_NODE, &node) < 0) {
+        return;
+    }
+    int nth = -1;
+    int targetId = -1;
+    if (node.format == MPV_FORMAT_NODE_ARRAY && node.u.list != nullptr) {
+        for (int i = 0; i < node.u.list->num; ++i) {
+            const mpv_node& item = node.u.list->values[i];
+            if (item.format != MPV_FORMAT_NODE_MAP || item.u.list == nullptr) {
+                continue;
+            }
+            QString itemType;
+            int id = -1;
+            for (int j = 0; j < item.u.list->num; ++j) {
+                const char* k = item.u.list->keys[j];
+                const mpv_node& v = item.u.list->values[j];
+                if (qstrcmp(k, "type") == 0 && v.format == MPV_FORMAT_STRING) {
+                    itemType = QString::fromUtf8(v.u.string);
+                } else if (qstrcmp(k, "id") == 0 &&
+                           v.format == MPV_FORMAT_INT64) {
+                    id = static_cast<int>(v.u.int64);
+                }
+            }
+            if (itemType != type) continue;
+            ++nth;
+            if (nth == index) {
+                targetId = id;
+                break;
+            }
+        }
+    }
+    mpv_free_node_contents(&node);
+    if (targetId > 0) {
+        mpv_set_property_string(mpv_, prop,
+                                QByteArray::number(targetId).constData());
+    } else {
+        qWarning() << "[mpv] selectTrack 未找到" << type << "#" << index;
+    }
+}
+
+void MpvWindow::setOverlayHoles(const QVariantList& rects) {
+    holes_ = rects;
+    applyRegion();
+}
+
+void MpvWindow::setDevicePixelRatio(qreal dpr) {
+    if (dpr <= 0) return;
+    dpr_ = dpr;
+    applyRegion();
+}
+
+void MpvWindow::applyRegion() {
+    if (video_hwnd_ == nullptr) return;
+    // 几何 + 孔都没变就不重建区域（SetWindowRgn 会触发重绘）。
+    QString sig = QStringLiteral("g%1,%2,%3,%4;")
+                      .arg(lastX_)
+                      .arg(lastY_)
+                      .arg(lastW_)
+                      .arg(lastH_);
+    for (const QVariant& v : holes_) {
+        const QRectF r = v.toRectF();
+        sig += QStringLiteral("%1,%2,%3,%4;")
+                   .arg(r.x())
+                   .arg(r.y())
+                   .arg(r.width())
+                   .arg(r.height());
+    }
+    if (sig == holesSig_) return;
+    holesSig_ = sig;
+
+    RECT rc = {};
+    ::GetClientRect(video_hwnd_, &rc);
+    HRGN rgn = ::CreateRectRgn(rc.left, rc.top, rc.right, rc.bottom);
+    for (const QVariant& v : holes_) {
+        const QRectF r = v.toRectF();
+        // QML 逻辑坐标（窗口客户区）→ 视频子窗口物理坐标
+        const int x1 = qRound(r.x() * dpr_);
+        const int y1 = qRound(r.y() * dpr_) - insetTop_;
+        const int x2 = qRound((r.x() + r.width()) * dpr_);
+        const int y2 = qRound((r.y() + r.height()) * dpr_) - insetTop_;
+        if (x2 <= rc.left || y2 <= rc.top || x1 >= rc.right || y1 >= rc.bottom) {
+            continue;
+        }
+        HRGN hole = ::CreateRectRgn(x1, y1, x2, y2);
+        HRGN diff = ::CreateRectRgn(0, 0, 0, 0);
+        ::CombineRgn(diff, rgn, hole, RGN_DIFF);
+        ::DeleteObject(rgn);
+        ::DeleteObject(hole);
+        rgn = diff;
+    }
+    // SetWindowRgn 接管 rgn 所有权（MSDN），之后不得 DeleteObject。
+    ::SetWindowRgn(video_hwnd_, rgn, TRUE);
+}
+
 void MpvWindow::setVolume(double volume) {
     if (mpv_ == nullptr) return;
     const double clamped = qBound(0.0, volume, 1.0);

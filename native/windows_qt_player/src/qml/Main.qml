@@ -110,7 +110,13 @@ ApplicationWindow {
         anchors.right: parent.right
         showControls: root.controlsVisible && !playerState.locked
 
-        onPlayPauseClicked: pipeServer.sendCommand({"type": "togglePlay"})
+        // 664 控件本地化：播放控制先直驱本地 mpv（Flutter 侧无人应答时
+        // 控件仍可用），同时把命令发给 Flutter 做记账（弹幕同步等）——
+        // 两边都幂等，重复应用无副作用。
+        onPlayPauseClicked: {
+            mpvWindow.togglePause()
+            pipeServer.sendCommand({"type": "togglePlay"})
+        }
         onPrevEpisodeClicked: pipeServer.sendCommand({
             "type": "selectEpisode",
             "index": playerState.currentEpisodeIndex - 1
@@ -126,16 +132,18 @@ ApplicationWindow {
         onEpisodeClicked: root.openEpisodePanel()
         onSpeedClicked: root.openSpeedPanel()
         onFullscreenClicked: root.toggleFullscreen()
-        onVolumeChanged: (v) => pipeServer.sendCommand({
-            "type": "setVolume", "volume": v
-        })
+        onVolumeChanged: (v) => {
+            mpvWindow.setVolume(v)
+            pipeServer.sendCommand({"type": "setVolume", "volume": v})
+        }
         onBrightnessChanged: (v) => pipeServer.sendCommand({
             "type": "setBrightness", "brightness": v
         })
-        onSeekFinished: (ratio) => pipeServer.sendCommand({
-            "type": "seekTo",
-            "positionMs": Math.round(ratio * playerState.durationMs)
-        })
+        onSeekFinished: (ratio) => {
+            var ms = Math.round(ratio * playerState.durationMs)
+            mpvWindow.seekTo(ms)
+            pipeServer.sendCommand({"type": "seekTo", "positionMs": ms})
+        }
     }
 
     // ── 左缘锁钮（662，照 Flutter PlayerLockButton）──
@@ -167,6 +175,7 @@ ApplicationWindow {
 
     // ── 加载指示器 ──
     EUI.ELoader {
+        id: loadingLoader
         anchors.centerIn: parent
         running: playerState.showLoading
         visible: playerState.showLoading
@@ -178,6 +187,7 @@ ApplicationWindow {
     // 【662 瑕疵修复】深色圆角底衬 + 白色文案：loader.gif 是深色系，
     // 黑窗口里裸放完全看不见（真机截图中央全黑）。
     Rectangle {
+        id: waitingOverlay
         anchors.centerIn: parent
         width: waitingCol.implicitWidth + 48
         height: waitingCol.implicitHeight + 32
@@ -208,10 +218,41 @@ ApplicationWindow {
 
     // ── 左下角剧集 Logo（660 照 Flutter 截图）──
     EpisodeLogo {
+        id: episodeLogo
         anchors.left: parent.left
         anchors.bottom: bottomBar.top
         anchors.leftMargin: Theme.barPadH
         anchors.bottomMargin: 8
+    }
+
+    // ── 664：视频 HWND 挖孔联动 ──
+    //
+    // 原生视频子窗口永远盖住 QML（Win32 硬规则），锁钮/Logo/面板落在
+    // 视频带上会被盖住（真机截图：面板点不到、锁钮/Logo 不可见）。
+    // 定期把浮层矩形交给 mpvWindow.setOverlayHoles 从视频窗口挖掉，
+    // 孔内露出下层 QML（可见可点）。C++ 侧几何/孔无变化不重建区域。
+    Timer {
+        interval: 150
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: root.updateOverlayHoles()
+    }
+
+    function updateOverlayHoles() {
+        var holes = []
+        function add(it) {
+            if (!it.visible || it.width <= 0 || it.height <= 0) return
+            var p = it.mapToItem(null, 0, 0)
+            holes.push(Qt.rect(p.x, p.y, it.width, it.height))
+        }
+        add(lockButton)
+        add(episodeLogo)
+        add(loadingLoader)
+        add(waitingOverlay)
+        if (panel.visible) add(panel)
+        if (adjustPanel.visible) add(adjustPanel)
+        mpvWindow.setOverlayHoles(holes)
     }
 
     // ── 列表面板（右侧浮层，与 Flutter 位置一致）──
@@ -259,7 +300,7 @@ ApplicationWindow {
             var e = playerState.episodes[i]
             list.push({
                 id: e.index,
-                label: "第 " + e.number + " 集",
+                display: "第 " + e.number + " 集",
                 sub: e.title,
                 selected: e.index === playerState.currentEpisodeIndex
             })
@@ -276,7 +317,7 @@ ApplicationWindow {
             var t = playerState.audioTracks[i]
             list.push({
                 id: t.id,
-                label: t.label !== "" ? t.label
+                display: t.label !== "" ? t.label
                        : (t.title !== "" ? t.title : "音轨 " + t.id),
                 sub: t.lang,
                 selected: t.selected
@@ -289,12 +330,12 @@ ApplicationWindow {
     }
 
     function openSubtitlePanel() {
-        var list = [{ id: -1, label: "关闭字幕", sub: "", selected: false }]
+        var list = [{ id: -1, display: "关闭字幕", sub: "", selected: false }]
         for (var i = 0; i < playerState.subtitleTracks.length; i++) {
             var t = playerState.subtitleTracks[i]
             list.push({
                 id: t.id,
-                label: t.label !== "" ? t.label
+                display: t.label !== "" ? t.label
                        : (t.title !== "" ? t.title : "字幕 " + t.id),
                 sub: t.lang,
                 selected: t.selected
@@ -313,7 +354,7 @@ ApplicationWindow {
             list.push({
                 id: speeds[i],
                 // 与 Flutter `SpeedMenuPanel.formatSpeedLabel` 同格式
-                label: formatSpeedLabel(speeds[i]),
+                display: formatSpeedLabel(speeds[i]),
                 sub: "",
                 selected: Math.abs(speeds[i] - playerState.speed) < 0.01
             })
@@ -338,7 +379,7 @@ ApplicationWindow {
             var v = playerState.versions[i]
             list.push({
                 id: v.index,
-                label: v.title !== "" ? v.title : "版本 " + (i + 1),
+                display: v.title !== "" ? v.title : "版本 " + (i + 1),
                 sub: "",
                 selected: v.index === playerState.currentVersionIndex
             })
@@ -353,11 +394,11 @@ ApplicationWindow {
     function openDecodePanel() {
         panel.title = "解码方式"
         panel.items = [
-            { id: "auto", label: "智能", sub: "优先硬解，失败回退软解",
+            { id: "auto", display: "智能", sub: "优先硬解，失败回退软解",
               selected: playerState.decodeMode === "auto" },
-            { id: "hw", label: "硬解", sub: "纯硬解，失败不回退",
+            { id: "hw", display: "硬解", sub: "纯硬解，失败不回退",
               selected: playerState.decodeMode === "hw" },
-            { id: "sw", label: "软解", sub: "纯软解，CPU 占用高",
+            { id: "sw", display: "软解", sub: "纯软解，CPU 占用高",
               selected: playerState.decodeMode === "sw" }
         ]
         adjustOpen = false
@@ -374,10 +415,14 @@ ApplicationWindow {
         if (panel.title === "选集") {
             pipeServer.sendCommand({"type": "selectEpisode", "index": id})
         } else if (panel.title === "音轨") {
+            // 664：切轨先本地生效（id = Emby 索引 + 1 → mpv 序号），再通知
+            mpvWindow.selectTrack("audio", id > 0 ? id - 1 : -1)
             pipeServer.sendCommand({"type": "selectAudio", "id": id})
         } else if (panel.title === "字幕") {
+            mpvWindow.selectTrack("subtitle", id > 0 ? id - 1 : -1)
             pipeServer.sendCommand({"type": "selectSubtitle", "id": id})
         } else if (panel.title === "播放速度") {
+            mpvWindow.setSpeed(id)
             pipeServer.sendCommand({"type": "setSpeed", "speed": id})
         } else if (panel.title === "版本") {
             pipeServer.sendCommand({"type": "selectVersion", "index": id})
@@ -391,12 +436,27 @@ ApplicationWindow {
         else showFullScreen()
     }
 
-    // ── 键盘快捷键 ──
-    Shortcut { sequence: "Space"; onActivated: pipeServer.sendCommand({"type": "togglePlay"}) }
-    Shortcut { sequence: "Left"; onActivated: pipeServer.sendCommand({"type": "seekRelative", "deltaMs": -10000}) }
-    Shortcut { sequence: "Right"; onActivated: pipeServer.sendCommand({"type": "seekRelative", "deltaMs": 10000}) }
-    Shortcut { sequence: "Up"; onActivated: pipeServer.sendCommand({"type": "setVolume", "volume": Math.min(1, playerState.volume + 0.05)}) }
-    Shortcut { sequence: "Down"; onActivated: pipeServer.sendCommand({"type": "setVolume", "volume": Math.max(0, playerState.volume - 0.05)}) }
+    // ── 键盘快捷键（664：与控件同策略——本地直驱 + 通知 Flutter）──
+    Shortcut { sequence: "Space"; onActivated: {
+        mpvWindow.togglePause()
+        pipeServer.sendCommand({"type": "togglePlay"})
+    } }
+    Shortcut { sequence: "Left"; onActivated: {
+        mpvWindow.seekTo(Math.max(0, playerState.positionMs - 10000))
+        pipeServer.sendCommand({"type": "seekRelative", "deltaMs": -10000})
+    } }
+    Shortcut { sequence: "Right"; onActivated: {
+        mpvWindow.seekTo(playerState.positionMs + 10000)
+        pipeServer.sendCommand({"type": "seekRelative", "deltaMs": 10000})
+    } }
+    Shortcut { sequence: "Up"; onActivated: {
+        mpvWindow.setVolume(Math.min(1, playerState.volume + 0.05))
+        pipeServer.sendCommand({"type": "setVolume", "volume": Math.min(1, playerState.volume + 0.05)})
+    } }
+    Shortcut { sequence: "Down"; onActivated: {
+        mpvWindow.setVolume(Math.max(0, playerState.volume - 0.05))
+        pipeServer.sendCommand({"type": "setVolume", "volume": Math.max(0, playerState.volume - 0.05)})
+    } }
     Shortcut { sequence: "F"; onActivated: root.toggleFullscreen() }
     Shortcut {
         sequence: "Escape"

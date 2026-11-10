@@ -636,6 +636,16 @@ jobs:
           $dest = 'build/windows/x64/runner/Release/himi_qt_player'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Copy-Item -Path 'build-qt/*' -Destination $dest -Recurse -Force
+          # 664：CMake 中间产物不进安装包（build-qt 全拷会带进
+          # build.ninja/CMakeCache/obj 库等 ~10MB 无用文件）
+          foreach ($junk in @('build.ninja', 'CMakeCache.txt', 'CMakeFiles',
+                              'cmake_install.cmake', 'himi_qt_player_autogen',
+                              'meta_types', 'himi_qt_player.exp',
+                              'himi_qt_player.lib',
+                              'himi_qt_player_qmltyperegistrations.cpp')) {
+            Remove-Item -Path (Join-Path $dest $junk) -Recurse -Force `
+              -ErrorAction SilentlyContinue
+          }
           # 【663 整合缺口】CRT 必须进 Qt 目录：Windows DLL 搜索本目录
           # 优先、**不含父目录**——{app}\himi_qt_player\ 里的 Qt DLLs 找
           # 不到 {app}\ 根的 VCRUNTIME140 → 纯净系统启动即失败（缺 DLL）

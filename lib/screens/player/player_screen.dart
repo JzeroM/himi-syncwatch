@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
+import 'package:himi_syncwatch/services/player/qt_player_session.dart';
 import 'package:himi_mpv_android/himi_mpv_android.dart'
     show HimiMpvAndroidSurfaceView;
 import 'package:himi_mpv_ohos/himi_mpv_ohos.dart' show HimiMpvSurfaceView;
@@ -3492,6 +3493,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     required bool hlg,
     required Map<String, String> headers,
     int startMs = 0,
+    Future<QtMediaTarget?> Function(int episodeIndex)? resolveEpisode,
+    Future<QtMediaTarget?> Function(int versionIndex)? resolveVersion,
   }) async {
     if (!MpvSessionPlatform.qtPlayerEnabled) return false;
     final exePath = MpvSessionPlatform.qtPlayerExePath;
@@ -3509,27 +3512,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return false;
     }
     LogService().log('Player', 'Qt 播放器已接管播放');
-    // 进程退出 → 回详情页（与原生 UI 关闭同语义）
-    adapter.onProcessExited = () {
-      if (!mounted || _disposed) return;
-      unawaited(_safePopPlayerPage());
-    };
-    // Qt 亮度滑杆 → Flutter（写入系统亮度 + 刷新 UI）
-    adapter.onBrightnessChanged = (v) {
-      if (!mounted || _disposed) return;
-      _brightness = v;
-      _brightnessNotifier.value = v;
-      _setBrightness(v);
-    };
-    // 662：Qt 控件命令（切集/选轨/选版本/弹幕/显示调节/解码…）走与
-    // 安卓/鸿蒙原生 UI 相同的 `_handleNativeUiCommand` 链路。
-    // 不接这根线时 Qt 侧的面板按钮全是死按钮（payload 无人消费）。
-    adapter.onNativeUiCommand = _handleNativeUiCommand;
     // 播放地址与鉴权头通过 IPC 下发（不放命令行：URL 会在任务管理器
     // 可见，且 Emby URL 可能超过命令行长度限制）
     adapter.media = url;
     adapter.setHttpHeaders(headers);
     await adapter.prepare(startMs: startMs);
+
+    // 664：Qt 窗口已出现 → **会话常驻接管 + 主窗口立即回详情页**
+    // （用户要求：Qt 窗口一出现，另一个窗口就是详情页）。
+    //
+    // 播放页 State 随 pop 销毁，原先挂在其上的状态推送/命令桥移交
+    // QtPlayerSession（快照 + 纯数据解析闭包，不碰已销毁的 State）。
+    // 播放态（位置/暂停）由 Qt 侧 mpv 事件本地补丁，不依赖本页存活。
+    final mpv = _player;
+    final template = mpv is MpvPlayerAdapter
+        ? mpv.buildNativePlayerState().toJson()
+        : <String, Object?>{};
+    template['brightness'] = _brightnessNotifier.value;
+    final session = QtPlayerSession.attach(
+      adapter: adapter,
+      template: template,
+      onProcessExited: () {
+        if (!mounted || _disposed) return;
+        unawaited(_safePopPlayerPage());
+      },
+    );
+    session.resolveEpisode = resolveEpisode;
+    session.resolveVersion = resolveVersion;
+    // 页面存活期的富处理兜底（设置持久化等）；pop 后 mounted 守卫空转
+    session.fallback = _handleNativeUiCommand;
+    session.applyBrightness = (v) async {
+      try {
+        await ScreenBrightness().setApplicationScreenBrightness(v);
+      } catch (e) {
+        LogService().log('QtPlayer', '会话亮度设置失败: $e');
+      }
+    };
+    // Qt 亮度滑杆 → 写系统亮度（会话阶段不依赖本页面存活）
+    adapter.onBrightnessChanged = (v) {
+      unawaited(session.applyBrightness?.call(v) ?? Future<void>.value());
+      if (!mounted || _disposed) return;
+      _brightness = v;
+      _brightnessNotifier.value = v;
+    };
+    // 立即回详情页（下一帧 pop，让调用方先收尾）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_disposed) unawaited(_safePopPlayerPage());
+    });
     return true;
   }
 
@@ -4300,6 +4329,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           hlg: mpv?.isHlgContent ?? false,
           headers: token.isNotEmpty ? {'X-Emby-Token': token} : const {},
           startMs: startMs,
+          // 664：会话阶段的切集/切版本解析（纯数据闭包：捕获服务实例
+          // 与字段读取，pop 后 State 销毁也能安全执行）。
+          resolveEpisode: (i) async {
+            if (i < 0 || i >= _episodes.length) return null;
+            final item = _episodes[i];
+            return QtMediaTarget(
+              url: embyService.getStreamUrl(item.id),
+              headers: token.isNotEmpty ? {'X-Emby-Token': token} : const {},
+              title: item.name,
+            );
+          },
+          resolveVersion: (i) async {
+            if (i < 0 || i >= _currentMediaSources.length) return null;
+            final src = _currentMediaSources[i];
+            return QtMediaTarget(
+              url: embyService.getStreamUrl(
+                targetItemId,
+                mediaSourceId: src.id,
+              ),
+              headers: token.isNotEmpty ? {'X-Emby-Token': token} : const {},
+              title: _currentEpisodeTitle,
+            );
+          },
         );
         if (tookOver) {
           _isSwitchingMedia = false;

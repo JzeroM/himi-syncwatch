@@ -136,6 +136,8 @@ int main(int argc, char* argv[]) {
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("playerState", &state);
     engine.rootContext()->setContextProperty("pipeServer", &pipe);
+    // 664：QML 直驱本地 mpv（控件本地化 + 视频挖孔）。
+    engine.rootContext()->setContextProperty("mpvWindow", &mpv);
 
     const QUrl qmlUrl(QStringLiteral("qrc:/qt/qml/HimiPlayer/Main.qml"));
     qInfo().noquote() << "[qml] 加载" << qmlUrl.toString();
@@ -210,6 +212,7 @@ int main(int argc, char* argv[]) {
         // 控件被视频盖住一半。
         const qreal dpr = host->devicePixelRatio();
         mpv.setOverlayInsets(qRound(48 * dpr), qRound(96 * dpr));
+        mpv.setDevicePixelRatio(dpr);
     });
 
     // ── 状态：Flutter → mpv + QML ──
@@ -237,12 +240,25 @@ int main(int argc, char* argv[]) {
                              const qint64 startMs = static_cast<qint64>(
                                  cmd.value(QLatin1String("startMs"))
                                      .toDouble(0));
+                             // 【664 真机回归：播不了/黑屏】headers 此前被
+                             // 整个丢弃——Emby 流 URL 不带 api_key，鉴权全靠
+                             // X-Emby-Token 头（getStreamUrl 实证），mpv 裸
+                             // 请求 401 → 永远黑屏 00:00。
+                             QMap<QString, QString> headers;
+                             const QJsonObject hobj =
+                                 cmd.value(QLatin1String("headers"))
+                                     .toObject();
+                             for (auto it = hobj.constBegin();
+                                  it != hobj.constEnd(); ++it) {
+                                 headers.insert(it.key(),
+                                                it.value().toString());
+                             }
                              if (!url.isEmpty()) {
                                  // 同一 URL 不重复 load（切集/续播才换）。
                                  // 但 startMs 仍需应用——续播位置可能变。
                                  if (url != loadedUrl) {
                                      loadedUrl = url;
-                                     mpv.load(url);
+                                     mpv.load(url, headers);
                                  }
                                  if (startMs > 0) mpv.seekTo(startMs);
                              }
@@ -268,6 +284,20 @@ int main(int argc, char* argv[]) {
                              if (!name.isEmpty()) {
                                  mpv.setProperty(name, value);
                              }
+                         } else if (type == QLatin1String("selectAudio")) {
+                             // 664：切轨命令此前无人处理（两头都断）。
+                             // id = Emby 索引 + 1（与 SelectAudio 约定一致），
+                             // <=0 关闭。
+                             const int id = static_cast<int>(
+                                 cmd.value(QLatin1String("id")).toInt(-1));
+                             mpv.selectTrack(QStringLiteral("audio"),
+                                             id > 0 ? id - 1 : -1);
+                         } else if (type ==
+                                    QLatin1String("selectSubtitle")) {
+                             const int id = static_cast<int>(
+                                 cmd.value(QLatin1String("id")).toInt(-1));
+                             mpv.selectTrack(QStringLiteral("subtitle"),
+                                             id > 0 ? id - 1 : -1);
                          }
                      });
 

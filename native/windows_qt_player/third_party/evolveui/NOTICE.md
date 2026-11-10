@@ -13,6 +13,7 @@
 | `src/qml/evolveui/ESlider.qml` | `components/ESlider.qml` | **未修改** |
 | `src/qml/evolveui/ECard.qml` | `components/ECard.qml` | **未修改** |
 | `src/qml/evolveui/ELoader.qml` | `components/ELoader.qml` | **未修改** |
+| `src/qml/evolveui/EList.qml` | `components/EList.qml` | **有扩展**（664）：行支持可选 `sub`（副文第二行，有则行高 56）与 `selected`（选中态：accent 文字 + 右侧 fa-check 勾）；模型无这两个字段时行为与上游完全一致 |
 | `assets/fonts/loader.gif` | `fonts/loader.gif` | **未修改** |
 | `assets/fonts/fontawesome-free-6.7.2-desktop/otfs/*` | `fonts/fontawesome-free-6.7.2-desktop/otfs/*` | **未修改**（FontAwesome 6 Free，OFL 许可见同目录 `LICENSE.txt`） |
 

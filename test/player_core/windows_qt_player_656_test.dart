@@ -838,7 +838,8 @@ void main() {
       // 选集/字幕/音轨/多版本面板全是死按钮。
       expect(adapterSrc, contains('onNativeUiCommand'));
       expect(adapterSrc, contains('NativePlayerCommand.fromMap'));
-      expect(screenSrc, contains('adapter.onNativeUiCommand = _handleNativeUiCommand'));
+      // 664 起命令桥经 QtPlayerSession 转发（fallback = 页面富处理）
+      expect(screenSrc, contains('session.fallback = _handleNativeUiCommand'));
     });
 
     test('CMake 注册 DisplayAdjustPanel.qml', () {
@@ -1011,6 +1012,12 @@ void main() {
       expect(rel, contains('Qt 目录已捆绑'));
     });
 
+    test('CMake 中间产物不进安装包（build-qt 全拷后清理）', () {
+      expect(rel, contains('CMake 中间产物不进安装包'));
+      expect(rel, contains('build.ninja'));
+      expect(rel, contains('Remove-Item'));
+    });
+
     test('release 产物校验含 Qt exe / CRT / EvolveUI QML 插件', () {
       expect(rel, contains(r'himi_qt_player\himi_qt_player.exe'));
       expect(rel, contains(r'himi_qt_player\qml\QtQuick\Effects'));
@@ -1034,6 +1041,79 @@ void main() {
 
     test('发布仍由 tag 门禁（workflow_dispatch 不会误发 Release）', () {
       expect(rel, contains("startsWith(github.ref, 'refs/tags/')"));
+    });
+  });
+  group('⑲ 664：播不了/面板被盖/回详情页（headers·挖孔·本地化·会话）', () {
+    final mainCpp = read('$dir/src/main.cpp');
+    final mpvCpp = read('$dir/src/mpv_window.cpp');
+    final mainQml = read('$dir/src/qml/Main.qml');
+    final panelQml = read('$dir/src/qml/Panel.qml');
+    final adjustQml = read('$dir/src/qml/DisplayAdjustPanel.qml');
+    final elistQml = read('$dir/src/qml/evolveui/EList.qml');
+    final session = read('lib/services/player/qt_player_session.dart');
+    final screenSrc =
+        File('lib/screens/player/player_screen.dart').readAsStringSync();
+
+    test('headers 透传 mpv（Emby 流鉴权全靠 X-Emby-Token，丢则 401 黑屏）', () {
+      expect(mainCpp, contains('"headers"'));
+      expect(mainCpp, contains('mpv.load(url, headers)'));
+      expect(mpvCpp, contains('http-header-fields'));
+    });
+
+    test('视频 HWND 挖孔（SetWindowRgn：浮层不被视频子窗口盖住）', () {
+      // 真机回归：面板点不到/锁钮 Logo 不可见 = 子 HWND 盖住 QML
+      expect(mpvCpp, contains('SetWindowRgn'));
+      expect(mpvCpp, contains('CombineRgn'));
+      expect(mainCpp, contains('setContextProperty("mpvWindow"'));
+      expect(mainQml, contains('updateOverlayHoles'));
+      expect(mainQml, contains('mpvWindow.setOverlayHoles'));
+    });
+
+    test('播放控件本地化（mpvWindow 直驱 + 通知 Flutter 双写）', () {
+      expect(mainQml, contains('mpvWindow.togglePause()'));
+      expect(mainQml, contains('mpvWindow.seekTo('));
+      expect(mainQml, contains('mpvWindow.setVolume('));
+      expect(mainQml, contains('mpvWindow.setSpeed('));
+      expect(mainQml, contains('mpvWindow.selectTrack('));
+    });
+
+    test('切轨命令两头接通（main.cpp 处理 selectAudio/selectSubtitle）', () {
+      expect(mainCpp, contains('"selectAudio"'));
+      expect(mainCpp, contains('"selectSubtitle"'));
+      expect(mpvCpp, contains('track-list'));
+      expect(mpvCpp, contains('selectTrack'));
+    });
+
+    test('Qt 窗口出现即回详情页（会话常驻接管）', () {
+      expect(screenSrc, contains('QtPlayerSession.attach'));
+      expect(screenSrc, contains('addPostFrameCallback'));
+      expect(screenSrc, contains('_safePopPlayerPage'));
+      expect(session, contains('static QtPlayerSession? active'));
+      expect(session, contains('resolveEpisode'));
+      expect(session, contains('resolveVersion'));
+    });
+
+    test('会话 headless：显示调节/字幕样式/解码直驱 mpv 属性', () {
+      expect(session, contains("'sub-scale'"));
+      expect(session, contains("'sub-delay'"));
+      expect(session, contains("'sub-pos'"));
+      expect(session, contains('DecodeModeService.resolveDecoders'));
+    });
+
+    test('面板 EvolveUI 化（ECard 容器 + EList 行）', () {
+      expect(panelQml, contains('EUI.ECard'));
+      expect(panelQml, contains('EUI.EList'));
+      expect(adjustQml, contains('EUI.ECard'));
+      expect(adjustQml, contains('EUI.EList'));
+    });
+
+    test('EList 扩展 sub/selected（NOTICE 记录）', () {
+      expect(elistQml, contains('model.sub'));
+      expect(elistQml, contains('model.selected'));
+      expect(cmake, contains('EList'));
+      final notice = read('$dir/third_party/evolveui/NOTICE.md');
+      expect(notice, contains('EList.qml'));
+      expect(notice, contains('有扩展'));
     });
   });
 }

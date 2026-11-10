@@ -61,7 +61,7 @@ endforeach()
 
 # EvolveUI vendor 组件（third_party/evolveui，MIT）：放进 evolveui/ 子
 # 目录，QML 里 `import "evolveui" as EUI` 相对解析。
-foreach(_qml ETheme EButton ESlider ECard ELoader)
+foreach(_qml ETheme EButton ESlider ECard ELoader EList)
     set_source_files_properties("src/qml/evolveui/${_qml}.qml" PROPERTIES
         QT_RESOURCE_ALIAS "evolveui/${_qml}.qml")
 endforeach()
@@ -94,6 +94,7 @@ qt_add_qml_module(himi_qt_player
         src/qml/evolveui/ESlider.qml
         src/qml/evolveui/ECard.qml
         src/qml/evolveui/ELoader.qml
+        src/qml/evolveui/EList.qml
 )
 
 # ── EvolveUI 资产（FontAwesome 字体 + loader.gif）────────────────────

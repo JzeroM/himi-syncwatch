@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QString>
 #include <QUrl>
+#include <QVariantList>
 #include <QWindow>
 
 #ifndef NOMINMAX
@@ -44,16 +45,37 @@ public:
     /// 加载媒体。`headers` 用于 Emby 鉴权（拼进 `http-header-fields`）。
     void load(const QString& url, const QMap<QString, QString>& headers = {});
 
-    void setPaused(bool paused);
-    void setVolume(double volume);   ///< 0.0 ~ 1.0
-    void setSpeed(double speed);
-    void seekTo(qint64 positionMs);
+    // 664：以下控件操作暴露给 QML 直驱（控件本地化）——Flutter 侧
+    // 无人应答（播放页已回详情页）时控件依然可用；QML 同时把命令
+    // 发给 Flutter 做记账（弹幕同步等），两边都写幂等无副作用。
+    Q_INVOKABLE void setPaused(bool paused);
+    Q_INVOKABLE void togglePause();
+    Q_INVOKABLE void setVolume(double volume);   ///< 0.0 ~ 1.0
+    Q_INVOKABLE void setSpeed(double speed);
+    Q_INVOKABLE void seekTo(qint64 positionMs);
+
+    /// 按序号选轨（type: "audio"/"subtitle"；index 从 0 起；-1 = 关闭）。
+    /// 664：序号 = NativePlayerState 轨道列表里的序号（Emby id-1），
+    /// 内部按 `track-list` 的顺序映射到 mpv 轨道 id。
+    Q_INVOKABLE void selectTrack(const QString& type, int index);
 
     /// 通用属性透传（HDR 切换、字幕延迟等场景）。
     void setProperty(const QString& name, const QString& value);
 
     /// 给 QML 控件让出的高度（顶栏 + 底栏）。视频子窗口会相应收窄。
     void setOverlayInsets(int top, int bottom);
+
+    /// 【664：视频窗口挖孔】QML 浮层（锁钮/Logo/面板）落在视频子窗口
+    /// 覆盖带内会被 Win32 子窗口盖住（永远在 QML 之上）——面板点不到、
+    /// 锁钮/Logo 不可见（真机截图实证）。把浮层矩形从视频窗口的
+    /// SetWindowRgn 区域里挖掉，孔内露出下层 QML，可点可渲染。
+    /// `rects` 元素为 QRectF，坐标是**窗口逻辑像素**（QML
+    /// `mapToItem(null, 0, 0)` 的结果），内部按 DPR 换算。
+    Q_INVOKABLE void setOverlayHoles(const QVariantList& rects);
+
+    /// 664：QML 逻辑坐标 → 物理坐标用（与 setOverlayInsets 的换算一致，
+    /// 由 main.cpp 在 attach 后注入 host 的 devicePixelRatio）。
+    void setDevicePixelRatio(qreal dpr);
 
     /// 实际输出是否为 HDR（`video-out-params` 的 gamma/primaries 判定）。
     bool hdrOutput() const;
@@ -79,6 +101,9 @@ private:
     void applyHdrOptions(bool hdr, bool hlg);
     void refreshOutputParams();
 
+    /// 664：按 holes_ 重建视频窗口区域（整窗减去浮层孔）。
+    void applyRegion();
+
     static LRESULT CALLBACK VideoWndProc(HWND hwnd, UINT msg, WPARAM wparam,
                                          LPARAM lparam);
 
@@ -93,6 +118,10 @@ private:
     int lastY_ = -1;
     int lastW_ = -1;
     int lastH_ = -1;
+
+    QVariantList holes_;   ///< 浮层孔（窗口逻辑坐标 QRectF）
+    QString holesSig_;     ///< 已应用孔签名（几何/孔都没变就不重建区域）
+    qreal dpr_ = 1.0;      ///< 逻辑→物理像素换算（main.cpp 注入）
 
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;
