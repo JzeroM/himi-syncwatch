@@ -1018,6 +1018,20 @@ void main() {
       expect(rel, contains(r'himi_qt_player\qt.conf'));
     });
 
+    test('Qt 校验步骤必须在 Qt 构建之后（顺序反了会假失败）', () {
+      // 663 真机回归：首版把校验放在「编译 Qt 播放器」之前 →
+      // 校验时 himi_qt_player\ 还没生成 → 构建假失败。
+      final buildIdx = rel.indexOf('- name: 编译 Qt 播放器');
+      final verifyIdx = rel.indexOf('校验 Qt 播放器整合');
+      expect(buildIdx, greaterThan(0), reason: '找不到 Qt 构建步骤');
+      expect(verifyIdx, greaterThan(buildIdx),
+          reason: 'Qt 校验必须排在 Qt 构建之后');
+      // 且在 Inno 打包之前（打包后再校验就晚了）
+      final innoIdx = rel.indexOf('- name: 编译 Inno Setup 安装包');
+      expect(verifyIdx, lessThan(innoIdx),
+          reason: 'Qt 校验必须排在 Inno 打包之前');
+    });
+
     test('发布仍由 tag 门禁（workflow_dispatch 不会误发 Release）', () {
       expect(rel, contains("startsWith(github.ref, 'refs/tags/')"));
     });

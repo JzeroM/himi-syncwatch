@@ -517,24 +517,6 @@ jobs:
             if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
             Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
           }
-          # 663：Qt 播放器整合校验（安装包 recursesubdirs 收录的就是这个
-          # 目录——这里缺一项，安装包就缺一项，且无人发现）。
-          foreach ($f in @('himi_qt_player\himi_qt_player.exe',
-                           'himi_qt_player\vcruntime140.dll',
-                           'himi_qt_player\msvcp140.dll',
-                           'himi_qt_player\qt.conf')) {
-            $p = Join-Path $rel $f
-            if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
-            Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
-          }
-          # EvolveUI 依赖的 QML 插件（MultiEffect=QtQuick.Effects）
-          foreach ($q in @('himi_qt_player\qml\QtQuick\Effects',
-                           'himi_qt_player\qml\QtQuick\Controls',
-                           'himi_qt_player\HimiPlayer\evolveui')) {
-            $p = Join-Path $rel $q
-            if (!(Test-Path $p)) { throw "产物缺少 QML 目录 $q($p)" }
-            Write-Host "OK: $q"
-          }
 
       # 捆绑 MSVC CRT：Flutter Windows release 动态链接 VCRUNTIME140/MSVCP140，
       # 纯净 Win 系统或缺运行库时应用直接闪退。从 runner 的 VS CRT 再发行目录
@@ -665,6 +647,33 @@ jobs:
             Write-Host "Qt 目录已捆绑 $dll"
           }
           Write-Host "Qt 播放器已放入 $dest"
+
+      # 663：Qt 播放器整合校验（必须在 Qt 构建**之后**、Inno 打包之前
+      # ——安装包 recursesubdirs 收录的就是这个目录，这里缺一项安装包
+      # 就缺一项且无人发现。注意步骤顺序：663 首版误放在 Qt 构建之前
+      # → 校验时目录还没生成 → 构建假失败）。
+      - name: 校验 Qt 播放器整合（安装包收录源）
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = 'build/windows/x64/runner/Release'
+          foreach ($f in @('himi_qt_player\himi_qt_player.exe',
+                           'himi_qt_player\vcruntime140.dll',
+                           'himi_qt_player\vcruntime140_1.dll',
+                           'himi_qt_player\msvcp140.dll',
+                           'himi_qt_player\qt.conf')) {
+            $p = Join-Path $rel $f
+            if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
+            Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
+          }
+          # EvolveUI 依赖的 QML 插件（MultiEffect=QtQuick.Effects）
+          foreach ($q in @('himi_qt_player\qml\QtQuick\Effects',
+                           'himi_qt_player\qml\QtQuick\Controls',
+                           'himi_qt_player\HimiPlayer\evolveui')) {
+            $p = Join-Path $rel $q
+            if (!(Test-Path $p)) { throw "产物缺少 QML 目录 $q($p)" }
+            Write-Host "OK: $q"
+          }
 
       - name: 编译 Inno Setup 安装包
         shell: pwsh
