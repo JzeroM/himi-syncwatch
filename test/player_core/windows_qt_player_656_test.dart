@@ -1116,4 +1116,24 @@ void main() {
       expect(notice, contains('有扩展'));
     });
   });
+  group('⑳ 665：视频满铺全窗（控件带挖孔，观感同 Flutter）', () {
+    final mainCpp = read('$dir/src/main.cpp');
+    final mainQml = read('$dir/src/qml/Main.qml');
+
+    test('inset 归零：视频满铺（不再被上下让位逼出横向黑边）', () {
+      // 真机回归：48/96 inset 把视频压成中间一块 → 「被控件包裹」。
+      expect(mainCpp, contains('setOverlayInsets(0, 0)'));
+    });
+
+    test('顶栏/底栏整条带走挖孔（控件浮在视频上、可点）', () {
+      expect(mainQml, contains('add(topBar)'));
+      expect(mainQml, contains('add(bottomBar)'));
+    });
+
+    test('控件隐藏 → 孔收放为纯视频（add 的 visible 门禁）', () {
+      // topBar/bottomBar 的 visible 跟随 opacity；自动隐藏后
+      // add() 不收录 → 无孔 → 视频满窗。
+      expect(mainQml, contains('if (!it.visible'));
+    });
+  });
 }

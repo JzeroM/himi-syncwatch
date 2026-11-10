@@ -227,10 +227,16 @@ ApplicationWindow {
 
     // ── 664：视频 HWND 挖孔联动 ──
     //
-    // 原生视频子窗口永远盖住 QML（Win32 硬规则），锁钮/Logo/面板落在
-    // 视频带上会被盖住（真机截图：面板点不到、锁钮/Logo 不可见）。
-    // 定期把浮层矩形交给 mpvWindow.setOverlayHoles 从视频窗口挖掉，
-    // 孔内露出下层 QML（可见可点）。C++ 侧几何/孔无变化不重建区域。
+    // 原生视频子窗口永远盖住 QML（Win32 硬规则），QML 浮层落在视频上
+    // 会被盖住（真机截图：面板点不到、锁钮/Logo 不可见）。
+    //
+    // 665：视频**满铺全窗口**（main.cpp inset 归零），顶栏/底栏也走
+    // 挖孔——观感与 Flutter「视频满窗、控件浮在视频上」同构：
+    //   - 16:9 内容横向到边（不再被上下 inset 逼出黑边）
+    //   - 控件带可点（孔内鼠标落给 QML）
+    //   - 控件自动隐藏时浮层 visible=false → **孔随之消失 = 纯视频**
+    // QML 每 150ms 把浮层矩形交给 mpvWindow.setOverlayHoles 挖孔，
+    // C++ 侧几何/孔无变化不重建区域。
     Timer {
         interval: 150
         repeat: true
@@ -246,6 +252,9 @@ ApplicationWindow {
             var p = it.mapToItem(null, 0, 0)
             holes.push(Qt.rect(p.x, p.y, it.width, it.height))
         }
+        // 顶/底栏整条带（visible 跟随 opacity：自动隐藏后孔消失）
+        add(topBar)
+        add(bottomBar)
         add(lockButton)
         add(episodeLogo)
         add(loadingLoader)

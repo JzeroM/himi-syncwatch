@@ -215,7 +215,12 @@ int main(int argc, char* argv[]) {
         // 150% 缩放下若不换算，视频窗口会少让出 24/48 像素 →
         // 控件被视频盖住一半。
         const qreal dpr = host->devicePixelRatio();
-        mpv.setOverlayInsets(qRound(48 * dpr), qRound(96 * dpr));
+        // 665：视频**满铺全窗口**（inset 归零）——此前上下让出 48/96
+        // 造成「视频被控件包裹」观感（16:9 内容被迫横向 pillarbox）。
+        // 控件区改由**挖孔**让位（QML 浮层矩形 → SetWindowRgn），
+        // 与 Flutter「视频满窗、控件浮在视频上」同构：控件显隐联动孔的
+        // 收放（隐藏时孔消失 = 纯视频满窗）。
+        mpv.setOverlayInsets(0, 0);
         mpv.setDevicePixelRatio(dpr);
     });
 
