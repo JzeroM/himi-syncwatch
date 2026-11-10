@@ -3521,6 +3521,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _brightnessNotifier.value = v;
       _setBrightness(v);
     };
+    // 662：Qt 控件命令（切集/选轨/选版本/弹幕/显示调节/解码…）走与
+    // 安卓/鸿蒙原生 UI 相同的 `_handleNativeUiCommand` 链路。
+    // 不接这根线时 Qt 侧的面板按钮全是死按钮（payload 无人消费）。
+    adapter.onNativeUiCommand = _handleNativeUiCommand;
     // 播放地址与鉴权头通过 IPC 下发（不放命令行：URL 会在任务管理器
     // 可见，且 Emby URL 可能超过命令行长度限制）
     adapter.media = url;

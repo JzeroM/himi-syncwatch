@@ -51,6 +51,22 @@ class PlayerState : public QObject {
     // ── 亮度（660，照 Flutter 播放页亮度滑杆）──
     Q_PROPERTY(double brightness READ brightness NOTIFY changed)
 
+    // ── 多版本（662，照 Flutter 底栏「多版本」按钮）──
+    Q_PROPERTY(QVariantList versions READ versionsVariant NOTIFY versionsChanged)
+    Q_PROPERTY(int versionCount READ versionCount NOTIFY versionsChanged)
+    Q_PROPERTY(int currentVersionIndex READ currentVersionIndex NOTIFY changed)
+
+    // ── 显示调节回读（662，照 Flutter「显示调节」面板六滑杆）──
+    Q_PROPERTY(double subtitleScale READ subtitleScale NOTIFY changed)
+    Q_PROPERTY(int subtitleMarginY READ subtitleMarginY NOTIFY changed)
+    Q_PROPERTY(double subtitleDelayMs READ subtitleDelayMs NOTIFY changed)
+    Q_PROPERTY(double danmakuSpeed READ danmakuSpeed NOTIFY changed)
+    Q_PROPERTY(double danmakuFontSize READ danmakuFontSize NOTIFY changed)
+    Q_PROPERTY(double danmakuOpacity READ danmakuOpacity NOTIFY changed)
+
+    // ── 屏幕锁定（662，照 Flutter 左缘锁钮）──
+    Q_PROPERTY(bool locked READ locked NOTIFY changed)
+
     // ── 弹幕 ──
     Q_PROPERTY(bool danmakuEnabled READ danmakuEnabled NOTIFY changed)
 
@@ -105,6 +121,24 @@ public:
 
     double brightness() const { return brightness_; }
 
+    /// 多版本（`versions` 数组的轻量投影，MediaSource 名）。
+    struct Version {
+        int index = 0;
+        QString title;
+    };
+    const QList<Version>& versions() const { return versions_; }
+    int currentVersionIndex() const { return currentVersionIndex_; }
+
+    // 显示调节（与 Flutter DisplayAdjustPanel 六滑杆一一对应）
+    double subtitleScale() const { return subtitleScale_; }
+    int subtitleMarginY() const { return subtitleMarginY_; }
+    double subtitleDelayMs() const { return subtitleDelayMs_; }
+    double danmakuSpeed() const { return danmakuSpeed_; }
+    double danmakuFontSize() const { return danmakuFontSize_; }
+    double danmakuOpacity() const { return danmakuOpacity_; }
+
+    bool locked() const { return locked_; }
+
     bool danmakuEnabled() const { return danmakuEnabled_; }
 
     bool hdrOutput() const { return hdrOutput_; }
@@ -136,10 +170,12 @@ public:
     int audioCount() const { return audioTracks_.size(); }
     int subtitleCount() const { return subtitleTracks_.size(); }
     int episodeCount() const { return episodes_.size(); }
+    int versionCount() const { return versions_.size(); }
 
     QVariantList episodesVariant() const;
     QVariantList audioTracksVariant() const;
     QVariantList subtitleTracksVariant() const;
+    QVariantList versionsVariant() const;
 
 signals:
     void changed();
@@ -147,10 +183,12 @@ signals:
     /// 剧集列表变化（QML 的 ListView 需要单独通知才能刷新 model）。
     void episodesChanged();
     void tracksChanged();
+    void versionsChanged();
 
 private:
     void setEpisodes(const QJsonArray& arr);
     void setTracks(const QJsonArray& arr);
+    void setVersions(const QJsonArray& arr);
 
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;
@@ -178,6 +216,15 @@ private:
 
     double brightness_ = 0.5;
 
+    double subtitleScale_ = 1.0;
+    int subtitleMarginY_ = 22;
+    double subtitleDelayMs_ = 0.0;
+    double danmakuSpeed_ = 0.7;
+    double danmakuFontSize_ = 0.5;
+    double danmakuOpacity_ = 1.0;
+
+    bool locked_ = false;
+
     bool danmakuEnabled_ = false;
 
     bool hdrOutput_ = false;
@@ -185,6 +232,8 @@ private:
 
     QList<Episode> episodes_;
     int currentEpisodeIndex_ = -1;
+    QList<Version> versions_;
+    int currentVersionIndex_ = 0;
     QList<Track> audioTracks_;
     QList<Track> subtitleTracks_;
 };

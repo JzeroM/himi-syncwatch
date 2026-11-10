@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../services/log_service.dart';
 import '../player/player_adapter.dart';
+import 'mpv_player_adapter.dart' show resolveWindowsHwdec;
+import 'native/native_player_command.dart';
 import 'qt_player_pipe.dart';
 
 /// 656：Qt 播放器窗口的 Flutter 侧适配器。
@@ -76,6 +78,15 @@ class QtPlayerAdapter implements PlayerAdapter {
   /// Qt 亮度滑杆变更回调（由播放页注入）。
   void Function(double value)? onBrightnessChanged;
 
+  /// 原生命令回调（与 MpvPlayerAdapter.onNativeUiCommand 同签名）。
+  ///
+  /// 【662 修复：命令链路断点】切集/选轨/选版本/弹幕/显示调节这类**带
+  /// payload** 的命令，此前只被包装成 `AdapterMediaEvent('native.command',
+  /// type)` 丢进事件流——**没有任何消费方**，Qt 窗口里的选集/字幕/音轨/
+  /// 多版本面板全部是死按钮。现在解析成 [NativePlayerCommand] 直接交给
+  /// 播放页的 `_handleNativeUiCommand`（与安卓/鸿蒙原生 UI 同链路）。
+  Future<void> Function(NativePlayerCommand command)? onNativeUiCommand;
+
   void _bindPipe() {
     _pipe.commands.listen(_handleCommand);
     _pipe.onDisconnected = () {
@@ -112,10 +123,20 @@ class QtPlayerAdapter implements PlayerAdapter {
         final v = (cmd['brightness'] as num?)?.toDouble() ?? 0.5;
         onBrightnessChanged?.call(v);
       default:
-        // 其余命令转发给上层（与原生 UI 命令链路一致）
-        _eventController.add(
-          AdapterMediaEvent(0, 'native.command', type ?? 'unknown'),
-        );
+        // 其余命令（切集/选轨/选版本/弹幕/显示调节等）解析成
+        // [NativePlayerCommand] 交给播放页（与安卓/鸿蒙原生 UI 同链路）。
+        // 【662 修复】此前只发 AdapterMediaEvent('native.command')——
+        // 没有任何消费方，Qt 窗口的选集/字幕/音轨/多版本面板全是死按钮。
+        final command = NativePlayerCommand.fromMap(cmd);
+        final forward = onNativeUiCommand;
+        if (command != null && forward != null) {
+          unawaited(forward(command));
+        } else {
+          // 无上层接线（或未知命令类型）时保留事件兜底。
+          _eventController.add(
+            AdapterMediaEvent(0, 'native.command', type ?? 'unknown'),
+          );
+        }
     }
   }
 
@@ -307,8 +328,43 @@ class QtPlayerAdapter implements PlayerAdapter {
   @override
   List<String> get videoDecoders => const [];
 
+  /// 解码档位 → mpv `hwdec`（经 Qt 侧 `setProperty` 命令透传）。
+  ///
+  /// 【662】此前是空实现：Qt 的「解码方式」面板切了档位只落设置，
+  /// 正在播的 mpv 根本不知道。映射与 `MpvPlayerAdapter.set
+  /// videoDecoders` 同语义：
+  ///   ['FFmpeg'] → no（软解）；[硬解器] → hw（纯硬解）；
+  ///   [硬解器, 'FFmpeg'] → auto（硬解优先软解兜底）。
+  /// 顶层 `resolveWindowsHwdec` 是映射的单一真相源（d3d11 零拷贝
+  /// 在部分驱动上崩溃，Windows 统一 copy-back）。
   @override
-  set videoDecoders(List<String> decoders) {}
+  set videoDecoders(List<String> decoders) {
+    if (_disposed) return;
+    const hwDecoderHints = <String>[
+      'ohcodec', 'mediacodec', 'd3d11', 'dxva',
+      'vt', 'videotoolbox', 'vaapi', 'vdpau', 'nvdec', 'cuda',
+    ];
+    final hasHw = decoders.any((d) {
+      final lower = d.toLowerCase();
+      return hwDecoderHints.any(lower.contains);
+    });
+    final hasSw = decoders.any((d) => d.toLowerCase().contains('ffmpeg'));
+    final String mode;
+    if (!hasHw && hasSw) {
+      mode = 'no';
+    } else if (hasHw && !hasSw) {
+      mode = 'hw';
+    } else {
+      mode = 'auto';
+    }
+    final effective = resolveWindowsHwdec(mode, windows: true);
+    _pipe.sendCommandRaw({
+      'type': 'setProperty',
+      'name': 'hwdec',
+      'value': effective,
+    });
+    LogService().log('QtPlayer', 'videoDecoders $decoders → hwdec=$effective');
+  }
 
   @override
   List<String> get audioDecoders => const [];

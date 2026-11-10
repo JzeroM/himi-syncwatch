@@ -1,14 +1,17 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import HimiPlayer
+import "evolveui" as EUI
 
-// 659：可复用图标按钮（对应 Flutter 的 `_buildControlButton`）。
+// 662：可复用图标按钮（EvolveUI `EButton` 封装，对应 Flutter 的
+// `_buildControlButton`）。
 //
-// 视觉规格全部取自 Theme（即 NativePlayerTheme），与 Flutter 一致：
-//   - 图标 24px（底栏）/ 22px（顶栏）
-//   - hover 底色 white12，圆角 8
-//   - 角标 9px 字，正圆，尺寸按位数分档 15/19/24
-//   - 角标底色 accent(#6366F1)
+// 【封装点】
+//   - EButton 尺寸档位的字号取 l/m/l（24/20/16），命中区仍是我们
+//     的 40×40（anchors.fill 覆盖其 implicit 尺寸，不改上游源码）
+//   - 图标按钮 `text: ""`（否则 EButton 会显示默认 "Button"）
+//   - 角标 9px 字、正圆、尺寸按位数分档 15/19/24（Theme.badgeSizeFor）
+//   - tooltip 用 HoverHandler + ToolTip（不抢 EButton 的 MouseArea）
 Item {
     id: root
 
@@ -17,27 +20,28 @@ Item {
     property string tooltip: ""
     property bool enabled: true
     property real iconSize: Theme.controlIconSize
-    property color iconColor: Theme.white
+    property color iconColor: theme.textColor
 
     signal clicked()
 
     implicitWidth: Math.max(iconSize + 16, 40)
     implicitHeight: Math.max(iconSize + 16, 40)
 
-    Rectangle {
+    EUI.EButton {
         anchors.fill: parent
+        text: ""
+        size: root.iconSize >= 22 ? "l" : (root.iconSize >= 18 ? "m" : "s")
+        iconCharacter: root.icon
+        iconFontFamily: iconFont.name
+        iconColor: root.enabled ? root.iconColor
+                                : theme.getBorderColor(false)
+        containerColor: "transparent"
+        hoverColor: theme.isDark ? Qt.rgba(1, 1, 1, 0.12)
+                                 : Qt.rgba(0, 0, 0, 0.08)
         radius: 8
-        color: root.enabled && mouse.containsMouse
-               ? Theme.white12 : "transparent"
-        Behavior on color { ColorAnimation { duration: 120 } }
-    }
-
-    Text {
-        anchors.centerIn: parent
-        text: root.icon
-        font.family: "Material Icons"
-        font.pixelSize: root.iconSize
-        color: root.enabled ? root.iconColor : Theme.white24
+        shadowEnabled: false
+        enabled: root.enabled
+        onClicked: root.clicked()
     }
 
     // 角标（与 Flutter `_buildBadge` 同规格）
@@ -45,32 +49,23 @@ Item {
         visible: root.badge !== ""
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.rightMargin: 0
-        anchors.topMargin: 0
         width: Theme.badgeSizeFor(root.badge)
         height: width
         radius: width / 2
-        color: Theme.accent
+        color: theme.focusColor
 
         Text {
             anchors.centerIn: parent
             text: root.badge
-            color: Theme.white
+            color: theme.textColor
             font.pixelSize: Theme.badgeFontSize
             font.bold: true
         }
     }
 
-    MouseArea {
-        id: mouse
-        anchors.fill: parent
-        hoverEnabled: true
-        enabled: root.enabled
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.clicked()
-
-        ToolTip.visible: containsMouse && root.tooltip !== ""
-        ToolTip.text: root.tooltip
-        ToolTip.delay: 800
-    }
+    // tooltip（HoverHandler 不与 EButton 的 MouseArea 抢事件）
+    HoverHandler { id: hover }
+    ToolTip.visible: hover.hovered && root.tooltip !== "" && root.enabled
+    ToolTip.text: root.tooltip
+    ToolTip.delay: 800
 }

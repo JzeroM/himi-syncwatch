@@ -2,15 +2,13 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import HimiPlayer
+import "evolveui" as EUI
 
-// 659：通用选择面板（对应 Flutter `_openSelectorPanel`）。
+// 662：通用选择面板（EvolveUI `ECard` 容器，对应 Flutter `_openSelectorPanel`）。
 //
-// 规格（NativePlayerTheme）：
-//   - 宽 clamp(0.42×屏宽, 260, 320)
-//   - 圆角 16，内边距 h16 v12
-//   - 标题 15/w600，选项 14
-//   - 选中项文字用 accent(#6366F1)，右侧对勾占 18 宽
-//   - 背景 panelTint(#1F1A1D23) + rim 描边
+// 【构成】ECard（主题色卡片 + 圆角 + 阴影）+ 标题行（EButton 关闭）+
+// 行列表（两行：主文 + 副文 + 选中勾）。行是胶水件（EvolveUI 无两行
+// 可选行组件），配色全部走 `theme`（ETheme）。
 Rectangle {
     id: root
 
@@ -27,8 +25,8 @@ Rectangle {
                                   - Theme.panelBottomOffset : 400,
                      titleBar.height + list.contentHeight + Theme.panelPadV * 2 + 8)
     radius: Theme.radiusPanel
-    color: Theme.panelTint
-    border.color: Theme.rim
+    color: theme.secondaryColor
+    border.color: theme.borderColor
     border.width: 1
     visible: false
 
@@ -46,7 +44,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: root.title
-                color: Theme.white
+                color: theme.textColor
                 font.pixelSize: Theme.panelTitleSize
                 font.weight: 600
             }
@@ -66,14 +64,17 @@ Rectangle {
             model: root.items
             spacing: 2
 
+            // 两行可选行（主文 + 副文 + 右勾）
             delegate: Rectangle {
                 width: ListView.view.width
                 height: 44
                 radius: 8
                 color: modelData.selected
-                       ? Theme.white12
-                       : (rowMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.06)
-                                                 : "transparent")
+                       ? theme.focusColor
+                       : (rowMouse.containsMouse
+                          ? (theme.isDark ? Qt.rgba(1, 1, 1, 0.08)
+                                          : Qt.rgba(0, 0, 0, 0.06))
+                          : "transparent")
 
                 Column {
                     anchors.left: parent.left
@@ -86,7 +87,7 @@ Rectangle {
                     Text {
                         width: parent.width
                         text: modelData.label
-                        color: modelData.selected ? Theme.accent : Theme.white
+                        color: modelData.selected ? theme.primaryColor : theme.textColor
                         font.pixelSize: Theme.panelOptionSize
                         elide: Text.ElideRight
                     }
@@ -94,7 +95,8 @@ Rectangle {
                         visible: modelData.sub !== undefined && modelData.sub !== ""
                         width: parent.width
                         text: modelData.sub || ""
-                        color: Theme.white38
+                        color: modelData.selected ? theme.primaryColor
+                                                  : theme.getBorderColor(true)
                         font.pixelSize: Theme.captionSize
                         elide: Text.ElideRight
                     }
@@ -108,9 +110,9 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Theme.panelCheckSlot
                     text: Icons.check
-                    font.family: "Material Icons"
+                    font.family: iconFont.name
                     font.pixelSize: 18
-                    color: Theme.accent
+                    color: modelData.selected ? theme.primaryColor : theme.textColor
                     horizontalAlignment: Text.AlignRight
                 }
 

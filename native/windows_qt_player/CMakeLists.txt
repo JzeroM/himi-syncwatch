@@ -53,10 +53,17 @@ qt_add_executable(himi_qt_player
 #   虽然改代码成 `qrc:/HimiPlayer/...` 也能跑，但 `/qt/qml` 是 Qt 6 的
 #   标准约定（QQmlEngine 会自动搜索该前缀，`import HimiPlayer` 的模块
 #   解析也依赖它），所以显式设置 RESOURCE_PREFIX 保持标准。
-foreach(_qml Main TopBar BottomBar SeekBar ControlButton Panel Theme Icons
-             GlassSlider EpisodeLogo)
+foreach(_qml Main TopBar BottomBar ControlButton Panel Theme Icons
+             PlayerSlider EpisodeLogo DisplayAdjustPanel)
     set_source_files_properties("src/qml/${_qml}.qml" PROPERTIES
         QT_RESOURCE_ALIAS "${_qml}.qml")
+endforeach()
+
+# EvolveUI vendor 组件（third_party/evolveui，MIT）：放进 evolveui/ 子
+# 目录，QML 里 `import "evolveui" as EUI` 相对解析。
+foreach(_qml ETheme EButton ESlider ECard ELoader)
+    set_source_files_properties("src/qml/evolveui/${_qml}.qml" PROPERTIES
+        QT_RESOURCE_ALIAS "evolveui/${_qml}.qml")
 endforeach()
 
 # 单例注册：Theme / Icons 是 `pragma Singleton`，必须显式声明
@@ -75,20 +82,37 @@ qt_add_qml_module(himi_qt_player
         src/qml/Main.qml
         src/qml/TopBar.qml
         src/qml/BottomBar.qml
-        src/qml/SeekBar.qml
         src/qml/ControlButton.qml
         src/qml/Panel.qml
         src/qml/Theme.qml
         src/qml/Icons.qml
-        src/qml/GlassSlider.qml
+        src/qml/PlayerSlider.qml
         src/qml/EpisodeLogo.qml
-    RESOURCES
-        fonts/MaterialIcons-Regular.otf
+        src/qml/DisplayAdjustPanel.qml
+        src/qml/evolveui/ETheme.qml
+        src/qml/evolveui/EButton.qml
+        src/qml/evolveui/ESlider.qml
+        src/qml/evolveui/ECard.qml
+        src/qml/evolveui/ELoader.qml
 )
 
-# 字体路径随 RESOURCE_PREFIX 变化：现在实际是
-#   qrc:/qt/qml/HimiPlayer/fonts/MaterialIcons-Regular.otf
-# 与 Main.qml 里的 FontLoader source 一致。
+# ── EvolveUI 资产（FontAwesome 字体 + loader.gif）────────────────────
+#
+# 组件内硬编码 `qrc:/new/prefix1/fonts/...`（上游约定，见
+# third_party/evolveui/NOTICE.md），这里用 PREFIX + BASE 原样注册，
+# 这样 EvolveUI 源码**零修改**可用。
+qt_add_resources(himi_qt_player "evolveui-assets"
+    PREFIX "/new/prefix1"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/evolveui/assets"
+    FILES
+        third_party/evolveui/assets/fonts/loader.gif
+        third_party/evolveui/assets/fonts/fontawesome-free-6.7.2-desktop/otfs/Font\ Awesome\ 6\ Free-Solid-900.otf
+        third_party/evolveui/assets/fonts/fontawesome-free-6.7.2-desktop/otfs/Font\ Awesome\ 6\ Free-Regular-400.otf
+        third_party/evolveui/assets/fonts/fontawesome-free-6.7.2-desktop/otfs/Font\ Awesome\ 6\ Brands-Regular-400.otf
+)
+
+# 图标字体路径（与 Main.qml 的 FontLoader source 一致）：
+#   qrc:/new/prefix1/fonts/fontawesome-free-6.7.2-desktop/otfs/Font Awesome 6 Free-Solid-900.otf
 
 # ── qt.conf（659 真机全黑的根因）────────────────────────────────────
 #

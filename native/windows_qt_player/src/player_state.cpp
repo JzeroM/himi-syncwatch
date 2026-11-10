@@ -99,6 +99,39 @@ void PlayerState::applyJson(const QJsonObject& json) {
                     static_cast<int>(readInt64(json, "currentEpisodeIndex",
                                                currentEpisodeIndex_)));
 
+    // ── 多版本（662）──
+    const QJsonValue vers = json.value(QLatin1String("versions"));
+    if (vers.isArray()) setVersions(vers.toArray());
+
+    dirty |= assign(currentVersionIndex_,
+                    static_cast<int>(readInt64(json, "currentVersionIndex",
+                                               currentVersionIndex_)));
+
+    // ── 屏幕锁定（662，Flutter toggleLock 命令回写）──
+    dirty |= assign(locked_, readBool(json, "locked", locked_));
+
+    // ── 显示调节（662）──
+    //
+    // 字幕大小在协议里是 `subtitleStyle.fontSize`（16.0 = 1.0×基准），
+    // 与 Flutter `_applyNativeSubtitleStyle` 的换算一致（scale = fontSize/16）。
+    const QJsonValue style = json.value(QLatin1String("subtitleStyle"));
+    if (style.isObject()) {
+        const double fontSize =
+            readDouble(style.toObject(), "fontSize", subtitleScale_ * 16.0);
+        dirty |= assign(subtitleScale_, fontSize / 16.0);
+    }
+    dirty |= assign(subtitleMarginY_,
+                    static_cast<int>(readInt64(json, "subtitleMarginY",
+                                               subtitleMarginY_)));
+    dirty |= assign(subtitleDelayMs_,
+                    readDouble(json, "subtitleDelayMs", subtitleDelayMs_));
+    dirty |= assign(danmakuSpeed_,
+                    readDouble(json, "danmakuSpeed", danmakuSpeed_));
+    dirty |= assign(danmakuFontSize_,
+                    readDouble(json, "danmakuFontSize", danmakuFontSize_));
+    dirty |= assign(danmakuOpacity_,
+                    readDouble(json, "danmakuOpacity", danmakuOpacity_));
+
     // ── 轨道 ──
     const QJsonValue tracks = json.value(QLatin1String("tracks"));
     if (tracks.isArray()) setTracks(tracks.toArray());
@@ -175,6 +208,45 @@ void PlayerState::setTracks(const QJsonArray& arr) {
     audioTracks_ = audio;
     subtitleTracks_ = subtitle;
     emit tracksChanged();
+}
+
+void PlayerState::setVersions(const QJsonArray& arr) {
+    QList<Version> next;
+    next.reserve(arr.size());
+    for (const QJsonValue& v : arr) {
+        if (!v.isObject()) continue;
+        const QJsonObject o = v.toObject();
+        Version ver;
+        ver.index = static_cast<int>(readInt64(o, "index", 0));
+        ver.title = readString(o, "title");
+        next.append(ver);
+    }
+    // 与 setEpisodes 同策略：内容相同不发信号（20Hz 推送防重建）。
+    bool same = next.size() == versions_.size();
+    if (same) {
+        for (int i = 0; i < next.size(); ++i) {
+            if (next[i].index != versions_[i].index ||
+                next[i].title != versions_[i].title) {
+                same = false;
+                break;
+            }
+        }
+    }
+    if (same) return;
+    versions_ = next;
+    emit versionsChanged();
+}
+
+QVariantList PlayerState::versionsVariant() const {
+    QVariantList out;
+    out.reserve(versions_.size());
+    for (const Version& v : versions_) {
+        QVariantMap m;
+        m.insert(QStringLiteral("index"), v.index);
+        m.insert(QStringLiteral("title"), v.title);
+        out.append(m);
+    }
+    return out;
 }
 
 QVariantList PlayerState::episodesVariant() const {

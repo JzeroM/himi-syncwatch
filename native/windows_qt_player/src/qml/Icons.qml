@@ -1,64 +1,63 @@
 pragma Singleton
 import QtQuick
 
-// 659：播放器图标码点（Material Icons）。
+// 662：播放器图标码点（Font Awesome 6 Free Solid）。
 //
-// 【单一真相源】与 `lib/services/player/native/native_player_icons.dart`
-// 逐值一致。那份又由 `tool/native_icons.json` 校验，并与 Flutter
-// `Icons.xxx.codePoint` 比对——所以这里用的字形与 Flutter 播放页**同款**。
+// 【为什么是 FontAwesome】662 起 Qt 播放器窗口的 UI 组件库换成
+// EvolveUI（third_party/evolveui），其生态图标即 FontAwesome——按
+// 用户决策「换 FontAwesome」统一字形。注意 Flutter/安卓/鸿蒙播放器
+// 仍是 Material Icons（NativePlayerIcons），两侧**语义一一对应**、
+// 字形不同（用户已确认此取舍）。
 //
-// 【为什么之前是错的】656 首版我凭记忆写码点（如 `\ue5c4` 当返回），
-// 那些是 Flutter 的 `Icons.arrow_back`，与项目统一使用的
-// `NativePlayerIcons.arrowBack = 0xE092` **不是同一个字形**。必须用本文件的值。
+// 【字体加载】字体由 Main.qml 根级 `iconFont` FontLoader 提供（与
+// EvolveUI 组件的 `iconFont` 上下文约定一致），Text 里用
+// `font.family: iconFont.name`。
 //
-// 【5 位码点必须用 fromCharCode】QML 的 `\u` 转义**只支持 4 位十六进制**：
-//   "\uf07bf" 会被解析成 U+F07B + 字符 'f'（两个字形拼在一起）→ 花屏。
-// 0x10000 以上的码点一律用 String.fromCharCode(0x...)。
-// 当前受影响：rotate(0xF07BF)、danmakuOff(0xF04D2)。
+// 【码点来源】Font Awesome 6 Free-Solid-900.otf（Cheatsheet）。
+// FA6 Solid 全部在 BMP 内，`\uXXXX` 转义即可（无 5 位码点问题）。
 QtObject {
     // ── 顶栏 ──
-    readonly property string arrowBack: "\ue092"
-    readonly property string memory: "\ue3db"
-    readonly property string highQuality: "\ue30f"
-    readonly property string aspectRatio: "\ue0a3"
-    readonly property string speed: "\ue5e0"
-    readonly property string fullscreen: "\ue2cb"
-    readonly property string closeFullscreen: "\ue16b"
-    readonly property string tune: "\ue683"
-    readonly property string fitScreen: "\ue28c"
-    readonly property string zoomOutMap: "\ue6ff"
-    // 0xF07BF 超过 BMP，QML \u 转义不支持
-    readonly property string rotate: String.fromCharCode(0xF07BF)
+    readonly property string arrowBack: "\uf060"          // fa-arrow-left
+    readonly property string memory: "\uf2db"             // fa-microchip
+    readonly property string highQuality: "\uf5fd"        // fa-layer-group（多版本）
+    readonly property string aspectRatio: "\uf125"        // fa-crop（比例=原始）
+    readonly property string speed: "\uf625"              // fa-gauge-high
+    readonly property string fullscreen: "\uf065"         // fa-expand
+    readonly property string closeFullscreen: "\uf066"    // fa-compress
+    readonly property string tune: "\uf1de"               // fa-sliders（显示调节）
+    readonly property string fitScreen: "\uf0b2"          // fa-arrows-alt（自适应）
+    readonly property string zoomOutMap: "\uf31e"         // fa-maximize（铺满）
+    readonly property string cropSimple: "\uf565"         // fa-crop-simple（裁剪）
+    readonly property string rotate: "\uf3cd"             // fa-mobile-screen-button
 
     // ── 底栏 ──
-    readonly property string playCircle: "\ue4cd"
-    readonly property string pauseCircle: "\ue47e"
-    readonly property string skipPrevious: "\ue5be"
-    readonly property string skipNext: "\ue5bd"
-    readonly property string volumeUp: "\ue6c5"
-    readonly property string volumeDown: "\ue6c2"
-    readonly property string volumeOff: "\ue6c4"
-    readonly property string brightness: "\ue10a"
-    readonly property string danmakuOn: "\ue17e"
-    // 0xF04D2 超过 BMP，QML \u 转义不支持
-    readonly property string danmakuOff: String.fromCharCode(0xF04D2)
-    readonly property string subtitles: "\ue619"
-    readonly property string audioTrack: "\ue0b6"
-    readonly property string playlistPlay: "\ue4d4"
-    readonly property string openInFull: "\ue45b"
+    readonly property string playCircle: "\uf144"         // fa-circle-play
+    readonly property string pauseCircle: "\uf28b"        // fa-circle-pause
+    readonly property string skipPrevious: "\uf048"       // fa-backward-step
+    readonly property string skipNext: "\uf051"           // fa-forward-step
+    readonly property string volumeUp: "\uf028"           // fa-volume-high
+    readonly property string volumeDown: "\uf027"         // fa-volume-low
+    readonly property string volumeOff: "\uf6a9"          // fa-volume-xmark
+    readonly property string brightness: "\uf185"         // fa-sun
+    readonly property string danmakuOn: "\uf086"          // fa-comments
+    readonly property string danmakuOff: "\uf4b5"         // fa-comment-slash
+    readonly property string subtitles: "\uf20a"          // fa-closed-captioning
+    readonly property string audioTrack: "\uf001"         // fa-music
+    readonly property string playlistPlay: "\uf0cb"       // fa-list-ol（选集）
+    readonly property string openInFull: "\uf08e"         // fa-arrow-up-right-from-square
 
     // ── 面板 ──
-    readonly property string check: "\ue156"
-    readonly property string close: "\ue16a"
-    readonly property string chevronRight: "\ue15f"
-    readonly property string expandMore: "\ue246"
-    readonly property string radioButtonChecked: "\ue503"
-    readonly property string radioButtonUnchecked: "\ue504"
+    readonly property string check: "\uf00c"              // fa-check
+    readonly property string close: "\uf00d"              // fa-xmark
+    readonly property string chevronRight: "\uf054"       // fa-chevron-right
+    readonly property string expandMore: "\uf078"         // fa-chevron-down
+    readonly property string radioButtonChecked: "\uf192" // fa-circle-dot
+    readonly property string radioButtonUnchecked: "\uf111" // fa-circle
 
     // ── 其他 ──
-    readonly property string lock: "\ue3ae"
-    readonly property string lockOpen: "\ue3b0"
-    readonly property string people: "\ue486"
-    readonly property string replay10: "\ue524"
-    readonly property string forward10: "\ue2c5"
+    readonly property string lock: "\uf023"               // fa-lock
+    readonly property string lockOpen: "\uf3c1"           // fa-lock-open
+    readonly property string people: "\uf0c0"             // fa-user-group
+    readonly property string replay10: "\uf0e2"           // fa-rotate-left
+    readonly property string forward10: "\uf01e"          // fa-rotate-right
 }

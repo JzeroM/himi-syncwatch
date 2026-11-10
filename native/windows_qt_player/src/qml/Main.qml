@@ -2,8 +2,9 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import HimiPlayer
+import "evolveui" as EUI
 
-// 659：播放器主窗口。
+// 662：播放器主窗口。
 //
 // 【层次】
 //   底层：原生视频子窗口（mpv，由 C++ 创建，永远在 QML 之上）
@@ -15,6 +16,13 @@ import HimiPlayer
 //
 // 【659】inset 按 DPI 换算（QML 逻辑像素 → Win32 物理像素），
 // 数值取自 Theme，与 Flutter 完全一致。
+//
+// 【662】UI 组件库换 EvolveUI（third_party/evolveui，MIT）：
+//   - 本文件根级 `id: theme`（ETheme）与 `id: iconFont`（FontAwesome
+//     FontLoader）按 EvolveUI 的上下文链约定提供给所有子组件
+//     （EButton/ESlider/ECard/ELoader 内部直接用 `theme`/`iconFont`）
+//   - 功能不变：左缘锁钮（toggleLock 回环）、多版本面板（selectVersion）、
+//     解码面板（setDecodeMode）、显示调节（adjustDisplay/resetDisplay）
 ApplicationWindow {
     id: root
     width: 1280
@@ -26,14 +34,29 @@ ApplicationWindow {
     color: "#000000"
     flags: Qt.Window
 
-    // Material Icons 字体（与 Flutter/安卓/鸿蒙同字形）
+    // FontAwesome 图标字体（EvolveUI 生态字形；Flutter/安卓/鸿蒙仍是
+    // Material Icons，两侧语义一一对应）
     FontLoader {
-        id: materialIcons
-        source: "qrc:/qt/qml/HimiPlayer/fonts/MaterialIcons-Regular.otf"
+        id: iconFont
+        source: "qrc:/new/prefix1/fonts/fontawesome-free-6.7.2-desktop/otfs/Font Awesome 6 Free-Solid-900.otf"
+    }
+
+    // EvolveUI 主题（暗色 + 沿用 #6366F1 强调色）
+    EUI.ETheme {
+        id: theme
+        isDark: true
+        focusColor: "#6366F1"
     }
 
     // 控件自动隐藏（播放中 5 秒无操作，与 Flutter `autoHideMs` 一致）
     property bool controlsVisible: true
+
+    /// 当前展开的菜单（"decode"/"subtitleStyle"），驱动顶栏玻璃方块高亮
+    property string openMenu: ""
+    /// 列表面板（Panel）是否展开
+    property bool panelOpen: false
+    /// 显示调节面板是否展开
+    property bool adjustOpen: false
 
     Timer {
         id: hideTimer
@@ -45,6 +68,13 @@ ApplicationWindow {
     function showControls() {
         controlsVisible = true
         hideTimer.restart()
+    }
+
+    /// 关闭所有面板（开新面板/锁定时调用）
+    function closePanels() {
+        panelOpen = false
+        adjustOpen = false
+        openMenu = ""
     }
 
     // 窗口内任意鼠标移动都重新计时
@@ -61,16 +91,16 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        showControls: root.controlsVisible
+        showControls: root.controlsVisible && !playerState.locked
+        openMenu: root.openMenu
         onBackClicked: {
             pipeServer.sendCommand({"type": "requestExit"})
             root.close()
         }
         onKernelClicked: pipeServer.sendCommand({"type": "switchEngine"})
-        onDecodeClicked: pipeServer.sendCommand({"type": "setDecodeMode"})
+        onDecodeClicked: root.openDecodePanel()
+        onSubtitleStyleClicked: root.openAdjustPanel()
         onVideoFitClicked: pipeServer.sendCommand({"type": "cycleVideoFit"})
-        onSpeedClicked: root.openSpeedPanel()
-        onFullscreenClicked: root.toggleFullscreen()
     }
 
     // ── 底栏 ──
@@ -79,7 +109,7 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        showControls: root.controlsVisible
+        showControls: root.controlsVisible && !playerState.locked
 
         onPlayPauseClicked: pipeServer.sendCommand({"type": "togglePlay"})
         onPrevEpisodeClicked: pipeServer.sendCommand({
@@ -91,6 +121,7 @@ ApplicationWindow {
             "index": playerState.currentEpisodeIndex + 1
         })
         onDanmakuClicked: pipeServer.sendCommand({"type": "toggleDanmaku"})
+        onVersionClicked: root.openVersionPanel()
         onSubtitleClicked: root.openSubtitlePanel()
         onAudioClicked: root.openAudioPanel()
         onEpisodeClicked: root.openEpisodePanel()
@@ -108,13 +139,39 @@ ApplicationWindow {
         })
     }
 
+    // ── 左缘锁钮（662，照 Flutter PlayerLockButton）──
+    //
+    // 圆形半黑底 + lock_open/lock，画面左缘垂直居中。
+    // 显隐跟随控件栏；锁定态顶栏/底栏被 locked 门禁，点视频任意处
+    // 仅浮现锁钮供解锁（与 Flutter「锁定态点屏」同语义）。
+    EUI.EButton {
+        id: lockButton
+        visible: root.controlsVisible
+        anchors.left: parent.left
+        anchors.leftMargin: 16
+        anchors.verticalCenter: parent.verticalCenter
+        width: 38
+        height: 38
+        text: ""
+        size: "m"
+        iconCharacter: playerState.locked ? Icons.lock : Icons.lockOpen
+        iconFontFamily: iconFont.name
+        iconColor: theme.textColor
+        radius: width / 2
+        containerColor: Qt.rgba(0, 0, 0, 0.45)
+        hoverColor: Qt.rgba(0, 0, 0, 0.65)
+        onClicked: {
+            pipeServer.sendCommand({"type": "toggleLock"})
+            root.closePanels()
+        }
+    }
+
     // ── 加载指示器 ──
-    BusyIndicator {
+    EUI.ELoader {
         anchors.centerIn: parent
         running: playerState.showLoading
         visible: playerState.showLoading
-        width: 56
-        height: 56
+        size: 56
     }
 
     // ── 等待主程序连接 ──
@@ -123,16 +180,15 @@ ApplicationWindow {
         spacing: 12
         visible: !pipeServer.hasClient
 
-        BusyIndicator {
+        EUI.ELoader {
             anchors.horizontalCenter: parent.horizontalCenter
             running: true
-            width: 48
-            height: 48
+            size: 48
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "等待主程序连接…"
-            color: Theme.white54
+            color: theme.getBorderColor(true)
             font.pixelSize: Theme.panelOptionSize
         }
     }
@@ -145,7 +201,7 @@ ApplicationWindow {
         anchors.bottomMargin: 8
     }
 
-    // ── 面板（右侧浮层，与 Flutter 位置一致）──
+    // ── 列表面板（右侧浮层，与 Flutter 位置一致）──
     Panel {
         id: panel
         anchors.right: parent.right
@@ -154,11 +210,36 @@ ApplicationWindow {
         anchors.rightMargin: Theme.panelRight
         anchors.topMargin: Theme.panelTopOffset
         anchors.bottomMargin: 8
-        onClosed: panel.visible = false
+        visible: root.panelOpen && !playerState.locked
+        onClosed: {
+            root.panelOpen = false
+            root.openMenu = ""
+        }
         onItemClicked: (id) => {
             root.handlePanelItem(id)
-            panel.visible = false
+            root.panelOpen = false
+            root.openMenu = ""
         }
+    }
+
+    // ── 显示调节面板（662，顶栏 tune 入口）──
+    DisplayAdjustPanel {
+        id: adjustPanel
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.rightMargin: Theme.panelRight
+        anchors.topMargin: Theme.panelTopOffset
+        visible: root.adjustOpen && !playerState.locked
+        onClosed: {
+            root.adjustOpen = false
+            root.openMenu = ""
+        }
+        onAdjust: (key, value) => pipeServer.sendCommand({
+            "type": "adjustDisplay", "key": key, "value": value
+        })
+        onReset: (scope) => pipeServer.sendCommand({
+            "type": "resetDisplay", "scope": scope
+        })
     }
 
     // ── 面板内容 ──
@@ -175,7 +256,9 @@ ApplicationWindow {
         }
         panel.title = "选集"
         panel.items = list
-        panel.visible = true
+        adjustOpen = false
+        openMenu = ""
+        panelOpen = true
     }
 
     function openAudioPanel() {
@@ -192,7 +275,9 @@ ApplicationWindow {
         }
         panel.title = "音轨"
         panel.items = list
-        panel.visible = true
+        adjustOpen = false
+        openMenu = ""
+        panelOpen = true
     }
 
     function openSubtitlePanel() {
@@ -209,7 +294,9 @@ ApplicationWindow {
         }
         panel.title = "字幕"
         panel.items = list
-        panel.visible = true
+        adjustOpen = false
+        openMenu = ""
+        panelOpen = true
     }
 
     function openSpeedPanel() {
@@ -218,14 +305,66 @@ ApplicationWindow {
         for (var i = 0; i < speeds.length; i++) {
             list.push({
                 id: speeds[i],
-                label: speeds[i].toFixed(2) + "x",
+                // 与 Flutter `SpeedMenuPanel.formatSpeedLabel` 同格式
+                label: formatSpeedLabel(speeds[i]),
                 sub: "",
                 selected: Math.abs(speeds[i] - playerState.speed) < 0.01
             })
         }
         panel.title = "播放速度"
         panel.items = list
-        panel.visible = true
+        adjustOpen = false
+        openMenu = ""
+        panelOpen = true
+    }
+
+    /// 倍速标签（与 Flutter `formatSpeedLabel` = '${speed}x' 一致）
+    function formatSpeedLabel(v) {
+        var s = v.toString()
+        if (s.indexOf(".") < 0) s += ".0"
+        return s + "x"
+    }
+
+    // ── 662：多版本面板（照 Flutter VersionMenuPanel）──
+    function openVersionPanel() {
+        var list = []
+        for (var i = 0; i < playerState.versions.length; i++) {
+            var v = playerState.versions[i]
+            list.push({
+                id: v.index,
+                label: v.title !== "" ? v.title : "版本 " + (i + 1),
+                sub: "",
+                selected: v.index === playerState.currentVersionIndex
+            })
+        }
+        panel.title = "版本"
+        panel.items = list
+        adjustOpen = false
+        openMenu = ""
+        panelOpen = true
+    }
+
+    // ── 662：解码方式面板（照 Flutter DecodeModePanel 三档）──
+    function openDecodePanel() {
+        panel.title = "解码方式"
+        panel.items = [
+            { id: "auto", label: "智能", sub: "优先硬解，失败回退软解",
+              selected: playerState.decodeMode === "auto" },
+            { id: "hw", label: "硬解", sub: "纯硬解，失败不回退",
+              selected: playerState.decodeMode === "hw" },
+            { id: "sw", label: "软解", sub: "纯软解，CPU 占用高",
+              selected: playerState.decodeMode === "sw" }
+        ]
+        adjustOpen = false
+        panelOpen = true
+        openMenu = "decode"
+    }
+
+    // ── 662：显示调节面板 ──
+    function openAdjustPanel() {
+        panelOpen = false
+        adjustOpen = true
+        openMenu = "subtitleStyle"
     }
 
     function handlePanelItem(id) {
@@ -237,6 +376,10 @@ ApplicationWindow {
             pipeServer.sendCommand({"type": "selectSubtitle", "id": id})
         } else if (panel.title === "播放速度") {
             pipeServer.sendCommand({"type": "setSpeed", "speed": id})
+        } else if (panel.title === "版本") {
+            pipeServer.sendCommand({"type": "selectVersion", "index": id})
+        } else if (panel.title === "解码方式") {
+            pipeServer.sendCommand({"type": "setDecodeMode", "mode": id})
         }
     }
 
@@ -256,6 +399,7 @@ ApplicationWindow {
         sequence: "Escape"
         onActivated: {
             if (root.visibility === Window.FullScreen) root.showNormal()
+            else if (root.panelOpen || root.adjustOpen) root.closePanels()
             else root.close()
         }
     }

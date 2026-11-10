@@ -175,26 +175,33 @@ void main() {
   });
 
   group('④ 控件：复刻 Windows Flutter 播放器', () {
-    test('顶栏含返回/标题/网速/内核/解码/比例/倍速/全屏', () {
-      // 659：图标改为走 Icons 单例（与 Flutter NativePlayerIcons 同码点），
-      // 不再在 QML 里写死 \uXXXX。
+    test('顶栏含返回/标题/网速/内核胶囊/显示调节/解码/比例', () {
+      // 659：图标改为走 Icons 单例（与 Flutter NativePlayerIcons 同码点）。
+      // 662：照 Flutter `player_top_bar.dart` 修正——
+      //   解码图标是 memory（原 highQuality 是「HD」错字形）；
+      //   新增 tune（显示调节）；倍速/全屏**不在顶栏**（桌面倍速在底栏、
+      //   全屏只在底栏，用户明确）。
       for (final icon in [
         'Icons.arrowBack',
         'Icons.memory',
-        'Icons.highQuality',
-        'Icons.aspectRatio',
-        'Icons.speed',
-        'Icons.fullscreen',
+        'Icons.tune',
       ]) {
         expect(topBar, contains(icon), reason: '顶栏缺 $icon');
       }
       expect(topBar, contains('playerState.title'));
       expect(topBar, contains('playerState.networkSpeedText'));
+      // 内核胶囊是纯文字（Flutter Text(kernelLabel)）
+      expect(topBar, contains('playerState.engineLabel'));
+      // 顶栏不得有倍速/全屏/解码旧图标（全屏按钮只在底栏；比例映射
+      // 里的 `return Icons.fullscreen` 是 cover 模式图标，不算按钮）
+      expect(topBar, isNot(contains('Icons.speed')));
+      expect(topBar, isNot(contains('icon: Icons.fullscreen')));
+      expect(topBar, isNot(contains('Icons.highQuality')));
     });
 
     test('底栏含进度条/时间/播放暂停/音量/字幕/音轨/选集/倍速/全屏', () {
-      // 660：进度条改为 GlassSlider（照 Flutter 观感），不再是 SeekBar
-      expect(bottomBar, contains('GlassSlider'));
+      // 662：滑杆为 PlayerSlider（EvolveUI ESlider 封装）
+      expect(bottomBar, contains('PlayerSlider'));
       expect(bottomBar, contains('formatTime'));
       expect(bottomBar, contains('playerState.paused'));
       expect(bottomBar, contains('playerState.volume'));
@@ -213,10 +220,19 @@ void main() {
       expect(mainQml, contains('openSpeedPanel'));
     });
 
-    test('Material Icons 字体已打包（与 Flutter 同字形）', () {
-      expect(cmake, contains('MaterialIcons-Regular.otf'));
-      expect(File('$dir/fonts/MaterialIcons-Regular.otf').existsSync(), isTrue);
+    test('图标字体为 FontAwesome（EvolveUI 生态；662 换字体）', () {
+      // 用户决策：Qt 播放器图标换 FontAwesome（与 EvolveUI 组件同字形）。
+      // Flutter/安卓/鸿蒙仍是 Material Icons，两侧语义一一对应。
+      expect(cmake, contains('Font Awesome 6 Free-Solid-900.otf'));
+      expect(
+        File('$dir/third_party/evolveui/assets/fonts/'
+                'fontawesome-free-6.7.2-desktop/otfs/'
+                'Font Awesome 6 Free-Solid-900.otf')
+            .existsSync(),
+        isTrue,
+      );
       expect(mainQml, contains('FontLoader'));
+      expect(mainQml, contains('id: iconFont'));
     });
 
     test('控件 5 秒无操作自动隐藏（播放中）', () {
@@ -300,8 +316,17 @@ void main() {
           .map((m) => m.group(1)!)
           .toSet();
       final used = <String>{};
-      for (final src in [mainQml, topBar, bottomBar]) {
-        for (final m in RegExp(r'playerState\.([a-zA-Z]+)').allMatches(src)) {
+      // 662：扫描全部 QML（新增的 DisplayAdjustPanel 等也要核对）
+      final qmlFiles = Directory('$dir/src/qml')
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.qml'))
+          .toList();
+      expect(qmlFiles.length, greaterThanOrEqualTo(10),
+          reason: 'src/qml 的 QML 文件数不对，路径变了?');
+      for (final f in qmlFiles) {
+        for (final m
+            in RegExp(r'playerState\.([a-zA-Z]+)').allMatches(f.readAsStringSync())) {
           used.add(m.group(1)!);
         }
       }
@@ -380,11 +405,17 @@ void main() {
         'Main',
         'TopBar',
         'BottomBar',
-        'SeekBar',
+        'PlayerSlider',
         'ControlButton',
         'Panel',
       ]) {
         expect(cmake, contains(name), reason: '别名循环里缺 $name');
+      }
+      // EvolveUI vendor 组件按 evolveui/ 子目录别名注册
+      // （CMake 用参数化模板，注意 raw 字符串防插值/转义）
+      expect(cmake, contains(r'QT_RESOURCE_ALIAS "evolveui/${_qml}.qml"'));
+      for (final name in ['ETheme', 'EButton', 'ESlider', 'ECard', 'ELoader']) {
+        expect(cmake, contains(name), reason: 'EvolveUI 组件缺 $name');
       }
     });
 
@@ -495,162 +526,88 @@ void main() {
     });
   });
 
-  group('⑬ UI 与 Flutter 一致（逐项对齐 NativePlayerTheme）', () {
-    final themeDart = File(
-      'lib/services/player/native/native_player_theme.dart',
-    ).readAsStringSync();
-    final iconsDart = File(
-      'lib/services/player/native/native_player_icons.dart',
-    ).readAsStringSync();
-    final themeQml = File('$dir/src/qml/Theme.qml').readAsStringSync();
-    final iconsQml = File('$dir/src/qml/Icons.qml').readAsStringSync();
+  group('⑬ UI 功能一致（布局结构 + 命令链路；样式走 EvolveUI）', () {
+    // 662 起样式**不再**追 Flutter 像素一致（用户决策：组件库换
+    // EvolveUI，「布局差不多，功能一致」），因此本组只锁**功能**：
+    // 按钮齐全、右组顺序、命令链路、面板场景。
+    final topBar = read('$dir/src/qml/TopBar.qml');
+    final bottomBar = read('$dir/src/qml/BottomBar.qml');
+    final mainQmlSrc = read('$dir/src/qml/Main.qml');
 
-    /// 从 Dart 源码取 `static const double xxx = N;`
-    String? dartDouble(String name) {
-      final m = RegExp('static const double $name = ([0-9.]+);')
-          .firstMatch(themeDart);
-      return m?.group(1);
-    }
-
-    /// 从 QML 源码取 `readonly property real xxx: N`
-    String? qmlReal(String name) {
-      final m = RegExp('readonly property real $name: ([0-9.]+)')
-          .firstMatch(themeQml);
-      return m?.group(1);
-    }
-
-    test('关键尺寸逐值一致（顶栏/底栏/图标/进度条）', () {
-      const pairs = <String, String>{
-        'topBarHeight': 'topBarHeight',
-        'topIconSize': 'topIconSize',
-        'titleSize': 'titleSize',
-        'captionSize': 'captionSize',
-        'barPadH': 'barPadH',
-        'barPadTop': 'barPadTop',
-        'barPadBottom': 'barPadBottom',
-        'seekTrackHeight': 'seekTrackHeight',
-        'seekThumbRadius': 'seekThumbRadius',
-        'transportPlaySize': 'transportPlaySize',
-        'transportSideSize': 'transportSideSize',
-        'controlIconSize': 'controlIconSize',
-        'controlGap': 'controlGap',
-      };
-      pairs.forEach((dartName, qmlName) {
-        final dartVal = dartDouble(dartName);
-        final qmlVal = qmlReal(qmlName);
-        expect(dartVal, isNotNull, reason: 'Dart 里找不到 $dartName');
-        expect(qmlVal, isNotNull, reason: 'QML 里找不到 $qmlName');
-        expect(qmlVal, dartVal,
-            reason: '$qmlName 与 Flutter 的 $dartName 不一致'
-                '（QML=$qmlVal, Dart=$dartVal）');
-      });
-    });
-
-    test('面板尺寸逐值一致', () {
-      const pairs = <String, String>{
-        'panelMinWidth': 'panelMinWidth',
-        'panelMaxWidth': 'panelMaxWidth',
-        'panelRight': 'panelRight',
-        'panelTopOffset': 'panelTopOffset',
-        'panelPadH': 'panelPadH',
-        'panelPadV': 'panelPadV',
-        'panelTitleSize': 'panelTitleSize',
-        'panelOptionSize': 'panelOptionSize',
-      };
-      pairs.forEach((dartName, qmlName) {
-        final dartVal = dartDouble(dartName);
-        final qmlVal = qmlReal(qmlName);
-        expect(dartVal, isNotNull, reason: 'Dart 里找不到 $dartName');
-        expect(qmlVal, dartVal,
-            reason: '$qmlName 与 Flutter 的 $dartName 不一致');
-      });
-    });
-
-    test('强调色一致（#6366F1）', () {
-      expect(themeDart, contains('accent = Color(0xFF6366F1)'));
-      expect(themeQml, contains('accent: "#6366F1"'));
-    });
-
-    test('图标码点与 NativePlayerIcons 一致（关键项）', () {
-      // 【656 的教训】首版我凭记忆写码点（如 \ue5c4 当返回），
-      // 那是 Flutter 的 Icons.arrow_back，与项目统一使用的
-      // NativePlayerIcons.arrowBack = 0xE092 不是同一个字形。
-      const pairs = <String, String>{
-        'arrowBack': 'E092',
-        'memory': 'E3DB',
-        'highQuality': 'E30F',
-        'aspectRatio': 'E0A3',
-        'speed': 'E5E0',
-        'fullscreen': 'E2CB',
-        'playCircle': 'E4CD',
-        'pauseCircle': 'E47E',
-        'skipNext': 'E5BD',
-        'subtitles': 'E619',
-        'audioTrack': 'E0B6',
-        'playlistPlay': 'E4D4',
-        'danmakuOn': 'E17E',
-        'volumeUp': 'E6C5',
-        'volumeOff': 'E6C4',
-        'check': 'E156',
-        'close': 'E16A',
-      };
-      pairs.forEach((name, hex) {
-        expect(iconsDart, contains(RegExp('$name = 0x$hex',
-                caseSensitive: false)),
-            reason: 'Dart 里 $name 不是 0x$hex');
-        // QML 里是小写 \ue092 形式
-        final lower = hex.toLowerCase();
-        expect(iconsQml, contains('\\u$lower'),
-            reason: 'QML 里 $name 应为 \\u$lower');
-      });
-    });
-
-    test('渐变实端一致（black@0.85）', () {
-      // Flutter: Colors.black.withValues(alpha: 0.85)
-      // 0.85 × 255 ≈ 217 = 0xD9
-      expect(themeQml, contains('barGradientSolid: "#D9000000"'));
-      expect(themeQml, contains('barBottomSolid: "#D9000000"'));
-      final screenSrc =
-          File('lib/screens/player/player_screen.dart').readAsStringSync();
-      expect(screenSrc, contains('Colors.black.withValues(alpha: 0.85)'));
-    });
-
-    test('角标分档一致（15/19/24）', () {
-      expect(themeDart, contains('badgeMinSize = 15'));
-      expect(themeDart, contains('badgeWideSize = 19'));
-      expect(themeDart, contains('badgeXlSize = 24'));
-      expect(themeQml, contains('badgeMinSize: 15'));
-      expect(themeQml, contains('badgeWideSize: 19'));
-      expect(themeQml, contains('badgeXlSize: 24'));
-    });
-
-    test('自动隐藏时长一致（5000ms）', () {
-      expect(themeDart, contains('autoHideMs = 5000'));
-      expect(themeQml, contains('autoHideMs: 5000'));
-    });
-
-    test('QML 不再硬编码颜色/尺寸（必须走 Theme）', () {
-      for (final name in [
-        'TopBar.qml',
-        'BottomBar.qml',
-        'SeekBar.qml',
-        'ControlButton.qml',
-        'Panel.qml',
+    test('顶栏按钮齐全：返回/标题/网速/内核胶囊/显示调节/解码/比例', () {
+      for (final token in [
+        'Icons.arrowBack',
+        'playerState.title',
+        'playerState.networkSpeedText',
+        'playerState.engineLabel',
+        'Icons.tune',
+        'Icons.memory',
+        'playerState.videoFit',
       ]) {
-        // 只看非注释行（注释里可以写「对应 Flutter 的 #6366F1」这类说明）
-        final src = File('$dir/src/qml/$name')
-            .readAsStringSync()
-            .split('\n')
-            .where((l) => !l.trimLeft().startsWith('//'))
-            .join('\n');
-        // 允许 #000000（窗口底色）与 Qt.rgba(1,1,1,x)（hover 微调）
-        final hardcoded = RegExp(r'#[0-9A-Fa-f]{6,8}').allMatches(src)
-            .map((m) => m.group(0)!)
-            .where((c) => c.toUpperCase() != '#000000')
-            .toList();
-        expect(hardcoded, isEmpty,
-            reason: '$name 里还有硬编码颜色 $hardcoded，应改用 Theme.xxx');
+        expect(topBar, contains(token), reason: '顶栏缺 $token');
       }
+      // 倍速/全屏不在顶栏（桌面倍速在底栏；全屏只在底栏，用户明确）
+      expect(topBar, isNot(contains('Icons.speed')));
+      expect(topBar, isNot(contains('icon: Icons.fullscreen')));
+    });
+
+    test('底栏右组顺序：弹幕→多版本→字幕→音轨→选集→倍速→全屏', () {
+      final order = [
+        'Icons.danmakuOn',
+        'Icons.highQuality',
+        'Icons.subtitles',
+        'Icons.audioTrack',
+        'Icons.playlistPlay',
+        'Icons.speed',
+        'icon: Icons.fullscreen',
+      ];
+      var cursor = -1;
+      for (final token in order) {
+        final idx = bottomBar.indexOf(token);
+        expect(idx, greaterThan(cursor),
+            reason: '右组顺序不对：$token 应在前一项之后');
+        cursor = idx;
+      }
+    });
+
+    test('多版本按钮：仅非房间且多版本显示，角标=版本数', () {
+      expect(bottomBar, contains('!playerState.isRoom && playerState.versionCount > 1'));
+      expect(bottomBar, contains('playerState.versionCount.toString()'));
+      expect(bottomBar, contains('versionClicked'));
+      expect(mainQmlSrc, contains('openVersionPanel'));
+    });
+
+    test('倍速是图标 + 文字标签（非角标）', () {
+      expect(bottomBar, contains('function formatSpeed'));
+      final speedBlock = bottomBar.split('Icons.speed')[1];
+      expect(speedBlock.split('ControlButton').first, isNot(contains('badge:')),
+          reason: '倍速应是文字标签，不是图标角标');
+    });
+
+    test('视频区：左缘锁钮 + 左下角 Logo', () {
+      expect(mainQmlSrc, contains('Icons.lockOpen'));
+      expect(mainQmlSrc, contains('"type": "toggleLock"'));
+      expect(mainQmlSrc, contains('!playerState.locked'));
+      expect(mainQmlSrc, contains('EpisodeLogo'));
+    });
+
+    test('面板场景齐全（选集/音轨/字幕/倍速/版本/解码/显示调节）', () {
+      for (final fn in [
+        'openEpisodePanel',
+        'openAudioPanel',
+        'openSubtitlePanel',
+        'openSpeedPanel',
+        'openVersionPanel',
+        'openDecodePanel',
+        'openAdjustPanel',
+      ]) {
+        expect(mainQmlSrc, contains(fn), reason: '缺面板入口 $fn');
+      }
+    });
+
+    test('自动隐藏 5 秒（Theme.autoHideMs）', () {
+      expect(mainQmlSrc, contains('interval: Theme.autoHideMs'));
+      expect(mainQmlSrc, contains('controlsVisible'));
     });
   });
 
@@ -662,7 +619,7 @@ void main() {
     final stateCpp = read('$dir/src/player_state.cpp');
 
     test('底栏是两行（进度条 + 控制条）', () {
-      expect(bottomBar, contains('GlassSlider'));
+      expect(bottomBar, contains('PlayerSlider'));
       expect(bottomBar, contains('skipPrevious'));
       expect(bottomBar, contains('skipNext'));
       expect(bottomBar, contains('Icons.brightness'));
@@ -682,11 +639,15 @@ void main() {
       expect(themeQml, contains('fpSeekThumbRadius: 6'));
     });
 
-    test('GlassSlider 多层绘制齐全', () {
-      final slider = read('$dir/src/qml/GlassSlider.qml');
-      expect(slider, contains('shadowBlur'));
-      expect(slider, contains('createLinearGradient'));
-      expect(slider, contains('arcTo'));
+    test('PlayerSlider：EvolveUI ESlider 封装（点击跳转 + 绑定保护）', () {
+      final slider = read('$dir/src/qml/PlayerSlider.qml');
+      expect(slider, contains('import "evolveui" as EUI'));
+      expect(slider, contains('EUI.ESlider'));
+      // ESlider 只能拖手柄 → 必须补轨道点击
+      expect(slider, contains('MouseArea'));
+      // ESlider 拖动赋值会打断外部绑定 → 必须用 Binding 保护
+      expect(slider, contains('Binding {'));
+      expect(slider, contains('when: !slider.isPressed'));
     });
 
     test('Main.qml 有 Logo 组件', () {
@@ -699,10 +660,26 @@ void main() {
       expect(stateCpp, contains('"brightness"'));
     });
 
-    test('5 位码点用 fromCharCode', () {
+    test('图标码点全为 FontAwesome（BMP 内，无 5 位码点问题）', () {
+      // 662 换 FontAwesome 后所有码点在 BMP 内，\uXXXX 转义即可；
+      // 不得再出现 String.fromCharCode/fromCodePoint 拼接（660 的
+      // 5 位码点花屏就是那条路线的回归）。
       final iconsQml = read('$dir/src/qml/Icons.qml');
-      expect(iconsQml, contains('String.fromCharCode(0xF07BF)'));
-      expect(iconsQml, contains('String.fromCharCode(0xF04D2)'));
+      final codeLines = iconsQml
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(codeLines, isNot(contains('String.fromCharCode')));
+      expect(codeLines, isNot(contains('String.fromCodePoint')));
+      // 码点必须落在 Font Awesome Private Use Area（U+F000~U+F8FF）
+      final escapes =
+          RegExp(r'\\u([0-9a-fA-F]{4})').allMatches(codeLines).toList();
+      expect(escapes.length, greaterThan(30), reason: '图标码点数量不对');
+      for (final m in escapes) {
+        final cp = int.parse(m.group(1)!, radix: 16);
+        expect(cp, inInclusiveRange(0xF000, 0xF8FF),
+            reason: '码点 U+${m.group(1)} 不在 FontAwesome PUA 区');
+      }
     });
 
     test('NativePlayerState 有 brightness 字段', () {
@@ -721,6 +698,231 @@ void main() {
       expect(adapterSrc, contains('onBrightnessChanged'));
       expect(adapterSrc, contains("'setBrightness'"));
       expect(screenSrc, contains('adapter.onBrightnessChanged'));
+    });
+  });
+
+  group('⑮ 662：复刻 Flutter 播放器 UI（多版本/锁钮/显示调节/命令链路）', () {
+    final topBar = read('$dir/src/qml/TopBar.qml');
+    final bottomBar = read('$dir/src/qml/BottomBar.qml');
+    final mainQml = read('$dir/src/qml/Main.qml');
+    final stateH = read('$dir/src/player_state.h');
+    final adapterSrc =
+        File('lib/services/player/qt_player_adapter.dart').readAsStringSync();
+    final screenSrc =
+        File('lib/screens/player/player_screen.dart').readAsStringSync();
+
+    test('滑杆统一走 PlayerSlider（旧 GlassSlider 已移除）', () {
+      // 662：GlassSlider.qml 删除，滑杆职责并入 PlayerSlider
+      // （EvolveUI ESlider 封装）：点击跳转、绑定保护、连续 moved/
+      // 松手 finished 信号。
+      expect(File('$dir/src/qml/GlassSlider.qml').existsSync(), isFalse);
+      final slider = read('$dir/src/qml/PlayerSlider.qml');
+      expect(slider, contains('signal moved(real v)'));
+      expect(slider, contains('signal finished(real v)'));
+    });
+
+    test('顶栏画面比例图标随模式切换（fitScreen/cropSimple/zoomOutMap/aspectRatio）', () {
+      for (final icon in [
+        'Icons.fitScreen',
+        'Icons.cropSimple',
+        'Icons.zoomOutMap',
+        'Icons.aspectRatio',
+      ]) {
+        expect(topBar, contains(icon), reason: '比例映射缺 $icon');
+      }
+    });
+
+    test('顶栏按钮走 EvolveUI（ControlButton/EButton 封装）', () {
+      // 样式组件库换 EvolveUI（用户决策），芯片/图标钮不再自制玻璃渐变
+      expect(topBar, contains('ControlButton'));
+      expect(topBar, contains('EUI.EButton'));
+      expect(topBar, contains('import "evolveui" as EUI'));
+    });
+
+    test('底栏多版本按钮：highQuality + 角标版本数 + 仅非房间多版本', () {
+      expect(bottomBar, contains('Icons.highQuality'));
+      expect(bottomBar, contains('playerState.versionCount'));
+      expect(bottomBar, contains('!playerState.isRoom && playerState.versionCount > 1'));
+      expect(bottomBar, contains('versionClicked'));
+      expect(mainQml, contains('openVersionPanel'));
+    });
+
+    test('底栏倍速是图标 + 文字标签（非角标）', () {
+      expect(bottomBar, contains('function formatSpeed'));
+      expect(bottomBar, contains('Icons.speed'));
+      // 倍速不再用角标显示数值
+      final speedBlock = bottomBar.split('Icons.speed')[1];
+      expect(speedBlock.split('ControlButton').first,
+          isNot(contains('badge:')),
+          reason: '倍速应是文字标签，不是图标角标');
+    });
+
+    test('全屏按钮只在底栏（用户明确）', () {
+      expect(bottomBar, contains('icon: Icons.fullscreen'));
+      expect(topBar, isNot(contains('icon: Icons.fullscreen')));
+    });
+
+    test('左缘锁钮：圆形 black45 + lock_open/lock + toggleLock 回环', () {
+      expect(mainQml, contains('Icons.lockOpen'));
+      expect(mainQml, contains('Icons.lock'));
+      expect(mainQml, contains('Qt.rgba(0, 0, 0, 0.45)'));
+      expect(mainQml, contains('"type": "toggleLock"'));
+      // 锁定态顶栏/底栏被 locked 门禁
+      expect(mainQml, contains('!playerState.locked'));
+    });
+
+    test('版本面板发 selectVersion（Flutter SelectVersion 已有处理）', () {
+      expect(mainQml, contains('"type": "selectVersion"'));
+      final cmd = File(
+        'lib/services/player/native/native_player_command.dart',
+      ).readAsStringSync();
+      expect(cmd, contains("case 'selectVersion'"));
+    });
+
+    test('解码面板三档（智能/硬解/软解）发 setDecodeMode 带 mode', () {
+      expect(mainQml, contains('openDecodePanel'));
+      expect(mainQml, contains('"type": "setDecodeMode", "mode": id'));
+      expect(mainQml, contains('优先硬解，失败回退软解'));
+    });
+
+    test('解码档位转发 mpv hwdec（此前空实现切了不生效）', () {
+      expect(adapterSrc, contains('set videoDecoders'));
+      expect(adapterSrc, contains('resolveWindowsHwdec'));
+      expect(adapterSrc, contains("'name': 'hwdec'"));
+      expect(adapterSrc, contains("'type': 'setProperty'"));
+    });
+
+    test('显示调节面板：6 滑杆 + 2 恢复默认（adjustDisplay/resetDisplay）', () {
+      final adjust = read('$dir/src/qml/DisplayAdjustPanel.qml');
+      for (final key in [
+        'subtitleScale',
+        'subtitleMarginY',
+        'subtitleDelayMs',
+        'danmakuSpeed',
+        'danmakuFontSize',
+        'danmakuOpacity',
+      ]) {
+        expect(adjust, contains('"$key"'), reason: '显示调节缺 $key');
+      }
+      expect(adjust, contains('"subtitle"'));
+      expect(adjust, contains('"danmaku"'));
+      expect(mainQml, contains('"type": "adjustDisplay"'));
+      expect(mainQml, contains('"type": "resetDisplay"'));
+      // 六行滑杆全走 PlayerSlider（ESlider 封装，自带标签+数值列）
+      expect('PlayerSlider'.allMatches(adjust).length, greaterThanOrEqualTo(6));
+    });
+
+    test('PlayerState 声明多版本/显示调节/锁定属性', () {
+      for (final prop in [
+        'Q_PROPERTY(QVariantList versions',
+        'Q_PROPERTY(int versionCount',
+        'Q_PROPERTY(int currentVersionIndex',
+        'Q_PROPERTY(double subtitleScale',
+        'Q_PROPERTY(int subtitleMarginY',
+        'Q_PROPERTY(double subtitleDelayMs',
+        'Q_PROPERTY(double danmakuSpeed',
+        'Q_PROPERTY(double danmakuFontSize',
+        'Q_PROPERTY(double danmakuOpacity',
+        'Q_PROPERTY(bool locked',
+      ]) {
+        expect(stateH, contains(prop), reason: 'PlayerState 缺 $prop');
+      }
+      final stateCpp = read('$dir/src/player_state.cpp');
+      expect(stateCpp, contains('"versions"'));
+      expect(stateCpp, contains('"subtitleMarginY"'));
+      expect(stateCpp, contains('"locked"'));
+    });
+
+    test('命令链路修复：Qt payload 命令转发 _handleNativeUiCommand', () {
+      // 662 断点回归：此前命令只发 AdapterMediaEvent 无人消费，
+      // 选集/字幕/音轨/多版本面板全是死按钮。
+      expect(adapterSrc, contains('onNativeUiCommand'));
+      expect(adapterSrc, contains('NativePlayerCommand.fromMap'));
+      expect(screenSrc, contains('adapter.onNativeUiCommand = _handleNativeUiCommand'));
+    });
+
+    test('CMake 注册 DisplayAdjustPanel.qml', () {
+      expect(cmake, contains('DisplayAdjustPanel'));
+    });
+  });
+  group('⑯ EvolveUI 集成（vendor 零补丁 + 上下文注入 + 资源对齐）', () {
+    final mainQml = read('$dir/src/qml/Main.qml');
+    final evolveDir = Directory('$dir/src/qml/evolveui');
+
+    test('vendor 组件齐全（ETheme/EButton/ESlider/ECard/ELoader）', () {
+      for (final name in [
+        'ETheme',
+        'EButton',
+        'ESlider',
+        'ECard',
+        'ELoader',
+      ]) {
+        expect(File('${evolveDir.path}/$name.qml').existsSync(), isTrue,
+            reason: '缺 vendor 组件 $name');
+      }
+    });
+
+    test('LICENSE / NOTICE 齐全（MIT 合规）', () {
+      expect(File('$dir/third_party/evolveui/LICENSE').existsSync(), isTrue);
+      final notice = read('$dir/third_party/evolveui/NOTICE.md');
+      expect(notice, contains('EvolveUI'));
+      expect(notice, contains('MIT'));
+      expect(notice, contains('11f904c'));
+    });
+
+    test('FontAwesome 字体 + loader.gif 在资产目录', () {
+      final assets = '$dir/third_party/evolveui/assets/fonts';
+      expect(File('$assets/loader.gif').existsSync(), isTrue);
+      expect(
+        File('$assets/fontawesome-free-6.7.2-desktop/otfs/'
+                'Font Awesome 6 Free-Solid-900.otf')
+            .existsSync(),
+        isTrue,
+      );
+    });
+
+    test('资源路径与上游硬编码一致（PREFIX /new/prefix1，零补丁）', () {
+      // EvolveUI 组件内写死 qrc:/new/prefix1/fonts/...，CMake 必须按
+      // 同路径注册，组件源码才能零修改复用（NOTICE.md 约定 2）
+      expect(cmake, contains('PREFIX "/new/prefix1"'));
+      expect(cmake, contains('loader.gif'));
+      // qt_add_resources 的 FILES 里是转义空格写法（raw 断言）
+      expect(cmake, contains(r'Font\ Awesome\ 6\ Free-Solid-900.otf'));
+      // Main.qml 的 FontLoader 走同一条路径
+      expect(mainQml,
+          contains('qrc:/new/prefix1/fonts/fontawesome-free-6.7.2-desktop/otfs/Font Awesome 6 Free-Solid-900.otf'));
+    });
+
+    test('主题/图标字体上下文注入（EvolveUI 约定）', () {
+      // 组件内未声明的 theme/iconFont 由根文件 id 沿上下文链解析
+      expect(mainQml, contains('EUI.ETheme {'));
+      expect(mainQml, contains('id: theme'));
+      expect(mainQml, contains('id: iconFont'));
+      expect(mainQml, contains('isDark: true'));
+      // 沿用 #6366F1 强调色
+      expect(mainQml, contains('focusColor: "#6366F1"'));
+    });
+
+    test('CI 校验 QtQuick.Effects / Controls 部署（MultiEffect 依赖）', () {
+      expect(workflow, contains(r'qml\QtQuick\Effects'));
+      expect(workflow, contains(r'qml\QtQuick\Controls'));
+    });
+
+    test('全部 QML 图标用 iconFont（FontAwesome），不再引用 Material 字体', () {
+      for (final f in evolveDir
+          .listSync()
+          .whereType<File>()
+          .followedBy(
+            Directory('$dir/src/qml').listSync().whereType<File>(),
+          )) {
+        final code = f
+            .readAsStringSync()
+            .split('\n')
+            .where((l) => !l.trimLeft().startsWith('//'))
+            .join('\n');
+        expect(code.contains('Material Icons'), isFalse,
+            reason: '${f.path} 还在引用 Material Icons');
+      }
     });
   });
 }

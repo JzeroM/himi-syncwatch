@@ -2,19 +2,19 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import HimiPlayer
+import "evolveui" as EUI
 
-// 660：底栏（照 Flutter `PlayerBottomRow` 截图实测布局）。
+// 662：底栏（EvolveUI 组件化；布局照 Flutter `player_bottom_row.dart`）。
 //
 // 【布局（两行）】
 //   第一行：00:33  [进度条─────────────]  38:51
-//   第二行：⏮ ⏸ ⏭  🔊 ── 80  ☀ ── 38%  💬 📄 🎵 ⋮ 1.0x ⛶
+//   第二行：⏮ ⏸ ⏭  🔊 ── 80  ☀ ── 38%  [留白]  💬 HDⁿ 📄ⁿ 🎵ⁿ ⋮ⁿ speed 1.0x ⛶
 //
-// 【与 Flutter 截图逐项对齐】
-//   进度条：track 4 / thumb 6（比原生 UI 的 6/8 更细）
-//   音量：图标 18(white70) + 滑杆 96 + 数值列 28(11px)
-//   亮度：图标 18(#FFD54F) + 滑杆 96 + 数值列 34(11px)
-//   播放组：28/36/28，间距 8，紧接音量左侧
-//   右侧：弹幕/字幕/音轨/选集/倍速/全屏，间距 20
+// 【右组顺序（Flutter trailing）】弹幕 → 多版本 → 字幕 → 音轨 → 选集
+//   → 倍速（图标+文字）→ 全屏（用户明确：全屏只在底栏）
+//
+// 【组件】按钮 = ControlButton（EvolveUI EButton 封装）；滑杆 =
+// PlayerSlider（EvolveUI ESlider 封装，含点击跳转/绑定保护）。
 Rectangle {
     id: root
 
@@ -27,6 +27,7 @@ Rectangle {
     signal prevEpisodeClicked()
     signal nextEpisodeClicked()
     signal danmakuClicked()
+    signal versionClicked()
     signal subtitleClicked()
     signal audioClicked()
     signal episodeClicked()
@@ -42,13 +43,36 @@ Rectangle {
     opacity: showControls ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: Theme.controlsFadeMs } }
 
-    // 渐变背景：透明 → black@0.85
+    // 渐变背景：透明 → 半黑
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
             GradientStop { position: 0.0; color: "transparent" }
             GradientStop { position: 1.0; color: Theme.barBottomSolid }
         }
+    }
+
+    /// 毫秒 → `mm:ss` 或 `h:mm:ss`（与 Flutter `SeekTimeLabels` 一致）
+    function formatTime(ms) {
+        if (ms <= 0) return "00:00"
+        var total = Math.floor(ms / 1000)
+        var h = Math.floor(total / 3600)
+        var m = Math.floor((total % 3600) / 60)
+        var s = total % 60
+        function pad(n) { return n < 10 ? "0" + n : "" + n }
+        return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : pad(m) + ":" + pad(s)
+    }
+
+    /// 时间列宽（≥1 小时用宽列，与 Flutter `SeekTimeLabels.cellWidth` 一致）
+    function timeCellWidthFor(ms) {
+        return ms >= 3600000 ? Theme.timeCellWidthWide : Theme.timeCellWidth
+    }
+
+    /// 倍速文字（与 Flutter `SpeedMenuPanel.formatSpeedLabel` 同格式）
+    function formatSpeed(v) {
+        var s = v.toString()
+        if (s.indexOf(".") < 0) s += ".0"
+        return s + "x"
     }
 
     ColumnLayout {
@@ -65,23 +89,27 @@ Rectangle {
             spacing: 0
 
             Text {
-                Layout.preferredWidth: Theme.timeCellWidth
+                Layout.preferredWidth: root.timeCellWidthFor(playerState.durationMs)
                 text: formatTime(playerState.positionMs)
-                color: Theme.white54
+                color: theme.getBorderColor(true)
                 font.pixelSize: Theme.captionSize
             }
-            GlassSlider {
+            PlayerSlider {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 24
-                value: root.seekRatio
-                trackHeight: Theme.fpSeekTrackHeight
-                thumbRadius: Theme.fpSeekThumbRadius
-                onSeekFinished: (ratio) => root.seekFinished(ratio)
+                Layout.preferredHeight: 32
+                text: ""
+                labelWidth: 0
+                showValue: false
+                minimumValue: 0
+                maximumValue: Math.max(1, playerState.durationMs)
+                value: playerState.positionMs
+                onFinished: (v) => root.seekFinished(
+                    playerState.durationMs > 0 ? v / playerState.durationMs : 0)
             }
             Text {
-                Layout.preferredWidth: Theme.timeCellWidth
+                Layout.preferredWidth: root.timeCellWidthFor(playerState.durationMs)
                 text: formatTime(playerState.durationMs)
-                color: Theme.white54
+                color: theme.getBorderColor(true)
                 font.pixelSize: Theme.captionSize
                 horizontalAlignment: Text.AlignRight
             }
@@ -92,7 +120,7 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 0
 
-            // 播放组（紧接左侧，间距 8）
+            // 播放组（28/36/28，间距 8）
             RowLayout {
                 spacing: Theme.transportGap
                 ControlButton {
@@ -118,115 +146,148 @@ Rectangle {
                 }
             }
 
-            Item { Layout.preferredWidth: 8 }
+            // Flutter：transport 尾 8 + leading 头 16
+            Item { Layout.preferredWidth: 24 }
 
-            // 音量：图标 18 + 滑杆 96 + 数值 28
+            // 音量：图标 + 滑杆(96) + 数值
             RowLayout {
                 spacing: 4
                 Text {
                     text: playerState.volume <= 0.001 ? Icons.volumeOff
                           : playerState.volume < 0.5 ? Icons.volumeDown
                           : Icons.volumeUp
-                    font.family: "Material Icons"
+                    font.family: iconFont.name
                     font.pixelSize: Theme.fpSliderIconSize
-                    color: Theme.white70
+                    color: theme.getBorderColor(true)
                 }
-                GlassSlider {
+                PlayerSlider {
                     Layout.preferredWidth: Theme.fpSliderWidth
-                    Layout.preferredHeight: 24
-                    value: playerState.volume
-                    onSeekFinished: (v) => root.volumeChanged(v)
-                    onSeekStarted: root.volumeChanged(value)
-                }
-                Text {
-                    Layout.preferredWidth: Theme.fpVolumeValueWidth
-                    text: Math.round(playerState.volume * 100).toString()
-                    color: Theme.white70
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignRight
+                    Layout.preferredHeight: 32
+                    text: ""
+                    labelWidth: 0
+                    showValue: true
+                    minimumValue: 0
+                    maximumValue: 100
+                    value: playerState.volume * 100
+                    onMoved: (v) => root.volumeChanged(v / 100)
                 }
             }
 
             Item { Layout.preferredWidth: 16 }
 
-            // 亮度：图标 18(#FFD54F) + 滑杆 96 + 数值 34
+            // 亮度：图标 + 滑杆(96) + 数值
             RowLayout {
                 spacing: 4
                 Text {
                     text: Icons.brightness
-                    font.family: "Material Icons"
+                    font.family: iconFont.name
                     font.pixelSize: Theme.fpSliderIconSize
                     color: Theme.fpBrightnessIcon
                 }
-                GlassSlider {
+                PlayerSlider {
                     Layout.preferredWidth: Theme.fpSliderWidth
-                    Layout.preferredHeight: 24
-                    value: playerState.brightness
-                    accent: Theme.fpBrightnessIcon
-                    onSeekFinished: (v) => root.brightnessChanged(v)
-                    onSeekStarted: root.brightnessChanged(value)
-                }
-                Text {
-                    Layout.preferredWidth: Theme.fpBrightnessValueWidth
-                    text: Math.round(playerState.brightness * 100) + "%"
-                    color: Theme.white70
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignRight
+                    Layout.preferredHeight: 32
+                    text: ""
+                    labelWidth: 0
+                    showValue: true
+                    valueSuffix: "%"
+                    fillColor: Theme.fpBrightnessIcon
+                    minimumValue: 0
+                    maximumValue: 100
+                    value: playerState.brightness * 100
+                    onMoved: (v) => root.brightnessChanged(v / 100)
                 }
             }
 
             Item { Layout.fillWidth: true }
 
-            // 右侧：弹幕/字幕/音轨/选集/倍速/全屏
-            ControlButton {
-                icon: playerState.danmakuEnabled ? Icons.danmakuOn : Icons.danmakuOff
-                tooltip: "弹幕"
-                onClicked: root.danmakuClicked()
-            }
-            ControlButton {
-                icon: Icons.subtitles
-                badge: playerState.subtitleCount > 0
-                       ? playerState.subtitleCount.toString() : ""
-                tooltip: "字幕"
-                onClicked: root.subtitleClicked()
-            }
-            ControlButton {
-                icon: Icons.audioTrack
-                badge: playerState.audioCount > 0
-                       ? playerState.audioCount.toString() : ""
-                tooltip: "音轨"
-                onClicked: root.audioClicked()
-            }
-            ControlButton {
-                icon: Icons.playlistPlay
-                enabled: playerState.episodeCount > 1
-                badge: playerState.episodeCount > 1
-                       ? playerState.episodeCount.toString() : ""
-                tooltip: "选集"
-                onClicked: root.episodeClicked()
-            }
-            ControlButton {
-                icon: Icons.speed
-                badge: playerState.speed.toFixed(1)
-                tooltip: "播放速度"
-                onClicked: root.speedClicked()
-            }
-            ControlButton {
-                icon: Icons.fullscreen
-                tooltip: "全屏"
-                onClicked: root.fullscreenClicked()
+            // ── 右组（Flutter trailing）──
+            RowLayout {
+                spacing: 8
+
+                // 弹幕开关
+                ControlButton {
+                    icon: playerState.danmakuEnabled ? Icons.danmakuOn : Icons.danmakuOff
+                    tooltip: "弹幕"
+                    onClicked: root.danmakuClicked()
+                }
+
+                // 多版本（仅非房间且多版本时显示）
+                ControlButton {
+                    visible: !playerState.isRoom && playerState.versionCount > 1
+                    icon: Icons.highQuality
+                    badge: playerState.versionCount > 0
+                           ? playerState.versionCount.toString() : ""
+                    tooltip: "版本"
+                    onClicked: root.versionClicked()
+                }
+
+                // 字幕
+                ControlButton {
+                    icon: Icons.subtitles
+                    badge: playerState.subtitleCount > 0
+                           ? playerState.subtitleCount.toString() : ""
+                    tooltip: "字幕"
+                    onClicked: root.subtitleClicked()
+                }
+
+                // 音轨
+                ControlButton {
+                    icon: Icons.audioTrack
+                    badge: playerState.audioCount > 0
+                           ? playerState.audioCount.toString() : ""
+                    tooltip: "音轨"
+                    onClicked: root.audioClicked()
+                }
+
+                // 选集（仅非房间且多集显示）
+                ControlButton {
+                    visible: !playerState.isRoom && playerState.episodeCount > 1
+                    icon: Icons.playlistPlay
+                    badge: playerState.episodeCount > 0
+                           ? playerState.episodeCount.toString() : ""
+                    tooltip: "选集"
+                    onClicked: root.episodeClicked()
+                }
+
+                // 倍速（图标 + 文字标签；仅非房间显示）
+                EUI.EButton {
+                    visible: !playerState.isRoom
+                    Layout.preferredHeight: 32
+                    Layout.preferredWidth: speedRow.implicitWidth + 16
+                    text: root.formatSpeed(playerState.speed)
+                    iconCharacter: Icons.speed
+                    iconFontFamily: iconFont.name
+                    size: "m"
+                    radius: 8
+                    shadowEnabled: false
+                    containerColor: "transparent"
+                    hoverColor: theme.isDark ? Qt.rgba(1, 1, 1, 0.12)
+                                             : Qt.rgba(0, 0, 0, 0.08)
+                    textColor: theme.getBorderColor(true)
+                    iconColor: theme.textColor
+                    onClicked: root.speedClicked()
+
+                    Text {
+                        id: speedRow
+                        visible: false
+                        text: Icons.speed + root.formatSpeed(playerState.speed)
+                        font.pixelSize: 20
+                    }
+
+                    HoverHandler { id: speedHover }
+                    ToolTip.visible: speedHover.hovered
+                    ToolTip.text: "播放速度"
+                    ToolTip.delay: 800
+                }
+
+                // 窗口全屏（仅底栏，用户明确）
+                ControlButton {
+                    icon: Icons.fullscreen
+                    tooltip: "全屏"
+                    onClicked: root.fullscreenClicked()
+                }
             }
         }
-    }
-
-    /// 毫秒 → `mm:ss` 或 `h:mm:ss`
-    function formatTime(ms) {
-        if (ms <= 0) return "00:00"
-        var total = Math.floor(ms / 1000)
-        var h = Math.floor(total / 3600)
-        var m = Math.floor((total % 3600) / 60)
-        var s = total % 60
-        function pad(n) { return n < 10 ? "0" + n : "" + n }
-        return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : pad(m) + ":" + pad(s)
     }
 }

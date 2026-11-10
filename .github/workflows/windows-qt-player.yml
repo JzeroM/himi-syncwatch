@@ -133,6 +133,15 @@ jobs:
             if (!(Test-Path $p)) { throw "产物缺少 $f($p)" }
             Write-Host "OK: $f ($((Get-Item $p).Length) bytes)"
           }
+          # 662 EvolveUI 依赖的 QML 插件必须部署（MultiEffect 走
+          # QtQuick.Effects、ESlider 的 SpinBox 走 QtQuick.Controls）。
+          # windeployqt --qmldir 扫描 src/qml（含 evolveui/ 子目录）自动带，
+          # 这里显式断言防止漏部署 → 运行期 "module not installed" 全黑。
+          foreach ($q in @('qml\QtQuick\Effects', 'qml\QtQuick\Controls', 'qml\QtQuick\Controls\Basic')) {
+            $p = Join-Path $rel $q
+            if (!(Test-Path $p)) { throw "产物缺少 QML 插件目录 $q($p)" }
+            Write-Host "OK: $q"
+          }
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
