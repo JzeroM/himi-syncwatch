@@ -339,26 +339,10 @@ void main() async {
 /// 679：房间模式下播放页会开启 `setPreventClose(true)` 拦截系统关闭，
 /// 此时本回调**不会**触发（`WM_CLOSE` 被 `window_manager` 吞掉），
 /// 改由 [RoomExitRequest] 通知播放页弹「退出房间」确认框。
+/// 非拦截态（单人播放）走到这里就是正常关闭 → 直接关 Qt。
 class _QtPlayerWindowCloseListener with WindowListener {
   @override
   void onWindowClose() {
-    unawaited(MpvSessionPlatform.closeQtPlayer());
-  }
-}
-
-/// 679：房间模式的关闭拦截——点 X 时发退出请求而不是直接关窗。
-///
-/// 【为什么不复用 `_QtPlayerWindowCloseListener`】那个回调在
-/// `setPreventClose(true)` 时根本不会被调用（WM_CLOSE 被插件吞掉）。
-/// 这里用 `onWindowClose` 之外的路径：`setPreventClose(true)` 后由
-/// 播放页自己监听 [RoomExitRequest]。
-///
-/// 本类只负责在**非拦截态**下正常关闭（单人播放 / 无房间）。
-class _RoomAwareCloseListener with WindowListener {
-  @override
-  void onWindowClose() {
-    // 房间拦截态由 window_manager 挡在 WM_CLOSE，不会到这里；
-    // 到这里说明没开拦截（单人播放）→ 保持原语义直接关 Qt。
     unawaited(MpvSessionPlatform.closeQtPlayer());
   }
 }
