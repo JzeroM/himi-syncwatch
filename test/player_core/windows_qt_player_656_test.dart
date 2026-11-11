@@ -1608,22 +1608,22 @@ void main() {
     test('A1 patchValue 本地镜像（滑杆不跳位的根治）', () {
       expect(state5, contains('Q_INVOKABLE void patchValue'));
       expect(stateCpp5, contains('void PlayerState::patchValue'));
-      expect(overlay5, contains('playerState.patchValue("volume"'));
-      expect(overlay5, contains('playerState.patchValue("brightness"'));
-      expect(overlay5, contains('playerState.patchValue("positionMs"'));
+      expect(overlay5, contains('root.patchState("volume"'));
+      expect(overlay5, contains('root.patchState("brightness"'));
+      expect(overlay5, contains('root.patchState("positionMs"'));
     });
 
     test('A2 恢复默认全联动（一次镜像六值）', () {
-      expect(overlay5, contains('patchValue("subtitleScale", 1.0)'));
-      expect(overlay5, contains('patchValue("subtitleMarginY", 22)'));
-      expect(overlay5, contains('patchValue("danmakuOpacity", 0.8)'));
+      expect(overlay5, contains('patchState("subtitleScale", 1.0)'));
+      expect(overlay5, contains('patchState("subtitleMarginY", 22)'));
+      expect(overlay5, contains('patchState("danmakuOpacity", 0.8)'));
     });
 
     test('A3 面板点选即时镜像（勾选不冻结）', () {
-      expect(overlay5, contains('patchValue("speed"'));
-      expect(overlay5, contains('patchValue("decodeMode"'));
-      expect(overlay5, contains('patchValue("selectedAudioId"'));
-      expect(overlay5, contains('patchValue("currentVersionIndex"'));
+      expect(overlay5, contains('patchState("speed"'));
+      expect(overlay5, contains('patchState("decodeMode"'));
+      expect(overlay5, contains('patchState("selectedAudioId"'));
+      expect(overlay5, contains('patchState("currentVersionIndex"'));
     });
 
     test('B1 轨道选中真相对齐安卓/鸿蒙（顶层 id）', () {
@@ -1698,6 +1698,57 @@ void main() {
     test('播放期封面预取（同尺寸预热缓存，首开面板秒开）', () {
       expect(overlay6, contains('Qt.size(544, 300)'));
       expect(overlay6, contains('model: playerState.episodes'));
+    });
+  });
+  group('㉚ 674：patchValue 真凶回归/容错镜像/一列默认/TV 标记面板', () {
+    final stateH7 = read('$dir/src/player_state.h');
+    final overlay7 = read('$dir/src/qml/Overlay.qml');
+    final bottom7 = read('$dir/src/qml/BottomBar.qml');
+    final panel7 = read('$dir/src/qml/Panel.qml');
+
+    test('A1 真凶回归：patchValue 必须在 public 区（私有 QML 调不到）', () {
+      // 真机回归「所有控件几乎都失效」：Qt 6.8 QML 只暴露公开
+      // Q_INVOKABLE，私有声明 → "patchValue is not a function"
+      final pub = stateH7.indexOf('public:');
+      final priv = stateH7.lastIndexOf('private:');
+      final pv = stateH7.indexOf('Q_INVOKABLE void patchValue');
+      expect(pv, greaterThan(pub), reason: 'patchValue 必须在 public: 之后');
+      expect(pv, lessThan(priv), reason: 'patchValue 不得掉回 private: 之后');
+    });
+
+    test('A2 容错镜像（try/catch，镜像失效不杀处理器）', () {
+      expect(overlay7, contains('function patchState'));
+      expect(overlay7, contains('try {'));
+      // helper 体内恰好一处直调（防replaceAll误伤成自递归——踩过）
+      expect('playerState.patchValue('.allMatches(overlay7).length, 1);
+    });
+
+    test('A3 命令先行、镜像后置（handlePanelItem）', () {
+      expect(overlay7,
+          contains('pipeServer.sendCommand({"type": "selectEpisode", "index": id})\n            root.patchState("currentEpisodeIndex", id)'));
+    });
+
+    test('A4 Font.W600 警告修复（QML 未定义 → 数字 600）', () {
+      expect(bottom7, isNot(contains('Font.W600')));
+    });
+
+    test('B1 选集面板默认一列', () {
+      expect(panel7, contains('property int columns: 1'));
+    });
+
+    test('C TV 标记面板（复刻安卓 SegmentMarkPanel）', () {
+      expect(overlay7, contains('片头 / 片尾'));
+      expect(overlay7, contains('当前位置 " + segmentMenu.formatMs'));
+      expect(overlay7, contains('设置片头'));
+      expect(overlay7, contains('设置片尾'));
+      // 行内范围红字警示（点前即知）
+      expect(overlay7, contains('超出范围（片头 ≤10%）'));
+      expect(overlay7, contains('超出范围（片尾 ≥70%）'));
+      // 已有标记二次确认：更新/清除/取消
+      expect(overlay7, contains('confirmIntro'));
+      expect(overlay7, contains('"更新"'));
+      expect(overlay7, contains('"清除"'));
+      expect(overlay7, contains('"取消"'));
     });
   });
 }

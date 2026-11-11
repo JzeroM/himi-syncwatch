@@ -25,7 +25,7 @@ EUI.ECard {
     // 【671 B2】选集列数控件（− [n] +）：每列宽 = 封面横卡**原始宽度**
     //（Flutter EpisodeSelectPanel cacheWidth 280 + 16:9 + 196 行跨距，
     // 不压缩卡片），面板宽度随列数自适应；上限收紧到总宽不超播放器宽。
-    property int columns: 2
+    property int columns: 1   // 674：默认一列（列数控件可调 1~8）
     property int currentIndex: -1
     readonly property int cardWidth: 280
     readonly property int cardStride: 196

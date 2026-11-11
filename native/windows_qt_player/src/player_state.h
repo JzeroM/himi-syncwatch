@@ -113,12 +113,15 @@ class PlayerState : public QObject {
     // 与安卓/鸿蒙原生底栏同驱动字段（skipPrompt）。
     Q_PROPERTY(QString skipPrompt READ skipPrompt NOTIFY changed)
 
-    /// 672：滑杆/面板**本地镜像**——moved/点选/恢复默认即时写入本状态，
-    /// 根治「绑定松手写回过期值 → 滑杆跳位 / 勾选冻结」（真机回归）。
-    Q_INVOKABLE void patchValue(const QString& key, const QVariant& value);
-
 public:
     explicit PlayerState(QObject* parent = nullptr);
+
+    /// 672：滑杆/面板**本地镜像**——moved/点选/恢复默认即时写入本状态，
+    /// 根治「绑定松手写回过期值 → 滑杆跳位 / 勾选冻结」（真机回归）。
+    /// 【674 真凶】必须在 public 区：Qt 6.8 QML 引擎只暴露公开
+    /// Q_INVOKABLE，私有声明调不到（「patchValue is not a function」
+    /// → 全部控件处理器中断，真机回归「所有控件几乎都失效」）。
+    Q_INVOKABLE void patchValue(const QString& key, const QVariant& value);
 
     /// 应用 Flutter 推来的完整状态 JSON。
     ///

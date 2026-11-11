@@ -68,12 +68,12 @@ ApplicationWindow {
     function adjustByWheel(which, dir) {
         if (which === "volume") {
             var v = Math.max(0, Math.min(1, playerState.volume + dir * 0.05))
-            playerState.patchValue("volume", v)
+            root.patchState("volume", v)
             mpvWindow.setVolume(v)
             pipeServer.sendCommand({"type": "setVolume", "volume": v})
         } else if (which === "brightness") {
             var b = Math.max(0, Math.min(1, playerState.brightness + dir * 0.05))
-            playerState.patchValue("brightness", b)
+            root.patchState("brightness", b)
             pipeServer.sendCommand({"type": "setBrightness", "brightness": b})
         }
     }
@@ -111,6 +111,21 @@ ApplicationWindow {
     function showControls() {
         playerState.controlsVisible = true
         hideTimer.restart()
+    }
+
+    /// 674 A2：本地镜像容错封装——镜像失败只影响刷新，绝不中断
+    /// 处理器（真机回归「patchValue is not a function → 全控件失效」）。
+    /// 错误只记一次，防日志刷屏。
+    property bool _patchWarned: false
+    function patchState(key, v) {
+        try {
+            playerState.patchValue(key, v)
+        } catch (e) {
+            if (!_patchWarned) {
+                _patchWarned = true
+                console.warn("[overlay] patchState 失败（仅影响刷新）: " + e)
+            }
+        }
     }
 
     function closePanels() {
@@ -153,11 +168,7 @@ ApplicationWindow {
         closePanels: root.closePanels
         showControls: () => hideTimer.restart()
         showGesture: (iconOrText) => root.showGesture(iconOrText)
-        showSegmentMenu: (mx, my) => {
-            segmentMenu.menuX = mx
-            segmentMenu.menuY = my
-            segmentMenu.visible = true
-        }
+        showSegmentMenu: (mx, my) => segmentMenu.openAt(mx, my)
         wheelHandler: (dir) => {
             if (root.selectedSlider !== "") {
                 root.adjustByWheel(root.selectedSlider, dir)
@@ -223,7 +234,7 @@ ApplicationWindow {
         })
         onDanmakuClicked: {
             danmakuOn = !danmakuOn
-            playerState.patchValue("danmakuEnabled", danmakuOn)
+            root.patchState("danmakuEnabled", danmakuOn)
             danmakuBuildTimer.restart()
             pipeServer.sendCommand({"type": "toggleDanmaku"})
         }
@@ -240,21 +251,21 @@ ApplicationWindow {
         }
         onWheelAdjust: (which, dir) => root.adjustByWheel(which, dir)
         onVolumeChanged: (v) => {
-            playerState.patchValue("volume", v)
             mpvWindow.setVolume(v)
             pipeServer.sendCommand({"type": "setVolume", "volume": v})
+            root.patchState("volume", v)
         }
         onBrightnessChanged: (v) => {
-            playerState.patchValue("brightness", v)
             pipeServer.sendCommand({
                 "type": "setBrightness", "brightness": v
             })
+            root.patchState("brightness", v)
         }
         onSeekFinished: (ratio) => {
             var ms = Math.round(ratio * playerState.durationMs)
-            playerState.patchValue("positionMs", ms)
             mpvWindow.seekTo(ms)
             pipeServer.sendCommand({"type": "seekTo", "positionMs": ms})
+            root.patchState("positionMs", ms)
         }
     }
 
@@ -359,62 +370,225 @@ ApplicationWindow {
         }
     }
 
-    // ── 672 D2：片头/片尾标记菜单（右键画面任意位置弹出）──
+    // ── 674 C：片头/片尾标记面板（复刻安卓 TV `SegmentMarkPanel`）──
+    // 标题行（剪刀 + 「片头 / 片尾」+ 当前位置）+ 两行设置项（行内
+    // 范围红字警示：片头 ≤10%、片尾 ≥70%，点前即知）+ 已有标记走
+    // 二次确认（更新 / 清除 / 取消），与安卓 TV 同交互。
     Rectangle {
         id: segmentMenu
         property real menuX: 0
         property real menuY: 0
+        property string mode: "main"   // main / confirmIntro / confirmOutro
+
+        readonly property int pos: playerState.positionMs
+        readonly property int dur: playerState.durationMs
+        readonly property bool hasIntro: playerState.segmentIntroEndMs >= 0
+        readonly property bool hasOutro: playerState.segmentOutroStartMs >= 0
+        readonly property string introReject:
+            (dur > 0 && pos > dur * 0.10) ? "超出范围（片头 ≤10%）" : ""
+        readonly property string outroReject:
+            (dur > 0 && pos < dur * 0.70) ? "超出范围（片尾 ≥70%）" : ""
+
+        function formatMs(ms) {
+            var t = Math.max(0, ms)
+            var h = Math.floor(t / 3600000)
+            var m = Math.floor((t % 3600000) / 60000)
+            var s = Math.floor((t % 60000) / 1000)
+            var mm = (m < 10 ? "0" : "") + m
+            var ss = (s < 10 ? "0" : "") + s
+            return h > 0 ? (h + ":" + mm + ":" + ss) : (m + ":" + ss)
+        }
+
+        function openAt(mx, my) {
+            menuX = mx
+            menuY = my
+            mode = "main"
+            visible = true
+        }
+
+        function onMarkRow(kind) {
+            // 已有标记 → 二次确认（安卓 TV 交互）
+            if (kind === "intro" && hasIntro) { mode = "confirmIntro"; return }
+            if (kind === "outro" && hasOutro) { mode = "confirmOutro"; return }
+            markSegment(kind)
+        }
+
+        function existingMark(kind) {
+            return kind === "intro" ? playerState.segmentIntroEndMs
+                                   : playerState.segmentOutroStartMs
+        }
+
         visible: false
         x: Math.max(8, Math.min(menuX, root.width - width - 8))
         y: Math.max(8, Math.min(menuY, root.height - height - 8))
-        width: 240
-        height: menuCol.implicitHeight + 12
-        radius: 12
-        color: Qt.rgba(0.07, 0.07, 0.09, 0.88)
+        width: 320
+        height: contentCol.implicitHeight + 28
+        radius: 18
+        color: Qt.rgba(0.07, 0.07, 0.09, 0.92)
         border.color: Qt.rgba(1, 1, 1, 0.12)
         border.width: 1
 
         Column {
-            id: menuCol
+            id: contentCol
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.margins: 14
+            spacing: 8
 
+            // ── 标题行（照安卓：剪刀 + 片头/片尾 + 当前位置）──
+            RowLayout {
+                width: parent.width
+                height: 28
+                Text {
+                    text: "\uf0c4"          // fa-scissors
+                    font.family: iconFont.name
+                    font.pixelSize: 18
+                    color: Theme.mutedText
+                }
+                Item { Layout.preferredWidth: 8 }
+                Text {
+                    text: "片头 / 片尾"
+                    color: theme.textColor
+                    font.pixelSize: Theme.panelTitleSize
+                    font.weight: 600
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "当前位置 " + segmentMenu.formatMs(segmentMenu.pos)
+                    color: Theme.mutedText
+                    font.pixelSize: Theme.captionSize
+                }
+            }
+
+            // ── 主模式：两行设置项 ──
             Repeater {
-                model: [
-                    { text: "设为片头结束（前 10% 内）", kind: "intro" },
-                    { text: "设为片尾开始（≥70% 处）", kind: "outro" },
-                    { text: "清除片头/片尾标记", kind: "clear" }
-                ]
+                model: segmentMenu.mode === "main"
+                       ? [
+                           { kind: "intro", icon: Icons.skipNext,
+                             title: "设置片头",
+                             hint: "当前位置作为片头结束 / 正片开始" },
+                           { kind: "outro", icon: Icons.skipPrevious,
+                             title: "设置片尾",
+                             hint: "当前位置作为片尾开始" }
+                         ]
+                       : []
                 delegate: Rectangle {
                     required property var modelData
-                    width: menuCol.width
-                    height: 38
-                    color: segRowMouse.containsMouse
+                    width: contentCol.width
+                    height: 58
+                    radius: 10
+                    color: markRowMouse.containsMouse
+                           ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
+
+                    readonly property string reject:
+                        modelData.kind === "intro" ? segmentMenu.introReject
+                                                   : segmentMenu.outroReject
+                    readonly property bool has:
+                        modelData.kind === "intro" ? segmentMenu.hasIntro
+                                                   : segmentMenu.hasOutro
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 10
+                        Text {
+                            text: modelData.icon
+                            font.family: iconFont.name
+                            font.pixelSize: 18
+                            color: theme.textColor
+                        }
+                        Column {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text {
+                                width: parent.width
+                                text: modelData.title
+                                color: theme.textColor
+                                font.pixelSize: Theme.panelOptionSize
+                                font.weight: 600
+                            }
+                            Text {
+                                width: parent.width
+                                // 行内提示：超范围红字（点前即知，不用点了才被拒）
+                                text: reject !== "" ? reject
+                                      : (has ? "当前标记 "
+                                             + segmentMenu.formatMs(
+                                                 segmentMenu.existingMark(modelData.kind))
+                                             + "（再点更新 / 清除）"
+                                             : modelData.hint)
+                                color: reject !== "" ? "#FF6B6B"
+                                       : Theme.mutedText
+                                font.pixelSize: Theme.captionSize
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                    MouseArea {
+                        id: markRowMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: segmentMenu.onMarkRow(modelData.kind)
+                    }
+                }
+            }
+
+            // ── 二次确认（安卓 TV：更新 / 清除 / 取消）──
+            Text {
+                visible: segmentMenu.mode !== "main"
+                width: contentCol.width
+                wrapMode: Text.WordWrap
+                text: "当前标记："
+                      + segmentMenu.formatMs(segmentMenu.existingMark(
+                          segmentMenu.mode === "confirmIntro" ? "intro" : "outro"))
+                      + "\n要用当前位置（" + segmentMenu.formatMs(segmentMenu.pos)
+                      + "）更新，还是清除？"
+                color: theme.textColor
+                font.pixelSize: Theme.panelOptionSize
+            }
+            Repeater {
+                model: segmentMenu.mode !== "main"
+                       ? [
+                           { act: "update", label: "更新" },
+                           { act: "clear", label: "清除" },
+                           { act: "cancel", label: "取消" }
+                         ]
+                       : []
+                delegate: Rectangle {
+                    required property var modelData
+                    width: contentCol.width
+                    height: 40
+                    radius: 8
+                    color: confirmRowMouse.containsMouse
                            ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
                     Text {
                         anchors.left: parent.left
-                        anchors.leftMargin: 14
+                        anchors.leftMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.text
-                        color: theme.textColor
+                        text: modelData.label
+                        color: modelData.act === "clear" ? "#FF6B6B"
+                               : theme.textColor
                         font.pixelSize: Theme.panelOptionSize
                     }
                     MouseArea {
-                        id: segRowMouse
+                        id: confirmRowMouse
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            if (modelData.kind === "clear") {
+                            var kind = segmentMenu.mode === "confirmIntro"
+                                    ? "intro" : "outro"
+                            if (modelData.act === "update") {
+                                markSegment(kind)
+                            } else if (modelData.act === "clear") {
                                 segmentMenu.visible = false
                                 pipeServer.sendCommand({
-                                    "type": "clearSegmentMark", "kind": "intro"})
-                                pipeServer.sendCommand({
-                                    "type": "clearSegmentMark", "kind": "outro"})
+                                    "type": "clearSegmentMark", "kind": kind})
                                 root.showNotice("已清除片头/片尾标记")
                             } else {
-                                root.markSegment(modelData.kind)
+                                segmentMenu.mode = "main"
                             }
                         }
                     }
@@ -448,7 +622,7 @@ ApplicationWindow {
         visible: root.adjustOpen
         onClosed: root.closePanels()
         onAdjust: (key, value) => {
-            playerState.patchValue(key, value)
+            root.patchState(key, value)
             pipeServer.sendCommand({
                 "type": "adjustDisplay", "key": key, "value": value
             })
@@ -456,14 +630,14 @@ ApplicationWindow {
         onReset: (scope) => {
             // 672 A2：本地一次镜像全部默认值（滑杆齐回默认位）+ 命令
             if (scope !== "danmaku") {
-                playerState.patchValue("subtitleScale", 1.0)
-                playerState.patchValue("subtitleMarginY", 22)
-                playerState.patchValue("subtitleDelayMs", 0.0)
+                root.patchState("subtitleScale", 1.0)
+                root.patchState("subtitleMarginY", 22)
+                root.patchState("subtitleDelayMs", 0.0)
             }
             if (scope !== "subtitle") {
-                playerState.patchValue("danmakuSpeed", 0.7)
-                playerState.patchValue("danmakuFontSize", 0.5)
-                playerState.patchValue("danmakuOpacity", 0.8)
+                root.patchState("danmakuSpeed", 0.7)
+                root.patchState("danmakuFontSize", 0.5)
+                root.patchState("danmakuOpacity", 0.8)
             }
             pipeServer.sendCommand({"type": "resetDisplay", "scope": scope})
         }
@@ -716,32 +890,32 @@ ApplicationWindow {
     }
 
     function handlePanelItem(id) {
-        // 672 A3：点选即本地镜像（勾选即时移动、重开正确）
+        // 674 A2：命令先行、镜像后置（镜像失效不影响操作）
         if (panel.title === "选集") {
-            playerState.patchValue("currentEpisodeIndex", id)
             pipeServer.sendCommand({"type": "selectEpisode", "index": id})
+            root.patchState("currentEpisodeIndex", id)
         } else if (panel.title === "音轨") {
-            playerState.patchValue("selectedAudioId", id > 0 ? id : 0)
             mpvWindow.selectTrack("audio", id > 0 ? id - 1 : -1)
             pipeServer.sendCommand({"type": "selectAudio", "id": id})
+            root.patchState("selectedAudioId", id > 0 ? id : 0)
         } else if (panel.title === "字幕") {
             if (id === -2) {
                 subDialog.open()
                 return
             }
-            playerState.patchValue("selectedSubtitleId", id > 0 ? id : 0)
             mpvWindow.selectTrack("subtitle", id > 0 ? id - 1 : -1)
             pipeServer.sendCommand({"type": "selectSubtitle", "id": id})
+            root.patchState("selectedSubtitleId", id > 0 ? id : 0)
         } else if (panel.title === "倍速") {
-            playerState.patchValue("speed", id)
             mpvWindow.setSpeed(id)
             pipeServer.sendCommand({"type": "setSpeed", "speed": id})
+            root.patchState("speed", id)
         } else if (panel.title === "版本") {
-            playerState.patchValue("currentVersionIndex", id)
             pipeServer.sendCommand({"type": "selectVersion", "index": id})
+            root.patchState("currentVersionIndex", id)
         } else if (panel.title === "解码方式") {
-            playerState.patchValue("decodeMode", id)
             pipeServer.sendCommand({"type": "setDecodeMode", "mode": id})
+            root.patchState("decodeMode", id)
         }
     }
 
@@ -766,7 +940,7 @@ ApplicationWindow {
             mpvWindow.command(["set", "video-unscaled", "yes"])
             mpvWindow.command(["set", "video-aspect-override", "0"])
         }
-        playerState.patchValue("videoFit", m)
+        root.patchState("videoFit", m)
         pipeServer.sendCommand({"type": "cycleVideoFit"})
     }
 

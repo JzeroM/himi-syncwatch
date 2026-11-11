@@ -243,7 +243,7 @@ Rectangle {
                           ? "跳过片头" : "跳过片尾"
                     color: theme.textColor
                     font.pixelSize: Theme.captionSize
-                    font.weight: Font.W600
+                    font.weight: 600
                 }
                 MouseArea {
                     anchors.fill: parent
