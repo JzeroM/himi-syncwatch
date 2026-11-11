@@ -582,6 +582,11 @@ jobs:
 
       - name: 编译 Qt 播放器
         shell: pwsh
+        # 680：必须显式注入 token——`$env:GITHUB_TOKEN` 为空时请求走未认证
+        # 通道，GitHub 匿名 API 限额只有 60 次/小时（共享 runner IP），
+        # 真机回归「API rate limit exceeded」直接让 build-windows 失败。
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $clientDir = 'native/windows_qt_player'

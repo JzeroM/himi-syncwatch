@@ -1066,6 +1066,22 @@ void main() {
       expect(panel, contains('if (this.roomIsHost)'));
     });
 
+    test('N16 CI 查 GitHub API 的 step 必须注入 token（防限流）', () {
+      // 真机回归 43080826078：release.yml 的「编译 Qt 播放器」缺
+      // `env: GITHUB_TOKEN` → 匿名 API 限额（60/h，共享 runner IP）
+      // → "API rate limit exceeded" → build-windows 失败。
+      final release = read('.github/workflows/release.yml');
+      final steps = release.split('- name:');
+      for (final step in steps) {
+        if (!step.contains('Invoke-RestMethod') &&
+            !step.contains('api.github.com')) {
+          continue;
+        }
+        expect(step, contains('GITHUB_TOKEN'),
+            reason: '查 GitHub API 的 step 必须注入 token（否则被限流）');
+      }
+    });
+
     test('N15 删除在播资源时 Qt 引擎也要卸载（真机回归「删了还在放」）', () {
       final body = _extract(playerScreen, 'void _removeEpisode(');
       // 两个引擎都要清：本页空闲引擎 + Qt 真实引擎
