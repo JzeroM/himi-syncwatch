@@ -56,6 +56,12 @@ EUI.ECard {
         return h
     }
 
+    /// 【676】列表可用高 = 面板高 - 上下内边距 - 标题行（36）。
+    /// 旧实现列表 preferredHeight 恒等于内容高 → 视口 == 内容高，
+    /// 超出部分被裁掉且**没有滚动范围**（滚轮/拖动都滚不动）。
+    readonly property real listAvailableHeight:
+        Math.max(44, height - padding * 2 - 36)
+
     width: cardMode
            ? root.padding * 2 + Math.min(columns, maxColumns) * cardWidth
            : Math.max(Theme.panelMinWidth,
@@ -147,11 +153,61 @@ EUI.ECard {
     ListView {
         id: list
         Layout.fillWidth: true
-        Layout.preferredHeight: root.rowsHeight
+        // 676：内容更矮时按内容（滚动条自动隐藏），更高时按可用高（滚动）
+        Layout.preferredHeight: Math.min(root.rowsHeight,
+                                         root.listAvailableHeight)
+        Layout.minimumHeight: 0
         visible: !root.cardMode
         clip: true
         spacing: 6
+        boundsBehavior: Flickable.StopAtBounds
         model: root.items
+
+        // 【676】纵向滚动条（与选集面板同款）：固定长度手柄 96px、
+        // 10px 粗、可拖拽；**内容够长才显示**。
+        Item {
+            id: listScroll
+            parent: list
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.rightMargin: 2
+            width: 10
+            z: 10
+            visible: list.contentHeight > list.height + 4
+
+            readonly property real ratio: Math.max(0, Math.min(1,
+                list.contentY / Math.max(1, list.contentHeight - list.height)))
+
+            Rectangle {
+                id: listHandle
+                width: 10
+                height: 96
+                radius: 5
+                x: 0
+                y: listScroll.ratio * Math.max(0, listScroll.height - height)
+                color: listHandleMouse.containsMouse || listHandleMouse.pressed
+                       ? Qt.rgba(1, 1, 1, 0.55) : Qt.rgba(1, 1, 1, 0.35)
+
+                MouseArea {
+                    id: listHandleMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    preventStealing: true
+                    drag.target: listHandle
+                    drag.axis: Drag.YAxis
+                    drag.minimumY: 0
+                    drag.maximumY: Math.max(0, listScroll.height - listHandle.height)
+                    onPositionChanged: {
+                        if (!pressed) return
+                        var span = Math.max(1, listScroll.height - listHandle.height)
+                        list.contentY = (listHandle.y / span)
+                                * Math.max(0, list.contentHeight - list.height)
+                    }
+                }
+            }
+        }
 
         delegate: Rectangle {
             width: list.width

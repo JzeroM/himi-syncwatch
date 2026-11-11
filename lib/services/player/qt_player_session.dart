@@ -125,7 +125,9 @@ class QtPlayerSession {
       case ResetDisplay(:final scope):
         if (scope == 'subtitle') {
           adapter.setProperty('sub-scale', '1');
-          adapter.setProperty('sub-pos', '89');
+          // 676：默认 marginY=22 → (100-22/4)=94.5→95（旧值 89 是 /2
+          // 公式的产物，恢复默认会把位置压低）
+          adapter.setProperty('sub-pos', '95');
           adapter.setProperty('sub-delay', '0');
         }
         await fallback?.call(command);
@@ -141,11 +143,13 @@ class QtPlayerSession {
       case 'subtitleScale':
         adapter.setProperty('sub-scale', value.clamp(0.5, 3.0).toString());
       case 'subtitleMarginY':
-        // mpv `sub-pos`：0=底部 … 100=越高越靠上；Flutter marginY
-        // 0~200px 越大越高 → 线性映射（marginY 22 → sub-pos 89）。
+        // 【676】对齐安卓权威映射（`player_screen._applySubtitleStyle`）：
+        // `sub-pos = (100 - marginY / 4).clamp(0, 100)`——mpv 手册警告
+        // 文本字幕 >100 会被裁切（libass 限制），且 /2 会让位置整体偏低
+        //（默认 marginY 22 → 95，旧实现算成 89）。
         adapter.setProperty(
           'sub-pos',
-          (100 - value.clamp(0, 200) / 2).round().toString(),
+          (100 - value.clamp(0, 200) / 4).clamp(0, 100).round().toString(),
         );
       case 'subtitleDelayMs':
         adapter.setProperty('sub-delay', (value / 1000.0).toString());

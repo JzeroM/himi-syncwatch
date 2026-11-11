@@ -70,6 +70,9 @@ class QtPlayerPipe {
         '--token', token,
         '--hdr', hdr ? '1' : '0',
         '--hlg', hlg ? '1' : '0',
+        // 676：父进程守卫——主窗口关闭/进程崩溃时 Qt 自己退出，
+        // 不留孤儿播放窗（detached 进程不会随父进程退出）。
+        '--parent-pid', '$pid',
         if (prewarm) '--prewarm',
       ],
       // 【必须用 detached，不能用 detachedWithStdio】

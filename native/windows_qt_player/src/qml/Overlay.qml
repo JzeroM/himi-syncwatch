@@ -244,6 +244,11 @@ ApplicationWindow {
         onDanmakuClicked: {
             danmakuOn = !danmakuOn
             root.patchState("danmakuEnabled", danmakuOn)
+            // 676：签名同步置位（开关只重建一次，不再被 onChanged 重复触发）
+            root.danmakuStyleSig = root.danmakuOn + "|"
+                    + playerState.danmakuFontSize + "|"
+                    + playerState.danmakuSpeed + "|"
+                    + playerState.danmakuOpacity
             danmakuBuildTimer.restart()
             pipeServer.sendCommand({"type": "toggleDanmaku"})
         }
@@ -690,6 +695,22 @@ ApplicationWindow {
     Connections {
         target: playerState
         function onDanmakuChanged() { danmakuBuildTimer.restart() }
+    }
+    // 【676】显示调节的弹幕三键（大小/速度/透明度）变化即重建 ASS。
+    // 旧实现只有新弹幕到达（onDanmakuChanged）才重建 → 拖滑杆"没有任何
+    // 反应"（675 的速度/透明度渲染逻辑因此也从未激活）。用签名比对，
+    // 避免 20Hz 状态推送把 ASS 重建刷爆。
+    property string danmakuStyleSig: ""
+    Connections {
+        target: playerState
+        function onChanged() {
+            var sig = root.danmakuOn + "|" + playerState.danmakuFontSize
+                    + "|" + playerState.danmakuSpeed
+                    + "|" + playerState.danmakuOpacity
+            if (sig === root.danmakuStyleSig) return
+            root.danmakuStyleSig = sig
+            danmakuBuildTimer.restart()
+        }
     }
 
     function assTime(sec) {

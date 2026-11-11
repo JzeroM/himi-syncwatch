@@ -1,5 +1,6 @@
 #include "mpv_window.h"
 
+#include <QDateTime>
 #include <QDebug>
 #include <QFile>
 #include <QCoreApplication>
@@ -11,7 +12,23 @@
 
 #include <mpv/client.h>
 
+#include <cstdint>
 #include <cstring>
+
+namespace {
+/// 【676】轨道类型名归一。
+///
+/// Dart 侧 `NativeTrack.type` 的字幕类型是 **`sub`**（安卓同源），而
+/// QML/main.cpp 传下来的是 **`subtitle`**；mpv `track-list` 的类型字段
+/// 也是 **`sub`**（同文件 setDanmakuAss 的 secondary-sid 过滤自证）。
+/// 旧实现拿 `subtitle` 直接跟 mpv 的 `sub` 比较 → 永远不匹配 →
+/// 「用户选了字幕但视频不显示字幕 / 面板打勾错位」，音轨（audio 两边
+/// 一致）不受影响。单点归一，两个入口共用。
+QString mpvTrackType(const QString& type) {
+    return type == QLatin1String("subtitle") ? QStringLiteral("sub") : type;
+}
+}  // namespace
+
 
 namespace {
 
@@ -97,6 +114,18 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
     mpv_set_option_string(mpv_, "cache-on-disk", "no");
     mpv_set_option_string(mpv_, "sub-ass", "yes");
     mpv_set_option_string(mpv_, "sub-visibility", "yes");
+    // 【676】字幕调节全类型生效（对齐安卓）：mpv 默认 `scale`，但显式
+    // 置位防上游改默认——ASS/SSA 样式字幕也吃 `sub-scale`（字体大小）；
+    // `sub-pos`（位置，%）、`sub-delay`（延迟，秒）本就对文本/位图全类型
+    // 生效（mpv 手册）。注意**不设** `sub-ass-force-margins`：它会把
+    // ASS 强制塞进黑边，反而压过用户的位置调节。
+    mpv_set_option_string(mpv_, "sub-ass-override", "scale");
+    // 【676】次字幕轨（弹幕 ASS 走 secondary-sid）**不得剥样式**：
+    // mpv 的 `--secondary-sub-ass-override` 默认值是 `strip`（"radically
+    // strip all ASS tags and styles"）→ 弹幕的颜色/\pos/\move/\alpha
+    // 全被吃掉：所有弹幕挤在同一行、速度/透明度调节永远"没反应"。
+    // 我们生成的 ASS 自带完整版式，这里要的是 "no"（按脚本渲染）。
+    mpv_set_option_string(mpv_, "secondary-sub-ass-override", "no");
     mpv_set_option_string(mpv_, "osd-level", "0");
     mpv_set_option_string(mpv_, "osc", "no");
     mpv_set_option_string(mpv_, "keep-open", "yes");
@@ -234,6 +263,7 @@ void MpvWindow::setHdrMode(bool hdr, bool hlg) {
 
 int MpvWindow::activeTrackIndex(const QString& type) {
     if (mpv_ == nullptr) return -1;
+    const QString typeName = mpvTrackType(type);
     mpv_node items[2];
     items[0].format = MPV_FORMAT_STRING;
     items[0].u.string = const_cast<char*>("get_property");
@@ -257,6 +287,7 @@ int MpvWindow::activeTrackIndex(const QString& type) {
             const mpv_node t = result.u.list->values[i];
             if (t.format != MPV_FORMAT_NODE_MAP || t.u.list == nullptr) continue;
             QString trackType;
+            QString trackFile;
             bool selected = false;
             for (int j = 0; j < t.u.list->num; ++j) {
                 const char* k = t.u.list->keys[j];
@@ -266,9 +297,13 @@ int MpvWindow::activeTrackIndex(const QString& type) {
                 } else if (strcmp(k, "selected") == 0 &&
                            v.format == MPV_FORMAT_FLAG) {
                     selected = v.u.flag != 0;
+                } else if (strcmp(k, "external-filename") == 0 &&
+                           v.format == MPV_FORMAT_STRING) {
+                    trackFile = QString::fromUtf8(v.u.string);
                 }
             }
-            if (trackType == type) {
+            if (!danmakuFile_.isEmpty() && trackFile == danmakuFile_) continue;
+            if (trackType == typeName) {
                 ++idx;
                 if (selected) ordinal = idx;
             }
@@ -318,13 +353,15 @@ void MpvWindow::selectTrack(const QString& type, int index) {
     // selectSubtitle 命令无人处理）。现在 QML 直驱本地 mpv：
     // 序号 = NativePlayerState 轨道列表序号（Emby id-1）→ 按 `track-list`
     // 同类型第 index 项映射到 mpv 轨道 id。
-    const char* prop = type == QLatin1String("subtitle") ? "sid" : "aid";
+    const QString typeName = mpvTrackType(type);
+    const char* prop = typeName == QLatin1String("sub") ? "sid" : "aid";
     if (index < 0) {
         mpv_set_property_string(mpv_, prop, "no");
         return;
     }
     mpv_node node{};
     if (mpv_get_property(mpv_, "track-list", MPV_FORMAT_NODE, &node) < 0) {
+        restoreSid();
         return;
     }
     int nth = -1;
@@ -336,6 +373,7 @@ void MpvWindow::selectTrack(const QString& type, int index) {
                 continue;
             }
             QString itemType;
+            QString itemFile;
             int id = -1;
             for (int j = 0; j < item.u.list->num; ++j) {
                 const char* k = item.u.list->keys[j];
@@ -345,9 +383,15 @@ void MpvWindow::selectTrack(const QString& type, int index) {
                 } else if (qstrcmp(k, "id") == 0 &&
                            v.format == MPV_FORMAT_INT64) {
                     id = static_cast<int>(v.u.int64);
+                } else if (qstrcmp(k, "external-filename") == 0 &&
+                           v.format == MPV_FORMAT_STRING) {
+                    itemFile = QString::fromUtf8(v.u.string);
                 }
             }
-            if (itemType != type) continue;
+            if (itemType != typeName) continue;
+            // 676：弹幕轨是 sub-add 进来的外部字幕，**不计入**面板序号
+            //（否则序号整体错位，选到的不是用户点的字幕）
+            if (!danmakuFile_.isEmpty() && itemFile == danmakuFile_) continue;
             ++nth;
             if (nth == index) {
                 targetId = id;
@@ -421,8 +465,21 @@ void MpvWindow::setDanmakuAss(const QString& assText) {
     f.write(assText.toUtf8());
     f.close();
 
-    if (!command({QStringLiteral("sub-add"), danmakuFile_,
-                  QStringLiteral("select")})) {
+    // 【676】记录用户当前主字幕轨，加轨后恢复。
+    //
+    // 旧实现 `sub-add <file> select` 会把**主字幕**切到弹幕轨——弹幕
+    // 每次重建（新弹幕到达 / 调节滑杆）都重来一遍，用户选的字幕就
+    // 反复"消失"（真机回归「字幕选中没显示字幕」的第二层根因）。
+    int64_t sidBefore = -1;
+    mpv_get_property(mpv_, "sid", MPV_FORMAT_INT64, &sidBefore);
+    const auto restoreSid = [this, sidBefore]() {
+        mpv_set_property_string(mpv_, "sid",
+                                sidBefore >= 0
+                                    ? QByteArray::number(sidBefore).constData()
+                                    : "no");
+    };
+    // 不带 select：新轨只加入 track-list，不改变 sid
+    if (!command({QStringLiteral("sub-add"), danmakuFile_})) {
         return;
     }
     // 新轨挂为**次字幕轨**（secondary-sid）：主字幕与弹幕同时渲染
@@ -466,6 +523,8 @@ void MpvWindow::setDanmakuAss(const QString& assText) {
                                 QByteArray::number(danmakuSubId_)
                                     .constData());
     }
+    // 恢复用户主字幕选中（sid），弹幕只走次字幕轨
+    restoreSid();
 }
 
 void MpvWindow::setVolume(double volume) {
@@ -497,6 +556,17 @@ void MpvWindow::setProperty(const QString& name, const QString& value) {
         qWarning().noquote()
             << "[mpv] setProperty 失败:" << name << value
             << QString::fromUtf8(mpv_error_string(rc));
+    } else if (name.startsWith(QLatin1String("sub-")) &&
+               name != QLatin1String("sub-add") &&
+               name != QLatin1String("sub-remove")) {
+        // 676：字幕三键成功落值日志（限流 500ms）——复测时一眼确认
+        // 「滑杆 → Dart → IPC → mpv」整条链是否打通。
+        static qint64 lastLogMs = 0;
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now - lastLogMs >= 500) {
+            lastLogMs = now;
+            qInfo().noquote() << "[mpv] 字幕属性" << name << "=" << value;
+        }
     }
 }
 

@@ -1806,4 +1806,102 @@ void main() {
       expect(bottom8, contains('playerState.paused ? Icons.playCircle : Icons.pauseCircle'));
     });
   });
+  group('㉜ 676：进度条时序/字幕接通/面板滚动/字幕全类型/弹幕即时/父进程守卫', () {
+    final stateCpp9 = read('$dir/src/player_state.cpp');
+    final mpvCpp9 = read('$dir/src/mpv_window.cpp');
+    final mainCpp9 = read('$dir/src/main.cpp');
+    final overlay9 = read('$dir/src/qml/Overlay.qml');
+    final panel9 = read('$dir/src/qml/Panel.qml');
+    final pslider9 = read('$dir/src/qml/PlayerSlider.qml');
+    final session9 = read('lib/services/player/qt_player_session.dart');
+    final pipe9 = read('lib/services/player/qt_player_pipe.dart');
+    final mainDart9 = read('lib/main.dart');
+
+    test('A 进度条松手时序：先 finished(拖动值) 再解绑', () {
+      final releaseAt = pslider9.indexOf('onReleased: (mouse) =>');
+      expect(releaseAt, greaterThan(0));
+      final finishedAt =
+          pslider9.indexOf('root.finished(v)', releaseAt);
+      final unbindAt =
+          pslider9.indexOf('slider.isPressed = false', releaseAt);
+      expect(finishedAt, greaterThan(releaseAt));
+      expect(unbindAt, greaterThan(finishedAt));
+      // 旧 Connections 松手链（读到绑定回写的旧值 → 二次 seek）已删除
+      expect(pslider9, isNot(contains('onIsPressedChanged')));
+      // 映射兜底：不依赖 ESlider 内部 id 链
+      expect(pslider9, contains('isNaN(v)'));
+      expect(pslider9, contains('preventStealing: true'));
+    });
+
+    test('B 字幕轨类型归一（subtitle → mpv 的 sub）', () {
+      expect(mpvCpp9, contains('QString mpvTrackType(const QString& type)'));
+      expect(mpvCpp9,
+          contains('type == QLatin1String("subtitle") ? QStringLiteral("sub")'));
+      expect(mpvCpp9, contains('itemType != typeName'));
+      expect(mpvCpp9, contains('trackType == typeName'));
+      // 两个入口都走归一（selectTrack / activeTrackIndex）
+      expect('const QString typeName = mpvTrackType(type);'
+          .allMatches(mpvCpp9).length, greaterThanOrEqualTo(2));
+      // Dart 侧字幕类型 'sub' 也入列（675 C 保留）
+      expect(stateCpp9, contains('QLatin1String("sub")'));
+      // 弹幕轨（sub-add 的外部字幕）不得计入面板序号
+      expect(mpvCpp9, contains('itemFile == danmakuFile_'));
+      expect(mpvCpp9, contains('trackFile == danmakuFile_'));
+      // 加弹幕轨不得抢占用户主字幕（sub-add 不带 select + 恢复 sid）
+      expect(mpvCpp9, contains('int64_t sidBefore = -1;'));
+      expect(mpvCpp9, contains('mpv_set_property_string(mpv_, "sid",'));
+      expect(mpvCpp9, isNot(contains('QStringLiteral("select")')));
+    });
+
+    test('C 字幕/音轨面板可滚动 + 固定长度滚动条（够长才显示）', () {
+      expect(panel9, contains('listAvailableHeight'));
+      expect(panel9, contains('Math.min(root.rowsHeight'));
+      expect(panel9, contains('id: listScroll'));
+      expect(panel9, contains('list.contentHeight > list.height + 4'));
+      expect(panel9, contains('id: listHandle'));
+      expect(panel9, contains('height: 96'));
+      expect(panel9, contains('list.contentY = (listHandle.y / span)'));
+      expect(panel9, contains('boundsBehavior: Flickable.StopAtBounds'));
+    });
+
+    test('D 字幕大小/位置/延迟全类型生效（安卓映射 + ASS 覆盖）', () {
+      // 位置公式对齐安卓：/4 + clamp(0,100)（22 → 95）
+      expect(session9, contains('value.clamp(0, 200) / 4'));
+      expect(session9, contains("adapter.setProperty('sub-pos', '95')"));
+      // ASS 样式字幕吃 sub-scale
+      expect(mpvCpp9,
+          contains('mpv_set_option_string(mpv_, "sub-ass-override", "scale")'));
+      // 次字幕轨（弹幕 ASS）不得被 strip（默认值会吃掉颜色/位置/透明度）
+      expect(mpvCpp9,
+          contains('"secondary-sub-ass-override", "no"'));
+      // 三通道写入可诊断
+      expect(mpvCpp9, contains('name.startsWith(QLatin1String("sub-"))'));
+    });
+
+    test('E 弹幕大小/速度/透明度变化即重建 ASS', () {
+      expect(overlay9, contains('property string danmakuStyleSig'));
+      expect(overlay9, contains('if (sig === root.danmakuStyleSig) return'));
+      expect(overlay9, contains('root.danmakuStyleSig = sig'));
+      // 三值都进签名
+      expect(overlay9, contains('playerState.danmakuFontSize'));
+      expect(overlay9, contains('playerState.danmakuSpeed'));
+      expect(overlay9, contains('playerState.danmakuOpacity'));
+    });
+
+    test('F 关主窗口 → Qt 跟随退出（双保险）', () {
+      // Qt 侧：父进程句柄守卫
+      expect(mainCpp9, contains('QWinEventNotifier'));
+      expect(mainCpp9, contains('::OpenProcess('));
+      expect(mainCpp9, contains('SYNCHRONIZE'));
+      expect(mainCpp9, contains('QCoreApplication::quit()'));
+      expect(mainCpp9, contains('"parent-pid"'));
+      expect(mainCpp9, contains('parser.value("parent-pid")'));
+      // Dart 侧：启动带父 pid + 关窗主动收
+      expect(pipe9, contains("'--parent-pid'"));
+      expect(pipe9, contains(r"'$pid'"));
+      expect(mainDart9, contains('_QtPlayerWindowCloseListener'));
+      expect(mainDart9, contains('void onWindowClose()'));
+      expect(mainDart9, contains('MpvSessionPlatform.closeQtPlayer()'));
+    });
+  });
 }

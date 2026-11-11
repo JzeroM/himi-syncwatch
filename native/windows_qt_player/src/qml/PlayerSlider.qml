@@ -71,17 +71,19 @@ Item {
         onUserValueChanged: (v) => root.moved(v)
     }
 
-    // 松手检测（ESlider 只有连续的 userValueChanged）
-    Connections {
-        target: slider
-        function onIsPressedChanged() {
-            if (!slider.isPressed) root.finished(slider.value)
-        }
-    }
+    // 【676】松手检测已移除独立 Connections 链（见 trackDrag.onReleased）：
+    // isPressed 由 true→false 的瞬间，`Binding`（when: !isPressed）会
+    // **立刻把 slider.value 写回 root.value（外部旧值）**，Connections
+    // 随后读到旧值再 finished() → seek 回旧位置（真机：进度条拖不动/
+    // 点击跳不过去，音量亮度因为有 onMoved 实时回写所以正常）。
+    // 现在改为松手时**先显式 finished(拖动值)**，再解除绑定保护。
 
-    // 【675 B】统一按压-拖动（Flutter Slider 语义）：按下即跳到光标、
-    // 按住拖动全程跟随、松手回调不变。置于 ESlider 之上接管全部鼠标
-    //（含手柄区——抓边不再偏移）。isPressed 悬起既有绑定保护与松手链。
+    // 【675 B / 676】统一按压-拖动（Flutter Slider 语义）：按下即跳到
+    // 光标、按住拖动全程跟随。置于 ESlider 之上接管全部鼠标（含手柄区
+    // ——抓边不再偏移）。isPressed 悬起既有绑定保护。
+    //
+    // 【676 松手时序】先 finished(拖动值) 再 isPressed=false——顺序反了
+    // 会被 Binding 立刻回写旧值，seek 回旧位置（进度条"拖不动"）。
     MouseArea {
         id: trackDrag
         anchors.fill: parent
@@ -91,9 +93,23 @@ Item {
         property bool active: false
 
         function applyAt(x) {
-            var v = slider.mapXToValue(x)
+            var v = null
+            try {
+                v = slider.mapXToValue(x)
+            } catch (e) {
+                v = null
+            }
+            if (v === null || isNaN(v) || !isFinite(v)) {
+                // 自含映射兜底（不依赖 ESlider 内部 id 链）：整宽线性。
+                var w = Math.max(1, width)
+                var ratio = Math.max(0, Math.min(1, x / w))
+                v = root.minimumValue
+                        + ratio * (root.maximumValue - root.minimumValue)
+            }
+            v = Math.max(root.minimumValue, Math.min(root.maximumValue, v))
             slider.value = v
             root.moved(v)
+            return v
         }
 
         onPressed: (mouse) => {
@@ -104,8 +120,14 @@ Item {
         onPositionChanged: (mouse) => {
             if (active) applyAt(mouse.x)
         }
-        onReleased: {
+        // 676：松手 = 落到最终位置 → **先回调**（此时 slider.value 还是
+        // 拖动值）→ 再解绑（绑定写回的是外部新值，不再二次 seek）。
+        onReleased: (mouse) => {
+            if (!active) return
+            applyAt(mouse.x)
             active = false
+            var v = slider.value
+            root.finished(v)
             slider.isPressed = false
         }
         onCanceled: {

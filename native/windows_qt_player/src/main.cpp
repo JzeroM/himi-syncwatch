@@ -1,4 +1,5 @@
 #include <QCommandLineParser>
+#include <QWinEventNotifier>
 #include <QNetworkAccessManager>
 #include <QNetworkDiskCache>
 #include <QQmlNetworkAccessManagerFactory>
@@ -143,7 +144,35 @@ int main(int argc, char* argv[]) {
     // 【670】预热模式：窗口隐藏待命，收到首条 load 命令才弹出；
     // 管道断开自动退出（防孤儿进程）。
     parser.addOption({"prewarm", "隐藏待命模式（启动预热）"});
+    // 【676】父进程（Flutter）pid：父进程退出/崩溃/被杀 → 本进程跟随退出
+    //（detached 启动不会被父进程带走，缺这个守卫会留孤儿播放窗）。
+    parser.addOption({"parent-pid", "父进程 pid（生命周期守卫）", "pid"});
     parser.process(app);
+
+    // ── 676：父进程存活守卫（Qt 进程由 Flutter detached 拉起）──
+    // 用 SYNCHRONIZE 句柄 + QWinEventNotifier：父进程一退出立即触发
+    //（不轮询、不占 CPU）。正常关闭路径另有一层 Dart 主动 kill。
+    {
+        bool pidOk = false;
+        const qint64 parentPid = parser.value("parent-pid").toLongLong(&pidOk);
+        if (pidOk && parentPid > 0) {
+            HANDLE parent = ::OpenProcess(
+                SYNCHRONIZE, FALSE, static_cast<DWORD>(parentPid));
+            if (parent != nullptr) {
+                auto* watcher = new QWinEventNotifier(parent, &app);
+                QObject::connect(watcher, &QWinEventNotifier::activated,
+                                 &app, []() {
+                                     qInfo() << "[lifecycle] 父进程已退出 →"
+                                                " Qt 播放器跟随关闭";
+                                     QCoreApplication::quit();
+                                 });
+                qInfo() << "[lifecycle] 父进程守卫已安装 pid=" << parentPid;
+            } else {
+                qWarning() << "[lifecycle] 父进程守卫安装失败 pid="
+                           << parentPid;
+            }
+        }
+    }
 
     const bool selftest = parser.isSet("selftest");
     const bool prewarm = parser.isSet("prewarm");

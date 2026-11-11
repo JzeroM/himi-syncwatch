@@ -188,6 +188,17 @@ Future<void> _bootstrap() async {
       await windowManager.ensureInitialized();
     } catch (_) {}
   }
+  // 676：主窗口关闭 → Qt 播放窗**跟随退出**。
+  //
+  // Qt 进程由 `Process.start(mode: detached)` 拉起，父进程退出**不会**
+  // 带走子进程（真机：关掉详情窗口后播放窗还挂在桌面上）。双保险：
+  //   ① 这里 onWindowClose 主动 kill（正常关闭路径，立刻生效）；
+  //   ② Qt 侧 `--parent-pid` 句柄守卫（崩溃/被任务管理器杀掉也能收）。
+  if (Platform.isWindows) {
+    try {
+      windowManager.addListener(_QtPlayerWindowCloseListener());
+    } catch (_) {}
+  }
   HttpOverrides.global = _SelfSignedHttpOverrides();
 
   final authService = EmbyAuthService();
@@ -321,4 +332,12 @@ void main() async {
   runZonedGuarded(_bootstrap, (error, stack) {
     LogService().log('FATAL', 'Zone error: $error\n$stack');
   });
+}
+
+/// 676：主窗口关闭事件 → 收掉 Qt 播放器进程（幂等）。
+class _QtPlayerWindowCloseListener with WindowListener {
+  @override
+  void onWindowClose() {
+    unawaited(MpvSessionPlatform.closeQtPlayer());
+  }
 }
