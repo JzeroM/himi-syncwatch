@@ -116,6 +116,9 @@ public:
     /// 由 main.cpp 从 `--parent-pid` 注入。
     void setParentPid(qint64 pid) { parentPid_ = pid; }
 
+    /// 677：供 main.cpp 的 50ms 节拍调用（`followParentOnce` 是私有实现）。
+    void followParentOncePublic() { followParentOnce(); }
+
     /// 【669：HDR 晚绑定】媒体信息解析完才决定 HDR/HLG 档位，而进程
     /// 为「起播直接弹窗」早已拉起（Flutter 侧 _ensureQtPlayerProcess）。
     /// 流程：先 setHdrMode 再 load，mpv 首帧前应用与启动参数等效。
@@ -178,10 +181,6 @@ private:
     HWND findParentWindow();
     /// 677：按 Flutter 主窗当前矩形重算并应用本窗矩形（房间并排跟随）。
     void followParentOnce();
-
-public:
-    /// 677：供 main.cpp 的 50ms 节拍调用（`followParentOnce` 是私有实现）。
-    void followParentOncePublic() { followParentOnce(); }
 
     /// 669：初始化前用 option、初始化后用 property（mpv 规则）。
     void setMpvString(const char* name, const QString& value);
