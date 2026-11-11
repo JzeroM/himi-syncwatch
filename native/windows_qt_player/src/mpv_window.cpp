@@ -232,6 +232,50 @@ void MpvWindow::setHdrMode(bool hdr, bool hlg) {
     applyHdrOptions(hdr, hlg);
 }
 
+int MpvWindow::activeTrackIndex(const QString& type) {
+    if (mpv_ == nullptr) return -1;
+    mpv_node items[2];
+    items[0].format = MPV_FORMAT_STRING;
+    items[0].u.string = const_cast<char*>("get_property");
+    items[1].format = MPV_FORMAT_STRING;
+    items[1].u.string = const_cast<char*>("track-list");
+    mpv_node_list cmdList{};
+    cmdList.num = 2;
+    cmdList.values = items;
+    cmdList.keys = nullptr;
+    mpv_node cmd;
+    cmd.format = MPV_FORMAT_NODE_ARRAY;
+    cmd.u.list = &cmdList;
+    mpv_node result;
+    if (mpv_command_node(mpv_, &cmd, &result) < 0) return -1;
+    int ordinal = -1;
+    int idx = -1;
+    if (result.format == MPV_FORMAT_NODE_ARRAY && result.u.list != nullptr) {
+        for (int i = 0; i < result.u.list->num; ++i) {
+            const mpv_node t = result.u.list->values[i];
+            if (t.format != MPV_FORMAT_NODE_MAP || t.u.map == nullptr) continue;
+            QString trackType;
+            bool selected = false;
+            for (int j = 0; j < t.u.map->num; ++j) {
+                const char* k = t.u.map->keys[j];
+                const mpv_node v = t.u.map->values[j];
+                if (strcmp(k, "type") == 0 && v.format == MPV_FORMAT_STRING) {
+                    trackType = QString::fromUtf8(v.u.string);
+                } else if (strcmp(k, "selected") == 0 &&
+                           v.format == MPV_FORMAT_FLAG) {
+                    selected = v.u.flag != 0;
+                }
+            }
+            if (trackType == type) {
+                ++idx;
+                if (selected) ordinal = idx;
+            }
+        }
+    }
+    mpv_free_node_contents(&result);
+    return ordinal;
+}
+
 void MpvWindow::load(const QString& url, const QMap<QString, QString>& headers) {
     if (mpv_ == nullptr || url.isEmpty()) return;
 

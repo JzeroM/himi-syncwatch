@@ -419,6 +419,21 @@ int main(int argc, char* argv[]) {
                                  }
                                  if (startMs > 0) mpv.seekTo(startMs);
                              }
+                             // 672：mpv 自选默认轨 → 回填面板默认勾
+                             //（延迟等 track-list 就绪）
+                             QTimer::singleShot(800, &app,
+                                                [&mpv, &state]() {
+                                 QJsonObject patch;
+                                 patch.insert(
+                                     QStringLiteral("selectedAudioId"),
+                                     mpv.activeTrackIndex(
+                                         QStringLiteral("audio")) + 1);
+                                 patch.insert(
+                                     QStringLiteral("selectedSubtitleId"),
+                                     mpv.activeTrackIndex(
+                                         QStringLiteral("subtitle")) + 1);
+                                 state.applyJson(patch);
+                             });
                          } else if (type == QLatin1String("setPaused")) {
                              mpv.setPaused(
                                  cmd.value(QLatin1String("paused")).toBool());
@@ -455,12 +470,22 @@ int main(int argc, char* argv[]) {
                                  cmd.value(QLatin1String("id")).toInt(-1));
                              mpv.selectTrack(QStringLiteral("audio"),
                                              id > 0 ? id - 1 : -1);
+                             // 672：回填选中真相（面板勾选即时正确）
+                             QJsonObject patch;
+                             patch.insert(QStringLiteral("selectedAudioId"),
+                                          id > 0 ? id : 0);
+                             state.applyJson(patch);
                          } else if (type ==
                                     QLatin1String("selectSubtitle")) {
                              const int id = static_cast<int>(
                                  cmd.value(QLatin1String("id")).toInt(-1));
                              mpv.selectTrack(QStringLiteral("subtitle"),
                                              id > 0 ? id - 1 : -1);
+                             // 672：回填选中真相（0 = 关闭字幕）
+                             QJsonObject patch;
+                             patch.insert(QStringLiteral("selectedSubtitleId"),
+                                          id > 0 ? id : 0);
+                             state.applyJson(patch);
                          }
                      });
 

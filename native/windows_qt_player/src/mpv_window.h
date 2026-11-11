@@ -77,6 +77,10 @@ public:
     /// 流程：先 setHdrMode 再 load，mpv 首帧前应用与启动参数等效。
     Q_INVOKABLE void setHdrMode(bool hdr, bool hlg);
 
+    /// 【672】活跃轨道在同类型组内的序号（0 起；无 = -1）——面板 id =
+    /// 序号 + 1（与 Flutter「Emby 索引 + 1」约定一致），供选中态回填。
+    Q_INVOKABLE int activeTrackIndex(const QString& type);
+
     /// 通用 mpv 命令透传（sub-add / sub-remove / screenshot-to-file …）。
     Q_INVOKABLE bool command(const QStringList& args);
 

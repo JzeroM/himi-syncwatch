@@ -54,6 +54,51 @@ void PlayerState::setWindowDiag(const QString& diag) {
     emit windowDiagChanged();
 }
 
+void PlayerState::patchValue(const QString& key, const QVariant& value) {
+    // 672：本地镜像（滑杆 moved/面板点选/恢复默认即时写）——绑定松手
+    // 写回的是这些值，镜像新则永不跳位/冻结。
+    if (key == QLatin1String("volume")) {
+        volume_ = value.toDouble();
+    } else if (key == QLatin1String("speed")) {
+        speed_ = value.toDouble();
+    } else if (key == QLatin1String("brightness")) {
+        brightness_ = value.toDouble();
+    } else if (key == QLatin1String("subtitleScale")) {
+        subtitleScale_ = value.toDouble();
+    } else if (key == QLatin1String("subtitleMarginY")) {
+        subtitleMarginY_ = value.toInt();
+    } else if (key == QLatin1String("subtitleDelayMs")) {
+        subtitleDelayMs_ = value.toDouble();
+    } else if (key == QLatin1String("danmakuSpeed")) {
+        danmakuSpeed_ = value.toDouble();
+    } else if (key == QLatin1String("danmakuFontSize")) {
+        danmakuFontSize_ = value.toDouble();
+    } else if (key == QLatin1String("danmakuOpacity")) {
+        danmakuOpacity_ = value.toDouble();
+    } else if (key == QLatin1String("decodeMode")) {
+        decodeMode_ = value.toString();
+    } else if (key == QLatin1String("videoFit")) {
+        videoFit_ = value.toString();
+    } else if (key == QLatin1String("danmakuEnabled")) {
+        danmakuEnabled_ = value.toBool();
+    } else if (key == QLatin1String("selectedAudioId")) {
+        selectedAudioId_ = value.toInt();
+    } else if (key == QLatin1String("selectedSubtitleId")) {
+        selectedSubtitleId_ = value.toInt();
+    } else if (key == QLatin1String("currentEpisodeIndex")) {
+        currentEpisodeIndex_ = value.toInt();
+    } else if (key == QLatin1String("currentVersionIndex")) {
+        currentVersionIndex_ = value.toInt();
+    } else if (key == QLatin1String("positionMs")) {
+        positionMs_ = value.toLongLong();
+    } else if (key == QLatin1String("skipPrompt")) {
+        skipPrompt_ = value.toString();
+    } else {
+        return;
+    }
+    emit changed();
+}
+
 void PlayerState::applyJson(const QJsonObject& json) {
     if (json.isEmpty()) return;
 
@@ -166,6 +211,11 @@ void PlayerState::applyJson(const QJsonObject& json) {
     // ── 轨道 ──
     const QJsonValue tracks = json.value(QLatin1String("tracks"));
     if (tracks.isArray()) setTracks(tracks.toArray());
+    // 672：轨道选中真相（顶层 id，与安卓/鸿蒙同源）+ 跳过提示
+    selectedAudioId_ = static_cast<int>(readInt64(json, "selectedAudioId", selectedAudioId_));
+    selectedSubtitleId_ = static_cast<int>(readInt64(json, "selectedSubtitleId", selectedSubtitleId_));
+    const QString sp = readString(json, "skipPrompt");
+    if (json.contains(QLatin1String("skipPrompt"))) skipPrompt_ = sp;
 
     if (dirty) emit changed();
 }

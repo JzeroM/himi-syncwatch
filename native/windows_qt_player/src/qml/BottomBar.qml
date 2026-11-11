@@ -35,6 +35,10 @@ Rectangle {
     signal fullscreenClicked()
     signal volumeChanged(real v)
     signal brightnessChanged(real v)
+    // 672：滑杆选中态（点击胶囊选中；选中后窗口滚轮调节该滑杆）
+    property string selectedSlider: ""
+    signal sliderSelected(string which)
+    signal wheelAdjust(string which, int dir)
     signal seekFinished(real ratio)
     signal skipSegmentClicked()
 
@@ -151,43 +155,28 @@ Rectangle {
             // Flutter：transport 尾 8 + leading 头 16
             Item { Layout.preferredWidth: 24 }
 
-            // 跳过片头/片尾胶囊（665，照 Flutter _buildSkipPromptButton）
-            Rectangle {
-                visible: (playerState.segmentIntroEndMs >= 0
-                          && playerState.positionMs < playerState.segmentIntroEndMs)
-                         || (playerState.segmentOutroStartMs >= 0
-                          && playerState.positionMs >= playerState.segmentOutroStartMs)
-                Layout.preferredHeight: 32
-                Layout.preferredWidth: skipLabel.implicitWidth + 24
-                radius: 16
-                color: theme.isDark ? Qt.rgba(1, 1, 1, 0.14)
-                                    : Qt.rgba(0, 0, 0, 0.10)
-                border.color: theme.borderColor
-                border.width: 1
-
-                Text {
-                    id: skipLabel
-                    anchors.centerIn: parent
-                    text: (playerState.segmentIntroEndMs >= 0
-                           && playerState.positionMs < playerState.segmentIntroEndMs)
-                          ? "跳过片头" : "跳过片尾"
-                    color: theme.textColor
-                    font.pixelSize: Theme.captionSize
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.skipSegmentClicked()
-                }
-            }
-
             // 【671 B1】音量玻璃胶囊：图标 + 加长滑杆 + 数值包裹一体（无 %）
+            // 【672】点击选中（描边高亮）+ 滚轮调节
             Rectangle {
+                id: volCapsule
                 Layout.preferredHeight: 32
                 Layout.preferredWidth: 210
                 radius: 16
                 color: Qt.rgba(1, 1, 1, 0.10)
+                border.width: root.selectedSlider === "volume" ? 2 : 0
+                border.color: theme.focusColor
+
+                // 胶囊点击/滚轮（在滑杆之下：滑杆区域优先归滑杆）
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.sliderSelected("volume")
+                    onWheel: (wheel) => {
+                        root.wheelAdjust("volume", wheel.angleDelta.y > 0 ? 1 : -1)
+                        wheel.accepted = true
+                    }
+                }
 
                 RowLayout {
                     anchors.fill: parent
@@ -230,14 +219,62 @@ Rectangle {
                 }
             }
 
+            // 【672 D1】跳过片头/片尾**文字胶囊**（skipPrompt 驱动，与安卓/
+            // 鸿蒙同字段；放音量控件右边保持间距——两侧各 10，隐藏不占位）
+            Item {
+                Layout.preferredWidth: 10
+                visible: skipCapsule.visible
+            }
+            Rectangle {
+                id: skipCapsule
+                visible: playerState.skipPrompt === "intro"
+                         || playerState.skipPrompt === "outro"
+                Layout.preferredHeight: 32
+                Layout.preferredWidth: skipLabel.implicitWidth + 28
+                radius: 16
+                color: Qt.rgba(1, 1, 1, 0.14)
+                border.color: theme.borderColor
+                border.width: 1
+
+                Text {
+                    id: skipLabel
+                    anchors.centerIn: parent
+                    text: playerState.skipPrompt === "intro"
+                          ? "跳过片头" : "跳过片尾"
+                    color: theme.textColor
+                    font.pixelSize: Theme.captionSize
+                    font.weight: Font.W600
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.skipSegmentClicked()
+                }
+            }
+
             Item { Layout.preferredWidth: 10 }
 
             // 【671 B1】亮度玻璃胶囊（同音量；数值不带 %）
             Rectangle {
+                id: briCapsule
                 Layout.preferredHeight: 32
                 Layout.preferredWidth: 210
                 radius: 16
                 color: Qt.rgba(1, 1, 1, 0.10)
+                border.width: root.selectedSlider === "brightness" ? 2 : 0
+                border.color: theme.focusColor
+
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.sliderSelected("brightness")
+                    onWheel: (wheel) => {
+                        root.wheelAdjust("brightness", wheel.angleDelta.y > 0 ? 1 : -1)
+                        wheel.accepted = true
+                    }
+                }
 
                 RowLayout {
                     anchors.fill: parent

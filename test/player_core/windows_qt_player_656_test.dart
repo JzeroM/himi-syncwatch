@@ -339,6 +339,8 @@ void main() {
         }
       }
       final missing = used.difference(declared);
+      // 672：patchValue 是 Q_INVOKABLE **方法**（非属性），排除方法调用
+      missing.removeWhere((m) => m == 'patchValue');
       expect(missing, isEmpty,
           reason: 'QML 用到但 C++ 未声明的属性: $missing');
     });
@@ -1173,12 +1175,13 @@ void main() {
       expect(mainQml, contains('function closePanels()'));
     });
 
-    test('手势：双击播放暂停 / 横滑 seek / 纵滑音量亮度', () {
+    test('手势：双击播放暂停 + 右键标记（672 拖拽类全去除）', () {
       expect(mainQml, contains('onDoubleClicked'));
       expect(mainQml, contains('tapTimer'));
-      expect(mainQml, contains('seekAccum'));
-      expect(mainQml, contains('startVolume'));
-      expect(mainQml, contains('startBrightness'));
+      // 拖拽 seek/音量/亮度按用户要求去除
+      expect(mainQml, isNot(contains('seekAccum')));
+      expect(mainQml, isNot(contains('startVolume')));
+      expect(mainQml, contains('Qt.RightButton'));
     });
 
     test('面板内容对齐：倍速标题/本地字幕行/选集卡片/内核面板', () {
@@ -1576,11 +1579,96 @@ void main() {
       expect(panel4, contains('cardWidth: 280'));
       expect(panel4, contains('maxColumns'));
       expect(panel4, contains('positionViewAtIndex'));
-      expect(panel4, contains('ScrollBar.vertical'));
+      expect(panel4, contains('vHandle'));  // 672：自绘固定长度滚动条
       expect(panel4, contains('root.columns - 1'));
       expect(panel4, contains('root.columns + 1'));
       // 总宽不超播放器宽（列数上限收紧）
       expect(panel4, contains('Math.floor(((parent ? parent.width : 1280)'));
+    });
+  });
+  group('㉘ 672：滑杆镜像/轨道真相/滚轮/右键标记/滚动条', () {
+    final state5 = read('$dir/src/player_state.h');
+    final stateCpp5 = read('$dir/src/player_state.cpp');
+    final mainCpp5 = read('$dir/src/main.cpp');
+    final overlay5 = read('$dir/src/qml/Overlay.qml');
+    final bottom5 = read('$dir/src/qml/BottomBar.qml');
+    final gestures5 = read('$dir/src/qml/VideoGestures.qml');
+    final panel5 = read('$dir/src/qml/Panel.qml');
+    final mpvH5 = read('$dir/src/mpv_window.h');
+    final settings5 = read('lib/screens/settings/intro_outro_settings_screen.dart');
+
+    test('A1 patchValue 本地镜像（滑杆不跳位的根治）', () {
+      expect(state5, contains('Q_INVOKABLE void patchValue'));
+      expect(stateCpp5, contains('void PlayerState::patchValue'));
+      expect(overlay5, contains('playerState.patchValue("volume"'));
+      expect(overlay5, contains('playerState.patchValue("brightness"'));
+      expect(overlay5, contains('playerState.patchValue("positionMs"'));
+    });
+
+    test('A2 恢复默认全联动（一次镜像六值）', () {
+      expect(overlay5, contains('patchValue("subtitleScale", 1.0)'));
+      expect(overlay5, contains('patchValue("subtitleMarginY", 22)'));
+      expect(overlay5, contains('patchValue("danmakuOpacity", 0.8)'));
+    });
+
+    test('A3 面板点选即时镜像（勾选不冻结）', () {
+      expect(overlay5, contains('patchValue("speed"'));
+      expect(overlay5, contains('patchValue("decodeMode"'));
+      expect(overlay5, contains('patchValue("selectedAudioId"'));
+      expect(overlay5, contains('patchValue("currentVersionIndex"'));
+    });
+
+    test('B1 轨道选中真相对齐安卓/鸿蒙（顶层 id）', () {
+      expect(state5, contains('selectedAudioId'));
+      expect(state5, contains('selectedSubtitleId'));
+      expect(mainCpp5, contains('selectedAudioId'));
+      expect(mainCpp5, contains('activeTrackIndex'));
+      expect(mpvH5, contains('activeTrackIndex'));
+      // 默认「关闭字幕」打勾 + 空面板兜底
+      expect(overlay5, contains('playerState.selectedSubtitleId <= 0'));
+      expect(overlay5, contains('无可用音轨'));
+    });
+
+    test('C1 拖拽类手势全去除（seek/音量/亮度）', () {
+      expect(gestures5, isNot(contains('seekAccum')));
+      expect(gestures5, isNot(contains('startVolume')));
+      expect(gestures5, isNot(contains('onPositionChanged: (mouse) => {\n            root.doShowControls()\n            if (!pressed')));
+      // 双击暂停保留
+      expect(gestures5, contains('onDoubleClicked'));
+    });
+
+    test('C2 滑杆选中态 + 滚轮调节', () {
+      expect(bottom5, contains('signal sliderSelected'));
+      expect(bottom5, contains('signal wheelAdjust'));
+      expect(overlay5, contains('function adjustByWheel'));
+      expect(gestures5, contains('wheelHandler'));
+    });
+
+    test('D1 跳过胶囊 skipPrompt 驱动 + 放音量右侧', () {
+      expect(bottom5, contains('playerState.skipPrompt === "intro"'));
+      expect(bottom5, contains('id: skipCapsule'));
+      expect(overlay5, contains('"type": "skipSegment"'));
+    });
+
+    test('D2 右键画面任意位置标记（范围 ≤10% / ≥70%）', () {
+      expect(gestures5, contains('Qt.RightButton'));
+      expect(gestures5, contains('showSegmentMenu'));
+      expect(overlay5, contains('function markSegment'));
+      expect(overlay5, contains('dur * 0.10'));
+      expect(overlay5, contains('dur * 0.70'));
+      expect(overlay5, contains('"type": "setSegmentMark"'));
+    });
+
+    test('D3 设置页操作说明含 Windows 右键', () {
+      expect(settings5, contains('鼠标右击'));
+      expect(settings5, contains('10%'));
+      expect(settings5, contains('70%'));
+    });
+
+    test('E 选集滚动条固定长度 + 加粗（自绘）', () {
+      expect(panel5, contains('height: 96'));
+      expect(panel5, contains('width: 10'));
+      expect(panel5, contains('vHandle'));
     });
   });
 }

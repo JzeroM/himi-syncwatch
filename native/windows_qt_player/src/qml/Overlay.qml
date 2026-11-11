@@ -61,6 +61,43 @@ ApplicationWindow {
     // 弹幕开关本地态（ASS 重生成随开关增减弹幕行；遮罩常驻）
     property bool danmakuOn: true
 
+    // 672：滑杆选中态（"" / "volume" / "brightness"）——选中后窗口任意
+    // 位置滚轮调节该滑杆；悬停胶囊滚轮直接调该胶囊（BottomBar 内）。
+    property string selectedSlider: ""
+
+    function adjustByWheel(which, dir) {
+        if (which === "volume") {
+            var v = Math.max(0, Math.min(1, playerState.volume + dir * 0.05))
+            playerState.patchValue("volume", v)
+            mpvWindow.setVolume(v)
+            pipeServer.sendCommand({"type": "setVolume", "volume": v})
+        } else if (which === "brightness") {
+            var b = Math.max(0, Math.min(1, playerState.brightness + dir * 0.05))
+            playerState.patchValue("brightness", b)
+            pipeServer.sendCommand({"type": "setBrightness", "brightness": b})
+        }
+    }
+
+    /// 672 D2：片头/片尾标记（范围约束与全平台一致——588 权威：
+    /// 片头 ≤10%、片尾 ≥70%；Flutter 侧 _markSegmentAt 同规则兜底）。
+    function markSegment(kind) {
+        segmentMenu.visible = false
+        var pos = playerState.positionMs
+        var dur = playerState.durationMs
+        if (dur <= 0) { showNotice("影片未就绪"); return }
+        if (kind === "intro" && pos > dur * 0.10) {
+            showNotice("片头结束需在影片前 10% 内标记")
+            return
+        }
+        if (kind === "outro" && pos < dur * 0.70) {
+            showNotice("片尾开始需在影片后 30%（≥70%）标记")
+            return
+        }
+        pipeServer.sendCommand({"type": "setSegmentMark",
+                                "kind": kind, "positionMs": pos})
+        showNotice(kind === "intro" ? "已标记片头结束" : "已标记片尾开始")
+    }
+
     Timer {
         id: hideTimer
         interval: Theme.autoHideMs
@@ -79,6 +116,7 @@ ApplicationWindow {
     function closePanels() {
         panelOpen = false
         adjustOpen = false
+        segmentMenu.visible = false
     }
 
     function showGesture(iconOrText) {
@@ -111,9 +149,20 @@ ApplicationWindow {
     // ── 手势层（669：共享组件 VideoGestures，与宿主双窗各挂一份）──
     VideoGestures {
         panelsOpen: () => root.panelOpen || root.adjustOpen
+                         || segmentMenu.visible
         closePanels: root.closePanels
         showControls: () => hideTimer.restart()
         showGesture: (iconOrText) => root.showGesture(iconOrText)
+        showSegmentMenu: (mx, my) => {
+            segmentMenu.menuX = mx
+            segmentMenu.menuY = my
+            segmentMenu.visible = true
+        }
+        wheelHandler: (dir) => {
+            if (root.selectedSlider !== "") {
+                root.adjustByWheel(root.selectedSlider, dir)
+            }
+        }
     }
 
     // ── 播放快捷键（与宿主共用组件）──
@@ -174,6 +223,7 @@ ApplicationWindow {
         })
         onDanmakuClicked: {
             danmakuOn = !danmakuOn
+            playerState.patchValue("danmakuEnabled", danmakuOn)
             danmakuBuildTimer.restart()
             pipeServer.sendCommand({"type": "toggleDanmaku"})
         }
@@ -183,16 +233,26 @@ ApplicationWindow {
         onEpisodeClicked: root.openEpisodePanel()
         onSpeedClicked: root.openSpeedPanel()
         onFullscreenClicked: mpvWindow.toggleHostFullscreen()
-        onSkipSegmentClicked: root.skipSegmentLocal()
+        onSkipSegmentClicked: pipeServer.sendCommand({"type": "skipSegment"})
+        selectedSlider: root.selectedSlider
+        onSliderSelected: (which) => {
+            root.selectedSlider = (root.selectedSlider === which) ? "" : which
+        }
+        onWheelAdjust: (which, dir) => root.adjustByWheel(which, dir)
         onVolumeChanged: (v) => {
+            playerState.patchValue("volume", v)
             mpvWindow.setVolume(v)
             pipeServer.sendCommand({"type": "setVolume", "volume": v})
         }
-        onBrightnessChanged: (v) => pipeServer.sendCommand({
-            "type": "setBrightness", "brightness": v
-        })
+        onBrightnessChanged: (v) => {
+            playerState.patchValue("brightness", v)
+            pipeServer.sendCommand({
+                "type": "setBrightness", "brightness": v
+            })
+        }
         onSeekFinished: (ratio) => {
             var ms = Math.round(ratio * playerState.durationMs)
+            playerState.patchValue("positionMs", ms)
             mpvWindow.seekTo(ms)
             pipeServer.sendCommand({"type": "seekTo", "positionMs": ms})
         }
@@ -279,6 +339,70 @@ ApplicationWindow {
         }
     }
 
+    // ── 672 D2：片头/片尾标记菜单（右键画面任意位置弹出）──
+    Rectangle {
+        id: segmentMenu
+        property real menuX: 0
+        property real menuY: 0
+        visible: false
+        x: Math.max(8, Math.min(menuX, root.width - width - 8))
+        y: Math.max(8, Math.min(menuY, root.height - height - 8))
+        width: 240
+        height: menuCol.implicitHeight + 12
+        radius: 12
+        color: Qt.rgba(0.07, 0.07, 0.09, 0.88)
+        border.color: Qt.rgba(1, 1, 1, 0.12)
+        border.width: 1
+
+        Column {
+            id: menuCol
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+
+            Repeater {
+                model: [
+                    { text: "设为片头结束（前 10% 内）", kind: "intro" },
+                    { text: "设为片尾开始（≥70% 处）", kind: "outro" },
+                    { text: "清除片头/片尾标记", kind: "clear" }
+                ]
+                delegate: Rectangle {
+                    required property var modelData
+                    width: menuCol.width
+                    height: 38
+                    color: segRowMouse.containsMouse
+                           ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 14
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.text
+                        color: theme.textColor
+                        font.pixelSize: Theme.panelOptionSize
+                    }
+                    MouseArea {
+                        id: segRowMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (modelData.kind === "clear") {
+                                segmentMenu.visible = false
+                                pipeServer.sendCommand({
+                                    "type": "clearSegmentMark", "kind": "intro"})
+                                pipeServer.sendCommand({
+                                    "type": "clearSegmentMark", "kind": "outro"})
+                                root.showNotice("已清除片头/片尾标记")
+                            } else {
+                                root.markSegment(modelData.kind)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ── 列表面板（液态玻璃卡；无 ✕：toggle/点空白收回）──
     Panel {
         id: panel
@@ -303,12 +427,26 @@ ApplicationWindow {
         anchors.topMargin: Theme.panelTopOffset
         visible: root.adjustOpen
         onClosed: root.closePanels()
-        onAdjust: (key, value) => pipeServer.sendCommand({
-            "type": "adjustDisplay", "key": key, "value": value
-        })
-        onReset: (scope) => pipeServer.sendCommand({
-            "type": "resetDisplay", "scope": scope
-        })
+        onAdjust: (key, value) => {
+            playerState.patchValue(key, value)
+            pipeServer.sendCommand({
+                "type": "adjustDisplay", "key": key, "value": value
+            })
+        }
+        onReset: (scope) => {
+            // 672 A2：本地一次镜像全部默认值（滑杆齐回默认位）+ 命令
+            if (scope !== "danmaku") {
+                playerState.patchValue("subtitleScale", 1.0)
+                playerState.patchValue("subtitleMarginY", 22)
+                playerState.patchValue("subtitleDelayMs", 0.0)
+            }
+            if (scope !== "subtitle") {
+                playerState.patchValue("danmakuSpeed", 0.7)
+                playerState.patchValue("danmakuFontSize", 0.5)
+                playerState.patchValue("danmakuOpacity", 0.8)
+            }
+            pipeServer.sendCommand({"type": "resetDisplay", "scope": scope})
+        }
     }
 
     // ── 本地字幕文件选择 ──
@@ -445,11 +583,16 @@ ApplicationWindow {
             var t = playerState.audioTracks[i]
             list.push({
                 id: t.id,
+                // 672 B1：选中真相 = 顶层 selectedAudioId（与安卓/鸿蒙
+                // 同源；每轨 selected 在 Qt 模式可能恒 false）
                 display: t.label !== "" ? t.label
                          : (t.title !== "" ? t.title : "音轨 " + t.id),
                 sub: t.lang,
-                selected: t.selected
+                selected: t.id === playerState.selectedAudioId || t.selected
             })
+        }
+        if (list.length === 0) {
+            list.push({id: -1, display: "无可用音轨", sub: "", selected: false})
         }
         panel.title = "音轨"
         panel.cardMode = false
@@ -460,7 +603,13 @@ ApplicationWindow {
 
     function openSubtitlePanel() {
         if (panelOpen && panel.title === "字幕") { closePanels(); return }
-        var list = [{ id: -1, display: "关闭字幕", sub: "", selected: false }]
+        // 672 B1：选中真相 = 顶层 selectedSubtitleId（0 = 关闭字幕）
+        var list = [{
+            id: -1,
+            display: "关闭字幕",
+            sub: "",
+            selected: playerState.selectedSubtitleId <= 0
+        }]
         for (var i = 0; i < playerState.subtitleTracks.length; i++) {
             var t = playerState.subtitleTracks[i]
             list.push({
@@ -468,7 +617,7 @@ ApplicationWindow {
                 display: t.label !== "" ? t.label
                          : (t.title !== "" ? t.title : "字幕 " + t.id),
                 sub: t.lang,
-                selected: t.selected
+                selected: t.id === playerState.selectedSubtitleId || t.selected
             })
         }
         list.push({ id: -2, display: "加载本地字幕文件...", sub: "", selected: false })
@@ -547,9 +696,12 @@ ApplicationWindow {
     }
 
     function handlePanelItem(id) {
+        // 672 A3：点选即本地镜像（勾选即时移动、重开正确）
         if (panel.title === "选集") {
+            playerState.patchValue("currentEpisodeIndex", id)
             pipeServer.sendCommand({"type": "selectEpisode", "index": id})
         } else if (panel.title === "音轨") {
+            playerState.patchValue("selectedAudioId", id > 0 ? id : 0)
             mpvWindow.selectTrack("audio", id > 0 ? id - 1 : -1)
             pipeServer.sendCommand({"type": "selectAudio", "id": id})
         } else if (panel.title === "字幕") {
@@ -557,14 +709,18 @@ ApplicationWindow {
                 subDialog.open()
                 return
             }
+            playerState.patchValue("selectedSubtitleId", id > 0 ? id : 0)
             mpvWindow.selectTrack("subtitle", id > 0 ? id - 1 : -1)
             pipeServer.sendCommand({"type": "selectSubtitle", "id": id})
         } else if (panel.title === "倍速") {
+            playerState.patchValue("speed", id)
             mpvWindow.setSpeed(id)
             pipeServer.sendCommand({"type": "setSpeed", "speed": id})
         } else if (panel.title === "版本") {
+            playerState.patchValue("currentVersionIndex", id)
             pipeServer.sendCommand({"type": "selectVersion", "index": id})
         } else if (panel.title === "解码方式") {
+            playerState.patchValue("decodeMode", id)
             pipeServer.sendCommand({"type": "setDecodeMode", "mode": id})
         }
     }
@@ -590,6 +746,7 @@ ApplicationWindow {
             mpvWindow.command(["set", "video-unscaled", "yes"])
             mpvWindow.command(["set", "video-aspect-override", "0"])
         }
+        playerState.patchValue("videoFit", m)
         pipeServer.sendCommand({"type": "cycleVideoFit"})
     }
 

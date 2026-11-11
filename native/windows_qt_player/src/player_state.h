@@ -104,6 +104,19 @@ class PlayerState : public QObject {
     // "GLASS" = 透明合成正常；"SAFE:alpha0" = 已深底降级；其余=异常。
     Q_PROPERTY(QString windowDiag READ windowDiag NOTIFY windowDiagChanged)
 
+    // ── 672：轨道选中真相（与安卓/鸿蒙同源：顶层 id，非每轨 selected）──
+    // 面板勾选用这两个 id 判定（每轨 selected 在 Qt 模式下可能恒 false）。
+    Q_PROPERTY(int selectedAudioId READ selectedAudioId NOTIFY changed)
+    Q_PROPERTY(int selectedSubtitleId READ selectedSubtitleId NOTIFY changed)
+
+    // ── 672：跳过片头/片尾提示（'' 隐藏 / 'intro' / 'outro'）──
+    // 与安卓/鸿蒙原生底栏同驱动字段（skipPrompt）。
+    Q_PROPERTY(QString skipPrompt READ skipPrompt NOTIFY changed)
+
+    /// 672：滑杆/面板**本地镜像**——moved/点选/恢复默认即时写入本状态，
+    /// 根治「绑定松手写回过期值 → 滑杆跳位 / 勾选冻结」（真机回归）。
+    Q_INVOKABLE void patchValue(const QString& key, const QVariant& value);
+
 public:
     explicit PlayerState(QObject* parent = nullptr);
 
@@ -180,6 +193,10 @@ public:
     QString windowDiag() const { return windowDiag_; }
     void setWindowDiag(const QString& diag);
 
+    int selectedAudioId() const { return selectedAudioId_; }
+    int selectedSubtitleId() const { return selectedSubtitleId_; }
+    QString skipPrompt() const { return skipPrompt_; }
+
     /// 选集列表（`episodes` 数组的轻量投影）。
     struct Episode {
         int index = 0;
@@ -240,6 +257,9 @@ private:
     bool playerReady_ = false;
     bool controlsVisible_ = true;
     QString windowDiag_;
+    int selectedAudioId_ = 0;
+    int selectedSubtitleId_ = 0;
+    QString skipPrompt_;
 
     QString title_;
     QString mediaTitle_;

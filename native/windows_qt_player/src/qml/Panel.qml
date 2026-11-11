@@ -231,16 +231,53 @@ EUI.ECard {
         cellHeight: root.cardStride
         model: root.items
 
-        // 【671 B2】纵向滚动条（玻璃样式）
-        ScrollBar.vertical: ScrollBar {
-            policy: ScrollBar.AsNeeded
-            width: 8
-            contentItem: Rectangle {
-                implicitWidth: 6
-                radius: 3
-                color: Qt.rgba(1, 1, 1, 0.35)
+        // 【672 E】纵向滚动条**自绘**：固定长度手柄（96px，不随条目
+        // 数变短）+ 加粗 10px——QQC2 ScrollBar 手柄按比例缩（真机回归
+        // 「滚动条太短」）。手柄可拖拽；滚轮走 GridView 原生滚动。
+
+        // 自绘纵向滚动条（672 E：固定长度 + 加粗）
+        Item {
+            id: vScroll
+            parent: cards
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.rightMargin: 2
+            width: 10
+            z: 10
+            visible: cards.contentHeight > cards.height + 4
+
+            readonly property real ratio: Math.max(0, Math.min(1,
+                cards.contentY / Math.max(1, cards.contentHeight - cards.height)))
+
+            Rectangle {
+                id: vHandle
+                width: 10
+                height: 96
+                radius: 5
+                x: 0
+                y: vScroll.ratio * Math.max(0, vScroll.height - height)
+                color: vHandleMouse.containsMouse || vHandleMouse.pressed
+                       ? Qt.rgba(1, 1, 1, 0.55) : Qt.rgba(1, 1, 1, 0.35)
+
+                MouseArea {
+                    id: vHandleMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    preventStealing: true
+                    drag.target: vHandle
+                    drag.axis: Drag.YAxis
+                    drag.minimumY: 0
+                    drag.maximumY: Math.max(0, vScroll.height - vHandle.height)
+                    onPositionChanged: {
+                        if (!pressed) return
+                        var span = Math.max(1, vScroll.height - vHandle.height)
+                        cards.contentY = (vHandle.y / span)
+                                * Math.max(0, cards.contentHeight - cards.height)
+                    }
+                }
             }
-            background: Item { }
         }
 
         delegate: Item {
