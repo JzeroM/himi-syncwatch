@@ -93,6 +93,7 @@ qt_add_qml_module(himi_qt_player
         src/qml/PlayerSlider.qml
         src/qml/EpisodeLogo.qml
         src/qml/DisplayAdjustPanel.qml
+        src/qml/RoomPanel.qml
         src/qml/evolveui/ETheme.qml
         src/qml/evolveui/EButton.qml
         src/qml/evolveui/ESlider.qml

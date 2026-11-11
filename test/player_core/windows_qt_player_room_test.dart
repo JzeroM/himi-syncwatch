@@ -744,6 +744,24 @@ void main() {
       expect(roomPanel, contains('playerState.resourcePanelOpen'));
       expect(roomPanel, contains('visible: open'));
     });
+
+    test('J8 RoomPanel 必须同时进 QML_FILES 与 alias 循环', () {
+      // 【CI 真机回归 43044933527】只加 alias 循环、漏加 QML_FILES →
+      // 文件不进 qrc → `RoomPanel is not a type`（冒烟退出码 -5）。
+      final cmake = read('$dir/CMakeLists.txt');
+      final qmlFilesBlock = cmake.substring(
+        cmake.indexOf('QML_FILES'),
+        cmake.indexOf('# ── EvolveUI 资产'),
+      );
+      expect(qmlFilesBlock, contains('src/qml/RoomPanel.qml'),
+          reason: 'RoomPanel.qml 未进 QML_FILES → 不会被打进 qrc');
+      // alias 循环里也要有（否则 qrc 路径带 src/qml 前缀）
+      final aliasBlock = cmake.substring(
+        cmake.indexOf('foreach(_qml Main Overlay'),
+        cmake.indexOf('# EvolveUI vendor'),
+      );
+      expect(aliasBlock, contains('RoomPanel'));
+    });
   });
 }
 
