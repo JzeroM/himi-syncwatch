@@ -1460,6 +1460,11 @@ void main() {
     test('CI 冒烟自检（--selftest：运行时 QML 加载错误 CI 直接红）', () {
       expect(mainCpp3, contains('selftest'));
       expect(mainCpp3, contains('[selftest] QML 加载通过'));
+      // 必须是**纯开关**（无 valueName）：照抄 --hdr 三参会变成带值
+      // 选项，裸 --selftest 报 "Missing value" 直接 exit(1)（670 CI 踩过）
+      expect(mainCpp3,
+          contains('parser.addOption({"selftest", "QML 加载冒烟自检后退出"});'));
+      expect(mainCpp3, contains('parser.isSet("prewarm")'));
       // 两个 workflow 都要跑（Qt 专用构建 + 发布构建）
       expect(qtWorkflow, contains('--selftest'));
       expect(relWorkflow, contains('--selftest'));

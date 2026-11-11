@@ -67,7 +67,7 @@ class QtPlayerPipe {
         '--token', token,
         '--hdr', hdr ? '1' : '0',
         '--hlg', hlg ? '1' : '0',
-        if (prewarm) '--prewarm', '1',
+        if (prewarm) '--prewarm',
       ],
       // 【必须用 detached，不能用 detachedWithStdio】
       //

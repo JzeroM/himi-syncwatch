@@ -113,14 +113,16 @@ int main(int argc, char* argv[]) {
     parser.addOption({"hlg", "内容是否为 HLG（1/0）", "flag", "0"});
     // 【670】CI 冒烟自检：只加载 QML 验证类型/导入正确性即退出 0
     //（抓「ApplicationWindow 不是一种类型」这类运行时加载错误）。
-    parser.addOption({"selftest", "QML 加载冒烟自检后退出", "flag", "0"});
+    // 注意：纯开关（无 valueName）——照抄 --hdr 的三参会变成带值选项，
+    // 裸 `--selftest` 会 "Missing value" 直接 exit(1)（670 CI 踩过）。
+    parser.addOption({"selftest", "QML 加载冒烟自检后退出"});
     // 【670】预热模式：窗口隐藏待命，收到首条 load 命令才弹出；
     // 管道断开自动退出（防孤儿进程）。
-    parser.addOption({"prewarm", "隐藏待命模式（启动预热）", "flag", "0"});
+    parser.addOption({"prewarm", "隐藏待命模式（启动预热）"});
     parser.process(app);
 
     const bool selftest = parser.isSet("selftest");
-    const bool prewarm = parser.value("prewarm") == QLatin1String("1");
+    const bool prewarm = parser.isSet("prewarm");
     const QString portText = parser.value("port");
     if (!selftest && portText.isEmpty()) {
         qCritical("缺少 --port 参数");
