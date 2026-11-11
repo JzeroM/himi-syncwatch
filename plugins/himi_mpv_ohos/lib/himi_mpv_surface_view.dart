@@ -44,6 +44,35 @@ class HimiMpvSurfaceView extends StatelessWidget {
   }
 }
 
+/// 678：房间/播放器内布局控制接口（**公开出来供测试使用**）。
+///
+/// 【为什么需要这个接口】`_HimiMpvOhosController` 是私有类，widget 测试
+/// 无法直接构造它；而 `PlatformViewLink` 在测试环境不会自动触发
+/// `create`。把「同步尺寸/位置」这一能力抽成公开接口后，测试可以通过
+/// [createHimiMpvOhosControllerForTest] 拿到实例，真实验证四次
+/// `flutter/platform_views` 通道调用与 `hybrid` 参数。
+abstract interface class HimiMpvOhosLayoutController
+    implements PlatformViewController {
+  /// 同步平台视图尺寸与位置（**变化才发**，避免每帧刷通道）。
+  Future<void> updateLayout({required Size size, required Offset offset});
+}
+
+/// 678：测试入口——构造一个真实的鸿蒙 hybrid 平台视图控制器。
+///
+/// 生产代码不要调用（`@visibleForTesting`）；正常路径走
+/// [HimiMpvSurfaceView] 的 `PlatformViewLink`。
+@visibleForTesting
+HimiMpvOhosLayoutController createHimiMpvOhosControllerForTest({
+  required int viewId,
+  TextDirection layoutDirection = TextDirection.ltr,
+  ValueChanged<int>? onCreated,
+}) =>
+    _HimiMpvOhosController(
+      viewId: viewId,
+      layoutDirection: layoutDirection,
+      onCreated: onCreated ?? (_) {},
+    );
+
 class _HimiMpvOhosSurface extends StatefulWidget {
   const _HimiMpvOhosSurface({required this.controller});
 
@@ -81,7 +110,8 @@ class _HimiMpvOhosSurfaceState extends State<_HimiMpvOhosSurface> {
   }
 }
 
-class _HimiMpvOhosController extends PlatformViewController {
+class _HimiMpvOhosController extends PlatformViewController
+    implements HimiMpvOhosLayoutController {
   _HimiMpvOhosController({
     required this.viewId,
     required this.layoutDirection,
@@ -117,6 +147,7 @@ class _HimiMpvOhosController extends PlatformViewController {
     onCreated(viewId);
   }
 
+  @override
   Future<void> updateLayout({
     required Size size,
     required Offset offset,
