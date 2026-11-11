@@ -96,10 +96,17 @@ void PlayerState::patchValue(const QString& key, const QVariant& value) {
     } else {
         return;
     }
+    localKeys_.insert(key);  // 675 A：本地置顶
     emit changed();
 }
 
-void PlayerState::applyJson(const QJsonObject& json) {
+void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
+    // 675 A：本地置顶——patchValue 写过的字段忽略远端过期推送
+    //（远端只补未动过的初值；mpv 事件的本地补丁走默认 false 照常生效）。
+    QJsonObject json = jsonIn;
+    if (remote) {
+        for (const QString& k : localKeys_) json.remove(k);
+    }
     if (json.isEmpty()) return;
 
     bool dirty = false;
@@ -267,7 +274,11 @@ void PlayerState::setTracks(const QJsonArray& arr) {
         t.selected = readBool(o, "selected", false);
         if (t.type == QLatin1String("audio")) {
             audio.append(t);
-        } else if (t.type == QLatin1String("subtitle")) {
+        } else if (t.type == QLatin1String("subtitle") ||
+                   // 675 C：Dart 侧 NativeTrack 字幕类型是 'sub'（安卓
+                   // 同源）——只认 'subtitle' 会把全部字幕轨丢弃
+                   //（真机回归「已有字幕未显示」）。
+                   t.type == QLatin1String("sub")) {
             subtitle.append(t);
         }
     }

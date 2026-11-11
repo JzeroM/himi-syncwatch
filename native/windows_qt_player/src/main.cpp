@@ -383,7 +383,9 @@ int main(int argc, char* argv[]) {
                          filtered.remove(QStringLiteral("paused"));
                          filtered.remove(QStringLiteral("positionMs"));
                          filtered.remove(QStringLiteral("durationMs"));
-                         state.applyJson(filtered);
+                         // remote=true：本地置顶字段（patchValue 写过）
+                         // 不被过期快照覆盖（675 A）
+                         state.applyJson(filtered, true);
                          // 【不做 loadfile】播放地址只由 `command` 帧的
                          // `load` 指令驱动（单一入口）。
                          //

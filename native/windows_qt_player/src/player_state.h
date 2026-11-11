@@ -3,6 +3,7 @@
 
 #include <QJsonObject>
 #include <QList>
+#include <QSet>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -127,7 +128,12 @@ public:
     ///
     /// 只在**字段真的变化**时发 changed 信号——QML 的属性绑定会因此
     /// 避免无谓重建（20Hz 推送下这一点很关键）。
-    void applyJson(const QJsonObject& json);
+    ///
+    /// [remote] 为 true（管道推送）时跳过**本地置顶字段**——patchValue
+    /// 写过的字段以本地为准（真机回归：过期快照把倍速/音量/字幕选中
+    /// 写回旧值 → 勾选冻结/标签不变）。mpv 事件的本地补丁走默认
+    /// false 照常生效。
+    void applyJson(const QJsonObject& json, bool remote = false);
 
     qint64 positionMs() const { return positionMs_; }
     qint64 durationMs() const { return durationMs_; }
@@ -260,6 +266,7 @@ private:
     bool playerReady_ = false;
     bool controlsVisible_ = true;
     QString windowDiag_;
+    QSet<QString> localKeys_;  ///< patchValue 写过的字段（本地置顶）
     int selectedAudioId_ = 0;
     int selectedSubtitleId_ = 0;
     QString skipPrompt_;

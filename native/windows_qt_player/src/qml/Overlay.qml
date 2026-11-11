@@ -45,6 +45,9 @@ ApplicationWindow {
     // 双窗实例任一被点击都能唤出本层）。
     property bool panelOpen: false
     property bool adjustOpen: false
+    // 675 D：开面板即取消滑杆选中（点别处语义）
+    onPanelOpenChanged: if (panelOpen) selectedSlider = ""
+    onAdjustOpenChanged: if (adjustOpen) selectedSlider = ""
 
     // 670 A1：SAFE 深底降级（main.cpp 自检 alphaBuffer 失败时置 true）
     // ——透明合成不可靠机器上保控件可见（0.35 深底，视频仍透出）。
@@ -103,7 +106,10 @@ ApplicationWindow {
         interval: Theme.autoHideMs
         // 670 A3：媒体就绪前控件**常驻**（防加载窗口期自动隐藏，
         // 用户正好没看见）；开播后才走 5 秒自动隐藏。
-        running: !playerState.paused && playerState.playerReady
+        // 675 G：就绪判定补 durationMs>0（playerReady 在 Qt 模式可能
+        // 恒 false → 自动隐藏永不启动，真机回归「长期无操作不隐藏」）。
+        running: !playerState.paused
+                 && (playerState.playerReady || playerState.durationMs > 0)
                  && playerState.controlsVisible
         onTriggered: playerState.controlsVisible = false
     }
@@ -132,6 +138,8 @@ ApplicationWindow {
         panelOpen = false
         adjustOpen = false
         segmentMenu.visible = false
+        // 675 D：点别处（含开面板）取消音量/亮度选中态
+        selectedSlider = ""
     }
 
     function showGesture(iconOrText) {
@@ -169,6 +177,7 @@ ApplicationWindow {
         showControls: () => hideTimer.restart()
         showGesture: (iconOrText) => root.showGesture(iconOrText)
         showSegmentMenu: (mx, my) => segmentMenu.openAt(mx, my)
+        onTap: () => root.selectedSlider = ""
         wheelHandler: (dir) => {
             if (root.selectedSlider !== "") {
                 root.adjustByWheel(root.selectedSlider, dir)
@@ -722,22 +731,52 @@ ApplicationWindow {
         lines.push("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
 
         var rows = Math.max(4, Math.floor((H - 80) / (fs + 6)))
-        for (var i = 0; i < items.length; i++) {
-            var it = items[i]
+        // 【675 E】速度 → 飞过时长（speed 越大越快）；透明度 → ASS alpha
+        var speed = Math.max(0.5, playerState.danmakuSpeed)
+        var opacity = Math.max(0.1, Math.min(1.0, playerState.danmakuOpacity))
+        var alphaTag = "\\alpha&H"
+                + ("0" + Math.round((1 - opacity) * 255).toString(16)).slice(-2)
+                + "&"
+        // 【675 E】防叠行：每行/每槽「最早可用时刻」，来弹幕优先取
+        // 空闲槽，同槽必有间隔——不再叠成一坨。
+        var rowFreeAt = [], topFreeAt = [], botFreeAt = []
+        for (var r = 0; r < rows; r++) rowFreeAt.push(0)
+        for (var r = 0; r < 3; r++) { topFreeAt.push(0); botFreeAt.push(0) }
+        function pickSlot(freeArr, t0) {
+            var best = 0
+            for (var k = 0; k < freeArr.length; k++) {
+                if (freeArr[k] <= t0) return k
+                if (freeArr[k] < freeArr[best]) best = k
+            }
+            return best
+        }
+        var sorted = items.slice().sort(function (a, b) {
+            return a.timeMs - b.timeMs
+        })
+        for (var i = 0; i < sorted.length; i++) {
+            var it = sorted[i]
             var t0 = it.timeMs / 1000
             var body = (it.text || "").replace(/\\\\/g, "\\")
                                      .replace(/\{/g, "(")
                                      .replace(/\}/g, ")")
                                      .replace(/\n/g, " ")
-            var col = assColor(it.color)
-            var dur = (it.mode === "scroll") ? 8 : 4
+            var col = assColor(it.color) + alphaTag
+            var dur = (it.mode === "scroll") ? (8.0 / speed) : 4
             var eff2
             if (it.mode === "top") {
-                eff2 = "{\\an8\\pos(" + Math.round(W / 2) + ",30)\\c" + col + "}"
+                var slotT = pickSlot(topFreeAt, t0)
+                topFreeAt[slotT] = t0 + 4
+                eff2 = "{\\an8\\pos(" + Math.round(W / 2) + ","
+                        + (30 + slotT * (fs + 6)) + ")\\c" + col + "}"
             } else if (it.mode === "bottom") {
-                eff2 = "{\\an2\\pos(" + Math.round(W / 2) + "," + (H - 30) + ")\\c" + col + "}"
+                var slotB = pickSlot(botFreeAt, t0)
+                botFreeAt[slotB] = t0 + 4
+                eff2 = "{\\an2\\pos(" + Math.round(W / 2) + ","
+                        + ((H - 30) - slotB * (fs + 6)) + ")\\c" + col + "}"
             } else {
-                var y2 = 20 + (i % rows) * (fs + 6)
+                var slotS = pickSlot(rowFreeAt, t0)
+                rowFreeAt[slotS] = t0 + dur * 0.55
+                var y2 = 20 + slotS * (fs + 6)
                 eff2 = "{\\move(" + (W + 120) + "," + y2 + "," + -120 + "," + y2
                         + ")\\c" + col + "}"
             }

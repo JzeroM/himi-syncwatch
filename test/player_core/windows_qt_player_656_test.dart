@@ -1558,7 +1558,7 @@ void main() {
     test('A3 滑杆拖动即时跟随（平滑只在程序性跳转）', () {
       expect(eSlider4, contains('enabled: !root.isPressed'));
       expect(eSlider4, contains('function mapXToValue'));
-      expect(pSlider4, contains('slider.mapXToValue(mouse.x)'));
+      expect(pSlider4, contains('slider.mapXToValue'));  // 675 起收进 applyAt(x)
     });
 
     test('A4 播放镜像字段以 mpv 为准（图标不失配）', () {
@@ -1749,6 +1749,61 @@ void main() {
       expect(overlay7, contains('"更新"'));
       expect(overlay7, contains('"清除"'));
       expect(overlay7, contains('"取消"'));
+    });
+  });
+  group('㉛ 675：本地置顶/按住跟随/字幕接通/弹幕增强/图标语义', () {
+    final stateH8 = read('$dir/src/player_state.h');
+    final stateCpp8 = read('$dir/src/player_state.cpp');
+    final mainCpp8 = read('$dir/src/main.cpp');
+    final overlay8 = read('$dir/src/qml/Overlay.qml');
+    final gestures8 = read('$dir/src/qml/VideoGestures.qml');
+    final pslider8 = read('$dir/src/qml/PlayerSlider.qml');
+    final bottom8 = read('$dir/src/qml/BottomBar.qml');
+
+    test('A 镜像本地置顶（过期快照不覆盖本地 patch）', () {
+      expect(stateCpp8, contains('localKeys_.insert(key)'));
+      expect(stateCpp8, contains('for (const QString& k : localKeys_) json.remove(k)'));
+      expect(mainCpp8, contains('state.applyJson(filtered, true)'));
+    });
+
+    test('B 滑杆按住跟随鼠标（按下即跳 + 全程跟随）', () {
+      expect(pslider8, contains('id: trackDrag'));
+      expect(pslider8, contains('slider.isPressed = true'));
+      expect(pslider8, contains('applyAt(mouse.x)'));
+      expect(pslider8, contains('preventStealing: true'));
+    });
+
+    test('C 字幕轨接通（type=sub 也入列，不再丢弃）', () {
+      expect(stateCpp8, contains('QLatin1String("sub")'));
+    });
+
+    test('D 选中态点别处取消', () {
+      expect(gestures8, contains('property var onTap'));
+      expect(overlay8, contains('onTap: () => root.selectedSlider = ""'));
+      expect(overlay8, contains('onPanelOpenChanged: if (panelOpen) selectedSlider = ""'));
+    });
+
+    test('E 弹幕增强（速度/透明度生效 + 防叠行）', () {
+      expect(overlay8, contains('pickSlot'));
+      expect(overlay8, contains('alphaTag'));
+      expect(overlay8, contains('8.0 / speed'));
+      expect(overlay8, contains('items.slice().sort'));
+    });
+
+    test('F 电影隐藏上下切集（episodeCount > 1）', () {
+      expect('visible: playerState.episodeCount > 1'.allMatches(bottom8).length, 2);
+    });
+
+    test('G 自动隐藏修复（就绪判定补 durationMs）', () {
+      expect(overlay8, contains('playerState.playerReady || playerState.durationMs > 0'));
+    });
+
+    test('H 手势图标语义（当前可执行动作 + 先算目标态）', () {
+      expect(gestures8, contains('willBePlaying ? Icons.pauseCircle'));
+      // 旧的反向表达式不得回归
+      expect(gestures8, isNot(contains('playerState.paused ? Icons.playCircle')));
+      // 底栏播放钮动作语义与 Flutter 一致
+      expect(bottom8, contains('playerState.paused ? Icons.playCircle : Icons.pauseCircle'));
     });
   });
 }

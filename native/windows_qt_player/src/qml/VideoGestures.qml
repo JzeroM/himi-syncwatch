@@ -34,6 +34,8 @@ Item {
     property var showSegmentMenu: null
     /// 672：滚轮转交（悬浮层注入：(delta) 调选中滑杆）；null = 忽略。
     property var wheelHandler: null
+    /// 675 D：点视频区（tap 判定落定时）回调——取消音量/亮度选中态。
+    property var onTap: null
 
     function doShowControls() {
         playerState.controlsVisible = true
@@ -72,10 +74,15 @@ Item {
 
         onDoubleClicked: {
             tapTimer.stop()
+            // 【675 H】Flutter 语义（playPauseHintIcon 测试钉死）：显示
+            // 切换后的「当前可执行动作」——播完→⏸、暂停后→▶。
+            // **先算目标态再切换**：toggle 后读 playerState.paused 是
+            // 旧值（mpv 事件异步回填）→ 图标恰好相反（真机回归）。
+            var willBePlaying = playerState.paused
             mpvWindow.togglePause()
             pipeServer.sendCommand({"type": "togglePlay"})
-            root.notifyGesture(playerState.paused ? Icons.playCircle
-                                                  : Icons.pauseCircle)
+            root.notifyGesture(willBePlaying ? Icons.pauseCircle
+                                             : Icons.playCircle)
         }
 
         onWheel: (wheel) => {
@@ -90,6 +97,8 @@ Item {
         id: tapTimer
         interval: 250
         onTriggered: {
+            // 675 D：点别处取消滑杆选中态
+            if (root.onTap) root.onTap()
             // Flutter `_onVideoAreaTap` 语义（按下瞬间快照判定）
             if (root.panelsOpen()) {
                 root.closePanels()

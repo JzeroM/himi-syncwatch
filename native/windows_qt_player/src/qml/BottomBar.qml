@@ -132,6 +132,9 @@ Rectangle {
                 ControlButton {
                     icon: Icons.skipPrevious
                     iconSize: Theme.transportSideSize
+                    // 675 F：电影不显示上下切集（Flutter 条件：
+                    // _hasEpisodeList && _totalEpisodeCount > 1）
+                    visible: playerState.episodeCount > 1
                     enabled: playerState.currentEpisodeIndex > 0
                     tooltip: "上一集"
                     onClicked: root.prevEpisodeClicked()
@@ -145,6 +148,8 @@ Rectangle {
                 ControlButton {
                     icon: Icons.skipNext
                     iconSize: Theme.transportSideSize
+                    // 675 F：电影不显示上下切集（同上）
+                    visible: playerState.episodeCount > 1
                     enabled: playerState.currentEpisodeIndex >= 0
                              && playerState.currentEpisodeIndex < playerState.episodeCount - 1
                     tooltip: "下一集"

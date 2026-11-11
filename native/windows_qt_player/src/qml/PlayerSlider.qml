@@ -37,19 +37,6 @@ Item {
     implicitHeight: 44
     implicitWidth: 260
 
-    // 轨道点击跳转（在 ESlider 之下，不抢手柄事件）。
-    // 671 A3：映射走 ESlider 内部精确几何（mapXToValue，与拖动互逆）
-    // ——旧实现用魔法数字猜轨道左边界，点击位置偏离。
-    MouseArea {
-        id: trackClick
-        anchors.fill: parent
-        onClicked: (mouse) => {
-            var v = slider.mapXToValue(mouse.x)
-            slider.value = v
-            root.moved(v)
-            root.finished(v)
-        }
-    }
 
     EUI.ESlider {
         id: slider
@@ -89,6 +76,41 @@ Item {
         target: slider
         function onIsPressedChanged() {
             if (!slider.isPressed) root.finished(slider.value)
+        }
+    }
+
+    // 【675 B】统一按压-拖动（Flutter Slider 语义）：按下即跳到光标、
+    // 按住拖动全程跟随、松手回调不变。置于 ESlider 之上接管全部鼠标
+    //（含手柄区——抓边不再偏移）。isPressed 悬起既有绑定保护与松手链。
+    MouseArea {
+        id: trackDrag
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        preventStealing: true
+        property bool active: false
+
+        function applyAt(x) {
+            var v = slider.mapXToValue(x)
+            slider.value = v
+            root.moved(v)
+        }
+
+        onPressed: (mouse) => {
+            active = true
+            slider.isPressed = true
+            applyAt(mouse.x)
+        }
+        onPositionChanged: (mouse) => {
+            if (active) applyAt(mouse.x)
+        }
+        onReleased: {
+            active = false
+            slider.isPressed = false
+        }
+        onCanceled: {
+            active = false
+            slider.isPressed = false
         }
     }
 }
