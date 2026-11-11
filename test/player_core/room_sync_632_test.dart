@@ -105,14 +105,16 @@ void main() {
 
     test('暂停时 rate 传 1.0（避免按暂停前倍速外推）', () {
       final body = bodyOf(screen, 'void _startHeartbeat()');
-      expect(body, contains('playing ? _player.playbackRate : 1.0'));
+      // 677：读真实引擎（`_roomEngine`），Qt 接管时 `_player` 从未起播
+      expect(body, contains('playing ? engine.playbackRate : 1.0'));
     });
 
     test('_handleHeartbeat 的状态应用在所有守卫之前', () {
       final body =
           stripComments(bodyOf(screen, 'void _handleHeartbeat('));
+      // 677：房间纠偏走真实引擎（`engine` = `_roomEngine`）
       final stateIdx =
-          body.indexOf('_player.state = AdapterPlaybackState.paused');
+          body.indexOf('engine.state = AdapterPlaybackState.paused');
       final guardIdx = body.indexOf('if (_syncPaused) return;');
       expect(stateIdx, greaterThan(0));
       expect(guardIdx, greaterThan(0));
@@ -130,7 +132,7 @@ void main() {
       final syncPaused = body.indexOf('if (_syncPaused) return;');
       expect(firstGuard, greaterThan(0));
       // _syncPaused 必须在状态应用之后（即不是紧跟 _isHost）。
-      expect(syncPaused, greaterThan(body.indexOf('_player.state =')));
+      expect(syncPaused, greaterThan(body.indexOf('engine.state =')));
     });
   });
 
@@ -148,9 +150,10 @@ void main() {
     });
 
     test('房主 syncPlay 下发真实暂停状态', () {
+      // 677：读真实引擎（Qt 接管时 `_player` 从未起播）
       expect(
         screen,
-        contains('paused: _player.state != AdapterPlaybackState.playing,'),
+        contains('paused: _roomEngine.state != AdapterPlaybackState.playing,'),
       );
     });
 

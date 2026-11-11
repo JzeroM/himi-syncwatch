@@ -115,7 +115,10 @@ Rectangle {
         }
 
         // 画面比例（图标随模式）
+        // 677：房间模式不显示（对齐安卓 `videoFitIcon.visibility` 与
+        // 鸿蒙 `!this.state().isRoom` 判定）。
         ControlButton {
+            visible: !playerState.isRoom
             icon: root.videoFitIconFor(root.videoFitMode)
             iconSize: Theme.topIconSize
             tooltip: "画面比例：" + root.videoFitLabelFor(root.videoFitMode)

@@ -114,6 +114,19 @@ class PlayerState : public QObject {
     // 与安卓/鸿蒙原生底栏同驱动字段（skipPrompt）。
     Q_PROPERTY(QString skipPrompt READ skipPrompt NOTIFY changed)
 
+    // ── 677：房间观众权限（对齐安卓/鸿蒙原生 UI）──
+    //
+    // 【为什么 Qt 必须有这两个字段】Dart 的 `NativePlayerState.toJson()`
+    // 早就在发 `canControl` / `segmentEnabled`，但 Qt 侧此前**从未解析**
+    // → QML 无门可依，房间观众能点播放/拖进度/右键标记片头片尾
+    //（真机回归：观众把房主的节奏拖乱了）。
+    //
+    // `canControl`：非房主为 false → 隐藏传输组、禁用进度条/双击/快捷键。
+    // `segmentEnabled`：片头片尾标记开关（Dart `_segmentFeatureEnabled`
+    // 已含 `_canControlPlayback`，观众恒 false）→ 右键菜单门控。
+    Q_PROPERTY(bool canControl READ canControl NOTIFY changed)
+    Q_PROPERTY(bool segmentEnabled READ segmentEnabled NOTIFY changed)
+
 public:
     explicit PlayerState(QObject* parent = nullptr);
 
@@ -205,6 +218,8 @@ public:
     int selectedAudioId() const { return selectedAudioId_; }
     int selectedSubtitleId() const { return selectedSubtitleId_; }
     QString skipPrompt() const { return skipPrompt_; }
+    bool canControl() const { return canControl_; }
+    bool segmentEnabled() const { return segmentEnabled_; }
 
     /// 选集列表（`episodes` 数组的轻量投影）。
     struct Episode {
@@ -270,6 +285,8 @@ private:
     int selectedAudioId_ = 0;
     int selectedSubtitleId_ = 0;
     QString skipPrompt_;
+    bool canControl_ = true;      ///< 677：房间观众为 false（隐藏播放控制）
+    bool segmentEnabled_ = false; ///< 677：片头片尾标记开关（右键菜单门）
 
     QString title_;
     QString mediaTitle_;

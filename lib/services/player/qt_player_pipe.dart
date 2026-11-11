@@ -37,6 +37,29 @@ class QtPlayerPipe {
   /// 原生 → Dart 的命令流（`NativePlayerCommand` 的 JSON map）。
   Stream<Map<String, Object?>> get commands => _commandController.stream;
 
+  /// 677：Qt → Dart 的**播放态回传**流（`playback` 帧）。
+  ///
+  /// 【为什么必须有】Qt 接管后 mpv 在 Qt 进程，Flutter 侧的 `_player`
+  /// 是一台从未起播的空闲引擎——房间心跳读到 `position=0 /
+  /// playing=false`，房主广播全是假值（观众永远停在开头）。
+  final StreamController<Map<String, Object?>> _playbackController =
+      StreamController<Map<String, Object?>>.broadcast();
+  Stream<Map<String, Object?>> get playback => _playbackController.stream;
+
+  /// 677：Qt → Dart 的**窗口态回传**流（`windowState` 帧：全屏态）。
+  final StreamController<Map<String, Object?>> _windowStateController =
+      StreamController<Map<String, Object?>>.broadcast();
+  Stream<Map<String, Object?>> get windowStates =>
+      _windowStateController.stream;
+
+  /// 677：Qt → Dart 的**并排布局**流（`splitLayout` 帧）。
+  ///
+  /// Qt 用 `QScreen::availableGeometry()` 算（多屏/DPI 权威），Dart 只
+  /// 负责应用面板侧 —— `window_manager` 不暴露工作区，反向算会猜错。
+  final StreamController<Map<String, Object?>> _layoutController =
+      StreamController<Map<String, Object?>>.broadcast();
+  Stream<Map<String, Object?>> get layouts => _layoutController.stream;
+
   /// 断开回调（Qt 进程退出/崩溃）。
   void Function()? onDisconnected;
 
@@ -141,6 +164,24 @@ class QtPlayerPipe {
             if (data is Map) {
               _commandController.add(Map<String, Object?>.from(data));
             }
+          } else if (type == 'playback') {
+            // 677：播放态回传（Qt 侧 mpv 的真实状态）
+            final data = obj['data'];
+            if (data is Map) {
+              _playbackController.add(Map<String, Object?>.from(data));
+            }
+          } else if (type == 'windowState') {
+            // 677：窗口态回传（全屏）
+            final data = obj['data'];
+            if (data is Map) {
+              _windowStateController.add(Map<String, Object?>.from(data));
+            }
+          } else if (type == 'splitLayout') {
+            // 677：并排布局（Qt 用 QScreen 算好回传）
+            final data = obj['data'];
+            if (data is Map) {
+              _layoutController.add(Map<String, Object?>.from(data));
+            }
           }
         } catch (e) {
           LogService().log('QtPlayer', '管道 JSON 解析失败: $e');
@@ -161,6 +202,9 @@ class QtPlayerPipe {
     LogService().log('QtPlayer', '管道已断开');
     onDisconnected?.call();
     unawaited(_commandController.close());
+    unawaited(_playbackController.close());
+    unawaited(_windowStateController.close());
+    unawaited(_layoutController.close());
   }
 
   /// 推送播放器状态给 Qt。
@@ -217,6 +261,15 @@ class QtPlayerPipe {
     } catch (_) {}
     try {
       await _commandController.close();
+    } catch (_) {}
+    try {
+      await _playbackController.close();
+    } catch (_) {}
+    try {
+      await _windowStateController.close();
+    } catch (_) {}
+    try {
+      await _layoutController.close();
     } catch (_) {}
   }
 }

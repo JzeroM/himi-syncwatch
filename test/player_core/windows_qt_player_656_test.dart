@@ -569,7 +569,8 @@ void main() {
         'Icons.audioTrack',
         'Icons.playlistPlay',
         'Icons.speed',
-        'icon: Icons.fullscreen',
+        // 677：全屏图标改为双向（全屏 / 退出全屏），按三元表达式定位
+        'Icons.closeFullscreen',
       ];
       var cursor = -1;
       for (final token in order) {
@@ -768,8 +769,11 @@ void main() {
     });
 
     test('全屏按钮只在底栏（用户明确）', () {
-      expect(bottomBar, contains('icon: Icons.fullscreen'));
-      expect(topBar, isNot(contains('icon: Icons.fullscreen')));
+      // 677：图标改为双向三元表达式（全屏 / 退出全屏）
+      expect(bottomBar, contains('Icons.fullscreen'));
+      expect(bottomBar, contains('Icons.closeFullscreen'));
+      expect(topBar, isNot(contains('Icons.fullscreen')));
+      expect(topBar, isNot(contains('Icons.closeFullscreen')));
     });
 
     test('668 锁钮已去除（含 locked 门禁清理）', () {
@@ -1567,7 +1571,10 @@ void main() {
     });
 
     test('A5 面板反馈链（倍速回传 + 状态回推）', () {
-      expect(adapter4, contains('forwardSpeed'));
+      // 677：倍速不再走 `forwardSpeed`（就地转发）——改为「上报意图」
+      //（`_emitTransportIntent`），由播放页决定广播（房主）或丢弃（观众）。
+      expect(adapter4, contains('_emitTransportIntent'));
+      expect(adapter4, contains('onTransportIntent'));
       expect(screen4, contains('session.fallback = _handleNativeUiCommand'));
     });
 

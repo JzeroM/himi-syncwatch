@@ -84,6 +84,30 @@ class QtPlayerAdapter implements PlayerAdapter {
   /// Qt 亮度滑杆变更回调（由播放页注入）。
   void Function(double value)? onBrightnessChanged;
 
+  /// 677：**播放控制意图**回调（Qt 本地已执行 → 只上报，不回发 IPC）。
+  ///
+  /// 【为什么要区分「意图」与「程序下发」】
+  /// Qt 的 `command` 帧天然只是「本地用户动作」——Qt 不会把 Dart 下发
+  /// 的命令回显。所以：
+  ///   - 用户点 Qt 的播放/暂停/seek/倍速 → 本回调 → 房主广播房间命令
+  ///   - Dart 程序性下发（心跳纠偏 / 同步）→ 走 `state=`/`seek()`，
+  ///     **不会**回到本回调 → 天然无广播回环。
+  ///
+  /// 【为什么不能走 setter】旧实现 `togglePlay` 就地 `state = ...`，
+  /// 会经 setter 回发 `setPaused` 给 Qt——而 QML 早已本地
+  /// `mpvWindow.togglePause()`，等于把状态又翻一次（真机：点一次播两下）。
+  void Function(QtTransportIntent intent)? onTransportIntent;
+
+  /// 677：窗口态回调（全屏切换；房间并排与全屏互斥）。
+  void Function(bool fullscreen)? onFullscreenChanged;
+
+  /// 677：房间观众权限（由播放页按 `_canControlPlayback` 注入）。
+  ///
+  /// 【最后一道防线】即使 QML 漏了 `canControl` 门，这里也直接丢弃
+  /// 观众的播放控制意图（与安卓 `_handleNativeUiCommand` 的 622 兜底
+  /// 同语义）。
+  bool canControlPlayback = true;
+
   /// 原生命令回调（与 MpvPlayerAdapter.onNativeUiCommand 同签名）。
   ///
   /// 【662 修复：命令链路断点】切集/选轨/选版本/弹幕/显示调节这类**带
@@ -95,6 +119,9 @@ class QtPlayerAdapter implements PlayerAdapter {
 
   void _bindPipe() {
     _pipe.commands.listen(_handleCommand);
+    _pipe.playback.listen(_applyPlayback);
+    _pipe.windowStates.listen(_applyWindowState);
+    _pipe.layouts.listen((data) => onSplitLayout?.call(data));
     _pipe.onDisconnected = () {
       if (_disposed) return;
       LogService().log('QtPlayer', 'Qt 进程已退出');
@@ -103,35 +130,128 @@ class QtPlayerAdapter implements PlayerAdapter {
     };
   }
 
+  /// 677：把 Qt 的 `playback` 帧镜像进本地缓存。
+  ///
+  /// 【绝不能用 setter】`set state` / `set playbackRate` 都会**回发 IPC**
+  /// （`setPaused` / `setSpeed`）——收到自己刚发出去的状态再发一遍，
+  /// 轻则重复命令，重则状态机自激。这里全部直接写私有字段。
+  void _applyPlayback(Map<String, Object?> data) {
+    if (_disposed) return;
+    final pos = (data['positionMs'] as num?)?.toInt();
+    final dur = (data['durationMs'] as num?)?.toInt();
+    final paused = data['paused'] as bool?;
+    final rate = (data['rate'] as num?)?.toDouble();
+    final buffering = data['buffering'] as bool?;
+
+    if (pos != null) _positionMs = pos;
+    if (dur != null) _durationMs = dur;
+    if (rate != null && rate > 0) _playbackRate = rate;
+    if (buffering != null) {
+      _setMediaStatus(buffering
+          ? AdapterMediaStatus.buffering
+          : AdapterMediaStatus.loaded);
+    }
+    if (paused != null) {
+      _setState(paused
+          ? AdapterPlaybackState.paused
+          : AdapterPlaybackState.playing);
+    }
+  }
+
+  /// 677：窗口态（全屏）。
+  void _applyWindowState(Map<String, Object?> data) {
+    if (_disposed) return;
+    final fullscreen = data['fullscreen'] as bool?;
+    if (fullscreen == null) return;
+    if (fullscreen == _hostFullscreen) return;
+    _hostFullscreen = fullscreen;
+    onFullscreenChanged?.call(fullscreen);
+  }
+
+  /// 677：当前是否全屏（Qt 回传）。
+  bool get hostFullscreen => _hostFullscreen;
+  bool _hostFullscreen = false;
+
+  /// 677：请求 Qt 全屏/退出全屏（房间并排与全屏互斥）。
+  void setHostFullscreen(bool fullscreen) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({
+      'type': 'setHostFullscreen',
+      'fullscreen': fullscreen,
+    });
+  }
+
+  /// 677：把播放窗拉回最前。
+  void focus() {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({'type': 'focus'});
+  }
+
+  /// 677：房间并排摆位（Dart 算矩形、Qt 应用）。
+  void setWindowRect({required int x, required int y, required int w, required int h}) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({
+      'type': 'setWindowRect',
+      'x': x,
+      'y': y,
+      'w': w,
+      'h': h,
+    });
+  }
+
+  /// 677：房间并排跟随开关（Qt 自己读 Flutter 主窗矩形）。
+  void setFollowParent(bool enabled) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({'type': 'setFollowParent', 'enabled': enabled});
+  }
+
+  /// 677：请求 Qt 按**它自己的 QScreen** 计算并排矩形。
+  ///
+  /// 【为什么让 Qt 算】`window_manager` 不暴露屏幕工作区（多屏 + DPI
+  /// 全靠猜）；Qt 的 `QScreen::availableGeometry()` 是权威值。
+  /// Qt 算完通过 `splitLayout` 帧回传，Dart 只负责应用面板侧。
+  void requestSplitLayout({
+    required int panelWidth,
+    required int minVideoWidth,
+  }) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({
+      'type': 'requestSplitLayout',
+      'panelWidth': panelWidth,
+      'minVideoWidth': minVideoWidth,
+    });
+  }
+
+  /// 677：并排布局回调（Qt → Dart，`splitLayout` 帧）。
+  void Function(Map<String, Object?> layout)? onSplitLayout;
+
   /// 处理 Qt 发来的命令（`NativePlayerCommand` 的 JSON）。
   ///
-  /// 这里只处理**播放控制类**（播放/暂停/seek/音量/倍速）；
-  /// 切集/选轨/弹幕这类需要 Flutter 逻辑的，由播放页的
+  /// 【677 分工重构】播放控制类（播放/暂停/seek/倍速）**不再就地消化**：
+  /// Qt 的 QML 早已本地直驱 mpv（`mpvWindow.togglePause()` 等），到这里的
+  /// 只是「本地用户意图」。旧实现就地改状态并经 setter 回发 `setPaused`，
+  /// 等于把 Qt 刚做的切换又翻一次；同时**完全绕过了房间广播**（房主的
+  /// 播放/暂停传不到观众）。
+  ///
+  /// 现在：意图 → [onTransportIntent] → 播放页（房主广播房间命令 /
+  /// 观众丢弃）。切集/选轨/弹幕这类需要 Flutter 逻辑的，仍由
   /// `onNativeUiCommand` 链路处理（与安卓/鸿蒙一致）。
   void _handleCommand(Map<String, Object?> cmd) {
     final type = cmd['type'] as String?;
     switch (type) {
       case 'togglePlay':
-        state = _state == AdapterPlaybackState.playing
-            ? AdapterPlaybackState.paused
-            : AdapterPlaybackState.playing;
       case 'seekTo':
-        final ms = (cmd['positionMs'] as num?)?.toInt() ?? 0;
-        unawaited(seek(positionMs: ms));
       case 'seekRelative':
-        final delta = (cmd['deltaMs'] as num?)?.toInt() ?? 0;
-        unawaited(seek(positionMs: _positionMs + delta));
-      case 'setVolume':
-        volume = (cmd['volume'] as num?)?.toDouble() ?? 1.0;
       case 'setSpeed':
-        playbackRate = (cmd['speed'] as num?)?.toDouble() ?? 1.0;
-        // 671 A5：倍速也回传上层（面板选中态/状态推送需要）——
-        // 本 case 就地消化但不转发会让倍速反馈断链（面板选中不变）。
-        final speedCmd = NativePlayerCommand.fromMap(cmd);
-        final forwardSpeed = onNativeUiCommand;
-        if (speedCmd != null && forwardSpeed != null) {
-          unawaited(forwardSpeed(speedCmd));
+        // 677：房间观众一律丢弃播放控制意图（622 兜底的 Qt 版）。
+        if (!canControlPlayback) {
+          LogService().log('QtPlayer', '观众无权执行播放控制: $type');
+          return;
         }
+        _emitTransportIntent(type!, cmd);
+      case 'setVolume':
+        // 音量是**本地 UI**（不影响房间同步），两端都允许。
+        volume = (cmd['volume'] as num?)?.toDouble() ?? 1.0;
       case 'setBrightness':
         final v = (cmd['brightness'] as num?)?.toDouble() ?? 0.5;
         onBrightnessChanged?.call(v);
@@ -150,6 +270,39 @@ class QtPlayerAdapter implements PlayerAdapter {
             AdapterMediaEvent(0, 'native.command', type ?? 'unknown'),
           );
         }
+    }
+  }
+
+  /// 677：把 Qt 的用户动作翻译成 [QtTransportIntent] 上报。
+  void _emitTransportIntent(String type, Map<String, Object?> cmd) {
+    final sink = onTransportIntent;
+    if (sink == null) {
+      LogService().log('QtPlayer', '播放意图无消费方: $type');
+      return;
+    }
+    switch (type) {
+      case 'togglePlay':
+        // 以 Qt 本地刚执行完的目标态为准：QML 先 `mpvWindow.togglePause()`
+        // 再发命令，本地 `_state` 可能还没被 playback 帧刷新，所以按
+        // 「取反当前镜像」推断目标态，并**立即本地镜像**（不回发 IPC）。
+        final willPlay = _state != AdapterPlaybackState.playing;
+        _setState(willPlay
+            ? AdapterPlaybackState.playing
+            : AdapterPlaybackState.paused);
+        sink(QtTransportIntent.playPause(playing: willPlay, positionMs: _positionMs));
+      case 'seekTo':
+        final ms = (cmd['positionMs'] as num?)?.toInt() ?? 0;
+        _positionMs = ms;
+        sink(QtTransportIntent.seek(positionMs: ms));
+      case 'seekRelative':
+        final delta = (cmd['deltaMs'] as num?)?.toInt() ?? 0;
+        final target = (_positionMs + delta).clamp(0, 1 << 40);
+        _positionMs = target;
+        sink(QtTransportIntent.seek(positionMs: target));
+      case 'setSpeed':
+        final speed = (cmd['speed'] as num?)?.toDouble() ?? 1.0;
+        _playbackRate = speed;
+        sink(QtTransportIntent.rate(speed: speed));
     }
   }
 
@@ -427,4 +580,45 @@ class QtPlayerAdapter implements PlayerAdapter {
     unawaited(_eventController.close());
     _textureIdNotifier.dispose();
   }
+}
+
+/// 677：Qt 播放窗的用户**播放控制意图**。
+///
+/// 【为什么单独建类型而不是复用 NativePlayerCommand】
+/// 1. `NativePlayerCommand` 表达的是「请执行这个动作」，而这里表达的是
+///    「用户**已经在 Qt 本地执行完了**，现在只需要记账/广播」——两者
+///    语义相反，混用会重复执行（Qt 已 toggle，Dart 再 toggle 一次）。
+/// 2. 房间广播需要的参数（position/rate）在这里是必填的，命令类型里
+///    是可选 payload。
+sealed class QtTransportIntent {
+  const QtTransportIntent();
+
+  /// 播放/暂停（[playing] = 执行后的目标态）。
+  const factory QtTransportIntent.playPause({
+    required bool playing,
+    required int positionMs,
+  }) = QtPlayPauseIntent;
+
+  /// 跳转（绝对位置，毫秒）。
+  const factory QtTransportIntent.seek({required int positionMs}) =
+      QtSeekIntent;
+
+  /// 倍速。
+  const factory QtTransportIntent.rate({required double speed}) = QtRateIntent;
+}
+
+class QtPlayPauseIntent extends QtTransportIntent {
+  const QtPlayPauseIntent({required this.playing, required this.positionMs});
+  final bool playing;
+  final int positionMs;
+}
+
+class QtSeekIntent extends QtTransportIntent {
+  const QtSeekIntent({required this.positionMs});
+  final int positionMs;
+}
+
+class QtRateIntent extends QtTransportIntent {
+  const QtRateIntent({required this.speed});
+  final double speed;
 }

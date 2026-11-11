@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
+import 'package:himi_syncwatch/services/player/room_panel_layout.dart';
 import 'package:himi_syncwatch/services/player/qt_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/qt_player_session.dart';
 import 'package:himi_mpv_android/himi_mpv_android.dart'
@@ -2059,10 +2060,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 弹出、加载在 Qt 窗口内完成。任何失败路径走 [_abandonQtTakeover]
     // 恢复本页 UI（646 回退链路不变）。
     if (defaultTargetPlatform == TargetPlatform.windows &&
-        widget.roomCode == null &&
         ref.read(settingsProvider).useQtPlayer &&
         _qtPlayerExePath() != null) {
-      _qtUiHidden = true;
+      // 677：房间模式也预启动 Qt（否则进房后要等 Qt 冷启动）。
+      // 但**不隐身**——房间模式本页要显示房间面板（`_roomPanelMode`）。
+      if (widget.roomCode == null) {
+        _qtUiHidden = true;
+      }
       unawaited(_ensureQtPlayerProcess());
     }
     // Android：预取显示器真实输出分辨率（渲染尺寸夹紧目标）。TV/盒子
@@ -3499,6 +3503,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 671 B3：本页持有的会话（被新会话顶替时本页退场的判定依据）。
   QtPlayerSession? _mySession;
 
+  /// 677：房间并排——主窗进入并排前的 bounds（退房恢复）。
+  Rect? _roomRestoreBounds;
+
+  /// 677：是否已请求并排布局（收到 `splitLayout` 帧时才应用）。
+  bool _roomSplitRequested = false;
+
   /// 669 B1：Qt 进程拉起**单飞**（670 提升为 [MpvSessionPlatform.ensureQtPlayer]
   /// 全局单飞：启动预热与起播共用一次，防并发互杀）。
   Future<QtPlayerAdapter?> _qtLaunchSingleFlight() =>
@@ -3571,6 +3581,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 669 B4：已交接——此后进程归 QtPlayerSession 管。
     _qtHandedOver = true;
 
+    // 677：**房间模式不 attach QtPlayerSession**。
+    //
+    // 【为什么】Session 接管 `onNativeUiCommand` 后会自己消化
+    // `SelectEpisode/SelectVersion`（走 `_load` 纯数据闭包）——它**不
+    // 知道房间的存在**，因此房主在 Qt 窗口里切集不会广播 `syncPlay` /
+    // `roomInfo`，观众的画面永远停在旧集（这是房间模式的核心断点之一）。
+    //
+    // 房间模式改为：命令全部留在本页 `_handleNativeUiCommand`（那里已有
+    // 完整的房间广播链路），状态推送继续走 `_syncNativePanelData`（页面
+    // 存活，不需要 Session 的模板快照）。
+    if (widget.roomCode != null) {
+      _wireRoomQtAdapter(adapter);
+      return true;
+    }
+
     // 664：Qt 窗口已出现 → **会话常驻接管 + 主窗口立即回详情页**
     // （用户要求：Qt 窗口一出现，另一个窗口就是详情页）。
     //
@@ -3636,10 +3661,157 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return true;
   }
 
+  // ── 677：房间模式的 Qt 适配器接线 ──────────────────────────
+
+  /// 房间模式下把 Qt 适配器接进本页（**不建 QtPlayerSession**）。
+  ///
+  /// 职责三件：
+  ///   1. 命令全部留在本页 `_handleNativeUiCommand`（房间广播链路完整）
+  ///   2. 播放控制**意图**转成房间命令（房主广播 / 观众丢弃）
+  ///   3. 权限 + 摆位 + 跟随注入
+  void _wireRoomQtAdapter(QtPlayerAdapter adapter) {
+    adapter.onNativeUiCommand = _handleNativeUiCommand;
+    // 677：观众权限注入（适配器侧最后一道防线）
+    adapter.canControlPlayback = _canControlPlayback;
+    adapter.onTransportIntent = _handleQtTransportIntent;
+    // 亮度是本地 UI（两端都允许观众调）——房间分支没有 session，
+    // 这里直接写本页状态。
+    adapter.onBrightnessChanged = (v) {
+      if (!mounted || _disposed) return;
+      _brightness = v;
+      _brightnessNotifier.value = v;
+      unawaited(
+        ScreenBrightness().setApplicationScreenBrightness(v).catchError((_) {}),
+      );
+    };
+    adapter.onSplitLayout = (layout) {
+      unawaited(_applyRoomSplitLayout(layout));
+    };
+    adapter.onFullscreenChanged = (fullscreen) {
+      if (!mounted || _disposed) return;
+      // 全屏期间暂停跟随（Qt 侧已自行跳过，这里只记账）
+      LogService().log('Room', 'Qt 全屏: $fullscreen');
+    };
+    // 房间并排：Qt 算矩形（它有 QScreen，多屏/DPI 都准），Dart 应用面板侧
+    unawaited(_enterRoomSplitLayout());
+  }
+
+  /// 677：Qt 播放窗的用户播放控制意图 → 房间命令。
+  ///
+  /// 【为什么不是直接执行】Qt 的 QML 已经本地直驱 mpv（`mpvWindow.*`），
+  /// 到这里时动作**已经发生**。这里只做两件事：
+  ///   - 房主：把动作广播给观众（`play`/`pause`/`seek`/`rate`）
+  ///   - 观众：适配器层已丢弃，到不了这里
+  void _handleQtTransportIntent(QtTransportIntent intent) {
+    if (!mounted || _disposed) return;
+    if (!_canControlPlayback) return;  // 兜底（适配器已拦一次）
+    if (widget.roomCode == null) return;  // 单人：Qt 本地执行即可
+    switch (intent) {
+      case QtPlayPauseIntent(:final playing, :final positionMs):
+        _sendCommand(
+          playing ? AppConstants.actionPlay : AppConstants.actionPause,
+          position: playing ? positionMs / 1000.0 : null,
+        );
+      case QtSeekIntent(:final positionMs):
+        _sendCommand(AppConstants.actionSeek, position: positionMs / 1000.0);
+      case QtRateIntent(:final speed):
+        // 房间协议里 `rate` 此前是「只收不发」的死代码——房主改倍速
+        // 观众永远不知道（两端原生层都没发）。这里补上广播。
+        _sendCommand(AppConstants.actionRate, rate: speed);
+    }
+    _syncPlayState();
+  }
+
+  /// 677：进入房间并排（Flutter 面板右、Qt 视频左）。
+  ///
+  /// 【为什么让 Qt 算】`window_manager` 不暴露屏幕工作区（多屏 + DPI
+  /// 全靠猜）；Qt 侧 `QScreen::availableGeometry()` 是权威值。所以：
+  ///   Qt 算 → 回 `splitLayout` 帧 → Dart 应用面板侧 + 卡最大尺寸。
+  ///
+  /// 【为什么还要一次性摆位】Qt 的 `setFollowParent` 只在**用户拖动/缩放**
+  /// 时跟随；进房这一刻需要先把两个窗口放到正确位置，否则第一帧会重叠。
+  Future<void> _enterRoomSplitLayout() async {
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (qt == null || !qt.isAlive) return;
+    _roomSplitRequested = true;
+    // 原 bounds 在收到 splitLayout 时记（那时才拿到 Qt 算的恢复点）
+    try {
+      _roomRestoreBounds = await windowManager.getBounds();
+    } catch (_) {}
+    qt.requestSplitLayout(
+      panelWidth: RoomPanelLayout.panelWidth.round(),
+      minVideoWidth: RoomPanelLayout.minVideoWidth.round(),
+    );
+  }
+
+  /// 677：应用 Qt 算好的并排布局（`splitLayout` 帧回调）。
+  Future<void> _applyRoomSplitLayout(Map<String, Object?> data) async {
+    if (!mounted || _disposed) return;
+    if (!_roomSplitRequested) return;  // 非房间/未请求
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (qt == null || !qt.isAlive) return;
+    try {
+      if (data['ok'] != true) {
+        LogService().log('Room', '工作区放不下双窗并排，退回单窗');
+        return;
+      }
+      final panel = (data['panel'] as Map?)?.cast<String, Object?>();
+      final video = (data['video'] as Map?)?.cast<String, Object?>();
+      if (panel == null || video == null) return;
+      final panelRect = Rect.fromLTWH(
+        (panel['x'] as num).toDouble(),
+        (panel['y'] as num).toDouble(),
+        (panel['w'] as num).toDouble(),
+        (panel['h'] as num).toDouble(),
+      );
+      final maxW = (data['maxPanelW'] as num?)?.toDouble();
+      final maxH = (data['maxPanelH'] as num?)?.toDouble();
+      if (maxW != null && maxH != null && maxW > 0 && maxH > 0) {
+        // 总宽不超屏：主窗最大宽度被卡死，连最大化按钮也受限
+        // （`WM_GETMINMAXINFO.ptMaxTrackSize`），Qt 永远有位置。
+        await windowManager.setMaximumSize(Size(maxW, maxH));
+      }
+      await windowManager.setBounds(panelRect);
+      qt.setWindowRect(
+        x: (video['x'] as num).round(),
+        y: (video['y'] as num).round(),
+        w: (video['w'] as num).round(),
+        h: (video['h'] as num).round(),
+      );
+      qt.setFollowParent(true);
+      LogService().log('Room', '房间并排已应用: panel=$panelRect');
+    } catch (e) {
+      LogService().log('Room', '房间并排失败: $e');
+    }
+  }
+
+  /// 677：退出房间并排（恢复主窗尺寸/位置 + 关闭跟随）。
+  Future<void> _exitRoomSplitLayout() async {
+    _roomSplitRequested = false;
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    qt?.setFollowParent(false);
+    final restore = _roomRestoreBounds;
+    _roomRestoreBounds = null;
+    try {
+      // 放开最大尺寸限制（给一个足够大的值）
+      await windowManager.setMaximumSize(const Size(16384, 16384));
+      if (restore != null) {
+        // 桌面断点保护：恢复值过窄会触发手机布局（658 同款坑）
+        final w = restore.width < kShellDesktopBreakpoint + 100
+            ? kShellDesktopBreakpoint + 100.0
+            : restore.width;
+        await windowManager.setBounds(
+          Rect.fromLTWH(restore.left, restore.top, w, restore.height),
+        );
+      }
+    } catch (e) {
+      LogService().log('Room', '恢复主窗失败: $e');
+    }
+  }
+
   void _onNativeUiActiveChanged() {
     if (!mounted || _disposed) return;
-    setState(() {});
-    // 【612 真机回归：初始未播放时房间头部不显示搜索/人数/房主徽章】
+    setState(() {});    // 【612 真机回归：初始未播放时房间头部不显示搜索/人数/房主徽章】
     //
     // `_syncNativePanelData()` 开头有守卫：
     //   `if (mpv is! MpvPlayerAdapter || _disposed) return;`
@@ -3970,6 +4142,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!_canControlPlayback &&
         PlayerScreen.isPlaybackControlCommand(command)) {
       LogService().log('Player', '观众无权执行: ${command.runtimeType}');
+      return;
+    }
+    // 677：Qt 房间模式下「退出」要先弹「解散/离开房间」确认，
+    // 不能像单人那样直接退页（房主离开会解散房间，必须确认）。
+    if (command is RequestExit && widget.roomCode != null && _roomQtActive) {
+      final shouldPop = await _confirmLeaveRoom();
+      if (!mounted) return;
+      if (shouldPop) {
+        await _safePopPlayerPage();
+        await MpvSessionPlatform.closeQtPlayer();
+      } else {
+        // 取消：把 Qt 播放窗拉回最前（否则焦点还在面板上）
+        MpvSessionPlatform.activeQtAdapter?.focus();
+      }
       return;
     }
     switch (command) {
@@ -5490,7 +5676,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             if (_isPlayerReady &&
                 _currentEpisodeIndex >= 0 &&
                 _currentEpisodeIndex < _episodes.length) {
-              final position = _player.position / 1000.0;
+              // 677：读真实引擎（Qt 接管时 `_player` 从未起播）
+              final position = _roomEngine.position / 1000.0;
               LogService().log('Room',
                   '主持人发送 syncPlay: episode=$_currentEpisodeIndex, pos=$position');
               await rtmService.sendCommand(
@@ -5508,7 +5695,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 defaultAudioStreamIndex: _embyDefaultAudioIndex,
                 // 632：把房主当前播放/暂停状态一起下发，
                 // 避免「房主暂停时中途进房的观众自顾自开始播放」。
-                paused: _player.state != AdapterPlaybackState.playing,
+                // 677：读真实引擎。
+                paused: _roomEngine.state != AdapterPlaybackState.playing,
               );
             }
           }
@@ -5708,17 +5896,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final rate = (message['rate'] as num?)?.toDouble() ?? 1.0;
     final timestamp = message['ts'] as int? ?? 0;
 
+    // 677：房间纠偏必须作用在**真实播放引擎**上——Qt 接管时 `_player`
+    // 是从未起播的空闲引擎，写它等于什么都没做（观众画面纹丝不动）。
+    final engine = _roomEngine;
+
     // 632：播放/暂停状态**必须始终应用**。
     //
     // 旧实现把 `if (_syncPaused) return;` 放在最前面，导致刚收到 pause
     // 命令的 3 秒窗口内，心跳里的 `playing: false` 被整体丢弃；若 pause
     // 命令本身丢失，观众就永远停在播放态。状态同步优先级高于位置校正，
     // 因此提到所有守卫之前。
-    if (playing && _player.state != AdapterPlaybackState.playing) {
-      _player.state = AdapterPlaybackState.playing;
+    if (playing && engine.state != AdapterPlaybackState.playing) {
+      engine.state = AdapterPlaybackState.playing;
       _syncPlayState();
-    } else if (!playing && _player.state == AdapterPlaybackState.playing) {
-      _player.state = AdapterPlaybackState.paused;
+    } else if (!playing && engine.state == AdapterPlaybackState.playing) {
+      engine.state = AdapterPlaybackState.paused;
       _syncPlayState();
     }
 
@@ -5726,8 +5918,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_syncPaused) return;
     if (_isSyncing) return;
     // fvp: 检查是否在缓冲中
-    if (_player.mediaStatus.test(AdapterMediaStatus.buffering)) return;
-    if (_player.mediaStatus.test(AdapterMediaStatus.seeking)) return;
+    if (engine.mediaStatus.test(AdapterMediaStatus.buffering)) return;
+    if (engine.mediaStatus.test(AdapterMediaStatus.seeking)) return;
 
     // 用时钟校准把房主时间戳换算到本机时钟，再算流逝时间；未校准时
     // 回退旧行为（两机假设同钟，等效 offset=0）。
@@ -5736,16 +5928,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final elapsed = elapsedMs / 1000.0;
     final expectedPos = position + (elapsed * rate);
 
-    final currentPos = _player.position / 1000.0;
+    final currentPos = engine.position / 1000.0;
     final diff = (expectedPos - currentPos).abs();
 
     if (diff < AppConstants.syncThresholdMicro) {
       // 差值 < 0.3s，不做操作
     } else if (diff < AppConstants.syncThresholdMedium) {
       _rateRestoreTimer?.cancel();
-      _player.playbackRate = 1.02;
+      engine.playbackRate = 1.02;
       _rateRestoreTimer = Timer(const Duration(seconds: 2), () {
-        if (mounted) _player.playbackRate = rate;
+        if (mounted) _roomEngine.playbackRate = rate;
       });
     } else {
       // seek 防抖：距上次 seek 不足 2 秒则跳过
@@ -5755,7 +5947,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       _lastSeekTime = DateTime.now();
       try {
-        _player.seek(positionMs: (expectedPos * 1000).toInt());
+        engine.seek(positionMs: (expectedPos * 1000).toInt());
       } catch (_) {}
     }
   }
@@ -5769,6 +5961,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (mounted) _syncPaused = false;
     });
 
+    // 677：房间命令必须作用在**真实播放引擎**（Qt 接管时是 Qt 的 mpv）。
+    final engine = _roomEngine;
+
     switch (action) {
       case AppConstants.actionPlay:
         // 637：若房主带了进度，先 seek 对齐再起播——避免观众从暂停点
@@ -5776,25 +5971,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final playPos = (message['position'] as num?)?.toDouble();
         if (playPos != null && playPos > 0) {
           try {
-            _player.seek(positionMs: (playPos * 1000).toInt());
+            engine.seek(positionMs: (playPos * 1000).toInt());
           } catch (_) {}
         }
-        _player.state = AdapterPlaybackState.playing;
+        engine.state = AdapterPlaybackState.playing;
         _syncPlayState();
         break;
       case AppConstants.actionPause:
-        _player.state = AdapterPlaybackState.paused;
+        engine.state = AdapterPlaybackState.paused;
         _syncPlayState();
         break;
       case AppConstants.actionSeek:
         final pos = (message['position'] as num?)?.toDouble() ?? 0.0;
         try {
-          _player.seek(positionMs: (pos * 1000).toInt());
+          engine.seek(positionMs: (pos * 1000).toInt());
         } catch (_) {}
         break;
       case AppConstants.actionRate:
         final r = (message['rate'] as num?)?.toDouble() ?? 1.0;
-        _player.playbackRate = r;
+        engine.playbackRate = r;
         break;
       case AppConstants.actionSyncPlay:
         final position = (message['position'] as num?)?.toDouble() ?? 0.0;
@@ -5877,7 +6072,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             videoStream: _embyVideoStream?.toJson(),
             defaultAudioStreamIndex: _embyDefaultAudioIndex,
             // 632：带上房主当前播放/暂停状态，观众起播后据此对齐。
-            paused: _player.state != AdapterPlaybackState.playing,
+            // 677：必须读真实引擎——Qt 接管时 `_player` 从未起播。
+            paused: _roomEngine.state != AdapterPlaybackState.playing,
             // 637：带上当前集索引——roomInfo 也可能单独触发起播，
             // 不带则观众 `_currentEpisodeIndex` 保持 -1 → 标题空白/错位。
             episodeIndex:
@@ -6283,13 +6479,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 让房主一暂停就彻底停发心跳 → 观众再也收不到 `playing: false`
         // → 永远不知道房主已暂停（真机回归「房主暂停，鸿蒙观众没暂停」）。
         // 暂停时 position 不再推进，心跳用真实 playing 字段携带状态即可。
-        final playing = _player.state == AdapterPlaybackState.playing;
+        //
+        // 677：必须读**真实引擎**——Qt 接管时 `_player` 是从未起播的
+        // 空闲引擎，心跳会恒定发 position=0/playing=false（观众永远
+        // 停在开头，这是房间模式最大的断点）。
+        final engine = _roomEngine;
+        final playing = engine.state == AdapterPlaybackState.playing;
         final rtmService = ref.read(rtmServiceProvider);
         rtmService.sendHeartbeat(
-          position: _player.position / 1000.0,
+          position: engine.position / 1000.0,
           playing: playing,
           // 暂停时倍速无意义，传 1.0 避免观众按暂停前的倍速外推位置。
-          rate: playing ? _player.playbackRate : 1.0,
+          rate: playing ? engine.playbackRate : 1.0,
         );
       },
     );
@@ -6336,18 +6537,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _togglePlayPause() {
-    if (_player.state == AdapterPlaybackState.playing) {
-      _player.state = AdapterPlaybackState.paused;
+    // 677：房间路径要作用在真实引擎（Qt 接管时是 Qt 的 mpv）
+    final engine = widget.roomCode == null ? _player : _roomEngine;
+    if (engine.state == AdapterPlaybackState.playing) {
+      engine.state = AdapterPlaybackState.paused;
       if (widget.roomCode != null) {
         _sendCommand(AppConstants.actionPause);
       }
     } else {
-      _player.state = AdapterPlaybackState.playing;
+      engine.state = AdapterPlaybackState.playing;
       // 回前台重载后恢复到暂停态的管线：恢复播放前对当前进度 seek 一次，
       // 强制重新驱动解码（否则可能「有图标无画面/无响应」）。
       if (_pendingResumeSeek) {
         _pendingResumeSeek = false;
-        final pos = _player.position;
+        final pos = engine.position;
         if (pos > 0) unawaited(_reengageAfterResume(pos));
       }
       if (widget.roomCode != null) {
@@ -6355,7 +6558,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 纠正（真机回归「房主暂停后再播放，观众恢复很慢」）。
         _sendCommand(
           AppConstants.actionPlay,
-          position: _player.position / 1000.0,
+          position: engine.position / 1000.0,
         );
       }
     }
@@ -6408,7 +6611,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _syncPlayState() {
-    final playing = _player.state == AdapterPlaybackState.playing;
+    // 677：房间路径读真实引擎（Qt 接管时是 Qt 的 mpv）
+    final engine = widget.roomCode == null ? _player : _roomEngine;
+    final playing = engine.state == AdapterPlaybackState.playing;
     if (playing) _markPlaybackStarted();
     if (_isPlayingNotifier.value != playing) {
       _isPlayingNotifier.value = playing;
@@ -6836,14 +7041,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _seekGuarded(int targetMs) async {
     _isSeekingPlayback = true;
     try {
-      await _player
+      // 677：房间路径要 seek 真实引擎（Qt 接管时是 Qt 的 mpv）
+      await (widget.roomCode == null ? _player : _roomEngine)
           .seek(positionMs: targetMs)
           .timeout(const Duration(seconds: 2));
     } catch (_) {}
     _isSeekingPlayback = false;
     _lastSeekCompletedAt = DateTime.now();
     if (!mounted) return;
-    final pos = _player.position;
+    // 677：回读也读真实引擎（Qt 接管时 `_player.position` 恒 0）
+    final pos = (widget.roomCode == null ? _player : _roomEngine).position;
     if (pos >= 0) {
       _position = Duration(milliseconds: pos);
       _positionNotifier.value = _position;
@@ -7702,7 +7909,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 加载完成后，主持人发送带 playUrl 的 syncPlay 给观众
     if (_isHost && _rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
-      final position = _player.position / 1000.0;
+      // 677：读真实引擎（Qt 接管时 `_player` 从未起播）
+      final position = _roomEngine.position / 1000.0;
       _logSyncEvent(
           '发送 syncPlay: ep=$index, pos=${position.toStringAsFixed(1)}s');
       await rtmService.sendCommand(
@@ -8243,6 +8451,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _clearHostOfflineCheck();
     _stopStreamRetry();
     _countRetryScheduler.cancel();
+    // 677：退房恢复主窗（并排摆位）——不能等到 Qt 窗关掉才恢复，
+    // 否则用户在「已退房但 Qt 还在关」的窗口里看到面板窗只有 380 宽。
+    unawaited(_exitRoomSplitLayout());
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
@@ -8446,6 +8657,63 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return _isHost;
   }
 
+  /// 677：房间同步要读的**真实播放引擎**。
+  ///
+  /// 【为什么需要】Qt 接管后 mpv 在 Qt 进程，本页的 `_player` 是一台
+  /// **从未起播**的空闲引擎（`prepare()` 在 Qt 接管分支被跳过）。房间
+  /// 的心跳、广播、纠偏如果继续读 `_player`：
+  ///   - 房主心跳恒定 `position=0 / playing=false` → 观众永远停在开头
+  ///   - 观众纠偏 `seek`/`playbackRate` 写到空闲引擎 → Qt 画面纹丝不动
+  ///
+  /// 因此房间路径统一走这个门面：Qt 存活用 Qt，否则回退本页引擎
+  /// （646 路径/非 Qt 环境行为完全不变）。
+  PlayerAdapter get _roomEngine {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      final qt = MpvSessionPlatform.activeQtAdapter;
+      if (qt != null && qt.isAlive) return qt;
+    }
+    return _player;
+  }
+
+  /// 677：房间同步是否走 Qt（面板态/摆位/权限注入的统一判据）。
+  bool get _roomQtActive {
+    if (defaultTargetPlatform != TargetPlatform.windows) return false;
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    return qt != null && qt.isAlive;
+  }
+
+  /// 677：房间面板态——Windows + 房间 + Qt 已接管。
+  ///
+  /// 此态下本页**全窗渲染房间面板**（不渲染视频区），Qt 窗只播视频。
+  bool get _roomPanelMode =>
+      widget.roomCode != null &&
+      _roomQtActive &&
+      defaultTargetPlatform == TargetPlatform.windows;
+
+  /// 677：房间面板态的全窗版式。
+  ///
+  /// 复用既有 `_buildResourcePanel()`（房间头部 + 资源分组 + 播报板，
+  /// 数据源 `_resourceGroups` / `_onlineUserCount` / `_broadcastMessages`
+  /// 早就在本页维护）。区别只是：
+  ///   - 不再 `Row(video, panel)` 分栏，面板独占全窗
+  ///   - 实底玻璃背景（`opaque:false` 路由会让详情页透出，必须自带底）
+  Widget _buildRoomPanelOnly() {
+    return TvBackConfirm(
+      enabled: ref.watch(settingsProvider.select((s) => s.tvMode)),
+      onBack: () => false,
+      onConfirm: () async {
+        await _reportStopped();
+        final shouldPop = await _confirmLeaveRoom();
+        if (shouldPop) await _safePopPlayerPage();
+      },
+      child: Scaffold(
+        // 实底（不能透明）：路由 opaque:false，详情页在下方
+        backgroundColor: const Color(0xFF12121C),
+        body: SafeArea(child: _buildResourcePanel()),
+      ),
+    );
+  }
+
   /// 手机版长按临时倍速是否可用：仅手机、非 TV、未锁定、可控、无面板打开。
   bool get _speedBoostGestureEnabled {
     if (!PlayerPlatform.mediaLongPressSpeedBoost) return false;
@@ -8495,6 +8763,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 任何失败路径走 [_abandonQtTakeover] 恢复本页 UI（回退兜底）。
     if (_qtUiHidden) {
       return const SizedBox.shrink();
+    }
+    // 677：房间模式 + Qt 接管 → 本页全窗渲染**房间面板**（房间头部 +
+    // 资源列表 + 播报板），视频区不渲染（视频在 Qt 窗）。
+    //
+    // 【为什么不走 _qtUiHidden】房间模式需要面板常显，不能隐身。
+    // 【为什么必须排在 _qtUiHidden 之后】单人 Qt 仍然要隐身。
+    if (_roomPanelMode) {
+      return _buildRoomPanelOnly();
     }
     return TvBackConfirm(
       // TV：首按提示、2 秒窗口内第二按才确认退出；非 TV 直接确认（现状）
@@ -11180,7 +11456,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
                 if (_roomData != null &&
                     _isHost &&
-                    _player.state != AdapterPlaybackState.playing) ...[
+                    _canControlPlayback &&
+                    _roomEngine.state != AdapterPlaybackState.playing) ...[
                   TvFocusable(
                     onTap: () async {
                       // 房间模式聚合搜索（竖屏窗口见 pushRoomResourceSearch）：

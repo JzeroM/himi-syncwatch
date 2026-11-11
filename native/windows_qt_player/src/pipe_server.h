@@ -50,6 +50,20 @@ public:
     /// 例：`sendCommand({{"type", "togglePlay"}})`
     Q_INVOKABLE void sendCommand(const QJsonObject& command);
 
+    /// 677：回传播放态给 Flutter（`playback` 帧）。
+    ///
+    /// 【为什么必须有】Qt 接管后 mpv 在**本进程**，Flutter 侧的 `_player`
+    /// 是一台从未起播的空闲引擎——房间心跳读到 `position=0 /
+    /// playing=false`，房主的心跳/广播全是假值（观众永远停在开头）。
+    /// 这里把 mpv 的真实播放态回传，Dart 侧镜像进适配器。
+    void sendPlayback(const QJsonObject& playback);
+
+    /// 677：回传窗口状态（`windowState` 帧：全屏态）。
+    void sendWindowState(const QJsonObject& windowState);
+
+    /// 677：回传并排布局（`splitLayout` 帧）。
+    void sendSplitLayout(const QJsonObject& layout);
+
 signals:
     /// 收到完整的一帧状态 JSON。
     void stateReceived(const QJsonObject& state);

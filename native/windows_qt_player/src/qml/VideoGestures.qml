@@ -64,7 +64,11 @@ Item {
 
         onClicked: (mouse) => {
             if (mouse.button === Qt.RightButton) {
-                if (root.showSegmentMenu) {
+                // 677：片头片尾标记走 segmentEnabled 门（Dart
+                // `_segmentFeatureEnabled` 已含 `_canControlPlayback`，
+                // 观众恒 false）。此前 Qt 侧完全没有门控 → 观众也能
+                // 标记片头片尾（两端原生层都有这道门）。
+                if (root.showSegmentMenu && playerState.segmentEnabled) {
                     root.showSegmentMenu(mouse.x, mouse.y)
                 }
                 return
@@ -74,6 +78,9 @@ Item {
 
         onDoubleClicked: {
             tapTimer.stop()
+            // 677：房间观众不得双击播放/暂停（对齐安卓/鸿蒙手势层
+            // `canControl` 门）。
+            if (!playerState.canControl) return
             // 【675 H】Flutter 语义（playPauseHintIcon 测试钉死）：显示
             // 切换后的「当前可执行动作」——播完→⏸、暂停后→▶。
             // **先算目标态再切换**：toggle 后读 playerState.paused 是

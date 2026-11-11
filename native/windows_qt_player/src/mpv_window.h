@@ -3,6 +3,7 @@
 
 #include <QMap>
 #include <QObject>
+#include <QRect>
 #include <QString>
 #include <QUrl>
 #include <QVariantList>
@@ -72,6 +73,49 @@ public:
     Q_INVOKABLE void toggleHostFullscreen();
     Q_INVOKABLE bool isHostFullscreen() const;
 
+    /// 677：全屏态提升为 **Q_PROPERTY**（按钮图标双向切换的依据）。
+    ///
+    /// 旧实现只在 QML 里每次调 `isHostFullscreen()`——属性绑定不会因
+    /// 窗口状态变化重新求值，全屏后图标仍是「全屏」而不是「退出全屏」。
+    Q_PROPERTY(bool hostFullscreen READ isHostFullscreen NOTIFY
+                   hostFullscreenChanged)
+
+    /// 677：显式设置全屏态（房间并排的摆位命令也走这里）。
+    Q_INVOKABLE void setHostFullscreen(bool fullscreen);
+
+    /// 677：房间并排矩形（由 Dart 下发）。
+    ///
+    /// 【为什么 Qt 要记】`showNormal()` 恢复的是 Qt 内部记忆的
+    /// `normalGeometry`——房间并排是外部改的几何，Qt 并不知道，
+    /// 退全屏后会落回上次的位置（与 Flutter 面板重叠/错位）。
+    /// 记住并排矩形后，退全屏**显式** `setGeometry` 回去。
+    ///
+    /// 全屏中收到**不同**矩形 → 自动退全屏再应用（用户明确要求）；
+    /// 相同则忽略（防面板刷新重发导致误退全屏）。
+    Q_INVOKABLE void setWindowRect(int x, int y, int w, int h);
+
+    /// 677：房间并排跟随开关。开启后本窗口自动占满「Flutter 主窗左侧
+    /// 剩余区域」，随 Flutter 窗口拖动/缩放实时跟随（50ms 节拍）。
+    Q_INVOKABLE void setFollowParent(bool enabled);
+
+    /// 677：按 `QScreen::availableGeometry()` 计算并排矩形并回传
+    /// （`splitLayout` 帧）。Qt 的屏幕信息是权威值（多屏/DPI），
+    /// Dart 侧 `window_manager` 拿不到工作区。
+    void requestSplitLayout(int panelWidth, int minVideoWidth);
+
+    /// 677：把本窗口拉到最前（Dart 取消退房/点面板时用）。
+    Q_INVOKABLE void raiseToFront();
+
+    /// 677：触发 Escape 语义（main.cpp 的事件过滤器调用）。
+    ///
+    /// 信号不能从类外 emit（虽然 Qt 的 `signals` 是 public，但语义上
+    /// 应由类自己发）——这里提供显式入口。
+    void notifyEscape() { emit escapePressed(); }
+
+    /// 677：父进程（Flutter）pid —— 房间并排跟随用它定位主窗。
+    /// 由 main.cpp 从 `--parent-pid` 注入。
+    void setParentPid(qint64 pid) { parentPid_ = pid; }
+
     /// 【669：HDR 晚绑定】媒体信息解析完才决定 HDR/HLG 档位，而进程
     /// 为「起播直接弹窗」早已拉起（Flutter 侧 _ensureQtPlayerProcess）。
     /// 流程：先 setHdrMode 再 load，mpv 首帧前应用与启动参数等效。
@@ -107,11 +151,37 @@ signals:
     /// 首帧就绪（用于隐藏加载指示器）。
     void firstFrameRendered();
 
+    /// 677：全屏态变化（Q_PROPERTY 通知 + QML 图标绑定）。
+    void hostFullscreenChanged();
+
+    /// 677：并排布局计算结果（`requestSplitLayout` → main.cpp → IPC）。
+    void splitLayoutReady(int panelX, int panelY, int panelW, int panelH,
+                          int videoX, int videoY, int videoW, int videoH,
+                          int maxPanelW, int maxPanelH, bool ok);
+
+    /// 677：Escape 按下（**两窗统一入口**）。
+    ///
+    /// 【为什么放 C++】旧实现两窗各挂一份 `Shortcut { sequence: "Escape" }`：
+    /// Overlay 有「收面板→退全屏→退出」三层，Main.qml 却只有
+    /// `requestExit + Qt.quit()`——焦点在宿主窗（点标题栏/视频区）时按
+    /// Esc，**全屏状态下会直接关掉播放器**（真机回归）。
+    /// 改为 C++ 统一拦截后只剩一份三层语义，不会再走错分支。
+    void escapePressed();
+
 private:
     void createVideoWindow();
     void syncGeometry();
     void pumpEvents();
     void applyHdrOptions(bool hdr, bool hlg);
+
+    /// 677：定位 Flutter 主窗（`--parent-pid` + 类名 + 顶层可见）。
+    HWND findParentWindow();
+    /// 677：按 Flutter 主窗当前矩形重算并应用本窗矩形（房间并排跟随）。
+    void followParentOnce();
+
+public:
+    /// 677：供 main.cpp 的 50ms 节拍调用（`followParentOnce` 是私有实现）。
+    void followParentOncePublic() { followParentOnce(); }
 
     /// 669：初始化前用 option、初始化后用 property（mpv 规则）。
     void setMpvString(const char* name, const QString& value);
@@ -124,6 +194,14 @@ private:
     HWND host_hwnd_ = nullptr;
     HWND video_hwnd_ = nullptr;
     mpv_handle* mpv_ = nullptr;
+
+    // 677：房间并排 / 全屏 / 跟随
+    QRect splitRect_;              ///< 并排矩形（退全屏显式回这里）
+    bool hasSplitRect_ = false;
+    bool followParent_ = false;    ///< 房间并排跟随开关
+    HWND parentHwnd_ = nullptr;    ///< Flutter 主窗（缓存，失效重找）
+    qint64 parentPid_ = 0;         ///< --parent-pid
+    QRect lastFollowRect_;         ///< 上一次应用的跟随矩形（变化才动）
 
     int insetTop_ = 0;
     int insetBottom_ = 0;

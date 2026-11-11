@@ -29,6 +29,12 @@ Item {
     property color trackColor: Qt.rgba(1, 1, 1, 0.14)
     property color fillColor: theme.focusColor
 
+    /// 677：是否允许用户交互（点击跳转 / 按住拖动）。
+    ///
+    /// 房间观众为 false —— 对齐安卓（`commit` 里拒绝并回弹到权威位置）
+    /// 与鸿蒙（`canControl` 门）。滑杆仍显示实时进度，只是不吃输入。
+    property bool interactive: true
+
     /// 拖动/点击连续回调（对应 Flutter Slider onChanged）
     signal moved(real v)
     /// 松手回调（seek 用：只在松手时真正 seek）
@@ -53,6 +59,8 @@ Item {
         backgroundVisible: true
         trackColor: root.trackColor
         fillColor: root.fillColor
+        // 677：不可交互时禁用内层滑杆（防手柄拖动绕过 trackDrag）。
+        enabled: root.interactive
         // 【662 瑕疵修复】ESlider 的 backgroundVisible:false 只藏底色，
         // **描边仍画**（1px theme.textColor 白）→ 滑杆带白框（真机截图）。
         // 走「透明描边」路线：保留暗色轨道底，去掉整圈描边。
@@ -88,8 +96,10 @@ Item {
         id: trackDrag
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: root.interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
         preventStealing: true
+        // 677：房间观众不可拖进度（点击/拖动全部禁用）。
+        enabled: root.interactive
         property bool active: false
 
         function applyAt(x) {

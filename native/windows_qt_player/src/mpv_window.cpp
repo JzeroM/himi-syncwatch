@@ -4,11 +4,16 @@
 #include <QDebug>
 #include <QFile>
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QRectF>
+#include <QScreen>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QtGlobal>   // qMax / qMin（并排布局夹紧）
 #include <QVariant>
 #include <QVector>
+
+#include <dwmapi.h>
 
 #include <mpv/client.h>
 
@@ -408,16 +413,229 @@ void MpvWindow::selectTrack(const QString& type, int index) {
 }
 
 void MpvWindow::toggleHostFullscreen() {
-    if (host_ == nullptr) return;
-    if (host_->visibility() == QWindow::FullScreen) {
-        host_->showNormal();
-    } else {
-        host_->showFullScreen();
-    }
+    setHostFullscreen(!isHostFullscreen());
 }
 
 bool MpvWindow::isHostFullscreen() const {
     return host_ != nullptr && host_->visibility() == QWindow::FullScreen;
+}
+
+void MpvWindow::setHostFullscreen(bool fullscreen) {
+    if (host_ == nullptr) return;
+    const bool wasFull = isHostFullscreen();
+    if (fullscreen == wasFull) return;
+
+    if (fullscreen) {
+        // 【677】进全屏前记住并排矩形：退全屏要显式回到这里，
+        // `showNormal()` 恢复的是 Qt 内部记忆的 normalGeometry
+        //（房间并排是外部改的几何，Qt 并不知道）→ 会与 Flutter
+        // 面板重叠/错位（用户明确要求「房间模式全屏别出问题」）。
+        //
+        // 取**当前几何**而不是上次下发的矩形：用户可能手动拖过窗口，
+        // 当前几何才是视觉上「刚才那个并排位置」。所以每次进全屏都
+        // 重新记录（不是只在首次）。
+        splitRect_ = host_->geometry();
+        hasSplitRect_ = !splitRect_.isEmpty();
+        host_->showFullScreen();
+    } else {
+        host_->showNormal();
+        // 显式回到并排矩形（覆盖 showNormal 的恢复值）。
+        if (hasSplitRect_ && !splitRect_.isEmpty()) {
+            host_->setGeometry(splitRect_);
+            // 677：同步跟随缓存——否则下一拍 followParentOnce 会认为
+            // 「矩形变了」再设一次（视觉无差异，但会多一次重绘/闪烁）。
+            lastFollowRect_ = splitRect_;
+        }
+    }
+    emit hostFullscreenChanged();
+}
+
+void MpvWindow::setWindowRect(int x, int y, int w, int h) {
+    if (host_ == nullptr) return;
+    if (w <= 0 || h <= 0) return;
+    const QRect next(x, y, w, h);
+    // 【677】相同矩形直接忽略——Dart 面板刷新会重发摆位命令，
+    // 不去重会导致「面板一刷新就把全屏顶掉」（用户选了自动退全屏，
+    // 但那只应发生在**布局真的变了**的时候）。
+    if (hasSplitRect_ && splitRect_ == next) {
+        // 全屏中收到相同矩形：保持全屏，只更新记录。
+        splitRect_ = next;
+        return;
+    }
+    // 全屏中收到**不同**矩形 → 自动退全屏再应用（用户明确要求）。
+    if (isHostFullscreen()) {
+        qInfo().noquote() << "[window] 全屏中收到新摆位 → 自动退全屏"
+                          << next;
+        host_->showNormal();
+        emit hostFullscreenChanged();
+    }
+    splitRect_ = next;
+    hasSplitRect_ = true;
+    lastFollowRect_ = QRect();  // 让跟随逻辑重新应用一次
+    host_->setGeometry(next);
+}
+
+void MpvWindow::setFollowParent(bool enabled) {
+    followParent_ = enabled;
+    if (!enabled) {
+        parentHwnd_ = nullptr;
+        lastFollowRect_ = QRect();
+        return;
+    }
+    // 开关打开时立即对齐一次（不等 50ms 节拍）。
+    followParentOnce();
+}
+
+void MpvWindow::requestSplitLayout(int panelWidth, int minVideoWidth) {
+    // 用本窗所在屏的工作区（多屏/DPI 权威值）。
+    QScreen* screen = nullptr;
+    if (host_ != nullptr) screen = host_->screen();
+    if (screen == nullptr) screen = QGuiApplication::primaryScreen();
+    if (screen == nullptr) {
+        emit splitLayoutReady(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false);
+        return;
+    }
+    const QRect work = screen->availableGeometry();
+    if (panelWidth <= 0) panelWidth = 380;
+    if (minVideoWidth <= 0) minVideoWidth = 480;
+
+    int panel = panelWidth;
+    // 总宽不超屏：放不下就压缩面板（下限 300），仍放不下则放弃并排。
+    if (panel + minVideoWidth > work.width()) {
+        panel = work.width() - minVideoWidth;
+    }
+    const int videoW = work.width() - panel;
+    if (panel < 300 || videoW < minVideoWidth) {
+        qWarning().noquote() << "[split] 工作区放不下双窗:" << work;
+        emit splitLayoutReady(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false);
+        return;
+    }
+    const int videoX = work.left();
+    const int panelX = work.left() + videoW;
+    // 主窗最大宽度 = 工作区宽 - Qt 最小宽（连最大化按钮一起受限）
+    const int maxPanelW = qMax(panel, work.width() - minVideoWidth);
+    qInfo().noquote() << "[split] 并排布局 work=" << work << "panelW=" << panel
+                      << "videoW=" << videoW;
+    emit splitLayoutReady(panelX, work.top(), panel, work.height(), videoX,
+                          work.top(), videoW, work.height(), maxPanelW,
+                          work.height(), true);
+}
+
+void MpvWindow::raiseToFront() {
+    if (host_ == nullptr) return;
+    const HWND h = reinterpret_cast<HWND>(host_->winId());
+    if (h == nullptr) return;
+    ::SetWindowPos(h, HWND_TOP, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    ::SetForegroundWindow(h);
+    host_->requestActivate();
+}
+
+/// 677：定位 Flutter 主窗。
+///
+/// 【判据三件套】同进程（`--parent-pid`）+ 类名
+/// `FLUTTER_RUNNER_WIN32_WINDOW`（`windows/runner/win32_window.cpp` 的
+/// 注册名）+ 顶层可见。只认类名会误伤其它 Flutter 应用，只认 pid 会
+/// 在 pid 复用后认错窗口，三者组合才唯一。
+HWND MpvWindow::findParentWindow() {
+    if (parentPid_ <= 0) return nullptr;
+    if (parentHwnd_ != nullptr && ::IsWindow(parentHwnd_)) {
+        return parentHwnd_;
+    }
+    parentHwnd_ = nullptr;
+    struct Ctx {
+        DWORD pid;
+        HWND found;
+    } ctx{static_cast<DWORD>(parentPid_), nullptr};
+
+    ::EnumWindows(
+        [](HWND hwnd, LPARAM lp) -> BOOL {
+            auto* c = reinterpret_cast<Ctx*>(lp);
+            DWORD pid = 0;
+            ::GetWindowThreadProcessId(hwnd, &pid);
+            if (pid != c->pid) return TRUE;
+            if (!::IsWindowVisible(hwnd)) return TRUE;
+            wchar_t cls[128] = {};
+            ::GetClassNameW(hwnd, cls, 128);
+            if (QString::fromWCharArray(cls) !=
+                QLatin1String("FLUTTER_RUNNER_WIN32_WINDOW")) {
+                return TRUE;
+            }
+            // 只认「有尺寸的顶层窗」（跳过 Flutter 的隐藏辅助窗）。
+            RECT rc = {};
+            ::GetWindowRect(hwnd, &rc);
+            if (rc.right - rc.left <= 0 || rc.bottom - rc.top <= 0) {
+                return TRUE;
+            }
+            c->found = hwnd;
+            return FALSE;  // 找到即停
+        },
+        reinterpret_cast<LPARAM>(&ctx));
+
+    parentHwnd_ = ctx.found;
+    if (parentHwnd_ != nullptr) {
+        qInfo().noquote() << "[follow] 已定位 Flutter 主窗 hwnd="
+                          << reinterpret_cast<quintptr>(parentHwnd_);
+    }
+    return parentHwnd_;
+}
+
+/// 677：房间并排跟随——本窗占满「Flutter 主窗左侧剩余区域」。
+///
+/// 【为什么由 Qt 自己做】拖动/缩放/移动/最大化/跨屏/DPI 变化全部自动
+/// 覆盖，零 IPC 流量、无需节流。Dart 只管把自己的窗缩到右侧固定宽，
+/// Qt 只看 Flutter 窗的左边缘。
+void MpvWindow::followParentOnce() {
+    if (!followParent_ || host_ == nullptr) return;
+    // 全屏时覆盖 Flutter 窗（用户明确例外），不跟随。
+    if (isHostFullscreen()) return;
+
+    const HWND parent = findParentWindow();
+    if (parent == nullptr) return;
+    if (::IsIconic(parent)) return;  // 最小化：保持上一有效矩形
+
+    // DwmGetWindowAttribute 取**真实可见边界**：GetWindowRect 含 Win10/11
+    // 的不可见边框与阴影（左右各多出 7~8px），两窗会重叠一条缝。
+    RECT frame = {};
+    if (FAILED(::DwmGetWindowAttribute(parent, DWMWA_EXTENDED_FRAME_BOUNDS,
+                                       &frame, sizeof(frame)))) {
+        ::GetWindowRect(parent, &frame);
+    }
+
+    // 物理像素 → 逻辑像素：Qt 6 的 QScreen 几何是逻辑像素，
+    // GetWindowRect 是物理像素；不换算在 150%/200% 缩放下会偏出一截。
+    const QRect parentPhysical(frame.left, frame.top,
+                               frame.right - frame.left,
+                               frame.bottom - frame.top);
+    QScreen* screen = QGuiApplication::screenAt(parentPhysical.center());
+    if (screen == nullptr) screen = QGuiApplication::primaryScreen();
+    if (screen == nullptr) return;
+    const qreal dpr = screen->devicePixelRatio();
+    if (dpr <= 0) return;
+
+    const QRect parentLogical(
+        qRound(parentPhysical.x() / dpr), qRound(parentPhysical.y() / dpr),
+        qRound(parentPhysical.width() / dpr),
+        qRound(parentPhysical.height() / dpr));
+    const QRect work = screen->availableGeometry();
+
+    // 本窗 = 工作区左边 → Flutter 窗左边缘，纵向取工作区高度。
+    const int left = work.left();
+    const int right = qMin(parentLogical.left(), work.right());
+    int w = right - left;
+    // 总宽不超屏：Flutter 最大化时 remaining 会很小 → 保底宽度，
+    // 不压到 Flutter 窗上（用户要求「两窗总长总宽不超屏」）。
+    constexpr int kMinWidth = 480;
+    if (w < kMinWidth) w = kMinWidth;
+    if (left + w > work.right()) w = work.right() - left;
+    if (w <= 0) return;
+
+    const QRect next(left, work.top(), w, work.height());
+    if (next == lastFollowRect_) return;  // 变化才动（零抖动）
+    lastFollowRect_ = next;
+    splitRect_ = next;
+    hasSplitRect_ = true;
+    host_->setGeometry(next);
 }
 
 bool MpvWindow::command(const QStringList& args) {

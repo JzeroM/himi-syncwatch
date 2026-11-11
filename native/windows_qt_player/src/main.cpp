@@ -4,6 +4,7 @@
 #include <QNetworkDiskCache>
 #include <QQmlNetworkAccessManagerFactory>
 #include <QStandardPaths>
+#include <QAbstractEventDispatcher>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -12,6 +13,8 @@
 #include <QGuiApplication>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QKeyEvent>
+#include <QObject>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -152,10 +155,13 @@ int main(int argc, char* argv[]) {
     // ── 676：父进程存活守卫（Qt 进程由 Flutter detached 拉起）──
     // 用 SYNCHRONIZE 句柄 + QWinEventNotifier：父进程一退出立即触发
     //（不轮询、不占 CPU）。正常关闭路径另有一层 Dart 主动 kill。
+    qint64 parentPidForFollow = 0;
     {
         bool pidOk = false;
         const qint64 parentPid = parser.value("parent-pid").toLongLong(&pidOk);
         if (pidOk && parentPid > 0) {
+            // 677：同一个 pid 也是「房间并排跟随」定位 Flutter 主窗的依据。
+            parentPidForFollow = parentPid;
             HANDLE parent = ::OpenProcess(
                 SYNCHRONIZE, FALSE, static_cast<DWORD>(parentPid));
             if (parent != nullptr) {
@@ -204,6 +210,8 @@ int main(int argc, char* argv[]) {
     // ── mpv 窗口（664：声明提前到 QML load 之前——mpvWindow 上下文
     // 属性必须在 engine.load 前注册，否则 QML 解析不到）──
     MpvWindow mpv;
+    // 677：房间并排跟随要定位 Flutter 主窗，pid 必须在 QML 注册前注入。
+    if (parentPidForFollow > 0) mpv.setParentPid(parentPidForFollow);
 
     // ── QML ──
     QQmlApplicationEngine engine;
@@ -400,6 +408,32 @@ int main(int argc, char* argv[]) {
     });
     syncTimer->start(50);
 
+    // ── 677：Escape 统一拦截（两窗共用一份三层语义）──
+    //
+    // 【真凶】旧实现两窗各挂一份 `Shortcut { sequence: "Escape" }`：
+    // Overlay 有「收面板→退全屏→退出」三层，Main.qml 只有
+    // `requestExit + Qt.quit()`。焦点落在宿主窗（点标题栏/视频区）时按
+    // Esc，**全屏状态下会直接关掉播放器**（用户要求「房间模式全屏别出
+    // 问题」，这条必须先堵）。C++ 拦截后只剩一份语义，且 QML 两处
+    // Shortcut 一并删除（防重复触发）。
+    struct EscapeFilter : QObject {
+        MpvWindow* mpv = nullptr;
+        explicit EscapeFilter(MpvWindow* m, QObject* parent)
+            : QObject(parent), mpv(m) {}
+        bool eventFilter(QObject* obj, QEvent* ev) override {
+            Q_UNUSED(obj)
+            if (ev->type() != QEvent::KeyPress) return false;
+            auto* key = static_cast<QKeyEvent*>(ev);
+            if (key->key() != Qt::Key_Escape) return false;
+            // 交给 QML 的三层语义（收面板 → 退全屏 → requestExit）。
+            mpv->notifyEscape();
+            return true;  // 吞掉，防 Qt 默认行为（关窗）
+        }
+    };
+    // parent = &app：随事件循环一起析构，不留悬挂过滤器。
+    auto* escapeFilter = new EscapeFilter(&mpv, &app);
+    app.installEventFilter(escapeFilter);
+
     // ── 状态：Flutter → mpv + QML ──
     QObject::connect(&pipe, &PipeServer::stateReceived, &state,
                      [&](const QJsonObject& json) {
@@ -533,8 +567,7 @@ int main(int argc, char* argv[]) {
                              patch.insert(QStringLiteral("selectedAudioId"),
                                           id > 0 ? id : 0);
                              state.applyJson(patch);
-                         } else if (type ==
-                                    QLatin1String("selectSubtitle")) {
+                         } else if (type == QLatin1String("selectSubtitle")) {
                              const int id = static_cast<int>(
                                  cmd.value(QLatin1String("id")).toInt(-1));
                              mpv.selectTrack(QStringLiteral("subtitle"),
@@ -544,6 +577,48 @@ int main(int argc, char* argv[]) {
                              patch.insert(QStringLiteral("selectedSubtitleId"),
                                           id > 0 ? id : 0);
                              state.applyJson(patch);
+                         } else if (type ==
+                                    QLatin1String("setWindowRect")) {
+                             // 677：房间并排摆位（Dart 算矩形、Qt 应用）。
+                             // 全屏中收到**不同**矩形 → 自动退全屏；
+                             // 相同则忽略（防面板刷新重发误退）。
+                             mpv.setWindowRect(
+                                 static_cast<int>(cmd.value(QLatin1String("x"))
+                                                      .toInt(0)),
+                                 static_cast<int>(cmd.value(QLatin1String("y"))
+                                                      .toInt(0)),
+                                 static_cast<int>(cmd.value(QLatin1String("w"))
+                                                      .toInt(0)),
+                                 static_cast<int>(cmd.value(QLatin1String("h"))
+                                                      .toInt(0)));
+                         } else if (type ==
+                                    QLatin1String("setFollowParent")) {
+                             // 677：房间并排跟随（Qt 自己读 Flutter 主窗
+                             // 矩形，拖动/缩放/移动/跨屏/DPI 全自动）。
+                             mpv.setFollowParent(
+                                 cmd.value(QLatin1String("enabled"))
+                                     .toBool(false));
+                         } else if (type ==
+                                    QLatin1String("requestSplitLayout")) {
+                             // 677：房间并排——Qt 用 QScreen 算矩形回传
+                             //（多屏/DPI 权威），Dart 应用面板侧。
+                             mpv.requestSplitLayout(
+                                 static_cast<int>(
+                                     cmd.value(QLatin1String("panelWidth"))
+                                         .toInt(380)),
+                                 static_cast<int>(
+                                     cmd.value(QLatin1String("minVideoWidth"))
+                                         .toInt(480)));
+                         } else if (type == QLatin1String("focus")) {
+                             // 677：把播放窗拉回最前（Dart 取消退房时用）。
+                             mpv.raiseToFront();
+                         } else if (type ==
+                                    QLatin1String("setHostFullscreen")) {
+                             // 677：全屏态可由 Dart 显式驱动（房间并排
+                             // 与全屏互斥，摆位时先退全屏）。
+                             mpv.setHostFullscreen(
+                                 cmd.value(QLatin1String("fullscreen"))
+                                     .toBool(false));
                          }
                      });
 
@@ -561,6 +636,95 @@ int main(int argc, char* argv[]) {
                          patch.insert(QStringLiteral("paused"), paused);
                          state.applyJson(patch);
                      });
+
+    // ── 677：播放态回传 Flutter（`playback` 帧）──
+    //
+    // 【为什么必须有】Qt 接管后 mpv 在**本进程**，Flutter 侧的 `_player`
+    // 是一台从未起播的空闲引擎 → 房间心跳读到 position=0/playing=false，
+    // 房主广播全是假值（观众永远停在开头）。这里把真实播放态回传。
+    //
+    // 节流 200ms + 边沿立即 flush：位置是高频量（20Hz 事件），全量转发
+    // 会白烧带宽；但播放/暂停/seek/倍速这类**边沿**必须立刻发，否则
+    // 观众要等最多 200ms 才知道房主暂停了。
+    auto* playbackTimer = new QTimer(&app);
+    playbackTimer->setSingleShot(true);
+    playbackTimer->setInterval(200);
+    QObject::connect(playbackTimer, &QTimer::timeout, &app, [&]() {
+        QJsonObject pb;
+        pb.insert(QStringLiteral("positionMs"), state.positionMs());
+        pb.insert(QStringLiteral("durationMs"), state.durationMs());
+        pb.insert(QStringLiteral("paused"), state.paused());
+        pb.insert(QStringLiteral("rate"), state.speed());
+        pb.insert(QStringLiteral("buffering"), state.buffering());
+        pipe.sendPlayback(pb);
+    });
+    const auto flushPlaybackSoon = [playbackTimer]() {
+        if (!playbackTimer->isActive()) playbackTimer->start();
+    };
+    QObject::connect(&mpv, &MpvWindow::positionChanged, &app,
+                     [flushPlaybackSoon](qint64, qint64) {
+                         flushPlaybackSoon();
+                     });
+
+    // 边沿（暂停/播放）立即发，不等节流。
+    QObject::connect(&mpv, &MpvWindow::pausedChanged, &app,
+                     [&pipe, &state](bool paused) {
+                         QJsonObject pb;
+                         pb.insert(QStringLiteral("positionMs"),
+                                   state.positionMs());
+                         pb.insert(QStringLiteral("durationMs"),
+                                   state.durationMs());
+                         pb.insert(QStringLiteral("paused"), paused);
+                         pb.insert(QStringLiteral("rate"), state.speed());
+                         pb.insert(QStringLiteral("buffering"),
+                                   state.buffering());
+                         pipe.sendPlayback(pb);
+                     });
+
+    // ── 677：全屏态回传（房间并排与全屏互斥，Dart 需要知道）──
+    QObject::connect(&mpv, &MpvWindow::hostFullscreenChanged, &app, [&]() {
+        QJsonObject ws;
+        ws.insert(QStringLiteral("fullscreen"), mpv.isHostFullscreen());
+        pipe.sendWindowState(ws);
+        // 全屏切换后**立即**重贴悬浮层 + 抬到最前：50ms 轮询只在本窗
+        // 活跃时才 raise，全屏瞬间可能还没激活 → 控件层被视频盖住
+        //（真机观感「全屏后控件消失」）。
+        QTimer::singleShot(0, &app, [host, overlay, syncOverlayGeometry]() {
+            if (host == nullptr || overlay == nullptr) return;
+            syncOverlayGeometry();
+            overlay->raise();
+        });
+        state.setControlsVisible(true);
+    });
+
+    // ── 677：房间并排跟随（50ms 节拍，变化才动）──
+    QObject::connect(syncTimer, &QTimer::timeout, &app, [&mpv]() {
+        mpv.followParentOncePublic();
+    });
+
+    // ── 677：并排布局回传（Qt 算 → Dart 应用面板侧）──
+    QObject::connect(
+        &mpv, &MpvWindow::splitLayoutReady, &app,
+        [&pipe](int px, int py, int pw, int ph, int vx, int vy, int vw,
+                int vh, int maxW, int maxH, bool ok) {
+            QJsonObject panel;
+            panel.insert(QStringLiteral("x"), px);
+            panel.insert(QStringLiteral("y"), py);
+            panel.insert(QStringLiteral("w"), pw);
+            panel.insert(QStringLiteral("h"), ph);
+            QJsonObject video;
+            video.insert(QStringLiteral("x"), vx);
+            video.insert(QStringLiteral("y"), vy);
+            video.insert(QStringLiteral("w"), vw);
+            video.insert(QStringLiteral("h"), vh);
+            QJsonObject data;
+            data.insert(QStringLiteral("ok"), ok);
+            data.insert(QStringLiteral("panel"), panel);
+            data.insert(QStringLiteral("video"), video);
+            data.insert(QStringLiteral("maxPanelW"), maxW);
+            data.insert(QStringLiteral("maxPanelH"), maxH);
+            pipe.sendSplitLayout(data);
+        });
 
     return app.exec();
 }

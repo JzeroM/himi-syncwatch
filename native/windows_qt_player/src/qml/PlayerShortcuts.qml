@@ -11,14 +11,19 @@ Item {
     anchors.fill: parent
 
     Shortcut { sequence: "Space"; onActivated: {
+        // 677：房间观众不得键盘播放/暂停
+        if (!playerState.canControl) return
         mpvWindow.togglePause()
         pipeServer.sendCommand({"type": "togglePlay"})
     } }
     Shortcut { sequence: "Left"; onActivated: {
+        // 677：房间观众不得键盘 seek
+        if (!playerState.canControl) return
         mpvWindow.seekTo(Math.max(0, playerState.positionMs - 10000))
         pipeServer.sendCommand({"type": "seekRelative", "deltaMs": -10000})
     } }
     Shortcut { sequence: "Right"; onActivated: {
+        if (!playerState.canControl) return
         mpvWindow.seekTo(playerState.positionMs + 10000)
         pipeServer.sendCommand({"type": "seekRelative", "deltaMs": 10000})
     } }
@@ -33,6 +38,8 @@ Item {
         pipeServer.sendCommand({"type": "setVolume", "volume": v})
     } }
     Shortcut { sequence: "F"; onActivated: mpvWindow.toggleHostFullscreen() }
-    // Escape 由各窗口自己处理（悬浮层：收面板→退全屏→退出；
-    // 宿主：退出），避免同一窗口双 Shortcut 冲突。
+    // 677：F11 与 F 并存（Windows 用户习惯）
+    Shortcut { sequence: "F11"; onActivated: mpvWindow.toggleHostFullscreen() }
+    // Escape 由 C++ 统一拦截（`MpvWindow::escapePressed`）——两窗 QML
+    // 的 Escape Shortcut 已删除，避免「焦点在宿主窗时全屏下直接退出」。
 }

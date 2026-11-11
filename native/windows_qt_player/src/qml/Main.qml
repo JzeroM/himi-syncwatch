@@ -29,11 +29,11 @@ ApplicationWindow {
     // 双击暂停/横滑 seek/点击唤出控件仍然有效。
     VideoGestures { }
 
-    Shortcut {
-        sequence: "Escape"
-        onActivated: {
-            pipeServer.sendCommand({"type": "requestExit"})
-            Qt.quit()
-        }
-    }
+    // 677：Escape 已由 C++ 统一拦截（`MpvWindow::escapePressed`），
+    // 本窗**不再**挂 Escape Shortcut。
+    //
+    // 【真凶】旧实现这里是 `requestExit + Qt.quit()`，而 Overlay 才有
+    // 「收面板→退全屏→退出」三层。焦点落在宿主窗（点标题栏/视频区）
+    // 时按 Esc，全屏状态下会**直接关掉播放器**（用户要求「房间模式
+    // 全屏别出问题」，这条必须先堵）。
 }

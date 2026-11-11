@@ -175,6 +175,9 @@ target_link_libraries(himi_qt_player PRIVATE
     Qt6::QuickControls2
     Qt6::Qml
     Qt6::Network
+    # 677：房间并排跟随用 DwmGetWindowAttribute 取窗口真实可见边界
+    #（GetWindowRect 含 Win10/11 不可见边框 + 阴影 → 两窗重叠一条缝）。
+    dwmapi
 )
 
 # libmpv-2.dll 拷到输出目录（与 exe 同级才能被加载）。

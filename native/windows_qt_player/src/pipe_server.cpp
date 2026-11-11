@@ -133,6 +133,30 @@ void PipeServer::sendCommand(const QJsonObject& command) {
     sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
 }
 
+void PipeServer::sendPlayback(const QJsonObject& playback) {
+    if (client_ == nullptr || !authed_) return;
+    QJsonObject frame;
+    frame.insert(QStringLiteral("type"), QStringLiteral("playback"));
+    frame.insert(QStringLiteral("data"), playback);
+    sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
+}
+
+void PipeServer::sendWindowState(const QJsonObject& windowState) {
+    if (client_ == nullptr || !authed_) return;
+    QJsonObject frame;
+    frame.insert(QStringLiteral("type"), QStringLiteral("windowState"));
+    frame.insert(QStringLiteral("data"), windowState);
+    sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
+}
+
+void PipeServer::sendSplitLayout(const QJsonObject& layout) {
+    if (client_ == nullptr || !authed_) return;
+    QJsonObject frame;
+    frame.insert(QStringLiteral("type"), QStringLiteral("splitLayout"));
+    frame.insert(QStringLiteral("data"), layout);
+    sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
+}
+
 void PipeServer::sendRaw(const QByteArray& payload) {
     if (client_ == nullptr) return;
     client_->write(payload);

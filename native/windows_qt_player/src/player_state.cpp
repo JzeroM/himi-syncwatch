@@ -138,6 +138,10 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
                                                onlineUserCount_)));
     dirty |= assign(isHost_, readBool(json, "isHost", isHost_));
     dirty |= assign(clockFormat_, readString(json, "clockFormat", clockFormat_));
+    // 677：房间观众权限（对齐安卓/鸿蒙原生 UI 的 canControl / segmentEnabled）
+    dirty |= assign(canControl_, readBool(json, "canControl", canControl_));
+    dirty |= assign(segmentEnabled_,
+                    readBool(json, "segmentEnabled", segmentEnabled_));
 
     // ── Logo（660）──
     dirty |= assign(logoUrl_, readString(json, "logoUrl", logoUrl_));

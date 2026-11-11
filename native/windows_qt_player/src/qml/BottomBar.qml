@@ -109,6 +109,9 @@ Rectangle {
                 minimumValue: 0
                 maximumValue: Math.max(1, playerState.durationMs)
                 value: playerState.positionMs
+                // 677：房间观众不得拖进度/点进度跳转（对齐安卓
+                // `commit` 里拒绝并回弹、鸿蒙 canControl 门）。
+                interactive: playerState.canControl
                 onFinished: (v) => root.seekFinished(
                     playerState.durationMs > 0 ? v / playerState.durationMs : 0)
             }
@@ -129,19 +132,25 @@ Rectangle {
             // 播放组（28/36/28，间距 8）
             RowLayout {
                 spacing: Theme.transportGap
+                // 677：房间观众隐藏传输组（占位不塌，播放键不位移）。
+                // 对齐安卓 `INVISIBLE` / 鸿蒙 `Visibility.Hidden`：
+                // 用 opacity 而非 visible，保持布局与观感一致。
+                opacity: playerState.canControl ? 1.0 : 0.0
                 ControlButton {
                     icon: Icons.skipPrevious
                     iconSize: Theme.transportSideSize
                     // 675 F：电影不显示上下切集（Flutter 条件：
                     // _hasEpisodeList && _totalEpisodeCount > 1）
                     visible: playerState.episodeCount > 1
-                    enabled: playerState.currentEpisodeIndex > 0
+                    enabled: playerState.canControl
+                             && playerState.currentEpisodeIndex > 0
                     tooltip: "上一集"
                     onClicked: root.prevEpisodeClicked()
                 }
                 ControlButton {
                     icon: playerState.paused ? Icons.playCircle : Icons.pauseCircle
                     iconSize: Theme.transportPlaySize
+                    enabled: playerState.canControl
                     tooltip: playerState.paused ? "播放" : "暂停"
                     onClicked: root.playPauseClicked()
                 }
@@ -150,7 +159,8 @@ Rectangle {
                     iconSize: Theme.transportSideSize
                     // 675 F：电影不显示上下切集（同上）
                     visible: playerState.episodeCount > 1
-                    enabled: playerState.currentEpisodeIndex >= 0
+                    enabled: playerState.canControl
+                             && playerState.currentEpisodeIndex >= 0
                              && playerState.currentEpisodeIndex < playerState.episodeCount - 1
                     tooltip: "下一集"
                     onClicked: root.nextEpisodeClicked()
@@ -416,9 +426,13 @@ Rectangle {
                 }
 
                 // 窗口全屏（仅底栏，用户明确）
+                // 677：图标双向（全屏 / 退出全屏）——旧实现恒为「全屏」，
+                // 全屏后按钮语义不明确（`Icons.closeFullscreen` 早已定义
+                // 但从未使用）。状态源是 C++ 的 Q_PROPERTY。
                 ControlButton {
-                    icon: Icons.fullscreen
-                    tooltip: "全屏"
+                    icon: mpvWindow.hostFullscreen
+                          ? Icons.closeFullscreen : Icons.fullscreen
+                    tooltip: mpvWindow.hostFullscreen ? "退出全屏" : "全屏"
                     onClicked: root.fullscreenClicked()
                 }
             }

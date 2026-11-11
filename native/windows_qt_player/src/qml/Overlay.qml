@@ -188,16 +188,21 @@ ApplicationWindow {
     // ── 播放快捷键（与宿主共用组件）──
     PlayerShortcuts { }
 
-    Shortcut {
-        sequence: "Escape"
-        onActivated: {
+    // 677：Escape 由 C++ 统一拦截（`MpvWindow::escapePressed`）。
+    // 这里接三层语义：收面板 → 退全屏 → 请求退出。
+    //
+    // 【房间模式】第三层只发 `requestExit`，**不本地 Qt.quit()**——
+    // 由 Dart 弹「解散/离开房间」确认框，确认后才关窗退页。
+    Connections {
+        target: mpvWindow
+        function onEscapePressed() {
             if (root.panelOpen || root.adjustOpen) {
                 root.closePanels()
             } else if (mpvWindow.isHostFullscreen()) {
                 mpvWindow.toggleHostFullscreen()
             } else {
                 pipeServer.sendCommand({"type": "requestExit"})
-                Qt.quit()
+                if (!playerState.isRoom) Qt.quit()
             }
         }
     }
@@ -258,7 +263,11 @@ ApplicationWindow {
         onEpisodeClicked: root.openEpisodePanel()
         onSpeedClicked: root.openSpeedPanel()
         onFullscreenClicked: mpvWindow.toggleHostFullscreen()
-        onSkipSegmentClicked: pipeServer.sendCommand({"type": "skipSegment"})
+        onSkipSegmentClicked: {
+            // 677：房间观众不得跳片头/片尾（切集/seek 均属播放控制）
+            if (!playerState.canControl) return
+            pipeServer.sendCommand({"type": "skipSegment"})
+        }
         selectedSlider: root.selectedSlider
         onSliderSelected: (which) => {
             root.selectedSlider = (root.selectedSlider === which) ? "" : which
@@ -676,6 +685,8 @@ ApplicationWindow {
     Connections {
         target: mpvWindow
         function onPlaybackEnded() {
+            // 677：房间观众不得自动切集（切集是房主节奏）
+            if (!playerState.canControl) return
             if (playerState.currentEpisodeIndex >= 0
                 && playerState.currentEpisodeIndex < playerState.episodeCount - 1) {
                 pipeServer.sendCommand({"type": "selectEpisode",
@@ -950,8 +961,12 @@ ApplicationWindow {
     }
 
     function handlePanelItem(id) {
+        // 677：房间观众不得切集/切版本/改倍速（对齐安卓
+        // `buildEpisodeContent` 的 canControl 门 + 鸿蒙同款）。
+        // 字幕/音轨是本地 UI，两端都保留。
         // 674 A2：命令先行、镜像后置（镜像失效不影响操作）
         if (panel.title === "选集") {
+            if (!playerState.canControl) return
             pipeServer.sendCommand({"type": "selectEpisode", "index": id})
             root.patchState("currentEpisodeIndex", id)
         } else if (panel.title === "音轨") {
@@ -967,10 +982,12 @@ ApplicationWindow {
             pipeServer.sendCommand({"type": "selectSubtitle", "id": id})
             root.patchState("selectedSubtitleId", id > 0 ? id : 0)
         } else if (panel.title === "倍速") {
+            if (!playerState.canControl) return
             mpvWindow.setSpeed(id)
             pipeServer.sendCommand({"type": "setSpeed", "speed": id})
             root.patchState("speed", id)
         } else if (panel.title === "版本") {
+            if (!playerState.canControl) return
             pipeServer.sendCommand({"type": "selectVersion", "index": id})
             root.patchState("currentVersionIndex", id)
         } else if (panel.title === "解码方式") {
@@ -1006,6 +1023,8 @@ ApplicationWindow {
 
     /// 跳过片头/片尾
     function skipSegmentLocal() {
+        // 677：房间观众不得跳片头片尾（切集/seek 都属于播放控制）
+        if (!playerState.canControl) return
         if (playerState.segmentIntroEndMs >= 0
             && playerState.positionMs < playerState.segmentIntroEndMs) {
             mpvWindow.seekTo(playerState.segmentIntroEndMs)

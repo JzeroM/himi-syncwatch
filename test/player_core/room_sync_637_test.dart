@@ -150,9 +150,10 @@ void main() {
     test('房主发 play 时带上当前进度', () {
       final body = stripComments(bodyOf(screen, 'void _togglePlayPause() {'));
       expect(body, contains('AppConstants.actionPlay'));
+      // 677：读真实引擎（`engine` = 房间态的 `_roomEngine`）
       expect(
         body,
-        contains('position: _player.position / 1000.0'),
+        contains('position: engine.position / 1000.0'),
         reason: '不带位置则观众只能等 5s 心跳纠正（恢复很慢）',
       );
     });
@@ -163,9 +164,11 @@ void main() {
       final end = screen.indexOf('case AppConstants.actionPause:', idx);
       final body = stripComments(screen.substring(idx, end));
       expect(body, contains("message['position']"));
-      expect(body, contains('_player.seek('));
+      // 677：房间命令作用在真实引擎（Qt 接管时 `_player` 从未起播）
+      expect(body, contains('engine.seek('));
       // seek 必须在设置 playing 之前
-      expect(body.indexOf('_player.seek('), lessThan(body.indexOf('AdapterPlaybackState.playing')));
+      expect(body.indexOf('engine.seek('),
+          lessThan(body.indexOf('AdapterPlaybackState.playing')));
     });
   });
 
